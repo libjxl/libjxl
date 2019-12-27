@@ -1,0 +1,137 @@
+// Copyright (c) the JPEG XL Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef JXL_COMMON_H_
+#define JXL_COMMON_H_
+
+// Shared constants and helper functions.
+
+#include <stddef.h>
+
+#include <memory>  // unique_ptr
+
+#include "jxl/base/compiler_specific.h"
+
+namespace jxl {
+// Some enums and typedefs used by more than one header file.
+enum class BlockType : uint8_t {
+  kAdd = 0,
+  kTowardsBlack = 1,
+  kTowardsWhite = 2,
+  kNumBlockTypes,
+};
+
+constexpr size_t kBitsPerByte = 8;  // more clear than CHAR_BIT
+
+constexpr inline size_t RoundUpBitsToByteMultiple(size_t bits) {
+  return (bits + 7) & ~size_t(7);
+}
+
+constexpr inline size_t RoundUpToBlockDim(size_t dim) {
+  return (dim + 7) & ~size_t(7);
+}
+
+template <typename T1, typename T2>
+constexpr inline T1 DivCeil(T1 a, T2 b) {
+  return (a + b - 1) / b;
+}
+
+constexpr double kPi = 3.14159265358979323846264338327950288;
+
+// Reasonable default for sRGB, matches common monitors. Butteraugli was tuned
+// for this, we scale darker/brighter inputs accordingly.
+static constexpr int kDefaultIntensityTarget = 250;
+static constexpr float kIntensityMultiplier = 1.0f / kDefaultIntensityTarget;
+
+template <typename T>
+constexpr T Pi(T multiplier) {
+  return static_cast<T>(multiplier * kPi);
+}
+
+// Block is the square grid of pixels to which an "energy compaction"
+// transformation (e.g. DCT) is applied. Each block has its own AC quantizer.
+constexpr size_t kBlockDim = 8;
+
+constexpr size_t kDCTBlockSize = kBlockDim * kBlockDim;
+
+// Group is the rectangular grid of blocks that can be decoded in parallel. This
+// is different for DC.
+// TODO(jon) : signal kDcGroupDimInBlocks and kGroupDim (and make them
+// variables),
+//             allowing powers of two between (say) 64 and 1024
+constexpr size_t kDcGroupDimInBlocks = 256;
+constexpr size_t kDcGroupDim = kDcGroupDimInBlocks * kBlockDim;
+// 512x512 DC = 4096x4096, enough for a 4K frame (3840x2160)
+// (setting it to 256 results in four DC groups of size 256x256, 224x256,
+// 256x14, 224x14)
+constexpr size_t kGroupDim = 256;
+static_assert(kGroupDim % kBlockDim == 0,
+              "Group dim should be divisible by block dim");
+constexpr size_t kGroupDimInBlocks = kGroupDim / kBlockDim;
+
+// Maximum number of passes in an image.
+constexpr size_t kMaxNumPasses = 11;
+
+// Maximum number of reference frames.
+constexpr size_t kMaxNumReferenceFrames = 3;
+
+// Dimensions of a frame, in pixels, and other derived dimensions.
+// Initially set from Preview/SizeHeader, may be overridden by AnimationFrame.
+struct FrameDimensions {
+  void Set(size_t xsize, size_t ysize) {
+    this->xsize = xsize;
+    this->ysize = ysize;
+    xsize_blocks = DivCeil(xsize, kBlockDim);
+    ysize_blocks = DivCeil(ysize, kBlockDim);
+    xsize_padded = xsize_blocks * kBlockDim;
+    ysize_padded = ysize_blocks * kBlockDim;
+    xsize_groups = DivCeil(xsize, kGroupDim);
+    ysize_groups = DivCeil(ysize, kGroupDim);
+    xsize_dc_groups = DivCeil(xsize, kDcGroupDim);
+    ysize_dc_groups = DivCeil(ysize, kDcGroupDim);
+    num_groups = xsize_groups * ysize_groups;
+    num_dc_groups = xsize_dc_groups * ysize_dc_groups;
+  }
+
+  size_t xsize;
+  size_t ysize;
+  size_t xsize_padded;
+  size_t ysize_padded;
+  size_t xsize_blocks;
+  size_t ysize_blocks;
+  size_t xsize_groups;
+  size_t ysize_groups;
+  size_t xsize_dc_groups;
+  size_t ysize_dc_groups;
+  size_t num_groups;
+  size_t num_dc_groups;
+};
+
+// Can't rely on C++14 yet.
+template <typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args&&... args) {
+  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
+// This leads to somewhat better code than pointer arithmetic.
+template <typename T>
+JXL_INLINE T* JXL_RESTRICT ByteOffset(T* JXL_RESTRICT base,
+                                      const intptr_t byte_offset) {
+  const uintptr_t base_addr = reinterpret_cast<uintptr_t>(base);
+  return reinterpret_cast<T*>(base_addr + byte_offset);
+}
+
+}  // namespace jxl
+
+#endif  // JXL_COMMON_H_

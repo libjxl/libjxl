@@ -1,0 +1,7 @@
+JPEGXL_0 {
+  global:
+    Jpegxl*;
+
+  local:
+    *;
+};

@@ -1,0 +1,18 @@
+# Copyright (c) the JPEG XL Project
+#
+# Use of this source code is governed by an MIT-style
+# license that can be found in the LICENSE file or at
+# https://opensource.org/licenses/MIT.
+
+# Build an Ubuntu-based docker image with the installed software needed to
+# develop and test JPEG XL.
+
+FROM ubuntu:bionic
+
+# Set a prompt for when using it locally.
+ENV PS1="\[\033[01;33m\]\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
+
+COPY scripts /jpegxl_scripts
+
+RUN /jpegxl_scripts/jpegxl_builder.sh && \
+  rm -rf /jpegxl_scripts

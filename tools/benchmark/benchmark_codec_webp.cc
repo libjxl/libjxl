@@ -1,0 +1,278 @@
+// Copyright (c) the JPEG XL Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+#include "tools/benchmark/benchmark_codec_webp.h"
+
+#include <stdint.h>
+#include <string.h>
+#include <webp/decode.h>
+#include <webp/encode.h>
+
+#include <string>
+#include <vector>
+
+#include "jxl/base/compiler_specific.h"
+#include "jxl/base/data_parallel.h"
+#include "jxl/base/padded_bytes.h"
+#include "jxl/base/span.h"
+#include "jxl/codec_in_out.h"
+#include "jxl/image.h"
+#include "jxl/image_bundle.h"
+
+#ifdef MEMORY_SANITIZER
+#include "sanitizer/msan_interface.h"
+#endif
+
+namespace jxl {
+
+struct WebPArgs {
+  // Empty, no WebP-specific args currently.
+};
+
+static WebPArgs* const webpargs = new WebPArgs;
+
+Status AddCommandLineOptionsWebPCodec(BenchmarkArgs* args) { return true; }
+
+class WebPCodec : public ImageCodec {
+ public:
+  explicit WebPCodec(const BenchmarkArgs& args) : ImageCodec(args) {}
+
+  Status ParseParam(const std::string& param) override {
+    // Ensure that the 'q' parameter is not used up by ImageCodec.
+    if (param[0] == 'q') {
+      if (near_lossless_) {
+        near_lossless_quality_ = ParseIntParam(param, 0, 99);
+      } else {
+        quality_ = ParseIntParam(param, 1, 100);
+      }
+      return true;
+    } else if (ImageCodec::ParseParam(param)) {
+      return true;
+    } else if (param == "ll") {
+      lossless_ = true;
+      JXL_CHECK(!near_lossless_);
+      return true;
+    } else if (param == "nl") {
+      near_lossless_ = true;
+      JXL_CHECK(!lossless_);
+      return true;
+    } else if (param[0] == 'm') {
+      method_ = ParseIntParam(param, 1, 6);
+      return true;
+    }
+    return false;
+  }
+
+  Status Compress(const std::string& filename, const CodecInOut* io,
+                  ThreadPool* pool, PaddedBytes* compressed) override {
+    const ImageBundle& ib = io->Main();
+
+    const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
+    if (ib.HasAlpha() && ib.metadata()->alpha_bits > 8) {
+      return JXL_FAILURE("WebP alpha must be 8-bit");
+    }
+
+    // TODO: ib.CopyToSRGB to Image3B assert-fails if 16-bit alpha. Fix that,
+    // since it may be bug in external_image (alpha isn't requested here).
+    Image3B srgb;
+    JXL_RETURN_IF_ERROR(ib.CopyToSRGB(Rect(ib), &srgb, pool));
+
+    if (lossless_ || near_lossless_) {
+      // The lossless codec does not support 16-bit channels.
+      // Color models are currently not supported here and the sRGB 8-bit
+      // conversion causes loss due to clipping.
+      if (!ib.IsSRGB() || ib.metadata()->bits_per_sample > 8) {
+        return JXL_FAILURE("%s: webp:ll/nl requires 8-bit sRGB",
+                           filename.c_str());
+      }
+      return CompressInternal(srgb, alpha, 100, compressed);
+    } else if (bitrate_target_ > 0.0) {
+      int quality_bad = 100;
+      int quality_good = 92;
+      size_t target_size = srgb.xsize() * srgb.ysize() * bitrate_target_ / 8.0;
+      while (quality_good > 0 &&
+             CompressInternal(srgb, alpha, quality_good, compressed) &&
+             compressed->size() > target_size) {
+        quality_bad = quality_good;
+        quality_good -= 8;
+      }
+      if (quality_good <= 0) quality_good = 1;
+      while (quality_good + 1 < quality_bad) {
+        int quality = (quality_bad + quality_good) / 2;
+        if (!CompressInternal(srgb, alpha, quality, compressed)) {
+          break;
+        }
+        if (compressed->size() <= target_size) {
+          quality_good = quality;
+        } else {
+          quality_bad = quality;
+        }
+      }
+      return CompressInternal(srgb, alpha, quality_good, compressed);
+    } else if (quality_ > 0) {
+      return CompressInternal(srgb, alpha, quality_, compressed);
+    }
+    return false;
+  }
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io) override {
+    WebPDecoderConfig config;
+#ifdef MEMORY_SANITIZER
+    // config is initialized by libwebp, which we are not instrumenting with
+    // msan, therefore we need to initialize it here.
+    memset(&config, 0, sizeof(config));
+#endif
+    JXL_RETURN_IF_ERROR(WebPInitDecoderConfig(&config) == 1);
+    config.options.use_threads = 0;
+    config.options.dithering_strength = 0;
+    config.options.bypass_filtering = 0;
+    config.options.no_fancy_upsampling = 0;
+    WebPDecBuffer* const buf = &config.output;
+    buf->colorspace = MODE_RGBA;
+    const uint8_t* webp_data = compressed.data();
+    const int webp_size = compressed.size();
+    if (WebPDecode(webp_data, webp_size, &config) != VP8_STATUS_OK) {
+      return JXL_FAILURE("WebPDecode failed");
+    }
+    JXL_CHECK(buf->u.RGBA.stride == buf->width * 4);
+
+    const bool is_gray = false;
+    const bool has_alpha = true;
+    const uint8_t* data_begin = &buf->u.RGBA.rgba[0];
+    const uint8_t* data_end = data_begin + buf->width * buf->height * 4;
+#ifdef MEMORY_SANITIZER
+    // The image data is initialized by libwebp, which we are not instrumenting
+    // with msan.
+    __msan_unpoison(data_begin, data_end - data_begin);
+#endif
+    if (io->metadata.color_encoding.IsGray() != is_gray) {
+      // TODO(lode): either ensure is_gray matches what the color profile says,
+      // or set a correct color profile, e.g.
+      // io->metadata.color_encoding = ColorManagement::SRGB(is_gray);
+      // Return a standard failure becuase SetFromSRGB triggers a fatal assert
+      // for this instead.
+      return JXL_FAILURE("Color profile is-gray mismatch");
+    }
+    const Status ok =
+        io->Main().SetFromSRGB(buf->width, buf->height, is_gray, has_alpha,
+                               data_begin, data_end, pool);
+    WebPFreeDecBuffer(buf);
+    JXL_RETURN_IF_ERROR(ok);
+    io->enc_size = compressed.size();
+    io->dec_pixels = buf->width * buf->height;
+    return true;
+  }
+
+ private:
+  static int WebPStringWrite(const uint8_t* data, size_t data_size,
+                             const WebPPicture* const picture) {
+    if (data_size) {
+      PaddedBytes* const out = static_cast<PaddedBytes*>(picture->custom_ptr);
+      const size_t pos = out->size();
+      out->resize(pos + data_size);
+      memcpy(out->data() + pos, data, data_size);
+    }
+    return 1;
+  }
+
+  static void Import(const Image3B& srgb, WebPPicture* pic) {
+    const size_t xsize = srgb.xsize();
+    const size_t ysize = srgb.ysize();
+    std::vector<uint8_t> rgb(xsize * ysize * 3);
+    for (size_t y = 0; y < ysize; ++y) {
+      const uint8_t* JXL_RESTRICT row0 = srgb.ConstPlaneRow(0, y);
+      const uint8_t* JXL_RESTRICT row1 = srgb.ConstPlaneRow(1, y);
+      const uint8_t* JXL_RESTRICT row2 = srgb.ConstPlaneRow(2, y);
+      uint8_t* const JXL_RESTRICT row_rgb = &rgb[y * xsize * 3];
+      for (size_t x = 0; x < xsize; ++x) {
+        row_rgb[3 * x + 0] = row0[x];
+        row_rgb[3 * x + 1] = row1[x];
+        row_rgb[3 * x + 2] = row2[x];
+      }
+    }
+    WebPPictureImportRGB(pic, &rgb[0], 3 * srgb.xsize());
+  }
+
+  static void Import(const Image3B& srgb, const ImageU& alpha,
+                     WebPPicture* pic) {
+    const size_t xsize = srgb.xsize();
+    const size_t ysize = srgb.ysize();
+    std::vector<uint8_t> rgba(xsize * ysize * 4);
+    for (size_t y = 0; y < ysize; ++y) {
+      const uint8_t* JXL_RESTRICT row0 = srgb.ConstPlaneRow(0, y);
+      const uint8_t* JXL_RESTRICT row1 = srgb.ConstPlaneRow(1, y);
+      const uint8_t* JXL_RESTRICT row2 = srgb.ConstPlaneRow(2, y);
+      const uint16_t* JXL_RESTRICT rowa = alpha.ConstRow(y);
+      uint8_t* const JXL_RESTRICT row_rgba = &rgba[y * xsize * 4];
+      for (size_t x = 0; x < xsize; ++x) {
+        row_rgba[4 * x + 0] = row0[x];
+        row_rgba[4 * x + 1] = row1[x];
+        row_rgba[4 * x + 2] = row2[x];
+        row_rgba[4 * x + 3] = rowa[x] & 0xFF;
+      }
+    }
+    WebPPictureImportRGBA(pic, &rgba[0], 4 * srgb.xsize());
+  }
+
+  Status CompressInternal(const Image3B& srgb, const ImageU* alpha, int quality,
+                          PaddedBytes* compressed) {
+    *compressed = PaddedBytes();
+    WebPConfig config;
+    WebPConfigInit(&config);
+    JXL_ASSERT(!lossless_ || !near_lossless_);  // can't have both
+    config.lossless = lossless_;
+    config.quality = quality;
+    config.method = method_;
+    config.near_lossless = near_lossless_ ? near_lossless_quality_ : 100;
+    JXL_CHECK(WebPValidateConfig(&config));
+
+    WebPPicture pic;
+    WebPPictureInit(&pic);
+    pic.width = static_cast<int>(srgb.xsize());
+    pic.height = static_cast<int>(srgb.ysize());
+    pic.writer = &WebPStringWrite;
+    if (lossless_ || near_lossless_) pic.use_argb = 1;
+    pic.custom_ptr = compressed;
+
+    if (alpha == nullptr) {
+      Import(srgb, &pic);
+    } else {
+      Import(srgb, *alpha, &pic);
+    }
+
+    // WebP encoding may fail, for example, if the image is more than 16384
+    // pixels high or wide.
+    bool ok = WebPEncode(&config, &pic);
+    WebPPictureFree(&pic);
+#ifdef MEMORY_SANITIZER
+    // Compressed image data is initialized by libwebp, which we are not
+    // instrumenting with msan.
+    __msan_unpoison(compressed->data(), compressed->size());
+#endif
+    return ok;
+  }
+
+  int quality_ = 90;
+  bool lossless_ = false;
+  bool near_lossless_ = false;
+  bool near_lossless_quality_ = 40;  // only used if near_lossless_
+  int method_ = 6;                   // smallest, some speed cost
+};
+
+ImageCodec* CreateNewWebPCodec(const BenchmarkArgs& args) {
+  return new WebPCodec(args);
+}
+
+}  // namespace jxl

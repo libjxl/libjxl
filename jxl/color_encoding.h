@@ -1,0 +1,445 @@
+// Copyright (c) the JPEG XL Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef JXL_COLOR_ENCODING_H_
+#define JXL_COLOR_ENCODING_H_
+
+// Metadata for color space conversions.
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#include <cmath>  // std::abs
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include "jxl/base/compiler_specific.h"
+#include "jxl/base/padded_bytes.h"
+#include "jxl/base/status.h"
+#include "jxl/field_encodings.h"
+
+namespace jxl {
+
+// (All CIE units are for the standard 1931 2 degree observer)
+
+enum class ColorSpace : uint32_t { kRGB, kGray, kXYB, kUnknown };
+
+static inline const char* EnumName(ColorSpace /*unused*/) {
+  return "ColorSpace";
+}
+static inline constexpr uint64_t EnumBits(ColorSpace /*unused*/) {
+  using CS = ColorSpace;
+  return MakeBit(CS::kRGB) | MakeBit(CS::kGray) | MakeBit(CS::kXYB) |
+         MakeBit(CS::kUnknown);
+}
+
+// Values from CICP ColourPrimaries.
+enum class WhitePoint : uint32_t {
+  kD65 = 1,     // sRGB/BT.709/Display P3/BT.2020
+  kCustom = 2,  // Actual values encoded in separate fields
+  kE = 10,      // XYZ
+  kDCI = 11,    // DCI-P3
+};
+
+static inline const char* EnumName(WhitePoint /*unused*/) {
+  return "WhitePoint";
+}
+static inline constexpr uint64_t EnumBits(WhitePoint /*unused*/) {
+  return MakeBit(WhitePoint::kD65) | MakeBit(WhitePoint::kCustom) |
+         MakeBit(WhitePoint::kE) | MakeBit(WhitePoint::kDCI);
+}
+
+// Values from CICP ColourPrimaries
+enum class Primaries : uint32_t {
+  kSRGB = 1,    // Same as BT.709
+  kCustom = 2,  // Actual values encoded in separate fields
+  k2100 = 9,    // Same as BT.2020
+  kP3 = 11,
+};
+
+static inline const char* EnumName(Primaries /*unused*/) { return "Primaries"; }
+static inline constexpr uint64_t EnumBits(Primaries /*unused*/) {
+  using Pr = Primaries;
+  return MakeBit(Pr::kSRGB) | MakeBit(Pr::kCustom) | MakeBit(Pr::k2100) |
+         MakeBit(Pr::kP3);
+}
+
+// Values from CICP TransferCharacteristics
+enum TransferFunction : uint32_t {
+  k709 = 1,
+  kUnknown = 2,
+  kLinear = 8,
+  kSRGB = 13,
+  kPQ = 16,   // from BT.2100
+  kDCI = 17,  // from SMPTE RP 431-2 reference projector
+  kHLG = 18,  // from BT.2100
+};
+
+static inline const char* EnumName(TransferFunction /*unused*/) {
+  return "TransferFunction";
+}
+static inline constexpr uint64_t EnumBits(TransferFunction /*unused*/) {
+  using TF = TransferFunction;
+  return MakeBit(TF::k709) | MakeBit(TF::kLinear) | MakeBit(TF::kSRGB) |
+         MakeBit(TF::kPQ) | MakeBit(TF::kDCI) | MakeBit(TF::kHLG) |
+         MakeBit(TF::kUnknown);
+}
+
+enum class RenderingIntent : uint32_t {
+  // Values match ICC sRGB encodings.
+  kPerceptual = 0,  // good for photos, requires a profile with LUT.
+  kRelative,        // good for logos.
+  kSaturation,      // perhaps useful for CG with fully saturated colors.
+  kAbsolute,        // leaves white point unchanged; good for proofing.
+};
+
+static inline const char* EnumName(RenderingIntent /*unused*/) {
+  return "RenderingIntent";
+}
+static inline constexpr uint64_t EnumBits(RenderingIntent /*unused*/) {
+  using RI = RenderingIntent;
+  return MakeBit(RI::kPerceptual) | MakeBit(RI::kRelative) |
+         MakeBit(RI::kSaturation) | MakeBit(RI::kAbsolute);
+}
+
+// Chromaticity (Y is omitted because it is 1 for primaries/white points)
+struct CIExy {
+  double x = 0.0;
+  double y = 0.0;
+};
+
+struct PrimariesCIExy {
+  CIExy r;
+  CIExy g;
+  CIExy b;
+};
+
+// Serializable form of CIExy.
+struct Customxy {
+  Customxy();
+  static const char* Name() { return "Customxy"; }
+
+  template <class Visitor>
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+    visitor->S32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
+                 BitsOffset(21, 2097152), 0, &x);
+    visitor->S32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
+                 BitsOffset(21, 2097152), 0, &y);
+    return true;
+  }
+
+  CIExy Get() const;
+  // Returns false if x or y do not fit in the encoding.
+  Status Set(const CIExy& xy);
+
+  int32_t x;
+  int32_t y;
+};
+
+struct CustomTransferFunction {
+  CustomTransferFunction();
+  static const char* Name() { return "CustomTransferFunction"; }
+
+  // Sets fields and returns true if nonserialized_color_space has an implicit
+  // transfer function, otherwise leaves fields unchanged and returns false.
+  bool SetImplicit();
+
+  // Gamma: only used for PNG inputs
+  bool IsGamma() const { return have_gamma_; }
+  double GetGamma() const {
+    JXL_ASSERT(IsGamma());
+    return gamma_ * 1E-7;  // (0, 1)
+  }
+  Status SetGamma(double gamma);
+
+  TransferFunction GetTransferFunction() const {
+    JXL_ASSERT(!IsGamma());
+    return transfer_function_;
+  }
+  void SetTransferFunction(const TransferFunction tf) {
+    have_gamma_ = false;
+    transfer_function_ = tf;
+  }
+
+  bool IsUnknown() const {
+    return !have_gamma_ && (transfer_function_ == TransferFunction::kUnknown);
+  }
+  bool IsSRGB() const {
+    return !have_gamma_ && (transfer_function_ == TransferFunction::kSRGB);
+  }
+  bool IsLinear() const {
+    return !have_gamma_ && (transfer_function_ == TransferFunction::kLinear);
+  }
+  bool IsPQ() const {
+    return !have_gamma_ && (transfer_function_ == TransferFunction::kPQ);
+  }
+  bool IsHLG() const {
+    return !have_gamma_ && (transfer_function_ == TransferFunction::kHLG);
+  }
+  bool IsSame(const CustomTransferFunction& other) const {
+    if (have_gamma_ != other.have_gamma_) return false;
+    if (have_gamma_) {
+      if (gamma_ != other.gamma_) return false;
+    } else {
+      if (transfer_function_ != other.transfer_function_) return false;
+    }
+    return true;
+  }
+
+  template <class Visitor>
+  bool VisitFields(Visitor* JXL_RESTRICT visitor) {
+    if (visitor->Conditional(!SetImplicit())) {
+      visitor->Bool(false, &have_gamma_);
+
+      if (visitor->Conditional(have_gamma_)) {
+        visitor->Bits(24, kGammaMul, &gamma_);
+        if (gamma_ > kGammaMul) {
+          return JXL_FAILURE("Invalid gamma %u", gamma_);
+        }
+      }
+
+      if (visitor->Conditional(!have_gamma_)) {
+        JXL_RETURN_IF_ERROR(
+            visitor->Enum(TransferFunction::kSRGB, &transfer_function_));
+      }
+    }
+
+    return true;
+  }
+
+  // Must be set before calling VisitFields!
+  ColorSpace nonserialized_color_space = ColorSpace::kRGB;
+
+ private:
+  static constexpr uint32_t kGammaMul = 10000000;
+
+  bool have_gamma_;
+
+  // OETF exponent to go from linear to gamma-compressed.
+  uint32_t gamma_;  // Only used if have_gamma_.
+
+  // Can be kUnknown.
+  TransferFunction transfer_function_;  // Only used if !have_gamma_.
+};
+
+// Compact encoding of data required to interpret and translate pixels to a
+// known color space. Stored in Metadata.
+struct ColorEncoding {
+  ColorEncoding();
+  static const char* Name() { return "ColorEncoding"; }
+
+  bool IsGray() const { return color_space_ == ColorSpace::kGray; }
+  size_t Channels() const { return IsGray() ? 1 : 3; }
+
+  // Returns false if the field is invalid and unusable.
+  bool HasPrimaries() const {
+    return !IsGray() && color_space_ != ColorSpace::kXYB;
+  }
+
+  // Returns true after setting the field to a value defined by color_space,
+  // otherwise false and leaves the field unchanged.
+  bool ImplicitWhitePoint() {
+    if (color_space_ == ColorSpace::kXYB) {
+      white_point = WhitePoint::kD65;
+      return true;
+    }
+    return false;
+  }
+
+  bool IsSRGB() const {
+    if (!IsGray() && color_space_ != ColorSpace::kRGB) return false;
+    if (white_point != WhitePoint::kD65) return false;
+    if (primaries != Primaries::kSRGB) return false;
+    if (!tf.IsSRGB()) return false;
+    return true;
+  }
+
+  void SetSRGB(const ColorSpace cs) {
+    icc.clear();
+    received_icc = opaque_icc = false;
+    JXL_ASSERT(cs == ColorSpace::kGray || cs == ColorSpace::kRGB);
+    color_space_ = cs;
+    white_point = WhitePoint::kD65;
+    primaries = Primaries::kSRGB;
+    tf.SetTransferFunction(TransferFunction::kSRGB);
+    rendering_intent = RenderingIntent::kRelative;
+  }
+
+  template <class Visitor>
+  bool VisitFields(Visitor* JXL_RESTRICT visitor) {
+    // NOTE: `icc` is not serialized here to avoid dependency on icc_codec.h.
+
+    if (visitor->AllDefault(*this, &all_default)) return true;
+
+    visitor->Bool(false, &received_icc);
+
+    if (visitor->Conditional(received_icc)) {
+      visitor->Bool(false, &opaque_icc);
+    }
+
+    // NOTE: use most likely values as default so ImageMetadata.all_default is
+    // true. We set ColorSpace/TransferFunction to kUnknown below if opaque_icc.
+
+    if (visitor->Conditional(!opaque_icc)) {
+      JXL_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
+
+      if (visitor->Conditional(!ImplicitWhitePoint())) {
+        JXL_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
+        if (visitor->Conditional(white_point == WhitePoint::kCustom)) {
+          JXL_RETURN_IF_ERROR(visitor->VisitNested(&white_));
+        }
+      }
+
+      if (visitor->Conditional(HasPrimaries())) {
+        JXL_RETURN_IF_ERROR(visitor->Enum(Primaries::kSRGB, &primaries));
+        if (visitor->Conditional(primaries == Primaries::kCustom)) {
+          JXL_RETURN_IF_ERROR(visitor->VisitNested(&red_));
+          JXL_RETURN_IF_ERROR(visitor->VisitNested(&green_));
+          JXL_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
+        }
+      }
+
+      JXL_RETURN_IF_ERROR(visitor->VisitNested(&tf));
+
+      JXL_RETURN_IF_ERROR(
+          visitor->Enum(RenderingIntent::kRelative, &rendering_intent));
+    }
+
+    if (opaque_icc) {
+      // Set correct 'defaults' (see above) but only when reading.
+      if (visitor->IsReading()) {
+        color_space_ = ColorSpace::kUnknown;
+        tf.SetTransferFunction(TransferFunction::kUnknown);
+      }
+    } else {
+      // Not opaque implies all fields should be known.
+      if (color_space_ == ColorSpace::kUnknown || tf.IsUnknown()) {
+        return JXL_FAILURE("Opaque %d but cs %u and tf %u%s", opaque_icc,
+                           color_space_,
+                           tf.IsGamma() ? 0 : tf.GetTransferFunction(),
+                           tf.IsGamma() ? "(gamma)" : "");
+      }
+    }
+
+    return true;
+  }
+
+  // Accessors ensure tf.nonserialized_color_space is updated at the same time.
+  ColorSpace GetColorSpace() const { return color_space_; }
+  void SetColorSpace(const ColorSpace cs) {
+    color_space_ = cs;
+    tf.nonserialized_color_space = cs;
+  }
+
+  CIExy GetWhitePoint() const;
+  Status SetWhitePoint(const CIExy& xy);
+
+  PrimariesCIExy GetPrimaries() const;
+  Status SetPrimaries(const PrimariesCIExy& xy);
+
+  // Checks if the color spaces (including white point / primaries) are the
+  // same, but ignores the transfer function, rendering intent and ICC bytes.
+  bool SameColorSpace(const ColorEncoding& other) const {
+    if (color_space_ != other.color_space_) return false;
+
+    if (white_point != other.white_point) return false;
+    if (white_point == WhitePoint::kCustom) {
+      if (white_.x != other.white_.x || white_.y != other.white_.y)
+        return false;
+    }
+
+    if (HasPrimaries() != other.HasPrimaries()) return false;
+    if (HasPrimaries()) {
+      if (primaries != other.primaries) return false;
+      if (primaries == Primaries::kCustom) {
+        if (red_.x != other.red_.x || red_.y != other.red_.y) return false;
+        if (green_.x != other.green_.x || green_.y != other.green_.y)
+          return false;
+        if (blue_.x != other.blue_.x || blue_.y != other.blue_.y) return false;
+      }
+    }
+    return true;
+  }
+
+  // Checks if the color space and transfer function are the same, ignoring
+  // rendering intent and ICC bytes
+  bool SameColorEncoding(const ColorEncoding& other) const {
+    return SameColorSpace(other) && tf.IsSame(other.tf);
+  }
+
+  mutable bool all_default;
+
+  // Either empty, or a valid ICC profile.
+  PaddedBytes icc;
+
+  // icc is non-empty AND it comes from an external source.
+  bool received_icc;
+
+  // received_icc AND the ICC cannot be described by ColorSpace and/or
+  // TransferFunction. If true, subsequent fields are default-initialized!
+  bool opaque_icc;
+
+  // Not serialized if opaque_icc. Fully describes the ICC if !opaque_icc.
+  // SetProfile will either fail or initialize all fields.
+
+  WhitePoint white_point;
+  Primaries primaries;  // Only valid if HasPrimaries()
+  CustomTransferFunction tf;
+  RenderingIntent rendering_intent;
+
+ private:
+  ColorSpace color_space_;  // Can be kUnknown
+
+  // Only used if white_point == kCustom.
+  Customxy white_;
+
+  // Only used if primaries == kCustom.
+  Customxy red_;
+  Customxy green_;
+  Customxy blue_;
+};
+
+// Returns whether the two inputs are approximately equal.
+static inline bool ApproxEq(const double a, const double b,
+#if JPEGXL_ENABLE_SKCMS
+                            double max_l1 = 1E-3) {
+#else
+                            double max_l1 = 8E-5) {
+#endif
+  // Threshold should be sufficient for ICC's 15-bit fixed-point numbers.
+  // We have seen differences of 7.1E-5 with lcms2 and 1E-3 with skcms.
+  return std::abs(a - b) <= max_l1;
+}
+
+// Returns a representation of the ColorEncoding fields (not icc).
+// Example description: "RGB_D65_SRG_Rel_Lin"
+std::string Description(const ColorEncoding& c);
+Status ParseDescription(const std::string& description,
+                        ColorEncoding* JXL_RESTRICT c);
+
+// Returns ColorEncoding with empty ICC profile. Caller must use
+// ColorEncoding::CreateProfile() to generate a profile.
+std::vector<ColorEncoding> AllEncodings();
+
+// Define the operator<< for tests.
+static inline ::std::ostream& operator<<(::std::ostream& os,
+                                         const ColorEncoding& c) {
+  return os << "ColorEncoding/" << Description(c);
+}
+
+}  // namespace jxl
+
+#endif  // JXL_COLOR_ENCODING_H_

@@ -1,0 +1,55 @@
+// Copyright (c) the JPEG XL Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef JXL_TOC_H_
+#define JXL_TOC_H_
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include <vector>
+
+#include "jxl/aux_out.h"
+#include "jxl/base/compiler_specific.h"
+#include "jxl/base/status.h"
+#include "jxl/dec_bit_reader.h"
+#include "jxl/enc_bit_writer.h"
+
+namespace jxl {
+
+static JXL_INLINE size_t AcGroupIndex(size_t pass, size_t group,
+                                      size_t num_groups, size_t num_dc_groups,
+                                      bool has_ac_global) {
+  return 1 + num_dc_groups + has_ac_global + pass * num_groups + group;
+}
+
+static JXL_INLINE size_t NumTocEntries(size_t num_groups, size_t num_dc_groups,
+                                       size_t num_passes, bool has_ac_global) {
+  if (num_groups == 1 && num_passes == 1) return 1;
+  return AcGroupIndex(0, 0, num_groups, num_dc_groups, has_ac_global) +
+         num_groups * num_passes;
+}
+
+Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
+                        std::vector<uint64_t>* JXL_RESTRICT group_offsets);
+
+Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
+                         BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
+
+Status WriteResponsiveOffsets(const std::vector<int>& offsets,
+                              BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
+
+}  // namespace jxl
+
+#endif  // JXL_TOC_H_

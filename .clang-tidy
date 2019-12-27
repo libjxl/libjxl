@@ -1,0 +1,56 @@
+# Disabled checks:
+# - google-readability-todo: We don't use the google TODO format.
+#
+# - modernize-deprecated-headers: We don't use std:: versions of the standard
+#   types and functions like size_t or printf, so we should include <stdio.h>
+#   instead <cstdio>.
+# - modernize-return-braced-init-list: this often doesn't improve readability.
+# - modernize-use-auto: is too aggressive towards using auto.
+# - modernize-use-default-member-init: with a mix of constructors and default
+#   member initialization this can be confusing if enforced.
+# - modernize-use-using: typedefs are ok.
+#
+# - readability-else-after-return: It doesn't always improve readability.
+# - readability-static-accessed-through-instance
+#   It is often more useful and readable to access a constant of a passed
+#   variable (like d.N) instead of using the type of the variable that could be
+#   long and complex.
+
+Checks: >-
+  clang-*,
+  -clang-diagnostic-unused-command-line-argument,
+  google-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  -google-readability-todo,
+  -modernize-deprecated-headers,
+  -modernize-return-braced-init-list,
+  -modernize-use-auto,
+  -modernize-use-default-member-init,
+  -modernize-use-using,
+  -readability-else-after-return,
+  -readability-static-accessed-through-instance,
+
+
+WarningsAsErrors: >-
+  clang-*,
+  clang-analyzer-*,
+  -clang-diagnostic-unused-command-line-argument,
+  google-build-using-namespace,
+  google-explicit-constructor,
+  google-readability-namespace-comments
+
+# We are only interested in the headers from this projects, excluding
+# third_party/ and build/.
+HeaderFilterRegex: '^.*/(jxl|fuif|tools)/.*\.h$'
+
+CheckOptions:
+  - key:             readability-braces-around-statements.ShortStatementLines
+    value:           '2'
+  - key:             google-readability-braces-around-statements.ShortStatementLines
+    value:           '2'
+  - key:             readability-implicit-bool-conversion.AllowPointerConditions
+    value:           '1'
+  - key:             readability-implicit-bool-conversion.AllowIntegerConditions
+    value:           '1'

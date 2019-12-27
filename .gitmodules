@@ -1,0 +1,24 @@
+[submodule "third_party/brotli"]
+	path = third_party/brotli
+	url = https://github.com/google/brotli
+[submodule "third_party/lodepng"]
+	path = third_party/lodepng
+	url = https://github.com/lvandeve/lodepng
+[submodule "third_party/lcms"]
+	path = third_party/lcms
+	url = https://github.com/mm2/Little-CMS
+[submodule "third_party/googletest"]
+	path = third_party/googletest
+	url = https://github.com/google/googletest
+[submodule "third_party/gperftools"]
+	path = third_party/gperftools
+	url = https://github.com/gperftools/gperftools
+[submodule "third_party/brunsli"]
+	path = third_party/brunsli
+	url = https://github.com/google/brunsli.git
+[submodule "third_party/sjpeg"]
+	path = third_party/sjpeg
+	url = https://github.com/webmproject/sjpeg.git
+[submodule "third_party/skcms"]
+	path = third_party/skcms
+	url = https://skia.googlesource.com/skcms
