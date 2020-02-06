@@ -80,6 +80,27 @@ static JXL_INLINE uint32_t LoadBE32(const uint8_t* p) {
 #endif
 }
 
+static JXL_INLINE uint64_t LoadBE64(const uint8_t* p) {
+#if JXL_BYTE_ORDER_LITTLE
+  uint64_t big;
+  memcpy(&big, p, 8);
+  return JXL_BSWAP64(big);
+#else
+  // Byte-order-independent - can't assume this machine is big endian.
+  const uint64_t byte7 = p[0];
+  const uint64_t byte6 = p[1];
+  const uint64_t byte5 = p[2];
+  const uint64_t byte4 = p[3];
+  const uint64_t byte3 = p[4];
+  const uint64_t byte2 = p[5];
+  const uint64_t byte1 = p[6];
+  const uint64_t byte0 = p[7];
+  return (byte7 << 56ull) | (byte6 << 48ull) | (byte5 << 40ull) |
+         (byte4 << 32ull) | (byte3 << 24ull) | (byte2 << 16ull) |
+         (byte1 << 8ull) | byte0;
+#endif
+}
+
 static JXL_INLINE uint32_t LoadLE32(const uint8_t* p) {
 #if JXL_BYTE_ORDER_LITTLE
   uint32_t little;
@@ -135,6 +156,23 @@ static JXL_INLINE void StoreBE32(const uint32_t native, uint8_t* p) {
   p[1] = (native >> 16) & 0xFF;
   p[2] = (native >> 8) & 0xFF;
   p[3] = native & 0xFF;
+#endif
+}
+
+static JXL_INLINE void StoreBE64(const uint64_t native, uint8_t* p) {
+#if JXL_BYTE_ORDER_LITTLE
+  const uint64_t big = JXL_BSWAP64(native);
+  memcpy(p, &big, 8);
+#else
+  // Byte-order-independent - can't assume this machine is big endian.
+  p[0] = native >> 56ull;
+  p[1] = (native >> 48ull) & 0xFF;
+  p[2] = (native >> 40ull) & 0xFF;
+  p[3] = (native >> 32ull) & 0xFF;
+  p[4] = (native >> 24ull) & 0xFF;
+  p[5] = (native >> 16ull) & 0xFF;
+  p[6] = (native >> 8ull) & 0xFF;
+  p[7] = native & 0xFF;
 #endif
 }
 

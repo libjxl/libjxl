@@ -1,8 +1,16 @@
 # Copyright (c) the JPEG XL Project
 #
-# Use of this source code is governed by an MIT-style
-# license that can be found in the LICENSE file or at
-# https://opensource.org/licenses/MIT.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # Highway
 set(HWY_USE_GTEST ON CACHE BOOL "HWY_USE_GTEST")
@@ -16,7 +24,7 @@ include(lodepng.cmake)
 
 # brotli
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h")
-  message(SEND_ERROR "Brotli is required to build, run \"git submodule update --init\" to get it, then run cmake again")
+  message(SEND_ERROR "Please run git submodule update --init")
 endif ()
 add_subdirectory(brotli EXCLUDE_FROM_ALL)
 
@@ -33,20 +41,12 @@ else ()
   include(lcms2.cmake)
 endif()
 
-# gperftools (TCMalloc)
-if("${JPEGXL_ENABLE_TCMALLOC}")
-  if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/gperftools/.git" )
-    message(SEND_ERROR "Please run git submodule update --init")
-  endif()
-  include(gperftools.cmake)
-endif()  # JPEGXL_ENABLE_TCMALLOC
-
 add_subdirectory(googletest EXCLUDE_FROM_ALL)
 
 # brunsli
 # depends both on brotli and googletest, so should be added after them.
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brunsli/c/include/brunsli/brunsli_decode.h")
-  message(SEND_ERROR "Brunsli is required to build, run \"git submodule update --init\" to get it, then run cmake again")
+  message(SEND_ERROR "Please run git submodule update --init")
 endif ()
 add_subdirectory(brunsli EXCLUDE_FROM_ALL)
 

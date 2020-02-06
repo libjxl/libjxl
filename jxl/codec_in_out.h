@@ -56,12 +56,17 @@ class DecoderHints {
     kv_.emplace_back(key, value);
   }
 
-  // Calls func(key, value) in order of Add.
+  // Calls `func(key, value)` for each key/value in the order they were added,
+  // returning false immediately if `func` returns false.
   template <class Func>
-  void Foreach(const Func& func) const {
+  Status Foreach(const Func& func) const {
     for (const KeyValue& kv : kv_) {
-      func(kv.key, kv.value);
+      Status ok = func(kv.key, kv.value);
+      if (!ok) {
+        return JXL_FAILURE("DecoderHints::Foreach returned false");
+      }
     }
+    return true;
   }
 
  private:
@@ -83,6 +88,13 @@ struct Blobs {
   PaddedBytes iptc;
   PaddedBytes jumbf;
   PaddedBytes xmp;
+};
+
+// For Codec::kJPG, convert between JPEG and pixels or between JPEG and
+// quantized DCT coefficients
+enum class DecodeTarget {
+  kPixels,
+  kQuantizedCoeffs,
 };
 
 // Holds a preview, a main image or one or more frames, plus the inputs/outputs
@@ -114,7 +126,7 @@ class CodecInOut {
 
   void CheckMetadata() const {
     JXL_CHECK(metadata.bits_per_sample != 0);
-    JXL_CHECK(!metadata.color_encoding.icc.empty());
+    JXL_CHECK(!metadata.color_encoding.ICC().empty());
 
     if (preview_frame.xsize() != 0) preview_frame.VerifyMetadata();
     JXL_CHECK(preview_frame.metadata() == &metadata);
@@ -125,8 +137,11 @@ class CodecInOut {
     }
   }
 
-  size_t xsize() const { return Main().xsize(); }
-  size_t ysize() const { return Main().ysize(); }
+  // These functions refer to the size of the whole image or "canvas" (as
+  // opposed to individual frames), which for animations corresponds to the size
+  // of the first frame.
+  size_t xsize() const { return frames[0].xsize(); }
+  size_t ysize() const { return frames[0].ysize(); }
   void ShrinkTo(size_t xsize, size_t ysize) {
     // preview is unaffected.
     for (ImageBundle& ib : frames) {
@@ -177,6 +192,8 @@ class CodecInOut {
 
   // Used to set c_current for codecs that lack color space metadata.
   DecoderHints dec_hints;
+  // Decode to pixels or keep JPEG as quantized DCT coefficients
+  DecodeTarget dec_target = DecodeTarget::kPixels;
 
   // -- DECODER OUTPUT
 

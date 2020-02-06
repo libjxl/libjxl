@@ -62,13 +62,11 @@ namespace jxl {
 // scattering lanes to multiples of 10 would also be slow.
 //
 // We instead compute the various predictors using SIMD, especially because
-// many of them are similar. Horizontal operations are generally inefficient,
-// but we take advantage of special hardware support for video codecs (minpos).
+// many of them are similar.
 //
 // The set of 8 predictors was chosen from a set of 16 as the combination that
 // minimized a simple model of encoding cost. Their order matters because
-// minpos(lanes) returns the lowest i with lanes[i] == min. We again retained
-// the permutation with the lowest encoding cost.
+// we choose the lowest i with lanes[i] == min.
 
 namespace predictor {
 

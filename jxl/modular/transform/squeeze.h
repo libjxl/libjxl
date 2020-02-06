@@ -81,7 +81,7 @@ inline pixel_type smooth_tendency(pixel_type B, pixel_type a, pixel_type n) {
   return diff;
 }
 
-void inv_hsqueeze(Image &input, int c, int rc, jxl::ThreadPool *pool) {
+void inv_hsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.w == 0) return;
@@ -92,7 +92,7 @@ void inv_hsqueeze(Image &input, int c, int rc, jxl::ThreadPool *pool) {
               "channel %i (going from width %zu to %zu)",
               c, rc, chin.w, chout.w);
   RunOnPool(
-      pool, 0, chin.h, jxl::ThreadPool::SkipInit(),
+      pool, 0, chin.h, ThreadPool::SkipInit(),
       [&](const int task, const int thread) {
         const size_t y = task;
         const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y);
@@ -177,7 +177,7 @@ void fwd_hsqueeze(Image &input, int c, int rc) {
 }
 #endif
 
-void inv_vsqueeze(Image &input, int c, int rc, jxl::ThreadPool *pool) {
+void inv_vsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.h == 0) return;
@@ -193,8 +193,7 @@ void inv_vsqueeze(Image &input, int c, int rc, jxl::ThreadPool *pool) {
   intptr_t onerow_out = chout.plane.PixelsPerRow();
   constexpr int kColsPerThread = 64;
   RunOnPool(
-      pool, 0, jxl::DivCeil(chin.w, kColsPerThread),
-      jxl::ThreadPool::SkipInit(),
+      pool, 0, DivCeil(chin.w, kColsPerThread), ThreadPool::SkipInit(),
       [&](const int task, const int thread) {
         const size_t x0 = task * kColsPerThread;
         const size_t x1 = std::min((size_t)(task + 1) * kColsPerThread, chin.w);
@@ -285,13 +284,13 @@ void fwd_vsqueeze(Image &input, int c, int rc) {
 }
 #endif
 
-void default_squeeze_parameters(std::vector<int> &parameters,
+void default_squeeze_parameters(TransformParams *parameters,
                                 const Image &image) {
   int nb_channels = image.nb_channels;
   // maybe other transforms have been applied before, but let's assume the first
   // nb_channels channels still contain the 'main' data
 
-  parameters.clear();
+  parameters->clear();
   size_t w = image.channel[image.nb_meta_channels].w;
   size_t h = image.channel[image.nb_meta_channels].h;
   JXL_DEBUG_V(7, "Default squeeze parameters for %zux%zu image: ", w, h);
@@ -310,37 +309,37 @@ void default_squeeze_parameters(std::vector<int> &parameters,
     //        parameters.push_back(image.nb_meta_channels+1);
     //        parameters.push_back(image.nb_meta_channels+2);
     //        }
-    parameters.push_back(1 + 2);  // horizontal chroma squeeze
-    parameters.push_back(image.nb_meta_channels + 1);
-    parameters.push_back(image.nb_meta_channels + 2);
+    parameters->push_back(1 + 2);  // horizontal chroma squeeze
+    parameters->push_back(image.nb_meta_channels + 1);
+    parameters->push_back(image.nb_meta_channels + 2);
     //        if (wide) {
-    parameters.push_back(0 + 2);  // vertical chroma squeeze
-    parameters.push_back(image.nb_meta_channels + 1);
-    parameters.push_back(image.nb_meta_channels + 2);
+    parameters->push_back(0 + 2);  // vertical chroma squeeze
+    parameters->push_back(image.nb_meta_channels + 1);
+    parameters->push_back(image.nb_meta_channels + 2);
     //        }
   }
 
   if (!wide) {
     if (h > MAX_FIRST_PREVIEW_SIZE) {
-      parameters.push_back(0);  // vertical squeeze
-      parameters.push_back(image.nb_meta_channels);
-      parameters.push_back(image.nb_meta_channels + nb_channels - 1);
+      parameters->push_back(0);  // vertical squeeze
+      parameters->push_back(image.nb_meta_channels);
+      parameters->push_back(image.nb_meta_channels + nb_channels - 1);
       h = (h + 1) / 2;
       JXL_DEBUG_V(7, "Vertical (%zux%zu), ", w, h);
     }
   }
   while (w > MAX_FIRST_PREVIEW_SIZE || h > MAX_FIRST_PREVIEW_SIZE) {
     if (w > MAX_FIRST_PREVIEW_SIZE) {
-      parameters.push_back(1);  // horizontal squeeze
-      parameters.push_back(image.nb_meta_channels);
-      parameters.push_back(image.nb_meta_channels + nb_channels - 1);
+      parameters->push_back(1);  // horizontal squeeze
+      parameters->push_back(image.nb_meta_channels);
+      parameters->push_back(image.nb_meta_channels + nb_channels - 1);
       w = (w + 1) / 2;
       JXL_DEBUG_V(7, "Horizontal (%zux%zu), ", w, h);
     }
     if (h > MAX_FIRST_PREVIEW_SIZE) {
-      parameters.push_back(0);  // vertical squeeze
-      parameters.push_back(image.nb_meta_channels);
-      parameters.push_back(image.nb_meta_channels + nb_channels - 1);
+      parameters->push_back(0);  // vertical squeeze
+      parameters->push_back(image.nb_meta_channels);
+      parameters->push_back(image.nb_meta_channels + nb_channels - 1);
       h = (h + 1) / 2;
       JXL_DEBUG_V(7, "Vertical (%zux%zu), ", w, h);
     }
@@ -348,32 +347,58 @@ void default_squeeze_parameters(std::vector<int> &parameters,
   JXL_DEBUG_V(7, "that's it");
 }
 
-void meta_squeeze(Image &image, std::vector<int> &parameters) {
-  if (!parameters.size()) default_squeeze_parameters(parameters, image);
+Status CheckMetaSqueezeParams(const TransformParams &parameters,
+                              int num_channels) {
+  if (parameters.size() % 3 != 0) {
+    return JXL_FAILURE("Invalid number of parameters");
+  }
+  for (size_t i = 0; i < parameters.size(); i += 3) {
+    int flags = parameters[i];
+    if ((flags & ~3) != 0) {
+      return JXL_FAILURE("Invalid Squeeze flags");
+    }
+    int c1 = parameters[i + 1];
+    int c2 = parameters[i + 2];
+    if (c1 < 0 || c1 > num_channels || c2 < 0 || c2 >= num_channels ||
+        c2 < c1) {
+      return JXL_FAILURE("Invalid channel range");
+    }
+  }
+  return true;
+}
 
-  for (size_t i = 0; i + 2 < parameters.size(); i += 3) {
-    bool horizontal = parameters[i] & 1;  // 0=vertical, 1=horizontal
-    bool in_place = !(parameters[i] & 2);
-    int beginc = parameters[i + 1];
-    int endc = parameters[i + 2];
-    int offset;
-    if (in_place)
+Status meta_squeeze(Image &image, TransformParams *parameters) {
+  if (parameters->empty()) {
+    default_squeeze_parameters(parameters, image);
+  }
+  JXL_RETURN_IF_ERROR(
+      CheckMetaSqueezeParams(*parameters, image.channel.size()));
+
+  for (size_t i = 0; i + 2 < parameters->size(); i += 3) {
+    bool horizontal = (*parameters)[i] & 1;  // 0=vertical, 1=horizontal
+    bool in_place = !((*parameters)[i] & 2);
+    uint32_t beginc = (*parameters)[i + 1];
+    uint32_t endc = (*parameters)[i + 2];
+
+    uint32_t offset;
+    if (in_place) {
       offset = endc + 1;
-    else
+    } else {
       offset = image.nb_meta_channels + image.nb_channels;
-    for (int c = beginc; c <= endc; c++) {
+    }
+    for (uint32_t c = beginc; c <= endc; c++) {
       Channel dummy;
       dummy.hcshift = image.channel[c].hcshift;
       dummy.vcshift = image.channel[c].vcshift;
       if (horizontal) {
-        int w = image.channel[c].w;
+        size_t w = image.channel[c].w;
         image.channel[c].w = (w + 1) / 2;
         image.channel[c].hshift++;
         image.channel[c].hcshift++;
         dummy.w = w - (w + 1) / 2;
         dummy.h = image.channel[c].h;
       } else {
-        int h = image.channel[c].h;
+        size_t h = image.channel[c].h;
         image.channel[c].h = (h + 1) / 2;
         image.channel[c].vshift++;
         image.channel[c].vcshift++;
@@ -387,33 +412,32 @@ void meta_squeeze(Image &image, std::vector<int> &parameters) {
                            std::move(dummy));
     }
   }
+  return true;
 }
 
 // [squeezetype] [beginc] [endc]
-bool squeeze(Image &input, bool inverse, std::vector<int> &parameters,
-             jxl::ThreadPool *pool) {
-  std::vector<int> adj_params =
-      parameters;  // use a copy so empty (default) parameters remain empty
-  if (!adj_params.size()) default_squeeze_parameters(adj_params, input);
+Status squeeze(Image &input, bool inverse, const TransformParams &parameters,
+               ThreadPool *pool) {
+  // Use a copy so empty (default) parameters remain empty.
+  TransformParams adj_params(parameters);
+  if (!adj_params.size()) {
+    default_squeeze_parameters(&adj_params, input);
+  }
+  JXL_RETURN_IF_ERROR(CheckMetaSqueezeParams(adj_params, input.channel.size()));
 
   if (inverse) {
     for (int i = adj_params.size() - 3; i >= 0; i -= 3) {
       bool horizontal = adj_params[i] & 1;  // 0=vertical, 1=horizontal
       bool in_place = !(adj_params[i] & 2);
-      int beginc = adj_params[i + 1];
-      int endc = adj_params[i + 2];
-      if (endc >= static_cast<int>(input.channel.size())) {
-        JXL_WARNING(
-            "Invalid parameters for squeeze transform: channel %i does not "
-            "exist",
-            endc);
-      }
-      int offset;
-      if (in_place)
+      uint32_t beginc = adj_params[i + 1];
+      uint32_t endc = adj_params[i + 2];
+      uint32_t offset;
+      if (in_place) {
         offset = endc + 1;
-      else
+      } else {
         offset = input.nb_meta_channels + input.nb_channels;
-      for (int c = beginc; c <= endc; c++) {
+      }
+      for (uint32_t c = beginc; c <= endc; c++) {
         if (input.channel[offset + c - beginc].is_empty()) {
           // stop unsqueezing luma; keep unsqueezing chroma channels
           //                if (input.channel[beginc].w == input.channel[c].w &&
@@ -421,10 +445,11 @@ bool squeeze(Image &input, bool inverse, std::vector<int> &parameters,
           //                continue;
           input.channel[offset + c - beginc].resize();  // assume all zeroes
         }
-        if (horizontal)
+        if (horizontal) {
           inv_hsqueeze(input, c, offset + c - beginc, pool);
-        else
+        } else {
           inv_vsqueeze(input, c, offset + c - beginc, pool);
+        }
       }
       input.channel.erase(input.channel.begin() + offset,
                           input.channel.begin() + offset + (endc - beginc + 1));
@@ -434,24 +459,20 @@ bool squeeze(Image &input, bool inverse, std::vector<int> &parameters,
     for (size_t i = 0; i + 2 < adj_params.size(); i += 3) {
       bool horizontal = adj_params[i] & 1;  // 0=vertical, 1=horizontal
       bool in_place = !(adj_params[i] & 2);
-      int beginc = adj_params[i + 1];
-      int endc = adj_params[i + 2];
-      if (endc >= static_cast<int>(input.channel.size())) {
-        JXL_WARNING(
-            "Invalid parameters for squeeze transform: channel %i does not "
-            "exist",
-            endc);
-      }
-      int offset;
-      if (in_place)
+      uint32_t beginc = adj_params[i + 1];
+      uint32_t endc = adj_params[i + 2];
+      uint32_t offset;
+      if (in_place) {
         offset = endc + 1;
-      else
+      } else {
         offset = input.nb_meta_channels + input.nb_channels;
-      for (int c = beginc; c <= endc; c++) {
-        if (horizontal)
+      }
+      for (uint32_t c = beginc; c <= endc; c++) {
+        if (horizontal) {
           fwd_hsqueeze(input, c, offset + c - beginc);
-        else
+        } else {
           fwd_vsqueeze(input, c, offset + c - beginc);
+        }
       }
     }
 #else

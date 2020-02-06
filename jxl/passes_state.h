@@ -30,7 +30,7 @@
 #include "jxl/quantizer.h"
 #include "jxl/splines.h"
 
-// Structures that hold the (en/de)coder state for a JPEG XL kPasses
+// Structures that hold the (en/de)coder state for a JPEG XL kVarDCT
 // (en/de)coder.
 
 namespace jxl {

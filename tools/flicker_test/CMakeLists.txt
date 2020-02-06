@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-find_package(Qt5 COMPONENTS Widgets X11Extras)
+find_package(Qt5 COMPONENTS Widgets)
 if (NOT Qt5_FOUND)
   message(WARNING "Qt5 was not found. The flicker test tool will not be built.")
   return()
 endif ()
 
-if (NOT TARGET x11_icc OR NOT TARGET image_loading)
+if (NOT TARGET icc_detect OR NOT TARGET image_loading)
   message(WARNING "Comparison tool not built. The flicker test tool will not be built.")
   return()
 endif ()
@@ -42,7 +42,6 @@ add_executable(flicker_test WIN32
 
 target_link_libraries(flicker_test PUBLIC
   Qt5::Widgets
-  Qt5::X11Extras
   image_loading
-  x11_icc
+  icc_detect
 )

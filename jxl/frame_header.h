@@ -20,6 +20,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string>
 
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
@@ -36,7 +37,7 @@
 namespace jxl {
 
 enum class FrameEncoding : uint32_t {
-  kPasses,
+  kVarDCT,
   kModularGroup,
   kJpegGroup,
 };
@@ -50,7 +51,7 @@ static inline const char* EnumName(FrameEncoding /*unused*/) {
 }
 
 static inline constexpr uint64_t EnumBits(FrameEncoding /*unused*/) {
-  return MakeBit(FrameEncoding::kPasses) |
+  return MakeBit(FrameEncoding::kVarDCT) |
          MakeBit(FrameEncoding::kModularGroup) |
          MakeBit(FrameEncoding::kJpegGroup);
 }
@@ -77,6 +78,16 @@ struct AnimationFrame {
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
+
+    name_length_ = name.length();
+    // Allows layer name lengths up to 1071 bytes
+    visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0, &name_length_);
+    name.resize(name_length_);
+    for (size_t i = 0; i < name_length_; i++) {
+        uint32_t c = name[i];
+        visitor->Bits(8, 0, &c);
+        name[i] = c;
+    }
 
     if (visitor->Conditional(duration > 0)) {
       visitor->U32(Val(static_cast<uint32_t>(NewBase::kExisting)),
@@ -118,6 +129,9 @@ struct AnimationFrame {
   // How long to wait [in ticks, see Animation{}] after rendering.
   // May be 0 if the current frame serves as a foundation for a frame with crop.
   uint32_t duration;
+
+  // Optional layer name
+  std::string name;
 
   // Indicates what the next frame will be "based" on.
   // A full frame (have_crop = false) can be based on a frame if and only if the
@@ -163,6 +177,7 @@ struct AnimationFrame {
  private:
   uint32_t new_base_int_;
   uint32_t blend_mode_int_;
+  uint32_t name_length_;
 
  public:
   bool nonserialized_have_timecode = false;
@@ -273,7 +288,7 @@ struct FrameHeader {
         JXL_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
     }
 
-    JXL_RETURN_IF_ERROR(visitor->Enum(FrameEncoding::kPasses, &encoding));
+    JXL_RETURN_IF_ERROR(visitor->Enum(FrameEncoding::kVarDCT, &encoding));
 
     JXL_RETURN_IF_ERROR(visitor->Enum(ColorTransform::kXYB, &color_transform));
     if (visitor->Conditional(color_transform == ColorTransform::kYCbCr &&
@@ -286,7 +301,7 @@ struct FrameHeader {
       JXL_RETURN_IF_ERROR(visitor->VisitNested(&passes));
       visitor->U64(0, &flags);
     }
-    // This field only makes sense for kPasses:
+    // This field only makes sense for kVarDCT:
     if (visitor->Conditional(IsLossy())) {
       visitor->U32(Val(0), Val(1), Val(2), Val(3), 1, &x_qm_scale);
     }
@@ -303,12 +318,16 @@ struct FrameHeader {
       visitor->Bool(false, &has_alpha);
     }
 
+    if (visitor->Conditional(has_alpha)) {
+      visitor->Bool(false, &alpha_is_premultiplied);
+    }
+
     visitor->BeginExtensions(&extensions);
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }
 
-  bool IsLossy() const { return encoding == FrameEncoding::kPasses; }
+  bool IsLossy() const { return encoding == FrameEncoding::kVarDCT; }
   bool IsJpeg() const { return encoding == FrameEncoding::kJpegGroup; }
 
   // Sets/clears `flag` based upon `condition`.
@@ -327,6 +346,7 @@ struct FrameHeader {
   }
 
   bool HasAlpha() const { return has_alpha; }
+  bool AlphaIsPremultiplied() const { return alpha_is_premultiplied; }
 
   mutable bool all_default;
 
@@ -356,6 +376,9 @@ struct FrameHeader {
 
   // Per-frame alpha flag - may differ between reference and displayed frames.
   bool has_alpha;  // only if dc_level == 0
+
+  // Whether the color data has been "premultiplied" by alpha or not.
+  bool alpha_is_premultiplied;  // only if has_alpha
 
   uint64_t extensions;
 };

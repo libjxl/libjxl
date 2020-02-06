@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -846,7 +846,6 @@ HWY_ATTR_WASM HWY_INLINE Vec128<float, N> ApproximateReciprocal(
   return one / v;
 }
 
-namespace ext {
 // Absolute value of difference.
 HWY_ATTR_WASM HWY_INLINE Vec128<float> AbsDiff(const Vec128<float> a,
                                                const Vec128<float> b) {
@@ -854,7 +853,6 @@ HWY_ATTR_WASM HWY_INLINE Vec128<float> AbsDiff(const Vec128<float> a,
       BitCast(Full128<float>(), Set(Full128<uint32_t>(), 0x7FFFFFFFu));
   return Vec128<float>{wasm_v128_and(mask.raw, (a - b).raw)};
 }
-}  // namespace ext
 
 // ------------------------------ Floating-point multiply-add variants
 
@@ -1193,7 +1191,8 @@ HWY_ATTR_WASM HWY_INLINE Vec128<T, N> IfThenZeroElse(Mask128<T, N> mask,
 template <typename T, size_t N, HWY_IF_FLOAT(T)>
 HWY_ATTR_WASM HWY_INLINE Vec128<T, N> ZeroIfNegative(Vec128<T, N> v) {
   const Desc<T, N> d;
-  return IfThenElse(MaskFromVec(v), Zero(d), v);
+  const auto zero = Zero(d);
+  return IfThenElse(Mask128<T, N>{(v > zero).raw}, v, zero);
 }
 
 // ================================================== MEMORY
@@ -1700,12 +1699,12 @@ HWY_ATTR_WASM HWY_INLINE Vec128<float> Shuffle0123(const Vec128<float> v) {
 
 // Returned by SetTableIndices for use by TableLookupLanes.
 template <typename T>
-struct permute_sse4 {
+struct permute_wasm {
   __v128_u raw;
 };
 
 template <typename T>
-HWY_ATTR_WASM HWY_INLINE permute_sse4<T> SetTableIndices(Full128<T> d,
+HWY_ATTR_WASM HWY_INLINE permute_wasm<T> SetTableIndices(Full128<T> d,
                                                          const int32_t* idx) {
 #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER)
   for (size_t i = 0; i < d.N; ++i) {
@@ -1726,22 +1725,21 @@ HWY_ATTR_WASM HWY_INLINE permute_sse4<T> SetTableIndices(Full128<T> d,
     const size_t mod = idx_byte % sizeof(T);
     control[idx_byte] = idx[idx_lane] * sizeof(T) + mod;
   }
-  // TODO(eustas): permute_sse4?
-  return permute_sse4<T>{Load(d8, control).raw};
+  return permute_wasm<T>{Load(d8, control).raw};
 }
 
 HWY_ATTR_WASM HWY_INLINE Vec128<uint32_t> TableLookupLanes(
-    const Vec128<uint32_t> v, const permute_sse4<uint32_t> idx) {
+    const Vec128<uint32_t> v, const permute_wasm<uint32_t> idx) {
   return TableLookupBytes(v, Vec128<uint8_t>{idx.raw});
 }
 
 HWY_ATTR_WASM HWY_INLINE Vec128<int32_t> TableLookupLanes(
-    const Vec128<int32_t> v, const permute_sse4<int32_t> idx) {
+    const Vec128<int32_t> v, const permute_wasm<int32_t> idx) {
   return TableLookupBytes(v, Vec128<uint8_t>{idx.raw});
 }
 
 HWY_ATTR_WASM HWY_INLINE Vec128<float> TableLookupLanes(
-    const Vec128<float> v, const permute_sse4<float> idx) {
+    const Vec128<float> v, const permute_wasm<float> idx) {
   return TableLookupBytes(v, Vec128<uint8_t>{idx.raw});
 }
 
@@ -2158,37 +2156,7 @@ HWY_ATTR_WASM HWY_INLINE Vec128<int32_t, N> NearestInt(
 // functions to this namespace in multiple places.
 namespace ext {
 
-// ------------------------------ movemask
-
-// Returns a bit array of the most significant bit of each byte in "v", i.e.
-// sum_i=0..15 of (v[i] >> 7) << i; v[0] is the least-significant byte of "v".
-// This is useful for testing/branching based on comparison results.
-HWY_ATTR_WASM HWY_INLINE uint64_t movemask(const Vec128<uint8_t> v) {
-  const __i8x16 bits = wasm_u8x16_shr(v.raw, 7);
-  const __i8x16 var_shift =
-      wasm_i8x16_make(1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8);
-  const __i8x16 shifted_bits = wasm_i8x16_mul(bits, var_shift);
-  const __i16x8 pairs_hi = wasm_u16x8_shr(shifted_bits, 8);
-  const __i16x8 pairs = wasm_v128_or(shifted_bits, pairs_hi);
-  const __i32x4 quads_hi = wasm_u32x4_shr(pairs, 16);
-  const __i32x4 quads = wasm_v128_or(pairs, quads_hi);
-  const __i32x4 mask = wasm_i32x4_splat(0xF);
-  alignas(16) uint32_t lanes[4];
-  wasm_v128_store(lanes, wasm_v128_and(quads, mask));
-  return lanes[0] | (lanes[1] << 4) | (lanes[2] << 8) | (lanes[3] << 12);
-}
-
-// Returns the most significant bit of each float/double lane (see above).
-HWY_ATTR_WASM HWY_INLINE uint64_t movemask(const Vec128<float> v) {
-  const __i32x4 bits = wasm_u32x4_shr(v.raw, 31);
-  const __i32x4 var_shift = wasm_i32x4_make(1, 2, 4, 8);
-  const __i32x4 shifted_bits = wasm_i32x4_mul(bits, var_shift);
-  alignas(16) uint32_t lanes[4];
-  wasm_v128_store(lanes, shifted_bits);
-  return lanes[0] | lanes[1] | lanes[2] | lanes[3];
-}
-
-// ------------------------------ mask
+// ------------------------------ Mask
 
 template <typename T>
 HWY_ATTR_WASM HWY_INLINE bool AllFalse(const Mask128<T> v) {
@@ -2206,6 +2174,54 @@ HWY_ATTR_WASM HWY_INLINE bool AllTrue(const Mask128<float> v) {
   return wasm_i32x4_all_true(v.raw);
 }
 
+namespace impl {
+
+template <typename T>
+HWY_ATTR_WASM HWY_INLINE uint64_t BitsFromMask(SizeTag<1> /*tag*/,
+                                               const Mask128<T> mask) {
+  const __i8x16 slice =
+      wasm_i8x16_make(1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8, 1, 2, 4, 8);
+  // Each u32 lane has byte[i] = (1 << i) or 0.
+  const __i8x16 v8_4_2_1 = wasm_v128_and(mask.raw, slice);
+  // OR together 4 bytes of each u32 to get the 4 bits.
+  const __i16x8 v2_1_z_z = wasm_i32x4_shl(v8_4_2_1, 16);
+  const __i16x8 v82_41_2_1 = wasm_v128_or(v8_4_2_1, v2_1_z_z);
+  const __i16x8 v41_2_1_0 = wasm_i32x4_shl(v82_41_2_1, 8);
+  const __i16x8 v8421_421_21_10 = wasm_v128_or(v82_41_2_1, v41_2_1_0);
+  const __i16x8 nibble_per_u32 = wasm_i32x4_shr(v8421_421_21_10, 24);
+  // Assemble four nibbles into 16 bits.
+  alignas(16) uint32_t lanes[4];
+  wasm_v128_store(lanes, nibble_per_u32);
+  return lanes[0] | (lanes[1] << 4) | (lanes[2] << 8) | (lanes[3] << 12);
+}
+
+template <typename T>
+HWY_ATTR_WASM HWY_INLINE uint64_t BitsFromMask(SizeTag<2> /*tag*/,
+                                               const Mask128<T> mask) {
+  // Remove useless lower half of each u16 while preserving the sign bit.
+  const __i16x8 zero = wasm_i16x8_splat(0);
+  const Mask128<T> mask8{wasm_i8x16_narrow_i16x8(mask.raw, zero)};
+  return BitsFromMask(SizeTag<1>(), mask8);
+}
+
+template <typename T>
+HWY_ATTR_WASM HWY_INLINE uint64_t BitsFromMask(SizeTag<4> /*tag*/,
+                                               const Mask128<T> mask) {
+  const __i32x4 mask_i = static_cast<__i32x4>(mask.raw);
+  const __i32x4 slice = wasm_i32x4_make(1, 2, 4, 8);
+  const __i32x4 sliced_mask = wasm_v128_and(mask_i, slice);
+  alignas(16) uint32_t lanes[4];
+  wasm_v128_store(lanes, sliced_mask);
+  return lanes[0] | lanes[1] | lanes[2] | lanes[3];
+}
+
+}  // namespace impl
+
+template <typename T>
+HWY_ATTR_WASM HWY_INLINE uint64_t BitsFromMask(const Mask128<T> mask) {
+  return impl::BitsFromMask(SizeTag<sizeof(T)>(), mask);
+}
+
 template <typename T>
 HWY_ATTR_WASM HWY_INLINE size_t CountTrue(const Mask128<T> v) {
   const __i32x4 mask =
@@ -2215,31 +2231,13 @@ HWY_ATTR_WASM HWY_INLINE size_t CountTrue(const Mask128<T> v) {
   wasm_v128_store(lanes, shifted_bits);
   return PopCount(lanes[0] | lanes[1]) / sizeof(T);
 }
+
 HWY_ATTR_WASM HWY_INLINE size_t CountTrue(const Mask128<float> v) {
   const __i32x4 var_shift = wasm_i32x4_make(1, 2, 4, 8);
   const __i32x4 shifted_bits = wasm_v128_and(v.raw, var_shift);
   alignas(16) uint64_t lanes[2];
   wasm_v128_store(lanes, shifted_bits);
   return PopCount(lanes[0] | lanes[1]);
-}
-
-// ------------------------------ minpos
-
-// Returns index and min value in lanes 1 and 0.
-HWY_ATTR_WASM HWY_INLINE Vec128<uint16_t> minpos(const Vec128<uint16_t> v) {
-  // TODO(eustas): optimize.
-  alignas(16) uint16_t lanes[8];
-  wasm_v128_store(lanes, v.raw);
-  uint16_t index = 0;
-  uint16_t min_val = lanes[0];
-  for (size_t i = 0; i < 8; ++i) {
-    uint16_t val = lanes[i];
-    if (val < min_val) {
-      index = i;
-      min_val = val;
-    }
-  }
-  return Vec128<uint16_t>{wasm_i16x8_make(min_val, index, 0, 0, 0, 0, 0, 0)};
 }
 
 // ------------------------------ Horizontal sum (reduction)

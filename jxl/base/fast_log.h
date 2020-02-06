@@ -16,8 +16,10 @@
 #define JXL_BASE_FAST_LOG_H_
 
 #include <stdint.h>
+#include <string.h>
 
 #include <cmath>
+#include <hwy/static_targets.h>
 
 namespace jxl {
 
@@ -121,11 +123,70 @@ static inline float FastLog2(uint32_t v) {
   return static_cast<float>(log2(v));
 }
 
+// L1 error ~9.1E-3 (see fast_log_test).
 static inline float FastLog2f(float f) {
-  int exp;
-  float fr = std::frexp(f, &exp);
+  int32_t f_bits;
+  memcpy(&f_bits, &f, 4);
+  int exp = ((f_bits >> 23) & 0xFF) - 126;
+  uint32_t fr_bits = (f_bits & 0x807fffff) | 0x3f000000;
+  float fr;
+  memcpy(&fr, &fr_bits, 4);
   // TODO(veluca): improve constants.
   return exp + (-1.34752046f * fr + 3.98979143f) * fr - 2.64898502f;
+}
+
+// L1 error ~1.6E-4 (see fast_log_test).
+template <class V>
+HWY_ATTR V FastLog2f_12bits(V x) {
+  // Modified from code bearing the following license:
+  // https://github.com/etheory/fastapprox/blob/master/fastapprox/src/fastlog.h
+  /*=====================================================================*
+   *                   Copyright (C) 2011 Paul Mineiro                   *
+   * All rights reserved.                                                *
+   *                                                                     *
+   * Redistribution and use in source and binary forms, with             *
+   * or without modification, are permitted provided that the            *
+   * following conditions are met:                                       *
+   *                                                                     *
+   *     * Redistributions of source code must retain the                *
+   *     above copyright notice, this list of conditions and             *
+   *     the following disclaimer.                                       *
+   *                                                                     *
+   *     * Redistributions in binary form must reproduce the             *
+   *     above copyright notice, this list of conditions and             *
+   *     the following disclaimer in the documentation and/or            *
+   *     other materials provided with the distribution.                 *
+   *                                                                     *
+   *     * Neither the name of Paul Mineiro nor the names                *
+   *     of other contributors may be used to endorse or promote         *
+   *     products derived from this software without specific            *
+   *     prior written permission.                                       *
+   *                                                                     *
+   * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND              *
+   * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES,         *
+   * INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES               *
+   * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE             *
+   * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER               *
+   * OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,                 *
+   * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES            *
+   * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE           *
+   * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR                *
+   * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF          *
+   * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT           *
+   * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY              *
+   * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE             *
+   * POSSIBILITY OF SUCH DAMAGE.                                         *
+   *                                                                     *
+   * Contact: Paul Mineiro <paul@mineiro.com>                            *
+   *=====================================================================*/
+  HWY_FULL(float) df;
+  HWY_FULL(int32_t) di;
+  auto x_bits = BitCast(di, x);
+  const auto m_bits = (x_bits & Set(di, 0x007FFFFF)) | Set(di, 0x3f000000);
+  const auto m = BitCast(df, m_bits);
+  auto y = ConvertTo(df, x_bits) * Set(df, 1.1920928955078125e-7f);
+  return y - Set(df, 124.22551499f) - Set(df, 1.498030302f) * m -
+         Set(df, 1.72587999f) / (Set(df, 0.3520887068f) + m);
 }
 
 }  // namespace jxl

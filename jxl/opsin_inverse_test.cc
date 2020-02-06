@@ -32,7 +32,7 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
 
   CodecInOut io;
   io.metadata.bits_per_sample = 32;
-  io.metadata.color_encoding = ColorManagement::LinearSRGB();
+  io.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io.SetFromImage(CopyImage(linear), io.metadata.color_encoding);
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());

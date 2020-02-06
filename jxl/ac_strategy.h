@@ -129,6 +129,7 @@ class AcStrategy {
                               TypeBit(Type::DCT8X16) | TypeBit(Type::DCT32X8) |
                               TypeBit(Type::DCT8X32) | TypeBit(Type::DCT16X32) |
                               TypeBit(Type::DCT32X16);
+    JXL_DASSERT(Strategy() < kNumValidStrategies);
     return ((1u << static_cast<uint32_t>(Strategy())) & bits) != 0;
   }
 
@@ -147,6 +148,7 @@ class AcStrategy {
     return FromRawStrategy(static_cast<Type>(raw_strategy));
   }
   static JXL_INLINE AcStrategy FromRawStrategy(Type raw_strategy) {
+    JXL_DASSERT(IsRawStrategyValid(static_cast<uint32_t>(raw_strategy)));
     return AcStrategy(raw_strategy, /*is_first_block=*/true);
   }
 

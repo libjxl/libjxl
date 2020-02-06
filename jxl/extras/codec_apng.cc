@@ -231,11 +231,12 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, CodecInOut* io) {
   io->metadata.bits_per_sample = 8;
   io->metadata.alpha_bits = 8;
   io->metadata.color_encoding =
-      ColorManagement::SRGB();  // todo: get data from png metadata
+      ColorEncoding::SRGB();  // todo: get data from png metadata
   io->enc_size = bytes.size();
-  io->dec_hints.Foreach(
+  (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
         JXL_WARNING("APNG decoder ignoring %s hint", key.c_str());
+        return true;
       });
 
   if (id == id_IHDR && chunkIHDR.size == 25) {
@@ -337,9 +338,9 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, CodecInOut* io) {
                   row_alpha[x] = f[4 * x + 3];
                 }
               }
-              bundle.SetFromImage(std::move(sub_frame),
-                                  ColorManagement::SRGB());
-              bundle.SetAlpha(std::move(sub_frame_alpha));
+              bundle.SetFromImage(std::move(sub_frame), ColorEncoding::SRGB());
+              bundle.SetAlpha(std::move(sub_frame_alpha),
+                              /*alpha_is_premultiplied=*/false);
               io->frames.push_back(std::move(bundle));
             } else {
               delete[] chunk.p;

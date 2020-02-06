@@ -42,9 +42,9 @@ int Run(int argc, char** argv) {
   JXL_CHECK(SetFromFile(argv[input_arg], &io1));
   JXL_CHECK(SetFromFile(argv[input_arg + 1], &io2));
   JXL_CHECK(
-      io1.TransformTo(jxl::ColorManagement::LinearSRGB(io1.Main().IsGray())));
+      io1.TransformTo(jxl::ColorEncoding::LinearSRGB(io1.Main().IsGray())));
   JXL_CHECK(
-      io2.TransformTo(jxl::ColorManagement::LinearSRGB(io2.Main().IsGray())));
+      io2.TransformTo(jxl::ColorEncoding::LinearSRGB(io2.Main().IsGray())));
 
   if (io1.xsize() != io2.xsize() || io1.ysize() != io2.ysize()) {
     fprintf(stderr, "Image size mismatch\n");

@@ -232,6 +232,7 @@ void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
 // possibly for the very last point).
 template <typename Points, typename Functor>
 void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
+  JXL_ASSERT(!points.empty());
   Spline::Point current = points.front();
   functor(current, kDesiredRenderingDistance);
   auto next = points.begin();
@@ -239,12 +240,12 @@ void ForEachEquallySpacedPoint(const Points& points, const Functor& functor) {
     const Spline::Point* previous = &current;
     float arclength_from_previous = 0.f;
     for (;;) {
-      const float arclength_to_next =
-          std::sqrt((*next - *previous).SquaredNorm());
       if (next == points.end()) {
         functor(*previous, arclength_from_previous);
         return;
       }
+      const float arclength_to_next =
+          std::sqrt((*next - *previous).SquaredNorm());
       if (arclength_from_previous + arclength_to_next >=
           kDesiredRenderingDistance) {
         current =
@@ -363,9 +364,9 @@ void QuantizedSpline::Tokenize(std::vector<Token>* const tokens) const {
   encode_dct(sigma_dct_);
 }
 
-HWY_ATTR void QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
-                                      ANSSymbolReader* const decoder,
-                                      BitReader* const br) {
+HWY_ATTR Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
+                                        ANSSymbolReader* const decoder,
+                                        BitReader* const br) {
   const size_t num_control_points =
       ReadHybridUint(kNumControlPointsContext, br, decoder, context_map);
   control_points_.resize(num_control_points);
@@ -376,17 +377,23 @@ HWY_ATTR void QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
         ReadHybridUint(kControlPointsContext, br, decoder, context_map));
   }
 
-  const auto decode_dct = [decoder, br, &context_map](int dct[32]) HWY_ATTR {
+  const auto decode_dct = [decoder, br, &context_map](int dct[32])
+                              HWY_ATTR -> Status {
     for (int i = 0; i < 32; ++i) {
       const uint32_t s = decoder->ReadSymbol(context_map[kDCTContext], br);
       const uint32_t bits = br->ReadBits(s);
+      if (s > 31) {
+        return JXL_FAILURE("Too many bits");
+      }
       dct[i] = DecodeVarLenInt(s, bits);
     }
+    return true;
   };
   for (int c = 0; c < 3; ++c) {
-    decode_dct(color_dct_[c]);
+    JXL_RETURN_IF_ERROR(decode_dct(color_dct_[c]));
   }
-  decode_dct(sigma_dct_);
+  JXL_RETURN_IF_ERROR(decode_dct(sigma_dct_));
+  return true;
 }
 
 void Splines::Encode(BitWriter* writer, const size_t layer,
@@ -429,7 +436,7 @@ HWY_ATTR Status Splines::Decode(jxl::BitReader* br) {
   splines_.reserve(num_splines);
   for (int i = 0; i < num_splines; ++i) {
     QuantizedSpline spline;
-    spline.Decode(context_map, &decoder, br);
+    JXL_RETURN_IF_ERROR(spline.Decode(context_map, &decoder, br));
     splines_.push_back(std::move(spline));
   }
 
@@ -470,6 +477,10 @@ void Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
     const float arc_length =
         (points_to_draw.size() - 2) * kDesiredRenderingDistance +
         points_to_draw.back().second;
+    if (arc_length <= 0.f) {
+      // This spline wouldn't have any effect.
+      continue;
+    }
     int k = 0;
     for (const auto& point_to_draw : points_to_draw) {
       const Spline::Point& point = point_to_draw.first;

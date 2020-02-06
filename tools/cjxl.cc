@@ -33,6 +33,7 @@
 #include "jxl/enc_cache.h"
 #include "jxl/enc_file.h"
 #include "jxl/extras/codec.h"
+#include "jxl/extras/codec_jpg.h"
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
@@ -55,10 +56,258 @@ static inline bool ParseColorTransform(const char* arg,
   if (ret) *out = jxl::ColorTransform(value);
   return ret;
 }
+
 // Proposes a distance to try for a given bpp target. This could depend
 // on the entropy in the image, too, but let's start with something.
 static double ApproximateDistanceForBPP(double bpp) {
   return 1.704 * pow(bpp, -0.804);
+}
+
+jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
+                            jxl::ThreadPool* pool, jxl::ImageF* out_map) {
+  jxl::CodecInOut io_heatmap;
+  if (!SetFromFile(filename_heatmap, &io_heatmap, pool)) {
+    return JXL_FAILURE("Could not load heatmap.");
+  }
+  jxl::ImageF heatmap(io_heatmap.xsize(), io_heatmap.ysize());
+  for (size_t num_row = 0; num_row < io_heatmap.ysize(); num_row++) {
+    const float* JXL_RESTRICT row_src =
+        io_heatmap.Main().color().ConstPlaneRow(0, num_row);
+    float* JXL_RESTRICT row_dst = heatmap.Row(num_row);
+    for (size_t num_col = 0; num_col < io_heatmap.xsize(); num_col++) {
+      row_dst[num_col] = row_src[num_col] / 255.0f;
+    }
+  }
+  *out_map = std::move(heatmap);
+  return true;
+}
+
+jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
+  jxl::CodecInOut spot_io;
+  spot_io.dec_hints = args.dec_hints;
+  if (!SetFromFile(args.spot_in, &spot_io)) {
+    fprintf(stderr, "Failed to read spot image %s.\n", args.spot_in);
+    return false;
+  }
+  io->metadata.m2.num_extra_channels = 1;
+  io->metadata.m2.extra_channel_bits = 8;
+  jxl::ExtraChannelInfo example;
+  example.rendered = 1;
+  example.color[0] = 255.0f;
+  example.color[1] = 0.0f;
+  example.color[2] = 0.0f;
+  example.color[3] = 1.0f;
+  io->metadata.m2.extra_channel_info.push_back(example);
+  jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
+  for (size_t y = 0; y < spot_io.ysize(); ++y) {
+    const float* JXL_RESTRICT from = spot_io.Main().color().PlaneRow(1, y);
+    uint16_t* JXL_RESTRICT to = sc.Row(y);
+    for (size_t x = 0; x < spot_io.xsize(); ++x) {
+      to[x] = from[x];
+    }
+  }
+  std::vector<jxl::ImageU> scv;
+  scv.push_back(std::move(sc));
+  io->Main().SetExtraChannels(std::move(scv));
+  return true;
+}
+
+jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
+                    jxl::CodecInOut* io, double* decode_mps) {
+  const double t0 = jxl::Now();
+
+  io->dec_hints = args.dec_hints;
+  io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
+                                        : jxl::DecodeTarget::kPixels);
+  jxl::Codec input_codec;
+  if (!SetFromFile(args.params.file_in, io, nullptr, &input_codec)) {
+    fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
+    return false;
+  }
+  if (input_codec != jxl::Codec::kJPG) args.jpeg_transcode = false;
+
+  if (input_codec == jxl::Codec::kGIF && args.quality < -1000.f &&
+      args.default_settings) {
+    args.params.modular_group_mode = true;
+    args.params.options.predictor.clear();
+    args.params.options.predictor.push_back(4);
+    args.params.responsive = 0;
+    args.params.colorspace = 0;
+    args.params.channel_colors_pre_transform_percent = 0;
+    args.params.channel_colors_percent = 0;
+    args.params.quality_pair.first = args.params.quality_pair.second = 100;
+  }
+
+  if (args.override_bitdepth != 0) {
+    io->metadata.bits_per_sample = args.override_bitdepth;
+  }
+
+  jxl::ImageF saliency_map;
+  if (!args.params.saliency_map_filename.empty()) {
+    if (!LoadSaliencyMap(args.params.saliency_map_filename, pool,
+                         &saliency_map)) {
+      fprintf(stderr, "Failed to read saliency map %s.\n",
+              args.params.saliency_map_filename.c_str());
+      return false;
+    }
+    args.params.saliency_map = &saliency_map;
+  }
+
+  if (!args.got_intensity_target) {
+    args.params.intensity_target = ChooseDefaultIntensityTarget(io->metadata);
+  }
+
+  if (args.spot_in != nullptr) {
+    if (!LoadSpotColors(args, io)) {
+      fprintf(stderr, "Failed to read spot colors %s.\n", args.spot_in);
+      return false;
+    }
+  }
+
+  const double t1 = jxl::Now();
+  const size_t pixels = io->xsize() * io->ysize();
+  *decode_mps = pixels * io->frames.size() * 1E-6 / (t1 - t0);
+
+  return true;
+}
+
+// Search algorithm for modular mode instead of Butteraugli distance.
+void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
+                                 const size_t pixels, const double target_size,
+                                 JxlCompressArgs* args) {
+  JXL_ASSERT(args->params.modular_group_mode);
+
+  JxlCompressArgs s = *args;  // Args for search.
+  // 5 bpp => 100, 0.1 bpp => 2
+  float quality = s.params.target_bitrate * 20;
+  s.params.target_bitrate = 0;
+  double best_loss = 1e99;
+  float best_quality = quality;
+  for (int i = 0; i < 7; ++i) {
+    s.params.quality_pair = std::make_pair(quality, quality);
+    jxl::PaddedBytes candidate;
+    bool ok = CompressJxl(pool, s, &candidate, /*print_stats=*/false);
+    if (!ok) {
+      printf(
+          "Compression error occurred during the search for best size."
+          " Trying with quality %.1f\n",
+          quality);
+      break;
+    }
+    printf("Quality %.1f yields %6zu bytes, %.3f bpp.\n", quality,
+           candidate.size(), candidate.size() * 8.0 / pixels);
+    const double ratio = static_cast<double>(candidate.size()) / target_size;
+    const double loss = std::max(ratio, 1.0 / std::max(ratio, 1e-30));
+    if (best_loss > loss) {
+      best_quality = quality;
+      best_loss = loss;
+    }
+    quality /= ratio;
+    if (quality < 1) {
+      quality = 1;
+    }
+    if (quality >= 100) {
+      quality = 100;
+    }
+  }
+  args->params.quality_pair = std::make_pair(best_quality, best_quality);
+  args->params.target_bitrate = 0;
+  args->params.target_size = 0;
+}
+
+void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
+                                   const size_t pixels, JxlCompressArgs* args) {
+  JxlCompressArgs s = *args;  // Args for search.
+
+  // If fixed size, convert to bitrate.
+  if (s.params.target_size > 0) {
+    s.params.target_bitrate = s.params.target_size * 8.0 / pixels;
+    s.params.target_size = 0;
+  }
+  const double target_size = s.params.target_bitrate * (1 / 8.) * pixels;
+
+  if (args->params.modular_group_mode) {
+    SetModularQualityForBitrate(pool, pixels, target_size, args);
+    return;
+  }
+
+  double dist = ApproximateDistanceForBPP(s.params.target_bitrate);
+  s.params.target_bitrate = 0;
+  double best_dist = 1.0;
+  double best_loss = 1e99;
+  for (int i = 0; i < 7; ++i) {
+    s.params.butteraugli_distance = static_cast<float>(dist);
+    jxl::PaddedBytes candidate;
+    bool ok = CompressJxl(pool, s, &candidate, /*print_stats=*/false);
+    if (!ok) {
+      printf(
+          "Compression error occurred during the search for best size. "
+          "Trying with butteraugli distance %.15g\n",
+          best_dist);
+      break;
+    }
+    printf("Butteraugli distance %.3f yields %6zu bytes, %.3f bpp.\n", dist,
+           candidate.size(), candidate.size() * 8.0 / pixels);
+    const double ratio = static_cast<double>(candidate.size()) / target_size;
+    const double loss = std::max(ratio, 1.0 / std::max(ratio, 1e-30));
+    if (best_loss > loss) {
+      best_dist = dist;
+      best_loss = loss;
+    }
+    dist *= ratio;
+    if (dist < 0.01) {
+      dist = 0.01;
+    }
+    if (dist >= 16.0) {
+      dist = 16.0;
+    }
+  }
+  args->params.butteraugli_distance = static_cast<float>(best_dist);
+  args->params.target_bitrate = 0;
+  args->params.target_size = 0;
+}
+
+const char* ModeFromArgs(const JxlCompressArgs& args) {
+  if (args.params.brunsli_group_mode || args.jpeg_transcode) return "JPEG";
+  if (args.params.modular_group_mode) return "Modular";
+  if (args.params.pixels_to_jpeg_mode) return "JPEG(encode)";
+  return "VarDCT";
+}
+
+std::string QualityFromArgs(const JxlCompressArgs& args) {
+  char buf[100];
+  if (args.params.brunsli_group_mode || args.jpeg_transcode) {
+    snprintf(buf, sizeof(buf), "lossless transcode");
+  } else if (args.params.modular_group_mode) {
+    if (args.params.quality_pair.first == 100 &&
+        args.params.quality_pair.second == 100) {
+      snprintf(buf, sizeof(buf), "lossless");
+    } else if (args.params.quality_pair.first !=
+               args.params.quality_pair.second) {
+      snprintf(buf, sizeof(buf), "Q%.2f,%.2f", args.params.quality_pair.first,
+               args.params.quality_pair.second);
+    } else {
+      snprintf(buf, sizeof(buf), "Q%.2f", args.params.quality_pair.first);
+    }
+  } else if (args.params.pixels_to_jpeg_mode) {
+    snprintf(buf, sizeof(buf), "q%u", args.params.jpeg_quality);
+  } else {
+    snprintf(buf, sizeof(buf), "d%.3f", args.params.butteraugli_distance);
+  }
+  return buf;
+}
+
+void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
+               const double decode_mps, const JxlCompressArgs& args) {
+  const char* mode = ModeFromArgs(args);
+  const char* speed = SpeedTierName(args.params.speed_tier);
+  const std::string quality = QualityFromArgs(args);
+  fprintf(stderr,
+          "Read %zu bytes (%zux%zu, %.3f bpp, %.1f MP/s)\n"
+          "Encoding [%s, %s, %s], %zu threads.\n",
+          io.enc_size, io.xsize(), io.ysize(),
+          io.enc_size * 8.0 / (io.xsize() * io.ysize()), decode_mps, mode,
+          quality.c_str(), speed, pool->NumWorkerThreads());
 }
 
 }  // namespace
@@ -71,74 +320,97 @@ JxlCompressArgs::JxlCompressArgs() {
 
 jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddPositionalOption(
-      "SPOT", "spot color channel (optional, for testing)", &spot_in);
+      "SPOT", "spot color channel (optional, for testing)", &spot_in, 2);
+
+  // High-level options
+  cmdline->AddOptionValue(
+      'q', "quality", "QUALITY",
+      "Quality setting. Range: 0 .. 100.\n"
+      "    100 = mathematically lossless. Default for already-lossy input "
+      "(JPEG/GIF)\n"
+      "    95 = visually lossless (flicker-test).\n"
+      "    90 = visually lossless (side by side). Default for generic input.",
+      &quality, &ParseFloat);
+
+  cmdline->AddOptionValue(
+      's', "speed", "SPEED",
+      "Encoder effort/speed setting. Valid values are:\n"
+      "    3|falcon| 4|cheetah| 5|hare| 6|wombat| 7|squirrel| 8|kitten| "
+      "9|tortoise\n"
+      "    Default: squirrel (7). Values are in order from faster to slower.",
+      &params.speed_tier, &ParseSpeedTier);
+
+  cmdline->AddOptionFlag('p', "progressive",
+                         "Enable progressive/responsive decoding.",
+                         &progressive, &SetBooleanTrue);
+
   // Flags.
-  cmdline->AddOptionFlag('\0', "progressive",
+  cmdline->AddOptionFlag('\0', "progressive_ac",
                          "Use the progressive mode for AC.",
-                         &params.progressive_mode, &SetBooleanTrue);
-  cmdline->AddOptionFlag('\0', "qprogressive",
+                         &params.progressive_mode, &SetBooleanTrue, 1);
+  cmdline->AddOptionFlag('\0', "qprogressive_ac",
                          "Use the progressive mode for AC.",
-                         &params.qprogressive_mode, &SetBooleanTrue);
+                         &params.qprogressive_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionValue('\0', "progressive_dc", "num_dc_frames",
                           "Use progressive mode for DC.",
-                          &params.progressive_dc, &ParseUnsigned);
+                          &params.progressive_dc, &ParseUnsigned, 1);
   cmdline->AddOptionFlag('g', "modular-group",
-                         "Use the modular-group mode (lossy / lossless).",
-                         &params.modular_group_mode, &SetBooleanTrue);
-  cmdline->AddOptionFlag('b', "jpeg-group", "Use the jpeg-group mode.",
-                         &params.brunsli_group_mode, &SetBooleanTrue);
+                         "Use the modular mode (lossy / lossless).",
+                         &params.modular_group_mode, &SetBooleanTrue, 1);
 
-  cmdline->AddOptionFlag(
-      'j', "jpeg_transcode",
-      "Do lossless transcode of input JPEG file (don't decode it to pixels).",
-      &jpeg_transcode, &SetBooleanTrue);
-
-  cmdline->AddOptionFlag('v', "verbose", "Verbose output.", &params.verbose,
-                         &SetBooleanTrue);
+  // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
+  cmdline->AddOptionFlag('b', "jpeg-group", "Use the jpeg mode.",
+                         &params.brunsli_group_mode, &SetBooleanTrue, 1);
+  cmdline->AddOptionFlag('\0', "jpeg1", "Compress pixels to JPEG.",
+                         &params.pixels_to_jpeg_mode, &SetBooleanTrue, 1);
+  cmdline->AddOptionFlag('j', "jpeg_transcode",
+                         "Do lossy transcode of input JPEG file (decode to "
+                         "pixels instead of doing lossless transcode).",
+                         &jpeg_transcode, &SetBooleanFalse, 1);
+  cmdline->AddOptionValue('\0', "jpeg_quality", "0-100",
+                          "Target JPEG quality .", &params.jpeg_quality,
+                          &ParseUint32, 1);
+  cmdline->AddOptionFlag('\0', "jpeg_420",
+                         "Do 4:2:0 chroma subsampling for JPEG.",
+                         &params.jpeg_420, &SetBooleanTrue, 1);
 
   cmdline->AddOptionValue('\0', "num_threads", "N",
                           "number of worker threads (zero = none).",
-                          &num_threads, &ParseUnsigned);
+                          &num_threads, &ParseUnsigned, 1);
   cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
-                          &num_reps, &ParseUnsigned);
+                          &num_reps, &ParseUnsigned, 1);
 
   cmdline->AddOptionValue('\0', "noise", "0|1",
                           "force enable/disable noise generation.",
-                          &params.noise, &ParseOverride);
+                          &params.noise, &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "dots", "0|1",
                           "force enable/disable dots generation.", &params.dots,
-                          &ParseOverride);
+                          &ParseOverride, 1);
 
   cmdline->AddOptionValue('\0', "adaptive_reconstruction", "0|1",
                           "force enable/disable loop filter.",
-                          &params.adaptive_reconstruction, &ParseOverride);
+                          &params.adaptive_reconstruction, &ParseOverride, 1);
 
   cmdline->AddOptionValue('\0', "gaborish", "0|1", "force disable gaborish.",
-                          &params.gaborish, &ParseOverride);
-
-  cmdline->AddOptionValue(
-      '\0', "speed", "falcon|cheetah|hare|wombat|squirrel|kitten|tortoise",
-      "Speed tier to use for compression. kitten is the default; values are in "
-      "order from faster to slower.",
-      &params.speed_tier, &ParseSpeedTier);
+                          &params.gaborish, &ParseOverride, 1);
 
   // Target distance/size/bpp
   opt_distance_id = cmdline->AddOptionValue(
       '\0', "distance", "maxError",
       ("Max. butteraugli distance, lower = higher quality.\n"
        "    Good default: 1.0. Supported range: 0.5 .. 3.0."),
-      &params.butteraugli_distance, &ParseFloat);
+      &params.butteraugli_distance, &ParseFloat, 1);
   opt_target_size_id = cmdline->AddOptionValue(
       '\0', "target_size", "N",
       ("Aim at file size of N bytes.\n"
        "    Compresses to 1 % of the target size in ideal conditions.\n"
        "    Runs the same algorithm as --target_bpp"),
-      &params.target_size, &ParseUnsigned);
+      &params.target_size, &ParseUnsigned, 1);
   opt_target_bpp_id = cmdline->AddOptionValue(
       '\0', "target_bpp", "BPP",
       ("Aim at file size that has N bits per pixel.\n"
        "    Compresses to 1 % of the target BPP in ideal conditions."),
-      &params.target_bitrate, &ParseFloat);
+      &params.target_bitrate, &ParseFloat, 1);
 
   opt_intensity_target_id = cmdline->AddOptionValue(
       '\0', "intensity_target", "N",
@@ -146,103 +418,109 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
        "   results in higher quality image. Supported range: 250..50000,\n"
        "   default is 250 for standard images, 4000 for input images known"
        "   to have PQ or HLG transfer function."),
-      &params.intensity_target, &ParseFloat);
+      &params.intensity_target, &ParseFloat, 1);
 
   cmdline->AddOptionValue('\0', "saliency_num_progressive_steps", "N", nullptr,
                           &params.saliency_num_progressive_steps,
-                          &ParseUnsigned);
+                          &ParseUnsigned, 2);
   cmdline->AddOptionValue('\0', "saliency_map_filename", "STRING", nullptr,
-                          &params.saliency_map_filename, &ParseString);
+                          &params.saliency_map_filename, &ParseString, 2);
   cmdline->AddOptionValue('\0', "saliency_threshold", "0..1", nullptr,
-                          &params.saliency_threshold, &ParseFloat);
+                          &params.saliency_threshold, &ParseFloat, 2);
 
   cmdline->AddOptionValue(
       'x', "dec-hints", "key=value",
-      "color_space indicates the ColorEncoding, see Description().", &dec_hints,
-      &ParseAndAppendKeyValue);
+      "color_space indicates the ColorEncoding, see Description();\n"
+      "icc_pathname refers to a binary file containing an ICC profile.",
+      &dec_hints, &ParseAndAppendKeyValue, 1);
 
   cmdline->AddOptionValue(
       '\0', "override_bitdepth", "0=use from image, 1-32=override",
       "If nonzero, store the given bit depth in the JPEG XL file metadata"
       " (1-32), instead of using the bit depth from the original input"
       " image.",
-      &override_bitdepth, &ParseUnsigned);
+      &override_bitdepth, &ParseUnsigned, 2);
 
   opt_color_id = cmdline->AddOptionValue(
       'c', "colortransform", "0..2", "0=XYB, 1=None, 2=YCbCr",
-      &params.color_transform, &ParseColorTransform);
+      &params.color_transform, &ParseColorTransform, 2);
 
   // modular mode options
   cmdline->AddOptionValue(
-      'Q', "quality", "luma_q[,chroma_q]",
+      'Q', "mquality", "luma_q[,chroma_q]",
       "[modular encoding] lossy 'quality' (100=lossless, lower is more lossy)",
-      &params.quality_pair, &ParseFloatPair);
+      &params.quality_pair, &ParseFloatPair, 1);
 
   cmdline->AddOptionValue(
       'I', "iterations", "F",
       "[modular encoding] number of mock encodes to learn MABEGABRAC trees "
       "(default=0.5, try 0 for no MA and fast decode)",
-      &params.options.nb_repeats, &ParseFloat);
+      &params.options.nb_repeats, &ParseFloat, 2);
 
   cmdline->AddOptionValue('T', "ctx-threshold", "F",
                           ("[modular encoding] number of bits hypothetically "
                            "saved during MABEGABRAC training "
                            "to justify adding another context (default: 16)"),
-                          &params.options.ctx_threshold, &ParseFloat);
+                          &params.options.ctx_threshold, &ParseFloat, 2);
 
   cmdline->AddOptionValue(
       'C', "colorspace", "K",
       ("[modular encoding] color transform: 0=RGB, 1=YCoCg, "
-       "2-37=RCT (default: YCoCg)"),
-      &params.colorspace, &ParseSigned);
+       "2-37=RCT (default: try several, depending on speed)"),
+      &params.colorspace, &ParseSigned, 1);
 
-  cmdline->AddOptionValue('P', "predictor", "K",
-                          "[modular encoding] predictor(s) to use: 0=zero, "
-                          "1=avgNW, 2=clampedGradient (default), 3=W, 4=N, "
-                          "5=WeightedPredictor (good for photo)",
-                          &params.options.predictor, &ParsePredictorsVector);
+  cmdline->AddOptionValue(
+      'P', "predictor", "K",
+      "[modular encoding] predictor(s) to use: 0=zero, "
+      "1=left, 2=top, 3=avg, 4=select, 5=gradient, 6=variable, "
+      "7=weighted (default: best of 5,7)",
+      &params.options.predictor, &ParsePredictorsVector, 1);
 
   cmdline->AddOptionValue(
       'E', "extra-properties", "K",
       "[modular encoding] number of extra MA tree properties to use",
-      &params.options.max_properties, &ParseSigned);
+      &params.options.max_properties, &ParseSigned, 2);
 
   cmdline->AddOptionValue('N', "near-lossless", "max_d",
                           "[modular encoding] apply near-lossless "
                           "preprocessing with maximum delta = max_d",
-                          &params.near_lossless, &ParseSigned);
+                          &params.near_lossless, &ParseSigned, 1);
 
   cmdline->AddOptionValue('p', "palette", "K",
                           "[modular encoding] use a palette if image has at "
                           "most K colors (default: 1024)",
-                          &params.palette_colors, &ParseSigned);
+                          &params.palette_colors, &ParseSigned, 1);
 
   cmdline->AddOptionValue(
       'X', "pre-compact", "PERCENT",
       ("[modular encoding] compact channels (globally) if ratio "
        "used/range is below this (default: 80%)"),
-      &params.channel_colors_pre_transform_percent, &ParseFloat);
+      &params.channel_colors_pre_transform_percent, &ParseFloat, 2);
 
   cmdline->AddOptionValue(
       'Y', "post-compact", "PERCENT",
       ("[modular encoding] compact channels (per-group) if ratio "
        "used/range is below this (default: 80%)"),
-      &params.channel_colors_percent, &ParseFloat);
+      &params.channel_colors_percent, &ParseFloat, 2);
 
   opt_brotli_id = cmdline->AddOptionValue(
       'B', "brotli", "effort",
       ("[modular encoding] use Brotli instead of MABEGABRAC/MAANS"
        " (with encode effort=0..11)"),
-      &params.options.brotli_effort, &ParseSigned);
+      &params.options.brotli_effort, &ParseSigned, 2);
 
   cmdline->AddOptionFlag('A', "ans",
                          "[modular encoding] use MAANS instead of MABEGABRAC",
-                         &params.ans, &SetBooleanTrue);
+                         &params.ans, &SetBooleanTrue, 2);
 
   cmdline->AddOptionValue('R', "responsive", "K",
                           "[modular encoding] do Squeeze transform, 0=false, "
                           "1=true (default: true if lossy, false if lossless)",
-                          &params.responsive, &ParseSigned);
+                          &params.responsive, &ParseSigned, 1);
+
+  cmdline->AddOptionFlag('v', "verbose",
+                         "Verbose output (also applies to help).",
+                         &params.verbose, &SetBooleanTrue);
 
   return true;
 }
@@ -255,6 +533,36 @@ jxl::Status JxlCompressArgs::ValidateArgs(
 
   got_intensity_target = cmdline.GetOption(opt_intensity_target_id)->matched();
 
+  if (quality < -1000.f) {
+    params.butteraugli_distance = 1.0f;
+  } else if (quality >= 100.f) {
+    // Use kModular for lossless
+    params.modular_group_mode = true;
+  } else if (quality > 40.f) {
+    // Use kVarDCT for most of the range (near-lossless until quite lossy)
+    // 100-epsilon -> 0.1111, 90 -> d1.0, 80 -> d2.77, 70 -> d5.44,
+    // 60 -> d9, 50 -> d13.44, 40+epsilon -> 18.77
+    params.butteraugli_distance = (105.f - quality) * (105.f - quality) / 225.f;
+    jpeg_transcode = false;
+  } else {
+    // Very low quality: use kModular again (40 -> -Q 0, 20 -> -Q -400, 0 -> -Q
+    // -1600)
+    params.modular_group_mode = true;
+    params.quality_pair.first = params.quality_pair.second =
+        -(quality - 40.f) * (quality - 40.f);
+    jpeg_transcode = false;
+  }
+
+  if (progressive) {
+    params.qprogressive_mode = true;
+    params.progressive_dc = 1;
+    params.responsive = 1;
+    jpeg_transcode = false;
+    default_settings = false;
+  }
+  if (got_target_size || got_target_bpp || got_intensity_target)
+    default_settings = false;
+
   if (got_distance) {
     constexpr float butteraugli_min_dist = 0.125f;
     constexpr float butteraugli_max_dist = 15.0f;
@@ -264,6 +572,7 @@ jxl::Status JxlCompressArgs::ValidateArgs(
               butteraugli_min_dist, butteraugli_max_dist);
       return false;
     }
+    default_settings = false;
   }
 
   if (got_target_bpp + got_target_size + got_distance > 1) {
@@ -280,7 +589,7 @@ jxl::Status JxlCompressArgs::ValidateArgs(
       params.saliency_map_filename.clear();
       fprintf(stderr,
               "Warning: Specifying --saliency_map_filename only makes sense "
-              "for --progressive mode.\n");
+              "for --progressive_ac mode.\n");
     }
   }
 
@@ -313,156 +622,31 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     return false;
   }
 
-  return true;
-}
+  if (params.jpeg_quality > 100) {
+    fprintf(stderr, "jpeg_quality must be <= 100\n");
+    return false;
+  }
 
-jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
-                            const jxl::CodecInOut* io, jxl::ThreadPool* pool,
-                            jxl::ImageF* out_map) {
-  jxl::CodecInOut io_heatmap;
-  if (!SetFromFile(filename_heatmap, &io_heatmap, pool)) {
-    return JXL_FAILURE("Could not load heatmap.");
-  }
-  jxl::ImageF heatmap(io_heatmap.xsize(), io_heatmap.ysize());
-  for (size_t num_row = 0; num_row < io_heatmap.ysize(); num_row++) {
-    const float* JXL_RESTRICT row_src =
-        io_heatmap.Main().color().ConstPlaneRow(0, num_row);
-    float* JXL_RESTRICT row_dst = heatmap.Row(num_row);
-    for (size_t num_col = 0; num_col < io_heatmap.xsize(); num_col++) {
-      row_dst[num_col] = row_src[num_col] / 255.0f;
-    }
-  }
-  *out_map = std::move(heatmap);
   return true;
 }
 
 jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
-                        jxl::PaddedBytes* compressed) {
+                        jxl::PaddedBytes* compressed, bool print_stats) {
   JXL_CHECK(pool);
-  double t0, t1;
 
   jxl::CodecInOut io;
-  io.dec_hints = args.dec_hints;
-  t0 = jxl::Now();
-  if (!SetFromFile(args.params.file_in, &io, nullptr,
-                   (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
-                                        : jxl::DecodeTarget::kPixels))) {
-    fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
-    return false;
-  }
-  if (args.override_bitdepth != 0) {
-    io.metadata.bits_per_sample = args.override_bitdepth;
-  }
-  jxl::ImageF saliency_map;
-  if (!args.params.saliency_map_filename.empty()) {
-    if (!LoadSaliencyMap(args.params.saliency_map_filename, &io, pool,
-                         &saliency_map)) {
-      fprintf(stderr, "Failed to read saliency map %s.\n",
-              args.params.saliency_map_filename.c_str());
-      return false;
-    }
-    args.params.saliency_map = &saliency_map;
-  }
-  if (!args.got_intensity_target) {
-    args.params.intensity_target = ChooseDefaultIntensityTarget(io.metadata);
-  }
-  if (args.spot_in != nullptr) {
-    jxl::CodecInOut spot_io;
-    spot_io.dec_hints = args.dec_hints;
-    if (!SetFromFile(args.spot_in, &spot_io)) {
-      fprintf(stderr, "Failed to read spot image %s.\n", args.spot_in);
-      return false;
-    }
-    io.metadata.m2.num_extra_channels = 1;
-    io.metadata.m2.extra_channel_bits = 8;
-    jxl::ExtraChannelInfo example;
-    example.rendered = 1;
-    example.color[0] = 255.0f;
-    example.color[1] = 0.0f;
-    example.color[2] = 0.0f;
-    example.color[3] = 1.0f;
-    io.metadata.m2.extra_channel_info.push_back(example);
-    jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
-    for (size_t y = 0; y < spot_io.ysize(); ++y) {
-      const float* JXL_RESTRICT from = spot_io.Main().color().PlaneRow(1, y);
-      uint16_t* JXL_RESTRICT to = sc.Row(y);
-      for (size_t x = 0; x < spot_io.xsize(); ++x) {
-        to[x] = from[x];
-      }
-    }
-    std::vector<jxl::ImageU> scv;
-    scv.push_back(std::move(sc));
-    io.Main().SetExtraChannels(std::move(scv));
-  }
-  t1 = jxl::Now();
-  const double decode_mps =
-      io.xsize() * io.ysize() * io.frames.size() * 1E-6 / (t1 - t0);
+  double decode_mps;
+  JXL_RETURN_IF_ERROR(LoadAll(args, pool, &io, &decode_mps));
+  const size_t pixels = io.xsize() * io.ysize();
 
-  const size_t xsize = io.xsize();
-  const size_t ysize = io.ysize();
   if (args.params.target_size > 0 || args.params.target_bitrate > 0) {
-    // Search algorithm for target bpp / size.
-    JxlCompressArgs s = args;  // Args for search.
-    if (s.params.target_size > 0) {
-      s.params.target_bitrate =
-          s.params.target_size * 8.0 / (io.xsize() * io.ysize());
-      s.params.target_size = 0;
-    }
-    double dist = ApproximateDistanceForBPP(s.params.target_bitrate);
-    s.params.butteraugli_distance = dist;
-    double target_size =
-        s.params.target_bitrate * (1 / 8.) * io.xsize() * io.ysize();
-    s.params.target_bitrate = 0;
-    double best_dist = 1.0;
-    double best_loss = 1e99;
-    for (int i = 0; i < 7; ++i) {
-      s.params.butteraugli_distance = dist;
-      jxl::PaddedBytes candidate;
-      bool ok = CompressJxl(pool, s, &candidate);
-      if (!ok) {
-        printf(
-            "Compression error occurred during the search for best size."
-            " Trying with butteraugli distance %.15g\n",
-            best_dist);
-        break;
-      }
-      printf("Butteraugli distance %g yields %zu bytes, %g bpp.\n", dist,
-             candidate.size(),
-             candidate.size() * 8.0 / (io.xsize() * io.ysize()));
-      const double ratio = static_cast<double>(candidate.size()) / target_size;
-      const double loss = std::max(ratio, 1.0 / std::max(ratio, 1e-30));
-      if (best_loss > loss) {
-        best_dist = dist;
-        best_loss = loss;
-      }
-      dist *= ratio;
-      if (dist < 0.01) {
-        dist = 0.01;
-      }
-      if (dist >= 16.0) {
-        dist = 16.0;
-      }
-    }
-    printf("Choosing butteraugli distance %.15g\n", best_dist);
-    args.params.butteraugli_distance = best_dist;
-    args.params.target_bitrate = 0;
-    args.params.target_size = 0;
+    // Slow iterative search for parameters that reach target bpp / size.
+    SetParametersForSizeOrBitrate(pool, pixels, &args);
   }
-  char mode[200];
-  if (args.params.speed_tier != jxl::SpeedTier::kKitten) {
-    snprintf(mode, sizeof(mode),
-             "in %s mode with maximum Butteraugli distance %f",
-             SpeedTierName(args.params.speed_tier),
-             args.params.butteraugli_distance);
-  } else {
-    snprintf(mode, sizeof(mode), "with maximum Butteraugli distance %f",
-             args.params.butteraugli_distance);
-  }
-  fprintf(stderr,
-          "Read %zu bytes (%zux%zu, %.1f MP/s); compressing %s, %zu threads.\n",
-          io.enc_size, xsize, ysize, decode_mps, mode,
-          pool->NumWorkerThreads());
 
+  if (print_stats) PrintMode(pool, io, decode_mps, args);
+
+  // Final/actual compression run (possibly repeated for benchmarking).
   jxl::AuxOut aux_out;
   if (args.inspector_image3f) {
     aux_out.SetInspectorImage3F(args.inspector_image3f);
@@ -470,24 +654,39 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
   SpeedStats stats;
   jxl::PassesEncoderState passes_encoder_state;
   for (size_t i = 0; i < args.num_reps; ++i) {
-    t0 = jxl::Now();
-    if (!EncodeFile(args.params, &io, &passes_encoder_state, compressed,
-                    &aux_out, pool)) {
-      fprintf(stderr, "Failed to compress.\n");
+    const double t0 = jxl::Now();
+    jxl::Status ok = false;
+    if (args.params.pixels_to_jpeg_mode) {
+#if !defined(__EMSCRIPTEN__)
+      const auto subsample = args.params.jpeg_420
+                                 ? jxl::YCbCrChromaSubsampling::k420
+                                 : jxl::YCbCrChromaSubsampling::k444;
+      ok = jxl::EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg,
+                               args.params.jpeg_quality, subsample, pool,
+                               compressed, jxl::DecodeTarget::kPixels);
+#endif
+    } else {
+      ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
+                      &aux_out, pool);
+    }
+    if (!ok) {
+      fprintf(stderr, "Failed to compress to %s.\n", ModeFromArgs(args));
       return false;
     }
-    t1 = jxl::Now();
+    const double t1 = jxl::Now();
     stats.NotifyElapsed(t1 - t0);
   }
-  const double bpp =
-      static_cast<double>(compressed->size() * jxl::kBitsPerByte) /
-      (xsize * ysize);
-  fprintf(stderr, "Compressed to %zu bytes (%.3f bpp%s).\n", compressed->size(),
-          bpp / io.frames.size(), io.frames.size() == 1 ? "" : "/frame");
-  JXL_CHECK(stats.Print(xsize, ysize, args.num_threads));
 
-  if (args.params.verbose) {
-    aux_out.Print(1);
+  if (print_stats) {
+    const double bpp =
+        static_cast<double>(compressed->size() * jxl::kBitsPerByte) / pixels;
+    fprintf(stderr, "Compressed to %zu bytes (%.3f bpp%s).\n",
+            compressed->size(), bpp / io.frames.size(),
+            io.frames.size() == 1 ? "" : "/frame");
+    JXL_CHECK(stats.Print(io.xsize(), io.ysize(), args.num_threads));
+    if (args.params.verbose) {
+      aux_out.Print(1);
+    }
   }
 
   return true;

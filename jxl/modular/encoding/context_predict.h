@@ -19,6 +19,7 @@
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/ma/compound.h"
 #include "jxl/modular/ma/util.h"
+#include "jxl/predictor.h"
 
 namespace jxl {
 
@@ -62,7 +63,8 @@ inline void init_properties(Ranges &pr, const Image &image, int beginc,
                                                      SIGNED_VAL(maxval)));
     offset++;
     pr.push_back(std::pair<PropertyVal, PropertyVal>(
-        0, MAX(UNSIGNED_VAL(minval - maxval), UNSIGNED_VAL(maxval - minval))));
+        0, std::max(UNSIGNED_VAL(minval - maxval),
+                    UNSIGNED_VAL(maxval - minval))));
     offset++;
     pr.push_back(std::pair<PropertyVal, PropertyVal>(
         SIGNED_VAL(minval - maxval), SIGNED_VAL(maxval - minval)));
@@ -84,9 +86,9 @@ inline void init_properties(Ranges &pr, const Image &image, int beginc,
 
   // neighbors
   pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      0, MAX(UNSIGNED_VAL(minval), UNSIGNED_VAL(maxval))));
+      0, std::max(UNSIGNED_VAL(minval), UNSIGNED_VAL(maxval))));
   pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      0, MAX(UNSIGNED_VAL(minval), UNSIGNED_VAL(maxval))));
+      0, std::max(UNSIGNED_VAL(minval), UNSIGNED_VAL(maxval))));
   pr.push_back(std::pair<PropertyVal, PropertyVal>(SIGNED_VAL(minval),
                                                    SIGNED_VAL(maxval)));
   pr.push_back(std::pair<PropertyVal, PropertyVal>(SIGNED_VAL(minval),
@@ -166,7 +168,7 @@ inline pixel_type predict_and_compute_properties(
       return select(left, top, topleft);
     case Predictor::Gradient:
     default:
-      return median3((pixel_type)(left + top - topleft), left, top);
+      return predictor::ClampedGradient(left, top, topleft);
   }
 }
 
@@ -192,7 +194,7 @@ inline pixel_type predict(const Channel &ch, const pixel_type *JXL_RESTRICT pp,
       return select(left, top, topleft);
     case Predictor::Gradient:
     default:
-      return median3((pixel_type)(left + top - topleft), left, top);
+      return predictor::ClampedGradient(left, top, topleft);
   }
 }
 
@@ -268,7 +270,7 @@ inline void precompute_references(const Channel &ch, size_t y,
         pixel_type vtop = (ry ? rpprev[rx] : vleft);
         pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
         pixel_type vpredicted =
-            median3((pixel_type)(vleft + vtop - vtopleft), vleft, vtop);
+            predictor::ClampedGradient(vleft, vtop, vtopleft);
         rp[2] = UNSIGNED_VAL(v - vpredicted);
         rp[3] = SIGNED_VAL(v - vpredicted);
       }
@@ -283,7 +285,7 @@ inline void precompute_references(const Channel &ch, size_t y,
           pixel_type vtop = (ry ? rpprev[rx] : vleft);
           pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
           pixel_type vpredicted =
-              median3((pixel_type)(vleft + vtop - vtopleft), vleft, vtop);
+              predictor::ClampedGradient(vleft, vtop, vtopleft);
           rp[0] = UNSIGNED_VAL(v);
           rp[1] = SIGNED_VAL(v);
           rp[2] = UNSIGNED_VAL(v - vpredicted);
@@ -302,7 +304,7 @@ inline void precompute_references(const Channel &ch, size_t y,
           pixel_type vtop = (ry ? rpprev[rx] : vleft);
           pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
           pixel_type vpredicted =
-              median3((pixel_type)(vleft + vtop - vtopleft), vleft, vtop);
+              predictor::ClampedGradient(vleft, vtop, vtopleft);
           for (size_t s = 0; s < stepsize; s++, rp += onerow) {
             rp[0] = UNSIGNED_VAL(v);
             rp[1] = SIGNED_VAL(v);
@@ -315,8 +317,7 @@ inline void precompute_references(const Channel &ch, size_t y,
       pixel_type vleft = (rx ? rpp[rx - 1] : image.channel[j].zero);
       pixel_type vtop = (ry ? rpprev[rx] : vleft);
       pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-      pixel_type vpredicted =
-          median3((pixel_type)(vleft + vtop - vtopleft), vleft, vtop);
+      pixel_type vpredicted = predictor::ClampedGradient(vleft, vtop, vtopleft);
       while (rp < lastrow) {
         rp[0] = UNSIGNED_VAL(v);
         rp[1] = SIGNED_VAL(v);
@@ -337,7 +338,7 @@ inline void precompute_references(const Channel &ch, size_t y,
         pixel_type vtop = (ry ? rpprev[rx] : vleft);
         pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
         pixel_type vpredicted =
-            median3((pixel_type)(vleft + vtop - vtopleft), vleft, vtop);
+            predictor::ClampedGradient(vleft, vtop, vtopleft);
         rp[2] = UNSIGNED_VAL(v - vpredicted);
         rp[3] = SIGNED_VAL(v - vpredicted);
       }

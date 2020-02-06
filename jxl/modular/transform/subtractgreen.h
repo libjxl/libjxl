@@ -21,7 +21,7 @@
 
 namespace jxl {
 
-bool inv_subtract_green(Image& input, const std::vector<int>& parameters) {
+Status inv_subtract_green(Image& input, const TransformParams& parameters) {
   size_t m = input.nb_meta_channels;
   int nb_channels = input.nb_channels;
   if (nb_channels < 3) {
@@ -76,7 +76,7 @@ bool inv_subtract_green(Image& input, const std::vector<int>& parameters) {
 }
 
 #ifdef HAS_ENCODER
-bool fwd_subtract_green(Image& input, const std::vector<int>& parameters) {
+Status fwd_subtract_green(Image& input, const TransformParams& parameters) {
   size_t nb_channels = input.nb_channels;
   if (nb_channels < 3) {
     return false;
@@ -128,16 +128,17 @@ bool fwd_subtract_green(Image& input, const std::vector<int>& parameters) {
 }
 #endif
 
-bool subtract_green(Image& input, bool inverse,
-                    const std::vector<int>& parameters) {
-  if (inverse) return inv_subtract_green(input, parameters);
+Status subtract_green(Image& input, bool inverse,
+                      const TransformParams& parameters) {
+  if (inverse) {
+    return inv_subtract_green(input, parameters);
+  } else {
 #ifdef HAS_ENCODER
-  else
     return fwd_subtract_green(input, parameters);
 #else
-  else
     return false;
 #endif
+  }
 }
 
 }  // namespace jxl

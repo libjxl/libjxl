@@ -31,6 +31,7 @@
 #include "jxl/convolve.h"
 #include "jxl/enc_params.h"
 #include "jxl/entropy_coder.h"
+#include "third_party/highway/hwy/static_targets.h"
 
 namespace jxl {
 
@@ -317,8 +318,13 @@ struct ACSConfig {
   const float& Pixel(size_t c, size_t x, size_t y) const {
     return src_rows[c][y * src_stride + x];
   }
-  float& Quant(size_t bx, size_t by) const {
+  float Quant(size_t bx, size_t by) const {
+    JXL_DASSERT(quant_field_row[by * quant_field_stride + bx] > 0);
     return quant_field_row[by * quant_field_stride + bx];
+  }
+  void SetQuant(size_t bx, size_t by, float value) const {
+    JXL_DASSERT(value > 0);
+    quant_field_row[by * quant_field_stride + bx] = value;
   }
 };
 
@@ -617,8 +623,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             enc_state->shared.cmap.ytob_map.ConstRow(ty)[tx]),
     };
     HWY_CAPPED(float, kBlockDim) d;
-    HWY_CAPPED(uint32_t, kBlockDim) du;
-    const auto abs_mask = BitCast(d, Set(du, 0x7FFFFFFFu));
+    HWY_CAPPED(float, 4) d4;
     // Pre-compute maximum delta in each 8x8 block.
     // Find a minimum delta of three options:
     // 1) all, 2) not accounting vertical, 3) not accounting horizontal
@@ -642,17 +647,33 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             }
           }
           for (size_t c = 0; c < 3; c++) {
-            float top[8] = {0};
-            float side[8] = {0};
+            // Sums of rows: only 4-wide SIMD (easier than transpose)
+            float side[8];
             for (size_t y = 0; y < 8; y++) {
-              for (size_t x = 0; x < 8; x++) {
-                side[y] += pixels[c][y * 8 + x];
-                top[x] += pixels[c][y * 8 + x];
-              }
+              const auto left = Load(d4, &pixels[c][y * 8] + 0);
+              const auto right = Load(d4, &pixels[c][y * 8] + 4);
+              side[y] = GetLane(hwy::ext::SumOfLanes(left + right));
             }
+
+            // Sum of columns (one per lane).
+            HWY_ALIGN float top[8];
+            for (size_t x = 0; x < 8; x += d.N) {
+              auto sums_of_columns = Load(d, &pixels[c][x]);
+              for (size_t y = 1; y < 8; y++) {
+                sums_of_columns += Load(d, &pixels[c][y * 8 + x]);
+              }
+              Store(sums_of_columns, d, top + x);
+            }
+
+            // Subtract fraction of row+col sums from each pixel
+            const auto mul = Set(d, 1.0f / 8);
             for (size_t y = 0; y < 8; y++) {
-              for (size_t x = 0; x < 8; x++) {
-                pixels[c][y * 8 + x] -= (1.0 / 8.0) * (top[x] + side[y]);
+              const auto side_y = Set(d, side[y]) * mul;
+              for (size_t x = 0; x < 8; x += d.N) {
+                const auto top_x = Load(d, &top[x]);
+                auto v = Load(d, &pixels[c][y * 8 + x]);
+                v -= MulAdd(mul, top_x, side_y);
+                Store(v, d, &pixels[c][y * 8 + x]);
               }
             }
           }
@@ -666,9 +687,9 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
               const auto w = LoadU(d, pix - 1);
               const auto e = LoadU(d, pix + 1);
               // Compute amount of per-pixel variation.
-              const auto m1 = Max(abs_mask & (n - p), abs_mask & (s - p));
-              const auto m2 = Max(abs_mask & (w - p), abs_mask & (e - p));
-              const auto m3 = Max(abs_mask & (e - w), abs_mask & (s - n));
+              const auto m1 = Max(AbsDiff(n, p), AbsDiff(s, p));
+              const auto m2 = Max(AbsDiff(w, p), AbsDiff(e, p));
+              const auto m3 = Max(AbsDiff(e, w), AbsDiff(s, n));
               const auto m4 = Max(m1, m2);
               const auto m5 = Max(m3, m4);
               delta = Max(delta, m5);
@@ -765,7 +786,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             float quant = 1.1f / (1.0f + max_delta_acs) / butteraugli_target;
             for (size_t y = 0; y < cy; y++) {
               for (size_t x = 0; x < cx; x++) {
-                config.Quant(bx * 4 + ix + x, by * 4 + iy + y) = quant;
+                config.SetQuant(bx * 4 + ix + x, by * 4 + iy + y, quant);
               }
             }
           }

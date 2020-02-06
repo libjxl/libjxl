@@ -18,16 +18,18 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
 #include "jxl/base/status.h"
 #include "jxl/modular/ma/symbol.h"
+#include "third_party/highway/hwy/static_targets.h"
 
 namespace jxl {
 
 typedef int32_t PropertyVal;
-typedef std::vector<std::pair<PropertyVal, PropertyVal> > Ranges;
+typedef std::vector<std::pair<PropertyVal, PropertyVal>> Ranges;
 typedef std::vector<PropertyVal> Properties;
 
 static const uint16_t CHANCE_INITZ[11] = {4,    128,  512,  1024, 1536, 2048,
@@ -54,6 +56,51 @@ class Tree : public std::vector<PropertyDecisionNode> {
  public:
   Tree() : std::vector<PropertyDecisionNode>(1, PropertyDecisionNode()) {}
 };
+
+struct CompactTree {
+  // Lower values make single chunk evaluation faster, but might increase
+  // height.
+  static constexpr size_t kChunkPropertyLimit = 4;
+
+  struct ChunkData {
+    // Thresholds for each property.
+    int32_t thresholds[kChunkPropertyLimit];
+
+    // ID of the properties used by this chunk.
+    int32_t properties[kChunkPropertyLimit];
+    uint8_t num_properties;
+
+    // First position in table.
+    size_t start;
+
+    // Position in the table corresponding to the given properties.
+    HWY_ATTR size_t Position(const Properties &props) const {
+      int32_t values[kChunkPropertyLimit] = {};
+      for (size_t i = 0; i < kChunkPropertyLimit; i++) {
+        values[i] = props[properties[i]];
+      }
+      size_t res = 0;
+      HWY_CAPPED(int32_t, kChunkPropertyLimit) di;
+      HWY_CAPPED(float, kChunkPropertyLimit) df;
+      for (size_t i = 0; i < kChunkPropertyLimit; i += di.N) {
+        const auto vals = LoadU(di, values + i);
+        const auto thres = LoadU(di, thresholds + i);
+        res |= hwy::ext::BitsFromMask(
+                   hwy::MaskFromVec(BitCast(df, VecFromMask(vals > thres))))
+               << i;
+      }
+      return res + start;
+    }
+  };
+
+  std::vector<ChunkData> chunks;
+
+  // <= 0: (negated) index of leaf node.
+  // > 0: index of child node.
+  std::vector<int16_t> table;
+};
+
+bool CompactifyTree(const Tree &tree, CompactTree *compact_tree);
 
 typedef std::vector<Tree> Trees;
 
@@ -137,23 +184,14 @@ class FinalPropertySymbolCoder {
  private:
   FinalCompoundSymbolCoder<BitChance, RAC, bits> coder;
   const unsigned int nb_properties;
-  std::vector<FinalCompoundSymbolChances<BitChance, bits> > leaf_node;
+  std::vector<FinalCompoundSymbolChances<BitChance, bits>> leaf_node;
   const Tree &inner_node;
+  CompactTree compact_inner_nodes;
+  bool has_compact_tree = false;
 
-  FinalCompoundSymbolChances<BitChance, bits> inline &find_leaf(
+  inline FinalCompoundSymbolChances<BitChance, bits> &find_leaf(
       const Properties &properties) ATTRIBUTE_HOT {
-    Tree::size_type pos = 0;
-#if JXL_COMPILER_CLANG
-#pragma clang loop unroll_count(8)
-#endif
-    while (true) {
-      const PropertyDecisionNode &node = inner_node[pos];
-      if (node.property < 0) return leaf_node[node.childID];
-      if (properties[node.property] > node.splitval)
-        pos = node.childID;
-      else
-        pos = node.childID + 1;
-    }
+    return leaf_node[context_id(properties)];
   }
 
  public:
@@ -172,19 +210,31 @@ class FinalPropertySymbolCoder {
         leaf_node.back().realChances.bitSign().set_12bit(signchance);
       }
     }
+    has_compact_tree = CompactifyTree(inner_node, &compact_inner_nodes);
   }
   int context_id(const Properties &properties) const ATTRIBUTE_HOT {
+    size_t p = -1;
+    if (has_compact_tree) {
+      int64_t pos = 0;
+      do {
+        size_t table_idx = compact_inner_nodes.chunks[pos].Position(properties);
+        pos = compact_inner_nodes.table[table_idx];
+      } while (pos > 0);
+      p = -pos;
+      return -pos;
+    }
+    // Fallback case for very peculiar trees.
     Tree::size_type pos = 0;
-#if JXL_COMPILER_CLANG
-#pragma clang loop unroll_count(4)
-#endif
     while (true) {
       const PropertyDecisionNode &node = inner_node[pos];
-      if (node.property < 0) return node.childID;
-      if (properties[node.property] > node.splitval)
+      if (node.property < 0) {
+        return node.childID;
+      }
+      if (properties[node.property] > node.splitval) {
         pos = node.childID;
-      else
+      } else {
         pos = node.childID + 1;
+      }
     }
   }
   int nb_contexts() const ATTRIBUTE_HOT { return leaf_node.size(); }

@@ -25,6 +25,7 @@
 
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/file_io.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
@@ -36,6 +37,7 @@
 #include "jxl/image_bundle.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
+#include "tools/speed_stats.h"
 
 namespace jpegxl {
 namespace tools {
@@ -56,6 +58,9 @@ jxl::Status BrunsliCompressArgs::AddCommandLineOptions(
       'x', "dec-hints", "key=value",
       "color_space indicates the ColorEncoding, see Description().", &dec_hints,
       &ParseAndAppendKeyValue);
+
+  cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
+                          &num_reps, &ParseUnsigned);
 
   return true;
 }
@@ -91,21 +96,33 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
       return JXL_FAILURE("Could not read JPEG file");
     }
 
-    brunsli::JPEGData jpg;
-    const uint8_t* input_data = jpg_content.data();
-    bool ok = brunsli::ReadJpeg(input_data, jpg_content.size(),
-                                brunsli::JPEG_READ_ALL, &jpg);
-    if (!ok) {
-      return JXL_FAILURE("Could not parse JPEG file");
-    }
+    SpeedStats stats;
+    size_t xsize = 0;
+    size_t ysize = 0;
+    for (size_t i = 0; i < args.num_reps; ++i) {
+      compressed->clear();
+      const double t0 = jxl::Now();
+      brunsli::JPEGData jpg;
+      const uint8_t* input_data = jpg_content.data();
+      if (!brunsli::ReadJpeg(input_data, jpg_content.size(),
+                             brunsli::JPEG_READ_ALL, &jpg)) {
+        return JXL_FAILURE("Could not parse JPEG file");
+      }
 
-    size_t output_size = ::brunsli::GetMaximumBrunsliEncodedSize(jpg);
-    std::vector<uint8_t> output(output_size);
-    // TODO(eustas): introduce streaming API?
-    if (!brunsli::BrunsliEncodeJpeg(jpg, output.data(), &output_size)) {
-      return JXL_FAILURE("Could not encode recompressed JPEG file");
+      size_t output_size = ::brunsli::GetMaximumBrunsliEncodedSize(jpg);
+      std::vector<uint8_t> output(output_size);
+      // TODO(eustas): introduce streaming API?
+      if (!brunsli::BrunsliEncodeJpeg(jpg, output.data(), &output_size)) {
+        return JXL_FAILURE("Could not encode recompressed JPEG file");
+      }
+      compressed->append(jxl::Span<uint8_t>(output.data(), output_size));
+
+      const double t1 = jxl::Now();
+      stats.NotifyElapsed(t1 - t0);
+      xsize = jpg.width;
+      ysize = jpg.height;
     }
-    compressed->append(jxl::Span<uint8_t>(output.data(), output_size));
+    JXL_CHECK(stats.Print(xsize, ysize, /* num_threads */ 1));
 
     return true;
   }
@@ -121,7 +138,7 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
     jxl::ColorEncoding hdr;
     std::string hdr_description = "RGB_D65_202_Rel_PeQ";
     JXL_CHECK(jxl::ParseDescription(hdr_description, &hdr));
-    JXL_CHECK(jxl::ColorManagement::CreateProfile(&hdr));
+    JXL_CHECK(hdr.CreateICC());
     JXL_CHECK(io.Main().TransformTo(hdr, pool));
     io.metadata.color_encoding = hdr;
   }

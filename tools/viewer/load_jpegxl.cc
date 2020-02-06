@@ -61,11 +61,10 @@ QImage loadJpegXlImage(const QString& filename, PaddedBytes targetIccProfile,
 
   const jxl::ImageBundle& ib = io.Main();
   ColorEncoding targetColorSpace;
-  const bool profileSet = ColorManagement::SetProfile(
-      std::move(targetIccProfile), &targetColorSpace);
+  const bool profileSet = targetColorSpace.SetICC(std::move(targetIccProfile));
   if (usedRequestedProfile != nullptr) *usedRequestedProfile = profileSet;
   if (!profileSet) {
-    targetColorSpace = ColorManagement::SRGB(ib.IsGray());
+    targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3U decoded;
   if (!ib.CopyTo(Rect(ib), targetColorSpace, &decoded, &pool)) {

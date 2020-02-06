@@ -63,7 +63,7 @@ TEST(BrunsliTest, RoundtripSinglePixel) {
 
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
-  io.metadata.color_encoding = ColorManagement::SRGB();
+  io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.color_encoding);
   CodecInOut io2;
   Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.001f);

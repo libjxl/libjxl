@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 
+#include <hwy/static_targets.h>
 #include <limits>
 #include <map>
 #include <memory>
@@ -316,38 +317,57 @@ void HistogramReindex(std::vector<Histogram>* out,
   }
 }
 
-float Entropy(size_t count, float total) {
-  if (count == 0) return 0;
-  // TODO(veluca): FastLog2f?
-  return count * std::log2(total / count);
+template <class V>
+HWY_ATTR V Entropy(V count, V total) {
+  const HWY_FULL(float) d;
+  const auto zero = Set(d, 0.0f);
+  const auto safe_div = Set(d, 1.0f);
+  const auto nonzero_count = IfThenElse(count == zero, safe_div, count);
+  return count * FastLog2f_12bits(total / nonzero_count);
 }
 
-void HistogramEntropy(const Histogram& a) {
-  a.entropy_ = 0;
+HWY_ATTR void HistogramEntropy(const Histogram& a) {
+  a.entropy_ = 0.0f;
   if (a.total_count_ == 0) return;
-  float tot = a.total_count_;
-  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
-    a.entropy_ += Entropy(a.data_[i], tot);
+
+  const HWY_FULL(float) df;
+  const HWY_FULL(int32_t) di;
+
+  const auto tot = Set(df, a.total_count_);
+  auto entropy_lanes = Zero(df);
+
+  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += di.N) {
+    const auto counts = LoadU(di, &a.data_[i]);
+    entropy_lanes += Entropy(ConvertTo(df, counts), tot);
   }
+  a.entropy_ += GetLane(::hwy::ext::SumOfLanes(entropy_lanes));
 }
 
-float HistogramDistance(const Histogram& a, const Histogram& b) {
+HWY_ATTR float HistogramDistance(const Histogram& a, const Histogram& b) {
   if (a.total_count_ == 0 || b.total_count_ == 0) return 0;
-  float tot = a.total_count_ + b.total_count_;
-  float total_distance = -a.entropy_ - b.entropy_;
-  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
-    size_t va = a.data_[i];
-    size_t vb = b.data_[i];
-    total_distance += Entropy(va + vb, tot);
+
+  const HWY_FULL(float) df;
+  const HWY_FULL(int32_t) di;
+
+  const auto tot = Set(df, a.total_count_ + b.total_count_);
+  auto distance_lanes = Zero(df);
+
+  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += di.N) {
+    const auto a_counts = LoadU(di, &a.data_[i]);
+    const auto b_counts = LoadU(di, &b.data_[i]);
+    const auto counts = ConvertTo(df, a_counts + b_counts);
+    distance_lanes += Entropy(counts, tot);
   }
-  return total_distance;
+  const float total_distance = GetLane(::hwy::ext::SumOfLanes(distance_lanes));
+  return total_distance - a.entropy_ - b.entropy_;
 }
 
 // First step of a k-means clustering with a fancy distance metric.
-void FastClusterHistograms(const std::vector<Histogram>& in,
-                           const size_t num_contexts, size_t max_histograms,
-                           std::vector<Histogram>* out,
-                           std::vector<uint32_t>* histogram_symbols) {
+HWY_ATTR void FastClusterHistograms(const std::vector<Histogram>& in,
+                                    const size_t num_contexts,
+                                    size_t max_histograms,
+                                    std::vector<Histogram>* out,
+                                    std::vector<uint32_t>* histogram_symbols) {
   PROFILER_FUNC;
   size_t largest_idx = 0;
   for (size_t i = 0; i < num_contexts; i++) {
@@ -417,11 +437,12 @@ void FastestClusterHistograms(const std::vector<Histogram>& in,
 // Clusters similar histograms in 'in' together, the selected histograms are
 // placed in 'out', and for each index in 'in', *histogram_symbols will
 // indicate which of the 'out' histograms is the best approximation.
-void ClusterHistograms(const HistogramParams params,
-                       const std::vector<Histogram>& in,
-                       const size_t num_contexts, size_t max_histograms,
-                       std::vector<Histogram>* out,
-                       std::vector<uint32_t>* histogram_symbols) {
+HWY_ATTR void ClusterHistograms(const HistogramParams params,
+                                const std::vector<Histogram>& in,
+                                const size_t num_contexts,
+                                size_t max_histograms,
+                                std::vector<Histogram>* out,
+                                std::vector<uint32_t>* histogram_symbols) {
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
     return FastestClusterHistograms(in, num_contexts, max_histograms, out,
                                     histogram_symbols);

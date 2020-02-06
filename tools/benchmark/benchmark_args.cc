@@ -184,12 +184,11 @@ Status BenchmarkArgs::AddCommandLineOptions() {
   AddFlag(&show_progress, "show_progress",
           "Show activity dots per completed file during benchmark.", false);
 
-  AddFlag(
-      &skip_butteraugli, "skip_butteraugli",
-      "If true, doesn't compute distance metrics, only compression and"
-      " decompression speed and size. Distance numbers shown in the"
-      " table are invalid.",
-      false);
+  AddFlag(&skip_butteraugli, "skip_butteraugli",
+          "If true, doesn't compute distance metrics, only compression and"
+          " decompression speed and size. Distance numbers shown in the"
+          " table are invalid.",
+          false);
 
   AddFlag(
       &decode_only, "decode_only",
@@ -227,7 +226,7 @@ Status BenchmarkArgs::ValidateArgs() {
                   output_description.c_str());
       return false;  // already warned
     }
-    JXL_RETURN_IF_ERROR(ColorManagement::CreateProfile(&output_encoding));
+    JXL_RETURN_IF_ERROR(output_encoding.CreateICC());
   }
 
   JXL_RETURN_IF_ERROR(ValidateArgsJxlCodec(this));

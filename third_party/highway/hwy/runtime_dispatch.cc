@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -93,7 +93,16 @@ constexpr uint32_t kFMA = 1u << 8;
 constexpr uint32_t kLZCNT = 1u << 9;
 constexpr uint32_t kBMI = 1u << 10;
 constexpr uint32_t kBMI2 = 1u << 11;
+
+// We normally assume BMI/BMI2/FMA are available if AVX2 is. This allows us to
+// use BZHI and (compiler-generated) MULX. However, VirtualBox lacks them
+// [https://www.virtualbox.org/ticket/15471]. Thus we provide the option of
+// avoiding using and requiring these so AVX2 can still be used.
+#ifdef HWY_DISABLE_BMI2_FMA
+constexpr uint32_t kGroupAVX2 = kAVX | kAVX2 | kLZCNT;
+#else
 constexpr uint32_t kGroupAVX2 = kAVX | kAVX2 | kFMA | kLZCNT | kBMI | kBMI2;
+#endif
 
 constexpr uint32_t kAVX512F = 1u << 12;
 constexpr uint32_t kAVX512VL = 1u << 13;

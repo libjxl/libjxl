@@ -92,7 +92,7 @@ class LossyFrameDecoder {
     dec_state_.EnsureStorage(num_threads);
   }
 
-  Status DecodeGlobalDCInfo(BitReader* reader) {
+  Status DecodeGlobalDCInfo(BitReader* reader, const ImageBundle* decoded) {
     PROFILER_FUNC;
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.matrices.DecodeDC(reader));
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.quantizer.Decode(reader));
@@ -100,7 +100,7 @@ class LossyFrameDecoder {
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.cmap.DecodeDC(reader));
 
     // Pre-compute info for decoding a group.
-    if (dec_state_.keep_dct) {
+    if (decoded->IsJPEG()) {
       dec_state_.shared_storage.quantizer.ClearDCMul();  // Don't dequant DC
     }
 
@@ -188,9 +188,10 @@ class LossyFrameDecoder {
   Status DecodeACGroup(size_t group_index, size_t thread,
                        BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                        size_t num_passes, Image3F* JXL_RESTRICT opsin,
+                       ImageBundle* JXL_RESTRICT decoded,
                        AuxOut* local_aux_out) {
     return DecodeGroup(readers, num_passes, group_index, &dec_state_,
-                       &group_dec_caches_[thread], thread, opsin,
+                       &group_dec_caches_[thread], thread, opsin, decoded,
                        local_aux_out);
   }
 
@@ -208,6 +209,7 @@ class LossyFrameDecoder {
       return JXL_FAILURE(
           "Quantization table is not a JPEG quantization table.");
     }
+    decoded->is_jpeg = true;
     decoded->jpeg_quant_table.resize(192);
     JXL_DASSERT(qe[0].qraw.qtable);
     JXL_DASSERT(qe[0].qraw.qtable->size() >= 3 * 8 * 8);
@@ -225,7 +227,7 @@ class LossyFrameDecoder {
 
   Status FinalizeDecoding(Image3F* JXL_RESTRICT opsin,
                           const LoopFilter& loop_filter, ImageBundle* decoded) {
-    if (dec_state_.keep_dct) {
+    if (decoded->IsJPEG()) {
       JXL_RETURN_IF_ERROR(FinalizeJPEG(opsin, decoded));
       return true;
     }
@@ -246,7 +248,7 @@ class LossyFrameDecoder {
       // Do not use decoded->IsGray() - c_current is not yet valid.
       const bool is_gray = decoded->metadata()->color_encoding.IsGray();
       decoded->SetFromImage(std::move(*opsin),
-                            ColorManagement::LinearSRGB(is_gray));
+                            ColorEncoding::LinearSRGB(is_gray));
     } else {
       decoded->SetFromImage(std::move(*opsin),
                             decoded->metadata()->color_encoding);
@@ -255,8 +257,6 @@ class LossyFrameDecoder {
   }
 
   PassesDecoderState* State() { return &dec_state_; }
-
-  void KeepDCT() { dec_state_.keep_dct = true; }
 
  private:
   PassesDecoderState dec_state_;
@@ -310,14 +310,17 @@ Status SkipFrame(const Span<const uint8_t> file,
 
   // Read TOC.
   std::vector<uint64_t> group_offsets;
+  std::vector<uint32_t> group_sizes;
+  uint64_t groups_total_size;
   const bool has_ac_global = !frame_header.IsJpeg();
   const size_t toc_entries =
       NumTocEntries(frame_dim->num_groups, frame_dim->num_dc_groups,
                     frame_header.passes.num_passes, has_ac_global);
-  JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets));
+  JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets,
+                                       &group_sizes, &groups_total_size));
 
   // Pretend all groups are read.
-  reader->SkipBits(group_offsets.back() * kBitsPerByte);
+  reader->SkipBits(groups_total_size * kBitsPerByte);
   if (reader->TotalBitsConsumed() > file.size() * kBitsPerByte) {
     return JXL_FAILURE("Group code extends after stream end");
   }
@@ -352,7 +355,12 @@ Status DecodeFrame(const DecompressParams& dparams,
   // dimensions; must reset to avoid error when setting alpha.
   decoded->RemoveColor();
   if (frame_header.HasAlpha()) {
-    decoded->SetAlpha(ImageU(xsize, ysize));
+    if (!decoded->metadata()->HasAlpha()) {
+      return JXL_FAILURE("Frame has alpha but decoded metadata doesn't");
+    }
+    decoded->SetAlpha(
+        ImageU(xsize, ysize),
+        /*alpha_is_premultiplied=*/frame_header.AlphaIsPremultiplied());
   }
 
   if (decoded->metadata()->m2.HasDepth())
@@ -372,7 +380,7 @@ Status DecodeFrame(const DecompressParams& dparams,
     loop_filter.epf = false;
   }
 
-  // Handling of progressive decoding for kPasses mode.
+  // Handling of progressive decoding for kVarDCT mode.
   size_t downsampling;
   size_t max_passes = dparams.max_passes;
   // TODO(veluca): deal with downsamplings >= 8.
@@ -407,69 +415,98 @@ Status DecodeFrame(const DecompressParams& dparams,
   BrunsliFrameDecoder jpeg_frame_decoder(pool);
   ModularFrameDecoder modular_frame_decoder;
 
-  if (dparams.keep_dct) lossy_frame_decoder.KeepDCT();
+  if (dparams.keep_dct) {
+    if (frame_header.encoding == FrameEncoding::kModularGroup) {
+      return JXL_FAILURE("Cannot output JPEG from ModularGroup");
+    }
+    decoded->is_jpeg = true;
+  }
 
   // Read TOC.
   std::vector<uint64_t> group_offsets;
+  std::vector<uint32_t> group_sizes;
+  uint64_t groups_total_size;
   const bool has_ac_global = !frame_header.IsJpeg();
   const size_t toc_entries = NumTocEntries(num_groups, frame_dim->num_dc_groups,
                                            num_passes, has_ac_global);
-  JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets));
+  JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets,
+                                       &group_sizes, &groups_total_size));
   const size_t global_ac_index = frame_dim->num_dc_groups + 1;
 
   JXL_DASSERT((reader->TotalBitsConsumed() % kBitsPerByte) == 0);
   const size_t group_codes_begin = reader->TotalBitsConsumed() / kBitsPerByte;
-
+  // group_offsets can be permuted, so we need to check the groups_total_size.
+  JXL_DASSERT(!group_offsets.empty());
+  if (group_codes_begin + groups_total_size > file.size() ||
+      group_codes_begin + groups_total_size < group_codes_begin) {
+    // The second check is for overflow on the
+    // "group_codes_begin + group_offsets.back()" calculation.
+    return JXL_FAILURE("group offset is out of bounds");
+  }
   auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
-                     &file,
+                     &group_sizes, &file,
                      &reader](BitReader* JXL_RESTRICT store, size_t index) {
     if (num_groups == 1 && num_passes == 1) return reader;
     const size_t group_offset = group_codes_begin + group_offsets[index];
-    const size_t group_size =
-        group_codes_begin + group_offsets[index + 1] - group_offset;
+    const size_t next_group_offset =
+        group_codes_begin + group_offsets[index] + group_sizes[index];
+    // The order of these variables must be:
+    // group_codes_begin <= group_offset <= next_group_offset <= file.size()
+    JXL_DASSERT(group_codes_begin <= group_offset);
+    JXL_DASSERT(group_offset <= next_group_offset);
+    JXL_DASSERT(next_group_offset <= file.size());
+    const size_t group_size = next_group_offset - group_offset;
     const size_t remaining_size = file.size() - group_offset;
     const size_t size = std::min(group_size + 8, remaining_size);
     *store = BitReader(Span<const uint8_t>(file.data() + group_offset, size));
     return store;
   };
 
-  BitReader global_store;
-  BitReader* global_reader = get_reader(&global_store, 0);
-
+  Status res = true;
   {
-    PassesSharedState& shared = lossy_frame_decoder.State()->shared_storage;
+    BitReader global_store;
+    BitReaderScopedCloser global_store_closer(&global_store, &res);
+    BitReader* global_reader = get_reader(&global_store, 0);
 
-    if (shared.frame_header.flags & FrameHeader::kPatches) {
-      JXL_RETURN_IF_ERROR(shared.image_features.patches.Decode(
-          global_reader, shared.frame_dim.xsize_padded,
-          shared.frame_dim.ysize_padded,
-          shared.frame_header.save_as_reference));
+    {
+      PassesSharedState& shared = lossy_frame_decoder.State()->shared_storage;
+
+      if (shared.frame_header.flags & FrameHeader::kPatches) {
+        JXL_RETURN_IF_ERROR(shared.image_features.patches.Decode(
+            global_reader, shared.frame_dim.xsize_padded,
+            shared.frame_dim.ysize_padded,
+            shared.frame_header.save_as_reference));
+      }
+      if (shared.frame_header.flags & FrameHeader::kSplines) {
+        JXL_RETURN_IF_ERROR(
+            shared.image_features.splines.Decode(global_reader));
+      }
+      if (shared.frame_header.flags & FrameHeader::kNoise) {
+        JXL_RETURN_IF_ERROR(
+            DecodeNoise(global_reader, &shared.image_features.noise_params));
+      }
     }
-    if (shared.frame_header.flags & FrameHeader::kSplines) {
-      JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(global_reader));
-    }
-    if (shared.frame_header.flags & FrameHeader::kNoise) {
+
+    if (frame_header.IsJpeg()) {
+      JXL_RETURN_IF_ERROR(jpeg_frame_decoder.ReadHeader(
+          frame_dim, global_reader, frame_header.chroma_subsampling));
+    } else if (frame_header.IsLossy()) {
       JXL_RETURN_IF_ERROR(
-          DecodeNoise(global_reader, &shared.image_features.noise_params));
+          lossy_frame_decoder.DecodeGlobalDCInfo(global_reader, decoded));
+    } else if (frame_header.encoding == FrameEncoding::kModularGroup) {
+      JXL_RETURN_IF_ERROR(
+          lossy_frame_decoder.DecodeModularGlobalInfo(global_reader));
     }
+    JXL_RETURN_IF_ERROR(modular_frame_decoder.DecodeGlobalInfo(
+        global_reader, frame_header, decoded,
+        /*decode_color = */
+        (frame_header.encoding == FrameEncoding::kModularGroup), xsize, ysize));
   }
 
-  if (frame_header.IsJpeg()) {
-    JXL_RETURN_IF_ERROR(jpeg_frame_decoder.ReadHeader(
-        frame_dim, global_reader, frame_header.chroma_subsampling));
-  } else if (frame_header.IsLossy()) {
-    JXL_RETURN_IF_ERROR(lossy_frame_decoder.DecodeGlobalDCInfo(global_reader));
-  } else if (frame_header.encoding == FrameEncoding::kModularGroup) {
-    JXL_RETURN_IF_ERROR(
-        lossy_frame_decoder.DecodeModularGlobalInfo(global_reader));
-  }
-  JXL_RETURN_IF_ERROR(modular_frame_decoder.DecodeGlobalInfo(
-      global_reader, frame_header, decoded,
-      /*decode_color = */
-      (frame_header.encoding == FrameEncoding::kModularGroup), xsize, ysize));
   // global_store is either never used (in which case Close() is optional
-  // and a no-op) or the real deal and we must call Close().
-  JXL_RETURN_IF_ERROR(global_store.Close());
+  // and a no-op) or the real deal and we must call Close() and check the error
+  // code here.
+  JXL_RETURN_IF_ERROR(res);
 
   // Decode DC groups.
   std::atomic<int> num_errors{0};
@@ -485,7 +522,8 @@ Status DecodeFrame(const DecompressParams& dparams,
   };
 
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
-  decoded->SetDecodedBytes(group_offsets[1] + group_codes_begin);
+  decoded->SetDecodedBytes(group_offsets[0] + group_sizes[0] +
+                           group_codes_begin);
 
   const auto process_dc_group_init = [&](size_t num_threads) {
     lossy_frame_decoder.SetNumThreads(num_threads);
@@ -513,7 +551,7 @@ Status DecodeFrame(const DecompressParams& dparams,
       ok &= lossy_frame_decoder.DecodeDCGroup(
           group_index, thread, rect, group_reader, loop_filter, my_aux_out);
     }
-    if (!ok || !group_store.Close()) {
+    if (!group_store.Close() || !ok) {
       num_errors.fetch_add(1, std::memory_order_relaxed);
     }
   };
@@ -521,7 +559,8 @@ Status DecodeFrame(const DecompressParams& dparams,
             process_dc_group, "DecodeDCGroup");
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
   if (downsampling < 16 && frame_dim->num_groups > 1) {
-    decoded->SetDecodedBytes(group_offsets[frame_dim->num_dc_groups + 1] +
+    decoded->SetDecodedBytes(group_offsets[frame_dim->num_dc_groups] +
+                             group_sizes[frame_dim->num_dc_groups] +
                              group_codes_begin);
   }
 
@@ -531,17 +570,21 @@ Status DecodeFrame(const DecompressParams& dparams,
   // Read global AC info.
   {
     PROFILER_ZONE("Global AC");
-    BitReader ac_info_store;
-    BitReader* ac_info_reader = get_reader(&ac_info_store, global_ac_index);
+    res = true;
+    {
+      BitReader ac_info_store;
+      BitReaderScopedCloser ac_info_store_closer(&ac_info_store, &res);
+      BitReader* ac_info_reader = get_reader(&ac_info_store, global_ac_index);
 
-    if (frame_header.IsLossy()) {
-      JXL_RETURN_IF_ERROR(
-          lossy_frame_decoder.DecodeGlobalACInfo(ac_info_reader));
+      if (frame_header.IsLossy()) {
+        JXL_RETURN_IF_ERROR(
+            lossy_frame_decoder.DecodeGlobalACInfo(ac_info_reader));
+      }
     }
-
     // ac_info_store is either never used (in which case Close() is optional
-    // and a no-op) or the real deal and we must call Close().
-    JXL_RETURN_IF_ERROR(ac_info_store.Close());
+    // and a no-op) or the real deal and we must call Close() and check the
+    // return error.
+    JXL_RETURN_IF_ERROR(res);
   }
 
   max_passes = std::min<size_t>(max_passes, frame_header.passes.num_passes);
@@ -604,7 +647,8 @@ Status DecodeFrame(const DecompressParams& dparams,
     }
     if (frame_header.IsLossy()) {
       if (!lossy_frame_decoder.DecodeACGroup(group_index, thread, readers,
-                                             max_passes, &opsin, my_aux_out)) {
+                                             max_passes, &opsin, decoded,
+                                             my_aux_out)) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
       }
     }
@@ -638,10 +682,14 @@ Status DecodeFrame(const DecompressParams& dparams,
   }
 
   if (downsampling < 8 && frame_dim->num_groups > 1) {
-    decoded->SetDecodedBytes(
-        group_offsets[AcGroupIndex(max_passes, 0, num_groups,
-                                   frame_dim->num_dc_groups, has_ac_global)] +
-        group_codes_begin);
+    uint64_t last_end_offset = 0;
+    size_t end_index = AcGroupIndex(max_passes, 0, num_groups,
+                                    frame_dim->num_dc_groups, has_ac_global);
+    for (size_t i = 0; i < end_index; i++) {
+      uint64_t end_offset = group_offsets[i] + group_sizes[i];
+      last_end_offset = std::max(last_end_offset, end_offset);
+    }
+    decoded->SetDecodedBytes(group_codes_begin + last_end_offset);
   }
 
   // Resizing to 0 assimilates all the results when needed.
@@ -649,10 +697,10 @@ Status DecodeFrame(const DecompressParams& dparams,
   // undo global modular transforms and copy int pixel buffers to float ones
   JXL_RETURN_IF_ERROR(modular_frame_decoder.FinalizeDecoding(
       &opsin, decoded, pool, frame_header));
+
   if (frame_header.IsJpeg()) {
-    jpeg_frame_decoder.FinalizeDecoding(&opsin);
-    decoded->SetFromImage(std::move(opsin),
-                          decoded->metadata()->color_encoding);
+    jpeg_frame_decoder.FinalizeDecoding(frame_header, std::move(opsin),
+                                        decoded);
   } else {
     JXL_RETURN_IF_ERROR(
         lossy_frame_decoder.FinalizeDecoding(&opsin, loop_filter, decoded));
@@ -663,16 +711,12 @@ Status DecodeFrame(const DecompressParams& dparams,
     // reader - unless we did not decode all passes.
     if (max_passes < num_passes) {
       const size_t frame_end =
-          group_codes_begin + group_offsets.back() * kBitsPerByte;
+          group_codes_begin + groups_total_size * kBitsPerByte;
       reader->SkipBits(frame_end - reader->TotalBitsConsumed());
     }
   } else {
     // Used per-group readers, need to skip groups in main reader.
-    reader->SkipBits(group_offsets.back() * kBitsPerByte);  // aligned
-  }
-
-  if (!frame_header.IsLossy() && dparams.keep_dct) {
-    return JXL_FAILURE("Cannot decode this frame mode to JPEG.\n");
+    reader->SkipBits(groups_total_size * kBitsPerByte);  // aligned
   }
 
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
@@ -680,11 +724,11 @@ Status DecodeFrame(const DecompressParams& dparams,
     return JXL_FAILURE("Read past stream end");
   }
 
-  if (!dparams.keep_dct) {
-    decoded->ShrinkTo(xsize, ysize);
-  } else {
+  if (decoded->IsJPEG()) {
     decoded->jpeg_xsize = xsize;
     decoded->jpeg_ysize = ysize;
+  } else {
+    decoded->ShrinkTo(xsize, ysize);
   }
   return true;
 }

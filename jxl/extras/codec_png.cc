@@ -230,13 +230,13 @@ class ColorEncodingReaderPNG {
       c_original->primaries = Primaries::k2100;
       c_original->tf.SetTransferFunction(TransferFunction::kPQ);
       c_original->rendering_intent = RenderingIntent::kRelative;
-      if (ColorManagement::CreateProfile(c_original)) return true;
+      if (c_original->CreateICC()) return true;
       JXL_WARNING("Failed to synthesize BT.2100 PQ");
       // Else: try the actual ICC profile.
     }
 
     // ICC overrides anything else if present.
-    if (ColorManagement::SetProfile(std::move(icc_), c_original)) {
+    if (c_original->SetICC(std::move(icc_))) {
       if (have_srgb_) {
         JXL_WARNING("Invalid PNG with both sRGB and ICC; ignoring sRGB");
       }
@@ -248,9 +248,7 @@ class ColorEncodingReaderPNG {
 
     // PNG requires that sRGB override gAMA/cHRM.
     if (have_srgb_) {
-      c_original->SetSRGB(color_space);
-      c_original->rendering_intent = rendering_intent_;  // after SetSRGB!
-      return ColorManagement::CreateProfile(c_original);
+      return c_original->SetSRGB(color_space, rendering_intent_);
     }
 
     // Try to create a custom profile:
@@ -278,14 +276,13 @@ class ColorEncodingReaderPNG {
     }
 
     c_original->rendering_intent = RenderingIntent::kRelative;
-    if (ColorManagement::CreateProfile(c_original)) return true;
+    if (c_original->CreateICC()) return true;
 
     JXL_WARNING(
         "DATA LOSS: unable to create an ICC profile for PNG gAMA/cHRM.\n"
         "Image pixels will be interpreted as sRGB. Please add an ICC \n"
         "profile to the input image");
-    c_original->SetSRGB(color_space);
-    return ColorManagement::CreateProfile(c_original);
+    return c_original->SetSRGB(color_space);
   }
 
  private:
@@ -454,8 +451,8 @@ class ColorEncodingWriterPNG {
       JXL_RETURN_IF_ERROR(AddSRGB(c, info));
       // PNG recommends not including both sRGB and iCCP, so skip the latter.
     } else {
-      JXL_ASSERT(!c.icc.empty());
-      JXL_RETURN_IF_ERROR(AddICC(c.icc, info));
+      JXL_ASSERT(!c.ICC().empty());
+      JXL_RETURN_IF_ERROR(AddICC(c.ICC(), info));
     }
 
     // gAMA and cHRM are always allowed but will be overridden by sRGB/iCCP.
@@ -690,9 +687,10 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   io->metadata.alpha_bits = has_alpha ? io->metadata.bits_per_sample : 0;
 
   io->enc_size = bytes.size();
-  io->dec_hints.Foreach(
+  (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
         JXL_WARNING("PNG decoder ignoring %s hint", key.c_str());
+        return true;
       });
 
   // Always decode to 8/16-bit RGB/RGBA, not LCT_PALETTE.
@@ -717,6 +715,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   const bool big_endian = true;  // PNG requirement
   const PackedImage desc(w, h, io->metadata.color_encoding, has_alpha,
+                         /*alpha_is_premultiplied=*/false,
                          io->metadata.alpha_bits, io->metadata.bits_per_sample,
                          big_endian, /*flipped_y=*/false);
   const Span<const uint8_t> span(out, out_size);
@@ -739,7 +738,8 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
   CodecIntervals* temp_intervals = nullptr;  // Can't store min/max.
   const ExternalImage external(
       pool, ib.color(), Rect(ib), ib.c_current(), c_desired, ib.HasAlpha(),
-      alpha, alpha_bits, io->enc_bits_per_sample, big_endian, temp_intervals);
+      ib.AlphaIsPremultiplied(), alpha, alpha_bits, io->enc_bits_per_sample,
+      big_endian, temp_intervals);
   JXL_RETURN_IF_ERROR(external.IsHealthy());
 
   PNGState state;

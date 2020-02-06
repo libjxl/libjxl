@@ -86,6 +86,34 @@ struct LoopFilter {
     return visitor->EndExtensions();
   }
 
+  void GaborishWeights(float* JXL_RESTRICT gab_weights) const {
+    gab_weights[0] = 1;
+    gab_weights[1] = gab_x_weight1;
+    gab_weights[2] = gab_x_weight2;
+    gab_weights[3] = 1;
+    gab_weights[4] = gab_y_weight1;
+    gab_weights[5] = gab_y_weight2;
+    gab_weights[6] = 1;
+    gab_weights[7] = gab_b_weight1;
+    gab_weights[8] = gab_b_weight2;
+    // Normalize
+    for (size_t c = 0; c < 3; c++) {
+      const float mul =
+          1.0f / (gab_weights[3 * c] +
+                  4 * (gab_weights[3 * c + 1] + gab_weights[3 * c + 2]));
+      gab_weights[3 * c] *= mul;
+      gab_weights[3 * c + 1] *= mul;
+      gab_weights[3 * c + 2] *= mul;
+    }
+  }
+
+  size_t FirstStageRows() const { return gab ? 1 : epf ? 2 : 0; }
+  size_t PaddingRows() const { return (epf ? 3 : 0) + (gab ? 1 : 0); }
+  size_t PaddingCols() const {
+    // Having less than one full block here breaks handling of sigma in EPF.
+    return kBlockDim;
+  }
+
   mutable bool all_default;
 
   // --- Gaborish convolution

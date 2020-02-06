@@ -105,17 +105,20 @@ class AcStrategyCoder {
         if (!AcStrategy::IsRawStrategyValid(raw_strategy)) {
           invalid_ = true;
         }
-        AcStrategy acs = AcStrategy::FromRawStrategy(raw_strategy);
-        if (y + acs.covered_blocks_y() > rect_.ysize()) {
-          invalid_ = true;
-        }
-        if (x + acs.covered_blocks_x() > rect_.xsize()) {
-          invalid_ = true;
-        }
         if (!invalid_) {
-          ac_strategy_->SetNoBoundsCheck(
-              rect_.x0() + x, rect_.y0() + y,
-              static_cast<AcStrategy::Type>(raw_strategy));
+          // We can't create an AcStrategy from an invalid raw_strategy.
+          AcStrategy acs = AcStrategy::FromRawStrategy(raw_strategy);
+          if (y + acs.covered_blocks_y() > rect_.ysize()) {
+            invalid_ = true;
+          }
+          if (x + acs.covered_blocks_x() > rect_.xsize()) {
+            invalid_ = true;
+          }
+          if (!invalid_) {
+            ac_strategy_->SetNoBoundsCheck(
+                rect_.x0() + x, rect_.y0() + y,
+                static_cast<AcStrategy::Type>(raw_strategy));
+          }
         }
       }
       if (!invalid_) {
@@ -502,18 +505,20 @@ bool DecodeARParameters(BitReader* br, ANSSymbolReader* decoder,
 // number of nonzeros of a strategy is above 63, it is written directly using a
 // fixed number of bits (that depends on the size of the strategy).
 // TODO(veluca): consider predicting #zeros with predictor.h.
-void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
-                          const Rect& rect,
-                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
-                          const AcStrategyImage& ac_strategy,
-                          Image3I* JXL_RESTRICT tmp_num_nzeroes,
-                          std::vector<Token>* JXL_RESTRICT output) {
+HWY_ATTR void TokenizeCoefficients(
+    const coeff_order_t* JXL_RESTRICT orders, const Rect& rect,
+    const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+    const AcStrategyImage& ac_strategy, Image3I* JXL_RESTRICT tmp_num_nzeroes,
+    std::vector<Token>* JXL_RESTRICT output) {
   const size_t xsize_blocks = rect.xsize();
   const size_t ysize_blocks = rect.ysize();
 
   // TODO(user): update the estimate: usually less coefficients are used.
   output->reserve(output->size() +
                   3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
+
+  const HWY_CAPPED(float, 8) df8;
+  const HWY_CAPPED(int32_t, 8) di8;
 
   size_t offset = 0;
   const size_t nzeros_stride = tmp_num_nzeroes->PixelsPerRow();
@@ -546,17 +551,31 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         size_t cx = acs.covered_blocks_x();
         size_t cy = acs.covered_blocks_y();
         CoefficientLayout(&cy, &cx);
-        for (size_t y = 0; y < cy * kBlockDim; y++) {
-          for (size_t x = 0; x < cx * kBlockDim; x++) {
-            // Skip LLF.
-            if (y < cy && x < cx) continue;
-            nzeros += static_cast<int32_t>(block[y * cx * kBlockDim + x]) != 0;
+        // Count number of non-zero coefficients (but skip LLF). We cannot
+        // rely on coef being all-zero bits, so truncate to integer.
+        for (size_t y = 0; y < cy; y++) {
+          for (size_t x = cx; x < cx * kBlockDim; x++) {
+            const float coef = block[y * cx * kBlockDim + x];
+            nzeros += static_cast<int32_t>(coef) != 0;
           }
         }
+        // .. resume after LLF with whole vectors
+        const auto zero = Zero(di8);
+        const auto one = Set(di8, 1);
+        auto nzeros_vec = zero;
+        for (size_t y = cy; y < cy * kBlockDim; y++) {
+          for (size_t x = 0; x < cx * kBlockDim; x += df8.N) {
+            const auto coef = Load(df8, &block[y * cx * kBlockDim + x]);
+            nzeros_vec += IfThenZeroElse(ConvertTo(di8, coef) == zero, one);
+          }
+        }
+        nzeros += GetLane(::hwy::ext::SumOfLanes(nzeros_vec));
+
+        const int32_t shifted_nzeros = static_cast<int32_t>(
+            (nzeros + covered_blocks - 1) >> log2_covered_blocks);
         for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
           for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
-            row_nzeros[c][bx + x + y * nzeros_stride] =
-                (nzeros + covered_blocks - 1) >> log2_covered_blocks;
+            row_nzeros[c][bx + x + y * nzeros_stride] = shifted_nzeros;
           }
         }
 
@@ -583,7 +602,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
           prev = coeff != 0;
           nzeros -= prev;
         }
-        JXL_ASSERT(nzeros == 0);
+        JXL_DASSERT(nzeros == 0);
       }
       offset += size;
     }

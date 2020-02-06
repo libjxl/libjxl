@@ -152,15 +152,6 @@ class JxlCodec : public ImageCodec {
     const std::string kMaxPassesPrefix = "max_passes=";
     const std::string kDownsamplingPrefix = "downsampling=";
 
-    dparams_.noise = jxlargs->noise;
-    dparams_.adaptive_reconstruction = jxlargs->adaptive_reconstruction;
-    cparams_.dots = jxlargs->dots;
-    cparams_.patches = jxlargs->patches;
-
-    cparams_.progressive_mode = jxlargs->progressive;
-    cparams_.qprogressive_mode = jxlargs->qprogressive;
-    cparams_.progressive_dc = jxlargs->progressive_dc;
-
     if (ImageCodec::ParseParam(param)) {
       // Nothing to do.
     } else if (param[0] == 'u') {
@@ -295,6 +286,13 @@ class JxlCodec : public ImageCodec {
       cparams_.intensity_target = ChooseDefaultIntensityTarget(io->metadata);
     }
 
+    cparams_.dots = jxlargs->dots;
+    cparams_.patches = jxlargs->patches;
+
+    cparams_.progressive_mode = jxlargs->progressive;
+    cparams_.qprogressive_mode = jxlargs->qprogressive;
+    cparams_.progressive_dc = jxlargs->progressive_dc;
+
     cparams_.noise = jxlargs->noise;
     cparams_.adaptive_reconstruction = jxlargs->adaptive_reconstruction;
     cparams_.gaborish = jxlargs->gaborish;
@@ -322,6 +320,8 @@ class JxlCodec : public ImageCodec {
           ".jxl:" + params_ + ".dbg/";
       JXL_RETURN_IF_ERROR(MakeDir(dinfo_.debug_prefix));
     }
+    dparams_.noise = jxlargs->noise;
+    dparams_.adaptive_reconstruction = jxlargs->adaptive_reconstruction;
     return DecodeFile(dparams_, compressed, io, &dinfo_, pool);
   }
 

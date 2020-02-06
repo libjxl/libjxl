@@ -18,7 +18,6 @@
 #include <stdio.h>
 // After stddef/stdio
 #include <jpeglib.h>
-
 #include <setjmp.h>
 #include <stdint.h>
 
@@ -205,8 +204,17 @@ constexpr int kInvPlaneOrder[] = {1, 0, 2};
 
 }  // namespace
 
-Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
-                      const DecodeTarget target) {
+Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
+  // We need to declare all the non-trivial destructor local variables before
+  // the call to setjmp().
+  ColorEncoding color_encoding;
+  PaddedBytes icc;
+  Image3F coeffs;
+  Image3F image;
+  std::unique_ptr<JSAMPLE[]> row;
+  ImageBundle bundle(&io->metadata);
+  const DecodeTarget target = io->dec_target;
+
   jpeg_decompress_struct cinfo;
 #ifdef MEMORY_SANITIZER
   // cinfo is initialized by libjpeg, which we are not instrumenting with
@@ -229,16 +237,14 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
   jpeg_mem_src(&cinfo, bytes.data(), bytes.size());
   jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
   jpeg_read_header(&cinfo, TRUE);
-  ColorEncoding color_encoding;
-  PaddedBytes icc;
   if (ReadICCProfile(&cinfo, &icc)) {
-    if (!ColorManagement::SetProfile(std::move(icc), &color_encoding)) {
+    if (!color_encoding.SetICC(std::move(icc))) {
       jpeg_abort_decompress(&cinfo);
       jpeg_destroy_decompress(&cinfo);
       return JXL_FAILURE("read an invalid ICC profile");
     }
   } else {
-    color_encoding = ColorManagement::SRGB(cinfo.output_components == 1);
+    color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
   }
   io->metadata.bits_per_sample = BITS_IN_JSAMPLE;
   io->metadata.color_encoding = color_encoding;
@@ -250,17 +256,17 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
     return JXL_FAILURE("unsupported number of components (%d) in JPEG",
                        cinfo.output_components);
   }
-  io->dec_hints.Foreach(
+  (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
         JXL_WARNING("JPEG decoder ignoring %s hint", key.c_str());
+        return true;
       });
 
   if (target == DecodeTarget::kPixels) {
     jpeg_start_decompress(&cinfo);
     JXL_ASSERT(cinfo.output_components == nbcomp);
-    Image3F image(cinfo.image_width, cinfo.image_height);
-    std::unique_ptr<JSAMPLE[]> row(
-        new JSAMPLE[cinfo.output_components * cinfo.image_width]);
+    image = Image3F(cinfo.image_width, cinfo.image_height);
+    row.reset(new JSAMPLE[cinfo.output_components * cinfo.image_width]);
     for (size_t y = 0; y < image.ysize(); ++y) {
       JSAMPROW rows[] = {row.get()};
       jpeg_read_scanlines(&cinfo, rows, 1);
@@ -330,22 +336,23 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
 
     io->frames.clear();
     io->frames.reserve(1);
-    ImageBundle bundle(&io->metadata);
 
-    if (cinfo.jpeg_color_space == JCS_YCbCr || nbcomp == 1) {
-      bundle.color_transform = ColorTransform::kYCbCr;
-    } else {
-      bundle.color_transform = ColorTransform::kNone;
-    }
-
+    bundle.is_jpeg = true;
+    bundle.jpeg_xsize = cinfo.image_width;
+    bundle.jpeg_ysize = cinfo.image_height;
     bundle.chroma_subsampling = cs;
+    bundle.color_transform =
+        (cinfo.jpeg_color_space == JCS_YCbCr || nbcomp == 1)
+            ? ColorTransform::kYCbCr
+            : ColorTransform::kNone;
 
-    Image3F coeffs(cinfo.comp_info->width_in_blocks * 8,
-                   cinfo.comp_info->height_in_blocks * 8);
+    coeffs = Image3F(cinfo.comp_info->width_in_blocks * 8,
+                     cinfo.comp_info->height_in_blocks * 8);
+
     ZeroFillImage(&coeffs);
     for (int ci : kPlaneOrder) {
       if (ci >= nbcomp) {
-        for (int i = 0; i < 64; i++) {
+        for (size_t i = 0; i < kDCTBlockSize; i++) {
           bundle.jpeg_quant_table.push_back(1);
         }
         continue;
@@ -358,18 +365,20 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
 #endif
       int hib = compptr->height_in_blocks;
       int wib = compptr->width_in_blocks;
-      for (int i = 0; i < 64; i++) {
+      for (size_t i = 0; i < kDCTBlockSize; i++) {
         bundle.jpeg_quant_table.push_back(compptr->quant_table->quantval[i]);
       }
-      intptr_t onerow = coeffs.PixelsPerRow();
+      const intptr_t onerow = coeffs.PixelsPerRow();
       for (int by = 0; by < hib; by++) {
 #ifdef MEMORY_SANITIZER
         if (cinfo.mem) {
           __msan_unpoison(cinfo.mem, sizeof(*cinfo.mem));
         }
 #endif
+        const JDIMENSION kNumRows = 1;
+        const boolean kWriteable = FALSE;
         JBLOCKARRAY buffer = (cinfo.mem->access_virt_barray)(
-            (j_common_ptr)&cinfo, coeffs_array[ci], by, (JDIMENSION)1, FALSE);
+            (j_common_ptr)&cinfo, coeffs_array[ci], by, kNumRows, kWriteable);
 #ifdef MEMORY_SANITIZER
         if (buffer) {
           __msan_unpoison(buffer, sizeof(buffer));
@@ -388,8 +397,6 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
     }
 
     bundle.SetFromImage(std::move(coeffs), color_encoding);
-    bundle.jpeg_xsize = cinfo.image_width;
-    bundle.jpeg_ysize = cinfo.image_height;
     io->frames.push_back(std::move(bundle));
   }
   jpeg_finish_decompress(&cinfo);
@@ -432,7 +439,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
     jpeg_set_quality(&cinfo, quality, TRUE);
     jpeg_start_compress(&cinfo, TRUE);
     if (!ib->IsSRGB()) {
-      WriteICCProfile(&cinfo, ib->c_current().icc);
+      WriteICCProfile(&cinfo, ib->c_current().ICC());
     }
     if (cinfo.input_components > 3)
       return JXL_FAILURE("invalid numbers of components");
@@ -540,7 +547,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
       }
     }
     if (!ib->IsSRGB()) {
-      WriteICCProfile(&cinfo, ib->c_current().icc);
+      WriteICCProfile(&cinfo, ib->c_current().ICC());
     }
   }
   jpeg_finish_compress(&cinfo);
@@ -564,8 +571,8 @@ Status EncodeWithSJpeg(const ImageBundle* ib, size_t quality,
 #else
   sjpeg::EncoderParam param(quality);
   if (!ib->IsSRGB()) {
-    param.iccp.assign(ib->metadata()->color_encoding.icc.begin(),
-                      ib->metadata()->color_encoding.icc.end());
+    param.iccp.assign(ib->metadata()->color_encoding.ICC().begin(),
+                      ib->metadata()->color_encoding.ICC().end());
   }
   switch (chroma_subsampling) {
     case YCbCrChromaSubsampling::kAuto:

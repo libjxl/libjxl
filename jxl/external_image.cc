@@ -1061,7 +1061,7 @@ class Converter {
 
     // Keep alpha if at least one value is (semi)transparent.
     if (and_bits != max_alpha) {
-      ib->SetAlpha(std::move(alpha_));
+      ib->SetAlpha(std::move(alpha_), desc_->alpha_is_premultiplied);
     } else {
       ib->RemoveAlpha();
     }
@@ -1175,11 +1175,13 @@ class Converter {
 
 ExternalImage::ExternalImage(const size_t xsize, const size_t ysize,
                              const ColorEncoding& c_current,
-                             const bool has_alpha, const size_t bits_per_alpha,
+                             const bool has_alpha,
+                             const bool alpha_is_premultiplied,
+                             const size_t bits_per_alpha,
                              const size_t bits_per_sample,
                              const bool big_endian)
-    : desc_(xsize, ysize, c_current, has_alpha, bits_per_alpha, bits_per_sample,
-            big_endian, /*flipped_y=*/false),
+    : desc_(xsize, ysize, c_current, has_alpha, alpha_is_premultiplied,
+            bits_per_alpha, bits_per_sample, big_endian, /*flipped_y=*/false),
       is_healthy_(true) {
   JXL_ASSERT(1 <= desc_.channels && desc_.channels <= 4);
   JXL_ASSERT(1 <= bits_per_sample && bits_per_sample <= 32);
@@ -1192,14 +1194,13 @@ ExternalImage::ExternalImage(const size_t xsize, const size_t ysize,
   }
 }
 
-ExternalImage::ExternalImage(const size_t xsize, const size_t ysize,
-                             const ColorEncoding& c_current,
-                             const bool has_alpha, const size_t bits_per_alpha,
-                             const size_t bits_per_sample,
-                             const bool big_endian, const uint8_t* bytes,
-                             const uint8_t* end)
-    : ExternalImage(xsize, ysize, c_current, has_alpha, bits_per_alpha,
-                    bits_per_sample, big_endian) {
+ExternalImage::ExternalImage(
+    const size_t xsize, const size_t ysize, const ColorEncoding& c_current,
+    const bool has_alpha, const bool alpha_is_premultiplied,
+    const size_t bits_per_alpha, const size_t bits_per_sample,
+    const bool big_endian, const uint8_t* bytes, const uint8_t* end)
+    : ExternalImage(xsize, ysize, c_current, has_alpha, alpha_is_premultiplied,
+                    bits_per_alpha, bits_per_sample, big_endian) {
   JXL_ASSERT(end > bytes);
   if (!is_healthy_) return;
   if (bytes + bytes_.size() > end) {
@@ -1213,11 +1214,14 @@ ExternalImage::ExternalImage(const size_t xsize, const size_t ysize,
 ExternalImage::ExternalImage(ThreadPool* pool, const Image3F& color,
                              const Rect& rect, const ColorEncoding& c_current,
                              const ColorEncoding& c_desired,
-                             const bool has_alpha, const ImageU* alpha,
-                             size_t bits_per_alpha, size_t bits_per_sample,
-                             bool big_endian, CodecIntervals* temp_intervals)
+                             const bool has_alpha,
+                             const bool alpha_is_premultiplied,
+                             const ImageU* alpha, size_t bits_per_alpha,
+                             size_t bits_per_sample, bool big_endian,
+                             CodecIntervals* temp_intervals)
     : ExternalImage(rect.xsize(), rect.ysize(), c_desired, has_alpha,
-                    bits_per_alpha, bits_per_sample, big_endian) {
+                    alpha_is_premultiplied, bits_per_alpha, bits_per_sample,
+                    big_endian) {
   if (!is_healthy_) return;
   Transformer transformer(pool, color, rect, has_alpha, alpha, this, c_current,
                           c_desired);
@@ -1261,6 +1265,7 @@ ExternalImage::ExternalImage(ThreadPool* pool, const Image3F& color,
 Status ExternalImage::CopyTo(const CodecIntervals* temp_intervals,
                              ThreadPool* pool, ImageBundle* ib) const {
   JXL_ASSERT(IsHealthy());  // Caller should have checked beforehand.
+  JXL_RETURN_IF_ERROR(desc_.ValidBufferSize(bytes_.size()));
 
   Converter converter(pool, desc_, bytes_.data());
 
@@ -1282,6 +1287,7 @@ Status ExternalImage::CopyTo(const CodecIntervals* temp_intervals,
 
 Status CopyTo(const PackedImage& desc, Span<const uint8_t> bytes,
               ThreadPool* pool, ImageBundle* ib) {
+  JXL_RETURN_IF_ERROR(desc.ValidBufferSize(bytes.size()));
   Converter converter(pool, desc, bytes.data());
 
   const CodecInterval ext_interval = GetInterval(desc.bits_per_sample);

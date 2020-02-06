@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,11 @@
 #include "hwy/shared.h"
 #include "hwy/x86/sse4.h"
 
+#ifdef HWY_DISABLE_BMI2_FMA  // See runtime_dispatch.cc
+#define HWY_ATTR_AVX2 HWY_TARGET_ATTR("avx,avx2")
+#else
 #define HWY_ATTR_AVX2 HWY_TARGET_ATTR("bmi,bmi2,avx,avx2,fma")
+#endif
 
 namespace hwy {
 
@@ -812,7 +816,6 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> ApproximateReciprocal(
   return Vec256<float>{_mm256_rcp_ps(v.raw)};
 }
 
-namespace ext {
 // Absolute value of difference.
 HWY_ATTR_AVX2 HWY_INLINE Vec256<float> AbsDiff(const Vec256<float> a,
                                                const Vec256<float> b) {
@@ -820,7 +823,6 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> AbsDiff(const Vec256<float> a,
       BitCast(Full256<float>(), Set(Full256<uint32_t>(), 0x7FFFFFFFu));
   return mask & (a - b);
 }
-}  // namespace ext
 
 // ------------------------------ Floating-point multiply-add variants
 
@@ -828,24 +830,40 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> AbsDiff(const Vec256<float> a,
 HWY_ATTR_AVX2 HWY_INLINE Vec256<float> MulAdd(const Vec256<float> mul,
                                               const Vec256<float> x,
                                               const Vec256<float> add) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<float>{_mm256_fmadd_ps(mul.raw, x.raw, add.raw)};
+#else
+  return mul * x + add;
+#endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> MulAdd(const Vec256<double> mul,
                                                const Vec256<double> x,
                                                const Vec256<double> add) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<double>{_mm256_fmadd_pd(mul.raw, x.raw, add.raw)};
+#else
+  return mul * x + add;
+#endif
 }
 
 // Returns add - mul * x
 HWY_ATTR_AVX2 HWY_INLINE Vec256<float> NegMulAdd(const Vec256<float> mul,
                                                  const Vec256<float> x,
                                                  const Vec256<float> add) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<float>{_mm256_fnmadd_ps(mul.raw, x.raw, add.raw)};
+#else
+  return add - mul * x;
+#endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> NegMulAdd(const Vec256<double> mul,
                                                   const Vec256<double> x,
                                                   const Vec256<double> add) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<double>{_mm256_fnmadd_pd(mul.raw, x.raw, add.raw)};
+#else
+  return add - mul * x;
+#endif
 }
 
 // Slightly more expensive on ARM (extra negate)
@@ -855,24 +873,40 @@ namespace ext {
 HWY_ATTR_AVX2 HWY_INLINE Vec256<float> MulSub(const Vec256<float> mul,
                                               const Vec256<float> x,
                                               const Vec256<float> sub) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<float>{_mm256_fmsub_ps(mul.raw, x.raw, sub.raw)};
+#else
+  return mul * x - sub;
+#endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> MulSub(const Vec256<double> mul,
                                                const Vec256<double> x,
                                                const Vec256<double> sub) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<double>{_mm256_fmsub_pd(mul.raw, x.raw, sub.raw)};
+#else
+  return mul * x - sub;
+#endif
 }
 
 // Returns -mul * x - sub
 HWY_ATTR_AVX2 HWY_INLINE Vec256<float> NegMulSub(const Vec256<float> mul,
                                                  const Vec256<float> x,
                                                  const Vec256<float> sub) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<float>{_mm256_fnmsub_ps(mul.raw, x.raw, sub.raw)};
+#else
+  return Neg(mul * x) - sub;
+#endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> NegMulSub(const Vec256<double> mul,
                                                   const Vec256<double> x,
                                                   const Vec256<double> sub) {
+#ifdef HWY_DISABLE_BMI2_FMA
   return Vec256<double>{_mm256_fnmsub_pd(mul.raw, x.raw, sub.raw)};
+#else
+  return Neg(mul * x) - sub;
+#endif
 }
 
 }  // namespace ext
@@ -1987,62 +2021,66 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<int32_t> NearestInt(const Vec256<float> v) {
 // functions to this namespace in multiple places.
 namespace ext {
 
-// ------------------------------ movemask
+// ------------------------------ Mask
 
-// Returns a bit array of the most significant bit of each byte in "v", i.e.
-// sum_i=0..31 of (v[i] >> 7) << i; v[0] is the least-significant byte of "v".
-// This is useful for testing/branching based on comparison results.
-HWY_ATTR_AVX2 HWY_INLINE uint64_t movemask(const Vec256<uint8_t> v) {
+namespace impl {
+
+template <typename T>
+HWY_ATTR_AVX2 HWY_INLINE uint64_t BitsFromMask(SizeTag<1> /*tag*/,
+                                               const Mask256<T> mask) {
+  const Full256<uint8_t> d;
+  const auto sign_bits = BitCast(d, VecFromMask(mask)).raw;
   // Prevent sign-extension of 32-bit masks because the intrinsic returns int.
-  return static_cast<uint32_t>(_mm256_movemask_epi8(v.raw));
+  return static_cast<uint32_t>(_mm256_movemask_epi8(sign_bits));
 }
-
-// Returns the most significant bit of each float/double lane (see above).
-HWY_ATTR_AVX2 HWY_INLINE uint64_t movemask(const Vec256<float> v) {
-  return static_cast<unsigned>(_mm256_movemask_ps(v.raw));
-}
-HWY_ATTR_AVX2 HWY_INLINE uint64_t movemask(const Vec256<double> v) {
-  return static_cast<unsigned>(_mm256_movemask_pd(v.raw));
-}
-
-// ------------------------------ mask
 
 template <typename T>
-HWY_ATTR_AVX2 HWY_INLINE bool AllFalse(const Mask256<T> v) {
+HWY_ATTR_AVX2 HWY_INLINE uint64_t BitsFromMask(SizeTag<2> /*tag*/,
+                                               const Mask256<T> mask) {
+  const uint64_t sign_bits8 = BitsFromMask(SizeTag<1>(), mask);
+  // Skip the bits from the lower byte of each u16 (better not to use the
+  // same packs_epi16 as sse4.h, because that requires an extra swizzle here).
+  return _pext_u64(sign_bits8, 0xAAAAAAAAull);
+}
+
+template <typename T>
+HWY_ATTR_AVX2 HWY_INLINE uint64_t BitsFromMask(SizeTag<4> /*tag*/,
+                                               const Mask256<T> mask) {
+  const Full256<float> d;
+  const auto sign_bits = BitCast(d, VecFromMask(mask)).raw;
+  return static_cast<unsigned>(_mm256_movemask_ps(sign_bits));
+}
+
+template <typename T>
+HWY_ATTR_AVX2 HWY_INLINE uint64_t BitsFromMask(SizeTag<8> /*tag*/,
+                                               const Mask256<T> mask) {
+  const Full256<double> d;
+  const auto sign_bits = BitCast(d, VecFromMask(mask)).raw;
+  return static_cast<unsigned>(_mm256_movemask_pd(sign_bits));
+}
+
+}  // namespace impl
+
+template <typename T>
+HWY_ATTR_AVX2 HWY_INLINE uint64_t BitsFromMask(const Mask256<T> mask) {
+  return impl::BitsFromMask(SizeTag<sizeof(T)>(), mask);
+}
+
+template <typename T>
+HWY_ATTR_AVX2 HWY_INLINE bool AllFalse(const Mask256<T> mask) {
   // Cheaper than PTEST, which is 2 uop / 3L.
-  const auto bytes = BitCast(Full256<uint8_t>(), VecFromMask(v));
-  return movemask(bytes) == 0;
-}
-HWY_ATTR_AVX2 HWY_INLINE bool AllFalse(const Mask256<float> v) {
-  return movemask(VecFromMask(v)) == 0;
-}
-HWY_ATTR_AVX2 HWY_INLINE bool AllFalse(const Mask256<double> v) {
-  return movemask(VecFromMask(v)) == 0;
+  return BitsFromMask(mask) == 0;
 }
 
 template <typename T>
-HWY_ATTR_AVX2 HWY_INLINE bool AllTrue(const Mask256<T> v) {
-  const auto bytes = BitCast(Full256<uint8_t>(), VecFromMask(v));
-  return movemask(bytes) == 0xFFFFFFFFu;
-}
-HWY_ATTR_AVX2 HWY_INLINE bool AllTrue(const Mask256<float> v) {
-  return movemask(VecFromMask(v)) == 0xFF;
-}
-HWY_ATTR_AVX2 HWY_INLINE bool AllTrue(const Mask256<double> v) {
-  return movemask(VecFromMask(v)) == 0xF;
+HWY_ATTR_AVX2 HWY_INLINE bool AllTrue(const Mask256<T> mask) {
+  constexpr uint64_t kAllBits = (1ull << Full256<T>::N) - 1;
+  return BitsFromMask(mask) == kAllBits;
 }
 
 template <typename T>
-HWY_ATTR_AVX2 HWY_INLINE size_t CountTrue(const Mask256<T> v) {
-  // Integer vectors: only have movemask for u8, so divide by number of bytes.
-  const auto bytes = BitCast(Full256<uint8_t>(), VecFromMask(v));
-  return PopCount(movemask(bytes)) / sizeof(T);
-}
-HWY_ATTR_AVX2 HWY_INLINE size_t CountTrue(const Mask256<float> v) {
-  return PopCount(movemask(VecFromMask(v)));
-}
-HWY_ATTR_AVX2 HWY_INLINE size_t CountTrue(const Mask256<double> v) {
-  return PopCount(movemask(VecFromMask(v)));
+HWY_ATTR_AVX2 HWY_INLINE size_t CountTrue(const Mask256<T> mask) {
+  return PopCount(BitsFromMask(mask));
 }
 
 // ------------------------------ Horizontal sum (reduction)

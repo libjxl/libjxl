@@ -61,9 +61,8 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
   const ImageBundle& ib = decoded.Main();
 
   ColorEncoding targetColorSpace;
-  if (!ColorManagement::SetProfile(std::move(targetIccProfile),
-                                   &targetColorSpace)) {
-    targetColorSpace = ColorManagement::SRGB(ib.IsGray());
+  if (!targetColorSpace.SetICC(std::move(targetIccProfile))) {
+    targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3B converted;
   if (!ib.CopyTo(Rect(ib), targetColorSpace, &converted, &pool)) {

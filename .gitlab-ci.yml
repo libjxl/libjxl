@@ -1,8 +1,16 @@
 # Copyright (c) the JPEG XL Project
 #
-# Use of this source code is governed by an MIT-style
-# license that can be found in the LICENSE file or at
-# https://opensource.org/licenses/MIT.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # We define only two stages for development. The "build" stage only compiles the
 # code and doesn't run any target code. The "test" stage runs the code compiled
@@ -22,7 +30,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_builder_template: &linux_builder_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:b4744eed15a00e88d6faf54798c8d8bca8b58a581bfdda374cfa8c668ec6c1b2
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:e97bb79499eb4f9af4186388a450996b2c27caa6cc873f4175947ae398192bbb
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -85,6 +93,7 @@ variables:
 # Common artifacts for the build stage
 .default_build_paths: &default_build_paths
   - build/libjpegxl.so*
+  - build/tools/cbrunsli
   - build/tools/cjpegxl
   - build/tools/djpegxl
   - build/tools/benchmark_xl
@@ -463,7 +472,7 @@ test:fast_benchmark.msan:
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
   <<: *linux_builder_template
-  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:4ff7fe5e3e1d19a8c4604b72a41916173d83ec95d335f7fabd599ad92c438df2
+  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:6d218aaf961c3e0591a7a0852cb8d30524811c8f9ed7327bb886e6d7e8294c1c
   stage: test
   tags:
     - aarch64
@@ -532,6 +541,11 @@ build:tidy:all:
 build:ems:all:
   <<: *linux_x86_64_template
   stage: build
+  only:
+    - master
+    - merge_requests
+    - schedules
+    - tags
   variables:
     CC: emcc
     CXX: em++

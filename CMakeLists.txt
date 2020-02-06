@@ -48,7 +48,7 @@ if(JPEGXL_EMSCRIPTEN)
   message("-- Compiler is EMSCRIPTEN.")
   set(JPEGXL_NOT_EMSCRIPTEN false)
   set(CMAKE_STATIC_LIBRARY_SUFFIX ".bc")
-  set(CMAKE_EXECUTABLE_SUFFIX ".html")
+  set(CMAKE_EXECUTABLE_SUFFIX ".js")
   add_definitions(-DPROFILER_ENABLED=0)
 else()
   message("-- Compiler is not EMSCRIPTEN.")
@@ -56,15 +56,13 @@ else()
 endif()
 
 ### Project build options:
-if(NOT APPLE AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"
-   AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
-  # Enabled by default except on arm64 and Apple builds.
+if(NOT APPLE AND NOT WIN32 AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"
+   AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm" AND NOT JPEGXL_EMSCRIPTEN)
+  # Enabled by default except on arm64, Windows and Apple builds.
   set(ENABLE_FUZZERS_DEFAULT true)
 endif()
-if(NOT APPLE AND NOT JPEGXL_EMSCRIPTEN
-   AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"
-   AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
-  # Enabled by default except on arm64 and Apple builds.
+if(NOT APPLE AND NOT WIN32 AND NOT JPEGXL_EMSCRIPTEN)
+  # Enabled by default except on Windows and Apple builds.
   set(ENABLE_TCMALLOC_DEFAULT true)
 endif()
 
@@ -136,14 +134,14 @@ else()
 endif()
 
 # CPU flags
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64" AND NOT MSVC)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
   -mavx2 \
   -mfma \
   -Xclang -mprefer-vector-width=128 \
   -Xclang -target-cpu -Xclang haswell \
   -Xclang -target-feature -Xclang +avx2")
-elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "AMD64")
+elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64" AND MSVC)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
 elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
@@ -177,6 +175,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
+find_package(PkgConfig)
 add_subdirectory(third_party)
 
 set(THREADS_PREFER_PTHREAD_FLAG YES)
@@ -189,8 +188,6 @@ include(CTest)
 # The jpegxl library definition. This also defines the internal list of flags we
 # use in our project (library, tests and tools): JPEGXL_INTERNAL_FLAGS.
 include(jpegxl.cmake)
-
-if (NOT "${JPEGXL_EMSCRIPTEN}")
 
 # Other libraries outside the core jpegxl library.
 include(jpegxl_extras.cmake)
@@ -211,14 +208,13 @@ include(GoogleTest)
 # Tests for the jpegxl library.
 include(jpegxltests.cmake)
 
-else()  # JPEGXL_EMSCRIPTEN
+if ("${JPEGXL_EMSCRIPTEN}")
 
 # WASM API facade.
 add_executable(jpegxl_emcc jxl/jpegxl_emcc.cc)
 target_link_libraries(jpegxl_emcc jpegxl-static)
 set_target_properties(jpegxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
-  -s TOTAL_MEMORY=256MB\
   -s EXPORTED_FUNCTIONS='[\
     \"_decompress\",\
     \"_free\",\

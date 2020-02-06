@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <complex>
+#include <hwy/static_targets.h>
 #include <limits>
 #include <map>
 #include <memory>
@@ -62,10 +63,11 @@ struct Histogram {
   mutable float entropy_;  // WARNING: not kept up-to-date.
 };
 
-void ClusterHistograms(HistogramParams params, const std::vector<Histogram>& in,
-                       size_t num_contexts, size_t max_histograms,
-                       std::vector<Histogram>* out,
-                       std::vector<uint32_t>* histogram_symbols);
+HWY_ATTR void ClusterHistograms(HistogramParams params,
+                                const std::vector<Histogram>& in,
+                                size_t num_contexts, size_t max_histograms,
+                                std::vector<Histogram>* out,
+                                std::vector<uint32_t>* histogram_symbols);
 }  // namespace jxl
 
 #endif  // JXL_ENC_CLUSTER_H_

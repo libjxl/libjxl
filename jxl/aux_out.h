@@ -189,7 +189,7 @@ struct AuxOut {
     pathname << debug_prefix << label << ".png";
     CodecInOut io;
     io.metadata.bits_per_sample = sizeof(T) * kBitsPerByte;
-    io.metadata.color_encoding = ColorManagement::SRGB();
+    io.metadata.color_encoding = ColorEncoding::SRGB();
     io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
     (void)dump_image(io, pathname.str());
   }
@@ -213,7 +213,7 @@ struct AuxOut {
 
     CodecInOut io;
     io.metadata.bits_per_sample = sizeof(T) * kBitsPerByte;
-    io.metadata.color_encoding = ColorManagement::LinearSRGB();
+    io.metadata.color_encoding = ColorEncoding::LinearSRGB();
     io.SetFromImage(std::move(linear), io.metadata.color_encoding);
 
     (void)dump_image(io, pathname.str());

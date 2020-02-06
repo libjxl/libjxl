@@ -113,11 +113,9 @@ HWY_ATTR Status DecodeFile(const DecompressParams& dparams,
     return true;
   }
 
+  // JPEGXL_SIG_JPEG is handled by djpegxl to avoid depending on codec_jpg here.
   if (signature != JPEGXL_SIG_JPEGXL) {
     return JXL_FAILURE("File does not start with JPEG XL marker");
-  }
-  if (file.data()[1] == kMarkerFlexible) {
-    return JXL_FAILURE("Flexible mode not yet supported");
   }
   Status ret = true;
   {
@@ -133,14 +131,10 @@ HWY_ATTR Status DecodeFile(const DecompressParams& dparams,
       main_frame_dim.Set(xsize, ysize);
     }
 
-    if (io->metadata.have_icc) {
+    if (io->metadata.color_encoding.WantICC()) {
       PaddedBytes icc;
       JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
-      JXL_RETURN_IF_ERROR(ColorManagement::SetProfile(
-          std::move(icc), &io->metadata.color_encoding));
-    } else {
-      JXL_RETURN_IF_ERROR(
-          ColorManagement::CreateProfile(&io->metadata.color_encoding));
+      JXL_RETURN_IF_ERROR(io->metadata.color_encoding.SetICC(std::move(icc)));
     }
 
     JXL_RETURN_IF_ERROR(

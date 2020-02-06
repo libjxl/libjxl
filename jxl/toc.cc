@@ -40,67 +40,77 @@ static size_t MaxBits(const size_t num_sizes) {
 
 HWY_ATTR Status ReadGroupOffsets(size_t toc_entries,
                                  BitReader* JXL_RESTRICT reader,
-                                 std::vector<uint64_t>* JXL_RESTRICT offsets) {
+                                 std::vector<uint64_t>* JXL_RESTRICT offsets,
+                                 std::vector<uint32_t>* JXL_RESTRICT sizes,
+                                 uint64_t* total_size) {
+  JXL_DASSERT(offsets != nullptr && sizes != nullptr);
   std::vector<coeff_order_t> permutation;
-  if (reader->ReadFixedBits<1>() == 1) {
+  if (reader->ReadFixedBits<1>() == 1 && toc_entries > 0) {
+    // Skip permutation description if the toc_entries is 0.
     permutation.resize(toc_entries);
     JXL_RETURN_IF_ERROR(
         DecodePermutation(/*skip=*/0, toc_entries, permutation.data(), reader));
   }
 
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  std::vector<uint32_t> sizes;
-  sizes.reserve(toc_entries);
+  sizes->clear();
+  sizes->reserve(toc_entries);
   for (size_t i = 0; i < toc_entries; ++i) {
-    sizes.push_back(U32Coder::Read(kDist, reader));
+    sizes->push_back(U32Coder::Read(kDist, reader));
   }
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
 
-  // Prefix sum starting with 0 and ending with total_size
-  offsets->reserve(toc_entries + 1);
-  offsets->push_back(0);
+  // Prefix sum starting with 0 and ending with the offset of the last group
+  offsets->clear();
+  offsets->reserve(toc_entries);
   uint64_t offset = 0;
   for (size_t i = 0; i < toc_entries; ++i) {
-    offset += sizes[i];
+    if (offset + (*sizes)[i] < offset) {
+      return JXL_FAILURE("group offset overflow");
+    }
     offsets->push_back(offset);
+    offset += (*sizes)[i];
+  }
+  if (total_size) {
+    *total_size = offset;
   }
 
   if (!permutation.empty()) {
     std::vector<uint64_t> permuted_offsets;
-    permuted_offsets.reserve(offsets->size());
+    std::vector<uint32_t> permuted_sizes;
+    permuted_offsets.reserve(toc_entries);
+    permuted_sizes.reserve(toc_entries);
     for (coeff_order_t index : permutation) {
       permuted_offsets.push_back((*offsets)[index]);
+      permuted_sizes.push_back((*sizes)[index]);
     }
     std::swap(*offsets, permuted_offsets);
+    std::swap(*sizes, permuted_sizes);
   }
 
   return true;
 }
 
 Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
+                         const std::vector<coeff_order_t>* permutation,
                          BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
   BitWriter::Allotment allotment(writer, MaxBits(group_codes.size()));
-  writer->Write(1, 0);  // no permutation
-  // TODO(janwas): WriteTokens(permutation), already has an allotment.
+  if (permutation && !group_codes.empty()) {
+    // Don't write a permutation at all for an empty group_codes.
+    writer->Write(1, 1);  // permutation
+    JXL_DASSERT(permutation->size() == group_codes.size());
+    EncodePermutation(permutation->data(), /*skip=*/0, permutation->size(),
+                      writer, /* layer= */ 0, aux_out);
+
+  } else {
+    writer->Write(1, 0);  // no permutation
+  }
   writer->ZeroPadToByte();  // before TOC entries
 
   for (size_t i = 0; i < group_codes.size(); i++) {
     JXL_ASSERT(group_codes[i].BitsWritten() % kBitsPerByte == 0);
     const size_t group_size = group_codes[i].BitsWritten() / kBitsPerByte;
     JXL_RETURN_IF_ERROR(U32Coder::Write(kDist, group_size, writer));
-  }
-  writer->ZeroPadToByte();  // before first group
-  ReclaimAndCharge(writer, &allotment, kLayerTOC, aux_out);
-  return true;
-}
-
-Status WriteResponsiveOffsets(const std::vector<int>& offsets,
-                              BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
-  BitWriter::Allotment allotment(writer, MaxBits(offsets.size()));
-  writer->Write(1, 0);      // no permutation
-  writer->ZeroPadToByte();  // before TOC entries
-  for (size_t i = 0; i < offsets.size(); i++) {
-    JXL_RETURN_IF_ERROR(U32Coder::Write(kDist, offsets[i], writer));
   }
   writer->ZeroPadToByte();  // before first group
   ReclaimAndCharge(writer, &allotment, kLayerTOC, aux_out);

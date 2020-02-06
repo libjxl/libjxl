@@ -34,7 +34,10 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
+#include "tools/benchmark/benchmark_codec_custom.h"
+#ifdef BENCHMARK_JPEG
 #include "tools/benchmark/benchmark_codec_jpeg.h"
+#endif  // BENCHMARK_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
 #include "tools/benchmark/benchmark_codec_png.h"
 #include "tools/benchmark/benchmark_stats.h"
@@ -134,7 +137,7 @@ class NoneCodec : public ImageCodec {
     Image3F image(xsize, ysize);
     ZeroFillImage(&image);
     io->metadata.bits_per_sample = 32;
-    io->metadata.color_encoding = ColorManagement::SRGB();
+    io->metadata.color_encoding = ColorEncoding::SRGB();
     io->SetFromImage(std::move(image), io->metadata.color_encoding);
     return true;
   }
@@ -153,8 +156,12 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   ImageCodecPtr result;
   if (name == "jxl") {
     result.reset(CreateNewJxlCodec(*Args()));
+  } else if (name == "custom") {
+    result.reset(CreateNewCustomCodec(*Args()));
+#ifdef BENCHMARK_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
+#endif  // BENCHMARK_JPEG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
   } else if (name == "none") {

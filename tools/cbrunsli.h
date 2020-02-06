@@ -45,6 +45,8 @@ struct BrunsliCompressArgs {
 
   size_t quant_scale = 0;
 
+  size_t num_reps = 1;
+
   const char* file_in = nullptr;
   const char* file_out = nullptr;
 };

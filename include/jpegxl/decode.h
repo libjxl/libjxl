@@ -43,14 +43,17 @@ enum JpegxlSignature {
   /** No valid JPEGXL header was found. */
   JPEGXL_SIG_INVALID = 1,
 
-  /** A valid transcoded JPEG XL image signature was found. */
+  /** A valid transcoded JPEG image signature was found. */
   JPEGXL_SIG_BRUNSLI = 2,
 
   /** A valid JPEG XL image signature was found. */
   JPEGXL_SIG_JPEGXL = 4,
 
+  /** A valid JPEG image signature was found. */
+  JPEGXL_SIG_JPEG = 8,
+
   /* Mask representing any valid JPEGXL signature. */
-  JPEGXL_SIG_ANY = JPEGXL_SIG_BRUNSLI | JPEGXL_SIG_JPEGXL,
+  JPEGXL_SIG_ANY = JPEGXL_SIG_BRUNSLI | JPEGXL_SIG_JPEGXL | JPEGXL_SIG_JPEG,
 };
 
 /**
@@ -63,6 +66,7 @@ enum JpegxlSignature {
  * @returns a flag indicating if a JPEG XL signature was found and what type.
  *   - JPEGXL_SIG_INVALID no valid signature found.
  *   - JPEGXL_SIG_BRUNSLI a valid Brunsli signature was found.
+ *   - JPEGXL_SIG_JPEG a valid JPEG signature was found.
  *   - JPEGXL_SIG_JPEGXL a valid JPEG XL signature was found.
  *   - JPEGXL_SIG_NOT_ENOUGH_BYTES not enough bytes were passed to determine
  *       if a valid signature is there.

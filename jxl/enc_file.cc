@@ -99,28 +99,18 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
   return true;
 }
 
-// Returns whether an encoder/decoder must send/receive an ICC profile.
-bool KeepICC(bool lossless, const ColorEncoding& color_encoding) {
-  // color_encoding fields fully describe the profile => skip
-  if (!color_encoding.received_icc) return false;
-
-  // Reconstructed profile may be slightly different (quantization), which is
-  // unacceptable in fully lossless mode, so keep the original profile.
-  if (lossless) return true;
-
-  // Some fields are unknown, so keep ICC.
-  if (color_encoding.opaque_icc) return true;
-
-  return false;
-}
-
 Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
                          ImageMetadata* metadata) {
   *metadata = io->metadata;
-  metadata->have_icc = KeepICC(
-      cparams.brunsli_group_mode ||
-          (cparams.modular_group_mode && cparams.quality_pair.first == 100.0f),
-      io->metadata.color_encoding);
+
+  // Keep ICC profile in lossless modes because a reconstructed profile may be
+  // slightly different (quantization).
+  const bool lossless_modular =
+      cparams.modular_group_mode && cparams.quality_pair.first == 100.0f;
+  if (!cparams.brunsli_group_mode && !lossless_modular) {
+    metadata->color_encoding.DecideIfWantICC();
+  }
+
   metadata->SetIntensityTarget(cparams.intensity_target);
   return true;
 }
@@ -131,7 +121,7 @@ Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
   // Marker/signature
   BitWriter::Allotment allotment(writer, 16);
   writer->Write(8, 0xFF);
-  writer->Write(8, kMarkerShort);
+  writer->Write(8, kCodestreamMarker);
   ReclaimAndCharge(writer, &allotment, kLayerHeader, aux_out);
 
   SizeHeader size;
@@ -167,9 +157,9 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
   JXL_RETURN_IF_ERROR(WriteHeaders(cparams, io, &metadata, &writer, aux_out));
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
-  if (metadata.have_icc) {
-    JXL_RETURN_IF_ERROR(
-        WriteICC(metadata.color_encoding.icc, &writer, kLayerHeader, aux_out));
+  if (metadata.color_encoding.WantICC()) {
+    JXL_RETURN_IF_ERROR(WriteICC(metadata.color_encoding.ICC(), &writer,
+                                 kLayerHeader, aux_out));
   }
 
   if (metadata.m2.have_preview) {

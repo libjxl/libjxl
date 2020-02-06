@@ -150,7 +150,6 @@ Status JxlLossyFrameHeuristics(PassesEncoderState* enc_state,
 }
 
 Status MakeFrameHeader(const CompressParams& cparams,
-                       const FrameDimensions& frame_dim,
                        const AnimationFrame* animation_frame_or_null,
                        const ImageBundle& ib, Multiframe* multiframe,
                        FrameHeader* JXL_RESTRICT frame_header,
@@ -166,11 +165,14 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->encoding = FrameEncoding::kModularGroup;
   }
 
-  if (!ib.jpeg_quant_table.empty()) {
+  if (ib.IsJPEG()) {
     // we are transcoding a JPEG, so we don't get to choose
-    frame_header->encoding = FrameEncoding::kPasses;
+    frame_header->encoding = FrameEncoding::kVarDCT;
     frame_header->color_transform = ib.color_transform;
     frame_header->chroma_subsampling = ib.chroma_subsampling;
+    JXL_ASSERT(frame_header->chroma_subsampling ==
+                   YCbCrChromaSubsampling::k444 ||
+               cparams.brunsli_group_mode);
   } else {
     frame_header->color_transform = cparams.color_transform;
     frame_header->chroma_subsampling = cparams.chroma_subsampling;
@@ -195,7 +197,11 @@ Status MakeFrameHeader(const CompressParams& cparams,
   }
 
   frame_header->has_alpha = ib.HasAlpha();
-  if (!frame_header->IsDisplayed()) frame_header->has_alpha = false;
+  frame_header->alpha_is_premultiplied = ib.AlphaIsPremultiplied();
+  if (!frame_header->IsDisplayed()) {
+    frame_header->has_alpha = false;
+    frame_header->alpha_is_premultiplied = false;
+  }
 
   return true;
 }
@@ -225,10 +231,11 @@ class LossyFrameEncoder {
     enc_state_->passes.clear();
   }
 
-  Status ComputeEncodingData(const ImageBundle& linear,
-                             Image3F* JXL_RESTRICT opsin, ThreadPool* pool,
-                             BitWriter* JXL_RESTRICT writer,
-                             FrameHeader* frame_header) {
+  HWY_ATTR Status ComputeEncodingData(const ImageBundle& linear,
+                                      Image3F* JXL_RESTRICT opsin,
+                                      ThreadPool* pool,
+                                      BitWriter* JXL_RESTRICT writer,
+                                      FrameHeader* frame_header) {
     PROFILER_ZONE("ComputeEncodingData uninstrumented");
     JXL_ASSERT((opsin->xsize() % kBlockDim) == 0 &&
                (opsin->ysize() % kBlockDim) == 0);
@@ -342,7 +349,8 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    const auto tokenize_group = [&](const int group_index, const int thread) {
+    const auto tokenize_group = [&](const int group_index,
+                                    const int thread) HWY_ATTR {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
@@ -382,9 +390,9 @@ class LossyFrameEncoder {
     return true;
   }
 
-  Status ComputeJPEGTranscodingData(const Image3F& opsin_orig,
-                                    const std::vector<int>& quant_table,
-                                    FrameHeader* frame_header) {
+  HWY_ATTR Status ComputeJPEGTranscodingData(
+      const Image3F& opsin_orig, const std::vector<int32_t>& quant_table,
+      FrameHeader* frame_header) {
     constexpr size_t N = kBlockDim;
     PROFILER_ZONE("ComputeJPEGTranscodingData uninstrumented");
     PassesSharedState& shared = enc_state_->shared;
@@ -602,7 +610,8 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    const auto tokenize_group = [&](const int group_index, const int thread) {
+    const auto tokenize_group = [&](const int group_index,
+                                    const int thread) HWY_ATTR {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
@@ -733,11 +742,12 @@ class LossyFrameEncoder {
   std::vector<EncCache> group_caches_;
 };
 
-Status EncodeFrame(const CompressParams& cparams_orig,
-                   const AnimationFrame* animation_frame_or_null,
-                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
-                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out,
-                   Multiframe* multiframe) {
+HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
+                            const AnimationFrame* animation_frame_or_null,
+                            const ImageBundle& ib,
+                            PassesEncoderState* passes_enc_state,
+                            ThreadPool* pool, BitWriter* writer,
+                            AuxOut* aux_out, Multiframe* multiframe) {
   ib.VerifyMetadata();
   CompressParams cparams = cparams_orig;
   if (cparams.dc_level + cparams.progressive_dc > 3) {
@@ -752,9 +762,15 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   FrameDimensions frame_dim;
   frame_dim.Set(ib.xsize(), ib.ysize());
 
-  if (!ib.jpeg_quant_table.empty()) {
+  if (ib.IsJPEG()) {
     cparams.gaborish = Override::kOff;
     cparams.adaptive_reconstruction = Override::kOff;
+
+    if (ib.chroma_subsampling != YCbCrChromaSubsampling::k444 &&
+        !cparams.brunsli_group_mode) {
+      JXL_DEBUG_V(2, "Subsampled JPEG, using kJpegGroup\n");
+      cparams.brunsli_group_mode = true;
+    }
   }
 
   const size_t xsize = ib.xsize();
@@ -764,14 +780,13 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   FrameHeader frame_header;
   LoopFilter loop_filter;
-  JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams, frame_dim,
-                                      animation_frame_or_null, ib, multiframe,
-                                      &frame_header, &loop_filter));
+  JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams, animation_frame_or_null, ib,
+                                      multiframe, &frame_header, &loop_filter));
 
   multiframe->StartFrame(frame_header);
 
   Image3F opsin;
-  const ColorEncoding& c = ColorManagement::LinearSRGB(ib.IsGray());
+  const ColorEncoding& c = ColorEncoding::LinearSRGB(ib.IsGray());
   ImageMetadata metadata;
   metadata.color_encoding = c;
   ImageBundle linear_storage(&metadata);
@@ -808,22 +823,22 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   ModularFrameEncoder modular_frame_encoder;
 
   if (cparams.brunsli_group_mode) {
-    if (ib.jpeg_quant_table.empty()) {
+    if (!ib.IsJPEG()) {
       return JXL_FAILURE("JpegGroup mode requires JPEG quant table");
     }
     JXL_RETURN_IF_ERROR(jpeg_frame_encoder.ReadSourceImage(
         &ib, ib.jpeg_quant_table, frame_header.chroma_subsampling));
-  } else if (!ib.jpeg_quant_table.empty()) {
+  } else if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
         ib.color(), ib.jpeg_quant_table, &frame_header));
   } else {
     // The Butteraugli feedback loop is only run in Kitten mode or slower: no
     // need to keep track of the original pixel values in faster modes.
-    ImageBundle* JXL_RESTRICT linear_storage_ptr =
-        cparams.speed_tier <= SpeedTier::kKitten &&
-                frame_header.encoding != FrameEncoding::kModularGroup
-            ? &linear_storage
-            : nullptr;
+    ImageBundle* JXL_RESTRICT linear_storage_ptr = nullptr;
+    if (cparams.speed_tier <= SpeedTier::kKitten &&
+        frame_header.encoding != FrameEncoding::kModularGroup) {
+      linear = linear_storage_ptr = &linear_storage;
+    }
     // Avoid a copy in PadImageToMultiple by allocating a large enough image
     // to begin with.
     opsin =
@@ -845,7 +860,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       JXL_RETURN_IF_ERROR(
           aux_out->InspectImage3F("enc_frame:OpsinDynamicsImage", opsin));
     }
-    if (frame_header.encoding == FrameEncoding::kPasses) {
+    if (frame_header.encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
           *linear, &opsin, pool, writer, &frame_header));
@@ -907,7 +922,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     JXL_RETURN_IF_ERROR(jpeg_frame_encoder.SerializeHeader(get_output(0)));
   }
   if (frame_header.IsLossy()) {
-    // encoding == kPasses
+    // encoding == kVarDCT
     JXL_RETURN_IF_ERROR(
         lossy_frame_encoder.EncodeGlobalDCInfo(frame_header, get_output(0)));
     // Lossless has no DC info.
@@ -986,7 +1001,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
           num_errors.fetch_add(1, std::memory_order_relaxed);
           return;
         }
-      } else if (frame_header.encoding == FrameEncoding::kPasses) {
+      } else if (frame_header.encoding == FrameEncoding::kVarDCT) {
         if (!lossy_frame_encoder.EncodeACGroup(
                 i, group_index, ac_group_code(i, group_index), my_aux_out)) {
           num_errors.fetch_add(1, std::memory_order_relaxed);
@@ -1006,7 +1021,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     bw.ZeroPadToByte();  // end of group.
   }
 
-  JXL_RETURN_IF_ERROR(WriteGroupOffsets(group_codes, writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteGroupOffsets(group_codes, nullptr, writer, aux_out));
   writer->AppendByteAligned(group_codes);
   writer->ZeroPadToByte();  // end of frame.
 

@@ -44,6 +44,9 @@ struct CompressArgs {
   // Common flags.
   // TODO(deymo): Move more flags here.
   bool version = false;
+  bool use_container = false;
+  bool quiet = false;
+
   const char* file_in = nullptr;
   const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;

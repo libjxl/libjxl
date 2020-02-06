@@ -21,11 +21,10 @@
 #include <QImage>
 #include <QMessageBox>
 #include <QStringList>
-#include <QX11Info>
 
 #include "tools/comparison_viewer/image_loading.h"
 #include "tools/comparison_viewer/split_image_view.h"
-#include "tools/x11/icc.h"
+#include "tools/icc_detect/icc_detect.h"
 
 namespace {
 
@@ -84,8 +83,7 @@ int main(int argc, char** argv) {
 
   jxl::SplitImageView view;
 
-  const jxl::PaddedBytes monitorIccProfile =
-      jxl::GetMonitorIccProfile(QX11Info::connection(), QX11Info::appScreen());
+  const jxl::PaddedBytes monitorIccProfile = jxl::GetMonitorIccProfile(&view);
 
   const QString leftImagePath = arguments.takeFirst();
   QImage leftImage =

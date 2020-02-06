@@ -262,7 +262,7 @@ uint8_t PredictValue(const uint8_t* data, size_t start, size_t i, size_t stride,
   }
 }
 
-// Checks if a + b > size, taking possible integer flow into account.
+// Checks if a + b > size, taking possible integer overflow into account.
 bool OutOfBounds(size_t a, size_t b, size_t size) {
   size_t pos = a + b;
   if (pos > size) return true;
@@ -827,6 +827,7 @@ Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
 Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc) {
   icc->clear();
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
+  JXL_RETURN_IF_ERROR(reader->AllReadsWithinBounds());
   const size_t kMaxOutput = 1ULL << 30;
   size_t bytes_read = 0;
   PaddedBytes decompressed;

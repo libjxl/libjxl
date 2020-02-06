@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "jxl/color_encoding.h"
+#include "jxl/test_utils.h"
 
 #include <stdio.h>
 
@@ -22,7 +23,8 @@ namespace jxl {
 namespace {
 
 TEST(ColorEncodingTest, RoundTripAll) {
-  for (const ColorEncoding& c_original : AllEncodings()) {
+  for (const test::ColorEncodingDescriptor& cdesc : test::AllEncodings()) {
+    const ColorEncoding c_original = test::ColorEncodingFromDescriptor(cdesc);
     // Verify Set(Get) yields the same white point/primaries/gamma.
     {
       ColorEncoding c;

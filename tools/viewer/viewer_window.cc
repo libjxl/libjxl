@@ -20,10 +20,9 @@
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QSet>
-#include <QX11Info>
 
+#include "tools/icc_detect/icc_detect.h"
 #include "tools/viewer/load_jpegxl.h"
-#include "tools/x11/icc.h"
 
 namespace jxl {
 
@@ -50,9 +49,7 @@ void recursivelyAddSubEntries(const QFileInfo& info,
 }  // namespace
 
 ViewerWindow::ViewerWindow(QWidget* const parent)
-    : QMainWindow(parent),
-      monitorProfile_(
-          GetMonitorIccProfile(QX11Info::connection(), QX11Info::appScreen())) {
+    : QMainWindow(parent), monitorProfile_(GetMonitorIccProfile(this)) {
   ui_.setupUi(this);
   ui_.actionOpen->setShortcut(QKeySequence::Open);
   ui_.actionExit->setShortcut(QKeySequence::Quit);

@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,5 +23,8 @@
 #define HWY_ARM8 8
 #define HWY_AVX512 16
 #define HWY_WASM 32
+
+// Uncomment to avoid using/requiring AVX2 when running on Intel/AMD.
+// #define HWY_DISABLE_AVX2
 
 #endif  // HWY_TARGETS_H_

@@ -50,7 +50,7 @@ ExternalImage* decompress(const uint8_t* data, size_t size) {
       printf("Failed to parse color profile description.\n");
       return nullptr;
     }
-    if (!ColorManagement::CreateProfile(&c)) {
+    if (!c.CreateICC()) {
       printf("Failed to create color profile.\n");
       return nullptr;
     }
@@ -64,6 +64,7 @@ ExternalImage* decompress(const uint8_t* data, size_t size) {
   const ImageBundle& ib = io.Main();
   const ColorEncoding& c_desired = io.metadata.color_encoding;
   const bool has_alpha = true;
+  const bool alpha_is_premultiplied = false;
   ImageU alpha(ib.color().xsize(), ib.color().ysize());
   const size_t alpha_bits = 8;
   size_t bits_per_sample = 32;
@@ -71,9 +72,10 @@ ExternalImage* decompress(const uint8_t* data, size_t size) {
   CodecIntervals* temp_intervals = nullptr;
   Rect rect = Rect(ib);
 
-  result = make_unique<ExternalImage>(pool, ib.color(), rect,
-      ib.c_current(), c_desired, has_alpha, &alpha, alpha_bits,
-      bits_per_sample, big_endian, temp_intervals);
+  result = make_unique<ExternalImage>(
+      pool, ib.color(), rect, ib.c_current(), c_desired, has_alpha,
+      alpha_is_premultiplied, &alpha, alpha_bits, bits_per_sample, big_endian,
+      temp_intervals);
 
   if (!result->IsHealthy()) {
     printf("ExternalImage is unhealthy.\n");

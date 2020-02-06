@@ -67,15 +67,13 @@ HWY_ATTR double ComputeDistance2(const ImageBundle& ib1,
   const Image3F* srgb1 = &ib1.color();
   Image3F copy1;
   if (!ib1.IsSRGB()) {
-    JXL_CHECK(
-        ib1.CopyTo(Rect(ib1), ColorManagement::SRGB(ib1.IsGray()), &copy1));
+    JXL_CHECK(ib1.CopyTo(Rect(ib1), ColorEncoding::SRGB(ib1.IsGray()), &copy1));
     srgb1 = &copy1;
   }
   const Image3F* srgb2 = &ib2.color();
   Image3F copy2;
   if (!ib2.IsSRGB()) {
-    JXL_CHECK(
-        ib2.CopyTo(Rect(ib2), ColorManagement::SRGB(ib2.IsGray()), &copy2));
+    JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::SRGB(ib2.IsGray()), &copy2));
     srgb2 = &copy2;
   }
 
@@ -113,7 +111,7 @@ Status WritePNG(const Image3B& image, ThreadPool* pool,
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
-  io.metadata.color_encoding = ColorManagement::SRGB();
+  io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
   PaddedBytes compressed;
   JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
@@ -330,11 +328,9 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
         const float intensity_multiplier =
             ib2.metadata()->IntensityTarget() * kIntensityMultiplier;
         Image3F linear_rgb1, linear_rgb2;
-        JXL_CHECK(ib1.CopyTo(Rect(ib1),
-                             ColorManagement::LinearSRGB(ib1.IsGray()),
+        JXL_CHECK(ib1.CopyTo(Rect(ib1), ColorEncoding::LinearSRGB(ib1.IsGray()),
                              &linear_rgb1, inner_pool));
-        JXL_CHECK(ib2.CopyTo(Rect(ib2),
-                             ColorManagement::LinearSRGB(ib2.IsGray()),
+        JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::LinearSRGB(ib2.IsGray()),
                              &linear_rgb2, inner_pool));
         if (intensity_multiplier != 1.f) {
           ScaleImage(intensity_multiplier, &linear_rgb1);
@@ -413,7 +409,7 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
       // For verifying HDR: scale output.
       if (Args()->mul_output != 0.0) {
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
-        JXL_CHECK(ib2.TransformTo(ColorManagement::LinearSRGB(ib2.IsGray()),
+        JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
                                   inner_pool));
         ScaleImage(static_cast<float>(Args()->mul_output),
                    const_cast<Image3F*>(&ib2.color()));
@@ -999,18 +995,17 @@ class Benchmark {
     PROFILER_FUNC;
     std::vector<CodecInOut> loaded_images;
     loaded_images.resize(fnames.size());
-    DecodeTarget decode_target = jpeg_transcoding_requested
-                                     ? DecodeTarget::kQuantizedCoeffs
-                                     : DecodeTarget::kPixels;
     RunOnPool(
         pool, 0, static_cast<int>(fnames.size()), ThreadPool::SkipInit(),
         [&](const int task, int /*thread*/) {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
           loaded_images[i].dec_hints = Args()->dec_hints;
+          loaded_images[i].dec_target = jpeg_transcoding_requested
+                                            ? DecodeTarget::kQuantizedCoeffs
+                                            : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
-            ok = SetFromFile(fnames[i], &loaded_images[i], nullptr,
-                             decode_target);
+            ok = SetFromFile(fnames[i], &loaded_images[i]);
           }
           if (!ok) {
             if (!Args()->silent_errors) {
@@ -1021,8 +1016,7 @@ class Benchmark {
 
           if (!Args()->decode_only && all_color_aware) {
             const bool is_gray = loaded_images[i].Main().IsGray();
-            const ColorEncoding& c_desired =
-                ColorManagement::LinearSRGB(is_gray);
+            const ColorEncoding& c_desired = ColorEncoding::LinearSRGB(is_gray);
             if (!loaded_images[i].TransformTo(c_desired, /*pool=*/nullptr)) {
               JXL_ABORT("Failed to transform to lin. sRGB %s",
                         fnames[i].c_str());

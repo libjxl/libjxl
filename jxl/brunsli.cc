@@ -360,6 +360,52 @@ HWY_ATTR void FixDc(const ::brunsli::coeff_t* JXL_RESTRICT coeffs, int q_dc,
   }
 }
 
+HWY_ATTR Status JpegDataToCoefficients(const brunsli::JPEGData& jpg,
+                                       const FrameHeader& frame_header,
+                                       Image3F* out, ImageBundle* decoded,
+                                       ThreadPool* pool) {
+  decoded->jpeg_xsize = jpg.width;
+  decoded->jpeg_ysize = jpg.height;
+  decoded->color_transform = frame_header.color_transform;
+  decoded->chroma_subsampling = frame_header.chroma_subsampling;
+  decoded->jpeg_quant_table.resize(jpg.components.size() * kDCTBlockSize);
+
+  for (size_t c = 0; c < jpg.components.size(); ++c) {
+    const brunsli::JPEGComponent& component = jpg.components[c];
+
+    const brunsli::JPEGQuantTable& quant_table = jpg.quant[component.quant_idx];
+    std::copy(quant_table.values.begin(), quant_table.values.end(),
+              decoded->jpeg_quant_table.begin() + c * kDCTBlockSize);
+
+    // Copy each DCT strip (64x1) to 8x8 squares.
+    const size_t hib = static_cast<size_t>(component.height_in_blocks);
+    const size_t wib = static_cast<size_t>(component.width_in_blocks);
+    const size_t out_stride = static_cast<size_t>(out->PixelsPerRow());
+    for (size_t by = 0; by < hib; ++by) {
+      const int16_t* JXL_RESTRICT src_blocks_row =
+          &component.coeffs[by * wib * kDCTBlockSize];
+      float* JXL_RESTRICT out_top_row =
+          out->PlaneRow(c < 2 ? 1 - c : 2, by * kBlockDim);
+
+      for (size_t bx = 0; bx < wib; ++bx) {
+        const int16_t* JXL_RESTRICT src_block =
+            src_blocks_row + bx * kDCTBlockSize;
+
+        for (size_t iy = 0; iy < kBlockDim; ++iy) {
+          float* JXL_RESTRICT out_top_left =
+              out_top_row + iy * out_stride + bx * kBlockDim;
+
+          for (size_t ix = 0; ix < kBlockDim; ++ix) {
+            out_top_left[ix] = src_block[iy * kBlockDim + ix];
+          }
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
 HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
                                  const BrunsliDecoderOptions& options,
                                  const BrunsliExtensions& extensions,
@@ -370,6 +416,7 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
   static_assert(kDCTBlockSize == N * N, "JPEG block size must be 64");
   const size_t xsize = src.width;
   const size_t ysize = src.height;
+  const size_t num_components = src.components.size();
 
   const HWY_FULL(float) df;
   constexpr size_t S = df.N;  // Step.
@@ -377,15 +424,15 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
                 "Block size should be divisible by SIMD length");
   const HWY_CAPPED(int32_t, S) di32;
   const HWY_CAPPED(int16_t, S) di16;
-  JXL_RETURN_IF_ERROR(src.components.size() == 1 || src.components.size() == 3);
-  *is_gray = src.components.size() == 1;
+  JXL_RETURN_IF_ERROR(num_components == 1 || num_components == 3);
+  *is_gray = num_components == 1;
 
   ImageF planes[3];
 
   const size_t xmcu = N * src.max_h_samp_factor;
   const size_t ymcu = N * src.max_v_samp_factor;
 
-  for (size_t c = 0; c < src.components.size(); ++c) {
+  for (size_t c = 0; c < num_components; ++c) {
     const brunsli::JPEGComponent& component = src.components[c];
     const size_t factor_x = src.max_h_samp_factor / component.h_samp_factor;
     const size_t factor_y = src.max_v_samp_factor / component.v_samp_factor;
@@ -406,7 +453,7 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
     }
   }
 
-  for (size_t c = 0; c < src.components.size(); ++c) {
+  for (size_t c = 0; c < num_components; ++c) {
     const brunsli::JPEGComponent& component = src.components[c];
     const brunsli::JPEGQuantTable& quant_table = src.quant[component.quant_idx];
     const size_t xsize_blocks = component.width_in_blocks;
@@ -417,7 +464,6 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
     const size_t factor_y = src.max_v_samp_factor / component.v_samp_factor;
 
     HWY_ALIGN float quant[kDCTBlockSize];
-
     for (size_t y = 0; y < N; ++y) {
       for (size_t x = 0; x < N; ++x) {
         const size_t i = y * N + x;
@@ -789,10 +835,10 @@ Status BrunsliToPixels(jxl::Span<const uint8_t> compressed,
   if (!extensions.hdr_colorspace.empty()) {
     JXL_RETURN_IF_ERROR(
         ParseDescription(extensions.hdr_colorspace, &color_encoding));
-    JXL_RETURN_IF_ERROR(ColorManagement::CreateProfile(&color_encoding));
+    JXL_RETURN_IF_ERROR(color_encoding.CreateICC());
   } else {
-    if (!ColorManagement::SetProfile(std::move(icc_profile), &color_encoding)) {
-      color_encoding = ColorManagement::SRGB(is_gray);
+    if (!color_encoding.SetICC(std::move(icc_profile))) {
+      color_encoding = ColorEncoding::SRGB(is_gray);
     }
   }
 
@@ -962,7 +1008,7 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   if (options.hdr_orig_colorspace.empty()) {
     // TODO(eustas): use "predefined profile" optimization, when eligible.
     if (!AddChunkedMarker(&out, kApp2, ByteSpan(kIccProfileTag),
-                          io->metadata.color_encoding.icc)) {
+                          io->metadata.color_encoding.ICC())) {
       JXL_ABORT("Brunsli: failed to add ICC profile\n");
     }
   } else {
@@ -1064,7 +1110,7 @@ class BrunsliFrameEncoderInternal {
   }
 
   bool ReadSourceImage(const ImageBundle* src,
-                       const std::vector<int>& quant_table,
+                       const std::vector<int32_t>& quant_table,
                        YCbCrChromaSubsampling subsampling) {
     if (!src->HasColor()) return false;
 
@@ -1434,9 +1480,9 @@ BrunsliFrameEncoder::BrunsliFrameEncoder(const FrameDimensions& frame_dim,
                                          ThreadPool* pool)
     : impl_(make_unique<BrunsliFrameEncoderInternal>(frame_dim, pool)) {}
 BrunsliFrameEncoder::~BrunsliFrameEncoder() = default;
-bool BrunsliFrameEncoder::ReadSourceImage(const ImageBundle* src,
-                                          const std::vector<int>& quant_table,
-                                          YCbCrChromaSubsampling subsampling) {
+bool BrunsliFrameEncoder::ReadSourceImage(
+    const ImageBundle* src, const std::vector<int32_t>& quant_table,
+    YCbCrChromaSubsampling subsampling) {
   return impl_->ReadSourceImage(src, quant_table, subsampling);
 }
 bool BrunsliFrameEncoder::DoEncode() { return impl_->DoEncode(); }
@@ -1662,13 +1708,21 @@ class BrunsliFrameDecoderInternal {
     return true;
   }
 
-  bool FinalizeDecoding(Image3F* opsin) {
-    BrunsliDecoderOptions options{};
-    BrunsliExtensions extensions{};
-    bool is_gray;
-    bool ok =
-        JpegDataToPixels(jpg_, options, extensions, opsin, &is_gray, pool_);
-    if (!ok) return false;
+  bool FinalizeDecoding(const FrameHeader& frame_header, Image3F&& opsin,
+                        ImageBundle* decoded) {
+    if (decoded->IsJPEG()) {
+      JXL_RETURN_IF_ERROR(
+          JpegDataToCoefficients(jpg_, frame_header, &opsin, decoded, pool_));
+    } else {
+      BrunsliDecoderOptions options{};
+      BrunsliExtensions extensions{};
+      bool is_gray;
+      JXL_RETURN_IF_ERROR(
+          JpegDataToPixels(jpg_, options, extensions, &opsin, &is_gray, pool_));
+    }
+
+    decoded->SetFromImage(std::move(opsin),
+                          decoded->metadata()->color_encoding);
     return true;
   }
 
@@ -1696,7 +1750,9 @@ bool BrunsliFrameDecoder::DecodeAcGroup(int idx, jxl::BitReader* src,
                                         Image3F* img, const Rect& rect) {
   return impl_->DecodeAcGroup(idx, src, img, rect);
 }
-bool BrunsliFrameDecoder::FinalizeDecoding(Image3F* opsin) {
-  return impl_->FinalizeDecoding(opsin);
+bool BrunsliFrameDecoder::FinalizeDecoding(const FrameHeader& frame_header,
+                                           Image3F&& opsin,
+                                           ImageBundle* decoded) {
+  return impl_->FinalizeDecoding(frame_header, std::move(opsin), decoded);
 }
 }  // namespace jxl

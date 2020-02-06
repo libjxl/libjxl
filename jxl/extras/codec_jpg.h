@@ -34,8 +34,7 @@ enum class JpegEncoder {
 };
 
 // Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io,
-                      const DecodeTarget target = DecodeTarget::kPixels);
+Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io);
 
 // Encodes into `bytes`.
 Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,

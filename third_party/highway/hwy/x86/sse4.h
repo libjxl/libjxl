@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -806,7 +806,6 @@ HWY_ATTR_SSE4 HWY_INLINE Vec128<float, 1> ApproximateReciprocal(
   return Vec128<float, 1>{_mm_rcp_ss(v.raw)};
 }
 
-namespace ext {
 // Absolute value of difference.
 HWY_ATTR_SSE4 HWY_INLINE Vec128<float> AbsDiff(const Vec128<float> a,
                                                const Vec128<float> b) {
@@ -814,7 +813,6 @@ HWY_ATTR_SSE4 HWY_INLINE Vec128<float> AbsDiff(const Vec128<float> a,
       BitCast(Full128<float>(), Set(Full128<uint32_t>(), 0x7FFFFFFFu));
   return Vec128<float>{_mm_and_ps(mask.raw, (a - b).raw)};
 }
-}  // namespace ext
 
 // ------------------------------ Floating-point multiply-add variants
 
@@ -2079,68 +2077,64 @@ HWY_ATTR_SSE4 HWY_INLINE Vec128<int32_t, N> NearestInt(
 // functions to this namespace in multiple places.
 namespace ext {
 
-// ------------------------------ movemask
+// ------------------------------ Mask
 
-// Returns a bit array of the most significant bit of each byte in "v", i.e.
-// sum_i=0..15 of (v[i] >> 7) << i; v[0] is the least-significant byte of "v".
-// This is useful for testing/branching based on comparison results.
-HWY_ATTR_SSE4 HWY_INLINE uint64_t movemask(const Vec128<uint8_t> v) {
-  return static_cast<unsigned>(_mm_movemask_epi8(v.raw));
-}
-
-// Returns the most significant bit of each float/double lane (see above).
-HWY_ATTR_SSE4 HWY_INLINE uint64_t movemask(const Vec128<float> v) {
-  return static_cast<unsigned>(_mm_movemask_ps(v.raw));
-}
-HWY_ATTR_SSE4 HWY_INLINE uint64_t movemask(const Vec128<double> v) {
-  return static_cast<unsigned>(_mm_movemask_pd(v.raw));
-}
-
-// ------------------------------ mask
+namespace impl {
 
 template <typename T>
-HWY_ATTR_SSE4 HWY_INLINE bool AllFalse(const Mask128<T> v) {
+HWY_ATTR_SSE4 HWY_INLINE uint64_t BitsFromMask(SizeTag<1> /*tag*/,
+                                               const Mask128<T> mask) {
+  const Full128<uint8_t> d;
+  const auto sign_bits = BitCast(d, VecFromMask(mask)).raw;
+  return static_cast<unsigned>(_mm_movemask_epi8(sign_bits));
+}
+
+template <typename T>
+HWY_ATTR_SSE4 HWY_INLINE uint64_t BitsFromMask(SizeTag<2> /*tag*/,
+                                               const Mask128<T> mask) {
+  // Remove useless lower half of each u16 while preserving the sign bit.
+  const auto sign_bits = _mm_packs_epi16(mask.raw, _mm_setzero_si128());
+  return static_cast<unsigned>(_mm_movemask_epi8(sign_bits));
+}
+
+template <typename T>
+HWY_ATTR_SSE4 HWY_INLINE uint64_t BitsFromMask(SizeTag<4> /*tag*/,
+                                               const Mask128<T> mask) {
+  const Full128<float> d;
+  const auto sign_bits = BitCast(d, VecFromMask(mask)).raw;
+  return static_cast<unsigned>(_mm_movemask_ps(sign_bits));
+}
+
+template <typename T>
+HWY_ATTR_SSE4 HWY_INLINE uint64_t BitsFromMask(SizeTag<8> /*tag*/,
+                                               const Mask128<T> mask) {
+  const Full128<double> d;
+  const auto sign_bits = BitCast(d, VecFromMask(mask)).raw;
+  return static_cast<unsigned>(_mm_movemask_pd(sign_bits));
+}
+
+}  // namespace impl
+
+template <typename T>
+HWY_ATTR_SSE4 HWY_INLINE uint64_t BitsFromMask(const Mask128<T> mask) {
+  return impl::BitsFromMask(SizeTag<sizeof(T)>(), mask);
+}
+
+template <typename T>
+HWY_ATTR_SSE4 HWY_INLINE bool AllFalse(const Mask128<T> mask) {
   // Cheaper than PTEST, which is 2 uop / 3L.
-  const auto bytes = BitCast(Full128<uint8_t>(), VecFromMask(v));
-  return movemask(bytes) == 0;
-}
-HWY_ATTR_SSE4 HWY_INLINE bool AllFalse(const Mask128<float> v) {
-  return movemask(VecFromMask(v)) == 0;
-}
-HWY_ATTR_SSE4 HWY_INLINE bool AllFalse(const Mask128<double> v) {
-  return movemask(VecFromMask(v)) == 0;
+  return BitsFromMask(mask) == 0;
 }
 
 template <typename T>
-HWY_ATTR_SSE4 HWY_INLINE bool AllTrue(const Mask128<T> v) {
-  const auto bytes = BitCast(Full128<uint8_t>(), VecFromMask(v));
-  return movemask(bytes) == 0xFFFF;
-}
-HWY_ATTR_SSE4 HWY_INLINE bool AllTrue(const Mask128<float> v) {
-  return movemask(VecFromMask(v)) == 0xF;
-}
-HWY_ATTR_SSE4 HWY_INLINE bool AllTrue(const Mask128<double> v) {
-  return movemask(VecFromMask(v)) == 3;
+HWY_ATTR_SSE4 HWY_INLINE bool AllTrue(const Mask128<T> mask) {
+  constexpr uint64_t kAllBits = (1ull << Full128<T>::N) - 1;
+  return BitsFromMask(mask) == kAllBits;
 }
 
 template <typename T>
-HWY_ATTR_SSE4 HWY_INLINE size_t CountTrue(const Mask128<T> v) {
-  // Integer vectors: only have movemask for u8, so divide by number of bytes.
-  const auto bytes = BitCast(Full128<uint8_t>(), VecFromMask(v));
-  return PopCount(movemask(bytes)) / sizeof(T);
-}
-HWY_ATTR_SSE4 HWY_INLINE size_t CountTrue(const Mask128<float> v) {
-  return PopCount(movemask(VecFromMask(v)));
-}
-HWY_ATTR_SSE4 HWY_INLINE size_t CountTrue(const Mask128<double> v) {
-  return PopCount(movemask(VecFromMask(v)));
-}
-
-// ------------------------------ minpos
-
-// Returns index and min value in lanes 1 and 0.
-HWY_ATTR_SSE4 HWY_INLINE Vec128<uint16_t> minpos(const Vec128<uint16_t> v) {
-  return Vec128<uint16_t>{_mm_minpos_epu16(v.raw)};
+HWY_ATTR_SSE4 HWY_INLINE size_t CountTrue(const Mask128<T> mask) {
+  return PopCount(BitsFromMask(mask));
 }
 
 // ------------------------------ Horizontal sum (reduction)

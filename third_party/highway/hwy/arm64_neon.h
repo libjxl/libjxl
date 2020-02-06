@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -914,7 +914,6 @@ HWY_INLINE Vec128<float, N> operator/(const Vec128<float, N> a,
 }
 #endif
 
-namespace ext {
 // Absolute value of difference.
 template <size_t N, HWY_IF64(int8_t, N)>
 HWY_INLINE Vec128<float, N> AbsDiff(const Vec128<float, 2> a,
@@ -925,7 +924,6 @@ HWY_INLINE Vec128<float, 4> AbsDiff(const Vec128<float, 4> a,
                                     const Vec128<float, 4> b) {
   return Vec128<float, 4>(vabdq_f32(a.raw, b.raw));
 }
-}  // namespace ext
 
 // ------------------------------ Floating-point multiply-add variants
 
@@ -2436,88 +2434,6 @@ HWY_INLINE Vec128<T> OddEven(const Vec128<T> a, const Vec128<T> b) {
 // functions to this namespace in multiple places.
 namespace ext {
 
-// ------------------------------ movemask
-
-// Returns a bit array of the most significant bit of each byte in "v", i.e.
-// sum_i=0..15 of (v[i] >> 7) << i; v[0] is the least-significant byte of "v".
-// This is useful for testing/branching based on comparison results.
-HWY_INLINE uint64_t movemask(const Vec128<uint8_t> v) {
-  static constexpr uint8x16_t kCollapseMask = {
-      1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80,
-  };
-  int8x16_t signed_v = vreinterpretq_s8_u8(v.raw);
-  int8x16_t signed_mask = vshrq_n_s8(signed_v, 7);
-  uint8x16_t values = vreinterpretq_u8_s8(signed_mask) & kCollapseMask;
-
-#if defined(__aarch64__)
-  uint8x8_t c0 = vget_low_u8(vpaddq_u8(values, values));
-  uint8x8_t c1 = vpadd_u8(c0, c0);
-  uint8x8_t c2 = vpadd_u8(c1, c1);
-#else
-  uint8x16x2_t v0 = vuzpq_u8(values, values);
-  uint8x8_t c0 = vget_low_u8(vorrq_u8(v0.val[0], v0.val[1]));
-  uint8x8x2_t v1 = vuzp_u8(c0, c0);
-  uint8x8_t c1 = vorr_u8(v1.val[0], v1.val[1]);
-  uint8x8x2_t v2 = vuzp_u8(c1, c1);
-  uint8x8_t c2 = vorr_u8(v2.val[0], v2.val[1]);
-#endif
-
-  return vreinterpret_u16_u8(c2)[0];
-}
-
-// Returns the most significant bit of each float/double lane (see above).
-HWY_INLINE uint64_t movemask(const Vec128<float> v) {
-  static constexpr uint32x4_t kCollapseMask = {1, 2, 4, 8};
-  int32x4_t signed_v = vreinterpretq_s32_f32(v.raw);
-  int32x4_t signed_mask = vshrq_n_s32(signed_v, 31);
-  uint32x4_t values = vreinterpretq_u32_s32(signed_mask) & kCollapseMask;
-#if defined(__aarch64__)
-  return vaddvq_u32(values);
-#else
-  uint32x4x2_t v0 = vuzpq_u32(values, values);
-  uint32x2_t c0 = vget_low_u32(vorrq_u32(v0.val[0], v0.val[1]));
-  uint32x2x2_t v1 = vuzp_u32(c0, c0);
-  uint32x2_t c1 = vorr_u32(v1.val[0], v1.val[1]);
-  return c1[0];
-#endif
-}
-#if defined(__aarch64__)
-HWY_INLINE uint64_t movemask(const Vec128<double> v) {
-  static constexpr uint64x2_t kCollapseMask = {1, 2};
-  int64x2_t signed_v = vreinterpretq_s64_f64(v.raw);
-  int64x2_t signed_mask = vshrq_n_s64(signed_v, 63);
-  uint64x2_t values = vreinterpretq_u64_s64(signed_mask) & kCollapseMask;
-  return vaddvq_u64(values);
-}
-#endif
-
-// ------------------------------ minpos
-
-// Returns index and min value in lanes 1 and 0.
-HWY_INLINE Vec128<uint16_t> minpos(const Vec128<uint16_t> v) {
-  // v = ABCDEFGH
-  uint16x8_t mask = {0, 1, 2, 3, 4, 5, 6, 7};
-  uint32x4_t a = vreinterpretq_u32_u16(vzip1q_u16(mask, v.raw));  // 0A1B2C3D
-  uint32x4_t b = vreinterpretq_u32_u16(vzip2q_u16(mask, v.raw));  // 4E5F6G7H
-  a = vminq_u32(a, b);
-#if defined(__aarch64__)
-  uint32_t pos_min = vminvq_u32(a);
-  a = Set(Full128<uint32_t>(), pos_min).raw;
-#else
-  uint32x4x2_t v0 = vuzpq_u32(a, a);
-  uint32x4_t c0 = vminq_u32(v0.val[0], v0.val[1]);
-  uint32x4x2_t v1 = vuzpq_u32(c0, c0);
-  a = vminq_u32(v1.val[0], v1.val[1]);
-#endif
-  // TODO(veluca): use CombineShiftRightBytes?
-  // At the end the minimum position is in the first 16-bit lane and the minimum
-  // value in the second 16-bit lane; but we need them switched. Since every
-  // 32-bit lane contains the same value we can just right-shift a 64-bit lane
-  // 16-bits.
-  return Vec128<uint16_t>(
-      vreinterpretq_u16_u64(vshrq_n_u64(vreinterpretq_u64_u32(a), 16)));
-}
-
 // ------------------------------ Horizontal sum (reduction)
 
 // Returns 64-bit sums of 8-byte groups.
@@ -2589,22 +2505,136 @@ HWY_INLINE bool AllTrue(const Mask128<T> v) {
   return AllFalse(VecFromMask(v) == Zero(Full128<T>()));
 }
 
+namespace impl {
+
 template <typename T>
-HWY_INLINE size_t CountTrue(const Mask128<T> v) {
-  // Integer vectors: only have movemask for u8, so divide by number of bytes.
-  const auto bytes = BitCast(Full128<uint8_t>(), VecFromMask(v));
-  return PopCount(movemask(bytes)) / sizeof(T);
-}
-HWY_INLINE size_t CountTrue(const Mask128<float> v) {
-  return PopCount(movemask(VecFromMask(v)));
-}
+HWY_INLINE uint64_t BitsFromMask(SizeTag<1> /*tag*/, const Mask128<T> mask) {
+  constexpr uint8x16_t kCollapseMask = {
+      1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80, 1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80,
+  };
+  const Full128<uint8_t> du;
+  const uint8x16_t values = BitCast(du, VecFromMask(mask)).raw & kCollapseMask;
+
 #if defined(__aarch64__)
-HWY_INLINE size_t CountTrue(const Mask128<double> v) {
-  return PopCount(movemask(VecFromMask(v)));
+  // Can't vaddv - we need two separate bytes (16 bits).
+  const uint8x8_t x2 = vget_low_u8(vpaddq_u8(values, values));
+  const uint8x8_t x4 = vpadd_u8(x2, x2);
+  const uint8x8_t x8 = vpadd_u8(x4, x4);
+  return vreinterpret_u16_u8(x8)[0];
+#else
+  // Don't have vpaddq, so keep doubling lane size.
+  const uint16x8_t x2 = vpaddlq_u8(values);
+  const uint32x4_t x4 = vpaddlq_u16(x2);
+  const uint64x2_t x8 = vpaddlq_u32(x4);
+  return (uint64_t(x8[1]) << 8) | x8[0];
+#endif
+}
+
+template <typename T>
+HWY_INLINE uint64_t BitsFromMask(SizeTag<2> /*tag*/, const Mask128<T> mask) {
+  constexpr uint16x8_t kCollapseMask = {1, 2, 4, 8, 0x10, 0x20, 0x40, 0x80};
+  const Full128<uint16_t> du;
+  const uint16x8_t values = BitCast(du, VecFromMask(mask)).raw & kCollapseMask;
+#if defined(__aarch64__)
+  return vaddvq_u16(values);
+#else
+  const uint32x4_t x2 = vpaddlq_u16(values);
+  const uint64x2_t x4 = vpaddlq_u32(x2);
+  return x4[0] + x4[1];
+#endif
+}
+
+template <typename T>
+HWY_INLINE uint64_t BitsFromMask(SizeTag<4> /*tag*/, const Mask128<T> mask) {
+  constexpr uint32x4_t kCollapseMask = {1, 2, 4, 8};
+  const Full128<uint32_t> du;
+  const uint32x4_t values = BitCast(du, VecFromMask(mask)).raw & kCollapseMask;
+#if defined(__aarch64__)
+  return vaddvq_u32(values);
+#else
+  const uint64x2_t x2 = vpaddlq_u32(values);
+  return x2[0] + x2[1];
+#endif
+}
+
+#if defined(__aarch64__)
+template <typename T>
+HWY_INLINE uint64_t BitsFromMask(SizeTag<8> /*tag*/, const Mask128<T> v) {
+  constexpr uint64x2_t kCollapseMask = {1, 2};
+  const Full128<uint64_t> du;
+  const uint64x2_t values = BitCast(du, VecFromMask(v)).raw & kCollapseMask;
+  return vaddvq_u64(values);
 }
 #endif
 
-// TODO(user): wrappers for all intrinsics (in neon namespace).
+// Returns number of lanes whose mask is set.
+//
+// Masks are either FF..FF or 0. Unfortunately there is no reduce-sub op
+// ("vsubv"). ANDing with 1 would work but requires a constant. Negating also
+// changes each lane to 1 (if mask set) or 0.
+
+template <typename T>
+HWY_INLINE size_t CountTrue(SizeTag<1> /*tag*/, const Mask128<T> mask) {
+  const Full128<int8_t> di;
+  const int8x16_t ones = vnegq_s8(BitCast(di, VecFromMask(mask)).raw);
+
+#if defined(__aarch64__)
+  return vaddvq_s8(ones);
+#else
+  const int16x8_t x2 = vpaddlq_s8(ones);
+  const int32x4_t x4 = vpaddlq_s16(x2);
+  const int64x2_t x8 = vpaddlq_s32(x4);
+  return x8[0] + x8[1];
+#endif
+}
+template <typename T>
+HWY_INLINE size_t CountTrue(SizeTag<2> /*tag*/, const Mask128<T> mask) {
+  const Full128<int16_t> di;
+  const int16x8_t ones = vnegq_s16(BitCast(di, VecFromMask(mask)).raw);
+
+#if defined(__aarch64__)
+  return vaddvq_s16(ones);
+#else
+  const int32x4_t x2 = vpaddlq_s16(ones);
+  const int64x2_t x4 = vpaddlq_s32(x2);
+  return x4[0] + x4[1];
+#endif
+}
+
+template <typename T>
+HWY_INLINE size_t CountTrue(SizeTag<4> /*tag*/, const Mask128<T> mask) {
+  const Full128<int32_t> di;
+  const int32x4_t ones = vnegq_s32(BitCast(di, VecFromMask(mask)).raw);
+
+#if defined(__aarch64__)
+  return vaddvq_s32(ones);
+#else
+  const int64x2_t x2 = vpaddlq_s32(ones);
+  return x2[0] + x2[1];
+#endif
+}
+
+#if defined(__aarch64__)
+template <typename T>
+HWY_INLINE size_t CountTrue(SizeTag<8> /*tag*/, const Mask128<T> mask) {
+  const Full128<int64_t> di;
+  const int64x2_t ones = vnegq_s64(BitCast(di, VecFromMask(mask)).raw);
+  return vaddvq_s64(ones);
+}
+#endif
+
+}  // namespace impl
+
+template <typename T>
+HWY_INLINE uint64_t BitsFromMask(const Mask128<T> mask) {
+  return impl::BitsFromMask(SizeTag<sizeof(T)>(), mask);
+}
+
+template <typename T>
+HWY_INLINE size_t CountTrue(const Mask128<T> mask) {
+  return impl::CountTrue(SizeTag<sizeof(T)>(), mask);
+}
+
 }  // namespace ext
 
 }  // namespace hwy

@@ -97,12 +97,12 @@ float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
   ImageMetadata metadata0 = *rgb0.metadata();
   ImageBundle store0(&metadata0);
   const ImageBundle* linear_srgb0;
-  JXL_CHECK(TransformIfNeeded(rgb0, ColorManagement::LinearSRGB(rgb0.IsGray()),
+  JXL_CHECK(TransformIfNeeded(rgb0, ColorEncoding::LinearSRGB(rgb0.IsGray()),
                               pool, &store0, &linear_srgb0));
   ImageMetadata metadata1 = *rgb1.metadata();
   ImageBundle store1(&metadata1);
   const ImageBundle* linear_srgb1;
-  JXL_CHECK(TransformIfNeeded(rgb1, ColorManagement::LinearSRGB(rgb1.IsGray()),
+  JXL_CHECK(TransformIfNeeded(rgb1, ColorEncoding::LinearSRGB(rgb1.IsGray()),
                               pool, &store1, &linear_srgb1));
 
   return ComputeScoreImpl(*linear_srgb0, *linear_srgb1, comparator, diffmap);

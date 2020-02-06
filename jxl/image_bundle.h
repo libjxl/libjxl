@@ -177,8 +177,6 @@ struct ImageMetadata {
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) return true;
 
-    visitor->Bool(false, &have_icc);
-
     visitor->U32(Val(8), Val(16), Val(32), Bits(5), 8, &bits_per_sample);
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
     visitor->U32(Val(0), Val(8), Val(16), Bits(4), 0, &alpha_bits);
@@ -200,7 +198,6 @@ struct ImageMetadata {
   float IntensityTarget() const { return target_nits_div50_ * 50.f; }
 
   mutable bool all_default;
-  bool have_icc;
 
   ImageMetadata2 m2;  // often default
 
@@ -245,6 +242,14 @@ class ImageBundle {
     for (const ImageU& plane : extra_channels_) {
       copy.extra_channels_.emplace_back(CopyImage(plane));
     }
+
+    copy.is_jpeg = is_jpeg;
+    copy.jpeg_quant_table = jpeg_quant_table;
+    copy.jpeg_xsize = jpeg_xsize;
+    copy.jpeg_ysize = jpeg_ysize;
+    copy.color_transform = color_transform;
+    copy.chroma_subsampling = chroma_subsampling;
+
     return copy;
   }
 
@@ -294,15 +299,15 @@ class ImageBundle {
   // Amount of input bytes per pixel must be:
   // (is_gray ? 1 : 3) + (has_alpha ? 1 : 0)
   Status SetFromSRGB(size_t xsize, size_t ysize, bool is_gray, bool has_alpha,
-                     const uint8_t* pixels, const uint8_t* end,
-                     ThreadPool* pool = nullptr);
+                     bool alpha_is_premultiplied, const uint8_t* pixels,
+                     const uint8_t* end, ThreadPool* pool = nullptr);
 
   // Sets image data from 16-bit sRGB data.
   // Amount of input uint16_t's per pixel must be:
   // (is_gray ? 1 : 3) + (has_alpha ? 1 : 0)
   Status SetFromSRGB(size_t xsize, size_t ysize, bool is_gray, bool has_alpha,
-                     const uint16_t* pixels, const uint16_t* end,
-                     ThreadPool* pool = nullptr);
+                     bool alpha_is_premultiplied, const uint16_t* pixels,
+                     const uint16_t* end, ThreadPool* pool = nullptr);
 
   // Sets image data from sRGB pixel array in bytes.
   // This low-level function supports both 8-bit and 16-bit data in bytes to
@@ -314,8 +319,9 @@ class ImageBundle {
   // The 16-bit byte order is given by big_endian, and this has no effect when
   // is_16bit is false.
   Status SetFromSRGB(size_t xsize, size_t ysize, bool is_gray, bool has_alpha,
-                     bool is_16bit, bool big_endian, const uint8_t* pixels,
-                     const uint8_t* end, ThreadPool* pool = nullptr);
+                     bool alpha_is_premultiplied, bool is_16bit,
+                     bool big_endian, const uint8_t* pixels, const uint8_t* end,
+                     ThreadPool* pool = nullptr);
 
   // -- COLOR ENCODING
 
@@ -352,12 +358,15 @@ class ImageBundle {
 
   // -- ALPHA
 
-  void SetAlpha(ImageU&& alpha);
+  void SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied);
   bool HasAlpha() const { return alpha_.xsize() != 0; }
+  bool AlphaIsPremultiplied() const { return alpha_is_premultiplied_; }
   const ImageU& alpha() const {
     JXL_ASSERT(HasAlpha());
     return alpha_;
   }
+
+  void PremultiplyAlphaIfNeeded(ThreadPool* pool = nullptr);
 
   // Reverts SetAlpha AND sets metadata->alpha_bits to 0. Called after noticing
   // that all alpha values are opaque.
@@ -394,9 +403,14 @@ class ImageBundle {
   void SetDecodedBytes(size_t decoded_bytes) { decoded_bytes_ = decoded_bytes; }
   size_t decoded_bytes() const { return decoded_bytes_; }
 
-  // if not empty: image data represents quantized DCT-8 coefficients
-  // (used for JPEG transcoding)
-  std::vector<int> jpeg_quant_table;
+  // -- JPEG transcoding:
+
+  // Returns true if image does or will represent quantized DCT-8 coefficients,
+  // stored in 8x8 pixel regions.
+  bool IsJPEG() const { return is_jpeg; }
+
+  bool is_jpeg = false;
+  std::vector<int32_t> jpeg_quant_table;
   size_t jpeg_xsize = 0;  // image dimensions of input JPEG
   size_t jpeg_ysize = 0;  // (can be up to 7 smaller than color_ dimensions)
   // these fields are used to signal the input JPEG color space
@@ -419,6 +433,7 @@ class ImageBundle {
 
   // Initialized by SetAlpha.
   ImageU alpha_;  // Empty or same size as color_.
+  bool alpha_is_premultiplied_ = false;
 
   // Initialized by SetDepth.
   ImageU depth_;  // Empty or size >> depth_shift_.

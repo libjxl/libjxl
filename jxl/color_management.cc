@@ -29,9 +29,9 @@
 #include <utility>
 
 #include "jxl/base/compiler_specific.h"
+#include "jxl/base/data_parallel.h"
 #include "jxl/field_encodings.h"
 #include "jxl/linalg.h"
-#include "jxl/rational_polynomial.h"
 #if JPEGXL_ENABLE_SKCMS
 #include "skcms.h"
 #else  // JPEGXL_ENABLE_SKCMS
@@ -41,6 +41,10 @@
 
 namespace jxl {
 namespace {
+
+namespace HWY_NAMESPACE {
+#include "jxl/rational_polynomial-inl.h"
+}  // namespace HWY_NAMESPACE
 
 #define JXL_CMS_VERBOSE 0
 
@@ -365,21 +369,23 @@ class TF_SRGB {
 
     // Computed via af_cheb_rational (k=100); replicated 4x.
     HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
-        2.200248328e-04, 2.200248328e-04, 2.200248328e-04, 2.200248328e-04,
-        1.043637593e-02, 1.043637593e-02, 1.043637593e-02, 1.043637593e-02,
-        1.624820318e-01, 1.624820318e-01, 1.624820318e-01, 1.624820318e-01,
-        7.961564959e-01, 7.961564959e-01, 7.961564959e-01, 7.961564959e-01,
-        8.210152774e-01, 8.210152774e-01, 8.210152774e-01, 8.210152774e-01,
+        2.200248328e-04f, 2.200248328e-04f, 2.200248328e-04f, 2.200248328e-04f,
+        1.043637593e-02f, 1.043637593e-02f, 1.043637593e-02f, 1.043637593e-02f,
+        1.624820318e-01f, 1.624820318e-01f, 1.624820318e-01f, 1.624820318e-01f,
+        7.961564959e-01f, 7.961564959e-01f, 7.961564959e-01f, 7.961564959e-01f,
+        8.210152774e-01f, 8.210152774e-01f, 8.210152774e-01f, 8.210152774e-01f,
     };
     HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
-        2.631846970e-01,  2.631846970e-01,  2.631846970e-01,  2.631846970e-01,
-        1.076976492e+00,  1.076976492e+00,  1.076976492e+00,  1.076976492e+00,
-        4.987528350e-01,  4.987528350e-01,  4.987528350e-01,  4.987528350e-01,
-        -5.512498495e-02, -5.512498495e-02, -5.512498495e-02, -5.512498495e-02,
-        6.521209011e-03,  6.521209011e-03,  6.521209011e-03,  6.521209011e-03,
+        2.631846970e-01f,  2.631846970e-01f,  2.631846970e-01f,
+        2.631846970e-01f,  1.076976492e+00f,  1.076976492e+00f,
+        1.076976492e+00f,  1.076976492e+00f,  4.987528350e-01f,
+        4.987528350e-01f,  4.987528350e-01f,  4.987528350e-01f,
+        -5.512498495e-02f, -5.512498495e-02f, -5.512498495e-02f,
+        -5.512498495e-02f, 6.521209011e-03f,  6.521209011e-03f,
+        6.521209011e-03f,  6.521209011e-03f,
     };
     const V linear = x * Set(d, kLowDivInv);
-    const V poly = EvalRationalPolynomial(x, p, q);
+    const V poly = HWY_NAMESPACE::EvalRationalPolynomial(x, p, q);
     const V magnitude =
         IfThenElse(x > Set(d, kThreshSRGBToLinear), poly, linear);
     return AndNot(kSign, magnitude) | original_sign;
@@ -395,21 +401,23 @@ class TF_SRGB {
 
     // Computed via af_cheb_rational (k=100); replicated 4x.
     HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
-        -5.135152395e-04, -5.135152395e-04, -5.135152395e-04, -5.135152395e-04,
-        5.287254571e-03,  5.287254571e-03,  5.287254571e-03,  5.287254571e-03,
-        3.903842876e-01,  3.903842876e-01,  3.903842876e-01,  3.903842876e-01,
-        1.474205315e+00,  1.474205315e+00,  1.474205315e+00,  1.474205315e+00,
-        7.352629620e-01,  7.352629620e-01,  7.352629620e-01,  7.352629620e-01,
+        -5.135152395e-04f, -5.135152395e-04f, -5.135152395e-04f,
+        -5.135152395e-04f, 5.287254571e-03f,  5.287254571e-03f,
+        5.287254571e-03f,  5.287254571e-03f,  3.903842876e-01f,
+        3.903842876e-01f,  3.903842876e-01f,  3.903842876e-01f,
+        1.474205315e+00f,  1.474205315e+00f,  1.474205315e+00f,
+        1.474205315e+00f,  7.352629620e-01f,  7.352629620e-01f,
+        7.352629620e-01f,  7.352629620e-01f,
     };
     HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
-        1.004519624e-02, 1.004519624e-02, 1.004519624e-02, 1.004519624e-02,
-        3.036675394e-01, 3.036675394e-01, 3.036675394e-01, 3.036675394e-01,
-        1.340816930e+00, 1.340816930e+00, 1.340816930e+00, 1.340816930e+00,
-        9.258482155e-01, 9.258482155e-01, 9.258482155e-01, 9.258482155e-01,
-        2.424867759e-02, 2.424867759e-02, 2.424867759e-02, 2.424867759e-02,
+        1.004519624e-02f, 1.004519624e-02f, 1.004519624e-02f, 1.004519624e-02f,
+        3.036675394e-01f, 3.036675394e-01f, 3.036675394e-01f, 3.036675394e-01f,
+        1.340816930e+00f, 1.340816930e+00f, 1.340816930e+00f, 1.340816930e+00f,
+        9.258482155e-01f, 9.258482155e-01f, 9.258482155e-01f, 9.258482155e-01f,
+        2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f,
     };
     const V linear = x * Set(d, kLowDiv);
-    const V poly = EvalRationalPolynomial(Sqrt(x), p, q);
+    const V poly = HWY_NAMESPACE::EvalRationalPolynomial(Sqrt(x), p, q);
     const V magnitude =
         IfThenElse(x > Set(d, kThreshLinearToSRGB), poly, linear);
     return AndNot(kSign, magnitude) | original_sign;
@@ -692,8 +700,9 @@ Status MaybeCreateProfile(const ColorEncoding& c,
                           PaddedBytes* JXL_RESTRICT icc) {
   PaddedBytes header, tagtable, tags;
 
-  // Unknown color_space/transfer_function.
-  if (c.opaque_icc) return false;  // Not an error
+  if (c.GetColorSpace() == ColorSpace::kUnknown || c.tf.IsUnknown()) {
+    return false;  // Not an error
+  }
 
   switch (c.GetColorSpace()) {
     case ColorSpace::kRGB:
@@ -701,9 +710,8 @@ Status MaybeCreateProfile(const ColorEncoding& c,
       break;  // OK
     case ColorSpace::kXYB:
       return JXL_FAILURE("XYB ICC not yet implemented");
-    case ColorSpace::kUnknown:
     default:
-      return JXL_FAILURE("Unknown CS despite !opaque_icc");
+      return JXL_FAILURE("Invalid CS %u", c.GetColorSpace());
   }
 
   JXL_RETURN_IF_ERROR(CreateICCHeader(c, &header));
@@ -788,9 +796,8 @@ Status MaybeCreateProfile(const ColorEncoding& c,
       case TransferFunction::kDCI:
         CreateICCCurvParaTag({2.6, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
         break;
-      case TransferFunction::kUnknown:
       default:
-        JXL_ABORT("Unknown TF despite !opaque_icc");
+        JXL_ABORT("Unknown TF %d", c.tf.GetTransferFunction());
     }
   }
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
@@ -833,8 +840,9 @@ Status MaybeCreateProfile(const ColorEncoding& c,
 
 Status MaybeCreateProfile(const ColorEncoding& c, skcms_ICCProfile* profile,
                           PaddedBytes* bytes) {
-  // Unknown color_space/transfer_function.
-  if (c.opaque_icc) return false;  // Not an error
+  if (c.GetColorSpace() == ColorSpace::kUnknown || c.tf.IsUnknown()) {
+    return false;  // Not an error
+  }
 
   JXL_RETURN_IF_ERROR(MaybeCreateProfile(c, bytes));
   JXL_RETURN_IF_ERROR(skcms_Parse(bytes->data(), bytes->size(), profile));
@@ -897,8 +905,8 @@ Curve CreateCurve(const cmsContext context, const ColorEncoding& c) {
     case TransferFunction::kDCI:
       params = {2.6, 1.0, 0.0, 1.0, 0.0};
       break;
-    case TransferFunction::kUnknown:
-      JXL_ABORT("Unknown TF despite !opaque_icc");
+    default:
+      JXL_ABORT("Invalid TF %d", c.tf.GetTransferFunction());
   }
   // WARNING: using cmsBuildGamma results in a bounded curve - LittleCMS
   // clamps negative outputs to zero. To retain unbounded mode, we use the
@@ -920,8 +928,9 @@ Profile MaybeCreateProfileRGB(const cmsContext context, const ColorEncoding& c,
 // Serializes the profile before use to ensure all values are quantized.
 Status MaybeCreateProfile(const cmsContext context, const ColorEncoding& c,
                           PaddedBytes* JXL_RESTRICT icc) {
-  // Unknown color_space/transfer_function.
-  if (c.opaque_icc) return false;  // Not an error
+  if (c.GetColorSpace() == ColorSpace::kUnknown || c.tf.IsUnknown()) {
+    return false;  // Not an error
+  }
 
   // (If color_space == kRGB, we'll use this curve for all channels.)
   const Curve curve = CreateCurve(context, c);
@@ -940,8 +949,8 @@ Status MaybeCreateProfile(const cmsContext context, const ColorEncoding& c,
     case ColorSpace::kXYB:
       JXL_FAILURE("XYB ICC not yet implemented");
       break;
-    case ColorSpace::kUnknown:
-      return JXL_FAILURE("Unknown CS despite !opaque_icc");
+    default:
+      return JXL_FAILURE("Unknown CS %u", c.GetColorSpace());
   }
   if (profile.get() == nullptr) {
     return JXL_FAILURE("Failed to create profile (cs = %u)", c.GetColorSpace());
@@ -958,16 +967,13 @@ Status MaybeCreateProfile(const cmsContext context, const ColorEncoding& c,
 
 #if JPEGXL_ENABLE_SKCMS
 
-// Sets *opaque_icc = true if color space is unknown.
-ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile,
-                                 bool* opaque_icc) {
+ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile) {
   switch (profile.data_color_space) {
     case skcms_Signature_RGB:
       return ColorSpace::kRGB;
     case skcms_Signature_Gray:
       return ColorSpace::kGray;
     default:
-      *opaque_icc = true;
       return ColorSpace::kUnknown;
   }
 }
@@ -1074,7 +1080,6 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
   }
 
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
-  c->opaque_icc = true;
 }
 
 #else  // JPEGXL_ENABLE_SKCMS
@@ -1089,15 +1094,13 @@ uint32_t Type64(const ColorEncoding& c) {
   return TYPE_RGB_DBL;
 }
 
-// Sets *opaque_icc = true if color space is unknown.
-ColorSpace ColorSpaceFromProfile(const Profile& profile, bool* opaque_icc) {
+ColorSpace ColorSpaceFromProfile(const Profile& profile) {
   switch (cmsGetColorSpace(profile.get())) {
     case cmsSigRgbData:
       return ColorSpace::kRGB;
     case cmsSigGrayData:
       return ColorSpace::kGray;
     default:
-      *opaque_icc = true;
       return ColorSpace::kUnknown;
   }
 }
@@ -1239,7 +1242,6 @@ void DetectTransferFunction(const cmsContext context, const Profile& profile,
   }
 
   c->tf.SetTransferFunction(TransferFunction::kUnknown);
-  c->opaque_icc = true;
 }
 
 void ErrorHandler(cmsContext context, cmsUInt32Number code, const char* text) {
@@ -1265,155 +1267,107 @@ cmsContext GetContext() {
 // All functions that call lcms directly (except ColorSpaceTransform::Run) must
 // lock lcms_mutex.
 
-Status ColorManagement::SetProfile(PaddedBytes&& icc,
-                                   ColorEncoding* JXL_RESTRICT c) {
-  c->icc.clear();
-  if (icc.empty()) return false;
+Status ColorEncoding::SetFieldsFromICC() {
+  // In case parsing fails, mark the ColorEncoding as invalid.
+  SetColorSpace(ColorSpace::kUnknown);
+  tf.SetTransferFunction(TransferFunction::kUnknown);
+
+  if (icc_.empty()) return JXL_FAILURE("Empty ICC profile");
 
 #if JPEGXL_ENABLE_SKCMS
+  if (icc_.size() < 128) {
+    return JXL_FAILURE("ICC file too small");
+  }
+
   skcms_ICCProfile profile;
-  JXL_RETURN_IF_ERROR(skcms_Parse(icc.data(), icc.size(), &profile));
+  JXL_RETURN_IF_ERROR(skcms_Parse(icc_.data(), icc_.size(), &profile));
 
   // skcms does not return the rendering intent, so get it from the file. It
   // is encoded as big-endian 32-bit integer in bytes 60..63.
-  if (icc.size() < 128) {
-    return JXL_FAILURE("ICC file too small");
-  }
-  uint32_t rendering_intent = icc[67];
-  if (rendering_intent > 3 || icc[64] != 0 || icc[65] != 0 || icc[66] != 0) {
-    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent);
+  uint32_t rendering_intent32 = icc_[67];
+  if (rendering_intent32 > 3 || icc_[64] != 0 || icc_[65] != 0 ||
+      icc_[66] != 0) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
 
-  c->icc = std::move(icc);
-  c->received_icc = true;
-  c->opaque_icc = false;  // May be set to true below.
-
-  c->SetColorSpace(ColorSpaceFromProfile(profile, &c->opaque_icc));
+  SetColorSpace(ColorSpaceFromProfile(profile));
 
   const CIExy wp_unadapted = UnadaptedWhitePoint(profile);
-  JXL_RETURN_IF_ERROR(c->SetWhitePoint(wp_unadapted));
+  JXL_RETURN_IF_ERROR(SetWhitePoint(wp_unadapted));
 
   // Relies on color_space.
-  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, c));
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, this));
 
   // Relies on color_space/white point/primaries being set already.
-  DetectTransferFunction(profile, c);
+  DetectTransferFunction(profile, this);
   // ICC and RenderingIntent have the same values (0..3).
-  c->rendering_intent = static_cast<RenderingIntent>(rendering_intent);
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 #else   // JPEGXL_ENABLE_SKCMS
 
   std::lock_guard<std::mutex> guard(lcms_mutex);
   const cmsContext context = GetContext();
 
   Profile profile;
-  JXL_RETURN_IF_ERROR(DecodeProfile(context, icc, &profile));
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, icc_, &profile));
 
-  const cmsUInt32Number rendering_intent =
+  const cmsUInt32Number rendering_intent32 =
       cmsGetHeaderRenderingIntent(profile.get());
-  if (rendering_intent > 3) {
-    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent);
+  if (rendering_intent32 > 3) {
+    return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
 
-  c->icc = std::move(icc);
-  c->received_icc = true;
-  c->opaque_icc = false;  // May be set to true below.
+  SetColorSpace(ColorSpaceFromProfile(profile));
 
-  c->SetColorSpace(ColorSpaceFromProfile(profile, &c->opaque_icc));
-
-  const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, *c);
-  JXL_RETURN_IF_ERROR(c->SetWhitePoint(CIExyFromXYZ(wp_unadapted)));
+  const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, *this);
+  JXL_RETURN_IF_ERROR(SetWhitePoint(CIExyFromXYZ(wp_unadapted)));
 
   // Relies on color_space.
-  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, c));
+  JXL_RETURN_IF_ERROR(IdentifyPrimaries(profile, wp_unadapted, this));
 
   // Relies on color_space/white point/primaries being set already.
-  DetectTransferFunction(context, profile, c);
+  DetectTransferFunction(context, profile, this);
 
   // ICC and RenderingIntent have the same values (0..3).
-  c->rendering_intent = static_cast<RenderingIntent>(rendering_intent);
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 #endif  // JPEGXL_ENABLE_SKCMS
-
-  if (!c->opaque_icc) {
-    // Ensure that it is safe to skip the profile, i.e. the reconstructed
-    // profile will be equivalent:
-    PaddedBytes icc_new;
-#if JPEGXL_ENABLE_SKCMS
-    JXL_RETURN_IF_ERROR(MaybeCreateProfile(*c, &icc_new));
-    if (!ProfileEquivalentToICC(profile, icc_new)) {
-#else   // JPEGXL_ENABLE_SKCMS
-    JXL_RETURN_IF_ERROR(MaybeCreateProfile(context, *c, &icc_new));
-    if (!ProfileEquivalentToICC(context, profile, icc_new, *c)) {
-#endif  // JPEGXL_ENABLE_SKCMS
-      return JXL_FAILURE("Generated profile does not match");
-    }
-  }
 
   return true;
 }
 
-Status ColorManagement::CreateProfile(ColorEncoding* JXL_RESTRICT c) {
+Status ColorEncoding::CreateICC() {
   std::lock_guard<std::mutex> guard(lcms_mutex);
-  c->icc.clear();
-  c->received_icc = c->opaque_icc = false;
+  InternalRemoveICC();
 
 #if JPEGXL_ENABLE_SKCMS
-  if (!MaybeCreateProfile(*c, &c->icc)) {
+  if (!MaybeCreateProfile(*this, &icc_)) {
 #else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
-  if (!MaybeCreateProfile(context, *c, &c->icc)) {
+  if (!MaybeCreateProfile(context, *this, &icc_)) {
 #endif  // JPEGXL_ENABLE_SKCMS
     return JXL_FAILURE("Failed to create profile from fields");
   }
   return true;
 }
 
-namespace {
+void ColorEncoding::DecideIfWantICC() {
+  PaddedBytes icc_new;
+  bool equivalent;
+#if JPEGXL_ENABLE_SKCMS
+  skcms_ICCProfile profile;
+  if (!DecodeProfile(ICC(), &profile)) return;
+  if (!MaybeCreateProfile(*this, &icc_new)) return;
+  equivalent = ProfileEquivalentToICC(profile, icc_new);
+#else   // JPEGXL_ENABLE_SKCMS
+  const cmsContext context = GetContext();
+  Profile profile;
+  if (!DecodeProfile(context, ICC(), &profile)) return;
+  if (!MaybeCreateProfile(context, *this, &icc_new)) return;
+  equivalent = ProfileEquivalentToICC(context, profile, icc_new, *this);
+#endif  // JPEGXL_ENABLE_SKCMS
 
-void InitC2Once(const Primaries pr, const TransferFunction tf,
-                std::atomic<int>* initialized,
-                std::array<ColorEncoding, 2>* c2) {
-  // Thread-safe double-checked locking.
-  int done = initialized->load(std::memory_order_acquire);
-  if (done == 1) return;
-  static std::mutex mutex;
-  std::lock_guard<std::mutex> lock(mutex);
-  done = initialized->load(std::memory_order_relaxed);
-  if (done == 1) return;
-
-  {
-    ColorEncoding* c_rgb = c2->data() + 0;
-    c_rgb->SetColorSpace(ColorSpace::kRGB);
-    c_rgb->white_point = WhitePoint::kD65;
-    c_rgb->primaries = pr;
-    c_rgb->tf.SetTransferFunction(tf);
-    JXL_CHECK(ColorManagement::CreateProfile(c_rgb));
-  }
-
-  {
-    ColorEncoding* c_gray = c2->data() + 1;
-    c_gray->SetColorSpace(ColorSpace::kGray);
-    c_gray->white_point = WhitePoint::kD65;
-    c_gray->primaries = pr;
-    c_gray->tf.SetTransferFunction(tf);
-    JXL_CHECK(ColorManagement::CreateProfile(c_gray));
-  }
-
-  initialized->store(1, std::memory_order_release);
-}
-
-}  // namespace
-
-const ColorEncoding& ColorManagement::SRGB(bool is_gray) {
-  static std::atomic<int> initialized{0};
-  static std::array<ColorEncoding, 2> c2;
-  InitC2Once(Primaries::kSRGB, TransferFunction::kSRGB, &initialized, &c2);
-  return c2[is_gray];
-}
-const ColorEncoding& ColorManagement::LinearSRGB(bool is_gray) {
-  static std::atomic<int> initialized{0};
-  static std::array<ColorEncoding, 2> c2;
-  InitC2Once(Primaries::kSRGB, TransferFunction::kLinear, &initialized, &c2);
-  return c2[is_gray];
+  // Successfully created a profile => reconstruction should be equivalent.
+  JXL_ASSERT(equivalent);
+  want_icc_ = false;
 }
 
 ColorSpaceTransform::~ColorSpaceTransform() {
@@ -1434,15 +1388,15 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
 #endif
 
 #if JPEGXL_ENABLE_SKCMS
-  icc_src_ = c_src.icc;
-  icc_dst_ = c_dst.icc;
+  icc_src_ = c_src.ICC();
+  icc_dst_ = c_dst.ICC();
   JXL_RETURN_IF_ERROR(DecodeProfile(icc_src_, &profile_src_));
   JXL_RETURN_IF_ERROR(DecodeProfile(icc_dst_, &profile_dst_));
 #else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
-  JXL_RETURN_IF_ERROR(DecodeProfile(context, c_src.icc, &profile_src));
-  JXL_RETURN_IF_ERROR(DecodeProfile(context, c_dst.icc, &profile_dst));
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, c_src.ICC(), &profile_src));
+  JXL_RETURN_IF_ERROR(DecodeProfile(context, c_dst.ICC(), &profile_dst));
 #endif  // JPEGXL_ENABLE_SKCMS
 
   skip_lcms_ = false;

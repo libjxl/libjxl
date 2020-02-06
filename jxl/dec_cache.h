@@ -51,10 +51,12 @@ struct PassesDecoderState {
   std::vector<ANSCode> code;
   std::vector<std::vector<uint8_t>> context_map;
 
-  bool keep_dct = false;
-
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_dm_multiplier;
+
+  // Normalized weights for gaborish, in XYB order, each weight for Manhattan
+  // distance of 0, 1 and 2 respectively.
+  float gab_weights[9];
 
   // Decoded image, with padding.
   Image3F decoded;
@@ -116,6 +118,9 @@ struct PassesDecoderState {
     if (lf.epf) {
       sigma = ImageF(shared->frame_dim.xsize_blocks + 4,
                      shared->frame_dim.ysize_blocks + 4);
+    }
+    if (lf.gab) {
+      lf.GaborishWeights(gab_weights);
     }
   }
 };

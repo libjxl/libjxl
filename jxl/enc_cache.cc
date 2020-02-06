@@ -133,7 +133,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                   enc_state->shared.frame_dim.ysize << (3 * cparams.dc_level));
     cparams.dc_level++;
     cparams.progressive_dc--;
-    // Use kPasses in max_error_mode for intermediate progressive DC,
+    // Use kVarDCT in max_error_mode for intermediate progressive DC,
     // and kModularGroup for the smallest DC (first in the bitstream)
     if (cparams.progressive_dc == 0) {
       cparams.modular_group_mode = true;
@@ -141,11 +141,11 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
           99.f - enc_state->cparams.butteraugli_distance * 2.f;
     }
     ImageMetadata metadata;
-    metadata.color_encoding = ColorManagement::LinearSRGB();
+    metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle ib(&metadata);
     // This is a lie - dc is in XYB
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
-    ib.SetFromImage(std::move(dc), ColorManagement::LinearSRGB());
+    ib.SetFromImage(std::move(dc), ColorEncoding::LinearSRGB());
     PassesEncoderState state;
     enc_state->special_frames.emplace_back();
     JXL_CHECK(EncodeFrame(cparams, nullptr, ib, &state, pool,

@@ -55,7 +55,7 @@ void CreateImage1x1(CodecInOut* io) {
   Image3F image(1, 1);
   ZeroFillImage(&image);
   io->metadata.bits_per_sample = 8;
-  io->metadata.color_encoding = ColorManagement::SRGB();
+  io->metadata.color_encoding = ColorEncoding::SRGB();
   io->SetFromImage(std::move(image), io->metadata.color_encoding);
 }
 
@@ -80,10 +80,10 @@ TEST(JxlTest, HeaderSize) {
     io.metadata.alpha_bits = 8;
     ImageU alpha(1, 1);
     alpha.Row(0)[0] = 1;
-    io.Main().SetAlpha(std::move(alpha));
+    io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
     AuxOut aux_out;
     Roundtrip(&io, cparams, dparams, pool, &io2, &aux_out);
-    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 60);
+    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 61);
   }
 }
 
@@ -154,7 +154,16 @@ TEST(JxlTest, RoundtripSmallD1) {
   DecompressParams dparams;
 
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 1000);
+  const size_t compressed_size = Roundtrip(&io, cparams, dparams, pool, &io2);
+  EXPECT_LE(compressed_size, 1000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+                                /*distmap=*/nullptr, pool),
+            1.5);
+
+  // And then, with a lower intensity target than the default, the bitrate
+  // should be smaller.
+  cparams.intensity_target = 100;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), compressed_size);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
                                 /*distmap=*/nullptr, pool),
             1.5);
@@ -222,6 +231,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
   DecompressParams dparams;
 
   cparams.butteraugli_distance = 1.0f;
+  cparams.speed_tier = SpeedTier::kKitten;
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, &pool, &io2);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
@@ -365,7 +375,7 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
 TEST(JxlTest, RoundtripSmallPatches) {
   ThreadPool* pool = nullptr;
   CodecInOut io;
-  io.metadata.color_encoding = ColorManagement::LinearSRGB();
+  io.metadata.color_encoding = ColorEncoding::LinearSRGB();
   Image3F black_with_small_lines(256, 256);
   ZeroFillImage(&black_with_small_lines);
   // This pattern should be picked up by the patch detection heuristics.
@@ -376,7 +386,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
     }
   }
   io.SetFromImage(std::move(black_with_small_lines),
-                  ColorManagement::LinearSRGB());
+                  ColorEncoding::LinearSRGB());
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -535,10 +545,11 @@ TEST(JxlTest, RoundtripAlpha16) {
   CodecInOut io;
   io.metadata.bits_per_sample = 16;
   io.metadata.alpha_bits = 16;
-  io.metadata.color_encoding = ColorManagement::SRGB(is_gray);
-  ASSERT_TRUE(io.Main().SetFromSRGB(xsize, ysize, is_gray,
-                                    /*has_alpha=*/true, pixels.data(),
-                                    pixels.data() + pixels.size(), &pool));
+  io.metadata.color_encoding = ColorEncoding::SRGB(is_gray);
+  ASSERT_TRUE(io.Main().SetFromSRGB(
+      xsize, ysize, is_gray,
+      /*has_alpha=*/true, /*alpha_is_premultiplied=*/false, pixels.data(),
+      pixels.data() + pixels.size(), &pool));
 
   // The image is wider than 512 pixels to ensure multiple groups are tested.
 
@@ -574,7 +585,7 @@ CompressParams CParamsForLossless() {
   cparams.options.predictor = {int(Predictor::Weighted)};
   return cparams;
 }
-};  // namespace
+}  // namespace
 
 TEST(JxlTest, RoundtripLossless8) {
   ThreadPoolInternal pool(8);
@@ -646,10 +657,11 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
   CodecInOut io;
   io.metadata.bits_per_sample = 16;
   io.metadata.alpha_bits = 16;
-  io.metadata.color_encoding = ColorManagement::SRGB(is_gray);
-  ASSERT_TRUE(io.Main().SetFromSRGB(xsize, ysize, is_gray,
-                                    /*has_alpha=*/true, pixels.data(),
-                                    pixels.data() + pixels.size(), pool));
+  io.metadata.color_encoding = ColorEncoding::SRGB(is_gray);
+  ASSERT_TRUE(io.Main().SetFromSRGB(
+      xsize, ysize, is_gray,
+      /*has_alpha=*/true, /*alpha_is_premultiplied=*/false, pixels.data(),
+      pixels.data() + pixels.size(), pool));
 
   EXPECT_EQ(16, io.metadata.alpha_bits);
   EXPECT_EQ(16, io.metadata.bits_per_sample);
@@ -699,10 +711,11 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   CodecInOut io;
   io.metadata.bits_per_sample = 16;
   io.metadata.alpha_bits = 16;
-  io.metadata.color_encoding = ColorManagement::SRGB(is_gray);
-  ASSERT_TRUE(io.Main().SetFromSRGB(xsize, ysize, /*is_gray=*/false,
-                                    /*has_alpha=*/true, pixels.data(),
-                                    pixels.data() + pixels.size(), pool));
+  io.metadata.color_encoding = ColorEncoding::SRGB(is_gray);
+  ASSERT_TRUE(io.Main().SetFromSRGB(
+      xsize, ysize, /*is_gray=*/false,
+      /*has_alpha=*/true, /*alpha_is_premultiplied=*/false, pixels.data(),
+      pixels.data() + pixels.size(), pool));
 
   EXPECT_EQ(16, io.metadata.alpha_bits);
   EXPECT_EQ(16, io.metadata.bits_per_sample);
@@ -770,6 +783,52 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   EXPECT_TRUE(io2.Main().IsGray());
   EXPECT_EQ(8, io2.metadata.bits_per_sample);
 }
+
+#if JPEGXL_ENABLE_GIF
+
+TEST(JxlTest, RoundtripAnimation) {
+  ThreadPool* pool = nullptr;
+  const std::string pathname = GetTestDataPath(
+      "conv_arithmetic/arbitrary_padding_no_strides_transposed.gif");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_EQ(25, io.frames.size());
+
+  CompressParams cparams;
+  // TODO: make patches work with animation
+  cparams.patches = Override::kOff;
+  cparams.speed_tier = SpeedTier::kKitten;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 450000);
+
+  EXPECT_EQ(io2.frames.size(), io.frames.size());
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+                                /*distmap=*/nullptr, pool),
+            1.5);
+}
+
+TEST(JxlTest, RoundtripLosslessAnimation) {
+  ThreadPool* pool = nullptr;
+  const std::string pathname = GetTestDataPath(
+      "conv_arithmetic/arbitrary_padding_no_strides_transposed.gif");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_EQ(25, io.frames.size());
+
+  CompressParams cparams = CParamsForLossless();
+  // TODO: make patches work with animation
+  cparams.patches = Override::kOff;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 325000);
+
+  EXPECT_EQ(io2.frames.size(), io.frames.size());
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+                                     /*distmap=*/nullptr, pool));
+}
+
+#endif  // JPEGXL_ENABLE_GIF
 
 }  // namespace
 }  // namespace jxl

@@ -33,12 +33,14 @@ namespace jxl {
 // Packed (no row padding), interleaved (RGBRGB) u8/u16/f32.
 struct PackedImage {
   PackedImage(size_t xsize, size_t ysize, const ColorEncoding& c_current,
-              bool has_alpha, size_t bits_per_alpha, size_t bits_per_sample,
-              bool big_endian, bool flipped_y)
+              bool has_alpha, bool alpha_is_premultiplied,
+              size_t bits_per_alpha, size_t bits_per_sample, bool big_endian,
+              bool flipped_y)
       : xsize(xsize),
         ysize(ysize),
         c_current(c_current),
         channels(c_current.Channels() + has_alpha),
+        alpha_is_premultiplied(alpha_is_premultiplied),
         bits_per_alpha(bits_per_alpha),
         bits_per_sample(bits_per_sample),
         row_size(xsize * channels * DivCeil(bits_per_sample, kBitsPerByte)),
@@ -47,10 +49,20 @@ struct PackedImage {
 
   bool HasAlpha() const { return channels == 2 || channels == 4; }
 
+  // Return whether the passed buffer size in bytes would be enough to hold the
+  // PackagedImage data.
+  Status ValidBufferSize(size_t buffer_size) const {
+    if (ysize && buffer_size / ysize < row_size) {
+      return JXL_FAILURE("Buffer size is too small");
+    }
+    return true;
+  }
+
   size_t xsize;
   size_t ysize;
   ColorEncoding c_current;
   size_t channels;
+  bool alpha_is_premultiplied;
   // Per alpha channel value
   size_t bits_per_alpha;
   // Per color channel
@@ -69,8 +81,9 @@ class ExternalImage {
   //
   // DEPRECATED, use ::CopyTo instead
   ExternalImage(size_t xsize, size_t ysize, const ColorEncoding& c_current,
-                bool has_alpha, size_t bits_per_alpha, size_t bits_per_sample,
-                bool big_endian, const uint8_t* bytes, const uint8_t* end);
+                bool has_alpha, bool alpha_is_premultiplied,
+                size_t bits_per_alpha, size_t bits_per_sample, bool big_endian,
+                const uint8_t* bytes, const uint8_t* end);
 
   // Copies pixels from rect and converts from c_current to c_desired. Called by
   // encoders and ImageBundle::CopyTo. alpha is nullptr iff !has_alpha.
@@ -78,7 +91,8 @@ class ExternalImage {
   // range. Otherwise, clamps temp to [0, 1].
   ExternalImage(ThreadPool* pool, const Image3F& color, const Rect& rect,
                 const ColorEncoding& c_current, const ColorEncoding& c_desired,
-                bool has_alpha, const ImageU* alpha, size_t bits_per_alpha,
+                bool has_alpha, bool alpha_is_premultiplied,
+                const ImageU* alpha, size_t bits_per_alpha,
                 size_t bits_per_sample, bool big_endian,
                 CodecIntervals* temp_intervals);
 
@@ -105,6 +119,7 @@ class ExternalImage {
   const ColorEncoding& c_current() const { return desc_.c_current; }
   bool IsGray() const { return desc_.c_current.IsGray(); }
   bool HasAlpha() const { return desc_.channels == 2 || desc_.channels == 4; }
+  bool AlphaIsPremultiplied() const { return desc_.alpha_is_premultiplied; }
   size_t BitsPerAlpha() const { return desc_.bits_per_alpha; }
   size_t BitsPerSample() const { return desc_.bits_per_sample; }
   bool BigEndian() const { return desc_.big_endian; }
@@ -116,8 +131,8 @@ class ExternalImage {
 
  private:
   ExternalImage(size_t xsize, size_t ysize, const ColorEncoding& c_current,
-                bool has_alpha, size_t bits_per_alpha, size_t bits_per_sample,
-                bool big_endian);
+                bool has_alpha, bool alpha_is_premultiplied,
+                size_t bits_per_alpha, size_t bits_per_sample, bool big_endian);
 
   PackedImage desc_;
   PaddedBytes bytes_;

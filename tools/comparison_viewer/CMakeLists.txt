@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-find_package(Qt5 COMPONENTS Concurrent Widgets X11Extras)
+find_package(Qt5 COMPONENTS Concurrent Widgets)
 if (NOT Qt5_FOUND)
   message(WARNING "Qt5 was not found. The comparison tool will not be built.")
   return()
 endif ()
 
-if (NOT TARGET x11_icc)
-  message(WARNING "x11_icc not built. The comparison tool will not be built.")
+if (NOT TARGET icc_detect)
+  message(WARNING "icc_detect not built. The comparison tool will not be built.")
   return ()
 endif ()
 
@@ -56,8 +56,7 @@ target_link_libraries(compare_codecs
   image_loading
   Qt5::Concurrent
   Qt5::Widgets
-  Qt5::X11Extras
-  x11_icc
+  icc_detect
 )
 
 add_executable(compare_images WIN32
@@ -74,6 +73,5 @@ add_executable(compare_images WIN32
 target_link_libraries(compare_images
   image_loading
   Qt5::Widgets
-  Qt5::X11Extras
-  x11_icc
+  icc_detect
 )

@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "jxl/epf_dispatch.h"
+#ifndef TOOLS_ICC_DETECT_ICC_DETECT_H_
+#define TOOLS_ICC_DETECT_ICC_DETECT_H_
 
-#include <hwy/runtime_dispatch.h>
+#include <QWidget>
 
-#include "jxl/epf.h"
+#include "jxl/base/padded_bytes.h"
 
 namespace jxl {
 
-void DoAdaptiveReconstruction(Image3F* JXL_RESTRICT out,
-                              PassesDecoderState* JXL_RESTRICT decoder_state,
-                              ThreadPool* pool) {
-  const hwy::Target target = hwy::TargetBitfield().Best();
-  Dispatch(target, AdaptiveReconstruction(), out, decoder_state, pool);
-}
+// Should be cached if possible.
+PaddedBytes GetMonitorIccProfile(const QWidget* widget);
 
 }  // namespace jxl
+
+#endif  // TOOLS_ICC_DETECT_ICC_DETECT_H_

@@ -856,7 +856,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
         }
       }
     }
-    for (const auto pos : info[i].second) {
+    for (const auto& pos : info[i].second) {
       positions.emplace_back(
           PatchPosition{pos.first, pos.second, PatchBlendMode::kAdd, ref_pos});
     }
@@ -892,10 +892,10 @@ void FindBestPatchDictionary(const Image3F& opsin,
     cparams.quality_pair.second = (100 + cparams.quality_pair.second) * 0.5f;
   }
   ImageMetadata metadata;
-  metadata.color_encoding = ColorManagement::LinearSRGB();
+  metadata.color_encoding = ColorEncoding::LinearSRGB();
   ImageBundle ib(&metadata);
   // XYB, not sRGB.
-  ib.SetFromImage(std::move(reference_frame), ColorManagement::LinearSRGB());
+  ib.SetFromImage(std::move(reference_frame), ColorEncoding::LinearSRGB());
   PassesEncoderState roundtrip_state;
   state->special_frames.emplace_back();
   Multiframe multiframe;

@@ -272,5 +272,64 @@ HWY_ATTR void BitReaderTest_MoveTest() {
 
 TEST(BitReaderTest, MoveTest) { BitReaderTest_MoveTest(); }
 
+#ifndef JXL_CRASH_ON_ERROR
+TEST(BitReaderTest, WordTestPastTheEnd) {
+  uint8_t data[1024] = {};
+  std::fill(data, data + 1024, 0xff);
+  BitReader word_reader(Span<const uint8_t>(data, 1024));
+  ASSERT_TRUE(word_reader.SwitchToByteAligned());
+  for (size_t i = 0; i < 512; i++) {
+    EXPECT_EQ(word_reader.ReadByteAlignedWord(), 0xffff);
+  }
+  EXPECT_EQ(word_reader.ReadByteAlignedWord(), 0);
+  EXPECT_FALSE(word_reader.Close());
+}
+#endif
+
+HWY_ATTR void BitReaderTest_WordTestCorrect() {
+  uint8_t data[1024] = {};
+  std::mt19937 rng;
+  std::uniform_int_distribution<uint8_t> dist(0, 255);
+  for (size_t i = 0; i < 1024; i++) {
+    data[i] = dist(rng);
+  }
+  BitReader reader(Span<const uint8_t>(data, 1024));
+  std::vector<uint16_t> words;
+  for (size_t i = 0; i < 512; i++) {
+    words.push_back(reader.ReadFixedBits<16>());
+  }
+  ASSERT_TRUE(reader.Close());
+  BitReader word_reader(Span<const uint8_t>(data, 1024));
+  ASSERT_TRUE(word_reader.SwitchToByteAligned());
+  for (size_t i = 0; i < 512; i++) {
+    EXPECT_EQ(word_reader.ReadByteAlignedWord(), words[i]);
+  }
+  EXPECT_TRUE(word_reader.Close());
+}
+TEST(BitReaderTest, WordTestCorrect) {
+  BitReaderTest_WordTestCorrect();
+}
+
+HWY_ATTR void BitReaderTest_WordTestShort() {
+  uint8_t data[4] = {};
+  std::mt19937 rng;
+  std::uniform_int_distribution<uint8_t> dist(0, 255);
+  for (size_t i = 0; i < 4; i++) {
+    data[i] = dist(rng);
+  }
+  BitReader reader(Span<const uint8_t>(data, 4));
+  BitReader word_reader(Span<const uint8_t>(data, 4));
+  EXPECT_EQ(reader.ReadFixedBits<8>(), word_reader.ReadFixedBits<8>());
+  ASSERT_TRUE(word_reader.SwitchToByteAligned());
+  EXPECT_EQ(reader.ReadFixedBits<16>(), word_reader.ReadByteAlignedWord());
+  EXPECT_EQ(reader.ReadFixedBits<8>(), word_reader.ReadFixedBits<8>());
+  ASSERT_TRUE(reader.Close());
+  EXPECT_TRUE(word_reader.Close());
+}
+
+TEST(BitReaderTest, WordTestShort) {
+  BitReaderTest_WordTestShort();
+}
+
 }  // namespace
 }  // namespace jxl

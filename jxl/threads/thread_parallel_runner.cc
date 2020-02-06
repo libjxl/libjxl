@@ -149,12 +149,19 @@ void ThreadParallelRunner::ThreadFunc(ThreadParallelRunner* self,
 }
 
 ThreadParallelRunner::ThreadParallelRunner(const int num_worker_threads)
+#if defined(__EMSCRIPTEN__)
+    : num_worker_threads_(0),
+      num_threads_(1) {
+  // TODO(eustas): find out if pthreads would work for us.
+  (void)num_worker_threads;
+#else
     : num_worker_threads_(num_worker_threads),
       num_threads_(std::max(num_worker_threads, 1)) {
+#endif
   PROFILER_ZONE("ThreadParallelRunner ctor");
 
-  JXL_CHECK(num_worker_threads >= 0);
-  threads_.reserve(num_worker_threads);
+  JXL_CHECK(num_worker_threads_ >= 0);
+  threads_.reserve(num_worker_threads_);
 
   // Suppress "unused-private-field" warning.
   (void)padding1;
@@ -163,7 +170,7 @@ ThreadParallelRunner::ThreadParallelRunner(const int num_worker_threads)
   // Safely handle spurious worker wakeups.
   worker_start_command_ = kWorkerWait;
 
-  for (int i = 0; i < num_worker_threads; ++i) {
+  for (int i = 0; i < num_worker_threads_; ++i) {
     threads_.emplace_back(ThreadFunc, this, i);
   }
 

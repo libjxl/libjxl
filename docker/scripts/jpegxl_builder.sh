@@ -116,7 +116,10 @@ install_pkgs() {
 
     # Common libraries.
     libstdc++-8-dev
-    libgif-dev  # See libgif-dev comment below.
+
+    # We don't use tcmalloc on archs other than amd64. This installs
+    # libgoogle-perftools4:amd64.
+    google-perftools
   )
 
   # Install packages that are arch-dependent.
@@ -133,13 +136,16 @@ install_pkgs() {
       libstdc++-8-dev:"${ubarch}"
       qtbase5-dev:"${ubarch}"
 
+      # For OpenEXR:
+      libilmbase12:"${ubarch}"
+      libopenexr22:"${ubarch}"
+
+      # TCMalloc dependency
+      libunwind-dev:"${ubarch}"
+
       # Cross-compiling tools per arch.
       libc6-dev-"${ubarch}"-cross
       libstdc++-8-dev-"${ubarch}"-cross
-
-      # libgif-dev package can't be installed for multiple architectures at
-      # the same time. Instead we unpack it manually later.
-      # libgif-dev:"${ubarch}"
     )
   done
 
@@ -154,13 +160,24 @@ install_pkgs() {
     fi
   done
 
-  apt install -y "${packages[@]}"
+  # Install all the manual packages via "apt install" for the main arch. These
+  # will be installed for other archs via manual download and unpack.
+  apt install -y "${packages[@]}" "${UNPACK_PKGS[@]}"
 }
 
 # Packages that are manually unpacked for each architecture.
 UNPACK_PKGS=(
   libgif-dev
   libclang-common-6.0-dev
+
+  # For OpenEXR:
+  libilmbase-dev
+  libopenexr-dev
+
+  # TCMalloc
+  libgoogle-perftools-dev
+  libtcmalloc-minimal4
+  libgoogle-perftools4
 )
 
 # Main script entry point.

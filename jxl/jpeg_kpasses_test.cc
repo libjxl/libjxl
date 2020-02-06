@@ -19,7 +19,9 @@
 #include "jxl/enc_butteraugli_comparator.h"
 #include "jxl/enc_file.h"
 #include "jxl/extras/codec.h"
+#if JPEGXL_ENABLE_JPEG
 #include "jxl/extras/codec_jpg.h"
+#endif
 #include "jxl/image_ops.h"
 #include "jxl/image_test_utils.h"
 #include "jxl/testdata_path.h"
@@ -27,6 +29,7 @@
 namespace jxl {
 namespace {
 
+#if JPEGXL_ENABLE_JPEG
 TEST(JPEGkPassesTest, RoundtripLarge) {
   ThreadPool* pool = nullptr;
   const std::string pathname =
@@ -57,7 +60,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
   AuxOut* aux_out = nullptr;
   PassesEncoderState enc_state;
 
-  // encode DCT coeffs as kPasses JXL
+  // encode DCT coeffs as kVarDCT JXL
   EXPECT_TRUE(
       EncodeFile(cparams, &io3, &enc_state, &compressed, aux_out, pool));
   // decode JXL to pixels
@@ -65,7 +68,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io4, aux_out, pool));
   const ImageBundle& ib4 = io4.Main();
 
-  // TODO: investigate where the difference between libjpeg and kPasses comes
+  // TODO: investigate where the difference between libjpeg and kVarDCT comes
   //       from (and see if it can be reduced)
   EXPECT_LE(ButteraugliDistance(ib2, ib4, cparams.hf_asymmetry,
                                 /*distmap=*/nullptr, pool),
@@ -89,6 +92,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
 
   EXPECT_TRUE(SamePixels(ib2.color(), ib6.color()));
 }
+#endif
 
 }  // namespace
 }  // namespace jxl

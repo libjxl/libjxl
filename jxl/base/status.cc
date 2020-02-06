@@ -25,13 +25,10 @@
 namespace jxl {
 
 bool Debug(const char* format, ...) {
-// Show the debug messages in debug or opt mode, not in release mode.
-#if JXL_DEBUG_WARNING
   va_list args;
   va_start(args, format);
   vfprintf(stderr, format, args);
   va_end(args);
-#endif
   return false;
 }
 

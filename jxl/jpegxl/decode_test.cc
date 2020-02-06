@@ -31,7 +31,7 @@ TEST(DecodeTest, JpegxlSignatureCheckTest) {
 
       // JPEGXL headers.
       {JPEGXL_SIG_NOT_ENOUGH_BYTES, {0xff}},  // Part of a signature.
-      {JPEGXL_SIG_JPEGXL, {0xff, 0x58}},
+      {JPEGXL_SIG_JPEG, {0xff, 0xD8}},
       {JPEGXL_SIG_JPEGXL, {0xff, 0x0a}},
 
       // A header could start with 0x0a, but it is not a complete signature.

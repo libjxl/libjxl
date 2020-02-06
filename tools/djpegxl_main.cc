@@ -34,6 +34,7 @@
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/brunsli.h"
 #include "jxl/codec_in_out.h"
+#include "tools/box/box.h"
 #include "tools/cmdline.h"
 #include "tools/djpegxl.h"
 #include "tools/djxl.h"
@@ -68,6 +69,27 @@ int DecompressMain(int argc, const char *argv[]) {
   if (!jxl::ReadFile(args.file_in, &compressed)) return 1;
   fprintf(stderr, "Read %zu compressed bytes\n", compressed.size());
 
+  // Detect whether the file uses the box format container. If so, extract the
+  // primary codestream, and continue with only the codestream.
+  const uint8_t box_header[] = {0,   0,   0,   0xc, 'J',  'X',
+                                'L', ' ', 0xd, 0xa, 0x87, 0xa};
+  if (compressed.size() >= 12 && !memcmp(box_header, compressed.data(), 12)) {
+#if defined(__EMSCRIPTEN__)
+    // There's a linker issue depending on "box", see TODO in the cmake files.
+    fprintf(stderr, "Container format not yet supported for emscripten");
+    return 1;
+#else  // defined(__EMSCRIPTEN__)
+    JpegXlContainer container;
+    if (!DecodeJpegXlContainerOneShot(compressed.data(), compressed.size(),
+                                      &container)) {
+      fprintf(stderr, "Decoding container format failed.\n");
+      return 1;
+    }
+    compressed.assign(container.codestream,
+                      container.codestream + container.codestream_size);
+#endif  // defined(__EMSCRIPTEN__)
+  }
+
   jxl::ThreadPoolInternal pool(args.num_threads);
   jxl::CodecInOut io;
   SpeedStats stats;
@@ -80,38 +102,39 @@ int DecompressMain(int argc, const char *argv[]) {
   io.use_sjpeg = args.use_sjpeg;
   io.jpeg_quality = args.jpeg_quality;
 
-  if ((JpegxlSignatureCheck(compressed.data(), compressed.size()) |
-       JPEGXL_SIG_ANY) != 0) {
-    const std::vector<int> cpus = jxl::AvailableCPUs();
-    pool.RunOnEachThread([&cpus](const int task, const size_t thread) {
-      // 1.1-1.2x speedup (36 cores) from pinning.
-      if (thread < cpus.size()) {
-        if (!jxl::PinThreadToCPU(cpus[thread])) {
-          fprintf(stderr, "WARNING: failed to pin thread %zu.\n", thread);
-        }
-      }
-    });
-
-    jxl::AuxOut aux_out;
-    for (size_t i = 0; i < args.num_reps; ++i) {
-      if (!DecompressJxl(jxl::Span<const uint8_t>(compressed),
-                         args.djxl_args.params, &pool, &io, &aux_out, &stats)) {
-        return 1;
-      }
-    }
-
-    if (!WriteJxlOutput(args.djxl_args, args.file_out, io)) return 1;
-
-    if (args.djxl_args.print_read_bytes) {
-      fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
-    }
-
-    if (args.print_info == jxl::Override::kOn) {
-      aux_out.Print(args.num_reps);
-    }
-  } else {
+  const auto signature =
+      JpegxlSignatureCheck(compressed.data(), compressed.size());
+  if ((signature & JPEGXL_SIG_ANY) == 0) {
     fprintf(stderr, "Unknown compressed image format\n");
     return 1;
+  }
+
+  const std::vector<int> cpus = jxl::AvailableCPUs();
+  pool.RunOnEachThread([&cpus](const int task, const size_t thread) {
+    // 1.1-1.2x speedup (36 cores) from pinning.
+    if (thread < cpus.size()) {
+      if (!jxl::PinThreadToCPU(cpus[thread])) {
+        fprintf(stderr, "WARNING: failed to pin thread %zu.\n", thread);
+      }
+    }
+  });
+
+  jxl::AuxOut aux_out;
+  for (size_t i = 0; i < args.num_reps; ++i) {
+    if (!DecompressJxl(signature, jxl::Span<const uint8_t>(compressed),
+                       args.djxl_args.params, &pool, &io, &aux_out, &stats)) {
+      return 1;
+    }
+  }
+
+  if (!WriteJxlOutput(args.djxl_args, args.file_out, io)) return 1;
+
+  if (args.djxl_args.print_read_bytes) {
+    fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
+  }
+
+  if (args.print_info == jxl::Override::kOn) {
+    aux_out.Print(args.num_reps);
   }
 
   JXL_CHECK(stats.Print(io.xsize(), io.ysize(), pool.NumWorkerThreads()));

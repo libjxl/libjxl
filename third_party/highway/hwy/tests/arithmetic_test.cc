@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -820,29 +820,6 @@ HWY_NOINLINE HWY_ATTR void TestSumsOfU8(D d) {
 #endif
 }
 
-HWY_NOINLINE HWY_ATTR void TestMinPos() {
-#if HWY_BITS == 128 || HWY_IDE
-  const HWY_CAPPED(uint16_t, 8) du16x8;
-  HWY_ALIGN uint16_t in_bytes[du16x8.N];
-
-  // Check for the minimum value in each position.
-  for (uint16_t ret_pos = 0; ret_pos < du16x8.N; ret_pos++) {
-    for (size_t i = 0; i < du16x8.N; ++i) {
-      // The minimum value is when i == 0, since i < d16.N and 3 is coprime
-      // with d16.N, therefore no other value of i has i * 3 % d16.N == 0.
-      in_bytes[(ret_pos + i) % du16x8.N] = 777U + i * 3 % du16x8.N;
-    }
-
-    const auto v = Load(du16x8, in_bytes);
-    auto ext_minpos_v = ext::minpos(v);
-
-    HWY_ASSERT_EQ(uint16_t(777), GetLane(ext_minpos_v));
-    ext_minpos_v = ShiftRightLanes<1>(ext_minpos_v);
-    HWY_ASSERT_EQ(ret_pos, GetLane(ext_minpos_v));
-  }
-#endif
-}
-
 template <class D>
 HWY_NOINLINE HWY_ATTR void TestHorzSumT(D d) {
   using T = typename D::T;
@@ -889,8 +866,8 @@ HWY_NOINLINE HWY_ATTR void TestAbsDiffT(D d) {
   const auto a = Load(d, in_lanes_a);
   const auto b = Load(d, in_lanes_b);
   const auto expected = Load(d, out_lanes);
-  HWY_ASSERT_VEC_EQ(d, expected, ext::AbsDiff(a, b));
-  HWY_ASSERT_VEC_EQ(d, expected, ext::AbsDiff(b, a));
+  HWY_ASSERT_VEC_EQ(d, expected, AbsDiff(a, b));
+  HWY_ASSERT_VEC_EQ(d, expected, AbsDiff(b, a));
 }
 
 HWY_NOINLINE HWY_ATTR void TestAbsDiff() { TestAbsDiffT(df); }
@@ -919,7 +896,6 @@ HWY_NOINLINE HWY_ATTR void TestArithmetic() {
   TestFloatFromInt(df);
 
   TestSumsOfU8(du64);
-  TestMinPos();
   TestHorzSum();
 
   TestAbsDiff();

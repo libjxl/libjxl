@@ -17,13 +17,13 @@
 
 // Forward/backward-compatible 'bundles' with auto-serialized 'fields'.
 
-#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <cinttypes>
 #include <cmath>  // abs
 #include <cstdarg>
 

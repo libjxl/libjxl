@@ -26,23 +26,26 @@ HWY_ATTR int TestOneInput(const uint8_t* data, size_t size) {
   size -= 2;
 
   std::vector<uint8_t> context_map;
-  BitReader br(Span<const uint8_t>(data, size));
-  ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(&br, numContexts, ANS_MAX_ALPHA_SIZE,
-                                       &code, &context_map));
-  ANSSymbolReader ansreader(&code, &br);
+  Status ret = true;
+  {
+    BitReader br(Span<const uint8_t>(data, size));
+    BitReaderScopedCloser br_closer(&br, &ret);
+    ANSCode code;
+    JXL_RETURN_IF_ERROR(DecodeHistograms(&br, numContexts, ANS_MAX_ALPHA_SIZE,
+                                         &code, &context_map));
+    ANSSymbolReader ansreader(&code, &br);
 
-  // Limit the maximum amount of reads to avoid (valid) infinite loops.
-  const size_t maxreads = size * 8;
-  size_t numreads = 0;
-  int context = 0;
-  while (DivCeil(br.TotalBitsConsumed(), kBitsPerByte) < size &&
-         numreads <= maxreads) {
-    int code = ReadHybridUint(context, &br, &ansreader, context_map);
-    context = code % numContexts;
-    numreads++;
+    // Limit the maximum amount of reads to avoid (valid) infinite loops.
+    const size_t maxreads = size * 8;
+    size_t numreads = 0;
+    int context = 0;
+    while (DivCeil(br.TotalBitsConsumed(), kBitsPerByte) < size &&
+           numreads <= maxreads) {
+      int code = ReadHybridUint(context, &br, &ansreader, context_map);
+      context = code % numContexts;
+      numreads++;
+    }
   }
-  (void)br.Close();
 
   return 0;
 }

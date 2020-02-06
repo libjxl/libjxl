@@ -103,6 +103,9 @@ HWY_ATTR bool DecodeContextMap(std::vector<uint8_t>* context_map,
         uint32_t nbits = sym;
         uint32_t bits = input->PeekBits(nbits);
         input->Consume(nbits);
+        if (nbits > 31) {
+          return JXL_FAILURE("Too many bits");
+        }
         uint32_t cluster = DecodeVarLenUint(sym, bits);
         if (cluster >= kMaxClusters) {
           return JXL_FAILURE("Invalid cluster ID");

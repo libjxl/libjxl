@@ -24,27 +24,28 @@
 
 #include "jxl/base/override.h"
 #include "jxl/frame_header.h"
-#include "jxl/modular/encoding/encoding.h"
+#include "jxl/modular/encoding/options.h"
 
 namespace jxl {
 
 enum class SpeedTier {
   // Turns on FindBestQuantizationHQ loop. Equivalent to "guetzli" mode.
-  kTortoise,
-  // Turns on FindBestQuantization butteraugli loop. Default.
-  kKitten,
+  kTortoise = 1,
+  // Turns on FindBestQuantization butteraugli loop.
+  kKitten = 2,
   // Turns on dots, patches, and spline detection by default, as well as full
-  // context clustering. Equivalent to "fast" mode.
-  kSquirrel,
-  // Turns on error diffusion and full AC strategy heuristics.
-  kWombat,
+  // context clustering. Default.
+  kSquirrel = 3,
+  // Turns on error diffusion and full AC strategy heuristics. Equivalent to
+  // "fast" mode.
+  kWombat = 4,
   // Turns on gaborish by default, non-default cmap, initial quant field.
-  kHare,
+  kHare = 5,
   // Turns on simple heuristics for AC strategy, quant field, and clustering;
   // also enables coefficient reordering.
-  kCheetah,
+  kCheetah = 6,
   // Turns off most encoder features, for the fastest possible encoding time.
-  kFalcon,
+  kFalcon = 7,
 };
 
 inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
@@ -57,10 +58,10 @@ inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
   } else if (s == "hare") {
     *out = SpeedTier::kHare;
     return true;
-  } else if (s == "wombat") {
+  } else if (s == "fast" || s == "wombat") {
     *out = SpeedTier::kWombat;
     return true;
-  } else if (s == "fast" || s == "squirrel") {
+  } else if (s == "squirrel") {
     *out = SpeedTier::kSquirrel;
     return true;
   } else if (s == "kitten") {
@@ -68,6 +69,11 @@ inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
     return true;
   } else if (s == "guetzli" || s == "tortoise") {
     *out = SpeedTier::kTortoise;
+    return true;
+  }
+  size_t st = 10 - static_cast<size_t>(strtoull(s.c_str(), nullptr, 0));
+  if (st <= (size_t)SpeedTier::kFalcon && st >= (size_t)SpeedTier::kTortoise) {
+    *out = SpeedTier(st);
     return true;
   }
   return false;
@@ -94,11 +100,6 @@ inline const char* SpeedTierName(SpeedTier speed_tier) {
 
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct CompressParams {
-  // Only used for benchmarking (comparing vs libjpeg)
-  int jpeg_quality = 100;
-  bool jpeg_chroma_subsampling = false;
-  bool clear_metadata = false;
-
   float butteraugli_distance = 1.0f;
   size_t target_size = 0;
   float target_bitrate = 0.0f;
@@ -120,7 +121,7 @@ struct CompressParams {
   // Up to 3 pyramid levels - for up to 4096x downsampling.
   size_t dc_level = 0;
 
-  SpeedTier speed_tier = SpeedTier::kKitten;
+  SpeedTier speed_tier = SpeedTier::kSquirrel;
 
   int max_butteraugli_iters = 4;
 
@@ -128,6 +129,11 @@ struct CompressParams {
 
   ColorTransform color_transform = ColorTransform::kXYB;
   YCbCrChromaSubsampling chroma_subsampling = YCbCrChromaSubsampling::k444;
+
+  // Compress pixels to JPEG.
+  bool pixels_to_jpeg_mode = false;
+  uint32_t jpeg_quality = 100;
+  bool jpeg_420 = false;
 
   // If true, the "modular mode options" members below are used.
   bool modular_group_mode = false;
@@ -178,6 +184,9 @@ struct CompressParams {
   // extractor with paths.
   const char* file_in = nullptr;
   const char* file_out = nullptr;
+
+  // Currently unused as of 2020-01.
+  bool clear_metadata = false;
 
   // Prints extra information during/after encoding.
   bool verbose = false;

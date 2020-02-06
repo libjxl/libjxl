@@ -49,6 +49,18 @@ HWY_ATTR void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
                                    Image3F* JXL_RESTRICT storage1,
                                    Image3F* JXL_RESTRICT storage2);
 
+// Same as EdgePreservingFilter, but only processes row `y` of
+// dec_state->decoded. If an output row was produced, it is returned in
+// `output_row`. `y` should be relative to `in_rect` (`output_row` will be too).
+// The first row in `in_rect` corresponds to a value of `y` of `2*kBlockDim`.
+// This function should be called for `in_rect.ysize() + 2 * lf.PaddingRows()`
+// values of `y`, in increasing order, starting from
+// `y=2*kBlockDim-lf.PaddingRows()`.
+HWY_ATTR bool ApplyLoopFiltersRow(PassesDecoderState* dec_state,
+                                  const Rect& in_rect, size_t y, size_t thread,
+                                  Image3F* JXL_RESTRICT out,
+                                  size_t* JXL_RESTRICT output_row);
+
 }  // namespace jxl
 
 #endif  // JXL_EPF_H_

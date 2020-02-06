@@ -18,6 +18,7 @@
 // Helper functions for reading/writing files.
 
 #include <stdio.h>
+#include <sys/stat.h>
 
 #include <string>
 
@@ -66,10 +67,23 @@ static inline Status ReadFile(const std::string& pathname,
   FileWrapper f(pathname, "rb");
   if (f == nullptr) return JXL_FAILURE("Failed to open file for reading");
 
-  if (fseek(f, 0, SEEK_END) != 0) return JXL_FAILURE("Failed to seek end");
-  bytes->resize(ftell(f));
-  if (bytes->empty()) return JXL_FAILURE("Zero-length file");
-  if (fseek(f, 0, SEEK_SET) != 0) return JXL_FAILURE("Failed to seek set");
+    // Ensure it is a regular file
+#ifdef _WIN32
+  struct __stat64 s = {};
+  const int err = _stat64(pathname.c_str(), &s);
+  const bool is_file = (s.st_mode & S_IFREG) != 0;
+#else
+  struct stat s = {};
+  const int err = stat(pathname.c_str(), &s);
+  const bool is_file = S_ISREG(s.st_mode);
+#endif
+  if (err != 0) return JXL_FAILURE("Failed to obtain file status");
+  if (!is_file) return JXL_FAILURE("Not a file");
+
+  // Get size of file in bytes
+  const int64_t size = s.st_size;
+  if (size <= 0) return JXL_FAILURE("Empty or invalid file size");
+  bytes->resize(static_cast<size_t>(size));
 
   size_t pos = 0;
   while (pos < bytes->size()) {

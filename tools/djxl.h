@@ -20,6 +20,7 @@
 
 #include <string>
 
+#include "jpegxl/decode.h"
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
@@ -60,7 +61,8 @@ struct JxlDecompressArgs {
 };
 
 // Decompresses and notifies SpeedStats of elapsed time.
-jxl::Status DecompressJxl(const jxl::Span<const uint8_t> compressed,
+jxl::Status DecompressJxl(const JpegxlSignature signature,
+                          const jxl::Span<const uint8_t> compressed,
                           const jxl::DecompressParams& params,
                           jxl::ThreadPool* pool,
                           jxl::CodecInOut* JXL_RESTRICT io,

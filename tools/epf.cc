@@ -179,7 +179,7 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   opsin_params.Init();
   jxl::OpsinToLinear(&opsin, pool, opsin_params);
   io->Main().SetFromImage(
-      std::move(opsin), jxl::ColorManagement::LinearSRGB(io->Main().IsGray()));
+      std::move(opsin), jxl::ColorEncoding::LinearSRGB(io->Main().IsGray()));
   JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));
   return true;
 }

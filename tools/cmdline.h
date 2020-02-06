@@ -42,6 +42,9 @@ class CommandLineParser {
     // Return the help string if any, or nullptr if no help string.
     virtual const char* help_text() const = 0;
 
+    // Return the verbosity level for this option
+    virtual int verbosity_level() const = 0;
+
     // Return whether the option was passed.
     virtual bool matched() const = 0;
 
@@ -56,8 +59,9 @@ class CommandLineParser {
   // Add a positional argument. Returns the id of the added option or
   // kOptionError on error.
   OptionId AddPositionalOption(const char* name, const char* help_text,
-                               const char** storage) {
-    options_.emplace_back(new CmdOptionPositional(name, help_text, storage));
+                               const char** storage, int verbosity_level = 0) {
+    options_.emplace_back(
+        new CmdOptionPositional(name, help_text, storage, verbosity_level));
     return options_.size() - 1;
   }
 
@@ -69,9 +73,11 @@ class CommandLineParser {
   template <typename T>
   OptionId AddOptionValue(char short_name, const char* long_name,
                           const char* metavar, const char* help_text,
-                          T* storage, bool(parser)(const char*, T*)) {
+                          T* storage, bool(parser)(const char*, T*),
+                          int verbosity_level = 0) {
     options_.emplace_back(new CmdOptionFlag<T>(short_name, long_name, metavar,
-                                               help_text, storage, parser));
+                                               help_text, storage, parser,
+                                               verbosity_level));
     return options_.size() - 1;
   }
 
@@ -79,9 +85,10 @@ class CommandLineParser {
   // kOptionError on error.
   template <typename T>
   OptionId AddOptionFlag(char short_name, const char* long_name,
-                         const char* help_text, T* storage, bool(parser)(T*)) {
-    options_.emplace_back(new CmdOptionFlag<T>(short_name, long_name, help_text,
-                                               storage, parser));
+                         const char* help_text, T* storage, bool(parser)(T*),
+                         int verbosity_level = 0) {
+    options_.emplace_back(new CmdOptionFlag<T>(
+        short_name, long_name, help_text, storage, parser, verbosity_level));
     return options_.size() - 1;
   }
 
@@ -92,6 +99,8 @@ class CommandLineParser {
 
   // Print the help message.
   void PrintHelp() const;
+
+  int verbosity = 0;
 
   // Parse the command line.
   bool Parse(int argc, const char* argv[]);
@@ -104,11 +113,15 @@ class CommandLineParser {
   class CmdOptionPositional : public CmdOptionInterface {
    public:
     CmdOptionPositional(const char* name, const char* help_text,
-                        const char** storage)
-        : name_(name), help_text_(help_text), storage_(storage) {}
+                        const char** storage, int verbosity_level)
+        : name_(name),
+          help_text_(help_text),
+          storage_(storage),
+          verbosity_level_(verbosity_level) {}
 
     std::string help_flags() const override { return name_; }
     const char* help_text() const override { return help_text_; }
+    int verbosity_level() const override { return verbosity_level_; }
     bool matched() const override { return matched_; }
 
     // Only match non-flag values. This means that you can't pass '-foo' as a
@@ -129,6 +142,7 @@ class CommandLineParser {
     const char* name_;
     const char* help_text_;
     const char** storage_;
+    const int verbosity_level_;
 
     bool matched_{false};
   };
@@ -140,26 +154,28 @@ class CommandLineParser {
     // Construct a flag that doesn't take any value, for example '-v' or
     // '--long'. Passing a value to it raises an error.
     CmdOptionFlag(char short_name, const char* long_name, const char* help_text,
-                  T* storage, bool(parser)(T*))
+                  T* storage, bool(parser)(T*), int verbosity_level)
         : short_name_(short_name),
           long_name_(long_name),
           long_name_len_(long_name ? strlen(long_name) : 0),
           metavar_(nullptr),
           help_text_(help_text),
-          storage_(storage) {
+          storage_(storage),
+          verbosity_level_(verbosity_level) {
       parser_.parser_no_value_ = parser;
     }
 
     // Construct a flag that expects a value to be passed.
     CmdOptionFlag(char short_name, const char* long_name, const char* metavar,
                   const char* help_text, T* storage,
-                  bool(parser)(const char* arg, T*))
+                  bool(parser)(const char* arg, T*), int verbosity_level)
         : short_name_(short_name),
           long_name_(long_name),
           long_name_len_(long_name ? strlen(long_name) : 0),
           metavar_(metavar ? metavar : ""),
           help_text_(help_text),
-          storage_(storage) {
+          storage_(storage),
+          verbosity_level_(verbosity_level) {
       parser_.parser_with_arg_ = parser;
     }
 
@@ -177,6 +193,7 @@ class CommandLineParser {
       return ret;
     }
     const char* help_text() const override { return help_text_; }
+    int verbosity_level() const override { return verbosity_level_; }
     bool matched() const override { return matched_; }
 
     bool Match(const char* arg) const override {
@@ -252,6 +269,9 @@ class CommandLineParser {
 
     // The pointer to the storage of this flag used when parsing.
     T* storage_;
+
+    // At which verbosity level do we show this option?
+    int verbosity_level_;
 
     // The function to use to parse the value when matched. The function used is
     // parser_with_arg_ when metavar_ is not null (and the value string will be

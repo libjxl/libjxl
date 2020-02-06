@@ -28,12 +28,13 @@ namespace jxl {
 namespace {
 
 Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
-                const bool has_alpha, const bool is_16bit,
-                const bool big_endian, const uint8_t* pixels,
-                const uint8_t* end, ThreadPool* pool, ImageBundle* ib) {
-  const ColorEncoding& c = ColorManagement::SRGB(is_gray);
+                const bool has_alpha, const bool alpha_is_premultiplied,
+                const bool is_16bit, const bool big_endian,
+                const uint8_t* pixels, const uint8_t* end, ThreadPool* pool,
+                ImageBundle* ib) {
+  const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
-  const PackedImage desc(xsize, ysize, c, has_alpha,
+  const PackedImage desc(xsize, ysize, c, has_alpha, alpha_is_premultiplied,
                          /*alpha_bits=*/bits_per_sample, bits_per_sample,
                          big_endian, /*flipped_y=*/false);
   const Span<const uint8_t> span(pixels, end - pixels);
@@ -129,7 +130,8 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   CodecIntervals* temp_intervals = nullptr;  // Don't need min/max.
   const ExternalImage external(
       pool, ib->color(), rect, ib->c_current(), c_desired, ib->HasAlpha(),
-      alpha, metadata->alpha_bits, bits_per_sample, big_endian, temp_intervals);
+      ib->AlphaIsPremultiplied(), alpha, metadata->alpha_bits, bits_per_sample,
+      big_endian, temp_intervals);
   JXL_RETURN_IF_ERROR(external.IsHealthy());
   AllocateAndFill(external, out);
   return true;
@@ -174,30 +176,33 @@ void ImageBundle::SetFromImage(Image3F&& color,
 }
 
 Status ImageBundle::SetFromSRGB(size_t xsize, size_t ysize, bool is_gray,
-                                bool has_alpha, const uint8_t* pixels,
-                                const uint8_t* end, ThreadPool* pool) {
+                                bool has_alpha, bool alpha_is_premultiplied,
+                                const uint8_t* pixels, const uint8_t* end,
+                                ThreadPool* pool) {
   const bool big_endian = false;  // don't care since each sample is a byte
-  return FromSRGB(xsize, ysize, is_gray, has_alpha, /*is_16bit=*/false,
-                  big_endian, pixels, end, pool, this);
+  return FromSRGB(xsize, ysize, is_gray, has_alpha, alpha_is_premultiplied,
+                  /*is_16bit=*/false, big_endian, pixels, end, pool, this);
 }
 
 Status ImageBundle::SetFromSRGB(size_t xsize, size_t ysize, bool is_gray,
-                                bool has_alpha, const uint16_t* pixels,
-                                const uint16_t* end, ThreadPool* pool) {
+                                bool has_alpha, bool alpha_is_premultiplied,
+                                const uint16_t* pixels, const uint16_t* end,
+                                ThreadPool* pool) {
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(pixels);
   const uint8_t* bytes_end = reinterpret_cast<const uint8_t*>(end);
   // Given as uint16_t, so is in native order.
   const bool big_endian = !IsLittleEndian();
-  return FromSRGB(xsize, ysize, is_gray, has_alpha, /*is_16bit=*/true,
-                  big_endian, bytes, bytes_end, pool, this);
+  return FromSRGB(xsize, ysize, is_gray, has_alpha, alpha_is_premultiplied,
+                  /*is_16bit=*/true, big_endian, bytes, bytes_end, pool, this);
 }
 
 Status ImageBundle::SetFromSRGB(size_t xsize, size_t ysize, bool is_gray,
-                                bool has_alpha, bool is_16bit, bool big_endian,
+                                bool has_alpha, bool alpha_is_premultiplied,
+                                bool is_16bit, bool big_endian,
                                 const uint8_t* pixels, const uint8_t* end,
                                 ThreadPool* pool) {
-  return FromSRGB(xsize, ysize, is_gray, has_alpha, is_16bit, big_endian,
-                  pixels, end, pool, this);
+  return FromSRGB(xsize, ysize, is_gray, has_alpha, alpha_is_premultiplied,
+                  is_16bit, big_endian, pixels, end, pool, this);
 }
 
 Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
@@ -211,8 +216,9 @@ Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
   const bool big_endian = !IsLittleEndian();
   CodecIntervals temp_intervals;
   const ExternalImage external(pool, color_, Rect(color_), c_current_,
-                               c_desired, HasAlpha(), alpha, alpha_bits, 32,
-                               big_endian, &temp_intervals);
+                               c_desired, HasAlpha(), AlphaIsPremultiplied(),
+                               alpha, alpha_bits, 32, big_endian,
+                               &temp_intervals);
   return external.IsHealthy() && external.CopyTo(&temp_intervals, pool, this);
 }
 
@@ -231,11 +237,11 @@ Status ImageBundle::CopyTo(const Rect& rect, const ColorEncoding& c_desired,
 
 Status ImageBundle::CopyToSRGB(const Rect& rect, Image3B* out,
                                ThreadPool* pool) const {
-  return CopyTo(rect, ColorManagement::SRGB(IsGray()), out, pool);
+  return CopyTo(rect, ColorEncoding::SRGB(IsGray()), out, pool);
 }
 
 void ImageBundle::VerifyMetadata() const {
-  JXL_CHECK(!c_current_.icc.empty());
+  JXL_CHECK(!c_current_.ICC().empty());
   JXL_CHECK(metadata_->color_encoding.IsGray() == IsGray());
 
   if (metadata_->HasAlpha() != HasAlpha()) {
@@ -307,8 +313,8 @@ size_t ImageBundle::DetectRealBitdepth() const {
       }
     }
   }
-  JXL_DEBUG_V(0, "Interpreting input as %zu-bit (nominally it is %zu-bit)",
-              real_d, orig_d);
+  JXL_WARNING("Interpreting input as %zu-bit (nominally it is %zu-bit)", real_d,
+              orig_d);
   return real_d;
 }
 
@@ -318,11 +324,33 @@ void ImageBundle::RemoveAlpha() {
   metadata_->alpha_bits = 0;  // maintain invariant for VerifyMetadata
 }
 
-void ImageBundle::SetAlpha(ImageU&& alpha) {
+void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
   JXL_CHECK(alpha.xsize() != 0 && alpha.ysize() != 0);
   JXL_CHECK(metadata_->alpha_bits != 0);
   alpha_ = std::move(alpha);
+  alpha_is_premultiplied_ = alpha_is_premultiplied;
   VerifySizes();
+}
+
+void ImageBundle::PremultiplyAlphaIfNeeded(ThreadPool* pool) {
+  JXL_ASSERT(HasAlpha());
+  JXL_CHECK(alpha_.xsize() == color_.xsize() &&
+            alpha_.ysize() == color_.ysize());
+  if (alpha_is_premultiplied_) return;
+  alpha_is_premultiplied_ = true;
+  const float alpha_normalizer = 1.f / ((1u << metadata_->alpha_bits) - 1);
+  RunOnPool(
+      pool, 0, alpha_.ysize(), ThreadPool::SkipInit(),
+      [this, alpha_normalizer](const int y, const int /*thread*/) {
+        for (size_t c = 0; c < 3; ++c) {
+          float* const JXL_RESTRICT row = color_.PlaneRow(c, y);
+          const uint16_t* const JXL_RESTRICT alpha_row = alpha_.ConstRow(y);
+          for (size_t x = 0; x < color_.xsize(); ++x) {
+            row[x] *= alpha_normalizer * alpha_row[x];
+          }
+        }
+      },
+      "premultiply alpha");
 }
 
 void ImageBundle::SetDepth(ImageU&& depth) {

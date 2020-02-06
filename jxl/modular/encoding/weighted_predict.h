@@ -75,22 +75,21 @@ struct State {
   // approximates (maxweight<<24)/(x+1), avoiding division
   JXL_INLINE uint32_t errorWeight(uint32_t x, uint32_t maxweight) {
     // cheapest option:
-    //    return maxweight << (24 - jxl::FloorLog2Nonzero(x+1));
+    //    return maxweight << (24 - FloorLog2Nonzero(x+1));
 
     // better and somewhat more expensive
-    //    int shift=jxl::FloorLog2Nonzero(x+1)+12;
+    //    int shift=FloorLog2Nonzero(x+1)+12;
     //    return maxweight * ((0x1000000000LLU - ((uint64_t)x<<(46-shift))) >>
     //    shift);
 
     // almost as good as real division
-    int shift = jxl::FloorLog2Nonzero(x + 1) - 5;
+    int shift = FloorLog2Nonzero(x + 1) - 5;
     if (shift < 0) shift = 0;
     return 4 + (maxweight * divlookup[x >> shift] >> shift);
   }
   JXL_INLINE int numBits(int x) {
     if (x < 2) return x;
-    return std::min(2 + (int)jxl::FloorLog2Nonzero((unsigned int)x - 1),
-                    kBitsMax);
+    return std::min(2 + (int)FloorLog2Nonzero((unsigned int)x - 1), kBitsMax);
   }
 
   JXL_INLINE pixel_type predict1y0(size_t x, size_t yp, size_t yp1,
@@ -120,7 +119,7 @@ struct State {
                                         uint32_t w4) {
     uint32_t sumWeights = w1 + w2 + w3 + w4;
     JXL_DASSERT(sumWeights > 15);
-    uint32_t log_weight = jxl::FloorLog2Nonzero(sumWeights);  // at least 4.
+    uint32_t log_weight = FloorLog2Nonzero(sumWeights);  // at least 4.
     w1 = w1 >> (log_weight - 4);
     w2 = w2 >> (log_weight - 4);
     w3 = w3 >> (log_weight - 4);
@@ -167,7 +166,7 @@ struct State {
     prediction0 = W + NE - N;
     prediction1 = N - (((sumWN + teNE) * p1C) >> 5);
     prediction2 = W - (((sumWN + teNW) * p2C) >> 5);
-    prediction3 = N - ((teNW * p3Ca + teN * p3Cb + teN * p3Cc +
+    prediction3 = N - ((teNW * p3Ca + teN * p3Cb + teNE * p3Cc +
                         (NN - N) * p3Cd + (NW - W) * p3Ce) >>
                        5);
 
@@ -294,14 +293,14 @@ struct State {
     }
   }
 
-  bool wp_compress(const Channel& img, jxl::PaddedBytes* bytes, int nb_modes) {
+  bool wp_compress(const Channel& img, PaddedBytes* bytes, int nb_modes) {
     size_t xsize = img.w;
     size_t ysize = img.h;
     size_t pos = bytes->size();
     size_t best_size = 0;
     for (int mode = 0; mode < nb_modes; mode++) {
       predictor_mode(mode);
-      std::vector<std::vector<jxl::Token>> tokens(1);
+      std::vector<std::vector<Token>> tokens(1);
 
       for (size_t y = 0, yp = 0, yp1 = xsize; y < ysize;
            ++y, yp = xsize - yp, yp1 = xsize - yp) {
@@ -315,10 +314,9 @@ struct State {
           JXL_DASSERT(shiftedMinTpv <= prediction &&
                       prediction <= shiftedMaxTpv);
           pixel_type truePixelValue = rowImg[x];
-          jxl::TokenizeHybridUint(
+          TokenizeHybridUint(
               maxErr,
-              jxl::PackSigned(truePixelValue -
-                              ((prediction + toRound_m1) >> PBits)),
+              PackSigned(truePixelValue - ((prediction + toRound_m1) >> PBits)),
               tokens.data());
           pixel_type err = prediction - AddPBits(truePixelValue);
           UpdateSizeAndErrors(err, yp, yp1, x, prediction0, prediction1,
@@ -326,10 +324,10 @@ struct State {
         }  // x
       }    // y
 
-      jxl::BitWriter writer;
-      jxl::EntropyEncodingData codes;
+      BitWriter writer;
+      EntropyEncodingData codes;
       std::vector<uint8_t> context_map;
-      jxl::BitWriter::Allotment allotment(&writer, 52);
+      BitWriter::Allotment allotment(&writer, 52);
       if (mode != 0) {
         writer.Write(1, 0);
         writer.Write(5, p1C);
@@ -346,13 +344,12 @@ struct State {
       } else {
         writer.Write(1, 1);
       }
-      jxl::ReclaimAndCharge(&writer, &allotment, 0, nullptr);
-      jxl::BuildAndEncodeHistograms(jxl::HistogramParams(), kNumContexts,
-                                    tokens, &codes, &context_map, &writer, 0,
-                                    nullptr);
-      jxl::WriteTokens(tokens[0], codes, context_map, &writer, 0, nullptr);
+      ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+      BuildAndEncodeHistograms(HistogramParams(), kNumContexts, tokens, &codes,
+                               &context_map, &writer, 0, nullptr);
+      WriteTokens(tokens[0], codes, context_map, &writer, 0, nullptr);
       writer.ZeroPadToByte();
-      jxl::Span<const uint8_t> span = writer.GetSpan();
+      Span<const uint8_t> span = writer.GetSpan();
       if (mode == 0 || span.size() < best_size) {
         bytes->resize(pos + span.size());
         best_size = span.size();
@@ -362,7 +359,7 @@ struct State {
     return true;
   }
 
-  HWY_ATTR bool wp_decompress(const jxl::Span<const uint8_t> bytes,
+  HWY_ATTR bool wp_decompress(const Span<const uint8_t> bytes,
                               size_t* bytes_pos, Channel& img) {
     if (*bytes_pos > bytes.size()) return JXL_FAILURE("out of bounds");
     size_t xsize = img.w;
@@ -374,65 +371,68 @@ struct State {
 
     predictor_mode(0);
 
-    jxl::BitReader bitreader(
-        jxl::Span<const uint8_t>(compressedData, compressedSize));
-    jxl::ANSCode code;
-    std::vector<uint8_t> context_map;
-    if (!bitreader.ReadBits(1)) {
-      p1C = bitreader.ReadBits(5);
-      p2C = bitreader.ReadBits(5);
-      p3Ca = bitreader.ReadBits(5);
-      p3Cb = bitreader.ReadBits(5);
-      p3Cc = bitreader.ReadBits(5);
-      p3Cd = bitreader.ReadBits(5);
-      p3Ce = bitreader.ReadBits(5);
-      w0 = bitreader.ReadBits(4);
-      w1 = bitreader.ReadBits(4);
-      w2 = bitreader.ReadBits(4);
-      w3 = bitreader.ReadBits(4);
+    Status ret = true;
+    {
+      BitReader bitreader(Span<const uint8_t>(compressedData, compressedSize));
+      BitReaderScopedCloser bitreader_closer(&bitreader, &ret);
+      ANSCode code;
+      std::vector<uint8_t> context_map;
+      if (!bitreader.ReadBits(1)) {
+        p1C = bitreader.ReadBits(5);
+        p2C = bitreader.ReadBits(5);
+        p3Ca = bitreader.ReadBits(5);
+        p3Cb = bitreader.ReadBits(5);
+        p3Cc = bitreader.ReadBits(5);
+        p3Cd = bitreader.ReadBits(5);
+        p3Ce = bitreader.ReadBits(5);
+        w0 = bitreader.ReadBits(4);
+        w1 = bitreader.ReadBits(4);
+        w2 = bitreader.ReadBits(4);
+        w3 = bitreader.ReadBits(4);
+      }
+
+      JXL_RETURN_IF_ERROR(DecodeHistograms(
+          &bitreader, kNumContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+      ANSSymbolReader ansreader(&code, &bitreader);
+
+      for (size_t y = 0, yp = 0, yp1 = xsize; y < ysize;
+           ++y, yp = xsize - yp, yp1 = xsize - yp) {
+        rowImg = img.Row(y);
+        rowPrev = (y == 0 ? nullptr : img.Row(y - 1));
+        rowPP = (y <= 1 ? rowPrev : img.Row(y - 2));
+        for (size_t x = 0; x < xsize; ++x) {
+          int maxErr;
+          pixel_type prediction = predict1(x, yp + x, yp1 + x, &maxErr);
+          JXL_DASSERT(0 <= maxErr && maxErr <= kNumContexts - 1);
+          JXL_DASSERT(shiftedMinTpv <= prediction &&
+                      prediction <= shiftedMaxTpv);
+
+          size_t q =
+              ReadHybridUint(maxErr, &bitreader, &ansreader, context_map);
+          pixel_type truePixelValue =
+              ((prediction + toRound_m1) >> PBits) + UnpackSigned(q);
+          rowImg[x] = truePixelValue;
+          pixel_type err = prediction - AddPBits(truePixelValue);
+          UpdateSizeAndErrors(err, yp, yp1, x, prediction0, prediction1,
+                              prediction2, prediction3, truePixelValue);
+        }  // x
+      }    // y
+      if (!ansreader.CheckANSFinalState()) {
+        return JXL_FAILURE("ANS final state invalid");
+      }
+      JXL_RETURN_IF_ERROR(bitreader.JumpToByteBoundary());
+      *bytes_pos += bitreader.TotalBitsConsumed() / 8;
     }
-
-    JXL_RETURN_IF_ERROR(jxl::DecodeHistograms(
-        &bitreader, kNumContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
-    jxl::ANSSymbolReader ansreader(&code, &bitreader);
-
-    for (size_t y = 0, yp = 0, yp1 = xsize; y < ysize;
-         ++y, yp = xsize - yp, yp1 = xsize - yp) {
-      rowImg = img.Row(y);
-      rowPrev = (y == 0 ? nullptr : img.Row(y - 1));
-      rowPP = (y <= 1 ? rowPrev : img.Row(y - 2));
-      for (size_t x = 0; x < xsize; ++x) {
-        int maxErr;
-        pixel_type prediction = predict1(x, yp + x, yp1 + x, &maxErr);
-        JXL_DASSERT(0 <= maxErr && maxErr <= kNumContexts - 1);
-        JXL_DASSERT(shiftedMinTpv <= prediction && prediction <= shiftedMaxTpv);
-
-        size_t q =
-            jxl::ReadHybridUint(maxErr, &bitreader, &ansreader, context_map);
-        pixel_type truePixelValue =
-            ((prediction + toRound_m1) >> PBits) + jxl::UnpackSigned(q);
-        rowImg[x] = truePixelValue;
-        pixel_type err = prediction - AddPBits(truePixelValue);
-        UpdateSizeAndErrors(err, yp, yp1, x, prediction0, prediction1,
-                            prediction2, prediction3, truePixelValue);
-      }  // x
-    }    // y
-    if (!ansreader.CheckANSFinalState()) {
-      return JXL_FAILURE("ANS final state invalid");
-    }
-    JXL_RETURN_IF_ERROR(bitreader.JumpToByteBoundary());
-    *bytes_pos += bitreader.TotalBitsConsumed() / 8;
-    JXL_RETURN_IF_ERROR(bitreader.Close());
-    return true;
+    return ret;
   }
 };
 
-bool wp_compress(const Channel& img, jxl::PaddedBytes* bytes, int nb_modes) {
+bool wp_compress(const Channel& img, PaddedBytes* bytes, int nb_modes) {
   std::unique_ptr<State> state(new State(img.w, img.h, img.minval, img.maxval));
   return state->wp_compress(img, bytes, nb_modes);
 }
 
-HWY_ATTR bool wp_decompress(const jxl::Span<const uint8_t> bytes, size_t* pos,
+HWY_ATTR bool wp_decompress(const Span<const uint8_t> bytes, size_t* pos,
                             Channel& img) {
   std::unique_ptr<State> state(new State(img.w, img.h, img.minval, img.maxval));
   return state->wp_decompress(bytes, pos, img);

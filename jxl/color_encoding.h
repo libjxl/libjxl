@@ -236,10 +236,50 @@ struct CustomTransferFunction {
 };
 
 // Compact encoding of data required to interpret and translate pixels to a
-// known color space. Stored in Metadata.
+// known color space. Stored in Metadata. Thread-compatible.
 struct ColorEncoding {
   ColorEncoding();
   static const char* Name() { return "ColorEncoding"; }
+
+  // Returns ready-to-use color encodings (initialized on-demand).
+  static const ColorEncoding& SRGB(bool is_gray = false);
+  static const ColorEncoding& LinearSRGB(bool is_gray = false);
+
+  // Returns true if an ICC profile was successfully created from fields.
+  // Must be called after modifying fields. Defined in color_management.cc.
+  Status CreateICC();
+
+  // Returns non-empty and valid ICC profile, unless:
+  // - between calling InternalRemoveICC() and CreateICC() in tests;
+  // - WantICC() == true and SetICC() was not yet called;
+  // - after a failed call to SetSRGB(), SetICC(), or CreateICC().
+  const PaddedBytes& ICC() const { return icc_; }
+
+  // Internal only, do not call except from tests.
+  void InternalRemoveICC() { icc_.clear(); }
+
+  // Returns true if `icc` is assigned and decoded successfully. If so,
+  // subsequent WantICC() will return true until DecideIfWantICC() changes it.
+  // Returning false indicates data has been lost.
+  Status SetICC(PaddedBytes&& icc) {
+    if (icc.empty()) return false;
+    icc_ = std::move(icc);
+
+    if (!SetFieldsFromICC()) {
+      InternalRemoveICC();
+      return false;
+    }
+
+    want_icc_ = true;
+    return true;
+  }
+
+  // Returns whether to send the ICC profile in the codestream.
+  bool WantICC() const { return want_icc_; }
+
+  // Causes WantICC() to return false if ICC() can be reconstructed from fields.
+  // Defined in color_management.cc.
+  void DecideIfWantICC();
 
   bool IsGray() const { return color_space_ == ColorSpace::kGray; }
   size_t Channels() const { return IsGray() ? 1 : 3; }
@@ -267,33 +307,28 @@ struct ColorEncoding {
     return true;
   }
 
-  void SetSRGB(const ColorSpace cs) {
-    icc.clear();
-    received_icc = opaque_icc = false;
+  Status SetSRGB(const ColorSpace cs,
+                 const RenderingIntent ri = RenderingIntent::kRelative) {
+    InternalRemoveICC();
     JXL_ASSERT(cs == ColorSpace::kGray || cs == ColorSpace::kRGB);
     color_space_ = cs;
     white_point = WhitePoint::kD65;
     primaries = Primaries::kSRGB;
     tf.SetTransferFunction(TransferFunction::kSRGB);
-    rendering_intent = RenderingIntent::kRelative;
+    rendering_intent = ri;
+    return CreateICC();
   }
 
   template <class Visitor>
   bool VisitFields(Visitor* JXL_RESTRICT visitor) {
-    // NOTE: `icc` is not serialized here to avoid dependency on icc_codec.h.
-
     if (visitor->AllDefault(*this, &all_default)) return true;
 
-    visitor->Bool(false, &received_icc);
+    visitor->Bool(false, &want_icc_);
 
-    if (visitor->Conditional(received_icc)) {
-      visitor->Bool(false, &opaque_icc);
-    }
+    if (visitor->Conditional(!WantICC())) {
+      // Serialize enums. NOTE: we set the defaults to the most common values so
+      // ImageMetadata.all_default is true in the common case.
 
-    // NOTE: use most likely values as default so ImageMetadata.all_default is
-    // true. We set ColorSpace/TransferFunction to kUnknown below if opaque_icc.
-
-    if (visitor->Conditional(!opaque_icc)) {
       JXL_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
 
       if (visitor->Conditional(!ImplicitWhitePoint())) {
@@ -316,22 +351,21 @@ struct ColorEncoding {
 
       JXL_RETURN_IF_ERROR(
           visitor->Enum(RenderingIntent::kRelative, &rendering_intent));
-    }
 
-    if (opaque_icc) {
-      // Set correct 'defaults' (see above) but only when reading.
-      if (visitor->IsReading()) {
-        color_space_ = ColorSpace::kUnknown;
-        tf.SetTransferFunction(TransferFunction::kUnknown);
-      }
-    } else {
-      // Not opaque implies all fields should be known.
+      // We didn't have ICC, so all fields should be known.
       if (color_space_ == ColorSpace::kUnknown || tf.IsUnknown()) {
-        return JXL_FAILURE("Opaque %d but cs %u and tf %u%s", opaque_icc,
-                           color_space_,
+        return JXL_FAILURE("No ICC but cs %u and tf %u%s", color_space_,
                            tf.IsGamma() ? 0 : tf.GetTransferFunction(),
                            tf.IsGamma() ? "(gamma)" : "");
       }
+
+      JXL_RETURN_IF_ERROR(CreateICC());
+    }
+
+    if (WantICC() && visitor->IsReading()) {
+      // Haven't called SetICC() yet, do nothing.
+    } else {
+      if (ICC().empty()) return JXL_FAILURE("Empty ICC");
     }
 
     return true;
@@ -382,25 +416,23 @@ struct ColorEncoding {
 
   mutable bool all_default;
 
-  // Either empty, or a valid ICC profile.
-  PaddedBytes icc;
-
-  // icc is non-empty AND it comes from an external source.
-  bool received_icc;
-
-  // received_icc AND the ICC cannot be described by ColorSpace and/or
-  // TransferFunction. If true, subsequent fields are default-initialized!
-  bool opaque_icc;
-
-  // Not serialized if opaque_icc. Fully describes the ICC if !opaque_icc.
-  // SetProfile will either fail or initialize all fields.
-
   WhitePoint white_point;
   Primaries primaries;  // Only valid if HasPrimaries()
   CustomTransferFunction tf;
   RenderingIntent rendering_intent;
 
  private:
+  // Returns true if all fields have been initialized (possibly to kUnknown).
+  // Returns false if the ICC profile is invalid or decoding it fails.
+  // Defined in color_management.cc.
+  Status SetFieldsFromICC();
+
+  // If true, the codestream contains an ICC profile and we do not serialize
+  // fields. Otherwise, fields are serialized and we create an ICC profile.
+  bool want_icc_;
+
+  PaddedBytes icc_;  // Valid ICC profile
+
   ColorSpace color_space_;  // Can be kUnknown
 
   // Only used if white_point == kCustom.
@@ -430,14 +462,9 @@ std::string Description(const ColorEncoding& c);
 Status ParseDescription(const std::string& description,
                         ColorEncoding* JXL_RESTRICT c);
 
-// Returns ColorEncoding with empty ICC profile. Caller must use
-// ColorEncoding::CreateProfile() to generate a profile.
-std::vector<ColorEncoding> AllEncodings();
-
-// Define the operator<< for tests.
-static inline ::std::ostream& operator<<(::std::ostream& os,
-                                         const ColorEncoding& c) {
-  return os << "ColorEncoding/" << Description(c);
+static inline std::ostream& operator<<(std::ostream& os,
+                                       const ColorEncoding& c) {
+  return os << Description(c);
 }
 
 }  // namespace jxl

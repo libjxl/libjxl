@@ -27,51 +27,12 @@
 #include "jxl/enc_bit_writer.h"
 #include "jxl/image.h"
 #include "jxl/modular/config.h"
+#include "jxl/modular/encoding/options.h"
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/ma/compound.h"
 #include "jxl/modular/memio.h"
 
 namespace jxl {
-
-struct modular_options {
-  // decoding options
-  bool identify;  // don't decode image data, just decode header
-
-  // used in both encode and decode
-  int nb_channels;   // if full_header==false, need to specify how many channels
-                     // to expect
-  int skipchannels;  // the first <skipchannels> channels will not be
-                     // encoded/decoded
-  size_t max_chan_size;  // stop encoding/decoding when reaching a (non-meta)
-                         // channel that has a dimension bigger than this
-
-  // encoding options (some of which are needed during decoding too)
-  int entropy_coder;  // 0 = MABEGABRAC, 1 = MABrotli, 2 = MARANS
-
-  // MA options
-  float nb_repeats;    // number of iterations to do to learn a MA tree (does
-                       // not have to be an integer; if zero there is no MA
-                       // context model)
-  int max_properties;  // maximum number of (previous channel) properties to use
-                       // in the MA trees
-  float ctx_threshold;  // number of bits to be saved to justify adding
-                        // another node to the MA tree (lower value = bigger
-                        // context model)
-
-  // Brotli options
-  int brotli_effort;  // 0..11
-
-  std::vector<int> predictor;  // predictor to use for each channel. last one
-                               // gets repeated if needed
-
-  int nb_wp_modes;
-
-  // deprecated
-  bool debug;      // produce debug images, including (for MABEGABRAC only) a
-                   // compression heatmap
-  Image *heatmap;  // produced if debug==true
-};
-void set_default_modular_options(struct modular_options &o);
 
 #ifdef HAS_ENCODER
 void modular_prepare_encode(Image &image, modular_options &options);
@@ -184,8 +145,8 @@ extern template bool modular_rect_decompress_3<int32_t>(
     const Image3I *JXL_RESTRICT result, const Rect &rect);
 
 template <typename IO>
-bool modular_decode(IO &io, Image &image, modular_options &options,
-                    size_t bytes_to_load = 0);
+Status modular_decode(IO &io, Image &image, modular_options &options,
+                      size_t bytes_to_load = 0);
 
 }  // namespace jxl
 

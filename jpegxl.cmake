@@ -27,6 +27,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/modular/encoding/context_predict.h
   jxl/modular/encoding/encoding.cpp
   jxl/modular/encoding/encoding.h
+  jxl/modular/encoding/options.h
   jxl/modular/encoding/weighted_predict.h
   jxl/modular/image/image.cpp
   jxl/modular/image/image.h
@@ -35,6 +36,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/modular/ma/chance.cpp
   jxl/modular/ma/chance.h
   jxl/modular/ma/compound.h
+  jxl/modular/ma/compound.cpp
   jxl/modular/ma/compound_enc.h
   jxl/modular/ma/rac.h
   jxl/modular/ma/rac_enc.h
@@ -51,7 +53,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/modular/transform/transform.cpp
   jxl/modular/transform/transform.h
   jxl/modular/transform/ycocg.h
-  jxl/modular/util.h
   jxl/ac_context.h
   jxl/ac_strategy.cc
   jxl/ac_strategy.h
@@ -221,13 +222,13 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/quant_weights.h
   jxl/quantizer.cc
   jxl/quantizer.h
-  jxl/rational_polynomial.h
+  jxl/rational_polynomial-inl.h
   jxl/splines.cc
   jxl/splines.h
   jxl/splines_fastmath.h
   jxl/toc.cc
   jxl/toc.h
-  jxl/xorshift128plus.h
+  jxl/xorshift128plus-inl.h
 )
 
 set(JPEGXL_INTERNAL_FLAGS
@@ -327,7 +328,7 @@ endif ()
 if(JPEGXL_ENABLE_COVERAGE)
 set(JPEGXL_COVERAGE_FLAGS
     -g -O0 -fprofile-arcs -ftest-coverage -DJXL_DISABLE_SLOW_TESTS
-    -DJXL_ENABLE_ASSERT=0
+    -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
 )
 endif()
 
@@ -390,11 +391,11 @@ target_include_directories(jpegxl-static PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_BINARY_DIR}/include")
 
-# gperftools (TCMalloc) does not compile on OSX.
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
 if(${JPEGXL_ENABLE_TCMALLOC})
-  target_link_libraries(jpegxl-static PUBLIC gperftools)
+  pkg_check_modules(TCMalloc REQUIRED IMPORTED_TARGET libtcmalloc)
+  target_link_libraries(jpegxl-static PUBLIC PkgConfig::TCMalloc)
 endif()  # JPEGXL_ENABLE_TCMALLOC
 
 if (NOT "${JPEGXL_EMSCRIPTEN}")

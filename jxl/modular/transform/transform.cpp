@@ -15,7 +15,6 @@
 #include "jxl/modular/transform/transform.h"
 
 #include "jxl/modular/image/image.h"
-
 #include "jxl/modular/transform/near-lossless.h"
 #include "jxl/modular/transform/palette.h"
 #include "jxl/modular/transform/quantize.h"
@@ -26,52 +25,54 @@
 
 namespace jxl {
 
-const std::vector<std::string> transform_name = {
-    "YCoCg",   "RCT",          "Palette",      "Subsample",
-    "Squeeze", "Quantization", "Near-Lossless"};
+namespace {
+const char *transform_name[static_cast<uint32_t>(TransformId::kNumTransforms)] =
+    {"YCoCg",   "RCT",          "Palette",      "Subsample",
+     "Squeeze", "Quantization", "Near-Lossless"};
+}  // namespace
 
-bool Transform::apply(Image &input, bool inverse, jxl::ThreadPool *pool) {
-  switch (ID) {
-    case TRANSFORM_ChromaSubsample:
+const char *Transform::Name() const {
+  if (IsValid()) return transform_name[static_cast<uint32_t>(id)];
+  return "Unknown transformation";
+}
+
+Status Transform::Apply(Image &input, bool inverse, ThreadPool *pool) {
+  switch (id) {
+    case TransformId::kChromaSubsample:
       return subsample(input, inverse, parameters);
-    case TRANSFORM_QUANTIZE:
+    case TransformId::kQuantize:
       return quantize(input, inverse, parameters, pool);
-    case TRANSFORM_YCoCg:
+    case TransformId::kYCoCg:
       return YCoCg(input, inverse, pool);
-    case TRANSFORM_RCT:
+    case TransformId::kRCT:
       return subtract_green(input, inverse, parameters);
-    case TRANSFORM_SQUEEZE:
+    case TransformId::kSqueeze:
       return squeeze(input, inverse, parameters, pool);
-    case TRANSFORM_PALETTE:
+    case TransformId::kPalette:
       return palette(input, inverse, parameters, pool);
-    case TRANSFORM_NEAR_LOSSLESS:
+    case TransformId::kNearLossless:
       return near_lossless(input, inverse, parameters);
     default:
-      return JXL_FAILURE("Unknown transformation (ID=%i)", ID);
+      return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }
 }
 
-void Transform::meta_apply(Image &input) {
-  switch (ID) {
-    case TRANSFORM_YCoCg:
-      return;
-    case TRANSFORM_ChromaSubsample:
-      meta_subsample(input, parameters);
-      return;
-    case TRANSFORM_QUANTIZE:
-      meta_quantize(input);
-      return;
-    case TRANSFORM_RCT:
-      return;
-    case TRANSFORM_SQUEEZE:
-      meta_squeeze(input, parameters);
-      return;
-    case TRANSFORM_PALETTE:
-      meta_palette(input, parameters);
-      return;
+Status Transform::MetaApply(Image &input) {
+  switch (id) {
+    case TransformId::kYCoCg:
+      return true;
+    case TransformId::kChromaSubsample:
+      return meta_subsample(input, parameters);
+    case TransformId::kQuantize:
+      return meta_quantize(input);
+    case TransformId::kRCT:
+      return true;
+    case TransformId::kSqueeze:
+      return meta_squeeze(input, &parameters);
+    case TransformId::kPalette:
+      return meta_palette(input, parameters);
     default:
-      JXL_FAILURE("Unknown transformation (ID=%i)", ID);
-      return;
+      return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }
 }
 

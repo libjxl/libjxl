@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 
+#include <hwy/static_targets.h>
 #include <vector>
 
 #include "jxl/aux_out.h"
@@ -28,7 +29,7 @@
 namespace jxl {
 
 // TODO: signal these multipliers (need larger ones for encoding Patch reference
-// frames in kPasses)
+// frames in kVarDCT)
 static const float kDecoderMul2[3] = {1. / 32768., 1. / 2048., 1. / 2048.};
 
 Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
@@ -60,7 +61,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     gi.channel[depth_chan].hshift = decoded->metadata()->m2.depth_shift;
     gi.channel[depth_chan].vshift = decoded->metadata()->m2.depth_shift;
   }
-  if (!reader->JumpToByteBoundary()) return false;
+  if (!reader->JumpToByteBoundary() || !reader->AllReadsWithinBounds()) {
+    return false;
+  }
   const Span<const uint8_t> span = reader->GetSpan();
   size_t pos = 0;
   modular_options options;
@@ -112,7 +115,9 @@ Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
   }
   gi.nb_channels = gi.channel.size();
   gi.real_nb_channels = gi.nb_channels;
-  if (!reader->JumpToByteBoundary()) return false;
+  if (!reader->JumpToByteBoundary() || !reader->AllReadsWithinBounds()) {
+    return false;
+  }
   const Span<const uint8_t> span = reader->GetSpan();
   size_t pos = 0;
   modular_options options;
@@ -141,10 +146,9 @@ Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
   return true;
 }
 
-Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
-                                             ImageBundle* decoded,
-                                             jxl::ThreadPool* pool,
-                                             const FrameHeader& frame_header) {
+HWY_ATTR Status ModularFrameDecoder::FinalizeDecoding(
+    Image3F* color, ImageBundle* decoded, jxl::ThreadPool* pool,
+    const FrameHeader& frame_header) {
   Image& gi = full_image;
   size_t xsize = gi.w;
   size_t ysize = gi.h;
@@ -169,31 +173,60 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
+            [&](const int task, const int thread) HWY_ATTR {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
                   gi.channel[c_in].Row(y);
               const pixel_type* const JXL_RESTRICT row_in_Y =
                   gi.channel[0].Row(y);
               float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = factor * (row_in[x] + row_in_Y[x]);
+              HWY_FULL(float) df;
+              HWY_FULL(int) di;
+              const auto factor_v = Set(df, factor);
+              for (size_t x = 0; x < xsize; x += di.N) {
+                const auto in = Load(di, row_in + x) + Load(di, row_in_Y + x);
+                const auto out = hwy::ConvertTo(df, in) * factor_v;
+                Store(out, df, row_out + x);
               }
             },
             "ModularIntToFloat");
-      } else
+      } else {
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
+            [&](const int task, const int thread) HWY_ATTR {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
                   gi.channel[decoded->IsGray() ? 0 : c_in].Row(y);
-              float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = factor * row_in[x];
+              HWY_FULL(float) df;
+              HWY_FULL(int) di;
+              const auto factor_v = Set(df, factor);
+              if (decoded->IsGray() &&
+                  frame_header.color_transform == ColorTransform::kNone) {
+                float* const JXL_RESTRICT row_out_r = color->PlaneRow(0, y);
+                float* const JXL_RESTRICT row_out_g = color->PlaneRow(1, y);
+                float* const JXL_RESTRICT row_out_b = color->PlaneRow(2, y);
+                for (size_t x = 0; x < xsize; x += di.N) {
+                  const auto in = Load(di, row_in + x);
+                  const auto out = hwy::ConvertTo(df, in) * factor_v;
+                  Store(out, df, row_out_r + x);
+                  Store(out, df, row_out_g + x);
+                  Store(out, df, row_out_b + x);
+                }
+              } else {
+                float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
+                for (size_t x = 0; x < xsize; x += di.N) {
+                  const auto in = Load(di, row_in + x);
+                  const auto out = hwy::ConvertTo(df, in) * factor_v;
+                  Store(out, df, row_out + x);
+                }
               }
             },
             "ModularIntToFloat");
+      }
+      if (decoded->IsGray() &&
+          frame_header.color_transform == ColorTransform::kNone) {
+        break;
+      }
     }
     if (decoded->IsGray() &&
         frame_header.color_transform == ColorTransform::kNone) {
@@ -206,7 +239,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       uint16_t* const JXL_RESTRICT row_out = decoded->alpha().MutableRow(y);
       const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
       for (size_t x = 0; x < xsize; ++x) {
-        row_out[x] = CLAMP(row_in[x], 0, max_alpha);
+        row_out[x] = Clamp(row_in[x], 0, max_alpha);
       }
     }
     c++;
@@ -217,7 +250,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       uint16_t* const JXL_RESTRICT row_out = decoded->depth().MutableRow(y);
       const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
       for (size_t x = 0; x < decoded->depth().xsize(); ++x) {
-        row_out[x] = CLAMP(row_in[x], 0, max_depth);
+        row_out[x] = Clamp(row_in[x], 0, max_depth);
       }
     }
     c++;
@@ -231,7 +264,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
             decoded->extra_channels()[ec].MutableRow(y);
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
         for (size_t x = 0; x < xsize; ++x) {
-          row_out[x] = CLAMP(row_in[x], 0, max_extra);
+          row_out[x] = Clamp(row_in[x], 0, max_extra);
         }
       }
     }

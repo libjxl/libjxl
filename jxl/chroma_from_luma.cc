@@ -299,7 +299,7 @@ Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
 bool DecodeFullColorMap(BitReader* JXL_RESTRICT br, ColorCorrelationMap* cmap,
                         bool use_new_cmap) {
   if (use_new_cmap) {
-    if (!br->JumpToByteBoundary()) return false;
+    if (!br->JumpToByteBoundary() || !br->AllReadsWithinBounds()) return false;
     const Span<const uint8_t> span = br->GetSpan();
     Rect rect0(cmap->ytob_map);
     size_t pos = 0;

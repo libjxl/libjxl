@@ -22,7 +22,7 @@
 
 namespace jxl {
 
-bool inv_YCoCg(Image& input, jxl::ThreadPool* pool) {
+bool inv_YCoCg(Image& input, ThreadPool* pool) {
   size_t m = input.nb_meta_channels;
   int nb_channels = input.nb_channels;
   if (nb_channels < 3) {
@@ -37,7 +37,7 @@ bool inv_YCoCg(Image& input, jxl::ThreadPool* pool) {
         "subsampled?).\n");
   }
   RunOnPool(
-      pool, 0, h, jxl::ThreadPool::SkipInit(),
+      pool, 0, h, ThreadPool::SkipInit(),
       [&](const int task, const int thread) {
         const size_t y = task;
         pixel_type* JXL_RESTRICT p0 = input.channel[m].Row(y);
@@ -92,7 +92,7 @@ bool fwd_YCoCg(Image& input) {
 }
 #endif
 
-bool YCoCg(Image& input, bool inverse, jxl::ThreadPool* pool) {
+bool YCoCg(Image& input, bool inverse, ThreadPool* pool) {
   if (inverse) return inv_YCoCg(input, pool);
 #ifdef HAS_ENCODER
   else

@@ -309,8 +309,6 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
   const size_t ysize = frame_dim.ysize;
   const size_t padded_xsize = RoundUpToBlockDim(xsize);
   const size_t padded_ysize = RoundUpToBlockDim(ysize);
-  JXL_ASSERT(xsize > 1);
-  JXL_ASSERT(ysize > 1);
   ImageF padded_diff(padded_xsize, padded_ysize);
   constexpr float mul0 = 0.046072108343079003f;
 
@@ -410,7 +408,9 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
     // Last pixel of the last row.
     {
       const size_t x = xsize - 1;
-      row_out[x] = row_out[x - 1];
+      if (x > 0) {
+        row_out[x] = row_out[x - 1];
+      }
     }
   }
   // Extend to multiple of 8 rows
@@ -655,7 +655,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
     metadata.bits_per_sample = 32;
-    metadata.color_encoding = ColorManagement::LinearSRGB();
+    metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle linear(&metadata);
     linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),
                         metadata.color_encoding);
@@ -902,7 +902,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
     quantizer.SetQuantField(quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
     metadata.bits_per_sample = 32;
-    metadata.color_encoding = ColorManagement::LinearSRGB();
+    metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle linear(&metadata);
     linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),
                         metadata.color_encoding);
@@ -1004,12 +1004,6 @@ ImageF AdaptiveQuantizationMap(const Image3F& opsin, const ImageF& intensity_ac,
                                const FrameDimensions& frame_dim, float scale,
                                ThreadPool* pool) {
   PROFILER_ZONE("aq AdaptiveQuantMap");
-  if (frame_dim.xsize <= 1 || frame_dim.ysize <= 1) {
-    ImageF out(1, 1);
-    FillImage(1.0f, &out);
-    return out;
-  }
-
   const float kSigma = 8.2553856725566153f;
   static const int kRadius = static_cast<int>(2 * kSigma + 0.5f);
   std::vector<float> kernel = GaussianKernel(kRadius, kSigma);
@@ -1147,12 +1141,13 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
   // Dummy metadata with grayscale = off.
   ImageMetadata metadata;
-  metadata.color_encoding = ColorManagement::SRGB();
+  metadata.color_encoding = ColorEncoding::SRGB();
 
   InitializePassesEncoder(opsin, pool, enc_state, nullptr);
   dec_state.Init(pool);
 
   Image3F idct(opsin.xsize(), opsin.ysize());
+  ImageBundle decoded(&metadata);
 
   const auto allocate_storage = [&](size_t num_threads) {
     dec_state.EnsureStorage(num_threads);
@@ -1161,8 +1156,8 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   const auto process_group = [&](const int group_index, const int thread) {
     ComputeCoefficients(group_index, enc_state, nullptr);
     JXL_CHECK(DecodeGroupForRoundtrip(
-        enc_state->coeffs, group_index, &dec_state, thread, &idct, nullptr,
-        save_decompressed, apply_color_transform));
+        enc_state->coeffs, group_index, &dec_state, thread, &idct, &decoded,
+        nullptr, save_decompressed, apply_color_transform));
   };
   RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
 

@@ -14,33 +14,55 @@
 
 cmake_minimum_required(VERSION 3.1)
 
-# X11 ICC library used by the comparison and viewer tools.
+# Check which formats will be available for io
+find_package(GIF 5)
+find_package(JPEG)
+find_package(ZLIB)  # dependency of PNG
+find_package(PNG)
+pkg_check_modules(OpenEXR IMPORTED_TARGET OpenEXR)
+
+
+# ICC detection library used by the comparison and viewer tools.
 if(JPEGXL_ENABLE_VIEWERS)
-find_package(ECM NO_MODULE)
-if (NOT ECM_FOUND)
-  message(WARNING "extra-cmake-modules were not found.")
-else()
-  set(CMAKE_MODULE_PATH ${ECM_FIND_MODULE_DIR})
-  find_package(XCB COMPONENTS XCB)
-  if (XCB_FOUND)
-    add_library(x11_icc STATIC
-      x11/icc.cc
-      x11/icc.h
+if(WIN32)
+  find_package(Qt5 COMPONENTS Widgets)
+  if (NOT Qt5_FOUND)
+    message(WARNING "Qt5 was not found.")
+  else()
+    add_library(icc_detect STATIC
+      icc_detect/icc_detect_win32.cc
+      icc_detect/icc_detect.h
     )
-    target_link_libraries(x11_icc PUBLIC jpegxl-static XCB::XCB)
-  endif ()
+    target_link_libraries(icc_detect PUBLIC jpegxl-static Qt5::Widgets)
+  endif()
+else()
+  find_package(Qt5 COMPONENTS Widgets X11Extras)
+  find_package(ECM NO_MODULE)
+  if (NOT Qt5_FOUND OR NOT ECM_FOUND)
+    if (NOT Qt5_FOUND)
+      message(WARNING "Qt5 was not found.")
+    else()
+      message(WARNING "extra-cmake-modules were not found.")
+    endif()
+  else()
+    set(CMAKE_MODULE_PATH ${ECM_FIND_MODULE_DIR})
+    find_package(XCB COMPONENTS XCB)
+    if (XCB_FOUND)
+      add_library(icc_detect STATIC
+        icc_detect/icc_detect_x11.cc
+        icc_detect/icc_detect.h
+      )
+      target_link_libraries(icc_detect PUBLIC jpegxl-static Qt5::Widgets Qt5::X11Extras XCB::XCB)
+    endif ()
+  endif()
 endif()
 endif()  # JPEGXL_ENABLE_VIEWERS
-
-# The JPEGXL_VERSION is set from the builders.
-if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
-  set(JPEGXL_VERSION "(unknown)")
-endif()
 
 set(TOOL_BINARIES
   cbrunsli_tool
   cjpegxl
   djpegxl
+  fuzzer_corpus
 
   butteraugli_main
   decode_and_encode
@@ -74,23 +96,41 @@ add_library(cjpegxltool STATIC
   cbrunsli.cc
   speed_stats.cc
 )
-target_compile_definitions(cjpegxltool
-  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 target_include_directories(cjpegxltool
   PUBLIC "${CMAKE_SOURCE_DIR}")
 target_include_directories(cjpegxltool PRIVATE
   $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
-  ${JPEG_INCLUDE_DIR}
 )
 target_link_libraries(cjpegxltool
-    ${JPEG_LIBRARIES}
     jpegxl-static
     jpegxl_extras-static
     jpegxl_threads
 )
 
+# TODO(lode): resolve linker issue in emscripten to enable box in it.
+if (NOT JPEGXL_EMSCRIPTEN)
+target_link_libraries(cjpegxltool
+    box
+)
+endif()
+
+if(GIF_FOUND)
+  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_GIF=1)
+endif()
+if(PNG_FOUND AND ZLIB_FOUND)
+  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_APNG=1)
+endif()
+if(JPEG_FOUND)
+  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_JPEG=1)
+endif()
+if (OpenEXR_FOUND AND NOT JPEGXL_EMSCRIPTEN)
+  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_EXR=1)
+endif ()
+
+
 add_executable(cbrunsli_tool cbrunsli_main.cc)
 add_executable(cjpegxl cjpegxl_main.cc)
+add_executable(fuzzer_corpus fuzzer_corpus.cc)
 
 # TODO: make brunsli own targets less "public"?
 set_target_properties (cbrunsli_tool PROPERTIES OUTPUT_NAME "cbrunsli" )
@@ -98,10 +138,11 @@ set_target_properties (cbrunsli_tool PROPERTIES OUTPUT_NAME "cbrunsli" )
 target_link_libraries(cbrunsli_tool cjpegxltool)
 target_link_libraries(cjpegxl cjpegxltool)
 
+target_link_libraries(fuzzer_corpus cjpegxltool)
+
 # Main decompressor.
 add_executable(djpegxl djxl.cc djpegxl.cc djpegxl_main.cc speed_stats.cc)
-target_compile_definitions(djpegxl
-  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
+
 
 # Other tools.
 add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
@@ -124,10 +165,10 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec.cc
     benchmark/benchmark_file_io.cc
     benchmark/benchmark_stats.cc
+    benchmark/benchmark_codec_custom.cc
+    benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc
     benchmark/benchmark_codec_jxl.h
-    benchmark/benchmark_codec_jpeg.cc
-    benchmark/benchmark_codec_jpeg.h
     benchmark/benchmark_codec_png.cc
     benchmark/benchmark_codec_png.h
     speed_stats.cc
@@ -135,13 +176,18 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     ../third_party/dirent.cc
   )
   target_include_directories(benchmark_xl PRIVATE
-    ${JPEG_INCLUDE_DIR}
     $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
   )
-  target_link_libraries(benchmark_xl
-    ${JPEG_LIBRARIES}
-    Threads::Threads
-  )
+  target_link_libraries(benchmark_xl Threads::Threads)
+  if(JPEG_FOUND)
+    target_sources(benchmark_xl PRIVATE
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.h"
+    )
+    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_JPEG)
+    target_include_directories(benchmark_xl PRIVATE ${JPEG_INCLUDE_DIR})
+    target_link_libraries(benchmark_xl ${JPEG_LIBRARIES})
+  endif ()
 
   find_package(PkgConfig)
   pkg_check_modules(WebP IMPORTED_TARGET libwebp)
@@ -171,6 +217,9 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
   target_link_libraries("${BINARY}" jpegxl-static jpegxl_extras-static jpegxl_threads jpegxl_tool)
+  if(NOT JPEGXL_EMSCRIPTEN)
+      target_link_libraries("${BINARY}" box)
+  endif()
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
@@ -193,6 +242,8 @@ if(${JPEGXL_ENABLE_FUZZERS})
   endforeach()
 endif()  # JPEGXL_ENABLE_FUZZERS
 
+if(NOT JPEGXL_EMSCRIPTEN)
+
 # Library API test. This test is only to check that we can link against the
 # shared library from C99 file and don't need to use internal symbols.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
@@ -207,9 +258,15 @@ endif()
 
 add_test(NAME LibraryCLinkageTest COMMAND libjpegxl_test)
 
+endif()  # JPEGXL_EMSCRIPTEN
+
 # Tools defined in subdirectories.
 if(${JPEGXL_ENABLE_VIEWERS})
 add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
 add_subdirectory(viewer)
+endif()
+
+if(NOT JPEGXL_EMSCRIPTEN)
+  add_subdirectory(box)
 endif()

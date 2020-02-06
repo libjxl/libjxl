@@ -43,7 +43,7 @@ Status WritePNG(const Image3B& image, const std::string& filename) {
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
-  io.metadata.color_encoding = ColorManagement::SRGB();
+  io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
   PaddedBytes compressed;
   JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, &pool, &compressed));

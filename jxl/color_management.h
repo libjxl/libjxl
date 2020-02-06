@@ -18,12 +18,9 @@
 // ICC profiles and color space conversions.
 
 #include <stddef.h>
-#include <stdint.h>
 
-#include <memory>
 #include <vector>
 
-#include "jxl/base/data_parallel.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/status.h"
 #include "jxl/color_encoding.h"
@@ -34,23 +31,6 @@
 #endif
 
 namespace jxl {
-
-// Thread-safe monostate.
-struct ColorManagement {
-  // Returns false and clears c->icc if `icc` is empty or decoding it fails.
-  // Otherwise, moves `icc` into c->icc and sets other fields based on its
-  // contents. c->opaque_icc is true if any ICC field cannot be represented.
-  static Status SetProfile(PaddedBytes&& icc, ColorEncoding* c);
-
-  // Returns true if c->icc was successfully created based on the other fields.
-  // Called by codecs that provide their own non-ICC metadata. Returning false
-  // indicates the profile is lost/empty and ColorSpaceTransform will fail.
-  static Status CreateProfile(ColorEncoding* c);
-
-  // Returns ready-to-use color encodings:
-  static const ColorEncoding& SRGB(bool is_gray = false);
-  static const ColorEncoding& LinearSRGB(bool is_gray = false);
-};
 
 // Run is thread-safe.
 class ColorSpaceTransform {

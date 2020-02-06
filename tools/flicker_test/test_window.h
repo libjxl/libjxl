@@ -24,7 +24,6 @@
 #include "tools/comparison_viewer/image_loading.h"
 #include "tools/flicker_test/parameters.h"
 #include "tools/flicker_test/ui_test_window.h"
-#include "tools/x11/icc.h"
 
 namespace jxl {
 

@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-find_package(Qt5 COMPONENTS Widgets X11Extras)
+find_package(Qt5 COMPONENTS Widgets)
 if (NOT Qt5_FOUND)
   message(WARNING "Qt5 was not found. The directory viewer will not be built.")
   return()
 endif ()
 
-if (NOT TARGET x11_icc)
+if (NOT TARGET icc_detect)
   message(WARNING "The directory viewer depends on the comparison tool and will also not be built.")
   return ()
 endif ()
@@ -39,6 +39,5 @@ target_link_libraries(viewer
   jpegxl
   jpegxl_threads
   Qt5::Widgets
-  Qt5::X11Extras
-  x11_icc
+  icc_detect
 )

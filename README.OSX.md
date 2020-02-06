@@ -17,17 +17,17 @@ version of XCode is installed.
 
 Installing (actually, building) `clang` might take a couple hours.
 
-```shell
+```bash
 brew install llvm
 ```
 
-```shell
+```bash
 brew install clang-format coreutils cmake giflib libjpeg ninja parallel
 ```
 
 If `git-clang-format` command is not accessible, run
 
-```shell
+```bash
 brew link --overwrite clang-format
 ```
 

@@ -20,46 +20,66 @@
 // Obviously there's room for encoder improvement here
 // The decoder doesn't need to know about this step
 
+#include "jxl/base/status.h"
+#include "jxl/common.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
 
+static Status CheckNearLosslessParams(const Image& image,
+                                      const TransformParams& parameters) {
+  if (parameters.size() != 3) {
+    return JXL_FAILURE("Invalid near-lossless parameter size");
+  }
+  int c1 = image.nb_meta_channels + parameters[0];
+  int c2 = image.nb_meta_channels + parameters[1];
+  if (c1 < image.nb_meta_channels ||
+      c1 > static_cast<int>(image.channel.size()) ||
+      c2 < image.nb_meta_channels ||
+      c2 >= static_cast<int>(image.channel.size()) || c2 < c1) {
+    return JXL_FAILURE("Invalid channel range");
+  }
+
+  return true;
+}
+
 #ifdef HAS_ENCODER
-void delta_quantize(int max_error, pixel_type &d) {
+void delta_quantize(int max_error, pixel_type& d) {
   int a = (d < 0 ? -d : d);
   a = (a + (max_error / 2)) / max_error * max_error;
   d = (d < 0 ? -a : a);
 }
 
-static bool fwd_near_lossless(Image &input, std::vector<int> &parameters) {
-  JXL_DASSERT(parameters.size() == 3);
-  int begin_c = input.nb_meta_channels + parameters[0];
-  int end_c = input.nb_meta_channels + parameters[1];
+static Status fwd_near_lossless(Image& input,
+                                const TransformParams& parameters) {
+  JXL_RETURN_IF_ERROR(CheckNearLosslessParams(input, parameters));
+
+  uint32_t begin_c = input.nb_meta_channels + parameters[0];
+  uint32_t end_c = input.nb_meta_channels + parameters[1];
   int max_delta_error = parameters[2];
 
   input.recompute_minmax();
-  JXL_DEBUG_V(8, "Applying loss on channels %i-%i with max delta=%i.", begin_c,
+  JXL_DEBUG_V(8, "Applying loss on channels %u-%u with max delta=%i.", begin_c,
               end_c, max_delta_error);
   uint64_t total_error = 0;
   for (int c = begin_c; c <= end_c; c++) {
-    if (c >= input.channel.size()) return false;
-    int w = input.channel[c].w;
-    int h = input.channel[c].h;
-    intptr_t onerow = input.channel[c].plane.PixelsPerRow();
+    size_t w = input.channel[c].w;
+    size_t h = input.channel[c].h;
 
     Channel out(w, h, 0, 1);
-    for (int y = 0; y < h; y++) {
-      pixel_type *JXL_RESTRICT p_in = input.channel[c].Row(y);
-      pixel_type *JXL_RESTRICT p_out = out.Row(y);
-      for (int x = 0; x < w; x++) {
+    for (size_t y = 0; y < h; y++) {
+      pixel_type* JXL_RESTRICT p_in = input.channel[c].Row(y);
+      pixel_type* JXL_RESTRICT p_out = out.Row(y);
+      pixel_type* JXL_RESTRICT prev_out = y ? out.Row(y - 1) : nullptr;
+      for (size_t x = 0; x < w; x++) {
         // assuming the default predictor
         pixel_type left = (x ? p_out[x - 1] : 0);
-        pixel_type top = (y ? p_out[x - onerow] : left);
+        pixel_type top = (y ? prev_out[x] : left);
         pixel_type prediction = (left + top) / 2;
         pixel_type delta = p_in[x] - prediction;
         delta_quantize(max_delta_error, delta);
         pixel_type reconstructed =
-            CLAMP(prediction + delta, input.channel[c].minval,
+            Clamp(prediction + delta, input.channel[c].minval,
                   input.channel[c].maxval);
         int e = p_in[x] - reconstructed;
         total_error += abs(e);
@@ -74,8 +94,8 @@ static bool fwd_near_lossless(Image &input, std::vector<int> &parameters) {
 }
 #endif
 
-static bool near_lossless(Image &input, bool inverse,
-                          std::vector<int> &parameters) {
+static Status near_lossless(Image& input, bool inverse,
+                            const TransformParams& parameters) {
   JXL_DASSERT(inverse == false);
 #ifdef HAS_ENCODER
   return fwd_near_lossless(input, parameters);

@@ -31,6 +31,10 @@ namespace jxl {
 #define JXL_ENABLE_ASSERT 1
 #endif
 
+#ifndef JXL_ENABLE_CHECK
+#define JXL_ENABLE_CHECK 1
+#endif
+
 // Pass -DJXL_DEBUG_ON_ERROR at compile time to print debug messages when a
 // function returns JXL_FAILURE or calls JXL_NOTIFY_ERROR. Note that this is
 // irrelevant if you also pass -DJXL_CRASH_ON_ERROR.
@@ -100,7 +104,7 @@ JXL_FORMAT(3, 4)
 JXL_NORETURN bool Abort(const char* file, int line, const char* format, ...);
 
 // Exits the program after printing file/line plus a formatted string.
-#define JXL_ABORT(...) Abort(__FILE__, __LINE__, __VA_ARGS__)
+#define JXL_ABORT(...) ::jxl::Abort(__FILE__, __LINE__, __VA_ARGS__)
 
 // Does not guarantee running the code, use only for debug mode checks.
 #if JXL_ENABLE_ASSERT
@@ -135,17 +139,27 @@ JXL_NORETURN bool Abort(const char* file, int line, const char* format, ...);
 #endif
 
 // Always runs the condition, so can be used for non-debug calls.
+#if JXL_ENABLE_CHECK
 #define JXL_CHECK(condition)                                    \
   do {                                                          \
     if (!(condition)) {                                         \
       ::jxl::Abort(__FILE__, __LINE__, "Check %s", #condition); \
     }                                                           \
   } while (0)
+#else
+#define JXL_CHECK(condition) \
+  do {                       \
+    (void)(condition);       \
+  } while (0)
+#endif
 
 // Always runs the condition, so can be used for non-debug calls.
-#define JXL_RETURN_IF_ERROR(condition) \
-  do {                                 \
-    if (!(condition)) return false;    \
+#define JXL_RETURN_IF_ERROR(condition)                                     \
+  do {                                                                     \
+    if (!(condition)) {                                                    \
+      JXL_DEBUG(JXL_DEBUG_ON_ERROR, "Return after error: %s", #condition); \
+      return false;                                                        \
+    }                                                                      \
   } while (0)
 
 // Annotation for the location where an error condition is first noticed.

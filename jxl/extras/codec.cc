@@ -15,12 +15,18 @@
 #include "jxl/extras/codec.h"
 
 #include "jxl/base/file_io.h"
+#if JPEGXL_ENABLE_APNG
 #include "jxl/extras/codec_apng.h"
+#endif
 #if JPEGXL_ENABLE_EXR
 #include "jxl/extras/codec_exr.h"
 #endif
+#if JPEGXL_ENABLE_GIF
 #include "jxl/extras/codec_gif.h"
+#endif
+#if JPEGXL_ENABLE_JPEG
 #include "jxl/extras/codec_jpg.h"
+#endif
 #include "jxl/extras/codec_pgx.h"
 #include "jxl/extras/codec_png.h"
 #include "jxl/extras/codec_pnm.h"
@@ -81,49 +87,75 @@ Codec CodecFromExtension(const std::string& extension,
 }
 
 Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
-                    ThreadPool* pool, const DecodeTarget decode_target) {
+                    ThreadPool* pool, Codec* orig_codec) {
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
   io->metadata.bits_per_sample = 0;  // (For is-set check below)
 
-  if (!DecodeImagePNG(bytes, pool, io) && !DecodeImageAPNG(bytes, io) &&
-      !DecodeImagePGX(bytes, pool, io) && !DecodeImagePNM(bytes, pool, io) &&
-      !DecodeImageGIF(bytes, io) && !DecodeImageJPG(bytes, io, decode_target)
-#if JPEGXL_ENABLE_EXR
-      && !DecodeImageEXR(bytes, io)
+  Codec codec;
+  if (DecodeImagePNG(bytes, pool, io)) {
+    codec = Codec::kPNG;
+  }
+#if JPEGXL_ENABLE_APNG
+  else if (DecodeImageAPNG(bytes, io)) {
+    codec = Codec::kPNG;
+  }
 #endif
-  ) {
+  else if (DecodeImagePGX(bytes, pool, io)) {
+    codec = Codec::kPGX;
+  } else if (DecodeImagePNM(bytes, pool, io)) {
+    codec = Codec::kPNM;
+  }
+#if JPEGXL_ENABLE_GIF
+  else if (DecodeImageGIF(bytes, io)) {
+    codec = Codec::kGIF;
+  }
+#endif
+#if JPEGXL_ENABLE_JPEG
+  else if (DecodeImageJPG(bytes, io)) {
+    codec = Codec::kJPG;
+  }
+#endif
+#if JPEGXL_ENABLE_EXR
+  else if (DecodeImageEXR(bytes, io)) {
+    codec = Codec::kEXR;
+  }
+#endif
+  else {
     return JXL_FAILURE("Codecs failed to decode");
   }
+  if (orig_codec) *orig_codec = codec;
 
   io->CheckMetadata();
   return true;
 }
 
 Status SetFromFile(const std::string& pathname, CodecInOut* io,
-                   ThreadPool* pool, const DecodeTarget decode_target) {
+                   ThreadPool* pool, Codec* orig_codec) {
   PaddedBytes encoded;
   JXL_RETURN_IF_ERROR(ReadFile(pathname, &encoded));
   JXL_RETURN_IF_ERROR(
-      SetFromBytes(Span<const uint8_t>(encoded), io, pool, decode_target));
+      SetFromBytes(Span<const uint8_t>(encoded), io, pool, orig_codec));
   return true;
 }
 
 Status Encode(const CodecInOut& io, const Codec codec,
               const ColorEncoding& c_desired, size_t bits_per_sample,
               PaddedBytes* bytes, ThreadPool* pool) {
-  JXL_CHECK(!io.Main().c_current().icc.empty());
-  JXL_CHECK(!c_desired.icc.empty());
+  JXL_CHECK(!io.Main().c_current().ICC().empty());
+  JXL_CHECK(!c_desired.ICC().empty());
   io.CheckMetadata();
-  if (io.Main().jpeg_xsize && codec != Codec::kJPG)
+  if (io.Main().IsJPEG() && codec != Codec::kJPG) {
     return JXL_FAILURE(
         "Output format has to be JPEG for losslessly recompressed JPEG "
         "reconstruction");
+  }
 
   switch (codec) {
     case Codec::kPNG:
       return EncodeImagePNG(&io, c_desired, bits_per_sample, pool, bytes);
     case Codec::kJPG:
+#if JPEGXL_ENABLE_JPEG
       return EncodeImageJPG(
           &io, io.use_sjpeg ? JpegEncoder::kSJpeg : JpegEncoder::kLibJpeg,
           io.jpeg_quality,
@@ -132,6 +164,9 @@ Status Encode(const CodecInOut& io, const Codec codec,
           pool, bytes,
           io.Main().jpeg_xsize ? DecodeTarget::kQuantizedCoeffs
                                : DecodeTarget::kPixels);
+#else
+      return JXL_FAILURE("JPEG XL was built without JPEG support");
+#endif
     case Codec::kPNM:
       return EncodeImagePNM(&io, c_desired, bits_per_sample, pool, bytes);
     case Codec::kPGX:

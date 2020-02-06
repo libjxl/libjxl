@@ -28,8 +28,8 @@ pixel_type rdiv(pixel_type x, int q) {
     return (x + q / 2) / q;
 }
 
-bool inv_quantize(Image &input, const std::vector<int> &parameters,
-                  jxl::ThreadPool *pool) {
+bool inv_quantize(Image &input, const TransformParams &parameters,
+                  ThreadPool *pool) {
   size_t c = input.nb_meta_channels;
   pixel_type *JXL_RESTRICT qs = input.channel[0].Row(0);
   size_t qx = 0;
@@ -42,7 +42,7 @@ bool inv_quantize(Image &input, const std::vector<int> &parameters,
     JXL_DEBUG_V(3, "De-quantizing channel %zu with quantization constant %i", c,
                 q);
     RunOnPool(
-        pool, 0, ch.h, jxl::ThreadPool::SkipInit(),
+        pool, 0, ch.h, ThreadPool::SkipInit(),
         [&](const int task, const int thread) {
           const size_t y = task;
           pixel_type *JXL_RESTRICT p = ch.Row(y);
@@ -57,16 +57,17 @@ bool inv_quantize(Image &input, const std::vector<int> &parameters,
   return true;
 }
 
-static void meta_quantize(Image &input) {
+static Status meta_quantize(Image &input) {
   Channel qs(input.channel.size() - input.nb_meta_channels, 1, 0, 255);
   qs.hshift = -1;
   input.channel.insert(input.channel.begin(), std::move(qs));
   input.nb_meta_channels++;
+  return true;
 }
 
 #ifdef HAS_ENCODER
-bool fwd_quantize(Image &input, std::vector<int> &parameters) {
-  meta_quantize(input);
+Status fwd_quantize(Image &input, const TransformParams &parameters) {
+  JXL_RETURN_IF_ERROR(meta_quantize(input));
   pixel_type *JXL_RESTRICT qs = input.channel[0].Row(0);
   size_t qx = 0;
   for (size_t c = input.nb_meta_channels; c < input.channel.size(); c++) {
@@ -94,15 +95,17 @@ bool fwd_quantize(Image &input, std::vector<int> &parameters) {
 }
 #endif
 
-bool quantize(Image &input, bool inverse, std::vector<int> &parameters,
-              jxl::ThreadPool *pool) {
-  if (inverse) return inv_quantize(input, parameters, pool);
+Status quantize(Image &input, bool inverse, const TransformParams &parameters,
+                ThreadPool *pool) {
+  if (inverse) {
+    return inv_quantize(input, parameters, pool);
+  } else {
 #ifdef HAS_ENCODER
-  else
     return fwd_quantize(input, parameters);
 #else
-  return false;
+    return false;
 #endif
+  }
 }
 
 }  // namespace jxl

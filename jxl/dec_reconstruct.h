@@ -50,6 +50,19 @@ HWY_ATTR void ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
                                  AuxOut* aux_out, bool save_decompressed,
                                  bool apply_color_transform);
 
+// Same as ApplyImageFeatures, but only processes row `y` of
+// dec_state->decoded. `y` should be relative to `rect`.
+// The first row in `rect` corresponds to a value of `y` of `2*kBlockDim`.
+// This function should be called for `rect.ysize() + 2 * lf.PaddingRows()`
+// values of `y`, in increasing order, starting from
+// `y=2*kBlockDim-lf.PaddingRows()`.
+HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
+                                    const Rect& rect,
+                                    PassesDecoderState* dec_state, size_t y,
+                                    size_t thread, AuxOut* aux_out,
+                                    bool save_decompressed,
+                                    bool apply_color_transform);
+
 }  // namespace jxl
 
 #endif  // JXL_DEC_RECONSTRUCT_H_

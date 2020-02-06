@@ -16,6 +16,7 @@
 
 #include <cmath>
 
+#include "jxl/color_management.h"
 #include "jxl/fields.h"
 
 namespace jxl {
@@ -141,11 +142,23 @@ class Tokenizer {
   size_t start_ = 0;  // of next token
 };
 
+Status ParseDouble(const std::string& num, double* JXL_RESTRICT d) {
+  char* end;
+  errno = 0;
+  *d = strtod(num.c_str(), &end);
+  if (*d == 0.0 && end == num.c_str()) {
+    return JXL_FAILURE("Invalid double: %s", num.c_str());
+  }
+  if (errno == ERANGE) {
+    return JXL_FAILURE("Double out of range: %s", num.c_str());
+  }
+  return true;
+}
+
 Status ParseDouble(Tokenizer* tokenizer, double* JXL_RESTRICT d) {
   std::string num;
   JXL_RETURN_IF_ERROR(tokenizer->Next(&num));
-  *d = std::stod(num);
-  return true;
+  return ParseDouble(num, d);
 }
 
 Status ParseColorSpace(Tokenizer* JXL_RESTRICT tokenizer,
@@ -221,7 +234,8 @@ Status ParseTransferFunction(Tokenizer* JXL_RESTRICT tokenizer,
   }
 
   if (str[0] == 'g') {
-    const double gamma = std::stod(str.substr(1));
+    double gamma;
+    JXL_RETURN_IF_ERROR(ParseDouble(str.substr(1), &gamma));
     if (c->tf.SetGamma(gamma)) return true;
   }
 
@@ -281,6 +295,46 @@ Status CustomTransferFunction::SetGamma(double gamma) {
   gamma_ = std::round(gamma * kGammaMul);
   transfer_function_ = TransferFunction::kUnknown;
   return true;
+}
+
+namespace {
+
+std::array<ColorEncoding, 2> CreateC2(const Primaries pr,
+                                      const TransferFunction tf) {
+  std::array<ColorEncoding, 2> c2;
+
+  {
+    ColorEncoding* c_rgb = c2.data() + 0;
+    c_rgb->SetColorSpace(ColorSpace::kRGB);
+    c_rgb->white_point = WhitePoint::kD65;
+    c_rgb->primaries = pr;
+    c_rgb->tf.SetTransferFunction(tf);
+    JXL_CHECK(c_rgb->CreateICC());
+  }
+
+  {
+    ColorEncoding* c_gray = c2.data() + 1;
+    c_gray->SetColorSpace(ColorSpace::kGray);
+    c_gray->white_point = WhitePoint::kD65;
+    c_gray->primaries = pr;
+    c_gray->tf.SetTransferFunction(tf);
+    JXL_CHECK(c_gray->CreateICC());
+  }
+
+  return c2;
+}
+
+}  // namespace
+
+const ColorEncoding& ColorEncoding::SRGB(bool is_gray) {
+  static std::array<ColorEncoding, 2> c2 =
+      CreateC2(Primaries::kSRGB, TransferFunction::kSRGB);
+  return c2[is_gray];
+}
+const ColorEncoding& ColorEncoding::LinearSRGB(bool is_gray) {
+  static std::array<ColorEncoding, 2> c2 =
+      CreateC2(Primaries::kSRGB, TransferFunction::kLinear);
+  return c2[is_gray];
 }
 
 CIExy ColorEncoding::GetWhitePoint() const {
@@ -459,46 +513,6 @@ Status ParseDescription(const std::string& description,
   JXL_RETURN_IF_ERROR(ParseRenderingIntent(&tokenizer, c));
   JXL_RETURN_IF_ERROR(ParseTransferFunction(&tokenizer, c));
   return true;
-}
-
-std::vector<ColorEncoding> AllEncodings() {
-  std::vector<ColorEncoding> all_encodings;
-  all_encodings.reserve(300);
-  ColorEncoding c;
-
-  for (ColorSpace cs : Values<ColorSpace>()) {
-    if (cs == ColorSpace::kUnknown || cs == ColorSpace::kXYB) continue;
-    c.SetColorSpace(cs);
-
-    for (WhitePoint wp : Values<WhitePoint>()) {
-      if (wp == WhitePoint::kCustom) continue;
-      if (c.ImplicitWhitePoint() && c.white_point != wp) continue;
-      c.white_point = wp;
-
-      for (Primaries primaries : Values<Primaries>()) {
-        if (primaries == Primaries::kCustom) continue;
-        if (!c.HasPrimaries()) continue;
-        c.primaries = primaries;
-
-        for (TransferFunction tf : Values<TransferFunction>()) {
-          if (tf == TransferFunction::kUnknown) continue;
-          if (c.tf.SetImplicit() &&
-              (c.tf.IsGamma() || c.tf.GetTransferFunction() != tf)) {
-            continue;
-          }
-          c.tf.SetTransferFunction(tf);
-
-          for (RenderingIntent ri : Values<RenderingIntent>()) {
-            c.rendering_intent = ri;
-
-            all_encodings.push_back(c);
-          }
-        }
-      }
-    }
-  }
-
-  return all_encodings;
 }
 
 Customxy::Customxy() { Bundle::Init(this); }

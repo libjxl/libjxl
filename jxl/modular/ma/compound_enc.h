@@ -15,8 +15,7 @@
 #ifndef JXL_MODULAR_MA_COMPOUND_ENC_H_
 #define JXL_MODULAR_MA_COMPOUND_ENC_H_
 
-#include <inttypes.h>
-
+#include <cinttypes>
 #include <cmath>
 
 #include "jxl/modular/ma/compound.h"

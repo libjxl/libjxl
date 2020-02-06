@@ -17,6 +17,7 @@
 #include <ImfChromaticitiesAttribute.h>
 #include <ImfIO.h>
 #include <ImfRgbaFile.h>
+#include <ImfStandardAttributes.h>
 
 #include <vector>
 
@@ -28,6 +29,7 @@ namespace jxl {
 namespace {
 
 namespace OpenEXR = OPENEXR_IMF_NAMESPACE;
+namespace Imath = IMATH_NAMESPACE;
 
 class InMemoryIStream : public OpenEXR::IStream {
  public:
@@ -99,6 +101,11 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, CodecInOut* io) {
   const bool has_alpha = (input.channels() & OpenEXR::RgbaChannels::WRITE_A) ==
                          OpenEXR::RgbaChannels::WRITE_A;
 
+  const float brightness_multiplier =
+      OpenEXR::hasWhiteLuminance(input.header())
+          ? OpenEXR::whiteLuminance(input.header()) / kDefaultIntensityTarget
+          : 1.f;
+
   auto image_size = input.displayWindow().size();
   // Size is computed as max - min, but both bounds are inclusive.
   ++image_size.x;
@@ -122,7 +129,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, CodecInOut* io) {
     };
     uint16_t* const JXL_RESTRICT alpha_row = has_alpha ? alpha.Row(y) : nullptr;
     for (int x = 0; x < image_size.x; ++x) {
-      const float multiplier = 255.f / std::max<float>(input_row[x].a, 0.01f);
+      const float multiplier = brightness_multiplier * 255.f;
       rows[0][x] = multiplier * input_row[x].r;
       rows[1][x] = multiplier * input_row[x].g;
       rows[2][x] = multiplier * input_row[x].b;
@@ -135,31 +142,29 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, CodecInOut* io) {
   ColorEncoding color_encoding;
   color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
   color_encoding.SetColorSpace(ColorSpace::kRGB);
-  PrimariesCIExy primaries = ColorManagement::SRGB().GetPrimaries();
-  CIExy white_point = ColorManagement::SRGB().GetWhitePoint();
-  const auto* const chromaticities =
-      input.header().findTypedAttribute<OpenEXR::ChromaticitiesAttribute>(
-          OpenEXR::ChromaticitiesAttribute().typeName());
-  if (chromaticities != nullptr) {
-    primaries.r.x = chromaticities->value().red.x;
-    primaries.r.y = chromaticities->value().red.y;
-    primaries.g.x = chromaticities->value().green.x;
-    primaries.g.y = chromaticities->value().green.y;
-    primaries.b.x = chromaticities->value().blue.x;
-    primaries.b.y = chromaticities->value().blue.y;
-    white_point.x = chromaticities->value().white.x;
-    white_point.y = chromaticities->value().white.y;
+  PrimariesCIExy primaries = ColorEncoding::SRGB().GetPrimaries();
+  CIExy white_point = ColorEncoding::SRGB().GetWhitePoint();
+  if (OpenEXR::hasChromaticities(input.header())) {
+    const auto& chromaticities = OpenEXR::chromaticities(input.header());
+    primaries.r.x = chromaticities.red.x;
+    primaries.r.y = chromaticities.red.y;
+    primaries.g.x = chromaticities.green.x;
+    primaries.g.y = chromaticities.green.y;
+    primaries.b.x = chromaticities.blue.x;
+    primaries.b.y = chromaticities.blue.y;
+    white_point.x = chromaticities.white.x;
+    white_point.y = chromaticities.white.y;
   }
   JXL_RETURN_IF_ERROR(color_encoding.SetPrimaries(primaries));
   JXL_RETURN_IF_ERROR(color_encoding.SetWhitePoint(white_point));
-  JXL_RETURN_IF_ERROR(ColorManagement::CreateProfile(&color_encoding));
+  JXL_RETURN_IF_ERROR(color_encoding.CreateICC());
 
   io->metadata.bits_per_sample = 32;
   io->SetFromImage(std::move(image), color_encoding);
   io->metadata.color_encoding = color_encoding;
   if (has_alpha) {
     io->metadata.alpha_bits = 16;
-    io->Main().SetAlpha(std::move(alpha));
+    io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/true);
   }
   return true;
 }
@@ -168,7 +173,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
                       ThreadPool* pool, PaddedBytes* bytes) {
   ColorEncoding c_linear = c_desired;
   c_linear.tf.SetTransferFunction(TransferFunction::kLinear);
-  JXL_RETURN_IF_ERROR(ColorManagement::CreateProfile(&c_linear));
+  JXL_RETURN_IF_ERROR(c_linear.CreateICC());
   ImageMetadata metadata = io->metadata;
   ImageBundle store(&metadata);
   const ImageBundle* linear;
@@ -176,22 +181,21 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
       TransformIfNeeded(io->Main(), c_linear, pool, &store, &linear));
 
   const bool has_alpha = io->Main().HasAlpha();
+  const bool alpha_is_premultiplied = io->Main().AlphaIsPremultiplied();
 
   InMemoryOStream os(bytes);
   OpenEXR::Header header(io->xsize(), io->ysize());
-  OpenEXR::ChromaticitiesAttribute chromaticities;
   const PrimariesCIExy& primaries =
       c_linear.HasPrimaries() ? c_linear.GetPrimaries()
-                              : ColorManagement::SRGB().GetPrimaries();
-  chromaticities.value().red =
-      IMATH_NAMESPACE::V2f(primaries.r.x, primaries.r.y);
-  chromaticities.value().green =
-      IMATH_NAMESPACE::V2f(primaries.g.x, primaries.g.y);
-  chromaticities.value().blue =
-      IMATH_NAMESPACE::V2f(primaries.b.x, primaries.b.y);
-  chromaticities.value().white = IMATH_NAMESPACE::V2f(
-      c_linear.GetWhitePoint().x, c_linear.GetWhitePoint().y);
-  header.insert(chromaticities.typeName(), chromaticities);
+                              : ColorEncoding::SRGB().GetPrimaries();
+  OpenEXR::Chromaticities chromaticities;
+  chromaticities.red = Imath::V2f(primaries.r.x, primaries.r.y);
+  chromaticities.green = Imath::V2f(primaries.g.x, primaries.g.y);
+  chromaticities.blue = Imath::V2f(primaries.b.x, primaries.b.y);
+  chromaticities.white =
+      Imath::V2f(c_linear.GetWhitePoint().x, c_linear.GetWhitePoint().y);
+  OpenEXR::addChromaticities(header, chromaticities);
+  OpenEXR::addWhiteLuminance(header, kDefaultIntensityTarget);
 
   OpenEXR::RgbaOutputFile output(
       os, header, has_alpha ? OpenEXR::WRITE_RGBA : OpenEXR::WRITE_RGB);
@@ -200,7 +204,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
 
   const float multiplier =
       io->metadata.IntensityTarget() * kIntensityMultiplier / 255.f;
-  const float alpha_multiplier =
+  const float alpha_normalizer =
       has_alpha ? 1.f / ((1 << io->metadata.alpha_bits) - 1) : 0;
 
   for (size_t y = 0; y < io->ysize(); ++y) {
@@ -209,13 +213,31 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
         linear->color().ConstPlaneRow(1, y),
         linear->color().ConstPlaneRow(2, y),
     };
-    const uint16_t* const JXL_RESTRICT alpha_row =
-        has_alpha ? io->Main().alpha().ConstRow(y) : nullptr;
-    for (size_t x = 0; x < io->xsize(); ++x) {
-      const float alpha = has_alpha ? alpha_multiplier * alpha_row[x] : 1.f;
-      row_data[x] = OpenEXR::Rgba(multiplier * alpha * input_rows[0][x],
-                                  multiplier * alpha * input_rows[1][x],
-                                  multiplier * alpha * input_rows[2][x], alpha);
+    if (has_alpha) {
+      const uint16_t* const JXL_RESTRICT alpha_row =
+          io->Main().alpha().ConstRow(y);
+      if (alpha_is_premultiplied) {
+        for (size_t x = 0; x < io->xsize(); ++x) {
+          const float alpha = alpha_normalizer * alpha_row[x];
+          row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
+                                      multiplier * input_rows[1][x],
+                                      multiplier * input_rows[2][x], alpha);
+        }
+      } else {
+        for (size_t x = 0; x < io->xsize(); ++x) {
+          const float alpha = alpha_normalizer * alpha_row[x];
+          row_data[x] =
+              OpenEXR::Rgba(multiplier * alpha * input_rows[0][x],
+                            multiplier * alpha * input_rows[1][x],
+                            multiplier * alpha * input_rows[2][x], alpha);
+        }
+      }
+    } else {
+      for (size_t x = 0; x < io->xsize(); ++x) {
+        row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
+                                    multiplier * input_rows[1][x],
+                                    multiplier * input_rows[2][x], 1.f);
+      }
     }
     output.writePixels(/*numScanLines=*/1);
   }

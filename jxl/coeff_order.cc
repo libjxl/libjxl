@@ -203,24 +203,39 @@ void TokenizePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   }
 }
 
-HWY_ATTR void ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
-                              BitReader* br, ANSSymbolReader* reader,
-                              const std::vector<uint8_t>& context_map) {
+HWY_ATTR Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
+                                BitReader* br, ANSSymbolReader* reader,
+                                const std::vector<uint8_t>& context_map) {
   std::vector<LehmerT> lehmer(size);
-  std::vector<uint32_t> temp(size);
+  // temp space needs to be as large as the next power of 2, so doubling the
+  // allocated size is enough.
+  std::vector<uint32_t> temp(size * 2);
   uint32_t nbits = reader->ReadSymbol(context_map[Context(size)], br);
   uint32_t bits = br->ReadBits(nbits);
+  if (nbits > 31) {
+    return JXL_FAILURE("Too many bits");
+  }
   uint32_t end = DecodeVarLenUint(nbits, bits) + skip;
+  if (end > size) {
+    return JXL_FAILURE("Invalid permutation size");
+  }
   uint32_t last = 0;
   for (size_t i = skip; i < end; ++i) {
     br->Refill();  // covers ReadSymbolWithoutRefill + ReadBits
     uint32_t nbits =
         reader->ReadSymbolWithoutRefill(context_map[Context(last)], br);
     uint32_t bits = br->ReadBits(nbits);
+    if (nbits > 31) {
+      return JXL_FAILURE("Too many bits");
+    }
     lehmer[i] = DecodeVarLenUint(nbits, bits);
+    if (lehmer[i] + i >= size) {
+      return JXL_FAILURE("Invalid lehmer code");
+    }
     last = lehmer[i];
   }
   DecodeLehmerCode(lehmer.data(), temp.data(), size, order);
+  return true;
 }
 
 }  // namespace
@@ -232,7 +247,8 @@ Status DecodePermutation(size_t skip, size_t size, coeff_order_t* order,
   JXL_RETURN_IF_ERROR(DecodeHistograms(
       br, kPermutationContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
   ANSSymbolReader reader(&code, br);
-  ReadPermutation(skip, size, order, br, &reader, context_map);
+  JXL_RETURN_IF_ERROR(
+      ReadPermutation(skip, size, order, br, &reader, context_map));
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("Invalid ANS stream");
   }
@@ -299,7 +315,8 @@ Status DecodeCoeffOrder(AcStrategy acs, coeff_order_t* order, BitReader* br,
   const size_t llf = acs.covered_blocks_x() * acs.covered_blocks_y();
   const size_t size = kDCTBlockSize * llf;
 
-  ReadPermutation(llf, size, order, br, reader, context_map);
+  JXL_RETURN_IF_ERROR(
+      ReadPermutation(llf, size, order, br, reader, context_map));
   const coeff_order_t* natural_coeff_order = acs.NaturalCoeffOrder();
   for (size_t k = 0; k < size; ++k) {
     order[k] = natural_coeff_order[order[k]];

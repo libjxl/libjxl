@@ -40,7 +40,7 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
 
   ImageMetadata metadata;
   metadata.bits_per_sample = 32;
-  metadata.color_encoding = ColorManagement::LinearSRGB();
+  metadata.color_encoding = ColorEncoding::LinearSRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(std::move(linear), metadata.color_encoding);
   Image3F opsin(1, 1);

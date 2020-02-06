@@ -23,14 +23,21 @@ namespace tools {
 void CommandLineParser::PrintHelp() const {
   fprintf(stderr, "Usage: %s [OPTIONS]\n",
           program_name_ ? program_name_ : "command");
+
+  bool showed_all = true;
   for (const auto& option : options_) {
+    if (option->verbosity_level() > verbosity) {
+      showed_all = false;
+      continue;
+    }
     fprintf(stderr, " %s\n", option->help_flags().c_str());
     const char* help_text = option->help_text();
     if (help_text) {
       fprintf(stderr, "    %s\n", help_text);
     }
   }
-  fprintf(stderr, " --help\n    Prints this help message.\n");
+  fprintf(stderr, " --help\n    Prints this help message%s.\n",
+          (showed_all ? "" : " (use -v to see more options)"));
 }
 
 bool CommandLineParser::Parse(int argc, const char* argv[]) {
@@ -40,6 +47,9 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
     if (!strcmp("--help", argv[i])) {
       // Returning false on Parse() forces to print the help message.
       return false;
+    }
+    if (!strcmp("-v", argv[i]) || !strcmp("--verbose", argv[i])) {
+      verbosity++;
     }
     bool found = false;
     for (const auto& option : options_) {

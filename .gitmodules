@@ -10,9 +10,6 @@
 [submodule "third_party/googletest"]
 	path = third_party/googletest
 	url = https://github.com/google/googletest
-[submodule "third_party/gperftools"]
-	path = third_party/gperftools
-	url = https://github.com/gperftools/gperftools
 [submodule "third_party/brunsli"]
 	path = third_party/brunsli
 	url = https://github.com/google/brunsli.git

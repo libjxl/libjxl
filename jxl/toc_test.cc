@@ -24,7 +24,21 @@
 namespace jxl {
 namespace {
 
-void Roundtrip(size_t num_entries, std::mt19937* rng) {
+void Roundtrip(size_t num_entries, bool permute, std::mt19937* rng) {
+  // Generate a random permutation.
+  std::vector<coeff_order_t> permutation(num_entries);
+  std::vector<coeff_order_t> inv_permutation(num_entries);
+  for (size_t i = 0; i < num_entries; i++) {
+    permutation[i] = i;
+    inv_permutation[i] = i;
+  }
+  if (permute) {
+    std::shuffle(permutation.begin(), permutation.end(), *rng);
+    for (size_t i = 0; i < num_entries; i++) {
+      inv_permutation[permutation[i]] = i;
+    }
+  }
+
   // Generate num_entries groups of random (byte-aligned) length
   std::vector<BitWriter> group_codes(num_entries);
   for (BitWriter& writer : group_codes) {
@@ -45,27 +59,41 @@ void Roundtrip(size_t num_entries, std::mt19937* rng) {
 
   BitWriter writer;
   AuxOut aux_out;
-  JXL_CHECK(WriteGroupOffsets(group_codes, &writer, &aux_out));
+  ASSERT_TRUE(WriteGroupOffsets(group_codes, permute ? &permutation : nullptr,
+                                &writer, &aux_out));
 
   BitReader reader(writer.GetSpan());
   std::vector<uint64_t> group_offsets;
-  ASSERT_TRUE(ReadGroupOffsets(num_entries, &reader, &group_offsets));
-  ASSERT_EQ(num_entries + 1, group_offsets.size());
+  std::vector<uint32_t> group_sizes;
+  uint64_t total_size;
+  ASSERT_TRUE(ReadGroupOffsets(num_entries, &reader, &group_offsets,
+                               &group_sizes, &total_size));
+  ASSERT_EQ(num_entries, group_offsets.size());
+  ASSERT_EQ(num_entries, group_sizes.size());
   EXPECT_TRUE(reader.Close());
 
-  EXPECT_EQ(0, group_offsets[0]);
-  size_t prefix_sum = 0;
-  for (size_t i = 1; i < num_entries + 1; ++i) {
-    EXPECT_TRUE(group_codes[i - 1].BitsWritten() % kBitsPerByte == 0);
-    prefix_sum += group_codes[i - 1].BitsWritten() / kBitsPerByte;
-    EXPECT_EQ(prefix_sum, group_offsets[i]);
+  uint64_t prefix_sum = 0;
+  for (size_t i = 0; i < num_entries; ++i) {
+    EXPECT_EQ(prefix_sum, group_offsets[inv_permutation[i]]);
+
+    EXPECT_EQ(0, group_codes[i].BitsWritten() % kBitsPerByte);
+    prefix_sum += group_codes[i].BitsWritten() / kBitsPerByte;
+
+    if (i + 1 < num_entries) {
+      EXPECT_EQ(
+          group_offsets[inv_permutation[i]] + group_sizes[inv_permutation[i]],
+          group_offsets[inv_permutation[i + 1]]);
+    }
   }
+  EXPECT_EQ(prefix_sum, total_size);
 }
 
 TEST(TocTest, Test) {
   std::mt19937 rng(12345);
-  for (size_t num_entries = 0; num_entries < 5; ++num_entries) {
-    Roundtrip(num_entries, &rng);
+  for (size_t num_entries = 0; num_entries < 10; ++num_entries) {
+    for (bool permute : std::vector<bool>{false, true}) {
+      Roundtrip(num_entries, permute, &rng);
+    }
   }
 }
 

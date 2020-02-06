@@ -1,42 +1,53 @@
 # Building and Testing
 
+This file describes the building and testing facilities provided by the `ci.sh`
+script. It assumes you already have the build environment set up, preferably
+Docker (see [instructions](doc/building_in_docker.md)).
+
 ## Basic building
 
-If you only want to build the project but not modify it you can run:
+To build the JPEG XL software and run its unit tests, run:
 
 ```bash
 ./ci.sh release
 ```
 
+## Testing
+
+`./ci.sh` build commands including `release`, `opt`, etc. will also run tests.
+You can set the environment variable `SKIP_TEST=1` to skip this.
+
+It is possible to manually run the tests, for example:
+
+```bash
+cd build/ && ctest -j32 --output-on-failure
+```
+
+`-j32` specifies the number of parallel tasks.
+
+It is also possible for faster iteration to run a specific test binary directly.
+googletest binaries support a glob filter to match the name of the test, for
+example `TransposeTest*` will execute all the test names that start with
+`TransposeTest`.
+
+```bash
+build/dct_test --gtest_filter=TransposeTest.Transpose8
+```
+
+If you want to run multiple tests from different binaries, you can pass a
+regular expression filter to ctest. Note that this is a regular expression
+instead of a glob match like in the `gtest_filter`.
+
+```bash
+cd build/ && ctest -j32 --output-on-failure -R '.*Transpose.*'
+```
+
+## Other commands
+
 Running `./ci.sh` with no parameters shows a list of available commands. For
 example, you can run `opt` for optimized developer builds with symbols or
 `debug` for debug builds which do not have NDEBUG defined and therefore include
 more runtime debug information.
-
-## Sending patches
-
-Before sending a patch, make sure your patch conforms to the
-[project guidelines](guidelines.md) and test it following these steps.
-
-You will need to install a few other dependencies for verifying these patches,
-which are used by the `./ci.sh` helper command.
-
-```bash
-sudo apt install clang-format-6.0 clang-tidy-6.0 curl parallel
-```
-
-### Build and unittest checks
-
-Your patch must build in the "release" and "debug" configurations at least, and
-pass all the tests. The "opt" configuration will be tested in the Merge Request
-pipeline which is equivalent to a "release" build with debug information.
-
-```bash
-./ci.sh opt
-```
-
-All of the tests must pass. If you added new functions, you should also add
-tests to these functions in the same commit.
 
 ### Cross-compiling
 
@@ -92,34 +103,6 @@ tidy`. Note that this will report all the problems encountered in any file that
 was modified by one of your commits, not just on the lines that your commits
 modified.
 
-## Testing
-
-All of the `./ci.sh` workflows like `release`, `opt`, etc will run the test
-after building. It is possible to manually run the tests, for example:
-
-```bash
-cd build/
-ctest -j32 --output-on-failure
-```
-
-It is also possible for faster iteration to run a specific test binary directly.
-googletest binaries support a glob filter to match the name of the test, for
-example `TransposeTest*` will execute all the test names that start with
-`TransposeTest`.
-
-```bash
-build/dct_test --gtest_filter=TransposeTest.Transpose8
-
-```
-
-If you want to run multiple tests from different binaries, you can pass a
-regular expression filter to ctest. Note that this is a regular expression
-instead of a glob match like in the `gtest_filter`.
-
-```bash
-cd build/
-ctest -j32 --output-on-failure -R '.*Transpose.*'
-```
 
 ### Address Sanitizer (asan)
 
@@ -170,12 +153,4 @@ can for example call:
 
 ```bash
 BUILD_DIR=build-msan ./ci.sh msan
-```
-
-### Benchmark
-
-To run the benchmark:
-
-```shell
-build/tools/benchmark_xl --input "/path/*.png" --codec jxl:d1,jxl:d2,jxl:d4
 ```

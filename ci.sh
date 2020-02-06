@@ -36,18 +36,21 @@ fi
 # Whether we should post a message in the MR when the build fails.
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 
+# Version inferred from the CI variables.
+CI_COMMIT_SHA=${CI_COMMIT_SHA:-$(git log | head -n 1 | cut -b 8-)}
+JPEGXL_VERSION=${JPEGXL_VERSION:-${CI_COMMIT_SHA:0:8}}
+
+echo "Version: $JPEGXL_VERSION"
 # Convenience flag to pass both CMAKE_C_FLAGS and CMAKE_CXX_FLAGS
-CMAKE_FLAGS=${CMAKE_FLAGS:-}
-CMAKE_C_FLAGS=${CMAKE_C_FLAGS:-${CMAKE_FLAGS}}
-CMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS:-${CMAKE_FLAGS}}
+CMAKE_FLAGS="${CMAKE_FLAGS:-} -DJPEGXL_VERSION=\\\"${JPEGXL_VERSION}\\\""
+CMAKE_C_FLAGS="${CMAKE_C_FLAGS:-} ${CMAKE_FLAGS}"
+CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS:-} ${CMAKE_FLAGS}"
+CMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR:-}
 CMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS:-}
 CMAKE_MODULE_LINKER_FLAGS=${CMAKE_MODULE_LINKER_FLAGS:-}
 CMAKE_SHARED_LINKER_FLAGS=${CMAKE_SHARED_LINKER_FLAGS:-}
 CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE:-}
 
-# Version inferred from the CI variables.
-CI_COMMIT_SHA=${CI_COMMIT_SHA:-}
-JPEGXL_VERSION=${JPEGXL_VERSION:-${CI_COMMIT_SHA:0:8}}
 
 # Benchmark parameters
 STORE_IMAGES=${STORE_IMAGES:-1}
@@ -251,7 +254,6 @@ cmake_configure() {
     -DCMAKE_MODULE_LINKER_FLAGS="${CMAKE_MODULE_LINKER_FLAGS}"
     -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS}"
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
-    -DJPEGXL_VERSION="${JPEGXL_VERSION}"
   )
   if [[ -n "${BUILD_TARGET}" ]]; then
     # If set, BUILD_TARGET must be the target triplet such as
@@ -275,6 +277,11 @@ cmake_configure() {
     if [[ -n "${pkg_config}" ]]; then
       args+=(-DPKG_CONFIG_EXECUTABLE="${pkg_config}")
     fi
+  fi
+  if [[ -n "${CMAKE_CROSSCOMPILING_EMULATOR}" ]]; then
+    args+=(
+      -DCMAKE_CROSSCOMPILING_EMULATOR="${CMAKE_CROSSCOMPILING_EMULATOR}"
+    )
   fi
   cmake "${args[@]}" "$@"
 }
@@ -408,7 +415,7 @@ cmd_asan() {
   CMAKE_CXX_FLAGS+=" -DJXL_ENABLE_ASSERT=1 -g -DADDRESS_SANITIZER \
     -fsanitize=address ${UBSAN_FLAGS[@]}"
   strip_dead_code
-  cmake_configure "$@"
+  cmake_configure "$@" -DJPEGXL_ENABLE_TCMALLOC=OFF
   export ASAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
   export UBSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
   cmake_build_and_test
@@ -481,7 +488,8 @@ cmd_msan() {
   CMAKE_SHARED_LINKER_FLAGS+=" ${msan_linker_flags[@]}"
   strip_dead_code
   cmake_configure "$@" \
-    -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=0 -DRUN_HAVE_POSIX_REGEX=0
+    -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=0 -DRUN_HAVE_POSIX_REGEX=0 \
+    -DJPEGXL_ENABLE_TCMALLOC=OFF
   export MSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
   export UBSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
   cmake_build_and_test
@@ -685,17 +693,31 @@ cmd_cpuset() {
   mycpuset="/dev/cpuset${mycpuset}"
   # Check that the directory exists:
   [[ -d "${mycpuset}" ]]
-  echo "${newset}" >"${mycpuset}/cpuset.cpus"
+  if [[ -e "${mycpuset}/cpuset.cpus" ]]; then
+    echo "${newset}" >"${mycpuset}/cpuset.cpus"
+  else
+    echo "${newset}" >"${mycpuset}/cpus"
+  fi
+}
+
+# Return the encoding/decoding speed from the Stats output.
+_speed_from_output() {
+  local speed="$@"
+  speed="${speed%% MP/s*}"
+  speed="${speed##* }"
+  echo "${speed}"
 }
 
 # Run benchmarks on ARM for the big and little CPUs.
 cmd_arm_benchmark() {
   local benchmarks=(
     # Lossy options:
-    "--adaptive_reconstruction=1 --distance=1.0 --speed=fast"
-    "--adaptive_reconstruction=0 --distance=1.0 --speed=fast"
-    "--adaptive_reconstruction=1 --distance=8.0 --speed=fast"
-    "--adaptive_reconstruction=0 --distance=8.0 --speed=fast"
+    "--jpeg1 --jpeg_quality 90"
+    "--jpeg1 --jpeg_quality 85 --jpeg_420"
+    "--adaptive_reconstruction=1 --distance=1.0 --speed=cheetah"
+    "--adaptive_reconstruction=0 --distance=1.0 --speed=cheetah"
+    "--adaptive_reconstruction=1 --distance=8.0 --speed=cheetah"
+    "--adaptive_reconstruction=0 --distance=8.0 --speed=cheetah"
     "--modular-group -Q 90"
     "--modular-group -Q 50"
     # Lossless options:
@@ -707,6 +729,11 @@ cmd_arm_benchmark() {
     "--adaptive_reconstruction=0 --distance=0.3 --speed=fast"
     "--modular-group -N 3 -B 11"
     "--modular-group -Q 97"
+  )
+
+  local brunsli_benchmarks=(
+    "--num_reps=6 --quant=0"
+    "--num_reps=6 --quant=20"
   )
 
   local images=(
@@ -721,48 +748,85 @@ cmd_arm_benchmark() {
     "${RUNNER_CPU_LITTLE%%-*}"
     "${RUNNER_CPU_BIG%%-*}"
   )
+
+  local jpg_dirname="third_party/corpora/jpeg"
+  mkdir -p "${jpg_dirname}"
+  local jpg_images=()
+  local jpg_qualities=( 50 80 95 )
+  for src_img in "${images[@]}"; do
+    for q in "${jpg_qualities[@]}"; do
+      local jpeg_name="${jpg_dirname}/"$(basename "${src_img}" .png)"-q${q}.jpg"
+      "${BUILD_DIR}/tools/cjpegxl" --jpeg1 --jpeg_quality "${q}" \
+        "${src_img}" "${jpeg_name}"
+      jpg_images+=("${jpeg_name}")
+    done
+  done
+
   local output_dir="${BUILD_DIR}/benchmark_results"
   mkdir -p "${output_dir}"
   local runs_file="${output_dir}/runs.txt"
 
   if [[ ! -e "${runs_file}" ]]; then
-    echo -e "flags\tsrc_img\tsrc size\tsrc pixels\tcpuset\tenc size (B)\tdec speed (MP/s)" |
+    echo -e "flags\tsrc_img\tsrc size\tsrc pixels\tcpuset\tenc size (B)\tenc speed (MP/s)\tdec speed (MP/s)" |
       tee -a "${runs_file}"
   fi
 
+  mkdir -p "${BUILD_DIR}/arm_benchmark"
   local flags
   local src_img
-  for src_img in "${images[@]}"; do
+  for src_img in "${jpg_images[@]}" "${images[@]}"; do
     local src_img_hash=$(sha1sum "${src_img}" | cut -f 1 -d ' ')
-    for flags in "${benchmarks[@]}"; do
-      cmd_cpuset "${RUNNER_CPU_ALL}"
+    local img_benchmarks=("${benchmarks[@]}")
+    local enc_binary="${BUILD_DIR}/tools/cjpegxl"
+    local src_ext="${src_img##*.}"
+    if [[ "${src_ext}" == "jpg" ]]; then
+      img_benchmarks=("${brunsli_benchmarks[@]}")
+      enc_binary="${BUILD_DIR}/tools/cbrunsli"
+    fi
+    for flags in "${img_benchmarks[@]}"; do
       # Encoding step.
       local enc_file_hash="$flags || ${src_img} || ${src_img_hash}"
       enc_file_hash=$(echo "${enc_file_hash}" | sha1sum | cut -f 1 -d ' ')
-
-      local enc_file="${BUILD_DIR}/${enc_file_hash}.bin"
-      if [[ ! -f "${enc_file}" ]]; then
-        "${BUILD_DIR}/tools/cjpegxl" ${flags} "${src_img}" "${enc_file}.tmp"
-        mv "${enc_file}.tmp" "${enc_file}"
-      fi
-      local enc_size=$(stat -c "%s" "${enc_file}")
+      local enc_file="${BUILD_DIR}/arm_benchmark/${enc_file_hash}.jxl"
 
       for cpu_conf in "${cpu_confs[@]}"; do
         cmd_cpuset "${cpu_conf}"
+
+        echo "Encoding with: img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
+        local enc_output
+        if [[ "${flags}" == *"modular-group"* ]]; then
+          # We don't benchmark encoding speed in this case.
+          if [[ ! -f "${enc_file}" ]]; then
+            cmd_cpuset "${RUNNER_CPU_ALL}"
+            "${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp"
+            mv "${enc_file}.tmp" "${enc_file}"
+            cmd_cpuset "${cpu_conf}"
+          fi
+          enc_output=" ?? MP/s"
+        else
+          wait_for_temp
+          enc_output=$("${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp" \
+            2>&1 | grep -F "MP/s [")
+          mv "${enc_file}.tmp" "${enc_file}"
+        fi
+        local enc_speed=$(_speed_from_output "${enc_output}")
+        local enc_size=$(stat -c "%s" "${enc_file}")
+
         echo "Decoding with: img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
 
         local dec_output
         wait_for_temp
         dec_output=$("${BUILD_DIR}/tools/djpegxl" "${enc_file}" \
-          --num_reps=5 2>&1 | grep -F "MP/s")
+          --num_reps=5 2>&1 | grep -F "MP/s [")
         local img_size=$(echo "${dec_output}" | cut -f 1 -d ',')
         local img_size_x=$(echo "${img_size}" | cut -f 1 -d ' ')
         local img_size_y=$(echo "${img_size}" | cut -f 3 -d ' ')
         local img_size_px=$(( ${img_size_x} * ${img_size_y} ))
-        local dec_speed=$(echo "${dec_output}" | cut -f 5 -d ' ')
+        local dec_speed=$(_speed_from_output "${dec_output}")
 
         # Record entry in a tab-separated file.
-        echo -e "${flags}\t${src_img}\t${img_size}\t${img_size_px}\t${cpu_conf}\t${enc_size}\t${dec_speed}" |
+        local src_img_base=$(basename "${src_img}")
+        echo -e "${flags}\t${src_img_base}\t${img_size}\t${img_size_px}\t${cpu_conf}\t${enc_size}\t${enc_speed}\t${dec_speed}" |
           tee -a "${runs_file}"
       done
     done
@@ -935,6 +999,7 @@ These optional environment variables are forwarded to the cmake call as
 parameters:
  - CMAKE_C_FLAGS
  - CMAKE_CXX_FLAGS
+ - CMAKE_CROSSCOMPILING_EMULATOR
  - CMAKE_EXE_LINKER_FLAGS
  - CMAKE_MODULE_LINKER_FLAGS
  - CMAKE_SHARED_LINKER_FLAGS

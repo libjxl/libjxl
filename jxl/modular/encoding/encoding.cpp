@@ -14,13 +14,18 @@
 
 #include "jxl/modular/encoding/encoding.h"
 
-#include <inttypes.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <random>
 
+#include <cinttypes>
+#include <random>
+#include <unordered_map>
+#include <unordered_set>
+
+#include "jxl/base/fast_log.h"
 #include "jxl/base/status.h"
 #include "jxl/brotli.h"
+#include "jxl/common.h"
 #include "jxl/dec_ans.h"
 #include "jxl/dec_bit_reader.h"
 #include "jxl/enc_bit_writer.h"
@@ -33,7 +38,6 @@
 #include "jxl/modular/ma/util.h"
 #include "jxl/modular/memio.h"
 #include "jxl/modular/transform/transform.h"
-#include "jxl/modular/util.h"
 #include "jxl/toc.h"
 
 namespace jxl {
@@ -53,6 +57,8 @@ void set_default_modular_options(struct modular_options &o) {
   o.nb_wp_modes = 1;
   o.debug = false;
   o.heatmap = nullptr;
+
+  o.use_splitting_heuristics = false;
 };
 
 template <typename IO>
@@ -71,19 +77,30 @@ void write_big_endian_varint(IO &io, size_t number, bool done = true) {
 }
 
 template <typename IO>
-int read_big_endian_varint(IO &io) {
+Status read_big_endian_varint(IO &io, int *out_result) {
+  static const int kMaxBytesRead = 4;
   int result = 0;
   int bytes_read = 0;
-  while (bytes_read++ < 10) {
+  // We only read up to 4 bytes, which means the largest number we can encode is
+  // 28 bits.
+  while (bytes_read++ < kMaxBytesRead) {
     int number = io.get_c();
-    if (number < 0) break;
-    if (number < 128) return result + number;
+    if (number < 0) {
+      // EOF case.
+      return JXL_FAILURE("EoF when reading read_big_endian_varint().");
+    }
+    if (number < 128) {
+      *out_result = result + number;
+      return true;
+    }
     number -= 128;
     result += number;
+    if (bytes_read == kMaxBytesRead) {
+      return JXL_FAILURE("Encoded number is too big");
+    }
     result <<= 7;
   }
-  if (!io.isEOF()) JXL_FAILURE("Invalid number encountered!");
-  return -1;
+  return JXL_FAILURE("Invalid number encountered!");
 }
 
 bool check_bit_depth(pixel_type minv, pixel_type maxv) {
@@ -123,6 +140,233 @@ Predictor find_best(const Channel &channel, const pixel_type *JXL_RESTRICT p,
   return (Predictor)best_predictor;
 }
 
+void MakeSplitNode(size_t pos, int property, int splitval, Tree *tree) {
+  (*tree)[pos].childID = tree->size();
+  (*tree)[pos].splitval = splitval;
+  (*tree)[pos].property = property;
+  tree->emplace_back();
+  tree->emplace_back();
+}
+
+float EstimateBits(const size_t counts[256], size_t num_symbols) {
+  float bits = 0;
+  float inv_total = 1.0f / std::accumulate(counts, counts + num_symbols, 0);
+  for (size_t i = 0; i < num_symbols; i++) {
+    if (counts[i] == 0) continue;
+    float freq = counts[i] * inv_total;
+    bits -= FastLog2f(freq) * counts[i];
+  }
+  return bits;
+}
+
+void FindBestSplit(const std::vector<std::vector<int>> &data,
+                   const std::vector<std::vector<int>> &compact_properties,
+                   std::vector<size_t> *indices, size_t pos, size_t begin,
+                   size_t end, const std::vector<size_t> &props_to_use,
+                   size_t num_symbols, float threshold, Tree *tree) {
+  if (begin == end) return;
+  size_t counts[256] = {};
+  for (size_t i = begin; i < end; i++) {
+    counts[data[0][(*indices)[i]]]++;
+  }
+  float base_bits = EstimateBits(counts, num_symbols);
+
+  size_t total_below = 0;
+  size_t split_prop = 0;
+  int split_val = 0;
+  float best_split = std::numeric_limits<float>::max();
+  std::vector<int> prop_value_used;
+  std::vector<int> prop_count_increase;
+  for (size_t prop : props_to_use) {
+    prop_value_used.clear();
+    prop_count_increase.clear();
+    prop_value_used.resize(compact_properties[prop - 1].size());
+    prop_count_increase.resize(compact_properties[prop - 1].size() *
+                               num_symbols);
+
+    size_t first_used = compact_properties[prop - 1].size();
+    size_t last_used = 0;
+
+    for (size_t i = begin; i < end; i++) {
+      size_t p = data[prop][(*indices)[i]];
+      size_t sym = data[0][(*indices)[i]];
+      prop_value_used[p] = true;
+      prop_count_increase[p * num_symbols + sym]++;
+      last_used = std::max(last_used, p);
+      first_used = std::min(first_used, p);
+    }
+
+    size_t counts_above[256];
+    memcpy(counts_above, counts, sizeof(counts));
+    size_t counts_below[256] = {};
+    // Exclude last used: this ensures neither counts_above nor counts_below is
+    // empty.
+    for (size_t i = first_used; i < last_used; i++) {
+      if (!prop_value_used[i]) continue;
+      for (size_t sym = 0; sym < num_symbols; sym++) {
+        counts_above[sym] -= prop_count_increase[i * num_symbols + sym];
+        counts_below[sym] += prop_count_increase[i * num_symbols + sym];
+      }
+      float cost = EstimateBits(counts_above, num_symbols) +
+                   EstimateBits(counts_below, num_symbols);
+      if (cost < best_split) {
+        split_prop = prop - 1;
+        split_val = i;
+        best_split = cost;
+        total_below =
+            std::accumulate(counts_below, counts_below + num_symbols, 0);
+      }
+    }
+  }
+
+  if (best_split + threshold < base_bits) {
+    // Split node and try to split children.
+    MakeSplitNode(pos, split_prop, compact_properties[split_prop][split_val],
+                  tree);
+    size_t split_pos = begin + total_below;
+    // "Sort" according to winning property
+    std::nth_element(indices->begin() + begin, indices->begin() + split_pos,
+                     indices->begin() + end, [&](size_t a, size_t b) {
+                       return data[split_prop + 1][a] < data[split_prop + 1][b];
+                     });
+    FindBestSplit(data, compact_properties, indices, (*tree)[pos].childID + 1,
+                  begin, split_pos, props_to_use, num_symbols, threshold, tree);
+    FindBestSplit(data, compact_properties, indices, (*tree)[pos].childID,
+                  split_pos, end, props_to_use, num_symbols, threshold, tree);
+  }
+}
+
+bool ChooseAndQuantizeProperties(
+    const std::vector<std::pair<int, int>> &prop_range, size_t max_properties,
+    std::vector<std::vector<int>> *data,
+    std::vector<std::vector<int>> *compact_properties,
+    std::vector<size_t> *props_to_use) {
+  // Remap all properties so that there are no holes nor negative numbers.
+  std::unordered_map<int, int> remap;
+  std::unordered_set<int> is_present;
+
+  std::vector<int> remap_v;
+  std::vector<int> is_present_v;
+
+  // Threshold to switch to using a hash table for property remapping.
+  static constexpr size_t kVectorMaxRange = 4096;
+
+  size_t largest_property = 0;
+  static constexpr size_t kNumPropertyValuesLimit = 1024;
+  // TODO(veluca): consider quantizing properties that have too many
+  // distinct values.
+  for (size_t i = 1; i < data->size(); i++) {
+    if (prop_range[i - 1].second - prop_range[i - 1].first + 1 <
+        kVectorMaxRange) {
+      int min = prop_range[i - 1].first;
+      is_present_v.clear();
+      is_present_v.resize(prop_range[i - 1].second - min + 1);
+      remap_v.resize(prop_range[i - 1].second - min + 1);
+      for (size_t j = 0; j < (*data)[i].size(); j++) {
+        size_t idx = (*data)[i][j] - min;
+        if (!is_present_v[idx]) {
+          (*compact_properties)[i - 1].push_back((*data)[i][j]);
+        }
+        is_present_v[idx] = 1;
+      }
+      std::sort((*compact_properties)[i - 1].begin(),
+                (*compact_properties)[i - 1].end());
+      for (size_t j = 0; j < (*compact_properties)[i - 1].size(); j++) {
+        remap_v[(*compact_properties)[i - 1][j] - min] = j;
+      }
+      for (size_t j = 0; j < (*data)[i].size(); j++) {
+        (*data)[i][j] = remap_v[(*data)[i][j] - min];
+      }
+    } else {
+      is_present.clear();
+      for (size_t j = 0; j < (*data)[i].size(); j++) {
+        is_present.insert((*data)[i][j]);
+      }
+      (*compact_properties)[i - 1].assign(is_present.begin(), is_present.end());
+      std::sort((*compact_properties)[i - 1].begin(),
+                (*compact_properties)[i - 1].end());
+      for (size_t j = 0; j < (*compact_properties)[i - 1].size(); j++) {
+        remap[(*compact_properties)[i - 1][j]] = j;
+      }
+      for (size_t j = 0; j < (*data)[i].size(); j++) {
+        (*data)[i][j] = remap.at((*data)[i][j]);
+      }
+    }
+    largest_property =
+        std::max(largest_property, (*compact_properties)[i - 1].size());
+    if (largest_property > kNumPropertyValuesLimit) break;
+  }
+
+  if (largest_property > kNumPropertyValuesLimit) return false;
+
+  size_t num_symbols =
+      *std::max_element((*data)[0].begin(), (*data)[0].end()) + 1;
+  size_t value_dist[256] = {};
+  for (size_t i = 0; i < (*data)[0].size(); i++) {
+    value_dist[(*data)[0][i]]++;
+  }
+  float inv_num_elements = 1.0f / (*data)[0].size();
+  float value_prob[256] = {};
+  for (size_t i = 0; i < 256; i++) {
+    if (value_dist[i] != 0) {
+      value_prob[i] = value_dist[i] * inv_num_elements;
+    }
+  }
+  std::vector<size_t> prop_dist;
+  std::vector<size_t> pair_dist;
+  std::vector<std::pair<float, size_t>> props_with_information;
+  for (size_t i = 1; i < data->size(); i++) {
+    prop_dist.clear();
+    pair_dist.clear();
+    prop_dist.resize((*compact_properties)[i - 1].size());
+    pair_dist.resize((*compact_properties)[i - 1].size() * num_symbols);
+    for (size_t j = 0; j < (*data)[0].size(); j++) {
+      prop_dist[(*data)[i][j]]++;
+      pair_dist[(*data)[i][j] * num_symbols + (*data)[0][j]]++;
+    }
+    float mutual_information = 0;
+    for (size_t prop = 0; prop < prop_dist.size(); prop++) {
+      float prop_prob = prop_dist[prop] * inv_num_elements;
+      for (size_t sym = 0; sym < num_symbols; sym++) {
+        if (pair_dist[prop * num_symbols + sym] == 0) continue;
+        float pair_prob =
+            pair_dist[prop * num_symbols + sym] * inv_num_elements;
+        float log_arg = pair_prob / (value_prob[sym] * prop_prob);
+        mutual_information += pair_prob * FastLog2f(log_arg);
+      }
+    }
+    props_with_information.emplace_back(mutual_information, i);
+  }
+  std::sort(props_with_information.begin(), props_with_information.end(),
+            std::greater<std::pair<float, size_t>>());
+
+  // Limit the search to the properties with the highest amount of mutual
+  // information.
+  max_properties = std::min(max_properties, props_with_information.size());
+  props_to_use->resize(max_properties);
+  for (size_t i = 0; i < max_properties; i++) {
+    (*props_to_use)[i] = props_with_information[i].second;
+  }
+  return true;
+}
+
+void ComputeBestTree(const std::vector<std::vector<int>> &data,
+                     const std::vector<std::vector<int>> compact_properties,
+                     const std::vector<size_t> &props_to_use, float threshold,
+                     size_t max_properties, Tree *tree) {
+  std::vector<size_t> indices(data[0].size());
+  std::iota(indices.begin(), indices.end(), 0);
+  size_t num_symbols = *std::max_element(data[0].begin(), data[0].end()) + 1;
+  FindBestSplit(data, compact_properties, &indices, 0, 0, indices.size(),
+                props_to_use, num_symbols, threshold, tree);
+  size_t leaves = 0;
+  for (size_t i = 0; i < tree->size(); i++) {
+    if ((*tree)[i].property < 0) {
+      (*tree)[i].childID = leaves++;
+    }
+  }
+}
+
 template <typename IO, typename Rac, typename Coder, bool learn>
 bool modular_encode_channels(IO &io, Tree &tree, modular_options &options,
                              Predictor predictor, int beginc, int endc,
@@ -145,7 +389,7 @@ bool modular_encode_channels(IO &io, Tree &tree, modular_options &options,
         for (size_t x = 0; x < channel.w; x++)
           if (p[x] == 0) zeroes++;
       }
-      predictability = CLAMP(zeroes * 4096 / pixels, 1, 4095);
+      predictability = Clamp<uint64_t>(zeroes * 4096 / pixels, 1, 4095);
       JXL_DEBUG_V(6,
                   "Found %" PRIu64 " zeroes in %" PRIu64
                   " pixels (zero chance=%i/4096)",
@@ -267,6 +511,67 @@ bool modular_encode_channels(IO &io, Tree &tree, modular_options &options,
     metacoder.write_tree(tree, entropy_coder == 0);
   }
   Properties properties(propRanges.size());
+
+  if (learn && options.use_splitting_heuristics && options.nb_repeats > 0) {
+    bool sign2lsb = true;
+    if (predictor == Predictor::Zero &&
+        (channel.maxval <= 0 || channel.minval >= 0)) {
+      sign2lsb = false;
+    }
+    std::mt19937_64 gen(1);  // deterministic learning (also between threads)
+    std::vector<size_t> ys(channel.h);
+    std::iota(ys.begin(), ys.end(), 0);
+    std::shuffle(ys.begin(), ys.end(), gen);
+    float pixel_fraction = std::min(1.0f, options.nb_repeats);
+    ys.resize(std::ceil(ys.size() * pixel_fraction));
+
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    Channel references(properties.size() - NB_NONREF_PROPERTIES, channel.w, 0,
+                       0);
+    std::vector<std::vector<int32_t>> data;  // 0 -> token, 1...: properties.
+    data.resize(properties.size() + 1);
+    std::vector<std::pair<int, int>> prop_range(properties.size());
+    for (size_t i = 0; i < properties.size(); i++) {
+      prop_range[i].first = std::numeric_limits<int>::max();
+      prop_range[i].second = std::numeric_limits<int>::min();
+    }
+    for (size_t y : ys) {
+      const pixel_type *JXL_RESTRICT p = channel.Row(y);
+      pixel_type *JXL_RESTRICT hp;
+      if (!learn && options.debug) hp = options.heatmap->channel[beginc].Row(y);
+      precompute_references(channel, y, image, beginc, options, references);
+      if (predictor == Predictor::Variable) {
+        subpredictor = find_best(channel, p, onerow, y, subpredictor);
+      }
+      for (size_t x = 0; x < channel.w; x++) {
+        pixel_type guess =
+            predict_and_compute_properties_with_precomputed_reference(
+                properties, channel, p + x, onerow, x, y, subpredictor, image,
+                beginc, options, references);
+        pixel_type diff =
+            sign2lsb ? PackSigned(p[x] - guess) : p[x] - channel.minval;
+        uint32_t token, nbits, bits;
+        EncodeHybridVarLenUint(diff, &token, &nbits, &bits);
+        data[0].push_back(token);
+        for (size_t i = 0; i < properties.size(); i++) {
+          data[i + 1].push_back(properties[i]);
+          prop_range[i].first = std::min(prop_range[i].first, properties[i]);
+          prop_range[i].second = std::max(prop_range[i].second, properties[i]);
+        }
+      }
+    }
+    std::vector<size_t> props_to_use;
+    std::vector<std::vector<int>> compact_properties(data.size() - 1);
+    if (ChooseAndQuantizeProperties(
+            prop_range, options.splitting_heuristics_max_properties, &data,
+            &compact_properties, &props_to_use)) {
+      ComputeBestTree(
+          data, compact_properties, props_to_use,
+          options.splitting_heuristics_node_threshold * pixel_fraction,
+          options.splitting_heuristics_max_properties, &tree);
+      return true;
+    }  // Fall back to the BEGRABAC heuristic.
+  }
 
   if (!learn && entropy_coder == 2) {
     rac.flush();
@@ -409,9 +714,9 @@ bool corrupt_or_truncated(IO &io, Channel &channel, size_t bytes_to_load) {
 }
 
 template <typename IO, typename Coder>
-HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
-                                     size_t &beginc, Image &image,
-                                     size_t bytes_to_load) {
+HWY_ATTR Status modular_decode_channel(IO &io, modular_options &options,
+                                       size_t &beginc, Image &image,
+                                       size_t bytes_to_load) {
   Channel &channel = image.channel[beginc];
 
   // zero pixel channel? could happen
@@ -420,7 +725,9 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
   if (io.isEOF() ||
       (bytes_to_load && static_cast<size_t>(io.ftell()) >= bytes_to_load))
     return true;
-  pixel_type minv = 2 - read_big_endian_varint(io);
+  int encoded_pixel_type_minv;
+  JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &encoded_pixel_type_minv));
+  pixel_type minv = 2 - encoded_pixel_type_minv;
   if (io.isEOF() ||
       (bytes_to_load && static_cast<size_t>(io.ftell()) >= bytes_to_load))
     return true;
@@ -429,15 +736,21 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
     minv = 0;
     maxv = 0;
   } else {
-    if (minv == 1) minv = 1 + read_big_endian_varint(io);
+    int encoded_value;
+    if (minv == 1) {
+      JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &encoded_value));
+      minv = 1 + encoded_value;
+    }
 
     if (io.isEOF() ||
-        (bytes_to_load && static_cast<size_t>(io.ftell()) >= bytes_to_load))
+        (bytes_to_load && static_cast<size_t>(io.ftell()) >= bytes_to_load)) {
       return true;
+    }
     if (channel.w == 1 && channel.h == 1) {
       maxv = minv;
     } else {
-      maxv = minv + read_big_endian_varint(io);
+      JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &encoded_value));
+      maxv = minv + encoded_value;
     }
   }
   if (io.isEOF() ||
@@ -461,7 +774,8 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
 
   if (minv == maxv) return true;
 
-  int firstbyte = read_big_endian_varint(io);
+  int firstbyte;
+  JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &firstbyte));
   if (io.isEOF() ||
       (bytes_to_load && static_cast<size_t>(io.ftell()) >= bytes_to_load))
     return true;
@@ -508,16 +822,18 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
     if (maxval > 0xffff) bytesperpixel++;
     size_t pixels = channel.w * channel.h;
     PaddedBytes obuffer;
-    size_t pos = 0;
+    size_t read_size = 0;
     size_t iopos = io.ftell();
+    // The starting position in obuffer of the decoded pixel data. The first
+    // channel.h bytes are only present when using the Predictor::Variable.
+    size_t pos = (predictor == Predictor::Variable ? channel.h : 0);
+    const size_t obuffer_size = pos + pixels * bytesperpixel;
     bool decodestatus = BrotliDecompress(
-        Span<const uint8_t>(io.ptr() + iopos, io.size() - iopos),
-        pixels * bytesperpixel +
-            (predictor == Predictor::Variable ? channel.h : 0),
-        &pos, &obuffer);
-    io.fseek(iopos + pos, SEEK_SET);
-    JXL_DEBUG_V(4, "   Decoded %zu bytes for %zu pixels", pos, pixels);
-    pos = (predictor == Predictor::Variable ? channel.h : 0);
+        Span<const uint8_t>(io.ptr() + iopos, io.size() - iopos), obuffer_size,
+        &read_size, &obuffer);
+    io.fseek(iopos + read_size, SEEK_SET);
+    JXL_DEBUG_V(4, "   Decoded %zu bytes for %zu pixels", read_size, pixels);
+
     if (!decodestatus) {
       if (io.isEOF() ||
           (bytes_to_load && static_cast<size_t>(io.ftell()) >= bytes_to_load)) {
@@ -526,6 +842,10 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
       }
       return JXL_FAILURE("Problem during Brotli decode");
     }
+    JXL_DASSERT(1 <= bytesperpixel && bytesperpixel <= 3);
+    if (obuffer_size != obuffer.size()) {
+      return JXL_FAILURE("Invalid decoded obuffer size");
+    }
 
     if (predictor == Predictor::Zero && bytesperpixel <= 2) {
       // special optimized case: no predictor
@@ -533,25 +853,26 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         if (sign2lsb) {
-          if (bytesperpixel == 1)
+          if (bytesperpixel == 1) {
             for (size_t x = 0; x < channel.w; x++) {
               r[x] = UnpackSigned(obuffer[pos++]);
             }
-          else
+          } else {
             for (size_t x = 0; x < channel.w; x++) {
               pixel_type v = obuffer[pos];
               v += obuffer[pixels + pos] << 8;
               pos++;
               r[x] = UnpackSigned(v);
             }
+          }
         } else {
-          if (bytesperpixel == 1)
+          if (bytesperpixel == 1) {
             for (size_t x = 0; x < channel.w; x++) {
               pixel_type v = obuffer[pos++];
               v += channel.minval;
               r[x] = v;
             }
-          else
+          } else {
             for (size_t x = 0; x < channel.w; x++) {
               pixel_type v = obuffer[pos];
               v += obuffer[pixels + pos] << 8;
@@ -559,21 +880,23 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
               v += channel.minval;
               r[x] = v;
             }
+          }
         }
       }
     } else {
       const intptr_t onerow = channel.plane.PixelsPerRow();
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
-        if (predictor == Predictor::Variable)
+        if (predictor == Predictor::Variable) {
           subpredictor = (Predictor)obuffer[y];
-        if (bytesperpixel == 1)
+        }
+        if (bytesperpixel == 1) {
           for (size_t x = 0; x < channel.w; x++) {
             pixel_type g = predict(channel, r + x, onerow, x, y, subpredictor);
             pixel_type v = obuffer[pos++];
             r[x] = UnpackSigned(v) + g;
           }
-        else if (bytesperpixel == 2)
+        } else if (bytesperpixel == 2) {
           for (size_t x = 0; x < channel.w; x++) {
             pixel_type g = predict(channel, r + x, onerow, x, y, subpredictor);
             pixel_type v = obuffer[pos];
@@ -581,7 +904,7 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
             pos++;
             r[x] = UnpackSigned(v) + g;
           }
-        else if (bytesperpixel == 3)
+        } else if (bytesperpixel == 3) {
           for (size_t x = 0; x < channel.w; x++) {
             pixel_type g = predict(channel, r + x, onerow, x, y, subpredictor);
             pixel_type v = obuffer[pos];
@@ -590,6 +913,7 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
             pos++;
             r[x] = UnpackSigned(v) + g;
           }
+        }
       }
     }
 
@@ -625,80 +949,84 @@ HWY_ATTR bool modular_decode_channel(IO &io, modular_options &options,
     if (predictor == Predictor::Variable) nbctx++;
 
     size_t iopos = io.ftell();
-    BitReader br(Span<const uint8_t>(io.ptr() + iopos, io.size() - iopos));
-    std::vector<uint8_t> context_map;
-    ANSCode code;
-    JXL_RETURN_IF_ERROR(
-        DecodeHistograms(&br, nbctx, ANS_MAX_ALPHA_SIZE, &code, &context_map));
-    ANSSymbolReader reader(&code, &br);
-    if (tree.size() == 1 && predictor == Predictor::Zero) {
-      // special optimized case: no meta-adaptation, no predictor, so no need
-      // to compute properties
-      JXL_DEBUG_V(8, "Fast track.");
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        if (sign2lsb) {
-          for (size_t x = 0; x < channel.w; x++) {
-            uint32_t v = ReadHybridUint(0, &br, &reader, context_map);
-            r[x] = UnpackSigned(v);
-          }
-        } else {
-          for (size_t x = 0; x < channel.w; x++) {
-            pixel_type v = ReadHybridUint(0, &br, &reader, context_map);
-            v += channel.minval;
-            r[x] = v;
-          }
-        }
-      }
-    } else if (tree.size() == 1) {
-      // special optimized case: no meta-adaptation, so no need to compute
-      // properties
-      JXL_DEBUG_V(8, "Quite fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        if (predictor == Predictor::Variable)
-          subpredictor =
-              (Predictor)ReadHybridUint(nbctx - 1, &br, &reader, context_map);
-        for (size_t x = 0; x < channel.w; x++) {
-          pixel_type g = predict(channel, r + x, onerow, x, y, subpredictor);
-          uint32_t v = ReadHybridUint(0, &br, &reader, context_map);
-          r[x] = UnpackSigned(v) + g;
-        }
-      }
-    } else {
-      JXL_DEBUG_V(8, "Slow track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
-      Channel references(properties.size() - NB_NONREF_PROPERTIES, channel.w, 0,
-                         0);
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT p = channel.Row(y);
-        precompute_references(channel, y, image, beginc, options, references);
-        if (predictor == Predictor::Variable)
-          subpredictor =
-              (Predictor)ReadHybridUint(nbctx - 1, &br, &reader, context_map);
-        for (size_t x = 0; x < channel.w; x++) {
-          pixel_type guess =
-              predict_and_compute_properties_with_precomputed_reference(
-                  properties, channel, p + x, onerow, x, y, subpredictor, image,
-                  beginc, options, references);
-          int ctx = coder.context_id(properties);
-          uint32_t v = ReadHybridUint(ctx, &br, &reader, context_map);
+    Status ret = true;
+    {
+      BitReader br(Span<const uint8_t>(io.ptr() + iopos, io.size() - iopos));
+      BitReaderScopedCloser br_closer(&br, &ret);
+
+      std::vector<uint8_t> context_map;
+      ANSCode code;
+      JXL_RETURN_IF_ERROR(DecodeHistograms(&br, nbctx, ANS_MAX_ALPHA_SIZE,
+                                           &code, &context_map));
+      ANSSymbolReader reader(&code, &br);
+      if (tree.size() == 1 && predictor == Predictor::Zero) {
+        // special optimized case: no meta-adaptation, no predictor, so no need
+        // to compute properties
+        JXL_DEBUG_V(8, "Fast track.");
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT r = channel.Row(y);
           if (sign2lsb) {
-            p[x] = UnpackSigned(v) + guess;
+            for (size_t x = 0; x < channel.w; x++) {
+              uint32_t v = ReadHybridUint(0, &br, &reader, context_map);
+              r[x] = UnpackSigned(v);
+            }
           } else {
-            p[x] = channel.minval + v;
+            for (size_t x = 0; x < channel.w; x++) {
+              pixel_type v = ReadHybridUint(0, &br, &reader, context_map);
+              v += channel.minval;
+              r[x] = v;
+            }
+          }
+        }
+      } else if (tree.size() == 1) {
+        // special optimized case: no meta-adaptation, so no need to compute
+        // properties
+        JXL_DEBUG_V(8, "Quite fast track.");
+        const intptr_t onerow = channel.plane.PixelsPerRow();
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT r = channel.Row(y);
+          if (predictor == Predictor::Variable)
+            subpredictor =
+                (Predictor)ReadHybridUint(nbctx - 1, &br, &reader, context_map);
+          for (size_t x = 0; x < channel.w; x++) {
+            pixel_type g = predict(channel, r + x, onerow, x, y, subpredictor);
+            uint32_t v = ReadHybridUint(0, &br, &reader, context_map);
+            r[x] = UnpackSigned(v) + g;
+          }
+        }
+      } else {
+        JXL_DEBUG_V(8, "Slow track.");
+        const intptr_t onerow = channel.plane.PixelsPerRow();
+        Channel references(properties.size() - NB_NONREF_PROPERTIES, channel.w,
+                           0, 0);
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT p = channel.Row(y);
+          precompute_references(channel, y, image, beginc, options, references);
+          if (predictor == Predictor::Variable)
+            subpredictor =
+                (Predictor)ReadHybridUint(nbctx - 1, &br, &reader, context_map);
+          for (size_t x = 0; x < channel.w; x++) {
+            pixel_type guess =
+                predict_and_compute_properties_with_precomputed_reference(
+                    properties, channel, p + x, onerow, x, y, subpredictor,
+                    image, beginc, options, references);
+            int ctx = coder.context_id(properties);
+            uint32_t v = ReadHybridUint(ctx, &br, &reader, context_map);
+            if (sign2lsb) {
+              p[x] = UnpackSigned(v) + guess;
+            } else {
+              p[x] = channel.minval + v;
+            }
           }
         }
       }
+      if (!reader.CheckANSFinalState()) {
+        return JXL_FAILURE("ANS decode final state failed");
+      }
+      JXL_RETURN_IF_ERROR(br.JumpToByteBoundary());
+      io.fseek(iopos + br.TotalBitsConsumed() / 8, SEEK_SET);
     }
-    if (!reader.CheckANSFinalState()) {
-      return JXL_FAILURE("ANS decode final state failed");
-    }
-    JXL_RETURN_IF_ERROR(br.JumpToByteBoundary());
-    io.fseek(iopos + br.TotalBitsConsumed() / 8, SEEK_SET);
-    JXL_RETURN_IF_ERROR(br.Close());
-    return true;
+    return ret;
   }
 
   // MABEGABRAC decode
@@ -829,9 +1157,9 @@ bool modular_encode(IO &realio, const Image &image, modular_options &options) {
   if (nb_transforms >= 3) write_big_endian_varint(io, nb_transforms - 3);
   JXL_DEBUG_V(5, "Image data underwent %i transformations: ", nb_transforms);
   for (int i = 0; i < nb_transforms; i++) {
-    int id = image.transform[i].ID;
+    TransformId id = image.transform[i].id;
     int nb_params = image.transform[i].parameters.size();
-    write_big_endian_varint(io, (nb_params << 4) + id);
+    write_big_endian_varint(io, (nb_params << 4) + static_cast<uint32_t>(id));
     for (int j = 0; j < nb_params; j++)
       write_big_endian_varint(io, image.transform[i].parameters[j]);
   }
@@ -960,30 +1288,44 @@ bool modular_encode(IO &realio, const Image &image, modular_options &options) {
 #endif
 
 template <typename IO>
-bool modular_decode(IO &io, Image &image, modular_options &options,
-                    size_t bytes_to_load) {
+Status modular_decode(IO &io, Image &image, modular_options &options,
+                      size_t bytes_to_load) {
   if (image.nb_channels < 1) return true;
 
   // decode transforms
-  int max_properties_nb_transforms = read_big_endian_varint(io);
+  int max_properties_nb_transforms;
+  JXL_RETURN_IF_ERROR(
+      read_big_endian_varint(io, &max_properties_nb_transforms));
   options.max_properties = (max_properties_nb_transforms >> 2);
   JXL_DEBUG_V(4, "Global option: up to %i back-referencing MA properties.",
               options.max_properties);
   int nb_transforms = (max_properties_nb_transforms & 3);
-  if (nb_transforms == 3) nb_transforms += read_big_endian_varint(io);
+  if (nb_transforms == 3) {
+    int encoded_nb_transforms;
+    JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &encoded_nb_transforms));
+    nb_transforms += encoded_nb_transforms;
+  }
   JXL_DEBUG_V(3, "Image data underwent %i transformations: ", nb_transforms);
   for (int i = 0; i < nb_transforms; i++) {
-    int id_and_nb_params = read_big_endian_varint(io);
-    Transform t(id_and_nb_params & 0xf);
+    int id_and_nb_params;
+    JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &id_and_nb_params));
+    uint32_t transform_id = id_and_nb_params & 0xf;
+    Transform t(static_cast<TransformId>(transform_id));
+    if (!t.IsValid()) {
+      return JXL_FAILURE("Unknown transform");
+    }
     int nb_params = (id_and_nb_params >> 4);
-    for (int j = 0; j < nb_params; j++)
-      t.parameters.push_back(read_big_endian_varint(io));
+    for (int j = 0; j < nb_params; j++) {
+      int parameter;
+      JXL_RETURN_IF_ERROR(read_big_endian_varint(io, &parameter));
+      t.parameters.push_back(parameter);
+    }
     if (!options.identify) {
-      t.meta_apply(image);
+      JXL_RETURN_IF_ERROR(t.MetaApply(image));
       image.transform.push_back(t);
     }
-    JXL_DEBUG_V(2, "%s", t.name());
-    if (t.ID == TRANSFORM_PALETTE) {
+    JXL_DEBUG_V(2, "%s", t.Name());
+    if (t.id == TransformId::kPalette) {
       if (t.parameters[0] == t.parameters[1])
         JXL_DEBUG_V(3, "[Compact channel %i to ", t.parameters[0]);
       else
@@ -1010,11 +1352,11 @@ bool modular_decode(IO &io, Image &image, modular_options &options,
     if ((bytes_to_load == 0 ||
          static_cast<size_t>(io.ftell()) < bytes_to_load) &&
         !io.isEOF()) {
-      if (!modular_decode_channel<
+      JXL_RETURN_IF_ERROR(
+          (modular_decode_channel<
               IO, FinalPropertySymbolCoder<ModularBitChancePass2, RacIn<IO>,
                                            MAX_BIT_DEPTH>>(
-              io, options, i, image, bytes_to_load))
-        return false;
+              io, options, i, image, bytes_to_load)));
     } else {
       JXL_DEBUG_V(3, "Skipping decode of channels %zu-%zu.", i,
                   nb_channels - 1);
@@ -1025,8 +1367,8 @@ bool modular_decode(IO &io, Image &image, modular_options &options,
   return true;
 }
 
-template bool modular_decode(BlobReader &io, Image &image,
-                             modular_options &options, size_t bytes_to_load);
+template Status modular_decode(BlobReader &io, Image &image,
+                               modular_options &options, size_t bytes_to_load);
 
 #ifdef HAS_ENCODER
 
@@ -1064,8 +1406,8 @@ bool modular_generic_compress(Image &image, PaddedBytes *bytes,
   if (try_transforms) {
     if (loss > 1) {
       // lossy DC
-      image.do_transform(Transform(TRANSFORM_SQUEEZE));
-      Transform quantize(TRANSFORM_QUANTIZE);
+      image.do_transform(Transform(TransformId::kSqueeze));
+      Transform quantize(TransformId::kQuantize);
       for (size_t i = image.nb_meta_channels; i < image.channel.size(); i++) {
         Channel &ch = image.channel[i];
         int shift = ch.hcshift + ch.vcshift;  // number of pixel halvings
@@ -1083,7 +1425,7 @@ bool modular_generic_compress(Image &image, PaddedBytes *bytes,
       image.recompute_minmax();
 
       for (size_t c = 0; c < image.nb_channels; c++) {
-        Transform maybe_palette_1(TRANSFORM_PALETTE);
+        Transform maybe_palette_1(TransformId::kPalette);
         maybe_palette_1.parameters.push_back(c + image.nb_meta_channels);
         maybe_palette_1.parameters.push_back(c + image.nb_meta_channels);
         int colors = image.channel[c + image.nb_meta_channels].maxval -
@@ -1215,8 +1557,7 @@ bool modular_generic_decompress(const Span<const uint8_t> bytes, size_t *pos,
                                 size_t bytes_to_load, int undo_transforms) {
   BlobReader io(bytes.data(), bytes.size());
   io.fseek(*pos, SEEK_SET);
-  bool status = modular_decode(io, image, options, bytes_to_load);
-  if (!status) return false;
+  JXL_RETURN_IF_ERROR(modular_decode(io, image, options, bytes_to_load));
   image.undo_transforms(undo_transforms);
   JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %lu bytes",
               image.w, image.h, image.real_nb_channels, io.ftell() - *pos);

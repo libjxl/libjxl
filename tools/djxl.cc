@@ -34,6 +34,9 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "tools/args.h"
+#if !defined(__EMSCRIPTEN__)
+#include "jxl/extras/codec_jpg.h"
+#endif
 
 namespace jpegxl {
 namespace tools {
@@ -92,17 +95,41 @@ jxl::Status JxlDecompressArgs::ValidateArgs() {
   return true;
 }
 
-jxl::Status DecompressJxl(const jxl::Span<const uint8_t> compressed,
+const char* ModeFromSignature(const JpegxlSignature signature) {
+  switch (signature) {
+    case JPEGXL_SIG_JPEG:
+      return "JPEG";
+    case JPEGXL_SIG_JPEGXL:
+      return "JPEGXL";
+    case JPEGXL_SIG_BRUNSLI:
+      return "Brunsli";
+    default:
+      JXL_ABORT("Invalid signature, should have handled this separately");
+  }
+}
+
+jxl::Status DecompressJxl(const JpegxlSignature signature,
+                          const jxl::Span<const uint8_t> compressed,
                           const jxl::DecompressParams& params,
                           jxl::ThreadPool* pool,
                           jxl::CodecInOut* JXL_RESTRICT io,
                           jxl::AuxOut* aux_out,
                           SpeedStats* JXL_RESTRICT stats) {
   const double t0 = jxl::Now();
-  if (!DecodeFile(params, compressed, io, aux_out, pool)) {
-    fprintf(stderr, "Failed to decompress.\n");
+
+  jxl::Status ok = false;
+  if (signature == JPEGXL_SIG_JPEG) {
+#if !defined(__EMSCRIPTEN__)
+    ok = DecodeImageJPG(compressed, io);
+#endif
+  } else {
+    ok = DecodeFile(params, compressed, io, aux_out, pool);
+  }
+  if (!ok) {
+    fprintf(stderr, "Failed to decompress %s.\n", ModeFromSignature(signature));
     return false;
   }
+
   const double t1 = jxl::Now();
   stats->NotifyElapsed(t1 - t0);
   return true;
@@ -149,7 +176,7 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
   jxl::ColorEncoding c_out = io.metadata.color_encoding;
   if (!args.color_space.empty()) {
     if (!jxl::ParseDescription(args.color_space, &c_out) ||
-        !jxl::ColorManagement::CreateProfile(&c_out)) {
+        !c_out.CreateICC()) {
       fprintf(stderr, "Failed to apply color_space.\n");
       return false;
     }
@@ -181,7 +208,9 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
                             io.frames[0].c_current());
       frame_io.metadata = *io.frames[0].metadata();
       if (io.frames[0].HasAlpha())
-        frame_io.Main().SetAlpha(jxl::CopyImage(io.frames[0].alpha()));
+        frame_io.Main().SetAlpha(
+            jxl::CopyImage(io.frames[0].alpha()),
+            /*alpha_is_premultiplied=*/io.frames[0].AlphaIsPremultiplied());
     }
 
     // TODO: take NewBase into account
@@ -224,27 +253,89 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
                   cropbox.MutableRow(&frame_io.Main().color().Plane(1), y);
               float* JXL_RESTRICT b =
                   cropbox.MutableRow(&frame_io.Main().color().Plane(2), y);
-              for (size_t x = 0; x < cropbox.xsize(); x++) {
-                if (a1[x] == 0) continue;
-                float new_a = a1[x] + (a[x] * (max_alpha - a1[x])) * rmax_alpha;
-                float rnew_a = 1.0f / new_a;
-                r[x] = (r1[x] * a1[x] + r[x] * a[x] * (max_alpha - a1[x])) *
-                       rnew_a;
-                g[x] = (g1[x] * a1[x] + g[x] * a[x] * (max_alpha - a1[x])) *
-                       rnew_a;
-                b[x] = (b1[x] * a1[x] + b[x] * a[x] * (max_alpha - a1[x])) *
-                       rnew_a;
-                a[x] = new_a;
+              if (!frame_io.Main().AlphaIsPremultiplied() &&
+                  !io.frames[i].AlphaIsPremultiplied()) {
+                for (size_t x = 0; x < cropbox.xsize(); x++) {
+                  if (a1[x] == 0) continue;
+                  float new_a =
+                      a1[x] + (a[x] * (max_alpha - a1[x])) * rmax_alpha;
+                  float rnew_a = 1.0f / new_a;
+                  r[x] = (r1[x] * a1[x] + r[x] * a[x] * (max_alpha - a1[x])) *
+                         rnew_a;
+                  g[x] = (g1[x] * a1[x] + g[x] * a[x] * (max_alpha - a1[x])) *
+                         rnew_a;
+                  b[x] = (b1[x] * a1[x] + b[x] * a[x] * (max_alpha - a1[x])) *
+                         rnew_a;
+                  a[x] = new_a;
+                }
+              } else {
+                frame_io.Main().PremultiplyAlphaIfNeeded();
+                if (io.frames[i].AlphaIsPremultiplied()) {
+                  for (size_t x = 0; x < cropbox.xsize(); x++) {
+                    const float one_minus_normalized_a1 =
+                        (max_alpha - a1[x]) * rmax_alpha;
+                    r[x] = r1[x] + r[x] * one_minus_normalized_a1;
+                    g[x] = g1[x] + g[x] * one_minus_normalized_a1;
+                    b[x] = b1[x] + b[x] * one_minus_normalized_a1;
+                    a[x] = a1[x] + a[x] * one_minus_normalized_a1;
+                  }
+                } else {
+                  for (size_t x = 0; x < cropbox.xsize(); x++) {
+                    r[x] = (r1[x] * a1[x] + r[x] * (max_alpha - a1[x])) *
+                           rmax_alpha;
+                    g[x] = (g1[x] * a1[x] + g[x] * (max_alpha - a1[x])) *
+                           rmax_alpha;
+                    b[x] = (b1[x] * a1[x] + b[x] * (max_alpha - a1[x])) *
+                           rmax_alpha;
+                    a[x] = a1[x] + (a[x] * (max_alpha - a1[x])) * rmax_alpha;
+                  }
+                }
               }
             }
           } else {  // kReplace
-            jxl::CopyImageTo(
-                io.frames[i].color(), cropbox,
-                const_cast<jxl::Image3F*>(&frame_io.Main().color()));
-            if (frame_io.Main().HasAlpha())
+            if (!frame_io.Main().HasAlpha() ||
+                !frame_io.Main().AlphaIsPremultiplied() ||
+                io.frames[i].AlphaIsPremultiplied()) {
+              if (io.frames[i].AlphaIsPremultiplied()) {
+                frame_io.Main().PremultiplyAlphaIfNeeded();
+              }
               jxl::CopyImageTo(
-                  io.frames[i].alpha(), cropbox,
-                  const_cast<jxl::ImageU*>(&frame_io.Main().alpha()));
+                  io.frames[i].color(), cropbox,
+                  const_cast<jxl::Image3F*>(&frame_io.Main().color()));
+              if (frame_io.Main().HasAlpha())
+                jxl::CopyImageTo(
+                    io.frames[i].alpha(), cropbox,
+                    const_cast<jxl::ImageU*>(&frame_io.Main().alpha()));
+            } else {
+              JXL_ASSERT(frame_io.Main().AlphaIsPremultiplied() &&
+                         !io.frames[i].AlphaIsPremultiplied());
+              float max_alpha = (1 << io.metadata.alpha_bits) - 1;
+              float rmax_alpha = 1.0f / max_alpha;
+              for (size_t y = 0; y < cropbox.ysize(); ++y) {
+                const uint16_t* JXL_RESTRICT a1 = io.frames[i].alpha().Row(y);
+                const float* JXL_RESTRICT r1 =
+                    io.frames[i].color().PlaneRow(0, y);
+                const float* JXL_RESTRICT g1 =
+                    io.frames[i].color().PlaneRow(1, y);
+                const float* JXL_RESTRICT b1 =
+                    io.frames[i].color().PlaneRow(2, y);
+                uint16_t* JXL_RESTRICT a =
+                    cropbox.MutableRow(&frame_io.Main().alpha(), y);
+                float* JXL_RESTRICT r =
+                    cropbox.MutableRow(&frame_io.Main().color().Plane(0), y);
+                float* JXL_RESTRICT g =
+                    cropbox.MutableRow(&frame_io.Main().color().Plane(1), y);
+                float* JXL_RESTRICT b =
+                    cropbox.MutableRow(&frame_io.Main().color().Plane(2), y);
+                for (size_t x = 0; x < cropbox.xsize(); ++x) {
+                  const float normalized_a1 = a1[x] * rmax_alpha;
+                  r[x] = r1[x] * normalized_a1;
+                  g[x] = g1[x] * normalized_a1;
+                  b[x] = b1[x] * normalized_a1;
+                  a[x] = a1[x];
+                }
+              }
+            }
           }
         }
 
@@ -262,7 +353,9 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
                               io.frames[i].c_current());
         frame_io.metadata = *io.frames[i].metadata();
         if (io.frames[i].HasAlpha())
-          frame_io.Main().SetAlpha(jxl::CopyImage(io.frames[i].alpha()));
+          frame_io.Main().SetAlpha(
+              jxl::CopyImage(io.frames[i].alpha()),
+              /*alpha_is_premultiplied=*/io.frames[i].AlphaIsPremultiplied());
         snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
                  base.c_str(), digits, i, extension);
         if (!EncodeToFile(frame_io, c_out, bits_per_sample,

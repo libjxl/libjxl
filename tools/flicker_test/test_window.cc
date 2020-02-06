@@ -14,21 +14,20 @@
 
 #include "tools/flicker_test/test_window.h"
 
-#include <algorithm>
-#include <random>
-
 #include <QDir>
 #include <QMessageBox>
 #include <QSet>
-#include <QX11Info>
+#include <algorithm>
+#include <random>
+
+#include "tools/icc_detect/icc_detect.h"
 
 namespace jxl {
 
 FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
                                      QWidget* const parent)
     : QMainWindow(parent),
-      monitorProfile_(
-          GetMonitorIccProfile(QX11Info::connection(), QX11Info::appScreen())),
+      monitorProfile_(GetMonitorIccProfile(this)),
       parameters_(std::move(parameters)),
       originalFolder_(parameters_.originalFolder, "*.png"),
       alteredFolder_(parameters_.alteredFolder, "*.png"),
@@ -73,8 +72,15 @@ FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
   originalFolder_.setFilter(QDir::Files);
   alteredFolder_.setFilter(QDir::Files);
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
   auto originalImages = QSet<QString>::fromList(originalFolder_.entryList());
   auto alteredImages = QSet<QString>::fromList(alteredFolder_.entryList());
+#else
+  auto originalImages = QSet<QString>(originalFolder_.entryList().begin(),
+                                      originalFolder_.entryList().end());
+  auto alteredImages = QSet<QString>(alteredFolder_.entryList().begin(),
+                                     alteredFolder_.entryList().end());
+#endif
 
   auto onlyOriginal = originalImages - alteredImages,
        onlyAltered = alteredImages - originalImages;
@@ -114,7 +120,7 @@ FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
     }
   }
 
-  remainingImages_ = originalImages.intersect(alteredImages).toList();
+  remainingImages_ = originalImages.intersect(alteredImages).values();
   std::random_device rd;
   std::mt19937 g(rd());
   std::shuffle(remainingImages_.begin(), remainingImages_.end(), g);

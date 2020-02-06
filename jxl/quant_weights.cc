@@ -335,6 +335,7 @@ HWY_ATTR Status Decode(BitReader* br, QuantEncoding* encoding,
       encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
       Image3I img(required_size_x, required_size_y);
       JXL_RETURN_IF_ERROR(br->JumpToByteBoundary());
+      JXL_RETURN_IF_ERROR(br->AllReadsWithinBounds());
       size_t pos = 0;
       const Span<const uint8_t> compressed = br->GetSpan();
       if (!modular_rect_decompress_3(compressed, &pos, &img, Rect(img)))

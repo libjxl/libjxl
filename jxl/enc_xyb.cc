@@ -60,10 +60,10 @@ void ToXYB(const ImageBundle& in, const float linear_multiplier,
 Image3F OpsinDynamicsImage(const Image3B& srgb8) {
   ImageMetadata metadata;
   metadata.bits_per_sample = 8;
-  metadata.color_encoding = ColorManagement::SRGB();
+  metadata.color_encoding = ColorEncoding::SRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(StaticCastImage3<float>(srgb8), metadata.color_encoding);
-  JXL_CHECK(ib.TransformTo(ColorManagement::LinearSRGB(ib.IsGray())));
+  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray())));
   ThreadPool* null_pool = nullptr;
   Image3F xyb(srgb8.xsize(), srgb8.ysize());
   ToXYB(ib, 1.0f, null_pool, &xyb);
@@ -204,9 +204,8 @@ HWY_ATTR void TestCubeRoot_T::HWY_FUNC() {
 
 // This is different from butteraugli::OpsinDynamicsImage() in the sense that
 // it does not contain a sensitivity multiplier based on the blurred image.
-HWY_ATTR void ToXYB_T::HWY_FUNC(const ImageBundle& in,
-                                const float linear_multiplier, ThreadPool* pool,
-                                Image3F* JXL_RESTRICT xyb,
+HWY_ATTR void ToXYB_T::HWY_FUNC(const ImageBundle& in, float linear_multiplier,
+                                ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
                                 ImageBundle* JXL_RESTRICT linear) {
   PROFILER_FUNC;
 
@@ -217,15 +216,25 @@ HWY_ATTR void ToXYB_T::HWY_FUNC(const ImageBundle& in,
 
   // Convert to linear sRGB (unless already in that space)
   const ImageBundle* linear_srgb = &in;
-  const ColorEncoding& c = ColorManagement::LinearSRGB(in.IsGray());
+  const ColorEncoding& c = ColorEncoding::LinearSRGB(in.IsGray());
   ImageMetadata metadata;
   metadata.color_encoding = c;
   ImageBundle copy(&metadata);
   JXL_CHECK(TransformIfNeeded(in, c, pool, linear == nullptr ? &copy : linear,
                               &linear_srgb));
-  // Copy output to `linear` if TransformIfNeeded did not already do this.
-  if (linear != nullptr && linear != linear_srgb) {
-    *linear = linear_srgb->Copy();
+  if (linear != nullptr) {
+    // Copy output to `linear` if TransformIfNeeded did not already do this.
+    if (linear != linear_srgb) {
+      *linear = linear_srgb->Copy();
+    }
+    if (linear_multiplier != 1.f) {
+      ScaleImage(linear_multiplier, linear->MutableColor());
+      if (linear == linear_srgb) {
+        // Since linear_srgb has been multiplied (via linear), it should not be
+        // multiplied further below.
+        linear_multiplier = 1.f;
+      }
+    }
   }
 
   const HWY_FULL(float) d;

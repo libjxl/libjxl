@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -195,16 +195,16 @@
 
 #undef HWY_HAS_CMP64
 #undef HWY_HAS_DOUBLE
+#undef HWY_HAS_INT64
 #ifdef __arm__
 #define HWY_HAS_CMP64 0
 #define HWY_HAS_DOUBLE 0
+#define HWY_HAS_INT64 0
 #else
 #define HWY_HAS_CMP64 1
 #define HWY_HAS_DOUBLE 1
-#endif
-
-#undef HWY_HAS_INT64
 #define HWY_HAS_INT64 1
+#endif
 
 #undef HWY_HAS_GATHER
 #define HWY_HAS_GATHER 0

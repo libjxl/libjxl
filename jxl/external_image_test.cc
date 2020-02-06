@@ -31,6 +31,7 @@
 #include "jxl/common.h"
 #include "jxl/image_ops.h"
 #include "jxl/image_test_utils.h"
+#include "jxl/test_utils.h"
 
 namespace jxl {
 namespace {
@@ -47,12 +48,12 @@ struct Globals {
     c_wide[0].SetColorSpace(ColorSpace::kRGB);
     c_wide[0].primaries = Primaries::k2100;
     c_wide[0].tf.SetTransferFunction(TransferFunction::kLinear);
-    JXL_CHECK(ColorManagement::CreateProfile(&c_wide[0]));
+    JXL_CHECK(c_wide[0].CreateICC());
 
     // Same, but gray
     c_wide[1] = c_wide[0];
     c_wide[1].SetColorSpace(ColorSpace::kGray);
-    JXL_CHECK(ColorManagement::CreateProfile(&c_wide[1]));
+    JXL_CHECK(c_wide[1].CreateICC());
 
     // Index = (channels - 1) + 8bit ? 0 : 4.
     color[1 - 1 + 0] = MakeGray();
@@ -132,7 +133,8 @@ struct Globals {
 };
 static Globals* g;
 
-class ExternalImageTest : public ::testing::TestWithParam<ColorEncoding> {
+class ExternalImageParametricTest
+    : public ::testing::TestWithParam<test::ColorEncodingDescriptor> {
  public:
   static void SetUpTestSuite() { g = new Globals; }
   static void TearDownTestSuite() { delete g; }
@@ -158,7 +160,7 @@ class ExternalImageTest : public ::testing::TestWithParam<ColorEncoding> {
     const size_t alpha_bits = bits_per_sample <= 8 ? 8 : 16;
     if (add_alpha) {
       io.metadata.alpha_bits = alpha_bits;
-      ib.SetAlpha(CopyImage(g->alpha[idx]));
+      ib.SetAlpha(CopyImage(g->alpha[idx]), /*alpha_is_premultiplied=*/false);
     }
 
     const ImageU* alpha = io.metadata.HasAlpha() ? &ib.alpha() : nullptr;
@@ -168,7 +170,8 @@ class ExternalImageTest : public ::testing::TestWithParam<ColorEncoding> {
     // Codec currently are not able to store this in metadata.
     CodecIntervals temp_intervals;
     const ExternalImage external(&g->pool, ib.color(), Rect(ib), ib.c_current(),
-                                 c_external, ib.HasAlpha(), alpha, alpha_bits,
+                                 c_external, ib.HasAlpha(),
+                                 ib.AlphaIsPremultiplied(), alpha, alpha_bits,
                                  bits_per_sample, big_endian, &temp_intervals);
     ASSERT_TRUE(external.IsHealthy());
 
@@ -294,13 +297,13 @@ class ExternalImageTest : public ::testing::TestWithParam<ColorEncoding> {
 
     CodecInOut io;
     io.metadata.bits_per_sample = bits_per_sample;
-    io.metadata.color_encoding = ColorManagement::SRGB();
+    io.metadata.color_encoding = ColorEncoding::SRGB();
     io.SetFromImage(std::move(image), io.metadata.color_encoding);
     const ImageBundle& ib = io.Main();
 
     Image3<T> out;
-    ASSERT_TRUE(ib.CopyTo(Rect(ib), ColorManagement::SRGB(ib.IsGray()), &out,
-                          &g->pool));
+    ASSERT_TRUE(
+        ib.CopyTo(Rect(ib), ColorEncoding::SRGB(ib.IsGray()), &out, &g->pool));
     for (size_t c = 0; c < 3; ++c) {
       const T* row_out0 = out.PlaneRow(c, 0);
       const T* row_out1 = out.PlaneRow(c, 1);
@@ -326,20 +329,21 @@ class ExternalImageTest : public ::testing::TestWithParam<ColorEncoding> {
     }
   }
 };
-INSTANTIATE_TEST_SUITE_P(ExternalImageTestInstantiation, ExternalImageTest,
-                         ::testing::ValuesIn(AllEncodings()));
+INSTANTIATE_TEST_SUITE_P(ExternalImageTestInstantiation,
+                         ExternalImageParametricTest,
+                         ::testing::ValuesIn(test::AllEncodings()));
 
-TEST_F(ExternalImageTest, TestConvert) {
+TEST_F(ExternalImageParametricTest, TestConvert) {
   TestCopyTo<uint8_t>();
   TestCopyTo<uint16_t>();
   TestCopyTo<float>();
 }
 
-TEST_P(ExternalImageTest, RoundTrip) {
-  ColorEncoding c_external = GetParam();
+TEST_P(ExternalImageParametricTest, RoundTrip) {
+  ColorEncoding c_external = ColorEncodingFromDescriptor(GetParam());
   // To speed up the test, ignore rendering_intent (unused here)
   if (c_external.rendering_intent != RenderingIntent::kRelative) return;
-  JXL_CHECK(ColorManagement::CreateProfile(&c_external));
+  JXL_CHECK(c_external.CreateICC());
 
   printf("%s\n", Description(c_external).c_str());
 
@@ -351,6 +355,25 @@ TEST_P(ExternalImageTest, RoundTrip) {
       }
     }
   }
+}
+
+TEST(ExternalImageTest, InvalidSize) {
+  PackedImage desc(/*xsize=*/10, /*ysize=*/100,
+                   /*c_current=*/ColorEncoding::SRGB(),
+                   /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
+                   /*bits_per_alpha=*/8, /*bits_per_sample=*/16,
+                   /*big_endian=*/true, /*flipped_y=*/false);
+
+  ImageMetadata im;
+  im.alpha_bits = 8;
+  ImageBundle ib(&im);
+
+  const uint8_t buf[10 * 100 * 8] = {};
+  EXPECT_FALSE(CopyTo(desc, Span<const uint8_t>(buf, 10), nullptr, &ib));
+  EXPECT_FALSE(
+      CopyTo(desc, Span<const uint8_t>(buf, sizeof(buf) - 1), nullptr, &ib));
+  EXPECT_TRUE(
+      CopyTo(desc, Span<const uint8_t>(buf, sizeof(buf)), nullptr, &ib));
 }
 
 }  // namespace

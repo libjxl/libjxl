@@ -29,6 +29,7 @@
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/enc_params.h"
 #include "tools/args.h"
+#include "tools/box/box.h"
 
 namespace jpegxl {
 namespace tools {
@@ -36,7 +37,21 @@ namespace tools {
 void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline,
                                          CompressionMode mode) {
   // Positional arguments.
-  cmdline->AddPositionalOption("INPUT", "the input can be PNG PPM or PFM.",
+  cmdline->AddPositionalOption("INPUT",
+                               "the input can be PNG"
+#if JPEGXL_ENABLE_APNG
+                               ", APNG"
+#endif
+#if JPEGXL_ENABLE_GIF
+                               ", GIF"
+#endif
+#if JPEGXL_ENABLE_JPEG
+                               ", JPEG"
+#endif
+#if JPEGXL_ENABLE_EXR
+                               ", EXR"
+#endif
+                               ", PPM, PFM, or PGX",
                                &file_in);
   cmdline->AddPositionalOption(
       "OUTPUT", "the compressed output file (optional)", &file_out);
@@ -44,10 +59,18 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline,
   // Flags.
   cmdline->AddOptionFlag('V', "version", "print version number and exit",
                          &version, &SetBooleanTrue);
+  cmdline->AddOptionFlag('\0', "quiet", "be more silent", &quiet,
+                         &SetBooleanTrue, 1);
+
+  // TODO(lode): also add options to add exif/xmp/other metadata in the
+  // container.
+  // TODO(lode): decide on good name for this flag: box, container, bmff, ...
+  cmdline->AddOptionFlag('\0', "container", "encode using container format",
+                         &use_container, &SetBooleanTrue);
 
   cmdline->AddOptionValue('\0', "print_profile", "0|1",
                           "print timing information before exiting",
-                          &print_profile, &ParseOverride);
+                          &print_profile, &ParseOverride, 1);
 
   switch (mode) {
     case CompressionMode::kJpegXL:
@@ -86,9 +109,9 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
   CompressArgs args;
   args.AddCommandLineOptions(&cmdline, mode);
 
-  if (!cmdline.Parse(argc, argv) || !args.ValidateArgs(cmdline, mode)) {
-    cmdline.PrintHelp();
-    return 1;
+  bool printhelp = false;
+  if (!cmdline.Parse(argc, argv)) {
+    printhelp = true;
   }
 
   if (args.version) {
@@ -97,6 +120,16 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
     return 0;
   }
 
+  if (!args.quiet) {
+    fprintf(stderr, "  J P E G   \\/ |\n");
+    fprintf(stderr,
+            "            /\\ |_   e n c o d e r    [" JPEGXL_VERSION "]\n\n");
+  }
+
+  if (printhelp || !args.ValidateArgs(cmdline, mode)) {
+    cmdline.PrintHelp();
+    return 1;
+  }
   const int bits = hwy::TargetBitfield().Bits();
   if ((bits & HWY_STATIC_TARGETS) != HWY_STATIC_TARGETS) {
     fprintf(stderr, "CPU does not support all enabled targets => exiting.\n");
@@ -108,25 +141,44 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
   switch (mode) {
     case CompressionMode::kJpegXL: {
       jxl::ThreadPoolInternal pool(args.cjxl_args.num_threads);
-      if (!CompressJxl(&pool, args.cjxl_args, &compressed)) return 1;
-      if (args.file_out) {
-        if (!jxl::WriteFile(compressed, args.file_out)) return 1;
-      }
+      if (!CompressJxl(&pool, args.cjxl_args, &compressed, !args.quiet))
+        return 1;
     } break;
     case CompressionMode::kBrunsli: {
       // TODO(eustas): add num_threads parameter.
       jxl::ThreadPoolInternal pool(0);
       if (!CompressBrunsli(&pool, args.cbrunsli_args, &compressed)) return 1;
-      if (args.file_out) {
-        if (!jxl::WriteFile(compressed, args.file_out)) return 1;
-      }
     } break;
+  }
+
+  if (args.use_container) {
+#if defined(__EMSCRIPTEN__)
+    // There's a linker issue depending on "box", see TODO in the cmake files.
+    fprintf(stderr, "Container format not yet supported for emscripten");
+    return 1;
+#else  // defined(__EMSCRIPTEN__)
+    JpegXlContainer container;
+    container.codestream = compressed.data();
+    container.codestream_size = compressed.size();
+    jxl::PaddedBytes container_file;
+    if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
+      fprintf(stderr, "Failed to encode container format\n");
+      return 1;
+    }
+    compressed.swap(container_file);
+#endif  // defined(__EMSCRIPTEN__)
+  }
+
+  if (args.file_out) {
+    if (!jxl::WriteFile(compressed, args.file_out)) return 1;
   }
 
   if (args.print_profile == jxl::Override::kOn) {
     PROFILER_PRINT_RESULTS();
   }
-  jxl::CacheAligned::PrintStats();
+  if (!args.quiet && cmdline.verbosity > 0) {
+    jxl::CacheAligned::PrintStats();
+  }
   return 0;
 }
 

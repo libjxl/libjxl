@@ -28,7 +28,7 @@ Status ButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
   const ImageBundle* ref_linear_srgb;
   ImageMetadata metadata = *ref.metadata();
   ImageBundle store(&metadata);
-  if (!TransformIfNeeded(ref, ColorManagement::LinearSRGB(ref.IsGray()),
+  if (!TransformIfNeeded(ref, ColorEncoding::LinearSRGB(ref.IsGray()),
                          /*pool=*/nullptr, &store, &ref_linear_srgb)) {
     return false;
   }
@@ -52,7 +52,7 @@ Status ButteraugliComparator::CompareWith(const ImageBundle& actual,
   const ImageBundle* actual_linear_srgb;
   ImageMetadata metadata = *actual.metadata();
   ImageBundle store(&metadata);
-  if (!TransformIfNeeded(actual, ColorManagement::LinearSRGB(actual.IsGray()),
+  if (!TransformIfNeeded(actual, ColorEncoding::LinearSRGB(actual.IsGray()),
                          /*pool=*/nullptr, &store, &actual_linear_srgb)) {
     return false;
   }

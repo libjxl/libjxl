@@ -61,13 +61,12 @@ Status ReadBuffer(const size_t xsize, const size_t ysize,
   }
 
   ColorEncoding color_encoding;
-  JXL_RETURN_IF_ERROR(
-      ColorManagement::SetProfile(std::move(icc), &color_encoding));
+  JXL_RETURN_IF_ERROR(color_encoding.SetICC(std::move(icc)));
   io->metadata.color_encoding = color_encoding;
   io->SetFromImage(std::move(image), color_encoding);
   if (has_alpha) {
     io->metadata.alpha_bits = alpha_bits;
-    io->Main().SetAlpha(std::move(alpha));
+    io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
   return true;
 }

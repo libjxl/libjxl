@@ -113,7 +113,7 @@ unsigned/signed/floating-point types.
     `1.0 / a[i]`.
 
 *   `V`: `f32` \
-    <code>V **ext::AbsDiff**(V a, V b)</code>: returns `|a[i] - b[i]|` in each
+    <code>V **AbsDiff**(V a, V b)</code>: returns `|a[i] - b[i]|` in each
     lane.
 
 #### Multiply
@@ -238,6 +238,9 @@ Let `M` denote a mask capable of storing true/false for each lane.
     true.
 *   <code>bool **ext::AllFalse**(M m)</code>: returns whether all `m[i]` are
     false.
+
+*   <code>uint64_t **ext::BitsFromMask**(M m)</code>: returns `sum{1 << i}`
+    for all indices `i` where `m[i]` is true.
 
 *   <code>size_t **ext::CountTrue**(M m)</code>: returns how many of `m[i]` are
     true [0, N].
@@ -473,10 +476,6 @@ more expensive on AVX2/AVX-512 than within-block operations.
 ### Misc
 
 **Note**: the following are only available for full vectors (`N > 1`):
-
-*   `V`: `u8`, `f` \
-    <code>uint64_t **ext::movemask**(V a)</code>: returns sum of
-    `upper_bit(a[i]) << i`.
 
 *   `V`: `u8`; `Ret`: `u64` \
     <code>Ret **ext::SumsOfU8x8**(V)</code>: returns the sums of 8 consecutive

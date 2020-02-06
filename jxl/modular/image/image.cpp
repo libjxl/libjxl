@@ -15,8 +15,8 @@
 #include "jxl/modular/image/image.h"
 
 #include "jxl/base/status.h"
+#include "jxl/common.h"
 #include "jxl/modular/transform/transform.h"
-#include "jxl/modular/util.h"
 
 namespace jxl {
 
@@ -41,23 +41,23 @@ void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
   if (keep == -2) return;
   while ((int)transform.size() > keep && transform.size() > 0) {
     Transform t = transform.back();
-    JXL_DEBUG_V(4, "Undoing transform %s", t.name());
-    bool result = t.apply(*this, true, pool);
+    JXL_DEBUG_V(4, "Undoing transform %s", t.Name());
+    Status result = t.Apply(*this, true, pool);
     if (result == false) {
-      JXL_FAILURE("Error while undoing transform %s.", t.name());
+      JXL_FAILURE("Error while undoing transform %s.", t.Name());
       error = true;
       return;
     }
-    JXL_DEBUG_V(8, "Undoing transform %s: done", t.name());
+    JXL_DEBUG_V(8, "Undoing transform %s: done", t.Name());
     transform.pop_back();
   }
-  if (!keep) {  // clamp the values to the valid range (lossy compression can
-                // produce values outside the range)
+  if (!keep) {  // clamp the values to the valid range (lossy
+                // compression can produce values outside the range)
     for (size_t i = 0; i < channel.size(); i++) {
       for (size_t y = 0; y < channel[i].h; y++) {
         pixel_type *JXL_RESTRICT p = channel[i].plane.Row(y);
         for (size_t x = 0; x < channel[i].w; x++, p++) {
-          *p = CLAMP(*p, minval, maxval);
+          *p = Clamp(*p, minval, maxval);
         }
       }
     }
@@ -67,7 +67,7 @@ void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
 #ifdef HAS_ENCODER
 bool Image::do_transform(const Transform &tr) {
   Transform t = tr;
-  bool did_it = t.apply(*this, false);
+  bool did_it = t.Apply(*this, false);
   if (did_it) transform.push_back(t);
   return did_it;
 }

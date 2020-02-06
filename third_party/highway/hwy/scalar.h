@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -440,12 +440,10 @@ HWY_INLINE Vec0<float> ApproximateReciprocal(const Vec0<float> v) {
   return Vec0<float>(1.0f / v.raw);
 }
 
-namespace ext {
 // Absolute value of difference.
 HWY_INLINE Vec0<float> AbsDiff(const Vec0<float> a, const Vec0<float> b) {
   return Vec0<float>(fabsf(a.raw - b.raw));
 }
-}  // namespace ext
 
 // ------------------------------ Floating-point multiply-add variants
 
@@ -775,36 +773,24 @@ HWY_INLINE Vec0<int64_t> ZipLo(const Vec0<int32_t> a, const Vec0<int32_t> b) {
 // functions to this namespace in multiple places.
 namespace ext {
 
-// Returns a bit array of the most significant bit of each byte in "v", i.e.
-// sum_i=0..15 of (v[i] >> 7) << i; v[0] is the least-significant byte of "v".
-// This is useful for testing/branching based on comparison results.
-HWY_INLINE uint64_t movemask(const Vec0<uint8_t> v) { return v.raw >> 7; }
-
-// Returns the most significant bit of each float/double lane (see above).
-HWY_INLINE uint64_t movemask(const Vec0<float> v) {
-  // Cannot return (v < 0) because +0.0 == -0.0.
-  const auto bits = BitCast(Scalar<uint32_t>(), v);
-  return GetLane(ShiftRight<31>(bits));
-}
-HWY_INLINE uint64_t movemask(const Vec0<double> v) {
-  // Cannot return (v < 0) because +0.0 == -0.0.
-  const auto bits = BitCast(Scalar<uint64_t>(), v);
-  return GetLane(ShiftRight<63>(bits));
+template <typename T>
+HWY_INLINE bool AllFalse(const Mask0<T> mask) {
+  return mask.bits == 0;
 }
 
 template <typename T>
-HWY_INLINE bool AllFalse(const Mask0<T> v) {
-  return v.bits == 0;
+HWY_INLINE bool AllTrue(const Mask0<T> mask) {
+  return mask.bits != 0;
 }
 
 template <typename T>
-HWY_INLINE bool AllTrue(const Mask0<T> v) {
-  return v.bits != 0;
+HWY_INLINE uint64_t BitsFromMask(const Mask0<T> mask) {
+  return mask.bits & 1;
 }
 
 template <typename T>
-HWY_INLINE size_t CountTrue(const Mask0<T> v) {
-  return v.bits == 0 ? 0 : 1;
+HWY_INLINE size_t CountTrue(const Mask0<T> mask) {
+  return mask.bits == 0 ? 0 : 1;
 }
 
 // Sum of all lanes, i.e. the only one.

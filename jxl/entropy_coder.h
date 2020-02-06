@@ -84,12 +84,11 @@ void TokenizeQuantField(const Rect& rect, const ImageI& quant_field,
 // Generate DCT NxN quantized AC values tokens.
 // Only the subset "rect" [in units of blocks] within all images.
 // See also DecodeACVarBlock.
-void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
-                          const Rect& rect,
-                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
-                          const AcStrategyImage& ac_strategy,
-                          Image3I* JXL_RESTRICT tmp_num_nzeroes,
-                          std::vector<Token>* JXL_RESTRICT output);
+HWY_ATTR void TokenizeCoefficients(
+    const coeff_order_t* JXL_RESTRICT orders, const Rect& rect,
+    const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+    const AcStrategyImage& ac_strategy, Image3I* JXL_RESTRICT tmp_num_nzeroes,
+    std::vector<Token>* JXL_RESTRICT output);
 
 // Decode AC strategy. The `rect` argument does *not* apply to the hint!
 // See also TokenizeAcStrategy.

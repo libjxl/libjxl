@@ -30,6 +30,7 @@
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/image_test_utils.h"
 #include "jxl/testdata_path.h"
+#include "jxl/test_utils.h"
 
 namespace jxl {
 
@@ -59,8 +60,8 @@ struct Globals {
     out_gray = ImageF(kWidth, 1);
     out_color = ImageF(kWidth * 3, 1);
 
-    c_native = ColorManagement::LinearSRGB(/*is_gray=*/false);
-    c_gray = ColorManagement::LinearSRGB(/*is_gray=*/true);
+    c_native = ColorEncoding::LinearSRGB(/*is_gray=*/false);
+    c_gray = ColorEncoding::LinearSRGB(/*is_gray=*/true);
   }
 
  private:
@@ -116,7 +117,8 @@ struct Globals {
 };
 static Globals* g;
 
-class ColorManagementTest : public ::testing::TestWithParam<ColorEncoding> {
+class ColorManagementTest
+    : public ::testing::TestWithParam<test::ColorEncodingDescriptor> {
  public:
   static void SetUpTestSuite() { g = new Globals; }
   static void TearDownTestSuite() { delete g; }
@@ -147,8 +149,8 @@ class ColorManagementTest : public ::testing::TestWithParam<ColorEncoding> {
     xform_rev.Run(thread, xform_fwd.BufDst(thread), out->Row(0));
 
 #if JPEGXL_ENABLE_SKCMS
-    double max_l1 = 5E-3;
-    double max_rel = 6E-3;
+    double max_l1 = 7E-4;
+    double max_rel = 4E-7;
 #else
     double max_l1 = 5E-5;
     // Most are lower; reached 3E-7 with D60 AP0.
@@ -159,23 +161,21 @@ class ColorManagementTest : public ::testing::TestWithParam<ColorEncoding> {
   }
 };
 INSTANTIATE_TEST_CASE_P(ColorManagementTestInstantiation, ColorManagementTest,
-                        ::testing::ValuesIn(AllEncodings()));
+                        ::testing::ValuesIn(test::AllEncodings()));
 
 // Exercises the ColorManagement interface for ALL ColorEncoding synthesizable
 // via enums.
 TEST_P(ColorManagementTest, VerifyAllProfiles) {
-  ColorEncoding c = GetParam();
+  ColorEncoding c = ColorEncodingFromDescriptor(GetParam());
   printf("%s\n", Description(c).c_str());
 
   // Can create profile.
-  ASSERT_TRUE(ColorManagement::CreateProfile(&c));
+  ASSERT_TRUE(c.CreateICC());
 
   // Can set an equivalent ColorEncoding from the generated ICC profile.
   ColorEncoding c3;
-  ASSERT_TRUE(ColorManagement::SetProfile(std::move(c.icc), &c3));
+  ASSERT_TRUE(c3.SetICC(PaddedBytes(c.ICC())));
   VerifySameFields(c, c3);
-  // (need a profile for VerifyPixelRoundTrip.)
-  c.icc = std::move(c3.icc);
 
   VerifyPixelRoundTrip(c);
 }
@@ -196,7 +196,7 @@ testing::Matcher<PrimariesCIExy> PrimariesAre(
 }
 
 TEST_F(ColorManagementTest, sRGBChromaticity) {
-  const ColorEncoding sRGB = ColorManagement::SRGB();
+  const ColorEncoding sRGB = ColorEncoding::SRGB();
   EXPECT_THAT(sRGB.GetWhitePoint(), CIExyIs(0.3127, 0.3290));
   EXPECT_THAT(sRGB.GetPrimaries(),
               PrimariesAre(CIExyIs(0.64, 0.33), CIExyIs(0.30, 0.60),
@@ -208,7 +208,7 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
   ASSERT_TRUE(jxl::ReadFile(
       GetTestDataPath("jxl/color_management/sRGB-D2700.icc"), &icc));
   ColorEncoding sRGB_D2700;
-  ASSERT_TRUE(jxl::ColorManagement::SetProfile(std::move(icc), &sRGB_D2700));
+  ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 
   EXPECT_THAT(sRGB_D2700.GetWhitePoint(), CIExyIs(0.45986, 0.41060));
   // The illuminant-relative chromaticities of this profile's primaries are the
@@ -224,10 +224,10 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
   ASSERT_TRUE(jxl::ReadFile(
       GetTestDataPath("jxl/color_management/sRGB-D2700.icc"), &icc));
   ColorEncoding sRGB_D2700;
-  ASSERT_TRUE(jxl::ColorManagement::SetProfile(std::move(icc), &sRGB_D2700));
+  ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 
   ColorSpaceTransform transform;
-  ASSERT_TRUE(transform.Init(sRGB_D2700, ColorManagement::SRGB(), 1, 1));
+  ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncoding::SRGB(), 1, 1));
   const float sRGB_D2700_values[3] = {0.863, 0.737, 0.490};
   float sRGB_values[3];
   transform.Run(0, sRGB_D2700_values, sRGB_values);

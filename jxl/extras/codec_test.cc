@@ -64,7 +64,7 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
     const uint16_t max = (1U << alpha_bits) - 1;
     RandomFillImage(&alpha, max);
     io.metadata.alpha_bits = alpha_bits;
-    io.Main().SetAlpha(std::move(alpha));
+    io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
   return io;
 }
@@ -86,7 +86,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   // will cause large round-trip errors.
   c_native.primaries = Primaries::kP3;
   c_native.tf.SetTransferFunction(TransferFunction::kLinear);
-  JXL_CHECK(ColorManagement::CreateProfile(&c_native));
+  JXL_CHECK(c_native.CreateICC());
 
   // Generally store same color space to reduce round trip errors..
   ColorEncoding c_external = c_native;
@@ -96,7 +96,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
     c_external.primaries = Primaries::k2100;
     c_external.tf.SetTransferFunction(TransferFunction::kSRGB);
   }
-  JXL_CHECK(ColorManagement::CreateProfile(&c_external));
+  JXL_CHECK(c_external.CreateICC());
 
   const CodecInOut io = CreateTestImage(xsize, ysize, is_gray, add_alpha,
                                         bits_per_sample, c_native);
@@ -132,10 +132,15 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   // Round-trip tolerances must be higher than in external_image_test because
   // codecs do not support unbounded ranges.
 #if JPEGXL_ENABLE_SKCMS
-  if (true) {
-#else
   if (io.enc_bits_per_sample <= 12) {
-#endif
+    max_l1 = 0.5;
+    max_rel = 6E-3;
+  } else {
+    max_l1 = 1E-3;
+    max_rel = 5E-4;
+  }
+#else  // JPEGXL_ENABLE_SKCMS
+  if (io.enc_bits_per_sample <= 12) {
     max_l1 = 0.5;
     max_rel = 6E-3;
   } else if (io.enc_bits_per_sample == 16) {
@@ -152,6 +157,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
     max_rel = 1E-5;
 #endif
   }
+#endif  // JPEGXL_ENABLE_SKCMS
 
   VerifyRelativeError(ib1.color(), ib2.color(), max_l1, max_rel);
 }
@@ -208,9 +214,9 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
   VerifyRelativeError(ib1.color(), ib2.color(), max_l1, max_rel);
 
   // Simulate the encoder removing profile and decoder restoring it.
-  if (!ib2.metadata()->color_encoding.opaque_icc) {
-    io2.metadata.color_encoding.icc.clear();
-    EXPECT_TRUE(ColorManagement::CreateProfile(&io2.metadata.color_encoding));
+  if (!ib2.metadata()->color_encoding.WantICC()) {
+    io2.metadata.color_encoding.InternalRemoveICC();
+    EXPECT_TRUE(io2.metadata.color_encoding.CreateICC());
   }
 
   return io2;
@@ -234,7 +240,7 @@ TEST(CodecTest, TestMetadataSRGB) {
     EXPECT_FALSE(io.metadata.HasAlpha());
 
     const ColorEncoding& c_original = io.metadata.color_encoding;
-    EXPECT_FALSE(c_original.icc.empty());
+    EXPECT_FALSE(c_original.ICC().empty());
     EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
     EXPECT_EQ(WhitePoint::kD65, c_original.white_point);
     EXPECT_EQ(Primaries::kSRGB, c_original.primaries);
@@ -265,7 +271,7 @@ TEST(CodecTest, TestMetadataLinear) {
     EXPECT_FALSE(io.metadata.HasAlpha());
 
     const ColorEncoding& c_original = io.metadata.color_encoding;
-    EXPECT_FALSE(c_original.icc.empty());
+    EXPECT_FALSE(c_original.ICC().empty());
     EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
     EXPECT_EQ(white_points[i], c_original.white_point);
     EXPECT_EQ(primaries[i], c_original.primaries);
@@ -291,7 +297,7 @@ TEST(CodecTest, TestMetadataICC) {
     EXPECT_FALSE(io.metadata.HasAlpha());
 
     const ColorEncoding& c_original = io.metadata.color_encoding;
-    EXPECT_FALSE(c_original.icc.empty());
+    EXPECT_FALSE(c_original.ICC().empty());
     EXPECT_EQ(RenderingIntent::kPerceptual, c_original.rendering_intent);
     EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
     EXPECT_EQ(WhitePoint::kD65, c_original.white_point);
@@ -336,7 +342,7 @@ void VerifyWideGamutMetadata(const std::string& relative_pathname,
   EXPECT_EQ(8, io.metadata.bits_per_sample);
 
   const ColorEncoding& c_original = io.metadata.color_encoding;
-  EXPECT_FALSE(c_original.icc.empty());
+  EXPECT_FALSE(c_original.ICC().empty());
   EXPECT_EQ(RenderingIntent::kAbsolute, c_original.rendering_intent);
   EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
   EXPECT_EQ(WhitePoint::kD65, c_original.white_point);

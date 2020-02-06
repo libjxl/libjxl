@@ -54,7 +54,16 @@ struct JxlCompressArgs {
   size_t num_threads = 0;
   size_t num_reps = 1;
   bool got_intensity_target = false;
-  bool jpeg_transcode = false;
+
+  // Whether to perform lossless transcoding with kVarDCT or kJPEG encoding.
+  // If true, attempts to load JPEG coefficients instead of pixels.
+  // Reset to false if input image is not a JPEG.
+  bool jpeg_transcode = true;
+
+  float quality = -1001.f;  // Default to lossless if input is already lossy,
+                            // q90 (d1) otherwise
+  bool progressive = false;
+  bool default_settings = true;
 
   // Will get passed on to AuxOut.
   jxl::InspectorImage3F inspector_image3f;
@@ -74,7 +83,7 @@ struct JxlCompressArgs {
 };
 
 jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
-                        jxl::PaddedBytes* compressed);
+                        jxl::PaddedBytes* compressed, bool print_stats = true);
 
 }  // namespace tools
 }  // namespace jpegxl

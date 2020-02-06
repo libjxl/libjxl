@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "tools/x11/icc.h"
+#include "tools/icc_detect/icc_detect.h"
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <xcb/xcb.h>
 
+#include <QX11Info>
 #include <algorithm>
 #include <memory>
 
@@ -35,11 +37,13 @@ using XcbUniquePtr = std::unique_ptr<T, FreeDeleter>;
 
 }  // namespace
 
-PaddedBytes GetMonitorIccProfile(xcb_connection_t* const connection,
-                                 const int screen_number) {
+PaddedBytes GetMonitorIccProfile(const QWidget* const widget) {
+  Q_UNUSED(widget)
+  xcb_connection_t* const connection = QX11Info::connection();
   if (connection == nullptr) {
     return PaddedBytes();
   }
+  const int screen_number = QX11Info::appScreen();
 
   const xcb_intern_atom_cookie_t atomRequest =
       xcb_intern_atom(connection, /*only_if_exists=*/1,

@@ -118,10 +118,19 @@ struct FrameDimensions {
   size_t num_dc_groups;
 };
 
-// Can't rely on C++14 yet.
+// Prior to C++14 (i.e. C++11): provide our own make_unique
+#if __cplusplus < 201402L
 template <typename T, typename... Args>
 std::unique_ptr<T> make_unique(Args&&... args) {
   return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+#else
+using std::make_unique;
+#endif
+
+template <typename T>
+JXL_INLINE T Clamp(T val, T low, T hi) {
+  return val < low ? low : val > hi ? hi : val;
 }
 
 // This leads to somewhat better code than pointer arithmetic.

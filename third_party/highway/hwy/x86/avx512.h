@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2019 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@
 
 // Must include contents of HWY_ATTR_AVX2 because an AVX-512 test may call
 // AVX2 functions (e.g. when converting to half-vectors).
+// HWY_DISABLE_BMI2_FMA is not relevant because if we have AVX-512, we should
+// also have BMI2/FMA.
 #define HWY_ATTR_AVX512 \
   HWY_TARGET_ATTR("bmi,bmi2,avx,avx2,fma,avx512f,avx512vl,avx512dq,avx512bw")
 
@@ -904,13 +906,11 @@ HWY_ATTR_AVX512 HWY_INLINE Vec512<float> ApproximateReciprocal(
   return Vec512<float>{_mm512_rcp14_ps(v.raw)};
 }
 
-namespace ext {
 // Absolute value of difference.
 HWY_ATTR_AVX512 HWY_INLINE Vec512<float> AbsDiff(const Vec512<float> a,
                                                  const Vec512<float> b) {
   return Vec512<float>{_mm512_abs_ps((a - b).raw)};
 }
-}  // namespace ext
 
 // ------------------------------ Floating-point multiply-add variants
 
@@ -2160,28 +2160,7 @@ HWY_ATTR_AVX512 HWY_INLINE Vec512<int32_t> NearestInt(const Vec512<float> v) {
 // functions to this namespace in multiple places.
 namespace ext {
 
-// ------------------------------ movemask
-
-// Returns a bit array of the most significant bit of each byte in "v", i.e.
-// sum_i=0..31 of (v[i] >> 7) << i; v[0] is the least-significant byte of "v".
-// This is useful for testing/branching based on comparison results.
-HWY_ATTR_AVX512 HWY_INLINE uint64_t movemask(const Vec512<uint8_t> v) {
-  return _mm512_cmplt_epi8_mask(v.raw, _mm512_setzero_si512());
-}
-
-// Returns the most significant bit of each float/double lane (see above).
-HWY_ATTR_AVX512 HWY_INLINE uint64_t movemask(const Vec512<float> v) {
-  // cmp < 0 doesn't set if -0.0 and <= -0.0 sets despite 0.0 input.
-  return _mm512_test_epi32_mask(_mm512_castps_si512(v.raw),
-                                _mm512_set1_epi32(-0x7fffffff - 1));
-}
-HWY_ATTR_AVX512 HWY_INLINE uint64_t movemask(const Vec512<double> v) {
-  // cmp < 0 doesn't set if -0.0 and <= -0.0 sets despite 0.0 input.
-  return _mm512_test_epi64_mask(_mm512_castpd_si512(v.raw),
-                                _mm512_set1_epi64(-0x7fffffffffffffff - 1));
-}
-
-// ------------------------------ mask
+// ------------------------------ Mask
 
 // For Clang and GCC, KORTEST wasn't added until recently.
 #if HWY_COMPILER_GCC >= 700 || HWY_COMPILER_CLANG >= 800 || \
@@ -2276,8 +2255,13 @@ HWY_ATTR_AVX512 HWY_INLINE bool AllTrue(const Mask512<T> v) {
 }
 
 template <typename T>
-HWY_ATTR_AVX512 HWY_INLINE size_t CountTrue(const Mask512<T> v) {
-  return PopCount(v.raw);
+HWY_ATTR_AVX512 HWY_INLINE uint64_t BitsFromMask(const Mask512<T> mask) {
+  return mask.raw;
+}
+
+template <typename T>
+HWY_ATTR_AVX512 HWY_INLINE size_t CountTrue(const Mask512<T> mask) {
+  return PopCount(mask.raw);
 }
 
 // ------------------------------ Horizontal sum (reduction)

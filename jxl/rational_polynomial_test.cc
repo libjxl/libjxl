@@ -12,20 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "jxl/rational_polynomial.h"
+#ifndef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/rational_polynomial_test.cc"
 
 #include <stdio.h>
 
 #include <cmath>
-#include <hwy/static_targets.h>
 #include <string>
 
-#include "gtest/gtest.h"
+#define HWY_USE_GTEST
+#include <hwy/tests/test_util.h>
+
 #include "jxl/base/descriptive_statistics.h"
 #include "jxl/common.h"
 
+struct RationalPolynomialTest {
+  HWY_DECLARE(void, ())
+};
+TEST(RationalPolynomialTest, Run) { hwy::RunTests<RationalPolynomialTest>(); }
+
+#endif  // HWY_TARGET_INCLUDE
+#include <hwy/tests/test_target_util.h>
+
 namespace jxl {
+namespace HWY_NAMESPACE {
 namespace {
+
+#include "jxl/rational_polynomial-inl.h"
 
 #if HWY_HAS_DOUBLE
 using T = double;
@@ -65,8 +78,9 @@ T SimpleGamma(T v) {
 
 // Runs CaratheodoryFejer and verifies the polynomial using a lot of samples to
 // return the biggest error.
-template <class Poly>
-HWY_ATTR T RunApproximation(T x0, T x1, const Poly& poly, T func_to_approx(T)) {
+template <size_t NP, size_t NQ>
+HWY_ATTR T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
+                            T func_to_approx(T)) {
   Stats err;
 
   T lastPrint = 0;
@@ -75,7 +89,8 @@ HWY_ATTR T RunApproximation(T x0, T x1, const Poly& poly, T func_to_approx(T)) {
     const T f = func_to_approx(x);
     const HWY_FULL(T) d;
     HWY_ALIGN T g_lanes[d.N];
-    Store(poly(Set(d, x)), d, g_lanes);
+    const auto approx = EvalRationalPolynomial(Set(d, x), p, q);
+    Store(approx, d, g_lanes);
     const T g = g_lanes[0];
     err.Notify(fabs(g - f));
     if (x == x0 || x - lastPrint > (x1 - x0) / 20.0) {
@@ -89,90 +104,100 @@ HWY_ATTR T RunApproximation(T x0, T x1, const Poly& poly, T func_to_approx(T)) {
   return err.Max();
 }
 
-HWY_ATTR void SimpleGammaImpl() {
-  const T p[6 + 1] = {-5.0646949363741811E-05, 6.7369380528439771E-05,
-                      8.9376652530412794E-05,  2.1153513301520462E-06,
-                      -6.9130322970386449E-08, 3.9424752749293728E-10,
-                      1.2360288207619576E-13};
+HWY_ATTR void TestSimpleGamma() {
+  const T p[4 * (6 + 1)] = {
+      HWY_REP4(-5.0646949363741811E-05), HWY_REP4(6.7369380528439771E-05),
+      HWY_REP4(8.9376652530412794E-05),  HWY_REP4(2.1153513301520462E-06),
+      HWY_REP4(-6.9130322970386449E-08), HWY_REP4(3.9424752749293728E-10),
+      HWY_REP4(1.2360288207619576E-13)};
 
-  const T q[6 + 1] = {-6.6389733798591366E-06, 1.3299859726565908E-05,
-                      3.8538748358398873E-06,  -2.8707687262928236E-08,
-                      -6.6897385800005434E-10, 6.1428748869186003E-12,
-                      -2.5475738169252870E-15};
+  const T q[4 * (6 + 1)] = {
+      HWY_REP4(-6.6389733798591366E-06), HWY_REP4(1.3299859726565908E-05),
+      HWY_REP4(3.8538748358398873E-06),  HWY_REP4(-2.8707687262928236E-08),
+      HWY_REP4(-6.6897385800005434E-10), HWY_REP4(6.1428748869186003E-12),
+      HWY_REP4(-2.5475738169252870E-15)};
 
-  const RationalPolynomial<D, 6, 6> poly(p, q);
-
-  const T err = RunApproximation(0.77, 274.579999999999984, poly, SimpleGamma);
+  const T err = RunApproximation(0.77, 274.579999999999984, p, q, SimpleGamma);
   EXPECT_LT(err, 0.05);
 }
-TEST(Approximation, SimpleGamma) { SimpleGammaImpl(); }
 
-HWY_ATTR void LinearToSrgb8DirectImpl() {
-  const T p[5 + 1] = {-9.5357499040105154E-05, 4.6761186249798248E-04,
-                      2.5708174333943594E-04,  1.5250087770436082E-05,
-                      1.1946768008931187E-07,  5.9916446295972850E-11};
+HWY_ATTR void TestLinearToSrgb8Direct() {
+  const T p[4 * (5 + 1)] = {
+      HWY_REP4(-9.5357499040105154E-05), HWY_REP4(4.6761186249798248E-04),
+      HWY_REP4(2.5708174333943594E-04),  HWY_REP4(1.5250087770436082E-05),
+      HWY_REP4(1.1946768008931187E-07),  HWY_REP4(5.9916446295972850E-11)};
 
-  const T q[4 + 1] = {1.8932479758079768E-05, 2.7312342474687321E-05,
-                      4.3901204783327006E-06, 1.0417787306920273E-07,
-                      3.0084206762140419E-10};
+  const T q[4 * (4 + 1)] = {
+      HWY_REP4(1.8932479758079768E-05), HWY_REP4(2.7312342474687321E-05),
+      HWY_REP4(4.3901204783327006E-06), HWY_REP4(1.0417787306920273E-07),
+      HWY_REP4(3.0084206762140419E-10)};
 
-  const RationalPolynomial<D, 5, 4> poly(p, q);
-  const T err = RunApproximation(0.77, 255, poly, LinearToSrgb8Direct);
+  const T err = RunApproximation(0.77, 255, p, q, LinearToSrgb8Direct);
   EXPECT_LT(err, 0.05);
 }
-TEST(Approximation, LinearToSrgb8Direct) { LinearToSrgb8DirectImpl(); }
 
-HWY_ATTR void ExpImpl() {
-  const T p[2 + 1] = {9.6266879665530902E-01, 4.8961265681586763E-01,
-                      8.2619259189548433E-02};
-  const T q[2 + 1] = {9.6259895571622622E-01, -4.7272457588933831E-01,
-                      7.4802088567547664E-02};
-  const RationalPolynomial<D, 2, 2> poly(p, q);
-  const T err = RunApproximation(-1, 1, poly, [](T x) { return T(exp(x)); });
+HWY_ATTR void TestExp() {
+  const T p[4 * (2 + 1)] = {HWY_REP4(9.6266879665530902E-01),
+                            HWY_REP4(4.8961265681586763E-01),
+                            HWY_REP4(8.2619259189548433E-02)};
+  const T q[4 * (2 + 1)] = {HWY_REP4(9.6259895571622622E-01),
+                            HWY_REP4(-4.7272457588933831E-01),
+                            HWY_REP4(7.4802088567547664E-02)};
+  const T err = RunApproximation(-1, 1, p, q, [](T x) { return T(exp(x)); });
   EXPECT_LT(err, 1E-4);
 }
-TEST(Approximation, Exp) { ExpImpl(); }
 
-HWY_ATTR void NegExpImpl() {
+HWY_ATTR void TestNegExp() {
   // 4,3 is the min required for monotonicity; max error in 0,10: 751 ppm
   // no benefit for k>50.
-  const T p[4 + 1] = {5.9580258551150123E-02, -2.5073728806886408E-02,
-                      4.1561830213689248E-03, -3.1815408488900372E-04,
-                      9.3866690094906802E-06};
-  const T q[3 + 1] = {5.9579108238812878E-02, 3.4542074345478582E-02,
-                      8.7263562483501714E-03, 1.4095109143061216E-03
+  const T p[4 * (4 + 1)] = {
+      HWY_REP4(5.9580258551150123E-02), HWY_REP4(-2.5073728806886408E-02),
+      HWY_REP4(4.1561830213689248E-03), HWY_REP4(-3.1815408488900372E-04),
+      HWY_REP4(9.3866690094906802E-06)};
+  const T q[4 * (3 + 1)] = {
+      HWY_REP4(5.9579108238812878E-02), HWY_REP4(3.4542074345478582E-02),
+      HWY_REP4(8.7263562483501714E-03), HWY_REP4(1.4095109143061216E-03)};
 
-  };
-  const RationalPolynomial<D, 4, 3> poly(p, q);
-
-  const T err = RunApproximation(0, 10, poly, [](T x) { return T(exp(-x)); });
+  const T err = RunApproximation(0, 10, p, q, [](T x) { return T(exp(-x)); });
 #if HWY_HAS_DOUBLE
   EXPECT_LT(err, 2E-5);
 #else
   EXPECT_LT(err, 3E-5);
 #endif
 }
-TEST(Approximation, NegExp) { NegExpImpl(); }
 
-HWY_ATTR void SinImpl() {
-  const T p[6 + 1] = {1.5518122109203780E-05,  2.3388958643675966E+00,
-                      -8.6705520940849157E-01, -1.9702294764873535E-01,
-                      1.2193404314472320E-01,  -1.7373966109788839E-02,
-                      7.8829435883034796E-04};
-  const T q[5 + 1] = {2.3394371422557279E+00, -8.7028221081288615E-01,
-                      2.0052872219658430E-01, -3.2460335995264836E-02,
-                      3.1546157932479282E-03, -1.6692542019380155E-04};
-  const RationalPolynomial<D, 6, 5> poly(p, q);
+HWY_ATTR void TestSin() {
+  const T p[4 * (6 + 1)] = {
+      HWY_REP4(1.5518122109203780E-05),  HWY_REP4(2.3388958643675966E+00),
+      HWY_REP4(-8.6705520940849157E-01), HWY_REP4(-1.9702294764873535E-01),
+      HWY_REP4(1.2193404314472320E-01),  HWY_REP4(-1.7373966109788839E-02),
+      HWY_REP4(7.8829435883034796E-04)};
+  const T q[4 * (5 + 1)] = {
+      HWY_REP4(2.3394371422557279E+00), HWY_REP4(-8.7028221081288615E-01),
+      HWY_REP4(2.0052872219658430E-01), HWY_REP4(-3.2460335995264836E-02),
+      HWY_REP4(3.1546157932479282E-03), HWY_REP4(-1.6692542019380155E-04)};
 
   const T err =
-      RunApproximation(0, Pi<T>(1) * 2, poly, [](T x) { return T(sin(x)); });
+      RunApproximation(0, Pi<T>(1) * 2, p, q, [](T x) { return T(sin(x)); });
 #if HWY_HAS_DOUBLE
   EXPECT_LT(err, 5E-4);
 #else
   EXPECT_LT(err, 7E-4);
 #endif
 }
-TEST(Approximation, Sin) { SinImpl(); }
+
+HWY_ATTR HWY_NOINLINE void RunAll() {
+  TestSimpleGamma();
+  TestLinearToSrgb8Direct();
+  TestExp();
+  TestNegExp();
+  TestSin();
+}
 
 }  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
+
+// Instantiate for the current target.
+void RationalPolynomialTest::HWY_FUNC() { jxl::HWY_NAMESPACE::RunAll(); }

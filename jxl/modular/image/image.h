@@ -28,7 +28,6 @@
 #include "jxl/base/status.h"
 #include "jxl/image.h"
 #include "jxl/modular/config.h"
-#include "jxl/modular/util.h"
 
 namespace jxl {
 

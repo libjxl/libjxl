@@ -29,7 +29,6 @@
 #include <QMap>
 #include <QString>
 #include <QStringList>
-#include <QX11Info>
 #include <QtConcurrent>
 #include <algorithm>
 #include <climits>
@@ -39,7 +38,7 @@
 #include "jxl/extras/codec.h"
 #include "tools/comparison_viewer/image_loading.h"
 #include "tools/comparison_viewer/split_image_view.h"
-#include "tools/x11/icc.h"
+#include "tools/icc_detect/icc_detect.h"
 
 namespace jxl {
 
@@ -71,9 +70,7 @@ void restoreCodecSelection(
 }  // namespace
 
 CodecComparisonWindow::CodecComparisonWindow(QWidget* const parent)
-    : QMainWindow(parent),
-      monitorIccProfile_(
-          GetMonitorIccProfile(QX11Info::connection(), QX11Info::appScreen())) {
+    : QMainWindow(parent), monitorIccProfile_(GetMonitorIccProfile(this)) {
   ui_.setupUi(this);
 
   connect(ui_.imageSetComboBox, &QComboBox::currentTextChanged, this,

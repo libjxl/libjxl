@@ -89,7 +89,8 @@ class BrunsliFrameDecoder {
                   YCbCrChromaSubsampling subsampling);
   bool DecodeDcGroup(int idx, BitReader* src);
   bool DecodeAcGroup(int idx, BitReader* src, Image3F* img, const Rect& rect);
-  bool FinalizeDecoding(Image3F* opsin);
+  bool FinalizeDecoding(const FrameHeader& frame_header, Image3F&& opsin,
+                        ImageBundle* decoded);
 
  private:
   std::unique_ptr<BrunsliFrameDecoderInternal> impl_;

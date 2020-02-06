@@ -45,7 +45,7 @@ void PrintXybRange() {
   }
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
-  io.metadata.color_encoding = ColorManagement::LinearSRGB();
+  io.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io.SetFromImage(std::move(linear), io.metadata.color_encoding);
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;

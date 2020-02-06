@@ -13,71 +13,139 @@ future decoders being able to decode the output of a current encoder.
 ## Checking out the code
 
 This repository uses git submodules to handle some third party dependencies
-under `third_party/`. To check out these dependencies as well clone the
+under `third_party/`. To also check out these dependencies, clone the
 repository with `--recursive`:
 
-```shell
-git clone git@gitlab.com:wg1/jpeg-xl.git --recursive
+```bash
+git clone https://gitlab.com/wg1/jpeg-xl.git  --recursive
 ```
 
-If you didn't check out recursively, and after any update run the following
-command to check out the git submodules.
+If you didn't check out with `--recursive`, or any of the third party
+dependencies have changed, run the following command:
 
-```shell
+```bash
 git submodule update --init --recursive
-```
-
-## Minimum build dependencies
-
-Apart from the dependencies in third_party, some of the tools use external
-dependencies that need to be installed in your system first. For a Debian/Ubuntu
-based Linux distribution install:
-
-```shell
-sudo apt install cmake clang-6.0 g++-8 qtbase5-dev libqt5x11extras5-dev \
-  extra-cmake-modules libgif-dev libjpeg-dev ninja-build
-```
-
-For developing changes in JPEG XL, take a look at the
-[Building and Testing changes](doc/building_and_testing.md) guide.
-
-Make sure your default "clang" compiler is at least version 6 running
-
-```bash
-clang --version
-```
-
-If it still shows an old version despite having a clang-6.0 installed, you need
-to update the default clang compiler. In Debian-based systems run:
-
-```bash
-sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-6.0 100
-sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-6.0 100
 ```
 
 ## Building
 
-The project builds with cmake. We currently support Linux (tested with Debian).
-To build the "release" version, you can use the following helper command:
+To avoid system incompatibilities, we **strongly recommend** using Docker to
+build and test the software, as explained in the
+[step by step guide](doc/developing_in_docker.md).
 
-```shell
-./ci.sh release
+For experienced developers on an up to date Debian-based Linux system, we
+also provide [Debian build instructions](doc/building_in_debian.md). If you
+encounter any difficulties, please use Docker instead.
+
+The resulting binaries are in the `build` directory and its subdirectories.
+
+## CPU requirements
+
+When running on Intel/AMD CPUs the software **currently requires AVX2** support
+(introduced by Intel in 2013 and AMD in 2015). If not supported by the CPU or
+VM, the software will print "CPU does not support all enabled targets =>
+exiting". You can either run on a more recent CPU/VM, or instruct the software
+to only use/require SSE4 by uncommenting the line near the bottom of
+third_party/highway/hwy/target.h:
+`// #define HWY_DISABLE_AVX2`
+
+## Basic encoder/decoder
+
+`build/tools/cjpegxl input.png output.jxl` encodes to JPEG XL with default
+options.
+
+Here and in general, the JPEG XL tools are able to read/write the following
+image formats: .exr, .gif, .jpeg/.jpg, .pfm, .pgm/.ppm, .pgx, .png.
+
+`build/tools/djpegxl output.jxl output.png` decodes JPEG XL to other formats.
+
+## Benchmarking
+
+We recommend `build/tools/benchmark_xl` as a convenient method for reading
+images or image sequences, encoding them using various codecs (jpeg jxl png
+webp), decoding the result, and computing objective quality metrics. An example
+invocation is:
+
+```bash
+build/tools/benchmark_xl --input "/path/*.png" --codec jxl:wombat:d1,jxl:cheetah:d2
 ```
 
-This will build and test the project, and leave the binaries in the `build/`
-directory. Check out the `tools` subdirectory for command-line tools that
-interact with the library. You can set the environment variable SKIP_TEST=1 to
-skip the test stage.
+Multiple comma-separated codecs are allowed. The characters after : are
+parameters for the codec, separated by colons, in this case specifying maximum
+target psychovisual distances of 1 and 2 (higher implies lower quality) and
+the encoder effort (see below). Other common parameters are `r0.5` (target
+bitrate 0.5 bits per pixel) and `q92` (quality 92, on a scale of 0-100, where
+higher is better). The `jxl` codec supports the following additional parameters:
 
-There are other build versions with more debug information useful when
-developing. You can read more about it in the
-[Building and Testing changes](doc/building_and_testing.md) guide.
+Speed: `falcon`, `cheetah`, `hare`, `wombat`, `squirrel`, `kitten`, `tortoise`
+control the encoder effort in ascending order.
 
-## Documentation
+*   `falcon` disables all of the following tools.
+*   `cheetah` enables coefficient reordering, context clustering, and heuristics
+    for selecting DCT sizes and quantization steps.
+*   `hare` enables Gaborish filtering, chroma from luma, and an initial estimate
+    of quantization steps.
+*   `wombat` enables error diffusion quantization and full DCT size selection
+    heuristics.
+*   `squirrel` enables dots, patches, and spline detection, and full context
+    clustering.
+*   `kitten` (default) enables the iterative adaptive quantization search.
+*   `tortoise` enables a more thorough adaptive quantization search.
 
-*   [Developing in GitLab](doc/developing_in_gitlab.md)
-*   [XL Overview](doc/xl_overview.md)
-*   [Building and Testing changes](doc/building_and_testing.md)
-*   [Software Contribution Guidelines](doc/guidelines.md)
+Mode: JPEG XL has several modes for various types of content. The default mode
+is suitable for photographic material. One of the following alternatives may be
+selected:
+
+*   `mg` activates modular mode (useful for non-photographic images such as
+    screen content).
+*   `bg` activates lossless JPEG reconstruction with parallel decoding (the
+    input must have been a JPEG file).
+*   `b:file` activates lossless JPEG reconstruction with more compact encodings,
+    but without the option of parallel decoding.
+
+Other arguments to benchmark_xl include:
+
+*   `save_compressed`: save codestreams to `output_dir`.
+*   `save_decompressed`: save decompressed outputs to `output_dir`.
+*   `output_extension`: selects the format used to output decoded images.
+*   `num_threads`: number of codec instances that will independently
+    encode/decode images, or 0.
+*   `inner_threads`: how many threads each instance should use for parallel
+    encoding/decoding, or 0.
+*   `encode_reps`/`decode_reps`: how many times to repeat encoding/decoding
+    each image, for more consistent measurements (we recommend 10).
+
+The benchmark output begins with a header:
+
+```
+Compr              Input    Compr            Compr       Compr  Decomp  Butteraugli
+Method            Pixels     Size              BPP   #    MP/s    MP/s     Distance    Error p norm           BPP*pnorm   Errors
+```
+
+`ComprMethod` lists each each comma-separated codec. `InputPixels` is the number
+of pixels in the input image. `ComprSize` is the codestream size in bytes and
+`ComprBPP` the bitrate. `Compr MP/s` and `Decomp MP/s` are the
+compress/decompress throughput, in units of Megapixels/second.
+`Butteraugli Distance` indicates the maximum psychovisual error in the decoded
+image (larger is worse). `Error p norm` is a similar summary of the psychovisual
+error, but closer to an average, giving less weight to small low-quality
+regions. `BPP*pnorm` is the product of `ComprBPP` and `Error p norm`, which is a
+figure of merit for the codec (lower is better). `Errors` is nonzero if errors
+occurred while loading or encoding/decoding the image.
+
+## Additional documentation
+
+### Codec description
+
+*   [Introductory paper](https://www.spiedigitallibrary.org/proceedings/Download?fullDOI=10.1117%2F12.2529237) (open-access)
+*   [XL Overview](doc/xl_overview.md) - a brief introduction to the
+    source code modules
 *   [JPEG XL committee draft](https://arxiv.org/abs/1908.03565)
-*   [Introductory paper](https://www.spiedigitallibrary.org/proceedings/Download?fullDOI=10.1117%2F12.2529237)
+*   JPEG XL white paper with overview of applications and coding tools:
+    WG1 output document number wg1n86059
+
+### Development process
+*   [Docker setup - **start here**](doc/developing_in_docker.md)
+*   [Building on Debian](doc/developing_in_debian.md) - for experts only
+*   [More information on testing/build options](doc/building_and_testing.md)
+*   [Git guide for JPEG XL](doc/developing_in_gitlab.md) - for developers only

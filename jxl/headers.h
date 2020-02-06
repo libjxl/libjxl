@@ -32,8 +32,7 @@ namespace jxl {
 // Reserved by ISO/IEC 10918-1. LF causes files opened in text mode to be
 // rejected because the marker changes to 0x0D instead. The 0xFF prefix also
 // ensures there were no 7-bit transmission limitations.
-static constexpr uint8_t kMarkerShort = 0x0A;
-static constexpr uint8_t kMarkerFlexible = 0x58;  // PLT
+static constexpr uint8_t kCodestreamMarker = 0x0A;
 
 // Compact representation of image dimensions (best case: 9 bits) so decoders
 // can preallocate early.
@@ -146,9 +145,9 @@ struct AnimationHeader {
     visitor->Bool(false, &composite_still);
     if (visitor->Conditional(!composite_still)) {
       visitor->U32(Val(99), Val(999), Bits(6), Bits(18), 0,
-                 &tps_numerator_minus_1);
+                   &tps_numerator_minus_1);
       visitor->U32(Val(0), Val(1000), Bits(8), Bits(10), 0,
-                 &tps_denominator_minus_1);
+                   &tps_denominator_minus_1);
 
       visitor->U32(Val(0), Bits(3), Bits(16), Bits(32), 0, &num_loops);
 

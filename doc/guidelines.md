@@ -51,17 +51,18 @@ In particular:
     #ifndef FILENAME_H_
     #define FILENAME_H_
     #endif // FILENAME_H_
-
     ```
 
 ## Acceptance test
 
-Before merging, the pipeline shall pass.
+Your patch shall build in the "release" and "debug" configurations of `ci.sh`
+and pass all tests (see [building and testing](doc/building_and_testing.md)).
 
-Note that tests can also be run locally from the cmake build/ directory:
-`ctest -j50 --output-on-failure`   (or some other number of parallel tasks)
+The "opt" configuration will be tested in the Merge Request pipeline which is
+equivalent to a "release" build with debug information.
 
-The code shall not involve race conditions nor accesses to undefined memory.
-In particular, before merging results of a core experiment, tests shall be run
-in three configurations: compiling with -fsanitize=address, -fsanitize=memory
-and -fsanitize=thread.
+Before merging results of a core experiment, the tests shall pass in the
+"asan" and "msan" configurations.
+
+If you added new functions, you should also add tests to these functions in the
+same commit.

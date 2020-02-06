@@ -26,6 +26,7 @@
 #include "jxl/base/bits.h"
 #include "jxl/base/byte_order.h"
 #include "jxl/base/compiler_specific.h"
+#include "jxl/base/file_io.h"
 #include "jxl/color_management.h"
 #include "jxl/external_image.h"
 #include "jxl/fields.h"  // AllDefault
@@ -181,37 +182,37 @@ Status EncodeHeader(const ExternalImage& external, char* header,
 
 Status ApplyHints(CodecInOut* io) {
   bool got_color_space = false;
-  Status ok = true;
 
-  io->dec_hints.Foreach([io, &got_color_space, &ok](const std::string& key,
-                                                    const std::string& value) {
-    if (key == "color_space") {
-      ColorEncoding* c_original = &io->metadata.color_encoding;
-      if (!ParseDescription(value, c_original) ||
-          !ColorManagement::CreateProfile(c_original)) {
-        JXL_WARNING("PGX: Failed to apply color_space");
-        ok = false;
-      }
+  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
+      [io, &got_color_space](const std::string& key, const std::string& value) {
+        ColorEncoding* c_original = &io->metadata.color_encoding;
+        if (key == "color_space") {
+          if (!ParseDescription(value, c_original) ||
+              !c_original->CreateICC()) {
+            return JXL_FAILURE("PGX: Failed to apply color_space");
+          }
 
-      if (!io->metadata.color_encoding.IsGray()) {
-        JXL_WARNING("PGX: color_space hint must be grayscale");
-        ok = false;
-      }
+          if (!io->metadata.color_encoding.IsGray()) {
+            return JXL_FAILURE("PGX: color_space hint must be grayscale");
+          }
 
-      got_color_space = true;
-    } else {
-      JXL_WARNING("PGX decoder ignoring %s hint", key.c_str());
-    }
-  });
+          got_color_space = true;
+        } else if (key == "icc_pathname") {
+          PaddedBytes icc;
+          JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
+          JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
+          got_color_space = true;
+        } else {
+          JXL_WARNING("PGX decoder ignoring %s hint", key.c_str());
+        }
+        return true;
+      }));
 
   if (!got_color_space) {
-    JXL_WARNING("PGX: no color_space hint given, assuming sRGB");
-    io->metadata.color_encoding.SetSRGB(ColorSpace::kGray);
-    JXL_RETURN_IF_ERROR(
-        ColorManagement::CreateProfile(&io->metadata.color_encoding));
+    JXL_WARNING("PGX: no color_space/icc_pathname given, assuming sRGB");
+    JXL_RETURN_IF_ERROR(io->metadata.color_encoding.SetSRGB(ColorSpace::kGray));
   }
 
-  if (!ok) return JXL_FAILURE("PGX ApplyHints failed");
   return true;
 }
 
@@ -234,7 +235,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   Parser parser(bytes);
   HeaderPGX header = {};
   const uint8_t* pos;
-  JXL_RETURN_IF_ERROR(parser.ParseHeader(&header, &pos));
+  if (!parser.ParseHeader(&header, &pos)) return false;
   JXL_RETURN_IF_ERROR(io->VerifyDimensions(header.xsize, header.ysize));
   if (header.bits_per_sample == 0 || header.bits_per_sample > 32) {
     return JXL_FAILURE("PGX: bits_per_sample invalid");
@@ -250,10 +251,10 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   const bool has_alpha = false;
   const bool flipped_y = false;
-  const PackedImage desc(header.xsize, header.ysize,
-                         io->metadata.color_encoding, has_alpha,
-                         io->metadata.alpha_bits, io->metadata.bits_per_sample,
-                         header.big_endian, flipped_y);
+  const PackedImage desc(
+      header.xsize, header.ysize, io->metadata.color_encoding, has_alpha,
+      /*alpha_is_premultiplied=*/false, io->metadata.alpha_bits,
+      io->metadata.bits_per_sample, header.big_endian, flipped_y);
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
   io->frames.push_back(std::move(ib));
@@ -282,8 +283,9 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
 
   const Image3F* to_external_image = &ib.color();
   ExternalImage external(pool, *to_external_image, Rect(ib), ib.c_current(),
-                         c_desired, ib.HasAlpha(), alpha, alpha_bits,
-                         io->enc_bits_per_sample, big_endian, temp_intervals);
+                         c_desired, ib.HasAlpha(), ib.AlphaIsPremultiplied(),
+                         alpha, alpha_bits, io->enc_bits_per_sample, big_endian,
+                         temp_intervals);
   JXL_RETURN_IF_ERROR(external.IsHealthy());
 
   char header[kMaxHeaderSize];

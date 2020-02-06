@@ -15,7 +15,8 @@
 #ifndef JXL_DEC_BIT_READER_H_
 #define JXL_DEC_BIT_READER_H_
 
-// Bounds-checked bit reader; 64-bit buffer with support for deferred refills.
+// Bounds-checked bit reader; 64-bit buffer with support for deferred refills
+// and switching to reading byte-aligned words.
 
 #include <stddef.h>
 #include <stdint.h>
@@ -211,6 +212,31 @@ class BitReader {
     return Span<const uint8_t>(first_byte_ + offset, TotalBytes() - offset);
   }
 
+  // Switch to byte-aligned word reads. The decoder will stay in this mode
+  // until the next call to Refill(). Calls to Read/PeekBits are illegal until
+  // the next call to Refill().
+  Status SwitchToByteAligned() {
+    JXL_RETURN_IF_ERROR(JumpToByteBoundary());
+    if (overread_bytes_ * kBitsPerByte > bits_in_buf_) {
+      return JXL_FAILURE("Read more bits than available in the bit_reader");
+    }
+    // Undo the read that filled the buffer.
+    next_byte_ -= bits_in_buf_ / kBitsPerByte - overread_bytes_;
+    bits_in_buf_ = 0;
+    buf_ = 0;
+    overread_bytes_ = 0;
+    return true;
+  }
+
+  JXL_INLINE uint32_t ReadByteAlignedWord() {
+    if (JXL_UNLIKELY(next_byte_ > end_minus_8_)) {
+      return BoundsCheckedReadByteAlignedWord();
+    }
+    uint32_t ret = LoadLE16(next_byte_);
+    next_byte_ += 2;
+    return ret;
+  }
+
   // Returns whether all the bits read so far have been within the input bounds.
   // When reading past the EOF, the Read*() and Consume() functions return zeros
   // but flag a failure when calling close or this function.
@@ -254,9 +280,20 @@ class BitReader {
     JXL_DASSERT(bits_in_buf_ >= 56);
   }
 
+  JXL_NOINLINE uint32_t BoundsCheckedReadByteAlignedWord() {
+    if (next_byte_ + 1 < end_minus_8_ + 8) {
+      uint32_t ret = LoadLE16(next_byte_);
+      next_byte_ += 2;
+      return ret;
+    }
+    overread_bytes_ += 2;
+    return 0;
+  }
+
   static HWY_ATTR HWY_INLINE uint64_t ZeroBitsAbove(uint64_t bits,
                                                     size_t index) {
-#if (HWY_STATIC_TARGETS & HWY_AVX2) && defined(__x86_64__)
+#if (HWY_STATIC_TARGETS & HWY_AVX2) && defined(__x86_64__) && \
+    !defined(HWY_DISABLE_BMI2_FMA)
     // BMI2: Clears bits with index >= nbits
     return _bzhi_u64(bits, index);
 #else

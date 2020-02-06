@@ -99,12 +99,13 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
   io->dec_pixels = 0;
 
   io->metadata.bits_per_sample = 8;
-  io->metadata.color_encoding = ColorManagement::SRGB();
+  io->metadata.color_encoding = ColorEncoding::SRGB();
   io->metadata.alpha_bits = 0;
   io->enc_size = bytes.size();
-  io->dec_hints.Foreach(
+  (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
         JXL_WARNING("GIF decoder ignoring %s hint", key.c_str());
+        return true;
       });
 
   Image3F canvas(gif->SWidth, gif->SHeight);
@@ -264,7 +265,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
         }
       }
     }
-    bundle.SetFromImage(std::move(sub_frame), ColorManagement::SRGB());
+    bundle.SetFromImage(std::move(sub_frame), ColorEncoding::SRGB());
     if (has_alpha || !AllOpaque(frame_alpha) || blend_alpha) {
       if (!has_alpha) {
         has_alpha = true;
@@ -272,10 +273,12 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
         for (ImageBundle& previous_frame : io->frames) {
           ImageU previous_alpha(previous_frame.xsize(), previous_frame.ysize());
           FillImage<uint16_t>(255, &previous_alpha);
-          previous_frame.SetAlpha(std::move(previous_alpha));
+          previous_frame.SetAlpha(std::move(previous_alpha),
+                                  /*alpha_is_premultiplied=*/false);
         }
       }
-      bundle.SetAlpha(std::move(sub_frame_alpha));
+      bundle.SetAlpha(std::move(sub_frame_alpha),
+                      /*alpha_is_premultiplied=*/false);
     }
     io->frames.push_back(std::move(bundle));
     switch (gcb.DisposalMode) {

@@ -44,16 +44,12 @@ enum class Codec : uint32_t {
   kEXR,
 };
 
-// For Codec::kJPG, convert between JPEG and pixels or between JPEG and
-// quantized DCT coefficients
-enum class DecodeTarget {
-  kPixels,
-  kQuantizedCoeffs,
-};
-
 static inline constexpr uint64_t EnumBits(Codec /*unused*/) {
   // Return only fully-supported codecs (kGIF is decode-only).
-  return MakeBit(Codec::kPNG) | MakeBit(Codec::kPNM) | MakeBit(Codec::kJPG)
+  return MakeBit(Codec::kPNM) | MakeBit(Codec::kPNG)
+#if JPEGXL_ENABLE_JPG
+         | MakeBit(Codec::kJPG)
+#endif
 #if JPEGXL_ENABLE_EXR
          | MakeBit(Codec::kEXR)
 #endif
@@ -72,13 +68,11 @@ Codec CodecFromExtension(const std::string& extension,
 // Decodes "bytes" and sets io->metadata.
 // dec_hints may specify the "color_space" (otherwise, defaults to sRGB).
 Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
-                    ThreadPool* pool = nullptr,
-                    const DecodeTarget decode_target = DecodeTarget::kPixels);
+                    ThreadPool* pool = nullptr, Codec* orig_codec = nullptr);
 
 // Reads from file and calls SetFromBytes.
 Status SetFromFile(const std::string& pathname, CodecInOut* io,
-                   ThreadPool* pool = nullptr,
-                   const DecodeTarget decode_target = DecodeTarget::kPixels);
+                   ThreadPool* pool = nullptr, Codec* orig_codec = nullptr);
 
 // Replaces "bytes" with an encoding of pixels transformed from c_current
 // color space to c_desired.

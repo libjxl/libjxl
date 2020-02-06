@@ -160,14 +160,14 @@ class WebPCodec : public ImageCodec {
     if (io->metadata.color_encoding.IsGray() != is_gray) {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
-      // io->metadata.color_encoding = ColorManagement::SRGB(is_gray);
+      // io->metadata.color_encoding = ColorEncoding::SRGB(is_gray);
       // Return a standard failure becuase SetFromSRGB triggers a fatal assert
       // for this instead.
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
-    const Status ok =
-        io->Main().SetFromSRGB(buf->width, buf->height, is_gray, has_alpha,
-                               data_begin, data_end, pool);
+    const Status ok = io->Main().SetFromSRGB(
+        buf->width, buf->height, is_gray, has_alpha,
+        /*alpha_is_premultiplied=*/false, data_begin, data_end, pool);
     WebPFreeDecBuffer(buf);
     JXL_RETURN_IF_ERROR(ok);
     io->enc_size = compressed.size();

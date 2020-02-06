@@ -25,6 +25,7 @@ https://en.wikipedia.org/wiki/Nelder%E2%80%93Mead_method
 start as ./simplex_fork.py binary dimensions amount
 """
 
+from __future__ import print_function
 import copy
 import os
 import random
@@ -127,7 +128,7 @@ def Eval(vec, binary_name, cached=True):
   dct32 = 0.0
   n = 0
   for line in process.communicate(input=None)[0].splitlines():
-    print "BE", line
+    print("BE", line)
     sys.stdout.flush()
     if line[0:3] == "jxl":
       bpp = line.split()[3]
@@ -187,7 +188,7 @@ def Eval(vec, binary_name, cached=True):
      vec[0] *= (1.0 + 5.0 * (dct32limit - dct32) ** 2)**n
      print "corrected dct32", dct32, vec[0]
   """
-  print "eval: ", vec
+  print("eval: ", vec)
   if (vec[0] <= 0.0):
     vec[0] = 1e30
   if found_score:
@@ -206,20 +207,20 @@ def Reflect(simplex, binary):
   mirrored = Add(mid, diff)
   Eval(mirrored, binary)
   if mirrored[0] > simplex[-2][0]:
-    print "\nStill worst\n\n"
+    print("\nStill worst\n\n")
     # Still the worst, shrink towards the best.
     shrinking = Average(simplex[-1], simplex[0])
     Eval(shrinking, binary)
-    print "\nshrinking...\n\n"
+    print("\nshrinking...\n\n")
     simplex[-1] = shrinking
     return
   if mirrored[0] < simplex[0][0]:
     # new best
-    print "\nNew Best\n\n"
+    print("\nNew Best\n\n")
     even_further = Add(mirrored, diff)
     Eval(even_further, binary)
     if even_further[0] < mirrored[0]:
-      print "\nEven Further\n\n"
+      print("\nEven Further\n\n")
       mirrored = even_further
     simplex[-1] = mirrored
     # try to extend
@@ -268,19 +269,19 @@ def InitialSimplex(vec, dim, amount):
     retval.append(best)
     do_shrink = True
     while OneDimensionalSearch(retval, 2.0, index):
-      print "OneDimensionalSearch-Grow"
+      print("OneDimensionalSearch-Grow")
     while OneDimensionalSearch(retval, 1.1, index):
-      print "OneDimensionalSearch-SlowGrow"
+      print("OneDimensionalSearch-SlowGrow")
       do_shrink = False
     if do_shrink:
       while OneDimensionalSearch(retval, 0.9, index):
-        print "OneDimensionalSearch-SlowShrinking"
+        print("OneDimensionalSearch-SlowShrinking")
     retval.sort()
   return retval
 
 
 if len(sys.argv) != 4:
-  print "usage: ", sys.argv[0], "binary-name number-of-dimensions simplex-size"
+  print("usage: ", sys.argv[0], "binary-name number-of-dimensions simplex-size")
   exit(1)
 
 g_dim = int(sys.argv[2])
@@ -300,12 +301,12 @@ best = g_simplex[0][:]
 for restarts in range(99999):
   for ii in range(g_dim * 2):
     g_simplex.sort()
-    print "reflect", ii, g_simplex[0]
+    print("reflect", ii, g_simplex[0])
     Reflect(g_simplex, g_binary)
 
   mulli = 0.1 + 15 * random.random()**2.0
   g_codecs = RandomizedJxlCodecs()
-  print "\n\n\nRestart", restarts, "mulli", mulli
+  print("\n\n\nRestart", restarts, "mulli", mulli)
   g_simplex.sort()
   best = g_simplex[0][:]
   g_simplex = InitialSimplex(best, g_dim, g_amount * mulli)

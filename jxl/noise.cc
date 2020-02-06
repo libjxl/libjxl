@@ -31,10 +31,14 @@
 #include "jxl/image_ops.h"
 #include "jxl/opsin_params.h"
 #include "jxl/optimize.h"
-#include "jxl/xorshift128plus.h"
 
 namespace jxl {
 namespace {
+
+namespace HWY_NAMESPACE {
+#include "jxl/xorshift128plus-inl.h"
+}  // namespace HWY_NAMESPACE
+using HWY_NAMESPACE::Xorshift128Plus;
 
 using D = HWY_CAPPED(float, 1);
 
@@ -279,8 +283,8 @@ HWY_ATTR void AddNoiseToRGB(const D d, const hwy::VT<D> rnd_noise_r,
                             float ytob, float* JXL_RESTRICT out_x,
                             float* JXL_RESTRICT out_y,
                             float* JXL_RESTRICT out_b) {
-  const auto kRGCorr = Set(d, 0.99f);
-  const auto kRGNCorr = Set(d, 0.01f);
+  const auto kRGCorr = Set(d, 0.9921875);    // 127/128
+  const auto kRGNCorr = Set(d, 0.0078125f);  // 1/128
 
   const auto red_noise = kRGNCorr * rnd_noise_r * noise_strength_r +
                          kRGCorr * rnd_noise_cor * noise_strength_r;

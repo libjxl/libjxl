@@ -15,9 +15,9 @@
 #ifndef TOOLS_FLICKER_TEST_SPLIT_VIEW_H_
 #define TOOLS_FLICKER_TEST_SPLIT_VIEW_H_
 
+#include <QElapsedTimer>
 #include <QImage>
 #include <QPixmap>
-#include <QTime>
 #include <QTimer>
 #include <QVariantAnimation>
 #include <QWidget>
@@ -85,7 +85,7 @@ class SplitView : public QWidget {
   // between 0 and 1 if fading to gray is enabled.
   QVariantAnimation flicker_;
   bool showingAltered_ = true;
-  QTime viewingStartTime_;
+  QElapsedTimer viewingStartTime_;
 };
 
 }  // namespace jxl

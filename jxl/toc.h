@@ -42,13 +42,15 @@ static JXL_INLINE size_t NumTocEntries(size_t num_groups, size_t num_dc_groups,
 }
 
 Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
-                        std::vector<uint64_t>* JXL_RESTRICT group_offsets);
+                        std::vector<uint64_t>* JXL_RESTRICT offsets,
+                        std::vector<uint32_t>* JXL_RESTRICT sizes,
+                        uint64_t* total_size);
 
+// Writes the group offsets. If the permutation vector is nullptr, the identity
+// permutation will be used.
 Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
+                         const std::vector<coeff_order_t>* permutation,
                          BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
-
-Status WriteResponsiveOffsets(const std::vector<int>& offsets,
-                              BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
 
 }  // namespace jxl
 
