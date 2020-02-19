@@ -28,6 +28,7 @@
 
 #include "jxl/aux_out.h"
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/base/override.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
@@ -248,24 +249,33 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed) override {
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
     if (brunsli_mode_) {
       if (brunsli_file_) {
         // Encode the original JPG file (or get failure if it was not JPG),
         // rather than the CodecInOut pixels.
         PaddedBytes bytes;
         JXL_RETURN_IF_ERROR(ReadFile(filename, &bytes));
+        const double start = Now();
         if (!EncodeBrunsli(bytes.size(), bytes.data(), compressed,
                            OutputToBytes)) {
           return JXL_FAILURE("Failed to encode file to brunsli");
         }
+        const double end = Now();
+        speed_stats->NotifyElapsed(end - start);
         return true;
       } else {
         if (io->metadata.HasAlpha()) {
           // Prevent Abort in ImageBundle::VerifyMetadata when decompressing.
           return JXL_FAILURE("Alpha not supported for brunsli");
         }
-        return PixelsToBrunsli(io, compressed, brunsli_params_, pool);
+        const double start = Now();
+        JXL_RETURN_IF_ERROR(
+            PixelsToBrunsli(io, compressed, brunsli_params_, pool));
+        const double end = Now();
+        speed_stats->NotifyElapsed(end - start);
+        return true;
       }
     }
     if (!jxlargs->debug_image_dir.empty()) {
@@ -303,14 +313,19 @@ class JxlCodec : public ImageCodec {
     cparams_.quality_pair.first = q_target_;
     cparams_.quality_pair.second = q_target_;
 
+    const double start = Now();
     PassesEncoderState passes_encoder_state;
-    return EncodeFile(cparams_, io, &passes_encoder_state, compressed, &cinfo_,
-                      pool);
+    JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
+                                   compressed, &cinfo_, pool));
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io) override {
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
       dinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
         return EncodeToFile(io, path);
@@ -322,7 +337,11 @@ class JxlCodec : public ImageCodec {
     }
     dparams_.noise = jxlargs->noise;
     dparams_.adaptive_reconstruction = jxlargs->adaptive_reconstruction;
-    return DecodeFile(dparams_, compressed, io, &dinfo_, pool);
+    const double start = Now();
+    JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, &dinfo_, pool));
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 
   void GetMoreStats(BenchmarkStats* stats) override {

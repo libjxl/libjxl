@@ -20,6 +20,7 @@
 #include "jxl/ac_strategy.h"
 #include "jxl/coeff_order.h"
 #include "jxl/common.h"
+#include "jxl/dec_noise.h"
 #include "jxl/image.h"
 #include "jxl/passes_state.h"
 #include "jxl/quant_weights.h"
@@ -76,10 +77,10 @@ struct PassesDecoderState {
       // dimension.
       // Since we use row-based processing and cyclic addressing, we only need 7
       // rows in storage1 and 3 in storage2.
-      storage1.push_back(
-          Image3F(kApplyImageFeaturesTileDim + 4 * kBlockDim, kEpf1InputRows));
-      storage2.push_back(
-          Image3F(kApplyImageFeaturesTileDim + 2 * kBlockDim, kEpf2InputRows));
+      storage1.emplace_back(kApplyImageFeaturesTileDim + 4 * kBlockDim,
+                            kEpf1InputRows);
+      storage2.emplace_back(kApplyImageFeaturesTileDim + 2 * kBlockDim,
+                            kEpf2InputRows);
     }
   }
 

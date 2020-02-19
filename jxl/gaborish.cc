@@ -24,82 +24,70 @@
 
 namespace jxl {
 
-class GaborishKernel {
- public:
-  // weight1,2 need not be normalized.
-  GaborishKernel(float weight1, float weight2) {
-    constexpr float weight0 = 1.0f;
-
-    // Normalize
-    const float mul = 1.0 / (weight0 + 4 * (weight1 + weight2));
-    const float w0 = weight0 * mul;
-    const float w1 = weight1 * mul;
-    const float w2 = weight2 * mul;
-
-    // Fill all lanes
-    for (size_t i = 0; i < 4; ++i) {
-      // clang-format off
-      weights_.tl[i] = w2; weights_.tc[i] = w1; weights_.tr[i] = w2;
-      weights_.ml[i] = w1; weights_.mc[i] = w0; weights_.mr[i] = w1;
-      weights_.bl[i] = w2; weights_.bc[i] = w1; weights_.br[i] = w2;
-      // clang-format on
-    }
-  }
-
-  JXL_INLINE const Weights3x3& Weights() const { return weights_; }
-
- private:
-  Weights3x3 weights_;
-};
-
-Image3F GaborishInverse(const Image3F& in, double mul, ThreadPool* pool) {
-  JXL_ASSERT(mul >= 0.0);
+Image3F GaborishInverse(const Image3F& in, float mul, ThreadPool* pool) {
+  JXL_ASSERT(mul >= 0.0f);
 
   // Only an approximation. One or even two 3x3, and rank-1 (separable) 5x5
   // are insufficient.
-  static const double kGaborish[5] = {
-      -0.092359145662814029,  -0.039253623634014627, 0.016176494530216929,
-      0.00083458437774987476, 0.004512465323949319,
+  constexpr float kGaborish[5] = {
+      -0.092359145662814029f,  -0.039253623634014627f, 0.016176494530216929f,
+      0.00083458437774987476f, 0.004512465323949319f,
   };
-  static const double kCenter = 1.0;
   /*
     better would be:
       1.0 - mul * (4 * (kGaborish[0] + kGaborish[1] +
                         kGaborish[2] + kGaborish[4]) +
                    8 * (kGaborish[3]));
   */
+  WeightsSymmetric5 weights = {{HWY_REP4(1.0f)},
+                               {HWY_REP4(mul * kGaborish[0])},
+                               {HWY_REP4(mul * kGaborish[2])},
+                               {HWY_REP4(mul * kGaborish[1])},
+                               {HWY_REP4(mul * kGaborish[4])},
+                               {HWY_REP4(mul * kGaborish[3])}};
+  double sum = weights.c[0];
+  sum += 4 * weights.r[0];
+  sum += 4 * weights.R[0];
+  sum += 4 * weights.d[0];
+  sum += 4 * weights.D[0];
+  sum += 8 * weights.L[0];
+  const float normalize = 1.0f / sum;
+  for (size_t i = 0; i < 4; ++i) {
+    weights.c[i] *= normalize;
+    weights.r[i] *= normalize;
+    weights.R[i] *= normalize;
+    weights.d[i] *= normalize;
+    weights.D[i] *= normalize;
+    weights.L[i] *= normalize;
+  }
 
-  const float sharpen_weights5[9] = {
-      static_cast<float>(kCenter),
-      static_cast<float>(mul * kGaborish[0]),
-      static_cast<float>(mul * kGaborish[2]),
-
-      static_cast<float>(mul * kGaborish[0]),
-      static_cast<float>(mul * kGaborish[1]),
-      static_cast<float>(mul * kGaborish[3]),
-
-      static_cast<float>(mul * kGaborish[2]),
-      static_cast<float>(mul * kGaborish[3]),
-      static_cast<float>(mul * kGaborish[4]),
-  };
   Image3F sharpened(in.xsize(), in.ysize());
-  slow::SymmetricConvolution<2, WrapClamp>::Run(in, Rect(in), sharpen_weights5,
-                                                pool, &sharpened);
+  Symmetric5(in, Rect(in), weights, pool, &sharpened);
   return sharpened;
 }
+
+namespace {
+
+// weight1,2 need not be normalized.
+WeightsSymmetric3 GaborishKernel(float weight1, float weight2) {
+  constexpr float weight0 = 1.0f;
+
+  // Normalize
+  const float mul = 1.0f / (weight0 + 4 * (weight1 + weight2));
+  const float w0 = weight0 * mul;
+  const float w1 = weight1 * mul;
+  const float w2 = weight2 * mul;
+
+  const WeightsSymmetric3 w = {{HWY_REP4(w0)}, {HWY_REP4(w1)}, {HWY_REP4(w2)}};
+  return w;
+}
+
+}  // namespace
 
 HWY_ATTR void ConvolveGaborish(const ImageF& in, float weight1, float weight2,
                                ThreadPool* pool, ImageF* JXL_RESTRICT out) {
   JXL_CHECK(SameSize(in, *out));
-
-  const GaborishKernel gaborish(weight1, weight2);
-  if (in.xsize() < kConvolveMinWidth) {
-    using Convolution = slow::General3x3Convolution<1, WrapMirror>;
-    Convolution::Run(in, Rect(in), gaborish, out);
-  } else {
-    using Conv3 = ConvolveT<strategy::Symmetric3>;
-    Conv3::Run(in, Rect(in), gaborish, pool, out);
-  }
+  Symmetric3(in, Rect(in), GaborishKernel(weight1, weight2), pool, out);
 }
 
 }  // namespace jxl

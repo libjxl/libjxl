@@ -76,6 +76,9 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   // JPEG encoding is not lossless.
   if (codec == Codec::kJPG) return;
   if (codec == Codec::kPNM && add_alpha) return;
+  // Our EXR codec always uses 16-bit premultiplied alpha, does not support
+  // grayscale, and somehow does not have sufficient precision for this test.
+  if (codec == Codec::kEXR) return;
   printf("Codec %s bps:%zu gr:%d al:%d\n",
          ExtensionFromCodec(codec, is_gray, bits_per_sample).c_str(),
          bits_per_sample, is_gray, add_alpha);

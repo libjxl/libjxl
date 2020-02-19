@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/span.h"
@@ -114,8 +115,10 @@ class NoneCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override { return true; }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed) override {
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
     PROFILER_ZONE("NoneCompress");
+    const double start = Now();
     // Encode image size so we "decompress" something of the same size, as
     // required by butteraugli.
     const uint32_t xsize = io->xsize();
@@ -123,13 +126,17 @@ class NoneCodec : public ImageCodec {
     compressed->resize(8);
     memcpy(compressed->data(), &xsize, 4);
     memcpy(compressed->data() + 4, &ysize, 4);
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
     return true;
   }
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io) override {
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
     PROFILER_ZONE("NoneDecompress");
+    const double start = Now();
     JXL_ASSERT(compressed.size() == 8);
     uint32_t xsize, ysize;
     memcpy(&xsize, compressed.data(), 4);
@@ -139,6 +146,8 @@ class NoneCodec : public ImageCodec {
     io->metadata.bits_per_sample = 32;
     io->metadata.color_encoding = ColorEncoding::SRGB();
     io->SetFromImage(std::move(image), io->metadata.color_encoding);
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
     return true;
   }
 

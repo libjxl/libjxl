@@ -44,7 +44,8 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
   ImageBundle ib(&metadata);
   ib.SetFromImage(std::move(linear), metadata.color_encoding);
   Image3F opsin(1, 1);
-  ToXYB(ib, 1.0f, /*pool=*/nullptr, &opsin);
+  ImageBundle unused_linear;
+  (void)ToXYB(ib, 1.0f, /*pool=*/nullptr, &opsin, &unused_linear);
 
   *xyb_x = opsin.PlaneRow(0, 0)[0];
   *xyb_y = opsin.PlaneRow(1, 0)[0];

@@ -21,6 +21,7 @@
 
 #include <vector>
 
+#include "jxl/alpha.h"
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
 
@@ -159,7 +160,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, CodecInOut* io) {
   JXL_RETURN_IF_ERROR(color_encoding.SetWhitePoint(white_point));
   JXL_RETURN_IF_ERROR(color_encoding.CreateICC());
 
-  io->metadata.bits_per_sample = 32;
+  io->metadata.bits_per_sample = 16;
   io->SetFromImage(std::move(image), color_encoding);
   io->metadata.color_encoding = color_encoding;
   if (has_alpha) {
@@ -183,11 +184,10 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   const bool has_alpha = io->Main().HasAlpha();
   const bool alpha_is_premultiplied = io->Main().AlphaIsPremultiplied();
 
-  InMemoryOStream os(bytes);
   OpenEXR::Header header(io->xsize(), io->ysize());
-  const PrimariesCIExy& primaries =
-      c_linear.HasPrimaries() ? c_linear.GetPrimaries()
-                              : ColorEncoding::SRGB().GetPrimaries();
+  const PrimariesCIExy& primaries = c_linear.HasPrimaries()
+                                        ? c_linear.GetPrimaries()
+                                        : ColorEncoding::SRGB().GetPrimaries();
   OpenEXR::Chromaticities chromaticities;
   chromaticities.red = Imath::V2f(primaries.r.x, primaries.r.y);
   chromaticities.green = Imath::V2f(primaries.g.x, primaries.g.y);
@@ -197,50 +197,57 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   OpenEXR::addChromaticities(header, chromaticities);
   OpenEXR::addWhiteLuminance(header, kDefaultIntensityTarget);
 
-  OpenEXR::RgbaOutputFile output(
-      os, header, has_alpha ? OpenEXR::WRITE_RGBA : OpenEXR::WRITE_RGB);
-  std::vector<OpenEXR::Rgba> row_data(io->xsize());
-  output.setFrameBuffer(row_data.data(), /*xStride=*/1, /*yStride=*/0);
+  // Ensure that the destructor of RgbaOutputFile has run before we look at the
+  // size of `bytes`.
+  {
+    InMemoryOStream os(bytes);
+    OpenEXR::RgbaOutputFile output(
+        os, header, has_alpha ? OpenEXR::WRITE_RGBA : OpenEXR::WRITE_RGB);
+    std::vector<OpenEXR::Rgba> row_data(io->xsize());
+    output.setFrameBuffer(row_data.data(), /*xStride=*/1, /*yStride=*/0);
 
-  const float multiplier =
-      io->metadata.IntensityTarget() * kIntensityMultiplier / 255.f;
-  const float alpha_normalizer =
-      has_alpha ? 1.f / ((1 << io->metadata.alpha_bits) - 1) : 0;
+    const float multiplier =
+        io->metadata.IntensityTarget() * kIntensityMultiplier / 255.f;
+    const float alpha_normalizer =
+        has_alpha ? 1.f / MaxAlpha(io->metadata.alpha_bits) : 0;
 
-  for (size_t y = 0; y < io->ysize(); ++y) {
-    const float* const JXL_RESTRICT input_rows[] = {
-        linear->color().ConstPlaneRow(0, y),
-        linear->color().ConstPlaneRow(1, y),
-        linear->color().ConstPlaneRow(2, y),
-    };
-    if (has_alpha) {
-      const uint16_t* const JXL_RESTRICT alpha_row =
-          io->Main().alpha().ConstRow(y);
-      if (alpha_is_premultiplied) {
-        for (size_t x = 0; x < io->xsize(); ++x) {
-          const float alpha = alpha_normalizer * alpha_row[x];
-          row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
-                                      multiplier * input_rows[1][x],
-                                      multiplier * input_rows[2][x], alpha);
+    for (size_t y = 0; y < io->ysize(); ++y) {
+      const float* const JXL_RESTRICT input_rows[] = {
+          linear->color().ConstPlaneRow(0, y),
+          linear->color().ConstPlaneRow(1, y),
+          linear->color().ConstPlaneRow(2, y),
+      };
+      if (has_alpha) {
+        const uint16_t* const JXL_RESTRICT alpha_row =
+            io->Main().alpha().ConstRow(y);
+        if (alpha_is_premultiplied) {
+          for (size_t x = 0; x < io->xsize(); ++x) {
+            const float alpha = alpha_normalizer * alpha_row[x];
+            row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
+                                        multiplier * input_rows[1][x],
+                                        multiplier * input_rows[2][x], alpha);
+          }
+        } else {
+          for (size_t x = 0; x < io->xsize(); ++x) {
+            const float alpha = alpha_normalizer * alpha_row[x];
+            row_data[x] =
+                OpenEXR::Rgba(multiplier * alpha * input_rows[0][x],
+                              multiplier * alpha * input_rows[1][x],
+                              multiplier * alpha * input_rows[2][x], alpha);
+          }
         }
       } else {
         for (size_t x = 0; x < io->xsize(); ++x) {
-          const float alpha = alpha_normalizer * alpha_row[x];
-          row_data[x] =
-              OpenEXR::Rgba(multiplier * alpha * input_rows[0][x],
-                            multiplier * alpha * input_rows[1][x],
-                            multiplier * alpha * input_rows[2][x], alpha);
+          row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
+                                      multiplier * input_rows[1][x],
+                                      multiplier * input_rows[2][x], 1.f);
         }
       }
-    } else {
-      for (size_t x = 0; x < io->xsize(); ++x) {
-        row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
-                                    multiplier * input_rows[1][x],
-                                    multiplier * input_rows[2][x], 1.f);
-      }
+      output.writePixels(/*numScanLines=*/1);
     }
-    output.writePixels(/*numScanLines=*/1);
   }
+
+  io->enc_size = bytes->size();
   return true;
 }
 

@@ -126,7 +126,7 @@ HWY_ATTR Status PatchDictionary::Decode(BitReader* br, size_t xsize,
   ANSSymbolReader decoder(&code, br);
 
   auto read_num = [&](size_t context) HWY_ATTR {
-    size_t r = ReadHybridUint(context, br, &decoder, context_map);
+    size_t r = decoder.ReadHybridUint(context, br, context_map);
     return r;
   };
 
@@ -722,6 +722,8 @@ std::vector<PatchInfo> FindTextLikePatches(
 void FindBestPatchDictionary(const Image3F& opsin,
                              PassesEncoderState* JXL_RESTRICT state,
                              ThreadPool* pool, AuxOut* aux_out, bool is_xyb) {
+  state->shared.image_features.patches = PatchDictionary();
+
   std::vector<PatchInfo> info =
       FindTextLikePatches(opsin, state, pool, aux_out, is_xyb);
 

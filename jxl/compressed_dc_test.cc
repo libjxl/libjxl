@@ -81,15 +81,15 @@ class CompressedDCTest : public testing::TestWithParam<CompressedDCTestParams> {
 #ifdef __aarch64__
     // Roundtrip precision is a bit worse in arm64.
     // TODO(veluca): Investigate why this is the case.
-    const float kErrorThreshold = 6e-6;
+    const float kErrorThreshold = 7e-6f;
 #else
-    const float kErrorThreshold = 1e-6;
+    const float kErrorThreshold = 1e-6f;
 #endif
 
     VerifyRelativeError(decoding_dc, encoding_dc, kErrorThreshold,
                         kErrorThreshold);
-    VerifyRelativeError(io->Main().color(), encoding_dec,
-                                  kErrorThreshold, kErrorThreshold);
+    VerifyRelativeError(io->Main().color(), encoding_dec, kErrorThreshold,
+                        kErrorThreshold);
   }
 };
 

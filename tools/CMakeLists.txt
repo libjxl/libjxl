@@ -14,14 +14,6 @@
 
 cmake_minimum_required(VERSION 3.1)
 
-# Check which formats will be available for io
-find_package(GIF 5)
-find_package(JPEG)
-find_package(ZLIB)  # dependency of PNG
-find_package(PNG)
-pkg_check_modules(OpenEXR IMPORTED_TARGET OpenEXR)
-
-
 # ICC detection library used by the comparison and viewer tools.
 if(JPEGXL_ENABLE_VIEWERS)
 if(WIN32)
@@ -57,6 +49,11 @@ else()
   endif()
 endif()
 endif()  # JPEGXL_ENABLE_VIEWERS
+
+# The JPEGXL_VERSION is set from the builders.
+if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
+  set(JPEGXL_VERSION "(unknown)")
+endif()
 
 set(TOOL_BINARIES
   cbrunsli_tool
@@ -96,37 +93,19 @@ add_library(cjpegxltool STATIC
   cbrunsli.cc
   speed_stats.cc
 )
+target_compile_definitions(cjpegxltool
+  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 target_include_directories(cjpegxltool
   PUBLIC "${CMAKE_SOURCE_DIR}")
 target_include_directories(cjpegxltool PRIVATE
   $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
 )
 target_link_libraries(cjpegxltool
+    box
     jpegxl-static
     jpegxl_extras-static
     jpegxl_threads
 )
-
-# TODO(lode): resolve linker issue in emscripten to enable box in it.
-if (NOT JPEGXL_EMSCRIPTEN)
-target_link_libraries(cjpegxltool
-    box
-)
-endif()
-
-if(GIF_FOUND)
-  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_GIF=1)
-endif()
-if(PNG_FOUND AND ZLIB_FOUND)
-  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_APNG=1)
-endif()
-if(JPEG_FOUND)
-  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_JPEG=1)
-endif()
-if (OpenEXR_FOUND AND NOT JPEGXL_EMSCRIPTEN)
-  target_compile_definitions(cjpegxltool PRIVATE -DJPEGXL_ENABLE_EXR=1)
-endif ()
-
 
 add_executable(cbrunsli_tool cbrunsli_main.cc)
 add_executable(cjpegxl cjpegxl_main.cc)
@@ -142,7 +121,8 @@ target_link_libraries(fuzzer_corpus cjpegxltool)
 
 # Main decompressor.
 add_executable(djpegxl djxl.cc djpegxl.cc djpegxl_main.cc speed_stats.cc)
-
+target_compile_definitions(djpegxl
+  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 
 # Other tools.
 add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
@@ -179,6 +159,8 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
   )
   target_link_libraries(benchmark_xl Threads::Threads)
+  target_compile_definitions(benchmark_xl
+    PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
   if(JPEG_FOUND)
     target_sources(benchmark_xl PRIVATE
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
@@ -216,10 +198,7 @@ endif()  # JPEGXL_ENABLE_BENCHMARK
 # All tool binaries depend on "jpegxl" library and the tool helpers.
 foreach(BINARY IN LISTS TOOL_BINARIES)
   target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-  target_link_libraries("${BINARY}" jpegxl-static jpegxl_extras-static jpegxl_threads jpegxl_tool)
-  if(NOT JPEGXL_EMSCRIPTEN)
-      target_link_libraries("${BINARY}" box)
-  endif()
+  target_link_libraries("${BINARY}" box jpegxl-static jpegxl_extras-static jpegxl_threads jpegxl_tool)
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
@@ -267,6 +246,4 @@ add_subdirectory(flicker_test)
 add_subdirectory(viewer)
 endif()
 
-if(NOT JPEGXL_EMSCRIPTEN)
-  add_subdirectory(box)
-endif()
+add_subdirectory(box)

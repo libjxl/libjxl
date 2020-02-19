@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include "jxl/alpha.h"
 #include "jxl/base/arch_specific.h"
 #include "jxl/base/cache_aligned.h"
 #include "jxl/base/compiler_specific.h"
@@ -153,7 +154,7 @@ static bool HasValidAlpha(const CodecInOut& io) {
   // external_image.cc.
   const ImageBundle& ib = io.Main();
   if (ib.HasAlpha()) {
-    size_t actual_max = (1u << ib.metadata()->alpha_bits) - 1;
+    size_t actual_max = MaxAlpha(ib.metadata()->alpha_bits);
     const ImageU& alpha = ib.alpha();
     for (size_t y = 0; y < alpha.ysize(); ++y) {
       auto* const JXL_RESTRICT row = alpha.Row(y);
@@ -191,7 +192,6 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
   const size_t ysize = io.ysize();
   const size_t input_pixels = xsize * ysize;
 
-  double start, end;
   jpegxl::tools::SpeedStats speed_stats;
   jpegxl::tools::SpeedStats::Summary summary;
 
@@ -210,12 +210,11 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
       if (codec->CanRecompressJpeg() && (ext == ".jpg" || ext == ".jpeg")) {
         std::string data_in;
         JXL_CHECK(ReadFile(filename, &data_in));
-        start = Now();
-        JXL_CHECK(codec->RecompressJpeg(filename, data_in, compressed));
-        end = Now();
+        JXL_CHECK(
+            codec->RecompressJpeg(filename, data_in, compressed, &speed_stats));
       } else {
-        start = Now();
-        Status status = codec->Compress(filename, &io, inner_pool, compressed);
+        Status status = codec->Compress(filename, &io, inner_pool, compressed,
+                                        &speed_stats);
         if (!status) {
           valid = false;
           if (!Args()->silent_errors) {
@@ -229,9 +228,7 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
             }
           }
         }
-        end = Now();
       }
-      speed_stats.NotifyElapsed(end - start);
     }
     JXL_CHECK(speed_stats.GetSummary(&summary));
     s->total_time_encode += summary.central_tendency;
@@ -250,9 +247,8 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
   if (valid) {
     speed_stats = jpegxl::tools::SpeedStats();
     for (size_t i = 0; i < Args()->decode_reps; ++i) {
-      start = Now();
       if (!codec->Decompress(filename, Span<const uint8_t>(*compressed),
-                             inner_pool, &io2)) {
+                             inner_pool, &io2, &speed_stats)) {
         if (!Args()->silent_errors) {
           fprintf(stderr,
                   "%s failed to decompress encoded image. Original source:"
@@ -261,8 +257,6 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
         }
         valid = false;
       }
-      end = Now();
-      speed_stats.NotifyElapsed(end - start);
 
       // io2.dec_pixels increases each time, but the total should be independent
       // of decode_reps, so only take the value from the first iteration.
@@ -893,8 +887,8 @@ class Benchmark {
     const int num_threads = NumOuterThreads(num_cores, num_tasks);
     const int num_inner = NumInnerThreads(num_cores, num_threads);
 
-    fprintf(stderr, "%d threads, %d inner threads, %d tasks, %d cores\n",
-            num_threads, num_inner, num_tasks, num_cores);
+    fprintf(stderr, "%d cores, %d tasks, %d threads, %d inner threads\n",
+            num_cores, num_tasks, num_threads, num_inner);
 
     pool->reset(new ThreadPoolInternal(num_threads));
     // Main thread OR worker threads in pool each get a possibly empty nested
@@ -1095,6 +1089,18 @@ class Benchmark {
 };
 
 int BenchmarkMain(int argc, char** argv) {
+#if defined(ADDRESS_SANITIZER)
+  const char* sanitizer = " asan";
+#elif defined(MEMORY_SANITIZER)
+  const char* sanitizer = " msan";
+#elif defined(THREAD_SANITIZER)
+  const char* sanitizer = " tsan";
+#else
+  const char* sanitizer = "";
+#endif
+
+  fprintf(stderr, "benchmark_xl [%s%s]\n", JPEGXL_VERSION, sanitizer);
+
   const int bits = hwy::TargetBitfield().Bits();
   if ((bits & HWY_STATIC_TARGETS) != HWY_STATIC_TARGETS) {
     fprintf(stderr, "Missing CPU support for targets in static_targets.h.\n");

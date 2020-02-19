@@ -52,7 +52,8 @@ third_party/highway/hwy/target.h:
 ## Basic encoder/decoder
 
 `build/tools/cjpegxl input.png output.jxl` encodes to JPEG XL with default
-options.
+settings. For a list of common options, run ``build/tools/cjpegxl`;
+`build/tools/cjpegxl -v` shows more.
 
 Here and in general, the JPEG XL tools are able to read/write the following
 image formats: .exr, .gif, .jpeg/.jpg, .pfm, .pgm/.ppm, .pgx, .png.
@@ -87,9 +88,9 @@ control the encoder effort in ascending order.
     of quantization steps.
 *   `wombat` enables error diffusion quantization and full DCT size selection
     heuristics.
-*   `squirrel` enables dots, patches, and spline detection, and full context
-    clustering.
-*   `kitten` (default) enables the iterative adaptive quantization search.
+*   `squirrel` (default) enables dots, patches, and spline detection, and full
+    context clustering.
+*   `kitten` optimizes the adaptive quantization for a psychovisual metric.
 *   `tortoise` enables a more thorough adaptive quantization search.
 
 Mode: JPEG XL has several modes for various types of content. The default mode

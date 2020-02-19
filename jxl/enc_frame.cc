@@ -19,6 +19,7 @@
 
 #include <array>
 #include <atomic>
+#include <hwy/static_targets.h>
 #include <vector>
 
 #include "jxl/ac_context.h"
@@ -50,6 +51,7 @@
 #include "jxl/enc_cache.h"
 #include "jxl/enc_group.h"
 #include "jxl/enc_modular.h"
+#include "jxl/enc_noise.h"
 #include "jxl/enc_params.h"
 #include "jxl/enc_xyb.h"
 #include "jxl/entropy_coder.h"
@@ -61,7 +63,6 @@
 #include "jxl/image_ops.h"
 #include "jxl/loop_filter.h"
 #include "jxl/multiframe.h"
-#include "jxl/noise.h"
 #include "jxl/patch_dictionary.h"
 #include "jxl/quant_weights.h"
 #include "jxl/quantizer.h"
@@ -119,7 +120,7 @@ size_t TargetSize(const CompressParams& cparams,
 
 // Also modifies the block, e.g. by removing patches.
 Status JxlLossyFrameHeuristics(PassesEncoderState* enc_state,
-                               const ImageBundle& linear, Image3F* opsin,
+                               const ImageBundle* linear, Image3F* opsin,
                                ThreadPool* pool, AuxOut* aux_out) {
   CompressParams& cparams = enc_state->cparams;
   const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
@@ -231,7 +232,7 @@ class LossyFrameEncoder {
     enc_state_->passes.clear();
   }
 
-  HWY_ATTR Status ComputeEncodingData(const ImageBundle& linear,
+  HWY_ATTR Status ComputeEncodingData(const ImageBundle* linear,
                                       Image3F* JXL_RESTRICT opsin,
                                       ThreadPool* pool,
                                       BitWriter* JXL_RESTRICT writer,
@@ -244,8 +245,8 @@ class LossyFrameEncoder {
     if (!enc_state_->cparams.max_error_mode) {
       float x_qm_scale_steps[3] = {1.2f, 2.4f, 4.8f};
       shared.frame_header.x_qm_scale = 0;
-      for (size_t i = 0; i < 3; i++) {
-        if (enc_state_->cparams.butteraugli_distance > x_qm_scale_steps[i]) {
+      for (float x_qm_scale_step : x_qm_scale_steps) {
+        if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
           shared.frame_header.x_qm_scale++;
         }
       }
@@ -312,7 +313,7 @@ class LossyFrameEncoder {
     }
 
     if (shared.image_features.loop_filter.gab) {
-      *opsin = GaborishInverse(*opsin, 0.9908511000000001, pool);
+      *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
     }
 
     JXL_RETURN_IF_ERROR(
@@ -514,10 +515,11 @@ class LossyFrameEncoder {
                 offset_sum += d_num_zeros[i];
               }
             }
-            if (best_sum > offset_sum + 1)
+            if (best_sum > offset_sum + 1) {
               row_out[tx] = best;
-            else
+            } else {
               row_out[tx] = kOffset;
+            }
           }
         };
 
@@ -544,11 +546,12 @@ class LossyFrameEncoder {
               map.ConstRow(by / kColorTileDimInBlocks);
           for (size_t bx = gx * kGroupDimInBlocks;
                bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
-            if (DCzero)
+            if (DCzero) {
               idc[bx] = inputjpeg[bx * 8];
-            else
+            } else {
               idc[bx] = (inputjpeg[bx * 8] * quant_table[c * 64] + 1024.f) /
                         quant_table[c * 64];
+            }
             fdc[bx] = idc[bx] / dcquantization[c];
             if (c == 1) {
               for (int i = 0; i < 64; i++) {
@@ -565,7 +568,8 @@ class LossyFrameEncoder {
                           quant_table[64 + i];
                 float QChroma = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
                 // Apply it like this to keep it reversible
-                int QCR = QChroma - (int)(Y * scale / quant_table[64 * c + i]);
+                int QCR = QChroma -
+                          static_cast<int>(Y * scale / quant_table[64 * c + i]);
                 ac[offset + i] = QCR;
               }
             }
@@ -742,12 +746,11 @@ class LossyFrameEncoder {
   std::vector<EncCache> group_caches_;
 };
 
-HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
-                            const AnimationFrame* animation_frame_or_null,
-                            const ImageBundle& ib,
-                            PassesEncoderState* passes_enc_state,
-                            ThreadPool* pool, BitWriter* writer,
-                            AuxOut* aux_out, Multiframe* multiframe) {
+HWY_ATTR JXL_NOINLINE Status EncodeFrame(
+    const CompressParams& cparams_orig,
+    const AnimationFrame* animation_frame_or_null, const ImageBundle& ib,
+    PassesEncoderState* passes_enc_state, ThreadPool* pool, BitWriter* writer,
+    AuxOut* aux_out, Multiframe* multiframe) {
   ib.VerifyMetadata();
   CompressParams cparams = cparams_orig;
   if (cparams.dc_level + cparams.progressive_dc > 3) {
@@ -790,7 +793,7 @@ HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
   ImageMetadata metadata;
   metadata.color_encoding = c;
   ImageBundle linear_storage(&metadata);
-  const ImageBundle* JXL_RESTRICT linear = &ib;
+  const ImageBundle* JXL_RESTRICT linear = nullptr;
 
   std::vector<AuxOut> aux_outs;
   // LossyFrameEncoder stores a reference to a std::function<Status(size_t)>
@@ -832,13 +835,6 @@ HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
         ib.color(), ib.jpeg_quant_table, &frame_header));
   } else {
-    // The Butteraugli feedback loop is only run in Kitten mode or slower: no
-    // need to keep track of the original pixel values in faster modes.
-    ImageBundle* JXL_RESTRICT linear_storage_ptr = nullptr;
-    if (cparams.speed_tier <= SpeedTier::kKitten &&
-        frame_header.encoding != FrameEncoding::kModularGroup) {
-      linear = linear_storage_ptr = &linear_storage;
-    }
     // Avoid a copy in PadImageToMultiple by allocating a large enough image
     // to begin with.
     opsin =
@@ -847,8 +843,15 @@ HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
 
     if (frame_header.color_transform == ColorTransform::kXYB &&
         cparams.dc_level == 0 && cparams.save_as_reference == 0) {
-      ToXYB(ib, cparams.GetIntensityMultiplier(), pool, &opsin,
-            linear_storage_ptr);
+      linear = ToXYB(ib, cparams.GetIntensityMultiplier(), pool, &opsin,
+                     &linear_storage);
+
+      // We only need linear sRGB in slow VarDCT modes.
+      if (cparams.speed_tier > SpeedTier::kKitten ||
+          frame_header.encoding == FrameEncoding::kModularGroup) {
+        linear = nullptr;
+        linear_storage = ImageBundle();  // free the memory
+      }
     } else {  // RGB or YCbCr: don't do anything (forward YCbCr is not
               // implemented, this is only used when the input is already in
               // YCbCr)
@@ -863,7 +866,7 @@ HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
     if (frame_header.encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-          *linear, &opsin, pool, writer, &frame_header));
+          linear, &opsin, pool, writer, &frame_header));
     }
   }
   JXL_RETURN_IF_ERROR(modular_frame_encoder.ComputeEncodingData(
@@ -892,7 +895,7 @@ HWY_ATTR Status EncodeFrame(const CompressParams& cparams_orig,
                                                    frame_dim.num_dc_groups,
                                                    num_passes, has_ac_global));
   const size_t global_ac_index = frame_dim.num_dc_groups + 1;
-  const size_t is_small_image = (frame_dim.num_groups == 1 && num_passes == 1);
+  const bool is_small_image = frame_dim.num_groups == 1 && num_passes == 1;
   const auto get_output = [&](const size_t index) {
     return &group_codes[is_small_image ? 0 : index];
   };

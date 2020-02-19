@@ -1635,4 +1635,14 @@ HWY_ATTR void ColorSpaceTransform::Run(const size_t thread,
   }
 }
 
+HWY_ATTR void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
+                           float* JXL_RESTRICT linear) {
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < n; i += d.N) {
+    const auto encoded = Load(d, srgb + i) * Set(d, 1.0f / 255);
+    const auto display = TF_SRGB().DisplayFromEncoded(encoded) * Set(d, 255.0f);
+    Store(display, d, linear + i);
+  }
+}
+
 }  // namespace jxl

@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "jxl/alpha.h"
 #include "jxl/base/byte_order.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/profiler.h"
@@ -338,17 +339,12 @@ void ImageBundle::PremultiplyAlphaIfNeeded(ThreadPool* pool) {
             alpha_.ysize() == color_.ysize());
   if (alpha_is_premultiplied_) return;
   alpha_is_premultiplied_ = true;
-  const float alpha_normalizer = 1.f / ((1u << metadata_->alpha_bits) - 1);
   RunOnPool(
       pool, 0, alpha_.ysize(), ThreadPool::SkipInit(),
-      [this, alpha_normalizer](const int y, const int /*thread*/) {
-        for (size_t c = 0; c < 3; ++c) {
-          float* const JXL_RESTRICT row = color_.PlaneRow(c, y);
-          const uint16_t* const JXL_RESTRICT alpha_row = alpha_.ConstRow(y);
-          for (size_t x = 0; x < color_.xsize(); ++x) {
-            row[x] *= alpha_normalizer * alpha_row[x];
-          }
-        }
+      [this](const int y, const int /*thread*/) {
+        PremultiplyAlpha(color_.PlaneRow(0, y), color_.PlaneRow(1, y),
+                         color_.PlaneRow(2, y), alpha_.ConstRow(y),
+                         metadata_->alpha_bits, color_.xsize());
       },
       "premultiply alpha");
 }

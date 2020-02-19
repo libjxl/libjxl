@@ -210,7 +210,7 @@ class QuantFieldCoder {
 
       AcStrategy acs = acs_row_[y * acs_stride_ + x];
       if (acs.IsFirstBlock()) {
-        uint32_t residual = ReadHybridUint(ctx, br_, decoder_, *context_map_);
+        uint32_t residual = decoder_->ReadHybridUint(ctx, br_, *context_map_);
         int qf = ErrorMetric::Original(residual, predictions[0]);
         if (qf < 0) qf = 0;
         if (qf > 255) qf = 255;
@@ -498,6 +498,113 @@ bool DecodeARParameters(BitReader* br, ANSSymbolReader* decoder,
   return true;
 }
 
+// Returns number of non-zero coefficients (but skip LLF).
+// We cannot rely on block[] being all-zero bits, so first truncate to integer.
+// Also writes the per-8x8 block nzeros starting at nzeros_pos.
+HWY_ATTR int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
+                                     const AcStrategy acs,
+                                     const size_t covered_blocks,
+                                     const size_t log2_covered_blocks,
+                                     const ac_qcoeff_t* JXL_RESTRICT block,
+                                     const size_t nzeros_stride,
+                                     int32_t* JXL_RESTRICT nzeros_pos) {
+  const HWY_CAPPED(float, kBlockDim) df;
+  const HWY_CAPPED(int32_t, kBlockDim) di;
+
+  const auto zero = Zero(di);
+  // Add FF..FF for every zero coefficient, negate to get #zeros.
+  auto neg_sum_zero = zero;
+
+  {
+    // Mask sufficient for one row of coefficients.
+    HWY_ALIGN const int32_t
+        llf_mask_lanes[AcStrategy::kMaxCoeffBlocks * (1 + kBlockDim)] = {
+            -1, -1, -1, -1};
+    // First cx=1,2,4 elements are FF..FF, others 0.
+    const int32_t* llf_mask_pos =
+        llf_mask_lanes + AcStrategy::kMaxCoeffBlocks - cx;
+
+    // Rows with LLF: mask out the LLF
+    for (size_t y = 0; y < cy; y++) {
+      for (size_t x = 0; x < cx * kBlockDim; x += df.N) {
+        const auto llf_mask = BitCast(df, LoadU(di, llf_mask_pos + x));
+
+        // LLF counts as zero so we don't include it in nzeros.
+        const auto coef =
+            AndNot(llf_mask, Load(df, &block[y * cx * kBlockDim + x]));
+
+        neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+      }
+    }
+  }
+
+  // Remaining rows: no mask
+  for (size_t y = cy; y < cy * kBlockDim; y++) {
+    for (size_t x = 0; x < cx * kBlockDim; x += df.N) {
+      const auto coef = Load(df, &block[y * cx * kBlockDim + x]);
+      neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+    }
+  }
+
+  // We want area - sum_zero, add because neg_sum_zero is already negated.
+  const int32_t nzeros = int32_t(cx * cy * kDCTBlockSize) +
+                         GetLane(::hwy::ext::SumOfLanes(neg_sum_zero));
+
+  const int32_t shifted_nzeros = static_cast<int32_t>(
+      (nzeros + covered_blocks - 1) >> log2_covered_blocks);
+  // Need non-canonicalized dimensions!
+  for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
+    for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
+      nzeros_pos[x + y * nzeros_stride] = shifted_nzeros;
+    }
+  }
+
+  return nzeros;
+}
+
+// Specialization for 8x8, where only top-left is LLF/DC.
+// About 1% overall speedup vs. NumNonZeroExceptLLF.
+HWY_ATTR int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
+                                       int32_t* JXL_RESTRICT nzeros_pos) {
+  const HWY_CAPPED(float, kBlockDim) df;
+  const HWY_CAPPED(int32_t, kBlockDim) di;
+
+  const auto zero = Zero(di);
+  // Add FF..FF for every zero coefficient, negate to get #zeros.
+  auto neg_sum_zero = zero;
+
+  {
+    // First row has DC, so mask
+    const size_t y = 0;
+    HWY_ALIGN const int32_t dc_mask_lanes[kBlockDim] = {-1};
+
+    for (size_t x = 0; x < kBlockDim; x += df.N) {
+      const auto dc_mask = BitCast(df, Load(di, dc_mask_lanes + x));
+
+      // DC counts as zero so we don't include it in nzeros.
+      const auto coef = AndNot(dc_mask, Load(df, &block[y * kBlockDim + x]));
+
+      neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+    }
+  }
+
+  // Remaining rows: no mask
+  for (size_t y = 1; y < kBlockDim; y++) {
+    for (size_t x = 0; x < kBlockDim; x += df.N) {
+      const auto coef = Load(df, &block[y * kBlockDim + x]);
+      neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+    }
+  }
+
+  // We want 64 - sum_zero, add because neg_sum_zero is already negated.
+  const int32_t nzeros =
+      int32_t(kDCTBlockSize) + GetLane(::hwy::ext::SumOfLanes(neg_sum_zero));
+
+  *nzeros_pos = nzeros;
+
+  return nzeros;
+}
+
 // The number of nonzeros of each block is predicted from the top and the left
 // blocks, with opportune scaling to take into account the number of blocks of
 // each strategy.  The predicted number of nonzeros divided by two is used as a
@@ -517,9 +624,6 @@ HWY_ATTR void TokenizeCoefficients(
   output->reserve(output->size() +
                   3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
 
-  const HWY_CAPPED(float, 8) df8;
-  const HWY_CAPPED(int32_t, 8) di8;
-
   size_t offset = 0;
   const size_t nzeros_stride = tmp_num_nzeroes->PixelsPerRow();
   for (size_t by = 0; by < ysize_blocks; ++by) {
@@ -537,47 +641,26 @@ HWY_ATTR void TokenizeCoefficients(
     for (size_t bx = 0; bx < xsize_blocks; ++bx) {
       AcStrategy acs = acs_row[bx];
       if (!acs.IsFirstBlock()) continue;
-      // Equal to number of LLF coefficients.
-      const size_t covered_blocks =
-          acs.covered_blocks_x() * acs.covered_blocks_y();
+      size_t cx = acs.covered_blocks_x();
+      size_t cy = acs.covered_blocks_y();
+      const size_t covered_blocks = cx * cy;  // = #LLF coefficients
       const size_t log2_covered_blocks =
           NumZeroBitsBelowLSBNonzero(covered_blocks);
       const size_t size = covered_blocks * kDCTBlockSize;
 
-      for (size_t c : {1, 0, 2}) {
-        size_t c_ctx = c == 1 ? 0 : 1;
-        const ac_qcoeff_t* JXL_RESTRICT block = ac_rows[c] + offset;
-        size_t nzeros = 0;
-        size_t cx = acs.covered_blocks_x();
-        size_t cy = acs.covered_blocks_y();
-        CoefficientLayout(&cy, &cx);
-        // Count number of non-zero coefficients (but skip LLF). We cannot
-        // rely on coef being all-zero bits, so truncate to integer.
-        for (size_t y = 0; y < cy; y++) {
-          for (size_t x = cx; x < cx * kBlockDim; x++) {
-            const float coef = block[y * cx * kBlockDim + x];
-            nzeros += static_cast<int32_t>(coef) != 0;
-          }
-        }
-        // .. resume after LLF with whole vectors
-        const auto zero = Zero(di8);
-        const auto one = Set(di8, 1);
-        auto nzeros_vec = zero;
-        for (size_t y = cy; y < cy * kBlockDim; y++) {
-          for (size_t x = 0; x < cx * kBlockDim; x += df8.N) {
-            const auto coef = Load(df8, &block[y * cx * kBlockDim + x]);
-            nzeros_vec += IfThenZeroElse(ConvertTo(di8, coef) == zero, one);
-          }
-        }
-        nzeros += GetLane(::hwy::ext::SumOfLanes(nzeros_vec));
+      CoefficientLayout(&cy, &cx);  // swap cx/cy to canonical order
 
-        const int32_t shifted_nzeros = static_cast<int32_t>(
-            (nzeros + covered_blocks - 1) >> log2_covered_blocks);
-        for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
-          for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
-            row_nzeros[c][bx + x + y * nzeros_stride] = shifted_nzeros;
-          }
-        }
+      for (size_t c : {1, 0, 2}) {
+        const uint32_t c_ctx_x5_tbl[3] = {5, 0, 5};
+        const size_t c_ctx_x5 = c_ctx_x5_tbl[c];
+        const ac_qcoeff_t* JXL_RESTRICT block = ac_rows[c] + offset;
+
+        int32_t nzeros =
+            (covered_blocks == 1)
+                ? NumNonZero8x8ExceptDC(block, row_nzeros[c] + bx)
+                : NumNonZeroExceptLLF(cx, cy, acs, covered_blocks,
+                                      log2_covered_blocks, block, nzeros_stride,
+                                      row_nzeros[c] + bx);
 
         size_t ord = kStrategyOrder[acs.RawStrategy()];
         const coeff_order_t* JXL_RESTRICT order =
@@ -587,9 +670,9 @@ HWY_ATTR void TokenizeCoefficients(
         int32_t predicted_nzeros =
             PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], bx, 32);
         const int32_t nzero_ctx =
-            NonZeroContext(predicted_nzeros, c_ctx * 5 + ord);
+            NonZeroContext(predicted_nzeros, c_ctx_x5 + ord);
         TokenizeHybridUint(nzero_ctx, nzeros, output);
-        const size_t histo_offset = ZeroDensityContextsOffset(c_ctx * 5 + ord);
+        const size_t histo_offset = ZeroDensityContextsOffset(c_ctx_x5 + ord);
         // Skip LLF.
         size_t prev = (nzeros > size / 16 ? 0 : 1);
         for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {

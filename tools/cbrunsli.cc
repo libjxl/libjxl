@@ -34,6 +34,7 @@
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
 #include "jxl/extras/codec.h"
+#include "jxl/extras/codec_jpg.h"
 #include "jxl/image_bundle.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -89,13 +90,12 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
   jxl::CodecInOut io;
   io.dec_hints = args.dec_hints;
 
-  std::string extension = jxl::Extension(args.file_in);
-  if (extension == ".jpg") {
-    jxl::PaddedBytes jpg_content;
-    if (!jxl::ReadFile(args.file_in, &jpg_content)) {
-      return JXL_FAILURE("Could not read JPEG file");
-    }
+  jxl::PaddedBytes file_content;
+  if (!jxl::ReadFile(args.file_in, &file_content)) {
+    return JXL_FAILURE("Could not read input file");
+  }
 
+  if (jxl::IsJPG(jxl::Span<const uint8_t>(file_content))) {
     SpeedStats stats;
     size_t xsize = 0;
     size_t ysize = 0;
@@ -103,8 +103,8 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
       compressed->clear();
       const double t0 = jxl::Now();
       brunsli::JPEGData jpg;
-      const uint8_t* input_data = jpg_content.data();
-      if (!brunsli::ReadJpeg(input_data, jpg_content.size(),
+      const uint8_t* input_data = file_content.data();
+      if (!brunsli::ReadJpeg(input_data, file_content.size(),
                              brunsli::JPEG_READ_ALL, &jpg)) {
         return JXL_FAILURE("Could not parse JPEG file");
       }
@@ -127,8 +127,8 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
     return true;
   }
 
-  if (!SetFromFile(args.file_in, &io)) {
-    fprintf(stderr, "Failed to read image %s.\n", args.file_in);
+  if (!SetFromBytes(jxl::Span<const uint8_t>(file_content), &io)) {
+    fprintf(stderr, "Failed to decode image %s.\n", args.file_in);
     return false;
   }
 

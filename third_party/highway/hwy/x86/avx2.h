@@ -831,18 +831,18 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> MulAdd(const Vec256<float> mul,
                                               const Vec256<float> x,
                                               const Vec256<float> add) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<float>{_mm256_fmadd_ps(mul.raw, x.raw, add.raw)};
-#else
   return mul * x + add;
+#else
+  return Vec256<float>{_mm256_fmadd_ps(mul.raw, x.raw, add.raw)};
 #endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> MulAdd(const Vec256<double> mul,
                                                const Vec256<double> x,
                                                const Vec256<double> add) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<double>{_mm256_fmadd_pd(mul.raw, x.raw, add.raw)};
-#else
   return mul * x + add;
+#else
+  return Vec256<double>{_mm256_fmadd_pd(mul.raw, x.raw, add.raw)};
 #endif
 }
 
@@ -851,18 +851,18 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> NegMulAdd(const Vec256<float> mul,
                                                  const Vec256<float> x,
                                                  const Vec256<float> add) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<float>{_mm256_fnmadd_ps(mul.raw, x.raw, add.raw)};
-#else
   return add - mul * x;
+#else
+  return Vec256<float>{_mm256_fnmadd_ps(mul.raw, x.raw, add.raw)};
 #endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> NegMulAdd(const Vec256<double> mul,
                                                   const Vec256<double> x,
                                                   const Vec256<double> add) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<double>{_mm256_fnmadd_pd(mul.raw, x.raw, add.raw)};
-#else
   return add - mul * x;
+#else
+  return Vec256<double>{_mm256_fnmadd_pd(mul.raw, x.raw, add.raw)};
 #endif
 }
 
@@ -874,18 +874,18 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> MulSub(const Vec256<float> mul,
                                               const Vec256<float> x,
                                               const Vec256<float> sub) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<float>{_mm256_fmsub_ps(mul.raw, x.raw, sub.raw)};
-#else
   return mul * x - sub;
+#else
+  return Vec256<float>{_mm256_fmsub_ps(mul.raw, x.raw, sub.raw)};
 #endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> MulSub(const Vec256<double> mul,
                                                const Vec256<double> x,
                                                const Vec256<double> sub) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<double>{_mm256_fmsub_pd(mul.raw, x.raw, sub.raw)};
-#else
   return mul * x - sub;
+#else
+  return Vec256<double>{_mm256_fmsub_pd(mul.raw, x.raw, sub.raw)};
 #endif
 }
 
@@ -894,18 +894,18 @@ HWY_ATTR_AVX2 HWY_INLINE Vec256<float> NegMulSub(const Vec256<float> mul,
                                                  const Vec256<float> x,
                                                  const Vec256<float> sub) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<float>{_mm256_fnmsub_ps(mul.raw, x.raw, sub.raw)};
-#else
   return Neg(mul * x) - sub;
+#else
+  return Vec256<float>{_mm256_fnmsub_ps(mul.raw, x.raw, sub.raw)};
 #endif
 }
 HWY_ATTR_AVX2 HWY_INLINE Vec256<double> NegMulSub(const Vec256<double> mul,
                                                   const Vec256<double> x,
                                                   const Vec256<double> sub) {
 #ifdef HWY_DISABLE_BMI2_FMA
-  return Vec256<double>{_mm256_fnmsub_pd(mul.raw, x.raw, sub.raw)};
-#else
   return Neg(mul * x) - sub;
+#else
+  return Vec256<double>{_mm256_fnmsub_pd(mul.raw, x.raw, sub.raw)};
 #endif
 }
 

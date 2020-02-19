@@ -28,6 +28,7 @@
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/fast_log.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
 #include "jxl/block.h"
@@ -50,7 +51,6 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/multiframe.h"
-#include "jxl/noise.h"
 #include "jxl/opsin_params.h"
 #include "jxl/quant_weights.h"
 
@@ -61,7 +61,7 @@ bool FLAGS_dump_quant_state = false;
 namespace jxl {
 namespace {
 
-static const double kQuant64[64] = {
+static const float kQuant64[64] = {
     0.0,
     1.3627035631195761,
     3.75394603948046884,
@@ -155,16 +155,15 @@ HWY_ATTR void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
     }
   }
   ComputeTransposedScaledDCT<8>()(FromBlock<8>(dct), ToBlock<8>(dct));
-  double entropyQL2 = 0;
-  double entropyQL4 = 0;
-  double entropyQL8 = 0;
+  float entropyQL2 = 0.0f;
+  float entropyQL4 = 0.0f;
+  float entropyQL8 = 0.0f;
   for (size_t k = 1; k < kDCTBlockSize; ++k) {
     const coeff_order_t i = natural_coeff_order[k];
-    const float scale = dct_rescale[i];
-    double v = static_cast<double>(dct[i] * scale);
+    float v = dct[i] * dct_rescale[i];
     v *= v;
-    static const double kPow = 1.7656070913325459;
-    double q = std::pow(kQuant64[k], kPow);
+    static const float kPow = 1.7656070913325459f;
+    float q = std::pow(kQuant64[k], kPow);
     entropyQL2 += q * v;
     v *= v;
     entropyQL4 += q * v;
@@ -173,12 +172,12 @@ HWY_ATTR void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   }
   entropyQL2 = std::sqrt(entropyQL2);
   entropyQL4 = std::sqrt(std::sqrt(entropyQL4));
-  entropyQL8 = std::pow(entropyQL8, 0.125);
-  static const double mulQL2 = 0.00064095761586667813;
-  static const double mulQL4 = -0.93103691258798293;
-  static const double mulQL8 = 0.20682345500923968;
-  double v = mulQL2 * entropyQL2 + mulQL4 * entropyQL4 + mulQL8 * entropyQL8;
-  double kMul = 1.0833857206487167;
+  entropyQL8 = std::pow(entropyQL8, 0.125f);
+  constexpr float mulQL2 = 0.00064095761586667813f;
+  constexpr float mulQL4 = -0.93103691258798293f;
+  constexpr float mulQL8 = 0.20682345500923968f;
+  float v = mulQL2 * entropyQL2 + mulQL4 * entropyQL4 + mulQL8 * entropyQL8;
+  constexpr float kMul = 1.0833857206487167f;
   *out_pos += kMul * v;
 }
 
@@ -270,17 +269,18 @@ HWY_ATTR void PerBlockModulations(const ImageF& xyb, const float scale,
       "AQ per block modulation");
 }
 
-static double SimpleGamma(double v) {
+static float SimpleGamma(float v) {
   // A simple HDR compatible gamma function.
   // mul and mul2 represent a scaling difference between jxl and butteraugli.
-  static const double mul = 103.72874071313939;
-  static const double mul2 = 1.0 / (67.781877502322729);
+  static const float mul = 103.72874071313939f;
+  static const float mul2 = 1 / 67.781877502322729f;
 
   v *= mul;
 
-  static const double kRetMul = mul2 * 18.6580932135;
-  static const double kRetAdd = mul2 * -20.2789020414;
-  static const double kVOffset = 7.14672470003;
+  // Includes correction factor for std::log -> log2.
+  static const float kRetMul = mul2 * 18.6580932135f * 0.693147181f;
+  static const float kRetAdd = mul2 * -20.2789020414f;
+  static const float kVOffset = 7.14672470003f;
 
   if (v < 0) {
     // This should happen rarely, but may lead to a NaN, which is rather
@@ -288,10 +288,10 @@ static double SimpleGamma(double v) {
     // clamping here.
     v = 0;
   }
-  return kRetMul * log(v + kVOffset) + kRetAdd;
+  return kRetMul * FastLog2f(v + kVOffset) + kRetAdd;
 }
 
-static double RatioOfCubicRootToSimpleGamma(double v) {
+static float RatioOfCubicRootToSimpleGamma(float v) {
   // The opsin space in jxl is the cubic root of photons, i.e., v * v * v
   // is related to the number of photons.
   //
@@ -344,23 +344,24 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
         const float* row_in2 = xyb.PlaneRow(1, y2);
         float* JXL_RESTRICT row_out = padded_diff.Row(y);
 
-        for (size_t x = 0; x + 1 < xsize; ++x) {
-          size_t x2;
-          if (x + 1 < xsize) {
-            x2 = x + 1;
-          } else if (x > 0) {
-            x2 = x - 1;
-          } else {
-            x2 = x;
-          }
-          size_t x1;
-          if (x == 0 && xsize >= 2) {
-            x1 = x + 1;
-          } else if (x > 0) {
-            x1 = x - 1;
-          } else {
-            x1 = x;
-          }
+        size_t x = 0;
+        // First pixel of the row.
+        {
+          const size_t x2 = (xsize < 1) ? 0 : 1;
+          const size_t x1 = x2;
+          float diff = mul0 * (std::abs(row_in[x] - row_in[x2]) +
+                               std::abs(row_in[x] - row_in2[x]) +
+                               std::abs(row_in[x] - row_in[x1]) +
+                               std::abs(row_in[x] - row_in1[x]) +
+                               3 * (std::abs(row_in2[x] - row_in1[x]) +
+                                    std::abs(row_in[x1] - row_in[x2])));
+          diff *= RatioOfCubicRootToSimpleGamma(row_in[x] + match_gamma_offset);
+          row_out[x] = std::min(cutoff, diff);
+          ++x;
+        }
+        for (; x + 1 < xsize; ++x) {
+          const size_t x2 = x + 1;
+          const size_t x1 = x - 1;
           float diff = mul0 * (std::abs(row_in[x] - row_in[x2]) +
                                std::abs(row_in[x] - row_in2[x]) +
                                std::abs(row_in[x] - row_in[x1]) +
@@ -372,10 +373,10 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
         }
         // Last pixel of the row.
         {
-          const size_t x = xsize - 1;
           float diff = 7.0f * mul0 * (std::abs(row_in[x] - row_in2[x]));
           diff *= RatioOfCubicRootToSimpleGamma(row_in[x] + match_gamma_offset);
           row_out[x] = std::min(cutoff, diff);
+          ++x;
         }
 
         // Extend to multiple of 8 columns
@@ -388,7 +389,7 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
           lastval += row_out[xsize - 2];
           lastval *= 0.5f;
         }
-        for (size_t x = xsize; x < padded_diff.xsize(); ++x) {
+        for (; x < padded_diff.xsize(); ++x) {
           row_out[x] = lastval;
         }
       },
@@ -1016,22 +1017,14 @@ ImageF AdaptiveQuantizationMap(const Image3F& opsin, const ImageF& intensity_ac,
   return out;
 }
 
-namespace kernel {
-
-struct GaussianDC {
-  JXL_INLINE const Weights3x3& Weights() const {
-    constexpr float w0 = 0.320356f;
-    constexpr float w1 = 0.122822f;
-    constexpr float w2 = 0.047089f;
-    static constexpr Weights3x3 weights = {
-        {HWY_REP4(w2)}, {HWY_REP4(w1)}, {HWY_REP4(w2)},
-        {HWY_REP4(w1)}, {HWY_REP4(w0)}, {HWY_REP4(w1)},
-        {HWY_REP4(w2)}, {HWY_REP4(w1)}, {HWY_REP4(w2)}};
-    return weights;
-  }
-};
-
-}  // namespace kernel
+const WeightsSymmetric3& WeightsSymmetric3GaussianDC() {
+  constexpr float w0 = 0.320356f;
+  constexpr float w1 = 0.122822f;
+  constexpr float w2 = 0.047089f;
+  static constexpr WeightsSymmetric3 weights = {
+      {HWY_REP4(w0)}, {HWY_REP4(w1)}, {HWY_REP4(w2)}};
+  return weights;
+}
 
 ImageF IntensityAcEstimate(const ImageF& opsin_y,
                            const FrameDimensions& frame_dim, ThreadPool* pool) {
@@ -1039,15 +1032,9 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
 
-  const kernel::GaussianDC kernel;
+  const WeightsSymmetric3& weights = WeightsSymmetric3GaussianDC();
   ImageF smoothed(xsize, ysize);
-  if (xsize < kConvolveMinWidth) {
-    using Convolution = slow::General3x3Convolution<1, WrapMirror>;
-    Convolution::Run(opsin_y, rect, kernel, &smoothed);
-  } else {
-    using Conv3 = ConvolveT<strategy::Symmetric3>;
-    Conv3::Run(opsin_y, rect, kernel, pool, &smoothed);
-  }
+  Symmetric3(opsin_y, rect, weights, pool, &smoothed);
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
@@ -1089,7 +1076,7 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
                                  quant_ac * rescale, pool);
 }
 
-void FindBestQuantizer(const ImageBundle& linear, const Image3F& opsin,
+void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
                        PassesEncoderState* enc_state, ThreadPool* pool,
                        AuxOut* aux_out, double rescale) {
   const CompressParams& cparams = enc_state->cparams;
@@ -1120,9 +1107,9 @@ void FindBestQuantizer(const ImageBundle& linear, const Image3F& opsin,
     // Normal encoding to a butteraugli score.
     PROFILER_ZONE("enc find best2");
     if (cparams.speed_tier == SpeedTier::kTortoise) {
-      FindBestQuantizationHQ(linear, opsin, enc_state, pool, aux_out);
+      FindBestQuantizationHQ(*linear, opsin, enc_state, pool, aux_out);
     } else {
-      FindBestQuantization(linear, opsin, enc_state, pool, aux_out);
+      FindBestQuantization(*linear, opsin, enc_state, pool, aux_out);
     }
   }
 }

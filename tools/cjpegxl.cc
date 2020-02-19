@@ -152,11 +152,6 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
   }
 
   if (args.use_container) {
-#if defined(__EMSCRIPTEN__)
-    // There's a linker issue depending on "box", see TODO in the cmake files.
-    fprintf(stderr, "Container format not yet supported for emscripten");
-    return 1;
-#else  // defined(__EMSCRIPTEN__)
     JpegXlContainer container;
     container.codestream = compressed.data();
     container.codestream_size = compressed.size();
@@ -166,7 +161,6 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
       return 1;
     }
     compressed.swap(container_file);
-#endif  // defined(__EMSCRIPTEN__)
   }
 
   if (args.file_out) {

@@ -36,7 +36,8 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   io.SetFromImage(CopyImage(linear), io.metadata.color_encoding);
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
-  ToXYB(io.Main(), 1.0f, null_pool, &opsin);
+  ImageBundle unused_linear;
+  (void)ToXYB(io.Main(), 1.0f, null_pool, &opsin, &unused_linear);
 
   OpsinParams opsin_params;
   opsin_params.Init();

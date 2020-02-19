@@ -32,7 +32,11 @@ struct FastDivision<float, V> {
   }
 
   HWY_ATTR V operator()(const V n, const V d) const {
+#if 1  // Faster on SKX
+    return n / d;
+#else
     return n * ReciprocalNR(d);
+#endif
   }
 };
 

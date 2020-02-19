@@ -27,4 +27,8 @@
 // Uncomment to avoid using/requiring AVX2 when running on Intel/AMD.
 // #define HWY_DISABLE_AVX2
 
+// Uncomment to avoid additional (optional) code generation for AVX-512 when
+// building for Intel/AMD.
+// #define HWY_DISABLE_AVX512
+
 #endif  // HWY_TARGETS_H_

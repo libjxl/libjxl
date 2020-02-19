@@ -16,11 +16,15 @@
 
 #include <libgen.h>
 #include <spawn.h>
+#include <stdio.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <fstream>
+
 #include "jxl/base/file_io.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/codec_in_out.h"
 #include "jxl/extras/codec_png.h"
 #include "jxl/image_bundle.h"
@@ -78,6 +82,31 @@ std::string GetBaseName(std::string filename) {
   return result;
 }
 
+// This uses `output_filename` to determine the name of the corresponding
+// `.time` file.
+template <typename F>
+Status ReportCodecRunningTime(F&& function, std::string output_filename,
+                              jpegxl::tools::SpeedStats* const speed_stats) {
+  const double start = Now();
+  JXL_RETURN_IF_ERROR(function());
+  const double end = Now();
+  const std::string time_filename =
+      GetBaseName(std::move(output_filename)) + ".time";
+  std::ifstream time_stream(time_filename);
+  double time;
+  if (time_stream >> time) {
+    // Report the time measured by the external codec itself.
+    speed_stats->NotifyElapsed(time);
+  } else {
+    // Fall back to the less accurate time that we measured.
+    speed_stats->NotifyElapsed(end - start);
+  }
+  if (time_stream.is_open()) {
+    remove(time_filename.c_str());
+  }
+  return true;
+}
+
 Status RunCommand(const std::string& command,
                   const std::vector<std::string>& arguments) {
   std::vector<char*> args;
@@ -122,7 +151,8 @@ class CustomCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed) override {
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
 
     const std::string basename = GetBaseName(filename);
@@ -139,13 +169,16 @@ class CustomCodec : public ImageCodec {
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(png_filename);
     arguments.push_back(encoded_filename);
-    JXL_RETURN_IF_ERROR(RunCommand(compress_command_, arguments));
+    JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
+        [&, this] { return RunCommand(compress_command_, arguments); },
+        encoded_filename, speed_stats));
     return ReadFile(encoded_filename, compressed);
   }
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io) override {
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
     const std::string basename = GetBaseName(filename);
     TemporaryFile encoded_file(basename, extension_), png_file(basename, "png");
     std::string encoded_filename, png_filename;
@@ -153,18 +186,16 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
 
     JXL_RETURN_IF_ERROR(WriteFile(compressed, encoded_filename));
-    JXL_RETURN_IF_ERROR(
-        RunCommand(decompress_command_,
-                   std::vector<std::string>{encoded_filename, png_filename}));
+    JXL_RETURN_IF_ERROR(ReportCodecRunningTime(
+        [&, this] {
+          return RunCommand(
+              decompress_command_,
+              std::vector<std::string>{encoded_filename, png_filename});
+        },
+        png_filename, speed_stats));
     PaddedBytes png;
     JXL_RETURN_IF_ERROR(ReadFile(png_filename, &png));
     return DecodeImagePNG(Span<const uint8_t>(png), pool, io);
-  }
-
-  void GetMoreStats(BenchmarkStats* const stats) override {
-    // Time measurements are unreliable because of the intermediary PNG step.
-    stats->total_time_encode = 0;
-    stats->total_time_decode = 0;
   }
 
  private:

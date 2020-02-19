@@ -788,19 +788,15 @@ TEST(JxlTest, RoundtripLossless8Gray) {
 
 TEST(JxlTest, RoundtripAnimation) {
   ThreadPool* pool = nullptr;
-  const std::string pathname = GetTestDataPath(
-      "conv_arithmetic/arbitrary_padding_no_strides_transposed.gif");
+  const std::string pathname = GetTestDataPath("jxl/traffic_light.gif");
   CodecInOut io;
   ASSERT_TRUE(SetFromFile(pathname, &io, pool));
-  ASSERT_EQ(25, io.frames.size());
+  ASSERT_EQ(4, io.frames.size());
 
   CompressParams cparams;
-  // TODO: make patches work with animation
-  cparams.patches = Override::kOff;
-  cparams.speed_tier = SpeedTier::kKitten;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 450000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 3000);
 
   EXPECT_EQ(io2.frames.size(), io.frames.size());
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
@@ -810,18 +806,15 @@ TEST(JxlTest, RoundtripAnimation) {
 
 TEST(JxlTest, RoundtripLosslessAnimation) {
   ThreadPool* pool = nullptr;
-  const std::string pathname = GetTestDataPath(
-      "conv_arithmetic/arbitrary_padding_no_strides_transposed.gif");
+  const std::string pathname = GetTestDataPath("jxl/traffic_light.gif");
   CodecInOut io;
   ASSERT_TRUE(SetFromFile(pathname, &io, pool));
-  ASSERT_EQ(25, io.frames.size());
+  ASSERT_EQ(4, io.frames.size());
 
   CompressParams cparams = CParamsForLossless();
-  // TODO: make patches work with animation
-  cparams.patches = Override::kOff;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 325000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 1200);
 
   EXPECT_EQ(io2.frames.size(), io.frames.size());
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.hf_asymmetry,

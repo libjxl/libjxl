@@ -91,22 +91,9 @@ HWY_ATTR bool DecodeContextMap(std::vector<uint8_t>* context_map,
       input->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
       uint32_t sym = reader.ReadSymbolWithoutRefill(0, input);
       if (sym >= 8) {
-        uint32_t nbits = sym - 8;
-        // Max 32 bits for ReadBits, but max 31 bits for left shift.
-        if (nbits > 31) {
-          return JXL_FAILURE("Too many bits");
-        }
-        uint32_t bits = input->PeekBits(nbits);
-        input->Consume(nbits);
-        i += DecodeVarLenUint(nbits, bits) + 2;
+        i += ReadVarLenUint(input, sym - 8) + 2;
       } else {
-        uint32_t nbits = sym;
-        uint32_t bits = input->PeekBits(nbits);
-        input->Consume(nbits);
-        if (nbits > 31) {
-          return JXL_FAILURE("Too many bits");
-        }
-        uint32_t cluster = DecodeVarLenUint(sym, bits);
+        uint32_t cluster = ReadVarLenUint(input, sym);
         if (cluster >= kMaxClusters) {
           return JXL_FAILURE("Invalid cluster ID");
         }

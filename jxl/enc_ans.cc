@@ -30,6 +30,7 @@
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/bits.h"
 #include "jxl/base/fast_log.h"
+#include "jxl/dec_ans.h"
 #include "jxl/enc_cluster.h"
 #include "jxl/enc_context_map.h"
 
@@ -670,7 +671,9 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   }
 
   // TODO(veluca): better heuristics.
-  bool use_prefix_code = total_tokens < 100;
+  bool use_prefix_code =
+      total_tokens < 100 ||
+      params.clustering == HistogramParams::ClusteringType::kFastest;
 
   // Encode histograms.
   const size_t max_contexts = std::min(num_contexts, kClustersLimit);
@@ -691,7 +694,12 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
 size_t WriteTokens(const std::vector<Token>& tokens,
                    const EntropyEncodingData& codes,
                    const std::vector<uint8_t>& context_map,
-                   const BitWriter::Allotment& allotment, BitWriter* writer) {
+                   const BitWriter::Allotment& allotment, BitWriter* writer,
+                   HybridUintConfig uint_config) {
+  writer->Write(2, uint_config.msb_in_token);
+  writer->Write(2, uint_config.lsb_in_token);
+  writer->Write(2, uint_config.split_exponent - uint_config.lsb_in_token -
+                       uint_config.msb_in_token);
   size_t num_extra_bits = 0;
   if (codes.use_prefix_code) {
     for (size_t i = 0; i < tokens.size(); i++) {
@@ -737,10 +745,10 @@ size_t WriteTokens(const std::vector<Token>& tokens,
 void WriteTokens(const std::vector<Token>& tokens,
                  const EntropyEncodingData& codes,
                  const std::vector<uint8_t>& context_map, BitWriter* writer,
-                 size_t layer, AuxOut* aux_out) {
+                 size_t layer, AuxOut* aux_out, HybridUintConfig uint_config) {
   BitWriter::Allotment allotment(writer, 32 * tokens.size() + 32 * 1024 * 4);
   size_t num_extra_bits =
-      WriteTokens(tokens, codes, context_map, allotment, writer);
+      WriteTokens(tokens, codes, context_map, allotment, writer, uint_config);
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
   if (aux_out != nullptr) {
     aux_out->layers[layer].extra_bits += num_extra_bits;

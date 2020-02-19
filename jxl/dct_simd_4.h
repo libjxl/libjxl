@@ -29,75 +29,55 @@ namespace jxl {
 static_assert(BlockDesc<8>::N == 4, "Wrong vector size, must be 4");
 
 template <class From, class To>
+static HWY_ATTR JXL_INLINE void TransposeBlock4_V4(const From& from,
+                                                   const To& to) {
+  const auto p0 = from.LoadVec(0, 0);
+  const auto p1 = from.LoadVec(1, 0);
+  const auto p2 = from.LoadVec(2, 0);
+  const auto p3 = from.LoadVec(3, 0);
+
+  const auto q0 = InterleaveLo(p0, p2);
+  const auto q1 = InterleaveLo(p1, p3);
+  const auto q2 = InterleaveHi(p0, p2);
+  const auto q3 = InterleaveHi(p1, p3);
+
+  const auto r0 = InterleaveLo(q0, q1);
+  const auto r1 = InterleaveHi(q0, q1);
+  const auto r2 = InterleaveLo(q2, q3);
+  const auto r3 = InterleaveHi(q2, q3);
+
+  to.StoreVec(r0, 0, 0);
+  to.StoreVec(r1, 1, 0);
+  to.StoreVec(r2, 2, 0);
+  to.StoreVec(r3, 3, 0);
+}
+
+// TODO(eustas): issue#40 temporary workaround.
+template <class From, class To>
+static HWY_ATTR JXL_NOINLINE void TransposeBlock4_V4_noinline(const From& from,
+                                                              const To& to) {
+  TransposeBlock4_V4(from, to);
+}
+
+template <class From, class To>
 static HWY_ATTR JXL_INLINE void TransposeBlock8_V4(const From& from,
                                                    const To& to) {
-  const auto p0L = from.LoadVec(0, 0);
-  const auto p0H = from.LoadVec(0, 4);
-  const auto p1L = from.LoadVec(1, 0);
-  const auto p1H = from.LoadVec(1, 4);
-  const auto p2L = from.LoadVec(2, 0);
-  const auto p2H = from.LoadVec(2, 4);
-  const auto p3L = from.LoadVec(3, 0);
-  const auto p3H = from.LoadVec(3, 4);
-  const auto p4L = from.LoadVec(4, 0);
-  const auto p4H = from.LoadVec(4, 4);
-  const auto p5L = from.LoadVec(5, 0);
-  const auto p5H = from.LoadVec(5, 4);
-  const auto p6L = from.LoadVec(6, 0);
-  const auto p6H = from.LoadVec(6, 4);
-  const auto p7L = from.LoadVec(7, 0);
-  const auto p7H = from.LoadVec(7, 4);
-
-  const auto q0L = InterleaveLo(p0L, p2L);
-  const auto q0H = InterleaveLo(p0H, p2H);
-  const auto q1L = InterleaveLo(p1L, p3L);
-  const auto q1H = InterleaveLo(p1H, p3H);
-  const auto q2L = InterleaveHi(p0L, p2L);
-  const auto q2H = InterleaveHi(p0H, p2H);
-  const auto q3L = InterleaveHi(p1L, p3L);
-  const auto q3H = InterleaveHi(p1H, p3H);
-  const auto q4L = InterleaveLo(p4L, p6L);
-  const auto q4H = InterleaveLo(p4H, p6H);
-  const auto q5L = InterleaveLo(p5L, p7L);
-  const auto q5H = InterleaveLo(p5H, p7H);
-  const auto q6L = InterleaveHi(p4L, p6L);
-  const auto q6H = InterleaveHi(p4H, p6H);
-  const auto q7L = InterleaveHi(p5L, p7L);
-  const auto q7H = InterleaveHi(p5H, p7H);
-
-  const auto r0L = InterleaveLo(q0L, q1L);
-  const auto r0H = InterleaveLo(q0H, q1H);
-  const auto r1L = InterleaveHi(q0L, q1L);
-  const auto r1H = InterleaveHi(q0H, q1H);
-  const auto r2L = InterleaveLo(q2L, q3L);
-  const auto r2H = InterleaveLo(q2H, q3H);
-  const auto r3L = InterleaveHi(q2L, q3L);
-  const auto r3H = InterleaveHi(q2H, q3H);
-  const auto r4L = InterleaveLo(q4L, q5L);
-  const auto r4H = InterleaveLo(q4H, q5H);
-  const auto r5L = InterleaveHi(q4L, q5L);
-  const auto r5H = InterleaveHi(q4H, q5H);
-  const auto r6L = InterleaveLo(q6L, q7L);
-  const auto r6H = InterleaveLo(q6H, q7H);
-  const auto r7L = InterleaveHi(q6L, q7L);
-  const auto r7H = InterleaveHi(q6H, q7H);
-
-  to.StoreVec(r0L, 0, 0);
-  to.StoreVec(r4L, 0, 4);
-  to.StoreVec(r1L, 1, 0);
-  to.StoreVec(r5L, 1, 4);
-  to.StoreVec(r2L, 2, 0);
-  to.StoreVec(r6L, 2, 4);
-  to.StoreVec(r3L, 3, 0);
-  to.StoreVec(r7L, 3, 4);
-  to.StoreVec(r0H, 4, 0);
-  to.StoreVec(r4H, 4, 4);
-  to.StoreVec(r1H, 5, 0);
-  to.StoreVec(r5H, 5, 4);
-  to.StoreVec(r2H, 6, 0);
-  to.StoreVec(r6H, 6, 4);
-  to.StoreVec(r3H, 7, 0);
-  to.StoreVec(r7H, 7, 4);
+  HWY_ALIGN float tmp[4 * 4];
+#if !defined(__wasm_simd128__)
+  TransposeBlock4_V4(from, to);
+#else
+  // TODO(eustas): issue#40 temporary workaround.
+  TransposeBlock4_V4_noinline(from, to);
+#endif
+  TransposeBlock4_V4(from.View(0, 4), ToBlock<4>(tmp));
+  TransposeBlock4_V4(from.View(4, 0), to.View(0, 4));
+  CopyBlock4(FromBlock<4>(tmp), to.View(4, 0));
+#if !defined(__wasm_simd128__)
+  TransposeBlock4_V4(from.View(4, 4), to.View(4, 4));
+#else
+  // TODO(eustas): issue#40 temporary workaround.
+  TransposeBlock4_V4_noinline(from.View(4, 4), to.View(4, 4));
+#endif
 }
 
 template <class From, class To>

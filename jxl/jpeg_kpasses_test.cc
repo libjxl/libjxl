@@ -50,8 +50,9 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
 
   // decode JPEG to DCT coeffs
   CodecInOut io3;
+  io3.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
   JXL_CHECK(SetFromBytes(Span<const uint8_t>(encoded), &io3, pool,
-                         jxl::DecodeTarget::kQuantizedCoeffs));
+                         /*orig_codec=*/nullptr));
 
   CompressParams cparams;
   DecompressParams dparams;

@@ -19,6 +19,7 @@
 #undef MIN
 #undef CLAMP
 
+#include "jxl/alpha.h"
 #include "jxl/base/file_io.h"
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/dec_file.h"
@@ -34,7 +35,7 @@ void FillBuffer(
     std::vector<typename BufferFormat<precision>::Sample>* const pixel_data) {
   pixel_data->reserve(io.xsize() * io.ysize() * (num_channels + has_alpha));
   const float alpha_normalizer =
-      has_alpha ? 1.f / ((1u << io.metadata.alpha_bits) - 1.f) : 0.f;
+      has_alpha ? 1.f / MaxAlpha(io.metadata.alpha_bits) : 0.f;
   for (size_t y = 0; y < io.ysize(); ++y) {
     const float* rows[num_channels];
     for (size_t c = 0; c < num_channels; ++c) {
@@ -46,7 +47,7 @@ void FillBuffer(
       const float alpha = has_alpha ? alpha_row[x] * alpha_normalizer : 1.f;
       const float alpha_multiplier =
           has_alpha && io.Main().AlphaIsPremultiplied()
-              ? 1.f / std::max(alpha, 1.f / (1u << 16))
+              ? 1.f / std::max(kSmallAlpha, alpha)
               : 1.f;
       for (const float* const row : rows) {
         pixel_data->push_back(BufferFormat<precision>::FromFloat(

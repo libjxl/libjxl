@@ -21,7 +21,6 @@ add_library(box STATIC
   box.h
 )
 target_link_libraries(box
-  jpegxl
   jpegxl-static
   jpegxl_threads
 )

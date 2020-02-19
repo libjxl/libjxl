@@ -15,6 +15,7 @@
 set(TEST_FILES
   jxl/ac_strategy_test.cc
   jxl/adaptive_reconstruction_test.cc
+  jxl/alpha_test.cc
   jxl/ans_common_test.cc
   jxl/ans_test.cc
   jxl/base/fast_log_test.cc
@@ -64,22 +65,17 @@ set(TEST_FILES
   jxl/threads/thread_parallel_runner_test.cc
   jxl/toc_test.cc
   jxl/xorshift128plus_test.cc
+  tools/box/box_test.cc
 )
-# TODO(lode): enable box_test for emscripten. The issue is not the test itself,
-# but a linker issue happening only with emscripten when adding "box" to
-# target_link_libraries(${TESTNAME} below.
-if (NOT JPEGXL_EMSCRIPTEN)
-  set(TEST_FILES
-    ${TEST_FILES}
-    tools/box/box_test.cc
-  )
-endif()
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 foreach (TESTFILE IN LISTS TEST_FILES)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
   add_executable(${TESTNAME} ${TESTFILE})
+  target_include_directories(${TESTNAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fastapprox
+  )
   if(JPEGXL_EMSCRIPTEN)
     target_compile_definitions(${TESTNAME} PRIVATE
         -DTEST_DATA_PATH="/")
@@ -102,6 +98,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     ${JPEGXL_COVERAGE_FLAGS}
   )
   target_link_libraries(${TESTNAME}
+    box
     jpegxl-static
     jpegxl_threads
     jpegxl_extras-static
@@ -109,11 +106,6 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     gtest
     gtest_main
   )
-  if (NOT JPEGXL_EMSCRIPTEN)
-    target_link_libraries(${TESTNAME}
-      box
-    )
-  endif()
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES PREFIX "tests/")
   if (WIN32 AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")

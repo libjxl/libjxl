@@ -126,6 +126,8 @@ constexpr intptr_t UnpackSigned(size_t value) {
   return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 
+const static HybridUintConfig kVarLenUintConfig{0, 0, 0};
+
 // Encode non-negative integer as a pair (N, bits), where len(bits) == N.
 // 0 is encoded as (0, ''); X from range [2**N - 1, 2 * (2**N - 1)]
 // is encoded as (N, X + 1 - 2**N). In detail:
@@ -140,86 +142,30 @@ constexpr intptr_t UnpackSigned(size_t value) {
 // ...
 // 65535 -> (16, '0000000000000000')
 static JXL_INLINE void EncodeVarLenUint(uint32_t value,
+                                        uint32_t* JXL_RESTRICT token,
                                         uint32_t* JXL_RESTRICT nbits,
                                         uint32_t* JXL_RESTRICT bits) {
-  if (value == 0) {
-    *nbits = 0;
-    *bits = 0;
-  } else {
-    uint32_t len = FloorLog2Nonzero(value + 1);
-    *nbits = len;
-    *bits = (value + 1) & ((1 << len) - 1);
-  }
+  return kVarLenUintConfig.Encode(value, token, nbits, bits);
 }
 
-// Decode variable length non-negative value. Reverse to EncodeVarLenUint.
-constexpr uint32_t DecodeVarLenUint(size_t nbits, uint32_t bits) {
-  return (1u << nbits) + bits - 1;
+static JXL_INLINE void TokenizeVarLenUint(
+    uint32_t ctx, uint32_t val, std::vector<Token>* JXL_RESTRICT tokens) {
+  uint32_t token, nbits, bits;
+  EncodeVarLenUint(val, &token, &nbits, &bits);
+  JXL_ASSERT(static_cast<size_t>(nbits) <= sizeof(Token::bits) * kBitsPerByte);
+  JXL_ASSERT(static_cast<size_t>(token) < ANS_MAX_ALPHA_SIZE);
+  tokens->emplace_back(ctx, token, nbits, bits);
 }
 
-// Pack signed integer and encode value.
-static JXL_INLINE void EncodeVarLenInt(int32_t value,
-                                       uint32_t* JXL_RESTRICT nbits,
-                                       uint32_t* JXL_RESTRICT bits) {
-  EncodeVarLenUint(PackSigned(value), nbits, bits);
+static HWY_ATTR JXL_INLINE size_t ReadVarLenUint(BitReader* JXL_RESTRICT br,
+                                                 size_t token) {
+  return kVarLenUintConfig.Read(br, token);
 }
-
-// Decode value and unpack signed integer.
-constexpr int32_t DecodeVarLenInt(uint32_t nbits, uint32_t bits) {
-  return UnpackSigned(DecodeVarLenUint(nbits, bits));
-}
-
-// Experiments show that best performance is typically achieved for a
-// split-exponent of 3 or 4. Trend seems to be that '4' is better
-// for large-ish pictures, and '3' better for rather small-ish pictures.
-// This is plausible - the more special symbols we have, the better
-// statistics we need to get a benefit out of them.
-constexpr uint32_t kHybridEncodingDirectSplitExponent = 4;
-// constexpr uint32_t kHybridEncodingDirectSplitExponent = 3;
-constexpr int kHybridEncodingSplitToken = 1u
-                                          << kHybridEncodingDirectSplitExponent;
-
-// Our hybrid-encoding scheme has dedicated tokens for the smallest
-// (1 << kHybridEncodingDirectSplitExponent) numbers, and for the rest
-// encodes (number of bits) + (2 sub-leading binary digits) in the token,
-// with the remaining up to `bits` - 3 bits then being encoded as data.
-//
-// Numbers N in [0 .. kHybridEncodingSplitToken-1]:
-//   These get represented as (token=N, bits='').
-// Numbers N >= kHybridEncodingSplitToken:
-//   If n is such that 2**n <= N < 2**(n+1),
-//   and m = N - 2**n is the 'mantissa',
-//   these get represented as:
-// (token=kHybridEncodingSplitToken +
-//        ((n - kHybridEncodingDirectSplitExponent) * 4) +
-//        (m >> (n - 2)),
-//  bits=m & (1 << (n - 2)) - 1)
-// Specifically, for kHybridEncodingDirectSplitExponent = 4, i.e.
-// kHybridEncodingSplitToken=16, we would get:
-// N = 0 - 15:          (token=N, nbits=0, bits='')
-// N = 16 (10000):      (token=16, nbits=2, bits='00')
-// N = 17 (10001):      (token=16, nbits=2, bits='01')
-// N = 20 (10100):      (token=17, nbits=2, bits='00')
-// N = 24 (11000):      (token=18, nbits=2, bits='00')
-// N = 28 (11100):      (token=19, nbits=2, bits='00')
-// N = 32 (100000):     (token=20, nbits=3, bits='000')
-// N = 65535:           (token=63, nbits=13, bits='1111111111111')
 static JXL_INLINE void EncodeHybridVarLenUint(uint32_t value,
                                               uint32_t* JXL_RESTRICT token,
                                               uint32_t* JXL_RESTRICT nbits,
                                               uint32_t* JXL_RESTRICT bits) {
-  if (value < kHybridEncodingSplitToken) {
-    *token = value;
-    *nbits = 0;
-    *bits = 0;
-  } else {
-    uint32_t n = FloorLog2Nonzero(value);
-    uint32_t m = value - (1 << n);
-    *token = kHybridEncodingSplitToken +
-             ((n - kHybridEncodingDirectSplitExponent) << 2) + (m >> (n - 2));
-    *nbits = n - 2;
-    *bits = value & ((1 << (n - 2)) - 1);
-  }
+  kHybridUint420Config.Encode(value, token, nbits, bits);
 }
 
 static JXL_INLINE void TokenizeHybridUint(
@@ -227,26 +173,18 @@ static JXL_INLINE void TokenizeHybridUint(
   uint32_t token, nbits, bits;
   EncodeHybridVarLenUint(val, &token, &nbits, &bits);
   JXL_ASSERT(static_cast<size_t>(nbits) <= sizeof(Token::bits) * kBitsPerByte);
+  JXL_ASSERT(static_cast<size_t>(token) < ANS_MAX_ALPHA_SIZE);
   tokens->emplace_back(ctx, token, nbits, bits);
 }
 
-static HWY_ATTR JXL_INLINE size_t
-ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
-               ANSSymbolReader* JXL_RESTRICT decoder,
-               const std::vector<uint8_t>& context_map) {
-  br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
-  size_t token = decoder->ReadSymbolWithoutRefill(context_map[ctx], br);
-  // Fast-track version of hybrid integer decoding.
-  if (token < kHybridEncodingSplitToken) return token;
-  uint32_t nbits = kHybridEncodingDirectSplitExponent - 2 +
-                   ((token - kHybridEncodingSplitToken) >> 2);
-  // Max amount of bits for ReadBits is 32 and max valid left shift is 29 bits.
-  // However, for speed no error is propagated here, instead limit the nbits
-  // size. If nbits > 29, the code stream is invalid, but no error is returned.
-  nbits &= 31u;
-  const size_t bits = br->PeekBits(nbits);
-  br->Consume(nbits);
-  return ((4 | (token & 3)) << nbits) | bits;
+static JXL_INLINE void TokenizeWithConfig(
+    const HybridUintConfig& config, uint32_t ctx, uint32_t val,
+    std::vector<Token>* JXL_RESTRICT tokens) {
+  uint32_t token, nbits, bits;
+  config.Encode(val, &token, &nbits, &bits);
+  JXL_ASSERT(static_cast<size_t>(nbits) <= sizeof(Token::bits) * kBitsPerByte);
+  JXL_ASSERT(static_cast<size_t>(token) < ANS_MAX_ALPHA_SIZE);
+  tokens->emplace_back(ctx, token, nbits, bits);
 }
 
 static JXL_INLINE int32_t PredictFromTopAndLeft(

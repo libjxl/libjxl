@@ -56,6 +56,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/ac_context.h
   jxl/ac_strategy.cc
   jxl/ac_strategy.h
+  jxl/alpha.cc
+  jxl/alpha.h
   jxl/ans_common.cc
   jxl/ans_common.h
   jxl/ans_params.h
@@ -109,7 +111,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/common.h
   jxl/compressed_dc.cc
   jxl/compressed_dc.h
+  jxl/convolve.cc
   jxl/convolve.h
+  jxl/convolve-inl.h
   jxl/dct.cc
   jxl/dct.h
   jxl/dct_simd_4.h
@@ -131,11 +135,14 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/dec_group.h
   jxl/dec_modular.cc
   jxl/dec_modular.h
+  jxl/dec_noise.cc
+  jxl/dec_noise.h
   jxl/dec_params.h
   jxl/dec_reconstruct.cc
   jxl/dec_reconstruct.h
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
+  jxl/dec_xyb-inl.h
   jxl/detect_dots.cc
   jxl/detect_dots.h
   jxl/dot_dictionary.cc
@@ -167,6 +174,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_group.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
+  jxl/enc_noise.cc
+  jxl/enc_noise.h
   jxl/enc_params.h
   jxl/enc_xyb.cc
   jxl/enc_xyb.h
@@ -205,7 +214,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/memory_manager_internal.h
   jxl/multiframe.cc
   jxl/multiframe.h
-  jxl/noise.cc
   jxl/noise.h
   jxl/noise_distributions.h
   jxl/opsin_params.cc
@@ -222,6 +230,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/quant_weights.h
   jxl/quantizer.cc
   jxl/quantizer.h
+  jxl/quantizer-inl.h
   jxl/rational_polynomial-inl.h
   jxl/splines.cc
   jxl/splines.h
@@ -342,6 +351,7 @@ endif()
 target_include_directories(jpegxl-obj PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fastapprox
   $<TARGET_PROPERTY:hwy,INCLUDE_DIRECTORIES>
   $<TARGET_PROPERTY:brotlicommon-static,INCLUDE_DIRECTORIES>
   $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>

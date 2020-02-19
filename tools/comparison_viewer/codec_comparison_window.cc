@@ -286,8 +286,7 @@ void CodecComparisonWindow::browseDirectory(const QDir& directory, int depth) {
   // Need at least image_name/codec_name/file.
   if (depth < 2) return;
 
-  for (const QFileInfo& file :
-       directory.entryInfoList(QDir::Files | QDir::NoSymLinks)) {
+  for (const QFileInfo& file : directory.entryInfoList(QDir::Files)) {
     if (file.suffix() == kPngSuffix) continue;
     QString decodedImage;
     if (canLoadImageWithExtension(file.suffix())) {

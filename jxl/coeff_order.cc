@@ -178,9 +178,9 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
 namespace {
 constexpr uint32_t kPermutationContexts = 8;
 uint32_t Context(uint32_t val) {
-  uint32_t nbits, bits;
-  EncodeVarLenUint(val, &nbits, &bits);
-  return std::min(nbits, kPermutationContexts - 1);
+  uint32_t token, nbits, bits;
+  EncodeVarLenUint(val, &token, &nbits, &bits);
+  return std::min(token, kPermutationContexts - 1);
 }
 
 void TokenizePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
@@ -192,13 +192,10 @@ void TokenizePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   while (end > skip && lehmer[end - 1] == 0) {
     --end;
   }
-  uint32_t nbits, bits;
-  EncodeVarLenUint(end - skip, &nbits, &bits);
-  tokens->emplace_back(Context(size), nbits, nbits, bits);
+  TokenizeVarLenUint(Context(size), end - skip, tokens);
   uint32_t last = 0;
   for (size_t i = skip; i < end; ++i) {
-    EncodeVarLenUint(lehmer[i], &nbits, &bits);
-    tokens->emplace_back(Context(last), nbits, nbits, bits);
+    TokenizeVarLenUint(Context(last), lehmer[i], tokens);
     last = lehmer[i];
   }
 }
@@ -210,28 +207,13 @@ HWY_ATTR Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
   // temp space needs to be as large as the next power of 2, so doubling the
   // allocated size is enough.
   std::vector<uint32_t> temp(size * 2);
-  uint32_t nbits = reader->ReadSymbol(context_map[Context(size)], br);
-  uint32_t bits = br->ReadBits(nbits);
-  if (nbits > 31) {
-    return JXL_FAILURE("Too many bits");
-  }
-  uint32_t end = DecodeVarLenUint(nbits, bits) + skip;
+  uint32_t end = reader->ReadHybridUint(Context(size), br, context_map) + skip;
   if (end > size) {
     return JXL_FAILURE("Invalid permutation size");
   }
   uint32_t last = 0;
   for (size_t i = skip; i < end; ++i) {
-    br->Refill();  // covers ReadSymbolWithoutRefill + ReadBits
-    uint32_t nbits =
-        reader->ReadSymbolWithoutRefill(context_map[Context(last)], br);
-    uint32_t bits = br->ReadBits(nbits);
-    if (nbits > 31) {
-      return JXL_FAILURE("Too many bits");
-    }
-    lehmer[i] = DecodeVarLenUint(nbits, bits);
-    if (lehmer[i] + i >= size) {
-      return JXL_FAILURE("Invalid lehmer code");
-    }
+    lehmer[i] = reader->ReadHybridUint(Context(last), br, context_map);
     last = lehmer[i];
   }
   DecodeLehmerCode(lehmer.data(), temp.data(), size, order);
@@ -264,7 +246,8 @@ void EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   EntropyEncodingData codes;
   BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, {tokens},
                            &codes, &context_map, writer, layer, aux_out);
-  WriteTokens(tokens, codes, context_map, writer, layer, aux_out);
+  WriteTokens(tokens, codes, context_map, writer, layer, aux_out,
+              kVarLenUintConfig);
 }
 
 namespace {
@@ -302,7 +285,8 @@ void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
     EntropyEncodingData codes;
     BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, {tokens},
                              &codes, &context_map, writer, layer, aux_out);
-    WriteTokens(tokens, codes, context_map, writer, layer, aux_out);
+    WriteTokens(tokens, codes, context_map, writer, layer, aux_out,
+                kVarLenUintConfig);
   }
 }
 

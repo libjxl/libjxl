@@ -180,7 +180,8 @@ static Image3F OpsinTestImage() {
   JXL_CHECK(SetFromFile(pathname, &io, /*pool=*/nullptr));
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
-  ToXYB(io.Main(), 1.0f, null_pool, &opsin);
+  ImageBundle unused_linear;
+  (void)ToXYB(io.Main(), 1.0f, null_pool, &opsin, &unused_linear);
   opsin.ShrinkTo(opsin.ysize() & ~7, opsin.xsize() & ~7);
   return opsin;
 }

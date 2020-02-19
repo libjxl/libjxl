@@ -410,7 +410,7 @@ class DCDecoder : public DcPredictor<DCDecoder> {
 
     for (size_t c : {1, 0, 2}) {
       int ctx = predictor_.Context(c, num_correct[c], min_error[c]);
-      residuals[c] = ReadHybridUint(ctx, br_, decoder_, *context_map_);
+      residuals[c] = decoder_->ReadHybridUint(ctx, br_, *context_map_);
     }
     predictor_.ComputeDecoded3(x, y, predictions, residuals, decoded);
   }
@@ -731,8 +731,8 @@ HWY_ATTR JXL_INLINE void ComputePixel(
 
 }  // namespace
 
-HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
-                                  ThreadPool* pool) {
+HWY_ATTR JXL_NOINLINE void AdaptiveDCSmoothing(const Image3F& dc_quant_field,
+                                               Image3F* dc, ThreadPool* pool) {
   const size_t xsize = dc->xsize();
   const size_t ysize = dc->ysize();
   if (ysize <= 2 || xsize <= 2) return;

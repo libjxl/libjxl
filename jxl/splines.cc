@@ -89,9 +89,9 @@ HWY_ATTR Status DecodeAllStartingPoints(
   int64_t last_y = 0;
   for (size_t i = 0; i < points->size(); i++) {
     int64_t x =
-        ReadHybridUint(kStartingPositionContext, br, reader, context_map);
+        reader->ReadHybridUint(kStartingPositionContext, br, context_map);
     int64_t y =
-        ReadHybridUint(kStartingPositionContext, br, reader, context_map);
+        reader->ReadHybridUint(kStartingPositionContext, br, context_map);
     if (i != 0) {
       x = UnpackSigned(x) + last_x;
       y = UnpackSigned(y) + last_y;
@@ -346,16 +346,14 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
 }
 
 void QuantizedSpline::Tokenize(std::vector<Token>* const tokens) const {
-  uint32_t nbits, bits;
   TokenizeHybridUint(kNumControlPointsContext, control_points_.size(), tokens);
   for (const auto& point : control_points_) {
     TokenizeHybridUint(kControlPointsContext, PackSigned(point.first), tokens);
     TokenizeHybridUint(kControlPointsContext, PackSigned(point.second), tokens);
   }
-  const auto encode_dct = [tokens, &nbits, &bits](const int dct[32]) {
+  const auto encode_dct = [tokens](const int dct[32]) {
     for (int i = 0; i < 32; ++i) {
-      EncodeVarLenInt(dct[i], &nbits, &bits);
-      tokens->emplace_back(kDCTContext, nbits, nbits, bits);
+      TokenizeHybridUint(kDCTContext, dct[i], tokens);
     }
   };
   for (int c = 0; c < 3; ++c) {
@@ -368,24 +366,19 @@ HWY_ATTR Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
                                         ANSSymbolReader* const decoder,
                                         BitReader* const br) {
   const size_t num_control_points =
-      ReadHybridUint(kNumControlPointsContext, br, decoder, context_map);
+      decoder->ReadHybridUint(kNumControlPointsContext, br, context_map);
   control_points_.resize(num_control_points);
   for (std::pair<int64_t, int64_t>& control_point : control_points_) {
     control_point.first = UnpackSigned(
-        ReadHybridUint(kControlPointsContext, br, decoder, context_map));
+        decoder->ReadHybridUint(kControlPointsContext, br, context_map));
     control_point.second = UnpackSigned(
-        ReadHybridUint(kControlPointsContext, br, decoder, context_map));
+        decoder->ReadHybridUint(kControlPointsContext, br, context_map));
   }
 
   const auto decode_dct = [decoder, br, &context_map](int dct[32])
                               HWY_ATTR -> Status {
     for (int i = 0; i < 32; ++i) {
-      const uint32_t s = decoder->ReadSymbol(context_map[kDCTContext], br);
-      const uint32_t bits = br->ReadBits(s);
-      if (s > 31) {
-        return JXL_FAILURE("Too many bits");
-      }
-      dct[i] = DecodeVarLenInt(s, bits);
+      dct[i] = decoder->ReadHybridUint(kDCTContext, br, context_map);
     }
     return true;
   };
@@ -423,15 +416,15 @@ HWY_ATTR Status Splines::Decode(jxl::BitReader* br) {
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(DecodeHistograms(
-      br, kNumSplineContexts, /*max_alphabet_size=*/64, &code, &context_map));
+      br, kNumSplineContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
   ANSSymbolReader decoder(&code, br);
   const int num_splines =
-      1 + ReadHybridUint(kNumSplinesContext, br, &decoder, context_map);
+      1 + decoder.ReadHybridUint(kNumSplinesContext, br, context_map);
   JXL_RETURN_IF_ERROR(DecodeAllStartingPoints(&starting_points_, br, &decoder,
                                               context_map, num_splines));
 
-  quantization_adjustment_ = UnpackSigned(ReadHybridUint(
-      kQuantizationAdjustmentContext, br, &decoder, context_map));
+  quantization_adjustment_ = UnpackSigned(
+      decoder.ReadHybridUint(kQuantizationAdjustmentContext, br, context_map));
 
   splines_.reserve(num_splines);
   for (int i = 0; i < num_splines; ++i) {

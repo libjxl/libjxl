@@ -967,12 +967,12 @@ HWY_ATTR Status modular_decode_channel(IO &io, modular_options &options,
           pixel_type *JXL_RESTRICT r = channel.Row(y);
           if (sign2lsb) {
             for (size_t x = 0; x < channel.w; x++) {
-              uint32_t v = ReadHybridUint(0, &br, &reader, context_map);
+              uint32_t v = reader.ReadHybridUint(0, &br, context_map);
               r[x] = UnpackSigned(v);
             }
           } else {
             for (size_t x = 0; x < channel.w; x++) {
-              pixel_type v = ReadHybridUint(0, &br, &reader, context_map);
+              pixel_type v = reader.ReadHybridUint(0, &br, context_map);
               v += channel.minval;
               r[x] = v;
             }
@@ -987,10 +987,10 @@ HWY_ATTR Status modular_decode_channel(IO &io, modular_options &options,
           pixel_type *JXL_RESTRICT r = channel.Row(y);
           if (predictor == Predictor::Variable)
             subpredictor =
-                (Predictor)ReadHybridUint(nbctx - 1, &br, &reader, context_map);
+                (Predictor)reader.ReadHybridUint(nbctx - 1, &br, context_map);
           for (size_t x = 0; x < channel.w; x++) {
             pixel_type g = predict(channel, r + x, onerow, x, y, subpredictor);
-            uint32_t v = ReadHybridUint(0, &br, &reader, context_map);
+            uint32_t v = reader.ReadHybridUint(0, &br, context_map);
             r[x] = UnpackSigned(v) + g;
           }
         }
@@ -1004,14 +1004,14 @@ HWY_ATTR Status modular_decode_channel(IO &io, modular_options &options,
           precompute_references(channel, y, image, beginc, options, references);
           if (predictor == Predictor::Variable)
             subpredictor =
-                (Predictor)ReadHybridUint(nbctx - 1, &br, &reader, context_map);
+                (Predictor)reader.ReadHybridUint(nbctx - 1, &br, context_map);
           for (size_t x = 0; x < channel.w; x++) {
             pixel_type guess =
                 predict_and_compute_properties_with_precomputed_reference(
                     properties, channel, p + x, onerow, x, y, subpredictor,
                     image, beginc, options, references);
             int ctx = coder.context_id(properties);
-            uint32_t v = ReadHybridUint(ctx, &br, &reader, context_map);
+            uint32_t v = reader.ReadHybridUint(ctx, &br, context_map);
             if (sign2lsb) {
               p[x] = UnpackSigned(v) + guess;
             } else {

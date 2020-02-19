@@ -59,9 +59,10 @@ void RunRGBRoundTrip(float distance, bool fast) {
   io.ShrinkTo(std::min(io.xsize(), kGroupDim), std::min(io.ysize(), kGroupDim));
 
   Image3F opsin(io.xsize(), io.ysize());
-  ToXYB(io.Main(), 1.0f, &pool, &opsin);
+  ImageBundle unused_linear;
+  (void)ToXYB(io.Main(), 1.0f, &pool, &opsin, &unused_linear);
   opsin = PadImageToMultiple(opsin, kBlockDim);
-  opsin = GaborishInverse(opsin, 1.0, &pool);
+  opsin = GaborishInverse(opsin, 1.0f, &pool);
 
   CompressParams cparams;
   cparams.butteraugli_distance = distance;

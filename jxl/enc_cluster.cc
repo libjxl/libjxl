@@ -26,6 +26,8 @@
 
 namespace jxl {
 
+#include <fast_log-inl.h>
+
 namespace {
 inline double CrossEntropy(const ANSHistBin* counts, const size_t counts_len,
                            const ANSHistBin* codes, const size_t codes_len) {
@@ -240,8 +242,8 @@ int HistogramCombine(Histogram* out, int* cluster_size, float* bit_cost,
     pairs.resize(copy_to - pairs.begin());
 
     // Push new pairs formed with the combined histogram to the queue.
-    for (size_t i = 0; i < clusters.size(); ++i) {
-      CompareAndPushToQueue(out, cluster_size, bit_cost, best_idx1, clusters[i],
+    for (uint32_t cluster : clusters) {
+      CompareAndPushToQueue(out, cluster_size, bit_cost, best_idx1, cluster,
                             &pairs);
     }
   }
@@ -304,16 +306,16 @@ void HistogramReindex(std::vector<Histogram>* out,
   std::vector<Histogram> tmp(*out);
   std::map<int, int> new_index;
   int next_index = 0;
-  for (size_t i = 0; i < symbols->size(); ++i) {
-    if (new_index.find((*symbols)[i]) == new_index.end()) {
-      new_index[(*symbols)[i]] = next_index;
-      (*out)[next_index] = tmp[(*symbols)[i]];
+  for (uint32_t symbol : *symbols) {
+    if (new_index.find(symbol) == new_index.end()) {
+      new_index[symbol] = next_index;
+      (*out)[next_index] = tmp[symbol];
       ++next_index;
     }
   }
   out->resize(next_index);
-  for (size_t i = 0; i < symbols->size(); ++i) {
-    (*symbols)[i] = new_index[(*symbols)[i]];
+  for (uint32_t& symbol : *symbols) {
+    symbol = new_index[symbol];
   }
 }
 
@@ -429,7 +431,6 @@ void FastestClusterHistograms(const std::vector<Histogram>& in,
   for (size_t i = 1; i < num_contexts; i++) {
     (*out)[0].AddHistogram(in[i]);
   }
-  return;
 }
 
 }  // namespace
@@ -437,12 +438,10 @@ void FastestClusterHistograms(const std::vector<Histogram>& in,
 // Clusters similar histograms in 'in' together, the selected histograms are
 // placed in 'out', and for each index in 'in', *histogram_symbols will
 // indicate which of the 'out' histograms is the best approximation.
-HWY_ATTR void ClusterHistograms(const HistogramParams params,
-                                const std::vector<Histogram>& in,
-                                const size_t num_contexts,
-                                size_t max_histograms,
-                                std::vector<Histogram>* out,
-                                std::vector<uint32_t>* histogram_symbols) {
+HWY_ATTR JXL_NOINLINE void ClusterHistograms(
+    const HistogramParams params, const std::vector<Histogram>& in,
+    const size_t num_contexts, size_t max_histograms,
+    std::vector<Histogram>* out, std::vector<uint32_t>* histogram_symbols) {
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
     return FastestClusterHistograms(in, num_contexts, max_histograms, out,
                                     histogram_symbols);

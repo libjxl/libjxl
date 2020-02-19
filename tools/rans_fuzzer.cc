@@ -41,7 +41,7 @@ HWY_ATTR int TestOneInput(const uint8_t* data, size_t size) {
     int context = 0;
     while (DivCeil(br.TotalBitsConsumed(), kBitsPerByte) < size &&
            numreads <= maxreads) {
-      int code = ReadHybridUint(context, &br, &ansreader, context_map);
+      int code = ansreader.ReadHybridUint(context, &br, context_map);
       context = code % numContexts;
       numreads++;
     }

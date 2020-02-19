@@ -294,7 +294,20 @@ HWY_ATTR JXL_INLINE void GenericTransposeBlockInplace(const From& from,
 template <size_t ROWS, size_t COLS, class From, class To>
 HWY_ATTR JXL_INLINE void GenericTransposeBlock(const From& from, const To& to) {
   // This does not guarantee anything, just saves from the most stupid mistakes.
-  JXL_ASSERT(from.Address(0, 0) != to.Address(0, 0));
+  JXL_DASSERT(from.Address(0, 0) != to.Address(0, 0));
+  for (size_t n = 0; n < ROWS; ++n) {
+    for (size_t m = 0; m < COLS; ++m) {
+      to.Write(from.Read(n, m), m, n);
+    }
+  }
+}
+
+// TODO(eustas): issue#40 temporary workaround.
+template <size_t ROWS, size_t COLS, class From, class To>
+HWY_ATTR JXL_NOINLINE void GenericTransposeBlockNoinline(const From& from,
+                                                         const To& to) {
+  // This does not guarantee anything, just saves from the most stupid mistakes.
+  JXL_DASSERT(from.Address(0, 0) != to.Address(0, 0));
   for (size_t n = 0; n < ROWS; ++n) {
     for (size_t m = 0; m < COLS; ++m) {
       to.Write(from.Read(n, m), m, n);
@@ -616,8 +629,14 @@ struct ComputeScaledDCT<4, 8> {
     using ToOriginal = ToBlock<4, 8>;
     using ToTransposed = ToBlock<8, 4>;
     ColumnDCT4<From, ToOriginal, /*COLS=*/8>(from, ToOriginal(block));
+#if !defined(__wasm_simd128__)
     GenericTransposeBlock<4, 8>(FromOriginal(block),
                                 ToTransposed(transposed_block));
+#else
+    // TODO(eustas): issue#40 temporary workaround.
+    GenericTransposeBlockNoinline<4, 8>(FromOriginal(block),
+                                        ToTransposed(transposed_block));
+#endif
     // Reusing block to reduce stack usage.
     ColumnDCT8<FromTransposed, ToTransposed, /*COLS=*/4>(
         FromTransposed(transposed_block), ToTransposed(block));

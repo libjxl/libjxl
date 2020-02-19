@@ -33,6 +33,12 @@ enum class JpegEncoder {
   kSJpeg,
 };
 
+static inline bool IsJPG(const Span<const uint8_t> bytes) {
+  if (bytes.size() < 2) return false;
+  if (bytes[0] != 0xFF || bytes[1] != 0xD8) return false;
+  return true;
+}
+
 // Decodes `bytes` into `io`. io->dec_hints are ignored.
 Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io);
 

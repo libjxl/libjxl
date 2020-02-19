@@ -42,18 +42,19 @@ struct TestCubeRoot_T {
 
 // See enc_xyb.h.
 struct ToXYB_T {
-  HWY_DECLARE(void, (const ImageBundle& in, float linear_multiplier,
-                     ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
-                     ImageBundle* JXL_RESTRICT linear = nullptr))
+  HWY_DECLARE(const ImageBundle*,
+              (const ImageBundle& in, float linear_multiplier, ThreadPool* pool,
+               Image3F* JXL_RESTRICT xyb,
+               ImageBundle* JXL_RESTRICT linear_storage))
 };
 
 void TestCubeRoot() { hwy::TargetBitfield().Foreach(TestCubeRoot_T()); }
 
-void ToXYB(const ImageBundle& in, const float linear_multiplier,
-           ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
-           ImageBundle* JXL_RESTRICT linear) {
-  Dispatch(hwy::TargetBitfield().Best(), ToXYB_T(), in, linear_multiplier, pool,
-           xyb, linear);
+const ImageBundle* ToXYB(const ImageBundle& in, const float linear_multiplier,
+                         ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
+                         ImageBundle* JXL_RESTRICT linear_storage) {
+  return Dispatch(hwy::TargetBitfield().Best(), ToXYB_T(), in,
+                  linear_multiplier, pool, xyb, linear_storage);
 }
 
 // DEPRECATED
@@ -66,7 +67,8 @@ Image3F OpsinDynamicsImage(const Image3B& srgb8) {
   JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray())));
   ThreadPool* null_pool = nullptr;
   Image3F xyb(srgb8.xsize(), srgb8.ysize());
-  ToXYB(ib, 1.0f, null_pool, &xyb);
+
+  (void)ToXYB(ib, 1.0f, null_pool, &xyb, /*linear_storage=*/nullptr);
   return xyb;
 }
 
@@ -204,37 +206,43 @@ HWY_ATTR void TestCubeRoot_T::HWY_FUNC() {
 
 // This is different from butteraugli::OpsinDynamicsImage() in the sense that
 // it does not contain a sensitivity multiplier based on the blurred image.
-HWY_ATTR void ToXYB_T::HWY_FUNC(const ImageBundle& in, float linear_multiplier,
-                                ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
-                                ImageBundle* JXL_RESTRICT linear) {
+HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
+    const ImageBundle& in, float linear_multiplier, ThreadPool* pool,
+    Image3F* JXL_RESTRICT xyb, ImageBundle* JXL_RESTRICT linear_storage) {
   PROFILER_FUNC;
 
   const size_t xsize = in.xsize();
   const size_t ysize = in.ysize();
-  JXL_ASSERT(xyb->xsize() == xsize);
-  JXL_ASSERT(xyb->ysize() == ysize);
+  JXL_ASSERT(SameSize(in, *xyb));
 
-  // Convert to linear sRGB (unless already in that space)
-  const ImageBundle* linear_srgb = &in;
   const ColorEncoding& c = ColorEncoding::LinearSRGB(in.IsGray());
-  ImageMetadata metadata;
-  metadata.color_encoding = c;
-  ImageBundle copy(&metadata);
-  JXL_CHECK(TransformIfNeeded(in, c, pool, linear == nullptr ? &copy : linear,
-                              &linear_srgb));
-  if (linear != nullptr) {
-    // Copy output to `linear` if TransformIfNeeded did not already do this.
-    if (linear != linear_srgb) {
-      *linear = linear_srgb->Copy();
-    }
-    if (linear_multiplier != 1.f) {
-      ScaleImage(linear_multiplier, linear->MutableColor());
-      if (linear == linear_srgb) {
-        // Since linear_srgb has been multiplied (via linear), it should not be
-        // multiplied further below.
-        linear_multiplier = 1.f;
-      }
-    }
+  // Whether we can skip both TransformIfNeeded and SRGBToLinear.
+  const bool already_linear = c.SameColorEncoding(in.c_current());
+  if (!already_linear) {
+    // No: will need storage. OK to reuse metadata, will not be changed.
+    JXL_ASSERT(linear_storage != nullptr);
+    *linear_storage = ImageBundle(const_cast<ImageMetadata*>(in.metadata()));
+  }
+
+  // Will point to linear sRGB (with or without actually transforming)
+  const ImageBundle* linear_ptr = already_linear ? &in : linear_storage;
+
+  const bool already_srgb = in.IsSRGB();  // Whether to call SRGBToLinear
+
+  if (already_srgb) {
+    JXL_ASSERT(!already_linear);
+    linear_storage->SetFromImage(Image3F(xsize, ysize), c);
+  } else {
+    JXL_CHECK(TransformIfNeeded(in, c, pool, linear_storage, &linear_ptr));
+  }
+
+  // If we have to multiply, we'll need a copy because `in` is const.
+  if (already_linear && linear_multiplier != 1.f) {
+    linear_storage->SetFromImage(ScaleImage(linear_multiplier, in.color()), c);
+    linear_ptr = linear_storage;
+    // Since linear_srgb has been multiplied (via linear), it should not be
+    // multiplied further below.
+    linear_multiplier = 1.f;
   }
 
   const HWY_FULL(float) d;
@@ -248,28 +256,64 @@ HWY_ATTR void ToXYB_T::HWY_FUNC(const ImageBundle& in, float linear_multiplier,
     Store(neg_bias_cbrt, d, premul_absorb + (9 + i) * d.N);
   }
 
-  RunOnPool(
-      pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
-      [&](const int task, const int /*thread*/) HWY_ATTR {
-        const size_t y = static_cast<size_t>(task);
-        const float* JXL_RESTRICT row_in0 =
-            linear_srgb->color().ConstPlaneRow(0, y);
-        const float* JXL_RESTRICT row_in1 =
-            linear_srgb->color().ConstPlaneRow(1, y);
-        const float* JXL_RESTRICT row_in2 =
-            linear_srgb->color().ConstPlaneRow(2, y);
-        float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
-        float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
-        float* JXL_RESTRICT row_xyb2 = xyb->PlaneRow(2, y);
-        for (size_t x = 0; x < xsize; x += d.N) {
-          const auto in_x = Load(d, row_in0 + x);
-          const auto in_y = Load(d, row_in1 + x);
-          const auto in_b = Load(d, row_in2 + x);
-          HWY_NAMESPACE::LinearToXyb(in_x, in_y, in_b, premul_absorb,
-                                     row_xyb0 + x, row_xyb1 + x, row_xyb2 + x);
-        }
-      },
-      "ToXYB");
+  const Image3F& in3 = in.color();
+  Image3F* JXL_RESTRICT linear3 = linear_ptr->MutableColor();
+
+  if (already_srgb) {
+    RunOnPool(
+        pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, const int /*thread*/) HWY_ATTR {
+          const size_t y = static_cast<size_t>(task);
+          const float* JXL_RESTRICT row_srgb0 = in3.ConstPlaneRow(0, y);
+          const float* JXL_RESTRICT row_srgb1 = in3.ConstPlaneRow(1, y);
+          const float* JXL_RESTRICT row_srgb2 = in3.ConstPlaneRow(2, y);
+
+          float* JXL_RESTRICT row_in0 = linear3->PlaneRow(0, y);
+          float* JXL_RESTRICT row_in1 = linear3->PlaneRow(1, y);
+          float* JXL_RESTRICT row_in2 = linear3->PlaneRow(2, y);
+
+          SRGBToLinear(in.xsize(), row_srgb0, row_in0);
+          SRGBToLinear(in.xsize(), row_srgb1, row_in1);
+          SRGBToLinear(in.xsize(), row_srgb2, row_in2);
+
+          float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
+          float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
+          float* JXL_RESTRICT row_xyb2 = xyb->PlaneRow(2, y);
+          for (size_t x = 0; x < xsize; x += d.N) {
+            const auto in_x = Load(d, row_in0 + x);
+            const auto in_y = Load(d, row_in1 + x);
+            const auto in_b = Load(d, row_in2 + x);
+            HWY_NAMESPACE::LinearToXyb(in_x, in_y, in_b, premul_absorb,
+                                       row_xyb0 + x, row_xyb1 + x,
+                                       row_xyb2 + x);
+          }
+        },
+        "SRGBToXYB");
+  } else {
+    RunOnPool(
+        pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, const int /*thread*/) HWY_ATTR {
+          const size_t y = static_cast<size_t>(task);
+          const float* JXL_RESTRICT row_in0 = linear3->ConstPlaneRow(0, y);
+          const float* JXL_RESTRICT row_in1 = linear3->ConstPlaneRow(1, y);
+          const float* JXL_RESTRICT row_in2 = linear3->ConstPlaneRow(2, y);
+          float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
+          float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
+          float* JXL_RESTRICT row_xyb2 = xyb->PlaneRow(2, y);
+
+          for (size_t x = 0; x < xsize; x += d.N) {
+            const auto in_x = Load(d, row_in0 + x);
+            const auto in_y = Load(d, row_in1 + x);
+            const auto in_b = Load(d, row_in2 + x);
+            HWY_NAMESPACE::LinearToXyb(in_x, in_y, in_b, premul_absorb,
+                                       row_xyb0 + x, row_xyb1 + x,
+                                       row_xyb2 + x);
+          }
+        },
+        "LinearToXYB");
+  }
+
+  return linear_ptr;
 }
 
 }  // namespace jxl

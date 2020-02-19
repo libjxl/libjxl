@@ -419,7 +419,7 @@ class ColorEncodingReaderPNG {
         }
       }
 
-      chunk = lodepng_chunk_next_const(chunk);
+      chunk = lodepng_chunk_next_const(chunk, end);
     }
     return true;
   }
@@ -697,8 +697,9 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   state.s.info_raw.bitdepth = static_cast<unsigned>(bits_per_sample);
   state.s.info_raw.colortype = MakeType(is_gray, has_alpha);
   unsigned char* out;
-  if (lodepng_decode(&out, &w, &h, &state.s, bytes.data(), bytes.size()) != 0) {
-    return JXL_FAILURE("PNG decode failed");
+  const unsigned err = lodepng_decode(&out, &w, &h, &state.s, bytes.data(), bytes.size());
+  if (err != 0) {
+    return JXL_FAILURE("PNG decode failed: %s", lodepng_error_text(err));
   }
 
   if (!BlobsReaderPNG::Decode(state.s.info_png, &io->blobs)) {

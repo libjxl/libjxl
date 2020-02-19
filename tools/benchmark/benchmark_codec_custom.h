@@ -37,6 +37,11 @@
 // An example with JPEG XL itself would be:
 //
 //     custom:jxl:cjpegxl:djpegxl:--distance:3
+//
+// Optionally, to have encoding and decoding speed reported, the codec may write
+// the number of seconds (as a floating point number) elapsed during actual
+// encoding/decoding to $encoded.time and $decoded.time, respectively (replacing
+// the .$ext and .png extensions).
 
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"

@@ -17,7 +17,6 @@
 #include <stdio.h>
 // After stddef/stdio
 #include <jpeglib.h>
-
 #include <stdint.h>
 #include <string.h>
 
@@ -25,6 +24,7 @@
 #include <string>
 
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
 #include "jxl/codec_in_out.h"
@@ -113,7 +113,8 @@ class JPEGCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed) override {
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
     if (encoder_ == JpegEncoder::kLibJpeg &&
         chroma_subsampling_ == YCbCrChromaSubsampling::kAuto) {
       if (jpegargs->chroma_subsampling != YCbCrChromaSubsampling::kAuto) {
@@ -122,14 +123,24 @@ class JPEGCodec : public ImageCodec {
         chroma_subsampling_ = YCbCrChromaSubsampling::k444;
       }
     }
-    return EncodeImageJPG(io, encoder_, static_cast<int>(std::round(q_target_)),
-                          chroma_subsampling_, pool, compressed);
+    const double start = Now();
+    JXL_RETURN_IF_ERROR(EncodeImageJPG(io, encoder_,
+                                       static_cast<int>(std::round(q_target_)),
+                                       chroma_subsampling_, pool, compressed));
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io) override {
-    return DecodeImageJPG(compressed, io);
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
+    const double start = Now();
+    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, io));
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 
  protected:

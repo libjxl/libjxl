@@ -138,7 +138,9 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   const jxl::ColorEncoding original_color_encoding =
       io->metadata.color_encoding;
   jxl::Image3F opsin(io->xsize(), io->ysize());
-  ToXYB(io->Main(), /*linear_multiplier=*/1.f, pool, &opsin);
+  jxl::ImageBundle unused_linear;
+  (void)ToXYB(io->Main(), /*linear_multiplier=*/1.f, pool, &opsin,
+              &unused_linear);
 
   const size_t original_xsize = opsin.xsize(), original_ysize = opsin.ysize();
   opsin = PadImageToMultiple(opsin, jxl::kBlockDim);
@@ -178,8 +180,8 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   jxl::OpsinParams opsin_params;
   opsin_params.Init();
   jxl::OpsinToLinear(&opsin, pool, opsin_params);
-  io->Main().SetFromImage(
-      std::move(opsin), jxl::ColorEncoding::LinearSRGB(io->Main().IsGray()));
+  io->Main().SetFromImage(std::move(opsin),
+                          jxl::ColorEncoding::LinearSRGB(io->Main().IsGray()));
   JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));
   return true;
 }

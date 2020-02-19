@@ -534,7 +534,8 @@ jxl::Status JxlCompressArgs::ValidateArgs(
   got_intensity_target = cmdline.GetOption(opt_intensity_target_id)->matched();
 
   if (quality < -1000.f) {
-    params.butteraugli_distance = 1.0f;
+    // Keep the Butteraugli distance obtained on the command line, or the
+    // default of 1
   } else if (quality >= 100.f) {
     // Use kModular for lossless
     params.modular_group_mode = true;

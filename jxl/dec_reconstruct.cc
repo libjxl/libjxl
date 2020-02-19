@@ -20,6 +20,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/profiler.h"
 #include "jxl/common.h"
+#include "jxl/dec_noise.h"
 #include "jxl/dec_xyb.h"
 #include "jxl/epf.h"
 #include "jxl/frame_header.h"
@@ -30,6 +31,8 @@
 
 namespace jxl {
 using DF = HWY_CAPPED(float, kBlockDim);
+
+#include "jxl/dec_xyb-inl.h"
 
 HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
                                     const Rect& in_rect,

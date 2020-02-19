@@ -42,6 +42,9 @@
 namespace jxl {
 
 namespace {
+
+#include "jxl/quantizer-inl.h"
+
 using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
 constexpr D d;
@@ -222,16 +225,17 @@ HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             get_block->GetBlock(bx, by, acs, size, log2_covered_blocks, block));
 
         if (JXL_UNLIKELY(decoded->IsJPEG())) {
-          if (acs.Strategy() != AcStrategy::Type::DCT)
+          if (acs.Strategy() != AcStrategy::Type::DCT) {
             return JXL_FAILURE(
                 "Can only decode to JPEG if only DCT-8 is used.");
+          }
           const std::vector<QuantEncoding>& qe =
               dec_state->shared->matrices.encodings();
-          if (qe.size() == 0 ||
-              qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
-              qe[0].qraw.qtable_den_shift != 0)
+          if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
+              qe[0].qraw.qtable_den_shift != 0) {
             return JXL_FAILURE(
                 "Quantization table is not a JPEG quantization table.");
+          }
 
           for (size_t c : {1, 0, 2}) {
             float* JXL_RESTRICT idct_pos = idct_row[c] + bx * kBlockDim;
@@ -252,9 +256,9 @@ HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                 // JPEG XL is transposed, JPEG is not.
                 idct_pos[x * idct_stride + y] =
                     block[c * size + i] +
-                    (int)(scale * block[size + i] *
-                          (*qe[0].qraw.qtable)[64 + x * 8 + y] /
-                          (*qe[0].qraw.qtable)[c * 64 + x * 8 + y]);
+                    static_cast<int>(scale * block[size + i] *
+                                     (*qe[0].qraw.qtable)[64 + x * 8 + y] /
+                                     (*qe[0].qraw.qtable)[c * 64 + x * 8 + y]);
               }
             }
           }
@@ -467,7 +471,7 @@ HWY_ATTR Status DecodeACVarBlock(
   size_t block_ctx_id = c_ctx * 5 + ord;
 
   const size_t nzero_ctx = NonZeroContext(predicted_nzeros, block_ctx_id);
-  nzeros = ReadHybridUint(nzero_ctx, br, decoder, context_map);
+  nzeros = decoder->ReadHybridUint(nzero_ctx, br, context_map);
   if (nzeros > size) {
     return JXL_FAILURE("Invalid AC: nzeros too large");
   }
@@ -488,7 +492,7 @@ HWY_ATTR Status DecodeACVarBlock(
       const size_t ctx =
           histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                             log2_covered_blocks, prev);
-      const size_t u_coeff = ReadHybridUint(ctx, br, decoder, context_map);
+      const size_t u_coeff = decoder->ReadHybridUint(ctx, br, context_map);
       // Hand-rolled version of UnpackSigned, shifting before the conversion to
       // signed integer to avoid undefined behavior of shifting negative
       // numbers.
@@ -497,7 +501,7 @@ HWY_ATTR Status DecodeACVarBlock(
       const intptr_t coeff =
           static_cast<intptr_t>((magnitude ^ (neg_sign - 1)) << shift);
       block[order[k]] += static_cast<ac_qcoeff_t>(coeff);
-      prev = u_coeff != 0;
+      prev = static_cast<size_t>(u_coeff != 0);
       nzeros -= prev;
     }
     if (JXL_UNLIKELY(nzeros != 0)) {

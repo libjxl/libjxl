@@ -40,6 +40,106 @@ struct ANSCode {
   bool use_prefix_code;
 };
 
+class ANSSymbolReader;
+
+// Experiments show that best performance is typically achieved for a
+// split-exponent of 3 or 4. Trend seems to be that '4' is better
+// for large-ish pictures, and '3' better for rather small-ish pictures.
+// This is plausible - the more special symbols we have, the better
+// statistics we need to get a benefit out of them.
+
+// Our hybrid-encoding scheme has dedicated tokens for the smallest
+// (1 << split_exponents) numbers, and for the rest
+// encodes (number of bits) + (msb_in_token sub-leading binary digits) +
+// (lsb_in_token lowest binary digits) in the token, with the remaining bits
+// then being encoded as data.
+//
+// Example with split_exponent = 4, msb_in_token = 2, lsb_in_token = 0.
+//
+// Numbers N in [0 .. 15]:
+//   These get represented as (token=N, bits='').
+// Numbers N >= 16:
+//   If n is such that 2**n <= N < 2**(n+1),
+//   and m = N - 2**n is the 'mantissa',
+//   these get represented as:
+// (token=split_token +
+//        ((n - split_exponent) * 4) +
+//        (m >> (n - msb_in_token)),
+//  bits=m & (1 << (n - msb_in_token)) - 1)
+// Specifically, we would get:
+// N = 0 - 15:          (token=N, nbits=0, bits='')
+// N = 16 (10000):      (token=16, nbits=2, bits='00')
+// N = 17 (10001):      (token=16, nbits=2, bits='01')
+// N = 20 (10100):      (token=17, nbits=2, bits='00')
+// N = 24 (11000):      (token=18, nbits=2, bits='00')
+// N = 28 (11100):      (token=19, nbits=2, bits='00')
+// N = 32 (100000):     (token=20, nbits=3, bits='000')
+// N = 65535:           (token=63, nbits=13, bits='1111111111111')
+struct HybridUintConfig {
+  uint32_t split_exponent;
+  uint32_t split_token;
+  uint32_t msb_in_token;
+  uint32_t lsb_in_token;
+  JXL_INLINE void Encode(uint32_t value, uint32_t* JXL_RESTRICT token,
+                         uint32_t* JXL_RESTRICT nbits,
+                         uint32_t* JXL_RESTRICT bits) const {
+    if (value < split_token) {
+      *token = value;
+      *nbits = 0;
+      *bits = 0;
+    } else {
+      uint32_t n = FloorLog2Nonzero(value);
+      uint32_t m = value - (1 << n);
+      *token = split_token +
+               ((n - split_exponent) << (msb_in_token + lsb_in_token)) +
+               ((m >> (n - msb_in_token)) << lsb_in_token) +
+               (m & ((1 << lsb_in_token) - 1));
+      *nbits = n - msb_in_token - lsb_in_token;
+      *bits = (value >> lsb_in_token) & ((1 << *nbits) - 1);
+    }
+  }
+
+  // Assumes Refill() has been called.
+  HWY_ATTR JXL_INLINE size_t Read(BitReader* JXL_RESTRICT br,
+                                  size_t token) const {
+    // Fast-track version of hybrid integer decoding.
+    if (token < split_token) return token;
+    uint32_t nbits = split_exponent - (msb_in_token + lsb_in_token) +
+                     ((token - split_token) >> (msb_in_token + lsb_in_token));
+    // Max amount of bits for ReadBits is 32 and max valid left shift is 29
+    // bits. However, for speed no error is propagated here, instead limit the
+    // nbits size. If nbits > 29, the code stream is invalid, but no error is
+    // returned.
+    nbits &= 31u;
+    uint32_t low = token & ((1 << lsb_in_token) - 1);
+    token >>= lsb_in_token;
+    const size_t bits = br->PeekBits(nbits);
+    br->Consume(nbits);
+    size_t ret = (((((1 << msb_in_token) | (token & ((1 << msb_in_token) - 1)))
+                    << nbits) |
+                   bits)
+                  << lsb_in_token) |
+                 low;
+    return ret;
+  }
+  HWY_ATTR JXL_INLINE size_t
+  Read(size_t ctx, BitReader* JXL_RESTRICT br,
+       ANSSymbolReader* JXL_RESTRICT decoder,
+       const std::vector<uint8_t>& context_map) const;
+
+  HybridUintConfig(uint32_t split_exponent, uint32_t msb_in_token,
+                   uint32_t lsb_in_token)
+      : split_exponent(split_exponent),
+        split_token(1 << split_exponent),
+        msb_in_token(msb_in_token),
+        lsb_in_token(lsb_in_token) {
+    JXL_ASSERT(split_exponent >= msb_in_token + lsb_in_token);
+    JXL_ASSERT(split_exponent <= msb_in_token + lsb_in_token + 3);
+    JXL_ASSERT(msb_in_token <= 3);
+    JXL_ASSERT(lsb_in_token <= 3);
+  }
+};
+
 class ANSSymbolReader {
  public:
   // Invalid symbol reader, to be overwritten.
@@ -49,6 +149,11 @@ class ANSSymbolReader {
             reinterpret_cast<AliasTable::Entry*>(code->alias_tables.get())),
         huffman_data_(&code->huffman_data),
         use_prefix_code_(code->use_prefix_code) {
+    uint32_t msb_in_token = br->ReadFixedBits<2>();
+    uint32_t lsb_in_token = br->ReadFixedBits<2>();
+    uint32_t split_exponent =
+        br->ReadFixedBits<2>() + msb_in_token + lsb_in_token;
+    config = HybridUintConfig{split_exponent, msb_in_token, lsb_in_token};
     if (!use_prefix_code_) {
       state_ = static_cast<uint32_t>(br->ReadFixedBits<32>());
     } else {
@@ -117,12 +222,33 @@ class ANSSymbolReader {
 
   bool CheckANSFinalState() { return state_ == (ANS_SIGNATURE << 16u); }
 
+  HWY_ATTR JXL_INLINE size_t
+  ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
+                 const std::vector<uint8_t>& context_map) {
+    return config.Read(ctx, br, this, context_map);
+  }
+
+  HWY_ATTR JXL_INLINE size_t ReadHybridUint(BitReader* JXL_RESTRICT br,
+                                            size_t token) {
+    return config.Read(br, token);
+  }
+
  private:
   const AliasTable::Entry* JXL_RESTRICT alias_tables_;  // not owned
   const std::vector<brunsli::HuffmanDecodingData>* huffman_data_;
   bool use_prefix_code_;
   uint32_t state_ = ANS_SIGNATURE << 16u;
+  HybridUintConfig config{0, 0, 0};
 };
+
+HWY_ATTR JXL_INLINE size_t
+HybridUintConfig::Read(size_t ctx, BitReader* JXL_RESTRICT br,
+                       ANSSymbolReader* JXL_RESTRICT decoder,
+                       const std::vector<uint8_t>& context_map) const {
+  br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
+  size_t token = decoder->ReadSymbolWithoutRefill(context_map[ctx], br);
+  return Read(br, token);
+}
 
 bool DecodeHistograms(BitReader* br, size_t num_contexts,
                       size_t max_alphabet_size, ANSCode* code,

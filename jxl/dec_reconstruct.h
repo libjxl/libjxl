@@ -28,7 +28,6 @@
 #include "jxl/image.h"
 #include "jxl/loop_filter.h"
 #include "jxl/multiframe.h"
-#include "jxl/noise.h"
 #include "jxl/patch_dictionary.h"
 #include "jxl/quantizer.h"
 #include "jxl/splines.h"
@@ -57,7 +56,7 @@ HWY_ATTR void ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
 // values of `y`, in increasing order, starting from
 // `y=2*kBlockDim-lf.PaddingRows()`.
 HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
-                                    const Rect& rect,
+                                    const Rect& in_rect,
                                     PassesDecoderState* dec_state, size_t y,
                                     size_t thread, AuxOut* aux_out,
                                     bool save_decompressed,

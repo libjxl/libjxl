@@ -19,6 +19,7 @@
 #include <string>
 
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
 #include "jxl/codec_in_out.h"
@@ -43,15 +44,26 @@ class PNGCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override { return true; }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed) override {
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
     const size_t bits = io->metadata.bits_per_sample;
-    return EncodeImagePNG(io, io->Main().c_current(), bits, pool, compressed);
+    const double start = Now();
+    JXL_RETURN_IF_ERROR(
+        EncodeImagePNG(io, io->Main().c_current(), bits, pool, compressed));
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 
   Status Decompress(const std::string& /*filename*/,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io) override {
-    return DecodeImagePNG(compressed, pool, io);
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
+    const double start = Now();
+    JXL_RETURN_IF_ERROR(DecodeImagePNG(compressed, pool, io));
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 };
 

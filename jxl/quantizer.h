@@ -21,7 +21,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <hwy/static_targets.h>
 #include <utility>
 #include <vector>
 
@@ -73,39 +72,6 @@ static constexpr float kDefaultQuantBias[4] = {
     0.145f,
 };
 
-template <class DF>
-HWY_ATTR JXL_INLINE hwy::VT<DF> AdjustQuantBias(
-    DF df, const size_t c, const hwy::VT<DF> quant,
-    const float* JXL_RESTRICT biases) {
-  const hwy::Desc<int32_t, DF::LanesOr0()> di;
-
-  // Compare |quant|, keep sign bit for negating result.
-  const auto kSign = BitCast(df, Set(di, INT32_MIN));
-  const auto sign = quant & kSign;  // TODO(janwas): = abs ^ orig
-  const auto abs_quant = AndNot(kSign, quant);
-
-  // If |x| is 1, kZeroBias creates a different bias for each channel.
-  // We're implementing the following:
-  // if (quant == 0) return 0;
-  // if (quant == 1) return biases[c];
-  // if (quant == -1) return -biases[c];
-  // return quant - biases[3] / quant;
-
-  // Integer comparison is not helpful because Clang incurs bypass penalties
-  // from unnecessarily mixing integer and float.
-  const auto is_01 = abs_quant < Set(df, 1.125f);
-  const auto not_0 = abs_quant > Zero(df);
-
-  // Bitwise logic is faster than quant * biases[3].
-  const auto one_bias = IfThenElseZero(not_0, Set(df, biases[c]) ^ sign);
-
-  // About 2E-5 worse than ReciprocalNR or division.
-  const auto bias =
-      NegMulAdd(Set(df, biases[3]), ApproximateReciprocal(quant), quant);
-
-  return IfThenElse(is_01, one_bias, bias);
-}
-
 class Quantizer {
  public:
   explicit Quantizer(const DequantMatrices* dequant);
@@ -134,7 +100,7 @@ class Quantizer {
   // Reciprocal of Scale().
   JXL_INLINE float InvGlobalScale() const { return inv_global_scale_; }
 
-  void SetQuantField(const float quant_dc, const ImageF& qf,
+  void SetQuantField(float quant_dc, const ImageF& qf,
                      ImageI* JXL_RESTRICT raw_quant_field);
 
   void SetQuant(float quant_dc, float quant_ac,
@@ -148,22 +114,6 @@ class Quantizer {
   // Dequantize by multiplying with this times dequant_matrix.
   float inv_quant_ac(int32_t quant) const { return inv_global_scale_ / quant; }
 
-  // NOTE: caller takes care of extracting quant from rect of RawQuantField.
-  HWY_ATTR void QuantizeBlockAC(const bool error_diffusion, size_t c,
-                                int32_t quant, float qm_multiplier,
-                                size_t quant_kind, size_t xsize, size_t ysize,
-                                const float* JXL_RESTRICT block_in,
-                                ac_qcoeff_t* JXL_RESTRICT block_out) const;
-
-  // NOTE: caller takes care of extracting quant from rect of RawQuantField.
-  HWY_ATTR void QuantizeRoundtripYBlockAC(const bool error_diffusion,
-                                          int32_t quant, size_t quant_kind,
-                                          size_t xsize, size_t ysize,
-                                          const float* JXL_RESTRICT biases,
-                                          const float* JXL_RESTRICT in,
-                                          ac_qcoeff_t* JXL_RESTRICT quantized,
-                                          float* JXL_RESTRICT out) const;
-
   Status Encode(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
 
   Status Decode(BitReader* reader);
@@ -172,6 +122,10 @@ class Quantizer {
 
   JXL_INLINE const float* DequantMatrix(size_t quant_kind, size_t c) const {
     return dequant_->Matrix(quant_kind, c);
+  }
+
+  JXL_INLINE const float* InvDequantMatrix(size_t quant_kind, size_t c) const {
+    return dequant_->InvMatrix(quant_kind, c);
   }
 
   JXL_INLINE size_t DequantMatrixOffset(size_t quant_kind, size_t c) const {
@@ -196,7 +150,7 @@ class Quantizer {
 
  private:
   void ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
-                                  float quant_absd);
+                                  float quant_median_absd);
 
   // These are serialized:
   int global_scale_;

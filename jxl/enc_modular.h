@@ -36,7 +36,7 @@ Status EncodeModularRect(const CompressParams& params, const ImageBundle& ib,
 
 class ModularFrameEncoder {
  public:
-  ModularFrameEncoder() {}
+  ModularFrameEncoder() = default;
   Status ComputeEncodingData(const CompressParams& orig_cparams,
                              const FrameHeader& frame_header,
                              const ImageBundle& ib, Image3F* JXL_RESTRICT color,

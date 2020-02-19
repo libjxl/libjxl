@@ -225,6 +225,8 @@ Status WriteImageMetadata(const ImageMetadata& metadata,
 // A bundle of color/alpha/depth/plane images.
 class ImageBundle {
  public:
+  // Uninitialized state for use as output parameter.
+  ImageBundle() : metadata_(nullptr) {}
   // Caller is responsible for setting metadata before calling Set*.
   explicit ImageBundle(ImageMetadata* metadata) : metadata_(metadata) {}
 
@@ -288,6 +290,10 @@ class ImageBundle {
   Image3F* MutableColor() {
     JXL_DASSERT(HasColor());
     return &color_;
+  }
+  Image3F* MutableColor() const {
+    JXL_DASSERT(HasColor());
+    return const_cast<Image3F*>(&color_);
   }
 
   // If c_current.IsGray(), all planes must be identical. NOTE: c_current is

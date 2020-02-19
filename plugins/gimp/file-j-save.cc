@@ -19,6 +19,7 @@
 #undef MIN
 #undef CLAMP
 
+#include "jxl/alpha.h"
 #include "jxl/base/file_io.h"
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/enc_file.h"
@@ -33,7 +34,7 @@ Status ReadBuffer(const size_t xsize, const size_t ysize,
                   const std::vector<float>& pixel_data, PaddedBytes icc,
                   CodecInOut* const io) {
   constexpr float alpha_multiplier =
-      has_alpha ? ((1u << alpha_bits) - 1.f) / 255.f : 0.f;
+      has_alpha ? MaxAlpha(alpha_bits) / 255.f : 0.f;
   Image3F image(xsize, ysize);
   ImageU alpha;
   if (has_alpha) {

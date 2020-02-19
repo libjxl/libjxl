@@ -79,6 +79,9 @@ class ColorSpaceTransform {
   ExtraTF postprocess_ = ExtraTF::kNone;
 };
 
+void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
+                  float* JXL_RESTRICT linear);
+
 }  // namespace jxl
 
 #endif  // JXL_COLOR_MANAGEMENT_H_

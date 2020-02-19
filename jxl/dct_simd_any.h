@@ -25,6 +25,21 @@ namespace jxl {
 // DCT building blocks that does not require specific SIMD vector length.
 
 template <class From, class To>
+HWY_ATTR JXL_INLINE void CopyBlock4(const From& from, const To& to) {
+  const BlockDesc<4> d;
+  for (size_t i = 0; i < 4; i += d.N) {
+    const auto i0 = from.template LoadPart<4>(0, i);
+    const auto i1 = from.template LoadPart<4>(1, i);
+    const auto i2 = from.template LoadPart<4>(2, i);
+    const auto i3 = from.template LoadPart<4>(3, i);
+    to.template StorePart<4>(i0, 0, i);
+    to.template StorePart<4>(i1, 1, i);
+    to.template StorePart<4>(i2, 2, i);
+    to.template StorePart<4>(i3, 3, i);
+  }
+}
+
+template <class From, class To>
 HWY_ATTR JXL_INLINE void CopyBlock8(const From& from, const To& to) {
   const BlockDesc<8> d;
   for (size_t i = 0; i < 8; i += d.N) {

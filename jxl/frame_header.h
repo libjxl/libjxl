@@ -77,8 +77,9 @@ struct AnimationFrame {
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
-
+    if (visitor->Conditional(!nonserialized_composite_still)) {
+      visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
+    }
     name_length_ = name.length();
     // Allows layer name lengths up to 1071 bytes
     visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0, &name_length_);
@@ -181,6 +182,7 @@ struct AnimationFrame {
 
  public:
   bool nonserialized_have_timecode = false;
+  bool nonserialized_composite_still = false;
   uint32_t timecode;  // 0xHHMMSSFF
 
   bool have_crop;  // If false, origin/size are zero == "full frame"

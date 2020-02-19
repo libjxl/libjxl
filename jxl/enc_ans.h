@@ -34,9 +34,12 @@
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/status.h"
+#include "jxl/dec_ans.h"
 #include "jxl/enc_bit_writer.h"
 
 namespace jxl {
+
+const static HybridUintConfig kHybridUint420Config{4, 2, 0};
 
 #define USE_MULT_BY_RECIPROCAL
 
@@ -131,13 +134,15 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
 void WriteTokens(const std::vector<Token>& tokens,
                  const EntropyEncodingData& codes,
                  const std::vector<uint8_t>& context_map, BitWriter* writer,
-                 size_t layer, AuxOut* aux_out);
+                 size_t layer, AuxOut* aux_out,
+                 HybridUintConfig uint_config = kHybridUint420Config);
 
 // Same as above, but assumes allotment created by caller.
 size_t WriteTokens(const std::vector<Token>& tokens,
                    const EntropyEncodingData& codes,
                    const std::vector<uint8_t>& context_map,
-                   const BitWriter::Allotment& allotment, BitWriter* writer);
+                   const BitWriter::Allotment& allotment, BitWriter* writer,
+                   HybridUintConfig uint_config = kHybridUint420Config);
 
 }  // namespace jxl
 

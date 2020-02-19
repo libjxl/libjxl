@@ -72,7 +72,8 @@ inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
     return true;
   }
   size_t st = 10 - static_cast<size_t>(strtoull(s.c_str(), nullptr, 0));
-  if (st <= (size_t)SpeedTier::kFalcon && st >= (size_t)SpeedTier::kTortoise) {
+  if (st <= static_cast<size_t>(SpeedTier::kFalcon) &&
+      st >= static_cast<size_t>(SpeedTier::kTortoise)) {
     *out = SpeedTier(st);
     return true;
   }

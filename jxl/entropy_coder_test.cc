@@ -15,6 +15,7 @@
 #include "jxl/entropy_coder.h"
 
 #include <stdint.h>
+
 #include "gtest/gtest.h"
 
 namespace jxl {
@@ -29,21 +30,53 @@ TEST(EntropyCoderTest, PackUnpack) {
   }
 }
 
-TEST(EntropyCoderTest, EncodeDecodeVarUint) {
-  // When n == 0 there is only one, but most important case 0 <-> (0, 0).
-  for (int n = 0; n < 6; ++n) {
-    uint32_t count = 1 << n;
-    uint32_t base = count - 1;
-    for (uint32_t i = 0; i < count; ++i) {
-      uint32_t nbits = 0xFFFFFFFF;
-      uint32_t bits = 0xFFFFFFFF;
-      uint32_t value = base + i;
-      EncodeVarLenUint(value, &nbits, &bits);
-      EXPECT_EQ(n, nbits);
-      EXPECT_EQ(i, bits);
-      EXPECT_EQ(value, DecodeVarLenUint(nbits, bits));
-    }
+HWY_ATTR void HybridUintRoundtrip(HybridUintConfig config,
+                                  size_t limit = 1 << 24) {
+  std::mt19937 rng(0);
+  std::uniform_int_distribution<uint32_t> dist(0, limit);
+  constexpr size_t kNumIntegers = 1 << 20;
+  std::vector<uint32_t> integers(kNumIntegers);
+  std::vector<Token> tokens;
+  for (size_t i = 0; i < kNumIntegers; i++) {
+    integers[i] = dist(rng);
+    TokenizeWithConfig(config, 0, integers[i], &tokens);
   }
+  BitWriter writer;
+
+  std::vector<uint8_t> context_map;
+  EntropyEncodingData codes;
+
+  BuildAndEncodeHistograms(HistogramParams(), 1, {tokens}, &codes, &context_map,
+                           &writer, 0, nullptr);
+  WriteTokens(tokens, codes, context_map, &writer, 0, nullptr, config);
+  writer.ZeroPadToByte();
+
+  BitReader br(writer.GetSpan());
+
+  std::vector<uint8_t> dec_context_map;
+  ANSCode decoded_codes;
+  ASSERT_TRUE(DecodeHistograms(&br, 1, ANS_MAX_ALPHA_SIZE, &decoded_codes,
+                               &dec_context_map));
+  ASSERT_EQ(dec_context_map, context_map);
+  ANSSymbolReader reader(&decoded_codes, &br);
+
+  for (size_t i = 0; i < kNumIntegers; i++) {
+    EXPECT_EQ(integers[i], reader.ReadHybridUint(0, &br, context_map));
+  }
+  EXPECT_TRUE(br.Close());
+}
+
+TEST(HybridUintTest, Test000) {
+  HybridUintRoundtrip(HybridUintConfig{0, 0, 0});
+}
+TEST(HybridUintTest, Test411) {
+  HybridUintRoundtrip(HybridUintConfig{4, 1, 1});
+}
+TEST(HybridUintTest, Test420) {
+  HybridUintRoundtrip(HybridUintConfig{4, 2, 0});
+}
+TEST(HybridUintTest, Test421) {
+  HybridUintRoundtrip(HybridUintConfig{4, 2, 1}, 256);
 }
 
 }  // namespace

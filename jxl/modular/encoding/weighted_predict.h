@@ -407,8 +407,7 @@ struct State {
           JXL_DASSERT(shiftedMinTpv <= prediction &&
                       prediction <= shiftedMaxTpv);
 
-          size_t q =
-              ReadHybridUint(maxErr, &bitreader, &ansreader, context_map);
+          size_t q = ansreader.ReadHybridUint(maxErr, &bitreader, context_map);
           pixel_type truePixelValue =
               ((prediction + toRound_m1) >> PBits) + UnpackSigned(q);
           rowImg[x] = truePixelValue;

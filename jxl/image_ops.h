@@ -195,6 +195,8 @@ void ZeroFillImage(Plane<T>* image) {
 // image size, otherwise this might not terminate.
 // The mirror is outside the last column (border pixel is also replicated).
 static inline int64_t Mirror(int64_t x, const int64_t xsize) {
+  JXL_DASSERT(xsize != 0);
+
   // TODO(janwas): replace with branchless version
   while (x < 0 || x >= xsize) {
     if (x < 0) {
@@ -212,13 +214,6 @@ static inline int64_t Mirror(int64_t x, const int64_t xsize) {
 struct WrapMirror {
   JXL_INLINE int64_t operator()(const int64_t coord, const int64_t size) const {
     return Mirror(coord, size);
-  }
-};
-
-// Repeats the edge pixel.
-struct WrapClamp {
-  JXL_INLINE int64_t operator()(const int64_t coord, const int64_t size) const {
-    return std::min(std::max<int64_t>(0, coord), size - 1);
   }
 };
 

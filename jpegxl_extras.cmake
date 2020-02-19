@@ -93,15 +93,15 @@ target_link_libraries(jpegxl_extras-static PUBLIC
 )
 
 if(GIF_FOUND)
-  target_compile_definitions(jpegxl_extras-static PRIVATE -DJPEGXL_ENABLE_GIF=1)
+  target_compile_definitions(jpegxl_extras-static PUBLIC -DJPEGXL_ENABLE_GIF=1)
 endif()
 
 if(PNG_FOUND AND ZLIB_FOUND)
-  target_compile_definitions(jpegxl_extras-static PRIVATE -DJPEGXL_ENABLE_APNG=1)
+  target_compile_definitions(jpegxl_extras-static PUBLIC -DJPEGXL_ENABLE_APNG=1)
 endif()
 
 if(JPEG_FOUND)
-  target_compile_definitions(jpegxl_extras-static PRIVATE -DJPEGXL_ENABLE_JPEG=1)
+  target_compile_definitions(jpegxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEG=1)
 endif()
 
 if (JPEGXL_ENABLE_SJPEG)
@@ -114,6 +114,6 @@ if (OpenEXR_FOUND AND NOT JPEGXL_EMSCRIPTEN)
     jxl/extras/codec_exr.cc
     jxl/extras/codec_exr.h
   )
-  target_compile_definitions(jpegxl_extras-static PRIVATE -DJPEGXL_ENABLE_EXR=1)
+  target_compile_definitions(jpegxl_extras-static PUBLIC -DJPEGXL_ENABLE_EXR=1)
   target_link_libraries(jpegxl_extras-static PUBLIC PkgConfig::OpenEXR)
 endif ()

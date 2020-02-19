@@ -55,7 +55,6 @@
 #include "jxl/image_ops.h"
 #include "jxl/loop_filter.h"
 #include "jxl/multiframe.h"
-#include "jxl/noise.h"
 #include "jxl/passes_state.h"
 #include "jxl/patch_dictionary.h"
 #include "jxl/quant_weights.h"
@@ -277,6 +276,8 @@ Status DecodeFrameHeader(const AnimationHeader* animation_or_null,
                          LoopFilter* JXL_RESTRICT loop_filter) {
   frame_header->animation_frame.nonserialized_have_timecode =
       animation_or_null ? animation_or_null->have_timecodes : false;
+  frame_header->animation_frame.nonserialized_composite_still =
+      animation_or_null ? animation_or_null->composite_still : false;
   JXL_RETURN_IF_ERROR(ReadFrameHeader(reader, frame_header));
 
   if (frame_header->animation_frame.have_crop) {

@@ -12,16 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "jxl/base/fast_log.h"
+#ifndef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
 
+#define HWY_USE_GTEST
+#include <hwy/tests/test_util.h>
+
+struct FastLog12Test {
+  HWY_DECLARE(void, ())
+};
+TEST(FastLog12Test, Run) { hwy::RunTests<FastLog12Test>(); }
+
+#include <hwy/tests/test_target_util.h>
 #include <random>
 
-#include "gtest/gtest.h"
+#include "jxl/base/fast_log.h"
 
 namespace jxl {
-namespace {
 
-HWY_NOINLINE HWY_ATTR void CheckFastLog() {
+TEST(FastLogTest, TestFastLog) {
   constexpr size_t kNumTrials = 1 << 23;
   std::mt19937 rng(1);
   std::uniform_real_distribution<float> dist(1e-7f, 1e3f);
@@ -34,6 +43,16 @@ HWY_NOINLINE HWY_ATTR void CheckFastLog() {
   }
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
+
+}  // namespace jxl
+
+#endif  // HWY_TARGET_INCLUDE
+
+namespace jxl {
+namespace HWY_NAMESPACE {
+namespace {
+
+#include <fast_log-inl.h>
 
 HWY_NOINLINE HWY_ATTR void CheckFastLog12() {
   constexpr size_t kNumTrials = 1 << 23;
@@ -51,9 +70,10 @@ HWY_NOINLINE HWY_ATTR void CheckFastLog12() {
   printf("12: max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
-TEST(FastLogTest, TestFastLog) { CheckFastLog(); }
-
-TEST(FastLogTest, TestFastLog12) { CheckFastLog12(); }
-
 }  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
+
+// Instantiate for the current target.
+void FastLog12Test::HWY_FUNC() { jxl::HWY_NAMESPACE::CheckFastLog12(); }

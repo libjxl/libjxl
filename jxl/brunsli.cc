@@ -1605,7 +1605,7 @@ class BrunsliFrameDecoderInternal {
             std::min<size_t>(first_y + v_group_dim, m.height_in_blocks);
         m.ac_coeffs += first_x * brunsli::kDCTBlockSize + first_y * m.ac_stride;
         m.block_state =
-            state.block_state_[c].data() + first_x + first_y * m.b_stride;
+            state.meta[c].block_state + first_x + first_y * m.b_stride;
         m.width_in_blocks = last_x - first_x;
         m.height_in_blocks = last_y - first_y;
       }
@@ -1642,7 +1642,7 @@ class BrunsliFrameDecoderInternal {
         m.context_offset = state.meta[c].context_offset;
         m.ac_coeffs += first_x * brunsli::kDCTBlockSize + first_y * m.ac_stride;
         m.block_state =
-            state.block_state_[c].data() + first_x + first_y * m.b_stride;
+            state.meta[c].block_state + first_x + first_y * m.b_stride;
         m.width_in_blocks = last_x - first_x;
         m.height_in_blocks = last_y - first_y;
       }

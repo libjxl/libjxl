@@ -24,12 +24,15 @@
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/color_encoding.h"
-#include "jxl/color_management.h"
 #include "jxl/frame_header.h"
 #include "jxl/headers.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
+
+#ifdef MEMORY_SANITIZER
+#include "sanitizer/msan_interface.h"
+#endif
 
 namespace jxl {
 
@@ -87,6 +90,15 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
     return JXL_FAILURE("Failed to read GIF: %s", GifErrorString(gif->Error));
   }
 
+#ifdef MEMORY_SANITIZER
+  __msan_unpoison(gif.get(), sizeof(*gif));
+  __msan_unpoison(gif->SColorMap, sizeof(*gif->SColorMap));
+  __msan_unpoison(gif->SColorMap->Colors,
+                  sizeof(*gif->SColorMap->Colors) * gif->SColorMap->ColorCount);
+  __msan_unpoison(gif->SavedImages,
+                  sizeof(*gif->SavedImages) * gif->ImageCount);
+#endif
+
   if (gif->ImageCount > 1) {
     io->metadata.m2.have_animation = true;
     // Delays in GIF are specified in 100ths of a second.
@@ -114,7 +126,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
   if (gif->SColorMap == nullptr) {
     background_color = {0, 0, 0};
   } else {
-    if (gif->SBackGroundColor > gif->SColorMap->ColorCount) {
+    if (gif->SBackGroundColor >= gif->SColorMap->ColorCount) {
       return JXL_FAILURE("GIF specifies out-of-bounds background color");
     }
     background_color = gif->SColorMap->Colors[gif->SBackGroundColor];
@@ -133,6 +145,11 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
   bool replace = true;
   for (int i = 0; i < gif->ImageCount; ++i) {
     const SavedImage& image = gif->SavedImages[i];
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(image.RasterBits, sizeof(*image.RasterBits) *
+                                          image.ImageDesc.Width *
+                                          image.ImageDesc.Height);
+#endif
     const Rect image_rect(image.ImageDesc.Left, image.ImageDesc.Top,
                           image.ImageDesc.Width, image.ImageDesc.Height);
     io->dec_pixels += image_rect.xsize() * image_rect.ysize();
@@ -167,8 +184,17 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
     if (color_map == nullptr) {
       return JXL_FAILURE("Missing GIF color map");
     }
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(color_map, sizeof(*color_map));
+    __msan_unpoison(color_map->Colors,
+                    sizeof(*color_map->Colors) * color_map->ColorCount);
+#endif
     GraphicsControlBlock gcb;
     DGifSavedExtensionToGCB(gif.get(), i, &gcb);
+#ifdef MEMORY_SANITIZER
+    __msan_unpoison(&gcb, sizeof(gcb));
+#endif
+
     if (io->metadata.m2.have_animation) {
       AnimationFrame animation_frame;
       animation_frame.duration = gcb.DelayTime;

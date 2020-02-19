@@ -50,7 +50,8 @@ void PrintXybRange() {
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
-  ToXYB(ib, 1.0f, null_pool, &opsin);
+  ImageBundle unused_linear;
+  (void)ToXYB(ib, 1.0f, null_pool, &opsin, &unused_linear);
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;

@@ -30,7 +30,7 @@ void TestRoundTrip(const Image3F& in, double max_l1) {
                    const_cast<ImageF*>(&fwd.Plane(1)));
   ConvolveGaborish(in.Plane(2), 0, 0, null_pool,
                    const_cast<ImageF*>(&fwd.Plane(2)));
-  const Image3F rev = GaborishInverse(fwd, 0.92718927264540152, null_pool);
+  const Image3F rev = GaborishInverse(fwd, 0.92718927264540152f, null_pool);
   VerifyRelativeError(in, rev, max_l1, 1E-4);
 }
 

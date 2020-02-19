@@ -15,14 +15,12 @@
 #ifndef TOOLS_BUTTERAUGLI_PNORM_H_
 #define TOOLS_BUTTERAUGLI_PNORM_H_
 
-#include <hwy/static_targets.h>
-
 #include "jxl/image.h"
 
 namespace jxl {
 
 // Computes p-norm given the butteraugli distmap.
-HWY_ATTR double ComputeDistanceP(const ImageF& distmap, double p);
+double ComputeDistanceP(const ImageF& distmap, double p);
 
 }  // namespace jxl
 

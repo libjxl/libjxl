@@ -74,11 +74,6 @@ int DecompressMain(int argc, const char *argv[]) {
   const uint8_t box_header[] = {0,   0,   0,   0xc, 'J',  'X',
                                 'L', ' ', 0xd, 0xa, 0x87, 0xa};
   if (compressed.size() >= 12 && !memcmp(box_header, compressed.data(), 12)) {
-#if defined(__EMSCRIPTEN__)
-    // There's a linker issue depending on "box", see TODO in the cmake files.
-    fprintf(stderr, "Container format not yet supported for emscripten");
-    return 1;
-#else  // defined(__EMSCRIPTEN__)
     JpegXlContainer container;
     if (!DecodeJpegXlContainerOneShot(compressed.data(), compressed.size(),
                                       &container)) {
@@ -87,7 +82,6 @@ int DecompressMain(int argc, const char *argv[]) {
     }
     compressed.assign(container.codestream,
                       container.codestream + container.codestream_size);
-#endif  // defined(__EMSCRIPTEN__)
   }
 
   jxl::ThreadPoolInternal pool(args.num_threads);

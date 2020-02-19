@@ -15,8 +15,6 @@
 #ifndef JXL_ENC_FRAME_H_
 #define JXL_ENC_FRAME_H_
 
-#include <hwy/static_targets.h>
-
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/data_parallel.h"
@@ -34,12 +32,11 @@ namespace jxl {
 // either a single image, or animation frame (depending on multiframe),
 // and consists of one or more passes. Groups may be processed in parallel by
 // `pool`.
-HWY_ATTR Status EncodeFrame(const CompressParams& params,
-                            const AnimationFrame* animation_frame_or_null,
-                            const ImageBundle& ib,
-                            PassesEncoderState* passes_enc_state,
-                            ThreadPool* pool, BitWriter* writer,
-                            AuxOut* aux_out, Multiframe* multiframe);
+Status EncodeFrame(const CompressParams& cparams_orig,
+                   const AnimationFrame* animation_frame_or_null,
+                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
+                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out,
+                   Multiframe* multiframe);
 
 }  // namespace jxl
 

@@ -357,6 +357,7 @@ TEST_P(ExternalImageParametricTest, RoundTrip) {
   }
 }
 
+#if !defined(JXL_CRASH_ON_ERROR)
 TEST(ExternalImageTest, InvalidSize) {
   PackedImage desc(/*xsize=*/10, /*ysize=*/100,
                    /*c_current=*/ColorEncoding::SRGB(),
@@ -375,6 +376,7 @@ TEST(ExternalImageTest, InvalidSize) {
   EXPECT_TRUE(
       CopyTo(desc, Span<const uint8_t>(buf, sizeof(buf)), nullptr, &ib));
 }
+#endif
 
 }  // namespace
 }  // namespace jxl

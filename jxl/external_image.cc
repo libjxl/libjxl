@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "jxl/alpha.h"
 #include "jxl/base/byte_order.h"
 #include "jxl/base/cache_aligned.h"
 #include "jxl/base/compiler_specific.h"
@@ -1045,7 +1046,7 @@ class Converter {
     // Don't have alpha; during TransformTo, don't remove existing alpha.
     if (alpha_stats_.empty()) return true;
 
-    const size_t max_alpha = (1 << bits_per_alpha_) - 1;
+    const size_t max_alpha = MaxAlpha(bits_per_alpha_);
 
     // Reduce per-thread statistics.
     uint32_t and_bits = alpha_stats_[0].and_bits;

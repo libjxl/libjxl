@@ -42,7 +42,7 @@ Status loadFromFile(const QString& filename, CodecInOut* const decoded,
 bool canLoadImageWithExtension(QString extension) {
   extension = extension.toLower();
   size_t bitsPerSampleUnused;
-  return extension == "j" || extension == "brn" ||
+  return extension == "jxl" || extension == "j" || extension == "brn" ||
          CodecFromExtension("." + extension.toStdString(),
                             &bitsPerSampleUnused) != jxl::Codec::kUnknown;
 }

@@ -245,8 +245,7 @@ int main(int argc, const char** argv) {
         spec.num_channels = num_channels;
         for (uint32_t alpha_bit_depth : {0, 8, 16}) {
           spec.alpha_bit_depth = alpha_bit_depth;
-          // TODO(deymo): Add 2 and 3 frames options.
-          for (uint32_t num_frames : {1}) {
+          for (uint32_t num_frames : {1, 3}) {
             spec.num_frames = num_frames;
 
             for (const auto& params : params_list) {

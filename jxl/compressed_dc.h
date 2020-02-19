@@ -18,9 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/static_targets.h>
-#include <vector>
-
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
@@ -54,8 +51,8 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
 void InitializeDCBorder(Image3F* JXL_RESTRICT dc);
 
 // Smooth DC in already-smooth areas, to counteract banding.
-HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
-                                  ThreadPool* pool);
+void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
+                         ThreadPool* pool);
 
 }  // namespace jxl
 

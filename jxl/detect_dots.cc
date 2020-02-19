@@ -79,30 +79,26 @@ constexpr bool kOptimizeBackground = true;
 constexpr std::array<float, 3> colorCoefXyb{0.0, 10.0, 0.0};
 
 // Gaussian that smooths noise but preserves dots
-struct Gaussian5Sigma0_65 {
-  JXL_INLINE const WeightsSeparable5& Weights() const {
-    constexpr float w0 = 0.558311f;
-    constexpr float w1 = 0.210395f;
-    constexpr float w2 = 0.010449f;
-    static constexpr WeightsSeparable5 weights = {
-        {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)},
-        {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)}};
-    return weights;
-  }
-};
+const WeightsSeparable5& WeightsSeparable5Gaussian0_65() {
+  constexpr float w0 = 0.558311f;
+  constexpr float w1 = 0.210395f;
+  constexpr float w2 = 0.010449f;
+  static constexpr WeightsSeparable5 weights = {
+      {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)},
+      {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)}};
+  return weights;
+}
 
 // (Iterated) Gaussian that removes dots.
-struct Gaussian5Sigma3 {
-  JXL_INLINE const WeightsSeparable5& Weights() const {
-    constexpr float w0 = 0.222338f;
-    constexpr float w1 = 0.210431f;
-    constexpr float w2 = 0.1784f;
-    static constexpr WeightsSeparable5 weights = {
-        {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)},
-        {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)}};
-    return weights;
-  }
-};
+const WeightsSeparable5& WeightsSeparable5Gaussian3() {
+  constexpr float w0 = 0.222338f;
+  constexpr float w1 = 0.210431f;
+  constexpr float w2 = 0.1784f;
+  static constexpr WeightsSeparable5 weights = {
+      {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)},
+      {HWY_REP4(w0), HWY_REP4(w1), HWY_REP4(w2)}};
+  return weights;
+}
 
 HWY_ATTR ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
                                    ThreadPool* pool) {
@@ -120,20 +116,13 @@ HWY_ATTR ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   Image3F tmp(orig.xsize(), orig.ysize());
   *smooth = Image3F(orig.xsize(), orig.ysize());
 
-  if (orig.xsize() < kConvolveMinWidth) {
-    using Conv = slow::SeparableConvolution<2, WrapMirror>;
-    Conv::Run(orig, Rect(orig), Gaussian5Sigma0_65(), &forig);
+  const auto& weights1 = WeightsSeparable5Gaussian0_65();
+  const auto& weights3 = WeightsSeparable5Gaussian3();
 
-    Conv::Run(orig, Rect(orig), Gaussian5Sigma3(), &tmp);
-    Conv::Run(tmp, Rect(tmp), Gaussian5Sigma3(), smooth);
+  Separable5(orig, Rect(orig), weights1, pool, &forig);
 
-  } else {
-    using Conv = ConvolveT<strategy::Separable5>;
-    Conv::Run(orig, Rect(orig), Gaussian5Sigma0_65(), pool, &forig);
-
-    Conv::Run(orig, Rect(orig), Gaussian5Sigma3(), pool, &tmp);
-    Conv::Run(tmp, Rect(tmp), Gaussian5Sigma3(), pool, smooth);
-  }
+  Separable5(orig, Rect(orig), weights3, pool, &tmp);
+  Separable5(tmp, Rect(tmp), weights3, pool, smooth);
 
 #if JXL_DEBUG_DOT_DETECT
   AuxOut aux;

@@ -23,6 +23,7 @@
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/os_specific.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
 #include "jxl/codec_in_out.h"
@@ -74,7 +75,9 @@ class WebPCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed) override {
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
+    const double start = Now();
     const ImageBundle& ib = io->Main();
 
     const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
@@ -95,7 +98,7 @@ class WebPCodec : public ImageCodec {
         return JXL_FAILURE("%s: webp:ll/nl requires 8-bit sRGB",
                            filename.c_str());
       }
-      return CompressInternal(srgb, alpha, 100, compressed);
+      JXL_RETURN_IF_ERROR(CompressInternal(srgb, alpha, 100, compressed));
     } else if (bitrate_target_ > 0.0) {
       int quality_bad = 100;
       int quality_good = 92;
@@ -118,16 +121,22 @@ class WebPCodec : public ImageCodec {
           quality_bad = quality;
         }
       }
-      return CompressInternal(srgb, alpha, quality_good, compressed);
+      JXL_RETURN_IF_ERROR(
+          CompressInternal(srgb, alpha, quality_good, compressed));
     } else if (quality_ > 0) {
-      return CompressInternal(srgb, alpha, quality_, compressed);
+      JXL_RETURN_IF_ERROR(CompressInternal(srgb, alpha, quality_, compressed));
+    } else {
+      return false;
     }
-    return false;
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
   }
 
   Status Decompress(const std::string& filename,
                     const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io) override {
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
     WebPDecoderConfig config;
 #ifdef MEMORY_SANITIZER
     // config is initialized by libwebp, which we are not instrumenting with
@@ -143,9 +152,12 @@ class WebPCodec : public ImageCodec {
     buf->colorspace = MODE_RGBA;
     const uint8_t* webp_data = compressed.data();
     const int webp_size = compressed.size();
+    const double start = Now();
     if (WebPDecode(webp_data, webp_size, &config) != VP8_STATUS_OK) {
       return JXL_FAILURE("WebPDecode failed");
     }
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
     JXL_CHECK(buf->u.RGBA.stride == buf->width * 4);
 
     const bool is_gray = false;
@@ -235,7 +247,13 @@ class WebPCodec : public ImageCodec {
     config.lossless = lossless_;
     config.quality = quality;
     config.method = method_;
+#if WEBP_ENCODER_ABI_VERSION >= 0x020a
     config.near_lossless = near_lossless_ ? near_lossless_quality_ : 100;
+#else
+    if (near_lossless_) {
+      JXL_WARNING("Near lossless not supported by this WebP version");
+    }
+#endif
     JXL_CHECK(WebPValidateConfig(&config));
 
     WebPPicture pic;

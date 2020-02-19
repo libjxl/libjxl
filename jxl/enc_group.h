@@ -18,9 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/static_targets.h>
-#include <vector>
-
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/data_parallel.h"
@@ -34,16 +31,13 @@
 #include "jxl/entropy_coder.h"
 #include "jxl/frame_header.h"
 #include "jxl/multiframe.h"
-#include "jxl/noise.h"
 #include "jxl/quantizer.h"
 
 namespace jxl {
 
-HWY_ATTR void ComputeCoefficients(size_t group_idx,
-                                  PassesEncoderState* enc_state,
-                                  AuxOut* aux_out);
+void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
+                         AuxOut* aux_out);
 
-// `group_codes` contains one vector (of group writers) per pass.
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         const PassesEncoderState& enc_state,
                                         BitWriter* writer, AuxOut* aux_out);

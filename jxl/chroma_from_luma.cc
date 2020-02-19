@@ -14,6 +14,7 @@
 
 #include "jxl/chroma_from_luma.h"
 
+#include <float.h>
 #include <stdlib.h>
 
 #include <algorithm>
@@ -39,9 +40,11 @@ namespace jxl {
 namespace {
 
 template <int MAIN_CHANNEL, int SIDE_CHANNEL, int SCALE, int OFFSET>
-void FindBestCorrelation(const Image3F& dct, ImageB* JXL_RESTRICT map,
-                         int* JXL_RESTRICT dc, float base,
-                         const DequantMatrices& dequant, ThreadPool* pool) {
+HWY_ATTR JXL_NOINLINE void FindBestCorrelation(const Image3F& dct,
+                                               ImageB* JXL_RESTRICT map,
+                                               int* JXL_RESTRICT dc, float base,
+                                               const DequantMatrices& dequant,
+                                               ThreadPool* pool) {
   constexpr float kScale = SCALE;
   constexpr float kZeroThresh =
       kScale * kZeroBiasDefault[SIDE_CHANNEL] *
@@ -53,7 +56,7 @@ void FindBestCorrelation(const Image3F& dct, ImageB* JXL_RESTRICT map,
     d_num_zeros_thread.resize(256 * num_threads);
     return true;
   };
-  auto process_row = [&](int ty, int thread) {
+  auto process_row = [&](int ty, int thread) HWY_ATTR {
     uint8_t* JXL_RESTRICT row_out = map->Row(ty);
     for (size_t tx = 0; tx < map->xsize(); ++tx) {
       const size_t y0 = ty * kColorTileDimInBlocks;
@@ -62,52 +65,61 @@ void FindBestCorrelation(const Image3F& dct, ImageB* JXL_RESTRICT map,
           std::min<size_t>(y0 + kColorTileDimInBlocks, dct.ysize());
       const size_t x1 = std::min<size_t>(
           x0 + kColorTileDimInBlocks * kDCTBlockSize, dct.xsize());
+
       int32_t d_num_zeros[257] = {0};
       for (size_t y = y0; y < y1; ++y) {
         const float* JXL_RESTRICT row_m = dct.ConstPlaneRow(MAIN_CHANNEL, y);
         const float* JXL_RESTRICT row_s = dct.ConstPlaneRow(SIDE_CHANNEL, y);
-        for (size_t x = x0; x < x1; ++x) {
-          const float scaled_m = row_m[x] * qm[x % kDCTBlockSize];
-          const float scaled_s = kScale * row_s[x] * qm[x % kDCTBlockSize] +
-                                 (OFFSET - base * kScale) * scaled_m;
+
+        const HWY_FULL(float) df;
+        const HWY_FULL(int32_t) di;
+        const auto zero = Zero(df);
+        const auto one = Set(df, 1.0f);
+        const auto epsilon = Set(df, FLT_EPSILON);
+        const auto abs_mask = BitCast(df, Set(di, 0x7FFFFFFF));
+
+        for (size_t x = x0; x < x1; x += di.N) {
+          const size_t k = x % kDCTBlockSize;  // index within block
+          const auto quant = Load(df, qm + k);
+          const auto scaled_m = Load(df, row_m + x) * quant;
+          const auto scaled_s = Set(df, kScale) * Load(df, row_s + x) * quant +
+                                Set(df, OFFSET - base * kScale) * scaled_m;
           // Increment num_zeros[idx] if
-          //   std::abs(scaled_s - (idx - OFFSET) *
-          //   scaled_m) < kZeroThresh
-          if (std::abs(scaled_m) > 1e-8f) {
-            float from;
-            float to;
-            if (scaled_m > 0) {
-              from = (scaled_s - kZeroThresh) / scaled_m;
-              to = (scaled_s + kZeroThresh) / scaled_m;
-            } else {
-              from = (scaled_s + kZeroThresh) / scaled_m;
-              to = (scaled_s - kZeroThresh) / scaled_m;
-            }
-            if (from < 0.0f) {
-              from = 0.0f;
-            }
-            if (to > 255.0f) {
-              to = 255.0f;
-            }
-            // Instead of clamping the both values
-            // we just check that range is sane.
-            if (from <= to) {
-              d_num_zeros_thread[256 * thread +
-                                 static_cast<int>(std::ceil(from))]++;
-              if (to < 255.f)
-                d_num_zeros_thread[256 * thread +
-                                   static_cast<int>(std::floor(to + 1))]--;
-              if (x % kDCTBlockSize == 0) continue;
-              d_num_zeros[static_cast<int>(std::ceil(from))]++;
-              d_num_zeros[static_cast<int>(std::floor(to + 1))]--;
+          //   std::abs(scaled_s - (idx - OFFSET) * scaled_m) < kZeroThresh
+          const auto abs_scaled_m = scaled_m & abs_mask;
+          const auto recip =
+              IfThenElseZero(abs_scaled_m > epsilon, one / scaled_m);
+
+          const auto m_sign = AndNot(abs_mask, scaled_m);
+          const auto signed_thres = Set(df, kZeroThresh) | m_sign;
+          const auto to =
+              Min((scaled_s + signed_thres) * recip, Set(df, 255.0f));
+          const auto from = Max(zero, (scaled_s - signed_thres) * recip);
+
+          HWY_ALIGN int32_t top[di.N];
+          HWY_ALIGN int32_t bot[di.N];
+          HWY_ALIGN int32_t recip_lanes[df.N];
+          Store(BitCast(di, recip), di, recip_lanes);
+          Store(ConvertTo(di, Ceil(from)), di, top);
+          Store(ConvertTo(di, Floor(to + one)), di, bot);
+
+          for (size_t i = 0; i < di.N; ++i) {
+            // Instead of clamping both values, just check that range is sane.
+            // If top=bot, this is a no-op. Also avoid div by zero.
+            if (recip_lanes[i] != 0 && top[i] < bot[i]) {
+              d_num_zeros_thread[256 * thread + top[i]]++;
+              if (bot[i] < 256) d_num_zeros_thread[256 * thread + bot[i]]--;
+              if (k + i == 0) continue;  // skip DC
+              d_num_zeros[top[i]]++;
+              d_num_zeros[bot[i]]--;
             }
           }
         }
+        int best = 0;
+        int32_t best_sum = 0;
+        FindIndexOfSumMaximum(d_num_zeros, 256, &best, &best_sum);
+        row_out[tx] = best;
       }
-      int best = 0;
-      int32_t best_sum = 0;
-      FindIndexOfSumMaximum(d_num_zeros, 256, &best, &best_sum);
-      row_out[tx] = best;
     }
   };
 
@@ -225,7 +237,7 @@ class ColorCorrelationMapCoder {
       for (size_t c = 0; c < 2; c++) {
         size_t ctx = base_context + Context(c, num_correct[c], min_error[c]);
 
-        uint32_t residual = ReadHybridUint(ctx, br, decoder, *context_map);
+        uint32_t residual = decoder->ReadHybridUint(ctx, br, *context_map);
 
         if (x == 0 && y == 0) {
           decoded[c] = kColorOffset + UnpackSigned(residual);

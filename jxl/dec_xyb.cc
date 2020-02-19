@@ -26,6 +26,8 @@
 
 namespace jxl {
 
+#include "jxl/dec_xyb-inl.h"
+
 void OpsinParams::Init() {
   InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(),
                         inverse_opsin_matrix);

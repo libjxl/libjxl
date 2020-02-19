@@ -19,6 +19,7 @@
 #include <hwy/static_targets.h>
 #include <vector>
 
+#include "jxl/alpha.h"
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/span.h"
@@ -234,7 +235,7 @@ HWY_ATTR Status ModularFrameDecoder::FinalizeDecoding(
     }
   }
   if (frame_header.HasAlpha()) {
-    pixel_type max_alpha = (1 << decoded->metadata()->alpha_bits) - 1;
+    pixel_type max_alpha = MaxAlpha(decoded->metadata()->alpha_bits);
     for (size_t y = 0; y < ysize; ++y) {
       uint16_t* const JXL_RESTRICT row_out = decoded->alpha().MutableRow(y);
       const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);

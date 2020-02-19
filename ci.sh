@@ -36,13 +36,8 @@ fi
 # Whether we should post a message in the MR when the build fails.
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 
-# Version inferred from the CI variables.
-CI_COMMIT_SHA=${CI_COMMIT_SHA:-$(git log | head -n 1 | cut -b 8-)}
-JPEGXL_VERSION=${JPEGXL_VERSION:-${CI_COMMIT_SHA:0:8}}
-
-echo "Version: $JPEGXL_VERSION"
 # Convenience flag to pass both CMAKE_C_FLAGS and CMAKE_CXX_FLAGS
-CMAKE_FLAGS="${CMAKE_FLAGS:-} -DJPEGXL_VERSION=\\\"${JPEGXL_VERSION}\\\""
+CMAKE_FLAGS=${CMAKE_FLAGS:-}
 CMAKE_C_FLAGS="${CMAKE_C_FLAGS:-} ${CMAKE_FLAGS}"
 CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS:-} ${CMAKE_FLAGS}"
 CMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR:-}
@@ -51,6 +46,9 @@ CMAKE_MODULE_LINKER_FLAGS=${CMAKE_MODULE_LINKER_FLAGS:-}
 CMAKE_SHARED_LINKER_FLAGS=${CMAKE_SHARED_LINKER_FLAGS:-}
 CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE:-}
 
+# Version inferred from the CI variables.
+CI_COMMIT_SHA=${CI_COMMIT_SHA:-}
+JPEGXL_VERSION=${JPEGXL_VERSION:-${CI_COMMIT_SHA:0:8}}
 
 # Benchmark parameters
 STORE_IMAGES=${STORE_IMAGES:-1}
@@ -214,7 +212,7 @@ load_mr_vars_from_commit() {
   { set +x; } 2>/dev/null
   if [[ -z "${CI_MERGE_REQUEST_IID:-}" ]]; then
     local mr_iid=$(git rev-list --format=%B --max-count=1 HEAD |
-      grep -F "${CI_PROJECT_URL}/merge_requests" | head -n 1)
+      grep -F "${CI_PROJECT_URL}" | grep -F "/merge_requests" | head -n 1)
     # mr_iid contains a string like this if it matched:
     #  Part-of: <https://gitlab.com/wg1/jpeg-xlm/merge_requests/123456>
     if [[ -n "${mr_iid}" ]]; then
@@ -254,6 +252,7 @@ cmake_configure() {
     -DCMAKE_MODULE_LINKER_FLAGS="${CMAKE_MODULE_LINKER_FLAGS}"
     -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS}"
     -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
+    -DJPEGXL_VERSION="${JPEGXL_VERSION}"
   )
   if [[ -n "${BUILD_TARGET}" ]]; then
     # If set, BUILD_TARGET must be the target triplet such as

@@ -19,13 +19,14 @@
 #include <stdlib.h>
 
 #include <atomic>
+#include <hwy/static_targets.h>
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/profiler.h"
 
 namespace jxl {
 
-HWY_ATTR double ComputeDistanceP(const ImageF& distmap, double p) {
+HWY_ATTR JXL_NOINLINE double ComputeDistanceP(const ImageF& distmap, double p) {
   PROFILER_FUNC;
   const double onePerPixels = 1.0 / (distmap.ysize() * distmap.xsize());
   if (std::abs(p - 3.0) < 1E-6) {

@@ -28,12 +28,15 @@
 namespace jxl {
 
 // Converts any color space to XYB. Copies internally to linear sRGB and
-// multiplies that by `linear_multiplier`. If `linear` is not a null pointer,
-// the pointee will contain a copy of the linear sRGB image bundle.
+// multiplies that by `linear_multiplier`.
+// Returns pointer to an ImageBundle in linear sRGB: either `in` if that is
+// already in linear sRGB, in which case linear_storage is ignored; otherwise
+// `*linear_storage` (default-constructed is sufficient). Note that even if
+// the caller doesn't need the linear sRGB, it is still used internally.
 // Runtime dispatch.
-void ToXYB(const ImageBundle& in, float linear_multiplier, ThreadPool* pool,
-           Image3F* JXL_RESTRICT xyb,
-           ImageBundle* JXL_RESTRICT linear = nullptr);
+const ImageBundle* ToXYB(const ImageBundle& in, float linear_multiplier,
+                         ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
+                         ImageBundle* JXL_RESTRICT linear_storage);
 
 // DEPRECATED, used by opsin_image_wrapper.
 Image3F OpsinDynamicsImage(const Image3B& srgb8);

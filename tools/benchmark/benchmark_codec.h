@@ -32,6 +32,7 @@
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/cmdline.h"
+#include "tools/speed_stats.h"
 
 namespace jxl {
 
@@ -66,18 +67,21 @@ class ImageCodec {
   virtual bool IsJpegTranscoder() const { return false; }
 
   virtual Status Compress(const std::string& filename, const CodecInOut* io,
-                          ThreadPool* pool, PaddedBytes* compressed) = 0;
+                          ThreadPool* pool, PaddedBytes* compressed,
+                          jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual Status Decompress(const std::string& filename,
                             const Span<const uint8_t> compressed,
-                            ThreadPool* pool, CodecInOut* io) = 0;
+                            ThreadPool* pool, CodecInOut* io,
+                            jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual void GetMoreStats(BenchmarkStats* stats) {}
 
   virtual Status CanRecompressJpeg() const { return false; }
   virtual Status RecompressJpeg(const std::string& filename,
                                 const std::string& data,
-                                PaddedBytes* compressed) {
+                                PaddedBytes* compressed,
+                                jpegxl::tools::SpeedStats* speed_stats) {
     return false;
   }
 

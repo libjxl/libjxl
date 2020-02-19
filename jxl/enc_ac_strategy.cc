@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <hwy/static_targets.h>
 
 #include "jxl/ac_strategy.h"
 #include "jxl/ans_params.h"
@@ -42,7 +43,7 @@ namespace {
 // Debugging utilities.
 
 // Returns a linear sRGB color (as bytes) for each AC strategy.
-static const uint8_t* TypeColor(const uint8_t& raw_strategy) {
+const uint8_t* TypeColor(const uint8_t& raw_strategy) {
   JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
   static_assert(AcStrategy::kNumValidStrategies == 18, "Change colors");
   static constexpr uint8_t kColors[][3] = {
@@ -68,7 +69,7 @@ static const uint8_t* TypeColor(const uint8_t& raw_strategy) {
   return kColors[raw_strategy];
 }
 
-static const uint8_t* TypeMask(const uint8_t& raw_strategy) {
+const uint8_t* TypeMask(const uint8_t& raw_strategy) {
   JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
   static_assert(AcStrategy::kNumValidStrategies == 18, "Add masks");
   static constexpr uint8_t kMask[][64] = {
@@ -447,8 +448,6 @@ constexpr AcStrategy::Type kACSOrder[] = {
     AcStrategy::Type::DCT,
 };
 
-constexpr size_t kEnabledTransforms = sizeof(kACSOrder) / sizeof(*kACSOrder);
-
 size_t ACSPossibleReplacements(AcStrategy::Type current,
                                AcStrategy::Type* JXL_RESTRICT out) {
   // TODO(veluca): is this decision tree optimal?
@@ -561,9 +560,9 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
 }
 }  // namespace
 
-HWY_ATTR void FindBestAcStrategy(const Image3F& src,
-                                 PassesEncoderState* JXL_RESTRICT enc_state,
-                                 ThreadPool* pool, AuxOut* aux_out) {
+HWY_ATTR JXL_NOINLINE void FindBestAcStrategy(
+    const Image3F& src, PassesEncoderState* JXL_RESTRICT enc_state,
+    ThreadPool* pool, AuxOut* aux_out) {
   PROFILER_FUNC;
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
@@ -646,21 +645,21 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
               }
             }
           }
-          for (size_t c = 0; c < 3; c++) {
+          for (auto& pixel : pixels) {
             // Sums of rows: only 4-wide SIMD (easier than transpose)
             float side[8];
             for (size_t y = 0; y < 8; y++) {
-              const auto left = Load(d4, &pixels[c][y * 8] + 0);
-              const auto right = Load(d4, &pixels[c][y * 8] + 4);
+              const auto left = Load(d4, &pixel[y * 8] + 0);
+              const auto right = Load(d4, &pixel[y * 8] + 4);
               side[y] = GetLane(hwy::ext::SumOfLanes(left + right));
             }
 
             // Sum of columns (one per lane).
             HWY_ALIGN float top[8];
             for (size_t x = 0; x < 8; x += d.N) {
-              auto sums_of_columns = Load(d, &pixels[c][x]);
+              auto sums_of_columns = Load(d, &pixel[x]);
               for (size_t y = 1; y < 8; y++) {
-                sums_of_columns += Load(d, &pixels[c][y * 8 + x]);
+                sums_of_columns += Load(d, &pixel[y * 8 + x]);
               }
               Store(sums_of_columns, d, top + x);
             }
@@ -671,9 +670,9 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
               const auto side_y = Set(d, side[y]) * mul;
               for (size_t x = 0; x < 8; x += d.N) {
                 const auto top_x = Load(d, &top[x]);
-                auto v = Load(d, &pixels[c][y * 8 + x]);
+                auto v = Load(d, &pixel[y * 8 + x]);
                 v -= MulAdd(mul, top_x, side_y);
-                Store(v, d, &pixels[c][y * 8 + x]);
+                Store(v, d, &pixel[y * 8 + x]);
               }
             }
           }
@@ -719,8 +718,8 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
     for (size_t iy = 0; iy < 4 && by * 4 + iy < ysize_blocks; iy++) {
       for (size_t ix = 0; ix < 4 && bx * 4 + ix < xsize_blocks; ix++) {
         if (chosen_mask[iy * 4 + ix]) continue;
-        for (size_t i = 0; i < kEnabledTransforms; i++) {
-          AcStrategy acs = AcStrategy::FromRawStrategy(kACSOrder[i]);
+        for (auto i : kACSOrder) {
+          AcStrategy acs = AcStrategy::FromRawStrategy(i);
           size_t cx = acs.covered_blocks_x();
           size_t cy = acs.covered_blocks_y();
           float max_delta_v[3] = {max_delta[0][iy * 4 + ix],
@@ -791,7 +790,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             }
           }
           // Mark blocks as chosen and write to acs image.
-          ac_strategy->Set(bx * 4 + ix, by * 4 + iy, kACSOrder[i]);
+          ac_strategy->Set(bx * 4 + ix, by * 4 + iy, i);
           for (size_t y = 0; y < cy; y++) {
             for (size_t x = 0; x < cx; x++) {
               chosen_mask[(y + iy) * 4 + x + ix] = 1;

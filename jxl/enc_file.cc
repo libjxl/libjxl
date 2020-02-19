@@ -216,6 +216,8 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
       AnimationFrame animation_frame = io->animation_frames[i];
       animation_frame.nonserialized_have_timecode =
           io->animation.have_timecodes;
+      animation_frame.nonserialized_composite_still =
+          io->animation.composite_still;
       animation_frame.is_last = i == io->frames.size() - 1;
       JXL_RETURN_IF_ERROR(EncodeFrame(cparams, &animation_frame, io->frames[i],
                                       passes_enc_state, pool, &writer, aux_out,

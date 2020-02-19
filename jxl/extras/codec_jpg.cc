@@ -205,6 +205,9 @@ constexpr int kInvPlaneOrder[] = {1, 0, 2};
 }  // namespace
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
+  // Don't do anything for non-JPEG files (no need to report an error)
+  if (!IsJPG(bytes)) return false;
+
   // We need to declare all the non-trivial destructor local variables before
   // the call to setjmp().
   ColorEncoding color_encoding;
@@ -234,7 +237,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
   cinfo.client_data = static_cast<void*>(&env);
 
   jpeg_create_decompress(&cinfo);
-  jpeg_mem_src(&cinfo, bytes.data(), bytes.size());
+  jpeg_mem_src(&cinfo, reinterpret_cast<const unsigned char*>(bytes.data()),
+               bytes.size());
   jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
   jpeg_read_header(&cinfo, TRUE);
   if (ReadICCProfile(&cinfo, &icc)) {

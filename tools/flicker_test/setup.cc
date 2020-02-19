@@ -26,10 +26,10 @@ FlickerTestWizard::FlickerTestWizard(QWidget* const parent)
     : QWizard(parent), settings_("JPEG XL project", "Flickering test") {
   ui_.setupUi(this);
 
-  connect(ui_.grayFadingTime, QOverload<int>::of(&QSpinBox::valueChanged), this,
-          &FlickerTestWizard::updateTotalGrayTime);
-  connect(ui_.grayTime, QOverload<int>::of(&QSpinBox::valueChanged), this,
-          &FlickerTestWizard::updateTotalGrayTime);
+  connect(ui_.grayFadingTime, SIGNAL(valueChanged(int)), this,
+          SLOT(updateTotalGrayTime()));
+  connect(ui_.grayTime, SIGNAL(valueChanged(int)), this,
+          SLOT(updateTotalGrayTime()));
 
   ui_.timingButtonBox->button(QDialogButtonBox::RestoreDefaults)
       ->setText(tr("Restore ISO/IEC 29170-2:2015 parameters"));
