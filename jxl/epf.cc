@@ -24,7 +24,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <hwy/static_targets.h>
 #include <mutex>
 #include <numeric>  // std::accumulate
 #include <vector>
@@ -43,9 +42,14 @@
 #include "jxl/quant_weights.h"
 #include "jxl/quantizer.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/epf.cc"
+#include <hwy/foreach_target.h>
+
 namespace jxl {
 
-namespace {
+#include <hwy/begin_target-inl.h>
+
 // Avoid compiler complaints about % 0 not being defined.
 template <size_t m>
 struct Mod {
@@ -101,19 +105,19 @@ constexpr float kMinSigma = -3.90524291751269967465540850526868f;
 
 DF df;
 
-HWY_ATTR JXL_INLINE hwy::VT<DF> Weight(hwy::VT<DF> sad, hwy::VT<DF> inv_sigma,
-                                       hwy::VT<DF> thres) {
+HWY_ATTR JXL_INLINE HWY_VEC(DF)
+    Weight(HWY_VEC(DF) sad, HWY_VEC(DF) inv_sigma, HWY_VEC(DF) thres) {
   auto v = MulAdd(sad, inv_sigma, Set(DF(), 1.0f));
   auto v2 = v * v;
-  return hwy::IfThenZeroElse(v <= thres, v2);
+  return IfThenZeroElse(v <= thres, v2);
 }
 
 template <bool aligned, int row>
 HWY_ATTR JXL_INLINE void AddPixelStep1(
-    const LoopFilterRows<2>& rows, size_t x, hwy::VT<DF> sad,
-    hwy::VT<DF> sad_mul, hwy::VT<DF> inv_sigma, const LoopFilter& lf,
-    hwy::VT<DF>* JXL_RESTRICT X, hwy::VT<DF>* JXL_RESTRICT Y,
-    hwy::VT<DF>* JXL_RESTRICT B, hwy::VT<DF>* JXL_RESTRICT w) {
+    const LoopFilterRows<2>& rows, size_t x, HWY_VEC(DF) sad,
+    HWY_VEC(DF) sad_mul, HWY_VEC(DF) inv_sigma, const LoopFilter& lf,
+    HWY_VEC(DF) * JXL_RESTRICT X, HWY_VEC(DF) * JXL_RESTRICT Y,
+    HWY_VEC(DF) * JXL_RESTRICT B, HWY_VEC(DF) * JXL_RESTRICT w) {
   auto cx = aligned ? Load(DF(), rows.GetInputRow<row>(0) + x)
                     : LoadU(DF(), rows.GetInputRow<row>(0) + x);
   auto cy = aligned ? Load(DF(), rows.GetInputRow<row>(1) + x)
@@ -131,11 +135,11 @@ HWY_ATTR JXL_INLINE void AddPixelStep1(
 
 template <bool aligned, int row>
 HWY_ATTR JXL_INLINE void AddPixelStep2(
-    const LoopFilterRows<1>& rows, size_t x, hwy::VT<DF> rx, hwy::VT<DF> ry,
-    hwy::VT<DF> rb, hwy::VT<DF> sad_mul, hwy::VT<DF> inv_sigma,
-    const LoopFilter& lf, hwy::VT<DF>* JXL_RESTRICT X,
-    hwy::VT<DF>* JXL_RESTRICT Y, hwy::VT<DF>* JXL_RESTRICT B,
-    hwy::VT<DF>* JXL_RESTRICT w) {
+    const LoopFilterRows<1>& rows, size_t x, HWY_VEC(DF) rx, HWY_VEC(DF) ry,
+    HWY_VEC(DF) rb, HWY_VEC(DF) sad_mul, HWY_VEC(DF) inv_sigma,
+    const LoopFilter& lf, HWY_VEC(DF) * JXL_RESTRICT X,
+    HWY_VEC(DF) * JXL_RESTRICT Y, HWY_VEC(DF) * JXL_RESTRICT B,
+    HWY_VEC(DF) * JXL_RESTRICT w) {
   auto cx = aligned ? Load(DF(), rows.GetInputRow<row>(0) + x)
                     : LoadU(DF(), rows.GetInputRow<row>(0) + x);
   auto cy = aligned ? Load(DF(), rows.GetInputRow<row>(1) + x)
@@ -355,7 +359,7 @@ HWY_ATTR void Epf2Row(const LoopFilterRows<1>& rows, const LoopFilter& lf,
   }
 }
 
-HWY_ATTR bool ApplyLoopFiltersRowImpl(
+HWY_ATTR Status ApplyLoopFiltersRowImpl(
     const LoopFilter& lf, const Rect& in_rect, const Image3F& in,
     const Rect& sigma_rect, const ImageF& sigma, size_t y,
     const float* JXL_RESTRICT gab_weights, const Rect& out_rect,
@@ -422,12 +426,15 @@ HWY_ATTR bool ApplyLoopFiltersRowImpl(
   *output_row = dy2;
   return true;
 }
-}  // namespace
 
-HWY_ATTR bool ApplyLoopFiltersRow(PassesDecoderState* dec_state,
-                                  const Rect& in_rect, size_t y, size_t thread,
-                                  Image3F* JXL_RESTRICT out,
-                                  size_t* JXL_RESTRICT output_row) {
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(ApplyLoopFiltersRowImpl)
+
+Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
+                           size_t y, size_t thread, Image3F* JXL_RESTRICT out,
+                           size_t* JXL_RESTRICT output_row) {
   JXL_DASSERT(in_rect.x0() % kBlockDim == 0);
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
   if (!lf.gab && !lf.epf) {
@@ -438,18 +445,20 @@ HWY_ATTR bool ApplyLoopFiltersRow(PassesDecoderState* dec_state,
   Rect sigma_rect(in_rect.x0() / kBlockDim, in_rect.y0() / kBlockDim,
                   DivCeil(in_rect.xsize(), kBlockDim),
                   DivCeil(in_rect.ysize(), kBlockDim));
-  return ApplyLoopFiltersRowImpl(lf, in_rect, dec_state->decoded, sigma_rect,
-                                 dec_state->sigma, y, dec_state->gab_weights,
-                                 in_rect, out, &dec_state->storage1[thread],
-                                 &dec_state->storage2[thread], output_row);
+  // TODO(janwas): hoist to caller
+  auto apply = ChooseApplyLoopFiltersRowImpl(hwy::SupportedTargets());
+  return apply(lf, in_rect, dec_state->decoded, sigma_rect, dec_state->sigma, y,
+               dec_state->gab_weights, in_rect, out,
+               &dec_state->storage1[thread], &dec_state->storage2[thread],
+               output_row);
 }
 
-HWY_ATTR void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
-                                   const Image3F& in, const Rect& sigma_rect,
-                                   const ImageF& sigma, const Rect& out_rect,
-                                   Image3F* JXL_RESTRICT out,
-                                   Image3F* JXL_RESTRICT storage1,
-                                   Image3F* JXL_RESTRICT storage2) {
+void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
+                          const Image3F& in, const Rect& sigma_rect,
+                          const ImageF& sigma, const Rect& out_rect,
+                          Image3F* JXL_RESTRICT out,
+                          Image3F* JXL_RESTRICT storage1,
+                          Image3F* JXL_RESTRICT storage2) {
   JXL_ASSERT(SameSize(in_rect, out_rect));
   JXL_ASSERT(in_rect.xsize() == sigma_rect.xsize() * kBlockDim);
   JXL_ASSERT(in_rect.ysize() == sigma_rect.ysize() * kBlockDim);
@@ -463,12 +472,15 @@ HWY_ATTR void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
   float gab_weights[9];
   lf.GaborishWeights(gab_weights);
 
+  auto apply = ChooseApplyLoopFiltersRowImpl(hwy::SupportedTargets());
   for (size_t y = 2 * kBlockDim - lf.PaddingRows();
        y < ysize + 2 * kBlockDim + lf.PaddingRows(); y++) {
     size_t output_row;
-    ApplyLoopFiltersRowImpl(lf, in_rect, in, sigma_rect, sigma, y, gab_weights,
-                            out_rect, out, storage1, storage2, &output_row);
+    (void)apply(lf, in_rect, in, sigma_rect, sigma, y, gab_weights, out_rect,
+                out, storage1, storage2, &output_row);
   }
 }
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

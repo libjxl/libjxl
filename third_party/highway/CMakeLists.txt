@@ -38,26 +38,20 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(HWY_SOURCES
-  hwy/arch.h
-  hwy/arm64_neon.h
-  hwy/cache_control.h
-  hwy/compiler_specific.h
-  hwy/foreach_target.h
-  hwy/include_headers.h
-  hwy/runtime_dispatch.cc
-  hwy/runtime_dispatch.h
-  hwy/runtime_targets.h
-  hwy/scalar.h
-  hwy/shared.h
-  hwy/static_targets.h
-  hwy/targets.h
-  hwy/tests/test_target_util.h
-  hwy/tests/test_util.h
-  hwy/type_traits.h
-  hwy/x86/avx2.h
-  hwy/x86/avx512.h
-  hwy/x86/sse4.h
-  hwy/wasm.h
+    hwy/begin_target-inl.h
+    hwy/end_target-inl.h
+    hwy/foreach_target.h
+    hwy/highway.h
+    hwy/interface.h
+    hwy/ops/arm_neon-inl.h
+    hwy/ops/scalar-inl.h
+    hwy/ops/wasm_128-inl.h
+    hwy/ops/x86_128-inl.h
+    hwy/ops/x86_256-inl.h
+    hwy/ops/x86_512-inl.h
+    hwy/supported_targets.cc
+    hwy/tests/test_util-inl.h
+    hwy/tests/test_util.h
 )
 
 set(HWY_FLAGS
@@ -99,7 +93,7 @@ if(${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
     -fno-vectorize
 
     # Use color in messages
-    -Xclang -fdiagnostics-show-option -fcolor-diagnostics
+    -fdiagnostics-show-option -fcolor-diagnostics
   )
 endif()
 
@@ -132,18 +126,33 @@ if(HWY_USE_GTEST)
   list(APPEND HWY_FLAGS -DHWY_USE_GTEST)
 endif()
 
-if(HWY_EMSCRIPTEN)
-  list(APPEND HWY_FLAGS -s SIMD=1)
-endif()
-
 add_library(hwy STATIC ${HWY_SOURCES})
 
 target_compile_options(hwy PRIVATE ${HWY_FLAGS})
 target_include_directories(hwy PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 
-if(HWY_EMSCRIPTEN)
-  target_link_libraries(hwy PUBLIC "-s SIMD=1")
-endif()
+# -------------------------------------------------------- hwy_list_targets
+# Generate a tool to pint the compiled-in targets as defined by the current
+# flags. This tool will print to stderr at build time, right after building
+# hwy.
+add_executable(hwy_list_targets hwy/tests/list_targets.cc)
+target_compile_options(hwy_list_targets PRIVATE ${HWY_FLAGS})
+target_include_directories(hwy_list_targets PRIVATE
+  $<TARGET_PROPERTY:hwy,INCLUDE_DIRECTORIES>)
+add_custom_command(TARGET hwy POST_BUILD
+    COMMAND $<TARGET_FILE:hwy_list_targets> || (exit 0))
+
+# -------------------------------------------------------- Examples
+
+add_executable(skeleton hwy/examples/skeleton_main.cc)
+target_sources(skeleton PRIVATE
+    hwy/examples/skeleton-inl.h
+    hwy/examples/skeleton.cc
+    hwy/examples/skeleton.h
+    hwy/examples/skeleton_shared.h)
+target_compile_options(skeleton PRIVATE ${HWY_FLAGS})
+target_link_libraries(skeleton hwy)
+set_target_properties(skeleton PROPERTIES PREFIX "tests/")
 
 # -------------------------------------------------------- Tests
 

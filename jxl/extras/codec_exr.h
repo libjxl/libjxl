@@ -27,7 +27,8 @@
 namespace jxl {
 
 // Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImageEXR(Span<const uint8_t> bytes, CodecInOut* io);
+Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
+                      CodecInOut* io);
 
 // Transforms from io->c_current to `c_desired` (with the transfer function set
 // to linear as that is the OpenEXR convention) and encodes into `bytes`.

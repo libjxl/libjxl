@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include <hwy/interface.h>
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/file_io.h"
 #include "jxl/base/padded_bytes.h"
@@ -43,6 +44,7 @@ Status WritePNG(const Image3B& image, const std::string& filename) {
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
+  io.metadata.floating_point_sample = false;
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
   PaddedBytes compressed;
@@ -84,7 +86,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   printf("%.10f\n", distance);
 
   double p = 3.0;
-  double pnorm = ComputeDistanceP(distmap, p);
+  double pnorm = ChooseComputeDistanceP(hwy::SupportedTargets())(distmap, p);
   printf("%g-norm: %f\n", p, pnorm);
 
   if (distmap_filename != "") {

@@ -34,3 +34,7 @@ target_link_libraries(jpegxl_threads
     # problems when including both the shared and static library.
     jpegxl-static
 )
+
+if(MINGW)
+target_link_libraries(jpegxl_threads PUBLIC mingw_stdthreads)
+endif()

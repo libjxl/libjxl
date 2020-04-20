@@ -56,15 +56,17 @@ static inline constexpr uint64_t EnumBits(FrameEncoding /*unused*/) {
          MakeBit(FrameEncoding::kJpegGroup);
 }
 
-static inline const char* EnumName(ColorTransform) { return "ColorTransform"; }
-static inline constexpr uint64_t EnumBits(ColorTransform) {
+static inline const char* EnumName(ColorTransform /*unused*/) {
+  return "ColorTransform";
+}
+static inline constexpr uint64_t EnumBits(ColorTransform /*unused*/) {
   return MakeBit(ColorTransform::kXYB) | MakeBit(ColorTransform::kNone) |
          MakeBit(ColorTransform::kYCbCr);
 }
-static inline const char* EnumName(YCbCrChromaSubsampling) {
+static inline const char* EnumName(YCbCrChromaSubsampling /*unused*/) {
   return "YCbCrChromaSubsampling";
 }
-static inline constexpr uint64_t EnumBits(YCbCrChromaSubsampling) {
+static inline constexpr uint64_t EnumBits(YCbCrChromaSubsampling /*unused*/) {
   return MakeBit(YCbCrChromaSubsampling::k444) |
          MakeBit(YCbCrChromaSubsampling::k420) |
          MakeBit(YCbCrChromaSubsampling::k422) |
@@ -82,12 +84,13 @@ struct AnimationFrame {
     }
     name_length_ = name.length();
     // Allows layer name lengths up to 1071 bytes
-    visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0, &name_length_);
+    visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0,
+                 &name_length_);
     name.resize(name_length_);
     for (size_t i = 0; i < name_length_; i++) {
-        uint32_t c = name[i];
-        visitor->Bits(8, 0, &c);
-        name[i] = c;
+      uint32_t c = name[i];
+      visitor->Bits(8, 0, &c);
+      name[i] = c;
     }
 
     if (visitor->Conditional(duration > 0)) {

@@ -20,7 +20,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <hwy/static_targets.h>
 #include <string>
 #include <vector>
 
@@ -31,19 +30,19 @@
 #include "jxl/base/fast_log.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
-#include "jxl/block.h"
 #include "jxl/butteraugli/butteraugli.h"
 #include "jxl/coeff_order_fwd.h"
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
 #include "jxl/common.h"
 #include "jxl/convolve.h"
-#include "jxl/dct.h"
+#include "jxl/dct_scales.h"
 #include "jxl/dec_cache.h"
 #include "jxl/dec_group.h"
 #include "jxl/dec_reconstruct.h"
 #include "jxl/enc_butteraugli_comparator.h"
 #include "jxl/enc_cache.h"
+#include "jxl/enc_dct.h"
 #include "jxl/enc_group.h"
 #include "jxl/enc_params.h"
 #include "jxl/gauss_blur.h"
@@ -141,11 +140,11 @@ void ComputeMask(float* JXL_RESTRICT out_pos) {
 }
 
 // Increase precision in 8x8 blocks that are complicated in DCT space.
-HWY_ATTR void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
-                            const coeff_order_t* natural_coeff_order,
-                            const float* JXL_RESTRICT dct_rescale,
-                            float* JXL_RESTRICT out_pos) {
-  HWY_ALIGN float dct[kDCTBlockSize] = {0};
+void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
+                   const coeff_order_t* natural_coeff_order,
+                   const float* JXL_RESTRICT dct_rescale,
+                   float* JXL_RESTRICT out_pos) {
+  HWY_ALIGN_MAX float dct[kDCTBlockSize] = {0};
   for (size_t dy = 0; dy < 8; ++dy) {
     const size_t yclamp = std::min(y + dy, xyb.ysize() - 1);
     const float* const JXL_RESTRICT row_in = xyb.Row(yclamp);
@@ -154,7 +153,7 @@ HWY_ATTR void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
       dct[dy * 8 + dx] = row_in[xclamp];
     }
   }
-  ComputeTransposedScaledDCT<8>()(FromBlock<8>(dct), ToBlock<8>(dct));
+  ChooseTransposedScaledDCT8(hwy::SupportedTargets())(dct);
   float entropyQL2 = 0.0f;
   float entropyQL4 = 0.0f;
   float entropyQL8 = 0.0f;
@@ -182,8 +181,8 @@ HWY_ATTR void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
 }
 
 // Increase precision in 8x8 blocks that have high dynamic range.
-HWY_ATTR void RangeModulation(const size_t x, const size_t y, const ImageF& xyb,
-                              float* JXL_RESTRICT out_pos) {
+void RangeModulation(const size_t x, const size_t y, const ImageF& xyb,
+                     float* JXL_RESTRICT out_pos) {
   float minval = 1e30f;
   float maxval = -1e30f;
   for (size_t dy = 0; dy < 8 && y + dy < xyb.ysize(); ++dy) {
@@ -233,8 +232,8 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   *out_pos += sum;
 }
 
-HWY_ATTR void PerBlockModulations(const ImageF& xyb, const float scale,
-                                  ThreadPool* pool, ImageF* out) {
+void PerBlockModulations(const ImageF& xyb, const float scale, ThreadPool* pool,
+                         ImageF* out) {
   JXL_ASSERT(DivCeil(xyb.xsize(), kBlockDim) == out->xsize());
   JXL_ASSERT(DivCeil(xyb.ysize(), kBlockDim) == out->ysize());
   const coeff_order_t* natural_coeff_order =
@@ -612,15 +611,13 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
   ImageF& quant_field = enc_state->initial_quant_field;
 
-  const float intensity_multiplier = cparams.GetIntensityMultiplier();
   const float butteraugli_target = cparams.butteraugli_distance;
   ButteraugliComparator comparator(cparams.hf_asymmetry);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
-  const float initial_quant_dc =
-      InitialQuantDC(butteraugli_target, intensity_multiplier);
+  const float initial_quant_dc = InitialQuantDC(butteraugli_target);
   AdjustQuantField(enc_state->shared.ac_strategy, &quant_field);
   ImageF tile_distmap;
   ImageF tile_distmap_localopt;
@@ -656,6 +653,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
     metadata.bits_per_sample = 32;
+    metadata.floating_point_sample = true;
     metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle linear(&metadata);
     linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),
@@ -903,6 +901,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
     quantizer.SetQuantField(quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
     metadata.bits_per_sample = 32;
+    metadata.floating_point_sample = true;
     metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle linear(&metadata);
     linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),
@@ -1034,7 +1033,8 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 
   const WeightsSymmetric3& weights = WeightsSymmetric3GaussianDC();
   ImageF smoothed(xsize, ysize);
-  Symmetric3(opsin_y, rect, weights, pool, &smoothed);
+  ChooseSymmetric3(hwy::SupportedTargets())(opsin_y, rect, weights, pool,
+                                            &smoothed);
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
@@ -1052,18 +1052,15 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 
 }  // namespace
 
-float InitialQuantDC(float butteraugli_target, float intensity_multiplier) {
-  const float intensity_multiplier3 = std::cbrt(intensity_multiplier);
+float InitialQuantDC(float butteraugli_target) {
   const float butteraugli_target_dc =
       std::min<float>(butteraugli_target,
                       2.5 * std::pow(0.4 * butteraugli_target, kDcQuantPow));
   // We want the maximum DC value to be at most 2**15 * kInvDCQuant / quant_dc.
   // The maximum DC value might not be in the kXybRange because of inverse
   // gaborish, so we add some slack to the maximum theoretical quant obtained
-  // this way (64), and some more if the intensity multiplier is more than the
-  // default of 1.
-  return std::min(kDcQuant / butteraugli_target_dc,
-                  50.f / intensity_multiplier3);
+  // this way (64).
+  return std::min(kDcQuant / butteraugli_target_dc, 50.f);
 }
 
 ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
@@ -1082,13 +1079,11 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
   const CompressParams& cparams = enc_state->cparams;
   Quantizer& quantizer = enc_state->shared.quantizer;
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
-  const float intensity_multiplier = cparams.GetIntensityMultiplier();
   if (cparams.max_error_mode) {
     PROFILER_ZONE("enc find best maxerr");
     FindBestQuantizationMaxError(opsin, enc_state, pool, aux_out);
   } else if (cparams.speed_tier == SpeedTier::kFalcon) {
-    const float quant_dc =
-        InitialQuantDC(cparams.butteraugli_distance, intensity_multiplier);
+    const float quant_dc = InitialQuantDC(cparams.butteraugli_distance);
     // TODO(veluca): tune constant.
     const float quant_ac = kAcQuant / cparams.butteraugli_distance;
     quantizer.SetQuant(quant_dc, quant_ac, &raw_quant_field);
@@ -1097,8 +1092,7 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
                        cparams.uniform_quant * rescale, &raw_quant_field);
   } else if (cparams.speed_tier > SpeedTier::kKitten) {
     PROFILER_ZONE("enc fast quant");
-    const float quant_dc =
-        InitialQuantDC(cparams.butteraugli_distance, intensity_multiplier);
+    const float quant_dc = InitialQuantDC(cparams.butteraugli_distance);
     AdjustQuantField(enc_state->shared.ac_strategy,
                      &enc_state->initial_quant_field);
     quantizer.SetQuantField(quant_dc, enc_state->initial_quant_field,
@@ -1140,11 +1134,14 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
     dec_state.EnsureStorage(num_threads);
     return true;
   };
+  const auto decode_group =
+      ChooseDecodeGroupForRoundtrip(hwy::SupportedTargets());
+  const auto compute_coef = ChooseComputeCoefficients(hwy::SupportedTargets());
   const auto process_group = [&](const int group_index, const int thread) {
-    ComputeCoefficients(group_index, enc_state, nullptr);
-    JXL_CHECK(DecodeGroupForRoundtrip(
-        enc_state->coeffs, group_index, &dec_state, thread, &idct, &decoded,
-        nullptr, save_decompressed, apply_color_transform));
+    compute_coef(group_index, enc_state, nullptr);
+    JXL_CHECK(decode_group(enc_state->coeffs, group_index, &dec_state, thread,
+                           &idct, &decoded, nullptr, save_decompressed,
+                           apply_color_transform));
   };
   RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
 

@@ -15,7 +15,6 @@
 #include "jxl/optimize.h"
 
 #include <algorithm>
-#include <iostream>
 
 #include "jxl/base/status.h"
 
@@ -24,14 +23,6 @@ namespace jxl {
 namespace optimize {
 
 namespace {
-
-void PrintVector(const std::vector<double>& v) {
-  std::cout << v[0] << " [";
-  for (size_t j = 1; j < v.size(); j++) {
-    std::cout << (j == 1 ? "" : ", ") << v[j];
-  }
-  std::cout << "]" << std::endl;
-}
 
 // simplex vector must be sorted by first element of its elements
 std::vector<double> Midpoint(const std::vector<std::vector<double>>& simplex) {
@@ -91,8 +82,6 @@ void Eval(std::vector<double>* vec,
           const std::function<double((const std::vector<double>&))>& fun) {
   std::vector<double> args(vec->begin() + 1, vec->end());
   (*vec)[0] = fun(args);
-  // std::cout << "eval: ";
-  // PrintVector(*vec);
 }
 
 void Sort(std::vector<std::vector<double>>* simplex) {
@@ -166,8 +155,6 @@ std::vector<double> RunSimplex(
       InitialSimplex(dim, amount, init, fun);
   for (int i = 0; i < max_iterations; i++) {
     Sort(&simplex);
-    // std::cout << "reflect " << i << ": ";
-    // PrintVector(simplex[0]);
     Reflect(&simplex, fun);
   }
   return simplex[0];

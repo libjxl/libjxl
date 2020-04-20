@@ -139,15 +139,25 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
 
   GimpPrecision precision;
   Status (*fill_layer)(gint32 layer, const CodecInOut& io, GimpImageType);
-  if (io.metadata.bits_per_sample <= 8) {
-    precision = GIMP_PRECISION_U8_GAMMA;
-    fill_layer = &FillGimpLayer<GIMP_PRECISION_U8_GAMMA>;
-  } else if (io.metadata.bits_per_sample <= 16) {
-    precision = GIMP_PRECISION_U16_GAMMA;
-    fill_layer = &FillGimpLayer<GIMP_PRECISION_U16_GAMMA>;
+  if (io.metadata.floating_point_sample) {
+    if (io.metadata.bits_per_sample <= 16) {
+      precision = GIMP_PRECISION_HALF_GAMMA;
+      fill_layer = &FillGimpLayer<GIMP_PRECISION_HALF_GAMMA>;
+    } else {
+      precision = GIMP_PRECISION_FLOAT_GAMMA;
+      fill_layer = &FillGimpLayer<GIMP_PRECISION_FLOAT_GAMMA>;
+    }
   } else {
-    precision = GIMP_PRECISION_FLOAT_GAMMA;
-    fill_layer = &FillGimpLayer<GIMP_PRECISION_FLOAT_GAMMA>;
+    if (io.metadata.bits_per_sample <= 8) {
+      precision = GIMP_PRECISION_U8_GAMMA;
+      fill_layer = &FillGimpLayer<GIMP_PRECISION_U8_GAMMA>;
+    } else if (io.metadata.bits_per_sample <= 16) {
+      precision = GIMP_PRECISION_U16_GAMMA;
+      fill_layer = &FillGimpLayer<GIMP_PRECISION_U16_GAMMA>;
+    } else {
+      precision = GIMP_PRECISION_U32_GAMMA;
+      fill_layer = &FillGimpLayer<GIMP_PRECISION_U32_GAMMA>;
+    }
   }
 
   *image_id = gimp_image_new_with_precision(io.xsize(), io.ysize(), image_type,

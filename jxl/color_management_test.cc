@@ -29,8 +29,8 @@
 #include "jxl/base/file_io.h"
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/image_test_utils.h"
-#include "jxl/testdata_path.h"
 #include "jxl/test_utils.h"
+#include "jxl/testdata_path.h"
 
 namespace jxl {
 
@@ -145,8 +145,9 @@ class ColorManagementTest
     const size_t thread = 0;
     const ImageF& in = c.IsGray() ? g->in_gray : g->in_color;
     ImageF* JXL_RESTRICT out = c.IsGray() ? &g->out_gray : &g->out_color;
-    xform_fwd.Run(thread, in.Row(0), xform_fwd.BufDst(thread));
-    xform_rev.Run(thread, xform_fwd.BufDst(thread), out->Row(0));
+    auto do_transform = ChooseDoColorSpaceTransform(hwy::SupportedTargets());
+    do_transform(&xform_fwd, thread, in.Row(0), xform_fwd.BufDst(thread));
+    do_transform(&xform_rev, thread, xform_fwd.BufDst(thread), out->Row(0));
 
 #if JPEGXL_ENABLE_SKCMS
     double max_l1 = 7E-4;
@@ -230,7 +231,8 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
   ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncoding::SRGB(), 1, 1));
   const float sRGB_D2700_values[3] = {0.863, 0.737, 0.490};
   float sRGB_values[3];
-  transform.Run(0, sRGB_D2700_values, sRGB_values);
+  auto do_transform = ChooseDoColorSpaceTransform(hwy::SupportedTargets());
+  do_transform(&transform, 0, sRGB_D2700_values, sRGB_values);
   EXPECT_THAT(sRGB_values,
               ElementsAre(FloatNear(0.914, 1e-3), FloatNear(0.745, 1e-3),
                           FloatNear(0.601, 1e-3)));

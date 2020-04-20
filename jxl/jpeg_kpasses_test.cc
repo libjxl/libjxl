@@ -45,7 +45,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
 
   // decode JPEG to pixels (using libjpeg)
   CodecInOut io2;
-  JXL_CHECK(jxl::DecodeImageJPG(Span<const uint8_t>(encoded), &io2));
+  JXL_CHECK(jxl::DecodeImageJPG(Span<const uint8_t>(encoded), pool, &io2));
   const ImageBundle& ib2 = io2.Main();
 
   // decode JPEG to DCT coeffs
@@ -88,7 +88,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
 
   // decode JPEG to pixels (using libjpeg)
   CodecInOut io6;
-  JXL_CHECK(jxl::DecodeImageJPG(Span<const uint8_t>(encoded2), &io6));
+  JXL_CHECK(jxl::DecodeImageJPG(Span<const uint8_t>(encoded2), pool, &io6));
   const ImageBundle& ib6 = io6.Main();
 
   EXPECT_TRUE(SamePixels(ib2.color(), ib6.color()));

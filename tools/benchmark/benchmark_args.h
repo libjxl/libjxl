@@ -65,6 +65,14 @@ struct BenchmarkArgs {
     return result;
   }
 
+  OptionId AddFloat(float* field, const char* longName, const char* help,
+                    float defaultValue) {
+    OptionId result = cmdline.AddOptionValue('\0', longName, "<scalar>", help,
+                                             field, &jpegxl::tools::ParseFloat);
+    *field = defaultValue;
+    return result;
+  }
+
   OptionId AddDouble(double* field, const char* longName, const char* help,
                      double defaultValue) {
     OptionId result = cmdline.AddOptionValue(
@@ -113,6 +121,8 @@ struct BenchmarkArgs {
 
   bool decode_only;
   bool skip_butteraugli;
+
+  float intensity_target;
 
   std::string dec_hints_string;
   jxl::DecoderHints dec_hints;

@@ -21,7 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/static_targets.h>
+#include <hwy/interface.h>
 #include <vector>
 
 #include "jxl/aux_out.h"
@@ -54,8 +54,8 @@ static constexpr size_t kColorTileDimInBlocks = kColorTileDim / kBlockDim;
 static_assert(kGroupDimInBlocks % kColorTileDimInBlocks == 0,
               "Group dim should be divisible by color tile dim");
 
-static constexpr const uint8_t kColorOffset = 127;
-static constexpr const uint8_t kDefaultColorFactor = 84;
+static constexpr uint8_t kColorOffset = 127;
+static constexpr uint8_t kDefaultColorFactor = 84;
 
 static constexpr U32Enc kColorFactorDist(Val(kDefaultColorFactor), Val(256),
                                          BitsOffset(2, 8), BitsOffset(258, 12));
@@ -93,7 +93,7 @@ struct ColorCorrelationMap {
     ReclaimAndCharge(writer, &allotment, layer, aux_out);
   }
 
-  HWY_ATTR Status DecodeDC(BitReader* br) {
+  Status DecodeDC(BitReader* br) {
     if (br->ReadFixedBits<1>() == 1) {
       // All default.
       return true;
@@ -133,6 +133,7 @@ struct ColorCorrelationMap {
   ImageB ytob_map;
 
  private:
+  HWY_ALIGN_MAX float dc_factors_[4] = {};
   // range of factor: -1.51 to +1.52
   uint32_t color_factor_ = kDefaultColorFactor;
   float color_scale_ = 1.0f / color_factor_;
@@ -140,31 +141,32 @@ struct ColorCorrelationMap {
   float base_correlation_b_ = kYToBRatio;
   int32_t ytox_dc_ = kColorOffset;
   int32_t ytob_dc_ = kColorOffset;
-  HWY_ALIGN float dc_factors_[4] = {};
 };
 
-void FindBestColorCorrelationMap(const Image3F& opsin,
-                                 const DequantMatrices& dequant,
-                                 ThreadPool* pool, ColorCorrelationMap* cmap);
+typedef void FindBestColorCorrelationMapFunc(const Image3F& opsin,
+                                             const DequantMatrices& dequant,
+                                             const AcStrategyImage* ac_strategy,
+                                             ThreadPool* pool,
+                                             ColorCorrelationMap* cmap);
+FindBestColorCorrelationMapFunc* ChooseFindBestColorCorrelationMap(
+    uint32_t targets_bits);
 
-void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
-                    std::vector<Token>* tokens, size_t base_context,
-                    AuxOut* JXL_RESTRICT aux_out);
+typedef void EncodeColorMapFunc(const ColorCorrelationMap& cmap,
+                                const Rect& rect, std::vector<Token>* tokens,
+                                size_t base_context,
+                                AuxOut* JXL_RESTRICT aux_out);
+EncodeColorMapFunc* ChooseEncodeColorMap(uint32_t targets_bits);
 
-Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
-                      const std::vector<uint8_t>& context_map,
-                      ColorCorrelationMap* cmap, const Rect& rect,
-                      size_t base_context, AuxOut* JXL_RESTRICT aux_out);
+typedef Status DecodeColorMapFunc(BitReader* JXL_RESTRICT br,
+                                  ANSSymbolReader* decoder,
+                                  const std::vector<uint8_t>& context_map,
+                                  ColorCorrelationMap* cmap, const Rect& rect,
+                                  size_t base_context,
+                                  AuxOut* JXL_RESTRICT aux_out);
+DecodeColorMapFunc* ChooseDecodeColorMap(uint32_t targets_bits);
 
 // Declared here to avoid including predictor.h.
 static constexpr size_t kCmapContexts = 24;
-
-void EncodeFullColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
-                        BitWriter* writer, size_t layer, AuxOut* aux_out,
-                        bool use_new_cmap);
-
-bool DecodeFullColorMap(BitReader* JXL_RESTRICT br, ColorCorrelationMap* cmap,
-                        bool use_new_cmap);
 
 template <typename V, typename R>
 inline void FindIndexOfSumMaximum(const V* array, const size_t len, R* idx,

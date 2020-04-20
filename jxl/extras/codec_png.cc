@@ -31,6 +31,7 @@
 #include "jxl/external_image.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
+#include "jxl/luminance.h"
 #include "third_party/lodepng/lodepng.h"
 
 namespace jxl {
@@ -684,6 +685,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("Unexpected PNG bit depth");
   }
   io->metadata.bits_per_sample = static_cast<uint32_t>(bits_per_sample);
+  io->metadata.floating_point_sample = false;
   io->metadata.alpha_bits = has_alpha ? io->metadata.bits_per_sample : 0;
 
   io->enc_size = bytes.size();
@@ -722,9 +724,10 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   const Span<const uint8_t> span(out, out_size);
   const bool ok = CopyTo(desc, span, pool, &io->Main());
   free(out);
+  JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
   io->metadata.bits_per_sample = io->Main().DetectRealBitdepth();
-  return ok;
+  return Map255ToTargetNits(io, pool);
 }
 
 Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
@@ -732,7 +735,8 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
                       PaddedBytes* bytes) {
   io->enc_bits_per_sample = bits_per_sample == 8 ? 8 : 16;
 
-  const ImageBundle& ib = io->Main();
+  ImageBundle ib = io->Main().Copy();
+  JXL_RETURN_IF_ERROR(MapTargetNitsTo255(&ib, pool));
   const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
   const size_t alpha_bits = ib.HasAlpha() ? io->metadata.alpha_bits : 0;
   const bool big_endian = true;              // PNG requirement

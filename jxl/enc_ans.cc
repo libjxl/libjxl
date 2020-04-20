@@ -40,9 +40,8 @@ namespace {
 
 static const int kMaxNumSymbolsForSmallCode = 4;
 
-HWY_ATTR void ANSBuildInfoTable(const ANSHistBin* counts,
-                                const AliasTable::Entry* table,
-                                size_t alphabet_size, ANSEncSymbolInfo* info) {
+void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
+                       size_t alphabet_size, ANSEncSymbolInfo* info) {
   // create valid alias table for empty streams.
   for (size_t s = 0; s < std::max<size_t>(1, alphabet_size); ++s) {
     const ANSHistBin freq = s == alphabet_size ? ANS_TAB_SIZE : counts[s];
@@ -74,7 +73,8 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
     if (histogram[i] > 0) {
       JXL_ASSERT(counts[i] > 0);
       // += histogram[i] * -log(counts[i]/total_counts)
-      sum += histogram[i] * (ANS_LOG_TAB_SIZE - FastLog2(counts[i]));
+      sum += histogram[i] *
+             std::max(0.0f, ANS_LOG_TAB_SIZE - FastLog2f(counts[i]));
     }
   }
   if (total_histogram > 0) {
@@ -84,7 +84,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
 }
 
 float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
-  const float flat_bits = FastLog2(len);
+  const float flat_bits = FastLog2f(len);
   int total_histogram = 0;
   for (size_t i = 0; i < len; ++i) {
     total_histogram += histogram[i];
@@ -106,7 +106,7 @@ static const uint8_t kLogCountSymbols[ANS_LOG_TAB_SIZE + 2] = {
 static int SmallestIncrement(uint32_t count, uint32_t shift) {
   int bits = count == 0 ? -1 : FloorLog2Nonzero(count);
   int drop_bits = bits - GetPopulationCountPrecision(bits, shift);
-  return (1 << drop_bits);
+  return drop_bits < 0 ? 1 : (1 << drop_bits);
 }
 
 template <bool minimize_error_of_sum>
@@ -365,14 +365,18 @@ float ComputeHistoAndDataCost(const ANSHistBin* histogram, size_t alphabet_size,
 }
 
 uint32_t ComputeBestMethod(const ANSHistBin* histogram, size_t alphabet_size,
-                           size_t* cost) {
-  uint32_t method = 0;
+                           float* cost, bool approximate = false) {
+  size_t method = 0;
   float fcost = ComputeHistoAndDataCost(histogram, alphabet_size, 0);
-  for (uint32_t shift = 0; shift <= ANS_LOG_TAB_SIZE; shift++) {
+  for (uint32_t shift = 0; shift <= ANS_LOG_TAB_SIZE;
+       approximate ? shift += 2 : shift++) {
     float c = ComputeHistoAndDataCost(histogram, alphabet_size, shift + 1);
     if (c < fcost) {
       method = shift + 1;
       fcost = c;
+    } else if (approximate) {
+      // do not be as precise if estimating cost.
+      break;
     }
   }
   *cost = fcost;
@@ -427,8 +431,9 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
     }
     alphabet_size = largest_symbol + 1;
   }
-  size_t cost;
+  float cost;
   uint32_t method = ComputeBestMethod(histogram, alphabet_size, &cost);
+  JXL_ASSERT(cost >= 0);
   int num_symbols;
   int symbols[kMaxNumSymbolsForSmallCode] = {};
   std::vector<ANSHistBin> counts(histogram, histogram + alphabet_size);
@@ -466,109 +471,9 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
 }
 
 float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size) {
-  // TODO(veluca): this function really ought to just run the next three
-  // lines, but this seems to make numbers worse.
-  //
-  // size_t c;
-  // uint32_t method = ComputeBestMethod(data, alphabet_size, &c);
-  // return ComputeHistoAndDataCost(data, alphabet_size, method);
-
-  size_t total_count = std::accumulate(data, data + alphabet_size, 0);
-  uint32_t shift = ANS_TAB_SIZE / 2;
-  if (total_count == 0) {
-    return 7;
-  }
-
-  float entropy_bits = total_count * ANS_LOG_TAB_SIZE;
-  int histogram_bits = 0;
-  size_t count = 0;
-  size_t length = 0;
-  if (total_count > ANS_TAB_SIZE) {
-    size_t total = total_count;
-    for (size_t i = 0; i < alphabet_size; ++i) {
-      if (data[i] > 0) {
-        ++count;
-        length = i;
-      }
-    }
-    if (count == 1) {
-      return 7;
-    }
-    ++length;
-    const uint64_t max0 = (total * length) >> ANS_LOG_TAB_SIZE;
-    const uint64_t max1 = (max0 * length) >> ANS_LOG_TAB_SIZE;
-    const uint32_t min_base = (total + max0 + max1) >> ANS_LOG_TAB_SIZE;
-    total += min_base * count;
-    const int64_t kFixBits = 32;
-    const int64_t kFixOne = 1LL << kFixBits;
-    const int64_t kDescaleBits = kFixBits - ANS_LOG_TAB_SIZE;
-    const int64_t kDescaleOne = 1LL << kDescaleBits;
-    const int64_t kDescaleMask = kDescaleOne - 1;
-    const uint32_t mult = kFixOne / total;
-    const uint32_t error = kFixOne % total;
-    uint32_t cumul = error;
-    if (error < kDescaleOne) {
-      cumul += (kDescaleOne - error) >> 1;
-    }
-    if (data[0] > 0) {
-      uint64_t c = (uint64_t)(data[0] + min_base) * mult + cumul;
-      float log2count = FastLog2(c >> kDescaleBits);
-      entropy_bits -= data[0] * log2count;
-      cumul = c & kDescaleMask;
-    }
-    for (size_t i = 1; i < length; ++i) {
-      if (data[i] > 0) {
-        uint64_t c = (uint64_t)(data[i] + min_base) * mult + cumul;
-        float log2count = FastLog2(c >> kDescaleBits);
-        int log2floor = static_cast<int>(log2count);
-        entropy_bits -= data[i] * log2count;
-        histogram_bits += log2floor;
-        histogram_bits += kLogCountBitLengths[log2floor + 1];
-        cumul = c & kDescaleMask;
-      } else {
-        histogram_bits += kLogCountBitLengths[0];
-      }
-    }
-  } else {
-    float log2norm = ANS_LOG_TAB_SIZE - FastLog2(total_count);
-    if (data[0] > 0) {
-      float log2count = FastLog2(data[0]) + log2norm;
-      entropy_bits -= data[0] * log2count;
-      length = 0;
-      ++count;
-    }
-    for (size_t i = 1; i < alphabet_size; ++i) {
-      if (data[i] > 0) {
-        float log2count = FastLog2(data[i]) + log2norm;
-        int log2floor = static_cast<int>(log2count);
-        entropy_bits -= data[i] * log2count;
-        if (log2floor >= static_cast<int>(ANS_LOG_TAB_SIZE)) {
-          log2floor = ANS_LOG_TAB_SIZE - 1;
-        }
-        histogram_bits += GetPopulationCountPrecision(log2floor, shift);
-        histogram_bits += kLogCountBitLengths[log2floor + 1];
-        length = i;
-        ++count;
-      } else {
-        histogram_bits += kLogCountBitLengths[0];
-      }
-    }
-    ++length;
-  }
-
-  if (count == 1) {
-    return 7;
-  }
-
-  if (count == 2) {
-    return static_cast<int>(entropy_bits) + 1 + 12 + ANS_LOG_TAB_SIZE;
-  }
-
-  int max_bits =
-      alphabet_size == 1 ? 0 : 1 + FloorLog2Nonzero(alphabet_size - 1);
-  histogram_bits += max_bits;
-
-  return histogram_bits + static_cast<int>(entropy_bits) + 1;
+  float c;
+  ComputeBestMethod(data, alphabet_size, &c, /*approximate=*/true);
+  return c;
 }
 
 namespace {
@@ -753,6 +658,23 @@ void WriteTokens(const std::vector<Token>& tokens,
   if (aux_out != nullptr) {
     aux_out->layers[layer].extra_bits += num_extra_bits;
   }
+}
+
+float TokenCost(const std::vector<Token>& tokens) {
+  // TODO(veluca): implement this without using a writer.
+  size_t num_contexts = 0;
+  for (Token t : tokens) {
+    if (num_contexts <= t.context) {
+      num_contexts = t.context + 1;
+    }
+  }
+  BitWriter writer;
+  EntropyEncodingData codes;
+  std::vector<uint8_t> context_map;
+  BuildAndEncodeHistograms(HistogramParams(), num_contexts, {tokens}, &codes,
+                           &context_map, &writer, 0, nullptr);
+  WriteTokens(tokens, codes, context_map, &writer, 0, nullptr);
+  return writer.BitsWritten();
 }
 
 }  // namespace jxl

@@ -17,8 +17,6 @@
 #include <stdio.h>
 
 #include <algorithm>
-#include <hwy/runtime_dispatch.h>
-#include <hwy/static_targets.h>
 
 #include "jxl/base/cache_aligned.h"
 #include "jxl/base/data_parallel.h"
@@ -128,11 +126,6 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
 
   if (printhelp || !args.ValidateArgs(cmdline, mode)) {
     cmdline.PrintHelp();
-    return 1;
-  }
-  const int bits = hwy::TargetBitfield().Bits();
-  if ((bits & HWY_STATIC_TARGETS) != HWY_STATIC_TARGETS) {
-    fprintf(stderr, "CPU does not support all enabled targets => exiting.\n");
     return 1;
   }
 

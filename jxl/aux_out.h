@@ -189,6 +189,8 @@ struct AuxOut {
     pathname << debug_prefix << label << ".png";
     CodecInOut io;
     io.metadata.bits_per_sample = sizeof(T) * kBitsPerByte;
+    // This assumes T is only float, uint8_t or uint16_t.
+    io.metadata.floating_point_sample = (sizeof(T) == 32) ? true : false;
     io.metadata.color_encoding = ColorEncoding::SRGB();
     io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
     (void)dump_image(io, pathname.str());
@@ -209,10 +211,13 @@ struct AuxOut {
     Image3F linear(image.xsize(), image.ysize());
     OpsinParams opsin_params;
     opsin_params.Init();
-    OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
+    ChooseOpsinToLinear(hwy::SupportedTargets())(image, Rect(linear), nullptr,
+                                                 &linear, opsin_params);
 
     CodecInOut io;
     io.metadata.bits_per_sample = sizeof(T) * kBitsPerByte;
+    // This assumes T is only float, uint8_t or uint16_t.
+    io.metadata.floating_point_sample = (sizeof(T) == 32) ? true : false;
     io.metadata.color_encoding = ColorEncoding::LinearSRGB();
     io.SetFromImage(std::move(linear), io.metadata.color_encoding);
 

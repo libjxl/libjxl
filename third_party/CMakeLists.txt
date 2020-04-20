@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Enable tests in third_party/ as well.
+enable_testing()
+include(CTest)
+
 # Highway
 set(HWY_USE_GTEST ON CACHE BOOL "HWY_USE_GTEST")
 add_subdirectory(highway)
@@ -26,6 +30,7 @@ include(lodepng.cmake)
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h")
   message(SEND_ERROR "Please run git submodule update --init")
 endif ()
+set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
 add_subdirectory(brotli EXCLUDE_FROM_ALL)
 
 # *cms
@@ -57,3 +62,14 @@ if (JPEGXL_ENABLE_SJPEG)
   endif()
   include(sjpeg.cmake)
 endif ()
+
+# std::thread support when cross-compiling with mingw.
+# jpeglx lib uses <mutex> and therefore needs mingw-std-threads when compiling
+# with mingw.
+if(MINGW)
+option(MINGW_STDTHREADS_GENERATE_STDHEADERS "" ON)
+if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mingw-std-threads/mingw.thread.h")
+  message(SEND_ERROR "Please run git submodule update --init")
+endif ()
+add_subdirectory(mingw-std-threads)
+endif()

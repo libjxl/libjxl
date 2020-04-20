@@ -27,15 +27,16 @@ static const size_t kMaxTestIter = 100000;
 
 // F(w) = (w - w_min)^2.
 struct SimpleQuadraticFunction {
-  explicit SimpleQuadraticFunction(const std::vector<double>& w0) : w_min(w0) {}
+  typedef Array<double, 2> ArrayType;
+  explicit SimpleQuadraticFunction(const ArrayType& w0) : w_min(w0) {}
 
-  double Compute(const std::vector<double>& w, std::vector<double>* df) const {
-    std::vector<double> dw = w - w_min;
+  double Compute(const ArrayType& w, ArrayType* df) const {
+    ArrayType dw = w - w_min;
     *df = -2.0 * dw;
     return dw * dw;
   }
 
-  std::vector<double> w_min;
+  ArrayType w_min;
 };
 
 // F(alpha, beta, gamma| x,y) = \sum_i(y_i - (alpha x_i ^ gamma + beta))^2.
@@ -44,7 +45,8 @@ struct PowerFunction {
                          const std::vector<double>& y0)
       : x(x0), y(y0) {}
 
-  double Compute(const std::vector<double>& w, std::vector<double>* df) const {
+  typedef Array<double, 3> ArrayType;
+  double Compute(const ArrayType& w, ArrayType* df) const {
     double loss_function = 0;
     (*df)[0] = 0;
     (*df)[1] = 0;
@@ -66,11 +68,11 @@ struct PowerFunction {
 };
 
 TEST(OptimizeTest, SimpleQuadraticFunction) {
-  std::vector<double> w_min(2);
+  SimpleQuadraticFunction::ArrayType w_min;
   w_min[0] = 1.0;
   w_min[1] = 2.0;
   SimpleQuadraticFunction f(w_min);
-  std::vector<double> w(2);
+  SimpleQuadraticFunction::ArrayType w(0.);
   static const double kPrecision = 1e-8;
   w = optimize::OptimizeWithScaledConjugateGradientMethod(f, w, kPrecision,
                                                           kMaxTestIter);
@@ -78,8 +80,6 @@ TEST(OptimizeTest, SimpleQuadraticFunction) {
   EXPECT_NEAR(w[1], 2.0, kPrecision);
 }
 
-// TODO(eustas): First 100 steps look similar, but then lambda goes wild...
-#if !defined(__EMSCRIPTEN__)
 TEST(OptimizeTest, PowerFunction) {
   std::vector<double> x(10);
   std::vector<double> y(10);
@@ -88,7 +88,7 @@ TEST(OptimizeTest, PowerFunction) {
     y[ind] = 2. * pow(x[ind], 3) + 5.;
   }
   PowerFunction f(x, y);
-  std::vector<double> w(3);
+  PowerFunction::ArrayType w(0.);
 
   static const double kPrecision = 0.01;
   w = optimize::OptimizeWithScaledConjugateGradientMethod(f, w, kPrecision,
@@ -97,7 +97,6 @@ TEST(OptimizeTest, PowerFunction) {
   EXPECT_NEAR(w[1], 3.0, kPrecision);
   EXPECT_NEAR(w[2], 5.0, kPrecision);
 }
-#endif
 
 TEST(OptimizeTest, SimplexOptTest) {
   auto f = [](const std::vector<double>& x) -> double {

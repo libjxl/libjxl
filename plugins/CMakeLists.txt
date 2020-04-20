@@ -12,10 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-if(NOT JPEGXL_EMSCRIPTEN)
-  # Problem: linking shared library
+if(NOT JPEGXL_EMSCRIPTEN AND NOT WIN32)
   add_subdirectory(gdk-pixbuf)
-  # Problem: compilation error: ... declared as an array with a negative size
   add_subdirectory(gimp)
 endif()
 

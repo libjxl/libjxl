@@ -20,8 +20,8 @@
 
 #include <stdint.h>
 
+#include <hwy/highway.h>  // LoadFence
 #include <ctime>
-#include <hwy/cache_control.h>  // LoadFence
 
 #include "jxl/base/arch_specific.h"
 #include "jxl/base/compiler_specific.h"

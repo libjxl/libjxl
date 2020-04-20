@@ -15,6 +15,7 @@
 #ifndef JXL_ENC_AC_STRATEGY_H_
 #define JXL_ENC_AC_STRATEGY_H_
 
+#include <stdint.h>
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
@@ -36,9 +37,10 @@ namespace jxl {
 // `quant_field` will be the initial quantization field for this image.  `src`
 // is the input image in the XYB color space. `ac_strategy` is the output
 // strategy.
-void FindBestAcStrategy(const Image3F& src,
-                        PassesEncoderState* JXL_RESTRICT enc_state,
-                        ThreadPool* pool, AuxOut* aux_out);
+typedef void FindBestAcStrategyFunc(const Image3F& src,
+                                    PassesEncoderState* JXL_RESTRICT enc_state,
+                                    ThreadPool* pool, AuxOut* aux_out);
+FindBestAcStrategyFunc* ChooseFindBestAcStrategy(uint32_t targets_bits);
 
 }  // namespace jxl
 

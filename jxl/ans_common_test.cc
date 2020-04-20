@@ -22,8 +22,7 @@
 namespace jxl {
 namespace {
 
-HWY_ATTR void VerifyAliasDistribution(const std::vector<int>& distribution,
-                                      int range) {
+void VerifyAliasDistribution(const std::vector<int>& distribution, int range) {
   AliasTable::Entry table[ANS_MAX_ALPHA_SIZE];
   InitAliasTable(distribution, range, table);
   std::vector<std::vector<int>> offsets(distribution.size());

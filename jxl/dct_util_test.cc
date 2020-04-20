@@ -22,9 +22,10 @@
 #include "jxl/base/bits.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
-#include "jxl/block.h"
 #include "jxl/codec_in_out.h"
-#include "jxl/dct.h"
+#include "jxl/dct_scales.h"
+#include "jxl/dec_dct.h"
+#include "jxl/enc_dct.h"
 #include "jxl/enc_xyb.h"
 #include "jxl/extras/codec.h"
 #include "jxl/image_ops.h"
@@ -181,40 +182,23 @@ static Image3F OpsinTestImage() {
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)ToXYB(io.Main(), 1.0f, null_pool, &opsin, &unused_linear);
+  (void)(*ChooseToXYB)(hwy::SupportedTargets())(io.Main(), null_pool, &opsin,
+                                                &unused_linear);
   opsin.ShrinkTo(opsin.ysize() & ~7, opsin.xsize() & ~7);
   return opsin;
-}
-
-static HWY_ATTR Image3F TransposedScaledIDCT(const Image3F& coeffs) {
-  constexpr size_t N = kBlockDim;
-  const size_t xsize_blocks = coeffs.xsize() / kDCTBlockSize;
-  const size_t ysize_blocks = coeffs.ysize();
-  Image3F img(xsize_blocks * N, ysize_blocks * N);
-  for (size_t c = 0; c < 3; ++c) {
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      for (size_t bx = 0; bx < xsize_blocks; ++bx) {
-        const size_t stride = img.PlaneRow(c, 1) - img.PlaneRow(c, 0);
-        const float* JXL_RESTRICT row_in = coeffs.PlaneRow(c, by);
-        float* JXL_RESTRICT row_out = img.PlaneRow(c, by * N);
-        ComputeTransposedScaledIDCT<N>()(
-            FromBlock<N>(row_in + bx * kDCTBlockSize),
-            ToLines<N>(row_out + bx * N, stride));
-      }
-    }
-  }
-  return img;
 }
 
 TEST(DctUtilTest, DCTRoundtrip) {
   Image3F opsin = OpsinTestImage();
   const size_t xsize_blocks = opsin.xsize() / kBlockDim;
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
+  const uint32_t targets = hwy::SupportedTargets();
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
-  TransposedScaledDCT(opsin, &coeffs);
-  Image3F recon = TransposedScaledIDCT(coeffs);
+  Image3F recon(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
 
+  ChooseTransposedScaledDCT(targets)(opsin, &coeffs);
+  ChooseTransposedScaledIDCT(targets)(coeffs, &recon);
   VerifyRelativeError(opsin, recon, 1e-6, 1e-6);
 }
 
@@ -222,11 +206,14 @@ TEST(DctUtilTest, Transform2x2Corners) {
   Image3F opsin = OpsinTestImage();
   const size_t xsize_blocks = opsin.xsize() / kBlockDim;
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
+  const uint32_t targets = hwy::SupportedTargets();
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
-  TransposedScaledDCT(opsin, &coeffs);
+  Image3F recon(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
+  ChooseTransposedScaledDCT(hwy::SupportedTargets())(opsin, &coeffs);
   Image3F t1 = GetPixelSpaceImageFrom0HVD_64(coeffs);
-  Image3F t2 = Subsample(TransposedScaledIDCT(KeepOnly2x2Corners(coeffs)), 4);
+  ChooseTransposedScaledIDCT(targets)(KeepOnly2x2Corners(coeffs), &recon);
+  Image3F t2 = Subsample(recon, 4);
   VerifyRelativeError(t1, t2, 1e-6, 1e-6);
 }
 
@@ -234,9 +221,10 @@ TEST(DctUtilTest, Roundtrip2x2Corners) {
   Image3F opsin = OpsinTestImage();
   const size_t xsize_blocks = opsin.xsize() / kBlockDim;
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
+  const uint32_t targets = hwy::SupportedTargets();
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
-  TransposedScaledDCT(opsin, &coeffs);
+  ChooseTransposedScaledDCT(targets)(opsin, &coeffs);
   Image3F tmp = GetPixelSpaceImageFrom0HVD_64(coeffs);
   Image3F coeffs_out = CopyImage(coeffs);
   ZeroOut2x2(&coeffs_out);

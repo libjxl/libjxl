@@ -83,26 +83,30 @@ void SlowLaplacian5(const ImageF& in, const Rect& rect, ThreadPool* pool,
 void SlowLaplacian5(const Image3F& in, const Rect& rect, ThreadPool* pool,
                     Image3F* out);
 
-void Symmetric3(const ImageF& in, const Rect& rect,
-                const WeightsSymmetric3& weights, ThreadPool* pool,
-                ImageF* out);
-void Symmetric3(const Image3F& in, const Rect& rect,
-                const WeightsSymmetric3& weights, ThreadPool* pool,
-                Image3F* out);
+typedef void Symmetric3Func(const ImageF& in, const Rect& rect,
+                            const WeightsSymmetric3& weights, ThreadPool* pool,
+                            ImageF* out);
+Symmetric3Func* ChooseSymmetric3(uint32_t targets_bits);
 
-void Symmetric5(const ImageF& in, const Rect& rect,
-                const WeightsSymmetric5& weights, ThreadPool* pool,
-                ImageF* JXL_RESTRICT out);
-void Symmetric5(const Image3F& in, const Rect& rect,
-                const WeightsSymmetric5& weights, ThreadPool* pool,
-                Image3F* JXL_RESTRICT out);
+typedef void Symmetric5Func(const ImageF& in, const Rect& rect,
+                            const WeightsSymmetric5& weights, ThreadPool* pool,
+                            ImageF* JXL_RESTRICT out);
+Symmetric5Func* ChooseSymmetric5(uint32_t targets_bits);
 
-void Separable5(const ImageF& in, const Rect& rect,
-                const WeightsSeparable5& weights, ThreadPool* pool,
-                ImageF* out);
-void Separable5(const Image3F& in, const Rect& rect,
-                const WeightsSeparable5& weights, ThreadPool* pool,
-                Image3F* out);
+typedef void Symmetric5_3Func(const Image3F& in, const Rect& rect,
+                              const WeightsSymmetric5& weights,
+                              ThreadPool* pool, Image3F* JXL_RESTRICT out);
+Symmetric5_3Func* ChooseSymmetric5_3(uint32_t targets_bits);
+
+typedef void Separable5Func(const ImageF& in, const Rect& rect,
+                            const WeightsSeparable5& weights, ThreadPool* pool,
+                            ImageF* out);
+Separable5Func* ChooseSeparable5(uint32_t targets_bits);
+
+typedef void Separable5_3Func(const Image3F& in, const Rect& rect,
+                              const WeightsSeparable5& weights,
+                              ThreadPool* pool, Image3F* out);
+Separable5_3Func* ChooseSeparable5_3(uint32_t targets_bits);
 
 }  // namespace jxl
 

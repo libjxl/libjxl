@@ -100,6 +100,12 @@ Status BenchmarkArgs::AddCommandLineOptions() {
             "for saving output images, "
             " defaults to sRGB.");
 
+  AddFloat(&intensity_target, "intensity_target",
+           "Intended viewing intensity target in nits. Defaults to 255 for "
+           "SDR images, 4000 for HDR images (when the input image uses PQ or "
+           "HLG transfer function)",
+           0);
+
   AddString(&dec_hints_string, "dec-hints",
             "Decoder hints for the input images to encoder. Comma separated "
             "key=value pairs. The key color_space indicates ColorEncoding (see "
@@ -199,7 +205,9 @@ Status BenchmarkArgs::AddCommandLineOptions() {
       false);
 
   if (!AddCommandLineOptionsJxlCodec(this)) return false;
+#ifdef BENCHMARK_JPEG
   if (!AddCommandLineOptionsJPEGCodec(this)) return false;
+#endif  // BENCHMARK_JPEG
   if (!AddCommandLineOptionsPNGCodec(this)) return false;
 #ifdef BENCHMARK_WEBP
   if (!AddCommandLineOptionsWebPCodec(this)) return false;

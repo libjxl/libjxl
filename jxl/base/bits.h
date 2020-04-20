@@ -25,7 +25,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/type_traits.h>
+#include <hwy/highway.h>  // SizeTag
 
 #include "jxl/base/compiler_specific.h"
 

@@ -143,6 +143,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 ImageMetadata::ImageMetadata() { Bundle::Init(this); }
 ImageMetadata2::ImageMetadata2() { Bundle::Init(this); }
 OpsinInverseMatrix::OpsinInverseMatrix() { Bundle::Init(this); }
+IntensityTargetInfo::IntensityTargetInfo() { Bundle::Init(this); }
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
                          ImageMetadata* JXL_RESTRICT metadata) {
@@ -283,6 +284,7 @@ void ImageBundle::VerifySizes() const {
 }
 
 size_t ImageBundle::DetectRealBitdepth() const {
+  JXL_CHECK(metadata_->floating_point_sample == false);
   const size_t orig_d = metadata_->bits_per_sample;
   const size_t maxval = (1 << orig_d) - 1;
   const double factor = maxval / 255.;
@@ -380,15 +382,6 @@ Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
   }
   *out = store;
   return true;
-}
-
-float ChooseDefaultIntensityTarget(const ImageMetadata& metadata) {
-  if (metadata.color_encoding.tf.IsPQ() || metadata.color_encoding.tf.IsHLG()) {
-    // HDR
-    return 4000;
-  }
-  // SDR
-  return kDefaultIntensityTarget;
 }
 
 }  // namespace jxl

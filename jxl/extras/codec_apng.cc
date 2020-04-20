@@ -49,9 +49,11 @@
 #include <string.h>
 
 #if defined(_WIN32) || defined(_WIN64)
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif  // NOMINMAX
 #define WIN32_LEAN_AND_MEAN
-#include <Windows.h>
+#include <windows.h>
 #endif
 
 #include <algorithm>
@@ -66,6 +68,7 @@
 #include "jxl/headers.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
+#include "jxl/luminance.h"
 #include "png.h" /* original (unpatched) libpng is ok */
 
 namespace jxl {
@@ -200,7 +203,8 @@ FILE* fmemopen(void* buf, size_t size, const char* mode) {
 
 }  // namespace
 
-Status DecodeImageAPNG(Span<const uint8_t> bytes, CodecInOut* io) {
+Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
+                       CodecInOut* io) {
   FILE* f;
   unsigned int id, i, j, w, h, w0, h0, x0, y0;
   unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
@@ -229,6 +233,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, CodecInOut* io) {
   io->frames.clear();
   io->dec_pixels = 0;
   io->metadata.bits_per_sample = 8;
+  io->metadata.floating_point_sample = false;
   io->metadata.alpha_bits = 8;
   io->metadata.color_encoding =
       ColorEncoding::SRGB();  // todo: get data from png metadata
@@ -418,7 +423,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, CodecInOut* io) {
   delete[] chunkIHDR.p;
 
   fclose(f);
-  return true;
+  return Map255ToTargetNits(io, pool);
 }
 
 }  // namespace jxl

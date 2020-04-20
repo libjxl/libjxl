@@ -111,7 +111,10 @@ struct LoopFilter {
   size_t PaddingRows() const { return (epf ? 3 : 0) + (gab ? 1 : 0); }
   size_t PaddingCols() const {
     // Having less than one full block here breaks handling of sigma in EPF.
-    return kBlockDim;
+    // If no loop filter is used, no padding is necessary - indeed, adding
+    // padding breaks the output as the padding area will not be processed
+    // separately.
+    return (epf || gab) ? kBlockDim : 0;
   }
 
   mutable bool all_default;

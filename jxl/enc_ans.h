@@ -118,6 +118,10 @@ struct Token {
 // histogram (header bits plus data bits).
 float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size);
 
+// Returns an estimate of the number of bits required to encode the given vector
+// of tokens.
+float TokenCost(const std::vector<Token>& tokens);
+
 // Apply context clustering, compute histograms and encode them. Returns an
 // estimate of the total bits used for encoding the stream. If `writer` ==
 // nullptr, the bit estimate will not take into account the context map (which

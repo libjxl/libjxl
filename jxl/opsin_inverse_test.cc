@@ -27,21 +27,26 @@ namespace jxl {
 namespace {
 
 TEST(OpsinInverseTest, LinearInverseInverts) {
+  const uint32_t targets_bits = hwy::SupportedTargets();
+
   Image3F linear(128, 128);
   RandomFillImage(&linear, 255.0f);
 
   CodecInOut io;
   io.metadata.bits_per_sample = 32;
+  io.metadata.floating_point_sample = true;
   io.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io.SetFromImage(CopyImage(linear), io.metadata.color_encoding);
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)ToXYB(io.Main(), 1.0f, null_pool, &opsin, &unused_linear);
+  (void)(ChooseToXYB(targets_bits)(io.Main(), null_pool, &opsin,
+                                   &unused_linear));
 
   OpsinParams opsin_params;
   opsin_params.Init();
-  OpsinToLinear(&opsin, /*pool=*/nullptr, opsin_params);
+  ChooseOpsinToLinearInplace(targets_bits)(&opsin, /*pool=*/nullptr,
+                                           opsin_params);
 
   VerifyRelativeError(linear, opsin, 3E-3, 2E-4);
 }

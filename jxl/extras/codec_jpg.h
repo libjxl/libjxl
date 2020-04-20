@@ -40,7 +40,8 @@ static inline bool IsJPG(const Span<const uint8_t> bytes) {
 }
 
 // Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io);
+Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
+                      CodecInOut* io);
 
 // Encodes into `bytes`.
 Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,

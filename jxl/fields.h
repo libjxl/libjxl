@@ -54,8 +54,7 @@ class BitsCoder {
     return true;
   }
 
-  HWY_ATTR static uint32_t Read(const size_t bits,
-                                BitReader* JXL_RESTRICT reader) {
+  static uint32_t Read(const size_t bits, BitReader* JXL_RESTRICT reader) {
     return reader->ReadBits(bits);
   }
 

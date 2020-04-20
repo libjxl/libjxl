@@ -37,6 +37,9 @@ namespace jxl {
 struct Spline {
   struct Point {
     float x, y;
+    bool operator==(const Point& other) const {
+      return std::fabs(x - other.x) < 1e-3f && std::fabs(y - other.y) < 1e-3f;
+    }
   };
   std::vector<Point> control_points;
   // X, Y, B.
@@ -85,9 +88,9 @@ class Splines {
   void Encode(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
   Status Decode(BitReader* br);
 
-  void AddTo(Image3F* opsin, const Rect& opsin_rect, const Rect& image_rect,
-             const ColorCorrelationMap& cmap) const;
-  void SubtractFrom(Image3F* opsin, const ColorCorrelationMap& cmap) const;
+  Status AddTo(Image3F* opsin, const Rect& opsin_rect, const Rect& image_rect,
+               const ColorCorrelationMap& cmap) const;
+  Status SubtractFrom(Image3F* opsin, const ColorCorrelationMap& cmap) const;
 
   const std::vector<QuantizedSpline>& TestOnlyQuantizedSplines() const {
     return splines_;
@@ -98,8 +101,8 @@ class Splines {
 
  private:
   template <bool>
-  void Apply(Image3F* opsin, const Rect& opsin_rect, const Rect& image_rect,
-             const ColorCorrelationMap& cmap) const;
+  Status Apply(Image3F* opsin, const Rect& opsin_rect, const Rect& image_rect,
+               const ColorCorrelationMap& cmap) const;
 
   // If positive, quantization weights are multiplied by 1 + this/8, which
   // increases precision. If negative, they are divided by 1 - this/8. If 0,

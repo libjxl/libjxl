@@ -19,8 +19,6 @@
 #include <stdlib.h>
 
 #include <algorithm>
-#include <hwy/compiler_specific.h>
-#include <hwy/static_targets.h>
 #include <numeric>
 #include <utility>
 
@@ -34,6 +32,8 @@
 
 namespace jxl {
 namespace {
+
+using OptimizeArray = optimize::Array<double, NoiseParams::kNumNoisePoints>;
 
 float GetScoreSumsOfAbsoluteDifferences(const Image3F& opsin, const int x,
                                         const int y, const int block_size) {
@@ -169,7 +169,7 @@ float GetSADThreshold(const NoiseHistogram& histogram, const int num_bin) {
 struct LossFunction {
   explicit LossFunction(std::vector<NoiseLevel> nl0) : nl(std::move(nl0)) {}
 
-  double Compute(const std::vector<double>& w, std::vector<double>* df,
+  double Compute(const OptimizeArray& w, OptimizeArray* df,
                  bool skip_regularization = false) const {
     constexpr double kReg = 0.005;
     constexpr double kAsym = 1.1;
@@ -221,12 +221,15 @@ void OptimizeNoiseParameters(const std::vector<NoiseLevel>& noise_level,
   avg /= noise_level.size();
 
   LossFunction loss_function(noise_level);
-  std::vector<double> parameter_vector(NoiseParams::kNumNoisePoints, avg);
+  OptimizeArray parameter_vector;
+  for (size_t i = 0; i < parameter_vector.size(); i++) {
+    parameter_vector[i] = avg;
+  }
 
   parameter_vector = optimize::OptimizeWithScaledConjugateGradientMethod(
       loss_function, parameter_vector, kPrecision, kMaxIter);
 
-  std::vector<double> df = parameter_vector;
+  OptimizeArray df = parameter_vector;
   float loss = loss_function.Compute(parameter_vector, &df,
                                      /*skip_regularization=*/true) /
                noise_level.size();

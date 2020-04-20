@@ -129,6 +129,7 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
 
   container->exif = nullptr;
   container->exif_size = 0;
+  container->xml.clear();
   container->jumb = nullptr;
   container->jumb_size = 0;
   container->codestream = nullptr;
@@ -177,6 +178,8 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
     } else if (!memcmp("exif", box.type, 4)) {
       container->exif = in;
       container->exif_size = data_size;
+    } else if (!memcmp("xml ", box.type, 4)) {
+      container->xml.emplace_back(in, data_size);
     } else if (!memcmp("jumb", box.type, 4)) {
       container->jumb = in;
       container->jumb_size = data_size;
@@ -216,6 +219,11 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
   if (container.exif) {
     JXL_RETURN_IF_ERROR(
         AppendBoxAndData("exif", container.exif, container.exif_size, out));
+  }
+
+  for (size_t i = 0; i < container.xml.size(); i++) {
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("xml ", container.xml[i].first,
+                                         container.xml[i].second, out));
   }
 
   if (container.codestream) {

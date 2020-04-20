@@ -17,9 +17,118 @@
 
 // Operations on images.
 
+#include <algorithm>
+#include <array>
+#include <limits>
+#include <vector>
+#include "jxl/base/profiler.h"
+#include "jxl/base/status.h"
 #include "jxl/image.h"
 
 namespace jxl {
+
+template <typename T>
+void CopyImageTo(const Plane<T>& from, Plane<T>* JXL_RESTRICT to) {
+  PROFILER_ZONE("CopyImage1");
+  JXL_ASSERT(SameSize(from, *to));
+  for (size_t y = 0; y < from.ysize(); ++y) {
+    const T* JXL_RESTRICT row_from = from.ConstRow(y);
+    T* JXL_RESTRICT row_to = to->Row(y);
+    memcpy(row_to, row_from, from.xsize() * sizeof(T));
+  }
+}
+
+// DEPRECATED - prefer to preallocate result.
+template <typename T>
+Plane<T> CopyImage(const Plane<T>& from) {
+  Plane<T> to(from.xsize(), from.ysize());
+  CopyImageTo(from, &to);
+  return to;
+}
+
+// Copies `from:rect_from` to `to`.
+template <typename T>
+void CopyImageTo(const Rect& rect_from, const Plane<T>& from,
+                 const Plane<T>* JXL_RESTRICT to) {
+  PROFILER_ZONE("CopyImageR");
+  JXL_ASSERT(SameSize(rect_from, *to));
+  for (size_t y = 0; y < rect_from.ysize(); ++y) {
+    const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
+    T* JXL_RESTRICT row_to = to->MutableRow(y);
+    memcpy(row_to, row_from, rect_from.xsize() * sizeof(T));
+  }
+}
+
+template <typename T>
+void CopyImageTo(const Plane<T>& from, const Rect& rect_to,
+                 const Plane<T>* JXL_RESTRICT to) {
+  PROFILER_ZONE("CopyImageR");
+  JXL_ASSERT(SameSize(from, rect_to));
+  for (size_t y = 0; y < rect_to.ysize(); ++y) {
+    const T* JXL_RESTRICT row_from = from.Row(y);
+    T* JXL_RESTRICT row_to = rect_to.MutableRow(to, y);
+    memcpy(row_to, row_from, rect_to.xsize() * sizeof(T));
+  }
+}
+
+// DEPRECATED - Returns a copy of the "image" pixels that lie in "rect".
+template <typename T>
+Plane<T> CopyImage(const Rect& rect, const Plane<T>& image) {
+  Plane<T> copy(rect.xsize(), rect.ysize());
+  CopyImageTo(rect, image, &copy);
+  return copy;
+}
+
+// Copies `from:rect_from` to `to:rect_to`.
+template <typename T>
+void CopyImageTo(const Rect& rect_from, const Image3<T>& from,
+                 const Rect& rect_to, Image3<T>* JXL_RESTRICT to) {
+  PROFILER_ZONE("CopyImageR");
+  JXL_ASSERT(SameSize(rect_from, rect_to));
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < rect_to.ysize(); ++y) {
+      const T* JXL_RESTRICT row_from = rect_from.ConstPlaneRow(from, c, y);
+      T* JXL_RESTRICT row_to = rect_to.PlaneRow(to, c, y);
+      memcpy(row_to, row_from, rect_to.xsize() * sizeof(T));
+    }
+  }
+}
+
+template <typename T>
+void CopyImageTo(const Image3<T>& from, Image3<T>* JXL_RESTRICT to) {
+  return CopyImageTo(Rect(from), from, Rect(*to), to);
+}
+
+template <typename T>
+void CopyImageTo(const Rect& rect_from, const Image3<T>& from,
+                 Image3<T>* JXL_RESTRICT to) {
+  return CopyImageTo(rect_from, from, Rect(*to), to);
+}
+
+// Copies `from` to `to:rect_to`.
+template <typename T>
+void CopyImageTo(const Image3<T>& from, const Rect& rect_to,
+                 Image3<T>* JXL_RESTRICT to) {
+  return CopyImageTo(Rect(from), from, rect_to, to);
+}
+
+// DEPRECATED - prefer to preallocate result.
+template <typename T>
+Image3<T> CopyImage(const Image3<T>& from) {
+  Image3<T> copy(from.xsize(), from.ysize());
+  CopyImageTo(from, &copy);
+  return copy;
+}
+
+// DEPRECATED - prefer to preallocate result.
+template <typename T>
+Image3<T> CopyImage(const Rect& rect, const Image3<T>& from) {
+  Image3<T> to(rect.xsize(), rect.ysize());
+  CopyImageTo(rect, from.Plane(0), const_cast<ImageF*>(&to.Plane(0)));
+  CopyImageTo(rect, from.Plane(1), const_cast<ImageF*>(&to.Plane(1)));
+  CopyImageTo(rect, from.Plane(2), const_cast<ImageF*>(&to.Plane(2)));
+  return to;
+}
 
 // Sets "thickness" pixels on each border to "value". This is faster than
 // initializing the entire image and overwriting valid/interior pixels.

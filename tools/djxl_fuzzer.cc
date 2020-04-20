@@ -15,9 +15,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include <hwy/runtime_dispatch.h>
-#include <hwy/static_targets.h>
-
 #include "jxl/aux_out.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/span.h"
@@ -29,17 +26,6 @@
 namespace jxl {
 
 int TestOneInput(const uint8_t* data, size_t size) {
-  // TODO(b/65240090): Remove
-  const int bits = hwy::TargetBitfield().Bits();
-  if ((bits & HWY_STATIC_TARGETS) != HWY_STATIC_TARGETS) {
-    static bool warned = false;
-    if (!warned) {
-      fprintf(stderr, "CPU doesn't support all enabled targets; exiting.\n");
-      warned = true;
-    }
-    return 0;
-  }
-
   DecompressParams params;
 
   CodecInOut io;

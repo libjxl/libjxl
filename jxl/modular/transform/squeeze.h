@@ -85,8 +85,8 @@ void inv_hsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.w == 0) return;
-  Channel chout(chin.w + chin_residual.w, chin.h, chin.minval, chin.maxval,
-                chin.hshift - 1, chin.vshift, chin.hcshift - 1, chin.vcshift);
+  Channel chout(chin.w + chin_residual.w, chin.h, chin.hshift - 1, chin.vshift,
+                chin.hcshift - 1, chin.vcshift);
   JXL_DEBUG_V(4,
               "Undoing horizontal squeeze of channel %i using residuals in "
               "channel %i (going from width %zu to %zu)",
@@ -137,10 +137,9 @@ void fwd_hsqueeze(Image &input, int c, int rc) {
   JXL_DEBUG_V(4, "Doing horizontal squeeze of channel %i to new channel %i", c,
               rc);
 
-  Channel chout((chin.w + 1) / 2, chin.h, chin.minval, chin.maxval,
-                chin.hshift + 1, chin.vshift, chin.hcshift + 1, chin.vcshift);
-  Channel chout_residual(chin.w - chout.w, chout.h, chout.minval - chout.maxval,
-                         chout.maxval - chout.minval, chin.hshift + 1,
+  Channel chout((chin.w + 1) / 2, chin.h, chin.hshift + 1, chin.vshift,
+                chin.hcshift + 1, chin.vcshift);
+  Channel chout_residual(chin.w - chout.w, chout.h, chin.hshift + 1,
                          chin.vshift, chin.hcshift, chin.vcshift);
 
   for (size_t y = 0; y < chout.h; y++) {
@@ -181,8 +180,8 @@ void inv_vsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.h == 0) return;
-  Channel chout(chin.w, chin.h + chin_residual.h, chin.minval, chin.maxval,
-                chin.hshift, chin.vshift - 1, chin.hcshift, chin.vcshift - 1);
+  Channel chout(chin.w, chin.h + chin_residual.h, chin.hshift, chin.vshift - 1,
+                chin.hcshift, chin.vcshift - 1);
   JXL_DEBUG_V(
       4,
       "Undoing vertical squeeze of channel %i using residuals in channel "
@@ -238,11 +237,10 @@ void fwd_vsqueeze(Image &input, int c, int rc) {
   JXL_DEBUG_V(4, "Doing vertical squeeze of channel %i to new channel %i", c,
               rc);
 
-  Channel chout(chin.w, (chin.h + 1) / 2, chin.minval, chin.maxval, chin.hshift,
-                chin.vshift + 1, chin.hcshift, chin.vcshift + 1);
-  Channel chout_residual(chin.w, chin.h - chout.h, chout.minval - chout.maxval,
-                         chout.maxval - chout.minval, chin.hshift,
-                         chin.vshift + 1, chin.hcshift, chin.vcshift);
+  Channel chout(chin.w, (chin.h + 1) / 2, chin.hshift, chin.vshift + 1,
+                chin.hcshift, chin.vcshift + 1);
+  Channel chout_residual(chin.w, chin.h - chout.h, chin.hshift, chin.vshift + 1,
+                         chin.hcshift, chin.vcshift);
   intptr_t onerow_in = chin.plane.PixelsPerRow();
   for (size_t y = 0; y < chout_residual.h; y++) {
     const pixel_type *JXL_RESTRICT p_in = chin.Row(y * 2);
@@ -420,7 +418,7 @@ Status squeeze(Image &input, bool inverse, const TransformParams &parameters,
                ThreadPool *pool) {
   // Use a copy so empty (default) parameters remain empty.
   TransformParams adj_params(parameters);
-  if (!adj_params.size()) {
+  if (adj_params.empty()) {
     default_squeeze_parameters(&adj_params, input);
   }
   JXL_RETURN_IF_ERROR(CheckMetaSqueezeParams(adj_params, input.channel.size()));

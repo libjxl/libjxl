@@ -15,9 +15,8 @@
 #ifndef JXL_GAUSS_BLUR_H_
 #define JXL_GAUSS_BLUR_H_
 
-#include <math.h>
 #include <stddef.h>
-
+#include <cmath>
 #include <vector>
 
 #include "jxl/base/status.h"

@@ -14,12 +14,8 @@
 
 #include "jxl/enc_xyb.h"
 
-#ifndef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_xyb.cc"
-
 #include <algorithm>
 #include <cstdlib>
-#include <hwy/runtime_dispatch.h>
 
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
@@ -34,53 +30,13 @@
 #include "jxl/image_ops.h"
 #include "jxl/opsin_params.h"
 
-namespace jxl {
-
-struct TestCubeRoot_T {
-  HWY_DECLARE(void, ())
-};
-
-// See enc_xyb.h.
-struct ToXYB_T {
-  HWY_DECLARE(const ImageBundle*,
-              (const ImageBundle& in, float linear_multiplier, ThreadPool* pool,
-               Image3F* JXL_RESTRICT xyb,
-               ImageBundle* JXL_RESTRICT linear_storage))
-};
-
-void TestCubeRoot() { hwy::TargetBitfield().Foreach(TestCubeRoot_T()); }
-
-const ImageBundle* ToXYB(const ImageBundle& in, const float linear_multiplier,
-                         ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
-                         ImageBundle* JXL_RESTRICT linear_storage) {
-  return Dispatch(hwy::TargetBitfield().Best(), ToXYB_T(), in,
-                  linear_multiplier, pool, xyb, linear_storage);
-}
-
-// DEPRECATED
-Image3F OpsinDynamicsImage(const Image3B& srgb8) {
-  ImageMetadata metadata;
-  metadata.bits_per_sample = 8;
-  metadata.color_encoding = ColorEncoding::SRGB();
-  ImageBundle ib(&metadata);
-  ib.SetFromImage(StaticCastImage3<float>(srgb8), metadata.color_encoding);
-  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray())));
-  ThreadPool* null_pool = nullptr;
-  Image3F xyb(srgb8.xsize(), srgb8.ysize());
-
-  (void)ToXYB(ib, 1.0f, null_pool, &xyb, /*linear_storage=*/nullptr);
-  return xyb;
-}
-
-}  // namespace jxl
-
-#endif  // end of non-SIMD code
-
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_xyb.cc"
 #include <hwy/foreach_target.h>
 
 namespace jxl {
-namespace HWY_NAMESPACE {
-namespace {
+
+#include <hwy/begin_target-inl.h>
 
 // Returns cbrt(x) + add with 6 ulp max error.
 // Modified from vectormath_exp.h, Apache 2 license.
@@ -104,8 +60,8 @@ HWY_ATTR V CubeRootAndAdd(const V x, const V add) {
   // "kExpBias - 1/3 * exp" below gives the wrong result. The IfThenZeroElse()
   // sets those values as 0, which prevents having NaNs in the computations
   // below.
-  const auto m2 = IfThenZeroElse(
-      m1 == Zero(di), kExpBias - (hwy::ShiftRight<23>(m1)) * kExpMul);
+  const auto m2 =
+      IfThenZeroElse(m1 == Zero(di), kExpBias - (ShiftRight<23>(m1)) * kExpMul);
   auto r = BitCast(df, m2);
 
   // Newton-Raphson iterations
@@ -178,19 +134,15 @@ HWY_ATTR void LinearToXyb(const V r, const V g, const V b,
   // For wide-gamut inputs, r/g/b and valx (but not y/z) are often negative.
 }
 
-}  // namespace
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-
 // Ensures infinity norm is bounded.
-HWY_ATTR void TestCubeRoot_T::HWY_FUNC() {
+HWY_ATTR void TestCubeRoot() {
   const HWY_FULL(float) d;
   float max_err = 0.0f;
   for (uint64_t x5 = 0; x5 < 2000000; x5++) {
     const float x = x5 * 1E-5f;
     const float expected = std::cbrt(x);
     HWY_ALIGN float approx[d.N];
-    Store(HWY_NAMESPACE::CubeRootAndAdd(Set(d, x), Zero(d)), d, approx);
+    Store(CubeRootAndAdd(Set(d, x), Zero(d)), d, approx);
 
     // All lanes are same
     for (size_t i = 1; i < d.N; ++i) {
@@ -206,9 +158,9 @@ HWY_ATTR void TestCubeRoot_T::HWY_FUNC() {
 
 // This is different from butteraugli::OpsinDynamicsImage() in the sense that
 // it does not contain a sensitivity multiplier based on the blurred image.
-HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
-    const ImageBundle& in, float linear_multiplier, ThreadPool* pool,
-    Image3F* JXL_RESTRICT xyb, ImageBundle* JXL_RESTRICT linear_storage) {
+HWY_ATTR const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
+                                  Image3F* JXL_RESTRICT xyb,
+                                  ImageBundle* JXL_RESTRICT linear_storage) {
   PROFILER_FUNC;
 
   const size_t xsize = in.xsize();
@@ -236,20 +188,11 @@ HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
     JXL_CHECK(TransformIfNeeded(in, c, pool, linear_storage, &linear_ptr));
   }
 
-  // If we have to multiply, we'll need a copy because `in` is const.
-  if (already_linear && linear_multiplier != 1.f) {
-    linear_storage->SetFromImage(ScaleImage(linear_multiplier, in.color()), c);
-    linear_ptr = linear_storage;
-    // Since linear_srgb has been multiplied (via linear), it should not be
-    // multiplied further below.
-    linear_multiplier = 1.f;
-  }
-
   const HWY_FULL(float) d;
   HWY_ALIGN float premul_absorb[d.N * 12];
   for (size_t i = 0; i < 9; ++i) {
     const auto absorb = Set(d, kOpsinAbsorbanceMatrix[i]);
-    Store(absorb * Set(d, linear_multiplier), d, premul_absorb + i * d.N);
+    Store(absorb, d, premul_absorb + i * d.N);
   }
   for (size_t i = 0; i < 3; ++i) {
     const auto neg_bias_cbrt = Set(d, -std::cbrt(kOpsinAbsorbanceBias[i]));
@@ -258,6 +201,9 @@ HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
 
   const Image3F& in3 = in.color();
   Image3F* JXL_RESTRICT linear3 = linear_ptr->MutableColor();
+
+  // TODO(janwas): move into -inl.h if indirect call is too expensive.
+  auto srgb_to_linear = ChooseSRGBToLinear(hwy::SupportedTargets());
 
   if (already_srgb) {
     RunOnPool(
@@ -272,9 +218,9 @@ HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
           float* JXL_RESTRICT row_in1 = linear3->PlaneRow(1, y);
           float* JXL_RESTRICT row_in2 = linear3->PlaneRow(2, y);
 
-          SRGBToLinear(in.xsize(), row_srgb0, row_in0);
-          SRGBToLinear(in.xsize(), row_srgb1, row_in1);
-          SRGBToLinear(in.xsize(), row_srgb2, row_in2);
+          srgb_to_linear(in.xsize(), row_srgb0, row_in0);
+          srgb_to_linear(in.xsize(), row_srgb1, row_in1);
+          srgb_to_linear(in.xsize(), row_srgb2, row_in2);
 
           float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
           float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
@@ -283,9 +229,8 @@ HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
             const auto in_x = Load(d, row_in0 + x);
             const auto in_y = Load(d, row_in1 + x);
             const auto in_b = Load(d, row_in2 + x);
-            HWY_NAMESPACE::LinearToXyb(in_x, in_y, in_b, premul_absorb,
-                                       row_xyb0 + x, row_xyb1 + x,
-                                       row_xyb2 + x);
+            LinearToXyb(in_x, in_y, in_b, premul_absorb, row_xyb0 + x,
+                        row_xyb1 + x, row_xyb2 + x);
           }
         },
         "SRGBToXYB");
@@ -305,9 +250,8 @@ HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
             const auto in_x = Load(d, row_in0 + x);
             const auto in_y = Load(d, row_in1 + x);
             const auto in_b = Load(d, row_in2 + x);
-            HWY_NAMESPACE::LinearToXyb(in_x, in_y, in_b, premul_absorb,
-                                       row_xyb0 + x, row_xyb1 + x,
-                                       row_xyb2 + x);
+            LinearToXyb(in_x, in_y, in_b, premul_absorb, row_xyb0 + x,
+                        row_xyb1 + x, row_xyb2 + x);
           }
         },
         "LinearToXYB");
@@ -315,5 +259,31 @@ HWY_ATTR const ImageBundle* ToXYB_T::HWY_FUNC(
 
   return linear_ptr;
 }
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(TestCubeRoot)
+HWY_EXPORT(ToXYB)
+
+// DEPRECATED
+Image3F OpsinDynamicsImage(const Image3B& srgb8) {
+  ImageMetadata metadata;
+  metadata.bits_per_sample = 8;
+  metadata.floating_point_sample = false;
+  metadata.color_encoding = ColorEncoding::SRGB();
+  ImageBundle ib(&metadata);
+  ib.SetFromImage(StaticCastImage3<float>(srgb8), metadata.color_encoding);
+  JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray())));
+  ThreadPool* null_pool = nullptr;
+  Image3F xyb(srgb8.xsize(), srgb8.ysize());
+
+  ImageBundle linear_storage(&metadata);
+  (void)ChooseToXYB(hwy::SupportedTargets())(ib, null_pool, &xyb,
+                                             &linear_storage);
+  return xyb;
+}
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

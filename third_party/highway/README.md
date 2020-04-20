@@ -34,9 +34,7 @@ and their parameters.
     during initial development. Analysis tools can warn about some potential
     inefficiencies, but likely not all. We instead provide [a carefully chosen
     set of vector types and operations that are efficient on all target
-    platforms][instmtx] (PPC8, SSE4/AVX2+, ARMv8), plus some useful but less
-    performance-portable operations in an `ext` namespace to make their cost
-    visible.
+    platforms][instmtx] (PPC8, SSE4/AVX2+, ARMv8).
 
 *   Future SIMD hardware features are difficult to predict. For example, AVX2
     came with surprising semantics (almost no interaction between 128-bit
@@ -78,13 +76,14 @@ and their parameters.
     Therefore, we provide code paths for multiple instruction sets and choose
     the most suitable at runtime. To reduce overhead, dispatch should be hoisted
     to higher layers instead of checking inside every low-level function.
-    Generating each code path from the same source reduces implementation- and
-    debugging cost.
+    Highway supports inlining functions in the same file or in *-inl.h headers.
+    We generate all code paths from the same source to reduce implementation-
+    and debugging cost.
 
 *   Not every CPU need be supported. For example, pre-SSE4.1 CPUs are
     increasingly rare and the AVX instruction set is limited to floating-point
     operations. To reduce code size and compile time, we provide specializations
-    for SSE4, AVX2 and AVX-512 instruction sets on x86.
+    for SSE4, AVX2 and AVX-512 instruction sets on x86, plus a scalar fallback.
 
 *   Access to platform-specific intrinsics is necessary for acceptance in
     performance-critical projects. We provide conversions to and from intrinsics
@@ -181,33 +180,15 @@ runtime dispatch.
 
 ## Overloaded function API
 
-Most C++ vector APIs rely on class templates. However, two PPC compilers
-including GCC 6.3 generate inefficient code for classes with a SIMD vector
-member: an [extra load/store for every function argument/return
-value](https://godbolt.org/z/pd2PNP). To avoid this overhead, we use built-in
-vector types on PPC. These provide overloaded arithmetic operators but do not
-allow member functions/typedefs such as `size()` or `value_type`. We instead
-rely on overloaded functions.
+Most C++ vector APIs rely on class templates. However, the ARM SVE vector
+type is sizeless and cannot be wrapped in a class. We instead rely on overloaded
+functions. Overloading based on vector types is also undesirable because SVE
+vectors cannot be default-constructed. We instead use a dedicated 'descriptor'
+type `Desc` for overloading, abbreviated to `D` for template arguments and
+`d` in lvalues.
 
-Because vectors of various lengths are the same type on PPC, we need an
-additional tag argument for disambiguation. Any function template with multiple
-return types uses a descriptor argument to specify the return type. For example,
-the return type of `Zero(Desc<T, N>)` is `VT<Desc<T, N>>`. For brevity,
-`Desc` is abbreviated to `D` for template arguments and `d` in lvalues.
-
-It may seem preferable to write `Zero<D>()` rather than `Zero(D())`, but
-there are technical difficulties. We prefer generic implementations where
-possible rather than overloading for every single `T`. Because C++ does not
-allow partial specialization of function templates, we need multiple overloads:
-one primary template per target. Thus, functions cannot be invoked using
-template syntax. Can we instead add a wrapper function template that calls the
-appropriate overload? Unfortunately, the compiler mechanism for avoiding
-dangerous per-file `-mavx2` requires per-function annotations, and these
-attributes are not generic. Thus, a wrapper into which SIMD functions are
-inlined cannot be a function, because it would also need a target-specific
-attribute. A macro `ZERO(D)` could work, but this is hardly more clear than a
-normal function with arguments. Note that descriptors occur often, so user code
-can define a `const HWY_FULL(float) d;` and then write `Zero(d)`.
+Note that generic function templates are possible, but they require a
+`HWY_ATTR` attribute, which means they must reside in the per-target namespace.
 
 ## Masks
 
@@ -230,115 +211,44 @@ portability: `HWY_FULL(float)`. When necessary, applications may also rely on
 128-bit vectors: `Desc<float, 4>`. There is also the option of a vector of up
 to N lanes: `HWY_CAPPED(float, N)` (the length is always a power of two).
 
-*   Single instruction set per platform: use normal C++ functions with
-    `HWY_ATTR` annotation and `#include "static_targets.h"`. Note that this
-    can co-exist with runtime dispatch in the same translation unit.
+Functions using Highway must be prefixed `HWY_ATTR` and reside between
+`#include <hwy/begin_target-inl.h>` and `#include <hwy/end_target-inl.h>`.
 
-*   Runtime dispatch means calling the best available implementation:
+*   For static dispatch, first include `highway.h`. `HWY_TARGET` will be the
+    best available target among `HWY_BASELINE_TARGETS`, i.e. those allowed for
+    use by the compiler (see [quick-reference](quick_reference.md)). Functions
+    defined between begin/end_target can be called using
+    `HWY_STATIC_DISPATCH(func)(args)`.
 
+*   For dynamic dispatch, each module exports one or more Choose* functions
+    (generated via `HWY_EXPORT`) that returns the best function pointer for the
+    current `hwy::SupportedTargets()`. A module is automatically compiled for
+    each target in `HWY_TARGETS` (see [quick-reference](quick_reference.md))
+    by foreach_target.h:
 ```c++
-  #include "jxl/hwy/runtime_dispatch.h"
-  Dispatch(TargetBitfield().Best(), Module()/*, args*/);
+#include "project/module.h"
+// INSERT other headers
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "project/module.cc"
+#include <hwy/foreach_target.h>
+
+namespace project {
+
+#include <hwy/begin_target-inl.h>
+// INSERT implementation
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(Func1)
+HWY_EXPORT(Func2)
+// INSERT any non-SIMD definitions (optional)
+#endif  // HWY_ONCE
+
+}  // namespace project
 ```
 
-The module is declared in a header as a non-const member function:
-```c++
-  struct Module {
-    HWY_DECLARE(void, (args))
-  };
-```
-
-The module.cc is automatically compiled multiple times, once per target CPU:
-```c++
-  #ifndef HWY_TARGET_INCLUDE
-  #define HWY_TARGET_INCLUDE "path/module.cc"
-  #include "path/module.h"
-  #endif  // end of non-SIMD code
-
-  #include "jxl/hwy/foreach_target.h"
-
-  namespace HWY_NAMESPACE { namespace {
-    HWY_ATTR void Implementation() {}
-  }}
-  HWY_ATTR void Module::HWY_FUNC(/*args*/) {
-    HWY_NAMESPACE::Implementation();
-  }
-```
-
-## Example source code
-
-```c++
-void FloorLog2(const uint8_t* HWY_RESTRICT values,
-               uint8_t* HWY_RESTRICT log2) {
-  // Descriptors for all required data types:
-  const HWY_FULL(int32_t) d32;
-  const HWY_FULL(float) df;
-  const HWY_CAPPED(uint8_t, d32.N) d8;
-
-  const auto u8 = Load(d8, values);
-  const auto bits = BitCast(d32, ConvertTo(df, ConvertTo(d32, u8)));
-  const auto exponent = ShiftRight<23>(bits) - Set(d32, 127);
-  Store(ConvertTo(d8, exponent), d8, log2);
-}
-```
-
-This generates the following SSE4 and AVX2 code, as shown by IACA:
-
-```
- p0  p1  p5
-|   |   | 1 | CP | pmovzxbd xmm1, dword [rsp+0x25c]
-|   | 1 |   |    | cvtdq2ps xmm1, xmm1
-| 1 |   |   |    | psrad xmm1, 0x17
-|   | 1 |   |    | paddd xmm1, xmm0
-|   |   | 1 | CP | packusdw xmm1, xmm0
-|   |   | 1 | CP | packuswb xmm1, xmm0
-|   |   |   |    | movd [rsp+0x45c], xmm1
-
-|   |   | 1 | CP | vpmovzxbd ymm1, qword [rsp+0x228]
-|   | 1 |   |    | vcvtdq2ps ymm1, ymm1
-| 1 |   |   |    | vpsrad ymm1, ymm1, 0x17
-|   | 1 |   |    | vpaddd ymm1, ymm1, ymm0
-|   |   | 1 | CP | vpackusdw ymm1, ymm1, ymm0
-|   |   | 1 | CP | vpermq ymm1, ymm1, 0xe8
-|   |   | 1 | CP | vpackuswb xmm1, xmm1, xmm0
-|   |   |   |    | vmovq [rsp+0x448], xmm1
-```
-
-```c++
-void Copy(const uint8_t* HWY_RESTRICT from, const size_t size,
-          uint8_t* HWY_RESTRICT to) {
-  // Width-agnostic (library-specified N)
-  const HWY_FULL(uint8_t) d;
-  const Scalar<uint8_t> ds;
-  size_t i = 0;
-  for (; i + d.N <= size; i += d.N) {
-    const auto bytes = Load(d, from + i);
-    Store(bytes, d, to + i);
-  }
-
-  for (; i < size; ++i) {
-    // (Same loop body as above, could factor into a shared template)
-    const auto bytes = Load(ds, from + i);
-    Store(bytes, ds, to + i);
-  }
-}
-```
-
-```c++
-void MulAdd(const T* HWY_RESTRICT mul_array, const T* HWY_RESTRICT add_array,
-            const size_t size, T* HWY_RESTRICT x_array) {
-  // Type-agnostic (caller-specified lane type) and width-agnostic (uses
-  // best available instruction set).
-  const HWY_FULL(T) d;
-  for (size_t i = 0; i < size; i += d.N) {
-    const auto mul = Load(d, mul_array + i);
-    const auto add = Load(d, add_array + i);
-    auto x = Load(d, x_array + i);
-    x = MulAdd(mul, x, add);
-    Store(x, d, x_array + i);
-  }
-}
-```
+See also `skeleton` inside examples/.
 
 ## Additional resources
 

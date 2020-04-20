@@ -106,6 +106,11 @@ Status SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   io.metadata.bits_per_sample = 8 *
                                 babl_format_get_bytes_per_pixel(native_format) /
                                 babl_format_get_n_components(native_format);
+  // TODO(lode): is there a way to query whether the data type if float or int
+  // from native_format instead?
+  GimpPrecision precision = gimp_image_get_precision(image_id);
+  io.metadata.floating_point_sample = (precision == GIMP_PRECISION_HALF_GAMMA ||
+                                       precision == GIMP_PRECISION_FLOAT_GAMMA);
 
   const GeglRectangle rect = *gegl_buffer_get_extent(gegl_buffer);
   std::vector<float> pixel_data(rect.width * rect.height * (3 + has_alpha));

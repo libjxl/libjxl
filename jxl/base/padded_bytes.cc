@@ -14,8 +14,6 @@
 
 #include "jxl/base/padded_bytes.h"
 
-#include <string.h>
-
 namespace jxl {
 
 void PaddedBytes::IncreaseCapacityTo(size_t capacity) {
@@ -42,6 +40,30 @@ void PaddedBytes::IncreaseCapacityTo(size_t capacity) {
 
   capacity_ = capacity;
   std::swap(new_data, data_);
+}
+
+void PaddedBytes::assign(const uint8_t* new_begin, const uint8_t* new_end) {
+  JXL_DASSERT(new_begin <= new_end);
+  const size_t new_size = static_cast<size_t>(new_end - new_begin);
+
+  // memcpy requires non-overlapping ranges, and resizing might invalidate the
+  // new range. Neither happens if the new range is completely to the left or
+  // right of the _allocated_ range (irrespective of size_).
+  const uint8_t* allocated_end = begin() + capacity_;
+  const bool outside = new_end <= begin() || new_begin >= allocated_end;
+  if (outside) {
+    resize(new_size);  // grow or shrink
+    memcpy(data(), new_begin, new_size);
+    return;
+  }
+
+  // There is overlap. The new size cannot be larger because we own the memory
+  // and the new range cannot include anything outside the allocated range.
+  JXL_ASSERT(new_size <= capacity_);
+
+  // memmove allows overlap and capacity_ is sufficient.
+  memmove(data(), new_begin, new_size);
+  size_ = new_size;  // shrink
 }
 
 }  // namespace jxl

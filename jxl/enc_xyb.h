@@ -34,15 +34,18 @@ namespace jxl {
 // `*linear_storage` (default-constructed is sufficient). Note that even if
 // the caller doesn't need the linear sRGB, it is still used internally.
 // Runtime dispatch.
-const ImageBundle* ToXYB(const ImageBundle& in, float linear_multiplier,
-                         ThreadPool* pool, Image3F* JXL_RESTRICT xyb,
-                         ImageBundle* JXL_RESTRICT linear_storage);
+
+typedef const ImageBundle* ToXYBFunc(const ImageBundle& in, ThreadPool* pool,
+                                     Image3F* JXL_RESTRICT xyb,
+                                     ImageBundle* JXL_RESTRICT linear_storage);
+ToXYBFunc* ChooseToXYB(uint32_t targets_bits);
 
 // DEPRECATED, used by opsin_image_wrapper.
 Image3F OpsinDynamicsImage(const Image3B& srgb8);
 
 // For opsin_image_test.
-void TestCubeRoot();
+typedef void TestCubeRootFunc();
+TestCubeRootFunc* ChooseTestCubeRoot(uint32_t targets_bits);
 
 }  // namespace jxl
 

@@ -31,6 +31,14 @@ struct DecompressArgs {
   // Initialize non-static default options.
   DecompressArgs();
 
+  // Add all the command line options to the CommandLineParser. Note that the
+  // options are tied to the instance that this was called on.
+  void AddCommandLineOptions(CommandLineParser* cmdline);
+
+  // Validate the passed arguments, checking whether all passed options are
+  // compatible. Returns whether the validation was successful.
+  jxl::Status ValidateArgs(const CommandLineParser& cmdline);
+
   // Common djpegxl parameters.
   const char* file_in = nullptr;
   const char* file_out = nullptr;
@@ -45,13 +53,8 @@ struct DecompressArgs {
 
   JxlDecompressArgs djxl_args;
 
-  // Add all the command line options to the CommandLineParser. Note that the
-  // options are tied to the instance that this was called on.
-  void AddCommandLineOptions(CommandLineParser* cmdline);
-
-  // Validate the passed arguments, checking whether all passed options are
-  // compatible. Returns whether the validation was successful.
-  jxl::Status ValidateArgs();
+  // References (ids) of specific options to check if they were matched.
+  CommandLineParser::OptionId opt_num_threads_id = -1;
 };
 
 }  // namespace tools

@@ -144,9 +144,9 @@ Getting back to the earlier block diagram:
 
 **Chroma from luma**: `chroma_from_luma.h`
 
-**(I)DCT**: `dct.h`. Instead of operating directly on blocks of memory, the
-functions operate on thin wrappers (declared in `block.h`) which can handle
-blocks spread across multiple image lines.
+**(I)DCT**: `dct*.h`. Instead of operating directly on blocks of memory, the
+functions operate on thin wrappers which can handle blocks spread across
+multiple image lines.
 
 **DCT size selection**: `ac_strategy.cc`
 

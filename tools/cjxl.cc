@@ -33,7 +33,9 @@
 #include "jxl/enc_cache.h"
 #include "jxl/enc_file.h"
 #include "jxl/extras/codec.h"
+#if JPEGXL_ENABLE_JPEG
 #include "jxl/extras/codec_jpg.h"
+#endif
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
@@ -55,6 +57,9 @@ static inline bool ParseColorTransform(const char* arg,
   if (ret && value > 2) ret = false;
   if (ret) *out = jxl::ColorTransform(value);
   return ret;
+}
+static inline bool ParseIntensityTarget(const char* arg, float* out) {
+  return ParseFloat(arg, out) && *out > 0;
 }
 
 // Proposes a distance to try for a given bpp target. This could depend
@@ -84,6 +89,7 @@ jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
 
 jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
   jxl::CodecInOut spot_io;
+  spot_io.target_nits = args.intensity_target;
   spot_io.dec_hints = args.dec_hints;
   if (!SetFromFile(args.spot_in, &spot_io)) {
     fprintf(stderr, "Failed to read spot image %s.\n", args.spot_in);
@@ -93,10 +99,10 @@ jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
   io->metadata.m2.extra_channel_bits = 8;
   jxl::ExtraChannelInfo example;
   example.rendered = 1;
-  example.color[0] = 255.0f;
-  example.color[1] = 0.0f;
-  example.color[2] = 0.0f;
-  example.color[3] = 1.0f;
+  example.color[0] = io->metadata.IntensityTarget();  // R
+  example.color[1] = 0.0f;                            // G
+  example.color[2] = 0.0f;                            // B
+  example.color[3] = 1.0f;                            // A
   io->metadata.m2.extra_channel_info.push_back(example);
   jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
   for (size_t y = 0; y < spot_io.ysize(); ++y) {
@@ -116,6 +122,7 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
                     jxl::CodecInOut* io, double* decode_mps) {
   const double t0 = jxl::Now();
 
+  io->target_nits = args.intensity_target;
   io->dec_hints = args.dec_hints;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
@@ -140,21 +147,17 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
 
   if (args.override_bitdepth != 0) {
     io->metadata.bits_per_sample = args.override_bitdepth;
+    io->metadata.floating_point_sample = (args.override_bitdepth == 32);
   }
 
   jxl::ImageF saliency_map;
-  if (!args.params.saliency_map_filename.empty()) {
-    if (!LoadSaliencyMap(args.params.saliency_map_filename, pool,
-                         &saliency_map)) {
+  if (!args.saliency_map_filename.empty()) {
+    if (!LoadSaliencyMap(args.saliency_map_filename, pool, &saliency_map)) {
       fprintf(stderr, "Failed to read saliency map %s.\n",
-              args.params.saliency_map_filename.c_str());
+              args.saliency_map_filename.c_str());
       return false;
     }
     args.params.saliency_map = &saliency_map;
-  }
-
-  if (!args.got_intensity_target) {
-    args.params.intensity_target = ChooseDefaultIntensityTarget(io->metadata);
   }
 
   if (args.spot_in != nullptr) {
@@ -312,11 +315,7 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
 
 }  // namespace
 
-JxlCompressArgs::JxlCompressArgs() {
-  jxl::ProcessorTopology topology;
-  JXL_CHECK(jxl::DetectProcessorTopology(&topology));
-  num_threads = topology.packages * topology.cores_per_package;
-}
+JxlCompressArgs::JxlCompressArgs() {}
 
 jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddPositionalOption(
@@ -374,9 +373,9 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "Do 4:2:0 chroma subsampling for JPEG.",
                          &params.jpeg_420, &SetBooleanTrue, 1);
 
-  cmdline->AddOptionValue('\0', "num_threads", "N",
-                          "number of worker threads (zero = none).",
-                          &num_threads, &ParseUnsigned, 1);
+  opt_num_threads_id = cmdline->AddOptionValue(
+      '\0', "num_threads", "N", "number of worker threads (zero = none).",
+      &num_threads, &ParseUnsigned, 1);
   cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
                           &num_reps, &ParseUnsigned, 1);
 
@@ -415,16 +414,16 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   opt_intensity_target_id = cmdline->AddOptionValue(
       '\0', "intensity_target", "N",
       ("Intensity target of monitor in nits, higher\n"
-       "   results in higher quality image. Supported range: 250..50000,\n"
-       "   default is 250 for standard images, 4000 for input images known"
+       "   results in higher quality image. Must be strictly positive.\n"
+       "   Default is 255 for standard images, 4000 for input images known to\n"
        "   to have PQ or HLG transfer function."),
-      &params.intensity_target, &ParseFloat, 1);
+      &intensity_target, &ParseIntensityTarget, 1);
 
   cmdline->AddOptionValue('\0', "saliency_num_progressive_steps", "N", nullptr,
                           &params.saliency_num_progressive_steps,
                           &ParseUnsigned, 2);
   cmdline->AddOptionValue('\0', "saliency_map_filename", "STRING", nullptr,
-                          &params.saliency_map_filename, &ParseString, 2);
+                          &saliency_map_filename, &ParseString, 2);
   cmdline->AddOptionValue('\0', "saliency_threshold", "0..1", nullptr,
                           &params.saliency_threshold, &ParseFloat, 2);
 
@@ -456,12 +455,6 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "[modular encoding] number of mock encodes to learn MABEGABRAC trees "
       "(default=0.5, try 0 for no MA and fast decode)",
       &params.options.nb_repeats, &ParseFloat, 2);
-
-  cmdline->AddOptionValue('T', "ctx-threshold", "F",
-                          ("[modular encoding] number of bits hypothetically "
-                           "saved during MABEGABRAC training "
-                           "to justify adding another context (default: 16)"),
-                          &params.options.ctx_threshold, &ParseFloat, 2);
 
   cmdline->AddOptionValue(
       'C', "colorspace", "K",
@@ -503,15 +496,11 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
        "used/range is below this (default: 80%)"),
       &params.channel_colors_percent, &ParseFloat, 2);
 
-  opt_brotli_id = cmdline->AddOptionValue(
-      'B', "brotli", "effort",
-      ("[modular encoding] use Brotli instead of MABEGABRAC/MAANS"
-       " (with encode effort=0..11)"),
-      &params.options.brotli_effort, &ParseSigned, 2);
-
-  cmdline->AddOptionFlag('A', "ans",
-                         "[modular encoding] use MAANS instead of MABEGABRAC",
-                         &params.ans, &SetBooleanTrue, 2);
+  opt_brotli_id =
+      cmdline->AddOptionValue('B', "brotli", "effort",
+                              ("[modular encoding] use Brotli instead of MAANS"
+                               " (with encode effort=0..11)"),
+                              &params.options.brotli_effort, &ParseSigned, 2);
 
   cmdline->AddOptionValue('R', "responsive", "K",
                           "[modular encoding] do Squeeze transform, 0=false, "
@@ -530,8 +519,8 @@ jxl::Status JxlCompressArgs::ValidateArgs(
   bool got_distance = cmdline.GetOption(opt_distance_id)->matched();
   bool got_target_size = cmdline.GetOption(opt_target_size_id)->matched();
   bool got_target_bpp = cmdline.GetOption(opt_target_bpp_id)->matched();
-
-  got_intensity_target = cmdline.GetOption(opt_intensity_target_id)->matched();
+  bool got_intensity_target =
+      cmdline.GetOption(opt_intensity_target_id)->matched();
 
   if (quality < -1000.f) {
     // Keep the Butteraugli distance obtained on the command line, or the
@@ -585,9 +574,9 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     return false;
   }
 
-  if (!params.saliency_map_filename.empty()) {
+  if (!saliency_map_filename.empty()) {
     if (!params.progressive_mode) {
-      params.saliency_map_filename.clear();
+      saliency_map_filename.clear();
       fprintf(stderr,
               "Warning: Specifying --saliency_map_filename only makes sense "
               "for --progressive_ac mode.\n");
@@ -608,10 +597,9 @@ jxl::Status JxlCompressArgs::ValidateArgs(
       params.color_transform = jxl::ColorTransform::kYCbCr;
   }
 
-  if (cmdline.GetOption(opt_brotli_id)->matched())
-    params.options.entropy_coder = 1;
-  else if (params.ans)
-    params.options.entropy_coder = 2;
+  if (cmdline.GetOption(opt_brotli_id)->matched()) {
+    params.options.entropy_coder = jxl::ModularOptions::kBrotli;
+  }
 
   if (params.near_lossless) {
     // Near-lossless assumes -R 0
@@ -626,6 +614,21 @@ jxl::Status JxlCompressArgs::ValidateArgs(
   if (params.jpeg_quality > 100) {
     fprintf(stderr, "jpeg_quality must be <= 100\n");
     return false;
+  }
+
+  // User didn't override num_threads, so we have to compute a default, which
+  // might fail, so only do so when necessary. Don't just check num_threads != 0
+  // because the user may have set it to that.
+  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
+    jxl::ProcessorTopology topology;
+    if (!jxl::DetectProcessorTopology(&topology)) {
+      // We have seen sporadic failures caused by setaffinity_np.
+      fprintf(stderr,
+              "Failed to choose default num_threads; you can avoid this "
+              "error by specifying a --num_threads N argument.\n");
+      return false;
+    }
+    num_threads = topology.packages * topology.cores_per_package;
   }
 
   return true;
@@ -658,7 +661,7 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
     const double t0 = jxl::Now();
     jxl::Status ok = false;
     if (args.params.pixels_to_jpeg_mode) {
-#if !defined(__EMSCRIPTEN__)
+#if JPEGXL_ENABLE_JPEG
       const auto subsample = args.params.jpeg_420
                                  ? jxl::YCbCrChromaSubsampling::k420
                                  : jxl::YCbCrChromaSubsampling::k444;

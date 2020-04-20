@@ -38,11 +38,10 @@ static size_t MaxBits(const size_t num_sizes) {
 
 }  // namespace
 
-HWY_ATTR Status ReadGroupOffsets(size_t toc_entries,
-                                 BitReader* JXL_RESTRICT reader,
-                                 std::vector<uint64_t>* JXL_RESTRICT offsets,
-                                 std::vector<uint32_t>* JXL_RESTRICT sizes,
-                                 uint64_t* total_size) {
+Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
+                        std::vector<uint64_t>* JXL_RESTRICT offsets,
+                        std::vector<uint32_t>* JXL_RESTRICT sizes,
+                        uint64_t* total_size) {
   JXL_DASSERT(offsets != nullptr && sizes != nullptr);
   std::vector<coeff_order_t> permutation;
   if (reader->ReadFixedBits<1>() == 1 && toc_entries > 0) {

@@ -438,7 +438,7 @@ struct NewBundle {
   uint32_t new_large = 0;
 };
 
-HWY_ATTR void FieldsTest_TestNewDecoderOldData() {
+TEST(FieldsTest, TestNewDecoderOldData) {
   OldBundle old_bundle;
   old_bundle.old_large = 123;
   old_bundle.old_f = 3.75f;
@@ -480,9 +480,8 @@ HWY_ATTR void FieldsTest_TestNewDecoderOldData() {
   EXPECT_EQ(-2.0f, new_bundle.new_f);
   EXPECT_EQ(0, new_bundle.new_large);
 }
-TEST(FieldsTest, TestNewDecoderOldData) { FieldsTest_TestNewDecoderOldData(); }
 
-HWY_ATTR void FieldsTest_TestOldDecoderNewData() {
+TEST(FieldsTest, TestOldDecoderNewData) {
   NewBundle new_bundle;
   new_bundle.old_large = 123;
   new_bundle.extensions = 1;
@@ -524,8 +523,6 @@ HWY_ATTR void FieldsTest_TestOldDecoderNewData() {
   EXPECT_EQ(new_bundle.old_large, old_bundle.old_large);
   // (Can't check new fields because old decoder doesn't know about them)
 }
-
-TEST(FieldsTest, TestOldDecoderNewData) { FieldsTest_TestOldDecoderNewData(); }
 
 }  // namespace
 }  // namespace jxl

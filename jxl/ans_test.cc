@@ -15,7 +15,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/static_targets.h>
 #include <random>
 #include <vector>
 
@@ -31,8 +30,8 @@
 namespace jxl {
 namespace {
 
-HWY_ATTR void RoundtripTestcase(int n_histograms, int alphabet_size,
-                                const std::vector<Token>& input_values) {
+void RoundtripTestcase(int n_histograms, int alphabet_size,
+                       const std::vector<Token>& input_values) {
   constexpr uint16_t kMagic1 = 0x9e33;
   constexpr uint16_t kMagic2 = 0x8b04;
 

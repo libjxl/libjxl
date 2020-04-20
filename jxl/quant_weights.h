@@ -18,6 +18,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <hwy/interface.h>
 #include <array>
 #include <utility>
 #include <vector>
@@ -225,7 +226,7 @@ class QuantEncoding final : public QuantEncodingInternal {
       qraw.qtable = new std::vector<int>(*other.qraw.qtable);
     }
   }
-  QuantEncoding(QuantEncoding&& other)
+  QuantEncoding(QuantEncoding&& other) noexcept
       : QuantEncodingInternal(
             static_cast<const QuantEncodingInternal&>(other)) {
     // Steal the qtable from the other object if any.
@@ -449,8 +450,8 @@ class DequantMatrices {
   static constexpr size_t kTotalTableSize =
       ArraySum(required_size_) * kDCTBlockSize * 3;
 
-  HWY_ALIGN float table_[kTotalTableSize];
-  HWY_ALIGN float inv_table_[kTotalTableSize];
+  HWY_ALIGN_MAX float table_[kTotalTableSize];
+  HWY_ALIGN_MAX float inv_table_[kTotalTableSize];
   float dc_quant_[3] = {kDCQuant[0], kDCQuant[1], kDCQuant[2]};
   float inv_dc_quant_[3] = {kInvDCQuant[0], kInvDCQuant[1], kInvDCQuant[2]};
   size_t table_offsets_[AcStrategy::kNumValidStrategies * 3];

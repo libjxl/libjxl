@@ -25,14 +25,16 @@ https://en.wikipedia.org/wiki/Nelder%E2%80%93Mead_method
 start as ./simplex_fork.py binary dimensions amount
 """
 
+from __future__ import absolute_import
+from __future__ import division
 from __future__ import print_function
+from six.moves import range
 import copy
 import os
 import random
 import re
 import subprocess
 import sys
-
 
 def Midpoint(simplex):
   """Nelder-Mead-like simplex midpoint calculation."""
@@ -101,7 +103,7 @@ def Eval(vec, binary_name, cached=True):
   for i in range(len(vec) - 1):
     os.environ["VAR%d" % i] = str(vec[i + 1])
     key += str(vec[i + 1]) + ":"
-  if cached and (eval_hash.has_key(key)):
+  if cached and (key in eval_hash):
     vec[0] = eval_hash[key]
     return
 

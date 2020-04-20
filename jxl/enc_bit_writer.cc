@@ -115,7 +115,7 @@ void BitWriter::AppendByteAligned(const std::vector<BitWriter>& others) {
   bits_written_ += other_bytes * kBitsPerByte;
 }
 
-HWY_ATTR BitWriter& BitWriter::operator+=(const BitWriter& other) {
+BitWriter& BitWriter::operator+=(const BitWriter& other) {
   // Required for correctness, otherwise owned[bits_written_] is out of bounds.
   if (other.bits_written_ == 0) return *this;
   const size_t other_bytes = DivCeil(other.bits_written_, kBitsPerByte);
@@ -192,7 +192,7 @@ void BitWriter::Write(size_t n_bits, uint64_t bits) {
   bits_written_ += n_bits;
 }
 
-HWY_ATTR BitWriter& BitWriter::operator+=(const PaddedBytes& other) {
+BitWriter& BitWriter::operator+=(const PaddedBytes& other) {
   const size_t other_bytes = other.size();
   // Required for correctness, otherwise owned[bits_written_] is out of bounds.
   if (other_bytes == 0) return *this;

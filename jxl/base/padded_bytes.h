@@ -19,11 +19,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
+#include <string.h>  // memcpy
 
-#include <algorithm>  // std::max
-#include <memory>
-#include <utility>
+#include <algorithm>  // max
+#include <initializer_list>
+#include <utility>  // swap
 
 #include "jxl/base/cache_aligned.h"
 #include "jxl/base/compiler_specific.h"
@@ -91,15 +91,17 @@ class PaddedBytes {
   void reserve(size_t capacity) {
     if (capacity > capacity_) IncreaseCapacityTo(capacity);
   }
+
   // NOTE: unlike vector, this does not initialize the new data!
   // However, we guarantee that write_bits can safely append after
   // the resize, as we zero-initialize the first new byte of data.
+  // If size < capacity(), does not invalidate the memory.
   void resize(size_t size) {
     if (size > capacity_) IncreaseCapacityTo(size);
     size_ = (data() == nullptr) ? 0 : size;
   }
 
-  // Explicitely initializes the new data with the value.
+  // resize(size) plus explicit initialization of the new data with `value`.
   void resize(size_t size, uint8_t value) {
     size_t old_size = size_;
     resize(size);
@@ -134,10 +136,8 @@ class PaddedBytes {
     memcpy(data(), il.begin(), il.size());
   }
 
-  void assign(const uint8_t* begin, const uint8_t* end) {
-    resize(end - begin);
-    memcpy(data(), begin, end - begin);
-  }
+  // Replaces data() with [new_begin, new_end); potentially reallocates.
+  void assign(const uint8_t* new_begin, const uint8_t* new_end);
 
   uint8_t* begin() { return data(); }
   const uint8_t* begin() const { return data(); }

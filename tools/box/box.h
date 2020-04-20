@@ -18,6 +18,7 @@
 #define TOOLS_BOX_BOX_H_
 
 #include <string>
+#include <vector>
 
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/status.h"
@@ -68,8 +69,11 @@ struct JpegXlContainer {
   const uint8_t* exif = nullptr;  // Not owned
   size_t exif_size = 0;
 
-  // TODO(lode): add support for "xml " box, which can be used for XMP. There
-  // may be multiple.
+  // XML boxes for XMP. There may be multiple XML boxes.
+  // Each entry points to XML location and provides size.
+  // The memory is not owned.
+  // TODO(lode): for C API, cannot use std::vector.
+  std::vector<std::pair<const uint8_t*, size_t>> xml;
 
   // JUMBF superbox data, or null if not present in the container.
   // The parsing of the nested boxes inside is not handled here.

@@ -18,25 +18,17 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
-#include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
-#include "jxl/chroma_from_luma.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/enc_ans.h"
 #include "jxl/enc_bit_writer.h"
 #include "jxl/enc_cache.h"
-#include "jxl/enc_params.h"
-#include "jxl/entropy_coder.h"
-#include "jxl/frame_header.h"
-#include "jxl/multiframe.h"
-#include "jxl/quantizer.h"
 
 namespace jxl {
 
-void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         AuxOut* aux_out);
+typedef void ComputeCoefficientsFunc(size_t group_idx,
+                                     PassesEncoderState* enc_state,
+                                     AuxOut* aux_out);
+ComputeCoefficientsFunc* ChooseComputeCoefficients(uint32_t targets_bits);
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         const PassesEncoderState& enc_state,

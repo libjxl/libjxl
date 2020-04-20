@@ -195,7 +195,27 @@ class CodecInOut {
   // Decode to pixels or keep JPEG as quantized DCT coefficients
   DecodeTarget dec_target = DecodeTarget::kPixels;
 
-  // -- DECODER OUTPUT
+  // Intended white luminance, in nits (cd/m^2).
+  // It is used by codecs that do not know the absolute luminance of their
+  // images. For those codecs, decoders map from white to this luminance. There
+  // is no other way of knowing the target brightness for those codecs - depends
+  // on source material. 709 typically targets 100 nits, BT.2100 PQ up to 10K,
+  // but HDR content is more typically mastered to 4K nits. Codecs that do know
+  // the absolute luminance of their images will typically ignore it as a
+  // decoder input. The corresponding decoder output and encoder input is the
+  // intensity target in the metadata. ALL decoders MUST set that metadata
+  // appropriately, but it does not have to be identical to this hint. Encoders
+  // for codecs that do not encode absolute luminance levels should use that
+  // metadata to decide on what to map to white. Encoders for codecs that *do*
+  // encode absolute luminance levels may use it to decide on encoding values,
+  // but not in a way that would affect the range of interpreted luminance.
+  //
+  // 0 means that it is up to the codec (or the Map255ToTargetNits function from
+  // luminance.h) to decide on a reasonable value to use.
+
+  float target_nits = 0;
+
+  // -- DECODER OUTPUT:
 
   // Total number of pixels decoded (may differ from #frames * xsize * ysize
   // if frames are cropped)

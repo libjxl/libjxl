@@ -18,17 +18,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/static_targets.h>
-
-#include "jxl/aux_out_fwd.h"
-#include "jxl/base/compiler_specific.h"
-#include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
 #include "jxl/coeff_order_fwd.h"
 #include "jxl/common.h"
-#include "jxl/dct.h"
-#include "jxl/dct_util.h"
-#include "jxl/image.h"
 #include "jxl/image_ops.h"
 
 // Defines the different kinds of transforms, and heuristics to choose between
@@ -43,32 +35,6 @@
 // multiples of 32.
 
 namespace jxl {
-
-template <size_t V>
-struct square_root {
-  static constexpr float value =
-      square_root<V / 2>::value * 1.4142135623730951f;
-};
-
-template <>
-struct square_root<1> {
-  static constexpr float value = 1.0f;
-};
-
-// Apply the DCT algorithm-intrinsic constants to DCTResampleScale.
-// Note that the DCTScales constants give results that are scaled with a factor
-// proportional to 1/sqrt(N), so we counteract that here.
-// We also use the fact that 1/(sqrt(N) DCTScales(N)) == sqrt(N) IDCTScales(N)
-// to avoid a division.
-template <size_t FROM, size_t TO>
-constexpr float DCTTotalResampleScale(size_t x) {
-  return square_root<FROM>::value * DCTScales<FROM>()[x] *
-         square_root<TO>::value * IDCTScales<TO>()[x] *
-         DCTResampleScales<FROM, TO>::kScales[x];
-}
-
-void AFVDCT4x4(const float* JXL_RESTRICT pixels, float* JXL_RESTRICT coeffs);
-void AFVIDCT4x4(const float* JXL_RESTRICT coeffs, float* JXL_RESTRICT pixels);
 
 class AcStrategy {
  public:
@@ -168,24 +134,24 @@ class AcStrategy {
   // Number of 8x8 blocks that this strategy will cover. 0 for non-top-left
   // blocks inside a multi-block transform.
   JXL_INLINE size_t covered_blocks_x() const {
-    static constexpr const uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 1, 2, 1,
-                                             4, 2, 4, 1, 1, 1, 1, 1, 1};
+    static constexpr uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 1, 2, 1,
+                                       4, 2, 4, 1, 1, 1, 1, 1, 1};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
     return kLut[size_t(strategy_)];
   }
 
   JXL_INLINE size_t covered_blocks_y() const {
-    static constexpr const uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 2, 1, 4,
-                                             1, 4, 2, 1, 1, 1, 1, 1, 1};
+    static constexpr uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 2, 1, 4,
+                                       1, 4, 2, 1, 1, 1, 1, 1, 1};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
     return kLut[size_t(strategy_)];
   }
 
   JXL_INLINE size_t log2_covered_blocks() const {
-    static constexpr const uint8_t kLut[] = {0, 0, 0, 0, 2, 4, 1, 1, 2,
-                                             2, 3, 3, 0, 0, 0, 0, 0, 0};
+    static constexpr uint8_t kLut[] = {0, 0, 0, 0, 2, 4, 1, 1, 2,
+                                       2, 3, 3, 0, 0, 0, 0, 0, 0};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
     return kLut[size_t(strategy_)];
@@ -215,20 +181,6 @@ class AcStrategy {
       return 1.0f / (32 * 16 - 8);
     return 1.0f / (8 * 8 - 1);
   }
-
-  // Pixel to coefficients and vice-versa
-  HWY_ATTR void TransformFromPixels(const float* JXL_RESTRICT pixels,
-                                    size_t pixels_stride,
-                                    float* JXL_RESTRICT coefficients) const;
-  HWY_ATTR void TransformToPixels(const float* JXL_RESTRICT coefficients,
-                                  float* JXL_RESTRICT pixels,
-                                  size_t pixels_stride) const;
-
-  // Same as above, but for DC image.
-  HWY_ATTR void LowestFrequenciesFromDC(const float* dc, size_t dc_stride,
-                                        float* llf) const;
-  HWY_ATTR void DCFromLowestFrequencies(const float* block, float* dc,
-                                        size_t dc_stride) const;
 
   struct CoeffOrderAndLut {
     coeff_order_t order[kNumValidStrategies * kMaxCoeffArea];

@@ -22,11 +22,7 @@
 namespace jpegxl {
 namespace tools {
 
-DecompressArgs::DecompressArgs() {
-  jxl::ProcessorTopology topology;
-  JXL_CHECK(jxl::DetectProcessorTopology(&topology));
-  num_threads = topology.packages * topology.cores_per_package;
-}
+DecompressArgs::DecompressArgs() {}
 
 void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
@@ -50,9 +46,9 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "jpeg_quality", "N", "JPEG output quality",
                           &jpeg_quality, &ParseUnsigned);
 
-  cmdline->AddOptionValue('\0', "num_threads", "N",
-                          "The number of threads to use", &num_threads,
-                          &ParseUnsigned);
+  opt_num_threads_id = cmdline->AddOptionValue('\0', "num_threads", "N",
+                                               "The number of threads to use",
+                                               &num_threads, &ParseUnsigned);
 
   cmdline->AddOptionValue('\0', "print_profile", "0|1",
                           "print timing information before exiting",
@@ -65,11 +61,27 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   djxl_args.AddCommandLineOptions(cmdline);
 }
 
-jxl::Status DecompressArgs::ValidateArgs() {
+jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (file_in == nullptr) {
     fprintf(stderr, "Missing INPUT filename.\n");
     return false;
   }
+
+  // User didn't override num_threads, so we have to compute a default, which
+  // might fail, so only do so when necessary. Don't just check num_threads != 0
+  // because the user may have set it to that.
+  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
+    jxl::ProcessorTopology topology;
+    if (!jxl::DetectProcessorTopology(&topology)) {
+      // We have seen sporadic failures caused by setaffinity_np.
+      fprintf(stderr,
+              "Failed to choose default num_threads; you can avoid this "
+              "error by specifying a --num_threads N argument.\n");
+      return false;
+    }
+    num_threads = topology.packages * topology.cores_per_package;
+  }
+
   return djxl_args.ValidateArgs();
 }
 

@@ -20,8 +20,7 @@
 
 namespace jxl {
 
-#ifdef HAS_ENCODER
-void Channel::actual_minmax(pixel_type *min, pixel_type *max) const {
+void Channel::compute_minmax(pixel_type *min, pixel_type *max) const {
   pixel_type realmin = LARGEST_VAL;
   pixel_type realmax = SMALLEST_VAL;
   for (size_t y = 0; y < h; y++) {
@@ -32,10 +31,25 @@ void Channel::actual_minmax(pixel_type *min, pixel_type *max) const {
     }
   }
 
-  *min = realmin;
-  *max = realmax;
+  if (min) *min = realmin;
+  if (max) *max = realmax;
 }
-#endif
+
+void Channel::compute_trivial(pixel_type *min, pixel_type *max) {
+  pixel_type realmin = LARGEST_VAL;
+  pixel_type realmax = SMALLEST_VAL;
+  for (size_t y = 0; y < h; y++) {
+    const pixel_type *JXL_RESTRICT p = plane.Row(y);
+    for (size_t x = 0; x < w; x++) {
+      if (p[x] < realmin) realmin = p[x];
+      if (p[x] > realmax) realmax = p[x];
+    }
+  }
+
+  is_trivial = realmin == realmax;
+  if (min) *min = realmin;
+  if (max) *max = realmax;
+}
 
 void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
   if (keep == -2) return;

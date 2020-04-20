@@ -12,33 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/xorshift128plus_test.cc"
-
 #include <stdint.h>
 
 #include <algorithm>
 #include <vector>
 
-#define HWY_USE_GTEST
-#include <hwy/tests/test_util.h>
-
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/thread_pool_internal.h"
 
-struct XorshiftTest {
-  HWY_DECLARE(void, ())
-};
-TEST(RationalPolynomialTest, Run) { hwy::RunTests<XorshiftTest>(); }
-
-#endif  // HWY_TARGET_INCLUDE
-#include <hwy/tests/test_target_util.h>
-
-namespace jxl {
-namespace HWY_NAMESPACE {
-namespace {
+#ifndef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/xorshift128plus_test.cc"
+#define HWY_USE_GTEST
+#endif
+#include <hwy/foreach_target.h>
+#include <hwy/tests/test_util.h>
 
 #include "jxl/xorshift128plus-inl.h"
+
+namespace jxl {
+
+#include <hwy/tests/test_util-inl.h>
+
+#include <hwy/begin_target-inl.h>
 
 // Define to nonzero in order to print the (new) golden outputs.
 #define PRINT_RESULTS 0
@@ -319,8 +314,8 @@ HWY_ATTR void TestFloat() {
                  const auto bits =
                      Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
                  // 1.0 + 23 random mantissa bits = [1, 2)
-                 const auto rand12 = BitCast(
-                     df, hwy::ShiftRight<9>(bits) | Set(du, 0x3F800000));
+                 const auto rand12 =
+                     BitCast(df, ShiftRight<9>(bits) | Set(du, 0x3F800000));
                  const auto rand01 = rand12 - Set(df, 1.0f);
                  Store(rand01, df, lanes);
                  for (float lane : lanes) {
@@ -357,17 +352,18 @@ HWY_ATTR void TestNotZero() {
            });
 }
 
-HWY_ATTR HWY_NOINLINE void RunAll() {
+HWY_ATTR HWY_NOINLINE void TestXorshift() {
   TestNotZero();
   TestGolden();
   TestSeedChanges();
   TestFloat();
 }
 
-}  // namespace
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
+#include <hwy/end_target-inl.h>
 
-// Instantiate for the current target.
-void XorshiftTest::HWY_FUNC() { jxl::HWY_NAMESPACE::RunAll(); }
+#if HWY_ONCE
+HWY_EXPORT(TestXorshift)
+TEST(HwyXorshiftTest, Run) { hwy::RunTest(&ChooseTestXorshift); }
+#endif
+
+}  // namespace jxl

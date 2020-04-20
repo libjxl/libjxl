@@ -15,7 +15,7 @@
 #ifndef JXL_BASE_IACA_H_
 #define JXL_BASE_IACA_H_
 
-#include <hwy/compiler_specific.h>
+#include "jxl/base/compiler_specific.h"
 
 // IACA (Intel's Code Analyzer) analyzes instruction latencies, but only for
 // code between special markers. These functions embed such markers in an
@@ -29,7 +29,7 @@
 namespace jxl {
 
 // Call before the region of interest.
-static HWY_INLINE void BeginIACA() {
+static JXL_INLINE void BeginIACA() {
 #if JXL_IACA_ENABLED && (JXL_COMPILER_GCC || JXL_COMPILER_CLANG)
   asm volatile(
       // UD2 "instruction" raises an invalid opcode exception.
@@ -48,7 +48,7 @@ static HWY_INLINE void BeginIACA() {
 }
 
 // Call after the region of interest.
-static HWY_INLINE void EndIACA() {
+static JXL_INLINE void EndIACA() {
 #if JXL_IACA_ENABLED && (JXL_COMPILER_GCC || JXL_COMPILER_CLANG)
   asm volatile(
       // See above.
@@ -65,8 +65,8 @@ static HWY_INLINE void EndIACA() {
 
 // Add to a scope to mark a region.
 struct ScopeIACA {
-  HWY_INLINE ScopeIACA() { BeginIACA(); }
-  HWY_INLINE ~ScopeIACA() { EndIACA(); }
+  JXL_INLINE ScopeIACA() { BeginIACA(); }
+  JXL_INLINE ~ScopeIACA() { EndIACA(); }
 };
 
 }  // namespace jxl

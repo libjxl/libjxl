@@ -28,6 +28,7 @@
 #include "jxl/color_encoding.h"
 #include "jxl/common.h"
 #include "jxl/compressed_dc.h"
+#include "jxl/dct_scales.h"
 #include "jxl/dct_util.h"
 #include "jxl/dec_frame.h"
 #include "jxl/enc_frame.h"
@@ -38,12 +39,82 @@
 #include "jxl/passes_state.h"
 #include "jxl/quantizer.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
+#include <hwy/foreach_target.h>
+
+#include "jxl/dec_transforms-inl.h"
+#include "jxl/enc_transforms-inl.h"
+
 namespace jxl {
+
+#include <hwy/begin_target-inl.h>
+
+// Returns dc.
+Image3F ComputeCoeffs(const Image3F& opsin,
+                      PassesSharedState* JXL_RESTRICT shared,
+                      PassesEncoderState* enc_state, ThreadPool* pool,
+                      AuxOut* aux_out) {
+  const size_t xsize_blocks = shared->frame_dim.xsize_blocks;
+  const size_t ysize_blocks = shared->frame_dim.ysize_blocks;
+
+  Image3F dc = Image3F(xsize_blocks, ysize_blocks);
+  const size_t dc_stride = static_cast<size_t>(dc.PixelsPerRow());
+  const size_t opsin_stride = static_cast<size_t>(opsin.PixelsPerRow());
+
+  auto compute_coeffs = [&](int group_index, int /* thread */) {
+    const size_t gx = group_index % shared->frame_dim.xsize_groups;
+    const size_t gy = group_index / shared->frame_dim.xsize_groups;
+    size_t offset = 0;
+    float* JXL_RESTRICT rows[3] = {
+        enc_state->coeffs[0].PlaneRow(0, group_index),
+        enc_state->coeffs[0].PlaneRow(1, group_index),
+        enc_state->coeffs[0].PlaneRow(2, group_index),
+    };
+    for (size_t by = gy * kGroupDimInBlocks;
+         by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
+      const float* JXL_RESTRICT opsin_rows[3] = {
+          opsin.ConstPlaneRow(0, by * kBlockDim),
+          opsin.ConstPlaneRow(1, by * kBlockDim),
+          opsin.ConstPlaneRow(2, by * kBlockDim),
+      };
+      float* JXL_RESTRICT dc_rows[3] = {
+          dc.PlaneRow(0, by),
+          dc.PlaneRow(1, by),
+          dc.PlaneRow(2, by),
+      };
+      for (size_t bx = gx * kGroupDimInBlocks;
+           bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
+        AcStrategy acs = shared->ac_strategy.ConstRow(by)[bx];
+        if (!acs.IsFirstBlock()) continue;
+        const AcStrategy::Type type = acs.Strategy();
+        for (size_t c = 0; c < 3; ++c) {
+          TransformFromPixels(type, opsin_rows[c] + bx * kBlockDim,
+                              opsin_stride, rows[c] + offset);
+          DCFromLowestFrequencies(type, rows[c] + offset, dc_rows[c] + bx,
+                                  dc_stride);
+        }
+        offset += kDCTBlockSize << acs.log2_covered_blocks();
+      }
+    }
+  };
+
+  RunOnPool(pool, 0, shared->frame_dim.num_groups, ThreadPool::SkipInit(),
+            compute_coeffs, "Compute coeffs");
+  if (aux_out != nullptr) {
+    aux_out->InspectImage3F("compressed_image:InitializeFrameEncCache:dc", dc);
+  }
+  return dc;
+}
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(ComputeCoeffs)
 
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                              PassesEncoderState* enc_state, AuxOut* aux_out) {
   PROFILER_FUNC;
-  constexpr size_t N = kBlockDim;
 
   PassesSharedState& JXL_RESTRICT shared = enc_state->shared;
 
@@ -67,52 +138,9 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
           ACImage3(kGroupDim * kGroupDim, shared.frame_dim.num_groups);
     }
   }
-  Image3F dc = Image3F(xsize_blocks, ysize_blocks);
 
-  size_t dc_stride = dc.PixelsPerRow();
-  size_t opsin_stride = opsin.PixelsPerRow();
-
-  auto compute_coeffs = [&](int group_index, int /* thread */) {
-    const size_t gx = group_index % shared.frame_dim.xsize_groups;
-    const size_t gy = group_index / shared.frame_dim.xsize_groups;
-    size_t offset = 0;
-    float* JXL_RESTRICT rows[3] = {
-        enc_state->coeffs[0].PlaneRow(0, group_index),
-        enc_state->coeffs[0].PlaneRow(1, group_index),
-        enc_state->coeffs[0].PlaneRow(2, group_index),
-    };
-    for (size_t by = gy * kGroupDimInBlocks;
-         by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
-      const float* JXL_RESTRICT opsin_rows[3] = {
-          opsin.ConstPlaneRow(0, by * N),
-          opsin.ConstPlaneRow(1, by * N),
-          opsin.ConstPlaneRow(2, by * N),
-      };
-      float* JXL_RESTRICT dc_rows[3] = {
-          dc.PlaneRow(0, by),
-          dc.PlaneRow(1, by),
-          dc.PlaneRow(2, by),
-      };
-      for (size_t bx = gx * kGroupDimInBlocks;
-           bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
-        AcStrategy acs = shared.ac_strategy.ConstRow(by)[bx];
-        if (!acs.IsFirstBlock()) continue;
-        for (size_t c = 0; c < 3; ++c) {
-          acs.TransformFromPixels(opsin_rows[c] + bx * N, opsin_stride,
-                                  rows[c] + offset);
-          acs.DCFromLowestFrequencies(rows[c] + offset, dc_rows[c] + bx,
-                                      dc_stride);
-        }
-        offset += kDCTBlockSize << acs.log2_covered_blocks();
-      }
-    }
-  };
-
-  RunOnPool(pool, 0, shared.frame_dim.num_groups, ThreadPool::SkipInit(),
-            compute_coeffs, "Compute coeffs");
-  if (aux_out != nullptr) {
-    aux_out->InspectImage3F("compressed_image:InitializeFrameEncCache:dc", dc);
-  }
+  Image3F dc = ChooseComputeCoeffs(hwy::SupportedTargets())(
+      opsin, &shared, enc_state, pool, aux_out);
 
   if (shared.frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
@@ -172,15 +200,17 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
         xsize_dc_groups * ysize_dc_groups,
         (enc_state->cparams.butteraugli_distance < 0.5 ? 0 : 1));
 
+    const uint32_t targets_bits = hwy::SupportedTargets();
+    auto tokenize_dc = ChooseTokenizeDC(targets_bits);
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
-      TokenizeDC(group_index, dc, enc_state, aux_out);
+      tokenize_dc(group_index, dc, enc_state, aux_out);
     };
     RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
               compute_dc_coeffs, "Compute DC coeffs");
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
-    if ((shared.frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing) ==
-        0) {
-      AdaptiveDCSmoothing(shared.dc_quant_field, &shared.dc_storage, pool);
+    if (!(shared.frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
+      ChooseAdaptiveDCSmoothing(targets_bits)(shared.dc_quant_field,
+                                              &shared.dc_storage, pool);
     }
   }
 
@@ -197,5 +227,7 @@ void EncCache::InitOnce() {
     num_nzeroes = Image3I(kGroupDimInBlocks, kGroupDimInBlocks);
   }
 }
+
+#endif  //  HWY_ONCE
 
 }  // namespace jxl

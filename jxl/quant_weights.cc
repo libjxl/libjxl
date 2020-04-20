@@ -26,11 +26,12 @@
 #include "jxl/base/bits.h"
 #include "jxl/base/status.h"
 #include "jxl/common.h"
-#include "jxl/dct.h"
+#include "jxl/dct_scales.h"
 #include "jxl/enc_bit_writer.h"
 #include "jxl/fields.h"
 #include "jxl/image.h"
 #include "jxl/modular/encoding/encoding.h"
+#include "jxl/modular/encoding/options.h"
 
 namespace jxl {
 
@@ -155,7 +156,7 @@ Status EncodeDctParams(const DctQuantWeightParams& params, BitWriter* writer) {
   return true;
 }
 
-HWY_ATTR Status DecodeDctParams(BitReader* br, DctQuantWeightParams* params) {
+Status DecodeDctParams(BitReader* br, DctQuantWeightParams* params) {
   params->num_distance_bands =
       br->ReadFixedBits<DctQuantWeightParams::kLog2MaxDistanceBands>() + 1;
   for (size_t c = 0; c < 3; c++) {
@@ -221,25 +222,20 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
       JXL_ASSERT(encoding.qraw.qtable != nullptr);
       JXL_ASSERT(size_x * size_y * 3 == encoding.qraw.qtable->size());
       writer->Write(3, encoding.qraw.qtable_den_shift);
-      writer->ZeroPadToByte();
-      Image3I img(size_x, size_y);
+      Image image(size_x, size_y, 255, 3);
       for (size_t c = 0; c < 3; c++) {
         for (size_t y = 0; y < size_y; y++) {
-          int* JXL_RESTRICT row = img.PlaneRow(c, y);
+          int* JXL_RESTRICT row = image.channel[c].Row(y);
           for (size_t x = 0; x < size_x; x++) {
             row[x] =
                 (*encoding.qraw.qtable)[c * size_x * size_y + y * size_x + x];
           }
         }
       }
-      modular_options cfopts;
-      set_default_modular_options(cfopts);
+      ModularOptions cfopts;
       cfopts.nb_repeats = 0;
-      cfopts.entropy_coder = 2;
-      PaddedBytes enc;
-      modular_rect_compress_3(img, Rect(img), &enc, &cfopts, /*loss=*/0);
-      writer->ZeroPadToByte();
-      *writer += enc;
+      cfopts.entropy_coder = ModularOptions::kMAANS;
+      JXL_RETURN_IF_ERROR(modular_generic_compress(image, cfopts, writer));
       break;
     }
     case QuantEncoding::kQuantModeAFV: {
@@ -258,9 +254,8 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
   return true;
 }
 
-HWY_ATTR Status Decode(BitReader* br, QuantEncoding* encoding,
-                       size_t required_size_x, size_t required_size_y,
-                       size_t idx) {
+Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
+              size_t required_size_y, size_t idx) {
   size_t required_size = required_size_x * required_size_y;
   required_size_x *= kBlockDim;
   required_size_y *= kBlockDim;
@@ -333,21 +328,16 @@ HWY_ATTR Status Decode(BitReader* br, QuantEncoding* encoding,
     }
     case QuantEncoding::kQuantModeRAW: {
       encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
-      Image3I img(required_size_x, required_size_y);
-      JXL_RETURN_IF_ERROR(br->JumpToByteBoundary());
-      JXL_RETURN_IF_ERROR(br->AllReadsWithinBounds());
-      size_t pos = 0;
-      const Span<const uint8_t> compressed = br->GetSpan();
-      if (!modular_rect_decompress_3(compressed, &pos, &img, Rect(img)))
-        return JXL_FAILURE("Failed to decode DC");
-      br->SkipBits(pos * kBitsPerByte);
+      Image image(required_size_x, required_size_y, 255, 3);
+      ModularOptions options;
+      JXL_RETURN_IF_ERROR(modular_generic_decompress(br, image, &options));
       if (!encoding->qraw.qtable) {
         encoding->qraw.qtable = new std::vector<int>();
       }
       encoding->qraw.qtable->resize(required_size_x * required_size_y * 3);
       for (size_t c = 0; c < 3; c++) {
         for (size_t y = 0; y < required_size_y; y++) {
-          int* JXL_RESTRICT row = img.PlaneRow(c, y);
+          int* JXL_RESTRICT row = image.channel[c].Row(y);
           for (size_t x = 0; x < required_size_x; x++) {
             (*encoding->qraw.qtable)[c * required_size_x * required_size_y +
                                      y * required_size_x + x] = row[x];
@@ -357,7 +347,6 @@ HWY_ATTR Status Decode(BitReader* br, QuantEncoding* encoding,
           }
         }
       }
-      JXL_RETURN_IF_ERROR(br->JumpToByteBoundary());
       break;
     }
     default:
@@ -720,7 +709,7 @@ Status DequantMatrices::EncodeDC(BitWriter* writer, size_t layer,
   return true;
 }
 
-HWY_ATTR Status DequantMatrices::Decode(BitReader* br) {
+Status DequantMatrices::Decode(BitReader* br) {
   size_t all_default = br->ReadBits(1);
   size_t num_tables = all_default ? 0 : kNum;
   encodings_.clear();
@@ -733,7 +722,7 @@ HWY_ATTR Status DequantMatrices::Decode(BitReader* br) {
   return DequantMatrices::Compute();
 }
 
-HWY_ATTR Status DequantMatrices::DecodeDC(BitReader* br) {
+Status DequantMatrices::DecodeDC(BitReader* br) {
   bool all_default = br->ReadBits(1);
   if (!all_default) {
     for (size_t c = 0; c < 3; c++) {

@@ -27,23 +27,12 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/modular/encoding/context_predict.h
   jxl/modular/encoding/encoding.cpp
   jxl/modular/encoding/encoding.h
+  jxl/modular/encoding/ma.cpp
+  jxl/modular/encoding/ma.h
   jxl/modular/encoding/options.h
   jxl/modular/encoding/weighted_predict.h
   jxl/modular/image/image.cpp
   jxl/modular/image/image.h
-  jxl/modular/ma/bit.cpp
-  jxl/modular/ma/bit.h
-  jxl/modular/ma/chance.cpp
-  jxl/modular/ma/chance.h
-  jxl/modular/ma/compound.h
-  jxl/modular/ma/compound.cpp
-  jxl/modular/ma/compound_enc.h
-  jxl/modular/ma/rac.h
-  jxl/modular/ma/rac_enc.h
-  jxl/modular/ma/symbol.h
-  jxl/modular/ma/symbol_enc.h
-  jxl/modular/ma/util.h
-  jxl/modular/memio.h
   jxl/modular/transform/near-lossless.h
   jxl/modular/transform/palette.h
   jxl/modular/transform/quantize.h
@@ -86,13 +75,13 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/base/override.h
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
+  jxl/base/profiler.cc
   jxl/base/profiler.h
   jxl/base/robust_statistics.h
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/tsc_timer.h
-  jxl/block.h
   jxl/brotli.cc
   jxl/brotli.h
   jxl/brunsli.cc
@@ -114,12 +103,10 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/convolve.cc
   jxl/convolve.h
   jxl/convolve-inl.h
-  jxl/dct.cc
-  jxl/dct.h
-  jxl/dct_simd_4.h
-  jxl/dct_simd_8.h
-  jxl/dct_simd_any.h
-  jxl/dct_util.cc
+  jxl/dct_block-inl.h
+  jxl/dct_scales.cc
+  jxl/dct_scales.h
+  jxl/dct_for_test.h
   jxl/dct_util.h
   jxl/dec_ans.cc
   jxl/dec_ans.h
@@ -127,6 +114,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/dec_cache.h
   jxl/dec_context_map.cc
   jxl/dec_context_map.h
+  jxl/dec_dct-inl.h
+  jxl/dec_dct.cc
+  jxl/dec_dct.h
   jxl/dec_file.cc
   jxl/dec_file.h
   jxl/dec_frame.cc
@@ -140,6 +130,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/dec_params.h
   jxl/dec_reconstruct.cc
   jxl/dec_reconstruct.h
+  jxl/dec_transforms-inl.h
+  jxl/dec_transforms.cc
+  jxl/dec_transforms.h
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
   jxl/dec_xyb-inl.h
@@ -165,6 +158,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
+  jxl/enc_dct-inl.h
+  jxl/enc_dct.cc
+  jxl/enc_dct.h
   jxl/enc_file.cc
   jxl/enc_file.h
   jxl/enc_frame.cc
@@ -177,6 +173,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_noise.cc
   jxl/enc_noise.h
   jxl/enc_params.h
+  jxl/enc_transforms-inl.h
+  jxl/enc_transforms.cc
+  jxl/enc_transforms.h
   jxl/enc_xyb.cc
   jxl/enc_xyb.h
   jxl/entropy_coder.cc
@@ -185,6 +184,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/epf.h
   jxl/external_image.cc
   jxl/external_image.h
+  jxl/fast_log-inl.h
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
@@ -210,6 +210,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/linalg.h
   jxl/loop_filter.cc
   jxl/loop_filter.h
+  jxl/luminance.cc
+  jxl/luminance.h
   jxl/memory_manager_internal.cc
   jxl/memory_manager_internal.h
   jxl/multiframe.cc
@@ -224,8 +226,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/passes_state.h
   jxl/patch_dictionary.cc
   jxl/patch_dictionary.h
+  jxl/predictor-inl.h
   jxl/predictor.cc
-  jxl/predictor.h
+  jxl/predictor_shared.h
   jxl/quant_weights.cc
   jxl/quant_weights.h
   jxl/quantizer.cc
@@ -237,6 +240,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/splines_fastmath.h
   jxl/toc.cc
   jxl/toc.h
+  jxl/transpose-inl.h
   jxl/xorshift128plus-inl.h
 )
 
@@ -401,12 +405,28 @@ target_include_directories(jpegxl-static PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_BINARY_DIR}/include")
 
+# JPEGXL_EXPORT is defined to "__declspec(dllimport)" automatically by CMake
+# in Windows builds when including headers from the C API and compiling from
+# outside the jpegxl library. This is required when using the shared library,
+# however in windows this causes the function to not be found when linking
+# against the static library. This define JPEGXL_EXPORT= here forces it to not
+# use dllimport in tests and other tools that require the static library.
+target_compile_definitions(jpegxl-static INTERFACE -DJPEGXL_EXPORT=)
+
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
 if(${JPEGXL_ENABLE_TCMALLOC})
   pkg_check_modules(TCMalloc REQUIRED IMPORTED_TARGET libtcmalloc)
   target_link_libraries(jpegxl-static PUBLIC PkgConfig::TCMalloc)
 endif()  # JPEGXL_ENABLE_TCMALLOC
+
+if(MINGW)
+# TODO(deymo): Remove threads from jpegxl-obj and jpegxl-static once we don't
+# use mutex inside the jpegxl library.
+target_include_directories(jpegxl-obj PUBLIC
+  $<TARGET_PROPERTY:mingw_stdthreads,INTERFACE_INCLUDE_DIRECTORIES>)
+target_link_libraries(jpegxl-static PUBLIC mingw_stdthreads)
+endif()
 
 if (NOT "${JPEGXL_EMSCRIPTEN}")
 

@@ -111,3 +111,4 @@ container is:
 *    aarch64-linux-gnu
 *    arm-linux-gnueabihf
 *    i686-linux-gnu
+*    x86_64-w64-mingw32 (for Windows builds)

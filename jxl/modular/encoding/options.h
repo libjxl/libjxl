@@ -19,50 +19,53 @@
 
 namespace jxl {
 
-struct modular_options {
-  // decoding options
-  bool identify;  // don't decode image data, just decode header
+struct ModularOptions {
+  // Decoding options:
 
-  // used in both encode and decode
-  int nb_channels;   // if full_header==false, need to specify how many channels
-                     // to expect
-  int skipchannels;  // the first <skipchannels> channels will not be
-                     // encoded/decoded
-  size_t max_chan_size;  // stop encoding/decoding when reaching a (non-meta)
-                         // channel that has a dimension bigger than this
+  // When true, only decode header, not the image data.
+  bool identify = false;
 
-  // encoding options (some of which are needed during decoding too)
-  int entropy_coder;  // 0 = MABEGABRAC, 1 = MABrotli, 2 = MARANS
+  /// Used in both encode and decode:
 
-  // MA options
-  float nb_repeats;    // number of iterations to do to learn a MA tree (does
-                       // not have to be an integer; if zero there is no MA
-                       // context model)
-  int max_properties;  // maximum number of (previous channel) properties to use
-                       // in the MA trees
-  float ctx_threshold;  // number of bits to be saved to justify adding
-                        // another node to the MA tree (lower value = bigger
-                        // context model)
+  // If full_header==false, need to specify how many channels to expect.
+  int nb_channels = 1;
+
+  // The first <skipchannels> channels will not be encoded/decoded.
+  int skipchannels = 0;
+
+  // Stop encoding/decoding when reaching a (non-meta) channel that has a
+  // dimension bigger than max_chan_size.
+  size_t max_chan_size = 0xFFFFFF;
+
+  // Encoding options (some of which are needed during decoding too):
+  enum EntropyCoder {
+    kBrotli = 0,
+    kMAANS,
+  };
+  EntropyCoder entropy_coder = kMAANS;
+
+  // MA options:
+  // Number of iterations to do to learn a MA tree (does not have to be an
+  // integer; if zero there is no MA context model).
+  float nb_repeats =
+      .5f;  // learn MA tree by looking at 50% of the rows, in random order
+
+  // Maximum number of (previous channel) properties to use in the MA trees
+  int max_properties = 0;  // no previous channels
+
   // Alternative heuristic tweaks.
-  bool use_splitting_heuristics;
   size_t splitting_heuristics_max_properties;
   float splitting_heuristics_node_threshold;
 
   // Brotli options
-  int brotli_effort;  // 0..11
+  int brotli_effort = 11;  // 0..11
 
-  std::vector<int> predictor;  // predictor to use for each channel. last one
-                               // gets repeated if needed
+  // Predictor to use for each channel. If there are more channels than
+  // predictors here the last one, or the default if empty, gets repeated.
+  std::vector<int> predictor;
 
-  int nb_wp_modes;
-
-  // deprecated
-  bool debug;      // produce debug images, including (for MABEGABRAC only) a
-                   // compression heatmap
-  Image *heatmap;  // produced if debug==true
+  int nb_wp_modes = 1;
 };
-
-void set_default_modular_options(struct modular_options &o);
 
 }  // namespace jxl
 

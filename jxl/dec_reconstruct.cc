@@ -14,6 +14,7 @@
 
 #include "jxl/dec_reconstruct.h"
 
+#include <mutex>
 #include <utility>
 
 #include "jxl/aux_out.h"
@@ -29,17 +30,24 @@
 #include "jxl/multiframe.h"
 #include "jxl/passes_state.h"
 
-namespace jxl {
-using DF = HWY_CAPPED(float, kBlockDim);
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
+#include <hwy/foreach_target.h>
 
 #include "jxl/dec_xyb-inl.h"
 
-HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
-                                    const Rect& in_rect,
-                                    PassesDecoderState* dec_state, size_t y,
-                                    size_t thread, AuxOut* aux_out,
-                                    bool save_decompressed,
-                                    bool apply_color_transform) {
+namespace jxl {
+
+#include <hwy/begin_target-inl.h>
+
+using DF = HWY_CAPPED(float, kBlockDim);
+
+HWY_ATTR Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
+                                      const Rect& in_rect,
+                                      PassesDecoderState* dec_state, size_t y,
+                                      size_t thread, AuxOut* /*aux_out*/,
+                                      bool save_decompressed,
+                                      bool apply_color_transform) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
@@ -47,7 +55,7 @@ HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
   size_t output_y;
   bool has_output_row =
       ApplyLoopFiltersRow(dec_state, in_rect, y, thread, idct, &output_y);
-  if (!has_output_row) return;
+  if (!has_output_row) return true;
 
   const Rect rect(in_rect.x0(), in_rect.y0() + output_y, in_rect.xsize(), 1);
 
@@ -56,7 +64,8 @@ HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 
   // TODO(veluca): Consider collapsing/inlining some of the following loops.
   image_features.patches.AddTo(idct, rect, rect);
-  image_features.splines.AddTo(idct, rect, rect, dec_state->shared->cmap);
+  JXL_RETURN_IF_ERROR(
+      image_features.splines.AddTo(idct, rect, rect, dec_state->shared->cmap));
 
   if (dec_state->shared->multiframe->NeedsRestoring()) {
     PROFILER_ZONE("MultiframeRestore");
@@ -72,8 +81,9 @@ HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 
   if (frame_header.flags & FrameHeader::kNoise) {
     PROFILER_ZONE("AddNoise");
-    AddNoise(image_features.noise_params, rect, dec_state->noise, rect,
-             dec_state->shared->cmap, idct);
+    auto add_noise = ChooseAddNoise(hwy::SupportedTargets());
+    add_noise(image_features.noise_params, rect, dec_state->noise, rect,
+              dec_state->shared->cmap, idct);
   }
 
   if (apply_color_transform &&
@@ -85,10 +95,22 @@ HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 
     const HWY_FULL(float) d;
 
+// rect is only aligned to blocks (8 floats = 32 bytes). For larger vectors,
+// treat loads/stores as unaligned.
+#undef LoadBlocks
+#undef StoreBlocks
+#if HWY_CAPS & HWY_CAP_GE512
+#define LoadBlocks LoadU
+#define StoreBlocks StoreU
+#else
+#define LoadBlocks Load
+#define StoreBlocks Store
+#endif
+
     for (size_t x = 0; x < rect.xsize(); x += d.N) {
-      const auto in_opsin_x = Load(d, row0 + x);
-      const auto in_opsin_y = Load(d, row1 + x);
-      const auto in_opsin_b = Load(d, row2 + x);
+      const auto in_opsin_x = LoadBlocks(d, row0 + x);
+      const auto in_opsin_y = LoadBlocks(d, row1 + x);
+      const auto in_opsin_b = LoadBlocks(d, row2 + x);
       JXL_COMPILER_FENCE;
       auto linear_r = Undefined(d);
       auto linear_g = Undefined(d);
@@ -96,26 +118,36 @@ HWY_ATTR void ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
       XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params, &linear_r,
                &linear_g, &linear_b);
 
-      Store(linear_r, d, row0 + x);
-      Store(linear_g, d, row1 + x);
-      Store(linear_b, d, row2 + x);
+      StoreBlocks(linear_r, d, row0 + x);
+      StoreBlocks(linear_g, d, row1 + x);
+      StoreBlocks(linear_b, d, row2 + x);
     }
   }
+
+  return true;
 }
 
-// TODO(veluca): implement dynamic dispatch.
-HWY_ATTR void ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                                 PassesDecoderState* dec_state, size_t thread,
-                                 AuxOut* aux_out, bool save_decompressed,
-                                 bool apply_color_transform) {
+Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                          PassesDecoderState* dec_state, size_t thread,
+                          AuxOut* aux_out, bool save_decompressed,
+                          bool apply_color_transform) {
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
 
   for (size_t y = 2 * kBlockDim - lf.PaddingRows();
        y < 2 * kBlockDim + lf.PaddingRows() + rect.ysize(); y++) {
-    ApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out,
-                          save_decompressed, apply_color_transform);
+    JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(idct, rect, dec_state, y, thread,
+                                              aux_out, save_decompressed,
+                                              apply_color_transform));
   }
+  return true;
 }
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+
+HWY_EXPORT(ApplyImageFeaturesRow)
+HWY_EXPORT(ApplyImageFeatures)
 
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              PassesDecoderState* dec_state, ThreadPool* pool,
@@ -183,13 +215,21 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     return true;
   };
 
-  auto apply_features = [&](size_t rect_id, size_t thread) {
-    ApplyImageFeatures(idct, rects_to_process[rect_id], dec_state, thread,
-                       aux_out, save_decompressed, apply_color_transform);
+  bool apply_features_ok = true;
+  std::mutex apply_features_ok_mutex;
+  const auto apply_features = ChooseApplyImageFeatures(hwy::SupportedTargets());
+  auto run_apply_features = [&](size_t rect_id, size_t thread) {
+    if (!apply_features(idct, rects_to_process[rect_id], dec_state, thread,
+                        aux_out, save_decompressed, apply_color_transform)) {
+      std::unique_lock<std::mutex> lock(apply_features_ok_mutex);
+      apply_features_ok = false;
+    }
   };
 
-  RunOnPool(pool, 0, rects_to_process.size(), allocate_storage, apply_features,
-            "ApplyFeatures");
+  RunOnPool(pool, 0, rects_to_process.size(), allocate_storage,
+            run_apply_features, "ApplyFeatures");
+
+  JXL_RETURN_IF_ERROR(apply_features_ok);
 
   if (dec_state->shared->multiframe->NeedsSaving() && save_decompressed) {
     dec_state->shared->multiframe->SetDecodedFrame();
@@ -204,13 +244,16 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       frame_header.color_transform == ColorTransform::kYCbCr) {
     // TODO(veluca): create per-pixel version of YcbcrToRgb for line-based
     // decoding in ApplyImageFeatures.
-    YcbcrToRgb(idct->Plane(1), idct->Plane(0), idct->Plane(2),
-               const_cast<ImageF*>(&idct->Plane(0)),
-               const_cast<ImageF*>(&idct->Plane(1)),
-               const_cast<ImageF*>(&idct->Plane(2)), pool);
+    ChooseYcbcrToRgb(hwy::SupportedTargets())(
+        idct->Plane(1), idct->Plane(0), idct->Plane(2),
+        const_cast<ImageF*>(&idct->Plane(0)),
+        const_cast<ImageF*>(&idct->Plane(1)),
+        const_cast<ImageF*>(&idct->Plane(2)), pool);
   }  // otherwise no color transform needed
 
   return true;
 }
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

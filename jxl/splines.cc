@@ -15,13 +15,12 @@
 #include "jxl/splines.h"
 
 #include <algorithm>
-#include <hwy/static_targets.h>
 
 #include "jxl/ans_params.h"
 #include "jxl/base/status.h"
 #include "jxl/chroma_from_luma.h"
 #include "jxl/common.h"
-#include "jxl/dct.h"
+#include "jxl/dct_scales.h"
 #include "jxl/entropy_coder.h"
 #include "jxl/opsin_params.h"
 #include "jxl/splines_fastmath.h"
@@ -59,8 +58,8 @@ enum SplineEntropyContexts : size_t {
   kNumSplineContexts
 };
 
-HWY_ATTR void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
-                                      std::vector<Token>* tokens) {
+void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
+                             std::vector<Token>* tokens) {
   int64_t last_x = 0;
   int64_t last_y = 0;
   for (size_t i = 0; i < points.size(); i++) {
@@ -80,10 +79,10 @@ HWY_ATTR void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
   }
 }
 
-HWY_ATTR Status DecodeAllStartingPoints(
-    std::vector<Spline::Point>* const points, BitReader* const br,
-    ANSSymbolReader* reader, const std::vector<uint8_t>& context_map,
-    size_t num_splines) {
+Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
+                               BitReader* const br, ANSSymbolReader* reader,
+                               const std::vector<uint8_t>& context_map,
+                               size_t num_splines) {
   points->resize(num_splines);
   int64_t last_x = 0;
   int64_t last_y = 0;
@@ -362,9 +361,9 @@ void QuantizedSpline::Tokenize(std::vector<Token>* const tokens) const {
   encode_dct(sigma_dct_);
 }
 
-HWY_ATTR Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
-                                        ANSSymbolReader* const decoder,
-                                        BitReader* const br) {
+Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
+                               ANSSymbolReader* const decoder,
+                               BitReader* const br) {
   const size_t num_control_points =
       decoder->ReadHybridUint(kNumControlPointsContext, br, context_map);
   control_points_.resize(num_control_points);
@@ -375,8 +374,7 @@ HWY_ATTR Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
         decoder->ReadHybridUint(kControlPointsContext, br, context_map));
   }
 
-  const auto decode_dct = [decoder, br, &context_map](int dct[32])
-                              HWY_ATTR -> Status {
+  const auto decode_dct = [decoder, br, &context_map](int dct[32]) -> Status {
     for (int i = 0; i < 32; ++i) {
       dct[i] = decoder->ReadHybridUint(kDCTContext, br, context_map);
     }
@@ -412,7 +410,7 @@ void Splines::Encode(BitWriter* writer, const size_t layer,
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
-HWY_ATTR Status Splines::Decode(jxl::BitReader* br) {
+Status Splines::Decode(jxl::BitReader* br) {
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(DecodeHistograms(
@@ -442,25 +440,31 @@ HWY_ATTR Status Splines::Decode(jxl::BitReader* br) {
   return true;
 }
 
-void Splines::AddTo(Image3F* const opsin, const Rect& opsin_rect,
-                    const Rect& image_rect,
-                    const ColorCorrelationMap& cmap) const {
-  Apply</*add=*/true>(opsin, opsin_rect, image_rect, cmap);
+Status Splines::AddTo(Image3F* const opsin, const Rect& opsin_rect,
+                      const Rect& image_rect,
+                      const ColorCorrelationMap& cmap) const {
+  return Apply</*add=*/true>(opsin, opsin_rect, image_rect, cmap);
 }
 
-void Splines::SubtractFrom(Image3F* const opsin,
-                           const ColorCorrelationMap& cmap) const {
-  Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin), cmap);
+Status Splines::SubtractFrom(Image3F* const opsin,
+                             const ColorCorrelationMap& cmap) const {
+  return Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin), cmap);
 }
 
 template <bool add>
-void Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
-                    const Rect& image_rect,
-                    const ColorCorrelationMap& cmap) const {
+Status Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
+                      const Rect& image_rect,
+                      const ColorCorrelationMap& cmap) const {
   for (size_t i = 0; i < splines_.size(); ++i) {
     const Spline spline = splines_[i].Dequantize(
         starting_points_[i], quantization_adjustment_,
         cmap.YtoXRatio(kColorOffset), cmap.YtoBRatio(kColorOffset));
+    if (std::adjacent_find(spline.control_points.begin(),
+                           spline.control_points.end()) !=
+        spline.control_points.end()) {
+      return JXL_FAILURE("identical successive control points in spline %zu",
+                         i);
+    }
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
     ForEachEquallySpacedPoint(
         DrawCentripetalCatmullRomSpline(spline.control_points),
@@ -493,6 +497,7 @@ void Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
                    sigma);
     }
   }
+  return true;
 }
 
 Splines FindSplines(const Image3F& opsin) {

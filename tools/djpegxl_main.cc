@@ -16,8 +16,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <hwy/runtime_dispatch.h>
-#include <hwy/static_targets.h>
 #include <vector>
 
 #include "jpegxl/decode.h"
@@ -49,7 +47,7 @@ int DecompressMain(int argc, const char *argv[]) {
   CommandLineParser cmdline;
   args.AddCommandLineOptions(&cmdline);
 
-  if (!cmdline.Parse(argc, argv) || !args.ValidateArgs()) {
+  if (!cmdline.Parse(argc, argv) || !args.ValidateArgs(cmdline)) {
     cmdline.PrintHelp();
     return 1;
   }
@@ -57,12 +55,6 @@ int DecompressMain(int argc, const char *argv[]) {
     fprintf(stderr, "djpegxl - version " JPEGXL_VERSION "\n");
     fprintf(stderr, "Copyright (c) the JPEG XL Project\n");
     return 0;
-  }
-
-  const int bits = hwy::TargetBitfield().Bits();
-  if ((bits & HWY_STATIC_TARGETS) != HWY_STATIC_TARGETS) {
-    fprintf(stderr, "CPU does not support all enabled targets => exiting.\n");
-    return 1;
   }
 
   jxl::PaddedBytes compressed;

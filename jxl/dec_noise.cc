@@ -19,8 +19,6 @@
 #include <stdlib.h>
 
 #include <algorithm>
-#include <hwy/compiler_specific.h>
-#include <hwy/static_targets.h>
 #include <numeric>
 #include <utility>
 
@@ -32,13 +30,15 @@
 #include "jxl/opsin_params.h"
 #include "jxl/optimize.h"
 
-namespace jxl {
-namespace {
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_noise.cc"
+#include <hwy/foreach_target.h>
 
-namespace HWY_NAMESPACE {
 #include "jxl/xorshift128plus-inl.h"
-}  // namespace HWY_NAMESPACE
-using HWY_NAMESPACE::Xorshift128Plus;
+
+namespace jxl {
+
+#include <hwy/begin_target-inl.h>
 
 using D = HWY_CAPPED(float, 1);
 
@@ -50,8 +50,7 @@ HWY_ATTR void BitsToFloat(const uint32_t* JXL_RESTRICT random_bits,
 
   const auto bits = Load(du, random_bits);
   // 1.0 + 23 random mantissa bits = [1, 2)
-  const auto rand12 =
-      BitCast(df, hwy::ShiftRight<9>(bits) | Set(du, 0x3F800000));
+  const auto rand12 = BitCast(df, ShiftRight<9>(bits) | Set(du, 0x3F800000));
   const auto rand01 = rand12 - Set(df, 1.0f);
   Store(rand01, df, floats);
 }
@@ -114,7 +113,7 @@ HWY_ATTR typename StrengthEval::V NoiseStrength(
 // TODO(veluca): SIMD-fy.
 class StrengthEvalLut {
  public:
-  using V = hwy::VT<D>;
+  using V = HWY_VEC(D);
 
   explicit StrengthEvalLut(const NoiseParams& noise_params)
       : noise_params_(noise_params) {}
@@ -135,11 +134,11 @@ class StrengthEvalLut {
 };
 
 template <class D>
-HWY_ATTR void AddNoiseToRGB(const D d, const hwy::VT<D> rnd_noise_r,
-                            const hwy::VT<D> rnd_noise_g,
-                            const hwy::VT<D> rnd_noise_cor,
-                            const hwy::VT<D> noise_strength_g,
-                            const hwy::VT<D> noise_strength_r, float ytox,
+HWY_ATTR void AddNoiseToRGB(const D d, const HWY_VEC(D) rnd_noise_r,
+                            const HWY_VEC(D) rnd_noise_g,
+                            const HWY_VEC(D) rnd_noise_cor,
+                            const HWY_VEC(D) noise_strength_g,
+                            const HWY_VEC(D) noise_strength_r, float ytox,
                             float ytob, float* JXL_RESTRICT out_x,
                             float* JXL_RESTRICT out_y,
                             float* JXL_RESTRICT out_b) {
@@ -163,8 +162,6 @@ HWY_ATTR void AddNoiseToRGB(const D d, const hwy::VT<D> rnd_noise_r,
   Store(vy, d, out_y);
   Store(vb, d, out_b);
 }
-
-}  // namespace
 
 HWY_ATTR void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
                        const Image3F& noise, const Rect& opsin_rect,
@@ -211,7 +208,7 @@ HWY_ATTR void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
   }
 }
 
-void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
+HWY_ATTR void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
 
@@ -222,7 +219,13 @@ void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
   RandomImage(&temp, &rng, rect, &noise->Plane(2));
 }
 
-HWY_ATTR void DecodeFloatParam(float precision, float* val, BitReader* br) {
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(AddNoise)
+HWY_EXPORT(RandomImage3)
+
+void DecodeFloatParam(float precision, float* val, BitReader* br) {
   const int absval_quant = br->ReadFixedBits<10>();
   *val = absval_quant / precision;
 }
@@ -236,5 +239,7 @@ Status DecodeNoise(BitReader* br, NoiseParams* noise_params) {
   }
   return true;
 }
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

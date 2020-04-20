@@ -32,6 +32,7 @@
 #include "jxl/fields.h"  // AllDefault
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
+#include "jxl/luminance.h"
 
 namespace jxl {
 namespace {
@@ -41,6 +42,7 @@ struct HeaderPNM {
   size_t ysize;
   bool is_gray;
   size_t bits_per_sample;
+  bool floating_point;
   bool big_endian;
 };
 
@@ -187,6 +189,7 @@ class Parser {
     JXL_RETURN_IF_ERROR(ParseUnsigned(&max_val));
     if (max_val == 0 || max_val >= 65536) return JXL_FAILURE("PNM: bad MaxVal");
     header->bits_per_sample = CeilLog2Nonzero(max_val);
+    header->floating_point = false;
     header->big_endian = true;
 
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
@@ -207,6 +210,7 @@ class Parser {
     JXL_RETURN_IF_ERROR(ParseSigned(&scale));
     header->big_endian = scale >= 0.0;
     header->bits_per_sample = 32;
+    header->floating_point = true;
 
     JXL_RETURN_IF_ERROR(SkipSingleWhitespace());
 
@@ -312,6 +316,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   JXL_RETURN_IF_ERROR(ApplyHints(header.is_gray, io));
   io->metadata.bits_per_sample = header.bits_per_sample;
+  io->metadata.floating_point_sample = header.floating_point;
   io->metadata.alpha_bits = 0;
   io->dec_pixels = header.xsize * header.ysize;
   io->frames.clear();
@@ -326,18 +331,19 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
                          header.big_endian, flipped_y);
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
-  if (header.bits_per_sample != 32)
+  if (!header.floating_point)
     io->metadata.bits_per_sample = ib.DetectRealBitdepth();
   io->frames.push_back(std::move(ib));
-  return true;
+  return Map255ToTargetNits(io, pool);
 }
 
 Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes) {
-  io->enc_bits_per_sample = bits_per_sample <= 16 ? bits_per_sample : 32;
+  bool floating_point = bits_per_sample > 16;
+  io->enc_bits_per_sample = floating_point ? 32 : bits_per_sample;
   // Choose native for PFM; PGM/PPM require big-endian.
-  const bool big_endian = (bits_per_sample == 32) ? !IsLittleEndian() : true;
+  const bool big_endian = floating_point ? !IsLittleEndian() : true;
 
   if (!Bundle::AllDefault(io->metadata)) {
     JXL_WARNING("PNM encoder ignoring metadata - use a different codec");
@@ -348,7 +354,8 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
         "will need hint key=color_space to get the same values");
   }
 
-  const ImageBundle& ib = io->Main();
+  ImageBundle ib = io->Main().Copy();
+  JXL_RETURN_IF_ERROR(MapTargetNitsTo255(&ib, pool));
   const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
   const size_t alpha_bits = ib.HasAlpha() ? io->metadata.alpha_bits : 0;
   CodecIntervals* temp_intervals = nullptr;  // Can't store min/max.
@@ -358,7 +365,7 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   // is designed that way.
   const Image3F* to_external_image = &ib.color();
   Image3F flipped;
-  if (bits_per_sample == 32) {
+  if (floating_point) {
     flipped = VerticallyFlipImage(ib.color());
     to_external_image = &flipped;
   }

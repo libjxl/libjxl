@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.1)
 # ICC detection library used by the comparison and viewer tools.
 if(JPEGXL_ENABLE_VIEWERS)
 if(WIN32)
-  find_package(Qt5 COMPONENTS Widgets)
+  find_package(Qt5 QUIET COMPONENTS Widgets)
   if (NOT Qt5_FOUND)
     message(WARNING "Qt5 was not found.")
   else()
@@ -28,8 +28,8 @@ if(WIN32)
     target_link_libraries(icc_detect PUBLIC jpegxl-static Qt5::Widgets)
   endif()
 else()
-  find_package(Qt5 COMPONENTS Widgets X11Extras)
-  find_package(ECM NO_MODULE)
+  find_package(Qt5 QUIET COMPONENTS Widgets X11Extras)
+  find_package(ECM QUIET NO_MODULE)
   if (NOT Qt5_FOUND OR NOT ECM_FOUND)
     if (NOT Qt5_FOUND)
       message(WARNING "Qt5 was not found.")
@@ -161,6 +161,11 @@ if(${JPEGXL_ENABLE_BENCHMARK})
   target_link_libraries(benchmark_xl Threads::Threads)
   target_compile_definitions(benchmark_xl
     PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
+  if(MINGW)
+  # MINGW doesn't support glob.h.
+  target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
+  endif() # MINGW
+
   if(JPEG_FOUND)
     target_sources(benchmark_xl PRIVATE
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"

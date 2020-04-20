@@ -94,7 +94,8 @@ class WebPCodec : public ImageCodec {
       // The lossless codec does not support 16-bit channels.
       // Color models are currently not supported here and the sRGB 8-bit
       // conversion causes loss due to clipping.
-      if (!ib.IsSRGB() || ib.metadata()->bits_per_sample > 8) {
+      if (!ib.IsSRGB() || ib.metadata()->bits_per_sample > 8 ||
+          ib.metadata()->floating_point_sample) {
         return JXL_FAILURE("%s: webp:ll/nl requires 8-bit sRGB",
                            filename.c_str());
       }

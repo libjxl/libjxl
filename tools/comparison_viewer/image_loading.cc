@@ -22,6 +22,7 @@
 #include "jxl/color_management.h"
 #include "jxl/dec_file.h"
 #include "jxl/extras/codec.h"
+#include "jxl/luminance.h"
 
 namespace jxl {
 
@@ -55,7 +56,8 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
   if (!sourceColorSpaceHint.isEmpty()) {
     decoded.dec_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
-  if (!loadFromFile(filename, &decoded, &pool)) {
+  if (!(loadFromFile(filename, &decoded, &pool) &&
+        MapTargetNitsTo255(&decoded, &pool))) {
     return QImage();
   }
   const ImageBundle& ib = decoded.Main();
@@ -64,7 +66,7 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
   if (!targetColorSpace.SetICC(std::move(targetIccProfile))) {
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
-  Image3B converted;
+  Image3F converted;
   if (!ib.CopyTo(Rect(ib), targetColorSpace, &converted, &pool)) {
     return QImage();
   }
@@ -77,9 +79,9 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
       const uint16_t* const alphaRow = ib.alpha().ConstRow(y);
-      const uint8_t* const redRow = converted.ConstPlaneRow(0, y);
-      const uint8_t* const greenRow = converted.ConstPlaneRow(1, y);
-      const uint8_t* const blueRow = converted.ConstPlaneRow(2, y);
+      const float* const redRow = converted.ConstPlaneRow(0, y);
+      const float* const greenRow = converted.ConstPlaneRow(1, y);
+      const float* const blueRow = converted.ConstPlaneRow(2, y);
       for (int x = 0; x < image.width(); ++x) {
         row[x] = qRgba(redRow[x], greenRow[x], blueRow[x],
                        alphaRow[x] >> alphaRightShiftAmount);
@@ -88,9 +90,9 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
   } else {
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
-      const uint8_t* const redRow = converted.ConstPlaneRow(0, y);
-      const uint8_t* const greenRow = converted.ConstPlaneRow(1, y);
-      const uint8_t* const blueRow = converted.ConstPlaneRow(2, y);
+      const float* const redRow = converted.ConstPlaneRow(0, y);
+      const float* const greenRow = converted.ConstPlaneRow(1, y);
+      const float* const blueRow = converted.ConstPlaneRow(2, y);
       for (int x = 0; x < image.width(); ++x) {
         row[x] = qRgb(redRow[x], greenRow[x], blueRow[x]);
       }

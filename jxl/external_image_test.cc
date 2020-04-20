@@ -154,6 +154,7 @@ class ExternalImageParametricTest
 
     CodecInOut io;
     io.metadata.bits_per_sample = bits_per_sample;
+    io.metadata.floating_point_sample = (bits_per_sample == 32);
     io.metadata.color_encoding = c_current;
     io.SetFromImage(CopyImage(g->color[idx]), c_current);
     ImageBundle& ib = io.Main();
@@ -297,6 +298,7 @@ class ExternalImageParametricTest
 
     CodecInOut io;
     io.metadata.bits_per_sample = bits_per_sample;
+    io.metadata.floating_point_sample = (bits_per_sample == 32);
     io.metadata.color_encoding = ColorEncoding::SRGB();
     io.SetFromImage(std::move(image), io.metadata.color_encoding);
     const ImageBundle& ib = io.Main();

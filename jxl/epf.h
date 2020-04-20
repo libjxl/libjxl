@@ -20,9 +20,8 @@
 
 #include <stddef.h>
 
-#include <hwy/runtime_targets.h>
-
 #include "jxl/base/data_parallel.h"
+#include "jxl/base/status.h"
 #include "jxl/dec_cache.h"
 
 namespace jxl {
@@ -42,12 +41,12 @@ static constexpr float kInvSigmaNum = -1.1715728752538099024f;
 // have at least 7 rows, while `storage2` should be at least as wide as the
 // output rect plus one block of padding on each side and should have at least 3
 // rows.
-HWY_ATTR void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
-                                   const Image3F& in, const Rect& sigma_rect,
-                                   const ImageF& sigma, const Rect& out_rect,
-                                   Image3F* JXL_RESTRICT out,
-                                   Image3F* JXL_RESTRICT storage1,
-                                   Image3F* JXL_RESTRICT storage2);
+void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
+                          const Image3F& in, const Rect& sigma_rect,
+                          const ImageF& sigma, const Rect& out_rect,
+                          Image3F* JXL_RESTRICT out,
+                          Image3F* JXL_RESTRICT storage1,
+                          Image3F* JXL_RESTRICT storage2);
 
 // Same as EdgePreservingFilter, but only processes row `y` of
 // dec_state->decoded. If an output row was produced, it is returned in
@@ -56,10 +55,9 @@ HWY_ATTR void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
 // This function should be called for `in_rect.ysize() + 2 * lf.PaddingRows()`
 // values of `y`, in increasing order, starting from
 // `y=2*kBlockDim-lf.PaddingRows()`.
-HWY_ATTR bool ApplyLoopFiltersRow(PassesDecoderState* dec_state,
-                                  const Rect& in_rect, size_t y, size_t thread,
-                                  Image3F* JXL_RESTRICT out,
-                                  size_t* JXL_RESTRICT output_row);
+Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
+                           size_t y, size_t thread, Image3F* JXL_RESTRICT out,
+                           size_t* JXL_RESTRICT output_row);
 
 }  // namespace jxl
 

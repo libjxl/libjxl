@@ -29,6 +29,7 @@
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
+#include "jxl/luminance.h"
 
 #ifdef MEMORY_SANITIZER
 #include "sanitizer/msan_interface.h"
@@ -63,7 +64,8 @@ bool AllOpaque(const ImageU& alpha) {
 
 }  // namespace
 
-Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
+Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
+                      CodecInOut* io) {
   int error;
   ReadState state = {bytes};
   const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const bytes,
@@ -111,6 +113,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
   io->dec_pixels = 0;
 
   io->metadata.bits_per_sample = 8;
+  io->metadata.floating_point_sample = false;
   io->metadata.color_encoding = ColorEncoding::SRGB();
   io->metadata.alpha_bits = 0;
   io->enc_size = bytes.size();
@@ -342,7 +345,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, CodecInOut* io) {
     }
   }
 
-  return true;
+  return Map255ToTargetNits(io, pool);
 }
 
 }  // namespace jxl

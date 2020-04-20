@@ -43,14 +43,14 @@ static Status inv_palette(Image &input, const TransformParams &parameters,
   // JXL_DASSERT(input.channel[c0].minval == 0);
   // JXL_DASSERT(input.channel[c0].maxval == palette.w-1);
   for (int i = 1; i < nb; i++) {
-    input.channel.insert(input.channel.begin() + c0 + 1, Channel(w, h, 0, 1));
+    input.channel.insert(input.channel.begin() + c0 + 1, Channel(w, h));
   }
   const Channel &palette = input.channel[0];
   int zero = 0;
   if (nb == 1) {
-    input.channel[c0].actual_minmax(&input.channel[c0].minval,
-                                    &input.channel[c0].maxval);
-    zero = -input.channel[c0].minval;
+    int min, max;
+    input.channel[c0].compute_trivial(&min, &max);
+    zero = -min;
   }
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
   intptr_t onerow = input.channel[0].plane.PixelsPerRow();
@@ -120,7 +120,7 @@ static Status meta_palette(Image &input, const TransformParams &parameters) {
   input.nb_channels -= nb - 1;
   input.channel.erase(input.channel.begin() + begin_c + 1,
                       input.channel.begin() + end_c + 1);
-  Channel pch(nb_colors, nb, 0, 1);
+  Channel pch(nb_colors, nb);
   pch.hshift = -1;
   input.channel.insert(input.channel.begin(), std::move(pch));
   return true;
@@ -177,16 +177,17 @@ static Status fwd_palette(Image &input, TransformParams &parameters) {
   JXL_DEBUG_V(6, "Channels %i-%i can be represented using a %i-color palette.",
               begin_c, end_c, nb_colors);
 
-  Channel pch(nb_colors, nb, 0, 1);
+  Channel pch(nb_colors, nb);
   pch.hshift = -1;
   int x = 0;
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
   intptr_t onerow = pch.plane.PixelsPerRow();
   int zero = 0;
   std::vector<pixel_type> lookup;
+  int minval, maxval;
+  input.channel[begin_c].compute_trivial(&minval, &maxval);
   if (nb == 1) {
-    lookup.resize(input.channel[begin_c].maxval -
-                  input.channel[begin_c].minval + 1);
+    lookup.resize(maxval - minval + 1);
   }
   if (ordered) {
     JXL_DEBUG_V(7, "Palette of %i colors, using lexicographic order",
@@ -196,7 +197,7 @@ static Status fwd_palette(Image &input, TransformParams &parameters) {
       for (int i = 0; i < nb; i++) {
         p_palette[i * onerow + x] = pcol[i];
       }
-      if (nb == 1) lookup[pcol[0] - input.channel[begin_c].minval] = x;
+      if (nb == 1) lookup[pcol[0] - minval] = x;
       if (nb == 1 && pcol[0] <= 0) zero = x;
       for (int i = 0; i < nb; i++) {
         JXL_DEBUG_V(9, "%i ", pcol[i]);
@@ -208,7 +209,7 @@ static Status fwd_palette(Image &input, TransformParams &parameters) {
     for (auto pcol : candidate_palette_imageorder) {
       JXL_DEBUG_V(9, "  Color %i :  ", x);
       for (int i = 0; i < nb; i++) p_palette[i * onerow + x] = pcol[i];
-      if (nb == 1) lookup[pcol[0] - input.channel[begin_c].minval] = x;
+      if (nb == 1) lookup[pcol[0] - minval] = x;
       for (int i = 0; i < nb; i++) JXL_DEBUG_V(9, "%i ", pcol[i]);
       x++;
     }
@@ -217,8 +218,7 @@ static Status fwd_palette(Image &input, TransformParams &parameters) {
     for (int c = 0; c < nb; c++) p_in[c] = input.channel[begin_c + c].Row(y);
     pixel_type *JXL_RESTRICT p = input.channel[begin_c].Row(y);
     if (nb == 1) {
-      for (size_t x = 0; x < w; x++)
-        p[x] = lookup[p[x] - input.channel[begin_c].minval] - zero;
+      for (size_t x = 0; x < w; x++) p[x] = lookup[p[x] - minval] - zero;
     } else {
       for (size_t x = 0; x < w; x++) {
         for (int c = 0; c < nb; c++) color[c] = p_in[c][x];

@@ -97,7 +97,7 @@ Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
     codec = Codec::kPNG;
   }
 #if JPEGXL_ENABLE_APNG
-  else if (DecodeImageAPNG(bytes, io)) {
+  else if (DecodeImageAPNG(bytes, pool, io)) {
     codec = Codec::kPNG;
   }
 #endif
@@ -107,17 +107,17 @@ Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
     codec = Codec::kPNM;
   }
 #if JPEGXL_ENABLE_GIF
-  else if (DecodeImageGIF(bytes, io)) {
+  else if (DecodeImageGIF(bytes, pool, io)) {
     codec = Codec::kGIF;
   }
 #endif
 #if JPEGXL_ENABLE_JPEG
-  else if (DecodeImageJPG(bytes, io)) {
+  else if (DecodeImageJPG(bytes, pool, io)) {
     codec = Codec::kJPG;
   }
 #endif
 #if JPEGXL_ENABLE_EXR
-  else if (DecodeImageEXR(bytes, io)) {
+  else if (DecodeImageEXR(bytes, pool, io)) {
     codec = Codec::kEXR;
   }
 #endif
@@ -198,6 +198,7 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
 
 Status EncodeToFile(const CodecInOut& io, const std::string& pathname,
                     ThreadPool* pool) {
+  // TODO(lode): need to take the floating_point_sample field into account
   return EncodeToFile(io, io.metadata.color_encoding,
                       io.metadata.bits_per_sample, pathname, pool);
 }

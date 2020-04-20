@@ -35,6 +35,7 @@
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
+#include "jxl/luminance.h"
 #if JPEGXL_ENABLE_SJPEG
 #include "sjpeg.h"
 #endif
@@ -204,7 +205,8 @@ constexpr int kInvPlaneOrder[] = {1, 0, 2};
 
 }  // namespace
 
-Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
+Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
+                      CodecInOut* io) {
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(bytes)) return false;
 
@@ -251,6 +253,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
     color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
   }
   io->metadata.bits_per_sample = BITS_IN_JSAMPLE;
+  io->metadata.floating_point_sample = false;
   io->metadata.color_encoding = color_encoding;
   io->enc_size = bytes.size();
   int nbcomp = cinfo.num_components;
@@ -294,6 +297,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
       }
     }
     io->SetFromImage(std::move(image), color_encoding);
+    JXL_RETURN_IF_ERROR(Map255ToTargetNits(io, pool));
   } else {  // (target == DecodeTarget::kQuantizedCoeffs)
     jvirt_barray_ptr* coeffs_array = jpeg_read_coefficients(&cinfo);
 
@@ -402,6 +406,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
 
     bundle.SetFromImage(std::move(coeffs), color_encoding);
     io->frames.push_back(std::move(bundle));
+    io->metadata.SetIntensityTarget(
+        io->target_nits != 0 ? io->target_nits : kDefaultIntensityTarget);
   }
   jpeg_finish_decompress(&cinfo);
   jpeg_destroy_decompress(&cinfo);
@@ -456,6 +462,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
           ib->color().ConstPlaneRow(2, y)};
       for (size_t x = 0; x < ib->xsize(); ++x) {
         for (size_t c = 0; c < cinfo.input_components; ++c) {
+          JXL_RETURN_IF_ERROR(c < 3);
           row[cinfo.input_components * x + c] = static_cast<JSAMPLE>(
               std::max(std::min(kJPEGSampleMultiplier * input_row[c][x] + .5f,
                                 kJPEGSampleMax),
@@ -473,6 +480,8 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
     cinfo.jpeg_height = ib->ysize();
     cinfo.scale_num = 1;
     cinfo.scale_denom = 1;
+    cinfo.min_DCT_h_scaled_size = DCTSIZE;
+    cinfo.min_DCT_v_scaled_size = DCTSIZE;
 #endif  // JPEG_LIB_VERSION >= 70
 
     cinfo.jpeg_color_space = JCS_RGB;
@@ -629,10 +638,14 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
     return JXL_FAILURE("please specify a 0-100 JPEG quality");
   }
 
+  ImageBundle ib_0_255 = io->Main().Copy();
+  if (target == DecodeTarget::kPixels) {
+    JXL_RETURN_IF_ERROR(MapTargetNitsTo255(&ib_0_255, pool));
+  }
   const ImageBundle* ib;
   ImageMetadata metadata = io->metadata;
   ImageBundle ib_store(&metadata);
-  JXL_RETURN_IF_ERROR(TransformIfNeeded(io->Main(), io->metadata.color_encoding,
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(ib_0_255, io->metadata.color_encoding,
                                         pool, &ib_store, &ib));
 
   switch (encoder) {

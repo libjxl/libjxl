@@ -38,20 +38,22 @@
 
 namespace jxl {
 
-Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
-                   size_t num_passes, size_t group_idx,
-                   PassesDecoderState* JXL_RESTRICT dec_state,
-                   GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
-                   Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
-                   AuxOut* aux_out);
-
-Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
-                               size_t group_idx,
+typedef Status DecodeGroupFunc(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
+                               size_t num_passes, size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
-                               size_t thread, Image3F* JXL_RESTRICT opsin,
+                               GroupDecCache* JXL_RESTRICT group_dec_cache,
+                               size_t thread, Image3F* opsin,
                                ImageBundle* JXL_RESTRICT decoded,
-                               AuxOut* aux_out, bool save_decompressed,
-                               bool apply_color_transform);
+                               AuxOut* aux_out);
+DecodeGroupFunc* ChooseDecodeGroup(uint32_t targets_bits);
+
+typedef Status DecodeGroupForRoundtripFunc(
+    const std::vector<ACImage3>& ac, size_t group_idx,
+    PassesDecoderState* JXL_RESTRICT dec_state, size_t thread,
+    Image3F* JXL_RESTRICT opsin, ImageBundle* JXL_RESTRICT decoded,
+    AuxOut* aux_out, bool save_decompressed, bool apply_color_transform);
+DecodeGroupForRoundtripFunc* ChooseDecodeGroupForRoundtrip(
+    uint32_t targets_bits);
 
 }  // namespace jxl
 

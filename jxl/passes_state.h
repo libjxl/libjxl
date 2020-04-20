@@ -42,11 +42,6 @@ struct ImageFeatures {
   Splines splines;
 };
 
-// Settings for bitstream-affecting experiments.
-struct Experiments {
-  bool use_new_cmap = false;
-};
-
 // State common to both encoder and decoder.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct PassesSharedState {
@@ -85,8 +80,6 @@ struct PassesSharedState {
   Image3F dc_quant_field;
 
   Multiframe* JXL_RESTRICT multiframe = nullptr;
-
-  Experiments experiments;
 
   // Number of histograms and coefficient orders, per pass (always 1 for
   // now). Encoded as num_histograms_ - 1.

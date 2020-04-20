@@ -20,7 +20,6 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <hwy/static_targets.h>
 #include <utility>
 #include <vector>
 
@@ -45,7 +44,58 @@
 #include "jxl/aux_out.h"
 #endif
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
+#include <hwy/foreach_target.h>
+
 namespace jxl {
+
+#include <hwy/begin_target-inl.h>
+
+HWY_ATTR ImageF SumOfSquareDifferences(const Image3F& forig,
+                                       const Image3F& smooth,
+                                       ThreadPool* pool) {
+  const HWY_FULL(float) d;
+  const auto color_coef0 = Set(d, 0.0f);
+  const auto color_coef1 = Set(d, 10.0f);
+  const auto color_coef2 = Set(d, 0.0f);
+
+  ImageF sum_of_squares(forig.xsize(), forig.ysize());
+  RunOnPool(
+      pool, 0, forig.ysize(), ThreadPool::SkipInit(),
+      [&](const int task, const int thread) HWY_ATTR {
+        const size_t y = static_cast<size_t>(task);
+        const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
+        const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);
+        const float* JXL_RESTRICT orig_row2 = forig.Plane(2).ConstRow(y);
+        const float* JXL_RESTRICT smooth_row0 = smooth.Plane(0).ConstRow(y);
+        const float* JXL_RESTRICT smooth_row1 = smooth.Plane(1).ConstRow(y);
+        const float* JXL_RESTRICT smooth_row2 = smooth.Plane(2).ConstRow(y);
+        float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
+
+        for (size_t x = 0; x < forig.xsize(); x += d.N) {
+          auto v0 = Load(d, orig_row0 + x) - Load(d, smooth_row0 + x);
+          auto v1 = Load(d, orig_row1 + x) - Load(d, smooth_row1 + x);
+          auto v2 = Load(d, orig_row2 + x) - Load(d, smooth_row2 + x);
+          v0 *= v0;
+          v1 *= v1;
+          v2 *= v2;
+          v0 *= color_coef0;  // FMA doesn't help here.
+          v1 *= color_coef1;
+          v2 *= color_coef2;
+          const auto sos = v0 + v1 + v2;  // weighted sum of square diffs
+          Store(sos, d, sos_row + x);
+        }
+      },
+      "ComputeEnergyImage");
+  return sum_of_squares;
+}
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(SumOfSquareDifferences)
+
 const int kEllipseWindowSize = 5;
 
 namespace {
@@ -76,7 +126,6 @@ double DotGaussianModel(double dx, double dy, double ct, double st,
 }
 
 constexpr bool kOptimizeBackground = true;
-constexpr std::array<float, 3> colorCoefXyb{0.0, 10.0, 0.0};
 
 // Gaussian that smooths noise but preserves dots
 const WeightsSeparable5& WeightsSeparable5Gaussian0_65() {
@@ -100,16 +149,9 @@ const WeightsSeparable5& WeightsSeparable5Gaussian3() {
   return weights;
 }
 
-HWY_ATTR ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
-                                   ThreadPool* pool) {
+ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
+                          ThreadPool* pool) {
   PROFILER_FUNC;
-
-  std::array<float, 3> colorCoef{1.0f, 1.0f, 1.0f};
-  colorCoef = colorCoefXyb;
-  const HWY_FULL(float) d;
-  const auto color_coef0 = Set(d, colorCoef[0]);
-  const auto color_coef1 = Set(d, colorCoef[1]);
-  const auto color_coef2 = Set(d, colorCoef[2]);
 
   // Prepare guidance images for dot selection.
   Image3F forig(orig.xsize(), orig.ysize());
@@ -119,10 +161,11 @@ HWY_ATTR ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   const auto& weights1 = WeightsSeparable5Gaussian0_65();
   const auto& weights3 = WeightsSeparable5Gaussian3();
 
-  Separable5(orig, Rect(orig), weights1, pool, &forig);
+  auto separable5_3 = ChooseSeparable5_3(hwy::SupportedTargets());
+  separable5_3(orig, Rect(orig), weights1, pool, &forig);
 
-  Separable5(orig, Rect(orig), weights3, pool, &tmp);
-  Separable5(tmp, Rect(tmp), weights3, pool, smooth);
+  separable5_3(orig, Rect(orig), weights3, pool, &tmp);
+  separable5_3(tmp, Rect(tmp), weights3, pool, smooth);
 
 #if JXL_DEBUG_DOT_DETECT
   AuxOut aux;
@@ -131,35 +174,9 @@ HWY_ATTR ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   aux.DumpImage("sm", *smooth);
 #endif
 
-  ImageF sum_of_squares(orig.xsize(), orig.ysize());
-  RunOnPool(
-      pool, 0, orig.ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) HWY_ATTR {
-        const size_t y = static_cast<size_t>(task);
-        const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
-        const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);
-        const float* JXL_RESTRICT orig_row2 = forig.Plane(2).ConstRow(y);
-        const float* JXL_RESTRICT smooth_row0 = smooth->Plane(0).ConstRow(y);
-        const float* JXL_RESTRICT smooth_row1 = smooth->Plane(1).ConstRow(y);
-        const float* JXL_RESTRICT smooth_row2 = smooth->Plane(2).ConstRow(y);
-        float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
-
-        for (size_t x = 0; x < orig.xsize(); x += d.N) {
-          auto v0 = Load(d, orig_row0 + x) - Load(d, smooth_row0 + x);
-          auto v1 = Load(d, orig_row1 + x) - Load(d, smooth_row1 + x);
-          auto v2 = Load(d, orig_row2 + x) - Load(d, smooth_row2 + x);
-          v0 *= v0;
-          v1 *= v1;
-          v2 *= v2;
-          v0 *= color_coef0;  // FMA doesn't help here.
-          v1 *= color_coef1;
-          v2 *= color_coef2;
-          const auto sos = v0 + v1 + v2;  // weighted sum of square diffs
-          Store(sos, d, sos_row + x);
-        }
-      },
-      "ComputeEnergyImage");
-  return sum_of_squares;
+  const auto square_diff =
+      ChooseSumOfSquareDifferences(hwy::SupportedTargets());
+  return square_diff(forig, *smooth, pool);
 }
 
 struct Pixel {
@@ -652,5 +669,7 @@ std::vector<PatchInfo> DetectGaussianEllipses(
 #endif  // JXL_DEBUG_DOT_DETECT
   return dots;
 }
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

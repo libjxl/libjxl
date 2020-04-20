@@ -28,26 +28,24 @@
 #include <string>
 #include <vector>
 
-#include "hwy/arch.h"
-#include "hwy/compiler_specific.h"
-#if HWY_ARCH == HWY_ARCH_X86
-#if defined(_MSC_VER)
+#include "hwy/highway.h"
+#if HWY_ARCH_PPC
+#include <sys/platform/ppc.h>  // NOLINT __ppc_get_timebase_freq
+#elif HWY_ARCH_X86
+
+#ifdef _MSC_VER
 #include <intrin.h>
 #else
 #include <cpuid.h>  // NOLINT
-#endif
-#elif HWY_ARCH == HWY_ARCH_PPC
-#include <sys/platform/ppc.h>  // NOLINT __ppc_get_timebase_freq
-#elif HWY_ARCH == HWY_ARCH_ARM
-#else
-#error "Please add support for this architecture"
-#endif
+#endif              // _MSC_VER
+
+#endif  // HWY_ARCH_X86
 
 namespace hwy {
 namespace platform {
 namespace {
 
-#if HWY_ARCH == HWY_ARCH_X86
+#if HWY_ARCH_X86
 
 void Cpuid(const uint32_t level, const uint32_t count,
            uint32_t* HWY_RESTRICT abcd) {
@@ -115,9 +113,9 @@ double NominalClockRate() {
 // Returns tick rate. Invariant means the tick counter frequency is independent
 // of CPU throttling or sleep. May be expensive, caller should cache the result.
 double InvariantTicksPerSecond() {
-#if HWY_ARCH == HWY_ARCH_PPC
+#if HWY_ARCH_PPC
   return __ppc_get_timebase_freq();
-#elif HWY_ARCH == HWY_ARCH_X86
+#elif HWY_ARCH_X86
   // We assume the TSC is invariant; it is on all recent Intel/AMD CPUs.
   return NominalClockRate();
 #else
@@ -202,9 +200,9 @@ namespace timer {
 // divide by InvariantTicksPerSecond.
 inline uint64_t Start64() {
   uint64_t t;
-#if HWY_ARCH == HWY_ARCH_PPC
+#if HWY_ARCH_PPC
   asm volatile("mfspr %0, %1" : "=r"(t) : "i"(268));
-#elif HWY_ARCH == HWY_ARCH_X86
+#elif HWY_ARCH_X86
 #if HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   _mm_lfence();
@@ -237,9 +235,9 @@ inline uint64_t Start64() {
 
 inline uint64_t Stop64() {
   uint64_t t;
-#if HWY_ARCH == HWY_ARCH_PPC
+#if HWY_ARCH_PPC
   asm volatile("mfspr %0, %1" : "=r"(t) : "i"(268));
-#elif HWY_ARCH == HWY_ARCH_X86
+#elif HWY_ARCH_X86
 #if HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   unsigned aux;
@@ -271,7 +269,7 @@ inline uint64_t Stop64() {
 // timestamp overflows about once a second.
 inline uint32_t Start32() {
   uint32_t t;
-#if HWY_ARCH == HWY_ARCH_X86
+#if HWY_ARCH_X86
 #if HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   _mm_lfence();
@@ -298,7 +296,7 @@ inline uint32_t Start32() {
 
 inline uint32_t Stop32() {
   uint32_t t;
-#if HWY_ARCH == HWY_ARCH_X86
+#if HWY_ARCH_X86
 #if HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   unsigned aux;

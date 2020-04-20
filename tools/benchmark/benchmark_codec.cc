@@ -144,6 +144,7 @@ class NoneCodec : public ImageCodec {
     Image3F image(xsize, ysize);
     ZeroFillImage(&image);
     io->metadata.bits_per_sample = 32;
+    io->metadata.floating_point_sample = true;
     io->metadata.color_encoding = ColorEncoding::SRGB();
     io->SetFromImage(std::move(image), io->metadata.color_encoding);
     const double end = Now();

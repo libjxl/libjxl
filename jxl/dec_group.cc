@@ -18,7 +18,6 @@
 #include <string.h>
 
 #include <algorithm>
-#include <hwy/static_targets.h>
 #include <utility>
 
 #include "jxl/ac_context.h"
@@ -30,6 +29,7 @@
 #include "jxl/coeff_order.h"
 #include "jxl/common.h"
 #include "jxl/convolve.h"
+#include "jxl/dct_scales.h"
 #include "jxl/dec_cache.h"
 #include "jxl/dec_reconstruct.h"
 #include "jxl/dec_xyb.h"
@@ -39,11 +39,17 @@
 #include "jxl/quant_weights.h"
 #include "jxl/quantizer.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_group.cc"
+#include <hwy/foreach_target.h>
+
+#include "jxl/dec_transforms-inl.h"
+#include "jxl/enc_transforms-inl.h"
+#include "jxl/quantizer-inl.h"
+
 namespace jxl {
 
-namespace {
-
-#include "jxl/quantizer-inl.h"
+#include <hwy/begin_target-inl.h>
 
 using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
@@ -99,7 +105,8 @@ HWY_ATTR void DequantBlock(const AcStrategy& acs, float inv_global_scale,
                 size, k, x_cc_mul, b_cc_mul, biases, block);
   }
   for (size_t c = 0; c < 3; c++) {
-    acs.LowestFrequenciesFromDC(dc_row[c] + bx, dc_stride, block + c * size);
+    LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + bx, dc_stride,
+                            block + c * size);
   }
 }
 
@@ -280,7 +287,8 @@ HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           // IDCT
           float* JXL_RESTRICT idct_pos =
               idct_row[c] + (padding + bx + padding * idct_stride) * kBlockDim;
-          acs.TransformToPixels(block + c * size, idct_pos, idct_stride);
+          TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
+                            idct_stride);
         }
 
         if (dec_state->shared->image_features.loop_filter.epf) {
@@ -432,12 +440,15 @@ HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     // When a row of blocks is done, run ApplyImageFeaturesRow.
     // TODO(veluca): consider switching this to 4 rows of blocks.
     if (JXL_LIKELY(run_apply_image_features)) {
+      const auto apply_row =
+          ChooseApplyImageFeaturesRow(hwy::SupportedTargets());
       size_t yb = by == 0 ? kBlockDim : 2 * kBlockDim;
       size_t ye = by == ysize_blocks - 1 ? 4 * kBlockDim : 3 * kBlockDim;
       for (size_t y = yb; y < ye; y++) {
         size_t aif_y = by * kBlockDim + y - ystart;
-        ApplyImageFeaturesRow(idct, aif_rect, dec_state, aif_y, thread, aux_out,
-                              save_decompressed, apply_color_transform);
+        JXL_RETURN_IF_ERROR(apply_row(idct, aif_rect, dec_state, aif_y, thread,
+                                      aux_out, save_decompressed,
+                                      apply_color_transform));
       }
     }
   }
@@ -629,8 +640,6 @@ struct GetBlockFromEncoder {
   const float* JXL_RESTRICT rows[kMaxNumPasses][3];
 };
 
-}  // namespace
-
 Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
@@ -682,4 +691,12 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                          save_decompressed, apply_color_transform, aux_out,
                          opsin, decoded);
 }
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(DecodeGroup)
+HWY_EXPORT(DecodeGroupForRoundtrip)
+#endif  // HWY_ONCE
+
 }  // namespace jxl

@@ -15,8 +15,6 @@
 #ifndef JXL_MODULAR_CONFIG_H_
 #define JXL_MODULAR_CONFIG_H_
 
-#include "jxl/modular/ma/chance.h"
-
 namespace jxl {
 
 #ifndef DECODER_ONLY
@@ -40,14 +38,6 @@ namespace jxl {
 // in the MA trees, and in any case the maximum bit depth is limited by the
 // integer type used in the channel buffers
 
-// this is one bit; this number gets multiplied by options.ctx_threshold
-// and adjusted for the options.nb_repeats value and the choice of entropy coder
-// decrease this number to make the learning during encode more eager to create
-// new contexts; increase it to reduce the number of contexts
-#define CONTEXT_TREE_SPLIT_THRESHOLD (5461)
-
-#define CONTEXT_TREE_MIN_SUBTREE_SIZE 0
-
 /**************************************************/
 /* DANGER ZONE: OPTIONS THAT CHANGE THE BITSTREAM */
 /* If you modify these, the bitstream format      */
@@ -65,11 +55,6 @@ namespace jxl {
 #else
 #define ATTRIBUTE_HOT __attribute__((hot))
 #endif
-
-typedef SimpleBitChance ModularBitChanceMeta;
-typedef SimpleBitChance ModularBitChancePass1;
-typedef SimpleBitChance ModularBitChancePass2;
-typedef SimpleBitChance ModularBitChanceTree;
 
 }  // namespace jxl
 

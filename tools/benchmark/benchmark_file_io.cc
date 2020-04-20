@@ -25,18 +25,19 @@
 #include <unistd.h>
 #endif
 
+#ifndef HAS_GLOB
 #define HAS_GLOB 0
 #if defined __has_include
 #if __has_include(<glob.h>)
 #undef HAS_GLOB
 #define HAS_GLOB 1
-#endif
-#endif
+#endif  // __has_include(<glob.h>)
+#endif  // __has_include
+#endif  // HAS_GLOB
 
 #if HAS_GLOB
 #include <glob.h>
-#endif
-
+#endif  // HAS_GLOB
 
 namespace jxl {
 

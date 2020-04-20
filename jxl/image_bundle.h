@@ -102,6 +102,24 @@ struct OpsinInverseMatrix {
   float quant_biases[4];
 };
 
+struct IntensityTargetInfo {
+  IntensityTargetInfo();
+  static const char* Name() { return "IntensityTargetInfo"; }
+
+  template <class Visitor>
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+    if (visitor->AllDefault(*this, &all_default)) return true;
+    visitor->F16(kDefaultIntensityTarget, &intensity_target);
+    if (intensity_target <= 0.f) {
+      return JXL_FAILURE("invalid intensity target");
+    }
+    return true;
+  }
+
+  mutable bool all_default;
+  float intensity_target;
+};
+
 // Less frequently changed fields, grouped into a separate bundle so they do not
 // need to be signaled when some ImageMetadata fields are non-default.
 struct ImageMetadata2 {
@@ -177,14 +195,26 @@ struct ImageMetadata {
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) return true;
 
-    visitor->U32(Val(8), Val(16), Val(32), Bits(5), 8, &bits_per_sample);
+    visitor->Bool(false, &floating_point_sample);
+    // The same field (bits_per_sample) is read in a different way depending on
+    // floating_point_sample's value. It's still default-initialized correctly
+    // so using visitor->Conditional is not required.
+    if (floating_point_sample) {
+      visitor->U32(Val(32), Val(16), Val(24), Val(0), 32, &bits_per_sample);
+    } else {
+      visitor->U32(Val(8), Val(16), BitsOffset(5, 1), Val(0), 8,
+                   &bits_per_sample);
+    }
+    if (bits_per_sample == 0) {
+      // The 4th possibility of the U32 encodings, set to 0 in the code but not
+      // in the specification, is invalid, and could be used for future values.
+      return JXL_FAILURE("Invalid bits_per_sample");
+    }
+
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
     visitor->U32(Val(0), Val(8), Val(16), Bits(4), 0, &alpha_bits);
 
-    // 250, 1000, 4000 are common; don't anticipate more than 10,000.
-    visitor->U32(Val(5), Val(20), Val(80), BitsOffset(10, 1),
-                 kDefaultIntensityTarget / 50, &target_nits_div50_);
-
+    JXL_RETURN_IF_ERROR(visitor->VisitNested(&intensity_target_info_));
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
 
     return true;
@@ -193,27 +223,33 @@ struct ImageMetadata {
   bool HasAlpha() const { return alpha_bits != 0; }
 
   void SetIntensityTarget(float intensity_target) {
-    target_nits_div50_ = static_cast<uint32_t>(intensity_target * 0.02f);
+    intensity_target_info_.intensity_target = intensity_target;
   }
-  float IntensityTarget() const { return target_nits_div50_ * 50.f; }
+  float IntensityTarget() const {
+    return intensity_target_info_.intensity_target;
+  }
 
   mutable bool all_default;
 
   ImageMetadata2 m2;  // often default
 
+  // Whether the original (uncompressed) samples are floating point or
+  // unsigned integer.
+  bool floating_point_sample;
+  // Bit depth of the original (uncompressed) image samples.
+  // In case of integer samples, must be in the range [1, 32].
+  // In case of floating point samples, must be 16, 24 or 32.
   uint32_t bits_per_sample;
+
   ColorEncoding color_encoding;
-  uint32_t alpha_bits;  // 0 if no alpha channel present
+
+  // Bit depth of the JPEG XL compressed alpha channel.
+  // 0 if no alpha channel present.
+  uint32_t alpha_bits;
 
  private:
-  uint32_t target_nits_div50_;
+  IntensityTargetInfo intensity_target_info_;
 };
-
-// Chooses a default intensity target based on the transfer function of the
-// image, if known. For SDR images or images not known to be HDR, returns
-// kDefaultIntensityTarget, for images known to have PQ or HLG transfer function
-// returns a higher value.
-float ChooseDefaultIntensityTarget(const ImageMetadata& metadata);
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
                          ImageMetadata* JXL_RESTRICT metadata);

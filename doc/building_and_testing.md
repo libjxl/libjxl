@@ -17,30 +17,33 @@ To build the JPEG XL software and run its unit tests, run:
 `./ci.sh` build commands including `release`, `opt`, etc. will also run tests.
 You can set the environment variable `SKIP_TEST=1` to skip this.
 
-It is possible to manually run the tests, for example:
+It is possible to manually run all the tests in parallel in all your CPUs with
+the command:
 
 ```bash
-cd build/ && ctest -j32 --output-on-failure
+./ci.sh test
 ```
-
-`-j32` specifies the number of parallel tasks.
 
 It is also possible for faster iteration to run a specific test binary directly.
-googletest binaries support a glob filter to match the name of the test, for
-example `TransposeTest*` will execute all the test names that start with
-`TransposeTest`.
+Tests are run with the `ctest` command and arguments passed to `ci.sh test` are
+forwarded to `ctest` with the appropriate environment variables set. For
+example, to list all the available tests you can run:
 
 ```bash
-build/dct_test --gtest_filter=TransposeTest.Transpose8
+./ci.sh test -N
 ```
 
-If you want to run multiple tests from different binaries, you can pass a
-regular expression filter to ctest. Note that this is a regular expression
-instead of a glob match like in the `gtest_filter`.
+To run a specific test from the list or actually a set of tests matching a
+regular expression you can use `ctest`'s parameter `-R`:
 
 ```bash
-cd build/ && ctest -j32 --output-on-failure -R '.*Transpose.*'
+./ci.sh test -R ^MyPrefixTe
 ```
+
+That command would run any test whose name that starts with `MyPrefixTe`. For
+more options run `ctest --help`, for example, you can pass `-j1` if you want
+to run only one test at a time instead of our default of multiple tests in
+parallel.
 
 ## Other commands
 
@@ -55,16 +58,28 @@ To compile the code for an architecture different than the one you are running
 you can pass a
 [toolchain file](https://cmake.org/cmake/help/latest/manual/cmake-toolchains.7.html)
 to cmake if you have one for your target, or you can use the `BUILD_TARGET`
-environment variable in `./ci.sh`. This assumes that you already have a
-cross-compiling environment set up and the library dependencies are already
-installed for the target architecture as well. Alternatively, you can use one of
-the [jpegxl docker containers](developing_in_docker.md) already configured to
-cross-compile and run for other architectures.
+environment variable in `./ci.sh`. For some targets such the Windows targets
+`ci.sh` sets up extra environment variables that are needed for testing.
+
+This assumes that you already have a cross-compiling environment set up and the
+library dependencies are already installed for the target architecture as well
+which is tricky to do in some cases. For this reason we provide a [jpegxl docker
+container](developing_in_docker.md) already configured to cross-compile and run
+for other architectures which is also used in our continuous integration
+pipeline.
 
 For example, to compile for the `aarch64-linux-gnu` target triplet you can run:
 
 ```bash
 BUILD_TARGET=aarch64-linux-gnu ./ci.sh release
+```
+
+Whenever using a `BUILD_TARGET` or even a custom `BUILD_DIR` these variables
+must be set for **every call** to `ci.sh` even calls to `ci.sh test`, for which
+we recommend exporting them in your shell session, for example:
+
+```bash
+export BUILD_TARGET=x86_64-w64-mingw32 BUILD_DIR=build-foobar
 ```
 
 ### Format checks (lint)

@@ -14,6 +14,9 @@
 
 #include "tools/benchmark/benchmark_codec_custom.h"
 
+// Not supported on Windows due to Linux-specific functions.
+#ifndef _WIN32
+
 #include <libgen.h>
 #include <spawn.h>
 #include <stdio.h>
@@ -213,3 +216,13 @@ ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) {
 }
 
 }  // namespace jxl
+
+#else
+
+namespace jxl {
+
+ImageCodec* CreateNewCustomCodec(const BenchmarkArgs& args) { return nullptr; }
+
+}  // namespace jxl
+
+#endif  // _MSC_VER

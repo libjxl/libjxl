@@ -66,7 +66,7 @@ static Status fwd_near_lossless(Image& input,
     size_t w = input.channel[c].w;
     size_t h = input.channel[c].h;
 
-    Channel out(w, h, 0, 1);
+    Channel out(w, h);
     for (size_t y = 0; y < h; y++) {
       pixel_type* JXL_RESTRICT p_in = input.channel[c].Row(y);
       pixel_type* JXL_RESTRICT p_out = out.Row(y);
@@ -78,9 +78,7 @@ static Status fwd_near_lossless(Image& input,
         pixel_type prediction = (left + top) / 2;
         pixel_type delta = p_in[x] - prediction;
         delta_quantize(max_delta_error, delta);
-        pixel_type reconstructed =
-            Clamp(prediction + delta, input.channel[c].minval,
-                  input.channel[c].maxval);
+        pixel_type reconstructed = prediction + delta;
         int e = p_in[x] - reconstructed;
         total_error += abs(e);
         p_out[x] = reconstructed;

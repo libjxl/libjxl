@@ -14,6 +14,7 @@
 
 #include "jxl/brunsli.h"
 
+#include <brunsli/brunsli_decode.h>
 #include <stddef.h>
 
 #include <string>
@@ -40,9 +41,15 @@ size_t Roundtrip(CodecInOut* io, const BrunsliEncoderOptions& enc_options,
 
   EXPECT_TRUE(PixelsToBrunsli(io, &compressed, enc_options, pool));
 
+  io->enc_size = compressed.size();
+
+  brunsli::JPEGData jpg;
+  brunsli::BrunsliStatus status =
+      brunsli::BrunsliDecodeJpeg(compressed.data(), compressed.size(), &jpg);
+  EXPECT_EQ(brunsli::BRUNSLI_OK, status);
+
   BrunsliDecoderMeta meta;
-  EXPECT_TRUE(BrunsliToPixels(jxl::Span<const uint8_t>(compressed), io2,
-                              dec_options, &meta, pool));
+  EXPECT_TRUE(BrunsliToPixels(jpg, io2, dec_options, &meta, pool));
 
   EXPECT_LE(ButteraugliDistance(*io, *io2, /* hf_assymetry */ 1.0f,
                                 /*distmap=*/nullptr, pool),
@@ -63,10 +70,11 @@ TEST(BrunsliTest, RoundtripSinglePixel) {
 
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
+  io.metadata.floating_point_sample = false;
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.color_encoding);
   CodecInOut io2;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.001f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.0f);
 }
 
 TEST(BrunsliTest, RoundtripTiny) {
@@ -82,7 +90,7 @@ TEST(BrunsliTest, RoundtripTiny) {
   BrunsliDecoderOptions dec_options;
 
   CodecInOut io2;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.3f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.15f);
 }
 
 TEST(BrunsliTest, RoundtripSmallQ0) {
@@ -98,7 +106,52 @@ TEST(BrunsliTest, RoundtripSmallQ0) {
   BrunsliDecoderOptions dec_options;
 
   CodecInOut io2;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.5f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.35f);
+}
+
+TEST(BrunsliTest, RoundtripHdr) {
+  ThreadPool* pool = nullptr;
+  const std::string pathname =
+      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
+
+  BrunsliEncoderOptions enc_options;
+  enc_options.quant_scale = 0.0f;
+  // Flat color map - just test encode-decode-apply workflow.
+  enc_options.hdr_orig_colorspace = jxl::Description(io.Main().c_current());
+  BrunsliDecoderOptions dec_options;
+
+  CodecInOut io2;
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 0.35f);
+}
+
+TEST(BrunsliTest, RoundtripEncOptions) {
+  ThreadPool* pool = nullptr;
+  const std::string pathname =
+      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
+
+  BrunsliEncoderOptions enc_options;
+  BrunsliDecoderOptions dec_options;
+  CodecInOut io2;
+
+  enc_options.quant_scale = 2.0f;
+
+  enc_options.dcc.active = false;
+  enc_options.gab.active = false;
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.6f);
+
+  enc_options.dcc.active = true;
+  enc_options.gab.active = false;
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.6f);
+
+  enc_options.dcc.active = false;
+  enc_options.gab.active = true;
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.65f);
 }
 
 TEST(BrunsliTest, RoundtripDecOptions) {
@@ -118,15 +171,15 @@ TEST(BrunsliTest, RoundtripDecOptions) {
 
   dec_options.fix_dc_staircase = false;
   dec_options.gaborish = false;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 5.4f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.6f);
 
   dec_options.fix_dc_staircase = true;
   dec_options.gaborish = false;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 5.2f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.3f);
 
   dec_options.fix_dc_staircase = false;
   dec_options.gaborish = true;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.777f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 4.65f);
 }
 
 TEST(BrunsliTest, RoundtripUnalignedQ0_5) {
@@ -142,7 +195,7 @@ TEST(BrunsliTest, RoundtripUnalignedQ0_5) {
   BrunsliDecoderOptions dec_options;
 
   CodecInOut io2;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 1.3579f);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 1.35f);
 }
 
 TEST(BrunsliTest, RoundtripLarge) {
@@ -157,7 +210,7 @@ TEST(BrunsliTest, RoundtripLarge) {
   BrunsliDecoderOptions dec_options;
 
   CodecInOut io2;
-  Roundtrip(&io, enc_options, dec_options, pool, &io2, 8.88888);
+  Roundtrip(&io, enc_options, dec_options, pool, &io2, 8.0f);
 }
 
 }  // namespace

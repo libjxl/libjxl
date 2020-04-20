@@ -115,8 +115,7 @@ Status inv_subsample(Image& input, const TransformParams& parameters) {
               c, input.nb_meta_channels);
           continue;
         }
-        Channel channel(ow * srh, oh * srv, input.channel[c].minval,
-                        input.channel[c].maxval);
+        Channel channel(ow * srh, oh * srv);
 
         // 'fancy' horizontal upscale
         if (srh == 2) {
@@ -139,8 +138,7 @@ Status inv_subsample(Image& input, const TransformParams& parameters) {
           }
         }
         if (srv == 2) {
-          Channel nchannel(ow * srh, oh * srv, input.channel[c].minval,
-                           input.channel[c].maxval);
+          Channel nchannel(ow * srh, oh * srv);
           intptr_t onerow =
               channel.plane
                   .PixelsPerRow();  // is equal for channel and nchannel since

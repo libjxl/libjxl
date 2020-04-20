@@ -16,6 +16,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "jxl/enc_butteraugli_comparator.h"
+#include "jxl/extras/codec.h"
+#include "jxl/image_test_utils.h"
+#include "jxl/testdata_path.h"
 
 namespace jxl {
 
@@ -36,8 +40,9 @@ using ::testing::FloatNear;
 using ::testing::Pointwise;
 
 constexpr int kQuantizationAdjustment = 0;
-constexpr float kYToX = 0;
-constexpr float kYToB = 0;
+const ColorCorrelationMap* const cmap = new ColorCorrelationMap;
+const float kYToX = cmap->YtoXRatio(kColorOffset);
+const float kYToB = cmap->YtoBRatio(kColorOffset);
 
 constexpr float kTolerance = 0.1;
 
@@ -196,6 +201,75 @@ TEST(SplinesTest, Serialization) {
       DequantizeSplines(decoded_splines);
   EXPECT_THAT(decoded_spline_data,
               Pointwise(SplinesMatch(), quantized_spline_data));
+}
+
+#ifdef JXL_CRASH_ON_ERROR
+TEST(SplinesTest, DISABLED_DuplicatePoints) {
+#else
+TEST(SplinesTest, DuplicatePoints) {
+#endif
+  std::vector<Spline> spline_data = {
+      {/*control_points=*/{{9, 54},
+                           {118, 159},
+                           {97, 3},  // Repeated.
+                           {97, 3},
+                           {10, 40},
+                           {150, 25},
+                           {120, 300}},
+       /*color_dct=*/
+       {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
+       /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}}};
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  for (const Spline& spline : spline_data) {
+    quantized_splines.emplace_back(spline, kQuantizationAdjustment, kYToX,
+                                   kYToB);
+    starting_points.push_back(spline.control_points.front());
+  }
+  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
+                  std::move(starting_points));
+
+  Image3F image(320, 320);
+  ZeroFillImage(&image);
+  EXPECT_FALSE(splines.AddTo(&image, Rect(image), Rect(image), *cmap));
+}
+
+TEST(SplinesTest, Drawing) {
+  CodecInOut io_expected;
+  ASSERT_TRUE(SetFromFile(GetTestDataPath("jxl/splines.png"), &io_expected,
+                          /*pool=*/nullptr));
+
+  std::vector<Spline> spline_data = {
+      {/*control_points=*/{
+           {9, 54}, {118, 159}, {97, 3}, {10, 40}, {150, 25}, {120, 300}},
+       /*color_dct=*/
+       {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
+       /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}}};
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  for (const Spline& spline : spline_data) {
+    quantized_splines.emplace_back(spline, kQuantizationAdjustment, kYToX,
+                                   kYToB);
+    starting_points.push_back(spline.control_points.front());
+  }
+  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
+                  std::move(starting_points));
+
+  Image3F image(320, 320);
+  ZeroFillImage(&image);
+  ASSERT_TRUE(splines.AddTo(&image, Rect(image), Rect(image), *cmap));
+
+  OpsinParams opsin_params{};
+  opsin_params.Init();
+  (void)(ChooseOpsinToLinearInplace(hwy::SupportedTargets())(
+      &image, /*pool=*/nullptr, opsin_params));
+
+  CodecInOut io_actual;
+  io_actual.SetFromImage(CopyImage(image), ColorEncoding::LinearSRGB());
+  ASSERT_TRUE(io_actual.TransformTo(io_expected.Main().c_current()));
+
+  VerifyRelativeError(io_expected.Main().color(), io_actual.Main().color(),
+                      1e-2f, 1e-1f);
 }
 
 }  // namespace

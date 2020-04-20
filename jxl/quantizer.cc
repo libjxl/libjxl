@@ -26,10 +26,6 @@
 
 namespace jxl {
 
-namespace {
-#include "jxl/quantizer-inl.h"
-}  // namespace
-
 static const int kDefaultQuant = 64;
 
 Quantizer::Quantizer(const DequantMatrices* dequant)

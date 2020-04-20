@@ -31,7 +31,7 @@ TEST(DecodeTest, JpegxlSignatureCheckTest) {
 
       // JPEGXL headers.
       {JPEGXL_SIG_NOT_ENOUGH_BYTES, {0xff}},  // Part of a signature.
-      {JPEGXL_SIG_JPEG, {0xff, 0xD8}},
+      {JPEGXL_SIG_JPEGXL, {0xff, 0xD8}},
       {JPEGXL_SIG_JPEGXL, {0xff, 0x0a}},
 
       // A header could start with 0x0a, but it is not a complete signature.
@@ -39,7 +39,7 @@ TEST(DecodeTest, JpegxlSignatureCheckTest) {
 
       // This is the beginning of a Brunsli file, but not a complete signature.
       {JPEGXL_SIG_NOT_ENOUGH_BYTES, {0x0a, 0x04, 'B', 0xd2}},
-      {JPEGXL_SIG_BRUNSLI, {0x0a, 0x04, 'B', 0xd2, 0xd5, 'N', 0x12}},
+      {JPEGXL_SIG_TRANSCODED_JPEG, {0x0a, 0x04, 'B', 0xd2, 0xd5, 'N', 0x12}},
       {JPEGXL_SIG_INVALID, {0x0a, 0x04, 'B', 0xd2, 0xd5, 'N', 0x13}},
   };
   for (const auto& test : tests) {

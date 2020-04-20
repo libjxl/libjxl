@@ -14,6 +14,7 @@
 
 #include "jxl/dec_file.h"
 
+#include <brunsli/brunsli_decode.h>
 #include <stddef.h>
 
 #include <utility>
@@ -93,10 +94,9 @@ Status DecodeHeaders(BitReader* reader, size_t* JXL_RESTRICT xsize,
 
 // To avoid the complexity of file I/O and buffering, we assume the bitstream
 // is loaded (or for large images/sequences: mapped into) memory.
-HWY_ATTR Status DecodeFile(const DecompressParams& dparams,
-                           const Span<const uint8_t> file,
-                           CodecInOut* JXL_RESTRICT io, AuxOut* aux_out,
-                           ThreadPool* pool) {
+Status DecodeFile(const DecompressParams& dparams,
+                  const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
+                  AuxOut* aux_out, ThreadPool* pool) {
   PROFILER_ZONE("DecodeFile uninstrumented");
 
   io->enc_size = file.size();
@@ -104,19 +104,43 @@ HWY_ATTR Status DecodeFile(const DecompressParams& dparams,
   // Marker
   JpegxlSignature signature = JpegxlSignatureCheck(file.data(), file.size());
 
-  if (signature == JPEGXL_SIG_BRUNSLI) {
-    // Brunsli mode.
-    BrunsliDecoderMeta meta;
-    JXL_RETURN_IF_ERROR(
-        BrunsliToPixels(file, io, dparams.brunsli, &meta, pool));
+  if (signature == JPEGXL_SIG_TRANSCODED_JPEG) {
+    brunsli::JPEGData jpg;
+    brunsli::BrunsliStatus status =
+        brunsli::BrunsliDecodeJpeg(file.data(), file.size(), &jpg);
+    if (status != brunsli::BRUNSLI_OK) {
+      return JXL_FAILURE("Failed to parse Brunsli input.");
+    }
+
+    if (dparams.keep_dct) {
+      std::vector<int32_t> jpeg_quant_table;
+      ImageBundle& decoded = io->Main();
+      const size_t xsize_blocks = DivCeil(jpg.width, kBlockDim);
+      const size_t ysize_blocks = DivCeil(jpg.height, kBlockDim);
+      Image3F coeffs(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
+      JXL_RETURN_IF_ERROR(
+          JpegDataToCoefficients(jpg, &coeffs, &jpeg_quant_table, pool));
+      decoded.jpeg_xsize = jpg.width;
+      decoded.jpeg_ysize = jpg.height;
+      decoded.color_transform = ColorTransform::kYCbCr;
+      decoded.chroma_subsampling = GetSubsamplingFromJpegData(jpg);
+      decoded.jpeg_quant_table = jpeg_quant_table;
+      ColorEncoding color_encoding;
+      SetColorEncodingFromJpegData(jpg, &color_encoding);
+      decoded.SetFromImage(std::move(coeffs), color_encoding);
+    } else {
+      BrunsliDecoderMeta meta;
+      JXL_RETURN_IF_ERROR(
+          BrunsliToPixels(jpg, io, dparams.brunsli, &meta, pool));
+    }
+
     io->CheckMetadata();
     return true;
-  }
-
-  // JPEGXL_SIG_JPEG is handled by djpegxl to avoid depending on codec_jpg here.
-  if (signature != JPEGXL_SIG_JPEGXL) {
+  } else if (signature != JPEGXL_SIG_JPEGXL) {
     return JXL_FAILURE("File does not start with JPEG XL marker");
   }
+  // Note: JPEG1 is handled by djpegxl to avoid depending on codec_jpg here.
+
   Status ret = true;
   {
     BitReader reader(file);

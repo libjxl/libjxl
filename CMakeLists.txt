@@ -133,23 +133,12 @@ else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
 endif()
 
-# CPU flags
-if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64" AND NOT MSVC)
+# CPU flags - remove once we have NEON dynamic dispatch
+if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
+# Older Clang requires at least armv7-a and GCC requires the latter two,
+# otherwise __ARM_NEON is undefined. Keep -mcpu for now, might help with speed.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -mavx2 \
-  -mfma \
-  -Xclang -mprefer-vector-width=128 \
-  -Xclang -target-cpu -Xclang haswell \
-  -Xclang -target-feature -Xclang +avx2")
-elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64|AMD64" AND MSVC)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
-elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -Xclang -mprefer-vector-width=128 \
-  -Xclang -target-cpu -Xclang cortex-a72")
-elseif(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -mcpu=cortex-a7 -mfpu=neon-vfpv4")
+    -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard")
 endif()
 
 endif()  # JPEGXL_EMSCRIPTEN

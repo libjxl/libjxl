@@ -121,7 +121,8 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
     writer->Write(1, 0);
     BuildAndEncodeHistograms(HistogramParams{}, 1, {tokens}, &codes,
                              &dummy_context_map, writer, 0, nullptr);
-    WriteTokens(tokens, codes, dummy_context_map, allotment, writer);
+    WriteTokens(tokens, codes, dummy_context_map, allotment, writer,
+                kVarLenUintConfig);
   }
 }
 

@@ -1,33 +1,23 @@
 # API synopsis / quick reference
 
-[TOC]
+[[_TOC_]]
 
 ## Headers
 
-*   When targeting a single CPU (chosen at compile-time): include
-    `hwy/static_targets.h`.
-*   When generating implementations for multiple targets: include
-    `hwy/foreach_target.h` per the example in README.md.
-*   For dispatching to the appropriate implementation for the current CPU:
-    include `hwy/runtime_dispatch.h`.
+*   For static dispatch (choosing the single CPU target at compile-time):
+    include `hwy/highway.h`.
+*   For dynamic dispatch (generating implementations for multiple targets and
+    choosing the best available at runtime): include `hwy/foreach_target.h` and
+    see the skeleton example in examples/.
 
 ## Preprocessor macros
 
 *   `HWY_ATTR` must be prefixed to any function declaration/definition into
-    which Highway functions are (transitively) inlined.
-
-*   `HWY_BITS`: how many bits in a full vector, or 0 if `NONE`.
-    Example: use `#if HWY_BITS == 0` to provide an alternative to functions
-    such as `TableLookupBytes` which are not supported by scalar.h.
+    which Highway functions are (transitively) inlined, i.e. all functions
+    inside begin/end_target unless they do not call Highway functions.
 
 *   `HWY_ALIGN`: Ensures an array is aligned and suitable for Load()/Store()
     functions. Example: `HWY_ALIGN T lanes[d.N];`
-
-*   `HWY_FUNC` expands to a target-specific function name; the same source code
-    is compiled multiple times to generate implementations for each target.
-
-*   `HWY_NAMESPACE` expands to a target-specific namespace name in which
-    target-specific functions called by HWY_FUNC must reside.
 
 ## Vector and descriptor types
 
@@ -48,7 +38,7 @@ relies on type deduction (`auto`). Examples:
 
 *   Zero-initialize: `auto v0 = Zero(d);`
 *   Uninitialized/output variables: `auto v = Undefined(d); Func(&v);`
-*   Function arguments or return types: `VT<D> Func2(VT<D> arg);`
+*   Function arguments or return types: `HWY_VEC(D) Func2(HWY_VEC(D) arg);`
 
 ## Operations
 
@@ -83,9 +73,9 @@ unsigned/signed/floating-point types.
 *   `V`: `u8/16` \
     <code>V **AverageRound**(V a, V b)</code> returns `(a[i] + b[i] + 1) / 2`.
 
-*   `V`: `i8/16/32` \
+*   `V`: `i8/16/32`, `f` \
     <code>V **Abs**(V a)</code> returns the absolute value of `a[i]`;
-    `LimitsMin()` maps to `LimitsMax() + 1`.
+    for integers, `LimitsMin()` maps to `LimitsMax() + 1`.
 
 *   `V`: `ui8/16/32`, `f` \
     <code>V **Min**(V a, V b)</code>: returns `min(a[i], b[i])`.
@@ -127,7 +117,7 @@ unsigned/signed/floating-point types.
     lane.
 
 *   `V`: `i16` \
-    <code>V **ext::MulHigh**(V a, V b)</code>: returns the upper half of
+    <code>V **MulHigh**(V a, V b)</code>: returns the upper half of
     `a[i] * b[i]` in each lane.
 
 *   `V`: `ui32` \
@@ -137,7 +127,8 @@ unsigned/signed/floating-point types.
 #### Fused multiply-add
 
 When supported, these functions are more precise and faster than separate
-multiplication followed by addition.
+multiplication followed by addition. The `*Sub` variants are somewhat slower
+on ARM; it is preferable to replace them with MulAdd using a negated constant.
 
 *   `V`: `f` \
     <code>V **MulAdd**(V a, V b, V c)</code>: returns `a[i] * b[i] + c[i]`.
@@ -146,10 +137,10 @@ multiplication followed by addition.
     <code>V **NegMulAdd**(V a, V b, V c)</code>: returns `-a[i] * b[i] + c[i]`.
 
 *   `V`: `f` \
-    <code>V **ext::MulSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]`.
+    <code>V **MulSub**(V a, V b, V c)</code>: returns `a[i] * b[i] - c[i]`.
 
 *   `V`: `f` \
-    <code>V **ext::NegMulSub**(V a, V b, V c)</code>: returns
+    <code>V **NegMulSub**(V a, V b, V c)</code>: returns
     `-a[i] * b[i] - c[i]`.
 
 #### Shifts
@@ -165,7 +156,7 @@ bits. ARM requires the count be less than the lane size.
     <code>V **ShiftRight**&lt;int&gt;(V a)</code> returns `a[i] >>` a compile-time
     constant count. Inserts zero or sign bit(s) depending on `V`.
 
-**Note**: independent shifts are only available if `HWY_HAS_VARIABLE_SHIFT`:
+**Note**: independent shifts are only available if `HWY_CAPS & HWY_CAP_VARIABLE_SHIFT`:
 
 *   `V`: `ui32/64` \
     <code>V **operator<<**(V a, V b)</code> returns `a[i] << b[i]`, which is
@@ -175,7 +166,7 @@ bits. ARM requires the count be less than the lane size.
     <code>V **operator>>**(V a, V b)</code> returns `a[i] >> b[i]`, which is
     zero when `b[i] >= sizeof(T)*8`. Inserts zero or sign bit(s).
 
-**Note**: the following are only provided if `!HWY_HAS_VARIABLE_SHIFT`:
+**Note**: the following are only provided if `!(HWY_CAPS & HWY_CAP_VARIABLE_SHIFT)`:
 
 *   `V`: `ui16/32/64` \
     <code>V **ShiftLeftSame**(V a, int bits)</code> returns `a[i] << bits`.
@@ -204,14 +195,23 @@ bits. ARM requires the count be less than the lane size.
 
 ### Logical
 
-These operate on individual bits within each lane, even for floating-point
-vectors.
+These operate on individual bits within each lane.
 
 *   <code>V **operator&**(V a, V b)</code>: returns `a[i] & b[i]`.
 
 *   <code>V **operator|**(V a, V b)</code>: returns `a[i] | b[i]`.
 
 *   <code>V **operator^**(V a, V b)</code>: returns `a[i] ^ b[i]`.
+
+*   <code>V **AndNot**(V a, V b)</code>: returns `~a[i] & b[i]`.
+
+For floating-point types, builtin operators are not always available, so we
+provide non-operator functions:
+*   <code>V **And**(V a, V b)</code>: returns `a[i] & b[i]`.
+
+*   <code>V **Or**(V a, V b)</code>: returns `a[i] | b[i]`.
+
+*   <code>V **Xor**(V a, V b)</code>: returns `a[i] ^ b[i]`.
 
 *   <code>V **AndNot**(V a, V b)</code>: returns `~a[i] & b[i]`.
 
@@ -234,16 +234,16 @@ Let `M` denote a mask capable of storing true/false for each lane.
 
 *   <code>V **ZeroIfNegative**(V v)</code>: returns `v[i] < 0 ? 0 : v[i]`.
 
-*   <code>bool **ext::AllTrue**(M m)</code>: returns whether all `m[i]` are
+*   <code>bool **AllTrue**(M m)</code>: returns whether all `m[i]` are
     true.
-*   <code>bool **ext::AllFalse**(M m)</code>: returns whether all `m[i]` are
+*   <code>bool **AllFalse**(M m)</code>: returns whether all `m[i]` are
     false.
 
-*   <code>uint64_t **ext::BitsFromMask**(M m)</code>: returns `sum{1 << i}`
+*   <code>uint64_t **BitsFromMask**(M m)</code>: returns `sum{1 << i}`
     for all indices `i` where `m[i]` is true.
 
-*   <code>size_t **ext::CountTrue**(M m)</code>: returns how many of `m[i]` are
-    true [0, N].
+*   <code>size_t **CountTrue**(M m)</code>: returns how many of `m[i]` are
+    true [0, N]. This is typically more expensive than AllTrue/False.
 
 ### Comparisons
 
@@ -279,13 +279,13 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 
 *   <code>VT&lt;D&gt; **LoadDup128**(D, const D::T* p)</code>: returns one
     128-bit block loaded from `p` and broadcasted into all 128-bit block\[s\].
-    This enables a `ConvertTo` overload that avoids a 3-cycle overhead on
-    AVX2/AVX-512. This is faster than broadcasting single values and useful for
-    specifying constants without having to know the (maximum) vector length.
+    This enables a specialized `U32FromU8` that avoids a 3-cycle overhead on
+    AVX2/AVX-512. This may be faster than broadcasting single values, and is
+    more convenient than preparing constants for the maximum vector length.
 
 #### Gather
 
-**Note**: only available if `HWY_HAS_GATHER`:
+**Note**: only available if `HWY_CAPS & HWY_CAP_GATHER`:
 
 *   `V`,`VI`: (`uif32,i32`), (`uif64,i64`) \
     <code>VT&lt;D&gt; **GatherOffset**(D, const D::T* base, VI offsets)</code>.
@@ -299,16 +299,18 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 
 #### Store
 
-*   <code>void **Store**(VT&lt;D&gt; a, D, D::T* aligned)</code>: copies `a[i]` into
-    `aligned[i]`.
-*   <code>void **StoreU**(VT&lt;D&gt; a, D, D::T* p)</code>: copies `a[i]` into
-    `p[i]`.
+*   <code>void **Store**(VT&lt;D&gt; a, D, D::T* aligned)</code>: copies `a[i]`
+    into `aligned[i]`, which must be naturally aligned. Writes exactly
+    N * sizeof(T) bytes.
+*   <code>void **StoreU**(VT&lt;D&gt; a, D, D::T* p)</code>: as Store, but
+    without the alignment requirement.
 
 ### Cache control
 
 *   <code>void **Stream**(VT&lt;D&gt; a, D, const D::T* aligned)</code>: copies `a[i]`
     into `aligned[i]` with non-temporal hint on x86 (for good performance, call
-    for all consecutive vectors within the same cache line).
+    for all consecutive vectors within the same cache line). (Over)writes a
+    multiple of HWY_STREAM_MULTIPLE bytes.
 
 *   `T`: `u32/64` \
     <code>void **Stream**(T, T* aligned)</code>: copies `T` into `*aligned` with
@@ -328,13 +330,13 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 
 ### Type conversion
 
-*   <code>VT&lt;D&gt; **BitCast**(D, V)</code>: returns the bits of `V` reinterpreted
-    as type `VT<D>`.
+*   <code>VT&lt;D&gt; **BitCast**(D, V)</code>: returns the bits of `V`
+    reinterpreted as type `HWY_VEC(D)`.
 
 *   `V`,`D`: (`u8,i16`), (`u8,i32`), (`u16,i32`), (`i8,i16`), (`i8,i32`),
     (`i16,i32`), (`f32,f64`) \
-    <code>VT&lt;D&gt; **ConvertTo**(D, V part)</code>: returns `part[i]` zero- or
-    sign-extended to the wider `D::T` type.
+    <code>VT&lt;D&gt; **PromoteTo**(D, V part)</code>: returns `part[i]`
+    zero- or sign-extended to the wider `D::T` type.
 
 *   `V`,`D`: (`u8,u32`) \
     <code>VT&lt;D&gt; **U32FromU8**(V)</code>: special-case `u8` to `u32` conversion
@@ -345,17 +347,17 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
     when all lanes of `V` are already clamped to `[0, 256)`.
 
 *   `V`,`D`: (`i16,i8`), (`i32,i8`), (`i32,i16`), (`i16,u8`), (`i32,u8`),
-    (`i32,u16`) \
-    <code>VT&lt;D&gt; **ConvertTo**(D, V a)</code>: returns `a[i]` after packing with
-    signed/unsigned saturation, i.e. a vector with narrower lane type
-    `D::T`.
+    (`i32,u16`), (`f64,f32`) \
+    <code>VT&lt;D&gt; **DemoteTo**(D, V a)</code>: returns `a[i]` after packing
+    with signed/unsigned saturation, i.e. a vector with narrower type `D::T`.
 
-*   `V`,`D`: (`i32`,`f32`) \
-    <code>VT&lt;D&gt; **ConvertTo**(D, V)</code>: converts an int32_t value to float.
+*   `V`,`D`: (`i32`,`f32`), (`i64`,`f64`) \
+    <code>VT&lt;D&gt; **ConvertTo**(D, V)</code>: converts an integer value to
+    same-sized floating point.
 
-*   `V`,`D`: (`f32`,`i32`) \
-    <code>VT&lt;D&gt; **ConvertTo**(D, V)</code>: rounds float towards zero and
-    converts the value to int32_t.
+*   `V`,`D`: (`f32`,`i32`), (`f64`,`i64`) \
+    <code>VT&lt;D&gt; **ConvertTo**(D, V)</code>: rounds floating point towards
+    zero and converts the value to same-sized integer.
 
 *   `V`: `f32`; `Ret`: `i32` \
     <code>Ret **NearestInt**(V a)</code>: returns the integer nearest to `a[i]`.
@@ -363,11 +365,10 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 ### Swizzle
 
 *   <code>T **GetLane**(V)</code>: returns lane 0 within `V`. This is useful
-    for extracting `ext::SumOfLanes` results.
+    for extracting `SumOfLanes` results.
 
-*   <code>V2 **GetHalf**(Upper/Lower, V)</code>: returns upper or lower half of
-    the vector `V`. When a specific half is needed, `V2 UpperHalf(V)` and
-    `V2 LowerHalf(V)` are more convenient alternatives.
+*   <code>V2 **Upper/LowerHalf**(V)</code>: returns upper or lower half of
+    the vector `V`.
 
 *   <code>V **OddEven**(V a, V b)</code>: returns a vector whose odd lanes are
     taken from `a` and the even lanes from `b`.
@@ -380,7 +381,7 @@ their operands into independently processed 128-bit *blocks*.
     each with lanes set to `input_block[i]`, `i = [0, 16/sizeof(T))`.
 
 *   `Ret`: double-width `u/i`; `V`: `u8/16/32`, `i8/16/32` \
-    <code>Ret **ZipLo**(V a, V b)</code>: returns the same bits as InterleaveLo,
+    <code>Ret **ZipLower**(V a, V b)</code>: returns the same bits as InterleaveLower,
     except that `Ret` is a vector with double-width lanes (required in order to
     use this operation with `scalar`).
 
@@ -388,7 +389,7 @@ their operands into independently processed 128-bit *blocks*.
 their operands into independently processed 128-bit *blocks*:
 
 *   `Ret`: double-width u/i; `V`: `u8/16/32`, `i8/16/32` \
-    <code>Ret **ZipHi**(V a, V b)</code>: returns the same bits as InterleaveHi,
+    <code>Ret **ZipUpper**(V a, V b)</code>: returns the same bits as InterleaveUpper,
     except that `Ret` is a vector with double-width lanes (required in order to
     use this operation with `scalar`).
 
@@ -441,28 +442,28 @@ their operands into independently processed 128-bit *blocks*:
     <code>V **Shuffle0123**(V)</code>: returns *blocks* with lanes in reverse
     order.
 
-*   <code>V **InterleaveLo**(V a, V b)</code>: returns *blocks* with alternating
+*   <code>V **InterleaveLower**(V a, V b)</code>: returns *blocks* with alternating
     lanes from the lower halves of `a` and `b` (`a[0]` in the least-significant
     lane).
 
-*   <code>V **InterleaveHi**(V a, V b)</code>: returns *blocks* with alternating
+*   <code>V **InterleaveUpper**(V a, V b)</code>: returns *blocks* with alternating
     lanes from the upper halves of `a` and `b` (`a[N/2]` in the
     least-significant lane).
 
 **Note**: the following operations cross block boundaries, which is typically
 more expensive on AVX2/AVX-512 than within-block operations.
 
-*   <code>V **ConcatLoLo**(V hi, V lo)</code>: returns the concatenation of the
+*   <code>V **ConcatLowerLower**(V hi, V lo)</code>: returns the concatenation of the
     lower halves of `hi` and `lo` without splitting into blocks.
 
-*   <code>V **ConcatHiHi**(V hi, V lo)</code>: returns the concatenation of the
+*   <code>V **ConcatUpperUpper**(V hi, V lo)</code>: returns the concatenation of the
     upper halves of `hi` and `lo` without splitting into blocks.
 
-*   <code>V **ConcatLoHi**(V hi, V lo)</code>: returns the inner half of the
+*   <code>V **ConcatLowerUpper**(V hi, V lo)</code>: returns the inner half of the
     concatenation of `hi` and `lo` without splitting into blocks. Useful for
     swapping the two blocks in 256-bit vectors.
 
-*   <code>V **ConcatHiLo**(V hi, V lo)</code>: returns the outer quarters of the
+*   <code>V **ConcatUpperLower**(V hi, V lo)</code>: returns the outer quarters of the
     concatenation of `hi` and `lo` without splitting into blocks. Unlike the
     other variants, this does not incur a block-crossing penalty on AVX2.
 
@@ -478,38 +479,90 @@ more expensive on AVX2/AVX-512 than within-block operations.
 **Note**: the following are only available for full vectors (`N > 1`):
 
 *   `V`: `u8`; `Ret`: `u64` \
-    <code>Ret **ext::SumsOfU8x8**(V)</code>: returns the sums of 8 consecutive
+    <code>Ret **SumsOfU8x8**(V)</code>: returns the sums of 8 consecutive
     bytes in each 64-bit lane.
 
 *   `V`: `uif32/64` \
-    <code>V **ext::SumOfLanes**(V v)</code>: returns the sum of all lanes in
-    each lane; to obtain the result, use `GetLane(horz_sum_result)`.
+    <code>V **SumOfLanes**(V v)</code>: returns the sum of all lanes in
+    each lane; to obtain the result, use `GetLane(horz_sum_result)`. This is a
+    "reduction" (horizontally across lanes), which is less efficient than
+    normal ("vertical") SIMD operations.
 
 ## Advanced macros
 
-Let `Target` denote an instruction set: `NONE/SSE4/AVX2/AVX512/PPC8/ARM8/WASM`.
+Let `Target` denote an instruction set: `SCALAR/SSE4/AVX2/AVX3/PPC8/NEON/WASM`.
 
 *   `HWY_Target=##` are powers of two uniquely identifying `Target`.
-*   `HWY_STATIC_TARGETS=##`, defined within `static_targets.h`, indicates which
-    HWY_Target(s) may be used without runtime dispatch.
-*   `HWY_RUNTIME_TARGETS=##`, defined within `runtime_targets.h`, indicates
-    which specializations are generated (and only called if supported).
 
-*   `HWY_LANES_OR_0(T)`: how many lanes of type `T` in a full vector, or 0 if
-    `NONE`. Intended for use by HWY_FULL/CAPPED. Note that this cannot be used
-    in #if conditions because it uses sizeof.
+*   `HWY_TARGETS` indicates which targets to generate for dynamic dispatch, and
+    which headers to include. It is determined by the configuration macros
+    `HWY_{BASELINE|BROKEN|DISABLED}_TARGETS[_ONLY]`.
 
-*   `HWY_HAS_GATHER`: whether the current target supports gather().
-*   `HWY_HAS_VARIABLE_SHIFT`: whether the current target supports variable
-    shifts, i.e. per-lane shift amounts (v1 << v2).
-*   `HWY_HAS_INT64`: whether the current target supports 64-bit integers.
-*   `HWY_HAS_CMP64`: whether the current target supports 64-bit signed
-    comparisons.
-*   `HWY_HAS_DOUBLE`: whether the current target supports double-precision
-    vectors.
+*   `HWY_STATIC_TARGET` is the best non-disabled/broken baseline `HWY_Target`,
+    and matches `HWY_TARGET` in static dispatch mode. This is useful even in
+    dynamic dispatch mode for deducing and printing the compiler flags.
 
-*   `HWY_IDE` is 0 except for purposes of IDE parsers; adding it to conditions
-    such as `#if HWY_BITS == 0 || HWY_IDE` avoids code appearing greyed out.
+*   `HWY_TARGET`: which `HWY_Target` is currently being compiled. This is
+    initially identical to `HWY_STATIC_TARGET` and remains so in static dispatch
+    mode. For dynamic dispatch, this changes before each re-inclusion and
+    finally reverts to `HWY_STATIC_TARGET`. Can be used in `#if` expressions to
+    provide an alternative to functions which are not supported by HWY_SCALAR.
+
+*   `HWY_LANES(T)`: how many lanes of type `T` in a full vector (>= 1). Used by
+    HWY_FULL/CAPPED. Note: cannot be used in #if because it uses sizeof.
+
+*   `HWY_CAPS` includes zero or more of the following:
+    - `HWY_CAP_GATHER`: whether the current target supports GatherIndex/Offset.
+    - `HWY_CAP_VARIABLE_SHIFT`: whether the current target supports variable
+      shifts, i.e. per-lane shift amounts (v1 << v2).
+    - `HWY_CAP_INT64`: whether the current target supports 64-bit integers.
+    - `HWY_CAP_CMP64`: whether the current target supports 64-bit signed
+      comparisons.
+    - `HWY_CAP_DOUBLE`: whether the current target supports double-precision
+      vectors.
+    - `HWY_CAP_GE256`: the current target supports vectors of >= 256 bits.
+    - `HWY_CAP_GE512`: the current target supports vectors of >= 512 bits.
+
+*   `HWY_IDE` is 0 except when parsed by IDEs; adding it to conditions such as
+    `#if HWY_TARGET != HWY_SCALAR || HWY_IDE` avoids code appearing greyed out.
+
+## Advanced configuration macros
+
+*   `HWY_DISABLE_CACHE_CONTROL` makes the cache-control functions no-ops.
+*   `HWY_DISABLE_BMI2_FMA` prevents emitting BMI/BMI2/FMA instructions.
+
+The following `*_TARGETS` are zero or more `HWY_Target` bits and can be defined
+as an expression, e.g. `#define HWY_DISABLED_TARGETS (HWY_SSE4 | HWY_AVX3)`.
+
+*   `HWY_BROKEN_TARGETS` are excluded from `HWY_BASELINE_TARGETS` and
+    `HWY_TARGETS`. If undefined, defaults to a blacklist of known compiler bugs.
+    Defining to 0 disables the blacklist.
+
+*   `HWY_DISABLED_TARGETS` are excluded from `HWY_BASELINE_TARGETS` and
+    `HWY_TARGETS`. If undefined, defaults to zero. This allows explicitly
+    disabling targets without interfering with the blacklist.
+
+*   `HWY_BASELINE_TARGETS` minus any broken/disabled targets are interpreted as
+    the targets for which the compiler is allowed to generate instructions
+    (implying the target CPU would have to support them). We exclude these
+    targets except the best of them (which supersedes the others) from
+    `HWY_TARGETS` to reduce compile time and binary size. `HWY_STATIC_TARGET` is
+    the best of these targets.
+
+    If undefined, defaults to the set whose predefined macros are defined (i.e.
+    those for which the corresponding flag, e.g. -mavx2, was passed to the
+    compiler).
+
+    To ensure all possible targets are included, which is useful for tests,
+    define this to `HWY_SCALAR` **globally** - doing so only for individual
+    translation units, e.g. the caller of a `Choose*()` function, may crash if
+    the called TU did not generate all the requested targets.
+
+*   `HWY_BASELINE_TARGET_ONLY` governs whether to add to `HWY_TARGETS` any
+    additional enabled targets. If defined, only `HWY_STATIC_TARGET` is
+    included, which effectively disables dynamic dispatch and reduces code size.
+    Otherwise, targets which are enabled and better than any baseline target are
+    also included, and thus generated if foreach_target.h is used.
 
 ## Compiler support
 

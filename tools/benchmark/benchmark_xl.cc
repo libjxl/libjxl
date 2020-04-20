@@ -18,11 +18,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <hwy/interface.h>
 #include <algorithm>
-#include <hwy/runtime_dispatch.h>
-#include <hwy/static_targets.h>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <random>
 #include <string>
 #include <utility>
@@ -60,58 +60,12 @@
 namespace jxl {
 namespace {
 
-// TODO(lode): take alpha into account when needed
-HWY_ATTR double ComputeDistance2(const ImageBundle& ib1,
-                                 const ImageBundle& ib2) {
-  PROFILER_FUNC;
-  // Convert to sRGB - closer to perception than linear.
-  const Image3F* srgb1 = &ib1.color();
-  Image3F copy1;
-  if (!ib1.IsSRGB()) {
-    JXL_CHECK(ib1.CopyTo(Rect(ib1), ColorEncoding::SRGB(ib1.IsGray()), &copy1));
-    srgb1 = &copy1;
-  }
-  const Image3F* srgb2 = &ib2.color();
-  Image3F copy2;
-  if (!ib2.IsSRGB()) {
-    JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::SRGB(ib2.IsGray()), &copy2));
-    srgb2 = &copy2;
-  }
-
-  JXL_CHECK(SameSize(*srgb1, *srgb2));
-
-  HWY_FULL(float) d;
-
-  auto sums = Zero(d);
-  double result = 0;
-  // Weighted PSNR as in JPEG-XL: chroma counts 1/8 (they compute on YCbCr).
-  // Avoid squaring the weight - 1/64 is too extreme.
-  const float weights[3] = {1.0f / 8, 6.0f / 8, 1.0f / 8};
-  for (size_t c = 0; c < 3; ++c) {
-    const auto weight = Set(d, weights[c]);
-    for (size_t y = 0; y < srgb1->ysize(); ++y) {
-      const float* JXL_RESTRICT row1 = srgb1->ConstPlaneRow(c, y);
-      const float* JXL_RESTRICT row2 = srgb2->ConstPlaneRow(c, y);
-      size_t x = 0;
-      for (; x + d.N <= srgb1->xsize(); x += d.N) {
-        const auto diff = Load(d, row1 + x) - Load(d, row2 + x);
-        sums += diff * diff * weight;
-      }
-      for (; x < srgb1->xsize(); ++x) {
-        const float diff = row1[x] - row2[x];
-        result += diff * diff * weights[c];
-      }
-    }
-  }
-  const float sum = GetLane(hwy::ext::SumOfLanes(sums));
-  return sum + result;
-}
-
 Status WritePNG(const Image3B& image, ThreadPool* pool,
                 const std::string& filename) {
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
   io.metadata.bits_per_sample = 8;
+  io.metadata.floating_point_sample = false;
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
   PaddedBytes compressed;
@@ -174,9 +128,9 @@ static bool HasValidAlpha(const CodecInOut& io) {
   return true;
 }
 
-HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
-                         ImageCodec* codec, ThreadPool* inner_pool,
-                         PaddedBytes* compressed, BenchmarkStats* s) {
+void DoCompress(const std::string& filename, const CodecInOut& io,
+                ImageCodec* codec, ThreadPool* inner_pool,
+                PaddedBytes* compressed, BenchmarkStats* s) {
   PROFILER_FUNC;
   ++s->total_input_files;
 
@@ -319,24 +273,19 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
         // This needs to be ib2 because the codec will have set it on the
         // encoded image if needed, but we currently don't set it on the
         // reference.
-        const float intensity_multiplier =
-            ib2.metadata()->IntensityTarget() * kIntensityMultiplier;
         Image3F linear_rgb1, linear_rgb2;
         JXL_CHECK(ib1.CopyTo(Rect(ib1), ColorEncoding::LinearSRGB(ib1.IsGray()),
                              &linear_rgb1, inner_pool));
         JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::LinearSRGB(ib2.IsGray()),
                              &linear_rgb2, inner_pool));
-        if (intensity_multiplier != 1.f) {
-          ScaleImage(intensity_multiplier, &linear_rgb1);
-          ScaleImage(intensity_multiplier, &linear_rgb2);
-        }
         double distance_double;
         JXL_CHECK(butteraugli::ButteraugliInterface(linear_rgb1, linear_rgb2,
                                                     codec->hf_asymmetry(),
                                                     distmap, distance_double));
         distance = static_cast<float>(distance_double);
         // Ensure pixels in range 0-255
-        s->distance_2 += ComputeDistance2(ib1, ib2);
+        s->distance_2 +=
+            ChooseComputeDistance2(hwy::SupportedTargets())(ib1, ib2);
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
@@ -345,8 +294,9 @@ HWY_ATTR void DoCompress(const std::string& filename, const CodecInOut& io,
         s->distance_2 += distance;
       }
       // Update stats
+      auto compute_dist = ChooseComputeDistanceP(hwy::SupportedTargets());
       s->distance_p_norm +=
-          ComputeDistanceP(distmap, Args()->error_pnorm) * input_pixels;
+          compute_dist(distmap, Args()->error_pnorm) * input_pixels;
       s->max_distance = std::max(s->max_distance, distance);
       s->distances.push_back(distance);
       max_distance = std::max(max_distance, distance);
@@ -832,8 +782,10 @@ class Benchmark {
     // Default to #cores
     if (num_threads < 0) num_threads = num_cores;
 
-    // No point exceeding #cores - we already max out TDP with 1/core.
-    num_threads = std::min(num_threads, num_cores);
+    // As a safety precaution, limit the number of threads to 4x the number of
+    // available CPUs.
+    num_threads =
+        std::min<int>(num_threads, 4 * std::thread::hardware_concurrency());
 
     // Don't create more threads than there are tasks (pointless/wasteful).
     num_threads = std::min(num_threads, num_tasks);
@@ -994,6 +946,8 @@ class Benchmark {
         [&](const int task, int /*thread*/) {
           const size_t i = static_cast<size_t>(task);
           Status ok = true;
+
+          loaded_images[i].target_nits = Args()->intensity_target;
           loaded_images[i].dec_hints = Args()->dec_hints;
           loaded_images[i].dec_target = jpeg_transcoding_requested
                                             ? DecodeTarget::kQuantizedCoeffs
@@ -1020,6 +974,8 @@ class Benchmark {
           if (!Args()->decode_only && Args()->override_bitdepth != 0) {
             loaded_images[i].metadata.bits_per_sample =
                 Args()->override_bitdepth;
+            loaded_images[i].metadata.floating_point_sample =
+                (Args()->override_bitdepth == 32);
           }
         },
         "Load images");
@@ -1100,12 +1056,6 @@ int BenchmarkMain(int argc, char** argv) {
 #endif
 
   fprintf(stderr, "benchmark_xl [%s%s]\n", JPEGXL_VERSION, sanitizer);
-
-  const int bits = hwy::TargetBitfield().Bits();
-  if ((bits & HWY_STATIC_TARGETS) != HWY_STATIC_TARGETS) {
-    fprintf(stderr, "Missing CPU support for targets in static_targets.h.\n");
-    return 1;
-  }
 
   JXL_CHECK(Args()->AddCommandLineOptions());
   if (!Args()->Parse(argc, const_cast<const char**>(argv)) ||

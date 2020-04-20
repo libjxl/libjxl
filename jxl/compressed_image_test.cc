@@ -60,7 +60,8 @@ void RunRGBRoundTrip(float distance, bool fast) {
 
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)ToXYB(io.Main(), 1.0f, &pool, &opsin, &unused_linear);
+  (void)(*ChooseToXYB)(hwy::SupportedTargets())(io.Main(), &pool, &opsin,
+                                                &unused_linear);
   opsin = PadImageToMultiple(opsin, kBlockDim);
   opsin = GaborishInverse(opsin, 1.0f, &pool);
 
@@ -101,6 +102,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
 
   CodecInOut io1;
   io1.metadata.bits_per_sample = io.metadata.bits_per_sample;
+  io1.metadata.floating_point_sample = io.metadata.floating_point_sample;
   io1.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io1.SetFromImage(std::move(recon), io1.metadata.color_encoding);
 

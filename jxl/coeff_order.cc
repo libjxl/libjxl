@@ -200,9 +200,9 @@ void TokenizePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   }
 }
 
-HWY_ATTR Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
-                                BitReader* br, ANSSymbolReader* reader,
-                                const std::vector<uint8_t>& context_map) {
+Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
+                       BitReader* br, ANSSymbolReader* reader,
+                       const std::vector<uint8_t>& context_map) {
   std::vector<LehmerT> lehmer(size);
   // temp space needs to be as large as the next power of 2, so doubling the
   // allocated size is enough.

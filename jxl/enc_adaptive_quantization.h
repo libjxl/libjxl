@@ -59,7 +59,7 @@ ImageF InitialQuantField(float butteraugli_target, const Image3F& opsin,
                          const FrameDimensions& frame_dim, ThreadPool* pool,
                          float rescale);
 
-float InitialQuantDC(float butteraugli_target, float intensity_multiplier);
+float InitialQuantDC(float butteraugli_target);
 
 // Returns a quantizer that uses an adjusted version of the provided
 // quant_field. Also computes the dequant_map corresponding to the given

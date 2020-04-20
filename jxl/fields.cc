@@ -45,8 +45,7 @@ Status U32Coder::CanEncode(const U32Enc enc, const uint32_t value,
   return ok;
 }
 
-HWY_ATTR uint32_t U32Coder::Read(const U32Enc enc,
-                                 BitReader* JXL_RESTRICT reader) {
+uint32_t U32Coder::Read(const U32Enc enc, BitReader* JXL_RESTRICT reader) {
   const uint32_t selector = reader->ReadFixedBits<2>();
   const U32Distr d = enc.GetDistr(selector);
   if (d.IsDirect()) {
@@ -117,7 +116,7 @@ Status U32Coder::ChooseSelector(const U32Enc enc, const uint32_t value,
   return true;
 }
 
-HWY_ATTR uint64_t U64Coder::Read(BitReader* JXL_RESTRICT reader) {
+uint64_t U64Coder::Read(BitReader* JXL_RESTRICT reader) {
   uint64_t selector = reader->ReadFixedBits<2>();
   if (selector == 0) {
     return 0;
@@ -213,8 +212,8 @@ Status U64Coder::CanEncode(uint64_t value, size_t* JXL_RESTRICT encoded_bits) {
   return true;
 }
 
-HWY_ATTR Status F16Coder::Read(BitReader* JXL_RESTRICT reader,
-                               float* JXL_RESTRICT value) {
+Status F16Coder::Read(BitReader* JXL_RESTRICT reader,
+                      float* JXL_RESTRICT value) {
   const uint32_t bits16 = reader->ReadFixedBits<16>();
   const uint32_t sign = bits16 >> 15;
   const uint32_t biased_exp = (bits16 >> 10) & 0x1F;

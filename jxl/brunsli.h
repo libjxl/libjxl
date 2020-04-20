@@ -15,6 +15,8 @@
 #ifndef JXL_BRUNSLI_H_
 #define JXL_BRUNSLI_H_
 
+#include <brunsli/jpeg_data.h>
+
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -25,6 +27,7 @@
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
 #include "jxl/codec_in_out.h"
+#include "jxl/color_encoding.h"
 #include "jxl/dec_params.h"
 
 // Utilities for rasterization of intermediate Brunsli representation.
@@ -39,16 +42,45 @@ enum class BrunsliFileSignature {
 
 BrunsliFileSignature IsBrunsliFile(jxl::Span<const uint8_t> compressed);
 
+// DC conditioning params.
+struct BrunsliDccParams {
+  bool active = false;
+  uint8_t max_gap[3] = {32, 32, 32};
+  uint8_t min_step[3] = {32, 32, 32};
+};
+
+// Gaborish loop filter params.
+struct BrunsliGaborishParams {
+  bool active = false;
+  uint8_t w1[3] = {205, 205, 205};
+  uint8_t w2[3] = {205, 205, 205};
+  uint8_t threshold[3] = {80, 80, 80};
+  uint8_t limit[3] = {9, 9, 9};
+};
+
 struct BrunsliEncoderOptions {
   float quant_scale = 1.0f;
   std::string hdr_orig_colorspace;
+
+  // TODO(eustas): optimize params for encoded image.
+  BrunsliDccParams dcc;
+  BrunsliGaborishParams gab;
 };
 
 struct BrunsliDecoderMeta {
   std::string hdr_orig_colorspace;
 };
 
-Status BrunsliToPixels(jxl::Span<const uint8_t> compressed,
+YCbCrChromaSubsampling GetSubsamplingFromJpegData(const brunsli::JPEGData& jpg);
+
+void SetColorEncodingFromJpegData(const brunsli::JPEGData& jpg,
+                                  ColorEncoding* color_encoding);
+
+Status JpegDataToCoefficients(const brunsli::JPEGData& jpg, Image3F* out,
+                              std::vector<int32_t>* out_quant_table,
+                              ThreadPool* pool);
+
+Status BrunsliToPixels(const brunsli::JPEGData& jpg,
                        jxl::CodecInOut* JXL_RESTRICT io,
                        const BrunsliDecoderOptions& options,
                        BrunsliDecoderMeta* metadata, jxl::ThreadPool* pool);

@@ -23,14 +23,14 @@ stages:
   - deploy
 
 variables:
-  # We need to fetch the third_party dependencies together with the code unless
-  # otherwise noted.
-  GIT_SUBMODULE_STRATEGY: recursive
+  # By default we don't fetch any third_party dependencies. Building requires to
+  # fetch all the dependencies but many other workflows don't.
+  GIT_SUBMODULE_STRATEGY: none
 
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
-.linux_builder_template: &linux_builder_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:e97bb79499eb4f9af4186388a450996b2c27caa6cc873f4175947ae398192bbb
+.linux_host_template: &linux_host_template
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:b98badcde2d9e779846075af97396ed59d566d08f5a0c50701e82150c8de2027
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -48,96 +48,53 @@ variables:
       - api_failure
       - stuck_or_timeout_failure
       - runner_system_failure
-
-# A template for building on x86_64 images on the cloud builders.
-.linux_x86_64_template: &linux_x86_64_template
-  <<: *linux_builder_template
+  # Default variables. Note that adding a "variables:" section to a template
+  # using this template will completely discard this section, not just add new
+  # variables.
   variables:
-    CC: clang-6.0
-    CXX: clang++-6.0
-
-.linux_i686_template: &linux_i686_template
-  <<: *linux_builder_template
-  variables:
-    CC: clang-6.0
-    CXX: clang++-6.0
-    # This makes cross-compiling for i686 the default when calling ci.sh.
-    BUILD_TARGET: i686-linux-gnu
+    GIT_SUBMODULE_STRATEGY: none
     BUILD_DIR: build
-
-# A template for building on aarch64 images on the cloud builders. These may not
-# run on actual aarch64 hardware.
-.linux_aarch64_template: &linux_aarch64_template
-  <<: *linux_builder_template
-  variables:
     CC: clang-6.0
     CXX: clang++-6.0
-    # This makes cross-compiling for aarch64 the default when calling ci.sh.
-    BUILD_TARGET: aarch64-linux-gnu
-    BUILD_DIR: build
-    # We need to fetch the third_party dependencies together with the code.
-    GIT_SUBMODULE_STRATEGY: recursive
-
-# A template for cross-compiling for arm-linux-gnueabihf.
-.linux_armhf_template: &linux_armhf_template
-  <<: *linux_builder_template
-  variables:
-    CC: clang-6.0
-    CXX: clang++-6.0
-    # This makes cross-compiling for armhf the default when calling ci.sh.
-    BUILD_TARGET: arm-linux-gnueabihf
-    BUILD_DIR: build
-    # We need to fetch the third_party dependencies together with the code.
-    GIT_SUBMODULE_STRATEGY: recursive
 
 # Common artifacts for the build stage
 .default_build_paths: &default_build_paths
   - build/libjpegxl.so*
-  - build/tools/cbrunsli
-  - build/tools/cjpegxl
-  - build/tools/djpegxl
-  - build/tools/benchmark_xl
-  - build/tools/decode_and_encode
-  - build/tools/comparison_viewer/compare_codecs
-  - build/tools/comparison_viewer/compare_images
-  - build/tools/viewer/viewer
+  - build/libjpegxl.dll
+  # Binary tools like cjpegxl are "cjpegxl.exe" in windows builds. These
+  # matches will match against either one.
+  - build/tools/cbrunsli*
+  - build/tools/cjpegxl*
+  - build/tools/djpegxl*
+  - build/tools/benchmark_xl*
+  - build/tools/decode_and_encode*
+  - build/tools/comparison_viewer/compare_codecs*
+  - build/tools/comparison_viewer/compare_images*
+  - build/tools/viewer/viewer*
   # All the test binaries in the build/ directory and .cmake files used by
   # ctest, compressed into this file together to save space when uploading.
   - build/tests.tar.xz
   # The coverage data produced at compile time.
   - build/gcno.tar.xz
 
-.linux_x86_64_build_template: &linux_x86_64_build_template
-  <<: *linux_x86_64_template
+# Helper template to add the default artifacts paths to all build stages. If
+# files in the "paths:" section are not present only a warning is generated.
+.linux_host_build_template: &linux_host_build_template
+  <<: *linux_host_template
   artifacts:
     name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
     expire_in: 1 week
     paths: *default_build_paths
+  variables:
+    # Building always requires to fetch all the repositories.
+    GIT_SUBMODULE_STRATEGY: recursive
+    BUILD_DIR: build
+    CC: clang-6.0
+    CXX: clang++-6.0
 
-.linux_i686_build_template: &linux_i686_build_template
-  <<: *linux_i686_template
-  artifacts:
-    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
-    expire_in: 1 week
-    paths: *default_build_paths
-
-.linux_aarch64_build_template: &linux_aarch64_build_template
-  <<: *linux_aarch64_template
-  artifacts:
-    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
-    expire_in: 1 week
-    paths: *default_build_paths
-
-.linux_armhf_build_template: &linux_armhf_build_template
-  <<: *linux_armhf_template
-  artifacts:
-    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
-    expire_in: 1 week
-    paths: *default_build_paths
-
-# The default Release build runs always.
+# linux x86_64 default Release mode.
 build:x86_64:clang:release:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -150,7 +107,7 @@ build:x86_64:clang:release:
     - ninja -C build install
 
 test:x86_64:clang:release:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
   only:
     - master
@@ -161,12 +118,10 @@ test:x86_64:clang:release:
     - build:x86_64:clang:release
   script:
     - ./ci.sh test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
 
 # x86_84 test coverage build
 build:x86_64:clang:coverage:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -176,7 +131,7 @@ build:x86_64:clang:coverage:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh coverage
 
 test:x86_64:clang:coverage:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
   only:
     - master
@@ -203,7 +158,7 @@ test:x86_64:clang:coverage:
 # Updates the "Pages" section in GitLab with the latest coverage report from
 # master.
 pages:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: deploy
   only:
     - master
@@ -221,7 +176,7 @@ pages:
 
 # x86_64 Scalar-only release runs only on master and on request.
 build:x86_64:clang:scalar:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -229,10 +184,10 @@ build:x86_64:clang:scalar:
     - schedules
     - tags
   script:
-    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_STATIC_TARGETS=0 -DHWY_RUNTIME_TARGETS=0" ./ci.sh release
+    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_DISABLE_TARGETS=~HWY_SCALAR" ./ci.sh release
 
 test:x86_64:clang:scalar:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:x86_64:clang:scalar
@@ -243,7 +198,7 @@ test:x86_64:clang:scalar:
 
 # i686 (x86 32-bit) builders
 build:i686:clang:release:
-  <<: *linux_i686_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -251,12 +206,11 @@ build:i686:clang:release:
     - schedules
     - tags
   script:
-    # AVX2 on 32-bit binaries hits clang compiler bugs.
-    - CMAKE_FLAGS="-DHWY_DISABLE_AVX2" SKIP_TEST=1 PACK_TEST=1
+    - BUILD_TARGET=i686-linux-gnu SKIP_TEST=1 PACK_TEST=1
         ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
 
 test:i686:clang:release:
-  <<: *linux_i686_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:i686:clang:release
@@ -265,9 +219,32 @@ test:i686:clang:release:
   variables:
     GIT_SUBMODULE_STRATEGY: none
 
+# Windows builders. These are cross-compiled from a linux host.
+build:win64:clang:release:
+  <<: *linux_host_build_template
+  stage: build
+  only:
+    - master
+    - merge_requests
+    - schedules
+    - tags
+  script:
+    - BUILD_TARGET=x86_64-w64-mingw32
+        SKIP_TEST=1 PACK_TEST=1
+        ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
+          -DJPEGXL_ENABLE_PLUGINS=OFF
+
+test:win64:clang:release:
+  <<: *linux_host_template
+  stage: test
+  dependencies:
+    - build:win64:clang:release
+  script:
+    - BUILD_TARGET=x86_64-w64-mingw32 ./ci.sh test
+
 # aarch64 release runs only on master and on request.
 build:aarch64:clang:release:
-  <<: *linux_aarch64_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -276,11 +253,12 @@ build:aarch64:clang:release:
     - tags
     - web
   script:
-    - CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
+    - BUILD_TARGET=aarch64-linux-gnu
+        CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
         ./ci.sh release
 
 test:aarch64:clang:release:
-  <<: *linux_aarch64_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:aarch64:clang:release
@@ -290,7 +268,7 @@ test:aarch64:clang:release:
 
 # arm release
 build:armhf:clang:release:
-  <<: *linux_armhf_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -299,11 +277,12 @@ build:armhf:clang:release:
     - tags
     - web
   script:
-    - CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
+    - BUILD_TARGET=arm-linux-gnueabihf
+        CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
         ./ci.sh release
 
 test:armhf:clang:release:
-  <<: *linux_armhf_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:armhf:clang:release
@@ -312,17 +291,17 @@ test:armhf:clang:release:
 
 # arm debug
 build:armhf:clang:debug:
-  <<: *linux_armhf_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - merge_requests
   script:
-    - SKIP_TEST=1 ./ci.sh debug
+    - BUILD_TARGET=arm-linux-gnueabihf SKIP_TEST=1 ./ci.sh debug
 
 # "debug" build enabled for merge_requests. This is here to check that
 # debug-only statements still compile.
 build:x86_64:clang:debug:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - merge_requests
@@ -332,13 +311,13 @@ build:x86_64:clang:debug:
 # "asan", "tsan" and "msan" builds only run on master, tags and when requested
 # from the web. Only supported in x86_64 for now.
 build:x86_64:clang:asan:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   script:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh asan
 
 test:x86_64:clang:asan:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:x86_64:clang:asan
@@ -349,13 +328,13 @@ test:x86_64:clang:asan:
 
 # aarch64 asan build and test.
 build:aarch64:clang:asan:
-  <<: *linux_aarch64_build_template
+  <<: *linux_host_build_template
   stage: build
   script:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh asan
 
 test:aarch64:clang:asan:
-  <<: *linux_aarch64_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:aarch64:clang:asan
@@ -366,13 +345,13 @@ test:aarch64:clang:asan:
     - ./ci.sh test
 
 build:x86_64:clang:tsan:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   script:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh tsan
 
 test:x86_64:clang:tsan:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:x86_64:clang:tsan
@@ -382,13 +361,13 @@ test:x86_64:clang:tsan:
     GIT_SUBMODULE_STRATEGY: none
 
 build:x86_64:clang:msan:
-  <<: *linux_x86_64_build_template
+  <<: *linux_host_build_template
   stage: build
   script:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh msan
 
 test:x86_64:clang:msan:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
   dependencies:
     - build:x86_64:clang:msan
@@ -399,7 +378,7 @@ test:x86_64:clang:msan:
 
 # Merge request linter checks.
 build:lint:
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: build
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -418,7 +397,7 @@ build:lint:
 # Most clang-tidy checks are currently informational only since these are
 # currently broken, however several are marked as errors.
 build:tidy:
-  <<: *linux_x86_64_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - merge_requests
@@ -433,10 +412,8 @@ build:tidy:
 
 # Faster benchmark over a smaller set of images.
 .benchmark_x86_64_template: &benchmark_x86_64_template
-  <<: *linux_x86_64_template
+  <<: *linux_host_template
   stage: test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
   artifacts:
     name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
     expire_in: 1 year
@@ -471,8 +448,8 @@ test:fast_benchmark.msan:
 
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
-  <<: *linux_builder_template
-  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:6d218aaf961c3e0591a7a0852cb8d30524811c8f9ed7327bb886e6d7e8294c1c
+  <<: *linux_host_template
+  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:74ad8996a25f3f78db6a3c8a9131a6404e0fc256efb7f541360334a1ac305745
   stage: test
   tags:
     - aarch64
@@ -523,7 +500,7 @@ test:benchmark:release:
       - build/benchmark_results/
 
 build:tidy:all:
-  <<: *linux_x86_64_template
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
@@ -539,24 +516,50 @@ build:tidy:all:
 
 # Emscripten (WASM) build.
 build:ems:all:
-  <<: *linux_x86_64_template
+  <<: *linux_host_build_template
+  stage: build
+  script:
+    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+    - source /opt/emsdk/emsdk_env.sh
+    - SKIP_TEST=1 PACK_TEST=1 ./ci.sh release
+
+test:ems:all:
+  <<: *linux_host_template
+  stage: test
+  dependencies:
+    - build:ems:all
+  script:
+    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+    - source /opt/emsdk/emsdk_env.sh
+    - ./ci.sh test
+
+# Emscripten (WASM + SIMD) build.
+build:ems_simd:all:
+  <<: *linux_host_build_template
   stage: build
   only:
     - master
     - merge_requests
     - schedules
     - tags
-  variables:
-    CC: emcc
-    CXX: em++
-    EMSDK: /opt/emsdk
-    EM_CONFIG: /opt/emsdk/.emscripten
-    CMAKE_TOOLCHAIN_FILE: /opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
-  artifacts:
-    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
-    expire_in: 1 week
-    paths:
-      - build/jpegxl_emcc.*
   script:
-    - source "${EMSDK}/emsdk_env.sh"
-    - SKIP_TEST=1 ./ci.sh release
+    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+    - export NODE=/usr/bin/node
+    - source /opt/emsdk/emsdk_env.sh
+    - ENABLE_WASM_SIMD=1 SKIP_TEST=1 PACK_TEST=1 ./ci.sh release
+
+test:ems_simd:all:
+  <<: *linux_host_template
+  stage: test
+  only:
+    - master
+    - merge_requests
+    - schedules
+    - tags
+  dependencies:
+    - build:ems_simd:all
+  script:
+    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
+    - export NODE=/opt/node-nightly/bin/node
+    - source /opt/emsdk/emsdk_env.sh
+    - ./ci.sh test

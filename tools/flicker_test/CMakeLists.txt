@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-find_package(Qt5 COMPONENTS Widgets)
+find_package(Qt5 QUIET COMPONENTS Widgets)
 if (NOT Qt5_FOUND)
   message(WARNING "Qt5 was not found. The flicker test tool will not be built.")
   return()

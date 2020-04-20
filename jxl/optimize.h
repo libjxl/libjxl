@@ -24,8 +24,72 @@
 #include <functional>
 #include <vector>
 
+#include "jxl/base/status.h"
+
 namespace jxl {
 namespace optimize {
+
+// An array type of numeric values that supports math operations with operator-,
+// operator+, etc.
+template <typename T, size_t N>
+class Array {
+ public:
+  Array() = default;
+  explicit Array(T v) {
+    for (size_t i = 0; i < N; i++) v_[i] = v;
+  }
+
+  size_t size() const { return N; }
+
+  T& operator[](size_t index) {
+    JXL_DASSERT(index < N);
+    return v_[index];
+  }
+  T operator[](size_t index) const {
+    JXL_DASSERT(index < N);
+    return v_[index];
+  }
+
+ private:
+  // The values used by this Array.
+  T v_[N];
+};
+
+template <typename T, size_t N>
+Array<T, N> operator+(const Array<T, N>& x, const Array<T, N>& y) {
+  Array<T, N> z;
+  for (size_t i = 0; i < N; ++i) {
+    z[i] = x[i] + y[i];
+  }
+  return z;
+}
+
+template <typename T, size_t N>
+Array<T, N> operator-(const Array<T, N>& x, const Array<T, N>& y) {
+  Array<T, N> z;
+  for (size_t i = 0; i < N; ++i) {
+    z[i] = x[i] - y[i];
+  }
+  return z;
+}
+
+template <typename T, size_t N>
+Array<T, N> operator*(T v, const Array<T, N>& x) {
+  Array<T, N> y;
+  for (size_t i = 0; i < N; ++i) {
+    y[i] = v * x[i];
+  }
+  return y;
+}
+
+template <typename T, size_t N>
+T operator*(const Array<T, N>& x, const Array<T, N>& y) {
+  T r = 0.0;
+  for (size_t i = 0; i < N; ++i) {
+    r += x[i] * y[i];
+  }
+  return r;
+}
 
 // Runs Nelder-Mead like optimization. Runs for max_iterations times,
 // fun gets called with a vector of size dim as argument, and returns the score
@@ -48,42 +112,6 @@ std::vector<double> RunSimplex(
     int dim, double amount, int max_iterations, const std::vector<double>& init,
     const std::function<double((const std::vector<double>&))>& fun);
 
-template <typename T>
-std::vector<T> operator+(const std::vector<T>& x, const std::vector<T>& y) {
-  std::vector<T> z(x.size());
-  for (size_t i = 0; i < x.size(); ++i) {
-    z[i] = x[i] + y[i];
-  }
-  return z;
-}
-
-template <typename T>
-std::vector<T> operator-(const std::vector<T>& x, const std::vector<T>& y) {
-  std::vector<T> z(x.size());
-  for (size_t i = 0; i < x.size(); ++i) {
-    z[i] = x[i] - y[i];
-  }
-  return z;
-}
-
-template <typename T>
-std::vector<T> operator*(T v, const std::vector<T>& x) {
-  std::vector<T> y(x.size());
-  for (size_t i = 0; i < x.size(); ++i) {
-    y[i] = v * x[i];
-  }
-  return y;
-}
-
-template <typename T>
-T operator*(const std::vector<T>& x, const std::vector<T>& y) {
-  T r = 0.0;
-  for (size_t i = 0; i < x.size(); ++i) {
-    r += x[i] * y[i];
-  }
-  return r;
-}
-
 // Implementation of the Scaled Conjugate Gradient method described in the
 // following paper:
 //   Moller, M. "A Scaled Conjugate Gradient Algorithm for Fast Supervised
@@ -94,84 +122,102 @@ T operator*(const std::vector<T>& x, const std::vector<T>& y) {
 //
 //   // Returns the value of the function at point w and sets *df to be the
 //   // negative gradient vector of the function at point w.
-//   double Compute(const vector<double>& w, vector<double>* df) const;
+//   double Compute(const optimize::Array<T, N>& w,
+//                  optimize::Array<T, N>* df) const;
 //
 // Returns a vector w, such that |df(w)| < grad_norm_threshold.
-template <typename T, typename Function>
-std::vector<T> OptimizeWithScaledConjugateGradientMethod(
-    const Function& f, const std::vector<T>& w0, const T grad_norm_threshold,
+template <typename T, size_t N, typename Function>
+Array<T, N> OptimizeWithScaledConjugateGradientMethod(
+    const Function& f, const Array<T, N>& w0, const T grad_norm_threshold,
     int max_iters) {
   const size_t n = w0.size();
   const T rsq_threshold = grad_norm_threshold * grad_norm_threshold;
   const T sigma0 = static_cast<T>(0.0001);
-  T lambda = static_cast<T>(0.000001);
-  std::vector<T> w(w0);
-  std::vector<T> p(n);
-  std::vector<T> r(n);
+  const T l_min = static_cast<T>(1.0e-15);
+  const T l_max = static_cast<T>(1.0e15);
+
+  Array<T, N> w = w0;
+  Array<T, N> wp;
+  Array<T, N> r;
+  Array<T, N> rt;
+  Array<T, N> e;
+  Array<T, N> p;
+  T psq;
+  T fp;
+  T D;
+  T d;
+  T m;
+  T a;
+  T b;
+  T s;
+  T t;
+
   T fw = f.Compute(w, &r);
   T rsq = r * r;
-  T psq = rsq;
-  T mu = rsq;
+  e = r;
   p = r;
-  for (int k = 1; rsq > rsq_threshold; ++k) {
-    if (max_iters > 0 && k > max_iters) break;
-    T sigma = sigma0 / std::sqrt(psq);
-    std::vector<T> r2(n);
-    std::vector<T> w2 = w + (sigma * p);
-    f.Compute(w2, &r2);
-    T delta = (mu - (p * r2)) / sigma;
-    T delta1 = delta + lambda * psq;
+  T l = static_cast<T>(1.0);
+  bool success = true;
+  size_t n_success = 0;
+  size_t k = 0;
 
-    if (delta1 <= 0) {
-      lambda = -2.0 * delta / psq;
-      delta1 = delta + lambda * psq;
-    }
-
-    bool success = true;
-    T alpha;
-    T fw1;
-    T Delta;
-    std::vector<T> w1(n);
-    std::vector<T> r1(n);
-
-    do {
-      alpha = mu / delta1;
-      w1 = w + (alpha * p);
-      fw1 = f.Compute(w1, &r1);
-      const T div = mu * alpha;
-      Delta = div == 0 ? 0 : 2 * (fw - fw1) / div;
-      success = (fw1 <= fw);
-      if (!success) {
-        lambda += delta1 * (1 - Delta) / psq;
-        delta1 = delta + lambda * psq;
+  while (k++ < max_iters) {
+    if (success) {
+      m = -(p * r);
+      if (m >= 0) {
+        p = r;
+        m = -(p * r);
       }
-    } while (!success);
-
-    T r1sq = r1 * r1;
-    T beta = k % n == 0 ? 0.0 : (r1sq - (r1 * r)) / mu;
-
-#if SCG_DEBUG
-    printf(
-        "Step %3d fw=%10.2f |dfw|=%7.3f |p|=%6.2f "
-        "delta=%9.6f lambda=%6.4f mu=%8.4f alpha=%8.4f "
-        "beta=%5.3f Delta=%5.3f\n",
-        k, fw, sqrt(rsq), sqrt(psq), delta, lambda, mu, alpha, beta, Delta);
-#endif
-
-    if (Delta >= 0.75) {
-      lambda *= 0.25;
-    } else if (Delta < 0.25) {
-      lambda += delta1 * (1 - Delta) / psq;
+      psq = p * p;
+      s = sigma0 / std::sqrt(psq);
+      f.Compute(w + (s * p), &rt);
+      t = (p * (r - rt)) / s;
     }
 
-    w = w1;
-    fw = fw1;
-    r = r1;
-    rsq = r1sq;
-    p = r + (beta * p);
-    psq = p * p;
-    mu = p * r;
+    d = t + l * psq;
+    if (d <= 0) {
+      d = l * psq;
+      l = l - t / psq;
+    }
+
+    a = -m / d;
+    wp = w + a * p;
+    fp = f.Compute(wp, &rt);
+
+    D = 2.0 * (fp - fw) / (a * m);
+    if (D >= 0.0) {
+      success = true;
+      n_success++;
+      w = wp;
+    } else {
+      success = false;
+    }
+
+    if (success) {
+      e = r;
+      r = rt;
+      rsq = r * r;
+      fw = fp;
+      if (rsq <= rsq_threshold) {
+        break;
+      }
+    }
+
+    if (D < 0.25) {
+      l = std::min(4.0 * l, l_max);
+    } else if (D > 0.75) {
+      l = std::max(0.25 * l, l_min);
+    }
+
+    if ((n_success % n) == 0) {
+      p = r;
+      l = 1.0;
+    } else if (success) {
+      b = ((e - r) * r) / m;
+      p = b * p + r;
+    }
   }
+
   return w;
 }
 

@@ -54,6 +54,7 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/loop_filter.h"
+#include "jxl/luminance.h"
 #include "jxl/multiframe.h"
 #include "jxl/passes_state.h"
 #include "jxl/patch_dictionary.h"
@@ -71,6 +72,7 @@ class LossyFrameDecoder {
               const ImageMetadata& image_metadata,
               const FrameDimensions& frame_dim, Multiframe* multiframe,
               size_t downsampling, ThreadPool* pool, AuxOut* aux_out) {
+    dec_group_ = ChooseDecodeGroup(hwy::SupportedTargets());
     downsampling_ = downsampling;
     pool_ = pool;
     aux_out_ = aux_out;
@@ -129,21 +131,17 @@ class LossyFrameDecoder {
     return jxl::DecodeDCGroup(reader, group_index, &dec_state_, local_aux_out);
   }
 
-  HWY_ATTR Status DecodeGlobalACInfo(BitReader* reader) {
+  Status DecodeGlobalACInfo(BitReader* reader) {
     uint64_t flags = dec_state_.shared_storage.frame_header.flags;
     if (!(flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
         !(flags & FrameHeader::kUseDcFrame)) {
-      AdaptiveDCSmoothing(dec_state_.shared_storage.dc_quant_field,
-                          &dec_state_.shared_storage.dc_storage, pool_);
+      ChooseAdaptiveDCSmoothing(hwy::SupportedTargets())(
+          dec_state_.shared_storage.dc_quant_field,
+          &dec_state_.shared_storage.dc_storage, pool_);
     }
 
     if (aux_out_ && aux_out_->testing_aux.dc) {
       *aux_out_->testing_aux.dc = CopyImage(*dec_state_.shared_storage.dc);
-    }
-
-    if (dec_state_.shared_storage.experiments.use_new_cmap) {
-      DecodeFullColorMap(reader, &dec_state_.shared_storage.cmap,
-                         dec_state_.shared_storage.experiments.use_new_cmap);
     }
 
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.matrices.Decode(reader));
@@ -189,9 +187,9 @@ class LossyFrameDecoder {
                        size_t num_passes, Image3F* JXL_RESTRICT opsin,
                        ImageBundle* JXL_RESTRICT decoded,
                        AuxOut* local_aux_out) {
-    return DecodeGroup(readers, num_passes, group_index, &dec_state_,
-                       &group_dec_caches_[thread], thread, opsin, decoded,
-                       local_aux_out);
+    return dec_group_(readers, num_passes, group_index, &dec_state_,
+                      &group_dec_caches_[thread], thread, opsin, decoded,
+                      local_aux_out);
   }
 
   Status FinalizeJPEG(Image3F* JXL_RESTRICT opsin, ImageBundle* decoded) {
@@ -236,12 +234,6 @@ class LossyFrameDecoder {
                               /*apply_color_transform=*/
                               dec_state_.shared->multiframe->IsDisplayed()));
 
-    const float intensity_multiplier =
-        decoded->metadata()->IntensityTarget() * kIntensityMultiplier;
-    if (intensity_multiplier != 1.f) {
-      ScaleImage(1.f / intensity_multiplier, opsin);
-    }
-
     if (dec_state_.shared_storage.frame_header.color_transform ==
         ColorTransform::kXYB) {
       // Do not use decoded->IsGray() - c_current is not yet valid.
@@ -251,6 +243,10 @@ class LossyFrameDecoder {
     } else {
       decoded->SetFromImage(std::move(*opsin),
                             decoded->metadata()->color_encoding);
+      if (dec_state_.shared_storage.frame_header.color_transform ==
+          ColorTransform::kYCbCr) {
+        JXL_RETURN_IF_ERROR(Map255ToTargetNits(decoded, pool_));
+      }
     }
     return true;
   }
@@ -259,6 +255,7 @@ class LossyFrameDecoder {
 
  private:
   PassesDecoderState dec_state_;
+  DecodeGroupFunc* dec_group_;
   size_t downsampling_;
 
   ThreadPool* pool_;

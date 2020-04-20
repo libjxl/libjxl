@@ -76,20 +76,16 @@ foreach (TESTFILE IN LISTS TEST_FILES)
   target_include_directories(${TESTNAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/fastapprox
   )
+  target_compile_definitions(${TESTNAME} PRIVATE
+      -DTEST_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/testdata")
   if(JPEGXL_EMSCRIPTEN)
-    target_compile_definitions(${TESTNAME} PRIVATE
-        -DTEST_DATA_PATH="/")
     # The emscripten linking step takes too much memory and crashes during the
     # wasm-opt step when using -O2 optimization level
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
       -s TOTAL_MEMORY=1536MB \
-      --embed-file ${CMAKE_CURRENT_SOURCE_DIR}/third_party/testdata@/ \
+      -s NODERAWFS=1 \
     ")
-
-  else()
-    target_compile_definitions(${TESTNAME} PRIVATE
-        -DTEST_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/third_party/testdata")
   endif()
   target_compile_options(${TESTNAME} PRIVATE
     ${JPEGXL_INTERNAL_FLAGS}
@@ -112,14 +108,16 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
   if(${CMAKE_VERSION} VERSION_LESS "3.10.3")
-    gtest_discover_tests(${TESTNAME} TIMEOUT 30)
+    gtest_discover_tests(${TESTNAME} TIMEOUT 60)
   else ()
-    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 30)
+    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 60)
   endif ()
 endforeach ()
 
 # googletest doesn't compile clean with clang-cl (-Wundef)
 if (WIN32 AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
   set_target_properties(gtest PROPERTIES COMPILE_FLAGS "-Wno-error")
+  set_target_properties(gmock PROPERTIES COMPILE_FLAGS "-Wno-error")
   set_target_properties(gtest_main PROPERTIES COMPILE_FLAGS "-Wno-error")
+  set_target_properties(gmock_main PROPERTIES COMPILE_FLAGS "-Wno-error")
 endif ()

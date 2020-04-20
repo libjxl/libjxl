@@ -17,6 +17,7 @@
 
 #include "tools/ssimulacra.h"
 
+#include <cmath>
 #include "jxl/image_ops.h"
 
 namespace ssimulacra {

@@ -35,7 +35,7 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "tools/args.h"
-#if !defined(__EMSCRIPTEN__)
+#if JPEGXL_ENABLE_JPEG
 #include "jxl/extras/codec_jpg.h"
 #endif
 
@@ -98,12 +98,10 @@ jxl::Status JxlDecompressArgs::ValidateArgs() {
 
 const char* ModeFromSignature(const JpegxlSignature signature) {
   switch (signature) {
-    case JPEGXL_SIG_JPEG:
-      return "JPEG";
     case JPEGXL_SIG_JPEGXL:
       return "JPEGXL";
-    case JPEGXL_SIG_BRUNSLI:
-      return "Brunsli";
+    case JPEGXL_SIG_TRANSCODED_JPEG:
+      return "TRANSCODED_JPEG";
     default:
       JXL_ABORT("Invalid signature, should have handled this separately");
   }
@@ -119,9 +117,11 @@ jxl::Status DecompressJxl(const JpegxlSignature signature,
   const double t0 = jxl::Now();
 
   jxl::Status ok = false;
-  if (signature == JPEGXL_SIG_JPEG) {
-#if !defined(__EMSCRIPTEN__)
-    ok = DecodeImageJPG(compressed, io);
+  // JPEG1, not JXL
+  if (signature == JPEGXL_SIG_JPEGXL &&
+      compressed[1] != jxl::kCodestreamMarker) {
+#if JPEGXL_ENABLE_JPEG
+    ok = DecodeImageJPG(compressed, pool, io);
 #endif
   } else {
     ok = DecodeFile(params, compressed, io, aux_out, pool);

@@ -24,24 +24,19 @@
 #include "jxl/opsin_params.h"
 #include "jxl/quantizer.h"
 
-namespace jxl {
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_xyb.cc"
+#include <hwy/foreach_target.h>
 
 #include "jxl/dec_xyb-inl.h"
 
-void OpsinParams::Init() {
-  InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(),
-                        inverse_opsin_matrix);
-  memcpy(opsin_biases, kNegOpsinAbsorbanceBiasRGB,
-         sizeof(kNegOpsinAbsorbanceBiasRGB));
-  memcpy(quant_biases, kDefaultQuantBias, sizeof(kDefaultQuantBias));
-  for (size_t c = 0; c < 4; c++) {
-    opsin_biases_cbrt[c] = std::cbrt(opsin_biases[c]);
-  }
-}
+namespace jxl {
 
-// In-place.
-HWY_ATTR void OpsinToLinear(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                            const OpsinParams& opsin_params) {
+#include <hwy/begin_target-inl.h>
+
+HWY_ATTR void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout,
+                                   ThreadPool* pool,
+                                   const OpsinParams& opsin_params) {
   PROFILER_FUNC;
 
   const size_t xsize = inout->xsize();  // not padded
@@ -246,7 +241,7 @@ HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
   const size_t lines_per_group = DivCeil(kGroupArea, xsize);
   const size_t num_stripes = DivCeil(ysize, lines_per_group);
 
-#if HWY_BITS == 0
+#if HWY_TARGET == HWY_SCALAR
   const auto upsample = [&](int idx, int /* thread*/) {
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
@@ -301,13 +296,13 @@ HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
         const auto next = Load(df, current_row + x + S);
         const auto current34 = current * c34;
         const auto l =
-            IfThenElse(c0001, hwy::Broadcast<3>(prev), Shuffle2103(current));
+            IfThenElse(c0001, Broadcast<3>(prev), Shuffle2103(current));
         const auto r =
-            IfThenElse(c1000, hwy::Broadcast<0>(next), Shuffle0321(current));
+            IfThenElse(c1000, Broadcast<0>(next), Shuffle0321(current));
         const auto o = MulAdd(l, c14, current34);
         const auto e = MulAdd(r, c14, current34);
-        Store(InterleaveLo(o, e), df, dst_row + x * 2);
-        Store(InterleaveHi(o, e), df, dst_row + x * 2 + S);
+        Store(InterleaveLower(o, e), df, dst_row + x * 2);
+        Store(InterleaveUpper(o, e), df, dst_row + x * 2 + S);
         prev = current;
         current = next;
       }
@@ -328,5 +323,28 @@ HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
             upsample, "UpsampleH2");
   return dst;
 }
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+
+HWY_EXPORT(OpsinToLinearInplace)
+HWY_EXPORT(OpsinToLinear)
+HWY_EXPORT(YcbcrToRgb)
+HWY_EXPORT(UpsampleV2)
+HWY_EXPORT(UpsampleH2)
+
+void OpsinParams::Init() {
+  InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(),
+                        inverse_opsin_matrix);
+  memcpy(opsin_biases, kNegOpsinAbsorbanceBiasRGB,
+         sizeof(kNegOpsinAbsorbanceBiasRGB));
+  memcpy(quant_biases, kDefaultQuantBias, sizeof(kDefaultQuantBias));
+  for (size_t c = 0; c < 4; c++) {
+    opsin_biases_cbrt[c] = std::cbrt(opsin_biases[c]);
+  }
+}
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

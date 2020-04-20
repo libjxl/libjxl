@@ -33,21 +33,17 @@ To avoid system incompatibilities, we **strongly recommend** using Docker to
 build and test the software, as explained in the
 [step by step guide](doc/developing_in_docker.md).
 
-For experienced developers on an up to date Debian-based Linux system, we
-also provide [Debian build instructions](doc/building_in_debian.md). If you
-encounter any difficulties, please use Docker instead.
+For experienced developers, we also provide build instructions for an [up to
+date Debian-based Linux](doc/developing_in_debian.md) and [64-bit
+Windows](doc/developing_in_windows.md). If you encounter any difficulties,
+please use Docker instead.
 
 The resulting binaries are in the `build` directory and its subdirectories.
 
 ## CPU requirements
 
-When running on Intel/AMD CPUs the software **currently requires AVX2** support
-(introduced by Intel in 2013 and AMD in 2015). If not supported by the CPU or
-VM, the software will print "CPU does not support all enabled targets =>
-exiting". You can either run on a more recent CPU/VM, or instruct the software
-to only use/require SSE4 by uncommenting the line near the bottom of
-third_party/highway/hwy/target.h:
-`// #define HWY_DISABLE_AVX2`
+JPEG XL no longer requires a particular CPU. The software chooses and uses the
+best available instruction set for the current CPU.
 
 ## Basic encoder/decoder
 
@@ -148,5 +144,7 @@ occurred while loading or encoding/decoding the image.
 ### Development process
 *   [Docker setup - **start here**](doc/developing_in_docker.md)
 *   [Building on Debian](doc/developing_in_debian.md) - for experts only
+*   [Building on Windows](doc/developing_in_windows.md) - for experts only
 *   [More information on testing/build options](doc/building_and_testing.md)
 *   [Git guide for JPEG XL](doc/developing_in_gitlab.md) - for developers only
+*   [Building Web Assembly artifacts](doc/building_wasm.md)

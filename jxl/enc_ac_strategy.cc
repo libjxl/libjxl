@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <hwy/static_targets.h>
 
 #include "jxl/ac_strategy.h"
 #include "jxl/ans_params.h"
@@ -30,14 +29,23 @@
 #include "jxl/base/status.h"
 #include "jxl/coeff_order_fwd.h"
 #include "jxl/convolve.h"
+#include "jxl/dct_scales.h"
 #include "jxl/enc_params.h"
 #include "jxl/entropy_coder.h"
-#include "third_party/highway/hwy/static_targets.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
+#include <hwy/foreach_target.h>
+
+#include "jxl/enc_transforms-inl.h"
 
 namespace jxl {
 
+// This must come before the begin/end_target, but HWY_ONCE is only true
+// after that, so use an "include guard".
+#ifndef JXL_ENC_AC_STRATEGY_
+#define JXL_ENC_AC_STRATEGY_
 // Parameters of the heuristic are marked with a OPTIMIZE comment.
-
 namespace {
 
 // Debugging utilities.
@@ -353,77 +361,6 @@ void ComputeTokenBits(float butteraugli_target, float* token_bits) {
   }
 }
 
-float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
-                      const ACSConfig& config,
-                      const float* JXL_RESTRICT cmap_factors) {
-  const size_t size = (1 << acs.log2_covered_blocks()) * kDCTBlockSize;
-
-  // Apply transform.
-  HWY_ALIGN float block[3 * AcStrategy::kMaxCoeffArea];
-  for (size_t c = 0; c < 3; c++) {
-    float* JXL_RESTRICT block_c = block + size * c;
-    std::fill(block_c, block_c + size, 0.0f);
-    acs.TransformFromPixels(&config.Pixel(c, x, y), config.src_stride, block_c);
-  }
-
-  float quant = 0;
-  // Load QF value
-  for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-    for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-      quant = std::max(quant, config.Quant(x / 8 + ix, y / 8 + iy));
-    }
-  }
-
-  // Compute entropy.
-  float entropy = 0.0;
-  float info_loss = 0.0;
-  const coeff_order_t* JXL_RESTRICT order = acs.NaturalCoeffOrder();
-  for (size_t c = 0; c < 3; c++) {
-    int extra_nbits = 0;
-    float extra_tbits = 0.0;
-    size_t num_nzeros = 0;
-    size_t cx = acs.covered_blocks_x();
-    size_t cy = acs.covered_blocks_y();
-    CoefficientLayout(&cy, &cx);
-    for (size_t y = 0; y < cy * kBlockDim; y++) {
-      for (size_t x = 0; x < cx * kBlockDim; x++) {
-        // Leave out the lowest frequencies.
-        size_t k = order[y * cx * kBlockDim + x];
-        if (x < cx && y < cy) {
-          continue;
-        }
-        float val = (block[c * size + k] - block[size + k] * cmap_factors[c]) *
-                    config.dequant->InvMatrix(acs.RawStrategy(), c)[k];
-        val *= quant;
-
-        uint32_t token, nbits, bits;
-        int v = std::lrint(val);
-        info_loss += std::fabs(v - val);
-        EncodeHybridVarLenUint(PackSigned(v), &token, &nbits, &bits);
-        // nbits + bits for token. Skip trailing zeros in natural coeff order.
-        extra_nbits += nbits;
-        extra_tbits += config.token_bits[token];
-        if (v != 0) {
-          num_nzeros++;
-          entropy += extra_nbits + extra_tbits;
-          extra_tbits = 0;
-          extra_nbits = 0;
-        }
-      }
-    }
-
-    // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
-    // number of non-zeros of the block.
-    size_t nbits = CeilLog2Nonzero(num_nzeros + 1) + 1;
-    // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
-    // bias.
-    entropy += CeilLog2Nonzero(nbits + 17) + nbits;
-  }
-  info_loss /= quant;  // Scale of information loss should not depend on quant.
-  float ret = entropy + config.info_loss_multiplier * info_loss;
-  return ret;
-}
-
 // AC strategy selection: recursive block splitting.
 
 template <size_t N>
@@ -492,10 +429,87 @@ size_t ACSPossibleReplacements(AcStrategy::Type current,
   return 0;
 }
 
-void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
-                     const float* JXL_RESTRICT cmap_factors,
-                     AcStrategyImage* JXL_RESTRICT ac_strategy,
-                     float* JXL_RESTRICT entropy_estimate) {
+}  // namespace
+#endif  // JXL_ENC_AC_STRATEGY_
+
+#include <hwy/begin_target-inl.h>
+
+HWY_ATTR float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
+                               const ACSConfig& config,
+                               const float* JXL_RESTRICT cmap_factors) {
+  const size_t size = (1 << acs.log2_covered_blocks()) * kDCTBlockSize;
+
+  // Apply transform.
+  HWY_ALIGN_MAX float block[3 * AcStrategy::kMaxCoeffArea];
+  for (size_t c = 0; c < 3; c++) {
+    float* JXL_RESTRICT block_c = block + size * c;
+    std::fill(block_c, block_c + size, 0.0f);
+    TransformFromPixels(acs.Strategy(), &config.Pixel(c, x, y),
+                        config.src_stride, block_c);
+  }
+
+  float quant = 0;
+  // Load QF value
+  for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+    for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+      quant = std::max(quant, config.Quant(x / 8 + ix, y / 8 + iy));
+    }
+  }
+
+  // Compute entropy.
+  float entropy = 0.0;
+  float info_loss = 0.0;
+  const coeff_order_t* JXL_RESTRICT order = acs.NaturalCoeffOrder();
+  for (size_t c = 0; c < 3; c++) {
+    int extra_nbits = 0;
+    float extra_tbits = 0.0;
+    size_t num_nzeros = 0;
+    size_t cx = acs.covered_blocks_x();
+    size_t cy = acs.covered_blocks_y();
+    CoefficientLayout(&cy, &cx);
+    for (size_t y = 0; y < cy * kBlockDim; y++) {
+      for (size_t x = 0; x < cx * kBlockDim; x++) {
+        // Leave out the lowest frequencies.
+        size_t k = order[y * cx * kBlockDim + x];
+        if (x < cx && y < cy) {
+          continue;
+        }
+        float val = (block[c * size + k] - block[size + k] * cmap_factors[c]) *
+                    config.dequant->InvMatrix(acs.RawStrategy(), c)[k];
+        val *= quant;
+
+        uint32_t token, nbits, bits;
+        int v = std::lrint(val);
+        info_loss += std::fabs(v - val);
+        EncodeHybridVarLenUint(PackSigned(v), &token, &nbits, &bits);
+        // nbits + bits for token. Skip trailing zeros in natural coeff order.
+        extra_nbits += nbits;
+        extra_tbits += config.token_bits[token];
+        if (v != 0) {
+          num_nzeros++;
+          entropy += extra_nbits + extra_tbits;
+          extra_tbits = 0;
+          extra_nbits = 0;
+        }
+      }
+    }
+
+    // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
+    // number of non-zeros of the block.
+    size_t nbits = CeilLog2Nonzero(num_nzeros + 1) + 1;
+    // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
+    // bias.
+    entropy += CeilLog2Nonzero(nbits + 17) + nbits;
+  }
+  info_loss /= quant;  // Scale of information loss should not depend on quant.
+  float ret = entropy + config.info_loss_multiplier * info_loss;
+  return ret;
+}
+
+HWY_ATTR void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
+                              const float* JXL_RESTRICT cmap_factors,
+                              AcStrategyImage* JXL_RESTRICT ac_strategy,
+                              float* JXL_RESTRICT entropy_estimate) {
   AcStrategy::Type current =
       AcStrategy::Type(ac_strategy->ConstRow(by)[bx].RawStrategy());
   AcStrategy::Type candidates[AcStrategy::kNumValidStrategies];
@@ -558,11 +572,10 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
     }
   }
 }
-}  // namespace
 
-HWY_ATTR JXL_NOINLINE void FindBestAcStrategy(
-    const Image3F& src, PassesEncoderState* JXL_RESTRICT enc_state,
-    ThreadPool* pool, AuxOut* aux_out) {
+HWY_ATTR void FindBestAcStrategy(const Image3F& src,
+                                 PassesEncoderState* JXL_RESTRICT enc_state,
+                                 ThreadPool* pool, AuxOut* aux_out) {
   PROFILER_FUNC;
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
@@ -622,7 +635,6 @@ HWY_ATTR JXL_NOINLINE void FindBestAcStrategy(
             enc_state->shared.cmap.ytob_map.ConstRow(ty)[tx]),
     };
     HWY_CAPPED(float, kBlockDim) d;
-    HWY_CAPPED(float, 4) d4;
     // Pre-compute maximum delta in each 8x8 block.
     // Find a minimum delta of three options:
     // 1) all, 2) not accounting vertical, 3) not accounting horizontal
@@ -646,12 +658,14 @@ HWY_ATTR JXL_NOINLINE void FindBestAcStrategy(
             }
           }
           for (auto& pixel : pixels) {
-            // Sums of rows: only 4-wide SIMD (easier than transpose)
+            // Sums of rows
             float side[8];
             for (size_t y = 0; y < 8; y++) {
-              const auto left = Load(d4, &pixel[y * 8] + 0);
-              const auto right = Load(d4, &pixel[y * 8] + 4);
-              side[y] = GetLane(hwy::ext::SumOfLanes(left + right));
+              auto sum = Load(d, &pixel[y * 8]);
+              for (size_t x = d.N; x < 8; x += d.N) {
+                sum += Load(d, &pixel[y * 8 + x]);
+              }
+              side[y] = GetLane(SumOfLanes(sum));
             }
 
             // Sum of columns (one per lane).
@@ -865,5 +879,11 @@ HWY_ATTR JXL_NOINLINE void FindBestAcStrategy(
                    enc_state->shared.frame_dim.ysize, "ac_strategy", aux_out);
   }
 }
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(FindBestAcStrategy)
+#endif  // HWY_ONCE
 
 }  // namespace jxl

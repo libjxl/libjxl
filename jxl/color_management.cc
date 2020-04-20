@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Defined by build system; this avoids IDE warnings. Must come before
+// color_management.h (affects header definitions).
+#ifndef JPEGXL_ENABLE_SKCMS
+#define JPEGXL_ENABLE_SKCMS 0
+#endif
+
 #include "jxl/color_management.h"
 
 #include <math.h>
@@ -22,7 +28,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <hwy/static_targets.h>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -39,14 +44,416 @@
 #include "lcms2_plugin.h"
 #endif  // JPEGXL_ENABLE_SKCMS
 
-namespace jxl {
-namespace {
-
-namespace HWY_NAMESPACE {
-#include "jxl/rational_polynomial-inl.h"
-}  // namespace HWY_NAMESPACE
-
 #define JXL_CMS_VERBOSE 0
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/color_management.cc"
+#include <hwy/foreach_target.h>
+
+#include "jxl/rational_polynomial-inl.h"
+
+namespace jxl {
+
+#include <hwy/begin_target-inl.h>
+
+// Definitions for BT.2100-2 transfer functions (used inside/outside SIMD):
+// "display" is linear light (nits) normalized to [0, 1].
+// "encoded" is a nonlinear encoding (e.g. PQ) in [0, 1].
+// "scene" is a linear function of photon counts, normalized to [0, 1].
+
+// Despite the stated ranges, we need unbounded transfer functions: see
+// http://www.littlecms.com/CIC18_UnboundedCMM.pdf. Inputs can be negative or
+// above 1 due to chromatic adaptation. To avoid severe round-trip errors caused
+// by clamping, we mirror negative inputs via copysign (f(-x) = -f(x), see
+// https://developer.apple.com/documentation/coregraphics/cgcolorspace/1644735-extendedsrgb)
+// and extend the function domains above 1.
+
+// Hybrid Log-Gamma.
+class TF_HLG {
+ public:
+  // EOTF. e = encoded.
+  JXL_INLINE double DisplayFromEncoded(const double e) const {
+    const double lifted = e * (1.0 - kBeta) + kBeta;
+    return OOTF(InvOETF(lifted));
+  }
+
+  // Inverse EOTF. d = display.
+  JXL_INLINE double EncodedFromDisplay(const double d) const {
+    const double lifted = OETF(InvOOTF(d));
+    const double e = (lifted - kBeta) * (1.0 / (1.0 - kBeta));
+    return e;
+  }
+
+ private:
+  // OETF (defines the HLG approach). s = scene, returns encoded.
+  JXL_INLINE double OETF(double s) const {
+    if (s == 0.0) return 0.0;
+    const double original_sign = s;
+    s = std::abs(s);
+
+    if (s <= kDiv12) return std::copysign(std::sqrt(3.0 * s), original_sign);
+
+    const double e = kA * std::log(12 * s - kB) + kC;
+    JXL_ASSERT(e > 0.0);
+    return std::copysign(e, original_sign);
+  }
+
+  // e = encoded, returns scene.
+  JXL_INLINE double InvOETF(double e) const {
+    if (e == 0.0) return 0.0;
+    const double original_sign = e;
+    e = std::abs(e);
+
+    if (e <= 0.5) return std::copysign(e * e * (1.0 / 3), original_sign);
+
+    const double s = (std::exp((e - kC) * kRA) + kB) * kDiv12;
+    JXL_ASSERT(s >= 0);
+    return std::copysign(s, original_sign);
+  }
+
+  // s = scene, returns display.
+  JXL_INLINE double OOTF(const double s) const {
+    // The actual (red channel) OOTF is RD = alpha * YS^(gamma-1) * RS, where
+    // YS = 0.2627 * RS + 0.6780 * GS + 0.0593 * BS. Let alpha = 1 so we return
+    // "display" (normalized [0, 1]) instead of nits. Our transfer function
+    // interface does not allow a dependency on YS. Fortunately, the system
+    // gamma at 334 nits is 1.0, so this reduces to RD = RS.
+    return s;
+  }
+
+  // d = display, returns scene.
+  JXL_INLINE double InvOOTF(const double d) const {
+    return d;  // see OOTF().
+  }
+
+  // Assume 1000:1 contrast @ 200 nits => gamma 0.9
+  static constexpr double kBeta = 0.04;  // = sqrt(3 * contrast^(1/gamma))
+
+  static constexpr double kA = 0.17883277;
+  static constexpr double kRA = 1.0 / kA;
+  static constexpr double kB = 1 - 4 * kA;
+  static constexpr double kC = 0.5599107295;
+  static constexpr double kDiv12 = 1.0 / 12;
+};
+
+// Perceptual Quantization
+class TF_PQ {
+ public:
+  // EOTF (defines the PQ approach). e = encoded.
+  JXL_INLINE double DisplayFromEncoded(double e) const {
+    if (e == 0.0) return 0.0;
+    const double original_sign = e;
+    e = std::abs(e);
+
+    const double xp = std::pow(e, 1.0 / kM2);
+    const double num = std::max(xp - kC1, 0.0);
+    const double den = kC2 - kC3 * xp;
+    JXL_ASSERT(den != 0.0);
+    const double d = std::pow(num / den, 1.0 / kM1);
+    JXL_ASSERT(d >= 0.0);  // Equal for e ~= 1E-9
+    return std::copysign(d, original_sign);
+  }
+
+  // Inverse EOTF. d = display.
+  JXL_INLINE double EncodedFromDisplay(double d) const {
+    if (d == 0.0) return 0.0;
+    const double original_sign = d;
+    d = std::abs(d);
+
+    const double xp = std::pow(d, kM1);
+    const double num = kC1 + xp * kC2;
+    const double den = 1.0 + xp * kC3;
+    const double e = std::pow(num / den, kM2);
+    JXL_ASSERT(e > 0.0);
+    return std::copysign(e, original_sign);
+  }
+
+ private:
+  static constexpr double kM1 = 2610.0 / 16384;
+  static constexpr double kM2 = (2523.0 / 4096) * 128;
+  static constexpr double kC1 = 3424.0 / 4096;
+  static constexpr double kC2 = (2413.0 / 4096) * 32;
+  static constexpr double kC3 = (2392.0 / 4096) * 32;
+};
+
+// sRGB
+class TF_SRGB {
+ public:
+  template <typename V>
+  HWY_ATTR JXL_INLINE V DisplayFromEncoded(V x) const {
+    const HWY_FULL(float) d;
+    const HWY_FULL(uint32_t) du;
+    const V kSign = BitCast(d, Set(du, 0x80000000u));
+    const V original_sign = And(x, kSign);
+    x = AndNot(kSign, x);  // abs
+
+    // Computed via af_cheb_rational (k=100); replicated 4x.
+    HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
+        2.200248328e-04f, 2.200248328e-04f, 2.200248328e-04f, 2.200248328e-04f,
+        1.043637593e-02f, 1.043637593e-02f, 1.043637593e-02f, 1.043637593e-02f,
+        1.624820318e-01f, 1.624820318e-01f, 1.624820318e-01f, 1.624820318e-01f,
+        7.961564959e-01f, 7.961564959e-01f, 7.961564959e-01f, 7.961564959e-01f,
+        8.210152774e-01f, 8.210152774e-01f, 8.210152774e-01f, 8.210152774e-01f,
+    };
+    HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
+        2.631846970e-01f,  2.631846970e-01f,  2.631846970e-01f,
+        2.631846970e-01f,  1.076976492e+00f,  1.076976492e+00f,
+        1.076976492e+00f,  1.076976492e+00f,  4.987528350e-01f,
+        4.987528350e-01f,  4.987528350e-01f,  4.987528350e-01f,
+        -5.512498495e-02f, -5.512498495e-02f, -5.512498495e-02f,
+        -5.512498495e-02f, 6.521209011e-03f,  6.521209011e-03f,
+        6.521209011e-03f,  6.521209011e-03f,
+    };
+    const V linear = x * Set(d, kLowDivInv);
+    const V poly = EvalRationalPolynomial(x, p, q);
+    const V magnitude =
+        IfThenElse(x > Set(d, kThreshSRGBToLinear), poly, linear);
+    return Or(AndNot(kSign, magnitude), original_sign);
+  }
+
+  template <class V>
+  HWY_ATTR JXL_INLINE V EncodedFromDisplay(V x) const {
+    const HWY_FULL(float) d;
+    const HWY_FULL(uint32_t) du;
+    const V kSign = BitCast(d, Set(du, 0x80000000u));
+    const V original_sign = And(x, kSign);
+    x = AndNot(kSign, x);  // abs
+
+    // Computed via af_cheb_rational (k=100); replicated 4x.
+    HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
+        -5.135152395e-04f, -5.135152395e-04f, -5.135152395e-04f,
+        -5.135152395e-04f, 5.287254571e-03f,  5.287254571e-03f,
+        5.287254571e-03f,  5.287254571e-03f,  3.903842876e-01f,
+        3.903842876e-01f,  3.903842876e-01f,  3.903842876e-01f,
+        1.474205315e+00f,  1.474205315e+00f,  1.474205315e+00f,
+        1.474205315e+00f,  7.352629620e-01f,  7.352629620e-01f,
+        7.352629620e-01f,  7.352629620e-01f,
+    };
+    HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
+        1.004519624e-02f, 1.004519624e-02f, 1.004519624e-02f, 1.004519624e-02f,
+        3.036675394e-01f, 3.036675394e-01f, 3.036675394e-01f, 3.036675394e-01f,
+        1.340816930e+00f, 1.340816930e+00f, 1.340816930e+00f, 1.340816930e+00f,
+        9.258482155e-01f, 9.258482155e-01f, 9.258482155e-01f, 9.258482155e-01f,
+        2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f,
+    };
+    const V linear = x * Set(d, kLowDiv);
+    const V poly = EvalRationalPolynomial(Sqrt(x), p, q);
+    const V magnitude =
+        IfThenElse(x > Set(d, kThreshLinearToSRGB), poly, linear);
+    return Or(AndNot(kSign, magnitude), original_sign);
+  }
+
+ private:
+  static constexpr float kThreshSRGBToLinear = 0.04045f;
+  static constexpr float kThreshLinearToSRGB = 0.0031308f;
+  static constexpr float kLowDiv = 12.92f;
+  static constexpr float kLowDivInv = 1.0f / kLowDiv;
+};
+
+#if JXL_CMS_VERBOSE >= 2
+const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
+#endif
+
+// xform_src = UndoGammaCompression(buf_src).
+HWY_ATTR void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
+                              float* xform_src) {
+  switch (t->preprocess_) {
+    case ExtraTF::kNone:
+      JXL_DASSERT(false);  // unreachable
+      break;
+
+    case ExtraTF::kPQ:
+      for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
+        xform_src[i] = static_cast<float>(
+            TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+      }
+#if JXL_CMS_VERBOSE >= 2
+      printf("pre in %.4f %.4f %.4f undoPQ %.4f %.4f %.4f\n", buf_src[3 * kX],
+             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
+             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
+#endif
+      break;
+
+    case ExtraTF::kHLG:
+      for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
+        xform_src[i] = static_cast<float>(
+            TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+      }
+#if JXL_CMS_VERBOSE >= 2
+      printf("pre in %.4f %.4f %.4f undoHLG %.4f %.4f %.4f\n", buf_src[3 * kX],
+             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
+             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
+#endif
+      break;
+
+    case ExtraTF::kSRGB:
+      HWY_FULL(float) df;
+      for (size_t i = 0; i < t->buf_src_.xsize(); i += df.N) {
+        const auto val = Load(df, buf_src + i);
+        const auto result = TF_SRGB().DisplayFromEncoded(val);
+        Store(result, df, xform_src + i);
+      }
+#if JXL_CMS_VERBOSE >= 2
+      printf("pre in %.4f %.4f %.4f undoSRGB %.4f %.4f %.4f\n", buf_src[3 * kX],
+             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
+             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
+#endif
+      break;
+  }
+}
+
+// Applies gamma compression in-place.
+HWY_ATTR void AfterTransform(ColorSpaceTransform* t,
+                             float* JXL_RESTRICT buf_dst) {
+  switch (t->postprocess_) {
+    case ExtraTF::kNone:
+      JXL_DASSERT(false);  // unreachable
+      break;
+    case ExtraTF::kPQ:
+      for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
+        buf_dst[i] = static_cast<float>(
+            TF_PQ().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
+      }
+#if JXL_CMS_VERBOSE >= 2
+      printf("after PQ enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
+             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
+#endif
+      break;
+    case ExtraTF::kHLG:
+      for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
+        buf_dst[i] = static_cast<float>(
+            TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
+      }
+#if JXL_CMS_VERBOSE >= 2
+      printf("after HLG enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
+             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
+#endif
+      break;
+    case ExtraTF::kSRGB:
+      HWY_FULL(float) df;
+      for (size_t i = 0; i < t->buf_dst_.xsize(); i += df.N) {
+        const auto val = Load(df, buf_dst + i);
+        const auto result = TF_SRGB().EncodedFromDisplay(val);
+        Store(result, df, buf_dst + i);
+      }
+#if JXL_CMS_VERBOSE >= 2
+      printf("after SRGB enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
+             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
+#endif
+      break;
+  }
+}
+
+HWY_ATTR void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
+                                    const float* buf_src, float* buf_dst) {
+  // No lock needed.
+
+  float* xform_src = const_cast<float*>(buf_src);  // Read-only.
+  if (t->preprocess_ != ExtraTF::kNone) {
+    xform_src = t->buf_src_.Row(thread);  // Writable buffer.
+    BeforeTransform(t, buf_src, xform_src);
+  }
+
+#if JXL_CMS_VERBOSE >= 2
+  // Save inputs for printing before in-place transforms overwrite them.
+  const float in0 = xform_src[3 * kX + 0];
+  const float in1 = xform_src[3 * kX + 1];
+  const float in2 = xform_src[3 * kX + 2];
+#endif
+
+  if (t->skip_lcms_) {
+    if (buf_dst != xform_src) {
+      memcpy(buf_dst, xform_src, t->buf_dst_.xsize() * sizeof(*buf_dst));
+    }  // else: in-place, no need to copy
+  } else {
+#if JPEGXL_ENABLE_SKCMS
+    JXL_CHECK(skcms_Transform(
+        xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
+        &t->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
+        skcms_AlphaFormat_Opaque, &t->profile_dst_, t->xsize_));
+#else   // JPEGXL_ENABLE_SKCMS
+    JXL_DASSERT(thread < t->transforms_.size());
+    cmsHTRANSFORM xform = t->transforms_[thread];
+    cmsDoTransform(xform, xform_src, buf_dst,
+                   static_cast<cmsUInt32Number>(t->xsize_));
+#endif  // JPEGXL_ENABLE_SKCMS
+  }
+#if JXL_CMS_VERBOSE >= 2
+  printf("xform skip%d: %.4f %.4f %.4f (%p) -> (%p) %.4f %.4f %.4f\n",
+         t->skip_lcms_, in0, in1, in2, xform_src, buf_dst, buf_dst[3 * kX],
+         buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
+#endif
+
+  if (t->postprocess_ != ExtraTF::kNone) {
+    AfterTransform(t, buf_dst);
+  }
+}
+
+HWY_ATTR void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
+                           float* JXL_RESTRICT linear) {
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < n; i += d.N) {
+    const auto encoded = Load(d, srgb + i) * Set(d, 1.0f / 255);
+    const auto display = TF_SRGB().DisplayFromEncoded(encoded) * Set(d, 255.0f);
+    Store(display, d, linear + i);
+  }
+}
+
+// NOTE: this is only used to provide a reasonable ICC profile that other
+// software can read. Our own transforms use ExtraTF instead because that is
+// more precise and supports unbounded mode.
+#if JPEGXL_ENABLE_SKCMS
+std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf) {
+  JXL_ASSERT(N <= 4096);  // ICC MFT2 only allows 4K entries
+  JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
+  // No point using float - LCMS converts to 16-bit for A2B/MFT.
+  std::vector<uint16_t> table(N);
+  for (uint32_t i = 0; i < N; ++i) {
+    const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
+    const double dx = static_cast<double>(x);
+    // LCMS requires EOTF (e.g. 2.4 exponent).
+    double y = (tf == ExtraTF::kHLG) ? TF_HLG().DisplayFromEncoded(dx)
+                                     : TF_PQ().DisplayFromEncoded(dx);
+    JXL_ASSERT(y >= 0.0);
+    // Clamp to table range - necessary for HLG.
+    if (y > 1.0) y = 1.0;
+    // 1.0 corresponds to table value 0xFFFF.
+    table[i] = static_cast<uint16_t>(std::round(y * 65535.0));
+  }
+  return table;
+}
+#else
+cmsToneCurve* CreateTableCurve(const cmsContext context, uint32_t N,
+                               const ExtraTF tf) {
+  JXL_ASSERT(N <= 4096);  // ICC MFT2 only allows 4K entries
+  JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
+  // No point using float - LCMS converts to 16-bit for A2B/MFT.
+  std::vector<uint16_t> table;
+  table.reserve(N);
+  for (uint32_t i = 0; i < N; ++i) {
+    const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
+    const double dx = static_cast<double>(x);
+    // LCMS requires EOTF (e.g. 2.4 exponent).
+    double y = (tf == ExtraTF::kHLG) ? TF_HLG().DisplayFromEncoded(dx)
+                                     : TF_PQ().DisplayFromEncoded(dx);
+    JXL_ASSERT(y >= 0.0);
+    // Clamp to table range - necessary for HLG.
+    if (y > 1.0) y = 1.0;
+    // 1.0 corresponds to table value 0xFFFF.
+    table.push_back(static_cast<uint16_t>(std::round(y * 65535.0)));
+  }
+  return cmsBuildTabulatedToneCurve16(context, N, table.data());
+}
+#endif  // JPEGXL_ENABLE_SKCMS
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(DoColorSpaceTransform)
+HWY_EXPORT(SRGBToLinear)
+HWY_EXPORT(CreateTableCurve)
+
+namespace {
 
 // Define to 1 on OS X as a workaround for older LCMS lacking MD5.
 #define JXL_CMS_OLD_VERSION 0
@@ -235,200 +642,6 @@ Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
   return true;
 }
 #endif  // JPEGXL_ENABLE_SKCMS
-
-// Definitions for BT.2100-2 transfer functions:
-// "display" is linear light (nits) normalized to [0, 1].
-// "encoded" is a nonlinear encoding (e.g. PQ) in [0, 1].
-// "scene" is a linear function of photon counts, normalized to [0, 1].
-
-// Despite the stated ranges, we need unbounded transfer functions: see
-// http://www.littlecms.com/CIC18_UnboundedCMM.pdf. Inputs can be negative or
-// above 1 due to chromatic adaptation. To avoid severe round-trip errors caused
-// by clamping, we mirror negative inputs via copysign (f(-x) = -f(x), see
-// https://developer.apple.com/documentation/coregraphics/cgcolorspace/1644735-extendedsrgb)
-// and extend the function domains above 1.
-
-// Hybrid Log-Gamma.
-class TF_HLG {
- public:
-  // EOTF. e = encoded.
-  JXL_INLINE double DisplayFromEncoded(const double e) const {
-    const double lifted = e * (1.0 - kBeta) + kBeta;
-    return OOTF(InvOETF(lifted));
-  }
-
-  // Inverse EOTF. d = display.
-  JXL_INLINE double EncodedFromDisplay(const double d) const {
-    const double lifted = OETF(InvOOTF(d));
-    const double e = (lifted - kBeta) * (1.0 / (1.0 - kBeta));
-    return e;
-  }
-
- private:
-  // OETF (defines the HLG approach). s = scene, returns encoded.
-  JXL_INLINE double OETF(double s) const {
-    if (s == 0.0) return 0.0;
-    const double original_sign = s;
-    s = std::abs(s);
-
-    if (s <= kDiv12) return std::copysign(std::sqrt(3.0 * s), original_sign);
-
-    const double e = kA * std::log(12 * s - kB) + kC;
-    JXL_ASSERT(e > 0.0);
-    return std::copysign(e, original_sign);
-  }
-
-  // e = encoded, returns scene.
-  JXL_INLINE double InvOETF(double e) const {
-    if (e == 0.0) return 0.0;
-    const double original_sign = e;
-    e = std::abs(e);
-
-    if (e <= 0.5) return std::copysign(e * e * (1.0 / 3), original_sign);
-
-    const double s = (std::exp((e - kC) * kRA) + kB) * kDiv12;
-    JXL_ASSERT(s >= 0);
-    return std::copysign(s, original_sign);
-  }
-
-  // s = scene, returns display.
-  JXL_INLINE double OOTF(const double s) const {
-    // The actual (red channel) OOTF is RD = alpha * YS^(gamma-1) * RS, where
-    // YS = 0.2627 * RS + 0.6780 * GS + 0.0593 * BS. Let alpha = 1 so we return
-    // "display" (normalized [0, 1]) instead of nits. Our transfer function
-    // interface does not allow a dependency on YS. Fortunately, the system
-    // gamma at 334 nits is 1.0, so this reduces to RD = RS.
-    return s;
-  }
-
-  // d = display, returns scene.
-  JXL_INLINE double InvOOTF(const double d) const {
-    return d;  // see OOTF().
-  }
-
-  // Assume 1000:1 contrast @ 200 nits => gamma 0.9
-  static constexpr double kBeta = 0.04;  // = sqrt(3 * contrast^(1/gamma))
-
-  static constexpr double kA = 0.17883277;
-  static constexpr double kRA = 1.0 / kA;
-  static constexpr double kB = 1 - 4 * kA;
-  static constexpr double kC = 0.5599107295;
-  static constexpr double kDiv12 = 1.0 / 12;
-};
-
-// Perceptual Quantization
-class TF_PQ {
- public:
-  // EOTF (defines the PQ approach). e = encoded.
-  JXL_INLINE double DisplayFromEncoded(double e) const {
-    if (e == 0.0) return 0.0;
-    const double original_sign = e;
-    e = std::abs(e);
-
-    const double xp = std::pow(e, 1.0 / kM2);
-    const double num = std::max(xp - kC1, 0.0);
-    const double den = kC2 - kC3 * xp;
-    JXL_ASSERT(den != 0.0);
-    const double d = std::pow(num / den, 1.0 / kM1);
-    JXL_ASSERT(d >= 0.0);  // Equal for e ~= 1E-9
-    return std::copysign(d, original_sign);
-  }
-
-  // Inverse EOTF. d = display.
-  JXL_INLINE double EncodedFromDisplay(double d) const {
-    if (d == 0.0) return 0.0;
-    const double original_sign = d;
-    d = std::abs(d);
-
-    const double xp = std::pow(d, kM1);
-    const double num = kC1 + xp * kC2;
-    const double den = 1.0 + xp * kC3;
-    const double e = std::pow(num / den, kM2);
-    JXL_ASSERT(e > 0.0);
-    return std::copysign(e, original_sign);
-  }
-
- private:
-  static constexpr double kM1 = 2610.0 / 16384;
-  static constexpr double kM2 = (2523.0 / 4096) * 128;
-  static constexpr double kC1 = 3424.0 / 4096;
-  static constexpr double kC2 = (2413.0 / 4096) * 32;
-  static constexpr double kC3 = (2392.0 / 4096) * 32;
-};
-
-// sRGB
-class TF_SRGB {
- public:
-  template <typename V>
-  HWY_ATTR JXL_INLINE V DisplayFromEncoded(V x) const {
-    const HWY_FULL(float) d;
-    const HWY_FULL(uint32_t) du;
-    const V kSign = BitCast(d, Set(du, 0x80000000u));
-    const V original_sign = x & kSign;
-    x = AndNot(kSign, x);  // abs
-
-    // Computed via af_cheb_rational (k=100); replicated 4x.
-    HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
-        2.200248328e-04f, 2.200248328e-04f, 2.200248328e-04f, 2.200248328e-04f,
-        1.043637593e-02f, 1.043637593e-02f, 1.043637593e-02f, 1.043637593e-02f,
-        1.624820318e-01f, 1.624820318e-01f, 1.624820318e-01f, 1.624820318e-01f,
-        7.961564959e-01f, 7.961564959e-01f, 7.961564959e-01f, 7.961564959e-01f,
-        8.210152774e-01f, 8.210152774e-01f, 8.210152774e-01f, 8.210152774e-01f,
-    };
-    HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
-        2.631846970e-01f,  2.631846970e-01f,  2.631846970e-01f,
-        2.631846970e-01f,  1.076976492e+00f,  1.076976492e+00f,
-        1.076976492e+00f,  1.076976492e+00f,  4.987528350e-01f,
-        4.987528350e-01f,  4.987528350e-01f,  4.987528350e-01f,
-        -5.512498495e-02f, -5.512498495e-02f, -5.512498495e-02f,
-        -5.512498495e-02f, 6.521209011e-03f,  6.521209011e-03f,
-        6.521209011e-03f,  6.521209011e-03f,
-    };
-    const V linear = x * Set(d, kLowDivInv);
-    const V poly = HWY_NAMESPACE::EvalRationalPolynomial(x, p, q);
-    const V magnitude =
-        IfThenElse(x > Set(d, kThreshSRGBToLinear), poly, linear);
-    return AndNot(kSign, magnitude) | original_sign;
-  }
-
-  template <class V>
-  HWY_ATTR JXL_INLINE V EncodedFromDisplay(V x) const {
-    const HWY_FULL(float) d;
-    const HWY_FULL(uint32_t) du;
-    const V kSign = BitCast(d, Set(du, 0x80000000u));
-    const V original_sign = x & kSign;
-    x = AndNot(kSign, x);  // abs
-
-    // Computed via af_cheb_rational (k=100); replicated 4x.
-    HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
-        -5.135152395e-04f, -5.135152395e-04f, -5.135152395e-04f,
-        -5.135152395e-04f, 5.287254571e-03f,  5.287254571e-03f,
-        5.287254571e-03f,  5.287254571e-03f,  3.903842876e-01f,
-        3.903842876e-01f,  3.903842876e-01f,  3.903842876e-01f,
-        1.474205315e+00f,  1.474205315e+00f,  1.474205315e+00f,
-        1.474205315e+00f,  7.352629620e-01f,  7.352629620e-01f,
-        7.352629620e-01f,  7.352629620e-01f,
-    };
-    HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
-        1.004519624e-02f, 1.004519624e-02f, 1.004519624e-02f, 1.004519624e-02f,
-        3.036675394e-01f, 3.036675394e-01f, 3.036675394e-01f, 3.036675394e-01f,
-        1.340816930e+00f, 1.340816930e+00f, 1.340816930e+00f, 1.340816930e+00f,
-        9.258482155e-01f, 9.258482155e-01f, 9.258482155e-01f, 9.258482155e-01f,
-        2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f,
-    };
-    const V linear = x * Set(d, kLowDiv);
-    const V poly = HWY_NAMESPACE::EvalRationalPolynomial(Sqrt(x), p, q);
-    const V magnitude =
-        IfThenElse(x > Set(d, kThreshLinearToSRGB), poly, linear);
-    return AndNot(kSign, magnitude) | original_sign;
-  }
-
- private:
-  static constexpr float kThreshSRGBToLinear = 0.04045f;
-  static constexpr float kThreshLinearToSRGB = 0.0031308f;
-  static constexpr float kLowDiv = 12.92f;
-  static constexpr float kLowDivInv = 1.0f / kLowDiv;
-};
 
 #if JPEGXL_ENABLE_SKCMS
 
@@ -774,12 +987,13 @@ Status MaybeCreateProfile(const ColorEncoding& c,
     float gamma = 1.0 / c.tf.GetGamma();
     CreateICCCurvParaTag({gamma, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
   } else {
+    auto create_table = ChooseCreateTableCurve(hwy::SupportedTargets());
     switch (c.tf.GetTransferFunction()) {
       case TransferFunction::kHLG:
-        CreateICCCurvCurvTag(CreateTableCurve(4096, TF_HLG()), &tags);
+        CreateICCCurvCurvTag(create_table(4096, ExtraTF::kHLG), &tags);
         break;
       case TransferFunction::kPQ:
-        CreateICCCurvCurvTag(CreateTableCurve(4096, TF_PQ()), &tags);
+        CreateICCCurvCurvTag(create_table(4096, ExtraTF::kPQ), &tags);
         break;
       case TransferFunction::kSRGB:
         CreateICCCurvParaTag(
@@ -852,29 +1066,6 @@ Status MaybeCreateProfile(const ColorEncoding& c, skcms_ICCProfile* profile,
 
 #else  // JPEGXL_ENABLE_SKCMS
 
-// NOTE: this is only used to provide a reasonable ICC profile that other
-// software can read. Our own transforms use ExtraTF instead because that is
-// more precise and supports unbounded mode.
-template <class Func>
-cmsToneCurve* CreateTableCurve(const cmsContext context, uint32_t N,
-                               const Func& func) {
-  JXL_ASSERT(N <= 4096);  // ICC MFT2 only allows 4K entries
-  // No point using float - LCMS converts to 16-bit for A2B/MFT.
-  std::vector<uint16_t> table;
-  table.reserve(N);
-  for (uint32_t i = 0; i < N; ++i) {
-    const float x = static_cast<float>(i) / (N - 1);  // 1.0 at index N - 1.
-    // LCMS requires EOTF (e.g. 2.4 exponent).
-    double y = func.DisplayFromEncoded(static_cast<double>(x));
-    JXL_ASSERT(y >= 0.0);
-    // Clamp to table range - necessary for HLG.
-    if (y > 1.0) y = 1.0;
-    // 1.0 corresponds to table value 0xFFFF.
-    table.push_back(static_cast<uint16_t>(std::round(y * 65535.0)));
-  }
-  return cmsBuildTabulatedToneCurve16(context, N, table.data());
-}
-
 Curve CreateCurve(const cmsContext context, const ColorEncoding& c) {
   // Exponential with linear part. Note that the LittleCMS API reference and
   // tutorial disagree on the type number.
@@ -887,11 +1078,12 @@ Curve CreateCurve(const cmsContext context, const ColorEncoding& c) {
     params = {1.0 / c.tf.GetGamma(), 1.0, 0.0, 1.0, 0.0};
     return Curve(cmsBuildParametricToneCurve(context, type, params.data()));
   }
+  auto create_table = ChooseCreateTableCurve(hwy::SupportedTargets());
   switch (c.tf.GetTransferFunction()) {
     case TransferFunction::kHLG:
-      return Curve(CreateTableCurve(context, 4096, TF_HLG()));
+      return Curve(create_table(context, 4096, ExtraTF::kHLG));
     case TransferFunction::kPQ:
-      return Curve(CreateTableCurve(context, 4096, TF_PQ()));
+      return Curve(create_table(context, 4096, ExtraTF::kPQ));
 
     case TransferFunction::kSRGB:
       params = {2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045};
@@ -1139,7 +1331,7 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
 
   if (c.IsGray()) {
     // Finer sampling and replicate each component.
-    for (in[0] = init; in[0] < 1.0; in[0] += step / 8) {
+    for (in [0] = init; in[0] < 1.0; in[0] += step / 8) {
       cmsDoTransform(xform1.get(), in, out1, 1);
       cmsDoTransform(xform2.get(), in, out2, 1);
       if (!ApproxEq(out1[0], out2[0], 2E-4)) {
@@ -1147,9 +1339,9 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
       }
     }
   } else {
-    for (in[0] = init; in[0] < 1.0; in[0] += step) {
-      for (in[1] = init; in[1] < 1.0; in[1] += step) {
-        for (in[2] = init; in[2] < 1.0; in[2] += step) {
+    for (in [0] = init; in[0] < 1.0; in[0] += step) {
+      for (in [1] = init; in[1] < 1.0; in[1] += step) {
+        for (in [2] = init; in[2] < 1.0; in[2] += step) {
           cmsDoTransform(xform1.get(), in, out1, 1);
           cmsDoTransform(xform2.get(), in, out2, 1);
           for (size_t i = 0; i < 3; ++i) {
@@ -1514,135 +1706,6 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
   return true;
 }
 
-HWY_ATTR void ColorSpaceTransform::Run(const size_t thread,
-                                       const float* buf_src, float* buf_dst) {
-  // No lock needed.
-
-  // If ExtraTF, we need a writable buffer; otherwise, only READ from buf_src.
-  float* const xform_src = (preprocess_ == ExtraTF::kNone)
-                               ? const_cast<float*>(buf_src)
-                               : buf_src_.Row(thread);
-
-#if JXL_CMS_VERBOSE >= 2
-  const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
-#endif
-
-  switch (preprocess_) {
-    case ExtraTF::kNone:
-      break;
-    case ExtraTF::kPQ:
-      for (size_t i = 0; i < buf_src_.xsize(); ++i) {
-        xform_src[i] = static_cast<float>(
-            TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("pre in %.4f %.4f %.4f undoPQ %.4f %.4f %.4f\n", buf_src[3 * kX],
-             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
-             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
-#endif
-      break;
-    case ExtraTF::kHLG:
-      for (size_t i = 0; i < buf_src_.xsize(); ++i) {
-        xform_src[i] = static_cast<float>(
-            TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("pre in %.4f %.4f %.4f undoHLG %.4f %.4f %.4f\n", buf_src[3 * kX],
-             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
-             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
-#endif
-      break;
-    case ExtraTF::kSRGB:
-      HWY_FULL(float) df;
-      for (size_t i = 0; i < buf_src_.xsize(); i += df.N) {
-        const auto val = Load(df, buf_src + i);
-        const auto result = TF_SRGB().DisplayFromEncoded(val);
-        Store(result, df, xform_src + i);
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("pre in %.4f %.4f %.4f undoSRGB %.4f %.4f %.4f\n", buf_src[3 * kX],
-             buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
-             xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
-#endif
-      break;
-  }
-
-#if JXL_CMS_VERBOSE >= 2
-  // Save inputs for printing before in-place transforms overwrite them.
-  const float in0 = xform_src[3 * kX + 0];
-  const float in1 = xform_src[3 * kX + 1];
-  const float in2 = xform_src[3 * kX + 2];
-#endif
-
-  if (skip_lcms_) {
-    if (buf_dst != xform_src) {
-      memcpy(buf_dst, xform_src, buf_dst_.xsize() * sizeof(*buf_dst));
-    }  // else: in-place, no need to copy
-  } else {
-#if JPEGXL_ENABLE_SKCMS
-    JXL_CHECK(skcms_Transform(xform_src, skcms_PixelFormat_RGB_fff,
-                              skcms_AlphaFormat_Opaque, &profile_src_, buf_dst,
-                              skcms_PixelFormat_RGB_fff,
-                              skcms_AlphaFormat_Opaque, &profile_dst_, xsize_));
-#else   // JPEGXL_ENABLE_SKCMS
-    JXL_DASSERT(thread < transforms_.size());
-    cmsHTRANSFORM xform = transforms_[thread];
-    cmsDoTransform(xform, xform_src, buf_dst,
-                   static_cast<cmsUInt32Number>(xsize_));
-#endif  // JPEGXL_ENABLE_SKCMS
-  }
-#if JXL_CMS_VERBOSE >= 2
-  printf("xform skip%d: %.4f %.4f %.4f (%p) -> (%p) %.4f %.4f %.4f\n",
-         skip_lcms_, in0, in1, in2, xform_src, buf_dst, buf_dst[3 * kX],
-         buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-
-  switch (postprocess_) {
-    case ExtraTF::kNone:
-      break;
-    case ExtraTF::kPQ:
-      for (size_t i = 0; i < buf_dst_.xsize(); ++i) {
-        buf_dst[i] = static_cast<float>(
-            TF_PQ().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("after PQ enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
-             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-      break;
-    case ExtraTF::kHLG:
-      for (size_t i = 0; i < buf_dst_.xsize(); ++i) {
-        buf_dst[i] = static_cast<float>(
-            TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("after HLG enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
-             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-      break;
-    case ExtraTF::kSRGB:
-      HWY_FULL(float) df;
-      for (size_t i = 0; i < buf_dst_.xsize(); i += df.N) {
-        const auto val = Load(df, buf_dst + i);
-        const auto result = TF_SRGB().EncodedFromDisplay(val);
-        Store(result, df, buf_dst + i);
-      }
-#if JXL_CMS_VERBOSE >= 2
-      printf("after SRGB enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
-             buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
-#endif
-      break;
-  }
-}
-
-HWY_ATTR void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
-                           float* JXL_RESTRICT linear) {
-  HWY_FULL(float) d;
-  for (size_t i = 0; i < n; i += d.N) {
-    const auto encoded = Load(d, srgb + i) * Set(d, 1.0f / 255);
-    const auto display = TF_SRGB().DisplayFromEncoded(encoded) * Set(d, 255.0f);
-    Store(display, d, linear + i);
-  }
-}
+#endif  // HWY_ONCE
 
 }  // namespace jxl

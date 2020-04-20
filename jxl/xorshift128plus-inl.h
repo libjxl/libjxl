@@ -13,7 +13,20 @@
 // limitations under the License.
 
 // Fast but weak random generator.
-// No include guard - included within HWY_NAMESPACE.
+
+#if defined(JXL_XORSHIFT128PLUS_INL_H_) == defined(HWY_TARGET_TOGGLE)
+#ifdef JXL_XORSHIFT128PLUS_INL_H_
+#undef JXL_XORSHIFT128PLUS_INL_H_
+#else
+#define JXL_XORSHIFT128PLUS_INL_H_
+#endif
+
+#include <hwy/highway.h>
+#include <stddef.h>
+
+namespace jxl {
+
+#include <hwy/begin_target-inl.h>
 
 // Adapted from https://github.com/vpxyz/xorshift/blob/master/xorshift128plus/
 // (MIT-license)
@@ -22,7 +35,7 @@ class Xorshift128Plus {
   // 8 independent generators (= single iteration for AVX-512)
   enum { N = 8 };
 
-  explicit Xorshift128Plus(const uint64_t seed) {
+  explicit HWY_MAYBE_UNUSED Xorshift128Plus(const uint64_t seed) {
     // Init state using SplitMix64 generator
     s0_[0] = SplitMix64(seed + 0x9E3779B97F4A7C15ull);
     s1_[0] = SplitMix64(s0_[0]);
@@ -32,16 +45,16 @@ class Xorshift128Plus {
     }
   }
 
-  HWY_ATTR HWY_INLINE void Fill(uint64_t* JXL_RESTRICT random_bits) {
-#if HWY_HAS_INT64
+  HWY_FUNC void Fill(uint64_t* HWY_RESTRICT random_bits) {
+#if HWY_CAPS & HWY_CAP_INT64
     const HWY_FULL(uint64_t) d;
     for (size_t i = 0; i < N; i += d.N) {
       auto s1 = Load(d, s0_ + i);
       const auto s0 = Load(d, s1_ + i);
-      s1 ^= hwy::ShiftLeft<23>(s1);
+      s1 ^= ShiftLeft<23>(s1);
       const auto bits = s1 + s0;  // b, c
       Store(s0, d, s0_ + i);
-      s1 ^= s0 ^ hwy::ShiftRight<18>(s1) ^ hwy::ShiftRight<5>(s0);
+      s1 ^= s0 ^ ShiftRight<18>(s1) ^ ShiftRight<5>(s0);
       Store(bits, d, random_bits + i);
       Store(s1, d, s1_ + i);
     }
@@ -69,3 +82,9 @@ class Xorshift128Plus {
   HWY_ALIGN uint64_t s0_[N];
   HWY_ALIGN uint64_t s1_[N];
 };
+
+#include <hwy/end_target-inl.h>
+
+}  // namespace jxl
+
+#endif  // include guard

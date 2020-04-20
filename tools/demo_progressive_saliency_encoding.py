@@ -35,6 +35,10 @@ Method:
 
 """
 
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
+from six.moves import zip
 import ast  # For ast.literal_eval() only.
 import os
 import re
@@ -94,8 +98,10 @@ def generate_demo_image(config, input_filename, output_filename):
         }
     # Remove empty args. This removes the heatmap-argument if no heatmap
     # is provided..
-    cmd = list(filter(None, [replacements.get(arg, arg)
-                             for arg in config['jpegxl_encoder']]))
+    cmd = [
+        _f for _f in
+        [replacements.get(arg, arg) for arg in config['jpegxl_encoder']] if _f
+    ]
     tempfiles.append(output_filename)
     subprocess.call(cmd)
   #

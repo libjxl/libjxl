@@ -30,18 +30,17 @@ enum JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf, size_t len) {
 
   jxl::BrunsliFileSignature brn =
       IsBrunsliFile(jxl::Span<const uint8_t>(buf, len));
-  if (brn == jxl::BrunsliFileSignature::kBrunsli) return JPEGXL_SIG_BRUNSLI;
+  if (brn == jxl::BrunsliFileSignature::kBrunsli)
+    return JPEGXL_SIG_TRANSCODED_JPEG;
   if (brn == jxl::BrunsliFileSignature::kNotEnoughData)
     ret = JPEGXL_SIG_NOT_ENOUGH_BYTES;
 
-  // Marker: JPEG or JPEG XL
+  // Marker: JPEG1 or JPEG XL
   if (len >= 1 && buf[0] == 0xff) {
     if (len < 2) {
       ret = JPEGXL_SIG_NOT_ENOUGH_BYTES;
-    } else if (buf[1] == jxl::kCodestreamMarker) {
+    } else if (buf[1] == jxl::kCodestreamMarker || buf[1] == 0xD8) {
       return JPEGXL_SIG_JPEGXL;
-    } else if (buf[1] == 0xD8) {
-      return JPEGXL_SIG_JPEG;
     }
   }
 

@@ -14,7 +14,6 @@
 
 #include "jxl/enc_group.h"
 
-#include <hwy/static_targets.h>
 #include <utility>
 
 #include "jxl/ac_strategy.h"
@@ -29,11 +28,15 @@
 #include "jxl/image.h"
 #include "jxl/quantizer.h"
 
-namespace jxl {
-
-namespace {
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
+#include <hwy/foreach_target.h>
 
 #include "jxl/quantizer-inl.h"
+
+namespace jxl {
+
+#include <hwy/begin_target-inl.h>
 
 // NOTE: caller takes care of extracting quant from rect of RawQuantField.
 HWY_ATTR void QuantizeBlockAC(const Quantizer& quantizer,
@@ -59,7 +62,6 @@ HWY_ATTR void QuantizeBlockAC(const Quantizer& quantizer,
     HWY_CAPPED(float, kBlockDim) df;
     HWY_CAPPED(uint32_t, kBlockDim) du;
     const auto quant = Set(df, qac * qm_multiplier);
-    const auto abs_mask = BitCast(df, Set(du, 0x7FFFFFFFu));
 
     for (size_t y = 0; y < ysize * kBlockDim; y++) {
       size_t yfix = static_cast<size_t>(y >= ysize * kBlockDim / 2) * 2;
@@ -82,7 +84,7 @@ HWY_ATTR void QuantizeBlockAC(const Quantizer& quantizer,
         const auto q = Load(df, qm + off + x) * quant;
         const auto in = Load(df, block_in + off + x);
         const auto val = q * in;
-        const auto nzero_mask = (abs_mask & val) >= thr;
+        const auto nzero_mask = Abs(val) >= thr;
         const auto v = IfThenElseZero(nzero_mask, Round(val));
         Store(v, df, block_out + off + x);
       }
@@ -171,11 +173,9 @@ HWY_ATTR void QuantizeRoundtripYBlockAC(
   }
 }
 
-}  // namespace
-
-HWY_ATTR JXL_NOINLINE void ComputeCoefficients(size_t group_idx,
-                                               PassesEncoderState* enc_state,
-                                               AuxOut* aux_out) {
+HWY_ATTR void ComputeCoefficients(size_t group_idx,
+                                  PassesEncoderState* enc_state,
+                                  AuxOut* aux_out) {
   PROFILER_FUNC;
   const Rect block_group_rect = enc_state->shared.BlockGroupRect(group_idx);
   const Rect cmap_rect(
@@ -272,6 +272,11 @@ HWY_ATTR JXL_NOINLINE void ComputeCoefficients(size_t group_idx,
   }
 }
 
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(ComputeCoefficients)
+
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         const PassesEncoderState& enc_state,
                                         BitWriter* writer, AuxOut* aux_out) {
@@ -295,5 +300,7 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
 
   return true;
 }
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

@@ -19,7 +19,7 @@
 
 #include <array>
 #include <atomic>
-#include <hwy/static_targets.h>
+#include <hwy/interface.h>
 #include <vector>
 
 #include "jxl/ac_context.h"
@@ -137,12 +137,22 @@ Status JxlLossyFrameHeuristics(PassesEncoderState* enc_state,
   FindBestDequantMatrices(cparams, *opsin, &enc_state->shared.matrices);
 
   // Non-default cmap is on only for Hare or slower.
+  auto find_best_cmap =
+      ChooseFindBestColorCorrelationMap(hwy::SupportedTargets());
   if (cparams.speed_tier <= SpeedTier::kHare) {
-    FindBestColorCorrelationMap(*opsin, enc_state->shared.matrices, pool,
-                                &enc_state->shared.cmap);
+    find_best_cmap(*opsin, enc_state->shared.matrices,
+                   /*ac_strategy=*/nullptr, pool, &enc_state->shared.cmap);
   }
 
-  FindBestAcStrategy(*opsin, enc_state, pool, aux_out);
+  ChooseFindBestAcStrategy(hwy::SupportedTargets())(*opsin, enc_state, pool,
+                                                    aux_out);
+
+  // Cmap is updated for different block sizes only for Wombat or slower.
+  if (cparams.speed_tier <= SpeedTier::kWombat) {
+    find_best_cmap(*opsin, enc_state->shared.matrices,
+                   &enc_state->shared.ac_strategy, pool,
+                   &enc_state->shared.cmap);
+  }
 
   FindBestArControlField(*opsin, enc_state, pool);
 
@@ -232,11 +242,10 @@ class LossyFrameEncoder {
     enc_state_->passes.clear();
   }
 
-  HWY_ATTR Status ComputeEncodingData(const ImageBundle* linear,
-                                      Image3F* JXL_RESTRICT opsin,
-                                      ThreadPool* pool,
-                                      BitWriter* JXL_RESTRICT writer,
-                                      FrameHeader* frame_header) {
+  Status ComputeEncodingData(const ImageBundle* linear,
+                             Image3F* JXL_RESTRICT opsin, ThreadPool* pool,
+                             BitWriter* JXL_RESTRICT writer,
+                             FrameHeader* frame_header) {
     PROFILER_ZONE("ComputeEncodingData uninstrumented");
     JXL_ASSERT((opsin->xsize() % kBlockDim) == 0 &&
                (opsin->ysize() % kBlockDim) == 0);
@@ -302,8 +311,8 @@ class LossyFrameEncoder {
 
     if (enc_state_->cparams.speed_tier <= SpeedTier::kSquirrel) {
       shared.image_features.splines = FindSplines(*opsin);
-      shared.image_features.splines.SubtractFrom(opsin,
-                                                 enc_state_->shared.cmap);
+      JXL_RETURN_IF_ERROR(shared.image_features.splines.SubtractFrom(
+          opsin, enc_state_->shared.cmap));
     }
 
     if (ApplyOverride(enc_state_->cparams.patches,
@@ -332,11 +341,13 @@ class LossyFrameEncoder {
         group_caches_.resize(num_threads);
         return pool_init_(num_threads);
       };
+      const auto compute_coef =
+          ChooseComputeCoefficients(hwy::SupportedTargets());
       const auto compute_group_cache = [&](const int group_index,
                                            const int thread) {
         // Compute coefficients and coefficient split.
         AuxOut* my_aux_out = aux_out_ ? &(*aux_outs_)[thread] : nullptr;
-        ComputeCoefficients(group_index, enc_state_, my_aux_out);
+        compute_coef(group_index, enc_state_, my_aux_out);
       };
       RunOnPool(pool_, 0, shared.frame_dim.num_groups, compute_group_cache_init,
                 compute_group_cache, "PixelsToGroupCoefficients");
@@ -350,8 +361,8 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    const auto tokenize_group = [&](const int group_index,
-                                    const int thread) HWY_ATTR {
+    auto tokenize_coeffs = ChooseTokenizeCoefficients(hwy::SupportedTargets());
+    const auto tokenize_group = [&](const int group_index, const int thread) {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
@@ -363,10 +374,10 @@ class LossyFrameEncoder {
         };
         // Ensure group cache is initialized.
         group_caches_[thread].InitOnce();
-        TokenizeCoefficients(
-            &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
-            shared.ac_strategy, &group_caches_[thread].num_nzeroes,
-            &enc_state_->passes[idx_pass].ac_tokens[group_index]);
+        tokenize_coeffs(&shared.coeff_orders[idx_pass * kCoeffOrderSize], rect,
+                        ac_rows, shared.ac_strategy,
+                        &group_caches_[thread].num_nzeroes,
+                        &enc_state_->passes[idx_pass].ac_tokens[group_index]);
       }
     };
     RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
@@ -391,9 +402,9 @@ class LossyFrameEncoder {
     return true;
   }
 
-  HWY_ATTR Status ComputeJPEGTranscodingData(
-      const Image3F& opsin_orig, const std::vector<int32_t>& quant_table,
-      FrameHeader* frame_header) {
+  Status ComputeJPEGTranscodingData(const Image3F& opsin_orig,
+                                    const std::vector<int32_t>& quant_table,
+                                    FrameHeader* frame_header) {
     constexpr size_t N = kBlockDim;
     PROFILER_ZONE("ComputeJPEGTranscodingData uninstrumented");
     PassesSharedState& shared = enc_state_->shared;
@@ -586,8 +597,9 @@ class LossyFrameEncoder {
     enc_state_->dc_tokens =
         std::vector<std::vector<Token>>(xsize_dc_groups * ysize_dc_groups);
     enc_state_->extra_dc_levels.resize(xsize_dc_groups * ysize_dc_groups, 0);
+    const auto tokenize_dc = ChooseTokenizeDC(hwy::SupportedTargets());
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
-      TokenizeDC(group_index, dc, enc_state_, aux_out_);
+      tokenize_dc(group_index, dc, enc_state_, aux_out_);
     };
     RunOnPool(pool_, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
               compute_dc_coeffs, "Compute DC coeffs");
@@ -614,8 +626,8 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    const auto tokenize_group = [&](const int group_index,
-                                    const int thread) HWY_ATTR {
+    auto tokenize_coeffs = ChooseTokenizeCoefficients(hwy::SupportedTargets());
+    const auto tokenize_group = [&](const int group_index, const int thread) {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
@@ -627,10 +639,10 @@ class LossyFrameEncoder {
         };
         // Ensure group cache is initialized.
         group_caches_[thread].InitOnce();
-        TokenizeCoefficients(
-            &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
-            shared.ac_strategy, &group_caches_[thread].num_nzeroes,
-            &enc_state_->passes[idx_pass].ac_tokens[group_index]);
+        tokenize_coeffs(&shared.coeff_orders[idx_pass * kCoeffOrderSize], rect,
+                        ac_rows, shared.ac_strategy,
+                        &group_caches_[thread].num_nzeroes,
+                        &enc_state_->passes[idx_pass].ac_tokens[group_index]);
       }
     };
     RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
@@ -658,12 +670,6 @@ class LossyFrameEncoder {
   }
 
   Status EncodeGlobalACInfo(BitWriter* writer) {
-    if (enc_state_->shared.experiments.use_new_cmap) {
-      EncodeFullColorMap(enc_state_->shared.cmap,
-                         Rect(enc_state_->shared.cmap.ytob_map), writer,
-                         kLayerDC, aux_out_,
-                         enc_state_->shared.experiments.use_new_cmap);
-    }
     JXL_RETURN_IF_ERROR(enc_state_->shared.matrices.Encode(
         writer, kLayerDequantTables, aux_out_));
     size_t num_histo_bits =
@@ -746,11 +752,11 @@ class LossyFrameEncoder {
   std::vector<EncCache> group_caches_;
 };
 
-HWY_ATTR JXL_NOINLINE Status EncodeFrame(
-    const CompressParams& cparams_orig,
-    const AnimationFrame* animation_frame_or_null, const ImageBundle& ib,
-    PassesEncoderState* passes_enc_state, ThreadPool* pool, BitWriter* writer,
-    AuxOut* aux_out, Multiframe* multiframe) {
+Status EncodeFrame(const CompressParams& cparams_orig,
+                   const AnimationFrame* animation_frame_or_null,
+                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
+                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out,
+                   Multiframe* multiframe) {
   ib.VerifyMetadata();
   CompressParams cparams = cparams_orig;
   if (cparams.dc_level + cparams.progressive_dc > 3) {
@@ -793,7 +799,7 @@ HWY_ATTR JXL_NOINLINE Status EncodeFrame(
   ImageMetadata metadata;
   metadata.color_encoding = c;
   ImageBundle linear_storage(&metadata);
-  const ImageBundle* JXL_RESTRICT linear = nullptr;
+  const ImageBundle* JXL_RESTRICT linear = &ib;
 
   std::vector<AuxOut> aux_outs;
   // LossyFrameEncoder stores a reference to a std::function<Status(size_t)>
@@ -843,8 +849,8 @@ HWY_ATTR JXL_NOINLINE Status EncodeFrame(
 
     if (frame_header.color_transform == ColorTransform::kXYB &&
         cparams.dc_level == 0 && cparams.save_as_reference == 0) {
-      linear = ToXYB(ib, cparams.GetIntensityMultiplier(), pool, &opsin,
-                     &linear_storage);
+      linear = (*ChooseToXYB(hwy::SupportedTargets()))(ib, pool, &opsin,
+                                                       &linear_storage);
 
       // We only need linear sRGB in slow VarDCT modes.
       if (cparams.speed_tier > SpeedTier::kKitten ||

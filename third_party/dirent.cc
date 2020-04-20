@@ -17,8 +17,10 @@
 
 #include "jxl/base/status.h"
 
+#ifndef NOMINMAX
 #define NOMINMAX
-#include <Windows.h>
+#endif  // NOMINMAX
+#include <windows.h>
 
 #include <memory>
 #include <string>

@@ -19,18 +19,24 @@
 #include <stdlib.h>
 
 #include <atomic>
-#include <hwy/static_targets.h>
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/profiler.h"
+#include "jxl/color_encoding.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "tools/butteraugli_pnorm.cc"
+#include <hwy/foreach_target.h>
 
 namespace jxl {
 
-HWY_ATTR JXL_NOINLINE double ComputeDistanceP(const ImageF& distmap, double p) {
+#include <hwy/begin_target-inl.h>
+
+HWY_ATTR double ComputeDistanceP(const ImageF& distmap, double p) {
   PROFILER_FUNC;
   const double onePerPixels = 1.0 / (distmap.ysize() * distmap.xsize());
   if (std::abs(p - 3.0) < 1E-6) {
-#if HWY_HAS_DOUBLE
+#if HWY_CAPS & HWY_CAP_DOUBLE
     const HWY_FULL(double) dd;
     const HWY_CAPPED(float, dd.N) df;
     auto sums0 = Zero(dd);
@@ -47,8 +53,8 @@ HWY_ATTR JXL_NOINLINE double ComputeDistanceP(const ImageF& distmap, double p) {
       const float* JXL_RESTRICT row = distmap.ConstRow(y);
       size_t x = 0;
       for (; x + df.N <= distmap.xsize(); x += df.N) {
-#if HWY_HAS_DOUBLE
-        const auto d1 = ConvertTo(dd, Load(df, row + x));
+#if HWY_CAPS & HWY_CAP_DOUBLE
+        const auto d1 = PromoteTo(dd, Load(df, row + x));
 #else
         const auto d1 = Load(df, row + x);
 #endif
@@ -70,11 +76,11 @@ HWY_ATTR JXL_NOINLINE double ComputeDistanceP(const ImageF& distmap, double p) {
       }
     }
     double v = 0;
-    v += pow(onePerPixels * (sum1[0] + GetLane(hwy::ext::SumOfLanes(sums0))),
+    v += pow(onePerPixels * (sum1[0] + GetLane(SumOfLanes(sums0))),
              1.0 / (p * 1.0));
-    v += pow(onePerPixels * (sum1[1] + GetLane(hwy::ext::SumOfLanes(sums1))),
+    v += pow(onePerPixels * (sum1[1] + GetLane(SumOfLanes(sums1))),
              1.0 / (p * 2.0));
-    v += pow(onePerPixels * (sum1[2] + GetLane(hwy::ext::SumOfLanes(sums2))),
+    v += pow(onePerPixels * (sum1[2] + GetLane(SumOfLanes(sums2))),
              1.0 / (p * 4.0));
     v /= 3.0;
     return v;
@@ -103,5 +109,59 @@ HWY_ATTR JXL_NOINLINE double ComputeDistanceP(const ImageF& distmap, double p) {
     return v;
   }
 }
+
+// TODO(lode): take alpha into account when needed
+HWY_ATTR double ComputeDistance2(const ImageBundle& ib1,
+                                 const ImageBundle& ib2) {
+  PROFILER_FUNC;
+  // Convert to sRGB - closer to perception than linear.
+  const Image3F* srgb1 = &ib1.color();
+  Image3F copy1;
+  if (!ib1.IsSRGB()) {
+    JXL_CHECK(ib1.CopyTo(Rect(ib1), ColorEncoding::SRGB(ib1.IsGray()), &copy1));
+    srgb1 = &copy1;
+  }
+  const Image3F* srgb2 = &ib2.color();
+  Image3F copy2;
+  if (!ib2.IsSRGB()) {
+    JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::SRGB(ib2.IsGray()), &copy2));
+    srgb2 = &copy2;
+  }
+
+  JXL_CHECK(SameSize(*srgb1, *srgb2));
+
+  HWY_FULL(float) d;
+
+  auto sums = Zero(d);
+  double result = 0;
+  // Weighted PSNR as in JPEG-XL: chroma counts 1/8 (they compute on YCbCr).
+  // Avoid squaring the weight - 1/64 is too extreme.
+  const float weights[3] = {1.0f / 8, 6.0f / 8, 1.0f / 8};
+  for (size_t c = 0; c < 3; ++c) {
+    const auto weight = Set(d, weights[c]);
+    for (size_t y = 0; y < srgb1->ysize(); ++y) {
+      const float* JXL_RESTRICT row1 = srgb1->ConstPlaneRow(c, y);
+      const float* JXL_RESTRICT row2 = srgb2->ConstPlaneRow(c, y);
+      size_t x = 0;
+      for (; x + d.N <= srgb1->xsize(); x += d.N) {
+        const auto diff = Load(d, row1 + x) - Load(d, row2 + x);
+        sums += diff * diff * weight;
+      }
+      for (; x < srgb1->xsize(); ++x) {
+        const float diff = row1[x] - row2[x];
+        result += diff * diff * weights[c];
+      }
+    }
+  }
+  const float sum = GetLane(SumOfLanes(sums));
+  return sum + result;
+}
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(ComputeDistanceP)
+HWY_EXPORT(ComputeDistance2)
+#endif
 
 }  // namespace jxl

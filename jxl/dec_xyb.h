@@ -17,6 +17,7 @@
 
 // XYB -> linear sRGB.
 
+#include <hwy/interface.h>
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
@@ -28,30 +29,37 @@ namespace jxl {
 
 // Parameters for XYB->sRGB conversion.
 struct OpsinParams {
-  HWY_ALIGN float inverse_opsin_matrix[9 * 4];
-  HWY_ALIGN float opsin_biases[4];
-  HWY_ALIGN float opsin_biases_cbrt[4];
+  HWY_ALIGN_MAX float inverse_opsin_matrix[9 * 4];
+  HWY_ALIGN_MAX float opsin_biases[4];
+  HWY_ALIGN_MAX float opsin_biases_cbrt[4];
   float quant_biases[4];
   void Init();
 };
 
 // Converts `inout` (not padded) from opsin to linear sRGB in-place. Called from
 // per-pass postprocessing, hence parallelized.
-HWY_ATTR void OpsinToLinear(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
-                            const OpsinParams& opsin_params);
+typedef void OpsinToLinearInplaceFunc(Image3F* JXL_RESTRICT inout,
+                                      ThreadPool* pool,
+                                      const OpsinParams& opsin_params);
+OpsinToLinearInplaceFunc* ChooseOpsinToLinearInplace(uint32_t targets_bits);
 
 // Converts `opsin:rect` (opsin may be padded, rect.x0 must be vector-aligned)
 // to linear sRGB. Called from whole-frame encoder, hence parallelized.
-HWY_ATTR void OpsinToLinear(const Image3F& opsin, const Rect& rect,
-                            ThreadPool* pool, Image3F* JXL_RESTRICT linear,
-                            const OpsinParams& opsin_params);
+typedef void OpsinToLinearFunc(const Image3F& opsin, const Rect& rect,
+                               ThreadPool* pool, Image3F* JXL_RESTRICT linear,
+                               const OpsinParams& opsin_params);
+OpsinToLinearFunc* ChooseOpsinToLinear(uint32_t targets_bits);
 
-HWY_ATTR void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
-                         const ImageF& cr_plane, ImageF* r_plane,
-                         ImageF* g_plane, ImageF* b_plane, ThreadPool* pool);
+typedef void YcbcrToRgbFunc(const ImageF& y_plane, const ImageF& cb_plane,
+                            const ImageF& cr_plane, ImageF* r_plane,
+                            ImageF* g_plane, ImageF* b_plane, ThreadPool* pool);
+YcbcrToRgbFunc* ChooseYcbcrToRgb(uint32_t targets_bits);
 
-HWY_ATTR ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
-HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool);
+typedef ImageF UpsampleV2Func(const ImageF& src, ThreadPool* pool);
+UpsampleV2Func* ChooseUpsampleV2(uint32_t targets_bits);
+
+typedef ImageF UpsampleH2Func(const ImageF& src, ThreadPool* pool);
+UpsampleH2Func* ChooseUpsampleH2(uint32_t targets_bits);
 
 }  // namespace jxl
 

@@ -23,6 +23,7 @@
 #include "jxl/enc_ans.h"
 #include "jxl/enc_bit_writer.h"
 #include "jxl/entropy_coder.h"
+#include "jxl/fields.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
@@ -39,16 +40,44 @@ constexpr int toRound_m1 = toRound;  // (toRound ? toRound - 1 : 0);
 constexpr pixel_type AddPBits(pixel_type x) { return uint32_t(x) << PBits; }
 }  // namespace
 
-struct State {
+struct WeightedPredictorHeader {
+  static const char* Name() { return "WeightedPredictorHeader"; }
+
+  template <class Visitor>
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+    if (visitor->AllDefault(*this, &all_default)) return true;
+    auto visit_p = [visitor](pixel_type val, pixel_type* p) {
+      uint32_t up = *p;
+      visitor->Bits(5, val, &up);
+      *p = up;
+    };
+    visit_p(16, &p1C);
+    visit_p(10, &p2C);
+    visit_p(7, &p3Ca);
+    visit_p(7, &p3Cb);
+    visit_p(7, &p3Cc);
+    visit_p(0, &p3Cd);
+    visit_p(0, &p3Ce);
+    visitor->Bits(4, 0xd, &w0);
+    visitor->Bits(4, 0xc, &w1);
+    visitor->Bits(4, 0xc, &w2);
+    visitor->Bits(4, 0xc, &w3);
+    return true;
+  }
+
+  WeightedPredictorHeader() { Bundle::Init(this); }
+
+  bool all_default;
+  pixel_type p1C = 0, p2C = 0, p3Ca = 0, p3Cb = 0, p3Cc = 0, p3Cd = 0, p3Ce = 0;
+  uint32_t w0 = 0, w1 = 0, w2 = 0, w3 = 0;
+};
+
+struct WeightedPredictorState {
   pixel_type prediction0, prediction1, prediction2, prediction3;
-  pixel_type p1C, p2C, p3Ca, p3Cb, p3Cc, p3Cd, p3Ce;
-  uint32_t w0, w1, w2, w3;
+  WeightedPredictorHeader header;
   const size_t lastX;  // xsize - 1, for prediction borders
   pixel_type* JXL_RESTRICT rowImg;
   const pixel_type *JXL_RESTRICT rowPrev, *JXL_RESTRICT rowPP;
-  const pixel_type minTpv, maxTpv;
-  const pixel_type shiftedMinTpv = AddPBits(minTpv);
-  const pixel_type shiftedMaxTpv = AddPBits(maxTpv);
 
   std::vector<uint32_t> errors0;  // Errors of predictor 0
   std::vector<uint32_t> errors1;  // Errors of predictor 1
@@ -58,9 +87,8 @@ struct State {
   std::vector<int32_t> trueErr;
   uint32_t divlookup[64];
 
-  State(size_t imageSizeX, size_t imageSizeY, pixel_type minval,
-        pixel_type maxval)
-      : lastX(imageSizeX - 1), minTpv(minval), maxTpv(maxval) {
+  WeightedPredictorState(size_t imageSizeX, size_t imageSizeY)
+      : lastX(imageSizeX - 1) {
     errors0.resize(imageSizeX * 2 + 4);
     errors1.resize(imageSizeX * 2 + 4);
     errors2.resize(imageSizeX * 2 + 4);
@@ -98,11 +126,11 @@ struct State {
                       : x == 1 ? nbitErr[yp - 1]
                                : std::max(nbitErr[yp - 1], nbitErr[yp - 2]));
     prediction0 = prediction1 = prediction2 = prediction3 =
-        (x == 0 ? AddPBits(minTpv + maxTpv) / 2
+        (x == 0 ? 0
                 : x == 1 ? AddPBits(rowImg[x - 1])
                          : AddPBits(rowImg[x - 1]) +
                                AddPBits(rowImg[x - 1] - rowImg[x - 2]) / 4);
-    return std::max(shiftedMinTpv, std::min(prediction0, shiftedMaxTpv));
+    return prediction0;
   }
 
   JXL_INLINE pixel_type predict1x0(size_t x, size_t yp, size_t yp1,
@@ -110,7 +138,7 @@ struct State {
     *maxErr = std::max(nbitErr[yp1], nbitErr[yp1 + (x < lastX ? 1 : 0)]);
     prediction0 = prediction2 = prediction3 = prediction1 =
         AddPBits(rowPrev[x]);
-    return std::max(shiftedMinTpv, std::min(prediction0, shiftedMaxTpv));
+    return prediction0;
   }
 
   JXL_INLINE pixel_type WeightedAverage(pixel_type p1, pixel_type p2,
@@ -152,10 +180,10 @@ struct State {
                NE = AddPBits(rowPrev[x + a1]), NW = AddPBits(rowPrev[x - 1]),
                NN = AddPBits(rowPP[x]);
 
-    weight0 = errorWeight(weight0, w0);
-    weight1 = errorWeight(weight1, w1);
-    weight2 = errorWeight(weight2, w2);
-    weight3 = errorWeight(weight3, w3);
+    weight0 = errorWeight(weight0, header.w0);
+    weight1 = errorWeight(weight1, header.w1);
+    weight2 = errorWeight(weight2, header.w2);
+    weight3 = errorWeight(weight3, header.w3);
 
     int teW = trueErr[yp - 1];
     int teN = trueErr[yp1];
@@ -164,11 +192,12 @@ struct State {
     int teNE = trueErr[yp1 + a1];
 
     prediction0 = W + NE - N;
-    prediction1 = N - (((sumWN + teNE) * p1C) >> 5);
-    prediction2 = W - (((sumWN + teNW) * p2C) >> 5);
-    prediction3 = N - ((teNW * p3Ca + teN * p3Cb + teNE * p3Cc +
-                        (NN - N) * p3Cd + (NW - W) * p3Ce) >>
-                       5);
+    prediction1 = N - (((sumWN + teNE) * header.p1C) >> 5);
+    prediction2 = W - (((sumWN + teNW) * header.p2C) >> 5);
+    prediction3 =
+        N - ((teNW * header.p3Ca + teN * header.p3Cb + teNE * header.p3Cc +
+              (NN - N) * header.p3Cd + (NW - W) * header.p3Ce) >>
+             5);
 
     pixel_type prediction =
         WeightedAverage(prediction0, prediction1, prediction2, prediction3,
@@ -179,7 +208,7 @@ struct State {
     *maxErr = mxe;
 
     if (((teN ^ teW) | (teN ^ teNW)) > 0) {  // if all three have the same sign
-      return std::max(shiftedMinTpv, std::min(prediction, shiftedMaxTpv));
+      return prediction;
     }
 
     pixel_type mx = (W > NE ? W : NE), mn = W + NE - mx;
@@ -217,90 +246,92 @@ struct State {
   }
 
   // Encoder helper function to set the parameters to some presets.
-  // Decoder only uses predictor_mode(0), which is the default setting.
   void predictor_mode(int i) {
     switch (i) {
       case 0:
         // ~ lossless16 predictor
-        w0 = 0xd;
-        w1 = 0xc;
-        w2 = 0xc;
-        w3 = 0xc;
-        p1C = 16;
-        p2C = 10;
-        p3Ca = 7;
-        p3Cb = 7;
-        p3Cc = 7;
-        p3Cd = 0;
-        p3Ce = 0;
+        header.w0 = 0xd;
+        header.w1 = 0xc;
+        header.w2 = 0xc;
+        header.w3 = 0xc;
+        header.p1C = 16;
+        header.p2C = 10;
+        header.p3Ca = 7;
+        header.p3Cb = 7;
+        header.p3Cc = 7;
+        header.p3Cd = 0;
+        header.p3Ce = 0;
         break;
       case 1:
         // ~ default lossless8 predictor
-        w0 = 0xd;
-        w1 = 0xc;
-        w2 = 0xc;
-        w3 = 0xb;
-        p1C = 8;
-        p2C = 8;
-        p3Ca = 4;
-        p3Cb = 0;
-        p3Cc = 3;
-        p3Cd = 23;
-        p3Ce = 2;
+        header.w0 = 0xd;
+        header.w1 = 0xc;
+        header.w2 = 0xc;
+        header.w3 = 0xb;
+        header.p1C = 8;
+        header.p2C = 8;
+        header.p3Ca = 4;
+        header.p3Cb = 0;
+        header.p3Cc = 3;
+        header.p3Cd = 23;
+        header.p3Ce = 2;
         break;
       case 2:
         // ~ west lossless8 predictor
-        w0 = 0xd;
-        w1 = 0xc;
-        w2 = 0xd;
-        w3 = 0xc;
-        p1C = 10;
-        p2C = 9;
-        p3Ca = 7;
-        p3Cb = 0;
-        p3Cc = 0;
-        p3Cd = 16;
-        p3Ce = 9;
+        header.w0 = 0xd;
+        header.w1 = 0xc;
+        header.w2 = 0xd;
+        header.w3 = 0xc;
+        header.p1C = 10;
+        header.p2C = 9;
+        header.p3Ca = 7;
+        header.p3Cb = 0;
+        header.p3Cc = 0;
+        header.p3Cd = 16;
+        header.p3Ce = 9;
         break;
       case 3:
         // ~ north lossless8 predictor
-        w0 = 0xd;
-        w1 = 0xd;
-        w2 = 0xc;
-        w3 = 0xc;
-        p1C = 16;
-        p2C = 8;
-        p3Ca = 0;
-        p3Cb = 16;
-        p3Cc = 0;
-        p3Cd = 23;
-        p3Ce = 0;
+        header.w0 = 0xd;
+        header.w1 = 0xd;
+        header.w2 = 0xc;
+        header.w3 = 0xc;
+        header.p1C = 16;
+        header.p2C = 8;
+        header.p3Ca = 0;
+        header.p3Cb = 16;
+        header.p3Cc = 0;
+        header.p3Cd = 23;
+        header.p3Ce = 0;
         break;
       case 4:
         // something else, because why not
-        w0 = 0xd;
-        w1 = 0xc;
-        w2 = 0xc;
-        w3 = 0xc;
-        p1C = 10;
-        p2C = 10;
-        p3Ca = 5;
-        p3Cb = 5;
-        p3Cc = 5;
-        p3Cd = 12;
-        p3Ce = 4;
+        header.w0 = 0xd;
+        header.w1 = 0xc;
+        header.w2 = 0xc;
+        header.w3 = 0xc;
+        header.p1C = 10;
+        header.p2C = 10;
+        header.p3Ca = 5;
+        header.p3Cb = 5;
+        header.p3Cc = 5;
+        header.p3Cd = 12;
+        header.p3Ce = 4;
         break;
     }
   }
 
-  bool wp_compress(const Channel& img, PaddedBytes* bytes, int nb_modes) {
+  bool wp_compress(const Channel& img, int nb_modes, size_t base_ctx,
+                   const HybridUintConfig& uint_config,
+                   std::vector<Token>* tokens,
+                   WeightedPredictorHeader* header) {
     size_t xsize = img.w;
     size_t ysize = img.h;
-    size_t pos = bytes->size();
-    size_t best_size = 0;
+    std::vector<Token> best_tokens;
+    float best_cost;
     for (int mode = 0; mode < nb_modes; mode++) {
       predictor_mode(mode);
-      std::vector<std::vector<Token>> tokens(1);
+      std::vector<Token> local_tokens;
 
       for (size_t y = 0, yp = 0, yp1 = xsize; y < ysize;
            ++y, yp = xsize - yp, yp1 = xsize - yp) {
@@ -311,131 +342,64 @@ struct State {
           int maxErr;
           pixel_type prediction = predict1(x, yp + x, yp1 + x, &maxErr);
           JXL_DASSERT(0 <= maxErr && maxErr <= kNumContexts - 1);
-          JXL_DASSERT(shiftedMinTpv <= prediction &&
-                      prediction <= shiftedMaxTpv);
           pixel_type truePixelValue = rowImg[x];
-          TokenizeHybridUint(
-              maxErr,
+          TokenizeWithConfig(
+              uint_config, base_ctx + maxErr,
               PackSigned(truePixelValue - ((prediction + toRound_m1) >> PBits)),
-              tokens.data());
+              &local_tokens);
           pixel_type err = prediction - AddPBits(truePixelValue);
           UpdateSizeAndErrors(err, yp, yp1, x, prediction0, prediction1,
                               prediction2, prediction3, truePixelValue);
         }  // x
       }    // y
 
-      BitWriter writer;
-      EntropyEncodingData codes;
-      std::vector<uint8_t> context_map;
-      BitWriter::Allotment allotment(&writer, 52);
-      if (mode != 0) {
-        writer.Write(1, 0);
-        writer.Write(5, p1C);
-        writer.Write(5, p2C);
-        writer.Write(5, p3Ca);
-        writer.Write(5, p3Cb);
-        writer.Write(5, p3Cc);
-        writer.Write(5, p3Cd);
-        writer.Write(5, p3Ce);
-        writer.Write(4, w0);
-        writer.Write(4, w1);
-        writer.Write(4, w2);
-        writer.Write(4, w3);
-      } else {
-        writer.Write(1, 1);
-      }
-      ReclaimAndCharge(&writer, &allotment, 0, nullptr);
-      BuildAndEncodeHistograms(HistogramParams(), kNumContexts, tokens, &codes,
-                               &context_map, &writer, 0, nullptr);
-      WriteTokens(tokens[0], codes, context_map, &writer, 0, nullptr);
-      writer.ZeroPadToByte();
-      Span<const uint8_t> span = writer.GetSpan();
-      if (mode == 0 || span.size() < best_size) {
-        bytes->resize(pos + span.size());
-        best_size = span.size();
-        memcpy(bytes->data() + pos, span.data(), span.size());
+      size_t extension_bits, header_bits;
+      JXL_RETURN_IF_ERROR(
+          Bundle::CanEncode(this->header, &extension_bits, &header_bits));
+
+      float local_cost = TokenCost(local_tokens) + extension_bits + header_bits;
+      if (mode == 0 || local_cost < best_cost) {
+        best_tokens = std::move(local_tokens);
+        best_cost = local_cost;
+        *header = this->header;
       }
     }
+    tokens->insert(tokens->end(), best_tokens.begin(), best_tokens.end());
     return true;
   }
 
-  HWY_ATTR bool wp_decompress(const Span<const uint8_t> bytes,
-                              size_t* bytes_pos, Channel& img) {
-    if (*bytes_pos > bytes.size()) return JXL_FAILURE("out of bounds");
-    size_t xsize = img.w;
-    size_t ysize = img.h;
-    size_t compressedSize = bytes.size() - *bytes_pos;
-    const uint8_t* compressedData = bytes.data() + *bytes_pos;
+  bool wp_decompress(BitReader* br, ANSSymbolReader* reader,
+                     const std::vector<uint8_t>& context_map, size_t base_ctx,
+                     const WeightedPredictorHeader& header, Channel* img) {
+    size_t xsize = img->w;
+    size_t ysize = img->h;
 
     if (!xsize || !ysize) return JXL_FAILURE("invalid image size");
 
-    predictor_mode(0);
+    this->header = header;
 
-    Status ret = true;
-    {
-      BitReader bitreader(Span<const uint8_t>(compressedData, compressedSize));
-      BitReaderScopedCloser bitreader_closer(&bitreader, &ret);
-      ANSCode code;
-      std::vector<uint8_t> context_map;
-      if (!bitreader.ReadBits(1)) {
-        p1C = bitreader.ReadBits(5);
-        p2C = bitreader.ReadBits(5);
-        p3Ca = bitreader.ReadBits(5);
-        p3Cb = bitreader.ReadBits(5);
-        p3Cc = bitreader.ReadBits(5);
-        p3Cd = bitreader.ReadBits(5);
-        p3Ce = bitreader.ReadBits(5);
-        w0 = bitreader.ReadBits(4);
-        w1 = bitreader.ReadBits(4);
-        w2 = bitreader.ReadBits(4);
-        w3 = bitreader.ReadBits(4);
-      }
+    for (size_t y = 0, yp = 0, yp1 = xsize; y < ysize;
+         ++y, yp = xsize - yp, yp1 = xsize - yp) {
+      rowImg = img->Row(y);
+      rowPrev = (y == 0 ? nullptr : img->Row(y - 1));
+      rowPP = (y <= 1 ? rowPrev : img->Row(y - 2));
+      for (size_t x = 0; x < xsize; ++x) {
+        int maxErr;
+        pixel_type prediction = predict1(x, yp + x, yp1 + x, &maxErr);
+        JXL_DASSERT(0 <= maxErr && maxErr <= kNumContexts - 1);
 
-      JXL_RETURN_IF_ERROR(DecodeHistograms(
-          &bitreader, kNumContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
-      ANSSymbolReader ansreader(&code, &bitreader);
-
-      for (size_t y = 0, yp = 0, yp1 = xsize; y < ysize;
-           ++y, yp = xsize - yp, yp1 = xsize - yp) {
-        rowImg = img.Row(y);
-        rowPrev = (y == 0 ? nullptr : img.Row(y - 1));
-        rowPP = (y <= 1 ? rowPrev : img.Row(y - 2));
-        for (size_t x = 0; x < xsize; ++x) {
-          int maxErr;
-          pixel_type prediction = predict1(x, yp + x, yp1 + x, &maxErr);
-          JXL_DASSERT(0 <= maxErr && maxErr <= kNumContexts - 1);
-          JXL_DASSERT(shiftedMinTpv <= prediction &&
-                      prediction <= shiftedMaxTpv);
-
-          size_t q = ansreader.ReadHybridUint(maxErr, &bitreader, context_map);
-          pixel_type truePixelValue =
-              ((prediction + toRound_m1) >> PBits) + UnpackSigned(q);
-          rowImg[x] = truePixelValue;
-          pixel_type err = prediction - AddPBits(truePixelValue);
-          UpdateSizeAndErrors(err, yp, yp1, x, prediction0, prediction1,
-                              prediction2, prediction3, truePixelValue);
-        }  // x
-      }    // y
-      if (!ansreader.CheckANSFinalState()) {
-        return JXL_FAILURE("ANS final state invalid");
-      }
-      JXL_RETURN_IF_ERROR(bitreader.JumpToByteBoundary());
-      *bytes_pos += bitreader.TotalBitsConsumed() / 8;
-    }
-    return ret;
+        size_t q = reader->ReadHybridUint(maxErr + base_ctx, br, context_map);
+        pixel_type truePixelValue =
+            ((prediction + toRound_m1) >> PBits) + UnpackSigned(q);
+        rowImg[x] = truePixelValue;
+        pixel_type err = prediction - AddPBits(truePixelValue);
+        UpdateSizeAndErrors(err, yp, yp1, x, prediction0, prediction1,
+                            prediction2, prediction3, truePixelValue);
+      }  // x
+    }    // y
+    return true;
   }
 };
-
-bool wp_compress(const Channel& img, PaddedBytes* bytes, int nb_modes) {
-  std::unique_ptr<State> state(new State(img.w, img.h, img.minval, img.maxval));
-  return state->wp_compress(img, bytes, nb_modes);
-}
-
-HWY_ATTR bool wp_decompress(const Span<const uint8_t> bytes, size_t* pos,
-                            Channel& img) {
-  std::unique_ptr<State> state(new State(img.w, img.h, img.minval, img.maxval));
-  return state->wp_decompress(bytes, pos, img);
-}
 
 }  // namespace jxl
 

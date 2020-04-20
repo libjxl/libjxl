@@ -35,8 +35,15 @@
 
 namespace jxl {
 
-void TokenizeDC(size_t group_index, const Image3F& dc,
-                PassesEncoderState* JXL_RESTRICT enc_state, AuxOut* aux_out);
+typedef void TokenizeDCFunc(size_t group_index, const Image3F& dc,
+                            PassesEncoderState* JXL_RESTRICT enc_state,
+                            AuxOut* aux_out);
+TokenizeDCFunc* ChooseTokenizeDC(uint32_t targets_bits);
+
+// Smooth DC in already-smooth areas, to counteract banding.
+typedef void AdaptiveDCSmoothingFunc(const Image3F& dc_quant_field, Image3F* dc,
+                                     ThreadPool* pool);
+AdaptiveDCSmoothingFunc* ChooseAdaptiveDCSmoothing(uint32_t targets_bits);
 
 // Encodes the DC-related information from enc_state: quantized dc itself
 // and gradient map.
@@ -46,13 +53,6 @@ Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
 // Decodes and dequantizes DC.
 Status DecodeDCGroup(BitReader* reader, size_t group_idx,
                      PassesDecoderState* dec_state, AuxOut* aux_out);
-
-// Fill border of DC image.
-void InitializeDCBorder(Image3F* JXL_RESTRICT dc);
-
-// Smooth DC in already-smooth areas, to counteract banding.
-void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
-                         ThreadPool* pool);
 
 }  // namespace jxl
 

@@ -26,7 +26,9 @@
 
 #if defined(_WIN32) || defined(_WIN64)
 #define OS_WIN 1
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif  // NOMINMAX
 #include <windows.h>
 #else
 #define OS_WIN 0

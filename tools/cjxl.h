@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include <string>
 #include <utility>
 
 #include "jxl/base/data_parallel.h"
@@ -51,9 +52,12 @@ struct JxlCompressArgs {
   jxl::DecoderHints dec_hints;
   size_t override_bitdepth = 0;
   jxl::CompressParams params;
-  size_t num_threads = 0;
+  size_t num_threads;
   size_t num_reps = 1;
-  bool got_intensity_target = false;
+  float intensity_target = 0;
+
+  // Filename for the user provided saliency-map.
+  std::string saliency_map_filename;
 
   // Whether to perform lossless transcoding with kVarDCT or kJPEG encoding.
   // If true, attempts to load JPEG coefficients instead of pixels.
@@ -69,6 +73,7 @@ struct JxlCompressArgs {
   jxl::InspectorImage3F inspector_image3f;
 
   // References (ids) of specific options to check if they were matched.
+  CommandLineParser::OptionId opt_num_threads_id = -1;
   CommandLineParser::OptionId opt_distance_id = -1;
   CommandLineParser::OptionId opt_target_size_id = -1;
   CommandLineParser::OptionId opt_target_bpp_id = -1;

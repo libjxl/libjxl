@@ -20,8 +20,6 @@
 
 #include <algorithm>
 #include <array>
-#include <hwy/scalar.h>
-#include <hwy/static_targets.h>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -44,28 +42,27 @@
 #include "jxl/enc_cache.h"
 #include "jxl/entropy_coder.h"
 #include "jxl/image.h"
-#include "jxl/predictor.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/compressed_dc.cc"
+#include <hwy/foreach_target.h>
+
+#include "jxl/predictor-inl.h"
 
 namespace jxl {
-namespace {
 
-// Approximate mapping of actual residual to encoded residual, used for
-// computing context.
+#ifndef JXL_COMPRESSED_DC
+#define JXL_COMPRESSED_DC
+static constexpr size_t kNumDcContexts = 36;
+#endif
 
-constexpr size_t kResidualLut[4][8] = {
-    {0, 1, 2, 3, 4, 5, 6, 7},
-    {0, 1, 2, 3, 3, 4, 4, 5},
-    {0, 1, 2, 3, 3, 3, 4, 4},
-    {0, 1, 2, 3, 3, 3, 4, 4},
-};
+#include <hwy/begin_target-inl.h>
 
-// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class DcCoderBase {
  public:
   enum {
-    kNumResidualContexts = 8,
-    kContextsPerChannel = kNumResidualContexts + 4,
-    kNumContexts = 3 * kContextsPerChannel,
+    kContextsPerChannel = kNumDcContexts / 3,
+    kNumResidualContexts = kContextsPerChannel - 4,
   };
 
   uint32_t JXL_INLINE ResidualToEncoded(size_t c, size_t residual) {
@@ -73,6 +70,14 @@ class DcCoderBase {
       return ((residual + (1 << extra_levels_[c]) / 2) >> extra_levels_[c]) +
              extra_levels_[c];
     }
+    // Approximate mapping of actual residual to encoded residual, used for
+    // computing context.
+    constexpr size_t kResidualLut[4][8] = {
+        {0, 1, 2, 3, 4, 5, 6, 7},
+        {0, 1, 2, 3, 3, 4, 4, 5},
+        {0, 1, 2, 3, 3, 3, 4, 4},
+        {0, 1, 2, 3, 3, 3, 4, 4},
+    };
     return kResidualLut[extra_levels_[c]][residual];
   }
 
@@ -122,10 +127,10 @@ class DcCoderBase {
               float** JXL_RESTRICT dc_dec_rows, size_t dc_dec_stride,
               float** JXL_RESTRICT dc_quant_field_rows,
               size_t dc_quant_field_stride)
-      : xsize_(xsize),
-        mul_dc_{mul_dc[0] / (1 << extra_levels[0]),
+      : mul_dc_{mul_dc[0] / (1 << extra_levels[0]),
                 mul_dc[1] / (1 << extra_levels[1]),
                 mul_dc[2] / (1 << extra_levels[2]), 0},
+        xsize_(xsize),
         inv_mul_dc_(inv_mul_dc),
         cmap_factor_(cmap_factor),
         dc_rows_(dc_rows),
@@ -235,7 +240,7 @@ class DcCoderBase {
                                 const int32_t* JXL_RESTRICT predictions,
                                 const uint32_t* JXL_RESTRICT residuals,
                                 int32_t* JXL_RESTRICT decoded) {
-#if HWY_HAS_VARIABLE_SHIFT && HWY_BITS >= 128
+#if (HWY_CAPS & HWY_CAP_VARIABLE_SHIFT) && HWY_TARGET != HWY_SCALAR
     using DU = HWY_CAPPED(uint32_t, 4);
     using DI = HWY_CAPPED(int32_t, 4);
     using DF = HWY_CAPPED(float, 4);
@@ -250,13 +255,13 @@ class DcCoderBase {
     // If positive, LSB is 0 so the add disappears after the shift.
     // If negative, LSB is 1 so the add carries and we have incremented the
     // shifted result by one.
-    const auto delta = hwy::ShiftRight<1>(residual + one);
+    const auto delta = ShiftRight<1>(residual + one);
 
     // Expand extra levels
     const auto extra_levels = Load(du, extra_levels_);
     // Build mask of "delta > extra_levels"
     const auto is_hi = MaskFromVec(
-        BitCast(du, hwy::ShiftRight<31>(BitCast(di, extra_levels - delta))));
+        BitCast(du, ShiftRight<31>(BitCast(di, extra_levels - delta))));
     const auto delta_hi = (delta - extra_levels) << extra_levels;
     const auto is_zero = delta == Zero(du);
     const auto deltam1 = delta - one;
@@ -282,9 +287,9 @@ class DcCoderBase {
     Store(adj_mul, DF(), dc_quant_field_ + 4 * x);
 
     const auto dequant = ConvertTo(DF(), quantized) * mul;
-    const auto y_dequant = hwy::Broadcast<1>(dequant);
-    const auto correlated =
-        MulAdd(Load(DF(), cmap_factor_), y_dequant, dequant);
+    const auto y_dequant = Broadcast<1>(dequant);
+    // No MulAdd - causes different results in compressed_dc_test.
+    const auto correlated = Load(DF(), cmap_factor_) * y_dequant + dequant;
     Store(correlated, DF(), dc_dec_ + 4 * x);
 #else
     for (size_t c : {1, 0, 2}) {
@@ -294,8 +299,14 @@ class DcCoderBase {
   }
 
  private:
-  const size_t xsize_;
   HWY_ALIGN float const mul_dc_[4];
+
+  // One padding value every 3 to have aligned stores.
+  HWY_ALIGN float dc_dec_[4 * kDcGroupDimInBlocks];
+  HWY_ALIGN float dc_quant_field_[4 * kDcGroupDimInBlocks];
+
+  const size_t xsize_;
+
   const float* JXL_RESTRICT inv_mul_dc_;
   const float* JXL_RESTRICT cmap_factor_;
 
@@ -309,10 +320,6 @@ class DcCoderBase {
 
   float** JXL_RESTRICT dc_quant_field_rows_base_;
   const size_t dc_quant_field_stride_;
-
-  // One padding value every 3 to have aligned stores.
-  HWY_ALIGN float dc_dec_[4 * kDcGroupDimInBlocks];
-  HWY_ALIGN float dc_quant_field_[4 * kDcGroupDimInBlocks];
 
   const uint32_t* JXL_RESTRICT const extra_levels_;
 };
@@ -373,8 +380,8 @@ class DCEncoder : public DcPredictor<DCEncoder> {
   void StartRow(size_t y) { predictor_.StartRow(y); }
 
  private:
+  HWY_ALIGN DcCoderBase predictor_;
   std::vector<Token>* JXL_RESTRICT tokens_;
-  DcCoderBase predictor_;
 };
 
 class DCDecoder : public DcPredictor<DCDecoder> {
@@ -417,50 +424,22 @@ class DCDecoder : public DcPredictor<DCDecoder> {
   void StartRow(size_t y) { predictor_.StartRow(y); }
 
  private:
+  HWY_ALIGN DcCoderBase predictor_;
   BitReader* JXL_RESTRICT br_;
   ANSSymbolReader* JXL_RESTRICT decoder_;
   const std::vector<uint8_t>* JXL_RESTRICT context_map_;
-  DcCoderBase predictor_;
 };
 
-void RunDCEncoder(bool progressive16, const uint32_t* JXL_RESTRICT extra_levels,
-                  const Rect& rect, const float* JXL_RESTRICT mul_dc,
-                  const float* JXL_RESTRICT inv_mul_dc,
-                  const float* JXL_RESTRICT cmap_factor,
-                  const float* JXL_RESTRICT* JXL_RESTRICT downsampled_dc_rows,
-                  size_t downsampled_dc_stride,
-                  const float* JXL_RESTRICT* JXL_RESTRICT dc_rows,
-                  size_t dc_stride, float** JXL_RESTRICT dc_dec_rows,
-                  size_t dc_dec_stride,
-                  float** JXL_RESTRICT dc_quant_field_rows,
-                  size_t dc_quant_field_stride, std::vector<Token>* tokens,
-                  AuxOut* JXL_RESTRICT aux_out) {}
-
-void RunDCDecoder(bool progressive16, const uint32_t* JXL_RESTRICT extra_levels,
-                  const Rect& rect, const float* JXL_RESTRICT mul_dc,
-                  const float* JXL_RESTRICT cmap_factor,
-                  const float* JXL_RESTRICT* JXL_RESTRICT downsampled_dc_rows,
-                  size_t downsampled_dc_stride,
-                  float** JXL_RESTRICT dc_dec_rows, size_t dc_dec_stride,
-                  float** JXL_RESTRICT dc_quant_field_rows,
-                  size_t dc_quant_field_stride, BitReader* JXL_RESTRICT br,
-                  ANSSymbolReader* JXL_RESTRICT decoder,
-                  const std::vector<uint8_t>& context_map,
-                  AuxOut* JXL_RESTRICT aux_out) {}
-
-namespace {
 HWY_ALIGN const uint32_t kExtraLevels[4][4] = {
     {0, 0, 0, /*unused*/ 0},
     {1, 1, 1, /*unused*/ 0},
     {1, 2, 1, /*unused*/ 0},
     {2, 3, 2, /*unused*/ 0},
 };
-}
 
-}  // namespace
-
-void TokenizeDC(size_t group_index, const Image3F& dc,
-                PassesEncoderState* JXL_RESTRICT enc_state, AuxOut* aux_out) {
+HWY_ATTR void TokenizeDC(size_t group_index, const Image3F& dc,
+                         PassesEncoderState* JXL_RESTRICT enc_state,
+                         AuxOut* aux_out) {
   const Rect rect = enc_state->shared.DCGroupRect(group_index);
   const Quantizer& quantizer = enc_state->shared.quantizer;
   const ColorCorrelationMap& cmap = enc_state->shared.cmap;
@@ -482,7 +461,7 @@ void TokenizeDC(size_t group_index, const Image3F& dc,
                                    rect.PlaneRow(dc_quant_field, 2, 0)};
   const size_t dc_quant_field_stride = dc_quant_field->PixelsPerRow();
 
-  DCEncoder coder(rect.xsize(),
+  HWY_ALIGN DCEncoder coder(rect.xsize(),
                   kExtraLevels[enc_state->extra_dc_levels[group_index]],
                   quantizer.MulDC(), quantizer.InvMulDC(), cmap.DCFactors(),
                   dc_rows, dc_stride, dc_dec_rows, dc_dec_stride,
@@ -491,11 +470,12 @@ void TokenizeDC(size_t group_index, const Image3F& dc,
             aux_out);
 }
 
-void DecodeDC(BitReader* br, ANSSymbolReader* decoder,
-              const std::vector<uint8_t>& context_map, const Rect& rect,
-              const float* mul_dc, const float* cmap_factor, int extra_levels,
-              Image3F* JXL_RESTRICT dc, Image3F* JXL_RESTRICT dc_quant_field,
-              AuxOut* aux_out) {
+HWY_ATTR void DecodeDC(BitReader* br, ANSSymbolReader* decoder,
+                       const std::vector<uint8_t>& context_map,
+                       const Rect& rect, const float* mul_dc,
+                       const float* cmap_factor, int extra_levels,
+                       Image3F* JXL_RESTRICT dc,
+                       Image3F* JXL_RESTRICT dc_quant_field, AuxOut* aux_out) {
   PROFILER_FUNC;
   // Not restrict: the predictor will create aliasing pointers in these arrays,
   // and they are not used directly anyway.
@@ -507,145 +487,15 @@ void DecodeDC(BitReader* br, ANSSymbolReader* decoder,
                                    rect.PlaneRow(dc_quant_field, 2, 0)};
   const size_t dc_quant_field_stride = dc_quant_field->PixelsPerRow();
 
-  DCDecoder coder(rect.xsize(), kExtraLevels[extra_levels], mul_dc, cmap_factor,
+  HWY_ALIGN DCDecoder coder(rect.xsize(), kExtraLevels[extra_levels], mul_dc, cmap_factor,
                   dc_rows, dc_stride, dc_quant_field_rows,
                   dc_quant_field_stride);
   coder.Run(rect.xsize(), rect.ysize(), br, decoder, context_map, aux_out);
 }
 
-constexpr size_t kCmapBaseContext = DcCoderBase::kNumContexts;
-constexpr size_t kControlFieldBaseContext = kCmapBaseContext + kCmapContexts;
-constexpr size_t kNumDCContexts =
-    kControlFieldBaseContext + kNumControlFieldContexts;
-
-Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
-                     BitWriter* writer, AuxOut* aux_out) {
-  const Rect rect = enc_state.shared.DCGroupRect(group_idx);
-  // Single set of tokens to avoid overhead of multiple ANS streams.
-  std::vector<std::vector<Token>> tokens(1);
-
-  if (!(enc_state.shared.frame_header.flags & FrameHeader::kUseDcFrame)) {
-    JXL_ASSERT(enc_state.extra_dc_levels[group_idx] < 4);
-    // Copy DC tokens from enc cache.
-    tokens[0] = enc_state.dc_tokens[group_idx];
-
-    BitWriter::Allotment allotment(writer, 1 + 2 * kBitsPerByte);
-    // Write number of extra DC levels.
-    writer->Write(2, enc_state.extra_dc_levels[group_idx]);
-    ReclaimAndCharge(writer, &allotment, kLayerDC, aux_out);
-  }
-
-  if (!enc_state.shared.experiments.use_new_cmap) {
-    JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);
-    JXL_ASSERT(rect.y0() % kColorTileDimInBlocks == 0);
-    Rect cmap_rect(rect.x0() / kColorTileDimInBlocks,
-                   rect.y0() / kColorTileDimInBlocks,
-                   DivCeil(rect.xsize(), kColorTileDimInBlocks),
-                   DivCeil(rect.ysize(), kColorTileDimInBlocks));
-
-    EncodeColorMap(enc_state.shared.cmap, cmap_rect, &tokens[0],
-                   kCmapBaseContext, aux_out);
-  }
-
-  TokenizeAcStrategy(rect, enc_state.shared.ac_strategy, &tokens[0],
-                     kControlFieldBaseContext);
-
-  TokenizeQuantField(rect, enc_state.shared.raw_quant_field,
-                     enc_state.shared.ac_strategy, &tokens[0],
-                     kControlFieldBaseContext + kAcStrategyContexts);
-
-  if (enc_state.shared.image_features.loop_filter.epf) {
-    TokenizeARParameters(
-        rect, enc_state.shared.epf_sharpness, enc_state.shared.ac_strategy,
-        &tokens[0],
-        kControlFieldBaseContext + kAcStrategyContexts + kQuantFieldContexts);
-  }
-
-  std::vector<uint8_t> context_map;
-  EntropyEncodingData codes;
-  HistogramParams hist_params(enc_state.cparams.speed_tier, kNumDCContexts);
-  BuildAndEncodeHistograms(hist_params, kNumDCContexts, tokens, &codes,
-                           &context_map, writer, kLayerDC, aux_out);
-  WriteTokens(tokens[0], codes, context_map, writer, kLayerDC, aux_out);
-
-  return true;
-}
-
-// `rect`: block units.
-HWY_ATTR Status DecodeDCGroup(BitReader* reader, size_t group_idx,
-                              PassesDecoderState* dec_state, AuxOut* aux_out) {
-  PROFILER_FUNC;
-  int extra_dc_levels = 0;
-
-  if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
-    extra_dc_levels = reader->ReadFixedBits<2>();
-  }
-
-  std::vector<uint8_t> context_map;
-  ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(
-      reader, kNumDCContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
-  ANSSymbolReader decoder(&code, reader);
-
-  const Rect rect = dec_state->shared->DCGroupRect(group_idx);
-  const size_t xsize = rect.xsize();
-  const size_t ysize = rect.ysize();
-  Rect rect0(0, 0, xsize, ysize);
-  if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
-    DecodeDC(reader, &decoder, context_map, rect,
-             dec_state->shared->quantizer.MulDC(),
-             dec_state->shared->cmap.DCFactors(), extra_dc_levels,
-             &dec_state->shared_storage.dc_storage,
-             &dec_state->shared_storage.dc_quant_field, aux_out);
-  }
-
-  if (!dec_state->shared_storage.experiments.use_new_cmap) {
-    JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);
-    JXL_ASSERT(rect.y0() % kColorTileDimInBlocks == 0);
-    Rect cmap_rect(rect.x0() / kColorTileDimInBlocks,
-                   rect.y0() / kColorTileDimInBlocks,
-                   DivCeil(rect.xsize(), kColorTileDimInBlocks),
-                   DivCeil(rect.ysize(), kColorTileDimInBlocks));
-
-    // Not all default
-    JXL_RETURN_IF_ERROR(DecodeColorMap(reader, &decoder, context_map,
-                                       &dec_state->shared_storage.cmap,
-                                       cmap_rect, kCmapBaseContext, aux_out));
-  }
-
-  if (!DecodeAcStrategy(reader, &decoder, context_map, rect,
-                        &dec_state->shared_storage.ac_strategy,
-                        kControlFieldBaseContext)) {
-    return JXL_FAILURE("Failed to decode AcStrategy.");
-  }
-
-  if (!DecodeQuantField(reader, &decoder, context_map, rect,
-                        dec_state->shared_storage.ac_strategy,
-                        &dec_state->shared_storage.raw_quant_field,
-                        kControlFieldBaseContext + kAcStrategyContexts)) {
-    return JXL_FAILURE("Failed to decode QuantField.");
-  }
-
-  if (dec_state->shared->image_features.loop_filter.epf &&
-      !DecodeARParameters(reader, &decoder, context_map, rect,
-                          dec_state->shared_storage.ac_strategy,
-                          &dec_state->shared_storage.epf_sharpness,
-                          kControlFieldBaseContext + kAcStrategyContexts +
-                              kQuantFieldContexts)) {
-    return JXL_FAILURE("Failed to decode ARParameters.");
-  }
-
-  if (!decoder.CheckANSFinalState()) {
-    return JXL_FAILURE("DC group: ANS checksum failure.");
-  }
-
-  return true;
-}
-
-namespace {
 using D = HWY_FULL(float);
-using DScalar = hwy::Scalar<float>;
-using V = hwy::VT<D>;
+using DScalar = HWY_CAPPED(float, 1);
+using V = HWY_VEC(D);
 
 // TODO(veluca): optimize constants.
 const float w1 = 0.20345139757231578f;
@@ -654,7 +504,7 @@ const float w0 = 1.0f - 4.0f * (w1 + w2);
 
 template <class V>
 HWY_ATTR V MaxWorkaround(V a, V b) {
-#if (HWY_ALL_TARGETS & HWY_AVX512) && HWY_COMPILER_CLANG <= 800
+#if (HWY_TARGET == HWY_AVX3) && HWY_COMPILER_CLANG <= 800
   // Prevents "Do not know how to split the result of this operator" error
   return IfThenElse(a > b, a, b);
 #else
@@ -666,8 +516,8 @@ template <typename D>
 HWY_ATTR JXL_INLINE void ComputePixelChannel(
     const D d, const float* JXL_RESTRICT dc_quant_row,
     const float* JXL_RESTRICT row_top, const float* JXL_RESTRICT row,
-    const float* JXL_RESTRICT row_bottom, hwy::VT<D>* JXL_RESTRICT mc,
-    hwy::VT<D>* JXL_RESTRICT sm, hwy::VT<D>* JXL_RESTRICT gap, size_t x) {
+    const float* JXL_RESTRICT row_bottom, HWY_VEC(D) * JXL_RESTRICT mc,
+    HWY_VEC(D) * JXL_RESTRICT sm, HWY_VEC(D) * JXL_RESTRICT gap, size_t x) {
   const auto tl = LoadU(d, row_top + x - 1);
   const auto tc = Load(d, row_top + x);
   const auto tr = LoadU(d, row_top + x + 1);
@@ -688,13 +538,8 @@ HWY_ATTR JXL_INLINE void ComputePixelChannel(
   const auto side = ml + mr + tc + bc;
   *sm = corner * w_corner + side * w_side + *mc * w_center;
 
-  constexpr uint32_t kMask = 0x7FFFFFFF;
-  float mask;
-  memcpy(&mask, &kMask, sizeof(float));
-  const auto sign_mask = Set(d, mask);
-
   const auto dc_quant = Load(d, dc_quant_row + x);
-  *gap = MaxWorkaround(*gap, sign_mask & ((*mc - *sm) / dc_quant));
+  *gap = MaxWorkaround(*gap, Abs((*mc - *sm) / dc_quant));
 }
 
 template <typename D>
@@ -729,10 +574,8 @@ HWY_ATTR JXL_INLINE void ComputePixel(
   Store(out, d, out_rows[2] + x);
 }
 
-}  // namespace
-
-HWY_ATTR JXL_NOINLINE void AdaptiveDCSmoothing(const Image3F& dc_quant_field,
-                                               Image3F* dc, ThreadPool* pool) {
+HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
+                                  ThreadPool* pool) {
   const size_t xsize = dc->xsize();
   const size_t ysize = dc->ysize();
   if (ysize <= 2 || xsize <= 2) return;
@@ -805,5 +648,143 @@ HWY_ATTR JXL_NOINLINE void AdaptiveDCSmoothing(const Image3F& dc_quant_field,
             "DCSmoothingRow");
   dc->Swap(smoothed);
 }
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(TokenizeDC)
+HWY_EXPORT(DecodeDC)
+HWY_EXPORT(AdaptiveDCSmoothing)
+
+constexpr size_t kCmapBaseContext = kNumDcContexts;
+constexpr size_t kControlFieldBaseContext = kCmapBaseContext + kCmapContexts;
+constexpr size_t kNumDCContexts =
+    kControlFieldBaseContext + kNumControlFieldContexts;
+
+Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
+                     BitWriter* writer, AuxOut* aux_out) {
+  const Rect rect = enc_state.shared.DCGroupRect(group_idx);
+  // Single set of tokens to avoid overhead of multiple ANS streams.
+  std::vector<std::vector<Token>> tokens(1);
+
+  if (!(enc_state.shared.frame_header.flags & FrameHeader::kUseDcFrame)) {
+    JXL_ASSERT(enc_state.extra_dc_levels[group_idx] < 4);
+    // Copy DC tokens from enc cache.
+    tokens[0] = enc_state.dc_tokens[group_idx];
+
+    BitWriter::Allotment allotment(writer, 1 + 2 * kBitsPerByte);
+    // Write number of extra DC levels.
+    writer->Write(2, enc_state.extra_dc_levels[group_idx]);
+    ReclaimAndCharge(writer, &allotment, kLayerDC, aux_out);
+  }
+
+  JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);
+  JXL_ASSERT(rect.y0() % kColorTileDimInBlocks == 0);
+  Rect cmap_rect(rect.x0() / kColorTileDimInBlocks,
+                 rect.y0() / kColorTileDimInBlocks,
+                 DivCeil(rect.xsize(), kColorTileDimInBlocks),
+                 DivCeil(rect.ysize(), kColorTileDimInBlocks));
+
+  const uint32_t targets_bits = hwy::SupportedTargets();
+  ChooseEncodeColorMap(targets_bits)(enc_state.shared.cmap, cmap_rect,
+                                     &tokens[0], kCmapBaseContext, aux_out);
+
+  ChooseTokenizeAcStrategy(targets_bits)(rect, enc_state.shared.ac_strategy,
+                                         &tokens[0], kControlFieldBaseContext);
+
+  ChooseTokenizeQuantField(targets_bits)(
+      rect, enc_state.shared.raw_quant_field, enc_state.shared.ac_strategy,
+      &tokens[0], kControlFieldBaseContext + kAcStrategyContexts);
+
+  if (enc_state.shared.image_features.loop_filter.epf) {
+    ChooseTokenizeARParameters(targets_bits)(
+        rect, enc_state.shared.epf_sharpness, enc_state.shared.ac_strategy,
+        &tokens[0],
+        kControlFieldBaseContext + kAcStrategyContexts + kQuantFieldContexts);
+  }
+
+  std::vector<uint8_t> context_map;
+  EntropyEncodingData codes;
+  HistogramParams hist_params(enc_state.cparams.speed_tier, kNumDCContexts);
+  BuildAndEncodeHistograms(hist_params, kNumDCContexts, tokens, &codes,
+                           &context_map, writer, kLayerDC, aux_out);
+  WriteTokens(tokens[0], codes, context_map, writer, kLayerDC, aux_out);
+
+  return true;
+}
+
+// `rect`: block units.
+Status DecodeDCGroup(BitReader* reader, size_t group_idx,
+                     PassesDecoderState* dec_state, AuxOut* aux_out) {
+  PROFILER_FUNC;
+  const uint32_t targets_bits = hwy::SupportedTargets();
+  int extra_dc_levels = 0;
+
+  if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
+    extra_dc_levels = reader->ReadFixedBits<2>();
+  }
+
+  std::vector<uint8_t> context_map;
+  ANSCode code;
+  JXL_RETURN_IF_ERROR(DecodeHistograms(
+      reader, kNumDCContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+  ANSSymbolReader decoder(&code, reader);
+
+  const Rect rect = dec_state->shared->DCGroupRect(group_idx);
+  const size_t xsize = rect.xsize();
+  const size_t ysize = rect.ysize();
+  Rect rect0(0, 0, xsize, ysize);
+  if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
+    ChooseDecodeDC(targets_bits)(
+        reader, &decoder, context_map, rect,
+        dec_state->shared->quantizer.MulDC(),
+        dec_state->shared->cmap.DCFactors(), extra_dc_levels,
+        &dec_state->shared_storage.dc_storage,
+        &dec_state->shared_storage.dc_quant_field, aux_out);
+  }
+
+  JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);
+  JXL_ASSERT(rect.y0() % kColorTileDimInBlocks == 0);
+  Rect cmap_rect(rect.x0() / kColorTileDimInBlocks,
+                 rect.y0() / kColorTileDimInBlocks,
+                 DivCeil(rect.xsize(), kColorTileDimInBlocks),
+                 DivCeil(rect.ysize(), kColorTileDimInBlocks));
+
+  JXL_RETURN_IF_ERROR(ChooseDecodeColorMap(targets_bits)(
+      reader, &decoder, context_map, &dec_state->shared_storage.cmap, cmap_rect,
+      kCmapBaseContext, aux_out));
+
+  if (!ChooseDecodeAcStrategy(targets_bits)(
+          reader, &decoder, context_map, rect,
+          &dec_state->shared_storage.ac_strategy, kControlFieldBaseContext)) {
+    return JXL_FAILURE("Failed to decode AcStrategy.");
+  }
+
+  if (!ChooseDecodeQuantField(targets_bits)(
+          reader, &decoder, context_map, rect,
+          dec_state->shared_storage.ac_strategy,
+          &dec_state->shared_storage.raw_quant_field,
+          kControlFieldBaseContext + kAcStrategyContexts)) {
+    return JXL_FAILURE("Failed to decode QuantField.");
+  }
+
+  if (dec_state->shared->image_features.loop_filter.epf &&
+      !ChooseDecodeARParameters(targets_bits)(
+          reader, &decoder, context_map, rect,
+          dec_state->shared_storage.ac_strategy,
+          &dec_state->shared_storage.epf_sharpness,
+          kControlFieldBaseContext + kAcStrategyContexts +
+              kQuantFieldContexts)) {
+    return JXL_FAILURE("Failed to decode ARParameters.");
+  }
+
+  if (!decoder.CheckANSFinalState()) {
+    return JXL_FAILURE("DC group: ANS checksum failure.");
+  }
+
+  return true;
+}
+
+#endif  // HWY_ONCE
 
 }  // namespace jxl

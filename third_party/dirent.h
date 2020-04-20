@@ -21,7 +21,9 @@
 
 #include <sys/stat.h>  // S_IFREG
 
+#ifndef _MODE_T_
 typedef unsigned int mode_t;
+#endif  // _MODE_T_
 int mkdir(const char* path, mode_t mode);
 
 struct dirent {
@@ -30,8 +32,13 @@ struct dirent {
 
 #define stat _stat64
 
+#ifndef S_ISDIR
 #define S_ISDIR(m) (m & S_IFDIR)
+#endif  // S_ISDIR
+
+#ifndef S_ISREG
 #define S_ISREG(m) (m & S_IFREG)
+#endif  // S_ISREG
 
 struct DIR;
 DIR* opendir(const char* path);

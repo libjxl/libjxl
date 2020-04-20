@@ -86,10 +86,6 @@ struct JxlArgs {
   bool progressive;
   size_t progressive_dc;
 
-  double intensity_target;
-  BenchmarkArgs::OptionId intensity_target_option_id;
-  bool got_intensity_target;
-
   Override noise;
   Override adaptive_reconstruction;
   Override dots;
@@ -113,13 +109,6 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
   args->AddUnsigned(&jxlargs->progressive_dc, "progressive_dc",
                     "Enable progressive mode for DC.", 0);
 
-  jxlargs->intensity_target_option_id = args->AddDouble(
-      &jxlargs->intensity_target, "intensity_target",
-      "Intended viewing intensity target in nits. Defaults to 250 for SDR"
-      " images, 4000 for HDR images (when the input image uses PQ or HLG"
-      " transfer function)",
-      jxl::kDefaultIntensityTarget);
-
   args->AddOverride(&jxlargs->noise, "noise",
                     "Enable(1)/disable(0) noise generation.");
   args->AddOverride(
@@ -139,11 +128,7 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
   return true;
 }
 
-Status ValidateArgsJxlCodec(BenchmarkArgs* args) {
-  jxlargs->got_intensity_target =
-      args->cmdline.GetOption(jxlargs->intensity_target_option_id)->matched();
-  return true;
-}
+Status ValidateArgsJxlCodec(BenchmarkArgs* args) { return true; }
 
 class JxlCodec : public ImageCodec {
  public:
@@ -169,7 +154,7 @@ class JxlCodec : public ImageCodec {
       parser >> dparams_.max_downsampling;
     } else if (param == "nl") {
       cparams_.color_transform = jxl::ColorTransform::kNone;
-      cparams_.options.entropy_coder = 1;
+      cparams_.options.entropy_coder = ModularOptions::kBrotli;
       cparams_.near_lossless = 3;
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;
@@ -194,9 +179,7 @@ class JxlCodec : public ImageCodec {
     } else if (param[0] == 'I') {
       cparams_.options.nb_repeats = strtof(param.substr(1).c_str(), nullptr);
     } else if (param == "Brotli") {
-      cparams_.options.entropy_coder = 1;
-    } else if (param == "ANS") {
-      cparams_.options.entropy_coder = 2;
+      cparams_.options.entropy_coder = ModularOptions::kBrotli;
     } else if (param[0] == 'E') {
       cparams_.options.max_properties =
           strtof(param.substr(1).c_str(), nullptr);
@@ -215,7 +198,7 @@ class JxlCodec : public ImageCodec {
       cparams_.brunsli_group_mode = true;
       cparams_.color_transform = jxl::ColorTransform::kYCbCr;
     } else if (param == "plt") {
-      cparams_.options.entropy_coder = 1;
+      cparams_.options.entropy_coder = ModularOptions::kBrotli;
       cparams_.options.brotli_effort = 11;
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;
@@ -289,12 +272,6 @@ class JxlCodec : public ImageCodec {
     }
     cparams_.butteraugli_distance = butteraugli_target_;
     cparams_.target_bitrate = bitrate_target_;
-
-    if (jxlargs->got_intensity_target) {
-      cparams_.intensity_target = static_cast<float>(jxlargs->intensity_target);
-    } else {
-      cparams_.intensity_target = ChooseDefaultIntensityTarget(io->metadata);
-    }
 
     cparams_.dots = jxlargs->dots;
     cparams_.patches = jxlargs->patches;

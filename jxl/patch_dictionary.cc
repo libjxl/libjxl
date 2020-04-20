@@ -19,7 +19,6 @@
 #include <sys/types.h>
 
 #include <algorithm>
-#include <hwy/static_targets.h>
 #include <random>
 #include <string>
 #include <tuple>
@@ -44,7 +43,6 @@
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
-#include "jxl/predictor.h"
 
 namespace jxl {
 
@@ -115,9 +113,8 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
-HWY_ATTR Status PatchDictionary::Decode(BitReader* br, size_t xsize,
-                                        size_t ysize,
-                                        size_t save_as_reference) {
+Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
+                               size_t save_as_reference) {
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(DecodeHistograms(br, kNumPatchDictionaryContexts,
@@ -125,7 +122,7 @@ HWY_ATTR Status PatchDictionary::Decode(BitReader* br, size_t xsize,
                                        &context_map));
   ANSSymbolReader decoder(&code, br);
 
-  auto read_num = [&](size_t context) HWY_ATTR {
+  auto read_num = [&](size_t context) {
     size_t r = decoder.ReadHybridUint(context, br, context_map);
     return r;
   };

@@ -12,23 +12,47 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
-
-#define HWY_USE_GTEST
-#include <hwy/tests/test_util.h>
-
-struct FastLog12Test {
-  HWY_DECLARE(void, ())
-};
-TEST(FastLog12Test, Run) { hwy::RunTests<FastLog12Test>(); }
-
-#include <hwy/tests/test_target_util.h>
-#include <random>
-
 #include "jxl/base/fast_log.h"
 
+#include <random>
+
+#ifndef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
+#define HWY_USE_GTEST
+#endif
+#include <hwy/foreach_target.h>
+#include <hwy/tests/test_util.h>
+
+// After foreach_target
+#include "jxl/fast_log-inl.h"
+
 namespace jxl {
+
+#include <hwy/tests/test_util-inl.h>
+
+#include <hwy/begin_target-inl.h>
+
+HWY_NOINLINE HWY_ATTR void TestFastLog12() {
+  constexpr size_t kNumTrials = 1 << 23;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<float> dist(1e-7f, 1e3f);
+  float max_abs_err = 0;
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < kNumTrials; i++) {
+    const float f = dist(rng);
+    const float actual = GetLane(FastLog2f_18bits(Set(d, f)));
+    const float abs_err = std::abs(std::log2(f) - actual);
+    EXPECT_LT(abs_err, 2.9E-6) << "f = " << f;
+    max_abs_err = std::max(max_abs_err, abs_err);
+  }
+  printf("18: max abs err %e\n", static_cast<double>(max_abs_err));
+}
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+
+HWY_EXPORT(TestFastLog12)
 
 TEST(FastLogTest, TestFastLog) {
   constexpr size_t kNumTrials = 1 << 23;
@@ -44,36 +68,8 @@ TEST(FastLogTest, TestFastLog) {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
+TEST(FastLogTest, Run) { hwy::RunTest(&ChooseTestFastLog12); }
+
+#endif  // HWY_ONCE
+
 }  // namespace jxl
-
-#endif  // HWY_TARGET_INCLUDE
-
-namespace jxl {
-namespace HWY_NAMESPACE {
-namespace {
-
-#include <fast_log-inl.h>
-
-HWY_NOINLINE HWY_ATTR void CheckFastLog12() {
-  constexpr size_t kNumTrials = 1 << 23;
-  std::mt19937 rng(1);
-  std::uniform_real_distribution<float> dist(1e-7f, 1e3f);
-  float max_abs_err = 0;
-  HWY_FULL(float) d;
-  for (size_t i = 0; i < kNumTrials; i++) {
-    const float f = dist(rng);
-    const float actual = GetLane(FastLog2f_12bits(Set(d, f)));
-    const float abs_err = std::abs(std::log2(f) - actual);
-    EXPECT_LT(abs_err, 1.6E-4) << "f = " << f;
-    max_abs_err = std::max(max_abs_err, abs_err);
-  }
-  printf("12: max abs err %e\n", static_cast<double>(max_abs_err));
-}
-
-}  // namespace
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
-
-// Instantiate for the current target.
-void FastLog12Test::HWY_FUNC() { jxl::HWY_NAMESPACE::CheckFastLog12(); }

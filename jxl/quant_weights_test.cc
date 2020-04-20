@@ -17,9 +17,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
+#include <random>
 
-#include "gtest/gtest.h"
-#include "jxl/dct.h"
+#define HWY_USE_GTEST
+#include <hwy/interface.h>
+#include <hwy/tests/test_util.h>  // ForeachTarget
+#include "jxl/dct_for_test.h"
+#include "jxl/dec_transforms.h"
+#include "jxl/enc_transforms.h"
 
 namespace jxl {
 namespace {
@@ -157,7 +163,7 @@ TEST(QuantWeightsTest, RAW) {
   RoundtripMatrices(encodings);
 }
 
-TEST(QuantWeightsTest, DCTUniform) {
+void TestUniform(uint32_t target_bit) {
   constexpr float kUniformQuant = 4;
   float weights[3][2] = {{1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0},
@@ -172,27 +178,30 @@ TEST(QuantWeightsTest, DCTUniform) {
                              1.0f / kUniformQuant};
   dequant_matrices.SetCustomDC(dc_quant);
 
+  const auto from_pixels = ChooseTransformFromPixels(target_bit);
+  const auto to_pixels = ChooseTransformToPixels(target_bit);
+
   // DCT8
   {
-    HWY_ALIGN float pixels[64];
+    HWY_ALIGN_MAX float pixels[64];
     std::iota(std::begin(pixels), std::end(pixels), 0);
-    HWY_ALIGN float coeffs[64];
-    AcStrategy dct = AcStrategy::FromRawStrategy(AcStrategy::DCT);
-    dct.TransformFromPixels(pixels, 8, coeffs);
-    HWY_ALIGN double slow_coeffs[64];
+    HWY_ALIGN_MAX float coeffs[64];
+    const AcStrategy::Type dct = AcStrategy::DCT;
+    from_pixels(dct, pixels, 8, coeffs);
+    HWY_ALIGN_MAX double slow_coeffs[64];
     for (size_t i = 0; i < 64; i++) slow_coeffs[i] = pixels[i];
-    slow_dct::DCTSlow<8>(slow_coeffs);
+    DCTSlow<8>(slow_coeffs);
 
     for (size_t i = 0; i < 64; i++) {
       // DCTSlow doesn't multiply/divide by 1/N, so we do it manually.
       slow_coeffs[i] =
           std::round(slow_coeffs[i] / 8 / kUniformQuant) * 8 * kUniformQuant;
-      coeffs[i] = std::round(coeffs[i] * dequant_matrices.InvMatrix(
-                                             dct.RawStrategy(), 0)[i]) *
-                  dequant_matrices.Matrix(dct.RawStrategy(), 0)[i];
+      coeffs[i] =
+          std::round(coeffs[i] * dequant_matrices.InvMatrix(dct, 0)[i]) *
+          dequant_matrices.Matrix(dct, 0)[i];
     }
-    slow_dct::IDCTSlow<8>(slow_coeffs);
-    dct.TransformToPixels(coeffs, pixels, 8);
+    IDCTSlow<8>(slow_coeffs);
+    to_pixels(dct, coeffs, pixels, 8);
     for (size_t i = 0; i < 64; i++) {
       EXPECT_NEAR(pixels[i], slow_coeffs[i], 1e-4);
     }
@@ -200,25 +209,25 @@ TEST(QuantWeightsTest, DCTUniform) {
 
   // DCT16
   {
-    HWY_ALIGN float pixels[64 * 4];
+    HWY_ALIGN_MAX float pixels[64 * 4];
     std::iota(std::begin(pixels), std::end(pixels), 0);
-    HWY_ALIGN float coeffs[64 * 4];
-    AcStrategy dct = AcStrategy::FromRawStrategy(AcStrategy::DCT16X16);
-    dct.TransformFromPixels(pixels, 16, coeffs);
-    HWY_ALIGN double slow_coeffs[64 * 4];
+    HWY_ALIGN_MAX float coeffs[64 * 4];
+    const AcStrategy::Type dct = AcStrategy::DCT16X16;
+    from_pixels(dct, pixels, 16, coeffs);
+    HWY_ALIGN_MAX double slow_coeffs[64 * 4];
     for (size_t i = 0; i < 64 * 4; i++) slow_coeffs[i] = pixels[i];
-    slow_dct::DCTSlow<16>(slow_coeffs);
+    DCTSlow<16>(slow_coeffs);
 
     for (size_t i = 0; i < 64 * 4; i++) {
       slow_coeffs[i] =
           std::round(slow_coeffs[i] / 16 / kUniformQuant) * 16 * kUniformQuant;
-      coeffs[i] = std::round(coeffs[i] * dequant_matrices.InvMatrix(
-                                             dct.RawStrategy(), 0)[i]) *
-                  dequant_matrices.Matrix(dct.RawStrategy(), 0)[i];
+      coeffs[i] =
+          std::round(coeffs[i] * dequant_matrices.InvMatrix(dct, 0)[i]) *
+          dequant_matrices.Matrix(dct, 0)[i];
     }
 
-    slow_dct::IDCTSlow<16>(slow_coeffs);
-    dct.TransformToPixels(coeffs, pixels, 16);
+    IDCTSlow<16>(slow_coeffs);
+    to_pixels(dct, coeffs, pixels, 16);
     for (size_t i = 0; i < 64 * 4; i++) {
       EXPECT_NEAR(pixels[i], slow_coeffs[i], 1e-4);
     }
@@ -230,6 +239,8 @@ TEST(QuantWeightsTest, DCTUniform) {
     EXPECT_NEAR(dequant_matrices.Matrix(i, 0)[0], kUniformQuant, 1e-6);
   }
 }
+
+TEST(QuantWeightsTest, DCTUniform) { hwy::ForeachTarget(&TestUniform); }
 
 }  // namespace
 }  // namespace jxl

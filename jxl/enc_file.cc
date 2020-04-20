@@ -111,7 +111,6 @@ Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
     metadata->color_encoding.DecideIfWantICC();
   }
 
-  metadata->SetIntensityTarget(cparams.intensity_target);
   return true;
 }
 

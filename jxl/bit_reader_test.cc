@@ -32,7 +32,7 @@
 namespace jxl {
 namespace {
 
-HWY_ATTR void BitReaderTest_ExtendsWithZeroes() {
+TEST(BitReaderTest, ExtendsWithZeroes) {
   for (size_t size = 4; size < 32; ++size) {
     std::vector<uint8_t> data(size, 0xff);
 
@@ -53,7 +53,6 @@ HWY_ATTR void BitReaderTest_ExtendsWithZeroes() {
     }
   }
 }
-TEST(BitReaderTest, ExtendsWithZeroes) { BitReaderTest_ExtendsWithZeroes(); }
 
 struct Symbol {
   uint32_t num_bits;
@@ -64,7 +63,7 @@ struct Symbol {
 TEST(BitReaderTest, TestRoundTrip) {
   ThreadPoolInternal pool(8);
   pool.Run(0, 1000, ThreadPool::SkipInit(),
-           [](const int task, const int /* thread */) HWY_ATTR {
+           [](const int task, const int /* thread */) {
              constexpr size_t kMaxBits = 8000;
              BitWriter writer;
              BitWriter::Allotment allotment(&writer, kMaxBits);
@@ -98,7 +97,7 @@ TEST(BitReaderTest, TestSkip) {
   ThreadPoolInternal pool(8);
   pool.Run(
       0, 96, ThreadPool::SkipInit(),
-      [](const int task, const int /* thread */) HWY_ATTR {
+      [](const int task, const int /* thread */) {
         constexpr size_t kSize = 100;
 
         for (size_t skip = 0; skip < 128; ++skip) {
@@ -148,7 +147,7 @@ TEST(BitReaderTest, TestSkip) {
 }
 
 // Verifies byte order and different groupings of bits.
-HWY_ATTR void BitReaderTest_TestOrder() {
+TEST(BitReaderTest, TestOrder) {
   constexpr size_t kMaxBits = 16;
 
   // u(1) - bits written into LSBs of first byte
@@ -220,9 +219,7 @@ HWY_ATTR void BitReaderTest_TestOrder() {
   }
 }
 
-TEST(BitReaderTest, TestOrder) { BitReaderTest_TestOrder(); }
-
-HWY_ATTR void BitReaderTest_TotalCountersTest() {
+TEST(BitReaderTest, TotalCountersTest) {
   uint8_t buf[4] = {1, 2, 3, 4};
   BitReader reader(Span<const uint8_t>(buf, sizeof(buf)));
 
@@ -246,9 +243,7 @@ HWY_ATTR void BitReaderTest_TotalCountersTest() {
   EXPECT_TRUE(reader.Close());
 }
 
-TEST(BitReaderTest, TotalCountersTest) { BitReaderTest_TotalCountersTest(); }
-
-HWY_ATTR void BitReaderTest_MoveTest() {
+TEST(BitReaderTest, MoveTest) {
   uint8_t buf[4] = {1, 2, 3, 4};
   BitReader reader2;
   {
@@ -270,8 +265,6 @@ HWY_ATTR void BitReaderTest_MoveTest() {
   EXPECT_TRUE(reader2.Close());
 }
 
-TEST(BitReaderTest, MoveTest) { BitReaderTest_MoveTest(); }
-
 #ifndef JXL_CRASH_ON_ERROR
 TEST(BitReaderTest, WordTestPastTheEnd) {
   uint8_t data[1024] = {};
@@ -286,12 +279,12 @@ TEST(BitReaderTest, WordTestPastTheEnd) {
 }
 #endif
 
-HWY_ATTR void BitReaderTest_WordTestCorrect() {
+TEST(BitReaderTest, WordTestCorrect) {
   uint8_t data[1024] = {};
   std::mt19937 rng;
-  std::uniform_int_distribution<uint8_t> dist(0, 255);
+  std::uniform_int_distribution<> dist(0, 255);
   for (size_t i = 0; i < 1024; i++) {
-    data[i] = dist(rng);
+    data[i] = dist(rng) & 0xFF;
   }
   BitReader reader(Span<const uint8_t>(data, 1024));
   std::vector<uint16_t> words;
@@ -306,16 +299,13 @@ HWY_ATTR void BitReaderTest_WordTestCorrect() {
   }
   EXPECT_TRUE(word_reader.Close());
 }
-TEST(BitReaderTest, WordTestCorrect) {
-  BitReaderTest_WordTestCorrect();
-}
 
-HWY_ATTR void BitReaderTest_WordTestShort() {
+TEST(BitReaderTest, WordTestShort) {
   uint8_t data[4] = {};
   std::mt19937 rng;
-  std::uniform_int_distribution<uint8_t> dist(0, 255);
+  std::uniform_int_distribution<> dist(0, 255);
   for (size_t i = 0; i < 4; i++) {
-    data[i] = dist(rng);
+    data[i] = dist(rng) & 0xFF;
   }
   BitReader reader(Span<const uint8_t>(data, 4));
   BitReader word_reader(Span<const uint8_t>(data, 4));
@@ -325,10 +315,6 @@ HWY_ATTR void BitReaderTest_WordTestShort() {
   EXPECT_EQ(reader.ReadFixedBits<8>(), word_reader.ReadFixedBits<8>());
   ASSERT_TRUE(reader.Close());
   EXPECT_TRUE(word_reader.Close());
-}
-
-TEST(BitReaderTest, WordTestShort) {
-  BitReaderTest_WordTestShort();
 }
 
 }  // namespace

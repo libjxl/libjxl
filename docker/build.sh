@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Copyright (c) the JPEG XL Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,9 @@ MYDIR=$(dirname $(realpath "$0"))
 declare -a TARGETS
 
 load_targets() {
-  for f in $(find -maxdepth 1 -name 'Dockerfile.*' | sort); do
+  # Built-in OSX "find" does not support "-m".
+  FIND=$(which "gfind" || which "find")
+  for f in $(${FIND} -maxdepth 1 -name 'Dockerfile.*' | sort); do
     local target="${f#*Dockerfile.}"
     TARGETS+=("${target}")
   done
@@ -46,7 +48,8 @@ build_target() {
   local tag="gcr.io/jpegxl/${target}"
 
   echo "Building ${target}"
-  if ! sudo docker build -t "${tag}" -f "${dockerfile}" "${MYDIR}" >"${target}.log" 2>&1; then
+  if ! sudo docker build --no-cache -t "${tag}" -f "${dockerfile}" "${MYDIR}" \
+      >"${target}.log" 2>&1; then
     echo "${target} failed. See ${target}.log" >&2
   else
     echo "Done, to upload image run:" >&2

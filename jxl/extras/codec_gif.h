@@ -28,7 +28,8 @@
 namespace jxl {
 
 // Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImageGIF(const Span<const uint8_t> bytes, CodecInOut* io);
+Status DecodeImageGIF(const Span<const uint8_t> bytes, ThreadPool* pool,
+                      CodecInOut* io);
 
 }  // namespace jxl
 

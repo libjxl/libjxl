@@ -137,7 +137,7 @@ class JPEGCodec : public ImageCodec {
                     CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, io));
+    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, pool, io));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

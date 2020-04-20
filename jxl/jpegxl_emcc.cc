@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <brunsli/brunsli_decode.h>
 #include <jxl/base/span.h>
 #include <jxl/brunsli.h>
 #include <jxl/color_management.h>
@@ -34,7 +35,18 @@ ExternalImage* decompress(const uint8_t* data, size_t size) {
   CodecInOut io;
   BrunsliDecoderOptions options;
   BrunsliDecoderMeta metadata;
-  if (!BrunsliToPixels(compressed, &io, options, &metadata, pool)) {
+
+  io.enc_size = compressed.size();
+
+  brunsli::JPEGData jpg;
+  brunsli::BrunsliStatus status =
+      brunsli::BrunsliDecodeJpeg(compressed.data(), compressed.size(), &jpg);
+  if (status != brunsli::BRUNSLI_OK) {
+    printf("Failed to parse Brunsli input.");
+    return nullptr;
+  }
+
+  if (!BrunsliToPixels(jpg, &io, options, &metadata, pool)) {
     printf("Failed to decompress.\n");
     return nullptr;
   }

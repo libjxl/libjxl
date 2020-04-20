@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include <hwy/interface.h>
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -152,6 +153,9 @@ class Quantizer {
   void ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
                                   float quant_median_absd);
 
+  HWY_ALIGN_MAX float mul_dc_[4];
+  HWY_ALIGN_MAX float inv_mul_dc_[4];
+
   // These are serialized:
   int global_scale_;
   int quant_dc_;
@@ -162,8 +166,6 @@ class Quantizer {
   float inv_quant_dc_;
 
   float zero_bias_[3];
-  HWY_ALIGN float mul_dc_[4];
-  HWY_ALIGN float inv_mul_dc_[4];
   const DequantMatrices* dequant_;
 };
 

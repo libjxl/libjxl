@@ -32,6 +32,7 @@
 #include "jxl/fields.h"  // AllDefault
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
+#include "jxl/luminance.h"
 
 namespace jxl {
 namespace {
@@ -243,6 +244,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   JXL_RETURN_IF_ERROR(ApplyHints(io));
   io->metadata.bits_per_sample = header.bits_per_sample;
+  io->metadata.floating_point_sample = false;
   io->metadata.alpha_bits = 0;
   io->dec_pixels = header.xsize * header.ysize;
   io->frames.clear();
@@ -258,7 +260,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
   io->frames.push_back(std::move(ib));
-  return true;
+  return Map255ToTargetNits(io, pool);
 }
 
 Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
@@ -276,7 +278,8 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
         "will need hint key=color_space to get the same values");
   }
 
-  const ImageBundle& ib = io->Main();
+  ImageBundle ib = io->Main().Copy();
+  JXL_RETURN_IF_ERROR(MapTargetNitsTo255(&ib, pool));
   const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
   const size_t alpha_bits = ib.HasAlpha() ? io->metadata.alpha_bits : 0;
   CodecIntervals* temp_intervals = nullptr;  // Can't store min/max.
@@ -312,6 +315,7 @@ void TestCodecPGX() {
     JXL_CHECK(ok == true);
 
     JXL_CHECK(io.metadata.bits_per_sample == 8);
+    JXL_CHECK(io.metadata.floating_point_sample == false);
     JXL_CHECK(io.metadata.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);
@@ -333,6 +337,7 @@ void TestCodecPGX() {
     JXL_CHECK(ok == true);
 
     JXL_CHECK(io.metadata.bits_per_sample == 16);
+    JXL_CHECK(io.metadata.floating_point_sample == false);
     JXL_CHECK(io.metadata.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);

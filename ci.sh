@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Copyright (c) the JPEG XL Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +28,7 @@ CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
 CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
 SKIP_TEST="${SKIP_TEST:-0}"
 BUILD_TARGET="${BUILD_TARGET:-}"
+ENABLE_WASM_SIMD="${ENABLE_WASM_SIMD:-0}"
 if [[ -n "${BUILD_TARGET}" ]]; then
   BUILD_DIR="${BUILD_DIR:-${MYDIR}/build-${BUILD_TARGET%%-*}}"
 else
@@ -36,15 +37,32 @@ fi
 # Whether we should post a message in the MR when the build fails.
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 
+# Time limit for the "fuzz" command in seconds (0 means no limit).
+FUZZER_MAX_TIME="${FUZZER_MAX_TIME:-0}"
+
+# Default to building all targets, even if compiler baseline is SSE4
+HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-HWY_SCALAR}
+
 # Convenience flag to pass both CMAKE_C_FLAGS and CMAKE_CXX_FLAGS
 CMAKE_FLAGS=${CMAKE_FLAGS:-}
 CMAKE_C_FLAGS="${CMAKE_C_FLAGS:-} ${CMAKE_FLAGS}"
 CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS:-} ${CMAKE_FLAGS}"
+
 CMAKE_CROSSCOMPILING_EMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR:-}
 CMAKE_EXE_LINKER_FLAGS=${CMAKE_EXE_LINKER_FLAGS:-}
+CMAKE_FIND_ROOT_PATH=${CMAKE_FIND_ROOT_PATH:-}
 CMAKE_MODULE_LINKER_FLAGS=${CMAKE_MODULE_LINKER_FLAGS:-}
 CMAKE_SHARED_LINKER_FLAGS=${CMAKE_SHARED_LINKER_FLAGS:-}
 CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE:-}
+
+if [[ "${ENABLE_WASM_SIMD}" -ne "0" ]]; then
+  CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -s SIMD=1"
+  CMAKE_C_FLAGS="${CMAKE_C_FLAGS} -s SIMD=1"
+  CMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS} -s SIMD=1"
+  CMAKE_CROSSCOMPILING_EMULATOR="${MYDIR}/node-wasm-simd.sh"
+fi
+
+CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -DHWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS}"
 
 # Version inferred from the CI variables.
 CI_COMMIT_SHA=${CI_COMMIT_SHA:-}
@@ -98,6 +116,10 @@ if [[ -t 1 ]]; then
 else
   COLORDIFF_BIN="cat"
 fi
+FIND_BIN=$(which gfind find | head -n 1)
+# "false" will disable wine64 when not installed. This won't allow
+# cross-compiling.
+WINE_BIN=$(which wine64 false | head -n 1)
 
 CLANG_VERSION="${CLANG_VERSION:-}"
 # Detect the clang version suffix and store it in CLANG_VERSION. For example,
@@ -240,7 +262,25 @@ cmd_post_mr_comment() {
   set -x
 }
 
+# Set up and export the environment variables needed by the child processes.
+export_env() {
+  if [[ "${BUILD_TARGET}" == *mingw32 ]]; then
+    # Wine needs to know the paths to the mingw dlls. These should be
+    # separated by ';'.
+    WINEPATH=$("${CC:-clang}" -print-search-dirs --target="${BUILD_TARGET}" \
+      | grep -F 'libraries: =' | cut -f 2- -d '=' | tr ':' ';')
+    # We also need our own libraries in the wine path.
+    local real_build_dir=$(realpath "${BUILD_DIR}")
+    export WINEPATH="${WINEPATH};${real_build_dir}"
+
+    local prefix="${BUILD_DIR}/wineprefix"
+    mkdir -p "${prefix}"
+    export WINEPREFIX=$(realpath "${prefix}")
+  fi
+}
+
 cmake_configure() {
+  export_env
   local args=(
     -B"${BUILD_DIR}" -H"${MYDIR}"
     -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
@@ -255,6 +295,19 @@ cmake_configure() {
     -DJPEGXL_VERSION="${JPEGXL_VERSION}"
   )
   if [[ -n "${BUILD_TARGET}" ]]; then
+    local system_name="Linux"
+    if [[ "${BUILD_TARGET}" == *mingw32 ]]; then
+      # When cross-compiling with mingw the target must be set to Windows and
+      # run programs with wine.
+      system_name="Windows"
+      args+=(
+        -DCMAKE_CROSSCOMPILING_EMULATOR="${WINE_BIN}"
+        # Normally CMake automatically defines MINGW=1 when building with the
+        # mingw compiler (x86_64-w64-mingw32-gcc) but we are normally compiling
+        # with clang.
+        -DMINGW=1
+      )
+    fi
     # If set, BUILD_TARGET must be the target triplet such as
     # x86_64-unknown-linux-gnu.
     args+=(
@@ -262,7 +315,7 @@ cmake_configure() {
       -DCMAKE_CXX_COMPILER_TARGET="${BUILD_TARGET}"
       # Only the first element of the target triplet.
       -DCMAKE_SYSTEM_PROCESSOR="${BUILD_TARGET%%-*}"
-      -DCMAKE_SYSTEM_NAME=Linux
+      -DCMAKE_SYSTEM_NAME="${system_name}"
       # These are needed to make googletest work when cross-compiling.
       -DCMAKE_CROSSCOMPILING=1
       -DHAVE_STD_REGEX=0
@@ -271,8 +324,18 @@ cmake_configure() {
       -DHAVE_STEADY_CLOCK=0
       -DHAVE_THREAD_SAFETY_ATTRIBUTES=0
     )
-    # Use pkg-config for the target:
+    if [[ -z "${CMAKE_FIND_ROOT_PATH}" ]]; then
+      # find_package() will look in this prefix for libraries.
+      CMAKE_FIND_ROOT_PATH="/usr/${BUILD_TARGET}"
+    fi
+    # Use pkg-config for the target. If there's no pkg-config available for the
+    # target we can set the PKG_CONFIG_PATH to the appropriate path in most
+    # linux distributions.
     local pkg_config=$(which "${BUILD_TARGET}-pkg-config" || true)
+    if [[ -z "${pkg_config}" ]]; then
+      pkg_config=$(which pkg-config)
+      export PKG_CONFIG_LIBDIR="/usr/${BUILD_TARGET}/lib/pkgconfig"
+    fi
     if [[ -n "${pkg_config}" ]]; then
       args+=(-DPKG_CONFIG_EXECUTABLE="${pkg_config}")
     fi
@@ -280,6 +343,11 @@ cmake_configure() {
   if [[ -n "${CMAKE_CROSSCOMPILING_EMULATOR}" ]]; then
     args+=(
       -DCMAKE_CROSSCOMPILING_EMULATOR="${CMAKE_CROSSCOMPILING_EMULATOR}"
+    )
+  fi
+  if [[ -n "${CMAKE_FIND_ROOT_PATH}" ]]; then
+    args+=(
+      -DCMAKE_FIND_ROOT_PATH="${CMAKE_FIND_ROOT_PATH}"
     )
   fi
   cmake "${args[@]}" "$@"
@@ -292,14 +360,14 @@ cmake_build_and_test() {
   # Pack test binaries if requested.
   if [[ "${PACK_TEST:-}" == "1" ]]; then
     (cd "${BUILD_DIR}"
-     find -name '*.cmake' -a '!' -path '*CMakeFiles*'
-     find -type d -name tests -a '!' -path '*CMakeFiles*'
+     ${FIND_BIN} -name '*.cmake' -a '!' -path '*CMakeFiles*'
+     ${FIND_BIN} -type d -name tests -a '!' -path '*CMakeFiles*'
     ) | tar -C "${BUILD_DIR}" -cf "${BUILD_DIR}/tests.tar.xz" -T - \
       --use-compress-program="xz --threads=$(nproc --all || echo 1) -6"
     du -h "${BUILD_DIR}/tests.tar.xz"
     # Pack coverage data if also available.
     touch "${BUILD_DIR}/gcno.sentinel"
-    (cd "${BUILD_DIR}"; echo gcno.sentinel; find -name '*gcno') | \
+    (cd "${BUILD_DIR}"; echo gcno.sentinel; ${FIND_BIN} -name '*gcno') | \
       tar -C "${BUILD_DIR}" -cvf "${BUILD_DIR}/gcno.tar.xz" -T - \
         --use-compress-program="xz --threads=$(nproc --all || echo 1) -6"
   fi
@@ -368,8 +436,8 @@ cmd_coverage() {
 
 cmd_coverage_report() {
   detect_clang_version
-  LLVM_COV=$(which "llvm-cov-${CLANG_VERSION}")
-  local real_build_dir=$(realpath ${BUILD_DIR})
+  LLVM_COV=$(which "llvm-cov-${CLANG_VERSION}" || which "llvm-cov")
+  local real_build_dir=$(realpath "${BUILD_DIR}")
   local gcovr_args=(
     -r "${real_build_dir}"
     --gcov-executable "${LLVM_COV} gcov"
@@ -391,6 +459,7 @@ cmd_coverage_report() {
 }
 
 cmd_test() {
+  export_env
   # Unpack tests if needed.
   if [[ -e "${BUILD_DIR}/tests.tar.xz" && ! -d "${BUILD_DIR}/tests" ]]; then
     tar -C "${BUILD_DIR}" -Jxvf "${BUILD_DIR}/tests.tar.xz"
@@ -400,7 +469,7 @@ cmd_test() {
   fi
   (cd "${BUILD_DIR}"
    export UBSAN_OPTIONS=print_stacktrace=1
-   ctest -j $(nproc --all || echo 1) --output-on-failure)
+   ctest -j $(nproc --all || echo 1) --output-on-failure "$@")
 }
 
 cmd_asan() {
@@ -602,7 +671,7 @@ cmd_benchmark() {
       "${BUILD_DIR}/tools/decode_and_encode" \
         "${tmpdir}/${filename}" "${mode}" "${tmpdir}/${png_filename}"
     images+=( "${png_filename}" )
-  done < <(cd "${tmpdir}"; find . -name '*.ppm' -type f)
+  done < <(cd "${tmpdir}"; ${FIND_BIN} . -name '*.ppm' -type f)
   sem --id "${sem_id}" --wait
 
   # We need about 10 GiB per thread on these images.
@@ -721,8 +790,8 @@ cmd_arm_benchmark() {
     "--modular-group -Q 50"
     # Lossless options:
     "--modular-group"
-    "--modular-group -E 0 -I 0 -A"
-    "--modular-group -P 5 -A"
+    "--modular-group -E 0 -I 0"
+    "--modular-group -P 5"
     "--modular-group --responsive=1"
     # Near-lossless options:
     "--adaptive_reconstruction=0 --distance=0.3 --speed=fast"
@@ -790,6 +859,9 @@ cmd_arm_benchmark() {
 
       for cpu_conf in "${cpu_confs[@]}"; do
         cmd_cpuset "${cpu_conf}"
+        # nproc returns the number of active CPUs, which is given by the cpuset
+        # mask.
+        local num_threads="$(nproc)"
 
         echo "Encoding with: img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
         local enc_output
@@ -816,7 +888,7 @@ cmd_arm_benchmark() {
         local dec_output
         wait_for_temp
         dec_output=$("${BUILD_DIR}/tools/djpegxl" "${enc_file}" \
-          --num_reps=5 2>&1 | grep -F "MP/s [")
+          --num_reps=5 --num_threads="${num_threads}" 2>&1 | grep -F "MP/s [")
         local img_size=$(echo "${dec_output}" | cut -f 1 -d ',')
         local img_size_x=$(echo "${img_size}" | cut -f 1 -d ' ')
         local img_size_y=$(echo "${img_size}" | cut -f 3 -d ' ')
@@ -845,6 +917,23 @@ $(column -t -s "	" "${runs_file}")
     cmd_post_mr_comment "${message}"
     set -x
   fi
+}
+
+# Generate a corpus and run the fuzzer on that corpus.
+cmd_fuzz() {
+  local corpus_dir=$(realpath "${BUILD_DIR}/fuzzer_corpus")
+  local fuzzer_crash_dir=$(realpath "${BUILD_DIR}/fuzzer_crash")
+  mkdir -p "${corpus_dir}" "${fuzzer_crash_dir}"
+  # Generate step.
+  "${BUILD_DIR}/tools/fuzzer_corpus" "${corpus_dir}"
+  # Run step:
+  local nprocs=$(nproc --all || echo 1)
+  (
+   cd "${BUILD_DIR}"
+   "tools/djxl_fuzzer" "${fuzzer_crash_dir}" "${corpus_dir}" \
+     -max_total_time="${FUZZER_MAX_TIME}" -jobs=${nprocs} \
+     -artifact_prefix="${fuzzer_crash_dir}/"
+  )
 }
 
 # Runs the linter (clang-format) on the pending CLs.
@@ -971,6 +1060,8 @@ Where cmd is one of:
  tsan      Build and test a TSan (ThreadSanitizer) build.
  test      Run the tests build by opt, debug, release, asan or msan. Useful when
            building with SKIP_TEST=1.
+ fuzz      Generate the fuzzer corpus and run the fuzzer on it. Useful after
+           building with asan or msan.
  benchmark Run the benchmark over the default corpus.
  fast_benchmark Run the benchmark over the small corpus.
 
@@ -990,20 +1081,23 @@ You can pass some optional environment variables as well:
  - BUILD_TARGET: The target triplet used when cross-compiling.
  - CMAKE_FLAGS: Convenience flag to pass both CMAKE_C_FLAGS and CMAKE_CXX_FLAGS.
  - CMAKE_PREFIX_PATH: Installation prefixes to be searched by the find_package.
+ - ENABLE_WASM_SIMD=1: enable experimental SIMD in WASM build (only).
+ - FUZZER_MAX_TIME: "fuzz" command fuzzer running timeout in seconds.
  - LINT_OUTPUT: Path to the output patch from the "lint" command.
  - SKIP_TEST=1: Skip the test stage.
  - STORE_IMAGES=0: Makes the benchmark discard the computed images.
 
 These optional environment variables are forwarded to the cmake call as
 parameters:
+ - CMAKE_BUILD_TYPE
  - CMAKE_C_FLAGS
  - CMAKE_CXX_FLAGS
  - CMAKE_CROSSCOMPILING_EMULATOR
+ - CMAKE_FIND_ROOT_PATH
  - CMAKE_EXE_LINKER_FLAGS
  - CMAKE_MODULE_LINKER_FLAGS
  - CMAKE_SHARED_LINKER_FLAGS
  - CMAKE_TOOLCHAIN_FILE
- - CMAKE_BUILD_TYPE
 
 Example:
   BUILD_DIR=/tmp/build $0 opt

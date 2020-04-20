@@ -17,17 +17,10 @@
 #ifndef JXL_ENC_CLUSTER_H_
 #define JXL_ENC_CLUSTER_H_
 
+#include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
-#include <algorithm>
-#include <cmath>
-#include <complex>
-#include <limits>
-#include <map>
-#include <memory>
-#include <utility>
 #include <vector>
 
 #include "jxl/ans_params.h"

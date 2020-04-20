@@ -27,6 +27,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
 #include "jxl/image.h"
+#include "jxl/image_ops.h"
 #include "jxl/modular/config.h"
 
 namespace jxl {
@@ -55,38 +56,22 @@ class Channel {
  public:
   jxl::Plane<pixel_type> plane;
   size_t w, h;
-  pixel_type minval, maxval;  // range
-  mutable pixel_type
-      zero;  // should be zero if zero is a valid value for this channel; the
-             // valid value closest to zero otherwise
-  int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
+  bool is_trivial = false;  // all pixels have the same value.
+  int hshift, vshift;       // w ~= image.w >> hshift;  h ~= image.h >> vshift
   int hcshift,
       vcshift;  // cumulative, i.e. when decoding up to this point, we have data
                 // available with these shifts (for this component)
-  Channel(size_t iw, size_t ih, pixel_type iminval, pixel_type imaxval,
-          int hsh = 0, int vsh = 0, int hcsh = 0, int vcsh = 0)
+  Channel(size_t iw, size_t ih, int hsh = 0, int vsh = 0, int hcsh = 0,
+          int vcsh = 0)
       : plane(iw, ih),
         w(iw),
         h(ih),
-        minval(iminval),
-        maxval(imaxval),
         hshift(hsh),
         vshift(vsh),
         hcshift(hcsh),
-        vcshift(vcsh) {
-    setzero();
-  }
+        vcshift(vcsh) {}
   Channel()
-      : plane(0, 0),
-        w(0),
-        h(0),
-        minval(0),
-        maxval(0),
-        zero(0),
-        hshift(0),
-        vshift(0),
-        hcshift(0),
-        vcshift(0) {}
+      : plane(0, 0), w(0), h(0), hshift(0), vshift(0), hcshift(0), vcshift(0) {}
 
   Channel(const Channel& other) = delete;
   Channel& operator=(const Channel& other) = delete;
@@ -95,8 +80,6 @@ class Channel {
   Channel& operator=(Channel&& other) noexcept {
     w = other.w;
     h = other.h;
-    minval = other.minval;
-    maxval = other.maxval;
     hshift = other.hshift;
     vshift = other.vshift;
     hcshift = other.hcshift;
@@ -108,35 +91,28 @@ class Channel {
   // Move constructor
   Channel(Channel&& other) noexcept = default;
 
-  void setzero() const {
-    if (minval > 0)
-      zero = minval;
-    else if (maxval < 0)
-      zero = maxval;
-    else
-      zero = 0;
-  }
-
-  void resize() {
+  void resize(pixel_type value = 0) {
     if (plane.xsize() == w && plane.ysize() == h) return;
     jxl::Plane<pixel_type> resizedplane(w, h);
-    if (plane.xsize() || plane.ysize() || zero) {
+    if (plane.xsize() || plane.ysize()) {
       // copy pixels over from old plane to new plane
       size_t y = 0;
       for (; y < plane.ysize() && y < h; y++) {
         const pixel_type* JXL_RESTRICT p = plane.Row(y);
         pixel_type* JXL_RESTRICT rp = resizedplane.Row(y);
-        size_t x = y;
+        size_t x = 0;
         for (; x < plane.xsize() && x < w; x++) rp[x] = p[x];
-        for (; x < w; x++) rp[x] = zero;
+        for (; x < w; x++) rp[x] = value;
       }
       for (; y < h; y++) {
         pixel_type* JXL_RESTRICT p = resizedplane.Row(y);
-        for (size_t x = 0; x < w; x++) p[x] = zero;
+        for (size_t x = 0; x < w; x++) p[x] = value;
       }
-    } else if (w && h) {
+    } else if (w && h && value == 0) {
       size_t ppr = resizedplane.bytes_per_row();
       memset(resizedplane.bytes(), 0, ppr * h);
+    } else if (w && h) {
+      FillImage(value, &resizedplane);
     }
     plane = std::move(resizedplane);
   }
@@ -151,7 +127,8 @@ class Channel {
   JXL_INLINE const pixel_type* Row(const size_t y) const {
     return plane.Row(y);
   }
-  void actual_minmax(pixel_type* min, pixel_type* max) const;
+  void compute_trivial(pixel_type* min = nullptr, pixel_type* max = nullptr);
+  void compute_minmax(pixel_type* min, pixel_type* max) const;
 };
 
 class Transform;
@@ -189,8 +166,7 @@ class Image {
         real_nb_channels(nb_chans),
         nb_meta_channels(0),
         error(false) {
-    for (int i = 0; i < nb_chans; i++)
-      channel.emplace_back(Channel(iw, ih, 0, maxval));
+    for (int i = 0; i < nb_chans; i++) channel.emplace_back(Channel(iw, ih));
   }
 
   Image()
@@ -225,7 +201,7 @@ class Image {
   // undo all except the first 'keep' transforms
   void undo_transforms(int keep = 0, jxl::ThreadPool* pool = nullptr);
   void recompute_minmax() {
-    for (auto& ch : channel) ch.actual_minmax(&ch.minval, &ch.maxval);
+    for (auto& ch : channel) ch.compute_trivial();
   }
 };
 

@@ -12,17 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "jxl/predictor.h"
-
 #include <stddef.h>
 #include <stdint.h>
 
 #include <algorithm>
-#include <hwy/static_targets.h>
 #include <limits>
 #include <random>
 
-#include "gtest/gtest.h"
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/status.h"
@@ -31,26 +27,84 @@
 #include "jxl/entropy_coder.h"
 #include "jxl/image.h"
 
-namespace jxl {
-namespace predictor {
-namespace {
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/predictor_test.cc"
+#include <hwy/foreach_target.h>
+#define HWY_USE_GTEST
+#include <hwy/tests/test_util.h>
 
-TEST(PredictorTest, AverageTest) {
-  EXPECT_EQ(0, Average(0, 1));
-  EXPECT_EQ(0, Average(-1, 1));
-  EXPECT_EQ(0, Average(-2, 2));
-  EXPECT_EQ(3, Average(2, 4));
-  EXPECT_EQ(3, Average(2, 5));
-  EXPECT_EQ(3, Average(1, 5));
-  EXPECT_EQ(-3, Average(-1, -5));
-  EXPECT_EQ(0x7ffffffe, Average(0x7fffffff, 0x7ffffffe));
-  EXPECT_EQ(-0x7ffffffe, Average(-0x7fffffff, -0x7ffffffe));
-  EXPECT_EQ(0, Average(-0x7fffffff, 0x7ffffffe));  // -0.5
-  EXPECT_EQ(0, Average(-0x7ffffffe, 0x7fffffff));  // 0.5
-}
+#include "jxl/predictor-inl.h"
+
+namespace jxl {
+
+#ifndef JXL_PREDICTOR_TEST_ONCE
+#define JXL_PREDICTOR_TEST_ONCE
+
+// Simple set of predictors used only for testing.
+struct PredictorForTesting {
+  static JXL_INLINE void Predict(const int32_t n, const int32_t w,
+                                 const int32_t l, const int32_t r,
+                                 int32_t* JXL_RESTRICT pred) {
+    pred[0] = pred[1] = n;
+    pred[2] = pred[3] = w;
+    pred[4] = pred[5] = l;
+    pred[6] = pred[7] = r;
+  }
+
+  static JXL_INLINE const uint32_t* Row0Mask() {
+    HWY_ALIGN_MAX static constexpr uint32_t kMask[kNumPredictors] = {
+        kMaxError, kMaxError, 0, 0, kMaxError, kMaxError, kMaxError, kMaxError};
+    return kMask;
+  }
+
+  static JXL_INLINE const uint32_t* Col0Mask() {
+    HWY_ALIGN_MAX static constexpr uint32_t kMask[kNumPredictors] = {
+        0, 0, kMaxError, kMaxError, kMaxError, kMaxError, 0, 0};
+    return kMask;
+  }
+
+  static JXL_INLINE const uint32_t* LastColMask() {
+    HWY_ALIGN_MAX static constexpr uint32_t kMask[kNumPredictors] = {
+        0, 0, 0, 0, 0, 0, kMaxError, kMaxError};
+    return kMask;
+  }
+
+  // Returns true if predictor is available.
+  static bool RunPredictor(size_t idx, size_t c, const Image3I& img, size_t x,
+                           size_t y, int32_t* pred) {
+    if (idx == 0 || idx == 1) {
+      if (y == 0) return false;
+      *pred = img.ConstPlaneRow(c, y - 1)[x];
+      return true;
+    }
+    if (idx == 2 || idx == 3) {
+      if (x == 0) return false;
+      *pred = img.ConstPlaneRow(c, y)[x - 1];
+      return true;
+    }
+    if (idx == 4 || idx == 5) {
+      if (y == 0) return false;
+      if (x == 0) return false;
+      *pred = img.ConstPlaneRow(c, y - 1)[x - 1];
+      return true;
+    }
+    if (idx == 6 || idx == 7) {
+      if (y == 0) return false;
+      if (x == img.xsize() - 1) return false;
+      *pred = img.ConstPlaneRow(c, y - 1)[x + 1];
+      return true;
+    }
+    JXL_ASSERT(idx < 8);
+    return false;
+  }
+};
+
+#endif  // JXL_PREDICTOR_TEST_ONCE
+
+#include <hwy/begin_target-inl.h>
 
 HWY_ATTR void TestPackSignedRange() {
-  using Pack = PackSignedRange<0, 255>;
+  using Pack = PredictorPackSignedRange<0, 255>;
   for (int32_t pred = 0; pred <= 255; pred++) {
     for (int32_t i = 0; i <= 255; i++) {
       HWY_ALIGN int32_t predv[kNumPredictors];
@@ -66,21 +120,19 @@ HWY_ATTR void TestPackSignedRange() {
     }
   }
 }
-TEST(PredictorTest, TestPackSignedRange) { TestPackSignedRange(); }
 
 HWY_ATTR void TestPackSigned() {
   for (int32_t i = std::numeric_limits<int16_t>::min();
        i <= std::numeric_limits<int16_t>::max(); i++) {
     HWY_ALIGN int32_t zeros[kNumPredictors] = {};
     HWY_ALIGN uint32_t cost_simd[kNumPredictors];
-    PackSigned::Compute(i, zeros, cost_simd);
-    uint32_t cost = jxl::PackSigned(i);
+    PredictorPackSigned::Compute(i, zeros, cost_simd);
+    uint32_t cost = PackSigned(i);
     for (size_t i = 0; i < kNumPredictors; i++) {
       EXPECT_EQ(cost, cost_simd[i]);
     }
   }
 }
-TEST(PredictorTest, TestPackSigned) { TestPackSigned(); }
 
 template <typename Pred>
 HWY_ATTR void TestPredictor() {
@@ -129,77 +181,16 @@ HWY_ATTR void TestPredictor() {
   }
 }
 
-TEST(PredictorTest, TestYPredictor) { TestPredictor<YPredictor>(); }
-
-TEST(PredictorTest, TestXBPredictor) { TestPredictor<XBPredictor>(); }
-
-// Simple set of predictors used only for testing.
-struct PredictorForTesting {
-  static JXL_INLINE void Predict(const int32_t n, const int32_t w,
-                                 const int32_t l, const int32_t r,
-                                 int32_t* JXL_RESTRICT pred) {
-    pred[0] = pred[1] = n;
-    pred[2] = pred[3] = w;
-    pred[4] = pred[5] = l;
-    pred[6] = pred[7] = r;
-  }
-
-  static JXL_INLINE const uint32_t* Row0Mask() {
-    HWY_ALIGN static constexpr uint32_t kMask[kNumPredictors] = {
-        kMaxError, kMaxError, 0, 0, kMaxError, kMaxError, kMaxError, kMaxError};
-    return kMask;
-  }
-
-  static JXL_INLINE const uint32_t* Col0Mask() {
-    HWY_ALIGN static constexpr uint32_t kMask[kNumPredictors] = {
-        0, 0, kMaxError, kMaxError, kMaxError, kMaxError, 0, 0};
-    return kMask;
-  }
-
-  static JXL_INLINE const uint32_t* LastColMask() {
-    HWY_ALIGN static constexpr uint32_t kMask[kNumPredictors] = {
-        0, 0, 0, 0, 0, 0, kMaxError, kMaxError};
-    return kMask;
-  }
-
-  // Returns true if predictor is available.
-  static bool RunPredictor(size_t idx, size_t c, const Image3I& img, size_t x,
-                           size_t y, int32_t* pred) {
-    if (idx == 0 || idx == 1) {
-      if (y == 0) return false;
-      *pred = img.ConstPlaneRow(c, y - 1)[x];
-      return true;
-    }
-    if (idx == 2 || idx == 3) {
-      if (x == 0) return false;
-      *pred = img.ConstPlaneRow(c, y)[x - 1];
-      return true;
-    }
-    if (idx == 4 || idx == 5) {
-      if (y == 0) return false;
-      if (x == 0) return false;
-      *pred = img.ConstPlaneRow(c, y - 1)[x - 1];
-      return true;
-    }
-    if (idx == 6 || idx == 7) {
-      if (y == 0) return false;
-      if (x == img.xsize() - 1) return false;
-      *pred = img.ConstPlaneRow(c, y - 1)[x + 1];
-      return true;
-    }
-    JXL_ASSERT(idx < 8);
-    return false;
-  }
-};
-
-TEST(PredictorTest, TestPredictorForTesting) {
+HWY_ATTR void TestPredictorForTesting() {
   TestPredictor<PredictorForTesting>();
 }
+HWY_ATTR void TestPredictorY() { TestPredictor<YPredictor>(); }
+HWY_ATTR void TestPredictorXB() { TestPredictor<XBPredictor>(); }
 
 class PredictorTester;
 
 using PredictorToTest = ComputeResiduals<
-    PredictorTester, PackSigned,
+    PredictorTester, PredictorPackSigned,
     Predictors3<PredictorForTesting, PredictorForTesting, PredictorForTesting>>;
 
 class PredictorTester : public PredictorToTest {
@@ -234,7 +225,7 @@ class PredictorTester : public PredictorToTest {
           int32_t pred;
           if (PredictorForTesting::RunPredictor(i, c, test_img_, x + px[0],
                                                 y + px[1], &pred)) {
-            uint32_t error = PackSigned::Residual(
+            uint32_t error = PredictorPackSigned::Residual(
                 test_img_.ConstPlaneRow(c, y + px[1])[x + px[0]], pred);
             max_error[i] = std::max(error, max_error[i]);
             has_error_information[i] = true;
@@ -307,6 +298,38 @@ class PredictorTester : public PredictorToTest {
   size_t pred_count_ = 0;
 };
 
+HWY_ATTR void RunPredictorTester(const Image3I& img) {
+  PredictorTester tester(img);
+  tester.Run();
+}
+
+#include <hwy/end_target-inl.h>
+
+#if HWY_ONCE
+HWY_EXPORT(TestPackSignedRange)
+HWY_EXPORT(TestPackSigned)
+HWY_EXPORT(TestPredictorForTesting)
+HWY_EXPORT(TestPredictorY)
+HWY_EXPORT(TestPredictorXB)
+HWY_EXPORT(RunPredictorTester)
+
+TEST(PredictorTest, TestPackSignedRange) {
+  hwy::ChooseAndCallForeachTarget(&ChooseTestPackSignedRange);
+}
+TEST(PredictorTest, TestPackSigned) {
+  hwy::ChooseAndCallForeachTarget(&ChooseTestPackSigned);
+}
+
+TEST(PredictorTest, TestPredictorForTesting) {
+  hwy::ChooseAndCallForeachTarget(&ChooseTestPredictorForTesting);
+}
+TEST(PredictorTest, TestYPredictor) {
+  hwy::ChooseAndCallForeachTarget(&ChooseTestPredictorY);
+}
+TEST(PredictorTest, TestXBPredictor) {
+  hwy::ChooseAndCallForeachTarget(&ChooseTestPredictorXB);
+}
+
 Image3I Stripes(int32_t low, int32_t high) {
   Image3I ret(kDcGroupDimInBlocks, kDcGroupDimInBlocks);
   for (size_t y = 0; y < ret.ysize(); y++) {
@@ -370,42 +393,51 @@ Image3I Random(int32_t low, int32_t high) {
 
 TEST(PredictorTest, TestStripes8) {
   Image3I img = Stripes(0, 255);
-  PredictorTester tester(img);
-  tester.Run();
+  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
 }
 
 TEST(PredictorTest, TestConstant8) {
   Image3I img = Constant(0, 255);
-  PredictorTester tester(img);
-  tester.Run();
+  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
 }
 
 TEST(PredictorTest, TestRandom8) {
   Image3I img = Random(0, 255);
-  PredictorTester tester(img);
-  tester.Run();
+  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
 }
 
 TEST(PredictorTest, TestStripes16) {
   Image3I img = Stripes(std::numeric_limits<int16_t>::min(),
                         std::numeric_limits<int16_t>::max());
-  PredictorTester tester(img);
-  tester.Run();
+  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
 }
 
 TEST(PredictorTest, TestConstant16) {
   Image3I img = Constant(std::numeric_limits<int16_t>::min(),
                          std::numeric_limits<int16_t>::max());
-  PredictorTester tester(img);
-  tester.Run();
+  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
 }
 
 TEST(PredictorTest, TestRandom16) {
   Image3I img = Random(std::numeric_limits<int16_t>::min(),
                        std::numeric_limits<int16_t>::max());
-  PredictorTester tester(img);
-  tester.Run();
+  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
 }
-}  // namespace
-}  // namespace predictor
+
+TEST(PredictorTest, AverageTest) {
+  EXPECT_EQ(0, Average(0, 1));
+  EXPECT_EQ(0, Average(-1, 1));
+  EXPECT_EQ(0, Average(-2, 2));
+  EXPECT_EQ(3, Average(2, 4));
+  EXPECT_EQ(3, Average(2, 5));
+  EXPECT_EQ(3, Average(1, 5));
+  EXPECT_EQ(-3, Average(-1, -5));
+  EXPECT_EQ(0x7ffffffe, Average(0x7fffffff, 0x7ffffffe));
+  EXPECT_EQ(-0x7ffffffe, Average(-0x7fffffff, -0x7ffffffe));
+  EXPECT_EQ(0, Average(-0x7fffffff, 0x7ffffffe));  // -0.5
+  EXPECT_EQ(0, Average(-0x7ffffffe, 0x7fffffff));  // 0.5
+}
+
+#endif  // HWY_ONCE
+
 }  // namespace jxl

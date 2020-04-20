@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Copyright (c) the JPEG XL Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 EMSDK_URL="https://github.com/emscripten-core/emsdk/archive/master.tar.gz"
 EMSDK_DIR="/opt/emsdk"
 
-EMSDK_RELEASE="1.39.4"  # Alternatively, we can use "latest"
+EMSDK_RELEASE="1.39.10"  # Alternatively, we can use "latest"
 
 set -eu -x
 
@@ -30,7 +30,7 @@ cleanup() {
 trap "{ set +x; } 2>/dev/null; cleanup" INT TERM EXIT
 
 main() {
-  local workdir=$(mktemp -d --suffix=qemu)
+  local workdir=$(mktemp -d --suffix=emsdk)
   CLEANUP_FILES+=("${workdir}")
 
   local emsdktar="${workdir}/emsdk.tar.gz"

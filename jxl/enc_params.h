@@ -176,8 +176,6 @@ struct CompressParams {
   // as salient, hence not require a saliency-map, and not actually generate
   // a 4th progressive step.
   float saliency_threshold = 0.0f;
-  // Filename for the saliency-map (must be generated separately).
-  std::string saliency_map_filename;
   // Saliency-map (owned by caller).
   ImageF* saliency_map = nullptr;
 
@@ -196,21 +194,11 @@ struct CompressParams {
   // features. 1.0=neutral.
   float hf_asymmetry = 1.0f;
 
-  // Intended intensity target of the viewer after decoding, in nits (cd/m^2).
-  // There is no other way of knowing the target brightness - depends on source
-  // material. 709 typically targets 100 nits, BT.2100 PQ up to 10K, but HDR
-  // content is more typically mastered to 4K nits. The default requires no
-  // scaling for Butteraugli.
-  float intensity_target = kDefaultIntensityTarget;
-
-  float GetIntensityMultiplier() const {
-    return intensity_target * kIntensityMultiplier;
-  }
-
   // modular mode options below
-  modular_options options;
+  ModularOptions options;
   int responsive = -1;
-  std::pair<float, float> quality_pair;
+  // A pair of <quality, cquality>.
+  std::pair<float, float> quality_pair{100.f, 100.f};
   int colorspace = -1;
   // Use Global channel palette if #colors < this percentage of range
   float channel_colors_pre_transform_percent = 95.f;
@@ -218,13 +206,6 @@ struct CompressParams {
   float channel_colors_percent = 80.f;
   int near_lossless = 0;
   int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
-  bool ans = false;
-
-  CompressParams() {
-    quality_pair.first = 100.f;   // quality
-    quality_pair.second = 100.f;  // cquality
-    set_default_modular_options(options);
-  }
 };
 
 // Always on so we notice any changes.

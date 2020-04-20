@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <hwy/static_targets.h>
-
 #include "jxl/dec_ans.h"
 #include "jxl/entropy_coder.h"
 
 namespace jxl {
 
-HWY_ATTR int TestOneInput(const uint8_t* data, size_t size) {
+int TestOneInput(const uint8_t* data, size_t size) {
   if (size < 2) return 0;
   size_t numContexts = data[0] * 256 * data[1] + 1;
   data += 2;

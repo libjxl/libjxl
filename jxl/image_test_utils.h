@@ -47,19 +47,23 @@ void VerifyEqual(const Image3<T>& expected, const Image3<T>& actual) {
 }
 
 template <typename T>
-bool SamePixels(const Plane<T>& image1, const Plane<T>& image2) {
-  const size_t xsize = image1.xsize();
-  const size_t ysize = image1.ysize();
-  JXL_CHECK(xsize == image2.xsize());
-  JXL_CHECK(ysize == image2.ysize());
+bool SamePixels(const Plane<T>& image1, const Plane<T>& image2,
+                const Rect rect) {
+  if (!rect.IsInside(image1) || !rect.IsInside(image2)) {
+    ADD_FAILURE() << "requsted rectangle is not fully inside the image";
+    return false;
+  }
   size_t mismatches = 0;
-  for (size_t y = 0; y < ysize; ++y) {
+  for (size_t y = rect.y0(); y < rect.ysize(); ++y) {
     const T* const JXL_RESTRICT row1 = image1.Row(y);
     const T* const JXL_RESTRICT row2 = image2.Row(y);
-    for (size_t x = 0; x < xsize; ++x) {
+    for (size_t x = rect.x0(); x < rect.xsize(); ++x) {
       if (row1[x] != row2[x]) {
-        printf("%zu, %zu: %f != %f\n", x, y, double(row1[x]), double(row2[x]));
-        if (++mismatches > 4) return false;
+        ADD_FAILURE() << "pixel mismatch" << x << ", " << y << ": "
+                      << double(row1[x]) << " != " << double(row2[x]);
+        if (++mismatches > 4) {
+          return false;
+        }
       }
     }
   }
@@ -67,21 +71,17 @@ bool SamePixels(const Plane<T>& image1, const Plane<T>& image2) {
 }
 
 template <typename T>
+bool SamePixels(const Plane<T>& image1, const Plane<T>& image2) {
+  JXL_CHECK(SameSize(image1, image2));
+  return SamePixels(image1, image2, Rect(image1));
+}
+
+template <typename T>
 bool SamePixels(const Image3<T>& image1, const Image3<T>& image2) {
   JXL_CHECK(SameSize(image1, image2));
-  const size_t xsize = image1.xsize();
-  const size_t ysize = image1.ysize();
   for (size_t c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < ysize; ++y) {
-      const T* JXL_RESTRICT row1 = image1.PlaneRow(c, y);
-      const T* JXL_RESTRICT row2 = image2.PlaneRow(c, y);
-      for (size_t x = 0; x < xsize; ++x) {
-        if (row1[x] != row2[x]) {
-          // printf("%zu, %zu, %zu: %f != %f\n", x, y, c, double(row1[x]),
-          //       double(row2[x]));
-          return false;
-        }
-      }
+    if (!SamePixels(image1.Plane(c), image2.Plane(c))) {
+      return false;
     }
   }
   return true;

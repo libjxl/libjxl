@@ -87,7 +87,8 @@ size_t Roundtrip(CodecInOut* io, const CompressParams& cparams,
   }
 
   EXPECT_THAT(io2->frames, testing::SizeIs(io->frames.size()));
-  if (!cparams.modular_group_mode) {
+  if (!cparams.modular_group_mode &&
+      cparams.color_transform == ColorTransform::kXYB) {
     // Non-modular returns linear sRGB.
     EXPECT_THAT(current_encodings_2,
                 testing::Each(MatchesPrimariesAndTransferFunction(

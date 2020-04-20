@@ -18,8 +18,7 @@
 #include <stdint.h>
 
 #include <algorithm>
-#include <hwy/cache_control.h>
-#include <hwy/static_targets.h>
+#include <hwy/highway.h>  // Prefetch
 #include <vector>
 
 #include "jxl/ans_params.h"
@@ -98,8 +97,8 @@ struct AliasTable {
   // symbol is `right_value`; since `offsets[1]` stores the number of occurences
   // of `right_value` "before" this entry, minus the `cutoff` value, the input
   // offset is then `remainder + offsets[1]`.
-  static HWY_ATTR JXL_INLINE Symbol Lookup(const Entry* JXL_RESTRICT table,
-                                           size_t value) {
+  static JXL_INLINE Symbol Lookup(const Entry* JXL_RESTRICT table,
+                                  size_t value) {
     const size_t i = value >> kLogEntrySize;
     const size_t pos = value & kEntrySizeMinus1;
 
@@ -139,8 +138,8 @@ struct AliasTable {
     return s;
   }
 
-  static HWY_ATTR HWY_INLINE void Prefetch(const Entry* JXL_RESTRICT table,
-                                           size_t value) {
+  static HWY_INLINE void Prefetch(const Entry* JXL_RESTRICT table,
+                                  size_t value) {
     const size_t i = value >> kLogEntrySize;
     hwy::Prefetch(table + i);
   }

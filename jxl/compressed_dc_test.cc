@@ -78,14 +78,8 @@ class CompressedDCTest : public testing::TestWithParam<CompressedDCTestParams> {
 
     EXPECT_TRUE(DecodeFile(dparams, compressed, io, &decoding_info, pool));
 
-#ifdef __aarch64__
-    // Roundtrip precision is a bit worse in arm64.
-    // TODO(veluca): Investigate why this is the case.
+    // Without FMA, 1E-6 is sufficient.
     const float kErrorThreshold = 7e-6f;
-#else
-    const float kErrorThreshold = 1e-6f;
-#endif
-
     VerifyRelativeError(decoding_dc, encoding_dc, kErrorThreshold,
                         kErrorThreshold);
     VerifyRelativeError(io->Main().color(), encoding_dec, kErrorThreshold,

@@ -15,12 +15,18 @@
 #ifndef TOOLS_BUTTERAUGLI_PNORM_H_
 #define TOOLS_BUTTERAUGLI_PNORM_H_
 
-#include "jxl/image.h"
+#include <stdint.h>
+#include "jxl/image_bundle.h"
 
 namespace jxl {
 
 // Computes p-norm given the butteraugli distmap.
-double ComputeDistanceP(const ImageF& distmap, double p);
+typedef double ComputeDistancePFunc(const ImageF& distmap, double p);
+ComputeDistancePFunc* ChooseComputeDistanceP(uint32_t targets_bits);
+
+typedef double ComputeDistance2Func(const ImageBundle& ib1,
+                                    const ImageBundle& ib2);
+ComputeDistance2Func* ChooseComputeDistance2(uint32_t targets_bits);
 
 }  // namespace jxl
 

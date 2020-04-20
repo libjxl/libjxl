@@ -31,7 +31,7 @@ namespace jxl {
 namespace {
 
 // Decodes a number in the range [0..255], by reading 1 - 11 bits.
-HWY_ATTR inline int DecodeVarLenUint8(BitReader* input) {
+inline int DecodeVarLenUint8(BitReader* input) {
   if (input->ReadFixedBits<1>()) {
     int nbits = static_cast<int>(input->ReadFixedBits<3>());
     if (nbits == 0) {
@@ -43,8 +43,8 @@ HWY_ATTR inline int DecodeVarLenUint8(BitReader* input) {
   return 0;
 }
 
-HWY_ATTR Status ReadHistogram(int precision_bits, std::vector<int>* counts,
-                              BitReader* input) {
+Status ReadHistogram(int precision_bits, std::vector<int>* counts,
+                     BitReader* input) {
   int simple_code = input->ReadBits(1);
   if (simple_code == 1) {
     int i;
@@ -243,9 +243,9 @@ bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
   return true;
 }
 
-HWY_ATTR bool DecodeHistograms(BitReader* br, const size_t num_contexts,
-                               const size_t max_alphabet_size, ANSCode* code,
-                               std::vector<uint8_t>* context_map) {
+bool DecodeHistograms(BitReader* br, const size_t num_contexts,
+                      const size_t max_alphabet_size, ANSCode* code,
+                      std::vector<uint8_t>* context_map) {
   PROFILER_FUNC;
   size_t num_histograms = 1;
   context_map->resize(num_contexts);

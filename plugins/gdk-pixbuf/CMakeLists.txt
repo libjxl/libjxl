@@ -21,8 +21,8 @@ if (NOT Gdk-Pixbuf_FOUND)
   return ()
 endif ()
 
-add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c c_interop.cc  c_interop.h)
-target_link_libraries(pixbufloader-jxl jpegxl-static PkgConfig::Gdk-Pixbuf)
+add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c c_interop.cc c_interop.h)
+target_link_libraries(pixbufloader-jxl jpegxl-static jpegxl_threads PkgConfig::Gdk-Pixbuf)
 
 install(TARGETS pixbufloader-jxl LIBRARY DESTINATION /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders)
 

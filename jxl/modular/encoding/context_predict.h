@@ -15,11 +15,13 @@
 #ifndef JXL_MODULAR_ENCODING_CONTEXT_PREDICT_H_
 #define JXL_MODULAR_ENCODING_CONTEXT_PREDICT_H_
 
+#include <utility>
+#include <vector>
+
+#include "jxl/entropy_coder.h"  // PackSigned
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/modular/image/image.h"
-#include "jxl/modular/ma/compound.h"
-#include "jxl/modular/ma/util.h"
-#include "jxl/predictor.h"
+#include "jxl/predictor_shared.h"
 
 namespace jxl {
 
@@ -35,6 +37,9 @@ enum class Predictor : uint32_t {
   Best = 8  // Best of Gradient and Weighted (encoder only)
 };
 
+using PropertyVal = int32_t;
+using Properties = std::vector<PropertyVal>;
+
 // Something that looks like absolute value. Just returning the absolute value
 // works. Wrapped into a function to make it easier to experiment with
 // alternatives.
@@ -45,72 +50,18 @@ inline pixel_type UNSIGNED_VAL(pixel_type x) { return abs(x); }
 // Wrapped into a function to make it easier to experiment with alternatives
 inline pixel_type SIGNED_VAL(pixel_type x) { return x; }
 
-inline void init_properties(Ranges &pr, const Image &image, int beginc,
-                            int endc, modular_options &options) {
-  int offset = 0;
-  for (int j = beginc - 1; j >= 0 && offset < options.max_properties; j--) {
-    if (image.channel[j].minval == image.channel[j].maxval) continue;
+inline size_t num_properties(const Image &image, int beginc, int endc,
+                             const ModularOptions &options) {
+  int num = 0;
+  for (int j = beginc - 1; j >= 0 && num < options.max_properties; j--) {
+    if (image.channel[j].is_trivial) continue;
     if (image.channel[j].w == 0 || image.channel[j].h == 0) continue;
     if (image.channel[j].hshift < 0) continue;
-    int minval = image.channel[j].minval;
-    if (minval > 0) minval = 0;
-    int maxval = image.channel[j].maxval;
-    if (maxval < 0) maxval = 0;
-    pr.push_back(std::pair<PropertyVal, PropertyVal>(
-        0, UNSIGNED_VAL((maxval > -minval ? maxval : minval))));
-    offset++;
-    pr.push_back(std::pair<PropertyVal, PropertyVal>(SIGNED_VAL(minval),
-                                                     SIGNED_VAL(maxval)));
-    offset++;
-    pr.push_back(std::pair<PropertyVal, PropertyVal>(
-        0, std::max(UNSIGNED_VAL(minval - maxval),
-                    UNSIGNED_VAL(maxval - minval))));
-    offset++;
-    pr.push_back(std::pair<PropertyVal, PropertyVal>(
-        SIGNED_VAL(minval - maxval), SIGNED_VAL(maxval - minval)));
-    offset++;
+    // 4 properties per previous channel.
+    num += 4;
   }
-
-  pixel_type minval = LARGEST_VAL;
-  pixel_type maxval = SMALLEST_VAL;
-  size_t maxh = 0;
-  size_t maxw = 0;
-  for (int j = beginc; j <= endc; j++) {
-    if (image.channel[j].minval < minval) minval = image.channel[j].minval;
-    if (image.channel[j].maxval > maxval) maxval = image.channel[j].maxval;
-    if (image.channel[j].h > maxh) maxh = image.channel[j].h;
-    if (image.channel[j].w > maxw) maxw = image.channel[j].w;
-  }
-  if (minval > 0) minval = 0;
-  if (maxval < 0) maxval = 0;
-
-  // neighbors
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      0, std::max(UNSIGNED_VAL(minval), UNSIGNED_VAL(maxval))));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      0, std::max(UNSIGNED_VAL(minval), UNSIGNED_VAL(maxval))));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(SIGNED_VAL(minval),
-                                                   SIGNED_VAL(maxval)));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(SIGNED_VAL(minval),
-                                                   SIGNED_VAL(maxval)));
-
-  // location
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(0, maxh - 1));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(0, maxw - 1));
-
-  // local gradient
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(minval + minval - maxval,
-                                                   maxval + maxval - minval));
-
-  // FFV1
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      SIGNED_VAL(minval - maxval), SIGNED_VAL(maxval - minval)));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      SIGNED_VAL(minval - maxval), SIGNED_VAL(maxval - minval)));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      SIGNED_VAL(minval - maxval), SIGNED_VAL(maxval - minval)));
-  pr.push_back(std::pair<PropertyVal, PropertyVal>(
-      SIGNED_VAL(minval - maxval), SIGNED_VAL(maxval - minval)));
+  // 11 properties for the current channels.
+  return num + 11;
 }
 
 inline pixel_type select(pixel_type a, pixel_type b, pixel_type c) {
@@ -127,7 +78,7 @@ inline pixel_type predict_and_compute_properties(
     Properties &p, const Channel &ch, const pixel_type *JXL_RESTRICT pp,
     const intptr_t onerow, const size_t x, const size_t y, Predictor predictor,
     int offset) {
-  pixel_type left = (x ? pp[-1] : ch.zero);
+  pixel_type left = (x ? pp[-1] : 0);
   pixel_type top = (y ? pp[-onerow] : left);
   pixel_type topleft = (x && y ? pp[-1 - onerow] : left);
   pixel_type topright = (x + 1 < ch.w && y ? pp[1 - onerow] : top);
@@ -157,7 +108,7 @@ inline pixel_type predict_and_compute_properties(
 
   switch (predictor) {
     case Predictor::Zero:
-      return ch.zero;
+      return 0;
     case Predictor::Left:
       return left;
     case Predictor::Top:
@@ -168,7 +119,7 @@ inline pixel_type predict_and_compute_properties(
       return select(left, top, topleft);
     case Predictor::Gradient:
     default:
-      return predictor::ClampedGradient(left, top, topleft);
+      return ClampedGradient(left, top, topleft);
   }
 }
 
@@ -178,12 +129,12 @@ inline pixel_type predict(const Channel &ch, const pixel_type *JXL_RESTRICT pp,
 inline pixel_type predict(const Channel &ch, const pixel_type *JXL_RESTRICT pp,
                           const intptr_t onerow, const int x, const int y,
                           Predictor predictor) {
-  pixel_type left = (x ? pp[-1] : ch.zero);
+  pixel_type left = (x ? pp[-1] : 0);
   pixel_type top = (y ? pp[-onerow] : left);
   pixel_type topleft = (x && y ? pp[-1 - onerow] : left);
   switch (predictor) {
     case Predictor::Zero:
-      return ch.zero;
+      return 0;
     case Predictor::Left:
       return left;
     case Predictor::Top:
@@ -194,7 +145,7 @@ inline pixel_type predict(const Channel &ch, const pixel_type *JXL_RESTRICT pp,
       return select(left, top, topleft);
     case Predictor::Gradient:
     default:
-      return predictor::ClampedGradient(left, top, topleft);
+      return ClampedGradient(left, top, topleft);
   }
 }
 
@@ -243,14 +194,14 @@ inline pixel_type predict_and_compute_properties_no_edge_case(
 
 inline void precompute_references(const Channel &ch, size_t y,
                                   const Image &image, int i,
-                                  const modular_options &options,
+                                  const ModularOptions &options,
                                   Channel &references) {
   int offset = 0;
   size_t oy = y << ch.vshift;
   intptr_t onerow = references.plane.PixelsPerRow();
   pixel_type *lastrow = references.Row(0) + references.h * onerow;
   for (int j = i - 1; j >= 0 && offset < options.max_properties; j--) {
-    if (image.channel[j].minval == image.channel[j].maxval) continue;
+    if (image.channel[j].is_trivial) continue;
     if (image.channel[j].w == 0 || image.channel[j].h == 0) continue;
     if (image.channel[j].hshift < 0) continue;
     size_t ry = oy >> image.channel[j].vshift;
@@ -266,11 +217,10 @@ inline void precompute_references(const Channel &ch, size_t y,
         pixel_type v = rpp[rx];
         rp[0] = UNSIGNED_VAL(v);
         rp[1] = SIGNED_VAL(v);
-        pixel_type vleft = (rx ? rpp[rx - 1] : image.channel[j].zero);
+        pixel_type vleft = (rx ? rpp[rx - 1] : 0);
         pixel_type vtop = (ry ? rpprev[rx] : vleft);
         pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-        pixel_type vpredicted =
-            predictor::ClampedGradient(vleft, vtop, vtopleft);
+        pixel_type vpredicted = ClampedGradient(vleft, vtop, vtopleft);
         rp[2] = UNSIGNED_VAL(v - vpredicted);
         rp[3] = SIGNED_VAL(v - vpredicted);
       }
@@ -281,11 +231,10 @@ inline void precompute_references(const Channel &ch, size_t y,
       if (stepsize == 2)
         for (; rx < image.channel[j].w - 1; rx++) {
           v = rpp[rx];
-          pixel_type vleft = (rx ? rpp[rx - 1] : image.channel[j].zero);
+          pixel_type vleft = (rx ? rpp[rx - 1] : 0);
           pixel_type vtop = (ry ? rpprev[rx] : vleft);
           pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-          pixel_type vpredicted =
-              predictor::ClampedGradient(vleft, vtop, vtopleft);
+          pixel_type vpredicted = ClampedGradient(vleft, vtop, vtopleft);
           rp[0] = UNSIGNED_VAL(v);
           rp[1] = SIGNED_VAL(v);
           rp[2] = UNSIGNED_VAL(v - vpredicted);
@@ -300,11 +249,10 @@ inline void precompute_references(const Channel &ch, size_t y,
       else
         for (; rx < image.channel[j].w - 1; rx++) {
           v = rpp[rx];
-          pixel_type vleft = (rx ? rpp[rx - 1] : image.channel[j].zero);
+          pixel_type vleft = (rx ? rpp[rx - 1] : 0);
           pixel_type vtop = (ry ? rpprev[rx] : vleft);
           pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-          pixel_type vpredicted =
-              predictor::ClampedGradient(vleft, vtop, vtopleft);
+          pixel_type vpredicted = ClampedGradient(vleft, vtop, vtopleft);
           for (size_t s = 0; s < stepsize; s++, rp += onerow) {
             rp[0] = UNSIGNED_VAL(v);
             rp[1] = SIGNED_VAL(v);
@@ -314,10 +262,10 @@ inline void precompute_references(const Channel &ch, size_t y,
         }
       // assert (x-1 < ch.w);
       v = rpp[rx];
-      pixel_type vleft = (rx ? rpp[rx - 1] : image.channel[j].zero);
+      pixel_type vleft = (rx ? rpp[rx - 1] : 0);
       pixel_type vtop = (ry ? rpprev[rx] : vleft);
       pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-      pixel_type vpredicted = predictor::ClampedGradient(vleft, vtop, vtopleft);
+      pixel_type vpredicted = ClampedGradient(vleft, vtop, vtopleft);
       while (rp < lastrow) {
         rp[0] = UNSIGNED_VAL(v);
         rp[1] = SIGNED_VAL(v);
@@ -334,11 +282,10 @@ inline void precompute_references(const Channel &ch, size_t y,
         pixel_type v = rpp[rx];
         rp[0] = UNSIGNED_VAL(v);
         rp[1] = SIGNED_VAL(v);
-        pixel_type vleft = (rx ? rpp[rx - 1] : image.channel[j].zero);
+        pixel_type vleft = (rx ? rpp[rx - 1] : 0);
         pixel_type vtop = (ry ? rpprev[rx] : vleft);
         pixel_type vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-        pixel_type vpredicted =
-            predictor::ClampedGradient(vleft, vtop, vtopleft);
+        pixel_type vpredicted = ClampedGradient(vleft, vtop, vtopleft);
         rp[2] = UNSIGNED_VAL(v - vpredicted);
         rp[3] = SIGNED_VAL(v - vpredicted);
       }
@@ -350,8 +297,7 @@ inline void precompute_references(const Channel &ch, size_t y,
 inline pixel_type predict_and_compute_properties_with_precomputed_reference(
     Properties &p, const Channel &ch, const pixel_type *JXL_RESTRICT pp,
     const intptr_t onerow, const int x, const int y, Predictor predictor,
-    const Image &image, int i, modular_options &options,
-    const Channel &references) {
+    const Image &image, int i, const Channel &references) {
   size_t offset;
   const pixel_type *JXL_RESTRICT rp = references.Row(x);
   for (offset = 0; offset < references.w;) {

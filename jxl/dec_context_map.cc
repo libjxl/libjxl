@@ -68,8 +68,8 @@ bool VerifyContextMap(const std::vector<uint8_t>& context_map,
 
 }  // namespace
 
-HWY_ATTR bool DecodeContextMap(std::vector<uint8_t>* context_map,
-                               size_t* num_htrees, BitReader* input) {
+bool DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
+                      BitReader* input) {
   bool is_simple = input->ReadFixedBits<1>();
   if (is_simple) {
     int bits_per_entry = input->ReadFixedBits<2>();
@@ -91,9 +91,9 @@ HWY_ATTR bool DecodeContextMap(std::vector<uint8_t>* context_map,
       input->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
       uint32_t sym = reader.ReadSymbolWithoutRefill(0, input);
       if (sym >= 8) {
-        i += ReadVarLenUint(input, sym - 8) + 2;
+        i += reader.ReadHybridUint(input, sym - 8) + 2;
       } else {
-        uint32_t cluster = ReadVarLenUint(input, sym);
+        uint32_t cluster = reader.ReadHybridUint(input, sym);
         if (cluster >= kMaxClusters) {
           return JXL_FAILURE("Invalid cluster ID");
         }

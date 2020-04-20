@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <third_party/dirent.h>  // S_ISREG
 
 #include <algorithm>
 #include <functional>
@@ -37,6 +38,8 @@
 #include "jxl/external_image.h"
 #include "jxl/modular/encoding/context_predict.h"
 
+namespace {
+
 const size_t kMaxWidth = 50000;
 const size_t kMaxHeight = 50000;
 const size_t kMaxPixels = 20 * (1 << 20);  // 20 MP
@@ -46,6 +49,9 @@ std::mutex stderr_mutex;
 
 typedef std::function<uint8_t()> PixelGenerator;
 
+// ImageSpec needs to be a packed struct to allow us to use the raw memory of
+// the struct for hashing to create a consistent.
+#pragma pack(push, 1)
 struct ImageSpec {
   bool Validate() const {
     if (width > kMaxWidth || height > kMaxHeight ||
@@ -63,7 +69,10 @@ struct ImageSpec {
       << " * chan=" << spec.num_channels << " depth=" << spec.bit_depth
       << " alpha=" << spec.alpha_bit_depth
       << " (premult=" << spec.alpha_is_premultiplied
-      << ") x frames=" << spec.num_frames << " seed=" << spec.seed << ">";
+      << ") x frames=" << spec.num_frames << " seed=" << spec.seed
+      << ", speed=" << static_cast<int>(spec.params.speed_tier)
+      << ", butteraugli=" << spec.params.butteraugli_distance
+      << ", modular_group_mode=" << spec.params.modular_group_mode << ">";
     return o;
   }
 
@@ -83,7 +92,7 @@ struct ImageSpec {
   size_t bit_depth;
   // Bit depth for the alpha channel. A value of 0 means no alpha channel.
   size_t alpha_bit_depth;
-  bool alpha_is_premultiplied = false;
+  int alpha_is_premultiplied = false;
 
   // Number of frames, all the frames will have the same size.
   size_t num_frames;
@@ -91,18 +100,48 @@ struct ImageSpec {
   // The seed for the PRNG.
   uint32_t seed = 7777;
 
-  // Flags used for compression.
-  jxl::CompressParams params;
+  // Flags used for compression. These are mapped to the CompressedParams.
+  struct CjxlParams {
+    float butteraugli_distance = 1.f;
+    int modular_predictor = int(jxl::Predictor::Weighted);
+    jxl::ColorTransform color_transform = jxl::ColorTransform::kXYB;
+    jxl::SpeedTier speed_tier = jxl::SpeedTier::kTortoise;
+    bool modular_group_mode = false;
+    uint8_t padding_[3] = {};
+  } params;
 };
+#pragma pack(pop)
+static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
 
-bool GenerateFile(const char* output_dir, const ImageSpec& spec) {
+bool GenerateFile(const char* output_dir, const ImageSpec& spec,
+                  bool regenerate) {
+  // Compute a checksum of the ImageSpec to name the file. This is just to keep
+  // the output of this program repeatable.
+  uint8_t checksum[16];
+  spec.SpecHash(checksum);
+  std::string hash_str(sizeof(checksum) * 2, ' ');
+  static const char* hex_chars = "0123456789abcdef";
+  for (size_t i = 0; i < sizeof(checksum); i++) {
+    hash_str[2 * i] = hex_chars[checksum[i] >> 4];
+    hash_str[2 * i + 1] = hex_chars[checksum[i] % 0x0f];
+  }
+  std::string output_fn = std::string(output_dir) + "/" + hash_str + ".jxl";
+
+  // Don't regenerate files if they already exist on disk to speed-up
+  // consecutive calls when --regenerate is not used.
+  struct stat st;
+  if (!regenerate && stat(output_fn.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
+    return true;
+  }
+
   {
     std::unique_lock<std::mutex> lock(stderr_mutex);
-    std::cerr << "Generating " << spec << std::endl;
+    std::cerr << "Generating " << spec << " as " << hash_str << std::endl;
   }
 
   jxl::CodecInOut io;
   io.metadata.bits_per_sample = spec.bit_depth;
+  io.metadata.floating_point_sample = (spec.bit_depth == 32);
   io.metadata.alpha_bits = spec.alpha_bit_depth;
   io.dec_pixels = spec.width * spec.height;
   io.frames.clear();
@@ -146,25 +185,21 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec) {
     io.frames.push_back(std::move(ib));
   }
 
+  jxl::CompressParams params;
+  params.speed_tier = spec.params.speed_tier;
+  params.modular_group_mode = spec.params.modular_group_mode;
+  params.color_transform = spec.params.color_transform;
+  params.butteraugli_distance = spec.params.butteraugli_distance;
+  params.options.predictor = {spec.params.modular_predictor};
+  params.quality_pair = {100., 100.};
+
   // Compress the image.
   jxl::PaddedBytes compressed;
   jxl::AuxOut aux_out;
   jxl::PassesEncoderState passes_encoder_state;
-  bool ok = jxl::EncodeFile(spec.params, &io, &passes_encoder_state,
-                            &compressed, &aux_out, nullptr);
+  bool ok = jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed,
+                            &aux_out, nullptr);
   if (!ok) return false;
-
-  // Compute a checksum of the ImageSpec to name the file. This is just to keep
-  // the output of this program repeatable.
-  uint8_t checksum[16];
-  spec.SpecHash(checksum);
-  std::string hash_str(sizeof(checksum) * 2, ' ');
-  static const char* hex_chars = "0123456789abcdef";
-  for (size_t i = 0; i < sizeof(checksum); i++) {
-    hash_str[2 * i] = hex_chars[checksum[i] >> 4];
-    hash_str[2 * i + 1] = hex_chars[checksum[i] % 0x0f];
-  }
-  std::string output_fn = std::string(output_dir) + "/" + hash_str + ".jxl";
 
   if (!jxl::WriteFile(compressed, output_fn)) return 1;
   {
@@ -176,39 +211,57 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec) {
   return true;
 }
 
-std::vector<jxl::CompressParams> CompressParamsList() {
-  std::vector<jxl::CompressParams> ret;
-  jxl::CompressParams default_params;
-  default_params.speed_tier = jxl::SpeedTier::kTortoise;
+std::vector<ImageSpec::CjxlParams> CompressParamsList() {
+  std::vector<ImageSpec::CjxlParams> ret;
 
   {
-    jxl::CompressParams params = default_params;
+    ImageSpec::CjxlParams params;
     params.butteraugli_distance = 1.5;
     ret.push_back(params);
   }
 
   {
     // Lossless
-    jxl::CompressParams params = default_params;
+    ImageSpec::CjxlParams params;
     params.modular_group_mode = true;
     params.color_transform = jxl::ColorTransform::kNone;
-    params.quality_pair = {100, 100};
-    params.options.predictor = {int(jxl::Predictor::Weighted)};
+    params.modular_predictor = {int(jxl::Predictor::Weighted)};
     ret.push_back(params);
   }
 
   return ret;
 }
 
+void Usage() {
+  fprintf(stderr,
+          "Use: fuzzer_corpus [-r] [output_dir]\n"
+          "\n"
+          "  -r Regenerate files if already exist.\n");
+}
+
+}  // namespace
+
 int main(int argc, const char** argv) {
   const char* dest_dir = "corpus";
-  if (argc > 1) {
-    dest_dir = argv[1];
+  bool regenerate = false;
+  int optind = 1;
+  if (optind < argc && !strcmp(argv[optind], "-r")) {
+    regenerate = true;
+    optind++;
+  }
+  if (optind < argc) {
+    dest_dir = argv[optind++];
+  }
+  if (optind < argc) {
+    fprintf(stderr, "Unknown parameter: \"%s\".\n", argv[optind]);
+    Usage();
+    return 1;
   }
 
   struct stat st;
   if (stat(dest_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
     fprintf(stderr, "Output path \"%s\" is not a directory.\n", dest_dir);
+    Usage();
     return 1;
   }
 
@@ -231,7 +284,7 @@ int main(int argc, const char** argv) {
       {777, 256},
       {333, 1025},
   };
-  const std::vector<jxl::CompressParams> params_list = CompressParamsList();
+  const std::vector<ImageSpec::CjxlParams> params_list = CompressParamsList();
 
   std::vector<ImageSpec> specs;
 
@@ -245,6 +298,10 @@ int main(int argc, const char** argv) {
         spec.num_channels = num_channels;
         for (uint32_t alpha_bit_depth : {0, 8, 16}) {
           spec.alpha_bit_depth = alpha_bit_depth;
+          if (bit_depth == 16 && alpha_bit_depth == 8) {
+            // This mode is not supported in CopyTo().
+            continue;
+          }
           for (uint32_t num_frames : {1, 3}) {
             spec.num_frames = num_frames;
 
@@ -272,11 +329,12 @@ int main(int argc, const char** argv) {
   }
 
   jxl::ThreadPoolInternal pool;
-  pool.Run(0, specs.size(), jxl::ThreadPool::SkipInit(),
-           [&specs, dest_dir](const int task, const int /* thread */) {
-             const ImageSpec& spec = specs[task];
-             GenerateFile(dest_dir, spec);
-           });
+  pool.Run(
+      0, specs.size(), jxl::ThreadPool::SkipInit(),
+      [&specs, dest_dir, regenerate](const int task, const int /* thread */) {
+        const ImageSpec& spec = specs[task];
+        GenerateFile(dest_dir, spec, regenerate);
+      });
 
   return 0;
 }

@@ -17,8 +17,6 @@
 
 #include <stddef.h>
 
-#include <hwy/static_targets.h>
-
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
@@ -29,21 +27,6 @@ namespace jxl {
 using ac_qcoeff_t = float;
 using ACImage = Plane<ac_qcoeff_t>;
 using ACImage3 = Image3<ac_qcoeff_t>;
-
-// Fills a preallocated (N*N)*W x H `dct` with (N*N)x1 blocks produced by
-// ComputeTransposedScaledDCT() from the corresponding NxN block of
-// `image`. Note that `dct` coefficients are scaled by 1 / (N*N), so that
-// ComputeTransposedScaledIDCT applied to each block of TransposedScaledIDCT
-// will return the original input.
-// REQUIRES: image.xsize() == N*W, image.ysize() == N*H
-HWY_ATTR void TransposedScaledDCT(const Image3F& image,
-                                  Image3F* JXL_RESTRICT dct);
-
-// Fills a preallocated N*W x N*H `idct` with NxN blocks produced by
-// ComputeTransposedScaledIDCT() from the (N*N)x1 blocks of `dct`.
-// REQUIRES: dct.xsize() == N*N*W, dct.ysize() == H
-HWY_ATTR void TransposedScaledIDCT(const Image3F& dct,
-                                   Image3F* JXL_RESTRICT idct);
 
 // Returns an N x M image by taking the DC coefficient from each 64x1 block.
 // REQUIRES: coeffs.xsize() == 64*N, coeffs.ysize() == M

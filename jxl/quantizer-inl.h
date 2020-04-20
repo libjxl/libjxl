@@ -12,17 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// No include guard - included within HWY_NAMESPACE.
+#if defined(JXL_QUANTIZER_INL_H_) == defined(HWY_TARGET_TOGGLE)
+#ifdef JXL_QUANTIZER_INL_H_
+#undef JXL_QUANTIZER_INL_H_
+#else
+#define JXL_QUANTIZER_INL_H_
+#endif
+
+#include <hwy/highway.h>
+#include <stddef.h>
+
+namespace jxl {
+
+#include <hwy/begin_target-inl.h>
 
 template <class DF>
-HWY_ATTR JXL_INLINE hwy::VT<DF> AdjustQuantBias(
-    DF df, const size_t c, const hwy::VT<DF> quant,
-    const float* JXL_RESTRICT biases) {
-  const hwy::Desc<int32_t, DF::LanesOr0()> di;
+HWY_FUNC HWY_VEC(DF)
+    AdjustQuantBias(DF df, const size_t c, const HWY_VEC(DF) quant,
+                    const float* HWY_RESTRICT biases) {
+  const hwy::Desc<int32_t, df.N> di;
 
   // Compare |quant|, keep sign bit for negating result.
   const auto kSign = BitCast(df, Set(di, INT32_MIN));
-  const auto sign = quant & kSign;  // TODO(janwas): = abs ^ orig
+  const auto sign = And(quant, kSign);  // TODO(janwas): = abs ^ orig
   const auto abs_quant = AndNot(kSign, quant);
 
   // If |x| is 1, kZeroBias creates a different bias for each channel.
@@ -38,7 +50,7 @@ HWY_ATTR JXL_INLINE hwy::VT<DF> AdjustQuantBias(
   const auto not_0 = abs_quant > Zero(df);
 
   // Bitwise logic is faster than quant * biases[3].
-  const auto one_bias = IfThenElseZero(not_0, Set(df, biases[c]) ^ sign);
+  const auto one_bias = IfThenElseZero(not_0, Xor(Set(df, biases[c]), sign));
 
   // About 2E-5 worse than ReciprocalNR or division.
   const auto bias =
@@ -46,3 +58,9 @@ HWY_ATTR JXL_INLINE hwy::VT<DF> AdjustQuantBias(
 
   return IfThenElse(is_01, one_bias, bias);
 }
+
+#include <hwy/end_target-inl.h>
+
+}  // namespace jxl
+
+#endif  // include guard

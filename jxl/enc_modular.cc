@@ -25,9 +25,11 @@
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/status.h"
+#include "jxl/dec_ans.h"
 #include "jxl/enc_bit_writer.h"
 #include "jxl/enc_params.h"
 #include "jxl/modular/encoding/encoding.h"
+#include "jxl/modular/encoding/options.h"
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/transform/transform.h"
 
@@ -85,6 +87,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     nb_chans += ib.extra_channels().size();
   }
 
+  // TODO(lode): must handle decoded->metadata()->floating_point_sample?
   int maxval = (1 << ib.metadata()->bits_per_sample) - 1;
   if (cparams.color_transform == ColorTransform::kXYB)
     maxval = 255;  // not true, but bits_per_sample doesn't matter either
@@ -172,8 +175,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cquality > 100) cquality = quality;
 
   if (quality < 100 || cparams.near_lossless) {
-    if (cparams.palette_colors != 0)
+    if (cparams.palette_colors != 0) {
       JXL_DEBUG_V(3, "Lossy encode, not doing palette transforms");
+    }
     cparams.channel_colors_pre_transform_percent = 0;
     cparams.channel_colors_percent = 0;
     cparams.palette_colors = 0;
@@ -184,11 +188,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
     // single channel palette (like FLIF's ChannelCompact)
     gi.recompute_minmax();
     for (size_t i = 0; i < gi.nb_channels; i++) {
-      int colors = (gi.channel[gi.nb_meta_channels + i].maxval -
-                    gi.channel[gi.nb_meta_channels + i].minval + 1);
-      JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i,
-                  gi.channel[gi.nb_meta_channels + i].minval,
-                  gi.channel[gi.nb_meta_channels + i].maxval);
+      int min, max;
+      gi.channel[gi.nb_meta_channels + i].compute_trivial(&min, &max);
+      int colors = max - min + 1;
+      JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
       maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
       maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
@@ -250,10 +253,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams.responsive) {
     gi.do_transform(Transform(TransformId::kSqueeze));  // use default squeezing
   }
-  if (cparams.speed_tier <= SpeedTier::kWombat &&
-      (quality == 100 || cparams.options.entropy_coder == 2)) {
-    cparams.options.use_splitting_heuristics = true;
-    cparams.options.splitting_heuristics_node_threshold = 96;
+  if (cparams.options.entropy_coder == ModularOptions::kMAANS) {
+    if (cparams.speed_tier > SpeedTier::kWombat) {
+      cparams.options.splitting_heuristics_node_threshold = 192;
+    } else {
+      cparams.options.splitting_heuristics_node_threshold = 96;
+    }
     switch (cparams.speed_tier) {
       case SpeedTier::kWombat:
         cparams.options.splitting_heuristics_max_properties = 4;
@@ -268,7 +273,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
         cparams.options.splitting_heuristics_max_properties = 128;
         break;
       default:
-        JXL_ABORT("Unreachable");
+        cparams.options.splitting_heuristics_max_properties = 4;
+        break;
     }
   }
 
@@ -367,15 +373,13 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
 Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
                                              AuxOut* aux_out) {
-  PaddedBytes compressed;
   cparams.options.max_chan_size = kGroupDim;
-  modular_generic_compress(full_image, &compressed, &cparams.options, 0, false);
-  if (aux_out != nullptr)
-    aux_out->layers[kLayerModularGlobal].total_bits += compressed.size() * 8;
-  writer->ZeroPadToByte();
-  *writer += compressed;
+  modular_generic_compress(full_image, cparams.options, writer, aux_out,
+                           kLayerModularGlobal,
+                           /*loss=*/0, /*try_transforms=*/false);
   return true;
 }
+
 Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
                                         AuxOut* aux_out, size_t minShift,
                                         size_t maxShift, size_t layer) {
@@ -397,7 +401,7 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
            rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
     if (r.xsize() == 0 || r.ysize() == 0) continue;
-    Channel gc(r.xsize(), r.ysize(), 0, maxval);
+    Channel gc(r.xsize(), r.ysize());
     gc.hshift = fc.hshift;
     gc.vshift = fc.vshift;
     for (size_t y = 0; y < r.ysize(); ++y) {
@@ -445,11 +449,10 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
     // single channel palette (like FLIF's ChannelCompact)
     gi.recompute_minmax();
     for (size_t i = 0; i < gi.nb_channels; i++) {
-      int colors = (gi.channel[gi.nb_meta_channels + i].maxval -
-                    gi.channel[gi.nb_meta_channels + i].minval + 1);
-      JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i,
-                  gi.channel[gi.nb_meta_channels + i].minval,
-                  gi.channel[gi.nb_meta_channels + i].maxval);
+      int min, max;
+      gi.channel[gi.nb_meta_channels + i].compute_trivial(&min, &max);
+      int colors = max - min + 1;
+      JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
       maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
       maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
@@ -464,31 +467,56 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
     }
   }
 
+  HybridUintConfig uint_config_sign{4, 2, 1};
+
   gi.recompute_minmax();
+
+#if JXL_DEBUG_V_LEVEL >= 5
+  // Only used for lossless.
+  int best = 0;
+#endif
+
+  BitWriter local_compressed;
+  AuxOut local_aux_out;
+  auto try_compress = [&](bool force_use, int new_best,
+                          HybridUintConfig uint_config =
+                              kHybridUint420Config) -> Status {
+    BitWriter compressed2;
+    AuxOut aux_out2;
+    JXL_RETURN_IF_ERROR(modular_generic_compress(
+        gi, cparams.options, &compressed2, &aux_out2, layer, /*loss=*/0,
+        /*try_transforms=*/false, uint_config));
+    if (compressed2.BitsWritten() < local_compressed.BitsWritten() ||
+        force_use) {
+      local_compressed = std::move(compressed2);
+      local_aux_out = std::move(aux_out2);
+#if JXL_DEBUG_V_LEVEL >= 5
+      best = new_best;
+#endif
+    }
+    return true;
+  };
+
   // lossless and no specific color transform specified: try Nothing, YCoCg,
   // and 17 RCTs
   if (cparams.color_transform == ColorTransform::kNone && quality == 100 &&
       cparams.colorspace < 0 && gi.nb_channels > 2 && !cparams.near_lossless &&
       cparams.responsive == false && do_color &&
       cparams.speed_tier <= SpeedTier::kWombat) {
-#if JXL_DEBUG_V_LEVEL >= 5
-    int best = 0;
-#endif
-
-    PaddedBytes compressed, compressed2;
     if (cparams.speed_tier <= SpeedTier::kKitten) {
-      modular_generic_compress(gi, &compressed, &cparams.options, 0, false);
+      JXL_RETURN_IF_ERROR(
+          modular_generic_compress(gi, cparams.options, &local_compressed,
+                                   &local_aux_out, layer, /*loss=*/0,
+                                   /*try_transforms=*/false));
     }
     gi.do_transform(Transform(TransformId::kYCoCg));
-    modular_generic_compress(gi, &compressed2, &cparams.options, 0, false);
-    if (compressed2.size() < compressed.size() ||
-        cparams.speed_tier > SpeedTier::kKitten) {
-      compressed = std::move(compressed2);
-#if JXL_DEBUG_V_LEVEL >= 5
-      best = 1;
-#endif
+    JXL_RETURN_IF_ERROR(
+        try_compress(cparams.speed_tier > SpeedTier::kKitten, /*new_best=*/1));
+    // Use sign-in-token.
+    if (cparams.speed_tier < SpeedTier::kWombat) {
+      JXL_RETURN_IF_ERROR(
+          try_compress(/*force_use=*/false, /*new_best=*/1, uint_config_sign));
     }
-    compressed2.clear();
 
     Transform sg(TransformId::kRCT);
     sg.parameters.push_back(0);
@@ -530,53 +558,56 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
                                                      : num_transforms_to_keep);
       sg.parameters[0] = i;
       gi.do_transform(sg);
-      modular_generic_compress(gi, &compressed2, &cparams.options, 0, false);
-      if (compressed2.size() < compressed.size()) {
-        compressed = std::move(compressed2);
-#if JXL_DEBUG_V_LEVEL >= 5
-        best = 2 + i;
-#endif
+      // Try putting the sign bit in the token only at slower settings.
+      if (cparams.speed_tier < SpeedTier::kWombat) {
+        JXL_RETURN_IF_ERROR(try_compress(/*force_use=*/false,
+                                         /*new_best=*/2 + i, uint_config_sign));
       }
-      compressed2.clear();
+      JXL_RETURN_IF_ERROR(
+          try_compress(/*force_use=*/false, /*new_best=*/2 + i));
       nb_rcts_to_try--;
     }
 #if JXL_DEBUG_V_LEVEL >= 5
     JXL_DEBUG_V(5, "Best color transform: %i", best);
 #endif
-    if (aux_out != nullptr)
-      aux_out->layers[layer].total_bits += compressed.size() * 8;
-    writer->ZeroPadToByte();
-    *writer += compressed;
-    return true;
-  }
-  if (cparams.near_lossless > 0) {
-    if (cparams.colorspace == 0) {
-      Transform nl(TransformId::kNearLossless);
-      nl.parameters.push_back(0);
-      nl.parameters.push_back(gi.nb_channels - 1);
-      nl.parameters.push_back(cparams.near_lossless);
-      gi.do_transform(nl);
-    } else {
-      Transform nl(TransformId::kNearLossless);
-      nl.parameters.push_back(0);
-      nl.parameters.push_back(0);
-      nl.parameters.push_back(cparams.near_lossless);
-      gi.do_transform(nl);
-      nl.parameters.clear();
-      nl.parameters.push_back(1);
-      nl.parameters.push_back(gi.nb_channels - 1);
-      nl.parameters.push_back(2 *
-                              cparams.near_lossless);  // more loss for chroma
-      gi.do_transform(nl);
+  } else {
+    if (cparams.near_lossless > 0) {
+      if (cparams.colorspace == 0) {
+        Transform nl(TransformId::kNearLossless);
+        nl.parameters.push_back(0);
+        nl.parameters.push_back(gi.nb_channels - 1);
+        nl.parameters.push_back(cparams.near_lossless);
+        gi.do_transform(nl);
+      } else {
+        Transform nl(TransformId::kNearLossless);
+        nl.parameters.push_back(0);
+        nl.parameters.push_back(0);
+        nl.parameters.push_back(cparams.near_lossless);
+        gi.do_transform(nl);
+        nl.parameters.clear();
+        nl.parameters.push_back(1);
+        nl.parameters.push_back(gi.nb_channels - 1);
+        nl.parameters.push_back(2 *
+                                cparams.near_lossless);  // more loss for chroma
+        gi.do_transform(nl);
+      }
+    }
+
+    JXL_RETURN_IF_ERROR(
+        modular_generic_compress(gi, cparams.options, &local_compressed,
+                                 &local_aux_out, layer, /*loss=*/0,
+                                 /*try_transforms=*/false));
+    if (cparams.speed_tier < SpeedTier::kWombat) {
+      JXL_RETURN_IF_ERROR(
+          try_compress(/*force_use=*/false, /*new_best=*/-1, uint_config_sign));
     }
   }
-
-  PaddedBytes compressed;
-  modular_generic_compress(gi, &compressed, &cparams.options, 0, false);
-  if (aux_out != nullptr)
-    aux_out->layers[layer].total_bits += compressed.size() * 8;
   writer->ZeroPadToByte();
-  *writer += compressed;
+  if (local_compressed.BitsWritten() != 0) {
+    local_compressed.ZeroPadToByte();
+    writer->AppendByteAligned(std::move(local_compressed));
+    if (aux_out) aux_out->Assimilate(local_aux_out);
+  }
   return true;
 }
 

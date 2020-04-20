@@ -15,6 +15,7 @@
 #include "jxl/entropy_coder.h"
 
 #include <stdint.h>
+#include <random>
 
 #include "gtest/gtest.h"
 
@@ -30,8 +31,7 @@ TEST(EntropyCoderTest, PackUnpack) {
   }
 }
 
-HWY_ATTR void HybridUintRoundtrip(HybridUintConfig config,
-                                  size_t limit = 1 << 24) {
+void HybridUintRoundtrip(HybridUintConfig config, size_t limit = 1 << 24) {
   std::mt19937 rng(0);
   std::uniform_int_distribution<uint32_t> dist(0, limit);
   constexpr size_t kNumIntegers = 1 << 20;

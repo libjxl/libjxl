@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Need include guard because this is included first from the test, then from
+// the subsequent test_util-inl.h so the IDE sees its dependencies.
 #ifndef HWY_TESTS_TEST_UTIL_H_
 #define HWY_TESTS_TEST_UTIL_H_
 
@@ -19,12 +21,11 @@
 
 #include <stdio.h>
 #include <string.h>
-
 #include <random>
+#include <string>
+#include <utility>  // std::forward
 
-#include "hwy/arch.h"  // kMaxVectorSize
-#include "hwy/runtime_dispatch.h"
-#include "hwy/type_traits.h"
+#include "hwy/highway.h"
 
 // Caller wants to use gtest.
 #ifdef HWY_USE_GTEST
@@ -39,8 +40,6 @@
 #endif  // HWY_USE_GTEST
 
 namespace hwy {
-// NOLINTNEXTLINE(google-build-namespaces)
-namespace {
 
 // The maximum vector size used in tests when defining test data. This is at
 // least the kMaxVectorSize but it can be bigger. If you increased
@@ -50,24 +49,50 @@ constexpr size_t kTestMaxVectorSize = 64;
 static_assert(kTestMaxVectorSize >= kMaxVectorSize,
               "All kTestMaxVectorSize test arrays need to be updated");
 
-// Calls Test()() for each instruction set via TargetBitfield.
-template <class Test>
-int RunTests() {
-  setvbuf(stdin, nullptr, _IONBF, 0);
+// Calls Functor for each individual target bit.
+template <class Functor>
+HWY_INLINE void ForeachTarget(const Functor& functor) {
+  // Prevent infinite loop by only including targets that are enabled.
+  uint32_t targets_bits = SupportedTargets() & HWY_TARGETS;
 
-  const int targets = TargetBitfield().Foreach(Test());
-  printf("Successfully tested instruction sets: 0x%x.\n", targets);
-  return 0;
+  while (targets_bits != 0) {
+    // 2's complement negation flips all bits above the lowest 1-bit and
+    // zeros lower bits, so ANDing with that clears all but the lowest 1-bit.
+    const uint32_t isolated_bit = targets_bits & (~targets_bits + 1);
+    functor(isolated_bit);
+    targets_bits &= ~isolated_bit;
+  }
 }
 
-[[noreturn]] void NotifyFailure(const char* filename, const int line,
-                                const size_t bits, const char* type_name,
-                                const size_t lane, const char* expected,
-                                const char* actual) {
-  fprintf(stderr,
-          "%s:%d: bits %zu, %s lane %zu mismatch: expected '%s', got '%s'.\n",
-          filename, line, bits, type_name, lane, expected, actual);
-  HWY_TRAP();
+// Calls function pointers returned by Choose for each individual target bit.
+template <class Choose, typename... Args>
+HWY_INLINE void ChooseAndCallForeachTarget(const Choose& choose,
+                                           Args&&... args) {
+  ForeachTarget([&](const uint32_t target_bit) {
+    const auto func = choose(target_bit);
+    (*func)(std::forward<Args>(args)...);
+  });
+}
+
+// Calls test for each enabled and available target.
+template <class Choose, typename... Args>
+void RunTest(const Choose& choose, Args&&... args) {
+  setvbuf(stdin, nullptr, _IONBF, 0);
+
+  ChooseAndCallForeachTarget(choose, std::forward<Args>(args)...);
+
+  std::string targets;
+  ForeachTarget([&targets](uint32_t target_bit) {
+    targets += TargetName(static_cast<int>(target_bit));
+    targets += ", ";
+  });
+  targets.resize(targets.size() - 2);  // strip last comma
+  printf("Successfully tested %s.\n", targets.c_str());
+
+  if ((HWY_TARGETS & HWY_SCALAR) == 0) {
+    fprintf(stderr, "WARNING: targets %x lack HWY_SCALAR, so it was skipped\n",
+            HWY_TARGETS);
+  }
 }
 
 // Random numbers
@@ -116,55 +141,38 @@ const char* TypeName() {
 
 // Value to string
 
-// Returns end of string (position of '\0').
+// We specialize for float/double below.
 template <typename T>
-inline char* ToString(T value, char* to) {
-  char reversed[100];
-  char* pos = reversed;
-  int64_t before;
-  do {
-    before = value;
-    value /= 10;
-    const int64_t mod = before - value * 10;
-    *pos++ = "9876543210123456789"[9 + mod];
-  } while (value != 0);
-  if (before < 0) *pos++ = '-';
-
-  // Reverse the string
-  const int num_chars = pos - reversed;
-  for (int i = 0; i < num_chars; ++i) {
-    to[i] = pos[-1 - i];
-  }
-  to[num_chars] = '\0';
-  return to + num_chars;
+inline std::string ToString(T value) {
+  return std::to_string(value);
 }
 
 template <>
-inline char* ToString<float>(const float value, char* to) {
-  if (!std::isfinite(value)) {
-    strncpy(to, "<not-finite>", 13);
-    return to + strlen(to);
-  }
-  const int64_t truncated = static_cast<int64_t>(value);
-  char* end = ToString(truncated, to);
-  *end++ = '.';
-  int64_t frac = static_cast<int64_t>((value - truncated) * 1E8);
-  if (frac < 0) frac = -frac;
-  return ToString(frac, end);
+inline std::string ToString<float>(const float value) {
+  // Ensure -0 and 0 are equivalent (required by some tests).
+  uint32_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  if ((bits & 0x7FFFFFFF) == 0) return "0";
+
+  // to_string doesn't return enough digits and sstream is a
+  // fairly large dependency (4KLOC).
+  char buf[100];
+  sprintf(buf, "%.8f", value);
+  return buf;
 }
 
 template <>
-inline char* ToString<double>(const double value, char* to) {
-  if (!std::isfinite(value)) {
-    strncpy(to, "<not-finite>", 13);
-    return to + strlen(to);
-  }
-  const int64_t truncated = static_cast<int64_t>(value);
-  char* end = ToString(truncated, to);
-  *end++ = '.';
-  int64_t frac = static_cast<int64_t>((value - truncated) * 1E16);
-  if (frac < 0) frac = -frac;
-  return ToString(frac, end);
+inline std::string ToString<double>(const double value) {
+  // Ensure -0 and 0 are equivalent (required by some tests).
+  uint64_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  if ((bits & 0x7FFFFFFFFFFFFFFFull) == 0) return "0";
+
+  // to_string doesn't return enough digits and sstream is a
+  // fairly large dependency (4KLOC).
+  char buf[100];
+  sprintf(buf, "%.16f", value);
+  return buf;
 }
 
 // String comparison
@@ -186,7 +194,6 @@ inline bool StringsEqual(const char* s1, const char* s2) {
   return false;
 }
 
-}  // namespace
 }  // namespace hwy
 
 #endif  // HWY_TESTS_TEST_UTIL_H_

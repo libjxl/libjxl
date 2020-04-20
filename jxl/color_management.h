@@ -18,6 +18,7 @@
 // ICC profiles and color space conversions.
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include <vector>
 
@@ -31,6 +32,13 @@
 #endif
 
 namespace jxl {
+
+enum class ExtraTF {
+  kNone,
+  kPQ,
+  kHLG,
+  kSRGB,
+};
 
 // Run is thread-safe.
 class ColorSpaceTransform {
@@ -50,18 +58,6 @@ class ColorSpaceTransform {
 
   float* BufDst(const size_t thread) { return buf_dst_.Row(thread); }
 
-  // buf_X can either be from BufX() or caller-allocated, interleaved storage.
-  // `thread` must be less than the `num_threads` passed to Init.
-  void Run(size_t thread, const float* buf_src, float* buf_dst);
-
- private:
-  enum class ExtraTF {
-    kNone,
-    kPQ,
-    kHLG,
-    kSRGB,
-  };
-
 #if JPEGXL_ENABLE_SKCMS
   // Parsed skcms_ICCProfiles retain pointers to the original data.
   PaddedBytes icc_src_, icc_dst_;
@@ -79,8 +75,16 @@ class ColorSpaceTransform {
   ExtraTF postprocess_ = ExtraTF::kNone;
 };
 
-void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
-                  float* JXL_RESTRICT linear);
+// buf_X can either be from BufX() or caller-allocated, interleaved storage.
+// `thread` must be less than the `num_threads` passed to Init.
+// `t` is non-const because buf_* may be modified.
+typedef void DoColorSpaceTransformFunc(ColorSpaceTransform* t, size_t thread,
+                                       const float* buf_src, float* buf_dst);
+DoColorSpaceTransformFunc* ChooseDoColorSpaceTransform(uint32_t targets_bits);
+
+typedef void SRGBToLinearFunc(size_t n, const float* JXL_RESTRICT srgb,
+                              float* JXL_RESTRICT linear);
+SRGBToLinearFunc* ChooseSRGBToLinear(uint32_t targets_bits);
 
 }  // namespace jxl
 

@@ -24,9 +24,9 @@
 #include <sys/mman.h>
 #endif
 
-#include <algorithm>  // std::max
+#include <hwy/interface.h>  // kMaxVectorSize
+#include <algorithm>        // std::max
 #include <atomic>
-#include <hwy/arch.h>  // for kMaxVectorSize
 
 #include "jxl/base/status.h"
 
@@ -37,7 +37,7 @@ namespace {
 struct AllocationHeader {
   void* allocated;
   size_t allocated_size;
-  uint8_t left_padding[kMaxVectorSize];
+  uint8_t left_padding[hwy::kMaxVectorSize];
 };
 #pragma pack(pop)
 
@@ -46,6 +46,12 @@ std::atomic<uint64_t> bytes_in_use{0};
 std::atomic<uint64_t> max_bytes_in_use{0};
 
 }  // namespace
+
+// Avoids linker errors in pre-C++17 builds.
+constexpr size_t CacheAligned::kPointerSize;
+constexpr size_t CacheAligned::kCacheLineSize;
+constexpr size_t CacheAligned::kAlignment;
+constexpr size_t CacheAligned::kAlias;
 
 void CacheAligned::PrintStats() {
   printf("Allocations: %zu (max bytes in use: %E)\n",

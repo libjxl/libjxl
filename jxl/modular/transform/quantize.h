@@ -58,7 +58,7 @@ bool inv_quantize(Image &input, const TransformParams &parameters,
 }
 
 static Status meta_quantize(Image &input) {
-  Channel qs(input.channel.size() - input.nb_meta_channels, 1, 0, 255);
+  Channel qs(input.channel.size() - input.nb_meta_channels, 1);
   qs.hshift = -1;
   input.channel.insert(input.channel.begin(), std::move(qs));
   input.nb_meta_channels++;
@@ -86,8 +86,6 @@ Status fwd_quantize(Image &input, const TransformParams &parameters) {
         p[x] = rdiv(p[x], q);
       }
     }
-    ch.minval /= q;
-    ch.maxval /= q;
     qs[qx] = q - 1;
     qx++;
   }

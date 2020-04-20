@@ -30,6 +30,7 @@
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_test_utils.h"
+#include "jxl/luminance.h"
 #include "jxl/testdata_path.h"
 
 namespace jxl {
@@ -56,6 +57,7 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
   }
   CodecInOut io;
   io.metadata.bits_per_sample = bits_per_sample;
+  io.metadata.floating_point_sample = (bits_per_sample == 32);
   io.metadata.color_encoding = c_native;
   io.SetFromImage(std::move(image), c_native);
   if (add_alpha) {
@@ -109,6 +111,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   JXL_CHECK(Encode(io, codec, c_external, bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
+  io2.target_nits = io.metadata.IntensityTarget();
   // Only for PNM because PNG will warn about ignoring them.
   if (codec == Codec::kPNM) {
     io2.dec_hints.Add("color_space", Description(c_external));
@@ -129,7 +132,9 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
     EXPECT_TRUE(SamePixels(ib1.alpha(), ib2.alpha()));
   }
 
+  JXL_CHECK(MapTargetNitsTo255(&io2, pool));
   JXL_CHECK(ib2.TransformTo(ib1.c_current(), pool));
+  JXL_CHECK(Map255ToTargetNits(&io2, pool));
 
   double max_l1, max_rel;
   // Round-trip tolerances must be higher than in external_image_test because
@@ -237,6 +242,7 @@ TEST(CodecTest, TestMetadataSRGB) {
     const CodecInOut io =
         DecodeRoundtrip(GetTestDataPath(relative_pathname), Codec::kPNG, &pool);
     EXPECT_EQ(8, io.metadata.bits_per_sample);
+    EXPECT_EQ(false, io.metadata.floating_point_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
@@ -268,6 +274,7 @@ TEST(CodecTest, TestMetadataLinear) {
     const CodecInOut io =
         DecodeRoundtrip(GetTestDataPath(paths[i]), Codec::kPNG, &pool);
     EXPECT_EQ(16, io.metadata.bits_per_sample);
+    EXPECT_EQ(false, io.metadata.floating_point_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
@@ -343,6 +350,7 @@ void VerifyWideGamutMetadata(const std::string& relative_pathname,
       DecodeRoundtrip(GetTestDataPath(relative_pathname), Codec::kPNG, pool);
 
   EXPECT_EQ(8, io.metadata.bits_per_sample);
+  EXPECT_EQ(false, io.metadata.floating_point_sample);
 
   const ColorEncoding& c_original = io.metadata.color_encoding;
   EXPECT_FALSE(c_original.ICC().empty());

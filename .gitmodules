@@ -19,3 +19,6 @@
 [submodule "third_party/skcms"]
 	path = third_party/skcms
 	url = https://skia.googlesource.com/skcms
+[submodule "third_party/mingw-std-threads"]
+	path = third_party/mingw-std-threads
+	url = https://github.com/meganz/mingw-std-threads
