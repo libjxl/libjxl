@@ -19,7 +19,6 @@
 #define JXL_DEC_TRANSFORMS_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include <stddef.h>
 
 #include "jxl/ac_strategy.h"
@@ -27,14 +26,15 @@
 #include "jxl/dct_scales.h"
 #include "jxl/dec_dct-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 template <size_t ROWS, size_t COLS>
 struct DoIDCT {
   template <typename From, typename To>
-  HWY_ATTR void operator()(const From& from, const To& to) {
+  void operator()(const From& from, const To& to) {
     ComputeScaledIDCT<ROWS, COLS>()(from, to);
   }
 };
@@ -42,7 +42,7 @@ struct DoIDCT {
 template <size_t N>
 struct DoIDCT<N, N> {
   template <typename From, typename To>
-  HWY_ATTR void operator()(const From& from, const To& to) const {
+  void operator()(const From& from, const To& to) const {
     ComputeTransposedScaledIDCT<N>()(from, to);
   }
 };
@@ -50,10 +50,9 @@ struct DoIDCT<N, N> {
 // Inverse of ReinterpretingDCT.
 template <size_t DCT_ROWS, size_t DCT_COLS, size_t LF_ROWS, size_t LF_COLS,
           size_t ROWS, size_t COLS>
-HWY_ATTR HWY_INLINE void ReinterpretingIDCT(const float* input,
-                                            const size_t input_stride,
-                                            float* output,
-                                            const size_t output_stride) {
+HWY_INLINE void ReinterpretingIDCT(const float* input,
+                                   const size_t input_stride, float* output,
+                                   const size_t output_stride) {
   // TODO(veluca): avoid copy using special FromBlock adapters.
   HWY_ALIGN float block[ROWS * COLS] = {};
   if (ROWS < COLS) {
@@ -76,8 +75,8 @@ HWY_ATTR HWY_INLINE void ReinterpretingIDCT(const float* input,
 
   constexpr size_t IN_ROWS = CoefficientRows(ROWS, COLS);
   constexpr size_t IN_COLS = CoefficientColumns(ROWS, COLS);
-  DoIDCT<ROWS, COLS>()(FromBlock<IN_ROWS, IN_COLS>(block),
-                       ToBlock<ROWS, COLS>(block));
+  DoIDCT<ROWS, COLS>()(FromBlock(IN_ROWS, IN_COLS, block),
+                       ToBlock(ROWS, COLS, block));
 
   for (size_t y = 0; y < ROWS; y++) {
     for (size_t x = 0; x < COLS; x++) {
@@ -115,8 +114,7 @@ void IDCT2TopBlock(const float* block, size_t stride_out, float* out) {
   }
 }
 
-HWY_ATTR void AFVIDCT4x4(const float* JXL_RESTRICT coeffs,
-                         float* JXL_RESTRICT pixels) {
+void AFVIDCT4x4(const float* JXL_RESTRICT coeffs, float* JXL_RESTRICT pixels) {
   HWY_ALIGN static constexpr float k4x4AFVBasis[16][16] = {
       {
           0.25,
@@ -408,22 +406,21 @@ HWY_ATTR void AFVIDCT4x4(const float* JXL_RESTRICT coeffs,
       },
   };
 
-  using D = HWY_CAPPED(float, 16);
-  for (size_t i = 0; i < 16; i += D::N) {
-    auto pixel = Zero(D());
+  const HWY_CAPPED(float, 16) d;
+  for (size_t i = 0; i < 16; i += Lanes(d)) {
+    auto pixel = Zero(d);
     for (size_t j = 0; j < 16; j++) {
-      auto cf = Set(D(), coeffs[j]);
-      auto basis = Load(D(), k4x4AFVBasis[j] + i);
+      auto cf = Set(d, coeffs[j]);
+      auto basis = Load(d, k4x4AFVBasis[j] + i);
       pixel = MulAdd(cf, basis, pixel);
     }
-    Store(pixel, D(), pixels + i);
+    Store(pixel, d, pixels + i);
   }
 }
 
 template <size_t afv_kind>
-HWY_ATTR void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
-                                   float* JXL_RESTRICT pixels,
-                                   size_t pixels_stride) {
+void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
+                          float* JXL_RESTRICT pixels, size_t pixels_stride) {
   size_t afv_x = afv_kind & 1;
   size_t afv_y = afv_kind / 2;
   float dcs[3] = {};
@@ -459,9 +456,9 @@ HWY_ATTR void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
     }
   }
   ComputeTransposedScaledIDCT<4>()(
-      FromBlock<4, 4>(block),
-      ToLines<4>(pixels + afv_y * 4 * pixels_stride + (afv_x == 1 ? 0 : 4),
-                 pixels_stride));
+      FromBlock(4, 4, block),
+      ToLines(pixels + afv_y * 4 * pixels_stride + (afv_x == 1 ? 0 : 4),
+              pixels_stride));
   // IDCT4x8.
   block[0] = dcs[2];
   for (size_t iy = 0; iy < 4; iy++) {
@@ -471,13 +468,14 @@ HWY_ATTR void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
     }
   }
   ComputeScaledIDCT<4, 8>()(
-      FromBlock<4, 8>(block),
-      ToLines<8>(pixels + (afv_y == 1 ? 0 : 4) * pixels_stride, pixels_stride));
+      FromBlock(4, 8, block),
+      ToLines(pixels + (afv_y == 1 ? 0 : 4) * pixels_stride, pixels_stride));
 }
 
-HWY_ATTR HWY_MAYBE_UNUSED void TransformToPixels(
-    const AcStrategy::Type strategy, const float* JXL_RESTRICT coefficients,
-    float* JXL_RESTRICT pixels, size_t pixels_stride) {
+HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
+                                        const float* JXL_RESTRICT coefficients,
+                                        float* JXL_RESTRICT pixels,
+                                        size_t pixels_stride) {
   using Type = AcStrategy::Type;
   switch (strategy) {
     case Type::IDENTITY: {
@@ -534,8 +532,8 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformToPixels(
             block[iy * 8 + ix] = coefficients[(x + iy * 2) * 8 + ix];
           }
         }
-        ComputeScaledIDCT<8, 4>()(FromBlock<4, 8>(block),
-                                  ToLines<4>(pixels + x * 4, pixels_stride));
+        ComputeScaledIDCT<8, 4>()(FromBlock(4, 8, block),
+                                  ToLines(pixels + x * 4, pixels_stride));
       }
       break;
     }
@@ -556,8 +554,8 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformToPixels(
           }
         }
         ComputeScaledIDCT<4, 8>()(
-            FromBlock<4, 8>(block),
-            ToLines<8>(pixels + y * 4 * pixels_stride, pixels_stride));
+            FromBlock(4, 8, block),
+            ToLines(pixels + y * 4 * pixels_stride, pixels_stride));
       }
       break;
     }
@@ -583,9 +581,8 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformToPixels(
             }
           }
           ComputeTransposedScaledIDCT<4>()(
-              FromBlock<4>(block),
-              ToLines<4>(pixels + y * 4 * pixels_stride + x * 4,
-                         pixels_stride));
+              FromBlock(4, 4, block),
+              ToLines(pixels + y * 4 * pixels_stride + x * 4, pixels_stride));
         }
       }
       break;
@@ -607,58 +604,58 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformToPixels(
     case Type::DCT16X16: {
       PROFILER_ZONE("IDCT 16");
       ComputeTransposedScaledIDCT<2 * kBlockDim>()(
-          FromBlock<2 * kBlockDim>(coefficients),
-          ToLines<2 * kBlockDim>(pixels, pixels_stride));
+          FromBlock(2 * kBlockDim, 2 * kBlockDim, coefficients),
+          ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT16X8: {
       PROFILER_ZONE("IDCT 16x8");
-      ComputeScaledIDCT<16, 8>()(FromBlock<8, 16>(coefficients),
-                                 ToLines<8>(pixels, pixels_stride));
+      ComputeScaledIDCT<16, 8>()(FromBlock(8, 16, coefficients),
+                                 ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT8X16: {
       PROFILER_ZONE("IDCT 8x16");
-      ComputeScaledIDCT<8, 16>()(FromBlock<8, 16>(coefficients),
-                                 ToLines<16>(pixels, pixels_stride));
+      ComputeScaledIDCT<8, 16>()(FromBlock(8, 16, coefficients),
+                                 ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT32X8: {
       PROFILER_ZONE("IDCT 32x8");
-      ComputeScaledIDCT<32, 8>()(FromBlock<8, 32>(coefficients),
-                                 ToLines<8>(pixels, pixels_stride));
+      ComputeScaledIDCT<32, 8>()(FromBlock(8, 32, coefficients),
+                                 ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT8X32: {
       PROFILER_ZONE("IDCT 8x32");
-      ComputeScaledIDCT<8, 32>()(FromBlock<8, 32>(coefficients),
-                                 ToLines<32>(pixels, pixels_stride));
+      ComputeScaledIDCT<8, 32>()(FromBlock(8, 32, coefficients),
+                                 ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT32X16: {
       PROFILER_ZONE("IDCT 32x16");
-      ComputeScaledIDCT<32, 16>()(FromBlock<16, 32>(coefficients),
-                                  ToLines<16>(pixels, pixels_stride));
+      ComputeScaledIDCT<32, 16>()(FromBlock(16, 32, coefficients),
+                                  ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT16X32: {
       PROFILER_ZONE("IDCT 16x32");
-      ComputeScaledIDCT<16, 32>()(FromBlock<16, 32>(coefficients),
-                                  ToLines<32>(pixels, pixels_stride));
+      ComputeScaledIDCT<16, 32>()(FromBlock(16, 32, coefficients),
+                                  ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT32X32: {
       PROFILER_ZONE("IDCT 32");
       ComputeTransposedScaledIDCT<4 * kBlockDim>()(
-          FromBlock<4 * kBlockDim>(coefficients),
-          ToLines<4 * kBlockDim>(pixels, pixels_stride));
+          FromBlock(4 * kBlockDim, 4 * kBlockDim, coefficients),
+          ToLines(pixels, pixels_stride));
       break;
     }
     case Type::DCT: {
       PROFILER_ZONE("IDCT 8");
       ComputeTransposedScaledIDCT<kBlockDim>()(
-          FromBlock<kBlockDim>(coefficients),
-          ToLines<kBlockDim>(pixels, pixels_stride));
+          FromBlock(kBlockDim, kBlockDim, coefficients),
+          ToLines(pixels, pixels_stride));
       break;
     }
     case Type::AFV0: {
@@ -686,9 +683,9 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformToPixels(
   }
 }
 
-HWY_ATTR HWY_MAYBE_UNUSED void DCFromLowestFrequencies(
-    const AcStrategy::Type strategy, const float* block, float* dc,
-    size_t dc_stride) {
+HWY_MAYBE_UNUSED void DCFromLowestFrequencies(const AcStrategy::Type strategy,
+                                              const float* block, float* dc,
+                                              size_t dc_stride) {
   using Type = AcStrategy::Type;
   switch (strategy) {
     case Type::DCT16X8: {
@@ -757,7 +754,7 @@ HWY_ATTR HWY_MAYBE_UNUSED void DCFromLowestFrequencies(
 }
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

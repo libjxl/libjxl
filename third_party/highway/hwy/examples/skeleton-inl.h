@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -29,31 +29,30 @@
 // It is fine to #include normal or *-inl headers.
 #include <stddef.h>
 #include "hwy/examples/skeleton_shared.h"
-#include "hwy/highway.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace skeleton {
-
 #include "hwy/begin_target-inl.h"
 
 // Computes out[i] = in1[i] * kMultiplier + in2[i] for i < 256.
-HWY_ATTR HWY_MAYBE_UNUSED void ExampleMulAdd(const float* HWY_RESTRICT in1,
-                                             const float* HWY_RESTRICT in2,
-                                             float* HWY_RESTRICT out) {
+HWY_MAYBE_UNUSED void ExampleMulAdd(const float* HWY_RESTRICT in1,
+                                    const float* HWY_RESTRICT in2,
+                                    float* HWY_RESTRICT out) {
   // Descriptor(s) for all vector types used in this function.
   HWY_FULL(float) df;
 
   const auto mul = Set(df, kMultiplier);
-  for (size_t i = 0; i < 256; i += df.N) {
+  for (size_t i = 0; i < 256; i += Lanes(df)) {
     const auto result = MulAdd(mul, Load(df, in1 + i), Load(df, in2 + i));
     Store(result, df, out + i);
   }
 }
 
-// (This doesn't generate SIMD instructions, so HWY_ATTR is not required here)
-HWY_ATTR HWY_MAYBE_UNUSED const char* ExampleGatherStrategy() {
+// (This doesn't generate SIMD instructions, so is not required here)
+HWY_MAYBE_UNUSED const char* ExampleGatherStrategy() {
   // Highway functions generate per-target implementations from the same source
   // code, but if needed, differing codepaths can be selected via #if.
-#if HWY_CAPS & HWY_CAP_GATHER
+#if HWY_CAP_GATHER
   return "Has gather";
 #else
   return "No gather, use scalar instead?";
@@ -61,7 +60,7 @@ HWY_ATTR HWY_MAYBE_UNUSED const char* ExampleGatherStrategy() {
 }
 
 #include "hwy/end_target-inl.h"
-
 }  // namespace skeleton
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

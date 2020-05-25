@@ -16,15 +16,25 @@
 // WARNING: most operations do not cross 128-bit block boundaries. In
 // particular, "Broadcast", pack and zip behavior may be surprising.
 
+// This header is included by begin_target-inl.h, possibly inside a namespace,
+// so do not include system headers (already done by highway.h). HWY_ALIGN is
+// already defined unless an IDE is only parsing this file, in which case we
+// include headers to avoid warnings (before including ops/x86_256-inl.h so it
+// doesn't overwrite HWY_TARGET) .
+#ifndef HWY_ALIGN
 #include <stddef.h>
 #include <stdint.h>
 
 #include "hwy/highway.h"
 
+#define HWY_NESTED_BEGIN  // prevent re-including this header
+#undef HWY_TARGET
+#define HWY_TARGET HWY_AVX3
+#include "hwy/begin_target-inl.h"
+#endif  // HWY_ALIGN
+
 // Required for promotion/demotion and users of HWY_CAPPED.
 #include "hwy/ops/x86_256-inl.h"
-
-#include "hwy/begin_target-inl.h"
 
 template <typename T>
 struct Raw512 {
@@ -40,10 +50,10 @@ struct Raw512<double> {
 };
 
 template <typename T>
-using Full512 = hwy::Desc<T, 64 / sizeof(T)>;
+using Full512 = hwy::Simd<T, 64 / sizeof(T)>;
 
 template <typename T, size_t N>
-using Desc = hwy::Desc<T, N>;
+using Simd = hwy::Simd<T, N>;
 
 template <typename T>
 class Vec512 {
@@ -157,16 +167,17 @@ HWY_API Vec512<double> Zero(Full512<double> /* tag */) {
 
 // Returns a vector with all lanes set to "t".
 HWY_API Vec512<uint8_t> Set(Full512<uint8_t> /* tag */, const uint8_t t) {
-  return Vec512<uint8_t>{_mm512_set1_epi8(t)};
+  return Vec512<uint8_t>{_mm512_set1_epi8(static_cast<char>(t))};  // NOLINT
 }
 HWY_API Vec512<uint16_t> Set(Full512<uint16_t> /* tag */, const uint16_t t) {
-  return Vec512<uint16_t>{_mm512_set1_epi16(t)};
+  return Vec512<uint16_t>{_mm512_set1_epi16(static_cast<short>(t))};  // NOLINT
 }
 HWY_API Vec512<uint32_t> Set(Full512<uint32_t> /* tag */, const uint32_t t) {
-  return Vec512<uint32_t>{_mm512_set1_epi32(t)};
+  return Vec512<uint32_t>{_mm512_set1_epi32(static_cast<int>(t))};  // NOLINT
 }
 HWY_API Vec512<uint64_t> Set(Full512<uint64_t> /* tag */, const uint64_t t) {
-  return Vec512<uint64_t>{_mm512_set1_epi64(t)};
+  return Vec512<uint64_t>{
+      _mm512_set1_epi64(static_cast<long long>(t))};  // NOLINT
 }
 HWY_API Vec512<int8_t> Set(Full512<int8_t> /* tag */, const int8_t t) {
   return Vec512<int8_t>{_mm512_set1_epi8(t)};
@@ -760,13 +771,6 @@ HWY_API Vec512<float> Max(const Vec512<float> a, const Vec512<float> b) {
 }
 HWY_API Vec512<double> Max(const Vec512<double> a, const Vec512<double> b) {
   return Vec512<double>{_mm512_max_pd(a.raw, b.raw)};
-}
-
-// Returns the closest value to v within [lo, hi].
-template <typename T>
-HWY_API Vec512<T> Clamp(const Vec512<T> v, const Vec512<T> lo,
-                        const Vec512<T> hi) {
-  return Min(Max(lo, v), hi);
 }
 
 // ------------------------------ Integer multiplication
@@ -1593,16 +1597,14 @@ struct Permute512 {
 };
 
 template <typename T>
-HWY_API Permute512<T> SetTableIndices(const Full512<T> d, const int32_t* idx) {
+HWY_API Permute512<T> SetTableIndices(const Full512<T>, const int32_t* idx) {
 #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER)
-  for (size_t i = 0; i < d.N; ++i) {
-    if (idx[i] >= static_cast<int32_t>(d.N)) {
-      printf("SetTableIndices [%zu] = %d >= %zu\n", i, idx[i], d.N);
-      hwy::Trap();
+  const size_t N = 64 / sizeof(T);
+  for (size_t i = 0; i < N; ++i) {
+    if (idx[i] >= static_cast<int32_t>(N)) {
+      printf("SetTableIndices [%zu] = %d >= %zu\n", i, idx[i], N);
     }
   }
-#else
-  (void)d;
 #endif
   return Permute512<T>{LoadU(Full512<int32_t>(), idx).raw};
 }
@@ -2216,5 +2218,3 @@ HWY_API Vec512<T> SumOfLanes(const Vec512<T> v3210) {
   return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(),
                             v32_32_10_10 + v10_10_32_32);
 }
-
-#include "hwy/end_target-inl.h"

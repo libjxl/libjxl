@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/rational_polynomial_test.cc"
+#include <hwy/foreach_target.h>
+
 #include <stdio.h>
 
 #include <cmath>
@@ -21,19 +25,12 @@
 #include "jxl/base/status.h"
 #include "jxl/common.h"
 
-#ifndef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/rational_polynomial_test.cc"
-#define HWY_USE_GTEST
-#endif
-#include <hwy/foreach_target.h>
-#include <hwy/tests/test_util.h>
-
 #include "jxl/rational_polynomial-inl.h"
-
-namespace jxl {
 
 #include <hwy/tests/test_util-inl.h>
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
 using T = float;  // required by EvalLog2
@@ -42,10 +39,10 @@ using D = HWY_FULL(T);
 // Generic: only computes polynomial
 struct EvalPoly {
   template <size_t NP, size_t NQ>
-  HWY_ATTR T operator()(T x, const T (&p)[NP], const T (&q)[NQ]) const {
+  T operator()(T x, const T (&p)[NP], const T (&q)[NQ]) const {
     const HWY_FULL(T) d;
     const auto vx = Set(d, x);
-    const auto approx = EvalRationalPolynomial(vx, p, q);
+    const auto approx = EvalRationalPolynomial(d, vx, p, q);
     return GetLane(approx);
   }
 };
@@ -53,7 +50,7 @@ struct EvalPoly {
 // Range reduction for log2
 struct EvalLog2 {
   template <size_t NP, size_t NQ>
-  HWY_ATTR T operator()(T x, const T (&p)[NP], const T (&q)[NQ]) const {
+  T operator()(T x, const T (&p)[NP], const T (&q)[NQ]) const {
     const HWY_FULL(T) d;
     auto vx = Set(d, x);
 
@@ -70,7 +67,7 @@ struct EvalLog2 {
     const auto exp_val = ConvertTo(d, exp_shifted);
     vx = mantissa - Set(d, 1.0f);
 
-    const auto approx = EvalRationalPolynomial(vx, p, q) + exp_val;
+    const auto approx = EvalRationalPolynomial(d, vx, p, q) + exp_val;
     return GetLane(approx);
   }
 };
@@ -107,8 +104,8 @@ T SimpleGamma(T v) {
 // Runs CaratheodoryFejer and verifies the polynomial using a lot of samples to
 // return the biggest error.
 template <size_t NP, size_t NQ, class Eval>
-HWY_ATTR T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
-                            const Eval& eval, T func_to_approx(T)) {
+T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
+                   const Eval& eval, T func_to_approx(T)) {
   Stats err;
 
   T lastPrint = 0;
@@ -128,7 +125,7 @@ HWY_ATTR T RunApproximation(T x0, T x1, const T (&p)[NP], const T (&q)[NQ],
   return err.Max();
 }
 
-HWY_ATTR void TestSimpleGamma() {
+void TestSimpleGamma() {
   const T p[4 * (6 + 1)] = {
       HWY_REP4(-5.0646949363741811E-05), HWY_REP4(6.7369380528439771E-05),
       HWY_REP4(8.9376652530412794E-05),  HWY_REP4(2.1153513301520462E-06),
@@ -146,7 +143,7 @@ HWY_ATTR void TestSimpleGamma() {
   EXPECT_LT(err, 0.05);
 }
 
-HWY_ATTR void TestLinearToSrgb8Direct() {
+void TestLinearToSrgb8Direct() {
   const T p[4 * (5 + 1)] = {
       HWY_REP4(-9.5357499040105154E-05), HWY_REP4(4.6761186249798248E-04),
       HWY_REP4(2.5708174333943594E-04),  HWY_REP4(1.5250087770436082E-05),
@@ -162,7 +159,7 @@ HWY_ATTR void TestLinearToSrgb8Direct() {
   EXPECT_LT(err, 0.05);
 }
 
-HWY_ATTR void TestExp() {
+void TestExp() {
   const T p[4 * (2 + 1)] = {HWY_REP4(9.6266879665530902E-01),
                             HWY_REP4(4.8961265681586763E-01),
                             HWY_REP4(8.2619259189548433E-02)};
@@ -174,7 +171,7 @@ HWY_ATTR void TestExp() {
   EXPECT_LT(err, 1E-4);
 }
 
-HWY_ATTR void TestNegExp() {
+void TestNegExp() {
   // 4,3 is the min required for monotonicity; max error in 0,10: 751 ppm
   // no benefit for k>50.
   const T p[4 * (4 + 1)] = {
@@ -190,7 +187,7 @@ HWY_ATTR void TestNegExp() {
   EXPECT_LT(err, sizeof(T) == 8 ? 2E-5 : 3E-5);
 }
 
-HWY_ATTR void TestSin() {
+void TestSin() {
   const T p[4 * (6 + 1)] = {
       HWY_REP4(1.5518122109203780E-05),  HWY_REP4(2.3388958643675966E+00),
       HWY_REP4(-8.6705520940849157E-01), HWY_REP4(-1.9702294764873535E-01),
@@ -206,7 +203,7 @@ HWY_ATTR void TestSin() {
   EXPECT_LT(err, sizeof(T) == 8 ? 5E-4 : 7E-4);
 }
 
-HWY_ATTR void TestLog() {
+void TestLog() {
   HWY_ALIGN const T p[4 * (2 + 1)] = {HWY_REP4(-1.8503833400518310E-06),
                                       HWY_REP4(1.4287160470083755E+00),
                                       HWY_REP4(7.4245873327820566E-01)};
@@ -217,7 +214,7 @@ HWY_ATTR void TestLog() {
   printf("%E\n", err);
 }
 
-HWY_ATTR HWY_NOINLINE void TestRationalPolynomial() {
+HWY_NOINLINE void TestRationalPolynomial() {
   TestSimpleGamma();
   TestLinearToSrgb8Direct();
   TestExp();
@@ -227,12 +224,17 @@ HWY_ATTR HWY_NOINLINE void TestRationalPolynomial() {
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
+
 HWY_EXPORT(TestRationalPolynomial)
+
 TEST(HwyRationalPolynomialTest, Run) {
-  hwy::RunTest(&ChooseTestRationalPolynomial);
+  hwy::RunTest([]() { ChooseTestRationalPolynomial()(); });
 }
-#endif  // HWY_ONCE
 
 }  // namespace jxl
+#endif  // HWY_ONCE

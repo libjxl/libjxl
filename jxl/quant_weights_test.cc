@@ -20,9 +20,9 @@
 #include <numeric>
 #include <random>
 
-#define HWY_USE_GTEST
-#include <hwy/interface.h>
-#include <hwy/tests/test_util.h>  // ForeachTarget
+#include <hwy/base.h>                 // HWY_ALIGN_MAX
+#include <hwy/tests/test_util-inl.h>  // RunTest
+
 #include "jxl/dct_for_test.h"
 #include "jxl/dec_transforms.h"
 #include "jxl/enc_transforms.h"
@@ -163,7 +163,7 @@ TEST(QuantWeightsTest, RAW) {
   RoundtripMatrices(encodings);
 }
 
-void TestUniform(uint32_t target_bit) {
+void TestUniform() {
   constexpr float kUniformQuant = 4;
   float weights[3][2] = {{1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0},
@@ -178,8 +178,8 @@ void TestUniform(uint32_t target_bit) {
                              1.0f / kUniformQuant};
   dequant_matrices.SetCustomDC(dc_quant);
 
-  const auto from_pixels = ChooseTransformFromPixels(target_bit);
-  const auto to_pixels = ChooseTransformToPixels(target_bit);
+  const auto from_pixels = ChooseTransformFromPixels();
+  const auto to_pixels = ChooseTransformToPixels();
 
   // DCT8
   {
@@ -240,7 +240,7 @@ void TestUniform(uint32_t target_bit) {
   }
 }
 
-TEST(QuantWeightsTest, DCTUniform) { hwy::ForeachTarget(&TestUniform); }
+TEST(QuantWeightsTest, DCTUniform) { hwy::RunTest(&TestUniform); }
 
 }  // namespace
 }  // namespace jxl

@@ -12,57 +12,223 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// NOTE: this must be included inside the project's namespace, but outside of
-// its begin/end_target-inl.
+// Normal include guard for non-SIMD portion of this header.
+#ifndef HWY_TESTS_TEST_UTIL_H_
+#define HWY_TESTS_TEST_UTIL_H_
 
-// This could have a HWY_TARGET_TOGGLE include guard, but the IDE cannot see
-// through that and would believe these functions are undefined.
+// Helper functions for use by *_test.cc.
 
-// No effect when compiling (already included), but this makes the IDE aware of
-// the definitions to avoid error messages in this header.
-#include "hwy/highway.h"
-#include "hwy/tests/test_util.h"
+#include <stdio.h>
+#include <string.h>
+#include <random>
+#include <string>
+#include <utility>  // std::forward
 
-#include "hwy/begin_target-inl.h"
+#include "hwy/targets.h"
 
-// Returns a vector with lane i=[0, N) set to "first" + i. Unique per-lane
-// values are required to detect lane-crossing bugs.
-template <class D, typename T2>
-HWY_ATTR HWY_VEC(D) Iota(const D d, const T2 first) {
-  HWY_ALIGN typename D::T lanes[d.N];
-  for (size_t i = 0; i < d.N; ++i) {
-    lanes[i] = first + static_cast<T2>(i);
+#include "gtest/gtest.h"
+
+namespace hwy {
+
+// The maximum vector size used in tests when defining test data. This is at
+// least the kMaxVectorSize but it can be bigger. If you increased
+// kMaxVectorSize, you also need to increase this constant and update all the
+// tests that use it to define bigger arrays of test data.
+constexpr size_t kTestMaxVectorSize = 64;
+static_assert(kTestMaxVectorSize >= kMaxVectorSize,
+              "All kTestMaxVectorSize test arrays need to be updated");
+
+// Helper class to run parametric tests using the hwy target as parameter. To
+// use this define the following in your test:
+//   class MyTestSuite : public TestWithParamTarget {
+//    ...
+//   };
+//   HWY_TARGET_INSTANTIATE_TEST_SUITE_P(MyTestSuite);
+//   TEST_P(MyTestSuite, MyTest) { ... }
+class TestWithParamTarget : public testing::TestWithParam<uint32_t> {
+ protected:
+  void SetUp() override { SetSupportedTargetsForTest(GetParam()); }
+
+  void TearDown() override {
+    // Check that the parametric test calls SupportedTargets() when the source
+    // was compiled with more than one target. In the single-target case only
+    // static dispatch will be used anyway.
+#if (HWY_TARGETS & (HWY_TARGETS - 1)) != 0
+    EXPECT_TRUE(SupportedTargetsCalledForTest())
+        << "This hwy target parametric test doesn't use dynamic-dispatch and "
+           "doesn't need to be parametric.";
+#endif
+    SetSupportedTargetsForTest(0);
   }
-  return Load(d, lanes);
+};
+
+// Function to convert the test parameter of a TestWithParamTarget for
+// displaying it in the gtest test name.
+std::string TestParamTargetName(const testing::TestParamInfo<uint32_t>& info) {
+  return TargetName(info.param);
 }
+
+#define HWY_TARGET_INSTANTIATE_TEST_SUITE_P(suite)              \
+  INSTANTIATE_TEST_SUITE_P(                                     \
+      suite##Group, suite,                                      \
+      testing::ValuesIn(::hwy::SupportedAndGeneratedTargets()), \
+      ::hwy::TestParamTargetName);
+
+// Helper macro to export a function and define a test that tests it. This is
+// equivalent to do a HWY_EXPORT of a void(void) function and run it in a test:
+//   class MyTestSuite : public TestWithParamTarget {
+//    ...
+//   };
+//   HWY_TARGET_INSTANTIATE_TEST_SUITE_P(MyTestSuite);
+//   HWY_EXPORT_AND_TEST_P(MyTestSuite, MyTest)
+#define HWY_EXPORT_AND_TEST_P(suite, func_name) \
+  HWY_EXPORT(func_name)                         \
+  TEST_P(suite, func_name) { HWY_CONCAT(Choose, func_name)()(); }
+
+// Calls test for each enabled and available target.
+template <class Func, typename... Args>
+void RunTest(const Func& func, Args&&... args) {
+  SetSupportedTargetsForTest(0);
+  auto targets = SupportedAndGeneratedTargets();
+
+  for (uint32_t target : targets) {
+    SetSupportedTargetsForTest(target);
+    fprintf(stderr, "Testing for target %s.\n",
+            TargetName(static_cast<int>(target)));
+    func(std::forward<Args>(args)...);
+  }
+  // Disable the mask after the test.
+  SetSupportedTargetsForTest(0);
+}
+
+// Random numbers
+typedef std::mt19937 RandomState;
+HWY_INLINE uint32_t Random32(RandomState* rng) {
+  return static_cast<uint32_t>((*rng)());
+}
+
+// Prevents the compiler from eliding the computations that led to "output".
+// Works by indicating to the compiler that "output" is being read and modified.
+// The +r constraint avoids unnecessary writes to memory, but only works for
+// built-in types.
+template <class T>
+inline void PreventElision(T&& output) {
+#ifndef _MSC_VER
+  asm volatile("" : "+r"(output) : : "memory");
+#endif
+}
+
+// Returns a name for the vector/part/scalar. The type prefix is u/i/f for
+// unsigned/signed/floating point, followed by the number of bits per lane;
+// then 'x' followed by the number of lanes. Example: u8x16. This is useful for
+// understanding which instantiation of a generic test failed.
+template <typename T>
+static inline std::string TypeName(T /*unused*/, size_t N) {
+  std::string prefix(IsFloat<T>() ? "f" : (IsSigned<T>() ? "i" : "u"));
+  prefix += std::to_string(sizeof(T) * 8);
+
+  // Scalars: omit the xN suffix.
+  if (N == 1) return prefix;
+
+  return prefix + 'x' + std::to_string(N);
+}
+
+// Value to string
+
+// We specialize for float/double below.
+template <typename T>
+inline std::string ToString(T value) {
+  return std::to_string(value);
+}
+
+template <>
+inline std::string ToString<float>(const float value) {
+  // Ensure -0 and 0 are equivalent (required by some tests).
+  uint32_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  if ((bits & 0x7FFFFFFF) == 0) return "0";
+
+  // to_string doesn't return enough digits and sstream is a
+  // fairly large dependency (4KLOC).
+  char buf[100];
+  sprintf(buf, "%.8f", value);
+  return buf;
+}
+
+template <>
+inline std::string ToString<double>(const double value) {
+  // Ensure -0 and 0 are equivalent (required by some tests).
+  uint64_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  if ((bits & 0x7FFFFFFFFFFFFFFFull) == 0) return "0";
+
+  // to_string doesn't return enough digits and sstream is a
+  // fairly large dependency (4KLOC).
+  char buf[100];
+  sprintf(buf, "%.16f", value);
+  return buf;
+}
+
+// String comparison
+
+template <typename T1, typename T2>
+inline bool BytesEqual(const T1* p1, const T2* p2, const size_t size) {
+  const uint8_t* bytes1 = reinterpret_cast<const uint8_t*>(p1);
+  const uint8_t* bytes2 = reinterpret_cast<const uint8_t*>(p2);
+  for (size_t i = 0; i < size; ++i) {
+    if (bytes1[i] != bytes2[i]) return false;
+  }
+  return true;
+}
+
+inline bool StringsEqual(const char* s1, const char* s2) {
+  while (*s1 == *s2++) {
+    if (*s1++ == '\0') return true;
+  }
+  return false;
+}
+
+}  // namespace hwy
+
+#endif  // HWY_TESTS_TEST_UTIL_H_
+
+// Per-target include guard
+#if defined(HWY_TESTS_TEST_UTIL_INL_H_) == defined(HWY_TARGET_TOGGLE)
+#ifdef HWY_TESTS_TEST_UTIL_INL_H_
+#undef HWY_TESTS_TEST_UTIL_INL_H_
+#else
+#define HWY_TESTS_TEST_UTIL_INL_H_
+#endif
+
+#include "hwy/before_namespace-inl.h"
+namespace hwy {
+#include "hwy/begin_target-inl.h"
 
 HWY_NORETURN void NotifyFailure(const char* filename, const int line,
                                 const char* type_name, const size_t lane,
                                 const char* expected, const char* actual) {
-  fprintf(stderr, "%s:%d: %s, %s lane %zu mismatch: expected '%s', got '%s'.\n",
-          filename, line, hwy::TargetName(HWY_TARGET), type_name, lane,
-          expected, actual);
-  hwy::Trap();
+  hwy::Abort(filename, line,
+             "%s, %s lane %zu mismatch: expected '%s', got '%s'.\n",
+             hwy::TargetName(HWY_TARGET), type_name, lane, expected, actual);
 }
 
 // Compare non-vector, non-string T.
 template <typename T>
-void AssertEqual(const T expected, const T actual, const char* filename = "",
-                 const int line = -1, const size_t lane = 0,
-                 const char* name = nullptr) {
-  if (name == nullptr) name = hwy::TypeName<T, 1>();
+void AssertEqual(const T expected, const T actual, const std::string& name,
+                 const char* filename = "", const int line = -1,
+                 const size_t lane = 0) {
   // Rely on string comparison to ensure similar floats are "equal".
   const std::string expected_str = ToString(expected);
   const std::string actual_str = ToString(actual);
   if (expected_str != actual_str) {
-    NotifyFailure(filename, line, name, lane, expected_str.c_str(),
+    NotifyFailure(filename, line, name.c_str(), lane, expected_str.c_str(),
                   actual_str.c_str());
   }
 }
 
-HWY_ATTR void AssertStringEqual(const char* expected, const char* actual,
-                                const char* filename = "", const int line = -1,
-                                const size_t lane = 0) {
+void AssertStringEqual(const char* expected, const char* actual,
+                       const char* filename = "", const int line = -1,
+                       const size_t lane = 0) {
   if (!hwy::StringsEqual(expected, actual)) {
     NotifyFailure(filename, line, "string", lane, expected, actual);
   }
@@ -70,36 +236,38 @@ HWY_ATTR void AssertStringEqual(const char* expected, const char* actual,
 
 // Compare expected vector to vector.
 template <class D, class V>
-HWY_ATTR void AssertVecEqual(D d, const V expected, const V actual,
-                             const char* filename, const int line) {
-  HWY_ALIGN typename D::T expected_lanes[d.N];
-  HWY_ALIGN typename D::T actual_lanes[d.N];
+void AssertVecEqual(D d, const V expected, const V actual, const char* filename,
+                    const int line) {
+  using T = typename D::T;
+  HWY_ALIGN T expected_lanes[MaxLanes(d)];
+  HWY_ALIGN T actual_lanes[MaxLanes(d)];
   Store(expected, d, expected_lanes);
   Store(actual, d, actual_lanes);
-  for (size_t i = 0; i < d.N; ++i) {
-    AssertEqual(expected_lanes[i], actual_lanes[i], filename, line, i,
-                hwy::TypeName<typename D::T, d.N>());
+  for (size_t i = 0; i < Lanes(d); ++i) {
+    AssertEqual(expected_lanes[i], actual_lanes[i],
+                hwy::TypeName(expected_lanes[i], Lanes(d)), filename, line, i);
   }
 }
 
 // Compare expected lanes to vector.
 template <class D, class V>
-HWY_ATTR void AssertVecEqual(D d, const typename D::T (&expected)[D::N],
-                             V actual, const char* filename, int line) {
+void AssertVecEqual(D d, const typename D::T (&expected)[MaxLanes(D())],
+                    V actual, const char* filename, int line) {
   AssertVecEqual(d, LoadU(d, expected), actual, filename, line);
 }
 
 #ifndef HWY_ASSERT
 
-#define HWY_ASSERT(condition)                                          \
-  do {                                                                 \
-    if (!(condition)) {                                                \
-      NotifyFailure(__FILE__, __LINE__, "Assert", 0, "1", #condition); \
-    }                                                                  \
+// Always enabled.
+#define HWY_ASSERT(condition)                                    \
+  do {                                                           \
+    if (!(condition)) {                                          \
+      ::hwy::Abort(__FILE__, __LINE__, "Assert %s", #condition); \
+    }                                                            \
   } while (0)
 
 #define HWY_ASSERT_EQ(expected, actual) \
-  AssertEqual(expected, actual, __FILE__, __LINE__)
+  AssertEqual(expected, actual, hwy::TypeName(expected, 1), __FILE__, __LINE__)
 
 #define HWY_ASSERT_STRING_EQ(expected, actual) \
   AssertStringEqual(expected, actual, __FILE__, __LINE__)
@@ -107,7 +275,7 @@ HWY_ATTR void AssertVecEqual(D d, const typename D::T (&expected)[D::N],
 #define HWY_ASSERT_VEC_EQ(d, expected, actual) \
   AssertVecEqual(d, expected, actual, __FILE__, __LINE__)
 
-#endif  // HWY_ASSERT
+#endif  // HWY_ASSERT_EQ
 
 // Helpers for instantiating tests with combinations of lane types / counts.
 
@@ -115,9 +283,9 @@ HWY_ATTR void AssertVecEqual(D d, const typename D::T (&expected)[D::N],
 // at N == 0)
 template <typename T, size_t N, size_t kMinLanes, class Test>
 struct ForeachSizeR {
-  static HWY_ATTR void Do() {
+  static void Do() {
     static_assert(N != 0, "End of recursion");
-    Test()(T(), hwy::Desc<T, N * kMinLanes>());
+    Test()(T(), hwy::Simd<T, N * kMinLanes>());
     ForeachSizeR<T, N / 2, kMinLanes, Test>::Do();
   }
 };
@@ -125,16 +293,16 @@ struct ForeachSizeR {
 // Base case to stop the recursion.
 template <typename T, size_t kMinLanes, class Test>
 struct ForeachSizeR<T, 0, kMinLanes, Test> {
-  static HWY_ATTR void Do() {}
+  static void Do() {}
 };
 
 // These adapters may be called directly, or via For*Types:
 
-// Calls Test for all powers of two in [kMinLanes, HWY_FULL(T)::N / kDivLanes].
+// Calls Test for all powers of two in [kMinLanes, MaxLanes(d) / kDivLanes].
 template <class Test, size_t kDivLanes = 1, size_t kMinLanes = 1>
 struct ForPartialVectors {
   template <typename T>
-  HWY_ATTR void operator()(T /*unused*/) const {
+  void operator()(T /*unused*/) const {
     ForeachSizeR<T, HWY_LANES(T) / kDivLanes / kMinLanes, kMinLanes,
                  Test>::Do();
   }
@@ -144,7 +312,7 @@ struct ForPartialVectors {
 template <class Test>
 struct ForGE128Vectors {
   template <typename T>
-  HWY_ATTR void operator()(T /*unused*/) const {
+  void operator()(T /*unused*/) const {
     ForeachSizeR<T, HWY_LANES(T) / (16 / sizeof(T)), (16 / sizeof(T)),
                  Test>::Do();
   }
@@ -154,7 +322,7 @@ struct ForGE128Vectors {
 template <class Test>
 struct ForFullVectors {
   template <typename T>
-  HWY_ATTR void operator()(T t) const {
+  void operator()(T t) const {
     Test()(t, HWY_FULL(T)());
   }
 };
@@ -166,7 +334,7 @@ void ForSignedTypes(const Func& func) {
   func(int8_t());
   func(int16_t());
   func(int32_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   func(int64_t());
 #endif
 }
@@ -176,7 +344,7 @@ void ForUnsignedTypes(const Func& func) {
   func(uint8_t());
   func(uint16_t());
   func(uint32_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   func(uint64_t());
 #endif
 }
@@ -190,7 +358,7 @@ void ForIntegerTypes(const Func& func) {
 template <class Func>
 void ForFloatTypes(const Func& func) {
   func(float());
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   func(double());
 #endif
 }
@@ -202,3 +370,7 @@ void ForAllTypes(const Func& func) {
 }
 
 #include "hwy/end_target-inl.h"
+}  // namespace hwy
+#include "hwy/after_namespace-inl.h"
+
+#endif  // per-target include guard

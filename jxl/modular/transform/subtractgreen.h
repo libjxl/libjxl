@@ -16,12 +16,12 @@
 #define JXL_MODULAR_TRANSFORM_SUBTRACTGREEN_H_
 
 #include "jxl/base/status.h"
-#include "jxl/modular/config.h"
+#include "jxl/common.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
 
-Status inv_subtract_green(Image& input, const TransformParams& parameters) {
+Status InvSubtractGreen(Image& input, const TransformParams& parameters) {
   size_t m = input.nb_meta_channels;
   int nb_channels = input.nb_channels;
   if (nb_channels < 3) {
@@ -58,25 +58,24 @@ Status inv_subtract_green(Image& input, const TransformParams& parameters) {
     pixel_type* out2 =
         input.channel[m + ((permutation + 2 - permutation / 3) % 3)].Row(y);
     for (size_t x = 0; x < w; x++) {
-      pixel_type First = in0[x];
-      pixel_type Second = in1[x];
-      pixel_type Third = in2[x];
+      pixel_type_w First = in0[x];
+      pixel_type_w Second = in1[x];
+      pixel_type_w Third = in2[x];
       if (third) Third = Third + First;
       if (second == 1) {
         Second = Second + First;
       } else if (second == 2) {
         Second = Second + ((First + Third) >> 1);
       }
-      out0[x] = First;
-      out1[x] = Second;
-      out2[x] = Third;
+      out0[x] = ClampToRange<pixel_type>(First);
+      out1[x] = ClampToRange<pixel_type>(Second);
+      out2[x] = ClampToRange<pixel_type>(Third);
     }
   }
   return true;
 }
 
-#ifdef HAS_ENCODER
-Status fwd_subtract_green(Image& input, const TransformParams& parameters) {
+Status FwdSubtractGreen(Image& input, const TransformParams& parameters) {
   size_t nb_channels = input.nb_channels;
   if (nb_channels < 3) {
     return false;
@@ -125,20 +124,6 @@ Status fwd_subtract_green(Image& input, const TransformParams& parameters) {
     }
   }
   return true;
-}
-#endif
-
-Status subtract_green(Image& input, bool inverse,
-                      const TransformParams& parameters) {
-  if (inverse) {
-    return inv_subtract_green(input, parameters);
-  } else {
-#ifdef HAS_ENCODER
-    return fwd_subtract_green(input, parameters);
-#else
-    return false;
-#endif
-  }
 }
 
 }  // namespace jxl

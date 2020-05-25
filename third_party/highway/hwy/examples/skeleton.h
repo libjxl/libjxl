@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@
 
 // Tiny subset of Highway API: essentials for declaring an interface, without
 // any implementation details.
-#include "hwy/interface.h"  // HWY_RESTRICT
+#include "hwy/base.h"  // HWY_RESTRICT
 
 namespace skeleton {
 
@@ -32,7 +32,7 @@ typedef void SkeletonFunc(const float* HWY_RESTRICT in1,
 // Gets function pointer for the best target in HWY_TARGETS that is also
 // included in targets_bits (returned from SupportedTargets).
 // Can be used to call immediately or call later.
-SkeletonFunc* ChooseSkeleton(uint32_t targets_bits);
+SkeletonFunc* ChooseSkeleton();
 
 }  // namespace skeleton
 

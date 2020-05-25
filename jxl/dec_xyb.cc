@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/dec_xyb.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_xyb.cc"
+#include <hwy/foreach_target.h>
 
 #include <string.h>
 
@@ -24,25 +27,20 @@
 #include "jxl/opsin_params.h"
 #include "jxl/quantizer.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_xyb.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/dec_xyb-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout,
-                                   ThreadPool* pool,
-                                   const OpsinParams& opsin_params) {
+void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
+                          const OpsinParams& opsin_params) {
   PROFILER_FUNC;
 
   const size_t xsize = inout->xsize();  // not padded
   RunOnPool(
       pool, 0, inout->ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) HWY_ATTR {
+      [&](const int task, const int thread) {
         const size_t y = task;
 
         // Faster than adding via ByteOffset at end of loop.
@@ -52,7 +50,7 @@ HWY_ATTR void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout,
 
         const HWY_FULL(float) d;
 
-        for (size_t x = 0; x < xsize; x += d.N) {
+        for (size_t x = 0; x < xsize; x += Lanes(d)) {
           const auto in_opsin_x = Load(d, row0 + x);
           const auto in_opsin_y = Load(d, row1 + x);
           const auto in_opsin_b = Load(d, row2 + x);
@@ -72,16 +70,16 @@ HWY_ATTR void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout,
 }
 
 // Same, but not in-place.
-HWY_ATTR void OpsinToLinear(const Image3F& opsin, const Rect& rect,
-                            ThreadPool* pool, Image3F* JXL_RESTRICT linear,
-                            const OpsinParams& opsin_params) {
+void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
+                   Image3F* JXL_RESTRICT linear,
+                   const OpsinParams& opsin_params) {
   PROFILER_FUNC;
 
   JXL_ASSERT(SameSize(rect, *linear));
 
   RunOnPool(
       pool, 0, static_cast<int>(rect.ysize()), ThreadPool::SkipInit(),
-      [&](const int task, int /*thread*/) HWY_ATTR {
+      [&](const int task, int /*thread*/) {
         const size_t y = static_cast<size_t>(task);
 
         // Faster than adding via ByteOffset at end of loop.
@@ -94,7 +92,7 @@ HWY_ATTR void OpsinToLinear(const Image3F& opsin, const Rect& rect,
 
         const HWY_FULL(float) d;
 
-        for (size_t x = 0; x < rect.xsize(); x += d.N) {
+        for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
           const auto in_opsin_x = Load(d, row_opsin_0 + x);
           const auto in_opsin_y = Load(d, row_opsin_1 + x);
           const auto in_opsin_b = Load(d, row_opsin_2 + x);
@@ -115,27 +113,28 @@ HWY_ATTR void OpsinToLinear(const Image3F& opsin, const Rect& rect,
 
 // Transform YCbCr to RGB.
 // Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
-HWY_ATTR void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
-                         const ImageF& cr_plane, ImageF* r_plane,
-                         ImageF* g_plane, ImageF* b_plane, ThreadPool* pool) {
+void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
+                const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
+                ImageF* b_plane, ThreadPool* pool) {
   const HWY_FULL(float) df;
-  constexpr size_t S = df.N;  // Step.
+  const size_t S = Lanes(df);  // Step.
 
   const size_t xsize = y_plane.xsize();
   const size_t ysize = y_plane.ysize();
-
   if ((xsize == 0) || (ysize == 0)) return;
 
+  // Full-range BT.601 as defined by JFIF Clause 7:
+  // https://www.itu.int/rec/T-REC-T.871-201105-I/en
   const auto c128 = Set(df, 128.0f);
   const auto crcr = Set(df, 1.402f);
-  const auto cgcb = Set(df, -0.34414f);
-  const auto cgcr = Set(df, -0.71414f);
+  const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
+  const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
   const auto cbcb = Set(df, 1.772f);
 
   constexpr size_t kGroupArea = kGroupDim * kGroupDim;
   const size_t lines_per_group = DivCeil(kGroupArea, xsize);
   const size_t num_stripes = DivCeil(ysize, lines_per_group);
-  const auto transform = [&](int idx, int /* thread*/) HWY_ATTR {
+  const auto transform = [&](int idx, int /* thread*/) {
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
     for (size_t y = y0; y < y1; ++y) {
@@ -149,9 +148,9 @@ HWY_ATTR void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
         const auto y_vec = Load(df, y_row + x) + c128;
         const auto cb_vec = Load(df, cb_row + x);
         const auto cr_vec = Load(df, cr_row + x);
-        const auto r_vec = MulAdd(crcr, cr_vec, y_vec);
-        const auto g_vec = MulAdd(cgcr, cr_vec, MulAdd(cgcb, cb_vec, y_vec));
-        const auto b_vec = MulAdd(cbcb, cb_vec, y_vec);
+        const auto r_vec = crcr * cr_vec + y_vec;
+        const auto g_vec = cgcr * cr_vec + cgcb * cb_vec + y_vec;
+        const auto b_vec = cbcb * cb_vec + y_vec;
         Store(r_vec, df, r_row + x);
         Store(g_vec, df, g_row + x);
         Store(b_vec, df, b_row + x);
@@ -174,9 +173,9 @@ HWY_ATTR void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
  *  |u1 u2 u3 u4| =: (u, d)
  *  |d1 d2 d3 d4|
  */
-HWY_ATTR ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
+ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
   const HWY_FULL(float) df;
-  constexpr size_t S = df.N;
+  const size_t S = Lanes(df);
   const auto c14 = Set(df, 0.25f);
   const auto c34 = Set(df, 0.75f);
 
@@ -192,7 +191,7 @@ HWY_ATTR ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
     constexpr size_t kGroupArea = kGroupDim * kGroupDim;
     const size_t lines_per_group = DivCeil(kGroupArea, xsize);
     const size_t num_stripes = DivCeil(ysize, lines_per_group);
-    const auto upsample = [&](int idx, int /* thread*/) HWY_ATTR {
+    const auto upsample = [&](int idx, int /* thread*/) {
       const size_t y0 = idx * lines_per_group;
       const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
       for (size_t y = y0; y < y1; ++y) {
@@ -230,7 +229,7 @@ HWY_ATTR ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
  *  output:
  *   |o1 e1 o2 e2 o3 e3 o4 e4| =: (o, e)
  */
-HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
+ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
   const size_t xsize = src.xsize();
   const size_t ysize = src.ysize();
   JXL_ASSERT(xsize != 0);
@@ -280,7 +279,7 @@ HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
   const auto c1000 = MaskFromVec(BitCast(df, Load(du, k1000)));
   const auto c0001 = MaskFromVec(BitCast(df, Load(du, k0001)));
 
-  const auto upsample = [&](int idx, int /* thread*/) HWY_ATTR {
+  const auto upsample = [&](int idx, int /* thread*/) {
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
     for (size_t y = y0; y < y1; ++y) {
@@ -325,8 +324,11 @@ HWY_ATTR ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 
 HWY_EXPORT(OpsinToLinearInplace)
 HWY_EXPORT(OpsinToLinear)
@@ -345,6 +347,5 @@ void OpsinParams::Init() {
   }
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

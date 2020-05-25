@@ -19,6 +19,9 @@
 #endif
 
 #include "jxl/color_management.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/color_management.cc"
+#include <hwy/foreach_target.h>
 
 #include <math.h>
 #include <stdint.h>
@@ -46,14 +49,10 @@
 
 #define JXL_CMS_VERBOSE 0
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/color_management.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/rational_polynomial-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Definitions for BT.2100-2 transfer functions (used inside/outside SIMD):
@@ -180,7 +179,7 @@ class TF_PQ {
 class TF_SRGB {
  public:
   template <typename V>
-  HWY_ATTR JXL_INLINE V DisplayFromEncoded(V x) const {
+  JXL_INLINE V DisplayFromEncoded(V x) const {
     const HWY_FULL(float) d;
     const HWY_FULL(uint32_t) du;
     const V kSign = BitCast(d, Set(du, 0x80000000u));
@@ -205,14 +204,14 @@ class TF_SRGB {
         6.521209011e-03f,  6.521209011e-03f,
     };
     const V linear = x * Set(d, kLowDivInv);
-    const V poly = EvalRationalPolynomial(x, p, q);
+    const V poly = EvalRationalPolynomial(d, x, p, q);
     const V magnitude =
         IfThenElse(x > Set(d, kThreshSRGBToLinear), poly, linear);
     return Or(AndNot(kSign, magnitude), original_sign);
   }
 
   template <class V>
-  HWY_ATTR JXL_INLINE V EncodedFromDisplay(V x) const {
+  JXL_INLINE V EncodedFromDisplay(V x) const {
     const HWY_FULL(float) d;
     const HWY_FULL(uint32_t) du;
     const V kSign = BitCast(d, Set(du, 0x80000000u));
@@ -237,7 +236,7 @@ class TF_SRGB {
         2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f, 2.424867759e-02f,
     };
     const V linear = x * Set(d, kLowDiv);
-    const V poly = EvalRationalPolynomial(Sqrt(x), p, q);
+    const V poly = EvalRationalPolynomial(d, Sqrt(x), p, q);
     const V magnitude =
         IfThenElse(x > Set(d, kThreshLinearToSRGB), poly, linear);
     return Or(AndNot(kSign, magnitude), original_sign);
@@ -255,8 +254,8 @@ const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
 #endif
 
 // xform_src = UndoGammaCompression(buf_src).
-HWY_ATTR void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
-                              float* xform_src) {
+void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
+                     float* xform_src) {
   switch (t->preprocess_) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
@@ -288,7 +287,7 @@ HWY_ATTR void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
 
     case ExtraTF::kSRGB:
       HWY_FULL(float) df;
-      for (size_t i = 0; i < t->buf_src_.xsize(); i += df.N) {
+      for (size_t i = 0; i < t->buf_src_.xsize(); i += Lanes(df)) {
         const auto val = Load(df, buf_src + i);
         const auto result = TF_SRGB().DisplayFromEncoded(val);
         Store(result, df, xform_src + i);
@@ -303,8 +302,7 @@ HWY_ATTR void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
 }
 
 // Applies gamma compression in-place.
-HWY_ATTR void AfterTransform(ColorSpaceTransform* t,
-                             float* JXL_RESTRICT buf_dst) {
+void AfterTransform(ColorSpaceTransform* t, float* JXL_RESTRICT buf_dst) {
   switch (t->postprocess_) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
@@ -331,7 +329,7 @@ HWY_ATTR void AfterTransform(ColorSpaceTransform* t,
       break;
     case ExtraTF::kSRGB:
       HWY_FULL(float) df;
-      for (size_t i = 0; i < t->buf_dst_.xsize(); i += df.N) {
+      for (size_t i = 0; i < t->buf_dst_.xsize(); i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
         const auto result = TF_SRGB().EncodedFromDisplay(val);
         Store(result, df, buf_dst + i);
@@ -344,8 +342,8 @@ HWY_ATTR void AfterTransform(ColorSpaceTransform* t,
   }
 }
 
-HWY_ATTR void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
-                                    const float* buf_src, float* buf_dst) {
+void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
+                           const float* buf_src, float* buf_dst) {
   // No lock needed.
 
   float* xform_src = const_cast<float*>(buf_src);  // Read-only.
@@ -389,10 +387,10 @@ HWY_ATTR void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
   }
 }
 
-HWY_ATTR void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
-                           float* JXL_RESTRICT linear) {
+void SRGBToLinear(const size_t n, const float* JXL_RESTRICT srgb,
+                  float* JXL_RESTRICT linear) {
   HWY_FULL(float) d;
-  for (size_t i = 0; i < n; i += d.N) {
+  for (size_t i = 0; i < n; i += Lanes(d)) {
     const auto encoded = Load(d, srgb + i) * Set(d, 1.0f / 255);
     const auto display = TF_SRGB().DisplayFromEncoded(encoded) * Set(d, 255.0f);
     Store(display, d, linear + i);
@@ -447,8 +445,12 @@ cmsToneCurve* CreateTableCurve(const cmsContext context, uint32_t N,
 #endif  // JPEGXL_ENABLE_SKCMS
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
+
 HWY_EXPORT(DoColorSpaceTransform)
 HWY_EXPORT(SRGBToLinear)
 HWY_EXPORT(CreateTableCurve)
@@ -987,7 +989,7 @@ Status MaybeCreateProfile(const ColorEncoding& c,
     float gamma = 1.0 / c.tf.GetGamma();
     CreateICCCurvParaTag({gamma, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
   } else {
-    auto create_table = ChooseCreateTableCurve(hwy::SupportedTargets());
+    auto create_table = ChooseCreateTableCurve();
     switch (c.tf.GetTransferFunction()) {
       case TransferFunction::kHLG:
         CreateICCCurvCurvTag(create_table(4096, ExtraTF::kHLG), &tags);
@@ -1078,7 +1080,7 @@ Curve CreateCurve(const cmsContext context, const ColorEncoding& c) {
     params = {1.0 / c.tf.GetGamma(), 1.0, 0.0, 1.0, 0.0};
     return Curve(cmsBuildParametricToneCurve(context, type, params.data()));
   }
-  auto create_table = ChooseCreateTableCurve(hwy::SupportedTargets());
+  auto create_table = ChooseCreateTableCurve();
   switch (c.tf.GetTransferFunction()) {
     case TransferFunction::kHLG:
       return Curve(create_table(context, 4096, ExtraTF::kHLG));
@@ -1706,6 +1708,5 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
   return true;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

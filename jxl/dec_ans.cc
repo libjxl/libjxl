@@ -202,7 +202,8 @@ bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
     pos %= kBitsPerByte;
     size_t orig_size = size;
     brunsli::BrunsliBitReader br;
-    brunsli::BrunsliBitReaderInit(&br, data, size);
+    brunsli::BrunsliBitReaderInit(&br);
+    brunsli::BrunsliBitReaderResume(&br, data, size);
     // Skip already consumed bits.
     (void)brunsli::BrunsliBitReaderRead(&br, pos);
     for (size_t c = 0; c < num_histograms; c++) {
@@ -221,7 +222,9 @@ bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
       return JXL_FAILURE("Invalid huffman code bitstream.");
     }
     size_t num_unused_bits = br.num_bits_;
-    size_t consumed_bytes = orig_size - brunsli::BrunsliBitReaderFinish(&br);
+    size_t unused_bytes = brunsli::BrunsliBitReaderSuspend(&br);
+    brunsli::BrunsliBitReaderFinish(&br);
+    size_t consumed_bytes = orig_size - unused_bytes;
     in->SkipBits(consumed_bytes * kBitsPerByte - num_unused_bits - pos);
   } else {
     result->alias_tables = AllocateArray(num_histograms * ANS_MAX_ALPHA_SIZE *

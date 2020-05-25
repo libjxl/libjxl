@@ -36,7 +36,7 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
   const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
   const PackedImage desc(xsize, ysize, c, has_alpha, alpha_is_premultiplied,
-                         /*alpha_bits=*/bits_per_sample, bits_per_sample,
+                         /*bits_per_alpha=*/bits_per_sample, bits_per_sample,
                          big_endian, /*flipped_y=*/false);
   const Span<const uint8_t> span(pixels, end - pixels);
   return CopyTo(desc, span, pool, ib);

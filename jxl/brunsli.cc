@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/brunsli.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
+#include <hwy/foreach_target.h>
 
 #include <brunsli/brunsli_decode.h>
 #include <brunsli/brunsli_encode.h>
@@ -31,6 +34,7 @@
 #include "jxl/dec_dct.h"
 #include "jxl/dec_xyb.h"
 #include "jxl/enc_dct.h"
+#include "jxl/enc_xyb.h"
 #include "jxl/gaborish.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
@@ -41,15 +45,10 @@
 #include "third_party/brunsli/c/dec/state.h"
 #include "third_party/brunsli/c/enc/state.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
-#include <hwy/foreach_target.h>
-
-namespace jxl {
-
 // Definitions required by SIMD. Only define once.
 #ifndef JXL_BRUNSLI
 #define JXL_BRUNSLI
+namespace jxl {
 
 struct BrunsliExtensions {
   std::string hdr_orig_colorspace;
@@ -285,59 +284,16 @@ void FixDc(const ::brunsli::coeff_t* JXL_RESTRICT coeffs,
   }
 }
 
+}  // namespace jxl
 #endif  // JXL_BRUNSLI
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-// Transform RGB to YCbCr.
-// Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
-HWY_ATTR void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
-                         const ImageF& b_plane, ImageF* y_plane,
-                         ImageF* cb_plane, ImageF* cr_plane) {
-  const HWY_FULL(float) df;
-  constexpr size_t S = df.N;  // Step.
-
-  const size_t xsize = r_plane.xsize();
-  const size_t ysize = r_plane.ysize();
-
-  const auto cm128 = Set(df, -128.0f);
-  const auto c05 = Set(df, 0.5f);
-  const auto cyr = Set(df, 0.299f);
-  const auto cyg = Set(df, 0.587f);
-  const auto cyb = Set(df, 0.114f);
-  const auto ccbr = Set(df, -0.1687f);
-  const auto ccbg = Set(df, -0.3313f);
-  const auto& ccbb = c05;
-  const auto& ccrr = c05;
-  const auto ccrg = Set(df, -0.4187f);
-  const auto ccrb = Set(df, -0.0813f);
-  for (size_t y = 0; y < ysize; ++y) {
-    const float* JXL_RESTRICT r_row = r_plane.ConstRow(y);
-    const float* JXL_RESTRICT g_row = g_plane.ConstRow(y);
-    const float* JXL_RESTRICT b_row = b_plane.ConstRow(y);
-    float* JXL_RESTRICT y_row = y_plane->Row(y);
-    float* JXL_RESTRICT cb_row = cb_plane->Row(y);
-    float* JXL_RESTRICT cr_row = cr_plane->Row(y);
-    for (size_t x = 0; x < xsize; x += S) {
-      const auto r_vec = Load(df, r_row + x);
-      const auto g_vec = Load(df, g_row + x);
-      const auto b_vec = Load(df, b_row + x);
-      const auto y_vec =
-          MulAdd(cyr, r_vec, MulAdd(cyg, g_vec, MulAdd(cyb, b_vec, cm128)));
-      const auto cb_vec =
-          MulAdd(ccbr, r_vec, MulAdd(ccbg, g_vec, ccbb * b_vec));
-      const auto cr_vec =
-          MulAdd(ccrr, r_vec, MulAdd(ccrg, g_vec, ccrb * b_vec));
-      Store(y_vec, df, y_row + x);
-      Store(cb_vec, df, cb_row + x);
-      Store(cr_vec, df, cr_row + x);
-    }
-  }
-}
-
-HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
-                                 const BrunsliExtensions& extensions,
-                                 Image3F* out, ThreadPool* pool) {
+Status JpegDataToPixels(const brunsli::JPEGData& src,
+                        const BrunsliExtensions& extensions, Image3F* out,
+                        ThreadPool* pool) {
   constexpr size_t N = kBlockDim;
   static_assert(N == 8, "JPEG block dim must be 8");
   static_assert(kDCTBlockSize == N * N, "JPEG block size must be 64");
@@ -346,11 +302,10 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
   const size_t num_components = src.components.size();
 
   const HWY_FULL(float) df;
-  constexpr size_t S = df.N;  // Step.
-  static_assert(kDCTBlockSize % S == 0,
-                "Block size should be divisible by SIMD length");
+  const size_t S = Lanes(df);  // Step.
+  JXL_DASSERT(kDCTBlockSize % S == 0);
   const HWY_FULL(int32_t) di32;
-  const HWY_CAPPED(int16_t, S) di16;
+  const HWY_CAPPED(int16_t, MaxLanes(df)) di16;
   JXL_RETURN_IF_ERROR(num_components == 1 || num_components == 3);
   const bool is_gray = (num_components == 1);
 
@@ -380,10 +335,9 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
     }
   }
 
-  const uint32_t targets_bits = hwy::SupportedTargets();
-  const auto ycbcr_to_rgb = ChooseYcbcrToRgb(targets_bits);
-  const auto upsample_h2 = ChooseUpsampleH2(targets_bits);
-  const auto upsample_v2 = ChooseUpsampleV2(targets_bits);
+  const auto ycbcr_to_rgb = ChooseYcbcrToRgb();
+  const auto upsample_h2 = ChooseUpsampleH2();
+  const auto upsample_v2 = ChooseUpsampleV2();
 
   for (size_t c = 0; c < num_components; ++c) {
     const brunsli::JPEGComponent& component = src.components[c];
@@ -409,7 +363,7 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
     ImageF dequantized(xsize_blocks * kDCTBlockSize, ysize_blocks);
     const size_t xsize_groups = DivCeil(xsize_blocks, group_dim);
     const size_t ysize_groups = DivCeil(ysize_blocks, group_dim);
-    const auto dequantize = [&](int idx, int /* thread */) HWY_ATTR {
+    const auto dequantize = [&](int idx, int /* thread */) {
       HWY_ALIGN int16_t coeffs[kDCTBlockSize];
       const size_t gx = idx % xsize_groups;
       const size_t gy = idx / xsize_groups;
@@ -453,8 +407,7 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
             dequantized.PixelsPerRow());
     }
 
-    ChooseIDct8(hwy::SupportedTargets())(xsize_blocks, ysize_blocks,
-                                         dequantized, pool, &pixels);
+    ChooseIDct8()(xsize_blocks, ysize_blocks, dequantized, pool, &pixels);
 
     // TODO: before or after upsampling?
     if (extensions.gab.active) {
@@ -532,9 +485,12 @@ HWY_ATTR Status JpegDataToPixels(const brunsli::JPEGData& src,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
-HWY_EXPORT(RgbToYcbcr)
+namespace jxl {
+
 HWY_EXPORT(JpegDataToPixels)
 
 namespace {
@@ -894,8 +850,7 @@ Status BrunsliToPixels(const brunsli::JPEGData& jpg,
   if (options.gaborish) extensions.gab.active = true;
 
   Image3F rgb;
-  JXL_RETURN_IF_ERROR(ChooseJpegDataToPixels(hwy::SupportedTargets())(
-      jpg, extensions, &rgb, pool));
+  JXL_RETURN_IF_ERROR(ChooseJpegDataToPixels()(jpg, extensions, &rgb, pool));
 
   ColorEncoding color_encoding;
   if (!extensions.hdr_colorspace.empty()) {
@@ -965,7 +920,7 @@ void ConvertPixels(const Image3F& from, brunsli::JPEGData* to,
 
   for (size_t c = 0; c < num_c; ++c) {
     // TODO(eustas): use pool.
-    const ImageF& plane = ChooseDct8(hwy::SupportedTargets())(from.Plane(c));
+    const ImageF& plane = ChooseDct8()(from.Plane(c));
     ::brunsli::JPEGComponent component;
     component.id = static_cast<int>(c) + 1;  // YCbCr
     component.h_samp_factor = 1;
@@ -1034,9 +989,8 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   for (auto& plane : planes) {
     plane = ImageF(src.xsize(), src.ysize());
   }
-  ChooseRgbToYcbcr(hwy::SupportedTargets())(src.Plane(0), src.Plane(1),
-                                            src.Plane(2), &planes[0],
-                                            &planes[1], &planes[2]);
+  ChooseRgbToYcbcr()(src.Plane(0), src.Plane(1), src.Plane(2), &planes[0],
+                     &planes[1], &planes[2], pool);
 
   ::brunsli::JPEGData out;
   out.width = xsize;
@@ -1797,8 +1751,8 @@ class BrunsliFrameDecoderInternal {
     } else {
       // TODO(eustas): parse extensions (in ReadHeader?)
       BrunsliExtensions extensions{};
-      JXL_RETURN_IF_ERROR(ChooseJpegDataToPixels(hwy::SupportedTargets())(
-          jpg_, extensions, &opsin, pool_));
+      JXL_RETURN_IF_ERROR(
+          ChooseJpegDataToPixels()(jpg_, extensions, &opsin, pool_));
     }
 
     decoded->SetFromImage(std::move(opsin),
@@ -1839,6 +1793,5 @@ bool BrunsliFrameDecoder::FinalizeDecoding(const FrameHeader& frame_header,
   return impl_->FinalizeDecoding(frame_header, std::move(opsin), decoded);
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

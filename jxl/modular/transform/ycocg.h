@@ -17,12 +17,12 @@
 
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
-#include "jxl/modular/config.h"
+#include "jxl/common.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
 
-bool inv_YCoCg(Image& input, ThreadPool* pool) {
+bool InvYCoCg(Image& input, ThreadPool* pool) {
   size_t m = input.nb_meta_channels;
   int nb_channels = input.nb_channels;
   if (nb_channels < 3) {
@@ -44,24 +44,23 @@ bool inv_YCoCg(Image& input, ThreadPool* pool) {
         pixel_type* JXL_RESTRICT p1 = input.channel[m + 1].Row(y);
         pixel_type* JXL_RESTRICT p2 = input.channel[m + 2].Row(y);
         for (size_t x = 0; x < w; x++) {
-          pixel_type Y = p0[x];
-          pixel_type Co = p1[x];
-          pixel_type Cg = p2[x];
-          pixel_type tmp = Y - (Cg >> 1);
-          pixel_type G = Cg + tmp;
-          pixel_type B = tmp - (Co >> 1);
-          pixel_type R = B + Co;
-          p0[x] = R;
-          p1[x] = G;
-          p2[x] = B;
+          pixel_type_w Y = p0[x];
+          pixel_type_w Co = p1[x];
+          pixel_type_w Cg = p2[x];
+          pixel_type_w tmp = Y - (Cg >> 1);
+          pixel_type_w G = Cg + tmp;
+          pixel_type_w B = tmp - (Co >> 1);
+          pixel_type_w R = B + Co;
+          p0[x] = ClampToRange<pixel_type>(R);
+          p1[x] = ClampToRange<pixel_type>(G);
+          p2[x] = ClampToRange<pixel_type>(B);
         }
       },
       "InvYCoCg");
   return true;
 }
 
-#ifdef HAS_ENCODER
-bool fwd_YCoCg(Image& input) {
+bool FwdYCoCg(Image& input) {
   int m = input.nb_meta_channels;
   int nb_channels = input.nb_channels;
   if (nb_channels < 3) {
@@ -89,17 +88,6 @@ bool fwd_YCoCg(Image& input) {
     }
   }
   return true;
-}
-#endif
-
-bool YCoCg(Image& input, bool inverse, ThreadPool* pool) {
-  if (inverse) return inv_YCoCg(input, pool);
-#ifdef HAS_ENCODER
-  else
-    return fwd_YCoCg(input);
-#else
-  return false;
-#endif
 }
 
 }  // namespace jxl

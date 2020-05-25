@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <hwy/interface.h>
 #include <array>
+#include <hwy/aligned_allocator.h>
 #include <utility>
 #include <vector>
 
@@ -359,7 +359,9 @@ class DequantMatrices {
       QuantTable::AFV0,    QuantTable::AFV0,     QuantTable::AFV0,
   };
 
-  DequantMatrices() {
+  DequantMatrices()
+      // TODO(janwas): integrate JpegxlMemoryManager pointers
+      : table_(hwy::AllocateAligned<float>(2 * kTotalTableSize)) {
     encodings_.resize(size_t(QuantTable::kNum), QuantEncoding::Library(0));
     for (size_t i = 0; i < size_t(QuantTable::kNum); i++) {
       encodings_[i] = QuantEncoding::Library(0);
@@ -390,7 +392,7 @@ class DequantMatrices {
 
   JXL_INLINE const float* InvMatrix(size_t quant_kind, size_t c) const {
     JXL_DASSERT(quant_kind < AcStrategy::kNumValidStrategies);
-    return &inv_table_[MatrixOffset(quant_kind, c)];
+    return &InvTable()[MatrixOffset(quant_kind, c)];
   }
 
   JXL_INLINE float DCQuant(size_t c) const { return dc_quant_[c]; }
@@ -438,6 +440,8 @@ class DequantMatrices {
   const std::vector<QuantEncoding>& encodings() const { return encodings_; }
 
  private:
+  float* InvTable() const { return table_.get() + kTotalTableSize; }
+
   Status Compute();
   static_assert(kNum == 11,
                 "Update this array when adding or removing quant tables.");
@@ -450,8 +454,8 @@ class DequantMatrices {
   static constexpr size_t kTotalTableSize =
       ArraySum(required_size_) * kDCTBlockSize * 3;
 
-  HWY_ALIGN_MAX float table_[kTotalTableSize];
-  HWY_ALIGN_MAX float inv_table_[kTotalTableSize];
+  // kTotalTableSize entries followed by kTotalTableSize for inv_table
+  hwy::AlignedUniquePtr<float[]> table_;
   float dc_quant_[3] = {kDCQuant[0], kDCQuant[1], kDCQuant[2]};
   float inv_dc_quant_[3] = {kInvDCQuant[0], kInvDCQuant[1], kInvDCQuant[2]};
   size_t table_offsets_[AcStrategy::kNumValidStrategies * 3];

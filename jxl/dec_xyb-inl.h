@@ -21,11 +21,10 @@
 #define JXL_DEC_XYB_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include "jxl/dec_xyb.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Inverts the pixel-wise RGB->XYB conversion in OpsinDynamicsImage() (including
@@ -89,7 +88,7 @@ HWY_FUNC void XybToRgb(D d, const V opsin_x, const V opsin_y, const V opsin_b,
 }
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif

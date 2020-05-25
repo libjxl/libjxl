@@ -20,6 +20,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// TODO(janwas): workaround for incorrect Win64 codegen (cause unknown)
+#include <hwy/highway.h>
+
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"

@@ -15,33 +15,10 @@
 #ifndef JXL_MODULAR_ENCODING_MA_H_
 #define JXL_MODULAR_ENCODING_MA_H_
 
-#include "jxl/modular/encoding/context_predict.h"
+#include "jxl/entropy_coder.h"
+#include "jxl/modular/options.h"
 
 namespace jxl {
-
-struct CompactTree {
-  // Lower values make single chunk evaluation faster, but might increase
-  // height.
-  static constexpr size_t kChunkPropertyLimit = 4;
-
-  struct ChunkData {
-    // Thresholds for each property.
-    int32_t thresholds[kChunkPropertyLimit];
-
-    // ID of the properties used by this chunk.
-    int32_t properties[kChunkPropertyLimit];
-    uint8_t num_properties;
-
-    // First position in table.
-    size_t start;
-  };
-
-  std::vector<ChunkData> chunks;
-
-  // <= 0: (negated) index of leaf node.
-  // > 0: index of child node.
-  std::vector<int16_t> table;
-};
 
 // inner nodes
 struct PropertyDecisionNode {
@@ -50,17 +27,22 @@ struct PropertyDecisionNode {
   // 0..nb_properties-1 : childID refers to left branch  (in inner_node)
   //                      childID+1 refers to right branch
   uint16_t childID;
+  Predictor predictor;
+  int64_t predictor_offset;
 
-  explicit PropertyDecisionNode(int p = -1, int split_val = 0, int child_id = 0)
-      : splitval(split_val), property(p), childID(child_id) {}
+  explicit PropertyDecisionNode(int p = -1, int split_val = 0, int child_id = 0,
+                                Predictor predictor = Predictor::Gradient,
+                                int64_t predictor_offset = 0)
+      : splitval(split_val),
+        property(p),
+        childID(child_id),
+        predictor(predictor),
+        predictor_offset(predictor_offset) {}
 };
 
-class Tree : public std::vector<PropertyDecisionNode> {
- public:
-  Tree() : std::vector<PropertyDecisionNode>(1, PropertyDecisionNode()) {}
-};
+class Tree : public std::vector<PropertyDecisionNode> {};
 
-constexpr size_t kNumTreeContexts = 2;
+constexpr size_t kNumTreeContexts = 4;
 
 void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
                   size_t base_ctx, std::vector<Token> *tokens,
@@ -68,18 +50,20 @@ void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
 
 Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
                   const std::vector<uint8_t> &context_map, size_t base_ctx,
-                  Tree *tree);
-
-bool CompactifyTree(const Tree &tree, CompactTree *compact_tree);
+                  Tree *tree, int max_property);
 
 void ChooseAndQuantizeProperties(
     size_t max_properties, size_t max_property_values,
-    std::vector<std::vector<int>> *data, std::vector<int> *multiplicity,
+    const HybridUintConfig &uint_config, int64_t offset,
+    const std::vector<std::vector<int>> &residuals,
+    std::vector<std::vector<int>> *props,
     std::vector<std::vector<int>> *compact_properties,
     std::vector<size_t> *props_to_use);
 
-void ComputeBestTree(const std::vector<std::vector<int>> &data,
-                     const std::vector<int> &multiplicity,
+void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
+                     const std::vector<std::vector<int>> &props,
+                     const std::vector<Predictor> &predictors,
+                     const HybridUintConfig &uint_config, int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
                      size_t max_properties, Tree *tree);

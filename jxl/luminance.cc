@@ -25,9 +25,14 @@ namespace {
 // kDefaultIntensityTarget, for images known to have PQ or HLG transfer function
 // returns a higher value.
 float ChooseDefaultIntensityTarget(const ImageMetadata& metadata) {
-  if (metadata.color_encoding.tf.IsPQ() || metadata.color_encoding.tf.IsHLG()) {
-    // HDR
-    return 4000;
+  if (metadata.color_encoding.tf.IsPQ()) {
+    // Peak luminance of PQ as defined by SMPTE ST 2084:2014.
+    return 10000;
+  }
+  if (metadata.color_encoding.tf.IsHLG()) {
+    // Nominal display peak luminance used as a reference by
+    // Rec. ITU-R BT.2100-2.
+    return 1000;
   }
   // SDR
   return kDefaultIntensityTarget;

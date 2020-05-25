@@ -184,11 +184,10 @@ Most C++ vector APIs rely on class templates. However, the ARM SVE vector
 type is sizeless and cannot be wrapped in a class. We instead rely on overloaded
 functions. Overloading based on vector types is also undesirable because SVE
 vectors cannot be default-constructed. We instead use a dedicated 'descriptor'
-type `Desc` for overloading, abbreviated to `D` for template arguments and
+type `Simd` for overloading, abbreviated to `D` for template arguments and
 `d` in lvalues.
 
-Note that generic function templates are possible, but they require a
-`HWY_ATTR` attribute, which means they must reside in the per-target namespace.
+Note that generic function templates are possible (see begin_target-inl.h).
 
 ## Masks
 
@@ -208,47 +207,78 @@ set, we provide a special `ZeroIfNegative` function.
 
 Whenever possible, use full-width descriptors for maximum performance
 portability: `HWY_FULL(float)`. When necessary, applications may also rely on
-128-bit vectors: `Desc<float, 4>`. There is also the option of a vector of up
+128-bit vectors: `Simd<float, 4>`. There is also the option of a vector of up
 to N lanes: `HWY_CAPPED(float, N)` (the length is always a power of two).
 
-Functions using Highway must be prefixed `HWY_ATTR` and reside between
-`#include <hwy/begin_target-inl.h>` and `#include <hwy/end_target-inl.h>`.
+Functions using Highway must reside between `#include <hwy/begin_target-inl.h>`
+and `#include <hwy/end_target-inl.h>`.
 
-*   For static dispatch, first include `highway.h`. `HWY_TARGET` will be the
-    best available target among `HWY_BASELINE_TARGETS`, i.e. those allowed for
-    use by the compiler (see [quick-reference](quick_reference.md)). Functions
-    defined between begin/end_target can be called using
-    `HWY_STATIC_DISPATCH(func)(args)`.
+*   For static dispatch, `HWY_TARGET` will be the best available target among
+    `HWY_BASELINE_TARGETS`, i.e. those allowed for use by the compiler (see
+    [quick-reference](quick_reference.md)). Functions defined between
+    begin/end_target can be called using `HWY_STATIC_DISPATCH(func)(args)`.
 
 *   For dynamic dispatch, each module exports one or more Choose* functions
-    (generated via `HWY_EXPORT`) that returns the best function pointer for the
-    current `hwy::SupportedTargets()`. A module is automatically compiled for
-    each target in `HWY_TARGETS` (see [quick-reference](quick_reference.md))
-    by foreach_target.h:
+    (generated via `HWY_EXPORT`) that returns the best function pointer for
+    the current CPU supported targets. A module is automatically compiled for
+    each target in `HWY_TARGETS` (see [quick-reference](quick_reference.md)) if
+    `HWY_TARGET_INCLUDE` is defined and foreach_target.h is included:
 ```c++
 #include "project/module.h"
-// INSERT other headers
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "project/module.cc"
 #include <hwy/foreach_target.h>
+// INSERT other headers
 
+#include <hwy/before_namespace-inl.h>
 namespace project {
-
 #include <hwy/begin_target-inl.h>
 // INSERT implementation
 #include <hwy/end_target-inl.h>
+}  // namespace project
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace project {
 HWY_EXPORT(Func1)
 HWY_EXPORT(Func2)
 // INSERT any non-SIMD definitions (optional)
-#endif  // HWY_ONCE
-
 }  // namespace project
+#endif  // HWY_ONCE
 ```
 
-See also `skeleton` inside examples/.
+See also the `skeleton` examples inside examples/.
+
+Note that tests would preferably cover all supported targets. However, the
+default is to skip any baseline targets (e.g. scalar) that are superseded by
+another baseline target. To avoid regressions, any patches should be tested
+with `-DHWY_COMPILE_ALL_ATTAINABLE` for all files, which will include all
+targets. A separate build of only the missing target(s) would also work.
+
+## Installation
+
+This project uses cmake to generate and build and
+[googletest](https://github.com/google/googletest) for running unit tests of
+this library. In a Debian-based system you can install them with the following
+command:
+
+```bash
+sudo apt install cmake libgtest-dev
+```
+
+To build and test the library the standard cmake workflow can be used:
+
+```bash
+mkdir build
+cd build
+cmake ..
+make -j
+make test
+```
+
+When testing patches on all the attainable targets for your platform use
+`cmake .. -DCMAKE_CXX_FLAGS="-DHWY_COMPILE_ALL_ATTAINABLE"` to configure the
+project.
 
 ## Additional resources
 

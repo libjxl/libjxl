@@ -82,16 +82,15 @@ LIST_MINGW_TARGETS=(
   i686-w64-mingw32
   x86_64-w64-mingw32
 )
+LIST_WASM_TARGETS=(
+  wasm32
+)
 
 # Setup the apt repositories and supported architectures.
 setup_apt() {
   apt-get update -y
   apt-get install -y curl gnupg
 
-  # gcc ppa sources.
-  cat >/etc/apt/sources.list.d/gcc.list <<EOF
-deb [arch=$(echo ${LIST_ARCHS[@]} | tr ' ' ,)] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu bionic main
-EOF
   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 1E9377A2BA9EF27F
 
   # node sources.
@@ -135,18 +134,17 @@ EOF
 
   main_list=$(echo "${main_list[@]}" | tr ' ' ,)
   grep -v -E '^#' "${bkplist}" |
-    sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2;" \
+    sed -E "s;^deb (http[^ ]+) (.*)\$;deb [arch=${main_list}] \\1 \\2\ndeb-src [arch=${main_list}] \\1 \\2;" \
     >>"${newlist}"
   mv "${newlist}" /etc/apt/sources.list
 }
 
 install_pkgs() {
   packages=(
-    # Native compilers
-    clang-6.0 clang-format-6.0 clang-tidy-6.0
+    # Native compilers (minimum for SIMD is clang-7)
+    clang-7 clang-format-7 clang-tidy-7
 
-    # TODO: Consider adding clang-7 and clang-8 to every builder:
-    #   clang-7 clang-format-7 clang-tidy-7
+    # TODO: Consider adding clang-8 to every builder:
     #   clang-8 clang-format-8 clang-tidy-8
 
     # For cross-compiling to Windows with mingw.
@@ -183,6 +181,9 @@ install_pkgs() {
 
     # NodeJS for running WASM tests
     nodejs
+
+    # To generate API documentation.
+    doxygen
   )
 
   # Install packages that are arch-dependent.
@@ -229,6 +230,22 @@ install_pkgs() {
     "${packages[@]}" "${UNPACK_PKGS[@]}"
 }
 
+# binutils <2.32 need a patch.
+install_binutils() {
+  local workdir=$(mktemp -d --suffix=_install)
+  CLEANUP_FILES+=("${workdir}")
+  pushd "${workdir}"
+  apt source binutils-mingw-w64
+  apt -y build-dep binutils-mingw-w64
+  cd binutils-mingw-w64-8ubuntu1
+  cp "${MYDIR}/binutils_align_fix.patch" debian/patches
+  echo binutils_align_fix.patch >> debian/patches/series
+  dpkg-buildpackage -b
+  cd ..
+  dpkg -i *deb
+  popd
+}
+
 # Install a library from the source code for multiple targets.
 # Usage: install_from_source <tar_url> <sha256> <target> [<target...>]
 install_from_source() {
@@ -254,18 +271,37 @@ install_from_source() {
     exit 1
   fi
 
-  local srcdir="${workdir}/source"
-  mkdir -p "${srcdir}"
-  tar -zxf "${tarfile}" -C "${srcdir}" --strip-components=1
-
   local target
   for target in "$@"; do
     echo "Installing ${package} for target ${target} from ${url}"
 
-    local builddir="${workdir}/build-${target}"
-    mkdir -p "${builddir}"
-    local cmake_args=()
+    local srcdir="${workdir}/source-${target}"
+    mkdir -p "${srcdir}"
+    tar -zxf "${tarfile}" -C "${srcdir}" --strip-components=1
 
+    local prefix="/usr"
+    if [[ "${target}" != "x86_64-linux-gnu" ]]; then
+      prefix="/usr/${target}"
+    fi
+
+    # Apply patches to buildfiles.
+    if [[ "${package}" == "GIFLIB" && "${target}" == *mingw32 ]]; then
+      # GIFLIB Makefile has several problems so we need to fix them here. We are
+      # using a patch from MSYS2 that already fixes the compilation for mingw.
+      local make_patch="${srcdir}/libgif.patch"
+      curl -L "${GIFLIB_PATCH_URL}" -o "${make_patch}"
+      echo "${GIFLIB_PATCH_SHA256} ${make_patch}" | sha256sum -c --status -
+      patch "${srcdir}/Makefile" < "${make_patch}"
+    elif [[ "${package}" == "LIBPNG" && "${target}" == wasm* ]]; then
+      # Cut the dependency to libm; there is pull request to fix it, so this
+      # might not be needed in the future.
+      sed -i 's/APPLE/EMSCRIPTEN/g' "${srcdir}/CMakeLists.txt"
+    fi
+
+    local cmake_args=()
+    local export_args=("CC=clang-7" "CXX=clang++-7")
+    local cmake="cmake"
+    local make="make"
     local system_name="Linux"
     if [[ "${target}" == *mingw32 ]]; then
       system_name="Windows"
@@ -278,12 +314,20 @@ install_from_source() {
         cmake_args+=(-DCMAKE_RC_COMPILER="${windres}")
       fi
     fi
+    if [[ "${target}" == wasm* ]]; then
+      system_name="WASM"
+      cmake="emcmake cmake"
+      make="emmake make"
+      export_args=()
+      cmake_args+=(
+        -DCMAKE_FIND_ROOT_PATH="${prefix}"
+        -DCMAKE_PREFIX_PATH="${prefix}"
+      )
+    fi
     cmake_args+=(-DCMAKE_SYSTEM_NAME="${system_name}")
 
-    local prefix="/usr"
     if [[ "${target}" != "x86_64-linux-gnu" ]]; then
       # Cross-compiling.
-      prefix="/usr/${target}"
       cmake_args+=(
         -DCMAKE_C_COMPILER_TARGET="${target}"
         -DCMAKE_CXX_COMPILER_TARGET="${target}"
@@ -294,42 +338,39 @@ install_from_source() {
     if [[ -e "${srcdir}/CMakeLists.txt" ]]; then
       # Most pacakges use cmake for building which is easier to configure for
       # cross-compiling.
-      (
-        export CC=clang-6.0 CXX=clang++-6.0
-        cmake -B"${builddir}" -H"${srcdir}" -G Ninja \
-          -DCMAKE_INSTALL_PREFIX="${prefix}" \
-          "${cmake_args[@]}" ${pkgflags}
-        cmake --build "${builddir}"
-        ninja -C "${builddir}" install
-      )
-    elif [[ "${package}" == "GIFLIB" ]]; then
-      # GIFLIB doesn't yet have a cmake build system and the Makefile has
-      # several problems so we need to fix them here. We are using a patch from
-      # MSYS2 that already fixes the compilation for mingw. There is a pull
-      # request in giflib for adding CMakeLists.txt so this might not be
-      # needed in the future.
-      local srcdir_tgt="${workdir}/source-${target}"
-      mkdir -p "${srcdir_tgt}"
-      tar -zxf "${tarfile}" -C "${srcdir_tgt}" --strip-components=1
-
-      if [[ "${target}" == *mingw32 ]]; then
-        local make_patch="${srcdir_tgt}/libgif.patch"
-        curl -L "${GIFLIB_PATCH_URL}" -o "${make_patch}"
-        echo "${GIFLIB_PATCH_SHA256} ${make_patch}" | sha256sum -c --status -
-        patch "${srcdir_tgt}/Makefile" < "${make_patch}"
+      if [[ "${package}" == "JPEG_TURBO" && "${target}" == wasm* ]]; then
+        # JT erroneously detects WASM CPU as i386 and tries to use asm.
+        # Wasm/Emscripten support for dynamic linking is incomplete; disable
+        # to avoid CMake warning.
+        cmake_args+=(-DWITH_SIMD=0 -DENABLE_SHARED=OFF)
       fi
       (
-        cd "${srcdir_tgt}"
+        cd "${srcdir}"
+        export ${export_args[@]}
+        ${cmake} \
+          -DCMAKE_INSTALL_PREFIX="${prefix}" \
+          "${cmake_args[@]}" ${pkgflags}
+        ${make} -j$(nproc --all)
+        ${make} install
+      )
+    elif [[ "${package}" == "GIFLIB" ]]; then
+      # GIFLIB doesn't yet have a cmake build system. There is a pull
+      # request in giflib for adding CMakeLists.txt so this might not be
+      # needed in the future.
+      (
+        cd "${srcdir}"
         local giflib_make_flags=(
-          CC=clang-6.0
-          PREFIX="${prefix}"
           CFLAGS="-O2 --target=${target} -std=gnu99"
+          PREFIX="${prefix}"
         )
+        if [[ "${target}" != wasm* ]]; then
+          giflib_make_flags+=(CC=clang-7)
+        fi
         # giflib make dependencies are not properly set up so parallel building
         # doesn't work for everything.
-        make -j$(nproc --all) libgif.a "${giflib_make_flags[@]}"
-        make -j$(nproc --all) all "${giflib_make_flags[@]}"
-        make install "${giflib_make_flags[@]}"
+        ${make} -j$(nproc --all) libgif.a "${giflib_make_flags[@]}"
+        ${make} -j$(nproc --all) all "${giflib_make_flags[@]}"
+        ${make} install "${giflib_make_flags[@]}"
       )
     else
       echo "Don't know how to install ${package}"
@@ -342,7 +383,7 @@ install_from_source() {
 # Packages that are manually unpacked for each architecture.
 UNPACK_PKGS=(
   libgif-dev
-  libclang-common-6.0-dev
+  libclang-common-7-dev
 
   # For OpenEXR:
   libilmbase-dev
@@ -365,6 +406,7 @@ main() {
   apt-get dist-upgrade -y
 
   install_pkgs
+  install_binutils
   apt clean
 
   # Manually extract packages for the target arch that can't install it directly
@@ -380,24 +422,9 @@ main() {
     fi
   done
   # TODO: Add clang from the llvm repos. This is problematic since we are
-  # installing libclang-common-6.0-dev:"${ubarch}" from the ubuntu ports repos
+  # installing libclang-common-7-dev:"${ubarch}" from the ubuntu ports repos
   # which is not available in the llvm repos so it might have a different
   # version than the ubuntu ones.
-
-  # clang-6.0 doesn't find the libgcc version from mingw since it has two
-  # version numbers and a suffix (see https://reviews.llvm.org/D45505). This
-  # workaround fixes it for clang-6.0:
-  local mingwtarget
-  for mingwtarget in "${LIST_MINGW_TARGETS[@]}"; do
-    local target_path="/usr/lib/gcc/${mingwtarget}"
-    local gccver
-    for gccver in $(find "${target_path}"/ -maxdepth 1 -mindepth 1 -type d \
-                    -exec basename {} \;); do
-      # Converts "a.b-mingw32" to "a.b.0-mingw32".
-      local symlink_dest="${target_path}/${gccver/-/.0-}"
-      [[ -e "${symlink_dest}" ]] || ln -s "${gccver}" "${symlink_dest}"
-    done
-  done
 
   # TODO: Add msan for the target when cross-compiling. This only installs it
   # for amd64.
@@ -409,12 +436,15 @@ main() {
   # Install emscripten SDK.
   ./emsdk_install.sh
 
+  # Setup environment for building WASM libraries from sources.
+  source /opt/emsdk/emsdk_env.sh
+
   # Install some dependency libraries manually for the different targets.
 
-  install_from_source JPEG_TURBO "${LIST_MINGW_TARGETS[@]}"
-  install_from_source ZLIB "${LIST_MINGW_TARGETS[@]}"
-  install_from_source LIBPNG "${LIST_MINGW_TARGETS[@]}"
-  install_from_source GIFLIB "${LIST_MINGW_TARGETS[@]}"
+  install_from_source JPEG_TURBO "${LIST_MINGW_TARGETS[@]}" "${LIST_WASM_TARGETS[@]}"
+  install_from_source ZLIB "${LIST_MINGW_TARGETS[@]}" "${LIST_WASM_TARGETS[@]}"
+  install_from_source LIBPNG "${LIST_MINGW_TARGETS[@]}" "${LIST_WASM_TARGETS[@]}"
+  install_from_source GIFLIB "${LIST_MINGW_TARGETS[@]}" "${LIST_WASM_TARGETS[@]}"
   # webp in Ubuntu is relatively old so we install it from source for everybody.
   install_from_source WEBP "${LIST_TARGETS[@]}" "${LIST_MINGW_TARGETS[@]}"
 

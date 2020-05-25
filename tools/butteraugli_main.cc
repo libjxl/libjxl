@@ -18,7 +18,6 @@
 #include <string>
 #include <vector>
 
-#include <hwy/interface.h>
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/file_io.h"
 #include "jxl/base/padded_bytes.h"
@@ -56,7 +55,9 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& distmap_filename,
                       const std::string& colorspace_hint) {
   CodecInOut io1;
-  if (colorspace_hint != "") io1.dec_hints.Add("color_space", colorspace_hint);
+  if (!colorspace_hint.empty()) {
+    io1.dec_hints.Add("color_space", colorspace_hint);
+  }
   ThreadPoolInternal pool(4);
   if (!SetFromFile(pathname1, &io1, &pool)) {
     fprintf(stderr, "Failed to read image from %s\n", pathname1);
@@ -64,7 +65,9 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   }
 
   CodecInOut io2;
-  if (colorspace_hint != "") io2.dec_hints.Add("color_space", colorspace_hint);
+  if (!colorspace_hint.empty()) {
+    io2.dec_hints.Add("color_space", colorspace_hint);
+  }
   if (!SetFromFile(pathname2, &io2, &pool)) {
     fprintf(stderr, "Failed to read image from %s\n", pathname2);
     return false;
@@ -86,13 +89,13 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   printf("%.10f\n", distance);
 
   double p = 3.0;
-  double pnorm = ChooseComputeDistanceP(hwy::SupportedTargets())(distmap, p);
+  double pnorm = ChooseComputeDistanceP()(distmap, p);
   printf("%g-norm: %f\n", p, pnorm);
 
-  if (distmap_filename != "") {
-    float good = butteraugli::ButteraugliFuzzyInverse(1.5);
-    float bad = butteraugli::ButteraugliFuzzyInverse(0.5);
-    Image3B heatmap = butteraugli::CreateHeatMapImage(distmap, good, bad);
+  if (!distmap_filename.empty()) {
+    float good = ButteraugliFuzzyInverse(1.5);
+    float bad = ButteraugliFuzzyInverse(0.5);
+    Image3B heatmap = CreateHeatMapImage(distmap, good, bad);
     JXL_CHECK(WritePNG(heatmap, distmap_filename));
   }
   return true;

@@ -13,12 +13,11 @@
 // limitations under the License.
 
 #include "jxl/enc_transforms.h"
-
-#include "jxl/dct_scales.h"
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/enc_transforms.cc"
 #include <hwy/foreach_target.h>
+
+#include "jxl/dct_scales.h"
 
 #include "jxl/enc_transforms-inl.h"
 

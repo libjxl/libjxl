@@ -15,8 +15,7 @@
 #ifndef JXL_EPF_H_
 #define JXL_EPF_H_
 
-// Fast SIMD edge preserving filter (adaptive, nonlinear).
-// "In-loop" filter: edge-preserving filter + quantization constraint.
+// Fast SIMD "in-loop" edge preserving filter (adaptive, nonlinear).
 
 #include <stddef.h>
 

@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/enc_cluster.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_cluster.cc"
+#include <hwy/foreach_target.h>
 
 #include <algorithm>
 #include <cmath>
@@ -26,26 +29,22 @@
 #include "jxl/base/fast_log.h"
 #include "jxl/base/profiler.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_cluster.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/fast_log-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 template <class V>
-HWY_ATTR V Entropy(V count, V total) {
+V Entropy(V count, V total) {
   const HWY_FULL(float) d;
   const auto zero = Set(d, 0.0f);
   const auto safe_div = Set(d, 1.0f);
   const auto nonzero_count = IfThenElse(count == zero, safe_div, count);
-  return count * FastLog2f_18bits(total / nonzero_count);
+  return count * FastLog2f_18bits(d, total / nonzero_count);
 }
 
-HWY_ATTR void HistogramEntropy(const Histogram& a) {
+void HistogramEntropy(const Histogram& a) {
   a.entropy_ = 0.0f;
   if (a.total_count_ == 0) return;
 
@@ -55,14 +54,14 @@ HWY_ATTR void HistogramEntropy(const Histogram& a) {
   const auto tot = Set(df, a.total_count_);
   auto entropy_lanes = Zero(df);
 
-  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += di.N) {
+  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += Lanes(di)) {
     const auto counts = LoadU(di, &a.data_[i]);
     entropy_lanes += Entropy(ConvertTo(df, counts), tot);
   }
   a.entropy_ += GetLane(SumOfLanes(entropy_lanes));
 }
 
-HWY_ATTR float HistogramDistance(const Histogram& a, const Histogram& b) {
+float HistogramDistance(const Histogram& a, const Histogram& b) {
   if (a.total_count_ == 0 || b.total_count_ == 0) return 0;
 
   const HWY_FULL(float) df;
@@ -71,7 +70,7 @@ HWY_ATTR float HistogramDistance(const Histogram& a, const Histogram& b) {
   const auto tot = Set(df, a.total_count_ + b.total_count_);
   auto distance_lanes = Zero(df);
 
-  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += di.N) {
+  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += Lanes(di)) {
     const auto a_counts = LoadU(di, &a.data_[i]);
     const auto b_counts = LoadU(di, &b.data_[i]);
     const auto counts = ConvertTo(df, a_counts + b_counts);
@@ -131,8 +130,11 @@ void FastClusterHistograms(const std::vector<Histogram>& in,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(FastClusterHistograms)
 
 namespace {
@@ -217,7 +219,7 @@ void ClusterHistograms(const HistogramParams params,
                        std::vector<uint32_t>* histogram_symbols) {
   constexpr float kMinDistanceForDistinctFast = 64.0f;
   constexpr float kMinDistanceForDistinctBest = 16.0f;
-  auto fast_cluster = ChooseFastClusterHistograms(hwy::SupportedTargets());
+  auto fast_cluster = ChooseFastClusterHistograms();
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
     // No reindexing needed.
     return FastestClusterHistograms(in, num_contexts, max_histograms, out,
@@ -334,6 +336,5 @@ void ClusterHistograms(const HistogramParams params,
   HistogramReindex(out, histogram_symbols);
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

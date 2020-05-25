@@ -36,22 +36,41 @@ const char *Transform::Name() const {
   return "Unknown transformation";
 }
 
-Status Transform::Apply(Image &input, bool inverse, ThreadPool *pool) {
+Status Transform::Forward(Image &input, ThreadPool *pool) {
   switch (id) {
     case TransformId::kChromaSubsample:
-      return subsample(input, inverse, parameters);
+      return FwdSubsample(input, parameters);
     case TransformId::kQuantize:
-      return quantize(input, inverse, parameters, pool);
+      return FwdQuantize(input, parameters);
     case TransformId::kYCoCg:
-      return YCoCg(input, inverse, pool);
+      return FwdYCoCg(input);
     case TransformId::kRCT:
-      return subtract_green(input, inverse, parameters);
+      return FwdSubtractGreen(input, parameters);
     case TransformId::kSqueeze:
-      return squeeze(input, inverse, parameters, pool);
+      return FwdSqueeze(input, parameters, pool);
     case TransformId::kPalette:
-      return palette(input, inverse, parameters, pool);
+      return FwdPalette(input, parameters);
     case TransformId::kNearLossless:
-      return near_lossless(input, inverse, parameters);
+      return FwdNearLossless(input, parameters);
+    default:
+      return JXL_FAILURE("Unknown transformation (ID=%u)", id);
+  }
+}
+
+Status Transform::Inverse(Image &input, ThreadPool *pool) {
+  switch (id) {
+    case TransformId::kChromaSubsample:
+      return InvSubsample(input, parameters);
+    case TransformId::kQuantize:
+      return InvQuantize(input, parameters, pool);
+    case TransformId::kYCoCg:
+      return InvYCoCg(input, pool);
+    case TransformId::kRCT:
+      return InvSubtractGreen(input, parameters);
+    case TransformId::kSqueeze:
+      return InvSqueeze(input, parameters, pool);
+    case TransformId::kPalette:
+      return InvPalette(input, parameters, pool);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }
@@ -62,15 +81,15 @@ Status Transform::MetaApply(Image &input) {
     case TransformId::kYCoCg:
       return true;
     case TransformId::kChromaSubsample:
-      return meta_subsample(input, parameters);
+      return MetaSubsample(input, parameters);
     case TransformId::kQuantize:
-      return meta_quantize(input);
+      return MetaQuantize(input);
     case TransformId::kRCT:
       return true;
     case TransformId::kSqueeze:
-      return meta_squeeze(input, &parameters);
+      return MetaSqueeze(input, &parameters);
     case TransformId::kPalette:
-      return meta_palette(input, parameters);
+      return MetaPalette(input, parameters);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }

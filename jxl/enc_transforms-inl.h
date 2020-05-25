@@ -19,7 +19,6 @@
 #define JXL_ENC_TRANSFORMS_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include <stddef.h>
 
 #include "jxl/ac_strategy.h"
@@ -27,14 +26,15 @@
 #include "jxl/dct_scales.h"
 #include "jxl/enc_dct-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 template <size_t ROWS, size_t COLS>
 struct DoDCT {
   template <typename From, typename To>
-  HWY_ATTR void operator()(const From& from, const To& to) {
+  void operator()(const From& from, const To& to) {
     ComputeScaledDCT<ROWS, COLS>()(from, to);
   }
 };
@@ -42,7 +42,7 @@ struct DoDCT {
 template <size_t N>
 struct DoDCT<N, N> {
   template <typename From, typename To>
-  HWY_ATTR void operator()(const From& from, const To& to) {
+  void operator()(const From& from, const To& to) {
     ComputeTransposedScaledDCT<N>()(from, to);
   }
 };
@@ -52,10 +52,8 @@ struct DoDCT<N, N> {
 // input block.
 template <size_t DCT_ROWS, size_t DCT_COLS, size_t LF_ROWS, size_t LF_COLS,
           size_t ROWS, size_t COLS>
-HWY_ATTR JXL_INLINE void ReinterpretingDCT(const float* input,
-                                           const size_t input_stride,
-                                           float* output,
-                                           const size_t output_stride) {
+JXL_INLINE void ReinterpretingDCT(const float* input, const size_t input_stride,
+                                  float* output, const size_t output_stride) {
   static_assert(LF_ROWS == ROWS,
                 "ReinterpretingDCT should only be called with LF == N");
   static_assert(LF_COLS == COLS,
@@ -70,8 +68,8 @@ HWY_ATTR JXL_INLINE void ReinterpretingDCT(const float* input,
 
   constexpr size_t OUT_ROWS = CoefficientRows(ROWS, COLS);
   constexpr size_t OUT_COLS = CoefficientColumns(ROWS, COLS);
-  DoDCT<ROWS, COLS>()(FromBlock<ROWS, COLS>(block),
-                      ScaleToBlock<OUT_ROWS, OUT_COLS>(block));
+  DoDCT<ROWS, COLS>()(FromBlock(ROWS, COLS, block),
+                      ScaleToBlock(OUT_ROWS, OUT_COLS, block));
   if (ROWS < COLS) {
     for (size_t y = 0; y < LF_ROWS; y++) {
       for (size_t x = 0; x < LF_COLS; x++) {
@@ -124,8 +122,7 @@ void DCT2TopBlock(const float* block, size_t stride, float* out) {
   }
 }
 
-HWY_ATTR void AFVDCT4x4(const float* JXL_RESTRICT pixels,
-                        float* JXL_RESTRICT coeffs) {
+void AFVDCT4x4(const float* JXL_RESTRICT pixels, float* JXL_RESTRICT coeffs) {
   HWY_ALIGN static constexpr float k4x4AFVBasisTranspose[16][16] = {
       {
           0.2500000000000000,
@@ -417,15 +414,15 @@ HWY_ATTR void AFVDCT4x4(const float* JXL_RESTRICT pixels,
       },
   };
 
-  using D = HWY_CAPPED(float, 16);
-  for (size_t i = 0; i < 16; i += D::N) {
-    auto scalar = Zero(D());
+  const HWY_CAPPED(float, 16) d;
+  for (size_t i = 0; i < 16; i += Lanes(d)) {
+    auto scalar = Zero(d);
     for (size_t j = 0; j < 16; j++) {
-      auto px = Set(D(), pixels[j]);
-      auto basis = Load(D(), k4x4AFVBasisTranspose[j] + i);
+      auto px = Set(d, pixels[j]);
+      auto basis = Load(d, k4x4AFVBasisTranspose[j] + i);
       scalar = MulAdd(px, basis, scalar);
     }
-    Store(scalar, D(), coeffs + i);
+    Store(scalar, d, coeffs + i);
   }
 }
 
@@ -434,9 +431,9 @@ HWY_ATTR void AFVDCT4x4(const float* JXL_RESTRICT pixels,
 //  - (odd, even) positions hold DCT4x4 coefficients
 //  - (any, odd) positions hold DCT4x8 coefficients
 template <size_t afv_kind>
-HWY_ATTR void AFVTransformFromPixels(const float* JXL_RESTRICT pixels,
-                                     size_t pixels_stride,
-                                     float* JXL_RESTRICT coefficients) {
+void AFVTransformFromPixels(const float* JXL_RESTRICT pixels,
+                            size_t pixels_stride,
+                            float* JXL_RESTRICT coefficients) {
   size_t afv_x = afv_kind & 1;
   size_t afv_y = afv_kind / 2;
   HWY_ALIGN float block[4 * 8];
@@ -456,9 +453,9 @@ HWY_ATTR void AFVTransformFromPixels(const float* JXL_RESTRICT pixels,
   }
   // 4x4 DCT of the block with same y and different x.
   ComputeTransposedScaledDCT<4>()(
-      FromLines<4>(pixels + afv_y * 4 * pixels_stride + (afv_x == 1 ? 0 : 4),
-                   pixels_stride),
-      ScaleToBlock<4, 4>(block));
+      FromLines(pixels + afv_y * 4 * pixels_stride + (afv_x == 1 ? 0 : 4),
+                pixels_stride),
+      ScaleToBlock(4, 4, block));
   // ... in (odd, even) positions.
   for (size_t iy = 0; iy < 4; iy++) {
     for (size_t ix = 0; ix < 8; ix++) {
@@ -467,9 +464,8 @@ HWY_ATTR void AFVTransformFromPixels(const float* JXL_RESTRICT pixels,
   }
   // 4x8 DCT of the other half of the block.
   ComputeScaledDCT<4, 8>()(
-      FromLines<8>(pixels + (afv_y == 1 ? 0 : 4) * pixels_stride,
-                   pixels_stride),
-      ScaleToBlock<4, 8>(block));
+      FromLines(pixels + (afv_y == 1 ? 0 : 4) * pixels_stride, pixels_stride),
+      ScaleToBlock(4, 8, block));
   for (size_t iy = 0; iy < 4; iy++) {
     for (size_t ix = 0; ix < 8; ix++) {
       coefficients[(1 + iy * 2) * 8 + ix] = block[iy * 8 + ix];
@@ -483,9 +479,10 @@ HWY_ATTR void AFVTransformFromPixels(const float* JXL_RESTRICT pixels,
   coefficients[8] = (block00 + block01 - 2 * block10) * 0.25f;
 }
 
-HWY_ATTR HWY_MAYBE_UNUSED void TransformFromPixels(
-    const AcStrategy::Type strategy, const float* JXL_RESTRICT pixels,
-    size_t pixels_stride, float* JXL_RESTRICT coefficients) {
+HWY_MAYBE_UNUSED void TransformFromPixels(const AcStrategy::Type strategy,
+                                          const float* JXL_RESTRICT pixels,
+                                          size_t pixels_stride,
+                                          float* JXL_RESTRICT coefficients) {
   using Type = AcStrategy::Type;
   switch (strategy) {
     case Type::IDENTITY: {
@@ -525,8 +522,8 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformFromPixels(
       PROFILER_ZONE("DCT 8x4");
       for (size_t x = 0; x < 2; x++) {
         HWY_ALIGN float block[4 * 8];
-        ComputeScaledDCT<8, 4>()(FromLines<4>(pixels + x * 4, pixels_stride),
-                                 ScaleToBlock<4, 8>(block));
+        ComputeScaledDCT<8, 4>()(FromLines(pixels + x * 4, pixels_stride),
+                                 ScaleToBlock(4, 8, block));
         for (size_t iy = 0; iy < 4; iy++) {
           for (size_t ix = 0; ix < 8; ix++) {
             // Store transposed.
@@ -545,8 +542,8 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformFromPixels(
       for (size_t y = 0; y < 2; y++) {
         HWY_ALIGN float block[4 * 8];
         ComputeScaledDCT<4, 8>()(
-            FromLines<8>(pixels + y * 4 * pixels_stride, pixels_stride),
-            ScaleToBlock<4, 8>(block));
+            FromLines(pixels + y * 4 * pixels_stride, pixels_stride),
+            ScaleToBlock(4, 8, block));
         for (size_t iy = 0; iy < 4; iy++) {
           for (size_t ix = 0; ix < 8; ix++) {
             coefficients[(y + iy * 2) * 8 + ix] = block[iy * 8 + ix];
@@ -565,9 +562,8 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformFromPixels(
         for (size_t x = 0; x < 2; x++) {
           HWY_ALIGN float block[4 * 4];
           ComputeTransposedScaledDCT<4>()(
-              FromLines<4>(pixels + y * 4 * pixels_stride + x * 4,
-                           pixels_stride),
-              ScaleToBlock<4>(block));
+              FromLines(pixels + y * 4 * pixels_stride + x * 4, pixels_stride),
+              ScaleToBlock(4, 4, block));
           for (size_t iy = 0; iy < 4; iy++) {
             for (size_t ix = 0; ix < 4; ix++) {
               coefficients[(y + iy * 2) * 8 + x + ix * 2] = block[iy * 4 + ix];
@@ -595,58 +591,58 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformFromPixels(
     case Type::DCT16X16: {
       PROFILER_ZONE("DCT 16");
       ComputeTransposedScaledDCT<2 * kBlockDim>()(
-          FromLines<2 * kBlockDim>(pixels, pixels_stride),
-          ScaleToBlock<2 * kBlockDim>(coefficients));
+          FromLines(pixels, pixels_stride),
+          ScaleToBlock(2 * kBlockDim, 2 * kBlockDim, coefficients));
       break;
     }
     case Type::DCT16X8: {
       PROFILER_ZONE("DCT 16x8");
-      ComputeScaledDCT<16, 8>()(FromLines<8>(pixels, pixels_stride),
-                                ScaleToBlock<8, 16>(coefficients));
+      ComputeScaledDCT<16, 8>()(FromLines(pixels, pixels_stride),
+                                ScaleToBlock(8, 16, coefficients));
       break;
     }
     case Type::DCT8X16: {
       PROFILER_ZONE("DCT 8x16");
-      ComputeScaledDCT<8, 16>()(FromLines<16>(pixels, pixels_stride),
-                                ScaleToBlock<8, 16>(coefficients));
+      ComputeScaledDCT<8, 16>()(FromLines(pixels, pixels_stride),
+                                ScaleToBlock(8, 16, coefficients));
       break;
     }
     case Type::DCT32X8: {
       PROFILER_ZONE("DCT 32x8");
-      ComputeScaledDCT<32, 8>()(FromLines<8>(pixels, pixels_stride),
-                                ScaleToBlock<8, 32>(coefficients));
+      ComputeScaledDCT<32, 8>()(FromLines(pixels, pixels_stride),
+                                ScaleToBlock(8, 32, coefficients));
       break;
     }
     case Type::DCT8X32: {
       PROFILER_ZONE("DCT 8x32");
-      ComputeScaledDCT<8, 32>()(FromLines<32>(pixels, pixels_stride),
-                                ScaleToBlock<8, 32>(coefficients));
+      ComputeScaledDCT<8, 32>()(FromLines(pixels, pixels_stride),
+                                ScaleToBlock(8, 32, coefficients));
       break;
     }
     case Type::DCT32X16: {
       PROFILER_ZONE("DCT 32x16");
-      ComputeScaledDCT<32, 16>()(FromLines<16>(pixels, pixels_stride),
-                                 ScaleToBlock<16, 32>(coefficients));
+      ComputeScaledDCT<32, 16>()(FromLines(pixels, pixels_stride),
+                                 ScaleToBlock(16, 32, coefficients));
       break;
     }
     case Type::DCT16X32: {
       PROFILER_ZONE("DCT 16x32");
-      ComputeScaledDCT<16, 32>()(FromLines<32>(pixels, pixels_stride),
-                                 ScaleToBlock<16, 32>(coefficients));
+      ComputeScaledDCT<16, 32>()(FromLines(pixels, pixels_stride),
+                                 ScaleToBlock(16, 32, coefficients));
       break;
     }
     case Type::DCT32X32: {
       PROFILER_ZONE("DCT 32");
       ComputeTransposedScaledDCT<4 * kBlockDim>()(
-          FromLines<4 * kBlockDim>(pixels, pixels_stride),
-          ScaleToBlock<4 * kBlockDim>(coefficients));
+          FromLines(pixels, pixels_stride),
+          ScaleToBlock(4 * kBlockDim, 4 * kBlockDim, coefficients));
       break;
     }
     case Type::DCT: {
       PROFILER_ZONE("DCT 8");
       ComputeTransposedScaledDCT<kBlockDim>()(
-          FromLines<kBlockDim>(pixels, pixels_stride),
-          ScaleToBlock<kBlockDim>(coefficients));
+          FromLines(pixels, pixels_stride),
+          ScaleToBlock(kBlockDim, kBlockDim, coefficients));
       break;
     }
     case Type::AFV0: {
@@ -674,9 +670,9 @@ HWY_ATTR HWY_MAYBE_UNUSED void TransformFromPixels(
   }
 }
 
-HWY_ATTR HWY_MAYBE_UNUSED void LowestFrequenciesFromDC(
-    const AcStrategy::Type strategy, const float* dc, size_t dc_stride,
-    float* llf) {
+HWY_MAYBE_UNUSED void LowestFrequenciesFromDC(const AcStrategy::Type strategy,
+                                              const float* dc, size_t dc_stride,
+                                              float* llf) {
   using Type = AcStrategy::Type;
   switch (strategy) {
     case Type::DCT16X8: {
@@ -745,7 +741,7 @@ HWY_ATTR HWY_MAYBE_UNUSED void LowestFrequenciesFromDC(
 }
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

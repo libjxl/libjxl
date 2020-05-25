@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/detect_dots.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
+#include <hwy/foreach_target.h>
 
 #include <stdint.h>
 
@@ -44,17 +47,12 @@
 #include "jxl/aux_out.h"
 #endif
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
-#include <hwy/foreach_target.h>
-
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR ImageF SumOfSquareDifferences(const Image3F& forig,
-                                       const Image3F& smooth,
-                                       ThreadPool* pool) {
+ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
+                              ThreadPool* pool) {
   const HWY_FULL(float) d;
   const auto color_coef0 = Set(d, 0.0f);
   const auto color_coef1 = Set(d, 10.0f);
@@ -63,7 +61,7 @@ HWY_ATTR ImageF SumOfSquareDifferences(const Image3F& forig,
   ImageF sum_of_squares(forig.xsize(), forig.ysize());
   RunOnPool(
       pool, 0, forig.ysize(), ThreadPool::SkipInit(),
-      [&](const int task, const int thread) HWY_ATTR {
+      [&](const int task, const int thread) {
         const size_t y = static_cast<size_t>(task);
         const float* JXL_RESTRICT orig_row0 = forig.Plane(0).ConstRow(y);
         const float* JXL_RESTRICT orig_row1 = forig.Plane(1).ConstRow(y);
@@ -73,7 +71,7 @@ HWY_ATTR ImageF SumOfSquareDifferences(const Image3F& forig,
         const float* JXL_RESTRICT smooth_row2 = smooth.Plane(2).ConstRow(y);
         float* JXL_RESTRICT sos_row = sum_of_squares.Row(y);
 
-        for (size_t x = 0; x < forig.xsize(); x += d.N) {
+        for (size_t x = 0; x < forig.xsize(); x += Lanes(d)) {
           auto v0 = Load(d, orig_row0 + x) - Load(d, smooth_row0 + x);
           auto v1 = Load(d, orig_row1 + x) - Load(d, smooth_row1 + x);
           auto v2 = Load(d, orig_row2 + x) - Load(d, smooth_row2 + x);
@@ -92,8 +90,11 @@ HWY_ATTR ImageF SumOfSquareDifferences(const Image3F& forig,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(SumOfSquareDifferences)
 
 const int kEllipseWindowSize = 5;
@@ -161,7 +162,7 @@ ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   const auto& weights1 = WeightsSeparable5Gaussian0_65();
   const auto& weights3 = WeightsSeparable5Gaussian3();
 
-  auto separable5_3 = ChooseSeparable5_3(hwy::SupportedTargets());
+  auto separable5_3 = ChooseSeparable5_3();
   separable5_3(orig, Rect(orig), weights1, pool, &forig);
 
   separable5_3(orig, Rect(orig), weights3, pool, &tmp);
@@ -174,8 +175,7 @@ ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   aux.DumpImage("sm", *smooth);
 #endif
 
-  const auto square_diff =
-      ChooseSumOfSquareDifferences(hwy::SupportedTargets());
+  const auto square_diff = ChooseSumOfSquareDifferences();
   return square_diff(forig, *smooth, pool);
 }
 
@@ -285,7 +285,7 @@ struct ConnectedComponent {
 
 Rect BoundingRectangle(const std::vector<Pixel>& pixels) {
   PROFILER_FUNC;
-  JXL_ASSERT(pixels.size() > 0);
+  JXL_ASSERT(!pixels.empty());
   int low_x, high_x, low_y, high_y;
   low_x = high_x = pixels[0].x;
   low_y = high_y = pixels[0].y;
@@ -591,12 +591,12 @@ GaussianEllipse FitGaussian(const ConnectedComponent& cc, const ImageF& energy,
 }  // namespace
 
 std::vector<PatchInfo> DetectGaussianEllipses(
-    const Image3F& img, const GaussianDetectParams& params,
+    const Image3F& opsin, const GaussianDetectParams& params,
     const EllipseQuantParams& qParams, ThreadPool* pool) {
   PROFILER_FUNC;
   std::vector<PatchInfo> dots;
-  Image3F smooth(img.xsize(), img.ysize());
-  ImageF energy = ComputeEnergyImage(img, &smooth, pool);
+  Image3F smooth(opsin.xsize(), opsin.ysize());
+  ImageF energy = ComputeEnergyImage(opsin, &smooth, pool);
 #if JXL_DEBUG_DOT_DETECT
   AuxOut aux;
   aux.debug_prefix = "/tmp/sebastian/";
@@ -616,11 +616,11 @@ std::vector<PatchInfo> DetectGaussianEllipses(
     components.erase(components.begin() + numCC, components.end());
   }
   for (const auto& cc : components) {
-    GaussianEllipse ellipse = FitGaussian(cc, energy, img, smooth);
+    GaussianEllipse ellipse = FitGaussian(cc, energy, opsin, smooth);
     if (ellipse.x < 0.0 ||
-        std::ceil(ellipse.x) >= static_cast<double>(img.xsize()) ||
+        std::ceil(ellipse.x) >= static_cast<double>(opsin.xsize()) ||
         ellipse.y < 0.0 ||
-        std::ceil(ellipse.y) >= static_cast<double>(img.ysize())) {
+        std::ceil(ellipse.y) >= static_cast<double>(opsin.ysize())) {
       continue;
     }
     if (ellipse.neg_pixels > params.maxNegPixels) continue;
@@ -646,7 +646,7 @@ std::vector<PatchInfo> DetectGaussianEllipses(
         for (size_t x = 0; x < patch.xsize; x++) {
           for (size_t c = 0; c < 3; c++) {
             patch.fpixels[c][y * patch.xsize + x] =
-                img.ConstPlaneRow(c, y0 + y)[x0 + x] -
+                opsin.ConstPlaneRow(c, y0 + y)[x0 + x] -
                 smooth.ConstPlaneRow(c, y0 + y)[x0 + x];
           }
         }
@@ -670,6 +670,5 @@ std::vector<PatchInfo> DetectGaussianEllipses(
   return dots;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

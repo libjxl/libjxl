@@ -31,8 +31,18 @@
 
 namespace jxl {
 
+// Those offsets get multiplied by kDCTBlockSize.
+static constexpr size_t kCoeffOrderOffset[3 * kNumOrders + 1] = {
+    0,  1,  2,  3,  4,  5,  6,  10, 14, 18,  34,
+    50, 66, 68, 70, 72, 76, 80, 84, 92, 100, 108,
+};
+
+static constexpr size_t CoeffOrderOffset(size_t order, size_t c) {
+  return kCoeffOrderOffset[3 * order + c] * kDCTBlockSize;
+}
+
 static constexpr size_t kCoeffOrderSize =
-    3 * kNumOrders * AcStrategy::kMaxCoeffArea;
+    kCoeffOrderOffset[3 * kNumOrders] * kDCTBlockSize;
 
 // Mapping from AC strategy to order bucket. Strategies with different natural
 // orders must have different buckets.

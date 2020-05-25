@@ -20,7 +20,10 @@
 
 #include <string>
 
-#include "jxl/base/os_specific.h"
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
+#include "sanitizer/common_interface_defs.h"  // __sanitizer_print_stack_trace
+#endif  // defined(*_SANITIZER)
 
 namespace jxl {
 
@@ -39,14 +42,19 @@ bool Abort(const char* file, int line, const char* format, ...) {
   vsnprintf(buf, sizeof(buf), format, args);
   va_end(args);
 
-  const std::string call_stack;
-
-  fprintf(stderr, "Abort at %s:%d: %s\n%s\n", file, line, buf,
-          call_stack.c_str());
+  fprintf(stderr, "Abort at %s:%d: %s\n", file, line, buf);
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
-  // If compiled with UBSAN, triggering an error gives us a call stack.
-  printf("Deliberate ubsan div zero %zu\n", 10 / (TotalMemoryMiB() >> 30));
+  // If compiled with any sanitizer print a stack trace. This call doesn't crash
+  // the program, instead the trap below will crash it also allowing gdb to
+  // break there.
+  __sanitizer_print_stack_trace();
+#endif  // defined(*_SANITIZER)
+
+#if HWY_COMPILER_MSVC
+  __debugbreak();
+#else
+  __builtin_trap();
 #endif
   abort();
 }

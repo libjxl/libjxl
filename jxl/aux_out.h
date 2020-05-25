@@ -60,6 +60,7 @@ enum {
   kLayerModularGlobal,
   kLayerModularDcGroup,
   kLayerModularAcGroup,
+  kLayerModularTree,
   kLayerAlpha,
   kLayerDepth,
   kLayerExtraChannels,
@@ -100,6 +101,8 @@ static inline const char* LayerName(size_t layer) {
       return "modularDcGroup";
     case kLayerModularAcGroup:
       return "modularAcGroup";
+    case kLayerModularTree:
+      return "modularTree";
     case kLayerAlpha:
       return "alpha";
     case kLayerDepth:
@@ -211,8 +214,7 @@ struct AuxOut {
     Image3F linear(image.xsize(), image.ysize());
     OpsinParams opsin_params;
     opsin_params.Init();
-    ChooseOpsinToLinear(hwy::SupportedTargets())(image, Rect(linear), nullptr,
-                                                 &linear, opsin_params);
+    ChooseOpsinToLinear()(image, Rect(linear), nullptr, &linear, opsin_params);
 
     CodecInOut io;
     io.metadata.bits_per_sample = sizeof(T) * kBitsPerByte;

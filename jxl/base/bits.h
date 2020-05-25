@@ -19,26 +19,34 @@
 
 #ifdef _MSC_VER
 #include <intrin.h>
-#include <nmmintrin.h>
 #endif
 
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/highway.h>  // SizeTag
-
 #include "jxl/base/compiler_specific.h"
 
 namespace jxl {
 
-static JXL_INLINE size_t PopCount(hwy::SizeTag<4> /* tag */, const uint32_t x) {
+// Empty struct used as a size tag type.
+template <size_t N>
+struct SizeTag {};
+
+template <typename T>
+constexpr bool IsSigned() {
+  return T(0) > T(-1);
+}
+
+static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(SizeTag<4> /* tag */,
+                                                   const uint32_t x) {
 #ifdef _MSC_VER
   return _mm_popcnt_u32(x);
 #else
   return static_cast<size_t>(__builtin_popcount(x));
 #endif
 }
-static JXL_INLINE size_t PopCount(hwy::SizeTag<8> /* tag */, const uint64_t x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(SizeTag<8> /* tag */,
+                                                   const uint64_t x) {
 #ifdef _MSC_VER
   return _mm_popcnt_u64(x);
 #else
@@ -46,14 +54,14 @@ static JXL_INLINE size_t PopCount(hwy::SizeTag<8> /* tag */, const uint64_t x) {
 #endif
 }
 template <typename T>
-static JXL_INLINE size_t PopCount(T x) {
-  static_assert(!hwy::IsSigned<T>(), "PopCount: use unsigned");
-  return PopCount(hwy::SizeTag<sizeof(T)>(), x);
+static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(T x) {
+  static_assert(!IsSigned<T>(), "PopCount: use unsigned");
+  return PopCount(SizeTag<sizeof(T)>(), x);
 }
 
 // Undefined results for x == 0.
-static JXL_INLINE size_t NumZeroBitsAboveMSBNonzero(hwy::SizeTag<4> /* tag */,
-                                                    const uint32_t x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t
+NumZeroBitsAboveMSBNonzero(SizeTag<4> /* tag */, const uint32_t x) {
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanReverse(&index, x);
@@ -62,8 +70,8 @@ static JXL_INLINE size_t NumZeroBitsAboveMSBNonzero(hwy::SizeTag<4> /* tag */,
   return static_cast<size_t>(__builtin_clz(x));
 #endif
 }
-static JXL_INLINE size_t NumZeroBitsAboveMSBNonzero(hwy::SizeTag<8> /* tag */,
-                                                    const uint64_t x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t
+NumZeroBitsAboveMSBNonzero(SizeTag<8> /* tag */, const uint64_t x) {
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanReverse64(&index, x);
@@ -73,15 +81,15 @@ static JXL_INLINE size_t NumZeroBitsAboveMSBNonzero(hwy::SizeTag<8> /* tag */,
 #endif
 }
 template <typename T>
-static JXL_INLINE size_t NumZeroBitsAboveMSBNonzero(const T x) {
-  static_assert(!hwy::IsSigned<T>(),
-                "NumZeroBitsAboveMSBNonzero: use unsigned");
-  return NumZeroBitsAboveMSBNonzero(hwy::SizeTag<sizeof(T)>(), x);
+static JXL_INLINE JXL_MAYBE_UNUSED size_t
+NumZeroBitsAboveMSBNonzero(const T x) {
+  static_assert(!IsSigned<T>(), "NumZeroBitsAboveMSBNonzero: use unsigned");
+  return NumZeroBitsAboveMSBNonzero(SizeTag<sizeof(T)>(), x);
 }
 
 // Undefined results for x == 0.
-static JXL_INLINE size_t NumZeroBitsBelowLSBNonzero(hwy::SizeTag<4> /* tag */,
-                                                    const uint32_t x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t
+NumZeroBitsBelowLSBNonzero(SizeTag<4> /* tag */, const uint32_t x) {
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanForward(&index, x);
@@ -90,8 +98,8 @@ static JXL_INLINE size_t NumZeroBitsBelowLSBNonzero(hwy::SizeTag<4> /* tag */,
   return static_cast<size_t>(__builtin_ctz(x));
 #endif
 }
-static JXL_INLINE size_t NumZeroBitsBelowLSBNonzero(hwy::SizeTag<8> /* tag */,
-                                                    const uint64_t x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t
+NumZeroBitsBelowLSBNonzero(SizeTag<8> /* tag */, const uint64_t x) {
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanForward64(&index, x);
@@ -101,40 +109,39 @@ static JXL_INLINE size_t NumZeroBitsBelowLSBNonzero(hwy::SizeTag<8> /* tag */,
 #endif
 }
 template <typename T>
-static JXL_INLINE size_t NumZeroBitsBelowLSBNonzero(T x) {
-  static_assert(!hwy::IsSigned<T>(),
-                "NumZeroBitsBelowLSBNonzero: use unsigned");
-  return NumZeroBitsBelowLSBNonzero(hwy::SizeTag<sizeof(T)>(), x);
+static JXL_INLINE JXL_MAYBE_UNUSED size_t NumZeroBitsBelowLSBNonzero(T x) {
+  static_assert(!IsSigned<T>(), "NumZeroBitsBelowLSBNonzero: use unsigned");
+  return NumZeroBitsBelowLSBNonzero(SizeTag<sizeof(T)>(), x);
 }
 
 // Returns bit width for x == 0.
 template <typename T>
-static JXL_INLINE size_t NumZeroBitsAboveMSB(const T x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t NumZeroBitsAboveMSB(const T x) {
   return (x == 0) ? sizeof(T) * 8 : NumZeroBitsAboveMSBNonzero(x);
 }
 
 // Returns bit width for x == 0.
 template <typename T>
-static JXL_INLINE size_t NumZeroBitsBelowLSB(const T x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t NumZeroBitsBelowLSB(const T x) {
   return (x == 0) ? sizeof(T) * 8 : NumZeroBitsBelowLSBNonzero(x);
 }
 
 // Returns base-2 logarithm, rounded down.
 template <typename T>
-static JXL_INLINE size_t FloorLog2Nonzero(const T x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t FloorLog2Nonzero(const T x) {
   return (sizeof(T) * 8 - 1) ^ NumZeroBitsAboveMSBNonzero(x);
 }
 
 // Returns base-2 logarithm, rounded up.
 template <typename T>
-static JXL_INLINE size_t CeilLog2Nonzero(const T x) {
+static JXL_INLINE JXL_MAYBE_UNUSED size_t CeilLog2Nonzero(const T x) {
   const size_t floor_log2 = FloorLog2Nonzero(x);
   if ((x & (x - 1)) == 0) return floor_log2;  // power of two
   return floor_log2 + 1;
 }
 
 // Reverses bit order.
-static JXL_INLINE uint8_t FlipByte(const uint8_t x) {
+static JXL_INLINE JXL_MAYBE_UNUSED uint8_t FlipByte(const uint8_t x) {
   // TODO(veluca): consider trying out alternative strategies, such as a single
   // LUT.
   static constexpr uint8_t kNibbleLut[16] = {

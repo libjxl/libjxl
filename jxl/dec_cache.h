@@ -100,7 +100,7 @@ struct PassesDecoderState {
       noise = Image3F(shared->frame_dim.xsize_padded,
                       shared->frame_dim.ysize_padded);
       PROFILER_ZONE("GenerateNoise");
-      auto random_image = ChooseRandomImage3(hwy::SupportedTargets());
+      auto random_image = ChooseRandomImage3();
       auto generate_noise = [&](int group_index, int _) {
         random_image(shared->PaddedGroupRect(group_index), &noise);
       };

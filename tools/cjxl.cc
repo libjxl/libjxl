@@ -137,7 +137,7 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
       args.default_settings) {
     args.params.modular_group_mode = true;
     args.params.options.predictor.clear();
-    args.params.options.predictor.push_back(4);
+    args.params.options.predictor.push_back(jxl::Predictor::Select);
     args.params.responsive = 0;
     args.params.colorspace = 0;
     args.params.channel_colors_pre_transform_percent = 0;

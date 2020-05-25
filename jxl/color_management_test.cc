@@ -145,7 +145,7 @@ class ColorManagementTest
     const size_t thread = 0;
     const ImageF& in = c.IsGray() ? g->in_gray : g->in_color;
     ImageF* JXL_RESTRICT out = c.IsGray() ? &g->out_gray : &g->out_color;
-    auto do_transform = ChooseDoColorSpaceTransform(hwy::SupportedTargets());
+    auto do_transform = ChooseDoColorSpaceTransform();
     do_transform(&xform_fwd, thread, in.Row(0), xform_fwd.BufDst(thread));
     do_transform(&xform_rev, thread, xform_fwd.BufDst(thread), out->Row(0));
 
@@ -231,7 +231,7 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
   ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncoding::SRGB(), 1, 1));
   const float sRGB_D2700_values[3] = {0.863, 0.737, 0.490};
   float sRGB_values[3];
-  auto do_transform = ChooseDoColorSpaceTransform(hwy::SupportedTargets());
+  auto do_transform = ChooseDoColorSpaceTransform();
   do_transform(&transform, 0, sRGB_D2700_values, sRGB_values);
   EXPECT_THAT(sRGB_values,
               ElementsAre(FloatNear(0.914, 1e-3), FloatNear(0.745, 1e-3),

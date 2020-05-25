@@ -19,27 +19,26 @@
 #define JXL_CONVOLVE_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include "jxl/base/status.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Synthesizes left/right neighbors from a vector of center pixels.
 class Neighbors {
  public:
   // TODO(janwas): AVX512
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
   using D = HWY_CAPPED(float, 8);
 #else
   using D = HWY_CAPPED(float, 4);
 #endif
-  using V = HWY_VEC(D);
+  using V = Vec<D>;
 
   // Returns l[i] == c[Mirror(i - 1)].
   HWY_FUNC static V FirstL1(const V c) {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
     const D d;
     HWY_ALIGN constexpr int lanes[8] = {0, 0, 1, 2, 3, 4, 5, 6};
     const auto indices = SetTableIndices(d, lanes);
@@ -64,7 +63,7 @@ class Neighbors {
 
   // Returns l[i] == c[Mirror(i - 2)].
   HWY_FUNC static V FirstL2(const V c) {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
     const D d;
     HWY_ALIGN constexpr int lanes[8] = {1, 0, 0, 1, 2, 3, 4, 5};
     const auto indices = SetTableIndices(d, lanes);
@@ -89,7 +88,7 @@ class Neighbors {
 
   // Returns l[i] == c[Mirror(i - 3)].
   HWY_FUNC static V FirstL3(const V c) {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
     const D d;
     HWY_ALIGN constexpr int lanes[8] = {2, 1, 0, 0, 1, 2, 3, 4};
     const auto indices = SetTableIndices(d, lanes);
@@ -114,7 +113,7 @@ class Neighbors {
 
   // Returns r[i] == c[i + 1].
   HWY_FUNC static V R1(const V c, const V n) {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
     // c = PONM'LKJI, n = xxxx'xxxQ
     const V Q_M = ConcatLowerUpper(n, c);      // Right-aligned (lower lane)
     return CombineShiftRightBytes<4>(Q_M, c);  // QPON'MLKJ
@@ -128,7 +127,7 @@ class Neighbors {
 
   // Returns r[i] == c[i + 1].
   HWY_FUNC static V LastR1(const V c) {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
     HWY_ALIGN constexpr uint32_t lanes[8] = {1, 2, 3, 4, 5, 6, 7, 7};
     const auto indices = Load(HWY_CAPPED(uint32_t, 8)(), lanes);
     // c = PONM'LKJI
@@ -144,7 +143,7 @@ class Neighbors {
 };
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

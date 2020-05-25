@@ -13,26 +13,26 @@
 // limitations under the License.
 
 #include "jxl/convolve.h"
-
-#include "jxl/image_ops.h"
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/convolve.cc"
 #include <hwy/foreach_target.h>
 
+#include "jxl/image_ops.h"
+
+#include "jxl/common.h"  // RoundUpTo
 #include "jxl/convolve-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Weighted sum of 1x5 pixels around ix, iy with [wx2 wx1 wx0 wx1 wx2].
 template <class WrapY>
-static HWY_ATTR float WeightedSumBorder(const ImageF& in, const WrapY wrap_y,
-                                        const int64_t ix, const int64_t iy,
-                                        const size_t xsize, const size_t ysize,
-                                        const float wx0, const float wx1,
-                                        const float wx2) {
+static float WeightedSumBorder(const ImageF& in, const WrapY wrap_y,
+                               const int64_t ix, const int64_t iy,
+                               const size_t xsize, const size_t ysize,
+                               const float wx0, const float wx1,
+                               const float wx2) {
   const WrapMirror wrap_x;
   const float* JXL_RESTRICT row = in.ConstRow(wrap_y(iy, ysize));
   const float in_m2 = row[wrap_x(ix - 2, xsize)];
@@ -47,10 +47,9 @@ static HWY_ATTR float WeightedSumBorder(const ImageF& in, const WrapY wrap_y,
 }
 
 template <class WrapY, class V>
-static HWY_ATTR V WeightedSum(const ImageF& in, const WrapY wrap_y,
-                              const size_t ix, const int64_t iy,
-                              const size_t ysize, const V wx0, const V wx1,
-                              const V wx2) {
+static V WeightedSum(const ImageF& in, const WrapY wrap_y, const size_t ix,
+                     const int64_t iy, const size_t ysize, const V wx0,
+                     const V wx1, const V wx2) {
   const HWY_FULL(float) d;
   const float* JXL_RESTRICT center = in.ConstRow(wrap_y(iy, ysize)) + ix;
   const auto in_m2 = LoadU(d, center - 2);
@@ -93,10 +92,10 @@ float Symmetric5Border(const ImageF& in, const Rect& rect, const int64_t ix,
 
 // Produces result for one vector's worth of pixels
 template <class WrapY>
-static HWY_ATTR void Symmetric5Interior(const ImageF& in, const Rect& rect,
-                                        const int64_t ix, const int64_t iy,
-                                        const WeightsSymmetric5& weights,
-                                        float* JXL_RESTRICT row_out) {
+static void Symmetric5Interior(const ImageF& in, const Rect& rect,
+                               const int64_t ix, const int64_t iy,
+                               const WeightsSymmetric5& weights,
+                               float* JXL_RESTRICT row_out) {
   const HWY_FULL(float) d;
 
   const auto w0 = LoadDup128(d, weights.c);
@@ -121,20 +120,20 @@ static HWY_ATTR void Symmetric5Interior(const ImageF& in, const Rect& rect,
 }
 
 template <class WrapY>
-static HWY_ATTR void Symmetric5Row(const ImageF& in, const Rect& rect,
-                                   const int64_t iy,
-                                   const WeightsSymmetric5& weights,
-                                   float* JXL_RESTRICT row_out) {
+static void Symmetric5Row(const ImageF& in, const Rect& rect, const int64_t iy,
+                          const WeightsSymmetric5& weights,
+                          float* JXL_RESTRICT row_out) {
   const int64_t kRadius = 2;
   const size_t xsize = rect.xsize();
 
   size_t ix = 0;
   const HWY_FULL(float) d;
-  const size_t aligned_x = (kRadius + d.N - 1) / d.N * d.N;
+  const size_t N = Lanes(d);
+  const size_t aligned_x = RoundUpTo(kRadius, N);
   for (; ix < std::min(aligned_x, xsize); ++ix) {
     row_out[ix] = Symmetric5Border<WrapY>(in, rect, ix, iy, weights);
   }
-  for (; ix + d.N + kRadius <= xsize; ix += d.N) {
+  for (; ix + N + kRadius <= xsize; ix += N) {
     Symmetric5Interior<WrapY>(in, rect, ix, iy, weights, row_out);
   }
   for (; ix < xsize; ++ix) {
@@ -142,16 +141,17 @@ static HWY_ATTR void Symmetric5Row(const ImageF& in, const Rect& rect,
   }
 }
 
-static HWY_ATTR JXL_NOINLINE void Symmetric5BorderRow(
-    const ImageF& in, const Rect& rect, const int64_t iy,
-    const WeightsSymmetric5& weights, float* JXL_RESTRICT row_out) {
+static JXL_NOINLINE void Symmetric5BorderRow(const ImageF& in, const Rect& rect,
+                                             const int64_t iy,
+                                             const WeightsSymmetric5& weights,
+                                             float* JXL_RESTRICT row_out) {
   return Symmetric5Row<WrapMirror>(in, rect, iy, weights, row_out);
 }
 
 // For use by SetTableIndices.
 static inline const int32_t* MirrorLanes(const size_t mod) {
-#if HWY_CAPS & HWY_CAP_GE256
-  HWY_CAPPED(float, 8) d;
+#if HWY_CAP_GE256
+  const HWY_CAPPED(float, 8) d;
   // last  part  mirrored
   // 01234567| 76543210   loadedReg 76543210 mirroredReg 01234567
   // 01234567|8 8765432   loadedReg 87654321 mirroredReg 23456788
@@ -161,7 +161,8 @@ static inline const int32_t* MirrorLanes(const size_t mod) {
   // 01234567|89ABC CBA
   // 01234567|89ABCD DC
   // 01234567|89ABCDE E   loadedReg EDCBA987 mirroredReg EEDCBA98
-  HWY_ALIGN static constexpr int32_t idx_lanes[d.N * d.N] = {
+  constexpr size_t kN = MaxLanes(d);
+  HWY_ALIGN static constexpr int32_t idx_lanes[kN * kN] = {
       7, 6, 5, 4, 3, 2, 1, 0,  // 0
       7, 7, 6, 5, 4, 3, 2, 1,  // 1
       6, 7, 7, 6, 5, 4, 3, 2,  // 2
@@ -171,34 +172,35 @@ static inline const int32_t* MirrorLanes(const size_t mod) {
       2, 3, 4, 5, 6, 7, 7, 6,  // 6
       1, 2, 3, 4, 5, 6, 7, 7,  // 7
   };
-  return idx_lanes + mod * d.N;
+  return idx_lanes + mod * kN;
 #elif HWY_TARGET == HWY_SCALAR
   return nullptr;  // do not call
 #else  // 128-bit
-  HWY_CAPPED(float, 4) d;
+  const HWY_CAPPED(float, 4) d;
+  constexpr size_t kN = MaxLanes(d);
   // 0123| 3210   loadedReg 3210 mirroredReg 0123
   // 0123|4 432   loadedReg 4321 mirroredReg 2344
   // 0123|45 54   loadedReg 5432 mirroredReg 4554
   // 0123|456 6   loadedReg 6543 mirroredReg 6654
-  HWY_ALIGN static constexpr int32_t idx_lanes[d.N * d.N] = {
+  HWY_ALIGN static constexpr int32_t idx_lanes[kN * kN] = {
       3, 2, 1, 0,  // 0
       3, 3, 2, 1,  // 1
       2, 3, 3, 2,  // 2
       1, 2, 3, 3,  // 3
   };
-  return idx_lanes + mod * d.N;
+  return idx_lanes + mod * kN;
 #endif
 }
 
 namespace strategy {
 
 struct StrategyBase {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
   using D = HWY_CAPPED(float, 8);
 #else
   using D = HWY_CAPPED(float, 4);
 #endif
-  using V = HWY_VEC(D);
+  using V = Vec<D>;
 };
 
 // 3x3 convolution by symmetric kernel with a single scan through the input.
@@ -208,10 +210,11 @@ class Symmetric3 : public StrategyBase {
 
   // Only accesses pixels in [0, xsize).
   template <size_t kSizeModN, class WrapRow>
-  static HWY_ATTR JXL_INLINE void ConvolveRow(
-      const float* const JXL_RESTRICT row_m, const size_t xsize,
-      const int64_t stride, const WrapRow& wrap_row,
-      const WeightsSymmetric3& weights, float* const JXL_RESTRICT row_out) {
+  static JXL_INLINE void ConvolveRow(const float* const JXL_RESTRICT row_m,
+                                     const size_t xsize, const int64_t stride,
+                                     const WrapRow& wrap_row,
+                                     const WeightsSymmetric3& weights,
+                                     float* const JXL_RESTRICT row_out) {
     const D d;
     // t, m, b = top, middle, bottom row;
     const float* const JXL_RESTRICT row_t = wrap_row(row_m - stride, stride);
@@ -240,8 +243,9 @@ class Symmetric3 : public StrategyBase {
     }
 
     // Loop as long as we can load enough new values:
-    size_t x = d.N;
-    for (; x + d.N + kRadius <= xsize; x += d.N) {
+    const size_t N = Lanes(d);
+    size_t x = N;
+    for (; x + N + kRadius <= xsize; x += N) {
       const auto conv = ConvolveValid(row_t, row_m, row_b, x, w0, w1, w2);
       Store(conv, d, row_out + x);
     }
@@ -260,16 +264,16 @@ class Symmetric3 : public StrategyBase {
     if (kSizeModN == 0) {
       // The above loop didn't handle the last vector because it needs an
       // additional right neighbor (generated via mirroring).
-      auto mirror = SetTableIndices(d, MirrorLanes(d.N - 1));
+      auto mirror = SetTableIndices(d, MirrorLanes(N - 1));
       tr = TableLookupLanes(tc, mirror);
       mr = TableLookupLanes(mc, mirror);
       br = TableLookupLanes(bc, mirror);
     } else {
-      auto mirror = SetTableIndices(d, MirrorLanes((xsize % d.N) - 1));
+      auto mirror = SetTableIndices(d, MirrorLanes((xsize % N) - 1));
       // Loads last valid value into uppermost lane and mirrors.
-      tr = TableLookupLanes(LoadU(d, row_t + xsize - d.N), mirror);
-      mr = TableLookupLanes(LoadU(d, row_m + xsize - d.N), mirror);
-      br = TableLookupLanes(LoadU(d, row_b + xsize - d.N), mirror);
+      tr = TableLookupLanes(LoadU(d, row_t + xsize - N), mirror);
+      mr = TableLookupLanes(LoadU(d, row_m + xsize - N), mirror);
+      br = TableLookupLanes(LoadU(d, row_b + xsize - N), mirror);
     }
 #endif
 
@@ -283,10 +287,10 @@ class Symmetric3 : public StrategyBase {
  private:
   // Returns sum{x_i * w_i}.
   template <class V>
-  static HWY_ATTR JXL_INLINE V WeightedSum(const V tl, const V tc, const V tr,
-                                           const V ml, const V mc, const V mr,
-                                           const V bl, const V bc, const V br,
-                                           const V w0, const V w1, const V w2) {
+  static JXL_INLINE V WeightedSum(const V tl, const V tc, const V tr,
+                                  const V ml, const V mc, const V mr,
+                                  const V bl, const V bc, const V br,
+                                  const V w0, const V w1, const V w2) {
     const V sum_tb = tc + bc;
 
     // Faster than 5 mul + 4 FMA.
@@ -303,11 +307,11 @@ class Symmetric3 : public StrategyBase {
     return mul2;
   }
 
-  static HWY_ATTR JXL_INLINE V ConvolveValid(const float* JXL_RESTRICT row_t,
-                                             const float* JXL_RESTRICT row_m,
-                                             const float* JXL_RESTRICT row_b,
-                                             const int64_t x, const V w0,
-                                             const V w1, const V w2) {
+  static JXL_INLINE V ConvolveValid(const float* JXL_RESTRICT row_t,
+                                    const float* JXL_RESTRICT row_m,
+                                    const float* JXL_RESTRICT row_b,
+                                    const int64_t x, const V w0, const V w1,
+                                    const V w2) {
     const D d;
     const V tc = LoadU(d, row_t + x);
     const V mc = LoadU(d, row_m + x);
@@ -328,10 +332,11 @@ class Separable5 : public StrategyBase {
   static constexpr int64_t kRadius = 2;
 
   template <size_t kSizeModN, class WrapRow>
-  static HWY_ATTR JXL_INLINE void ConvolveRow(
-      const float* const JXL_RESTRICT row_m, const size_t xsize,
-      const int64_t stride, const WrapRow& wrap_row,
-      const WeightsSeparable5& weights, float* const JXL_RESTRICT row_out) {
+  static JXL_INLINE void ConvolveRow(const float* const JXL_RESTRICT row_m,
+                                     const size_t xsize, const int64_t stride,
+                                     const WrapRow& wrap_row,
+                                     const WeightsSeparable5& weights,
+                                     float* const JXL_RESTRICT row_out) {
     const D d;
     const int64_t neg_stride = -stride;  // allows LEA addressing.
     const float* const JXL_RESTRICT row_t2 =
@@ -352,8 +357,8 @@ class Separable5 : public StrategyBase {
 
     size_t x = 0;
 
-    // Need to loop more than once for scalars (d.N == 1).
-    for (; x < kRadius; x += d.N) {
+    // More than one iteration for scalars.
+    for (; x < kRadius; x += Lanes(d)) {
       const V conv0 = HorzConvolveFirst(row_m, x, xsize, wh0, wh1, wh2) * wv0;
 
       const V conv1t = HorzConvolveFirst(row_t1, x, xsize, wh0, wh1, wh2);
@@ -367,7 +372,7 @@ class Separable5 : public StrategyBase {
     }
 
     // Main loop: load inputs without padding
-    for (; x + d.N + kRadius <= xsize; x += d.N) {
+    for (; x + Lanes(d) + kRadius <= xsize; x += Lanes(d)) {
       const V conv0 = HorzConvolve(row_m + x, wh0, wh1, wh2) * wv0;
 
       const V conv1t = HorzConvolve(row_t1 + x, wh0, wh1, wh2);
@@ -401,7 +406,7 @@ class Separable5 : public StrategyBase {
           HorzConvolveLast<kSizeModN>(row_b2, x, xsize, wh0, wh1, wh2);
       const V conv2 = MulAdd(conv2t + conv2b, wv2, conv1);
       Store(conv2, d, row_out + x);
-      x += d.N;
+      x += Lanes(d);
     }
 
     // If mod = 0, the above vector was the last.
@@ -424,9 +429,9 @@ class Separable5 : public StrategyBase {
 
  private:
   // Same as HorzConvolve for the first/last vector in a row.
-  static HWY_ATTR JXL_INLINE V HorzConvolveFirst(
-      const float* const JXL_RESTRICT row, const int64_t x, const int64_t xsize,
-      const V wh0, const V wh1, const V wh2) {
+  static JXL_INLINE V HorzConvolveFirst(const float* const JXL_RESTRICT row,
+                                        const int64_t x, const int64_t xsize,
+                                        const V wh0, const V wh1, const V wh2) {
     const D d;
     const V c = LoadU(d, row + x);
     const V mul0 = c * wh0;
@@ -449,9 +454,9 @@ class Separable5 : public StrategyBase {
   }
 
   template <size_t kSizeModN>
-  static HWY_ATTR JXL_INLINE V
-  HorzConvolveLast(const float* const JXL_RESTRICT row, const int64_t x,
-                   const int64_t xsize, const V wh0, const V wh1, const V wh2) {
+  static JXL_INLINE V HorzConvolveLast(const float* const JXL_RESTRICT row,
+                                       const int64_t x, const int64_t xsize,
+                                       const V wh0, const V wh1, const V wh2) {
     const D d;
     const V c = LoadU(d, row + x);
     const V mul0 = c * wh0;
@@ -464,12 +469,13 @@ class Separable5 : public StrategyBase {
     r1 = LoadU(d, row + Mirror(x + 1, xsize));
     r2 = LoadU(d, row + Mirror(x + 2, xsize));
 #else
+    const size_t N = Lanes(d);
     if (kSizeModN == 0) {
-      r2 = TableLookupLanes(c, SetTableIndices(d, MirrorLanes(d.N - 2)));
-      r1 = TableLookupLanes(c, SetTableIndices(d, MirrorLanes(d.N - 1)));
+      r2 = TableLookupLanes(c, SetTableIndices(d, MirrorLanes(N - 2)));
+      r1 = TableLookupLanes(c, SetTableIndices(d, MirrorLanes(N - 1)));
     } else {  // == 1
-      const auto last = LoadU(d, row + xsize - d.N);
-      r2 = TableLookupLanes(last, SetTableIndices(d, MirrorLanes(d.N - 1)));
+      const auto last = LoadU(d, row + xsize - N);
+      r2 = TableLookupLanes(last, SetTableIndices(d, MirrorLanes(N - 1)));
       r1 = last;
     }
 #endif
@@ -483,9 +489,8 @@ class Separable5 : public StrategyBase {
   }
 
   // Requires kRadius valid pixels before/after pos.
-  static HWY_ATTR JXL_INLINE V HorzConvolve(const float* const JXL_RESTRICT pos,
-                                            const V wh0, const V wh1,
-                                            const V wh2) {
+  static JXL_INLINE V HorzConvolve(const float* const JXL_RESTRICT pos,
+                                   const V wh0, const V wh1, const V wh2) {
     const D d;
     const V c = LoadU(d, pos);
     const V mul0 = c * wh0;
@@ -507,9 +512,9 @@ class Separable5 : public StrategyBase {
 }  // namespace strategy
 
 // TODO(janwas): AVX-512
-static constexpr size_t kConvolveLanes = HWY_CAPPED(float, 8)::N;
+static const size_t kConvolveLanes = Lanes(HWY_CAPPED(float, 8)());
 // Kernels load a full vector starting at x = kRadius - 1.
-static constexpr size_t kConvolveMinWidth = kConvolveLanes + kConvolveMaxRadius;
+static const size_t kConvolveMinWidth = kConvolveLanes + kConvolveMaxRadius;
 
 // Single entry point for convolution.
 // "Strategy" (Direct*/Separable*) decides kernel size and how to evaluate it.
@@ -520,9 +525,8 @@ class ConvolveT {
  public:
   // "Image" is ImageF or Image3F.
   template <class Image, class Weights>
-  static HWY_ATTR void Run(const Image& in, const Rect& rect,
-                           const Weights& weights, ThreadPool* pool,
-                           const Image* out) {
+  static void Run(const Image& in, const Rect& rect, const Weights& weights,
+                  ThreadPool* pool, const Image* out) {
     PROFILER_ZONE("ConvolveT::Run");
     JXL_CHECK(SameSize(rect, *out));
     JXL_CHECK(rect.xsize() >= kConvolveMinWidth);
@@ -543,20 +547,19 @@ class ConvolveT {
 
  private:
   template <size_t kSizeModN, class WrapRow, class Weights>
-  static HWY_ATTR JXL_INLINE void RunRow(const float* JXL_RESTRICT in,
-                                         const size_t xsize,
-                                         const int64_t stride,
-                                         const WrapRow& wrap_row,
-                                         const Weights& weights,
-                                         const float* JXL_RESTRICT out) {
+  static JXL_INLINE void RunRow(const float* JXL_RESTRICT in,
+                                const size_t xsize, const int64_t stride,
+                                const WrapRow& wrap_row, const Weights& weights,
+                                const float* JXL_RESTRICT out) {
     Strategy::template ConvolveRow<kSizeModN>(in, xsize, stride, wrap_row,
                                               weights, const_cast<float*>(out));
   }
 
   template <size_t kSizeModN, class Weights>
-  static HWY_ATTR JXL_INLINE void RunBorderRows(
-      const ImageF& in, const Rect& rect, const int64_t ybegin,
-      const int64_t yend, const Weights& weights, const ImageF* out) {
+  static JXL_INLINE void RunBorderRows(const ImageF& in, const Rect& rect,
+                                       const int64_t ybegin, const int64_t yend,
+                                       const Weights& weights,
+                                       const ImageF* out) {
     const int64_t stride = in.PixelsPerRow();
     const WrapRowMirror wrap_row(in, rect.ysize());
     for (int64_t y = ybegin; y < yend; ++y) {
@@ -567,9 +570,10 @@ class ConvolveT {
 
   // Image3F.
   template <size_t kSizeModN, class Weights>
-  static HWY_ATTR JXL_INLINE void RunBorderRows(
-      const Image3F& in, const Rect& rect, const int64_t ybegin,
-      const int64_t yend, const Weights& weights, const Image3F* out) {
+  static JXL_INLINE void RunBorderRows(const Image3F& in, const Rect& rect,
+                                       const int64_t ybegin, const int64_t yend,
+                                       const Weights& weights,
+                                       const Image3F* out) {
     const int64_t stride = in.PixelsPerRow();
     for (int64_t y = ybegin; y < yend; ++y) {
       for (size_t c = 0; c < 3; ++c) {
@@ -581,14 +585,15 @@ class ConvolveT {
   }
 
   template <size_t kSizeModN, class Weights>
-  static HWY_ATTR JXL_INLINE void RunInteriorRows(
-      const ImageF& in, const Rect& rect, const int64_t ybegin,
-      const int64_t yend, const Weights& weights, ThreadPool* pool,
-      const ImageF* out) {
+  static JXL_INLINE void RunInteriorRows(const ImageF& in, const Rect& rect,
+                                         const int64_t ybegin,
+                                         const int64_t yend,
+                                         const Weights& weights,
+                                         ThreadPool* pool, const ImageF* out) {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
-        [&](const int y, int /*thread*/) HWY_ATTR {
+        [&](const int y, int /*thread*/) {
           RunRow<kSizeModN>(rect.ConstRow(in, y), rect.xsize(), stride,
                             WrapRowUnchanged(), weights, out->Row(y));
         },
@@ -597,14 +602,15 @@ class ConvolveT {
 
   // Image3F.
   template <size_t kSizeModN, class Weights>
-  static HWY_ATTR JXL_INLINE void RunInteriorRows(
-      const Image3F& in, const Rect& rect, const int64_t ybegin,
-      const int64_t yend, const Weights& weights, ThreadPool* pool,
-      const Image3F* out) {
+  static JXL_INLINE void RunInteriorRows(const Image3F& in, const Rect& rect,
+                                         const int64_t ybegin,
+                                         const int64_t yend,
+                                         const Weights& weights,
+                                         ThreadPool* pool, const Image3F* out) {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
-        [&](const int y, int /*thread*/) HWY_ATTR {
+        [&](const int y, int /*thread*/) {
           for (size_t c = 0; c < 3; ++c) {
             RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(),
                               stride, WrapRowUnchanged(), weights,
@@ -615,9 +621,9 @@ class ConvolveT {
   }
 
   template <size_t kSizeModN, class Image, class Weights>
-  static HWY_ATTR JXL_INLINE void RunRows(const Image& in, const Rect& rect,
-                                          const Weights& weights,
-                                          ThreadPool* pool, const Image* out) {
+  static JXL_INLINE void RunRows(const Image& in, const Rect& rect,
+                                 const Weights& weights, ThreadPool* pool,
+                                 const Image* out) {
     const int64_t ysize = rect.ysize();
     RunBorderRows<kSizeModN>(in, rect, 0, std::min(int64_t(kRadius), ysize),
                              weights, out);
@@ -709,8 +715,12 @@ void Symmetric5_3(const Image3F& in, const Rect& rect,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
+
 HWY_EXPORT(Symmetric3)
 HWY_EXPORT(Symmetric5)
 HWY_EXPORT(Symmetric5_3)
@@ -971,6 +981,5 @@ void SlowLaplacian5(const Image3F& in, const Rect& rect, ThreadPool* pool,
   }
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

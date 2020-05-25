@@ -18,8 +18,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/compressed_dc.cc"
+#include <hwy/foreach_target.h>
+//
+
 #include <algorithm>
 #include <array>
+#include <hwy/aligned_allocator.h>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -42,33 +48,41 @@
 #include "jxl/enc_cache.h"
 #include "jxl/entropy_coder.h"
 #include "jxl/image.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/compressed_dc.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/predictor-inl.h"
 
-namespace jxl {
-
-#ifndef JXL_COMPRESSED_DC
-#define JXL_COMPRESSED_DC
-static constexpr size_t kNumDcContexts = 36;
+#ifndef JXL_NUM_DC_CONTEXTS
+#define JXL_NUM_DC_CONTEXTS 36
 #endif
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
 class DcCoderBase {
+  // Must be 16-byte aligned for SIMD Load/Store; easier to guarantee that
+  // for a separately allocated POD struct instead of the base class.
+  struct Aligned {
+    HWY_ALIGN float mul_dc[4];
+    HWY_ALIGN float inv_mul_dc[4];
+    HWY_ALIGN float cmap_factor[4];
+    HWY_ALIGN uint32_t extra_levels[4];
+
+    // One padding value every 3 to have aligned stores.
+    HWY_ALIGN float dc_dec[4 * kDcGroupDimInBlocks];
+    HWY_ALIGN float dc_quant_field[4 * kDcGroupDimInBlocks];
+  };
+
  public:
   enum {
-    kContextsPerChannel = kNumDcContexts / 3,
+    kContextsPerChannel = JXL_NUM_DC_CONTEXTS / 3,
     kNumResidualContexts = kContextsPerChannel - 4,
   };
 
   uint32_t JXL_INLINE ResidualToEncoded(size_t c, size_t residual) {
+    const uint32_t extra_levels = aligned_->extra_levels[c];
     if (residual > 7) {
-      return ((residual + (1 << extra_levels_[c]) / 2) >> extra_levels_[c]) +
-             extra_levels_[c];
+      return ((residual + (1 << extra_levels) / 2) >> extra_levels) +
+             extra_levels;
     }
     // Approximate mapping of actual residual to encoded residual, used for
     // computing context.
@@ -78,7 +92,7 @@ class DcCoderBase {
         {0, 1, 2, 3, 3, 3, 4, 4},
         {0, 1, 2, 3, 3, 3, 4, 4},
     };
-    return kResidualLut[extra_levels_[c]][residual];
+    return kResidualLut[extra_levels][residual];
   }
 
   size_t Context(size_t c, size_t correct, size_t badness) {
@@ -103,8 +117,8 @@ class DcCoderBase {
       float* JXL_RESTRICT dc_quant_field_row =
           dc_quant_field_rows_base_[c] + y * dc_quant_field_stride_;
       for (size_t x = 0; x < xsize_; x++) {
-        dc_quant_field_row[x] = dc_quant_field_[4 * x + c];
-        dc_dec_row[x] = dc_dec_[4 * x + c];
+        dc_quant_field_row[x] = aligned_->dc_quant_field[4 * x + c];
+        dc_dec_row[x] = aligned_->dc_dec[4 * x + c];
       }
     }
   }
@@ -114,9 +128,9 @@ class DcCoderBase {
   }
 
   float GetDcValue(size_t c, size_t y, size_t x) {
-    dc_dec_[4 * x + c] = 0;
+    aligned_->dc_dec[4 * x + c] = 0;
     return dc_rows_[c][y * dc_stride_ + x] -
-           dc_dec_[4 * x + 1] * cmap_factor_[c];
+           aligned_->dc_dec[4 * x + 1] * aligned_->cmap_factor[c];
   }
 
   DcCoderBase(size_t xsize, const uint32_t* JXL_RESTRICT extra_levels,
@@ -127,29 +141,35 @@ class DcCoderBase {
               float** JXL_RESTRICT dc_dec_rows, size_t dc_dec_stride,
               float** JXL_RESTRICT dc_quant_field_rows,
               size_t dc_quant_field_stride)
-      : mul_dc_{mul_dc[0] / (1 << extra_levels[0]),
-                mul_dc[1] / (1 << extra_levels[1]),
-                mul_dc[2] / (1 << extra_levels[2]), 0},
+      // TODO(janwas): pass through allocator funcs
+      : aligned_(hwy::AllocateSingleAligned<Aligned>()),
         xsize_(xsize),
-        inv_mul_dc_(inv_mul_dc),
-        cmap_factor_(cmap_factor),
         dc_rows_(dc_rows),
         dc_stride_(dc_stride),
         dc_dec_rows_base_(dc_dec_rows),
         dc_dec_stride_(dc_dec_stride),
         dc_quant_field_rows_base_(dc_quant_field_rows),
-        dc_quant_field_stride_(dc_quant_field_stride),
-        extra_levels_(extra_levels) {}
+        dc_quant_field_stride_(dc_quant_field_stride) {
+    for (size_t i = 0; i < 4; ++i) {
+      aligned_->mul_dc[i] = i == 3 ? 0 : mul_dc[i] / (1 << extra_levels[i]);
+      aligned_->inv_mul_dc[i] = inv_mul_dc == nullptr ? 0.0f : inv_mul_dc[i];
+      aligned_->cmap_factor[i] = cmap_factor[i];
+      aligned_->extra_levels[i] = extra_levels[i];
+    }
+  }
 
-  float JXL_INLINE Dequantize(size_t c, int val) { return val * mul_dc_[c]; }
+  float JXL_INLINE Dequantize(size_t c, int val) {
+    return val * aligned_->mul_dc[c];
+  }
 
   int Quantize(size_t c, float val) {
     JXL_DASSERT(val >= 0);
-    val *= inv_mul_dc_[c];
-    if (extra_levels_[c] == 0) {
+    val *= aligned_->inv_mul_dc[c];
+    const uint32_t extra_levels = aligned_->extra_levels[c];
+    if (extra_levels == 0) {
       return static_cast<int>(val + 0.5f);
     }
-    if (extra_levels_[c] == 1) {
+    if (extra_levels == 1) {
       if (val <= 0.25f) {
         return 0;
       }
@@ -158,7 +178,7 @@ class DcCoderBase {
       }
       return static_cast<int>(val + 0.5f) + 1;
     }
-    if (extra_levels_[c] == 2) {
+    if (extra_levels == 2) {
       if (val <= 0.125f) {
         return 0;
       }
@@ -170,7 +190,7 @@ class DcCoderBase {
       }
       return static_cast<int>(val + 0.5f) + 2;
     }
-    JXL_DASSERT(extra_levels_[c] == 3);
+    JXL_DASSERT(extra_levels == 3);
     if (val <= 0.0625f) {
       return 0;
     }
@@ -205,9 +225,10 @@ class DcCoderBase {
     bool negative = delta < 0;
     delta = std::abs(delta);
 
-    if (static_cast<uint32_t>(delta) > extra_levels_[c]) {
-      delta = (delta - extra_levels_[c]) << extra_levels_[c];
-      *interval *= 1 << extra_levels_[c];
+    const uint32_t extra_levels = aligned_->extra_levels[c];
+    if (static_cast<uint32_t>(delta) > extra_levels) {
+      delta = (delta - extra_levels) << extra_levels;
+      *interval *= 1 << extra_levels;
     } else if (delta != 0) {
       delta = 1 << (delta - 1);
       *interval *= delta;
@@ -224,23 +245,24 @@ class DcCoderBase {
                       int32_t* JXL_RESTRICT decoded) {
     int32_t prediction = predictions[c];
 
-    dc_quant_field_[4 * x + c] = mul_dc_[c];
-    dc_dec_[4 * x + c] = 0;
+    aligned_->dc_quant_field[4 * x + c] = aligned_->mul_dc[c];
+    aligned_->dc_dec[4 * x + c] = 0;
 
-    int quant =
-        ApplyResidual(c, prediction, residuals[c], &dc_quant_field_[4 * x + c]);
+    int quant = ApplyResidual(c, prediction, residuals[c],
+                              &aligned_->dc_quant_field[4 * x + c]);
 
     decoded[c] = quant;
 
     float dcd = Dequantize(c, quant);
-    dc_dec_[4 * x + c] = dcd + dc_dec_[4 * x + 1] * cmap_factor_[c];
+    aligned_->dc_dec[4 * x + c] =
+        dcd + aligned_->dc_dec[4 * x + 1] * aligned_->cmap_factor[c];
   }
 
-  HWY_ATTR void ComputeDecoded3(size_t x, size_t y,
-                                const int32_t* JXL_RESTRICT predictions,
-                                const uint32_t* JXL_RESTRICT residuals,
-                                int32_t* JXL_RESTRICT decoded) {
-#if (HWY_CAPS & HWY_CAP_VARIABLE_SHIFT) && HWY_TARGET != HWY_SCALAR
+  void ComputeDecoded3(size_t x, size_t y,
+                       const int32_t* JXL_RESTRICT predictions,
+                       const uint32_t* JXL_RESTRICT residuals,
+                       int32_t* JXL_RESTRICT decoded) {
+#if HWY_CAP_VARIABLE_SHIFT && HWY_TARGET != HWY_SCALAR
     using DU = HWY_CAPPED(uint32_t, 4);
     using DI = HWY_CAPPED(int32_t, 4);
     using DF = HWY_CAPPED(float, 4);
@@ -258,7 +280,7 @@ class DcCoderBase {
     const auto delta = ShiftRight<1>(residual + one);
 
     // Expand extra levels
-    const auto extra_levels = Load(du, extra_levels_);
+    const auto extra_levels = Load(du, aligned_->extra_levels);
     // Build mask of "delta > extra_levels"
     const auto is_hi = MaskFromVec(
         BitCast(du, ShiftRight<31>(BitCast(di, extra_levels - delta))));
@@ -277,20 +299,21 @@ class DcCoderBase {
     // Not aligned in predictor.h.
     StoreU(quantized, di, decoded);
 
-    const auto mul = Load(DF(), mul_dc_);
+    const auto mul = Load(DF(), aligned_->mul_dc);
     // Compute adjusted quant interval
     const auto mul_factor_hi = one << extra_levels;
     const auto mul_factor = BitCast(
         di,
         IfThenElse(is_hi, mul_factor_hi, IfThenElse(is_zero, one, delta_lo)));
     const auto adj_mul = mul * ConvertTo(DF(), mul_factor);
-    Store(adj_mul, DF(), dc_quant_field_ + 4 * x);
+    Store(adj_mul, DF(), aligned_->dc_quant_field + 4 * x);
 
     const auto dequant = ConvertTo(DF(), quantized) * mul;
     const auto y_dequant = Broadcast<1>(dequant);
     // No MulAdd - causes different results in compressed_dc_test.
-    const auto correlated = Load(DF(), cmap_factor_) * y_dequant + dequant;
-    Store(correlated, DF(), dc_dec_ + 4 * x);
+    const auto correlated =
+        Load(DF(), aligned_->cmap_factor) * y_dequant + dequant;
+    Store(correlated, DF(), aligned_->dc_dec + 4 * x);
 #else
     for (size_t c : {1, 0, 2}) {
       ComputeDecoded(c, x, y, predictions, residuals, decoded);
@@ -299,16 +322,9 @@ class DcCoderBase {
   }
 
  private:
-  HWY_ALIGN float const mul_dc_[4];
-
-  // One padding value every 3 to have aligned stores.
-  HWY_ALIGN float dc_dec_[4 * kDcGroupDimInBlocks];
-  HWY_ALIGN float dc_quant_field_[4 * kDcGroupDimInBlocks];
+  hwy::AlignedUniquePtr<Aligned> aligned_;
 
   const size_t xsize_;
-
-  const float* JXL_RESTRICT inv_mul_dc_;
-  const float* JXL_RESTRICT cmap_factor_;
 
   // Input (encoder-side) values.
   const float* JXL_RESTRICT* JXL_RESTRICT dc_rows_;
@@ -320,8 +336,6 @@ class DcCoderBase {
 
   float** JXL_RESTRICT dc_quant_field_rows_base_;
   const size_t dc_quant_field_stride_;
-
-  const uint32_t* JXL_RESTRICT const extra_levels_;
 };
 
 class DCEncoder : public DcPredictor<DCEncoder> {
@@ -338,19 +352,18 @@ class DCEncoder : public DcPredictor<DCEncoder> {
                    dc_rows, dc_stride, dc_dec_rows, dc_dec_stride,
                    dc_quant_field_rows, dc_quant_field_stride) {}
 
-  HWY_ATTR void Run(size_t xsize, size_t ysize,
-                    std::vector<Token>* JXL_RESTRICT tokens,
-                    AuxOut* JXL_RESTRICT aux_out) {
+  void Run(size_t xsize, size_t ysize, std::vector<Token>* JXL_RESTRICT tokens,
+           AuxOut* JXL_RESTRICT aux_out) {
     tokens_ = tokens;
     DcPredictor<DCEncoder>::Run(xsize, ysize, aux_out);
     predictor_.FlushRow(ysize - 1);
   }
 
-  HWY_ATTR JXL_INLINE void Prediction(size_t x, size_t y,
-                                      const int32_t* JXL_RESTRICT predictions,
-                                      const uint32_t* JXL_RESTRICT num_correct,
-                                      const uint32_t* JXL_RESTRICT min_error,
-                                      int32_t* JXL_RESTRICT decoded) {
+  JXL_INLINE void Prediction(size_t x, size_t y,
+                             const int32_t* JXL_RESTRICT predictions,
+                             const uint32_t* JXL_RESTRICT num_correct,
+                             const uint32_t* JXL_RESTRICT min_error,
+                             int32_t* JXL_RESTRICT decoded) {
     uint32_t residuals[3];
     // TODO(veluca): investigate possible SIMD-fication of this code.
 
@@ -396,10 +409,10 @@ class DCDecoder : public DcPredictor<DCDecoder> {
                    0, dc_dec_rows, dc_dec_stride, dc_quant_field_rows,
                    dc_quant_field_stride) {}
 
-  HWY_ATTR void Run(size_t xsize, size_t ysize, BitReader* JXL_RESTRICT br,
-                    ANSSymbolReader* JXL_RESTRICT decoder,
-                    const std::vector<uint8_t>& JXL_RESTRICT context_map,
-                    AuxOut* JXL_RESTRICT aux_out) {
+  void Run(size_t xsize, size_t ysize, BitReader* JXL_RESTRICT br,
+           ANSSymbolReader* JXL_RESTRICT decoder,
+           const std::vector<uint8_t>& JXL_RESTRICT context_map,
+           AuxOut* JXL_RESTRICT aux_out) {
     br_ = br;
     decoder_ = decoder;
     context_map_ = &context_map;
@@ -407,11 +420,11 @@ class DCDecoder : public DcPredictor<DCDecoder> {
     predictor_.FlushRow(ysize - 1);
   }
 
-  HWY_ATTR JXL_INLINE void Prediction(size_t x, size_t y,
-                                      const int32_t* JXL_RESTRICT predictions,
-                                      const uint32_t* JXL_RESTRICT num_correct,
-                                      const uint32_t* JXL_RESTRICT min_error,
-                                      int32_t* JXL_RESTRICT decoded) {
+  JXL_INLINE void Prediction(size_t x, size_t y,
+                             const int32_t* JXL_RESTRICT predictions,
+                             const uint32_t* JXL_RESTRICT num_correct,
+                             const uint32_t* JXL_RESTRICT min_error,
+                             int32_t* JXL_RESTRICT decoded) {
     HWY_ALIGN uint32_t residuals[4];
     residuals[3] = 0;
 
@@ -437,9 +450,8 @@ HWY_ALIGN const uint32_t kExtraLevels[4][4] = {
     {2, 3, 2, /*unused*/ 0},
 };
 
-HWY_ATTR void TokenizeDC(size_t group_index, const Image3F& dc,
-                         PassesEncoderState* JXL_RESTRICT enc_state,
-                         AuxOut* aux_out) {
+void TokenizeDC(size_t group_index, const Image3F& dc,
+                PassesEncoderState* JXL_RESTRICT enc_state, AuxOut* aux_out) {
   const Rect rect = enc_state->shared.DCGroupRect(group_index);
   const Quantizer& quantizer = enc_state->shared.quantizer;
   const ColorCorrelationMap& cmap = enc_state->shared.cmap;
@@ -461,21 +473,20 @@ HWY_ATTR void TokenizeDC(size_t group_index, const Image3F& dc,
                                    rect.PlaneRow(dc_quant_field, 2, 0)};
   const size_t dc_quant_field_stride = dc_quant_field->PixelsPerRow();
 
-  HWY_ALIGN DCEncoder coder(rect.xsize(),
-                  kExtraLevels[enc_state->extra_dc_levels[group_index]],
-                  quantizer.MulDC(), quantizer.InvMulDC(), cmap.DCFactors(),
-                  dc_rows, dc_stride, dc_dec_rows, dc_dec_stride,
-                  dc_quant_field_rows, dc_quant_field_stride);
+  HWY_ALIGN DCEncoder coder(
+      rect.xsize(), kExtraLevels[enc_state->extra_dc_levels[group_index]],
+      quantizer.MulDC(), quantizer.InvMulDC(), cmap.DCFactors(), dc_rows,
+      dc_stride, dc_dec_rows, dc_dec_stride, dc_quant_field_rows,
+      dc_quant_field_stride);
   coder.Run(rect.xsize(), rect.ysize(), &enc_state->dc_tokens[group_index],
             aux_out);
 }
 
-HWY_ATTR void DecodeDC(BitReader* br, ANSSymbolReader* decoder,
-                       const std::vector<uint8_t>& context_map,
-                       const Rect& rect, const float* mul_dc,
-                       const float* cmap_factor, int extra_levels,
-                       Image3F* JXL_RESTRICT dc,
-                       Image3F* JXL_RESTRICT dc_quant_field, AuxOut* aux_out) {
+void DecodeDC(BitReader* br, ANSSymbolReader* decoder,
+              const std::vector<uint8_t>& context_map, const Rect& rect,
+              const float* mul_dc, const float* cmap_factor, int extra_levels,
+              Image3F* JXL_RESTRICT dc, Image3F* JXL_RESTRICT dc_quant_field,
+              AuxOut* aux_out) {
   PROFILER_FUNC;
   // Not restrict: the predictor will create aliasing pointers in these arrays,
   // and they are not used directly anyway.
@@ -487,15 +498,15 @@ HWY_ATTR void DecodeDC(BitReader* br, ANSSymbolReader* decoder,
                                    rect.PlaneRow(dc_quant_field, 2, 0)};
   const size_t dc_quant_field_stride = dc_quant_field->PixelsPerRow();
 
-  HWY_ALIGN DCDecoder coder(rect.xsize(), kExtraLevels[extra_levels], mul_dc, cmap_factor,
-                  dc_rows, dc_stride, dc_quant_field_rows,
-                  dc_quant_field_stride);
+  HWY_ALIGN DCDecoder coder(rect.xsize(), kExtraLevels[extra_levels], mul_dc,
+                            cmap_factor, dc_rows, dc_stride,
+                            dc_quant_field_rows, dc_quant_field_stride);
   coder.Run(rect.xsize(), rect.ysize(), br, decoder, context_map, aux_out);
 }
 
 using D = HWY_FULL(float);
 using DScalar = HWY_CAPPED(float, 1);
-using V = HWY_VEC(D);
+using V = Vec<D>;
 
 // TODO(veluca): optimize constants.
 const float w1 = 0.20345139757231578f;
@@ -503,7 +514,7 @@ const float w2 = 0.0334829185968739f;
 const float w0 = 1.0f - 4.0f * (w1 + w2);
 
 template <class V>
-HWY_ATTR V MaxWorkaround(V a, V b) {
+V MaxWorkaround(V a, V b) {
 #if (HWY_TARGET == HWY_AVX3) && HWY_COMPILER_CLANG <= 800
   // Prevents "Do not know how to split the result of this operator" error
   return IfThenElse(a > b, a, b);
@@ -513,11 +524,11 @@ HWY_ATTR V MaxWorkaround(V a, V b) {
 }
 
 template <typename D>
-HWY_ATTR JXL_INLINE void ComputePixelChannel(
+JXL_INLINE void ComputePixelChannel(
     const D d, const float* JXL_RESTRICT dc_quant_row,
     const float* JXL_RESTRICT row_top, const float* JXL_RESTRICT row,
-    const float* JXL_RESTRICT row_bottom, HWY_VEC(D) * JXL_RESTRICT mc,
-    HWY_VEC(D) * JXL_RESTRICT sm, HWY_VEC(D) * JXL_RESTRICT gap, size_t x) {
+    const float* JXL_RESTRICT row_bottom, Vec<D>* JXL_RESTRICT mc,
+    Vec<D>* JXL_RESTRICT sm, Vec<D>* JXL_RESTRICT gap, size_t x) {
   const auto tl = LoadU(d, row_top + x - 1);
   const auto tc = Load(d, row_top + x);
   const auto tr = LoadU(d, row_top + x + 1);
@@ -543,7 +554,7 @@ HWY_ATTR JXL_INLINE void ComputePixelChannel(
 }
 
 template <typename D>
-HWY_ATTR JXL_INLINE void ComputePixel(
+JXL_INLINE void ComputePixel(
     const float* JXL_RESTRICT* JXL_RESTRICT dc_quant_rows,
     const float* JXL_RESTRICT* JXL_RESTRICT rows_top,
     const float* JXL_RESTRICT* JXL_RESTRICT rows,
@@ -574,8 +585,8 @@ HWY_ATTR JXL_INLINE void ComputePixel(
   Store(out, d, out_rows[2] + x);
 }
 
-HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
-                                  ThreadPool* pool) {
+void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
+                         ThreadPool* pool) {
   const size_t xsize = dc->xsize();
   const size_t ysize = dc->ysize();
   if (ysize <= 2 || xsize <= 2) return;
@@ -595,7 +606,7 @@ HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
              xsize * sizeof(float));
     }
   }
-  auto process_row = [&](int y, int /*thread*/) HWY_ATTR {
+  auto process_row = [&](int y, int /*thread*/) {
     const float* JXL_RESTRICT rows_top[3]{
         dc->ConstPlaneRow(0, y - 1),
         dc->ConstPlaneRow(1, y - 1),
@@ -629,13 +640,13 @@ HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
 
     size_t x = 1;
     // First pixels
-    constexpr size_t kVectorSize = D::N;
-    for (; x < std::min(kVectorSize, xsize - 1); x++) {
+    const size_t N = Lanes(D());
+    for (; x < std::min(N, xsize - 1); x++) {
       ComputePixel<DScalar>(rows_dc_quant, rows_top, rows, rows_bottom,
                             rows_out, x);
     }
     // Full vectors.
-    for (; x + D::N <= xsize - 1; x += D::N) {
+    for (; x + N <= xsize - 1; x += N) {
       ComputePixel<D>(rows_dc_quant, rows_top, rows, rows_bottom, rows_out, x);
     }
     // Last pixels.
@@ -650,13 +661,17 @@ HWY_ATTR void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
+
 HWY_EXPORT(TokenizeDC)
 HWY_EXPORT(DecodeDC)
 HWY_EXPORT(AdaptiveDCSmoothing)
 
-constexpr size_t kCmapBaseContext = kNumDcContexts;
+constexpr size_t kCmapBaseContext = JXL_NUM_DC_CONTEXTS;
 constexpr size_t kControlFieldBaseContext = kCmapBaseContext + kCmapContexts;
 constexpr size_t kNumDCContexts =
     kControlFieldBaseContext + kNumControlFieldContexts;
@@ -685,19 +700,18 @@ Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
                  DivCeil(rect.xsize(), kColorTileDimInBlocks),
                  DivCeil(rect.ysize(), kColorTileDimInBlocks));
 
-  const uint32_t targets_bits = hwy::SupportedTargets();
-  ChooseEncodeColorMap(targets_bits)(enc_state.shared.cmap, cmap_rect,
-                                     &tokens[0], kCmapBaseContext, aux_out);
+  ChooseEncodeColorMap()(enc_state.shared.cmap, cmap_rect, &tokens[0],
+                         kCmapBaseContext, aux_out);
 
-  ChooseTokenizeAcStrategy(targets_bits)(rect, enc_state.shared.ac_strategy,
-                                         &tokens[0], kControlFieldBaseContext);
+  ChooseTokenizeAcStrategy()(rect, enc_state.shared.ac_strategy, &tokens[0],
+                             kControlFieldBaseContext);
 
-  ChooseTokenizeQuantField(targets_bits)(
-      rect, enc_state.shared.raw_quant_field, enc_state.shared.ac_strategy,
-      &tokens[0], kControlFieldBaseContext + kAcStrategyContexts);
+  ChooseTokenizeQuantField()(rect, enc_state.shared.raw_quant_field,
+                             enc_state.shared.ac_strategy, &tokens[0],
+                             kControlFieldBaseContext + kAcStrategyContexts);
 
   if (enc_state.shared.image_features.loop_filter.epf) {
-    ChooseTokenizeARParameters(targets_bits)(
+    ChooseTokenizeARParameters()(
         rect, enc_state.shared.epf_sharpness, enc_state.shared.ac_strategy,
         &tokens[0],
         kControlFieldBaseContext + kAcStrategyContexts + kQuantFieldContexts);
@@ -717,7 +731,6 @@ Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
 Status DecodeDCGroup(BitReader* reader, size_t group_idx,
                      PassesDecoderState* dec_state, AuxOut* aux_out) {
   PROFILER_FUNC;
-  const uint32_t targets_bits = hwy::SupportedTargets();
   int extra_dc_levels = 0;
 
   if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
@@ -735,12 +748,11 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
   const size_t ysize = rect.ysize();
   Rect rect0(0, 0, xsize, ysize);
   if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
-    ChooseDecodeDC(targets_bits)(
-        reader, &decoder, context_map, rect,
-        dec_state->shared->quantizer.MulDC(),
-        dec_state->shared->cmap.DCFactors(), extra_dc_levels,
-        &dec_state->shared_storage.dc_storage,
-        &dec_state->shared_storage.dc_quant_field, aux_out);
+    ChooseDecodeDC()(reader, &decoder, context_map, rect,
+                     dec_state->shared->quantizer.MulDC(),
+                     dec_state->shared->cmap.DCFactors(), extra_dc_levels,
+                     &dec_state->shared_storage.dc_storage,
+                     &dec_state->shared_storage.dc_quant_field, aux_out);
   }
 
   JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);
@@ -750,17 +762,17 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
                  DivCeil(rect.xsize(), kColorTileDimInBlocks),
                  DivCeil(rect.ysize(), kColorTileDimInBlocks));
 
-  JXL_RETURN_IF_ERROR(ChooseDecodeColorMap(targets_bits)(
+  JXL_RETURN_IF_ERROR(ChooseDecodeColorMap()(
       reader, &decoder, context_map, &dec_state->shared_storage.cmap, cmap_rect,
       kCmapBaseContext, aux_out));
 
-  if (!ChooseDecodeAcStrategy(targets_bits)(
-          reader, &decoder, context_map, rect,
-          &dec_state->shared_storage.ac_strategy, kControlFieldBaseContext)) {
+  if (!ChooseDecodeAcStrategy()(reader, &decoder, context_map, rect,
+                                &dec_state->shared_storage.ac_strategy,
+                                kControlFieldBaseContext)) {
     return JXL_FAILURE("Failed to decode AcStrategy.");
   }
 
-  if (!ChooseDecodeQuantField(targets_bits)(
+  if (!ChooseDecodeQuantField()(
           reader, &decoder, context_map, rect,
           dec_state->shared_storage.ac_strategy,
           &dec_state->shared_storage.raw_quant_field,
@@ -769,12 +781,12 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
   }
 
   if (dec_state->shared->image_features.loop_filter.epf &&
-      !ChooseDecodeARParameters(targets_bits)(
-          reader, &decoder, context_map, rect,
-          dec_state->shared_storage.ac_strategy,
-          &dec_state->shared_storage.epf_sharpness,
-          kControlFieldBaseContext + kAcStrategyContexts +
-              kQuantFieldContexts)) {
+      !ChooseDecodeARParameters()(reader, &decoder, context_map, rect,
+                                  dec_state->shared_storage.ac_strategy,
+                                  &dec_state->shared_storage.epf_sharpness,
+                                  kControlFieldBaseContext +
+                                      kAcStrategyContexts +
+                                      kQuantFieldContexts)) {
     return JXL_FAILURE("Failed to decode ARParameters.");
   }
 
@@ -785,6 +797,5 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
   return true;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

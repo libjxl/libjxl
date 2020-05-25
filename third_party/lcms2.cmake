@@ -49,6 +49,4 @@ target_include_directories(lcms2
 target_compile_definitions(lcms2
   PRIVATE "-DCMS_PTR_ALIGNMENT=8")
 
-if (NOT "${JPEGXL_EMSCRIPTEN}")
 set_property(TARGET lcms2 PROPERTY POSITION_INDEPENDENT_CODE ON)
-endif()

@@ -75,6 +75,14 @@
 #endif
 
 #if JXL_COMPILER_MSVC
+#define JXL_MAYBE_UNUSED
+#else
+// Encountered "attribute list cannot appear here" when using the C++17
+// [[maybe_unused]], so only use the old style attribute for now.
+#define JXL_MAYBE_UNUSED __attribute__((unused))
+#endif
+
+#if JXL_COMPILER_MSVC
 // Unsupported, __assume is not the same.
 #define JXL_LIKELY(expr) expr
 #define JXL_UNLIKELY(expr) expr

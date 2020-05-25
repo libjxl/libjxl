@@ -96,7 +96,8 @@ ExternalImage* decompress(const uint8_t* data, size_t size) {
 
   size_t w = result->xsize();
   size_t h = result->ysize();
-  float* pixels = const_cast<float*>(reinterpret_cast<const float*>(result->Bytes().data()));
+  float* pixels = const_cast<float*>(
+      reinterpret_cast<const float*>(result->Bytes().data()));
   for (size_t i = 0; i < w * h; ++i) {
     pixels[i * 4 + 3] = 1.0f;
   }
@@ -104,26 +105,19 @@ ExternalImage* decompress(const uint8_t* data, size_t size) {
   return result.release();
 }
 
-void freeImage(ExternalImage* img) {
-  delete img;
-}
+void freeImage(ExternalImage* img) { delete img; }
 
-int getImageWidth(ExternalImage* img) {
-  return img->xsize();
-}
+int getImageWidth(ExternalImage* img) { return img->xsize(); }
 
-int getImageHeight(ExternalImage* img) {
-  return img->ysize();
-}
+int getImageHeight(ExternalImage* img) { return img->ysize(); }
 
-const void* getImagePixels(ExternalImage* img) {
-  return img->Bytes().data();
-}
+const void* getImagePixels(ExternalImage* img) { return img->Bytes().data(); }
 
 }  // extern "C"
 
 /*
-// Chrome must be launched with "--enable-blink-features=CanvasColorManagement" option.
+// Chrome must be launched with "--enable-blink-features=CanvasColorManagement"
+option.
 
 function showImage(bytes, amp) {
   if (!amp) amp = 1.0 / 256;
@@ -136,12 +130,13 @@ function showImage(bytes, amp) {
   var w = Module._getImageWidth(img);
   var h = Module._getImageHeight(img);
   var pixelsPtr = Module._getImagePixels(img);
-  var pixels = new Float32Array(Module.HEAPF32.subarray(pixelsPtr >> 2, (pixelsPtr >> 2) + w * h * 4));
-  for (var i = 0; i < w * h * 4; ++i) if ((i & 3) != 3) pixels[i] *= amp;
-  var canvas = document.getElementById("canvas");
+  var pixels = new Float32Array(Module.HEAPF32.subarray(pixelsPtr >> 2,
+(pixelsPtr >> 2) + w * h * 4)); for (var i = 0; i < w * h * 4; ++i) if ((i & 3)
+!= 3) pixels[i] *= amp; var canvas = document.getElementById("canvas");
   canvas.width = w;
   canvas.height = h;
-  var ctx = canvas.getContext("2d", {"colorSpace": "rec2020", "pixelFormat": "float16"});
+  var ctx = canvas.getContext("2d", {"colorSpace": "rec2020", "pixelFormat":
+"float16"});
   // Is there a way to create F16 ImageData?
   var imageData = ctx.getImageData(0, 0, w, h);
   imageData.dataUnion.set(pixels);

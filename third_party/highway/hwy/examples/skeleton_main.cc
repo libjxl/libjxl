@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,9 +17,6 @@
 #include <stdio.h>
 #include "hwy/examples/skeleton.h"         // ChooseSkeleton
 #include "hwy/examples/skeleton_shared.h"  // kMultiplier
-#include "hwy/interface.h"                 // SupportedTargets
-#undef HWY_USE_GTEST
-#include "hwy/tests/test_util.h"  // ChooseAndCallForeachTarget
 
 namespace skeleton {
 
@@ -32,14 +29,9 @@ void Main() {
     in2[i] = in1[i] + 300;
   }
 
-  const uint32_t targets_bits = hwy::SupportedTargets();
-  SkeletonFunc* best = ChooseSkeleton(targets_bits);
+  SkeletonFunc* best = ChooseSkeleton();
   (*best)(in1, in2, out);
   printf("Should be %.2f: %.2f\n", in1[255] * kMultiplier + in2[255], out[255]);
-
-  // Tests would typically run for all targets to ensure all are OK.
-  printf("\nNow running for all targets:\n\n");
-  hwy::ChooseAndCallForeachTarget(&ChooseSkeleton, in1, in2, out);
 }
 
 }  // namespace skeleton

@@ -21,6 +21,7 @@
 #include <time.h>    // clock_gettime
 
 #include <algorithm>  // sort
+#include <array>
 #include <atomic>
 #include <limits>
 #include <numeric>  // iota
@@ -28,7 +29,7 @@
 #include <string>
 #include <vector>
 
-#include "hwy/highway.h"
+#include "hwy/base.h"
 #if HWY_ARCH_PPC
 #include <sys/platform/ppc.h>  // NOLINT __ppc_get_timebase_freq
 #elif HWY_ARCH_X86
@@ -56,7 +57,10 @@ void Cpuid(const uint32_t level, const uint32_t count,
     abcd[i] = regs[i];
   }
 #else
-  uint32_t a, b, c, d;
+  uint32_t a;
+  uint32_t b;
+  uint32_t c;
+  uint32_t d;
   __cpuid_count(level, count, a, b, c, d);
   abcd[0] = a;
   abcd[1] = b;
@@ -67,17 +71,17 @@ void Cpuid(const uint32_t level, const uint32_t count,
 
 std::string BrandString() {
   char brand_string[49];
-  uint32_t abcd[4];
+  std::array<uint32_t, 4> abcd;
 
   // Check if brand string is supported (it is on all reasonable Intel/AMD)
-  Cpuid(0x80000000U, 0, abcd);
+  Cpuid(0x80000000U, 0, abcd.data());
   if (abcd[0] < 0x80000004U) {
     return std::string();
   }
 
   for (int i = 0; i < 3; ++i) {
-    Cpuid(0x80000002U + i, 0, abcd);
-    memcpy(brand_string + i * 16, &abcd, sizeof(abcd));
+    Cpuid(0x80000002U + i, 0, abcd.data());
+    memcpy(brand_string + i * 16, abcd.data(), sizeof(abcd));
   }
   brand_string[48] = 0;
   return brand_string;
@@ -202,8 +206,7 @@ inline uint64_t Start64() {
   uint64_t t;
 #if HWY_ARCH_PPC
   asm volatile("mfspr %0, %1" : "=r"(t) : "i"(268));
-#elif HWY_ARCH_X86
-#if HWY_COMPILER_MSVC
+#elif HWY_ARCH_X86 && HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   _mm_lfence();
   _ReadWriteBarrier();
@@ -211,7 +214,7 @@ inline uint64_t Start64() {
   _ReadWriteBarrier();
   _mm_lfence();
   _ReadWriteBarrier();
-#else
+#elif HWY_ARCH_X86_64
   asm volatile(
       "lfence\n\t"
       "rdtsc\n\t"
@@ -223,7 +226,6 @@ inline uint64_t Start64() {
       // "memory" avoids reordering. rdx = TSC >> 32.
       // "cc" = flags modified by SHL.
       : "rdx", "memory", "cc");
-#endif
 #else
   // Fall back to OS - unsure how to reliably query cntvct_el0 frequency.
   timespec ts;
@@ -237,15 +239,14 @@ inline uint64_t Stop64() {
   uint64_t t;
 #if HWY_ARCH_PPC
   asm volatile("mfspr %0, %1" : "=r"(t) : "i"(268));
-#elif HWY_ARCH_X86
-#if HWY_COMPILER_MSVC
+#elif HWY_ARCH_X86 && HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   unsigned aux;
   t = __rdtscp(&aux);
   _ReadWriteBarrier();
   _mm_lfence();
   _ReadWriteBarrier();
-#else
+#elif HWY_ARCH_X86_64
   // Use inline asm because __rdtscp generates code to store TSC_AUX (ecx).
   asm volatile(
       "rdtscp\n\t"
@@ -257,7 +258,6 @@ inline uint64_t Stop64() {
       // "memory" avoids reordering. rcx = TSC_AUX. rdx = TSC >> 32.
       // "cc" = flags modified by SHL.
       : "rcx", "rdx", "memory", "cc");
-#endif
 #else
   t = Start64();
 #endif
@@ -269,8 +269,7 @@ inline uint64_t Stop64() {
 // timestamp overflows about once a second.
 inline uint32_t Start32() {
   uint32_t t;
-#if HWY_ARCH_X86
-#if HWY_COMPILER_MSVC
+#if HWY_ARCH_X86 && HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   _mm_lfence();
   _ReadWriteBarrier();
@@ -278,7 +277,7 @@ inline uint32_t Start32() {
   _ReadWriteBarrier();
   _mm_lfence();
   _ReadWriteBarrier();
-#else
+#elif HWY_ARCH_X86_64
   asm volatile(
       "lfence\n\t"
       "rdtsc\n\t"
@@ -287,7 +286,6 @@ inline uint32_t Start32() {
       :
       // "memory" avoids reordering. rdx = TSC >> 32.
       : "rdx", "memory");
-#endif
 #else
   t = static_cast<uint32_t>(Start64());
 #endif
@@ -296,15 +294,14 @@ inline uint32_t Start32() {
 
 inline uint32_t Stop32() {
   uint32_t t;
-#if HWY_ARCH_X86
-#if HWY_COMPILER_MSVC
+#if HWY_ARCH_X86 && HWY_COMPILER_MSVC
   _ReadWriteBarrier();
   unsigned aux;
   t = static_cast<uint32_t>(__rdtscp(&aux));
   _ReadWriteBarrier();
   _mm_lfence();
   _ReadWriteBarrier();
-#else
+#elif HWY_ARCH_X86_64
   // Use inline asm because __rdtscp generates code to store TSC_AUX (ecx).
   asm volatile(
       "rdtscp\n\t"
@@ -313,7 +310,6 @@ inline uint32_t Stop32() {
       :
       // "memory" avoids reordering. rcx = TSC_AUX. rdx = TSC >> 32.
       : "rcx", "rdx", "memory");
-#endif
 #else
   t = static_cast<uint32_t>(Stop64());
 #endif

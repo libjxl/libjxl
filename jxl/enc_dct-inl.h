@@ -21,21 +21,21 @@
 #define JXL_ENC_DCT_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include <stddef.h>
 
 #include "jxl/dct_block-inl.h"
 #include "jxl/transpose-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Column IDCTs with (part of) one row per vector argument. Called by the
 // facades below which take From/To template arguments.
 struct VectorDCT {
   template <size_t SZ, class V>
-  HWY_FUNC static void ColumnDCT4(V& i0, V& i1, V& i2, V& i3) {
+  HWY_MAYBE_UNUSED static void ColumnDCT4(V& i0, V& i1, V& i2, V& i3) {
     const BlockDesc<SZ> d;
     const auto c2_8 = Set(d, 1.414213562373095048f);  // 2 * cos(2 * pi / 8)
     auto t0 = i0 + i3;
@@ -51,8 +51,8 @@ struct VectorDCT {
   }
 
   template <size_t SZ, class V>
-  HWY_FUNC static void ColumnDCT8(V& i0, V& i1, V& i2, V& i3, V& i4, V& i5,
-                                  V& i6, V& i7) {
+  HWY_MAYBE_UNUSED static void ColumnDCT8(V& i0, V& i1, V& i2, V& i3, V& i4,
+                                          V& i5, V& i6, V& i7) {
     const BlockDesc<SZ> d;
 
     const auto c1 = Set(d, 0.707106781186548f);  // 1 / sqrt(2)
@@ -97,10 +97,10 @@ struct VectorDCT {
   // "A low multiplicative complexity fast recursive DCT-2 algorithm"
   // Maxim Vashkevich, Alexander Pertrovsky, 27 Jul 2012
   template <size_t SZ, class V>
-  HWY_FUNC static void ColumnDCT16(V& i00, V& i01, V& i02, V& i03, V& i04,
-                                   V& i05, V& i06, V& i07, V& i08, V& i09,
-                                   V& i10, V& i11, V& i12, V& i13, V& i14,
-                                   V& i15) {
+  HWY_MAYBE_UNUSED static void ColumnDCT16(V& i00, V& i01, V& i02, V& i03,
+                                           V& i04, V& i05, V& i06, V& i07,
+                                           V& i08, V& i09, V& i10, V& i11,
+                                           V& i12, V& i13, V& i14, V& i15) {
     const BlockDesc<SZ> d;
 
     const auto c1_16 = Set(d, 1.9615705608064609f);   // 2 * cos(1 * pi / 16)
@@ -212,13 +212,11 @@ struct VectorDCT {
   }
 
   template <size_t SZ, class V>
-  HWY_FUNC static void ColumnDCT32(V& i00, V& i01, V& i02, V& i03, V& i04,
-                                   V& i05, V& i06, V& i07, V& i08, V& i09,
-                                   V& i10, V& i11, V& i12, V& i13, V& i14,
-                                   V& i15, V& i16, V& i17, V& i18, V& i19,
-                                   V& i20, V& i21, V& i22, V& i23, V& i24,
-                                   V& i25, V& i26, V& i27, V& i28, V& i29,
-                                   V& i30, V& i31) {
+  HWY_MAYBE_UNUSED static void ColumnDCT32(
+      V& i00, V& i01, V& i02, V& i03, V& i04, V& i05, V& i06, V& i07, V& i08,
+      V& i09, V& i10, V& i11, V& i12, V& i13, V& i14, V& i15, V& i16, V& i17,
+      V& i18, V& i19, V& i20, V& i21, V& i22, V& i23, V& i24, V& i25, V& i26,
+      V& i27, V& i28, V& i29, V& i30, V& i31) {
     const BlockDesc<SZ> d;
     const auto c2_64 = Set(d, 1.990369453344393857f);   // 2 * cos(2 * pi / 64)
     const auto c4_64 = Set(d, 1.961570560806460861f);   // 2 * cos(4 * pi / 64)
@@ -533,171 +531,174 @@ struct VectorDCT {
 // Call VectorDCT::ColumnDCT* after loading rows.
 
 template <class From, class To, size_t COLS = 4>
-HWY_FUNC void ColumnDCT4(const From& from, const To& to) {
+HWY_MAYBE_UNUSED void ColumnDCT(DCTSizeTag<4>, const From& from, const To& to) {
   const BlockDesc<4> d;
-  constexpr size_t kSize = COLS < d.N ? COLS : d.N;
-  for (size_t i = 0; i < COLS; i += d.N) {
-    auto i0 = from.template LoadPart<kSize>(0, i);
-    auto i1 = from.template LoadPart<kSize>(1, i);
-    auto i2 = from.template LoadPart<kSize>(2, i);
-    auto i3 = from.template LoadPart<kSize>(3, i);
+  constexpr size_t kSize = HWY_MIN(COLS, MaxLanes(d));
+  for (size_t i = 0; i < COLS; i += Lanes(d)) {
+    auto i0 = from.LoadPart(BlockDesc<kSize>(), 0, i);
+    auto i1 = from.LoadPart(BlockDesc<kSize>(), 1, i);
+    auto i2 = from.LoadPart(BlockDesc<kSize>(), 2, i);
+    auto i3 = from.LoadPart(BlockDesc<kSize>(), 3, i);
     VectorDCT::ColumnDCT4<kSize>(i0, i1, i2, i3);
-    to.template StorePart<kSize>(i0, 0, i);
-    to.template StorePart<kSize>(i1, 1, i);
-    to.template StorePart<kSize>(i2, 2, i);
-    to.template StorePart<kSize>(i3, 3, i);
+    to.StorePart(BlockDesc<kSize>(), i0, 0, i);
+    to.StorePart(BlockDesc<kSize>(), i1, 1, i);
+    to.StorePart(BlockDesc<kSize>(), i2, 2, i);
+    to.StorePart(BlockDesc<kSize>(), i3, 3, i);
   }
 }
 
 template <class From, class To, size_t COLS = 8>
-HWY_FUNC void ColumnDCT8(const From& from, const To& to) {
+HWY_MAYBE_UNUSED void ColumnDCT(DCTSizeTag<8>, const From& from, const To& to) {
   const BlockDesc<8> d;
-  constexpr size_t kSize = COLS < d.N ? COLS : d.N;
+  constexpr size_t kSize = HWY_MIN(COLS, MaxLanes(d));
 
-  for (size_t i = 0; i < COLS; i += d.N) {
-    auto i0 = from.template LoadPart<kSize>(0, i);
-    auto i1 = from.template LoadPart<kSize>(1, i);
-    auto i2 = from.template LoadPart<kSize>(2, i);
-    auto i3 = from.template LoadPart<kSize>(3, i);
-    auto i4 = from.template LoadPart<kSize>(4, i);
-    auto i5 = from.template LoadPart<kSize>(5, i);
-    auto i6 = from.template LoadPart<kSize>(6, i);
-    auto i7 = from.template LoadPart<kSize>(7, i);
+  for (size_t i = 0; i < COLS; i += Lanes(d)) {
+    auto i0 = from.LoadPart(BlockDesc<kSize>(), 0, i);
+    auto i1 = from.LoadPart(BlockDesc<kSize>(), 1, i);
+    auto i2 = from.LoadPart(BlockDesc<kSize>(), 2, i);
+    auto i3 = from.LoadPart(BlockDesc<kSize>(), 3, i);
+    auto i4 = from.LoadPart(BlockDesc<kSize>(), 4, i);
+    auto i5 = from.LoadPart(BlockDesc<kSize>(), 5, i);
+    auto i6 = from.LoadPart(BlockDesc<kSize>(), 6, i);
+    auto i7 = from.LoadPart(BlockDesc<kSize>(), 7, i);
     VectorDCT::ColumnDCT8<kSize>(i0, i1, i2, i3, i4, i5, i6, i7);
-    to.template StorePart<kSize>(i0, 0, i);
-    to.template StorePart<kSize>(i1, 1, i);
-    to.template StorePart<kSize>(i2, 2, i);
-    to.template StorePart<kSize>(i3, 3, i);
-    to.template StorePart<kSize>(i4, 4, i);
-    to.template StorePart<kSize>(i5, 5, i);
-    to.template StorePart<kSize>(i6, 6, i);
-    to.template StorePart<kSize>(i7, 7, i);
+    to.StorePart(BlockDesc<kSize>(), i0, 0, i);
+    to.StorePart(BlockDesc<kSize>(), i1, 1, i);
+    to.StorePart(BlockDesc<kSize>(), i2, 2, i);
+    to.StorePart(BlockDesc<kSize>(), i3, 3, i);
+    to.StorePart(BlockDesc<kSize>(), i4, 4, i);
+    to.StorePart(BlockDesc<kSize>(), i5, 5, i);
+    to.StorePart(BlockDesc<kSize>(), i6, 6, i);
+    to.StorePart(BlockDesc<kSize>(), i7, 7, i);
   }
 }
 
 template <class From, class To, size_t COLS = 16>
-HWY_ATTR HWY_MAYBE_UNUSED void ColumnDCT16(const From& from, const To& to) {
+HWY_MAYBE_UNUSED void ColumnDCT(DCTSizeTag<16>, const From& from,
+                                const To& to) {
   const BlockDesc<COLS> d;
 
-  for (size_t i = 0; i < COLS; i += d.N) {
-    auto i00 = from.template LoadPart<COLS>(0, i);
-    auto i01 = from.template LoadPart<COLS>(1, i);
-    auto i02 = from.template LoadPart<COLS>(2, i);
-    auto i03 = from.template LoadPart<COLS>(3, i);
-    auto i04 = from.template LoadPart<COLS>(4, i);
-    auto i05 = from.template LoadPart<COLS>(5, i);
-    auto i06 = from.template LoadPart<COLS>(6, i);
-    auto i07 = from.template LoadPart<COLS>(7, i);
-    auto i08 = from.template LoadPart<COLS>(8, i);
-    auto i09 = from.template LoadPart<COLS>(9, i);
-    auto i10 = from.template LoadPart<COLS>(10, i);
-    auto i11 = from.template LoadPart<COLS>(11, i);
-    auto i12 = from.template LoadPart<COLS>(12, i);
-    auto i13 = from.template LoadPart<COLS>(13, i);
-    auto i14 = from.template LoadPart<COLS>(14, i);
-    auto i15 = from.template LoadPart<COLS>(15, i);
-    VectorDCT::ColumnDCT16<COLS>(i00, i01, i02, i03, i04, i05, i06, i07, i08,
-                                 i09, i10, i11, i12, i13, i14, i15);
-    to.template StorePart<COLS>(i00, 0, i);
-    to.template StorePart<COLS>(i01, 1, i);
-    to.template StorePart<COLS>(i02, 2, i);
-    to.template StorePart<COLS>(i03, 3, i);
-    to.template StorePart<COLS>(i04, 4, i);
-    to.template StorePart<COLS>(i05, 5, i);
-    to.template StorePart<COLS>(i06, 6, i);
-    to.template StorePart<COLS>(i07, 7, i);
-    to.template StorePart<COLS>(i08, 8, i);
-    to.template StorePart<COLS>(i09, 9, i);
-    to.template StorePart<COLS>(i10, 10, i);
-    to.template StorePart<COLS>(i11, 11, i);
-    to.template StorePart<COLS>(i12, 12, i);
-    to.template StorePart<COLS>(i13, 13, i);
-    to.template StorePart<COLS>(i14, 14, i);
-    to.template StorePart<COLS>(i15, 15, i);
+  for (size_t i = 0; i < COLS; i += Lanes(d)) {
+    auto i00 = from.LoadPart(d, 0, i);
+    auto i01 = from.LoadPart(d, 1, i);
+    auto i02 = from.LoadPart(d, 2, i);
+    auto i03 = from.LoadPart(d, 3, i);
+    auto i04 = from.LoadPart(d, 4, i);
+    auto i05 = from.LoadPart(d, 5, i);
+    auto i06 = from.LoadPart(d, 6, i);
+    auto i07 = from.LoadPart(d, 7, i);
+    auto i08 = from.LoadPart(d, 8, i);
+    auto i09 = from.LoadPart(d, 9, i);
+    auto i10 = from.LoadPart(d, 10, i);
+    auto i11 = from.LoadPart(d, 11, i);
+    auto i12 = from.LoadPart(d, 12, i);
+    auto i13 = from.LoadPart(d, 13, i);
+    auto i14 = from.LoadPart(d, 14, i);
+    auto i15 = from.LoadPart(d, 15, i);
+    VectorDCT::ColumnDCT16<MaxLanes(d)>(i00, i01, i02, i03, i04, i05, i06, i07,
+                                        i08, i09, i10, i11, i12, i13, i14, i15);
+    to.StorePart(d, i00, 0, i);
+    to.StorePart(d, i01, 1, i);
+    to.StorePart(d, i02, 2, i);
+    to.StorePart(d, i03, 3, i);
+    to.StorePart(d, i04, 4, i);
+    to.StorePart(d, i05, 5, i);
+    to.StorePart(d, i06, 6, i);
+    to.StorePart(d, i07, 7, i);
+    to.StorePart(d, i08, 8, i);
+    to.StorePart(d, i09, 9, i);
+    to.StorePart(d, i10, 10, i);
+    to.StorePart(d, i11, 11, i);
+    to.StorePart(d, i12, 12, i);
+    to.StorePart(d, i13, 13, i);
+    to.StorePart(d, i14, 14, i);
+    to.StorePart(d, i15, 15, i);
   }
 }
 
 template <class From, class To, size_t COLS = 32>
-HWY_ATTR HWY_MAYBE_UNUSED void ColumnDCT32(const From& from, const To& to) {
+HWY_MAYBE_UNUSED void ColumnDCT(DCTSizeTag<32>, const From& from,
+                                const To& to) {
   const BlockDesc<COLS> d;
 
-  for (size_t i = 0; i < COLS; i += d.N) {
-    auto i00 = from.template LoadPart<COLS>(0, i);
-    auto i01 = from.template LoadPart<COLS>(1, i);
-    auto i02 = from.template LoadPart<COLS>(2, i);
-    auto i03 = from.template LoadPart<COLS>(3, i);
-    auto i04 = from.template LoadPart<COLS>(4, i);
-    auto i05 = from.template LoadPart<COLS>(5, i);
-    auto i06 = from.template LoadPart<COLS>(6, i);
-    auto i07 = from.template LoadPart<COLS>(7, i);
-    auto i08 = from.template LoadPart<COLS>(8, i);
-    auto i09 = from.template LoadPart<COLS>(9, i);
-    auto i10 = from.template LoadPart<COLS>(10, i);
-    auto i11 = from.template LoadPart<COLS>(11, i);
-    auto i12 = from.template LoadPart<COLS>(12, i);
-    auto i13 = from.template LoadPart<COLS>(13, i);
-    auto i14 = from.template LoadPart<COLS>(14, i);
-    auto i15 = from.template LoadPart<COLS>(15, i);
-    auto i16 = from.template LoadPart<COLS>(16, i);
-    auto i17 = from.template LoadPart<COLS>(17, i);
-    auto i18 = from.template LoadPart<COLS>(18, i);
-    auto i19 = from.template LoadPart<COLS>(19, i);
-    auto i20 = from.template LoadPart<COLS>(20, i);
-    auto i21 = from.template LoadPart<COLS>(21, i);
-    auto i22 = from.template LoadPart<COLS>(22, i);
-    auto i23 = from.template LoadPart<COLS>(23, i);
-    auto i24 = from.template LoadPart<COLS>(24, i);
-    auto i25 = from.template LoadPart<COLS>(25, i);
-    auto i26 = from.template LoadPart<COLS>(26, i);
-    auto i27 = from.template LoadPart<COLS>(27, i);
-    auto i28 = from.template LoadPart<COLS>(28, i);
-    auto i29 = from.template LoadPart<COLS>(29, i);
-    auto i30 = from.template LoadPart<COLS>(30, i);
-    auto i31 = from.template LoadPart<COLS>(31, i);
-    VectorDCT::ColumnDCT32<COLS>(i00, i01, i02, i03, i04, i05, i06, i07, i08,
-                                 i09, i10, i11, i12, i13, i14, i15, i16, i17,
-                                 i18, i19, i20, i21, i22, i23, i24, i25, i26,
-                                 i27, i28, i29, i30, i31);
-    to.template StorePart<COLS>(i00, 0, i);
-    to.template StorePart<COLS>(i01, 1, i);
-    to.template StorePart<COLS>(i02, 2, i);
-    to.template StorePart<COLS>(i03, 3, i);
-    to.template StorePart<COLS>(i04, 4, i);
-    to.template StorePart<COLS>(i05, 5, i);
-    to.template StorePart<COLS>(i06, 6, i);
-    to.template StorePart<COLS>(i07, 7, i);
-    to.template StorePart<COLS>(i08, 8, i);
-    to.template StorePart<COLS>(i09, 9, i);
-    to.template StorePart<COLS>(i10, 10, i);
-    to.template StorePart<COLS>(i11, 11, i);
-    to.template StorePart<COLS>(i12, 12, i);
-    to.template StorePart<COLS>(i13, 13, i);
-    to.template StorePart<COLS>(i14, 14, i);
-    to.template StorePart<COLS>(i15, 15, i);
-    to.template StorePart<COLS>(i16, 16, i);
-    to.template StorePart<COLS>(i17, 17, i);
-    to.template StorePart<COLS>(i18, 18, i);
-    to.template StorePart<COLS>(i19, 19, i);
-    to.template StorePart<COLS>(i20, 20, i);
-    to.template StorePart<COLS>(i21, 21, i);
-    to.template StorePart<COLS>(i22, 22, i);
-    to.template StorePart<COLS>(i23, 23, i);
-    to.template StorePart<COLS>(i24, 24, i);
-    to.template StorePart<COLS>(i25, 25, i);
-    to.template StorePart<COLS>(i26, 26, i);
-    to.template StorePart<COLS>(i27, 27, i);
-    to.template StorePart<COLS>(i28, 28, i);
-    to.template StorePart<COLS>(i29, 29, i);
-    to.template StorePart<COLS>(i30, 30, i);
-    to.template StorePart<COLS>(i31, 31, i);
+  for (size_t i = 0; i < COLS; i += Lanes(d)) {
+    auto i00 = from.LoadPart(d, 0, i);
+    auto i01 = from.LoadPart(d, 1, i);
+    auto i02 = from.LoadPart(d, 2, i);
+    auto i03 = from.LoadPart(d, 3, i);
+    auto i04 = from.LoadPart(d, 4, i);
+    auto i05 = from.LoadPart(d, 5, i);
+    auto i06 = from.LoadPart(d, 6, i);
+    auto i07 = from.LoadPart(d, 7, i);
+    auto i08 = from.LoadPart(d, 8, i);
+    auto i09 = from.LoadPart(d, 9, i);
+    auto i10 = from.LoadPart(d, 10, i);
+    auto i11 = from.LoadPart(d, 11, i);
+    auto i12 = from.LoadPart(d, 12, i);
+    auto i13 = from.LoadPart(d, 13, i);
+    auto i14 = from.LoadPart(d, 14, i);
+    auto i15 = from.LoadPart(d, 15, i);
+    auto i16 = from.LoadPart(d, 16, i);
+    auto i17 = from.LoadPart(d, 17, i);
+    auto i18 = from.LoadPart(d, 18, i);
+    auto i19 = from.LoadPart(d, 19, i);
+    auto i20 = from.LoadPart(d, 20, i);
+    auto i21 = from.LoadPart(d, 21, i);
+    auto i22 = from.LoadPart(d, 22, i);
+    auto i23 = from.LoadPart(d, 23, i);
+    auto i24 = from.LoadPart(d, 24, i);
+    auto i25 = from.LoadPart(d, 25, i);
+    auto i26 = from.LoadPart(d, 26, i);
+    auto i27 = from.LoadPart(d, 27, i);
+    auto i28 = from.LoadPart(d, 28, i);
+    auto i29 = from.LoadPart(d, 29, i);
+    auto i30 = from.LoadPart(d, 30, i);
+    auto i31 = from.LoadPart(d, 31, i);
+    VectorDCT::ColumnDCT32<MaxLanes(d)>(i00, i01, i02, i03, i04, i05, i06, i07,
+                                        i08, i09, i10, i11, i12, i13, i14, i15,
+                                        i16, i17, i18, i19, i20, i21, i22, i23,
+                                        i24, i25, i26, i27, i28, i29, i30, i31);
+    to.StorePart(d, i00, 0, i);
+    to.StorePart(d, i01, 1, i);
+    to.StorePart(d, i02, 2, i);
+    to.StorePart(d, i03, 3, i);
+    to.StorePart(d, i04, 4, i);
+    to.StorePart(d, i05, 5, i);
+    to.StorePart(d, i06, 6, i);
+    to.StorePart(d, i07, 7, i);
+    to.StorePart(d, i08, 8, i);
+    to.StorePart(d, i09, 9, i);
+    to.StorePart(d, i10, 10, i);
+    to.StorePart(d, i11, 11, i);
+    to.StorePart(d, i12, 12, i);
+    to.StorePart(d, i13, 13, i);
+    to.StorePart(d, i14, 14, i);
+    to.StorePart(d, i15, 15, i);
+    to.StorePart(d, i16, 16, i);
+    to.StorePart(d, i17, 17, i);
+    to.StorePart(d, i18, 18, i);
+    to.StorePart(d, i19, 19, i);
+    to.StorePart(d, i20, 20, i);
+    to.StorePart(d, i21, 21, i);
+    to.StorePart(d, i22, 22, i);
+    to.StorePart(d, i23, 23, i);
+    to.StorePart(d, i24, 24, i);
+    to.StorePart(d, i25, 25, i);
+    to.StorePart(d, i26, 26, i);
+    to.StorePart(d, i27, 27, i);
+    to.StorePart(d, i28, 28, i);
+    to.StorePart(d, i29, 29, i);
+    to.StorePart(d, i30, 30, i);
+    to.StorePart(d, i31, 31, i);
   }
 }
 
 // Special case for 8-lane SIMD - combines DCT and transpose.
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
 
 template <class From, class To>
-HWY_FUNC void ComputeTransposedScaledDCT8_V8(const From& from, const To& to) {
+HWY_MAYBE_UNUSED void ComputeTransposedScaledDCT8_V8(const From& from,
+                                                     const To& to) {
   const BlockDesc<8> d;
 
   const float c1234_lanes[4] = {
@@ -709,26 +710,26 @@ HWY_FUNC void ComputeTransposedScaledDCT8_V8(const From& from, const To& to) {
   const auto c1234 = LoadDup128(d, c1234_lanes);
   const auto k1 = Set(d, 1.0f);
 
-  auto i0 = from.template LoadPart<8>(0, 0);
-  auto i7 = from.template LoadPart<8>(7, 0);
+  auto i0 = from.LoadPart(BlockDesc<8>(), 0, 0);
+  auto i7 = from.LoadPart(BlockDesc<8>(), 7, 0);
   auto t00 = i0 + i7;                // 2 (faster than Add)
   auto t01 = NegMulAdd(i7, k1, i0);  // 4
   HWY_FENCE;
 
-  auto i3 = from.template LoadPart<8>(3, 0);
-  auto i4 = from.template LoadPart<8>(4, 0);
+  auto i3 = from.LoadPart(BlockDesc<8>(), 3, 0);
+  auto i4 = from.LoadPart(BlockDesc<8>(), 4, 0);
   auto t02 = i3 + i4;
   auto t03 = NegMulAdd(i4, k1, i3);  // 1
   HWY_FENCE;
 
-  auto i2 = from.template LoadPart<8>(2, 0);
-  auto i5 = from.template LoadPart<8>(5, 0);
+  auto i2 = from.LoadPart(BlockDesc<8>(), 2, 0);
+  auto i5 = from.LoadPart(BlockDesc<8>(), 5, 0);
   auto t04 = i2 + i5;  // 1
   auto t05 = NegMulAdd(i5, k1, i2);
   HWY_FENCE;
 
-  auto i1 = from.template LoadPart<8>(1, 0);
-  auto i6 = from.template LoadPart<8>(6, 0);
+  auto i1 = from.LoadPart(BlockDesc<8>(), 1, 0);
+  auto i6 = from.LoadPart(BlockDesc<8>(), 6, 0);
   auto t06 = i1 + i6;  // !
   HWY_FENCE;
 
@@ -849,28 +850,28 @@ HWY_FUNC void ComputeTransposedScaledDCT8_V8(const From& from, const To& to) {
   i2 = MulAdd(c1, t15, t09);
 
   i6 = NegMulAdd(c1, t15, t09);
-  to.template StorePart<8>(i0, 0, 0);
+  to.StorePart(BlockDesc<8>(), i0, 0, 0);
   HWY_FENCE;
 
   i1 = t20 + t22;
 
   i7 = t20 - t22;
-  to.template StorePart<8>(i2, 2, 0);
-  to.template StorePart<8>(i4, 4, 0);
+  to.StorePart(BlockDesc<8>(), i2, 2, 0);
+  to.StorePart(BlockDesc<8>(), i4, 4, 0);
   HWY_FENCE;
 
   i3 = t21 - t23;
-  to.template StorePart<8>(i1, 1, 0);
+  to.StorePart(BlockDesc<8>(), i1, 1, 0);
   HWY_FENCE;
 
   i5 = t21 + t23;
-  to.template StorePart<8>(i6, 6, 0);
-  to.template StorePart<8>(i7, 7, 0);
-  to.template StorePart<8>(i3, 3, 0);
-  to.template StorePart<8>(i5, 5, 0);
+  to.StorePart(BlockDesc<8>(), i6, 6, 0);
+  to.StorePart(BlockDesc<8>(), i7, 7, 0);
+  to.StorePart(BlockDesc<8>(), i3, 3, 0);
+  to.StorePart(BlockDesc<8>(), i5, 5, 0);
 }
 
-#endif  // HWY_CAPS & HWY_CAP_GE256
+#endif  // HWY_CAP_GE256
 
 // Computes the in-place NxN transposed-scaled-DCT (tsDCT) of block.
 // Requires that block is HWY_ALIGN'ed.
@@ -884,68 +885,36 @@ HWY_FUNC void ComputeTransposedScaledDCT8_V8(const From& from, const To& to) {
 //
 // See also DCTSlow, ComputeDCT
 template <size_t N>
-struct ComputeTransposedScaledDCT;
-
-template <>
-struct ComputeTransposedScaledDCT<32> {
+struct ComputeTransposedScaledDCT {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[32 * 32];
-    ColumnDCT32(from, ToBlock<32>(block));
-    TransposeBlock32(FromBlock<32>(block), ToBlock<32>(block));
-    ColumnDCT32(FromBlock<32>(block), to);
-  }
-};
-
-template <>
-struct ComputeTransposedScaledDCT<16> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[16 * 16];
-    ColumnDCT16(from, ToBlock<16>(block));
-    TransposeBlock16(FromBlock<16>(block), ToBlock<16>(block));
-    ColumnDCT16(FromBlock<16>(block), to);
-  }
-};
-
-template <>
-struct ComputeTransposedScaledDCT<8> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-#if HWY_CAPS & HWY_CAP_GE256
-    ComputeTransposedScaledDCT8_V8(from, to);
-#elif HWY_TARGET == HWY_SCALAR
-    HWY_ALIGN float block[8 * 8];
-    ColumnDCT8(from, ToBlock<8>(block));
-    TransposeBlock8(FromBlock<8>(block), ToBlock<8>(block));
-    ColumnDCT8(FromBlock<8>(block), to);
-#else  // 128-bit
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     // TODO(user): it is possible to avoid using temporary array,
     // after generalizing "To" to be bi-directional; all sub-transforms could
     // be performed "in-place".
-    HWY_ALIGN float block[8 * 8];
-    ColumnDCT8(from, ToBlock<8>(block));
-    TransposeBlock8_V4(FromBlock<8>(block), ToBlock<8>(block));
-    ColumnDCT8(FromBlock<8>(block), to);
-#endif
+    HWY_ALIGN float block[N * N];
+    HWY_ALIGN float transposed_block[N * N];
+    ColumnDCT(DCTSizeTag<N>(), from, ToBlock(N, N, block));
+    Transpose<N, N>::Run(FromBlock(N, N, block),
+                         ToBlock(N, N, transposed_block));
+    ColumnDCT(DCTSizeTag<N>(), FromBlock(N, N, transposed_block), to);
   }
 };
 
+#if HWY_CAP_GE256
 template <>
-struct ComputeTransposedScaledDCT<4> {
+struct ComputeTransposedScaledDCT<8> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[4 * 4];
-    ColumnDCT4(from, ToBlock<4>(block));
-    GenericTransposeBlockInplace<4>(FromBlock<4>(block), ToBlock<4>(block));
-    ColumnDCT4(FromBlock<4>(block), to);
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
+    return ComputeTransposedScaledDCT8_V8(from, to);
   }
 };
+#endif
 
+// Special case for 2x2 DCT.
 template <>
 struct ComputeTransposedScaledDCT<2> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     const float a00 = from.Read(0, 0);
     const float a01 = from.Read(0, 1);
     const float a10 = from.Read(1, 0);
@@ -960,163 +929,36 @@ struct ComputeTransposedScaledDCT<2> {
 // Computes the non-transposed, scaled DCT of a block, that needs to be
 // HWY_ALIGN'ed. Used for rectangular blocks.
 template <size_t ROWS, size_t COLS>
-struct ComputeScaledDCT;
-
-template <>
-struct ComputeScaledDCT<8, 16> {
+struct ComputeScaledDCT {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[8 * 16];
-    HWY_ALIGN float transposed_block[8 * 16];
-    using FromOriginal = FromBlock<8, 16>;
-    using FromTransposed = FromBlock<16, 8>;
-    using ToOriginal = ToBlock<8, 16>;
-    using ToTransposed = ToBlock<16, 8>;
-    ColumnDCT8<From, ToOriginal, /*COLS=*/16>(from, ToOriginal(block));
-    TransposeBlock816(FromOriginal(block), ToTransposed(transposed_block));
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
+    HWY_ALIGN float block[ROWS * COLS];
+    HWY_ALIGN float transposed_block[ROWS * COLS];
+    ColumnDCT<From, ToBlock, COLS>(DCTSizeTag<ROWS>(), from,
+                                   ToBlock(ROWS, COLS, block));
+    Transpose<ROWS, COLS>::Run(FromBlock(ROWS, COLS, block),
+                               ToBlock(COLS, ROWS, transposed_block));
     // Reusing block to reduce stack usage.
-    ColumnDCT16<FromTransposed, ToTransposed, /*COLS=*/8>(
-        FromTransposed(transposed_block), ToTransposed(block));
-    TransposeBlock168(FromTransposed(block), to);
+    if (ROWS < COLS) {
+      ColumnDCT<FromBlock, ToBlock, ROWS>(
+          DCTSizeTag<COLS>(), FromBlock(COLS, ROWS, transposed_block),
+          ToBlock(COLS, ROWS, block));
+      Transpose<COLS, ROWS>::Run(FromBlock(COLS, ROWS, block), to);
+    } else {
+      ColumnDCT<FromBlock, To, ROWS>(
+          DCTSizeTag<COLS>(), FromBlock(COLS, ROWS, transposed_block), to);
+    }
   }
 };
 
-template <>
-struct ComputeScaledDCT<8, 32> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[8 * 32];
-    HWY_ALIGN float transposed_block[8 * 32];
-    using FromOriginal = FromBlock<8, 32>;
-    using FromTransposed = FromBlock<32, 8>;
-    using ToOriginal = ToBlock<8, 32>;
-    using ToTransposed = ToBlock<32, 8>;
-    ColumnDCT8<From, ToOriginal, /*COLS=*/32>(from, ToOriginal(block));
-    TransposeBlock832(FromOriginal(block), ToTransposed(transposed_block));
-    // Reusing block to reduce stack usage.
-    ColumnDCT32<FromTransposed, ToTransposed, /*COLS=*/8>(
-        FromTransposed(transposed_block), ToTransposed(block));
-    TransposeBlock328(FromTransposed(block), to);
-  }
-};
-
-template <>
-struct ComputeScaledDCT<16, 32> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[16 * 32];
-    HWY_ALIGN float transposed_block[16 * 32];
-    using FromOriginal = FromBlock<16, 32>;
-    using FromTransposed = FromBlock<32, 16>;
-    using ToOriginal = ToBlock<16, 32>;
-    using ToTransposed = ToBlock<32, 16>;
-    ColumnDCT16<From, ToOriginal, /*COLS=*/32>(from, ToOriginal(block));
-    TransposeBlock1632(FromOriginal(block), ToTransposed(transposed_block));
-    // Reusing block to reduce stack usage.
-    ColumnDCT32<FromTransposed, ToTransposed, /*COLS=*/16>(
-        FromTransposed(transposed_block), ToTransposed(block));
-    TransposeBlock3216(FromTransposed(block), to);
-  }
-};
-
-// Blocks of the form XxY with X > Y are stored transposed.
-
-template <>
-struct ComputeScaledDCT<16, 8> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[8 * 16];
-    HWY_ALIGN float transposed_block[8 * 16];
-    using FromOriginal = FromBlock<16, 8>;
-    using FromTransposed = FromBlock<8, 16>;
-    using ToOriginal = ToBlock<16, 8>;
-    using ToTransposed = ToBlock<8, 16>;
-    ColumnDCT16<From, ToOriginal, /*COLS=*/8>(from, ToOriginal(block));
-    TransposeBlock168(FromOriginal(block), ToTransposed(transposed_block));
-    ColumnDCT8<FromTransposed, To, /*COLS=*/16>(
-        FromTransposed(transposed_block), to);
-  }
-};
-
-template <>
-struct ComputeScaledDCT<32, 8> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[8 * 32];
-    HWY_ALIGN float transposed_block[8 * 32];
-    using FromOriginal = FromBlock<32, 8>;
-    using FromTransposed = FromBlock<8, 32>;
-    using ToOriginal = ToBlock<32, 8>;
-    using ToTransposed = ToBlock<8, 32>;
-    ColumnDCT32<From, ToOriginal, /*COLS=*/8>(from, ToOriginal(block));
-    TransposeBlock328(FromOriginal(block), ToTransposed(transposed_block));
-    ColumnDCT8<FromTransposed, To, /*COLS=*/32>(
-        FromTransposed(transposed_block), to);
-  }
-};
-
-template <>
-struct ComputeScaledDCT<32, 16> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[16 * 32];
-    HWY_ALIGN float transposed_block[16 * 32];
-    using FromOriginal = FromBlock<32, 16>;
-    using FromTransposed = FromBlock<16, 32>;
-    using ToOriginal = ToBlock<32, 16>;
-    using ToTransposed = ToBlock<16, 32>;
-    ColumnDCT32<From, ToOriginal, /*COLS=*/16>(from, ToOriginal(block));
-    TransposeBlock3216(FromOriginal(block), ToTransposed(transposed_block));
-    ColumnDCT16<FromTransposed, To, /*COLS=*/32>(
-        FromTransposed(transposed_block), to);
-  }
-};
-
-template <>
-struct ComputeScaledDCT<8, 4> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[4 * 8];
-    HWY_ALIGN float transposed_block[4 * 8];
-    using FromOriginal = FromBlock<8, 4>;
-    using FromTransposed = FromBlock<4, 8>;
-    using ToOriginal = ToBlock<8, 4>;
-    using ToTransposed = ToBlock<4, 8>;
-    ColumnDCT8<From, ToOriginal, /*COLS=*/4>(from, ToOriginal(block));
-    GenericTransposeBlock<8, 4>(FromOriginal(block),
-                                ToTransposed(transposed_block));
-    ColumnDCT4<FromTransposed, To, /*COLS=*/8>(FromTransposed(transposed_block),
-                                               to);
-  }
-};
-
-template <>
-struct ComputeScaledDCT<4, 8> {
-  template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[8 * 4];
-    HWY_ALIGN float transposed_block[8 * 4];
-    using FromOriginal = FromBlock<4, 8>;
-    using FromTransposed = FromBlock<8, 4>;
-    using ToOriginal = ToBlock<4, 8>;
-    using ToTransposed = ToBlock<8, 4>;
-    ColumnDCT4<From, ToOriginal, /*COLS=*/8>(from, ToOriginal(block));
-    GenericTransposeBlock<4, 8>(FromOriginal(block),
-                                ToTransposed(transposed_block));
-    // Reusing block to reduce stack usage.
-    ColumnDCT8<FromTransposed, ToTransposed, /*COLS=*/4>(
-        FromTransposed(transposed_block), ToTransposed(block));
-    GenericTransposeBlock<8, 4>(FromTransposed(block), to);
-  }
-};
-
+// Special cases for ROWS (or COLS) <= 2.
 template <>
 struct ComputeScaledDCT<4, 2> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     HWY_ALIGN float block[4 * 2];
-    using ToOriginal = ToBlock<4, 2>;
-    ColumnDCT4<From, ToOriginal, /*COLS=*/2>(from, ToOriginal(block));
+    ColumnDCT<From, ToBlock, /*COLS=*/2>(DCTSizeTag<4>(), from,
+                                         ToBlock(4, 2, block));
     for (size_t y = 0; y < 4; ++y) {
       const float a0 = block[2 * y];
       const float a1 = block[2 * y + 1];
@@ -1129,7 +971,7 @@ struct ComputeScaledDCT<4, 2> {
 template <>
 struct ComputeScaledDCT<2, 4> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     // `block` and `coeffs` are transposed.
     HWY_ALIGN float block[4 * 2];
     for (size_t y = 0; y < 4; ++y) {
@@ -1138,44 +980,41 @@ struct ComputeScaledDCT<2, 4> {
       block[2 * y] = a0 + a1;
       block[2 * y + 1] = a0 - a1;
     }
-    using FromTransposed = FromBlock<4, 2>;
-    using ToTransposed = ToBlock<4, 2>;
     HWY_ALIGN float coeffs[4 * 2];
-    ColumnDCT4<FromTransposed, ToTransposed, /*COLS=*/2>(FromTransposed(block),
-                                                         ToTransposed(coeffs));
-    GenericTransposeBlock<4, 2>(FromTransposed(coeffs), to);
+    ColumnDCT<FromBlock, ToBlock, /*COLS=*/2>(
+        DCTSizeTag<4>(), FromBlock(4, 2, block), ToBlock(4, 2, coeffs));
+    Transpose<4, 2>::Run(FromBlock(4, 2, coeffs), to);
   }
 };
 
 template <>
 struct ComputeScaledDCT<4, 1> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     HWY_ALIGN float block[4 * 1];
-    ColumnDCT4<From, ToBlock<4, 1>, /*COLS=*/1>(from, ToBlock<4, 1>(block));
-    GenericTransposeBlock<4, 1>(FromBlock<4, 1>(block), to);
+    ColumnDCT<From, ToBlock, /*COLS=*/1>(DCTSizeTag<4>(), from,
+                                         ToBlock(4, 1, block));
+    Transpose<4, 1>::Run(FromBlock(4, 1, block), to);
   }
 };
 
 template <>
 struct ComputeScaledDCT<1, 4> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     HWY_ALIGN float coeffs[4 * 1];
-    using FromTransposed = FromBlock<4, 1>;
-    using ToTransposed = ToBlock<4, 1>;
-    GenericTransposeBlock<1, 4>(from, ToTransposed(coeffs));
+    Transpose<1, 4>::Run(from, ToBlock(4, 1, coeffs));
     HWY_ALIGN float block[4 * 1];
-    ColumnDCT4<FromTransposed, ToTransposed, /*COLS=*/1>(FromTransposed(coeffs),
-                                                         ToTransposed(block));
-    GenericTransposeBlock<4, 1>(FromTransposed(block), to);
+    ColumnDCT<FromBlock, ToBlock, /*COLS=*/1>(
+        DCTSizeTag<4>(), FromBlock(4, 1, coeffs), ToBlock(4, 1, block));
+    Transpose<4, 1>::Run(FromBlock(4, 1, block), to);
   }
 };
 
 template <>
 struct ComputeScaledDCT<2, 1> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     const float a0 = from.Read(0, 0);
     const float a1 = from.Read(1, 0);
     to.Write(a0 + a1, 0, 0);
@@ -1186,7 +1025,7 @@ struct ComputeScaledDCT<2, 1> {
 template <>
 struct ComputeScaledDCT<1, 2> {
   template <class From, class To>
-  HWY_FUNC void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
     const float a0 = from.Read(0, 0);
     const float a1 = from.Read(0, 1);
     to.Write(a0 + a1, 0, 0);
@@ -1195,7 +1034,7 @@ struct ComputeScaledDCT<1, 2> {
 };
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

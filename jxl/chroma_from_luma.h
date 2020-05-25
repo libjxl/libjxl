@@ -21,7 +21,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/interface.h>
 #include <vector>
 
 #include "jxl/aux_out.h"
@@ -133,7 +132,7 @@ struct ColorCorrelationMap {
   ImageB ytob_map;
 
  private:
-  HWY_ALIGN_MAX float dc_factors_[4] = {};
+  float dc_factors_[4] = {};
   // range of factor: -1.51 to +1.52
   uint32_t color_factor_ = kDefaultColorFactor;
   float color_scale_ = 1.0f / color_factor_;
@@ -143,19 +142,17 @@ struct ColorCorrelationMap {
   int32_t ytob_dc_ = kColorOffset;
 };
 
-typedef void FindBestColorCorrelationMapFunc(const Image3F& opsin,
-                                             const DequantMatrices& dequant,
-                                             const AcStrategyImage* ac_strategy,
-                                             ThreadPool* pool,
-                                             ColorCorrelationMap* cmap);
-FindBestColorCorrelationMapFunc* ChooseFindBestColorCorrelationMap(
-    uint32_t targets_bits);
+typedef void FindBestColorCorrelationMapFunc(
+    const Image3F& opsin, const DequantMatrices& dequant,
+    const AcStrategyImage* ac_strategy, const ImageI* raw_quant_field,
+    const Quantizer* quantizer, ThreadPool* pool, ColorCorrelationMap* cmap);
+FindBestColorCorrelationMapFunc* ChooseFindBestColorCorrelationMap();
 
 typedef void EncodeColorMapFunc(const ColorCorrelationMap& cmap,
                                 const Rect& rect, std::vector<Token>* tokens,
                                 size_t base_context,
                                 AuxOut* JXL_RESTRICT aux_out);
-EncodeColorMapFunc* ChooseEncodeColorMap(uint32_t targets_bits);
+EncodeColorMapFunc* ChooseEncodeColorMap();
 
 typedef Status DecodeColorMapFunc(BitReader* JXL_RESTRICT br,
                                   ANSSymbolReader* decoder,
@@ -163,28 +160,10 @@ typedef Status DecodeColorMapFunc(BitReader* JXL_RESTRICT br,
                                   ColorCorrelationMap* cmap, const Rect& rect,
                                   size_t base_context,
                                   AuxOut* JXL_RESTRICT aux_out);
-DecodeColorMapFunc* ChooseDecodeColorMap(uint32_t targets_bits);
+DecodeColorMapFunc* ChooseDecodeColorMap();
 
 // Declared here to avoid including predictor.h.
 static constexpr size_t kCmapContexts = 24;
-
-template <typename V, typename R>
-inline void FindIndexOfSumMaximum(const V* array, const size_t len, R* idx,
-                                  V* sum) {
-  JXL_ASSERT(len > 0);
-  V maxval = 0;
-  V val = 0;
-  R maxidx = 0;
-  for (size_t i = 0; i < len; ++i) {
-    val += array[i];
-    if (val > maxval) {
-      maxval = val;
-      maxidx = i;
-    }
-  }
-  *idx = maxidx;
-  *sum = maxval;
-}
 
 }  // namespace jxl
 

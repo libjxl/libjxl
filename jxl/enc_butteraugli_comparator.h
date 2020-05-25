@@ -29,9 +29,9 @@
 
 namespace jxl {
 
-class ButteraugliComparator : public Comparator {
+class JxlButteraugliComparator : public Comparator {
  public:
-  explicit ButteraugliComparator(float hf_asymmetry);
+  explicit JxlButteraugliComparator(float hf_asymmetry);
 
   Status SetReferenceImage(const ImageBundle& ref) override;
 
@@ -43,7 +43,7 @@ class ButteraugliComparator : public Comparator {
 
  private:
   float hf_asymmetry_;
-  std::unique_ptr<butteraugli::ButteraugliComparator> comparator_;
+  std::unique_ptr<ButteraugliComparator> comparator_;
   size_t xsize_ = 0;
   size_t ysize_ = 0;
 };

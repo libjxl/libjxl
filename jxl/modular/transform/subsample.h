@@ -24,8 +24,7 @@ namespace jxl {
 // [end_channel], [sample_ratio_h], [sample_ratio_v], ... e.g. 1, 2, 2
 // corresponds to 4:2:0
 
-Status check_subsample_parameters(TransformParams* parameters,
-                                  int num_channels) {
+Status CheckSubsampleParameters(TransformParams* parameters, int num_channels) {
   if (parameters->size() == 0) {
     parameters->push_back(0);
   }
@@ -82,10 +81,10 @@ Status check_subsample_parameters(TransformParams* parameters,
   return true;
 }
 
-Status inv_subsample(Image& input, const TransformParams& parameters) {
+Status InvSubsample(Image& input, const TransformParams& parameters) {
   TransformParams copy_parameters(parameters);
   JXL_RETURN_IF_ERROR(
-      check_subsample_parameters(&copy_parameters, input.channel.size()));
+      CheckSubsampleParameters(&copy_parameters, input.channel.size()));
 
   for (size_t i = 0; i < copy_parameters.size(); i += 4) {
     uint32_t c1 = copy_parameters[i + 0];
@@ -169,8 +168,8 @@ Status inv_subsample(Image& input, const TransformParams& parameters) {
   return true;
 }
 
-Status fwd_subsample(Image& /* input */,
-                     const TransformParams& /* parameters */) {
+Status FwdSubsample(Image& /* input */,
+                    const TransformParams& /* parameters */) {
   return false;  // TODO (not really needed though; subsampling is useful if the
                  // input data is a JPEG or YUV, but then the transform is
                  // already done) for non-subsampled input it's probably better
@@ -178,10 +177,10 @@ Status fwd_subsample(Image& /* input */,
                  // details away)
 }
 
-Status meta_subsample(Image& input, const TransformParams& parameters) {
+Status MetaSubsample(Image& input, const TransformParams& parameters) {
   TransformParams copy_parameters(parameters);
   JXL_RETURN_IF_ERROR(
-      check_subsample_parameters(&copy_parameters, input.channel.size()));
+      CheckSubsampleParameters(&copy_parameters, input.channel.size()));
   for (size_t i = 0; i < copy_parameters.size(); i += 4) {
     uint32_t c1 = copy_parameters[i + 0];
     uint32_t c2 = copy_parameters[i + 1];
@@ -197,15 +196,6 @@ Status meta_subsample(Image& input, const TransformParams& parameters) {
     }
   }
   return true;
-}
-
-Status subsample(Image& input, bool inverse,
-                 const TransformParams& parameters) {
-  if (inverse) {
-    return inv_subsample(input, parameters);
-  } else {
-    return fwd_subsample(input, parameters);
-  }
 }
 
 }  // namespace jxl

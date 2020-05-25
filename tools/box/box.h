@@ -59,6 +59,8 @@ jxl::Status ParseBoxHeader(const uint8_t** next_in, size_t* available_in,
 // TODO(lode): streaming C API
 jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out);
 
+// NOTE: after DecodeJpegXlContainerOneShot, the exif etc. pointers point to
+// regions within the input data passed to that function.
 struct JpegXlContainer {
   // Exif metadata, or null if not present in the container.
   // The exif data has the format of 'Exif block' as defined in
@@ -87,6 +89,8 @@ struct JpegXlContainer {
   size_t codestream_size = 0;
 };
 
+// NOTE: the input data must remain valid as long as `container` is used,
+// because its exif etc. pointers point to that data.
 jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
                                          JpegXlContainer* container);
 

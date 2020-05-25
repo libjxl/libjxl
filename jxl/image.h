@@ -90,7 +90,7 @@ struct PlaneBase {
   }
 
   enum class Padding {
-    // Allow Load(d, row + x) for x = 0; x < xsize(); x += d.N. Default.
+    // Allow Load(d, row + x) for x = 0; x < xsize(); x += Lanes(d). Default.
     kRoundUp,
     // Allow LoadU(d, row + x) for x = xsize() - 1. This requires an extra
     // vector to be initialized. If done by default, this would suppress
@@ -146,30 +146,27 @@ class Plane : public PlaneBase {
     InitializePadding(sizeof(T), Padding::kUnaligned);
   }
 
-  JXL_INLINE T* JXL_RESTRICT Row(const size_t y) {
-    return static_cast<T*>(VoidRow(y));
-  }
+  JXL_INLINE T* Row(const size_t y) { return static_cast<T*>(VoidRow(y)); }
 
   // Returns pointer to non-const - required for writing to individual planes
   // of an Image3.
-  JXL_INLINE T* JXL_RESTRICT MutableRow(const size_t y) const {
+  JXL_INLINE T* MutableRow(const size_t y) const {
     return static_cast<T*>(VoidRow(y));
   }
 
   // Returns pointer to const (see above).
-  JXL_INLINE const T* JXL_RESTRICT Row(const size_t y) const {
+  JXL_INLINE const T* Row(const size_t y) const {
     return static_cast<const T*>(VoidRow(y));
   }
 
   // Documents that the access is const.
-  JXL_INLINE const T* JXL_RESTRICT ConstRow(const size_t y) const {
+  JXL_INLINE const T* ConstRow(const size_t y) const {
     return static_cast<const T*>(VoidRow(y));
   }
 
   // Returns number of pixels (some of which are padding) per row. Useful for
   // computing other rows via pointer arithmetic. WARNING: this must
-  // NOT be used to determine xsize. NOTE: this is less efficient than
-  // ByteOffset(row, bytes_per_row).
+  // NOT be used to determine xsize.
   JXL_INLINE intptr_t PixelsPerRow() const {
     return static_cast<intptr_t>(bytes_per_row_ / sizeof(T));
   }
@@ -336,27 +333,25 @@ class Image3 {
   }
 
   // Returns row pointer; usage: PlaneRow(idx_plane, y)[x] = val.
-  JXL_INLINE T* JXL_RESTRICT PlaneRow(const size_t c, const size_t y) {
+  JXL_INLINE T* PlaneRow(const size_t c, const size_t y) {
     // Custom implementation instead of calling planes_[c].Row ensures only a
     // single multiplication is needed for PlaneRow(0..2, y).
     PlaneRowBoundsCheck(c, y);
     const size_t row_offset = y * planes_[0].bytes_per_row();
     void* row = planes_[c].bytes() + row_offset;
-    return static_cast<T*>(JXL_ASSUME_ALIGNED(row, 64));
+    return static_cast<T * JXL_RESTRICT>(JXL_ASSUME_ALIGNED(row, 64));
   }
 
   // Returns const row pointer; usage: val = PlaneRow(idx_plane, y)[x].
-  JXL_INLINE const T* JXL_RESTRICT PlaneRow(const size_t c,
-                                            const size_t y) const {
+  JXL_INLINE const T* PlaneRow(const size_t c, const size_t y) const {
     PlaneRowBoundsCheck(c, y);
     const size_t row_offset = y * planes_[0].bytes_per_row();
     const void* row = planes_[c].bytes() + row_offset;
-    return static_cast<const T*>(JXL_ASSUME_ALIGNED(row, 64));
+    return static_cast<const T * JXL_RESTRICT>(JXL_ASSUME_ALIGNED(row, 64));
   }
 
   // Returns const row pointer, even if called from a non-const Image3.
-  JXL_INLINE const T* JXL_RESTRICT ConstPlaneRow(const size_t c,
-                                                 const size_t y) const {
+  JXL_INLINE const T* ConstPlaneRow(const size_t c, const size_t y) const {
     return PlaneRow(c, y);
   }
 
@@ -383,8 +378,7 @@ class Image3 {
   JXL_INLINE size_t bytes_per_row() const { return planes_[0].bytes_per_row(); }
   // Returns number of pixels (some of which are padding) per row. Useful for
   // computing other rows via pointer arithmetic. WARNING: this must NOT be used
-  // to determine xsize. NOTE: this is less efficient than
-  // ByteOffset(row, bytes_per_row).
+  // to determine xsize.
   JXL_INLINE intptr_t PixelsPerRow() const { return planes_[0].PixelsPerRow(); }
 
  private:

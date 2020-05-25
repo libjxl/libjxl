@@ -44,37 +44,35 @@ check_cxx_source_compiles(
     }"
   JPEGXL_EMSCRIPTEN
 )
-if(JPEGXL_EMSCRIPTEN)
-  message("-- Compiler is EMSCRIPTEN.")
-  set(JPEGXL_NOT_EMSCRIPTEN false)
-  set(CMAKE_STATIC_LIBRARY_SUFFIX ".bc")
-  set(CMAKE_EXECUTABLE_SUFFIX ".js")
-  add_definitions(-DPROFILER_ENABLED=0)
-else()
-  message("-- Compiler is not EMSCRIPTEN.")
-  set(JPEGXL_NOT_EMSCRIPTEN true)
-endif()
+
+message(STATUS "CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}")
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
+set(CXX_PIC_FLAGS "\
+  -Xclang -mrelocation-model -Xclang pic \
+  -Xclang -pic-level -Xclang 2")
+check_cxx_compiler_flag("${CXX_PIC_FLAGS}" CXX_PIC_FLAGS_SUPPORTED)
+check_cxx_compiler_flag("-Xclang -mconstructor-aliases" CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
 
 ### Project build options:
-if(NOT APPLE AND NOT WIN32 AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64"
-   AND NOT ${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm" AND NOT JPEGXL_EMSCRIPTEN)
+if(${CXX_FUZZERS_SUPPORTED})
   # Enabled by default except on arm64, Windows and Apple builds.
   set(ENABLE_FUZZERS_DEFAULT true)
 endif()
-if(NOT APPLE AND NOT WIN32 AND NOT JPEGXL_EMSCRIPTEN)
+if(NOT APPLE AND NOT WIN32 AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   # Enabled by default except on Windows and Apple builds.
   set(ENABLE_TCMALLOC_DEFAULT true)
 endif()
 
 set(JPEGXL_ENABLE_FUZZERS ${ENABLE_FUZZERS_DEFAULT} CACHE BOOL
     "Build JPEGXL fuzzer targets")
-set(JPEGXL_ENABLE_BENCHMARK ${JPEGXL_NOT_EMSCRIPTEN} CACHE BOOL
+set(JPEGXL_ENABLE_BENCHMARK true CACHE BOOL
     "Build JPEGXL benchmark tools")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
     "Build JPEGXL with support for encoding with sjpeg")
 set(JPEGXL_ENABLE_SKCMS false CACHE BOOL
     "Where possible, use skcms instead of lcms2")
-set(JPEGXL_ENABLE_VIEWERS ${JPEGXL_NOT_EMSCRIPTEN} CACHE BOOL
+set(JPEGXL_ENABLE_VIEWERS true CACHE BOOL
     "Build JPEGXL viewer tools for evaluation")
 set(JPEGXL_ENABLE_TCMALLOC ${ENABLE_TCMALLOC_DEFAULT} CACHE BOOL
     "Build JPEGXL using gperftools (tcmalloc) allocator.")
@@ -111,21 +109,22 @@ add_definitions(
 # For this reason we place them in CMAKE_CXX_FLAGS instead.
 # See https://gitlab.kitware.com/cmake/cmake/issues/15826
 
-if (NOT "${JPEGXL_EMSCRIPTEN}")
-
 # Pretty colorful messages within reasonable limits.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -Xclang -ferror-limit -Xclang 19 -Xclang -fmessage-length -Xclang 0 \
-  -Xclang -fdiagnostics-show-option -fcolor-diagnostics")
+  -ferror-limit=19 -fmessage-length=0 \
+  -fdiagnostics-show-option -fcolor-diagnostics")
 
 # Machine flags.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -Xclang -mrelax-all \
-  -Xclang -mrelocation-model -Xclang pic \
-  -Xclang -pic-level -Xclang 2 \
-  -Xclang -mconstructor-aliases \
-  -Xclang -mpie-copy-relocations \
-  -Xclang -munwind-tables")
+  -mrelax-all \
+  -mpie-copy-relocations \
+  -funwind-tables")
+if ("${CXX_PIC_FLAGS_SUPPORTED}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_PIC_FLAGS}")
+endif()
+if ("${CXX_CONSTRUCTOR_ALIASES_SUPPORTED}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -mconstructor-aliases")
+endif()
 
 if(WIN32)
 # Not supported by clang-cl, but frame pointers are default on Windows
@@ -140,8 +139,6 @@ if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
     -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard")
 endif()
-
-endif()  # JPEGXL_EMSCRIPTEN
 
 # Force build with optimizations in release mode.
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
@@ -196,24 +193,3 @@ include(GoogleTest)
 
 # Tests for the jpegxl library.
 include(jpegxltests.cmake)
-
-if ("${JPEGXL_EMSCRIPTEN}")
-
-# WASM API facade.
-add_executable(jpegxl_emcc jxl/jpegxl_emcc.cc)
-target_link_libraries(jpegxl_emcc jpegxl-static)
-set_target_properties(jpegxl_emcc PROPERTIES LINK_FLAGS "\
-  -O3\
-  -s EXPORTED_FUNCTIONS='[\
-    \"_decompress\",\
-    \"_free\",\
-    \"_freeImage\",\
-    \"_getImageWidth\",\
-    \"_getImageHeight\",\
-    \"_getImagePixels\",\
-    \"_malloc\"\
-  ]'\
-")
-
-endif ()  # JPEGXL_EMSCRIPTEN
-

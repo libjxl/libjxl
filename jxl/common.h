@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 
+#include <limits>  // numeric_limits
 #include <memory>  // unique_ptr
 
 #include "jxl/base/compiler_specific.h"
@@ -49,7 +50,7 @@ constexpr inline T1 DivCeil(T1 a, T2 b) {
 
 // Works for any `align`; if a power of two, compiler emits ADD+AND.
 constexpr inline size_t RoundUpTo(size_t what, size_t align) {
-  return DivCeil(what + align - 1, align) * align;
+  return DivCeil(what, align) * align;
 }
 
 constexpr double kPi = 3.14159265358979323846264338327950288;
@@ -138,12 +139,20 @@ JXL_INLINE T Clamp(T val, T low, T hi) {
   return val < low ? low : val > hi ? hi : val;
 }
 
-// This leads to somewhat better code than pointer arithmetic.
 template <typename T>
-JXL_INLINE T* JXL_RESTRICT ByteOffset(T* JXL_RESTRICT base,
-                                      const intptr_t byte_offset) {
-  const uintptr_t base_addr = reinterpret_cast<uintptr_t>(base);
-  return reinterpret_cast<T*>(base_addr + byte_offset);
+JXL_INLINE T ClampToRange(int64_t val) {
+  return Clamp<int64_t>(val, std::numeric_limits<T>::min(),
+                        std::numeric_limits<T>::max());
+}
+
+template <typename T>
+JXL_INLINE T SaturatingMul(int64_t a, int64_t b) {
+  return ClampToRange<T>(a * b);
+}
+
+template <typename T>
+JXL_INLINE T SaturatingAdd(int64_t a, int64_t b) {
+  return ClampToRange<T>(a + b);
 }
 
 }  // namespace jxl

@@ -35,10 +35,10 @@ typedef void AddNoiseFunc(const NoiseParams& noise_params,
                           const Rect& noise_rect, const Image3F& noise,
                           const Rect& opsin_rect,
                           const ColorCorrelationMap& cmap, Image3F* opsin);
-AddNoiseFunc* ChooseAddNoise(uint32_t targets_bits);
+AddNoiseFunc* ChooseAddNoise();
 
 typedef void RandomImage3Func(const Rect& rect, Image3F* JXL_RESTRICT noise);
-RandomImage3Func* ChooseRandomImage3(uint32_t targets_bits);
+RandomImage3Func* ChooseRandomImage3();
 
 // Must only call if FrameHeader.flags.kNoise.
 Status DecodeNoise(BitReader* br, NoiseParams* noise_params);

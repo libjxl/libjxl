@@ -24,7 +24,7 @@
 
 #include "jxl/base/override.h"
 #include "jxl/frame_header.h"
-#include "jxl/modular/encoding/options.h"
+#include "jxl/modular/options.h"
 
 namespace jxl {
 

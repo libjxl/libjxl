@@ -21,11 +21,13 @@
 #define JXL_DCT_BLOCK_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include <stddef.h>
 
-namespace jxl {
+#include "jxl/base/status.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
 // Block: (x, y) <-> (N * y + x)
@@ -39,136 +41,101 @@ namespace jxl {
 template <size_t N>
 using BlockDesc = HWY_CAPPED(float, N);
 
+template <size_t N>
+struct DCTSizeTag {};
+
 // Here and in the following, the SZ template parameter specifies the number of
 // values to load/store. Needed because we want to handle 4x4 sub-blocks of
 // 16x16 blocks.
-template <size_t ROWS, size_t COLS = ROWS>
 class FromBlock {
  public:
-  explicit FromBlock(const float* block) : block_(block) {}
+  FromBlock(size_t rows, size_t cols, const float* block)
+      : cols_(cols), block_(block) {}
 
-  FromBlock View(size_t dx, size_t dy) const {
-    return FromBlock<ROWS, COLS>(Address(dx, dy));
+  template <typename D>
+  HWY_INLINE Vec<D> LoadPart(D, const size_t row, size_t i) const {
+    JXL_DASSERT(Lanes(D()) <= cols_);
+    return Load(D(), Address(row, i));
   }
 
-  template <size_t SZ>
-  HWY_ATTR HWY_INLINE HWY_VEC(BlockDesc<SZ>)
-      LoadPart(const size_t row, size_t i) const {
-    static_assert(SZ <= COLS, "Requesting more values that are present!");
-    return Load(BlockDesc<SZ>(), block_ + row * COLS + i);
-  }
-
-  HWY_ATTR HWY_INLINE HWY_VEC(BlockDesc<COLS>)
-      LoadVec(const size_t row, size_t i) const {
-    return LoadPart<COLS>(row, i);
-  }
-
-  HWY_ATTR HWY_INLINE float Read(const size_t row, const size_t i) const {
+  HWY_INLINE float Read(const size_t row, const size_t i) const {
     return *Address(row, i);
   }
 
   constexpr HWY_INLINE const float* Address(const size_t row,
                                             const size_t i) const {
-    return block_ + row * COLS + i;
+    return block_ + row * cols_ + i;
   }
 
  private:
+  size_t cols_;
   const float* block_;
 };
 
-template <size_t ROWS, size_t COLS = ROWS>
 class ToBlock {
  public:
-  explicit ToBlock(float* block) : block_(block) {}
+  ToBlock(size_t rows, size_t cols, float* block)
+      : cols_(cols), block_(block) {}
 
-  ToBlock View(size_t dx, size_t dy) const {
-    return ToBlock<ROWS, COLS>(Address(dx, dy));
+  template <typename D>
+  HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
+                            const size_t i) const {
+    JXL_DASSERT(Lanes(D()) <= cols_);
+    Store(v, D(), Address(row, i));
   }
 
-  template <size_t SZ>
-  HWY_ATTR HWY_INLINE void StorePart(const HWY_VEC(BlockDesc<SZ>) & v,
-                                     const size_t row, const size_t i) const {
-    static_assert(SZ <= COLS, "Requesting more values that are present!");
-    Store(v, BlockDesc<SZ>(), Address(row, i));
-  }
-
-  HWY_ATTR HWY_INLINE void StoreVec(const HWY_VEC(BlockDesc<COLS>) & v,
-                                    const size_t row, size_t i) const {
-    return StorePart<COLS>(v, row, i);
-  }
-
-  HWY_ATTR HWY_INLINE void Write(float v, const size_t row,
-                                 const size_t i) const {
+  HWY_INLINE void Write(float v, const size_t row, const size_t i) const {
     *Address(row, i) = v;
   }
 
   constexpr HWY_INLINE float* Address(const size_t row, const size_t i) const {
-    return block_ + row * COLS + i;
+    return block_ + row * cols_ + i;
   }
 
  private:
+  size_t cols_;
   float* block_;
 };
 
 // Same as ToBlock, but multiplies result by (N * N)
-template <size_t ROWS, size_t COLS = ROWS>
 class ScaleToBlock {
  public:
-  explicit HWY_ATTR ScaleToBlock(float* block) : block_(block) {}
+  ScaleToBlock(size_t rows, size_t cols, float* block)
+      : cols_(cols), mul_(1.0f / (cols * rows)), block_(block) {}
 
-  ScaleToBlock View(size_t dx, size_t dy) const {
-    return ScaleToBlock<ROWS, COLS>(Address(dx, dy));
+  template <typename D>
+  HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
+                            const size_t i) const {
+    JXL_DASSERT(Lanes(D()) <= cols_);
+    const auto mul = Set(D(), mul_);
+    Store(v * mul, D(), Address(row, i));
   }
 
-  template <size_t SZ>
-  HWY_ATTR HWY_INLINE void StorePart(const HWY_VEC(BlockDesc<SZ>) & v,
-                                     const size_t row, const size_t i) const {
-    using BlockDesc = BlockDesc<SZ>;
-    const auto mul_ = Set(BlockDesc(), 1.0f / (COLS * ROWS));
-    Store(v * mul_, BlockDesc(), Address(row, i));
-  }
-
-  HWY_ATTR HWY_INLINE void StoreVec(const HWY_VEC(BlockDesc<COLS>) & v,
-                                    const size_t row, size_t i) const {
-    return StorePart<COLS>(v, row, i);
-  }
-
-  HWY_ATTR HWY_INLINE void Write(float v, const size_t row,
-                                 const size_t i) const {
-    constexpr float mul_ = 1.0f / (COLS * ROWS);
+  HWY_INLINE void Write(float v, const size_t row, const size_t i) const {
     *Address(row, i) = v * mul_;
   }
 
   constexpr HWY_INLINE float* Address(const size_t row, const size_t i) const {
-    return block_ + row * COLS + i;
+    return block_ + row * cols_ + i;
   }
 
  private:
+  size_t cols_;
+  float mul_;
   float* block_;
 };
 
-template <size_t N>
 class FromLines {
  public:
   FromLines(const float* top_left, size_t stride)
       : top_left_(top_left), stride_(stride) {}
 
-  FromLines View(size_t dx, size_t dy) const {
-    return FromLines(Address(dx, dy), stride_);
+  template <typename D>
+  HWY_INLINE Vec<D> LoadPart(D, const size_t row, const size_t i) const {
+    return Load(D(), Address(row, i));
   }
 
-  template <size_t SZ>
-  HWY_ATTR HWY_INLINE HWY_VEC(BlockDesc<SZ>)
-      LoadPart(const size_t row, const size_t i) const {
-    return Load(BlockDesc<SZ>(), Address(row, i));
-  }
-
-  HWY_ATTR HWY_INLINE HWY_VEC(BlockDesc<N>)
-      LoadVec(const size_t row, size_t i) const {
-    return LoadPart<N>(row, i);
-  }
-
-  HWY_ATTR HWY_INLINE float Read(const size_t row, const size_t i) const {
+  HWY_INLINE float Read(const size_t row, const size_t i) const {
     return *Address(row, i);
   }
 
@@ -183,29 +150,18 @@ class FromLines {
 
 // Pointers are restrict-qualified: assumes we don't use both FromLines and
 // ToLines in the same DCT. NOTE: Transpose uses From/ToBlock, not *Lines.
-template <size_t N>
 class ToLines {
  public:
   ToLines(float* top_left, size_t stride)
       : top_left_(top_left), stride_(stride) {}
 
-  ToLines View(const ToLines& /*other*/, size_t dx, size_t dy) const {
-    return ToLines(Address(dx, dy), stride_);
+  template <typename D>
+  HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
+                            const size_t i) const {
+    Store(v, D(), Address(row, i));
   }
 
-  template <size_t SZ>
-  HWY_ATTR HWY_INLINE void StorePart(const HWY_VEC(BlockDesc<SZ>) & v,
-                                     const size_t row, const size_t i) const {
-    Store(v, BlockDesc<SZ>(), Address(row, i));
-  }
-
-  HWY_ATTR HWY_INLINE void StoreVec(const HWY_VEC(BlockDesc<N>) & v,
-                                    const size_t row, size_t i) const {
-    return StorePart<N>(v, row, i);
-  }
-
-  HWY_ATTR HWY_INLINE void Write(float v, const size_t row,
-                                 const size_t i) const {
+  HWY_INLINE void Write(float v, const size_t row, const size_t i) const {
     *Address(row, i) = v;
   }
 
@@ -219,7 +175,7 @@ class ToLines {
 };
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

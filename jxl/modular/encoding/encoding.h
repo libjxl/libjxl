@@ -28,28 +28,24 @@
 #include "jxl/enc_ans.h"
 #include "jxl/enc_bit_writer.h"
 #include "jxl/image.h"
-#include "jxl/modular/config.h"
-#include "jxl/modular/encoding/options.h"
 #include "jxl/modular/image/image.h"
+#include "jxl/modular/options.h"
 
 namespace jxl {
 
-#ifdef HAS_ENCODER
-bool modular_generic_compress(
+bool ModularGenericCompress(
     Image &image, const ModularOptions &opts, BitWriter *writer,
-    AuxOut *aux_out = nullptr, size_t layer = 0, int loss = 1,
-    bool try_transforms = true,
+    AuxOut *aux_out = nullptr, size_t layer = 0,
     const HybridUintConfig &uint_config = kHybridUint420Config);
-#endif
 
 // undo_transforms == N > 0: undo all transforms except the first N
 //                           (e.g. to represent YCbCr420 losslessly)
 // undo_transforms == 0: undo all transforms
 // undo_transforms == -1: undo all transforms but don't clamp to range
 // undo_transforms == -2: don't undo any transform
-bool modular_generic_decompress(BitReader *br, Image &image,
-                                ModularOptions *options,
-                                int undo_transforms = -1);
+bool ModularGenericDecompress(BitReader *br, Image &image,
+                              ModularOptions *options,
+                              int undo_transforms = -1);
 }  // namespace jxl
 
 #endif  // JXL_MODULAR_ENCODING_ENCODING_H_

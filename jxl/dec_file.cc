@@ -192,9 +192,10 @@ Status DecodeFile(const DecompressParams& dparams,
       // Skip frames that are not displayed.
       do {
         frame_dim = main_frame_dim;
-        JXL_RETURN_IF_ERROR(DecodeFrame(
-            dparams, file, /*animation=*/nullptr, &frame_dim, &multiframe, pool,
-            &reader, aux_out, &io->frames.back(), /*animation_frame=*/nullptr));
+        JXL_RETURN_IF_ERROR(
+            DecodeFrame(dparams, file, /*animation_or_null=*/nullptr,
+                        &frame_dim, &multiframe, pool, &reader, aux_out,
+                        &io->frames.back(), /*animation=*/nullptr));
       } while (!multiframe.IsDisplayed());
       io->dec_pixels += frame_dim.xsize * frame_dim.ysize;
     }

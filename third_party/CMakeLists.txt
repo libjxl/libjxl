@@ -16,8 +16,32 @@
 enable_testing()
 include(CTest)
 
+# Add GTest from source and alias it to what the find_package(GTest) workflow
+# defines. Omitting googletest/ directory would require it to be available in
+# the base system instead, but it would work just fine. This makes packages
+# using GTest and calling find_package(GTest) actually work.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/googletest/CMakeLists.txt")
+  add_subdirectory(googletest EXCLUDE_FROM_ALL)
+
+  set(GTEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/googletest/googletest")
+  set(GTEST_INCLUDE_DIR "$<TARGET_PROPERTY:INCLUDE_DIRECTORIES,gtest>"
+      CACHE STRING "")
+  set(GTEST_LIBRARY "$<TARGET_FILE:gtest>")
+  set(GTEST_MAIN_LIBRARY "$<TARGET_FILE:gtest_main>")
+  add_library(GTest::GTest ALIAS gtest)
+  add_library(GTest::Main ALIAS gtest_main)
+
+  # googletest doesn't compile clean with clang-cl (-Wundef)
+  if (WIN32 AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
+    set_target_properties(gtest PROPERTIES COMPILE_FLAGS "-Wno-error")
+    set_target_properties(gmock PROPERTIES COMPILE_FLAGS "-Wno-error")
+    set_target_properties(gtest_main PROPERTIES COMPILE_FLAGS "-Wno-error")
+    set_target_properties(gmock_main PROPERTIES COMPILE_FLAGS "-Wno-error")
+  endif ()
+endif()
+find_package(GTest REQUIRED)
+
 # Highway
-set(HWY_USE_GTEST ON CACHE BOOL "HWY_USE_GTEST")
 add_subdirectory(highway)
 
 # lodepng
@@ -45,8 +69,6 @@ else ()
   endif()
   include(lcms2.cmake)
 endif()
-
-add_subdirectory(googletest EXCLUDE_FROM_ALL)
 
 # brunsli
 # depends both on brotli and googletest, so should be added after them.

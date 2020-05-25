@@ -19,12 +19,11 @@
 #include <cmath>
 #include <utility>
 
+#include <hwy/base.h>  // HWY_ALIGN_MAX
+#include <hwy/tests/test_util-inl.h>  // RunTest
+
 #include "jxl/common.h"
 #include "jxl/dct_scales.h"
-
-#define HWY_USE_GTEST
-#include <hwy/interface.h>
-#include <hwy/tests/test_util.h>  // ForeachTarget
 #include "jxl/dec_transforms.h"
 #include "jxl/enc_transforms.h"
 
@@ -34,12 +33,12 @@ namespace {
 // Test that DCT -> IDCT is a noop.
 class AcStrategyRoundtrip : public testing::TestWithParam<int> {
  protected:
-  void Run(const uint32_t target_bit) {
+  void Run() {
     const AcStrategy::Type type = static_cast<AcStrategy::Type>(GetParam());
-    const auto from_pixels = ChooseTransformFromPixels(target_bit);
-    const auto to_pixels = ChooseTransformToPixels(target_bit);
-    const auto from_dc = ChooseLowestFrequenciesFromDC(target_bit);
-    const auto to_dc = ChooseDCFromLowestFrequencies(target_bit);
+    const auto from_pixels = ChooseTransformFromPixels();
+    const auto to_pixels = ChooseTransformToPixels();
+    const auto from_dc = ChooseLowestFrequenciesFromDC();
+    const auto to_dc = ChooseDCFromLowestFrequencies();
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
 
     HWY_ALIGN_MAX float coeffs[AcStrategy::kMaxCoeffArea] = {};
@@ -79,16 +78,16 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
 
 TEST_P(AcStrategyRoundtrip, Test) {
-  hwy::ForeachTarget([this](const uint32_t target_bit) { Run(target_bit); });
+  hwy::RunTest([this]() { Run(); });
 }
 
 // Test that DC(2x2) -> DCT coefficients -> IDCT -> downsampled IDCT is a noop.
 class AcStrategyRoundtripDownsample : public testing::TestWithParam<int> {
  protected:
-  void Run(const uint32_t target_bit) {
+  void Run() {
     const AcStrategy::Type type = static_cast<AcStrategy::Type>(GetParam());
-    const auto from_dc = ChooseLowestFrequenciesFromDC(target_bit);
-    const auto to_pixels = ChooseTransformToPixels(target_bit);
+    const auto from_dc = ChooseLowestFrequenciesFromDC();
+    const auto to_pixels = ChooseTransformToPixels();
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
 
     HWY_ALIGN_MAX float coeffs[AcStrategy::kMaxCoeffArea] = {};
@@ -125,17 +124,17 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
 
 TEST_P(AcStrategyRoundtripDownsample, Test) {
-  hwy::ForeachTarget([this](const uint32_t target_bit) { Run(target_bit); });
+  hwy::RunTest([this]() { Run(); });
 }
 
 // Test that IDCT(block with zeros in the non-topleft corner) -> downsampled
 // IDCT is the same as IDCT -> DC(2x2) of the same block.
 class AcStrategyDownsample : public testing::TestWithParam<int> {
  protected:
-  void Run(const uint32_t target_bit) {
+  void Run() {
     const AcStrategy::Type type = static_cast<AcStrategy::Type>(GetParam());
-    const auto to_pixels = ChooseTransformToPixels(target_bit);
-    const auto to_dc = ChooseDCFromLowestFrequencies(target_bit);
+    const auto to_pixels = ChooseTransformToPixels();
+    const auto to_dc = ChooseDCFromLowestFrequencies();
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
     size_t cx = acs.covered_blocks_y();
     size_t cy = acs.covered_blocks_x();
@@ -177,7 +176,7 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
 
 TEST_P(AcStrategyDownsample, Test) {
-  hwy::ForeachTarget([this](const uint32_t target_bit) { Run(target_bit); });
+  hwy::RunTest([this]() { Run(); });
 }
 
 float I8(int N, int u) {
@@ -270,9 +269,9 @@ TEST(AcStrategyTest, TestConstant8) {
 }
 
 TEST(AcStrategyTest, RoundtripAFVDCT) {
-  hwy::ForeachTarget([](const uint32_t target_bit) {
-    const auto do_dct = ChooseAFVDCT4x4(target_bit);
-    const auto do_idct = ChooseAFVIDCT4x4(target_bit);
+  hwy::RunTest([]() {
+    const auto do_dct = ChooseAFVDCT4x4();
+    const auto do_idct = ChooseAFVIDCT4x4();
     HWY_ALIGN_MAX float idct[16];
     for (size_t i = 0; i < 16; i++) {
       HWY_ALIGN_MAX float pixels[16] = {};
@@ -289,9 +288,9 @@ TEST(AcStrategyTest, RoundtripAFVDCT) {
 }
 
 TEST(AcStrategyTest, BenchmarkAFV) {
-  hwy::ForeachTarget([](const uint32_t target_bit) {
-    const auto from_pixels = ChooseTransformFromPixels(target_bit);
-    const auto to_pixels = ChooseTransformToPixels(target_bit);
+  hwy::RunTest([]() {
+    const auto from_pixels = ChooseTransformFromPixels();
+    const auto to_pixels = ChooseTransformToPixels();
 
     const AcStrategy::Type type = AcStrategy::Type::AFV0;
     HWY_ALIGN_MAX float pixels[64] = {1};
@@ -305,9 +304,9 @@ TEST(AcStrategyTest, BenchmarkAFV) {
 }
 
 TEST(AcStrategyTest, BenchmarkAFVDCT) {
-  hwy::ForeachTarget([](const uint32_t target_bit) {
-    const auto do_dct = ChooseAFVDCT4x4(target_bit);
-    const auto do_idct = ChooseAFVIDCT4x4(target_bit);
+  hwy::RunTest([]() {
+    const auto do_dct = ChooseAFVDCT4x4();
+    const auto do_idct = ChooseAFVIDCT4x4();
 
     HWY_ALIGN_MAX float pixels[64] = {1};
     HWY_ALIGN_MAX float coeffs[64] = {};

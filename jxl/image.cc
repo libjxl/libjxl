@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/image.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/image.cc"
+#include <hwy/foreach_target.h>
 
 #include <algorithm>  // swap
 
@@ -20,23 +23,24 @@
 #include "jxl/common.h"
 #include "jxl/image_ops.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/image.cc"
-#include <hwy/foreach_target.h>
-
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
 
 #include <hwy/begin_target-inl.h>
-HWY_ATTR size_t GetVectorSize() { return HWY_LANES(uint8_t); }
+size_t GetVectorSize() { return HWY_LANES(uint8_t); }
 #include <hwy/end_target-inl.h>
 
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
+
 #if HWY_ONCE
+namespace jxl {
 namespace {
 
 HWY_EXPORT(GetVectorSize)
 
 size_t VectorSize() {
-  static size_t bytes = ChooseGetVectorSize(hwy::SupportedTargets())();
+  static size_t bytes = ChooseGetVectorSize()();
   return bytes;
 }
 
@@ -239,6 +243,5 @@ float DotProduct(const ImageF& a, const ImageF& b) {
   return sum;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

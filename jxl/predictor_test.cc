@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/predictor_test.cc"
+#include <hwy/foreach_target.h>
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -27,18 +31,11 @@
 #include "jxl/entropy_coder.h"
 #include "jxl/image.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/predictor_test.cc"
-#include <hwy/foreach_target.h>
-#define HWY_USE_GTEST
-#include <hwy/tests/test_util.h>
-
 #include "jxl/predictor-inl.h"
-
-namespace jxl {
 
 #ifndef JXL_PREDICTOR_TEST_ONCE
 #define JXL_PREDICTOR_TEST_ONCE
+namespace jxl {
 
 // Simple set of predictors used only for testing.
 struct PredictorForTesting {
@@ -99,11 +96,16 @@ struct PredictorForTesting {
   }
 };
 
+}  // namespace jxl
 #endif  // JXL_PREDICTOR_TEST_ONCE
 
+#include <hwy/tests/test_util-inl.h>
+
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR void TestPackSignedRange() {
+void TestPackSignedRange() {
   using Pack = PredictorPackSignedRange<0, 255>;
   for (int32_t pred = 0; pred <= 255; pred++) {
     for (int32_t i = 0; i <= 255; i++) {
@@ -121,7 +123,7 @@ HWY_ATTR void TestPackSignedRange() {
   }
 }
 
-HWY_ATTR void TestPackSigned() {
+void TestPackSigned() {
   for (int32_t i = std::numeric_limits<int16_t>::min();
        i <= std::numeric_limits<int16_t>::max(); i++) {
     HWY_ALIGN int32_t zeros[kNumPredictors] = {};
@@ -135,7 +137,7 @@ HWY_ATTR void TestPackSigned() {
 }
 
 template <typename Pred>
-HWY_ATTR void TestPredictor() {
+void TestPredictor() {
   std::mt19937_64 rng;
   // While the range fits in int32_t, the internal calculations in
   // uniform_int_distribution overflow when using integer values, which is
@@ -181,11 +183,9 @@ HWY_ATTR void TestPredictor() {
   }
 }
 
-HWY_ATTR void TestPredictorForTesting() {
-  TestPredictor<PredictorForTesting>();
-}
-HWY_ATTR void TestPredictorY() { TestPredictor<YPredictor>(); }
-HWY_ATTR void TestPredictorXB() { TestPredictor<XBPredictor>(); }
+void TestPredictorForTesting() { TestPredictor<PredictorForTesting>(); }
+void TestPredictorY() { TestPredictor<YPredictor>(); }
+void TestPredictorXB() { TestPredictor<XBPredictor>(); }
 
 class PredictorTester;
 
@@ -298,14 +298,17 @@ class PredictorTester : public PredictorToTest {
   size_t pred_count_ = 0;
 };
 
-HWY_ATTR void RunPredictorTester(const Image3I& img) {
+void RunPredictorTester(const Image3I& img) {
   PredictorTester tester(img);
   tester.Run();
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(TestPackSignedRange)
 HWY_EXPORT(TestPackSigned)
 HWY_EXPORT(TestPredictorForTesting)
@@ -314,20 +317,20 @@ HWY_EXPORT(TestPredictorXB)
 HWY_EXPORT(RunPredictorTester)
 
 TEST(PredictorTest, TestPackSignedRange) {
-  hwy::ChooseAndCallForeachTarget(&ChooseTestPackSignedRange);
+  hwy::RunTest([]() { ChooseTestPackSignedRange()(); });
 }
 TEST(PredictorTest, TestPackSigned) {
-  hwy::ChooseAndCallForeachTarget(&ChooseTestPackSigned);
+  hwy::RunTest([]() { ChooseTestPackSigned()(); });
 }
 
 TEST(PredictorTest, TestPredictorForTesting) {
-  hwy::ChooseAndCallForeachTarget(&ChooseTestPredictorForTesting);
+  hwy::RunTest([]() { ChooseTestPredictorForTesting()(); });
 }
 TEST(PredictorTest, TestYPredictor) {
-  hwy::ChooseAndCallForeachTarget(&ChooseTestPredictorY);
+  hwy::RunTest([]() { ChooseTestPredictorY()(); });
 }
 TEST(PredictorTest, TestXBPredictor) {
-  hwy::ChooseAndCallForeachTarget(&ChooseTestPredictorXB);
+  hwy::RunTest([]() { ChooseTestPredictorXB()(); });
 }
 
 Image3I Stripes(int32_t low, int32_t high) {
@@ -392,36 +395,48 @@ Image3I Random(int32_t low, int32_t high) {
 }
 
 TEST(PredictorTest, TestStripes8) {
-  Image3I img = Stripes(0, 255);
-  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
+  hwy::RunTest([]() {
+    Image3I img = Stripes(0, 255);
+    ChooseRunPredictorTester()(img);
+  });
 }
 
 TEST(PredictorTest, TestConstant8) {
-  Image3I img = Constant(0, 255);
-  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
+  hwy::RunTest([]() {
+    Image3I img = Constant(0, 255);
+    ChooseRunPredictorTester()(img);
+  });
 }
 
 TEST(PredictorTest, TestRandom8) {
-  Image3I img = Random(0, 255);
-  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
+  hwy::RunTest([]() {
+    Image3I img = Random(0, 255);
+    ChooseRunPredictorTester()(img);
+  });
 }
 
 TEST(PredictorTest, TestStripes16) {
-  Image3I img = Stripes(std::numeric_limits<int16_t>::min(),
-                        std::numeric_limits<int16_t>::max());
-  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
+  hwy::RunTest([]() {
+    Image3I img = Stripes(std::numeric_limits<int16_t>::min(),
+                          std::numeric_limits<int16_t>::max());
+    ChooseRunPredictorTester()(img);
+  });
 }
 
 TEST(PredictorTest, TestConstant16) {
-  Image3I img = Constant(std::numeric_limits<int16_t>::min(),
-                         std::numeric_limits<int16_t>::max());
-  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
+  hwy::RunTest([]() {
+    Image3I img = Constant(std::numeric_limits<int16_t>::min(),
+                           std::numeric_limits<int16_t>::max());
+    ChooseRunPredictorTester()(img);
+  });
 }
 
 TEST(PredictorTest, TestRandom16) {
-  Image3I img = Random(std::numeric_limits<int16_t>::min(),
-                       std::numeric_limits<int16_t>::max());
-  hwy::ChooseAndCallForeachTarget(&ChooseRunPredictorTester, img);
+  hwy::RunTest([]() {
+    Image3I img = Random(std::numeric_limits<int16_t>::min(),
+                         std::numeric_limits<int16_t>::max());
+    ChooseRunPredictorTester()(img);
+  });
 }
 
 TEST(PredictorTest, AverageTest) {
@@ -438,6 +453,5 @@ TEST(PredictorTest, AverageTest) {
   EXPECT_EQ(0, Average(-0x7ffffffe, 0x7fffffff));  // 0.5
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

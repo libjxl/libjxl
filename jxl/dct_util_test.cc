@@ -15,7 +15,6 @@
 #include "jxl/dct_util.h"
 
 #include <stdint.h>
-
 #include <string>
 
 #include "gtest/gtest.h"
@@ -182,8 +181,7 @@ static Image3F OpsinTestImage() {
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)(*ChooseToXYB)(hwy::SupportedTargets())(io.Main(), null_pool, &opsin,
-                                                &unused_linear);
+  (void)(*ChooseToXYB)()(io.Main(), null_pool, &opsin, &unused_linear);
   opsin.ShrinkTo(opsin.ysize() & ~7, opsin.xsize() & ~7);
   return opsin;
 }
@@ -192,13 +190,12 @@ TEST(DctUtilTest, DCTRoundtrip) {
   Image3F opsin = OpsinTestImage();
   const size_t xsize_blocks = opsin.xsize() / kBlockDim;
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
-  const uint32_t targets = hwy::SupportedTargets();
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
   Image3F recon(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
 
-  ChooseTransposedScaledDCT(targets)(opsin, &coeffs);
-  ChooseTransposedScaledIDCT(targets)(coeffs, &recon);
+  ChooseTransposedScaledDCT()(opsin, &coeffs);
+  ChooseTransposedScaledIDCT()(coeffs, &recon);
   VerifyRelativeError(opsin, recon, 1e-6, 1e-6);
 }
 
@@ -206,13 +203,12 @@ TEST(DctUtilTest, Transform2x2Corners) {
   Image3F opsin = OpsinTestImage();
   const size_t xsize_blocks = opsin.xsize() / kBlockDim;
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
-  const uint32_t targets = hwy::SupportedTargets();
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
   Image3F recon(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
-  ChooseTransposedScaledDCT(hwy::SupportedTargets())(opsin, &coeffs);
+  ChooseTransposedScaledDCT()(opsin, &coeffs);
   Image3F t1 = GetPixelSpaceImageFrom0HVD_64(coeffs);
-  ChooseTransposedScaledIDCT(targets)(KeepOnly2x2Corners(coeffs), &recon);
+  ChooseTransposedScaledIDCT()(KeepOnly2x2Corners(coeffs), &recon);
   Image3F t2 = Subsample(recon, 4);
   VerifyRelativeError(t1, t2, 1e-6, 1e-6);
 }
@@ -221,10 +217,9 @@ TEST(DctUtilTest, Roundtrip2x2Corners) {
   Image3F opsin = OpsinTestImage();
   const size_t xsize_blocks = opsin.xsize() / kBlockDim;
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
-  const uint32_t targets = hwy::SupportedTargets();
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
-  ChooseTransposedScaledDCT(targets)(opsin, &coeffs);
+  ChooseTransposedScaledDCT()(opsin, &coeffs);
   Image3F tmp = GetPixelSpaceImageFrom0HVD_64(coeffs);
   Image3F coeffs_out = CopyImage(coeffs);
   ZeroOut2x2(&coeffs_out);

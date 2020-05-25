@@ -72,7 +72,7 @@ class LossyFrameDecoder {
               const ImageMetadata& image_metadata,
               const FrameDimensions& frame_dim, Multiframe* multiframe,
               size_t downsampling, ThreadPool* pool, AuxOut* aux_out) {
-    dec_group_ = ChooseDecodeGroup(hwy::SupportedTargets());
+    dec_group_ = ChooseDecodeGroup();
     downsampling_ = downsampling;
     pool_ = pool;
     aux_out_ = aux_out;
@@ -135,9 +135,8 @@ class LossyFrameDecoder {
     uint64_t flags = dec_state_.shared_storage.frame_header.flags;
     if (!(flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
         !(flags & FrameHeader::kUseDcFrame)) {
-      ChooseAdaptiveDCSmoothing(hwy::SupportedTargets())(
-          dec_state_.shared_storage.dc_quant_field,
-          &dec_state_.shared_storage.dc_storage, pool_);
+      ChooseAdaptiveDCSmoothing()(dec_state_.shared_storage.dc_quant_field,
+                                  &dec_state_.shared_storage.dc_storage, pool_);
     }
 
     if (aux_out_ && aux_out_->testing_aux.dc) {
@@ -201,7 +200,7 @@ class LossyFrameDecoder {
         dec_state_.shared_storage.frame_header.chroma_subsampling;
     const std::vector<QuantEncoding>& qe =
         dec_state_.shared_storage.matrices.encodings();
-    if (qe.size() == 0 || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
+    if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
         qe[0].qraw.qtable_den_shift != 0) {
       return JXL_FAILURE(
           "Quantization table is not a JPEG quantization table.");
@@ -340,6 +339,9 @@ Status DecodeFrame(const DecompressParams& dparams,
   LoopFilter loop_filter;
   JXL_RETURN_IF_ERROR(DecodeFrameHeader(
       animation_or_null, reader, &frame_header, frame_dim, &loop_filter));
+  if (frame_dim->xsize == 0 || frame_dim->ysize == 0) {
+    return JXL_FAILURE("Empty frame");
+  }
   const size_t num_passes = frame_header.passes.num_passes;
   const size_t xsize = frame_dim->xsize;
   const size_t ysize = frame_dim->ysize;
@@ -512,10 +514,19 @@ Status DecodeFrame(const DecompressParams& dparams,
   const auto resize_aux_outs = [&](size_t num_threads) {
     // Updates aux_outs size Assimilating its elements if the size decreases.
     if (aux_out != nullptr) {
-      for (size_t i = num_threads; i < aux_outs.size(); i++) {
+      size_t old_size = aux_outs.size();
+      for (size_t i = num_threads; i < old_size; i++) {
         aux_out->Assimilate(aux_outs[i]);
       }
       aux_outs.resize(num_threads);
+      // Each thread needs these INPUTS. Don't copy the entire AuxOut
+      // because it may contain stats which would be Assimilated multiple
+      // times below.
+      for (size_t i = old_size; i < aux_outs.size(); i++) {
+        aux_outs[i].testing_aux = aux_out->testing_aux;
+        aux_outs[i].dump_image = aux_out->dump_image;
+        aux_outs[i].debug_prefix = aux_out->debug_prefix;
+      }
     }
   };
 

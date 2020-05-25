@@ -28,29 +28,13 @@
 #include "jxl/base/status.h"
 #include "jxl/image.h"
 #include "jxl/image_ops.h"
-#include "jxl/modular/config.h"
 
 namespace jxl {
-
-#ifdef HDR
 
 typedef int32_t pixel_type;  // can use int16_t if it's only for 8-bit images.
                              // Need some wiggle room for YCoCg / Squeeze etc
 
-// largest possible pixel value (2147483647)
-#define LARGEST_VAL 0x7FFFFFFF
-
-// smallest possible pixel value (-2147483647)
-#define SMALLEST_VAL 0x80000001
-
-#else
-
-typedef int16_t
-    pixel_type;  // enough for up to 14-bit with YCoCg/Squeeze (I think)
-#define LARGEST_VAL 0x7FFF
-#define SMALLEST_VAL 0x8001
-
-#endif
+typedef int64_t pixel_type_w;
 
 class Channel {
  public:

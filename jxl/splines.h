@@ -112,7 +112,7 @@ class Splines {
   std::vector<Spline::Point> starting_points_;
 };
 
-Splines FindSplines(const Image3F& image);
+Splines FindSplines(const Image3F& opsin);
 
 }  // namespace jxl
 

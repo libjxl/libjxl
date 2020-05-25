@@ -17,7 +17,12 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <third_party/dirent.h>  // S_ISREG
+#if defined(_WIN32) || defined(_WIN64)
+#include "third_party/dirent.h"
+#else
+#include <dirent.h>
+#include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <functional>
@@ -103,7 +108,7 @@ struct ImageSpec {
   // Flags used for compression. These are mapped to the CompressedParams.
   struct CjxlParams {
     float butteraugli_distance = 1.f;
-    int modular_predictor = int(jxl::Predictor::Weighted);
+    jxl::Predictor modular_predictor = jxl::Predictor::Weighted;
     jxl::ColorTransform color_transform = jxl::ColorTransform::kXYB;
     jxl::SpeedTier speed_tier = jxl::SpeedTier::kTortoise;
     bool modular_group_mode = false;
@@ -225,7 +230,7 @@ std::vector<ImageSpec::CjxlParams> CompressParamsList() {
     ImageSpec::CjxlParams params;
     params.modular_group_mode = true;
     params.color_transform = jxl::ColorTransform::kNone;
-    params.modular_predictor = {int(jxl::Predictor::Weighted)};
+    params.modular_predictor = {jxl::Predictor::Weighted};
     ret.push_back(params);
   }
 

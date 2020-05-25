@@ -40,8 +40,29 @@ POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 # Time limit for the "fuzz" command in seconds (0 means no limit).
 FUZZER_MAX_TIME="${FUZZER_MAX_TIME:-0}"
 
-# Default to building all targets, even if compiler baseline is SSE4
-HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-HWY_SCALAR}
+SANITIZER="none"
+
+if [[ "${BUILD_TARGET}" == wasm* ]]; then
+  # Check that environment is setup for the WASM build target.
+  if [[ -z "${EMSCRIPTEN}" ]]; then
+    echo "'EMSCRIPTEN' is not defined. Use 'emconfigure' wrapper to setup WASM build environment" >&2
+    return 1
+  fi
+  EMS_TOOLCHAIN_FILE="${EMSCRIPTEN}/cmake/Modules/Platform/Emscripten.cmake"
+  if [[ -f "${EMS_TOOLCHAIN_FILE}" ]]; then
+    CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE:-${EMS_TOOLCHAIN_FILE}}
+  else
+    echo "Warning: EMSCRIPTEN CMake module not found" >&2
+  fi
+fi
+
+if [[ "${BUILD_TARGET%%-*}" == "x86_64" ||
+    "${BUILD_TARGET%%-*}" == "i686" ]]; then
+  # Default to building all targets, even if compiler baseline is SSE4
+  HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-HWY_SCALAR}
+else
+  HWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS:-}
+fi
 
 # Convenience flag to pass both CMAKE_C_FLAGS and CMAKE_CXX_FLAGS
 CMAKE_FLAGS=${CMAKE_FLAGS:-}
@@ -62,7 +83,9 @@ if [[ "${ENABLE_WASM_SIMD}" -ne "0" ]]; then
   CMAKE_CROSSCOMPILING_EMULATOR="${MYDIR}/node-wasm-simd.sh"
 fi
 
-CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -DHWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS}"
+if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
+  CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -DHWY_BASELINE_TARGETS=${HWY_BASELINE_TARGETS}"
+fi
 
 # Version inferred from the CI variables.
 CI_COMMIT_SHA=${CI_COMMIT_SHA:-}
@@ -109,7 +132,7 @@ if [[ "${BUILD_TARGET%%-*}" != "arm" ]]; then
   )
 fi
 
-CLANG_TIDY_BIN=$(which clang-tidy-6.0 clang-tidy-7 clang-tidy-8 | head -n 1)
+CLANG_TIDY_BIN=$(which clang-tidy-6.0 clang-tidy-7 clang-tidy-8 clang-tidy | head -n 1)
 # Default to "cat" if "colordiff" is not installed or if stdout is not a tty.
 if [[ -t 1 ]]; then
   COLORDIFF_BIN=$(which colordiff cat | head -n 1)
@@ -142,6 +165,12 @@ detect_clang_version() {
       ;;
     "clang version 9."*)
       CLANG_VERSION="9"
+      ;;
+    "clang version 10."*)
+      CLANG_VERSION="10"
+      ;;
+    "emcc"*)
+      # We can't use asan or msan in the emcc case.
       ;;
     *)
       echo "Unknown clang version: ${clang_version}" >&2
@@ -277,6 +306,17 @@ export_env() {
     mkdir -p "${prefix}"
     export WINEPREFIX=$(realpath "${prefix}")
   fi
+  # Sanitizers need these variables to print and properly format the stack
+  # traces:
+  detect_clang_version
+  if [[ -n "${CLANG_VERSION}" ]]; then
+    LLVM_SYMBOLIZER=$(which llvm-symbolizer "llvm-symbolizer-${CLANG_VERSION}" \
+      | head -n1)
+    LLVM_SYMBOLIZER="$(realpath "${LLVM_SYMBOLIZER}" || true)"
+    export ASAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
+    export MSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
+    export UBSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
+  fi
 }
 
 cmake_configure() {
@@ -291,8 +331,8 @@ cmake_configure() {
     -DCMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS}"
     -DCMAKE_MODULE_LINKER_FLAGS="${CMAKE_MODULE_LINKER_FLAGS}"
     -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS}"
-    -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
     -DJPEGXL_VERSION="${JPEGXL_VERSION}"
+    -DSANITIZER="${SANITIZER}"
   )
   if [[ -n "${BUILD_TARGET}" ]]; then
     local system_name="Linux"
@@ -308,14 +348,19 @@ cmake_configure() {
         -DMINGW=1
       )
     fi
-    # If set, BUILD_TARGET must be the target triplet such as
-    # x86_64-unknown-linux-gnu.
+    # EMSCRIPTEN toolchain sets the right values itself
+    if [[ "${BUILD_TARGET}" != wasm* ]]; then
+      # If set, BUILD_TARGET must be the target triplet such as
+      # x86_64-unknown-linux-gnu.
+      args+=(
+        -DCMAKE_C_COMPILER_TARGET="${BUILD_TARGET}"
+        -DCMAKE_CXX_COMPILER_TARGET="${BUILD_TARGET}"
+        # Only the first element of the target triplet.
+        -DCMAKE_SYSTEM_PROCESSOR="${BUILD_TARGET%%-*}"
+        -DCMAKE_SYSTEM_NAME="${system_name}"
+      )
+    fi
     args+=(
-      -DCMAKE_C_COMPILER_TARGET="${BUILD_TARGET}"
-      -DCMAKE_CXX_COMPILER_TARGET="${BUILD_TARGET}"
-      # Only the first element of the target triplet.
-      -DCMAKE_SYSTEM_PROCESSOR="${BUILD_TARGET%%-*}"
-      -DCMAKE_SYSTEM_NAME="${system_name}"
       # These are needed to make googletest work when cross-compiling.
       -DCMAKE_CROSSCOMPILING=1
       -DHAVE_STD_REGEX=0
@@ -327,6 +372,9 @@ cmake_configure() {
     if [[ -z "${CMAKE_FIND_ROOT_PATH}" ]]; then
       # find_package() will look in this prefix for libraries.
       CMAKE_FIND_ROOT_PATH="/usr/${BUILD_TARGET}"
+    fi
+    if [[ -z "${CMAKE_PREFIX_PATH}" ]]; then
+      CMAKE_PREFIX_PATH="/usr/${BUILD_TARGET}"
     fi
     # Use pkg-config for the target. If there's no pkg-config available for the
     # target we can set the PKG_CONFIG_PATH to the appropriate path in most
@@ -348,6 +396,11 @@ cmake_configure() {
   if [[ -n "${CMAKE_FIND_ROOT_PATH}" ]]; then
     args+=(
       -DCMAKE_FIND_ROOT_PATH="${CMAKE_FIND_ROOT_PATH}"
+    )
+  fi
+  if [[ -n "${CMAKE_PREFIX_PATH}" ]]; then
+    args+=(
+      -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
     )
   fi
   cmake "${args[@]}" "$@"
@@ -473,23 +526,18 @@ cmd_test() {
 }
 
 cmd_asan() {
-  detect_clang_version
-  LLVM_SYMBOLIZER=$(which llvm-symbolizer "llvm-symbolizer-${CLANG_VERSION}" | \
-    head -n1)
-  LLVM_SYMBOLIZER="$(realpath "${LLVM_SYMBOLIZER}" || true)"
-
+  SANITIZER="asan"
   CMAKE_C_FLAGS+=" -DJXL_ENABLE_ASSERT=1 -g -DADDRESS_SANITIZER \
     -fsanitize=address ${UBSAN_FLAGS[@]}"
   CMAKE_CXX_FLAGS+=" -DJXL_ENABLE_ASSERT=1 -g -DADDRESS_SANITIZER \
     -fsanitize=address ${UBSAN_FLAGS[@]}"
   strip_dead_code
   cmake_configure "$@" -DJPEGXL_ENABLE_TCMALLOC=OFF
-  export ASAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
-  export UBSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
   cmake_build_and_test
 }
 
 cmd_tsan() {
+  SANITIZER="tsan"
   local tsan_args=(
     -DJXL_ENABLE_ASSERT=1
     -g
@@ -506,6 +554,7 @@ cmd_tsan() {
 }
 
 cmd_msan() {
+  SANITIZER="msan"
   detect_clang_version
   local msan_prefix="${HOME}/.msan/${CLANG_VERSION}"
   if [[ ! -d "${msan_prefix}" || -e "${msan_prefix}/lib/libc++abi.a" ]]; then
@@ -545,10 +594,6 @@ cmd_msan() {
     -Wl,-rpath -Wl,"${msan_prefix}"/lib/
   )
 
-  LLVM_SYMBOLIZER=$(which llvm-symbolizer "llvm-symbolizer-${CLANG_VERSION}" | \
-    head -n1)
-  LLVM_SYMBOLIZER="$(realpath "${LLVM_SYMBOLIZER}" || true)"
-
   CMAKE_C_FLAGS+=" ${msan_c_flags[@]} ${UBSAN_FLAGS[@]}"
   CMAKE_CXX_FLAGS+=" ${msan_cxx_flags[@]} ${UBSAN_FLAGS[@]}"
   CMAKE_EXE_LINKER_FLAGS+=" ${msan_linker_flags[@]}"
@@ -558,8 +603,6 @@ cmd_msan() {
   cmake_configure "$@" \
     -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=0 -DRUN_HAVE_POSIX_REGEX=0 \
     -DJPEGXL_ENABLE_TCMALLOC=OFF
-  export MSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
-  export UBSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
   cmake_build_and_test
 }
 
@@ -585,6 +628,9 @@ cmd_msan_install() {
       ;;
     "9")
       llvm_tag="llvmorg-9.0.0"
+      ;;
+    "10")
+      llvm_tag="llvmorg-10.0.0"
       ;;
     *)
       echo "Unknown clang version: ${CLANG_VERSION}" >&2
@@ -706,7 +752,7 @@ run_benchmark() {
 
   local benchmark_args=(
     --input "${src_img_dir}/*.png"
-    --codec=jpeg:yuv420:q85,webp:q80,jxl:fast:d1,jxl:fast:d1:downsampling=8,jxl:fast:d4,jxl:fast:d4:downsampling=8,jxl:mg:nl,jxl:mg,jxl:mg:P7,jxl:mg:q80
+    --codec=jpeg:yuv420:q85,webp:q80,jxl:fast:d1,jxl:fast:d1:downsampling=8,jxl:fast:d4,jxl:fast:d4:downsampling=8,jxl:mg:nl,jxl:mg,jxl:mg:P6,jxl:mg:q80
     --output_dir "${output_dir}"
     --noprofiler --show_progress
     --num_threads="${num_threads}"
@@ -993,7 +1039,7 @@ cmd_tidy() {
   local what="${1:-}"
 
   if [[ -z "${CLANG_TIDY_BIN}" ]]; then
-    echo "ERROR: You must install clang-tidy-6.0 or newer to use ci.sh tidy" >&2
+    echo "ERROR: You must install clang-tidy-7 or newer to use ci.sh tidy" >&2
     exit 1
   fi
 
@@ -1015,6 +1061,14 @@ cmd_tidy() {
     # enabled for the clang-tidy analyzer to use them.
     CMAKE_BUILD_TYPE="Debug"
     cmake_configure
+    # Build the autogen targets to generate the .h files from the .ui files.
+    local autogen_targets=(
+        $(ninja -C "${BUILD_DIR}" -t targets | grep -F _autogen: |
+          cut -f 1 -d :)
+    )
+    if [[ ${#autogen_targets[@]} != 0 ]]; then
+      ninja -C "${BUILD_DIR}" "${autogen_targets[@]}"
+    fi
   fi
 
   cd "${MYDIR}"

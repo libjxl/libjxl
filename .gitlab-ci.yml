@@ -30,7 +30,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:b98badcde2d9e779846075af97396ed59d566d08f5a0c50701e82150c8de2027
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:d364b96422ca6445d9312d0537e602d137373d67ea947796ed3670354b07e033
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -54,8 +54,8 @@ variables:
   variables:
     GIT_SUBMODULE_STRATEGY: none
     BUILD_DIR: build
-    CC: clang-6.0
-    CXX: clang++-6.0
+    CC: clang-7
+    CXX: clang++-7
 
 # Common artifacts for the build stage
 .default_build_paths: &default_build_paths
@@ -89,8 +89,8 @@ variables:
     # Building always requires to fetch all the repositories.
     GIT_SUBMODULE_STRATEGY: recursive
     BUILD_DIR: build
-    CC: clang-6.0
-    CXX: clang++-6.0
+    CC: clang-7
+    CXX: clang++-7
 
 # linux x86_64 default Release mode.
 build:x86_64:clang:release:
@@ -143,8 +143,8 @@ test:x86_64:clang:coverage:
     - ./ci.sh test
     - ./ci.sh coverage_report
   variables:
-    CC: clang-6.0
-    CXX: clang++-6.0
+    CC: clang-7
+    CXX: clang++-7
     # Headers from submodules might be needed when generating the HTML reports.
     GIT_SUBMODULE_STRATEGY: recursive
   artifacts:
@@ -184,7 +184,7 @@ build:x86_64:clang:scalar:
     - schedules
     - tags
   script:
-    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_DISABLE_TARGETS=~HWY_SCALAR" ./ci.sh release
+    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_COMPILE_ONLY_SCALAR" ./ci.sh release
 
 test:x86_64:clang:scalar:
   <<: *linux_host_template
@@ -193,8 +193,6 @@ test:x86_64:clang:scalar:
     - build:x86_64:clang:scalar
   script:
     - ./ci.sh test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
 
 # i686 (x86 32-bit) builders
 build:i686:clang:release:
@@ -216,8 +214,6 @@ test:i686:clang:release:
     - build:i686:clang:release
   script:
     - ./ci.sh test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
 
 # Windows builders. These are cross-compiled from a linux host.
 build:win64:clang:release:
@@ -323,8 +319,6 @@ test:x86_64:clang:asan:
     - build:x86_64:clang:asan
   script:
     - ./ci.sh test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
 
 # aarch64 asan build and test.
 build:aarch64:clang:asan:
@@ -357,8 +351,6 @@ test:x86_64:clang:tsan:
     - build:x86_64:clang:tsan
   script:
     - ./ci.sh test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
 
 build:x86_64:clang:msan:
   <<: *linux_host_build_template
@@ -373,15 +365,11 @@ test:x86_64:clang:msan:
     - build:x86_64:clang:msan
   script:
     - ./ci.sh test
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
 
 # Merge request linter checks.
 build:lint:
   <<: *linux_host_template
   stage: build
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
   only:
     - merge_requests
   script:
@@ -453,8 +441,6 @@ test:fast_benchmark.msan:
   stage: test
   tags:
     - aarch64
-  variables:
-    GIT_SUBMODULE_STRATEGY: none
   artifacts:
     name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
     expire_in: 1 year
@@ -519,9 +505,8 @@ build:ems:all:
   <<: *linux_host_build_template
   stage: build
   script:
-    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
     - source /opt/emsdk/emsdk_env.sh
-    - SKIP_TEST=1 PACK_TEST=1 ./ci.sh release
+    - BUILD_TARGET=wasm32 SKIP_TEST=1 PACK_TEST=1 emconfigure ./ci.sh release
 
 test:ems:all:
   <<: *linux_host_template
@@ -529,9 +514,8 @@ test:ems:all:
   dependencies:
     - build:ems:all
   script:
-    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
     - source /opt/emsdk/emsdk_env.sh
-    - ./ci.sh test
+    - BUILD_TARGET=wasm32 emconfigure ./ci.sh test
 
 # Emscripten (WASM + SIMD) build.
 build:ems_simd:all:
@@ -543,10 +527,9 @@ build:ems_simd:all:
     - schedules
     - tags
   script:
-    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
-    - export NODE=/usr/bin/node
+    - export NODE=/opt/node-nightly/bin/node
     - source /opt/emsdk/emsdk_env.sh
-    - ENABLE_WASM_SIMD=1 SKIP_TEST=1 PACK_TEST=1 ./ci.sh release
+    - BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 SKIP_TEST=1 PACK_TEST=1 emconfigure ./ci.sh release
 
 test:ems_simd:all:
   <<: *linux_host_template
@@ -559,7 +542,6 @@ test:ems_simd:all:
   dependencies:
     - build:ems_simd:all
   script:
-    - export CMAKE_TOOLCHAIN_FILE=/opt/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake
     - export NODE=/opt/node-nightly/bin/node
     - source /opt/emsdk/emsdk_env.sh
-    - ./ci.sh test
+    - BUILD_TARGET=wasm32  emconfigure ./ci.sh test

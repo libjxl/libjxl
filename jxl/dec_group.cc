@@ -47,8 +47,9 @@
 #include "jxl/enc_transforms-inl.h"
 #include "jxl/quantizer-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 using D = HWY_FULL(float);
@@ -56,11 +57,10 @@ using DU = HWY_FULL(uint32_t);
 constexpr D d;
 
 template <class V>
-HWY_ATTR void DequantLane(V scaled_dequant, V x_dm_multiplier,
-                          const float* JXL_RESTRICT dequant_matrices,
-                          size_t dq_ofs, size_t size, size_t k, V x_cc_mul,
-                          V b_cc_mul, const float* JXL_RESTRICT biases,
-                          float* JXL_RESTRICT block) {
+void DequantLane(V scaled_dequant, V x_dm_multiplier,
+                 const float* JXL_RESTRICT dequant_matrices, size_t dq_ofs,
+                 size_t size, size_t k, V x_cc_mul, V b_cc_mul,
+                 const float* JXL_RESTRICT biases, float* JXL_RESTRICT block) {
   const auto x_mul =
       Load(d, dequant_matrices + dq_ofs + k) * scaled_dequant * x_dm_multiplier;
   const auto y_mul =
@@ -84,15 +84,14 @@ HWY_ATTR void DequantLane(V scaled_dequant, V x_dm_multiplier,
 }
 
 template <class V>
-HWY_ATTR void DequantBlock(const AcStrategy& acs, float inv_global_scale,
-                           int quant, float x_dm_multiplier, V x_cc_mul,
-                           V b_cc_mul, size_t kind, size_t size,
-                           const Quantizer& quantizer,
-                           const float* JXL_RESTRICT dequant_matrices,
-                           size_t covered_blocks, size_t bx,
-                           const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
-                           size_t dc_stride, const float* JXL_RESTRICT biases,
-                           float* JXL_RESTRICT block) {
+void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
+                  float x_dm_multiplier, V x_cc_mul, V b_cc_mul, size_t kind,
+                  size_t size, const Quantizer& quantizer,
+                  const float* JXL_RESTRICT dequant_matrices,
+                  size_t covered_blocks, size_t bx,
+                  const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
+                  size_t dc_stride, const float* JXL_RESTRICT biases,
+                  float* JXL_RESTRICT block) {
   PROFILER_FUNC;
 
   const auto scaled_dequant = Set(d, inv_global_scale / quant);
@@ -100,7 +99,7 @@ HWY_ATTR void DequantBlock(const AcStrategy& acs, float inv_global_scale,
 
   const size_t dq_ofs = quantizer.DequantMatrixOffset(kind, 0);
 
-  for (size_t k = 0; k < covered_blocks * kDCTBlockSize; k += D::N) {
+  for (size_t k = 0; k < covered_blocks * kDCTBlockSize; k += Lanes(d)) {
     DequantLane(scaled_dequant, x_dm_multiplier_v, dequant_matrices, dq_ofs,
                 size, k, x_cc_mul, b_cc_mul, biases, block);
   }
@@ -111,13 +110,12 @@ HWY_ATTR void DequantBlock(const AcStrategy& acs, float inv_global_scale,
 }
 
 template <class GetBlock>
-HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
-                                PassesDecoderState* JXL_RESTRICT dec_state,
-                                size_t thread, const Rect& block_rect,
-                                bool save_decompressed,
-                                bool apply_color_transform, AuxOut* aux_out,
-                                Image3F* JXL_RESTRICT idct,
-                                const ImageBundle* decoded) {
+Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
+                       PassesDecoderState* JXL_RESTRICT dec_state,
+                       size_t thread, const Rect& block_rect,
+                       bool save_decompressed, bool apply_color_transform,
+                       AuxOut* aux_out, Image3F* JXL_RESTRICT idct,
+                       const ImageBundle* decoded) {
   PROFILER_FUNC;
 
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
@@ -440,8 +438,7 @@ HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     // When a row of blocks is done, run ApplyImageFeaturesRow.
     // TODO(veluca): consider switching this to 4 rows of blocks.
     if (JXL_LIKELY(run_apply_image_features)) {
-      const auto apply_row =
-          ChooseApplyImageFeaturesRow(hwy::SupportedTargets());
+      const auto apply_row = ChooseApplyImageFeaturesRow();
       size_t yb = by == 0 ? kBlockDim : 2 * kBlockDim;
       size_t ye = by == ysize_blocks - 1 ? 4 * kBlockDim : 3 * kBlockDim;
       for (size_t y = yb; y < ye; y++) {
@@ -457,14 +454,16 @@ HWY_ATTR Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
 // Decode quantized AC coefficients of DCT blocks.
 // LLF components in the output block will not be modified.
-HWY_ATTR Status DecodeACVarBlock(
-    size_t log2_covered_blocks, int32_t* JXL_RESTRICT row_nzeros,
-    const int32_t* JXL_RESTRICT row_nzeros_top, size_t nzeros_stride, size_t c,
-    size_t bx, size_t by, AcStrategy acs,
-    const coeff_order_t* JXL_RESTRICT coeff_order, BitReader* JXL_RESTRICT br,
-    ANSSymbolReader* JXL_RESTRICT decoder,
-    const std::vector<uint8_t>& context_map, ac_qcoeff_t* JXL_RESTRICT block,
-    size_t shift = 0) {
+Status DecodeACVarBlock(size_t log2_covered_blocks,
+                        int32_t* JXL_RESTRICT row_nzeros,
+                        const int32_t* JXL_RESTRICT row_nzeros_top,
+                        size_t nzeros_stride, size_t c, size_t bx, size_t by,
+                        AcStrategy acs,
+                        const coeff_order_t* JXL_RESTRICT coeff_order,
+                        BitReader* JXL_RESTRICT br,
+                        ANSSymbolReader* JXL_RESTRICT decoder,
+                        const std::vector<uint8_t>& context_map,
+                        ac_qcoeff_t* JXL_RESTRICT block, size_t shift = 0) {
   PROFILER_FUNC;
   size_t c_ctx = c == 1 ? 0 : 1;
   // Equal to number of LLF coefficients.
@@ -476,14 +475,14 @@ HWY_ATTR Status DecodeACVarBlock(
 
   size_t ord = kStrategyOrder[acs.RawStrategy()];
   const coeff_order_t* JXL_RESTRICT order =
-      &coeff_order[(ord * 3 + c) * AcStrategy::kMaxCoeffArea];
+      &coeff_order[CoeffOrderOffset(ord, c)];
   ord = ord > 2 ? ord / 2 + 1 : ord;
   // ord is in [0, 5), so we multiply c_ctx by 5.
   size_t block_ctx_id = c_ctx * 5 + ord;
 
   const size_t nzero_ctx = NonZeroContext(predicted_nzeros, block_ctx_id);
   nzeros = decoder->ReadHybridUint(nzero_ctx, br, context_map);
-  if (nzeros > size) {
+  if (nzeros + covered_blocks > size) {
     return JXL_FAILURE("Invalid AC: nzeros too large");
   }
   for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
@@ -557,11 +556,10 @@ struct GetBlockFromBitstream {
     return true;
   }
 
-  HWY_ATTR Status Init(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
-                       size_t num_passes, size_t group_idx,
-                       size_t histo_selector_bits,
-                       GroupDecCache* JXL_RESTRICT group_dec_cache,
-                       PassesDecoderState* dec_state) {
+  Status Init(BitReader* JXL_RESTRICT* JXL_RESTRICT readers, size_t num_passes,
+              size_t group_idx, size_t histo_selector_bits,
+              GroupDecCache* JXL_RESTRICT group_dec_cache,
+              PassesDecoderState* dec_state) {
     this->coeff_orders = dec_state->shared->coeff_orders.data();
     this->context_map = dec_state->context_map.data();
     this->readers = readers;
@@ -693,10 +691,12 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(DecodeGroup)
 HWY_EXPORT(DecodeGroupForRoundtrip)
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

@@ -21,10 +21,10 @@
 
 namespace jxl {
 
-ButteraugliComparator::ButteraugliComparator(float hf_asymmetry)
+JxlButteraugliComparator::JxlButteraugliComparator(float hf_asymmetry)
     : hf_asymmetry_(hf_asymmetry) {}
 
-Status ButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
+Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
   const ImageBundle* ref_linear_srgb;
   ImageMetadata metadata = *ref.metadata();
   ImageBundle store(&metadata);
@@ -33,15 +33,15 @@ Status ButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
     return false;
   }
 
-  comparator_.reset(new butteraugli::ButteraugliComparator(
-      ref_linear_srgb->color(), hf_asymmetry_));
+  comparator_.reset(
+      new ButteraugliComparator(ref_linear_srgb->color(), hf_asymmetry_));
   xsize_ = ref.xsize();
   ysize_ = ref.ysize();
   return true;
 }
 
-Status ButteraugliComparator::CompareWith(const ImageBundle& actual,
-                                          ImageF* diffmap, float* score) {
+Status JxlButteraugliComparator::CompareWith(const ImageBundle& actual,
+                                             ImageF* diffmap, float* score) {
   if (!comparator_) {
     return JXL_FAILURE("Must set reference image first");
   }
@@ -61,7 +61,7 @@ Status ButteraugliComparator::CompareWith(const ImageBundle& actual,
   comparator_->Diffmap(actual_linear_srgb->color(), temp_diffmap);
 
   if (score != nullptr) {
-    *score = butteraugli::ButteraugliScoreFromDiffmap(temp_diffmap);
+    *score = ButteraugliScoreFromDiffmap(temp_diffmap);
   }
   if (diffmap != nullptr) {
     diffmap->Swap(temp_diffmap);
@@ -70,25 +70,25 @@ Status ButteraugliComparator::CompareWith(const ImageBundle& actual,
   return true;
 }
 
-float ButteraugliComparator::GoodQualityScore() const {
-  return butteraugli::ButteraugliFuzzyInverse(1.5);
+float JxlButteraugliComparator::GoodQualityScore() const {
+  return ButteraugliFuzzyInverse(1.5);
 }
 
-float ButteraugliComparator::BadQualityScore() const {
-  return butteraugli::ButteraugliFuzzyInverse(0.5);
+float JxlButteraugliComparator::BadQualityScore() const {
+  return ButteraugliFuzzyInverse(0.5);
 }
 
 float ButteraugliDistance(const ImageBundle& rgb0, const ImageBundle& rgb1,
                           float hf_asymmetry, ImageF* distmap,
                           ThreadPool* pool) {
-  ButteraugliComparator comparator(hf_asymmetry);
+  JxlButteraugliComparator comparator(hf_asymmetry);
   return ComputeScore(rgb0, rgb1, &comparator, distmap, pool);
 }
 
 float ButteraugliDistance(const CodecInOut& rgb0, const CodecInOut& rgb1,
                           float hf_asymmetry, ImageF* distmap,
                           ThreadPool* pool) {
-  ButteraugliComparator comparator(hf_asymmetry);
+  JxlButteraugliComparator comparator(hf_asymmetry);
   JXL_ASSERT(rgb0.frames.size() == rgb1.frames.size());
   float max_dist = 0.0f;
   for (size_t i = 0; i < rgb0.frames.size(); ++i) {

@@ -15,23 +15,19 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/hwy_test.cc"
 #include "hwy/foreach_target.h"
-#include "hwy/tests/test_util.h"
-
-namespace hwy {
 
 #include "hwy/tests/test_util-inl.h"
 
+#include <hwy/before_namespace-inl.h>
+namespace hwy {
 #include "hwy/begin_target-inl.h"
 
-namespace examples {
-
 template <class DF>
-HWY_NOINLINE HWY_ATTR void FloorLog2(const DF df,
-                                     const uint8_t* HWY_RESTRICT values,
-                                     uint8_t* HWY_RESTRICT log2) {
+HWY_NOINLINE void FloorLog2(const DF df, const uint8_t* HWY_RESTRICT values,
+                            uint8_t* HWY_RESTRICT log2) {
   // Descriptors for all required data types:
-  const Desc<int32_t, df.N> d32;
-  const Desc<uint8_t, df.N> d8;
+  const Simd<int32_t, MaxLanes(df)> d32;
+  const Simd<uint8_t, MaxLanes(df)> d8;
 
   const auto u8 = Load(d8, values);
   const auto bits = BitCast(d32, ConvertTo(df, PromoteTo(d32, u8)));
@@ -41,9 +37,9 @@ HWY_NOINLINE HWY_ATTR void FloorLog2(const DF df,
 
 struct TestFloorLog2 {
   template <class T, class DF>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, DF df) {
+  HWY_NOINLINE void operator()(T /*unused*/, DF df) {
     const size_t kBytes = 32;
-    static_assert(kBytes % df.N == 0, "Must be a multiple of df.N");
+    static_assert(kBytes % MaxLanes(df) == 0, "Must be divisible");
 
     HWY_ALIGN uint8_t in[kBytes];
     uint8_t expected[kBytes];
@@ -53,7 +49,7 @@ struct TestFloorLog2 {
       in[i] = static_cast<uint8_t>(1u << expected[i]);
     }
     HWY_ALIGN uint8_t out[32];
-    for (size_t i = 0; i < kBytes; i += df.N) {
+    for (size_t i = 0; i < kBytes; i += Lanes(df)) {
       FloorLog2(df, in + i, out + i);
     }
     int sum = 0;
@@ -66,14 +62,12 @@ struct TestFloorLog2 {
 };
 
 template <class D, typename T>
-HWY_NOINLINE HWY_ATTR void MulAddLoop(const D d,
-                                      const T* HWY_RESTRICT mul_array,
-                                      const T* HWY_RESTRICT add_array,
-                                      const size_t size,
-                                      T* HWY_RESTRICT x_array) {
+HWY_NOINLINE void MulAddLoop(const D d, const T* HWY_RESTRICT mul_array,
+                             const T* HWY_RESTRICT add_array, const size_t size,
+                             T* HWY_RESTRICT x_array) {
   // Type-agnostic (caller-specified lane type) and width-agnostic (uses
   // best available instruction set).
-  for (size_t i = 0; i < size; i += d.N) {
+  for (size_t i = 0; i < size; i += Lanes(d)) {
     const auto mul = Load(d, mul_array + i);
     const auto add = Load(d, add_array + i);
     auto x = Load(d, x_array + i);
@@ -84,7 +78,7 @@ HWY_NOINLINE HWY_ATTR void MulAddLoop(const D d,
 
 struct TestSumMulAdd {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     RandomState rng{1234};
     const size_t kSize = 64;
     HWY_ALIGN T mul[kSize];
@@ -104,23 +98,19 @@ struct TestSumMulAdd {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestExamples() {
+HWY_NOINLINE void TestExamples() {
   ForPartialVectors<TestFloorLog2>()(float());
 
   const ForPartialVectors<TestSumMulAdd> test_mul_add;
   test_mul_add(float());
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   test_mul_add(double());
 #endif
 }
 
-}  // namespace examples
-
-namespace basic {
-
 // util.h
 
-HWY_NOINLINE HWY_ATTR void TestLimits() {
+HWY_NOINLINE void TestLimits() {
   HWY_ASSERT_EQ(uint8_t(0), LimitsMin<uint8_t>());
   HWY_ASSERT_EQ(uint16_t(0), LimitsMin<uint16_t>());
   HWY_ASSERT_EQ(uint32_t(0), LimitsMin<uint32_t>());
@@ -144,7 +134,7 @@ HWY_NOINLINE HWY_ATTR void TestLimits() {
 
 // Test the ToString used to output test failures
 
-HWY_NOINLINE HWY_ATTR void TestToString() {
+HWY_NOINLINE void TestToString() {
   HWY_ASSERT_STRING_EQ("0", std::to_string(int64_t(0)).c_str());
   HWY_ASSERT_STRING_EQ("3", std::to_string(int64_t(3)).c_str());
   HWY_ASSERT_STRING_EQ("-1", std::to_string(int64_t(-1)).c_str());
@@ -163,7 +153,7 @@ HWY_NOINLINE HWY_ATTR void TestToString() {
 
 struct TestIsUnsigned {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D /*unused*/) {
+  HWY_NOINLINE void operator()(T /*unused*/, D /*unused*/) {
     static_assert(!IsFloat<T>(), "Expected !IsFloat");
     static_assert(!IsSigned<T>(), "Expected !IsSigned");
   }
@@ -171,7 +161,7 @@ struct TestIsUnsigned {
 
 struct TestIsSigned {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D /*unused*/) {
+  HWY_NOINLINE void operator()(T /*unused*/, D /*unused*/) {
     static_assert(!IsFloat<T>(), "Expected !IsFloat");
     static_assert(IsSigned<T>(), "Expected IsSigned");
   }
@@ -179,13 +169,13 @@ struct TestIsSigned {
 
 struct TestIsFloat {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D /*unused*/) {
+  HWY_NOINLINE void operator()(T /*unused*/, D /*unused*/) {
     static_assert(IsFloat<T>(), "Expected IsFloat");
     static_assert(IsSigned<T>(), "Floats are also considered signed");
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestType() {
+HWY_NOINLINE void TestType() {
   ForUnsignedTypes(ForPartialVectors<TestIsUnsigned>());
   ForSignedTypes(ForPartialVectors<TestIsSigned>());
   ForFloatTypes(ForPartialVectors<TestIsFloat>());
@@ -194,7 +184,7 @@ HWY_NOINLINE HWY_ATTR void TestType() {
 // Ensures wraparound (mod 2^bits)
 struct TestOverflowT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v1 = Set(d, T(1));
     const auto vmax = Set(d, LimitsMax<T>());
     const auto vmin = Set(d, LimitsMin<T>());
@@ -205,44 +195,48 @@ struct TestOverflowT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestOverflow() {
+HWY_NOINLINE void TestOverflow() {
   ForIntegerTypes(ForPartialVectors<TestOverflowT>());
 }
 
 struct TestName {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T t, D d) {
     std::string expected = IsFloat<T>() ? "f" : (IsSigned<T>() ? "i" : "u");
     expected += std::to_string(sizeof(T) * 8);
-    if (d.N != 1) {
+
+    const size_t N = Lanes(d);
+    if (N != 1) {
       expected += 'x';
-      expected += std::to_string(d.N);
+      expected += std::to_string(N);
     }
-    if (expected != TypeName<T, d.N>()) {
+    const std::string actual = TypeName(t, N);
+    if (expected != actual) {
       NotifyFailure(__FILE__, __LINE__, expected.c_str(), 0, expected.c_str(),
-                    TypeName<T, d.N>());
+                    actual.c_str());
     }
   }
 };
 
 struct TestSet {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     // Zero
     const auto v0 = Zero(d);
-    HWY_ALIGN T expected[d.N] = {};  // zero-initialized.
+    HWY_ALIGN T expected[MaxLanes(d)] = {};  // zero-initialized.
     HWY_ASSERT_VEC_EQ(d, expected, v0);
+    const size_t N = Lanes(d);
 
     // Set
     const auto v2 = Set(d, T(2));
-    for (size_t i = 0; i < d.N; ++i) {
+    for (size_t i = 0; i < N; ++i) {
       expected[i] = 2;
     }
     HWY_ASSERT_VEC_EQ(d, expected, v2);
 
     // iota
     const auto vi = Iota(d, T(5));
-    for (size_t i = 0; i < d.N; ++i) {
+    for (size_t i = 0; i < N; ++i) {
       expected[i] = 5 + i;
     }
     HWY_ASSERT_VEC_EQ(d, expected, vi);
@@ -255,7 +249,7 @@ struct TestSet {
 
 struct TestCopyAndAssign {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     // copy V
     const auto v3 = Iota(d, 3);
     auto v3b(v3);
@@ -270,11 +264,11 @@ struct TestCopyAndAssign {
 
 struct TestLowerHalfT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-    constexpr size_t N2 = (d.N + 1) / 2;
-    const Desc<T, N2> d2;
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    constexpr size_t N2 = (MaxLanes(d) + 1) / 2;
+    const Simd<T, N2> d2;
 
-    HWY_ALIGN T lanes[d.N] = {0};
+    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
     const auto v = Iota(d, 1);
     Store(LowerHalf(v), d2, lanes);
     size_t i = 0;
@@ -282,7 +276,7 @@ struct TestLowerHalfT {
       HWY_ASSERT_EQ(T(1 + i), lanes[i]);
     }
     // Other half remains unchanged
-    for (; i < d.N; ++i) {
+    for (; i < Lanes(d); ++i) {
       HWY_ASSERT_EQ(T(0), lanes[i]);
     }
   }
@@ -290,11 +284,11 @@ struct TestLowerHalfT {
 
 struct TestLowerQuarterT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-    constexpr size_t N4 = (d.N + 3) / 4;
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    constexpr size_t N4 = (MaxLanes(d) + 3) / 4;
     const HWY_CAPPED(T, N4) d4;
 
-    HWY_ALIGN T lanes[d.N] = {0};
+    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
     const auto v = Iota(d, 1);
     const auto lo = LowerHalf(LowerHalf(v));
     Store(lo, d4, lanes);
@@ -303,13 +297,13 @@ struct TestLowerQuarterT {
       HWY_ASSERT_EQ(T(i + 1), lanes[i]);
     }
     // Upper 3/4 remain unchanged
-    for (; i < d.N; ++i) {
+    for (; i < Lanes(d); ++i) {
       HWY_ASSERT_EQ(T(0), lanes[i]);
     }
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestLowerHalf() {
+HWY_NOINLINE void TestLowerHalf() {
   ForAllTypes(
       ForPartialVectors<TestLowerHalfT, /*kDivLanes=*/1, /*kMinLanes=*/2>());
   ForAllTypes(
@@ -318,15 +312,15 @@ HWY_NOINLINE HWY_ATTR void TestLowerHalf() {
 
 struct TestUpperHalfT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     // Scalar does not define UpperHalf.
 #if HWY_TARGET != HWY_SCALAR
     size_t i;
-    constexpr size_t N2 = (d.N + 1) / 2;
-    const Desc<T, N2> d2;
+    constexpr size_t N2 = (MaxLanes(d) + 1) / 2;
+    const Simd<T, N2> d2;
 
     const auto v = Iota(d, 1);
-    HWY_ALIGN T lanes[d.N] = {0};
+    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
 
     Store(UpperHalf(v), d2, lanes);
     i = 0;
@@ -334,7 +328,7 @@ struct TestUpperHalfT {
       HWY_ASSERT_EQ(T(N2 + 1 + i), lanes[i]);
     }
     // Other half remains unchanged
-    for (; i < d.N; ++i) {
+    for (; i < Lanes(d); ++i) {
       HWY_ASSERT_EQ(T(0), lanes[i]);
     }
 #else
@@ -343,37 +337,41 @@ struct TestUpperHalfT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestUpperHalf() {
+HWY_NOINLINE void TestUpperHalf() {
   ForAllTypes(ForGE128Vectors<TestUpperHalfT>());
 }
 
-HWY_NOINLINE HWY_ATTR void TestBasic() {
-  TestLimits();
-  TestToString();
-  TestType();
+HWY_NOINLINE void TestAllSet() { ForAllTypes(ForPartialVectors<TestSet>()); }
+
+HWY_NOINLINE void TestAllNameBasic() {
   ForAllTypes(ForPartialVectors<TestName>());
-  TestOverflow();
-  ForAllTypes(ForPartialVectors<TestSet>());
-  ForAllTypes(ForPartialVectors<TestCopyAndAssign>());
-  TestLowerHalf();
-  TestUpperHalf();
 }
 
-}  // namespace basic
-
-HWY_NOINLINE HWY_ATTR void TestHwy() {
-  examples::TestExamples();
-  basic::TestBasic();
+HWY_NOINLINE void TestAllCopyAndAssign() {
+  ForAllTypes(ForPartialVectors<TestCopyAndAssign>());
 }
 
 #include "hwy/end_target-inl.h"
+}  // namespace hwy
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
-HWY_EXPORT(TestHwy)
-#endif
+namespace hwy {
+
+class HwyHwyTest : public hwy::TestWithParamTarget {};
+
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyHwyTest);
+
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestLimits)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestToString)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestType)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestOverflow)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestLowerHalf)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestUpperHalf)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllSet)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllNameBasic)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllCopyAndAssign)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestExamples)
 
 }  // namespace hwy
-
-#if HWY_ONCE
-TEST(HwyHwyTest, Run) { hwy::RunTest(&hwy::ChooseTestHwy); }
 #endif

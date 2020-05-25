@@ -40,10 +40,14 @@ AcStrategy::CoeffOrderAndLut ComputeNaturalCoeffOrder() {
     size_t cy = acs.covered_blocks_y();
     CoefficientLayout(&cy, &cx);
     const size_t num_coeffs = kDCTBlockSize * cx * cy;
+    JXL_ASSERT((AcStrategy::CoeffOrderAndLut::kOffset[s + 1] -
+                AcStrategy::CoeffOrderAndLut::kOffset[s]) *
+                   kDCTBlockSize ==
+               num_coeffs);
     coeff_order_t* JXL_RESTRICT order_start =
-        coeff.order + s * AcStrategy::kMaxCoeffArea;
+        coeff.order + AcStrategy::CoeffOrderAndLut::kOffset[s] * kDCTBlockSize;
     coeff_order_t* JXL_RESTRICT lut_start =
-        coeff.lut + s * AcStrategy::kMaxCoeffArea;
+        coeff.lut + AcStrategy::CoeffOrderAndLut::kOffset[s] * kDCTBlockSize;
     std::iota(order_start, order_start + num_coeffs, 0);
 
     auto compute_key = [cx, cy](int32_t pos) {
@@ -85,6 +89,7 @@ const AcStrategy::CoeffOrderAndLut* AcStrategy::CoeffOrder() {
 constexpr size_t AcStrategy::kMaxCoeffBlocks;
 constexpr size_t AcStrategy::kMaxBlockDim;
 constexpr size_t AcStrategy::kMaxCoeffArea;
+constexpr size_t AcStrategy::CoeffOrderAndLut::kOffset[];
 
 AcStrategyImage::AcStrategyImage(size_t xsize, size_t ysize)
     : layers_(xsize, ysize) {

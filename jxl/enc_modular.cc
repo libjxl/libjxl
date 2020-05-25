@@ -29,8 +29,8 @@
 #include "jxl/enc_bit_writer.h"
 #include "jxl/enc_params.h"
 #include "jxl/modular/encoding/encoding.h"
-#include "jxl/modular/encoding/options.h"
 #include "jxl/modular/image/image.h"
+#include "jxl/modular/options.h"
 #include "jxl/modular/transform/transform.h"
 
 namespace jxl {
@@ -327,20 +327,20 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     gi.do_transform(quantize);
   }
-  if (cparams.options.predictor.size() == 0) {
+  if (cparams.options.predictor.empty()) {
     // no explicit predictor(s) given, set a good default
     if (cparams.near_lossless) {
       // avg(top,left) predictor for near_lossless
-      cparams.options.predictor.push_back(3);
+      cparams.options.predictor.push_back(Predictor::Average);
     } else if (cparams.responsive) {
       // zero predictor for Squeeze residues
-      cparams.options.predictor.push_back(0);
+      cparams.options.predictor.push_back(Predictor::Zero);
     } else if (cparams.speed_tier < SpeedTier::kFalcon) {
       // try median and weighted predictor for anything else
-      cparams.options.predictor.push_back(8);
+      cparams.options.predictor.push_back(Predictor::Best);
     } else {
       // just weighted predictor in fastest mode
-      cparams.options.predictor.push_back(7);
+      cparams.options.predictor.push_back(Predictor::Weighted);
     }
   }
   switch (cparams.speed_tier) {
@@ -374,9 +374,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
 Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
                                              AuxOut* aux_out) {
   cparams.options.max_chan_size = kGroupDim;
-  modular_generic_compress(full_image, cparams.options, writer, aux_out,
-                           kLayerModularGlobal,
-                           /*loss=*/0, /*try_transforms=*/false);
+  ModularGenericCompress(full_image, cparams.options, writer, aux_out,
+                         kLayerModularGlobal);
   return true;
 }
 
@@ -483,9 +482,8 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
                               kHybridUint420Config) -> Status {
     BitWriter compressed2;
     AuxOut aux_out2;
-    JXL_RETURN_IF_ERROR(modular_generic_compress(
-        gi, cparams.options, &compressed2, &aux_out2, layer, /*loss=*/0,
-        /*try_transforms=*/false, uint_config));
+    JXL_RETURN_IF_ERROR(ModularGenericCompress(
+        gi, cparams.options, &compressed2, &aux_out2, layer, uint_config));
     if (compressed2.BitsWritten() < local_compressed.BitsWritten() ||
         force_use) {
       local_compressed = std::move(compressed2);
@@ -504,10 +502,8 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       cparams.responsive == false && do_color &&
       cparams.speed_tier <= SpeedTier::kWombat) {
     if (cparams.speed_tier <= SpeedTier::kKitten) {
-      JXL_RETURN_IF_ERROR(
-          modular_generic_compress(gi, cparams.options, &local_compressed,
-                                   &local_aux_out, layer, /*loss=*/0,
-                                   /*try_transforms=*/false));
+      JXL_RETURN_IF_ERROR(ModularGenericCompress(
+          gi, cparams.options, &local_compressed, &local_aux_out, layer));
     }
     gi.do_transform(Transform(TransformId::kYCoCg));
     JXL_RETURN_IF_ERROR(
@@ -593,10 +589,8 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       }
     }
 
-    JXL_RETURN_IF_ERROR(
-        modular_generic_compress(gi, cparams.options, &local_compressed,
-                                 &local_aux_out, layer, /*loss=*/0,
-                                 /*try_transforms=*/false));
+    JXL_RETURN_IF_ERROR(ModularGenericCompress(
+        gi, cparams.options, &local_compressed, &local_aux_out, layer));
     if (cparams.speed_tier < SpeedTier::kWombat) {
       JXL_RETURN_IF_ERROR(
           try_compress(/*force_use=*/false, /*new_best=*/-1, uint_config_sign));

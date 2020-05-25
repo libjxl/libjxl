@@ -34,11 +34,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <hwy/targets.h>
 #include "jxl/base/arch_specific.h"
 #include "jxl/base/cache_aligned.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/status.h"
 #include "jxl/base/tsc_timer.h"
+
+#if JXL_ARCH_X64 && HWY_TARGET != HWY_SCALAR
+#define PROFILER_BUFFER 1
+#else
+#define PROFILER_BUFFER 0
+#endif
 
 namespace jxl {
 
@@ -107,13 +114,13 @@ class ThreadSpecific {
 
  private:
   void FlushStorage();
-#if JXL_ARCH_X64
+#if PROFILER_BUFFER
   void FlushBuffer();
 #endif
 
   // Write packet to buffer/storage, emptying them as needed.
   void Write(const Packet packet) {
-#if JXL_ARCH_X64 && HWY_TARGET != HWY_SCALAR
+#if PROFILER_BUFFER
     if (buffer_size_ == kBufferCapacity) {  // Full
       FlushBuffer();
     }
@@ -125,12 +132,12 @@ class ThreadSpecific {
     }
     packets_[num_packets_] = packet;
     ++num_packets_;
-#endif
+#endif  // PROFILER_BUFFER
   }
 
   // Write-combining buffer to avoid cache pollution. Must be the first
   // non-static member to ensure cache-line alignment.
-#if JXL_ARCH_X64
+#if PROFILER_BUFFER
   Packet buffer_[kBufferCapacity];
   size_t buffer_size_ = 0;
 #endif

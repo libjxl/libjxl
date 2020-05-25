@@ -19,7 +19,6 @@
 
 #include <array>
 #include <atomic>
-#include <hwy/interface.h>
 #include <vector>
 
 #include "jxl/ac_context.h"
@@ -137,26 +136,26 @@ Status JxlLossyFrameHeuristics(PassesEncoderState* enc_state,
   FindBestDequantMatrices(cparams, *opsin, &enc_state->shared.matrices);
 
   // Non-default cmap is on only for Hare or slower.
-  auto find_best_cmap =
-      ChooseFindBestColorCorrelationMap(hwy::SupportedTargets());
+  auto find_best_cmap = ChooseFindBestColorCorrelationMap();
   if (cparams.speed_tier <= SpeedTier::kHare) {
     find_best_cmap(*opsin, enc_state->shared.matrices,
-                   /*ac_strategy=*/nullptr, pool, &enc_state->shared.cmap);
+                   /*ac_strategy=*/nullptr, /*raw_quant_field=*/nullptr,
+                   /*quantizer=*/nullptr, pool, &enc_state->shared.cmap);
   }
 
-  ChooseFindBestAcStrategy(hwy::SupportedTargets())(*opsin, enc_state, pool,
-                                                    aux_out);
-
-  // Cmap is updated for different block sizes only for Wombat or slower.
-  if (cparams.speed_tier <= SpeedTier::kWombat) {
-    find_best_cmap(*opsin, enc_state->shared.matrices,
-                   &enc_state->shared.ac_strategy, pool,
-                   &enc_state->shared.cmap);
-  }
+  ChooseFindBestAcStrategy()(*opsin, enc_state, pool, aux_out);
 
   FindBestArControlField(*opsin, enc_state, pool);
 
   FindBestQuantizer(linear, *opsin, enc_state, pool, aux_out);
+
+  // Cmap is updated for different block sizes only for Wombat or slower.
+  if (cparams.speed_tier <= SpeedTier::kWombat) {
+    find_best_cmap(*opsin, enc_state->shared.matrices,
+                   &enc_state->shared.ac_strategy,
+                   &enc_state->shared.raw_quant_field,
+                   &enc_state->shared.quantizer, pool, &enc_state->shared.cmap);
+  }
   return true;
 }
 
@@ -341,8 +340,7 @@ class LossyFrameEncoder {
         group_caches_.resize(num_threads);
         return pool_init_(num_threads);
       };
-      const auto compute_coef =
-          ChooseComputeCoefficients(hwy::SupportedTargets());
+      const auto compute_coef = ChooseComputeCoefficients();
       const auto compute_group_cache = [&](const int group_index,
                                            const int thread) {
         // Compute coefficients and coefficient split.
@@ -361,7 +359,7 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    auto tokenize_coeffs = ChooseTokenizeCoefficients(hwy::SupportedTargets());
+    auto tokenize_coeffs = ChooseTokenizeCoefficients();
     const auto tokenize_group = [&](const int group_index, const int thread) {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
@@ -597,7 +595,7 @@ class LossyFrameEncoder {
     enc_state_->dc_tokens =
         std::vector<std::vector<Token>>(xsize_dc_groups * ysize_dc_groups);
     enc_state_->extra_dc_levels.resize(xsize_dc_groups * ysize_dc_groups, 0);
-    const auto tokenize_dc = ChooseTokenizeDC(hwy::SupportedTargets());
+    const auto tokenize_dc = ChooseTokenizeDC();
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
       tokenize_dc(group_index, dc, enc_state_, aux_out_);
     };
@@ -626,7 +624,7 @@ class LossyFrameEncoder {
       group_caches_.resize(num_threads);
       return true;
     };
-    auto tokenize_coeffs = ChooseTokenizeCoefficients(hwy::SupportedTargets());
+    auto tokenize_coeffs = ChooseTokenizeCoefficients();
     const auto tokenize_group = [&](const int group_index, const int thread) {
       // Tokenize coefficients.
       const Rect rect = shared.BlockGroupRect(group_index);
@@ -744,6 +742,24 @@ class LossyFrameEncoder {
     }
   }
 
+  template <typename V, typename R>
+  static inline void FindIndexOfSumMaximum(const V* array, const size_t len,
+                                           R* idx, V* sum) {
+    JXL_ASSERT(len > 0);
+    V maxval = 0;
+    V val = 0;
+    R maxidx = 0;
+    for (size_t i = 0; i < len; ++i) {
+      val += array[i];
+      if (val > maxval) {
+        maxval = val;
+        maxidx = i;
+      }
+    }
+    *idx = maxidx;
+    *sum = maxval;
+  }
+
   PassesEncoderState* JXL_RESTRICT enc_state_;
   ThreadPool* pool_;
   const std::function<Status(size_t)>& pool_init_;
@@ -820,6 +836,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       // times below.
       for (size_t i = old_size; i < aux_outs.size(); i++) {
         aux_outs[i].testing_aux = aux_out->testing_aux;
+        aux_outs[i].dump_image = aux_out->dump_image;
+        aux_outs[i].debug_prefix = aux_out->debug_prefix;
       }
     }
     return true;
@@ -849,8 +867,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
     if (frame_header.color_transform == ColorTransform::kXYB &&
         cparams.dc_level == 0 && cparams.save_as_reference == 0) {
-      linear = (*ChooseToXYB(hwy::SupportedTargets()))(ib, pool, &opsin,
-                                                       &linear_storage);
+      linear = (*ChooseToXYB())(ib, pool, &opsin, &linear_storage);
 
       // We only need linear sRGB in slow VarDCT modes.
       if (cparams.speed_tier > SpeedTier::kKitten ||

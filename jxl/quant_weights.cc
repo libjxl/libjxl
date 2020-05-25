@@ -31,7 +31,7 @@
 #include "jxl/fields.h"
 #include "jxl/image.h"
 #include "jxl/modular/encoding/encoding.h"
-#include "jxl/modular/encoding/options.h"
+#include "jxl/modular/options.h"
 
 namespace jxl {
 
@@ -235,7 +235,7 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
       ModularOptions cfopts;
       cfopts.nb_repeats = 0;
       cfopts.entropy_coder = ModularOptions::kMAANS;
-      JXL_RETURN_IF_ERROR(modular_generic_compress(image, cfopts, writer));
+      JXL_RETURN_IF_ERROR(ModularGenericCompress(image, cfopts, writer));
       break;
     }
     case QuantEncoding::kQuantModeAFV: {
@@ -330,7 +330,7 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
       Image image(required_size_x, required_size_y, 255, 3);
       ModularOptions options;
-      JXL_RETURN_IF_ERROR(modular_generic_decompress(br, image, &options));
+      JXL_RETURN_IF_ERROR(ModularGenericDecompress(br, image, &options));
       if (!encoding->qraw.qtable) {
         encoding->qraw.qtable = new std::vector<int>();
       }
@@ -1172,7 +1172,7 @@ Status DequantMatrices::Compute() {
                                      AcStrategy::kNumValidStrategies +
                                  table % kNum];
     }
-    JXL_RETURN_IF_ERROR(ComputeQuantTable(encodings[table], table_,
+    JXL_RETURN_IF_ERROR(ComputeQuantTable(encodings[table], table_.get(),
                                           offsets.data(), table,
                                           QuantTable(table % kNum), &pos));
   }
@@ -1181,7 +1181,7 @@ Status DequantMatrices::Compute() {
 
   size_ = pos;
   for (size_t i = 0; i < pos; i++) {
-    inv_table_[i] = 1.0f / table_[i];
+    InvTable()[i] = 1.0f / table_[i];
   }
   for (size_t i = 0; i < AcStrategy::kNumValidStrategies; i++) {
     for (size_t c = 0; c < 3; c++) {

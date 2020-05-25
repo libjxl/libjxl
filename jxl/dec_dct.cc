@@ -24,19 +24,21 @@
 
 #include "jxl/dec_dct-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
-                    const ImageF& dequantized, ThreadPool* pool,
-                    ImageF* JXL_RESTRICT pixels) {
+void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
+           const ImageF& dequantized, ThreadPool* pool,
+           ImageF* JXL_RESTRICT pixels) {
   constexpr size_t N = kBlockDim;
   const size_t xsize_groups = DivCeil(xsize_blocks, kGroupDimInBlocks);
   const size_t ysize_groups = DivCeil(ysize_blocks, kGroupDimInBlocks);
   const size_t pixels_stride = pixels->PixelsPerRow();
 
-  const auto idct = [&](int idx, int /* thread */) HWY_ATTR {
+  const auto idct = [&](int idx, int /* thread */) {
+    HWY_ALIGN float block[N * N];
     const size_t gx = idx % xsize_groups;
     const size_t gy = idx / xsize_groups;
     const Rect group_rect_blocks(gx * kGroupDimInBlocks, gy * kGroupDimInBlocks,
@@ -51,11 +53,10 @@ HWY_ATTR void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
       float* JXL_RESTRICT pixels_row = pixels->Row(by * N);
       for (size_t bx = bx0; bx < bx1; ++bx) {
         ComputeTransposedScaledIDCT<N>()(
-            FromBlock<N>(dequantized_row + bx * kDCTBlockSize),
-            ToLines<N>(pixels_row + bx * N, pixels_stride));
-        GenericTransposeBlockInplace<N>(
-            FromLines<N>(pixels_row + bx * N, pixels_stride),
-            ToLines<N>(pixels_row + bx * N, pixels_stride));
+            FromBlock(N, N, dequantized_row + bx * kDCTBlockSize),
+            ToBlock(N, N, block));
+        Transpose<N, N>::Run(FromBlock(N, N, block),
+                             ToLines(pixels_row + bx * N, pixels_stride));
       }
     }
   };
@@ -63,8 +64,7 @@ HWY_ATTR void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
             ThreadPool::SkipInit(), idct, "Brunsli:IDCT");
 }
 
-HWY_ATTR void TransposedScaledIDCT(const Image3F& dct,
-                                   Image3F* JXL_RESTRICT idct) {
+void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
   PROFILER_ZONE("IDCT facade");
   JXL_ASSERT(dct.xsize() % kDCTBlockSize == 0);
   const size_t xsize_blocks = dct.xsize() / kDCTBlockSize;
@@ -78,19 +78,22 @@ HWY_ATTR void TransposedScaledIDCT(const Image3F& dct,
       float* JXL_RESTRICT row_idct = idct->PlaneRow(c, by * kBlockDim);
       for (size_t bx = 0; bx < xsize_blocks; ++bx) {
         ComputeTransposedScaledIDCT<kBlockDim>()(
-            FromBlock<kBlockDim>(row_dct + bx * kDCTBlockSize),
-            ToLines<kBlockDim>(row_idct + bx * kBlockDim,
-                               idct->PixelsPerRow()));
+            FromBlock(kBlockDim, kBlockDim, row_dct + bx * kDCTBlockSize),
+            ToLines(row_idct + bx * kBlockDim, idct->PixelsPerRow()));
       }
     }
   }
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
+
 HWY_EXPORT(IDct8)
 HWY_EXPORT(TransposedScaledIDCT)
-#endif  // HWY_ONCE
 
 }  // namespace jxl
+#endif  // HWY_ONCE

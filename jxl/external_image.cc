@@ -860,7 +860,7 @@ class Transformer {
     printf("ExtImg Transformer %s->%s\n", Description(c_src_).c_str(),
            Description(c_dst_).c_str());
 #endif
-    do_transform_ = ChooseDoColorSpaceTransform(hwy::SupportedTargets());
+    do_transform_ = ChooseDoColorSpaceTransform();
     return transform_.Init(c_src_, c_dst_, rect_.xsize(), num_threads);
   }
 

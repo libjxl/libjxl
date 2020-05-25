@@ -72,7 +72,8 @@ class Transform {
   // Return the name of the transform (if valid).
   const char *Name() const;
 
-  Status Apply(Image &input, bool inverse, ThreadPool *pool = nullptr);
+  Status Forward(Image &input, ThreadPool *pool = nullptr);
+  Status Inverse(Image &input, ThreadPool *pool = nullptr);
   Status MetaApply(Image &input);
 };
 

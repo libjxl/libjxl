@@ -109,7 +109,7 @@ if (JPEGXL_ENABLE_SJPEG)
   target_link_libraries(jpegxl_extras-static PUBLIC sjpeg)
 endif ()
 
-if (OpenEXR_FOUND AND NOT JPEGXL_EMSCRIPTEN)
+if (OpenEXR_FOUND)
   target_sources(jpegxl_extras-static PRIVATE
     jxl/extras/codec_exr.cc
     jxl/extras/codec_exr.h

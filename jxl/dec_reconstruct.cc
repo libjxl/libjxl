@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/dec_reconstruct.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
+#include <hwy/foreach_target.h>
 
 #include <mutex>
 #include <utility>
@@ -30,24 +33,19 @@
 #include "jxl/multiframe.h"
 #include "jxl/passes_state.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/dec_xyb-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 using DF = HWY_CAPPED(float, kBlockDim);
 
-HWY_ATTR Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
-                                      const Rect& in_rect,
-                                      PassesDecoderState* dec_state, size_t y,
-                                      size_t thread, AuxOut* /*aux_out*/,
-                                      bool save_decompressed,
-                                      bool apply_color_transform) {
+Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
+                             PassesDecoderState* dec_state, size_t y,
+                             size_t thread, AuxOut* /*aux_out*/,
+                             bool save_decompressed,
+                             bool apply_color_transform) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
@@ -81,7 +79,7 @@ HWY_ATTR Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 
   if (frame_header.flags & FrameHeader::kNoise) {
     PROFILER_ZONE("AddNoise");
-    auto add_noise = ChooseAddNoise(hwy::SupportedTargets());
+    auto add_noise = ChooseAddNoise();
     add_noise(image_features.noise_params, rect, dec_state->noise, rect,
               dec_state->shared->cmap, idct);
   }
@@ -99,7 +97,7 @@ HWY_ATTR Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 // treat loads/stores as unaligned.
 #undef LoadBlocks
 #undef StoreBlocks
-#if HWY_CAPS & HWY_CAP_GE512
+#if HWY_CAP_GE512
 #define LoadBlocks LoadU
 #define StoreBlocks StoreU
 #else
@@ -107,7 +105,7 @@ HWY_ATTR Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 #define StoreBlocks Store
 #endif
 
-    for (size_t x = 0; x < rect.xsize(); x += d.N) {
+    for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
       const auto in_opsin_x = LoadBlocks(d, row0 + x);
       const auto in_opsin_y = LoadBlocks(d, row1 + x);
       const auto in_opsin_b = LoadBlocks(d, row2 + x);
@@ -143,8 +141,11 @@ Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 
 HWY_EXPORT(ApplyImageFeaturesRow)
 HWY_EXPORT(ApplyImageFeatures)
@@ -217,7 +218,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
   bool apply_features_ok = true;
   std::mutex apply_features_ok_mutex;
-  const auto apply_features = ChooseApplyImageFeatures(hwy::SupportedTargets());
+  const auto apply_features = ChooseApplyImageFeatures();
   auto run_apply_features = [&](size_t rect_id, size_t thread) {
     if (!apply_features(idct, rects_to_process[rect_id], dec_state, thread,
                         aux_out, save_decompressed, apply_color_transform)) {
@@ -244,16 +245,14 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       frame_header.color_transform == ColorTransform::kYCbCr) {
     // TODO(veluca): create per-pixel version of YcbcrToRgb for line-based
     // decoding in ApplyImageFeatures.
-    ChooseYcbcrToRgb(hwy::SupportedTargets())(
-        idct->Plane(1), idct->Plane(0), idct->Plane(2),
-        const_cast<ImageF*>(&idct->Plane(0)),
-        const_cast<ImageF*>(&idct->Plane(1)),
-        const_cast<ImageF*>(&idct->Plane(2)), pool);
+    ChooseYcbcrToRgb()(idct->Plane(1), idct->Plane(0), idct->Plane(2),
+                       const_cast<ImageF*>(&idct->Plane(0)),
+                       const_cast<ImageF*>(&idct->Plane(1)),
+                       const_cast<ImageF*>(&idct->Plane(2)), pool);
   }  // otherwise no color transform needed
 
   return true;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

@@ -72,7 +72,6 @@ set(TOOL_BINARIES
   #  benchmark_xl
 )
 
-
 add_library(jpegxl_tool STATIC
   butteraugli_pnorm.cc
   cmdline.cc
@@ -226,13 +225,19 @@ if(${JPEGXL_ENABLE_FUZZERS})
   endforeach()
 endif()  # JPEGXL_ENABLE_FUZZERS
 
-if(NOT JPEGXL_EMSCRIPTEN)
+if(TARGET jpegxl)
 
 # Library API test. This test is only to check that we can link against the
 # shared library from C99 file and don't need to use internal symbols.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 add_executable(libjpegxl_test libjpegxl_test.c)
 set_property(TARGET libjpegxl_test PROPERTY C_STANDARD 99)
+if(NOT ${SANITIZER} STREQUAL "none")
+  # Linking a C test binary with the C++ JPEG XL implementation when using
+  # address sanitizer is not well supported by clang 9, so force using clang++
+  # for linking this test if a sanitizer is used.
+  set_target_properties(libjpegxl_test PROPERTIES LINKER_LANGUAGE CXX)
+endif()
 set_target_properties(libjpegxl_test PROPERTIES PREFIX "tests/")
 target_link_libraries(libjpegxl_test jpegxl)
 target_compile_options(libjpegxl_test PRIVATE -Wall -Wextra -Werror)
@@ -242,7 +247,7 @@ endif()
 
 add_test(NAME LibraryCLinkageTest COMMAND libjpegxl_test)
 
-endif()  # JPEGXL_EMSCRIPTEN
+endif()  # TARGET jpegxl
 
 # Tools defined in subdirectories.
 if(${JPEGXL_ENABLE_VIEWERS})
@@ -252,3 +257,21 @@ add_subdirectory(viewer)
 endif()
 
 add_subdirectory(box)
+
+if ("${JPEGXL_EMSCRIPTEN}")
+# WASM API facade.
+add_executable(jpegxl_emcc jpegxl_emcc.cc)
+target_link_libraries(jpegxl_emcc jpegxl-static)
+set_target_properties(jpegxl_emcc PROPERTIES LINK_FLAGS "\
+  -O3\
+  -s EXPORTED_FUNCTIONS='[\
+    \"_decompress\",\
+    \"_free\",\
+    \"_freeImage\",\
+    \"_getImageWidth\",\
+    \"_getImageHeight\",\
+    \"_getImagePixels\",\
+    \"_malloc\"\
+  ]'\
+")
+endif ()  # JPEGXL_EMSCRIPTEN

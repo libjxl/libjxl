@@ -15,12 +15,11 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/convert_test.cc"
 #include "hwy/foreach_target.h"
-#include "hwy/tests/test_util.h"
-
-namespace hwy {
 
 #include "hwy/tests/test_util-inl.h"
 
+#include <hwy/before_namespace-inl.h>
+namespace hwy {
 #include "hwy/begin_target-inl.h"
 
 // Cast and ensure bytes are the same. Called directly from TestBitCast or
@@ -28,44 +27,44 @@ namespace hwy {
 template <typename ToT>
 struct TestBitCastT {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-    const Desc<ToT, d.N * sizeof(T) / sizeof(ToT)> dto;
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const Simd<ToT, MaxLanes(d) * sizeof(T) / sizeof(ToT)> dto;
     const auto vf = Iota(d, 1);
     const auto vt = BitCast(dto, vf);
     static_assert(sizeof(vf) == sizeof(vt), "Cast must return same size");
     // Must return the same bits
-    HWY_ALIGN T from_lanes[d.N];
-    HWY_ALIGN ToT to_lanes[dto.N];
+    HWY_ALIGN T from_lanes[MaxLanes(d)];
+    HWY_ALIGN ToT to_lanes[MaxLanes(dto)];
     Store(vf, d, from_lanes);
     Store(vt, dto, to_lanes);
-    HWY_ASSERT(BytesEqual(from_lanes, to_lanes, d.N * sizeof(T)));
+    HWY_ASSERT(BytesEqual(from_lanes, to_lanes, Lanes(d) * sizeof(T)));
   }
 };
 
 // From D to all types.
 struct TestBitCastFrom {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T t, D d) {
+  HWY_NOINLINE void operator()(T t, D d) {
     TestBitCastT<uint8_t>()(t, d);
     TestBitCastT<uint16_t>()(t, d);
     TestBitCastT<uint32_t>()(t, d);
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
     TestBitCastT<uint64_t>()(t, d);
 #endif
     TestBitCastT<int8_t>()(t, d);
     TestBitCastT<int16_t>()(t, d);
     TestBitCastT<int32_t>()(t, d);
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
     TestBitCastT<int64_t>()(t, d);
 #endif
     TestBitCastT<float>()(t, d);
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
     TestBitCastT<double>()(t, d);
 #endif
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestBitCast() {
+HWY_NOINLINE void TestBitCast() {
   // For HWY_SCALAR and partial vectors, we can only cast to same-sized types:
   // the former can't partition its single lane, and the latter can be smaller
   // than a destination type.
@@ -95,18 +94,18 @@ HWY_NOINLINE HWY_ATTR void TestBitCast() {
   to_i32(int32_t());
   to_i32(float());
 
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   const ForPartialVectors<TestBitCastT<uint64_t>> to_u64;
   to_u64(uint64_t());
   to_u64(int64_t());
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   to_u64(double());
 #endif
 
   const ForPartialVectors<TestBitCastT<int64_t>> to_i64;
   to_i64(uint64_t());
   to_i64(int64_t());
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   to_i64(double());
 #endif
 #endif  // HWY_CAP_INT64
@@ -116,10 +115,10 @@ HWY_NOINLINE HWY_ATTR void TestBitCast() {
   to_float(int32_t());
   to_float(float());
 
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   const ForPartialVectors<TestBitCastT<double>> to_double;
   to_double(double());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   to_double(uint64_t());
   to_double(int64_t());
 #endif  // HWY_CAP_INT64
@@ -132,8 +131,8 @@ HWY_NOINLINE HWY_ATTR void TestBitCast() {
 template <typename ToT>
 struct TestPromoteToT {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D from_d) {
-    const Desc<ToT, from_d.N> to_d;
+  HWY_NOINLINE void operator()(T /*unused*/, D from_d) {
+    const Simd<ToT, MaxLanes(from_d)> to_d;
 
     const auto from_p1 = Iota(from_d, 1);
     const auto from_n1 = Set(from_d, T(-1));
@@ -150,7 +149,7 @@ struct TestPromoteToT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestPromote() {
+HWY_NOINLINE void TestPromote() {
   const ForPartialVectors<TestPromoteToT<uint16_t>, 2> to_u16div2;
   to_u16div2(uint8_t());
 
@@ -172,14 +171,14 @@ HWY_NOINLINE HWY_ATTR void TestPromote() {
   to_i32div4(uint8_t());
   to_i32div4(int8_t());
 
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   const ForPartialVectors<TestPromoteToT<uint64_t>, 2> to_u64div2;
   to_u64div2(uint32_t());
 
   const ForPartialVectors<TestPromoteToT<int64_t>, 2> to_i64div2;
   to_i64div2(int32_t());
 #endif
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   const ForPartialVectors<TestPromoteToT<double>, 2> to_f64div2;
   to_f64div2(float());
 #endif
@@ -188,8 +187,8 @@ HWY_NOINLINE HWY_ATTR void TestPromote() {
 template <typename ToT>
 struct TestDemoteToT {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D from_d) {
-    const Desc<ToT, from_d.N> to_d;
+  HWY_NOINLINE void operator()(T /*unused*/, D from_d) {
+    const Simd<ToT, MaxLanes(from_d)> to_d;
 
     const auto from = Iota(from_d, 1);
     const auto from_n1 = Set(from_d, T(ToT(-1)));
@@ -206,7 +205,7 @@ struct TestDemoteToT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestDemoteTo() {
+HWY_NOINLINE void TestDemoteTo() {
   const ForPartialVectors<TestDemoteToT<uint8_t>> to_u8;
   to_u8(int16_t());
   to_u8(int32_t());
@@ -221,7 +220,7 @@ HWY_NOINLINE HWY_ATTR void TestDemoteTo() {
   const ForPartialVectors<TestDemoteToT<uint16_t>> to_u16;
   to_u16(int32_t());
 
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   const ForPartialVectors<TestDemoteToT<float>> to_float;
   to_float(double());
 #endif
@@ -229,15 +228,15 @@ HWY_NOINLINE HWY_ATTR void TestDemoteTo() {
 
 struct TestConvertU8 {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, const D du32) {
-    const Desc<uint8_t, du32.N * sizeof(uint32_t)> du8;
-    HWY_ALIGN uint8_t lanes8[du8.N];
+  HWY_NOINLINE void operator()(T /*unused*/, const D du32) {
+    const Simd<uint8_t, MaxLanes(du32) * sizeof(uint32_t)> du8;
+    HWY_ALIGN uint8_t lanes8[MaxLanes(du8)];
     Store(Iota(du8, 0), du8, lanes8);
     HWY_ASSERT_VEC_EQ(du32, Iota(du32, 0), U32FromU8(LoadDup128(du8, lanes8)));
     Store(Iota(du8, 0x7F), du8, lanes8);
     HWY_ASSERT_VEC_EQ(du32, Iota(du32, 0x7F),
                       U32FromU8(LoadDup128(du8, lanes8)));
-    const HWY_CAPPED(uint8_t, du32.N) p8;
+    const HWY_CAPPED(uint8_t, MaxLanes(du32)) p8;
     HWY_ASSERT_VEC_EQ(p8, Iota(p8, 0), U8FromU32(Iota(du32, 0)));
     HWY_ASSERT_VEC_EQ(p8, Iota(p8, 0x7F), U8FromU32(Iota(du32, 0x7F)));
   }
@@ -245,9 +244,9 @@ struct TestConvertU8 {
 
 struct TestIntFromFloat {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, const D df) {
+  HWY_NOINLINE void operator()(T /*unused*/, const D df) {
     using TI = MakeSigned<T>;
-    const Desc<TI, df.N> di;
+    const Simd<TI, MaxLanes(df)> di;
     // Integer positive
     HWY_ASSERT_VEC_EQ(di, Iota(di, TI(4)), ConvertTo(di, Iota(df, T(4.0))));
 
@@ -272,9 +271,9 @@ struct TestIntFromFloat {
 
 struct TestFloatFromInt {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, const D di) {
+  HWY_NOINLINE void operator()(T /*unused*/, const D di) {
     using TF = MakeFloat<T>;
-    const Desc<TF, di.N> df;
+    const Simd<TF, MaxLanes(di)> df;
 
     // Integer positive
     HWY_ASSERT_VEC_EQ(df, Iota(df, TF(4.0)), ConvertTo(df, Iota(di, T(4))));
@@ -296,10 +295,10 @@ struct TestFloatFromInt {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestConvertFloatInt() {
+HWY_NOINLINE void TestConvertFloatInt() {
   ForPartialVectors<TestIntFromFloat>()(float());
   ForPartialVectors<TestFloatFromInt>()(int32_t());
-#if (HWY_CAPS & HWY_CAP_DOUBLE) && (HWY_CAPS & HWY_CAP_INT64)
+#if HWY_CAP_DOUBLE && HWY_CAP_INT64
   ForPartialVectors<TestIntFromFloat>()(double());
   ForPartialVectors<TestFloatFromInt>()(int64_t());
 #endif
@@ -307,8 +306,8 @@ HWY_NOINLINE HWY_ATTR void TestConvertFloatInt() {
 
 struct TestNearestInt {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, const D di) {
-    const Desc<float, di.N> df;
+  HWY_NOINLINE void operator()(T /*unused*/, const D di) {
+    const Simd<float, MaxLanes(di)> df;
 
     // Integer positive
     HWY_ASSERT_VEC_EQ(di, Iota(di, 4), NearestInt(Iota(df, 4.0f)));
@@ -330,25 +329,31 @@ struct TestNearestInt {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestConvert() {
-  TestBitCast();
-
-  TestPromote();
-  TestDemoteTo();
-
+HWY_NOINLINE void TestAllConvertU8() {
   ForGE128Vectors<TestConvertU8>()(uint32_t());
-  TestConvertFloatInt();
+}
+
+HWY_NOINLINE void TestAllNearestInt() {
   ForPartialVectors<TestNearestInt>()(int32_t());
 }
 
 #include "hwy/end_target-inl.h"
+}  // namespace hwy
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
-HWY_EXPORT(TestConvert)
-#endif
+namespace hwy {
+
+class HwyConvertTest : public hwy::TestWithParamTarget {};
+
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyConvertTest);
+
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestBitCast)
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestPromote)
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestDemoteTo)
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllConvertU8)
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestConvertFloatInt)
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllNearestInt)
 
 }  // namespace hwy
-
-#if HWY_ONCE
-TEST(HwyConvertTest, Run) { hwy::RunTest(&hwy::ChooseTestConvert); }
 #endif

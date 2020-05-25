@@ -120,11 +120,10 @@ class BitReader {
     JXL_DASSERT(nbits <= kMaxBitsPerCall);
     JXL_DASSERT(!close_called_);
 
-    // Slightly faster but requires BMI2. It is infeasible to use HWY_ATTR
-    // because there are too many callers and we don't want to make them all
-    // reside in begin/end_target, especially because only the callers in
-    // dec_ans are time-critical. Therefore only enabled if the entire binary
-    // is compiled for (and thus requires) BMI2.
+    // Slightly faster but requires BMI2. It is infeasible to make the many
+    // callers reside between begin/end_target, especially because only the
+    // callers in dec_ans are time-critical. Therefore only enabled if the
+    // entire binary is compiled for (and thus requires) BMI2.
 #ifdef __BMI2__
     return _bzhi_u64(buf_, nbits);
 #else

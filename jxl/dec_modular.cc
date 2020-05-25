@@ -18,6 +18,10 @@
 
 #include <vector>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_modular.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/alpha.h"
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
@@ -26,42 +30,37 @@
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/modular/image/image.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_modular.cc"
-#include <hwy/foreach_target.h>
-
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR void MultiplySum(const size_t xsize,
-                          const pixel_type* const JXL_RESTRICT row_in,
-                          const pixel_type* const JXL_RESTRICT row_in_Y,
-                          const float factor,
-                          float* const JXL_RESTRICT row_out) {
+void MultiplySum(const size_t xsize,
+                 const pixel_type* const JXL_RESTRICT row_in,
+                 const pixel_type* const JXL_RESTRICT row_in_Y,
+                 const float factor, float* const JXL_RESTRICT row_out) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, df.N) di;  // assumes pixel_type <= float
+  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
   const auto factor_v = Set(df, factor);
-  for (size_t x = 0; x < xsize; x += di.N) {
+  for (size_t x = 0; x < xsize; x += Lanes(di)) {
     const auto in = Load(di, row_in + x) + Load(di, row_in_Y + x);
     const auto out = ConvertTo(df, in) * factor_v;
     Store(out, df, row_out + x);
   }
 }
 
-HWY_ATTR void RgbFromSingle(const size_t xsize,
-                            const pixel_type* const JXL_RESTRICT row_in,
-                            const float factor, Image3F* color, size_t /*c*/,
-                            size_t y) {
+void RgbFromSingle(const size_t xsize,
+                   const pixel_type* const JXL_RESTRICT row_in,
+                   const float factor, Image3F* color, size_t /*c*/, size_t y) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, df.N) di;  // assumes pixel_type <= float
+  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
 
   float* const JXL_RESTRICT row_out_r = color->PlaneRow(0, y);
   float* const JXL_RESTRICT row_out_g = color->PlaneRow(1, y);
   float* const JXL_RESTRICT row_out_b = color->PlaneRow(2, y);
 
   const auto factor_v = Set(df, factor);
-  for (size_t x = 0; x < xsize; x += di.N) {
+  for (size_t x = 0; x < xsize; x += Lanes(di)) {
     const auto in = Load(di, row_in + x);
     const auto out = ConvertTo(df, in) * factor_v;
     Store(out, df, row_out_r + x);
@@ -71,17 +70,16 @@ HWY_ATTR void RgbFromSingle(const size_t xsize,
 }
 
 // Same signature as RgbFromSingle so we can assign to the same pointer.
-HWY_ATTR void SingleFromSingle(const size_t xsize,
-                               const pixel_type* const JXL_RESTRICT row_in,
-                               const float factor, Image3F* color, size_t c,
-                               size_t y) {
+void SingleFromSingle(const size_t xsize,
+                      const pixel_type* const JXL_RESTRICT row_in,
+                      const float factor, Image3F* color, size_t c, size_t y) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, df.N) di;  // assumes pixel_type <= float
+  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
 
   float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
 
   const auto factor_v = Set(df, factor);
-  for (size_t x = 0; x < xsize; x += di.N) {
+  for (size_t x = 0; x < xsize; x += Lanes(di)) {
     const auto in = Load(di, row_in + x);
     const auto out = ConvertTo(df, in) * factor_v;
     Store(out, df, row_out + x);
@@ -89,8 +87,11 @@ HWY_ATTR void SingleFromSingle(const size_t xsize,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(MultiplySum)
 HWY_EXPORT(RgbFromSingle)
 HWY_EXPORT(SingleFromSingle)
@@ -131,7 +132,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   ModularOptions options;
   options.max_chan_size = kGroupDim;
-  if (!modular_generic_decompress(reader, gi, &options, -2))
+  if (!ModularGenericDecompress(reader, gi, &options, -2))
     return JXL_FAILURE("Failed to decode global modular info");
 
   // ensure all the channel buffers are allocated
@@ -178,7 +179,7 @@ Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
   gi.real_nb_channels = gi.nb_channels;
   ModularOptions options;
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  if (!modular_generic_decompress(reader, gi, &options))
+  if (!ModularGenericDecompress(reader, gi, &options))
     return JXL_FAILURE("Failed to decode modular group");
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   int gic = 0;
@@ -216,8 +217,6 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
   // Undo the global transforms
   gi.undo_transforms(-1, pool);
 
-  const uint32_t targets = hwy::SupportedTargets();
-
   int c = 0;
   if (do_color) {
     for (; c < 3; c++) {
@@ -230,7 +229,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
         factor *= kDecoderMul2[c];
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
-        auto convert_row = ChooseMultiplySum(targets);
+        auto convert_row = ChooseMultiplySum();
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
             [&](const int task, const int thread) {
@@ -247,8 +246,8 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
         const bool rgb_from_gray =
             decoded->IsGray() &&
             frame_header.color_transform == ColorTransform::kNone;
-        auto convert_row = rgb_from_gray ? ChooseRgbFromSingle(targets)
-                                         : ChooseSingleFromSingle(targets);
+        auto convert_row =
+            rgb_from_gray ? ChooseRgbFromSingle() : ChooseSingleFromSingle();
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
             [&](const int task, const int thread) {
@@ -308,6 +307,5 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
   return true;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

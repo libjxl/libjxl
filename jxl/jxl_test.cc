@@ -41,7 +41,7 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/image_test_utils.h"
-#include "jxl/modular/encoding/context_predict.h"
+#include "jxl/modular/options.h"
 #include "jxl/test_utils.h"
 #include "jxl/testdata_path.h"
 
@@ -649,12 +649,12 @@ CompressParams CParamsForLossless() {
   cparams.modular_group_mode = true;
   cparams.color_transform = jxl::ColorTransform::kNone;
   cparams.quality_pair = {100, 100};
-  cparams.options.predictor = {int(Predictor::Weighted)};
+  cparams.options.predictor = {Predictor::Weighted};
   return cparams;
 }
 }  // namespace
 
-TEST(JxlTest, RoundtripLossless8) {
+TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   ThreadPoolInternal pool(8);
   const std::string pathname =
       GetTestDataPath("imagecompression.info/flower_foveon.png");

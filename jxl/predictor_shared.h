@@ -17,7 +17,7 @@
 
 #include <stddef.h>
 #include <algorithm>
-#include <hwy/interface.h>
+#include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/common.h"

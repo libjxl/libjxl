@@ -21,8 +21,8 @@
 namespace jxl {
 
 void Channel::compute_minmax(pixel_type *min, pixel_type *max) const {
-  pixel_type realmin = LARGEST_VAL;
-  pixel_type realmax = SMALLEST_VAL;
+  pixel_type realmin = std::numeric_limits<pixel_type>::max();
+  pixel_type realmax = std::numeric_limits<pixel_type>::min();
   for (size_t y = 0; y < h; y++) {
     const pixel_type *JXL_RESTRICT p = plane.Row(y);
     for (size_t x = 0; x < w; x++) {
@@ -36,8 +36,8 @@ void Channel::compute_minmax(pixel_type *min, pixel_type *max) const {
 }
 
 void Channel::compute_trivial(pixel_type *min, pixel_type *max) {
-  pixel_type realmin = LARGEST_VAL;
-  pixel_type realmax = SMALLEST_VAL;
+  pixel_type realmin = std::numeric_limits<pixel_type>::max();
+  pixel_type realmax = std::numeric_limits<pixel_type>::min();
   for (size_t y = 0; y < h; y++) {
     const pixel_type *JXL_RESTRICT p = plane.Row(y);
     for (size_t x = 0; x < w; x++) {
@@ -56,7 +56,7 @@ void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
   while ((int)transform.size() > keep && transform.size() > 0) {
     Transform t = transform.back();
     JXL_DEBUG_V(4, "Undoing transform %s", t.Name());
-    Status result = t.Apply(*this, true, pool);
+    Status result = t.Inverse(*this, pool);
     if (result == false) {
       JXL_FAILURE("Error while undoing transform %s.", t.Name());
       error = true;
@@ -78,13 +78,11 @@ void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
   }
 }
 
-#ifdef HAS_ENCODER
 bool Image::do_transform(const Transform &tr) {
   Transform t = tr;
-  bool did_it = t.Apply(*this, false);
+  bool did_it = t.Forward(*this);
   if (did_it) transform.push_back(t);
   return did_it;
 }
-#endif
 
 }  // namespace jxl

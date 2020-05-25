@@ -24,15 +24,16 @@
 
 #include "jxl/enc_dct-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR void TransposedScaledDCT8(float* block) {
-  ComputeTransposedScaledDCT<8>()(FromBlock<8>(block), ToBlock<8>(block));
+void TransposedScaledDCT8(float* block) {
+  ComputeTransposedScaledDCT<8>()(FromBlock(8, 8, block), ToBlock(8, 8, block));
 }
 
-HWY_ATTR ImageF Dct8(const ImageF& image) {
+ImageF Dct8(const ImageF& image) {
   constexpr size_t N = kBlockDim;
   static_assert(N == 8, "JPEG block dim must be 8");
   static_assert(kDCTBlockSize == N * N, "JPEG block size must be 64");
@@ -48,15 +49,14 @@ HWY_ATTR ImageF Dct8(const ImageF& image) {
     float* JXL_RESTRICT row_dct = dct.Row(by);
     for (size_t bx = 0; bx < xsize_blocks; ++bx) {
       ComputeTransposedScaledDCT<kBlockDim>()(
-          FromLines<kBlockDim>(row_in + bx * kBlockDim, image.PixelsPerRow()),
-          ScaleToBlock<kBlockDim>(row_dct + bx * kDCTBlockSize));
+          FromLines(row_in + bx * kBlockDim, image.PixelsPerRow()),
+          ScaleToBlock(kBlockDim, kBlockDim, row_dct + bx * kDCTBlockSize));
     }
   }
   return dct;
 }
 
-HWY_ATTR void TransposedScaledDCT(const Image3F& image,
-                                  Image3F* JXL_RESTRICT dct) {
+void TransposedScaledDCT(const Image3F& image, Image3F* JXL_RESTRICT dct) {
   PROFILER_ZONE("TransposedScaledDCT facade");
   JXL_ASSERT(image.xsize() % kBlockDim == 0);
   JXL_ASSERT(image.ysize() % kBlockDim == 0);
@@ -72,19 +72,21 @@ HWY_ATTR void TransposedScaledDCT(const Image3F& image,
 
       for (size_t bx = 0; bx < xsize_blocks; ++bx) {
         ComputeTransposedScaledDCT<kBlockDim>()(
-            FromLines<kBlockDim>(row_in + bx * kBlockDim, image.PixelsPerRow()),
-            ScaleToBlock<kBlockDim>(row_dct + bx * kDCTBlockSize));
+            FromLines(row_in + bx * kBlockDim, image.PixelsPerRow()),
+            ScaleToBlock(kBlockDim, kBlockDim, row_dct + bx * kDCTBlockSize));
       }
     }
   }
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(TransposedScaledDCT8)
 HWY_EXPORT(Dct8)
 HWY_EXPORT(TransposedScaledDCT)
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

@@ -60,8 +60,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
 
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)(*ChooseToXYB)(hwy::SupportedTargets())(io.Main(), &pool, &opsin,
-                                                &unused_linear);
+  (void)(*ChooseToXYB)()(io.Main(), &pool, &opsin, &unused_linear);
   opsin = PadImageToMultiple(opsin, kBlockDim);
   opsin = GaborishInverse(opsin, 1.0f, &pool);
 

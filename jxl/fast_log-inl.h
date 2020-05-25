@@ -21,17 +21,16 @@
 #define JXL_FAST_LOG_INL_H_
 #endif
 
-#include <hwy/highway.h>
-#include "jxl/base/status.h"
 #include "jxl/rational_polynomial-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
+// Computes natural logarithm like std::log. Undefined if negative / NaN.
 // L1 error ~3.9E-6 (see fast_log_test).
-template <class V>
-HWY_ATTR HWY_MAYBE_UNUSED V FastLog2f_18bits(V x) {
+template <class DF, class V>
+HWY_MAYBE_UNUSED V FastLog2f_18bits(const DF df, V x) {
   // 2,2 rational polynomial approximation of std::log1p(x) / std::log(2).
   HWY_ALIGN const float p[4 * (2 + 1)] = {HWY_REP4(-1.8503833400518310E-06f),
                                           HWY_REP4(1.4287160470083755E+00f),
@@ -40,11 +39,8 @@ HWY_ATTR HWY_MAYBE_UNUSED V FastLog2f_18bits(V x) {
                                           HWY_REP4(1.0096718572241148E+00f),
                                           HWY_REP4(1.7409343003366853E-01f)};
 
-  HWY_FULL(float) df;
-  HWY_FULL(int32_t) di;
+  const hwy::Simd<int32_t, MaxLanes(df)> di;
   const auto x_bits = BitCast(di, x);
-  // Cannot handle negative numbers / NaN.
-  JXL_DASSERT(AllTrue(Abs(x_bits) == x_bits));
 
   // Range reduction to [-1/3, 1/3] - 3 integer, 2 float ops
   const auto exp_bits = x_bits - Set(di, 0x3f2aaaab);  // = 2/3
@@ -52,11 +48,12 @@ HWY_ATTR HWY_MAYBE_UNUSED V FastLog2f_18bits(V x) {
   const auto exp_shifted = ShiftRight<23>(exp_bits);
   const auto mantissa = BitCast(df, x_bits - ShiftLeft<23>(exp_shifted));
   const auto exp_val = ConvertTo(df, exp_shifted);
-  return EvalRationalPolynomial(mantissa - Set(df, 1.0f), p, q) + exp_val;
+  return EvalRationalPolynomial(df, mantissa - Set(df, 1.0f), p, q) + exp_val;
 }
 
 #include <hwy/end_target-inl.h>
 
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

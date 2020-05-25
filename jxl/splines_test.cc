@@ -261,8 +261,7 @@ TEST(SplinesTest, Drawing) {
 
   OpsinParams opsin_params{};
   opsin_params.Init();
-  (void)(ChooseOpsinToLinearInplace(hwy::SupportedTargets())(
-      &image, /*pool=*/nullptr, opsin_params));
+  (void)(ChooseOpsinToLinearInplace()(&image, /*pool=*/nullptr, opsin_params));
 
   CodecInOut io_actual;
   io_actual.SetFromImage(CopyImage(image), ColorEncoding::LinearSRGB());

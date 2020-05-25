@@ -73,7 +73,13 @@ static JXL_INLINE size_t ZeroDensityContext(size_t nonzeros_left, size_t k,
   JXL_DASSERT(k > 0);
   JXL_DASSERT(k < 64);
   JXL_DASSERT(nonzeros_left > 0);
-  JXL_DASSERT(nonzeros_left + k < 65);
+  // Asserting nonzeros_left + k < 65 here causes crashes in debug mode with
+  // invalid input, since the (hot) decoding loop does not check this condition.
+  // As no out-of-bound memory reads are issued even if that condition is
+  // broken, we check this simpler condition which holds anyway. The decoder
+  // will still mark a file in which that condition happens as not valid at the
+  // end of the decoding loop, as `nzeros` will not be `0`.
+  JXL_DASSERT(nonzeros_left < 64);
   return (kCoeffNumNonzeroContext[nonzeros_left] + kCoeffFreqContext[k]) * 2 +
          prev;
 }

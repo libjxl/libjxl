@@ -74,8 +74,7 @@ uint32_t ComputeUsedOrders(const SpeedTier speed,
 void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
                        const FrameDimensions& frame_dim, uint32_t used_orders,
                        coeff_order_t* JXL_RESTRICT order) {
-  int32_t num_zeros[3 * AcStrategy::kNumValidStrategies *
-                    AcStrategy::kMaxCoeffArea] = {};
+  int32_t num_zeros[kCoeffOrderSize] = {};
   // No need to compute number of zero coefficients if all orders are the
   // default.
   if (used_orders != 0) {
@@ -102,8 +101,7 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
           size_t size = kDCTBlockSize << acs.log2_covered_blocks();
           for (size_t c = 0; c < 3; ++c) {
             const size_t order_offset =
-                (kStrategyOrder[acs.RawStrategy()] * 3 + c) *
-                AcStrategy::kMaxCoeffArea;
+                CoeffOrderOffset(kStrategyOrder[acs.RawStrategy()], c);
             for (size_t k = 0; k < size; k++) {
               if (rows[c][ac_offset + k] == 0) {
                 num_zeros[order_offset + k]++;
@@ -130,17 +128,18 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
     uint8_t ord = kStrategyOrder[o];
     if (computed & (1 << ord)) continue;
     computed |= 1 << ord;
+    AcStrategy acs = AcStrategy::FromRawStrategy(o);
+    size_t sz = kDCTBlockSize * acs.covered_blocks_x() * acs.covered_blocks_y();
     // Ensure natural coefficient order is not permuted if the order is
     // not transmitted.
     if ((1 << ord) & ~used_orders) {
       for (size_t c = 0; c < 3; c++) {
-        SetDefaultOrder(AcStrategy::FromRawStrategy(o),
-                        &order[(3 * ord + c) * AcStrategy::kMaxCoeffArea]);
+        size_t offset = CoeffOrderOffset(ord, c);
+        JXL_DASSERT(CoeffOrderOffset(ord, c + 1) - offset == sz);
+        SetDefaultOrder(AcStrategy::FromRawStrategy(o), &order[offset]);
       }
       continue;
     }
-    AcStrategy acs = AcStrategy::FromRawStrategy(o);
-    size_t sz = kDCTBlockSize * acs.covered_blocks_x() * acs.covered_blocks_y();
     const coeff_order_t* natural_coeff_order = acs.NaturalCoeffOrder();
 
     for (uint8_t c = 0; c < 3; c++) {
@@ -151,7 +150,8 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
 
       // Apply zig-zag order.
       PosAndCount pos_and_val[AcStrategy::kMaxCoeffArea];
-      size_t offset = (ord * 3 + c) * AcStrategy::kMaxCoeffArea;
+      size_t offset = CoeffOrderOffset(ord, c);
+      JXL_DASSERT(CoeffOrderOffset(ord, c + 1) - offset == sz);
       for (size_t i = 0; i < sz; ++i) {
         size_t pos = natural_coeff_order[i];
         pos_and_val[i].pos = pos;
@@ -169,8 +169,7 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
 
       // Grab indices.
       for (size_t i = 0; i < sz; ++i) {
-        order[(ord * 3 + c) * AcStrategy::kMaxCoeffArea + i] =
-            pos_and_val[i].pos;
+        order[offset + i] = pos_and_val[i].pos;
       }
     }
   }
@@ -215,6 +214,9 @@ Status ReadPermutation(size_t skip, size_t size, coeff_order_t* order,
   for (size_t i = skip; i < end; ++i) {
     lehmer[i] = reader->ReadHybridUint(Context(last), br, context_map);
     last = lehmer[i];
+    if (lehmer[i] + i >= size) {
+      return JXL_FAILURE("Invalid lehmer code");
+    }
   }
   DecodeLehmerCode(lehmer.data(), temp.data(), size, order);
   return true;
@@ -275,8 +277,7 @@ void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
     if ((used_orders & (1 << ord)) == 0) continue;
     AcStrategy acs = AcStrategy::FromRawStrategy(o);
     for (size_t c = 0; c < 3; c++) {
-      EncodeCoeffOrder(&order[(3 * ord + c) * AcStrategy::kMaxCoeffArea], acs,
-                       &tokens);
+      EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)], acs, &tokens);
     }
   }
   // Do not write anything if no order is used.
@@ -329,13 +330,13 @@ Status DecodeCoeffOrders(uint16_t used_orders, coeff_order_t* order,
     AcStrategy acs = AcStrategy::FromRawStrategy(o);
     if ((used_orders & (1 << ord)) == 0) {
       for (size_t c = 0; c < 3; c++) {
-        SetDefaultOrder(acs, &order[(3 * ord + c) * AcStrategy::kMaxCoeffArea]);
+        SetDefaultOrder(acs, &order[CoeffOrderOffset(ord, c)]);
       }
     } else {
       for (size_t c = 0; c < 3; c++) {
-        JXL_RETURN_IF_ERROR(DecodeCoeffOrder(
-            acs, &order[(3 * ord + c) * AcStrategy::kMaxCoeffArea], br,
-            reader.get(), context_map));
+        JXL_RETURN_IF_ERROR(DecodeCoeffOrder(acs,
+                                             &order[CoeffOrderOffset(ord, c)],
+                                             br, reader.get(), context_map));
       }
     }
   }

@@ -24,8 +24,8 @@
 
 namespace jxl {
 
-static Status inv_palette(Image &input, const TransformParams &parameters,
-                          ThreadPool *pool) {
+static Status InvPalette(Image &input, const TransformParams &parameters,
+                         ThreadPool *pool) {
   if (input.nb_meta_channels < 1) {
     return JXL_FAILURE("Error: Palette transform without palette.");
   }
@@ -106,7 +106,7 @@ static Status CheckPaletteParams(const Image &image,
   return true;
 }
 
-static Status meta_palette(Image &input, const TransformParams &parameters) {
+static Status MetaPalette(Image &input, const TransformParams &parameters) {
   JXL_RETURN_IF_ERROR(CheckPaletteParams(input, parameters));
 
   uint32_t begin_c = parameters[0];
@@ -126,8 +126,7 @@ static Status meta_palette(Image &input, const TransformParams &parameters) {
   return true;
 }
 
-#ifdef HAS_ENCODER
-static Status fwd_palette(Image &input, TransformParams &parameters) {
+static Status FwdPalette(Image &input, TransformParams &parameters) {
   JXL_RETURN_IF_ERROR(CheckPaletteParams(input, parameters));
   uint32_t begin_c = parameters[0];
   uint32_t end_c = parameters[1];
@@ -242,20 +241,6 @@ static Status fwd_palette(Image &input, TransformParams &parameters) {
                       input.channel.begin() + end_c + 1);
   input.channel.insert(input.channel.begin(), std::move(pch));
   return true;
-}
-#endif
-
-static Status palette(Image &input, bool inverse, TransformParams &parameters,
-                      ThreadPool *pool) {
-  if (inverse) {
-    return inv_palette(input, parameters, pool);
-  } else {
-#ifdef HAS_ENCODER
-    return fwd_palette(input, parameters);
-#else
-    return false;
-#endif
-  }
 }
 
 }  // namespace jxl

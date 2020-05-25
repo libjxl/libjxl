@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-if(NOT JPEGXL_EMSCRIPTEN AND NOT WIN32)
+if(NOT WIN32)
   add_subdirectory(gdk-pixbuf)
   add_subdirectory(gimp)
 endif()

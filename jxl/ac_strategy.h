@@ -124,11 +124,13 @@ class AcStrategy {
   //  X = NaturalCoeffOrder(s)[NaturalCoeffOrderLutN(s)[X]]
   //  X = NaturalCoeffOrderLut(s)[NaturalCoeffOrderN(s)[X]]
   JXL_INLINE const coeff_order_t* NaturalCoeffOrder() const {
-    return CoeffOrder()->order + RawStrategy() * kMaxCoeffArea;
+    return CoeffOrder()->order +
+           CoeffOrderAndLut::kOffset[RawStrategy()] * kDCTBlockSize;
   }
 
   JXL_INLINE const coeff_order_t* NaturalCoeffOrderLut() const {
-    return CoeffOrder()->lut + RawStrategy() * kMaxCoeffArea;
+    return CoeffOrder()->lut +
+           CoeffOrderAndLut::kOffset[RawStrategy()] * kDCTBlockSize;
   }
 
   // Number of 8x8 blocks that this strategy will cover. 0 for non-top-left
@@ -183,8 +185,13 @@ class AcStrategy {
   }
 
   struct CoeffOrderAndLut {
-    coeff_order_t order[kNumValidStrategies * kMaxCoeffArea];
-    coeff_order_t lut[kNumValidStrategies * kMaxCoeffArea];
+    // Those offsets get multiplied by kDCTBlockSize.
+    static constexpr size_t kOffset[kNumValidStrategies + 1] = {
+        0, 1, 2, 3, 4, 8, 24, 26, 28, 32, 36, 44, 52, 53, 54, 55, 56, 57, 58};
+    static constexpr size_t kTotalTableSize =
+        kOffset[kNumValidStrategies] * kDCTBlockSize;
+    coeff_order_t order[kTotalTableSize];
+    coeff_order_t lut[kTotalTableSize];
   };
 
  private:

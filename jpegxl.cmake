@@ -23,23 +23,21 @@ set(JPEGXL_LIBRARY_SOVERSION "${JPEGXL_MAJOR_VERSION}")
 
 # TODO(deymo): Split this into encoder and decoder targets
 set(JPEGXL_INTERNAL_SOURCES
-  jxl/modular/config.h
   jxl/modular/encoding/context_predict.h
-  jxl/modular/encoding/encoding.cpp
+  jxl/modular/encoding/encoding.cc
   jxl/modular/encoding/encoding.h
-  jxl/modular/encoding/ma.cpp
+  jxl/modular/encoding/ma.cc
   jxl/modular/encoding/ma.h
-  jxl/modular/encoding/options.h
-  jxl/modular/encoding/weighted_predict.h
-  jxl/modular/image/image.cpp
+  jxl/modular/image/image.cc
   jxl/modular/image/image.h
+  jxl/modular/options.h
   jxl/modular/transform/near-lossless.h
   jxl/modular/transform/palette.h
   jxl/modular/transform/quantize.h
   jxl/modular/transform/squeeze.h
   jxl/modular/transform/subsample.h
   jxl/modular/transform/subtractgreen.h
-  jxl/modular/transform/transform.cpp
+  jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
   jxl/modular/transform/ycocg.h
   jxl/ac_context.h
@@ -349,9 +347,7 @@ endif()
 add_library(jpegxl-obj OBJECT ${JPEGXL_INTERNAL_SOURCES})
 target_compile_options(jpegxl-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
 target_compile_options(jpegxl-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
-if (NOT "${JPEGXL_EMSCRIPTEN}")
 set_property(TARGET jpegxl-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
-endif()
 target_include_directories(jpegxl-obj PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -428,7 +424,7 @@ target_include_directories(jpegxl-obj PUBLIC
 target_link_libraries(jpegxl-static PUBLIC mingw_stdthreads)
 endif()
 
-if (NOT "${JPEGXL_EMSCRIPTEN}")
+if ((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR "${TARGET_SUPPORTS_SHARED_LIBS}")
 
 # Public shared library.
 add_library(jpegxl SHARED $<TARGET_OBJECTS:jpegxl-obj>)
@@ -466,4 +462,4 @@ configure_file("${CMAKE_SOURCE_DIR}/jxl/libjpegxl.pc.in" "libjpegxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjpegxl.pc"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 
-endif()  # JPEGXL_EMSCRIPTEN
+endif()  # TARGET_SUPPORTS_SHARED_LIBS

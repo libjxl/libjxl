@@ -31,10 +31,6 @@
 // - assumes string literals are stored within an 8 MiB range
 // - compiler-specific annotations (restrict, alignment, fences)
 
-#include <hwy/highway.h>
-
-namespace jxl {
-
 // How many mebibytes to allocate (if PROFILER_ENABLED) per thread that
 // enters at least one zone. Once this buffer is full, the thread will analyze
 // and discard packets, thus temporarily adding some observer overhead.
@@ -45,16 +41,17 @@ namespace jxl {
 
 #define PROFILER_PRINT_OVERHEAD 0
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-#if JXL_ARCH_X64 && HWY_TARGET != HWY_SCALAR
+#if PROFILER_BUFFER
 // Overwrites `to` without loading it into cache (read-for-ownership).
 // Copies kCacheLineSize bytes from/to naturally aligned addresses.
-HWY_ATTR void StreamCacheLine(const Packet* JXL_RESTRICT from,
-                              Packet* JXL_RESTRICT to) {
+void StreamCacheLine(const Packet* JXL_RESTRICT from, Packet* JXL_RESTRICT to) {
   constexpr size_t kLanes = 16 / sizeof(Packet);
   static_assert(kLanes == 2, "Update descriptor type");
-  const hwy::Desc<uint64_t, kLanes> d;
+  const hwy::Simd<uint64_t, kLanes> d;
   JXL_COMPILER_FENCE;
   const uint64_t* JXL_RESTRICT from64 = reinterpret_cast<const uint64_t*>(from);
   const auto v0 = Load(d, from64 + 0 * kLanes);
@@ -71,10 +68,13 @@ HWY_ATTR void StreamCacheLine(const Packet* JXL_RESTRICT from,
   Stream(v3, d, to64 + 3 * kLanes);
   JXL_COMPILER_FENCE;
 }
-#endif
+#endif  // PROFILER_BUFFER
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
+namespace jxl {
 namespace {
 
 // Upper bounds for various fixed-size data structures (guarded via JXL_ASSERT):
@@ -258,7 +258,7 @@ class Results {
     memset(zones_, 0, sizeof(zones_));
   }
 
-  /// private:
+ private:
 #if JXL_ARCH_X64
   static bool SameOffset(const __m128i zone, const uintptr_t biased_offset) {
     const uint64_t num_calls = _mm_cvtsi128_si64(zone);
@@ -425,6 +425,7 @@ void ThreadSpecific::FlushStorage() {
   num_packets_ = 0;
 }
 
+#if PROFILER_BUFFER
 void ThreadSpecific::FlushBuffer() {
   if (num_packets_ + kBufferCapacity > max_packets_) {
     FlushStorage();
@@ -435,9 +436,10 @@ void ThreadSpecific::FlushBuffer() {
   num_packets_ += kBufferCapacity;
   buffer_size_ = 0;
 }
+#endif  // PROFILER_BUFFER
 
 void ThreadSpecific::AnalyzeRemainingPackets() {
-#if JXL_ARCH_X64
+#if PROFILER_BUFFER
   // Ensures prior weakly-ordered streaming stores are globally visible.
   hwy::StoreFence();
 
@@ -449,7 +451,7 @@ void ThreadSpecific::AnalyzeRemainingPackets() {
   memcpy(packets_ + num_packets_, buffer_, buffer_size_ * sizeof(Packet));
   num_packets_ += buffer_size_;
   buffer_size_ = 0;
-#endif
+#endif  // PROFILER_BUFFER
 
   results_->AnalyzePackets(packets_, num_packets_);
   num_packets_ = 0;
@@ -472,7 +474,7 @@ void ThreadSpecific::ComputeOverhead() {
         {
           PROFILER_ZONE("Dummy Zone (never shown)");
         }
-#if JXL_ARCH_X64
+#if PROFILER_BUFFER
         const uint64_t duration = results_->ZoneDuration(buffer_);
         buffer_size_ = 0;
 #else
@@ -512,11 +514,9 @@ void ThreadSpecific::ComputeOverhead() {
       for (size_t i = 0; i < kReps; ++i) {
         PROFILER_ZONE("Dummy");
       }
-#if JXL_ARCH_X64
-      _mm_sfence();
-#endif
+      hwy::StoreFence();
       const uint64_t t1 = TicksAfter();
-#if JXL_ARCH_X64
+#if PROFILER_BUFFER
       JXL_CHECK(num_packets_ + buffer_size_ == kReps * 2);
       buffer_size_ = 0;
 #else

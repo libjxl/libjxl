@@ -12,12 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "hwy/highway.h"
+#include "hwy/targets.h"
 
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include <atomic>
+#include <limits>
+
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
+#include "sanitizer/common_interface_defs.h"  // __sanitizer_print_stack_trace
+#endif                                        // defined(*_SANITIZER)
 
 #if HWY_ARCH_X86
 #include <xmmintrin.h>
@@ -49,7 +56,10 @@ void Cpuid(const uint32_t level, const uint32_t count,
     abcd[i] = regs[i];
   }
 #else
-  uint32_t a, b, c, d;
+  uint32_t a;
+  uint32_t b;
+  uint32_t c;
+  uint32_t d;
   __cpuid_count(level, count, a, b, c, d);
   abcd[0] = a;
   abcd[1] = b;
@@ -77,6 +87,13 @@ uint32_t ReadXCR0() {
 
 // Not function-local => no compiler-generated locking.
 std::atomic<uint32_t> supported_{0};  // Not yet initialized
+
+// When running tests, this value can be set to the mocked supported targets
+// mask. Only written to from a single thread before the test starts.
+uint32_t supported_targets_for_test_ = 0;
+
+// Mask of targets disabled at runtime with DisableTargets.
+uint32_t supported_mask_{std::numeric_limits<uint32_t>::max()};
 
 #if HWY_ARCH_X86
 // Bits indicating which instruction set extensions are supported.
@@ -114,11 +131,58 @@ constexpr uint32_t kGroupAVX3 = kAVX512F | kAVX512VL | kAVX512DQ | kAVX512BW;
 
 }  // namespace
 
+HWY_NORETURN void HWY_FORMAT(3, 4)
+    Abort(const char* file, int line, const char* format, ...) {
+  char buf[2000];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buf, sizeof(buf), format, args);
+  va_end(args);
+
+  fprintf(stderr, "Abort at %s:%d: %s\n", file, line, buf);
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
+  // If compiled with any sanitizer print a stack trace. This call doesn't crash
+  // the program, instead the trap below will crash it also allowing gdb to
+  // break there.
+  __sanitizer_print_stack_trace();
+#endif  // defined(*_SANITIZER)
+
+#if HWY_COMPILER_MSVC
+  __debugbreak();
+#else
+  __builtin_trap();
+#endif
+}
+
+void DisableTargets(uint32_t disabled_targets) {
+  supported_mask_ = ~(disabled_targets & ~HWY_ENABLED_BASELINE);
+}
+
+void SetSupportedTargetsForTest(uint32_t targets) {
+  // Reset the cached supported_ value to 0 to force a re-evaluation in the
+  // next call to SupportedTargets() which will use the mocked value set here
+  // if not zero.
+  supported_.store(0, std::memory_order_release);
+  supported_targets_for_test_ = targets;
+}
+
+bool SupportedTargetsCalledForTest() {
+  return supported_.load(std::memory_order_acquire) != 0;
+}
+
 uint32_t SupportedTargets() {
   uint32_t bits = supported_.load(std::memory_order_acquire);
   // Already initialized?
   if (HWY_LIKELY(bits != 0)) {
-    return bits;
+    return bits & supported_mask_;
+  }
+
+  // When running tests, this allows to mock the current supported targets.
+  if (HWY_UNLIKELY(supported_targets_for_test_ != 0)) {
+    // Store the value to signal that this was used.
+    supported_.store(supported_targets_for_test_, std::memory_order_release);
+    return supported_targets_for_test_ & supported_mask_;
   }
 
   bits = HWY_SCALAR;
@@ -198,7 +262,7 @@ uint32_t SupportedTargets() {
   }
 
   supported_.store(bits, std::memory_order_release);
-  return bits;
+  return bits & supported_mask_;
 }
 
 }  // namespace hwy

@@ -16,15 +16,25 @@
 // WARNING: most operations do not cross 128-bit block boundaries. In
 // particular, "Broadcast", pack and zip behavior may be surprising.
 
+// This header is included by begin_target-inl.h, possibly inside a namespace,
+// so do not include system headers (already done by highway.h). HWY_ALIGN is
+// already defined unless an IDE is only parsing this file, in which case we
+// include headers to avoid warnings (before including ops/x86_128-inl.h so it
+// doesn't overwrite HWY_TARGET) .
+#ifndef HWY_ALIGN
 #include <stddef.h>
 #include <stdint.h>
 
 #include "hwy/highway.h"
 
+#define HWY_NESTED_BEGIN  // prevent re-including this header
+#undef HWY_TARGET
+#define HWY_TARGET HWY_AVX2
+#include "hwy/begin_target-inl.h"
+#endif  // HWY_ALIGN
+
 // Required for promotion/demotion and users of HWY_CAPPED.
 #include "hwy/ops/x86_128-inl.h"
-
-#include "hwy/begin_target-inl.h"
 
 template <typename T>
 struct Raw256 {
@@ -40,10 +50,10 @@ struct Raw256<double> {
 };
 
 template <typename T>
-using Full256 = hwy::Desc<T, 32 / sizeof(T)>;
+using Full256 = hwy::Simd<T, 32 / sizeof(T)>;
 
 template <typename T, size_t N>
-using Desc = hwy::Desc<T, N>;
+using Simd = hwy::Simd<T, N>;
 
 template <typename T>
 class Vec256 {
@@ -140,16 +150,17 @@ HWY_API Vec256<double> Zero(Full256<double> /* tag */) {
 
 // Returns a vector with all lanes set to "t".
 HWY_API Vec256<uint8_t> Set(Full256<uint8_t> /* tag */, const uint8_t t) {
-  return Vec256<uint8_t>{_mm256_set1_epi8(t)};
+  return Vec256<uint8_t>{_mm256_set1_epi8(static_cast<char>(t))};  // NOLINT
 }
 HWY_API Vec256<uint16_t> Set(Full256<uint16_t> /* tag */, const uint16_t t) {
-  return Vec256<uint16_t>{_mm256_set1_epi16(t)};
+  return Vec256<uint16_t>{_mm256_set1_epi16(static_cast<short>(t))};  // NOLINT
 }
 HWY_API Vec256<uint32_t> Set(Full256<uint32_t> /* tag */, const uint32_t t) {
-  return Vec256<uint32_t>{_mm256_set1_epi32(t)};
+  return Vec256<uint32_t>{_mm256_set1_epi32(static_cast<int>(t))};  // NOLINT
 }
 HWY_API Vec256<uint64_t> Set(Full256<uint64_t> /* tag */, const uint64_t t) {
-  return Vec256<uint64_t>{_mm256_set1_epi64x(t)};
+  return Vec256<uint64_t>{
+      _mm256_set1_epi64x(static_cast<long long>(t))};  // NOLINT
 }
 HWY_API Vec256<int8_t> Set(Full256<int8_t> /* tag */, const int8_t t) {
   return Vec256<int8_t>{_mm256_set1_epi8(t)};
@@ -657,13 +668,6 @@ HWY_API Vec256<float> Max(const Vec256<float> a, const Vec256<float> b) {
 }
 HWY_API Vec256<double> Max(const Vec256<double> a, const Vec256<double> b) {
   return Vec256<double>{_mm256_max_pd(a.raw, b.raw)};
-}
-
-// Returns the closest value to v within [lo, hi].
-template <typename T>
-HWY_API Vec256<T> Clamp(const Vec256<T> v, const Vec256<T> lo,
-                        const Vec256<T> hi) {
-  return Min(Max(lo, v), hi);
 }
 
 // ------------------------------ Integer multiplication
@@ -1440,16 +1444,14 @@ struct Permute256 {
 };
 
 template <typename T>
-HWY_API Permute256<T> SetTableIndices(const Full256<T> d, const int32_t* idx) {
+HWY_API Permute256<T> SetTableIndices(const Full256<T>, const int32_t* idx) {
 #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER)
-  for (size_t i = 0; i < d.N; ++i) {
-    if (idx[i] >= static_cast<int32_t>(d.N)) {
-      printf("SetTableIndices [%zu] = %d >= %zu\n", i, idx[i], d.N);
-      hwy::Trap();
+  const size_t N = 32 / sizeof(T);
+  for (size_t i = 0; i < N; ++i) {
+    if (idx[i] >= static_cast<int32_t>(N)) {
+      printf("SetTableIndices [%zu] = %d >= %zu\n", i, idx[i], N);
     }
   }
-#else
-  (void)d;
 #endif
   return Permute256<T>{LoadU(Full256<int32_t>(), idx).raw};
 }
@@ -1829,7 +1831,7 @@ HWY_API Vec128<int16_t> DemoteTo(Full128<int16_t> /* tag */,
       _mm256_castsi256_si128(_mm256_permute4x64_epi64(i16, 0x88))};
 }
 
-HWY_API Vec128<uint8_t, 8> DemoteTo(Desc<uint8_t, 8> /* tag */,
+HWY_API Vec128<uint8_t, 8> DemoteTo(Simd<uint8_t, 8> /* tag */,
                                     const Vec256<int32_t> v) {
   const __m256i u16_blocks = _mm256_packus_epi32(v.raw, v.raw);
   // Concatenate lower 64 bits of each 128-bit block
@@ -1845,7 +1847,7 @@ HWY_API Vec128<uint8_t> DemoteTo(Full128<uint8_t> /* tag */,
       _mm256_castsi256_si128(_mm256_permute4x64_epi64(u8, 0x88))};
 }
 
-HWY_API Vec128<int8_t, 8> DemoteTo(Desc<int8_t, 8> /* tag */,
+HWY_API Vec128<int8_t, 8> DemoteTo(Simd<int8_t, 8> /* tag */,
                                    const Vec256<int32_t> v) {
   const __m256i i16_blocks = _mm256_packs_epi32(v.raw, v.raw);
   // Concatenate lower 64 bits of each 128-bit block
@@ -1877,7 +1879,7 @@ HWY_API Vec128<uint8_t, 8> U8FromU32(const Vec256<uint32_t> v) {
   const auto lo = LowerHalf(quad);
   const auto hi = UpperHalf(quad);
   const auto pair = LowerHalf(lo | hi);
-  return BitCast(Desc<uint8_t, 8>(), pair);
+  return BitCast(Simd<uint8_t, 8>(), pair);
 }
 
 // ------------------------------ Convert integer <=> floating point
@@ -1990,7 +1992,7 @@ HWY_API bool AllFalse(const Mask256<T> mask) {
 
 template <typename T>
 HWY_API bool AllTrue(const Mask256<T> mask) {
-  constexpr uint64_t kAllBits = (1ull << Full256<T>::N) - 1;
+  constexpr uint64_t kAllBits = (1ull << (32 / sizeof(T))) - 1;
   return BitsFromMask(mask) == kAllBits;
 }
 
@@ -2032,5 +2034,3 @@ HWY_API Vec256<T> SumOfLanes(const Vec256<T> vHL) {
   const Vec256<T> vLH = ConcatLowerUpper(vHL, vHL);
   return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(), vLH + vHL);
 }
-
-#include "hwy/end_target-inl.h"

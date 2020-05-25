@@ -25,14 +25,14 @@ namespace jxl {
 typedef void IDct8Func(const size_t xsize_blocks, const size_t ysize_blocks,
                        const ImageF& dequantized, ThreadPool* pool,
                        ImageF* JXL_RESTRICT pixels);
-IDct8Func* ChooseIDct8(uint32_t targets_bits);
+IDct8Func* ChooseIDct8();
 
 // Fills a preallocated N*W x N*H `idct` with NxN blocks produced by
 // ComputeTransposedScaledIDCT() from the (N*N)x1 blocks of `dct`.
 // REQUIRES: dct.xsize() == N*N*W, dct.ysize() == H
 typedef void TransposedScaledIDCTFunc(const Image3F& dct,
                                       Image3F* JXL_RESTRICT idct);
-TransposedScaledIDCTFunc* ChooseTransposedScaledIDCT(uint32_t targets_bits);
+TransposedScaledIDCTFunc* ChooseTransposedScaledIDCT();
 
 }  // namespace jxl
 

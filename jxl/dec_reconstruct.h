@@ -50,7 +50,7 @@ typedef Status ApplyImageFeaturesFunc(Image3F* JXL_RESTRICT idct,
                                       size_t thread, AuxOut* aux_out,
                                       bool save_decompressed,
                                       bool apply_color_transform);
-ApplyImageFeaturesFunc* ChooseApplyImageFeatures(uint32_t targets_bits);
+ApplyImageFeaturesFunc* ChooseApplyImageFeatures();
 
 // Same as ApplyImageFeatures, but only processes row `y` of
 // dec_state->decoded. `y` should be relative to `rect`.
@@ -62,7 +62,7 @@ typedef Status ApplyImageFeaturesRowFunc(
     Image3F* JXL_RESTRICT idct, const Rect& in_rect,
     PassesDecoderState* dec_state, size_t y, size_t thread, AuxOut* aux_out,
     bool save_decompressed, bool apply_color_transform);
-ApplyImageFeaturesRowFunc* ChooseApplyImageFeaturesRow(uint32_t targets_bits);
+ApplyImageFeaturesRowFunc* ChooseApplyImageFeaturesRow();
 
 }  // namespace jxl
 

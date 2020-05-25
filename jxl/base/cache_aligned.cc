@@ -24,9 +24,9 @@
 #include <sys/mman.h>
 #endif
 
-#include <hwy/interface.h>  // kMaxVectorSize
-#include <algorithm>        // std::max
+#include <algorithm>  // std::max
 #include <atomic>
+#include <hwy/base.h>  // kMaxVectorSize
 
 #include "jxl/base/status.h"
 

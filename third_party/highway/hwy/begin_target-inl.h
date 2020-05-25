@@ -12,25 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// NOTE: atypical include guard.
-
-// For nested inclusion via ops/*-inl.h, do nothing. This allows those headers
-// to include their own begin/end_target-inl.h to avoid IDE warnings, without
-// affecting the compilation of other headers/TU that also include
-// begin/end_target-inl.h.
-#ifdef HWY_BEGIN_TARGET_INL_H_
-
-// Allowing arbitrary begin/end nesting would require a counter, but we only
-// provide a single guard macro. That is sufficient because users include their
-// -inl.h outside the begin/end block.
-#ifdef HWY_BEGIN_TARGET_NESTED
-#error "More than one recursive begin_target-inl.h inclusion is not allowed"
-#endif
-#define HWY_BEGIN_TARGET_NESTED
-
-#else  // not nested:
-// Include guard. This only prevents recursion and will be undefined in
+// Include guard (required when re-including the TU) - will be undefined in
 // end_target-inl.h so this header is active again for the next target.
+#ifndef HWY_BEGIN_TARGET_INL_H_
 #define HWY_BEGIN_TARGET_INL_H_
 
 // IDE is parsing only this header, or user forgot to include header:
@@ -38,15 +22,14 @@
 #include "hwy/highway.h"  // only for IDE - avoids warnings.
 #define HWY_END_NAMESPACE_FOR_IDE
 #if !HWY_IDE
-// Users must include foreach_target.h - we can't do it here when compiling
-// because begin_target-inl.h may be included inside the project's namespace,
-// whereas foreach_target.h must be in the global namespace.)
-#error "Must include foreach_target.h before begin_target-inl.h"
+// Users must have included before_namespace-inl.h - we can't do it here because
+// this may be included inside the project's namespace.)
+#error "Must include before_namespace-inl.h before begin_target-inl.h"
 #endif  // !HWY_IDE
-#endif  // !HWY_*_TARGETS
+#endif  // !HWY_TARGET
 
 // Prepare for the implementation section of the file that included us:
-// 1) Define HWY_ATTR etc. based on HWY_TARGET.
+// 1) Define HWY_ALIGN etc. based on HWY_TARGET.
 // 2) Open a target-specific namespace, later closed by end_target-inl.h.
 // 3) Define ops functions inside that namespace.
 
@@ -61,15 +44,21 @@
 // SSE4
 #if HWY_TARGET == HWY_SSE4
 
-#define HWY_ATTR HWY_ATTR_SSE4
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
-#define HWY_CAPS (HWY_CAP_DOUBLE | HWY_CAP_INT64)
+
+#define HWY_CAP_GATHER 0
+#define HWY_CAP_VARIABLE_SHIFT 0
+#define HWY_CAP_INT64 1
+#define HWY_CAP_CMP64 0
+#define HWY_CAP_DOUBLE 1
+#define HWY_CAP_GE256 0
+#define HWY_CAP_GE512 0
 
 namespace N_SSE4 {
 namespace {
 
-#ifndef HWY_OPS_X86_128
+#if !defined(HWY_OPS_X86_128) && !defined(HWY_NESTED_BEGIN)
 #define HWY_OPS_X86_128
 #include "hwy/ops/x86_128-inl.h"
 #endif  // HWY_OPS_X86_128
@@ -78,17 +67,21 @@ namespace {
 // AVX2
 #elif HWY_TARGET == HWY_AVX2
 
-#define HWY_ATTR HWY_ATTR_AVX2
 #define HWY_ALIGN alignas(32)
 #define HWY_LANES(T) (32 / sizeof(T))
-#define HWY_CAPS                                                             \
-  (HWY_CAP_DOUBLE | HWY_CAP_INT64 | HWY_CAP_CMP64 | HWY_CAP_VARIABLE_SHIFT | \
-   HWY_CAP_GATHER | HWY_CAP_GE256)
+
+#define HWY_CAP_GATHER 1
+#define HWY_CAP_VARIABLE_SHIFT 1
+#define HWY_CAP_INT64 1
+#define HWY_CAP_CMP64 1
+#define HWY_CAP_DOUBLE 1
+#define HWY_CAP_GE256 1
+#define HWY_CAP_GE512 0
 
 namespace N_AVX2 {
 namespace {
 
-#ifndef HWY_OPS_X86_256
+#if !defined(HWY_OPS_X86_256) && !defined(HWY_NESTED_BEGIN)
 #define HWY_OPS_X86_256
 #include "hwy/ops/x86_256-inl.h"
 #endif  // HWY_OPS_X86_256
@@ -97,17 +90,21 @@ namespace {
 // AVX3
 #elif HWY_TARGET == HWY_AVX3
 
-#define HWY_ATTR HWY_ATTR_AVX3
 #define HWY_ALIGN alignas(64)
 #define HWY_LANES(T) (64 / sizeof(T))
-#define HWY_CAPS                                                             \
-  (HWY_CAP_DOUBLE | HWY_CAP_INT64 | HWY_CAP_CMP64 | HWY_CAP_VARIABLE_SHIFT | \
-   HWY_CAP_GATHER | HWY_CAP_GE256 | HWY_CAP_GE512)
+
+#define HWY_CAP_GATHER 1
+#define HWY_CAP_VARIABLE_SHIFT 1
+#define HWY_CAP_INT64 1
+#define HWY_CAP_CMP64 1
+#define HWY_CAP_DOUBLE 1
+#define HWY_CAP_GE256 1
+#define HWY_CAP_GE512 1
 
 namespace N_AVX3 {
 namespace {
 
-#ifndef HWY_OPS_X86_512
+#if !defined(HWY_OPS_X86_512) && !defined(HWY_NESTED_BEGIN)
 #define HWY_OPS_X86_512
 #include "hwy/ops/x86_512-inl.h"
 #endif  // HWY_OPS_X86_512
@@ -116,11 +113,16 @@ namespace {
 // PPC8
 #elif HWY_TARGET == HWY_PPC8
 
-#define HWY_ATTR
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
-#define HWY_CAPS \
-  (HWY_CAP_DOUBLE | HWY_CAP_INT64 | HWY_CAP_CMP64 | HWY_CAP_VARIABLE_SHIFT)
+
+#define HWY_CAP_GATHER 0
+#define HWY_CAP_VARIABLE_SHIFT 1
+#define HWY_CAP_INT64 1
+#define HWY_CAP_CMP64 1
+#define HWY_CAP_DOUBLE 1
+#define HWY_CAP_GE256 0
+#define HWY_CAP_GE512 0
 
 namespace N_PPC8 {
 namespace {
@@ -129,21 +131,28 @@ namespace {
 // NEON
 #elif HWY_TARGET == HWY_NEON
 
-#define HWY_ATTR HWY_ATTR_NEON
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
 
+#define HWY_CAP_VARIABLE_SHIFT 1
+#define HWY_CAP_GATHER 0
+#define HWY_CAP_GE256 0
+#define HWY_CAP_GE512 0
+
 #ifdef __arm__
-#define HWY_CAPS HWY_CAP_VARIABLE_SHIFT
+#define HWY_CAP_INT64 0
+#define HWY_CAP_CMP64 0
+#define HWY_CAP_DOUBLE 0
 #else
-#define HWY_CAPS \
-  (HWY_CAP_DOUBLE | HWY_CAP_INT64 | HWY_CAP_CMP64 | HWY_CAP_VARIABLE_SHIFT)
+#define HWY_CAP_INT64 1
+#define HWY_CAP_CMP64 1
+#define HWY_CAP_DOUBLE 1
 #endif
 
 namespace N_NEON {
 namespace {
 
-#ifndef HWY_OPS_ARM_NEON
+#if !defined(HWY_OPS_ARM_NEON) && !defined(HWY_NESTED_BEGIN)
 #define HWY_OPS_ARM_NEON
 #include "hwy/ops/arm_neon-inl.h"
 #endif  // HWY_OPS_ARM_NEON
@@ -152,15 +161,21 @@ namespace {
 // WASM
 #elif HWY_TARGET == HWY_WASM
 
-#define HWY_ATTR HWY_ATTR_WASM
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
-#define HWY_CAPS 0 /* none */
+
+#define HWY_CAP_GATHER 0
+#define HWY_CAP_VARIABLE_SHIFT 0
+#define HWY_CAP_INT64 0
+#define HWY_CAP_CMP64 0
+#define HWY_CAP_DOUBLE 0
+#define HWY_CAP_GE256 0
+#define HWY_CAP_GE512 0
 
 namespace N_WASM {
 namespace {
 
-#ifndef HWY_OPS_WASM_128
+#if !defined(HWY_OPS_WASM_128) && !defined(HWY_NESTED_BEGIN)
 #define HWY_OPS_WASM_128
 #include "hwy/ops/wasm_128-inl.h"
 #endif  // HWY_OPS_WASM_128
@@ -169,17 +184,23 @@ namespace {
 // SCALAR
 #elif HWY_TARGET == HWY_SCALAR
 
-#define HWY_ATTR
 #define HWY_ALIGN
 #define HWY_LANES(T) 1
-#define HWY_CAPS                                                             \
-  (HWY_CAP_DOUBLE | HWY_CAP_INT64 | HWY_CAP_CMP64 | HWY_CAP_VARIABLE_SHIFT | \
-   HWY_CAP_GATHER)
+
+#define HWY_CAP_GATHER 1
+#define HWY_CAP_VARIABLE_SHIFT 1
+#define HWY_CAP_INT64 1
+#define HWY_CAP_CMP64 1
+#define HWY_CAP_DOUBLE 1
+#define HWY_CAP_GE256 0
+#define HWY_CAP_GE512 0
 
 namespace N_SCALAR {
 namespace {
 
-#ifndef HWY_OPS_SCALAR
+// No pragma attribute needed.
+
+#if !defined(HWY_OPS_SCALAR) && !defined(HWY_NESTED_BEGIN)
 #define HWY_OPS_SCALAR
 #include "hwy/ops/scalar-inl.h"
 #endif  // HWY_OPS_SCALAR
@@ -188,10 +209,70 @@ namespace {
 #pragma message("HWY_TARGET does not match any known target")
 #endif  // HWY_TARGET
 
-// (Followed by the implementation section)
+//-----------------------------------------------------------------------------
+// Shared definitions common to all targets
+
+#if defined(HWY_BEGIN_TARGET_INL_SHARED) == defined(HWY_TARGET_TOGGLE)
+#ifdef HWY_BEGIN_TARGET_INL_SHARED
+#undef HWY_BEGIN_TARGET_INL_SHARED
+#else
+#define HWY_BEGIN_TARGET_INL_SHARED
+#endif
+
+// Returns the closest value to v within [lo, hi].
+template <class V>
+HWY_API V Clamp(const V v, const V lo, const V hi) {
+  return Min(Max(lo, v), hi);
+}
+
+// Corresponding vector type, e.g. Vec128<float> for Simd<float, 4>,
+template <class D>
+using Vec = decltype(Zero(D()));
+
+using U8xN = Vec<HWY_FULL(uint8_t)>;
+using U16xN = Vec<HWY_FULL(uint16_t)>;
+using U32xN = Vec<HWY_FULL(uint32_t)>;
+using U64xN = Vec<HWY_FULL(uint64_t)>;
+
+using I8xN = Vec<HWY_FULL(int8_t)>;
+using I16xN = Vec<HWY_FULL(int16_t)>;
+using I32xN = Vec<HWY_FULL(int32_t)>;
+using I64xN = Vec<HWY_FULL(int64_t)>;
+
+using F32xN = Vec<HWY_FULL(float)>;
+using F64xN = Vec<HWY_FULL(double)>;
+
+// Compile-time-constant upper bound (even for variable-length vectors), useful
+// for array dimensions.
+template <typename T, size_t N>
+HWY_INLINE HWY_MAYBE_UNUSED constexpr size_t MaxLanes(hwy::Simd<T, N>) {
+  return N;
+}
+
+// (Potentially) non-constant actual size of the vector at runtime, subject to
+// the limit imposed by the Simd. Useful for advancing loop counters.
+template <typename T, size_t N>
+HWY_INLINE HWY_MAYBE_UNUSED size_t Lanes(hwy::Simd<T, N>) {
+  return N;
+}
+
+// Returns a vector with lane i=[0, N) set to "first" + i. Unique per-lane
+// values are required to detect lane-crossing bugs.
+template <class D, typename T2>
+Vec<D> Iota(const D d, const T2 first) {
+  using T = typename D::T;
+  HWY_ALIGN T lanes[MaxLanes(d)];
+  for (size_t i = 0; i < Lanes(d); ++i) {
+    lanes[i] = first + static_cast<T2>(i);
+  }
+  return Load(d, lanes);
+}
+#endif  // HWY_BEGIN_TARGET_INL_SHARED
+
+// (Followed by user's SIMD code, then #include end_target-inl.h)
 
 // For IDE only: avoid unmatched-brace warning.
-#ifdef HWY_END_NAMESPACE_FOR_IDE
+#if defined(HWY_END_NAMESPACE_FOR_IDE) || defined(HWY_NESTED_BEGIN)
 #undef HWY_END_NAMESPACE_FOR_IDE
 }  // namespace
 }  // namespace N_$TARGET

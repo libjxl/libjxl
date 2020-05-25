@@ -16,7 +16,6 @@
 
 #include <utility>
 
-#include <hwy/interface.h>
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/codec_in_out.h"
@@ -53,8 +52,7 @@ void PrintXybRange() {
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
   ImageBundle unused_linear;
-  (void)(*ChooseToXYB)(hwy::SupportedTargets())(ib, null_pool, &opsin,
-                                                &unused_linear);
+  (void)(*ChooseToXYB)()(ib, null_pool, &opsin, &unused_linear);
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;

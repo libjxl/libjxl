@@ -80,11 +80,11 @@ class ColorSpaceTransform {
 // `t` is non-const because buf_* may be modified.
 typedef void DoColorSpaceTransformFunc(ColorSpaceTransform* t, size_t thread,
                                        const float* buf_src, float* buf_dst);
-DoColorSpaceTransformFunc* ChooseDoColorSpaceTransform(uint32_t targets_bits);
+DoColorSpaceTransformFunc* ChooseDoColorSpaceTransform();
 
 typedef void SRGBToLinearFunc(size_t n, const float* JXL_RESTRICT srgb,
                               float* JXL_RESTRICT linear);
-SRGBToLinearFunc* ChooseSRGBToLinear(uint32_t targets_bits);
+SRGBToLinearFunc* ChooseSRGBToLinear();
 
 }  // namespace jxl
 

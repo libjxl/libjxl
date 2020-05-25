@@ -15,6 +15,4 @@
 add_library(skcms STATIC skcms/skcms.cc)
 target_include_directories(skcms PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
 
-if (NOT "${JPEGXL_EMSCRIPTEN}")
 set_property(TARGET skcms PROPERTY POSITION_INDEPENDENT_CODE ON)
-endif()

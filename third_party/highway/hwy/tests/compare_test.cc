@@ -15,24 +15,25 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/compare_test.cc"
 #include "hwy/foreach_target.h"
-#include "hwy/tests/test_util.h"
 
-namespace hwy {
+#include <string.h>  // memset
 
 #include "hwy/tests/test_util-inl.h"
 
+#include <hwy/before_namespace-inl.h>
+namespace hwy {
 #include "hwy/begin_target-inl.h"
 
 // All types.
 struct TestEquality {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v2 = Iota(d, 2);
     const auto v2b = Iota(d, 2);
     const auto v3 = Iota(d, 3);
 
-    HWY_ALIGN const T all_false[d.N] = {};
-    HWY_ALIGN T all_true[d.N];
+    HWY_ALIGN const T all_false[MaxLanes(d)] = {};
+    HWY_ALIGN T all_true[MaxLanes(d)];
     memset(all_true, 0xFF, sizeof(all_true));
 
     HWY_ASSERT_VEC_EQ(d, all_false, VecFromMask(v2 == v3));
@@ -44,12 +45,12 @@ struct TestEquality {
 // Integer and floating-point.
 struct TestStrictT {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v2 = Iota(d, 2);
-    const auto vn = Iota(d, -T(d.N));
+    const auto vn = Iota(d, -T(Lanes(d)));
 
-    HWY_ALIGN const T all_false[d.N] = {};
-    HWY_ALIGN T all_true[d.N];
+    HWY_ALIGN const T all_false[MaxLanes(d)] = {};
+    HWY_ALIGN T all_true[MaxLanes(d)];
     memset(all_true, 0xFF, sizeof(all_true));
 
     HWY_ASSERT_VEC_EQ(d, all_true, VecFromMask(v2 > vn));
@@ -59,14 +60,14 @@ struct TestStrictT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestStrict() {
+HWY_NOINLINE void TestStrict() {
   const ForPartialVectors<TestStrictT> test;
 
   // HWY_CAP_INT64 is insufficient, so we cannot use ForSignedTypes.
   test(int8_t());
   test(int16_t());
   test(int32_t());
-#if HWY_CAPS & HWY_CAP_CMP64
+#if HWY_CAP_CMP64
   test(int64_t());
 #endif
 
@@ -76,12 +77,12 @@ HWY_NOINLINE HWY_ATTR void TestStrict() {
 // Floating-point.
 struct TestWeak {
   template <typename T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v2 = Iota(d, 2);
-    const auto vn = Iota(d, -T(d.N));
+    const auto vn = Iota(d, -T(Lanes(d)));
 
-    HWY_ALIGN const T all_false[d.N] = {};
-    HWY_ALIGN T all_true[d.N];
+    HWY_ALIGN const T all_false[MaxLanes(d)] = {};
+    HWY_ALIGN T all_true[MaxLanes(d)];
     memset(all_true, 0xFF, sizeof(all_true));
 
     HWY_ASSERT_VEC_EQ(d, all_true, VecFromMask(v2 >= v2));
@@ -95,20 +96,28 @@ struct TestWeak {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestCompare() {
+HWY_NOINLINE void TestAllEquality() {
   ForAllTypes(ForPartialVectors<TestEquality>());
-  TestStrict();
+}
+
+HWY_NOINLINE void TestAllWeak() {
   ForFloatTypes(ForPartialVectors<TestWeak>());
 }
 
 #include "hwy/end_target-inl.h"
+}  // namespace hwy
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
-HWY_EXPORT(TestCompare)
-#endif
+namespace hwy {
+
+class HwyCompareTest : public hwy::TestWithParamTarget {};
+
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyCompareTest);
+
+HWY_EXPORT_AND_TEST_P(HwyCompareTest, TestAllEquality)
+HWY_EXPORT_AND_TEST_P(HwyCompareTest, TestStrict)
+HWY_EXPORT_AND_TEST_P(HwyCompareTest, TestAllWeak)
 
 }  // namespace hwy
-
-#if HWY_ONCE
-TEST(HwyCompareTest, Run) { hwy::RunTest(&hwy::ChooseTestCompare); }
 #endif

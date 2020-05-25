@@ -19,6 +19,24 @@
 
 namespace jxl {
 
+using PropertyVal = int32_t;
+using Properties = std::vector<PropertyVal>;
+
+enum class Predictor : uint32_t {
+  Zero = 0,
+  Left = 1,
+  Top = 2,
+  Average = 3,
+  Select = 4,
+  Gradient = 5,
+  Weighted = 6,
+  // The following predictors are encoder-only.
+  Best = 7,      // Best of Gradient and Weighted
+  Variable = 8,  // Find the best decision tree for predictors/predictor per row
+};
+
+constexpr size_t kNumModularPredictors = static_cast<size_t>(Predictor::Best);
+
 struct ModularOptions {
   // Decoding options:
 
@@ -54,15 +72,15 @@ struct ModularOptions {
   int max_properties = 0;  // no previous channels
 
   // Alternative heuristic tweaks.
-  size_t splitting_heuristics_max_properties;
-  float splitting_heuristics_node_threshold;
+  size_t splitting_heuristics_max_properties = 8;
+  float splitting_heuristics_node_threshold = 96;
 
   // Brotli options
   int brotli_effort = 11;  // 0..11
 
   // Predictor to use for each channel. If there are more channels than
   // predictors here the last one, or the default if empty, gets repeated.
-  std::vector<int> predictor;
+  std::vector<Predictor> predictor;
 
   int nb_wp_modes = 1;
 };

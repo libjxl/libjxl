@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/xorshift128plus_test.cc"
+#include <hwy/foreach_target.h>
+
 #include <stdint.h>
 
 #include <algorithm>
@@ -20,19 +24,12 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/thread_pool_internal.h"
 
-#ifndef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/xorshift128plus_test.cc"
-#define HWY_USE_GTEST
-#endif
-#include <hwy/foreach_target.h>
-#include <hwy/tests/test_util.h>
-
 #include "jxl/xorshift128plus-inl.h"
-
-namespace jxl {
 
 #include <hwy/tests/test_util-inl.h>
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
 // Define to nonzero in order to print the (new) golden outputs.
@@ -254,7 +251,7 @@ const uint64_t kExpected[kVectors][Xorshift128Plus::N] = {
 #endif  // PRINT_RESULTS
 
 // Ensures Xorshift128+ returns consistent and unchanging values.
-HWY_ATTR void TestGolden() {
+void TestGolden() {
   HWY_ALIGN Xorshift128Plus rng(12345);
   for (uint64_t vector = 0; vector < kVectors; ++vector) {
     HWY_ALIGN uint64_t lanes[Xorshift128Plus::N];
@@ -271,7 +268,7 @@ HWY_ATTR void TestGolden() {
 }
 
 // Output changes when given different seeds
-HWY_ATTR void TestSeedChanges() {
+void TestSeedChanges() {
   HWY_ALIGN uint64_t lanes[Xorshift128Plus::N];
 
   std::vector<uint64_t> first;
@@ -293,24 +290,28 @@ HWY_ATTR void TestSeedChanges() {
   EXPECT_EQ(kNumSeeds, first.size());
 }
 
-HWY_ATTR void TestFloat() {
+void TestFloat() {
   ThreadPoolInternal pool(8);
 
-  // All 14-bit seeds
-  pool.Run(0, 16384, ThreadPool::SkipInit(),
-           [](const int seed, const int /*thread*/) HWY_ATTR {
+#ifdef JXL_DISABLE_SLOW_TESTS
+  const uint32_t kMaxSeed = 2048;
+#else   // JXL_DISABLE_SLOW_TESTS
+  const uint32_t kMaxSeed = 16384;  // All 14-bit seeds
+#endif  // JXL_DISABLE_SLOW_TESTS
+  pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
+           [](const int seed, const int /*thread*/) {
              HWY_ALIGN Xorshift128Plus rng(seed);
 
              const HWY_FULL(uint32_t) du;
              const HWY_FULL(float) df;
              HWY_ALIGN uint64_t batch[Xorshift128Plus::N];
-             HWY_ALIGN float lanes[df.N];
+             HWY_ALIGN float lanes[MaxLanes(df)];
              double sum = 0.0;
              size_t count = 0;
              const size_t kReps = 2000;
              for (size_t reps = 0; reps < kReps; ++reps) {
                rng.Fill(batch);
-               for (size_t i = 0; i < Xorshift128Plus::N * 2; i += df.N) {
+               for (size_t i = 0; i < Xorshift128Plus::N * 2; i += Lanes(df)) {
                  const auto bits =
                      Load(du, reinterpret_cast<const uint32_t*>(batch) + i);
                  // 1.0 + 23 random mantissa bits = [1, 2)
@@ -333,11 +334,16 @@ HWY_ATTR void TestFloat() {
 }
 
 // Not more than one 64-bit zero
-HWY_ATTR void TestNotZero() {
+void TestNotZero() {
   ThreadPoolInternal pool(8);
 
-  pool.Run(0, 2000, ThreadPool::SkipInit(),
-           [](const int task, const int /*thread*/) HWY_ATTR {
+#ifdef JXL_DISABLE_SLOW_TESTS
+  const uint32_t kMaxSeed = 500;
+#else   // JXL_DISABLE_SLOW_TESTS
+  const uint32_t kMaxSeed = 2000;
+#endif  // JXL_DISABLE_SLOW_TESTS
+  pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
+           [](const int task, const int /*thread*/) {
              HWY_ALIGN uint64_t lanes[Xorshift128Plus::N];
 
              HWY_ALIGN Xorshift128Plus rng(task);
@@ -352,18 +358,21 @@ HWY_ATTR void TestNotZero() {
            });
 }
 
-HWY_ATTR HWY_NOINLINE void TestXorshift() {
-  TestNotZero();
-  TestGolden();
-  TestSeedChanges();
-  TestFloat();
-}
-
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
-HWY_EXPORT(TestXorshift)
-TEST(HwyXorshiftTest, Run) { hwy::RunTest(&ChooseTestXorshift); }
-#endif
+namespace jxl {
+
+class Xorshift128Test : public hwy::TestWithParamTarget {};
+
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(Xorshift128Test);
+
+HWY_EXPORT_AND_TEST_P(Xorshift128Test, TestNotZero);
+HWY_EXPORT_AND_TEST_P(Xorshift128Test, TestGolden);
+HWY_EXPORT_AND_TEST_P(Xorshift128Test, TestSeedChanges);
+HWY_EXPORT_AND_TEST_P(Xorshift128Test, TestFloat);
 
 }  // namespace jxl
+#endif

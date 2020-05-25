@@ -30,7 +30,6 @@
 // This module decreases final size of DC images by 2-4% vs. the standard
 // MED/MAP predictor from JPEG-LS and processes 330 M coefficients per second.
 
-#include <hwy/highway.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -44,8 +43,6 @@
 #include "jxl/image.h"
 #include "jxl/image_ops.h"
 #include "jxl/predictor_shared.h"
-
-namespace jxl {
 
 // TODO(veluca): what happens if all valid predictors have an error of exactly
 // 2**16-1? One option is to ensure that this does not happen.
@@ -71,6 +68,8 @@ namespace jxl {
 // minimized a simple model of encoding cost. Their order matters because
 // we choose the lowest i with lanes[i] == min.
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
 struct PredictorPackSigned {
@@ -80,7 +79,7 @@ struct PredictorPackSigned {
     HWY_CAPPED(int32_t, kNumPredictors) di;
     HWY_CAPPED(uint32_t, kNumPredictors) du;
     auto cv = Set(di, c);
-    for (size_t i = 0; i < kNumPredictors; i += di.N) {
+    for (size_t i = 0; i < kNumPredictors; i += Lanes(di)) {
       auto res = cv - Load(di, pred + i);
       auto res2 = ShiftLeft<1>(BitCast(du, Abs(res)));
       auto res_sign = BitCast(du, VecFromMask(res < Zero(di)));
@@ -108,7 +107,7 @@ struct PredictorPackSignedRange {
     auto cv = Set(di, c);
     auto minv = Set(di, min);
     auto maxv = Set(di, max);
-    for (size_t i = 0; i < kNumPredictors; i += di.N) {
+    for (size_t i = 0; i < kNumPredictors; i += Lanes(di)) {
       auto predv = Load(di, pred + i);
       auto res = cv - predv;
       auto low = cv - minv;
@@ -139,7 +138,7 @@ HWY_FUNC void ChoosePredictor(const int32_t prediction[kNumPredictors],
                               int32_t* JXL_RESTRICT pred,
                               uint32_t* JXL_RESTRICT min_error,
                               uint32_t* JXL_RESTRICT num_correct) {
-#if HWY_CAPS & HWY_CAP_GE256
+#if HWY_CAP_GE256
   HWY_CAPPED(uint32_t, kNumPredictors) du;
   HWY_CAPPED(int32_t, kNumPredictors) di;
   static_assert(kNumPredictors == 8, "");
@@ -194,7 +193,7 @@ HWY_FUNC void ChoosePredictor(const int32_t prediction[kNumPredictors],
 
   HWY_CAPPED(uint32_t, kNumPredictors) du;
   size_t ret = 0;
-  for (size_t i = 0; i < kNumPredictors; i += du.N) {
+  for (size_t i = 0; i < kNumPredictors; i += Lanes(du)) {
     auto l = Load(du, expected_error + i);
     ret += CountTrue(l == Zero(du));
   }
@@ -394,8 +393,15 @@ class ComputeResiduals {
   using ForEachChannel =
       typename Predictors::template Impl<ErrorMetric, pixel_type>;
 
+  struct Aligned {
+    // We re-use predictor error for pixel l from pixel n and error w
+    // from the previous pixel.
+    HWY_ALIGN uint32_t error_l[kNumChannels * kNumPredictors];
+    HWY_ALIGN uint32_t error_w[kNumChannels * kNumPredictors];
+  };
+
  public:
-  HWY_ATTR void Run(size_t xsize, size_t ysize, AuxOut* JXL_RESTRICT aux_out) {
+  void Run(size_t xsize, size_t ysize, AuxOut* JXL_RESTRICT aux_out) {
     ProcessRow<RowType::kFirstRow>(xsize, 0, aux_out);
     if (ysize == 1) return;
     ProcessRow<RowType::kSecondRow>(xsize, 1, aux_out);
@@ -406,20 +412,20 @@ class ComputeResiduals {
 
  private:
   // Computes the best prediction for each channel, calls Prediction and
-  // updates error_w_ and error_l_.
+  // updates error_w and error_l.
   template <PixelType pixel_type>
-  HWY_ATTR void Advance(RowType row_type, ColumnType column_type, size_t x,
-                        size_t y, AuxOut* JXL_RESTRICT aux_out) {
+  void Advance(RowType row_type, ColumnType column_type, size_t x, size_t y,
+               AuxOut* JXL_RESTRICT aux_out) {
     // Highway vectors may be larger, but the arrays used here have exactly
     // kNumChannels * kNumPredictors elements. To avoid overruns, we only
     // use this many lanes so vectors evenly divide the array size.
-    using DU = HWY_CAPPED(uint32_t, kNumPredictors);
-    auto max_it = [](uint32_t* JXL_RESTRICT dest,
-                     uint32_t* JXL_RESTRICT mix) HWY_ATTR {
-      for (size_t i = 0; i < kNumChannels * kNumPredictors; i += DU::N) {
-        auto cur = Load(DU(), dest + i);
-        auto m = Load(DU(), mix + i);
-        Store(Max(cur, m), DU(), dest + i);
+    auto max_it = [](uint32_t* JXL_RESTRICT dest, uint32_t* JXL_RESTRICT mix) {
+      const HWY_CAPPED(uint32_t, kNumPredictors) du;
+
+      for (size_t i = 0; i < kNumChannels * kNumPredictors; i += Lanes(du)) {
+        auto cur = Load(du, dest + i);
+        auto m = Load(du, mix + i);
+        Store(Max(cur, m), du, dest + i);
       }
 #if defined(__arm__)
       // Compiler bug in clang-6 on arm can cause successive calls to max_it()
@@ -493,7 +499,7 @@ class ComputeResiduals {
     // first column.
     if (pixel_type == PixelType::kInteriorPixel ||
         (row_type != RowType::kFirstRow && (column_type & kFirstColumn) == 0)) {
-      max_it(expected_error, error_l_);
+      max_it(expected_error, aligned_->error_l);
       // Mark valid predictors as being usable.
       ForEachChannel<pixel_type>::template ApplyMask<error::And>(
           previous_row, previous_column, error_mask);
@@ -502,7 +508,7 @@ class ComputeResiduals {
     // Do not take into account error on pixel w if in the first column.
     if (pixel_type == PixelType::kInteriorPixel ||
         (column_type & kFirstColumn) == 0) {
-      max_it(expected_error, error_w_);
+      max_it(expected_error, aligned_->error_w);
       // Mark valid predictors as being usable.
       ForEachChannel<pixel_type>::template ApplyMask<error::And>(
           row_type, previous_column, error_mask);
@@ -563,7 +569,7 @@ class ComputeResiduals {
     for (size_t channel = 0; channel < kNumChannels; channel++) {
       if (row_type != RowType::kFirstRow) {
         for (size_t i = 0; i < kNumPredictors; i++) {
-          error_l_[channel * kNumPredictors + i] =
+          aligned_->error_l[channel * kNumPredictors + i] =
               error_n[channel * kNumPredictors + i];
         }
       }
@@ -577,9 +583,9 @@ class ComputeResiduals {
     Prediction(x, y, prediction, num_correct, min_error, decoded);
     if (pixel_type == PixelType::kInteriorPixel ||
         (column_type & kLastColumn) == 0) {
-      // Compute error for current pixel and save it in error_w_.
+      // Compute error for current pixel and save it in error_w.
       ForEachChannel<pixel_type>::ComputeError(
-          row_type, column_type, prediction_cur, decoded, error_w_);
+          row_type, column_type, prediction_cur, decoded, aligned_->error_w);
     }
   }
 
@@ -611,27 +617,25 @@ class ComputeResiduals {
   // This function is called with the prediction, number of predictors
   // expected to be correct and minimum prediction error for each channel, and
   // should write in `decoded` the decoder-side values.
-  HWY_ATTR void Prediction(size_t x, size_t y,
-                           const int32_t* JXL_RESTRICT predictions,
-                           const uint32_t* JXL_RESTRICT num_correct,
-                           const uint32_t* JXL_RESTRICT min_error,
-                           int32_t* JXL_RESTRICT decoded) {
+  void Prediction(size_t x, size_t y, const int32_t* JXL_RESTRICT predictions,
+                  const uint32_t* JXL_RESTRICT num_correct,
+                  const uint32_t* JXL_RESTRICT min_error,
+                  int32_t* JXL_RESTRICT decoded) {
     static_cast<T*>(this)->Prediction(x, y, predictions, num_correct, min_error,
                                       decoded);
   }
 
   void StartRow(size_t y) {}
 
-  HWY_ATTR void CallStartRow(size_t y) { static_cast<T*>(this)->StartRow(y); }
+  void CallStartRow(size_t y) { static_cast<T*>(this)->StartRow(y); }
+
+  // TODO(janwas): pass through alloc funcs
+  hwy::AlignedUniquePtr<Aligned> aligned_ =
+      hwy::AllocateSingleAligned<Aligned>();
 
   // Predictors need the last two rows. We use a ringbuffer of size 4, as it
   // is faster to compute row numbers modulo 4 than modulo 3.
   int32_t rows_[4][kMaxLine * kNumChannels];
-
-  // We re-use predictor error for pixel l from pixel n and error w
-  // from the previous pixel.
-  HWY_ALIGN uint32_t error_l_[kNumChannels * kNumPredictors];
-  HWY_ALIGN uint32_t error_w_[kNumChannels * kNumPredictors];
 };
 
 // TODO(veluca): choose predictors.
@@ -641,7 +645,7 @@ using DcPredictor =
                      Predictors3<YPredictor, YPredictor, YPredictor>>;
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

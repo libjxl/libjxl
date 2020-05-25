@@ -13,26 +13,22 @@
 // limitations under the License.
 
 #include "jxl/base/fast_log.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
+#include <hwy/foreach_target.h>
 
 #include <random>
 
-#ifndef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
-#define HWY_USE_GTEST
-#endif
-#include <hwy/foreach_target.h>
-#include <hwy/tests/test_util.h>
-
-// After foreach_target
+#include <stdio.h>
 #include "jxl/fast_log-inl.h"
-
-namespace jxl {
 
 #include <hwy/tests/test_util-inl.h>
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-HWY_NOINLINE HWY_ATTR void TestFastLog12() {
+HWY_NOINLINE void TestFastLog12() {
   constexpr size_t kNumTrials = 1 << 23;
   std::mt19937 rng(1);
   std::uniform_real_distribution<float> dist(1e-7f, 1e3f);
@@ -40,7 +36,8 @@ HWY_NOINLINE HWY_ATTR void TestFastLog12() {
   HWY_FULL(float) d;
   for (size_t i = 0; i < kNumTrials; i++) {
     const float f = dist(rng);
-    const float actual = GetLane(FastLog2f_18bits(Set(d, f)));
+    const F32xN actual_v = FastLog2f_18bits(d, Set(d, f));
+    const float actual = GetLane(actual_v);
     const float abs_err = std::abs(std::log2(f) - actual);
     EXPECT_LT(abs_err, 2.9E-6) << "f = " << f;
     max_abs_err = std::max(max_abs_err, abs_err);
@@ -49,8 +46,11 @@ HWY_NOINLINE HWY_ATTR void TestFastLog12() {
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 
 HWY_EXPORT(TestFastLog12)
 
@@ -68,8 +68,9 @@ TEST(FastLogTest, TestFastLog) {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
-TEST(FastLogTest, Run) { hwy::RunTest(&ChooseTestFastLog12); }
-
-#endif  // HWY_ONCE
+TEST(FastLogTest, Run) {
+  hwy::RunTest([]() { ChooseTestFastLog12()(); });
+}
 
 }  // namespace jxl
+#endif  // HWY_ONCE

@@ -17,6 +17,8 @@
 
 // Macros and functions useful for tests.
 
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/codec_in_out.h"
@@ -25,9 +27,6 @@
 #include "jxl/dec_params.h"
 #include "jxl/enc_file.h"
 #include "jxl/enc_params.h"
-
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
 
 #ifdef JXL_DISABLE_SLOW_TESTS
 #define JXL_SLOW_TEST(X) DISABLED_##X
@@ -87,9 +86,8 @@ size_t Roundtrip(CodecInOut* io, const CompressParams& cparams,
   }
 
   EXPECT_THAT(io2->frames, testing::SizeIs(io->frames.size()));
-  if (!cparams.modular_group_mode &&
-      cparams.color_transform == ColorTransform::kXYB) {
-    // Non-modular returns linear sRGB.
+  if (cparams.color_transform == ColorTransform::kXYB) {
+    // If color transform is XYB, linear sRGB is returned.
     EXPECT_THAT(current_encodings_2,
                 testing::Each(MatchesPrimariesAndTransferFunction(
                     ColorEncoding::LinearSRGB())));
@@ -166,7 +164,6 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
           c.tf.SetTransferFunction(tf);
 
           for (RenderingIntent ri : Values<RenderingIntent>()) {
-
             ColorEncodingDescriptor cdesc;
             cdesc.color_space = cs;
             cdesc.white_point = wp;

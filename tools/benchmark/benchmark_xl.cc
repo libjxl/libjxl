@@ -18,7 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <hwy/interface.h>
 #include <algorithm>
 #include <memory>
 #include <mutex>
@@ -279,13 +278,12 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::LinearSRGB(ib2.IsGray()),
                              &linear_rgb2, inner_pool));
         double distance_double;
-        JXL_CHECK(butteraugli::ButteraugliInterface(linear_rgb1, linear_rgb2,
-                                                    codec->hf_asymmetry(),
-                                                    distmap, distance_double));
+        JXL_CHECK(ButteraugliInterface(linear_rgb1, linear_rgb2,
+                                       codec->hf_asymmetry(), distmap,
+                                       distance_double));
         distance = static_cast<float>(distance_double);
         // Ensure pixels in range 0-255
-        s->distance_2 +=
-            ChooseComputeDistance2(hwy::SupportedTargets())(ib1, ib2);
+        s->distance_2 += ChooseComputeDistance2()(ib1, ib2);
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
@@ -294,7 +292,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         s->distance_2 += distance;
       }
       // Update stats
-      auto compute_dist = ChooseComputeDistanceP(hwy::SupportedTargets());
+      auto compute_dist = ChooseComputeDistanceP();
       s->distance_p_norm +=
           compute_dist(distmap, Args()->error_pnorm) * input_pixels;
       s->max_distance = std::max(s->max_distance, distance);
@@ -362,13 +360,11 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       JXL_CHECK(EncodeToFile(io2, *c_desired, ib2.metadata()->bits_per_sample,
                              decompressed_fn));
       if (!skip_butteraugli) {
-        float good = Args()->heatmap_good > 0.0f
-                         ? Args()->heatmap_good
-                         : butteraugli::ButteraugliFuzzyInverse(1.5);
-        float bad = Args()->heatmap_bad > 0.0f
-                        ? Args()->heatmap_bad
-                        : butteraugli::ButteraugliFuzzyInverse(0.5);
-        Image3B heatmap = butteraugli::CreateHeatMapImage(distmap, good, bad);
+        float good = Args()->heatmap_good > 0.0f ? Args()->heatmap_good
+                                                 : ButteraugliFuzzyInverse(1.5);
+        float bad = Args()->heatmap_bad > 0.0f ? Args()->heatmap_bad
+                                               : ButteraugliFuzzyInverse(0.5);
+        Image3B heatmap = CreateHeatMapImage(distmap, good, bad);
         JXL_CHECK(WritePNG(heatmap, inner_pool, heatmap_fn));
       }
     }

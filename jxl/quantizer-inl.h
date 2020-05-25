@@ -19,18 +19,16 @@
 #define JXL_QUANTIZER_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include <stddef.h>
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 template <class DF>
-HWY_FUNC HWY_VEC(DF)
-    AdjustQuantBias(DF df, const size_t c, const HWY_VEC(DF) quant,
-                    const float* HWY_RESTRICT biases) {
-  const hwy::Desc<int32_t, df.N> di;
+HWY_FUNC Vec<DF> AdjustQuantBias(DF df, const size_t c, const Vec<DF> quant,
+                                 const float* HWY_RESTRICT biases) {
+  const hwy::Simd<int32_t, MaxLanes(df)> di;
 
   // Compare |quant|, keep sign bit for negating result.
   const auto kSign = BitCast(df, Set(di, INT32_MIN));
@@ -60,7 +58,7 @@ HWY_FUNC HWY_VEC(DF)
 }
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

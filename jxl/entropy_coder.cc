@@ -43,20 +43,20 @@
 
 #include "jxl/predictor-inl.h"
 
+// SIMD code
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Returns number of non-zero coefficients (but skip LLF).
 // We cannot rely on block[] being all-zero bits, so first truncate to integer.
 // Also writes the per-8x8 block nzeros starting at nzeros_pos.
-HWY_ATTR int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
-                                     const AcStrategy acs,
-                                     const size_t covered_blocks,
-                                     const size_t log2_covered_blocks,
-                                     const ac_qcoeff_t* JXL_RESTRICT block,
-                                     const size_t nzeros_stride,
-                                     int32_t* JXL_RESTRICT nzeros_pos) {
+int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
+                            const AcStrategy acs, const size_t covered_blocks,
+                            const size_t log2_covered_blocks,
+                            const ac_qcoeff_t* JXL_RESTRICT block,
+                            const size_t nzeros_stride,
+                            int32_t* JXL_RESTRICT nzeros_pos) {
   const HWY_CAPPED(float, kBlockDim) df;
   const HWY_CAPPED(int32_t, kBlockDim) di;
 
@@ -75,7 +75,7 @@ HWY_ATTR int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
 
     // Rows with LLF: mask out the LLF
     for (size_t y = 0; y < cy; y++) {
-      for (size_t x = 0; x < cx * kBlockDim; x += df.N) {
+      for (size_t x = 0; x < cx * kBlockDim; x += Lanes(df)) {
         const auto llf_mask = BitCast(df, LoadU(di, llf_mask_pos + x));
 
         // LLF counts as zero so we don't include it in nzeros.
@@ -89,7 +89,7 @@ HWY_ATTR int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
 
   // Remaining rows: no mask
   for (size_t y = cy; y < cy * kBlockDim; y++) {
-    for (size_t x = 0; x < cx * kBlockDim; x += df.N) {
+    for (size_t x = 0; x < cx * kBlockDim; x += Lanes(df)) {
       const auto coef = Load(df, &block[y * cx * kBlockDim + x]);
       neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
     }
@@ -113,8 +113,8 @@ HWY_ATTR int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
 
 // Specialization for 8x8, where only top-left is LLF/DC.
 // About 1% overall speedup vs. NumNonZeroExceptLLF.
-HWY_ATTR int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
-                                       int32_t* JXL_RESTRICT nzeros_pos) {
+int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
+                              int32_t* JXL_RESTRICT nzeros_pos) {
   const HWY_CAPPED(float, kBlockDim) df;
   const HWY_CAPPED(int32_t, kBlockDim) di;
 
@@ -127,7 +127,7 @@ HWY_ATTR int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
     const size_t y = 0;
     HWY_ALIGN const int32_t dc_mask_lanes[kBlockDim] = {-1};
 
-    for (size_t x = 0; x < kBlockDim; x += df.N) {
+    for (size_t x = 0; x < kBlockDim; x += Lanes(df)) {
       const auto dc_mask = BitCast(df, Load(di, dc_mask_lanes + x));
 
       // DC counts as zero so we don't include it in nzeros.
@@ -139,7 +139,7 @@ HWY_ATTR int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
 
   // Remaining rows: no mask
   for (size_t y = 1; y < kBlockDim; y++) {
-    for (size_t x = 0; x < kBlockDim; x += df.N) {
+    for (size_t x = 0; x < kBlockDim; x += Lanes(df)) {
       const auto coef = Load(df, &block[y * kBlockDim + x]);
       neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
     }
@@ -161,11 +161,12 @@ HWY_ATTR int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
 // number of nonzeros of a strategy is above 63, it is written directly using a
 // fixed number of bits (that depends on the size of the strategy).
 // TODO(veluca): consider predicting #zeros with predictor-inl.h.
-HWY_ATTR void TokenizeCoefficients(
-    const coeff_order_t* JXL_RESTRICT orders, const Rect& rect,
-    const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
-    const AcStrategyImage& ac_strategy, Image3I* JXL_RESTRICT tmp_num_nzeroes,
-    std::vector<Token>* JXL_RESTRICT output) {
+void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
+                          const Rect& rect,
+                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+                          const AcStrategyImage& ac_strategy,
+                          Image3I* JXL_RESTRICT tmp_num_nzeroes,
+                          std::vector<Token>* JXL_RESTRICT output) {
   const size_t xsize_blocks = rect.xsize();
   const size_t ysize_blocks = rect.ysize();
 
@@ -213,7 +214,7 @@ HWY_ATTR void TokenizeCoefficients(
 
         size_t ord = kStrategyOrder[acs.RawStrategy()];
         const coeff_order_t* JXL_RESTRICT order =
-            &orders[(ord * 3 + c) * AcStrategy::kMaxCoeffArea];
+            &orders[CoeffOrderOffset(ord, c)];
         ord = ord > 2 ? ord / 2 + 1 : ord;
 
         int32_t predicted_nzeros =
@@ -700,8 +701,11 @@ Status DecodeARParameters(BitReader* br, ANSSymbolReader* decoder,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(TokenizeCoefficients)
 HWY_EXPORT(TokenizeQuantField)
 HWY_EXPORT(DecodeQuantField)
@@ -709,7 +713,5 @@ HWY_EXPORT(TokenizeAcStrategy)
 HWY_EXPORT(DecodeAcStrategy)
 HWY_EXPORT(TokenizeARParameters)
 HWY_EXPORT(DecodeARParameters)
-
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

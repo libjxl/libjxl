@@ -43,15 +43,13 @@ static Status CheckNearLosslessParams(const Image& image,
   return true;
 }
 
-#ifdef HAS_ENCODER
-void delta_quantize(int max_error, pixel_type& d) {
+void DeltaQuantize(int max_error, pixel_type& d) {
   int a = (d < 0 ? -d : d);
   a = (a + (max_error / 2)) / max_error * max_error;
   d = (d < 0 ? -a : a);
 }
 
-static Status fwd_near_lossless(Image& input,
-                                const TransformParams& parameters) {
+static Status FwdNearLossless(Image& input, const TransformParams& parameters) {
   JXL_RETURN_IF_ERROR(CheckNearLosslessParams(input, parameters));
 
   uint32_t begin_c = input.nb_meta_channels + parameters[0];
@@ -77,7 +75,7 @@ static Status fwd_near_lossless(Image& input,
         pixel_type top = (y ? prev_out[x] : left);
         pixel_type prediction = (left + top) / 2;
         pixel_type delta = p_in[x] - prediction;
-        delta_quantize(max_delta_error, delta);
+        DeltaQuantize(max_delta_error, delta);
         pixel_type reconstructed = prediction + delta;
         int e = p_in[x] - reconstructed;
         total_error += abs(e);
@@ -89,17 +87,6 @@ static Status fwd_near_lossless(Image& input,
   }
   return false;  // don't signal this 'transform' in the bitstream, there is no
                  // inverse transform to be done
-}
-#endif
-
-static Status near_lossless(Image& input, bool inverse,
-                            const TransformParams& parameters) {
-  JXL_DASSERT(inverse == false);
-#ifdef HAS_ENCODER
-  return fwd_near_lossless(input, parameters);
-#else
-  return false;
-#endif
 }
 
 }  // namespace jxl

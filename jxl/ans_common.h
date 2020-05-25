@@ -17,8 +17,8 @@
 
 #include <stdint.h>
 
+#include <hwy/cache_control.h>  // Prefetch
 #include <algorithm>
-#include <hwy/highway.h>  // Prefetch
 #include <vector>
 
 #include "jxl/ans_params.h"

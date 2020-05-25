@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/enc_cache.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
+#include <hwy/foreach_target.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -39,15 +42,11 @@
 #include "jxl/passes_state.h"
 #include "jxl/quantizer.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_transforms-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Returns dc.
@@ -108,8 +107,12 @@ Image3F ComputeCoeffs(const Image3F& opsin,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
+
 HWY_EXPORT(ComputeCoeffs)
 
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
@@ -139,8 +142,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     }
   }
 
-  Image3F dc = ChooseComputeCoeffs(hwy::SupportedTargets())(
-      opsin, &shared, enc_state, pool, aux_out);
+  Image3F dc = ChooseComputeCoeffs()(opsin, &shared, enc_state, pool, aux_out);
 
   if (shared.frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
@@ -200,8 +202,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
         xsize_dc_groups * ysize_dc_groups,
         (enc_state->cparams.butteraugli_distance < 0.5 ? 0 : 1));
 
-    const uint32_t targets_bits = hwy::SupportedTargets();
-    auto tokenize_dc = ChooseTokenizeDC(targets_bits);
+    auto tokenize_dc = ChooseTokenizeDC();
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
       tokenize_dc(group_index, dc, enc_state, aux_out);
     };
@@ -209,8 +210,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
               compute_dc_coeffs, "Compute DC coeffs");
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(shared.frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
-      ChooseAdaptiveDCSmoothing(targets_bits)(shared.dc_quant_field,
-                                              &shared.dc_storage, pool);
+      ChooseAdaptiveDCSmoothing()(shared.dc_quant_field, &shared.dc_storage,
+                                  pool);
     }
   }
 
@@ -228,6 +229,5 @@ void EncCache::InitOnce() {
   }
 }
 
-#endif  //  HWY_ONCE
-
 }  // namespace jxl
+#endif  //  HWY_ONCE

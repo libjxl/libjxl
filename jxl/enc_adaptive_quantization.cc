@@ -153,7 +153,7 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
       dct[dy * 8 + dx] = row_in[xclamp];
     }
   }
-  ChooseTransposedScaledDCT8(hwy::SupportedTargets())(dct);
+  ChooseTransposedScaledDCT8()(dct);
   float entropyQL2 = 0.0f;
   float entropyQL4 = 0.0f;
   float entropyQL8 = 0.0f;
@@ -547,8 +547,7 @@ bool AdjustQuantVal(float* const JXL_RESTRICT q, const float d,
 void DumpHeatmap(const AuxOut* aux_out, const std::string& label,
                  const ImageF& image, float good_threshold,
                  float bad_threshold) {
-  Image3B heatmap =
-      butteraugli::CreateHeatMapImage(image, good_threshold, bad_threshold);
+  Image3B heatmap = CreateHeatMapImage(image, good_threshold, bad_threshold);
   char filename[200];
   snprintf(filename, sizeof(filename), "%s%05d", label.c_str(),
            aux_out->num_butteraugli_iters);
@@ -612,7 +611,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   ImageF& quant_field = enc_state->initial_quant_field;
 
   const float butteraugli_target = cparams.butteraugli_distance;
-  ButteraugliComparator comparator(cparams.hf_asymmetry);
+  JxlButteraugliComparator comparator(cparams.hf_asymmetry);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
@@ -863,7 +862,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
   ImageF& quant_field = enc_state->initial_quant_field;
   const AcStrategyImage& ac_strategy = enc_state->shared.ac_strategy;
 
-  ButteraugliComparator comparator(cparams.hf_asymmetry);
+  JxlButteraugliComparator comparator(cparams.hf_asymmetry);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   AdjustQuantField(ac_strategy, &quant_field);
@@ -1033,8 +1032,7 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 
   const WeightsSymmetric3& weights = WeightsSymmetric3GaussianDC();
   ImageF smoothed(xsize, ysize);
-  ChooseSymmetric3(hwy::SupportedTargets())(opsin_y, rect, weights, pool,
-                                            &smoothed);
+  ChooseSymmetric3()(opsin_y, rect, weights, pool, &smoothed);
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
@@ -1134,9 +1132,8 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
     dec_state.EnsureStorage(num_threads);
     return true;
   };
-  const auto decode_group =
-      ChooseDecodeGroupForRoundtrip(hwy::SupportedTargets());
-  const auto compute_coef = ChooseComputeCoefficients(hwy::SupportedTargets());
+  const auto decode_group = ChooseDecodeGroupForRoundtrip();
+  const auto compute_coef = ChooseComputeCoefficients();
   const auto process_group = [&](const int group_index, const int thread) {
     compute_coef(group_index, enc_state, nullptr);
     JXL_CHECK(decode_group(enc_state->coeffs, group_index, &dec_state, thread,

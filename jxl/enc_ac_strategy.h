@@ -40,7 +40,7 @@ namespace jxl {
 typedef void FindBestAcStrategyFunc(const Image3F& src,
                                     PassesEncoderState* JXL_RESTRICT enc_state,
                                     ThreadPool* pool, AuxOut* aux_out);
-FindBestAcStrategyFunc* ChooseFindBestAcStrategy(uint32_t targets_bits);
+FindBestAcStrategyFunc* ChooseFindBestAcStrategy();
 
 }  // namespace jxl
 

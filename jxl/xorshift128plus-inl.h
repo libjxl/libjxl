@@ -21,11 +21,10 @@
 #define JXL_XORSHIFT128PLUS_INL_H_
 #endif
 
-#include <hwy/highway.h>
 #include <stddef.h>
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // Adapted from https://github.com/vpxyz/xorshift/blob/master/xorshift128plus/
@@ -46,9 +45,9 @@ class Xorshift128Plus {
   }
 
   HWY_FUNC void Fill(uint64_t* HWY_RESTRICT random_bits) {
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
     const HWY_FULL(uint64_t) d;
-    for (size_t i = 0; i < N; i += d.N) {
+    for (size_t i = 0; i < N; i += Lanes(d)) {
       auto s1 = Load(d, s0_ + i);
       const auto s0 = Load(d, s1_ + i);
       s1 ^= ShiftLeft<23>(s1);
@@ -84,7 +83,7 @@ class Xorshift128Plus {
 };
 
 #include <hwy/end_target-inl.h>
-
 }  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #endif  // include guard

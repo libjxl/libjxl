@@ -189,7 +189,21 @@ Status Encode(const CodecInOut& io, const Codec codec,
 Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
                     size_t bits_per_sample, const std::string& pathname,
                     ThreadPool* pool) {
-  const Codec codec = CodecFromExtension(Extension(pathname), &bits_per_sample);
+  const std::string extension = Extension(pathname);
+  const Codec codec = CodecFromExtension(extension, &bits_per_sample);
+
+  // Warn about incorrect usage of PGM/PGX/PPM - the first two only support
+  // grayscale, but CodecFromExtension does not distinguish between PGM/PPM.
+  if (codec == Codec::kPNM) {
+    if (!io.Main().IsGray() && extension == ".pgm") {
+      JXL_WARNING("Storing color image to PGM - use .ppm extension instead.\n");
+    } else if (io.Main().IsGray() && extension == ".ppm") {
+      JXL_WARNING(
+          "Storing grayscale image to PPM - use .pgm extension instead.\n");
+    }
+  } else if (codec == Codec::kPGX && !io.Main().IsGray()) {
+    JXL_WARNING("Storing color image to PGX - use .ppm extension instead.\n");
+  }
 
   PaddedBytes encoded;
   return Encode(io, codec, c_desired, bits_per_sample, &encoded, pool) &&

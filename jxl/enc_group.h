@@ -28,7 +28,7 @@ namespace jxl {
 typedef void ComputeCoefficientsFunc(size_t group_idx,
                                      PassesEncoderState* enc_state,
                                      AuxOut* aux_out);
-ComputeCoefficientsFunc* ChooseComputeCoefficients(uint32_t targets_bits);
+ComputeCoefficientsFunc* ChooseComputeCoefficients();
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         const PassesEncoderState& enc_state,

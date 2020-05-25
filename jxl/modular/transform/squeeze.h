@@ -36,8 +36,9 @@
 
 #include "jxl/base/data_parallel.h"
 #include "jxl/common.h"
-#include "jxl/modular/config.h"
 #include "jxl/modular/image/image.h"
+
+#define JXL_MAX_FIRST_PREVIEW_SIZE 8
 
 namespace jxl {
 
@@ -63,8 +64,8 @@ namespace jxl {
 // (otherwise, this is not a smooth area and we cannot really estimate C-D)
 //                  2) making sure that B <= C <= D <= n  or B >= C >= D >= n
 
-inline pixel_type smooth_tendency(pixel_type B, pixel_type a, pixel_type n) {
-  pixel_type diff = 0;
+inline pixel_type_w SmoothTendency(pixel_type_w B, pixel_type_w a, pixel_type_w n) {
+  pixel_type_w diff = 0;
   if (B >= a && a >= n) {
     diff = (4 * B - 3 * n - a + 6) / 12;
     //      2C = a<<1 + diff - diff&1 <= 2B  so diff - diff&1 <= 2B - 2a
@@ -81,7 +82,7 @@ inline pixel_type smooth_tendency(pixel_type B, pixel_type a, pixel_type n) {
   return diff;
 }
 
-void inv_hsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
+void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.w == 0) return;
@@ -100,29 +101,28 @@ void inv_hsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
         pixel_type *JXL_RESTRICT p_out = chout.Row(y);
 
         // special case for x=0 so we don't have to check x>0
-        pixel_type avg = p_avg[0];
-        pixel_type next_avg = (1 < chin.w ? next_avg = p_avg[1] : avg);
-        pixel_type tendency = smooth_tendency(avg, avg, next_avg);
-        pixel_type diff = p_residual[0] + tendency;
-        pixel_type A =
+        pixel_type_w avg = p_avg[0];
+        pixel_type_w next_avg = (1 < chin.w ? next_avg = p_avg[1] : avg);
+        pixel_type_w tendency = SmoothTendency(avg, avg, next_avg);
+        pixel_type_w diff = p_residual[0] + tendency;
+        pixel_type_w A =
             ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
-        pixel_type B = A - diff;
-        p_out[0] = A;
-        p_out[1] = B;
+        pixel_type_w B = A - diff;
+        p_out[0] = ClampToRange<pixel_type>(A);
+        p_out[1] = ClampToRange<pixel_type>(B);
 
         for (size_t x = 1; x < chin_residual.w; x++) {
-          pixel_type diff_minus_tendency = p_residual[x];
-          pixel_type avg = p_avg[x];
-          pixel_type next_avg =
-              (x + 1 < chin.w ? next_avg = p_avg[x + 1] : avg);
-          pixel_type left = p_out[(x << 1) - 1];
-          pixel_type tendency = smooth_tendency(left, avg, next_avg);
-          pixel_type diff = diff_minus_tendency + tendency;
-          pixel_type A =
+          pixel_type_w diff_minus_tendency = p_residual[x];
+          pixel_type_w avg = p_avg[x];
+          pixel_type_w next_avg = (x + 1 < chin.w ? next_avg = p_avg[x + 1] : avg);
+          pixel_type_w left = p_out[(x << 1) - 1];
+          pixel_type_w tendency = SmoothTendency(left, avg, next_avg);
+          pixel_type_w diff = diff_minus_tendency + tendency;
+          pixel_type_w A =
               ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
-          p_out[x << 1] = A;
-          pixel_type B = A - diff;
-          p_out[(x << 1) + 1] = B;
+          p_out[x << 1] = ClampToRange<pixel_type>(A);
+          pixel_type_w B = A - diff;
+          p_out[(x << 1) + 1] = ClampToRange<pixel_type>(B);
         }
         if (chout.w & 1) p_out[chout.w - 1] = p_avg[chin.w - 1];
       },
@@ -130,8 +130,7 @@ void inv_hsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   input.channel[c] = std::move(chout);
 }
 
-#ifdef HAS_ENCODER
-void fwd_hsqueeze(Image &input, int c, int rc) {
+void FwdHSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
 
   JXL_DEBUG_V(4, "Doing horizontal squeeze of channel %i to new channel %i", c,
@@ -155,14 +154,14 @@ void fwd_hsqueeze(Image &input, int c, int rc) {
       pixel_type diff = A - B;
 
       pixel_type next_avg = avg;
-      if (x + 1 < chout_residual.w)
+      if (x + 1 < chout_residual.w) {
         next_avg = (p_in[x * 2 + 2] + p_in[x * 2 + 3] +
                     (p_in[x * 2 + 2] > p_in[x * 2 + 3])) >>
                    1;  // which will be chout.value(y,x+1)
-      else if (chin.w & 1)
+      } else if (chin.w & 1)
         next_avg = p_in[x * 2 + 2];
       pixel_type left = (x > 0 ? p_in[x * 2 - 1] : avg);
-      pixel_type tendency = smooth_tendency(left, avg, next_avg);
+      pixel_type tendency = SmoothTendency(left, avg, next_avg);
 
       p_res[x] = diff - tendency;
     }
@@ -174,9 +173,8 @@ void fwd_hsqueeze(Image &input, int c, int rc) {
   input.channel[c] = std::move(chout);
   input.channel.insert(input.channel.begin() + rc, std::move(chout_residual));
 }
-#endif
 
-void inv_vsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
+void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.h == 0) return;
@@ -201,19 +199,20 @@ void inv_vsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
           const pixel_type *JXL_RESTRICT p_avg = chin.Row(y);
           pixel_type *JXL_RESTRICT p_out = chout.Row(y << 1);
           for (size_t x = x0; x < x1; x++) {
-            pixel_type diff_minus_tendency = p_residual[x];
-            pixel_type avg = p_avg[x];
+            pixel_type_w diff_minus_tendency = p_residual[x];
+            pixel_type_w avg = p_avg[x];
 
-            pixel_type next_avg = avg;
+            pixel_type_w next_avg = avg;
             if (y + 1 < chin.h) next_avg = p_avg[x + onerow_in];
-            pixel_type top =
+            pixel_type_w top =
                 (y > 0 ? p_out[static_cast<ssize_t>(x) - onerow_out] : avg);
-            pixel_type tendency = smooth_tendency(top, avg, next_avg);
-            pixel_type diff = diff_minus_tendency + tendency;
-
-            p_out[x] =
+            pixel_type_w tendency = SmoothTendency(top, avg, next_avg);
+            pixel_type_w diff = diff_minus_tendency + tendency;
+            pixel_type_w out =
                 ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
-            p_out[x + onerow_out] = p_out[x] - diff;
+
+            p_out[x] = ClampToRange<pixel_type>(out);
+            p_out[x + onerow_out] = ClampToRange<pixel_type>(p_out[x] - diff);
           }
         }
       },
@@ -230,8 +229,7 @@ void inv_vsqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   input.channel[c] = std::move(chout);
 }
 
-#ifdef HAS_ENCODER
-void fwd_vsqueeze(Image &input, int c, int rc) {
+void FwdVSqueeze(Image &input, int c, int rc) {
   const Channel &chin = input.channel[c];
 
   JXL_DEBUG_V(4, "Doing vertical squeeze of channel %i to new channel %i", c,
@@ -264,7 +262,7 @@ void fwd_vsqueeze(Image &input, int c, int rc) {
       }
       pixel_type top =
           (y > 0 ? p_in[static_cast<ssize_t>(x) - onerow_in] : avg);
-      pixel_type tendency = smooth_tendency(top, avg, next_avg);
+      pixel_type tendency = SmoothTendency(top, avg, next_avg);
 
       p_res[x] = diff - tendency;
     }
@@ -280,10 +278,8 @@ void fwd_vsqueeze(Image &input, int c, int rc) {
   input.channel[c] = std::move(chout);
   input.channel.insert(input.channel.begin() + rc, std::move(chout_residual));
 }
-#endif
 
-void default_squeeze_parameters(TransformParams *parameters,
-                                const Image &image) {
+void DefaultSqueezeParameters(TransformParams *parameters, const Image &image) {
   int nb_channels = image.nb_channels;
   // maybe other transforms have been applied before, but let's assume the first
   // nb_channels channels still contain the 'main' data
@@ -318,7 +314,7 @@ void default_squeeze_parameters(TransformParams *parameters,
   }
 
   if (!wide) {
-    if (h > MAX_FIRST_PREVIEW_SIZE) {
+    if (h > JXL_MAX_FIRST_PREVIEW_SIZE) {
       parameters->push_back(0);  // vertical squeeze
       parameters->push_back(image.nb_meta_channels);
       parameters->push_back(image.nb_meta_channels + nb_channels - 1);
@@ -326,15 +322,15 @@ void default_squeeze_parameters(TransformParams *parameters,
       JXL_DEBUG_V(7, "Vertical (%zux%zu), ", w, h);
     }
   }
-  while (w > MAX_FIRST_PREVIEW_SIZE || h > MAX_FIRST_PREVIEW_SIZE) {
-    if (w > MAX_FIRST_PREVIEW_SIZE) {
+  while (w > JXL_MAX_FIRST_PREVIEW_SIZE || h > JXL_MAX_FIRST_PREVIEW_SIZE) {
+    if (w > JXL_MAX_FIRST_PREVIEW_SIZE) {
       parameters->push_back(1);  // horizontal squeeze
       parameters->push_back(image.nb_meta_channels);
       parameters->push_back(image.nb_meta_channels + nb_channels - 1);
       w = (w + 1) / 2;
       JXL_DEBUG_V(7, "Horizontal (%zux%zu), ", w, h);
     }
-    if (h > MAX_FIRST_PREVIEW_SIZE) {
+    if (h > JXL_MAX_FIRST_PREVIEW_SIZE) {
       parameters->push_back(0);  // vertical squeeze
       parameters->push_back(image.nb_meta_channels);
       parameters->push_back(image.nb_meta_channels + nb_channels - 1);
@@ -365,9 +361,9 @@ Status CheckMetaSqueezeParams(const TransformParams &parameters,
   return true;
 }
 
-Status meta_squeeze(Image &image, TransformParams *parameters) {
+Status MetaSqueeze(Image &image, TransformParams *parameters) {
   if (parameters->empty()) {
-    default_squeeze_parameters(parameters, image);
+    DefaultSqueezeParameters(parameters, image);
   }
   JXL_RETURN_IF_ERROR(
       CheckMetaSqueezeParams(*parameters, image.channel.size()));
@@ -414,68 +410,73 @@ Status meta_squeeze(Image &image, TransformParams *parameters) {
 }
 
 // [squeezetype] [beginc] [endc]
-Status squeeze(Image &input, bool inverse, const TransformParams &parameters,
-               ThreadPool *pool) {
+Status InvSqueeze(Image &input, const TransformParams &parameters,
+                  ThreadPool *pool) {
   // Use a copy so empty (default) parameters remain empty.
   TransformParams adj_params(parameters);
   if (adj_params.empty()) {
-    default_squeeze_parameters(&adj_params, input);
+    DefaultSqueezeParameters(&adj_params, input);
   }
   JXL_RETURN_IF_ERROR(CheckMetaSqueezeParams(adj_params, input.channel.size()));
 
-  if (inverse) {
-    for (int i = adj_params.size() - 3; i >= 0; i -= 3) {
-      bool horizontal = adj_params[i] & 1;  // 0=vertical, 1=horizontal
-      bool in_place = !(adj_params[i] & 2);
-      uint32_t beginc = adj_params[i + 1];
-      uint32_t endc = adj_params[i + 2];
-      uint32_t offset;
-      if (in_place) {
-        offset = endc + 1;
-      } else {
-        offset = input.nb_meta_channels + input.nb_channels;
-      }
-      for (uint32_t c = beginc; c <= endc; c++) {
-        if (input.channel[offset + c - beginc].is_empty()) {
-          // stop unsqueezing luma; keep unsqueezing chroma channels
-          //                if (input.channel[beginc].w == input.channel[c].w &&
-          //                input.channel[beginc].h == input.channel[c].h)
-          //                continue;
-          input.channel[offset + c - beginc].resize();  // assume all zeroes
-        }
-        if (horizontal) {
-          inv_hsqueeze(input, c, offset + c - beginc, pool);
-        } else {
-          inv_vsqueeze(input, c, offset + c - beginc, pool);
-        }
-      }
-      input.channel.erase(input.channel.begin() + offset,
-                          input.channel.begin() + offset + (endc - beginc + 1));
+  for (int i = adj_params.size() - 3; i >= 0; i -= 3) {
+    bool horizontal = adj_params[i] & 1;  // 0=vertical, 1=horizontal
+    bool in_place = !(adj_params[i] & 2);
+    uint32_t beginc = adj_params[i + 1];
+    uint32_t endc = adj_params[i + 2];
+    uint32_t offset;
+    if (in_place) {
+      offset = endc + 1;
+    } else {
+      offset = input.nb_meta_channels + input.nb_channels;
     }
-  } else {
-#ifdef HAS_ENCODER
-    for (size_t i = 0; i + 2 < adj_params.size(); i += 3) {
-      bool horizontal = adj_params[i] & 1;  // 0=vertical, 1=horizontal
-      bool in_place = !(adj_params[i] & 2);
-      uint32_t beginc = adj_params[i + 1];
-      uint32_t endc = adj_params[i + 2];
-      uint32_t offset;
-      if (in_place) {
-        offset = endc + 1;
-      } else {
-        offset = input.nb_meta_channels + input.nb_channels;
+    for (uint32_t c = beginc; c <= endc; c++) {
+      if (input.channel[offset + c - beginc].is_empty()) {
+        // stop unsqueezing luma; keep unsqueezing chroma channels
+        //                if (input.channel[beginc].w == input.channel[c].w &&
+        //                input.channel[beginc].h == input.channel[c].h)
+        //                continue;
+        input.channel[offset + c - beginc].resize();  // assume all zeroes
       }
-      for (uint32_t c = beginc; c <= endc; c++) {
-        if (horizontal) {
-          fwd_hsqueeze(input, c, offset + c - beginc);
-        } else {
-          fwd_vsqueeze(input, c, offset + c - beginc);
-        }
+      if (horizontal) {
+        InvHSqueeze(input, c, offset + c - beginc, pool);
+      } else {
+        InvVSqueeze(input, c, offset + c - beginc, pool);
       }
     }
-#else
-    return false;
-#endif
+    input.channel.erase(input.channel.begin() + offset,
+                        input.channel.begin() + offset + (endc - beginc + 1));
+  }
+  return true;
+}
+
+Status FwdSqueeze(Image &input, const TransformParams &parameters,
+                  ThreadPool *pool) {
+  // Use a copy so empty (default) parameters remain empty.
+  TransformParams adj_params(parameters);
+  if (adj_params.empty()) {
+    DefaultSqueezeParameters(&adj_params, input);
+  }
+  JXL_RETURN_IF_ERROR(CheckMetaSqueezeParams(adj_params, input.channel.size()));
+
+  for (size_t i = 0; i + 2 < adj_params.size(); i += 3) {
+    bool horizontal = adj_params[i] & 1;  // 0=vertical, 1=horizontal
+    bool in_place = !(adj_params[i] & 2);
+    uint32_t beginc = adj_params[i + 1];
+    uint32_t endc = adj_params[i + 2];
+    uint32_t offset;
+    if (in_place) {
+      offset = endc + 1;
+    } else {
+      offset = input.nb_meta_channels + input.nb_channels;
+    }
+    for (uint32_t c = beginc; c <= endc; c++) {
+      if (horizontal) {
+        FwdHSqueeze(input, c, offset + c - beginc);
+      } else {
+        FwdVSqueeze(input, c, offset + c - beginc);
+      }
+    }
   }
   return true;
 }

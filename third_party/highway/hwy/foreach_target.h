@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,25 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Included in the global namespace, hence we cannot include ops/* from here.
-// The include guard prevents infinite recursion.
 #ifndef HWY_FOREACH_TARGET_H_
 #define HWY_FOREACH_TARGET_H_
 
-#include "hwy/highway.h"
+// Re-includes the translation unit zero or more times to compile for any
+// targets except HWY_STATIC_TARGET. Defines unique HWY_TARGET each time so that
+// begin_target-inl.h defines the corresponding macro/namespace.
 
-// IDE is parsing only this header, or user forgot to define this:
-#ifndef HWY_TARGET_INCLUDE
-#if HWY_IDE
-#define HWY_TARGET_INCLUDE <stddef.h>  // any header - avoids warnings.
-#else
+#include "hwy/targets.h"
+
+#if !defined(HWY_TARGET_INCLUDE) && !HWY_IDE
 #error "Must define HWY_TARGET_INCLUDE before including foreach_target.h"
 #endif
-#endif
-
-// Re-includes the translation unit zero or more times to compile for any
-// targets except HWY_STATIC_TARGET. HWY_TARGET determines the macros/namespace
-// in begin_target-inl.h.
 
 // *_inl.h may include other headers, which requires include guards to prevent
 // repeated inclusion. The guards must be reset after compiling each target, so
@@ -38,7 +31,7 @@
 // defining it if undefined and vice versa. This macro is initially undefined
 // so that IDEs don't gray out the contents of each header.
 #ifdef HWY_TARGET_TOGGLE
-#error "This macro must not be defined before foreach_target.h"
+#error "This macro must not be defined outside foreach_target.h"
 #endif
 
 #if (HWY_TARGETS & HWY_SCALAR) && (HWY_STATIC_TARGET != HWY_SCALAR)

@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/enc_ac_strategy.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
+#include <hwy/foreach_target.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -33,19 +36,14 @@
 #include "jxl/enc_params.h"
 #include "jxl/entropy_coder.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/enc_transforms-inl.h"
-
-namespace jxl {
 
 // This must come before the begin/end_target, but HWY_ONCE is only true
 // after that, so use an "include guard".
 #ifndef JXL_ENC_AC_STRATEGY_
 #define JXL_ENC_AC_STRATEGY_
 // Parameters of the heuristic are marked with a OPTIMIZE comment.
+namespace jxl {
 namespace {
 
 // Debugging utilities.
@@ -430,13 +428,16 @@ size_t ACSPossibleReplacements(AcStrategy::Type current,
 }
 
 }  // namespace
+}  // namespace jxl
 #endif  // JXL_ENC_AC_STRATEGY_
 
+#include <hwy/before_namespace-inl.h>
+namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-HWY_ATTR float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
-                               const ACSConfig& config,
-                               const float* JXL_RESTRICT cmap_factors) {
+float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
+                      const ACSConfig& config,
+                      const float* JXL_RESTRICT cmap_factors) {
   const size_t size = (1 << acs.log2_covered_blocks()) * kDCTBlockSize;
 
   // Apply transform.
@@ -506,10 +507,10 @@ HWY_ATTR float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   return ret;
 }
 
-HWY_ATTR void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
-                              const float* JXL_RESTRICT cmap_factors,
-                              AcStrategyImage* JXL_RESTRICT ac_strategy,
-                              float* JXL_RESTRICT entropy_estimate) {
+void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
+                     const float* JXL_RESTRICT cmap_factors,
+                     AcStrategyImage* JXL_RESTRICT ac_strategy,
+                     float* JXL_RESTRICT entropy_estimate) {
   AcStrategy::Type current =
       AcStrategy::Type(ac_strategy->ConstRow(by)[bx].RawStrategy());
   AcStrategy::Type candidates[AcStrategy::kNumValidStrategies];
@@ -573,9 +574,9 @@ HWY_ATTR void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
   }
 }
 
-HWY_ATTR void FindBestAcStrategy(const Image3F& src,
-                                 PassesEncoderState* JXL_RESTRICT enc_state,
-                                 ThreadPool* pool, AuxOut* aux_out) {
+void FindBestAcStrategy(const Image3F& src,
+                        PassesEncoderState* JXL_RESTRICT enc_state,
+                        ThreadPool* pool, AuxOut* aux_out) {
   PROFILER_FUNC;
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
@@ -622,7 +623,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
 
   size_t xsize32 = DivCeil(xsize_blocks, 4);
   size_t ysize32 = DivCeil(ysize_blocks, 4);
-  const auto compute_initial_acs_guess = [&](int block32, int _) HWY_ATTR {
+  const auto compute_initial_acs_guess = [&](int block32, int _) {
     size_t bx = block32 % xsize32;
     size_t by = block32 / xsize32;
     size_t tx = bx * 4 / kColorTileDimInBlocks;
@@ -635,6 +636,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             enc_state->shared.cmap.ytob_map.ConstRow(ty)[tx]),
     };
     HWY_CAPPED(float, kBlockDim) d;
+    const size_t N = Lanes(d);
     // Pre-compute maximum delta in each 8x8 block.
     // Find a minimum delta of three options:
     // 1) all, 2) not accounting vertical, 3) not accounting horizontal
@@ -650,7 +652,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
           if (dx >= xsize_blocks) continue;
           for (size_t c = 0; c < 3; c++) {
             for (size_t y = 0; y < 8; y++) {
-              for (size_t x = 0; x < 8; x += d.N) {
+              for (size_t x = 0; x < 8; x += N) {
                 const auto v =
                     Load(d, &config.Pixel(c, dx * 8 + x, dy * 8 + y));
                 Store(v, d, &pixels[c][y * 8 + x]);
@@ -662,7 +664,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             float side[8];
             for (size_t y = 0; y < 8; y++) {
               auto sum = Load(d, &pixel[y * 8]);
-              for (size_t x = d.N; x < 8; x += d.N) {
+              for (size_t x = N; x < 8; x += N) {
                 sum += Load(d, &pixel[y * 8 + x]);
               }
               side[y] = GetLane(SumOfLanes(sum));
@@ -670,7 +672,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
 
             // Sum of columns (one per lane).
             HWY_ALIGN float top[8];
-            for (size_t x = 0; x < 8; x += d.N) {
+            for (size_t x = 0; x < 8; x += N) {
               auto sums_of_columns = Load(d, &pixel[x]);
               for (size_t y = 1; y < 8; y++) {
                 sums_of_columns += Load(d, &pixel[y * 8 + x]);
@@ -682,7 +684,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             const auto mul = Set(d, 1.0f / 8);
             for (size_t y = 0; y < 8; y++) {
               const auto side_y = Set(d, side[y]) * mul;
-              for (size_t x = 0; x < 8; x += d.N) {
+              for (size_t x = 0; x < 8; x += N) {
                 const auto top_x = Load(d, &top[x]);
                 auto v = Load(d, &pixel[y * 8 + x]);
                 v -= MulAdd(mul, top_x, side_y);
@@ -691,7 +693,7 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
             }
           }
           auto delta = Zero(d);
-          for (size_t x = 0; x < 8; x += d.N) {
+          for (size_t x = 0; x < 8; x += N) {
             for (size_t y = 1; y < 7; y++) {
               float* pix = &pixels[c][y * 8 + x];
               const auto p = Load(d, pix);
@@ -707,10 +709,10 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
               const auto m5 = Max(m3, m4);
               delta = Max(delta, m5);
             }
-            HWY_ALIGN float lmax[d.N];
+            HWY_ALIGN float lmax[MaxLanes(d)];
             Store(delta, d, lmax);
             float mdelta = 0;
-            for (size_t i = 0; i < d.N; i++) {
+            for (size_t i = 0; i < N; i++) {
               int ioff = (i + x) & 7;
               if (ioff != 0 && ioff != 7) {
                 mdelta = std::max(mdelta, lmax[i]);
@@ -881,9 +883,11 @@ HWY_ATTR void FindBestAcStrategy(const Image3F& src,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(FindBestAcStrategy)
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

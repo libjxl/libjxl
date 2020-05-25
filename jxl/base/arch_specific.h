@@ -18,7 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <hwy/interface.h>  // kMaxVectorSize
+#include <hwy/base.h>  // kMaxVectorSize
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/status.h"

@@ -1,4 +1,4 @@
-// Copyright (c) the JPEG XL Project
+// Copyright 2020 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,27 +14,24 @@
 
 #include "hwy/examples/skeleton.h"
 
-#include <assert.h>
-#include <stdio.h>
-#include "hwy/examples/skeleton_shared.h"
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/examples/skeleton.cc"
 #include "hwy/foreach_target.h"
 
-// Optional: include shared *-inl.h, after foreach_target.h
+#include <assert.h>
+#include <stdio.h>
+#include "hwy/examples/skeleton_shared.h"
+
+// Optional: factor out parts of the implementation into *-inl.h
 #include "hwy/examples/skeleton-inl.h"
 
-#undef HWY_USE_GTEST
-#include "hwy/tests/test_util.h"  // required if test_util-inl is included.
-
+#include "hwy/before_namespace-inl.h"
 namespace skeleton {
-
 #include "hwy/begin_target-inl.h"
 
-// Compiled once per target via multiple inclusion (foreach_target.h).
-HWY_ATTR void Skeleton(const float* HWY_RESTRICT in1,
-                       const float* HWY_RESTRICT in2, float* HWY_RESTRICT out) {
+// Compiled once per target via multiple inclusion.
+void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
+              float* HWY_RESTRICT out) {
   printf("Target %s: %s\n", hwy::TargetName(HWY_TARGET),
          ExampleGatherStrategy());
 
@@ -42,8 +39,11 @@ HWY_ATTR void Skeleton(const float* HWY_RESTRICT in1,
 }
 
 #include "hwy/end_target-inl.h"
+}  // namespace skeleton
+#include "hwy/after_namespace-inl.h"
 
 #if HWY_ONCE
+namespace skeleton {
 
 HWY_EXPORT(Skeleton)
 
@@ -51,6 +51,5 @@ HWY_EXPORT(Skeleton)
 // public functions provided by this module, can go inside #if HWY_ONCE
 // (after end_target-inl.h).
 
-#endif  // HWY_ONCE
-
 }  // namespace skeleton
+#endif  // HWY_ONCE

@@ -29,18 +29,17 @@ typedef void TransformToPixelsFunc(AcStrategy::Type strategy,
                                    const float* JXL_RESTRICT coefficients,
                                    float* JXL_RESTRICT pixels,
                                    size_t pixels_stride);
-TransformToPixelsFunc* ChooseTransformToPixels(uint32_t targets_bits);
+TransformToPixelsFunc* ChooseTransformToPixels();
 
 // Equivalent of the above for DC image.
 typedef void DCFromLowestFrequenciesFunc(AcStrategy::Type strategy,
                                          const float* block, float* dc,
                                          size_t dc_stride);
-DCFromLowestFrequenciesFunc* ChooseDCFromLowestFrequencies(
-    uint32_t targets_bits);
+DCFromLowestFrequenciesFunc* ChooseDCFromLowestFrequencies();
 
 typedef void AFVIDCT4x4Func(const float* JXL_RESTRICT coeffs,
                             float* JXL_RESTRICT pixels);
-AFVIDCT4x4Func* ChooseAFVIDCT4x4(uint32_t targets_bits);
+AFVIDCT4x4Func* ChooseAFVIDCT4x4();
 
 }  // namespace jxl
 

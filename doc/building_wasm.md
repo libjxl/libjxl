@@ -65,7 +65,7 @@ source $OPT/emsdk/emsdk_env.sh
 export CMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
 
 # Either build with regular WASM:
-./ci.sh release
+emconfigure ./ci.sh release
 # or with SIMD WASM:
-ENABLE_WASM_SIMD=1 ./ci.sh release
+ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
 ```

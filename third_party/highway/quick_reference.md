@@ -2,61 +2,122 @@
 
 [[_TOC_]]
 
+## Usage modes
+
+A project or module using SIMD can choose to integrate into its callers via
+static or dynamic dispatch. Examples of both are provided in examples/.
+
+Static dispatch means choosing the single CPU target at compile-time. This does
+not require any setup nor per-call overhead.
+
+Dynamic dispatch means generating implementations for multiple targets and
+choosing the best available at runtime. Uses the same source code as static,
+plus `#define HWY_TARGET_INCLUDE` and `#include <hwy/foreach_target.h>`.
+
 ## Headers
 
-*   For static dispatch (choosing the single CPU target at compile-time):
-    include `hwy/highway.h`.
-*   For dynamic dispatch (generating implementations for multiple targets and
-    choosing the best available at runtime): include `hwy/foreach_target.h` and
-    see the skeleton example in examples/.
+The public headers are:
+
+*   hwy/base.h: used internally, and potentially also useful for applications
+    that want to use its compiler/platform-dependent functionality, typically
+   `HWY_ALIGN_MAX` and/or `kMaxVectorSize`.
+
+*   hwy/foreach_target.h: re-includes the translation unit (specified by
+    `HWY_TARGET_INCLUDE`) once per enabled target to generate code from the
+    same source code. Only needed if dynamic dispatch is desired.
+
+*   hwy/aligned_allocator.h: defines functions for allocating memory with
+    alignment suitable for `Load`/`Store`.
+
+*   hwy/cache_control.h: defines stand-alone functions to control caching (e.g.
+    prefetching) and memory barriers, independent of actual SIMD.
+
+SIMD implementations must be preceded and followed by two #includes:
+```
+#include <hwy/before_namespace-inl.h>  // at file scope
+namespace project {  // optional
+#include <hwy/begin_target-inl.h>
+
+// implementation
+
+#include <hwy/end_target-inl.h>
+}  // namespace - if used above
+#include <hwy/after_namespace-inl.h>
+```
 
 ## Preprocessor macros
 
-*   `HWY_ATTR` must be prefixed to any function declaration/definition into
-    which Highway functions are (transitively) inlined, i.e. all functions
-    inside begin/end_target unless they do not call Highway functions.
-
 *   `HWY_ALIGN`: Ensures an array is aligned and suitable for Load()/Store()
-    functions. Example: `HWY_ALIGN T lanes[d.N];`
+    functions. Example: `HWY_ALIGN T lanes[MaxLanes(d)];` This can only be used
+    between including begin/end_target-inl.h.
+
+*   `HWY_ALIGN_MAX`: As `HWY_ALIGN`, but aligns to an upper bound suitable for
+    all targets on this platform. Use this for caller of SIMD modules, e.g. for
+    arrays used as arguments.
 
 ## Vector and descriptor types
 
 SIMD vectors consist of one or more 'lanes' of the same built-in type `T =
 uint##_t, int##_t, float or double` for `## = 8, 16, 32, 64`. Highway provides
-data types for vectors of unspecified sizes `N`, where N is a power of two
-in the range [1, kMaxVectorSize / sizeof(T)].
+vectors with `N <= kMaxVectorSize / sizeof(T)` lanes, where N is a power of two.
 
-Highway relies on "descriptors" (zero-sized class templates) to select the
-function overload matching a given `T` and `N`. Users typically define a
-descriptor lvalue `d` using aliases:
+Platforms such as x86 support multiple vector types, and other platforms require
+that vectors are built-in types. Thus the Highway API consists of overloaded
+functions selected via a zero-sized tag parameter `d` of type `D = Simd<T, N>`.
+These are typically constructed using aliases:
 
-*   `const HWY_FULL(T) d;` for the largest available N;
+*   `const HWY_FULL(T) d;` chooses the maximum N for the current target;
 *   `const HWY_CAPPED(T, N) d;` for up to `N` lanes.
 
-The API does not document the names of the vector types. Instead, user code
-relies on type deduction (`auto`). Examples:
+The type `T` may be accessed as D::T (prefixed with typename if D is a template
+argument).
 
-*   Zero-initialize: `auto v0 = Zero(d);`
-*   Uninitialized/output variables: `auto v = Undefined(d); Func(&v);`
-*   Function arguments or return types: `HWY_VEC(D) Func2(HWY_VEC(D) arg);`
+There are three possibilities for the template parameter `N`:
+1.  Equal to the hardware vector width. This is the most common case, e.g. when
+    using `HWY_FULL(T)` on a target with compile-time constant vectors.
+
+2.  Less than the hardware vector width. This is the result of a compile-time
+    decision by the user, i.e. using `HWY_CAPPED(T, N)` to limit the number of
+    lanes, even when the hardware vector width could be greater.
+
+3.  Greater or equal to the hardware vector width, e.g. when the hardware vector
+    width is not known at compile-time.
+
+In all cases, `Lanes(d)` returns the actual number of lanes, i.e. the amount by
+which to advance loop counters (at most `N`). The constexpr `MaxLanes(d)`
+returns an upper bound, typically used as a template argument to another
+descriptor. Using it as an array size is discouraged because the bound may be
+loose in case 3, leading to excessive stack usage. Where possible, prefer
+aligned dynamic allocation of `Lanes(d)` elements.
+
+To construct vectors, call factory functions (see "Initialization" below) with
+a tag parameter `d`.
+
+Local variables typically use auto for type deduction. If `d` is
+`HWY_FULL(int32_t)`, users may instead use the full-width vector alias `I32xN`
+(or `U16xN', `F64xN' etc.) to document the types used.
+
+For function arguments, it is often sufficient to return the same type as the
+argument: `template<class V> V Squared(V v) { return v * v; }`. Otherwise, use
+the alias `Vec<D>`.
 
 ## Operations
 
-Let `V` denote a `D::N`-lane vector (where `D::N` is a power of two).
-Operations limited to certain types have prefixes `V`: `u8/16` or `uif` for
-unsigned/signed/floating-point types.
+In the following, the argument or return type `V` denotes a vector with `N`
+lanes. Operations limited to certain vector types begin with a constraint of the
+form `V`: `{u,i,f}{8/16/32/64}` to denote unsigned/signed/floating-point types,
+possibly with the specified size in bits of `T`.
 
 ### Initialization
 
-*   <code>V **Zero**(D)</code>: returns D::N-lane vector or scalar with all bits
-    set to 0.
-*   <code>V **Set**(D, T)</code>: returns D::N-lane vector or scalar with all
-    lanes equal to the given value of type `T`.
-*   <code>V **Iota**(D, T)</code>: returns D::N-lane vector or scalar where the
-    lane with index `i` has the given value of type `T` plus `i`. The least
-    significant lane has index 0.
-*   <code>V **Undefined**(D)</code>: returns uninitialized D::N-lane vector or
-    scalar.
+*   <code>V **Zero**(D)</code>: returns N-lane vector with all bits set to 0.
+*   <code>V **Set**(D, T)</code>: returns N-lane vector with all lanes equal to
+    the given value of type `T`.
+*   <code>V **Undefined**(D)</code>: returns uninitialized N-lane vector, e.g.
+    for use as an output parameter.
+*   <code>V **Iota**(D, T)</code>: returns N-lane vector where the lane with
+    index `i` has the given value of type `T` plus `i`. The least significant
+    lane has index 0. (include test_util-inl.h)
 
 ### Arithmetic
 
@@ -126,9 +187,10 @@ unsigned/signed/floating-point types.
 
 #### Fused multiply-add
 
-When supported, these functions are more precise and faster than separate
-multiplication followed by addition. The `*Sub` variants are somewhat slower
-on ARM; it is preferable to replace them with MulAdd using a negated constant.
+When implemented using special instructions, these functions are more precise
+and faster than separate multiplication followed by addition. The `*Sub`
+variants are somewhat slower on ARM; it is preferable to replace them with
+`MulAdd` using a negated constant.
 
 *   `V`: `f` \
     <code>V **MulAdd**(V a, V b, V c)</code>: returns `a[i] * b[i] + c[i]`.
@@ -156,7 +218,7 @@ bits. ARM requires the count be less than the lane size.
     <code>V **ShiftRight**&lt;int&gt;(V a)</code> returns `a[i] >>` a compile-time
     constant count. Inserts zero or sign bit(s) depending on `V`.
 
-**Note**: independent shifts are only available if `HWY_CAPS & HWY_CAP_VARIABLE_SHIFT`:
+**Note**: independent shifts are only available if `HWY_CAP_VARIABLE_SHIFT`:
 
 *   `V`: `ui32/64` \
     <code>V **operator<<**(V a, V b)</code> returns `a[i] << b[i]`, which is
@@ -166,7 +228,7 @@ bits. ARM requires the count be less than the lane size.
     <code>V **operator>>**(V a, V b)</code> returns `a[i] >> b[i]`, which is
     zero when `b[i] >= sizeof(T)*8`. Inserts zero or sign bit(s).
 
-**Note**: the following are only provided if `!(HWY_CAPS & HWY_CAP_VARIABLE_SHIFT)`:
+**Note**: the following are only provided if `!HWY_CAP_VARIABLE_SHIFT`:
 
 *   `V`: `ui16/32/64` \
     <code>V **ShiftLeftSame**(V a, int bits)</code> returns `a[i] << bits`.
@@ -273,11 +335,11 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 
 #### Load
 
-*   <code>VT&lt;D&gt; **Load**(D, const D::T* aligned)</code>: returns
+*   <code>VT&lt;D&gt; **Load**(D, const T* aligned)</code>: returns
     `aligned[i]`.
-*   <code>VT&lt;D&gt; **LoadU**(D, const D::T* p)</code>: returns `p[i]`.
+*   <code>VT&lt;D&gt; **LoadU**(D, const T* p)</code>: returns `p[i]`.
 
-*   <code>VT&lt;D&gt; **LoadDup128**(D, const D::T* p)</code>: returns one
+*   <code>VT&lt;D&gt; **LoadDup128**(D, const T* p)</code>: returns one
     128-bit block loaded from `p` and broadcasted into all 128-bit block\[s\].
     This enables a specialized `U32FromU8` that avoids a 3-cycle overhead on
     AVX2/AVX-512. This may be faster than broadcasting single values, and is
@@ -285,36 +347,34 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 
 #### Gather
 
-**Note**: only available if `HWY_CAPS & HWY_CAP_GATHER`:
+**Note**: only available if `HWY_CAP_GATHER`:
 
 *   `V`,`VI`: (`uif32,i32`), (`uif64,i64`) \
-    <code>VT&lt;D&gt; **GatherOffset**(D, const D::T* base, VI offsets)</code>.
+    <code>VT&lt;D&gt; **GatherOffset**(D, const T* base, VI offsets)</code>.
     Returns elements of base selected by signed/possibly repeated *byte*
     `offsets[i]`.
 
 *   `V`,`VI`: (`uif32,i32`), (`uif64,i64`) \
-    <code>VT&lt;D&gt; **GatherIndex**(D, const D::T* base, VI indices)</code>.
+    <code>VT&lt;D&gt; **GatherIndex**(D, const T* base, VI indices)</code>.
     Returns vector of `base[indices[i]]`. Indices are signed and need not be
     unique.
 
 #### Store
 
-*   <code>void **Store**(VT&lt;D&gt; a, D, D::T* aligned)</code>: copies `a[i]`
+*   <code>void **Store**(VT&lt;D&gt; a, D, T* aligned)</code>: copies `a[i]`
     into `aligned[i]`, which must be naturally aligned. Writes exactly
     N * sizeof(T) bytes.
-*   <code>void **StoreU**(VT&lt;D&gt; a, D, D::T* p)</code>: as Store, but
+*   <code>void **StoreU**(VT&lt;D&gt; a, D, T* p)</code>: as Store, but
     without the alignment requirement.
 
 ### Cache control
 
-*   <code>void **Stream**(VT&lt;D&gt; a, D, const D::T* aligned)</code>: copies `a[i]`
-    into `aligned[i]` with non-temporal hint on x86 (for good performance, call
-    for all consecutive vectors within the same cache line). (Over)writes a
-    multiple of HWY_STREAM_MULTIPLE bytes.
+All functions except Stream are defined in cache_control.h.
 
-*   `T`: `u32/64` \
-    <code>void **Stream**(T, T* aligned)</code>: copies `T` into `*aligned` with
-    non-temporal hint on x86.
+*   <code>void **Stream**(VT&lt;D&gt; a, D, const T* aligned)</code>: copies
+    `a[i]` into `aligned[i]` with non-temporal hint on x86 (for good
+    performance, call for all consecutive vectors within the same cache line).
+    (Over)writes a multiple of HWY_STREAM_MULTIPLE bytes.
 
 *   <code>void **LoadFence**()</code>: delays subsequent loads until prior loads
     are visible. Also a full fence on Intel CPUs. No effect on non-x86.
@@ -331,7 +391,7 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 ### Type conversion
 
 *   <code>VT&lt;D&gt; **BitCast**(D, V)</code>: returns the bits of `V`
-    reinterpreted as type `HWY_VEC(D)`.
+    reinterpreted as type `Vec<D>`.
 
 *   `V`,`D`: (`u8,i16`), (`u8,i32`), (`u16,i32`), (`i8,i16`), (`i8,i32`),
     (`i16,i32`), (`f32,f64`) \
@@ -472,7 +532,7 @@ more expensive on AVX2/AVX-512 than within-block operations.
     `a[indices[i]]`, where `VI` is from `SetTableIndices(D, &indices[0])`.
 
 *   <code>VI **SetTableIndices**(D, int* idx)</code> prepares for
-    `TableLookupLanes` with lane indices `idx = [0, d.N)` (need not be unique).
+    `TableLookupLanes` with lane indices `idx = [0, N)` (need not be unique).
 
 ### Misc
 
@@ -491,16 +551,22 @@ more expensive on AVX2/AVX-512 than within-block operations.
 ## Advanced macros
 
 Let `Target` denote an instruction set: `SCALAR/SSE4/AVX2/AVX3/PPC8/NEON/WASM`.
+Targets are only used if enabled (i.e. not broken nor disabled). Baseline means
+the compiler is allowed to generate such instructions (implying the target CPU
+would have to support them).
 
 *   `HWY_Target=##` are powers of two uniquely identifying `Target`.
 
-*   `HWY_TARGETS` indicates which targets to generate for dynamic dispatch, and
-    which headers to include. It is determined by the configuration macros
-    `HWY_{BASELINE|BROKEN|DISABLED}_TARGETS[_ONLY]`.
+*   `HWY_STATIC_TARGET` is the best enabled baseline `HWY_Target`, and matches
+    `HWY_TARGET` in static dispatch mode. This is useful even in dynamic
+    dispatch mode for deducing and printing the compiler flags.
 
-*   `HWY_STATIC_TARGET` is the best non-disabled/broken baseline `HWY_Target`,
-    and matches `HWY_TARGET` in static dispatch mode. This is useful even in
-    dynamic dispatch mode for deducing and printing the compiler flags.
+*   `HWY_TARGETS` indicates which targets to generate for dynamic dispatch, and
+    which headers to include. It is determined by configuration macros and
+    always includes `HWY_STATIC_TARGET`.
+
+*   `HWY_SUPPORTED_TARGETS` is the set of targets available at runtime. Expands
+    to a literal if only a single target is enabled, or SupportedTargets().
 
 *   `HWY_TARGET`: which `HWY_Target` is currently being compiled. This is
     initially identical to `HWY_STATIC_TARGET` and remains so in static dispatch
@@ -511,67 +577,82 @@ Let `Target` denote an instruction set: `SCALAR/SSE4/AVX2/AVX3/PPC8/NEON/WASM`.
 *   `HWY_LANES(T)`: how many lanes of type `T` in a full vector (>= 1). Used by
     HWY_FULL/CAPPED. Note: cannot be used in #if because it uses sizeof.
 
-*   `HWY_CAPS` includes zero or more of the following:
-    - `HWY_CAP_GATHER`: whether the current target supports GatherIndex/Offset.
-    - `HWY_CAP_VARIABLE_SHIFT`: whether the current target supports variable
-      shifts, i.e. per-lane shift amounts (v1 << v2).
-    - `HWY_CAP_INT64`: whether the current target supports 64-bit integers.
-    - `HWY_CAP_CMP64`: whether the current target supports 64-bit signed
-      comparisons.
-    - `HWY_CAP_DOUBLE`: whether the current target supports double-precision
-      vectors.
-    - `HWY_CAP_GE256`: the current target supports vectors of >= 256 bits.
-    - `HWY_CAP_GE512`: the current target supports vectors of >= 512 bits.
-
 *   `HWY_IDE` is 0 except when parsed by IDEs; adding it to conditions such as
     `#if HWY_TARGET != HWY_SCALAR || HWY_IDE` avoids code appearing greyed out.
 
+The following signal capabilities and expand to 1 or 0.
+*   `HWY_CAP_GATHER`: whether the current target supports GatherIndex/Offset.
+*   `HWY_CAP_VARIABLE_SHIFT`: whether the current target supports variable
+    shifts, i.e. per-lane shift amounts (v1 << v2).
+*   `HWY_CAP_INT64`: whether the current target supports 64-bit integers.
+*   `HWY_CAP_CMP64`: whether the current target supports 64-bit signed
+    comparisons.
+*   `HWY_CAP_DOUBLE`: whether the current target supports double-precision
+    vectors.
+*   `HWY_CAP_GE256`: the current target supports vectors of >= 256 bits.
+*   `HWY_CAP_GE512`: the current target supports vectors of >= 512 bits.
+
+## Detecting supported targets
+
+`SupportedTargets()` returns a cached (initialized on-demand) bitfield of the
+targets supported on the current CPU, detected using CPUID on x86 or equivalent.
+This may include targets that are not in `HWY_TARGETS`, and vice versa. If
+there is no overlap the binary will likely crash. This can only happen if:
+
+*   the specified baseline is not supported by the current CPU, which
+    contradicts the definition of baseline, so the configuration is invalid; or
+*   the baseline does not include the enabled/attainable target(s), which are
+    also not supported by the current CPU, and baseline targets (in particular
+    `HWY_SCALAR`) were explicitly disabled.
+
 ## Advanced configuration macros
 
+The following macros govern which targets to generate. Unless specified
+otherwise, they may be defined per translation unit, e.g. to disable >128 bit
+vectors in modules that do not benefit from them (if bandwidth-limited or only
+called occasionally). This is safe because `HWY_TARGETS` always includes at
+least one baseline target which `HWY_EXPORT` can use.
+
 *   `HWY_DISABLE_CACHE_CONTROL` makes the cache-control functions no-ops.
-*   `HWY_DISABLE_BMI2_FMA` prevents emitting BMI/BMI2/FMA instructions.
+*   `HWY_DISABLE_BMI2_FMA` prevents emitting BMI/BMI2/FMA instructions. This
+    allows using AVX2 in VMs that do not support the other instructions, but
+    only if defined for all translation units.
 
 The following `*_TARGETS` are zero or more `HWY_Target` bits and can be defined
-as an expression, e.g. `#define HWY_DISABLED_TARGETS (HWY_SSE4 | HWY_AVX3)`.
+as an expression, e.g. `-DHWY_DISABLED_TARGETS=(HWY_SSE4|HWY_AVX3)`.
 
-*   `HWY_BROKEN_TARGETS` are excluded from `HWY_BASELINE_TARGETS` and
-    `HWY_TARGETS`. If undefined, defaults to a blacklist of known compiler bugs.
+*   `HWY_BROKEN_TARGETS` defaults to a blacklist of known compiler bugs.
     Defining to 0 disables the blacklist.
 
-*   `HWY_DISABLED_TARGETS` are excluded from `HWY_BASELINE_TARGETS` and
-    `HWY_TARGETS`. If undefined, defaults to zero. This allows explicitly
-    disabling targets without interfering with the blacklist.
+*   `HWY_DISABLED_TARGETS` defaults to zero. This allows explicitly disabling
+    targets without interfering with the blacklist.
 
-*   `HWY_BASELINE_TARGETS` minus any broken/disabled targets are interpreted as
-    the targets for which the compiler is allowed to generate instructions
-    (implying the target CPU would have to support them). We exclude these
-    targets except the best of them (which supersedes the others) from
-    `HWY_TARGETS` to reduce compile time and binary size. `HWY_STATIC_TARGET` is
-    the best of these targets.
+*   `HWY_BASELINE_TARGETS` defaults to the set whose predefined macros are
+    defined (i.e. those for which the corresponding flag, e.g. -mavx2, was
+    passed to the compiler). If specified, this should be the same for all
+    translation units, otherwise the safety check in SupportedTargets (that all
+    enabled baseline targets are supported) may be inaccurate.
 
-    If undefined, defaults to the set whose predefined macros are defined (i.e.
-    those for which the corresponding flag, e.g. -mavx2, was passed to the
-    compiler).
+Zero or one of the following macros may be defined to replace the default
+policy for selecting `HWY_TARGETS`:
 
-    To ensure all possible targets are included, which is useful for tests,
-    define this to `HWY_SCALAR` **globally** - doing so only for individual
-    translation units, e.g. the caller of a `Choose*()` function, may crash if
-    the called TU did not generate all the requested targets.
+*   `HWY_COMPILE_ONLY_SCALAR` selects only `HWY_SCALAR`, which disables SIMD.
+*   `HWY_COMPILE_ONLY_STATIC` selects only `HWY_STATIC_TARGET`, which
+    effectively disables dynamic dispatch.
+*   `HWY_COMPILE_ALL_ATTAINABLE` selects all attainable targets (i.e. enabled
+    and permitted by the compiler, independently of autovectorization), which
+    maximizes coverage in tests.
 
-*   `HWY_BASELINE_TARGET_ONLY` governs whether to add to `HWY_TARGETS` any
-    additional enabled targets. If defined, only `HWY_STATIC_TARGET` is
-    included, which effectively disables dynamic dispatch and reduces code size.
-    Otherwise, targets which are enabled and better than any baseline target are
-    also included, and thus generated if foreach_target.h is used.
+If none are defined, the default is to select all attainable targets except any
+non-best baseline (typically `HWY_SCALAR`), which reduces code size.
 
 ## Compiler support
 
 Clang and GCC require e.g. -mavx2 flags in order to use SIMD intrinsics.
 However, this enables AVX2 instructions in the entire translation unit, which
 may violate the one-definition rule and cause crashes. Instead, we use
-target-specific attribute annotations: any function using SIMD must be prefixed
-with `HWY_ATTR`. These are supported by GCC 4.9 or Clang 3.9 and unnecessary in
-MSVC.
+target-specific attributes introduced via #pragma. Function using SIMD must
+reside between `#include <begin/end_target-inl.h>`.
 
 Immediates (compile-time constants) are specified as template arguments to avoid
 constant-propagation issues with Clang on ARM.
@@ -583,3 +664,14 @@ constant-propagation issues with Clang on ARM.
 *   `LimitsMin/Max<T>()` return the smallest/largest value representable in T.
 *   `SizeTag<N>` is an empty struct, used to select overloaded functions
     appropriate for N bytes.
+
+## Memory allocation
+
+`AllocateAligned<T>(items)` returns a unique pointer to newly allocated memory
+for `items` elements of type `T`. The start address is aligned as required by
+`Load/Store`. Furthermore, successive allocations are not congruent modulo a
+platform-specific alignment. This helps prevent false dependencies or cache
+conflicts.
+`AllocateSingleAligned<T>()` is as above, but returns a pointer to a single
+POD item (typically a struct containing multiple members with `HWY_ALIGN`, or
+arrays whose lengths are known to be a multiple of the vector size).

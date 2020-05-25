@@ -15,36 +15,38 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/swizzle_test.cc"
 #include "hwy/foreach_target.h"
-#include "hwy/tests/test_util.h"
-
-namespace hwy {
 
 #include "hwy/tests/test_util-inl.h"
 
+#include <hwy/before_namespace-inl.h>
+namespace hwy {
 #include "hwy/begin_target-inl.h"
 
 struct TestShiftBytesT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     // Scalar does not define Shift*Bytes.
-#if HWY_TARGET != HWY_SCALAR
+#if HWY_TARGET != HWY_SCALAR || HWY_IDE
+    constexpr size_t kN = MaxLanes(d);
+    const Simd<uint8_t, kN * sizeof(T)> du8;
+    const size_t N8 = Lanes(du8);
+
     // Zero remains zero
     const auto v0 = Zero(d);
     HWY_ASSERT_VEC_EQ(d, v0, ShiftLeftBytes<1>(v0));
     HWY_ASSERT_VEC_EQ(d, v0, ShiftRightBytes<1>(v0));
 
     // Zero after shifting out the high/low byte
-    const Desc<uint8_t, d.N * sizeof(T)> du8;
-    HWY_ALIGN uint8_t bytes[du8.N] = {0};
-    bytes[du8.N - 1] = 0x7F;
+    HWY_ALIGN uint8_t bytes[MaxLanes(du8)] = {0};
+    bytes[N8 - 1] = 0x7F;
     const auto vhi = BitCast(d, Load(du8, bytes));
-    bytes[du8.N - 1] = 0;
+    bytes[N8 - 1] = 0;
     bytes[0] = 0x7F;
     const auto vlo = BitCast(d, Load(du8, bytes));
     HWY_ASSERT(AllTrue(ShiftLeftBytes<1>(vhi) == v0));
     HWY_ASSERT(AllTrue(ShiftRightBytes<1>(vlo) == v0));
 
-    HWY_ALIGN T in[d.N];
+    HWY_ALIGN T in[kN];
     const uint8_t* in_bytes = reinterpret_cast<const uint8_t*>(in);
     const auto v = BitCast(d, Iota(du8, 1));
     Store(v, d, in);
@@ -52,32 +54,31 @@ struct TestShiftBytesT {
     // Shifting by one lane is the same as shifting #bytes
     HWY_ASSERT_VEC_EQ(d, ShiftLeftLanes<1>(v), ShiftLeftBytes<sizeof(T)>(v));
     HWY_ASSERT_VEC_EQ(d, ShiftRightLanes<1>(v), ShiftRightBytes<sizeof(T)>(v));
-    // Two lanes, we can only try to shift lanes if there are at least two
-    // lanes.
-    if (d.N > 2) {
+    // We can only try to shift lanes if there are at least two lanes.
+    if (kN > 2) {
       // If there are only two lanes we just define the one lane version to
       // avoid running into static_asserts.
-      const size_t shift_bytes = d.N > 2 ? 2 * sizeof(T) : sizeof(T);
-      const size_t shift_lanes = d.N > 2 ? 2 : 1;
-      HWY_ASSERT_VEC_EQ(d, ShiftLeftLanes<shift_lanes>(v),
-                        ShiftLeftBytes<shift_bytes>(v));
-      HWY_ASSERT_VEC_EQ(d, ShiftRightLanes<shift_lanes>(v),
-                        ShiftRightBytes<shift_bytes>(v));
+      constexpr size_t kShiftBytes = kN > 2 ? 2 * sizeof(T) : sizeof(T);
+      constexpr size_t kShiftLanes = kN > 2 ? 2 : 1;
+      HWY_ASSERT_VEC_EQ(d, ShiftLeftLanes<kShiftLanes>(v),
+                        ShiftLeftBytes<kShiftBytes>(v));
+      HWY_ASSERT_VEC_EQ(d, ShiftRightLanes<kShiftLanes>(v),
+                        ShiftRightBytes<kShiftBytes>(v));
     }
 
-    HWY_ALIGN T shifted[d.N];
+    HWY_ALIGN T shifted[kN];
     const uint8_t* shifted_bytes = reinterpret_cast<const uint8_t*>(shifted);
 
-    const size_t kBlockSize = HWY_MIN(du8.N, 16);
+    const size_t kBlockSize = HWY_MIN(N8, 16);
     Store(ShiftLeftBytes<1>(v), d, shifted);
-    for (size_t block = 0; block < du8.N; block += kBlockSize) {
+    for (size_t block = 0; block < N8; block += kBlockSize) {
       HWY_ASSERT_EQ(uint8_t(0), shifted_bytes[block]);
       HWY_ASSERT(BytesEqual(in_bytes + block, shifted_bytes + block + 1,
                             kBlockSize - 1));
     }
 
     Store(ShiftRightBytes<1>(v), d, shifted);
-    for (size_t block = 0; block < du8.N; block += kBlockSize) {
+    for (size_t block = 0; block < N8; block += kBlockSize) {
       HWY_ASSERT_EQ(uint8_t(0), shifted_bytes[block + kBlockSize - 1]);
       HWY_ASSERT(BytesEqual(in_bytes + block + 1, shifted_bytes + block,
                             kBlockSize - 1));
@@ -88,25 +89,27 @@ struct TestShiftBytesT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestShiftBytes() {
+HWY_NOINLINE void TestShiftBytes() {
   ForIntegerTypes(ForGE128Vectors<TestShiftBytesT>());
 }
 
 template <typename D, int kLane>
 struct TestBroadcastR {
-  HWY_NOINLINE HWY_ATTR void operator()() const {
+  HWY_NOINLINE void operator()() const {
     using T = typename D::T;
     const D d;
-    HWY_ALIGN T in_lanes[d.N] = {};
-    constexpr size_t kBlockN = HWY_MIN(d.N * sizeof(T), 16) / sizeof(T);
+    constexpr size_t kN = MaxLanes(d);
+    const size_t N = Lanes(d);
+    HWY_ALIGN T in_lanes[kN] = {};
+    constexpr size_t kBlockN = HWY_MIN(kN * sizeof(T), 16) / sizeof(T);
     // Need to set within each 128-bit block
-    for (size_t block = 0; block < d.N; block += kBlockN) {
+    for (size_t block = 0; block < N; block += kBlockN) {
       in_lanes[block + kLane] = static_cast<T>(block + 1);
     }
     const auto in = Load(d, in_lanes);
-    HWY_ALIGN T out_lanes[d.N];
+    HWY_ALIGN T out_lanes[kN];
     Store(Broadcast<kLane>(in), d, out_lanes);
-    for (size_t block = 0; block < d.N; block += kBlockN) {
+    for (size_t block = 0; block < N; block += kBlockN) {
       for (size_t i = 0; i < kBlockN; ++i) {
         HWY_ASSERT_EQ(T(block + 1), out_lanes[block + i]);
       }
@@ -123,24 +126,24 @@ struct TestBroadcastR<D, -1> {
 
 struct TestBroadcastT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-    TestBroadcastR<D, HWY_MIN(d.N, 16 / sizeof(T)) - 1>()();
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    TestBroadcastR<D, HWY_MIN(MaxLanes(d), 16 / sizeof(T)) - 1>()();
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestBroadcast() {
+HWY_NOINLINE void TestBroadcast() {
   const ForFullVectors<TestBroadcastT> test;
   // No u8.
   test(uint16_t());
   test(uint32_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   test(uint64_t());
 #endif
 
   // No i8.
   test(int16_t());
   test(int32_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   test(int64_t());
 #endif
 
@@ -149,17 +152,18 @@ HWY_NOINLINE HWY_ATTR void TestBroadcast() {
 
 struct TestPermuteT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-#if HWY_CAPS & HWY_CAP_GE256
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+#if HWY_CAP_GE256
     {
+      const int32_t N = Lanes(d);
       // Too many permutations to test exhaustively; choose one with repeated
       // and cross-block indices and ensure indices do not exceed #lanes.
       HWY_ALIGN int32_t idx[kTestMaxVectorSize / sizeof(int32_t)] = {
-          1,        3,        2,        2,        8 % d.N, 1,       7,       6,
-          15 % d.N, 14 % d.N, 14 % d.N, 15 % d.N, 4,       9 % d.N, 8 % d.N, 5};
+          1,      3,      2,      2,      8 % N, 1,     7,     6,
+          15 % N, 14 % N, 14 % N, 15 % N, 4,     9 % N, 8 % N, 5};
       const auto v = Iota(d, 1);
-      HWY_ALIGN T expected_lanes[d.N];
-      for (size_t i = 0; i < d.N; ++i) {
+      HWY_ALIGN T expected_lanes[MaxLanes(d)];
+      for (int32_t i = 0; i < N; ++i) {
         expected_lanes[i] = idx[i] + 1;  // == v[idx[i]]
       }
 
@@ -171,11 +175,11 @@ struct TestPermuteT {
     (void)d;
 #else  // 128-bit
     // Test all possible permutations.
-    HWY_ALIGN int32_t idx[d.N];
+    HWY_ALIGN int32_t idx[MaxLanes(d)];
     const auto v = Iota(d, 1);
-    HWY_ALIGN T expected_lanes[d.N];
+    HWY_ALIGN T expected_lanes[MaxLanes(d)];
 
-    const int32_t N = static_cast<int32_t>(d.N);
+    const int32_t N = static_cast<int32_t>(Lanes(d));
     for (int32_t i0 = 0; i0 < N; ++i0) {
       idx[0] = i0;
       for (int32_t i1 = 0; i1 < N; ++i1) {
@@ -185,7 +189,7 @@ struct TestPermuteT {
           for (int32_t i3 = 0; i3 < N; ++i3) {
             idx[3] = i3;
 
-            for (size_t i = 0; i < d.N; ++i) {
+            for (size_t i = 0; i < static_cast<size_t>(N); ++i) {
               expected_lanes[i] = idx[i] + 1;  // == v[idx[i]]
             }
 
@@ -200,7 +204,7 @@ struct TestPermuteT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestPermute() {
+HWY_NOINLINE void TestPermute() {
   const ForFullVectors<TestPermuteT> test;
   test(uint32_t());
   test(int32_t());
@@ -209,23 +213,24 @@ HWY_NOINLINE HWY_ATTR void TestPermute() {
 
 struct TestInterleaveT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-    HWY_ALIGN T even_lanes[d.N];
-    HWY_ALIGN T odd_lanes[d.N];
-    for (size_t i = 0; i < d.N; ++i) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    constexpr size_t kN = MaxLanes(d);
+    HWY_ALIGN T even_lanes[kN];
+    HWY_ALIGN T odd_lanes[kN];
+    for (size_t i = 0; i < Lanes(d); ++i) {
       even_lanes[i] = static_cast<T>(2 * i + 0);
       odd_lanes[i] = static_cast<T>(2 * i + 1);
     }
     const auto even = Load(d, even_lanes);
     const auto odd = Load(d, odd_lanes);
 
-    HWY_ALIGN T lo_lanes[d.N];
-    HWY_ALIGN T hi_lanes[d.N];
+    HWY_ALIGN T lo_lanes[kN];
+    HWY_ALIGN T hi_lanes[kN];
     Store(InterleaveLower(even, odd), d, lo_lanes);
     Store(InterleaveUpper(even, odd), d, hi_lanes);
 
     constexpr size_t kBlockN = 16 / sizeof(T);
-    for (size_t i = 0; i < d.N; ++i) {
+    for (size_t i = 0; i < Lanes(d); ++i) {
       const size_t block = i / kBlockN;
       const size_t lo = (i % kBlockN) + block * 2 * kBlockN;
       HWY_ASSERT_EQ(T(lo), lo_lanes[i]);
@@ -234,43 +239,43 @@ struct TestInterleaveT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestInterleave() {
+HWY_NOINLINE void TestInterleave() {
   // Not supported by HWY_SCALAR: Interleave(f32, f32) would return f32x2.
   ForAllTypes(ForGE128Vectors<TestInterleaveT>());
 }
 
 template <typename T>
 struct MakeWideSigned {
-  using type = typename MakeSignedT<sizeof(T) * 2>::type;
+  using type = typename TypesOfSize<2 * sizeof(T)>::Signed;
 };
 
 template <typename T>
 struct MakeWideUnsigned {
-  using type = typename MakeUnsignedT<sizeof(T) * 2>::type;
+  using type = typename TypesOfSize<2 * sizeof(T)>::Unsigned;
 };
 
 template <template <class> class MakeWide>
 struct TestZipLowerT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     using WideT = typename MakeWide<T>::type;
     static_assert(sizeof(T) * 2 == sizeof(WideT), "Must be double-width");
     static_assert(IsSigned<T>() == IsSigned<WideT>(), "Must have same sign");
-    const Desc<WideT, (d.N + 1) / 2> dw;
-    HWY_ALIGN T even_lanes[d.N];
-    HWY_ALIGN T odd_lanes[d.N];
-    for (size_t i = 0; i < d.N; ++i) {
+    const Simd<WideT, (MaxLanes(d) + 1) / 2> dw;
+    HWY_ALIGN T even_lanes[MaxLanes(d)];
+    HWY_ALIGN T odd_lanes[MaxLanes(d)];
+    for (size_t i = 0; i < Lanes(d); ++i) {
       even_lanes[i] = static_cast<T>(2 * i + 0);
       odd_lanes[i] = static_cast<T>(2 * i + 1);
     }
     const auto even = Load(d, even_lanes);
     const auto odd = Load(d, odd_lanes);
 
-    HWY_ALIGN WideT lo_lanes[dw.N];
+    HWY_ALIGN WideT lo_lanes[MaxLanes(dw)];
     Store(ZipLower(even, odd), dw, lo_lanes);
 
     constexpr WideT kBlockN = static_cast<WideT>(16 / sizeof(WideT));
-    for (size_t i = 0; i < dw.N; ++i) {
+    for (size_t i = 0; i < Lanes(dw); ++i) {
       const size_t block = i / kBlockN;
       // Value of least-significant lane in lo-vector.
       const WideT lo =
@@ -286,25 +291,26 @@ struct TestZipLowerT {
 template <template <class> class MakeWide>
 struct TestZipUpperT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     using WideT = typename MakeWide<T>::type;
     static_assert(sizeof(T) * 2 == sizeof(WideT), "Must be double-width");
     static_assert(IsSigned<T>() == IsSigned<WideT>(), "Must have same sign");
-    const Desc<WideT, (d.N + 1) / 2> dw;
-    HWY_ALIGN T even_lanes[d.N];
-    HWY_ALIGN T odd_lanes[d.N];
-    for (size_t i = 0; i < d.N; ++i) {
+    constexpr size_t kN = MaxLanes(d);
+    HWY_ALIGN T even_lanes[kN];
+    HWY_ALIGN T odd_lanes[kN];
+    for (size_t i = 0; i < Lanes(d); ++i) {
       even_lanes[i] = static_cast<T>(2 * i + 0);
       odd_lanes[i] = static_cast<T>(2 * i + 1);
     }
     const auto even = Load(d, even_lanes);
     const auto odd = Load(d, odd_lanes);
 
-    HWY_ALIGN WideT hi_lanes[dw.N];
+    const Simd<WideT, (kN + 1) / 2> dw;
+    HWY_ALIGN WideT hi_lanes[MaxLanes(dw)];
     Store(ZipUpper(even, odd), dw, hi_lanes);
 
     constexpr WideT kBlockN = static_cast<WideT>(16 / sizeof(WideT));
-    for (size_t i = 0; i < dw.N; ++i) {
+    for (size_t i = 0; i < Lanes(dw); ++i) {
       const size_t block = i / kBlockN;
       const WideT lo =
           static_cast<WideT>(2 * (i % kBlockN) + 4 * block * kBlockN);
@@ -317,32 +323,32 @@ struct TestZipUpperT {
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestZip() {
+HWY_NOINLINE void TestZip() {
   const ForPartialVectors<TestZipLowerT<MakeWideUnsigned>, 2> lower_unsigned;
   lower_unsigned(uint8_t());
   lower_unsigned(uint16_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   lower_unsigned(uint32_t());  // generates u64
 #endif
 
   const ForPartialVectors<TestZipLowerT<MakeWideSigned>, 2> lower_signed;
   lower_signed(int8_t());
   lower_signed(int16_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   lower_signed(int32_t());  // generates i64
 #endif
 
   const ForGE128Vectors<TestZipUpperT<MakeWideUnsigned>> upper_unsigned;
   upper_unsigned(uint8_t());
   upper_unsigned(uint16_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   upper_unsigned(uint32_t());  // generates u64
 #endif
 
   const ForGE128Vectors<TestZipUpperT<MakeWideSigned>> upper_signed;
   upper_signed(int8_t());
   upper_signed(int16_t());
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   upper_signed(int32_t());  // generates i64
 #endif
 
@@ -351,10 +357,10 @@ HWY_NOINLINE HWY_ATTR void TestZip() {
 
 struct TestShuffleT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     RandomState rng{1234};
-    const Desc<uint8_t, d.N * sizeof(T)> du8;
-    HWY_ALIGN uint8_t in_bytes[du8.N];
+    const Simd<uint8_t, MaxLanes(d) * sizeof(T)> du8;
+    HWY_ALIGN uint8_t in_bytes[MaxLanes(du8)];
     for (uint8_t& in_byte : in_bytes) {
       in_byte = Random32(&rng) & 0xFF;
     }
@@ -366,21 +372,21 @@ struct TestShuffleT {
         11, 10, 3, 4, 5,  8,  7,  6,  14, 13, 12, 15, 2,  1,  2,  0,
         4,  3,  2, 2, 5,  6,  7,  7,  15, 15, 15, 15, 15, 15, 0,  1};
     const auto indices = Load(du8, index_bytes);
-    HWY_ALIGN T out_lanes[d.N];
+    HWY_ALIGN T out_lanes[MaxLanes(d)];
     Store(TableLookupBytes(in, indices), d, out_lanes);
     const uint8_t* out_bytes = reinterpret_cast<const uint8_t*>(out_lanes);
 
-    for (size_t block = 0; block + 16 <= du8.N; block += 16) {
+    for (size_t block = 0; block + 16 <= Lanes(du8); block += 16) {
       for (size_t i = 0; i < 16; ++i) {
         const uint8_t index = index_bytes[block + i];
-        const uint8_t expected = in_bytes[(block + index) % du8.N];
+        const uint8_t expected = in_bytes[(block + index) % MaxLanes(du8)];
         HWY_ASSERT_EQ(expected, out_bytes[block + i]);
       }
     }
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestShuffle() {
+HWY_NOINLINE void TestShuffle() {
   // Not supported by HWY_SCALAR (its vector size is always less than 16 bytes)
   ForIntegerTypes(ForGE128Vectors<TestShuffleT>());
 }
@@ -388,7 +394,7 @@ HWY_NOINLINE HWY_ATTR void TestShuffle() {
 class TestSpecialShuffle32 {
  public:
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v = Iota(d, 0);
 
 #define VERIFY_LANES_32(d, v, i3, i2, i1, i0) \
@@ -405,19 +411,19 @@ class TestSpecialShuffle32 {
 
  private:
   template <class D, class V>
-  HWY_NOINLINE HWY_ATTR void VerifyLanes32(D d, V v, const int i3, const int i2,
-                                           const int i1, const int i0,
-                                           const char* filename,
-                                           const int line) {
+  HWY_NOINLINE void VerifyLanes32(D d, V v, const int i3, const int i2,
+                                  const int i1, const int i0,
+                                  const char* filename, const int line) {
     using T = typename D::T;
-    HWY_ALIGN T lanes[d.N];
+    HWY_ALIGN T lanes[MaxLanes(d)];
     Store(v, d, lanes);
+    const std::string name = TypeName(lanes[0], Lanes(d));
     constexpr size_t kBlockN = 16 / sizeof(T);
-    for (int block = 0; block < static_cast<int>(d.N); block += kBlockN) {
-      AssertEqual(T(block + i3), lanes[block + 3], filename, line);
-      AssertEqual(T(block + i2), lanes[block + 2], filename, line);
-      AssertEqual(T(block + i1), lanes[block + 1], filename, line);
-      AssertEqual(T(block + i0), lanes[block + 0], filename, line);
+    for (int block = 0; block < static_cast<int>(Lanes(d)); block += kBlockN) {
+      AssertEqual(T(block + i3), lanes[block + 3], name, filename, line);
+      AssertEqual(T(block + i2), lanes[block + 2], name, filename, line);
+      AssertEqual(T(block + i1), lanes[block + 1], name, filename, line);
+      AssertEqual(T(block + i0), lanes[block + 0], name, filename, line);
     }
   }
 };
@@ -425,40 +431,40 @@ class TestSpecialShuffle32 {
 class TestSpecialShuffle64 {
  public:
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     const auto v = Iota(d, 0);
     VerifyLanes64(d, Shuffle01(v), 0, 1, __FILE__, __LINE__);
   }
 
  private:
   template <class D, class V>
-  HWY_NOINLINE HWY_ATTR void VerifyLanes64(D d, V v, const int i1, const int i0,
-                                           const char* filename,
-                                           const int line) {
+  HWY_NOINLINE void VerifyLanes64(D d, V v, const int i1, const int i0,
+                                  const char* filename, const int line) {
     using T = typename D::T;
-    HWY_ALIGN T lanes[d.N];
+    HWY_ALIGN T lanes[MaxLanes(d)];
     Store(v, d, lanes);
+    const std::string name = TypeName(lanes[0], Lanes(d));
     constexpr size_t kBlockN = 16 / sizeof(T);
-    for (int block = 0; block < static_cast<int>(d.N); block += kBlockN) {
-      AssertEqual(T(block + i1), lanes[block + 1], filename, line);
-      AssertEqual(T(block + i0), lanes[block + 0], filename, line);
+    for (int block = 0; block < static_cast<int>(Lanes(d)); block += kBlockN) {
+      AssertEqual(T(block + i1), lanes[block + 1], name, filename, line);
+      AssertEqual(T(block + i0), lanes[block + 0], name, filename, line);
     }
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestSpecialShuffles() {
+HWY_NOINLINE void TestSpecialShuffles() {
   const ForGE128Vectors<TestSpecialShuffle32> test32;
   test32(uint32_t());
   test32(int32_t());
   test32(float());
 
-#if HWY_CAPS & HWY_CAP_INT64
+#if HWY_CAP_INT64
   const ForGE128Vectors<TestSpecialShuffle64> test64;
   test64(uint64_t());
   test64(int64_t());
 #endif
 
-#if HWY_CAPS & HWY_CAP_DOUBLE
+#if HWY_CAP_DOUBLE
   const ForGE128Vectors<TestSpecialShuffle64> test_d;
   test_d(double());
 #endif
@@ -467,24 +473,25 @@ HWY_NOINLINE HWY_ATTR void TestSpecialShuffles() {
 template <int kBytes>
 struct TestCombineShiftRightR {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T t, D d) {
+  HWY_NOINLINE void operator()(T t, D d) {
 // Scalar does not define CombineShiftRightBytes.
-#if HWY_TARGET != HWY_SCALAR
-    const Desc<uint8_t, d.N * sizeof(T)> d8;
+#if HWY_TARGET != HWY_SCALAR || HWY_IDE
+    const Simd<uint8_t, MaxLanes(d) * sizeof(T)> d8;
+    const size_t N8 = Lanes(d8);
     const auto lo = BitCast(d, Iota(d8, 1));
-    const auto hi = BitCast(d, Iota(d8, 1 + d8.N));
+    const auto hi = BitCast(d, Iota(d8, 1 + N8));
 
-    HWY_ALIGN T lanes[d.N];
+    HWY_ALIGN T lanes[MaxLanes(d)];
     Store(CombineShiftRightBytes<kBytes>(hi, lo), d, lanes);
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(lanes);
 
     const size_t kBlockSize = 16;
-    for (size_t i = 0; i < d8.N; ++i) {
+    for (size_t i = 0; i < N8; ++i) {
       const size_t block = i / kBlockSize;
       const size_t lane = i % kBlockSize;
       const size_t first_lo = block * kBlockSize;
       const size_t idx = lane + kBytes;
-      const size_t offset = (idx < kBlockSize) ? 0 : d8.N - kBlockSize;
+      const size_t offset = (idx < kBlockSize) ? 0 : N8 - kBlockSize;
       const bool at_end = idx >= 2 * kBlockSize;
       const uint8_t expected =
           at_end ? 0 : static_cast<uint8_t>(first_lo + idx + 1 + offset);
@@ -502,128 +509,132 @@ struct TestCombineShiftRightR {
 template <>
 struct TestCombineShiftRightR<0> {
   template <class T, class D>
-  HWY_ATTR void operator()(T /*unused*/, D /*unused*/) {}
+  void operator()(T /*unused*/, D /*unused*/) {}
 };
 
 struct TestCombineShiftRightT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T t, D d) {
+  HWY_NOINLINE void operator()(T t, D d) {
     TestCombineShiftRightR<15>()(t, d);
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestCombineShiftRight() {
+HWY_NOINLINE void TestCombineShiftRight() {
   ForIntegerTypes(ForGE128Vectors<TestCombineShiftRightT>());
 }
 
 struct TestConcatHalvesT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
     // Construct inputs such that interleaved halves == iota.
     const auto expected = Iota(d, 1);
 
-    HWY_ALIGN T lo[d.N];
-    HWY_ALIGN T hi[d.N];
+    HWY_ALIGN T lo[MaxLanes(d)];
+    HWY_ALIGN T hi[MaxLanes(d)];
+    const size_t N = Lanes(d);
     size_t i;
-    for (i = 0; i < d.N / 2; ++i) {
+    for (i = 0; i < N / 2; ++i) {
       lo[i] = static_cast<T>(1 + i);
-      hi[i] = static_cast<T>(lo[i] + T(d.N) / 2);
+      hi[i] = static_cast<T>(lo[i] + T(N) / 2);
     }
-    for (; i < d.N; ++i) {
+    for (; i < N; ++i) {
       lo[i] = hi[i] = 0;
     }
     HWY_ASSERT_VEC_EQ(d, expected, ConcatLowerLower(Load(d, hi), Load(d, lo)));
 
     // Same for high blocks.
-    for (i = 0; i < d.N / 2; ++i) {
+    for (i = 0; i < N / 2; ++i) {
       lo[i] = hi[i] = 0;
     }
-    for (; i < d.N; ++i) {
-      lo[i] = static_cast<T>(1 + i - d.N / 2);
-      hi[i] = static_cast<T>(lo[i] + T(d.N) / 2);
+    for (; i < N; ++i) {
+      lo[i] = static_cast<T>(1 + i - N / 2);
+      hi[i] = static_cast<T>(lo[i] + T(N) / 2);
     }
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestConcatHalves() {
+HWY_NOINLINE void TestConcatHalves() {
   ForAllTypes(ForGE128Vectors<TestConcatHalvesT>());
 }
 
 struct TestConcatLowerUpperT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
-    // Middle part of Iota(1) == Iota(1 + d.N / 2).
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const size_t N = Lanes(d);
+    // Middle part of Iota(1) == Iota(1 + N / 2).
     const auto lo = Iota(d, 1);
-    const auto hi = Iota(d, 1 + d.N);
-    HWY_ASSERT_VEC_EQ(d, Iota(d, 1 + d.N / 2), ConcatLowerUpper(hi, lo));
+    const auto hi = Iota(d, 1 + N);
+    HWY_ASSERT_VEC_EQ(d, Iota(d, 1 + N / 2), ConcatLowerUpper(hi, lo));
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestConcatLowerUpper() {
+HWY_NOINLINE void TestConcatLowerUpper() {
   ForAllTypes(ForGE128Vectors<TestConcatLowerUpperT>());
 }
 
 struct TestConcatUpperLowerT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const size_t N = Lanes(d);
     const auto lo = Iota(d, 1);
-    const auto hi = Iota(d, 1 + d.N);
-    T expected[d.N];
+    const auto hi = Iota(d, 1 + N);
+    T expected[MaxLanes(d)];
     size_t i = 0;
-    for (; i < d.N / 2; ++i) {
+    for (; i < N / 2; ++i) {
       expected[i] = static_cast<T>(1 + i);
     }
-    for (; i < d.N; ++i) {
-      expected[i] = static_cast<T>(1 + i + d.N);
+    for (; i < N; ++i) {
+      expected[i] = static_cast<T>(1 + i + N);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ConcatUpperLower(hi, lo));
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestConcatUpperLower() {
+HWY_NOINLINE void TestConcatUpperLower() {
   ForAllTypes(ForGE128Vectors<TestConcatUpperLowerT>());
 }
 
 struct TestOddEvenT {
   template <class T, class D>
-  HWY_NOINLINE HWY_ATTR void operator()(T /*unused*/, D d) {
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    const size_t N = Lanes(d);
     const auto even = Iota(d, 1);
-    const auto odd = Iota(d, 1 + d.N);
-    T expected[d.N];
-    for (size_t i = 0; i < d.N; ++i) {
-      expected[i] = static_cast<T>(1 + i + ((i & 1) ? d.N : 0));
+    const auto odd = Iota(d, 1 + N);
+    T expected[MaxLanes(d)];
+    for (size_t i = 0; i < N; ++i) {
+      expected[i] = static_cast<T>(1 + i + ((i & 1) ? N : 0));
     }
     HWY_ASSERT_VEC_EQ(d, expected, OddEven(odd, even));
   }
 };
 
-HWY_NOINLINE HWY_ATTR void TestOddEven() {
+HWY_NOINLINE void TestOddEven() {
   ForAllTypes(ForGE128Vectors<TestOddEvenT>());
 }
 
-HWY_NOINLINE HWY_ATTR void TestSwizzle() {
-  TestShiftBytes();
-  TestBroadcast();
-  TestPermute();
-  TestInterleave();
-  TestZip();
-  TestShuffle();
-  TestSpecialShuffles();
-  TestCombineShiftRight();
-  TestConcatHalves();
-  TestConcatLowerUpper();
-  TestConcatUpperLower();
-  TestOddEven();
-}
-
 #include "hwy/end_target-inl.h"
+}  // namespace hwy
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
-HWY_EXPORT(TestSwizzle)
-#endif
+namespace hwy {
+
+class HwySwizzleTest : public hwy::TestWithParamTarget {};
+
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwySwizzleTest);
+
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShiftBytes)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestBroadcast)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestPermute)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestInterleave)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestZip)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShuffle)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestSpecialShuffles)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestCombineShiftRight)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatHalves)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatLowerUpper)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatUpperLower)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestOddEven)
 
 }  // namespace hwy
-
-#if HWY_ONCE
-TEST(HwySwizzleTest, Run) { hwy::RunTest(&hwy::ChooseTestSwizzle); }
 #endif

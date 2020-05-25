@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "jxl/enc_group.h"
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
+#include <hwy/foreach_target.h>
 
 #include <utility>
 
@@ -28,23 +31,18 @@
 #include "jxl/image.h"
 #include "jxl/quantizer.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/quantizer-inl.h"
 
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
-
 #include <hwy/begin_target-inl.h>
 
 // NOTE: caller takes care of extracting quant from rect of RawQuantField.
-HWY_ATTR void QuantizeBlockAC(const Quantizer& quantizer,
-                              const bool error_diffusion, size_t c,
-                              int32_t quant, float qm_multiplier,
-                              size_t quant_kind, size_t xsize, size_t ysize,
-                              const float* JXL_RESTRICT block_in,
-                              ac_qcoeff_t* JXL_RESTRICT block_out) {
+void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
+                     size_t c, int32_t quant, float qm_multiplier,
+                     size_t quant_kind, size_t xsize, size_t ysize,
+                     const float* JXL_RESTRICT block_in,
+                     ac_qcoeff_t* JXL_RESTRICT block_out) {
   PROFILER_FUNC;
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   const float qac = quantizer.Scale() * quant;
@@ -66,7 +64,7 @@ HWY_ATTR void QuantizeBlockAC(const Quantizer& quantizer,
     for (size_t y = 0; y < ysize * kBlockDim; y++) {
       size_t yfix = static_cast<size_t>(y >= ysize * kBlockDim / 2) * 2;
       const size_t off = y * kBlockDim * xsize;
-      for (size_t x = 0; x < xsize * kBlockDim; x += df.N) {
+      for (size_t x = 0; x < xsize * kBlockDim; x += Lanes(df)) {
         auto thr = Zero(df);
         if (xsize == 1) {
           HWY_ALIGN uint32_t kMask[kBlockDim] = {0,   0,   0,   0,
@@ -151,11 +149,13 @@ retry:
 }
 
 // NOTE: caller takes care of extracting quant from rect of RawQuantField.
-HWY_ATTR void QuantizeRoundtripYBlockAC(
-    const Quantizer& quantizer, const bool error_diffusion, int32_t quant,
-    size_t quant_kind, size_t xsize, size_t ysize,
-    const float* JXL_RESTRICT biases, const float* JXL_RESTRICT in,
-    ac_qcoeff_t* JXL_RESTRICT quantized, float* JXL_RESTRICT out) {
+void QuantizeRoundtripYBlockAC(const Quantizer& quantizer,
+                               const bool error_diffusion, int32_t quant,
+                               size_t quant_kind, size_t xsize, size_t ysize,
+                               const float* JXL_RESTRICT biases,
+                               const float* JXL_RESTRICT in,
+                               ac_qcoeff_t* JXL_RESTRICT quantized,
+                               float* JXL_RESTRICT out) {
   QuantizeBlockAC(quantizer, error_diffusion, 1, quant, 1.0f, quant_kind, xsize,
                   ysize, in, quantized);
 
@@ -165,7 +165,7 @@ HWY_ATTR void QuantizeRoundtripYBlockAC(
 
   HWY_CAPPED(float, kDCTBlockSize) df;
   const auto inv_qac = Set(df, quantizer.inv_quant_ac(quant));
-  for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += df.N) {
+  for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += Lanes(df)) {
     const auto quant = Load(df, quantized + k);
     const auto adj_quant = AdjustQuantBias(df, 1, quant, biases);
     const auto dequantm = Load(df, dequant_matrix + k);
@@ -173,9 +173,8 @@ HWY_ATTR void QuantizeRoundtripYBlockAC(
   }
 }
 
-HWY_ATTR void ComputeCoefficients(size_t group_idx,
-                                  PassesEncoderState* enc_state,
-                                  AuxOut* aux_out) {
+void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
+                         AuxOut* aux_out) {
   PROFILER_FUNC;
   const Rect block_group_rect = enc_state->shared.BlockGroupRect(group_idx);
   const Rect cmap_rect(
@@ -246,7 +245,7 @@ HWY_ATTR void ComputeCoefficients(size_t group_idx,
               coeffs[0][1] + offset, quantized + size, roundtrip_y);
 
           // Unapply color correlation
-          for (size_t k = 0; k < size; k += d.N) {
+          for (size_t k = 0; k < size; k += Lanes(d)) {
             const auto in_x = Load(d, coeffs[0][0] + offset + k);
             const auto in_y = Load(d, roundtrip_y + k);
             const auto in_b = Load(d, coeffs[0][2] + offset + k);
@@ -273,8 +272,11 @@ HWY_ATTR void ComputeCoefficients(size_t group_idx,
 }
 
 #include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
 
 #if HWY_ONCE
+namespace jxl {
 HWY_EXPORT(ComputeCoefficients)
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
@@ -301,6 +303,5 @@ Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
   return true;
 }
 
-#endif  // HWY_ONCE
-
 }  // namespace jxl
+#endif  // HWY_ONCE

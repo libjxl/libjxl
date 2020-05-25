@@ -49,6 +49,7 @@ set(TEST_FILES
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
   jxl/linalg_test.cc
+  jxl/modular_test.cc
   jxl/opsin_image_test.cc
   jxl/opsin_inverse_test.cc
   jxl/optimize_test.cc
@@ -99,8 +100,8 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     jpegxl_threads
     jpegxl_extras-static
     gmock
-    gtest
-    gtest_main
+    GTest::GTest
+    GTest::Main
   )
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES PREFIX "tests/")
@@ -113,11 +114,3 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 60)
   endif ()
 endforeach ()
-
-# googletest doesn't compile clean with clang-cl (-Wundef)
-if (WIN32 AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
-  set_target_properties(gtest PROPERTIES COMPILE_FLAGS "-Wno-error")
-  set_target_properties(gmock PROPERTIES COMPILE_FLAGS "-Wno-error")
-  set_target_properties(gtest_main PROPERTIES COMPILE_FLAGS "-Wno-error")
-  set_target_properties(gmock_main PROPERTIES COMPILE_FLAGS "-Wno-error")
-endif ()

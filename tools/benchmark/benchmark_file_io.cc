@@ -39,6 +39,11 @@
 #include <glob.h>
 #endif  // HAS_GLOB
 
+// There is no "user" in embedded filesystems.
+#ifndef GLOB_TILDE
+#define GLOB_TILDE 0
+#endif
+
 namespace jxl {
 
 const char kPathSeparator = '/';
