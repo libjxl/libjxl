@@ -238,7 +238,7 @@ struct CustomTransferFunction {
 // Compact encoding of data required to interpret and translate pixels to a
 // known color space. Stored in Metadata. Thread-compatible.
 struct ColorEncoding {
-  ColorEncoding();
+  ColorEncoding() { InitFields(); }
   static const char* Name() { return "ColorEncoding"; }
 
   // Returns ready-to-use color encodings (initialized on-demand).
@@ -321,7 +321,11 @@ struct ColorEncoding {
 
   template <class Visitor>
   bool VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
 
     visitor->Bool(false, &want_icc_);
 
@@ -422,6 +426,8 @@ struct ColorEncoding {
   RenderingIntent rendering_intent;
 
  private:
+  void InitFields();
+
   // Returns true if all fields have been initialized (possibly to kUnknown).
   // Returns false if the ICC profile is invalid or decoding it fails.
   // Defined in color_management.cc.

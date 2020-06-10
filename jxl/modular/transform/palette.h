@@ -24,16 +24,13 @@
 
 namespace jxl {
 
-static Status InvPalette(Image &input, const TransformParams &parameters,
+static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                          ThreadPool *pool) {
   if (input.nb_meta_channels < 1) {
     return JXL_FAILURE("Error: Palette transform without palette.");
   }
-  if (parameters.size() != 3) {
-    return JXL_FAILURE("Error: Palette transform with incorrect parameters.");
-  }
   int nb = input.channel[0].h;
-  uint32_t c0 = static_cast<uint32_t>(parameters[0] + 1);
+  uint32_t c0 = begin_c + 1;
   if (c0 >= input.channel.size()) {
     return JXL_FAILURE("Channel is out of range.");
   }
@@ -49,7 +46,7 @@ static Status InvPalette(Image &input, const TransformParams &parameters,
   int zero = 0;
   if (nb == 1) {
     int min, max;
-    input.channel[c0].compute_trivial(&min, &max);
+    input.channel[c0].compute_minmax(&min, &max);
     zero = -min;
   }
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
@@ -90,13 +87,10 @@ static Status InvPalette(Image &input, const TransformParams &parameters,
   return true;
 }
 
-static Status CheckPaletteParams(const Image &image,
-                                 const TransformParams &parameters) {
-  if (parameters.size() != 3) {
-    return JXL_FAILURE("Error: Palette transform with incorrect parameters.");
-  }
-  int c1 = parameters[0];
-  int c2 = parameters[1];
+static Status CheckPaletteParams(const Image &image, uint32_t begin_c,
+                                 uint32_t end_c) {
+  int c1 = begin_c;
+  int c2 = end_c;
   // The range is including c1 and c2, so c2 may not be num_channels.
   if (c1 < 0 || c1 > image.channel.size() || c2 < 0 ||
       c2 >= image.channel.size() || c2 < c1) {
@@ -106,16 +100,12 @@ static Status CheckPaletteParams(const Image &image,
   return true;
 }
 
-static Status MetaPalette(Image &input, const TransformParams &parameters) {
-  JXL_RETURN_IF_ERROR(CheckPaletteParams(input, parameters));
+static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
+                          uint32_t nb_colors) {
+  JXL_RETURN_IF_ERROR(CheckPaletteParams(input, begin_c, end_c));
 
-  uint32_t begin_c = parameters[0];
-  uint32_t end_c = parameters[1];
-  uint32_t nb = end_c - begin_c + 1;
-  int nb_colors = parameters[2];
-  if (nb_colors <= 0) {
-    return JXL_FAILURE("Invalid number of nb_colors");
-  }
+  JXL_ASSERT(nb_colors > 0);  // Guaranteed by bundle reading.
+  size_t nb = end_c - begin_c + 1;
   input.nb_meta_channels++;
   input.nb_channels -= nb - 1;
   input.channel.erase(input.channel.begin() + begin_c + 1,
@@ -126,16 +116,9 @@ static Status MetaPalette(Image &input, const TransformParams &parameters) {
   return true;
 }
 
-static Status FwdPalette(Image &input, TransformParams &parameters) {
-  JXL_RETURN_IF_ERROR(CheckPaletteParams(input, parameters));
-  uint32_t begin_c = parameters[0];
-  uint32_t end_c = parameters[1];
-  int &nb_colors = parameters[2];
-  bool ordered = true;
-  if (nb_colors < 0) {
-    nb_colors = -nb_colors;
-    ordered = false;
-  }
+static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
+                         uint32_t &nb_colors, bool ordered) {
+  JXL_RETURN_IF_ERROR(CheckPaletteParams(input, begin_c, end_c));
   uint32_t nb = end_c - begin_c + 1;
 
   size_t w = input.channel[begin_c].w;
@@ -172,7 +155,6 @@ static Status FwdPalette(Image &input, TransformParams &parameters) {
     }
   }
   nb_colors = candidate_palette.size();
-  if (nb_colors == 1) return false;  // don't need palette for this
   JXL_DEBUG_V(6, "Channels %i-%i can be represented using a %i-color palette.",
               begin_c, end_c, nb_colors);
 
@@ -184,7 +166,7 @@ static Status FwdPalette(Image &input, TransformParams &parameters) {
   int zero = 0;
   std::vector<pixel_type> lookup;
   int minval, maxval;
-  input.channel[begin_c].compute_trivial(&minval, &maxval);
+  input.channel[begin_c].compute_minmax(&minval, &maxval);
   if (nb == 1) {
     lookup.resize(maxval - minval + 1);
   }

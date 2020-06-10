@@ -30,15 +30,22 @@
 
 namespace jxl {
 
-struct LoopFilter {
-  LoopFilter();
+class LoopFilter {
+  void InitFields();
+
+ public:
+  LoopFilter() { InitFields(); }
   static const char* Name() { return "LoopFilter"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     // Must come before AllDefault.
 
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
 
     visitor->Bool(true, &gab);
     if (visitor->Conditional(gab)) {

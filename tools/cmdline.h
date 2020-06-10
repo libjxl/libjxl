@@ -54,14 +54,26 @@ class CommandLineParser {
     // Parses the option. The passed i points to the argument with the flag
     // that matches either the short or the long name.
     virtual bool Parse(int argc, const char* argv[], int* i) = 0;
+
+    // Returns whether the option is positional, and therefore will be shown
+    // in the first command line representation of the help output.
+    virtual bool positional() const = 0;
+
+    // Returns whether the option should be displayed as required in the help
+    // output. No effect on validation.
+    virtual bool required() const = 0;
   };
 
   // Add a positional argument. Returns the id of the added option or
   // kOptionError on error.
-  OptionId AddPositionalOption(const char* name, const char* help_text,
-                               const char** storage, int verbosity_level = 0) {
-    options_.emplace_back(
-        new CmdOptionPositional(name, help_text, storage, verbosity_level));
+  // The "required" flag indicates whether the parameter is mandatory or
+  // optional, but is only used for how it is displayed in the command line
+  // help.
+  OptionId AddPositionalOption(const char* name, bool required,
+                               const char* help_text, const char** storage,
+                               int verbosity_level = 0) {
+    options_.emplace_back(new CmdOptionPositional(name, help_text, storage,
+                                                  verbosity_level, required));
     return options_.size() - 1;
   }
 
@@ -113,11 +125,13 @@ class CommandLineParser {
   class CmdOptionPositional : public CmdOptionInterface {
    public:
     CmdOptionPositional(const char* name, const char* help_text,
-                        const char** storage, int verbosity_level)
+                        const char** storage, int verbosity_level,
+                        bool required)
         : name_(name),
           help_text_(help_text),
           storage_(storage),
-          verbosity_level_(verbosity_level) {}
+          verbosity_level_(verbosity_level),
+          required_(required) {}
 
     std::string help_flags() const override { return name_; }
     const char* help_text() const override { return help_text_; }
@@ -138,11 +152,16 @@ class CommandLineParser {
       return true;
     }
 
+    virtual bool positional() const override { return true; }
+
+    virtual bool required() const override { return required_; }
+
    private:
     const char* name_;
     const char* help_text_;
     const char** storage_;
     const int verbosity_level_;
+    const bool required_;
 
     bool matched_{false};
   };
@@ -230,6 +249,13 @@ class CommandLineParser {
       } else {
         return (*parser_.parser_no_value_)(storage_);
       }
+    }
+
+    virtual bool positional() const override { return false; }
+
+    virtual bool required() const override {
+      // Only used for help display of positional arguments.
+      return false;
     }
 
    private:

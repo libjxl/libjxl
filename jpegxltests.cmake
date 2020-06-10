@@ -40,6 +40,7 @@ set(TEST_FILES
   jxl/fields_test.cc
   jxl/gaborish_test.cc
   jxl/gamma_correct_test.cc
+  jxl/gauss_blur_test.cc
   jxl/gradient_test.cc
   jxl/iaca_test.cc
   jxl/icc_codec_test.cc
@@ -49,6 +50,7 @@ set(TEST_FILES
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
   jxl/linalg_test.cc
+  jxl/luminance_test.cc
   jxl/modular_test.cc
   jxl/opsin_image_test.cc
   jxl/opsin_inverse_test.cc

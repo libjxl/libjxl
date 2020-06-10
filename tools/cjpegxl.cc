@@ -35,7 +35,7 @@ namespace tools {
 void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline,
                                          CompressionMode mode) {
   // Positional arguments.
-  cmdline->AddPositionalOption("INPUT",
+  cmdline->AddPositionalOption("INPUT", /* required = */ true,
                                "the input can be PNG"
 #if JPEGXL_ENABLE_APNG
                                ", APNG"
@@ -51,8 +51,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline,
 #endif
                                ", PPM, PFM, or PGX",
                                &file_in);
-  cmdline->AddPositionalOption(
-      "OUTPUT", "the compressed output file (optional)", &file_out);
+  cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
+                               "the compressed output file (optional)",
+                               &file_out);
 
   // Flags.
   cmdline->AddOptionFlag('V', "version", "print version number and exit",

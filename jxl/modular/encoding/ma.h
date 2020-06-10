@@ -45,12 +45,11 @@ class Tree : public std::vector<PropertyDecisionNode> {};
 constexpr size_t kNumTreeContexts = 4;
 
 void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
-                  size_t base_ctx, std::vector<Token> *tokens,
-                  Tree *decoder_tree);
+                  std::vector<Token> *tokens, Tree *decoder_tree);
 
 Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                  const std::vector<uint8_t> &context_map, size_t base_ctx,
-                  Tree *tree, int max_property);
+                  const std::vector<uint8_t> &context_map, Tree *tree,
+                  int max_property);
 
 void ChooseAndQuantizeProperties(
     size_t max_properties, size_t max_property_values,

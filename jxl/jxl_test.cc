@@ -43,7 +43,7 @@
 #include "jxl/image_test_utils.h"
 #include "jxl/modular/options.h"
 #include "jxl/test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -126,10 +126,10 @@ TEST(JxlTest, RoundtripMarker) {
 
 TEST(JxlTest, RoundtripTinyFast) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(32, 32);
 
   CompressParams cparams;
@@ -144,8 +144,8 @@ TEST(JxlTest, RoundtripTinyFast) {
 
 TEST(JxlTest, RoundtripSmallD1) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
   DecompressParams dparams;
@@ -155,7 +155,7 @@ TEST(JxlTest, RoundtripSmallD1) {
 
   {
     CodecInOut io;
-    ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
     io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
     compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
@@ -170,7 +170,7 @@ TEST(JxlTest, RoundtripSmallD1) {
     // should be smaller.
     CodecInOut io_dim;
     io_dim.target_nits = 100;
-    ASSERT_TRUE(SetFromFile(pathname, &io_dim, pool));
+    ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_dim, pool));
     io_dim.ShrinkTo(io_dim.xsize() / 8, io_dim.ysize() / 8);
     EXPECT_LT(Roundtrip(&io_dim, cparams, dparams, pool, &io_out),
               compressed_size);
@@ -184,10 +184,10 @@ TEST(JxlTest, RoundtripSmallD1) {
 
 TEST(JxlTest, RoundtripOtherTransforms) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/64px/a2d1un_nkitzmiller_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/64px/a2d1un_nkitzmiller_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   CompressParams cparams;
   // Slow modes access linear image for adaptive quant search
@@ -213,10 +213,10 @@ TEST(JxlTest, RoundtripOtherTransforms) {
 
 TEST(JxlTest, RoundtripUnalignedD2) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 12, io.ysize() / 7);
 
   CompressParams cparams;
@@ -234,10 +234,10 @@ TEST(JxlTest, RoundtripUnalignedD2) {
 
 TEST(JxlTest, RoundtripMultiGroupNL) {
   ThreadPoolInternal pool(4);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);  // partial X, full Y group
 
   CompressParams cparams;
@@ -263,10 +263,10 @@ TEST(JxlTest, RoundtripMultiGroupNL) {
 
 TEST(JxlTest, RoundtripMultiGroup) {
   ThreadPoolInternal pool(4);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);  // partial X, full Y group
 
   CompressParams cparams;
@@ -290,10 +290,10 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
 TEST(JxlTest, RoundtripLargeFast) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -308,10 +308,10 @@ TEST(JxlTest, RoundtripLargeFast) {
 // Failing this may be a sign of race conditions or invalid memory accesses.
 TEST(JxlTest, RoundtripD2Consistent) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -343,10 +343,10 @@ TEST(JxlTest, RoundtripD2Consistent) {
 // Same as above, but for full image, testing multiple groups.
 TEST(JxlTest, RoundtripLargeConsistent) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -375,10 +375,10 @@ TEST(JxlTest, RoundtripLargeConsistent) {
 
 TEST(JxlTest, RoundtripSmallNL) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   CompressParams cparams;
@@ -396,10 +396,10 @@ TEST(JxlTest, RoundtripSmallNL) {
 
 TEST(JxlTest, RoundtripNoGaborishNoAR) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   CompressParams cparams;
   cparams.gaborish = Override::kOff;
@@ -416,10 +416,10 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
 
 TEST(JxlTest, RoundtripSmallNoGaborish) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   CompressParams cparams;
@@ -464,10 +464,10 @@ TEST(JxlTest, RoundtripSmallPatches) {
 
 TEST(JxlTest, RoundtripGrayscale) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   ASSERT_NE(io.xsize(), 0);
   io.ShrinkTo(128, 128);
   EXPECT_TRUE(io.Main().IsGray());
@@ -519,10 +519,10 @@ TEST(JxlTest, RoundtripGrayscale) {
 
 TEST(JxlTest, RoundtripAlpha) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   ASSERT_NE(io.xsize(), 0);
   ASSERT_TRUE(io.metadata.HasAlpha());
@@ -556,10 +556,10 @@ TEST(JxlTest, RoundtripAlpha) {
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   ASSERT_NE(io.xsize(), 0);
   ASSERT_TRUE(io.metadata.HasAlpha());
@@ -656,10 +656,10 @@ CompressParams CParamsForLossless() {
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams = CParamsForLossless();
   DecompressParams dparams;
@@ -685,10 +685,10 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
 
 TEST(JxlTest, RoundtripLossless8Alpha) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_alpha.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   EXPECT_EQ(8, io.metadata.alpha_bits);
   EXPECT_EQ(8, io.metadata.bits_per_sample);
   EXPECT_EQ(false, io.metadata.floating_point_sample);
@@ -810,10 +810,10 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
 
 TEST(JxlTest, RoundtripDots) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   ASSERT_NE(io.xsize(), 0);
 
@@ -841,10 +841,10 @@ TEST(JxlTest, RoundtripDots) {
 
 TEST(JxlTest, RoundtripLossless8Gray) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/cvo9xd_keong_macan_grayscale.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   CompressParams cparams = CParamsForLossless();
   DecompressParams dparams;
@@ -866,9 +866,9 @@ TEST(JxlTest, RoundtripLossless8Gray) {
 
 TEST(JxlTest, RoundtripAnimation) {
   ThreadPool* pool = nullptr;
-  const std::string pathname = GetTestDataPath("jxl/traffic_light.gif");
+  const PaddedBytes orig = ReadTestData("jxl/traffic_light.gif");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   ASSERT_EQ(4, io.frames.size());
 
   CompressParams cparams;
@@ -884,9 +884,9 @@ TEST(JxlTest, RoundtripAnimation) {
 
 TEST(JxlTest, RoundtripLosslessAnimation) {
   ThreadPool* pool = nullptr;
-  const std::string pathname = GetTestDataPath("jxl/traffic_light.gif");
+  const PaddedBytes orig = ReadTestData("jxl/traffic_light.gif");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   ASSERT_EQ(4, io.frames.size());
 
   CompressParams cparams = CParamsForLossless();
@@ -968,11 +968,11 @@ bool SameJpegCoeffs(const CodecInOut& io1, const CodecInOut& io2) {
 
 TEST(JxlTest, RoundtripBrunsli444) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
   CodecInOut io;
   io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.brunsli_group_mode = true;
@@ -990,14 +990,14 @@ TEST(JxlTest, RoundtripBrunsli444) {
 
 TEST(JxlTest, RoundtripBrunsliToPixels) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
   CodecInOut io;
   io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CodecInOut io2;
-  ASSERT_TRUE(SetFromFile(pathname, &io2, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
 
   CompressParams cparams;
   cparams.brunsli_group_mode = true;
@@ -1017,11 +1017,11 @@ TEST(JxlTest, RoundtripBrunsliToPixels) {
 //               codepaths in Brunsli code (see coverage report).
 TEST(JxlTest, RoundtripBrunsliGray) {
   ThreadPoolInternal pool(8);
-  const std::string pathname = GetTestDataPath(
-      "imagecompression.info/flower_foveon.png.im_q85_gray.jpg");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png.im_q85_gray.jpg");
   CodecInOut io;
   io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.brunsli_group_mode = true;
@@ -1039,11 +1039,11 @@ TEST(JxlTest, RoundtripBrunsliGray) {
 
 TEST(JxlTest, RoundtripBrunsli420) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
   CodecInOut io;
   io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.brunsli_group_mode = true;

@@ -84,16 +84,6 @@ static HWY_INLINE HWY_MAYBE_UNUSED size_t PopCount(const uint64_t x) {
 //------------------------------------------------------------------------------
 // Controlling overload resolution
 
-template <bool Condition, class T>
-struct EnableIfT {};
-template <class T>
-struct EnableIfT<true, T> {
-  using type = T;
-};
-
-template <bool Condition, class T = void>
-using EnableIf = typename EnableIfT<Condition, T>::type;
-
 // Insert into template/function arguments to enable this overload only for
 // vectors of AT MOST this many bits.
 //

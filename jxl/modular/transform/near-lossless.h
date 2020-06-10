@@ -26,39 +26,23 @@
 
 namespace jxl {
 
-static Status CheckNearLosslessParams(const Image& image,
-                                      const TransformParams& parameters) {
-  if (parameters.size() != 3) {
-    return JXL_FAILURE("Invalid near-lossless parameter size");
-  }
-  int c1 = image.nb_meta_channels + parameters[0];
-  int c2 = image.nb_meta_channels + parameters[1];
-  if (c1 < image.nb_meta_channels ||
-      c1 > static_cast<int>(image.channel.size()) ||
-      c2 < image.nb_meta_channels ||
-      c2 >= static_cast<int>(image.channel.size()) || c2 < c1) {
-    return JXL_FAILURE("Invalid channel range");
-  }
-
-  return true;
-}
-
 void DeltaQuantize(int max_error, pixel_type& d) {
   int a = (d < 0 ? -d : d);
   a = (a + (max_error / 2)) / max_error * max_error;
   d = (d < 0 ? -a : a);
 }
 
-static Status FwdNearLossless(Image& input, const TransformParams& parameters) {
-  JXL_RETURN_IF_ERROR(CheckNearLosslessParams(input, parameters));
+static Status FwdNearLossless(Image& input, size_t begin_c, size_t end_c,
+                              int max_delta_error) {
+  if (begin_c < input.nb_meta_channels ||
+      begin_c > static_cast<int>(input.channel.size()) ||
+      end_c < input.nb_meta_channels ||
+      end_c >= static_cast<int>(input.channel.size()) || end_c < begin_c) {
+    return JXL_FAILURE("Invalid channel range");
+  }
 
-  uint32_t begin_c = input.nb_meta_channels + parameters[0];
-  uint32_t end_c = input.nb_meta_channels + parameters[1];
-  int max_delta_error = parameters[2];
-
-  input.recompute_minmax();
-  JXL_DEBUG_V(8, "Applying loss on channels %u-%u with max delta=%i.", begin_c,
-              end_c, max_delta_error);
+  JXL_DEBUG_V(8, "Applying loss on channels %zu-%zu with max delta=%i.",
+              begin_c, end_c, max_delta_error);
   uint64_t total_error = 0;
   for (int c = begin_c; c <= end_c; c++) {
     size_t w = input.channel[c].w;

@@ -34,6 +34,15 @@
 
 namespace jxl {
 
+template <typename T>
+T Geomean(const T* items, size_t count) {
+  double product = 1.0;
+  for (size_t i = 0; i < count; ++i) {
+    product *= items[i];
+  }
+  return static_cast<T>(std::pow(product, 1.0 / count));
+}
+
 // Round up for integers
 template <class T, typename std::enable_if<
                        std::numeric_limits<T>::is_integer>::type* = nullptr>

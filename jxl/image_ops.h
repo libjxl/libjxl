@@ -136,25 +136,27 @@ template <typename T>
 void SetBorder(const size_t thickness, const T value, Image3<T>* image) {
   const size_t xsize = image->xsize();
   const size_t ysize = image->ysize();
-  JXL_ASSERT(2 * thickness < xsize && 2 * thickness < ysize);
-  // Top
+  // Top: fill entire row
   for (size_t c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < thickness; ++y) {
+    for (size_t y = 0; y < std::min(thickness, ysize); ++y) {
       T* JXL_RESTRICT row = image->PlaneRow(c, y);
       std::fill(row, row + xsize, value);
     }
 
-    // Bottom
+    // Bottom: fill entire row
     for (size_t y = ysize - thickness; y < ysize; ++y) {
       T* JXL_RESTRICT row = image->PlaneRow(c, y);
       std::fill(row, row + xsize, value);
     }
 
-    // Left/right
-    for (size_t y = thickness; y < ysize - thickness; ++y) {
-      T* JXL_RESTRICT row = image->PlaneRow(c, y);
-      std::fill(row, row + thickness, value);
-      std::fill(row + xsize - thickness, row + xsize, value);
+    // Left/right: fill the 'columns' on either side, but only if the image is
+    // big enough that they don't already belong to the top/bottom rows.
+    if (ysize >= 2 * thickness) {
+      for (size_t y = thickness; y < ysize - thickness; ++y) {
+        T* JXL_RESTRICT row = image->PlaneRow(c, y);
+        std::fill(row, row + thickness, value);
+        std::fill(row + xsize - thickness, row + xsize, value);
+      }
     }
   }
 }
@@ -375,24 +377,26 @@ template <typename T>
 void SetBorder(const size_t thickness, const T value, Plane<T>* image) {
   const size_t xsize = image->xsize();
   const size_t ysize = image->ysize();
-  JXL_ASSERT(2 * thickness < xsize && 2 * thickness < ysize);
-  // Top
-  for (size_t y = 0; y < thickness; ++y) {
+  // Top: fill entire row
+  for (size_t y = 0; y < std::min(thickness, ysize); ++y) {
     T* const JXL_RESTRICT row = image->Row(y);
     std::fill(row, row + xsize, value);
   }
 
-  // Bottom
+  // Bottom: fill entire row
   for (size_t y = ysize - thickness; y < ysize; ++y) {
     T* const JXL_RESTRICT row = image->Row(y);
     std::fill(row, row + xsize, value);
   }
 
-  // Left/right
-  for (size_t y = thickness; y < ysize - thickness; ++y) {
-    T* const JXL_RESTRICT row = image->Row(y);
-    std::fill(row, row + thickness, value);
-    std::fill(row + xsize - thickness, row + xsize, value);
+  // Left/right: fill the 'columns' on either side, but only if the image is
+  // big enough that they don't already belong to the top/bottom rows.
+  if (ysize >= 2 * thickness) {
+    for (size_t y = thickness; y < ysize - thickness; ++y) {
+      T* const JXL_RESTRICT row = image->Row(y);
+      std::fill(row, row + thickness, value);
+      std::fill(row + xsize - thickness, row + xsize, value);
+    }
   }
 }
 

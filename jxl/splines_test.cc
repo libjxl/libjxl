@@ -19,7 +19,7 @@
 #include "jxl/enc_butteraugli_comparator.h"
 #include "jxl/extras/codec.h"
 #include "jxl/image_test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 
@@ -236,8 +236,9 @@ TEST(SplinesTest, DuplicatePoints) {
 
 TEST(SplinesTest, Drawing) {
   CodecInOut io_expected;
-  ASSERT_TRUE(SetFromFile(GetTestDataPath("jxl/splines.png"), &io_expected,
-                          /*pool=*/nullptr));
+  const PaddedBytes orig = ReadTestData("jxl/splines.png");
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,
+                           /*pool=*/nullptr));
 
   std::vector<Spline> spline_data = {
       {/*control_points=*/{

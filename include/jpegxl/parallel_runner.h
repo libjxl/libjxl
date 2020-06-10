@@ -13,6 +13,10 @@
  * limitations under the License.
  */
 
+/**
+ * @file parallel_runner.h
+ */
+
 /** API for running data operations in parallel in a multi-threaded environment.
  * This module allows the JPEG XL caller to define their own way of creating and
  * assigning threads.
@@ -53,6 +57,10 @@ extern "C" {
  */
 typedef int JpegxlParallelRetCode;
 
+/**
+ * General error returned by the JpegxlParallelRunInit function to indicate
+ * an error.
+ */
 #define JPEGXL_PARALLEL_RET_RUNNER_ERROR (-1)
 
 /**

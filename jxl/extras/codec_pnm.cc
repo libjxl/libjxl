@@ -40,7 +40,8 @@ namespace {
 struct HeaderPNM {
   size_t xsize;
   size_t ysize;
-  bool is_gray;
+  bool is_bit;   // PBM
+  bool is_gray;  // PGM
   size_t bits_per_sample;
   bool floating_point;
   bool big_endian;
@@ -53,12 +54,20 @@ class Parser {
 
   // Sets "pos" to the first non-header byte/pixel on success.
   Status ParseHeader(HeaderPNM* header, const uint8_t** pos) {
-    // codec_facade ensures we have at least two bytes => no range check here.
+    // codec.cc ensures we have at least two bytes => no range check here.
     if (pos_[0] != 'P') return false;
     const uint8_t type = pos_[1];
     pos_ += 2;
 
+    header->is_bit = false;
+
     switch (type) {
+      case '4':
+        header->is_bit = true;
+        header->is_gray = true;
+        header->bits_per_sample = 1;
+        return ParseHeaderPNM(header, pos);
+
       case '5':
         header->is_gray = true;
         return ParseHeaderPNM(header, pos);
@@ -184,11 +193,15 @@ class Parser {
     JXL_RETURN_IF_ERROR(SkipWhitespace());
     JXL_RETURN_IF_ERROR(ParseUnsigned(&header->ysize));
 
-    JXL_RETURN_IF_ERROR(SkipWhitespace());
-    size_t max_val;
-    JXL_RETURN_IF_ERROR(ParseUnsigned(&max_val));
-    if (max_val == 0 || max_val >= 65536) return JXL_FAILURE("PNM: bad MaxVal");
-    header->bits_per_sample = CeilLog2Nonzero(max_val);
+    if (!header->is_bit) {
+      JXL_RETURN_IF_ERROR(SkipWhitespace());
+      size_t max_val;
+      JXL_RETURN_IF_ERROR(ParseUnsigned(&max_val));
+      if (max_val == 0 || max_val >= 65536) {
+        return JXL_FAILURE("PNM: bad MaxVal");
+      }
+      header->bits_per_sample = CeilLog2Nonzero(max_val);
+    }
     header->floating_point = false;
     header->big_endian = true;
 
@@ -233,6 +246,12 @@ Status EncodeHeader(const ExternalImage& external, char* header,
     const double scale = external.BigEndian() ? 1.0 : -1.0;
     snprintf(header, kMaxHeaderSize, "P%c %zu %zu\n%f\n%n", type,
              external.xsize(), external.ysize(), scale, chars_written);
+  } else if (external.BitsPerSample() == 1) {  // PBM
+    if (!external.IsGray()) {
+      return JXL_FAILURE("Cannot encode color as PBM");
+    }
+    snprintf(header, kMaxHeaderSize, "P4\n%zu %zu\n%n", external.xsize(),
+             external.ysize(), chars_written);
   } else {  // PGM/PPM
     const uint32_t max_val = (1U << external.BitsPerSample()) - 1;
     if (max_val >= 65536) return JXL_FAILURE("PNM cannot have > 16 bits");
@@ -310,6 +329,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
   const uint8_t* pos;
   if (!parser.ParseHeader(&header, &pos)) return false;
   JXL_RETURN_IF_ERROR(io->VerifyDimensions(header.xsize, header.ysize));
+
   if (header.bits_per_sample == 0 || header.bits_per_sample > 32) {
     return JXL_FAILURE("PNM: bits_per_sample invalid");
   }
@@ -331,8 +351,9 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
                          header.big_endian, flipped_y);
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
-  if (!header.floating_point)
+  if (!header.floating_point) {
     io->metadata.bits_per_sample = ib.DetectRealBitdepth();
+  }
   io->frames.push_back(std::move(ib));
   return Map255ToTargetNits(io, pool);
 }
@@ -340,9 +361,9 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
 Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes) {
-  bool floating_point = bits_per_sample > 16;
+  const bool floating_point = bits_per_sample > 16;
   io->enc_bits_per_sample = floating_point ? 32 : bits_per_sample;
-  // Choose native for PFM; PGM/PPM require big-endian.
+  // Choose native for PFM; PGM/PPM require big-endian (N/A for PBM)
   const bool big_endian = floating_point ? !IsLittleEndian() : true;
 
   if (!Bundle::AllDefault(io->metadata)) {

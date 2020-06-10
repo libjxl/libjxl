@@ -35,7 +35,7 @@
 #include "jxl/extras/codec.h"
 #include "jxl/image_bundle.h"
 #include "jxl/test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -43,10 +43,10 @@ using test::Roundtrip;
 
 TEST(PassesTest, RoundtripSmallPasses) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   CompressParams cparams;
@@ -63,10 +63,10 @@ TEST(PassesTest, RoundtripSmallPasses) {
 
 TEST(PassesTest, RoundtripUnalignedPasses) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 12, io.ysize() / 7);
 
   CompressParams cparams;
@@ -83,10 +83,10 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 
 TEST(PassesTest, RoundtripMultiGroupPasses) {
   ThreadPoolInternal pool(4);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   io.ShrinkTo(600, 1024);  // partial X, full Y group
 
   CompressParams cparams;
@@ -110,10 +110,10 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
 
 TEST(PassesTest, RoundtripLargeFastPasses) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -129,10 +129,10 @@ TEST(PassesTest, RoundtripLargeFastPasses) {
 // Failing this may be a sign of race conditions or invalid memory accesses.
 TEST(PassesTest, RoundtripProgressiveConsistent) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
   cparams.speed_tier = SpeedTier::kSquirrel;
@@ -164,10 +164,10 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
 
 TEST(PassesTest, AllDownsampleFeasible) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   PaddedBytes compressed;
   AuxOut aux;
@@ -212,10 +212,10 @@ TEST(PassesTest, AllDownsampleFeasible) {
 
 TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   PaddedBytes compressed;
   AuxOut aux;
@@ -260,10 +260,10 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
 
 TEST(PassesTest, NonProgressiveDCImage) {
   ThreadPoolInternal pool(8);
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, &pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   PaddedBytes compressed;
   AuxOut aux;
@@ -289,10 +289,10 @@ TEST(PassesTest, NonProgressiveDCImage) {
 
 TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   CompressParams cparams;

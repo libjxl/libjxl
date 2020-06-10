@@ -26,6 +26,8 @@ MYDIR=$(dirname $(realpath "$0"))
 ### Environment parameters:
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
 CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
+CMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER:-}
+CMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER:-}
 SKIP_TEST="${SKIP_TEST:-0}"
 BUILD_TARGET="${BUILD_TARGET:-}"
 ENABLE_WASM_SIMD="${ENABLE_WASM_SIMD:-0}"
@@ -403,13 +405,23 @@ cmake_configure() {
       -DCMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH}"
     )
   fi
+  if [[ -n "${CMAKE_C_COMPILER_LAUNCHER}" ]]; then
+    args+=(
+      -DCMAKE_C_COMPILER_LAUNCHER="${CMAKE_C_COMPILER_LAUNCHER}"
+    )
+  fi
+  if [[ -n "${CMAKE_CXX_COMPILER_LAUNCHER}" ]]; then
+    args+=(
+      -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER}"
+    )
+  fi
   cmake "${args[@]}" "$@"
 }
 
 cmake_build_and_test() {
   # gtest_discover_tests() runs the test binaries to discover the list of tests
   # at build time, which fails under qemu.
-  ASAN_OPTIONS=detect_leaks=0 cmake --build "${BUILD_DIR}"
+  ASAN_OPTIONS=detect_leaks=0 cmake --build "${BUILD_DIR}" -- all doc
   # Pack test binaries if requested.
   if [[ "${PACK_TEST:-}" == "1" ]]; then
     (cd "${BUILD_DIR}"
@@ -1146,6 +1158,8 @@ parameters:
  - CMAKE_BUILD_TYPE
  - CMAKE_C_FLAGS
  - CMAKE_CXX_FLAGS
+ - CMAKE_C_COMPILER_LAUNCHER
+ - CMAKE_CXX_COMPILER_LAUNCHER
  - CMAKE_CROSSCOMPILING_EMULATOR
  - CMAKE_FIND_ROOT_PATH
  - CMAKE_EXE_LINKER_FLAGS

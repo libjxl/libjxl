@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include <third_party/highway/hwy/base.h>  // EnableIf
 #include "jxl/alpha.h"
 #include "jxl/base/byte_order.h"
 #include "jxl/base/cache_aligned.h"
@@ -61,12 +62,12 @@ constexpr size_t kX = 1;
 // the loss is gone when outputting to external integer again.
 //
 // Summary of formats:
-// Name        |   Bits  |    Max   | Channels |   Layout    |  Alpha
-// ------------+---------+----------+----------+-------------+---------
-// External    | 8,16,32 | 2^Bits-1 |  1,2,3,4 | Interleaved | Included
-// Temp01      |    32   |     1    |    1,3   | Interleaved | Separate
-// Temp255     |    32   |    255   |    1,3   | Interleaved | Separate
-// ImageBundle |    32   |    255   |    3,4   |   Planar    |  ImageU
+// Name        |    Bits   |    Max   | Channels |   Layout    |  Alpha
+// ------------+-----------+----------+----------+-------------+---------
+// External    | 1,8,16,32 | 2^Bits-1 |  1,2,3,4 | Interleaved | Included
+// Temp01      |     32    |     1    |    1,3   | Interleaved | Separate
+// Temp255     |     32    |    255   |    1,3   | Interleaved | Separate
+// ImageBundle |     32    |    255   |    3,4   |   Planar    |  ImageU
 
 // Number of external channels including alpha.
 struct Channels1 {
@@ -167,7 +168,12 @@ struct Interleave {
 // Step 2t: type conversion
 
 // Same naming convention as Image: B=u8, U=u16, F=f32. kSize enables generic
-// functions with Type and Order template arguments.
+// functions with Type and Order template arguments. 1=PBM.
+struct Type1 {
+  static const char* Name() { return "1"; }
+  static constexpr size_t kSize = 0;
+  static constexpr uint16_t kMaxAlpha = 0xFF;
+};
 struct TypeB {
   static const char* Name() { return "B"; }
   static constexpr size_t kSize = 1;
@@ -272,12 +278,47 @@ struct Alpha {
   }
 };
 
+#define JXL_IF_NOT_PBM hwy::EnableIf<Type::kSize != 0>* = nullptr
+
 // Step 2d: demux external into separate (type-converted) color and alpha.
 // Supports Temp01 and Temp255, the Cast decides this.
 struct Demux {
+  // PBM, one plane
+  template <class Order, class Channels, class Cast>
+  static JXL_INLINE void ExternalToTemp(Type1 /*type*/, Order /*order*/,
+                                        Channels /*channels*/,
+                                        const size_t xsize,
+                                        const uint8_t* external,
+                                        const Cast /*cast*/,
+                                        float* JXL_RESTRICT row_temp) {
+    for (size_t x = 0; x < xsize; ++x) {
+      const uint32_t byte = external[x / kBitsPerByte];
+      const size_t idx_bit = x % kBitsPerByte;  // 0 = MSB!
+      // 1 is black, and bit order is MSB to LSB.
+      row_temp[x] = (byte & (0x80 >> idx_bit)) ? 0 : 255;
+    }
+  }
+  template <class Order, class Channels, class Cast>
+  static JXL_INLINE void TempToExternal(Type1 /*type*/, Order /*order*/,
+                                        Channels /*channels*/,
+                                        const size_t xsize,
+                                        const float* JXL_RESTRICT row_temp,
+                                        const Cast /*cast*/,
+                                        uint8_t* row_external) {
+    memset(row_external, 0, DivCeil(xsize, kBitsPerByte));
+    for (size_t x = 0; x < xsize; ++x) {
+      const size_t idx_byte = x / kBitsPerByte;
+      const size_t idx_bit = x % kBitsPerByte;  // 0 = MSB!
+      // 1 is black, and bit order is MSB to LSB.
+      const uint32_t bit = (row_temp[x] == 0.0f) ? (0x80 >> idx_bit) : 0;
+      row_external[idx_byte] =
+          static_cast<uint8_t>(row_external[idx_byte] | bit);
+    }
+  }
+
   // 1 plane - copy all.
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void ExternalToTemp(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void ExternalToTemp(Type type, Order /*order*/,
                                         Channels1 /*tag*/, const size_t xsize,
                                         const uint8_t* external,
                                         const Cast cast,
@@ -288,8 +329,8 @@ struct Demux {
       row_temp[x] = cast.FromExternal(rounded, 0);
     }
   }
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void TempToExternal(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void TempToExternal(Type type, Order /*order*/,
                                         Channels1 /*tag*/, const size_t xsize,
                                         const float* JXL_RESTRICT row_temp,
                                         const Cast cast,
@@ -301,8 +342,8 @@ struct Demux {
   }
 
   // 2 planes - ignore alpha.
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void ExternalToTemp(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void ExternalToTemp(Type type, Order /*order*/,
                                         Channels2 /*tag*/, const size_t xsize,
                                         const uint8_t* external,
                                         const Cast cast,
@@ -313,8 +354,8 @@ struct Demux {
       row_temp[x] = cast.FromExternal(rounded, 0);
     }
   }
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void TempToExternal(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void TempToExternal(Type type, Order /*order*/,
                                         Channels2 /*tag*/, const size_t xsize,
                                         const float* JXL_RESTRICT row_temp,
                                         const Cast cast,
@@ -327,8 +368,8 @@ struct Demux {
   }
 
   // 3 planes - copy all.
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void ExternalToTemp(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void ExternalToTemp(Type type, Order /*order*/,
                                         Channels3 /*tag*/, const size_t xsize,
                                         const uint8_t* external,
                                         const Cast cast,
@@ -345,8 +386,8 @@ struct Demux {
       row_temp[3 * x + 2] = cast.FromExternal(rounded2, 2);
     }
   }
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void TempToExternal(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void TempToExternal(Type type, Order /*order*/,
                                         Channels3 /*tag*/, const size_t xsize,
                                         const float* JXL_RESTRICT row_temp,
                                         const Cast cast,
@@ -365,8 +406,8 @@ struct Demux {
   }
 
   // 4 planes - ignore alpha.
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void ExternalToTemp(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void ExternalToTemp(Type type, Order /*order*/,
                                         Channels4 /*tag*/, const size_t xsize,
                                         const uint8_t* external,
                                         const Cast cast,
@@ -383,8 +424,8 @@ struct Demux {
       row_temp[3 * x + 2] = cast.FromExternal(rounded2, 2);
     }
   }
-  template <class Type, class Order, class Cast>
-  static JXL_INLINE void TempToExternal(Type type, Order order,
+  template <class Type, class Order, class Cast, JXL_IF_NOT_PBM>
+  static JXL_INLINE void TempToExternal(Type type, Order /*order*/,
                                         Channels4 /*tag*/, const size_t xsize,
                                         const float* JXL_RESTRICT row_temp,
                                         const Cast cast,
@@ -404,17 +445,14 @@ struct Demux {
 
   // Gray only, no alpha.
   template <class Type, class Order>
-  static JXL_INLINE void ExternalToAlpha(Type type, Order order,
-                                         Channels1 /*tag*/, const size_t xsize,
-                                         const uint8_t* external,
-                                         uint16_t* JXL_RESTRICT row_alpha,
-                                         const size_t thread,
-                                         std::vector<Alpha::Stats>* stats) {}
+  static JXL_INLINE void ExternalToAlpha(
+      Type /*type*/, Order /*order*/, Channels1 /*tag*/, const size_t /*xsize*/,
+      const uint8_t* /*external*/, uint16_t* JXL_RESTRICT /*row_alpha*/,
+      const size_t /*thread*/, std::vector<Alpha::Stats>* /*stats*/) {}
   template <class Type, class Order>
-  static JXL_INLINE void AlphaToExternal(Type type, Order order,
-                                         Channels1 /*tag*/, const size_t xsize,
-                                         const uint16_t* JXL_RESTRICT row_alpha,
-                                         uint8_t* row_external) {}
+  static JXL_INLINE void AlphaToExternal(
+      Type /*type*/, Order /*order*/, Channels1 /*tag*/, const size_t /*xsize*/,
+      const uint16_t* JXL_RESTRICT /*row_alpha*/, uint8_t* /*row_external*/) {}
 
   // Gray + alpha.
   template <class Type, class Order>
@@ -457,17 +495,14 @@ struct Demux {
 
   // RGB only, no alpha.
   template <class Type, class Order>
-  static JXL_INLINE void ExternalToAlpha(Type type, Order order,
-                                         Channels3 /*tag*/, const size_t xsize,
-                                         const uint8_t* external,
-                                         uint16_t* JXL_RESTRICT row_alpha,
-                                         const size_t thread,
-                                         std::vector<Alpha::Stats>* stats) {}
+  static JXL_INLINE void ExternalToAlpha(
+      Type /*type*/, Order /*order*/, Channels3 /*tag*/, const size_t /*xsize*/,
+      const uint8_t* /*external*/, uint16_t* JXL_RESTRICT /*row_alpha*/,
+      const size_t /*thread*/, std::vector<Alpha::Stats>* /*stats*/) {}
   template <class Type, class Order>
-  static JXL_INLINE void AlphaToExternal(Type type, Order order,
-                                         Channels3 /*tag*/, const size_t xsize,
-                                         const uint16_t* JXL_RESTRICT row_alpha,
-                                         uint8_t* row_external) {}
+  static JXL_INLINE void AlphaToExternal(
+      Type /*type*/, Order /*order*/, Channels3 /*tag*/, const size_t /*xsize*/,
+      const uint16_t* JXL_RESTRICT /*row_alpha*/, uint8_t* /*row_external*/) {}
 
   // RGBA.
   template <class Type, class Order>
@@ -836,7 +871,9 @@ class Transformer {
   Status Run(Extent* extents, const Cast& cast) {
     const size_t bytes = DivCeil(external_->BitsPerSample(), kBitsPerByte);
     const bool big_endian = external_->BigEndian();
-    if (bytes == 1) {
+    if (external_->BitsPerSample() == 1) {
+      return DispatchType<To, Type1, OrderLE>(extents, cast);
+    } else if (bytes == 1) {
       return DispatchType<To, TypeB, OrderLE>(extents, cast);
     } else if (bytes == 2 && big_endian) {
       return DispatchType<To, TypeU, OrderBE>(extents, cast);
@@ -1026,7 +1063,9 @@ class Converter {
   Status Run(const Cast& cast) {
     const size_t bytes = DivCeil(desc_->bits_per_sample, kBitsPerByte);
     const bool big_endian = desc_->big_endian;
-    if (bytes == 1) {
+    if (desc_->bits_per_sample == 1) {
+      return DispatchType<Type1, OrderLE>(cast);
+    } else if (bytes == 1) {
       return DispatchType<TypeB, OrderLE>(cast);
     } else if (bytes == 2 && big_endian) {
       return DispatchType<TypeU, OrderBE>(cast);

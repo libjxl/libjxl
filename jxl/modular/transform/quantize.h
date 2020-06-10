@@ -30,16 +30,12 @@ pixel_type rdiv(pixel_type x, int q) {
   }
 }
 
-bool InvQuantize(Image &input, const TransformParams &parameters,
-                 ThreadPool *pool) {
-  size_t c = input.nb_meta_channels;
+bool InvQuantize(Image &input, ThreadPool *pool) {
   pixel_type *JXL_RESTRICT qs = input.channel[0].Row(0);
-  size_t qx = 0;
-  for (; c < input.channel.size(); c++) {
+  for (size_t c = 1; c < input.channel.size(); c++) {
     Channel &ch = input.channel[c];
     if (ch.is_empty()) continue;
-    int q = qs[qx] + 1;
-    qx++;
+    int q = qs[c - 1] + 1;
     if (q == 1) continue;
     JXL_DEBUG_V(3, "De-quantizing channel %zu with quantization constant %i", c,
                 q);
@@ -60,23 +56,21 @@ bool InvQuantize(Image &input, const TransformParams &parameters,
 }
 
 static Status MetaQuantize(Image &input) {
-  Channel qs(input.channel.size() - input.nb_meta_channels, 1);
+  Channel qs(input.channel.size(), 1);
   qs.hshift = -1;
   input.channel.insert(input.channel.begin(), std::move(qs));
   input.nb_meta_channels++;
   return true;
 }
 
-Status FwdQuantize(Image &input, const TransformParams &parameters) {
+Status FwdQuantize(Image &input, const std::vector<int> &quant_factors) {
   JXL_RETURN_IF_ERROR(MetaQuantize(input));
   pixel_type *JXL_RESTRICT qs = input.channel[0].Row(0);
-  size_t qx = 0;
-  for (size_t c = input.nb_meta_channels; c < input.channel.size(); c++) {
+  for (size_t c = 1; c < input.channel.size(); c++) {
     Channel &ch = input.channel[c];
     if (ch.is_empty()) continue;
-    int q = (c - input.nb_meta_channels < parameters.size()
-                 ? parameters[c - input.nb_meta_channels]
-                 : parameters.back());
+    int q =
+        (c < quant_factors.size() ? quant_factors[c] : quant_factors.back());
     if (q < 1) q = 1;
     JXL_DEBUG_V(3, "Quantizing channel %zu with quantization constant %i", c,
                 q);
@@ -87,8 +81,7 @@ Status FwdQuantize(Image &input, const TransformParams &parameters) {
         p[x] = rdiv(p[x], q);
       }
     }
-    qs[qx] = q - 1;
-    qx++;
+    qs[c - 1] = q - 1;
   }
   return true;
 }

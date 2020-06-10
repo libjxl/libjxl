@@ -19,9 +19,11 @@
 
 namespace jxl {
 
+void FrameHeader::InitFields() { Bundle::Init(this); }
+
 AnimationFrame::AnimationFrame() { Bundle::Init(this); }
 Passes::Passes() { Bundle::Init(this); }
-FrameHeader::FrameHeader() { Bundle::Init(this); }
+FrameHeader::FrameHeader() { InitFields(); }
 
 Status ReadFrameHeader(BitReader* JXL_RESTRICT reader,
                        FrameHeader* JXL_RESTRICT frame) {

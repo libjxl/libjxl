@@ -28,7 +28,7 @@
 #include "jxl/extras/codec.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -79,10 +79,10 @@ TEST(BrunsliTest, RoundtripSinglePixel) {
 
 TEST(BrunsliTest, RoundtripTiny) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(16, 16);
 
   BrunsliEncoderOptions enc_options;
@@ -95,10 +95,10 @@ TEST(BrunsliTest, RoundtripTiny) {
 
 TEST(BrunsliTest, RoundtripSmallQ0) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   BrunsliEncoderOptions enc_options;
@@ -111,10 +111,10 @@ TEST(BrunsliTest, RoundtripSmallQ0) {
 
 TEST(BrunsliTest, RoundtripHdr) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   BrunsliEncoderOptions enc_options;
@@ -129,10 +129,10 @@ TEST(BrunsliTest, RoundtripHdr) {
 
 TEST(BrunsliTest, RoundtripEncOptions) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   BrunsliEncoderOptions enc_options;
@@ -156,10 +156,10 @@ TEST(BrunsliTest, RoundtripEncOptions) {
 
 TEST(BrunsliTest, RoundtripDecOptions) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
 
   BrunsliEncoderOptions enc_options;
@@ -184,10 +184,10 @@ TEST(BrunsliTest, RoundtripDecOptions) {
 
 TEST(BrunsliTest, RoundtripUnalignedQ0_5) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 12, io.ysize() / 7);
 
   BrunsliEncoderOptions enc_options;
@@ -200,10 +200,10 @@ TEST(BrunsliTest, RoundtripUnalignedQ0_5) {
 
 TEST(BrunsliTest, RoundtripLarge) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("imagecompression.info/flower_foveon.png");
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   BrunsliEncoderOptions enc_options;
   enc_options.quant_scale = 2.0f;

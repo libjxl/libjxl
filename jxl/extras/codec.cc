@@ -72,6 +72,10 @@ Codec CodecFromExtension(const std::string& extension,
 
   if (extension == ".pgx") return Codec::kPGX;
 
+  if (extension == ".pbm") {
+    *bits_per_sample = 1;
+    return Codec::kPNM;
+  }
   if (extension == ".pgm") return Codec::kPNM;
   if (extension == ".ppm") return Codec::kPNM;
   if (extension == ".pfm") {
@@ -192,14 +196,14 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
   const std::string extension = Extension(pathname);
   const Codec codec = CodecFromExtension(extension, &bits_per_sample);
 
-  // Warn about incorrect usage of PGM/PGX/PPM - the first two only support
-  // grayscale, but CodecFromExtension does not distinguish between PGM/PPM.
+  // Warn about incorrect usage of PBM/PGM/PGX/PPM - only the latter supports
+  // color, but CodecFromExtension lumps them all together.
   if (codec == Codec::kPNM) {
-    if (!io.Main().IsGray() && extension == ".pgm") {
-      JXL_WARNING("Storing color image to PGM - use .ppm extension instead.\n");
+    if (!io.Main().IsGray() && extension != ".ppm") {
+      JXL_WARNING("For color images, the filename should end with .ppm.\n");
     } else if (io.Main().IsGray() && extension == ".ppm") {
       JXL_WARNING(
-          "Storing grayscale image to PPM - use .pgm extension instead.\n");
+          "For grayscale images, the filename should not end with .ppm.\n");
     }
   } else if (codec == Codec::kPGX && !io.Main().IsGray()) {
     JXL_WARNING("Storing color image to PGX - use .ppm extension instead.\n");

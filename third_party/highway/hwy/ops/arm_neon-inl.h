@@ -2324,21 +2324,27 @@ HWY_INLINE Vec128<uint16_t> Broadcast(const Vec128<uint16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<uint16_t>(vdupq_laneq_u16(v.raw, kLane));
 }
-template <int kLane, size_t N>
-HWY_INLINE Vec128<uint16_t> Broadcast(const Vec128<uint16_t, N> v) {
+template <int kLane, size_t N, HWY_IF_LE64(uint16_t, N)>
+HWY_INLINE Vec128<uint16_t, N> Broadcast(const Vec128<uint16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
-  return Vec128<uint16_t>(vdupq_laneq_u16(vcombine_u16(v.raw, v.raw), kLane));
+  return Vec128<uint16_t, N>(vdup_lane_u16(v.raw, kLane));
 }
 template <int kLane>
 HWY_INLINE Vec128<uint32_t> Broadcast(const Vec128<uint32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<uint32_t>(vdupq_laneq_u32(v.raw, kLane));
 }
+template <int kLane, size_t N, HWY_IF_LE64(uint32_t, N)>
+HWY_INLINE Vec128<uint32_t, N> Broadcast(const Vec128<uint32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<uint32_t, N>(vdup_lane_u32(v.raw, kLane));
+}
 template <int kLane>
 HWY_INLINE Vec128<uint64_t> Broadcast(const Vec128<uint64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<uint64_t>(vdupq_laneq_u64(v.raw, kLane));
 }
+// Vec128<uint64_t, 1> is defined below.
 
 // Signed
 template <int kLane>
@@ -2346,21 +2352,27 @@ HWY_INLINE Vec128<int16_t> Broadcast(const Vec128<int16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<int16_t>(vdupq_laneq_s16(v.raw, kLane));
 }
-template <int kLane, size_t N>
-HWY_INLINE Vec128<int16_t> Broadcast(const Vec128<int16_t, N> v) {
+template <int kLane, size_t N, HWY_IF_LE64(int16_t, N)>
+HWY_INLINE Vec128<int16_t, N> Broadcast(const Vec128<int16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
-  return Vec128<int16_t>(vdupq_laneq_s16(vcombine_s16(v.raw, v.raw), kLane));
+  return Vec128<int16_t, N>(vdup_lane_s16(v.raw, kLane));
 }
 template <int kLane>
 HWY_INLINE Vec128<int32_t> Broadcast(const Vec128<int32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<int32_t>(vdupq_laneq_s32(v.raw, kLane));
 }
+template <int kLane, size_t N, HWY_IF_LE64(int32_t, N)>
+HWY_INLINE Vec128<int32_t, N> Broadcast(const Vec128<int32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<int32_t, N>(vdup_lane_s32(v.raw, kLane));
+}
 template <int kLane>
 HWY_INLINE Vec128<int64_t> Broadcast(const Vec128<int64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<int64_t>(vdupq_laneq_s64(v.raw, kLane));
 }
+// Vec128<int64_t, 1> is defined below.
 
 // Float
 template <int kLane>
@@ -2368,11 +2380,22 @@ HWY_INLINE Vec128<float> Broadcast(const Vec128<float> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<float>(vdupq_laneq_f32(v.raw, kLane));
 }
+template <int kLane, size_t N, HWY_IF_LE64(float, N)>
+HWY_INLINE Vec128<float, N> Broadcast(const Vec128<float, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<float, N>(vdup_lane_f32(v.raw, kLane));
+}
 template <int kLane>
 HWY_INLINE Vec128<double> Broadcast(const Vec128<double> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<double>(vdupq_laneq_f64(v.raw, kLane));
 }
+template <int kLane>
+HWY_INLINE Vec128<double, 1> Broadcast(const Vec128<double, 1> v) {
+  static_assert(0 <= kLane && kLane < 1, "Invalid lane");
+  return v;
+}
+
 #else
 // No vdupq_laneq_* on armv7: use vgetq_lane_* + vdupq_n_*.
 
@@ -2382,22 +2405,27 @@ HWY_INLINE Vec128<uint16_t> Broadcast(const Vec128<uint16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<uint16_t>(vdupq_n_u16(vgetq_lane_u16(v.raw, kLane)));
 }
-template <int kLane, size_t N>
-HWY_INLINE Vec128<uint16_t> Broadcast(const Vec128<uint16_t, N> v) {
+template <int kLane, size_t N, HWY_IF_LE64(uint16_t, N)>
+HWY_INLINE Vec128<uint16_t, N> Broadcast(const Vec128<uint16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
-  return Vec128<uint16_t>(
-      vdupq_n_u16(vgetq_lane_u16(vcombine_u16(v.raw, v.raw), kLane)));
+  return Vec128<uint16_t, N>(vdup_lane_u16(v.raw, kLane));
 }
 template <int kLane>
 HWY_INLINE Vec128<uint32_t> Broadcast(const Vec128<uint32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<uint32_t>(vdupq_n_u32(vgetq_lane_u32(v.raw, kLane)));
 }
+template <int kLane, size_t N, HWY_IF_LE64(uint32_t, N)>
+HWY_INLINE Vec128<uint32_t, N> Broadcast(const Vec128<uint32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<uint32_t, N>(vdup_lane_u32(v.raw, kLane));
+}
 template <int kLane>
 HWY_INLINE Vec128<uint64_t> Broadcast(const Vec128<uint64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<uint64_t>(vdupq_n_u64(vgetq_lane_u64(v.raw, kLane)));
 }
+// Vec128<uint64_t, 1> is defined below.
 
 // Signed
 template <int kLane>
@@ -2405,22 +2433,27 @@ HWY_INLINE Vec128<int16_t> Broadcast(const Vec128<int16_t> v) {
   static_assert(0 <= kLane && kLane < 8, "Invalid lane");
   return Vec128<int16_t>(vdupq_n_s16(vgetq_lane_s16(v.raw, kLane)));
 }
-template <int kLane, size_t N>
-HWY_INLINE Vec128<int16_t> Broadcast(const Vec128<int16_t, N> v) {
+template <int kLane, size_t N, HWY_IF_LE64(int16_t, N)>
+HWY_INLINE Vec128<int16_t, N> Broadcast(const Vec128<int16_t, N> v) {
   static_assert(0 <= kLane && kLane < N, "Invalid lane");
-  return Vec128<int16_t>(
-      vdupq_n_s16(vgetq_lane_s16(vcombine_s16(v.raw, v.raw), kLane)));
+  return Vec128<int16_t, N>(vdup_lane_s16(v.raw, kLane));
 }
 template <int kLane>
 HWY_INLINE Vec128<int32_t> Broadcast(const Vec128<int32_t> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<int32_t>(vdupq_n_s32(vgetq_lane_s32(v.raw, kLane)));
 }
+template <int kLane, size_t N, HWY_IF_LE64(int32_t, N)>
+HWY_INLINE Vec128<int32_t, N> Broadcast(const Vec128<int32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<int32_t, N>(vdup_lane_s32(v.raw, kLane));
+}
 template <int kLane>
 HWY_INLINE Vec128<int64_t> Broadcast(const Vec128<int64_t> v) {
   static_assert(0 <= kLane && kLane < 2, "Invalid lane");
   return Vec128<int64_t>(vdupq_n_s64(vgetq_lane_s64(v.raw, kLane)));
 }
+// Vec128<int64_t, 1> is defined below.
 
 // Float
 template <int kLane>
@@ -2428,7 +2461,24 @@ HWY_INLINE Vec128<float> Broadcast(const Vec128<float> v) {
   static_assert(0 <= kLane && kLane < 4, "Invalid lane");
   return Vec128<float>(vdupq_n_f32(vgetq_lane_f32(v.raw, kLane)));
 }
+template <int kLane, size_t N, HWY_IF_LE64(float, N)>
+HWY_INLINE Vec128<float, N> Broadcast(const Vec128<float, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<float, N>(vdup_lane_f32(v.raw, kLane));
+}
+
 #endif
+
+template <int kLane>
+HWY_INLINE Vec128<uint64_t, 1> Broadcast(const Vec128<uint64_t, 1> v) {
+  static_assert(0 <= kLane && kLane < 1, "Invalid lane");
+  return v;
+}
+template <int kLane>
+HWY_INLINE Vec128<int64_t, 1> Broadcast(const Vec128<int64_t, 1> v) {
+  static_assert(0 <= kLane && kLane < 1, "Invalid lane");
+  return v;
+}
 
 // ------------------------------ Shuffle bytes with variable indices
 

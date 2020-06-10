@@ -60,13 +60,20 @@ struct ExtraChannelInfo {
   float color[4];     // spot color in linear RGBA
 };
 
-struct OpsinInverseMatrix {
-  OpsinInverseMatrix();
+class OpsinInverseMatrix {
+  void InitFields();
+
+ public:
+  OpsinInverseMatrix() { InitFields(); }
   static const char* Name() { return "OpsinInverseMatrix"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
     for (int i = 0; i < 9; ++i) {
       visitor->F16(DefaultInverseOpsinAbsorbanceMatrix()[i],
                    &inverse_matrix[i]);
@@ -102,13 +109,20 @@ struct OpsinInverseMatrix {
   float quant_biases[4];
 };
 
-struct IntensityTargetInfo {
-  IntensityTargetInfo();
+class IntensityTargetInfo {
+  void InitFields();
+
+ public:
+  IntensityTargetInfo() { InitFields(); }
   static const char* Name() { return "IntensityTargetInfo"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
     visitor->F16(kDefaultIntensityTarget, &intensity_target);
     if (intensity_target <= 0.f) {
       return JXL_FAILURE("invalid intensity target");
@@ -122,13 +136,20 @@ struct IntensityTargetInfo {
 
 // Less frequently changed fields, grouped into a separate bundle so they do not
 // need to be signaled when some ImageMetadata fields are non-default.
-struct ImageMetadata2 {
-  ImageMetadata2();
+class ImageMetadata2 {
+  void InitFields();
+
+ public:
+  ImageMetadata2() { InitFields(); }
   static const char* Name() { return "ImageMetadata2"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
 
@@ -187,13 +208,20 @@ struct ImageMetadata2 {
 
 // Properties of the original image bundle. This enables Encode(Decode()) to
 // re-create an equivalent image without user input.
-struct ImageMetadata {
-  ImageMetadata();
+class ImageMetadata {
+  void InitFields();
+
+ public:
+  ImageMetadata() { InitFields(); }
   static const char* Name() { return "ImageMetadata"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
 
     visitor->Bool(false, &floating_point_sample);
     // The same field (bits_per_sample) is read in a different way depending on

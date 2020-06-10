@@ -119,11 +119,10 @@ static inline bool ParseAndAppendKeyValue(const char* arg,
   return true;
 }
 
-static inline bool ParsePredictorsVector(const char* arg,
-                                         std::vector<jxl::Predictor>* out) {
+static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
   for (; *arg; arg++) {
     if (*arg >= '0' && *arg <= '9') {
-      out->push_back(static_cast<jxl::Predictor>(*arg - '0'));
+      *out = static_cast<jxl::Predictor>(*arg - '0');
     } else {
       fprintf(stderr, "Invalid predictor value '%c', must be a digit.", *arg);
       return JXL_FAILURE("Args");

@@ -193,9 +193,9 @@ void fill_info(GdkPixbufFormat *info) {
   static GdkPixbufModulePattern signature[] = {
       {"\xd7\x4c\x4d\x0a", "    ", 100}, {NULL, NULL, 0}};
 
-  static gchar *mime_types[] = {"image/x-jxl", NULL};
+  static gchar *mime_types[] = {"image/jxl", NULL};
 
-  static gchar *extensions[] = {"jxl", "j", NULL};
+  static gchar *extensions[] = {"jxl", NULL};
 
   info->name = "JPEG XL";
   info->signature = signature;

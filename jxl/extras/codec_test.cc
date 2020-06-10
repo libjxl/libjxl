@@ -31,7 +31,7 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_test_utils.h"
 #include "jxl/luminance.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -193,7 +193,8 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
                            const DecoderHints& dec_hints = DecoderHints()) {
   CodecInOut io;
   io.dec_hints = dec_hints;
-  JXL_CHECK(SetFromFile(pathname, &io, pool));
+  const PaddedBytes orig = ReadTestData(pathname);
+  JXL_CHECK(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   const ImageBundle& ib1 = io.Main();
 
   // Encode/Decode again to make sure Encode carries through all metadata.
@@ -240,7 +241,7 @@ TEST(CodecTest, TestMetadataSRGB) {
                          "raw.pixls/Sony-DSC-RX1RM2-14bit_srgb8_v4_krita.png"};
   for (const char* relative_pathname : paths) {
     const CodecInOut io =
-        DecodeRoundtrip(GetTestDataPath(relative_pathname), Codec::kPNG, &pool);
+        DecodeRoundtrip(relative_pathname, Codec::kPNG, &pool);
     EXPECT_EQ(8, io.metadata.bits_per_sample);
     EXPECT_EQ(false, io.metadata.floating_point_sample);
 
@@ -271,8 +272,7 @@ TEST(CodecTest, TestMetadataLinear) {
                                   Primaries::k2100};
 
   for (size_t i = 0; i < 3; ++i) {
-    const CodecInOut io =
-        DecodeRoundtrip(GetTestDataPath(paths[i]), Codec::kPNG, &pool);
+    const CodecInOut io = DecodeRoundtrip(paths[i], Codec::kPNG, &pool);
     EXPECT_EQ(16, io.metadata.bits_per_sample);
     EXPECT_EQ(false, io.metadata.floating_point_sample);
 
@@ -298,7 +298,7 @@ TEST(CodecTest, TestMetadataICC) {
   };
   for (const char* relative_pathname : paths) {
     const CodecInOut io =
-        DecodeRoundtrip(GetTestDataPath(relative_pathname), Codec::kPNG, &pool);
+        DecodeRoundtrip(relative_pathname, Codec::kPNG, &pool);
     EXPECT_GE(16, io.metadata.bits_per_sample);
     EXPECT_LE(14, io.metadata.bits_per_sample);
 
@@ -320,34 +320,30 @@ TEST(CodecTest, TestPNGSuite) {
   ThreadPoolInternal pool(12);
 
   // Ensure we can load PNG with text, japanese UTF-8, compressed text.
-  (void)DecodeRoundtrip(GetTestDataPath("pngsuite/ct1n0g04.png"), Codec::kPNG,
-                        &pool);
-  (void)DecodeRoundtrip(GetTestDataPath("pngsuite/ctjn0g04.png"), Codec::kPNG,
-                        &pool);
-  (void)DecodeRoundtrip(GetTestDataPath("pngsuite/ctzn0g04.png"), Codec::kPNG,
-                        &pool);
+  (void)DecodeRoundtrip("pngsuite/ct1n0g04.png", Codec::kPNG, &pool);
+  (void)DecodeRoundtrip("pngsuite/ctjn0g04.png", Codec::kPNG, &pool);
+  (void)DecodeRoundtrip("pngsuite/ctzn0g04.png", Codec::kPNG, &pool);
 
   // Extract gAMA
-  const CodecInOut b1 = DecodeRoundtrip(
-      GetTestDataPath("pngsuite/g10n3p04.png"), Codec::kPNG, &pool);
+  const CodecInOut b1 =
+      DecodeRoundtrip("pngsuite/g10n3p04.png", Codec::kPNG, &pool);
   EXPECT_TRUE(b1.metadata.color_encoding.tf.IsLinear());
 
   // Extract cHRM
-  const CodecInOut b_p = DecodeRoundtrip(
-      GetTestDataPath("pngsuite/ccwn2c08.png"), Codec::kPNG, &pool);
+  const CodecInOut b_p =
+      DecodeRoundtrip("pngsuite/ccwn2c08.png", Codec::kPNG, &pool);
   EXPECT_EQ(Primaries::kSRGB, b_p.metadata.color_encoding.primaries);
   EXPECT_EQ(WhitePoint::kD65, b_p.metadata.color_encoding.white_point);
 
   // Extract EXIF from (new-style) dedicated chunk
-  const CodecInOut b_exif = DecodeRoundtrip(
-      GetTestDataPath("pngsuite/exif2c08.png"), Codec::kPNG, &pool);
+  const CodecInOut b_exif =
+      DecodeRoundtrip("pngsuite/exif2c08.png", Codec::kPNG, &pool);
   EXPECT_EQ(978, b_exif.blobs.exif.size());
 }
 
 void VerifyWideGamutMetadata(const std::string& relative_pathname,
                              const Primaries primaries, ThreadPool* pool) {
-  const CodecInOut io =
-      DecodeRoundtrip(GetTestDataPath(relative_pathname), Codec::kPNG, pool);
+  const CodecInOut io = DecodeRoundtrip(relative_pathname, Codec::kPNG, pool);
 
   EXPECT_EQ(8, io.metadata.bits_per_sample);
   EXPECT_EQ(false, io.metadata.floating_point_sample);

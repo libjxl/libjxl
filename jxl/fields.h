@@ -27,7 +27,6 @@
 #include <cmath>  // abs
 #include <cstdarg>
 
-#include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/status.h"
@@ -179,8 +178,13 @@ class F16Coder {
 //
 // - encode an entire bundle in one bit if ALL its fields equal their default
 //   values: add a "mutable bool all_default" field and as the first visitor:
-//   if (v->AllDefault(*this, &all_default)) return true;
-//   Note: if extensions are present, AllDefault() == false.
+//   if (v->AllDefault(*this, &all_default)) {
+//     // Overwrite all serialized fields, but not any nonserialized_*.
+//     InitFields();
+//     return true; }
+//   Note: if extensions are present, AllDefault() == false. To avoid depending
+//   on fields.h, InitFields is a private non-inlined member function that calls
+//   Bundle::Init(this).
 
 class Bundle {
  public:

@@ -88,11 +88,8 @@ double SummarizeElapsedTimes(std::vector<double>& elapsed) {
 
   // Prefer geomean unless numerically unreliable (too many reps)
   if (std::pow(elapsed[0], elapsed.size()) < 1E100) {
-    double product = 1.0;
-    for (size_t i = 1; i < elapsed.size(); ++i) {
-      product *= elapsed[i];
-    }
-    return std::pow(product, 1.0 / (elapsed.size() - 1));
+    // Skip first(noisier)
+    return Geomean(elapsed.data() + 1, elapsed.size() - 1);
   }
 
   // Else: mode

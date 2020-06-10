@@ -35,6 +35,48 @@ enum class Predictor : uint32_t {
   Variable = 8,  // Find the best decision tree for predictors/predictor per row
 };
 
+inline const char* PredictorName(Predictor p) {
+  switch (p) {
+    case Predictor::Zero:
+      return "Zero";
+    case Predictor::Left:
+      return "Left";
+    case Predictor::Top:
+      return "Top";
+    case Predictor::Average:
+      return "Avg";
+    case Predictor::Select:
+      return "Sel";
+    case Predictor::Gradient:
+      return "Grd";
+    case Predictor::Weighted:
+      return "Wgh";
+    default:
+      return "INVALID";
+  };
+}
+
+inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
+  switch (p) {
+    case Predictor::Zero:
+      return {0, 0, 0};
+    case Predictor::Left:
+      return {255, 0, 0};
+    case Predictor::Top:
+      return {0, 255, 0};
+    case Predictor::Average:
+      return {0, 0, 255};
+    case Predictor::Select:
+      return {255, 255, 0};
+    case Predictor::Gradient:
+      return {255, 0, 255};
+    case Predictor::Weighted:
+      return {0, 255, 255};
+    default:
+      return {255, 255, 255};
+  };
+}
+
 constexpr size_t kNumModularPredictors = static_cast<size_t>(Predictor::Best);
 
 struct ModularOptions {
@@ -78,11 +120,10 @@ struct ModularOptions {
   // Brotli options
   int brotli_effort = 11;  // 0..11
 
-  // Predictor to use for each channel. If there are more channels than
-  // predictors here the last one, or the default if empty, gets repeated.
-  std::vector<Predictor> predictor;
+  // Predictor to use for each channel.
+  Predictor predictor = static_cast<Predictor>(-1);
 
-  int nb_wp_modes = 1;
+  int wp_mode = 0;
 };
 
 }  // namespace jxl

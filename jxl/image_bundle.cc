@@ -140,10 +140,10 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 
 }  // namespace
 
-ImageMetadata::ImageMetadata() { Bundle::Init(this); }
-ImageMetadata2::ImageMetadata2() { Bundle::Init(this); }
-OpsinInverseMatrix::OpsinInverseMatrix() { Bundle::Init(this); }
-IntensityTargetInfo::IntensityTargetInfo() { Bundle::Init(this); }
+void OpsinInverseMatrix::InitFields() { Bundle::Init(this); }
+void IntensityTargetInfo::InitFields() { Bundle::Init(this); }
+void ImageMetadata2::InitFields() { Bundle::Init(this); }
+void ImageMetadata::InitFields() { Bundle::Init(this); }
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
                          ImageMetadata* JXL_RESTRICT metadata) {

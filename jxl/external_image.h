@@ -30,7 +30,7 @@
 
 namespace jxl {
 
-// Packed (no row padding), interleaved (RGBRGB) u8/u16/f32.
+// Packed (no row padding), interleaved (RGBRGB) u1/u8/u16/f32.
 struct PackedImage {
   PackedImage(size_t xsize, size_t ysize, const ColorEncoding& c_current,
               bool has_alpha, bool alpha_is_premultiplied,
@@ -45,7 +45,11 @@ struct PackedImage {
         bits_per_sample(bits_per_sample),
         row_size(xsize * channels * DivCeil(bits_per_sample, kBitsPerByte)),
         big_endian(big_endian),
-        flipped_y(flipped_y) {}
+        flipped_y(flipped_y) {
+    if (bits_per_sample == 1) {
+      row_size = DivCeil(xsize, kBitsPerByte);
+    }
+  }
 
   bool HasAlpha() const { return channels == 2 || channels == 4; }
 
@@ -72,12 +76,12 @@ struct PackedImage {
   bool flipped_y;
 };
 
-// Packed (no row padding), interleaved (RGBRGB) u8/u16/f32.
+// Packed (no row padding), interleaved (RGBRGB) u1/u8/u16/f32.
 class ExternalImage {
  public:
   // Copies from existing interleaved image. Called by decoders. "big_endian"
-  // only matters for bits_per_sample > 8. "end" is the STL-style end of "bytes"
-  // for range checks.
+  // only matters for bits_per_sample > 8 (single-bit are always big endian to
+  // match PBM). "end" is the STL-style end of "bytes" for range checks.
   //
   // DEPRECATED, use ::CopyTo instead
   ExternalImage(size_t xsize, size_t ysize, const ColorEncoding& c_current,

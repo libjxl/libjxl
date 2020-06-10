@@ -95,8 +95,8 @@ setup_apt() {
 
   # node sources.
   cat >/etc/apt/sources.list.d/nodesource.list <<EOF
-  deb https://deb.nodesource.com/node_13.x bionic main
-  deb-src https://deb.nodesource.com/node_13.x bionic main
+  deb https://deb.nodesource.com/node_14.x bionic main
+  deb-src https://deb.nodesource.com/node_14.x bionic main
 EOF
   curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | apt-key add -
 
@@ -448,16 +448,9 @@ main() {
   # webp in Ubuntu is relatively old so we install it from source for everybody.
   install_from_source WEBP "${LIST_TARGETS[@]}" "${LIST_MINGW_TARGETS[@]}"
 
-
-  # TODO(eustas): remove after official v14 release (21 Apr 2020)
-  # Nightly NodeJS (v14) install.
-  local node_tar_xz="/tmp/node.tar.xz"
-  local node_path="/opt/node-nightly"
-  local node_version="v14.0.0-nightly2020033067d5c907d2"
-  curl -s "https://nodejs.org/download/nightly/${node_version}/node-${node_version}-linux-x64.tar.xz" -o "${node_tar_xz}"
-  mkdir -p "${node_path}"
-  tar -xf "${node_tar_xz}" -C "${node_path}" --strip-components=1
-  rm -f "${node_tar_xz}"
+  # Install v8. v8 has better WASM SIMD support than NodeJS 14.
+  npm install jsvu -g
+  jsvu --os=linux64 v8@8.5.133
 
   # Cleanup.
   rm -rf /var/lib/apt/lists/*

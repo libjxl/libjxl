@@ -19,14 +19,14 @@
 
 #include <string>
 
-#include "plugins/gimp/file-j-load.h"
-#include "plugins/gimp/file-j-save.h"
+#include "plugins/gimp/file-jxl-load.h"
+#include "plugins/gimp/file-jxl-save.h"
 
 namespace jxl {
 namespace {
 
-constexpr char kLoadProc[] = "file-j-load";
-constexpr char kSaveProc[] = "file-j-save";
+constexpr char kLoadProc[] = "file-jxl-load";
+constexpr char kSaveProc[] = "file-jxl-save";
 
 void Query() {
   {
@@ -56,8 +56,8 @@ void Query() {
         /*type=*/GIMP_PLUGIN, /*n_params=*/G_N_ELEMENTS(load_args),
         /*n_return_vals=*/G_N_ELEMENTS(load_return_vals), /*params=*/load_args,
         /*return_vals=*/load_return_vals);
-    gimp_register_file_handler_mime(kLoadProc, "image/j");
-    gimp_register_magic_load_handler(kLoadProc, "j", "",
+    gimp_register_file_handler_mime(kLoadProc, "image/jxl");
+    gimp_register_magic_load_handler(kLoadProc, "jxl", "",
                                      "0,string,\x0A\x04\x42\xD2\xD5\x4E\x12,0,"
                                      "string,\xFF\x0A,0,string,\xFF\x58");
   }
@@ -89,8 +89,8 @@ void Query() {
         /*type=*/GIMP_PLUGIN, /*n_params=*/G_N_ELEMENTS(save_args),
         /*n_return_vals=*/0, /*params=*/save_args,
         /*return_vals=*/nullptr);
-    gimp_register_file_handler_mime(kSaveProc, "image/j");
-    gimp_register_save_handler(kSaveProc, "j", "");
+    gimp_register_file_handler_mime(kSaveProc, "image/jxl");
+    gimp_register_save_handler(kSaveProc, "jxl", "");
   }
 }
 

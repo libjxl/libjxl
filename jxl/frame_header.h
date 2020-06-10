@@ -198,7 +198,10 @@ struct AnimationFrame {
 };
 
 // For decoding to lower resolutions. Cannot mix with animation.
-struct Passes {
+class Passes {
+  void InitFields();
+
+ public:
   Passes();
   static const char* Name() { return "Passes"; }
 
@@ -250,7 +253,10 @@ struct Passes {
 
 // Image/frame := one of more of these, where the last has is_last = true.
 // Starts at a byte-aligned address "a"; the next pass starts at "a + size".
-struct FrameHeader {
+class FrameHeader {
+  void InitFields();
+
+ public:
   // Optional postprocessing steps. These flags are the source of truth;
   // Override must set/clear them rather than change their meaning. Values
   // chosen such that typical flags == 0 (encoded in only two bits).
@@ -282,7 +288,11 @@ struct FrameHeader {
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) return true;
+    if (visitor->AllDefault(*this, &all_default)) {
+      // Overwrite all serialized fields, but not any nonserialized_*.
+      InitFields();
+      return true;
+    }
 
     // Up to 3 pyramid levels - for up to 4096x downsampling.
     visitor->U32(Val(0), Val(1), Val(2), Val(3), 0, &dc_level);

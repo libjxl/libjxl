@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "plugins/gimp/file-j-save.h"
+#include "plugins/gimp/file-jxl-save.h"
 
 // Defined by both FUIF and glib.
 #undef MAX

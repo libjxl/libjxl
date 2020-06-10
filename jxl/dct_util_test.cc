@@ -29,7 +29,7 @@
 #include "jxl/extras/codec.h"
 #include "jxl/image_ops.h"
 #include "jxl/image_test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -174,10 +174,10 @@ static Image3F Subsample(const Image3F& image, int f) {
 }
 
 static Image3F OpsinTestImage() {
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  JXL_CHECK(SetFromFile(pathname, &io, /*pool=*/nullptr));
+  JXL_CHECK(SetFromBytes(Span<const uint8_t>(orig), &io, /*pool=*/nullptr));
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef PLUGINS_GIMP_FILE_J_LOAD_H_
-#define PLUGINS_GIMP_FILE_J_LOAD_H_
+#ifndef PLUGINS_GIMP_FILE_JXL_LOAD_H_
+#define PLUGINS_GIMP_FILE_JXL_LOAD_H_
 
 #include <libgimp/gimp.h>
 

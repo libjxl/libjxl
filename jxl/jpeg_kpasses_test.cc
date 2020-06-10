@@ -24,7 +24,7 @@
 #endif
 #include "jxl/image_ops.h"
 #include "jxl/image_test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -32,10 +32,10 @@ namespace {
 #if JPEGXL_ENABLE_JPEG
 TEST(JPEGkPassesTest, RoundtripLarge) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   // encode to JPEG
   PaddedBytes encoded;

@@ -30,7 +30,7 @@
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/image_test_utils.h"
 #include "jxl/test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 
@@ -205,9 +205,7 @@ TEST_F(ColorManagementTest, sRGBChromaticity) {
 }
 
 TEST_F(ColorManagementTest, D2700Chromaticity) {
-  PaddedBytes icc;
-  ASSERT_TRUE(jxl::ReadFile(
-      GetTestDataPath("jxl/color_management/sRGB-D2700.icc"), &icc));
+  PaddedBytes icc = ReadTestData("jxl/color_management/sRGB-D2700.icc");
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 
@@ -221,9 +219,7 @@ TEST_F(ColorManagementTest, D2700Chromaticity) {
 }
 
 TEST_F(ColorManagementTest, D2700ToSRGB) {
-  PaddedBytes icc;
-  ASSERT_TRUE(jxl::ReadFile(
-      GetTestDataPath("jxl/color_management/sRGB-D2700.icc"), &icc));
+  PaddedBytes icc = ReadTestData("jxl/color_management/sRGB-D2700.icc");
   ColorEncoding sRGB_D2700;
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 

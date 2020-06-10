@@ -119,8 +119,8 @@ void ViewerWindow::refreshImage() {
           .arg(currentFileIndex_ + 1)
           .arg(filenames_.size())
           .arg(filenames_[currentFileIndex_])
-          .arg(ui_.image->pixmap()->width())
-          .arg(ui_.image->pixmap()->height())
+          .arg(image.width())
+          .arg(image.height())
           .arg(elapsed_ns / 1e6)
           .arg(1e9 / elapsed_ns));
 

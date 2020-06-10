@@ -186,47 +186,44 @@ Status ModularFrameEncoder::ComputeEncodingData(
   // Global channel palette
   if (cparams.channel_colors_pre_transform_percent > 0 && quality == 100) {
     // single channel palette (like FLIF's ChannelCompact)
-    gi.recompute_minmax();
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;
-      gi.channel[gi.nb_meta_channels + i].compute_trivial(&min, &max);
+      gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
       int colors = max - min + 1;
       JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
-      maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
-      maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
+      maybe_palette_1.begin_c = i + gi.nb_meta_channels;
+      maybe_palette_1.num_c = 1;
       // simple heuristic: if less than X percent of the values in the range
       // actually occur, it is probably worth it to do a compaction
       // (but only if the channel palette is less than 80% the size of the
       // image itself)
-      maybe_palette_1.parameters.push_back(std::min(
+      maybe_palette_1.nb_colors = std::min(
           (int)(xsize * ysize * 0.8),
-          (int)(cparams.channel_colors_pre_transform_percent / 100. * colors)));
+          (int)(cparams.channel_colors_pre_transform_percent / 100. * colors));
       gi.do_transform(maybe_palette_1);
     }
   }
-
-  gi.recompute_minmax();
 
   // Global palette
   if (cparams.palette_colors != 0 && cparams.speed_tier < SpeedTier::kFalcon) {
     // all-channel palette (e.g. RGBA)
     if (gi.nb_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
-      maybe_palette.parameters.push_back(gi.nb_meta_channels);
-      maybe_palette.parameters.push_back(gi.nb_meta_channels + gi.nb_channels -
-                                         1);
-      maybe_palette.parameters.push_back(cparams.palette_colors);
+      maybe_palette.begin_c = gi.nb_meta_channels;
+      maybe_palette.num_c = gi.nb_channels;
+      maybe_palette.nb_colors = std::abs(cparams.palette_colors);
+      maybe_palette.ordered_palette = cparams.palette_colors >= 0;
       gi.do_transform(maybe_palette);
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
     if (gi.nb_channels > 3) {
       Transform maybe_palette_3(TransformId::kPalette);
-      maybe_palette_3.parameters.push_back(gi.nb_meta_channels);
-      maybe_palette_3.parameters.push_back(gi.nb_meta_channels +
-                                           gi.nb_channels - 2);
-      maybe_palette_3.parameters.push_back(cparams.palette_colors);
+      maybe_palette_3.begin_c = gi.nb_meta_channels;
+      maybe_palette_3.num_c = gi.nb_channels - 1;
+      maybe_palette_3.nb_colors = std::abs(cparams.palette_colors);
+      maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
       gi.do_transform(maybe_palette_3);
     }
   }
@@ -235,10 +232,14 @@ Status ModularFrameEncoder::ComputeEncodingData(
     if (cparams.colorspace == 1 ||
         (cparams.colorspace < 0 && (quality < 100 || cparams.near_lossless ||
                                     cparams.speed_tier > SpeedTier::kWombat))) {
-      gi.do_transform(Transform(TransformId::kYCoCg));
+      Transform ycocg{TransformId::kRCT};
+      ycocg.rct_type = 6;
+      ycocg.begin_c = gi.nb_meta_channels;
+      gi.do_transform(ycocg);
     } else if (cparams.colorspace >= 2) {
       Transform sg(TransformId::kRCT);
-      sg.parameters.push_back(cparams.colorspace - 2);
+      sg.begin_c = gi.nb_meta_channels;
+      sg.rct_type = cparams.colorspace - 2;
       gi.do_transform(sg);
     }
   }
@@ -254,10 +255,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
     gi.do_transform(Transform(TransformId::kSqueeze));  // use default squeezing
   }
   if (cparams.options.entropy_coder == ModularOptions::kMAANS) {
+    float pixel_fraction = std::min(1.0f, cparams.options.nb_repeats);
     if (cparams.speed_tier > SpeedTier::kWombat) {
-      cparams.options.splitting_heuristics_node_threshold = 192;
+      cparams.options.splitting_heuristics_node_threshold =
+          192 * pixel_fraction;
     } else {
-      cparams.options.splitting_heuristics_node_threshold = 96;
+      cparams.options.splitting_heuristics_node_threshold = 96 * pixel_fraction;
     }
     switch (cparams.speed_tier) {
       case SpeedTier::kWombat:
@@ -292,8 +295,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
       cquality = (400 + cquality) / 5;
     }
     Transform quantize(TransformId::kQuantize);
-    for (size_t i = 0; i < gi.nb_meta_channels; i++)
-      quantize.parameters.push_back(1);  // don't quantize metachannels
+    for (size_t i = 0; i < gi.nb_meta_channels; i++) {
+      quantize.nonserialized_quant_factors.push_back(
+          1);  // don't quantize metachannels
+    }
 
     // convert 'quality' to quantization scaling factor
     if (quality > 50)
@@ -323,65 +328,47 @@ Status ModularFrameEncoder::ComputeEncodingData(
         q = quality * squeeze_quality_factor * squeeze_luma_factor *
             squeeze_luma_qtable[shift];
       if (q < 1) q = 1;
-      quantize.parameters.push_back(q);
+      quantize.nonserialized_quant_factors.push_back(q);
     }
     gi.do_transform(quantize);
   }
-  if (cparams.options.predictor.empty()) {
+  if (cparams.options.predictor == static_cast<Predictor>(-1)) {
     // no explicit predictor(s) given, set a good default
     if (cparams.near_lossless) {
       // avg(top,left) predictor for near_lossless
-      cparams.options.predictor.push_back(Predictor::Average);
+      cparams.options.predictor = Predictor::Average;
     } else if (cparams.responsive) {
       // zero predictor for Squeeze residues
-      cparams.options.predictor.push_back(Predictor::Zero);
+      cparams.options.predictor = Predictor::Zero;
     } else if (cparams.speed_tier < SpeedTier::kFalcon) {
       // try median and weighted predictor for anything else
-      cparams.options.predictor.push_back(Predictor::Best);
+      cparams.options.predictor = Predictor::Best;
     } else {
       // just weighted predictor in fastest mode
-      cparams.options.predictor.push_back(Predictor::Weighted);
+      cparams.options.predictor = Predictor::Weighted;
     }
-  }
-  switch (cparams.speed_tier) {
-    case SpeedTier::kFalcon:
-      cparams.options.nb_wp_modes = 1;
-      break;
-    case SpeedTier::kCheetah:
-      cparams.options.nb_wp_modes = 1;
-      break;
-    case SpeedTier::kHare:
-      cparams.options.nb_wp_modes = 1;
-      break;
-    case SpeedTier::kWombat:
-      cparams.options.nb_wp_modes = 1;
-      break;
-    case SpeedTier::kSquirrel:
-      cparams.options.nb_wp_modes = 1;
-      break;
-    case SpeedTier::kKitten:
-      cparams.options.nb_wp_modes = 2;
-      break;
-    case SpeedTier::kTortoise:
-      cparams.options.nb_wp_modes = 5;
-      break;
   }
 
   full_image = std::move(gi);
   return true;
 }
 
-Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
-                                             AuxOut* aux_out) {
+Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out,
+                                             size_t group_id) {
   cparams.options.max_chan_size = kGroupDim;
-  ModularGenericCompress(full_image, cparams.options, writer, aux_out,
-                         kLayerModularGlobal);
+  ModularOptions options = cparams.options;
+  if (options.predictor == Predictor::Best) {
+    options.predictor = Predictor::Gradient;
+  }
+  ModularGenericCompress(full_image, options, writer, aux_out,
+                         kLayerModularGlobal, group_id, call++);
   return true;
 }
 
 Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
                                         AuxOut* aux_out, size_t minShift,
-                                        size_t maxShift, size_t layer) {
+                                        size_t maxShift, size_t layer,
+                                        size_t group_id) {
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   int maxval = full_image.maxval;
@@ -424,20 +411,20 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
     // all-channel palette (e.g. RGBA)
     if (gi.nb_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
-      maybe_palette.parameters.push_back(gi.nb_meta_channels);
-      maybe_palette.parameters.push_back(gi.nb_meta_channels + gi.nb_channels -
-                                         1);
-      maybe_palette.parameters.push_back(cparams.palette_colors);
+      maybe_palette.begin_c = gi.nb_meta_channels;
+      maybe_palette.num_c = gi.nb_channels;
+      maybe_palette.nb_colors = std::abs(cparams.palette_colors);
+      maybe_palette.ordered_palette = cparams.palette_colors >= 0;
       gi.do_transform(maybe_palette);
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
     if (gi.nb_channels > 3) {
       Transform maybe_palette_3(TransformId::kPalette);
-      maybe_palette_3.parameters.push_back(gi.nb_meta_channels);
-      maybe_palette_3.parameters.push_back(gi.nb_meta_channels +
-                                           gi.nb_channels - 2);
-      maybe_palette_3.parameters.push_back(cparams.palette_colors);
+      maybe_palette_3.begin_c = gi.nb_meta_channels;
+      maybe_palette_3.num_c = gi.nb_channels - 1;
+      maybe_palette_3.nb_colors = std::abs(cparams.palette_colors);
+      maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
       gi.do_transform(maybe_palette_3);
     }
   }
@@ -446,29 +433,26 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
   if (cparams.channel_colors_percent > 0 && quality == 100 &&
       cparams.speed_tier < SpeedTier::kCheetah) {
     // single channel palette (like FLIF's ChannelCompact)
-    gi.recompute_minmax();
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;
-      gi.channel[gi.nb_meta_channels + i].compute_trivial(&min, &max);
+      gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
       int colors = max - min + 1;
       JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
-      maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
-      maybe_palette_1.parameters.push_back(i + gi.nb_meta_channels);
+      maybe_palette_1.begin_c = i + gi.nb_meta_channels;
+      maybe_palette_1.num_c = 1;
       // simple heuristic: if less than X percent of the values in the range
       // actually occur, it is probably worth it to do a compaction
       // (but only if the channel palette is less than 80% the size of the
       // image itself)
-      maybe_palette_1.parameters.push_back(
+      maybe_palette_1.nb_colors =
           std::min((int)(xsize * ysize * 0.8),
-                   (int)(cparams.channel_colors_percent / 100. * colors)));
+                   (int)(cparams.channel_colors_percent / 100. * colors));
       gi.do_transform(maybe_palette_1);
     }
   }
 
   HybridUintConfig uint_config_sign{4, 2, 1};
-
-  gi.recompute_minmax();
 
 #if JXL_DEBUG_V_LEVEL >= 5
   // Only used for lossless.
@@ -477,20 +461,73 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
 
   BitWriter local_compressed;
   AuxOut local_aux_out;
-  auto try_compress = [&](bool force_use, int new_best,
-                          HybridUintConfig uint_config =
-                              kHybridUint420Config) -> Status {
+  bool has_compressed = false;
+  size_t nb_wp_modes = 0;
+  switch (cparams.speed_tier) {
+    case SpeedTier::kFalcon:
+      nb_wp_modes = 1;
+      break;
+    case SpeedTier::kCheetah:
+      nb_wp_modes = 1;
+      break;
+    case SpeedTier::kHare:
+      nb_wp_modes = 1;
+      break;
+    case SpeedTier::kWombat:
+      nb_wp_modes = 1;
+      break;
+    case SpeedTier::kSquirrel:
+      nb_wp_modes = 1;
+      break;
+    case SpeedTier::kKitten:
+      nb_wp_modes = 2;
+      break;
+    case SpeedTier::kTortoise:
+      nb_wp_modes = 5;
+      break;
+  }
+  auto try_compress_once = [&](int new_best, const ModularOptions& options,
+                               HybridUintConfig uint_config) -> Status {
     BitWriter compressed2;
     AuxOut aux_out2;
-    JXL_RETURN_IF_ERROR(ModularGenericCompress(
-        gi, cparams.options, &compressed2, &aux_out2, layer, uint_config));
+    if (aux_out) {
+      aux_out2.testing_aux = aux_out->testing_aux;
+      aux_out2.dump_image = aux_out->dump_image;
+      aux_out2.debug_prefix = aux_out->debug_prefix;
+    }
+    JXL_RETURN_IF_ERROR(ModularGenericCompress(gi, options, &compressed2,
+                                               &aux_out2, layer, group_id,
+                                               call++, uint_config));
     if (compressed2.BitsWritten() < local_compressed.BitsWritten() ||
-        force_use) {
+        !has_compressed) {
+      has_compressed = true;
       local_compressed = std::move(compressed2);
       local_aux_out = std::move(aux_out2);
 #if JXL_DEBUG_V_LEVEL >= 5
       best = new_best;
 #endif
+    }
+    return true;
+  };
+  auto try_compress = [&](int new_best, HybridUintConfig uint_config =
+                                            kHybridUint420Config) -> Status {
+    if (cparams.options.predictor != Predictor::Weighted &&
+        cparams.options.predictor != Predictor::Best) {
+      return try_compress_once(new_best, cparams.options, uint_config);
+    }
+    if (cparams.options.predictor == Predictor::Best) {
+      ModularOptions options = cparams.options;
+      options.predictor = Predictor::Gradient;
+      JXL_RETURN_IF_ERROR(try_compress_once(new_best, options, uint_config));
+    }
+    if (cparams.options.predictor == Predictor::Weighted ||
+        cparams.options.predictor == Predictor::Best) {
+      ModularOptions options = cparams.options;
+      options.predictor = Predictor::Weighted;
+      for (size_t i = 0; i < nb_wp_modes; i++) {
+        options.wp_mode = i;
+        JXL_RETURN_IF_ERROR(try_compress_once(new_best, options, uint_config));
+      }
     }
     return true;
   };
@@ -501,67 +538,56 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       cparams.colorspace < 0 && gi.nb_channels > 2 && !cparams.near_lossless &&
       cparams.responsive == false && do_color &&
       cparams.speed_tier <= SpeedTier::kWombat) {
-    if (cparams.speed_tier <= SpeedTier::kKitten) {
-      JXL_RETURN_IF_ERROR(ModularGenericCompress(
-          gi, cparams.options, &local_compressed, &local_aux_out, layer));
-    }
-    gi.do_transform(Transform(TransformId::kYCoCg));
-    JXL_RETURN_IF_ERROR(
-        try_compress(cparams.speed_tier > SpeedTier::kKitten, /*new_best=*/1));
-    // Use sign-in-token.
-    if (cparams.speed_tier < SpeedTier::kWombat) {
-      JXL_RETURN_IF_ERROR(
-          try_compress(/*force_use=*/false, /*new_best=*/1, uint_config_sign));
-    }
-
     Transform sg(TransformId::kRCT);
-    sg.parameters.push_back(0);
+    sg.begin_c = gi.nb_meta_channels;
 
     size_t nb_rcts_to_try = 0;
     switch (cparams.speed_tier) {
       case SpeedTier::kFalcon:
-        nb_rcts_to_try = 0;
-        break;
-      case SpeedTier::kCheetah:
-        nb_rcts_to_try = 1;
-        break;
-      case SpeedTier::kHare:
         nb_rcts_to_try = 2;
         break;
-      case SpeedTier::kWombat:
+      case SpeedTier::kCheetah:
         nb_rcts_to_try = 3;
         break;
-      case SpeedTier::kSquirrel:
+      case SpeedTier::kHare:
+        nb_rcts_to_try = 4;
+        break;
+      case SpeedTier::kWombat:
         nb_rcts_to_try = 5;
         break;
-      case SpeedTier::kKitten:
+      case SpeedTier::kSquirrel:
         nb_rcts_to_try = 7;
         break;
+      case SpeedTier::kKitten:
+        nb_rcts_to_try = 9;
+        break;
       case SpeedTier::kTortoise:
-        nb_rcts_to_try = 17;
+        nb_rcts_to_try = 19;
         break;
     }
-    // These should be 17 actually different transforms; the remaining ones
-    // are equivalent to one of these (or to do-nothing)
-    // modulo channel reordering (which only matters in the case
-    // of MA-with-prev-channels-properties) and/or sign (e.g. RmG vs GmR)
-    for (int i : {5, 9, 23, 35, 11, 17, 7, 4, 8, 13, 14, 15, 28, 29, 2, 1, 3}) {
+    // These should be 19 actually different transforms; the remaining ones
+    // are equivalent to one of these (note that the first two are do-nothing
+    // and YCoCg) modulo channel reordering (which only matters in the case of
+    // MA-with-prev-channels-properties) and/or sign (e.g. RmG vs GmR)
+    for (int i : {0 * 7 + 0, 0 * 7 + 6, 0 * 7 + 5, 1 * 7 + 3, 3 * 7 + 5,
+                  5 * 7 + 5, 1 * 7 + 5, 2 * 7 + 5, 1 * 7 + 1, 0 * 7 + 4,
+                  1 * 7 + 2, 2 * 7 + 1, 2 * 7 + 2, 2 * 7 + 3, 4 * 7 + 4,
+                  4 * 7 + 5, 0 * 7 + 2, 0 * 7 + 1, 0 * 7 + 3}) {
       if (nb_rcts_to_try == 0) break;
-      int num_transforms_to_keep = gi.transform.size() - 1;
-      // Ensure we do not clamp channels to their supposed range, as this
-      // otherwise break in the presence of patches.
-      gi.undo_transforms(num_transforms_to_keep == 0 ? -1
-                                                     : num_transforms_to_keep);
-      sg.parameters[0] = i;
+      int num_transforms_to_keep = gi.transform.size();
+      sg.rct_type = i;
       gi.do_transform(sg);
       // Try putting the sign bit in the token only at slower settings.
       if (cparams.speed_tier < SpeedTier::kWombat) {
-        JXL_RETURN_IF_ERROR(try_compress(/*force_use=*/false,
-                                         /*new_best=*/2 + i, uint_config_sign));
+        JXL_RETURN_IF_ERROR(try_compress(
+            /*new_best=*/i, uint_config_sign));
       }
-      JXL_RETURN_IF_ERROR(
-          try_compress(/*force_use=*/false, /*new_best=*/2 + i));
+      JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/i));
       nb_rcts_to_try--;
+      // Ensure we do not clamp channels to their supposed range, as this
+      // otherwise breaks in the presence of patches.
+      gi.undo_transforms(num_transforms_to_keep == 0 ? -1
+                                                     : num_transforms_to_keep);
     }
 #if JXL_DEBUG_V_LEVEL >= 5
     JXL_DEBUG_V(5, "Best color transform: %i", best);
@@ -570,30 +596,26 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
     if (cparams.near_lossless > 0) {
       if (cparams.colorspace == 0) {
         Transform nl(TransformId::kNearLossless);
-        nl.parameters.push_back(0);
-        nl.parameters.push_back(gi.nb_channels - 1);
-        nl.parameters.push_back(cparams.near_lossless);
+        nl.begin_c = gi.nb_meta_channels;
+        nl.num_c = gi.nb_channels;
+        nl.max_delta_error = cparams.near_lossless;
         gi.do_transform(nl);
       } else {
         Transform nl(TransformId::kNearLossless);
-        nl.parameters.push_back(0);
-        nl.parameters.push_back(0);
-        nl.parameters.push_back(cparams.near_lossless);
+        nl.begin_c = gi.nb_meta_channels;
+        nl.num_c = 1;
+        nl.max_delta_error = cparams.near_lossless;
         gi.do_transform(nl);
-        nl.parameters.clear();
-        nl.parameters.push_back(1);
-        nl.parameters.push_back(gi.nb_channels - 1);
-        nl.parameters.push_back(2 *
-                                cparams.near_lossless);  // more loss for chroma
+        nl.begin_c += 1;
+        nl.num_c = gi.nb_channels - 1;
+        nl.max_delta_error *= 2;  // more loss for chroma
         gi.do_transform(nl);
       }
     }
 
-    JXL_RETURN_IF_ERROR(ModularGenericCompress(
-        gi, cparams.options, &local_compressed, &local_aux_out, layer));
+    JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/-1));
     if (cparams.speed_tier < SpeedTier::kWombat) {
-      JXL_RETURN_IF_ERROR(
-          try_compress(/*force_use=*/false, /*new_best=*/-1, uint_config_sign));
+      JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/-1, uint_config_sign));
     }
   }
   writer->ZeroPadToByte();

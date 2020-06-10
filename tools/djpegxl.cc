@@ -26,10 +26,12 @@ DecompressArgs::DecompressArgs() {}
 
 void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
-  cmdline->AddPositionalOption("INPUT", "the compressed input file", &file_in);
+  cmdline->AddPositionalOption("INPUT", /* required = */ true,
+                               "the compressed input file", &file_in);
 
   cmdline->AddPositionalOption(
-      "OUTPUT", "the output can be PNG with ICC, JPG, or PPM/PFM.", &file_out);
+      "OUTPUT", /* required = */ true,
+      "the output can be PNG with ICC, JPG, or PPM/PFM.", &file_out);
 
   cmdline->AddOptionFlag('V', "version", "print version number and exit",
                          &version, &SetBooleanTrue);

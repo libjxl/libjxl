@@ -246,6 +246,17 @@ constexpr T LimitsMin() {
   return IsSigned<T>() ? T(-1) - LimitsMax<T>() : T(0);
 }
 
+// Manual control of overload resolution (SFINAE).
+template <bool Condition, class T>
+struct EnableIfT {};
+template <class T>
+struct EnableIfT<true, T> {
+  using type = T;
+};
+
+template <bool Condition, class T = void>
+using EnableIf = typename EnableIfT<Condition, T>::type;
+
 }  // namespace hwy
 
 #endif  // HWY_BASE_H_

@@ -22,15 +22,17 @@ endif ()
 
 option(JPEGXL_ENABLE_GIMP_SAVING "Enable saving to JPEG XL from GIMP" OFF)
 
-add_executable(file-j
+add_executable(file-jxl
   common.h
-  file-j-load.cc
-  file-j-load.h
-  file-j-save.cc
-  file-j-save.h
-  file-j.cc)
+  file-jxl-load.cc
+  file-jxl-load.h
+  file-jxl-save.cc
+  file-jxl-save.h
+  file-jxl.cc)
 if (JPEGXL_ENABLE_GIMP_SAVING)
-  target_compile_definitions(file-j PRIVATE -DJPEGXL_ENABLE_GIMP_SAVING=1)
+  target_compile_definitions(file-jxl PRIVATE -DJPEGXL_ENABLE_GIMP_SAVING=1)
 endif ()
-target_link_libraries(file-j jpegxl-static jpegxl_threads PkgConfig::Gimp)
-install(TARGETS file-j RUNTIME DESTINATION lib/gimp/2.0/plug-ins/file-j)
+target_link_libraries(file-jxl jpegxl-static jpegxl_threads PkgConfig::Gimp)
+
+pkg_get_variable(GIMP_LIB_DIR gimp-2.0 gimplibdir)
+install(TARGETS file-jxl RUNTIME DESTINATION "${GIMP_LIB_DIR}/plug-ins/file-jxl/")

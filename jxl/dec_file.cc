@@ -102,9 +102,11 @@ Status DecodeFile(const DecompressParams& dparams,
   io->enc_size = file.size();
 
   // Marker
-  JpegxlSignature signature = JpegxlSignatureCheck(file.data(), file.size());
+  if (JpegxlSignatureCheck(file.data(), file.size()) != JPEGXL_SIG_VALID) {
+    return JXL_FAILURE("File does not start with known JPEG XL signature");
+  }
 
-  if (signature == JPEGXL_SIG_TRANSCODED_JPEG) {
+  if (IsBrunsliFile(file) == jxl::BrunsliFileSignature::kBrunsli) {
     brunsli::JPEGData jpg;
     brunsli::BrunsliStatus status =
         brunsli::BrunsliDecodeJpeg(file.data(), file.size(), &jpg);
@@ -136,8 +138,6 @@ Status DecodeFile(const DecompressParams& dparams,
 
     io->CheckMetadata();
     return true;
-  } else if (signature != JPEGXL_SIG_JPEGXL) {
-    return JXL_FAILURE("File does not start with JPEG XL marker");
   }
   // Note: JPEG1 is handled by djpegxl to avoid depending on codec_jpg here.
 

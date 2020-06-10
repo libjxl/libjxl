@@ -14,44 +14,45 @@
 
 #include "jxl/modular/transform/transform.h"
 
+#include "jxl/fields.h"
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/transform/near-lossless.h"
 #include "jxl/modular/transform/palette.h"
 #include "jxl/modular/transform/quantize.h"
 #include "jxl/modular/transform/squeeze.h"
-#include "jxl/modular/transform/subsample.h"
 #include "jxl/modular/transform/subtractgreen.h"
-#include "jxl/modular/transform/ycocg.h"
 
 namespace jxl {
 
 namespace {
 const char *transform_name[static_cast<uint32_t>(TransformId::kNumTransforms)] =
-    {"YCoCg",   "RCT",          "Palette",      "Subsample",
-     "Squeeze", "Quantization", "Near-Lossless"};
+    {"RCT", "Palette", "Squeeze", "Quantization", "Near-Lossless"};
 }  // namespace
 
-const char *Transform::Name() const {
-  if (IsValid()) return transform_name[static_cast<uint32_t>(id)];
-  return "Unknown transformation";
+SqueezeParams::SqueezeParams() { Bundle::Init(this); }
+Transform::Transform(TransformId id) {
+  Bundle::Init(this);
+  this->id = id;
+}
+
+const char *Transform::TransformName() const {
+  return transform_name[static_cast<uint32_t>(id)];
 }
 
 Status Transform::Forward(Image &input, ThreadPool *pool) {
   switch (id) {
-    case TransformId::kChromaSubsample:
-      return FwdSubsample(input, parameters);
     case TransformId::kQuantize:
-      return FwdQuantize(input, parameters);
-    case TransformId::kYCoCg:
-      return FwdYCoCg(input);
+      return FwdQuantize(input, nonserialized_quant_factors);
     case TransformId::kRCT:
-      return FwdSubtractGreen(input, parameters);
+      return FwdSubtractGreen(input, begin_c, rct_type);
     case TransformId::kSqueeze:
-      return FwdSqueeze(input, parameters, pool);
+      return FwdSqueeze(input, squeezes, pool);
     case TransformId::kPalette:
-      return FwdPalette(input, parameters);
+      return FwdPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
+                        ordered_palette);
     case TransformId::kNearLossless:
-      return FwdNearLossless(input, parameters);
+      return FwdNearLossless(input, begin_c, begin_c + num_c - 1,
+                             max_delta_error);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }
@@ -59,18 +60,14 @@ Status Transform::Forward(Image &input, ThreadPool *pool) {
 
 Status Transform::Inverse(Image &input, ThreadPool *pool) {
   switch (id) {
-    case TransformId::kChromaSubsample:
-      return InvSubsample(input, parameters);
     case TransformId::kQuantize:
-      return InvQuantize(input, parameters, pool);
-    case TransformId::kYCoCg:
-      return InvYCoCg(input, pool);
+      return InvQuantize(input, pool);
     case TransformId::kRCT:
-      return InvSubtractGreen(input, parameters);
+      return InvSubtractGreen(input, begin_c, rct_type);
     case TransformId::kSqueeze:
-      return InvSqueeze(input, parameters, pool);
+      return InvSqueeze(input, squeezes, pool);
     case TransformId::kPalette:
-      return InvPalette(input, parameters, pool);
+      return InvPalette(input, begin_c, nb_colors, pool);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }
@@ -78,18 +75,14 @@ Status Transform::Inverse(Image &input, ThreadPool *pool) {
 
 Status Transform::MetaApply(Image &input) {
   switch (id) {
-    case TransformId::kYCoCg:
-      return true;
-    case TransformId::kChromaSubsample:
-      return MetaSubsample(input, parameters);
     case TransformId::kQuantize:
       return MetaQuantize(input);
     case TransformId::kRCT:
       return true;
     case TransformId::kSqueeze:
-      return MetaSqueeze(input, &parameters);
+      return MetaSqueeze(input, &squeezes);
     case TransformId::kPalette:
-      return MetaPalette(input, parameters);
+      return MetaPalette(input, begin_c, begin_c + num_c - 1, nb_colors);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }

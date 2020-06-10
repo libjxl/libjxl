@@ -13,29 +13,36 @@
 // limitations under the License.
 //
 
-// Implementation of a JpegxlParallelRunner using std::threads.
-//
-// The main class in this module, ThreadParallelRunner, implements a static
-// method ThreadParallelRunner::Runner than can be passed as a
-// JpegxlParallelRunner when using the JPEG XL library. This uses std::thread
-// internally and related synchronization functions. The number of threads
-// created is fixed at construction time and the threads are re-used for every
-// ThreadParallelRunner::Runner call. Only one concurrent Runner() call per
-// instance is allowed at a time.
-//
-// This is a scalable, lower-overhead thread pool runner, especially suitable
-// for data-parallel computations in the fork-join model, where clients need to
-// know when all tasks have completed.
-//
-// This thread pool can efficiently load-balance millions of tasks using an
-// atomic counter, thus avoiding per-task virtual or system calls. With 48
-// hyperthreads and 1M tasks that add to an atomic counter, overall runtime is
-// 10-20x higher when using std::async, and ~200x for a queue-based thread pool.
-//
-// Usage:
-//   ThreadParallelRunner runner;
-//   JpegxlDecode(
-//       ... , &ThreadParallelRunner::Runner, static_cast<void*>(&runner));
+/// @file thread_parallel_runner.h
+/// @brief C++ implementation using std::thread of a ::JpegxlParallelRunner.
+
+///
+/// @addtogroup jpegxl_threads
+/// @{
+/// The main class in this module, ThreadParallelRunner, implements a static
+/// method ThreadParallelRunner::Runner than can be passed as a
+/// JpegxlParallelRunner when using the JPEG XL library. This uses std::thread
+/// internally and related synchronization functions. The number of threads
+/// created is fixed at construction time and the threads are re-used for every
+/// ThreadParallelRunner::Runner call. Only one concurrent Runner() call per
+/// instance is allowed at a time.
+///
+/// This is a scalable, lower-overhead thread pool runner, especially suitable
+/// for data-parallel computations in the fork-join model, where clients need to
+/// know when all tasks have completed.
+///
+/// This thread pool can efficiently load-balance millions of tasks using an
+/// atomic counter, thus avoiding per-task virtual or system calls. With 48
+/// hyperthreads and 1M tasks that add to an atomic counter, overall runtime is
+/// 10-20x higher when using std::async, and ~200x for a queue-based thread
+/// pool.
+///
+/// Usage:
+/// @code{.cpp}
+///   ThreadParallelRunner runner;
+///   JpegxlDecode(
+///       ... , &ThreadParallelRunner::Runner, static_cast<void*>(&runner));
+/// @endcode
 
 #ifndef JPEGXL_THREAD_PARALLEL_RUNNER_H_
 #define JPEGXL_THREAD_PARALLEL_RUNNER_H_
@@ -56,35 +63,36 @@
 
 namespace jpegxl {
 
+/// Main helper class implementing the ::JpegxlParallelRunner interface.
 class ThreadParallelRunner {
  public:
-  // JpegxlParallelRunner interface.
+  /// ::JpegxlParallelRunner interface.
   static JpegxlParallelRetCode Runner(void* runner_opaque, void* jpegxl_opaque,
                                       JpegxlParallelRunInit init,
                                       JpegxlParallelRunFunction func,
                                       uint32_t start_range, uint32_t end_range);
 
-  // Starts the given number of worker threads and blocks until they are ready.
-  // "num_worker_threads" defaults to one per hyperthread. If zero, all tasks
-  // run on the main thread.
+  /// Starts the given number of worker threads and blocks until they are ready.
+  /// "num_worker_threads" defaults to one per hyperthread. If zero, all tasks
+  /// run on the main thread.
   explicit ThreadParallelRunner(
       int num_worker_threads = std::thread::hardware_concurrency());
 
-  // Waits for all threads to exit.
+  /// Waits for all threads to exit.
   ~ThreadParallelRunner();
 
-  // Returns number of worker threads created (some may be sleeping and never
-  // wake up in time to participate in Run). Useful for characterizing
-  // performance; 0 means "run on main thread".
+  /// Returns number of worker threads created (some may be sleeping and never
+  /// wake up in time to participate in Run). Useful for characterizing
+  /// performance; 0 means "run on main thread".
   size_t NumWorkerThreads() const { return num_worker_threads_; }
 
-  // Returns maximum number of main/worker threads that may call Func. Useful
-  // for allocating per-thread storage.
+  /// Returns maximum number of main/worker threads that may call Func. Useful
+  /// for allocating per-thread storage.
   size_t NumThreads() const { return num_threads_; }
 
-  // Runs func(thread, thread) on all thread(s) that may participate in Run.
-  // If NumThreads() == 0, runs on the main thread with thread == 0, otherwise
-  // concurrently called by each worker thread in [0, NumThreads()).
+  /// Runs func(thread, thread) on all thread(s) that may participate in Run.
+  /// If NumThreads() == 0, runs on the main thread with thread == 0, otherwise
+  /// concurrently called by each worker thread in [0, NumThreads()).
   template <class Func>
   void RunOnEachThread(const Func& func) {
     if (num_worker_threads_ == 0) {
@@ -175,5 +183,8 @@ class ThreadParallelRunner {
 };
 
 }  // namespace jpegxl
+
+///
+/// @}
 
 #endif /* JPEGXL_THREAD_PARALLEL_RUNNER_H_ */

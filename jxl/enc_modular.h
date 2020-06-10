@@ -42,14 +42,16 @@ class ModularFrameEncoder {
                              const ImageBundle& ib, Image3F* JXL_RESTRICT color,
                              PassesEncoderState* JXL_RESTRICT enc_state,
                              bool encode_color);
-  Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out);
+  Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out, size_t group_id);
   Status EncodeGroup(const Rect& rect, BitWriter* writer, AuxOut* aux_out,
-                     size_t minShift, size_t maxShift, size_t layer);
+                     size_t minShift, size_t maxShift, size_t layer,
+                     size_t group_id);
 
  private:
   Image full_image;
   CompressParams cparams;
   bool do_color;
+  std::atomic<size_t> call{0};
 };
 
 }  // namespace jxl

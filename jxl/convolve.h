@@ -54,10 +54,27 @@ struct WeightsSymmetric5 {
   float L[4];
 };
 
+// Weights for separable 5x5 filters (typically but not necessarily the same
+// values for horizontal and vertical directions). The kernel must already be
+// normalized, but note that values for negative offsets are omitted, so the
+// given values do not sum to 1.
 struct WeightsSeparable5 {
   // Horizontal 1D, distances 0..2 (each replicated 4x)
   float horz[3 * 4];
   float vert[3 * 4];
+};
+
+// Weights for separable 7x7 filters (typically but not necessarily the same
+// values for horizontal and vertical directions). The kernel must already be
+// normalized, but note that values for negative offsets are omitted, so the
+// given values do not sum to 1.
+//
+// NOTE: for >= 7x7 Gaussian kernels, it is faster to use FastGaussian instead,
+// at least when images exceed the L1 cache size.
+struct WeightsSeparable7 {
+  // Horizontal 1D, distances 0..3 (each replicated 4x)
+  float horz[4 * 4];
+  float vert[4 * 4];
 };
 
 const WeightsSymmetric3& WeightsSymmetric3Lowpass();
@@ -76,6 +93,13 @@ void SlowSeparable5(const ImageF& in, const Rect& rect,
                     ImageF* out);
 void SlowSeparable5(const Image3F& in, const Rect& rect,
                     const WeightsSeparable5& weights, ThreadPool* pool,
+                    Image3F* out);
+
+void SlowSeparable7(const ImageF& in, const Rect& rect,
+                    const WeightsSeparable7& weights, ThreadPool* pool,
+                    ImageF* out);
+void SlowSeparable7(const Image3F& in, const Rect& rect,
+                    const WeightsSeparable7& weights, ThreadPool* pool,
                     Image3F* out);
 
 void SlowLaplacian5(const ImageF& in, const Rect& rect, ThreadPool* pool,
@@ -107,6 +131,16 @@ typedef void Separable5_3Func(const Image3F& in, const Rect& rect,
                               const WeightsSeparable5& weights,
                               ThreadPool* pool, Image3F* out);
 Separable5_3Func* ChooseSeparable5_3();
+
+typedef void Separable7Func(const ImageF& in, const Rect& rect,
+                            const WeightsSeparable7& weights, ThreadPool* pool,
+                            ImageF* out);
+Separable7Func* ChooseSeparable7();
+
+typedef void Separable7_3Func(const Image3F& in, const Rect& rect,
+                              const WeightsSeparable7& weights,
+                              ThreadPool* pool, Image3F* out);
+Separable7_3Func* ChooseSeparable7_3();
 
 }  // namespace jxl
 

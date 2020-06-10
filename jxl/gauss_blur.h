@@ -19,6 +19,8 @@
 #include <cmath>
 #include <vector>
 
+#include <hwy/aligned_allocator.h>
+#include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
 #include "jxl/image.h"
 
@@ -73,6 +75,44 @@ ImageF ConvolveXSampleAndTranspose(const ImageF& in,
 Image3F ConvolveXSampleAndTranspose(const Image3F& in,
                                     const std::vector<float>& kernel,
                                     const size_t res);
+
+// Only for use by CreateRecursiveGaussian and FastGaussian*.
+#pragma pack(push, 1)
+struct RecursiveGaussian {
+  // For k={1,3,5} in that order, each broadcasted 4x for LoadDup128. Used only
+  // for vertical passes.
+  float n2[3 * 4];
+  float d1[3 * 4];
+
+  // We unroll horizontal passes 4x - one output per lane. These are each lane's
+  // multiplier for the previous output (relative to the first of the four
+  // outputs). Indexing: 4 * 0..2 (for {1,3,5}) + 0..3 for the lane index.
+  float mul_prev[3 * 4];
+  // Ditto for the second to last output.
+  float mul_prev2[3 * 4];
+
+  // We multiply a vector of inputs 0..3 by a vector shifted from this array.
+  // in=0 uses all 4 (nonzero) terms; for in=3, the lower three lanes are 0.
+  float mul_in[3 * 4];
+
+  size_t radius;
+};
+#pragma pack(pop)
+
+// Precomputation for FastGaussian*; users may use the same pointer/storage in
+// subsequent calls to FastGaussian* with the same sigma.
+hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma);
+
+// 1D Gaussian with zero-pad boundary handling and runtime independent of sigma.
+typedef void FastGaussian1DFunc(
+    const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+    const float* JXL_RESTRICT in, intptr_t width, float* JXL_RESTRICT out);
+FastGaussian1DFunc* ChooseFastGaussian1D();
+
+// 2D Gaussian with zero-pad boundary handling and runtime independent of sigma.
+void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                  const ImageF& in, ThreadPool* pool, ImageF* JXL_RESTRICT temp,
+                  ImageF* JXL_RESTRICT out);
 
 }  // namespace jxl
 

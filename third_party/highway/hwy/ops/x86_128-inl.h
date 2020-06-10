@@ -1680,61 +1680,61 @@ HWY_API Vec128<T> CombineShiftRightBytes(const Vec128<T> hi,
 // ------------------------------ Broadcast/splat any lane
 
 // Unsigned
-template <int kLane>
-HWY_API Vec128<uint16_t> Broadcast(const Vec128<uint16_t> v) {
-  static_assert(0 <= kLane && kLane < 8, "Invalid lane");
+template <int kLane, size_t N>
+HWY_API Vec128<uint16_t, N> Broadcast(const Vec128<uint16_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
   if (kLane < 4) {
     const __m128i lo = _mm_shufflelo_epi16(v.raw, (0x55 * kLane) & 0xFF);
-    return Vec128<uint16_t>{_mm_unpacklo_epi64(lo, lo)};
+    return Vec128<uint16_t, N>{_mm_unpacklo_epi64(lo, lo)};
   } else {
     const __m128i hi = _mm_shufflehi_epi16(v.raw, (0x55 * (kLane - 4)) & 0xFF);
-    return Vec128<uint16_t>{_mm_unpackhi_epi64(hi, hi)};
+    return Vec128<uint16_t, N>{_mm_unpackhi_epi64(hi, hi)};
   }
 }
-template <int kLane>
-HWY_API Vec128<uint32_t> Broadcast(const Vec128<uint32_t> v) {
-  static_assert(0 <= kLane && kLane < 4, "Invalid lane");
-  return Vec128<uint32_t>{_mm_shuffle_epi32(v.raw, 0x55 * kLane)};
+template <int kLane, size_t N>
+HWY_API Vec128<uint32_t, N> Broadcast(const Vec128<uint32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<uint32_t, N>{_mm_shuffle_epi32(v.raw, 0x55 * kLane)};
 }
-template <int kLane>
-HWY_API Vec128<uint64_t> Broadcast(const Vec128<uint64_t> v) {
-  static_assert(0 <= kLane && kLane < 2, "Invalid lane");
-  return Vec128<uint64_t>{_mm_shuffle_epi32(v.raw, kLane ? 0xEE : 0x44)};
+template <int kLane, size_t N>
+HWY_API Vec128<uint64_t, N> Broadcast(const Vec128<uint64_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<uint64_t, N>{_mm_shuffle_epi32(v.raw, kLane ? 0xEE : 0x44)};
 }
 
 // Signed
-template <int kLane>
-HWY_API Vec128<int16_t> Broadcast(const Vec128<int16_t> v) {
-  static_assert(0 <= kLane && kLane < 8, "Invalid lane");
+template <int kLane, size_t N>
+HWY_API Vec128<int16_t, N> Broadcast(const Vec128<int16_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
   if (kLane < 4) {
     const __m128i lo = _mm_shufflelo_epi16(v.raw, (0x55 * kLane) & 0xFF);
-    return Vec128<int16_t>{_mm_unpacklo_epi64(lo, lo)};
+    return Vec128<int16_t, N>{_mm_unpacklo_epi64(lo, lo)};
   } else {
     const __m128i hi = _mm_shufflehi_epi16(v.raw, (0x55 * (kLane - 4)) & 0xFF);
-    return Vec128<int16_t>{_mm_unpackhi_epi64(hi, hi)};
+    return Vec128<int16_t, N>{_mm_unpackhi_epi64(hi, hi)};
   }
 }
-template <int kLane>
-HWY_API Vec128<int32_t> Broadcast(const Vec128<int32_t> v) {
-  static_assert(0 <= kLane && kLane < 4, "Invalid lane");
-  return Vec128<int32_t>{_mm_shuffle_epi32(v.raw, 0x55 * kLane)};
+template <int kLane, size_t N>
+HWY_API Vec128<int32_t, N> Broadcast(const Vec128<int32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<int32_t, N>{_mm_shuffle_epi32(v.raw, 0x55 * kLane)};
 }
-template <int kLane>
-HWY_API Vec128<int64_t> Broadcast(const Vec128<int64_t> v) {
-  static_assert(0 <= kLane && kLane < 2, "Invalid lane");
-  return Vec128<int64_t>{_mm_shuffle_epi32(v.raw, kLane ? 0xEE : 0x44)};
+template <int kLane, size_t N>
+HWY_API Vec128<int64_t, N> Broadcast(const Vec128<int64_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<int64_t, N>{_mm_shuffle_epi32(v.raw, kLane ? 0xEE : 0x44)};
 }
 
 // Float
-template <int kLane>
-HWY_API Vec128<float> Broadcast(const Vec128<float> v) {
-  static_assert(0 <= kLane && kLane < 4, "Invalid lane");
-  return Vec128<float>{_mm_shuffle_ps(v.raw, v.raw, 0x55 * kLane)};
+template <int kLane, size_t N>
+HWY_API Vec128<float, N> Broadcast(const Vec128<float, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<float, N>{_mm_shuffle_ps(v.raw, v.raw, 0x55 * kLane)};
 }
-template <int kLane>
-HWY_API Vec128<double> Broadcast(const Vec128<double> v) {
-  static_assert(0 <= kLane && kLane < 2, "Invalid lane");
-  return Vec128<double>{_mm_shuffle_pd(v.raw, v.raw, 3 * kLane)};
+template <int kLane, size_t N>
+HWY_API Vec128<double, N> Broadcast(const Vec128<double, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<double, N>{_mm_shuffle_pd(v.raw, v.raw, 3 * kLane)};
 }
 
 // ------------------------------ Shuffle bytes with variable indices

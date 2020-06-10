@@ -40,8 +40,7 @@ class Channel {
  public:
   jxl::Plane<pixel_type> plane;
   size_t w, h;
-  bool is_trivial = false;  // all pixels have the same value.
-  int hshift, vshift;       // w ~= image.w >> hshift;  h ~= image.h >> vshift
+  int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
   int hcshift,
       vcshift;  // cumulative, i.e. when decoding up to this point, we have data
                 // available with these shifts (for this component)
@@ -111,7 +110,6 @@ class Channel {
   JXL_INLINE const pixel_type* Row(const size_t y) const {
     return plane.Row(y);
   }
-  void compute_trivial(pixel_type* min = nullptr, pixel_type* max = nullptr);
   void compute_minmax(pixel_type* min, pixel_type* max) const;
 };
 
@@ -184,9 +182,6 @@ class Image {
   bool do_transform(const Transform& t);
   // undo all except the first 'keep' transforms
   void undo_transforms(int keep = 0, jxl::ThreadPool* pool = nullptr);
-  void recompute_minmax() {
-    for (auto& ch : channel) ch.compute_trivial();
-  }
 };
 
 }  // namespace jxl

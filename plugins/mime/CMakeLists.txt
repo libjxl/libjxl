@@ -12,11 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-find_program(XDG_MIME_PROG xdg-mime)
-if(NOT ${XDG_MIME_PROG} STREQUAL "XDG_MIME_PROG-NOTFOUND")
-  install(CODE "execute_process(COMMAND ${XDG_MIME_PROG} install --novendor \
-                              ${CMAKE_CURRENT_SOURCE_DIR}/image-x-jxl.xml)")
-else()
-  message(WARNING "xdg-mime not found")
-endif()
-# Can be uninstalled by `xdg-mine uninstall image-x-jxl.xml`.
+install(FILES image-jxl.xml DESTINATION share/mime/packages/)

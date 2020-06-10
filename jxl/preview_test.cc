@@ -34,7 +34,7 @@
 #include "jxl/headers.h"
 #include "jxl/image_bundle.h"
 #include "jxl/test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -42,10 +42,10 @@ using test::Roundtrip;
 
 TEST(PreviewTest, RoundtripGivenPreview) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
   // Same as main image
   io.preview_frame = io.Main().Copy();

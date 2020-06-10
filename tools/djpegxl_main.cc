@@ -90,7 +90,7 @@ int DecompressMain(int argc, const char *argv[]) {
 
   const auto signature =
       JpegxlSignatureCheck(compressed.data(), compressed.size());
-  if ((signature & JPEGXL_SIG_ANY) == 0) {
+  if (signature != JPEGXL_SIG_VALID) {
     fprintf(stderr, "Unknown compressed image format\n");
     return 1;
   }

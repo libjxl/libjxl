@@ -44,7 +44,7 @@
 #include "jxl/image_test_utils.h"
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/test_utils.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -52,8 +52,8 @@ using test::Roundtrip;
 
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_group_mode = true;
   cparams.quality_pair = {90.0f, 90.0f};
@@ -63,7 +63,7 @@ TEST(ModularTest, RoundtripLossy) {
   size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 150000);
@@ -74,8 +74,8 @@ TEST(ModularTest, RoundtripLossy) {
 
 TEST(ModularTest, RoundtripLossyWP) {
   ThreadPool* pool = nullptr;
-  const std::string pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_group_mode = true;
   cparams.quality_pair = {90.0f, 90.0f};
@@ -86,7 +86,7 @@ TEST(ModularTest, RoundtripLossyWP) {
   size_t compressed_size;
 
   CodecInOut io;
-  ASSERT_TRUE(SetFromFile(pathname, &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 200000);
@@ -100,7 +100,7 @@ TEST(ModularTest, RoundtripExtraProperties) {
   Image image(kSize, kSize, /*maxval=*/255, 3);
   ModularOptions options;
   options.max_properties = 4;
-  options.predictor.resize(1, Predictor::Zero);
+  options.predictor = Predictor::Zero;
   std::mt19937 rng(0);
   std::uniform_int_distribution<> dist(0, 8);
   for (size_t y = 0; y < kSize; y++) {

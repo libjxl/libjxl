@@ -50,6 +50,7 @@ Status ScaleInLinearSpace(const float scaling_factor, ImageBundle* const ib,
   const ColorEncoding original_encoding = ib->c_current();
   ColorEncoding linear = original_encoding;
   linear.tf.SetTransferFunction(TransferFunction::kLinear);
+  JXL_RETURN_IF_ERROR(linear.CreateICC());
   JXL_RETURN_IF_ERROR(ib->TransformTo(linear, pool));
   ScaleImage(scaling_factor, ib->MutableColor());
   return ib->TransformTo(original_encoding, pool);

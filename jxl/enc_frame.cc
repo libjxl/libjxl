@@ -954,7 +954,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     // Lossless has no DC info.
   }
   JXL_RETURN_IF_ERROR(
-      modular_frame_encoder.EncodeGlobalInfo(get_output(0), aux_out));
+      modular_frame_encoder.EncodeGlobalInfo(get_output(0), aux_out, 0));
 
   const auto process_dc_group = [&](const int group_index, const int thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
@@ -966,7 +966,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     // minShift==3 because kDcGroupDim>>3 == kGroupDim
     // maxShift==1000 is infinity
     JXL_CHECK(modular_frame_encoder.EncodeGroup(rect, output, my_aux_out, 3,
-                                                1000, kLayerModularDcGroup));
+                                                1000, kLayerModularDcGroup,
+                                                group_index + 1));
     if (frame_header.IsJpeg()) {
       JXL_CHECK(
           jpeg_frame_encoder.SerializeDcGroup(group_index, output, my_aux_out));
@@ -1011,7 +1012,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       //      printf("Encoding shifts %i..%i\n",minShift,maxShift);
       if (!modular_frame_encoder.EncodeGroup(
               mrect, ac_group_code(i, group_index), my_aux_out, minShift,
-              maxShift, kLayerModularAcGroup)) {
+              maxShift, kLayerModularAcGroup,
+              AcGroupIndex(i, group_index, frame_dim.num_groups,
+                           frame_dim.num_dc_groups, has_ac_global))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
         return;
       }

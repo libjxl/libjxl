@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef JXL_TESTDATA_PATH_H_
-#define JXL_TESTDATA_PATH_H_
+#ifndef PLUGINS_GIMP_FILE_JXL_SAVE_H_
+#define PLUGINS_GIMP_FILE_JXL_SAVE_H_
 
-#include <string>
+#include <libgimp/gimp.h>
 
+#include "jxl/base/status.h"
 
 namespace jxl {
 
-static inline std::string GetTestDataPath(const std::string& filename) {
-  return std::string(TEST_DATA_PATH "/") + filename;
+Status SaveJpegXlImage(gint32 image_id, gint32 drawable_id,
+                       gint32 orig_image_id, const gchar* filename);
+
 }
 
-}  // namespace jxl
-
-#endif  // JXL_TESTDATA_PATH_H_
+#endif

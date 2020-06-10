@@ -149,7 +149,7 @@ include the symbols (functions and line numbers). To install `llvm-symbolizer`
 on a Debian-based system run:
 
 ```bash
-sudo apt install llvm # or llvm-6.0, llvm-7, etc for a specific version.
+sudo apt install llvm # or llvm-7, etc for a specific version.
 ```
 
 To install a version of libc++ compiled with `-fsanitize=memory` you can use the

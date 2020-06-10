@@ -14,6 +14,7 @@
 
 #include "jxl/color_encoding.h"
 
+#include <array>
 #include <cmath>
 
 #include "jxl/color_management.h"
@@ -242,23 +243,27 @@ Status ParseTransferFunction(Tokenizer* JXL_RESTRICT tokenizer,
   return JXL_FAILURE("Invalid gamma %s", str.c_str());
 }
 
-static double F64FromI32(const int32_t i) { return i * 1E-6; }
-static int32_t I32FromF64(const double f) {
-  return static_cast<int32_t>(std::round(f * 1E6));
+static double F64FromCustomxyI32(const int32_t i) { return i * 1E-6; }
+static Status F64ToCustomxyI32(const double f, int32_t* JXL_RESTRICT i) {
+  if (!(-4 <= f && f <= 4)) {
+    return JXL_FAILURE("F64 out of bounds for CustomxyI32");
+  }
+  *i = static_cast<int32_t>(std::round(f * 1E6));
+  return true;
 }
 
 }  // namespace
 
 CIExy Customxy::Get() const {
   CIExy xy;
-  xy.x = F64FromI32(x);
-  xy.y = F64FromI32(y);
+  xy.x = F64FromCustomxyI32(x);
+  xy.y = F64FromCustomxyI32(y);
   return xy;
 }
 
 Status Customxy::Set(const CIExy& xy) {
-  x = I32FromF64(xy.x);
-  y = I32FromF64(xy.y);
+  JXL_RETURN_IF_ERROR(F64ToCustomxyI32(xy.x, &x));
+  JXL_RETURN_IF_ERROR(F64ToCustomxyI32(xy.y, &y));
   size_t extension_bits, total_bits;
   if (!Bundle::CanEncode(*this, &extension_bits, &total_bits)) {
     return JXL_FAILURE("Unable to encode XY %f %f", xy.x, xy.y);
@@ -515,8 +520,9 @@ Status ParseDescription(const std::string& description,
   return true;
 }
 
+void ColorEncoding::InitFields() { Bundle::Init(this); }
+
 Customxy::Customxy() { Bundle::Init(this); }
 CustomTransferFunction::CustomTransferFunction() { Bundle::Init(this); }
-ColorEncoding::ColorEncoding() { Bundle::Init(this); }
 
 }  // namespace jxl

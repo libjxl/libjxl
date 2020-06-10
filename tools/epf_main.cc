@@ -35,8 +35,10 @@ int main(int argc, const char** argv) {
   cmdline.AddOptionValue('s', "sharpness", "1..7",
                          "EPF sharpness value from 1 to 7", &sharpness,
                          &jpegxl::tools::ParseUnsigned);
-  cmdline.AddPositionalOption("INPUT", "Input image", &input_filename);
-  cmdline.AddPositionalOption("OUTPUT", "Output image", &output_filename);
+  cmdline.AddPositionalOption("INPUT", /* required = */ true, "Input image",
+                              &input_filename);
+  cmdline.AddPositionalOption("OUTPUT", /* required = */ true, "Output image",
+                              &output_filename);
   if (!cmdline.Parse(argc, argv) || input_filename == nullptr ||
       output_filename == nullptr) {
     cmdline.PrintHelp();

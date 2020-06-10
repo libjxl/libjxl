@@ -1,0 +1,14 @@
+/* This document is meant for Doxygen use only. If you are looking for the API
+ * documentation generate it with `./ci.sh release` and look under the
+ * build/html directory.
+ *
+ * This file documents all the groups and defines the order in which they appear
+ * in Doxygen. Define the @defgroup commands here and use @addtogroup anywhere
+ * else.
+ */
+
+/**
+@defgroup jpegxl_dec JPEG XL Decoder library (jpegxl_dec)
+
+@defgroup jpegxl_threads JPEG XL Threads API helper library (jpegxl_threads)
+*/

@@ -184,9 +184,8 @@ class JxlCodec : public ImageCodec {
       cparams_.options.max_properties =
           strtof(param.substr(1).c_str(), nullptr);
     } else if (param[0] == 'P') {
-      cparams_.options.predictor.clear();
-      cparams_.options.predictor.push_back(
-          static_cast<Predictor>(strtof(param.substr(1).c_str(), nullptr)));
+      cparams_.options.predictor =
+          static_cast<Predictor>(strtof(param.substr(1).c_str(), nullptr));
     } else if (param == "slow") {
       cparams_.options.nb_repeats = 2;
     } else if (param == "R") {
@@ -202,8 +201,7 @@ class JxlCodec : public ImageCodec {
       cparams_.options.brotli_effort = 11;
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;
-      cparams_.options.predictor.clear();
-      cparams_.options.predictor.push_back(Predictor::Zero);
+      cparams_.options.predictor = Predictor::Zero;
       cparams_.responsive = 0;
       cparams_.colorspace = 0;
       cparams_.channel_colors_pre_transform_percent = 0;

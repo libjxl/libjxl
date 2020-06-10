@@ -132,7 +132,7 @@ struct TestBroadcastT {
 };
 
 HWY_NOINLINE void TestBroadcast() {
-  const ForFullVectors<TestBroadcastT> test;
+  const ForPartialVectors<TestBroadcastT> test;
   // No u8.
   test(uint16_t());
   test(uint32_t());

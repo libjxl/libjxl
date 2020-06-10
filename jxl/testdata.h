@@ -12,18 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef PLUGINS_GIMP_FILE_J_SAVE_H_
-#define PLUGINS_GIMP_FILE_J_SAVE_H_
+#ifndef JXL_TESTDATA_PATH_H_
+#define JXL_TESTDATA_PATH_H_
 
-#include <libgimp/gimp.h>
+#include <string>
 
-#include "jxl/base/status.h"
+#include "jxl/base/file_io.h"
 
 namespace jxl {
 
-Status SaveJpegXlImage(gint32 image_id, gint32 drawable_id,
-                       gint32 orig_image_id, const gchar* filename);
-
+static inline PaddedBytes ReadTestData(const std::string& filename) {
+  std::string full_path = std::string(TEST_DATA_PATH "/") + filename;
+  PaddedBytes data;
+  JXL_CHECK(ReadFile(full_path, &data));
+  return data;
 }
 
-#endif
+}  // namespace jxl
+
+#endif  // JXL_TESTDATA_PATH_H_

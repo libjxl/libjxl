@@ -35,11 +35,9 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/modular/transform/palette.h
   jxl/modular/transform/quantize.h
   jxl/modular/transform/squeeze.h
-  jxl/modular/transform/subsample.h
   jxl/modular/transform/subtractgreen.h
   jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
-  jxl/modular/transform/ycocg.h
   jxl/ac_context.h
   jxl/ac_strategy.cc
   jxl/ac_strategy.h

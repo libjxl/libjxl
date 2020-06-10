@@ -42,6 +42,19 @@
 namespace jpegxl {
 namespace tools {
 
+namespace {
+const char* ModeFromSignature(const jxl::Span<const uint8_t> compressed,
+                              const JpegxlSignature signature) {
+  switch (signature) {
+    case JPEGXL_SIG_VALID:
+      // compressed is guaranteed large enough if the signature is valid
+      return (compressed[0] == 0x0A) ? "TRANSCODED_JPEG" : "JPEGXL";
+    default:
+      JXL_ABORT("Invalid signature, should have handled this separately");
+  }
+}
+}  // namespace
+
 void JxlDecompressArgs::AddCommandLineOptions(
     tools::CommandLineParser* cmdline) {
   // Flags.
@@ -96,17 +109,6 @@ jxl::Status JxlDecompressArgs::ValidateArgs() {
   return true;
 }
 
-const char* ModeFromSignature(const JpegxlSignature signature) {
-  switch (signature) {
-    case JPEGXL_SIG_JPEGXL:
-      return "JPEGXL";
-    case JPEGXL_SIG_TRANSCODED_JPEG:
-      return "TRANSCODED_JPEG";
-    default:
-      JXL_ABORT("Invalid signature, should have handled this separately");
-  }
-}
-
 jxl::Status DecompressJxl(const JpegxlSignature signature,
                           const jxl::Span<const uint8_t> compressed,
                           const jxl::DecompressParams& params,
@@ -114,12 +116,15 @@ jxl::Status DecompressJxl(const JpegxlSignature signature,
                           jxl::CodecInOut* JXL_RESTRICT io,
                           jxl::AuxOut* aux_out,
                           SpeedStats* JXL_RESTRICT stats) {
+  if (compressed.size() < 2 || signature != JPEGXL_SIG_VALID) {
+    fprintf(stderr, "Not a valid JPEG XL file.\n");
+    return false;
+  }
   const double t0 = jxl::Now();
 
   jxl::Status ok = false;
-  // JPEG1, not JXL
-  if (signature == JPEGXL_SIG_JPEGXL &&
-      compressed[1] != jxl::kCodestreamMarker) {
+  // JPEG1, not JXL nor Brunsli
+  if (compressed[0] == 0xff && compressed[1] != jxl::kCodestreamMarker) {
 #if JPEGXL_ENABLE_JPEG
     ok = DecodeImageJPG(compressed, pool, io);
 #endif
@@ -127,7 +132,8 @@ jxl::Status DecompressJxl(const JpegxlSignature signature,
     ok = DecodeFile(params, compressed, io, aux_out, pool);
   }
   if (!ok) {
-    fprintf(stderr, "Failed to decompress %s.\n", ModeFromSignature(signature));
+    fprintf(stderr, "Failed to decompress %s.\n",
+            ModeFromSignature(compressed, signature));
     return false;
   }
 

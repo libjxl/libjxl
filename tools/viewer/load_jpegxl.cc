@@ -83,7 +83,11 @@ QImage loadJpegXlImage(const QString& filename, PaddedBytes targetIccProfile,
     const int alphaLeftShiftAmount =
         16 - static_cast<int>(io.metadata.alpha_bits);
     for (int y = 0; y < result.height(); ++y) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+      QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
+#else
       QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
+#endif
       const uint16_t* const alphaRow = ib.alpha().ConstRow(y);
       const uint16_t* const redRow = decoded.ConstPlaneRow(0, y);
       const uint16_t* const greenRow = decoded.ConstPlaneRow(1, y);
@@ -107,7 +111,11 @@ QImage loadJpegXlImage(const QString& filename, PaddedBytes targetIccProfile,
     }
   } else {
     for (int y = 0; y < result.height(); ++y) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
+      QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
+#else
       QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
+#endif
       const uint16_t* const redRow = decoded.ConstPlaneRow(0, y);
       const uint16_t* const greenRow = decoded.ConstPlaneRow(1, y);
       const uint16_t* const blueRow = decoded.ConstPlaneRow(2, y);

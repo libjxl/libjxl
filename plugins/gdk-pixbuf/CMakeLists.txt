@@ -24,16 +24,10 @@ endif ()
 add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c c_interop.cc c_interop.h)
 target_link_libraries(pixbufloader-jxl jpegxl-static jpegxl_threads PkgConfig::Gdk-Pixbuf)
 
-install(TARGETS pixbufloader-jxl LIBRARY DESTINATION /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0/2.10.0/loaders)
-
-find_program(GDK_PIXBUF_QUERY_LOADERS_PROG gdk-pixbuf-query-loaders /usr/lib/x86_64-linux-gnu/gdk-pixbuf-2.0)
-if(NOT ${GDK_PIXBUF_QUERY_LOADERS_PROG} STREQUAL "GDK_PIXBUF_QUERY_LOADERS_PROG-NOTFOUND")
-  install(CODE "execute_process(COMMAND ${GDK_PIXBUF_QUERY_LOADERS_PROG} --update-cache)")
-else()
-  message(WARNING "gdk-pixbuf-query-loeaders not found")
-endif()
+pkg_get_variable(GDK_PIXBUF_MODULEDIR gdk-pixbuf-2.0 gdk_pixbuf_moduledir)
+install(TARGETS pixbufloader-jxl LIBRARY DESTINATION "${GDK_PIXBUF_MODULEDIR}")
 
 # Instead of the following, we might instead add the
-# mime type image/x-jxl to
+# mime type image/jxl to
 # /usr/share/thumbnailers/gdk-pixbuf-thumbnailer.thumbnailer
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/jxl.thumbnailer DESTINATION /usr/share/thumbnailers/)
+install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/jxl.thumbnailer DESTINATION share/thumbnailers/)

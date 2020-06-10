@@ -136,8 +136,7 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
   if (input_codec == jxl::Codec::kGIF && args.quality < -1000.f &&
       args.default_settings) {
     args.params.modular_group_mode = true;
-    args.params.options.predictor.clear();
-    args.params.options.predictor.push_back(jxl::Predictor::Select);
+    args.params.options.predictor = jxl::Predictor::Select;
     args.params.responsive = 0;
     args.params.colorspace = 0;
     args.params.channel_colors_pre_transform_percent = 0;
@@ -318,8 +317,9 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
 JxlCompressArgs::JxlCompressArgs() {}
 
 jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
-  cmdline->AddPositionalOption(
-      "SPOT", "spot color channel (optional, for testing)", &spot_in, 2);
+  cmdline->AddPositionalOption("SPOT", /* required = */ false,
+                               "spot color channel (optional, for testing)",
+                               &spot_in, 2);
 
   // High-level options
   cmdline->AddOptionValue(
@@ -467,7 +467,7 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "[modular encoding] predictor(s) to use: 0=zero, "
       "1=left, 2=top, 3=avg, 4=select, 5=gradient, 6=variable, "
       "7=weighted (default: best of 5,7)",
-      &params.options.predictor, &ParsePredictorsVector, 1);
+      &params.options.predictor, &ParsePredictor, 1);
 
   cmdline->AddOptionValue(
       'E', "extra-properties", "K",

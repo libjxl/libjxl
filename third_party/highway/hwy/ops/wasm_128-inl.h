@@ -1385,38 +1385,38 @@ HWY_API Vec128<T> CombineShiftRightBytes(const Vec128<T> hi,
 // ------------------------------ Broadcast/splat any lane
 
 // Unsigned
-template <int kLane>
-HWY_API Vec128<uint16_t> Broadcast(const Vec128<uint16_t> v) {
-  static_assert(0 <= kLane && kLane < 8, "Invalid lane");
-  return Vec128<uint16_t>{wasm_v16x8_shuffle(
+template <int kLane, size_t N>
+HWY_API Vec128<uint16_t, N> Broadcast(const Vec128<uint16_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<uint16_t, N>{wasm_v16x8_shuffle(
       v.raw, v.raw, kLane, kLane, kLane, kLane, kLane, kLane, kLane, kLane)};
 }
-template <int kLane>
-HWY_API Vec128<uint32_t> Broadcast(const Vec128<uint32_t> v) {
-  static_assert(0 <= kLane && kLane < 4, "Invalid lane");
-  return Vec128<uint32_t>{
+template <int kLane, size_t N>
+HWY_API Vec128<uint32_t, N> Broadcast(const Vec128<uint32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<uint32_t, N>{
       wasm_v32x4_shuffle(v.raw, v.raw, kLane, kLane, kLane, kLane)};
 }
 
 // Signed
-template <int kLane>
-HWY_API Vec128<int16_t> Broadcast(const Vec128<int16_t> v) {
-  static_assert(0 <= kLane && kLane < 8, "Invalid lane");
-  return Vec128<int16_t>{wasm_v16x8_shuffle(v.raw, v.raw, kLane, kLane, kLane,
-                                            kLane, kLane, kLane, kLane, kLane)};
+template <int kLane, size_t N>
+HWY_API Vec128<int16_t, N> Broadcast(const Vec128<int16_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<int16_t, N>{wasm_v16x8_shuffle(
+      v.raw, v.raw, kLane, kLane, kLane, kLane, kLane, kLane, kLane, kLane)};
 }
-template <int kLane>
-HWY_API Vec128<int32_t> Broadcast(const Vec128<int32_t> v) {
-  static_assert(0 <= kLane && kLane < 4, "Invalid lane");
-  return Vec128<int32_t>{
+template <int kLane, size_t N>
+HWY_API Vec128<int32_t, N> Broadcast(const Vec128<int32_t, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<int32_t, N>{
       wasm_v32x4_shuffle(v.raw, v.raw, kLane, kLane, kLane, kLane)};
 }
 
 // Float
-template <int kLane>
-HWY_API Vec128<float> Broadcast(const Vec128<float> v) {
-  static_assert(0 <= kLane && kLane < 4, "Invalid lane");
-  return Vec128<float>{
+template <int kLane, size_t N>
+HWY_API Vec128<float, N> Broadcast(const Vec128<float, N> v) {
+  static_assert(0 <= kLane && kLane < N, "Invalid lane");
+  return Vec128<float, N>{
       wasm_v32x4_shuffle(v.raw, v.raw, kLane, kLane, kLane, kLane)};
 }
 

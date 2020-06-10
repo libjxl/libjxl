@@ -69,9 +69,6 @@ void TestNeighbors() {
 template <class Random>
 void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
                       Random* rng) {
-  const size_t kRadius = 1;
-  JXL_CHECK(xsize > kRadius);
-  JXL_CHECK(ysize > kRadius);
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
@@ -91,9 +88,6 @@ void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
 template <class Random>
 void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
                       Random* rng) {
-  const size_t kRadius = 2;
-  JXL_CHECK(xsize > kRadius);
-  JXL_CHECK(ysize > kRadius);
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
@@ -112,9 +106,6 @@ void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
 template <class Random>
 void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
                       Random* rng) {
-  const size_t kRadius = 2;
-  JXL_CHECK(xsize > kRadius);
-  JXL_CHECK(ysize > kRadius);
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
@@ -130,11 +121,34 @@ void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
 }
 
+template <class Random>
+void VerifySeparable7(const size_t xsize, const size_t ysize, ThreadPool* pool,
+                      Random* rng) {
+  const Rect rect(0, 0, xsize, ysize);
+
+  ImageF in(xsize, ysize);
+  GenerateImage(GeneratorRandom<float, Random>(rng, 1.0f), &in);
+
+  ImageF out_expected(xsize, ysize);
+  ImageF out_actual(xsize, ysize);
+
+  // Gaussian sigma 1.0
+  const WeightsSeparable7 weights = {{HWY_REP4(0.383103f), HWY_REP4(0.241843f),
+                                      HWY_REP4(0.060626f), HWY_REP4(0.00598f)},
+                                     {HWY_REP4(0.383103f), HWY_REP4(0.241843f),
+                                      HWY_REP4(0.060626f), HWY_REP4(0.00598f)}};
+
+  SlowSeparable7(in, rect, weights, pool, &out_expected);
+  ChooseSeparable7()(in, Rect(in), weights, pool, &out_actual);
+
+  VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
+}
+
 // For all xsize/ysize and kernels:
 void TestConvolve() {
   TestNeighbors();
 
-  ThreadPoolInternal pool(0);
+  ThreadPoolInternal pool(4);
   pool.Run(kConvolveMaxRadius, 40, ThreadPool::SkipInit(),
            [](const int task, int /*thread*/) {
              const size_t xsize = task;
@@ -158,6 +172,10 @@ void TestConvolve() {
                JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep5------------------");
                VerifySeparable5(xsize, ysize, null_pool, &rng);
                VerifySeparable5(xsize, ysize, &pool3, &rng);
+
+               JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sep7------------------");
+               VerifySeparable7(xsize, ysize, null_pool, &rng);
+               VerifySeparable7(xsize, ysize, &pool3, &rng);
              }
            });
 }

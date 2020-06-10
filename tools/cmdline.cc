@@ -21,8 +21,19 @@ namespace jpegxl {
 namespace tools {
 
 void CommandLineParser::PrintHelp() const {
-  fprintf(stderr, "Usage: %s [OPTIONS]\n",
-          program_name_ ? program_name_ : "command");
+  fprintf(stderr, "Usage: %s", program_name_ ? program_name_ : "command");
+
+  for (const auto& option : options_) {
+    if (option->positional()) {
+      if (option->verbosity_level() > verbosity) continue;
+      if (option->required()) {
+        fprintf(stderr, " %s", option->help_flags().c_str());
+      } else {
+        fprintf(stderr, " [%s]", option->help_flags().c_str());
+      }
+    }
+  }
+  fprintf(stderr, " [OPTIONS...]\n");
 
   bool showed_all = true;
   for (const auto& option : options_) {

@@ -42,33 +42,8 @@
 
 namespace jxl {
 
-struct ChannelHeader {
-  ChannelHeader() { Bundle::Init(this); }
-
-  static const char *Name() { return "ChannelHeader"; }
-
-  template <class Visitor>
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) {
-    visitor->Bool(false, &trivial_channel);
-    if (visitor->Conditional(trivial_channel)) {
-      uint32_t minval_packed = PackSigned(minv);
-      visitor->U32(Val(0), BitsOffset(9, 1), BitsOffset(24, 513),
-                   BitsOffset(32, 16777729), 0, &minval_packed);
-      minv = UnpackSigned(minval_packed);
-    }
-    if (visitor->Conditional(!trivial_channel)) {
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
-    }
-    return true;
-  }
-
-  bool trivial_channel;
-  int32_t minv = 0;            // trivial_channel.
-  weighted::Header wp_header;  // !trivial_channel.
-};
-
 // Tries all the predictors, excluding Weighted, per row.
-Predictor FindBest(const Image &image, size_t chan,
+Predictor FindBest(const Image &image, pixel_type chan,
                    const pixel_type *JXL_RESTRICT p, intptr_t onerow, size_t y,
                    Predictor prev_predictor) {
   const Channel &channel = image.channel[chan];
@@ -96,66 +71,80 @@ Predictor FindBest(const Image &image, size_t chan,
   return (Predictor)best_predictor;
 }
 
-Status EncodeModularChannelMAANS(const Image &image, size_t chan,
-                                 const ChannelHeader &header, const Tree &tree,
+Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
+                                 const weighted::Header &wp_header,
+                                 const Tree &tree,
                                  const ModularOptions &options,
                                  const HybridUintConfig &uint_config,
-                                 size_t base_ctx, std::vector<Token> *tokens) {
+                                 std::vector<Token> *tokens, AuxOut *aux_out,
+                                 size_t group_id, size_t call_id) {
   const Channel &channel = image.channel[chan];
 
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
 
-  if (header.trivial_channel) return true;
+  Image3F predictor_img(channel.w, channel.h);
 
   JXL_DEBUG_V(6,
-              "Encoding %zux%zu channel %zu, "
+              "Encoding %zux%zu channel %d, "
               "(shift=%i,%i, cshift=%i,%i)",
               channel.w, channel.h, chan, channel.hshift, channel.vshift,
               channel.hcshift, channel.vcshift);
 
-  Properties properties(NumProperties(image, chan, chan, options));
+  Properties properties(NumProperties(image, options));
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
 
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan};
+
   const intptr_t onerow = channel.plane.PixelsPerRow();
   Channel references(properties.size() - kNumNonrefProperties, channel.w);
-  weighted::State wp_state(header.wp_header, channel.w, channel.h);
+  weighted::State wp_state(wp_header, channel.w, channel.h);
   for (size_t y = 0; y < channel.h; y++) {
     const pixel_type *JXL_RESTRICT p = channel.Row(y);
     PrecomputeReferences(channel, y, image, chan, options, &references);
+    float *pred_img_row[3] = {predictor_img.PlaneRow(0, y),
+                              predictor_img.PlaneRow(1, y),
+                              predictor_img.PlaneRow(2, y)};
     for (size_t x = 0; x < channel.w; x++) {
       PredictionResult res =
-          PredictTreeWP(&properties, channel, p + x, onerow, x, y, tree_lookup,
-                        references, &wp_state);
-      TokenizeWithConfig(uint_config, base_ctx + res.context,
-                         PackSigned(p[x] - res.guess), tokens);
+          PredictTreeWP(&properties, channel, static_props, p + x, onerow, x, y,
+                        tree_lookup, references, &wp_state);
+      for (size_t i = 0; i < 3; i++) {
+        pred_img_row[i][x] = PredictorColor(res.predictor)[i];
+      }
+      TokenizeWithConfig(uint_config, res.context, PackSigned(p[x] - res.guess),
+                         tokens);
       wp_state.UpdateErrors(p[x], x, y, channel.w);
     }
+  }
+  if (WantDebugOutput(aux_out)) {
+    aux_out->DumpImage(("pred_" + std::to_string(group_id) + "_" +
+                        std::to_string(chan) + "_" + std::to_string(call_id))
+                           .c_str(),
+                       predictor_img);
   }
   return true;
 }
 
 Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const std::vector<uint8_t> &context_map,
-                                 const Tree &tree, const ChannelHeader &header,
-                                 const ModularOptions &options, size_t base_ctx,
-                                 size_t chan, Image *image) {
+                                 const Tree &tree,
+                                 const weighted::Header &wp_header,
+                                 const ModularOptions &options, pixel_type chan,
+                                 Image *image) {
   Channel &channel = image->channel[chan];
+
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan};
+  // TODO(veluca): filter the tree according to static_props.
 
   // zero pixel channel? could happen
   if (channel.w == 0 || channel.h == 0) return true;
-
-  if (header.trivial_channel) {
-    channel.plane = Plane<pixel_type>();
-    channel.resize(header.minv);  // fill it with the constant value
-    return true;
-  }
 
   channel.resize(channel.w, channel.h);
 
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Decoded MA tree with %zu nodes", tree.size());
-  Properties properties(NumProperties(*image, chan, chan, options));
+  Properties properties(NumProperties(*image, options));
 
   // MAANS decode
   bool tree_has_wp_prop_or_pred = false;
@@ -164,8 +153,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       if (tree[i].predictor == Predictor::Weighted) {
         tree_has_wp_prop_or_pred = true;
       }
-    } else if (tree[i].property >=
-               properties.size() - weighted::kNumProperties) {
+    } else if (kNumNonrefProperties > tree[i].property &&
+               tree[i].property >=
+                   kNumNonrefProperties - weighted::kNumProperties) {
       tree_has_wp_prop_or_pred = true;
     }
   }
@@ -180,7 +170,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
-          uint32_t v = reader->ReadHybridUint(base_ctx, br, context_map);
+          uint32_t v = reader->ReadHybridUint(0, br, context_map);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), offset);
         }
       }
@@ -195,7 +185,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type_w g =
               PredictNoTreeNoWP(channel, r + x, onerow, x, y, predictor).guess +
               offset;
-          uint64_t v = reader->ReadHybridUint(base_ctx, br, context_map);
+          uint64_t v = reader->ReadHybridUint(0, br, context_map);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
         }
       }
@@ -204,7 +194,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       // compute properties
       JXL_DEBUG_V(8, "Somewhat fast track.");
       const intptr_t onerow = channel.plane.PixelsPerRow();
-      weighted::State wp_state(header.wp_header, channel.w, channel.h);
+      weighted::State wp_state(wp_header, channel.w, channel.h);
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
@@ -212,7 +202,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                            predictor, &wp_state)
                                .guess +
                            offset;
-          uint64_t v = reader->ReadHybridUint(base_ctx, br, context_map);
+          uint64_t v = reader->ReadHybridUint(0, br, context_map);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
           wp_state.UpdateErrors(r[x], x, y, channel.w);
         }
@@ -228,10 +218,10 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, *image, chan, options, &references);
       for (size_t x = 0; x < channel.w; x++) {
-        PredictionResult res = PredictTreeNoWP(
-            &properties, channel, p + x, onerow, x, y, tree_lookup, references);
-        uint64_t v =
-            reader->ReadHybridUint(base_ctx + res.context, br, context_map);
+        PredictionResult res =
+            PredictTreeNoWP(&properties, channel, static_props, p + x, onerow,
+                            x, y, tree_lookup, references);
+        uint64_t v = reader->ReadHybridUint(res.context, br, context_map);
         p[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), res.guess);
       }
     }
@@ -239,16 +229,15 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     JXL_DEBUG_V(8, "Slowest track.");
     const intptr_t onerow = channel.plane.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
-    weighted::State wp_state(header.wp_header, channel.w, channel.h);
+    weighted::State wp_state(wp_header, channel.w, channel.h);
     for (size_t y = 0; y < channel.h; y++) {
       pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, *image, chan, options, &references);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
-            PredictTreeWP(&properties, channel, p + x, onerow, x, y,
-                          tree_lookup, references, &wp_state);
-        uint64_t v =
-            reader->ReadHybridUint(base_ctx + res.context, br, context_map);
+            PredictTreeWP(&properties, channel, static_props, p + x, onerow, x,
+                          y, tree_lookup, references, &wp_state);
+        uint64_t v = reader->ReadHybridUint(res.context, br, context_map);
         p[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), res.guess);
         wp_state.UpdateErrors(p[x], x, y, channel.w);
       }
@@ -257,33 +246,18 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   return true;
 }
 
-ChannelHeader ComputeChannelHeader(const Channel &channel) {
-  ChannelHeader header;
-
-  if (channel.is_trivial) {
-    header.trivial_channel = true;
-    pixel_type minv;
-    pixel_type maxv;
-    channel.compute_minmax(&minv, &maxv);
-    header.minv = minv;
-  }
-  return header;
-}
-
-Tree LearnTree(const Image &image, size_t chan, const ChannelHeader &header,
-               Predictor predictor, const ModularOptions &options,
-               const HybridUintConfig &uint_config) {
-  if (options.nb_repeats <= 0) {
-    Tree t;
-    t.push_back(PropertyDecisionNode{});
-    return t;
-  }
+void GatherTreeData(const Image &image, pixel_type chan,
+                    const weighted::Header &wp_header,
+                    const std::vector<Predictor> &predictors,
+                    const ModularOptions &options,
+                    std::vector<std::vector<int32_t>> &props,
+                    std::vector<std::vector<int32_t>> &residuals) {
   const Channel &channel = image.channel[chan];
 
-  JXL_DEBUG_V(7, "Learning %zux%zu channel %zu (predictor %i)", channel.w,
-              channel.h, chan, predictor);
+  JXL_DEBUG_V(7, "Learning %zux%zu channel %d", channel.w, channel.h, chan);
 
-  Properties properties(NumProperties(image, chan, chan, options));
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan};
+  Properties properties(NumProperties(image, options));
   std::mt19937_64 gen(1);  // deterministic learning (also between threads)
   float pixel_fraction = std::min(1.0f, options.nb_repeats);
   pixel_fraction = std::max(pixel_fraction,
@@ -292,38 +266,27 @@ Tree LearnTree(const Image &image, size_t chan, const ChannelHeader &header,
 
   const intptr_t onerow = channel.plane.PixelsPerRow();
   Channel references(properties.size() - kNumNonrefProperties, channel.w);
-  weighted::State wp_state(header.wp_header, channel.w, channel.h);
-  std::vector<std::vector<int32_t>> props(properties.size());
-  std::vector<Predictor> predictors;
-  if (predictor == Predictor::Variable) {
-    predictors.resize(kNumModularPredictors);
-    for (size_t i = 0; i < kNumModularPredictors; i++) {
-      predictors[i] = static_cast<Predictor>(i);
-    }
-  } else {
-    predictors = {predictor};
+  weighted::State wp_state(wp_header, channel.w, channel.h);
+  if (props.empty()) {
+    props.resize(properties.size());
+    residuals.resize(predictors.size());
   }
-  std::vector<std::vector<int32_t>> residuals(predictors.size());
-  std::vector<std::pair<int, int>> prop_range(properties.size());
-  for (size_t i = 0; i < properties.size(); i++) {
-    prop_range[i].first = std::numeric_limits<int>::max();
-    prop_range[i].second = std::numeric_limits<int>::min();
-  }
+  JXL_ASSERT(props.size() == properties.size());
   for (size_t y = 0; y < channel.h; y++) {
     const pixel_type *JXL_RESTRICT p = channel.Row(y);
     PrecomputeReferences(channel, y, image, chan, options, &references);
     for (size_t x = 0; x < channel.w; x++) {
       pixel_type_w res[kNumModularPredictors];
-      if (predictor == Predictor::Variable) {
-        PredictLearnAll(&properties, channel, p + x, onerow, x, y, references,
-                        &wp_state, res);
-        for (size_t i = 0; i < kNumModularPredictors; i++) {
-          res[i] = p[x] - res[i];
+      if (predictors.size() != 1) {
+        PredictLearnAll(&properties, channel, static_props, p + x, onerow, x, y,
+                        references, &wp_state, res);
+        for (size_t i = 0; i < predictors.size(); i++) {
+          res[i] = p[x] - res[(int)predictors[i]];
         }
       } else {
         PredictionResult pres =
-            PredictLearn(&properties, channel, p + x, onerow, x, y, predictor,
-                         references, &wp_state);
+            PredictLearn(&properties, channel, static_props, p + x, onerow, x,
+                         y, predictors[0], references, &wp_state);
         res[0] = p[x] - pres.guess;
       }
       if (dist(gen)) {
@@ -332,15 +295,20 @@ Tree LearnTree(const Image &image, size_t chan, const ChannelHeader &header,
         }
         for (size_t i = 0; i < properties.size(); i++) {
           props[i].push_back(properties[i]);
-          prop_range[i].first = std::min(prop_range[i].first, properties[i]);
-          prop_range[i].second = std::max(prop_range[i].second, properties[i]);
         }
       }
       wp_state.UpdateErrors(p[x], x, y, channel.w);
     }
   }
+}
+
+Tree LearnTree(std::vector<Predictor> predictors,
+               std::vector<std::vector<int32_t>> &&props,
+               std::vector<std::vector<int32_t>> &&residuals,
+               const ModularOptions &options,
+               const HybridUintConfig &uint_config) {
   int64_t offset = 0;
-  if (predictor == Predictor::Variable) {
+  if (predictors.size() > 1) {
     int base_pred = 0;
     size_t base_pred_cost = 0;
     for (size_t i = 0; i < kNumModularPredictors; i++) {
@@ -364,7 +332,7 @@ Tree LearnTree(const Image &image, size_t chan, const ChannelHeader &header,
     std::swap(residuals[base_pred], residuals[0]);
   }
   std::vector<size_t> props_to_use;
-  std::vector<std::vector<int>> compact_properties(properties.size());
+  std::vector<std::vector<int>> compact_properties(props.size());
   // TODO(veluca): add an option for max total number of property values.
   ChooseAndQuantizeProperties(options.splitting_heuristics_max_properties,
                               options.splitting_heuristics_max_properties * 256,
@@ -373,23 +341,27 @@ Tree LearnTree(const Image &image, size_t chan, const ChannelHeader &header,
   Tree tree;
   ComputeBestTree(residuals, props, predictors, uint_config, offset,
                   compact_properties, props_to_use,
-                  options.splitting_heuristics_node_threshold * pixel_fraction,
+                  options.splitting_heuristics_node_threshold,
                   options.splitting_heuristics_max_properties, &tree);
   return tree;
 }
 
-Status EncodeModularChannelBrotli(const Image &image, size_t chan,
-                                  const ChannelHeader &header,
+Status EncodeModularChannelBrotli(const Image &image, pixel_type chan,
+                                  const weighted::Header &wp_header,
                                   Predictor predictor, size_t total_pixels,
                                   size_t *JXL_RESTRICT pos,
                                   size_t *JXL_RESTRICT subpred_pos,
                                   PaddedBytes *JXL_RESTRICT data) {
   const Channel &channel = image.channel[chan];
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
-  if (header.trivial_channel) return true;
   Predictor subpredictor = Predictor::Gradient;
+  int min, max;
+  channel.compute_minmax(&min, &max);
+  if (min == max) {
+    predictor = subpredictor = Predictor::Zero;
+  }
   const intptr_t onerow = channel.plane.PixelsPerRow();
-  weighted::State wp_state(header.wp_header, channel.w, channel.h);
+  weighted::State wp_state(wp_header, channel.w, channel.h);
   for (size_t y = 0; y < channel.h; y++) {
     const pixel_type *JXL_RESTRICT p = channel.Row(y);
     if (predictor == Predictor::Variable) {
@@ -417,17 +389,12 @@ Status EncodeModularChannelBrotli(const Image &image, size_t chan,
 }
 
 Status DecodeModularChannelBrotli(const PaddedBytes &data,
-                                  const ChannelHeader &header,
+                                  const weighted::Header &wp_header,
                                   size_t total_pixels, size_t *JXL_RESTRICT pos,
                                   size_t *JXL_RESTRICT subpred_pos,
-                                  Image *image, size_t chan) {
+                                  Image *image, pixel_type chan) {
   Channel *channel = &image->channel[chan];
   JXL_ASSERT(channel->w != 0 && channel->h != 0);
-  if (header.trivial_channel) {
-    channel->plane = Plane<pixel_type>();
-    channel->resize(header.minv);  // fill it with the constant value
-    return true;
-  }
 
   channel->resize(channel->w, channel->h);
 
@@ -479,7 +446,7 @@ Status DecodeModularChannelBrotli(const PaddedBytes &data,
     }
   } else {
     const intptr_t onerow = channel->plane.PixelsPerRow();
-    weighted::State wp_state(header.wp_header, channel->w, channel->h);
+    weighted::State wp_state(wp_header, channel->w, channel->h);
     for (size_t y = 0; y < channel->h; y++) {
       pixel_type *JXL_RESTRICT r = channel->Row(y);
       Predictor predictor = (Predictor)data[*subpred_pos];
@@ -512,45 +479,58 @@ struct GroupHeader {
   Status VisitFields(Visitor *JXL_RESTRICT visitor) {
     visitor->Bool(false, &use_brotli);
     visitor->U32(Val(0), Val(1), Val(2), BitsOffset(4, 3), 0, &max_properties);
+    JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
     uint32_t num_transforms = transforms.size();
     visitor->U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(8, 18), 0,
                  &num_transforms);
     if (visitor->IsReading()) transforms.resize(num_transforms);
     for (size_t i = 0; i < num_transforms; i++) {
-      visitor->Bits(3, 0, &transforms[i].id);
-      if (transforms[i].id >= (uint32_t)TransformId::kNumTransforms) {
-        return JXL_FAILURE("Invalid transform id: %u", transforms[i].id);
-      }
-      if (transforms[i].id == (uint32_t)TransformId::kNearLossless) {
-        return JXL_FAILURE("Invalid transform id: %u", transforms[i].id);
-      }
-      uint32_t num_params = transforms[i].params.size();
-      visitor->U32(Val(0), Val(1), Val(3), BitsOffset(7, 2), 0, &num_params);
-      if (visitor->IsReading()) transforms[i].params.resize(num_params);
-      for (size_t j = 0; j < num_params; j++) {
-        visitor->U32(Bits(2), BitsOffset(3, 4), BitsOffset(8, 12),
-                     BitsOffset(16, 268), 1, &transforms[i].params[j]);
-      }
+      JXL_RETURN_IF_ERROR(visitor->VisitNested(&transforms[i]));
     }
     return true;
   }
 
   bool use_brotli;
   uint32_t max_properties;
+  weighted::Header wp_header;
 
-  struct Transform {
-    uint32_t id;
-    std::vector<uint32_t> params;
-  };
   std::vector<Transform> transforms;
 };
 
 }  // namespace
 
+constexpr bool kPrintTree = false;
+
+void PrintTree(const Tree &tree, size_t cur, FILE *f) {
+  if (tree[cur].property < 0) {
+    fprintf(f, "n%05zu [label=\"%s%+" PRId64 "\"];\n", cur,
+            PredictorName(tree[cur].predictor), tree[cur].predictor_offset);
+  } else {
+    fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
+            PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
+    fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].childID);
+    fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].childID + 1);
+    PrintTree(tree, tree[cur].childID, f);
+    PrintTree(tree, tree[cur].childID + 1, f);
+  }
+}
+
+void PrintTree(const Tree &tree, const std::string &path) {
+  FILE *f = fopen((path + ".dot").c_str(), "w");
+  fprintf(f, "graph{\n");
+  PrintTree(tree, 0, f);
+  fprintf(f, "}\n");
+  fclose(f);
+  JXL_ASSERT(
+      system(("dot " + path + ".dot -T png -o " + path + ".png").c_str()) == 0);
+}
+
 bool ModularEncode(const Image &image, const ModularOptions &options,
                    const HybridUintConfig &uint_config, BitWriter *writer,
-                   AuxOut *aux_out, size_t layer) {
+                   AuxOut *aux_out, size_t layer, size_t group_id,
+                   size_t call_id) {
   if (image.error) return JXL_FAILURE("Invalid image");
+  JXL_ASSERT(options.predictor != Predictor::Best);
   size_t nb_channels = image.real_nb_channels;
   int bit_depth = 1, maxval = 1;
   while (maxval < image.maxval) {
@@ -566,54 +546,22 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
 
   // encode transforms
   GroupHeader header;
+  if (options.predictor == Predictor::Weighted) {
+    weighted::PredictorMode(options.wp_mode, &header.wp_header);
+  }
   header.max_properties = options.max_properties;
   header.use_brotli =
       options.entropy_coder == ModularOptions::EntropyCoder::kBrotli;
-  header.transforms.resize(image.transform.size());
-  for (size_t i = 0; i < header.transforms.size(); i++) {
-    header.transforms[i].id = (uint32_t)image.transform[i].id;
-    header.transforms[i].params.assign(image.transform[i].parameters.begin(),
-                                       image.transform[i].parameters.end());
-  }
+  header.transforms = image.transform;
   JXL_RETURN_IF_ERROR(Bundle::Write(header, writer, layer, aux_out));
 
   nb_channels = image.channel.size();
 
-  // Predictors to use for each channel.
-  std::vector<Predictor> predictors;
-  for (Predictor p : options.predictor) {
-    predictors.push_back(p);
-  }
-  // if nothing at all is specified, use Gradient,
-  // seems to be the best general-purpose predictor
-  if (predictors.empty()) {
-    predictors.push_back(Predictor::Gradient);
-  }
-  if (predictors.size() < nb_channels) {
-    predictors.resize(nb_channels, predictors.back());
-  }
-
   if (header.use_brotli) {
-    std::vector<ChannelHeader> headers(nb_channels);
-
-    for (size_t i = options.skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options.max_chan_size ||
-           image.channel[i].h > options.max_chan_size)) {
-        break;
-      }
-      headers[i] = ComputeChannelHeader(image.channel[i]);
-      JXL_RETURN_IF_ERROR(Bundle::Write(headers[i], writer, layer, aux_out));
-    }
-
     size_t total_pixels = 0;
     size_t total_height = 0;
     for (size_t i = options.skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h ||
-          headers[i].trivial_channel) {
+      if (!image.channel[i].w || !image.channel[i].h) {
         continue;  // skip empty channels
       }
       if (i >= image.nb_meta_channels &&
@@ -624,6 +572,7 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
       total_pixels += image.channel[i].w * image.channel[i].h;
       total_height += image.channel[i].h;
     }
+    if (total_pixels == 0) return true;
 
     PaddedBytes data(4 * total_pixels + total_height);
     size_t subpred_pos = 0;
@@ -639,10 +588,8 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
         break;
       }
       JXL_RETURN_IF_ERROR(EncodeModularChannelBrotli(
-          image, i, headers[i],
-          predictors[i] == Predictor::Best ? Predictor::Gradient
-                                           : predictors[i],
-          total_pixels, &pos, &subpred_pos, &data));
+          image, i, header.wp_header, options.predictor, total_pixels, &pos,
+          &subpred_pos, &data));
     }
     writer->ZeroPadToByte();
 
@@ -655,28 +602,25 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
     return true;
   }
 
-  std::vector<ChannelHeader> headers(nb_channels);
-  for (size_t i = options.skipchannels; i < nb_channels; i++) {
-    if (!image.channel[i].w || !image.channel[i].h) {
-      continue;  // skip empty channels
-    }
-    if (i >= image.nb_meta_channels &&
-        (image.channel[i].w > options.max_chan_size ||
-         image.channel[i].h > options.max_chan_size)) {
-      break;
-    }
-    headers[i] = ComputeChannelHeader(image.channel[i]);
-  }
-
   std::vector<std::vector<Token>> tokens(1);
   std::vector<std::vector<Token>> tree_tokens(1);
-  size_t base_tree_ctx = 0;
-  size_t base_ctx = 0;
+
+  std::vector<Predictor> predictors;
+  if (options.predictor == Predictor::Variable) {
+    predictors.resize(kNumModularPredictors);
+    for (size_t i = 0; i < kNumModularPredictors; i++) {
+      predictors[i] = static_cast<Predictor>(i);
+    }
+  } else {
+    predictors = {options.predictor};
+  }
 
   size_t num_chans = 0;
+  Tree tree;
+  std::vector<std::vector<int32_t>> props;
+  std::vector<std::vector<int32_t>> residuals;
   for (size_t i = options.skipchannels; i < nb_channels; i++) {
-    if (!image.channel[i].w || !image.channel[i].h ||
-        headers[i].trivial_channel) {
+    if (!image.channel[i].w || !image.channel[i].h) {
       continue;  // skip empty channels
     }
     if (i >= image.nb_meta_channels &&
@@ -685,67 +629,25 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
       break;
     }
     num_chans++;
-    Predictor predictor = predictors[i];
-
-    std::vector<Token> best_tree_tokens, best_tokens;
-    bool has_best = false;
-    float best_cost = 0;
-    size_t num_ctxs = 0;
-    auto try_mode = [&](Predictor pred, size_t wp_mode) {
-      std::vector<Token> local_tree_tokens, local_tokens;
-      Tree tree;
-      ChannelHeader header = ComputeChannelHeader(image.channel[i]);
-      if (pred == Predictor::Weighted) {
-        weighted::PredictorMode(wp_mode, &header.wp_header);
-      }
-      tree = LearnTree(image, i, header, pred, options, uint_config);
-      Tree decoded_tree;
-      TokenizeTree(tree, uint_config, base_tree_ctx, &local_tree_tokens,
-                   &decoded_tree);
-      JXL_ASSERT(tree.size() == decoded_tree.size());
-      tree = std::move(decoded_tree);
-      JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(image, i, header, tree,
-                                                    options, uint_config,
-                                                    base_ctx, &local_tokens));
-      size_t extension_bits, total_bits;
-      JXL_RETURN_IF_ERROR(
-          Bundle::CanEncode(header, &extension_bits, &total_bits));
-      float cost =
-          TokenCost(local_tree_tokens) + TokenCost(local_tokens) + total_bits;
-      if (!has_best || best_cost > cost) {
-        best_tree_tokens = local_tree_tokens;
-        best_tokens = local_tokens;
-        best_cost = cost;
-        has_best = true;
-        num_ctxs = (tree.size() + 1) / 2;
-        headers[i] = header;
-      }
-      return true;
-    };
-    if (predictor != Predictor::Weighted && predictor != Predictor::Best) {
-      JXL_RETURN_IF_ERROR(try_mode(predictor, 0));
-    }
-    if (predictor == Predictor::Best) {
-      JXL_RETURN_IF_ERROR(try_mode(Predictor::Gradient, 0));
-    }
-    if (predictor == Predictor::Weighted || predictor == Predictor::Best) {
-      for (size_t wp_mode = 0; wp_mode < options.nb_wp_modes; wp_mode++) {
-        JXL_RETURN_IF_ERROR(try_mode(Predictor::Weighted, wp_mode));
-      }
-    }
-    if (!has_best) {
-      return JXL_FAILURE("Could not compress channel");
-    }
-    tree_tokens[0].insert(tree_tokens[0].end(), best_tree_tokens.begin(),
-                          best_tree_tokens.end());
-    tokens[0].insert(tokens[0].end(), best_tokens.begin(), best_tokens.end());
-
-    // Advance context starts
-    base_ctx += num_ctxs;
-    base_tree_ctx += kNumTreeContexts;
+    GatherTreeData(image, i, header.wp_header, predictors, options, props,
+                   residuals);
   }
 
-  // Write headers
+  if (num_chans == 0) return true;
+
+  tree = LearnTree(predictors, std::move(props), std::move(residuals), options,
+                   uint_config);
+  Tree decoded_tree;
+  TokenizeTree(tree, uint_config, &tree_tokens[0], &decoded_tree);
+  JXL_ASSERT(tree.size() == decoded_tree.size());
+  tree = std::move(decoded_tree);
+
+  if (WantDebugOutput(aux_out) && kPrintTree) {
+    PrintTree(tree, aux_out->debug_prefix + "/tree_" +
+                        std::to_string(group_id) + "_" +
+                        std::to_string(call_id));
+  }
+
   for (size_t i = options.skipchannels; i < nb_channels; i++) {
     if (!image.channel[i].w || !image.channel[i].h) {
       continue;  // skip empty channels
@@ -755,24 +657,22 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
          image.channel[i].h > options.max_chan_size)) {
       break;
     }
-    JXL_RETURN_IF_ERROR(Bundle::Write(headers[i], writer, layer, aux_out));
+    JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
+        image, i, header.wp_header, tree, options, uint_config, &tokens[0],
+        aux_out, group_id, call_id));
   }
-  // Write trees
-  if (base_tree_ctx != 0) {
-    EntropyEncodingData codes;
-    std::vector<uint8_t> context_map;
-    BuildAndEncodeHistograms(HistogramParams(), base_tree_ctx, tree_tokens,
-                             &codes, &context_map, writer, kLayerModularTree,
-                             aux_out);
-    WriteTokens(tree_tokens[0], codes, context_map, writer, kLayerModularTree,
-                aux_out, uint_config);
-  }
-  if (base_ctx == 0) return true;
-  // Write data
+
+  // Write tree
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(HistogramParams(), base_ctx, tokens, &codes,
-                           &context_map, writer, layer, aux_out);
+  BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
+                           &codes, &context_map, writer, kLayerModularTree,
+                           aux_out);
+  WriteTokens(tree_tokens[0], codes, context_map, writer, kLayerModularTree,
+              aux_out, uint_config);
+  // Write data
+  BuildAndEncodeHistograms(HistogramParams(), (tree.size() + 1) / 2, tokens,
+                           &codes, &context_map, writer, layer, aux_out);
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out,
               uint_config);
   return true;
@@ -789,11 +689,9 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
               options->max_properties);
   JXL_DEBUG_V(3, "Image data underwent %zu transformations: ",
               header.transforms.size());
-  for (size_t i = 0; i < header.transforms.size(); i++) {
-    image.transform.emplace_back((TransformId)header.transforms[i].id);
-    image.transform[i].parameters.assign(header.transforms[i].params.begin(),
-                                         header.transforms[i].params.end());
-    JXL_RETURN_IF_ERROR(image.transform[i].MetaApply(image));
+  image.transform = header.transforms;
+  for (Transform &transform : image.transform) {
+    JXL_RETURN_IF_ERROR(transform.MetaApply(image));
   }
   if (options->identify) return true;
   if (image.error) {
@@ -802,9 +700,7 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
 
   size_t nb_channels = image.channel.size();
 
-  size_t num_trees = 0;
-
-  std::vector<ChannelHeader> headers(nb_channels);
+  size_t num_chans = 0;
   for (size_t i = options->skipchannels; i < nb_channels; i++) {
     if (!image.channel[i].w || !image.channel[i].h) {
       continue;  // skip empty channels
@@ -814,17 +710,15 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
          image.channel[i].h > options->max_chan_size)) {
       break;
     }
-    JXL_RETURN_IF_ERROR(Bundle::Read(br, &headers[i]));
-    if (headers[i].trivial_channel) continue;
-    num_trees++;
+    num_chans++;
   }
+  if (num_chans == 0) return true;
 
   if (header.use_brotli) {
     size_t total_pixels = 0;
     size_t total_height = 0;
     for (size_t i = options->skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h ||
-          headers[i].trivial_channel) {
+      if (!image.channel[i].w || !image.channel[i].h) {
         continue;  // skip empty channels
       }
       if (i >= image.nb_meta_channels &&
@@ -867,71 +761,31 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
         break;
       }
       JXL_RETURN_IF_ERROR(DecodeModularChannelBrotli(
-          data, headers[i], total_pixels, &pos, &subpred_pos, &image, i));
+          data, header.wp_header, total_pixels, &pos, &subpred_pos, &image, i));
     }
     return true;
   }
 
-  // Read trees and compute starting contexts for each channel.
-  size_t num_ctxs = 0;
-  std::vector<Tree> trees(nb_channels);
-  std::vector<uint32_t> base_context(nb_channels);
-  // If no trees, all channels are trivial.
-  if (num_trees != 0) {
+  // Read tree.
+  Tree tree;
+  {
     std::vector<uint8_t> context_map;
     ANSCode code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(br, num_trees * kNumTreeContexts,
-                                         ANS_MAX_ALPHA_SIZE, &code,
-                                         &context_map));
+    JXL_RETURN_IF_ERROR(DecodeHistograms(
+        br, kNumTreeContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
     ANSSymbolReader reader(&code, br);
-    size_t base_ctx = 0;
-    for (size_t i = options->skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h ||
-          headers[i].trivial_channel) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options->max_chan_size ||
-           image.channel[i].h > options->max_chan_size)) {
-        break;
-      }
-      base_context[i] = num_ctxs;
-      JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, context_map, base_ctx,
-                                     &trees[i],
-                                     NumProperties(image, i, i, *options)));
-      num_ctxs += (trees[i].size() + 1) / 2;
-      base_ctx += kNumTreeContexts;
-    }
+    JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, context_map, &tree,
+                                   NumProperties(image, *options)));
     if (!reader.CheckANSFinalState()) {
       return JXL_FAILURE("ANS decode final state failed");
     }
   }
 
-  // Trivial image.
-  if (num_ctxs == 0) {
-    for (size_t i = options->skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options->max_chan_size ||
-           image.channel[i].h > options->max_chan_size)) {
-        break;
-      }
-      Channel &channel = image.channel[i];
-      if (headers[i].trivial_channel) {
-        channel.plane = Plane<pixel_type>();
-        channel.is_trivial = true;
-        channel.resize(headers[i].minv);  // fill it with the constant value
-      }
-    }
-    return true;
-  }
   // Read channels
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, num_ctxs, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+  JXL_RETURN_IF_ERROR(DecodeHistograms(
+      br, (tree.size() + 1) / 2, ANS_MAX_ALPHA_SIZE, &code, &context_map));
   ANSSymbolReader reader(&code, br);
   for (size_t i = options->skipchannels; i < nb_channels; i++) {
     Channel &channel = image.channel[i];
@@ -942,15 +796,8 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
                                         channel.h > options->max_chan_size)) {
       break;
     }
-    if (headers[i].trivial_channel) {
-      channel.plane = Plane<pixel_type>();
-      channel.is_trivial = true;
-      channel.resize(headers[i].minv);  // fill it with the constant value
-      continue;
-    }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
-        br, &reader, context_map, trees[i], headers[i], *options,
-        base_context[i], i, &image));
+        br, &reader, context_map, tree, header.wp_header, *options, i, &image));
   }
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
@@ -960,18 +807,18 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
 
 bool ModularGenericCompress(Image &image, const ModularOptions &opts,
                             BitWriter *writer, AuxOut *aux_out, size_t layer,
+                            size_t group_id, size_t call_id,
                             const HybridUintConfig &uint_config) {
   if (image.w == 0 || image.h == 0) return true;
   ModularOptions options = opts;  // Make a copy to modify it.
 
-  if (options.predictor.empty()) {
-    options.predictor.push_back(Predictor::Gradient);
+  if (options.predictor == static_cast<Predictor>(-1)) {
+    options.predictor = Predictor::Gradient;
   }
 
   size_t bits = writer->BitsWritten();
-  image.recompute_minmax();
-  JXL_RETURN_IF_ERROR(
-      ModularEncode(image, options, uint_config, writer, aux_out, layer));
+  JXL_RETURN_IF_ERROR(ModularEncode(image, options, uint_config, writer,
+                                    aux_out, layer, group_id, call_id));
   bits = writer->BitsWritten() - bits;
   JXL_DEBUG_V(
       4, "Modular-encoded a %zux%zu maxval=%i nbchans=%zu image in %zu bytes",

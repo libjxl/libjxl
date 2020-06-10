@@ -28,14 +28,6 @@ sudo docker run -it --rm \
   gcr.io/jpegxl/jpegxl-builder bash
 ```
 
-On Windows, you can run the following from the jpeg-xl directory obtained from
-Gitlab:
-
-```bash
-docker run -u root:root -it --rm -v %cd%:/jpeg-xl -w /jpeg-xl \
-  gcr.io/jpegxl/jpegxl-builder
-```
-
 This creates and runs a container that will be deleted after you exit from this
 terminal (`--rm` flag).
 
@@ -51,21 +43,32 @@ settings of Docker.
 
 On OSX, "cannot find name for group ID" can be ignored.
 
+On Windows, you can run the following from the jpeg-xl directory obtained from
+Gitlab:
+
+```bash
+docker run -u root:root -it --rm -v %cd%:/jpeg-xl -w /jpeg-xl \
+  gcr.io/jpegxl/jpegxl-builder
+```
+
 ## Basic building
 
 Inside the Docker container, you can compile everything and run unit tests
 by running the following:
 
 ```bash
-CC=clang-6.0 CXX=clang++-6.0 ./ci.sh opt
+CC=clang-7 CXX=clang++-7 ./ci.sh opt
 ```
 
 This writes binaries to `/jpeg-xl/build/tools` and runs unit tests.
 More information on [build modes and testing](doc/building_and_testing.md) is
 available.
 
+If there already was a build directory on the host this can give conflicts,
+remove it first with `rm -rf build`.
+
 Note that the default "clang" compiler is not installed on the image, hence we
-specify clang-6.0. If a build/ directory already exists and was configured for
+specify clang-7. If a build/ directory already exists and was configured for
 a different compiler, cmake will complain. This can be avoided by renaming any
 existing build/ directory or setting the `BUILD_DIR` environment variable.
 
@@ -96,7 +99,7 @@ sudo apt install binfmt-support qemu-user-static
 Then to cross-compile and run unit tests execute the following commands:
 
 ```bash
-export BUILD_TARGET=aarch64-linux-gnu CC=clang-6.0 CXX=clang++-6.0
+export BUILD_TARGET=aarch64-linux-gnu CC=clang-7 CXX=clang++-7
 ./ci.sh release
 ```
 

@@ -42,7 +42,7 @@
 #include "jxl/passes_state.h"
 #include "jxl/quant_weights.h"
 #include "jxl/quantizer.h"
-#include "jxl/testdata_path.h"
+#include "jxl/testdata.h"
 
 namespace jxl {
 namespace {
@@ -51,10 +51,10 @@ namespace {
 void RunRGBRoundTrip(float distance, bool fast) {
   ThreadPoolInternal pool(4);
 
-  const std::string& pathname =
-      GetTestDataPath("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CodecInOut io;
-  JXL_CHECK(SetFromFile(pathname, &io, &pool));
+  JXL_CHECK(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   // This test can only handle a single group.
   io.ShrinkTo(std::min(io.xsize(), kGroupDim), std::min(io.ysize(), kGroupDim));
 

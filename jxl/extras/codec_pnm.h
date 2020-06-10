@@ -15,7 +15,7 @@
 #ifndef JXL_EXTRAS_CODEC_PNM_H_
 #define JXL_EXTRAS_CODEC_PNM_H_
 
-// Encodes/decodes PGM/PPM/PFM pixels in memory.
+// Encodes/decodes PBM/PGM/PPM/PFM pixels in memory.
 
 #include <stddef.h>
 #include <stdint.h>

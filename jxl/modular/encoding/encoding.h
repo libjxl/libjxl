@@ -35,7 +35,8 @@ namespace jxl {
 
 bool ModularGenericCompress(
     Image &image, const ModularOptions &opts, BitWriter *writer,
-    AuxOut *aux_out = nullptr, size_t layer = 0,
+    AuxOut *aux_out = nullptr, size_t layer = 0, size_t group_id = 0,
+    size_t call_id = 0,
     const HybridUintConfig &uint_config = kHybridUint420Config);
 
 // undo_transforms == N > 0: undo all transforms except the first N
