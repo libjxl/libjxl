@@ -889,5 +889,12 @@ void FindBestAcStrategy(const Image3F& src,
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(FindBestAcStrategy)
+void FindBestAcStrategy(const Image3F& src,
+                        PassesEncoderState* JXL_RESTRICT enc_state,
+                        ThreadPool* pool, AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(FindBestAcStrategy)(src, enc_state, pool,
+                                                  aux_out);
+}
+
 }  // namespace jxl
 #endif  // HWY_ONCE

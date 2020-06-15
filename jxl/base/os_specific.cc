@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <numeric>
 #include <random>
 
 #include "jxl/base/arch_specific.h"  // ProcessorTopology
@@ -73,6 +74,13 @@
 #define OS_FREEBSD 0
 #endif
 
+#ifdef __HAIKU__
+#define OS_HAIKU 1
+#include <OS.h>
+#else
+#define OS_HAIKU 0
+#endif
+
 namespace jxl {
 
 double Now() {
@@ -92,6 +100,8 @@ double Now() {
     (void)mach_timebase_info(&timebase);
   }
   return double(t) * timebase.numer / timebase.denom * 1E-9;
+#elif OS_HAIKU
+  return double(system_time_nsecs()) * 1E-9;
 #else
   timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
@@ -103,7 +113,7 @@ double Now() {
 
 #if OS_FREEBSD
 using cpu_set_t = cpuset_t;
-#elif OS_WIN || OS_MAC
+#elif OS_WIN || OS_MAC || OS_HAIKU
 using cpu_set_t = uint64_t;
 
 static inline void CPU_ZERO(cpu_set_t* set) { *set = 0; }
@@ -229,6 +239,10 @@ Status SetThreadAffinity(ThreadAffinity* affinity) {
   // core(s); THREAD_AFFINITY_POLICY is only a hint.
   (void)affinity;
   return false;
+#elif OS_HAIKU
+  // As of 2020-06 Haiku does not support pinning threads to cores.
+  (void)affinity;
+  return false;
 #else
   printf("Don't know how to SetThreadAffinity on this platform.\n");
   return false;
@@ -245,6 +259,11 @@ std::vector<int> AvailableCPUs() {
       cpus.push_back(static_cast<int>(cpu));
     }
   }
+#elif OS_HAIKU
+  system_info info;
+  get_system_info(&info);
+  cpus.resize(info->cpu_count);
+  std::iota(cpus.begin(), cpus.end(), 0);
 #else
   cpus.push_back(0);
 #endif
@@ -304,6 +323,10 @@ size_t DetectTotalMemoryMiB() {
   // `bytes` excludes nonpaged pool reserved during boot; round up to whole MiB
   // to improve the estimate.
   return (bytes + (1U << 20) - 1) >> 20;
+#elif OS_HAIKU
+  system_info info;
+  get_system_info(&info);
+  return (max_pages * B_PAGE_SIZE) >> 20;
 #else
   JXL_WARNING("Implement DetectTotalMemoryMiB for this platform");
   return 0;
@@ -348,7 +371,7 @@ Status RunCommand(const std::vector<std::string>& args) {
   // Synthesize a string for system(). And warn about it.
   // TODO(user): Fix this - research the safe way to run a command on Windows.
   // Likely, the solution is along these lines:
-  // https://docs.microsoft.com/en-us/windows/desktop/ProcThread/creating-processes
+  // docs.microsoft.com/en-us/windows/desktop/ProcThread/creating-processes
   std::ostringstream cmd;
   std::copy(args.begin(), args.end(),
             std::ostream_iterator<std::string>(cmd, " "));

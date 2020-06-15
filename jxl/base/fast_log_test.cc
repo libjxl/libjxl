@@ -52,8 +52,6 @@ HWY_NOINLINE void TestFastLog12() {
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(TestFastLog12)
-
 TEST(FastLogTest, TestFastLog) {
   constexpr size_t kNumTrials = 1 << 23;
   std::mt19937 rng(1);
@@ -68,9 +66,10 @@ TEST(FastLogTest, TestFastLog) {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
-TEST(FastLogTest, Run) {
-  hwy::RunTest([]() { ChooseTestFastLog12()(); });
-}
+class FastLogTargetTest : public hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(FastLogTargetTest);
+
+HWY_EXPORT_AND_TEST_P(FastLogTargetTest, TestFastLog12)
 
 }  // namespace jxl
 #endif  // HWY_ONCE

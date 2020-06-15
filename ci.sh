@@ -28,6 +28,7 @@ CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
 CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
 CMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER:-}
 CMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER:-}
+CMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM:-}
 SKIP_TEST="${SKIP_TEST:-0}"
 BUILD_TARGET="${BUILD_TARGET:-}"
 ENABLE_WASM_SIMD="${ENABLE_WASM_SIMD:-0}"
@@ -50,12 +51,15 @@ if [[ "${BUILD_TARGET}" == wasm* ]]; then
     echo "'EMSCRIPTEN' is not defined. Use 'emconfigure' wrapper to setup WASM build environment" >&2
     return 1
   fi
+  # Remove the side-effect of "emconfigure" wrapper - it considers NodeJS environment.
+  unset EMMAKEN_JUST_CONFIGURE
   EMS_TOOLCHAIN_FILE="${EMSCRIPTEN}/cmake/Modules/Platform/Emscripten.cmake"
   if [[ -f "${EMS_TOOLCHAIN_FILE}" ]]; then
     CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE:-${EMS_TOOLCHAIN_FILE}}
   else
     echo "Warning: EMSCRIPTEN CMake module not found" >&2
   fi
+  CMAKE_CROSSCOMPILING_EMULATOR="${MYDIR}/js-wasm-wrapper.sh"
 fi
 
 if [[ "${BUILD_TARGET%%-*}" == "x86_64" ||
@@ -82,7 +86,6 @@ if [[ "${ENABLE_WASM_SIMD}" -ne "0" ]]; then
   CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -s SIMD=1"
   CMAKE_C_FLAGS="${CMAKE_C_FLAGS} -s SIMD=1"
   CMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS} -s SIMD=1"
-  CMAKE_CROSSCOMPILING_EMULATOR="${MYDIR}/node-wasm-simd.sh"
 fi
 
 if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
@@ -159,17 +162,10 @@ detect_clang_version() {
     "clang version 6."*)
       CLANG_VERSION="6.0"
       ;;
-    "clang version 7."*)
-      CLANG_VERSION="7"
-      ;;
-    "clang version 8."*)
-      CLANG_VERSION="8"
-      ;;
-    "clang version 9."*)
-      CLANG_VERSION="9"
-      ;;
-    "clang version 10."*)
-      CLANG_VERSION="10"
+    "clang version "*)
+      # Any other clang version uses just the major version number.
+      local suffix="${clang_version#clang version }"
+      CLANG_VERSION="${suffix%%.*}"
       ;;
     "emcc"*)
       # We can't use asan or msan in the emcc case.
@@ -310,11 +306,8 @@ export_env() {
   fi
   # Sanitizers need these variables to print and properly format the stack
   # traces:
-  detect_clang_version
-  if [[ -n "${CLANG_VERSION}" ]]; then
-    LLVM_SYMBOLIZER=$(which llvm-symbolizer "llvm-symbolizer-${CLANG_VERSION}" \
-      | head -n1)
-    LLVM_SYMBOLIZER="$(realpath "${LLVM_SYMBOLIZER}" || true)"
+  LLVM_SYMBOLIZER=$("${CC:-clang}" -print-prog-name=llvm-symbolizer || true)
+  if [[ -n "${LLVM_SYMBOLIZER}" ]]; then
     export ASAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
     export MSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
     export UBSAN_SYMBOLIZER_PATH="${LLVM_SYMBOLIZER}"
@@ -415,6 +408,11 @@ cmake_configure() {
       -DCMAKE_CXX_COMPILER_LAUNCHER="${CMAKE_CXX_COMPILER_LAUNCHER}"
     )
   fi
+  if [[ -n "${CMAKE_MAKE_PROGRAM}" ]]; then
+    args+=(
+      -DCMAKE_MAKE_PROGRAM="${CMAKE_MAKE_PROGRAM}"
+    )
+  fi
   cmake "${args[@]}" "$@"
 }
 
@@ -500,8 +498,7 @@ cmd_coverage() {
 }
 
 cmd_coverage_report() {
-  detect_clang_version
-  LLVM_COV=$(which "llvm-cov-${CLANG_VERSION}" || which "llvm-cov")
+  LLVM_COV=$("${CC:-clang}" -print-prog-name=llvm-cov)
   local real_build_dir=$(realpath "${BUILD_DIR}")
   local gcovr_args=(
     -r "${real_build_dir}"
@@ -627,7 +624,7 @@ cmd_msan_install() {
   export CC="${CC:-clang}"
   export CXX="${CXX:-clang++}"
   detect_clang_version
-  local llvm_tag
+  local llvm_tag="llvmorg-${CLANG_VERSION}.0.0"
   case "${CLANG_VERSION}" in
     "6.0")
       llvm_tag="llvmorg-6.0.1"
@@ -635,18 +632,6 @@ cmd_msan_install() {
     "7")
       llvm_tag="llvmorg-7.0.1"
       ;;
-    "8")
-      llvm_tag="llvmorg-8.0.0"
-      ;;
-    "9")
-      llvm_tag="llvmorg-9.0.0"
-      ;;
-    "10")
-      llvm_tag="llvmorg-10.0.0"
-      ;;
-    *)
-      echo "Unknown clang version: ${CLANG_VERSION}" >&2
-      return 1
   esac
   local llvm_targz="${tmpdir}/${llvm_tag}.tar.gz"
   curl -L --show-error -o "${llvm_targz}" \
@@ -764,7 +749,7 @@ run_benchmark() {
 
   local benchmark_args=(
     --input "${src_img_dir}/*.png"
-    --codec=jpeg:yuv420:q85,webp:q80,jxl:fast:d1,jxl:fast:d1:downsampling=8,jxl:fast:d4,jxl:fast:d4:downsampling=8,jxl:mg:nl,jxl:mg,jxl:mg:P6,jxl:mg:q80
+    --codec=jpeg:yuv420:q85,webp:q80,jxl:fast:d1,jxl:fast:d1:downsampling=8,jxl:fast:d4,jxl:fast:d4:downsampling=8,jxl:mg:cheetah:nl,jxl:cheetah:mg,jxl:mg:cheetah:P6,jxl:mg:falcon:q80
     --output_dir "${output_dir}"
     --noprofiler --show_progress
     --num_threads="${num_threads}"
@@ -1163,6 +1148,7 @@ parameters:
  - CMAKE_CROSSCOMPILING_EMULATOR
  - CMAKE_FIND_ROOT_PATH
  - CMAKE_EXE_LINKER_FLAGS
+ - CMAKE_MAKE_PROGRAM
  - CMAKE_MODULE_LINKER_FLAGS
  - CMAKE_SHARED_LINKER_FLAGS
  - CMAKE_TOOLCHAIN_FILE

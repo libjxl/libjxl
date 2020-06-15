@@ -376,9 +376,9 @@ void FindBestSplit(const HybridUintConfig &uint_config,
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(EstimateEntropy)
-HWY_EXPORT(EstimateTotalBits)
-HWY_EXPORT(FindBestSplit)
+HWY_EXPORT(EstimateEntropy)    // Local function.
+HWY_EXPORT(EstimateTotalBits)  // Local function.
+HWY_EXPORT(FindBestSplit)      // Local function.
 
 void ChooseAndQuantizeProperties(
     size_t max_properties, size_t max_property_values,
@@ -441,8 +441,9 @@ void ChooseAndQuantizeProperties(
   }
 
   std::vector<std::pair<float, size_t>> props_with_entropy;
-  ChooseEstimateEntropy()(uint_config, offset, residuals, *props,
-                          *compact_properties, &props_with_entropy);
+  HWY_DYNAMIC_DISPATCH(EstimateEntropy)(
+      uint_config, offset, residuals, *props, *compact_properties,
+      &props_with_entropy);
   std::sort(props_with_entropy.begin(), props_with_entropy.end());
 
   // Limit the search to the properties with the smallest resulting entropy
@@ -522,11 +523,11 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
 
   std::vector<size_t> indices(residuals[0].size());
   std::iota(indices.begin(), indices.end(), 0);
-  float base_bits = ChooseEstimateTotalBits()(
+  float base_bits = HWY_DYNAMIC_DISPATCH(EstimateTotalBits)(
       uint_config, base_offset, residuals[0], indices, 0, indices.size());
-  ChooseFindBestSplit()(uint_config, residuals, props, predictors,
-                        compact_properties, &indices, 0, 0, indices.size(),
-                        props_to_use, base_bits, threshold, tree);
+  HWY_DYNAMIC_DISPATCH(FindBestSplit)(
+      uint_config, residuals, props, predictors, compact_properties, &indices,
+      0, 0, indices.size(), props_to_use, base_bits, threshold, tree);
   size_t leaves = 0;
   for (size_t i = 0; i < tree->size(); i++) {
     if ((*tree)[i].property < 0) {

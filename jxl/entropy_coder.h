@@ -65,11 +65,9 @@ constexpr uint32_t kNumControlFieldContexts =
 // Only the subset "rect" [in units of blocks] within all images.
 // Appends one token per pixel to output.
 // See also DecodeAcStrategy.
-typedef void TokenizeAcStrategyFunc(const Rect& rect,
-                                    const AcStrategyImage& ac_strategy,
-                                    std::vector<Token>* JXL_RESTRICT output,
-                                    size_t base_context);
-TokenizeAcStrategyFunc* ChooseTokenizeAcStrategy();
+void TokenizeAcStrategy(const Rect& rect, const AcStrategyImage& ac_strategy,
+                        std::vector<Token>* JXL_RESTRICT output,
+                        size_t base_context);
 
 // Generate quantization field tokens.
 // Only the subset "rect" [in units of blocks] within all images.
@@ -77,54 +75,47 @@ TokenizeAcStrategyFunc* ChooseTokenizeAcStrategy();
 // TODO(user): quant field seems to be useful for all the AC strategies.
 // perhaps, we could just have different quant_ctx based on the block type.
 // See also DecodeQuantField.
-typedef void TokenizeQuantFieldFunc(const Rect& rect, const ImageI& quant_field,
-                                    const AcStrategyImage& ac_strategy,
-                                    std::vector<Token>* JXL_RESTRICT output,
-                                    size_t base_context);
-TokenizeQuantFieldFunc* ChooseTokenizeQuantField();
+void TokenizeQuantField(const Rect& rect, const ImageI& quant_field,
+                        const AcStrategyImage& ac_strategy,
+                        std::vector<Token>* JXL_RESTRICT output,
+                        size_t base_context);
 
 // Generate DCT NxN quantized AC values tokens.
 // Only the subset "rect" [in units of blocks] within all images.
 // See also DecodeACVarBlock.
-typedef void TokenizeCoefficientsFunc(
-    const coeff_order_t* JXL_RESTRICT orders, const Rect& rect,
-    const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
-    const AcStrategyImage& ac_strategy, Image3I* JXL_RESTRICT tmp_num_nzeroes,
-    std::vector<Token>* JXL_RESTRICT output);
-TokenizeCoefficientsFunc* ChooseTokenizeCoefficients();
+void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
+                          const Rect& rect,
+                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+                          const AcStrategyImage& ac_strategy,
+                          Image3I* JXL_RESTRICT tmp_num_nzeroes,
+                          std::vector<Token>* JXL_RESTRICT output);
 
-typedef void TokenizeARParametersFunc(const Rect& rect,
-                                      const ImageB& epf_sharpness,
-                                      const AcStrategyImage& ac_strategy,
-                                      std::vector<Token>* JXL_RESTRICT output,
-                                      size_t base_context);
-TokenizeARParametersFunc* ChooseTokenizeARParameters();
+void TokenizeARParameters(const Rect& rect, const ImageB& epf_sharpness,
+                          const AcStrategyImage& ac_strategy,
+                          std::vector<Token>* JXL_RESTRICT output,
+                          size_t base_context);
 
 // Decode AC strategy. The `rect` argument does *not* apply to the hint!
 // See also TokenizeAcStrategy.
-typedef Status DecodeAcStrategyFunc(BitReader* JXL_RESTRICT br,
-                                    ANSSymbolReader* JXL_RESTRICT decoder,
-                                    const std::vector<uint8_t>& context_map,
-                                    const Rect& rect,
-                                    AcStrategyImage* JXL_RESTRICT ac_strategy,
-                                    size_t base_context);
-DecodeAcStrategyFunc* ChooseDecodeAcStrategy();
+Status DecodeAcStrategy(BitReader* JXL_RESTRICT br,
+                        ANSSymbolReader* JXL_RESTRICT decoder,
+                        const std::vector<uint8_t>& context_map,
+                        const Rect& rect,
+                        AcStrategyImage* JXL_RESTRICT ac_strategy,
+                        size_t base_context);
 
-typedef Status DecodeARParametersFunc(BitReader* br, ANSSymbolReader* decoder,
-                                      const std::vector<uint8_t>& context_map,
-                                      const Rect& rect,
-                                      const AcStrategyImage& ac_strategy,
-                                      ImageB* epf_sharpness,
-                                      size_t base_context);
-DecodeARParametersFunc* ChooseDecodeARParameters();
+Status DecodeARParameters(BitReader* br, ANSSymbolReader* decoder,
+                          const std::vector<uint8_t>& context_map,
+                          const Rect& rect, const AcStrategyImage& ac_strategy,
+                          ImageB* epf_sharpness, size_t base_context);
 
 // See TokenizeQuantField.
-typedef Status DecodeQuantFieldFunc(
-    BitReader* JXL_RESTRICT br, ANSSymbolReader* JXL_RESTRICT decoder,
-    const std::vector<uint8_t>& context_map, const Rect& rect_qf,
-    const AcStrategyImage& JXL_RESTRICT ac_strategy,
-    ImageI* JXL_RESTRICT quant_field, size_t base_context);
-DecodeQuantFieldFunc* ChooseDecodeQuantField();
+Status DecodeQuantField(BitReader* JXL_RESTRICT br,
+                        ANSSymbolReader* JXL_RESTRICT decoder,
+                        const std::vector<uint8_t>& context_map,
+                        const Rect& rect_qf,
+                        const AcStrategyImage& JXL_RESTRICT ac_strategy,
+                        ImageI* JXL_RESTRICT quant_field, size_t base_context);
 
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
 constexpr uint32_t PackSigned(int32_t value) {

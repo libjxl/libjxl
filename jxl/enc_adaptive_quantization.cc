@@ -128,7 +128,7 @@ static const float kQuant64[64] = {
 };
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  constexpr float kBase = 1.4731057596473099f;
+  constexpr float kBase = 1.522f;
   constexpr float kMul1 = 0.011521457315309454f;
   constexpr float kOffset1 = 0.0079611186521877063f;
   constexpr float kMul2 = -0.19590586155132378f;
@@ -153,7 +153,7 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
       dct[dy * 8 + dx] = row_in[xclamp];
     }
   }
-  ChooseTransposedScaledDCT8()(dct);
+  TransposedScaledDCT8(dct);
   float entropyQL2 = 0.0f;
   float entropyQL4 = 0.0f;
   float entropyQL8 = 0.0f;
@@ -181,23 +181,37 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
 }
 
 // Increase precision in 8x8 blocks that have high dynamic range.
-void RangeModulation(const size_t x, const size_t y, const ImageF& xyb,
-                     float* JXL_RESTRICT out_pos) {
-  float minval = 1e30f;
-  float maxval = -1e30f;
-  for (size_t dy = 0; dy < 8 && y + dy < xyb.ysize(); ++dy) {
-    const float* const JXL_RESTRICT row_in = xyb.Row(y + dy);
-    for (size_t dx = 0; dx < 8 && x + dx < xyb.xsize(); ++dx) {
-      float v = row_in[x + dx];
-      if (minval > v) {
-        minval = v;
+void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
+                     const ImageF& xyb_y, float* JXL_RESTRICT out_pos) {
+  float minval_x = 1e30f;
+  float minval_y = 1e30f;
+  float maxval_x = -1e30f;
+  float maxval_y = -1e30f;
+  for (size_t dy = 0; dy < 8 && y + dy < xyb_x.ysize(); ++dy) {
+    const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
+    const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
+    for (size_t dx = 0; dx < 8 && x + dx < xyb_x.xsize(); ++dx) {
+      float vx = row_in_x[x + dx];
+      float vy = row_in_y[x + dx];
+      if (minval_x > vx) {
+        minval_x = vx;
       }
-      if (maxval < v) {
-        maxval = v;
+      if (maxval_x < vx) {
+        maxval_x = vx;
+      }
+      if (minval_y > vy) {
+        minval_y = vy;
+      }
+      if (maxval_y < vy) {
+        maxval_y = vy;
       }
     }
   }
-  float range = maxval - minval;
+  float range_x = maxval_x - minval_x;
+  float range_y = maxval_y - minval_y;
+  // This is not really a sound approach but it seems to yield better results
+  // than the previous approach of just using range_y.
+  float range = std::sqrt(range_x * range_y);
   constexpr float mul = 0.66697599699046262f;
   *out_pos += mul * range;
 }
@@ -232,10 +246,12 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   *out_pos += sum;
 }
 
-void PerBlockModulations(const ImageF& xyb, const float scale, ThreadPool* pool,
-                         ImageF* out) {
-  JXL_ASSERT(DivCeil(xyb.xsize(), kBlockDim) == out->xsize());
-  JXL_ASSERT(DivCeil(xyb.ysize(), kBlockDim) == out->ysize());
+void PerBlockModulations(const ImageF& xyb_x, const ImageF& xyb_y,
+                         const float scale, ThreadPool* pool, ImageF* out) {
+  JXL_ASSERT(DivCeil(xyb_x.xsize(), kBlockDim) == out->xsize());
+  JXL_ASSERT(DivCeil(xyb_x.ysize(), kBlockDim) == out->ysize());
+  JXL_ASSERT(DivCeil(xyb_y.xsize(), kBlockDim) == out->xsize());
+  JXL_ASSERT(DivCeil(xyb_y.ysize(), kBlockDim) == out->ysize());
   const coeff_order_t* natural_coeff_order =
       AcStrategy::FromRawStrategy(AcStrategy::Type::DCT).NaturalCoeffOrder();
   float dct_rescale[kDCTBlockSize] = {0};
@@ -247,18 +263,18 @@ void PerBlockModulations(const ImageF& xyb, const float scale, ThreadPool* pool,
   }
 
   RunOnPool(
-      pool, 0, static_cast<int>(DivCeil(xyb.ysize(), kBlockDim)),
+      pool, 0, static_cast<int>(DivCeil(xyb_x.ysize(), kBlockDim)),
       ThreadPool::SkipInit(),
       [&](const int task, const int /*thread*/) {
         const size_t iy = static_cast<size_t>(task);
         const size_t y = iy * 8;
         float* const JXL_RESTRICT row_out = out->Row(iy);
-        for (size_t x = 0; x < xyb.xsize(); x += 8) {
+        for (size_t x = 0; x < xyb_x.xsize(); x += 8) {
           float* JXL_RESTRICT out_pos = row_out + x / 8;
           ComputeMask(out_pos);
-          DctModulation(x, y, xyb, natural_coeff_order, dct_rescale, out_pos);
-          RangeModulation(x, y, xyb, out_pos);
-          HfModulation(x, y, xyb, out_pos);
+          DctModulation(x, y, xyb_y, natural_coeff_order, dct_rescale, out_pos);
+          RangeModulation(x, y, xyb_x, xyb_y, out_pos);
+          HfModulation(x, y, xyb_y, out_pos);
 
           // We want multiplicative quantization field, so everything
           // until this point has been modulating the exponent.
@@ -999,7 +1015,9 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
   quantizer.SetQuantField(best_quant_dc, best_quant_field, &raw_quant_field);
 }
 
-ImageF AdaptiveQuantizationMap(const Image3F& opsin, const ImageF& intensity_ac,
+ImageF AdaptiveQuantizationMap(const Image3F& opsin,
+                               const ImageF& intensity_ac_x,
+                               const ImageF& intensity_ac_y,
                                const FrameDimensions& frame_dim, float scale,
                                ThreadPool* pool) {
   PROFILER_ZONE("aq AdaptiveQuantMap");
@@ -1011,7 +1029,7 @@ ImageF AdaptiveQuantizationMap(const Image3F& opsin, const ImageF& intensity_ac,
   ImageF out = DiffPrecompute(opsin, frame_dim, kDiffCutoff, pool);
   JXL_ASSERT(out.xsize() % kBlockDim == 0 && out.ysize() % kBlockDim == 0);
   out = ConvolveAndSample(out, kernel, kBlockDim);
-  PerBlockModulations(intensity_ac, scale, pool, &out);
+  PerBlockModulations(intensity_ac_x, intensity_ac_y, scale, pool, &out);
   return out;
 }
 
@@ -1032,7 +1050,7 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 
   const WeightsSymmetric3& weights = WeightsSymmetric3GaussianDC();
   ImageF smoothed(xsize, ysize);
-  ChooseSymmetric3()(opsin_y, rect, weights, pool, &smoothed);
+  Symmetric3(opsin_y, rect, weights, pool, &smoothed);
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
@@ -1066,9 +1084,10 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
                          float rescale) {
   PROFILER_FUNC;
   const float quant_ac = kAcQuant / butteraugli_target;
-  ImageF intensity_ac = IntensityAcEstimate(opsin.Plane(1), frame_dim, pool);
-  return AdaptiveQuantizationMap(opsin, intensity_ac, frame_dim,
-                                 quant_ac * rescale, pool);
+  ImageF intensity_ac_x = IntensityAcEstimate(opsin.Plane(0), frame_dim, pool);
+  ImageF intensity_ac_y = IntensityAcEstimate(opsin.Plane(1), frame_dim, pool);
+  return AdaptiveQuantizationMap(opsin, intensity_ac_x, intensity_ac_y,
+                                 frame_dim, quant_ac * rescale, pool);
 }
 
 void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
@@ -1132,13 +1151,11 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
     dec_state.EnsureStorage(num_threads);
     return true;
   };
-  const auto decode_group = ChooseDecodeGroupForRoundtrip();
-  const auto compute_coef = ChooseComputeCoefficients();
   const auto process_group = [&](const int group_index, const int thread) {
-    compute_coef(group_index, enc_state, nullptr);
-    JXL_CHECK(decode_group(enc_state->coeffs, group_index, &dec_state, thread,
-                           &idct, &decoded, nullptr, save_decompressed,
-                           apply_color_transform));
+    ComputeCoefficients(group_index, enc_state, nullptr);
+    JXL_CHECK(DecodeGroupForRoundtrip(
+        enc_state->coeffs, group_index, &dec_state, thread, &idct, &decoded,
+        nullptr, save_decompressed, apply_color_transform));
   };
   RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
 

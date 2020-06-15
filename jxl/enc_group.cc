@@ -278,6 +278,11 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ComputeCoefficients)
+void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
+                         AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(ComputeCoefficients)(group_idx, enc_state,
+                                                   aux_out);
+}
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         const PassesEncoderState& enc_state,

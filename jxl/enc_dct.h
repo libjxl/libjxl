@@ -22,11 +22,9 @@
 
 namespace jxl {
 
-typedef void TransposedScaledDCT8Func(float* block);
-TransposedScaledDCT8Func* ChooseTransposedScaledDCT8();
+void TransposedScaledDCT8(float* block);
 
-typedef ImageF Dct8Func(const ImageF& image);
-Dct8Func* ChooseDct8();
+ImageF Dct8(const ImageF& image);
 
 // Fills a preallocated (N*N)*W x H `dct` with (N*N)x1 blocks produced by
 // ComputeTransposedScaledDCT() from the corresponding NxN block of
@@ -34,9 +32,7 @@ Dct8Func* ChooseDct8();
 // ComputeTransposedScaledIDCT applied to each block of TransposedScaledIDCT
 // will return the original input.
 // REQUIRES: image.xsize() == N*W, image.ysize() == N*H
-typedef void TransposedScaledDCTFunc(const Image3F& image,
-                                     Image3F* JXL_RESTRICT dct);
-TransposedScaledDCTFunc* ChooseTransposedScaledDCT();
+void TransposedScaledDCT(const Image3F& image, Image3F* JXL_RESTRICT dct);
 
 }  // namespace jxl
 

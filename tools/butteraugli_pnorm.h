@@ -21,12 +21,9 @@
 namespace jxl {
 
 // Computes p-norm given the butteraugli distmap.
-typedef double ComputeDistancePFunc(const ImageF& distmap, double p);
-ComputeDistancePFunc* ChooseComputeDistanceP();
+double ComputeDistanceP(const ImageF& distmap, double p);
 
-typedef double ComputeDistance2Func(const ImageBundle& ib1,
-                                    const ImageBundle& ib2);
-ComputeDistance2Func* ChooseComputeDistance2();
+double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2);
 
 }  // namespace jxl
 

@@ -38,11 +38,11 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)(ChooseToXYB()(io.Main(), null_pool, &opsin, &unused_linear));
+  (void)ToXYB(io.Main(), null_pool, &opsin, &unused_linear);
 
   OpsinParams opsin_params;
   opsin_params.Init();
-  ChooseOpsinToLinearInplace()(&opsin, /*pool=*/nullptr, opsin_params);
+  OpsinToLinearInplace(&opsin, /*pool=*/nullptr, opsin_params);
 
   VerifyRelativeError(linear, opsin, 3E-3, 2E-4);
 }
@@ -53,16 +53,16 @@ TEST(OpsinInverseTest, YcbCrInverts) {
 
   ThreadPool* null_pool = nullptr;
   Image3F ycbcr(rgb.xsize(), rgb.ysize());
-  ChooseRgbToYcbcr()(rgb.Plane(0), rgb.Plane(1), rgb.Plane(2),
-                     const_cast<ImageF*>(&ycbcr.Plane(0)),
-                     const_cast<ImageF*>(&ycbcr.Plane(1)),
-                     const_cast<ImageF*>(&ycbcr.Plane(2)), null_pool);
+  RgbToYcbcr(rgb.Plane(0), rgb.Plane(1), rgb.Plane(2),
+             const_cast<ImageF*>(&ycbcr.Plane(0)),
+             const_cast<ImageF*>(&ycbcr.Plane(1)),
+             const_cast<ImageF*>(&ycbcr.Plane(2)), null_pool);
 
   Image3F rgb2(rgb.xsize(), rgb.ysize());
-  ChooseYcbcrToRgb()(ycbcr.Plane(0), ycbcr.Plane(1), ycbcr.Plane(2),
-                     const_cast<ImageF*>(&rgb2.Plane(0)),
-                     const_cast<ImageF*>(&rgb2.Plane(1)),
-                     const_cast<ImageF*>(&rgb2.Plane(2)), null_pool);
+  YcbcrToRgb(ycbcr.Plane(0), ycbcr.Plane(1), ycbcr.Plane(2),
+             const_cast<ImageF*>(&rgb2.Plane(0)),
+             const_cast<ImageF*>(&rgb2.Plane(1)),
+             const_cast<ImageF*>(&rgb2.Plane(2)), null_pool);
 
   VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7);
 }

@@ -432,7 +432,7 @@ Status ApplyLoopFiltersRowImpl(const LoopFilter& lf, const Rect& in_rect,
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(ApplyLoopFiltersRowImpl)
+HWY_EXPORT(ApplyLoopFiltersRowImpl)  // Local function
 
 Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
                            size_t y, size_t thread, Image3F* JXL_RESTRICT out,
@@ -448,11 +448,10 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
                   DivCeil(in_rect.xsize(), kBlockDim),
                   DivCeil(in_rect.ysize(), kBlockDim));
   // TODO(janwas): hoist to caller
-  auto apply = ChooseApplyLoopFiltersRowImpl();
-  return apply(lf, in_rect, dec_state->decoded, sigma_rect, dec_state->sigma, y,
-               dec_state->gab_weights, in_rect, out,
-               &dec_state->storage1[thread], &dec_state->storage2[thread],
-               output_row);
+  return HWY_DYNAMIC_DISPATCH(ApplyLoopFiltersRowImpl)(
+      lf, in_rect, dec_state->decoded, sigma_rect, dec_state->sigma, y,
+      dec_state->gab_weights, in_rect, out, &dec_state->storage1[thread],
+      &dec_state->storage2[thread], output_row);
 }
 
 void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
@@ -474,12 +473,12 @@ void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
   float gab_weights[9];
   lf.GaborishWeights(gab_weights);
 
-  auto apply = ChooseApplyLoopFiltersRowImpl();
   for (size_t y = 2 * kBlockDim - lf.PaddingRows();
        y < ysize + 2 * kBlockDim + lf.PaddingRows(); y++) {
     size_t output_row;
-    (void)apply(lf, in_rect, in, sigma_rect, sigma, y, gab_weights, out_rect,
-                out, storage1, storage2, &output_row);
+    (void)HWY_DYNAMIC_DISPATCH(ApplyLoopFiltersRowImpl)(
+        lf, in_rect, in, sigma_rect, sigma, y, gab_weights, out_rect, out,
+        storage1, storage2, &output_row);
   }
 }
 

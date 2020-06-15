@@ -52,7 +52,7 @@ void PrintXybRange() {
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());
   ImageBundle unused_linear;
-  (void)(*ChooseToXYB)()(ib, null_pool, &opsin, &unused_linear);
+  (void)ToXYB(ib, null_pool, &opsin, &unused_linear);
   for (size_t c = 0; c < 3; ++c) {
     float minval = 1e10f;
     float maxval = -1e10f;

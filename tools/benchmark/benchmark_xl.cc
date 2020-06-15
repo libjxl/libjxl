@@ -280,7 +280,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                                        distance_double));
         distance = static_cast<float>(distance_double);
         // Ensure pixels in range 0-255
-        s->distance_2 += ChooseComputeDistance2()(ib1, ib2);
+        s->distance_2 += ComputeDistance2(ib1, ib2);
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
         distance = 1e+4f;
@@ -289,9 +289,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         s->distance_2 += distance;
       }
       // Update stats
-      auto compute_dist = ChooseComputeDistanceP();
       s->distance_p_norm +=
-          compute_dist(distmap, Args()->error_pnorm) * input_pixels;
+          ComputeDistanceP(distmap, Args()->error_pnorm) * input_pixels;
       s->max_distance = std::max(s->max_distance, distance);
       s->distances.push_back(distance);
       max_distance = std::max(max_distance, distance);

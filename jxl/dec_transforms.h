@@ -25,21 +25,15 @@
 
 namespace jxl {
 
-typedef void TransformToPixelsFunc(AcStrategy::Type strategy,
-                                   const float* JXL_RESTRICT coefficients,
-                                   float* JXL_RESTRICT pixels,
-                                   size_t pixels_stride);
-TransformToPixelsFunc* ChooseTransformToPixels();
+void TransformToPixels(AcStrategy::Type strategy,
+                       const float* JXL_RESTRICT coefficients,
+                       float* JXL_RESTRICT pixels, size_t pixels_stride);
 
 // Equivalent of the above for DC image.
-typedef void DCFromLowestFrequenciesFunc(AcStrategy::Type strategy,
-                                         const float* block, float* dc,
-                                         size_t dc_stride);
-DCFromLowestFrequenciesFunc* ChooseDCFromLowestFrequencies();
+void DCFromLowestFrequencies(AcStrategy::Type strategy, const float* block,
+                             float* dc, size_t dc_stride);
 
-typedef void AFVIDCT4x4Func(const float* JXL_RESTRICT coeffs,
-                            float* JXL_RESTRICT pixels);
-AFVIDCT4x4Func* ChooseAFVIDCT4x4();
+void AFVIDCT4x4(const float* JXL_RESTRICT coeffs, float* JXL_RESTRICT pixels);
 
 }  // namespace jxl
 

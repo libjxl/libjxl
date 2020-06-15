@@ -180,11 +180,10 @@ class F16Coder {
 //   values: add a "mutable bool all_default" field and as the first visitor:
 //   if (v->AllDefault(*this, &all_default)) {
 //     // Overwrite all serialized fields, but not any nonserialized_*.
-//     InitFields();
-//     return true; }
-//   Note: if extensions are present, AllDefault() == false. To avoid depending
-//   on fields.h, InitFields is a private non-inlined member function that calls
-//   Bundle::Init(this).
+//     v->SetDefault(this);
+//     return true;
+//   }
+//   Note: if extensions are present, AllDefault() == false.
 
 class Bundle {
  public:
@@ -197,10 +196,22 @@ class Bundle {
   // Print size for each field and CanEncode total_bits.
   static constexpr bool PrintSizes() { return false; }
 
+  // Initializes fields to the default values. It is not recursive to nested
+  // fields, this function is intended to be called in the constructors so
+  // each nested field will already Init itself.
   template <class T>
   static void Init(T* JXL_RESTRICT t) {
     InitVisitor visitor;
     if (!visitor.Visit(t, PrintVisitors() ? "-- Init\n" : "")) {
+      JXL_ASSERT(false);  // Init should never fail.
+    }
+  }
+
+  // Similar to Init, but recursive to nested fields.
+  template <class T>
+  static void SetDefault(T* JXL_RESTRICT t) {
+    SetDefaultVisitor visitor;
+    if (!visitor.Visit(t, PrintVisitors() ? "-- SetDefault\n" : "")) {
       JXL_ASSERT(false);  // Init should never fail.
     }
   }
@@ -427,6 +438,11 @@ class Bundle {
       return *all_default;
     }
 
+    template <class Fields>
+    void SetDefault(Fields* fields) {
+      // Do nothing by default, this is overridden by ReadVisitor.
+    }
+
     // Returns the result of visiting a nested Bundle.
     // Overridden by InitVisitor.
     template <class Fields>
@@ -539,6 +555,57 @@ class Bundle {
     }
   };
 
+  // Similar to InitVisitor, but also initializes nested fields.
+  struct SetDefaultVisitor : public VisitorBase<SetDefaultVisitor> {
+    void Bits(const size_t /*unused*/, const uint32_t default_value,
+              uint32_t* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    void U32WithEnc(const U32Enc /*unused*/, const uint32_t default_value,
+                    uint32_t* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    void U64(const uint64_t default_value, uint64_t* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    void Bool(bool default_value, bool* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    template <typename T>
+    Status Enum(const T default_value, T* JXL_RESTRICT value) {
+      *value = default_value;
+      return EnumValid(*value);
+    }
+
+    void S32(U32Distr /*unused*/, U32Distr /*unused*/, U32Distr /*unused*/,
+             U32Distr /*unused*/, const int32_t default_value,
+             int32_t* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    void S64(const int64_t default_value, int64_t* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    void F16(const float default_value, float* JXL_RESTRICT value) {
+      *value = default_value;
+    }
+
+    // Always visit conditional fields to ensure they are initialized.
+    Status Conditional(bool condition) { return true; }
+
+    template <class Fields>
+    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
+      // Just initialize this field and don't skip initializing others.
+      Bool(true, all_default);
+      return false;
+    }
+  };
+
   class AllDefaultVisitor : public VisitorBase<AllDefaultVisitor> {
    public:
     AllDefaultVisitor() : VisitorBase<AllDefaultVisitor>(PrintAllDefault()) {}
@@ -614,6 +681,11 @@ class Bundle {
     void F16(const float default_value, float* JXL_RESTRICT value) {
       ok_ &= F16Coder::Read(reader_, value);
       if (PrintRead()) Trace("  F16 = %f\n", *value);
+    }
+
+    template <class Fields>
+    void SetDefault(Fields* fields) {
+      Bundle::SetDefault(fields);
     }
 
     Status IsReading() const { return true; }

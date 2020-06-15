@@ -38,21 +38,20 @@
 
 namespace jxl {
 
-typedef Status DecodeGroupFunc(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
-                               size_t num_passes, size_t group_idx,
-                               PassesDecoderState* JXL_RESTRICT dec_state,
-                               GroupDecCache* JXL_RESTRICT group_dec_cache,
-                               size_t thread, Image3F* opsin,
-                               ImageBundle* JXL_RESTRICT decoded,
-                               AuxOut* aux_out);
-DecodeGroupFunc* ChooseDecodeGroup();
+Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
+                   size_t num_passes, size_t group_idx,
+                   PassesDecoderState* JXL_RESTRICT dec_state,
+                   GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
+                   Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
+                   AuxOut* aux_out);
 
-typedef Status DecodeGroupForRoundtripFunc(
-    const std::vector<ACImage3>& ac, size_t group_idx,
-    PassesDecoderState* JXL_RESTRICT dec_state, size_t thread,
-    Image3F* JXL_RESTRICT opsin, ImageBundle* JXL_RESTRICT decoded,
-    AuxOut* aux_out, bool save_decompressed, bool apply_color_transform);
-DecodeGroupForRoundtripFunc* ChooseDecodeGroupForRoundtrip();
+Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
+                               size_t group_idx,
+                               PassesDecoderState* JXL_RESTRICT dec_state,
+                               size_t thread, Image3F* JXL_RESTRICT opsin,
+                               ImageBundle* JXL_RESTRICT decoded,
+                               AuxOut* aux_out, bool save_decompressed,
+                               bool apply_color_transform);
 
 }  // namespace jxl
 

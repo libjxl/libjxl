@@ -44,13 +44,10 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
 // Applies image features on the given `idct_rect` of `idct`, interpreted as the
 // `image_rect` region of the full image.
-typedef Status ApplyImageFeaturesFunc(Image3F* JXL_RESTRICT idct,
-                                      const Rect& rect,
-                                      PassesDecoderState* dec_state,
-                                      size_t thread, AuxOut* aux_out,
-                                      bool save_decompressed,
-                                      bool apply_color_transform);
-ApplyImageFeaturesFunc* ChooseApplyImageFeatures();
+Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                          PassesDecoderState* dec_state, size_t thread,
+                          AuxOut* aux_out, bool save_decompressed,
+                          bool apply_color_transform);
 
 // Same as ApplyImageFeatures, but only processes row `y` of
 // dec_state->decoded. `y` should be relative to `rect`.
@@ -58,11 +55,11 @@ ApplyImageFeaturesFunc* ChooseApplyImageFeatures();
 // This function should be called for `rect.ysize() + 2 * lf.PaddingRows()`
 // values of `y`, in increasing order, starting from
 // `y=2*kBlockDim-lf.PaddingRows()`.
-typedef Status ApplyImageFeaturesRowFunc(
-    Image3F* JXL_RESTRICT idct, const Rect& in_rect,
-    PassesDecoderState* dec_state, size_t y, size_t thread, AuxOut* aux_out,
-    bool save_decompressed, bool apply_color_transform);
-ApplyImageFeaturesRowFunc* ChooseApplyImageFeaturesRow();
+Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
+                             PassesDecoderState* dec_state, size_t y,
+                             size_t thread, AuxOut* aux_out,
+                             bool save_decompressed,
+                             bool apply_color_transform);
 
 }  // namespace jxl
 

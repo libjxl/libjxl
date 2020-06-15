@@ -157,6 +157,10 @@ HWY_NORETURN void HWY_FORMAT(3, 4)
 
 void DisableTargets(uint32_t disabled_targets) {
   supported_mask_ = ~(disabled_targets & ~HWY_ENABLED_BASELINE);
+  // We can call Update() here to initialize the mask but that will trigger a
+  // call to SupportedTargets() which we use in tests to tell whether any of the
+  // highway dynamic dispatch functions were used.
+  chosen_target.DeInit();
 }
 
 void SetSupportedTargetsForTest(uint32_t targets) {
@@ -165,6 +169,7 @@ void SetSupportedTargetsForTest(uint32_t targets) {
   // if not zero.
   supported_.store(0, std::memory_order_release);
   supported_targets_for_test_ = targets;
+  chosen_target.DeInit();
 }
 
 bool SupportedTargetsCalledForTest() {
@@ -263,6 +268,19 @@ uint32_t SupportedTargets() {
 
   supported_.store(bits, std::memory_order_release);
   return bits & supported_mask_;
+}
+
+// Declared in targets.h
+ChosenTarget chosen_target;
+
+void ChosenTarget::Update() {
+  // The supported variable contains the current CPU supported targets shifted
+  // to the location expected by the ChosenTarget mask. We enabled SCALAR
+  // regardless of whether it was compiled since it is also used as the
+  // fallback mechanism to the baseline target.
+  uint32_t supported = HWY_CHOSEN_TARGET_SHIFT(hwy::SupportedTargets()) |
+                       HWY_CHOSEN_TARGET_MASK_SCALAR;
+  mask_.store(supported);
 }
 
 }  // namespace hwy

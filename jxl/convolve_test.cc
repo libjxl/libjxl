@@ -78,7 +78,7 @@ void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
   ImageF out_actual(xsize, ysize);
 
   const WeightsSymmetric3& weights = WeightsSymmetric3Lowpass();
-  ChooseSymmetric3()(in, rect, weights, pool, &out_expected);
+  Symmetric3(in, rect, weights, pool, &out_expected);
   SlowSymmetric3(in, rect, weights, pool, &out_actual);
 
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
@@ -96,9 +96,8 @@ void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   ImageF out_expected(xsize, ysize);
   ImageF out_actual(xsize, ysize);
 
-  ChooseSeparable5()(in, Rect(in), WeightsSeparable5Lowpass(), pool,
-                     &out_expected);
-  ChooseSymmetric5()(in, rect, WeightsSymmetric5Lowpass(), pool, &out_actual);
+  Separable5(in, Rect(in), WeightsSeparable5Lowpass(), pool, &out_expected);
+  Symmetric5(in, rect, WeightsSymmetric5Lowpass(), pool, &out_actual);
 
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
 }
@@ -115,7 +114,7 @@ void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   ImageF out_actual(xsize, ysize);
 
   const WeightsSeparable5& weights = WeightsSeparable5Lowpass();
-  ChooseSeparable5()(in, Rect(in), weights, pool, &out_expected);
+  Separable5(in, Rect(in), weights, pool, &out_expected);
   SlowSeparable5(in, rect, weights, pool, &out_actual);
 
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
@@ -139,7 +138,7 @@ void VerifySeparable7(const size_t xsize, const size_t ysize, ThreadPool* pool,
                                       HWY_REP4(0.060626f), HWY_REP4(0.00598f)}};
 
   SlowSeparable7(in, rect, weights, pool, &out_expected);
-  ChooseSeparable7()(in, Rect(in), weights, pool, &out_actual);
+  Separable7(in, Rect(in), weights, pool, &out_actual);
 
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
 }
@@ -187,11 +186,10 @@ void TestConvolve() {
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(TestConvolve)
+class ConvolveTest : public hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(ConvolveTest);
 
-TEST(HwyConvolveTest, Run) {
-  hwy::RunTest([]() { ChooseTestConvolve()(); });
-}
+HWY_EXPORT_AND_TEST_P(ConvolveTest, TestConvolve)
 
 }  // namespace jxl
 #endif

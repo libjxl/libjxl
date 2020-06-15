@@ -1010,12 +1010,53 @@ void Symmetric5_3(const Image3F& in, const Rect& rect,
 namespace jxl {
 
 HWY_EXPORT(Symmetric3)
+void Symmetric3(const ImageF& in, const Rect& rect,
+                const WeightsSymmetric3& weights, ThreadPool* pool,
+                ImageF* out) {
+  return HWY_DYNAMIC_DISPATCH(Symmetric3)(in, rect, weights, pool, out);
+}
+
 HWY_EXPORT(Symmetric5)
+void Symmetric5(const ImageF& in, const Rect& rect,
+                const WeightsSymmetric5& weights, ThreadPool* pool,
+                ImageF* JXL_RESTRICT out) {
+  return HWY_DYNAMIC_DISPATCH(Symmetric5)(in, rect, weights, pool, out);
+}
+
 HWY_EXPORT(Symmetric5_3)
+void Symmetric5_3(const Image3F& in, const Rect& rect,
+                  const WeightsSymmetric5& weights, ThreadPool* pool,
+                  Image3F* JXL_RESTRICT out) {
+  return HWY_DYNAMIC_DISPATCH(Symmetric5_3)(in, rect, weights, pool, out);
+}
+
 HWY_EXPORT(Separable5)
+void Separable5(const ImageF& in, const Rect& rect,
+                const WeightsSeparable5& weights, ThreadPool* pool,
+                ImageF* out) {
+  return HWY_DYNAMIC_DISPATCH(Separable5)(in, rect, weights, pool, out);
+}
+
 HWY_EXPORT(Separable5_3)
+void Separable5_3(const Image3F& in, const Rect& rect,
+                  const WeightsSeparable5& weights, ThreadPool* pool,
+                  Image3F* out) {
+  return HWY_DYNAMIC_DISPATCH(Separable5_3)(in, rect, weights, pool, out);
+}
+
 HWY_EXPORT(Separable7)
+void Separable7(const ImageF& in, const Rect& rect,
+                const WeightsSeparable7& weights, ThreadPool* pool,
+                ImageF* out) {
+  return HWY_DYNAMIC_DISPATCH(Separable7)(in, rect, weights, pool, out);
+}
+
 HWY_EXPORT(Separable7_3)
+void Separable7_3(const Image3F& in, const Rect& rect,
+                  const WeightsSeparable7& weights, ThreadPool* pool,
+                  Image3F* out) {
+  return HWY_DYNAMIC_DISPATCH(Separable7_3)(in, rect, weights, pool, out);
+}
 
 //------------------------------------------------------------------------------
 // Kernels

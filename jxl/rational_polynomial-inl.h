@@ -63,27 +63,31 @@ HWY_FUNC V EvalRationalPolynomial(const D d, const V x, const T (&p)[NP],
   constexpr size_t kDegQ = NQ / 4 - 1;
   auto yp = LoadDup128(d, &p[kDegP * 4]);
   auto yq = LoadDup128(d, &q[kDegQ * 4]);
+  // We use pointer arithmetic to refer to &p[(kDegP - n) * 4] to avoid a
+  // compiler warning that the index is out of bounds since we are already
+  // checking that it is not out of bounds with (kDegP >= n) and the access
+  // will be optimized away. Similarly with q and kDegQ.
   HWY_FENCE;
-  if (kDegP >= 1) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 1) * 4]));
-  if (kDegQ >= 1) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 1) * 4]));
+  if (kDegP >= 1) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 1) * 4)));
+  if (kDegQ >= 1) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 1) * 4)));
   HWY_FENCE;
-  if (kDegP >= 2) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 2) * 4]));
-  if (kDegQ >= 2) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 2) * 4]));
+  if (kDegP >= 2) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 2) * 4)));
+  if (kDegQ >= 2) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 2) * 4)));
   HWY_FENCE;
-  if (kDegP >= 3) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 3) * 4]));
-  if (kDegQ >= 3) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 3) * 4]));
+  if (kDegP >= 3) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 3) * 4)));
+  if (kDegQ >= 3) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 3) * 4)));
   HWY_FENCE;
-  if (kDegP >= 4) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 4) * 4]));
-  if (kDegQ >= 4) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 4) * 4]));
+  if (kDegP >= 4) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 4) * 4)));
+  if (kDegQ >= 4) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 4) * 4)));
   HWY_FENCE;
-  if (kDegP >= 5) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 5) * 4]));
-  if (kDegQ >= 5) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 5) * 4]));
+  if (kDegP >= 5) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 5) * 4)));
+  if (kDegQ >= 5) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 5) * 4)));
   HWY_FENCE;
-  if (kDegP >= 6) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 6) * 4]));
-  if (kDegQ >= 6) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 6) * 4]));
+  if (kDegP >= 6) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 6) * 4)));
+  if (kDegQ >= 6) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 6) * 4)));
   HWY_FENCE;
-  if (kDegP >= 7) yp = MulAdd(yp, x, LoadDup128(d, &p[(kDegP - 7) * 4]));
-  if (kDegQ >= 7) yq = MulAdd(yq, x, LoadDup128(d, &q[(kDegQ - 7) * 4]));
+  if (kDegP >= 7) yp = MulAdd(yp, x, LoadDup128(d, p + ((kDegP - 7) * 4)));
+  if (kDegQ >= 7) yq = MulAdd(yq, x, LoadDup128(d, q + ((kDegQ - 7) * 4)));
 
   return FastDivision<T, V>()(yp, yq);
 }

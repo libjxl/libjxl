@@ -37,31 +37,25 @@ struct OpsinParams {
 
 // Converts `inout` (not padded) from opsin to linear sRGB in-place. Called from
 // per-pass postprocessing, hence parallelized.
-typedef void OpsinToLinearInplaceFunc(Image3F* JXL_RESTRICT inout,
-                                      ThreadPool* pool,
-                                      const OpsinParams& opsin_params);
-OpsinToLinearInplaceFunc* ChooseOpsinToLinearInplace();
+void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
+                          const OpsinParams& opsin_params);
 
 // Converts `opsin:rect` (opsin may be padded, rect.x0 must be vector-aligned)
 // to linear sRGB. Called from whole-frame encoder, hence parallelized.
-typedef void OpsinToLinearFunc(const Image3F& opsin, const Rect& rect,
-                               ThreadPool* pool, Image3F* JXL_RESTRICT linear,
-                               const OpsinParams& opsin_params);
-OpsinToLinearFunc* ChooseOpsinToLinear();
+void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
+                   Image3F* JXL_RESTRICT linear,
+                   const OpsinParams& opsin_params);
 
 // Bt.601 to match JPEG/JFIF. Inputs are _signed_ YCbCr values suitable for DCT,
 // see F.1.1.3 of T.81 (because our data type is float, there is no need to add
 // a bias to make the values unsigned).
-typedef void YcbcrToRgbFunc(const ImageF& y_plane, const ImageF& cb_plane,
-                            const ImageF& cr_plane, ImageF* r_plane,
-                            ImageF* g_plane, ImageF* b_plane, ThreadPool* pool);
-YcbcrToRgbFunc* ChooseYcbcrToRgb();
+void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
+                const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
+                ImageF* b_plane, ThreadPool* pool);
 
-typedef ImageF UpsampleV2Func(const ImageF& src, ThreadPool* pool);
-UpsampleV2Func* ChooseUpsampleV2();
+ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
 
-typedef ImageF UpsampleH2Func(const ImageF& src, ThreadPool* pool);
-UpsampleH2Func* ChooseUpsampleH2();
+ImageF UpsampleH2(const ImageF& src, ThreadPool* pool);
 
 }  // namespace jxl
 

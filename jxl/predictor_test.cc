@@ -309,29 +309,17 @@ void RunPredictorTester(const Image3I& img) {
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(TestPackSignedRange)
-HWY_EXPORT(TestPackSigned)
-HWY_EXPORT(TestPredictorForTesting)
-HWY_EXPORT(TestPredictorY)
-HWY_EXPORT(TestPredictorXB)
+
 HWY_EXPORT(RunPredictorTester)
 
-TEST(PredictorTest, TestPackSignedRange) {
-  hwy::RunTest([]() { ChooseTestPackSignedRange()(); });
-}
-TEST(PredictorTest, TestPackSigned) {
-  hwy::RunTest([]() { ChooseTestPackSigned()(); });
-}
+class PredictorTargetTest : public hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(PredictorTargetTest);
 
-TEST(PredictorTest, TestPredictorForTesting) {
-  hwy::RunTest([]() { ChooseTestPredictorForTesting()(); });
-}
-TEST(PredictorTest, TestYPredictor) {
-  hwy::RunTest([]() { ChooseTestPredictorY()(); });
-}
-TEST(PredictorTest, TestXBPredictor) {
-  hwy::RunTest([]() { ChooseTestPredictorXB()(); });
-}
+HWY_EXPORT_AND_TEST_P(PredictorTargetTest, TestPackSignedRange)
+HWY_EXPORT_AND_TEST_P(PredictorTargetTest, TestPackSigned)
+HWY_EXPORT_AND_TEST_P(PredictorTargetTest, TestPredictorForTesting)
+HWY_EXPORT_AND_TEST_P(PredictorTargetTest, TestPredictorY)
+HWY_EXPORT_AND_TEST_P(PredictorTargetTest, TestPredictorXB)
 
 Image3I Stripes(int32_t low, int32_t high) {
   Image3I ret(kDcGroupDimInBlocks, kDcGroupDimInBlocks);
@@ -394,49 +382,37 @@ Image3I Random(int32_t low, int32_t high) {
   return ret;
 }
 
-TEST(PredictorTest, TestStripes8) {
-  hwy::RunTest([]() {
-    Image3I img = Stripes(0, 255);
-    ChooseRunPredictorTester()(img);
-  });
+TEST_P(PredictorTargetTest, TestStripes8) {
+  Image3I img = Stripes(0, 255);
+  HWY_DYNAMIC_DISPATCH(RunPredictorTester)(img);
 }
 
-TEST(PredictorTest, TestConstant8) {
-  hwy::RunTest([]() {
-    Image3I img = Constant(0, 255);
-    ChooseRunPredictorTester()(img);
-  });
+TEST_P(PredictorTargetTest, TestConstant8) {
+  Image3I img = Constant(0, 255);
+  HWY_DYNAMIC_DISPATCH(RunPredictorTester)(img);
 }
 
-TEST(PredictorTest, TestRandom8) {
-  hwy::RunTest([]() {
-    Image3I img = Random(0, 255);
-    ChooseRunPredictorTester()(img);
-  });
+TEST_P(PredictorTargetTest, TestRandom8) {
+  Image3I img = Random(0, 255);
+  HWY_DYNAMIC_DISPATCH(RunPredictorTester)(img);
 }
 
-TEST(PredictorTest, TestStripes16) {
-  hwy::RunTest([]() {
-    Image3I img = Stripes(std::numeric_limits<int16_t>::min(),
-                          std::numeric_limits<int16_t>::max());
-    ChooseRunPredictorTester()(img);
-  });
+TEST_P(PredictorTargetTest, TestStripes16) {
+  Image3I img = Stripes(std::numeric_limits<int16_t>::min(),
+                        std::numeric_limits<int16_t>::max());
+  HWY_DYNAMIC_DISPATCH(RunPredictorTester)(img);
 }
 
-TEST(PredictorTest, TestConstant16) {
-  hwy::RunTest([]() {
-    Image3I img = Constant(std::numeric_limits<int16_t>::min(),
-                           std::numeric_limits<int16_t>::max());
-    ChooseRunPredictorTester()(img);
-  });
-}
-
-TEST(PredictorTest, TestRandom16) {
-  hwy::RunTest([]() {
-    Image3I img = Random(std::numeric_limits<int16_t>::min(),
+TEST_P(PredictorTargetTest, TestConstant16) {
+  Image3I img = Constant(std::numeric_limits<int16_t>::min(),
                          std::numeric_limits<int16_t>::max());
-    ChooseRunPredictorTester()(img);
-  });
+  HWY_DYNAMIC_DISPATCH(RunPredictorTester)(img);
+}
+
+TEST_P(PredictorTargetTest, TestRandom16) {
+  Image3I img = Random(std::numeric_limits<int16_t>::min(),
+                       std::numeric_limits<int16_t>::max());
+  HWY_DYNAMIC_DISPATCH(RunPredictorTester)(img);
 }
 
 TEST(PredictorTest, AverageTest) {

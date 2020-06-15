@@ -593,7 +593,7 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
     JXL_DEBUG_V(5, "Best color transform: %i", best);
 #endif
   } else {
-    if (cparams.near_lossless > 0) {
+    if (cparams.near_lossless > 0 && gi.nb_channels != 0) {
       if (cparams.colorspace == 0) {
         Transform nl(TransformId::kNearLossless);
         nl.begin_c = gi.nb_meta_channels;

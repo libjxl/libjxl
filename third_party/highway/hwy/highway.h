@@ -192,89 +192,141 @@ struct Simd {
 
 #endif
 
-// HWY_EXPORT(FUNC_NAME) defines a ChooseFUNC_NAME function consisting of one
-// HWY_CHOOSE_$ conditional return statement per enabled target. Its last
-// statement is an unconditional HWY_STATIC_DISPATCH for the baseline target.
+// Dynamic dispatch declarations.
+
+template <typename RetType, typename... Args>
+struct FunctionCache {
+ public:
+  typedef RetType(FunctionType)(Args...);
+
+  // A template function that when instantiated has the same signature as the
+  // function being called. This function initializes the global cache of the
+  // current supported targets mask used for dynamic dispatch and calls the
+  // appropriate function. Since this mask used for dynamic dispatch is a
+  // global cache, all the highway exported functions, even those exposed by
+  // different modules, will be initialized after this function runs for any one
+  // of those exported functions.
+  template <FunctionType* const table[]>
+  static RetType ChooseAndCall(Args... args) {
+    // If we are running here it means we need to update the chosen target.
+    chosen_target.Update();
+    return (table[chosen_target.GetIndex()])(args...);
+  }
+};
+
+// Factory function only used to infer the template parameters RetType and Args
+// from a function passed to the factory.
+template <typename RetType, typename... Args>
+FunctionCache<RetType, Args...> FunctionCacheFactory(RetType (*)(Args...)) {
+  return FunctionCache<RetType, Args...>();
+}
+
+// HWY_CHOOSE_*(FUNC_NAME) expands to the function pointer for that target or
+// nullptr is that target was not compiled.
 #if HWY_TARGETS & HWY_SCALAR
-#define HWY_CHOOSE_SCALAR(FUNC_NAME) \
-  if (targets_bits & HWY_SCALAR) return &N_SCALAR::FUNC_NAME;
+#define HWY_CHOOSE_SCALAR(FUNC_NAME) &N_SCALAR::FUNC_NAME
 #else
-#define HWY_CHOOSE_SCALAR(FUNC_NAME)
+// When scalar is not present and we try to use scalar because other targets
+// were disabled at runtime we fall back to the baseline with
+// HWY_STATIC_DISPATCH()
+#define HWY_CHOOSE_SCALAR(FUNC_NAME) &HWY_STATIC_DISPATCH(FUNC_NAME)
 #endif
 
 #if HWY_TARGETS & HWY_WASM
-#define HWY_CHOOSE_WASM(FUNC_NAME) \
-  if (targets_bits & HWY_WASM) return &N_WASM::FUNC_NAME;
+#define HWY_CHOOSE_WASM(FUNC_NAME) &N_WASM::FUNC_NAME
 #else
-#define HWY_CHOOSE_WASM(FUNC_NAME)
+#define HWY_CHOOSE_WASM(FUNC_NAME) nullptr
 #endif
 
 #if HWY_TARGETS & HWY_NEON
-#define HWY_CHOOSE_NEON(FUNC_NAME) \
-  if (targets_bits & HWY_NEON) return &N_NEON::FUNC_NAME;
+#define HWY_CHOOSE_NEON(FUNC_NAME) &N_NEON::FUNC_NAME
 #else
-#define HWY_CHOOSE_NEON(FUNC_NAME)
+#define HWY_CHOOSE_NEON(FUNC_NAME) nullptr
 #endif
 
 #if HWY_TARGETS & HWY_PPC8
-#define HWY_CHOOSE_PCC8(FUNC_NAME) \
-  if (targets_bits & HWY_PPC8) return &N_PPC8::FUNC_NAME;
+#define HWY_CHOOSE_PCC8(FUNC_NAME) &N_PPC8::FUNC_NAME
 #else
-#define HWY_CHOOSE_PPC8(FUNC_NAME)
+#define HWY_CHOOSE_PPC8(FUNC_NAME) nullptr
 #endif
 
 #if HWY_TARGETS & HWY_SSE4
-#define HWY_CHOOSE_SSE4(FUNC_NAME) \
-  if (targets_bits & HWY_SSE4) return &N_SSE4::FUNC_NAME;
+#define HWY_CHOOSE_SSE4(FUNC_NAME) &N_SSE4::FUNC_NAME
 #else
-#define HWY_CHOOSE_SSE4(FUNC_NAME)
+#define HWY_CHOOSE_SSE4(FUNC_NAME) nullptr
 #endif
 
 #if HWY_TARGETS & HWY_AVX2
-#define HWY_CHOOSE_AVX2(FUNC_NAME) \
-  if (targets_bits & HWY_AVX2) return &N_AVX2::FUNC_NAME;
+#define HWY_CHOOSE_AVX2(FUNC_NAME) &N_AVX2::FUNC_NAME
 #else
-#define HWY_CHOOSE_AVX2(FUNC_NAME)
+#define HWY_CHOOSE_AVX2(FUNC_NAME) nullptr
 #endif
 
 #if HWY_TARGETS & HWY_AVX3
-#define HWY_CHOOSE_AVX3(FUNC_NAME) \
-  if (targets_bits & HWY_AVX3) return &N_AVX3::FUNC_NAME;
+#define HWY_CHOOSE_AVX3(FUNC_NAME) &N_AVX3::FUNC_NAME
 #else
-#define HWY_CHOOSE_AVX3(FUNC_NAME)
+#define HWY_CHOOSE_AVX3(FUNC_NAME) nullptr
 #endif
 
-// Simplified version for IDE: prevents unused-function warning for the exported
-// function while also avoiding warnings about undefined namespaces.
-#if HWY_IDE
-#define HWY_EXPORT(FUNC_NAME)                                               \
-  decltype(&HWY_STATIC_DISPATCH(FUNC_NAME)) HWY_MUST_USE_RESULT HWY_CONCAT( \
-      Choose, FUNC_NAME)() {                                                \
-    return &HWY_STATIC_DISPATCH(FUNC_NAME);                                 \
-  }
+#define HWY_DISPATCH_TABLE(FUNC_NAME) \
+  HWY_CONCAT(FUNC_NAME, HighwayDispatchTable)
+
+// HWY_EXPORT(FUNC_NAME) expands to a static array that is used by
+// HWY_DYNAMIC_DISPATCH() to call the appropriate function at runtime. This
+// static array must be defined at the same namespace level as the function
+// it is exporting.
+// After being exported, it can be called from other parts of the same source
+// file using HWY_DYNAMIC_DISTPATCH(), in particular from a function wrapper
+// like in the following example:
+//
+//   #include <hwy/before_namespace-inl.h>
+//   namespace skeleton {
+//   #include "hwy/begin_target-inl.h"
+//
+//   void MyFunction(int a, char b, const char* c) { ... }
+//
+//   #include "hwy/end_target-inl.h"
+//   }  // namespace skeleton
+//   #include <hwy/after_namespace-inl.h>
+//
+//   namespace skeleton {
+//   HWY_EXPORT(MyFunction)  // Defines the dispatch table in this scope.
+//
+//   void MyFunction(int a, char b, const char* c) {
+//     return HWY_DYNAMIC_DISPATCH(MyFunction)(a, b, c);
+//   }
+//   }  // namespace skeleton
+//
+
+#if HWY_IDE || ((HWY_TARGETS & (HWY_TARGETS - 1)) == 0)
+
+// Simplified version for IDE or the dynamic dispatch case with only one target.
+// This case still uses a table, although of a single element, to provide the
+// same compile error conditions as with the dynamic dispatch case when multiple
+// targets are being compiled.
+#define HWY_EXPORT(FUNC_NAME)                                                \
+  static decltype(&HWY_STATIC_DISPATCH(FUNC_NAME)) const HWY_DISPATCH_TABLE( \
+      FUNC_NAME)[1] = {&HWY_STATIC_DISPATCH(FUNC_NAME)};
+#define HWY_DYNAMIC_DISPATCH(FUNC_NAME) (*(HWY_DISPATCH_TABLE(FUNC_NAME)[0]))
 
 #else
 
-// Expands to a Choose* function that returns a pointer to a function inside
-// one of the target-specific namespaces (the best one whose bit in
-// `targets_bits` is set).
-#define HWY_EXPORT(FUNC_NAME)                                               \
-  decltype(&HWY_STATIC_DISPATCH(FUNC_NAME)) HWY_MUST_USE_RESULT HWY_CONCAT( \
-      Choose, FUNC_NAME)() {                                                \
-    const uint32_t targets_bits = HWY_SUPPORTED_TARGETS;                    \
-    /* In priority order because these may return immediately. */           \
-    HWY_CHOOSE_WASM(FUNC_NAME)                                              \
-    HWY_CHOOSE_NEON(FUNC_NAME)                                              \
-    HWY_CHOOSE_PPC8(FUNC_NAME)                                              \
-    HWY_CHOOSE_AVX3(FUNC_NAME)                                              \
-    HWY_CHOOSE_AVX2(FUNC_NAME)                                              \
-    HWY_CHOOSE_SSE4(FUNC_NAME)                                              \
-    HWY_CHOOSE_SCALAR(FUNC_NAME)                                            \
-    /* unconditional because this is the baseline (always supported) */     \
-    return &HWY_STATIC_DISPATCH(FUNC_NAME);                                 \
-  }
+// Dynamic dispatch case with one entry per dynamic target plus the scalar
+// mode and the initialization wrapper.
+#define HWY_EXPORT(FUNC_NAME)                                              \
+  static decltype(&HWY_STATIC_DISPATCH(FUNC_NAME))                         \
+      const HWY_DISPATCH_TABLE(FUNC_NAME)[HWY_MAX_DYNAMIC_TARGETS + 2] = { \
+          /* The first entry in the table initializes the global cache and \
+           * calls the appropriate function. */                            \
+          &decltype(hwy::FunctionCacheFactory(&HWY_STATIC_DISPATCH(        \
+              FUNC_NAME)))::ChooseAndCall<HWY_DISPATCH_TABLE(FUNC_NAME)>,  \
+          HWY_CHOOSE_TARGET_LIST(FUNC_NAME),                               \
+          HWY_CHOOSE_SCALAR(FUNC_NAME),                                    \
+  };
+#define HWY_DYNAMIC_DISPATCH(FUNC_NAME) \
+  (*(HWY_DISPATCH_TABLE(FUNC_NAME)[hwy::chosen_target.GetIndex()]))
 
-#endif  // HWY_IDE
+#endif  // HWY_IDE || ((HWY_TARGETS & (HWY_TARGETS - 1)) == 0)
 
 }  // namespace hwy
 

@@ -113,7 +113,7 @@ Image3F ComputeCoeffs(const Image3F& opsin,
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(ComputeCoeffs)
+HWY_EXPORT(ComputeCoeffs)  // Local function.
 
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                              PassesEncoderState* enc_state, AuxOut* aux_out) {
@@ -142,7 +142,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     }
   }
 
-  Image3F dc = ChooseComputeCoeffs()(opsin, &shared, enc_state, pool, aux_out);
+  Image3F dc = HWY_DYNAMIC_DISPATCH(ComputeCoeffs)(opsin, &shared, enc_state,
+                                                   pool, aux_out);
 
   if (shared.frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
@@ -202,16 +203,14 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
         xsize_dc_groups * ysize_dc_groups,
         (enc_state->cparams.butteraugli_distance < 0.5 ? 0 : 1));
 
-    auto tokenize_dc = ChooseTokenizeDC();
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
-      tokenize_dc(group_index, dc, enc_state, aux_out);
+      TokenizeDC(group_index, dc, enc_state, aux_out);
     };
     RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
               compute_dc_coeffs, "Compute DC coeffs");
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(shared.frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
-      ChooseAdaptiveDCSmoothing()(shared.dc_quant_field, &shared.dc_storage,
-                                  pool);
+      AdaptiveDCSmoothing(shared.dc_quant_field, &shared.dc_storage, pool);
     }
   }
 

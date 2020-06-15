@@ -438,14 +438,13 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     // When a row of blocks is done, run ApplyImageFeaturesRow.
     // TODO(veluca): consider switching this to 4 rows of blocks.
     if (JXL_LIKELY(run_apply_image_features)) {
-      const auto apply_row = ChooseApplyImageFeaturesRow();
       size_t yb = by == 0 ? kBlockDim : 2 * kBlockDim;
       size_t ye = by == ysize_blocks - 1 ? 4 * kBlockDim : 3 * kBlockDim;
       for (size_t y = yb; y < ye; y++) {
         size_t aif_y = by * kBlockDim + y - ystart;
-        JXL_RETURN_IF_ERROR(apply_row(idct, aif_rect, dec_state, aif_y, thread,
-                                      aux_out, save_decompressed,
-                                      apply_color_transform));
+        JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(
+            idct, aif_rect, dec_state, aif_y, thread, aux_out,
+            save_decompressed, apply_color_transform));
       }
     }
   }
@@ -697,6 +696,29 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(DecodeGroup)
+Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
+                   size_t num_passes, size_t group_idx,
+                   PassesDecoderState* JXL_RESTRICT dec_state,
+                   GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
+                   Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
+                   AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(DecodeGroup)(readers, num_passes, group_idx,
+                                           dec_state, group_dec_cache, thread,
+                                           opsin, decoded, aux_out);
+}
+
 HWY_EXPORT(DecodeGroupForRoundtrip)
+Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
+                               size_t group_idx,
+                               PassesDecoderState* JXL_RESTRICT dec_state,
+                               size_t thread, Image3F* JXL_RESTRICT opsin,
+                               ImageBundle* JXL_RESTRICT decoded,
+                               AuxOut* aux_out, bool save_decompressed,
+                               bool apply_color_transform) {
+  return HWY_DYNAMIC_DISPATCH(DecodeGroupForRoundtrip)(
+      ac, group_idx, dec_state, thread, opsin, decoded, aux_out,
+      save_decompressed, apply_color_transform);
+}
+
 }  // namespace jxl
 #endif  // HWY_ONCE

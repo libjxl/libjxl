@@ -92,9 +92,9 @@ void SingleFromSingle(const size_t xsize,
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(MultiplySum)
-HWY_EXPORT(RgbFromSingle)
-HWY_EXPORT(SingleFromSingle)
+HWY_EXPORT(MultiplySum)       // Local function
+HWY_EXPORT(RgbFromSingle)     // Local function
+HWY_EXPORT(SingleFromSingle)  // Local function
 
 // TODO: signal these multipliers (need larger ones for encoding Patch reference
 // frames in kVarDCT)
@@ -229,7 +229,6 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
         factor *= kDecoderMul2[c];
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
-        auto convert_row = ChooseMultiplySum();
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
             [&](const int task, const int thread) {
@@ -239,22 +238,27 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
               const pixel_type* const JXL_RESTRICT row_in_Y =
                   gi.channel[0].Row(y);
               float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
-              convert_row(xsize, row_in, row_in_Y, factor, row_out);
+              HWY_DYNAMIC_DISPATCH(MultiplySum)(xsize, row_in, row_in_Y, factor,
+                                                row_out);
             },
             "ModularIntToFloat");
       } else {
         const bool rgb_from_gray =
             decoded->IsGray() &&
             frame_header.color_transform == ColorTransform::kNone;
-        auto convert_row =
-            rgb_from_gray ? ChooseRgbFromSingle() : ChooseSingleFromSingle();
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
             [&](const int task, const int thread) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
                   gi.channel[decoded->IsGray() ? 0 : c_in].Row(y);
-              convert_row(xsize, row_in, factor, color, c, y);
+              if (rgb_from_gray) {
+                HWY_DYNAMIC_DISPATCH(RgbFromSingle)(xsize, row_in, factor,
+                                                    color, c, y);
+              } else {
+                HWY_DYNAMIC_DISPATCH(SingleFromSingle)(xsize, row_in, factor,
+                                                       color, c, y);
+              }
             },
             "ModularIntToFloat");
       }

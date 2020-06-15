@@ -302,7 +302,13 @@ void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 namespace jxl {
 
 HWY_EXPORT(FastGaussian1D)
-HWY_EXPORT(FastGaussianVertical)
+void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                    const float* JXL_RESTRICT in, intptr_t width,
+                    float* JXL_RESTRICT out) {
+  return HWY_DYNAMIC_DISPATCH(FastGaussian1D)(rg, in, width, out);
+}
+
+HWY_EXPORT(FastGaussianVertical)  // Local function.
 
 inline void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
                                float* const JXL_RESTRICT row_out,
@@ -352,35 +358,10 @@ Image3F ConvolveXSampleAndTranspose(const Image3F& in,
                  ConvolveXSampleAndTranspose(in.Plane(2), kernel, res));
 }
 
-ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel_x,
-                         const std::vector<float>& kernel_y, const size_t res) {
-  ImageF tmp = ConvolveXSampleAndTranspose(in, kernel_x, res);
-  return ConvolveXSampleAndTranspose(tmp, kernel_y, res);
-}
-
-ImageF Convolve(const ImageF& in, const std::vector<float>& kernel_x,
-                const std::vector<float>& kernel_y) {
-  return ConvolveAndSample(in, kernel_x, kernel_y, 1);
-}
-
-Image3F Convolve(const Image3F& in, const std::vector<float>& kernel_x,
-                 const std::vector<float>& kernel_y) {
-  return Image3F(Convolve(in.Plane(0), kernel_x, kernel_y),
-                 Convolve(in.Plane(1), kernel_x, kernel_y),
-                 Convolve(in.Plane(2), kernel_x, kernel_y));
-}
-
 ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel,
                          const size_t res) {
-  return ConvolveAndSample(in, kernel, kernel, res);
-}
-
-ImageF Convolve(const ImageF& in, const std::vector<float>& kernel) {
-  return ConvolveAndSample(in, kernel, 1);
-}
-
-Image3F Convolve(const Image3F& in, const std::vector<float>& kernel) {
-  return Convolve(in, kernel, kernel);
+  ImageF tmp = ConvolveXSampleAndTranspose(in, kernel, res);
+  return ConvolveXSampleAndTranspose(tmp, kernel, res);
 }
 
 // Implements "Recursive Implementation of the Gaussian Filter Using Truncated
@@ -488,14 +469,13 @@ void FastGaussianHorizontal(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   JXL_CHECK(SameSize(in, *out));
 
   const intptr_t xsize = in.xsize();
-  const auto fast_gauss = ChooseFastGaussian1D();
   RunOnPool(
       pool, 0, in.ysize(), ThreadPool::SkipInit(),
       [&](const int task, const int /*thread*/) {
         const size_t y = task;
         const float* row_in = in.ConstRow(y);
         float* JXL_RESTRICT row_out = out->Row(y);
-        fast_gauss(rg, row_in, xsize, row_out);
+        FastGaussian1D(rg, row_in, xsize, row_out);
       },
       "FastGaussianHorizontal");
 }
@@ -506,7 +486,7 @@ void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                   const ImageF& in, ThreadPool* pool, ImageF* JXL_RESTRICT temp,
                   ImageF* JXL_RESTRICT out) {
   FastGaussianHorizontal(rg, in, pool, temp);
-  ChooseFastGaussianVertical()(rg, *temp, pool, out);
+  HWY_DYNAMIC_DISPATCH(FastGaussianVertical)(rg, *temp, pool, out);
 }
 
 }  // namespace jxl

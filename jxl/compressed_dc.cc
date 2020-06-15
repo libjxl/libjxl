@@ -668,8 +668,18 @@ void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
 namespace jxl {
 
 HWY_EXPORT(TokenizeDC)
-HWY_EXPORT(DecodeDC)
+void TokenizeDC(size_t group_index, const Image3F& dc,
+                PassesEncoderState* JXL_RESTRICT enc_state, AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(TokenizeDC)(group_index, dc, enc_state, aux_out);
+}
+
 HWY_EXPORT(AdaptiveDCSmoothing)
+void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
+                         ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(dc_quant_field, dc, pool);
+}
+
+HWY_EXPORT(DecodeDC)  // Local function.
 
 constexpr size_t kCmapBaseContext = JXL_NUM_DC_CONTEXTS;
 constexpr size_t kControlFieldBaseContext = kCmapBaseContext + kCmapContexts;
@@ -700,18 +710,18 @@ Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
                  DivCeil(rect.xsize(), kColorTileDimInBlocks),
                  DivCeil(rect.ysize(), kColorTileDimInBlocks));
 
-  ChooseEncodeColorMap()(enc_state.shared.cmap, cmap_rect, &tokens[0],
-                         kCmapBaseContext, aux_out);
+  EncodeColorMap(enc_state.shared.cmap, cmap_rect, &tokens[0], kCmapBaseContext,
+                 aux_out);
 
-  ChooseTokenizeAcStrategy()(rect, enc_state.shared.ac_strategy, &tokens[0],
-                             kControlFieldBaseContext);
+  TokenizeAcStrategy(rect, enc_state.shared.ac_strategy, &tokens[0],
+                     kControlFieldBaseContext);
 
-  ChooseTokenizeQuantField()(rect, enc_state.shared.raw_quant_field,
-                             enc_state.shared.ac_strategy, &tokens[0],
-                             kControlFieldBaseContext + kAcStrategyContexts);
+  TokenizeQuantField(rect, enc_state.shared.raw_quant_field,
+                     enc_state.shared.ac_strategy, &tokens[0],
+                     kControlFieldBaseContext + kAcStrategyContexts);
 
   if (enc_state.shared.image_features.loop_filter.epf) {
-    ChooseTokenizeARParameters()(
+    TokenizeARParameters(
         rect, enc_state.shared.epf_sharpness, enc_state.shared.ac_strategy,
         &tokens[0],
         kControlFieldBaseContext + kAcStrategyContexts + kQuantFieldContexts);
@@ -748,11 +758,12 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
   const size_t ysize = rect.ysize();
   Rect rect0(0, 0, xsize, ysize);
   if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
-    ChooseDecodeDC()(reader, &decoder, context_map, rect,
-                     dec_state->shared->quantizer.MulDC(),
-                     dec_state->shared->cmap.DCFactors(), extra_dc_levels,
-                     &dec_state->shared_storage.dc_storage,
-                     &dec_state->shared_storage.dc_quant_field, aux_out);
+    HWY_DYNAMIC_DISPATCH(DecodeDC)(
+        reader, &decoder, context_map, rect,
+        dec_state->shared->quantizer.MulDC(),
+        dec_state->shared->cmap.DCFactors(), extra_dc_levels,
+        &dec_state->shared_storage.dc_storage,
+        &dec_state->shared_storage.dc_quant_field, aux_out);
   }
 
   JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);
@@ -762,31 +773,29 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
                  DivCeil(rect.xsize(), kColorTileDimInBlocks),
                  DivCeil(rect.ysize(), kColorTileDimInBlocks));
 
-  JXL_RETURN_IF_ERROR(ChooseDecodeColorMap()(
-      reader, &decoder, context_map, &dec_state->shared_storage.cmap, cmap_rect,
-      kCmapBaseContext, aux_out));
+  JXL_RETURN_IF_ERROR(DecodeColorMap(reader, &decoder, context_map,
+                                     &dec_state->shared_storage.cmap, cmap_rect,
+                                     kCmapBaseContext, aux_out));
 
-  if (!ChooseDecodeAcStrategy()(reader, &decoder, context_map, rect,
-                                &dec_state->shared_storage.ac_strategy,
-                                kControlFieldBaseContext)) {
+  if (!DecodeAcStrategy(reader, &decoder, context_map, rect,
+                        &dec_state->shared_storage.ac_strategy,
+                        kControlFieldBaseContext)) {
     return JXL_FAILURE("Failed to decode AcStrategy.");
   }
 
-  if (!ChooseDecodeQuantField()(
-          reader, &decoder, context_map, rect,
-          dec_state->shared_storage.ac_strategy,
-          &dec_state->shared_storage.raw_quant_field,
-          kControlFieldBaseContext + kAcStrategyContexts)) {
+  if (!DecodeQuantField(reader, &decoder, context_map, rect,
+                        dec_state->shared_storage.ac_strategy,
+                        &dec_state->shared_storage.raw_quant_field,
+                        kControlFieldBaseContext + kAcStrategyContexts)) {
     return JXL_FAILURE("Failed to decode QuantField.");
   }
 
   if (dec_state->shared->image_features.loop_filter.epf &&
-      !ChooseDecodeARParameters()(reader, &decoder, context_map, rect,
-                                  dec_state->shared_storage.ac_strategy,
-                                  &dec_state->shared_storage.epf_sharpness,
-                                  kControlFieldBaseContext +
-                                      kAcStrategyContexts +
-                                      kQuantFieldContexts)) {
+      !DecodeARParameters(reader, &decoder, context_map, rect,
+                          dec_state->shared_storage.ac_strategy,
+                          &dec_state->shared_storage.epf_sharpness,
+                          kControlFieldBaseContext + kAcStrategyContexts +
+                              kQuantFieldContexts)) {
     return JXL_FAILURE("Failed to decode ARParameters.");
   }
 

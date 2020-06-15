@@ -331,10 +331,36 @@ ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
 namespace jxl {
 
 HWY_EXPORT(OpsinToLinearInplace)
+void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
+                          const OpsinParams& opsin_params) {
+  return HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
+}
+
 HWY_EXPORT(OpsinToLinear)
+void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
+                   Image3F* JXL_RESTRICT linear,
+                   const OpsinParams& opsin_params) {
+  return HWY_DYNAMIC_DISPATCH(OpsinToLinear)(opsin, rect, pool, linear,
+                                             opsin_params);
+}
+
 HWY_EXPORT(YcbcrToRgb)
+void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
+                const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
+                ImageF* b_plane, ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(y_plane, cb_plane, cr_plane, r_plane,
+                                          g_plane, b_plane, pool);
+}
+
 HWY_EXPORT(UpsampleV2)
+ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(UpsampleV2)(src, pool);
+}
+
 HWY_EXPORT(UpsampleH2)
+ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, pool);
+}
 
 void OpsinParams::Init() {
   InitSIMDInverseMatrix(GetOpsinAbsorbanceInverseMatrix(),

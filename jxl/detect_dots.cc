@@ -95,7 +95,7 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(SumOfSquareDifferences)
+HWY_EXPORT(SumOfSquareDifferences)  // Local function
 
 const int kEllipseWindowSize = 5;
 
@@ -162,11 +162,10 @@ ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   const auto& weights1 = WeightsSeparable5Gaussian0_65();
   const auto& weights3 = WeightsSeparable5Gaussian3();
 
-  auto separable5_3 = ChooseSeparable5_3();
-  separable5_3(orig, Rect(orig), weights1, pool, &forig);
+  Separable5_3(orig, Rect(orig), weights1, pool, &forig);
 
-  separable5_3(orig, Rect(orig), weights3, pool, &tmp);
-  separable5_3(tmp, Rect(tmp), weights3, pool, smooth);
+  Separable5_3(orig, Rect(orig), weights3, pool, &tmp);
+  Separable5_3(tmp, Rect(tmp), weights3, pool, smooth);
 
 #if JXL_DEBUG_DOT_DETECT
   AuxOut aux;
@@ -175,8 +174,7 @@ ImageF ComputeEnergyImage(const Image3F& orig, Image3F* smooth,
   aux.DumpImage("sm", *smooth);
 #endif
 
-  const auto square_diff = ChooseSumOfSquareDifferences();
-  return square_diff(forig, *smooth, pool);
+  return HWY_DYNAMIC_DISPATCH(SumOfSquareDifferences)(forig, *smooth, pool);
 }
 
 struct Pixel {

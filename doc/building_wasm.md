@@ -13,10 +13,6 @@ variables are set:
  * `OPT` - path to the directory containing additional software;
    the `emsdk` directory with the Emscripten SDK should reside there;
    in the Docker container (mentioned above) this should be `/opt`
- * `NODE` - path to capcble NodeJS binary; if variable is not set, the
-   default binary will be used (returned by `which node`); please make sure,
-   that either `NODE` variable, or `which node` points to the capable NodeJS
-   binary
 
 ## Requirements
 
@@ -43,13 +39,6 @@ cd emsdk
 # Make the "latest" SDK "active" for the current user. (writes ~/.emscripten file)
 ./emsdk activate latest
 ```
-
-NodeJS is used to run tests. Emscripten SDK is shipped with NodeJS binary.
-Unfortunately, currently supplied version does not fully support SIMD features.
-`emsdk_env.sh` modifies `PATH` variable so, that bundled NodeJS binary is
-prioritized in path resolution. To overcome that, please set `NODE` variable
-to point to the capable NodeJS binary
-(`$NODE -v` should report at least `v13.11.0`).
 
 In [Docker container](doc/developing_in_docker.md)
 CMake and Emscripten SDK are pre-installed.

@@ -331,12 +331,12 @@ HWY_API Vec128<int16_t, N> SaturatedSub(const Vec128<int16_t, N> a,
 template <size_t N>
 HWY_API Vec128<uint8_t, N> AverageRound(const Vec128<uint8_t, N> a,
                                         const Vec128<uint8_t, N> b) {
-  return Vec128<uint8_t, N>{wasm_i8x16_avgr_u(a.raw, b.raw)};
+  return Vec128<uint8_t, N>{wasm_u8x16_avgr(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<uint16_t, N> AverageRound(const Vec128<uint16_t, N> a,
                                          const Vec128<uint16_t, N> b) {
-  return Vec128<uint16_t, N>{wasm_i16x8_avgr_u(a.raw, b.raw)};
+  return Vec128<uint16_t, N>{wasm_u16x8_avgr(a.raw, b.raw)};
 }
 
 // ------------------------------ Absolute value
@@ -344,38 +344,15 @@ HWY_API Vec128<uint16_t, N> AverageRound(const Vec128<uint16_t, N> a,
 // Returns absolute value, except that LimitsMin() maps to LimitsMax() + 1.
 template <size_t N>
 HWY_API Vec128<int8_t, N> Abs(const Vec128<int8_t, N> v) {
-  // TODO(eustas): return unsigned_min(v, ~v + 1)?
-  alignas(16) int8_t input[16];
-  alignas(16) int8_t output[16];
-  wasm_v128_store(input, v.raw);
-  for (size_t i = 0; i < 16; ++i) {
-    output[i] = std::abs(input[i]);
-  }
-  // what should happen to -128?
-  return Vec128<int8_t, N>{wasm_v128_load(output)};
+  return Vec128<int8_t, N>{wasm_i8x16_abs(v.raw)};
 }
 template <size_t N>
 HWY_API Vec128<int16_t, N> Abs(const Vec128<int16_t, N> v) {
-  // TODO(eustas): return unsigned_min(v, ~v + 1)?
-  alignas(16) int16_t input[8];
-  alignas(16) int16_t output[8];
-  wasm_v128_store(input, v.raw);
-  for (size_t i = 0; i < 8; ++i) {
-    output[i] = std::abs(input[i]);
-  }
-  return Vec128<int16_t, N>{wasm_v128_load(output)};
+  return Vec128<int16_t, N>{wasm_i16x8_abs(v.raw)};
 }
 template <size_t N>
 HWY_API Vec128<int32_t, N> Abs(const Vec128<int32_t, N> v) {
-  // TODO(eustas): return unsigned_min(v, ~v + 1)?
-  alignas(16) int32_t input[4];
-  alignas(16) int32_t output[4];
-  wasm_v128_store(input, v.raw);
-  for (size_t i = 0; i < 4; ++i) {
-    output[i] = std::abs(input[i]);
-  }
-  // what should happen to -128?
-  return Vec128<int32_t, N>{wasm_v128_load(output)};
+  return Vec128<int32_t, N>{wasm_i32x4_abs(v.raw)};
 }
 
 template <size_t N>
@@ -477,34 +454,34 @@ HWY_API Vec128<int32_t, N> ShiftRightSame(const Vec128<int32_t, N> v,
 template <size_t N>
 HWY_API Vec128<uint8_t, N> Min(const Vec128<uint8_t, N> a,
                                const Vec128<uint8_t, N> b) {
-  return Vec128<uint8_t, N>{wasm_i8x16_min_u(a.raw, b.raw)};
+  return Vec128<uint8_t, N>{wasm_u8x16_min(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<uint16_t, N> Min(const Vec128<uint16_t, N> a,
                                 const Vec128<uint16_t, N> b) {
-  return Vec128<uint16_t, N>{wasm_i16x8_min_u(a.raw, b.raw)};
+  return Vec128<uint16_t, N>{wasm_u16x8_min(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<uint32_t, N> Min(const Vec128<uint32_t, N> a,
                                 const Vec128<uint32_t, N> b) {
-  return Vec128<uint32_t, N>{wasm_i32x4_min_u(a.raw, b.raw)};
+  return Vec128<uint32_t, N>{wasm_u32x4_min(a.raw, b.raw)};
 }
 
 // Signed
 template <size_t N>
 HWY_API Vec128<int8_t, N> Min(const Vec128<int8_t, N> a,
                               const Vec128<int8_t, N> b) {
-  return Vec128<int8_t, N>{wasm_i8x16_min_s(a.raw, b.raw)};
+  return Vec128<int8_t, N>{wasm_i8x16_min(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<int16_t, N> Min(const Vec128<int16_t, N> a,
                                const Vec128<int16_t, N> b) {
-  return Vec128<int16_t, N>{wasm_i16x8_min_s(a.raw, b.raw)};
+  return Vec128<int16_t, N>{wasm_i16x8_min(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<int32_t, N> Min(const Vec128<int32_t, N> a,
                                const Vec128<int32_t, N> b) {
-  return Vec128<int32_t, N>{wasm_i32x4_min_s(a.raw, b.raw)};
+  return Vec128<int32_t, N>{wasm_i32x4_min(a.raw, b.raw)};
 }
 
 // Float
@@ -520,34 +497,34 @@ HWY_API Vec128<float, N> Min(const Vec128<float, N> a,
 template <size_t N>
 HWY_API Vec128<uint8_t, N> Max(const Vec128<uint8_t, N> a,
                                const Vec128<uint8_t, N> b) {
-  return Vec128<uint8_t, N>{wasm_i8x16_max_u(a.raw, b.raw)};
+  return Vec128<uint8_t, N>{wasm_u8x16_max(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<uint16_t, N> Max(const Vec128<uint16_t, N> a,
                                 const Vec128<uint16_t, N> b) {
-  return Vec128<uint16_t, N>{wasm_i16x8_max_u(a.raw, b.raw)};
+  return Vec128<uint16_t, N>{wasm_u16x8_max(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<uint32_t, N> Max(const Vec128<uint32_t, N> a,
                                 const Vec128<uint32_t, N> b) {
-  return Vec128<uint32_t, N>{wasm_i32x4_max_u(a.raw, b.raw)};
+  return Vec128<uint32_t, N>{wasm_u32x4_max(a.raw, b.raw)};
 }
 
 // Signed
 template <size_t N>
 HWY_API Vec128<int8_t, N> Max(const Vec128<int8_t, N> a,
                               const Vec128<int8_t, N> b) {
-  return Vec128<int8_t, N>{wasm_i8x16_max_s(a.raw, b.raw)};
+  return Vec128<int8_t, N>{wasm_i8x16_max(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<int16_t, N> Max(const Vec128<int16_t, N> a,
                                const Vec128<int16_t, N> b) {
-  return Vec128<int16_t, N>{wasm_i16x8_max_s(a.raw, b.raw)};
+  return Vec128<int16_t, N>{wasm_i16x8_max(a.raw, b.raw)};
 }
 template <size_t N>
 HWY_API Vec128<int32_t, N> Max(const Vec128<int32_t, N> a,
                                const Vec128<int32_t, N> b) {
-  return Vec128<int32_t, N>{wasm_i32x4_max_s(a.raw, b.raw)};
+  return Vec128<int32_t, N>{wasm_i32x4_max(a.raw, b.raw)};
 }
 
 // Float

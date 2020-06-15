@@ -60,7 +60,7 @@ Image3F GaborishInverse(const Image3F& in, float mul, ThreadPool* pool) {
   }
 
   Image3F sharpened(in.xsize(), in.ysize());
-  ChooseSymmetric5_3()(in, Rect(in), weights, pool, &sharpened);
+  Symmetric5_3(in, Rect(in), weights, pool, &sharpened);
   return sharpened;
 }
 
@@ -85,7 +85,7 @@ WeightsSymmetric3 GaborishKernel(float weight1, float weight2) {
 void ConvolveGaborish(const ImageF& in, float weight1, float weight2,
                       ThreadPool* pool, ImageF* JXL_RESTRICT out) {
   JXL_CHECK(SameSize(in, *out));
-  ChooseSymmetric3()(in, Rect(in), GaborishKernel(weight1, weight2), pool, out);
+  Symmetric3(in, Rect(in), GaborishKernel(weight1, weight2), pool, out);
 }
 
 }  // namespace jxl

@@ -531,50 +531,21 @@ void TestSlowInverseShard(size_t shard) {
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(TransposeTest)
-HWY_EXPORT(InverseTest)
-HWY_EXPORT(IDCTOrthonormalTest)
-HWY_EXPORT(DCTOrthonormalTest)
-HWY_EXPORT(ColumnDctRoundtrip)
-HWY_EXPORT(TestRectInverse)
-HWY_EXPORT(TestRectTranspose)
-HWY_EXPORT(TestDctAccuracyShard)
-HWY_EXPORT(TestIdctAccuracyShard)
-HWY_EXPORT(TestDctTransposeShard)
-HWY_EXPORT(TestSlowIsSameDCTShard)
-HWY_EXPORT(TestSlowIsSameIDCTShard)
-HWY_EXPORT(TestSlowInverseShard)
+class TransposeTest : public hwy::TestWithParamTarget {};
 
-TEST(TransposeTest, Transpose) {
-  hwy::RunTest([]() { ChooseTransposeTest()(); });
-}
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(TransposeTest);
 
-TEST(IdctTest, Inverse) {
-  hwy::RunTest([]() { ChooseInverseTest()(); });
-}
-
-TEST(IdctTest, IDCTOrthonormal) {
-  hwy::RunTest([]() { ChooseIDCTOrthonormalTest()(); });
-}
-
-TEST(DctTest, DCTOrthonormal) {
-  hwy::RunTest([]() { ChooseDCTOrthonormalTest()(); });
-}
-
-TEST(DctTest, ColumnDctRoundtrip) {
-  hwy::RunTest([]() { ChooseColumnDctRoundtrip()(); });
-}
-
-TEST(RectDctTest, TestRectInverse) {
-  hwy::RunTest([]() { ChooseTestRectInverse()(); });
-}
-
-TEST(RectDctTest, TestRectTranspose) {
-  hwy::RunTest([]() { ChooseTestRectTranspose()(); });
-}
+HWY_EXPORT_AND_TEST_P(TransposeTest, TransposeTest)
+HWY_EXPORT_AND_TEST_P(TransposeTest, InverseTest)
+HWY_EXPORT_AND_TEST_P(TransposeTest, IDCTOrthonormalTest)
+HWY_EXPORT_AND_TEST_P(TransposeTest, DCTOrthonormalTest)
+HWY_EXPORT_AND_TEST_P(TransposeTest, ColumnDctRoundtrip)
+HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectInverse)
+HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectTranspose)
 
 // Tests in the DctShardedTest class are sharded for N=32.
-class DctShardedTest : public ::testing::TestWithParam<uint32_t> {};
+class DctShardedTest : public ::hwy::TestWithParamTargetAndT<uint32_t> {};
+
 std::vector<uint32_t> ShardRange(uint32_t n) {
 #ifdef JXL_DISABLE_SLOW_TESTS
   JXL_ASSERT(n > 6);
@@ -585,32 +556,16 @@ std::vector<uint32_t> ShardRange(uint32_t n) {
 #endif  // JXL_DISABLE_SLOW_TESTS
   return ret;
 }
-INSTANTIATE_TEST_CASE_P(SlowDctTestInstantiation, DctShardedTest,
-                        ::testing::ValuesIn(ShardRange(32)));
 
-TEST_P(DctShardedTest, DctTest_Accuracy) {
-  hwy::RunTest([]() { ChooseTestDctAccuracyShard()(GetParam()); });
-}
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(DctShardedTest,
+                                      ::testing::ValuesIn(ShardRange(32)));
 
-TEST_P(DctShardedTest, IdctTest_Accuracy) {
-  hwy::RunTest([]() { ChooseTestIdctAccuracyShard()(GetParam()); });
-}
-
-TEST_P(DctShardedTest, IdctTest_Transpose) {
-  hwy::RunTest([]() { ChooseTestDctTransposeShard()(GetParam()); });
-}
-
-TEST_P(DctShardedTest, DCTIsSame) {
-  hwy::RunTest([]() { ChooseTestSlowIsSameDCTShard()(GetParam()); });
-}
-
-TEST_P(DctShardedTest, IDCTIsSame) {
-  hwy::RunTest([]() { ChooseTestSlowIsSameIDCTShard()(GetParam()); });
-}
-
-TEST_P(DctShardedTest, SlowInverse) {
-  hwy::RunTest([]() { ChooseTestSlowInverseShard()(GetParam()); });
-}
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctAccuracyShard)
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestIdctAccuracyShard)
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctTransposeShard)
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameDCTShard)
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameIDCTShard)
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowInverseShard)
 
 }  // namespace jxl
 #endif  // HWY_ONCE

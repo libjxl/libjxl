@@ -38,7 +38,7 @@ static Status FwdNearLossless(Image& input, size_t begin_c, size_t end_c,
       begin_c > static_cast<int>(input.channel.size()) ||
       end_c < input.nb_meta_channels ||
       end_c >= static_cast<int>(input.channel.size()) || end_c < begin_c) {
-    return JXL_FAILURE("Invalid channel range");
+    return JXL_FAILURE("Invalid channel range %zu-%zu", begin_c, end_c);
   }
 
   JXL_DEBUG_V(8, "Applying loss on channels %zu-%zu with max delta=%i.",

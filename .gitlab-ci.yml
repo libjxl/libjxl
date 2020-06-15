@@ -30,7 +30,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:68031dcf6cca18c63341d0364d356f06907e3a02c5bba6198877d67d794dab41
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:9a6dff70c21c75f64a8291de60f758134f11df1f67560e4e4ad42bfa51b5fa7f
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -505,6 +505,7 @@ build:ems:all:
   <<: *linux_host_build_template
   stage: build
   script:
+    - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
     - BUILD_TARGET=wasm32 SKIP_TEST=1 PACK_TEST=1 emconfigure ./ci.sh release
 
@@ -514,6 +515,7 @@ test:ems:all:
   dependencies:
     - build:ems:all
   script:
+    - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
     - BUILD_TARGET=wasm32 emconfigure ./ci.sh test
 
@@ -527,7 +529,7 @@ build:ems_simd:all:
     - schedules
     - tags
   script:
-    - export NODE=/usr/bin/node
+    - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
     - BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 SKIP_TEST=1 PACK_TEST=1 emconfigure ./ci.sh release
 
@@ -542,6 +544,6 @@ test:ems_simd:all:
   dependencies:
     - build:ems_simd:all
   script:
-    - export NODE=/usr/bin/node
+    - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
-    - BUILD_TARGET=wasm32  emconfigure ./ci.sh test
+    - BUILD_TARGET=wasm32 emconfigure ./ci.sh test

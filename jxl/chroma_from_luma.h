@@ -142,25 +142,21 @@ struct ColorCorrelationMap {
   int32_t ytob_dc_ = kColorOffset;
 };
 
-typedef void FindBestColorCorrelationMapFunc(
-    const Image3F& opsin, const DequantMatrices& dequant,
-    const AcStrategyImage* ac_strategy, const ImageI* raw_quant_field,
-    const Quantizer* quantizer, ThreadPool* pool, ColorCorrelationMap* cmap);
-FindBestColorCorrelationMapFunc* ChooseFindBestColorCorrelationMap();
+void FindBestColorCorrelationMap(const Image3F& opsin,
+                                 const DequantMatrices& dequant,
+                                 const AcStrategyImage* ac_strategy,
+                                 const ImageI* raw_quant_field,
+                                 const Quantizer* quantizer, ThreadPool* pool,
+                                 ColorCorrelationMap* cmap);
 
-typedef void EncodeColorMapFunc(const ColorCorrelationMap& cmap,
-                                const Rect& rect, std::vector<Token>* tokens,
-                                size_t base_context,
-                                AuxOut* JXL_RESTRICT aux_out);
-EncodeColorMapFunc* ChooseEncodeColorMap();
+void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
+                    std::vector<Token>* tokens, size_t base_context,
+                    AuxOut* JXL_RESTRICT aux_out);
 
-typedef Status DecodeColorMapFunc(BitReader* JXL_RESTRICT br,
-                                  ANSSymbolReader* decoder,
-                                  const std::vector<uint8_t>& context_map,
-                                  ColorCorrelationMap* cmap, const Rect& rect,
-                                  size_t base_context,
-                                  AuxOut* JXL_RESTRICT aux_out);
-DecodeColorMapFunc* ChooseDecodeColorMap();
+Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
+                      const std::vector<uint8_t>& context_map,
+                      ColorCorrelationMap* cmap, const Rect& rect,
+                      size_t base_context, AuxOut* JXL_RESTRICT aux_out);
 
 // Declared here to avoid including predictor.h.
 static constexpr size_t kCmapContexts = 24;

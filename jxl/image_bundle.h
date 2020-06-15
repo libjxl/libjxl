@@ -60,18 +60,15 @@ struct ExtraChannelInfo {
   float color[4];     // spot color in linear RGBA
 };
 
-class OpsinInverseMatrix {
-  void InitFields();
-
- public:
-  OpsinInverseMatrix() { InitFields(); }
+struct OpsinInverseMatrix {
+  OpsinInverseMatrix();
   static const char* Name() { return "OpsinInverseMatrix"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
-      InitFields();
+      visitor->SetDefault(this);
       return true;
     }
     for (int i = 0; i < 9; ++i) {
@@ -109,18 +106,15 @@ class OpsinInverseMatrix {
   float quant_biases[4];
 };
 
-class IntensityTargetInfo {
-  void InitFields();
-
- public:
-  IntensityTargetInfo() { InitFields(); }
+struct IntensityTargetInfo {
+  IntensityTargetInfo();
   static const char* Name() { return "IntensityTargetInfo"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
-      InitFields();
+      visitor->SetDefault(this);
       return true;
     }
     visitor->F16(kDefaultIntensityTarget, &intensity_target);
@@ -136,18 +130,15 @@ class IntensityTargetInfo {
 
 // Less frequently changed fields, grouped into a separate bundle so they do not
 // need to be signaled when some ImageMetadata fields are non-default.
-class ImageMetadata2 {
-  void InitFields();
-
- public:
-  ImageMetadata2() { InitFields(); }
+struct ImageMetadata2 {
+  ImageMetadata2();
   static const char* Name() { return "ImageMetadata2"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
-      InitFields();
+      visitor->SetDefault(this);
       return true;
     }
 
@@ -208,18 +199,15 @@ class ImageMetadata2 {
 
 // Properties of the original image bundle. This enables Encode(Decode()) to
 // re-create an equivalent image without user input.
-class ImageMetadata {
-  void InitFields();
-
- public:
-  ImageMetadata() { InitFields(); }
+struct ImageMetadata {
+  ImageMetadata();
   static const char* Name() { return "ImageMetadata"; }
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
-      InitFields();
+      visitor->SetDefault(this);
       return true;
     }
 

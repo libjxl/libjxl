@@ -110,7 +110,7 @@ void VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
       const double l1 = std::abs(row_expected[x] - row_actual[x]);
 
       // Cannot compute relative, only check/update L1.
-      if (row_expected[x] < 1E-10) {
+      if (std::abs(row_expected[x]) < 1E-10) {
         if (l1 > threshold_l1) {
           any_bad = true;
           max_l1 = std::max(max_l1, l1);

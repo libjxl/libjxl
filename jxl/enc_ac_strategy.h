@@ -37,10 +37,9 @@ namespace jxl {
 // `quant_field` will be the initial quantization field for this image.  `src`
 // is the input image in the XYB color space. `ac_strategy` is the output
 // strategy.
-typedef void FindBestAcStrategyFunc(const Image3F& src,
-                                    PassesEncoderState* JXL_RESTRICT enc_state,
-                                    ThreadPool* pool, AuxOut* aux_out);
-FindBestAcStrategyFunc* ChooseFindBestAcStrategy();
+void FindBestAcStrategy(const Image3F& src,
+                        PassesEncoderState* JXL_RESTRICT enc_state,
+                        ThreadPool* pool, AuxOut* aux_out);
 
 }  // namespace jxl
 

@@ -89,7 +89,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   printf("%.10f\n", distance);
 
   double p = 3.0;
-  double pnorm = ChooseComputeDistanceP()(distmap, p);
+  double pnorm = ComputeDistanceP(distmap, p);
   printf("%g-norm: %f\n", p, pnorm);
 
   if (!distmap_filename.empty()) {

@@ -43,9 +43,21 @@ void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
 #include "hwy/after_namespace-inl.h"
 
 #if HWY_ONCE
+
 namespace skeleton {
 
+// This macro declares a static array SkeletonHighwayDispatchTable used for
+// dynamic dispatch. This macro should be placed in the same namespace that
+// defines the Skeleton function above.
 HWY_EXPORT(Skeleton)
+
+// This function is optional and only needed in the case of exposing it in the
+// header file. Otherwise using HWY_DYNAMIC_DISPATCH(Skeleton) multiple times in
+// this module is equivalent to inlining this optional function..
+void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
+              float* HWY_RESTRICT out) {
+  return HWY_DYNAMIC_DISPATCH(Skeleton)(in1, in2, out);
+}
 
 // Optional: anything to compile only once, e.g. non-SIMD implementations of
 // public functions provided by this module, can go inside #if HWY_ONCE

@@ -224,7 +224,17 @@ void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
 namespace jxl {
 
 HWY_EXPORT(AddNoise)
+void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
+              const Image3F& noise, const Rect& opsin_rect,
+              const ColorCorrelationMap& cmap, Image3F* opsin) {
+  return HWY_DYNAMIC_DISPATCH(AddNoise)(noise_params, noise_rect, noise,
+                                        opsin_rect, cmap, opsin);
+}
+
 HWY_EXPORT(RandomImage3)
+void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
+  return HWY_DYNAMIC_DISPATCH(RandomImage3)(rect, noise);
+}
 
 void DecodeFloatParam(float precision, float* val, BitReader* br) {
   const int absval_quant = br->ReadFixedBits<10>();

@@ -78,13 +78,11 @@ class ColorSpaceTransform {
 // buf_X can either be from BufX() or caller-allocated, interleaved storage.
 // `thread` must be less than the `num_threads` passed to Init.
 // `t` is non-const because buf_* may be modified.
-typedef void DoColorSpaceTransformFunc(ColorSpaceTransform* t, size_t thread,
-                                       const float* buf_src, float* buf_dst);
-DoColorSpaceTransformFunc* ChooseDoColorSpaceTransform();
+void DoColorSpaceTransform(ColorSpaceTransform* t, size_t thread,
+                           const float* buf_src, float* buf_dst);
 
-typedef void SRGBToLinearFunc(size_t n, const float* JXL_RESTRICT srgb,
-                              float* JXL_RESTRICT linear);
-SRGBToLinearFunc* ChooseSRGBToLinear();
+void SRGBToLinear(size_t n, const float* JXL_RESTRICT srgb,
+                  float* JXL_RESTRICT linear);
 
 }  // namespace jxl
 

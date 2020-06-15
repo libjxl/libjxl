@@ -249,7 +249,7 @@ HWY_EXPORT(RunBenchmarks)
 int main(int argc, char** /*argv*/) {
   for (uint32_t target : hwy::SupportedAndGeneratedTargets()) {
     hwy::SetSupportedTargetsForTest(target);
-    hwy::ChooseRunBenchmarks()(argc != 999);
+    HWY_DYNAMIC_DISPATCH(hwy::RunBenchmarks)(argc != 999);
   }
   hwy::SetSupportedTargetsForTest(0);  // Reset the mask afterwards.
   return 0;

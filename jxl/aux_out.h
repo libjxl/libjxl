@@ -214,7 +214,7 @@ struct AuxOut {
     Image3F linear(image.xsize(), image.ysize());
     OpsinParams opsin_params;
     opsin_params.Init();
-    ChooseOpsinToLinear()(image, Rect(linear), nullptr, &linear, opsin_params);
+    OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
 
     CodecInOut io;
     io.metadata.bits_per_sample = sizeof(T) * kBitsPerByte;

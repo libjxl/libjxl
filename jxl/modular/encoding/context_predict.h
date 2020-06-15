@@ -32,19 +32,16 @@ constexpr static int64_t kPredExtraBits = 3;
 constexpr static int64_t kPredictionRound = ((1 << kPredExtraBits) >> 1) - 1;
 constexpr static size_t kNumProperties = 1;
 
-class Header {
-  // TODO(janwas): move to cc file, avoid including fields.h.
-  void InitFields() { Bundle::Init(this); }
-
- public:
+struct Header {
   static const char *Name() { return "WeightedPredictorHeader"; }
-  Header() { InitFields(); }
+  // TODO(janwas): move to cc file, avoid including fields.h.
+  Header() { Bundle::Init(this); }
 
   template <class Visitor>
   Status VisitFields(Visitor *JXL_RESTRICT visitor) {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
-      InitFields();
+      visitor->SetDefault(this);
       return true;
     }
     auto visit_p = [visitor](pixel_type val, pixel_type *p) {

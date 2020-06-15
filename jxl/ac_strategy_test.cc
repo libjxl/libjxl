@@ -20,7 +20,7 @@
 #include <utility>
 
 #include <hwy/base.h>  // HWY_ALIGN_MAX
-#include <hwy/tests/test_util-inl.h>  // RunTest
+#include <hwy/tests/test_util-inl.h>
 
 #include "jxl/common.h"
 #include "jxl/dct_scales.h"
@@ -31,14 +31,10 @@ namespace jxl {
 namespace {
 
 // Test that DCT -> IDCT is a noop.
-class AcStrategyRoundtrip : public testing::TestWithParam<int> {
+class AcStrategyRoundtrip : public ::hwy::TestWithParamTargetAndT<int> {
  protected:
   void Run() {
     const AcStrategy::Type type = static_cast<AcStrategy::Type>(GetParam());
-    const auto from_pixels = ChooseTransformFromPixels();
-    const auto to_pixels = ChooseTransformToPixels();
-    const auto from_dc = ChooseLowestFrequenciesFromDC();
-    const auto to_dc = ChooseDCFromLowestFrequencies();
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
 
     HWY_ALIGN_MAX float coeffs[AcStrategy::kMaxCoeffArea] = {};
@@ -47,10 +43,10 @@ class AcStrategyRoundtrip : public testing::TestWithParam<int> {
     for (size_t i = 0; i < 64 << acs.log2_covered_blocks(); i++) {
       HWY_ALIGN_MAX float input[AcStrategy::kMaxCoeffArea] = {};
       input[i] = 0.2f;
-      from_pixels(type, input, acs.covered_blocks_x() * 8, coeffs);
+      TransformFromPixels(type, input, acs.covered_blocks_x() * 8, coeffs);
       ASSERT_NEAR(coeffs[0], 0.2 / (64 << acs.log2_covered_blocks()), 1e-6)
           << " i = " << i;
-      to_pixels(type, coeffs, idct, acs.covered_blocks_x() * 8);
+      TransformToPixels(type, coeffs, idct, acs.covered_blocks_x() * 8);
       for (size_t j = 0; j < 64 << acs.log2_covered_blocks(); j++) {
         ASSERT_NEAR(idct[j], input[j], 1e-6)
             << "j = " << j << " i = " << i << " acs " << type;
@@ -62,8 +58,8 @@ class AcStrategyRoundtrip : public testing::TestWithParam<int> {
       for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
         HWY_ALIGN_MAX float dc[AcStrategy::kMaxCoeffArea] = {};
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2;
-        from_dc(type, dc, acs.covered_blocks_x() * 8, coeffs);
-        to_dc(type, coeffs, idct, acs.covered_blocks_x() * 8);
+        LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs);
+        DCFromLowestFrequencies(type, coeffs, idct, acs.covered_blocks_x() * 8);
         for (size_t j = 0; j < 64 << acs.log2_covered_blocks(); j++) {
           ASSERT_NEAR(idct[j], dc[j], 1e-6)
               << "j = " << j << " x = " << x << " y = " << y << " acs " << type;
@@ -73,21 +69,18 @@ class AcStrategyRoundtrip : public testing::TestWithParam<int> {
   }
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    AcStrategyRoundtripInstantiation, AcStrategyRoundtrip,
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(
+    AcStrategyRoundtrip,
     ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
 
-TEST_P(AcStrategyRoundtrip, Test) {
-  hwy::RunTest([this]() { Run(); });
-}
+TEST_P(AcStrategyRoundtrip, Test) { Run(); }
 
 // Test that DC(2x2) -> DCT coefficients -> IDCT -> downsampled IDCT is a noop.
-class AcStrategyRoundtripDownsample : public testing::TestWithParam<int> {
+class AcStrategyRoundtripDownsample
+    : public ::hwy::TestWithParamTargetAndT<int> {
  protected:
   void Run() {
     const AcStrategy::Type type = static_cast<AcStrategy::Type>(GetParam());
-    const auto from_dc = ChooseLowestFrequenciesFromDC();
-    const auto to_pixels = ChooseTransformToPixels();
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
 
     HWY_ALIGN_MAX float coeffs[AcStrategy::kMaxCoeffArea] = {};
@@ -97,8 +90,8 @@ class AcStrategyRoundtripDownsample : public testing::TestWithParam<int> {
       for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
         HWY_ALIGN_MAX float dc[AcStrategy::kMaxCoeffArea] = {};
         dc[y * acs.covered_blocks_x() * 8 + x] = 0.2f;
-        from_dc(type, dc, acs.covered_blocks_x() * 8, coeffs);
-        to_pixels(type, coeffs, idct, acs.covered_blocks_x() * 8);
+        LowestFrequenciesFromDC(type, dc, acs.covered_blocks_x() * 8, coeffs);
+        TransformToPixels(type, coeffs, idct, acs.covered_blocks_x() * 8);
         // Downsample
         for (size_t dy = 0; dy < acs.covered_blocks_y(); dy++) {
           for (size_t dx = 0; dx < acs.covered_blocks_x(); dx++) {
@@ -119,22 +112,18 @@ class AcStrategyRoundtripDownsample : public testing::TestWithParam<int> {
   }
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    AcStrategyRoundtripDownsampleInstantiation, AcStrategyRoundtripDownsample,
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(
+    AcStrategyRoundtripDownsample,
     ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
 
-TEST_P(AcStrategyRoundtripDownsample, Test) {
-  hwy::RunTest([this]() { Run(); });
-}
+TEST_P(AcStrategyRoundtripDownsample, Test) { Run(); }
 
 // Test that IDCT(block with zeros in the non-topleft corner) -> downsampled
 // IDCT is the same as IDCT -> DC(2x2) of the same block.
-class AcStrategyDownsample : public testing::TestWithParam<int> {
+class AcStrategyDownsample : public ::hwy::TestWithParamTargetAndT<int> {
  protected:
   void Run() {
     const AcStrategy::Type type = static_cast<AcStrategy::Type>(GetParam());
-    const auto to_pixels = ChooseTransformToPixels();
-    const auto to_dc = ChooseDCFromLowestFrequencies();
     const AcStrategy acs = AcStrategy::FromRawStrategy(type);
     size_t cx = acs.covered_blocks_y();
     size_t cy = acs.covered_blocks_x();
@@ -147,8 +136,9 @@ class AcStrategyDownsample : public testing::TestWithParam<int> {
       for (size_t x = 0; x < cx; x++) {
         HWY_ALIGN_MAX float coeffs[AcStrategy::kMaxCoeffArea] = {};
         coeffs[y * cx * 8 + x] = 0.2f;
-        to_pixels(type, coeffs, idct, acs.covered_blocks_x() * 8);
-        to_dc(type, coeffs, idct_acs_downsampled, acs.covered_blocks_x() * 8);
+        TransformToPixels(type, coeffs, idct, acs.covered_blocks_x() * 8);
+        DCFromLowestFrequencies(type, coeffs, idct_acs_downsampled,
+                                acs.covered_blocks_x() * 8);
         // Downsample
         for (size_t dy = 0; dy < acs.covered_blocks_y(); dy++) {
           for (size_t dx = 0; dx < acs.covered_blocks_x(); dx++) {
@@ -171,13 +161,11 @@ class AcStrategyDownsample : public testing::TestWithParam<int> {
   }
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    AcStrategyDownsampleInstantiation, AcStrategyDownsample,
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(
+    AcStrategyDownsample,
     ::testing::Range(0, int(AcStrategy::Type::kNumValidStrategies)));
 
-TEST_P(AcStrategyDownsample, Test) {
-  hwy::RunTest([this]() { Run(); });
-}
+TEST_P(AcStrategyDownsample, Test) { Run(); }
 
 float I8(int N, int u) {
   float eps = u == 0 ? std::sqrt(0.5) : 1.0;
@@ -268,54 +256,43 @@ TEST(AcStrategyTest, TestConstant8) {
   }
 }
 
-TEST(AcStrategyTest, RoundtripAFVDCT) {
-  hwy::RunTest([]() {
-    const auto do_dct = ChooseAFVDCT4x4();
-    const auto do_idct = ChooseAFVIDCT4x4();
-    HWY_ALIGN_MAX float idct[16];
-    for (size_t i = 0; i < 16; i++) {
-      HWY_ALIGN_MAX float pixels[16] = {};
-      pixels[i] = 1;
-      HWY_ALIGN_MAX float coeffs[16] = {};
+class AcStrategyTargetTest : public ::hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(AcStrategyTargetTest);
 
-      do_dct(pixels, coeffs);
-      do_idct(coeffs, idct);
-      for (size_t j = 0; j < 16; j++) {
-        EXPECT_NEAR(idct[j], pixels[j], 1e-6);
-      }
+TEST_P(AcStrategyTargetTest, RoundtripAFVDCT) {
+  HWY_ALIGN_MAX float idct[16];
+  for (size_t i = 0; i < 16; i++) {
+    HWY_ALIGN_MAX float pixels[16] = {};
+    pixels[i] = 1;
+    HWY_ALIGN_MAX float coeffs[16] = {};
+
+    AFVDCT4x4(pixels, coeffs);
+    AFVIDCT4x4(coeffs, idct);
+    for (size_t j = 0; j < 16; j++) {
+      EXPECT_NEAR(idct[j], pixels[j], 1e-6);
     }
-  });
+  }
 }
 
-TEST(AcStrategyTest, BenchmarkAFV) {
-  hwy::RunTest([]() {
-    const auto from_pixels = ChooseTransformFromPixels();
-    const auto to_pixels = ChooseTransformToPixels();
-
-    const AcStrategy::Type type = AcStrategy::Type::AFV0;
-    HWY_ALIGN_MAX float pixels[64] = {1};
-    HWY_ALIGN_MAX float coeffs[64] = {};
-    for (size_t i = 0; i < 1 << 14; i++) {
-      to_pixels(type, coeffs, pixels, 8);
-      from_pixels(type, pixels, 8, coeffs);
-    }
-    EXPECT_NEAR(pixels[0], 0.0, 1E-6);
-  });
+TEST_P(AcStrategyTargetTest, BenchmarkAFV) {
+  const AcStrategy::Type type = AcStrategy::Type::AFV0;
+  HWY_ALIGN_MAX float pixels[64] = {1};
+  HWY_ALIGN_MAX float coeffs[64] = {};
+  for (size_t i = 0; i < 1 << 14; i++) {
+    TransformToPixels(type, coeffs, pixels, 8);
+    TransformFromPixels(type, pixels, 8, coeffs);
+  }
+  EXPECT_NEAR(pixels[0], 0.0, 1E-6);
 }
 
-TEST(AcStrategyTest, BenchmarkAFVDCT) {
-  hwy::RunTest([]() {
-    const auto do_dct = ChooseAFVDCT4x4();
-    const auto do_idct = ChooseAFVIDCT4x4();
-
-    HWY_ALIGN_MAX float pixels[64] = {1};
-    HWY_ALIGN_MAX float coeffs[64] = {};
-    for (size_t i = 0; i < 1 << 14; i++) {
-      do_dct(pixels, coeffs);
-      do_idct(coeffs, pixels);
-    }
-    EXPECT_NEAR(pixels[0], 1.0, 1E-6);
-  });
+TEST_P(AcStrategyTargetTest, BenchmarkAFVDCT) {
+  HWY_ALIGN_MAX float pixels[64] = {1};
+  HWY_ALIGN_MAX float coeffs[64] = {};
+  for (size_t i = 0; i < 1 << 14; i++) {
+    AFVDCT4x4(pixels, coeffs);
+    AFVIDCT4x4(coeffs, pixels);
+  }
+  EXPECT_NEAR(pixels[0], 1.0, 1E-6);
 }
 
 }  // namespace

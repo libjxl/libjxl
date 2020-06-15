@@ -37,10 +37,10 @@ size_t GetVectorSize() { return HWY_LANES(uint8_t); }
 namespace jxl {
 namespace {
 
-HWY_EXPORT(GetVectorSize)
+HWY_EXPORT(GetVectorSize)  // Local function.
 
 size_t VectorSize() {
-  static size_t bytes = ChooseGetVectorSize()();
+  static size_t bytes = HWY_DYNAMIC_DISPATCH(GetVectorSize)();
   return bytes;
 }
 

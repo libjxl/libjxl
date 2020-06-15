@@ -31,14 +31,11 @@ namespace jxl {
 
 // Add a noise to Opsin image, loading generated random noise from `noise_rect`
 // in `noise`.
-typedef void AddNoiseFunc(const NoiseParams& noise_params,
-                          const Rect& noise_rect, const Image3F& noise,
-                          const Rect& opsin_rect,
-                          const ColorCorrelationMap& cmap, Image3F* opsin);
-AddNoiseFunc* ChooseAddNoise();
+void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
+              const Image3F& noise, const Rect& opsin_rect,
+              const ColorCorrelationMap& cmap, Image3F* opsin);
 
-typedef void RandomImage3Func(const Rect& rect, Image3F* JXL_RESTRICT noise);
-RandomImage3Func* ChooseRandomImage3();
+void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise);
 
 // Must only call if FrameHeader.flags.kNoise.
 Status DecodeNoise(BitReader* br, NoiseParams* noise_params);

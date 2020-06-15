@@ -39,13 +39,17 @@
 namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-using DF = HWY_CAPPED(float, kBlockDim);
-
-Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
-                             PassesDecoderState* dec_state, size_t y,
-                             size_t thread, AuxOut* /*aux_out*/,
-                             bool save_decompressed,
-                             bool apply_color_transform) {
+// TODO(deymo): Rename LocalApplyImageFeaturesRow to ApplyImageFeaturesRow. This
+// currently has a different name than the public wrapper function because the
+// function call from ApplyImageFeatures to ApplyImageFeaturesRow is ambiguous
+// due to ADL rules and it can't be disambiguated without access to the
+// namespace name formerly known as HWY_NAMESPACE.
+Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
+                                  const Rect& in_rect,
+                                  PassesDecoderState* dec_state, size_t y,
+                                  size_t thread, AuxOut* /*aux_out*/,
+                                  bool save_decompressed,
+                                  bool apply_color_transform) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
@@ -79,9 +83,8 @@ Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
 
   if (frame_header.flags & FrameHeader::kNoise) {
     PROFILER_ZONE("AddNoise");
-    auto add_noise = ChooseAddNoise();
-    add_noise(image_features.noise_params, rect, dec_state->noise, rect,
-              dec_state->shared->cmap, idct);
+    AddNoise(image_features.noise_params, rect, dec_state->noise, rect,
+             dec_state->shared->cmap, idct);
   }
 
   if (apply_color_transform &&
@@ -133,9 +136,9 @@ Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
 
   for (size_t y = 2 * kBlockDim - lf.PaddingRows();
        y < 2 * kBlockDim + lf.PaddingRows() + rect.ysize(); y++) {
-    JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(idct, rect, dec_state, y, thread,
-                                              aux_out, save_decompressed,
-                                              apply_color_transform));
+    JXL_RETURN_IF_ERROR(
+        LocalApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out,
+                                   save_decompressed, apply_color_transform));
   }
   return true;
 }
@@ -147,8 +150,26 @@ Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(ApplyImageFeaturesRow)
+HWY_EXPORT(LocalApplyImageFeaturesRow)
+Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
+                             PassesDecoderState* dec_state, size_t y,
+                             size_t thread, AuxOut* aux_out,
+                             bool save_decompressed,
+                             bool apply_color_transform) {
+  return HWY_DYNAMIC_DISPATCH(LocalApplyImageFeaturesRow)(
+      idct, in_rect, dec_state, y, thread, aux_out, save_decompressed,
+      apply_color_transform);
+}
+
 HWY_EXPORT(ApplyImageFeatures)
+Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                          PassesDecoderState* dec_state, size_t thread,
+                          AuxOut* aux_out, bool save_decompressed,
+                          bool apply_color_transform) {
+  return HWY_DYNAMIC_DISPATCH(ApplyImageFeatures)(idct, rect, dec_state, thread,
+                                                  aux_out, save_decompressed,
+                                                  apply_color_transform);
+}
 
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              PassesDecoderState* dec_state, ThreadPool* pool,
@@ -218,10 +239,10 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
   bool apply_features_ok = true;
   std::mutex apply_features_ok_mutex;
-  const auto apply_features = ChooseApplyImageFeatures();
   auto run_apply_features = [&](size_t rect_id, size_t thread) {
-    if (!apply_features(idct, rects_to_process[rect_id], dec_state, thread,
-                        aux_out, save_decompressed, apply_color_transform)) {
+    if (!ApplyImageFeatures(idct, rects_to_process[rect_id], dec_state, thread,
+                            aux_out, save_decompressed,
+                            apply_color_transform)) {
       std::unique_lock<std::mutex> lock(apply_features_ok_mutex);
       apply_features_ok = false;
     }
@@ -245,10 +266,10 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       frame_header.color_transform == ColorTransform::kYCbCr) {
     // TODO(veluca): create per-pixel version of YcbcrToRgb for line-based
     // decoding in ApplyImageFeatures.
-    ChooseYcbcrToRgb()(idct->Plane(1), idct->Plane(0), idct->Plane(2),
-                       const_cast<ImageF*>(&idct->Plane(0)),
-                       const_cast<ImageF*>(&idct->Plane(1)),
-                       const_cast<ImageF*>(&idct->Plane(2)), pool);
+    YcbcrToRgb(idct->Plane(1), idct->Plane(0), idct->Plane(2),
+               const_cast<ImageF*>(&idct->Plane(0)),
+               const_cast<ImageF*>(&idct->Plane(1)),
+               const_cast<ImageF*>(&idct->Plane(2)), pool);
   }  // otherwise no color transform needed
 
   return true;

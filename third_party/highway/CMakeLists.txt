@@ -26,6 +26,17 @@ if (NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles(
+   "int main() {
+      #if !defined(__EMSCRIPTEN__)
+      static_assert(false, \"__EMSCRIPTEN__ is not defined\");
+      #endif
+      return 0;
+    }"
+  HWY_EMSCRIPTEN
+)
+
 set(HWY_SOURCES
     hwy/after_namespace-inl.h
     hwy/aligned_allocator.cc
@@ -221,6 +232,10 @@ foreach (TESTFILE IN LISTS HWY_TEST_FILES)
   target_link_libraries(${TESTNAME} hwy GTest::GTest GTest::Main)
   # Output test targets in the test directory.
   set_target_properties(${TESTNAME} PROPERTIES PREFIX "tests/")
+
+  if (HWY_EMSCRIPTEN)
+    set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "-s SINGLE_FILE=1")
+  endif()
 
   if(${CMAKE_VERSION} VERSION_LESS "3.10.3")
     gtest_discover_tests(${TESTNAME} TIMEOUT 60)

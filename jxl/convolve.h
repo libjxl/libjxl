@@ -107,40 +107,33 @@ void SlowLaplacian5(const ImageF& in, const Rect& rect, ThreadPool* pool,
 void SlowLaplacian5(const Image3F& in, const Rect& rect, ThreadPool* pool,
                     Image3F* out);
 
-typedef void Symmetric3Func(const ImageF& in, const Rect& rect,
-                            const WeightsSymmetric3& weights, ThreadPool* pool,
-                            ImageF* out);
-Symmetric3Func* ChooseSymmetric3();
+void Symmetric3(const ImageF& in, const Rect& rect,
+                const WeightsSymmetric3& weights, ThreadPool* pool,
+                ImageF* out);
 
-typedef void Symmetric5Func(const ImageF& in, const Rect& rect,
-                            const WeightsSymmetric5& weights, ThreadPool* pool,
-                            ImageF* JXL_RESTRICT out);
-Symmetric5Func* ChooseSymmetric5();
+void Symmetric5(const ImageF& in, const Rect& rect,
+                const WeightsSymmetric5& weights, ThreadPool* pool,
+                ImageF* JXL_RESTRICT out);
 
-typedef void Symmetric5_3Func(const Image3F& in, const Rect& rect,
-                              const WeightsSymmetric5& weights,
-                              ThreadPool* pool, Image3F* JXL_RESTRICT out);
-Symmetric5_3Func* ChooseSymmetric5_3();
+void Symmetric5_3(const Image3F& in, const Rect& rect,
+                  const WeightsSymmetric5& weights, ThreadPool* pool,
+                  Image3F* JXL_RESTRICT out);
 
-typedef void Separable5Func(const ImageF& in, const Rect& rect,
-                            const WeightsSeparable5& weights, ThreadPool* pool,
-                            ImageF* out);
-Separable5Func* ChooseSeparable5();
+void Separable5(const ImageF& in, const Rect& rect,
+                const WeightsSeparable5& weights, ThreadPool* pool,
+                ImageF* out);
 
-typedef void Separable5_3Func(const Image3F& in, const Rect& rect,
-                              const WeightsSeparable5& weights,
-                              ThreadPool* pool, Image3F* out);
-Separable5_3Func* ChooseSeparable5_3();
+void Separable5_3(const Image3F& in, const Rect& rect,
+                  const WeightsSeparable5& weights, ThreadPool* pool,
+                  Image3F* out);
 
-typedef void Separable7Func(const ImageF& in, const Rect& rect,
-                            const WeightsSeparable7& weights, ThreadPool* pool,
-                            ImageF* out);
-Separable7Func* ChooseSeparable7();
+void Separable7(const ImageF& in, const Rect& rect,
+                const WeightsSeparable7& weights, ThreadPool* pool,
+                ImageF* out);
 
-typedef void Separable7_3Func(const Image3F& in, const Rect& rect,
-                              const WeightsSeparable7& weights,
-                              ThreadPool* pool, Image3F* out);
-Separable7_3Func* ChooseSeparable7_3();
+void Separable7_3(const Image3F& in, const Rect& rect,
+                  const WeightsSeparable7& weights, ThreadPool* pool,
+                  Image3F* out);
 
 }  // namespace jxl
 

@@ -100,9 +100,8 @@ struct PassesDecoderState {
       noise = Image3F(shared->frame_dim.xsize_padded,
                       shared->frame_dim.ysize_padded);
       PROFILER_ZONE("GenerateNoise");
-      auto random_image = ChooseRandomImage3();
       auto generate_noise = [&](int group_index, int _) {
-        random_image(shared->PaddedGroupRect(group_index), &noise);
+        RandomImage3(shared->PaddedGroupRect(group_index), &noise);
       };
       RunOnPool(pool, 0, shared->frame_dim.num_groups, ThreadPool::SkipInit(),
                 generate_noise, "Generate noise");

@@ -59,7 +59,7 @@ if(${CXX_FUZZERS_SUPPORTED})
   # Enabled by default except on arm64, Windows and Apple builds.
   set(ENABLE_FUZZERS_DEFAULT true)
 endif()
-if(NOT APPLE AND NOT WIN32 AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
+if(NOT APPLE AND NOT WIN32 AND NOT HAIKU AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
   # Enabled by default except on Windows and Apple builds.
   set(ENABLE_TCMALLOC_DEFAULT true)
 endif()
@@ -109,15 +109,10 @@ add_definitions(
 # For this reason we place them in CMAKE_CXX_FLAGS instead.
 # See https://gitlab.kitware.com/cmake/cmake/issues/15826
 
-# Pretty colorful messages within reasonable limits.
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -ferror-limit=19 -fmessage-length=0 \
-  -fdiagnostics-show-option -fcolor-diagnostics")
-
 # Machine flags.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-  -mrelax-all \
-  -mpie-copy-relocations \
+  -Xclang -mrelax-all \
+  -Xclang -mpie-copy-relocations \
   -funwind-tables")
 if ("${CXX_PIC_FLAGS_SUPPORTED}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_PIC_FLAGS}")

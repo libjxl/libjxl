@@ -520,9 +520,9 @@ Status ParseDescription(const std::string& description,
   return true;
 }
 
-void ColorEncoding::InitFields() { Bundle::Init(this); }
-
 Customxy::Customxy() { Bundle::Init(this); }
 CustomTransferFunction::CustomTransferFunction() { Bundle::Init(this); }
+ColorEncoding::ColorEncoding() { Bundle::Init(this); }
+
 
 }  // namespace jxl

@@ -20,10 +20,9 @@
 # This wrapper is used to enable WASM SIMD when running tests.
 # Unfortunately, it is impossible to pass the option directly via the
 # CMAKE_CROSSCOMPILING_EMULATOR variable.
-# NODE should point to a capable binary; the one currently bundled with EMSDK
-# is too old.
 
-# Fallback to default node binary, if override is not set.
-NODE="${NODE:-$(which node)}"
-
-"${NODE}" --experimental-wasm-simd "$@"
+# Fallback to default v8 binary, if override is not set.
+V8="${V8:-$(which v8)}"
+SCRIPT="$1"
+shift
+"${V8}" --experimental-wasm-simd "${SCRIPT}" -- "$@"

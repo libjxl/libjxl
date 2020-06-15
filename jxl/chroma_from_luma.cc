@@ -449,8 +449,32 @@ void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
 namespace jxl {
 
 HWY_EXPORT(FindBestColorCorrelationMap)
-HWY_EXPORT(DecodeColorMap)
+void FindBestColorCorrelationMap(const Image3F& opsin,
+                                 const DequantMatrices& dequant,
+                                 const AcStrategyImage* ac_strategy,
+                                 const ImageI* raw_quant_field,
+                                 const Quantizer* quantizer, ThreadPool* pool,
+                                 ColorCorrelationMap* cmap) {
+  return HWY_DYNAMIC_DISPATCH(FindBestColorCorrelationMap)(
+      opsin, dequant, ac_strategy, raw_quant_field, quantizer, pool, cmap);
+}
+
 HWY_EXPORT(EncodeColorMap)
+void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
+                    std::vector<Token>* tokens, size_t base_context,
+                    AuxOut* JXL_RESTRICT aux_out) {
+  return HWY_DYNAMIC_DISPATCH(EncodeColorMap)(cmap, rect, tokens, base_context,
+                                              aux_out);
+}
+
+HWY_EXPORT(DecodeColorMap)
+Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
+                      const std::vector<uint8_t>& context_map,
+                      ColorCorrelationMap* cmap, const Rect& rect,
+                      size_t base_context, AuxOut* JXL_RESTRICT aux_out) {
+  return HWY_DYNAMIC_DISPATCH(DecodeColorMap)(br, decoder, context_map, cmap,
+                                              rect, base_context, aux_out);
+}
 
 ColorCorrelationMap::ColorCorrelationMap(size_t xsize, size_t ysize, bool XYB)
     : ytox_map(DivCeil(xsize, kColorTileDim), DivCeil(ysize, kColorTileDim)),

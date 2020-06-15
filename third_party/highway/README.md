@@ -216,13 +216,17 @@ and `#include <hwy/end_target-inl.h>`.
 *   For static dispatch, `HWY_TARGET` will be the best available target among
     `HWY_BASELINE_TARGETS`, i.e. those allowed for use by the compiler (see
     [quick-reference](quick_reference.md)). Functions defined between
-    begin/end_target can be called using `HWY_STATIC_DISPATCH(func)(args)`.
+    begin/end_target can be called using `HWY_STATIC_DISPATCH(func)(args)`
+    within the same module they are defined in. This `HWY_STATIC_DISPATCH` call
+    can be wrapped in a regular function and expose it to other modules
+    declaring it in a header file.
 
-*   For dynamic dispatch, each module exports one or more Choose* functions
-    (generated via `HWY_EXPORT`) that returns the best function pointer for
-    the current CPU supported targets. A module is automatically compiled for
-    each target in `HWY_TARGETS` (see [quick-reference](quick_reference.md)) if
-    `HWY_TARGET_INCLUDE` is defined and foreach_target.h is included:
+*   For dynamic dispatch, a table of function pointers is generated via the
+    `HWY_EXPORT` macro that is used by `HWY_DYNAMIC_DISPATCH(func)(args)` to
+    call the best function pointer for the current CPU supported targets. A
+    module is automatically compiled for each target in `HWY_TARGETS` (see
+    [quick-reference](quick_reference.md)) if `HWY_TARGET_INCLUDE` is defined
+    and foreach_target.h is included:
 ```c++
 #include "project/module.h"
 #undef HWY_TARGET_INCLUDE
@@ -233,7 +237,10 @@ and `#include <hwy/end_target-inl.h>`.
 #include <hwy/before_namespace-inl.h>
 namespace project {
 #include <hwy/begin_target-inl.h>
-// INSERT implementation
+
+// INSERT implementations
+bool Func1(int x) { ... }
+
 #include <hwy/end_target-inl.h>
 }  // namespace project
 #include <hwy/after_namespace-inl.h>
@@ -242,6 +249,13 @@ namespace project {
 namespace project {
 HWY_EXPORT(Func1)
 HWY_EXPORT(Func2)
+
+// Optional wrapper to call Func1 from outside this module using a regular
+// function declared in module.h.
+bool Func1(int x) {
+  return  HWY_DYNAMIC_DISPATCH(Func1)(x);
+}
+
 // INSERT any non-SIMD definitions (optional)
 }  // namespace project
 #endif  // HWY_ONCE

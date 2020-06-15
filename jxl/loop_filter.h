@@ -30,11 +30,8 @@
 
 namespace jxl {
 
-class LoopFilter {
-  void InitFields();
-
- public:
-  LoopFilter() { InitFields(); }
+struct LoopFilter {
+  LoopFilter();
   static const char* Name() { return "LoopFilter"; }
 
   template <class Visitor>
@@ -43,7 +40,7 @@ class LoopFilter {
 
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
-      InitFields();
+      visitor->SetDefault(this);
       return true;
     }
 

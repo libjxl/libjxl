@@ -19,7 +19,7 @@
 
 namespace jxl {
 
-void LoopFilter::InitFields() { Bundle::Init(this); }
+LoopFilter::LoopFilter() { Bundle::Init(this); }
 
 Status ReadLoopFilter(BitReader* JXL_RESTRICT reader,
                       LoopFilter* JXL_RESTRICT loop_filter) {

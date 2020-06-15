@@ -335,10 +335,6 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
     }
   }
 
-  const auto ycbcr_to_rgb = ChooseYcbcrToRgb();
-  const auto upsample_h2 = ChooseUpsampleH2();
-  const auto upsample_v2 = ChooseUpsampleV2();
-
   for (size_t c = 0; c < num_components; ++c) {
     const brunsli::JPEGComponent& component = src.components[c];
     const brunsli::JPEGQuantTable& quant_table = src.quant[component.quant_idx];
@@ -407,7 +403,7 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
             dequantized.PixelsPerRow());
     }
 
-    ChooseIDct8()(xsize_blocks, ysize_blocks, dequantized, pool, &pixels);
+    IDct8(xsize_blocks, ysize_blocks, dequantized, pool, &pixels);
 
     // TODO: before or after upsampling?
     if (extensions.gab.active) {
@@ -448,14 +444,14 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
       if (factor_y == 1) {
         planes[c] = std::move(pixels);
       } else {
-        planes[c] = upsample_v2(pixels, pool);
+        planes[c] = UpsampleV2(pixels, pool);
       }
     } else {
       pixels.InitializePaddingForUnalignedAccesses();
       if (factor_y == 1) {
-        planes[c] = upsample_h2(pixels, pool);
+        planes[c] = UpsampleH2(pixels, pool);
       } else {
-        planes[c] = upsample_v2(upsample_h2(pixels, pool), pool);
+        planes[c] = UpsampleV2(UpsampleH2(pixels, pool), pool);
       }
     }
   }
@@ -469,8 +465,8 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
       }
     }
   } else {
-    ycbcr_to_rgb(planes[0], planes[1], planes[2], &planes[0], &planes[1],
-                 &planes[2], pool);
+    YcbcrToRgb(planes[0], planes[1], planes[2], &planes[0], &planes[1],
+               &planes[2], pool);
   }
 
   if (is_gray) {
@@ -491,7 +487,7 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(JpegDataToPixels)
+HWY_EXPORT(JpegDataToPixels)  // Local function.
 
 namespace {
 
@@ -850,7 +846,8 @@ Status BrunsliToPixels(const brunsli::JPEGData& jpg,
   if (options.gaborish) extensions.gab.active = true;
 
   Image3F rgb;
-  JXL_RETURN_IF_ERROR(ChooseJpegDataToPixels()(jpg, extensions, &rgb, pool));
+  JXL_RETURN_IF_ERROR(
+      HWY_DYNAMIC_DISPATCH(JpegDataToPixels)(jpg, extensions, &rgb, pool));
 
   ColorEncoding color_encoding;
   if (!extensions.hdr_colorspace.empty()) {
@@ -920,7 +917,7 @@ void ConvertPixels(const Image3F& from, brunsli::JPEGData* to,
 
   for (size_t c = 0; c < num_c; ++c) {
     // TODO(eustas): use pool.
-    const ImageF& plane = ChooseDct8()(from.Plane(c));
+    const ImageF& plane = Dct8(from.Plane(c));
     ::brunsli::JPEGComponent component;
     component.id = static_cast<int>(c) + 1;  // YCbCr
     component.h_samp_factor = 1;
@@ -989,8 +986,8 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   for (auto& plane : planes) {
     plane = ImageF(src.xsize(), src.ysize());
   }
-  ChooseRgbToYcbcr()(src.Plane(0), src.Plane(1), src.Plane(2), &planes[0],
-                     &planes[1], &planes[2], pool);
+  RgbToYcbcr(src.Plane(0), src.Plane(1), src.Plane(2), &planes[0], &planes[1],
+             &planes[2], pool);
 
   ::brunsli::JPEGData out;
   out.width = xsize;
@@ -1751,8 +1748,8 @@ class BrunsliFrameDecoderInternal {
     } else {
       // TODO(eustas): parse extensions (in ReadHeader?)
       BrunsliExtensions extensions{};
-      JXL_RETURN_IF_ERROR(
-          ChooseJpegDataToPixels()(jpg_, extensions, &opsin, pool_));
+      JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(JpegDataToPixels)(
+          jpg_, extensions, &opsin, pool_));
     }
 
     decoded->SetFromImage(std::move(opsin),

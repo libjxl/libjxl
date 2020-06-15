@@ -15,7 +15,8 @@
 // Example of runtime dispatch to the "skeleton" module.
 
 #include <stdio.h>
-#include "hwy/examples/skeleton.h"         // ChooseSkeleton
+
+#include "hwy/examples/skeleton.h"         // Skeleton
 #include "hwy/examples/skeleton_shared.h"  // kMultiplier
 
 namespace skeleton {
@@ -29,8 +30,7 @@ void Main() {
     in2[i] = in1[i] + 300;
   }
 
-  SkeletonFunc* best = ChooseSkeleton();
-  (*best)(in1, in2, out);
+  Skeleton(in1, in2, out);
   printf("Should be %.2f: %.2f\n", in1[255] * kMultiplier + in2[255], out[255]);
 }
 

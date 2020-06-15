@@ -87,7 +87,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     set_target_properties(${TESTNAME} PROPERTIES LINK_FLAGS "\
       -O1 \
       -s TOTAL_MEMORY=1536MB \
-      -s NODERAWFS=1 \
+      -s SINGLE_FILE=1 \
     ")
   endif()
   target_compile_options(${TESTNAME} PRIVATE

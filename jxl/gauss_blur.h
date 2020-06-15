@@ -51,30 +51,9 @@ std::vector<T> GaussianKernel(int radius, T sigma) {
 //
 // where R is the radius of the kernel (i.e. kernel size is 2*R+1).
 
-// TODO(janwas): Deprecated, use ConvolveT instead (if |kernel| <= 5).
-ImageF Convolve(const ImageF& in, const std::vector<float>& kernel);
-Image3F Convolve(const Image3F& in, const std::vector<float>& kernel);
-
-// TODO(janwas): Deprecated, use ConvolveT instead (if |kernel| <= 5).
-ImageF Convolve(const ImageF& in, const std::vector<float>& kernel_x,
-                const std::vector<float>& kernel_y);
-Image3F Convolve(const Image3F& in, const std::vector<float>& kernel_x,
-                 const std::vector<float>& kernel_y);
-
-// TODO(janwas): Use ConvolveT instead (if |kernel| <= 5 and res == 1).
 // REQUIRES: in.xsize() and in.ysize() are integer multiples of res.
 ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel,
                          const size_t res);
-ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel_x,
-                         const std::vector<float>& kernel_y, const size_t res);
-
-// TODO(janwas): Use ConvolveT instead (if |kernel| <= 5 and res == 1).
-ImageF ConvolveXSampleAndTranspose(const ImageF& in,
-                                   const std::vector<float>& kernel,
-                                   const size_t res);
-Image3F ConvolveXSampleAndTranspose(const Image3F& in,
-                                    const std::vector<float>& kernel,
-                                    const size_t res);
 
 // Only for use by CreateRecursiveGaussian and FastGaussian*.
 #pragma pack(push, 1)
@@ -104,10 +83,9 @@ struct RecursiveGaussian {
 hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma);
 
 // 1D Gaussian with zero-pad boundary handling and runtime independent of sigma.
-typedef void FastGaussian1DFunc(
-    const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-    const float* JXL_RESTRICT in, intptr_t width, float* JXL_RESTRICT out);
-FastGaussian1DFunc* ChooseFastGaussian1D();
+void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                    const float* JXL_RESTRICT in, intptr_t width,
+                    float* JXL_RESTRICT out);
 
 // 2D Gaussian with zero-pad boundary handling and runtime independent of sigma.
 void FastGaussian(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,

@@ -14,7 +14,7 @@
 
 // Example of unit test for the "skeleton" module.
 
-#include "hwy/examples/skeleton.h"  // ChooseSkeleton
+#include "hwy/examples/skeleton.h"  // Skeleton
 
 #include <stdio.h>
 
@@ -33,7 +33,7 @@ TEST(SkeletonTest, MainTest) {
 
   // Tests will run for all compiled targets to ensure all are OK.
   hwy::RunTest([&in1, &in2, &out]() {
-    ChooseSkeleton()(in1, in2, out);
+    Skeleton(in1, in2, out);
     // Add EXPECT_... calls here.
   });
 }

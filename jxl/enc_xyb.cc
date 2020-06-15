@@ -203,9 +203,6 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   const Image3F& in3 = in.color();
   Image3F* JXL_RESTRICT linear3 = linear_ptr->MutableColor();
 
-  // TODO(janwas): move into -inl.h if indirect call is too expensive.
-  auto srgb_to_linear = ChooseSRGBToLinear();
-
   if (already_srgb) {
     RunOnPool(
         pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
@@ -219,9 +216,10 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
           float* JXL_RESTRICT row_in1 = linear3->PlaneRow(1, y);
           float* JXL_RESTRICT row_in2 = linear3->PlaneRow(2, y);
 
-          srgb_to_linear(in.xsize(), row_srgb0, row_in0);
-          srgb_to_linear(in.xsize(), row_srgb1, row_in1);
-          srgb_to_linear(in.xsize(), row_srgb2, row_in2);
+          // TODO(janwas): move into -inl.h if indirect call is too expensive.
+          SRGBToLinear(in.xsize(), row_srgb0, row_in0);
+          SRGBToLinear(in.xsize(), row_srgb1, row_in1);
+          SRGBToLinear(in.xsize(), row_srgb2, row_in2);
 
           float* JXL_RESTRICT row_xyb0 = xyb->PlaneRow(0, y);
           float* JXL_RESTRICT row_xyb1 = xyb->PlaneRow(1, y);
@@ -328,9 +326,23 @@ void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(TestCubeRoot)
 HWY_EXPORT(ToXYB)
+const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
+                         Image3F* JXL_RESTRICT xyb,
+                         ImageBundle* JXL_RESTRICT linear_storage) {
+  return HWY_DYNAMIC_DISPATCH(ToXYB)(in, pool, xyb, linear_storage);
+}
+
 HWY_EXPORT(RgbToYcbcr)
+void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
+                const ImageF& b_plane, ImageF* y_plane, ImageF* cb_plane,
+                ImageF* cr_plane, ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(RgbToYcbcr)(r_plane, g_plane, b_plane, y_plane,
+                                          cb_plane, cr_plane, pool);
+}
+
+HWY_EXPORT(TestCubeRoot)
+void TestCubeRoot() { return HWY_DYNAMIC_DISPATCH(TestCubeRoot)(); }
 
 // DEPRECATED
 Image3F OpsinDynamicsImage(const Image3B& srgb8) {
@@ -345,7 +357,7 @@ Image3F OpsinDynamicsImage(const Image3B& srgb8) {
   Image3F xyb(srgb8.xsize(), srgb8.ysize());
 
   ImageBundle linear_storage(&metadata);
-  (void)ChooseToXYB()(ib, null_pool, &xyb, &linear_storage);
+  (void)ToXYB(ib, null_pool, &xyb, &linear_storage);
   return xyb;
 }
 

@@ -72,7 +72,6 @@ class LossyFrameDecoder {
               const ImageMetadata& image_metadata,
               const FrameDimensions& frame_dim, Multiframe* multiframe,
               size_t downsampling, ThreadPool* pool, AuxOut* aux_out) {
-    dec_group_ = ChooseDecodeGroup();
     downsampling_ = downsampling;
     pool_ = pool;
     aux_out_ = aux_out;
@@ -135,8 +134,8 @@ class LossyFrameDecoder {
     uint64_t flags = dec_state_.shared_storage.frame_header.flags;
     if (!(flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
         !(flags & FrameHeader::kUseDcFrame)) {
-      ChooseAdaptiveDCSmoothing()(dec_state_.shared_storage.dc_quant_field,
-                                  &dec_state_.shared_storage.dc_storage, pool_);
+      AdaptiveDCSmoothing(dec_state_.shared_storage.dc_quant_field,
+                          &dec_state_.shared_storage.dc_storage, pool_);
     }
 
     if (aux_out_ && aux_out_->testing_aux.dc) {
@@ -186,9 +185,9 @@ class LossyFrameDecoder {
                        size_t num_passes, Image3F* JXL_RESTRICT opsin,
                        ImageBundle* JXL_RESTRICT decoded,
                        AuxOut* local_aux_out) {
-    return dec_group_(readers, num_passes, group_index, &dec_state_,
-                      &group_dec_caches_[thread], thread, opsin, decoded,
-                      local_aux_out);
+    return DecodeGroup(readers, num_passes, group_index, &dec_state_,
+                       &group_dec_caches_[thread], thread, opsin, decoded,
+                       local_aux_out);
   }
 
   Status FinalizeJPEG(Image3F* JXL_RESTRICT opsin, ImageBundle* decoded) {
@@ -254,7 +253,6 @@ class LossyFrameDecoder {
 
  private:
   PassesDecoderState dec_state_;
-  DecodeGroupFunc* dec_group_;
   size_t downsampling_;
 
   ThreadPool* pool_;

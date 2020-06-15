@@ -181,7 +181,7 @@ static Image3F OpsinTestImage() {
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   ImageBundle unused_linear;
-  (void)(*ChooseToXYB)()(io.Main(), null_pool, &opsin, &unused_linear);
+  (void)ToXYB(io.Main(), null_pool, &opsin, &unused_linear);
   opsin.ShrinkTo(opsin.ysize() & ~7, opsin.xsize() & ~7);
   return opsin;
 }
@@ -194,8 +194,8 @@ TEST(DctUtilTest, DCTRoundtrip) {
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
   Image3F recon(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
 
-  ChooseTransposedScaledDCT()(opsin, &coeffs);
-  ChooseTransposedScaledIDCT()(coeffs, &recon);
+  TransposedScaledDCT(opsin, &coeffs);
+  TransposedScaledIDCT(coeffs, &recon);
   VerifyRelativeError(opsin, recon, 1e-6, 1e-6);
 }
 
@@ -206,9 +206,9 @@ TEST(DctUtilTest, Transform2x2Corners) {
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
   Image3F recon(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
-  ChooseTransposedScaledDCT()(opsin, &coeffs);
+  TransposedScaledDCT(opsin, &coeffs);
   Image3F t1 = GetPixelSpaceImageFrom0HVD_64(coeffs);
-  ChooseTransposedScaledIDCT()(KeepOnly2x2Corners(coeffs), &recon);
+  TransposedScaledIDCT(KeepOnly2x2Corners(coeffs), &recon);
   Image3F t2 = Subsample(recon, 4);
   VerifyRelativeError(t1, t2, 1e-6, 1e-6);
 }
@@ -219,7 +219,7 @@ TEST(DctUtilTest, Roundtrip2x2Corners) {
   const size_t ysize_blocks = opsin.ysize() / kBlockDim;
 
   Image3F coeffs(xsize_blocks * kDCTBlockSize, ysize_blocks);
-  ChooseTransposedScaledDCT()(opsin, &coeffs);
+  TransposedScaledDCT(opsin, &coeffs);
   Image3F tmp = GetPixelSpaceImageFrom0HVD_64(coeffs);
   Image3F coeffs_out = CopyImage(coeffs);
   ZeroOut2x2(&coeffs_out);

@@ -139,7 +139,7 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
       io->metadata.color_encoding;
   jxl::Image3F opsin(io->xsize(), io->ysize());
   jxl::ImageBundle unused_linear;
-  (void)(*jxl::ChooseToXYB)()(io->Main(), pool, &opsin, &unused_linear);
+  (void)ToXYB(io->Main(), pool, &opsin, &unused_linear);
 
   const size_t original_xsize = opsin.xsize(), original_ysize = opsin.ysize();
   opsin = PadImageToMultiple(opsin, jxl::kBlockDim);
@@ -177,7 +177,7 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   opsin.ShrinkTo(original_xsize, original_ysize);
   jxl::OpsinParams opsin_params;
   opsin_params.Init();
-  jxl::ChooseOpsinToLinearInplace()(&opsin, pool, opsin_params);
+  jxl::OpsinToLinearInplace(&opsin, pool, opsin_params);
   io->Main().SetFromImage(std::move(opsin),
                           jxl::ColorEncoding::LinearSRGB(io->Main().IsGray()));
   JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));

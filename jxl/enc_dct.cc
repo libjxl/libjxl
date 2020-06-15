@@ -86,7 +86,17 @@ void TransposedScaledDCT(const Image3F& image, Image3F* JXL_RESTRICT dct) {
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(TransposedScaledDCT8)
+void TransposedScaledDCT8(float* block) {
+  return HWY_DYNAMIC_DISPATCH(TransposedScaledDCT8)(block);
+}
+
 HWY_EXPORT(Dct8)
+ImageF Dct8(const ImageF& image) { return HWY_DYNAMIC_DISPATCH(Dct8)(image); }
+
 HWY_EXPORT(TransposedScaledDCT)
+void TransposedScaledDCT(const Image3F& image, Image3F* JXL_RESTRICT dct) {
+  return HWY_DYNAMIC_DISPATCH(TransposedScaledDCT)(image, dct);
+}
+
 }  // namespace jxl
 #endif  // HWY_ONCE

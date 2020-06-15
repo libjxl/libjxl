@@ -93,7 +93,17 @@ void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
 namespace jxl {
 
 HWY_EXPORT(IDct8)
+void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
+           const ImageF& dequantized, ThreadPool* pool,
+           ImageF* JXL_RESTRICT pixels) {
+  return HWY_DYNAMIC_DISPATCH(IDct8)(xsize_blocks, ysize_blocks, dequantized,
+                                     pool, pixels);
+}
+
 HWY_EXPORT(TransposedScaledIDCT)
+void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
+  return HWY_DYNAMIC_DISPATCH(TransposedScaledIDCT)(dct, idct);
+}
 
 }  // namespace jxl
 #endif  // HWY_ONCE

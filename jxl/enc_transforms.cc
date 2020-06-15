@@ -25,8 +25,24 @@ namespace jxl {
 
 #if HWY_ONCE
 HWY_EXPORT(TransformFromPixels)
+void TransformFromPixels(const AcStrategy::Type strategy,
+                         const float* JXL_RESTRICT pixels, size_t pixels_stride,
+                         float* JXL_RESTRICT coefficients) {
+  return HWY_DYNAMIC_DISPATCH(TransformFromPixels)(strategy, pixels,
+                                                   pixels_stride, coefficients);
+}
+
 HWY_EXPORT(LowestFrequenciesFromDC)
+void LowestFrequenciesFromDC(const jxl::AcStrategy::Type strategy,
+                             const float* dc, size_t dc_stride, float* llf) {
+  return HWY_DYNAMIC_DISPATCH(LowestFrequenciesFromDC)(strategy, dc, dc_stride,
+                                                       llf);
+}
+
 HWY_EXPORT(AFVDCT4x4)
+void AFVDCT4x4(const float* JXL_RESTRICT pixels, float* JXL_RESTRICT coeffs) {
+  return HWY_DYNAMIC_DISPATCH(AFVDCT4x4)(pixels, coeffs);
+}
 #endif  // HWY_ONCE
 
 }  // namespace jxl

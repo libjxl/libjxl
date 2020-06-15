@@ -230,11 +230,15 @@ HWY_NOINLINE void TestRationalPolynomial() {
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(TestRationalPolynomial)
+class RationalPolynomialTest : public hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(RationalPolynomialTest);
 
-TEST(HwyRationalPolynomialTest, Run) {
-  hwy::RunTest([]() { ChooseTestRationalPolynomial()(); });
-}
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestSimpleGamma)
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestLinearToSrgb8Direct)
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestExp)
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestNegExp)
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestSin)
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestLog)
 
 }  // namespace jxl
 #endif  // HWY_ONCE

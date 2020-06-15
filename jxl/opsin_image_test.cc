@@ -26,9 +26,10 @@
 namespace jxl {
 namespace {
 
-TEST(OpsinImageTest, MaxCubeRootError) {
-  hwy::RunTest([]() { ChooseTestCubeRoot()(); });
-}
+class OpsinImageTargetTest : public hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(OpsinImageTargetTest);
+
+TEST_P(OpsinImageTargetTest, MaxCubeRootError) { TestCubeRoot(); }
 
 // Convert a single linear sRGB color to xyb, using the exact image conversion
 // procedure that jpeg xl uses.
@@ -48,7 +49,7 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
   ib.SetFromImage(std::move(linear), metadata.color_encoding);
   Image3F opsin(1, 1);
   ImageBundle unused_linear;
-  (void)(*ChooseToXYB)()(ib, /*pool=*/nullptr, &opsin, &unused_linear);
+  (void)ToXYB(ib, /*pool=*/nullptr, &opsin, &unused_linear);
 
   *xyb_x = opsin.PlaneRow(0, 0)[0];
   *xyb_y = opsin.PlaneRow(1, 0)[0];
@@ -67,7 +68,7 @@ void OpsinToLinearSrgb(float xyb_x, float xyb_y, float xyb_b,
   Image3F linear(1, 1);
   OpsinParams opsin_params;
   opsin_params.Init();
-  ChooseOpsinToLinear()(opsin, Rect(opsin), nullptr, &linear, opsin_params);
+  OpsinToLinear(opsin, Rect(opsin), nullptr, &linear, opsin_params);
   *rgb_r = linear.PlaneRow(0, 0)[0];
   *rgb_g = linear.PlaneRow(1, 0)[0];
   *rgb_b = linear.PlaneRow(2, 0)[0];

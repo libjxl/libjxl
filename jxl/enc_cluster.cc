@@ -135,7 +135,7 @@ void FastClusterHistograms(const std::vector<Histogram>& in,
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(FastClusterHistograms)
+HWY_EXPORT(FastClusterHistograms)  // Local function
 
 namespace {
 inline double CrossEntropy(const ANSHistBin* counts, const size_t counts_len,
@@ -219,18 +219,19 @@ void ClusterHistograms(const HistogramParams params,
                        std::vector<uint32_t>* histogram_symbols) {
   constexpr float kMinDistanceForDistinctFast = 64.0f;
   constexpr float kMinDistanceForDistinctBest = 16.0f;
-  auto fast_cluster = ChooseFastClusterHistograms();
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
     // No reindexing needed.
     return FastestClusterHistograms(in, num_contexts, max_histograms, out,
                                     histogram_symbols);
   } else if (params.clustering == HistogramParams::ClusteringType::kFast) {
-    fast_cluster(in, num_contexts, max_histograms, kMinDistanceForDistinctFast,
-                 out, histogram_symbols);
+    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)(
+        in, num_contexts, max_histograms, kMinDistanceForDistinctFast, out,
+        histogram_symbols);
   } else {
     PROFILER_FUNC;
-    fast_cluster(in, num_contexts, max_histograms, kMinDistanceForDistinctBest,
-                 out, histogram_symbols);
+    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)(
+        in, num_contexts, max_histograms, kMinDistanceForDistinctBest, out,
+        histogram_symbols);
     std::vector<uint8_t> alphabet_size(out->size());
     for (size_t i = 0; i < out->size(); i++) {
       for (size_t j = 0; j < ANS_MAX_ALPHA_SIZE; j++) {

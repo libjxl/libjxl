@@ -897,7 +897,6 @@ class Transformer {
     printf("ExtImg Transformer %s->%s\n", Description(c_src_).c_str(),
            Description(c_dst_).c_str());
 #endif
-    do_transform_ = ChooseDoColorSpaceTransform();
     return transform_.Init(c_src_, c_dst_, rect_.xsize(), num_threads);
   }
 
@@ -915,7 +914,7 @@ class Transformer {
     const float in2 = row_temp[3 * kX + 2];
 #endif
 
-    do_transform_(&transform_, thread, row_temp, row_temp);
+    DoColorSpaceTransform(&transform_, thread, row_temp, row_temp);
 
 #if JXL_EXT_VERBOSE >= 2
     printf("ToExt1: in %.4f %.4f %.4f; xform %.4f %.4f %.4f\n", in0, in1, in2,
@@ -959,7 +958,7 @@ class Transformer {
     const float in1 = row_temp[3 * kX + 1];
     const float in2 = row_temp[3 * kX + 2];
 #endif
-    do_transform_(&transform_, thread, row_temp, row_temp);
+    DoColorSpaceTransform(&transform_, thread, row_temp, row_temp);
 
     uint8_t* JXL_RESTRICT row_external = external_->Row(y);
     Demux::TempToExternal(Type(), Order(), Channels(), rect_.xsize(), row_temp,
@@ -1044,7 +1043,6 @@ class Transformer {
   bool init_called_ = false;
 
   ColorSpaceTransform transform_;
-  DoColorSpaceTransformFunc* do_transform_;
   const ColorEncoding& c_src_;
   const ColorEncoding& c_dst_;
 };

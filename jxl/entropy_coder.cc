@@ -706,12 +706,74 @@ Status DecodeARParameters(BitReader* br, ANSSymbolReader* decoder,
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(TokenizeCoefficients)
-HWY_EXPORT(TokenizeQuantField)
-HWY_EXPORT(DecodeQuantField)
 HWY_EXPORT(TokenizeAcStrategy)
-HWY_EXPORT(DecodeAcStrategy)
+void TokenizeAcStrategy(const Rect& rect, const AcStrategyImage& ac_strategy,
+                        std::vector<Token>* JXL_RESTRICT output,
+                        size_t base_context) {
+  return HWY_DYNAMIC_DISPATCH(TokenizeAcStrategy)(rect, ac_strategy, output,
+                                                  base_context);
+}
+
+HWY_EXPORT(TokenizeQuantField)
+void TokenizeQuantField(const Rect& rect, const ImageI& quant_field,
+                        const AcStrategyImage& ac_strategy,
+                        std::vector<Token>* JXL_RESTRICT output,
+                        size_t base_context) {
+  return HWY_DYNAMIC_DISPATCH(TokenizeQuantField)(
+      rect, quant_field, ac_strategy, output, base_context);
+}
+
+HWY_EXPORT(TokenizeCoefficients)
+void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
+                          const Rect& rect,
+                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+                          const AcStrategyImage& ac_strategy,
+                          Image3I* JXL_RESTRICT tmp_num_nzeroes,
+                          std::vector<Token>* JXL_RESTRICT output) {
+  return HWY_DYNAMIC_DISPATCH(TokenizeCoefficients)(
+      orders, rect, ac_rows, ac_strategy, tmp_num_nzeroes, output);
+}
+
 HWY_EXPORT(TokenizeARParameters)
+void TokenizeARParameters(const Rect& rect, const ImageB& epf_sharpness,
+                          const AcStrategyImage& ac_strategy,
+                          std::vector<Token>* JXL_RESTRICT output,
+                          size_t base_context) {
+  return HWY_DYNAMIC_DISPATCH(TokenizeARParameters)(
+      rect, epf_sharpness, ac_strategy, output, base_context);
+}
+
+HWY_EXPORT(DecodeAcStrategy)
+Status DecodeAcStrategy(BitReader* JXL_RESTRICT br,
+                        ANSSymbolReader* JXL_RESTRICT decoder,
+                        const std::vector<uint8_t>& context_map,
+                        const Rect& rect,
+                        AcStrategyImage* JXL_RESTRICT ac_strategy,
+                        size_t base_context) {
+  return HWY_DYNAMIC_DISPATCH(DecodeAcStrategy)(br, decoder, context_map, rect,
+                                                ac_strategy, base_context);
+}
+
 HWY_EXPORT(DecodeARParameters)
+Status DecodeARParameters(BitReader* br, ANSSymbolReader* decoder,
+                          const std::vector<uint8_t>& context_map,
+                          const Rect& rect, const AcStrategyImage& ac_strategy,
+                          ImageB* epf_sharpness, size_t base_context) {
+  return HWY_DYNAMIC_DISPATCH(DecodeARParameters)(
+      br, decoder, context_map, rect, ac_strategy, epf_sharpness, base_context);
+}
+
+HWY_EXPORT(DecodeQuantField)
+Status DecodeQuantField(BitReader* JXL_RESTRICT br,
+                        ANSSymbolReader* JXL_RESTRICT decoder,
+                        const std::vector<uint8_t>& context_map,
+                        const Rect& rect_qf,
+                        const AcStrategyImage& JXL_RESTRICT ac_strategy,
+                        ImageI* JXL_RESTRICT quant_field, size_t base_context) {
+  return HWY_DYNAMIC_DISPATCH(DecodeQuantField)(br, decoder, context_map,
+                                                rect_qf, ac_strategy,
+                                                quant_field, base_context);
+}
+
 }  // namespace jxl
 #endif  // HWY_ONCE

@@ -452,8 +452,19 @@ cmsToneCurve* CreateTableCurve(const cmsContext context, uint32_t N,
 namespace jxl {
 
 HWY_EXPORT(DoColorSpaceTransform)
+void DoColorSpaceTransform(ColorSpaceTransform* t, size_t thread,
+                           const float* buf_src, float* buf_dst) {
+  return HWY_DYNAMIC_DISPATCH(DoColorSpaceTransform)(t, thread, buf_src,
+                                                     buf_dst);
+}
+
 HWY_EXPORT(SRGBToLinear)
-HWY_EXPORT(CreateTableCurve)
+void SRGBToLinear(size_t n, const float* JXL_RESTRICT srgb,
+                  float* JXL_RESTRICT linear) {
+  return HWY_DYNAMIC_DISPATCH(SRGBToLinear)(n, srgb, linear);
+}
+
+HWY_EXPORT(CreateTableCurve)  // Local function.
 
 namespace {
 
@@ -989,13 +1000,14 @@ Status MaybeCreateProfile(const ColorEncoding& c,
     float gamma = 1.0 / c.tf.GetGamma();
     CreateICCCurvParaTag({gamma, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
   } else {
-    auto create_table = ChooseCreateTableCurve();
     switch (c.tf.GetTransferFunction()) {
       case TransferFunction::kHLG:
-        CreateICCCurvCurvTag(create_table(4096, ExtraTF::kHLG), &tags);
+        CreateICCCurvCurvTag(
+            HWY_DYNAMIC_DISPATCH(CreateTableCurve)(4096, ExtraTF::kHLG), &tags);
         break;
       case TransferFunction::kPQ:
-        CreateICCCurvCurvTag(create_table(4096, ExtraTF::kPQ), &tags);
+        CreateICCCurvCurvTag(
+            HWY_DYNAMIC_DISPATCH(CreateTableCurve)(4096, ExtraTF::kPQ), &tags);
         break;
       case TransferFunction::kSRGB:
         CreateICCCurvParaTag(
@@ -1080,12 +1092,13 @@ Curve CreateCurve(const cmsContext context, const ColorEncoding& c) {
     params = {1.0 / c.tf.GetGamma(), 1.0, 0.0, 1.0, 0.0};
     return Curve(cmsBuildParametricToneCurve(context, type, params.data()));
   }
-  auto create_table = ChooseCreateTableCurve();
   switch (c.tf.GetTransferFunction()) {
     case TransferFunction::kHLG:
-      return Curve(create_table(context, 4096, ExtraTF::kHLG));
+      return Curve(
+          HWY_DYNAMIC_DISPATCH(CreateTableCurve)(context, 4096, ExtraTF::kHLG));
     case TransferFunction::kPQ:
-      return Curve(create_table(context, 4096, ExtraTF::kPQ));
+      return Curve(
+          HWY_DYNAMIC_DISPATCH(CreateTableCurve)(context, 4096, ExtraTF::kPQ));
 
     case TransferFunction::kSRGB:
       params = {2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045};

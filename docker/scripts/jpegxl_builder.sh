@@ -37,8 +37,8 @@ ZLIB_FLAGS='-DUNIX=1 -DINSTALL_PKGCONFIG_DIR=/${CMAKE_INSTALL_PREFIX}/lib/pkgcon
 
 # libpng
 LIBPNG_RELEASE="1.6.37"
-LIBPNG_URL="https://download.sourceforge.net/libpng/libpng-${LIBPNG_RELEASE}.tar.gz"
-LIBPNG_SHA256="daeb2620d829575513e35fecc83f0d3791a620b9b93d800b763542ece9390fb4"
+LIBPNG_URL="https://github.com/glennrp/libpng/archive/v${LIBPNG_RELEASE}.tar.gz"
+LIBPNG_SHA256="ca74a0dace179a8422187671aee97dd3892b53e168627145271cad5b5ac81307"
 
 # giflib
 GIFLIB_RELEASE="5.2.1"
@@ -449,8 +449,12 @@ main() {
   install_from_source WEBP "${LIST_TARGETS[@]}" "${LIST_MINGW_TARGETS[@]}"
 
   # Install v8. v8 has better WASM SIMD support than NodeJS 14.
+  local v8_version="8.5.133"
+  # install installer
   npm install jsvu -g
-  jsvu --os=linux64 v8@8.5.133
+  # install specific version;
+  HOME=/opt jsvu --os=linux64 "v8@${v8_version}"
+  ln -s "/opt/.jsvu/v8-${v8_version}" "/opt/.jsvu/v8"
 
   # Cleanup.
   rm -rf /var/lib/apt/lists/*

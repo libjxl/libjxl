@@ -25,14 +25,8 @@
 namespace skeleton {
 
 // Computes out[i] = in1[i] * kMultiplier + in2[i] for i < 256.
-typedef void SkeletonFunc(const float* HWY_RESTRICT in1,
-                          const float* HWY_RESTRICT in2,
-                          float* HWY_RESTRICT out);
-
-// Gets function pointer for the best target in HWY_TARGETS that is also
-// included in targets_bits (returned from SupportedTargets).
-// Can be used to call immediately or call later.
-SkeletonFunc* ChooseSkeleton();
+void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
+              float* HWY_RESTRICT out);
 
 }  // namespace skeleton
 

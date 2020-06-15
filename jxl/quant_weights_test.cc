@@ -21,7 +21,7 @@
 #include <random>
 
 #include <hwy/base.h>                 // HWY_ALIGN_MAX
-#include <hwy/tests/test_util-inl.h>  // RunTest
+#include <hwy/tests/test_util-inl.h>
 
 #include "jxl/dct_for_test.h"
 #include "jxl/dec_transforms.h"
@@ -163,7 +163,10 @@ TEST(QuantWeightsTest, RAW) {
   RoundtripMatrices(encodings);
 }
 
-void TestUniform() {
+class QuantWeightsTargetTest : public hwy::TestWithParamTarget {};
+HWY_TARGET_INSTANTIATE_TEST_SUITE_P(QuantWeightsTargetTest);
+
+TEST_P(QuantWeightsTargetTest, DCTUniform) {
   constexpr float kUniformQuant = 4;
   float weights[3][2] = {{1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0},
@@ -178,16 +181,13 @@ void TestUniform() {
                              1.0f / kUniformQuant};
   dequant_matrices.SetCustomDC(dc_quant);
 
-  const auto from_pixels = ChooseTransformFromPixels();
-  const auto to_pixels = ChooseTransformToPixels();
-
   // DCT8
   {
     HWY_ALIGN_MAX float pixels[64];
     std::iota(std::begin(pixels), std::end(pixels), 0);
     HWY_ALIGN_MAX float coeffs[64];
     const AcStrategy::Type dct = AcStrategy::DCT;
-    from_pixels(dct, pixels, 8, coeffs);
+    TransformFromPixels(dct, pixels, 8, coeffs);
     HWY_ALIGN_MAX double slow_coeffs[64];
     for (size_t i = 0; i < 64; i++) slow_coeffs[i] = pixels[i];
     DCTSlow<8>(slow_coeffs);
@@ -201,7 +201,7 @@ void TestUniform() {
           dequant_matrices.Matrix(dct, 0)[i];
     }
     IDCTSlow<8>(slow_coeffs);
-    to_pixels(dct, coeffs, pixels, 8);
+    TransformToPixels(dct, coeffs, pixels, 8);
     for (size_t i = 0; i < 64; i++) {
       EXPECT_NEAR(pixels[i], slow_coeffs[i], 1e-4);
     }
@@ -213,7 +213,7 @@ void TestUniform() {
     std::iota(std::begin(pixels), std::end(pixels), 0);
     HWY_ALIGN_MAX float coeffs[64 * 4];
     const AcStrategy::Type dct = AcStrategy::DCT16X16;
-    from_pixels(dct, pixels, 16, coeffs);
+    TransformFromPixels(dct, pixels, 16, coeffs);
     HWY_ALIGN_MAX double slow_coeffs[64 * 4];
     for (size_t i = 0; i < 64 * 4; i++) slow_coeffs[i] = pixels[i];
     DCTSlow<16>(slow_coeffs);
@@ -227,7 +227,7 @@ void TestUniform() {
     }
 
     IDCTSlow<16>(slow_coeffs);
-    to_pixels(dct, coeffs, pixels, 16);
+    TransformToPixels(dct, coeffs, pixels, 16);
     for (size_t i = 0; i < 64 * 4; i++) {
       EXPECT_NEAR(pixels[i], slow_coeffs[i], 1e-4);
     }
@@ -239,8 +239,6 @@ void TestUniform() {
     EXPECT_NEAR(dequant_matrices.Matrix(i, 0)[0], kUniformQuant, 1e-6);
   }
 }
-
-TEST(QuantWeightsTest, DCTUniform) { hwy::RunTest(&TestUniform); }
 
 }  // namespace
 }  // namespace jxl

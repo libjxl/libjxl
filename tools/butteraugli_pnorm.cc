@@ -186,6 +186,14 @@ double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2) {
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ComputeDistanceP)
+double ComputeDistanceP(const ImageF& distmap, double p) {
+  return HWY_DYNAMIC_DISPATCH(ComputeDistanceP)(distmap, p);
+}
+
 HWY_EXPORT(ComputeDistance2)
+double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2) {
+  return HWY_DYNAMIC_DISPATCH(ComputeDistance2)(ib1, ib2);
+}
+
 }  // namespace jxl
 #endif
