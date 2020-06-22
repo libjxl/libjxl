@@ -224,7 +224,7 @@ void FindBestSplit(const HybridUintConfig &uint_config,
   // threshold`). Finally, find the split that minimizes the cost.
   struct CostInfo {
     float cost = std::numeric_limits<float>::max();
-    Predictor pred;  // will be unitialized in some cases, but never used.
+    Predictor pred;  // will be uninitialized in some cases, but never used.
   };
   std::vector<CostInfo> costs_l;
   std::vector<CostInfo> costs_r;
@@ -441,9 +441,9 @@ void ChooseAndQuantizeProperties(
   }
 
   std::vector<std::pair<float, size_t>> props_with_entropy;
-  HWY_DYNAMIC_DISPATCH(EstimateEntropy)(
-      uint_config, offset, residuals, *props, *compact_properties,
-      &props_with_entropy);
+  HWY_DYNAMIC_DISPATCH(EstimateEntropy)
+  (uint_config, offset, residuals, *props, *compact_properties,
+   &props_with_entropy);
   std::sort(props_with_entropy.begin(), props_with_entropy.end());
 
   // Limit the search to the properties with the smallest resulting entropy
@@ -525,9 +525,9 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   std::iota(indices.begin(), indices.end(), 0);
   float base_bits = HWY_DYNAMIC_DISPATCH(EstimateTotalBits)(
       uint_config, base_offset, residuals[0], indices, 0, indices.size());
-  HWY_DYNAMIC_DISPATCH(FindBestSplit)(
-      uint_config, residuals, props, predictors, compact_properties, &indices,
-      0, 0, indices.size(), props_to_use, base_bits, threshold, tree);
+  HWY_DYNAMIC_DISPATCH(FindBestSplit)
+  (uint_config, residuals, props, predictors, compact_properties, &indices, 0,
+   0, indices.size(), props_to_use, base_bits, threshold, tree);
   size_t leaves = 0;
   for (size_t i = 0; i < tree->size(); i++) {
     if ((*tree)[i].property < 0) {
@@ -543,9 +543,12 @@ constexpr size_t kPredictorContext = 2;
 constexpr size_t kOffsetContext = 3;
 }  // namespace
 
+static constexpr size_t kMaxTreeSize = 1 << 26;
+
 // TODO(veluca): very simple encoding scheme. This should be improved.
 void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
                   std::vector<Token> *tokens, Tree *decoder_tree) {
+  JXL_ASSERT(tree.size() <= kMaxTreeSize);
   std::queue<int> q;
   q.push(0);
   size_t leaf_id = 0;
@@ -575,8 +578,6 @@ void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
                        PackSigned(tree[cur].splitval), tokens);
   }
 }
-
-static constexpr size_t kMaxTreeSize = 1 << 20;
 
 Status ValidateTree(
     const Tree &tree,

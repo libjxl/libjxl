@@ -243,8 +243,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   }
 
   JXL_RETURN_IF_ERROR(ApplyHints(io));
-  io->metadata.bits_per_sample = header.bits_per_sample;
-  io->metadata.floating_point_sample = false;
+  io->metadata.SetUintSamples(header.bits_per_sample);
   io->metadata.alpha_bits = 0;
   io->dec_pixels = header.xsize * header.ysize;
   io->frames.clear();
@@ -314,8 +313,8 @@ void TestCodecPGX() {
     Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
     JXL_CHECK(ok == true);
 
+    JXL_CHECK(!io.metadata.floating_point_sample);
     JXL_CHECK(io.metadata.bits_per_sample == 8);
-    JXL_CHECK(io.metadata.floating_point_sample == false);
     JXL_CHECK(io.metadata.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);
@@ -336,8 +335,8 @@ void TestCodecPGX() {
     Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
     JXL_CHECK(ok == true);
 
+    JXL_CHECK(!io.metadata.floating_point_sample);
     JXL_CHECK(io.metadata.bits_per_sample == 16);
-    JXL_CHECK(io.metadata.floating_point_sample == false);
     JXL_CHECK(io.metadata.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);

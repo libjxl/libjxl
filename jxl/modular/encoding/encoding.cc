@@ -77,7 +77,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                                  const ModularOptions &options,
                                  const HybridUintConfig &uint_config,
                                  std::vector<Token> *tokens, AuxOut *aux_out,
-                                 size_t group_id, size_t call_id) {
+                                 size_t group_id, bool want_debug) {
   const Channel &channel = image.channel[chan];
 
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
@@ -94,8 +94,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
 
-  std::array<pixel_type, kNumStaticProperties> static_props = {chan};
-
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
+                                                               (int)group_id};
   const intptr_t onerow = channel.plane.PixelsPerRow();
   Channel references(properties.size() - kNumNonrefProperties, channel.w);
   weighted::State wp_state(wp_header, channel.w, channel.h);
@@ -117,11 +117,11 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       wp_state.UpdateErrors(p[x], x, y, channel.w);
     }
   }
-  if (WantDebugOutput(aux_out)) {
-    aux_out->DumpImage(("pred_" + std::to_string(group_id) + "_" +
-                        std::to_string(chan) + "_" + std::to_string(call_id))
-                           .c_str(),
-                       predictor_img);
+  if (want_debug && WantDebugOutput(aux_out)) {
+    aux_out->DumpImage(
+        ("pred_" + std::to_string(group_id) + "_" + std::to_string(chan))
+            .c_str(),
+        predictor_img);
   }
   return true;
 }
@@ -131,10 +131,11 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const Tree &tree,
                                  const weighted::Header &wp_header,
                                  const ModularOptions &options, pixel_type chan,
-                                 Image *image) {
+                                 size_t group_id, Image *image) {
   Channel &channel = image->channel[chan];
 
-  std::array<pixel_type, kNumStaticProperties> static_props = {chan};
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
+                                                               (int)group_id};
   // TODO(veluca): filter the tree according to static_props.
 
   // zero pixel channel? could happen
@@ -246,22 +247,27 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   return true;
 }
 
-void GatherTreeData(const Image &image, pixel_type chan,
+void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
                     const weighted::Header &wp_header,
                     const std::vector<Predictor> &predictors,
                     const ModularOptions &options,
                     std::vector<std::vector<int32_t>> &props,
-                    std::vector<std::vector<int32_t>> &residuals) {
+                    std::vector<std::vector<int32_t>> &residuals,
+                    size_t *total_pixels) {
   const Channel &channel = image.channel[chan];
 
   JXL_DEBUG_V(7, "Learning %zux%zu channel %d", channel.w, channel.h, chan);
 
-  std::array<pixel_type, kNumStaticProperties> static_props = {chan};
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
+                                                               (int)group_id};
   Properties properties(NumProperties(image, options));
   std::mt19937_64 gen(1);  // deterministic learning (also between threads)
   float pixel_fraction = std::min(1.0f, options.nb_repeats);
-  pixel_fraction = std::max(pixel_fraction,
-                            std::min(1.0f, 1024.0f / (channel.w * channel.h)));
+  // a fraction of 0 is used to disable learning entirely.
+  if (pixel_fraction > 0) {
+    pixel_fraction = std::max(
+        pixel_fraction, std::min(1.0f, 1024.0f / (channel.w * channel.h)));
+  }
   std::bernoulli_distribution dist(pixel_fraction);
 
   const intptr_t onerow = channel.plane.PixelsPerRow();
@@ -289,6 +295,7 @@ void GatherTreeData(const Image &image, pixel_type chan,
                          y, predictors[0], references, &wp_state);
         res[0] = p[x] - pres.guess;
       }
+      (*total_pixels)++;
       if (dist(gen)) {
         for (size_t i = 0; i < predictors.size(); i++) {
           residuals[i].push_back(res[i]);
@@ -305,18 +312,18 @@ void GatherTreeData(const Image &image, pixel_type chan,
 Tree LearnTree(std::vector<Predictor> predictors,
                std::vector<std::vector<int32_t>> &&props,
                std::vector<std::vector<int32_t>> &&residuals,
-               const ModularOptions &options,
+               size_t total_pixels, const ModularOptions &options,
                const HybridUintConfig &uint_config) {
   int64_t offset = 0;
   if (predictors.size() > 1) {
     int base_pred = 0;
     size_t base_pred_cost = 0;
-    for (size_t i = 0; i < kNumModularPredictors; i++) {
+    for (size_t i = 0; i < predictors.size(); i++) {
       int64_t sum = 0;
       for (size_t j = 0; j < residuals[i].size(); j++) {
         sum += residuals[i][j];
       }
-      int64_t tot = residuals.size();
+      int64_t tot = residuals[i].size();
       int64_t off = sum > 0 ? (sum + tot / 2) / tot : (sum - tot / 2) / tot;
       size_t cost = 0;
       for (size_t j = 0; j < residuals[i].size(); j++) {
@@ -331,6 +338,12 @@ Tree LearnTree(std::vector<Predictor> predictors,
     std::swap(predictors[base_pred], predictors[0]);
     std::swap(residuals[base_pred], residuals[0]);
   }
+  if (residuals.empty() || residuals[0].empty()) {
+    Tree tree;
+    tree.emplace_back();
+    tree.back().predictor = predictors.back();
+    return tree;
+  }
   std::vector<size_t> props_to_use;
   std::vector<std::vector<int>> compact_properties(props.size());
   // TODO(veluca): add an option for max total number of property values.
@@ -338,10 +351,12 @@ Tree LearnTree(std::vector<Predictor> predictors,
                               options.splitting_heuristics_max_properties * 256,
                               uint_config, offset, residuals, &props,
                               &compact_properties, &props_to_use);
+  float pixel_fraction = props[0].size() * 1.0f / total_pixels;
+  float required_cost = pixel_fraction * 0.9 + 0.1;
   Tree tree;
   ComputeBestTree(residuals, props, predictors, uint_config, offset,
                   compact_properties, props_to_use,
-                  options.splitting_heuristics_node_threshold,
+                  options.splitting_heuristics_node_threshold * required_cost,
                   options.splitting_heuristics_max_properties, &tree);
   return tree;
 }
@@ -469,35 +484,7 @@ Status DecodeModularChannelBrotli(const PaddedBytes &data,
   return true;
 }
 
-namespace {
-struct GroupHeader {
-  GroupHeader() { Bundle::Init(this); }
-
-  static const char *Name() { return "GroupHeader"; }
-
-  template <class Visitor>
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) {
-    visitor->Bool(false, &use_brotli);
-    visitor->U32(Val(0), Val(1), Val(2), BitsOffset(4, 3), 0, &max_properties);
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
-    uint32_t num_transforms = transforms.size();
-    visitor->U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(8, 18), 0,
-                 &num_transforms);
-    if (visitor->IsReading()) transforms.resize(num_transforms);
-    for (size_t i = 0; i < num_transforms; i++) {
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&transforms[i]));
-    }
-    return true;
-  }
-
-  bool use_brotli;
-  uint32_t max_properties;
-  weighted::Header wp_header;
-
-  std::vector<Transform> transforms;
-};
-
-}  // namespace
+GroupHeader::GroupHeader() { Bundle::Init(this); }
 
 constexpr bool kPrintTree = false;
 
@@ -516,6 +503,7 @@ void PrintTree(const Tree &tree, size_t cur, FILE *f) {
 }
 
 void PrintTree(const Tree &tree, const std::string &path) {
+  if (!kPrintTree) return;
   FILE *f = fopen((path + ".dot").c_str(), "w");
   fprintf(f, "graph{\n");
   PrintTree(tree, 0, f);
@@ -528,9 +516,11 @@ void PrintTree(const Tree &tree, const std::string &path) {
 bool ModularEncode(const Image &image, const ModularOptions &options,
                    const HybridUintConfig &uint_config, BitWriter *writer,
                    AuxOut *aux_out, size_t layer, size_t group_id,
-                   size_t call_id) {
+                   std::vector<std::vector<int32_t>> *props,
+                   std::vector<std::vector<int32_t>> *residuals,
+                   size_t *total_pixels, const Tree *tree, GroupHeader *header,
+                   std::vector<Token> *tokens, bool want_debug) {
   if (image.error) return JXL_FAILURE("Invalid image");
-  JXL_ASSERT(options.predictor != Predictor::Best);
   size_t nb_channels = image.real_nb_channels;
   int bit_depth = 1, maxval = 1;
   while (maxval < image.maxval) {
@@ -545,19 +535,28 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
   }
 
   // encode transforms
-  GroupHeader header;
+  GroupHeader header_storage;
+  if (header == nullptr) header = &header_storage;
+  Bundle::Init(header);
   if (options.predictor == Predictor::Weighted) {
-    weighted::PredictorMode(options.wp_mode, &header.wp_header);
+    weighted::PredictorMode(options.wp_mode, &header->wp_header);
   }
-  header.max_properties = options.max_properties;
-  header.use_brotli =
+  header->max_properties = options.max_properties;
+  header->use_brotli =
       options.entropy_coder == ModularOptions::EntropyCoder::kBrotli;
-  header.transforms = image.transform;
-  JXL_RETURN_IF_ERROR(Bundle::Write(header, writer, layer, aux_out));
+  header->transforms = image.transform;
+  // This doesn't actually work
+  if (tree != nullptr) {
+    header->use_global_tree = true;
+  }
+  if (props == nullptr && tree == nullptr) {
+    JXL_RETURN_IF_ERROR(Bundle::Write(*header, writer, layer, aux_out));
+  }
 
   nb_channels = image.channel.size();
 
-  if (header.use_brotli) {
+  if (header->use_brotli) {
+    JXL_ASSERT(!props && !residuals && !tree && !tokens);
     size_t total_pixels = 0;
     size_t total_height = 0;
     for (size_t i = options.skipchannels; i < nb_channels; i++) {
@@ -588,7 +587,7 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
         break;
       }
       JXL_RETURN_IF_ERROR(EncodeModularChannelBrotli(
-          image, i, header.wp_header, options.predictor, total_pixels, &pos,
+          image, i, header->wp_header, options.predictor, total_pixels, &pos,
           &subpred_pos, &data));
     }
     writer->ZeroPadToByte();
@@ -602,50 +601,74 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
     return true;
   }
 
-  std::vector<std::vector<Token>> tokens(1);
-  std::vector<std::vector<Token>> tree_tokens(1);
-
   std::vector<Predictor> predictors;
   if (options.predictor == Predictor::Variable) {
     predictors.resize(kNumModularPredictors);
     for (size_t i = 0; i < kNumModularPredictors; i++) {
       predictors[i] = static_cast<Predictor>(i);
     }
+  } else if (options.predictor == Predictor::Best) {
+    predictors = {Predictor::Gradient, Predictor::Weighted};
   } else {
     predictors = {options.predictor};
   }
 
-  size_t num_chans = 0;
-  Tree tree;
-  std::vector<std::vector<int32_t>> props;
-  std::vector<std::vector<int32_t>> residuals;
-  for (size_t i = options.skipchannels; i < nb_channels; i++) {
-    if (!image.channel[i].w || !image.channel[i].h) {
-      continue;  // skip empty channels
+  std::vector<std::vector<int32_t>> props_storage;
+  std::vector<std::vector<int32_t>> residuals_storage;
+  size_t total_pixels_storage = 0;
+  if (!total_pixels) total_pixels = &total_pixels_storage;
+  // If there's no tree, compute one (or gather data to).
+  if (tree == nullptr) {
+    JXL_ASSERT((props == nullptr) == (residuals == nullptr));
+    bool gather_data = props != nullptr;
+    for (size_t i = options.skipchannels; i < nb_channels; i++) {
+      if (!image.channel[i].w || !image.channel[i].h) {
+        continue;  // skip empty channels
+      }
+      if (i >= image.nb_meta_channels &&
+          (image.channel[i].w > options.max_chan_size ||
+           image.channel[i].h > options.max_chan_size)) {
+        break;
+      }
+      GatherTreeData(image, i, group_id, header->wp_header, predictors, options,
+                     gather_data ? *props : props_storage,
+                     gather_data ? *residuals : residuals_storage,
+                     total_pixels);
     }
-    if (i >= image.nb_meta_channels &&
-        (image.channel[i].w > options.max_chan_size ||
-         image.channel[i].h > options.max_chan_size)) {
-      break;
-    }
-    num_chans++;
-    GatherTreeData(image, i, header.wp_header, predictors, options, props,
-                   residuals);
+    if (gather_data) return true;
   }
 
-  if (num_chans == 0) return true;
+  JXL_ASSERT((tree == nullptr) == (tokens == nullptr));
 
-  tree = LearnTree(predictors, std::move(props), std::move(residuals), options,
-                   uint_config);
-  Tree decoded_tree;
-  TokenizeTree(tree, uint_config, &tree_tokens[0], &decoded_tree);
-  JXL_ASSERT(tree.size() == decoded_tree.size());
-  tree = std::move(decoded_tree);
+  Tree tree_storage;
+  std::vector<std::vector<Token>> tokens_storage(1);
+  // Compute tree.
+  if (tree == nullptr) {
+    EntropyEncodingData code;
+    std::vector<uint8_t> context_map;
 
-  if (WantDebugOutput(aux_out) && kPrintTree) {
-    PrintTree(tree, aux_out->debug_prefix + "/tree_" +
-                        std::to_string(group_id) + "_" +
-                        std::to_string(call_id));
+    std::vector<std::vector<Token>> tree_tokens(1);
+    tree_storage = LearnTree(predictors, std::move(props_storage),
+                             std::move(residuals_storage), *total_pixels,
+                             options, uint_config);
+    tree = &tree_storage;
+    tokens = &tokens_storage[0];
+
+    Tree decoded_tree;
+    TokenizeTree(*tree, uint_config, &tree_tokens[0], &decoded_tree);
+    JXL_ASSERT(tree->size() == decoded_tree.size());
+    tree_storage = std::move(decoded_tree);
+
+    if (want_debug && WantDebugOutput(aux_out)) {
+      PrintTree(*tree,
+                aux_out->debug_prefix + "/tree_" + std::to_string(group_id));
+    }
+    // Write tree
+    BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
+                             &code, &context_map, writer, kLayerModularTree,
+                             aux_out);
+    WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
+                aux_out, uint_config);
   }
 
   for (size_t i = options.skipchannels; i < nb_channels; i++) {
@@ -658,27 +681,27 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
       break;
     }
     JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
-        image, i, header.wp_header, tree, options, uint_config, &tokens[0],
-        aux_out, group_id, call_id));
+        image, i, header->wp_header, *tree, options, uint_config, tokens,
+        aux_out, group_id, want_debug));
   }
 
-  // Write tree
-  EntropyEncodingData codes;
-  std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
-                           &codes, &context_map, writer, kLayerModularTree,
-                           aux_out);
-  WriteTokens(tree_tokens[0], codes, context_map, writer, kLayerModularTree,
-              aux_out, uint_config);
-  // Write data
-  BuildAndEncodeHistograms(HistogramParams(), (tree.size() + 1) / 2, tokens,
-                           &codes, &context_map, writer, layer, aux_out);
-  WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out,
-              uint_config);
+  // Write data if not using a global tree/ANS stream.
+  if (!header->use_global_tree) {
+    EntropyEncodingData code;
+    std::vector<uint8_t> context_map;
+    BuildAndEncodeHistograms(HistogramParams(), (tree->size() + 1) / 2,
+                             tokens_storage, &code, &context_map, writer, layer,
+                             aux_out);
+    WriteTokens(tokens_storage[0], code, context_map, writer, layer, aux_out,
+                uint_config);
+  }
   return true;
 }
 
-Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
+Status ModularDecode(BitReader *br, Image &image, size_t group_id,
+                     ModularOptions *options, const Tree *global_tree,
+                     const ANSCode *global_code,
+                     const std::vector<uint8_t> *global_ctx_map) {
   if (image.nb_channels < 1) return true;
 
   // decode transforms
@@ -767,26 +790,44 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
   }
 
   // Read tree.
-  Tree tree;
-  {
-    std::vector<uint8_t> context_map;
-    ANSCode code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(
-        br, kNumTreeContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
-    ANSSymbolReader reader(&code, br);
-    JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, context_map, &tree,
+  Tree tree_storage;
+  std::vector<uint8_t> context_map_storage;
+  ANSCode code_storage;
+  const Tree *tree = &tree_storage;
+  const ANSCode *code = &code_storage;
+  const std::vector<uint8_t> *context_map = &context_map_storage;
+  if (!header.use_global_tree) {
+    std::vector<uint8_t> tree_context_map;
+    ANSCode tree_code;
+    JXL_RETURN_IF_ERROR(DecodeHistograms(br, kNumTreeContexts,
+                                         ANS_MAX_ALPHA_SIZE, &tree_code,
+                                         &tree_context_map));
+    ANSSymbolReader reader(&tree_code, br);
+    JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, &tree_storage,
                                    NumProperties(image, *options)));
     if (!reader.CheckANSFinalState()) {
       return JXL_FAILURE("ANS decode final state failed");
     }
+    JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
+                                         ANS_MAX_ALPHA_SIZE, &code_storage,
+                                         &context_map_storage));
+  } else {
+    if (!global_tree || !global_code || !global_ctx_map ||
+        global_tree->empty()) {
+      return JXL_FAILURE("No global tree available but one was requested");
+    }
+    tree = global_tree;
+    code = global_code;
+    context_map = global_ctx_map;
+    for (size_t i = 0; i < tree->size(); i++) {
+      if ((*tree)[i].property >= (int)NumProperties(image, *options)) {
+        return JXL_FAILURE("Invalid property ID used in tree");
+      }
+    }
   }
 
   // Read channels
-  std::vector<uint8_t> context_map;
-  ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(
-      br, (tree.size() + 1) / 2, ANS_MAX_ALPHA_SIZE, &code, &context_map));
-  ANSSymbolReader reader(&code, br);
+  ANSSymbolReader reader(code, br);
   for (size_t i = options->skipchannels; i < nb_channels; i++) {
     Channel &channel = image.channel[i];
     if (!channel.w || !channel.h) {
@@ -797,7 +838,8 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
       break;
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(
-        br, &reader, context_map, tree, header.wp_header, *options, i, &image));
+        br, &reader, *context_map, *tree, header.wp_header, *options, i,
+        group_id, &image));
   }
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
@@ -807,8 +849,13 @@ Status ModularDecode(BitReader *br, Image &image, ModularOptions *options) {
 
 bool ModularGenericCompress(Image &image, const ModularOptions &opts,
                             BitWriter *writer, AuxOut *aux_out, size_t layer,
-                            size_t group_id, size_t call_id,
-                            const HybridUintConfig &uint_config) {
+                            size_t group_id,
+                            const HybridUintConfig &uint_config,
+                            std::vector<std::vector<int32_t>> *props,
+                            std::vector<std::vector<int32_t>> *residuals,
+                            size_t *total_pixels, const Tree *tree,
+                            GroupHeader *header, std::vector<Token> *tokens,
+                            bool want_debug) {
   if (image.w == 0 || image.h == 0) return true;
   ModularOptions options = opts;  // Make a copy to modify it.
 
@@ -816,20 +863,26 @@ bool ModularGenericCompress(Image &image, const ModularOptions &opts,
     options.predictor = Predictor::Gradient;
   }
 
-  size_t bits = writer->BitsWritten();
-  JXL_RETURN_IF_ERROR(ModularEncode(image, options, uint_config, writer,
-                                    aux_out, layer, group_id, call_id));
-  bits = writer->BitsWritten() - bits;
-  JXL_DEBUG_V(
-      4, "Modular-encoded a %zux%zu maxval=%i nbchans=%zu image in %zu bytes",
-      image.w, image.h, image.maxval, image.real_nb_channels, bits / 8);
+  size_t bits = writer ? writer->BitsWritten() : 0;
+  JXL_RETURN_IF_ERROR(ModularEncode(
+      image, options, uint_config, writer, aux_out, layer, group_id, props,
+      residuals, total_pixels, tree, header, tokens, want_debug));
+  bits = writer ? writer->BitsWritten() - bits : 0;
+  if (writer) {
+    JXL_DEBUG_V(
+        4, "Modular-encoded a %zux%zu maxval=%i nbchans=%zu image in %zu bytes",
+        image.w, image.h, image.maxval, image.real_nb_channels, bits / 8);
+  }
   (void)bits;
   return true;
 }
 
-bool ModularGenericDecompress(BitReader *br, Image &image,
-                              ModularOptions *options, int undo_transforms) {
-  JXL_RETURN_IF_ERROR(ModularDecode(br, image, options));
+bool ModularGenericDecompress(BitReader *br, Image &image, size_t group_id,
+                              ModularOptions *options, int undo_transforms,
+                              const Tree *tree, const ANSCode *code,
+                              const std::vector<uint8_t> *ctx_map) {
+  JXL_RETURN_IF_ERROR(
+      ModularDecode(br, image, group_id, options, tree, code, ctx_map));
   image.undo_transforms(undo_transforms);
   size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %zu bytes",

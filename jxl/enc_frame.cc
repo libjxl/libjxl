@@ -889,7 +889,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
   }
   JXL_RETURN_IF_ERROR(modular_frame_encoder.ComputeEncodingData(
-      cparams, frame_header, ib, &opsin, lossy_frame_encoder.State(),
+      cparams, frame_header, ib, &opsin, lossy_frame_encoder.State(), pool,
+      aux_out,
       /* encode_color= */ frame_header.encoding ==
           FrameEncoding::kModularGroup));
 
@@ -950,20 +951,15 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     // Lossless has no DC info.
   }
   JXL_RETURN_IF_ERROR(
-      modular_frame_encoder.EncodeGlobalInfo(get_output(0), aux_out, 0));
+      modular_frame_encoder.EncodeGlobalInfo(get_output(0), aux_out));
+  JXL_RETURN_IF_ERROR(modular_frame_encoder.EncodeGroup(
+      get_output(0), aux_out, kLayerModularGlobal, 0));
 
   const auto process_dc_group = [&](const int group_index, const int thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
     BitWriter* output = get_output(group_index + 1);
-    const size_t gx = group_index % frame_dim.xsize_dc_groups;
-    const size_t gy = group_index / frame_dim.xsize_dc_groups;
-    const Rect rect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
-                    kDcGroupDim);
-    // minShift==3 because kDcGroupDim>>3 == kGroupDim
-    // maxShift==1000 is infinity
-    JXL_CHECK(modular_frame_encoder.EncodeGroup(rect, output, my_aux_out, 3,
-                                                1000, kLayerModularDcGroup,
-                                                group_index + 1));
+    JXL_CHECK(modular_frame_encoder.EncodeGroup(
+        output, my_aux_out, kLayerModularDcGroup, group_index + 1));
     if (frame_header.IsJpeg()) {
       JXL_CHECK(
           jpeg_frame_encoder.SerializeDcGroup(group_index, output, my_aux_out));
@@ -988,34 +984,15 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   const auto process_group = [&](const int group_index, const int thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
 
-    const size_t gx = group_index % frame_dim.xsize_groups;
-    const size_t gy = group_index / frame_dim.xsize_groups;
-    // For modular, don't limit to image dimensions here (is done in
-    // EncodeGroup)
-    const Rect mrect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim);
-    int maxShift = 2;
-    int minShift = 0;
     for (size_t i = 0; i < multiframe->GetNumPasses(); i++) {
       // Write all modular encoded data (color?, alpha, depth, extra channels)
-      for (uint32_t j = 0; j < frame_header.passes.num_downsample; ++j) {
-        if (i <= frame_header.passes.last_pass[j]) {
-          if (frame_header.passes.downsample[j] == 8) minShift = 3;
-          if (frame_header.passes.downsample[j] == 4) minShift = 2;
-          if (frame_header.passes.downsample[j] == 2) minShift = 1;
-          if (frame_header.passes.downsample[j] == 1) minShift = 0;
-        }
-      }
-      //      printf("Encoding shifts %i..%i\n",minShift,maxShift);
       if (!modular_frame_encoder.EncodeGroup(
-              mrect, ac_group_code(i, group_index), my_aux_out, minShift,
-              maxShift, kLayerModularAcGroup,
+              ac_group_code(i, group_index), my_aux_out, kLayerModularAcGroup,
               AcGroupIndex(i, group_index, frame_dim.num_groups,
                            frame_dim.num_dc_groups, has_ac_global))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
         return;
       }
-      maxShift = minShift - 1;
-      minShift = 0;
       if (frame_header.encoding == FrameEncoding::kJpegGroup) {
         if (multiframe->GetNumPasses() != 1) {
           num_errors.fetch_add(1, std::memory_order_relaxed);

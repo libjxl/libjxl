@@ -603,7 +603,8 @@ std::vector<PatchInfo> FindTextLikePatches(
         }
       }
       if (!has_similar) continue;
-      QuantizedPatch patch;
+      info.push_back({QuantizedPatch{}, {{min_x, min_y}}});
+      QuantizedPatch& patch = info.back().first;
       patch.xsize = max_x - min_x + 1;
       patch.ysize = max_y - min_y + 1;
       int max_value = 0;
@@ -620,9 +621,9 @@ std::vector<PatchInfo> FindTextLikePatches(
         }
       }
       if (max_value < kMinPeak) {
+        info.pop_back();
         continue;
       }
-      info.push_back({patch, {{min_x, min_y}}});
       if (paint_ccs) {
         float cc_color = dist(rng);
         for (std::pair<uint32_t, uint32_t> p : cc) {

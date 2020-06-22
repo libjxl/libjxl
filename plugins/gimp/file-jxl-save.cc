@@ -102,15 +102,23 @@ Status SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
 
   GeglBuffer* gegl_buffer = gimp_drawable_get_buffer(drawable_id);
 
-  const Babl* native_format = gegl_buffer_get_format(gegl_buffer);
-  io.metadata.bits_per_sample = 8 *
-                                babl_format_get_bytes_per_pixel(native_format) /
-                                babl_format_get_n_components(native_format);
   // TODO(lode): is there a way to query whether the data type if float or int
-  // from native_format instead?
+  // from gegl_buffer_get_format instead?
   GimpPrecision precision = gimp_image_get_precision(image_id);
-  io.metadata.floating_point_sample = (precision == GIMP_PRECISION_HALF_GAMMA ||
-                                       precision == GIMP_PRECISION_FLOAT_GAMMA);
+  if (precision == GIMP_PRECISION_HALF_GAMMA) {
+    io.metadata.bits_per_sample = 16;
+    io.metadata.exponent_bits_per_sample = 5;
+  } else if (precision == GIMP_PRECISION_FLOAT_GAMMA) {
+    io.metadata.SetFloat32Samples();
+  } else {  // unsigned integer
+    // TODO(lode): handle GIMP_PRECISION_DOUBLE_GAMMA. 64-bit per channel is not
+    // supported by io.metadata.
+    const Babl* native_format = gegl_buffer_get_format(gegl_buffer);
+    uint32_t bits_per_sample = 8 *
+                               babl_format_get_bytes_per_pixel(native_format) /
+                               babl_format_get_n_components(native_format);
+    io.metadata.SetUintSamples(bits_per_sample);
+  }
 
   const GeglRectangle rect = *gegl_buffer_get_extent(gegl_buffer);
   std::vector<float> pixel_data(rect.width * rect.height * (3 + has_alpha));

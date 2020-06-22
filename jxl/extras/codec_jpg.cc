@@ -252,8 +252,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   } else {
     color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
   }
-  io->metadata.bits_per_sample = BITS_IN_JSAMPLE;
-  io->metadata.floating_point_sample = false;
+  io->metadata.SetUintSamples(BITS_IN_JSAMPLE);
   io->metadata.color_encoding = color_encoding;
   io->enc_size = bytes.size();
   int nbcomp = cinfo.num_components;

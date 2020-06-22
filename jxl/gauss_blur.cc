@@ -367,6 +367,7 @@ ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel,
 // Implements "Recursive Implementation of the Gaussian Filter Using Truncated
 // Cosine Functions" by Charalampidis [2016].
 hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
+  PROFILER_FUNC;
   hwy::AlignedUniquePtr<RecursiveGaussian> rg =
       hwy::AllocateSingleAligned<RecursiveGaussian>();
   constexpr double kPi = 3.141592653589793238;

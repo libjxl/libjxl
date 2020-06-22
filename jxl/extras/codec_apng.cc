@@ -232,8 +232,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
 
   io->frames.clear();
   io->dec_pixels = 0;
-  io->metadata.bits_per_sample = 8;
-  io->metadata.floating_point_sample = false;
+  io->metadata.SetUintSamples(8);
   io->metadata.alpha_bits = 8;
   io->metadata.color_encoding =
       ColorEncoding::SRGB();  // todo: get data from png metadata

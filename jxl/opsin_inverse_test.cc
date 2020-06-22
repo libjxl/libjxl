@@ -31,8 +31,7 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   RandomFillImage(&linear, 255.0f);
 
   CodecInOut io;
-  io.metadata.bits_per_sample = 32;
-  io.metadata.floating_point_sample = true;
+  io.metadata.SetFloat32Samples();
   io.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io.SetFromImage(CopyImage(linear), io.metadata.color_encoding);
   ThreadPool* null_pool = nullptr;

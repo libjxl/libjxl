@@ -98,6 +98,205 @@ JPEGXL_EXPORT JpegxlDecoder* JpegxlDecoderCreate(
  */
 JPEGXL_EXPORT void JpegxlDecoderDestroy(JpegxlDecoder* dec);
 
+/**
+ * Return value for JpegxlDecoderProcessInput.
+ */
+typedef enum {
+  /** Decoding has finished, the end of the input file is reached and all
+   * output has been delivered.
+   */
+  JPEGXL_DEC_FINISHED,
+
+  /** An error occured, for example invalid input file or out of memory.
+   * TODO(lode): add function to get error information from decoder.
+   */
+  JPEGXL_DEC_ERROR,
+
+  /** The decoder needs more input bytes to continue. In the next
+   * JpegxlDecoderProcessInput call, next_in and avail_in must point to more
+   * bytes to continue. If *avail_in is not 0, the new bytes must be appended to
+   * the *avail_in last previous bytes.
+   */
+  JPEGXL_DEC_NEED_MORE_INPUT,
+} JpegxlDecoderStatus;
+
+/** Signature type of the codestream.
+ */
+typedef enum {
+  /** JPEG XL codestream.
+   */
+  JPEGXL_SIG_TYPE_JPEGXL = 0,
+
+  /** Transcoded JPEG image signature was found. The decoder will be
+   * able to transcode back to the JPEG codestream passed to the encoder.
+   */
+  JPEGXL_SIG_TYPE_TRANSCODED_JPEG = 1,
+
+  /** JPEG codestream, which would preferably also be decoded using this
+   * decoder in case the codestream contains JPEG XL extensions (marker
+   * segments).
+   */
+  JPEGXL_SIG_TYPE_JPEG = 2,
+} JpegxlSignatureType;
+
+typedef enum {
+  // Values 1..8 match the EXIF definitions.
+  // The name indicates the operation to perform to transform from the encoded
+  // image to the display image.
+  JPEGXL_ORIENT_IDENTITY = 1,
+  JPEGXL_ORIENT_FLIP_HORIZONTAL = 2,
+  JPEGXL_ORIENT_ROTATE_180 = 3,
+  JPEGXL_ORIENT_FLIP_VERTICAL = 4,
+  JPEGXL_ORIENT_TRANSPOSE = 5,
+  JPEGXL_ORIENT_ROTATE_90_CW = 6,
+  JPEGXL_ORIENT_ANTI_TRANSPOSE = 7,
+  JPEGXL_ORIENT_ROTATE_90_CCW = 8,
+} JpegxlOrientation;
+
+/** Basic image information. This information is available from the file
+ * signature and first part of the codestream header.
+ */
+typedef struct JpegxlBasicInfo {
+  // TODO(lode): need additional fields for (transcoded) JPEG? For reusable
+  // fields orientation must be read from Exif APP1. For has_icc_profile: must
+  // look up where ICC profile is guaranteed to be in a JPEG file to be able to
+  // indicate this.
+
+  // TODO(lode): make struct packed, and/or make this opaque struct with getter
+  // functions (still separate struct from opaque decoder)
+
+  /** Whether the codestream is embedded in the container format. If true,
+   * metadata information and extensions may be available in addition to the
+   * codestream.
+   */
+  uint8_t has_container;
+
+  /** Signature of the codestream.
+   */
+  JpegxlSignatureType signature_type;
+
+  /** Width of the image in pixels, before applying orientation.
+   */
+  uint32_t xsize;
+
+  /** Height of the image in pixels, before applying orientation.
+   */
+  uint32_t ysize;
+
+  /** Original image color channel data type: 0 = unsigned integer, 1 = floating
+   * point.
+   */
+  uint8_t floating_point_sample;
+
+  /** Original image color channel bit depth.
+   */
+  uint32_t bits_per_sample;
+
+  /** Original image color channel exponent bits, only used if
+   * floating_point_sample is true. If the original data is single precision
+   * floating point, bits_per_sample is 32 and exponent_bits_per_sample is 8,
+   * and so on for other floating point precisions.
+   */
+  uint32_t exponent_bits_per_sample;
+
+  /** If true, an ICC profile must be decoded after the headers. If false,
+   * the color space is defined by descriptors instead. The ICC profile or
+   * color descriptors themselves are not included in the basic info.
+   */
+  uint8_t has_icc_profile;
+
+  /** Bit depth of the encoded alpha channel, or 0 if there is no alpha channel.
+   */
+  uint32_t alpha_bit_depth;
+
+  /** Intended display luminance in nits (candelas per square meter).
+   */
+  uint32_t intensity_target;
+
+  /** Indicates a preview image exists near the beginning of the codestream.
+   * The preview itself or its dimensions are not included in the basic info.
+   */
+  uint8_t have_preview;
+
+  /** Indicates animation frames exist in the codestream. The animation
+   * information is not included in the basic info.
+   */
+  uint8_t have_animation;
+
+  /** Image orientation, value 1-8 matching the values used by JEITA CP-3451C
+   * (Exif version 2.3).
+   */
+  JpegxlOrientation orientation;
+
+  /** Bit depth of depth image, or 0 if there is no depth image.
+   */
+  uint32_t depth_bits;
+
+  /** Base-2 logarithm of the downsampling factor of the dimensions of the depth
+   * image (if any) with respect to the main image dimensions defined by xsize,
+   * ysize. The depth image size is rounded up.
+   * This field is invalid if depth_bits is 0.
+   */
+  uint32_t depth_shift;
+
+  /** Number of additional image channels. Information of the individual
+   * extra channels is not included in the basic info.
+   */
+  uint32_t num_extra_channels;
+
+  /** Bit depth of all additional image channels.
+   * This field is invalid if num_extra_channels is 0.
+   */
+  uint32_t extra_channel_bits;
+} JpegxlBasicInfo;
+
+/**
+ * Returns a hint indicating how many more bytes the decoder is expected to
+ * need to make JpegxlDecoderGetBasicInfo available after the next
+ * JpegxlDecoderProcessInput call. This is a suggested large enough value for
+ * the *avail_in parameter.
+ * Can be used before the first JpegxlDecoderProcessInput call, and is correct
+ * the first time in most cases. If not, JpegxlDecoderSizeHintBasicInfo can be
+ * called again to get an updated hint.
+ *
+ * @returns the size hint in bytes if the basic info is not yet fully decoded.
+ * @returns 0 when the basic info is already available.
+ */
+JPEGXL_EXPORT size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec);
+
+/**
+ * Decodes JPEG XL file using the available bytes. @p *avail_in indicates how
+ * many input bytes are available, and @p *next_in points to the input bytes.
+ * *avail_in will be decremented by the amount of bytes that have been processed
+ * by the decoder and *next_in will be incremented by the same amount, so
+ * *next_in will now point at the amount of *avail_in unprocessed bytes. For the
+ * next call to this function, all unprocessed bytes must be provided again (the
+ * address need not match, but the contents must), and more bytes may be
+ * concatenated after the unprocessed bytes.
+ *
+ * The returned status indicates whether the decoder needs more input bytes, or
+ * more output buffer for a certain type of output data. No matter what the
+ * returned status is (other than JPEGXL_DEC_ERROR), new information, such as
+ * JpegxlDecoderGetBasicInfo, may have become available after this call.
+ *
+ * @returns status indicating the decoding needs more input or output bytes to
+ * continue, encountered an error, or successfully finished, See
+ * JpegxlDecoderStatus for the description of each possible status.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderProcessInput(
+    JpegxlDecoder* dec, const uint8_t** next_in, size_t* avail_in);
+
+/**
+ * Outputs the basic image information, such as image dimensions, bit depth and
+ * all other JpegxlBasicInfo fields, if available.
+ *
+ * @param info struct to copy the information into, or NULL to only check
+ * whether the information is available through the return value.
+ * @returns 1 if the value is available, 0 if not available.
+ */
+JPEGXL_EXPORT int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
+                                            JpegxlBasicInfo* info);
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif

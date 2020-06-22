@@ -42,8 +42,7 @@ Status WritePNG(const Image3B& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
-  io.metadata.bits_per_sample = 8;
-  io.metadata.floating_point_sample = false;
+  io.metadata.SetUintSamples(8);
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
   PaddedBytes compressed;
@@ -53,7 +52,7 @@ Status WritePNG(const Image3B& image, const std::string& filename) {
 
 Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& distmap_filename,
-                      const std::string& colorspace_hint) {
+                      const std::string& colorspace_hint, double p) {
   CodecInOut io1;
   if (!colorspace_hint.empty()) {
     io1.dec_hints.Add("color_space", colorspace_hint);
@@ -84,11 +83,11 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
 
   ImageF distmap;
   const float kHfAsymmetry = 0.8;
-  const float distance = ButteraugliDistance(io1.Main(), io2.Main(),
-                                             kHfAsymmetry, &distmap, &pool);
+  const float kXMul = 1;
+  const float distance = ButteraugliDistance(
+      io1.Main(), io2.Main(), kHfAsymmetry, kXMul, &distmap, &pool);
   printf("%.10f\n", distance);
 
-  double p = 3.0;
   double pnorm = ComputeDistanceP(distmap, p);
   printf("%g-norm: %f\n", p, pnorm);
 
@@ -118,12 +117,24 @@ int main(int argc, char** argv) {
   }
   std::string distmap;
   std::string colorspace;
-  for (int i = 2; i < argc; i++) {
-    if (std::string(argv[i]) == "--distmap" && i + 1 < argc)
+  double p = 3;
+  for (int i = 3; i < argc; i++) {
+    if (std::string(argv[i]) == "--distmap" && i + 1 < argc) {
       distmap = argv[++i];
-    if (std::string(argv[i]) == "--colorspace" && i + 1 < argc)
+    } else if (std::string(argv[i]) == "--colorspace" && i + 1 < argc) {
       colorspace = argv[++i];
+    } else if (std::string(argv[i]) == "--pnorm" && i + 1 < argc) {
+      char* end;
+      p = strtod(argv[++i], &end);
+      if (end == argv[i]) {
+        fprintf(stderr, "Failed to parse pnorm \"%s\".\n", argv[i]);
+        return 1;
+      }
+    } else {
+      fprintf(stderr, "Unrecognized flag \"%s\".\n", argv[i]);
+      return 1;
+    }
   }
 
-  return jxl::RunButteraugli(argv[1], argv[2], distmap, colorspace) ? 0 : 1;
+  return jxl::RunButteraugli(argv[1], argv[2], distmap, colorspace, p) ? 0 : 1;
 }

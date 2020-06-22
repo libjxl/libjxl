@@ -16,3 +16,5 @@ add_library(lodepng STATIC
   lodepng/lodepng.cpp
   lodepng/lodepng.h
 )
+target_include_directories(lodepng
+    PUBLIC "${CMAKE_CURRENT_LIST_DIR}/lodepng")

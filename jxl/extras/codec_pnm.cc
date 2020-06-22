@@ -335,8 +335,11 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
   }
 
   JXL_RETURN_IF_ERROR(ApplyHints(header.is_gray, io));
-  io->metadata.bits_per_sample = header.bits_per_sample;
-  io->metadata.floating_point_sample = header.floating_point;
+  if (header.floating_point) {
+    io->metadata.SetFloat32Samples();
+  } else {
+    io->metadata.SetUintSamples(header.bits_per_sample);
+  }
   io->metadata.alpha_bits = 0;
   io->dec_pixels = header.xsize * header.ysize;
   io->frames.clear();

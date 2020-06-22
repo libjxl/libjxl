@@ -297,7 +297,7 @@ HWY_INLINE std::vector<uint32_t> SupportedAndGeneratedTargets() {
   return ret;
 }
 
-static inline HWY_MAYBE_UNUSED const char* TargetName(int32_t target) {
+static inline HWY_MAYBE_UNUSED const char* TargetName(uint32_t target) {
   switch (target) {
 #if HWY_ARCH_X86
     case HWY_SSE4:

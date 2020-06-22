@@ -56,7 +56,7 @@ TEST(PassesTest, RoundtripSmallPasses) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
             1.5);
 }
@@ -76,7 +76,7 @@ TEST(PassesTest, RoundtripUnalignedPasses) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
             3.2);
 }
@@ -96,14 +96,14 @@ TEST(PassesTest, RoundtripMultiGroupPasses) {
   cparams.progressive_mode = true;
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, &pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, &pool),
             1.99f);
 
   cparams.butteraugli_distance = 2.0f;
   CodecInOut io3;
   Roundtrip(&io, cparams, dparams, &pool, &io3);
-  EXPECT_LE(ButteraugliDistance(io, io3, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, &pool),
             3.0f);
 }
@@ -154,10 +154,12 @@ TEST(PassesTest, RoundtripProgressiveConsistent) {
     EXPECT_EQ(size2, size3);
 
     // Exact same distance.
-    const float dist2 = ButteraugliDistance(io, io2, cparams.hf_asymmetry,
-                                            /*distmap=*/nullptr, &pool);
-    const float dist3 = ButteraugliDistance(io, io3, cparams.hf_asymmetry,
-                                            /*distmap=*/nullptr, &pool);
+    const float dist2 =
+        ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+                            /*distmap=*/nullptr, &pool);
+    const float dist3 =
+        ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
+                            /*distmap=*/nullptr, &pool);
     EXPECT_EQ(dist2, dist3);
   }
 }
@@ -202,9 +204,10 @@ TEST(PassesTest, AllDownsampleFeasible) {
     EXPECT_EQ(aux_downsampled.downsampling, downsampling);
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
-    EXPECT_LE(ButteraugliDistance(io, output, cparams.hf_asymmetry,
-                                  /*distmap=*/nullptr, nullptr),
-              target_butteraugli[downsampling])
+    EXPECT_LE(
+        ButteraugliDistance(io, output, cparams.hf_asymmetry, cparams.xmul,
+                            /*distmap=*/nullptr, nullptr),
+        target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
   };
   pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
@@ -250,9 +253,10 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
     EXPECT_EQ(aux_downsampled.downsampling, downsampling);
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
-    EXPECT_LE(ButteraugliDistance(io, output, cparams.hf_asymmetry,
-                                  /*distmap=*/nullptr, nullptr),
-              target_butteraugli[downsampling])
+    EXPECT_LE(
+        ButteraugliDistance(io, output, cparams.hf_asymmetry, cparams.xmul,
+                            /*distmap=*/nullptr, nullptr),
+        target_butteraugli[downsampling])
         << "downsampling: " << downsampling;
   };
   pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
@@ -303,7 +307,7 @@ TEST(PassesTest, RoundtripSmallNoGaborishPasses) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
             1.7);
 }

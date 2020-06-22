@@ -101,11 +101,11 @@ void RunRGBRoundTrip(float distance, bool fast) {
 
   CodecInOut io1;
   io1.metadata.bits_per_sample = io.metadata.bits_per_sample;
-  io1.metadata.floating_point_sample = io.metadata.floating_point_sample;
+  io1.metadata.exponent_bits_per_sample = io.metadata.exponent_bits_per_sample;
   io1.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io1.SetFromImage(std::move(recon), io1.metadata.color_encoding);
 
-  EXPECT_LE(ButteraugliDistance(io, io1, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io1, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, &pool),
             1.2);
 }

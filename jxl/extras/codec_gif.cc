@@ -112,8 +112,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   io->frames.reserve(gif->ImageCount);
   io->dec_pixels = 0;
 
-  io->metadata.bits_per_sample = 8;
-  io->metadata.floating_point_sample = false;
+  io->metadata.SetUintSamples(8);
   io->metadata.color_encoding = ColorEncoding::SRGB();
   io->metadata.alpha_bits = 0;
   io->enc_size = bytes.size();

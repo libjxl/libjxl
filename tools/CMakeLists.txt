@@ -90,6 +90,7 @@ add_library(cjpegxltool STATIC
   cjpegxl.cc
   cjxl.cc
   cbrunsli.cc
+  codec_config.cc
   speed_stats.cc
 )
 target_compile_definitions(cjpegxltool
@@ -119,7 +120,13 @@ target_link_libraries(cjpegxl cjpegxltool)
 target_link_libraries(fuzzer_corpus cjpegxltool)
 
 # Main decompressor.
-add_executable(djpegxl djxl.cc djpegxl.cc djpegxl_main.cc speed_stats.cc)
+add_executable(djpegxl
+    codec_config.cc
+    djxl.cc
+    djpegxl.cc
+    djpegxl_main.cc
+    speed_stats.cc
+)
 target_compile_definitions(djpegxl
   PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 
@@ -150,6 +157,8 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_jxl.h
     benchmark/benchmark_codec_png.cc
     benchmark/benchmark_codec_png.h
+    codec_config.cc
+    codec_config.h
     speed_stats.cc
     speed_stats.h
     ../third_party/dirent.cc

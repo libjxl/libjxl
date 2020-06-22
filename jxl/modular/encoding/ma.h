@@ -26,7 +26,7 @@ struct PropertyDecisionNode {
   int16_t property;  // -1: leaf node, childID points to leaf node
   // 0..nb_properties-1 : childID refers to left branch  (in inner_node)
   //                      childID+1 refers to right branch
-  uint16_t childID;
+  uint32_t childID;
   Predictor predictor;
   int64_t predictor_offset;
 
@@ -66,5 +66,6 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
                      size_t max_properties, Tree *tree);
+
 }  // namespace jxl
 #endif

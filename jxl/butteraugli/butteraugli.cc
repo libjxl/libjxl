@@ -267,10 +267,78 @@ void ConvolutionWithTranspose(const ImageF& in,
   }
 }
 
+// Separate horizontal and vertical (next function) convolution passes.
+void BlurHorizontalConv(const ImageF& in, const intptr_t xbegin,
+                        const intptr_t xend, const intptr_t ybegin,
+                        const intptr_t yend, const std::vector<float>& kernel,
+                        ImageF* out) {
+  if (xbegin >= xend || ybegin >= yend) return;
+  const intptr_t xsize = in.xsize();
+  const intptr_t ysize = in.ysize();
+  JXL_ASSERT(0 <= xbegin && xend <= xsize);
+  JXL_ASSERT(0 <= ybegin && yend <= ysize);
+  (void)xsize;
+  (void)ysize;
+  const intptr_t radius = kernel.size() / 2;
+
+  for (intptr_t y = ybegin; y < yend; ++y) {
+    float* JXL_RESTRICT row_out = out->Row(y);
+    for (intptr_t x = xbegin; x < xend; ++x) {
+      float sum = 0.0f;
+      float sum_weights = 0.0f;
+      const float* JXL_RESTRICT row_in = in.Row(y);
+      for (intptr_t ix = -radius; ix <= radius; ++ix) {
+        const intptr_t in_x = x + ix;
+        if (in_x < 0 || in_x >= xsize) continue;
+        const float weight_x = kernel[ix + radius];
+        sum += row_in[in_x] * weight_x;
+        sum_weights += weight_x;
+      }
+      row_out[x] = sum / sum_weights;
+    }
+  }
+}
+
+void BlurVerticalConv(const ImageF& in, const intptr_t xbegin,
+                      const intptr_t xend, const intptr_t ybegin,
+                      const intptr_t yend, const std::vector<float>& kernel,
+                      ImageF* out) {
+  if (xbegin >= xend || ybegin >= yend) return;
+  const intptr_t xsize = in.xsize();
+  const intptr_t ysize = in.ysize();
+  JXL_ASSERT(0 <= xbegin && xend <= xsize);
+  JXL_ASSERT(0 <= ybegin && yend <= ysize);
+  (void)xsize;
+  const intptr_t radius = kernel.size() / 2;
+  for (intptr_t y = ybegin; y < yend; ++y) {
+    float* JXL_RESTRICT row_out = out->Row(y);
+    for (intptr_t x = xbegin; x < xend; ++x) {
+      float sum = 0.0f;
+      float sum_weights = 0.0f;
+      for (intptr_t iy = -radius; iy <= radius; ++iy) {
+        const intptr_t in_y = y + iy;
+        if (in_y < 0 || in_y >= ysize) continue;
+        const float weight_y = kernel[iy + radius];
+        sum += in.ConstRow(in_y)[x] * weight_y;
+        sum_weights += weight_y;
+      }
+      row_out[x] = sum / sum_weights;
+    }
+  }
+}
+
 // A blur somewhat similar to a 2D Gaussian blur.
 // See: https://en.wikipedia.org/wiki/Gaussian_blur
+//
+// This is a bottleneck because the sigma can be quite large (>7). We can use
+// gauss_blur.cc (runtime independent of sigma, closer to a 4*sigma truncated
+// Gaussian and our 2.25 in ComputeKernel), but its boundary conditions are
+// zero-valued. This leads to noticeable differences at the edges of diffmaps.
+// We retain a special case for 5x5 kernels (even faster than gauss_blur),
+// optionally use gauss_blur followed by fixup of the borders for large images,
+// or fall back to the previous truncated FIR followed by a transpose.
 void Blur(const ImageF& in, float sigma, ImageF* HWY_RESTRICT temp,
-          ImageF* HWY_RESTRICT out) {
+          ImageF* HWY_RESTRICT transposed_temp, ImageF* HWY_RESTRICT out) {
   std::vector<float> kernel = ComputeKernel(sigma);
   if (kernel.size() == 5) {
     float sum_weights = 0.0f;
@@ -289,8 +357,52 @@ void Blur(const ImageF& in, float sigma, ImageF* HWY_RESTRICT temp,
     return;
   }
 
-  ConvolutionWithTranspose(in, kernel, temp);
-  ConvolutionWithTranspose(*temp, kernel, out);
+  const bool kFastGauss = false;
+  const bool kBorderFixup = kFastGauss && false;
+  // Fast+fixup is actually slower for small images that are all border.
+  const bool too_small_for_fast_gauss =
+      kBorderFixup &&
+      in.xsize() * in.ysize() < 9 * kernel.size() * kernel.size();
+  // If fast gaussian is disabled, use previous transposed convolution.
+  if (!kFastGauss || too_small_for_fast_gauss) {
+    ConvolutionWithTranspose(in, kernel, transposed_temp);
+    ConvolutionWithTranspose(*transposed_temp, kernel, out);
+    return;
+  }
+  auto rg = CreateRecursiveGaussian(sigma);
+  ThreadPool* null_pool = nullptr;
+  FastGaussian(rg, in, null_pool, temp, out);
+
+  if (kBorderFixup) {
+    // Produce rg_radius extra pixels around each border
+    const intptr_t rg_radius = rg->radius;
+    const intptr_t radius = kernel.size() / 2;
+    const intptr_t xsize = in.xsize();
+    const intptr_t ysize = in.ysize();
+    const intptr_t yend_top = std::min(rg_radius + radius, ysize);
+    const intptr_t ybegin_bottom =
+        std::max(intptr_t(0), ysize - rg_radius - radius);
+    // Top (requires radius extra for the vertical pass)
+    BlurHorizontalConv(in, 0, xsize, 0, yend_top, kernel, temp);
+    // Bottom
+    BlurHorizontalConv(in, 0, xsize, ybegin_bottom, ysize, kernel, temp);
+    // Left/right columns between top and bottom
+    const intptr_t xbegin_right = std::max(intptr_t(0), xsize - rg_radius);
+    const intptr_t xend_left = std::min(rg_radius, xsize);
+    BlurHorizontalConv(in, 0, xend_left, yend_top, ybegin_bottom, kernel, temp);
+    BlurHorizontalConv(in, xbegin_right, xsize, yend_top, ybegin_bottom, kernel,
+                       temp);
+
+    // Entire left/right columns
+    BlurVerticalConv(*temp, 0, xend_left, 0, ysize, kernel, out);
+    BlurVerticalConv(*temp, xbegin_right, xsize, 0, ysize, kernel, out);
+    // Top/bottom between left/right
+    const intptr_t ybegin_bottom2 = std::max(intptr_t(0), ysize - rg_radius);
+    const intptr_t yend_top2 = std::min(rg_radius, ysize);
+    BlurVerticalConv(*temp, xend_left, xbegin_right, 0, yend_top2, kernel, out);
+    BlurVerticalConv(*temp, xend_left, xbegin_right, ybegin_bottom2, ysize,
+                     kernel, out);
+  }
 }
 
 // Allows PaddedMaltaUnit to call either function via overloading.
@@ -304,40 +416,33 @@ static const double kInternalGoodQualityThreshold = 42.5;
 static const double kGlobalScale = 1.0 / kInternalGoodQualityThreshold;
 
 // For Mask()
-static std::array<double, 512> MakeMask(double extmul, double extoff,
-                                        double mul, double offset,
-                                        double scaler) {
-  std::array<double, 512> lut;
+static std::array<float, 512> MakeMask(float extmul, float extoff, float mul,
+                                       float offset, float scaler) {
+  std::array<float, 512> lut;
   for (size_t i = 0; i < lut.size(); ++i) {
     const double c = mul / ((0.01 * scaler * i) + offset);
-    lut[i] = kGlobalScale * (1.0 + extmul * (c + extoff));
-    if (lut[i] < 1e-5) {
-      lut[i] = 1e-5;
+    double m = kGlobalScale * (1.0 + extmul * (c + extoff));
+    if (m < 1e-5) {
+      m = 1e-5;
     }
-    JXL_DASSERT(lut[i] >= 0.0);
-    lut[i] *= lut[i];
+    JXL_DASSERT(m >= 0.0);
+    lut[i] = m * m;
   }
   return lut;
 }
 
 // Clamping linear interpolator.
-inline double InterpolateClampNegative(const double* array, int size,
-                                       double ix) {
-  if (ix < 0) {
-    ix = 0;
-  }
+inline float InterpolateClampNegative(const float* array, int size, float ix) {
   int baseix = static_cast<int>(ix);
-  double res;
   if (baseix >= size - 1) {
-    res = array[size - 1];
+    return array[size - 1];
   } else if (baseix < 0) {
-    res = array[0];
-  } else {
-    double mix = ix - baseix;
-    int nextix = baseix + 1;
-    res = array[baseix] + mix * (array[nextix] - array[baseix]);
+    return array[0];
   }
-  return res;
+
+  float mix = ix - baseix;
+  int nextix = baseix + 1;
+  return array[baseix] + mix * (array[nextix] - array[baseix]);
 }
 
 }  // namespace jxl
@@ -427,7 +532,8 @@ static void SeparateFrequencies(size_t xsize, size_t ysize, const Image3F& xyb,
   PROFILER_FUNC;
   const HWY_FULL(float) d;
 
-  ImageF blur_temp(ysize, xsize);  // transposed
+  ImageF blur_temp(xsize, ysize);
+  ImageF blur_temp_transposed(ysize, xsize);
 
   // Extract lf ...
   static const double kSigmaLf = 7.15593339443;
@@ -439,7 +545,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize, const Image3F& xyb,
   ps.lf = Image3F(xyb.xsize(), xyb.ysize());
   ps.mf = Image3F(xyb.xsize(), xyb.ysize());
   for (int i = 0; i < 3; ++i) {
-    Blur(xyb.Plane(i), kSigmaLf, &blur_temp,
+    Blur(xyb.Plane(i), kSigmaLf, &blur_temp, &blur_temp_transposed,
          const_cast<ImageF*>(&ps.lf.Plane(i)));
 
     // ... and keep everything else in mf.
@@ -453,7 +559,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize, const Image3F& xyb,
       }
     }
     if (i == 2) {
-      Blur(ps.mf.Plane(i), kSigmaHf, &blur_temp,
+      Blur(ps.mf.Plane(i), kSigmaHf, &blur_temp, &blur_temp_transposed,
            const_cast<ImageF*>(&ps.mf.Plane(i)));
       break;
     }
@@ -465,7 +571,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize, const Image3F& xyb,
         Store(Load(d, row_mf + x), d, row_hf + x);
       }
     }
-    Blur(ps.mf.Plane(i), kSigmaHf, &blur_temp,
+    Blur(ps.mf.Plane(i), kSigmaHf, &blur_temp, &blur_temp_transposed,
          const_cast<ImageF*>(&ps.mf.Plane(i)));
     static const double kRemoveMfRange = 0.3;
     static const double kAddMfRange = 0.1;
@@ -516,7 +622,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize, const Image3F& xyb,
         row_uhf[x] = row_hf[x];
       }
     }
-    Blur(ps.hf[i], kSigmaUhf, &blur_temp, &ps.hf[i]);
+    Blur(ps.hf[i], kSigmaUhf, &blur_temp, &blur_temp_transposed, &ps.hf[i]);
     static const double kRemoveHfRange = 0.12;
     static const double kAddHfRange = 0.03;
     static const double kRemoveUhfRange = 0.08;
@@ -964,6 +1070,7 @@ static BUTTERAUGLI_INLINE float PaddedMaltaUnit(const ImageF& diffs,
     return GetLane(MaltaUnit(Tag(), df, d, diffs.PixelsPerRow()));
   }
 
+  PROFILER_ZONE("Padded Malta");
   float borderimage[12 * 9];  // round up to 4
   for (int dy = 0; dy < 9; ++dy) {
     int y = y0 + dy - 4;
@@ -1119,46 +1226,46 @@ void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
                 diffs, block_diff_ac, c);
 }
 
-double MaskX(double delta) {
-  static const double extmul = 1.9741728897212369;
-  static const double extoff = 2.0124797155052101;
-  static const double offset = 0.26118960206891428;
-  static const double scaler = 386.58249095811573;
-  static const double mul = 4.0096602151572194;
-  static const std::array<double, 512> lut =
+float MaskX(float delta) {
+  static const float extmul = 1.9741728897212369;
+  static const float extoff = 2.0124797155052101;
+  static const float offset = 0.26118960206891428;
+  static const float scaler = 386.58249095811573;
+  static const float mul = 4.0096602151572194;
+  static const std::array<float, 512> lut =
       MakeMask(extmul, extoff, mul, offset, scaler);
   return InterpolateClampNegative(lut.data(), lut.size(), delta);
 }
 
-double MaskY(double delta) {
-  static const double extmul = 3.2760071347758579;
-  static const double extoff = -3.3377693215128232;
-  static const double offset = 1.9592295279427681;
-  static const double scaler = 1.4422616544932898;
-  static const double mul = 9.6463717073130066;
-  static const std::array<double, 512> lut =
+float MaskY(float delta) {
+  static const float extmul = 3.2760071347758579;
+  static const float extoff = -3.3377693215128232;
+  static const float offset = 1.9592295279427681;
+  static const float scaler = 1.4422616544932898;
+  static const float mul = 9.6463717073130066;
+  static const std::array<float, 512> lut =
       MakeMask(extmul, extoff, mul, offset, scaler);
   return InterpolateClampNegative(lut.data(), lut.size(), delta);
 }
 
-double MaskDcX(double delta) {
-  static const double extmul = 7.9213692914149458;
-  static const double extoff = 2.5312740226978478;
-  static const double offset = 0.1060403567938254;
-  static const double scaler = 43.546844862805052;
-  static const double mul = 0.32110246816137022;
-  static const std::array<double, 512> lut =
+float MaskDcX(float delta) {
+  static const float extmul = 7.9213692914149458;
+  static const float extoff = 2.5312740226978478;
+  static const float offset = 0.1060403567938254;
+  static const float scaler = 43.546844862805052;
+  static const float mul = 0.32110246816137022;
+  static const std::array<float, 512> lut =
       MakeMask(extmul, extoff, mul, offset, scaler);
   return InterpolateClampNegative(lut.data(), lut.size(), delta);
 }
 
-double MaskDcY(double delta) {
-  static const double extmul = 0.019875068816088557;
-  static const double extoff = 0.1;
-  static const double offset = 0.1;
-  static const double scaler = 7.0;
-  static const double mul = 9.8744858184185791;
-  static const std::array<double, 512> lut =
+float MaskDcY(float delta) {
+  static const float extmul = 0.019875068816088557;
+  static const float extoff = 0.1;
+  static const float offset = 0.1;
+  static const float scaler = 7.0;
+  static const float mul = 9.8744858184185791;
+  static const std::array<float, 512> lut =
       MakeMask(extmul, extoff, mul, offset, scaler);
   return InterpolateClampNegative(lut.data(), lut.size(), delta);
 }
@@ -1387,14 +1494,15 @@ void Mask(const Image3F& xyb0, const Image3F& xyb1,
   static const double r2 = 8.0;
 
   ImageF diff0(xsize, ysize);
-  ImageF blur_temp(ysize, xsize);  // transposed
+  ImageF blur_temp(xsize, ysize);
+  ImageF blur_temp_transposed(ysize, xsize);
 
   {
     // X component
     static const double mul = 0.533043878407;
     static const double cutoff = 0.5;
     DiffPrecomputeX(xyb0.Plane(0), xyb1.Plane(0), mul, cutoff, &diff0);
-    Blur(diff0, r2, &blur_temp, &mask->mask_x);
+    Blur(diff0, r2, &blur_temp, &blur_temp_transposed, &mask->mask_x);
   }
   {
     // Y component
@@ -1406,10 +1514,10 @@ void Mask(const Image3F& xyb0, const Image3F& xyb1,
     ImageF blurred1_a(xsize, ysize);
     ImageF blurred1_b(xsize, ysize);
     DiffPrecomputeY(xyb0.Plane(1), xyb1.Plane(1), mul, mul2, &diff0, &diff1);
-    Blur(diff0, r0, &blur_temp, &blurred0_a);
-    Blur(diff0, r1, &blur_temp, &blurred0_b);
-    Blur(diff1, r0, &blur_temp, &blurred1_a);
-    Blur(diff1, r1, &blur_temp, &blurred1_b);
+    Blur(diff0, r0, &blur_temp, &blur_temp_transposed, &blurred0_a);
+    Blur(diff0, r1, &blur_temp, &blur_temp_transposed, &blurred0_b);
+    Blur(diff1, r0, &blur_temp, &blur_temp_transposed, &blurred1_a);
+    Blur(diff1, r1, &blur_temp, &blur_temp_transposed, &blurred1_b);
 
     for (size_t y = 0; y < ysize; ++y) {
       const float* JXL_RESTRICT row_blurred0_a = blurred0_a.Row(y);
@@ -1444,21 +1552,28 @@ void Mask(const Image3F& xyb0, const Image3F& xyb1,
     }
   }
   // B component
-  static const double w00 = 564.23707674490015;
-  static const double w11 = 11.480266246995546;
-  static const double p1_to_p0 = 0.022922908053854666;
+  {
+    static const float w00 = 564.23707674490015f;
+    static const float w11 = 11.480266246995546f;
+    static const float p1_to_p0 = 0.022922908053854666f;
 
-  for (size_t y = 0; y < ysize; ++y) {
-    for (size_t x = 0; x < xsize; ++x) {
-      const double s0 = mask->mask_x.Row(y)[x];
-      const double s1 = mask->mask_yb.Row(y)[x];
-      const double p1 = w11 * s1;
-      const double p0 = w00 * s0 + p1_to_p0 * p1;
+    PROFILER_ZONE("Mask.Blue");
+    for (size_t y = 0; y < ysize; ++y) {
+      float* JXL_RESTRICT row_mask_x = mask->mask_x.Row(y);
+      float* JXL_RESTRICT row_mask_yb = mask->mask_yb.Row(y);
+      float* JXL_RESTRICT row_mask_dc_x = mask_dc->mask_x.Row(y);
+      float* JXL_RESTRICT row_mask_dc_yb = mask_dc->mask_yb.Row(y);
+      for (size_t x = 0; x < xsize; ++x) {
+        const float s0 = row_mask_x[x];
+        const float s1 = row_mask_yb[x];
+        const float p1 = w11 * s1;
+        const float p0 = w00 * s0 + p1_to_p0 * p1;
 
-      mask->mask_x.Row(y)[x] = MaskX(p0);
-      mask->mask_yb.Row(y)[x] = MaskY(p1);
-      mask_dc->mask_x.Row(y)[x] = MaskDcX(p0);
-      mask_dc->mask_yb.Row(y)[x] = MaskDcY(p1);
+        row_mask_x[x] = MaskX(p0);
+        row_mask_yb[x] = MaskY(p1);
+        row_mask_dc_x[x] = MaskDcX(p0);
+        row_mask_dc_yb[x] = MaskDcY(p1);
+      }
     }
   }
 }
@@ -1513,7 +1628,8 @@ void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
 void CombineChannelsToDiffmap(const MaskImage& mask_xyb,
                               const MaskImage& mask_xyb_dc,
                               const Image3F& block_diff_dc,
-                              const Image3F& block_diff_ac, ImageF* diffmap) {
+                              const Image3F& block_diff_ac, float xmul,
+                              ImageF* diffmap) {
   PROFILER_FUNC;
   JXL_CHECK(SameSize(mask_xyb.mask_x, *diffmap));
 
@@ -1552,12 +1668,13 @@ void CombineChannelsToDiffmap(const MaskImage& mask_xyb,
       sum_y = MulAdd(diff_ac_y, mask_ac_yb, sum_y);
       sum_b = MulAdd(diff_ac_b, mask_ac_yb, sum_b);
 
-      const auto combined = sum_x + sum_y + sum_b;
+      const auto combined = MulAdd(Set(d, xmul), sum_x, sum_y + sum_b);
       Store(Sqrt(combined), d, row_out + x);
     }
   }
 }
 
+// Adds weighted L2 difference between i0 and i1 to diffmap.
 static void L2Diff(const ImageF& i0, const ImageF& i1, const float w,
                    Image3F* BUTTERAUGLI_RESTRICT diffmap, size_t c) {
   if (w == 0) return;
@@ -1575,6 +1692,27 @@ static void L2Diff(const ImageF& i0, const ImageF& i1, const float w,
       const auto diff2 = diff * diff;
       const auto prev = Load(d, row_diff + x);
       Store(MulAdd(diff2, weight, prev), d, row_diff + x);
+    }
+  }
+}
+
+// Initializes diffmap to the weighted L2 difference between i0 and i1.
+static void SetL2Diff(const ImageF& i0, const ImageF& i1, const float w,
+                      Image3F* BUTTERAUGLI_RESTRICT diffmap, size_t c) {
+  if (w == 0) return;
+
+  const HWY_FULL(float) d;
+  const auto weight = Set(d, w);
+
+  for (size_t y = 0; y < i0.ysize(); ++y) {
+    const float* BUTTERAUGLI_RESTRICT row0 = i0.ConstRow(y);
+    const float* BUTTERAUGLI_RESTRICT row1 = i1.ConstRow(y);
+    float* BUTTERAUGLI_RESTRICT row_diff = diffmap->PlaneRow(c, y);
+
+    for (size_t x = 0; x < i0.xsize(); x += Lanes(d)) {
+      const auto diff = Load(d, row0 + x) - Load(d, row1 + x);
+      const auto diff2 = diff * diff;
+      Store(diff2 * weight, d, row_diff + x);
     }
   }
 }
@@ -1634,9 +1772,12 @@ HWY_EXPORT(SeparateFrequencies)       // Local function.
 HWY_EXPORT(MaskPsychoImage)           // Local function.
 HWY_EXPORT(L2DiffAsymmetric)          // Local function.
 HWY_EXPORT(L2Diff)                    // Local function.
+HWY_EXPORT(SetL2Diff)                 // Local function.
 HWY_EXPORT(CombineChannelsToDiffmap)  // Local function.
 HWY_EXPORT(MaltaDiffMap)              // Local function.
 HWY_EXPORT(MaltaDiffMapLF)            // Local function.
+
+#if BUTTERAUGLI_ENABLE_CHECKS
 
 static inline bool IsNan(const float x) {
   uint32_t bits;
@@ -1666,8 +1807,6 @@ static inline void CheckImage(const ImageF& image, const char* name) {
   }
 }
 
-#if BUTTERAUGLI_ENABLE_CHECKS
-
 #define CHECK_NAN(x, str)                \
   do {                                   \
     if (IsNan(x)) {                      \
@@ -1678,12 +1817,12 @@ static inline void CheckImage(const ImageF& image, const char* name) {
 
 #define CHECK_IMAGE(image, name) CheckImage(image, name)
 
-#else
+#else  // BUTTERAUGLI_ENABLE_CHECKS
 
 #define CHECK_NAN(x, str)
 #define CHECK_IMAGE(image, name)
 
-#endif
+#endif  // BUTTERAUGLI_ENABLE_CHECKS
 
 // Calculate a 2x2 subsampled image for purposes of recursive butteraugli at
 // multiresolution.
@@ -1808,13 +1947,14 @@ Image3F OpsinDynamicsImage(const Image3F& rgb) {
   PROFILER_FUNC;
   Image3F xyb(rgb.xsize(), rgb.ysize());
   const double kSigma = 1.2;
-  ImageF blur_temp(rgb.ysize(), rgb.xsize());  // transposed
+  ImageF blur_temp(rgb.xsize(), rgb.ysize());
+  ImageF blur_temp_transposed(rgb.ysize(), rgb.xsize());
   Image3F blurred(rgb.xsize(), rgb.ysize());
-  Blur(rgb.Plane(0), kSigma, &blur_temp,
+  Blur(rgb.Plane(0), kSigma, &blur_temp, &blur_temp_transposed,
        const_cast<ImageF*>(&blurred.Plane(0)));
-  Blur(rgb.Plane(1), kSigma, &blur_temp,
+  Blur(rgb.Plane(1), kSigma, &blur_temp, &blur_temp_transposed,
        const_cast<ImageF*>(&blurred.Plane(1)));
-  Blur(rgb.Plane(2), kSigma, &blur_temp,
+  Blur(rgb.Plane(2), kSigma, &blur_temp, &blur_temp_transposed,
        const_cast<ImageF*>(&blurred.Plane(2)));
   for (size_t y = 0; y < rgb.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row_r = rgb.ConstPlaneRow(0, y);
@@ -1872,10 +2012,11 @@ Image3F OpsinDynamicsImage(const Image3F& rgb) {
 }
 
 ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
-                                             double hf_asymmetry)
+                                             double hf_asymmetry, double xmul)
     : xsize_(rgb0.xsize()),
       ysize_(rgb0.ysize()),
       hf_asymmetry_(hf_asymmetry),
+      xmul_(xmul),
       sub_(nullptr) {
   if (xsize_ < 8 || ysize_ < 8) {
     return;
@@ -1886,7 +2027,7 @@ ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
   // Awful recursive construction of samples of different resolution.
   // This is an after-thought and possibly somewhat parallel in
   // functionality with the PsychoImage multi-resolution approach.
-  sub_ = new ButteraugliComparator(SubSample2x(rgb0), hf_asymmetry);
+  sub_ = new ButteraugliComparator(SubSample2x(rgb0), hf_asymmetry, xmul);
 }
 
 ButteraugliComparator::~ButteraugliComparator() { delete sub_; }
@@ -1894,8 +2035,8 @@ ButteraugliComparator::~ButteraugliComparator() { delete sub_; }
 void ButteraugliComparator::Mask(MaskImage* BUTTERAUGLI_RESTRICT mask,
                                  MaskImage* BUTTERAUGLI_RESTRICT
                                      mask_dc) const {
-  HWY_DYNAMIC_DISPATCH(MaskPsychoImage)(pi0_, pi0_, xsize_, ysize_, mask,
-                                        mask_dc, nullptr);
+  HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
+  (pi0_, pi0_, xsize_, ysize_, mask, mask_dc, nullptr);
 }
 
 void ButteraugliComparator::Diffmap(const Image3F& rgb1, ImageF& result) const {
@@ -1938,8 +2079,8 @@ void MaltaDiffMap(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
   PROFILER_FUNC;
   const double len = 3.75;
   static const double mulli = 0.359826387683;
-  HWY_DYNAMIC_DISPATCH(MaltaDiffMap)(lum0, lum1, w_0gt1, w_0lt1, norm1, len,
-                                     mulli, diffs, block_diff_ac, c);
+  HWY_DYNAMIC_DISPATCH(MaltaDiffMap)
+  (lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli, diffs, block_diff_ac, c);
 }
 
 void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
@@ -1949,8 +2090,8 @@ void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
   PROFILER_FUNC;
   const double len = 3.75;
   static const double mulli = 0.737143715861;
-  HWY_DYNAMIC_DISPATCH(MaltaDiffMapLF)(lum0, lum1, w_0gt1, w_0lt1, norm1, len,
-                                       mulli, diffs, block_diff_ac, c);
+  HWY_DYNAMIC_DISPATCH(MaltaDiffMapLF)
+  (lum0, lum1, w_0gt1, w_0lt1, norm1, len, mulli, diffs, block_diff_ac, c);
 }
 
 }  // namespace
@@ -1963,8 +2104,6 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
     return;
   }
   ImageF diffs(xsize_, ysize_);  // temp, used in each call
-  Image3F block_diff_dc(xsize_, ysize_);
-  ZeroFillImage(&block_diff_dc);
   Image3F block_diff_ac(xsize_, ysize_);
   ZeroFillImage(&block_diff_ac);
   static const double wUhfMalta = 8.3230030810258917;
@@ -2011,26 +2150,27 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
       1.0323708525451885,
       5.5346699491372346,
   };
+  Image3F block_diff_dc(xsize_, ysize_);
   for (size_t c = 0; c < 3; ++c) {
     if (c < 2) {  // No blue channel error accumulated at HF.
-      HWY_DYNAMIC_DISPATCH(L2DiffAsymmetric)(
-          pi0_.hf[c], pi1.hf[c], wmul[c] * hf_asymmetry_,
-          wmul[c] / hf_asymmetry_, &block_diff_ac, c);
+      HWY_DYNAMIC_DISPATCH(L2DiffAsymmetric)
+      (pi0_.hf[c], pi1.hf[c], wmul[c] * hf_asymmetry_, wmul[c] / hf_asymmetry_,
+       &block_diff_ac, c);
     }
-    HWY_DYNAMIC_DISPATCH(L2Diff)(
-        pi0_.mf.Plane(c), pi1.mf.Plane(c), wmul[3 + c], &block_diff_ac, c);
-    HWY_DYNAMIC_DISPATCH(L2Diff)(
-        pi0_.lf.Plane(c), pi1.lf.Plane(c), wmul[6 + c], &block_diff_dc, c);
+    HWY_DYNAMIC_DISPATCH(L2Diff)
+    (pi0_.mf.Plane(c), pi1.mf.Plane(c), wmul[3 + c], &block_diff_ac, c);
+    HWY_DYNAMIC_DISPATCH(SetL2Diff)
+    (pi0_.lf.Plane(c), pi1.lf.Plane(c), wmul[6 + c], &block_diff_dc, c);
   }
 
   MaskImage mask_xyb_ac;
   MaskImage mask_xyb_dc;
-  HWY_DYNAMIC_DISPATCH(MaskPsychoImage)(
-      pi0_, pi1, xsize_, ysize_, &mask_xyb_ac, &mask_xyb_dc,
-      const_cast<ImageF*>(&block_diff_ac.Plane(1)));
+  HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
+  (pi0_, pi1, xsize_, ysize_, &mask_xyb_ac, &mask_xyb_dc,
+   const_cast<ImageF*>(&block_diff_ac.Plane(1)));
 
-  HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)(
-      mask_xyb_ac, mask_xyb_dc, block_diff_dc, block_diff_ac, &diffmap);
+  HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)
+  (mask_xyb_ac, mask_xyb_dc, block_diff_dc, block_diff_ac, xmul_, &diffmap);
 }
 
 double ButteraugliScoreFromDiffmap(const ImageF& diffmap) {
@@ -2046,7 +2186,7 @@ double ButteraugliScoreFromDiffmap(const ImageF& diffmap) {
 }
 
 bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
-                        double hf_asymmetry, ImageF& diffmap) {
+                        double hf_asymmetry, double xmul, ImageF& diffmap) {
   PROFILER_FUNC;
   const size_t xsize = rgb0.xsize();
   const size_t ysize = rgb0.ysize();
@@ -2081,8 +2221,8 @@ bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
       }
     }
     ImageF diffmap_scaled;
-    const bool ok =
-        ButteraugliDiffmap(scaled0, scaled1, hf_asymmetry, diffmap_scaled);
+    const bool ok = ButteraugliDiffmap(scaled0, scaled1, hf_asymmetry, xmul,
+                                       diffmap_scaled);
     diffmap = ImageF(xsize, ysize);
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
@@ -2091,18 +2231,18 @@ bool ButteraugliDiffmap(const Image3F& rgb0, const Image3F& rgb1,
     }
     return ok;
   }
-  ButteraugliComparator butteraugli(rgb0, hf_asymmetry);
+  ButteraugliComparator butteraugli(rgb0, hf_asymmetry, xmul);
   butteraugli.Diffmap(rgb1, diffmap);
   return true;
 }
 
 bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
-                          float hf_asymmetry, ImageF& diffmap,
+                          float hf_asymmetry, float xmul, ImageF& diffmap,
                           double& diffvalue) {
 #if PROFILER_ENABLED
   double t0 = Now();
 #endif
-  if (!ButteraugliDiffmap(rgb0, rgb1, hf_asymmetry, diffmap)) {
+  if (!ButteraugliDiffmap(rgb0, rgb1, hf_asymmetry, xmul, diffmap)) {
     return false;
   }
 #if PROFILER_ENABLED

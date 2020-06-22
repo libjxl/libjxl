@@ -429,6 +429,7 @@ Status DecodeFrame(const DecompressParams& dparams,
                                            num_passes, has_ac_global);
   JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets,
                                        &group_sizes, &groups_total_size));
+
   const size_t global_ac_index = frame_dim->num_dc_groups + 1;
 
   JXL_DASSERT((reader->TotalBitsConsumed() % kBitsPerByte) == 0);
@@ -498,7 +499,8 @@ Status DecodeFrame(const DecompressParams& dparams,
     JXL_RETURN_IF_ERROR(modular_frame_decoder.DecodeGlobalInfo(
         global_reader, frame_header, decoded,
         /*decode_color = */
-        (frame_header.encoding == FrameEncoding::kModularGroup), xsize, ysize));
+        (frame_header.encoding == FrameEncoding::kModularGroup), xsize, ysize,
+        /*group_id=*/0));
   }
 
   // global_store is either never used (in which case Close() is optional
@@ -547,8 +549,8 @@ Status DecodeFrame(const DecompressParams& dparams,
     bool ok = true;
     const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
                      kDcGroupDim);
-    ok = modular_frame_decoder.DecodeGroup(dparams, mrect, group_reader,
-                                           my_aux_out, 3, 1000);
+    ok = modular_frame_decoder.DecodeGroup(
+        dparams, mrect, group_reader, my_aux_out, 3, 1000, 1 + group_index);
     if (frame_header.IsJpeg()) {
       ok &= jpeg_frame_decoder.DecodeDcGroup(group_index, group_reader);
     } else if (frame_header.IsLossy()) {
@@ -645,8 +647,10 @@ Status DecodeFrame(const DecompressParams& dparams,
           if (frame_header.passes.downsample[j] == 1) minShift = 0;
         }
       }
-      if (!modular_frame_decoder.DecodeGroup(dparams, mrect, readers[i],
-                                             my_aux_out, minShift, maxShift)) {
+      if (!modular_frame_decoder.DecodeGroup(
+              dparams, mrect, readers[i], my_aux_out, minShift, maxShift,
+              AcGroupIndex(i, group_index, num_groups, frame_dim->num_dc_groups,
+                           has_ac_global))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
       }
       maxShift = minShift - 1;

@@ -145,8 +145,11 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
   }
 
   if (args.override_bitdepth != 0) {
-    io->metadata.bits_per_sample = args.override_bitdepth;
-    io->metadata.floating_point_sample = (args.override_bitdepth == 32);
+    if (args.override_bitdepth == 32) {
+      io->metadata.SetFloat32Samples();
+    } else {
+      io->metadata.SetUintSamples(args.override_bitdepth);
+    }
   }
 
   jxl::ImageF saliency_map;

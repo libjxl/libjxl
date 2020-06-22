@@ -194,6 +194,9 @@ struct CompressParams {
   // features. 1.0=neutral.
   float hf_asymmetry = 1.0f;
 
+  // Multiplier for the psychovisual difference in the X channel.
+  float xmul = 1.0f;
+
   // modular mode options below
   ModularOptions options;
   int responsive = -1;

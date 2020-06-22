@@ -74,7 +74,7 @@ namespace jxl {
 // Returns true on success.
 
 bool ButteraugliInterface(const Image3F &rgb0, const Image3F &rgb1,
-                          float hf_asymmetry, ImageF &diffmap,
+                          float hf_asymmetry, float xmul, ImageF &diffmap,
                           double &diffvalue);
 
 // Converts the butteraugli score into fuzzy class values that are continuous
@@ -139,7 +139,10 @@ struct PsychoImage {
 
 class ButteraugliComparator {
  public:
-  ButteraugliComparator(const Image3F &rgb0, double hf_asymmetry);
+  // Butteraugli is calibrated at xmul = 1.0. We add a multiplier here so that
+  // we can test the hypothesis that a higher weighing of the X channel would
+  // improve results at higher Butteraugli values.
+  ButteraugliComparator(const Image3F &rgb0, double hf_asymmetry, double xmul);
   virtual ~ButteraugliComparator();
 
   // Computes the butteraugli map between the original image given in the
@@ -159,12 +162,13 @@ class ButteraugliComparator {
   const size_t xsize_;
   const size_t ysize_;
   float hf_asymmetry_;
+  float xmul_;
   PsychoImage pi0_;
   ButteraugliComparator *sub_;
 };
 
 bool ButteraugliDiffmap(const Image3F &rgb0, const Image3F &rgb1,
-                        double hf_asymmetry, ImageF &diffmap);
+                        double hf_asymmetry, double xmul, ImageF &diffmap);
 
 double ButteraugliScoreFromDiffmap(const ImageF &diffmap);
 

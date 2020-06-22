@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/detect_dots.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
-#include <hwy/foreach_target.h>
 
 #include <stdint.h>
 
@@ -37,6 +34,10 @@
 #include "jxl/image_ops.h"
 #include "jxl/linalg.h"
 #include "jxl/optimize.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
+#include <hwy/foreach_target.h>
 
 // Set JXL_DEBUG_DOT_DETECT to 1 to enable debugging.
 #ifndef JXL_DEBUG_DOT_DETECT
@@ -635,11 +636,12 @@ std::vector<PatchInfo> DetectGaussianEllipses(
         ellipse.custom_loss < params.maxCustomLoss &&
         intensitySq > (params.minIntensity * params.minIntensity) &&
         sqDistMeanMode < params.maxDistMeanMode * params.maxDistMeanMode) {
-      QuantizedPatch patch;
-      patch.xsize = cc.bounds.xsize();
-      patch.ysize = cc.bounds.ysize();
       size_t x0 = cc.bounds.x0();
       size_t y0 = cc.bounds.y0();
+      dots.push_back(PatchInfo{QuantizedPatch{}, {{x0, y0}}});
+      QuantizedPatch& patch = dots.back().first;
+      patch.xsize = cc.bounds.xsize();
+      patch.ysize = cc.bounds.ysize();
       for (size_t y = 0; y < patch.ysize; y++) {
         for (size_t x = 0; x < patch.xsize; x++) {
           for (size_t c = 0; c < 3; c++) {
@@ -649,7 +651,6 @@ std::vector<PatchInfo> DetectGaussianEllipses(
           }
         }
       }
-      dots.push_back(PatchInfo{patch, {{x0, y0}}});
     }
   }
 #if JXL_DEBUG_DOT_DETECT

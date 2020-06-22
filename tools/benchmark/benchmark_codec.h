@@ -44,7 +44,8 @@ class ImageCodec {
         butteraugli_target_(1.0f),
         q_target_(100.0f),
         bitrate_target_(0.0f),
-        hf_asymmetry_(1.0f) {}
+        hf_asymmetry_(1.0f),
+        xmul_(1.0f) {}
 
   virtual ~ImageCodec() = default;
 
@@ -52,6 +53,7 @@ class ImageCodec {
   const std::string& description() const { return description_; }
 
   float hf_asymmetry() const { return hf_asymmetry_; }
+  float xmul() const { return xmul_; }
 
   virtual void ParseParameters(const std::string& parameters);
 
@@ -95,6 +97,7 @@ class ImageCodec {
   float q_target_;
   float bitrate_target_;
   float hf_asymmetry_;
+  float xmul_;
   std::string error_message_;
 };
 

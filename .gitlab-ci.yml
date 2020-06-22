@@ -76,6 +76,8 @@ variables:
   - build/tests.tar.xz
   # The coverage data produced at compile time.
   - build/gcno.tar.xz
+  # The packed html doxygen documentation, only produced by the coverage build.
+  - build/htmldoc.tar.gz
 
 # Helper template to add the default artifacts paths to all build stages. If
 # files in the "paths:" section are not present only a warning is generated.
@@ -129,6 +131,7 @@ build:x86_64:clang:coverage:
     - tags
   script:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh coverage
+    - tar -zcf build/htmldoc.tar.gz -C build/html .
 
 test:x86_64:clang:coverage:
   <<: *linux_host_template
@@ -154,6 +157,7 @@ test:x86_64:clang:coverage:
       - build/coverage.txt
       - build/coverage*.html
       - build/coverage.xml
+      - build/htmldoc.tar.gz
 
 # Updates the "Pages" section in GitLab with the latest coverage report from
 # master.
@@ -166,9 +170,13 @@ pages:
     - test:x86_64:clang:coverage
   script:
     - mkdir public
+    # Unpack the doxygen documentation as "pages".
+    - tar -zxf build/htmldoc.tar.gz -C public
+    # Link from the index to the coverage.html file.
+    - sed -E "s,<!--header-->,<!--header--><a href=coverage.html>Coverage for ${CI_COMMIT_SHA}</a><br />," -i public/index.html
+    # Copy the coverage files to public/coverage*
     - mv build/coverage* public/
-    - mv public/coverage.html public/index.html
-    - sed -E "s,GCC Code Coverage Report,Coverage Report for <a href='${CI_PROJECT_URL}/commit/${CI_COMMIT_SHA}'>${CI_COMMIT_SHORT_SHA}</a>," -i public/index.html
+    - sed -E "s,GCC Code Coverage Report,Coverage Report for <a href='${CI_PROJECT_URL}/commit/${CI_COMMIT_SHA}'>${CI_COMMIT_SHORT_SHA}</a>," -i public/coverage.html
   artifacts:
     paths:
       - public

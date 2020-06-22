@@ -347,8 +347,7 @@ void TestCubeRoot() { return HWY_DYNAMIC_DISPATCH(TestCubeRoot)(); }
 // DEPRECATED
 Image3F OpsinDynamicsImage(const Image3B& srgb8) {
   ImageMetadata metadata;
-  metadata.bits_per_sample = 8;
-  metadata.floating_point_sample = false;
+  metadata.SetUintSamples(8);
   metadata.color_encoding = ColorEncoding::SRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(StaticCastImage3<float>(srgb8), metadata.color_encoding);

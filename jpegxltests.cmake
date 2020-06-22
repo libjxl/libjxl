@@ -116,3 +116,11 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 60)
   endif ()
 endforeach ()
+
+# Script to run tests over the source code in bash.
+find_program (BASH_PROGRAM bash)
+if (BASH_PROGRAM)
+  add_test(
+    NAME bash_test
+    COMMAND ${BASH_PROGRAM} ${CMAKE_CURRENT_SOURCE_DIR}/bash_test.sh)
+endif ()

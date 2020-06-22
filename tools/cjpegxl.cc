@@ -28,6 +28,7 @@
 #include "jxl/enc_params.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
+#include "tools/codec_config.h"
 
 namespace jpegxl {
 namespace tools {
@@ -114,15 +115,15 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
   }
 
   if (args.version) {
-    fprintf(stderr, "cjpegxl - version " JPEGXL_VERSION "\n");
+    fprintf(stderr, "cjpegxl [%s]\n", CodecConfigString().c_str());
     fprintf(stderr, "Copyright (c) the JPEG XL Project\n");
     return 0;
   }
 
   if (!args.quiet) {
     fprintf(stderr, "  J P E G   \\/ |\n");
-    fprintf(stderr,
-            "            /\\ |_   e n c o d e r    [" JPEGXL_VERSION "]\n\n");
+    fprintf(stderr, "            /\\ |_   e n c o d e r    [%s]\n\n",
+            CodecConfigString().c_str());
   }
 
   if (printhelp || !args.ValidateArgs(cmdline, mode)) {

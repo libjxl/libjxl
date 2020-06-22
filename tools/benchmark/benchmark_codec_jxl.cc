@@ -79,6 +79,7 @@ int EncodeBrunsli(size_t insize, const unsigned char* in, void* outdata,
 }
 
 struct JxlArgs {
+  double xmul;
   double quant_bias;
 
   bool use_ac_strategy;
@@ -98,6 +99,8 @@ struct JxlArgs {
 static JxlArgs* const jxlargs = new JxlArgs;
 
 Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
+  args->AddDouble(&jxlargs->xmul, "xmul",
+                  "Multiplier for the difference in X channel in Butteraugli.", 1.0);
   args->AddDouble(&jxlargs->quant_bias, "quant_bias",
                   "Bias border pixels during quantization by this ratio.", 0.0);
   args->AddFlag(&jxlargs->use_ac_strategy, "use_ac_strategy",
@@ -284,6 +287,7 @@ class JxlCodec : public ImageCodec {
 
     cparams_.quant_border_bias = static_cast<float>(jxlargs->quant_bias);
     cparams_.hf_asymmetry = hf_asymmetry_;
+    cparams_.xmul = static_cast<float>(jxlargs->xmul);
 
     cparams_.quality_pair.first = q_target_;
     cparams_.quality_pair.second = q_target_;

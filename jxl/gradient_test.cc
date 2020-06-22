@@ -164,8 +164,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   Image3F gradient = GenerateTestGradient(color0, color1, angle, xsize, ysize);
 
   CodecInOut io;
-  io.metadata.bits_per_sample = 8;
-  io.metadata.floating_point_sample = false;
+  io.metadata.SetUintSamples(8);
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(gradient), io.metadata.color_encoding);
 

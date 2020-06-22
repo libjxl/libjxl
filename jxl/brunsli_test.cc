@@ -52,6 +52,7 @@ size_t Roundtrip(CodecInOut* io, const BrunsliEncoderOptions& enc_options,
   EXPECT_TRUE(BrunsliToPixels(jpg, io2, dec_options, &meta, pool));
 
   EXPECT_LE(ButteraugliDistance(*io, *io2, /* hf_assymetry */ 1.0f,
+                                /* xmul */ 1.0f,
                                 /*distmap=*/nullptr, pool),
             max_butteraugli_score);
 
@@ -69,8 +70,7 @@ TEST(BrunsliTest, RoundtripSinglePixel) {
   image.PlaneRow(2, 0)[0] = 0.0f;
 
   CodecInOut io;
-  io.metadata.bits_per_sample = 8;
-  io.metadata.floating_point_sample = false;
+  io.metadata.SetUintSamples(8);
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.color_encoding);
   CodecInOut io2;

@@ -145,8 +145,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   }
 
   jxl::CodecInOut io;
-  io.metadata.bits_per_sample = spec.bit_depth;
-  io.metadata.floating_point_sample = (spec.bit_depth == 32);
+  if (spec.bit_depth == 32) {
+    io.metadata.SetFloat32Samples();
+  } else {
+    io.metadata.SetUintSamples(spec.bit_depth);
+  }
   io.metadata.alpha_bits = spec.alpha_bit_depth;
   io.dec_pixels = spec.width * spec.height;
   io.frames.clear();

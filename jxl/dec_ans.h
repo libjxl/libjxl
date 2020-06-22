@@ -124,8 +124,9 @@ struct HybridUintConfig {
                          ANSSymbolReader* JXL_RESTRICT decoder,
                          const std::vector<uint8_t>& context_map) const;
 
-  HybridUintConfig(uint32_t split_exponent, uint32_t msb_in_token,
-                   uint32_t lsb_in_token)
+  explicit HybridUintConfig(uint32_t split_exponent = 4,
+                            uint32_t msb_in_token = 2,
+                            uint32_t lsb_in_token = 0)
       : split_exponent(split_exponent),
         split_token(1 << split_exponent),
         msb_in_token(msb_in_token),

@@ -24,6 +24,7 @@
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
+#include "jxl/modular/encoding/encoding.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
@@ -37,21 +38,30 @@ Status EncodeModularRect(const CompressParams& params, const ImageBundle& ib,
 class ModularFrameEncoder {
  public:
   ModularFrameEncoder() = default;
-  Status ComputeEncodingData(const CompressParams& orig_cparams,
+  Status ComputeEncodingData(CompressParams orig_cparams,
                              const FrameHeader& frame_header,
                              const ImageBundle& ib, Image3F* JXL_RESTRICT color,
                              PassesEncoderState* JXL_RESTRICT enc_state,
-                             bool encode_color);
-  Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out, size_t group_id);
-  Status EncodeGroup(const Rect& rect, BitWriter* writer, AuxOut* aux_out,
-                     size_t minShift, size_t maxShift, size_t layer,
+                             ThreadPool* pool, AuxOut* aux_out, bool do_color);
+  Status EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out);
+  Status EncodeGroup(BitWriter* writer, AuxOut* aux_out, size_t layer,
                      size_t group_id);
 
  private:
-  Image full_image;
-  CompressParams cparams;
-  bool do_color;
-  std::atomic<size_t> call{0};
+  Status PrepareGroupParams(const Rect& rect, const CompressParams& cparams,
+                            int minShift, int maxShift, size_t group_id,
+                            HybridUintConfig uint_config, bool do_color,
+                            size_t* bit_size);
+  std::vector<Image> group_images;
+  std::vector<ModularOptions> group_options;
+
+  Tree tree;
+  std::vector<std::vector<Token>> tree_tokens;
+  std::vector<GroupHeader> group_headers;
+  std::vector<std::vector<Token>> tokens;
+  EntropyEncodingData code;
+  std::vector<uint8_t> context_map;
+  HybridUintConfig uint_config;
 };
 
 }  // namespace jxl

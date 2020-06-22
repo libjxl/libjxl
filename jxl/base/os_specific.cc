@@ -156,6 +156,24 @@ cpu_set_t SetOfAllLogicalProcessors() {
   return (1ull << logical) - 1;
 }
 }  // namespace
+
+#elif OS_HAIKU
+
+namespace {
+cpu_set_t SetOfAllLogicalProcessors() {
+  system_info info;
+  get_system_info(&info);
+
+  if (info.cpu_count > 64) {
+    printf("Warning: more than 64 logical processors, update cpu_set_t");
+    return ~0ull;
+  }
+  if (info.cpu_count == 64) return ~0ull;
+
+  return (1ull << info.cpu_count) - 1;
+}
+}  // namespace
+
 #endif
 
 Status GetProcessorTopologyFromOS(ProcessorTopology* pt) {
@@ -171,6 +189,15 @@ Status GetProcessorTopologyFromOS(ProcessorTopology* pt) {
   pt->logical_per_core = logical / cores;
 
   return true;
+#elif OS_HAIKU
+  system_info info;
+  get_system_info(&info);
+  pt->packages = 1;
+  pt->cores_per_package = info.cpu_count;
+  pt->logical_per_core = 1;
+
+  return true;
+
 #else
   // Not needed on X64 if the affinity APIs work (DetectProcessorTopology will
   // succeed)
@@ -197,7 +224,7 @@ ThreadAffinity* GetThreadAffinity() {
   const int err = cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, pid,
                                      sizeof(cpuset_t), &affinity->set);
   JXL_CHECK(err == 0);
-#elif OS_MAC
+#elif OS_MAC || OS_HAIKU
   static cpu_set_t all = SetOfAllLogicalProcessors();
   affinity->set = all;
 #endif
@@ -252,18 +279,13 @@ Status SetThreadAffinity(ThreadAffinity* affinity) {
 std::vector<int> AvailableCPUs() {
   std::vector<int> cpus;
   cpus.reserve(128);
-#if OS_WIN || OS_LINUX || OS_FREEBSD || OS_MAC
+#if OS_WIN || OS_LINUX || OS_FREEBSD || OS_MAC || OS_HAIKU
   const ThreadAffinity* const affinity = OriginalThreadAffinity();
   for (int cpu = 0; cpu < static_cast<int>(sizeof(cpu_set_t)) * 8; ++cpu) {
     if (CPU_ISSET(cpu, &affinity->set)) {
       cpus.push_back(static_cast<int>(cpu));
     }
   }
-#elif OS_HAIKU
-  system_info info;
-  get_system_info(&info);
-  cpus.resize(info->cpu_count);
-  std::iota(cpus.begin(), cpus.end(), 0);
 #else
   cpus.push_back(0);
 #endif
@@ -326,7 +348,7 @@ size_t DetectTotalMemoryMiB() {
 #elif OS_HAIKU
   system_info info;
   get_system_info(&info);
-  return (max_pages * B_PAGE_SIZE) >> 20;
+  return (info.max_pages * B_PAGE_SIZE) >> 20;
 #else
   JXL_WARNING("Implement DetectTotalMemoryMiB for this platform");
   return 0;

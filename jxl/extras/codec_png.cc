@@ -19,6 +19,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Lodepng library:
+#include <lodepng.h>
+
 #include <algorithm>
 #include <string>
 #include <utility>
@@ -32,7 +35,6 @@
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/luminance.h"
-#include "third_party/lodepng/lodepng.h"
 
 namespace jxl {
 namespace {
@@ -684,8 +686,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   if (bits_per_sample != 8 && bits_per_sample != 16) {
     return JXL_FAILURE("Unexpected PNG bit depth");
   }
-  io->metadata.bits_per_sample = static_cast<uint32_t>(bits_per_sample);
-  io->metadata.floating_point_sample = false;
+  io->metadata.SetUintSamples(static_cast<uint32_t>(bits_per_sample));
   io->metadata.alpha_bits = has_alpha ? io->metadata.bits_per_sample : 0;
 
   io->enc_size = bytes.size();

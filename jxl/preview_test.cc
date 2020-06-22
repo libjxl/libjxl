@@ -61,7 +61,7 @@ TEST(PreviewTest, RoundtripGivenPreview) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
             2.5);
   EXPECT_EQ(0, io2.preview_frame.xsize());
@@ -70,16 +70,16 @@ TEST(PreviewTest, RoundtripGivenPreview) {
 
   CodecInOut io3;
   Roundtrip(&io, cparams, dparams, pool, &io3);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
             2.5);
 
   // Preview image also close to original
   EXPECT_NE(0, io3.preview_frame.xsize());
-  EXPECT_LE(
-      ButteraugliDistance(io.Main(), io3.preview_frame, cparams.hf_asymmetry,
-                          /*distmap=*/nullptr, pool),
-      2.5);
+  EXPECT_LE(ButteraugliDistance(io.Main(), io3.preview_frame,
+                                cparams.hf_asymmetry, cparams.xmul,
+                                /*distmap=*/nullptr, pool),
+            2.5);
 }
 
 }  // namespace

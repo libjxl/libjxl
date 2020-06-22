@@ -54,6 +54,7 @@
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/butteraugli_pnorm.h"
+#include "tools/codec_config.h"
 #include "tools/speed_stats.h"
 
 namespace jxl {
@@ -63,8 +64,7 @@ Status WritePNG(const Image3B& image, ThreadPool* pool,
                 const std::string& filename) {
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
-  io.metadata.bits_per_sample = 8;
-  io.metadata.floating_point_sample = false;
+  io.metadata.SetUintSamples(8);
   io.metadata.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
   PaddedBytes compressed;
@@ -92,9 +92,9 @@ double SummarizeElapsedTimes(std::vector<double>& elapsed) {
     return Geomean(elapsed.data() + 1, elapsed.size() - 1);
   }
 
-  // Else: mode
-  std::sort(elapsed.begin(), elapsed.end());
-  return jxl::HalfSampleMode()(elapsed.data(), elapsed.size());
+  // Else: mode; also skip first (noisier)
+  std::sort(elapsed.begin() + 1, elapsed.end());
+  return jxl::HalfSampleMode()(elapsed.data() + 1, elapsed.size());
 }
 
 static bool HasValidAlpha(const CodecInOut& io) {
@@ -276,8 +276,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                              &linear_rgb2, inner_pool));
         double distance_double;
         JXL_CHECK(ButteraugliInterface(linear_rgb1, linear_rgb2,
-                                       codec->hf_asymmetry(), distmap,
-                                       distance_double));
+                                       codec->hf_asymmetry(), codec->xmul(),
+                                       distmap, distance_double));
         distance = static_cast<float>(distance_double);
         // Ensure pixels in range 0-255
         s->distance_2 += ComputeDistance2(ib1, ib2);
@@ -964,10 +964,12 @@ class Benchmark {
           }
 
           if (!Args()->decode_only && Args()->override_bitdepth != 0) {
-            loaded_images[i].metadata.bits_per_sample =
-                Args()->override_bitdepth;
-            loaded_images[i].metadata.floating_point_sample =
-                (Args()->override_bitdepth == 32);
+            if (Args()->override_bitdepth == 32) {
+              loaded_images[i].metadata.SetFloat32Samples();
+            } else {
+              loaded_images[i].metadata.SetUintSamples(
+                  Args()->override_bitdepth);
+            }
           }
         },
         "Load images");
@@ -1013,11 +1015,12 @@ class Benchmark {
           "bpp,dist,psnr,p,bppp,qabpp\n");
     }
 
-    std::vector<size_t> errors_thread;
+    std::vector<uint64_t> errors_thread;
     RunOnPool(
         pool, 0, tasks->size(),
         [&](size_t num_threads) {
-          errors_thread.resize(num_threads);
+          // Reduce false sharing by only writing every 8th slot (64 bytes).
+          errors_thread.resize(8 * num_threads);
           return true;
         },
         [&](const int i, const int thread) {
@@ -1028,7 +1031,7 @@ class Benchmark {
           DoCompress(fnames[t.idx_image], image, t.codec.get(),
                      inner_pools[thread].get(), &compressed, &t.stats);
           printer.TaskDone(i, t);
-          errors_thread[thread] += t.stats.total_errors;
+          errors_thread[8 * thread] += t.stats.total_errors;
         },
         "Benchmark tasks");
     if (Args()->show_progress) fprintf(stderr, "\n");
@@ -1037,17 +1040,8 @@ class Benchmark {
 };
 
 int BenchmarkMain(int argc, char** argv) {
-#if defined(ADDRESS_SANITIZER)
-  const char* sanitizer = " asan";
-#elif defined(MEMORY_SANITIZER)
-  const char* sanitizer = " msan";
-#elif defined(THREAD_SANITIZER)
-  const char* sanitizer = " tsan";
-#else
-  const char* sanitizer = "";
-#endif
-
-  fprintf(stderr, "benchmark_xl [%s%s]\n", JPEGXL_VERSION, sanitizer);
+  fprintf(stderr, "benchmark_xl [%s]\n",
+          jpegxl::tools::CodecConfigString().c_str());
 
   JXL_CHECK(Args()->AddCommandLineOptions());
   if (!Args()->Parse(argc, const_cast<const char**>(argv)) ||

@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include <third_party/highway/hwy/base.h>  // EnableIf
+#include "hwy/base.h"  // EnableIf
 #include "jxl/alpha.h"
 #include "jxl/base/byte_order.h"
 #include "jxl/base/cache_aligned.h"

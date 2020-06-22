@@ -26,6 +26,7 @@
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
+#include "jxl/modular/encoding/encoding.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
@@ -40,10 +41,10 @@ class ModularFrameDecoder {
   ModularFrameDecoder() {}
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
                           ImageBundle* decoded, bool decode_color, size_t xsize,
-                          size_t ysize);
+                          size_t ysize, size_t group_id);
   Status DecodeGroup(const DecompressParams& dparams, const Rect& rect,
                      BitReader* reader, AuxOut* aux_out, size_t minShift,
-                     size_t maxShift);
+                     size_t maxShift, size_t group_id);
   Status FinalizeDecoding(Image3F* color, ImageBundle* decoded,
                           jxl::ThreadPool* pool,
                           const FrameHeader& frame_header);
@@ -53,6 +54,9 @@ class ModularFrameDecoder {
   Image full_image;
   bool do_color;
   bool have_something;
+  Tree tree;
+  ANSCode code;
+  std::vector<uint8_t> context_map;
 };
 
 }  // namespace jxl

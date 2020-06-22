@@ -56,8 +56,12 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
     RandomFillImage(&image, 255.0f);
   }
   CodecInOut io;
-  io.metadata.bits_per_sample = bits_per_sample;
-  io.metadata.floating_point_sample = (bits_per_sample == 32);
+
+  if (bits_per_sample == 32) {
+    io.metadata.SetFloat32Samples();
+  } else {
+    io.metadata.SetUintSamples(bits_per_sample);
+  }
   io.metadata.color_encoding = c_native;
   io.SetFromImage(std::move(image), c_native);
   if (add_alpha) {
@@ -243,7 +247,8 @@ TEST(CodecTest, TestMetadataSRGB) {
     const CodecInOut io =
         DecodeRoundtrip(relative_pathname, Codec::kPNG, &pool);
     EXPECT_EQ(8, io.metadata.bits_per_sample);
-    EXPECT_EQ(false, io.metadata.floating_point_sample);
+    EXPECT_FALSE(io.metadata.floating_point_sample);
+    EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
@@ -274,7 +279,8 @@ TEST(CodecTest, TestMetadataLinear) {
   for (size_t i = 0; i < 3; ++i) {
     const CodecInOut io = DecodeRoundtrip(paths[i], Codec::kPNG, &pool);
     EXPECT_EQ(16, io.metadata.bits_per_sample);
-    EXPECT_EQ(false, io.metadata.floating_point_sample);
+    EXPECT_FALSE(io.metadata.floating_point_sample);
+    EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
@@ -346,7 +352,8 @@ void VerifyWideGamutMetadata(const std::string& relative_pathname,
   const CodecInOut io = DecodeRoundtrip(relative_pathname, Codec::kPNG, pool);
 
   EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_EQ(false, io.metadata.floating_point_sample);
+  EXPECT_FALSE(io.metadata.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
 
   const ColorEncoding& c_original = io.metadata.color_encoding;
   EXPECT_FALSE(c_original.ICC().empty());

@@ -32,6 +32,7 @@
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/options.h"
 #include "jxl/modular/transform/transform.h"
+#include "jxl/toc.h"
 
 namespace jxl {
 
@@ -61,11 +62,78 @@ static const float kEncoderMul2[3] = {32768.0f, 2048.0f, 2048.0f};
 }  // namespace
 
 Status ModularFrameEncoder::ComputeEncodingData(
-    const CompressParams& orig_cparams, const FrameHeader& frame_header,
+    CompressParams cparams, const FrameHeader& frame_header,
     const ImageBundle& ib, Image3F* JXL_RESTRICT color,
-    PassesEncoderState* JXL_RESTRICT enc_state, bool encode_color) {
-  cparams = orig_cparams;
-  do_color = encode_color;
+    PassesEncoderState* JXL_RESTRICT enc_state, ThreadPool* pool,
+    AuxOut* aux_out, bool do_color) {
+  const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
+
+  if (cparams.options.entropy_coder == ModularOptions::kMAANS) {
+    if (cparams.speed_tier > SpeedTier::kWombat) {
+      cparams.options.splitting_heuristics_node_threshold = 192;
+    } else {
+      cparams.options.splitting_heuristics_node_threshold = 96;
+    }
+    switch (cparams.speed_tier) {
+      case SpeedTier::kWombat:
+        cparams.options.splitting_heuristics_max_properties = 4;
+        break;
+      case SpeedTier::kSquirrel:
+        cparams.options.splitting_heuristics_max_properties = 6;
+        break;
+      case SpeedTier::kKitten:
+        cparams.options.splitting_heuristics_max_properties = 8;
+        break;
+      case SpeedTier::kTortoise:
+        cparams.options.splitting_heuristics_max_properties = 128;
+        break;
+      default:
+        cparams.options.splitting_heuristics_max_properties = 4;
+        break;
+    }
+  }
+
+  float quality = cparams.quality_pair.first;
+  float cquality = cparams.quality_pair.second;
+  if (cquality > 100) cquality = quality;
+
+  // use a sensible default if nothing explicit is specified:
+  // Squeeze for lossy, no squeeze for lossless
+  if (cparams.responsive < 0) {
+    if (quality == 100) {
+      cparams.responsive = 0;
+    } else {
+      cparams.responsive = 1;
+    }
+  }
+
+  if (cparams.options.predictor == static_cast<Predictor>(-1)) {
+    // no explicit predictor(s) given, set a good default
+    if (cparams.speed_tier < SpeedTier::kTortoise) {
+      cparams.options.predictor = Predictor::Variable;
+    } else if (cparams.near_lossless) {
+      // avg(top,left) predictor for near_lossless
+      cparams.options.predictor = Predictor::Average;
+    } else if (cparams.responsive) {
+      // zero predictor for Squeeze residues
+      cparams.options.predictor = Predictor::Zero;
+    } else if (cparams.speed_tier < SpeedTier::kFalcon) {
+      // try median and weighted predictor for anything else
+      cparams.options.predictor = Predictor::Best;
+    } else {
+      // just weighted predictor in fastest mode
+      cparams.options.predictor = Predictor::Weighted;
+    }
+  }
+
+  const bool has_ac_global = !frame_header.IsJpeg();
+  size_t num_groups =
+      (has_ac_global ? 2 : 1) + frame_dim.num_dc_groups +
+      enc_state->shared.multiframe->GetNumPasses() * frame_dim.num_groups;
+
+  cparams.options.max_chan_size = kGroupDim;
+  group_images.resize(num_groups);
+  group_options.resize(num_groups, cparams.options);
 
   if (do_color && cparams.speed_tier < SpeedTier::kCheetah) {
     FindBestPatchDictionary(*color, enc_state, nullptr, nullptr,
@@ -87,11 +155,32 @@ Status ModularFrameEncoder::ComputeEncodingData(
     nb_chans += ib.extra_channels().size();
   }
 
-  // TODO(lode): must handle decoded->metadata()->floating_point_sample?
-  int maxval = (1 << ib.metadata()->bits_per_sample) - 1;
-  if (cparams.color_transform == ColorTransform::kXYB)
+  if (ib.metadata()->bits_per_sample >= 32) {
+    if (ib.metadata()->bits_per_sample == 32) {
+      // TODO(lode): does modular support uint32_t? maxval is signed int so
+      // cannot represent 32 bits.
+      return JXL_FAILURE("uint32_t not supported in dec_modular");
+    } else {
+      return JXL_FAILURE("bits_per_sample > 32 not supported");
+    }
+  }
+
+  // TODO(lode): must handle decoded->metadata()->floating_point_channel?
+  int maxval =
+      (1u << static_cast<uint32_t>(ib.metadata()->bits_per_sample)) - 1;
+
+  // Nothing to do if image is trivial.
+  if (nb_chans == 0) {
+    for (size_t i = 0; i < num_groups; i++) {
+      group_images[i] = Image(xsize, ysize, maxval, 0);
+    }
+    return true;
+  }
+  if (cparams.color_transform == ColorTransform::kXYB) {
     maxval = 255;  // not true, but bits_per_sample doesn't matter either
-  Image gi(xsize, ysize, maxval, nb_chans);
+  }
+  Image& gi = group_images[0];
+  gi = Image(xsize, ysize, maxval, nb_chans);
   int c = 0;
   if (do_color) {
     for (; c < 3; c++) {
@@ -162,17 +251,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       }
     }
   }
-  // stop here if we have a trivial zero-channel image
-  if (c == 0) {
-    full_image = std::move(gi);
-    return true;
-  }
+  JXL_ASSERT(c == nb_chans);
 
   // Set options and apply transformations
-
-  float quality = cparams.quality_pair.first;
-  float cquality = cparams.quality_pair.second;
-  if (cquality > 100) cquality = quality;
 
   if (quality < 100 || cparams.near_lossless) {
     if (cparams.palette_colors != 0) {
@@ -228,7 +309,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
-  if (orig_cparams.color_transform == ColorTransform::kNone && do_color) {
+  if (cparams.color_transform == ColorTransform::kNone && do_color) {
     if (cparams.colorspace == 1 ||
         (cparams.colorspace < 0 && (quality < 100 || cparams.near_lossless ||
                                     cparams.speed_tier > SpeedTier::kWombat))) {
@@ -243,44 +324,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
       gi.do_transform(sg);
     }
   }
-  // use a sensible default if nothing explicit is specified:
-  // Squeeze for lossy, no squeeze for lossless
-  if (cparams.responsive < 0) {
-    if (quality == 100)
-      cparams.responsive = 0;
-    else
-      cparams.responsive = 1;
-  }
+
   if (cparams.responsive) {
     gi.do_transform(Transform(TransformId::kSqueeze));  // use default squeezing
   }
-  if (cparams.options.entropy_coder == ModularOptions::kMAANS) {
-    float pixel_fraction = std::min(1.0f, cparams.options.nb_repeats);
-    if (cparams.speed_tier > SpeedTier::kWombat) {
-      cparams.options.splitting_heuristics_node_threshold =
-          192 * pixel_fraction;
-    } else {
-      cparams.options.splitting_heuristics_node_threshold = 96 * pixel_fraction;
-    }
-    switch (cparams.speed_tier) {
-      case SpeedTier::kWombat:
-        cparams.options.splitting_heuristics_max_properties = 4;
-        break;
-      case SpeedTier::kSquirrel:
-        cparams.options.splitting_heuristics_max_properties = 6;
-        break;
-      case SpeedTier::kKitten:
-        cparams.options.splitting_heuristics_max_properties = 8;
-        break;
-      case SpeedTier::kTortoise:
-        cparams.options.splitting_heuristics_max_properties = 128;
-        break;
-      default:
-        cparams.options.splitting_heuristics_max_properties = 4;
-        break;
-    }
-  }
-
   if (quality < 100 || cquality < 100) {
     JXL_DEBUG_V(
         2,
@@ -332,47 +379,216 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     gi.do_transform(quantize);
   }
-  if (cparams.options.predictor == static_cast<Predictor>(-1)) {
-    // no explicit predictor(s) given, set a good default
-    if (cparams.near_lossless) {
-      // avg(top,left) predictor for near_lossless
-      cparams.options.predictor = Predictor::Average;
-    } else if (cparams.responsive) {
-      // zero predictor for Squeeze residues
-      cparams.options.predictor = Predictor::Zero;
-    } else if (cparams.speed_tier < SpeedTier::kFalcon) {
-      // try median and weighted predictor for anything else
-      cparams.options.predictor = Predictor::Best;
-    } else {
-      // just weighted predictor in fastest mode
-      cparams.options.predictor = Predictor::Weighted;
+
+  // Fill other groups.
+  struct GroupParams {
+    Rect rect;
+    int minShift;
+    int maxShift;
+    size_t id;
+  };
+  std::vector<GroupParams> group_params;
+
+  // DC
+  for (size_t group_index = 0; group_index < frame_dim.num_dc_groups;
+       group_index++) {
+    const size_t gx = group_index % frame_dim.xsize_dc_groups;
+    const size_t gy = group_index / frame_dim.xsize_dc_groups;
+    const Rect rect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
+                    kDcGroupDim);
+    // minShift==3 because kDcGroupDim>>3 == kGroupDim
+    // maxShift==1000 is infinity
+    group_params.push_back(GroupParams{rect, 3, 1000, group_index + 1});
+  }
+  // AC global -> nothing.
+  // AC
+  for (size_t group_index = 0; group_index < frame_dim.num_groups;
+       group_index++) {
+    const size_t gx = group_index % frame_dim.xsize_groups;
+    const size_t gy = group_index / frame_dim.xsize_groups;
+    const Rect mrect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim);
+    int maxShift = 2;
+    int minShift = 0;
+    for (size_t i = 0; i < enc_state->shared.multiframe->GetNumPasses(); i++) {
+      for (uint32_t j = 0; j < frame_header.passes.num_downsample; ++j) {
+        if (i <= frame_header.passes.last_pass[j]) {
+          if (frame_header.passes.downsample[j] == 8) minShift = 3;
+          if (frame_header.passes.downsample[j] == 4) minShift = 2;
+          if (frame_header.passes.downsample[j] == 2) minShift = 1;
+          if (frame_header.passes.downsample[j] == 1) minShift = 0;
+        }
+      }
+      group_params.push_back(
+          GroupParams{mrect, minShift, maxShift,
+                      AcGroupIndex(i, group_index, frame_dim.num_groups,
+                                   frame_dim.num_dc_groups, has_ac_global)});
+      maxShift = minShift - 1;
+      minShift = 0;
     }
   }
 
-  full_image = std::move(gi);
-  return true;
-}
-
-Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer, AuxOut* aux_out,
-                                             size_t group_id) {
-  cparams.options.max_chan_size = kGroupDim;
-  ModularOptions options = cparams.options;
-  if (options.predictor == Predictor::Best) {
-    options.predictor = Predictor::Gradient;
+  if (cparams.options.entropy_coder == ModularOptions::EntropyCoder::kBrotli) {
+    for (size_t i = 0; i < group_params.size(); i++) {
+      JXL_RETURN_IF_ERROR(PrepareGroupParams(
+          group_params[i].rect, cparams, group_params[i].minShift,
+          group_params[i].maxShift, group_params[i].id, kHybridUint420Config,
+          do_color, /*bit_size=*/nullptr));
+    }
+    return true;
   }
-  ModularGenericCompress(full_image, options, writer, aux_out,
-                         kLayerModularGlobal, group_id, call++);
+
+  HybridUintConfig all_uint_config[2] = {kHybridUint420Config,
+                                         HybridUintConfig(4, 2, 1)};
+  // Try putting the sign bit in the token only at slower settings.
+  size_t num_uint_configs = cparams.speed_tier < SpeedTier::kWombat ? 2 : 1;
+
+  size_t best_cost = std::numeric_limits<size_t>::max();
+  for (size_t uc = 0; uc < num_uint_configs; uc++) {
+    std::atomic<size_t> total_cost{0};
+    RunOnPool(
+        pool, 0, group_params.size(), ThreadPool::SkipInit(),
+        [&](size_t i, size_t _) {
+          size_t cost = 0;
+          JXL_CHECK(PrepareGroupParams(
+              group_params[i].rect, cparams, group_params[i].minShift,
+              group_params[i].maxShift, group_params[i].id, all_uint_config[uc],
+              do_color, &cost));
+          total_cost += cost;
+        },
+        "ChooseParams");
+    if (total_cost < best_cost) {
+      best_cost = total_cost;
+      uint_config = all_uint_config[uc];
+    }
+  }
+
+  // Add dummy params for the global info so that tree learning takes that into
+  // account too.
+  group_params.push_back(GroupParams{Rect{}, 0, 0, /*id=*/0});
+
+  group_headers.resize(num_groups);
+  tokens.resize(num_groups);
+
+  // TODO: parallelize.
+  std::vector<std::vector<int32_t>> props;
+  std::vector<std::vector<int32_t>> residuals;
+  size_t total_pixels = 0;
+  for (size_t i = 0; i < group_params.size(); i++) {
+    size_t group_id = group_params[i].id;
+    JXL_RETURN_IF_ERROR(ModularGenericCompress(
+        group_images[group_id], group_options[group_id], /*writer=*/nullptr,
+        /*aux_out=*/nullptr, 0, group_id, uint_config, &props, &residuals,
+        &total_pixels));
+  }
+
+  std::vector<Predictor> predictors;
+  if (cparams.options.predictor == Predictor::Variable) {
+    predictors.resize(kNumModularPredictors);
+    for (size_t i = 0; i < kNumModularPredictors; i++) {
+      predictors[i] = static_cast<Predictor>(i);
+    }
+  } else if (cparams.options.predictor == Predictor::Best) {
+    predictors = {Predictor::Gradient, Predictor::Weighted};
+  } else {
+    predictors = {cparams.options.predictor};
+  }
+
+  // TODO(veluca): parallelize.
+  tree = LearnTree(predictors, std::move(props), std::move(residuals),
+                   total_pixels, cparams.options, uint_config);
+  tree_tokens.resize(1);
+  Tree decoded_tree;
+  TokenizeTree(tree, kHybridUint420Config, &tree_tokens[0], &decoded_tree);
+  JXL_ASSERT(tree.size() == decoded_tree.size());
+  tree = std::move(decoded_tree);
+
+  RunOnPool(
+      pool, 0, group_params.size(), ThreadPool::SkipInit(),
+      [&](size_t i, size_t _) {
+        AuxOut my_aux_out;
+        if (aux_out) {
+          my_aux_out.testing_aux = aux_out->testing_aux;
+          my_aux_out.dump_image = aux_out->dump_image;
+          my_aux_out.debug_prefix = aux_out->debug_prefix;
+        }
+        size_t group_id = group_params[i].id;
+        JXL_CHECK(ModularGenericCompress(
+            group_images[group_id], group_options[group_id], /*writer=*/nullptr,
+            &my_aux_out, 0, group_id, uint_config,
+            /*props=*/nullptr,
+            /*residuals=*/nullptr,
+            /*total_pixels=*/nullptr,
+            /*tree=*/&tree, /*header=*/&group_headers[group_id],
+            /*tokens=*/&tokens[group_id],
+            /*want_debug=*/true));
+      },
+      "ComputeTokens");
+
   return true;
 }
 
-Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
-                                        AuxOut* aux_out, size_t minShift,
-                                        size_t maxShift, size_t layer,
-                                        size_t group_id) {
+Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
+                                             AuxOut* aux_out) {
+  BitWriter::Allotment allotment(writer, 1);
+  // If we are using brotli, or not using modular mode.
+  if (group_options[0].entropy_coder == ModularOptions::EntropyCoder::kBrotli ||
+      tree_tokens.empty()) {
+    writer->Write(1, 0);
+    ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
+    return true;
+  }
+  writer->Write(1, 1);
+  ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
+
+  if (WantDebugOutput(aux_out)) {
+    PrintTree(tree, aux_out->debug_prefix + "/global_tree");
+  }
+  // Write tree
+  BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
+                           &code, &context_map, writer, kLayerModularTree,
+                           aux_out);
+  WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
+              aux_out, kHybridUint420Config);
+  // Write histograms.
+  BuildAndEncodeHistograms(HistogramParams(), (tree.size() + 1) / 2, tokens,
+                           &code, &context_map, writer, kLayerModularGlobal,
+                           aux_out);
+  return true;
+}
+
+Status ModularFrameEncoder::EncodeGroup(BitWriter* writer, AuxOut* aux_out,
+                                        size_t layer, size_t group_id) {
+  if (group_options[group_id].entropy_coder ==
+      ModularOptions::EntropyCoder::kBrotli) {
+    return ModularGenericCompress(
+        group_images[group_id], group_options[group_id], writer, aux_out, layer,
+        group_id, kHybridUint420Config,
+        /*props=*/nullptr, /*residuals=*/nullptr, /*total_pixels=*/nullptr,
+        /*tree=*/nullptr, /*header=*/nullptr, /*tokens=*/nullptr,
+        /*want_debug=*/true);
+  }
+  if (group_images[group_id].real_nb_channels < 1) {
+    return true;  // Image with no channels, header never gets decoded.
+  }
+  JXL_RETURN_IF_ERROR(
+      Bundle::Write(group_headers[group_id], writer, layer, aux_out));
+  WriteTokens(tokens[group_id], code, context_map, writer, layer, aux_out,
+              uint_config);
+  return true;
+}
+
+Status ModularFrameEncoder::PrepareGroupParams(
+    const Rect& rect, const CompressParams& cparams, int minShift, int maxShift,
+    size_t group_id, HybridUintConfig uint_config, bool do_color,
+    size_t* bit_size) {
+  JXL_ASSERT(group_id != 0);
+  Image& full_image = group_images[0];
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   int maxval = full_image.maxval;
-  Image gi(xsize, ysize, maxval, 0);
+  Image& gi = group_images[group_id];
+  ModularOptions base_options = group_options[group_id];
+  gi = Image(xsize, ysize, maxval, 0);
   // start at the first bigger-than-kGroupDim non-metachannel
   int c = full_image.nb_meta_channels;
   for (; c < full_image.channel.size(); c++) {
@@ -451,17 +667,42 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       gi.do_transform(maybe_palette_1);
     }
   }
+  if (cparams.near_lossless > 0 && gi.nb_channels != 0) {
+    if (cparams.colorspace == 0) {
+      Transform nl(TransformId::kNearLossless);
+      nl.begin_c = gi.nb_meta_channels;
+      nl.num_c = gi.nb_channels;
+      nl.max_delta_error = cparams.near_lossless;
+      gi.do_transform(nl);
+    } else {
+      Transform nl(TransformId::kNearLossless);
+      nl.begin_c = gi.nb_meta_channels;
+      nl.num_c = 1;
+      nl.max_delta_error = cparams.near_lossless;
+      gi.do_transform(nl);
+      nl.begin_c += 1;
+      nl.num_c = gi.nb_channels - 1;
+      nl.max_delta_error *= 2;  // more loss for chroma
+      gi.do_transform(nl);
+    }
+  }
 
-  HybridUintConfig uint_config_sign{4, 2, 1};
+  size_t compressed_size = std::numeric_limits<size_t>::max();
+  size_t best_rct = 0;
+  auto try_compress_once = [&](int new_best,
+                               const ModularOptions& options) -> Status {
+    BitWriter compressed;
+    JXL_RETURN_IF_ERROR(ModularGenericCompress(gi, options, &compressed,
+                                               /*aux_out=*/nullptr, /*layer=*/0,
+                                               group_id, uint_config));
+    if (compressed.BitsWritten() < compressed_size) {
+      compressed_size = compressed.BitsWritten();
+      group_options[group_id] = options;
+      best_rct = new_best;
+    }
+    return true;
+  };
 
-#if JXL_DEBUG_V_LEVEL >= 5
-  // Only used for lossless.
-  int best = 0;
-#endif
-
-  BitWriter local_compressed;
-  AuxOut local_aux_out;
-  bool has_compressed = false;
   size_t nb_wp_modes = 0;
   switch (cparams.speed_tier) {
     case SpeedTier::kFalcon:
@@ -486,47 +727,17 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       nb_wp_modes = 5;
       break;
   }
-  auto try_compress_once = [&](int new_best, const ModularOptions& options,
-                               HybridUintConfig uint_config) -> Status {
-    BitWriter compressed2;
-    AuxOut aux_out2;
-    if (aux_out) {
-      aux_out2.testing_aux = aux_out->testing_aux;
-      aux_out2.dump_image = aux_out->dump_image;
-      aux_out2.debug_prefix = aux_out->debug_prefix;
+  auto try_compress = [&](int new_best) -> Status {
+    if (base_options.predictor != Predictor::Weighted &&
+        base_options.predictor != Predictor::Best) {
+      return try_compress_once(new_best, base_options);
     }
-    JXL_RETURN_IF_ERROR(ModularGenericCompress(gi, options, &compressed2,
-                                               &aux_out2, layer, group_id,
-                                               call++, uint_config));
-    if (compressed2.BitsWritten() < local_compressed.BitsWritten() ||
-        !has_compressed) {
-      has_compressed = true;
-      local_compressed = std::move(compressed2);
-      local_aux_out = std::move(aux_out2);
-#if JXL_DEBUG_V_LEVEL >= 5
-      best = new_best;
-#endif
-    }
-    return true;
-  };
-  auto try_compress = [&](int new_best, HybridUintConfig uint_config =
-                                            kHybridUint420Config) -> Status {
-    if (cparams.options.predictor != Predictor::Weighted &&
-        cparams.options.predictor != Predictor::Best) {
-      return try_compress_once(new_best, cparams.options, uint_config);
-    }
-    if (cparams.options.predictor == Predictor::Best) {
-      ModularOptions options = cparams.options;
-      options.predictor = Predictor::Gradient;
-      JXL_RETURN_IF_ERROR(try_compress_once(new_best, options, uint_config));
-    }
-    if (cparams.options.predictor == Predictor::Weighted ||
-        cparams.options.predictor == Predictor::Best) {
-      ModularOptions options = cparams.options;
-      options.predictor = Predictor::Weighted;
+    if (base_options.predictor == Predictor::Weighted ||
+        base_options.predictor == Predictor::Best) {
+      ModularOptions options = base_options;
       for (size_t i = 0; i < nb_wp_modes; i++) {
         options.wp_mode = i;
-        JXL_RETURN_IF_ERROR(try_compress_once(new_best, options, uint_config));
+        JXL_RETURN_IF_ERROR(try_compress_once(new_best, options));
       }
     }
     return true;
@@ -577,11 +788,6 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       int num_transforms_to_keep = gi.transform.size();
       sg.rct_type = i;
       gi.do_transform(sg);
-      // Try putting the sign bit in the token only at slower settings.
-      if (cparams.speed_tier < SpeedTier::kWombat) {
-        JXL_RETURN_IF_ERROR(try_compress(
-            /*new_best=*/i, uint_config_sign));
-      }
       JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/i));
       nb_rcts_to_try--;
       // Ensure we do not clamp channels to their supposed range, as this
@@ -589,42 +795,17 @@ Status ModularFrameEncoder::EncodeGroup(const Rect& rect, BitWriter* writer,
       gi.undo_transforms(num_transforms_to_keep == 0 ? -1
                                                      : num_transforms_to_keep);
     }
-#if JXL_DEBUG_V_LEVEL >= 5
-    JXL_DEBUG_V(5, "Best color transform: %i", best);
-#endif
+    // Apply the best RCT to the image for future encoding.
+    sg.rct_type = best_rct;
+    gi.do_transform(sg);
   } else {
-    if (cparams.near_lossless > 0 && gi.nb_channels != 0) {
-      if (cparams.colorspace == 0) {
-        Transform nl(TransformId::kNearLossless);
-        nl.begin_c = gi.nb_meta_channels;
-        nl.num_c = gi.nb_channels;
-        nl.max_delta_error = cparams.near_lossless;
-        gi.do_transform(nl);
-      } else {
-        Transform nl(TransformId::kNearLossless);
-        nl.begin_c = gi.nb_meta_channels;
-        nl.num_c = 1;
-        nl.max_delta_error = cparams.near_lossless;
-        gi.do_transform(nl);
-        nl.begin_c += 1;
-        nl.num_c = gi.nb_channels - 1;
-        nl.max_delta_error *= 2;  // more loss for chroma
-        gi.do_transform(nl);
-      }
-    }
-
-    JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/-1));
+    // No need to try anything in wombat mode or faster: the default options
+    // are already set.
     if (cparams.speed_tier < SpeedTier::kWombat) {
-      JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/-1, uint_config_sign));
+      JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/-1));
     }
   }
-  writer->ZeroPadToByte();
-  if (local_compressed.BitsWritten() != 0) {
-    local_compressed.ZeroPadToByte();
-    writer->AppendByteAligned(std::move(local_compressed));
-    if (aux_out) aux_out->Assimilate(local_aux_out);
-  }
+  if (bit_size) *bit_size = compressed_size;
   return true;
 }
-
 }  // namespace jxl

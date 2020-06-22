@@ -284,7 +284,7 @@ void ImageBundle::VerifySizes() const {
 }
 
 size_t ImageBundle::DetectRealBitdepth() const {
-  JXL_CHECK(metadata_->floating_point_sample == false);
+  JXL_CHECK(!metadata_->floating_point_sample);
   const size_t orig_d = metadata_->bits_per_sample;
   const size_t maxval = (1 << orig_d) - 1;
   const double factor = maxval / 255.;

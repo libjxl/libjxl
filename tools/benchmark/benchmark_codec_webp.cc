@@ -95,7 +95,7 @@ class WebPCodec : public ImageCodec {
       // Color models are currently not supported here and the sRGB 8-bit
       // conversion causes loss due to clipping.
       if (!ib.IsSRGB() || ib.metadata()->bits_per_sample > 8 ||
-          ib.metadata()->floating_point_sample) {
+          ib.metadata()->exponent_bits_per_sample > 0) {
         return JXL_FAILURE("%s: webp:ll/nl requires 8-bit sRGB",
                            filename.c_str());
       }

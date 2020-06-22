@@ -330,7 +330,9 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
       Image image(required_size_x, required_size_y, 255, 3);
       ModularOptions options;
-      JXL_RETURN_IF_ERROR(ModularGenericDecompress(br, image, &options));
+      // TODO(veluca): decide whether to allow global trees here.
+      JXL_RETURN_IF_ERROR(
+          ModularGenericDecompress(br, image, /*group_id=*/0, &options));
       if (!encoding->qraw.qtable) {
         encoding->qraw.qtable = new std::vector<int>();
       }

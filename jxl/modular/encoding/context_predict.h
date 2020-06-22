@@ -286,7 +286,7 @@ class MATreeLookup {
  public:
   explicit MATreeLookup(const Tree &tree) : inner_nodes_(tree) {}
   struct LookupResult {
-    int context;
+    uint32_t context;
     Predictor predictor;
     int64_t offset;
   };
@@ -313,7 +313,7 @@ class MATreeLookup {
 // works. Wrapped into a function to make it easier to experiment with
 // alternatives.
 inline pixel_type UnsignedVal(pixel_type_w x) {
-  return ClampToRange<pixel_type>(abs(x));
+  return ClampToRange<pixel_type>(std::abs(x));
 }
 
 // Something that preserves the sign but potentially reduces the range
@@ -323,7 +323,7 @@ inline pixel_type SignedVal(pixel_type_w x) {
   return ClampToRange<pixel_type>(x);
 }
 
-static constexpr size_t kNumStaticProperties = 1;  // channel.
+static constexpr size_t kNumStaticProperties = 2;  // channel, group_id.
 static constexpr size_t kNumNonrefProperties =
     kNumStaticProperties + 11 + weighted::kNumProperties;
 
@@ -343,8 +343,8 @@ inline size_t NumProperties(const Image &image, const ModularOptions &options) {
 
 inline pixel_type_w Select(pixel_type_w a, pixel_type_w b, pixel_type_w c) {
   pixel_type_w p = a + b - c;
-  pixel_type_w pa = abs(p - a);
-  pixel_type_w pb = abs(p - b);
+  pixel_type_w pa = std::abs(p - a);
+  pixel_type_w pb = std::abs(p - b);
   return pa < pb ? a : b;
 }
 
@@ -462,36 +462,38 @@ struct PredictionResult {
 };
 
 inline std::string PropertyName(size_t i) {
-  static_assert(kNumNonrefProperties == 13, "Update this function");
+  static_assert(kNumNonrefProperties == 14, "Update this function");
   switch (i) {
     case 0:
       return "c";
     case 1:
-      return "|N|";
+      return "g";
     case 2:
-      return "|W|";
+      return "|N|";
     case 3:
-      return "N";
+      return "|W|";
     case 4:
-      return "W";
+      return "N";
     case 5:
-      return "x";
+      return "W";
     case 6:
-      return "y";
+      return "x";
     case 7:
-      return "W+N-NW";
+      return "y";
     case 8:
-      return "W-NW";
+      return "W+N-NW";
     case 9:
-      return "NW-N";
+      return "W-NW";
     case 10:
-      return "N-NE";
+      return "NW-N";
     case 11:
-      return "W-WW";
+      return "N-NE";
     case 12:
+      return "W-WW";
+    case 13:
       return "WGH";
     default:
-      return "ch[" + std::to_string(12 - (int)i) + "]";
+      return "ch[" + std::to_string(13 - (int)i) + "]";
   }
 }
 

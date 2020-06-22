@@ -34,6 +34,7 @@
 #include "jxl/codec_in_out.h"
 #include "tools/box/box.h"
 #include "tools/cmdline.h"
+#include "tools/codec_config.h"
 #include "tools/djpegxl.h"
 #include "tools/djxl.h"
 #include "tools/speed_stats.h"
@@ -52,14 +53,15 @@ int DecompressMain(int argc, const char *argv[]) {
     return 1;
   }
   if (args.version) {
-    fprintf(stderr, "djpegxl - version " JPEGXL_VERSION "\n");
+    fprintf(stderr, "djpegxl [%s]\n", CodecConfigString().c_str());
     fprintf(stderr, "Copyright (c) the JPEG XL Project\n");
     return 0;
   }
 
   jxl::PaddedBytes compressed;
   if (!jxl::ReadFile(args.file_in, &compressed)) return 1;
-  fprintf(stderr, "Read %zu compressed bytes\n", compressed.size());
+  fprintf(stderr, "Read %zu compressed bytes [%s]\n", compressed.size(),
+          CodecConfigString().c_str());
 
   // Detect whether the file uses the box format container. If so, extract the
   // primary codestream, and continue with only the codestream.

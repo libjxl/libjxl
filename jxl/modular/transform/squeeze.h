@@ -26,6 +26,11 @@
 //                                        of zeroes
 // Repeated application (alternating horizontal and vertical squeezes) results
 // in downscaling
+//
+// The default coefficient ordering is low-frequency to high-frequency, as in
+// M. Antonini, M. Barlaud, P. Mathieu and I. Daubechies, "Image coding using wavelet transform",
+// IEEE Transactions on Image Processing, vol. 1, no. 2, pp. 205-220, April 1992, doi: 10.1109/83.136597.
+
 
 #include <stdlib.h>
 

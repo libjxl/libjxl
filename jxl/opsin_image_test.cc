@@ -42,8 +42,7 @@ void LinearSrgbToOpsin(float rgb_r, float rgb_g, float rgb_b,
   linear.PlaneRow(2, 0)[0] = rgb_b;
 
   ImageMetadata metadata;
-  metadata.bits_per_sample = 32;
-  metadata.floating_point_sample = true;
+  metadata.SetFloat32Samples();
   metadata.color_encoding = ColorEncoding::LinearSRGB();
   ImageBundle ib(&metadata);
   ib.SetFromImage(std::move(linear), metadata.color_encoding);

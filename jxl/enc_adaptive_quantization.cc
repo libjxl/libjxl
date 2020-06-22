@@ -627,7 +627,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   ImageF& quant_field = enc_state->initial_quant_field;
 
   const float butteraugli_target = cparams.butteraugli_distance;
-  JxlButteraugliComparator comparator(cparams.hf_asymmetry);
+  JxlButteraugliComparator comparator(cparams.hf_asymmetry, cparams.xmul);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
@@ -667,8 +667,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
 
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
-    metadata.bits_per_sample = 32;
-    metadata.floating_point_sample = true;
+    metadata.SetFloat32Samples();
     metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle linear(&metadata);
     linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),
@@ -878,7 +877,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
   ImageF& quant_field = enc_state->initial_quant_field;
   const AcStrategyImage& ac_strategy = enc_state->shared.ac_strategy;
 
-  JxlButteraugliComparator comparator(cparams.hf_asymmetry);
+  JxlButteraugliComparator comparator(cparams.hf_asymmetry, cparams.xmul);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   AdjustQuantField(ac_strategy, &quant_field);
@@ -915,8 +914,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
     ImageF diffmap;
     quantizer.SetQuantField(quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
-    metadata.bits_per_sample = 32;
-    metadata.floating_point_sample = true;
+    metadata.SetFloat32Samples();
     metadata.color_encoding = ColorEncoding::LinearSRGB();
     ImageBundle linear(&metadata);
     linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),

@@ -104,7 +104,25 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
                                              ImageBundle* decoded,
                                              bool decode_color, size_t xsize,
-                                             size_t ysize) {
+                                             size_t ysize, size_t group_id) {
+  bool has_tree = reader->ReadBits(1);
+  if (has_tree) {
+    std::vector<uint8_t> tree_context_map;
+    ANSCode tree_code;
+    JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumTreeContexts,
+                                         ANS_MAX_ALPHA_SIZE, &tree_code,
+                                         &tree_context_map));
+    ANSSymbolReader ans_reader(&tree_code, reader);
+    // Hard limit the number of properties to 128.
+    JXL_RETURN_IF_ERROR(
+        DecodeTree(reader, &ans_reader, tree_context_map, &tree, 128));
+    if (!ans_reader.CheckANSFinalState()) {
+      return JXL_FAILURE("ANS decode final state failed");
+    }
+    JXL_RETURN_IF_ERROR(DecodeHistograms(reader, (tree.size() + 1) / 2,
+                                         ANS_MAX_ALPHA_SIZE, &code,
+                                         &context_map));
+  }
   int nb_chans = 3, depth_chan = 3;
   if (decoded->IsGray() &&
       frame_header.color_transform == ColorTransform::kNone) {
@@ -121,8 +139,20 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
     nb_chans += decoded->extra_channels().size();
   }
-  // TODO(lode): must handle decoded->metadata()->floating_point_sample?
-  int maxval = (1 << decoded->metadata()->bits_per_sample) - 1;
+
+  if (decoded->metadata()->bits_per_sample >= 32) {
+    if (decoded->metadata()->bits_per_sample == 32) {
+      // TODO(lode): does modular support uint32_t? maxval is signed int so
+      // cannot represent 32 bits.
+      return JXL_FAILURE("uint32_t not supported in dec_modular");
+    } else {
+      return JXL_FAILURE("bits_per_sample > 32 not supported");
+    }
+  }
+  // TODO(lode): must handle decoded->metadata()->floating_point_channel?
+  int maxval =
+      (1u << static_cast<uint32_t>(decoded->metadata()->bits_per_sample)) - 1;
+
   Image gi(xsize, ysize, maxval, nb_chans);
   if (decoded->HasDepth()) {
     gi.channel[depth_chan].resize(decoded->depth().xsize(),
@@ -132,8 +162,11 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   ModularOptions options;
   options.max_chan_size = kGroupDim;
-  if (!ModularGenericDecompress(reader, gi, &options, -2))
+  if (!ModularGenericDecompress(reader, gi, group_id, &options,
+                                /*undo_transforms=*/-2, &tree, &code,
+                                &context_map)) {
     return JXL_FAILURE("Failed to decode global modular info");
+  }
 
   // ensure all the channel buffers are allocated
   have_something = false;
@@ -150,7 +183,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
                                         const Rect& rect, BitReader* reader,
                                         AuxOut* aux_out, size_t minShift,
-                                        size_t maxShift) {
+                                        size_t maxShift, size_t group_id) {
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   int maxval = full_image.maxval;
@@ -178,10 +211,10 @@ Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
   gi.nb_channels = gi.channel.size();
   gi.real_nb_channels = gi.nb_channels;
   ModularOptions options;
-  JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  if (!ModularGenericDecompress(reader, gi, &options))
+  if (!ModularGenericDecompress(reader, gi, group_id, &options,
+                                /*undo_transforms=*/-1, &tree, &code,
+                                &context_map))
     return JXL_FAILURE("Failed to decode modular group");
-  JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   int gic = 0;
   for (c = beginc; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
@@ -238,8 +271,8 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
               const pixel_type* const JXL_RESTRICT row_in_Y =
                   gi.channel[0].Row(y);
               float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
-              HWY_DYNAMIC_DISPATCH(MultiplySum)(xsize, row_in, row_in_Y, factor,
-                                                row_out);
+              HWY_DYNAMIC_DISPATCH(MultiplySum)
+              (xsize, row_in, row_in_Y, factor, row_out);
             },
             "ModularIntToFloat");
       } else {
@@ -253,11 +286,11 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
               const pixel_type* const JXL_RESTRICT row_in =
                   gi.channel[decoded->IsGray() ? 0 : c_in].Row(y);
               if (rgb_from_gray) {
-                HWY_DYNAMIC_DISPATCH(RgbFromSingle)(xsize, row_in, factor,
-                                                    color, c, y);
+                HWY_DYNAMIC_DISPATCH(RgbFromSingle)
+                (xsize, row_in, factor, color, c, y);
               } else {
-                HWY_DYNAMIC_DISPATCH(SingleFromSingle)(xsize, row_in, factor,
-                                                       color, c, y);
+                HWY_DYNAMIC_DISPATCH(SingleFromSingle)
+                (xsize, row_in, factor, color, c, y);
               }
             },
             "ModularIntToFloat");

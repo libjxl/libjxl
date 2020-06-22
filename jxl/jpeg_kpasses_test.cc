@@ -71,7 +71,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
 
   // TODO: investigate where the difference between libjpeg and kVarDCT comes
   //       from (and see if it can be reduced)
-  EXPECT_LE(ButteraugliDistance(ib2, ib4, cparams.hf_asymmetry,
+  EXPECT_LE(ButteraugliDistance(ib2, ib4, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
             0.87654f);
 

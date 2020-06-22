@@ -18,6 +18,7 @@
 
 #include <vector>
 
+#include "c/common/constants.h"
 #include "c/dec/bit_reader.h"
 #include "jxl/ans_common.h"
 #include "jxl/ans_params.h"
@@ -185,6 +186,7 @@ Status ReadHistogram(int precision_bits, std::vector<int>* counts,
 bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
                     BitReader* in, ANSCode* result) {
   JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHA_SIZE);
+  JXL_ASSERT(max_alphabet_size <= brunsli::kMaxContextMapAlphabetSize);
   if (result->use_prefix_code) {
     result->huffman_data.resize(num_histograms);
     std::vector<uint16_t> alphabet_sizes(num_histograms);
@@ -215,7 +217,8 @@ bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
               alphabet_sizes[c]);
         }
       } else {
-        result->huffman_data[c].table_.resize(brunsli::kMaxHuffmanTableSize);
+        // 0-bit codes does not requre extension tables.
+        result->huffman_data[c].table_.resize(1u << brunsli::kHuffmanTableBits);
       }
     }
     if (!brunsli::BrunsliBitReaderIsHealthy(&br)) {

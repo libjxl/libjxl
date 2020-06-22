@@ -17,14 +17,22 @@
 #define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
 #include <hwy/foreach_target.h>
 
-#include <brunsli/brunsli_decode.h>
-#include <brunsli/brunsli_encode.h>
-
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <utility>
 #include <vector>
+
+// Brunsli public headers:
+#include <brunsli/brunsli_decode.h>
+#include <brunsli/brunsli_encode.h>
+
+// Brunsli internal headers:
+#include "c/common/constants.h"
+#include "c/common/context.h"
+#include "c/dec/state.h"
+#include "c/enc/state.h"
+//
 
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
@@ -40,10 +48,6 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/luminance.h"
-#include "third_party/brunsli/c/common/constants.h"
-#include "third_party/brunsli/c/common/context.h"
-#include "third_party/brunsli/c/dec/state.h"
-#include "third_party/brunsli/c/enc/state.h"
 
 // Definitions required by SIMD. Only define once.
 #ifndef JXL_BRUNSLI
@@ -862,11 +866,9 @@ Status BrunsliToPixels(const brunsli::JPEGData& jpg,
   metadata->hdr_orig_colorspace = extensions.hdr_orig_colorspace;
 
   if (extensions.hdr_orig_colorspace.empty()) {
-    io->metadata.bits_per_sample = 8;
-    io->metadata.floating_point_sample = false;
+    io->metadata.SetUintSamples(8);
   } else {
-    io->metadata.bits_per_sample = 32;
-    io->metadata.floating_point_sample = true;
+    io->metadata.SetFloat32Samples();
   }
   io->metadata.color_encoding = color_encoding;
   io->SetFromImage(std::move(rgb), color_encoding);

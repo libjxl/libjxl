@@ -212,19 +212,34 @@ struct ImageMetadata {
     }
 
     visitor->Bool(false, &floating_point_sample);
-    // The same field (bits_per_sample) is read in a different way depending on
-    // floating_point_sample's value. It's still default-initialized correctly
-    // so using visitor->Conditional is not required.
-    if (floating_point_sample) {
-      visitor->U32(Val(32), Val(16), Val(24), Val(0), 32, &bits_per_sample);
-    } else {
-      visitor->U32(Val(8), Val(16), BitsOffset(5, 1), Val(0), 8,
+    // The same fields (bits_per_sample and exponent_bits_per_sample) are read
+    // in a different way depending on floating_point_sample's value. It's still
+    // default-initialized correctly so using visitor->Conditional is not
+    // required.
+    if (!floating_point_sample) {
+      visitor->U32(Val(8), Val(10), Val(12), BitsOffset(5, 1), 8,
                    &bits_per_sample);
+      exponent_bits_per_sample = 0;
+    } else {
+      visitor->U32(Val(32), Val(16), Val(24), Bits(5), 32, &bits_per_sample);
+      // The encoded value is exponent_bits_per_sample - 1, encoded in 3 bits
+      // so the value can be in range [1, 8].
+      const uint32_t offset = 1;
+      exponent_bits_per_sample -= offset;
+      visitor->Bits(3, 8 - offset, &exponent_bits_per_sample);
+      exponent_bits_per_sample += offset;
     }
-    if (bits_per_sample == 0) {
-      // The 4th possibility of the U32 encodings, set to 0 in the code but not
-      // in the specification, is invalid, and could be used for future values.
-      return JXL_FAILURE("Invalid bits_per_sample");
+
+    // Error-checking for floating point ranges.
+    if (floating_point_sample) {
+      if (exponent_bits_per_sample < 2 || exponent_bits_per_sample > 8) {
+        return JXL_FAILURE("Invalid exponent_bits_per_sample");
+      }
+      int mantissa_bits =
+          static_cast<int>(bits_per_sample) - exponent_bits_per_sample - 1;
+      if (mantissa_bits < 2 || mantissa_bits > 23) {
+        return JXL_FAILURE("Invalid bits_per_sample");
+      }
     }
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
@@ -237,6 +252,21 @@ struct ImageMetadata {
   }
 
   bool HasAlpha() const { return alpha_bits != 0; }
+
+  // Sets the original bit depth fields to indicate unsigned integer of the
+  // given bit depth.
+  void SetUintSamples(uint32_t bits) {
+    bits_per_sample = bits;
+    exponent_bits_per_sample = 0;
+    floating_point_sample = false;
+  }
+  // Sets the original bit depth fields to indicate single precision floating
+  // point.
+  void SetFloat32Samples() {
+    bits_per_sample = 32;
+    exponent_bits_per_sample = 8;
+    floating_point_sample = true;
+  }
 
   void SetIntensityTarget(float intensity_target) {
     intensity_target_info_.intensity_target = intensity_target;
@@ -252,10 +282,22 @@ struct ImageMetadata {
   // Whether the original (uncompressed) samples are floating point or
   // unsigned integer.
   bool floating_point_sample;
-  // Bit depth of the original (uncompressed) image samples.
-  // In case of integer samples, must be in the range [1, 32].
-  // In case of floating point samples, must be 16, 24 or 32.
+
+  // Bit depth of the original (uncompressed) image samples. Must be in the
+  // range [1, 32].
   uint32_t bits_per_sample;
+
+  // Floating point exponent bits of the original (uncompressed) image samples,
+  // only used if floating_point_sample is true.
+  // If used, the samples are floating point with:
+  // - 1 sign bit
+  // - exponent_bits_per_sample exponent bits
+  // - (bits_per_sample - exponent_bits_per_sample - 1) mantissa bits
+  // If used, exponent_bits_per_sample must be in the range
+  // [2, 8] and amount of mantissa bits must be in the range [2, 23].
+  // NOTE: exponent_bits_per_sample is 8 for single precision binary32
+  // point, 5 for half precision binary16, 7 for fp24.
+  uint32_t exponent_bits_per_sample;
 
   ColorEncoding color_encoding;
 
