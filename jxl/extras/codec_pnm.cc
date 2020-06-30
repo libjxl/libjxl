@@ -347,15 +347,15 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
   ImageBundle ib(&io->metadata);
 
   const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
-  const PackedImage desc(header.xsize, header.ysize,
-                         io->metadata.color_encoding,
-                         /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
-                         io->metadata.alpha_bits, io->metadata.bits_per_sample,
-                         header.big_endian, flipped_y);
+  const PackedImage desc(
+      header.xsize, header.ysize, io->metadata.color_encoding,
+      /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
+      io->metadata.alpha_bits, io->metadata.bit_depth.bits_per_sample,
+      header.big_endian, flipped_y);
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
   if (!header.floating_point) {
-    io->metadata.bits_per_sample = ib.DetectRealBitdepth();
+    io->metadata.bit_depth.bits_per_sample = ib.DetectRealBitdepth();
   }
   io->frames.push_back(std::move(ib));
   return Map255ToTargetNits(io, pool);

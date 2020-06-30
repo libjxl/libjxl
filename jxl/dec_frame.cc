@@ -172,9 +172,9 @@ class LossyFrameDecoder {
         size_t idx =
             histo * dec_state_.shared_storage.frame_header.passes.num_passes +
             i;
-        JXL_RETURN_IF_ERROR(DecodeHistograms(
-            reader, kNumContexts, ANS_MAX_ALPHA_SIZE, &dec_state_.code[idx],
-            &dec_state_.context_map[idx]));
+        JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumContexts,
+                                             &dec_state_.code[idx],
+                                             &dec_state_.context_map[idx]));
       }
     }
     return true;
@@ -361,9 +361,10 @@ Status DecodeFrame(const DecompressParams& dparams,
         /*alpha_is_premultiplied=*/frame_header.AlphaIsPremultiplied());
   }
 
-  if (decoded->metadata()->m2.HasDepth())
+  if (decoded->metadata()->m2.Find(ExtraChannel::kDepth)) {
     decoded->SetDepth(
         ImageU(decoded->DepthSize(xsize), decoded->DepthSize(ysize)));
+  }
   if (decoded->metadata()->m2.num_extra_channels > 0 &&
       frame_header.IsDisplayed()) {
     std::vector<ImageU> ecv;

@@ -178,7 +178,7 @@ namespace {
 constexpr uint32_t kPermutationContexts = 8;
 uint32_t Context(uint32_t val) {
   uint32_t token, nbits, bits;
-  EncodeVarLenUint(val, &token, &nbits, &bits);
+  HybridUintConfig(0, 0, 0).Encode(val, &token, &nbits, &bits);
   return std::min(token, kPermutationContexts - 1);
 }
 
@@ -191,10 +191,10 @@ void TokenizePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   while (end > skip && lehmer[end - 1] == 0) {
     --end;
   }
-  TokenizeVarLenUint(Context(size), end - skip, tokens);
+  tokens->emplace_back(Context(size), end - skip);
   uint32_t last = 0;
   for (size_t i = skip; i < end; ++i) {
-    TokenizeVarLenUint(Context(last), lehmer[i], tokens);
+    tokens->emplace_back(Context(last), lehmer[i]);
     last = lehmer[i];
   }
 }
@@ -228,8 +228,8 @@ Status DecodePermutation(size_t skip, size_t size, coeff_order_t* order,
                          BitReader* br) {
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(
-      br, kPermutationContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+  JXL_RETURN_IF_ERROR(
+      DecodeHistograms(br, kPermutationContexts, &code, &context_map));
   ANSSymbolReader reader(&code, br);
   JXL_RETURN_IF_ERROR(
       ReadPermutation(skip, size, order, br, &reader, context_map));
@@ -248,8 +248,7 @@ void EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
   EntropyEncodingData codes;
   BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, {tokens},
                            &codes, &context_map, writer, layer, aux_out);
-  WriteTokens(tokens, codes, context_map, writer, layer, aux_out,
-              kVarLenUintConfig);
+  WriteTokens(tokens, codes, context_map, writer, layer, aux_out);
 }
 
 namespace {
@@ -286,8 +285,7 @@ void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
     EntropyEncodingData codes;
     BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, {tokens},
                              &codes, &context_map, writer, layer, aux_out);
-    WriteTokens(tokens, codes, context_map, writer, layer, aux_out,
-                kVarLenUintConfig);
+    WriteTokens(tokens, codes, context_map, writer, layer, aux_out);
   }
 }
 
@@ -319,8 +317,8 @@ Status DecodeCoeffOrders(uint16_t used_orders, coeff_order_t* order,
   std::unique_ptr<ANSSymbolReader> reader;
   // Bitstream does not have histograms if no coefficient order is used.
   if (used_orders != 0) {
-    JXL_RETURN_IF_ERROR(DecodeHistograms(
-        br, kPermutationContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+    JXL_RETURN_IF_ERROR(
+        DecodeHistograms(br, kPermutationContexts, &code, &context_map));
     reader = make_unique<ANSSymbolReader>(&code, br);
   }
   for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {

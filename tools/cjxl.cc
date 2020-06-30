@@ -95,14 +95,16 @@ jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
     fprintf(stderr, "Failed to read spot image %s.\n", args.spot_in);
     return false;
   }
-  io->metadata.m2.num_extra_channels = 1;
-  io->metadata.m2.extra_channel_bits = 8;
   jxl::ExtraChannelInfo example;
-  example.rendered = 1;
-  example.color[0] = io->metadata.IntensityTarget();  // R
-  example.color[1] = 0.0f;                            // G
-  example.color[2] = 0.0f;                            // B
-  example.color[3] = 1.0f;                            // A
+  example.type = jxl::ExtraChannel::kSpotColor;
+  example.bit_depth.bits_per_sample = 8;
+  example.dim_shift = 0;
+  example.add_to_prev_frame = false;
+  example.name = "spot";
+  example.spot_color[0] = io->metadata.IntensityTarget();  // R
+  example.spot_color[1] = 0.0f;                            // G
+  example.spot_color[2] = 0.0f;                            // B
+  example.spot_color[3] = 1.0f;                            // A
   io->metadata.m2.extra_channel_info.push_back(example);
   jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
   for (size_t y = 0; y < spot_io.ysize(); ++y) {
@@ -133,8 +135,7 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
   }
   if (input_codec != jxl::Codec::kJPG) args.jpeg_transcode = false;
 
-  if (input_codec == jxl::Codec::kGIF && args.quality < -1000.f &&
-      args.default_settings) {
+  if (input_codec == jxl::Codec::kGIF && args.default_settings) {
     args.params.modular_group_mode = true;
     args.params.options.predictor = jxl::Predictor::Select;
     args.params.responsive = 0;
@@ -324,14 +325,33 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                                "spot color channel (optional, for testing)",
                                &spot_in, 2);
 
+  // Target distance/size/bpp
+  opt_distance_id = cmdline->AddOptionValue(
+      'd', "distance", "maxError",
+      ("Max. butteraugli distance, lower = higher quality. Range: 0 .. 15.\n"
+       "    0.0 = mathematically lossless. Default for already-lossy input "
+       "(JPEG/GIF).\n"
+       "    1.0 = visually lossless. Default for other input.\n"
+       "    Recommended range: 0.5 .. 3.0."),
+      &params.butteraugli_distance, &ParseFloat);
+  opt_target_size_id = cmdline->AddOptionValue(
+      '\0', "target_size", "N",
+      ("Aim at file size of N bytes.\n"
+       "    Compresses to 1 % of the target size in ideal conditions.\n"
+       "    Runs the same algorithm as --target_bpp"),
+      &params.target_size, &ParseUnsigned, 1);
+  opt_target_bpp_id = cmdline->AddOptionValue(
+      '\0', "target_bpp", "BPP",
+      ("Aim at file size that has N bits per pixel.\n"
+       "    Compresses to 1 % of the target BPP in ideal conditions."),
+      &params.target_bitrate, &ParseFloat, 1);
+
   // High-level options
-  cmdline->AddOptionValue(
+  opt_quality_id = cmdline->AddOptionValue(
       'q', "quality", "QUALITY",
-      "Quality setting. Range: 0 .. 100.\n"
+      "Quality setting for modular mode. Range: 0 .. 100.\n"
       "    100 = mathematically lossless. Default for already-lossy input "
-      "(JPEG/GIF)\n"
-      "    95 = visually lossless (flicker-test).\n"
-      "    90 = visually lossless (side by side). Default for generic input.",
+      "(JPEG/GIF).\n",
       &quality, &ParseFloat);
 
   cmdline->AddOptionValue(
@@ -395,24 +415,6 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 
   cmdline->AddOptionValue('\0', "gaborish", "0|1", "force disable gaborish.",
                           &params.gaborish, &ParseOverride, 1);
-
-  // Target distance/size/bpp
-  opt_distance_id = cmdline->AddOptionValue(
-      '\0', "distance", "maxError",
-      ("Max. butteraugli distance, lower = higher quality.\n"
-       "    Good default: 1.0. Supported range: 0.5 .. 3.0."),
-      &params.butteraugli_distance, &ParseFloat, 1);
-  opt_target_size_id = cmdline->AddOptionValue(
-      '\0', "target_size", "N",
-      ("Aim at file size of N bytes.\n"
-       "    Compresses to 1 % of the target size in ideal conditions.\n"
-       "    Runs the same algorithm as --target_bpp"),
-      &params.target_size, &ParseUnsigned, 1);
-  opt_target_bpp_id = cmdline->AddOptionValue(
-      '\0', "target_bpp", "BPP",
-      ("Aim at file size that has N bits per pixel.\n"
-       "    Compresses to 1 % of the target BPP in ideal conditions."),
-      &params.target_bitrate, &ParseFloat, 1);
 
   opt_intensity_target_id = cmdline->AddOptionValue(
       '\0', "intensity_target", "N",
@@ -522,28 +524,15 @@ jxl::Status JxlCompressArgs::ValidateArgs(
   bool got_distance = cmdline.GetOption(opt_distance_id)->matched();
   bool got_target_size = cmdline.GetOption(opt_target_size_id)->matched();
   bool got_target_bpp = cmdline.GetOption(opt_target_bpp_id)->matched();
+  bool got_quality = cmdline.GetOption(opt_quality_id)->matched();
   bool got_intensity_target =
       cmdline.GetOption(opt_intensity_target_id)->matched();
 
-  if (quality < -1000.f) {
-    // Keep the Butteraugli distance obtained on the command line, or the
-    // default of 1
-  } else if (quality >= 100.f) {
-    // Use kModular for lossless
+  if (got_quality) {
     params.modular_group_mode = true;
-  } else if (quality > 40.f) {
-    // Use kVarDCT for most of the range (near-lossless until quite lossy)
-    // 100-epsilon -> 0.1111, 90 -> d1.0, 80 -> d2.77, 70 -> d5.44,
-    // 60 -> d9, 50 -> d13.44, 40+epsilon -> 18.77
-    params.butteraugli_distance = (105.f - quality) * (105.f - quality) / 225.f;
-    jpeg_transcode = false;
-  } else {
-    // Very low quality: use kModular again (40 -> -Q 0, 20 -> -Q -400, 0 -> -Q
-    // -1600)
-    params.modular_group_mode = true;
-    params.quality_pair.first = params.quality_pair.second =
-        -(quality - 40.f) * (quality - 40.f);
-    jpeg_transcode = false;
+    if (quality < 100) jpeg_transcode = false;
+    params.quality_pair.first = params.quality_pair.second = quality;
+    default_settings = false;
   }
 
   if (progressive) {
@@ -557,20 +546,26 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     default_settings = false;
 
   if (got_distance) {
-    constexpr float butteraugli_min_dist = 0.125f;
+    constexpr float butteraugli_min_dist = 0.1f;
     constexpr float butteraugli_max_dist = 15.0f;
-    if (!(butteraugli_min_dist <= params.butteraugli_distance &&
+    if (!(0 <= params.butteraugli_distance &&
           params.butteraugli_distance <= butteraugli_max_dist)) {
-      fprintf(stderr, "Invalid/out of range distance, try %g to %g.\n",
-              butteraugli_min_dist, butteraugli_max_dist);
+      fprintf(stderr, "Invalid/out of range distance, try 0 to %g.\n",
+              butteraugli_max_dist);
       return false;
+    }
+    if (params.butteraugli_distance == 0) {
+      // Use modular for lossless.
+      params.modular_group_mode = true;
+    } else if (params.butteraugli_distance < butteraugli_min_dist) {
+      params.butteraugli_distance = butteraugli_min_dist;
     }
     default_settings = false;
   }
 
-  if (got_target_bpp + got_target_size + got_distance > 1) {
+  if (got_target_bpp + got_target_size + got_distance + got_quality > 1) {
     fprintf(stderr,
-            "You can specify only one of '--distance', "
+            "You can specify only one of '--distance', '-q', "
             "'--target_bpp' and '--target_size'. They are all different ways"
             " to specify the image quality. When in doubt, use --distance."
             " It gives the most visually consistent results.\n");

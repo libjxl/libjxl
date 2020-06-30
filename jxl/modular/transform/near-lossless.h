@@ -22,18 +22,26 @@
 
 #include "jxl/base/status.h"
 #include "jxl/common.h"
+#include "jxl/modular/encoding/context_predict.h"
 #include "jxl/modular/image/image.h"
 
 namespace jxl {
 
-void DeltaQuantize(int max_error, pixel_type& d) {
-  int a = (d < 0 ? -d : d);
-  a = (a + (max_error / 2)) / max_error * max_error;
-  d = (d < 0 ? -a : a);
+pixel_type DeltaQuantize(int max_error, pixel_type in, pixel_type prediction) {
+  int resolution = 2 << max_error;
+  pixel_type d = in - prediction;
+  int32_t val = std::abs(d);
+  if (val < std::max(1, resolution / 4 * 3 / 4)) return 0;
+  if (val < resolution / 2 * 3 / 4) {
+    return d > 0 ? resolution / 4 : -resolution / 4;
+  }
+  if (val < resolution * 3 / 4) return d > 0 ? resolution / 2 : -resolution / 2;
+  val = (val + resolution / 2) / resolution * resolution;
+  return d > 0 ? val : -val;
 }
 
 static Status FwdNearLossless(Image& input, size_t begin_c, size_t end_c,
-                              int max_delta_error) {
+                              int max_delta_error, Predictor predictor) {
   if (begin_c < input.nb_meta_channels ||
       begin_c > static_cast<int>(input.channel.size()) ||
       end_c < input.nb_meta_channels ||
@@ -49,24 +57,25 @@ static Status FwdNearLossless(Image& input, size_t begin_c, size_t end_c,
     size_t h = input.channel[c].h;
 
     Channel out(w, h);
+    weighted::Header header;
+    weighted::State wp_state(header, w, h);
     for (size_t y = 0; y < h; y++) {
       pixel_type* JXL_RESTRICT p_in = input.channel[c].Row(y);
       pixel_type* JXL_RESTRICT p_out = out.Row(y);
-      pixel_type* JXL_RESTRICT prev_out = y ? out.Row(y - 1) : nullptr;
       for (size_t x = 0; x < w; x++) {
-        // assuming the default predictor
-        pixel_type left = (x ? p_out[x - 1] : 0);
-        pixel_type top = (y ? prev_out[x] : left);
-        pixel_type prediction = (left + top) / 2;
-        pixel_type delta = p_in[x] - prediction;
-        DeltaQuantize(max_delta_error, delta);
-        pixel_type reconstructed = prediction + delta;
+        PredictionResult pred =
+            PredictNoTreeWP(out, p_out + x, out.plane.PixelsPerRow(), x, y,
+                            predictor, &wp_state);
+        pixel_type delta = DeltaQuantize(max_delta_error, p_in[x], pred.guess);
+        pixel_type reconstructed = pred.guess + delta;
         int e = p_in[x] - reconstructed;
         total_error += abs(e);
         p_out[x] = reconstructed;
+        wp_state.UpdateErrors(p_out[x], x, y, w);
       }
     }
     input.channel[c] = std::move(out);
+    // fprintf(stderr, "Avg error: %f\n", total_error * 1.0 / (w * h));
     JXL_DEBUG_V(9, "  Avg error: %f", total_error * 1.0 / (w * h));
   }
   return false;  // don't signal this 'transform' in the bitstream, there is no

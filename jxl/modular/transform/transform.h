@@ -22,6 +22,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/fields.h"
 #include "jxl/modular/image/image.h"
+#include "jxl/modular/options.h"
 
 namespace jxl {
 
@@ -85,6 +86,7 @@ class Transform {
   std::vector<int> nonserialized_quant_factors;
   // for NearLossless, not serialized.
   int max_delta_error;
+  Predictor predictor;
   // for Palette, not serialized.
   bool ordered_palette = true;
 

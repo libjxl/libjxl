@@ -29,8 +29,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
     BitReader br(Span<const uint8_t>(data, size));
     BitReaderScopedCloser br_closer(&br, &ret);
     ANSCode code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(&br, numContexts, ANS_MAX_ALPHA_SIZE,
-                                         &code, &context_map));
+    JXL_RETURN_IF_ERROR(
+        DecodeHistograms(&br, numContexts, &code, &context_map));
     ANSSymbolReader ansreader(&code, &br);
 
     // Limit the maximum amount of reads to avoid (valid) infinite loops.

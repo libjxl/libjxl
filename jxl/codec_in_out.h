@@ -125,7 +125,7 @@ class CodecInOut {
   }
 
   void CheckMetadata() const {
-    JXL_CHECK(metadata.bits_per_sample != 0);
+    JXL_CHECK(metadata.bit_depth.bits_per_sample != 0);
     JXL_CHECK(!metadata.color_encoding.ICC().empty());
 
     if (preview_frame.xsize() != 0) preview_frame.VerifyMetadata();

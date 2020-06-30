@@ -202,14 +202,15 @@ TEST(JxlTest, RoundtripOtherTransforms) {
   EXPECT_LE(compressed_size, 22000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
-            5);
+            6);
 
+  // Check the consistency when performing another roundtrip.
   CodecInOut io3;
   const size_t compressed_size2 = Roundtrip(&io, cparams, dparams, pool, &io3);
   EXPECT_LE(compressed_size2, 22000);
   EXPECT_LE(ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool),
-            5);
+            6);
 }
 
 TEST(JxlTest, RoundtripUnalignedD2) {
@@ -493,9 +494,9 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
     CodecInOut io2;
     Roundtrip(&io, cparams, dparams, pool, &io2);
 
-    EXPECT_EQ(bit_depth, io2.metadata.bits_per_sample);
-    EXPECT_FALSE(io2.metadata.floating_point_sample);
-    EXPECT_EQ(0, io2.metadata.exponent_bits_per_sample);
+    EXPECT_EQ(bit_depth, io2.metadata.bit_depth.bits_per_sample);
+    EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
+    EXPECT_EQ(0, io2.metadata.bit_depth.exponent_bits_per_sample);
     EXPECT_EQ(0, io2.metadata.alpha_bits);
   }
 
@@ -524,16 +525,17 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
     else
       exponent_bit_depth = 8;
 
-    io.metadata.bits_per_sample = bit_depth;
-    io.metadata.floating_point_sample = true;
-    io.metadata.exponent_bits_per_sample = exponent_bit_depth;
+    io.metadata.bit_depth.bits_per_sample = bit_depth;
+    io.metadata.bit_depth.floating_point_sample = true;
+    io.metadata.bit_depth.exponent_bits_per_sample = exponent_bit_depth;
 
     CodecInOut io2;
     Roundtrip(&io, cparams, dparams, pool, &io2);
 
-    EXPECT_EQ(bit_depth, io2.metadata.bits_per_sample);
-    EXPECT_TRUE(io2.metadata.floating_point_sample);
-    EXPECT_EQ(exponent_bit_depth, io2.metadata.exponent_bits_per_sample);
+    EXPECT_EQ(bit_depth, io2.metadata.bit_depth.bits_per_sample);
+    EXPECT_TRUE(io2.metadata.bit_depth.floating_point_sample);
+    EXPECT_EQ(exponent_bit_depth,
+              io2.metadata.bit_depth.exponent_bits_per_sample);
     EXPECT_EQ(0, io2.metadata.alpha_bits);
   }
 }
@@ -547,9 +549,9 @@ TEST(JxlTest, RoundtripGrayscale) {
   ASSERT_NE(io.xsize(), 0);
   io.ShrinkTo(128, 128);
   EXPECT_TRUE(io.Main().IsGray());
-  EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.color_encoding.tf.IsSRGB());
 
   PassesEncoderState enc_state;
@@ -610,9 +612,9 @@ TEST(JxlTest, RoundtripAlpha) {
   cparams.butteraugli_distance = 1.0;
   DecompressParams dparams;
 
-  EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.color_encoding.tf.IsSRGB());
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
@@ -648,9 +650,9 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   cparams.butteraugli_distance = 1.0;
   DecompressParams dparams;
 
-  EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
   EXPECT_TRUE(io.metadata.color_encoding.tf.IsSRGB());
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
@@ -734,7 +736,7 @@ CompressParams CParamsForLossless() {
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
-      ReadTestData("imagecompression.info/flower_foveon.png");
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
@@ -768,9 +770,9 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
   EXPECT_EQ(8, io.metadata.alpha_bits);
-  EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
 
   CompressParams cparams = CParamsForLossless();
   DecompressParams dparams;
@@ -783,9 +785,9 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
                                 /*distmap=*/nullptr, pool));
   EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
   EXPECT_EQ(8, io2.metadata.alpha_bits);
-  EXPECT_EQ(8, io2.metadata.bits_per_sample);
-  EXPECT_FALSE(io2.metadata.floating_point_sample);
-  EXPECT_EQ(0, io2.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io2.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io2.metadata.bit_depth.exponent_bits_per_sample);
 }
 
 TEST(JxlTest, RoundtripLossless16Alpha) {
@@ -814,9 +816,9 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
       pixels.data() + pixels.size(), pool));
 
   EXPECT_EQ(16, io.metadata.alpha_bits);
-  EXPECT_EQ(16, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(16, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
 
   CompressParams cparams = CParamsForLossless();
   DecompressParams dparams;
@@ -840,9 +842,9 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
                                 /*distmap=*/nullptr, pool));
   EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
   EXPECT_EQ(16, io2.metadata.alpha_bits);
-  EXPECT_EQ(16, io2.metadata.bits_per_sample);
-  EXPECT_FALSE(io2.metadata.floating_point_sample);
-  EXPECT_EQ(0, io2.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(16, io2.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io2.metadata.bit_depth.exponent_bits_per_sample);
 }
 
 TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
@@ -873,9 +875,9 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
       pixels.data() + pixels.size(), pool));
 
   EXPECT_EQ(16, io.metadata.alpha_bits);
-  EXPECT_EQ(16, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(16, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
 
   CompressParams cparams = CParamsForLossless();
   DecompressParams dparams;
@@ -883,9 +885,9 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000);
   EXPECT_EQ(16, io2.metadata.alpha_bits);
-  EXPECT_EQ(16, io2.metadata.bits_per_sample);
-  EXPECT_FALSE(io2.metadata.floating_point_sample);
-  EXPECT_EQ(0, io2.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(16, io2.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io2.metadata.bit_depth.exponent_bits_per_sample);
   // If fails, see note about floating point in RoundtripLossless8.
   EXPECT_EQ(0.0,
             ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
@@ -908,9 +910,9 @@ TEST(JxlTest, RoundtripDots) {
   cparams.speed_tier = SpeedTier::kSquirrel;
   DecompressParams dparams;
 
-  EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
+  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
   EXPECT_TRUE(io.metadata.color_encoding.tf.IsSRGB());
   PassesEncoderState enc_state;
   AuxOut* aux_out = nullptr;
@@ -936,9 +938,9 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   DecompressParams dparams;
 
   EXPECT_TRUE(io.Main().IsGray());
-  EXPECT_EQ(8, io.metadata.bits_per_sample);
-  EXPECT_FALSE(io.metadata.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 130000);
   // If fails, see note about floating point in RoundtripLossless8.
@@ -946,9 +948,9 @@ TEST(JxlTest, RoundtripLossless8Gray) {
             ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, pool));
   EXPECT_TRUE(io2.Main().IsGray());
-  EXPECT_EQ(8, io2.metadata.bits_per_sample);
-  EXPECT_FALSE(io2.metadata.floating_point_sample);
-  EXPECT_EQ(0, io2.metadata.exponent_bits_per_sample);
+  EXPECT_EQ(8, io2.metadata.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io2.metadata.bit_depth.exponent_bits_per_sample);
 }
 
 #if JPEGXL_ENABLE_GIF

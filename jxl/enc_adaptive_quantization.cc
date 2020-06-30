@@ -128,11 +128,11 @@ static const float kQuant64[64] = {
 };
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  constexpr float kBase = 1.522f;
-  constexpr float kMul1 = 0.011521457315309454f;
-  constexpr float kOffset1 = 0.0079611186521877063f;
-  constexpr float kMul2 = -0.19590586155132378f;
-  constexpr float kOffset2 = 0.074575093726693686f;
+  const float kBase = 1.579;
+  const float kMul1 = 0.011694005436008714;
+  const float kOffset1 = 0.008803111138697944;
+  const float kMul2 = -0.19516184961217076;
+  const float kOffset2 = 0.07573967791241042;
   const float val = *out_pos;
   // Avoid division by zero.
   const float div = std::max(val + kOffset1, 1e-3f);
@@ -207,13 +207,23 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       }
     }
   }
-  float range_x = maxval_x - minval_x;
+  const float xmul = 5.907827885712019;
+  float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
   // than the previous approach of just using range_y.
-  float range = std::sqrt(range_x * range_y);
-  constexpr float mul = 0.66697599699046262f;
-  *out_pos += mul * range;
+  float range0 = std::sqrt(range_x * range_y);
+  const float mul0 = 1.9948072308564326;
+  float range1 = std::sqrt(range_x * range_x + range_y * range_y);
+  const float mul1 = -0.5246306314344823;
+  float range2 = std::max(range_x, range_y);
+  const float mul2 = 0.0821908522392129;
+  float range3 = std::min(range_x, range_y);
+  const float mul3 = -0.08637092410094918;
+  // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
+  // some pathological cases and cause problems downstream.
+  *out_pos += std::max(-7.f, std::min(7.f, mul0 * range0 + mul1 * range1 +
+                                               mul2 * range2 + mul3 * range3));
 }
 
 // Change precision in 8x8 blocks that have high frequency content.
@@ -241,7 +251,7 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   if (n != 0) {
     sum /= n;
   }
-  constexpr float kMul = 0.70810081505707823f;
+  const float kMul = -3.752792318134207;
   sum *= kMul;
   *out_pos += sum;
 }

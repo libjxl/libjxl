@@ -49,7 +49,7 @@ MATCHER(MatchesPrimariesAndTransferFunction, "") {
 }
 
 // Returns compressed size [bytes].
-size_t Roundtrip(CodecInOut* io, const CompressParams& cparams,
+size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
                  const DecompressParams& dparams, ThreadPool* pool,
                  CodecInOut* JXL_RESTRICT io2, AuxOut* aux_out = nullptr) {
   PaddedBytes compressed;

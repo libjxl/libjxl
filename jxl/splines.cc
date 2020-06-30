@@ -66,13 +66,11 @@ void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
     const int64_t x = std::lround(points[i].x);
     const int64_t y = std::lround(points[i].y);
     if (i == 0) {
-      TokenizeHybridUint(kStartingPositionContext, x, tokens);
-      TokenizeHybridUint(kStartingPositionContext, y, tokens);
+      tokens->emplace_back(kStartingPositionContext, x);
+      tokens->emplace_back(kStartingPositionContext, y);
     } else {
-      TokenizeHybridUint(kStartingPositionContext, PackSigned(x - last_x),
-                         tokens);
-      TokenizeHybridUint(kStartingPositionContext, PackSigned(y - last_y),
-                         tokens);
+      tokens->emplace_back(kStartingPositionContext, PackSigned(x - last_x));
+      tokens->emplace_back(kStartingPositionContext, PackSigned(y - last_y));
     }
     last_x = x;
     last_y = y;
@@ -345,14 +343,14 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
 }
 
 void QuantizedSpline::Tokenize(std::vector<Token>* const tokens) const {
-  TokenizeHybridUint(kNumControlPointsContext, control_points_.size(), tokens);
+  tokens->emplace_back(kNumControlPointsContext, control_points_.size());
   for (const auto& point : control_points_) {
-    TokenizeHybridUint(kControlPointsContext, PackSigned(point.first), tokens);
-    TokenizeHybridUint(kControlPointsContext, PackSigned(point.second), tokens);
+    tokens->emplace_back(kControlPointsContext, PackSigned(point.first));
+    tokens->emplace_back(kControlPointsContext, PackSigned(point.second));
   }
   const auto encode_dct = [tokens](const int dct[32]) {
     for (int i = 0; i < 32; ++i) {
-      TokenizeHybridUint(kDCTContext, dct[i], tokens);
+      tokens->emplace_back(kDCTContext, PackSigned(dct[i]));
     }
   };
   for (int c = 0; c < 3; ++c) {
@@ -376,7 +374,8 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
 
   const auto decode_dct = [decoder, br, &context_map](int dct[32]) -> Status {
     for (int i = 0; i < 32; ++i) {
-      dct[i] = decoder->ReadHybridUint(kDCTContext, br, context_map);
+      dct[i] =
+          UnpackSigned(decoder->ReadHybridUint(kDCTContext, br, context_map));
     }
     return true;
   };
@@ -393,11 +392,11 @@ void Splines::Encode(BitWriter* writer, const size_t layer,
 
   std::vector<QuantizedSpline> splines = splines_;
   std::vector<std::vector<Token>> tokens(1);
-  TokenizeHybridUint(kNumSplinesContext, splines.size() - 1, &tokens[0]);
+  tokens[0].emplace_back(kNumSplinesContext, splines.size() - 1);
   EncodeAllStartingPoints(starting_points_, &tokens[0]);
 
-  TokenizeHybridUint(kQuantizationAdjustmentContext,
-                     PackSigned(quantization_adjustment_), &tokens[0]);
+  tokens[0].emplace_back(kQuantizationAdjustmentContext,
+                         PackSigned(quantization_adjustment_));
 
   for (const QuantizedSpline& spline : splines) {
     spline.Tokenize(&tokens[0]);
@@ -413,8 +412,8 @@ void Splines::Encode(BitWriter* writer, const size_t layer,
 Status Splines::Decode(jxl::BitReader* br) {
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(
-      br, kNumSplineContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+  JXL_RETURN_IF_ERROR(
+      DecodeHistograms(br, kNumSplineContexts, &code, &context_map));
   ANSSymbolReader decoder(&code, br);
   const int num_splines =
       1 + decoder.ReadHybridUint(kNumSplinesContext, br, context_map);

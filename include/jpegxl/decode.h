@@ -169,7 +169,7 @@ typedef struct JpegxlBasicInfo {
    * metadata information and extensions may be available in addition to the
    * codestream.
    */
-  uint8_t has_container;
+  uint8_t have_container;
 
   /** Signature of the codestream.
    */
@@ -203,15 +203,15 @@ typedef struct JpegxlBasicInfo {
    * the color space is defined by descriptors instead. The ICC profile or
    * color descriptors themselves are not included in the basic info.
    */
-  uint8_t has_icc_profile;
+  uint8_t have_icc;
 
   /** Bit depth of the encoded alpha channel, or 0 if there is no alpha channel.
    */
-  uint32_t alpha_bit_depth;
+  uint32_t alpha_bits;
 
   /** Intended display luminance in nits (candelas per square meter).
    */
-  uint32_t intensity_target;
+  uint32_t target_nits;
 
   /** Indicates a preview image exists near the beginning of the codestream.
    * The preview itself or its dimensions are not included in the basic info.

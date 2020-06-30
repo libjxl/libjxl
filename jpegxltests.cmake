@@ -44,6 +44,7 @@ set(TEST_FILES
   jxl/gradient_test.cc
   jxl/iaca_test.cc
   jxl/icc_codec_test.cc
+  jxl/image_bundle_test.cc
   jxl/image_test.cc
   jxl/jpeg_kpasses_test.cc
   jxl/jpegxl/decode_test.cc

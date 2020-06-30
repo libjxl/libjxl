@@ -32,12 +32,7 @@ namespace jxl {
 #define ANS_LOG_TAB_SIZE 12u
 #define ANS_TAB_SIZE (1 << ANS_LOG_TAB_SIZE)
 #define ANS_TAB_MASK (ANS_TAB_SIZE - 1)
-
-// 7 is sufficient for 30 bits using ReadHybridUint. Working set is proportional
-// to ANS_MAX_ALPHA_SIZE, and does not fit in L2 cache for larger values.
-#define ANS_LOG_MAX_ALPHABET_SIZE 7
-#define ANS_MAX_ALPHA_SIZE (1 << ANS_LOG_MAX_ALPHABET_SIZE)
-#define ANS_MAX_ALPHA_MASK (ANS_MAX_ALPHA_SIZE - 1)
+#define ANS_MAX_ALPHA_SIZE 256
 
 #define ANS_SIGNATURE 0x13  // Initial state, used as CRC.
 
@@ -45,6 +40,11 @@ struct HistogramParams {
   enum class ClusteringType {
     kFastest,  // Cluster everything together
     kFast,
+    kBest,
+  };
+
+  enum class HybridUintMethod {
+    kNone,  // just use kHybridUint420Config.
     kBest,
   };
 
@@ -58,9 +58,13 @@ struct HistogramParams {
     } else {
       clustering = ClusteringType::kBest;
     }
+    if (tier > SpeedTier::kTortoise) {
+      uint_method = HybridUintMethod::kNone;
+    }
   }
 
   ClusteringType clustering = ClusteringType::kBest;
+  HybridUintMethod uint_method = HybridUintMethod::kBest;
 };
 
 }  // namespace jxl

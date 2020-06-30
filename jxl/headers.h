@@ -144,10 +144,10 @@ struct AnimationHeader {
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     visitor->Bool(false, &composite_still);
     if (visitor->Conditional(!composite_still)) {
-      visitor->U32(Val(99), Val(999), Bits(6), Bits(18), 0,
-                   &tps_numerator_minus_1);
-      visitor->U32(Val(0), Val(1000), Bits(8), Bits(10), 0,
-                   &tps_denominator_minus_1);
+      visitor->U32(Val(100), Val(1000), BitsOffset(10, 1), BitsOffset(30, 1), 1,
+                   &tps_numerator);
+      visitor->U32(Val(1), Val(1001), BitsOffset(8, 1), BitsOffset(10, 1), 1,
+                   &tps_denominator);
 
       visitor->U32(Val(0), Bits(3), Bits(16), Bits(32), 0, &num_loops);
 
@@ -159,8 +159,8 @@ struct AnimationHeader {
   bool composite_still;
 
   // Ticks per second (expressed as rational number to support NTSC)
-  uint32_t tps_numerator_minus_1;
-  uint32_t tps_denominator_minus_1;
+  uint32_t tps_numerator;
+  uint32_t tps_denominator;
 
   uint32_t num_loops;  // 0 means to repeat infinitely.
 

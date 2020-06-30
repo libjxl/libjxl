@@ -106,7 +106,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
 
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
                                 /*distmap=*/nullptr, /*pool=*/nullptr),
-            2.05);
+            2.1);
 }
 }  // namespace
 }  // namespace jxl

@@ -353,7 +353,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                    const_cast<Image3F*>(&ib2.color()));
       }
 
-      JXL_CHECK(EncodeToFile(io2, *c_desired, ib2.metadata()->bits_per_sample,
+      JXL_CHECK(EncodeToFile(io2, *c_desired,
+                             ib2.metadata()->bit_depth.bits_per_sample,
                              decompressed_fn));
       if (!skip_butteraugli) {
         float good = Args()->heatmap_good > 0.0f ? Args()->heatmap_good

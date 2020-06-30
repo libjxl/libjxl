@@ -52,7 +52,7 @@ Status Transform::Forward(Image &input, ThreadPool *pool) {
                         ordered_palette);
     case TransformId::kNearLossless:
       return FwdNearLossless(input, begin_c, begin_c + num_c - 1,
-                             max_delta_error);
+                             max_delta_error, predictor);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }

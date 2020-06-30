@@ -77,6 +77,18 @@ struct QuantizedPatch {
   }
 };
 
+JXL_INLINE void swap(QuantizedPatch& a, QuantizedPatch& b) {
+  std::swap(a.xsize, b.xsize);
+  std::swap(a.ysize, b.ysize);
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t i = 0; i < std::max(a.xsize * a.ysize, b.xsize * b.ysize);
+         i++) {
+      std::swap(a.pixels[c][i], b.pixels[c][i]);
+      std::swap(a.fpixels[c][i], b.fpixels[c][i]);
+    }
+  }
+}
+
 // Pair (patch, vector of occurences).
 using PatchInfo =
     std::pair<QuantizedPatch, std::vector<std::pair<uint32_t, uint32_t>>>;

@@ -163,19 +163,24 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
   // (Writing large PNGs is slow, so allow skipping it for benchmarks.)
   if (file_out == nullptr) return true;
 
-  for (size_t ec = 0; ec < io.metadata.m2.num_extra_channels; ec++) {
-    if (io.metadata.m2.extra_channel_info[ec].rendered != 0) {
-      if (io.metadata.m2.extra_channel_info[ec].rendered == 1) {
-        for (size_t fr = 0; fr < io.frames.size(); fr++)
-          RenderSpotColor(io.frames[fr].color(),
-                          io.frames[fr].extra_channels()[ec],
-                          io.metadata.m2.extra_channel_info[ec].color,
-                          io.metadata.m2.extra_channel_bits);
-      } else {
-        fprintf(stderr,
-                "Warning: ignoring extra channel which is supposed to be "
-                "rendered but I don't know how.\n");
-      }
+  for (size_t i = 0; i < io.metadata.m2.num_extra_channels; i++) {
+    // Don't use Find() because there may be multiple spot color channels.
+    const jxl::ExtraChannelInfo& eci = io.metadata.m2.extra_channel_info[i];
+    if (eci.type == jxl::ExtraChannel::kOptional) {
+      continue;
+    }
+    if (eci.type == jxl::ExtraChannel::kUnknown ||
+        (int(jxl::ExtraChannel::kReserved0) <= int(eci.type) &&
+         int(eci.type) <= int(jxl::ExtraChannel::kReserved7))) {
+      fprintf(stderr, "Unknown extra channel (bits %u, shift %u, name '%s')\n",
+              eci.bit_depth.bits_per_sample, eci.dim_shift, eci.name.c_str());
+      continue;
+    }
+    if (eci.type == jxl::ExtraChannel::kSpotColor) {
+      for (size_t fr = 0; fr < io.frames.size(); fr++)
+        RenderSpotColor(io.frames[fr].color(),
+                        io.frames[fr].extra_channels()[i], eci.spot_color,
+                        eci.bit_depth.bits_per_sample);
     }
   }
 
@@ -190,7 +195,7 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
   }
 
   // Override original #bits with arg if specified.
-  size_t bits_per_sample = io.metadata.bits_per_sample;
+  size_t bits_per_sample = io.metadata.bit_depth.bits_per_sample;
   if (args.bits_per_sample != 0) bits_per_sample = args.bits_per_sample;
 
   if (!io.metadata.m2.have_animation) {

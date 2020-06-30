@@ -41,7 +41,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
   PaddedBytes encoded;
   io.jpeg_quality = 90;
   JXL_CHECK(Encode(io, Codec::kJPG, io.metadata.color_encoding,
-                   io.metadata.bits_per_sample, &encoded, pool));
+                   io.metadata.bit_depth.bits_per_sample, &encoded, pool));
 
   // decode JPEG to pixels (using libjpeg)
   CodecInOut io2;
@@ -84,7 +84,7 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
   PaddedBytes encoded2;
   io5.jpeg_quality = 100;  // ignored but has to be set
   JXL_CHECK(Encode(io5, Codec::kJPG, io5.metadata.color_encoding,
-                   io5.metadata.bits_per_sample, &encoded2, pool));
+                   io5.metadata.bit_depth.bits_per_sample, &encoded2, pool));
 
   // decode JPEG to pixels (using libjpeg)
   CodecInOut io6;

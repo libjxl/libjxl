@@ -221,7 +221,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
             PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], bx, 32);
         const int32_t nzero_ctx =
             NonZeroContext(predicted_nzeros, c_ctx_x5 + ord);
-        TokenizeHybridUint(nzero_ctx, nzeros, output);
+        output->emplace_back(nzero_ctx, nzeros);
         const size_t histo_offset = ZeroDensityContextsOffset(c_ctx_x5 + ord);
         // Skip LLF.
         size_t prev = (nzeros > size / 16 ? 0 : 1);
@@ -231,7 +231,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
               histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                                 log2_covered_blocks, prev);
           uint32_t u_coeff = PackSigned(coeff);
-          TokenizeHybridUint(ctx, u_coeff, output);
+          output->emplace_back(ctx, u_coeff);
           prev = coeff != 0;
           nzeros -= prev;
         }
@@ -301,7 +301,8 @@ class AcStrategyCoder {
           base_context_ + PredictionContext(predictions[0], num_correct[0]);
 
       if (!ac_strategy_->IsValid(rect_.x0() + x, rect_.y0() + y)) {
-        uint32_t raw_strategy = decoder_->ReadSymbol((*context_map_)[ctx], br_);
+        uint32_t raw_strategy =
+            decoder_->ReadHybridUint(ctx, br_, *context_map_);
         if (!AcStrategy::IsRawStrategyValid(raw_strategy)) {
           invalid_ = true;
         }
@@ -363,7 +364,7 @@ class AcStrategyCoder {
       JXL_ASSERT(AcStrategy::IsRawStrategyValid(decoded[0]));
 
       if (row_[y * stride_ + x].IsFirstBlock()) {
-        tokens_->emplace_back(ctx, decoded[0], 0, 0);
+        tokens_->emplace_back(ctx, decoded[0]);
       }
     }
 
@@ -465,7 +466,7 @@ class QuantFieldCoder {
       AcStrategy acs = acs_row_[y * acs_stride_ + x];
       if (acs.IsFirstBlock()) {
         uint32_t residual = ErrorMetric::Residual(decoded[0], predictions[0]);
-        TokenizeHybridUint(ctx, residual, tokens_);
+        tokens_->emplace_back(ctx, residual);
       }
     }
 
@@ -515,14 +516,15 @@ class ARParamsCoder {
           base_context_ + PredictionContext(predictions[0], num_correct[0]);
       AcStrategy acs = acs_row_[y * acs_stride_ + x];
       if (acs.IsFirstBlock()) {
-        uint32_t lut = decoder_->ReadSymbol((*context_map_)[ctx], br_);
+        uint32_t lut = decoder_->ReadHybridUint(ctx, br_, *context_map_);
         if (lut > kNumEpfSharpness - 1) lut = kNumEpfSharpness - 1;
         row_[y * stride_ + x] = lut;
         ctx = base_context_ + kPerPredictionContexts * kNumEpfSharpness + lut;
         for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
           for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
             if (ix == 0 && iy == 0) continue;
-            uint32_t new_lut = decoder_->ReadSymbol((*context_map_)[ctx], br_);
+            uint32_t new_lut =
+                decoder_->ReadHybridUint(ctx, br_, *context_map_);
             row_[(y + iy) * stride_ + x + ix] =
                 new_lut > kNumEpfSharpness - 1 ? kNumEpfSharpness - 1 : new_lut;
           }
@@ -571,13 +573,13 @@ class ARParamsCoder {
       AcStrategy acs = acs_row_[y * acs_stride_ + x];
       if (acs.IsFirstBlock()) {
         uint8_t lut = row_[y * stride_ + x];
-        tokens_->emplace_back(ctx, lut, 0, 0);
+        tokens_->emplace_back(ctx, lut);
         ctx = base_context_ + kPerPredictionContexts * kNumEpfSharpness + lut;
         for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
           for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
             if (ix == 0 && iy == 0) continue;
             uint8_t new_lut = row_[(y + iy) * stride_ + x + ix];
-            tokens_->emplace_back(ctx, new_lut, 0, 0);
+            tokens_->emplace_back(ctx, new_lut);
           }
         }
       }

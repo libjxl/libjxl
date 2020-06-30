@@ -24,10 +24,11 @@ namespace {
 
 void VerifyAliasDistribution(const std::vector<int>& distribution, int range) {
   AliasTable::Entry table[ANS_MAX_ALPHA_SIZE];
-  InitAliasTable(distribution, range, table);
+  InitAliasTable(distribution, range, 8, table);
   std::vector<std::vector<int>> offsets(distribution.size());
   for (int i = 0; i < range; i++) {
-    AliasTable::Symbol s = AliasTable::Lookup(table, i);
+    AliasTable::Symbol s = AliasTable::Lookup(
+        table, i, ANS_LOG_TAB_SIZE - 8, (1 << (ANS_LOG_TAB_SIZE - 8)) - 1);
     offsets[s.value].push_back(s.offset);
   }
   for (int i = 0; i < distribution.size(); i++) {

@@ -58,7 +58,7 @@ std::vector<int> CreateFlatHistogram(int length, int total_count) {
 // entry might be either overfull or underfull, and is pushed into the
 // corresponding stack.
 void InitAliasTable(std::vector<int> distribution, int range,
-                    AliasTable::Entry* JXL_RESTRICT a) {
+                    size_t log_alpha_size, AliasTable::Entry* JXL_RESTRICT a) {
   while (!distribution.empty() && distribution.back() == 0) {
     distribution.pop_back();
   }
@@ -68,21 +68,19 @@ void InitAliasTable(std::vector<int> distribution, int range,
   if (distribution.empty()) {
     distribution.emplace_back(range);
   }
-  const int kTableSizeLog = ANS_LOG_MAX_ALPHABET_SIZE;
-  const int kTableSize = ANS_MAX_ALPHA_SIZE;
+  const int table_size = 1 << log_alpha_size;
 #if JXL_ENABLE_ASSERT
   int sum = std::accumulate(distribution.begin(), distribution.end(), 0);
 #endif  // JXL_ENABLE_ASSERT
   JXL_ASSERT(sum == range);
-  JXL_ASSERT(distribution.size() <= (1 << kTableSizeLog));
   // range must be a power of two
   JXL_ASSERT((range & (range - 1)) == 0);
-  JXL_ASSERT(kTableSize >= distribution.size());
-  JXL_ASSERT(kTableSize <= range);
-  const int entry_size = range >> kTableSizeLog;  // this is exact
+  JXL_ASSERT(distribution.size() <= table_size);
+  JXL_ASSERT(table_size <= range);
+  const int entry_size = range >> log_alpha_size;  // this is exact
   std::vector<int> underfull_posn;
   std::vector<int> overfull_posn;
-  int cutoffs[kTableSize];
+  int cutoffs[ANS_MAX_ALPHA_SIZE];
   // Initialize entries.
   for (size_t i = 0; i < distribution.size(); i++) {
     cutoffs[i] = distribution[i];
@@ -92,7 +90,7 @@ void InitAliasTable(std::vector<int> distribution, int range,
       underfull_posn.push_back(i);
     }
   }
-  for (int i = distribution.size(); i < kTableSize; i++) {
+  for (int i = distribution.size(); i < table_size; i++) {
     cutoffs[i] = 0;
     underfull_posn.push_back(i);
   }
@@ -116,7 +114,7 @@ void InitAliasTable(std::vector<int> distribution, int range,
       overfull_posn.push_back(overfull_i);
     }
   }
-  for (int i = 0; i < kTableSize; i++) {
+  for (int i = 0; i < table_size; i++) {
     // cutoffs[i] is properly initialized but the clang-analyzer doesn't infer
     // it since it is partially initialized across two for-loops.
     // NOLINTNEXTLINE(clang-analyzer-core.UndefinedBinaryOperatorResult)

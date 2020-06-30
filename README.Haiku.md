@@ -16,5 +16,5 @@ pkgman install llvm9_clang ninja cmake doxygen
 ## Building
 
 ```shell
-CMAKE_FLAGS=-I/boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/8.3.0/include/c++ -I/boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/8.3.0/include/c++/x86_64-unknown-haiku" CMAKE_SHARED_LINKER_FLAGS="-shared -Xlinker -soname=libjpegxl.so -lpthread" ./ci opt
+CMAKE_FLAGS="-I/boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/8.3.0/include/c++ -I/boot/system/develop/tools/lib/gcc/x86_64-unknown-haiku/8.3.0/include/c++/x86_64-unknown-haiku" CMAKE_SHARED_LINKER_FLAGS="-shared -Xlinker -soname=libjpegxl.so -lpthread" ./ci.sh opt
 ```

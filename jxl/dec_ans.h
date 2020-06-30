@@ -33,12 +33,6 @@
 
 namespace jxl {
 
-struct ANSCode {
-  CacheAlignedUniquePtr alias_tables;
-  std::vector<brunsli::HuffmanDecodingData> huffman_data;
-  bool use_prefix_code;
-};
-
 class ANSSymbolReader;
 
 // Experiments show that best performance is typically achieved for a
@@ -94,12 +88,13 @@ struct HybridUintConfig {
                ((m >> (n - msb_in_token)) << lsb_in_token) +
                (m & ((1 << lsb_in_token) - 1));
       *nbits = n - msb_in_token - lsb_in_token;
-      *bits = (value >> lsb_in_token) & ((1 << *nbits) - 1);
+      *bits = (value >> lsb_in_token) & ((1UL << *nbits) - 1);
     }
   }
 
   // Assumes Refill() has been called.
-  JXL_INLINE size_t Read(BitReader* JXL_RESTRICT br, size_t token) const {
+  template <typename BR>
+  JXL_INLINE size_t Read(BR* JXL_RESTRICT br, size_t token) const {
     // Fast-track version of hybrid integer decoding.
     if (token < split_token) return token;
     uint32_t nbits = split_exponent - (msb_in_token + lsb_in_token) +
@@ -131,11 +126,16 @@ struct HybridUintConfig {
         split_token(1 << split_exponent),
         msb_in_token(msb_in_token),
         lsb_in_token(lsb_in_token) {
-    JXL_ASSERT(split_exponent >= msb_in_token + lsb_in_token);
-    JXL_ASSERT(split_exponent <= msb_in_token + lsb_in_token + 3);
-    JXL_ASSERT(msb_in_token <= 3);
-    JXL_ASSERT(lsb_in_token <= 3);
+    JXL_DASSERT(split_exponent >= msb_in_token + lsb_in_token);
   }
+};
+
+struct ANSCode {
+  CacheAlignedUniquePtr alias_tables;
+  std::vector<brunsli::HuffmanDecodingData> huffman_data;
+  std::vector<HybridUintConfig> uint_config;
+  bool use_prefix_code;
+  uint8_t log_alpha_size;  // for ANS.
 };
 
 class ANSSymbolReader {
@@ -146,14 +146,13 @@ class ANSSymbolReader {
       : alias_tables_(
             reinterpret_cast<AliasTable::Entry*>(code->alias_tables.get())),
         huffman_data_(&code->huffman_data),
-        use_prefix_code_(code->use_prefix_code) {
-    uint32_t msb_in_token = br->ReadFixedBits<2>();
-    uint32_t lsb_in_token = br->ReadFixedBits<2>();
-    uint32_t split_exponent =
-        br->ReadFixedBits<2>() + msb_in_token + lsb_in_token;
-    config = HybridUintConfig{split_exponent, msb_in_token, lsb_in_token};
+        use_prefix_code_(code->use_prefix_code),
+        configs(code->uint_config.data()) {
     if (!use_prefix_code_) {
       state_ = static_cast<uint32_t>(br->ReadFixedBits<32>());
+      log_alpha_size_ = code->log_alpha_size;
+      log_entry_size_ = ANS_LOG_TAB_SIZE - code->log_alpha_size;
+      entry_size_minus_1_ = (1 << log_entry_size_) - 1;
     } else {
       state_ = (ANS_SIGNATURE << 16u);
     }
@@ -164,8 +163,9 @@ class ANSSymbolReader {
     const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
 
     const AliasTable::Entry* table =
-        &alias_tables_[histo_idx * ANS_MAX_ALPHA_SIZE];
-    const AliasTable::Symbol symbol = AliasTable::Lookup(table, res);
+        &alias_tables_[histo_idx << log_alpha_size_];
+    const AliasTable::Symbol symbol =
+        AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
     state_ = symbol.freq * (state_ >> ANS_LOG_TAB_SIZE) + symbol.offset;
 
 #if 1
@@ -182,7 +182,7 @@ class ANSSymbolReader {
     }
 #endif
     const uint32_t next_res = state_ & (ANS_TAB_SIZE - 1u);
-    AliasTable::Prefetch(table, next_res);
+    AliasTable::Prefetch(table, next_res, log_entry_size_);
 
     return symbol.value;
   }
@@ -222,11 +222,7 @@ class ANSSymbolReader {
 
   JXL_INLINE size_t ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
                                    const std::vector<uint8_t>& context_map) {
-    return config.Read(ctx, br, this, context_map);
-  }
-
-  JXL_INLINE size_t ReadHybridUint(BitReader* JXL_RESTRICT br, size_t token) {
-    return config.Read(br, token);
+    return configs[context_map[ctx]].Read(ctx, br, this, context_map);
   }
 
  private:
@@ -234,7 +230,10 @@ class ANSSymbolReader {
   const std::vector<brunsli::HuffmanDecodingData>* huffman_data_;
   bool use_prefix_code_;
   uint32_t state_ = ANS_SIGNATURE << 16u;
-  HybridUintConfig config{0, 0, 0};
+  const HybridUintConfig* JXL_RESTRICT configs;
+  uint32_t log_alpha_size_;
+  uint32_t log_entry_size_;
+  uint32_t entry_size_minus_1_;
 };
 
 JXL_INLINE size_t
@@ -246,9 +245,12 @@ HybridUintConfig::Read(size_t ctx, BitReader* JXL_RESTRICT br,
   return Read(br, token);
 }
 
-bool DecodeHistograms(BitReader* br, size_t num_contexts,
-                      size_t max_alphabet_size, ANSCode* code,
-                      std::vector<uint8_t>* context_map);
+Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
+                        std::vector<uint8_t>* context_map);
+// Exposed for tests.
+Status DecodeUintConfigs(size_t log_alpha_size,
+                         std::vector<HybridUintConfig>* uint_config,
+                         BitReader* br);
 
 }  // namespace jxl
 

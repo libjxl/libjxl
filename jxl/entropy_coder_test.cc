@@ -15,6 +15,7 @@
 #include "jxl/entropy_coder.h"
 
 #include <stdint.h>
+
 #include <random>
 
 #include "gtest/gtest.h"
@@ -31,39 +32,31 @@ TEST(EntropyCoderTest, PackUnpack) {
   }
 }
 
+struct DummyBitReader {
+  uint32_t nbits, bits;
+  void Consume(uint32_t nbits) {}
+  uint32_t PeekBits(uint32_t n) {
+    EXPECT_EQ(n, nbits);
+    return bits;
+  }
+};
+
 void HybridUintRoundtrip(HybridUintConfig config, size_t limit = 1 << 24) {
   std::mt19937 rng(0);
   std::uniform_int_distribution<uint32_t> dist(0, limit);
   constexpr size_t kNumIntegers = 1 << 20;
   std::vector<uint32_t> integers(kNumIntegers);
-  std::vector<Token> tokens;
+  std::vector<uint32_t> token(kNumIntegers);
+  std::vector<uint32_t> nbits(kNumIntegers);
+  std::vector<uint32_t> bits(kNumIntegers);
   for (size_t i = 0; i < kNumIntegers; i++) {
     integers[i] = dist(rng);
-    TokenizeWithConfig(config, 0, integers[i], &tokens);
+    config.Encode(integers[i], &token[i], &nbits[i], &bits[i]);
   }
-  BitWriter writer;
-
-  std::vector<uint8_t> context_map;
-  EntropyEncodingData codes;
-
-  BuildAndEncodeHistograms(HistogramParams(), 1, {tokens}, &codes, &context_map,
-                           &writer, 0, nullptr);
-  WriteTokens(tokens, codes, context_map, &writer, 0, nullptr, config);
-  writer.ZeroPadToByte();
-
-  BitReader br(writer.GetSpan());
-
-  std::vector<uint8_t> dec_context_map;
-  ANSCode decoded_codes;
-  ASSERT_TRUE(DecodeHistograms(&br, 1, ANS_MAX_ALPHA_SIZE, &decoded_codes,
-                               &dec_context_map));
-  ASSERT_EQ(dec_context_map, context_map);
-  ANSSymbolReader reader(&decoded_codes, &br);
-
   for (size_t i = 0; i < kNumIntegers; i++) {
-    EXPECT_EQ(integers[i], reader.ReadHybridUint(0, &br, context_map));
+    DummyBitReader br{nbits[i], bits[i]};
+    EXPECT_EQ(integers[i], config.Read(&br, token[i]));
   }
-  EXPECT_TRUE(br.Close());
 }
 
 TEST(HybridUintTest, Test000) {

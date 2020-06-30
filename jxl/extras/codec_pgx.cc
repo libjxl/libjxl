@@ -255,7 +255,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   const PackedImage desc(
       header.xsize, header.ysize, io->metadata.color_encoding, has_alpha,
       /*alpha_is_premultiplied=*/false, io->metadata.alpha_bits,
-      io->metadata.bits_per_sample, header.big_endian, flipped_y);
+      io->metadata.bit_depth.bits_per_sample, header.big_endian, flipped_y);
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
   io->frames.push_back(std::move(ib));
@@ -313,8 +313,8 @@ void TestCodecPGX() {
     Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
     JXL_CHECK(ok == true);
 
-    JXL_CHECK(!io.metadata.floating_point_sample);
-    JXL_CHECK(io.metadata.bits_per_sample == 8);
+    JXL_CHECK(!io.metadata.bit_depth.floating_point_sample);
+    JXL_CHECK(io.metadata.bit_depth.bits_per_sample == 8);
     JXL_CHECK(io.metadata.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);
@@ -335,8 +335,8 @@ void TestCodecPGX() {
     Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
     JXL_CHECK(ok == true);
 
-    JXL_CHECK(!io.metadata.floating_point_sample);
-    JXL_CHECK(io.metadata.bits_per_sample == 16);
+    JXL_CHECK(!io.metadata.bit_depth.floating_point_sample);
+    JXL_CHECK(io.metadata.bit_depth.bits_per_sample == 16);
     JXL_CHECK(io.metadata.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);

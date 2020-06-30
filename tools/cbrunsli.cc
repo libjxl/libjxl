@@ -133,7 +133,7 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
   }
 
   jxl::BrunsliEncoderOptions options = args.options;
-  if (io.metadata.bits_per_sample > 8) {
+  if (io.metadata.bit_depth.bits_per_sample > 8) {
     options.hdr_orig_colorspace = jxl::Description(io.Main().c_current());
     jxl::ColorEncoding hdr;
     std::string hdr_description = "RGB_D65_202_Rel_PeQ";

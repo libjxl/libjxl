@@ -799,6 +799,7 @@ wait_for_temp() {
 
 # Helper function to set the cpuset restriction of the current process.
 cmd_cpuset() {
+  [[ "${SKIP_CPUSET:-}" != "1" ]] || return 0
   local newset="$1"
   local mycpuset=$(cat /proc/self/cpuset)
   mycpuset="/dev/cpuset${mycpuset}"
@@ -851,14 +852,23 @@ cmd_arm_benchmark() {
     "third_party/testdata/imagecompression.info/flower_foveon.png"
   )
 
-  local cpu_confs=(
-    "${RUNNER_CPU_LITTLE}"
-    "${RUNNER_CPU_BIG}"
-    # The CPU description is something like 3-7, so these configurations only
-    # take the first CPU of the group.
-    "${RUNNER_CPU_LITTLE%%-*}"
-    "${RUNNER_CPU_BIG%%-*}"
-  )
+  if [[ "${SKIP_CPUSET:-}" == "1" ]]; then
+    # Use a single cpu config in this case.
+    local cpu_confs=("?")
+  else
+    # Otherwise the CPU config comes from the environment:
+    local cpu_confs=(
+      "${RUNNER_CPU_LITTLE}"
+      "${RUNNER_CPU_BIG}"
+      # The CPU description is something like 3-7, so these configurations only
+      # take the first CPU of the group.
+      "${RUNNER_CPU_LITTLE%%-*}"
+      "${RUNNER_CPU_BIG%%-*}"
+    )
+    # Check that RUNNER_CPU_ALL is defined. In the SKIP_CPUSET=1 case this will
+    # be ignored but still evaluated when calling cmd_cpuset.
+    [[ -n "${RUNNER_CPU_ALL}" ]]
+  fi
 
   local jpg_dirname="third_party/corpora/jpeg"
   mkdir -p "${jpg_dirname}"
@@ -911,7 +921,7 @@ cmd_arm_benchmark() {
         if [[ "${flags}" == *"modular-group"* ]]; then
           # We don't benchmark encoding speed in this case.
           if [[ ! -f "${enc_file}" ]]; then
-            cmd_cpuset "${RUNNER_CPU_ALL}"
+            cmd_cpuset "${RUNNER_CPU_ALL:-}"
             "${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp"
             mv "${enc_file}.tmp" "${enc_file}"
             cmd_cpuset "${cpu_conf}"
@@ -945,7 +955,7 @@ cmd_arm_benchmark() {
       done
     done
   done
-  cmd_cpuset "${RUNNER_CPU_ALL}"
+  cmd_cpuset "${RUNNER_CPU_ALL:-}"
   cat "${runs_file}"
 
   if [[ -n "${CI_BUILD_NAME:-}" ]]; then
@@ -1135,6 +1145,7 @@ You can pass some optional environment variables as well:
  - ENABLE_WASM_SIMD=1: enable experimental SIMD in WASM build (only).
  - FUZZER_MAX_TIME: "fuzz" command fuzzer running timeout in seconds.
  - LINT_OUTPUT: Path to the output patch from the "lint" command.
+ - SKIP_CPUSET=1: Skip modifying the cpuset in the arm_benchmark.
  - SKIP_TEST=1: Skip the test stage.
  - STORE_IMAGES=0: Makes the benchmark discard the computed images.
 

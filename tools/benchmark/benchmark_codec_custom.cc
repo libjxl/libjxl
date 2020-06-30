@@ -164,7 +164,7 @@ class CustomCodec : public ImageCodec {
     JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
 
-    const size_t bits = io->metadata.bits_per_sample;
+    const size_t bits = io->metadata.bit_depth.bits_per_sample;
     PaddedBytes png;
     JXL_RETURN_IF_ERROR(
         EncodeImagePNG(io, io->Main().c_current(), bits, pool, &png));

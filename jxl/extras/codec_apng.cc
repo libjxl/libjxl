@@ -276,7 +276,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
           isAnimated = true;
           skipFirst = true;
           io->metadata.m2.have_animation = true;
-          io->animation.tps_numerator_minus_1 = 1000 - 1;
+          io->animation.tps_numerator = 1000;
         } else if (id == id_IEND ||
                    (id == id_fcTL && (!hasInfo || isAnimated))) {
           if (hasInfo) {

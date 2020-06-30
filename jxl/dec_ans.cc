@@ -183,17 +183,18 @@ Status ReadHistogram(int precision_bits, std::vector<int>* counts,
 
 }  // namespace
 
-bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
-                    BitReader* in, ANSCode* result) {
-  JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHA_SIZE);
-  JXL_ASSERT(max_alphabet_size <= brunsli::kMaxContextMapAlphabetSize);
+Status DecodeANSCodes(const size_t num_histograms,
+                      const size_t max_alphabet_size, BitReader* in,
+                      ANSCode* result) {
   if (result->use_prefix_code) {
+    JXL_ASSERT(max_alphabet_size <= brunsli::kMaxContextMapAlphabetSize);
     result->huffman_data.resize(num_histograms);
     std::vector<uint16_t> alphabet_sizes(num_histograms);
     for (size_t c = 0; c < num_histograms; c++) {
       alphabet_sizes[c] = DecodeVarLenUint8(in) + 1;
-      if (alphabet_sizes[c] > max_alphabet_size)
-        return JXL_FAILURE("Alphabet size is too long");
+      if (alphabet_sizes[c] > max_alphabet_size) {
+        return JXL_FAILURE("Alphabet size is too long: %u", alphabet_sizes[c]);
+      }
     }
     size_t pos = in->TotalBitsConsumed();
     size_t size = in->TotalBytes();
@@ -230,8 +231,10 @@ bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
     size_t consumed_bytes = orig_size - unused_bytes;
     in->SkipBits(consumed_bytes * kBitsPerByte - num_unused_bits - pos);
   } else {
-    result->alias_tables = AllocateArray(num_histograms * ANS_MAX_ALPHA_SIZE *
-                                         sizeof(AliasTable::Entry));
+    JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHA_SIZE);
+    result->alias_tables =
+        AllocateArray(num_histograms * (1 << result->log_alpha_size) *
+                      sizeof(AliasTable::Entry));
     AliasTable::Entry* alias_tables =
         reinterpret_cast<AliasTable::Entry*>(result->alias_tables.get());
     for (size_t c = 0; c < num_histograms; ++c) {
@@ -240,18 +243,40 @@ bool DecodeANSCodes(const size_t num_histograms, const size_t max_alphabet_size,
         return JXL_FAILURE("Invalid histogram bitstream.");
       }
       if (counts.size() > max_alphabet_size) {
-        return JXL_FAILURE("Alphabet size is too long.");
+        return JXL_FAILURE("Alphabet size is too long: %zu", counts.size());
       }
-      InitAliasTable(counts, ANS_TAB_SIZE,
-                     alias_tables + c * ANS_MAX_ALPHA_SIZE);
+      InitAliasTable(counts, ANS_TAB_SIZE, result->log_alpha_size,
+                     alias_tables + c * (1 << result->log_alpha_size));
     }
   }
   return true;
 }
+Status DecodeUintConfigs(size_t log_alpha_size,
+                         std::vector<HybridUintConfig>* uint_config,
+                         BitReader* br) {
+  // TODO(veluca): RLE?
+  for (size_t i = 0; i < uint_config->size(); i++) {
+    br->Refill();
+    size_t split_exponent = br->ReadBits(CeilLog2Nonzero(log_alpha_size + 1));
+    size_t msb_in_token = 0, lsb_in_token = 0;
+    if (split_exponent != log_alpha_size) {
+      // otherwise, msb/lsb don't matter.
+      size_t nbits = CeilLog2Nonzero(split_exponent + 1);
+      msb_in_token = br->ReadBits(nbits);
+      nbits = CeilLog2Nonzero(split_exponent - msb_in_token + 1);
+      lsb_in_token = br->ReadBits(nbits);
+    }
+    if (lsb_in_token + msb_in_token > split_exponent) {
+      return JXL_FAILURE("Invalid HybridUintConfig");
+    }
+    (*uint_config)[i] =
+        HybridUintConfig(split_exponent, msb_in_token, lsb_in_token);
+  }
+  return true;
+}
 
-bool DecodeHistograms(BitReader* br, const size_t num_contexts,
-                      const size_t max_alphabet_size, ANSCode* code,
-                      std::vector<uint8_t>* context_map) {
+Status DecodeHistograms(BitReader* br, const size_t num_contexts, ANSCode* code,
+                        std::vector<uint8_t>* context_map) {
   PROFILER_FUNC;
   size_t num_histograms = 1;
   context_map->resize(num_contexts);
@@ -259,6 +284,15 @@ bool DecodeHistograms(BitReader* br, const size_t num_contexts,
     JXL_RETURN_IF_ERROR(DecodeContextMap(context_map, &num_histograms, br));
   }
   code->use_prefix_code = br->ReadFixedBits<1>();
+  if (code->use_prefix_code) {
+    code->log_alpha_size = 8;
+  } else {
+    code->log_alpha_size = br->ReadFixedBits<2>() + 5;
+  }
+  code->uint_config.resize(num_histograms);
+  JXL_RETURN_IF_ERROR(
+      DecodeUintConfigs(code->log_alpha_size, &code->uint_config, br));
+  const size_t max_alphabet_size = 1 << code->log_alpha_size;
   if (!DecodeANSCodes(num_histograms, max_alphabet_size, br, code)) {
     return JXL_FAILURE("Histo DecodeANSCodes");
   }

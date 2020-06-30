@@ -83,21 +83,19 @@ bool DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
   } else {
     ANSCode code;
     std::vector<uint8_t> dummy_ctx_map;
-    JXL_RETURN_IF_ERROR(
-        DecodeHistograms(input, 1, ANS_MAX_ALPHA_SIZE, &code, &dummy_ctx_map));
+    JXL_RETURN_IF_ERROR(DecodeHistograms(input, 1, &code, &dummy_ctx_map));
     ANSSymbolReader reader(&code, input);
     size_t i = 0;
     while (i < context_map->size()) {
-      input->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
-      uint32_t sym = reader.ReadSymbolWithoutRefill(0, input);
-      if (sym >= 8) {
-        i += reader.ReadHybridUint(input, sym - 8) + 2;
+      int32_t sym =
+          UnpackSigned(reader.ReadHybridUint(0, input, dummy_ctx_map));
+      if (sym < 0) {
+        i += -sym + 1;
       } else {
-        uint32_t cluster = reader.ReadHybridUint(input, sym);
-        if (cluster >= kMaxClusters) {
+        if (sym >= kMaxClusters) {
           return JXL_FAILURE("Invalid cluster ID");
         }
-        (*context_map)[i] = cluster;
+        (*context_map)[i] = sym;
         i++;
       }
     }

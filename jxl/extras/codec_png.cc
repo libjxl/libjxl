@@ -687,7 +687,8 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("Unexpected PNG bit depth");
   }
   io->metadata.SetUintSamples(static_cast<uint32_t>(bits_per_sample));
-  io->metadata.alpha_bits = has_alpha ? io->metadata.bits_per_sample : 0;
+  io->metadata.alpha_bits =
+      has_alpha ? io->metadata.bit_depth.bits_per_sample : 0;
 
   io->enc_size = bytes.size();
   (void)io->dec_hints.Foreach(
@@ -700,7 +701,8 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   state.s.info_raw.bitdepth = static_cast<unsigned>(bits_per_sample);
   state.s.info_raw.colortype = MakeType(is_gray, has_alpha);
   unsigned char* out;
-  const unsigned err = lodepng_decode(&out, &w, &h, &state.s, bytes.data(), bytes.size());
+  const unsigned err =
+      lodepng_decode(&out, &w, &h, &state.s, bytes.data(), bytes.size());
   if (err != 0) {
     return JXL_FAILURE("PNG decode failed: %s", lodepng_error_text(err));
   }
@@ -718,16 +720,16 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   const size_t out_size = w * h * num_channels * bits_per_sample / kBitsPerByte;
 
   const bool big_endian = true;  // PNG requirement
-  const PackedImage desc(w, h, io->metadata.color_encoding, has_alpha,
-                         /*alpha_is_premultiplied=*/false,
-                         io->metadata.alpha_bits, io->metadata.bits_per_sample,
-                         big_endian, /*flipped_y=*/false);
+  const PackedImage desc(
+      w, h, io->metadata.color_encoding, has_alpha,
+      /*alpha_is_premultiplied=*/false, io->metadata.alpha_bits,
+      io->metadata.bit_depth.bits_per_sample, big_endian, /*flipped_y=*/false);
   const Span<const uint8_t> span(out, out_size);
   const bool ok = CopyTo(desc, span, pool, &io->Main());
   free(out);
   JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
-  io->metadata.bits_per_sample = io->Main().DetectRealBitdepth();
+  io->metadata.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
   return Map255ToTargetNits(io, pool);
 }
 

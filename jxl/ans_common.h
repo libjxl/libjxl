@@ -17,8 +17,8 @@
 
 #include <stdint.h>
 
-#include <hwy/cache_control.h>  // Prefetch
 #include <algorithm>
+#include <hwy/cache_control.h>  // Prefetch
 #include <vector>
 
 #include "jxl/ans_params.h"
@@ -63,9 +63,6 @@ std::vector<int> CreateFlatHistogram(int length, int total_count);
 // define - it is currently defined by the algorithm to compute the alias table.
 // Beware of breaking the implicit assumption that symbols that come after the
 // cutoff value should have an offset at least as big as the cutoff.
-static constexpr uint32_t kLogEntrySize =
-    ANS_LOG_TAB_SIZE - ANS_LOG_MAX_ALPHABET_SIZE;
-static constexpr uint32_t kEntrySizeMinus1 = (1 << kLogEntrySize) - 1;
 
 struct AliasTable {
   struct Symbol {
@@ -97,10 +94,11 @@ struct AliasTable {
   // symbol is `right_value`; since `offsets[1]` stores the number of occurences
   // of `right_value` "before" this entry, minus the `cutoff` value, the input
   // offset is then `remainder + offsets[1]`.
-  static JXL_INLINE Symbol Lookup(const Entry* JXL_RESTRICT table,
-                                  size_t value) {
-    const size_t i = value >> kLogEntrySize;
-    const size_t pos = value & kEntrySizeMinus1;
+  static JXL_INLINE Symbol Lookup(const Entry* JXL_RESTRICT table, size_t value,
+                                  size_t log_entry_size,
+                                  size_t entry_size_minus_1) {
+    const size_t i = value >> log_entry_size;
+    const size_t pos = value & entry_size_minus_1;
 
 #if JXL_BYTE_ORDER_LITTLE
     uint64_t entry;
@@ -138,16 +136,16 @@ struct AliasTable {
     return s;
   }
 
-  static HWY_INLINE void Prefetch(const Entry* JXL_RESTRICT table,
-                                  size_t value) {
-    const size_t i = value >> kLogEntrySize;
+  static HWY_INLINE void Prefetch(const Entry* JXL_RESTRICT table, size_t value,
+                                  size_t log_entry_size) {
+    const size_t i = value >> log_entry_size;
     hwy::Prefetch(table + i);
   }
 };
 
 // Computes an alias table for a given distribution.
 void InitAliasTable(std::vector<int> distribution, int range,
-                    AliasTable::Entry* JXL_RESTRICT a);
+                    size_t log_alpha_size, AliasTable::Entry* JXL_RESTRICT a);
 
 }  // namespace jxl
 

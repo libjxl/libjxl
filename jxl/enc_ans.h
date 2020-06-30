@@ -39,8 +39,6 @@
 
 namespace jxl {
 
-const static HybridUintConfig kHybridUint420Config{4, 2, 0};
-
 #define USE_MULT_BY_RECIPROCAL
 
 // precision must be equal to:  #bits(state_) + #bits(freq)
@@ -97,21 +95,14 @@ using ANSHistBin = int32_t;
 struct EntropyEncodingData {
   std::vector<std::vector<ANSEncSymbolInfo>> encoding_info;
   bool use_prefix_code;
+  std::vector<HybridUintConfig> uint_config;
 };
 
-// Token to be encoded by the ANS. Uses context c (16 bits), writing symbol s
-// (8 bits), and adds up to 32 (nb) extra bits (b) that are interleaved in the
-// ANS stream.
+// Integer to be encoded by an entropy coder, either ANS or Huffman.
 struct Token {
-  Token(uint32_t c, uint32_t s, uint32_t nb, uint32_t b)
-      : bits(b), context(c), nbits(nb), symbol(s) {
-    JXL_DASSERT(c < (1UL << 16));
-    static_assert(sizeof(Token) == 8, "Token must be a 8 byte struct!");
-  }
-  uint32_t bits;
-  uint16_t context;
-  uint8_t nbits;
-  uint8_t symbol;
+  Token(uint32_t c, uint32_t value) : context(c), value(value) {}
+  uint32_t context;
+  uint32_t value;
 };
 
 // Returns an estimate of the number of bits required to encode the given
@@ -138,15 +129,20 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
 void WriteTokens(const std::vector<Token>& tokens,
                  const EntropyEncodingData& codes,
                  const std::vector<uint8_t>& context_map, BitWriter* writer,
-                 size_t layer, AuxOut* aux_out,
-                 HybridUintConfig uint_config = kHybridUint420Config);
+                 size_t layer, AuxOut* aux_out);
 
 // Same as above, but assumes allotment created by caller.
 size_t WriteTokens(const std::vector<Token>& tokens,
                    const EntropyEncodingData& codes,
                    const std::vector<uint8_t>& context_map,
-                   const BitWriter::Allotment& allotment, BitWriter* writer,
-                   HybridUintConfig uint_config = kHybridUint420Config);
+                   const BitWriter::Allotment& allotment, BitWriter* writer);
+
+// Exposed for tests; to be used with Writer=BitWriter only.
+template <typename Writer>
+void EncodeUintConfigs(const std::vector<HybridUintConfig>& uint_config,
+                       Writer* writer, size_t log_alpha_size);
+extern template void EncodeUintConfigs(const std::vector<HybridUintConfig>&,
+                                       BitWriter*, size_t);
 
 }  // namespace jxl
 

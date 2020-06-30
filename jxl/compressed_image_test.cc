@@ -100,8 +100,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
   Image3F recon = RoundtripImage(opsin, &enc_state, &pool);
 
   CodecInOut io1;
-  io1.metadata.bits_per_sample = io.metadata.bits_per_sample;
-  io1.metadata.exponent_bits_per_sample = io.metadata.exponent_bits_per_sample;
+  io1.metadata.bit_depth = io.metadata.bit_depth;
   io1.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io1.SetFromImage(std::move(recon), io1.metadata.color_encoding);
 

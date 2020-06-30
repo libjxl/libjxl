@@ -66,7 +66,7 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
   std::vector<std::vector<Token>> tokens(1);
 
   auto add_num = [&](int context, size_t num) {
-    TokenizeHybridUint(context, num, &tokens[0]);
+    tokens[0].emplace_back(context, num);
   };
   size_t num_ref_patch = 0;
   for (size_t i = 0; i < positions_.size();) {
@@ -117,9 +117,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
                                size_t save_as_reference) {
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(br, kNumPatchDictionaryContexts,
-                                       ANS_MAX_ALPHA_SIZE, &code,
-                                       &context_map));
+  JXL_RETURN_IF_ERROR(
+      DecodeHistograms(br, kNumPatchDictionaryContexts, &code, &context_map));
   ANSSymbolReader decoder(&code, br);
 
   auto read_num = [&](size_t context) {
@@ -603,7 +602,8 @@ std::vector<PatchInfo> FindTextLikePatches(
         }
       }
       if (!has_similar) continue;
-      info.push_back({QuantizedPatch{}, {{min_x, min_y}}});
+      info.emplace_back();
+      info.back().second.emplace_back(min_x, min_y);
       QuantizedPatch& patch = info.back().first;
       patch.xsize = max_x - min_x + 1;
       patch.ysize = max_y - min_y + 1;

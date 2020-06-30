@@ -82,12 +82,14 @@ struct AnimationFrame {
     if (visitor->Conditional(!nonserialized_composite_still)) {
       visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
     }
-    name_length_ = name.length();
+    uint32_t name_length = name.length();
     // Allows layer name lengths up to 1071 bytes
     visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0,
-                 &name_length_);
-    name.resize(name_length_);
-    for (size_t i = 0; i < name_length_; i++) {
+                 &name_length);
+    if (visitor->IsReading()) {
+      name.resize(name_length);
+    }
+    for (size_t i = 0; i < name_length; i++) {
       uint32_t c = name[i];
       visitor->Bits(8, 0, &c);
       name[i] = c;
@@ -134,21 +136,21 @@ struct AnimationFrame {
   // May be 0 if the current frame serves as a foundation for a frame with crop.
   uint32_t duration;
 
-  // Optional layer name
+  // Optional layer name (UTF-8)
   std::string name;
 
   // Indicates what the next frame will be "based" on.
   // A full frame (have_crop = false) can be based on a frame if and only if the
   // frame and the base are lossy. The rendered frame will then be the sum of
   // the two. A cropped frame can be based on any kind of frame. The rendered
-  // frame will be obtained by blitting.
+  // frame will be obtained by blitting. Applies to main and channels.
   enum class NewBase {
     // The next frame will be based on the same frame as the current one.
     kExisting,
     // The next frame will be based on the current one.
     kCurrentFrame,
     // The next frame will be a full frame (have_crop = false) and will not be
-    // based on any frame.
+    // based on any frame; all channels (including extra) are zero.
     kNone,
   };
   NewBase new_base() const { return static_cast<NewBase>(new_base_int_); }
@@ -165,7 +167,8 @@ struct AnimationFrame {
     kReplace,
     // The new values (in the crop) get added to the old ones
     kAdd,
-    // The new values (in the crop) replace the old ones if alpha>0
+    // The new values (in the crop) replace the old ones if alpha>0.
+    // Not allowed for the first alpha channel.
     kBlend,
   };
   BlendMode blend_mode() const {
@@ -181,7 +184,6 @@ struct AnimationFrame {
  private:
   uint32_t new_base_int_;
   uint32_t blend_mode_int_;
-  uint32_t name_length_;
 
  public:
   bool nonserialized_have_timecode = false;

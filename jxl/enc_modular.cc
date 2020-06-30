@@ -112,8 +112,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
     if (cparams.speed_tier < SpeedTier::kTortoise) {
       cparams.options.predictor = Predictor::Variable;
     } else if (cparams.near_lossless) {
-      // avg(top,left) predictor for near_lossless
-      cparams.options.predictor = Predictor::Average;
+      // weighted predictor for near_lossless
+      cparams.options.predictor = Predictor::Weighted;
     } else if (cparams.responsive) {
       // zero predictor for Squeeze residues
       cparams.options.predictor = Predictor::Zero;
@@ -155,8 +155,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
     nb_chans += ib.extra_channels().size();
   }
 
-  if (ib.metadata()->bits_per_sample >= 32) {
-    if (ib.metadata()->bits_per_sample == 32) {
+  if (ib.metadata()->bit_depth.bits_per_sample >= 32) {
+    if (ib.metadata()->bit_depth.bits_per_sample == 32) {
       // TODO(lode): does modular support uint32_t? maxval is signed int so
       // cannot represent 32 bits.
       return JXL_FAILURE("uint32_t not supported in dec_modular");
@@ -167,7 +167,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // TODO(lode): must handle decoded->metadata()->floating_point_channel?
   int maxval =
-      (1u << static_cast<uint32_t>(ib.metadata()->bits_per_sample)) - 1;
+      (1u << static_cast<uint32_t>(ib.metadata()->bit_depth.bits_per_sample)) -
+      1;
 
   // Nothing to do if image is trivial.
   if (nb_chans == 0) {
@@ -216,6 +217,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     if (ib.IsGray()) c = 1;
   }
+  // TODO(janwas): move to extra channel
   if (frame_header.HasAlpha()) {
     for (size_t y = 0; y < ysize; ++y) {
       const uint16_t* const JXL_RESTRICT row_in = ib.alpha().Row(y);
@@ -226,21 +228,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     c++;
   }
-  if (ib.HasDepth()) {
-    gi.channel[c].resize(ib.depth().xsize(), ib.depth().ysize());
-    gi.channel[c].hshift = ib.metadata()->m2.depth_shift;
-    gi.channel[c].vshift = ib.metadata()->m2.depth_shift;
-    for (size_t y = 0; y < ib.depth().ysize(); ++y) {
-      const uint16_t* const JXL_RESTRICT row_in = ib.depth().Row(y);
-      pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
-      for (size_t x = 0; x < ib.depth().xsize(); ++x) {
-        row_out[x] = row_in[x];
-      }
-    }
-    c++;
-  }
   if (ib.HasExtraChannels() && frame_header.IsDisplayed()) {
     for (size_t ec = 0; ec < ib.extra_channels().size(); ec++, c++) {
+      const ExtraChannelInfo& eci = ib.metadata()->m2.extra_channel_info[ec];
+      gi.channel[c].resize(eci.Size(ib.xsize()), eci.Size(ib.depth().ysize()));
+      gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
+
       for (size_t y = 0; y < ysize; ++y) {
         const uint16_t* const JXL_RESTRICT row_in =
             ib.extra_channels()[ec].Row(y);
@@ -427,39 +420,17 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
+  RunOnPool(
+      pool, 0, group_params.size(), ThreadPool::SkipInit(),
+      [&](size_t i, size_t _) {
+        JXL_CHECK(PrepareGroupParams(
+            group_params[i].rect, cparams, group_params[i].minShift,
+            group_params[i].maxShift, group_params[i].id, do_color));
+      },
+      "ChooseParams");
+
   if (cparams.options.entropy_coder == ModularOptions::EntropyCoder::kBrotli) {
-    for (size_t i = 0; i < group_params.size(); i++) {
-      JXL_RETURN_IF_ERROR(PrepareGroupParams(
-          group_params[i].rect, cparams, group_params[i].minShift,
-          group_params[i].maxShift, group_params[i].id, kHybridUint420Config,
-          do_color, /*bit_size=*/nullptr));
-    }
     return true;
-  }
-
-  HybridUintConfig all_uint_config[2] = {kHybridUint420Config,
-                                         HybridUintConfig(4, 2, 1)};
-  // Try putting the sign bit in the token only at slower settings.
-  size_t num_uint_configs = cparams.speed_tier < SpeedTier::kWombat ? 2 : 1;
-
-  size_t best_cost = std::numeric_limits<size_t>::max();
-  for (size_t uc = 0; uc < num_uint_configs; uc++) {
-    std::atomic<size_t> total_cost{0};
-    RunOnPool(
-        pool, 0, group_params.size(), ThreadPool::SkipInit(),
-        [&](size_t i, size_t _) {
-          size_t cost = 0;
-          JXL_CHECK(PrepareGroupParams(
-              group_params[i].rect, cparams, group_params[i].minShift,
-              group_params[i].maxShift, group_params[i].id, all_uint_config[uc],
-              do_color, &cost));
-          total_cost += cost;
-        },
-        "ChooseParams");
-    if (total_cost < best_cost) {
-      best_cost = total_cost;
-      uint_config = all_uint_config[uc];
-    }
   }
 
   // Add dummy params for the global info so that tree learning takes that into
@@ -477,8 +448,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     size_t group_id = group_params[i].id;
     JXL_RETURN_IF_ERROR(ModularGenericCompress(
         group_images[group_id], group_options[group_id], /*writer=*/nullptr,
-        /*aux_out=*/nullptr, 0, group_id, uint_config, &props, &residuals,
-        &total_pixels));
+        /*aux_out=*/nullptr, 0, group_id, &props, &residuals, &total_pixels));
   }
 
   std::vector<Predictor> predictors;
@@ -495,10 +465,16 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // TODO(veluca): parallelize.
   tree = LearnTree(predictors, std::move(props), std::move(residuals),
-                   total_pixels, cparams.options, uint_config);
+                   total_pixels, cparams.options);
+  // TODO(veluca): do this somewhere else.
+  if (cparams.near_lossless) {
+    for (size_t i = 0; i < tree.size(); i++) {
+      tree[i].predictor_offset = 0;
+    }
+  }
   tree_tokens.resize(1);
   Tree decoded_tree;
-  TokenizeTree(tree, kHybridUint420Config, &tree_tokens[0], &decoded_tree);
+  TokenizeTree(tree, &tree_tokens[0], &decoded_tree);
   JXL_ASSERT(tree.size() == decoded_tree.size());
   tree = std::move(decoded_tree);
 
@@ -514,7 +490,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
         size_t group_id = group_params[i].id;
         JXL_CHECK(ModularGenericCompress(
             group_images[group_id], group_options[group_id], /*writer=*/nullptr,
-            &my_aux_out, 0, group_id, uint_config,
+            &my_aux_out, 0, group_id,
             /*props=*/nullptr,
             /*residuals=*/nullptr,
             /*total_pixels=*/nullptr,
@@ -548,7 +524,7 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
                            &code, &context_map, writer, kLayerModularTree,
                            aux_out);
   WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
-              aux_out, kHybridUint420Config);
+              aux_out);
   // Write histograms.
   BuildAndEncodeHistograms(HistogramParams(), (tree.size() + 1) / 2, tokens,
                            &code, &context_map, writer, kLayerModularGlobal,
@@ -562,7 +538,7 @@ Status ModularFrameEncoder::EncodeGroup(BitWriter* writer, AuxOut* aux_out,
       ModularOptions::EntropyCoder::kBrotli) {
     return ModularGenericCompress(
         group_images[group_id], group_options[group_id], writer, aux_out, layer,
-        group_id, kHybridUint420Config,
+        group_id,
         /*props=*/nullptr, /*residuals=*/nullptr, /*total_pixels=*/nullptr,
         /*tree=*/nullptr, /*header=*/nullptr, /*tokens=*/nullptr,
         /*want_debug=*/true);
@@ -572,15 +548,14 @@ Status ModularFrameEncoder::EncodeGroup(BitWriter* writer, AuxOut* aux_out,
   }
   JXL_RETURN_IF_ERROR(
       Bundle::Write(group_headers[group_id], writer, layer, aux_out));
-  WriteTokens(tokens[group_id], code, context_map, writer, layer, aux_out,
-              uint_config);
+  WriteTokens(tokens[group_id], code, context_map, writer, layer, aux_out);
   return true;
 }
 
-Status ModularFrameEncoder::PrepareGroupParams(
-    const Rect& rect, const CompressParams& cparams, int minShift, int maxShift,
-    size_t group_id, HybridUintConfig uint_config, bool do_color,
-    size_t* bit_size) {
+Status ModularFrameEncoder::PrepareGroupParams(const Rect& rect,
+                                               const CompressParams& cparams,
+                                               int minShift, int maxShift,
+                                               size_t group_id, bool do_color) {
   JXL_ASSERT(group_id != 0);
   Image& full_image = group_images[0];
   const size_t xsize = rect.xsize();
@@ -668,21 +643,22 @@ Status ModularFrameEncoder::PrepareGroupParams(
     }
   }
   if (cparams.near_lossless > 0 && gi.nb_channels != 0) {
+    Transform nl(TransformId::kNearLossless);
+    nl.predictor = cparams.options.predictor;
+    JXL_RETURN_IF_ERROR(nl.predictor != Predictor::Best);
+    JXL_RETURN_IF_ERROR(nl.predictor != Predictor::Variable);
+    nl.begin_c = gi.nb_meta_channels;
     if (cparams.colorspace == 0) {
-      Transform nl(TransformId::kNearLossless);
-      nl.begin_c = gi.nb_meta_channels;
       nl.num_c = gi.nb_channels;
       nl.max_delta_error = cparams.near_lossless;
       gi.do_transform(nl);
     } else {
-      Transform nl(TransformId::kNearLossless);
-      nl.begin_c = gi.nb_meta_channels;
       nl.num_c = 1;
       nl.max_delta_error = cparams.near_lossless;
       gi.do_transform(nl);
       nl.begin_c += 1;
       nl.num_c = gi.nb_channels - 1;
-      nl.max_delta_error *= 2;  // more loss for chroma
+      nl.max_delta_error++;  // more loss for chroma
       gi.do_transform(nl);
     }
   }
@@ -694,7 +670,7 @@ Status ModularFrameEncoder::PrepareGroupParams(
     BitWriter compressed;
     JXL_RETURN_IF_ERROR(ModularGenericCompress(gi, options, &compressed,
                                                /*aux_out=*/nullptr, /*layer=*/0,
-                                               group_id, uint_config));
+                                               group_id));
     if (compressed.BitsWritten() < compressed_size) {
       compressed_size = compressed.BitsWritten();
       group_options[group_id] = options;
@@ -799,13 +775,8 @@ Status ModularFrameEncoder::PrepareGroupParams(
     sg.rct_type = best_rct;
     gi.do_transform(sg);
   } else {
-    // No need to try anything in wombat mode or faster: the default options
-    // are already set.
-    if (cparams.speed_tier < SpeedTier::kWombat) {
-      JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/-1));
-    }
+    // No need to try anything, just use the default options.
   }
-  if (bit_size) *bit_size = compressed_size;
   return true;
 }
 }  // namespace jxl

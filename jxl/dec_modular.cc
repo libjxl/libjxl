@@ -109,8 +109,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   if (has_tree) {
     std::vector<uint8_t> tree_context_map;
     ANSCode tree_code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumTreeContexts,
-                                         ANS_MAX_ALPHA_SIZE, &tree_code,
+    JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumTreeContexts, &tree_code,
                                          &tree_context_map));
     ANSSymbolReader ans_reader(&tree_code, reader);
     // Hard limit the number of properties to 128.
@@ -119,9 +118,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     if (!ans_reader.CheckANSFinalState()) {
       return JXL_FAILURE("ANS decode final state failed");
     }
-    JXL_RETURN_IF_ERROR(DecodeHistograms(reader, (tree.size() + 1) / 2,
-                                         ANS_MAX_ALPHA_SIZE, &code,
-                                         &context_map));
+    JXL_RETURN_IF_ERROR(
+        DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
   }
   int nb_chans = 3, depth_chan = 3;
   if (decoded->IsGray() &&
@@ -140,8 +138,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     nb_chans += decoded->extra_channels().size();
   }
 
-  if (decoded->metadata()->bits_per_sample >= 32) {
-    if (decoded->metadata()->bits_per_sample == 32) {
+  if (decoded->metadata()->bit_depth.bits_per_sample >= 32) {
+    if (decoded->metadata()->bit_depth.bits_per_sample == 32) {
       // TODO(lode): does modular support uint32_t? maxval is signed int so
       // cannot represent 32 bits.
       return JXL_FAILURE("uint32_t not supported in dec_modular");
@@ -150,15 +148,18 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     }
   }
   // TODO(lode): must handle decoded->metadata()->floating_point_channel?
-  int maxval =
-      (1u << static_cast<uint32_t>(decoded->metadata()->bits_per_sample)) - 1;
+  int maxval = (1u << static_cast<uint32_t>(
+                    decoded->metadata()->bit_depth.bits_per_sample)) -
+               1;
 
   Image gi(xsize, ysize, maxval, nb_chans);
   if (decoded->HasDepth()) {
     gi.channel[depth_chan].resize(decoded->depth().xsize(),
                                   decoded->depth().ysize());
-    gi.channel[depth_chan].hshift = decoded->metadata()->m2.depth_shift;
-    gi.channel[depth_chan].vshift = decoded->metadata()->m2.depth_shift;
+    const ExtraChannelInfo* eci =
+        decoded->metadata()->m2.Find(ExtraChannel::kDepth);
+    gi.channel[depth_chan].hshift = eci->dim_shift;
+    gi.channel[depth_chan].vshift = eci->dim_shift;
   }
   ModularOptions options;
   options.max_chan_size = kGroupDim;
@@ -316,26 +317,18 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
     }
     c++;
   }
-  if (decoded->HasDepth()) {
-    pixel_type max_depth = (1 << decoded->metadata()->m2.depth_bits) - 1;
-    for (size_t y = 0; y < decoded->depth().ysize(); ++y) {
-      uint16_t* const JXL_RESTRICT row_out = decoded->depth().MutableRow(y);
-      const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
-      for (size_t x = 0; x < decoded->depth().xsize(); ++x) {
-        row_out[x] = Clamp(row_in[x], 0, max_depth);
-      }
-    }
-    c++;
-  }
   if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
-    pixel_type max_extra =
-        (1 << decoded->metadata()->m2.extra_channel_bits) - 1;
     for (size_t ec = 0; ec < decoded->extra_channels().size(); ec++, c++) {
-      for (size_t y = 0; y < ysize; ++y) {
+      const jxl::ExtraChannelInfo& eci =
+          decoded->metadata()->m2.extra_channel_info[ec];
+      const pixel_type max_extra = (1u << eci.bit_depth.bits_per_sample) - 1;
+      const size_t ec_xsize = eci.Size(xsize);  // includes shift
+      const size_t ec_ysize = eci.Size(ysize);
+      for (size_t y = 0; y < ec_ysize; ++y) {
         uint16_t* const JXL_RESTRICT row_out =
             decoded->extra_channels()[ec].MutableRow(y);
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
-        for (size_t x = 0; x < xsize; ++x) {
+        for (size_t x = 0; x < ec_xsize; ++x) {
           row_out[x] = Clamp(row_in[x], 0, max_extra);
         }
       }

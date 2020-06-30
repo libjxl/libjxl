@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/enc_ac_strategy.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
-#include <hwy/foreach_target.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -35,6 +32,10 @@
 #include "jxl/dct_scales.h"
 #include "jxl/enc_params.h"
 #include "jxl/entropy_coder.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
+#include <hwy/foreach_target.h>
 
 #include "jxl/enc_transforms-inl.h"
 
@@ -482,7 +483,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
         uint32_t token, nbits, bits;
         int v = std::lrint(val);
         info_loss += std::fabs(v - val);
-        EncodeHybridVarLenUint(PackSigned(v), &token, &nbits, &bits);
+        HybridUintConfig().Encode(PackSigned(v), &token, &nbits, &bits);
         // nbits + bits for token. Skip trailing zeros in natural coeff order.
         extra_nbits += nbits;
         extra_tbits += config.token_bits[token];

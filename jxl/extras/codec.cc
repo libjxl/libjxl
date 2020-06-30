@@ -94,7 +94,7 @@ Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
                     ThreadPool* pool, Codec* orig_codec) {
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
-  io->metadata.bits_per_sample = 0;  // (For is-set check below)
+  io->metadata.bit_depth.bits_per_sample = 0;  // (For is-set check below)
 
   Codec codec;
   if (DecodeImagePNG(bytes, pool, io)) {
@@ -218,7 +218,7 @@ Status EncodeToFile(const CodecInOut& io, const std::string& pathname,
                     ThreadPool* pool) {
   // TODO(lode): need to take the floating_point_sample field into account
   return EncodeToFile(io, io.metadata.color_encoding,
-                      io.metadata.bits_per_sample, pathname, pool);
+                      io.metadata.bit_depth.bits_per_sample, pathname, pool);
 }
 
 }  // namespace jxl

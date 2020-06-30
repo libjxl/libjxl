@@ -233,10 +233,11 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   JXL_RETURN_IF_ERROR(color_encoding.SetWhitePoint(white_point));
   JXL_RETURN_IF_ERROR(color_encoding.CreateICC());
 
-  io->metadata.bits_per_sample = kExrBitsPerSample;
+  io->metadata.bit_depth.bits_per_sample = kExrBitsPerSample;
   // EXR uses binary16 or binary32 floating point format.
-  io->metadata.exponent_bits_per_sample = kExrBitsPerSample == 16 ? 5 : 8;
-  io->metadata.floating_point_sample = true;
+  io->metadata.bit_depth.exponent_bits_per_sample =
+      kExrBitsPerSample == 16 ? 5 : 8;
+  io->metadata.bit_depth.floating_point_sample = true;
   io->SetFromImage(std::move(image), color_encoding);
   io->metadata.color_encoding = color_encoding;
   if (has_alpha) {

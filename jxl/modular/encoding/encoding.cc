@@ -75,7 +75,6 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                                  const weighted::Header &wp_header,
                                  const Tree &tree,
                                  const ModularOptions &options,
-                                 const HybridUintConfig &uint_config,
                                  std::vector<Token> *tokens, AuxOut *aux_out,
                                  size_t group_id, bool want_debug) {
   const Channel &channel = image.channel[chan];
@@ -112,8 +111,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       for (size_t i = 0; i < 3; i++) {
         pred_img_row[i][x] = PredictorColor(res.predictor)[i];
       }
-      TokenizeWithConfig(uint_config, res.context, PackSigned(p[x] - res.guess),
-                         tokens);
+      tokens->emplace_back(res.context, PackSigned(p[x] - res.guess));
       wp_state.UpdateErrors(p[x], x, y, channel.w);
     }
   }
@@ -312,10 +310,9 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
 Tree LearnTree(std::vector<Predictor> predictors,
                std::vector<std::vector<int32_t>> &&props,
                std::vector<std::vector<int32_t>> &&residuals,
-               size_t total_pixels, const ModularOptions &options,
-               const HybridUintConfig &uint_config) {
+               size_t total_pixels, const ModularOptions &options) {
   int64_t offset = 0;
-  if (predictors.size() > 1) {
+  if (predictors.size() > 1 && !residuals[0].empty()) {
     int base_pred = 0;
     size_t base_pred_cost = 0;
     for (size_t i = 0; i < predictors.size(); i++) {
@@ -349,13 +346,13 @@ Tree LearnTree(std::vector<Predictor> predictors,
   // TODO(veluca): add an option for max total number of property values.
   ChooseAndQuantizeProperties(options.splitting_heuristics_max_properties,
                               options.splitting_heuristics_max_properties * 256,
-                              uint_config, offset, residuals, &props,
-                              &compact_properties, &props_to_use);
+                              offset, residuals, &props, &compact_properties,
+                              &props_to_use);
   float pixel_fraction = props[0].size() * 1.0f / total_pixels;
   float required_cost = pixel_fraction * 0.9 + 0.1;
   Tree tree;
-  ComputeBestTree(residuals, props, predictors, uint_config, offset,
-                  compact_properties, props_to_use,
+  ComputeBestTree(residuals, props, predictors, offset, compact_properties,
+                  props_to_use,
                   options.splitting_heuristics_node_threshold * required_cost,
                   options.splitting_heuristics_max_properties, &tree);
   return tree;
@@ -514,9 +511,8 @@ void PrintTree(const Tree &tree, const std::string &path) {
 }
 
 bool ModularEncode(const Image &image, const ModularOptions &options,
-                   const HybridUintConfig &uint_config, BitWriter *writer,
-                   AuxOut *aux_out, size_t layer, size_t group_id,
-                   std::vector<std::vector<int32_t>> *props,
+                   BitWriter *writer, AuxOut *aux_out, size_t layer,
+                   size_t group_id, std::vector<std::vector<int32_t>> *props,
                    std::vector<std::vector<int32_t>> *residuals,
                    size_t *total_pixels, const Tree *tree, GroupHeader *header,
                    std::vector<Token> *tokens, bool want_debug) {
@@ -648,14 +644,14 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
 
     std::vector<std::vector<Token>> tree_tokens(1);
-    tree_storage = LearnTree(predictors, std::move(props_storage),
-                             std::move(residuals_storage), *total_pixels,
-                             options, uint_config);
+    tree_storage =
+        LearnTree(predictors, std::move(props_storage),
+                  std::move(residuals_storage), *total_pixels, options);
     tree = &tree_storage;
     tokens = &tokens_storage[0];
 
     Tree decoded_tree;
-    TokenizeTree(*tree, uint_config, &tree_tokens[0], &decoded_tree);
+    TokenizeTree(*tree, &tree_tokens[0], &decoded_tree);
     JXL_ASSERT(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
@@ -668,7 +664,7 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
                              &code, &context_map, writer, kLayerModularTree,
                              aux_out);
     WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
-                aux_out, uint_config);
+                aux_out);
   }
 
   for (size_t i = options.skipchannels; i < nb_channels; i++) {
@@ -680,9 +676,9 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
          image.channel[i].h > options.max_chan_size)) {
       break;
     }
-    JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
-        image, i, header->wp_header, *tree, options, uint_config, tokens,
-        aux_out, group_id, want_debug));
+    JXL_RETURN_IF_ERROR(
+        EncodeModularChannelMAANS(image, i, header->wp_header, *tree, options,
+                                  tokens, aux_out, group_id, want_debug));
   }
 
   // Write data if not using a global tree/ANS stream.
@@ -692,8 +688,7 @@ bool ModularEncode(const Image &image, const ModularOptions &options,
     BuildAndEncodeHistograms(HistogramParams(), (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
                              aux_out);
-    WriteTokens(tokens_storage[0], code, context_map, writer, layer, aux_out,
-                uint_config);
+    WriteTokens(tokens_storage[0], code, context_map, writer, layer, aux_out);
   }
   return true;
 }
@@ -799,9 +794,8 @@ Status ModularDecode(BitReader *br, Image &image, size_t group_id,
   if (!header.use_global_tree) {
     std::vector<uint8_t> tree_context_map;
     ANSCode tree_code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(br, kNumTreeContexts,
-                                         ANS_MAX_ALPHA_SIZE, &tree_code,
-                                         &tree_context_map));
+    JXL_RETURN_IF_ERROR(
+        DecodeHistograms(br, kNumTreeContexts, &tree_code, &tree_context_map));
     ANSSymbolReader reader(&tree_code, br);
     JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, &tree_storage,
                                    NumProperties(image, *options)));
@@ -809,8 +803,7 @@ Status ModularDecode(BitReader *br, Image &image, size_t group_id,
       return JXL_FAILURE("ANS decode final state failed");
     }
     JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
-                                         ANS_MAX_ALPHA_SIZE, &code_storage,
-                                         &context_map_storage));
+                                         &code_storage, &context_map_storage));
   } else {
     if (!global_tree || !global_code || !global_ctx_map ||
         global_tree->empty()) {
@@ -850,7 +843,6 @@ Status ModularDecode(BitReader *br, Image &image, size_t group_id,
 bool ModularGenericCompress(Image &image, const ModularOptions &opts,
                             BitWriter *writer, AuxOut *aux_out, size_t layer,
                             size_t group_id,
-                            const HybridUintConfig &uint_config,
                             std::vector<std::vector<int32_t>> *props,
                             std::vector<std::vector<int32_t>> *residuals,
                             size_t *total_pixels, const Tree *tree,
@@ -864,9 +856,9 @@ bool ModularGenericCompress(Image &image, const ModularOptions &opts,
   }
 
   size_t bits = writer ? writer->BitsWritten() : 0;
-  JXL_RETURN_IF_ERROR(ModularEncode(
-      image, options, uint_config, writer, aux_out, layer, group_id, props,
-      residuals, total_pixels, tree, header, tokens, want_debug));
+  JXL_RETURN_IF_ERROR(ModularEncode(image, options, writer, aux_out, layer,
+                                    group_id, props, residuals, total_pixels,
+                                    tree, header, tokens, want_debug));
   bits = writer ? writer->BitsWritten() - bits : 0;
   if (writer) {
     JXL_DEBUG_V(

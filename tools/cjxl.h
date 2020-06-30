@@ -65,7 +65,7 @@ struct JxlCompressArgs {
   bool jpeg_transcode = true;
 
   float quality = -1001.f;  // Default to lossless if input is already lossy,
-                            // q90 (d1) otherwise
+                            // or to VarDCT otherwise.
   bool progressive = false;
   bool default_settings = true;
 
@@ -77,6 +77,7 @@ struct JxlCompressArgs {
   CommandLineParser::OptionId opt_distance_id = -1;
   CommandLineParser::OptionId opt_target_size_id = -1;
   CommandLineParser::OptionId opt_target_bpp_id = -1;
+  CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_near_lossless_id = -1;
   CommandLineParser::OptionId opt_intensity_target_id = -1;
 

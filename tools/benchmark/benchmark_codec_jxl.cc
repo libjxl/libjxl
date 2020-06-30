@@ -100,7 +100,8 @@ static JxlArgs* const jxlargs = new JxlArgs;
 
 Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
   args->AddDouble(&jxlargs->xmul, "xmul",
-                  "Multiplier for the difference in X channel in Butteraugli.", 1.0);
+                  "Multiplier for the difference in X channel in Butteraugli.",
+                  1.0);
   args->AddDouble(&jxlargs->quant_bias, "quant_bias",
                   "Bias border pixels during quantization by this ratio.", 0.0);
   args->AddFlag(&jxlargs->use_ac_strategy, "use_ac_strategy",
@@ -155,12 +156,10 @@ class JxlCodec : public ImageCodec {
                kDownsamplingPrefix) {
       std::istringstream parser(param.substr(kDownsamplingPrefix.size()));
       parser >> dparams_.max_downsampling;
-    } else if (param == "nl") {
+    } else if (param[0] == 'n' && param[1] == 'l') {
       cparams_.color_transform = jxl::ColorTransform::kNone;
-      cparams_.options.entropy_coder = ModularOptions::kBrotli;
-      cparams_.near_lossless = 3;
-      cparams_.options.max_properties = 0;
-      cparams_.options.nb_repeats = 0;
+      cparams_.near_lossless = strtol(param.substr(2).c_str(), nullptr, 10);
+      if (cparams_.near_lossless == 0) cparams_.near_lossless = 2;
       cparams_.responsive = 0;
     } else if (ParseSpeedTier(param, &cparams_.speed_tier)) {
       // Nothing to do.

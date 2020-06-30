@@ -78,10 +78,8 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
 
   std::vector<uint8_t> transformed_symbols = MoveToFrontTransform(context_map);
   std::vector<Token> tokens;
-  auto encode_rl = [&](size_t len) {
-    uint32_t token, nbits, bits;
-    EncodeVarLenUint(len, &token, &nbits, &bits);
-    tokens.emplace_back(0, token + 8, nbits, bits);
+  auto encode_rl = [&](int len) {
+    tokens.emplace_back(0, PackSigned(-len - 1));
   };
   int zero_start = -1;
   for (size_t i = 0; i < transformed_symbols.size(); i++) {
@@ -96,10 +94,7 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
       }
       if (zero_start != -1) continue;
     }
-    uint32_t token, nbits, bits;
-    EncodeVarLenUint(transformed_symbols[i], &token, &nbits, &bits);
-    JXL_ASSERT(token < 8);
-    tokens.emplace_back(0, token, nbits, bits);
+    tokens.emplace_back(0, PackSigned(transformed_symbols[i]));
   }
   if (zero_start != -1) {
     encode_rl(transformed_symbols.size() - zero_start - 2);
@@ -121,8 +116,7 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
     writer->Write(1, 0);
     BuildAndEncodeHistograms(HistogramParams{}, 1, {tokens}, &codes,
                              &dummy_context_map, writer, 0, nullptr);
-    WriteTokens(tokens, codes, dummy_context_map, allotment, writer,
-                kVarLenUintConfig);
+    WriteTokens(tokens, codes, dummy_context_map, allotment, writer);
   }
 }
 

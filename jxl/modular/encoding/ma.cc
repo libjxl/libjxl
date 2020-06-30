@@ -54,8 +54,7 @@ float EstimateBits(const int32_t counts[ANS_MAX_ALPHA_SIZE],
   return GetLane(SumOfLanes(bits_lanes));
 }
 
-float EstimateTotalBits(HybridUintConfig uint_config, int64_t offset,
-                        const std::vector<int> &residuals,
+float EstimateTotalBits(int64_t offset, const std::vector<int> &residuals,
                         const std::vector<size_t> &indices, size_t begin,
                         size_t end) {
   float ans = 0;
@@ -63,8 +62,8 @@ float EstimateTotalBits(HybridUintConfig uint_config, int64_t offset,
   size_t num_symbols = 0;
   for (size_t i = begin; i < end; i++) {
     uint32_t tok, nbits, bits;
-    uint_config.Encode(PackSigned(residuals[indices[i]] - offset), &tok, &bits,
-                       &nbits);
+    HybridUintConfig().Encode(PackSigned(residuals[indices[i]] - offset), &tok,
+                              &bits, &nbits);
     dist[tok]++;
     ans += nbits;
     num_symbols = num_symbols > tok + 1 ? num_symbols : tok + 1;
@@ -72,8 +71,7 @@ float EstimateTotalBits(HybridUintConfig uint_config, int64_t offset,
   return ans + EstimateBits(dist, num_symbols);
 }
 
-float EstimateTotalBitsAndOffset(HybridUintConfig uint_config,
-                                 const std::vector<int> &residuals,
+float EstimateTotalBitsAndOffset(const std::vector<int> &residuals,
                                  const std::vector<size_t> &indices,
                                  size_t begin, size_t end, int64_t *offset) {
   JXL_ASSERT(begin < end);
@@ -84,14 +82,12 @@ float EstimateTotalBitsAndOffset(HybridUintConfig uint_config,
   }
   int64_t tot = end - begin;
   *offset = sum > 0 ? (sum + tot / 2) / tot : (sum - tot / 2) / tot;
-  return EstimateTotalBits(uint_config, *offset, residuals, indices, begin,
-                           end);
+  return EstimateTotalBits(*offset, residuals, indices, begin, end);
 }
 
 // Compute the entropy obtained by splitting up along each property.
 void EstimateEntropy(
-    HybridUintConfig uint_config, int64_t offset,
-    const std::vector<std::vector<int>> &residuals,
+    int64_t offset, const std::vector<std::vector<int>> &residuals,
     const std::vector<std::vector<int>> &all_props,
     const std::vector<std::vector<int>> &compact_properties,
     std::vector<std::pair<float, size_t>> *props_with_entropy) {
@@ -99,7 +95,7 @@ void EstimateEntropy(
   tokens.reserve(residuals[0].size());
   for (int v : residuals[0]) {
     uint32_t tok, nbits, bits;
-    uint_config.Encode(PackSigned(v - offset), &tok, &bits, &nbits);
+    HybridUintConfig().Encode(PackSigned(v - offset), &tok, &bits, &nbits);
     tokens.push_back(tok);
   }
   const size_t num_symbols =
@@ -163,8 +159,7 @@ void MakeSplitNode(size_t pos, int property, int splitval, Predictor lpred,
   tree->back().predictor_offset = loff;
 }
 
-void FindBestSplit(const HybridUintConfig &uint_config,
-                   const std::vector<std::vector<int>> &residuals,
+void FindBestSplit(const std::vector<std::vector<int>> &residuals,
                    const std::vector<std::vector<int>> &props,
                    const std::vector<Predictor> predictors,
                    const std::vector<std::vector<int>> &compact_properties,
@@ -196,8 +191,8 @@ void FindBestSplit(const HybridUintConfig &uint_config,
   for (size_t pred = 0; pred < residuals.size(); pred++) {
     for (size_t i = begin; i < end; i++) {
       uint32_t tok, nbits, bits;
-      uint_config.Encode(PackSigned(residuals[pred][(*indices)[i]]), &tok,
-                         &bits, &nbits);
+      HybridUintConfig().Encode(PackSigned(residuals[pred][(*indices)[i]]),
+                                &tok, &bits, &nbits);
       tokens[pred].push_back(tok);
       extra_bits[pred].push_back(nbits);
       max_symbols = max_symbols > tok + 1 ? max_symbols : tok + 1;
@@ -342,11 +337,11 @@ void FindBestSplit(const HybridUintConfig &uint_config,
                      indices->begin() + end, [&](size_t a, size_t b) {
                        return props[split_prop][a] < props[split_prop][b];
                      });
-    FindBestSplit(uint_config, residuals, props, predictors, compact_properties,
-                  indices, (*tree)[pos].childID + 1, begin, split_pos,
-                  props_to_use, best_split_l, threshold, tree);
-    FindBestSplit(uint_config, residuals, props, predictors, compact_properties,
-                  indices, (*tree)[pos].childID, split_pos, end, props_to_use,
+    FindBestSplit(residuals, props, predictors, compact_properties, indices,
+                  (*tree)[pos].childID + 1, begin, split_pos, props_to_use,
+                  best_split_l, threshold, tree);
+    FindBestSplit(residuals, props, predictors, compact_properties, indices,
+                  (*tree)[pos].childID, split_pos, end, props_to_use,
                   best_split_r, threshold, tree);
   } else {
     // try to pick an offset for the leaves.
@@ -358,8 +353,8 @@ void FindBestSplit(const HybridUintConfig &uint_config,
       }
     }
     int64_t o;
-    float c = EstimateTotalBitsAndOffset(uint_config, residuals[pred], *indices,
-                                         begin, end, &o);
+    float c =
+        EstimateTotalBitsAndOffset(residuals[pred], *indices, begin, end, &o);
     // Cost estimate of encoding the offset. Huge constant penalty to avoid
     // significant increases in tree size.
     c += 200.0f + FloorLog2Nonzero(PackSigned(o) + 1);
@@ -381,8 +376,7 @@ HWY_EXPORT(EstimateTotalBits)  // Local function.
 HWY_EXPORT(FindBestSplit)      // Local function.
 
 void ChooseAndQuantizeProperties(
-    size_t max_properties, size_t max_property_values,
-    const HybridUintConfig &uint_config, int64_t offset,
+    size_t max_properties, size_t max_property_values, int64_t offset,
     const std::vector<std::vector<int>> &residuals,
     std::vector<std::vector<int>> *props,
     std::vector<std::vector<int>> *compact_properties,
@@ -442,8 +436,7 @@ void ChooseAndQuantizeProperties(
 
   std::vector<std::pair<float, size_t>> props_with_entropy;
   HWY_DYNAMIC_DISPATCH(EstimateEntropy)
-  (uint_config, offset, residuals, *props, *compact_properties,
-   &props_with_entropy);
+  (offset, residuals, *props, *compact_properties, &props_with_entropy);
   std::sort(props_with_entropy.begin(), props_with_entropy.end());
 
   // Limit the search to the properties with the smallest resulting entropy
@@ -512,10 +505,13 @@ void ChooseAndQuantizeProperties(
 void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<std::vector<int>> &props,
                      const std::vector<Predictor> &predictors,
-                     const HybridUintConfig &uint_config, int64_t base_offset,
+                     int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
                      size_t max_properties, Tree *tree) {
+  // TODO(veluca): take into account that different contexts can have different
+  // uint configs.
+  //
   // Initialize tree.
   tree->emplace_back();
   tree->back().predictor = predictors[0];
@@ -524,10 +520,10 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   std::vector<size_t> indices(residuals[0].size());
   std::iota(indices.begin(), indices.end(), 0);
   float base_bits = HWY_DYNAMIC_DISPATCH(EstimateTotalBits)(
-      uint_config, base_offset, residuals[0], indices, 0, indices.size());
+      base_offset, residuals[0], indices, 0, indices.size());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
-  (uint_config, residuals, props, predictors, compact_properties, &indices, 0,
-   0, indices.size(), props_to_use, base_bits, threshold, tree);
+  (residuals, props, predictors, compact_properties, &indices, 0, 0,
+   indices.size(), props_to_use, base_bits, threshold, tree);
   size_t leaves = 0;
   for (size_t i = 0; i < tree->size(); i++) {
     if ((*tree)[i].property < 0) {
@@ -546,8 +542,8 @@ constexpr size_t kOffsetContext = 3;
 static constexpr size_t kMaxTreeSize = 1 << 26;
 
 // TODO(veluca): very simple encoding scheme. This should be improved.
-void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
-                  std::vector<Token> *tokens, Tree *decoder_tree) {
+void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
+                  Tree *decoder_tree) {
   JXL_ASSERT(tree.size() <= kMaxTreeSize);
   std::queue<int> q;
   q.push(0);
@@ -557,13 +553,12 @@ void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
     int cur = q.front();
     q.pop();
     JXL_ASSERT(tree[cur].property >= -1);
-    TokenizeWithConfig(uint_config, kPropertyContext, tree[cur].property + 1,
-                       tokens);
+    tokens->emplace_back(kPropertyContext, tree[cur].property + 1);
     if (tree[cur].property == -1) {
-      TokenizeWithConfig(uint_config, kPredictorContext,
-                         static_cast<int>(tree[cur].predictor), tokens);
-      TokenizeWithConfig(uint_config, kOffsetContext,
-                         PackSigned(tree[cur].predictor_offset), tokens);
+      tokens->emplace_back(kPredictorContext,
+                           static_cast<int>(tree[cur].predictor));
+      tokens->emplace_back(kOffsetContext,
+                           PackSigned(tree[cur].predictor_offset));
       JXL_ASSERT(tree[cur].predictor < Predictor::Best);
       decoder_tree->push_back(PropertyDecisionNode(
           -1, 0, leaf_id++, tree[cur].predictor, tree[cur].predictor_offset));
@@ -574,8 +569,7 @@ void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
                              decoder_tree->size() + q.size() + 1));
     q.push(tree[cur].childID);
     q.push(tree[cur].childID + 1);
-    TokenizeWithConfig(uint_config, kSplitValContext,
-                       PackSigned(tree[cur].splitval), tokens);
+    tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
   }
 }
 

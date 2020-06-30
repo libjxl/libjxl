@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/chroma_from_luma.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/chroma_from_luma.cc"
-#include <hwy/foreach_target.h>
 
 #include <float.h>
 #include <stdlib.h>
@@ -37,10 +34,15 @@
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/quantizer.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/chroma_from_luma.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_transforms-inl.h"
 #include "jxl/predictor-inl.h"
 
+// SIMD code
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
@@ -407,7 +409,7 @@ class ColorCorrelationMapCoder {
           residual = PackSigned(decoded[c] - predictions[c]);
         }
 
-        TokenizeHybridUint(ctx, residual, tokens);
+        tokens->emplace_back(ctx, residual);
       }
     }
   };

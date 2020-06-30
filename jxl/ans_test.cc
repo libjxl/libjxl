@@ -64,16 +64,15 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
 
   std::vector<uint8_t> dec_context_map;
   ANSCode decoded_codes;
-  ASSERT_TRUE(DecodeHistograms(&br, n_histograms, ANS_MAX_ALPHA_SIZE,
-                               &decoded_codes, &dec_context_map));
+  ASSERT_TRUE(
+      DecodeHistograms(&br, n_histograms, &decoded_codes, &dec_context_map));
   ASSERT_EQ(dec_context_map, context_map);
   ANSSymbolReader reader(&decoded_codes, &br);
 
   for (const Token& symbol : input_values) {
     uint32_t read_symbol =
-        reader.ReadSymbol(dec_context_map[symbol.context], &br);
-    ASSERT_EQ(read_symbol, symbol.symbol);
-    ASSERT_EQ(br.ReadBits(symbol.nbits), symbol.bits);
+        reader.ReadHybridUint(symbol.context, &br, dec_context_map);
+    ASSERT_EQ(read_symbol, symbol.value);
   }
   ASSERT_TRUE(reader.CheckANSFinalState());
 
@@ -87,11 +86,10 @@ TEST(ANSTest, EmptyRoundtrip) {
 
 TEST(ANSTest, SingleSymbolRoundtrip) {
   for (uint32_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
-    RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE, {{0, i, 0, 0}});
+    RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE, {{0, i}});
   }
   for (uint32_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
-    RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE,
-                      std::vector<Token>(1024, {0, i, 0, 0}));
+    RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE, std::vector<Token>(1024, {0, i}));
   }
 }
 
@@ -111,9 +109,7 @@ void RoundtripRandomStream(int alphabet_size, size_t reps = kReps,
     for (size_t j = 0; j < num; j++) {
       int context = std::uniform_int_distribution<>(0, kNumHistograms - 1)(rng);
       int value = std::uniform_int_distribution<>(0, alphabet_size - 1)(rng);
-      int nbits = std::uniform_int_distribution<>(0, 16)(rng);
-      int bits = std::uniform_int_distribution<>(0, (1 << nbits) - 1)(rng);
-      symbols.emplace_back(context, value, nbits, bits);
+      symbols.emplace_back(context, value);
     }
     RoundtripTestcase(kNumHistograms, alphabet_size, symbols);
   }
@@ -148,9 +144,7 @@ void RoundtripRandomUnbalancedStream(int alphabet_size) {
       int context = std::uniform_int_distribution<>(0, kNumHistograms - 1)(rng);
       int value = distributions[context][std::uniform_int_distribution<>(
           0, kPrecision - 1)(rng)];
-      int nbits = std::uniform_int_distribution<>(0, 16)(rng);
-      int bits = std::uniform_int_distribution<>(0, (1 << nbits) - 1)(rng);
-      symbols.emplace_back(context, value, nbits, bits);
+      symbols.emplace_back(context, value);
     }
     RoundtripTestcase(kNumHistograms + 1, alphabet_size, symbols);
   }
@@ -170,6 +164,34 @@ TEST(ANSTest, RandomUnbalancedStreamRoundtrip3) {
 
 TEST(ANSTest, RandomUnbalancedStreamRoundtripBig) {
   RoundtripRandomUnbalancedStream(ANS_MAX_ALPHA_SIZE);
+}
+
+TEST(ANSTest, UintConfigRoundtrip) {
+  for (size_t log_alpha_size = 5; log_alpha_size <= 8; log_alpha_size++) {
+    std::vector<HybridUintConfig> uint_config, uint_config_dec;
+    for (size_t i = 0; i < log_alpha_size; i++) {
+      for (size_t j = 0; j <= i; j++) {
+        for (size_t k = 0; k <= i - j; k++) {
+          uint_config.emplace_back(i, j, k);
+        }
+      }
+    }
+    uint_config.emplace_back(log_alpha_size, 0, 0);
+    uint_config_dec.resize(uint_config.size());
+    BitWriter writer;
+    BitWriter::Allotment allotment(&writer, 10 * uint_config.size());
+    EncodeUintConfigs(uint_config, &writer, log_alpha_size);
+    ReclaimAndCharge(&writer, &allotment, 0, nullptr);
+    writer.ZeroPadToByte();
+    BitReader br(writer.GetSpan());
+    EXPECT_TRUE(DecodeUintConfigs(log_alpha_size, &uint_config_dec, &br));
+    EXPECT_TRUE(br.Close());
+    for (size_t i = 0; i < uint_config.size(); i++) {
+      EXPECT_EQ(uint_config[i].split_token, uint_config_dec[i].split_token);
+      EXPECT_EQ(uint_config[i].msb_in_token, uint_config_dec[i].msb_in_token);
+      EXPECT_EQ(uint_config[i].lsb_in_token, uint_config_dec[i].lsb_in_token);
+    }
+  }
 }
 
 }  // namespace

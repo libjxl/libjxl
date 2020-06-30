@@ -41,7 +41,10 @@ namespace {
 static const int kMaxNumSymbolsForSmallCode = 4;
 
 void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
-                       size_t alphabet_size, ANSEncSymbolInfo* info) {
+                       size_t alphabet_size, size_t log_alpha_size,
+                       ANSEncSymbolInfo* info) {
+  size_t log_entry_size = ANS_LOG_TAB_SIZE - log_alpha_size;
+  size_t entry_size_minus_1 = (1 << log_entry_size) - 1;
   // create valid alias table for empty streams.
   for (size_t s = 0; s < std::max<size_t>(1, alphabet_size); ++s) {
     const ANSHistBin freq = s == alphabet_size ? ANS_TAB_SIZE : counts[s];
@@ -57,7 +60,8 @@ void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
     info[s].reverse_map_.resize(freq);
   }
   for (int i = 0; i < ANS_TAB_SIZE; i++) {
-    AliasTable::Symbol s = AliasTable::Lookup(table, i);
+    AliasTable::Symbol s =
+        AliasTable::Lookup(table, i, log_entry_size, entry_size_minus_1);
     info[s.value].reverse_map_[s.offset] = i;
   }
 }
@@ -388,7 +392,8 @@ uint32_t ComputeBestMethod(const ANSHistBin* histogram, size_t alphabet_size,
 // Returns an estimate of the cost of encoding this histogram and the
 // corresponding data.
 size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
-                                    size_t alphabet_size, bool use_prefix_code,
+                                    size_t alphabet_size, size_t log_alpha_size,
+                                    bool use_prefix_code,
                                     ANSEncSymbolInfo* info, BitWriter* writer) {
   if (use_prefix_code) {
     if (alphabet_size <= 1) return 0;
@@ -449,8 +454,8 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
   if (method == 0) {
     counts = CreateFlatHistogram(alphabet_size, ANS_TAB_SIZE);
     AliasTable::Entry a[ANS_MAX_ALPHA_SIZE];
-    InitAliasTable(counts, ANS_TAB_SIZE, a);
-    ANSBuildInfoTable(counts.data(), a, alphabet_size, info);
+    InitAliasTable(counts, ANS_TAB_SIZE, log_alpha_size, a);
+    ANSBuildInfoTable(counts.data(), a, alphabet_size, log_alpha_size, info);
     if (writer != nullptr) {
       EncodeFlatHistogram(alphabet_size, writer);
     }
@@ -461,8 +466,8 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
   JXL_CHECK(NormalizeCounts(counts.data(), &omit_pos, alphabet_size,
                             ANS_LOG_TAB_SIZE, shift, &num_symbols, symbols));
   AliasTable::Entry a[ANS_MAX_ALPHA_SIZE];
-  InitAliasTable(counts, ANS_TAB_SIZE, a);
-  ANSBuildInfoTable(counts.data(), a, alphabet_size, info);
+  InitAliasTable(counts, ANS_TAB_SIZE, log_alpha_size, a);
+  ANSBuildInfoTable(counts.data(), a, alphabet_size, log_alpha_size, info);
   if (writer != nullptr) {
     EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
                  symbols, writer);
@@ -476,7 +481,122 @@ float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size) {
   return c;
 }
 
+template <typename Writer>
+void EncodeUintConfigs(const std::vector<HybridUintConfig>& uint_config,
+                       Writer* writer, size_t log_alpha_size) {
+  // TODO(veluca): RLE?
+  for (size_t i = 0; i < uint_config.size(); i++) {
+    writer->Write(CeilLog2Nonzero(log_alpha_size + 1),
+                  uint_config[i].split_exponent);
+    if (uint_config[i].split_exponent == log_alpha_size) {
+      continue;  // msb/lsb don't matter.
+    }
+    size_t nbits = CeilLog2Nonzero(uint_config[i].split_exponent + 1);
+    writer->Write(nbits, uint_config[i].msb_in_token);
+    nbits = CeilLog2Nonzero(uint_config[i].split_exponent -
+                            uint_config[i].msb_in_token + 1);
+    writer->Write(nbits, uint_config[i].lsb_in_token);
+  }
+}
+template void EncodeUintConfigs(const std::vector<HybridUintConfig>&,
+                                BitWriter*, size_t);
+
 namespace {
+
+void ChooseUintConfigs(const HistogramParams& params,
+                       const std::vector<std::vector<Token>>& tokens,
+                       const std::vector<uint8_t>& context_map,
+                       std::vector<Histogram>* clustered_histograms,
+                       EntropyEncodingData* codes, size_t* log_alpha_size) {
+  codes->uint_config.resize(clustered_histograms->size());
+  if (params.uint_method == HistogramParams::HybridUintMethod::kNone) return;
+
+  // Brute-force method that tries a few options.
+  HybridUintConfig configs[] = {
+      HybridUintConfig(4, 2, 0),  // default
+      HybridUintConfig(4, 1, 0),  // less precise
+      HybridUintConfig(4, 2, 1),  // add sign
+      HybridUintConfig(4, 2, 2),  // add sign+parity
+      HybridUintConfig(4, 1, 2),  // add parity but less msb
+      // Same as above, but more direct coding.
+      HybridUintConfig(5, 2, 0), HybridUintConfig(5, 1, 0),
+      HybridUintConfig(5, 2, 1), HybridUintConfig(5, 2, 2),
+      HybridUintConfig(5, 1, 2),
+      // Same as above, but less direct coding.
+      HybridUintConfig(3, 2, 0), HybridUintConfig(3, 1, 0),
+      HybridUintConfig(3, 2, 1), HybridUintConfig(3, 1, 2),
+      // For near-lossless.
+      HybridUintConfig(4, 1, 3), HybridUintConfig(5, 1, 4),
+      HybridUintConfig(5, 2, 3), HybridUintConfig(6, 1, 5),
+      HybridUintConfig(6, 2, 4), HybridUintConfig(6, 0, 0),
+      // Other
+      HybridUintConfig(0, 0, 0),  // varlenuint
+      HybridUintConfig(2, 0, 1),  // works well for ctx map
+      HybridUintConfig(7, 0, 0),  // direct coding
+  };
+
+  std::vector<float> costs(clustered_histograms->size(),
+                           std::numeric_limits<float>::max());
+  std::vector<float> extra_bits(clustered_histograms->size());
+  std::vector<uint8_t> is_valid(clustered_histograms->size());
+  for (HybridUintConfig cfg : configs) {
+    std::fill(is_valid.begin(), is_valid.end(), true);
+    std::fill(extra_bits.begin(), extra_bits.end(), 0);
+
+    for (size_t i = 0; i < clustered_histograms->size(); i++) {
+      (*clustered_histograms)[i].Clear();
+    }
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      for (size_t j = 0; j < tokens[i].size(); ++j) {
+        const Token token = tokens[i][j];
+        uint32_t tok, nbits, bits;
+        size_t histo = context_map[token.context];
+        cfg.Encode(token.value, &tok, &nbits, &bits);
+        if (tok >= ANS_MAX_ALPHA_SIZE) {
+          is_valid[histo] = false;
+          continue;
+        }
+        extra_bits[histo] += nbits;
+        (*clustered_histograms)[histo].Add(tok);
+      }
+    }
+
+    for (size_t i = 0; i < clustered_histograms->size(); i++) {
+      if (!is_valid[i]) continue;
+      float cost = (*clustered_histograms)[i].PopulationCost() + extra_bits[i];
+      if (cost < costs[i]) {
+        codes->uint_config[i] = cfg;
+        costs[i] = cost;
+      }
+    }
+  }
+
+  // Rebuild histograms.
+  for (size_t i = 0; i < clustered_histograms->size(); i++) {
+    (*clustered_histograms)[i].Clear();
+  }
+  *log_alpha_size = 4;
+  for (size_t i = 0; i < tokens.size(); ++i) {
+    for (size_t j = 0; j < tokens[i].size(); ++j) {
+      const Token token = tokens[i][j];
+      uint32_t tok, nbits, bits;
+      size_t histo = context_map[token.context];
+      codes->uint_config[histo].Encode(token.value, &tok, &nbits, &bits);
+      (*clustered_histograms)[histo].Add(tok);
+      while (tok >= (1 << *log_alpha_size)) (*log_alpha_size)++;
+    }
+  }
+  JXL_ASSERT(*log_alpha_size <= 8);
+  /*
+  for (size_t i = 0; i < clustered_histograms->size(); i++) {
+    fprintf(stderr, "%u%u%u[%lu] ", codes->uint_config[i].split_exponent,
+            codes->uint_config[i].msb_in_token,
+            codes->uint_config[i].lsb_in_token,
+            (*clustered_histograms)[i].total_count_);
+  }
+  fprintf(stderr, "\n");
+  */
+}
 
 class HistogramBuilder {
  public:
@@ -489,13 +609,12 @@ class HistogramBuilder {
   }
 
   // NOTE: `layer` is only for clustered_entropy; caller does ReclaimAndCharge.
-  size_t BuildAndStoreEntropyCodes(const HistogramParams params,
-                                   EntropyEncodingData* codes,
-                                   std::vector<uint8_t>* context_map,
-                                   bool use_prefix_code,
-                                   const BitWriter::Allotment& allotment,
-                                   BitWriter* writer, size_t layer,
-                                   AuxOut* aux_out) const {
+  size_t BuildAndStoreEntropyCodes(
+      const HistogramParams params,
+      const std::vector<std::vector<Token>>& tokens, EntropyEncodingData* codes,
+      std::vector<uint8_t>* context_map, bool use_prefix_code,
+      const BitWriter::Allotment& allotment, BitWriter* writer, size_t layer,
+      AuxOut* aux_out) const {
     size_t cost = 0;
     codes->encoding_info.clear();
     std::vector<Histogram> clustered_histograms(histograms_);
@@ -518,11 +637,27 @@ class HistogramBuilder {
             clustered_histograms[i].ShannonEntropy();
       }
     }
+    codes->use_prefix_code = use_prefix_code;
+    size_t log_alpha_size = 7;  // Sane default.
+    ChooseUintConfigs(params, tokens, *context_map, &clustered_histograms,
+                      codes, &log_alpha_size);
+    if (log_alpha_size < 5) log_alpha_size = 5;
+    SizeWriter size_writer;  // Used if writer == nullptr to estimate costs.
     cost += 1;
     if (writer) writer->Write(1, use_prefix_code);
-    codes->use_prefix_code = use_prefix_code;
+
     if (use_prefix_code) {
-      SizeWriter size_writer;  // Used if writer == nullptr to estimate costs.
+      log_alpha_size = 8;
+    } else {
+      cost += 2;
+    }
+    if (writer == nullptr) {
+      EncodeUintConfigs(codes->uint_config, &size_writer, log_alpha_size);
+    } else {
+      if (!use_prefix_code) writer->Write(2, log_alpha_size - 5);
+      EncodeUintConfigs(codes->uint_config, writer, log_alpha_size);
+    }
+    if (use_prefix_code) {
       for (size_t c = 0; c < clustered_histograms.size(); ++c) {
         size_t num_symbol = 1;
         for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
@@ -534,8 +669,8 @@ class HistogramBuilder {
           StoreVarLenUint8(num_symbol - 1, &size_writer);
         }
       }
-      cost += size_writer.size;
     }
+    cost += size_writer.size;
     for (size_t c = 0; c < clustered_histograms.size(); ++c) {
       size_t num_symbol = 1;
       for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
@@ -545,8 +680,8 @@ class HistogramBuilder {
       codes->encoding_info.back().resize(std::max<size_t>(1, num_symbol));
 
       cost += BuildAndStoreANSEncodingData(
-          clustered_histograms[c].data_, num_symbol, use_prefix_code,
-          codes->encoding_info.back().data(), writer);
+          clustered_histograms[c].data_, num_symbol, log_alpha_size,
+          use_prefix_code, codes->encoding_info.back().data(), writer);
     }
     return cost;
   }
@@ -567,11 +702,14 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   size_t total_tokens = 0;
   // Build histograms.
   HistogramBuilder builder(num_contexts);
+  HybridUintConfig uint_config;  //  Default config for clustering.
   for (size_t i = 0; i < tokens.size(); ++i) {
     for (size_t j = 0; j < tokens[i].size(); ++j) {
       const Token token = tokens[i][j];
       total_tokens++;
-      builder.VisitSymbol(token.symbol, token.context);
+      uint32_t tok, nbits, bits;
+      uint_config.Encode(token.value, &tok, &nbits, &bits);
+      builder.VisitSymbol(tok, token.context);
     }
   }
 
@@ -583,9 +721,9 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   // Encode histograms.
   const size_t max_contexts = std::min(num_contexts, kClustersLimit);
   BitWriter::Allotment allotment(writer, 8192 * (max_contexts + 4));
-  total_bits = builder.BuildAndStoreEntropyCodes(params, codes, context_map,
-                                                 use_prefix_code, allotment,
-                                                 writer, layer, aux_out);
+  total_bits = builder.BuildAndStoreEntropyCodes(
+      params, tokens, codes, context_map, use_prefix_code, allotment, writer,
+      layer, aux_out);
   allotment.FinishedHistogram(writer);
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
 
@@ -599,20 +737,18 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
 size_t WriteTokens(const std::vector<Token>& tokens,
                    const EntropyEncodingData& codes,
                    const std::vector<uint8_t>& context_map,
-                   const BitWriter::Allotment& allotment, BitWriter* writer,
-                   HybridUintConfig uint_config) {
-  writer->Write(2, uint_config.msb_in_token);
-  writer->Write(2, uint_config.lsb_in_token);
-  writer->Write(2, uint_config.split_exponent - uint_config.lsb_in_token -
-                       uint_config.msb_in_token);
+                   const BitWriter::Allotment& allotment, BitWriter* writer) {
   size_t num_extra_bits = 0;
   if (codes.use_prefix_code) {
     for (size_t i = 0; i < tokens.size(); i++) {
+      uint32_t tok, nbits, bits;
+      codes.uint_config[context_map[tokens[i].context]].Encode(
+          tokens[i].value, &tok, &nbits, &bits);
       const uint8_t histo_idx = context_map[tokens[i].context];
-      writer->Write(codes.encoding_info[histo_idx][tokens[i].symbol].depth,
-                    codes.encoding_info[histo_idx][tokens[i].symbol].bits);
-      writer->Write(tokens[i].nbits, tokens[i].bits);
-      num_extra_bits += tokens[i].nbits;
+      writer->Write(codes.encoding_info[histo_idx][tok].depth,
+                    codes.encoding_info[histo_idx][tok].bits);
+      writer->Write(nbits, bits);
+      num_extra_bits += nbits;
     }
     return num_extra_bits;
   }
@@ -623,7 +759,10 @@ size_t WriteTokens(const std::vector<Token>& tokens,
   for (int i = end - 1; i >= 0; --i) {
     const Token token = tokens[i];
     const uint8_t histo_idx = context_map[token.context];
-    const ANSEncSymbolInfo& info = codes.encoding_info[histo_idx][token.symbol];
+    uint32_t tok, unused_nbits, unused_bits;
+    codes.uint_config[context_map[tokens[i].context]].Encode(
+        tokens[i].value, &tok, &unused_nbits, &unused_bits);
+    const ANSEncSymbolInfo& info = codes.encoding_info[histo_idx][tok];
     uint8_t nbits = 0;
     uint32_t bits = ans.PutSymbol(info, &nbits);
     if (nbits == 16) {
@@ -637,8 +776,11 @@ size_t WriteTokens(const std::vector<Token>& tokens,
     int nextidx = i > 0 ? out[i - 1].first : end;
     for (; tokenidx < nextidx; ++tokenidx) {
       const Token token = tokens[tokenidx];
-      writer->Write(token.nbits, token.bits);
-      num_extra_bits += token.nbits;
+      uint32_t tok, nbits, bits;
+      codes.uint_config[context_map[token.context]].Encode(token.value, &tok,
+                                                           &nbits, &bits);
+      writer->Write(nbits, bits);
+      num_extra_bits += nbits;
     }
     if (i > 0) {
       writer->Write(16, out[i - 1].second);
@@ -650,10 +792,10 @@ size_t WriteTokens(const std::vector<Token>& tokens,
 void WriteTokens(const std::vector<Token>& tokens,
                  const EntropyEncodingData& codes,
                  const std::vector<uint8_t>& context_map, BitWriter* writer,
-                 size_t layer, AuxOut* aux_out, HybridUintConfig uint_config) {
+                 size_t layer, AuxOut* aux_out) {
   BitWriter::Allotment allotment(writer, 32 * tokens.size() + 32 * 1024 * 4);
   size_t num_extra_bits =
-      WriteTokens(tokens, codes, context_map, allotment, writer, uint_config);
+      WriteTokens(tokens, codes, context_map, allotment, writer);
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
   if (aux_out != nullptr) {
     aux_out->layers[layer].extra_bits += num_extra_bits;

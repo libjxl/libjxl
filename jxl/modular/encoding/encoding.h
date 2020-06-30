@@ -70,15 +70,13 @@ void PrintTree(const Tree &tree, const std::string &path);
 Tree LearnTree(std::vector<Predictor> predictors,
                std::vector<std::vector<int32_t>> &&props,
                std::vector<std::vector<int32_t>> &&residuals,
-               size_t total_pixels, const ModularOptions &options,
-               const HybridUintConfig &uint_config);
+               size_t total_pixels, const ModularOptions &options);
 
 // TODO(veluca): make cleaner interfaces.
 
 bool ModularGenericCompress(
     Image &image, const ModularOptions &opts, BitWriter *writer,
     AuxOut *aux_out = nullptr, size_t layer = 0, size_t group_id = 0,
-    const HybridUintConfig &uint_config = kHybridUint420Config,
     // For gathering data for producing a global tree.
     std::vector<std::vector<int32_t>> *props = nullptr,
     std::vector<std::vector<int32_t>> *residuals = nullptr,

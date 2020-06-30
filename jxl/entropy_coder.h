@@ -128,63 +128,6 @@ constexpr intptr_t UnpackSigned(size_t value) {
   return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 
-const static HybridUintConfig kVarLenUintConfig{0, 0, 0};
-
-// Encode non-negative integer as a pair (N, bits), where len(bits) == N.
-// 0 is encoded as (0, ''); X from range [2**N - 1, 2 * (2**N - 1)]
-// is encoded as (N, X + 1 - 2**N). In detail:
-// 0 -> (0, '')
-// 1 -> (1, '0')
-// 2 -> (1, '1')
-// 3 -> (2, '00')
-// 4 -> (2, '01')
-// 5 -> (2, '10')
-// 6 -> (2, '11')
-// 7 -> (3, '000')
-// ...
-// 65535 -> (16, '0000000000000000')
-static JXL_INLINE void EncodeVarLenUint(uint32_t value,
-                                        uint32_t* JXL_RESTRICT token,
-                                        uint32_t* JXL_RESTRICT nbits,
-                                        uint32_t* JXL_RESTRICT bits) {
-  return kVarLenUintConfig.Encode(value, token, nbits, bits);
-}
-
-static JXL_INLINE void TokenizeVarLenUint(
-    uint32_t ctx, uint32_t val, std::vector<Token>* JXL_RESTRICT tokens) {
-  uint32_t token, nbits, bits;
-  EncodeVarLenUint(val, &token, &nbits, &bits);
-  JXL_ASSERT(static_cast<size_t>(nbits) <= sizeof(Token::bits) * kBitsPerByte);
-  JXL_ASSERT(static_cast<size_t>(token) < ANS_MAX_ALPHA_SIZE);
-  tokens->emplace_back(ctx, token, nbits, bits);
-}
-
-static JXL_INLINE void EncodeHybridVarLenUint(uint32_t value,
-                                              uint32_t* JXL_RESTRICT token,
-                                              uint32_t* JXL_RESTRICT nbits,
-                                              uint32_t* JXL_RESTRICT bits) {
-  kHybridUint420Config.Encode(value, token, nbits, bits);
-}
-
-static JXL_INLINE void TokenizeHybridUint(
-    uint32_t ctx, uint32_t val, std::vector<Token>* JXL_RESTRICT tokens) {
-  uint32_t token, nbits, bits;
-  EncodeHybridVarLenUint(val, &token, &nbits, &bits);
-  JXL_ASSERT(static_cast<size_t>(nbits) <= sizeof(Token::bits) * kBitsPerByte);
-  JXL_ASSERT(static_cast<size_t>(token) < ANS_MAX_ALPHA_SIZE);
-  tokens->emplace_back(ctx, token, nbits, bits);
-}
-
-static JXL_INLINE void TokenizeWithConfig(
-    const HybridUintConfig& config, uint32_t ctx, uint32_t val,
-    std::vector<Token>* JXL_RESTRICT tokens) {
-  uint32_t token, nbits, bits;
-  config.Encode(val, &token, &nbits, &bits);
-  JXL_ASSERT(static_cast<size_t>(nbits) <= sizeof(Token::bits) * kBitsPerByte);
-  JXL_ASSERT(static_cast<size_t>(token) < ANS_MAX_ALPHA_SIZE);
-  tokens->emplace_back(ctx, token, nbits, bits);
-}
-
 static JXL_INLINE int32_t PredictFromTopAndLeft(
     const int32_t* const JXL_RESTRICT row_top,
     const int32_t* const JXL_RESTRICT row, size_t x, int32_t default_val) {

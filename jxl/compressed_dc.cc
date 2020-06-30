@@ -383,11 +383,11 @@ class DCEncoder : public DcPredictor<DCEncoder> {
     predictor_.ComputeDecoded(2, x, y, predictions, residuals, decoded);
 
     int ctx = predictor_.Context(1, num_correct[1], min_error[1]);
-    TokenizeHybridUint(ctx, residuals[1], tokens_);
+    tokens_->emplace_back(ctx, residuals[1]);
     ctx = predictor_.Context(0, num_correct[0], min_error[0]);
-    TokenizeHybridUint(ctx, residuals[0], tokens_);
+    tokens_->emplace_back(ctx, residuals[0]);
     ctx = predictor_.Context(2, num_correct[2], min_error[2]);
-    TokenizeHybridUint(ctx, residuals[2], tokens_);
+    tokens_->emplace_back(ctx, residuals[2]);
   }
 
   void StartRow(size_t y) { predictor_.StartRow(y); }
@@ -749,21 +749,34 @@ Status DecodeDCGroup(BitReader* reader, size_t group_idx,
 
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(DecodeHistograms(
-      reader, kNumDCContexts, ANS_MAX_ALPHA_SIZE, &code, &context_map));
+  JXL_RETURN_IF_ERROR(
+      DecodeHistograms(reader, kNumDCContexts, &code, &context_map));
   ANSSymbolReader decoder(&code, reader);
 
   const Rect rect = dec_state->shared->DCGroupRect(group_idx);
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   Rect rect0(0, 0, xsize, ysize);
+
+#if defined(__aarch64__) && HWY_COMPILER_CLANG != 0 && HWY_COMPILER_CLANG < 800
+  // Workaround a (likely) clang 7 bug that causes a segfault upon the return
+  // of DecodeDC.
+  //
+  // The exact cause of this bug is unclear, but it causes a segfaut between the
+  // final line in DecodeDC and the next line in this function. As there are no
+  // non-trivial destructors being invoked, this is likely caused by some
+  // (wrong) compiler optimization. The next line emits a forced load which
+  // seems to be enough to disrupt this compiler behaviour.
+  (void)*(volatile decltype(HWY_DISPATCH_TABLE(DecodeDC))*)HWY_DISPATCH_TABLE(
+      DecodeDC);
+#endif
+
   if (!(dec_state->shared->frame_header.flags & FrameHeader::kUseDcFrame)) {
-    HWY_DYNAMIC_DISPATCH(DecodeDC)(
-        reader, &decoder, context_map, rect,
-        dec_state->shared->quantizer.MulDC(),
-        dec_state->shared->cmap.DCFactors(), extra_dc_levels,
-        &dec_state->shared_storage.dc_storage,
-        &dec_state->shared_storage.dc_quant_field, aux_out);
+    HWY_DYNAMIC_DISPATCH(DecodeDC)
+    (reader, &decoder, context_map, rect, dec_state->shared->quantizer.MulDC(),
+     dec_state->shared->cmap.DCFactors(), extra_dc_levels,
+     &dec_state->shared_storage.dc_storage,
+     &dec_state->shared_storage.dc_quant_field, aux_out);
   }
 
   JXL_ASSERT(rect.x0() % kColorTileDimInBlocks == 0);

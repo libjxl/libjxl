@@ -638,7 +638,8 @@ std::vector<PatchInfo> DetectGaussianEllipses(
         sqDistMeanMode < params.maxDistMeanMode * params.maxDistMeanMode) {
       size_t x0 = cc.bounds.x0();
       size_t y0 = cc.bounds.y0();
-      dots.push_back(PatchInfo{QuantizedPatch{}, {{x0, y0}}});
+      dots.emplace_back();
+      dots.back().second.emplace_back(x0, y0);
       QuantizedPatch& patch = dots.back().first;
       patch.xsize = cc.bounds.xsize();
       patch.ysize = cc.bounds.ysize();

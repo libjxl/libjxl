@@ -50,8 +50,7 @@ class ModularFrameEncoder {
  private:
   Status PrepareGroupParams(const Rect& rect, const CompressParams& cparams,
                             int minShift, int maxShift, size_t group_id,
-                            HybridUintConfig uint_config, bool do_color,
-                            size_t* bit_size);
+                            bool do_color);
   std::vector<Image> group_images;
   std::vector<ModularOptions> group_options;
 
@@ -61,7 +60,6 @@ class ModularFrameEncoder {
   std::vector<std::vector<Token>> tokens;
   EntropyEncodingData code;
   std::vector<uint8_t> context_map;
-  HybridUintConfig uint_config;
 };
 
 }  // namespace jxl

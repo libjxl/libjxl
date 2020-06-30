@@ -140,10 +140,12 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 
 }  // namespace
 
+BitDepth::BitDepth() { Bundle::Init(this); }
+ExtraChannelInfo::ExtraChannelInfo() { Bundle::Init(this); }
 ImageMetadata::ImageMetadata() { Bundle::Init(this); }
 ImageMetadata2::ImageMetadata2() { Bundle::Init(this); }
 OpsinInverseMatrix::OpsinInverseMatrix() { Bundle::Init(this); }
-IntensityTargetInfo::IntensityTargetInfo() { Bundle::Init(this); }
+ToneMapping::ToneMapping() { Bundle::Init(this); }
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
                          ImageMetadata* JXL_RESTRICT metadata) {
@@ -159,9 +161,6 @@ Status WriteImageMetadata(const ImageMetadata& metadata,
 void ImageBundle::ShrinkTo(size_t xsize, size_t ysize) {
   color_.ShrinkTo(xsize, ysize);
   if (HasAlpha()) alpha_.ShrinkTo(xsize, ysize);
-  if (HasDepth()) {
-    depth_.ShrinkTo(DepthSize(xsize), DepthSize(ysize));
-  }
   for (ImageU& plane : extra_channels_) {
     plane.ShrinkTo(xsize, ysize);
   }
@@ -254,8 +253,6 @@ void ImageBundle::VerifyMetadata() const {
   const uint32_t alpha_bits = metadata_->alpha_bits;
   JXL_CHECK(alpha_bits <= 16);
 
-  JXL_CHECK(metadata_->m2.HasDepth() == HasDepth());
-
   JXL_CHECK(metadata_->m2.num_extra_channels == extra_channels_.size());
 }
 
@@ -268,24 +265,21 @@ void ImageBundle::VerifySizes() const {
       JXL_CHECK(DivCeil(alpha_.xsize(), kBlockDim) == DivCeil(xs, kBlockDim));
       JXL_CHECK(DivCeil(alpha_.ysize(), kBlockDim) == DivCeil(ys, kBlockDim));
     }
-
-    if (HasDepth()) {
-      JXL_CHECK(depth_.xsize() == DepthSize(xs) &&
-                depth_.ysize() == DepthSize(ys));
-    }
   }
 
   if (HasExtraChannels()) {
     JXL_CHECK(xs != 0 && ys != 0);
-    for (const ImageU& plane : extra_channels_) {
-      JXL_CHECK(plane.xsize() == xs && plane.ysize() == ys);
+    for (size_t ec = 0; ec < metadata_->m2.extra_channel_info.size(); ++ec) {
+      const ExtraChannelInfo& eci = metadata_->m2.extra_channel_info[ec];
+      JXL_CHECK(extra_channels_[ec].xsize() == eci.Size(xs));
+      JXL_CHECK(extra_channels_[ec].ysize() == eci.Size(ys));
     }
   }
 }
 
 size_t ImageBundle::DetectRealBitdepth() const {
-  JXL_CHECK(!metadata_->floating_point_sample);
-  const size_t orig_d = metadata_->bits_per_sample;
+  JXL_CHECK(!metadata_->bit_depth.floating_point_sample);
+  const size_t orig_d = metadata_->bit_depth.bits_per_sample;
   const size_t maxval = (1 << orig_d) - 1;
   const double factor = maxval / 255.;
   size_t real_d = 1;
@@ -353,8 +347,10 @@ void ImageBundle::PremultiplyAlphaIfNeeded(ThreadPool* pool) {
 
 void ImageBundle::SetDepth(ImageU&& depth) {
   JXL_CHECK(depth.xsize() != 0 && depth.ysize() != 0);
-  JXL_CHECK(metadata_->m2.depth_bits != 0);
-  depth_ = std::move(depth);
+  const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kDepth);
+  JXL_CHECK(eci != nullptr);
+  const size_t ec = eci - metadata_->m2.extra_channel_info.data();
+  extra_channels_[ec] = std::move(depth);
   VerifySizes();
 }
 

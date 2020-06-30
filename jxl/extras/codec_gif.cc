@@ -104,7 +104,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   if (gif->ImageCount > 1) {
     io->metadata.m2.have_animation = true;
     // Delays in GIF are specified in 100ths of a second.
-    io->animation.tps_numerator_minus_1 = 100 - 1;
+    io->animation.tps_numerator = 100;
     io->animation_frames.reserve(gif->ImageCount);
   }
 

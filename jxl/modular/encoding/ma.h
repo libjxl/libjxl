@@ -44,16 +44,15 @@ class Tree : public std::vector<PropertyDecisionNode> {};
 
 constexpr size_t kNumTreeContexts = 4;
 
-void TokenizeTree(const Tree &tree, const HybridUintConfig &uint_config,
-                  std::vector<Token> *tokens, Tree *decoder_tree);
+void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
+                  Tree *decoder_tree);
 
 Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
                   const std::vector<uint8_t> &context_map, Tree *tree,
                   int max_property);
 
 void ChooseAndQuantizeProperties(
-    size_t max_properties, size_t max_property_values,
-    const HybridUintConfig &uint_config, int64_t offset,
+    size_t max_properties, size_t max_property_values, int64_t offset,
     const std::vector<std::vector<int>> &residuals,
     std::vector<std::vector<int>> *props,
     std::vector<std::vector<int>> *compact_properties,
@@ -62,7 +61,7 @@ void ChooseAndQuantizeProperties(
 void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<std::vector<int>> &props,
                      const std::vector<Predictor> &predictors,
-                     const HybridUintConfig &uint_config, int64_t base_offset,
+                     int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
                      size_t max_properties, Tree *tree);

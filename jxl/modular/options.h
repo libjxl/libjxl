@@ -15,7 +15,10 @@
 #ifndef JXL_MODULAR_ENCODING_OPTIONS_H_
 #define JXL_MODULAR_ENCODING_OPTIONS_H_
 
-#include "jxl/modular/image/image.h"
+#include <stdint.h>
+
+#include <array>
+#include <vector>
 
 namespace jxl {
 
