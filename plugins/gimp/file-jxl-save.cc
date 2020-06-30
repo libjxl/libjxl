@@ -106,8 +106,8 @@ Status SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   // from gegl_buffer_get_format instead?
   GimpPrecision precision = gimp_image_get_precision(image_id);
   if (precision == GIMP_PRECISION_HALF_GAMMA) {
-    io.metadata.bits_per_sample = 16;
-    io.metadata.exponent_bits_per_sample = 5;
+    io.metadata.bit_depth.bits_per_sample = 16;
+    io.metadata.bit_depth.exponent_bits_per_sample = 5;
   } else if (precision == GIMP_PRECISION_FLOAT_GAMMA) {
     io.metadata.SetFloat32Samples();
   } else {  // unsigned integer

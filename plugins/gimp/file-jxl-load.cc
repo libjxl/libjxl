@@ -139,8 +139,8 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
 
   GimpPrecision precision;
   Status (*fill_layer)(gint32 layer, const CodecInOut& io, GimpImageType);
-  if (io.metadata.floating_point_sample) {
-    if (io.metadata.bits_per_sample <= 16) {
+  if (io.metadata.bit_depth.floating_point_sample) {
+    if (io.metadata.bit_depth.bits_per_sample <= 16) {
       precision = GIMP_PRECISION_HALF_GAMMA;
       fill_layer = &FillGimpLayer<GIMP_PRECISION_HALF_GAMMA>;
     } else {
@@ -148,10 +148,10 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
       fill_layer = &FillGimpLayer<GIMP_PRECISION_FLOAT_GAMMA>;
     }
   } else {
-    if (io.metadata.bits_per_sample <= 8) {
+    if (io.metadata.bit_depth.bits_per_sample <= 8) {
       precision = GIMP_PRECISION_U8_GAMMA;
       fill_layer = &FillGimpLayer<GIMP_PRECISION_U8_GAMMA>;
-    } else if (io.metadata.bits_per_sample <= 16) {
+    } else if (io.metadata.bit_depth.bits_per_sample <= 16) {
       precision = GIMP_PRECISION_U16_GAMMA;
       fill_layer = &FillGimpLayer<GIMP_PRECISION_U16_GAMMA>;
     } else {
