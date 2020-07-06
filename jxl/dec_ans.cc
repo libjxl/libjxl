@@ -263,6 +263,11 @@ Status DecodeUintConfigs(size_t log_alpha_size,
       // otherwise, msb/lsb don't matter.
       size_t nbits = CeilLog2Nonzero(split_exponent + 1);
       msb_in_token = br->ReadBits(nbits);
+      if (msb_in_token > split_exponent) {
+        // This could be invalid here already and we need to check this before
+        // we use its value to read more bits.
+        return JXL_FAILURE("Invalid HybridUintConfig");
+      }
       nbits = CeilLog2Nonzero(split_exponent - msb_in_token + 1);
       lsb_in_token = br->ReadBits(nbits);
     }

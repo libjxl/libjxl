@@ -26,6 +26,7 @@
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
+#include "jxl/butteraugli/butteraugli.h"
 #include "jxl/codec_in_out.h"
 #include "jxl/image.h"
 #include "tools/args.h"
@@ -43,17 +44,14 @@ class ImageCodec {
       : args_(args),
         butteraugli_target_(1.0f),
         q_target_(100.0f),
-        bitrate_target_(0.0f),
-        hf_asymmetry_(1.0f),
-        xmul_(1.0f) {}
+        bitrate_target_(0.0f) {}
 
   virtual ~ImageCodec() = default;
 
   void set_description(const std::string& desc) { description_ = desc; }
   const std::string& description() const { return description_; }
 
-  float hf_asymmetry() const { return hf_asymmetry_; }
-  float xmul() const { return xmul_; }
+  const ButteraugliParams& BaParams() const { return ba_params_; }
 
   virtual void ParseParameters(const std::string& parameters);
 
@@ -96,8 +94,7 @@ class ImageCodec {
   float butteraugli_target_;
   float q_target_;
   float bitrate_target_;
-  float hf_asymmetry_;
-  float xmul_;
+  ButteraugliParams ba_params_;
   std::string error_message_;
 };
 

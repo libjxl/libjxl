@@ -67,7 +67,7 @@ TEST(ModularTest, RoundtripLossy) {
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 150000);
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.5);
 }
@@ -90,7 +90,7 @@ TEST(ModularTest, RoundtripLossyWP) {
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 200000);
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.5);
 }

@@ -21,9 +21,9 @@
 
 namespace jxl {
 
-JxlButteraugliComparator::JxlButteraugliComparator(float hf_asymmetry,
-                                                   float xmul)
-    : hf_asymmetry_(hf_asymmetry), xmul_(xmul) {}
+JxlButteraugliComparator::JxlButteraugliComparator(
+    const ButteraugliParams& params)
+    : params_(params) {}
 
 Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
   const ImageBundle* ref_linear_srgb;
@@ -34,8 +34,8 @@ Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
     return false;
   }
 
-  comparator_.reset(new ButteraugliComparator(ref_linear_srgb->color(),
-                                              hf_asymmetry_, xmul_));
+  comparator_.reset(
+      new ButteraugliComparator(ref_linear_srgb->color(), params_));
   xsize_ = ref.xsize();
   ysize_ = ref.ysize();
   return true;
@@ -62,7 +62,7 @@ Status JxlButteraugliComparator::CompareWith(const ImageBundle& actual,
   comparator_->Diffmap(actual_linear_srgb->color(), temp_diffmap);
 
   if (score != nullptr) {
-    *score = ButteraugliScoreFromDiffmap(temp_diffmap);
+    *score = ButteraugliScoreFromDiffmap(temp_diffmap, &params_);
   }
   if (diffmap != nullptr) {
     diffmap->Swap(temp_diffmap);
@@ -80,16 +80,16 @@ float JxlButteraugliComparator::BadQualityScore() const {
 }
 
 float ButteraugliDistance(const ImageBundle& rgb0, const ImageBundle& rgb1,
-                          float hf_asymmetry, float xmul, ImageF* distmap,
+                          const ButteraugliParams& params, ImageF* distmap,
                           ThreadPool* pool) {
-  JxlButteraugliComparator comparator(hf_asymmetry, xmul);
+  JxlButteraugliComparator comparator(params);
   return ComputeScore(rgb0, rgb1, &comparator, distmap, pool);
 }
 
 float ButteraugliDistance(const CodecInOut& rgb0, const CodecInOut& rgb1,
-                          float hf_asymmetry, float xmul, ImageF* distmap,
+                          const ButteraugliParams& params, ImageF* distmap,
                           ThreadPool* pool) {
-  JxlButteraugliComparator comparator(hf_asymmetry, xmul);
+  JxlButteraugliComparator comparator(params);
   JXL_ASSERT(rgb0.frames.size() == rgb1.frames.size());
   float max_dist = 0.0f;
   for (size_t i = 0; i < rgb0.frames.size(); ++i) {

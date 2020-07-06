@@ -16,6 +16,7 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tools/butteraugli_pnorm.cc"
 #include "hwy/foreach_target.h"
+//
 
 #include <math.h>
 #include <stdio.h>
@@ -27,12 +28,23 @@
 #include "jxl/base/profiler.h"
 #include "jxl/color_encoding.h"
 
+//
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
 
-double ComputeDistanceP(const ImageF& distmap, double p) {
+double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
+                        double p) {
   PROFILER_FUNC;
+  // In approximate-border mode, skip pixels on the border likely to be affected
+  // by FastGauss' zero-valued-boundary behavior. The border is less than half
+  // the largest-diameter kernel (37x37 pixels), and 0 if the image is tiny.
+  // NOTE: chosen such that it is vector-aligned.
+  size_t border = (params.approximate_border) ? 8 : 0;
+  if (distmap.xsize() <= 2 * border || distmap.ysize() <= 2 * border) {
+    border = 0;
+  }
+
   const double onePerPixels = 1.0 / (distmap.ysize() * distmap.xsize());
   if (std::abs(p - 3.0) < 1E-6) {
     double sum1[3] = {0.0};
@@ -51,15 +63,15 @@ double ComputeDistanceP(const ImageF& distmap, double p) {
     HWY_ALIGN T sum_totals1[N] = {0};
     HWY_ALIGN T sum_totals2[N] = {0};
 
-    for (size_t y = 0; y < distmap.ysize(); ++y) {
+    for (size_t y = border; y < distmap.ysize() - border; ++y) {
       const float* JXL_RESTRICT row = distmap.ConstRow(y);
 
       auto sums0 = Zero(d);
       auto sums1 = Zero(d);
       auto sums2 = Zero(d);
 
-      size_t x = 0;
-      for (; x + Lanes(d) <= distmap.xsize(); x += Lanes(d)) {
+      size_t x = border;
+      for (; x + Lanes(d) <= distmap.xsize() - border; x += Lanes(d)) {
 #if HWY_CAP_DOUBLE
         const auto d1 = PromoteTo(d, Load(df, row + x));
 #else
@@ -77,7 +89,7 @@ double ComputeDistanceP(const ImageF& distmap, double p) {
       Store(sums1 + Load(d, sum_totals1), d, sum_totals1);
       Store(sums2 + Load(d, sum_totals2), d, sum_totals2);
 
-      for (; x < distmap.xsize(); ++x) {
+      for (; x < distmap.xsize() - border; ++x) {
         const double d1 = row[x];
         double d2 = d1 * d1 * d1;
         sum1[0] += d2;
@@ -105,9 +117,9 @@ double ComputeDistanceP(const ImageF& distmap, double p) {
       fprintf(stderr, "WARNING: using slow ComputeDistanceP\n");
     }
     double sum1[3] = {0.0};
-    for (size_t y = 0; y < distmap.ysize(); ++y) {
+    for (size_t y = border; y < distmap.ysize() - border; ++y) {
       const float* JXL_RESTRICT row = distmap.ConstRow(y);
-      for (size_t x = 0; x < distmap.xsize(); ++x) {
+      for (size_t x = border; x < distmap.xsize() - border; ++x) {
         double d2 = std::pow(row[x], p);
         sum1[0] += d2;
         d2 *= d2;
@@ -186,8 +198,9 @@ double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2) {
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(ComputeDistanceP)
-double ComputeDistanceP(const ImageF& distmap, double p) {
-  return HWY_DYNAMIC_DISPATCH(ComputeDistanceP)(distmap, p);
+double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
+                        double p) {
+  return HWY_DYNAMIC_DISPATCH(ComputeDistanceP)(distmap, params, p);
 }
 
 HWY_EXPORT(ComputeDistance2)

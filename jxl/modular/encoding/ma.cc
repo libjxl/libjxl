@@ -560,13 +560,12 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
       tokens->emplace_back(kOffsetContext,
                            PackSigned(tree[cur].predictor_offset));
       JXL_ASSERT(tree[cur].predictor < Predictor::Best);
-      decoder_tree->push_back(PropertyDecisionNode(
-          -1, 0, leaf_id++, tree[cur].predictor, tree[cur].predictor_offset));
+      decoder_tree->emplace_back(-1, 0, leaf_id++, tree[cur].predictor,
+                                 tree[cur].predictor_offset);
       continue;
     }
-    decoder_tree->push_back(
-        PropertyDecisionNode(tree[cur].property, tree[cur].splitval,
-                             decoder_tree->size() + q.size() + 1));
+    decoder_tree->emplace_back(tree[cur].property, tree[cur].splitval,
+                               decoder_tree->size() + q.size() + 1);
     q.push(tree[cur].childID);
     q.push(tree[cur].childID + 1);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
@@ -614,15 +613,13 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
       }
       int64_t predictor_offset =
           UnpackSigned(reader->ReadHybridUint(kOffsetContext, br, context_map));
-      tree->push_back(PropertyDecisionNode(-1, 0, leaf_id++,
-                                           static_cast<Predictor>(predictor),
-                                           predictor_offset));
+      tree->emplace_back(-1, 0, leaf_id++, static_cast<Predictor>(predictor),
+                         predictor_offset);
       continue;
     }
     int splitval =
         UnpackSigned(reader->ReadHybridUint(kSplitValContext, br, context_map));
-    tree->push_back(
-        PropertyDecisionNode(property, splitval, tree->size() + to_decode + 1));
+    tree->emplace_back(property, splitval, tree->size() + to_decode + 1);
     to_decode += 2;
   }
   std::vector<std::pair<pixel_type, pixel_type>> prop_bounds;

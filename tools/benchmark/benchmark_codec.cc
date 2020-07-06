@@ -90,18 +90,19 @@ Status ImageCodec::ParseParam(const std::string& param) {
     static const double kLowDistance = 0.6;
 
     if (butteraugli_target_ >= kHighDistance) {
-      hf_asymmetry_ = args_.hf_asymmetry;
+      ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     } else if (butteraugli_target_ >= kLowDistance) {
       float w =
           (butteraugli_target_ - kLowDistance) / (kHighDistance - kLowDistance);
-      hf_asymmetry_ = args_.hf_asymmetry * w + 1.0f * (1.0f - w);
+      ba_params_.hf_asymmetry =
+          args_.ba_params.hf_asymmetry * w + 1.0f * (1.0f - w);
     } else {
-      hf_asymmetry_ = 1.0f;
+      ba_params_.hf_asymmetry = 1.0f;
     }
     return true;
   } else if (param[0] == 'r') {
     butteraugli_target_ = -1.0;
-    hf_asymmetry_ = args_.hf_asymmetry;
+    ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     bitrate_target_ = strtof(param.substr(1).c_str(), nullptr);
     return true;
   }

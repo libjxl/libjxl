@@ -104,7 +104,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
   io1.metadata.color_encoding = ColorEncoding::LinearSRGB();
   io1.SetFromImage(std::move(recon), io1.metadata.color_encoding);
 
-  EXPECT_LE(ButteraugliDistance(io, io1, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io1, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
             1.2);
 }

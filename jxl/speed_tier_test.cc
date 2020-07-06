@@ -104,7 +104,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
   CodecInOut io2;
   test::Roundtrip(&io, cparams, dparams, nullptr, &io2);
 
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, /*pool=*/nullptr),
             2.1);
 }

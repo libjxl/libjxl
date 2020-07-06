@@ -159,10 +159,9 @@ TEST(JxlTest, RoundtripSmallD1) {
 
     compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
     EXPECT_LE(compressed_size, 1000);
-    EXPECT_LE(
-        ButteraugliDistance(io, io_out, cparams.hf_asymmetry, cparams.xmul,
-                            /*distmap=*/nullptr, pool),
-        1.5);
+    EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              1.5);
   }
 
   {
@@ -174,10 +173,9 @@ TEST(JxlTest, RoundtripSmallD1) {
     io_dim.ShrinkTo(io_dim.xsize() / 8, io_dim.ysize() / 8);
     EXPECT_LT(Roundtrip(&io_dim, cparams, dparams, pool, &io_out),
               compressed_size);
-    EXPECT_LE(
-        ButteraugliDistance(io_dim, io_out, cparams.hf_asymmetry, cparams.xmul,
-                            /*distmap=*/nullptr, pool),
-        1.5);
+    EXPECT_LE(ButteraugliDistance(io_dim, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              1.5);
     EXPECT_EQ(io_dim.metadata.IntensityTarget(),
               io_out.metadata.IntensityTarget());
   }
@@ -200,7 +198,7 @@ TEST(JxlTest, RoundtripOtherTransforms) {
   CodecInOut io2;
   const size_t compressed_size = Roundtrip(&io, cparams, dparams, pool, &io2);
   EXPECT_LE(compressed_size, 22000);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             6);
 
@@ -208,7 +206,7 @@ TEST(JxlTest, RoundtripOtherTransforms) {
   CodecInOut io3;
   const size_t compressed_size2 = Roundtrip(&io, cparams, dparams, pool, &io3);
   EXPECT_LE(compressed_size2, 22000);
-  EXPECT_LE(ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             6);
 }
@@ -227,7 +225,7 @@ TEST(JxlTest, RoundtripUnalignedD2) {
 
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 700);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             3.2);
 }
@@ -249,14 +247,14 @@ TEST(JxlTest, RoundtripMultiGroupNL) {
   cparams.butteraugli_distance = 1.0f;
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, &pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
             0.9f);
 
   cparams.butteraugli_distance = 2.0f;
   CodecInOut io3;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io3), 80000);
-  EXPECT_LE(ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
             1.5f);
 }
@@ -278,14 +276,14 @@ TEST(JxlTest, RoundtripMultiGroup) {
   cparams.speed_tier = SpeedTier::kKitten;
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, &pool, &io2);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
             1.99f);
 
   cparams.butteraugli_distance = 2.0f;
   CodecInOut io3;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io3), 20000);
-  EXPECT_LE(ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
             3.0f);
 }
@@ -334,12 +332,10 @@ TEST(JxlTest, RoundtripD2Consistent) {
     EXPECT_EQ(size2, size3);
 
     // Exact same distance.
-    const float dist2 =
-        ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                            /*distmap=*/nullptr, &pool);
-    const float dist3 =
-        ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
-                            /*distmap=*/nullptr, &pool);
+    const float dist2 = ButteraugliDistance(io, io2, cparams.ba_params,
+                                            /*distmap=*/nullptr, &pool);
+    const float dist3 = ButteraugliDistance(io, io3, cparams.ba_params,
+                                            /*distmap=*/nullptr, &pool);
     EXPECT_EQ(dist2, dist3);
   }
 }
@@ -368,12 +364,10 @@ TEST(JxlTest, RoundtripLargeConsistent) {
   EXPECT_EQ(size2, size3);
 
   // Exact same distance.
-  const float dist2 =
-      ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                          /*distmap=*/nullptr, &pool);
-  const float dist3 =
-      ButteraugliDistance(io, io3, cparams.hf_asymmetry, cparams.xmul,
-                          /*distmap=*/nullptr, &pool);
+  const float dist2 = ButteraugliDistance(io, io2, cparams.ba_params,
+                                          /*distmap=*/nullptr, &pool);
+  const float dist3 = ButteraugliDistance(io, io3, cparams.ba_params,
+                                          /*distmap=*/nullptr, &pool);
   EXPECT_EQ(dist2, dist3);
 }
 
@@ -393,7 +387,7 @@ TEST(JxlTest, RoundtripSmallNL) {
 
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 1500);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.7);
 }
@@ -415,7 +409,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
 
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 40000);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             2.0);
 }
@@ -435,7 +429,7 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
 
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 900);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.7);
 }
@@ -463,7 +457,7 @@ TEST(JxlTest, RoundtripSmallPatches) {
 
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             0.5f);
 }
@@ -570,7 +564,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000);
-    EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+    EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                   /*distmap=*/nullptr, pool),
               1.7777777);
   }
@@ -590,7 +584,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 1300);
-    EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+    EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                   /*distmap=*/nullptr, pool),
               9.0);
   }
@@ -629,7 +623,7 @@ TEST(JxlTest, RoundtripAlpha) {
   // the two contexts.
   // EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
   // TODO(robryk): Fix the distance estimate used in the encoder.
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             6.3);
 }
@@ -667,7 +661,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   // the two contexts.
   // EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
   // TODO(robryk): Fix the distance estimate used in the encoder.
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             6.3);
 }
@@ -758,9 +752,8 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
   // Note that this precision issue is not a problem in practice if the values
   // are equal when rounded to 8-bit int, but currently full exact precision is
   // tested.
-  EXPECT_EQ(0.0,
-            ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, &pool));
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
 }
 
 TEST(JxlTest, RoundtripLossless8Alpha) {
@@ -780,9 +773,8 @@ TEST(JxlTest, RoundtripLossless8Alpha) {
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 350000);
   // If fails, see note about floating point in RoundtripLossless8.
-  EXPECT_EQ(0.0,
-            ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, pool));
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
   EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
   EXPECT_EQ(8, io2.metadata.alpha_bits);
   EXPECT_EQ(8, io2.metadata.bit_depth.bits_per_sample);
@@ -837,9 +829,8 @@ TEST(JxlTest, RoundtripLossless16Alpha) {
   // Note that this precision issue is not a problem in practice if the values
   // are equal when rounded to 16-bit int, but currently full exact precision is
   // tested.
-  EXPECT_EQ(0.0,
-            ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, pool));
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
   EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
   EXPECT_EQ(16, io2.metadata.alpha_bits);
   EXPECT_EQ(16, io2.metadata.bit_depth.bits_per_sample);
@@ -889,9 +880,8 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
   EXPECT_EQ(0, io2.metadata.bit_depth.exponent_bits_per_sample);
   // If fails, see note about floating point in RoundtripLossless8.
-  EXPECT_EQ(0.0,
-            ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, pool));
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
   EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
 }
 
@@ -922,7 +912,7 @@ TEST(JxlTest, RoundtripDots) {
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
 
   EXPECT_LE(compressed.size(), 400000);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             2.2);
 }
@@ -944,9 +934,8 @@ TEST(JxlTest, RoundtripLossless8Gray) {
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 130000);
   // If fails, see note about floating point in RoundtripLossless8.
-  EXPECT_EQ(0.0,
-            ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, pool));
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
   EXPECT_TRUE(io2.Main().IsGray());
   EXPECT_EQ(8, io2.metadata.bit_depth.bits_per_sample);
   EXPECT_FALSE(io2.metadata.bit_depth.floating_point_sample);
@@ -968,7 +957,7 @@ TEST(JxlTest, RoundtripAnimation) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 3000);
 
   EXPECT_EQ(io2.frames.size(), io.frames.size());
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.5);
 }
@@ -986,9 +975,8 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 1200);
 
   EXPECT_EQ(io2.frames.size(), io.frames.size());
-  EXPECT_EQ(0.0,
-            ButteraugliDistance(io, io2, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, pool));
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
 }
 
 #endif  // JPEGXL_ENABLE_GIF
@@ -1101,9 +1089,8 @@ TEST(JxlTest, RoundtripBrunsliToPixels) {
   Roundtrip(&io, cparams, dparams, &pool, &io3);
 
   // TODO(eustas): investigate, why SJPEG and Brunsli pixels are different.
-  EXPECT_GE(1.5,
-            ButteraugliDistance(io2, io3, cparams.hf_asymmetry, cparams.xmul,
-                                /*distmap=*/nullptr, &pool));
+  EXPECT_GE(1.5, ButteraugliDistance(io2, io3, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
 }
 
 // TODO(eustas): while this test passes, it does not activate "grayscale"

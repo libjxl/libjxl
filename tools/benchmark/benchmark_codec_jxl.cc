@@ -146,7 +146,7 @@ class JxlCodec : public ImageCodec {
       // Nothing to do.
     } else if (param[0] == 'u') {
       cparams_.uniform_quant = strtof(param.substr(1).c_str(), nullptr);
-      hf_asymmetry_ = args_.hf_asymmetry;
+      ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     } else if (param[0] == 'Q') {
       brunsli_params_.quant_scale = strtof(param.substr(1).c_str(), nullptr);
     } else if (param.substr(0, kMaxPassesPrefix.size()) == kMaxPassesPrefix) {
@@ -285,8 +285,8 @@ class JxlCodec : public ImageCodec {
     cparams_.gaborish = jxlargs->gaborish;
 
     cparams_.quant_border_bias = static_cast<float>(jxlargs->quant_bias);
-    cparams_.hf_asymmetry = hf_asymmetry_;
-    cparams_.xmul = static_cast<float>(jxlargs->xmul);
+    cparams_.ba_params.hf_asymmetry = ba_params_.hf_asymmetry;
+    cparams_.ba_params.xmul = static_cast<float>(jxlargs->xmul);
 
     cparams_.quality_pair.first = q_target_;
     cparams_.quality_pair.second = q_target_;

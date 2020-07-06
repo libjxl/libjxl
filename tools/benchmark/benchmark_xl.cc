@@ -276,8 +276,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                              &linear_rgb2, inner_pool));
         double distance_double;
         JXL_CHECK(ButteraugliInterface(linear_rgb1, linear_rgb2,
-                                       codec->hf_asymmetry(), codec->xmul(),
-                                       distmap, distance_double));
+                                       codec->BaParams(), distmap,
+                                       distance_double));
         distance = static_cast<float>(distance_double);
         // Ensure pixels in range 0-255
         s->distance_2 += ComputeDistance2(ib1, ib2);
@@ -290,7 +290,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       }
       // Update stats
       s->distance_p_norm +=
-          ComputeDistanceP(distmap, Args()->error_pnorm) * input_pixels;
+          ComputeDistanceP(distmap, Args()->ba_params, Args()->error_pnorm) *
+          input_pixels;
       s->max_distance = std::max(s->max_distance, distance);
       s->distances.push_back(distance);
       max_distance = std::max(max_distance, distance);
@@ -608,10 +609,10 @@ struct StatPrinter {
 
     const double rmse =
         std::sqrt(t.stats.distance_2 / t.stats.total_input_pixels);
-    const double psnr =
-        t.stats.total_compressed_size == 0
-            ? 0.0
-            : (t.stats.distance_2 == 0) ? 99.99 : (20 * std::log10(255 / rmse));
+    const double psnr = t.stats.total_compressed_size == 0 ? 0.0
+                        : (t.stats.distance_2 == 0)
+                            ? 99.99
+                            : (20 * std::log10(255 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =

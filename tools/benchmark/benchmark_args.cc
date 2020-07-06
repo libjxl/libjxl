@@ -180,11 +180,11 @@ Status BenchmarkArgs::AddCommandLineOptions() {
   AddDouble(&error_pnorm, "error_pnorm",
             "smallest p norm for pooling butteraugli values", 3.0);
 
-  AddDouble(&hf_asymmetry, "hf_asymmetry",
-            "Multiplier for weighting HF artefacts more than features "
-            "being smoothed out. 1.0 means no HF asymmetry. 0.3 is "
-            "a good value to start exploring for asymmetry.",
-            0.8);
+  AddFloat(&ba_params.hf_asymmetry, "hf_asymmetry",
+           "Multiplier for weighting HF artefacts more than features "
+           "being smoothed out. 1.0 means no HF asymmetry. 0.3 is "
+           "a good value to start exploring for asymmetry.",
+           0.8f);
   AddFlag(&profiler, "profiler", "If true, print profiler results.", false);
 
   AddFlag(&show_progress, "show_progress",

@@ -51,8 +51,7 @@ size_t Roundtrip(CodecInOut* io, const BrunsliEncoderOptions& enc_options,
   BrunsliDecoderMeta meta;
   EXPECT_TRUE(BrunsliToPixels(jpg, io2, dec_options, &meta, pool));
 
-  EXPECT_LE(ButteraugliDistance(*io, *io2, /* hf_assymetry */ 1.0f,
-                                /* xmul */ 1.0f,
+  EXPECT_LE(ButteraugliDistance(*io, *io2, ButteraugliParams(),
                                 /*distmap=*/nullptr, pool),
             max_butteraugli_score);
 

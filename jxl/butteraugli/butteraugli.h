@@ -38,6 +38,17 @@
 
 namespace jxl {
 
+struct ButteraugliParams {
+  // Multiplier for penalizing new HF artifacts more than blurring away
+  // features. 1.0=neutral.
+  float hf_asymmetry = 1.0f;
+
+  // Multiplier for the psychovisual difference in the X channel.
+  float xmul = 1.0f;
+
+  bool approximate_border = false;
+};
+
 // ButteraugliInterface defines the public interface for butteraugli.
 //
 // It calculates the difference between rgb0 and rgb1.
@@ -72,7 +83,11 @@ namespace jxl {
 // a subtle difference can be observed between the images.
 //
 // Returns true on success.
+bool ButteraugliInterface(const Image3F &rgb0, const Image3F &rgb1,
+                          const ButteraugliParams &params, ImageF &diffmap,
+                          double &diffvalue);
 
+// Deprecated (calls the previous function)
 bool ButteraugliInterface(const Image3F &rgb0, const Image3F &rgb1,
                           float hf_asymmetry, float xmul, ImageF &diffmap,
                           double &diffvalue);
@@ -142,7 +157,7 @@ class ButteraugliComparator {
   // Butteraugli is calibrated at xmul = 1.0. We add a multiplier here so that
   // we can test the hypothesis that a higher weighing of the X channel would
   // improve results at higher Butteraugli values.
-  ButteraugliComparator(const Image3F &rgb0, double hf_asymmetry, double xmul);
+  ButteraugliComparator(const Image3F &rgb0, const ButteraugliParams &params);
   virtual ~ButteraugliComparator();
 
   // Computes the butteraugli map between the original image given in the
@@ -161,16 +176,20 @@ class ButteraugliComparator {
  private:
   const size_t xsize_;
   const size_t ysize_;
-  float hf_asymmetry_;
-  float xmul_;
+  ButteraugliParams params_;
   PsychoImage pi0_;
   ButteraugliComparator *sub_;
 };
 
+// Deprecated.
 bool ButteraugliDiffmap(const Image3F &rgb0, const Image3F &rgb1,
                         double hf_asymmetry, double xmul, ImageF &diffmap);
 
-double ButteraugliScoreFromDiffmap(const ImageF &diffmap);
+bool ButteraugliDiffmap(const Image3F &rgb0, const Image3F &rgb1,
+                        const ButteraugliParams &params, ImageF &diffmap);
+
+double ButteraugliScoreFromDiffmap(const ImageF &diffmap,
+                                   const ButteraugliParams *params = nullptr);
 
 // Generate rgb-representation of the distance between two images.
 Image3B CreateHeatMapImage(const ImageF &distmap, double good_threshold,

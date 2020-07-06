@@ -128,11 +128,11 @@ static const float kQuant64[64] = {
 };
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  const float kBase = 1.579;
-  const float kMul1 = 0.011694005436008714;
-  const float kOffset1 = 0.008803111138697944;
-  const float kMul2 = -0.19516184961217076;
-  const float kOffset2 = 0.07573967791241042;
+  const float kBase = 1.518;
+  const float kMul1 = 0.012064582959485624;
+  const float kOffset1 = 0.0090838876826177;
+  const float kMul2 = -0.19452292450379458;
+  const float kOffset2 = 0.07720901311417044;
   const float val = *out_pos;
   // Avoid division by zero.
   const float div = std::max(val + kOffset1, 1e-3f);
@@ -187,10 +187,12 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
   float minval_y = 1e30f;
   float maxval_x = -1e30f;
   float maxval_y = -1e30f;
+  float y_sum_of_squares = 0.f;
+  size_t n = 0;
   for (size_t dy = 0; dy < 8 && y + dy < xyb_x.ysize(); ++dy) {
     const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
     const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
-    for (size_t dx = 0; dx < 8 && x + dx < xyb_x.xsize(); ++dx) {
+    for (size_t dx = 0; dx < 8 && x + dx < xyb_x.xsize(); ++dx, ++n) {
       float vx = row_in_x[x + dx];
       float vy = row_in_y[x + dx];
       if (minval_x > vx) {
@@ -205,25 +207,29 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       if (maxval_y < vy) {
         maxval_y = vy;
       }
+      y_sum_of_squares += vy * vy;
     }
   }
-  const float xmul = 5.907827885712019;
+  const float xmul = 8.084918242585585;
   float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
   // than the previous approach of just using range_y.
   float range0 = std::sqrt(range_x * range_y);
-  const float mul0 = 1.9948072308564326;
+  const float mul0 = 2.1115995962627556;
   float range1 = std::sqrt(range_x * range_x + range_y * range_y);
-  const float mul1 = -0.5246306314344823;
+  const float mul1 = -0.6958640662929165;
   float range2 = std::max(range_x, range_y);
-  const float mul2 = 0.0821908522392129;
+  const float mul2 = 0.0873656790090423;
   float range3 = std::min(range_x, range_y);
-  const float mul3 = -0.08637092410094918;
+  const float mul3 = -0.29894579393496157;
+  float range4 = n == 0 ? 0 : range_x * std::sqrt(y_sum_of_squares / n);
+  const float mul4 = 3.722260709772485;
   // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
   // some pathological cases and cause problems downstream.
-  *out_pos += std::max(-7.f, std::min(7.f, mul0 * range0 + mul1 * range1 +
-                                               mul2 * range2 + mul3 * range3));
+  *out_pos += std::max(
+      -7.f, std::min(7.f, mul0 * range0 + mul1 * range1 + mul2 * range2 +
+                              mul3 * range3 + mul4 * range4));
 }
 
 // Change precision in 8x8 blocks that have high frequency content.
@@ -251,7 +257,7 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   if (n != 0) {
     sum /= n;
   }
-  const float kMul = -3.752792318134207;
+  const float kMul = -3.561784742875307;
   sum *= kMul;
   *out_pos += sum;
 }
@@ -637,7 +643,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   ImageF& quant_field = enc_state->initial_quant_field;
 
   const float butteraugli_target = cparams.butteraugli_distance;
-  JxlButteraugliComparator comparator(cparams.hf_asymmetry, cparams.xmul);
+  JxlButteraugliComparator comparator(cparams.ba_params);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
@@ -864,8 +870,9 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
         // compensate. If the error is below the target, decrease the qf.
         // However, to avoid an excessive increase of the qf, only do so if the
         // error is less than half the maximum allowed error.
-        float qf_mul = max_error < 0.5f ? max_error * 2.0f
-                                        : max_error > 1.0f ? max_error : 1.0f;
+        float qf_mul = max_error < 0.5f   ? max_error * 2.0f
+                       : max_error > 1.0f ? max_error
+                                          : 1.0f;
         for (size_t qy = by; qy < by + acs.covered_blocks_y(); qy++) {
           float* JXL_RESTRICT quant_field_row = quant_field.Row(qy);
           for (size_t qx = bx; qx < bx + acs.covered_blocks_x(); qx++) {
@@ -887,7 +894,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
   ImageF& quant_field = enc_state->initial_quant_field;
   const AcStrategyImage& ac_strategy = enc_state->shared.ac_strategy;
 
-  JxlButteraugliComparator comparator(cparams.hf_asymmetry, cparams.xmul);
+  JxlButteraugliComparator comparator(cparams.ba_params);
   ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   AdjustQuantField(ac_strategy, &quant_field);

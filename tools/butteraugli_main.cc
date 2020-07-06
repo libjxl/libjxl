@@ -82,13 +82,14 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   }
 
   ImageF distmap;
-  const float kHfAsymmetry = 0.8;
-  const float kXMul = 1;
-  const float distance = ButteraugliDistance(
-      io1.Main(), io2.Main(), kHfAsymmetry, kXMul, &distmap, &pool);
+  ButteraugliParams ba_params;
+  ba_params.hf_asymmetry = 0.8f;
+  ba_params.xmul = 1.0f;
+  const float distance =
+      ButteraugliDistance(io1.Main(), io2.Main(), ba_params, &distmap, &pool);
   printf("%.10f\n", distance);
 
-  double pnorm = ComputeDistanceP(distmap, p);
+  double pnorm = ComputeDistanceP(distmap, ba_params, p);
   printf("%g-norm: %f\n", p, pnorm);
 
   if (!distmap_filename.empty()) {

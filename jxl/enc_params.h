@@ -23,6 +23,7 @@
 #include <string>
 
 #include "jxl/base/override.h"
+#include "jxl/butteraugli/butteraugli.h"
 #include "jxl/frame_header.h"
 #include "jxl/modular/options.h"
 
@@ -190,12 +191,7 @@ struct CompressParams {
   // Prints extra information during/after encoding.
   bool verbose = false;
 
-  // Multiplier for penalizing new HF artifacts more than blurring away
-  // features. 1.0=neutral.
-  float hf_asymmetry = 1.0f;
-
-  // Multiplier for the psychovisual difference in the X channel.
-  float xmul = 1.0f;
+  ButteraugliParams ba_params;
 
   // modular mode options below
   ModularOptions options;

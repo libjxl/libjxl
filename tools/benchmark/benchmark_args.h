@@ -150,7 +150,7 @@ struct BenchmarkArgs {
 
   int num_samples;
   int sample_dimensions;
-  double hf_asymmetry;
+  ButteraugliParams ba_params;
 
   bool profiler;
   double error_pnorm;
