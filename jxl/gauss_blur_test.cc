@@ -49,19 +49,20 @@ void TestImpulseResponse(size_t width, size_t peak) {
   const auto rg5 = CreateRecursiveGaussian(5.0);
 
   // Extra padding for 4x unrolling
-  std::vector<float> in(width + 3);
+  hwy::AlignedUniquePtr<float[]> in(hwy::AllocateAligned<float>(width + 3));
+  memset(in.get(), 0, sizeof(float) * (width + 3));
   in[peak] = 1.0f;
 
-  std::vector<float> out3(width + 3);
-  std::vector<float> out4(width + 3);
-  std::vector<float> out5(width + 3);
-  FastGaussian1D(rg3, in.data(), width, out3.data());
-  FastGaussian1D(rg4, out3.data(), width, out4.data());
-  FastGaussian1D(rg5, in.data(), width, out5.data());
+  hwy::AlignedUniquePtr<float[]> out3(hwy::AllocateAligned<float>(width + 3));
+  hwy::AlignedUniquePtr<float[]> out4(hwy::AllocateAligned<float>(width + 3));
+  hwy::AlignedUniquePtr<float[]> out5(hwy::AllocateAligned<float>(width + 3));
+  FastGaussian1D(rg3, in.get(), width, out3.get());
+  FastGaussian1D(rg4, out3.get(), width, out4.get());
+  FastGaussian1D(rg5, in.get(), width, out5.get());
 
-  VerifySymmetric(width, peak, out3.data());
-  VerifySymmetric(width, peak, out4.data());
-  VerifySymmetric(width, peak, out5.data());
+  VerifySymmetric(width, peak, out3.get());
+  VerifySymmetric(width, peak, out4.get());
+  VerifySymmetric(width, peak, out5.get());
 
   // Wider kernel has flatter peak
   EXPECT_LT(out5[peak] + 0.05, out3[peak]);

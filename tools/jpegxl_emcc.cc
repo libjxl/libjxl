@@ -12,144 +12,66 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <brunsli/brunsli_decode.h>
 #include <jxl/base/span.h>
-#include <jxl/brunsli.h>
-#include <jxl/color_management.h>
-#include <jxl/common.h>
-#include <jxl/external_image.h>
-#include <jxl/image_ops.h>
+#include <jxl/codec_in_out.h>
+#include <jxl/dec_file.h>
+#include <jxl/enc_cache.h>
+#include <jxl/enc_file.h>
+#include <jxl/extras/codec.h>
 
-#include <cstdio>
 #include <cstring>
 
 using namespace jxl;
 
 extern "C" {
 
-ExternalImage* decompress(const uint8_t* data, size_t size) {
-  ThreadPool* pool = nullptr;
-  Span<const uint8_t> compressed(data, size);
-  std::unique_ptr<ExternalImage> result;
+/* NOTA BENE: see file history to uncover how to decode HDR JPEGs to pixels. */
 
+/** Result: uint32_t 'size' followed by compressed image (JXL). */
+uint8_t* compress(const uint8_t* data, size_t size) {
+  PaddedBytes compressed;
   CodecInOut io;
-  BrunsliDecoderOptions options;
-  BrunsliDecoderMeta metadata;
-
-  io.enc_size = compressed.size();
-
-  brunsli::JPEGData jpg;
-  brunsli::BrunsliStatus status =
-      brunsli::BrunsliDecodeJpeg(compressed.data(), compressed.size(), &jpg);
-  if (status != brunsli::BRUNSLI_OK) {
-    printf("Failed to parse Brunsli input.");
+  Codec input_codec;
+  if (!SetFromBytes(Span<const uint8_t>(data, size), &io, nullptr,
+                    &input_codec)) {
     return nullptr;
   }
-
-  if (!BrunsliToPixels(jpg, &io, options, &metadata, pool)) {
-    printf("Failed to decompress.\n");
+  CompressParams params;
+  PassesEncoderState passes_encoder_state;
+  if (!EncodeFile(params, &io, &passes_encoder_state, &compressed, nullptr,
+                  nullptr)) {
     return nullptr;
   }
-
-  if (!metadata.hdr_orig_colorspace.empty()) {
-    printf("Original colorspace: %s\n", metadata.hdr_orig_colorspace.c_str());
-    // Hopefully, that is something like Chrome / rec2020.
-    metadata.hdr_orig_colorspace = "RGB_D65_202_Rel_Lin";
-    printf("Output colorspace: %s\n", metadata.hdr_orig_colorspace.c_str());
-
-    ColorEncoding c;
-    if (!ParseDescription(metadata.hdr_orig_colorspace, &c)) {
-      printf("Failed to parse color profile description.\n");
-      return nullptr;
-    }
-    if (!c.CreateICC()) {
-      printf("Failed to create color profile.\n");
-      return nullptr;
-    }
-    if (!io.Main().TransformTo(c, pool)) {
-      printf("Failed to transform colorspace.\n");
-      return nullptr;
-    }
-    io.metadata.color_encoding = c;
-  }
-
-  const ImageBundle& ib = io.Main();
-  const ColorEncoding& c_desired = io.metadata.color_encoding;
-  const bool has_alpha = true;
-  const bool alpha_is_premultiplied = false;
-  ImageU alpha(ib.color().xsize(), ib.color().ysize());
-  const size_t alpha_bits = 8;
-  size_t bits_per_sample = 32;
-  const bool big_endian = false;
-  CodecIntervals* temp_intervals = nullptr;
-  Rect rect = Rect(ib);
-
-  result = make_unique<ExternalImage>(
-      pool, ib.color(), rect, ib.c_current(), c_desired, has_alpha,
-      alpha_is_premultiplied, &alpha, alpha_bits, bits_per_sample, big_endian,
-      temp_intervals);
-
-  if (!result->IsHealthy()) {
-    printf("ExternalImage is unhealthy.\n");
-    return nullptr;
-  }
-
-  size_t w = result->xsize();
-  size_t h = result->ysize();
-  float* pixels = const_cast<float*>(
-      reinterpret_cast<const float*>(result->Bytes().data()));
-  for (size_t i = 0; i < w * h; ++i) {
-    pixels[i * 4 + 3] = 1.0f;
-  }
-
-  return result.release();
+  size_t compressed_size = compressed.size();
+  uint8_t* result = reinterpret_cast<uint8_t*>(malloc(compressed_size + 4));
+  uint32_t* meta = reinterpret_cast<uint32_t*>(result);
+  meta[0] = compressed_size;
+  memcpy(result + 4, compressed.data(), compressed_size);
+  return result;
+  return nullptr;
 }
 
-void freeImage(ExternalImage* img) { delete img; }
-
-int getImageWidth(ExternalImage* img) { return img->xsize(); }
-
-int getImageHeight(ExternalImage* img) { return img->ysize(); }
-
-const void* getImagePixels(ExternalImage* img) { return img->Bytes().data(); }
+/** Result: uint32_t 'size' followed by decompressed image (JPG). */
+uint8_t* decompress(const uint8_t* data, size_t size) {
+  PaddedBytes decompressed;
+  CodecInOut io;
+  DecompressParams params;
+  if (!DecodeFile(params, Span<const uint8_t>(data, size), &io, nullptr,
+                  nullptr)) {
+    return nullptr;
+  }
+  io.use_sjpeg = false;
+  io.jpeg_quality = 100;
+  if (!Encode(io, Codec::kJPG, io.Main().c_current(), 8, &decompressed,
+              nullptr)) {
+    return nullptr;
+  }
+  size_t decompressed_size = decompressed.size();
+  uint8_t* result = reinterpret_cast<uint8_t*>(malloc(decompressed_size + 4));
+  uint32_t* meta = reinterpret_cast<uint32_t*>(result);
+  meta[0] = decompressed_size;
+  memcpy(result + 4, decompressed.data(), decompressed_size);
+  return result;
+}
 
 }  // extern "C"
-
-/*
-// Chrome must be launched with "--enable-blink-features=CanvasColorManagement"
-option.
-
-function showImage(bytes, amp) {
-  if (!amp) amp = 1.0 / 256;
-  console.log("Encoded size: " + bytes.length);
-  var buf = Module._malloc(bytes.length);
-  Module.HEAPU8.set(bytes, buf);
-  var img = Module._decompress(buf, bytes.length);
-  Module._free(buf);
-  if (!img) return;
-  var w = Module._getImageWidth(img);
-  var h = Module._getImageHeight(img);
-  var pixelsPtr = Module._getImagePixels(img);
-  var pixels = new Float32Array(Module.HEAPF32.subarray(pixelsPtr >> 2,
-(pixelsPtr >> 2) + w * h * 4)); for (var i = 0; i < w * h * 4; ++i) if ((i & 3)
-!= 3) pixels[i] *= amp; var canvas = document.getElementById("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  var ctx = canvas.getContext("2d", {"colorSpace": "rec2020", "pixelFormat":
-"float16"});
-  // Is there a way to create F16 ImageData?
-  var imageData = ctx.getImageData(0, 0, w, h);
-  imageData.dataUnion.set(pixels);
-  ctx.putImageData(imageData, 0, 0);
-  Module._freeImage(img);
-}
-
-function loadAndShow(path, amp) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", path, true);
-  xhr.responseType = "arraybuffer";
-  xhr.onload = (e) => { showImage(new Uint8Array(xhr.response), amp); }
-  xhr.send(null);
-}
-
-*/

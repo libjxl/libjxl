@@ -128,7 +128,7 @@ static const float kQuant64[64] = {
 };
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  const float kBase = 1.518;
+  const float kBase = 0.635;
   const float kMul1 = 0.012064582959485624;
   const float kOffset1 = 0.0090838876826177;
   const float kMul2 = -0.19452292450379458;
@@ -180,6 +180,69 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   *out_pos += kMul * v;
 }
 
+static float SimpleGamma2(float v) {
+  // Variant of SimpleGamma used for GammaModulation below.
+  static const float mul = 140.16326721564042f;
+  static const float mul2 = 1 / 28.074951961462975;
+
+  v *= mul;
+
+  // Includes correction factor for std::log -> log2.
+  static const float kRetMul = mul2 * 7.972356479515924f * 0.693147181f;
+  static const float kRetAdd = mul2 * -20.2789020414f;
+  static const float kVOffset = 7.667752478222198f;
+
+  if (v < 0) {
+    // This should happen rarely, but may lead to a NaN, which is rather
+    // undesirable. Since negative photons don't exist we solve the NaNs by
+    // clamping here.
+    v = 0;
+  }
+  return kRetMul * FastLog2f(v + kVOffset) + kRetAdd;
+}
+
+void GammaModulation(const size_t x, const size_t y, const ImageF& xyb_x,
+                     const ImageF& xyb_y, float* JXL_RESTRICT out_pos) {
+  float overall_ratio = 0.f;
+  size_t n = 0;
+  for (size_t dy = 0; dy < 8 && y + dy < xyb_x.ysize(); ++dy) {
+    const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
+    const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
+    for (size_t dx = 0; dx < 8 && x + dx < xyb_x.xsize(); ++dx) {
+      const float kBias = 0.16;
+      JXL_DASSERT(kBias > kOpsinAbsorbanceBias[0]);
+      JXL_DASSERT(kBias > kOpsinAbsorbanceBias[1]);
+      JXL_DASSERT(kBias > kOpsinAbsorbanceBias[2]);
+      const float r = row_in_y[x + dx] - row_in_x[x + dx] + kBias;
+      const float g = row_in_y[x + dx] + row_in_x[x + dx] + kBias;
+      const float linear_r = r * r * r;
+      const float linear_g = g * g * g;
+      const float kEpsilon = 0.01;
+      const float r_eps = r + kEpsilon;
+      const float g_eps = g + kEpsilon;
+
+      const float linear_r_eps = r_eps * r_eps * r_eps;
+      const float linear_g_eps = g_eps * g_eps * g_eps;
+      const float log_r = SimpleGamma2(linear_r);
+      const float log_g = SimpleGamma2(linear_g);
+      const float log_r_eps = SimpleGamma2(linear_r_eps);
+      const float log_g_eps = SimpleGamma2(linear_g_eps);
+      const float r_delta = r_eps - r;
+      const float g_delta = g_eps - g;
+      const float log_r_delta = log_r_eps - log_r;
+      const float log_g_delta = log_g_eps - log_g;
+      const float ratio_r = log_r_delta / r_delta;
+      const float ratio_g = log_g_delta / g_delta;
+      const float avg_ratio = 0.5 * (ratio_r + ratio_g);
+
+      overall_ratio += avg_ratio;
+      ++n;
+    }
+  }
+
+  *out_pos += -0.8 * std::log(overall_ratio / n);
+}
+
 // Increase precision in 8x8 blocks that have high dynamic range.
 void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
                      const ImageF& xyb_y, float* JXL_RESTRICT out_pos) {
@@ -210,7 +273,7 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       y_sum_of_squares += vy * vy;
     }
   }
-  const float xmul = 8.084918242585585;
+  const float xmul = 14.1438272671416;
   float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
@@ -257,7 +320,7 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   if (n != 0) {
     sum /= n;
   }
-  const float kMul = -3.561784742875307;
+  const float kMul = -2.7732748987237232;
   sum *= kMul;
   *out_pos += sum;
 }
@@ -291,6 +354,7 @@ void PerBlockModulations(const ImageF& xyb_x, const ImageF& xyb_y,
           DctModulation(x, y, xyb_y, natural_coeff_order, dct_rescale, out_pos);
           RangeModulation(x, y, xyb_x, xyb_y, out_pos);
           HfModulation(x, y, xyb_y, out_pos);
+          GammaModulation(x, y, xyb_x, xyb_y, out_pos);
 
           // We want multiplicative quantization field, so everything
           // until this point has been modulating the exponent.
@@ -341,14 +405,14 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
   const size_t padded_xsize = RoundUpToBlockDim(xsize);
   const size_t padded_ysize = RoundUpToBlockDim(ysize);
   ImageF padded_diff(padded_xsize, padded_ysize);
-  constexpr float mul0 = 0.046072108343079003f;
+  const float mul0 = 0.025960416673242875f;
 
   // The XYB gamma is 3.0 to be able to decode faster with two muls.
   // Butteraugli's gamma is matching the gamma of human eye, around 2.6.
   // We approximate the gamma difference by adding one cubic root into
   // the adaptive quantization. This gives us a total gamma of 2.6666
   // for quantization uses.
-  constexpr float match_gamma_offset = 0.25084239333070085f;
+  const float match_gamma_offset = 1.4631502677995982f;
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),

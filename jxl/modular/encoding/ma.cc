@@ -165,17 +165,31 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
                    const std::vector<std::vector<int>> &compact_properties,
                    std::vector<size_t> *indices, size_t pos, size_t begin,
                    size_t end, const std::vector<size_t> &props_to_use,
-                   float base_bits, float threshold, Tree *tree) {
+                   float base_bits, float threshold, uint64_t used_properties,
+                   float fast_decode_multiplier, Tree *tree) {
   if (begin == end) return;
 
-  size_t split_prop = 0;
-  int split_val = 0;
-  size_t split_pos = begin;
-  float best_split_l = std::numeric_limits<float>::max();
-  float best_split_r = std::numeric_limits<float>::max();
+  int wp_prop = props_to_use.size();
+  for (size_t i = 0; i < props_to_use.size(); i++) {
+    if (props_to_use[i] == kNumNonrefProperties - weighted::kNumProperties) {
+      wp_prop = i;
+    }
+  }
 
-  Predictor lpred = predictors[0];
-  Predictor rpred = predictors[0];
+  struct SplitInfo {
+    size_t prop = 0;
+    int val = 0;
+    size_t pos = 0;
+    float lcost = std::numeric_limits<float>::max();
+    float rcost = std::numeric_limits<float>::max();
+    Predictor lpred = Predictor::Zero;
+    Predictor rpred = Predictor::Zero;
+    float Cost() { return lcost + rcost; }
+  };
+
+  SplitInfo best_split_static;
+  SplitInfo best_split_nonstatic;
+  SplitInfo best_split_nowp;
 
   std::vector<std::vector<uint32_t>> tokens(residuals.size());
   for (auto &v : tokens) {
@@ -219,11 +233,15 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
   // threshold`). Finally, find the split that minimizes the cost.
   struct CostInfo {
     float cost = std::numeric_limits<float>::max();
+    float extra_cost = 0;
+    float Cost() const { return cost + extra_cost; }
     Predictor pred;  // will be uninitialized in some cases, but never used.
   };
   std::vector<CostInfo> costs_l;
   std::vector<CostInfo> costs_r;
-  constexpr float kChangePredPenalty = 4;
+  // The lower the threshold, the higher the expected noisiness of the estimate.
+  // Thus, discourage changing predictors.
+  float change_pred_penalty = 800.0f / (100.0f + threshold);
   for (size_t prop = 0; prop < props.size(); prop++) {
     costs_l.clear();
     costs_r.clear();
@@ -281,16 +299,19 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
                       tot_extra_bits[pred] - extra_bits_below;
         float lcost =
             EstimateBits(counts_below, max_symbols) + extra_bits_below;
+        float penalty = 0;
         if (predictors[pred] != (*tree)[pos].predictor) {
-          rcost += kChangePredPenalty;
-          lcost += kChangePredPenalty;
+          penalty = change_pred_penalty;
         }
-        if (rcost < costs_r[split - begin].cost) {
+        if (rcost + penalty < costs_r[split - begin].Cost()) {
           costs_r[split - begin].cost = rcost;
+          costs_r[split - begin].extra_cost = penalty;
           costs_r[split - begin].pred = predictors[pred];
         }
-        if (lcost < costs_l[split - begin].cost) {
+        if (lcost + penalty < costs_l[split - begin].Cost()) {
           costs_l[split - begin].cost = lcost;
+          costs_l[split - begin].extra_cost = penalty;
+          ;
           costs_l[split - begin].pred = predictors[pred];
         }
       }
@@ -303,14 +324,25 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
       split += prop_value_used_count[i];
       float rcost = costs_r[split - begin].cost;
       float lcost = costs_l[split - begin].cost;
-      if (lcost + rcost < best_split_l + best_split_r) {
-        split_prop = prop;
-        split_val = i;
-        split_pos = split;
-        best_split_l = lcost;
-        lpred = costs_l[split - begin].pred;
-        best_split_r = rcost;
-        rpred = costs_r[split - begin].pred;
+      // WP was not used + we would use the WP property or predictor
+      bool uses_wp = prop == wp_prop ||
+                     costs_l[split - begin].pred == Predictor::Weighted ||
+                     costs_r[split - begin].pred == Predictor::Weighted;
+      bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
+                     (*tree)[pos].predictor == Predictor::Weighted;
+      bool adds_wp = uses_wp && !used_wp;
+
+      SplitInfo &best = prop < kNumStaticProperties
+                            ? best_split_static
+                            : adds_wp ? best_split_nonstatic : best_split_nowp;
+      if (lcost + rcost < best.Cost()) {
+        best.prop = prop;
+        best.val = i;
+        best.pos = split;
+        best.lcost = lcost;
+        best.lpred = costs_l[split - begin].pred;
+        best.rcost = rcost;
+        best.rpred = costs_r[split - begin].pred;
       }
     }
     // Clear prop_count_increase, extra_bits_increase and prop_value_used_count
@@ -327,22 +359,39 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     }
   }
 
-  if (best_split_l + best_split_r + threshold < base_bits) {
+  SplitInfo *best = &best_split_nonstatic;
+  // Try to avoid introducing WP.
+  if (best_split_nowp.Cost() + threshold < base_bits &&
+      best_split_nowp.Cost() <= fast_decode_multiplier * best->Cost()) {
+    best = &best_split_nowp;
+  }
+  // Split along static props if possible and not significantly more expensive.
+  if (best_split_static.Cost() + threshold < base_bits &&
+      best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
+    best = &best_split_static;
+  }
+
+  if (best->Cost() + threshold < base_bits) {
     // Split node and try to split children.
-    MakeSplitNode(pos, props_to_use[split_prop],
-                  compact_properties[split_prop][split_val], lpred, 0, rpred, 0,
-                  tree);
+    MakeSplitNode(pos, props_to_use[best->prop],
+                  compact_properties[best->prop][best->val], best->lpred, 0,
+                  best->rpred, 0, tree);
     // "Sort" according to winning property
-    std::nth_element(indices->begin() + begin, indices->begin() + split_pos,
+    std::nth_element(indices->begin() + begin, indices->begin() + best->pos,
                      indices->begin() + end, [&](size_t a, size_t b) {
-                       return props[split_prop][a] < props[split_prop][b];
+                       return props[best->prop][a] < props[best->prop][b];
                      });
+    if (best->prop >= kNumStaticProperties) {
+      used_properties |= 1 << best->prop;
+    }
     FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].childID + 1, begin, split_pos, props_to_use,
-                  best_split_l, threshold, tree);
+                  (*tree)[pos].childID + 1, begin, best->pos, props_to_use,
+                  best->lcost, threshold, used_properties,
+                  fast_decode_multiplier, tree);
     FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].childID, split_pos, end, props_to_use,
-                  best_split_r, threshold, tree);
+                  (*tree)[pos].childID, best->pos, end, props_to_use,
+                  best->rcost, threshold, used_properties,
+                  fast_decode_multiplier, tree);
   } else {
     // try to pick an offset for the leaves.
     size_t pred = 0;
@@ -508,7 +557,8 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
-                     size_t max_properties, Tree *tree) {
+                     size_t max_properties, float fast_decode_multiplier,
+                     Tree *tree) {
   // TODO(veluca): take into account that different contexts can have different
   // uint configs.
   //
@@ -516,6 +566,7 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   tree->emplace_back();
   tree->back().predictor = predictors[0];
   tree->back().predictor_offset = base_offset;
+  JXL_ASSERT(props.size() < 64);
 
   std::vector<size_t> indices(residuals[0].size());
   std::iota(indices.begin(), indices.end(), 0);
@@ -523,7 +574,8 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
       base_offset, residuals[0], indices, 0, indices.size());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
   (residuals, props, predictors, compact_properties, &indices, 0, 0,
-   indices.size(), props_to_use, base_bits, threshold, tree);
+   indices.size(), props_to_use, base_bits, threshold, /*used_properties=*/0,
+   fast_decode_multiplier, tree);
   size_t leaves = 0;
   for (size_t i = 0; i < tree->size(); i++) {
     if ((*tree)[i].property < 0) {

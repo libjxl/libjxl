@@ -416,7 +416,7 @@ struct ImageMetadata {
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
     visitor->U32(Val(0), Val(8), Val(16), Bits(4), 0, &alpha_bits);
 
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping_));
+    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
 
     return true;
@@ -440,9 +440,9 @@ struct ImageMetadata {
   }
 
   void SetIntensityTarget(float intensity_target) {
-    tone_mapping_.intensity_target = intensity_target;
+    tone_mapping.intensity_target = intensity_target;
   }
-  float IntensityTarget() const { return tone_mapping_.intensity_target; }
+  float IntensityTarget() const { return tone_mapping.intensity_target; }
 
   mutable bool all_default;
 
@@ -452,13 +452,12 @@ struct ImageMetadata {
 
   ColorEncoding color_encoding;
 
+  ToneMapping tone_mapping;
+
   // Bit depth of the JPEG XL compressed alpha channel.
   // 0 if no alpha channel present.
   // TODO(janwas): move to ExtraChannelInfo
   uint32_t alpha_bits;
-
- private:
-  ToneMapping tone_mapping_;
 };
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,

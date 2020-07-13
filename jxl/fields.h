@@ -266,6 +266,23 @@ class Bundle {
     return visitor.OK();
   }
 
+  // Reads bits, and in case of error, outputs whether the error was due to
+  // needing more input bytes, or another reason (such as invalid values).
+  // NOTE: If there were not enough input bytes, a next Read must start from the
+  // beginning of the stream again, the given reader cannot be reused since its
+  // position may have advanced.
+  // TODO(lode): this still displays debug error messages in the terminal if the
+  // only issue is not enough bytes and we want to handle this gracefully, a
+  // different mechanism is needed to read fields streaming and from partial
+  // data. This also includes AllReadsWithinBounds and Close of BitReader.
+  template <class T>
+  static Status Read(BitReader* reader, T* JXL_RESTRICT t, bool* enough_bytes) {
+    ReadVisitor visitor(reader);
+    Status status = visitor.Visit(t, PrintVisitors() ? "-- Read\n" : "");
+    *enough_bytes = visitor.EnoughBytes();
+    return status ? visitor.OK() : status;
+  }
+
   template <class T>
   static Status Write(const T& t, BitWriter* JXL_RESTRICT writer, size_t layer,
                       AuxOut* aux_out) {
@@ -663,23 +680,39 @@ class Bundle {
 
     void Bits(const size_t bits, const uint32_t default_value,
               uint32_t* JXL_RESTRICT value) {
+      if (!enough_bytes_) return;
       *value = BitsCoder::Read(bits, reader_);
+      if (!reader_->AllReadsWithinBounds()) {
+        enough_bytes_ = false;
+      }
       if (PrintRead()) Trace("  u(%zu) = %u\n", bits, *value);
     }
 
     void U32WithEnc(const U32Enc dist, const uint32_t default_value,
                     uint32_t* JXL_RESTRICT value) {
+      if (!enough_bytes_) return;
       *value = U32Coder::Read(dist, reader_);
+      if (!reader_->AllReadsWithinBounds()) {
+        enough_bytes_ = false;
+      }
       if (PrintRead()) Trace("  U32 = %u\n", *value);
     }
 
     void U64(const uint64_t default_value, uint64_t* JXL_RESTRICT value) {
+      if (!enough_bytes_) return;
       *value = U64Coder::Read(reader_);
+      if (!reader_->AllReadsWithinBounds()) {
+        enough_bytes_ = false;
+      }
       if (PrintRead()) Trace("  U64 = %" PRIu64 "\n", *value);
     }
 
     void F16(const float default_value, float* JXL_RESTRICT value) {
+      if (!enough_bytes_) return;
       ok_ &= F16Coder::Read(reader_, value);
+      if (!reader_->AllReadsWithinBounds()) {
+        enough_bytes_ = false;
+      }
       if (PrintRead()) Trace("  F16 = %f\n", *value);
     }
 
@@ -691,11 +724,16 @@ class Bundle {
     Status IsReading() const { return true; }
 
     void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      if (!enough_bytes_) return;
       VisitorBase<ReadVisitor>::BeginExtensions(extensions);
       if (*extensions != 0) {
         // Read the additional U64 indicating the number of extension bits
         // (more compact than sending the total size).
         extension_bits_ = U64Coder::Read(reader_);  // >= 0
+        if (!reader_->AllReadsWithinBounds()) {
+          enough_bytes_ = false;
+          return;
+        }
         // Used by EndExtensions to skip past any _remaining_ extensions.
         pos_after_ext_size_ = reader_->TotalBitsConsumed();
         JXL_ASSERT(pos_after_ext_size_ != 0);
@@ -717,14 +755,23 @@ class Bundle {
       if (remaining_bits != 0) {
         JXL_WARNING("Skipping %zu-bit extension(s)", remaining_bits);
         reader_->SkipBits(remaining_bits);
+        if (!reader_->AllReadsWithinBounds()) {
+          enough_bytes_ = false;
+        }
       }
       return true;
     }
 
-    Status OK() const { return ok_; }
+    Status OK() const { return ok_ && enough_bytes_; }
+
+    Status EnoughBytes() const { return enough_bytes_; }
 
    private:
+    // Whether any error other than not enough bytes occured.
     bool ok_ = true;
+
+    // Whether there are enough input bytes to read from.
+    bool enough_bytes_ = true;
     BitReader* const reader_;
     uint64_t extension_bits_ = 0;    // May be 0 even if extensions present.
     size_t pos_after_ext_size_ = 0;  // 0 iff extensions == 0.

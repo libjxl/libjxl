@@ -270,16 +270,21 @@ add_subdirectory(box)
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
 add_executable(jpegxl_emcc jpegxl_emcc.cc)
-target_link_libraries(jpegxl_emcc jpegxl-static)
+target_link_libraries(jpegxl_emcc jpegxl-static jpegxl_extras-static)
 set_target_properties(jpegxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
+  --closure 1 \
+  -s ALLOW_MEMORY_GROWTH=1 \
+  -flto \
+  --llvm-lto 1 \
+  -s DISABLE_EXCEPTION_CATCHING=1 \
+  -s MODULARIZE=1 \
+  -s FILESYSTEM=0 \
+  -s EXPORT_NAME=\"JxlCodecModule\"\
   -s EXPORTED_FUNCTIONS='[\
+    \"_compress\",\
     \"_decompress\",\
     \"_free\",\
-    \"_freeImage\",\
-    \"_getImageWidth\",\
-    \"_getImageHeight\",\
-    \"_getImagePixels\",\
     \"_malloc\"\
   ]'\
 ")

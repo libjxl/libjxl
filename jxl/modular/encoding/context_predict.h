@@ -282,31 +282,49 @@ inline void PredictorMode(int i, Header *header) {
 }
 }  // namespace weighted
 
+// Stores a node and its two children at the same time. This significantly
+// reduces the number of branches needed during decoding.
+struct FlatDecisionNode {
+  // Property + splitval of the top node.
+  int32_t property0;  // -1 if leaf.
+  union {
+    PropertyVal splitval0;
+    Predictor predictor;
+  };
+  uint32_t childID;  // childID is ctx id if leaf.
+  // Property+splitval of the two child nodes.
+  PropertyVal splitvals[2];
+  union {
+    int32_t properties[2];
+    int64_t predictor_offset;
+  };
+};
+using FlatTree = std::vector<FlatDecisionNode>;
+
 class MATreeLookup {
  public:
-  explicit MATreeLookup(const Tree &tree) : inner_nodes_(tree) {}
+  explicit MATreeLookup(const FlatTree &tree) : nodes_(tree) {}
   struct LookupResult {
     uint32_t context;
     Predictor predictor;
     int64_t offset;
   };
   LookupResult Lookup(const Properties &properties) const {
-    Tree::size_type pos = 0;
+    uint32_t pos = 0;
     while (true) {
-      const PropertyDecisionNode &node = inner_nodes_[pos];
-      if (node.property < 0) {
+      const FlatDecisionNode &node = nodes_[pos];
+      if (node.property0 < 0) {
         return {node.childID, node.predictor, node.predictor_offset};
       }
-      if (properties[node.property] > node.splitval) {
-        pos = node.childID;
-      } else {
-        pos = node.childID + 1;
-      }
+      bool p0 = properties[node.property0] <= node.splitval0;
+      uint32_t off0 = properties[node.properties[0]] <= node.splitvals[0];
+      uint32_t off1 = 2 | (properties[node.properties[1]] <= node.splitvals[1]);
+      pos = node.childID + (p0 ? off1 : off0);
     }
   }
 
  private:
-  const Tree &inner_nodes_;
+  const FlatTree &nodes_;
 };
 
 // Something that looks like absolute value. Just returning the absolute value
@@ -477,9 +495,9 @@ inline std::string PropertyName(size_t i) {
     case 5:
       return "W";
     case 6:
-      return "x";
-    case 7:
       return "y";
+    case 7:
+      return "x";
     case 8:
       return "W+N-NW";
     case 9:

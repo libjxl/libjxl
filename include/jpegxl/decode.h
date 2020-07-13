@@ -105,7 +105,7 @@ typedef enum {
   /** Decoding has finished, the end of the input file is reached and all
    * output has been delivered.
    */
-  JPEGXL_DEC_FINISHED,
+  JPEGXL_DEC_FINISHED = 0,
 
   /** An error occured, for example invalid input file or out of memory.
    * TODO(lode): add function to get error information from decoder.
@@ -209,7 +209,8 @@ typedef struct JpegxlBasicInfo {
    */
   uint32_t alpha_bits;
 
-  /** Intended display luminance in nits (candelas per square meter).
+  /** Intensity target: intended display luminance in nits (candelas per square
+   * meter).
    */
   uint32_t target_nits;
 
@@ -254,7 +255,8 @@ typedef struct JpegxlBasicInfo {
  * Returns a hint indicating how many more bytes the decoder is expected to
  * need to make JpegxlDecoderGetBasicInfo available after the next
  * JpegxlDecoderProcessInput call. This is a suggested large enough value for
- * the *avail_in parameter.
+ * the *avail_in parameter, but it is not guaranteed to be an upper bound nor
+ * a lower bound.
  * Can be used before the first JpegxlDecoderProcessInput call, and is correct
  * the first time in most cases. If not, JpegxlDecoderSizeHintBasicInfo can be
  * called again to get an updated hint.
@@ -292,7 +294,7 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderProcessInput(
  *
  * @param info struct to copy the information into, or NULL to only check
  * whether the information is available through the return value.
- * @returns 1 if the value is available, 0 if not available.
+ * @returns 0 if the value is available, 1 if not available.
  */
 JPEGXL_EXPORT int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
                                             JpegxlBasicInfo* info);

@@ -20,6 +20,7 @@
 #include <cinttypes>
 #include <limits>
 #include <numeric>
+#include <queue>
 #include <random>
 #include <unordered_map>
 #include <unordered_set>
@@ -71,9 +72,103 @@ Predictor FindBest(const Image &image, pixel_type chan,
   return (Predictor)best_predictor;
 }
 
+namespace {
+
+// Removes all nodes that use a static property (i.e. channel or group ID) from
+// the tree and collapses each node on even levels with its two children to
+// produce a flatter tree. Also computes whether the resulting tree requires
+// using the weighted predictor.
+FlatTree FilterTree(const Tree &global_tree,
+                    std::array<pixel_type, kNumStaticProperties> &static_props,
+                    bool *use_wp) {
+  *use_wp = false;
+  size_t used_properties = 0;
+  FlatTree output;
+  std::queue<size_t> nodes;
+  nodes.push(0);
+  // Produces a trimmed and flattened tree by doing a BFS visit of the original
+  // tree, ignoring branches that are known to be false and proceeding two
+  // levels at a time to collapse nodes in a flatter tree; if an inner parent
+  // node has a leaf as a child, the leaf is duplicated and an implicit fake
+  // node is added. This allows to reduce the number of branches when traversing
+  // the resulting flat tree.
+  while (!nodes.empty()) {
+    size_t cur = nodes.front();
+    nodes.pop();
+    // Skip nodes that we can decide now, by jumping directly to their children.
+    while (global_tree[cur].property < kNumStaticProperties &&
+           global_tree[cur].property != -1) {
+      if (static_props[global_tree[cur].property] > global_tree[cur].splitval) {
+        cur = global_tree[cur].childID;
+      } else {
+        cur = global_tree[cur].childID + 1;
+      }
+    }
+    FlatDecisionNode flat;
+    if (global_tree[cur].property == -1) {
+      flat.property0 = -1;
+      flat.childID = global_tree[cur].childID;
+      flat.predictor = global_tree[cur].predictor;
+      flat.predictor_offset = global_tree[cur].predictor_offset;
+      if (flat.predictor == Predictor::Weighted) *use_wp = true;
+      output.push_back(flat);
+      continue;
+    }
+    flat.childID = output.size() + nodes.size() + 1;
+
+    flat.property0 = global_tree[cur].property;
+    flat.splitval0 = global_tree[cur].splitval;
+
+    size_t child_id = global_tree[cur].childID;
+    for (size_t i = 0; i < 2; i++) {
+      size_t cur_child = child_id + i;
+      // Skip nodes that we can decide now.
+      while (global_tree[cur_child].property < kNumStaticProperties &&
+             global_tree[cur_child].property != -1) {
+        if (static_props[global_tree[cur_child].property] >
+            global_tree[cur_child].splitval) {
+          cur_child = global_tree[cur_child].childID;
+        } else {
+          cur_child = global_tree[cur_child].childID + 1;
+        }
+      }
+      // We ended up in a leaf, add a dummy decision and two copies of the leaf.
+      if (global_tree[cur_child].property == -1) {
+        flat.properties[i] = 0;
+        flat.splitvals[i] = std::numeric_limits<int32_t>::max();
+        nodes.push(cur_child);
+        nodes.push(cur_child);
+      } else {
+        flat.properties[i] = global_tree[cur_child].property;
+        flat.splitvals[i] = global_tree[cur_child].splitval;
+        nodes.push(global_tree[cur_child].childID);
+        nodes.push(global_tree[cur_child].childID + 1);
+      }
+    }
+
+    for (size_t j = 0; j < 2; j++) {
+      if (flat.properties[j] >= kNumStaticProperties) {
+        used_properties |= 1 << flat.properties[j];
+      }
+    }
+    if (flat.property0 >= kNumStaticProperties) {
+      used_properties |= 1 << flat.property0;
+    }
+    output.push_back(flat);
+  }
+  if (used_properties &
+      (1 << (kNumNonrefProperties - weighted::kNumProperties))) {
+    *use_wp = true;
+  }
+
+  return output;
+}
+
+}  // namespace
+
 Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                                  const weighted::Header &wp_header,
-                                 const Tree &tree,
+                                 const Tree &global_tree,
                                  const ModularOptions &options,
                                  std::vector<Token> *tokens, AuxOut *aux_out,
                                  size_t group_id, bool want_debug) {
@@ -90,11 +185,13 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
               channel.hcshift, channel.vcshift);
 
   Properties properties(NumProperties(image, options));
+  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
+                                                               (int)group_id};
+  bool use_wp;
+  FlatTree tree = FilterTree(global_tree, static_props, &use_wp);
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
 
-  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
-                                                               (int)group_id};
   const intptr_t onerow = channel.plane.PixelsPerRow();
   Channel references(properties.size() - kNumNonrefProperties, channel.w);
   weighted::State wp_state(wp_header, channel.w, channel.h);
@@ -126,7 +223,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 
 Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                  const std::vector<uint8_t> &context_map,
-                                 const Tree &tree,
+                                 const Tree &global_tree,
                                  const weighted::Header &wp_header,
                                  const ModularOptions &options, pixel_type chan,
                                  size_t group_id, Image *image) {
@@ -140,36 +237,28 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   if (channel.w == 0 || channel.h == 0) return true;
 
   channel.resize(channel.w, channel.h);
+  bool tree_has_wp_prop_or_pred = false;
+  FlatTree tree =
+      FilterTree(global_tree, static_props, &tree_has_wp_prop_or_pred);
 
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Decoded MA tree with %zu nodes", tree.size());
   Properties properties(NumProperties(*image, options));
 
   // MAANS decode
-  bool tree_has_wp_prop_or_pred = false;
-  for (size_t i = 0; i < tree.size(); i++) {
-    if (tree[i].property < 0) {
-      if (tree[i].predictor == Predictor::Weighted) {
-        tree_has_wp_prop_or_pred = true;
-      }
-    } else if (kNumNonrefProperties > tree[i].property &&
-               tree[i].property >=
-                   kNumNonrefProperties - weighted::kNumProperties) {
-      tree_has_wp_prop_or_pred = true;
-    }
-  }
 
   if (tree.size() == 1) {
     // special optimized case: no meta-adaptation, so no need
     // to compute properties.
     Predictor predictor = tree[0].predictor;
     int64_t offset = tree[0].predictor_offset;
+    size_t ctx_id = tree[0].childID;
     if (predictor == Predictor::Zero) {
       JXL_DEBUG_V(8, "Fast track.");
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
-          uint32_t v = reader->ReadHybridUint(0, br, context_map);
+          uint32_t v = reader->ReadHybridUint(ctx_id, br, context_map);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), offset);
         }
       }
@@ -184,7 +273,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type_w g =
               PredictNoTreeNoWP(channel, r + x, onerow, x, y, predictor).guess +
               offset;
-          uint64_t v = reader->ReadHybridUint(0, br, context_map);
+          uint64_t v = reader->ReadHybridUint(ctx_id, br, context_map);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
         }
       }
@@ -201,7 +290,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
                                            predictor, &wp_state)
                                .guess +
                            offset;
-          uint64_t v = reader->ReadHybridUint(0, br, context_map);
+          uint64_t v = reader->ReadHybridUint(ctx_id, br, context_map);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
           wp_state.UpdateErrors(r[x], x, y, channel.w);
         }
@@ -354,7 +443,8 @@ Tree LearnTree(std::vector<Predictor> predictors,
   ComputeBestTree(residuals, props, predictors, offset, compact_properties,
                   props_to_use,
                   options.splitting_heuristics_node_threshold * required_cost,
-                  options.splitting_heuristics_max_properties, &tree);
+                  options.splitting_heuristics_max_properties,
+                  options.fast_decode_multiplier, &tree);
   return tree;
 }
 
@@ -507,7 +597,7 @@ void PrintTree(const Tree &tree, const std::string &path) {
   fprintf(f, "}\n");
   fclose(f);
   JXL_ASSERT(
-      system(("dot " + path + ".dot -T png -o " + path + ".png").c_str()) == 0);
+      system(("dot " + path + ".dot -T svg -o " + path + ".svg").c_str()) == 0);
 }
 
 bool ModularEncode(const Image &image, const ModularOptions &options,

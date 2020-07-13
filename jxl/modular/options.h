@@ -127,6 +127,8 @@ struct ModularOptions {
   Predictor predictor = static_cast<Predictor>(-1);
 
   int wp_mode = 0;
+
+  float fast_decode_multiplier = 1.01f;
 };
 
 }  // namespace jxl

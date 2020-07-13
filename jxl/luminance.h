@@ -34,7 +34,7 @@ Status Map255ToTargetNits(ImageBundle* ib, ThreadPool* pool);
 
 // Does the opposite, mapping
 // (intensity_target, intensity_target, intensity_target) to (255, 255, 255) in
-// linear space, where intensity_target = io->metadata.GetIntensityTarget().
+// linear space, where intensity_target = io->metadata.IntensityTarget().
 Status MapTargetNitsTo255(CodecInOut* io, ThreadPool* pool);
 Status MapTargetNitsTo255(ImageBundle* ib, ThreadPool* pool);
 

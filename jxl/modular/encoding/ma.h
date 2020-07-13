@@ -40,7 +40,7 @@ struct PropertyDecisionNode {
         predictor_offset(predictor_offset) {}
 };
 
-class Tree : public std::vector<PropertyDecisionNode> {};
+using Tree = std::vector<PropertyDecisionNode>;
 
 constexpr size_t kNumTreeContexts = 4;
 
@@ -64,7 +64,8 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
-                     size_t max_properties, Tree *tree);
+                     size_t max_properties, float fast_decode_multiplier,
+                     Tree *tree);
 
 }  // namespace jxl
 #endif
