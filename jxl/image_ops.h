@@ -21,6 +21,7 @@
 #include <array>
 #include <limits>
 #include <vector>
+
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
 #include "jxl/image.h"
@@ -90,6 +91,24 @@ void CopyImageTo(const Rect& rect_from, const Image3<T>& from,
       const T* JXL_RESTRICT row_from = rect_from.ConstPlaneRow(from, c, y);
       T* JXL_RESTRICT row_to = rect_to.PlaneRow(to, c, y);
       memcpy(row_to, row_from, rect_to.xsize() * sizeof(T));
+    }
+  }
+}
+
+template <typename T, typename U>
+void ConvertPlaneAndClamp(const Rect& rect_from, const Plane<T>& from,
+                          const Rect& rect_to,
+                          const Plane<U>* JXL_RESTRICT to) {
+  PROFILER_ZONE("ConvertPlane");
+  JXL_ASSERT(SameSize(rect_from, rect_to));
+  using M = decltype(T() + U());
+  for (size_t y = 0; y < rect_to.ysize(); ++y) {
+    const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
+    U* JXL_RESTRICT row_to = rect_to.MutableRow(to, y);
+    for (size_t x = 0; x < rect_to.xsize(); ++x) {
+      row_to[x] =
+          std::min<M>(std::max<M>(row_from[x], std::numeric_limits<U>::min()),
+                      std::numeric_limits<U>::max());
     }
   }
 }

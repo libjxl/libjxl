@@ -78,19 +78,12 @@ std::vector<PatchInfo> FindDotDictionary(const CompressParams& cparams,
                                          ThreadPool* pool) {
   if (ApplyOverride(cparams.dots,
                     cparams.butteraugli_distance >= kMinButteraugliForDots)) {
-    EllipseQuantParams qParams{opsin.xsize(),
-                               opsin.ysize(),
-                               kEllipsePosQ,
-                               kEllipseMinSigma,
-                               kEllipseMaxSigma,
-                               kEllipseSigmaQ,
-                               kEllipseAngleQ,
-                               kEllipseMinIntensity,
-                               kEllipseMaxIntensity,
-                               kEllipseIntensityQ,
-                               kEllipsePosQ <= 5,
-                               cmap.YtoXRatio(kColorOffset),
-                               cmap.YtoBRatio(kColorOffset)};
+    EllipseQuantParams qParams{
+        opsin.xsize(),      opsin.ysize(),        kEllipsePosQ,
+        kEllipseMinSigma,   kEllipseMaxSigma,     kEllipseSigmaQ,
+        kEllipseAngleQ,     kEllipseMinIntensity, kEllipseMaxIntensity,
+        kEllipseIntensityQ, kEllipsePosQ <= 5,    cmap.YtoXRatio(0),
+        cmap.YtoBRatio(0)};
     // cparams.butteraugli_distance < 1.5};
     GaussianDetectParams eDetectParams = kEllipseDetectParams;
     /*if (cparams.butteraugli_distance > 2.5) {

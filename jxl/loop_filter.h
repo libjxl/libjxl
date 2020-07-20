@@ -85,7 +85,7 @@ struct LoopFilter {
       }
     }
 
-    visitor->BeginExtensions(&extensions);
+    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }

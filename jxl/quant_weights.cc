@@ -28,6 +28,7 @@
 #include "jxl/common.h"
 #include "jxl/dct_scales.h"
 #include "jxl/enc_bit_writer.h"
+#include "jxl/enc_modular.h"
 #include "jxl/fields.h"
 #include "jxl/image.h"
 #include "jxl/modular/encoding/encoding.h"
@@ -169,7 +170,8 @@ Status DecodeDctParams(BitReader* br, DctQuantWeightParams* params) {
 }
 
 Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
-                   size_t size_y, BitWriter* writer) {
+                   size_t size_y, BitWriter* writer,
+                   ModularFrameEncoder* modular_frame_encoder) {
   writer->Write(kLog2NumQuantModes, encoding.mode);
   size_x *= kBlockDim;
   size_y *= kBlockDim;
@@ -219,23 +221,8 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
       break;
     }
     case QuantEncoding::kQuantModeRAW: {
-      JXL_ASSERT(encoding.qraw.qtable != nullptr);
-      JXL_ASSERT(size_x * size_y * 3 == encoding.qraw.qtable->size());
-      writer->Write(3, encoding.qraw.qtable_den_shift);
-      Image image(size_x, size_y, 255, 3);
-      for (size_t c = 0; c < 3; c++) {
-        for (size_t y = 0; y < size_y; y++) {
-          int* JXL_RESTRICT row = image.channel[c].Row(y);
-          for (size_t x = 0; x < size_x; x++) {
-            row[x] =
-                (*encoding.qraw.qtable)[c * size_x * size_y + y * size_x + x];
-          }
-        }
-      }
-      ModularOptions cfopts;
-      cfopts.nb_repeats = 0;
-      cfopts.entropy_coder = ModularOptions::kMAANS;
-      JXL_RETURN_IF_ERROR(ModularGenericCompress(image, cfopts, writer));
+      ModularFrameEncoder::EncodeQuantTable(size_x, size_y, writer, encoding,
+                                            idx, modular_frame_encoder);
       break;
     }
     case QuantEncoding::kQuantModeAFV: {
@@ -255,7 +242,8 @@ Status EncodeQuant(const QuantEncoding& encoding, size_t idx, size_t size_x,
 }
 
 Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
-              size_t required_size_y, size_t idx) {
+              size_t required_size_y, size_t idx,
+              ModularFrameDecoder* modular_frame_decoder) {
   size_t required_size = required_size_x * required_size_y;
   required_size_x *= kBlockDim;
   required_size_y *= kBlockDim;
@@ -327,28 +315,9 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       break;
     }
     case QuantEncoding::kQuantModeRAW: {
-      encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
-      Image image(required_size_x, required_size_y, 255, 3);
-      ModularOptions options;
-      // TODO(veluca): decide whether to allow global trees here.
-      JXL_RETURN_IF_ERROR(
-          ModularGenericDecompress(br, image, /*group_id=*/0, &options));
-      if (!encoding->qraw.qtable) {
-        encoding->qraw.qtable = new std::vector<int>();
-      }
-      encoding->qraw.qtable->resize(required_size_x * required_size_y * 3);
-      for (size_t c = 0; c < 3; c++) {
-        for (size_t y = 0; y < required_size_y; y++) {
-          int* JXL_RESTRICT row = image.channel[c].Row(y);
-          for (size_t x = 0; x < required_size_x; x++) {
-            (*encoding->qraw.qtable)[c * required_size_x * required_size_y +
-                                     y * required_size_x + x] = row[x];
-            if (row[x] <= 0) {
-              return JXL_FAILURE("Invalid raw quantization table");
-            }
-          }
-        }
-      }
+      JXL_RETURN_IF_ERROR(ModularFrameDecoder::DecodeQuantTable(
+          required_size_x, required_size_y, br, encoding, idx,
+          modular_frame_decoder));
       break;
     }
     default:
@@ -670,8 +639,9 @@ constexpr size_t DequantMatrices::required_size_x_[];
 constexpr size_t DequantMatrices::required_size_y_[];
 constexpr DequantMatrices::QuantTable DequantMatrices::kQuantTable[];
 
-Status DequantMatrices::Encode(BitWriter* writer, size_t layer,
-                               AuxOut* aux_out) const {
+Status DequantMatrices::Encode(
+    BitWriter* writer, size_t layer, AuxOut* aux_out,
+    ModularFrameEncoder* modular_frame_encoder) const {
   bool all_default = true;
   for (size_t i = 0; i < encodings_.size(); i++) {
     if (encodings_[i].mode != QuantEncoding::kQuantModeLibrary ||
@@ -685,7 +655,8 @@ Status DequantMatrices::Encode(BitWriter* writer, size_t layer,
   if (!all_default) {
     for (size_t i = 0; i < encodings_.size(); i++) {
       JXL_RETURN_IF_ERROR(EncodeQuant(encodings_[i], i, required_size_x_[i],
-                                      required_size_y_[i], writer));
+                                      required_size_y_[i], writer,
+                                      modular_frame_encoder));
     }
   }
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
@@ -711,15 +682,16 @@ Status DequantMatrices::EncodeDC(BitWriter* writer, size_t layer,
   return true;
 }
 
-Status DequantMatrices::Decode(BitReader* br) {
+Status DequantMatrices::Decode(BitReader* br,
+                               ModularFrameDecoder* modular_frame_decoder) {
   size_t all_default = br->ReadBits(1);
   size_t num_tables = all_default ? 0 : kNum;
   encodings_.clear();
   encodings_.resize(kNum, QuantEncoding::Library(0));
   for (size_t i = 0; i < num_tables; i++) {
-    JXL_RETURN_IF_ERROR(jxl::Decode(br, &encodings_[i],
-                                    required_size_x_[i % kNum],
-                                    required_size_y_[i % kNum], i));
+    JXL_RETURN_IF_ERROR(
+        jxl::Decode(br, &encodings_[i], required_size_x_[i % kNum],
+                    required_size_y_[i % kNum], i, modular_frame_decoder));
   }
   return DequantMatrices::Compute();
 }
@@ -1193,9 +1165,32 @@ Status DequantMatrices::Compute() {
   return true;
 }
 
+void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings,
+                                ModularFrameEncoder* modular_frame_encoder) {
+  JXL_ASSERT(encodings.size() == kNum);
+  encodings_ = encodings;
+  for (size_t i = 0; i < encodings_.size(); i++) {
+    if (encodings_[i].mode == QuantEncodingInternal::kQuantModeRAW) {
+      modular_frame_encoder->AddQuantTable(required_size_x_[i] * kBlockDim,
+                                           required_size_y_[i] * kBlockDim,
+                                           encodings_[i], i);
+    }
+  }
+  // Roundtrip encode/decode the matrices to ensure same values as decoder.
+  // Do not pass modular en/decoder, as they only change entropy and not values.
+  BitWriter writer;
+  JXL_CHECK(Encode(&writer, 0, nullptr));
+  writer.ZeroPadToByte();
+  BitReader br(writer.GetSpan());
+  // Called only in the encoder: should fail only for programmer errors.
+  JXL_CHECK(Decode(&br));
+  JXL_CHECK(br.Close());
+}
+
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
-                             DequantMatrices* dequant_matrices) {
+                             DequantMatrices* dequant_matrices,
+                             ModularFrameEncoder* modular_frame_encoder) {
   // TODO(veluca): heuristics for in-bitstream quant tables.
   *dequant_matrices = DequantMatrices();
   if (cparams.max_error_mode) {
@@ -1206,7 +1201,7 @@ void FindBestDequantMatrices(const CompressParams& cparams,
     DctQuantWeightParams dct_params(weights);
     std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
                                          QuantEncoding::DCT(dct_params));
-    dequant_matrices->SetCustom(encodings);
+    dequant_matrices->SetCustom(encodings, modular_frame_encoder);
     float dc_weights[3] = {1.0f / cparams.max_error[0],
                            1.0f / cparams.max_error[1],
                            1.0f / cparams.max_error[2]};

@@ -22,7 +22,6 @@
 #include "jxl/modular/encoding/ma.h"
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/options.h"
-#include "jxl/predictor_shared.h"
 
 namespace jxl {
 
@@ -159,9 +158,11 @@ struct State {
     pixel_type_w teNE = error[pos_NE];
 
     if (compute_properties) {
-      (*properties)[offset++] =
-          std::max(std::max(std::abs(teW), std::abs(teN)),
-                   std::max(std::abs(teNW), std::abs(teNE)));
+      pixel_type_w p = teW;
+      if (std::abs(teN) > std::abs(p)) p = teN;
+      if (std::abs(teNW) > std::abs(p)) p = teNW;
+      if (std::abs(teNE) > std::abs(p)) p = teNE;
+      (*properties)[offset++] = p;
     }
 
     prediction[0] = W + NE - N;
@@ -358,6 +359,26 @@ inline size_t NumProperties(const Image &image, const ModularOptions &options) {
   // Add properties for the current channels.
   return num + kNumNonrefProperties;
 }
+//
+// Clamps gradient to the min/max of n, w (and l, implicitly).
+static JXL_INLINE int32_t ClampedGradient(const int32_t n, const int32_t w,
+                                          const int32_t l) {
+  const int32_t m = std::min(n, w);
+  const int32_t M = std::max(n, w);
+  // The end result of this operation doesn't overflow or underflow if the
+  // result is between m and M, but the intermediate value may overflow, so we
+  // do the intermediate operations in uint32_t and check later if we had an
+  // overflow or underflow condition comparing m, M and l directly.
+  // grad = M + m - l = n + w - l
+  const int32_t grad =
+      static_cast<int32_t>(static_cast<uint32_t>(n) + static_cast<uint32_t>(w) -
+                           static_cast<uint32_t>(l));
+  // We use two sets of ternary operators to force the evaluation of them in
+  // any case, allowing the compiler to avoid branches and use cmovl/cmovg in
+  // x86.
+  const int32_t grad_clamp_M = (l < m) ? M : grad;
+  return (l > M) ? m : grad_clamp_M;
+}
 
 inline pixel_type_w Select(pixel_type_w a, pixel_type_w b, pixel_type_w c) {
   pixel_type_w p = a + b - c;
@@ -525,7 +546,7 @@ enum PredictorMode {
 
 template <int mode>
 inline PredictionResult Predict(
-    Properties *p, const Channel &ch,
+    Properties *p, size_t w,
     const std::array<pixel_type, kNumStaticProperties> &static_props,
     const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
     const int y, Predictor predictor, const MATreeLookup *lookup,
@@ -534,10 +555,10 @@ inline PredictionResult Predict(
   size_t offset = 0;
   constexpr bool compute_properties =
       mode & kUseTree || mode & kForceComputeProperties;
-  pixel_type_w left = (x ? pp[-1] : 0);
+  pixel_type_w left = (x ? pp[-1] : (y ? pp[-onerow] : 0));
   pixel_type_w top = (y ? pp[-onerow] : left);
   pixel_type_w topleft = (x && y ? pp[-1 - onerow] : left);
-  pixel_type_w topright = (x + 1 < ch.w && y ? pp[1 - onerow] : top);
+  pixel_type_w topright = (x + 1 < w && y ? pp[1 - onerow] : top);
   pixel_type_w leftleft = (x > 1 ? pp[-2] : left);
   pixel_type_w toptop = (y > 1 ? pp[-onerow - onerow] : top);
 
@@ -570,7 +591,7 @@ inline PredictionResult Predict(
   pixel_type_w wp_pred = 0;
   if (mode & kUseWP) {
     wp_pred = wp_state->Predict<compute_properties>(
-        x, y, ch.w, top, left, topright, topleft, toptop, p, offset);
+        x, y, w, top, left, topright, topleft, toptop, p, offset);
   }
   if (compute_properties) {
     offset += weighted::kNumProperties;
@@ -606,75 +627,75 @@ inline PredictionResult Predict(
 }
 }  // namespace detail
 
-inline PredictionResult PredictNoTreeNoWP(const Channel &ch,
+inline PredictionResult PredictNoTreeNoWP(size_t w,
                                           const pixel_type *JXL_RESTRICT pp,
                                           const intptr_t onerow, const int x,
                                           const int y, Predictor predictor) {
   return detail::Predict</*mode=*/0>(
-      /*p=*/nullptr, ch, {}, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
+      /*p=*/nullptr, w, {}, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
       /*references=*/nullptr, /*wp_state=*/nullptr, /*predictions=*/nullptr);
 }
 
-inline PredictionResult PredictNoTreeWP(const Channel &ch,
+inline PredictionResult PredictNoTreeWP(size_t w,
                                         const pixel_type *JXL_RESTRICT pp,
                                         const intptr_t onerow, const int x,
                                         const int y, Predictor predictor,
                                         weighted::State *wp_state) {
   return detail::Predict<detail::kUseWP>(
-      /*p=*/nullptr, ch, {}, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
+      /*p=*/nullptr, w, {}, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
       /*references=*/nullptr, wp_state, /*predictions=*/nullptr);
 }
 
 inline PredictionResult PredictTreeNoWP(
-    Properties *p, const Channel &ch,
+    Properties *p, size_t w,
     const std::array<pixel_type, kNumStaticProperties> &static_props,
     const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
     const int y, const MATreeLookup &tree_lookup, const Channel &references) {
   return detail::Predict<detail::kUseTree>(
-      p, ch, static_props, pp, onerow, x, y, Predictor::Zero, &tree_lookup,
+      p, w, static_props, pp, onerow, x, y, Predictor::Zero, &tree_lookup,
       &references,
       /*wp_state=*/nullptr, /*predictions=*/nullptr);
 }
 
 inline PredictionResult PredictTreeWP(
-    Properties *p, const Channel &ch,
+    Properties *p, size_t w,
     const std::array<pixel_type, kNumStaticProperties> &static_props,
     const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
     const int y, const MATreeLookup &tree_lookup, const Channel &references,
     weighted::State *wp_state) {
   return detail::Predict<detail::kUseTree | detail::kUseWP>(
-      p, ch, static_props, pp, onerow, x, y, Predictor::Zero, &tree_lookup,
+      p, w, static_props, pp, onerow, x, y, Predictor::Zero, &tree_lookup,
       &references, wp_state, /*predictions=*/nullptr);
 }
 
 inline PredictionResult PredictLearn(
-    Properties *p, const Channel &ch,
+    Properties *p, size_t w,
     const std::array<pixel_type, kNumStaticProperties> &static_props,
     const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
     const int y, Predictor predictor, const Channel &references,
     weighted::State *wp_state) {
   return detail::Predict<detail::kForceComputeProperties | detail::kUseWP>(
-      p, ch, static_props, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
+      p, w, static_props, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
       &references, wp_state, /*predictions=*/nullptr);
 }
 
 inline void PredictLearnAll(
-    Properties *p, const Channel &ch,
+    Properties *p, size_t w,
     const std::array<pixel_type, kNumStaticProperties> &static_props,
     const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
     const int y, const Channel &references, weighted::State *wp_state,
     pixel_type_w *predictions) {
   detail::Predict<detail::kForceComputeProperties | detail::kUseWP |
                   detail::kAllPredictions>(
-      p, ch, static_props, pp, onerow, x, y, Predictor::Zero,
+      p, w, static_props, pp, onerow, x, y, Predictor::Zero,
       /*lookup=*/nullptr, &references, wp_state, predictions);
 }
 
-inline void PredictAllNoWP(const Channel &ch, const pixel_type *JXL_RESTRICT pp,
+inline void PredictAllNoWP(size_t w, const pixel_type *JXL_RESTRICT pp,
                            const intptr_t onerow, const int x, const int y,
                            pixel_type_w *predictions) {
   detail::Predict<detail::kAllPredictions>(
-      /*p=*/nullptr, ch, {}, pp, onerow, x, y, Predictor::Zero,
+      /*p=*/nullptr, w, {}, pp, onerow, x, y, Predictor::Zero,
       /*lookup=*/nullptr,
       /*references=*/nullptr, /*wp_state=*/nullptr, predictions);
 }

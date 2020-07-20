@@ -131,8 +131,8 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   CodecIntervals* temp_intervals = nullptr;  // Don't need min/max.
   const ExternalImage external(
       pool, ib->color(), rect, ib->c_current(), c_desired, ib->HasAlpha(),
-      ib->AlphaIsPremultiplied(), alpha, metadata->alpha_bits, bits_per_sample,
-      big_endian, temp_intervals);
+      ib->AlphaIsPremultiplied(), alpha, metadata->GetAlphaBits(),
+      bits_per_sample, big_endian, temp_intervals);
   JXL_RETURN_IF_ERROR(external.IsHealthy());
   AllocateAndFill(external, out);
   return true;
@@ -158,9 +158,43 @@ Status WriteImageMetadata(const ImageMetadata& metadata,
   return Bundle::Write(metadata, writer, layer, aux_out);
 }
 
+void ImageMetadata::SetAlphaBits(uint32_t bits) {
+  std::vector<ExtraChannelInfo>& eciv = m2.extra_channel_info;
+  ExtraChannelInfo* alpha = m2.Find(ExtraChannel::kAlpha);
+  if (bits == 0) {
+    if (alpha != nullptr) {
+      // Remove the alpha channel from the extra channel info. It's
+      // theoretically possible that there are multiple, remove all in that
+      // case. This ensure a next HasAlpha() will return false.
+      const auto is_alpha = [](const ExtraChannelInfo& eci) {
+        return eci.type == ExtraChannel::kAlpha;
+      };
+      eciv.erase(std::remove_if(eciv.begin(), eciv.end(), is_alpha),
+                 eciv.end());
+    }
+  } else {
+    if (alpha == nullptr) {
+      ExtraChannelInfo info;
+      info.type = ExtraChannel::kAlpha;
+      // leave new_base default to save space, it is ignored anyway.
+      info.blend_mode = BlendMode::kReplace;
+      info.bit_depth.bits_per_sample = bits;
+      info.dim_shift = 0;
+      info.alpha_associated = false;  // may be set by SetAlpha() later
+      // Prepend rather than append: in case there already are other extra
+      // channels, prefer alpha channel to be listed first.
+      eciv.insert(eciv.begin(), info);
+    } else {
+      // Ignores potential extra alpha channels, only sets to first one.
+      alpha->bit_depth.bits_per_sample = bits;
+      alpha->bit_depth.floating_point_sample = false;
+      alpha->bit_depth.exponent_bits_per_sample = 0;
+    }
+  }
+}
+
 void ImageBundle::ShrinkTo(size_t xsize, size_t ysize) {
   color_.ShrinkTo(xsize, ysize);
-  if (HasAlpha()) alpha_.ShrinkTo(xsize, ysize);
   for (ImageU& plane : extra_channels_) {
     plane.ShrinkTo(xsize, ysize);
   }
@@ -212,13 +246,13 @@ Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
   // Changing IsGray is probably a bug.
   JXL_CHECK(IsGray() == c_desired.IsGray());
 
-  const ImageU* alpha = HasAlpha() ? &alpha_ : nullptr;
-  const size_t alpha_bits = HasAlpha() ? metadata_->alpha_bits : 0;
+  const ImageU* alpha_ptr = HasAlpha() ? &alpha() : nullptr;
+  const size_t alpha_bits = HasAlpha() ? metadata_->GetAlphaBits() : 0;
   const bool big_endian = !IsLittleEndian();
   CodecIntervals temp_intervals;
   const ExternalImage external(pool, color_, Rect(color_), c_current_,
                                c_desired, HasAlpha(), AlphaIsPremultiplied(),
-                               alpha, alpha_bits, 32, big_endian,
+                               alpha_ptr, alpha_bits, 32, big_endian,
                                &temp_intervals);
   return external.IsHealthy() && external.CopyTo(&temp_intervals, pool, this);
 }
@@ -245,27 +279,21 @@ void ImageBundle::VerifyMetadata() const {
   JXL_CHECK(!c_current_.ICC().empty());
   JXL_CHECK(metadata_->color_encoding.IsGray() == IsGray());
 
-  if (metadata_->HasAlpha() != HasAlpha()) {
-    JXL_ABORT("MD alpha_bits %u IB alpha %zu x %zu\n", metadata_->alpha_bits,
-              alpha_.xsize(), alpha_.ysize());
+  if (metadata_->HasAlpha() && alpha().xsize() == 0) {
+    JXL_ABORT("MD alpha_bits %u IB alpha %zu x %zu\n",
+              metadata_->GetAlphaBits(), alpha().xsize(), alpha().ysize());
   }
-
-  const uint32_t alpha_bits = metadata_->alpha_bits;
+  const uint32_t alpha_bits = metadata_->GetAlphaBits();
   JXL_CHECK(alpha_bits <= 16);
 
-  JXL_CHECK(metadata_->m2.num_extra_channels == extra_channels_.size());
+  // metadata_->m2.num_extra_channels may temporarily differ from
+  // extra_channels_.size(), e.g. after SetAlpha. They are synced by the next
+  // call to VisitFields.
 }
 
 void ImageBundle::VerifySizes() const {
   const size_t xs = xsize();
   const size_t ys = ysize();
-  // Can only verify alpha/depth after SetFrom* or SetPlanes is called.
-  if (xs != 0 && ys != 0) {
-    if (HasAlpha()) {
-      JXL_CHECK(DivCeil(alpha_.xsize(), kBlockDim) == DivCeil(xs, kBlockDim));
-      JXL_CHECK(DivCeil(alpha_.ysize(), kBlockDim) == DivCeil(ys, kBlockDim));
-    }
-  }
 
   if (HasExtraChannels()) {
     JXL_CHECK(xs != 0 && ys != 0);
@@ -315,32 +343,60 @@ size_t ImageBundle::DetectRealBitdepth() const {
   return real_d;
 }
 
+const ImageU& ImageBundle::alpha() const {
+  JXL_ASSERT(HasAlpha());
+  const size_t ec = metadata_->m2.Find(ExtraChannel::kAlpha) -
+                    metadata_->m2.extra_channel_info.data();
+  JXL_ASSERT(ec < extra_channels_.size());
+  return extra_channels_[ec];
+}
+
+const ImageU& ImageBundle::depth() const {
+  JXL_ASSERT(HasDepth());
+  const size_t ec = metadata_->m2.Find(ExtraChannel::kDepth) -
+                    metadata_->m2.extra_channel_info.data();
+  JXL_ASSERT(ec < extra_channels_.size());
+  return extra_channels_[ec];
+}
+
 void ImageBundle::RemoveAlpha() {
-  alpha_ = ImageU();
+  const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+  JXL_ASSERT(eci != nullptr);
+  const size_t ec = eci - metadata_->m2.extra_channel_info.data();
+  JXL_ASSERT(ec < extra_channels_.size());
+  extra_channels_.erase(extra_channels_.begin() + ec);
+  metadata_->SetAlphaBits(0);  // maintain invariant for VerifyMetadata
   JXL_ASSERT(!HasAlpha());
-  metadata_->alpha_bits = 0;  // maintain invariant for VerifyMetadata
 }
 
 void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
+  ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+  // Must call SetAlphaBits first, otherwise we don't know which channel index
+  JXL_CHECK(eci != nullptr);
   JXL_CHECK(alpha.xsize() != 0 && alpha.ysize() != 0);
-  JXL_CHECK(metadata_->alpha_bits != 0);
-  alpha_ = std::move(alpha);
-  alpha_is_premultiplied_ = alpha_is_premultiplied;
+  eci->alpha_associated = alpha_is_premultiplied;
+  extra_channels_.insert(
+      extra_channels_.begin() + (eci - metadata_->m2.extra_channel_info.data()),
+      std::move(alpha));
+  // num_extra_channels is automatically set in visitor
   VerifySizes();
 }
 
 void ImageBundle::PremultiplyAlphaIfNeeded(ThreadPool* pool) {
-  JXL_ASSERT(HasAlpha());
+  ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+  JXL_ASSERT(eci != nullptr);
+  const ImageU& alpha_ =
+      extra_channels()[eci - metadata_->m2.extra_channel_info.data()];
   JXL_CHECK(alpha_.xsize() == color_.xsize() &&
             alpha_.ysize() == color_.ysize());
-  if (alpha_is_premultiplied_) return;
-  alpha_is_premultiplied_ = true;
+  if (eci->alpha_associated) return;
+  eci->alpha_associated = true;
   RunOnPool(
       pool, 0, alpha_.ysize(), ThreadPool::SkipInit(),
-      [this](const int y, const int /*thread*/) {
+      [this, &alpha_](const int y, const int /*thread*/) {
         PremultiplyAlpha(color_.PlaneRow(0, y), color_.PlaneRow(1, y),
                          color_.PlaneRow(2, y), alpha_.ConstRow(y),
-                         metadata_->alpha_bits, color_.xsize());
+                         metadata_->GetAlphaBits(), color_.xsize());
       },
       "premultiply alpha");
 }
@@ -350,6 +406,7 @@ void ImageBundle::SetDepth(ImageU&& depth) {
   const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kDepth);
   JXL_CHECK(eci != nullptr);
   const size_t ec = eci - metadata_->m2.extra_channel_info.data();
+  JXL_ASSERT(ec < extra_channels_.size());
   extra_channels_[ec] = std::move(depth);
   VerifySizes();
 }
@@ -373,6 +430,16 @@ Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
   // TODO(janwas): avoid copying via createExternal+copyBackToIO
   // instead of copy+createExternal+copyBackToIO
   store->SetFromImage(CopyImage(in.color()), in.c_current());
+
+  // Must at least copy the alpha channel for use by external_image.
+  if (in.HasExtraChannels()) {
+    std::vector<ImageU> extra_channels;
+    for (const ImageU& extra_channel : in.extra_channels()) {
+      extra_channels.emplace_back(CopyImage(extra_channel));
+    }
+    store->SetExtraChannels(std::move(extra_channels));
+  }
+
   if (!store->TransformTo(c_desired, pool)) {
     return false;
   }

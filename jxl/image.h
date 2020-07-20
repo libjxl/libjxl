@@ -172,6 +172,7 @@ class Plane : public PlaneBase {
   }
 };
 
+using ImageSB = Plane<int8_t>;
 using ImageB = Plane<uint8_t>;
 using ImageS = Plane<int16_t>;  // signed integer or half-float
 using ImageU = Plane<uint16_t>;

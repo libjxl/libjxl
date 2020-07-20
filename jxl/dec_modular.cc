@@ -27,6 +27,7 @@
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
+#include "jxl/compressed_dc.h"
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/modular/image/image.h"
 
@@ -85,7 +86,6 @@ void SingleFromSingle(const size_t xsize,
     Store(out, df, row_out + x);
   }
 }
-
 #include <hwy/end_target-inl.h>
 }  // namespace jxl
 #include <hwy/after_namespace-inl.h>
@@ -104,7 +104,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
                                              ImageBundle* decoded,
                                              bool decode_color, size_t xsize,
-                                             size_t ysize, size_t group_id) {
+                                             size_t ysize) {
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
     std::vector<uint8_t> tree_context_map;
@@ -129,13 +129,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   do_color = decode_color;
   if (!do_color) nb_chans = depth_chan = 0;
-  if (frame_header.HasAlpha()) {
-    nb_chans++;
-    depth_chan++;
-  }
-  if (decoded->HasDepth()) nb_chans++;
   if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
-    nb_chans += decoded->extra_channels().size();
+    size_t num_extra = decoded->extra_channels().size();
+    nb_chans += num_extra;
   }
 
   if (decoded->metadata()->bit_depth.bits_per_sample >= 32) {
@@ -163,9 +159,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   ModularOptions options;
   options.max_chan_size = kGroupDim;
-  if (!ModularGenericDecompress(reader, gi, group_id, &options,
-                                /*undo_transforms=*/-2, &tree, &code,
-                                &context_map)) {
+  if (!ModularGenericDecompress(
+          reader, gi, ModularStreamId::Global().ID(frame_dim), &options,
+          /*undo_transforms=*/-2, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode global modular info");
   }
 
@@ -181,10 +177,12 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   return true;
 }
 
-Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
-                                        const Rect& rect, BitReader* reader,
+Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
                                         AuxOut* aux_out, size_t minShift,
-                                        size_t maxShift, size_t group_id) {
+                                        size_t maxShift,
+                                        const ModularStreamId& stream) {
+  JXL_DASSERT(stream.kind == ModularStreamId::kModularDC ||
+              stream.kind == ModularStreamId::kModularAC);
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   int maxval = full_image.maxval;
@@ -212,7 +210,7 @@ Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
   gi.nb_channels = gi.channel.size();
   gi.real_nb_channels = gi.nb_channels;
   ModularOptions options;
-  if (!ModularGenericDecompress(reader, gi, group_id, &options,
+  if (!ModularGenericDecompress(reader, gi, stream.ID(frame_dim), &options,
                                 /*undo_transforms=*/-1, &tree, &code,
                                 &context_map))
     return JXL_FAILURE("Failed to decode modular group");
@@ -233,6 +231,84 @@ Status ModularFrameDecoder::DecodeGroup(const DecompressParams& dparams,
       }
     }
     gic++;
+  }
+  return true;
+}
+Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
+                                           PassesDecoderState* dec_state,
+                                           AuxOut* aux_out) {
+  const Rect r = dec_state->shared->DCGroupRect(group_id);
+  Image image(r.xsize(), r.ysize(), 255, 3);
+  size_t stream_id = ModularStreamId::VarDCTDC(group_id).ID(frame_dim);
+  reader->Refill();
+  size_t extra_precision = reader->ReadFixedBits<2>();
+  float mul = 1.0f / (1 << extra_precision);
+  ModularOptions options;
+  if (!ModularGenericDecompress(reader, image, stream_id, &options,
+                                /*undo_transforms=*/-1, &tree, &code,
+                                &context_map)) {
+    return JXL_FAILURE("Failed to decode modular DC group");
+  }
+  DequantDC(r, &dec_state->shared_storage.dc_storage, image,
+            dec_state->shared->quantizer.MulDC(), mul,
+            dec_state->shared->cmap.DCFactors());
+  return true;
+}
+
+Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
+                                             PassesDecoderState* dec_state,
+                                             AuxOut* aux_out) {
+  const Rect r = dec_state->shared->DCGroupRect(group_id);
+  size_t upper_bound = r.xsize() * r.ysize();
+  reader->Refill();
+  size_t width = reader->ReadBits(CeilLog2Nonzero(upper_bound)) + 1;
+  size_t stream_id = ModularStreamId::ACMetadata(group_id).ID(frame_dim);
+  // YToX, YToB, ACS + QF, EPF
+  Image image(r.xsize(), r.ysize(), 255, 4);
+  static_assert(kColorTileDimInBlocks == 8, "Color tile size changed");
+  Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3, (r.ysize() + 7) >> 3);
+  image.channel[0] = Channel(cr.xsize(), cr.ysize(), 3, 3);
+  image.channel[1] = Channel(cr.xsize(), cr.ysize(), 3, 3);
+  image.channel[2] = Channel(width, 2, 0, 0);
+  ModularOptions options;
+  if (!ModularGenericDecompress(reader, image, stream_id, &options,
+                                /*undo_transforms=*/-1, &tree, &code,
+                                &context_map)) {
+    return JXL_FAILURE("Failed to decode AC metadata");
+  }
+  ConvertPlaneAndClamp(Rect(image.channel[0].plane), image.channel[0].plane, cr,
+                       &dec_state->shared->cmap.ytox_map);
+  ConvertPlaneAndClamp(Rect(image.channel[1].plane), image.channel[1].plane, cr,
+                       &dec_state->shared->cmap.ytob_map);
+  size_t num = 0;
+  for (size_t y = 0; y < r.ysize(); y++) {
+    int* row_qf = r.MutableRow(&dec_state->shared_storage.raw_quant_field, y);
+    uint8_t* row_epf =
+        r.MutableRow(&dec_state->shared_storage.epf_sharpness, y);
+    int* row_in_1 = image.channel[2].plane.Row(0);
+    int* row_in_2 = image.channel[2].plane.Row(1);
+    int* row_in_3 = image.channel[3].plane.Row(y);
+    for (size_t x = 0; x < r.xsize(); x++) {
+      row_epf[x] = row_in_3[x];
+      if (dec_state->shared_storage.ac_strategy.IsValid(r.x0() + x,
+                                                        r.y0() + y)) {
+        continue;
+      }
+      if (!AcStrategy::IsRawStrategyValid(row_in_1[num])) {
+        return JXL_FAILURE("Invalid AC strategy");
+      }
+      AcStrategy acs = AcStrategy::FromRawStrategy(row_in_1[num]);
+      if (x + acs.covered_blocks_x() > r.xsize()) {
+        return JXL_FAILURE("Invalid AC strategy, x overflow");
+      }
+      if (y + acs.covered_blocks_y() > r.ysize()) {
+        return JXL_FAILURE("Invalid AC strategy, y overflow");
+      }
+      dec_state->shared_storage.ac_strategy.SetNoBoundsCheck(
+          r.x0() + x, r.y0() + y, AcStrategy::Type(row_in_1[num]));
+      row_qf[x] = 1 + std::max(0, row_in_2[num]);
+      num++;
+    }
   }
   return true;
 }
@@ -306,17 +382,6 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       c = 1;
     }
   }
-  if (frame_header.HasAlpha()) {
-    pixel_type max_alpha = MaxAlpha(decoded->metadata()->alpha_bits);
-    for (size_t y = 0; y < ysize; ++y) {
-      uint16_t* const JXL_RESTRICT row_out = decoded->alpha().MutableRow(y);
-      const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
-      for (size_t x = 0; x < xsize; ++x) {
-        row_out[x] = Clamp(row_in[x], 0, max_alpha);
-      }
-    }
-    c++;
-  }
   if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
     for (size_t ec = 0; ec < decoded->extra_channels().size(); ec++, c++) {
       const jxl::ExtraChannelInfo& eci =
@@ -330,6 +395,42 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
         for (size_t x = 0; x < ec_xsize; ++x) {
           row_out[x] = Clamp(row_in[x], 0, max_extra);
+        }
+      }
+    }
+  }
+  return true;
+}
+
+Status ModularFrameDecoder::DecodeQuantTable(
+    size_t required_size_x, size_t required_size_y, BitReader* br,
+    QuantEncoding* encoding, size_t idx,
+    ModularFrameDecoder* modular_frame_decoder) {
+  encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
+  Image image(required_size_x, required_size_y, 255, 3);
+  ModularOptions options;
+  if (modular_frame_decoder) {
+    JXL_RETURN_IF_ERROR(ModularGenericDecompress(
+        br, image,
+        ModularStreamId::QuantTable(idx).ID(modular_frame_decoder->frame_dim),
+        &options, /*undo_transforms=*/-1, &modular_frame_decoder->tree,
+        &modular_frame_decoder->code, &modular_frame_decoder->context_map));
+  } else {
+    JXL_RETURN_IF_ERROR(ModularGenericDecompress(br, image, 0, &options,
+                                                 /*undo_transforms=*/-1));
+  }
+  if (!encoding->qraw.qtable) {
+    encoding->qraw.qtable = new std::vector<int>();
+  }
+  encoding->qraw.qtable->resize(required_size_x * required_size_y * 3);
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < required_size_y; y++) {
+      int* JXL_RESTRICT row = image.channel[c].Row(y);
+      for (size_t x = 0; x < required_size_x; x++) {
+        (*encoding->qraw.qtable)[c * required_size_x * required_size_y +
+                                 y * required_size_x + x] = row[x];
+        if (row[x] <= 0) {
+          return JXL_FAILURE("Invalid raw quantization table");
         }
       }
     }

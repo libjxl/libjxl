@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/enc_cache.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
-#include <hwy/foreach_target.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -35,6 +32,7 @@
 #include "jxl/dct_util.h"
 #include "jxl/dec_frame.h"
 #include "jxl/enc_frame.h"
+#include "jxl/enc_modular.h"
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
@@ -42,9 +40,14 @@
 #include "jxl/passes_state.h"
 #include "jxl/quantizer.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_transforms-inl.h"
 
+// SIMD code
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
@@ -116,13 +119,12 @@ namespace jxl {
 HWY_EXPORT(ComputeCoeffs)  // Local function.
 
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
-                             PassesEncoderState* enc_state, AuxOut* aux_out) {
+                             PassesEncoderState* enc_state,
+                             ModularFrameEncoder* modular_frame_encoder,
+                             AuxOut* aux_out) {
   PROFILER_FUNC;
 
   PassesSharedState& JXL_RESTRICT shared = enc_state->shared;
-
-  const size_t xsize_blocks = shared.frame_dim.xsize_blocks;
-  const size_t ysize_blocks = shared.frame_dim.ysize_blocks;
 
   if (shared.frame_header.color_transform == ColorTransform::kXYB) {
     enc_state->x_qm_multiplier =
@@ -192,27 +194,23 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
         CopyImage(*shared.multiframe->SavedDc(cparams.dc_level));
     JXL_CHECK(br.Close());
   } else {
-    const size_t xsize_dc_groups = DivCeil(xsize_blocks, kDcGroupDimInBlocks);
-    const size_t ysize_dc_groups = DivCeil(ysize_blocks, kDcGroupDimInBlocks);
-
-    enc_state->dc_tokens =
-        std::vector<std::vector<Token>>(xsize_dc_groups * ysize_dc_groups);
-    // Disable extra levels when compressing very high quality images: this
-    // allows us to use a finer quantization step.
-    enc_state->extra_dc_levels.resize(
-        xsize_dc_groups * ysize_dc_groups,
-        (enc_state->cparams.butteraugli_distance < 0.5 ? 0 : 1));
-
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
-      TokenizeDC(group_index, dc, enc_state, aux_out);
+      modular_frame_encoder->AddVarDCTDC(
+          dc, group_index, enc_state->cparams.butteraugli_distance >= 2.0f,
+          enc_state);
     };
     RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
               compute_dc_coeffs, "Compute DC coeffs");
     // TODO(veluca): this is only useful in tests and if inspection is enabled.
     if (!(shared.frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing)) {
-      AdaptiveDCSmoothing(shared.dc_quant_field, &shared.dc_storage, pool);
+      AdaptiveDCSmoothing(shared.quantizer.MulDC(), &shared.dc_storage, pool);
     }
   }
+  auto compute_ac_meta = [&](int group_index, int /* thread */) {
+    modular_frame_encoder->AddACMetadata(group_index, enc_state);
+  };
+  RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
+            compute_ac_meta, "Compute AC Metadata");
 
   if (aux_out != nullptr) {
     aux_out->InspectImage3F("compressed_image:InitializeFrameEncCache:dc_dec",

@@ -53,7 +53,6 @@ static constexpr size_t kColorTileDimInBlocks = kColorTileDim / kBlockDim;
 static_assert(kGroupDimInBlocks % kColorTileDimInBlocks == 0,
               "Group dim should be divisible by color tile dim");
 
-static constexpr uint8_t kColorOffset = 127;
 static constexpr uint8_t kDefaultColorFactor = 84;
 
 static constexpr U32Enc kColorFactorDist(Val(kDefaultColorFactor), Val(256),
@@ -67,16 +66,16 @@ struct ColorCorrelationMap {
   ColorCorrelationMap(size_t xsize, size_t ysize, bool XYB = true);
 
   float YtoXRatio(int32_t x_factor) const {
-    return base_correlation_x_ + (x_factor - kColorOffset) * color_scale_;
+    return base_correlation_x_ + x_factor * color_scale_;
   }
 
   float YtoBRatio(int32_t b_factor) const {
-    return base_correlation_b_ + (b_factor - kColorOffset) * color_scale_;
+    return base_correlation_b_ + b_factor * color_scale_;
   }
 
   void EncodeDC(BitWriter* writer, size_t layer, AuxOut* aux_out) const {
     BitWriter::Allotment allotment(writer, 1 + 2 * kBitsPerByte + 12 + 32);
-    if (ytox_dc_ == kColorOffset && ytob_dc_ == kColorOffset &&
+    if (ytox_dc_ == 0 && ytob_dc_ == 0 &&
         color_factor_ == kDefaultColorFactor && base_correlation_x_ == 0.0f &&
         base_correlation_b_ == kYToBRatio) {
       writer->Write(1, 1);
@@ -87,8 +86,8 @@ struct ColorCorrelationMap {
     JXL_CHECK(U32Coder::Write(kColorFactorDist, color_factor_, writer));
     JXL_CHECK(F16Coder::Write(base_correlation_x_, writer));
     JXL_CHECK(F16Coder::Write(base_correlation_b_, writer));
-    writer->Write(kBitsPerByte, ytox_dc_);
-    writer->Write(kBitsPerByte, ytob_dc_);
+    writer->Write(kBitsPerByte, ytox_dc_ - std::numeric_limits<int8_t>::min());
+    writer->Write(kBitsPerByte, ytob_dc_ - std::numeric_limits<int8_t>::min());
     ReclaimAndCharge(writer, &allotment, layer, aux_out);
   }
 
@@ -100,8 +99,10 @@ struct ColorCorrelationMap {
     SetColorFactor(U32Coder::Read(kColorFactorDist, br));
     JXL_RETURN_IF_ERROR(F16Coder::Read(br, &base_correlation_x_));
     JXL_RETURN_IF_ERROR(F16Coder::Read(br, &base_correlation_b_));
-    ytox_dc_ = br->ReadFixedBits<kBitsPerByte>();
-    ytob_dc_ = br->ReadFixedBits<kBitsPerByte>();
+    ytox_dc_ = static_cast<int>(br->ReadFixedBits<kBitsPerByte>()) +
+               std::numeric_limits<int8_t>::min();
+    ytob_dc_ = static_cast<int>(br->ReadFixedBits<kBitsPerByte>()) +
+               std::numeric_limits<int8_t>::min();
     RecomputeDCFactors();
     return true;
   }
@@ -128,8 +129,8 @@ struct ColorCorrelationMap {
     dc_factors_[2] = YtoBRatio(ytob_dc_);
   }
 
-  ImageB ytox_map;
-  ImageB ytob_map;
+  ImageSB ytox_map;
+  ImageSB ytob_map;
 
  private:
   float dc_factors_[4] = {};
@@ -138,8 +139,8 @@ struct ColorCorrelationMap {
   float color_scale_ = 1.0f / color_factor_;
   float base_correlation_x_ = 0.0f;
   float base_correlation_b_ = kYToBRatio;
-  int32_t ytox_dc_ = kColorOffset;
-  int32_t ytob_dc_ = kColorOffset;
+  int32_t ytox_dc_ = 0;
+  int32_t ytob_dc_ = 0;
 };
 
 void FindBestColorCorrelationMap(const Image3F& opsin,
@@ -148,18 +149,6 @@ void FindBestColorCorrelationMap(const Image3F& opsin,
                                  const ImageI* raw_quant_field,
                                  const Quantizer* quantizer, ThreadPool* pool,
                                  ColorCorrelationMap* cmap);
-
-void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
-                    std::vector<Token>* tokens, size_t base_context,
-                    AuxOut* JXL_RESTRICT aux_out);
-
-Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
-                      const std::vector<uint8_t>& context_map,
-                      ColorCorrelationMap* cmap, const Rect& rect,
-                      size_t base_context, AuxOut* JXL_RESTRICT aux_out);
-
-// Declared here to avoid including predictor.h.
-static constexpr size_t kCmapContexts = 24;
 
 }  // namespace jxl
 

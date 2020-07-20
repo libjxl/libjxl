@@ -52,7 +52,7 @@ Predictor FindBest(const Image &image, pixel_type chan,
   uint64_t sum_of_abs_residuals[kNumModularPredictors] = {};
   pixel_type_w predictions[kNumModularPredictors] = {};
   for (size_t x = 0; x < channel.w; x++) {
-    PredictAllNoWP(channel, p + x, onerow, x, y, predictions);
+    PredictAllNoWP(channel.w, p + x, onerow, x, y, predictions);
     for (size_t i = 0; i < kNumModularPredictors; i++) {
       sum_of_abs_residuals[i] += abs(p[x] - predictions[i]);
     }
@@ -73,6 +73,8 @@ Predictor FindBest(const Image &image, pixel_type chan,
 }
 
 namespace {
+constexpr size_t kWPProp = kNumNonrefProperties - weighted::kNumProperties;
+constexpr int32_t kWPPropRange = 512;
 
 // Removes all nodes that use a static property (i.e. channel or group ID) from
 // the tree and collapses each node on even levels with its two children to
@@ -80,8 +82,9 @@ namespace {
 // using the weighted predictor.
 FlatTree FilterTree(const Tree &global_tree,
                     std::array<pixel_type, kNumStaticProperties> &static_props,
-                    bool *use_wp) {
+                    bool *use_wp, bool *wp_only) {
   *use_wp = false;
+  *wp_only = true;
   size_t used_properties = 0;
   FlatTree output;
   std::queue<size_t> nodes;
@@ -99,18 +102,23 @@ FlatTree FilterTree(const Tree &global_tree,
     while (global_tree[cur].property < kNumStaticProperties &&
            global_tree[cur].property != -1) {
       if (static_props[global_tree[cur].property] > global_tree[cur].splitval) {
-        cur = global_tree[cur].childID;
+        cur = global_tree[cur].lchild;
       } else {
-        cur = global_tree[cur].childID + 1;
+        cur = global_tree[cur].rchild;
       }
     }
     FlatDecisionNode flat;
     if (global_tree[cur].property == -1) {
       flat.property0 = -1;
-      flat.childID = global_tree[cur].childID;
+      flat.childID = global_tree[cur].lchild;
       flat.predictor = global_tree[cur].predictor;
       flat.predictor_offset = global_tree[cur].predictor_offset;
-      if (flat.predictor == Predictor::Weighted) *use_wp = true;
+      if (flat.predictor == Predictor::Weighted) {
+        *use_wp = true;
+      } else {
+        *wp_only = false;
+      }
+      if (flat.predictor_offset != 0) *wp_only = false;
       output.push_back(flat);
       continue;
     }
@@ -119,30 +127,30 @@ FlatTree FilterTree(const Tree &global_tree,
     flat.property0 = global_tree[cur].property;
     flat.splitval0 = global_tree[cur].splitval;
 
-    size_t child_id = global_tree[cur].childID;
     for (size_t i = 0; i < 2; i++) {
-      size_t cur_child = child_id + i;
+      size_t cur_child =
+          i == 0 ? global_tree[cur].lchild : global_tree[cur].rchild;
       // Skip nodes that we can decide now.
       while (global_tree[cur_child].property < kNumStaticProperties &&
              global_tree[cur_child].property != -1) {
         if (static_props[global_tree[cur_child].property] >
             global_tree[cur_child].splitval) {
-          cur_child = global_tree[cur_child].childID;
+          cur_child = global_tree[cur_child].lchild;
         } else {
-          cur_child = global_tree[cur_child].childID + 1;
+          cur_child = global_tree[cur_child].rchild;
         }
       }
       // We ended up in a leaf, add a dummy decision and two copies of the leaf.
       if (global_tree[cur_child].property == -1) {
         flat.properties[i] = 0;
-        flat.splitvals[i] = std::numeric_limits<int32_t>::max();
+        flat.splitvals[i] = 0;
         nodes.push(cur_child);
         nodes.push(cur_child);
       } else {
         flat.properties[i] = global_tree[cur_child].property;
         flat.splitvals[i] = global_tree[cur_child].splitval;
-        nodes.push(global_tree[cur_child].childID);
-        nodes.push(global_tree[cur_child].childID + 1);
+        nodes.push(global_tree[cur_child].lchild);
+        nodes.push(global_tree[cur_child].rchild);
       }
     }
 
@@ -156,9 +164,11 @@ FlatTree FilterTree(const Tree &global_tree,
     }
     output.push_back(flat);
   }
-  if (used_properties &
-      (1 << (kNumNonrefProperties - weighted::kNumProperties))) {
+  if (used_properties & (1 << kWPProp)) {
     *use_wp = true;
+  }
+  if (used_properties != (1 << kWPProp)) {
+    *wp_only = false;
   }
 
   return output;
@@ -187,8 +197,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   Properties properties(NumProperties(image, options));
   std::array<pixel_type, kNumStaticProperties> static_props = {chan,
                                                                (int)group_id};
-  bool use_wp;
-  FlatTree tree = FilterTree(global_tree, static_props, &use_wp);
+  bool use_wp, is_wp_only;
+  FlatTree tree = FilterTree(global_tree, static_props, &use_wp, &is_wp_only);
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
 
@@ -203,8 +213,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                               predictor_img.PlaneRow(2, y)};
     for (size_t x = 0; x < channel.w; x++) {
       PredictionResult res =
-          PredictTreeWP(&properties, channel, static_props, p + x, onerow, x, y,
-                        tree_lookup, references, &wp_state);
+          PredictTreeWP(&properties, channel.w, static_props, p + x, onerow, x,
+                        y, tree_lookup, references, &wp_state);
       for (size_t i = 0; i < 3; i++) {
         pred_img_row[i][x] = PredictorColor(res.predictor)[i];
       }
@@ -238,28 +248,129 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   channel.resize(channel.w, channel.h);
   bool tree_has_wp_prop_or_pred = false;
-  FlatTree tree =
-      FilterTree(global_tree, static_props, &tree_has_wp_prop_or_pred);
+  bool is_wp_only = false;
+  FlatTree tree = FilterTree(global_tree, static_props,
+                             &tree_has_wp_prop_or_pred, &is_wp_only);
 
-  MATreeLookup tree_lookup(tree);
+  // From here on, tree lookup returns a *clustered* context ID.
+  // This avoids an extra memory lookup after tree traversal.
+  for (size_t i = 0; i < tree.size(); i++) {
+    if (tree[i].property0 == -1) {
+      tree[i].childID = context_map[tree[i].childID];
+    }
+  }
+
   JXL_DEBUG_V(3, "Decoded MA tree with %zu nodes", tree.size());
-  Properties properties(NumProperties(*image, options));
 
   // MAANS decode
 
-  if (tree.size() == 1) {
+  // Check if this tree is a WP-only tree with a small enough property value
+  // range.
+  // those contexts are *clustered* context ids. This reduces stack usages and
+  // avoids an extra memory lookup.
+  uint8_t context_lookup[2 * kWPPropRange];
+  if (is_wp_only) {
+    struct TreeRange {
+      // Begin *excluded*, end *included*. This works best with > vs <= decision
+      // nodes.
+      int begin, end;
+      size_t pos;
+    };
+    std::vector<TreeRange> ranges;
+    ranges.push_back(TreeRange{-kWPPropRange - 1, kWPPropRange - 1, 0});
+    while (!ranges.empty()) {
+      TreeRange cur = ranges.back();
+      ranges.pop_back();
+      if (cur.begin < -kWPPropRange - 1 || cur.begin >= kWPPropRange - 1 ||
+          cur.end > kWPPropRange - 1) {
+        // Tree is outside the allowed range, exit.
+        is_wp_only = false;
+        break;
+      }
+      auto &node = tree[cur.pos];
+      // Leaf.
+      if (node.property0 == -1) {
+        for (int i = cur.begin + 1; i < cur.end + 1; i++) {
+          context_lookup[i + kWPPropRange] = node.childID;
+        }
+        continue;
+      }
+      // > side of top node.
+      if (node.properties[0] >= kNumStaticProperties) {
+        ranges.push_back(TreeRange({node.splitvals[0], cur.end, node.childID}));
+        ranges.push_back(
+            TreeRange({node.splitval0, node.splitvals[0], node.childID + 1}));
+      } else {
+        ranges.push_back(TreeRange({node.splitval0, cur.end, node.childID}));
+      }
+      // <= side
+      if (node.properties[1] >= kNumStaticProperties) {
+        ranges.push_back(
+            TreeRange({node.splitvals[1], node.splitval0, node.childID + 2}));
+        ranges.push_back(
+            TreeRange({cur.begin, node.splitvals[1], node.childID + 3}));
+      } else {
+        ranges.push_back(
+            TreeRange({cur.begin, node.splitval0, node.childID + 2}));
+      }
+    }
+  }
+
+  if (is_wp_only) {
+    JXL_DEBUG_V(8, "WP fast track.");
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    Properties properties(1);
+    for (size_t y = 0; y < channel.h; y++) {
+      pixel_type *JXL_RESTRICT r = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        size_t offset = 0;
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        pixel_type_w topright =
+            (x + 1 < channel.w && y ? *(r + x + 1 - onerow) : top);
+        pixel_type_w toptop = (y > 1 ? *(r - x - onerow - onerow) : top);
+        int32_t guess = wp_state.Predict</*compute_properties=*/true>(
+            x, y, channel.w, top, left, topright, topleft, toptop, &properties,
+            offset);
+        uint32_t ctx_id =
+            context_lookup[kWPPropRange +
+                           std::min(std::max(-kWPPropRange, properties[0]),
+                                    kWPPropRange - 1)];
+        uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
+        r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), guess);
+        wp_state.UpdateErrors(r[x], x, y, channel.w);
+      }
+    }
+  } else if (tree.size() == 1) {
     // special optimized case: no meta-adaptation, so no need
     // to compute properties.
     Predictor predictor = tree[0].predictor;
     int64_t offset = tree[0].predictor_offset;
     size_t ctx_id = tree[0].childID;
     if (predictor == Predictor::Zero) {
-      JXL_DEBUG_V(8, "Fast track.");
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        for (size_t x = 0; x < channel.w; x++) {
-          uint32_t v = reader->ReadHybridUint(ctx_id, br, context_map);
-          r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), offset);
+      if (reader->IsSingleValue(ctx_id)) {
+        // Special-case: histogram has a single symbol, with no extra bits, and
+        // we use ANS mode.
+        JXL_DEBUG_V(8, "Fastest track.");
+        pixel_type v =
+            SaturatingAdd<pixel_type>(UnpackSigned(reader->ReadSingleValue(
+                                          ctx_id, br, channel.h * channel.w)),
+                                      offset);
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT r = channel.Row(y);
+          std::fill(r, r + channel.w, v);
+        }
+
+      } else {
+        JXL_DEBUG_V(8, "Fast track.");
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT r = channel.Row(y);
+          for (size_t x = 0; x < channel.w; x++) {
+            uint32_t v = reader->ReadHybridUintClustered(ctx_id, br);
+            r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), offset);
+          }
         }
       }
     } else if (predictor != Predictor::Weighted) {
@@ -270,10 +381,10 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
-          pixel_type_w g =
-              PredictNoTreeNoWP(channel, r + x, onerow, x, y, predictor).guess +
-              offset;
-          uint64_t v = reader->ReadHybridUint(ctx_id, br, context_map);
+          PredictionResult pred =
+              PredictNoTreeNoWP(channel.w, r + x, onerow, x, y, predictor);
+          pixel_type_w g = pred.guess + offset;
+          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
         }
       }
@@ -286,11 +397,11 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       for (size_t y = 0; y < channel.h; y++) {
         pixel_type *JXL_RESTRICT r = channel.Row(y);
         for (size_t x = 0; x < channel.w; x++) {
-          pixel_type_w g = PredictNoTreeWP(channel, r + x, onerow, x, y,
+          pixel_type_w g = PredictNoTreeWP(channel.w, r + x, onerow, x, y,
                                            predictor, &wp_state)
                                .guess +
                            offset;
-          uint64_t v = reader->ReadHybridUint(ctx_id, br, context_map);
+          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
           r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
           wp_state.UpdateErrors(r[x], x, y, channel.w);
         }
@@ -300,6 +411,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     // special optimized case: the weighted predictor and its properties are not
     // used, so no need to compute weights and properties.
     JXL_DEBUG_V(8, "Slow track.");
+    MATreeLookup tree_lookup(tree);
+    Properties properties(NumProperties(*image, options));
     const intptr_t onerow = channel.plane.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
@@ -307,14 +420,16 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       PrecomputeReferences(channel, y, *image, chan, options, &references);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
-            PredictTreeNoWP(&properties, channel, static_props, p + x, onerow,
+            PredictTreeNoWP(&properties, channel.w, static_props, p + x, onerow,
                             x, y, tree_lookup, references);
-        uint64_t v = reader->ReadHybridUint(res.context, br, context_map);
+        uint64_t v = reader->ReadHybridUintClustered(res.context, br);
         p[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), res.guess);
       }
     }
   } else {
     JXL_DEBUG_V(8, "Slowest track.");
+    MATreeLookup tree_lookup(tree);
+    Properties properties(NumProperties(*image, options));
     const intptr_t onerow = channel.plane.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     weighted::State wp_state(wp_header, channel.w, channel.h);
@@ -323,9 +438,9 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       PrecomputeReferences(channel, y, *image, chan, options, &references);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
-            PredictTreeWP(&properties, channel, static_props, p + x, onerow, x,
-                          y, tree_lookup, references, &wp_state);
-        uint64_t v = reader->ReadHybridUint(res.context, br, context_map);
+            PredictTreeWP(&properties, channel.w, static_props, p + x, onerow,
+                          x, y, tree_lookup, references, &wp_state);
+        uint64_t v = reader->ReadHybridUintClustered(res.context, br);
         p[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), res.guess);
         wp_state.UpdateErrors(p[x], x, y, channel.w);
       }
@@ -371,14 +486,14 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
     for (size_t x = 0; x < channel.w; x++) {
       pixel_type_w res[kNumModularPredictors];
       if (predictors.size() != 1) {
-        PredictLearnAll(&properties, channel, static_props, p + x, onerow, x, y,
-                        references, &wp_state, res);
+        PredictLearnAll(&properties, channel.w, static_props, p + x, onerow, x,
+                        y, references, &wp_state, res);
         for (size_t i = 0; i < predictors.size(); i++) {
           res[i] = p[x] - res[(int)predictors[i]];
         }
       } else {
         PredictionResult pres =
-            PredictLearn(&properties, channel, static_props, p + x, onerow, x,
+            PredictLearn(&properties, channel.w, static_props, p + x, onerow, x,
                          y, predictors[0], references, &wp_state);
         res[0] = p[x] - pres.guess;
       }
@@ -400,24 +515,16 @@ Tree LearnTree(std::vector<Predictor> predictors,
                std::vector<std::vector<int32_t>> &&props,
                std::vector<std::vector<int32_t>> &&residuals,
                size_t total_pixels, const ModularOptions &options) {
-  int64_t offset = 0;
-  if (predictors.size() > 1 && !residuals[0].empty()) {
+  if (residuals.size() > 1 && !residuals[0].empty()) {
     int base_pred = 0;
     size_t base_pred_cost = 0;
     for (size_t i = 0; i < predictors.size(); i++) {
-      int64_t sum = 0;
-      for (size_t j = 0; j < residuals[i].size(); j++) {
-        sum += residuals[i][j];
-      }
-      int64_t tot = residuals[i].size();
-      int64_t off = sum > 0 ? (sum + tot / 2) / tot : (sum - tot / 2) / tot;
       size_t cost = 0;
       for (size_t j = 0; j < residuals[i].size(); j++) {
-        cost += PackSigned(residuals[i][j] - off);
+        cost += PackSigned(residuals[i][j]);
       }
       if (cost < base_pred_cost || i == 0) {
         base_pred = i;
-        offset = off;
         base_pred_cost = cost;
       }
     }
@@ -428,19 +535,46 @@ Tree LearnTree(std::vector<Predictor> predictors,
     Tree tree;
     tree.emplace_back();
     tree.back().predictor = predictors.back();
+    tree.back().property = -1;
+    tree.back().predictor_offset = 0;
     return tree;
   }
   std::vector<size_t> props_to_use;
+  if (options.force_wp_only) {
+    for (size_t i = 0; i < props[kWPProp].size(); i++) {
+      props[kWPProp][i] = std::min(std::max(-kWPPropRange, props[kWPProp][i]),
+                                   kWPPropRange - 1);
+    }
+  }
+  if (options.force_no_wp) {
+    for (size_t i = 0; i < props[kWPProp].size(); i++) {
+      props[kWPProp][i] = 0;
+    }
+    size_t wp_pos = predictors.size();
+    for (size_t i = 0; i < predictors.size(); i++) {
+      if (predictors[i] == Predictor::Weighted) {
+        wp_pos = i;
+        break;
+      }
+    }
+    if (wp_pos != predictors.size()) {
+      JXL_ASSERT(predictors.size() > 1);
+      std::swap(predictors[wp_pos], predictors.back());
+      std::swap(residuals[wp_pos], residuals.back());
+      predictors.pop_back();
+      residuals.pop_back();
+    }
+  }
   std::vector<std::vector<int>> compact_properties(props.size());
   // TODO(veluca): add an option for max total number of property values.
   ChooseAndQuantizeProperties(options.splitting_heuristics_max_properties,
                               options.splitting_heuristics_max_properties * 256,
-                              offset, residuals, &props, &compact_properties,
-                              &props_to_use);
+                              residuals, options.force_wp_only, &props,
+                              &compact_properties, &props_to_use);
   float pixel_fraction = props[0].size() * 1.0f / total_pixels;
   float required_cost = pixel_fraction * 0.9 + 0.1;
   Tree tree;
-  ComputeBestTree(residuals, props, predictors, offset, compact_properties,
+  ComputeBestTree(residuals, props, predictors, compact_properties,
                   props_to_use,
                   options.splitting_heuristics_node_threshold * required_cost,
                   options.splitting_heuristics_max_properties,
@@ -475,9 +609,9 @@ Status EncodeModularChannelBrotli(const Image &image, pixel_type chan,
     JXL_ASSERT((*data)[*subpred_pos] < kNumModularPredictors);
     (*subpred_pos)++;
     for (size_t x = 0; x < channel.w; x++) {
-      pixel_type_w guess =
-          PredictNoTreeWP(channel, p + x, onerow, x, y, subpredictor, &wp_state)
-              .guess;
+      pixel_type_w guess = PredictNoTreeWP(channel.w, p + x, onerow, x, y,
+                                           subpredictor, &wp_state)
+                               .guess;
       pixel_type_w v = PackSigned(p[x] - guess);
       (*data)[*pos] = (v & 0xff);
       (*data)[*pos + total_pixels] = ((v >> 8) & 0xff);
@@ -537,7 +671,7 @@ Status DecodeModularChannelBrotli(const PaddedBytes &data,
       (*subpred_pos)++;
       for (size_t x = 0; x < channel->w; x++) {
         pixel_type_w g =
-            PredictNoTreeNoWP(*channel, r + x, onerow, x, y, predictor).guess;
+            PredictNoTreeNoWP(channel->w, r + x, onerow, x, y, predictor).guess;
         pixel_type_w v = data[*pos];
         v += (pixel_type_w)data[total_pixels + *pos] << 8;
         v += (pixel_type_w)data[2 * total_pixels + *pos] << 16;
@@ -554,9 +688,9 @@ Status DecodeModularChannelBrotli(const PaddedBytes &data,
       Predictor predictor = (Predictor)data[*subpred_pos];
       (*subpred_pos)++;
       for (size_t x = 0; x < channel->w; x++) {
-        pixel_type_w g =
-            PredictNoTreeWP(*channel, r + x, onerow, x, y, predictor, &wp_state)
-                .guess;
+        pixel_type_w g = PredictNoTreeWP(channel->w, r + x, onerow, x, y,
+                                         predictor, &wp_state)
+                             .guess;
         pixel_type_w v = data[*pos];
         v += (pixel_type_w)data[total_pixels + *pos] << 8;
         v += (pixel_type_w)data[2 * total_pixels + *pos] << 16;
@@ -575,25 +709,21 @@ GroupHeader::GroupHeader() { Bundle::Init(this); }
 
 constexpr bool kPrintTree = false;
 
-void PrintTree(const Tree &tree, size_t cur, FILE *f) {
-  if (tree[cur].property < 0) {
-    fprintf(f, "n%05zu [label=\"%s%+" PRId64 "\"];\n", cur,
-            PredictorName(tree[cur].predictor), tree[cur].predictor_offset);
-  } else {
-    fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
-            PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
-    fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].childID);
-    fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].childID + 1);
-    PrintTree(tree, tree[cur].childID, f);
-    PrintTree(tree, tree[cur].childID + 1, f);
-  }
-}
-
 void PrintTree(const Tree &tree, const std::string &path) {
   if (!kPrintTree) return;
   FILE *f = fopen((path + ".dot").c_str(), "w");
   fprintf(f, "graph{\n");
-  PrintTree(tree, 0, f);
+  for (size_t cur = 0; cur < tree.size(); cur++) {
+    if (tree[cur].property < 0) {
+      fprintf(f, "n%05zu [label=\"%s%+" PRId64 "\"];\n", cur,
+              PredictorName(tree[cur].predictor), tree[cur].predictor_offset);
+    } else {
+      fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
+              PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
+      fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].lchild);
+      fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].rchild);
+    }
+  }
   fprintf(f, "}\n");
   fclose(f);
   JXL_ASSERT(

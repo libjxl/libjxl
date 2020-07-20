@@ -183,19 +183,15 @@ typedef struct JpegxlBasicInfo {
    */
   uint32_t ysize;
 
-  /** Original image color channel data type: 0 = unsigned integer, 1 = floating
-   * point.
-   */
-  uint8_t floating_point_sample;
-
   /** Original image color channel bit depth.
    */
   uint32_t bits_per_sample;
 
-  /** Original image color channel exponent bits, only used if
-   * floating_point_sample is true. If the original data is single precision
-   * floating point, bits_per_sample is 32 and exponent_bits_per_sample is 8,
-   * and so on for other floating point precisions.
+  /** Original image color channel floating point exponent bits, or 0 if they
+   * are unsigned integer. For example, if the original data is half-precision
+   * (binary16) floating point, bits_per_sample is 16 and
+   * exponent_bits_per_sample is 5, and so on for other floating point
+   * precisions.
    */
   uint32_t exponent_bits_per_sample;
 
@@ -205,14 +201,30 @@ typedef struct JpegxlBasicInfo {
    */
   uint8_t have_icc;
 
-  /** Bit depth of the encoded alpha channel, or 0 if there is no alpha channel.
+  /** Upper bound on the intensity level present in the image in nits. For
+   * unsigned integer pixel encodings, this is the brightness of the largest
+   * representable value. The image does not necessarily contain a pixel
+   * actually this bright. An encoder is allowed to set 255 for SDR images
+   * without computing a histogram.
    */
-  uint32_t alpha_bits;
+  float intensity_target;
 
-  /** Intensity target: intended display luminance in nits (candelas per square
-   * meter).
+  /** Lower bound on the intensity level present in the image. This may be
+   * loose, i.e. lower than the actual darkest pixel. When tone mapping, a
+   * decoder will map [min_nits, intensity_target] to the display range.
    */
-  uint32_t target_nits;
+  float min_nits;
+
+  /** See the description of relative_to_max_display.
+   */
+  uint8_t relative_to_max_display;
+
+  /** The tone mapping will leave unchanged (linear mapping) any pixels whose
+   * brightness is strictly below this. The interpretation depends on
+   * relative_to_max_display. If true, this is a ratio [0, 1] of the maximum
+   * display brightness [nits], otherwise an absolute brightness [nits].
+   */
+  float linear_below;
 
   /** Indicates a preview image exists near the beginning of the codestream.
    * The preview itself or its dimensions are not included in the basic info.
@@ -229,26 +241,26 @@ typedef struct JpegxlBasicInfo {
    */
   JpegxlOrientation orientation;
 
-  /** Bit depth of depth image, or 0 if there is no depth image.
-   */
-  uint32_t depth_bits;
-
-  /** Base-2 logarithm of the downsampling factor of the dimensions of the depth
-   * image (if any) with respect to the main image dimensions defined by xsize,
-   * ysize. The depth image size is rounded up.
-   * This field is invalid if depth_bits is 0.
-   */
-  uint32_t depth_shift;
-
-  /** Number of additional image channels. Information of the individual
-   * extra channels is not included in the basic info.
+  /** Number of additional image channels. Information of all the individual
+   * extra channels is not included in the basic info struct, except for the
+   * first alpha channel in the fields below. Information for other extra
+   * channels can be queried from the decoder at this point, however.
+   * TODO(lode): implement that feature
    */
   uint32_t num_extra_channels;
 
-  /** Bit depth of all additional image channels.
-   * This field is invalid if num_extra_channels is 0.
+  /** Bit depth of the encoded alpha channel, or 0 if there is no alpha channel.
    */
-  uint32_t extra_channel_bits;
+  uint32_t alpha_bits;
+
+  /** Alpha channel floating point exponent bits, or 0 if they are unsigned
+   * integer.
+   */
+  uint32_t alpha_exponent_bits;
+
+  /** Whether the alpha channel is premultiplied
+   */
+  uint8_t alpha_premultiplied;
 } JpegxlBasicInfo;
 
 /**

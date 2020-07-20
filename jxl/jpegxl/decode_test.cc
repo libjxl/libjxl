@@ -106,65 +106,47 @@ TEST(DecodeTest, CustomAllocTest) {
 // bits_per_sample, orientation: a selection of header parameters to test with.
 // have_container: add box container format around the codestream.
 // metadata_default: if true, ImageMetadata is set to default and
-//   bits_per_sample, orientation and only_basic_info are ignored.
-// only_basic_info: do not encode the final part of ImageMetadata2.
+//   bits_per_sample, orientation and alpha_bits are ignored.
 // insert_box: insert an extra box before the codestream box, making the header
 // farther away from the front than is ideal. Only used if have_container.
 std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
                                    size_t bits_per_sample, size_t orientation,
-                                   bool have_container, bool metadata_default,
-                                   bool only_basic_info,
+                                   size_t alpha_bits, bool have_container,
+                                   bool metadata_default,
                                    bool insert_extra_box) {
   jxl::BitWriter writer;
   jxl::BitWriter::Allotment allotment(&writer, 65536);  // Large enough
 
   if (have_container) {
-    // Signature box
-    writer.Write(24, 0);
-    writer.Write(8, 0xc);
-    writer.Write(8, 'J');
-    writer.Write(8, 'X');
-    writer.Write(8, 'L');
-    writer.Write(8, ' ');
-    writer.Write(8, 0xd);
-    writer.Write(8, 0xa);
-    writer.Write(8, 0x87);
-    writer.Write(8, 0xa);
-    // File type box
-    writer.Write(24, 0);
-    writer.Write(8, 0x14);
-    writer.Write(8, 'f');
-    writer.Write(8, 't');
-    writer.Write(8, 'y');
-    writer.Write(8, 'p');
-    writer.Write(8, 'j');
-    writer.Write(8, 'x');
-    writer.Write(8, 'l');
-    writer.Write(8, ' ');
-    writer.Write(32, 0);
-    writer.Write(8, 'j');
-    writer.Write(8, 'x');
-    writer.Write(8, 'l');
-    writer.Write(8, ' ');
+    const std::vector<uint8_t> signature_box = {0,   0,   0,   0xc, 'J',  'X',
+                                                'L', ' ', 0xd, 0xa, 0x87, 0xa};
+    const std::vector<uint8_t> filetype_box = {
+        0,   0,   0, 0x14, 'f', 't', 'y', 'p', 'j', 'x',
+        'l', ' ', 0, 0,    0,   0,   'j', 'x', 'l', ' '};
+    const std::vector<uint8_t> extra_box_header = {0,   0,   0,   0xff,
+                                                   't', 'e', 's', 't'};
+    // Beginning of codestream box, with an arbitrary size certainly large
+    // enough to contain the header
+    const std::vector<uint8_t> codestream_box_header = {0,   0,   0,   0xff,
+                                                        'j', 'x', 'l', 'c'};
+
+    for (size_t i = 0; i < signature_box.size(); i++) {
+      writer.Write(8, signature_box[i]);
+    }
+    for (size_t i = 0; i < filetype_box.size(); i++) {
+      writer.Write(8, filetype_box[i]);
+    }
     if (insert_extra_box) {
-      writer.Write(24, 0);
-      writer.Write(8, 0xff);  // extra box length 255 bytes
-      writer.Write(8, 't');
-      writer.Write(8, 'e');
-      writer.Write(8, 's');
-      writer.Write(8, 't');
+      for (size_t i = 0; i < extra_box_header.size(); i++) {
+        writer.Write(8, extra_box_header[i]);
+      }
       for (size_t i = 0; i < 255 - 8; i++) {
         writer.Write(8, 0);
       }
     }
-    // Beginning of codestream box, with an arbitrary size certainly large
-    // enough to contain the header
-    writer.Write(24, 0);
-    writer.Write(8, 0xff);
-    writer.Write(8, 'j');
-    writer.Write(8, 'x');
-    writer.Write(8, 'l');
-    writer.Write(8, 'c');
+    for (size_t i = 0; i < codestream_box_header.size(); i++) {
+      writer.Write(8, codestream_box_header[i]);
+    }
   }
 
   // JXL signature
@@ -172,48 +154,18 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
   writer.Write(8, 0x0a);
 
   // SizeHeader
-  writer.Write(1, 0);          // small
-  writer.Write(2, 0);          // U32 selector
-  writer.Write(9, ysize - 1);  // ysize
-  writer.Write(3, 0);          // ratio
-  writer.Write(2, 0);          // U32 selector
-  writer.Write(9, xsize - 1);  // xsize
+  jxl::SizeHeader size;
+  EXPECT_TRUE(size.Set(xsize, ysize));
+  EXPECT_TRUE(WriteSizeHeader(size, &writer, 0, nullptr));
 
-  // ImageMetadata
-  if (metadata_default) {
-    writer.Write(1, 1);  // all_default
-  } else {
-    writer.Write(1, 0);  // all_default
-
-    // bit_depth fields
-    writer.Write(1, 0);  // floating_point_sample
-    if (bits_per_sample == 8) {
-      writer.Write(2, 0);  // U32 selector
-    } else if (bits_per_sample == 10) {
-      writer.Write(2, 1);  // U32 selector
-    } else if (bits_per_sample == 12) {
-      writer.Write(2, 2);  // U32 selector
-    } else {
-      writer.Write(2, 3);  // U32 selector
-      writer.Write(5, bits_per_sample - 1);
-    }
-
-    writer.Write(1, 1);  // colour_encoding: all_default
-    writer.Write(2, 0);  // U32 selector: alpha_bits 0
-    writer.Write(1, 1);  // tone_mapping: all_default
-
-    // ImageMetadata2
-    writer.Write(1, 0);                // all_default
-    writer.Write(1, 0);                // have_preview
-    writer.Write(1, 0);                // have_animation
-    writer.Write(3, orientation - 1);  // orientation
-    writer.Write(2, 0);                // U32 selector: extra_channels 0
-
-    if (!only_basic_info) {
-      writer.Write(1, 1);  // all_default opsin matrix
-      writer.Write(2, 0);  // extensions: U64 value 0
-    }
+  jxl::ImageMetadata metadata;
+  if (!metadata_default) {
+    metadata.SetUintSamples(bits_per_sample);
+    metadata.m2.orientation_minus_1 = orientation - 1;
+    metadata.SetAlphaBits(alpha_bits);
   }
+
+  EXPECT_TRUE(jxl::Bundle::Write(metadata, &writer, 0, nullptr));
 
   writer.ZeroPadToByte();
   ReclaimAndCharge(&writer, &allotment, 0, nullptr);
@@ -223,23 +175,28 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
 }
 
 TEST(DecodeTest, BasicInfoTest) {
+#ifdef JXL_CRASH_ON_ERROR
+  JXL_WARNING("This test will fail because it involves partial reads");
+#endif
+
   size_t xsize[2] = {50, 33};
   size_t ysize[2] = {50, 77};
   size_t bits_per_sample[2] = {8, 23};
   size_t orientation[2] = {3, 5};
+  size_t alpha_bits[2] = {0, 8};
   size_t have_container[2] = {0, 1};
 
   std::vector<std::vector<uint8_t>> test_samples;
   // Test with direct codestream
-  test_samples.push_back(
-      GetTestHeader(xsize[0], ysize[0], bits_per_sample[0], orientation[0],
-                    have_container[0], /*metadata_default=*/false,
-                    /*only_basic_info=*/true, /*insert_extra_box=*/false));
+  test_samples.push_back(GetTestHeader(
+      xsize[0], ysize[0], bits_per_sample[0], orientation[0], alpha_bits[0],
+      have_container[0], /*metadata_default=*/false,
+      /*insert_extra_box=*/false));
   // Test with container and different parameters
-  test_samples.push_back(
-      GetTestHeader(xsize[1], ysize[1], bits_per_sample[1], orientation[1],
-                    have_container[1], /*metadata_default=*/false,
-                    /*only_basic_info=*/true, /*insert_extra_box=*/false));
+  test_samples.push_back(GetTestHeader(
+      xsize[1], ysize[1], bits_per_sample[1], orientation[1], alpha_bits[1],
+      have_container[1], /*metadata_default=*/false,
+      /*insert_extra_box=*/false));
 
   for (size_t i = 0; i < test_samples.size(); ++i) {
     const std::vector<uint8_t>& data = test_samples[i];
@@ -264,12 +221,13 @@ TEST(DecodeTest, BasicInfoTest) {
         EXPECT_EQ(have_container[i], info.have_container);
         EXPECT_EQ(xsize[i], info.xsize);
         EXPECT_EQ(ysize[i], info.ysize);
+        EXPECT_EQ(alpha_bits[i], info.alpha_bits);
         EXPECT_EQ(orientation[i], info.orientation);
-        EXPECT_EQ(bits_per_sample[i], info.bits_per_sample);
       } else {
         // If we did not give the full header, the basic info should not be
-        // available.
-        EXPECT_EQ(false, have_basic_info);
+        // available. Allow a few bytes of slack due to some bits for default
+        // opsinmatrix/extension bits.
+        if (size + 2 < data.size()) EXPECT_EQ(false, have_basic_info);
       }
 
       JpegxlDecoderDestroy(dec);
@@ -284,10 +242,11 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   size_t ysize = 50;
   size_t bits_per_sample = 16;
   size_t orientation = 1;
+  size_t alpha_bits = 0;
   std::vector<uint8_t> data =
-      GetTestHeader(xsize, ysize, bits_per_sample, orientation,
+      GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
                     /*have_container=*/true, /*metadata_default=*/false,
-                    /*only_basic_info=*/true, /*insert_extra_box=*/true);
+                    /*insert_extra_box=*/true);
 
   JpegxlDecoderStatus status;
   JpegxlDecoder* dec = JpegxlDecoderCreate(NULL);

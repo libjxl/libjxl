@@ -44,6 +44,7 @@
 #include "jxl/enc_cache.h"
 #include "jxl/enc_dct.h"
 #include "jxl/enc_group.h"
+#include "jxl/enc_modular.h"
 #include "jxl/enc_params.h"
 #include "jxl/gauss_blur.h"
 #include "jxl/image.h"
@@ -128,11 +129,11 @@ static const float kQuant64[64] = {
 };
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  const float kBase = 0.635;
-  const float kMul1 = 0.012064582959485624;
-  const float kOffset1 = 0.0090838876826177;
-  const float kMul2 = -0.19452292450379458;
-  const float kOffset2 = 0.07720901311417044;
+  const float kBase = 1.150;
+  const float kMul1 = 0.011997460360056856;
+  const float kOffset1 = 0.008653861363398005;
+  const float kMul2 = -0.19435889750542837;
+  const float kOffset2 = 0.0779320418139338;
   const float val = *out_pos;
   // Avoid division by zero.
   const float div = std::max(val + kOffset1, 1e-3f);
@@ -180,17 +181,18 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   *out_pos += kMul * v;
 }
 
-static float SimpleGamma2(float v) {
-  // Variant of SimpleGamma used for GammaModulation below.
-  static const float mul = 140.16326721564042f;
-  static const float mul2 = 1 / 28.074951961462975;
+static float SimpleGamma(float v) {
+  // A simple HDR compatible gamma function.
+  // mul and mul2 represent a scaling difference between jxl and butteraugli.
+  static const float mul = 200.f;
+  static const float mul2 = 1 / 74.f;
 
   v *= mul;
 
   // Includes correction factor for std::log -> log2.
-  static const float kRetMul = mul2 * 7.972356479515924f * 0.693147181f;
+  static const float kRetMul = mul2 * 18.6580932135f * 0.693147181f;
   static const float kRetAdd = mul2 * -20.2789020414f;
-  static const float kVOffset = 7.667752478222198f;
+  static const float kVOffset = 7.14672470003f;
 
   if (v < 0) {
     // This should happen rarely, but may lead to a NaN, which is rather
@@ -223,10 +225,10 @@ void GammaModulation(const size_t x, const size_t y, const ImageF& xyb_x,
 
       const float linear_r_eps = r_eps * r_eps * r_eps;
       const float linear_g_eps = g_eps * g_eps * g_eps;
-      const float log_r = SimpleGamma2(linear_r);
-      const float log_g = SimpleGamma2(linear_g);
-      const float log_r_eps = SimpleGamma2(linear_r_eps);
-      const float log_g_eps = SimpleGamma2(linear_g_eps);
+      const float log_r = SimpleGamma(linear_r);
+      const float log_g = SimpleGamma(linear_g);
+      const float log_r_eps = SimpleGamma(linear_r_eps);
+      const float log_g_eps = SimpleGamma(linear_g_eps);
       const float r_delta = r_eps - r;
       const float g_delta = g_eps - g;
       const float log_r_delta = log_r_eps - log_r;
@@ -240,7 +242,7 @@ void GammaModulation(const size_t x, const size_t y, const ImageF& xyb_x,
     }
   }
 
-  *out_pos += -0.8 * std::log(overall_ratio / n);
+  *out_pos += -0.777 * std::log(overall_ratio / n);
 }
 
 // Increase precision in 8x8 blocks that have high dynamic range.
@@ -273,21 +275,21 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       y_sum_of_squares += vy * vy;
     }
   }
-  const float xmul = 14.1438272671416;
+  const float xmul = 2.594061271935514;
   float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
   // than the previous approach of just using range_y.
   float range0 = std::sqrt(range_x * range_y);
-  const float mul0 = 2.1115995962627556;
+  const float mul0 = -0.3487568186688595;
   float range1 = std::sqrt(range_x * range_x + range_y * range_y);
-  const float mul1 = -0.6958640662929165;
+  const float mul1 = -0.4541809358833795;
   float range2 = std::max(range_x, range_y);
-  const float mul2 = 0.0873656790090423;
+  const float mul2 = 0.1560925882017745;
   float range3 = std::min(range_x, range_y);
-  const float mul3 = -0.29894579393496157;
+  const float mul3 = -0.6983299108674192;
   float range4 = n == 0 ? 0 : range_x * std::sqrt(y_sum_of_squares / n);
-  const float mul4 = 3.722260709772485;
+  const float mul4 = 178.33920534447083;
   // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
   // some pathological cases and cause problems downstream.
   *out_pos += std::max(
@@ -320,7 +322,7 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   if (n != 0) {
     sum /= n;
   }
-  const float kMul = -2.7732748987237232;
+  const float kMul = -6.751862512491382;
   sum *= kMul;
   *out_pos += sum;
 }
@@ -364,36 +366,23 @@ void PerBlockModulations(const ImageF& xyb_x, const ImageF& xyb_y,
       "AQ per block modulation");
 }
 
-static float SimpleGamma(float v) {
-  // A simple HDR compatible gamma function.
-  // mul and mul2 represent a scaling difference between jxl and butteraugli.
-  static const float mul = 103.72874071313939f;
-  static const float mul2 = 1 / 67.781877502322729f;
-
-  v *= mul;
-
-  // Includes correction factor for std::log -> log2.
-  static const float kRetMul = mul2 * 18.6580932135f * 0.693147181f;
-  static const float kRetAdd = mul2 * -20.2789020414f;
-  static const float kVOffset = 7.14672470003f;
-
-  if (v < 0) {
-    // This should happen rarely, but may lead to a NaN, which is rather
-    // undesirable. Since negative photons don't exist we solve the NaNs by
-    // clamping here.
-    v = 0;
-  }
-  return kRetMul * FastLog2f(v + kVOffset) + kRetAdd;
-}
-
-static float RatioOfCubicRootToSimpleGamma(float v) {
+static float RatioOfDerivativesOfCubicRootToSimpleGamma(float v) {
   // The opsin space in jxl is the cubic root of photons, i.e., v * v * v
   // is related to the number of photons.
   //
   // SimpleGamma(v * v * v) is the psychovisual space in butteraugli.
   // This ratio allows quantization to move from jxl's opsin space to
   // butteraugli's log-gamma space.
-  return v / SimpleGamma(v * v * v);
+  const float linear = v * v * v;
+  const float kEpsilon = 0.01;
+  const float v_eps = v + kEpsilon;
+
+  const float linear_eps = v_eps * v_eps * v_eps;
+  const float log_v = SimpleGamma(linear);
+  const float log_v_eps = SimpleGamma(linear_eps);
+  const float v_delta = v_eps - v;
+  const float log_v_delta = log_v_eps - log_v;
+  return v_delta / log_v_delta;
 }
 
 // Returns image (padded to multiple of 8x8) of local pixel differences.
@@ -405,14 +394,14 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
   const size_t padded_xsize = RoundUpToBlockDim(xsize);
   const size_t padded_ysize = RoundUpToBlockDim(ysize);
   ImageF padded_diff(padded_xsize, padded_ysize);
-  const float mul0 = 0.025960416673242875f;
+  const float mul0 = 0.025054135231958742f;
 
   // The XYB gamma is 3.0 to be able to decode faster with two muls.
   // Butteraugli's gamma is matching the gamma of human eye, around 2.6.
   // We approximate the gamma difference by adding one cubic root into
   // the adaptive quantization. This gives us a total gamma of 2.6666
   // for quantization uses.
-  const float match_gamma_offset = 1.4631502677995982f;
+  const float match_gamma_offset = 0.8642339254766029;
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),
@@ -450,7 +439,8 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
                                std::abs(row_in[x] - row_in1[x]) +
                                3 * (std::abs(row_in2[x] - row_in1[x]) +
                                     std::abs(row_in[x1] - row_in[x2])));
-          diff *= RatioOfCubicRootToSimpleGamma(row_in[x] + match_gamma_offset);
+          diff *= RatioOfDerivativesOfCubicRootToSimpleGamma(
+              row_in[x] + match_gamma_offset);
           row_out[x] = std::min(cutoff, diff);
           ++x;
         }
@@ -463,13 +453,15 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
                                std::abs(row_in[x] - row_in1[x]) +
                                3 * (std::abs(row_in2[x] - row_in1[x]) +
                                     std::abs(row_in[x1] - row_in[x2])));
-          diff *= RatioOfCubicRootToSimpleGamma(row_in[x] + match_gamma_offset);
+          diff *= RatioOfDerivativesOfCubicRootToSimpleGamma(
+              row_in[x] + match_gamma_offset);
           row_out[x] = std::min(cutoff, diff);
         }
         // Last pixel of the row.
         {
           float diff = 7.0f * mul0 * (std::abs(row_in[x] - row_in2[x]));
-          diff *= RatioOfCubicRootToSimpleGamma(row_in[x] + match_gamma_offset);
+          diff *= RatioOfDerivativesOfCubicRootToSimpleGamma(
+              row_in[x] + match_gamma_offset);
           row_out[x] = std::min(cutoff, diff);
           ++x;
         }
@@ -498,7 +490,8 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
     for (size_t x = 0; x + 1 < xsize; ++x) {
       const size_t x2 = x + 1;
       float diff = 7.0f * mul0 * std::abs(row_in[x] - row_in[x2]);
-      diff *= RatioOfCubicRootToSimpleGamma(row_in[x] + match_gamma_offset);
+      diff *= RatioOfDerivativesOfCubicRootToSimpleGamma(row_in[x] +
+                                                         match_gamma_offset);
       row_out[x] = std::min(cutoff, diff);
     }
     // Last pixel of the last row.
@@ -1220,7 +1213,11 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   ImageMetadata metadata;
   metadata.color_encoding = ColorEncoding::SRGB();
 
-  InitializePassesEncoder(opsin, pool, enc_state, nullptr);
+  ModularFrameEncoder modular_frame_encoder(enc_state->shared.frame_dim,
+                                            enc_state->shared.frame_header,
+                                            enc_state->cparams);
+  InitializePassesEncoder(opsin, pool, enc_state, &modular_frame_encoder,
+                          nullptr);
   dec_state.Init(pool);
 
   Image3F idct(opsin.xsize(), opsin.ysize());

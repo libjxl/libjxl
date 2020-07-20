@@ -183,7 +183,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     const size_t ty = (block_rect.y0() + by) / kColorTileDimInBlocks;
     AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
 
-    const uint8_t* JXL_RESTRICT row_cmap[3] = {
+    const int8_t* JXL_RESTRICT row_cmap[3] = {
         dec_state->shared->cmap.ytox_map.ConstRow(ty),
         nullptr,
         dec_state->shared->cmap.ytob_map.ConstRow(ty),

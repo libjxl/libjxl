@@ -63,9 +63,8 @@ static Status FwdNearLossless(Image& input, size_t begin_c, size_t end_c,
       pixel_type* JXL_RESTRICT p_in = input.channel[c].Row(y);
       pixel_type* JXL_RESTRICT p_out = out.Row(y);
       for (size_t x = 0; x < w; x++) {
-        PredictionResult pred =
-            PredictNoTreeWP(out, p_out + x, out.plane.PixelsPerRow(), x, y,
-                            predictor, &wp_state);
+        PredictionResult pred = PredictNoTreeWP(
+            w, p_out + x, out.plane.PixelsPerRow(), x, y, predictor, &wp_state);
         pixel_type delta = DeltaQuantize(max_delta_error, p_in[x], pred.guess);
         pixel_type reconstructed = pred.guess + delta;
         int e = p_in[x] - reconstructed;

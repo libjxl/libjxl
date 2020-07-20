@@ -687,8 +687,8 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("Unexpected PNG bit depth");
   }
   io->metadata.SetUintSamples(static_cast<uint32_t>(bits_per_sample));
-  io->metadata.alpha_bits =
-      has_alpha ? io->metadata.bit_depth.bits_per_sample : 0;
+  io->metadata.SetAlphaBits(has_alpha ? io->metadata.bit_depth.bits_per_sample
+                                      : 0);
 
   io->enc_size = bytes.size();
   (void)io->dec_hints.Foreach(
@@ -722,7 +722,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   const bool big_endian = true;  // PNG requirement
   const PackedImage desc(
       w, h, io->metadata.color_encoding, has_alpha,
-      /*alpha_is_premultiplied=*/false, io->metadata.alpha_bits,
+      /*alpha_is_premultiplied=*/false, io->metadata.GetAlphaBits(),
       io->metadata.bit_depth.bits_per_sample, big_endian, /*flipped_y=*/false);
   const Span<const uint8_t> span(out, out_size);
   const bool ok = CopyTo(desc, span, pool, &io->Main());
@@ -741,7 +741,7 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageBundle ib = io->Main().Copy();
   JXL_RETURN_IF_ERROR(MapTargetNitsTo255(&ib, pool));
   const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
-  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.alpha_bits : 0;
+  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.GetAlphaBits() : 0;
   const bool big_endian = true;              // PNG requirement
   CodecIntervals* temp_intervals = nullptr;  // Can't store min/max.
   const ExternalImage external(

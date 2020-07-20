@@ -52,25 +52,13 @@ struct PassesEncoderState {
   // WARNING: assumes ac_qcoeff_t == float!
   std::vector<ACImage3> coeffs;
 
-  // Vector of tokens for each DC group.
-  std::vector<std::vector<Token>> dc_tokens;
-
   // Raw data for special (reference+DC) frames.
   std::vector<BitWriter> special_frames;
-
-  // Quantized DC.
-  Image3S dc;
-
-  // Number of extra DC levels, per group.
-  std::vector<int> extra_dc_levels;
 
   // Storage for reference frames. More than one to allow for photographic and
   // non-photographic patches, as well as mixing previous frames and special
   // frames as sources.
   Image3F reference_frames[kMaxNumReferenceFrames];
-
-  // Per-dc16-group-tokens.
-  std::vector<std::vector<Token>> downsampled_dc_tokens;
 
   CompressParams cparams;
 
@@ -87,8 +75,10 @@ struct PassesEncoderState {
 };
 
 // Initialize per-frame information.
+class ModularFrameEncoder;
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                              PassesEncoderState* passes_enc_state,
+                             ModularFrameEncoder* modular_frame_encoder,
                              AuxOut* aux_out);
 
 // Working area for ComputeCoefficients (per-group!)

@@ -116,8 +116,7 @@ struct HybridUintConfig {
     return ret;
   }
   JXL_INLINE size_t Read(size_t ctx, BitReader* JXL_RESTRICT br,
-                         ANSSymbolReader* JXL_RESTRICT decoder,
-                         const std::vector<uint8_t>& context_map) const;
+                         ANSSymbolReader* JXL_RESTRICT decoder) const;
 
   explicit HybridUintConfig(uint32_t split_exponent = 4,
                             uint32_t msb_in_token = 2,
@@ -220,9 +219,63 @@ class ANSSymbolReader {
 
   bool CheckANSFinalState() { return state_ == (ANS_SIGNATURE << 16u); }
 
+  // Takes a *clustered* idx.
+  JXL_INLINE size_t ReadHybridUintClustered(size_t ctx,
+                                            BitReader* JXL_RESTRICT br) {
+    return configs[ctx].Read(ctx, br, this);
+  }
+
   JXL_INLINE size_t ReadHybridUint(size_t ctx, BitReader* JXL_RESTRICT br,
                                    const std::vector<uint8_t>& context_map) {
-    return configs[context_map[ctx]].Read(ctx, br, this, context_map);
+    return ReadHybridUintClustered(context_map[ctx], br);
+  }
+
+  // ctx is a *clustered* context!
+  bool IsSingleValue(size_t ctx) const {
+    // No optimization for Huffman mode.
+    if (use_prefix_code_) return false;
+    const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
+    const AliasTable::Entry* table = &alias_tables_[ctx << log_alpha_size_];
+    AliasTable::Symbol symbol =
+        AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
+    if (symbol.freq != ANS_TAB_SIZE) return false;
+    if (configs[ctx].split_token <= symbol.value) return false;
+    return true;
+  }
+
+  // Reads `count` symbols from the stream using cotnext `ctx`, which contains a
+  // single symbol. Assumes `IsSingleValue(ctx)`.
+  uint32_t ReadSingleValue(size_t ctx, BitReader* br, size_t count) {
+    JXL_DASSERT(IsSingleValue(ctx));
+    const AliasTable::Entry* table = &alias_tables_[ctx << log_alpha_size_];
+
+    // Figure out the length of the state loop (typically <= 10).
+    size_t state = state_;
+    size_t cycle_len = 0;
+    size_t ret;
+    do {
+      cycle_len++;
+      const uint32_t res = state & (ANS_TAB_SIZE - 1u);
+      AliasTable::Symbol symbol =
+          AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
+      ret = symbol.value;
+      state = symbol.freq * (state >> ANS_LOG_TAB_SIZE) + symbol.offset;
+      if (cycle_len > count) {
+        cycle_len = count + 1;
+        break;
+      }
+    } while (state_ != state);
+
+    // Skip all the complete loops, and only update the state for the last loop.
+    size_t final_state_iters = count % cycle_len;
+    for (size_t i = 0; i < final_state_iters; i++) {
+      const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
+      AliasTable::Symbol symbol =
+          AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
+      state_ = symbol.freq * (state_ >> ANS_LOG_TAB_SIZE) + symbol.offset;
+    }
+
+    return ret;
   }
 
  private:
@@ -238,10 +291,9 @@ class ANSSymbolReader {
 
 JXL_INLINE size_t
 HybridUintConfig::Read(size_t ctx, BitReader* JXL_RESTRICT br,
-                       ANSSymbolReader* JXL_RESTRICT decoder,
-                       const std::vector<uint8_t>& context_map) const {
+                       ANSSymbolReader* JXL_RESTRICT decoder) const {
   br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
-  size_t token = decoder->ReadSymbolWithoutRefill(context_map[ctx], br);
+  size_t token = decoder->ReadSymbolWithoutRefill(ctx, br);
   return Read(br, token);
 }
 

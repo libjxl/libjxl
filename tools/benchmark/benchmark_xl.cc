@@ -104,7 +104,7 @@ static bool HasValidAlpha(const CodecInOut& io) {
   // external_image.cc.
   const ImageBundle& ib = io.Main();
   if (ib.HasAlpha()) {
-    size_t actual_max = MaxAlpha(ib.metadata()->alpha_bits);
+    size_t actual_max = MaxAlpha(ib.metadata()->GetAlphaBits());
     const ImageU& alpha = ib.alpha();
     for (size_t y = 0; y < alpha.ysize(); ++y) {
       auto* const JXL_RESTRICT row = alpha.Row(y);
@@ -114,7 +114,7 @@ static bool HasValidAlpha(const CodecInOut& io) {
             JXL_WARNING(
                 "alpha value too large for given bit depth:"
                 " depth: %d, value: %d",
-                ib.metadata()->alpha_bits, row[x]);
+                ib.metadata()->GetAlphaBits(), row[x]);
           }
           return false;
         }

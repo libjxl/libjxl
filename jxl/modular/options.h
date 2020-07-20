@@ -129,6 +129,11 @@ struct ModularOptions {
   int wp_mode = 0;
 
   float fast_decode_multiplier = 1.01f;
+
+  // Forces the encoder to produce a tree that is compatible with the WP-only
+  // decode path (or with the no-wp path).
+  bool force_wp_only = false;
+  bool force_no_wp = false;
 };
 
 }  // namespace jxl

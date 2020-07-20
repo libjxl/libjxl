@@ -222,9 +222,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/passes_state.h
   jxl/patch_dictionary.cc
   jxl/patch_dictionary.h
-  jxl/predictor-inl.h
-  jxl/predictor.cc
-  jxl/predictor_shared.h
   jxl/quant_weights.cc
   jxl/quant_weights.h
   jxl/quantizer.cc

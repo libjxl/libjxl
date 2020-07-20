@@ -76,9 +76,6 @@ struct PassesSharedState {
   Image3F dc_storage;
   const Image3F* JXL_RESTRICT dc = &dc_storage;
 
-  // Only useful if adaptive DC smoothing is enabled.
-  Image3F dc_quant_field;
-
   Multiframe* JXL_RESTRICT multiframe = nullptr;
 
   // Number of histograms and coefficient orders, per pass (always 1 for

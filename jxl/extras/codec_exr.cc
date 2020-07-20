@@ -241,7 +241,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   io->SetFromImage(std::move(image), color_encoding);
   io->metadata.color_encoding = color_encoding;
   if (has_alpha) {
-    io->metadata.alpha_bits = kExrAlphaBits;
+    io->metadata.SetAlphaBits(kExrAlphaBits);
     io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/true);
   }
   return true;
@@ -291,7 +291,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
 
     const float multiplier = 1.f / io->metadata.IntensityTarget();
     const float alpha_normalizer =
-        has_alpha ? 1.f / MaxAlpha(io->metadata.alpha_bits) : 0;
+        has_alpha ? 1.f / MaxAlpha(io->metadata.GetAlphaBits()) : 0;
 
     for (size_t start_y = 0; start_y < io->ysize(); start_y += y_chunk_size) {
       // Inclusive.

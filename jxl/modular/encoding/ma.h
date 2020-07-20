@@ -23,21 +23,21 @@ namespace jxl {
 // inner nodes
 struct PropertyDecisionNode {
   PropertyVal splitval;
-  int16_t property;  // -1: leaf node, childID points to leaf node
-  // 0..nb_properties-1 : childID refers to left branch  (in inner_node)
-  //                      childID+1 refers to right branch
-  uint32_t childID;
+  int16_t property;  // -1: leaf node, lchild points to leaf node
+  uint32_t lchild;
+  uint32_t rchild;
   Predictor predictor;
   int64_t predictor_offset;
 
-  explicit PropertyDecisionNode(int p = -1, int split_val = 0, int child_id = 0,
-                                Predictor predictor = Predictor::Gradient,
-                                int64_t predictor_offset = 0)
+  PropertyDecisionNode(int p, int split_val, int lchild, int rchild,
+                       Predictor predictor, int64_t predictor_offset)
       : splitval(split_val),
         property(p),
-        childID(child_id),
+        lchild(lchild),
+        rchild(rchild),
         predictor(predictor),
         predictor_offset(predictor_offset) {}
+  PropertyDecisionNode() = default;
 };
 
 using Tree = std::vector<PropertyDecisionNode>;
@@ -52,8 +52,8 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
                   int max_property);
 
 void ChooseAndQuantizeProperties(
-    size_t max_properties, size_t max_property_values, int64_t offset,
-    const std::vector<std::vector<int>> &residuals,
+    size_t max_properties, size_t max_property_values,
+    const std::vector<std::vector<int>> &residuals, bool force_wp_only,
     std::vector<std::vector<int>> *props,
     std::vector<std::vector<int>> *compact_properties,
     std::vector<size_t> *props_to_use);
@@ -61,7 +61,6 @@ void ChooseAndQuantizeProperties(
 void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<std::vector<int>> &props,
                      const std::vector<Predictor> &predictors,
-                     int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
                      size_t max_properties, float fast_decode_multiplier,

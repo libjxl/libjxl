@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/dec_noise.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_noise.cc"
-#include <hwy/foreach_target.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -33,8 +30,13 @@
 #include "jxl/opsin_params.h"
 #include "jxl/optimize.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_noise.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/xorshift128plus-inl.h"
 
+// SIMD code.
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
@@ -176,8 +178,8 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
   // normalizer is half of what it was before (0.5).
   const auto norm_const = Set(d, 0.22f);
 
-  float ytox = cmap.YtoXRatio(kColorOffset);
-  float ytob = cmap.YtoBRatio(kColorOffset);
+  float ytox = cmap.YtoXRatio(0);
+  float ytob = cmap.YtoBRatio(0);
 
   for (size_t y = 0; y < ysize; ++y) {
     float* JXL_RESTRICT row_x = opsin_rect.PlaneRow(opsin, 0, y);

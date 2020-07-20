@@ -110,20 +110,21 @@ struct QuantizerParams {
 
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->U32(Bits(11), BitsOffset(11, 2048), BitsOffset(12, 4096),
-                 BitsOffset(15, 8192), 0, &global_scale_minus_1);
-    visitor->U32(Val(15), Bits(5), Bits(8), Bits(16), 0, &quant_dc_minus_1);
+    visitor->U32(BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
+                 BitsOffset(15, 8193), 1, &global_scale);
+    visitor->U32(Val(16), BitsOffset(5, 1), BitsOffset(8, 1), BitsOffset(16, 1),
+                 1, &quant_dc);
     return true;
   }
 
-  uint32_t global_scale_minus_1;
-  uint32_t quant_dc_minus_1;
+  uint32_t global_scale;
+  uint32_t quant_dc;
 };
 
 void TestQuantizerParams() {
   for (uint32_t i = 1; i < 10000; ++i) {
     QuantizerParams p;
-    p.global_scale_minus_1 = i - 1;
+    p.global_scale = i;
     size_t extension_bits = 0, total_bits = 0;
     JXL_CHECK(Bundle::CanEncode(p, &extension_bits, &total_bits));
     JXL_CHECK(extension_bits == 0);
@@ -134,16 +135,16 @@ void TestQuantizerParams() {
 Status Quantizer::Encode(BitWriter* writer, size_t layer,
                          AuxOut* aux_out) const {
   QuantizerParams params;
-  params.global_scale_minus_1 = global_scale_ - 1;
-  params.quant_dc_minus_1 = quant_dc_ - 1;
+  params.global_scale = global_scale_;
+  params.quant_dc = quant_dc_;
   return Bundle::Write(params, writer, layer, aux_out);
 }
 
 Status Quantizer::Decode(BitReader* reader) {
   QuantizerParams params;
   JXL_RETURN_IF_ERROR(Bundle::Read(reader, &params));
-  global_scale_ = static_cast<int>(params.global_scale_minus_1 + 1);
-  quant_dc_ = static_cast<int>(params.quant_dc_minus_1 + 1);
+  global_scale_ = static_cast<int>(params.global_scale);
+  quant_dc_ = static_cast<int>(params.quant_dc);
   RecomputeFromGlobalScale();
   return true;
 }

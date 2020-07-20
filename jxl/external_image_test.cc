@@ -163,7 +163,7 @@ class ExternalImageParametricTest
     ImageBundle& ib = io.Main();
     const size_t alpha_bits = bits_per_sample <= 8 ? 8 : 16;
     if (add_alpha) {
-      io.metadata.alpha_bits = alpha_bits;
+      io.metadata.SetAlphaBits(alpha_bits);
       ib.SetAlpha(CopyImage(g->alpha[idx]), /*alpha_is_premultiplied=*/false);
     }
 
@@ -370,7 +370,7 @@ TEST(ExternalImageTest, InvalidSize) {
                    /*big_endian=*/true, /*flipped_y=*/false);
 
   ImageMetadata im;
-  im.alpha_bits = 8;
+  im.SetAlphaBits(8);
   ImageBundle ib(&im);
 
   const uint8_t buf[10 * 100 * 8] = {};

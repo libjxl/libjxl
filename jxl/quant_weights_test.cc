@@ -17,14 +17,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <hwy/base.h>  // HWY_ALIGN_MAX
+#include <hwy/tests/test_util-inl.h>
 #include <numeric>
 #include <random>
 
-#include <hwy/base.h>                 // HWY_ALIGN_MAX
-#include <hwy/tests/test_util-inl.h>
-
 #include "jxl/dct_for_test.h"
 #include "jxl/dec_transforms.h"
+#include "jxl/enc_modular.h"
 #include "jxl/enc_transforms.h"
 
 namespace jxl {
@@ -55,7 +55,9 @@ TEST(QuantWeightsTest, DC) {
 void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   ASSERT_TRUE(encodings.size() == DequantMatrices::kNum);
   DequantMatrices mat;
-  mat.SetCustom(encodings);
+  ModularFrameEncoder encoder(FrameDimensions{}, FrameHeader{},
+                              CompressParams{});
+  mat.SetCustom(encodings, &encoder);
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
     const QuantEncoding& e = encodings[i];
@@ -175,7 +177,9 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
                                        QuantEncoding::DCT(dct_params));
   DequantMatrices dequant_matrices;
-  dequant_matrices.SetCustom(encodings);
+  ModularFrameEncoder encoder(FrameDimensions{}, FrameHeader{},
+                              CompressParams{});
+  dequant_matrices.SetCustom(encodings, &encoder);
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};

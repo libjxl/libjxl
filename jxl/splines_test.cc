@@ -41,8 +41,8 @@ using ::testing::Pointwise;
 
 constexpr int kQuantizationAdjustment = 0;
 const ColorCorrelationMap* const cmap = new ColorCorrelationMap;
-const float kYToX = cmap->YtoXRatio(kColorOffset);
-const float kYToB = cmap->YtoBRatio(kColorOffset);
+const float kYToX = cmap->YtoXRatio(0);
+const float kYToB = cmap->YtoBRatio(0);
 
 constexpr float kTolerance = 0.1;
 

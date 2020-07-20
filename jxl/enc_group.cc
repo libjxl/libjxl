@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/enc_group.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
-#include <hwy/foreach_target.h>
 
 #include <utility>
 
@@ -31,8 +28,13 @@
 #include "jxl/image.h"
 #include "jxl/quantizer.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/quantizer-inl.h"
 
+// SIMD code.
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
@@ -215,7 +217,7 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
       const int32_t* JXL_RESTRICT row_quant_ac =
           block_group_rect.ConstRow(full_quant_field, by);
       size_t ty = by / kColorTileDimInBlocks;
-      const uint8_t* JXL_RESTRICT row_cmap[3] = {
+      const int8_t* JXL_RESTRICT row_cmap[3] = {
           cmap_rect.ConstRow(enc_state->shared.cmap.ytox_map, ty),
           nullptr,
           cmap_rect.ConstRow(enc_state->shared.cmap.ytob_map, ty),

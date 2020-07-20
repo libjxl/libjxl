@@ -18,6 +18,7 @@
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/common.h"
 #include "jxl/enc_adaptive_quantization.h"
+#include "jxl/enc_modular.h"
 #include "jxl/enc_xyb.h"
 #include "jxl/epf.h"
 
@@ -151,7 +152,10 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   const float dc_quant = jxl::InitialQuantDC(distance);
   const float ac_quant = kAcQuant / distance;
   jxl::PassesEncoderState state;
-  jxl::InitializePassesEncoder(opsin, pool, &state, /*aux_out=*/nullptr);
+  jxl::ModularFrameEncoder modular_frame_encoder(frame_dim, jxl::FrameHeader{},
+                                                 jxl::CompressParams{});
+  jxl::InitializePassesEncoder(opsin, pool, &state, &modular_frame_encoder,
+                               /*aux_out=*/nullptr);
   state.shared.raw_quant_field =
       jxl::ImageI(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   state.shared.quantizer.SetQuant(dc_quant, ac_quant,

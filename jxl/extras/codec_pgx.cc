@@ -244,7 +244,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   JXL_RETURN_IF_ERROR(ApplyHints(io));
   io->metadata.SetUintSamples(header.bits_per_sample);
-  io->metadata.alpha_bits = 0;
+  io->metadata.SetAlphaBits(0);
   io->dec_pixels = header.xsize * header.ysize;
   io->frames.clear();
   io->frames.reserve(1);
@@ -254,7 +254,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   const bool flipped_y = false;
   const PackedImage desc(
       header.xsize, header.ysize, io->metadata.color_encoding, has_alpha,
-      /*alpha_is_premultiplied=*/false, io->metadata.alpha_bits,
+      /*alpha_is_premultiplied=*/false, io->metadata.GetAlphaBits(),
       io->metadata.bit_depth.bits_per_sample, header.big_endian, flipped_y);
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   if (!CopyTo(desc, span, pool, &ib)) return false;
@@ -280,7 +280,7 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageBundle ib = io->Main().Copy();
   JXL_RETURN_IF_ERROR(MapTargetNitsTo255(&ib, pool));
   const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
-  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.alpha_bits : 0;
+  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.GetAlphaBits() : 0;
   CodecIntervals* temp_intervals = nullptr;  // Can't store min/max.
 
   const Image3F* to_external_image = &ib.color();

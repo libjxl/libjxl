@@ -1103,10 +1103,11 @@ class Converter {
       return JXL_FAILURE("Alpha out of range");
     }
 
-    // Keep alpha if at least one value is (semi)transparent.
-    if (and_bits != max_alpha) {
-      ib->SetAlpha(std::move(alpha_), desc_->alpha_is_premultiplied);
-    } else {
+    // Always set, so we can properly remove below.
+    ib->SetAlpha(std::move(alpha_), desc_->alpha_is_premultiplied);
+
+    // Remove if no value is (semi)transparent.
+    if (and_bits == max_alpha) {
       ib->RemoveAlpha();
     }
 

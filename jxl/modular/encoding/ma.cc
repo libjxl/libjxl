@@ -41,15 +41,32 @@ size_t Padded(size_t x) { return RoundUpTo(x, Lanes(df)); }
 
 float EstimateBits(const int32_t counts[ANS_MAX_ALPHA_SIZE],
                    size_t num_symbols) {
-  const auto inv_total =
-      Set(df, 1.0f / std::accumulate(counts, counts + num_symbols, 0));
+  // Try to approximate the effect of rounding up nonzero probabilities.
+  int32_t rounded_counts[ANS_MAX_ALPHA_SIZE];
+  int32_t total = std::accumulate(counts, counts + num_symbols, 0);
+  const auto min = Set(di, (total + ANS_TAB_SIZE - 1) >> ANS_LOG_TAB_SIZE);
+  const auto zero_i = Zero(di);
+  for (size_t i = 0; i < num_symbols; i += Lanes(df)) {
+    auto counts_v = LoadU(di, &counts[i]);
+    counts_v = IfThenElse(counts_v == zero_i, zero_i,
+                          IfThenElse(counts_v < min, min, counts_v));
+    StoreU(counts_v, di, &rounded_counts[i]);
+  }
+  // Compute entropy of the "rounded" probabilities.
   const auto zero = Zero(df);
+  const size_t total_scalar =
+      std::accumulate(rounded_counts, rounded_counts + num_symbols, 0);
+  const auto inv_total = Set(df, 1.0f / total_scalar);
   auto bits_lanes = Zero(df);
+  auto total_v = Set(di, total_scalar);
   for (size_t i = 0; i < num_symbols; i += Lanes(df)) {
     const auto counts_v = ConvertTo(df, LoadU(di, &counts[i]));
+    const auto round_counts_v = LoadU(di, &rounded_counts[i]);
+    const auto probs = ConvertTo(df, round_counts_v) * inv_total;
+    const auto nbps = IfThenElse(round_counts_v == total_v, BitCast(di, zero),
+                                 BitCast(di, FastLog2f_18bits(df, probs)));
     bits_lanes -=
-        IfThenElse(counts_v == zero, zero,
-                   counts_v * FastLog2f_18bits(df, counts_v * inv_total));
+        IfThenElse(counts_v == zero, zero, counts_v * BitCast(df, nbps));
   }
   return GetLane(SumOfLanes(bits_lanes));
 }
@@ -62,8 +79,8 @@ float EstimateTotalBits(int64_t offset, const std::vector<int> &residuals,
   size_t num_symbols = 0;
   for (size_t i = begin; i < end; i++) {
     uint32_t tok, nbits, bits;
-    HybridUintConfig().Encode(PackSigned(residuals[indices[i]] - offset), &tok,
-                              &bits, &nbits);
+    HybridUintConfig(4, 1, 2).Encode(PackSigned(residuals[indices[i]] - offset),
+                                     &tok, &bits, &nbits);
     dist[tok]++;
     ans += nbits;
     num_symbols = num_symbols > tok + 1 ? num_symbols : tok + 1;
@@ -95,7 +112,8 @@ void EstimateEntropy(
   tokens.reserve(residuals[0].size());
   for (int v : residuals[0]) {
     uint32_t tok, nbits, bits;
-    HybridUintConfig().Encode(PackSigned(v - offset), &tok, &bits, &nbits);
+    HybridUintConfig(4, 1, 2).Encode(PackSigned(v - offset), &tok, &bits,
+                                     &nbits);
     tokens.push_back(tok);
   }
   const size_t num_symbols =
@@ -148,13 +166,16 @@ void EstimateEntropy(
 void MakeSplitNode(size_t pos, int property, int splitval, Predictor lpred,
                    int64_t loff, Predictor rpred, int64_t roff, Tree *tree) {
   // Note that the tree splits on *strictly greater*.
-  (*tree)[pos].childID = tree->size();
+  (*tree)[pos].lchild = tree->size();
+  (*tree)[pos].rchild = tree->size() + 1;
   (*tree)[pos].splitval = splitval;
   (*tree)[pos].property = property;
   tree->emplace_back();
+  tree->back().property = -1;
   tree->back().predictor = rpred;
   tree->back().predictor_offset = roff;
   tree->emplace_back();
+  tree->back().property = -1;
   tree->back().predictor = lpred;
   tree->back().predictor_offset = loff;
 }
@@ -187,6 +208,7 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     float Cost() { return lcost + rcost; }
   };
 
+  SplitInfo best_split_static_constant;
   SplitInfo best_split_static;
   SplitInfo best_split_nonstatic;
   SplitInfo best_split_nowp;
@@ -205,8 +227,8 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
   for (size_t pred = 0; pred < residuals.size(); pred++) {
     for (size_t i = begin; i < end; i++) {
       uint32_t tok, nbits, bits;
-      HybridUintConfig().Encode(PackSigned(residuals[pred][(*indices)[i]]),
-                                &tok, &bits, &nbits);
+      HybridUintConfig(4, 1, 2).Encode(
+          PackSigned(residuals[pred][(*indices)[i]]), &tok, &bits, &nbits);
       tokens[pred].push_back(tok);
       extra_bits[pred].push_back(nbits);
       max_symbols = max_symbols > tok + 1 ? max_symbols : tok + 1;
@@ -258,6 +280,8 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     size_t first_used = compact_properties[prop].size();
     size_t last_used = 0;
 
+    // TODO(veluca): consider finding multiple splits along a single property at
+    // the same time, possibly with a bottom-up approach.
     for (size_t i = begin; i < end; i++) {
       size_t p = props[prop][(*indices)[i]];
       prop_value_used_count[p]++;
@@ -331,10 +355,13 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
       bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
                      (*tree)[pos].predictor == Predictor::Weighted;
       bool adds_wp = uses_wp && !used_wp;
+      bool zero_entropy_side = rcost == 0 || lcost == 0;
 
-      SplitInfo &best = prop < kNumStaticProperties
-                            ? best_split_static
-                            : adds_wp ? best_split_nonstatic : best_split_nowp;
+      SplitInfo &best =
+          prop < kNumStaticProperties
+              ? (zero_entropy_side ? best_split_static_constant
+                                   : best_split_static)
+              : (adds_wp ? best_split_nonstatic : best_split_nowp);
       if (lcost + rcost < best.Cost()) {
         best.prop = prop;
         best.val = i;
@@ -370,6 +397,10 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
       best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
     best = &best_split_static;
   }
+  // Split along static props to create constant nodes if possible.
+  if (best_split_static_constant.Cost() + threshold < base_bits) {
+    best = &best_split_static_constant;
+  }
 
   if (best->Cost() + threshold < base_bits) {
     // Split node and try to split children.
@@ -385,11 +416,11 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
       used_properties |= 1 << best->prop;
     }
     FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].childID + 1, begin, best->pos, props_to_use,
+                  (*tree)[pos].rchild, begin, best->pos, props_to_use,
                   best->lcost, threshold, used_properties,
                   fast_decode_multiplier, tree);
     FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].childID, best->pos, end, props_to_use,
+                  (*tree)[pos].lchild, best->pos, end, props_to_use,
                   best->rcost, threshold, used_properties,
                   fast_decode_multiplier, tree);
   } else {
@@ -425,8 +456,8 @@ HWY_EXPORT(EstimateTotalBits)  // Local function.
 HWY_EXPORT(FindBestSplit)      // Local function.
 
 void ChooseAndQuantizeProperties(
-    size_t max_properties, size_t max_property_values, int64_t offset,
-    const std::vector<std::vector<int>> &residuals,
+    size_t max_properties, size_t max_property_values,
+    const std::vector<std::vector<int>> &residuals, bool force_wp_only,
     std::vector<std::vector<int>> *props,
     std::vector<std::vector<int>> *compact_properties,
     std::vector<size_t> *props_to_use) {
@@ -441,6 +472,10 @@ void ChooseAndQuantizeProperties(
   static constexpr size_t kVectorMaxRange = 4096;
 
   for (size_t i = 0; i < props->size(); i++) {
+    if (force_wp_only && i >= kNumStaticProperties &&
+        i != kNumNonrefProperties - weighted::kNumProperties) {
+      continue;
+    }
     PropertyVal min = std::numeric_limits<PropertyVal>::max();
     PropertyVal max = std::numeric_limits<PropertyVal>::min();
     for (PropertyVal x : (*props)[i]) {
@@ -483,19 +518,29 @@ void ChooseAndQuantizeProperties(
     }
   }
 
-  std::vector<std::pair<float, size_t>> props_with_entropy;
-  HWY_DYNAMIC_DISPATCH(EstimateEntropy)
-  (offset, residuals, *props, *compact_properties, &props_with_entropy);
-  std::sort(props_with_entropy.begin(), props_with_entropy.end());
+  if (force_wp_only) {
+    props_to_use->resize(kNumStaticProperties);
+    std::iota(props_to_use->begin(), props_to_use->end(), 0);
+    props_to_use->back() = kNumNonrefProperties - weighted::kNumProperties;
+  } else if (max_properties + kNumStaticProperties >= props->size()) {
+    props_to_use->resize(props->size());
+    std::iota(props_to_use->begin(), props_to_use->end(), 0);
+  } else {
+    std::vector<std::pair<float, size_t>> props_with_entropy;
+    HWY_DYNAMIC_DISPATCH(EstimateEntropy)
+    (0, residuals, *props, *compact_properties, &props_with_entropy);
+    std::sort(props_with_entropy.begin(), props_with_entropy.end());
 
-  // Limit the search to the properties with the smallest resulting entropy
-  // (including static properties).
-  max_properties = std::min(max_properties + kNumStaticProperties,
-                            props_with_entropy.size());
-  props_to_use->resize(max_properties);
-  for (size_t i = 0; i < max_properties; i++) {
-    (*props_to_use)[i] = props_with_entropy[i].second;
+    // Limit the search to the properties with the smallest resulting entropy
+    // (including static properties).
+    max_properties = std::min(max_properties + kNumStaticProperties,
+                              props_with_entropy.size());
+    props_to_use->resize(max_properties);
+    for (size_t i = 0; i < max_properties; i++) {
+      (*props_to_use)[i] = props_with_entropy[i].second;
+    }
   }
+
   // Remove other properties from the data.
   size_t num_property_values = 0;
   std::sort(props_to_use->begin(), props_to_use->end());
@@ -554,7 +599,6 @@ void ChooseAndQuantizeProperties(
 void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<std::vector<int>> &props,
                      const std::vector<Predictor> &predictors,
-                     int64_t base_offset,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
                      size_t max_properties, float fast_decode_multiplier,
@@ -564,24 +608,19 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   //
   // Initialize tree.
   tree->emplace_back();
+  tree->back().property = -1;
   tree->back().predictor = predictors[0];
-  tree->back().predictor_offset = base_offset;
+  tree->back().predictor_offset = 0;
   JXL_ASSERT(props.size() < 64);
 
   std::vector<size_t> indices(residuals[0].size());
   std::iota(indices.begin(), indices.end(), 0);
   float base_bits = HWY_DYNAMIC_DISPATCH(EstimateTotalBits)(
-      base_offset, residuals[0], indices, 0, indices.size());
+      0, residuals[0], indices, 0, indices.size());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
   (residuals, props, predictors, compact_properties, &indices, 0, 0,
    indices.size(), props_to_use, base_bits, threshold, /*used_properties=*/0,
    fast_decode_multiplier, tree);
-  size_t leaves = 0;
-  for (size_t i = 0; i < tree->size(); i++) {
-    if ((*tree)[i].property < 0) {
-      (*tree)[i].childID = leaves++;
-    }
-  }
 }
 
 namespace {
@@ -612,14 +651,16 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
       tokens->emplace_back(kOffsetContext,
                            PackSigned(tree[cur].predictor_offset));
       JXL_ASSERT(tree[cur].predictor < Predictor::Best);
-      decoder_tree->emplace_back(-1, 0, leaf_id++, tree[cur].predictor,
+      decoder_tree->emplace_back(-1, 0, leaf_id++, 0, tree[cur].predictor,
                                  tree[cur].predictor_offset);
       continue;
     }
     decoder_tree->emplace_back(tree[cur].property, tree[cur].splitval,
-                               decoder_tree->size() + q.size() + 1);
-    q.push(tree[cur].childID);
-    q.push(tree[cur].childID + 1);
+                               decoder_tree->size() + q.size() + 1,
+                               decoder_tree->size() + q.size() + 2,
+                               Predictor::Zero, 0);
+    q.push(tree[cur].lchild);
+    q.push(tree[cur].rchild);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
   }
 }
@@ -635,10 +676,10 @@ Status ValidateTree(
   if (prop_bounds[p].second < val) return JXL_FAILURE("Invalid tree");
   auto new_bounds = prop_bounds;
   new_bounds[p].first = val + 1;
-  JXL_RETURN_IF_ERROR(ValidateTree(tree, new_bounds, tree[root].childID));
+  JXL_RETURN_IF_ERROR(ValidateTree(tree, new_bounds, tree[root].lchild));
   new_bounds[p] = prop_bounds[p];
   new_bounds[p].second = val;
-  return ValidateTree(tree, new_bounds, tree[root].childID + 1);
+  return ValidateTree(tree, new_bounds, tree[root].rchild);
 }
 
 Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
@@ -665,13 +706,14 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
       }
       int64_t predictor_offset =
           UnpackSigned(reader->ReadHybridUint(kOffsetContext, br, context_map));
-      tree->emplace_back(-1, 0, leaf_id++, static_cast<Predictor>(predictor),
+      tree->emplace_back(-1, 0, leaf_id++, 0, static_cast<Predictor>(predictor),
                          predictor_offset);
       continue;
     }
     int splitval =
         UnpackSigned(reader->ReadHybridUint(kSplitValContext, br, context_map));
-    tree->emplace_back(property, splitval, tree->size() + to_decode + 1);
+    tree->emplace_back(property, splitval, tree->size() + to_decode + 1,
+                       tree->size() + to_decode + 2, Predictor::Zero, 0);
     to_decode += 2;
   }
   std::vector<std::pair<pixel_type, pixel_type>> prop_bounds;

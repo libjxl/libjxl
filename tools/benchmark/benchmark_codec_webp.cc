@@ -81,7 +81,7 @@ class WebPCodec : public ImageCodec {
     const ImageBundle& ib = io->Main();
 
     const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
-    if (ib.HasAlpha() && ib.metadata()->alpha_bits > 8) {
+    if (ib.HasAlpha() && ib.metadata()->GetAlphaBits() > 8) {
       return JXL_FAILURE("WebP alpha must be 8-bit");
     }
 
@@ -178,6 +178,7 @@ class WebPCodec : public ImageCodec {
       // for this instead.
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
+    io->metadata.SetAlphaBits(8);
     const Status ok = io->Main().SetFromSRGB(
         buf->width, buf->height, is_gray, has_alpha,
         /*alpha_is_premultiplied=*/false, data_begin, data_end, pool);

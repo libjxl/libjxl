@@ -97,9 +97,9 @@ jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
   }
   jxl::ExtraChannelInfo example;
   example.type = jxl::ExtraChannel::kSpotColor;
+  example.blend_mode = jxl::BlendMode::kBlend;
   example.bit_depth.bits_per_sample = 8;
   example.dim_shift = 0;
-  example.add_to_prev_frame = false;
   example.name = "spot";
   example.spot_color[0] = io->metadata.IntensityTarget();  // R
   example.spot_color[1] = 0.0f;                            // G
@@ -408,6 +408,9 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "dots", "0|1",
                           "force enable/disable dots generation.", &params.dots,
                           &ParseOverride, 1);
+  cmdline->AddOptionValue('\0', "patches", "0|1",
+                          "force enable/disable patches generation.",
+                          &params.patches, &ParseOverride, 1);
 
   cmdline->AddOptionValue('\0', "adaptive_reconstruction", "0|1",
                           "force enable/disable loop filter.",
@@ -484,7 +487,7 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "preprocessing with maximum delta = max_d",
                           &params.near_lossless, &ParseSigned, 1);
 
-  cmdline->AddOptionValue('p', "palette", "K",
+  cmdline->AddOptionValue('\0', "palette", "K",
                           "[modular encoding] use a palette if image has at "
                           "most K colors (default: 1024)",
                           &params.palette_colors, &ParseSigned, 1);

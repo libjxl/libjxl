@@ -45,8 +45,9 @@ struct GroupHeader {
     visitor->Bool(false, &use_brotli);
     if (visitor->Conditional(!use_brotli)) {
       visitor->Bool(false, &use_global_tree);
+      visitor->U32(Val(0), Val(1), Val(2), BitsOffset(4, 3), 0,
+                   &max_properties);
     }
-    visitor->U32(Val(0), Val(1), Val(2), BitsOffset(4, 3), 0, &max_properties);
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
     uint32_t num_transforms = transforms.size();
     visitor->U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(8, 18), 0,

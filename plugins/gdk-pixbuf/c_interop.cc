@@ -51,7 +51,7 @@ extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
     *ysize = io.ysize();
     *has_alpha = 1;
     const int alpha_right_shift_amount =
-        static_cast<int>(io.metadata.alpha_bits) - 8;
+        static_cast<int>(io.metadata.GetAlphaBits()) - 8;
     for (int y = 0; y < *ysize; ++y) {
       uint8_t *JXL_RESTRICT const row = image + y * *stride;
       const uint16_t *const alpha_row = io.Main().alpha().ConstRow(y);

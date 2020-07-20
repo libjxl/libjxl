@@ -40,7 +40,6 @@
 
 #include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_transforms-inl.h"
-#include "jxl/predictor-inl.h"
 
 // SIMD code
 #include <hwy/before_namespace-inl.h>
@@ -54,27 +53,25 @@ struct CFLFunction {
   static constexpr float kThres = 100.0f;
   static constexpr float kInvColorFactor = 1.0f / kDefaultColorFactor;
   CFLFunction(const float* values_m, const float* values_s, size_t num,
-              float offset, float base, float distance_mul)
+              float base, float distance_mul)
       : values_m(values_m),
         values_s(values_s),
         num(num),
-        offset(offset),
         base(base),
         distance_mul(distance_mul) {}
 
   // Returns f'(x), where f is 1/3 * sum ((|color residual| + 1)^2-1) +
-  // distance_mul * (x-offset)^2 * num.
+  // distance_mul * x^2 * num.
   float Compute(float x, float eps, float* fpeps, float* fmeps) const {
-    float first_derivative = 2 * distance_mul * num * (x - offset);
-    float first_derivative_peps = 2 * distance_mul * num * (x + eps - offset);
-    float first_derivative_meps = 2 * distance_mul * num * (x - eps - offset);
+    float first_derivative = 2 * distance_mul * num * x;
+    float first_derivative_peps = 2 * distance_mul * num * (x + eps);
+    float first_derivative_meps = 2 * distance_mul * num * (x - eps);
 
     const auto inv_color_factor = Set(df, kInvColorFactor);
     const auto thres = Set(df, kThres);
     const auto coeffx2 = Set(df, kCoeff * 2.0f);
     const auto one = Set(df, 1.0f);
     const auto zero = Set(df, 0.0f);
-    const auto offset_v = Set(df, offset);
     const auto base_v = Set(df, base);
     const auto x_v = Set(df, x);
     const auto xpe_v = Set(df, x + eps);
@@ -87,8 +84,7 @@ struct CFLFunction {
     for (size_t i = 0; i < num; i += Lanes(df)) {
       // color residual = ax + b
       const auto a = inv_color_factor * Load(df, values_m + i);
-      const auto b = base_v * Load(df, values_m + i) - offset_v * a -
-                     Load(df, values_s + i);
+      const auto b = base_v * Load(df, values_m + i) - Load(df, values_s + i);
       const auto v = a * x_v + b;
       const auto vpe = a * xpe_v + b;
       const auto vme = a * xme_v + b;
@@ -114,18 +110,16 @@ struct CFLFunction {
   const float* JXL_RESTRICT values_m;
   const float* JXL_RESTRICT values_s;
   size_t num;
-  float offset;
   float base;
   float distance_mul;
 };
 
-size_t FindBestMultiplier(const float* values_m, const float* values_s,
-                          size_t num, float offset, float base,
-                          float distance_mul) {
+int32_t FindBestMultiplier(const float* values_m, const float* values_s,
+                           size_t num, float base, float distance_mul) {
   constexpr float eps = 1;
   constexpr float kClamp = 20.0f;
-  CFLFunction fn(values_m, values_s, num, offset, base, distance_mul);
-  float x = offset;
+  CFLFunction fn(values_m, values_s, num, base, distance_mul);
+  float x = 0;
   // Up to 20 Newton iterations, with approximate derivatives.
   // Derivatives are approximate due to the high amount of noise in the exact
   // derivatives.
@@ -137,13 +131,12 @@ size_t FindBestMultiplier(const float* values_m, const float* values_s,
     x -= std::min(kClamp, std::max(-kClamp, step));
     if (std::abs(step) < 3e-3) break;
   }
-  return std::max(0.0f, std::min(255.0f, std::roundf(x)));
+  return std::max(-128.0f, std::min(127.0f, std::roundf(x)));
 }
 
-template <int MAIN_CHANNEL, int SIDE_CHANNEL, bool use_dct8, int SCALE,
-          int OFFSET>
+template <int MAIN_CHANNEL, int SIDE_CHANNEL, bool use_dct8, int SCALE>
 JXL_NOINLINE void FindBestCorrelation(
-    const Image3F& opsin, ImageB* JXL_RESTRICT map, int* JXL_RESTRICT dc,
+    const Image3F& opsin, ImageSB* JXL_RESTRICT map, int* JXL_RESTRICT dc,
     float base, const DequantMatrices& dequant,
     const AcStrategyImage* ac_strategy, const ImageI* raw_quant_field,
     const Quantizer* quantizer, ThreadPool* pool) {
@@ -175,7 +168,7 @@ JXL_NOINLINE void FindBestCorrelation(
         dc_m[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
     HWY_ALIGN_MAX float
         dc_s[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
-    uint8_t* JXL_RESTRICT row_out = map->Row(ty);
+    int8_t* JXL_RESTRICT row_out = map->Row(ty);
     for (size_t tx = 0; tx < map->xsize(); ++tx) {
       const size_t y0 = ty * kColorTileDimInBlocks;
       const size_t x0 = tx * kColorTileDimInBlocks;
@@ -249,7 +242,7 @@ JXL_NOINLINE void FindBestCorrelation(
         coeffs_s[num_ac] = 0;
         num_ac++;
       }
-      row_out[tx] = FindBestMultiplier(coeffs_m, coeffs_s, num_ac, OFFSET, base,
+      row_out[tx] = FindBestMultiplier(coeffs_m, coeffs_s, num_ac, base,
                                        kDistanceMultiplierAC);
     }
   };
@@ -257,8 +250,8 @@ JXL_NOINLINE void FindBestCorrelation(
   RunOnPool(pool, 0, map->ysize(), ThreadPool::SkipInit(), process_row,
             "FindCorrelation");
 
-  *dc = FindBestMultiplier(dc_values_m, dc_values_s, dc_values.xsize(), OFFSET,
-                           base, kDistanceMultiplierDC);
+  *dc = FindBestMultiplier(dc_values_m, dc_values_s, dc_values.xsize(), base,
+                           kDistanceMultiplierDC);
 }
 
 void FindBestColorCorrelationMap(const Image3F& opsin,
@@ -269,178 +262,34 @@ void FindBestColorCorrelationMap(const Image3F& opsin,
                                  ColorCorrelationMap* cmap) {
   PROFILER_ZONE("enc YTo* correlation");
 
-  int32_t ytob_dc = kColorOffset;
-  int32_t ytox_dc = kColorOffset;
+  int32_t ytob_dc = 0;
+  int32_t ytox_dc = 0;
 
   if (ac_strategy == nullptr) {
     JXL_ASSERT(raw_quant_field == nullptr);
     JXL_ASSERT(quantizer == nullptr);
     FindBestCorrelation</* from Y */ 1, /* to B */ 2, /*use_dct8=*/true,
-                        kDefaultColorFactor, kColorOffset>(
-        opsin, &cmap->ytob_map, &ytob_dc, cmap->YtoBRatio(kColorOffset),
-        dequant, ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(
+        opsin, &cmap->ytob_map, &ytob_dc, cmap->YtoBRatio(0), dequant,
+        ac_strategy, raw_quant_field, quantizer, pool);
     FindBestCorrelation</* from Y */ 1, /* to X */ 0, /*use_dct8=*/true,
-                        kDefaultColorFactor, kColorOffset>(
-        opsin, &cmap->ytox_map, &ytox_dc, cmap->YtoXRatio(kColorOffset),
-        dequant, ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(
+        opsin, &cmap->ytox_map, &ytox_dc, cmap->YtoXRatio(0), dequant,
+        ac_strategy, raw_quant_field, quantizer, pool);
   } else {
     JXL_ASSERT(raw_quant_field != nullptr);
     JXL_ASSERT(quantizer != nullptr);
     FindBestCorrelation</* from Y */ 1, /* to B */ 2, /*use_dct8=*/false,
-                        kDefaultColorFactor, kColorOffset>(
-        opsin, &cmap->ytob_map, &ytob_dc, cmap->YtoBRatio(kColorOffset),
-        dequant, ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(
+        opsin, &cmap->ytob_map, &ytob_dc, cmap->YtoBRatio(0), dequant,
+        ac_strategy, raw_quant_field, quantizer, pool);
     FindBestCorrelation</* from Y */ 1, /* to X */ 0, /*use_dct8=*/false,
-                        kDefaultColorFactor, kColorOffset>(
-        opsin, &cmap->ytox_map, &ytox_dc, cmap->YtoXRatio(kColorOffset),
-        dequant, ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(
+        opsin, &cmap->ytox_map, &ytox_dc, cmap->YtoXRatio(0), dequant,
+        ac_strategy, raw_quant_field, quantizer, pool);
   }
   cmap->SetYToBDC(ytob_dc);
   cmap->SetYToXDC(ytox_dc);
-}
-
-class ColorCorrelationMapCoder {
- public:
-  // TODO(veluca): change predictors?
-  template <typename T>
-  using Predictor = ComputeResiduals<T, PredictorPackSignedRange<0, 255>,
-                                     Predictors2<YPredictor, YPredictor>>;
-
-  enum {
-    kNumResidualContexts = 8,
-    kContextsPerChannel = kNumResidualContexts + 4,
-    kNumContexts = 2 * kContextsPerChannel,
-  };
-
-  static int Context(size_t c, size_t correct, size_t badness) {
-    if (correct == 0) {
-      JXL_ASSERT(badness != 0);
-      badness = (badness + 1) >> 1;
-      size_t badness_offset =
-          std::min<size_t>(badness, kNumResidualContexts) - 1;
-      return kContextsPerChannel * c + badness_offset;
-    }
-    return kContextsPerChannel * c + kNumResidualContexts +
-           CeilLog2Nonzero(9 - correct);
-  }
-  static_assert(kNumContexts == kCmapContexts,
-                "Invalid number of cmap contexts");
-
-  struct Decoder : public Predictor<Decoder> {
-    BitReader* JXL_RESTRICT br;
-    ANSSymbolReader* decoder;
-    const std::vector<uint8_t>* context_map;
-    uint8_t* JXL_RESTRICT rows[2];
-    size_t stride;
-    size_t base_context;
-    AuxOut* JXL_RESTRICT aux_out;
-
-    Decoder(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
-            const std::vector<uint8_t>* context_map,
-            uint8_t* JXL_RESTRICT rows[2], size_t stride, size_t base_context,
-            AuxOut* JXL_RESTRICT aux_out)
-        : br(br),
-          decoder(decoder),
-          context_map(context_map),
-          rows{rows[0], rows[1]},
-          stride(stride),
-          base_context(base_context),
-          aux_out(aux_out) {}
-
-    void Decode(size_t xsize, size_t ysize) {
-      Predictor<Decoder>::Run(xsize, ysize, aux_out);
-    }
-
-    JXL_INLINE void Prediction(size_t x, size_t y,
-                               const int32_t* JXL_RESTRICT predictions,
-                               const uint32_t* JXL_RESTRICT num_correct,
-                               const uint32_t* JXL_RESTRICT min_error,
-                               int32_t* JXL_RESTRICT decoded) {
-      for (size_t c = 0; c < 2; c++) {
-        size_t ctx = base_context + Context(c, num_correct[c], min_error[c]);
-
-        uint32_t residual = decoder->ReadHybridUint(ctx, br, *context_map);
-
-        if (x == 0 && y == 0) {
-          decoded[c] = kColorOffset + UnpackSigned(residual);
-        } else {
-          decoded[c] = predictions[c] + UnpackSigned(residual);
-        }
-
-        rows[c][y * stride + x] = decoded[c];
-      }
-    }
-  };
-
-  struct Encoder : public Predictor<Encoder> {
-    std::vector<Token>* JXL_RESTRICT tokens;
-    const uint8_t* JXL_RESTRICT rows[2];
-    size_t stride;
-    size_t base_context;
-    AuxOut* JXL_RESTRICT aux_out;
-
-    Encoder(std::vector<Token>* JXL_RESTRICT tokens,
-            const uint8_t* JXL_RESTRICT rows[2], size_t stride,
-            size_t base_context, AuxOut* JXL_RESTRICT aux_out)
-        : tokens(tokens),
-          rows{rows[0], rows[1]},
-          stride(stride),
-          base_context(base_context),
-          aux_out(aux_out) {}
-
-    void Encode(size_t xsize, size_t ysize) {
-      Predictor<Encoder>::Run(xsize, ysize, aux_out);
-    }
-
-    JXL_INLINE void Prediction(size_t x, size_t y,
-                               const int32_t* JXL_RESTRICT predictions,
-                               const uint32_t* JXL_RESTRICT num_correct,
-                               const uint32_t* JXL_RESTRICT min_error,
-                               int32_t* JXL_RESTRICT decoded) {
-      for (size_t c = 0; c < 2; c++) {
-        size_t ctx = base_context + Context(c, num_correct[c], min_error[c]);
-
-        decoded[c] = rows[c][y * stride + x];
-
-        uint32_t residual;
-        if (x == 0 && y == 0) {
-          residual = PackSigned(decoded[c] - kColorOffset);
-        } else {
-          residual = PackSigned(decoded[c] - predictions[c]);
-        }
-
-        tokens->emplace_back(ctx, residual);
-      }
-    }
-  };
-};
-
-Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
-                      const std::vector<uint8_t>& context_map,
-                      ColorCorrelationMap* cmap, const Rect& rect,
-                      size_t base_context, AuxOut* JXL_RESTRICT aux_out) {
-  uint8_t* JXL_RESTRICT rows[2] = {
-      rect.Row(&cmap->ytox_map, 0),
-      rect.Row(&cmap->ytob_map, 0),
-  };
-  const size_t stride = cmap->ytob_map.PixelsPerRow();
-
-  ColorCorrelationMapCoder::Decoder(br, decoder, &context_map, rows, stride,
-                                    base_context, aux_out)
-      .Decode(rect.xsize(), rect.ysize());
-  return true;
-}
-
-void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
-                    std::vector<Token>* tokens, size_t base_context,
-                    AuxOut* JXL_RESTRICT aux_out) {
-  const uint8_t* JXL_RESTRICT rows[2] = {
-      rect.ConstRow(cmap.ytox_map, 0),
-      rect.ConstRow(cmap.ytob_map, 0),
-  };
-  const size_t stride = cmap.ytob_map.PixelsPerRow();
-  ColorCorrelationMapCoder::Encoder(tokens, rows, stride, base_context, aux_out)
-      .Encode(rect.xsize(), rect.ysize());
 }
 
 #include <hwy/end_target-inl.h>
@@ -461,28 +310,11 @@ void FindBestColorCorrelationMap(const Image3F& opsin,
       opsin, dequant, ac_strategy, raw_quant_field, quantizer, pool, cmap);
 }
 
-HWY_EXPORT(EncodeColorMap)
-void EncodeColorMap(const ColorCorrelationMap& cmap, const Rect& rect,
-                    std::vector<Token>* tokens, size_t base_context,
-                    AuxOut* JXL_RESTRICT aux_out) {
-  return HWY_DYNAMIC_DISPATCH(EncodeColorMap)(cmap, rect, tokens, base_context,
-                                              aux_out);
-}
-
-HWY_EXPORT(DecodeColorMap)
-Status DecodeColorMap(BitReader* JXL_RESTRICT br, ANSSymbolReader* decoder,
-                      const std::vector<uint8_t>& context_map,
-                      ColorCorrelationMap* cmap, const Rect& rect,
-                      size_t base_context, AuxOut* JXL_RESTRICT aux_out) {
-  return HWY_DYNAMIC_DISPATCH(DecodeColorMap)(br, decoder, context_map, cmap,
-                                              rect, base_context, aux_out);
-}
-
 ColorCorrelationMap::ColorCorrelationMap(size_t xsize, size_t ysize, bool XYB)
     : ytox_map(DivCeil(xsize, kColorTileDim), DivCeil(ysize, kColorTileDim)),
       ytob_map(DivCeil(xsize, kColorTileDim), DivCeil(ysize, kColorTileDim)) {
-  FillImage(kColorOffset, &ytox_map);
-  FillImage(kColorOffset, &ytob_map);
+  ZeroFillImage(&ytox_map);
+  ZeroFillImage(&ytob_map);
   if (!XYB) {
     base_correlation_b_ = 0;
   }

@@ -75,7 +75,7 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
 
   if (ib.HasAlpha()) {
     const int alphaRightShiftAmount =
-        static_cast<int>(decoded.metadata.alpha_bits) - 8;
+        static_cast<int>(decoded.metadata.GetAlphaBits()) - 8;
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
       const uint16_t* const alphaRow = ib.alpha().ConstRow(y);

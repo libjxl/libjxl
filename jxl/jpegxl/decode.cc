@@ -134,26 +134,6 @@ size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec) {
   return dec->basic_info_size_hint;
 }
 
-static void InitBasicInfo(JpegxlBasicInfo* info) {
-  info->have_container = 0;
-  info->signature_type = JPEGXL_SIG_TYPE_JPEGXL;
-  info->xsize = 0;
-  info->ysize = 0;
-  info->floating_point_sample = 0;
-  info->bits_per_sample = 8;
-  info->exponent_bits_per_sample = 0;
-  info->have_icc = 0;
-  info->alpha_bits = 0;
-  info->target_nits = 255;
-  info->have_preview = 0;
-  info->have_animation = 0;
-  info->orientation = JPEGXL_ORIENT_IDENTITY;
-  info->depth_bits = 0;
-  info->depth_shift = 0;
-  info->num_extra_channels = 0;
-  info->extra_channel_bits = 0;
-}
-
 namespace jxl {
 
 JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
@@ -276,27 +256,39 @@ int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info) {
   if (!dec->basic_info_available) return 1;  // indicate not available
 
   if (info) {
-    InitBasicInfo(info);
     info->have_container = dec->have_container;
     info->signature_type = dec->signature_type;
     info->xsize = dec->xsize;
     info->ysize = dec->ysize;
 
     const jxl::ImageMetadata meta = dec->metadata;
-    info->floating_point_sample = meta.bit_depth.floating_point_sample;
     info->bits_per_sample = meta.bit_depth.bits_per_sample;
     info->exponent_bits_per_sample = meta.bit_depth.exponent_bits_per_sample;
     info->have_icc = meta.color_encoding.WantICC();
 
-    // TODO(lode): add tone mapping and intensity target info
+    info->intensity_target = meta.tone_mapping.intensity_target;
+    info->min_nits = meta.tone_mapping.min_nits;
+    info->relative_to_max_display = meta.tone_mapping.relative_to_max_display;
+    info->linear_below = meta.tone_mapping.linear_below;
 
     info->have_preview = meta.m2.have_preview;
     info->have_animation = meta.m2.have_animation;
     info->orientation =
         static_cast<JpegxlOrientation>(meta.m2.orientation_minus_1 + 1);
 
-    // TODO(lode): add the bit depth and presense of alpha channel and other
-    // extra channels (depth, ...)
+    const jxl::ExtraChannelInfo* alpha =
+        meta.m2.Find(jxl::ExtraChannel::kAlpha);
+    if (alpha != nullptr) {
+      info->alpha_bits = alpha->bit_depth.bits_per_sample;
+      info->alpha_exponent_bits = alpha->bit_depth.exponent_bits_per_sample;
+      info->alpha_premultiplied = alpha->alpha_associated;
+    } else {
+      info->alpha_bits = 0;
+      info->alpha_exponent_bits = 0;
+      info->alpha_premultiplied = 0;
+    }
+
+    info->num_extra_channels = meta.m2.num_extra_channels;
   }
 
   return 0;

@@ -114,7 +114,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
 
   io->metadata.SetUintSamples(8);
   io->metadata.color_encoding = ColorEncoding::SRGB();
-  io->metadata.alpha_bits = 0;
+  io->metadata.SetAlphaBits(0);
   io->enc_size = bytes.size();
   (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
@@ -211,27 +211,24 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
         animation_frame.ysize = total_rect.ysize();
       } else {
         if (!io->animation_frames.empty()) {
-          io->animation_frames.back().SetNewBase(
-              AnimationFrame::NewBase::kNone);
+          io->animation_frames.back().new_base = NewBase::kNone;
         }
       }
       switch (gcb.DisposalMode) {
         case DISPOSE_DO_NOT:
         case DISPOSE_BACKGROUND:
-          animation_frame.SetNewBase(AnimationFrame::NewBase::kCurrentFrame);
+          animation_frame.new_base = NewBase::kCurrentFrame;
           break;
         case DISPOSE_PREVIOUS:
-          animation_frame.SetNewBase(AnimationFrame::NewBase::kExisting);
+          animation_frame.new_base = NewBase::kExisting;
           break;
         case DISPOSAL_UNSPECIFIED:
         default:
-          animation_frame.SetNewBase(AnimationFrame::NewBase::kNone);
+          animation_frame.new_base = NewBase::kNone;
           break;
       }
-      if (replace)
-        animation_frame.SetBlendMode(AnimationFrame::BlendMode::kReplace);
-      else
-        animation_frame.SetBlendMode(AnimationFrame::BlendMode::kBlend);
+      animation_frame.blend_mode =
+          replace ? BlendMode::kReplace : BlendMode::kBlend;
       io->animation_frames.push_back(animation_frame);
     }
     ImageBundle bundle(&io->metadata);
@@ -297,7 +294,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     if (has_alpha || !AllOpaque(frame_alpha) || blend_alpha) {
       if (!has_alpha) {
         has_alpha = true;
-        io->metadata.alpha_bits = 8;
+        io->metadata.SetAlphaBits(8);
         for (ImageBundle& previous_frame : io->frames) {
           ImageU previous_alpha(previous_frame.xsize(), previous_frame.ysize());
           FillImage<uint16_t>(255, &previous_alpha);

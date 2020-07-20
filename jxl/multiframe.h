@@ -115,8 +115,7 @@ class Multiframe {
            (current_header_.save_as_reference != 0) ||
            (!current_header_.animation_frame.is_last &&
             !current_header_.animation_frame.have_crop &&
-            current_header_.animation_frame.new_base() ==
-                AnimationFrame::NewBase::kCurrentFrame);
+            current_header_.animation_frame.new_base == NewBase::kCurrentFrame);
   }
 
   bool NeedsRestoring() {
@@ -151,20 +150,19 @@ class Multiframe {
     if (!IsDisplayed()) return;
     if (!current_header_.animation_frame.is_last &&
         !current_header_.animation_frame.have_crop) {
-      switch (current_header_.animation_frame.new_base()) {
-        case AnimationFrame::NewBase::kExisting:
+      switch (current_header_.animation_frame.new_base) {
+        case NewBase::kExisting:
           break;
-        case AnimationFrame::NewBase::kCurrentFrame:
+        case NewBase::kCurrentFrame:
           has_previous_frame_ = true;
           break;
-        case AnimationFrame::NewBase::kNone:
+        case NewBase::kNone:
           frame_storage_ = Image3F();
           has_previous_frame_ = false;
           break;
       }
     } else {
-      if (current_header_.animation_frame.new_base() !=
-          AnimationFrame::NewBase::kExisting) {
+      if (current_header_.animation_frame.new_base != NewBase::kExisting) {
         frame_storage_ = Image3F();
         has_previous_frame_ = false;
       }

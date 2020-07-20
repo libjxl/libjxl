@@ -474,11 +474,12 @@ class Bundle {
     // Overriden by ReadVisitor and WriteVisitor.
     // Called before any conditional visit based on "extensions".
     // Overridden by ReadVisitor, CanEncodeVisitor and WriteVisitor.
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
       Derived* self = static_cast<Derived*>(this);
       self->U64(0, extensions);
 
       extension_states_.Begin();
+      return true;
     }
 
     // Called after all extension fields (if any). Although non-extension
@@ -723,21 +724,23 @@ class Bundle {
 
     Status IsReading() const { return true; }
 
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      if (!enough_bytes_) return;
-      VisitorBase<ReadVisitor>::BeginExtensions(extensions);
+    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      if (!enough_bytes_) return JXL_FAILURE("Not enough bytes for extension");
+      JXL_RETURN_IF_ERROR(
+          VisitorBase<ReadVisitor>::BeginExtensions(extensions));
       if (*extensions != 0) {
         // Read the additional U64 indicating the number of extension bits
         // (more compact than sending the total size).
         extension_bits_ = U64Coder::Read(reader_);  // >= 0
         if (!reader_->AllReadsWithinBounds()) {
           enough_bytes_ = false;
-          return;
+          return JXL_FAILURE("Not enough bytes for extension");
         }
         // Used by EndExtensions to skip past any _remaining_ extensions.
         pos_after_ext_size_ = reader_->TotalBitsConsumed();
         JXL_ASSERT(pos_after_ext_size_ != 0);
       }
+      return true;
     }
 
     Status EndExtensions() {
@@ -806,9 +809,10 @@ class Bundle {
     // Always visit conditional fields to get a (loose) upper bound.
     Status Conditional(bool condition) { return true; }
 
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
       // Skip - extensions are not included in "MaxBits" because their length
       // is potentially unbounded.
+      return true;
     }
 
     Status EndExtensions() { return true; }
@@ -864,13 +868,15 @@ class Bundle {
       return *all_default;
     }
 
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      VisitorBase<CanEncodeVisitor>::BeginExtensions(extensions);
+    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      JXL_RETURN_IF_ERROR(
+          VisitorBase<CanEncodeVisitor>::BeginExtensions(extensions));
       if (*extensions != 0) {
         JXL_ASSERT(pos_after_ext_ == 0);
         pos_after_ext_ = encoded_bits_;
         JXL_ASSERT(pos_after_ext_ != 0);  // visited "extensions"
       }
+      return true;
     }
     // EndExtensions = default.
 
@@ -921,8 +927,9 @@ class Bundle {
       ok_ &= F16Coder::Write(*value, writer_);
     }
 
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      VisitorBase<WriteVisitor>::BeginExtensions(extensions);
+    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      JXL_RETURN_IF_ERROR(
+          VisitorBase<WriteVisitor>::BeginExtensions(extensions));
       if (*extensions == 0) {
         JXL_ASSERT(extension_bits_ == 0);
       } else {
@@ -930,6 +937,7 @@ class Bundle {
         // any additional fields.
         ok_ &= U64Coder::Write(extension_bits_, writer_);
       }
+      return true;
     }
     // EndExtensions = default.
 

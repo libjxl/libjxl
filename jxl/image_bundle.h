@@ -103,7 +103,8 @@ struct BitDepth {
                    &bits_per_sample);
       exponent_bits_per_sample = 0;
     } else {
-      visitor->U32(Val(32), Val(16), Val(24), Bits(5), 32, &bits_per_sample);
+      visitor->U32(Val(32), Val(16), Val(24), BitsOffset(6, 1), 32,
+                   &bits_per_sample);
       // The encoded value is exponent_bits_per_sample - 1, encoded in 3 bits
       // so the value can be in range [1, 8].
       const uint32_t offset = 1;
@@ -162,7 +163,13 @@ struct ExtraChannelInfo {
 
     // General
     JXL_RETURN_IF_ERROR(visitor->Enum(ExtraChannel::kAlpha, &type));
-    visitor->Bool(false, &add_to_prev_frame);  // ? kAdd : kReplace
+
+    JXL_RETURN_IF_ERROR(VisitNewBase(visitor, &new_base));
+
+    JXL_RETURN_IF_ERROR(VisitBlendMode(visitor, &blend_mode));
+    if (blend_mode == BlendMode::kBlend && type == ExtraChannel::kAlpha) {
+      return JXL_FAILURE("Cannot blend alpha");
+    }
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
 
@@ -171,18 +178,7 @@ struct ExtraChannelInfo {
       return JXL_FAILURE("dim_shift %u too large", dim_shift);
     }
 
-    uint32_t name_length = name.length();
-    // Allows name lengths up to 1071 bytes
-    visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0,
-                 &name_length);
-    if (visitor->IsReading()) {
-      name.resize(name_length);
-    }
-    for (size_t i = 0; i < name_length; i++) {
-      uint32_t c = name[i];
-      visitor->Bits(8, 0, &c);
-      name[i] = c;
-    }
+    VisitNameString(visitor, &name);
 
     // Conditional
     if (visitor->Conditional(type == ExtraChannel::kAlpha)) {
@@ -208,7 +204,8 @@ struct ExtraChannelInfo {
   mutable bool all_default;
 
   ExtraChannel type;
-  bool add_to_prev_frame;
+  NewBase new_base;
+  BlendMode blend_mode;
   BitDepth bit_depth;
   uint32_t dim_shift;  // downsampled by 2^dim_shift on each axis
 
@@ -347,11 +344,6 @@ struct ImageMetadata2 {
     visitor->U32(Val(0), Bits(4), BitsOffset(8, 16), BitsOffset(12, 1), 0,
                  &num_extra_channels);
 
-    // Treat as if only the fields up to num_extra_channels exist.
-    if (visitor->IsReading() && nonserialized_only_parse_basic_info) {
-      return true;
-    }
-
     if (visitor->Conditional(num_extra_channels != 0)) {
       if (visitor->IsReading()) {
         extra_channel_info.resize(num_extra_channels);
@@ -361,9 +353,14 @@ struct ImageMetadata2 {
       }
     }
 
+    // Treat as if only the fields up to extra channels exist.
+    if (visitor->IsReading() && nonserialized_only_parse_basic_info) {
+      return true;
+    }
+
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
 
-    visitor->BeginExtensions(&extensions);
+    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }
@@ -371,6 +368,14 @@ struct ImageMetadata2 {
   // Returns first ExtraChannelInfo of the given type, or nullptr if none.
   const ExtraChannelInfo* Find(ExtraChannel type) const {
     for (const ExtraChannelInfo& eci : extra_channel_info) {
+      if (eci.type == type) return &eci;
+    }
+    return nullptr;
+  }
+
+  // Returns first ExtraChannelInfo of the given type, or nullptr if none.
+  ExtraChannelInfo* Find(ExtraChannel type) {
+    for (ExtraChannelInfo& eci : extra_channel_info) {
       if (eci.type == type) return &eci;
     }
     return nullptr;
@@ -391,7 +396,7 @@ struct ImageMetadata2 {
 
   uint64_t extensions;
 
-  // Option to stop parsing after extra_channel_bits, and treat as if the later
+  // Option to stop parsing after basic info, and treat as if the later
   // fields do not participate. Use to parse only basic image information
   // excluding the final larger or variable sized data.
   bool nonserialized_only_parse_basic_info = false;
@@ -414,7 +419,6 @@ struct ImageMetadata {
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
-    visitor->U32(Val(0), Val(8), Val(16), Bits(4), 0, &alpha_bits);
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
@@ -422,10 +426,31 @@ struct ImageMetadata {
     return true;
   }
 
-  bool HasAlpha() const { return alpha_bits != 0; }
+  // Returns bit depth of the JPEG XL compressed alpha channel, or 0 if no alpha
+  // channel present. In the theoretical case that there are multiple alpha
+  // channels, returns the bit depht of the first.
+  uint32_t GetAlphaBits() const {
+    const ExtraChannelInfo* alpha = m2.Find(ExtraChannel::kAlpha);
+    if (alpha == nullptr) return 0;
+    JXL_ASSERT(alpha->bit_depth.bits_per_sample != 0);
+    return alpha->bit_depth.bits_per_sample;
+  }
+
+  // Sets bit depth of alpha channel, adding extra channel if needed, or
+  // removing all alpha channels if bits is 0.
+  // Assumes integer alpha channel and not designed to support multiple
+  // alpha channels (it's possible to use those features by manipulating
+  // m2.extra_channel_info directly).
+  //
+  // Callers must insert the actual channel image at the same index before any
+  // further modifications to m2.extra_channel_info.
+  void SetAlphaBits(uint32_t bits);
+
+  bool HasAlpha() const { return GetAlphaBits() != 0; }
 
   // Sets the original bit depth fields to indicate unsigned integer of the
   // given bit depth.
+  // TODO(lode): move function to BitDepth
   void SetUintSamples(uint32_t bits) {
     bit_depth.bits_per_sample = bits;
     bit_depth.exponent_bits_per_sample = 0;
@@ -433,6 +458,7 @@ struct ImageMetadata {
   }
   // Sets the original bit depth fields to indicate single precision floating
   // point.
+  // TODO(lode): move function to BitDepth
   void SetFloat32Samples() {
     bit_depth.bits_per_sample = 32;
     bit_depth.exponent_bits_per_sample = 8;
@@ -453,11 +479,6 @@ struct ImageMetadata {
   ColorEncoding color_encoding;
 
   ToneMapping tone_mapping;
-
-  // Bit depth of the JPEG XL compressed alpha channel.
-  // 0 if no alpha channel present.
-  // TODO(janwas): move to ExtraChannelInfo
-  uint32_t alpha_bits;
 };
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
@@ -483,7 +504,6 @@ class ImageBundle {
     ImageBundle copy(metadata_);
     copy.color_ = CopyImage(color_);
     copy.c_current_ = c_current_;
-    copy.alpha_ = CopyImage(alpha_);
     copy.extra_channels_.reserve(extra_channels_.size());
     for (const ImageU& plane : extra_channels_) {
       copy.extra_channels_.emplace_back(CopyImage(plane));
@@ -609,16 +629,18 @@ class ImageBundle {
   // -- ALPHA
 
   void SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied);
-  bool HasAlpha() const { return alpha_.xsize() != 0; }
-  bool AlphaIsPremultiplied() const { return alpha_is_premultiplied_; }
-  const ImageU& alpha() const {
-    JXL_ASSERT(HasAlpha());
-    return alpha_;
+  bool HasAlpha() const {
+    return metadata_->m2.Find(ExtraChannel::kAlpha) != nullptr;
   }
+  bool AlphaIsPremultiplied() const {
+    const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+    return (eci == nullptr) ? false : eci->alpha_associated;
+  }
+  const ImageU& alpha() const;
 
   void PremultiplyAlphaIfNeeded(ThreadPool* pool = nullptr);
 
-  // Reverts SetAlpha AND sets metadata->alpha_bits to 0. Called after noticing
+  // Reverts SetAlpha AND sets metadata alpha bits to 0. Called after noticing
   // that all alpha values are opaque.
   void RemoveAlpha();
 
@@ -628,12 +650,7 @@ class ImageBundle {
   bool HasDepth() const {
     return metadata_->m2.Find(ExtraChannel::kDepth) != nullptr;
   }
-  const ImageU& depth() const {
-    JXL_ASSERT(HasDepth());
-    const size_t ec = metadata_->m2.Find(ExtraChannel::kDepth) -
-                      metadata_->m2.extra_channel_info.data();
-    return extra_channels_[ec];
-  }
+  const ImageU& depth() const;
   // Returns the dimensions of the depth image. Do not call if !HasDepth.
   size_t DepthSize(size_t size) const {
     return metadata_->m2.Find(ExtraChannel::kDepth)->Size(size);
@@ -683,11 +700,6 @@ class ImageBundle {
   // Initialized by Set*:
   Image3F color_;  // If empty, planes_ is not; all planes equal if IsGray().
   ColorEncoding c_current_;  // of color_
-
-  // Initialized by SetAlpha.
-  // TODO(janwas): move to extra channel
-  ImageU alpha_;  // Empty or same size as color_.
-  bool alpha_is_premultiplied_ = false;
 
   // Initialized by SetPlanes; size = ImageMetadata.num_extra_channels
   // TODO(janwas): change to pixel_type

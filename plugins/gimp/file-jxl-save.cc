@@ -66,7 +66,7 @@ Status ReadBuffer(const size_t xsize, const size_t ysize,
   io->metadata.color_encoding = color_encoding;
   io->SetFromImage(std::move(image), color_encoding);
   if (has_alpha) {
-    io->metadata.alpha_bits = alpha_bits;
+    io->metadata.SetAlphaBits(alpha_bits);
     io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
   return true;

@@ -49,8 +49,8 @@ enum {
   kLayerQuant,
   kLayerDequantTables,
   kLayerOrder,
-  kLayerDownsampledDC,
   kLayerDC,
+  kLayerControlFields,
   kLayerAC,
   kLayerACTokens,
   kLayerDictionary,
@@ -82,7 +82,9 @@ static inline const char* LayerName(size_t layer) {
     case kLayerOrder:
       return "order";
     case kLayerDC:
-      return "DC+Group";
+      return "DC";
+    case kLayerControlFields:
+      return "ControlFields";
     case kLayerAC:
       return "AC";
     case kLayerACTokens:

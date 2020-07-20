@@ -25,8 +25,6 @@
 
 namespace jxl {
 
-static_assert(kNumEpfSharpness <= LoopFilter::kEpfSharpEntries, "Mismatch");
-
 // 4 * (sqrt(0.5)-1), so that Weight(sigma) = 0.5.
 static constexpr float kInvSigmaNum = -1.1715728752538099024f;
 

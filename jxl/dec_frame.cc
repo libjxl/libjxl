@@ -104,11 +104,6 @@ class LossyFrameDecoder {
       dec_state_.shared_storage.quantizer.ClearDCMul();  // Don't dequant DC
     }
 
-    for (size_t c = 0; c < 3; c++) {
-      FillImage(dec_state_.shared_storage.quantizer.GetDcStep(c),
-                const_cast<ImageF*>(
-                    &dec_state_.shared_storage.dc_quant_field.Plane(c)));
-    }
     if (downsampling_ != 16) {
       dec_state_.shared_storage.ac_strategy.FillInvalid();
     } else {
@@ -124,17 +119,12 @@ class LossyFrameDecoder {
     return true;
   }
 
-  Status DecodeDCGroup(size_t group_index, size_t thread, const Rect& rect,
-                       BitReader* reader, const LoopFilter& loop_filter,
-                       AuxOut* local_aux_out) {
-    return jxl::DecodeDCGroup(reader, group_index, &dec_state_, local_aux_out);
-  }
-
-  Status DecodeGlobalACInfo(BitReader* reader) {
+  Status DecodeGlobalACInfo(BitReader* reader,
+                            ModularFrameDecoder* modular_frame_decoder) {
     uint64_t flags = dec_state_.shared_storage.frame_header.flags;
     if (!(flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
         !(flags & FrameHeader::kUseDcFrame)) {
-      AdaptiveDCSmoothing(dec_state_.shared_storage.dc_quant_field,
+      AdaptiveDCSmoothing(dec_state_.shared->quantizer.MulDC(),
                           &dec_state_.shared_storage.dc_storage, pool_);
     }
 
@@ -142,7 +132,8 @@ class LossyFrameDecoder {
       *aux_out_->testing_aux.dc = CopyImage(*dec_state_.shared_storage.dc);
     }
 
-    JXL_RETURN_IF_ERROR(dec_state_.shared_storage.matrices.Decode(reader));
+    JXL_RETURN_IF_ERROR(dec_state_.shared_storage.matrices.Decode(
+        reader, modular_frame_decoder));
 
     size_t num_histo_bits =
         dec_state_.shared->frame_dim.num_groups == 1
@@ -412,7 +403,7 @@ Status DecodeFrame(const DecompressParams& dparams,
       frame_header, loop_filter, *decoded->metadata(), *frame_dim, multiframe,
       downsampling, pool, aux_out));
   BrunsliFrameDecoder jpeg_frame_decoder(pool);
-  ModularFrameDecoder modular_frame_decoder;
+  ModularFrameDecoder modular_frame_decoder(*frame_dim);
 
   if (dparams.keep_dct) {
     if (frame_header.encoding == FrameEncoding::kModularGroup) {
@@ -500,8 +491,7 @@ Status DecodeFrame(const DecompressParams& dparams,
     JXL_RETURN_IF_ERROR(modular_frame_decoder.DecodeGlobalInfo(
         global_reader, frame_header, decoded,
         /*decode_color = */
-        (frame_header.encoding == FrameEncoding::kModularGroup), xsize, ysize,
-        /*group_id=*/0));
+        (frame_header.encoding == FrameEncoding::kModularGroup), xsize, ysize));
   }
 
   // global_store is either never used (in which case Close() is optional
@@ -550,16 +540,20 @@ Status DecodeFrame(const DecompressParams& dparams,
     bool ok = true;
     const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
                      kDcGroupDim);
-    ok = modular_frame_decoder.DecodeGroup(
-        dparams, mrect, group_reader, my_aux_out, 3, 1000, 1 + group_index);
+    if (frame_header.IsLossy() &&
+        !(frame_header.flags & FrameHeader::kUseDcFrame)) {
+      ok &= modular_frame_decoder.DecodeVarDCTDC(
+          group_index, group_reader, lossy_frame_decoder.State(), my_aux_out);
+    }
     if (frame_header.IsJpeg()) {
       ok &= jpeg_frame_decoder.DecodeDcGroup(group_index, group_reader);
-    } else if (frame_header.IsLossy()) {
-      const Rect rect(gx * kDcGroupDimInBlocks, gy * kDcGroupDimInBlocks,
-                      kDcGroupDimInBlocks, kDcGroupDimInBlocks,
-                      frame_dim->xsize_blocks, frame_dim->ysize_blocks);
-      ok &= lossy_frame_decoder.DecodeDCGroup(
-          group_index, thread, rect, group_reader, loop_filter, my_aux_out);
+    }
+    ok &= modular_frame_decoder.DecodeGroup(
+        mrect, group_reader, my_aux_out, 3, 1000,
+        ModularStreamId::ModularDC(group_index));
+    if (frame_header.IsLossy()) {
+      ok &= modular_frame_decoder.DecodeAcMetadata(
+          group_index, group_reader, lossy_frame_decoder.State(), my_aux_out);
     }
     if (!group_store.Close() || !ok) {
       num_errors.fetch_add(1, std::memory_order_relaxed);
@@ -587,8 +581,8 @@ Status DecodeFrame(const DecompressParams& dparams,
       BitReader* ac_info_reader = get_reader(&ac_info_store, global_ac_index);
 
       if (frame_header.IsLossy()) {
-        JXL_RETURN_IF_ERROR(
-            lossy_frame_decoder.DecodeGlobalACInfo(ac_info_reader));
+        JXL_RETURN_IF_ERROR(lossy_frame_decoder.DecodeGlobalACInfo(
+            ac_info_reader, &modular_frame_decoder));
       }
     }
     // ac_info_store is either never used (in which case Close() is optional
@@ -637,6 +631,21 @@ Status DecodeFrame(const DecompressParams& dparams,
                      AcGroupIndex(i, group_index, num_groups,
                                   frame_dim->num_dc_groups, has_ac_global));
     }
+    if (frame_header.IsLossy()) {
+      if (!lossy_frame_decoder.DecodeACGroup(group_index, thread, readers,
+                                             max_passes, &opsin, decoded,
+                                             my_aux_out)) {
+        num_errors.fetch_add(1, std::memory_order_relaxed);
+        return;
+      }
+    }
+    if (frame_header.IsJpeg()) {
+      if (!jpeg_frame_decoder.DecodeAcGroup(group_index, pass0_group_reader,
+                                            &opsin, rect)) {
+        num_errors.fetch_add(1, std::memory_order_relaxed);
+        return;
+      }
+    }
     int minShift = 0;
     int maxShift = 2;
     for (size_t i = 0; i < max_passes; i++) {
@@ -649,40 +658,24 @@ Status DecodeFrame(const DecompressParams& dparams,
         }
       }
       if (!modular_frame_decoder.DecodeGroup(
-              dparams, mrect, readers[i], my_aux_out, minShift, maxShift,
-              AcGroupIndex(i, group_index, num_groups, frame_dim->num_dc_groups,
-                           has_ac_global))) {
+              mrect, readers[i], my_aux_out, minShift, maxShift,
+              ModularStreamId::ModularAC(group_index, i))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
+        return;
       }
       maxShift = minShift - 1;
       minShift = 0;
     }
-    if (frame_header.IsLossy()) {
-      if (!lossy_frame_decoder.DecodeACGroup(group_index, thread, readers,
-                                             max_passes, &opsin, decoded,
-                                             my_aux_out)) {
-        num_errors.fetch_add(1, std::memory_order_relaxed);
-      }
-    }
     for (size_t i = 1; i < max_passes; i++) {
       if (!storage[i - 1].Close()) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
+        return;
       }
-    }
-
-    bool ok = true;
-    if (frame_header.IsJpeg()) {
-      ok = jpeg_frame_decoder.DecodeAcGroup(group_index, pass0_group_reader,
-                                            &opsin, rect);
-    }
-
-    if (!ok) {
-      num_errors.fetch_add(1, std::memory_order_relaxed);
-      return;
     }
 
     if (!pass0_reader_store.Close()) {
       num_errors.fetch_add(1, std::memory_order_relaxed);
+      return;
     }
   };
 

@@ -398,7 +398,7 @@ struct OldBundle {
     visitor->F16(1.125f, &old_f);
     visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
 
-    visitor->BeginExtensions(&extensions);
+    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     return visitor->EndExtensions();
   }
 
@@ -418,7 +418,7 @@ struct NewBundle {
     visitor->F16(1.125f, &old_f);
     visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
 
-    visitor->BeginExtensions(&extensions);
+    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     if (extensions & 1) {
       visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small);
       visitor->F16(-2.0f, &new_f);

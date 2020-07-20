@@ -282,8 +282,8 @@ set_target_properties(jpegxl_emcc PROPERTIES LINK_FLAGS "\
   -s FILESYSTEM=0 \
   -s EXPORT_NAME=\"JxlCodecModule\"\
   -s EXPORTED_FUNCTIONS='[\
-    \"_compress\",\
-    \"_decompress\",\
+    \"_jxlCompress\",\
+    \"_jxlDecompress\",\
     \"_free\",\
     \"_malloc\"\
   ]'\

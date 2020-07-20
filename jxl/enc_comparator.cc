@@ -62,7 +62,7 @@ const Image3F* AlphaBlend(const ImageBundle& ib, const Image3F& linear,
   if (!ib.HasAlpha()) return &linear;
 
   *copy = Image3F(linear.xsize(), linear.ysize());
-  const uint16_t opaque = (1U << ib.metadata()->alpha_bits) - 1;
+  const uint16_t opaque = (1U << ib.metadata()->GetAlphaBits()) - 1;
   for (size_t c = 0; c < 3; ++c) {
     AlphaBlend(linear, c, background_linear255, ib.alpha(), opaque, copy);
   }
@@ -73,7 +73,8 @@ void AlphaBlend(float background_linear255, ImageBundle* io_linear_srgb) {
   // No alpha => all opaque.
   if (!io_linear_srgb->HasAlpha()) return;
 
-  const uint16_t opaque = (1U << io_linear_srgb->metadata()->alpha_bits) - 1;
+  const uint16_t opaque =
+      (1U << io_linear_srgb->metadata()->GetAlphaBits()) - 1;
   for (size_t c = 0; c < 3; ++c) {
     AlphaBlend(io_linear_srgb->color(), c, background_linear255,
                io_linear_srgb->alpha(), opaque, io_linear_srgb->MutableColor());

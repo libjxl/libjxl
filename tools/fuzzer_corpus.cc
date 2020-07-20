@@ -150,7 +150,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   } else {
     io.metadata.SetUintSamples(spec.bit_depth);
   }
-  io.metadata.alpha_bits = spec.alpha_bit_depth;
+  io.metadata.SetAlphaBits(spec.alpha_bit_depth);
   io.dec_pixels = spec.width * spec.height;
   io.frames.clear();
   io.frames.reserve(spec.num_frames);
@@ -172,7 +172,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         spec.width, spec.height, io.metadata.color_encoding,
         /*has_alpha=*/spec.alpha_bit_depth != 0,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.alpha_bits, io.metadata.bit_depth.bits_per_sample,
+        io.metadata.GetAlphaBits(), io.metadata.bit_depth.bits_per_sample,
         false /* big_endian */, false /* flipped_y */);
 
     size_t bytes_per_pixel = desc.row_size / desc.xsize;

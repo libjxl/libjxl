@@ -28,7 +28,7 @@ extern "C" {
 /* NOTA BENE: see file history to uncover how to decode HDR JPEGs to pixels. */
 
 /** Result: uint32_t 'size' followed by compressed image (JXL). */
-uint8_t* compress(const uint8_t* data, size_t size) {
+uint8_t* jxlCompress(const uint8_t* data, size_t size) {
   PaddedBytes compressed;
   CodecInOut io;
   Codec input_codec;
@@ -52,7 +52,7 @@ uint8_t* compress(const uint8_t* data, size_t size) {
 }
 
 /** Result: uint32_t 'size' followed by decompressed image (JPG). */
-uint8_t* decompress(const uint8_t* data, size_t size) {
+uint8_t* jxlDecompress(const uint8_t* data, size_t size) {
   PaddedBytes decompressed;
   CodecInOut io;
   DecompressParams params;

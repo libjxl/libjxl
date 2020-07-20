@@ -29,27 +29,19 @@
 #include "jxl/enc_bit_writer.h"
 #include "jxl/enc_cache.h"
 #include "jxl/image.h"
+#include "jxl/modular/image/image.h"
 
 // DC handling functions: encoding and decoding of DC to and from bitstream, and
 // related function to initialize the per-group decoder cache.
 
 namespace jxl {
 
-void TokenizeDC(size_t group_index, const Image3F& dc,
-                PassesEncoderState* JXL_RESTRICT enc_state, AuxOut* aux_out);
-
 // Smooth DC in already-smooth areas, to counteract banding.
-void AdaptiveDCSmoothing(const Image3F& dc_quant_field, Image3F* dc,
+void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
                          ThreadPool* pool);
 
-// Encodes the DC-related information from enc_state: quantized dc itself
-// and gradient map.
-Status EncodeDCGroup(const PassesEncoderState& enc_state, size_t group_idx,
-                     BitWriter* writer, AuxOut* aux_out);
-
-// Decodes and dequantizes DC.
-Status DecodeDCGroup(BitReader* reader, size_t group_idx,
-                     PassesDecoderState* dec_state, AuxOut* aux_out);
+void DequantDC(const Rect& r, Image3F* dc, const Image& in,
+               const float* dc_factors, float mul, const float* cfl_factors);
 
 }  // namespace jxl
 

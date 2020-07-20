@@ -233,7 +233,7 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
           jxl::Rect cropbox(frame_io.Main().color());
           if (af.have_crop)
             cropbox = jxl::Rect(af.x0, af.y0, af.xsize, af.ysize);
-          if (af.blend_mode() == jxl::AnimationFrame::BlendMode::kAdd) {
+          if (af.blend_mode == jxl::BlendMode::kAdd) {
             for (int p = 0; p < 3; p++) {
               jxl::AddTo(jxl::Rect(io.frames[i].color()),
                          io.frames[i].color().Plane(p), cropbox,
@@ -243,7 +243,7 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
               jxl::AddTo(jxl::Rect(io.frames[i].alpha()), io.frames[i].alpha(),
                          cropbox, &frame_io.Main().alpha());
             }
-          } else if (af.blend_mode() == jxl::AnimationFrame::BlendMode::kBlend
+          } else if (af.blend_mode == jxl::BlendMode::kBlend
                      // blend without alpha is just replace
                      && io.frames[i].HasAlpha()) {
             if (io.frames[i].AlphaIsPremultiplied()) {
@@ -268,13 +268,13 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
               float* JXL_RESTRICT b =
                   cropbox.MutableRow(&frame_io.Main().color().Plane(2), y);
               jxl::PerformAlphaBlending(
-                  /*bg=*/{r, g, b, a, io.metadata.alpha_bits,
+                  /*bg=*/{r, g, b, a, io.metadata.GetAlphaBits(),
                           frame_io.Main().AlphaIsPremultiplied()},
                   /*fg=*/
-                  {r1, g1, b1, a1, io.metadata.alpha_bits,
+                  {r1, g1, b1, a1, io.metadata.GetAlphaBits(),
                    io.frames[i].AlphaIsPremultiplied()},
                   /*out=*/
-                  {r, g, b, a, io.metadata.alpha_bits,
+                  {r, g, b, a, io.metadata.GetAlphaBits(),
                    frame_io.Main().AlphaIsPremultiplied()},
                   cropbox.xsize());
             }
@@ -295,7 +295,7 @@ jxl::Status WriteJxlOutput(const JxlDecompressArgs& args, const char* file_out,
             } else {
               JXL_ASSERT(frame_io.Main().AlphaIsPremultiplied() &&
                          !io.frames[i].AlphaIsPremultiplied());
-              float max_alpha = jxl::MaxAlpha(io.metadata.alpha_bits);
+              float max_alpha = jxl::MaxAlpha(io.metadata.GetAlphaBits());
               float rmax_alpha = 1.0f / max_alpha;
               for (size_t y = 0; y < cropbox.ysize(); ++y) {
                 const uint16_t* JXL_RESTRICT a1 = io.frames[i].alpha().Row(y);

@@ -324,6 +324,9 @@ const float kDCQuant[3] = {
     1.0f / kInvDCQuant[2],
 };
 
+class ModularFrameEncoder;
+class ModularFrameDecoder;
+
 class DequantMatrices {
  public:
   enum QuantTable : size_t {
@@ -401,18 +404,8 @@ class DequantMatrices {
 
   size_t Size() const { return size_; }
 
-  void SetCustom(const std::vector<QuantEncoding>& encodings) {
-    JXL_ASSERT(encodings.size() == kNum);
-    encodings_ = encodings;
-    // Roundtrip encode/decode the matrices to ensure same values as decoder.
-    BitWriter writer;
-    JXL_CHECK(Encode(&writer, 0, nullptr));
-    writer.ZeroPadToByte();
-    BitReader br(writer.GetSpan());
-    // Called only in the encoder: should fail only for programmer errors.
-    JXL_CHECK(Decode(&br));
-    JXL_CHECK(br.Close());
-  }
+  void SetCustom(const std::vector<QuantEncoding>& encodings,
+                 ModularFrameEncoder* modular_frame_encoder);
 
   // For consistency with QuantEncoding, higher values correspond to more
   // precision.
@@ -431,10 +424,12 @@ class DequantMatrices {
     JXL_CHECK(br.Close());
   }
 
-  Status Encode(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
+  Status Encode(BitWriter* writer, size_t layer, AuxOut* aux_out,
+                ModularFrameEncoder* modular_frame_encoder = nullptr) const;
   Status EncodeDC(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
 
-  Status Decode(BitReader* br);
+  Status Decode(BitReader* br,
+                ModularFrameDecoder* modular_frame_encoder = nullptr);
   Status DecodeDC(BitReader* br);
 
   const std::vector<QuantEncoding>& encodings() const { return encodings_; }
@@ -465,7 +460,8 @@ class DequantMatrices {
 
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
-                             DequantMatrices* dequant_matrices);
+                             DequantMatrices* dequant_matrices,
+                             ModularFrameEncoder* modular_frame_encoder);
 
 }  // namespace jxl
 

@@ -455,9 +455,9 @@ Status Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
                       const Rect& image_rect,
                       const ColorCorrelationMap& cmap) const {
   for (size_t i = 0; i < splines_.size(); ++i) {
-    const Spline spline = splines_[i].Dequantize(
-        starting_points_[i], quantization_adjustment_,
-        cmap.YtoXRatio(kColorOffset), cmap.YtoBRatio(kColorOffset));
+    const Spline spline =
+        splines_[i].Dequantize(starting_points_[i], quantization_adjustment_,
+                               cmap.YtoXRatio(0), cmap.YtoBRatio(0));
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {

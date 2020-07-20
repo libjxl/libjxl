@@ -233,7 +233,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   io->frames.clear();
   io->dec_pixels = 0;
   io->metadata.SetUintSamples(8);
-  io->metadata.alpha_bits = 8;
+  io->metadata.SetAlphaBits(8);
   io->metadata.color_encoding =
       ColorEncoding::SRGB();  // todo: get data from png metadata
   io->enc_size = bytes.size();
@@ -291,31 +291,25 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
                 animation_frame.ysize = h0;
               } else {
                 if (!io->animation_frames.empty()) {
-                  io->animation_frames.back().SetNewBase(
-                      AnimationFrame::NewBase::kNone);
+                  io->animation_frames.back().new_base = NewBase::kNone;
                 }
               }
               switch (dop) {
                 case 0:
-                  animation_frame.SetNewBase(
-                      AnimationFrame::NewBase::kCurrentFrame);
+                  animation_frame.new_base = NewBase::kCurrentFrame;
                   break;
                 case 1:
-                  animation_frame.SetNewBase(AnimationFrame::NewBase::kNone);
+                  animation_frame.new_base = NewBase::kNone;
                   break;
                 case 2:
-                  animation_frame.SetNewBase(
-                      AnimationFrame::NewBase::kExisting);
+                  animation_frame.new_base = NewBase::kExisting;
                   break;
                 default:
-                  animation_frame.SetNewBase(AnimationFrame::NewBase::kNone);
+                  animation_frame.new_base = NewBase::kNone;
                   break;
               }
-              if (bop == 0)
-                animation_frame.SetBlendMode(
-                    AnimationFrame::BlendMode::kReplace);
-              else
-                animation_frame.SetBlendMode(AnimationFrame::BlendMode::kBlend);
+              animation_frame.blend_mode =
+                  (bop == 0) ? BlendMode::kReplace : BlendMode::kBlend;
               io->animation_frames.push_back(animation_frame);
               io->dec_pixels += w0 * h0;
 

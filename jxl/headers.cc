@@ -62,7 +62,7 @@ size_t SizeHeader::xsize() const {
     return FixedAspectRatios(ratio_).MulTruncate(
         static_cast<uint32_t>(ysize()));
   }
-  return small_ ? ((xsize_div8_minus_1_ + 1) * 8) : xsize_minus_1_ + 1;
+  return small_ ? ((xsize_div8_minus_1_ + 1) * 8) : xsize_;
 }
 
 Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
@@ -77,7 +77,7 @@ Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
   if (small_) {
     ysize_div8_minus_1_ = ysize32 / 8 - 1;
   } else {
-    ysize_minus_1_ = ysize32 - 1;
+    ysize_ = ysize32;
   }
 
   ratio_ = FindAspectRatio(xsize32, ysize32);
@@ -85,7 +85,7 @@ Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
     if (small_) {
       xsize_div8_minus_1_ = xsize32 / 8 - 1;
     } else {
-      xsize_minus_1_ = xsize32 - 1;
+      xsize_ = xsize32;
     }
   }
   JXL_ASSERT(xsize() == xsize64);
@@ -99,17 +99,17 @@ Status PreviewHeader::Set(size_t xsize64, size_t ysize64) {
   if (xsize64 == 0 || ysize64 == 0) return JXL_FAILURE("Empty preview");
   div8_ = (xsize64 % kBlockDim) == 0 && (ysize64 % kBlockDim) == 0;
   if (div8_) {
-    ysize_div8_minus_1_ = ysize32 / 8 - 1;
+    ysize_div8_ = ysize32 / 8;
   } else {
-    ysize_minus_1_ = ysize32 - 1;
+    ysize_ = ysize32;
   }
 
   ratio_ = FindAspectRatio(xsize32, ysize32);
   if (ratio_ == 0) {
     if (div8_) {
-      xsize_div8_minus_1_ = xsize32 / 8 - 1;
+      xsize_div8_ = xsize32 / 8;
     } else {
-      xsize_minus_1_ = xsize32 - 1;
+      xsize_ = xsize32;
     }
   }
   JXL_ASSERT(xsize() == xsize64);
@@ -122,7 +122,7 @@ size_t PreviewHeader::xsize() const {
     return FixedAspectRatios(ratio_).MulTruncate(
         static_cast<uint32_t>(ysize()));
   }
-  return div8_ ? ((xsize_div8_minus_1_ + 1) * 8) : xsize_minus_1_ + 1;
+  return div8_ ? (xsize_div8_ * 8) : xsize_;
 }
 
 SizeHeader::SizeHeader() { Bundle::Init(this); }

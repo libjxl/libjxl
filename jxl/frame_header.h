@@ -73,6 +73,82 @@ static inline constexpr uint64_t EnumBits(YCbCrChromaSubsampling /*unused*/) {
          MakeBit(YCbCrChromaSubsampling::k411);
 }
 
+template <class Visitor>
+static inline void VisitNameString(Visitor* JXL_RESTRICT visitor,
+                                   std::string* name) {
+  uint32_t name_length = name->length();
+  // Allows layer name lengths up to 1071 bytes
+  visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0,
+               &name_length);
+  if (visitor->IsReading()) {
+    name->resize(name_length);
+  }
+  for (size_t i = 0; i < name_length; i++) {
+    uint32_t c = (*name)[i];
+    visitor->Bits(8, 0, &c);
+    (*name)[i] = c;
+  }
+}
+
+// Indicates what the next frame will be "based" on.
+// A full frame (have_crop = false) can be based on a frame if and only if the
+// frame and the base are lossy. The rendered frame will then be the sum of
+// the two. A cropped frame can be based on any kind of frame. The rendered
+// frame will be obtained by blitting. Stored in FrameHeader and
+// ExtraChannelInfo to allow independent control for main and extra channels.
+enum class NewBase {
+  // The next frame will be based on the same frame as the current one.
+  kExisting,
+  // The next frame will be based on the current one.
+  kCurrentFrame,
+  // The next frame will be a full frame (have_crop = false) and will not be
+  // based on any frame, but start from a value of 0 in main and extra channels.
+  kNone,
+};
+
+template <class Visitor>
+static inline Status VisitNewBase(Visitor* JXL_RESTRICT visitor,
+                                  NewBase* new_base) {
+  uint32_t encoded = static_cast<uint32_t>(*new_base);
+  visitor->U32(Val(static_cast<uint32_t>(NewBase::kExisting)),
+               Val(static_cast<uint32_t>(NewBase::kCurrentFrame)),
+               Val(static_cast<uint32_t>(NewBase::kNone)), Val(3),
+               static_cast<uint32_t>(NewBase::kCurrentFrame), &encoded);
+  if (encoded == 3) {
+    return JXL_FAILURE("Invalid new_base");
+  }
+  *new_base = static_cast<NewBase>(encoded);
+  return true;
+}
+
+// Indicates how to combine the current frame with the previous "base". Stored
+// in FrameHeader and ExtraChannelInfo to allow independent control for main and
+// extra channels. Update tools/djxl.cc if blend modes change.
+enum class BlendMode {
+  // The new values (in the crop) replace the old ones
+  kReplace,
+  // The new values (in the crop) get added to the old ones
+  kAdd,
+  // The new values (in the crop) replace the old ones if alpha>0.
+  // Not allowed for the first alpha channel.
+  kBlend,
+};
+
+template <class Visitor>
+static inline Status VisitBlendMode(Visitor* JXL_RESTRICT visitor,
+                                    BlendMode* blend_mode) {
+  uint32_t encoded = static_cast<uint32_t>(*blend_mode);
+  visitor->U32(Val(static_cast<uint32_t>(BlendMode::kReplace)),
+               Val(static_cast<uint32_t>(BlendMode::kAdd)),
+               Val(static_cast<uint32_t>(BlendMode::kBlend)), Val(3),
+               static_cast<uint32_t>(BlendMode::kReplace), &encoded);
+  if (encoded == 3) {
+    return JXL_FAILURE("Invalid blend_mode");
+  }
+  *blend_mode = static_cast<BlendMode>(encoded);
+  return true;
+}
+
 struct AnimationFrame {
   AnimationFrame();
   static const char* Name() { return "AnimationFrame"; }
@@ -82,36 +158,13 @@ struct AnimationFrame {
     if (visitor->Conditional(!nonserialized_composite_still)) {
       visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
     }
-    uint32_t name_length = name.length();
-    // Allows layer name lengths up to 1071 bytes
-    visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0,
-                 &name_length);
-    if (visitor->IsReading()) {
-      name.resize(name_length);
-    }
-    for (size_t i = 0; i < name_length; i++) {
-      uint32_t c = name[i];
-      visitor->Bits(8, 0, &c);
-      name[i] = c;
-    }
+
+    VisitNameString(visitor, &name);
 
     if (visitor->Conditional(duration > 0)) {
-      visitor->U32(Val(static_cast<uint32_t>(NewBase::kExisting)),
-                   Val(static_cast<uint32_t>(NewBase::kCurrentFrame)),
-                   Val(static_cast<uint32_t>(NewBase::kNone)), Val(3),
-                   static_cast<uint32_t>(NewBase::kCurrentFrame),
-                   &new_base_int_);
+      JXL_RETURN_IF_ERROR(VisitNewBase(visitor, &new_base));
     }
-    if (new_base_int_ == 3) {
-      return JXL_FAILURE("AnimationFrame with invalid new_base");
-    }
-    visitor->U32(Val(static_cast<uint32_t>(BlendMode::kReplace)),
-                 Val(static_cast<uint32_t>(BlendMode::kAdd)),
-                 Val(static_cast<uint32_t>(BlendMode::kBlend)), Val(3),
-                 static_cast<uint32_t>(BlendMode::kReplace), &blend_mode_int_);
-    if (blend_mode_int_ == 3) {
-      return JXL_FAILURE("AnimationFrame with invalid blend_mode");
-    }
+    JXL_RETURN_IF_ERROR(VisitBlendMode(visitor, &blend_mode));
 
     if (visitor->Conditional(nonserialized_have_timecode)) {
       visitor->Bits(32, 0, &timecode);
@@ -139,53 +192,9 @@ struct AnimationFrame {
   // Optional layer name (UTF-8)
   std::string name;
 
-  // Indicates what the next frame will be "based" on.
-  // A full frame (have_crop = false) can be based on a frame if and only if the
-  // frame and the base are lossy. The rendered frame will then be the sum of
-  // the two. A cropped frame can be based on any kind of frame. The rendered
-  // frame will be obtained by blitting. Applies to main and channels.
-  enum class NewBase {
-    // The next frame will be based on the same frame as the current one.
-    kExisting,
-    // The next frame will be based on the current one.
-    kCurrentFrame,
-    // The next frame will be a full frame (have_crop = false) and will not be
-    // based on any frame; all channels (including extra) are zero.
-    kNone,
-  };
-  NewBase new_base() const { return static_cast<NewBase>(new_base_int_); }
-  void SetNewBase(const NewBase new_base) {
-    JXL_DASSERT(new_base == NewBase::kExisting ||
-                new_base == NewBase::kCurrentFrame ||
-                new_base == NewBase::kNone);
-    new_base_int_ = static_cast<uint32_t>(new_base);
-  }
+  NewBase new_base;
+  BlendMode blend_mode;
 
-  // update tools/djxl.cc if blend modes change
-  enum class BlendMode {
-    // The new values (in the crop) replace the old ones
-    kReplace,
-    // The new values (in the crop) get added to the old ones
-    kAdd,
-    // The new values (in the crop) replace the old ones if alpha>0.
-    // Not allowed for the first alpha channel.
-    kBlend,
-  };
-  BlendMode blend_mode() const {
-    return static_cast<BlendMode>(blend_mode_int_);
-  }
-  void SetBlendMode(const BlendMode blend_mode) {
-    JXL_DASSERT(blend_mode == BlendMode::kReplace ||
-                blend_mode == BlendMode::kAdd ||
-                blend_mode == BlendMode::kBlend);
-    blend_mode_int_ = static_cast<uint32_t>(blend_mode);
-  }
-
- private:
-  uint32_t new_base_int_;
-  uint32_t blend_mode_int_;
-
- public:
   bool nonserialized_have_timecode = false;
   bool nonserialized_composite_still = false;
   uint32_t timecode;  // 0xHHMMSSFF
@@ -333,7 +342,7 @@ struct FrameHeader {
       visitor->Bool(false, &alpha_is_premultiplied);
     }
 
-    visitor->BeginExtensions(&extensions);
+    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }

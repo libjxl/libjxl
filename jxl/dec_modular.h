@@ -22,6 +22,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
 #include "jxl/dec_bit_reader.h"
+#include "jxl/dec_cache.h"
 #include "jxl/dec_params.h"
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
@@ -31,20 +32,91 @@
 
 namespace jxl {
 
-Status DecodeModularRect(const DecompressParams& dparams,
-                         size_t responsive_preview, ImageBundle* decoded,
-                         const Rect& rect, BitReader* reader, AuxOut* aux_out,
-                         size_t bytes_to_read, const FrameHeader& frame_header);
+struct ModularStreamId {
+  enum Kind {
+    kGlobalData,
+    kVarDCTDC,
+    kModularDC,
+    kACMetadata,
+    kQuantTable,
+    kModularAC
+  };
+  Kind kind;
+  size_t quant_table_id;
+  size_t group_id;  // DC or AC group id.
+  size_t pass_id;   // Only for kModularAC.
+  size_t ID(const FrameDimensions& frame_dim) const {
+    size_t id = 0;
+    switch (kind) {
+      case kGlobalData:
+        id = 0;
+        break;
+      case kVarDCTDC:
+        id = 1 + group_id;
+        break;
+      case kModularDC:
+        id = 1 + frame_dim.num_dc_groups + group_id;
+        break;
+      case kACMetadata:
+        id = 1 + 2 * frame_dim.num_dc_groups + group_id;
+        break;
+      case kQuantTable:
+        id = 1 + 3 * frame_dim.num_dc_groups + quant_table_id;
+        break;
+      case kModularAC:
+        id = 1 + 3 * frame_dim.num_dc_groups + DequantMatrices::kNum +
+             frame_dim.num_groups * pass_id + group_id;
+        break;
+    };
+    return id;
+  }
+  static ModularStreamId Global() {
+    return ModularStreamId{kGlobalData, 0, 0, 0};
+  }
+  static ModularStreamId VarDCTDC(size_t group_id) {
+    return ModularStreamId{kVarDCTDC, 0, group_id, 0};
+  }
+  static ModularStreamId ModularDC(size_t group_id) {
+    return ModularStreamId{kModularDC, 0, group_id, 0};
+  }
+  static ModularStreamId ACMetadata(size_t group_id) {
+    return ModularStreamId{kACMetadata, 0, group_id, 0};
+  }
+  static ModularStreamId QuantTable(size_t quant_table_id) {
+    JXL_ASSERT(quant_table_id < DequantMatrices::kNum);
+    return ModularStreamId{kQuantTable, quant_table_id, 0, 0};
+  }
+  static ModularStreamId ModularAC(size_t group_id, size_t pass_id) {
+    return ModularStreamId{kModularAC, 0, group_id, pass_id};
+  }
+  static size_t Num(const FrameDimensions& frame_dim, size_t passes) {
+    return ModularAC(0, passes).ID(frame_dim);
+  }
+};
 
 class ModularFrameDecoder {
  public:
-  ModularFrameDecoder() {}
+  explicit ModularFrameDecoder(const FrameDimensions& frame_dim)
+      : frame_dim(frame_dim) {}
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
                           ImageBundle* decoded, bool decode_color, size_t xsize,
-                          size_t ysize, size_t group_id);
-  Status DecodeGroup(const DecompressParams& dparams, const Rect& rect,
-                     BitReader* reader, AuxOut* aux_out, size_t minShift,
-                     size_t maxShift, size_t group_id);
+                          size_t ysize);
+  Status DecodeGroup(const Rect& rect, BitReader* reader, AuxOut* aux_out,
+                     size_t minShift, size_t maxShift,
+                     const ModularStreamId& stream);
+  // Decodes a VarDCT DC group (`group_id`) from the given `reader`.
+  Status DecodeVarDCTDC(size_t group_id, BitReader* reader,
+                        PassesDecoderState* dec_state, AuxOut* aux_out);
+  // Decodes a VarDCT AC Metadata group (`group_id`) from the given `reader`.
+  Status DecodeAcMetadata(size_t group_id, BitReader* reader,
+                          PassesDecoderState* dec_state, AuxOut* aux_out);
+  // Decodes a RAW quant table from `br` into the given `encoding`, of size
+  // `required_size_x x required_size_y`. If `modular_frame_decoder` is passed,
+  // its global tree is used, otherwise no global tree is used.
+  static Status DecodeQuantTable(size_t required_size_x, size_t required_size_y,
+                                 BitReader* br, QuantEncoding* encoding,
+                                 size_t idx,
+                                 ModularFrameDecoder* modular_frame_decoder);
   Status FinalizeDecoding(Image3F* color, ImageBundle* decoded,
                           jxl::ThreadPool* pool,
                           const FrameHeader& frame_header);
@@ -52,6 +124,7 @@ class ModularFrameDecoder {
 
  private:
   Image full_image;
+  FrameDimensions frame_dim;
   bool do_color;
   bool have_something;
   Tree tree;

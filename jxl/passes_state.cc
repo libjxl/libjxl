@@ -45,8 +45,6 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
   if (!(frame_header.flags & FrameHeader::kUseDcFrame) || encoder) {
     shared->dc_storage =
         Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-    shared->dc_quant_field =
-        Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   } else {
     if (frame_header.dc_level == 3) {
       return JXL_FAILURE("Invalid DC level for kUseDcFrame: %u",
@@ -64,8 +62,6 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
       multiframe->GetReferenceFrames());
 
   shared->dc_storage = Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-  shared->dc_quant_field =
-      Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
 
   return true;
 }
