@@ -13,6 +13,7 @@ Please [install vcpkg](https://vcpkg.readthedocs.io/en/latest/examples/installin
 and use it to install the following libraries:
 
 ```bash
+vcpkg install gtest:x64-windows
 vcpkg install giflib:x64-windows
 vcpkg install libjpeg-turbo:x64-windows
 vcpkg install libpng:x64-windows
@@ -22,7 +23,9 @@ vcpkg install zlib:x64-windows```
 
 From Visual Studio, open the CMakeLists.txt in the JPEG XL root directory.
 Right-click the CMakeLists.txt entry in the Folder View of the Solution
-Explorer. In the context menu, select CMake Settings, click on the blue
+Explorer. In the context menu, select CMake Settings. Click on the green plus
+to add an x64-Clang configuration and the red minus to remove any non-Clang
+configuration (the MSVC compiler is currently not supported). Click on the blue
 hyperlink marked "CMakeSettings.json" and an editor will open. Insert the
 following text after replacing $VCPKG with the directory where you installed
 vcpkg above.
@@ -63,6 +66,11 @@ vcpkg above.
         },
         {
           "name": "JPEGXL_ENABLE_FUZZERS",
+          "value": "False",
+          "type": "BOOL"
+        },
+        {
+          "name": "JPEGXL_ENABLE_VIEWERS",
           "value": "False",
           "type": "BOOL"
         }

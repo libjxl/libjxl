@@ -174,10 +174,39 @@ void MakeSplitNode(size_t pos, int property, int splitval, Predictor lpred,
   tree->back().property = -1;
   tree->back().predictor = rpred;
   tree->back().predictor_offset = roff;
+  tree->back().multiplier = 1;
   tree->emplace_back();
   tree->back().property = -1;
   tree->back().predictor = lpred;
   tree->back().predictor_offset = loff;
+  tree->back().multiplier = 1;
+}
+
+enum class IntersectionType { kNone, kPartial, kInside };
+IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
+                               uint32_t &partial_axis, uint32_t &partial_val) {
+  bool partial = false;
+  for (size_t i = 0; i < kNumStaticProperties; i++) {
+    if (haystack[i][0] >= needle[i][1]) {
+      return IntersectionType::kNone;
+    }
+    if (haystack[i][1] <= needle[i][0]) {
+      return IntersectionType::kNone;
+    }
+    if (haystack[i][0] <= needle[i][0] && haystack[i][1] >= needle[i][1]) {
+      continue;
+    }
+    partial = true;
+    partial_axis = i;
+    if (haystack[i][0] > needle[i][0] && haystack[i][0] < needle[i][1]) {
+      partial_val = haystack[i][0] - 1;
+    } else {
+      JXL_DASSERT(haystack[i][1] > needle[i][0] &&
+                  haystack[i][1] < needle[i][1]);
+      partial_val = haystack[i][1] - 1;
+    }
+  }
+  return partial ? IntersectionType::kPartial : IntersectionType::kInside;
 }
 
 void FindBestSplit(const std::vector<std::vector<int>> &residuals,
@@ -186,7 +215,9 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
                    const std::vector<std::vector<int>> &compact_properties,
                    std::vector<size_t> *indices, size_t pos, size_t begin,
                    size_t end, const std::vector<size_t> &props_to_use,
-                   float base_bits, float threshold, uint64_t used_properties,
+                   float threshold, uint64_t used_properties,
+                   const std::vector<ModularMultiplierInfo> &mul_info,
+                   StaticPropRange static_prop_range,
                    float fast_decode_multiplier, Tree *tree) {
   if (begin == end) return;
 
@@ -213,6 +244,9 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
   SplitInfo best_split_nonstatic;
   SplitInfo best_split_nowp;
 
+  JXL_ASSERT(begin <= end);
+  JXL_ASSERT(end <= indices->size());
+
   std::vector<std::vector<uint32_t>> tokens(residuals.size());
   for (auto &v : tokens) {
     v.reserve(end - begin);
@@ -237,13 +271,23 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
   max_symbols = Padded(max_symbols);
   std::vector<int32_t> counts(max_symbols * residuals.size());
   std::vector<int32_t> tot_extra_bits(residuals.size());
-  JXL_ASSERT(begin <= end);
-  JXL_ASSERT(end <= indices->size());
   for (size_t pred = 0; pred < tokens.size(); pred++) {
     for (size_t i = 0; i < tokens[pred].size(); i++) {
       counts[pred * max_symbols + tokens[pred][i]]++;
       tot_extra_bits[pred] += extra_bits[pred][i];
     }
+  }
+
+  float base_bits;
+  {
+    size_t pred = 0;
+    for (size_t i = 0; i < predictors.size(); i++) {
+      if (predictors[i] == (*tree)[pos].predictor) {
+        pred = i;
+      }
+    }
+    base_bits = EstimateBits(counts.data() + pred * max_symbols, max_symbols) +
+                tot_extra_bits[pred];
   }
 
   std::vector<int> prop_value_used_count;
@@ -264,7 +308,7 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
   // The lower the threshold, the higher the expected noisiness of the estimate.
   // Thus, discourage changing predictors.
   float change_pred_penalty = 800.0f / (100.0f + threshold);
-  for (size_t prop = 0; prop < props.size(); prop++) {
+  for (size_t prop = 0; prop < props.size() && base_bits > threshold; prop++) {
     costs_l.clear();
     costs_r.clear();
     costs_l.resize(end - begin);
@@ -401,29 +445,72 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
   if (best_split_static_constant.Cost() + threshold < base_bits) {
     best = &best_split_static_constant;
   }
+  SplitInfo forced_split;
+  // The multiplier ranges cut halfway through the current ranges of static
+  // properties. We do this even if the current node is not a leaf, to minimize
+  // the number of nodes in the resulting tree.
+  for (size_t i = 0; i < mul_info.size(); i++) {
+    uint32_t axis, val;
+    IntersectionType t =
+        BoxIntersects(static_prop_range, mul_info[i].range, axis, val);
+    if (t == IntersectionType::kNone) continue;
+    if (t == IntersectionType::kInside) {
+      (*tree)[pos].multiplier = mul_info[i].multiplier;
+      break;
+    }
+    if (t == IntersectionType::kPartial) {
+      forced_split.val = val;
+      forced_split.prop = axis;
+      forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
+      best = &forced_split;
+      best->pos = begin;
+      JXL_ASSERT(best->prop == props_to_use[best->prop]);
+      for (size_t x = begin; x < end; x++) {
+        if (props[best->prop][(*indices)[x]] <= best->val) {
+          best->pos++;
+        }
+      }
+      break;
+    }
+  }
 
   if (best->Cost() + threshold < base_bits) {
     // Split node and try to split children.
     MakeSplitNode(pos, props_to_use[best->prop],
-                  compact_properties[best->prop][best->val], best->lpred, 0,
-                  best->rpred, 0, tree);
+                  best->val < compact_properties[best->prop].size()
+                      ? compact_properties[best->prop][best->val]
+                      : best->val,
+                  best->lpred, 0, best->rpred, 0, tree);
     // "Sort" according to winning property
     std::nth_element(indices->begin() + begin, indices->begin() + best->pos,
                      indices->begin() + end, [&](size_t a, size_t b) {
                        return props[best->prop][a] < props[best->prop][b];
                      });
-    if (best->prop >= kNumStaticProperties) {
+    uint32_t p = props_to_use[best->prop];
+    if (p >= kNumStaticProperties) {
       used_properties |= 1 << best->prop;
+    }
+    auto new_sp_range = static_prop_range;
+    if (p < kNumStaticProperties) {
+      JXL_ASSERT(best->val + 1 <= new_sp_range[p][1]);
+      new_sp_range[p][1] = best->val + 1;
+      JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
     }
     FindBestSplit(residuals, props, predictors, compact_properties, indices,
                   (*tree)[pos].rchild, begin, best->pos, props_to_use,
-                  best->lcost, threshold, used_properties,
+                  threshold, used_properties, mul_info, new_sp_range,
                   fast_decode_multiplier, tree);
+    new_sp_range = static_prop_range;
+    if (p < kNumStaticProperties) {
+      JXL_ASSERT(new_sp_range[p][0] <= best->val + 1);
+      new_sp_range[p][0] = best->val + 1;
+      JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+    }
     FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].lchild, best->pos, end, props_to_use,
-                  best->rcost, threshold, used_properties,
+                  (*tree)[pos].lchild, best->pos, end, props_to_use, threshold,
+                  used_properties, mul_info, new_sp_range,
                   fast_decode_multiplier, tree);
-  } else {
+  } else if ((*tree)[pos].multiplier == 1) {
     // try to pick an offset for the leaves.
     size_t pred = 0;
     for (size_t i = 0; i < predictors.size(); i++) {
@@ -451,9 +538,8 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(EstimateEntropy)    // Local function.
-HWY_EXPORT(EstimateTotalBits)  // Local function.
-HWY_EXPORT(FindBestSplit)      // Local function.
+HWY_EXPORT(EstimateEntropy)  // Local function.
+HWY_EXPORT(FindBestSplit)    // Local function.
 
 void ChooseAndQuantizeProperties(
     size_t max_properties, size_t max_property_values,
@@ -481,6 +567,12 @@ void ChooseAndQuantizeProperties(
     for (PropertyVal x : (*props)[i]) {
       min = std::min(min, x);
       max = std::max(max, x);
+    }
+    if (i < kNumStaticProperties) {
+      (*compact_properties)[i].resize(max + 1);
+      std::iota((*compact_properties)[i].begin(),
+                (*compact_properties)[i].end(), 0);
+      continue;
     }
     if (max - min + 1 < kVectorMaxRange) {
       is_present_v.clear();
@@ -565,6 +657,7 @@ void ChooseAndQuantizeProperties(
     std::vector<int> remap;
     std::vector<int> new_cp;
     for (size_t i = 0; i < max_properties; i++) {
+      if (i < kNumStaticProperties) continue;
       counts.clear();
       counts.resize((*compact_properties)[i].size());
       remap.resize((*compact_properties)[i].size());
@@ -601,8 +694,10 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<Predictor> &predictors,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
-                     size_t max_properties, float fast_decode_multiplier,
-                     Tree *tree) {
+                     size_t max_properties,
+                     const std::vector<ModularMultiplierInfo> &mul_info,
+                     StaticPropRange static_prop_range,
+                     float fast_decode_multiplier, Tree *tree) {
   // TODO(veluca): take into account that different contexts can have different
   // uint configs.
   //
@@ -611,16 +706,15 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   tree->back().property = -1;
   tree->back().predictor = predictors[0];
   tree->back().predictor_offset = 0;
+  tree->back().multiplier = 1;
   JXL_ASSERT(props.size() < 64);
 
   std::vector<size_t> indices(residuals[0].size());
   std::iota(indices.begin(), indices.end(), 0);
-  float base_bits = HWY_DYNAMIC_DISPATCH(EstimateTotalBits)(
-      0, residuals[0], indices, 0, indices.size());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
   (residuals, props, predictors, compact_properties, &indices, 0, 0,
-   indices.size(), props_to_use, base_bits, threshold, /*used_properties=*/0,
-   fast_decode_multiplier, tree);
+   indices.size(), props_to_use, threshold, /*used_properties=*/0, mul_info,
+   static_prop_range, fast_decode_multiplier, tree);
 }
 
 namespace {
@@ -628,6 +722,8 @@ constexpr size_t kSplitValContext = 0;
 constexpr size_t kPropertyContext = 1;
 constexpr size_t kPredictorContext = 2;
 constexpr size_t kOffsetContext = 3;
+constexpr size_t kMultiplierLogContext = 4;
+constexpr size_t kMultiplierBitsContext = 5;
 }  // namespace
 
 static constexpr size_t kMaxTreeSize = 1 << 26;
@@ -650,15 +746,20 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
                            static_cast<int>(tree[cur].predictor));
       tokens->emplace_back(kOffsetContext,
                            PackSigned(tree[cur].predictor_offset));
+      uint32_t mul_log = NumZeroBitsBelowLSBNonzero(tree[cur].multiplier);
+      uint32_t mul_bits = (tree[cur].multiplier >> mul_log) - 1;
+      tokens->emplace_back(kMultiplierLogContext, mul_log);
+      tokens->emplace_back(kMultiplierBitsContext, mul_bits);
       JXL_ASSERT(tree[cur].predictor < Predictor::Best);
       decoder_tree->emplace_back(-1, 0, leaf_id++, 0, tree[cur].predictor,
-                                 tree[cur].predictor_offset);
+                                 tree[cur].predictor_offset,
+                                 tree[cur].multiplier);
       continue;
     }
     decoder_tree->emplace_back(tree[cur].property, tree[cur].splitval,
                                decoder_tree->size() + q.size() + 1,
                                decoder_tree->size() + q.size() + 2,
-                               Predictor::Zero, 0);
+                               Predictor::Zero, 0, 1);
     q.push(tree[cur].lchild);
     q.push(tree[cur].rchild);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
@@ -683,8 +784,7 @@ Status ValidateTree(
 }
 
 Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                  const std::vector<uint8_t> &context_map, Tree *tree,
-                  int max_property) {
+                  const std::vector<uint8_t> &context_map, Tree *tree) {
   size_t leaf_id = 0;
   size_t to_decode = 1;
   tree->clear();
@@ -695,7 +795,7 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
     to_decode--;
     int property =
         reader->ReadHybridUint(kPropertyContext, br, context_map) - 1;
-    if (property < -1 || property > max_property) {
+    if (property < -1 || property >= 256) {
       return JXL_FAILURE("Invalid tree property value");
     }
     if (property == -1) {
@@ -706,20 +806,30 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
       }
       int64_t predictor_offset =
           UnpackSigned(reader->ReadHybridUint(kOffsetContext, br, context_map));
+      uint32_t mul_log =
+          reader->ReadHybridUint(kMultiplierLogContext, br, context_map);
+      if (mul_log >= 31) {
+        return JXL_FAILURE("Invalid multiplier logarithm");
+      }
+      uint32_t mul_bits =
+          reader->ReadHybridUint(kMultiplierBitsContext, br, context_map);
+      if (mul_bits + 1 >= 1 << (31 - mul_log)) {
+        return JXL_FAILURE("Invalid multiplier");
+      }
+      uint32_t multiplier = (mul_bits + 1U) << mul_log;
       tree->emplace_back(-1, 0, leaf_id++, 0, static_cast<Predictor>(predictor),
-                         predictor_offset);
+                         predictor_offset, multiplier);
       continue;
     }
     int splitval =
         UnpackSigned(reader->ReadHybridUint(kSplitValContext, br, context_map));
     tree->emplace_back(property, splitval, tree->size() + to_decode + 1,
-                       tree->size() + to_decode + 2, Predictor::Zero, 0);
+                       tree->size() + to_decode + 2, Predictor::Zero, 0, 1);
     to_decode += 2;
   }
   std::vector<std::pair<pixel_type, pixel_type>> prop_bounds;
-  prop_bounds.resize(max_property + 1,
-                     {std::numeric_limits<pixel_type>::min(),
-                      std::numeric_limits<pixel_type>::max()});
+  prop_bounds.resize(256, {std::numeric_limits<pixel_type>::min(),
+                           std::numeric_limits<pixel_type>::max()});
   return ValidateTree(*tree, prop_bounds, 0);
 }
 

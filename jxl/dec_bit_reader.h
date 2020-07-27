@@ -250,10 +250,17 @@ class BitReader {
 
   // Returns whether all the bits read so far have been within the input bounds.
   // When reading past the EOF, the Read*() and Consume() functions return zeros
-  // but flag a failure when calling close or this function.
-  Status AllReadsWithinBounds() const {
+  // but flag a failure when calling Close() without checking this function.
+  Status AllReadsWithinBounds() {
+    // Mark up to which point the user checked the out of bounds condition. If
+    // the user handles the condition at higher level (e.g. fetch more bytes
+    // from network, return a custom JXL_FAILURE, ...), Close() should not
+    // output a debug error (which would break tests with JXL_CRASH_ON_ERROR
+    // even when legitimately handling the situation at higher level). This is
+    // used by Bundle::CanRead.
+    checked_out_of_bounds_bits_ = TotalBitsConsumed();
     if (TotalBitsConsumed() > TotalBytes() * kBitsPerByte) {
-      return JXL_FAILURE("Read more bits than available in the bit_reader");
+      return false;
     }
     return true;
   }
@@ -264,7 +271,10 @@ class BitReader {
     JXL_DASSERT(!close_called_);
     close_called_ = true;
     if (!first_byte_) return true;
-    JXL_RETURN_IF_ERROR(AllReadsWithinBounds());
+    if (TotalBitsConsumed() > checked_out_of_bounds_bits_ &&
+        TotalBitsConsumed() > TotalBytes() * kBitsPerByte) {
+      return JXL_FAILURE("Read more bits than available in the bit_reader");
+    }
     return true;
   }
 
@@ -313,6 +323,8 @@ class BitReader {
   // passed to the constructor.
   uint64_t overread_bytes_{0};
   bool close_called_{false};
+
+  uint64_t checked_out_of_bounds_bits_{0};
 };
 
 // Closes a BitReader when the BitReaderScopedCloser goes out of scope. When

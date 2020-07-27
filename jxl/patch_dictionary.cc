@@ -345,7 +345,7 @@ std::vector<PatchInfo> FindTextLikePatches(
         return pci.is_similar_v(v1, v2, threshold);
       };
 
-  bool has_screenshot_areas = false;
+  std::atomic<bool> has_screenshot_areas{false};
   const size_t opsin_stride = opsin.PixelsPerRow();
   const float* JXL_RESTRICT opsin_rows[3] = {opsin.ConstPlaneRow(0, 0),
                                              opsin.ConstPlaneRow(1, 0),
@@ -892,10 +892,14 @@ void FindBestPatchDictionary(const Image3F& opsin,
     cparams.quality_pair.second = (100 + cparams.quality_pair.second) * 0.5f;
   }
   ImageMetadata metadata;
-  metadata.color_encoding = ColorEncoding::LinearSRGB();
+  // The encoding used here does not really matter much but it should have the
+  // same number of channels as the image. If `is_xyb` is true, then the
+  // reference frame is in XYB and thus has three channels even if the original
+  // image does not.
+  metadata.color_encoding =
+      ColorEncoding::LinearSRGB(state->shared.IsGrayscale() && !is_xyb);
   ImageBundle ib(&metadata);
-  // XYB, not sRGB.
-  ib.SetFromImage(std::move(reference_frame), ColorEncoding::LinearSRGB());
+  ib.SetFromImage(std::move(reference_frame), metadata.color_encoding);
   PassesEncoderState roundtrip_state;
   state->special_frames.emplace_back();
   Multiframe multiframe;

@@ -650,9 +650,6 @@ class LossyFrameEncoder {
 
   Status EncodeGlobalDCInfo(const FrameHeader& frame_header,
                             BitWriter* writer) const {
-    JXL_RETURN_IF_ERROR(enc_state_->shared.matrices.EncodeDC(
-        writer, kLayerDequantTables, aux_out_));
-
     // Encode quantizer DC and global scale.
     JXL_RETURN_IF_ERROR(
         enc_state_->shared.quantizer.Encode(writer, kLayerQuant, aux_out_));
@@ -942,6 +939,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     // Heavy-lifting happens here.
     JXL_RETURN_IF_ERROR(jpeg_frame_encoder.DoEncode());
     JXL_RETURN_IF_ERROR(jpeg_frame_encoder.SerializeHeader(get_output(0)));
+  } else {
+    JXL_RETURN_IF_ERROR(lossy_frame_encoder.State()->shared.matrices.EncodeDC(
+        get_output(0), kLayerDequantTables, aux_out));
   }
   if (frame_header.IsLossy()) {
     // encoding == kVarDCT

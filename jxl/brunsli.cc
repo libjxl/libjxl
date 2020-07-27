@@ -498,9 +498,9 @@ namespace {
 const uint8_t kBrunsliMagic[] = {0x0A, 0x04, 'B', 0xd2, 0xd5, 'N', 0x12};
 constexpr size_t kBrunsliMagicSize = sizeof(kBrunsliMagic);
 
-const uint8_t kBrunsliXHdr[] = {'B', 'R', 'N', ':', 'H', 'D', 'R'};
-const uint8_t kBrunsliXDcc[] = {'B', 'R', 'N', ':', 'D', 'C', 'C'};
-const uint8_t kBrunsliXGab[] = {'B', 'R', 'N', ':', 'G', 'A', 'B'};
+const uint8_t kBrunsliXHdr[] = {'J', 'X', 'L', ':', 'H', 'D', 'R'};
+const uint8_t kBrunsliXDcc[] = {'J', 'X', 'L', ':', 'D', 'C', 'C'};
+const uint8_t kBrunsliXGab[] = {'J', 'X', 'L', ':', 'G', 'A', 'B'};
 
 const uint8_t kIccProfileTag[] = {'I', 'C', 'C', '_', 'P', 'R',
                                   'O', 'F', 'I', 'L', 'E', 0x00};
@@ -513,7 +513,7 @@ constexpr uint8_t kSos = 0xDA;
 constexpr uint8_t kDqt = 0xDB;
 constexpr uint8_t kApp0 = 0xE0;
 constexpr uint8_t kApp2 = 0xE2;
-constexpr uint8_t kApp9 = 0xE9;
+constexpr uint8_t kApp11 = 0xEB;
 
 constexpr uint32_t kHuffmanCodeDcSlotOffset = 0x00;
 constexpr uint32_t kHuffmanCodeAcSlotOffset = 0x10;
@@ -704,7 +704,7 @@ BrunsliExtensions ParseBrunsliExtensions(const brunsli::JPEGData& src) {
   BrunsliExtensions result{};
 
   PaddedBytes hdr_payload;
-  if (!ParseChunkedMarker(src, kApp9, ByteSpan(kBrunsliXHdr), &hdr_payload)) {
+  if (!ParseChunkedMarker(src, kApp11, ByteSpan(kBrunsliXHdr), &hdr_payload)) {
     hdr_payload.clear();
     JXL_WARNING("ReJPEG: corrupted HDR extension payload\n");
   }
@@ -719,7 +719,7 @@ BrunsliExtensions ParseBrunsliExtensions(const brunsli::JPEGData& src) {
   }
 
   PaddedBytes dcc_payload;
-  if (!ParseChunkedMarker(src, kApp9, ByteSpan(kBrunsliXDcc), &dcc_payload)) {
+  if (!ParseChunkedMarker(src, kApp11, ByteSpan(kBrunsliXDcc), &dcc_payload)) {
     dcc_payload.clear();
     JXL_WARNING("ReJPEG: corrupted DCC extension payload\n");
   }
@@ -740,7 +740,7 @@ BrunsliExtensions ParseBrunsliExtensions(const brunsli::JPEGData& src) {
   }
 
   PaddedBytes gab_payload;
-  if (!ParseChunkedMarker(src, kApp9, ByteSpan(kBrunsliXGab), &gab_payload)) {
+  if (!ParseChunkedMarker(src, kApp11, ByteSpan(kBrunsliXGab), &gab_payload)) {
     gab_payload.clear();
     JXL_WARNING("ReJPEG: corrupted GAB extension payload\n");
   }
@@ -1017,7 +1017,7 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
     std::string colorspace = Description(ib.c_current());
     std::string payload = options.hdr_orig_colorspace + ">" + colorspace;
     hdr_payload.append(payload);
-    if (!AddChunkedMarker(&out, kApp9, ByteSpan(kBrunsliXHdr), hdr_payload)) {
+    if (!AddChunkedMarker(&out, kApp11, ByteSpan(kBrunsliXHdr), hdr_payload)) {
       JXL_ABORT("Brunsli: failed to add HDR extension\n");
     }
   }
@@ -1029,7 +1029,7 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
       dcc_payload.push_back(dcc.max_gap[c]);
       dcc_payload.push_back(dcc.min_step[c]);
     }
-    if (!AddChunkedMarker(&out, kApp9, ByteSpan(kBrunsliXDcc), dcc_payload)) {
+    if (!AddChunkedMarker(&out, kApp11, ByteSpan(kBrunsliXDcc), dcc_payload)) {
       JXL_ABORT("Brunsli: failed to add DCC extension\n");
     }
   }
@@ -1043,7 +1043,7 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
       gab_payload.push_back(gab.threshold[c]);
       gab_payload.push_back(gab.limit[c]);
     }
-    if (!AddChunkedMarker(&out, kApp9, ByteSpan(kBrunsliXGab), gab_payload)) {
+    if (!AddChunkedMarker(&out, kApp11, ByteSpan(kBrunsliXGab), gab_payload)) {
       JXL_ABORT("Brunsli: failed to add GAB extension\n");
     }
   }

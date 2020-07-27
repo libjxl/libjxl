@@ -74,10 +74,12 @@ HWY_INLINE void CopyBytes(const From* from, To* to) {
 }
 
 static HWY_INLINE HWY_MAYBE_UNUSED size_t PopCount(const uint64_t x) {
-#if HWY_COMPILER_MSVC
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+  return static_cast<size_t>(__builtin_popcountll(x));
+#elif HWY_COMPILER_MSVC
   return _mm_popcnt_u64(x);
 #else
-  return static_cast<size_t>(__builtin_popcountll(x));
+#error "not supported"
 #endif
 }
 

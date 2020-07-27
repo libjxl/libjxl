@@ -152,6 +152,28 @@ struct PsychoImage {
   Image3F lf;     // XYB
 };
 
+// Depending on implementation, Blur either needs a normal or transposed image.
+// Hold one or both of them here and only allocate on demand to reduce memory
+// usage.
+struct BlurTemp {
+  ImageF *Get(const ImageF &in) {
+    if (temp.xsize() == 0) {
+      temp = ImageF(in.xsize(), in.ysize());
+    }
+    return &temp;
+  }
+
+  ImageF *GetTransposed(const ImageF &in) {
+    if (transposed_temp.xsize() == 0) {
+      transposed_temp = ImageF(in.ysize(), in.xsize());
+    }
+    return &transposed_temp;
+  }
+
+  ImageF temp;
+  ImageF transposed_temp;
+};
+
 class ButteraugliComparator {
  public:
   // Butteraugli is calibrated at xmul = 1.0. We add a multiplier here so that
@@ -174,11 +196,21 @@ class ButteraugliComparator {
             MaskImage *BUTTERAUGLI_RESTRICT mask_dc) const;
 
  private:
+  Image3F *Temp() const;
+  void ReleaseTemp() const;
+
   const size_t xsize_;
   const size_t ysize_;
   ButteraugliParams params_;
   PsychoImage pi0_;
-  ButteraugliComparator *sub_;
+
+  // Shared temporary image storage to reduce the number of allocations;
+  // obtained via Temp(), must call ReleaseTemp when no longer needed.
+  mutable Image3F temp_;
+  mutable std::atomic_flag temp_in_use_ = ATOMIC_FLAG_INIT;
+
+  mutable BlurTemp blur_temp_;
+  std::unique_ptr<ButteraugliComparator> sub_;
 };
 
 // Deprecated.

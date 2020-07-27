@@ -36,17 +36,12 @@ enum class TransformId : uint32_t {
   // Squeezing (Haar-style)
   kSqueeze = 2,
 
-  // JPEG-style quantization. Parameters are quantization factors for each
-  // channel
-  // (encoded as part of channel metadata).
-  kQuantize = 3,
-
   // this is lossy preprocessing, doesn't have an inverse transform and doesn't
   // exist from the decoder point of view
-  kNearLossless = 4,
+  kNearLossless = 3,
 
   // The total number of transforms. Update this if adding more transformations.
-  kNumTransforms = 5,
+  kNumTransforms = 4,
 };
 
 struct SqueezeParams {
@@ -82,8 +77,6 @@ class Transform {
   uint32_t nb_colors;
   // for Squeeze. Default squeeze if empty.
   std::vector<SqueezeParams> squeezes;
-  // for Quantize, not serialized.
-  std::vector<int> nonserialized_quant_factors;
   // for NearLossless, not serialized.
   int max_delta_error;
   Predictor predictor;
@@ -98,9 +91,8 @@ class Transform {
   Status VisitFields(Visitor *JXL_RESTRICT visitor) {
     visitor->U32(
         Val((uint32_t)TransformId::kRCT), Val((uint32_t)TransformId::kPalette),
-        Val((uint32_t)TransformId::kSqueeze),
-        Val((uint32_t)TransformId::kQuantize), (uint32_t)TransformId::kRCT,
-        reinterpret_cast<uint32_t *>(&id));
+        Val((uint32_t)TransformId::kSqueeze), Val((uint32_t)TransformId::kRCT),
+        (uint32_t)TransformId::kRCT, reinterpret_cast<uint32_t *>(&id));
     if (visitor->Conditional(id == TransformId::kRCT ||
                              id == TransformId::kPalette)) {
       visitor->U32(Bits(3), BitsOffset(6, 8), BitsOffset(10, 72),

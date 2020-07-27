@@ -21,19 +21,20 @@ namespace jpegxl {
 namespace tools {
 
 void CommandLineParser::PrintHelp() const {
-  fprintf(stderr, "Usage: %s", program_name_ ? program_name_ : "command");
+  FILE* out = help_ ? stdout : stderr;
+  fprintf(out, "Usage: %s", program_name_ ? program_name_ : "command");
 
   for (const auto& option : options_) {
     if (option->positional()) {
       if (option->verbosity_level() > verbosity) continue;
       if (option->required()) {
-        fprintf(stderr, " %s", option->help_flags().c_str());
+        fprintf(out, " %s", option->help_flags().c_str());
       } else {
-        fprintf(stderr, " [%s]", option->help_flags().c_str());
+        fprintf(out, " [%s]", option->help_flags().c_str());
       }
     }
   }
-  fprintf(stderr, " [OPTIONS...]\n");
+  fprintf(out, " [OPTIONS...]\n");
 
   bool showed_all = true;
   for (const auto& option : options_) {
@@ -41,13 +42,13 @@ void CommandLineParser::PrintHelp() const {
       showed_all = false;
       continue;
     }
-    fprintf(stderr, " %s\n", option->help_flags().c_str());
+    fprintf(out, " %s\n", option->help_flags().c_str());
     const char* help_text = option->help_text();
     if (help_text) {
-      fprintf(stderr, "    %s\n", help_text);
+      fprintf(out, "    %s\n", help_text);
     }
   }
-  fprintf(stderr, " --help\n    Prints this help message%s.\n",
+  fprintf(out, " --help\n    Prints this help message%s.\n",
           (showed_all ? "" : " (use -v to see more options)"));
 }
 
@@ -56,6 +57,7 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
   int i = 1;  // argv[0] is the program name.
   while (i < argc) {
     if (!strcmp("--help", argv[i])) {
+      help_ = true;
       // Returning false on Parse() forces to print the help message.
       return false;
     }

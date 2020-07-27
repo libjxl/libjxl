@@ -78,6 +78,22 @@ void InitAliasTable(std::vector<int> distribution, int range,
   JXL_ASSERT(distribution.size() <= table_size);
   JXL_ASSERT(table_size <= range);
   const int entry_size = range >> log_alpha_size;  // this is exact
+  // Special case for single-symbol distributions, that ensures that the state
+  // does not change when decoding from such a distribution. Note that, since we
+  // hardcode offset0 == 0, it is not straightforward (if at all possible) to
+  // fix the general case to produce this result.
+  for (size_t sym = 0; sym < distribution.size(); sym++) {
+    if (distribution[sym] == ANS_TAB_SIZE) {
+      for (size_t i = 0; i < table_size; i++) {
+        a[i].right_value = sym;
+        a[i].cutoff = 0;
+        a[i].offsets1 = entry_size * i;
+        a[i].freq0 = 0;
+        a[i].freq1_xor_freq0 = ANS_TAB_SIZE;
+      }
+      return;
+    }
+  }
   std::vector<int> underfull_posn;
   std::vector<int> overfull_posn;
   int cutoffs[ANS_MAX_ALPHA_SIZE];

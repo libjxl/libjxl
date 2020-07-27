@@ -104,6 +104,9 @@ TEST(DecodeTest, CustomAllocTest) {
 // testing.
 // xsize, ysize: image dimentions to store in the SizeHeader, max 512.
 // bits_per_sample, orientation: a selection of header parameters to test with.
+// orientation: image orientation to set in the metadata
+// alpha_bits: if non-0, alpha extra channel bits to set in the metadata. Also
+//   gives the alpha channel the name "alpha_test"
 // have_container: add box container format around the codestream.
 // metadata_default: if true, ImageMetadata is set to default and
 //   bits_per_sample, orientation and alpha_bits are ignored.
@@ -163,6 +166,9 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
     metadata.SetUintSamples(bits_per_sample);
     metadata.m2.orientation_minus_1 = orientation - 1;
     metadata.SetAlphaBits(alpha_bits);
+    if (alpha_bits != 0) {
+      metadata.m2.extra_channel_info[0].name = "alpha_test";
+    }
   }
 
   EXPECT_TRUE(jxl::Bundle::Write(metadata, &writer, 0, nullptr));
@@ -175,10 +181,6 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
 }
 
 TEST(DecodeTest, BasicInfoTest) {
-#ifdef JXL_CRASH_ON_ERROR
-  JXL_WARNING("This test will fail because it involves partial reads");
-#endif
-
   size_t xsize[2] = {50, 33};
   size_t ysize[2] = {50, 77};
   size_t bits_per_sample[2] = {8, 23};
@@ -223,6 +225,24 @@ TEST(DecodeTest, BasicInfoTest) {
         EXPECT_EQ(ysize[i], info.ysize);
         EXPECT_EQ(alpha_bits[i], info.alpha_bits);
         EXPECT_EQ(orientation[i], info.orientation);
+
+        if (alpha_bits[i] != 0) {
+          // Expect an extra channel
+          EXPECT_EQ(1, info.num_extra_channels);
+          JpegxlExtraChannelInfo extra;
+          EXPECT_EQ(0, JpegxlDecoderGetExtraChannelInfo(dec, 0, &extra));
+          EXPECT_EQ(alpha_bits[i], extra.bits_per_sample);
+          EXPECT_EQ(JPEGXL_CHANNEL_ALPHA, extra.type);
+          EXPECT_EQ(0, extra.alpha_associated);
+          // Verify the name "alpha_test" given to the alpha channel
+          EXPECT_EQ(10, extra.name_length);
+          char name[11];
+          EXPECT_EQ(
+              0, JpegxlDecoderGetExtraChannelName(dec, 0, sizeof(name), name));
+          EXPECT_EQ(std::string("alpha_test"), std::string(name));
+        } else {
+          EXPECT_EQ(0, info.num_extra_channels);
+        }
       } else {
         // If we did not give the full header, the basic info should not be
         // available. Allow a few bytes of slack due to some bits for default

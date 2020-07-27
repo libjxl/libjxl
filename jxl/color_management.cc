@@ -1154,7 +1154,7 @@ Status MaybeCreateProfile(const cmsContext context, const ColorEncoding& c,
       profile.reset(cmsCreateGrayProfileTHR(context, &wp_xyY, curve.get()));
       break;
     case ColorSpace::kXYB:
-      JXL_FAILURE("XYB ICC not yet implemented");
+      JXL_NOTIFY_ERROR("XYB ICC not yet implemented");
       break;
     default:
       return JXL_FAILURE("Unknown CS %u", c.GetColorSpace());

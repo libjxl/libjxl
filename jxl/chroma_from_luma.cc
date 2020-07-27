@@ -159,7 +159,7 @@ JXL_NOINLINE void FindBestCorrelation(
   constexpr float kDistanceMultiplierDC = 1e-5f;
   constexpr float kDistanceMultiplierAC = 1e-3f;
 
-  auto process_row = [&](int ty, int thread) {
+  auto process_row = [&](int ty, int thread) HWY_ATTR {
     HWY_ALIGN_MAX float block_m[AcStrategy::kMaxCoeffArea];
     HWY_ALIGN_MAX float block_s[AcStrategy::kMaxCoeffArea];
     HWY_ALIGN_MAX float coeffs_m[kColorTileDim * kColorTileDim];

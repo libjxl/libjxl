@@ -263,24 +263,30 @@ class Bundle {
   static Status Read(BitReader* reader, T* JXL_RESTRICT t) {
     ReadVisitor visitor(reader);
     JXL_RETURN_IF_ERROR(visitor.Visit(t, PrintVisitors() ? "-- Read\n" : ""));
+    if (!visitor.EnoughBytes()) {
+      return JXL_FAILURE("Read more bits than available for bundle");
+    }
     return visitor.OK();
   }
 
-  // Reads bits, and in case of error, outputs whether the error was due to
-  // needing more input bytes, or another reason (such as invalid values).
-  // NOTE: If there were not enough input bytes, a next Read must start from the
-  // beginning of the stream again, the given reader cannot be reused since its
-  // position may have advanced.
-  // TODO(lode): this still displays debug error messages in the terminal if the
-  // only issue is not enough bytes and we want to handle this gracefully, a
-  // different mechanism is needed to read fields streaming and from partial
-  // data. This also includes AllReadsWithinBounds and Close of BitReader.
+  // Returns whether enough bits are available to fully read this bundle using
+  // Read. Also returns true in case of a codestream error (other than not being
+  // large enough): that means enough bits are available to determine there's an
+  // error, use Read to get such error status.
+  // NOTE: this advances the BitReader, a different one pointing back at the
+  // original bit position in the codestream must be created to use Read after
+  // this.
   template <class T>
-  static Status Read(BitReader* reader, T* JXL_RESTRICT t, bool* enough_bytes) {
+  static bool CanRead(BitReader* reader, T* JXL_RESTRICT t) {
     ReadVisitor visitor(reader);
     Status status = visitor.Visit(t, PrintVisitors() ? "-- Read\n" : "");
-    *enough_bytes = visitor.EnoughBytes();
-    return status ? visitor.OK() : status;
+    // The status is ignored: we are only checking here whether there are enough
+    // bytes. If the error is due to not enough bytes, then that's returned
+    // below. If the error is due to another reason than enough bytes, then we'd
+    // return true, because it means there are enough bytes to determine there's
+    // an error, but that must be checked with another function such as Read.
+    (void)status;
+    return visitor.EnoughBytes();
   }
 
   template <class T>
@@ -474,12 +480,11 @@ class Bundle {
     // Overriden by ReadVisitor and WriteVisitor.
     // Called before any conditional visit based on "extensions".
     // Overridden by ReadVisitor, CanEncodeVisitor and WriteVisitor.
-    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
       Derived* self = static_cast<Derived*>(this);
       self->U64(0, extensions);
 
       extension_states_.Begin();
-      return true;
     }
 
     // Called after all extension fields (if any). Although non-extension
@@ -724,29 +729,37 @@ class Bundle {
 
     Status IsReading() const { return true; }
 
-    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      if (!enough_bytes_) return JXL_FAILURE("Not enough bytes for extension");
-      JXL_RETURN_IF_ERROR(
-          VisitorBase<ReadVisitor>::BeginExtensions(extensions));
+    // This never fails because visitors are expected to keep reading until
+    // EndExtensions, see comment there.
+    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      VisitorBase<ReadVisitor>::BeginExtensions(extensions);
+      if (!enough_bytes_) return;
       if (*extensions != 0) {
         // Read the additional U64 indicating the number of extension bits
         // (more compact than sending the total size).
         extension_bits_ = U64Coder::Read(reader_);  // >= 0
         if (!reader_->AllReadsWithinBounds()) {
           enough_bytes_ = false;
-          return JXL_FAILURE("Not enough bytes for extension");
+          return;
         }
         // Used by EndExtensions to skip past any _remaining_ extensions.
         pos_after_ext_size_ = reader_->TotalBitsConsumed();
         JXL_ASSERT(pos_after_ext_size_ != 0);
       }
-      return true;
     }
 
     Status EndExtensions() {
       JXL_RETURN_IF_ERROR(VisitorBase<ReadVisitor>::EndExtensions());
       // Happens if extensions == 0: don't read size, done.
       if (pos_after_ext_size_ == 0) return true;
+
+      // Not enough bytes as set by BeginExtensions or earlier. Do not return
+      // this as an JXL_FAILURE or false (which can also propagate to error
+      // through e.g. JXL_RETURN_IF_ERROR), since this may be used while
+      // silently checking whether there are enough bytes. If this case must be
+      // treated as an error, reader_>Close() will do this, just like is already
+      // done for non-extension fields.
+      if (!enough_bytes_) return true;
 
       // Skip new fields this (old?) decoder didn't know about, if any.
       const size_t bits_read = reader_->TotalBitsConsumed();
@@ -770,7 +783,7 @@ class Bundle {
     Status EnoughBytes() const { return enough_bytes_; }
 
    private:
-    // Whether any error other than not enough bytes occured.
+    // Whether any error other than not enough bytes occurred.
     bool ok_ = true;
 
     // Whether there are enough input bytes to read from.
@@ -809,10 +822,9 @@ class Bundle {
     // Always visit conditional fields to get a (loose) upper bound.
     Status Conditional(bool condition) { return true; }
 
-    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
       // Skip - extensions are not included in "MaxBits" because their length
       // is potentially unbounded.
-      return true;
     }
 
     Status EndExtensions() { return true; }
@@ -868,15 +880,13 @@ class Bundle {
       return *all_default;
     }
 
-    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      JXL_RETURN_IF_ERROR(
-          VisitorBase<CanEncodeVisitor>::BeginExtensions(extensions));
+    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      VisitorBase<CanEncodeVisitor>::BeginExtensions(extensions);
       if (*extensions != 0) {
         JXL_ASSERT(pos_after_ext_ == 0);
         pos_after_ext_ = encoded_bits_;
         JXL_ASSERT(pos_after_ext_ != 0);  // visited "extensions"
       }
-      return true;
     }
     // EndExtensions = default.
 
@@ -927,9 +937,8 @@ class Bundle {
       ok_ &= F16Coder::Write(*value, writer_);
     }
 
-    Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      JXL_RETURN_IF_ERROR(
-          VisitorBase<WriteVisitor>::BeginExtensions(extensions));
+    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
+      VisitorBase<WriteVisitor>::BeginExtensions(extensions);
       if (*extensions == 0) {
         JXL_ASSERT(extension_bits_ == 0);
       } else {
@@ -937,7 +946,6 @@ class Bundle {
         // any additional fields.
         ok_ &= U64Coder::Write(extension_bits_, writer_);
       }
-      return true;
     }
     // EndExtensions = default.
 

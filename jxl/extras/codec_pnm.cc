@@ -265,30 +265,32 @@ Status EncodeHeader(const ExternalImage& external, char* header,
 Status ApplyHints(const bool is_gray, CodecInOut* io) {
   bool got_color_space = false;
 
-  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach([is_gray, io, &got_color_space](
-                                                const std::string& key,
-                                                const std::string& value) {
-    ColorEncoding* c_original = &io->metadata.color_encoding;
-    if (key == "color_space") {
-      if (!ParseDescription(value, c_original) || !c_original->CreateICC()) {
-        return JXL_FAILURE("PNM: Failed to apply color_space");
-      }
+  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
+      [is_gray, io, &got_color_space](const std::string& key,
+                                      const std::string& value) -> Status {
+        ColorEncoding* c_original = &io->metadata.color_encoding;
+        if (key == "color_space") {
+          if (!ParseDescription(value, c_original) ||
+              !c_original->CreateICC()) {
+            return JXL_FAILURE("PNM: Failed to apply color_space");
+          }
 
-      if (is_gray != io->metadata.color_encoding.IsGray()) {
-        return JXL_FAILURE("PNM: mismatch between file and color_space hint");
-      }
+          if (is_gray != io->metadata.color_encoding.IsGray()) {
+            return JXL_FAILURE(
+                "PNM: mismatch between file and color_space hint");
+          }
 
-      got_color_space = true;
-    } else if (key == "icc_pathname") {
-      PaddedBytes icc;
-      JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
-      JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
-      got_color_space = true;
-    } else {
-      JXL_WARNING("PNM decoder ignoring %s hint", key.c_str());
-    }
-    return true;
-  }));
+          got_color_space = true;
+        } else if (key == "icc_pathname") {
+          PaddedBytes icc;
+          JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
+          JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
+          got_color_space = true;
+        } else {
+          JXL_WARNING("PNM decoder ignoring %s hint", key.c_str());
+        }
+        return true;
+      }));
 
   if (!got_color_space) {
     JXL_WARNING("PNM: no color_space/icc_pathname given, assuming sRGB");

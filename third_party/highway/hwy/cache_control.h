@@ -62,7 +62,7 @@ HWY_INLINE HWY_ATTR_CACHE void StoreFence() {
 template <typename T>
 HWY_INLINE HWY_ATTR_CACHE void Prefetch(const T* p) {
 #if HWY_ARCH_X86 && !defined(HWY_DISABLE_CACHE_CONTROL)
-  _mm_prefetch(const_cast<T*>(p), _MM_HINT_T0);
+  _mm_prefetch(reinterpret_cast<const char*>(p), _MM_HINT_T0);
 #elif HWY_COMPILER_GCC || HWY_COMPILER_CLANG
   // Hint=0 (NTA) behavior differs, but skipping outer caches is probably not
   // desirable, so use the default 3 (keep in caches).

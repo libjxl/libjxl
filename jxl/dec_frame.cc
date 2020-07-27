@@ -94,7 +94,6 @@ class LossyFrameDecoder {
 
   Status DecodeGlobalDCInfo(BitReader* reader, const ImageBundle* decoded) {
     PROFILER_FUNC;
-    JXL_RETURN_IF_ERROR(dec_state_.shared_storage.matrices.DecodeDC(reader));
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.quantizer.Decode(reader));
 
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.cmap.DecodeDC(reader));
@@ -481,7 +480,12 @@ Status DecodeFrame(const DecompressParams& dparams,
     if (frame_header.IsJpeg()) {
       JXL_RETURN_IF_ERROR(jpeg_frame_decoder.ReadHeader(
           frame_dim, global_reader, frame_header.chroma_subsampling));
-    } else if (frame_header.IsLossy()) {
+    } else {
+      JXL_RETURN_IF_ERROR(
+          lossy_frame_decoder.State()->shared_storage.matrices.DecodeDC(
+              global_reader));
+    }
+    if (frame_header.IsLossy()) {
       JXL_RETURN_IF_ERROR(
           lossy_frame_decoder.DecodeGlobalDCInfo(global_reader, decoded));
     } else if (frame_header.encoding == FrameEncoding::kModularGroup) {
@@ -701,7 +705,8 @@ Status DecodeFrame(const DecompressParams& dparams,
   resize_aux_outs(0);
   // undo global modular transforms and copy int pixel buffers to float ones
   JXL_RETURN_IF_ERROR(modular_frame_decoder.FinalizeDecoding(
-      &opsin, decoded, pool, frame_header));
+      &opsin, decoded, pool,
+      lossy_frame_decoder.State()->shared->matrices.DCQuants(), frame_header));
 
   if (frame_header.IsJpeg()) {
     jpeg_frame_decoder.FinalizeDecoding(frame_header, std::move(opsin),

@@ -21,10 +21,6 @@
 #include <stdint.h>
 #include <atomic>
 
-#ifdef _MSC_VER
-#include <intrin.h>
-#endif
-
 // Add to #if conditions to prevent IDE from graying out code.
 #if (defined __CDT_PARSER__) || (defined __INTELLISENSE__) || \
     (defined Q_CREATOR_RUN)

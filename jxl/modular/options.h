@@ -29,13 +29,20 @@ enum class Predictor : uint32_t {
   Zero = 0,
   Left = 1,
   Top = 2,
-  Average = 3,
+  Average0 = 3,
   Select = 4,
   Gradient = 5,
   Weighted = 6,
+  TopRight = 7,
+  TopLeft = 8,
+  LeftLeft = 9,
+  Average1 = 10,
+  Average2 = 11,
+  Average3 = 12,
   // The following predictors are encoder-only.
-  Best = 7,      // Best of Gradient and Weighted
-  Variable = 8,  // Find the best decision tree for predictors/predictor per row
+  Best = 13,  // Best of Gradient and Weighted
+  Variable =
+      14,  // Find the best decision tree for predictors/predictor per row
 };
 
 inline const char* PredictorName(Predictor p) {
@@ -46,14 +53,24 @@ inline const char* PredictorName(Predictor p) {
       return "Left";
     case Predictor::Top:
       return "Top";
-    case Predictor::Average:
-      return "Avg";
+    case Predictor::Average0:
+      return "Avg0";
+    case Predictor::Average1:
+      return "Avg1";
+    case Predictor::Average2:
+      return "Avg2";
+    case Predictor::Average3:
+      return "Avg3";
     case Predictor::Select:
       return "Sel";
     case Predictor::Gradient:
       return "Grd";
     case Predictor::Weighted:
       return "Wgh";
+    case Predictor::TopLeft:
+      return "TopL";
+    case Predictor::TopRight:
+      return "TopR";
     default:
       return "INVALID";
   };
@@ -67,7 +84,7 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
       return {255, 0, 0};
     case Predictor::Top:
       return {0, 255, 0};
-    case Predictor::Average:
+    case Predictor::Average0:
       return {0, 0, 255};
     case Predictor::Select:
       return {255, 255, 0};
@@ -75,12 +92,23 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
       return {255, 0, 255};
     case Predictor::Weighted:
       return {0, 255, 255};
+      // TODO
     default:
       return {255, 255, 255};
   };
 }
 
 constexpr size_t kNumModularPredictors = static_cast<size_t>(Predictor::Best);
+
+static constexpr size_t kNumStaticProperties = 2;  // channel, group_id.
+
+using StaticPropRange =
+    std::array<std::array<uint32_t, 2>, kNumStaticProperties>;
+
+struct ModularMultiplierInfo {
+  StaticPropRange range;
+  uint32_t multiplier;
+};
 
 struct ModularOptions {
   // Decoding options:

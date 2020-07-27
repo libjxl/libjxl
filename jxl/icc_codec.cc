@@ -486,7 +486,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         result->push_back(0);
       }
     } else {
-      JXL_FAILURE("Unknown command");
+      return JXL_FAILURE("Unknown command");
     }
   }
 
@@ -827,7 +827,10 @@ Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
 Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc) {
   icc->clear();
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  JXL_RETURN_IF_ERROR(reader->AllReadsWithinBounds());
+  if (!reader->AllReadsWithinBounds()) {
+    return JXL_FAILURE(
+        "Read more bits than available before reading ICC profile");
+  }
   const size_t kMaxOutput = 1ULL << 30;
   size_t bytes_read = 0;
   PaddedBytes decompressed;

@@ -66,7 +66,7 @@ bool AllOpaque(const ImageU& alpha) {
 
 Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
                       CodecInOut* io) {
-  int error;
+  int error = GIF_OK;
   ReadState state = {bytes};
   const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const bytes,
                                int n) {

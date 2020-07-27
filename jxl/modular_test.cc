@@ -72,29 +72,6 @@ TEST(ModularTest, RoundtripLossy) {
             1.5);
 }
 
-TEST(ModularTest, RoundtripLossyWP) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig =
-      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
-  CompressParams cparams;
-  cparams.modular_group_mode = true;
-  cparams.quality_pair = {90.0f, 90.0f};
-  cparams.options.predictor = {Predictor::Weighted};
-  DecompressParams dparams;
-
-  CodecInOut io_out;
-  size_t compressed_size;
-
-  CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
-
-  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 200000);
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            1.5);
-}
-
 TEST(ModularTest, RoundtripExtraProperties) {
   constexpr size_t kSize = 250;
   Image image(kSize, kSize, /*maxval=*/255, 3);

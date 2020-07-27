@@ -294,7 +294,10 @@ struct FlatDecisionNode {
   };
   uint32_t childID;  // childID is ctx id if leaf.
   // Property+splitval of the two child nodes.
-  PropertyVal splitvals[2];
+  union {
+    PropertyVal splitvals[2];
+    int32_t multiplier;
+  };
   union {
     int32_t properties[2];
     int64_t predictor_offset;
@@ -309,13 +312,15 @@ class MATreeLookup {
     uint32_t context;
     Predictor predictor;
     int64_t offset;
+    int32_t multiplier;
   };
   LookupResult Lookup(const Properties &properties) const {
     uint32_t pos = 0;
     while (true) {
       const FlatDecisionNode &node = nodes_[pos];
       if (node.property0 < 0) {
-        return {node.childID, node.predictor, node.predictor_offset};
+        return {node.childID, node.predictor, node.predictor_offset,
+                node.multiplier};
       }
       bool p0 = properties[node.property0] <= node.splitval0;
       uint32_t off0 = properties[node.properties[0]] <= node.splitvals[0];
@@ -328,38 +333,10 @@ class MATreeLookup {
   const FlatTree &nodes_;
 };
 
-// Something that looks like absolute value. Just returning the absolute value
-// works. Wrapped into a function to make it easier to experiment with
-// alternatives.
-inline pixel_type UnsignedVal(pixel_type_w x) {
-  return ClampToRange<pixel_type>(std::abs(x));
-}
-
-// Something that preserves the sign but potentially reduces the range
-// Just returning the value works.
-// Wrapped into a function to make it easier to experiment with alternatives
-inline pixel_type SignedVal(pixel_type_w x) {
-  return ClampToRange<pixel_type>(x);
-}
-
-static constexpr size_t kNumStaticProperties = 2;  // channel, group_id.
+static constexpr size_t kExtraPropsPerChannel = 4;
 static constexpr size_t kNumNonrefProperties =
-    kNumStaticProperties + 11 + weighted::kNumProperties;
+    kNumStaticProperties + 13 + weighted::kNumProperties;
 
-inline size_t NumProperties(const Image &image, const ModularOptions &options) {
-  int num = 0;
-  for (int j = image.channel.size() - 1; j >= 0 && num < options.max_properties;
-       j--) {
-    if (image.channel[j].w == 0 || image.channel[j].h == 0) continue;
-    if (image.channel[j].hshift < 0) continue;
-    num++;
-  }
-  // 4 properties per previous channel.
-  num *= 4;
-  // Add properties for the current channels.
-  return num + kNumNonrefProperties;
-}
-//
 // Clamps gradient to the min/max of n, w (and l, implicitly).
 static JXL_INLINE int32_t ClampedGradient(const int32_t n, const int32_t w,
                                           const int32_t l) {
@@ -389,108 +366,34 @@ inline pixel_type_w Select(pixel_type_w a, pixel_type_w b, pixel_type_w c) {
 
 inline void PrecomputeReferences(const Channel &ch, size_t y,
                                  const Image &image, int i,
-                                 const ModularOptions &options,
                                  Channel *references) {
   ZeroFillImage(&references->plane);
   int offset = 0;
-  size_t oy = y << ch.vshift;
+  size_t num_extra_props = references->w;
   intptr_t onerow = references->plane.PixelsPerRow();
-  pixel_type *lastrow = references->Row(0) + references->h * onerow;
-  for (int j = i - 1; j >= 0 && offset < 4 * options.max_properties; j--) {
-    if (image.channel[j].w == 0 || image.channel[j].h == 0) continue;
-    if (image.channel[j].hshift < 0) continue;
-    size_t ry = oy >> image.channel[j].vshift;
-    if (ry >= image.channel[j].h) ry = image.channel[j].h - 1;
+  for (int j = i - 1; j >= 0 && offset < num_extra_props; j--) {
+    if (image.channel[j].w != image.channel[i].w ||
+        image.channel[j].h != image.channel[i].h) {
+      continue;
+    }
+    if (image.channel[j].hshift != image.channel[i].hshift) continue;
+    if (image.channel[j].vshift != image.channel[i].vshift) continue;
     pixel_type *JXL_RESTRICT rp = references->Row(0) + offset;
-    const pixel_type *JXL_RESTRICT rpp = image.channel[j].Row(ry);
-    const pixel_type *JXL_RESTRICT rpprev =
-        image.channel[j].Row(ry ? ry - 1 : 0);
-
-    if (ch.hshift == image.channel[j].hshift && ch.w <= image.channel[j].w) {
-      for (size_t x = 0; x < ch.w; x++, rp += onerow) {
-        size_t rx = x;
-        pixel_type_w v = rpp[rx];
-        rp[0] = UnsignedVal(v);
-        rp[1] = SignedVal(v);
-        pixel_type_w vleft = (rx ? rpp[rx - 1] : 0);
-        pixel_type_w vtop = (ry ? rpprev[rx] : vleft);
-        pixel_type_w vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-        pixel_type_w vpredicted = ClampedGradient(vleft, vtop, vtopleft);
-        rp[2] = UnsignedVal(v - vpredicted);
-        rp[3] = SignedVal(v - vpredicted);
-      }
-    } else if (ch.hshift < image.channel[j].hshift) {
-      size_t stepsize = 1 << (image.channel[j].hshift - ch.hshift);
-      size_t rx = 0;
-      pixel_type_w v;
-      if (stepsize == 2) {
-        for (; rx < image.channel[j].w - 1 &&
-               rx < (ch.w >> (image.channel[j].hshift - ch.hshift));
-             rx++) {
-          v = rpp[rx];
-          pixel_type_w vleft = (rx ? rpp[rx - 1] : 0);
-          pixel_type_w vtop = (ry ? rpprev[rx] : vleft);
-          pixel_type_w vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-          pixel_type_w vpredicted = ClampedGradient(vleft, vtop, vtopleft);
-          rp[0] = UnsignedVal(v);
-          rp[1] = SignedVal(v);
-          rp[2] = UnsignedVal(v - vpredicted);
-          rp[3] = SignedVal(v - vpredicted);
-          rp += onerow;
-          rp[0] = UnsignedVal(v);
-          rp[1] = SignedVal(v);
-          rp[2] = UnsignedVal(v - vpredicted);
-          rp[3] = SignedVal(v - vpredicted);
-          rp += onerow;
-        }
-      } else {
-        for (; rx < image.channel[j].w - 1 &&
-               rx < (ch.w >> (image.channel[j].hshift - ch.hshift));
-             rx++) {
-          v = rpp[rx];
-          pixel_type_w vleft = (rx ? rpp[rx - 1] : 0);
-          pixel_type_w vtop = (ry ? rpprev[rx] : vleft);
-          pixel_type_w vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-          pixel_type_w vpredicted = ClampedGradient(vleft, vtop, vtopleft);
-          for (size_t s = 0; s < stepsize; s++, rp += onerow) {
-            rp[0] = UnsignedVal(v);
-            rp[1] = SignedVal(v);
-            rp[2] = UnsignedVal(v - vpredicted);
-            rp[3] = SignedVal(v - vpredicted);
-          }
-        }
-      }
-      // assert (x-1 < ch.w);
-      v = rpp[rx];
-      pixel_type_w vleft = (rx ? rpp[rx - 1] : 0);
-      pixel_type_w vtop = (ry ? rpprev[rx] : vleft);
-      pixel_type_w vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
+    const pixel_type *JXL_RESTRICT rpp = image.channel[j].Row(y);
+    const pixel_type *JXL_RESTRICT rpprev = image.channel[j].Row(y ? y - 1 : 0);
+    for (size_t x = 0; x < ch.w; x++, rp += onerow) {
+      pixel_type_w v = rpp[x];
+      rp[0] = std::abs(v);
+      rp[1] = v;
+      pixel_type_w vleft = (x ? rpp[x - 1] : 0);
+      pixel_type_w vtop = (y ? rpprev[x] : vleft);
+      pixel_type_w vtopleft = (x && y ? rpprev[x - 1] : vleft);
       pixel_type_w vpredicted = ClampedGradient(vleft, vtop, vtopleft);
-      while (rp < lastrow) {
-        rp[0] = UnsignedVal(v);
-        rp[1] = SignedVal(v);
-        rp[2] = UnsignedVal(v - vpredicted);
-        rp[3] = SignedVal(v - vpredicted);
-        rp += onerow;
-      }
-    } else
-      // all the above are just some special cases of this:
-      for (size_t x = 0; x < ch.w; x++, rp += onerow) {
-        size_t ox = x << ch.hshift;
-        size_t rx = ox >> image.channel[j].hshift;
-        if (rx >= image.channel[j].w) rx = image.channel[j].w - 1;
-        pixel_type_w v = rpp[rx];
-        rp[0] = UnsignedVal(v);
-        rp[1] = SignedVal(v);
-        pixel_type_w vleft = (rx ? rpp[rx - 1] : 0);
-        pixel_type_w vtop = (ry ? rpprev[rx] : vleft);
-        pixel_type_w vtopleft = (rx && ry ? rpprev[rx - 1] : vleft);
-        pixel_type_w vpredicted = ClampedGradient(vleft, vtop, vtopleft);
-        rp[2] = UnsignedVal(v - vpredicted);
-        rp[3] = SignedVal(v - vpredicted);
-      }
+      rp[2] = std::abs(v - vpredicted);
+      rp[3] = v - vpredicted;
+    }
 
-    offset += 4;
+    offset += kExtraPropsPerChannel;
   }
 }
 
@@ -498,10 +401,11 @@ struct PredictionResult {
   int context = 0;
   pixel_type_w guess = 0;
   Predictor predictor;
+  int32_t multiplier;
 };
 
 inline std::string PropertyName(size_t i) {
-  static_assert(kNumNonrefProperties == 14, "Update this function");
+  static_assert(kNumNonrefProperties == 16, "Update this function");
   switch (i) {
     case 0:
       return "c";
@@ -522,18 +426,33 @@ inline std::string PropertyName(size_t i) {
     case 8:
       return "W+N-NW";
     case 9:
-      return "W-NW";
+      return "W-WW-NW+NWW";
     case 10:
-      return "NW-N";
+      return "W-NW";
     case 11:
-      return "N-NE";
+      return "NW-N";
     case 12:
-      return "W-WW";
+      return "N-NE";
     case 13:
+      return "N-NN";
+    case 14:
+      return "W-WW";
+    case 15:
       return "WGH";
     default:
-      return "ch[" + std::to_string(13 - (int)i) + "]";
+      return "ch[" + std::to_string(15 - (int)i) + "]";
   }
+}
+
+inline void InitPropsRow(
+    Properties *p,
+    const std::array<pixel_type, kNumStaticProperties> &static_props,
+    const int y) {
+  for (size_t i = 0; i < kNumStaticProperties; i++) {
+    (*p)[i] = static_props[i];
+  }
+  (*p)[2] = y;
+  (*p)[9] = 0;  // local gradient.
 }
 
 namespace detail {
@@ -545,14 +464,15 @@ enum PredictorMode {
 };
 
 template <int mode>
-inline PredictionResult Predict(
-    Properties *p, size_t w,
-    const std::array<pixel_type, kNumStaticProperties> &static_props,
-    const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
-    const int y, Predictor predictor, const MATreeLookup *lookup,
-    const Channel *references, weighted::State *wp_state,
-    pixel_type_w *predictions) {
-  size_t offset = 0;
+inline PredictionResult Predict(Properties *p, size_t w,
+                                const pixel_type *JXL_RESTRICT pp,
+                                const intptr_t onerow, const int x, const int y,
+                                Predictor predictor, const MATreeLookup *lookup,
+                                const Channel *references,
+                                weighted::State *wp_state,
+                                pixel_type_w *predictions) {
+  // We start in position 3 because of 2 static properties + y.
+  size_t offset = 3;
   constexpr bool compute_properties =
       mode & kUseTree || mode & kForceComputeProperties;
   pixel_type_w left = (x ? pp[-1] : (y ? pp[-onerow] : 0));
@@ -563,29 +483,26 @@ inline PredictionResult Predict(
   pixel_type_w toptop = (y > 1 ? pp[-onerow - onerow] : top);
 
   if (compute_properties) {
-    for (size_t i = 0; i < kNumStaticProperties; i++) {
-      (*p)[offset++] = static_props[i];
-    }
-    // neighbors
-    (*p)[offset++] = UnsignedVal(top);
-    (*p)[offset++] = UnsignedVal(left);
-    (*p)[offset++] = SignedVal(top);
-    (*p)[offset++] = SignedVal(left);
-
     // location
-    (*p)[offset++] = y;
     (*p)[offset++] = x;
+    // neighbors
+    (*p)[offset++] = std::abs(top);
+    (*p)[offset++] = std::abs(left);
+    (*p)[offset++] = top;
+    (*p)[offset++] = left;
 
     // local gradient
+    (*p)[offset] = left - (*p)[offset + 1];
+    offset++;
+    // local gradient
     (*p)[offset++] = left + top - topleft;
-    //  (*p)[offset++] = topleft + topright - top;
 
     // FFV1 context properties
-    (*p)[offset++] = SignedVal(left - topleft);
-    (*p)[offset++] = SignedVal(topleft - top);
-    (*p)[offset++] = SignedVal(top - topright);
-    //  (*p)[offset++] = SignedVal(top - toptop);
-    (*p)[offset++] = SignedVal(left - leftleft);
+    (*p)[offset++] = left - topleft;
+    (*p)[offset++] = topleft - top;
+    (*p)[offset++] = top - topright;
+    (*p)[offset++] = top - toptop;
+    (*p)[offset++] = left - leftleft;
   }
 
   pixel_type_w wp_pred = 0;
@@ -606,19 +523,26 @@ inline PredictionResult Predict(
     MATreeLookup::LookupResult lr = lookup->Lookup(*p);
     result.context = lr.context;
     result.guess = lr.offset;
+    result.multiplier = lr.multiplier;
     predictor = lr.predictor;
   }
-  pixel_type_w pred_storage[(int)Predictor::Best];
+  pixel_type_w pred_storage[kNumModularPredictors];
   if (!(mode & kAllPredictions)) {
     predictions = pred_storage;
   }
   predictions[(int)Predictor::Zero] = 0;
   predictions[(int)Predictor::Left] = left;
   predictions[(int)Predictor::Top] = top;
-  predictions[(int)Predictor::Average] = (left + top) / 2;
   predictions[(int)Predictor::Select] = Select(left, top, topleft);
   predictions[(int)Predictor::Weighted] = wp_pred;
   predictions[(int)Predictor::Gradient] = ClampedGradient(left, top, topleft);
+  predictions[(int)Predictor::TopLeft] = topleft;
+  predictions[(int)Predictor::TopRight] = topright;
+  predictions[(int)Predictor::LeftLeft] = leftleft;
+  predictions[(int)Predictor::Average0] = (left + top) / 2;
+  predictions[(int)Predictor::Average1] = (left + topleft) / 2;
+  predictions[(int)Predictor::Average2] = (topleft + top) / 2;
+  predictions[(int)Predictor::Average3] = (top + topright) / 2;
 
   result.guess += predictions[(int)predictor];
   result.predictor = predictor;
@@ -632,7 +556,7 @@ inline PredictionResult PredictNoTreeNoWP(size_t w,
                                           const intptr_t onerow, const int x,
                                           const int y, Predictor predictor) {
   return detail::Predict</*mode=*/0>(
-      /*p=*/nullptr, w, {}, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
+      /*p=*/nullptr, w, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
       /*references=*/nullptr, /*wp_state=*/nullptr, /*predictions=*/nullptr);
 }
 
@@ -642,52 +566,53 @@ inline PredictionResult PredictNoTreeWP(size_t w,
                                         const int y, Predictor predictor,
                                         weighted::State *wp_state) {
   return detail::Predict<detail::kUseWP>(
-      /*p=*/nullptr, w, {}, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
+      /*p=*/nullptr, w, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
       /*references=*/nullptr, wp_state, /*predictions=*/nullptr);
 }
 
-inline PredictionResult PredictTreeNoWP(
-    Properties *p, size_t w,
-    const std::array<pixel_type, kNumStaticProperties> &static_props,
-    const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
-    const int y, const MATreeLookup &tree_lookup, const Channel &references) {
+inline PredictionResult PredictTreeNoWP(Properties *p, size_t w,
+                                        const pixel_type *JXL_RESTRICT pp,
+                                        const intptr_t onerow, const int x,
+                                        const int y,
+                                        const MATreeLookup &tree_lookup,
+                                        const Channel &references) {
   return detail::Predict<detail::kUseTree>(
-      p, w, static_props, pp, onerow, x, y, Predictor::Zero, &tree_lookup,
-      &references,
+      p, w, pp, onerow, x, y, Predictor::Zero, &tree_lookup, &references,
       /*wp_state=*/nullptr, /*predictions=*/nullptr);
 }
 
-inline PredictionResult PredictTreeWP(
-    Properties *p, size_t w,
-    const std::array<pixel_type, kNumStaticProperties> &static_props,
-    const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
-    const int y, const MATreeLookup &tree_lookup, const Channel &references,
-    weighted::State *wp_state) {
+inline PredictionResult PredictTreeWP(Properties *p, size_t w,
+                                      const pixel_type *JXL_RESTRICT pp,
+                                      const intptr_t onerow, const int x,
+                                      const int y,
+                                      const MATreeLookup &tree_lookup,
+                                      const Channel &references,
+                                      weighted::State *wp_state) {
   return detail::Predict<detail::kUseTree | detail::kUseWP>(
-      p, w, static_props, pp, onerow, x, y, Predictor::Zero, &tree_lookup,
-      &references, wp_state, /*predictions=*/nullptr);
+      p, w, pp, onerow, x, y, Predictor::Zero, &tree_lookup, &references,
+      wp_state, /*predictions=*/nullptr);
 }
 
-inline PredictionResult PredictLearn(
-    Properties *p, size_t w,
-    const std::array<pixel_type, kNumStaticProperties> &static_props,
-    const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
-    const int y, Predictor predictor, const Channel &references,
-    weighted::State *wp_state) {
+inline PredictionResult PredictLearn(Properties *p, size_t w,
+                                     const pixel_type *JXL_RESTRICT pp,
+                                     const intptr_t onerow, const int x,
+                                     const int y, Predictor predictor,
+                                     const Channel &references,
+                                     weighted::State *wp_state) {
   return detail::Predict<detail::kForceComputeProperties | detail::kUseWP>(
-      p, w, static_props, pp, onerow, x, y, predictor, /*lookup=*/nullptr,
-      &references, wp_state, /*predictions=*/nullptr);
+      p, w, pp, onerow, x, y, predictor, /*lookup=*/nullptr, &references,
+      wp_state, /*predictions=*/nullptr);
 }
 
-inline void PredictLearnAll(
-    Properties *p, size_t w,
-    const std::array<pixel_type, kNumStaticProperties> &static_props,
-    const pixel_type *JXL_RESTRICT pp, const intptr_t onerow, const int x,
-    const int y, const Channel &references, weighted::State *wp_state,
-    pixel_type_w *predictions) {
+inline void PredictLearnAll(Properties *p, size_t w,
+                            const pixel_type *JXL_RESTRICT pp,
+                            const intptr_t onerow, const int x, const int y,
+                            const Channel &references,
+                            weighted::State *wp_state,
+                            pixel_type_w *predictions) {
   detail::Predict<detail::kForceComputeProperties | detail::kUseWP |
                   detail::kAllPredictions>(
-      p, w, static_props, pp, onerow, x, y, Predictor::Zero,
+      p, w, pp, onerow, x, y, Predictor::Zero,
       /*lookup=*/nullptr, &references, wp_state, predictions);
 }
 
@@ -695,7 +620,7 @@ inline void PredictAllNoWP(size_t w, const pixel_type *JXL_RESTRICT pp,
                            const intptr_t onerow, const int x, const int y,
                            pixel_type_w *predictions) {
   detail::Predict<detail::kAllPredictions>(
-      /*p=*/nullptr, w, {}, pp, onerow, x, y, Predictor::Zero,
+      /*p=*/nullptr, w, pp, onerow, x, y, Predictor::Zero,
       /*lookup=*/nullptr,
       /*references=*/nullptr, /*wp_state=*/nullptr, predictions);
 }

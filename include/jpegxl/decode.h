@@ -29,7 +29,7 @@ extern "C" {
 /**
  * Decoder library version.
  *
- * @returns the decoder library version as an integer:
+ * @return the decoder library version as an integer:
  * MAJOR_VERSION * 1000000 + MINOR_VERSION * 1000 + PATCH_VERSION. For example,
  * version 1.2.3 would return 1002003.
  */
@@ -59,7 +59,7 @@ enum JpegxlSignature {
  * buf of size
  * @p size doesn't need to be a full image, only the beginning of the file.
  *
- * @returns a flag indicating if a JPEG XL signature was found and what type.
+ * @return a flag indicating if a JPEG XL signature was found and what type.
  *   - JPEGXL_SIG_INVALID: no valid signature found for JPEG XL decoding.
  *   - JPEGXL_SIG_VALID a valid JPEG XL signature was found.
  *   - JPEGXL_SIG_NOT_ENOUGH_BYTES not enough bytes were passed to determine
@@ -85,8 +85,8 @@ typedef struct JpegxlDecoderStruct JpegxlDecoder;
  *
  * @param memory_manager custom allocator function. It may be NULL. The memory
  *        manager will be copied internally.
- * @returns @c NULL if the instance can not be allocated or initialized
- * @returns pointer to initialized JpegxlDecoder otherwise
+ * @return @c NULL if the instance can not be allocated or initialized
+ * @return pointer to initialized JpegxlDecoder otherwise
  */
 JPEGXL_EXPORT JpegxlDecoder* JpegxlDecoderCreate(
     const JpegxlMemoryManager* memory_manager);
@@ -107,7 +107,7 @@ typedef enum {
    */
   JPEGXL_DEC_FINISHED = 0,
 
-  /** An error occured, for example invalid input file or out of memory.
+  /** An error occurred, for example invalid input file or out of memory.
    * TODO(lode): add function to get error information from decoder.
    */
   JPEGXL_DEC_ERROR,
@@ -152,6 +152,65 @@ typedef enum {
   JPEGXL_ORIENT_ANTI_TRANSPOSE = 7,
   JPEGXL_ORIENT_ROTATE_90_CCW = 8,
 } JpegxlOrientation;
+
+/** Given type of an extra channel.
+ */
+typedef enum {
+  JPEGXL_CHANNEL_ALPHA,
+  JPEGXL_CHANNEL_DEPTH,
+  JPEGXL_CHANNEL_SPOT_COLOR,
+  JPEGXL_CHANNEL_SELECTION_MASK,
+  JPEGXL_CHANNEL_BLACK,
+  JPEGXL_CHANNEL_CFA,
+  JPEGXL_CHANNEL_THERMAL,
+  JPEGXL_CHANNEL_RESERVED0,
+  JPEGXL_CHANNEL_RESERVED1,
+  JPEGXL_CHANNEL_RESERVED2,
+  JPEGXL_CHANNEL_RESERVED3,
+  JPEGXL_CHANNEL_RESERVED4,
+  JPEGXL_CHANNEL_RESERVED5,
+  JPEGXL_CHANNEL_RESERVED6,
+  JPEGXL_CHANNEL_RESERVED7,
+  JPEGXL_CHANNEL_UNKNOWN,
+  JPEGXL_CHANNEL_OPTIONAL
+} JpegxlExtraChannelType;
+
+/** Indicates what the next frame will be "based" on.
+ * A full frame (have_crop = false) can be based on a frame if and only if the
+ * frame and the base are lossy. The rendered frame will then be the sum of
+ * the two. A cropped frame can be based on any kind of frame. The rendered
+ * frame will be obtained by blitting. Stored in FrameHeader and
+ * ExtraChannelInfo to allow independent control for main and extra channels.
+ */
+typedef enum {
+  /** The next frame will be based on the same frame as the current one.
+   */
+  JPEGXL_FRAME_BASE_EXISTING,
+  /** The next frame will be based on the current one.
+   */
+  JPEGXL_FRAME_BASE_CURRENT_FRAME,
+  /** The next frame will be a full frame (have_crop = false) and will not be
+   * based on any frame, but start from a value of 0 in main and extra channels.
+   */
+  JPEGXL_FRAME_BASE_NONE,
+} JpegxlFrameBase;
+
+/** Indicates how to combine the current frame with the previous "base". Stored
+ * in FrameHeader and ExtraChannelInfo to allow independent control for main and
+ * extra channels.
+ */
+typedef enum {
+  /** The new values (in the crop) replace the old ones
+   */
+  JPEGXL_BLEND_MODE_REPLACE,
+  /** The new values (in the crop) get added to the old ones
+   */
+  JPEGXL_BLEND_MODE_ADD,
+  /** The new values (in the crop) replace the old ones if alpha>0.
+   * Not allowed for the first alpha channel.
+   */
+  JPEGXL_BLEND_MODE_BLEND,
+} JpegxlBlendMode;
 
 /** Basic image information. This information is available from the file
  * signature and first part of the codestream header.
@@ -263,6 +322,58 @@ typedef struct JpegxlBasicInfo {
   uint8_t alpha_premultiplied;
 } JpegxlBasicInfo;
 
+/** Information for a single extra channel.
+ */
+typedef struct {
+  /** Given type of an extra channel.
+   */
+  JpegxlExtraChannelType type;
+
+  /** Base for next frame
+   */
+  JpegxlFrameBase next_frame_base;
+
+  /** Blend mode for next frame
+   */
+  JpegxlBlendMode blend_mode;
+
+  /** Total bits per sample for this channel.
+   */
+  uint32_t bits_per_sample;
+
+  /** Floating point exponent bits per channel, or 0 if they are unsigned
+   * integer.
+   */
+  uint32_t exponent_bits_per_sample;
+
+  /** The exponent the channel is downsampled by on each axis.
+   * TODO(lode): expand this comment to match the JPEG XL specification,
+   * specify how to upscale, how to round the size computation, and to which
+   * extra channels this field applies.
+   */
+  uint32_t dim_shift;
+
+  /** Length of the extra channel name in bytes, or 0 if no name.
+   * Excludes null termination character.
+   */
+  uint32_t name_length;
+
+  /** Whether alpha channel uses premultiplied alpha. Only applicable if
+   * type is JPEGXL_CHANNEL_ALPHA.
+   */
+  uint8_t alpha_associated;
+
+  /** Spot color of the current spot channel in linear RGBA. Only applicable if
+   * type is JPEGXL_CHANNEL_SPOT_COLOR.
+   */
+  float spot_color[4];
+
+  /** Only applicable if type is JPEGXL_CHANNEL_CFA.
+   * TODO(lode): add comment about the meaning of this field.
+   */
+  uint32_t cfa_channel;
+} JpegxlExtraChannelInfo;
+
 /**
  * Returns a hint indicating how many more bytes the decoder is expected to
  * need to make JpegxlDecoderGetBasicInfo available after the next
@@ -273,8 +384,8 @@ typedef struct JpegxlBasicInfo {
  * the first time in most cases. If not, JpegxlDecoderSizeHintBasicInfo can be
  * called again to get an updated hint.
  *
- * @returns the size hint in bytes if the basic info is not yet fully decoded.
- * @returns 0 when the basic info is already available.
+ * @return the size hint in bytes if the basic info is not yet fully decoded.
+ * @return 0 when the basic info is already available.
  */
 JPEGXL_EXPORT size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec);
 
@@ -293,7 +404,7 @@ JPEGXL_EXPORT size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec);
  * returned status is (other than JPEGXL_DEC_ERROR), new information, such as
  * JpegxlDecoderGetBasicInfo, may have become available after this call.
  *
- * @returns status indicating the decoding needs more input or output bytes to
+ * @return status indicating the decoding needs more input or output bytes to
  * continue, encountered an error, or successfully finished, See
  * JpegxlDecoderStatus for the description of each possible status.
  */
@@ -306,10 +417,38 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderProcessInput(
  *
  * @param info struct to copy the information into, or NULL to only check
  * whether the information is available through the return value.
- * @returns 0 if the value is available, 1 if not available.
+ * @return 0 if the value is available, 1 if not available.
  */
 JPEGXL_EXPORT int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
                                             JpegxlBasicInfo* info);
+
+/**
+ * Outputs information for extra channel at the given index. The index must be
+ * smaller than num_extra_channels in the associated JpegxlBasicInfo.
+ *
+ * @param index index of the extra channel to query.
+ * @param info struct to copy the information into, or NULL to only check
+ * whether the information is available through the return value.
+ * @return 0 if the value is available, 1 if not available or out of bounds.
+ */
+JPEGXL_EXPORT int JpegxlDecoderGetExtraChannelInfo(
+    const JpegxlDecoder* dec, size_t index, JpegxlExtraChannelInfo* info);
+
+/**
+ * Outputs name for extra channel at the given index in UTF-8. The index must be
+ * smaller than num_extra_channels in the associated JpegxlBasicInfo. The buffer
+ * for name must have at least name_length + 1 bytes allocated, gotten from
+ * the associated JpegxlExtraChannelInfo.
+ *
+ * @param index index of the extra channel to query.
+ * @param n size of the name buffer in bytes
+ * @param name buffer to copy the name into
+ * @return 0 if the value is available, 1 if not available, out of bounds or
+ * too large.
+ */
+JPEGXL_EXPORT int JpegxlDecoderGetExtraChannelName(const JpegxlDecoder* dec,
+                                                   size_t index, size_t n,
+                                                   char* name);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

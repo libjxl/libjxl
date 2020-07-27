@@ -17,14 +17,14 @@
 
 // Specialized instructions for processing register-sized bit arrays.
 
+#include "jxl/base/compiler_specific.h"
+
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
 
 #include <stddef.h>
 #include <stdint.h>
-
-#include "jxl/base/compiler_specific.h"
 
 namespace jxl {
 
@@ -39,18 +39,22 @@ constexpr bool IsSigned() {
 
 static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(SizeTag<4> /* tag */,
                                                    const uint32_t x) {
-#ifdef _MSC_VER
+#if JXL_COMPILER_CLANG || JXL_COMPILER_GCC
+  return static_cast<size_t>(__builtin_popcount(x));
+#elif JXL_COMPILER_MSVC
   return _mm_popcnt_u32(x);
 #else
-  return static_cast<size_t>(__builtin_popcount(x));
+#error "not supported"
 #endif
 }
 static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(SizeTag<8> /* tag */,
                                                    const uint64_t x) {
-#ifdef _MSC_VER
+#if JXL_COMPILER_CLANG || JXL_COMPILER_GCC
+  return static_cast<size_t>(__builtin_popcountll(x));
+#elif JXL_COMPILER_MSVC
   return _mm_popcnt_u64(x);
 #else
-  return static_cast<size_t>(__builtin_popcountll(x));
+#error "not supported"
 #endif
 }
 template <typename T>

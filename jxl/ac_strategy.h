@@ -239,17 +239,23 @@ class AcStrategyImage {
 #endif  // JXL_ENABLE_ASSERT
     JXL_ASSERT(y + acs.covered_blocks_y() <= layers_.ysize());
     JXL_ASSERT(x + acs.covered_blocks_x() <= layers_.xsize());
-    SetNoBoundsCheck(x, y, type);
+    JXL_CHECK(SetNoBoundsCheck(x, y, type, /*check=*/false));
   }
 
-  void SetNoBoundsCheck(size_t x, size_t y, AcStrategy::Type type) {
+  Status SetNoBoundsCheck(size_t x, size_t y, AcStrategy::Type type,
+                          bool check = true) {
     AcStrategy acs = AcStrategy::FromRawStrategy(type);
     for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
       for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-        row_[(y + iy) * stride_ + x + ix] =
+        size_t pos = (y + iy) * stride_ + x + ix;
+        if (check && row_[pos] != INVALID) {
+          return JXL_FAILURE("Invalid AC strategy: block overlap");
+        }
+        row_[pos] =
             (static_cast<uint8_t>(type) << 1) | ((iy | ix) == 0 ? 1 : 0);
       }
     }
+    return true;
   }
 
   bool IsValid(size_t x, size_t y) { return row_[y * stride_ + x] != INVALID; }

@@ -265,7 +265,8 @@ Status TestF16Coder(const float value) {
   F16Coder coder;
 
   size_t max_encoded_bits;
-  JXL_RETURN_IF_ERROR(coder.CanEncode(value, &max_encoded_bits));
+  // It is not a fatal error if it can't be encoded.
+  if (!coder.CanEncode(value, &max_encoded_bits)) return false;
   EXPECT_EQ(F16Coder::MaxEncodedBits(), max_encoded_bits);
 
   BitWriter writer;
@@ -398,7 +399,7 @@ struct OldBundle {
     visitor->F16(1.125f, &old_f);
     visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
 
-    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
+    visitor->BeginExtensions(&extensions);
     return visitor->EndExtensions();
   }
 
@@ -418,7 +419,7 @@ struct NewBundle {
     visitor->F16(1.125f, &old_f);
     visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
 
-    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
+    visitor->BeginExtensions(&extensions);
     if (extensions & 1) {
       visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small);
       visitor->F16(-2.0f, &new_f);

@@ -187,7 +187,7 @@ Status DecodeANSCodes(const size_t num_histograms,
                       const size_t max_alphabet_size, BitReader* in,
                       ANSCode* result) {
   if (result->use_prefix_code) {
-    JXL_ASSERT(max_alphabet_size <= brunsli::kMaxContextMapAlphabetSize);
+    JXL_ASSERT(max_alphabet_size <= 1 << brunsli::kMaxHuffmanBits);
     result->huffman_data.resize(num_histograms);
     std::vector<uint16_t> alphabet_sizes(num_histograms);
     for (size_t c = 0; c < num_histograms; c++) {
@@ -290,7 +290,7 @@ Status DecodeHistograms(BitReader* br, const size_t num_contexts, ANSCode* code,
   }
   code->use_prefix_code = br->ReadFixedBits<1>();
   if (code->use_prefix_code) {
-    code->log_alpha_size = 8;
+    code->log_alpha_size = brunsli::kMaxHuffmanBits;
   } else {
     code->log_alpha_size = br->ReadFixedBits<2>() + 5;
   }

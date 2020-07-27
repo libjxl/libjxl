@@ -72,7 +72,7 @@ TEST(JxlTest, HeaderSize) {
     CodecInOut io2;
     AuxOut aux_out;
     Roundtrip(&io, cparams, dparams, pool, &io2, &aux_out);
-    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 51);
+    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 52);
   }
 
   {
@@ -83,7 +83,7 @@ TEST(JxlTest, HeaderSize) {
     io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
     AuxOut aux_out;
     Roundtrip(&io, cparams, dparams, pool, &io2, &aux_out);
-    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 73);
+    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 75);
   }
 }
 

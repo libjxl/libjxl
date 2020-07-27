@@ -87,6 +87,8 @@ class ModularFrameEncoder {
   float quality = cparams.quality_pair.first;
   float cquality = cparams.quality_pair.second;
   std::vector<size_t> tree_splits;
+  std::vector<ModularMultiplierInfo> multiplier_info;
+  std::vector<std::vector<uint32_t>> gi_channel;
 };
 
 }  // namespace jxl

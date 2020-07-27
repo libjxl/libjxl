@@ -40,8 +40,27 @@ cd emsdk
 ./emsdk activate latest
 ```
 
+[v8](https://v8.dev/) is a JavaScript engine used for running tests.
+v8 has better WASM SIMD support than NodeJS 14.
+To install it use [JSVU](https://github.com/GoogleChromeLabs/jsvu):
+
+```bash
+# Fix some v8 version know to work well.
+export v8_version="8.5.133"
+
+# Install JSVU
+npm install jsvu -g
+
+# Trick JSVU to install to specific location instead of user "home".
+# Note: "os" flag should match the host OS.
+HOME=$OPT jsvu --os=linux64 "v8@${v8_version}"
+
+# Link v8 binary to version-indepentent path.
+ln -s "$OPT/.jsvu/v8-${v8_version}" "$OPT/.jsvu/v8"
+```
+
 In [Docker container](doc/developing_in_docker.md)
-CMake and Emscripten SDK are pre-installed.
+CMake, Emscripten SDK and V8 are pre-installed.
 
 ## Building and testing the project
 
@@ -50,11 +69,11 @@ CMake and Emscripten SDK are pre-installed.
 # $OPT/emsdk.
 source $OPT/emsdk/emsdk_env.sh
 
-# Tune CMake for WASM-cross-compilation.
-export CMAKE_TOOLCHAIN_FILE="$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake"
+# Specify JS engine binary
+export V8=$OPT/.jsvu/v8
 
 # Either build with regular WASM:
-emconfigure ./ci.sh release
+BUILD_TARGET=wasm32 emconfigure ./ci.sh release
 # or with SIMD WASM:
-ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
+BUILD_TARGET=wasm32 ENABLE_WASM_SIMD=1 emconfigure ./ci.sh release
 ```

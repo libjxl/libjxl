@@ -33,7 +33,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/modular/options.h
   jxl/modular/transform/near-lossless.h
   jxl/modular/transform/palette.h
-  jxl/modular/transform/quantize.h
   jxl/modular/transform/squeeze.h
   jxl/modular/transform/subtractgreen.h
   jxl/modular/transform/transform.cc

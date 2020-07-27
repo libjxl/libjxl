@@ -33,6 +33,7 @@
 #include "jxl/enc_bit_writer.h"
 #include "jxl/field_encodings.h"
 #include "jxl/frame_header.h"
+#include "jxl/headers.h"
 #include "jxl/image.h"
 #include "jxl/opsin_params.h"
 #include "jxl/quantizer.h"
@@ -337,8 +338,15 @@ struct ImageMetadata2 {
     visitor->Bool(false, &have_preview);
     visitor->Bool(false, &have_animation);
 
+    visitor->Bool(false, &have_intrinsic_size);
+    if (visitor->Conditional(have_intrinsic_size)) {
+      JXL_RETURN_IF_ERROR(visitor->VisitNested(&intrinsic_size));
+    }
+
     visitor->Bits(3, 0, &orientation_minus_1);
     // (No need for bounds checking because we read exactly 3 bits)
+
+    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
 
     num_extra_channels = extra_channel_info.size();
     visitor->U32(Val(0), Bits(4), BitsOffset(8, 16), BitsOffset(12, 1), 0,
@@ -360,7 +368,7 @@ struct ImageMetadata2 {
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
 
-    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
+    visitor->BeginExtensions(&extensions);
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }
@@ -386,7 +394,14 @@ struct ImageMetadata2 {
   bool have_preview;
   bool have_animation;
 
+  // If present, the stored image has the dimensions of the first SizeHeader,
+  // but decoders are advised to resample or display per `intrinsic_size`.
+  bool have_intrinsic_size;
+  SizeHeader intrinsic_size;  // only if have_intrinsic_size
+
   uint32_t orientation_minus_1;
+
+  ToneMapping tone_mapping;
 
   // When reading: deserialized. When writing: automatically set from vector.
   uint32_t num_extra_channels;
@@ -417,10 +432,9 @@ struct ImageMetadata {
     }
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
+    visitor->Bool(true, &modular_16_bit_buffer_sufficient);
 
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
-
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
 
     return true;
@@ -466,19 +480,18 @@ struct ImageMetadata {
   }
 
   void SetIntensityTarget(float intensity_target) {
-    tone_mapping.intensity_target = intensity_target;
+    m2.tone_mapping.intensity_target = intensity_target;
   }
-  float IntensityTarget() const { return tone_mapping.intensity_target; }
+  float IntensityTarget() const { return m2.tone_mapping.intensity_target; }
 
   mutable bool all_default;
 
-  ImageMetadata2 m2;  // often default
-
   BitDepth bit_depth;
+  bool modular_16_bit_buffer_sufficient;  // otherwise 32 is.
 
   ColorEncoding color_encoding;
 
-  ToneMapping tone_mapping;
+  ImageMetadata2 m2;  // often default
 };
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,

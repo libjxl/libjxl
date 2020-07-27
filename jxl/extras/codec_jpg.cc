@@ -335,8 +335,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
         int srh = compptr->h_samp_factor;
         int srv = compptr->v_samp_factor;
         if (srh > 1 || srv > 1) {
-          JXL_FAILURE("Cannot handle this chroma subsampling mode");
-          return false;
+          return JXL_FAILURE("Cannot handle this chroma subsampling mode");
         }
       }
     }

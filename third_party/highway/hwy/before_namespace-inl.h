@@ -18,6 +18,8 @@
 //
 // Uses a single pragma instead of user-specified annotations to each function,
 // which are error-prone (omitting them may cause failures on some compilers).
+// HWY_ATTR is unfortunately still required for lambdas because Clang does not
+// provide an apply_to for lambdas.
 //
 // Must be included at file scope - clang prior to v9 raises errors if these
 // pragma occur within a namespace.
@@ -32,9 +34,15 @@
 #pragma GCC push_options
 #endif
 
+#undef HWY_ATTR
+
 //-----------------------------------------------------------------------------
 // SSE4
 #if HWY_TARGET == HWY_SSE4
+
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR __attribute__((target("sse2,ssse3,sse4.1")))
+#endif
 
 #if HWY_COMPILER_CLANG
 #pragma clang attribute push(__attribute__((target("sse2,ssse3,sse4.1"))), \
@@ -47,6 +55,10 @@
 // AVX2 \ FMA
 #elif HWY_TARGET == HWY_AVX2 && defined(HWY_DISABLE_BMI2_FMA)
 
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR __attribute__((target("avx,avx2")))
+#endif
+
 #if HWY_COMPILER_CLANG
 #pragma clang attribute push(__attribute__((target("avx,avx2"))), \
                              apply_to = function)
@@ -58,6 +70,10 @@
 // AVX2 + FMA
 #elif HWY_TARGET == HWY_AVX2 && !defined(HWY_DISABLE_BMI2_FMA)
 
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR __attribute__((target("avx,avx2,bmi,bmi2,fma")))
+#endif
+
 #if HWY_COMPILER_CLANG
 #pragma clang attribute push(__attribute__((target("avx,avx2,bmi,bmi2,fma"))), \
                              apply_to = function)
@@ -68,6 +84,12 @@
 //-----------------------------------------------------------------------------
 // AVX3
 #elif HWY_TARGET == HWY_AVX3
+
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR \
+  __attribute__( \
+      (target("avx,avx2,bmi,bmi2,fma,avx512f,avx512vl,avx512dq,avx512bw")))
+#endif
 
 // Must include AVX2 because an AVX3 test may call AVX2 functions (e.g. when
 // converting to half-vectors). HWY_DISABLE_BMI2_FMA is not relevant because if
@@ -85,6 +107,10 @@
 // PPC8
 #elif HWY_TARGET == HWY_PPC8
 
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR __attribute__((target("altivec,vsx")))
+#endif
+
 #if HWY_COMPILER_CLANG
 #pragma clang attribute push(__attribute__((target("altivec,vsx"))), \
                              apply_to = function)
@@ -96,6 +122,10 @@
 // NEON
 #elif HWY_TARGET == HWY_NEON
 
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR __attribute__((target("crypto")))
+#endif
+
 #if HWY_COMPILER_CLANG
 #pragma clang attribute push(__attribute__((target("crypto"))), \
                              apply_to = function)
@@ -106,6 +136,10 @@
 //-----------------------------------------------------------------------------
 // WASM
 #elif HWY_TARGET == HWY_WASM
+
+#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
+#define HWY_ATTR __attribute__((target("simd128")))
+#endif
 
 #if HWY_COMPILER_CLANG
 #pragma clang attribute push(__attribute__((target("simd128"))), \
@@ -119,6 +153,7 @@
 #elif HWY_TARGET == HWY_SCALAR
 
 // No pragma attribute needed.
+#define HWY_ATTR
 
 #else
 #pragma message("HWY_TARGET does not match any known target")

@@ -50,22 +50,22 @@ class Xorshift128Plus {
     for (size_t i = 0; i < N; i += Lanes(d)) {
       auto s1 = Load(d, s0_ + i);
       const auto s0 = Load(d, s1_ + i);
-      s1 ^= ShiftLeft<23>(s1);
       const auto bits = s1 + s0;  // b, c
       Store(s0, d, s0_ + i);
-      s1 ^= s0 ^ ShiftRight<18>(s1) ^ ShiftRight<5>(s0);
+      s1 ^= ShiftLeft<23>(s1);
       Store(bits, d, random_bits + i);
+      s1 ^= s0 ^ ShiftRight<18>(s1) ^ ShiftRight<5>(s0);
       Store(s1, d, s1_ + i);
     }
 #else
     for (size_t i = 0; i < N; ++i) {
       auto s1 = s0_[i];
       const auto s0 = s1_[i];
-      s1 ^= s1 << 23;
       const auto bits = s1 + s0;  // b, c
       s0_[i] = s0;
-      s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
+      s1 ^= s1 << 23;
       random_bits[i] = bits;
+      s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
       s1_[i] = s1;
     }
 #endif

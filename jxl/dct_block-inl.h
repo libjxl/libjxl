@@ -108,7 +108,7 @@ class ScaleToBlock {
                             const size_t i) const {
     JXL_DASSERT(Lanes(D()) <= cols_);
     const auto mul = Set(D(), mul_);
-    Store(v * mul, D(), Address(row, i));
+    StoreU(v * mul, D(), Address(row, i));
   }
 
   HWY_INLINE void Write(float v, const size_t row, const size_t i) const {
@@ -132,7 +132,7 @@ class FromLines {
 
   template <typename D>
   HWY_INLINE Vec<D> LoadPart(D, const size_t row, const size_t i) const {
-    return Load(D(), Address(row, i));
+    return LoadU(D(), Address(row, i));
   }
 
   HWY_INLINE float Read(const size_t row, const size_t i) const {
@@ -158,7 +158,7 @@ class ToLines {
   template <typename D>
   HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
                             const size_t i) const {
-    Store(v, D(), Address(row, i));
+    StoreU(v, D(), Address(row, i));
   }
 
   HWY_INLINE void Write(float v, const size_t row, const size_t i) const {

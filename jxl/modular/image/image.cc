@@ -42,7 +42,7 @@ void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
     JXL_DEBUG_V(4, "Undoing transform %s", t.Name());
     Status result = t.Inverse(*this, pool);
     if (result == false) {
-      JXL_FAILURE("Error while undoing transform %s.", t.Name());
+      JXL_NOTIFY_ERROR("Error while undoing transform %s.", t.Name());
       error = true;
       return;
     }

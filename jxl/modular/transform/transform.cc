@@ -18,7 +18,6 @@
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/transform/near-lossless.h"
 #include "jxl/modular/transform/palette.h"
-#include "jxl/modular/transform/quantize.h"
 #include "jxl/modular/transform/squeeze.h"
 #include "jxl/modular/transform/subtractgreen.h"
 
@@ -26,7 +25,7 @@ namespace jxl {
 
 namespace {
 const char *transform_name[static_cast<uint32_t>(TransformId::kNumTransforms)] =
-    {"RCT", "Palette", "Squeeze", "Quantization", "Near-Lossless"};
+    {"RCT", "Palette", "Squeeze", "Near-Lossless"};
 }  // namespace
 
 SqueezeParams::SqueezeParams() { Bundle::Init(this); }
@@ -41,8 +40,6 @@ const char *Transform::TransformName() const {
 
 Status Transform::Forward(Image &input, ThreadPool *pool) {
   switch (id) {
-    case TransformId::kQuantize:
-      return FwdQuantize(input, nonserialized_quant_factors);
     case TransformId::kRCT:
       return FwdSubtractGreen(input, begin_c, rct_type);
     case TransformId::kSqueeze:
@@ -60,8 +57,6 @@ Status Transform::Forward(Image &input, ThreadPool *pool) {
 
 Status Transform::Inverse(Image &input, ThreadPool *pool) {
   switch (id) {
-    case TransformId::kQuantize:
-      return InvQuantize(input, pool);
     case TransformId::kRCT:
       return InvSubtractGreen(input, begin_c, rct_type);
     case TransformId::kSqueeze:
@@ -75,8 +70,6 @@ Status Transform::Inverse(Image &input, ThreadPool *pool) {
 
 Status Transform::MetaApply(Image &input) {
   switch (id) {
-    case TransformId::kQuantize:
-      return MetaQuantize(input);
     case TransformId::kRCT:
       return true;
     case TransformId::kSqueeze:

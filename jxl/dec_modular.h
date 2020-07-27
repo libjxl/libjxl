@@ -118,7 +118,7 @@ class ModularFrameDecoder {
                                  size_t idx,
                                  ModularFrameDecoder* modular_frame_decoder);
   Status FinalizeDecoding(Image3F* color, ImageBundle* decoded,
-                          jxl::ThreadPool* pool,
+                          jxl::ThreadPool* pool, const float* xyb_muls,
                           const FrameHeader& frame_header);
   bool have_dc() { return have_something; };
 

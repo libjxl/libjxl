@@ -45,8 +45,9 @@ struct GroupHeader {
     visitor->Bool(false, &use_brotli);
     if (visitor->Conditional(!use_brotli)) {
       visitor->Bool(false, &use_global_tree);
-      visitor->U32(Val(0), Val(1), Val(2), BitsOffset(4, 3), 0,
-                   &max_properties);
+    } else {
+      visitor->U32(Val(2), Val(3), BitsOffset(1, 4), BitsOffset(2, 6), 2,
+                   &bytes_per_pixel);
     }
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
     uint32_t num_transforms = transforms.size();
@@ -61,7 +62,7 @@ struct GroupHeader {
 
   bool use_brotli;
   bool use_global_tree;
-  uint32_t max_properties;
+  uint32_t bytes_per_pixel;  // Only for Brotli mode.
   weighted::Header wp_header;
 
   std::vector<Transform> transforms;
@@ -71,11 +72,13 @@ void PrintTree(const Tree &tree, const std::string &path);
 Tree LearnTree(std::vector<Predictor> predictors,
                std::vector<std::vector<int32_t>> &&props,
                std::vector<std::vector<int32_t>> &&residuals,
-               size_t total_pixels, const ModularOptions &options);
+               size_t total_pixels, const ModularOptions &options,
+               const std::vector<ModularMultiplierInfo> &multiplier_info = {},
+               StaticPropRange static_prop_range = {});
 
 // TODO(veluca): make cleaner interfaces.
 
-bool ModularGenericCompress(
+Status ModularGenericCompress(
     Image &image, const ModularOptions &opts, BitWriter *writer,
     AuxOut *aux_out = nullptr, size_t layer = 0, size_t group_id = 0,
     // For gathering data for producing a global tree.
@@ -93,11 +96,12 @@ bool ModularGenericCompress(
 // undo_transforms == 0: undo all transforms
 // undo_transforms == -1: undo all transforms but don't clamp to range
 // undo_transforms == -2: don't undo any transform
-bool ModularGenericDecompress(BitReader *br, Image &image, size_t group_id,
-                              ModularOptions *options, int undo_transforms = -1,
-                              const Tree *tree = nullptr,
-                              const ANSCode *code = nullptr,
-                              const std::vector<uint8_t> *ctx_map = nullptr);
+Status ModularGenericDecompress(BitReader *br, Image &image, size_t group_id,
+                                ModularOptions *options,
+                                int undo_transforms = -1,
+                                const Tree *tree = nullptr,
+                                const ANSCode *code = nullptr,
+                                const std::vector<uint8_t> *ctx_map = nullptr);
 }  // namespace jxl
 
 #endif  // JXL_MODULAR_ENCODING_ENCODING_H_

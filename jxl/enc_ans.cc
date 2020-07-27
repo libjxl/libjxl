@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "c/common/constants.h"
 #include "c/enc/context_map_encode.h"
 #include "c/enc/write_bits.h"
 #include "jxl/ans_common.h"
@@ -647,7 +648,7 @@ class HistogramBuilder {
     if (writer) writer->Write(1, use_prefix_code);
 
     if (use_prefix_code) {
-      log_alpha_size = 8;
+      log_alpha_size = brunsli::kMaxHuffmanBits;
     } else {
       cost += 2;
     }

@@ -342,7 +342,7 @@ struct FrameHeader {
       visitor->Bool(false, &alpha_is_premultiplied);
     }
 
-    JXL_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
+    visitor->BeginExtensions(&extensions);
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }
@@ -390,9 +390,8 @@ struct FrameHeader {
 
   // 0 = don't save. Otherwise, save as reference frame of ID
   // `save_as_reference`-1.
-  uint32_t
-      save_as_reference;  // only if !animation_frame.is_last && dc_level == 0.
-  bool is_displayed;      // only if dc_level == 0 && save_as_reference == 0
+  uint32_t save_as_reference;  // if !animation_frame.is_last && dc_level == 0.
+  bool is_displayed;           // if dc_level == 0 && save_as_reference == 0
 
   // Per-frame alpha flag - may differ between reference and displayed frames.
   bool has_alpha;  // only if dc_level == 0

@@ -96,10 +96,6 @@ HWY_EXPORT(MultiplySum)       // Local function
 HWY_EXPORT(RgbFromSingle)     // Local function
 HWY_EXPORT(SingleFromSingle)  // Local function
 
-// TODO: signal these multipliers (need larger ones for encoding Patch reference
-// frames in kVarDCT)
-static const float kDecoderMul2[3] = {1. / 32768., 1. / 2048., 1. / 2048.};
-
 Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
                                              ImageBundle* decoded,
@@ -112,9 +108,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumTreeContexts, &tree_code,
                                          &tree_context_map));
     ANSSymbolReader ans_reader(&tree_code, reader);
-    // Hard limit the number of properties to 128.
     JXL_RETURN_IF_ERROR(
-        DecodeTree(reader, &ans_reader, tree_context_map, &tree, 128));
+        DecodeTree(reader, &ans_reader, tree_context_map, &tree));
     if (!ans_reader.CheckANSFinalState()) {
       return JXL_FAILURE("ANS decode final state failed");
     }
@@ -304,8 +299,9 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       if (y + acs.covered_blocks_y() > r.ysize()) {
         return JXL_FAILURE("Invalid AC strategy, y overflow");
       }
-      dec_state->shared_storage.ac_strategy.SetNoBoundsCheck(
-          r.x0() + x, r.y0() + y, AcStrategy::Type(row_in_1[num]));
+      JXL_RETURN_IF_ERROR(
+          dec_state->shared_storage.ac_strategy.SetNoBoundsCheck(
+              r.x0() + x, r.y0() + y, AcStrategy::Type(row_in_1[num])));
       row_qf[x] = 1 + std::max(0, row_in_2[num]);
       num++;
     }
@@ -316,6 +312,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
 Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
                                              ImageBundle* decoded,
                                              jxl::ThreadPool* pool,
+                                             const float* xyb_muls,
                                              const FrameHeader& frame_header) {
   Image& gi = full_image;
   size_t xsize = gi.w;
@@ -336,7 +333,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
         factor = 1.0f;
         // XYB is encoded as YX(B-Y)
         if (c < 2) c_in = 1 - c;
-        factor *= kDecoderMul2[c];
+        factor *= xyb_muls[c];
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         RunOnPool(

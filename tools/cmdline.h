@@ -314,6 +314,10 @@ class CommandLineParser {
   const char* program_name_{nullptr};
 
   std::vector<std::unique_ptr<CmdOptionInterface>> options_;
+
+  // If true, help argument was given, so print help to stdout rather than
+  // stderr.
+  bool help_ = false;
 };
 
 }  // namespace tools

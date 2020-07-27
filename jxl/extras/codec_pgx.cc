@@ -185,7 +185,8 @@ Status ApplyHints(CodecInOut* io) {
   bool got_color_space = false;
 
   JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
-      [io, &got_color_space](const std::string& key, const std::string& value) {
+      [io, &got_color_space](const std::string& key,
+                             const std::string& value) -> Status {
         ColorEncoding* c_original = &io->metadata.color_encoding;
         if (key == "color_space") {
           if (!ParseDescription(value, c_original) ||

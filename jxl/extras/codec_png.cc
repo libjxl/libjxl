@@ -23,6 +23,7 @@
 #include <lodepng.h>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -700,9 +701,11 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   // Always decode to 8/16-bit RGB/RGBA, not LCT_PALETTE.
   state.s.info_raw.bitdepth = static_cast<unsigned>(bits_per_sample);
   state.s.info_raw.colortype = MakeType(is_gray, has_alpha);
-  unsigned char* out;
+  unsigned char* out = nullptr;
   const unsigned err =
       lodepng_decode(&out, &w, &h, &state.s, bytes.data(), bytes.size());
+  // Automatically call free(out) on return.
+  std::unique_ptr<unsigned char, void (*)(void*)> out_ptr{out, free};
   if (err != 0) {
     return JXL_FAILURE("PNG decode failed: %s", lodepng_error_text(err));
   }
@@ -726,7 +729,6 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
       io->metadata.bit_depth.bits_per_sample, big_endian, /*flipped_y=*/false);
   const Span<const uint8_t> span(out, out_size);
   const bool ok = CopyTo(desc, span, pool, &io->Main());
-  free(out);
   JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
   io->metadata.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
@@ -764,13 +766,15 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
 
   unsigned char* out = nullptr;
   size_t out_size = 0;
-  if (lodepng_encode(&out, &out_size, external.Bytes().data(), ib.xsize(),
-                     ib.ysize(), &state.s) != 0) {
+  const unsigned err = lodepng_encode(&out, &out_size, external.Bytes().data(),
+                                      ib.xsize(), ib.ysize(), &state.s);
+  // Automatically call free(out) on return.
+  std::unique_ptr<unsigned char, void (*)(void*)> out_ptr{out, free};
+  if (err != 0) {
     return JXL_FAILURE("Failed to encode PNG");
   }
   bytes->resize(out_size);
   memcpy(bytes->data(), out, out_size);
-  free(out);
 
   io->enc_size = out_size;
   return true;

@@ -81,7 +81,7 @@ struct PlaneBase {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
     if (y >= ysize_) {
-      Abort(__FILE__, __LINE__, "Row(%zu) >= %u\n", y, ysize_);
+      JXL_ABORT("Row(%zu) >= %u\n", y, ysize_);
     }
 #endif
 
@@ -387,7 +387,7 @@ class Image3 {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
     if (c >= kNumPlanes || y >= ysize()) {
-      Abort(__FILE__, __LINE__, "PlaneRow(%zu, %zu) >= %zu\n", c, y, ysize());
+      JXL_ABORT("PlaneRow(%zu, %zu) >= %zu\n", c, y, ysize());
     }
 #endif
   }

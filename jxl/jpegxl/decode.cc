@@ -48,6 +48,20 @@ JXL_INLINE size_t InitialBasicInfoSizeHint() {
 
   return container_header_size + max_codestream_basic_info_size;
 }
+
+// Debug-printing failure macro similar to JXL_FAILURE, but for the status code
+// JXL_DEC_ERROR
+#ifdef JXL_CRASH_ON_ERROR
+#define JXL_API_ERROR(format, ...)                                           \
+  (::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, ##__VA_ARGS__), \
+   ::jxl::Abort(), JPEGXL_DEC_ERROR)
+#else  // JXL_CRASH_ON_ERROR
+#define JXL_API_ERROR(format, ...)                                             \
+  (((JXL_DEBUG_ON_ERROR) &&                                                    \
+    ::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, ##__VA_ARGS__)), \
+   JPEGXL_DEC_ERROR)
+#endif  // JXL_CRASH_ON_ERROR
+
 }  // namespace
 
 uint32_t JpegxlDecoderVersion(void) {
@@ -136,11 +150,20 @@ size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec) {
 
 namespace jxl {
 
+template <class T>
+bool CanRead(Span<const uint8_t> data, BitReader* reader, T* JXL_RESTRICT t) {
+  BitReader reader2(data);
+  reader2.SkipBits(reader->TotalBitsConsumed());
+  bool result = Bundle::CanRead(&reader2, t);
+  JXL_ASSERT(reader2.Close());
+  return result;
+}
+
 JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
                                                 const uint8_t* in,
                                                 size_t size) {
   JpegxlSignature sig = JpegxlSignatureCheck(in, size);
-  if (sig == JPEGXL_SIG_INVALID) return JPEGXL_DEC_ERROR;
+  if (sig == JPEGXL_SIG_INVALID) return JXL_API_ERROR("invalid signature");
   if (sig == JPEGXL_SIG_NOT_ENOUGH_BYTES) return JPEGXL_DEC_NEED_MORE_INPUT;
 
   // Signature guaranteed correct, now it's possible to tell which one from
@@ -170,12 +193,13 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
       if (box_size < 8) {
         return JPEGXL_DEC_ERROR;
       }
-      // TODO(lode): support the case where the header is split across mutliple
+      // TODO(lode): support the case where the header is split across multiple
       // codestreaam boxes
       if (strcmp(type, "jxlc") == 0 || strcmp(type, "jxlp") == 0) {
         // Check signature again, for the codestream this time
         JpegxlSignature sig = JpegxlSignatureCheck(in + pos, size - pos);
-        if (sig == JPEGXL_SIG_INVALID) return JPEGXL_DEC_ERROR;
+        if (sig == JPEGXL_SIG_INVALID)
+          return JXL_API_ERROR("invalid signature");
         if (sig == JPEGXL_SIG_NOT_ENOUGH_BYTES) {
           return JPEGXL_DEC_NEED_MORE_INPUT;
         }
@@ -198,8 +222,7 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
   // Signature guaranteed correct, now it's possible to tell which one from
   // just the first few bytes.
   if (in[pos] == 0) {
-    // container nested in codestream not supported
-    return JPEGXL_DEC_ERROR;
+    return JXL_API_ERROR("container nested in codestream not supported");
   } else if (in[pos] == 0xff && in[pos + 1] == 0x0a) {
     dec->signature_type = JPEGXL_SIG_TYPE_JPEGXL;
     pos += 2;
@@ -213,7 +236,7 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
 
   // TODO(lode): support reading basic info from JPEG and Recompressed JPEG.
   if (dec->signature_type != JPEGXL_SIG_TYPE_JPEGXL) {
-    return JPEGXL_DEC_ERROR;  // reading non-jxl header not yet supported.
+    return JXL_API_ERROR("reading non-jxl header not yet supported");
   }
 
   Span<const uint8_t> span(in + pos, size - pos);
@@ -227,17 +250,21 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
   } reader_closer = {&reader};
 
   SizeHeader size_header;
-  bool enough_bytes;
-  if (!Bundle::Read(&reader, &size_header, &enough_bytes)) {
-    return enough_bytes ? JPEGXL_DEC_ERROR : JPEGXL_DEC_NEED_MORE_INPUT;
+  if (!CanRead(span, &reader, &size_header)) {
+    return JPEGXL_DEC_NEED_MORE_INPUT;
+  }
+  if (!Bundle::Read(&reader, &size_header)) {
+    return JXL_API_ERROR("invalid SizeHeader");
   }
 
   dec->xsize = size_header.xsize();
   dec->ysize = size_header.ysize();
 
-  dec->metadata.m2.nonserialized_only_parse_basic_info = true;
-  if (!Bundle::Read(&reader, &dec->metadata, &enough_bytes)) {
-    return enough_bytes ? JPEGXL_DEC_ERROR : JPEGXL_DEC_NEED_MORE_INPUT;
+  if (!CanRead(span, &reader, &dec->metadata)) {
+    return JPEGXL_DEC_NEED_MORE_INPUT;
+  }
+  if (!Bundle::Read(&reader, &dec->metadata)) {
+    return JXL_API_ERROR("invalid ImageMetadata");
   }
   dec->basic_info_available = true;
   dec->basic_info_size_hint = 0;
@@ -266,15 +293,17 @@ int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info) {
     info->exponent_bits_per_sample = meta.bit_depth.exponent_bits_per_sample;
     info->have_icc = meta.color_encoding.WantICC();
 
-    info->intensity_target = meta.tone_mapping.intensity_target;
-    info->min_nits = meta.tone_mapping.min_nits;
-    info->relative_to_max_display = meta.tone_mapping.relative_to_max_display;
-    info->linear_below = meta.tone_mapping.linear_below;
-
     info->have_preview = meta.m2.have_preview;
     info->have_animation = meta.m2.have_animation;
+    // TODO(janwas): intrinsic_size
     info->orientation =
         static_cast<JpegxlOrientation>(meta.m2.orientation_minus_1 + 1);
+
+    info->intensity_target = meta.IntensityTarget();
+    info->min_nits = meta.m2.tone_mapping.min_nits;
+    info->relative_to_max_display =
+        meta.m2.tone_mapping.relative_to_max_display;
+    info->linear_below = meta.m2.tone_mapping.linear_below;
 
     const jxl::ExtraChannelInfo* alpha =
         meta.m2.Find(jxl::ExtraChannel::kAlpha);
@@ -290,6 +319,54 @@ int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info) {
 
     info->num_extra_channels = meta.m2.num_extra_channels;
   }
+
+  return 0;
+}
+
+int JpegxlDecoderGetExtraChannelInfo(const JpegxlDecoder* dec, size_t index,
+                                     JpegxlExtraChannelInfo* info) {
+  if (!dec->basic_info_available) return 1;
+
+  const std::vector<jxl::ExtraChannelInfo>& channels =
+      dec->metadata.m2.extra_channel_info;
+
+  if (index >= channels.size()) return 1;  // out of bounds
+  const jxl::ExtraChannelInfo& channel = channels[index];
+
+  info->type = static_cast<JpegxlExtraChannelType>(channel.type);
+  info->next_frame_base = static_cast<JpegxlFrameBase>(channel.new_base);
+  info->blend_mode = static_cast<JpegxlBlendMode>(channel.blend_mode);
+  info->bits_per_sample = channel.bit_depth.bits_per_sample;
+  info->exponent_bits_per_sample =
+      channel.bit_depth.floating_point_sample
+          ? channel.bit_depth.exponent_bits_per_sample
+          : 0;
+  info->dim_shift = channel.dim_shift;
+  info->name_length = channel.name.size();
+  info->alpha_associated = channel.alpha_associated;
+  info->spot_color[0] = channel.spot_color[0];
+  info->spot_color[1] = channel.spot_color[1];
+  info->spot_color[2] = channel.spot_color[2];
+  info->spot_color[3] = channel.spot_color[3];
+  info->cfa_channel = channel.cfa_channel;
+
+  return 0;
+}
+
+int JpegxlDecoderGetExtraChannelName(const JpegxlDecoder* dec, size_t index,
+                                     size_t n, char* name) {
+  if (!dec->basic_info_available) return 1;
+
+  const std::vector<jxl::ExtraChannelInfo>& channels =
+      dec->metadata.m2.extra_channel_info;
+
+  if (index >= channels.size()) return 1;  // out of bounds
+  const jxl::ExtraChannelInfo& channel = channels[index];
+
+  // Also need null-termination character
+  if (channel.name.size() + 1 > n) return 1;
+
+  memcpy(name, channel.name.c_str(), channel.name.size() + 1);
 
   return 0;
 }

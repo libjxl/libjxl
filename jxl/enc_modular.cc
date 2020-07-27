@@ -58,10 +58,6 @@ static const float squeeze_luma_qtable[16] = {
 static const float squeeze_chroma_qtable[16] = {
     1024, 512, 256, 128, 64, 32, 16, 8, 4, 2, 1, 0.5, 0.5, 0.5, 0.5, 0.5};
 
-// XYB multipliers. TODO: signal them.
-// Also may want to use chroma_from_luma instead of doing B-Y here...
-static const float kEncoderMul2[3] = {32768.0f, 2048.0f, 2048.0f};
-
 // `cutoffs` must be sorted.
 Tree MakeFixedTree(int property, const std::vector<int32_t>& cutoffs,
                    Predictor pred) {
@@ -71,7 +67,7 @@ Tree MakeFixedTree(int property, const std::vector<int32_t>& cutoffs,
   };
   std::queue<NodeInfo> q;
   // Leaf IDs will be set by roundtrip decoding the tree.
-  tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0));
+  tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0, 1));
   q.push(NodeInfo{0, cutoffs.size(), 0});
   while (!q.empty()) {
     NodeInfo info = q.front();
@@ -83,9 +79,9 @@ Tree MakeFixedTree(int property, const std::vector<int32_t>& cutoffs,
     tree[info.pos].property = property;
     tree[info.pos].splitval = cutoffs[split];
     q.push(NodeInfo{split + 1, info.end, tree.size()});
-    tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0));
+    tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0, 1));
     q.push(NodeInfo{info.begin, split, tree.size()});
-    tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0));
+    tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0, 1));
   }
   return tree;
 }
@@ -113,11 +109,25 @@ void MergeTrees(const std::vector<Tree>& trees,
   size_t mid = (begin + end) / 2;
   size_t splitval = tree_splits[mid] - 1;
   size_t cur = tree->size();
-  tree->emplace_back(1 /*stream_id*/, splitval, 0, 0, Predictor::Zero, 0);
+  tree->emplace_back(1 /*stream_id*/, splitval, 0, 0, Predictor::Zero, 0, 1);
   (*tree)[cur].lchild = tree->size();
   MergeTrees(trees, tree_splits, mid, end, tree);
   (*tree)[cur].rchild = tree->size();
   MergeTrees(trees, tree_splits, begin, mid, tree);
+}
+
+void QuantizeChannel(const Channel& ch, const int q) {
+  if (q == 1) return;
+  for (size_t y = 0; y < ch.plane.ysize(); y++) {
+    pixel_type* row = ch.plane.MutableRow(y);
+    for (size_t x = 0; x < ch.plane.xsize(); x++) {
+      if (row[x] < 0) {
+        row[x] = -((-row[x] + q / 2) / q) * q;
+      } else {
+        row[x] = ((row[x] + q / 2) / q) * q;
+      }
+    }
+  }
 }
 }  // namespace
 
@@ -167,8 +177,12 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
 
   if (cparams.options.predictor == static_cast<Predictor>(-1)) {
     // no explicit predictor(s) given, set a good default
-    if (cparams.speed_tier < SpeedTier::kTortoise ||
-        cparams.modular_group_mode == false) {
+    if (cparams.options.entropy_coder ==
+        ModularOptions::EntropyCoder::kBrotli) {
+      // TODO(veluca): make kBest work again in Brotli mode.
+      cparams.options.predictor = Predictor::Weighted;
+    } else if (cparams.speed_tier <= SpeedTier::kTortoise ||
+               cparams.modular_group_mode == false) {
       cparams.options.predictor = Predictor::Variable;
     } else if (cparams.near_lossless) {
       // weighted predictor for near_lossless
@@ -247,6 +261,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
   Image& gi = stream_images[0];
   gi = Image(xsize, ysize, maxval, nb_chans);
   int c = 0;
+  if (cparams.color_transform == ColorTransform::kXYB &&
+      cparams.modular_group_mode == true) {
+    static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
+    enc_state->shared.matrices.SetCustomDC(enc_factors);
+  }
   if (do_color) {
     for (; c < 3; c++) {
       if (ib.IsGray() &&
@@ -258,7 +277,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
         c_out = 1 - c_out;
       float factor = maxval / 255.f;
       if (cparams.color_transform == ColorTransform::kXYB)
-        factor *= kEncoderMul2[c];
+        factor *= enc_state->shared.matrices.InvDCQuant(c);
       if (c == 2 && cparams.color_transform == ColorTransform::kXYB) {
         for (size_t y = 0; y < ysize; ++y) {
           const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
@@ -374,7 +393,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams.responsive) {
     gi.do_transform(Transform(TransformId::kSqueeze));  // use default squeezing
   }
+
+  std::vector<uint32_t> quants;
+
   if (quality < 100 || cquality < 100) {
+    quants.resize(gi.channel.size(), 1);
     JXL_DEBUG_V(
         2,
         "Adding quantization constants corresponding to luma quality %.2f "
@@ -386,11 +409,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
                   "transform is just color quantization.");
       quality = (400 + quality) / 5;
       cquality = (400 + cquality) / 5;
-    }
-    Transform quantize(TransformId::kQuantize);
-    for (size_t i = 0; i < gi.nb_meta_channels; i++) {
-      quantize.nonserialized_quant_factors.push_back(
-          1);  // don't quantize metachannels
     }
 
     // convert 'quality' to quantization scaling factor
@@ -405,7 +423,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
     quality *= 0.01f * maxval / 255.f;
     cquality *= 0.01f * maxval / 255.f;
 
-    for (size_t i = gi.nb_meta_channels; i < gi.channel.size(); i++) {
+    if (cparams.options.nb_repeats == 0) {
+      return JXL_FAILURE("nb_repeats = 0 not supported with modular lossy!");
+    }
+    for (uint32_t i = gi.nb_meta_channels; i < gi.channel.size(); i++) {
       Channel& ch = gi.channel[i];
       int shift = ch.hcshift + ch.vcshift;  // number of pixel halvings
       if (shift > 15) shift = 15;
@@ -413,17 +434,26 @@ Status ModularFrameEncoder::ComputeEncodingData(
       // assuming default Squeeze here
       int component = ((i - gi.nb_meta_channels) % gi.real_nb_channels);
       // last 4 channels are final chroma residuals
-      if (gi.real_nb_channels > 2 && i >= gi.channel.size() - 4) component = 1;
+      if (gi.real_nb_channels > 2 && i >= gi.channel.size() - 4) {
+        component = 1;
+      }
 
-      if (cparams.colorspace != 0 && component > 0 && component < 3)
+      if (cparams.colorspace != 0 && component > 0 && component < 3) {
         q = cquality * squeeze_quality_factor * squeeze_chroma_qtable[shift];
-      else
+      } else {
         q = quality * squeeze_quality_factor * squeeze_luma_factor *
             squeeze_luma_qtable[shift];
+      }
       if (q < 1) q = 1;
-      quantize.nonserialized_quant_factors.push_back(q);
+      // preserve the old (buggy) behaviour of quantize.h.
+      if (i != gi.nb_meta_channels) {
+        QuantizeChannel(gi.channel[i - 1], q);
+        quants[i - 1] = q;
+      }
     }
-    gi.do_transform(quantize);
+    size_t r = gi.channel.size() - 1;
+    quants[r] = quants[r - 1];
+    QuantizeChannel(gi.channel[r], quants[r]);
   }
 
   // Fill other groups.
@@ -471,6 +501,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       minShift = 0;
     }
   }
+  gi_channel.resize(stream_images.size());
 
   RunOnPool(
       pool, 0, stream_params.size(), ThreadPool::SkipInit(),
@@ -481,6 +512,60 @@ Status ModularFrameEncoder::ComputeEncodingData(
             stream_params[i].maxShift, stream_params[i].id, do_color));
       },
       "ChooseParams");
+
+  if (!quants.empty()) {
+    for (uint32_t stream_id = 0; stream_id < stream_images.size();
+         stream_id++) {
+      Image& image = stream_images[stream_id];
+      const ModularOptions& options = stream_options[stream_id];
+      for (uint32_t i = image.nb_meta_channels; i < image.channel.size(); i++) {
+        if (i >= image.nb_meta_channels &&
+            (image.channel[i].w > options.max_chan_size ||
+             image.channel[i].h > options.max_chan_size)) {
+          continue;
+        }
+        size_t ch_id = stream_id == 0
+                           ? i
+                           : gi_channel[stream_id][i - image.nb_meta_channels];
+        uint32_t q = quants[ch_id];
+        // Inform the tree splitting heuristics that each channel in each group
+        // used this quantization factor. This will produce a tree with the
+        // given multipliers.
+        if (multiplier_info.empty() ||
+            multiplier_info.back().range[1][0] != stream_id ||
+            multiplier_info.back().multiplier != q) {
+          StaticPropRange range;
+          range[0] = {i, i + 1};
+          range[1] = {stream_id, stream_id + 1};
+          multiplier_info.push_back({range, (uint32_t)q});
+        } else {
+          // Previous channel in the same group had the same quantization
+          // factor. Don't provide two different ranges, as that creates
+          // unnecessary nodes.
+          multiplier_info.back().range[0][1] = i + 1;
+        }
+      }
+    }
+    // Merge group+channel settings that have the same channels and quantization
+    // factors, to avoid unnecessary nodes.
+    std::sort(multiplier_info.begin(), multiplier_info.end(),
+              [](ModularMultiplierInfo a, ModularMultiplierInfo b) {
+                return std::make_tuple(a.range, a.multiplier) <
+                       std::make_tuple(b.range, b.multiplier);
+              });
+    size_t new_num = 1;
+    for (size_t i = 1; i < multiplier_info.size(); i++) {
+      ModularMultiplierInfo& prev = multiplier_info[new_num - 1];
+      ModularMultiplierInfo& cur = multiplier_info[i];
+      if (prev.range[0] == cur.range[0] && prev.multiplier == cur.multiplier &&
+          prev.range[1][1] == cur.range[1][0]) {
+        prev.range[1][1] = cur.range[1][1];
+      } else {
+        multiplier_info[new_num++] = multiplier_info[i];
+      }
+    }
+    multiplier_info.resize(new_num);
+  }
 
   return PrepareEncoding(pool, aux_out);
 }
@@ -495,7 +580,8 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
   stream_headers.resize(num_streams);
   tokens.resize(num_streams);
 
-  if (cparams.speed_tier != SpeedTier::kFalcon) {
+  if (cparams.speed_tier != SpeedTier::kFalcon || quality != 100 ||
+      !cparams.modular_group_mode) {
     // Avoid creating a tree with leaves that don't correspond to any pixels.
     std::vector<size_t> useful_splits;
     useful_splits.reserve(tree_splits.size());
@@ -524,12 +610,14 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
           std::vector<std::vector<int32_t>> props;
           std::vector<std::vector<int32_t>> residuals;
           size_t total_pixels = 0;
-          size_t start = useful_splits[chunk];
-          size_t stop = useful_splits[chunk + 1];
+          uint32_t start = useful_splits[chunk];
+          uint32_t stop = useful_splits[chunk + 1];
+          uint32_t max_c = 0;
           for (size_t i = start; i < stop; i++) {
             JXL_CHECK(ModularGenericCompress(
                 stream_images[i], stream_options[i], /*writer=*/nullptr,
                 /*aux_out=*/nullptr, 0, i, &props, &residuals, &total_pixels));
+            max_c = std::max<uint32_t>(stream_images[i].channel.size(), max_c);
           }
 
           std::vector<Predictor> predictors;
@@ -543,11 +631,14 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
           } else {
             predictors = {stream_options[start].predictor};
           }
+          StaticPropRange range;
+          range[0] = {0, max_c};
+          range[1] = {start, stop};
 
           // TODO(veluca): parallelize more.
-          trees[chunk] =
-              LearnTree(predictors, std::move(props), std::move(residuals),
-                        total_pixels, stream_options[start]);
+          trees[chunk] = LearnTree(
+              predictors, std::move(props), std::move(residuals), total_pixels,
+              stream_options[start], multiplier_info, range);
         },
         "LearnTrees");
     tree.clear();
@@ -574,6 +665,10 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
   TokenizeTree(tree, &tree_tokens[0], &decoded_tree);
   JXL_ASSERT(tree.size() == decoded_tree.size());
   tree = std::move(decoded_tree);
+
+  if (WantDebugOutput(aux_out)) {
+    PrintTree(tree, aux_out->debug_prefix + "/global_tree");
+  }
 
   RunOnPool(
       pool, 0, num_streams, ThreadPool::SkipInit(),
@@ -613,9 +708,6 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   writer->Write(1, 1);
   ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
 
-  if (WantDebugOutput(aux_out)) {
-    PrintTree(tree, aux_out->debug_prefix + "/global_tree");
-  }
   // Write tree
   BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
                            &code, &context_map, writer, kLayerModularTree,
@@ -679,6 +771,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
            rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
     if (r.xsize() == 0 || r.ysize() == 0) continue;
+    gi_channel[stream_id].push_back(c);
     Channel gc(r.xsize(), r.ysize());
     gc.hshift = fc.hshift;
     gc.vshift = fc.vshift;
@@ -699,7 +792,9 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   float quality = cparams.quality_pair.first;
 
   // Local palette
-  if (cparams.palette_colors != 0 && cparams.speed_tier < SpeedTier::kCheetah) {
+  // TODO(veluca): make this work with quantize-after-prediction in lossy mode.
+  if (quality == 100 && cparams.palette_colors != 0 &&
+      cparams.speed_tier < SpeedTier::kCheetah) {
     // all-channel palette (e.g. RGBA)
     if (gi.nb_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);

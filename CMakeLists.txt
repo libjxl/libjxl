@@ -64,22 +64,30 @@ if(NOT APPLE AND NOT WIN32 AND NOT HAIKU AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "
   set(ENABLE_TCMALLOC_DEFAULT true)
 endif()
 
+if(WIN32)
+  set(WARNINGS_AS_ERRORS_DEFAULT false)
+else()
+  set(WARNINGS_AS_ERRORS_DEFAULT true)
+endif()
+
 set(JPEGXL_ENABLE_FUZZERS ${ENABLE_FUZZERS_DEFAULT} CACHE BOOL
-    "Build JPEGXL fuzzer targets")
+    "Build JPEGXL fuzzer targets.")
 set(JPEGXL_ENABLE_BENCHMARK true CACHE BOOL
-    "Build JPEGXL benchmark tools")
+    "Build JPEGXL benchmark tools.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
-    "Build JPEGXL with support for encoding with sjpeg")
+    "Build JPEGXL with support for encoding with sjpeg.")
 set(JPEGXL_ENABLE_SKCMS false CACHE BOOL
-    "Where possible, use skcms instead of lcms2")
+    "Where possible, use skcms instead of lcms2.")
 set(JPEGXL_ENABLE_VIEWERS true CACHE BOOL
-    "Build JPEGXL viewer tools for evaluation")
+    "Build JPEGXL viewer tools for evaluation.")
 set(JPEGXL_ENABLE_TCMALLOC ${ENABLE_TCMALLOC_DEFAULT} CACHE BOOL
     "Build JPEGXL using gperftools (tcmalloc) allocator.")
 set(JPEGXL_ENABLE_PLUGINS true CACHE BOOL
     "Build third-party plugings to support JPEG XL in other applications.")
 set(JPEGXL_ENABLE_COVERAGE false CACHE BOOL
     "Enable code coverage tracking for libjpegxl. This also enables debug and disables optimizations.")
+set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
+    "Treat warnings as errors during compilation.")
 
 # Require clang for building.
 if(NOT ${CMAKE_C_COMPILER_ID} MATCHES "Clang" OR
@@ -146,7 +154,7 @@ add_compile_options(
   -Wall
 )
 
-if (NOT WIN32)
+if (JPEGXL_WARNINGS_AS_ERRORS)
 add_compile_options(-Werror)
 endif ()
 

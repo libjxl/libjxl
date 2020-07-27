@@ -28,28 +28,37 @@ struct PropertyDecisionNode {
   uint32_t rchild;
   Predictor predictor;
   int64_t predictor_offset;
+  uint32_t multiplier;
 
   PropertyDecisionNode(int p, int split_val, int lchild, int rchild,
-                       Predictor predictor, int64_t predictor_offset)
+                       Predictor predictor, int64_t predictor_offset,
+                       uint32_t multiplier)
       : splitval(split_val),
         property(p),
         lchild(lchild),
         rchild(rchild),
         predictor(predictor),
-        predictor_offset(predictor_offset) {}
-  PropertyDecisionNode() = default;
+        predictor_offset(predictor_offset),
+        multiplier(multiplier) {}
+  PropertyDecisionNode()
+      : splitval(0),
+        property(-1),
+        lchild(0),
+        rchild(0),
+        predictor(Predictor::Zero),
+        predictor_offset(0),
+        multiplier(1){};
 };
 
 using Tree = std::vector<PropertyDecisionNode>;
 
-constexpr size_t kNumTreeContexts = 4;
+constexpr size_t kNumTreeContexts = 6;
 
 void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
                   Tree *decoder_tree);
 
 Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                  const std::vector<uint8_t> &context_map, Tree *tree,
-                  int max_property);
+                  const std::vector<uint8_t> &context_map, Tree *tree);
 
 void ChooseAndQuantizeProperties(
     size_t max_properties, size_t max_property_values,
@@ -63,8 +72,10 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
                      const std::vector<Predictor> &predictors,
                      const std::vector<std::vector<int>> compact_properties,
                      const std::vector<size_t> &props_to_use, float threshold,
-                     size_t max_properties, float fast_decode_multiplier,
-                     Tree *tree);
+                     size_t max_properties,
+                     const std::vector<ModularMultiplierInfo> &mul_info,
+                     StaticPropRange static_prop_range,
+                     float fast_decode_multiplier, Tree *tree);
 
 }  // namespace jxl
 #endif

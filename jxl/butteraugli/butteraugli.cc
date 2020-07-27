@@ -339,8 +339,7 @@ void BlurVerticalConv(const ImageF& in, const intptr_t xbegin,
 // optionally use gauss_blur followed by fixup of the borders for large images,
 // or fall back to the previous truncated FIR followed by a transpose.
 void Blur(const ImageF& in, float sigma, const ButteraugliParams& params,
-          ImageF* HWY_RESTRICT temp, ImageF* HWY_RESTRICT transposed_temp,
-          ImageF* HWY_RESTRICT out) {
+          BlurTemp* temp, ImageF* HWY_RESTRICT out) {
   std::vector<float> kernel = ComputeKernel(sigma);
   if (kernel.size() == 5) {
     float sum_weights = 0.0f;
@@ -367,13 +366,15 @@ void Blur(const ImageF& in, float sigma, const ButteraugliParams& params,
       in.xsize() * in.ysize() < 9 * kernel.size() * kernel.size();
   // If fast gaussian is disabled, use previous transposed convolution.
   if (!fast_gauss || too_small_for_fast_gauss) {
-    ConvolutionWithTranspose(in, kernel, transposed_temp);
-    ConvolutionWithTranspose(*transposed_temp, kernel, out);
+    ImageF* JXL_RESTRICT temp_t = temp->GetTransposed(in);
+    ConvolutionWithTranspose(in, kernel, temp_t);
+    ConvolutionWithTranspose(*temp_t, kernel, out);
     return;
   }
   auto rg = CreateRecursiveGaussian(sigma);
+  ImageF* JXL_RESTRICT temp_ = temp->Get(in);
   ThreadPool* null_pool = nullptr;
-  FastGaussian(rg, in, null_pool, temp, out);
+  FastGaussian(rg, in, null_pool, temp_, out);
 
   if (kBorderFixup) {
     // Produce rg_radius extra pixels around each border
@@ -385,24 +386,26 @@ void Blur(const ImageF& in, float sigma, const ButteraugliParams& params,
     const intptr_t ybegin_bottom =
         std::max(intptr_t(0), ysize - rg_radius - radius);
     // Top (requires radius extra for the vertical pass)
-    BlurHorizontalConv(in, 0, xsize, 0, yend_top, kernel, temp);
+    BlurHorizontalConv(in, 0, xsize, 0, yend_top, kernel, temp_);
     // Bottom
-    BlurHorizontalConv(in, 0, xsize, ybegin_bottom, ysize, kernel, temp);
+    BlurHorizontalConv(in, 0, xsize, ybegin_bottom, ysize, kernel, temp_);
     // Left/right columns between top and bottom
     const intptr_t xbegin_right = std::max(intptr_t(0), xsize - rg_radius);
     const intptr_t xend_left = std::min(rg_radius, xsize);
-    BlurHorizontalConv(in, 0, xend_left, yend_top, ybegin_bottom, kernel, temp);
+    BlurHorizontalConv(in, 0, xend_left, yend_top, ybegin_bottom, kernel,
+                       temp_);
     BlurHorizontalConv(in, xbegin_right, xsize, yend_top, ybegin_bottom, kernel,
-                       temp);
+                       temp_);
 
     // Entire left/right columns
-    BlurVerticalConv(*temp, 0, xend_left, 0, ysize, kernel, out);
-    BlurVerticalConv(*temp, xbegin_right, xsize, 0, ysize, kernel, out);
+    BlurVerticalConv(*temp_, 0, xend_left, 0, ysize, kernel, out);
+    BlurVerticalConv(*temp_, xbegin_right, xsize, 0, ysize, kernel, out);
     // Top/bottom between left/right
     const intptr_t ybegin_bottom2 = std::max(intptr_t(0), ysize - rg_radius);
     const intptr_t yend_top2 = std::min(rg_radius, ysize);
-    BlurVerticalConv(*temp, xend_left, xbegin_right, 0, yend_top2, kernel, out);
-    BlurVerticalConv(*temp, xend_left, xbegin_right, ybegin_bottom2, ysize,
+    BlurVerticalConv(*temp_, xend_left, xbegin_right, 0, yend_top2, kernel,
+                     out);
+    BlurVerticalConv(*temp_, xend_left, xbegin_right, ybegin_bottom2, ysize,
                      kernel, out);
   }
 }
@@ -537,12 +540,10 @@ void SuppressXByY(const ImageF& in_x, const ImageF& in_y, const double yw,
 
 static void SeparateFrequencies(size_t xsize, size_t ysize,
                                 const ButteraugliParams& params,
-                                const Image3F& xyb, PsychoImage& ps) {
+                                BlurTemp* blur_temp, const Image3F& xyb,
+                                PsychoImage& ps) {
   PROFILER_FUNC;
   const HWY_FULL(float) d;
-
-  ImageF blur_temp(xsize, ysize);
-  ImageF blur_temp_transposed(ysize, xsize);
 
   // Extract lf ...
   static const double kSigmaLf = 7.15593339443;
@@ -554,7 +555,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
   ps.lf = Image3F(xyb.xsize(), xyb.ysize());
   ps.mf = Image3F(xyb.xsize(), xyb.ysize());
   for (int i = 0; i < 3; ++i) {
-    Blur(xyb.Plane(i), kSigmaLf, params, &blur_temp, &blur_temp_transposed,
+    Blur(xyb.Plane(i), kSigmaLf, params, blur_temp,
          const_cast<ImageF*>(&ps.lf.Plane(i)));
 
     // ... and keep everything else in mf.
@@ -568,7 +569,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
       }
     }
     if (i == 2) {
-      Blur(ps.mf.Plane(i), kSigmaHf, params, &blur_temp, &blur_temp_transposed,
+      Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp,
            const_cast<ImageF*>(&ps.mf.Plane(i)));
       break;
     }
@@ -580,7 +581,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
         Store(Load(d, row_mf + x), d, row_hf + x);
       }
     }
-    Blur(ps.mf.Plane(i), kSigmaHf, params, &blur_temp, &blur_temp_transposed,
+    Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp,
          const_cast<ImageF*>(&ps.mf.Plane(i)));
     static const double kRemoveMfRange = 0.3;
     static const double kAddMfRange = 0.1;
@@ -631,8 +632,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
         row_uhf[x] = row_hf[x];
       }
     }
-    Blur(ps.hf[i], kSigmaUhf, params, &blur_temp, &blur_temp_transposed,
-         &ps.hf[i]);
+    Blur(ps.hf[i], kSigmaUhf, params, blur_temp, &ps.hf[i]);
     static const double kRemoveHfRange = 0.12;
     static const double kAddHfRange = 0.03;
     static const double kRemoveUhfRange = 0.08;
@@ -1490,7 +1490,8 @@ void InitializeMasks(const ButteraugliParams& params) {
 // Compute values of local frequency and dc masking based on the activity
 // in the two images. img_diff_ac may be null.
 void Mask(const Image3F& xyb0, const Image3F& xyb1,
-          const ButteraugliParams& params, MaskImage* BUTTERAUGLI_RESTRICT mask,
+          const ButteraugliParams& params, Image3F* temp, BlurTemp* blur_temp,
+          MaskImage* BUTTERAUGLI_RESTRICT mask,
           MaskImage* BUTTERAUGLI_RESTRICT mask_dc,
           ImageF* BUTTERAUGLI_RESTRICT img_diff_ac) {
   PROFILER_FUNC;
@@ -1522,31 +1523,29 @@ void Mask(const Image3F& xyb0, const Image3F& xyb1,
   static const double r1 = 5.5;
   static const double r2 = 8.0;
 
-  ImageF diff0(xsize, ysize);
-  ImageF blur_temp(xsize, ysize);
-  ImageF blur_temp_transposed(ysize, xsize);
+  ImageF& diff0 = const_cast<ImageF&>(temp->Plane(0));
+  ImageF& diff1 = const_cast<ImageF&>(temp->Plane(1));
+  ImageF& blurred0_a = const_cast<ImageF&>(temp->Plane(2));
 
   {
     // X component
     static const double mul = 0.533043878407;
     static const double cutoff = 0.5;
     DiffPrecomputeX(xyb0.Plane(0), xyb1.Plane(0), mul, cutoff, &diff0);
-    Blur(diff0, r2, params, &blur_temp, &blur_temp_transposed, &mask->mask_x);
+    Blur(diff0, r2, params, blur_temp, &mask->mask_x);
   }
   {
     // Y component
     static const double mul = 0.559;
     static const double mul2 = 1.0;
-    ImageF diff1(xsize, ysize);
-    ImageF blurred0_a(xsize, ysize);
     ImageF blurred0_b(xsize, ysize);
     ImageF blurred1_a(xsize, ysize);
     ImageF blurred1_b(xsize, ysize);
     DiffPrecomputeY(xyb0.Plane(1), xyb1.Plane(1), mul, mul2, &diff0, &diff1);
-    Blur(diff0, r0, params, &blur_temp, &blur_temp_transposed, &blurred0_a);
-    Blur(diff0, r1, params, &blur_temp, &blur_temp_transposed, &blurred0_b);
-    Blur(diff1, r0, params, &blur_temp, &blur_temp_transposed, &blurred1_a);
-    Blur(diff1, r1, params, &blur_temp, &blur_temp_transposed, &blurred1_b);
+    Blur(diff0, r0, params, blur_temp, &blurred0_a);
+    Blur(diff0, r1, params, blur_temp, &blurred0_b);
+    Blur(diff1, r0, params, blur_temp, &blurred1_a);
+    Blur(diff1, r1, params, blur_temp, &blurred1_b);
 
     for (size_t y = 0; y < ysize; ++y) {
       const float* JXL_RESTRICT row_blurred0_a = blurred0_a.Row(y);
@@ -1633,8 +1632,8 @@ void LinearCombination(const ImageF& in1, const ImageF& in2, double mul1,
 // `diff_ac` may be null.
 void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
                      const size_t xsize, const size_t ysize,
-                     const ButteraugliParams& params,
-                     MaskImage* BUTTERAUGLI_RESTRICT mask,
+                     const ButteraugliParams& params, Image3F* temp,
+                     BlurTemp* blur_temp, MaskImage* BUTTERAUGLI_RESTRICT mask,
                      MaskImage* BUTTERAUGLI_RESTRICT mask_dc,
                      ImageF* BUTTERAUGLI_RESTRICT diff_ac) {
   Image3F mask_xyb0(xsize, ysize);
@@ -1651,7 +1650,7 @@ void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
     LinearCombination(pi1.uhf[i], pi1.hf[i], muls[2 * i], muls[2 * i + 1],
                       const_cast<ImageF*>(&mask_xyb1.Plane(i)));
   }
-  Mask(mask_xyb0, mask_xyb1, params, mask, mask_dc, diff_ac);
+  Mask(mask_xyb0, mask_xyb1, params, temp, blur_temp, mask, mask_dc, diff_ac);
 }
 
 // Diffmap := sqrt of sum{diff images by multplied by X and Y/B masks}
@@ -1973,30 +1972,28 @@ BUTTERAUGLI_INLINE void RgbToXyb(const V& r, const V& g, const V& b,
   *valb = b;
 }
 
-Image3F OpsinDynamicsImage(const Image3F& rgb,
-                           const ButteraugliParams& params) {
+// `blurred` is a temporary image used inside this function and not returned.
+Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
+                           Image3F* blurred, BlurTemp* blur_temp) {
   PROFILER_FUNC;
   Image3F xyb(rgb.xsize(), rgb.ysize());
   const double kSigma = 1.2;
-  ImageF blur_temp(rgb.xsize(), rgb.ysize());
-  ImageF blur_temp_transposed(rgb.ysize(), rgb.xsize());
-  Image3F blurred(rgb.xsize(), rgb.ysize());
-  Blur(rgb.Plane(0), kSigma, params, &blur_temp, &blur_temp_transposed,
-       const_cast<ImageF*>(&blurred.Plane(0)));
-  Blur(rgb.Plane(1), kSigma, params, &blur_temp, &blur_temp_transposed,
-       const_cast<ImageF*>(&blurred.Plane(1)));
-  Blur(rgb.Plane(2), kSigma, params, &blur_temp, &blur_temp_transposed,
-       const_cast<ImageF*>(&blurred.Plane(2)));
+  Blur(rgb.Plane(0), kSigma, params, blur_temp,
+       const_cast<ImageF*>(&blurred->Plane(0)));
+  Blur(rgb.Plane(1), kSigma, params, blur_temp,
+       const_cast<ImageF*>(&blurred->Plane(1)));
+  Blur(rgb.Plane(2), kSigma, params, blur_temp,
+       const_cast<ImageF*>(&blurred->Plane(2)));
   for (size_t y = 0; y < rgb.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row_r = rgb.ConstPlaneRow(0, y);
     const float* BUTTERAUGLI_RESTRICT row_g = rgb.ConstPlaneRow(1, y);
     const float* BUTTERAUGLI_RESTRICT row_b = rgb.ConstPlaneRow(2, y);
     const float* BUTTERAUGLI_RESTRICT row_blurred_r =
-        blurred.ConstPlaneRow(0, y);
+        blurred->ConstPlaneRow(0, y);
     const float* BUTTERAUGLI_RESTRICT row_blurred_g =
-        blurred.ConstPlaneRow(1, y);
+        blurred->ConstPlaneRow(1, y);
     const float* BUTTERAUGLI_RESTRICT row_blurred_b =
-        blurred.ConstPlaneRow(2, y);
+        blurred->ConstPlaneRow(2, y);
     float* BUTTERAUGLI_RESTRICT row_out_x = xyb.PlaneRow(0, y);
     float* BUTTERAUGLI_RESTRICT row_out_y = xyb.PlaneRow(1, y);
     float* BUTTERAUGLI_RESTRICT row_out_b = xyb.PlaneRow(2, y);
@@ -2042,32 +2039,47 @@ Image3F OpsinDynamicsImage(const Image3F& rgb,
   return xyb;
 }
 
+Image3F* ButteraugliComparator::Temp() const {
+  bool was_in_use = temp_in_use_.test_and_set(std::memory_order_acq_rel);
+  JXL_ASSERT(!was_in_use);
+  (void)was_in_use;
+  return &temp_;
+}
+
+void ButteraugliComparator::ReleaseTemp() const {
+  temp_in_use_.clear(std::memory_order_acq_rel);
+}
+
 ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
                                              const ButteraugliParams& params)
     : xsize_(rgb0.xsize()),
       ysize_(rgb0.ysize()),
       params_(params),
-      sub_(nullptr) {
+      temp_(xsize_, ysize_) {
   if (xsize_ < 8 || ysize_ < 8) {
     return;
   }
-  Image3F xyb0 = OpsinDynamicsImage(rgb0, params);
+
+  Image3F xyb0 = OpsinDynamicsImage(rgb0, params, Temp(), &blur_temp_);
+  ReleaseTemp();
   HWY_DYNAMIC_DISPATCH(SeparateFrequencies)
-  (xsize_, ysize_, params_, xyb0, pi0_);
+  (xsize_, ysize_, params_, &blur_temp_, xyb0, pi0_);
 
   // Awful recursive construction of samples of different resolution.
   // This is an after-thought and possibly somewhat parallel in
   // functionality with the PsychoImage multi-resolution approach.
-  sub_ = new ButteraugliComparator(SubSample2x(rgb0), params);
+  sub_.reset(new ButteraugliComparator(SubSample2x(rgb0), params));
 }
 
-ButteraugliComparator::~ButteraugliComparator() { delete sub_; }
+ButteraugliComparator::~ButteraugliComparator() {}
 
 void ButteraugliComparator::Mask(MaskImage* BUTTERAUGLI_RESTRICT mask,
                                  MaskImage* BUTTERAUGLI_RESTRICT
                                      mask_dc) const {
   HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
-  (pi0_, pi0_, xsize_, ysize_, params_, mask, mask_dc, nullptr);
+  (pi0_, pi0_, xsize_, ysize_, params_, Temp(), &blur_temp_, mask, mask_dc,
+   nullptr);
+  ReleaseTemp();
 }
 
 void ButteraugliComparator::Diffmap(const Image3F& rgb1, ImageF& result) const {
@@ -2076,14 +2088,18 @@ void ButteraugliComparator::Diffmap(const Image3F& rgb1, ImageF& result) const {
     ZeroFillImage(&result);
     return;
   }
-  DiffmapOpsinDynamicsImage(OpsinDynamicsImage(rgb1, params_), result);
+  const Image3F xyb1 = OpsinDynamicsImage(rgb1, params_, Temp(), &blur_temp_);
+  ReleaseTemp();
+  DiffmapOpsinDynamicsImage(xyb1, result);
   if (sub_) {
     if (sub_->xsize_ < 8 || sub_->ysize_ < 8) {
       return;
     }
+    const Image3F sub_xyb = OpsinDynamicsImage(SubSample2x(rgb1), params_,
+                                               sub_->Temp(), &sub_->blur_temp_);
+    sub_->ReleaseTemp();
     ImageF subresult;
-    sub_->DiffmapOpsinDynamicsImage(
-        OpsinDynamicsImage(SubSample2x(rgb1), params_), subresult);
+    sub_->DiffmapOpsinDynamicsImage(sub_xyb, subresult);
     AddSupersampled2x(subresult, 0.5, result);
   }
 }
@@ -2096,7 +2112,8 @@ void ButteraugliComparator::DiffmapOpsinDynamicsImage(const Image3F& xyb1,
     return;
   }
   PsychoImage pi1;
-  HWY_DYNAMIC_DISPATCH(SeparateFrequencies)(xsize_, ysize_, params_, xyb1, pi1);
+  HWY_DYNAMIC_DISPATCH(SeparateFrequencies)
+  (xsize_, ysize_, params_, &blur_temp_, xyb1, pi1);
   result = ImageF(xsize_, ysize_);
   DiffmapPsychoImage(pi1, result);
 }
@@ -2138,7 +2155,7 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   const float hf_asymmetry_ = params_.hf_asymmetry;
   const float xmul_ = params_.xmul;
 
-  ImageF diffs(xsize_, ysize_);  // temp, used in each call
+  ImageF diffs(xsize_, ysize_);
   Image3F block_diff_ac(xsize_, ysize_);
   ZeroFillImage(&block_diff_ac);
   static const double wUhfMalta = 8.3230030810258917;
@@ -2201,8 +2218,9 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   MaskImage mask_xyb_ac;
   MaskImage mask_xyb_dc;
   HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
-  (pi0_, pi1, xsize_, ysize_, params_, &mask_xyb_ac, &mask_xyb_dc,
-   const_cast<ImageF*>(&block_diff_ac.Plane(1)));
+  (pi0_, pi1, xsize_, ysize_, params_, Temp(), &blur_temp_, &mask_xyb_ac,
+   &mask_xyb_dc, const_cast<ImageF*>(&block_diff_ac.Plane(1)));
+  ReleaseTemp();
 
   HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)
   (mask_xyb_ac, mask_xyb_dc, block_diff_dc, block_diff_ac, xmul_, &diffmap);

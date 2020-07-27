@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <array>
 #include <hwy/aligned_allocator.h>
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -97,8 +97,7 @@ struct QuantEncodingInternal {
 
   static constexpr QuantEncodingInternal Library(uint8_t predefined) {
     return ((predefined < kNumPredefinedTables) ||
-            ::jxl::Abort(__FILE__, __LINE__,
-                         "Assert predefined < kNumPredefinedTables")),
+            JXL_ABORT("Assert predefined < kNumPredefinedTables")),
            QuantEncodingInternal(Tag<kQuantModeLibrary>(), predefined);
   }
   constexpr QuantEncodingInternal(Tag<kQuantModeLibrary> /* tag */,
@@ -398,7 +397,9 @@ class DequantMatrices {
     return &InvTable()[MatrixOffset(quant_kind, c)];
   }
 
+  // DC quants are used in modular mode for XYB multipliers.
   JXL_INLINE float DCQuant(size_t c) const { return dc_quant_[c]; }
+  JXL_INLINE const float* DCQuants() const { return dc_quant_; }
 
   JXL_INLINE float InvDCQuant(size_t c) const { return inv_dc_quant_[c]; }
 
@@ -429,7 +430,7 @@ class DequantMatrices {
   Status EncodeDC(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
 
   Status Decode(BitReader* br,
-                ModularFrameDecoder* modular_frame_encoder = nullptr);
+                ModularFrameDecoder* modular_frame_decoder = nullptr);
   Status DecodeDC(BitReader* br);
 
   const std::vector<QuantEncoding>& encodings() const { return encodings_; }

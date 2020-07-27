@@ -854,7 +854,7 @@ class ConvolveT {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
-        [&](const int y, int /*thread*/) {
+        [&](const int y, int /*thread*/) HWY_ATTR {
           RunRow<kSizeModN>(rect.ConstRow(in, y), rect.xsize(), stride,
                             WrapRowUnchanged(), weights, out->Row(y));
         },
@@ -871,7 +871,7 @@ class ConvolveT {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
-        [&](const int y, int /*thread*/) {
+        [&](const int y, int /*thread*/) HWY_ATTR {
           for (size_t c = 0; c < 3; ++c) {
             RunRow<kSizeModN>(rect.ConstPlaneRow(in, c, y), rect.xsize(),
                               stride, WrapRowUnchanged(), weights,

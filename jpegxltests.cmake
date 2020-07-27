@@ -58,6 +58,7 @@ set(TEST_FILES
   jxl/optimize_test.cc
   jxl/padded_bytes_test.cc
   jxl/passes_test.cc
+  jxl/patch_dictionary_test.cc
   jxl/preview_test.cc
   jxl/quant_weights_test.cc
   jxl/quantizer_test.cc

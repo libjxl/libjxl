@@ -35,14 +35,7 @@ bool Debug(const char* format, ...) {
   return false;
 }
 
-bool Abort(const char* file, int line, const char* format, ...) {
-  char buf[2000];
-  va_list args;
-  va_start(args, format);
-  vsnprintf(buf, sizeof(buf), format, args);
-  va_end(args);
-
-  fprintf(stderr, "Abort at %s:%d: %s\n", file, line, buf);
+bool Abort() {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
   // If compiled with any sanitizer print a stack trace. This call doesn't crash

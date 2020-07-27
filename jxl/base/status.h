@@ -17,6 +17,8 @@
 
 // Error handling: Status return type + helper macros.
 
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -24,7 +26,8 @@
 
 namespace jxl {
 
-// Uncomment to abort when JXL_FAILURE is reached
+// Uncomment to abort when JXL_FAILURE or JXL_STATUS with a fatal error is
+// reached:
 // #define JXL_CRASH_ON_ERROR
 
 #ifndef JXL_ENABLE_ASSERT
@@ -38,16 +41,28 @@ namespace jxl {
 // Pass -DJXL_DEBUG_ON_ERROR at compile time to print debug messages when a
 // function returns JXL_FAILURE or calls JXL_NOTIFY_ERROR. Note that this is
 // irrelevant if you also pass -DJXL_CRASH_ON_ERROR.
-#ifdef JXL_DEBUG_ON_ERROR
+#if defined(JXL_DEBUG_ON_ERROR) || defined(JXL_CRASH_ON_ERROR)
 #undef JXL_DEBUG_ON_ERROR
 #define JXL_DEBUG_ON_ERROR 1
-#else  // JXL_DEBUG_ON_ERROR
+#else  // JXL_DEBUG_ON_ERROR || JXL_CRASH_ON_ERROR
 #ifdef NDEBUG
 #define JXL_DEBUG_ON_ERROR 0
-#else  // JXL_DEBUG_ON_ERROR
+#else  // NDEBUG
 #define JXL_DEBUG_ON_ERROR 1
 #endif  // NDEBUG
-#endif  // JXL_DEBUG_ON_ERROR
+#endif  // JXL_DEBUG_ON_ERROR || JXL_CRASH_ON_ERROR
+
+// Pass -DJXL_DEBUG_ON_ALL_ERROR at compile time to print debug messages on
+// all error (fatal and non-fatal) status. This implies JXL_DEBUG_ON_ERROR.
+#if defined(JXL_DEBUG_ON_ALL_ERROR)
+#undef JXL_DEBUG_ON_ALL_ERROR
+#define JXL_DEBUG_ON_ALL_ERROR 1
+// JXL_DEBUG_ON_ALL_ERROR implies JXL_DEBUG_ON_ERROR too.
+#undef JXL_DEBUG_ON_ERROR
+#define JXL_DEBUG_ON_ERROR 1
+#else  // JXL_DEBUG_ON_ALL_ERROR
+#define JXL_DEBUG_ON_ALL_ERROR 0
+#endif  // JXL_DEBUG_ON_ALL_ERROR
 
 // The Verbose level for the library
 #ifndef JXL_DEBUG_V_LEVEL
@@ -99,20 +114,23 @@ bool Debug(const char* format, ...);
 #endif  // JXL_DEBUG_WARNING
 #define JXL_WARNING(...) JXL_DEBUG(JXL_DEBUG_WARNING, __VA_ARGS__)
 
-// Exits the program after printing file/line plus a formatted string.
-JXL_FORMAT(3, 4)
-JXL_NORETURN bool Abort(const char* file, int line, const char* format, ...);
+// Exits the program after printing a stack trace when possible.
+JXL_NORETURN bool Abort();
 
 // Exits the program after printing file/line plus a formatted string.
-#define JXL_ABORT(...) ::jxl::Abort(__FILE__, __LINE__, __VA_ARGS__)
+#define JXL_ABORT(format, ...)                                          \
+  (::jxl::Debug(("%s:%d: JXL_ABORT: " format "\n"), __FILE__, __LINE__, \
+                ##__VA_ARGS__),                                         \
+   ::jxl::Abort())
 
 // Does not guarantee running the code, use only for debug mode checks.
 #if JXL_ENABLE_ASSERT
-#define JXL_ASSERT(condition)                                    \
-  do {                                                           \
-    if (!(condition)) {                                          \
-      ::jxl::Abort(__FILE__, __LINE__, "Assert %s", #condition); \
-    }                                                            \
+#define JXL_ASSERT(condition)                        \
+  do {                                               \
+    if (!(condition)) {                              \
+      JXL_DEBUG(true, "JXL_ASSERT: %s", #condition); \
+      ::jxl::Abort();                                \
+    }                                                \
   } while (0)
 #else
 #define JXL_ASSERT(condition) \
@@ -126,11 +144,12 @@ JXL_NORETURN bool Abort(const char* file, int line, const char* format, ...);
 // opt or release.
 #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || \
     defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-#define JXL_DASSERT(condition)                                         \
-  do {                                                                 \
-    if (!(condition)) {                                                \
-      ::jxl::Abort(__FILE__, __LINE__, "Debug Assert %s", #condition); \
-    }                                                                  \
+#define JXL_DASSERT(condition)                        \
+  do {                                                \
+    if (!(condition)) {                               \
+      JXL_DEBUG(true, "JXL_DASSERT: %s", #condition); \
+      ::jxl::Abort();                                 \
+    }                                                 \
   } while (0)
 #else
 #define JXL_DASSERT(condition) \
@@ -140,11 +159,12 @@ JXL_NORETURN bool Abort(const char* file, int line, const char* format, ...);
 
 // Always runs the condition, so can be used for non-debug calls.
 #if JXL_ENABLE_CHECK
-#define JXL_CHECK(condition)                                    \
-  do {                                                          \
-    if (!(condition)) {                                         \
-      ::jxl::Abort(__FILE__, __LINE__, "Check %s", #condition); \
-    }                                                           \
+#define JXL_CHECK(condition)                        \
+  do {                                              \
+    if (!(condition)) {                             \
+      JXL_DEBUG(true, "JXL_CHECK: %s", #condition); \
+      ::jxl::Abort();                               \
+    }                                               \
   } while (0)
 #else
 #define JXL_CHECK(condition) \
@@ -153,46 +173,107 @@ JXL_NORETURN bool Abort(const char* file, int line, const char* format, ...);
   } while (0)
 #endif
 
-// Always runs the condition, so can be used for non-debug calls.
-#define JXL_RETURN_IF_ERROR(condition)                                     \
-  do {                                                                     \
-    if (!(condition)) {                                                    \
-      JXL_DEBUG(JXL_DEBUG_ON_ERROR, "Return after error: %s", #condition); \
-      return false;                                                        \
-    }                                                                      \
+// A jxl::Status value from a StatusCode or Status which prints a debug message
+// when enabled.
+#define JXL_STATUS(status, format, ...)                                        \
+  ::jxl::StatusMessage(::jxl::Status(status), "%s:%d: " format "\n", __FILE__, \
+                       __LINE__, ##__VA_ARGS__)
+
+// Notify of an error but discard the resulting Status value. This is only
+// useful for debug builds or when building with JXL_CRASH_ON_ERROR.
+#define JXL_NOTIFY_ERROR(format, ...)                                      \
+  (void)JXL_STATUS(::jxl::StatusCode::kGenericError, "JXL_ERROR: " format, \
+                   ##__VA_ARGS__)
+
+// An error Status with a message. The JXL_STATUS() macro will return a Status
+// object with a kGenericError code, but the comma operator helps with
+// clang-tidy inference and potentially with optimizations.
+#define JXL_FAILURE(format, ...)                                              \
+  ((void)JXL_STATUS(::jxl::StatusCode::kGenericError, "JXL_FAILURE: " format, \
+                    ##__VA_ARGS__),                                           \
+   ::jxl::Status(::jxl::StatusCode::kGenericError))
+
+// Always evaluates the status exactly once, so can be used for non-debug calls.
+// Returns from the current context if the passed Status expression is an error
+// (fatal or non-fatal). The return value is the passed Status.
+#define JXL_RETURN_IF_ERROR(status)                                           \
+  do {                                                                        \
+    ::jxl::Status jxl_return_if_error_status = (status);                      \
+    if (!jxl_return_if_error_status) {                                        \
+      (void)::jxl::StatusMessage(jxl_return_if_error_status,                  \
+                                 "%s:%d: JXL_RETURN_IF_ERROR code=%d: %s\n",  \
+                                 __FILE__, __LINE__,                          \
+                                 jxl_return_if_error_status.code(), #status); \
+      return jxl_return_if_error_status;                                      \
+    }                                                                         \
   } while (0)
 
-// Annotation for the location where an error condition is first noticed.
-// Error codes are too unspecific to pinpoint the exact location, so we
-// add a build flag that crashes and dumps stack at the actual error source.
-#ifdef JXL_CRASH_ON_ERROR
-#define JXL_NOTIFY_ERROR(...) \
-  (void)::jxl::Abort(__FILE__, __LINE__, __VA_ARGS__)
-#define JXL_FAILURE(...) ::jxl::Abort(__FILE__, __LINE__, __VA_ARGS__)
-#else  // JXL_CRASH_ON_ERROR
-#define JXL_NOTIFY_ERROR(...) JXL_DEBUG(JXL_DEBUG_ON_ERROR, __VA_ARGS__)
-#define JXL_FAILURE(format, ...)                                               \
-  ((JXL_DEBUG_ON_ERROR) &&                                                     \
-   ::jxl::Debug(("%s:%d: " format "\n"), __FILE__, __LINE__, ##__VA_ARGS__) && \
-   false)
-#endif  // JXL_CRASH_ON_ERROR
+enum class StatusCode : int32_t {
+  // Non-fatal errors (negative values).
+  kNotEnoughBytes = -1,
+
+  // The only non-error status code.
+  kOk = 0,
+
+  // Fatal-errors (positive values)
+  kGenericError = 1,
+};
 
 // Drop-in replacement for bool that raises compiler warnings if not used
 // after being returned from a function. Example:
 // Status LoadFile(...) { return true; } is more compact than
 // bool JXL_MUST_USE_RESULT LoadFile(...) { return true; }
+// In case of error, the status can carry an extra error code in its value which
+// is split between fatal and non-fatal error codes.
 class JXL_MUST_USE_RESULT Status {
  public:
   // We want implicit constructor from bool to allow returning "true" or "false"
-  // on a function when using Status.
-  Status(bool ok) : ok_(ok) {}  // NOLINT(google-explicit-constructor)
+  // on a function when using Status. "true" means kOk while "false" means a
+  // generic fatal error.
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr Status(bool ok)
+      : code_(ok ? StatusCode::kOk : StatusCode::kGenericError) {}
+
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr Status(StatusCode code) : code_(code) {}
 
   // We also want implicit cast to bool to check for return values of functions.
-  operator bool() const { return ok_; }  // NOLINT(google-explicit-constructor)
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  constexpr operator bool() const { return code_ == StatusCode::kOk; }
+
+  constexpr StatusCode code() const { return code_; }
+
+  // Returns whether the status code is a fatal error.
+  constexpr bool IsFatalError() const {
+    return static_cast<int32_t>(code_) > 0;
+  }
 
  private:
-  bool ok_;
+  StatusCode code_;
 };
+
+// Helper function to create a Status and print the debug message or abort when
+// needed.
+JXL_INLINE
+JXL_FORMAT(2, 3)
+Status StatusMessage(const Status status, const char* format, ...) {
+  // This block will be optimized out when JXL_DEBUG_ON_ERROR and
+  // JXL_DEBUG_ON_ALL_ERROR are both disabled.
+  if ((JXL_DEBUG_ON_ERROR && status.IsFatalError()) ||
+      (JXL_DEBUG_ON_ALL_ERROR && !status)) {
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+  }
+#ifdef JXL_CRASH_ON_ERROR
+  // JXL_CRASH_ON_ERROR means to Abort() only on non-fatal errors.
+  if (status.IsFatalError()) {
+    Abort();
+  }
+#endif  // JXL_CRASH_ON_ERROR
+  return status;
+}
 
 }  // namespace jxl
 
