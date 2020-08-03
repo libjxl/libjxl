@@ -195,9 +195,6 @@ class JxlCodec : public ImageCodec {
     } else if (param == "mg") {
       cparams_.modular_group_mode = true;
       cparams_.color_transform = jxl::ColorTransform::kNone;
-    } else if (param == "bg") {
-      cparams_.brunsli_group_mode = true;
-      cparams_.color_transform = jxl::ColorTransform::kYCbCr;
     } else if (param == "plt") {
       cparams_.options.entropy_coder = ModularOptions::kBrotli;
       cparams_.options.brotli_effort = 11;
@@ -220,14 +217,13 @@ class JxlCodec : public ImageCodec {
 
   bool IsColorAware() const override {
     // Can't deal with negative values from color space conversion.
-    if (cparams_.brunsli_group_mode || cparams_.modular_group_mode)
-      return false;
+    if (cparams_.modular_group_mode) return false;
     // Otherwise, input may be in any color space.
     return true;
   }
 
   bool IsJpegTranscoder() const override {
-    if (cparams_.brunsli_group_mode) return true;
+    // TODO(veluca): figure out when to turn this on.
     return false;
   }
 

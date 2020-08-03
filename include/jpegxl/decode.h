@@ -13,14 +13,22 @@
  * limitations under the License.
  */
 
+/** @file jpegxl/decode.h
+ * @brief Decoding API for JPEG XL.
+ */
+
 #ifndef JPEGXL_DECODE_H_
 #define JPEGXL_DECODE_H_
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include "jpegxl/codestream_header.h"
+#include "jpegxl/color_encoding.h"
 #include "jpegxl/jpegxl_export.h"
 #include "jpegxl/memory_manager.h"
+#include "jpegxl/parallel_runner.h"
+#include "jpegxl/types.h"
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
@@ -35,6 +43,8 @@ extern "C" {
  */
 JPEGXL_EXPORT uint32_t JpegxlDecoderVersion(void);
 
+/** The result of JpegxlSignatureCheck.
+ */
 enum JpegxlSignature {
   /** Not enough bytes were passed to determine if a valid signature was found.
    */
@@ -100,279 +110,168 @@ JPEGXL_EXPORT void JpegxlDecoderDestroy(JpegxlDecoder* dec);
 
 /**
  * Return value for JpegxlDecoderProcessInput.
+ * The values above 64 are optional informal events that can be subscribed to.
  */
 typedef enum {
-  /** Decoding has finished, the end of the input file is reached and all
-   * output has been delivered.
+  /** Function call finished sucessfully, or decoding is finished and there is
+   * nothing more to be done.
    */
-  JPEGXL_DEC_FINISHED = 0,
+  JPEGXL_DEC_SUCCESS = 0,
 
-  /** An error occurred, for example invalid input file or out of memory.
+  /** An error occured, for example invalid input file or out of memory.
    * TODO(lode): add function to get error information from decoder.
    */
-  JPEGXL_DEC_ERROR,
+  JPEGXL_DEC_ERROR = 1,
 
   /** The decoder needs more input bytes to continue. In the next
    * JpegxlDecoderProcessInput call, next_in and avail_in must point to more
    * bytes to continue. If *avail_in is not 0, the new bytes must be appended to
    * the *avail_in last previous bytes.
    */
-  JPEGXL_DEC_NEED_MORE_INPUT,
+  JPEGXL_DEC_NEED_MORE_INPUT = 2,
+
+  /** The decoder needs an output buffer to continue. Which output buffers it
+   * needs depends on events subscribed to with JpegxlDecoderSubscribeEvents.
+   */
+  JPEGXL_DEC_NEED_MORE_OUTPUT = 3,
+
+  /** Informative event: basic information such as image dimensions and extra
+   * channels.
+   */
+  JPEGXL_DEC_BASIC_INFO = 64,
+
+  /** Informative event: user extensions of the codestream header.
+   */
+  JPEGXL_DEC_EXTENSIONS = 128,
+
+  /** Informative event: preview header from the codestream header.
+   */
+  JPEGXL_DEC_PREVIEW_HEADER = 256,
+
+  /** Informative event: animation header from the codestream header.
+   */
+  JPEGXL_DEC_ANIMATION_HEADER = 512,
+
+  /** Informative event: color encoding or ICC profile from the codestream
+   * header.
+   */
+  JPEGXL_DEC_COLOR_ENCODING = 1024,
+
+  /** Informative event: DC image, 8x8 sub-sampled image.
+   */
+  JPEGXL_DEC_DC = 2048,
+
+  /** Informative event: full image decoded.
+   */
+  JPEGXL_DEC_FULL_IMAGE = 2048,
 } JpegxlDecoderStatus;
 
-/** Signature type of the codestream.
+/** Data type for the sample values per channel per pixel.
  */
 typedef enum {
-  /** JPEG XL codestream.
+  /** Use 1-bit packed in uint8_t, first pixel in LSB, padded to uint8_t per
+   * row.
+   * TODO(lode): support first in MSB, other padding.
    */
-  JPEGXL_SIG_TYPE_JPEGXL = 0,
+  JPEGXL_TYPE_BOOLEAN,
 
-  /** Transcoded JPEG image signature was found. The decoder will be
-   * able to transcode back to the JPEG codestream passed to the encoder.
+  /** Use type uint8_t.
    */
-  JPEGXL_SIG_TYPE_TRANSCODED_JPEG = 1,
+  JPEGXL_TYPE_UINT8,
 
-  /** JPEG codestream, which would preferably also be decoded using this
-   * decoder in case the codestream contains JPEG XL extensions (marker
-   * segments).
+  /** Use type uint16_t.
    */
-  JPEGXL_SIG_TYPE_JPEG = 2,
-} JpegxlSignatureType;
+  JPEGXL_TYPE_UINT16,
 
-typedef enum {
-  // Values 1..8 match the EXIF definitions.
-  // The name indicates the operation to perform to transform from the encoded
-  // image to the display image.
-  JPEGXL_ORIENT_IDENTITY = 1,
-  JPEGXL_ORIENT_FLIP_HORIZONTAL = 2,
-  JPEGXL_ORIENT_ROTATE_180 = 3,
-  JPEGXL_ORIENT_FLIP_VERTICAL = 4,
-  JPEGXL_ORIENT_TRANSPOSE = 5,
-  JPEGXL_ORIENT_ROTATE_90_CW = 6,
-  JPEGXL_ORIENT_ANTI_TRANSPOSE = 7,
-  JPEGXL_ORIENT_ROTATE_90_CCW = 8,
-} JpegxlOrientation;
-
-/** Given type of an extra channel.
- */
-typedef enum {
-  JPEGXL_CHANNEL_ALPHA,
-  JPEGXL_CHANNEL_DEPTH,
-  JPEGXL_CHANNEL_SPOT_COLOR,
-  JPEGXL_CHANNEL_SELECTION_MASK,
-  JPEGXL_CHANNEL_BLACK,
-  JPEGXL_CHANNEL_CFA,
-  JPEGXL_CHANNEL_THERMAL,
-  JPEGXL_CHANNEL_RESERVED0,
-  JPEGXL_CHANNEL_RESERVED1,
-  JPEGXL_CHANNEL_RESERVED2,
-  JPEGXL_CHANNEL_RESERVED3,
-  JPEGXL_CHANNEL_RESERVED4,
-  JPEGXL_CHANNEL_RESERVED5,
-  JPEGXL_CHANNEL_RESERVED6,
-  JPEGXL_CHANNEL_RESERVED7,
-  JPEGXL_CHANNEL_UNKNOWN,
-  JPEGXL_CHANNEL_OPTIONAL
-} JpegxlExtraChannelType;
-
-/** Indicates what the next frame will be "based" on.
- * A full frame (have_crop = false) can be based on a frame if and only if the
- * frame and the base are lossy. The rendered frame will then be the sum of
- * the two. A cropped frame can be based on any kind of frame. The rendered
- * frame will be obtained by blitting. Stored in FrameHeader and
- * ExtraChannelInfo to allow independent control for main and extra channels.
- */
-typedef enum {
-  /** The next frame will be based on the same frame as the current one.
+  /** Use type uint32_t.
    */
-  JPEGXL_FRAME_BASE_EXISTING,
-  /** The next frame will be based on the current one.
-   */
-  JPEGXL_FRAME_BASE_CURRENT_FRAME,
-  /** The next frame will be a full frame (have_crop = false) and will not be
-   * based on any frame, but start from a value of 0 in main and extra channels.
-   */
-  JPEGXL_FRAME_BASE_NONE,
-} JpegxlFrameBase;
+  JPEGXL_TYPE_UINT32,
 
-/** Indicates how to combine the current frame with the previous "base". Stored
- * in FrameHeader and ExtraChannelInfo to allow independent control for main and
- * extra channels.
- */
-typedef enum {
-  /** The new values (in the crop) replace the old ones
+  /** use type float.
    */
-  JPEGXL_BLEND_MODE_REPLACE,
-  /** The new values (in the crop) get added to the old ones
-   */
-  JPEGXL_BLEND_MODE_ADD,
-  /** The new values (in the crop) replace the old ones if alpha>0.
-   * Not allowed for the first alpha channel.
-   */
-  JPEGXL_BLEND_MODE_BLEND,
-} JpegxlBlendMode;
+  JPEGXL_TYPE_FLOAT,
+} JpegxlDataType;
 
-/** Basic image information. This information is available from the file
- * signature and first part of the codestream header.
- */
-typedef struct JpegxlBasicInfo {
-  // TODO(lode): need additional fields for (transcoded) JPEG? For reusable
-  // fields orientation must be read from Exif APP1. For has_icc_profile: must
-  // look up where ICC profile is guaranteed to be in a JPEG file to be able to
-  // indicate this.
-
-  // TODO(lode): make struct packed, and/or make this opaque struct with getter
-  // functions (still separate struct from opaque decoder)
-
-  /** Whether the codestream is embedded in the container format. If true,
-   * metadata information and extensions may be available in addition to the
-   * codestream.
-   */
-  uint8_t have_container;
-
-  /** Signature of the codestream.
-   */
-  JpegxlSignatureType signature_type;
-
-  /** Width of the image in pixels, before applying orientation.
-   */
-  uint32_t xsize;
-
-  /** Height of the image in pixels, before applying orientation.
-   */
-  uint32_t ysize;
-
-  /** Original image color channel bit depth.
-   */
-  uint32_t bits_per_sample;
-
-  /** Original image color channel floating point exponent bits, or 0 if they
-   * are unsigned integer. For example, if the original data is half-precision
-   * (binary16) floating point, bits_per_sample is 16 and
-   * exponent_bits_per_sample is 5, and so on for other floating point
-   * precisions.
-   */
-  uint32_t exponent_bits_per_sample;
-
-  /** If true, an ICC profile must be decoded after the headers. If false,
-   * the color space is defined by descriptors instead. The ICC profile or
-   * color descriptors themselves are not included in the basic info.
-   */
-  uint8_t have_icc;
-
-  /** Upper bound on the intensity level present in the image in nits. For
-   * unsigned integer pixel encodings, this is the brightness of the largest
-   * representable value. The image does not necessarily contain a pixel
-   * actually this bright. An encoder is allowed to set 255 for SDR images
-   * without computing a histogram.
-   */
-  float intensity_target;
-
-  /** Lower bound on the intensity level present in the image. This may be
-   * loose, i.e. lower than the actual darkest pixel. When tone mapping, a
-   * decoder will map [min_nits, intensity_target] to the display range.
-   */
-  float min_nits;
-
-  /** See the description of relative_to_max_display.
-   */
-  uint8_t relative_to_max_display;
-
-  /** The tone mapping will leave unchanged (linear mapping) any pixels whose
-   * brightness is strictly below this. The interpretation depends on
-   * relative_to_max_display. If true, this is a ratio [0, 1] of the maximum
-   * display brightness [nits], otherwise an absolute brightness [nits].
-   */
-  float linear_below;
-
-  /** Indicates a preview image exists near the beginning of the codestream.
-   * The preview itself or its dimensions are not included in the basic info.
-   */
-  uint8_t have_preview;
-
-  /** Indicates animation frames exist in the codestream. The animation
-   * information is not included in the basic info.
-   */
-  uint8_t have_animation;
-
-  /** Image orientation, value 1-8 matching the values used by JEITA CP-3451C
-   * (Exif version 2.3).
-   */
-  JpegxlOrientation orientation;
-
-  /** Number of additional image channels. Information of all the individual
-   * extra channels is not included in the basic info struct, except for the
-   * first alpha channel in the fields below. Information for other extra
-   * channels can be queried from the decoder at this point, however.
-   * TODO(lode): implement that feature
-   */
-  uint32_t num_extra_channels;
-
-  /** Bit depth of the encoded alpha channel, or 0 if there is no alpha channel.
-   */
-  uint32_t alpha_bits;
-
-  /** Alpha channel floating point exponent bits, or 0 if they are unsigned
-   * integer.
-   */
-  uint32_t alpha_exponent_bits;
-
-  /** Whether the alpha channel is premultiplied
-   */
-  uint8_t alpha_premultiplied;
-} JpegxlBasicInfo;
-
-/** Information for a single extra channel.
+/** Data type for the sample values per channel per pixel for the output buffer
+ * for pixels. This is not necessarily the same as the data type encoded in the
+ * codestream. The channels are interleaved per pixel. The pixels are
+ * organized row by row, left to right, top to bottom.
+ * TODO(lode): support padding / alignment (row stride)
+ * TODO(lode): support outputting >8-bit data into uint8_t (and endianness)
+ * TODO(lode): support non-interleaved (may be a no-op here, involves getting
+ *     single channels separately instead)
+ * TODO(lode): support different channel orders if needed (RGB, BGR, ...)
  */
 typedef struct {
-  /** Given type of an extra channel.
+  /** Amount of channels available in a pixel buffer.
+   * 1: single-channel data, e.g. grayscale
+   * 2: single-channel + alpha
+   * 3: trichromatic, e.g. RGB
+   * 4: trichromatic + alpha
+   * TODO(lode): this needs finetuning. It is not yet defined how the user
+   * chooses output color space. CMYK+alpha needs 5 channels.
    */
-  JpegxlExtraChannelType type;
+  size_t num_channels;
 
-  /** Base for next frame
+  /** Data type of each channel.
    */
-  JpegxlFrameBase next_frame_base;
+  JpegxlDataType data_type;
+} JpegxlPixelFormat;
 
-  /** Blend mode for next frame
-   */
-  JpegxlBlendMode blend_mode;
+/**
+ * Set the parallel runner for multithreading. May only be set before starting
+ * decoding.
+ *
+ * @param dec decoder object
+ * @param parallel_runner function pointer to runner for multithreading. It may
+ *        be NULL to use the default, single-threaded, runner. A multithreaded
+ *        runner should be set to reach fast performance.
+ * @param parallel_runner_opaque opaque pointer for parallel_runner.
+ * @return JPEGXL_DEC_SUCCESS if the runner was set, JPEGXL_DEC_ERROR
+ * otherwise (the previous runner remains set).
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderSetParallelRunner(
+    JpegxlDecoder* dec, JpegxlParallelRunner parallel_runner,
+    void* parallel_runner_opaque);
 
-  /** Total bits per sample for this channel.
+/** Specifies how the color profile information of the image can be retrieved,
+ * Either through ICC profile, or through JpegxlColorEncoding.
+ *
+ * The following scenarios are possible:
+ * - The ICC profile is accurate and the color encoding is invalid. Only the
+ * ICC profile may be requested.
+ * - the ICC profile is inaccurate and the color encoding is valid. Both can
+ * be requested, but only the color encoding correctly specifies the color, the
+ * ICC profile is an approximation that can be used when only ICC profile is
+ * supported.
+ * - Both are valid and accurate, any can be used equally well.
+ *
+ * Example: for PQ or HLG color, JpegxlDecoderGetColorEncoding describes the
+ * transfer function more correctly and the ICC profile will not be accurate. On
+ * the other hand, there exist transfer functions that can only be described by
+ * an ICC profile, in that case icc_profile_accurate is JPEGXL_TRUE and
+ * color_encoding_valid is JPEGXL_FALSE.
+ */
+typedef struct {
+  /** If JPEGXL_TRUE, the ICC profile describes the image color encoding, once
+   * the ICC profile has been decoded. If JPEGXL_FALSE, the ICC profile is not
+   * accurate and a JpegxlDecoderGetColorEncoding must be used instead to
+   * accurately describe the color profile of the image. An ICC profile can
+   * still be requested, but it will only be an approximation.
    */
-  uint32_t bits_per_sample;
+  JPEGXL_BOOL icc_profile_accurate;
 
-  /** Floating point exponent bits per channel, or 0 if they are unsigned
-   * integer.
+  /** If JPEGXL_TRUE, JpegxlDecoderGetColorEncoding describes the image color
+   * encoding, once its information is available. If JPEGXL_FALSE, only the ICC
+   * profile can be used.
    */
-  uint32_t exponent_bits_per_sample;
+  JPEGXL_BOOL color_encoding_valid;
 
-  /** The exponent the channel is downsampled by on each axis.
-   * TODO(lode): expand this comment to match the JPEG XL specification,
-   * specify how to upscale, how to round the size computation, and to which
-   * extra channels this field applies.
+  /**
+   * ICC profile size in bytes.
    */
-  uint32_t dim_shift;
-
-  /** Length of the extra channel name in bytes, or 0 if no name.
-   * Excludes null termination character.
-   */
-  uint32_t name_length;
-
-  /** Whether alpha channel uses premultiplied alpha. Only applicable if
-   * type is JPEGXL_CHANNEL_ALPHA.
-   */
-  uint8_t alpha_associated;
-
-  /** Spot color of the current spot channel in linear RGBA. Only applicable if
-   * type is JPEGXL_CHANNEL_SPOT_COLOR.
-   */
-  float spot_color[4];
-
-  /** Only applicable if type is JPEGXL_CHANNEL_CFA.
-   * TODO(lode): add comment about the meaning of this field.
-   */
-  uint32_t cfa_channel;
-} JpegxlExtraChannelInfo;
+  size_t icc_profile_size;
+} JpegxlColorProfileSource;
 
 /**
  * Returns a hint indicating how many more bytes the decoder is expected to
@@ -384,10 +283,26 @@ typedef struct {
  * the first time in most cases. If not, JpegxlDecoderSizeHintBasicInfo can be
  * called again to get an updated hint.
  *
+ * @param dec decoder object
  * @return the size hint in bytes if the basic info is not yet fully decoded.
  * @return 0 when the basic info is already available.
  */
 JPEGXL_EXPORT size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec);
+
+/** Select for which informative events (JPEGXL_DEC_BASIC_INFO, etc...) the
+ * decoder should return with a status. It is not required to subscribe to any
+ * events, data can still be requested from the decoder as soon as it available.
+ * By default, the decoder is subscribed to no events (events_wanted == 0), and
+ * the decoder will then only return when it cannot continue because it needs
+ * more input data or more output buffer. This function may only be be called
+ * before using JpegxlDecoderProcessInput
+ *
+ * @param dec decoder object
+ * @param events_wanted bitfield of desired events.
+ * @return JPEGXL_DEC_SUCCESS if no error, JPEGXL_DEC_ERROR otherwise.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus
+JpegxlDecoderSubscribeEvents(JpegxlDecoder* dec, int events_wanted);
 
 /**
  * Decodes JPEG XL file using the available bytes. @p *avail_in indicates how
@@ -402,11 +317,31 @@ JPEGXL_EXPORT size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec);
  * The returned status indicates whether the decoder needs more input bytes, or
  * more output buffer for a certain type of output data. No matter what the
  * returned status is (other than JPEGXL_DEC_ERROR), new information, such as
- * JpegxlDecoderGetBasicInfo, may have become available after this call.
+ * JpegxlDecoderGetBasicInfo, may have become available after this call. When
+ * the return value is not JPEGXL_DEC_ERROR or JPEGXL_DEC_SUCCESS, the decoding
+ * requires more JpegxlDecoderProcessInput calls to continue.
  *
- * @return status indicating the decoding needs more input or output bytes to
- * continue, encountered an error, or successfully finished, See
- * JpegxlDecoderStatus for the description of each possible status.
+ * @param dec decoder object
+ * @param next_in pointer to next bytes to read from
+ * @param avail_in amount of bytes available starting from *next_in
+ * @return JPEGXL_DEC_SUCCESS when decoding finished and all events handled.
+ * @return JPEGXL_DEC_ERROR when decoding failed, e.g. invalid codestream.
+ * TODO(lode) document the input data mechanism
+ * @return JPEGXL_DEC_NEED_MORE_INPUT more input data is necessary.
+ * @return JPEGXL_DEC_BASIC_INFO when basic info such as image dimensions is
+ * available and this informative event is subscribed to.
+ * @return JPEGXL_DEC_EXTENSIONS when JPEG XL codestream user extensions are
+ * available and this informative event is subscribed to.
+ * @return JPEGXL_DEC_PREVIEW_HEADER when preview dimensions are available and
+ * this informative event is subscribed to.
+ * @return JPEGXL_DEC_ANIMATION_HEADER when animation information is available
+ * and this informative event is subscribed to.
+ * @return JPEGXL_DEC_COLOR_ENCODING when color profile information is
+ * available and this informative event is subscribed to.
+ * @return JPEGXL_DEC_DC when DC pixel information is available and output in
+ * the DC buffer.
+ * @return JPEGXL_DEC_FULL_IMAGE when all pixel information at highest detail is
+ * available and has been output in the pixel buffer.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderProcessInput(
     JpegxlDecoder* dec, const uint8_t** next_in, size_t* avail_in);
@@ -415,23 +350,29 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderProcessInput(
  * Outputs the basic image information, such as image dimensions, bit depth and
  * all other JpegxlBasicInfo fields, if available.
  *
+ * @param dec decoder object
  * @param info struct to copy the information into, or NULL to only check
  * whether the information is available through the return value.
- * @return 0 if the value is available, 1 if not available.
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
  */
-JPEGXL_EXPORT int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
-                                            JpegxlBasicInfo* info);
+JPEGXL_EXPORT JpegxlDecoderStatus
+JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info);
 
 /**
  * Outputs information for extra channel at the given index. The index must be
  * smaller than num_extra_channels in the associated JpegxlBasicInfo.
  *
+ * @param dec decoder object
  * @param index index of the extra channel to query.
  * @param info struct to copy the information into, or NULL to only check
  * whether the information is available through the return value.
- * @return 0 if the value is available, 1 if not available or out of bounds.
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
  */
-JPEGXL_EXPORT int JpegxlDecoderGetExtraChannelInfo(
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetExtraChannelInfo(
     const JpegxlDecoder* dec, size_t index, JpegxlExtraChannelInfo* info);
 
 /**
@@ -440,15 +381,155 @@ JPEGXL_EXPORT int JpegxlDecoderGetExtraChannelInfo(
  * for name must have at least name_length + 1 bytes allocated, gotten from
  * the associated JpegxlExtraChannelInfo.
  *
+ * @param dec decoder object
  * @param index index of the extra channel to query.
- * @param n size of the name buffer in bytes
  * @param name buffer to copy the name into
- * @return 0 if the value is available, 1 if not available, out of bounds or
- * too large.
+ * @param size size of the name buffer in bytes
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
  */
-JPEGXL_EXPORT int JpegxlDecoderGetExtraChannelName(const JpegxlDecoder* dec,
-                                                   size_t index, size_t n,
-                                                   char* name);
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetExtraChannelName(
+    const JpegxlDecoder* dec, size_t index, char* name, size_t size);
+
+/**
+ * Outputs the preview header, if available.
+ *
+ * @param dec decoder object
+ * @param preview_header struct to copy the information into, or NULL to only
+ * check whether the information is available through the return value.
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetPreviewHeader(
+    const JpegxlDecoder* dec, JpegxlPreviewHeader* preview_header);
+
+/**
+ * Outputs the animation header, if available.
+ *
+ * @param dec decoder object
+ * @param animation_header struct to copy the information into, or NULL to only
+ * check whether the information is available through the return value.
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
+    const JpegxlDecoder* dec, JpegxlAnimationHeader* animation_header);
+
+/**
+ * Outputs the color information, if available. The color info tells whether
+ * JpegxlDecoderGetColorEncoding and/or JpegxlDecoderGetICCProfile should be
+ * used to get the correct image color profile.
+ *
+ * @param dec decoder object
+ * @param color_info struct to copy the information into, or NULL to only
+ * check whether the information is available through the return value.
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
+ *
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorProfileSource(
+    const JpegxlDecoder* dec, JpegxlColorProfileSource* color_info);
+
+/**
+ * Outputs the color profile information, if available. Only may be used if
+ * JpegxlColorProfileSource.color_encoding_valid.
+ *
+ * @param dec decoder object
+ * @param color_encoding struct to copy the information into, or NULL to only
+ * check whether the information is available through the return value.
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorEncoding(
+    const JpegxlDecoder* dec, JpegxlColorEncoding* color_encoding);
+
+/**
+ * Outputs ICC profile. The output buffer should have enough bytes allocated
+ * to contain the icc_size given in the JpegxlColorEncoding.
+ *
+ * @param dec decoder object
+ * @param icc_profile buffer to copy the ICC profile into
+ * @param size size of the icc_profile buffer in bytes
+ * @return JPEGXL_DEC_SUCCESS if the value is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
+ *    of other error conditions.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetICCProfile(
+    const JpegxlDecoder* dec, uint8_t* icc_profile, size_t size);
+
+/**
+ * Returns the size in bytes the DC image output pixel buffer requires at least
+ * to contain the DC image pixels in the given format. This is the minumum size
+ * of the buffer for JpegxlDecoderSetDCOutBuffer. Requires the basic image
+ * information is available in the decoder.
+ *
+ * @param dec decoder object
+ * @param format format of pixelsformat of pixels.
+ * @param size output value, buffer size in bytes
+ * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as
+ *    information not available yet.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderDCOutBufferSize(
+    const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size);
+
+/**
+ * Sets the buffer to write the lower resolution (8x8 sub-sampled) DC image
+ * to. The size of the buffer must be at least as large as given by
+ * JpegxlDecoderDCOutBufferSize. The buffer follows the format described by
+ * JpegxlPixelFormat. The DC image has dimensions ceil(sizex / 8) * ceil(sizey /
+ * 8). The buffer is owned by the caller.
+ *
+ * @param dec decoder object
+ * @param format format of pixels. Object owned by user and its contents are
+ * copied internally.
+ * @param buffer buffer type to output the pixel data to
+ * @param size size of buffer in bytes
+ * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as size
+ *     too small.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus
+JpegxlDecoderSetDCOutBuffer(JpegxlDecoder* dec, const JpegxlPixelFormat* format,
+                            void* buffer, size_t size);
+
+/**
+ * Returns the size in bytes the image output pixel buffer requires at least to
+ * contain all pixels in the given format. This is the minumum size of the
+ * buffer for JpegxlDecoderSetImageOutBuffer. Requires the basic image
+ * information is available in the decoder.
+ *
+ * @param dec decoder object
+ * @param format format of pixelsformat of pixels.
+ * @param size output value, buffer size in bytes
+ * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as
+ *    information not available yet.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
+    const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size);
+
+/**
+ * Sets the buffer to write the full resolution image to. The size of the
+ * buffer must be at least as large as given by JpegxlDecoderImageOutBufferSize.
+ * The buffer follows the format described by JpegxlPixelFormat. The buffer is
+ * owned by the caller.
+ *
+ * @param dec decoder object
+ * @param format format of pixelsformat of pixels. Object owned by user and its
+ * contents are copied internally.
+ * @param buffer buffer type to output the pixel data to
+ * @param size size of buffer in bytes
+ * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as size
+ *     too small.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderSetImageOutBuffer(
+    JpegxlDecoder* dec, const JpegxlPixelFormat* format, void* buffer,
+    size_t size);
+
+// TODO(lode): add way to output extra channels
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

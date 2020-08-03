@@ -95,17 +95,21 @@ constexpr size_t kMaxNumReferenceFrames = 3;
 // Dimensions of a frame, in pixels, and other derived dimensions.
 // Initially set from Preview/SizeHeader, may be overridden by AnimationFrame.
 struct FrameDimensions {
-  void Set(size_t xsize, size_t ysize) {
+  void Set(size_t xsize, size_t ysize, size_t group_size_shift) {
+    group_dim = (kGroupDim >> 1) << group_size_shift;
+    static_assert(
+        kGroupDim == kDcGroupDimInBlocks,
+        "DC groups (in blocks) and groups (in pixels) have different size");
     this->xsize = xsize;
     this->ysize = ysize;
     xsize_blocks = DivCeil(xsize, kBlockDim);
     ysize_blocks = DivCeil(ysize, kBlockDim);
     xsize_padded = xsize_blocks * kBlockDim;
     ysize_padded = ysize_blocks * kBlockDim;
-    xsize_groups = DivCeil(xsize, kGroupDim);
-    ysize_groups = DivCeil(ysize, kGroupDim);
-    xsize_dc_groups = DivCeil(xsize, kDcGroupDim);
-    ysize_dc_groups = DivCeil(ysize, kDcGroupDim);
+    xsize_groups = DivCeil(xsize, group_dim);
+    ysize_groups = DivCeil(ysize, group_dim);
+    xsize_dc_groups = DivCeil(xsize_blocks, group_dim);
+    ysize_dc_groups = DivCeil(ysize_blocks, group_dim);
     num_groups = xsize_groups * ysize_groups;
     num_dc_groups = xsize_dc_groups * ysize_dc_groups;
   }
@@ -122,6 +126,7 @@ struct FrameDimensions {
   size_t ysize_dc_groups;
   size_t num_groups;
   size_t num_dc_groups;
+  size_t group_dim;
 };
 
 // Prior to C++14 (i.e. C++11): provide our own make_unique

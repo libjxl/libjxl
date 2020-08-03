@@ -121,7 +121,6 @@ FlatTree FilterTree(const Tree &global_tree,
       } else {
         *wp_only = false;
       }
-      if (flat.predictor_offset != 0) *wp_only = false;
       output.push_back(flat);
       continue;
     }
@@ -289,6 +288,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   // Initialized to avoid clang-tidy complaining.
   uint8_t context_lookup[2 * kWPPropRange] = {};
   int32_t multipliers[2 * kWPPropRange] = {};
+  int8_t offsets[2 * kWPPropRange] = {};
   if (is_wp_only) {
     struct TreeRange {
       // Begin *excluded*, end *included*. This works best with > vs <= decision
@@ -310,9 +310,15 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
       auto &node = tree[cur.pos];
       // Leaf.
       if (node.property0 == -1) {
+        if (node.predictor_offset < std::numeric_limits<int8_t>::min() ||
+            node.predictor_offset > std::numeric_limits<int8_t>::max()) {
+          is_wp_only = false;
+          break;
+        }
         for (int i = cur.begin + 1; i < cur.end + 1; i++) {
           context_lookup[i + kWPPropRange] = node.childID;
           multipliers[i + kWPPropRange] = node.multiplier;
+          offsets[i + kWPPropRange] = node.predictor_offset;
         }
         continue;
       }
@@ -360,8 +366,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
             std::min(std::max(-kWPPropRange, properties[0]), kWPPropRange - 1);
         uint32_t ctx_id = context_lookup[pos];
         uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
-        r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v) * multipliers[pos],
-                                         guess);
+        r[x] = SaturatingAdd<pixel_type>(
+            UnpackSigned(v) * multipliers[pos] + offsets[pos], guess);
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
     }
@@ -596,7 +602,7 @@ Tree LearnTree(std::vector<Predictor> predictors,
       }
     }
     if (wp_pos != predictors.size()) {
-      JXL_ASSERT(predictors.size() > 1);
+      JXL_ASSERT(predictors.size() > 1);  // caller must check this
       std::swap(predictors[wp_pos], predictors.back());
       std::swap(residuals[wp_pos], residuals.back());
       predictors.pop_back();
@@ -851,13 +857,11 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
 
   if (header->use_brotli) {
     JXL_ASSERT(!props && !residuals && !tree && !tokens);
-    auto encode_brotli = header->bytes_per_pixel == 2
-                             ? EncodeModularChannelBrotli<2>
-                             : header->bytes_per_pixel == 3
-                                   ? EncodeModularChannelBrotli<3>
-                                   : header->bytes_per_pixel == 4
-                                         ? EncodeModularChannelBrotli<4>
-                                         : EncodeModularChannelBrotli<5>;
+    auto encode_brotli =
+        header->bytes_per_pixel == 2   ? EncodeModularChannelBrotli<2>
+        : header->bytes_per_pixel == 3 ? EncodeModularChannelBrotli<3>
+        : header->bytes_per_pixel == 4 ? EncodeModularChannelBrotli<4>
+                                       : EncodeModularChannelBrotli<5>;
     size_t total_pixels = 0;
     size_t total_height = 0;
     for (size_t i = options.skipchannels; i < nb_channels; i++) {
@@ -949,6 +953,10 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     std::vector<uint8_t> context_map;
 
     std::vector<std::vector<Token>> tree_tokens(1);
+    if (options.force_no_wp && predictors.size() == 1 &&
+        predictors[0] == Predictor::Weighted) {
+      return JXL_FAILURE("Logic error: cannot force_no_wp with {Weighted}");
+    }
     tree_storage =
         LearnTree(predictors, std::move(props_storage),
                   std::move(residuals_storage), *total_pixels, options);
@@ -1041,13 +1049,11 @@ Status ModularDecode(BitReader *br, Image &image, size_t group_id,
       return JXL_FAILURE("%u bytes per pixel are not supported\n",
                          header.bytes_per_pixel);
     }
-    auto decode_brotli = header.bytes_per_pixel == 2
-                             ? DecodeModularChannelBrotli<2>
-                             : header.bytes_per_pixel == 3
-                                   ? DecodeModularChannelBrotli<3>
-                                   : header.bytes_per_pixel == 4
-                                         ? DecodeModularChannelBrotli<4>
-                                         : DecodeModularChannelBrotli<5>;
+    auto decode_brotli =
+        header.bytes_per_pixel == 2   ? DecodeModularChannelBrotli<2>
+        : header.bytes_per_pixel == 3 ? DecodeModularChannelBrotli<3>
+        : header.bytes_per_pixel == 4 ? DecodeModularChannelBrotli<4>
+                                      : DecodeModularChannelBrotli<5>;
     size_t total_pixels = 0;
     size_t total_height = 0;
     for (size_t i = options->skipchannels; i < nb_channels; i++) {

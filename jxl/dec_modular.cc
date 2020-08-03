@@ -153,7 +153,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     gi.channel[depth_chan].vshift = eci->dim_shift;
   }
   ModularOptions options;
-  options.max_chan_size = kGroupDim;
+  options.max_chan_size = frame_dim.group_dim;
   if (!ModularGenericDecompress(
           reader, gi, ModularStreamId::Global().ID(frame_dim), &options,
           /*undo_transforms=*/-2, &tree, &code, &context_map)) {
@@ -164,7 +164,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   have_something = false;
   for (int c = 0; c < gi.channel.size(); c++) {
     Channel& gic = gi.channel[c];
-    if (c >= gi.nb_meta_channels && gic.w < kGroupDim && gic.h < kGroupDim)
+    if (c >= gi.nb_meta_channels && gic.w < frame_dim.group_dim &&
+        gic.h < frame_dim.group_dim)
       have_something = true;
     gic.resize();
   }
@@ -186,7 +187,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   int c = full_image.nb_meta_channels;
   for (; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
-    if (fc.w > kGroupDim || fc.h > kGroupDim) break;
+    if (fc.w > frame_dim.group_dim || fc.h > frame_dim.group_dim) break;
   }
   int beginc = c;
   for (; c < full_image.channel.size(); c++) {
@@ -239,6 +240,14 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   size_t extra_precision = reader->ReadFixedBits<2>();
   float mul = 1.0f / (1 << extra_precision);
   ModularOptions options;
+  size_t hshift = HShift(dec_state->shared->frame_header.chroma_subsampling);
+  size_t vshift = VShift(dec_state->shared->frame_header.chroma_subsampling);
+  for (size_t c = 1; c < 3; c++) {
+    Channel& ch = image.channel[c];
+    ch.h = ChromaSize(ch.h, vshift);
+    ch.w = ChromaSize(ch.w, hshift);
+    ch.resize();
+  }
   if (!ModularGenericDecompress(reader, image, stream_id, &options,
                                 /*undo_transforms=*/-1, &tree, &code,
                                 &context_map)) {
@@ -246,7 +255,8 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   }
   DequantDC(r, &dec_state->shared_storage.dc_storage, image,
             dec_state->shared->quantizer.MulDC(), mul,
-            dec_state->shared->cmap.DCFactors());
+            dec_state->shared->cmap.DCFactors(),
+            dec_state->shared->frame_header.chroma_subsampling);
   return true;
 }
 
@@ -276,6 +286,10 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   ConvertPlaneAndClamp(Rect(image.channel[1].plane), image.channel[1].plane, cr,
                        &dec_state->shared->cmap.ytob_map);
   size_t num = 0;
+  const size_t hshift =
+      HShift(dec_state->shared->frame_header.chroma_subsampling);
+  const size_t vshift =
+      VShift(dec_state->shared->frame_header.chroma_subsampling);
   for (size_t y = 0; y < r.ysize(); y++) {
     int* row_qf = r.MutableRow(&dec_state->shared_storage.raw_quant_field, y);
     uint8_t* row_epf =
@@ -289,10 +303,16 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
                                                         r.y0() + y)) {
         continue;
       }
+
       if (!AcStrategy::IsRawStrategyValid(row_in_1[num])) {
         return JXL_FAILURE("Invalid AC strategy");
       }
       AcStrategy acs = AcStrategy::FromRawStrategy(row_in_1[num]);
+      if ((acs.covered_blocks_x() > 1 && hshift != 0) ||
+          (acs.covered_blocks_y() > 1 && vshift != 0)) {
+        return JXL_FAILURE(
+            "AC strategy not compatible with chroma subsampling");
+      }
       if (x + acs.covered_blocks_x() > r.xsize()) {
         return JXL_FAILURE("Invalid AC strategy, x overflow");
       }
@@ -319,7 +339,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
   size_t ysize = gi.h;
 
   // Don't use threads if total image size is smaller than a group
-  if (xsize * ysize < kGroupDim * kGroupDim) pool = nullptr;
+  if (xsize * ysize < frame_dim.group_dim * frame_dim.group_dim) pool = nullptr;
 
   // Undo the global transforms
   gi.undo_transforms(-1, pool);

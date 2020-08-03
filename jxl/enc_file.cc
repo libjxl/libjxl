@@ -107,7 +107,7 @@ Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
   // slightly different (quantization).
   const bool lossless_modular =
       cparams.modular_group_mode && cparams.quality_pair.first == 100.0f;
-  if (!cparams.brunsli_group_mode && !lossless_modular) {
+  if (!lossless_modular) {
     metadata->color_encoding.DecideIfWantICC();
   }
 

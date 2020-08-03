@@ -1046,7 +1046,7 @@ bool SameJpegCoeffs(const CodecInOut& io1, const CodecInOut& io2) {
   return SameJpegCoeffs(io1.Main(), io2.Main());
 }
 
-TEST(JxlTest, RoundtripBrunsli444) {
+TEST(JxlTest, RoundtripJpegRecompression444) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
@@ -1055,7 +1055,6 @@ TEST(JxlTest, RoundtripBrunsli444) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
-  cparams.brunsli_group_mode = true;
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
   DecompressParams dparams;
@@ -1063,12 +1062,12 @@ TEST(JxlTest, RoundtripBrunsli444) {
 
   CodecInOut io2;
   // JPEG size is 326'916 bytes.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 245000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 255000);
 
   EXPECT_TRUE(SameJpegCoeffs(io, io2));
 }
 
-TEST(JxlTest, RoundtripBrunsliToPixels) {
+TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
@@ -1080,7 +1079,6 @@ TEST(JxlTest, RoundtripBrunsliToPixels) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
 
   CompressParams cparams;
-  cparams.brunsli_group_mode = true;
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
   DecompressParams dparams;
@@ -1088,14 +1086,13 @@ TEST(JxlTest, RoundtripBrunsliToPixels) {
   CodecInOut io3;
   Roundtrip(&io, cparams, dparams, &pool, &io3);
 
-  // TODO(eustas): investigate, why SJPEG and Brunsli pixels are different.
+  // TODO(eustas): investigate, why SJPEG and JpegRecompression pixels are
+  // different.
   EXPECT_GE(1.5, ButteraugliDistance(io2, io3, cparams.ba_params,
                                      /*distmap=*/nullptr, &pool));
 }
 
-// TODO(eustas): while this test passes, it does not activate "grayscale"
-//               codepaths in Brunsli code (see coverage report).
-TEST(JxlTest, RoundtripBrunsliGray) {
+TEST(JxlTest, RoundtripJpegRecompressionGray) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_gray.jpg");
@@ -1104,7 +1101,6 @@ TEST(JxlTest, RoundtripBrunsliGray) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
-  cparams.brunsli_group_mode = true;
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
   DecompressParams dparams;
@@ -1112,12 +1108,12 @@ TEST(JxlTest, RoundtripBrunsliGray) {
 
   CodecInOut io2;
   // JPEG size is 167'025 bytes.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 128000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 135000);
 
   EXPECT_TRUE(SameJpegCoeffs(io, io2));
 }
 
-TEST(JxlTest, RoundtripBrunsli420) {
+TEST(JxlTest, RoundtripJpegRecompression420) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
@@ -1126,17 +1122,18 @@ TEST(JxlTest, RoundtripBrunsli420) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams;
-  cparams.brunsli_group_mode = true;
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
+  // TODO(veluca): restore this check when decode-to-jpeg is implemented for
+  // chroma subsampling.
   DecompressParams dparams;
-  dparams.keep_dct = true;
+  // dparams.keep_dct = true;
 
   CodecInOut io2;
   // JPEG size is 226'018 bytes.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 172000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 181000);
 
-  EXPECT_TRUE(SameJpegCoeffs(io, io2));
+  // EXPECT_TRUE(SameJpegCoeffs(io, io2));
 }
 
 #endif  // JPEGXL_ENABLE_JPEG

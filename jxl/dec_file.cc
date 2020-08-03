@@ -53,7 +53,8 @@ Status DecodePreview(const DecompressParams& dparams,
   // Have preview; prepare to skip or read it.
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   FrameDimensions frame_dim;
-  frame_dim.Set(io->preview.xsize(), io->preview.ysize());
+  frame_dim.Set(io->preview.xsize(), io->preview.ysize(),
+                /*group_size_shift=*/1);
 
   const AnimationHeader* animation = nullptr;
   if (dparams.preview == Override::kOff) {
@@ -152,7 +153,7 @@ Status DecodeFile(const DecompressParams& dparams,
       size_t xsize, ysize;
       JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, &xsize, &ysize, io));
       JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
-      main_frame_dim.Set(xsize, ysize);
+      main_frame_dim.Set(xsize, ysize, /*group_size_shift=*/1);
     }
 
     if (io->metadata.color_encoding.WantICC()) {

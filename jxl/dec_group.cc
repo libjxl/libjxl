@@ -88,7 +88,7 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                   float x_dm_multiplier, V x_cc_mul, V b_cc_mul, size_t kind,
                   size_t size, const Quantizer& quantizer,
                   const float* JXL_RESTRICT dequant_matrices,
-                  size_t covered_blocks, size_t bx,
+                  size_t covered_blocks, size_t bx, size_t sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
                   size_t dc_stride, const float* JXL_RESTRICT biases,
                   float* JXL_RESTRICT block) {
@@ -104,8 +104,8 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                 size, k, x_cc_mul, b_cc_mul, biases, block);
   }
   for (size_t c = 0; c < 3; c++) {
-    LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + bx, dc_stride,
-                            block + c * size);
+    LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + (c == 1 ? bx : sbx),
+                            dc_stride, block + c * size);
   }
 }
 
@@ -134,7 +134,11 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const size_t sharpness_stride =
       dec_state->shared->epf_sharpness.PixelsPerRow();
 
-  bool save_to_decoded = !decoded->IsJPEG() && (lf.epf || lf.gab);
+  YCbCrChromaSubsampling cs =
+      dec_state->shared->frame_header.chroma_subsampling;
+
+  bool save_to_decoded = !decoded->IsJPEG() && (lf.epf || lf.gab) &&
+                         cs == YCbCrChromaSubsampling::k444;
   size_t padding = save_to_decoded ? 2 : 0;
 
   const size_t idct_stride =
@@ -158,9 +162,12 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   size_t xend = is_last_group_x ? xsize : xsize - lf.PaddingCols();
   size_t yend = is_last_group_y ? ysize : ysize - lf.PaddingRows();
 
-  // No ApplyImageFeatures in JPEG mode.
-  bool run_apply_image_features =
-      xstart < xend && ystart < yend && !decoded->IsJPEG();
+  // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
+  // be done after decoding the whole image (this allows it to work on the
+  // chroma channels too).
+  bool run_apply_image_features = xstart < xend && ystart < yend &&
+                                  !decoded->IsJPEG() &&
+                                  cs == YCbCrChromaSubsampling::k444;
 
   static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
                 "Groups are too large");
@@ -168,49 +175,44 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                       block_rect.y0() * kBlockDim + ystart, xend - xstart,
                       yend - ystart);
 
-  for (size_t by = 0; by < ysize_blocks; ++by) {
-    get_block->StartRow(by);
+  if (cs != YCbCrChromaSubsampling::k444) {
+    if (decoded->IsJPEG())
+      return JXL_FAILURE(
+          "Decoding to JPEG is not supported with chroma subsampling");
+    size_t hshift = HShift(cs);
+    size_t vshift = VShift(cs);
+    Rect cr(block_rect.x0() >> hshift, block_rect.y0() >> vshift,
+            ChromaSize(block_rect.xsize(), hshift),
+            ChromaSize(block_rect.ysize(), vshift));
 
-    const int32_t* JXL_RESTRICT row_quant =
-        block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
+    for (size_t by = 0; by < ysize_blocks; ++by) {
+      get_block->StartRow(by);
+      size_t sby = by >> vshift;
 
-    const float* JXL_RESTRICT dc_rows[3] = {
-        block_rect.ConstPlaneRow(*dec_state->shared->dc, 0, by),
-        block_rect.ConstPlaneRow(*dec_state->shared->dc, 1, by),
-        block_rect.ConstPlaneRow(*dec_state->shared->dc, 2, by),
-    };
+      const int32_t* JXL_RESTRICT row_quant =
+          block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
 
-    const size_t ty = (block_rect.y0() + by) / kColorTileDimInBlocks;
-    AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
+      const float* JXL_RESTRICT dc_rows[3] = {
+          cr.ConstPlaneRow(*dec_state->shared->dc, 0, sby),
+          block_rect.ConstPlaneRow(*dec_state->shared->dc, 1, by),
+          cr.ConstPlaneRow(*dec_state->shared->dc, 2, sby),
+      };
 
-    const int8_t* JXL_RESTRICT row_cmap[3] = {
-        dec_state->shared->cmap.ytox_map.ConstRow(ty),
-        nullptr,
-        dec_state->shared->cmap.ytob_map.ConstRow(ty),
-    };
+      AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
 
-    float* JXL_RESTRICT sigma_row =
-        lf.epf ? block_rect.Row(&dec_state->sigma, by) : nullptr;
-    const uint8_t* JXL_RESTRICT sharpness_row =
-        block_rect.ConstRow(dec_state->shared->epf_sharpness, by);
-    float* JXL_RESTRICT idct_row[3];
-    for (size_t c = 0; c < 3; c++) {
-      idct_row[c] = (!save_to_decoded ? *idct : dec_state->decoded)
-                        .PlaneRow(c, (block_rect.y0() + by) * kBlockDim) +
-                    (block_rect.x0()) * kBlockDim;
-    }
+      float* JXL_RESTRICT idct_row[3];
+      for (size_t c = 0; c < 3; c++) {
+        Rect r = c == 1 ? block_rect : cr;
+        size_t y = c == 1 ? by : sby;
+        idct_row[c] =
+            idct->PlaneRow(c, (r.y0() + y) * kBlockDim) + r.x0() * kBlockDim;
+      }
 
-    for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
-         tx++) {
-      size_t abs_tx = tx + block_rect.x0() / kColorTileDimInBlocks;
-      auto x_cc_mul =
-          Set(d, dec_state->shared->cmap.YtoXRatio(row_cmap[0][abs_tx]));
-      auto b_cc_mul =
-          Set(d, dec_state->shared->cmap.YtoBRatio(row_cmap[2][abs_tx]));
+      auto x_cc_mul = Set(d, 0.0f);
+      auto b_cc_mul = Set(d, 0.0f);
       // Increment bx by llf_x because those iterations would otherwise
       // immediately continue (!IsFirstBlock). Reduces mispredictions.
-      for (size_t bx = tx * kColorTileDimInBlocks;
-           bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
+      for (size_t bx = 0; bx < xsize_blocks;) {
         AcStrategy acs = acs_row[bx];
         const size_t llf_x = acs.covered_blocks_x();
 
@@ -229,174 +231,218 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         JXL_RETURN_IF_ERROR(
             get_block->GetBlock(bx, by, acs, size, log2_covered_blocks, block));
 
-        if (JXL_UNLIKELY(decoded->IsJPEG())) {
-          if (acs.Strategy() != AcStrategy::Type::DCT) {
-            return JXL_FAILURE(
-                "Can only decode to JPEG if only DCT-8 is used.");
-          }
-          const std::vector<QuantEncoding>& qe =
-              dec_state->shared->matrices.encodings();
-          if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
-              qe[0].qraw.qtable_den_shift != 0) {
-            return JXL_FAILURE(
-                "Quantization table is not a JPEG quantization table.");
-          }
-
-          for (size_t c : {1, 0, 2}) {
-            float* JXL_RESTRICT idct_pos = idct_row[c] + bx * kBlockDim;
-            idct_pos[0] = dc_rows[c][bx];
-            if (c == 1) {
-              for (int i = 1; i < 64; i++) {
-                idct_pos[(i % 8) * idct_stride + (i / 8)] = block[c * size + i];
-              }
-            } else {
-              float scale =
-                  (c == 0
-                       ? dec_state->shared->cmap.YtoXRatio(row_cmap[c][abs_tx])
-                       : dec_state->shared->cmap.YtoBRatio(
-                             row_cmap[c][abs_tx]));
-              for (int i = 1; i < 64; i++) {
-                size_t x = i % 8;
-                size_t y = i / 8;
-                // JPEG XL is transposed, JPEG is not.
-                idct_pos[x * idct_stride + y] =
-                    block[c * size + i] +
-                    static_cast<int>(scale * block[size + i] *
-                                     (*qe[0].qraw.qtable)[64 + x * 8 + y] /
-                                     (*qe[0].qraw.qtable)[c * 64 + x * 8 + y]);
-              }
-            }
-          }
-          bx += llf_x;
-          continue;
-        }
-
         // Dequantize and add predictions.
         {
-          DequantBlock(
-              acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
-              x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
-              dec_state->shared->quantizer, dequant_matrices,
-              acs.covered_blocks_y() * acs.covered_blocks_x(), bx, dc_rows,
-              dc_stride, dec_state->shared->opsin_params.quant_biases, block);
+          DequantBlock(acs, inv_global_scale, row_quant[bx],
+                       dec_state->x_dm_multiplier, x_cc_mul, b_cc_mul,
+                       acs.RawStrategy(), size, dec_state->shared->quantizer,
+                       dequant_matrices,
+                       acs.covered_blocks_y() * acs.covered_blocks_x(), bx,
+                       bx >> hshift, dc_rows, dc_stride,
+                       dec_state->shared->opsin_params.quant_biases, block);
         }
 
         for (size_t c : {1, 0, 2}) {
+          if ((c != 1 && (bx >> hshift) << hshift != bx) ||
+              (c != 1 && (by >> vshift) << vshift != by)) {
+            continue;
+          }
+          size_t sbx = c == 1 ? bx : bx >> hshift;
+          //          fprintf(stderr, "%lu %f %f\n", c, dc_rows[c][sbx], block[c
+          //          * size]);
           // IDCT
-          float* JXL_RESTRICT idct_pos =
-              idct_row[c] + (padding + bx + padding * idct_stride) * kBlockDim;
+          float* JXL_RESTRICT idct_pos = idct_row[c] + sbx * kBlockDim;
           TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
                             idct_stride);
         }
 
-        if (dec_state->shared->image_features.loop_filter.epf) {
-          size_t sbx = block_rect.x0() + bx;
-          size_t sby = block_rect.y0() + by;
-          size_t xbl = dec_state->shared->frame_dim.xsize_blocks;
-          size_t ybl = dec_state->shared->frame_dim.ysize_blocks;
-          float quant = 1.0f / (row_quant[bx] * quant_scale);
-          float sigma_quant = quant * lf.epf_quant_mul;
-          for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-            for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-              // Increase sigma near edges.
-              float dc_range = 0;
-              for (size_t c = 0; c < 3; c++) {
-                const float* JXL_RESTRICT base_dc_ptr =
-                    dc_rows[c] + bx + ix + iy * dc_stride;
-                // UBSAN complains about overflowing unsigned addition here,
-                // hence we use a slightly more convoluted syntax than simple
-                // array access to ensure we only ever add or subtract positive
-                // quantities.
-                float dc_ref = *base_dc_ptr;
-                float dc_top = *(base_dc_ptr - (sby + iy == 0 ? 0 : dc_stride));
-                float dc_bottom =
-                    base_dc_ptr[sby + iy + 1 == ybl ? 0 : dc_stride];
-                float dc_left = *(base_dc_ptr - (sbx + ix == 0 ? 0 : 1));
-                float dc_right = base_dc_ptr[sbx + ix + 1 == xbl ? 0 : 1];
+        bx += llf_x;
+      }
+    }
+  } else {
+    for (size_t by = 0; by < ysize_blocks; ++by) {
+      get_block->StartRow(by);
 
-                float dc_range_c = std::abs(dc_top - dc_ref);
-                dc_range_c = std::max(dc_range_c, std::abs(dc_bottom - dc_ref));
-                dc_range_c = std::max(dc_range_c, std::abs(dc_left - dc_ref));
-                dc_range_c = std::max(dc_range_c, std::abs(dc_right - dc_ref));
-                dc_range =
-                    std::max(dc_range_c * lf.epf_channel_scale[c], dc_range);
+      const int32_t* JXL_RESTRICT row_quant =
+          block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
+
+      const float* JXL_RESTRICT dc_rows[3] = {
+          block_rect.ConstPlaneRow(*dec_state->shared->dc, 0, by),
+          block_rect.ConstPlaneRow(*dec_state->shared->dc, 1, by),
+          block_rect.ConstPlaneRow(*dec_state->shared->dc, 2, by),
+      };
+
+      const size_t ty = (block_rect.y0() + by) / kColorTileDimInBlocks;
+      AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
+
+      const int8_t* JXL_RESTRICT row_cmap[3] = {
+          dec_state->shared->cmap.ytox_map.ConstRow(ty),
+          nullptr,
+          dec_state->shared->cmap.ytob_map.ConstRow(ty),
+      };
+
+      float* JXL_RESTRICT sigma_row =
+          lf.epf ? block_rect.Row(&dec_state->sigma, by) : nullptr;
+      const uint8_t* JXL_RESTRICT sharpness_row =
+          block_rect.ConstRow(dec_state->shared->epf_sharpness, by);
+      float* JXL_RESTRICT idct_row[3];
+      for (size_t c = 0; c < 3; c++) {
+        idct_row[c] = (!save_to_decoded ? *idct : dec_state->decoded)
+                          .PlaneRow(c, (block_rect.y0() + by) * kBlockDim) +
+                      (block_rect.x0()) * kBlockDim;
+      }
+
+      for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
+           tx++) {
+        size_t abs_tx = tx + block_rect.x0() / kColorTileDimInBlocks;
+        auto x_cc_mul =
+            Set(d, dec_state->shared->cmap.YtoXRatio(row_cmap[0][abs_tx]));
+        auto b_cc_mul =
+            Set(d, dec_state->shared->cmap.YtoBRatio(row_cmap[2][abs_tx]));
+        // Increment bx by llf_x because those iterations would otherwise
+        // immediately continue (!IsFirstBlock). Reduces mispredictions.
+        for (size_t bx = tx * kColorTileDimInBlocks;
+             bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
+          AcStrategy acs = acs_row[bx];
+          const size_t llf_x = acs.covered_blocks_x();
+
+          // Can only happen in the second or lower rows of a varblock.
+          if (JXL_UNLIKELY(!acs.IsFirstBlock())) {
+            bx += llf_x;
+            continue;
+          }
+          PROFILER_ZONE("DecodeGroupImpl inner");
+          const size_t log2_covered_blocks = acs.log2_covered_blocks();
+
+          const size_t covered_blocks = 1 << log2_covered_blocks;
+          const size_t size = covered_blocks * kDCTBlockSize;
+
+          HWY_ALIGN float block[3 * AcStrategy::kMaxCoeffArea];
+          JXL_RETURN_IF_ERROR(get_block->GetBlock(bx, by, acs, size,
+                                                  log2_covered_blocks, block));
+
+          if (JXL_UNLIKELY(decoded->IsJPEG())) {
+            if (acs.Strategy() != AcStrategy::Type::DCT) {
+              return JXL_FAILURE(
+                  "Can only decode to JPEG if only DCT-8 is used.");
+            }
+            const std::vector<QuantEncoding>& qe =
+                dec_state->shared->matrices.encodings();
+            if (qe.empty() ||
+                qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
+                qe[0].qraw.qtable_den_shift != 0) {
+              return JXL_FAILURE(
+                  "Quantization table is not a JPEG quantization table.");
+            }
+
+            for (size_t c : {1, 0, 2}) {
+              float* JXL_RESTRICT idct_pos = idct_row[c] + bx * kBlockDim;
+              idct_pos[0] = dc_rows[c][bx];
+              if (c == 1) {
+                for (int i = 1; i < 64; i++) {
+                  idct_pos[(i % 8) * idct_stride + (i / 8)] =
+                      block[c * size + i];
+                }
+              } else {
+                float scale = (c == 0 ? dec_state->shared->cmap.YtoXRatio(
+                                            row_cmap[c][abs_tx])
+                                      : dec_state->shared->cmap.YtoBRatio(
+                                            row_cmap[c][abs_tx]));
+                for (int i = 1; i < 64; i++) {
+                  size_t x = i % 8;
+                  size_t y = i / 8;
+                  // JPEG XL is transposed, JPEG is not.
+                  idct_pos[x * idct_stride + y] =
+                      block[c * size + i] +
+                      std::round(scale * block[size + i] *
+                                 (*qe[0].qraw.qtable)[64 + i] /
+                                 (*qe[0].qraw.qtable)[c * 64 + i]);
+                }
               }
-              float sigma =
-                  sigma_quant *
-                  (2.0f - 1.0f / (1.0f + lf.epf_dc_range_mul * dc_range));
-              sigma *= lf.epf_sharp_lut[sharpness_row[bx + ix +
-                                                      iy * sharpness_stride]];
-              // Avoid infinities.
-              sigma = std::max(1e-4f, sigma);
-              sigma_row[bx + ix + 2 + (iy + 2) * sigma_stride] =
-                  kInvSigmaNum / sigma;
             }
+            bx += llf_x;
+            continue;
           }
-          // Left padding with mirroring.
-          if (bx + block_rect.x0() == 0) {
-            for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-              sigma_row[1 + (iy + 2) * sigma_stride] =
-                  sigma_row[2 + (iy + 2) * sigma_stride];
-            }
-          }
-          // Right padding with mirroring.
-          if (bx + block_rect.x0() + llf_x ==
-              dec_state->shared->frame_dim.xsize_blocks) {
-            for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-              sigma_row[(iy + 2) * sigma_stride + bx + llf_x + 2] =
-                  sigma_row[(iy + 2) * sigma_stride + bx + llf_x + 1];
-            }
-          }
-          // Offsets for row copying, in blocks.
-          size_t offset_before = bx + block_rect.x0() == 0 ? 1 : bx + 2;
-          size_t offset_after =
-              bx + block_rect.x0() + llf_x ==
-                      dec_state->shared->frame_dim.xsize_blocks
-                  ? llf_x + bx + 3
-                  : llf_x + bx + 2;
-          size_t num = offset_after - offset_before;
-          // Above
-          if (by + block_rect.y0() == 0) {
-            memcpy(sigma_row + offset_before + sigma_stride,
-                   sigma_row + offset_before + 2 * sigma_stride,
-                   num * sizeof(*sigma_row));
-          }
-          // Below
-          if (by + block_rect.y0() + acs.covered_blocks_y() ==
-              dec_state->shared->frame_dim.ysize_blocks) {
-            memcpy(sigma_row + offset_before +
-                       sigma_stride * (acs.covered_blocks_y() + 2),
-                   sigma_row + offset_before +
-                       sigma_stride * (acs.covered_blocks_y() + 1),
-                   num * sizeof(*sigma_row));
-          }
-        }
 
-        if (save_to_decoded) {
+          // Dequantize and add predictions.
+          {
+            DequantBlock(acs, inv_global_scale, row_quant[bx],
+                         dec_state->x_dm_multiplier, x_cc_mul, b_cc_mul,
+                         acs.RawStrategy(), size, dec_state->shared->quantizer,
+                         dequant_matrices,
+                         acs.covered_blocks_y() * acs.covered_blocks_x(), bx,
+                         bx, dc_rows, dc_stride,
+                         dec_state->shared->opsin_params.quant_biases, block);
+          }
+
           for (size_t c : {1, 0, 2}) {
+            // IDCT
+            float* JXL_RESTRICT idct_pos =
+                idct_row[c] +
+                (padding + bx + padding * idct_stride) * kBlockDim;
+            TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
+                              idct_stride);
+          }
+
+          if (dec_state->shared->image_features.loop_filter.epf) {
+            size_t sbx = block_rect.x0() + bx;
+            size_t sby = block_rect.y0() + by;
+            size_t xbl = dec_state->shared->frame_dim.xsize_blocks;
+            size_t ybl = dec_state->shared->frame_dim.ysize_blocks;
+            float quant = 1.0f / (row_quant[bx] * quant_scale);
+            float sigma_quant = quant * lf.epf_quant_mul;
+            for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+              for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+                // Increase sigma near edges.
+                float dc_range = 0;
+                for (size_t c = 0; c < 3; c++) {
+                  const float* JXL_RESTRICT base_dc_ptr =
+                      dc_rows[c] + bx + ix + iy * dc_stride;
+                  // UBSAN complains about overflowing unsigned addition here,
+                  // hence we use a slightly more convoluted syntax than simple
+                  // array access to ensure we only ever add or subtract
+                  // positive quantities.
+                  float dc_ref = *base_dc_ptr;
+                  float dc_top =
+                      *(base_dc_ptr - (sby + iy == 0 ? 0 : dc_stride));
+                  float dc_bottom =
+                      base_dc_ptr[sby + iy + 1 == ybl ? 0 : dc_stride];
+                  float dc_left = *(base_dc_ptr - (sbx + ix == 0 ? 0 : 1));
+                  float dc_right = base_dc_ptr[sbx + ix + 1 == xbl ? 0 : 1];
+
+                  float dc_range_c = std::abs(dc_top - dc_ref);
+                  dc_range_c =
+                      std::max(dc_range_c, std::abs(dc_bottom - dc_ref));
+                  dc_range_c = std::max(dc_range_c, std::abs(dc_left - dc_ref));
+                  dc_range_c =
+                      std::max(dc_range_c, std::abs(dc_right - dc_ref));
+                  dc_range =
+                      std::max(dc_range_c * lf.epf_channel_scale[c], dc_range);
+                }
+                float sigma =
+                    sigma_quant *
+                    (2.0f - 1.0f / (1.0f + lf.epf_dc_range_mul * dc_range));
+                sigma *= lf.epf_sharp_lut[sharpness_row[bx + ix +
+                                                        iy * sharpness_stride]];
+                // Avoid infinities.
+                sigma = std::max(1e-4f, sigma);
+                sigma_row[bx + ix + 2 + (iy + 2) * sigma_stride] =
+                    kInvSigmaNum / sigma;
+              }
+            }
             // Left padding with mirroring.
             if (bx + block_rect.x0() == 0) {
-              for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y();
-                   iy++) {
-                size_t row_offset =
-                    idct_stride * (2 * kBlockDim + iy) + kBlockDim;
-                for (size_t ix = 0; ix < kBlockDim; ix++) {
-                  idct_row[c][kBlockDim - ix - 1 + row_offset] =
-                      idct_row[c][kBlockDim + ix + row_offset];
-                }
+              for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+                sigma_row[1 + (iy + 2) * sigma_stride] =
+                    sigma_row[2 + (iy + 2) * sigma_stride];
               }
             }
             // Right padding with mirroring.
             if (bx + block_rect.x0() + llf_x ==
                 dec_state->shared->frame_dim.xsize_blocks) {
-              for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y();
-                   iy++) {
-                size_t row_offset = idct_stride * (2 * kBlockDim + iy) +
-                                    (bx + llf_x + 1) * kBlockDim;
-                for (size_t ix = 0; ix < kBlockDim; ix++) {
-                  idct_row[c][kBlockDim + ix + row_offset] =
-                      idct_row[c][kBlockDim - ix - 1 + row_offset];
-                }
+              for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+                sigma_row[(iy + 2) * sigma_stride + bx + llf_x + 2] =
+                    sigma_row[(iy + 2) * sigma_stride + bx + llf_x + 1];
               }
             }
             // Offsets for row copying, in blocks.
@@ -409,42 +455,95 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             size_t num = offset_after - offset_before;
             // Above
             if (by + block_rect.y0() == 0) {
-              for (size_t iy = 0; iy < kBlockDim; iy++) {
-                float* JXL_RESTRICT row =
-                    idct_row[c] + offset_before * kBlockDim;
-                memcpy(row + (2 * kBlockDim - iy - 1) * idct_stride,
-                       row + (2 * kBlockDim + iy) * idct_stride,
-                       num * sizeof(**idct_row) * kBlockDim);
-              }
+              memcpy(sigma_row + offset_before + sigma_stride,
+                     sigma_row + offset_before + 2 * sigma_stride,
+                     num * sizeof(*sigma_row));
             }
             // Below
             if (by + block_rect.y0() + acs.covered_blocks_y() ==
                 dec_state->shared->frame_dim.ysize_blocks) {
-              for (size_t iy = 0; iy < kBlockDim; iy++) {
-                float* JXL_RESTRICT row =
-                    idct_row[c] +
-                    (acs.covered_blocks_y() + 1) * kBlockDim * idct_stride +
-                    offset_before * kBlockDim;
-                memcpy(row + (kBlockDim + iy) * idct_stride,
-                       row + (kBlockDim - iy - 1) * idct_stride,
-                       num * sizeof(**idct_row) * kBlockDim);
+              memcpy(sigma_row + offset_before +
+                         sigma_stride * (acs.covered_blocks_y() + 2),
+                     sigma_row + offset_before +
+                         sigma_stride * (acs.covered_blocks_y() + 1),
+                     num * sizeof(*sigma_row));
+            }
+          }
+
+          if (save_to_decoded) {
+            for (size_t c : {1, 0, 2}) {
+              // Left padding with mirroring.
+              if (bx + block_rect.x0() == 0) {
+                for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y();
+                     iy++) {
+                  size_t row_offset =
+                      idct_stride * (2 * kBlockDim + iy) + kBlockDim;
+                  for (size_t ix = 0; ix < kBlockDim; ix++) {
+                    idct_row[c][kBlockDim - ix - 1 + row_offset] =
+                        idct_row[c][kBlockDim + ix + row_offset];
+                  }
+                }
+              }
+              // Right padding with mirroring.
+              if (bx + block_rect.x0() + llf_x ==
+                  dec_state->shared->frame_dim.xsize_blocks) {
+                for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y();
+                     iy++) {
+                  size_t row_offset = idct_stride * (2 * kBlockDim + iy) +
+                                      (bx + llf_x + 1) * kBlockDim;
+                  for (size_t ix = 0; ix < kBlockDim; ix++) {
+                    idct_row[c][kBlockDim + ix + row_offset] =
+                        idct_row[c][kBlockDim - ix - 1 + row_offset];
+                  }
+                }
+              }
+              // Offsets for row copying, in blocks.
+              size_t offset_before = bx + block_rect.x0() == 0 ? 1 : bx + 2;
+              size_t offset_after =
+                  bx + block_rect.x0() + llf_x ==
+                          dec_state->shared->frame_dim.xsize_blocks
+                      ? llf_x + bx + 3
+                      : llf_x + bx + 2;
+              size_t num = offset_after - offset_before;
+              // Above
+              if (by + block_rect.y0() == 0) {
+                for (size_t iy = 0; iy < kBlockDim; iy++) {
+                  float* JXL_RESTRICT row =
+                      idct_row[c] + offset_before * kBlockDim;
+                  memcpy(row + (2 * kBlockDim - iy - 1) * idct_stride,
+                         row + (2 * kBlockDim + iy) * idct_stride,
+                         num * sizeof(**idct_row) * kBlockDim);
+                }
+              }
+              // Below
+              if (by + block_rect.y0() + acs.covered_blocks_y() ==
+                  dec_state->shared->frame_dim.ysize_blocks) {
+                for (size_t iy = 0; iy < kBlockDim; iy++) {
+                  float* JXL_RESTRICT row =
+                      idct_row[c] +
+                      (acs.covered_blocks_y() + 1) * kBlockDim * idct_stride +
+                      offset_before * kBlockDim;
+                  memcpy(row + (kBlockDim + iy) * idct_stride,
+                         row + (kBlockDim - iy - 1) * idct_stride,
+                         num * sizeof(**idct_row) * kBlockDim);
+                }
               }
             }
           }
+          bx += llf_x;
         }
-        bx += llf_x;
       }
-    }
-    // When a row of blocks is done, run ApplyImageFeaturesRow.
-    // TODO(veluca): consider switching this to 4 rows of blocks.
-    if (JXL_LIKELY(run_apply_image_features)) {
-      size_t yb = by == 0 ? kBlockDim : 2 * kBlockDim;
-      size_t ye = by == ysize_blocks - 1 ? 4 * kBlockDim : 3 * kBlockDim;
-      for (size_t y = yb; y < ye; y++) {
-        size_t aif_y = by * kBlockDim + y - ystart;
-        JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(
-            idct, aif_rect, dec_state, aif_y, thread, aux_out,
-            save_decompressed, apply_color_transform));
+      // When a row of blocks is done, run ApplyImageFeaturesRow.
+      // TODO(veluca): consider switching this to 4 rows of blocks.
+      if (JXL_LIKELY(run_apply_image_features)) {
+        size_t yb = by == 0 ? kBlockDim : 2 * kBlockDim;
+        size_t ye = by == ysize_blocks - 1 ? 4 * kBlockDim : 3 * kBlockDim;
+        for (size_t y = yb; y < ye; y++) {
+          size_t aif_y = by * kBlockDim + y - ystart;
+          JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(
+              idct, aif_rect, dec_state, aif_y, thread, aux_out,
+              save_decompressed, apply_color_transform));
+        }
       }
     }
   }
@@ -529,10 +628,12 @@ struct GetBlockFromBitstream {
   void StartRow(size_t by) {
     for (size_t i = 0; i < num_passes; i++) {
       for (size_t c = 0; c < 3; c++) {
-        row_nzeros[i][c] = group_dec_cache->num_nzeroes[i].PlaneRow(c, by);
+        size_t sby = c == 1 ? by : by >> vshift;
+        row_nzeros[i][c] = group_dec_cache->num_nzeroes[i].PlaneRow(c, sby);
         row_nzeros_top[i][c] =
-            by == 0 ? nullptr
-                    : group_dec_cache->num_nzeroes[i].ConstPlaneRow(c, by - 1);
+            sby == 0
+                ? nullptr
+                : group_dec_cache->num_nzeroes[i].ConstPlaneRow(c, sby - 1);
       }
     }
   }
@@ -542,11 +643,17 @@ struct GetBlockFromBitstream {
     memset(block, 0, sizeof(float) * size * 3);
     for (size_t c : {1, 0, 2}) {
       float* JXL_RESTRICT block_c = block + c * size;
+      size_t sbx = c == 1 ? bx : bx >> hshift;
+      size_t sby = c == 1 ? by : by >> hshift;
+      if (JXL_UNLIKELY(c != 1 && (bx >> hshift) << hshift != bx) ||
+          JXL_UNLIKELY(c != 1 && (by >> vshift) << vshift != by)) {
+        continue;
+      }
 
       for (size_t pass = 0; JXL_UNLIKELY(pass < num_passes); pass++) {
         JXL_RETURN_IF_ERROR(DecodeACVarBlock(
             log2_covered_blocks, row_nzeros[pass][c], row_nzeros_top[pass][c],
-            nzeros_stride, c, bx, by, acs,
+            nzeros_stride, c, sbx, sby, acs,
             &coeff_orders[idx[pass] * kCoeffOrderSize], readers[pass],
             &decoders[pass], context_map[idx[pass]], block_c,
             shift_for_pass[pass]));
@@ -559,6 +666,8 @@ struct GetBlockFromBitstream {
               size_t group_idx, size_t histo_selector_bits,
               GroupDecCache* JXL_RESTRICT group_dec_cache,
               PassesDecoderState* dec_state) {
+    this->hshift = HShift(dec_state->shared->frame_header.chroma_subsampling);
+    this->vshift = VShift(dec_state->shared->frame_header.chroma_subsampling);
     this->coeff_orders = dec_state->shared->coeff_orders.data();
     this->context_map = dec_state->context_map.data();
     this->readers = readers;
@@ -602,6 +711,7 @@ struct GetBlockFromBitstream {
   int32_t* JXL_RESTRICT row_nzeros[kMaxNumPasses][3];
   const int32_t* JXL_RESTRICT row_nzeros_top[kMaxNumPasses][3];
   GroupDecCache* JXL_RESTRICT group_dec_cache;
+  size_t hshift, vshift;
 };
 
 struct GetBlockFromEncoder {
@@ -625,6 +735,7 @@ struct GetBlockFromEncoder {
 
   GetBlockFromEncoder(const std::vector<ACImage3>& ac, size_t group_idx)
       : quantized_ac(&ac) {
+    // TODO(veluca): not supported with chroma subsampling.
     for (size_t i = 0; i < quantized_ac->size(); i++) {
       for (size_t c = 0; c < 3; c++) {
         rows[i][c] = (*quantized_ac)[i].ConstPlaneRow(c, group_idx);

@@ -1448,9 +1448,7 @@ HWY_API Permute256<T> SetTableIndices(const Full256<T>, const int32_t* idx) {
 #if !defined(NDEBUG) || defined(ADDRESS_SANITIZER)
   const size_t N = 32 / sizeof(T);
   for (size_t i = 0; i < N; ++i) {
-    if (idx[i] >= static_cast<int32_t>(N)) {
-      printf("SetTableIndices [%zu] = %d >= %zu\n", i, idx[i], N);
-    }
+    HWY_DASSERT(0 <= idx[i] && idx[i] < static_cast<int32_t>(N));
   }
 #endif
   return Permute256<T>{LoadU(Full256<int32_t>(), idx).raw};

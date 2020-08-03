@@ -41,7 +41,8 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
                          ThreadPool* pool);
 
 void DequantDC(const Rect& r, Image3F* dc, const Image& in,
-               const float* dc_factors, float mul, const float* cfl_factors);
+               const float* dc_factors, float mul, const float* cfl_factors,
+               YCbCrChromaSubsampling chroma_subsampling);
 
 }  // namespace jxl
 

@@ -50,6 +50,34 @@ namespace jxl {
 namespace {
 using test::Roundtrip;
 
+void TestLosslessGroups(size_t group_size_shift) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  CompressParams cparams;
+  cparams.modular_group_mode = true;
+  cparams.modular_group_size_shift = group_size_shift;
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 4400000);
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            0.2);
+}
+
+TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
+
+TEST(ModularTest, RoundtripLosslessGroups512) { TestLosslessGroups(2); }
+
+TEST(ModularTest, RoundtripLosslessGroups1024) { TestLosslessGroups(3); }
+
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
@@ -69,7 +97,7 @@ TEST(ModularTest, RoundtripLossy) {
   EXPECT_LE(compressed_size, 150000);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            1.5);
+            1.0);
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {

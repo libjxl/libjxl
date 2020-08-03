@@ -34,6 +34,7 @@
 #include "jxl/dec_ans.h"
 #include "jxl/enc_cluster.h"
 #include "jxl/enc_context_map.h"
+#include "jxl/fields.h"
 
 namespace jxl {
 
@@ -483,20 +484,25 @@ float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size) {
 }
 
 template <typename Writer>
+void EncodeUintConfig(const HybridUintConfig uint_config, Writer* writer,
+                      size_t log_alpha_size) {
+  writer->Write(CeilLog2Nonzero(log_alpha_size + 1),
+                uint_config.split_exponent);
+  if (uint_config.split_exponent == log_alpha_size) {
+    return;  // msb/lsb don't matter.
+  }
+  size_t nbits = CeilLog2Nonzero(uint_config.split_exponent + 1);
+  writer->Write(nbits, uint_config.msb_in_token);
+  nbits = CeilLog2Nonzero(uint_config.split_exponent -
+                          uint_config.msb_in_token + 1);
+  writer->Write(nbits, uint_config.lsb_in_token);
+}
+template <typename Writer>
 void EncodeUintConfigs(const std::vector<HybridUintConfig>& uint_config,
                        Writer* writer, size_t log_alpha_size) {
   // TODO(veluca): RLE?
   for (size_t i = 0; i < uint_config.size(); i++) {
-    writer->Write(CeilLog2Nonzero(log_alpha_size + 1),
-                  uint_config[i].split_exponent);
-    if (uint_config[i].split_exponent == log_alpha_size) {
-      continue;  // msb/lsb don't matter.
-    }
-    size_t nbits = CeilLog2Nonzero(uint_config[i].split_exponent + 1);
-    writer->Write(nbits, uint_config[i].msb_in_token);
-    nbits = CeilLog2Nonzero(uint_config[i].split_exponent -
-                            uint_config[i].msb_in_token + 1);
-    writer->Write(nbits, uint_config[i].lsb_in_token);
+    EncodeUintConfig(uint_config[i], writer, log_alpha_size);
   }
 }
 template void EncodeUintConfigs(const std::vector<HybridUintConfig>&,
@@ -588,15 +594,6 @@ void ChooseUintConfigs(const HistogramParams& params,
     }
   }
   JXL_ASSERT(*log_alpha_size <= 8);
-  /*
-  for (size_t i = 0; i < clustered_histograms->size(); i++) {
-    fprintf(stderr, "%u%u%u[%lu] ", codes->uint_config[i].split_exponent,
-            codes->uint_config[i].msb_in_token,
-            codes->uint_config[i].lsb_in_token,
-            (*clustered_histograms)[i].total_count_);
-  }
-  fprintf(stderr, "\n");
-  */
 }
 
 class HistogramBuilder {
@@ -699,7 +696,29 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
                                 std::vector<uint8_t>* context_map,
                                 BitWriter* writer, size_t layer,
                                 AuxOut* aux_out) {
+  LZ77Params lz77;
   size_t total_bits = 0;
+  // TODO(veluca): figure out if lz77 should be used, and transform the token
+  // streams.
+  if (writer) {
+    JXL_CHECK(Bundle::Write(lz77, writer, layer, aux_out));
+  } else {
+    size_t ebits, bits;
+    JXL_CHECK(Bundle::CanEncode(lz77, &ebits, &bits));
+    total_bits += bits;
+  }
+  if (lz77.enabled) {
+    if (writer) {
+      size_t b = writer->BitsWritten();
+      EncodeUintConfig(lz77.length_uint_config, writer, /*log_alpha_size=*/7);
+      total_bits += writer->BitsWritten() - b;
+    } else {
+      SizeWriter size_writer;
+      EncodeUintConfig(lz77.length_uint_config, &size_writer,
+                       /*log_alpha_size=*/7);
+      total_bits += size_writer.size;
+    }
+  }
   size_t total_tokens = 0;
   // Build histograms.
   HistogramBuilder builder(num_contexts);
@@ -722,7 +741,7 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   // Encode histograms.
   const size_t max_contexts = std::min(num_contexts, kClustersLimit);
   BitWriter::Allotment allotment(writer, 8192 * (max_contexts + 4));
-  total_bits = builder.BuildAndStoreEntropyCodes(
+  total_bits += builder.BuildAndStoreEntropyCodes(
       params, tokens, codes, context_map, use_prefix_code, allotment, writer,
       layer, aux_out);
   allotment.FinishedHistogram(writer);

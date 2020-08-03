@@ -72,8 +72,8 @@ Status SizeHeader::Set(size_t xsize64, size_t ysize64) {
   const uint32_t xsize32 = static_cast<uint32_t>(xsize64);
   const uint32_t ysize32 = static_cast<uint32_t>(ysize64);
   if (xsize64 == 0 || ysize64 == 0) return JXL_FAILURE("Empty image");
-  small_ = xsize64 <= kGroupDim && ysize64 <= kGroupDim &&
-           (xsize64 % kBlockDim) == 0 && (ysize64 % kBlockDim) == 0;
+  small_ = xsize64 <= 256 && ysize64 <= 256 && (xsize64 % kBlockDim) == 0 &&
+           (ysize64 % kBlockDim) == 0;
   if (small_) {
     ysize_div8_minus_1_ = ysize32 / 8 - 1;
   } else {

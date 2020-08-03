@@ -27,6 +27,7 @@
 #include "jxl/base/status.h"
 #include "jxl/common.h"
 #include "jxl/dec_context_map.h"
+#include "jxl/fields.h"
 
 namespace jxl {
 namespace {
@@ -251,43 +252,63 @@ Status DecodeANSCodes(const size_t num_histograms,
   }
   return true;
 }
+Status DecodeUintConfig(size_t log_alpha_size, HybridUintConfig* uint_config,
+                        BitReader* br) {
+  br->Refill();
+  size_t split_exponent = br->ReadBits(CeilLog2Nonzero(log_alpha_size + 1));
+  size_t msb_in_token = 0, lsb_in_token = 0;
+  if (split_exponent != log_alpha_size) {
+    // otherwise, msb/lsb don't matter.
+    size_t nbits = CeilLog2Nonzero(split_exponent + 1);
+    msb_in_token = br->ReadBits(nbits);
+    if (msb_in_token > split_exponent) {
+      // This could be invalid here already and we need to check this before
+      // we use its value to read more bits.
+      return JXL_FAILURE("Invalid HybridUintConfig");
+    }
+    nbits = CeilLog2Nonzero(split_exponent - msb_in_token + 1);
+    lsb_in_token = br->ReadBits(nbits);
+  }
+  if (lsb_in_token + msb_in_token > split_exponent) {
+    return JXL_FAILURE("Invalid HybridUintConfig");
+  }
+  *uint_config = HybridUintConfig(split_exponent, msb_in_token, lsb_in_token);
+  return true;
+}
+
+constexpr int8_t ANSSymbolReader::kSpecialDistances[kNumSpecialDistances][2];
+
 Status DecodeUintConfigs(size_t log_alpha_size,
                          std::vector<HybridUintConfig>* uint_config,
                          BitReader* br) {
   // TODO(veluca): RLE?
   for (size_t i = 0; i < uint_config->size(); i++) {
-    br->Refill();
-    size_t split_exponent = br->ReadBits(CeilLog2Nonzero(log_alpha_size + 1));
-    size_t msb_in_token = 0, lsb_in_token = 0;
-    if (split_exponent != log_alpha_size) {
-      // otherwise, msb/lsb don't matter.
-      size_t nbits = CeilLog2Nonzero(split_exponent + 1);
-      msb_in_token = br->ReadBits(nbits);
-      if (msb_in_token > split_exponent) {
-        // This could be invalid here already and we need to check this before
-        // we use its value to read more bits.
-        return JXL_FAILURE("Invalid HybridUintConfig");
-      }
-      nbits = CeilLog2Nonzero(split_exponent - msb_in_token + 1);
-      lsb_in_token = br->ReadBits(nbits);
-    }
-    if (lsb_in_token + msb_in_token > split_exponent) {
-      return JXL_FAILURE("Invalid HybridUintConfig");
-    }
-    (*uint_config)[i] =
-        HybridUintConfig(split_exponent, msb_in_token, lsb_in_token);
+    JXL_RETURN_IF_ERROR(
+        DecodeUintConfig(log_alpha_size, &(*uint_config)[i], br));
   }
   return true;
 }
 
-Status DecodeHistograms(BitReader* br, const size_t num_contexts, ANSCode* code,
-                        std::vector<uint8_t>* context_map) {
+LZ77Params::LZ77Params() { Bundle::Init(this); }
+
+Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
+                        std::vector<uint8_t>* context_map, bool disallow_lz77) {
   PROFILER_FUNC;
+  JXL_RETURN_IF_ERROR(Bundle::Read(br, &code->lz77));
+  if (code->lz77.enabled) {
+    num_contexts++;
+    JXL_RETURN_IF_ERROR(DecodeUintConfig(/*log_alphabet_size=*/7,
+                                         &code->lz77.length_uint_config, br));
+  }
+  if (code->lz77.enabled && disallow_lz77) {
+    return JXL_FAILURE("Using LZ77 when explicitly disallowed");
+  }
   size_t num_histograms = 1;
   context_map->resize(num_contexts);
   if (num_contexts > 1) {
     JXL_RETURN_IF_ERROR(DecodeContextMap(context_map, &num_histograms, br));
   }
+  code->lz77.distance_context = context_map->back();
   code->use_prefix_code = br->ReadFixedBits<1>();
   if (code->use_prefix_code) {
     code->log_alpha_size = brunsli::kMaxHuffmanBits;

@@ -146,7 +146,7 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   opsin = PadImageToMultiple(opsin, jxl::kBlockDim);
 
   jxl::FrameDimensions frame_dim;
-  frame_dim.Set(original_xsize, original_ysize);
+  frame_dim.Set(original_xsize, original_ysize, /*group_size_shift=*/1);
 
   static constexpr float kAcQuant = 0.84f;
   const float dc_quant = jxl::InitialQuantDC(distance);

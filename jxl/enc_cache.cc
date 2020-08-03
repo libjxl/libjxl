@@ -163,7 +163,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     }
     FrameDimensions frame_dim;
     frame_dim.Set(enc_state->shared.frame_dim.xsize << (3 * cparams.dc_level),
-                  enc_state->shared.frame_dim.ysize << (3 * cparams.dc_level));
+                  enc_state->shared.frame_dim.ysize << (3 * cparams.dc_level),
+                  shared.frame_header.group_size_shift);
     cparams.dc_level++;
     cparams.progressive_dc--;
     // Use kVarDCT in max_error_mode for intermediate progressive DC,

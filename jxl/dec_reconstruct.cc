@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/dec_reconstruct.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
-#include <hwy/foreach_target.h>
 
 #include <mutex>
 #include <utility>
@@ -33,8 +30,13 @@
 #include "jxl/multiframe.h"
 #include "jxl/passes_state.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/dec_xyb-inl.h"
 
+// SIMD code
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
@@ -180,7 +182,8 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
 
-  if (lf.epf || lf.gab) {
+  if ((lf.epf || lf.gab) &&
+      frame_header.chroma_subsampling == YCbCrChromaSubsampling::k444) {
     size_t xsize = dec_state->shared->frame_dim.xsize_padded;
     size_t ysize = dec_state->shared->frame_dim.ysize_padded;
     size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;
@@ -224,7 +227,31 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       }
     }
   }
-  if (frame_header.encoding == FrameEncoding::kModularGroup) {
+  // If we used chroma subsampling, we upsample chroma now and run
+  // ApplyImageFeatures after.
+  if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k420) {
+    for (size_t c : {0, 2}) {
+      ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
+      plane.ShrinkTo(idct->xsize() / 2, idct->ysize() / 2);
+      plane = UpsampleH2(plane, pool);
+      plane = UpsampleV2(plane, pool);
+    }
+  } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k411) {
+    for (size_t c : {0, 2}) {
+      ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
+      plane.ShrinkTo(idct->xsize() / 4, idct->ysize());
+      plane = UpsampleH2(plane, pool);
+      plane = UpsampleH2(plane, pool);
+    }
+  } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k422) {
+    for (size_t c : {0, 2}) {
+      ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
+      plane.ShrinkTo(idct->xsize() / 2, idct->ysize());
+      plane = UpsampleH2(plane, pool);
+    }
+  }
+  if (frame_header.encoding == FrameEncoding::kModularGroup ||
+      frame_header.chroma_subsampling != YCbCrChromaSubsampling::k444) {
     for (size_t y = 0; y < idct->ysize(); y += kGroupDim) {
       for (size_t x = 0; x < idct->xsize(); x += kGroupDim) {
         rects_to_process.emplace_back(x, y, kGroupDim, kGroupDim, idct->xsize(),

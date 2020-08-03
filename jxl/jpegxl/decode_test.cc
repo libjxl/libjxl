@@ -28,6 +28,7 @@
 #include "jxl/brunsli.h"
 #include "jxl/fields.h"
 #include "jxl/headers.h"
+#include "jxl/icc_codec.h"
 
 TEST(DecodeTest, JpegxlSignatureCheckTest) {
   std::vector<std::pair<int, std::vector<uint8_t>>> tests = {
@@ -100,6 +101,16 @@ TEST(DecodeTest, CustomAllocTest) {
   EXPECT_LE(1, counters.frees);
 }
 
+// TODO(lode): add multi-threaded test when multithreaded pixel decoding from
+// API is implemented.
+TEST(DecodeTest, DefaultParallelRunnerTest) {
+  JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+  EXPECT_NE(nullptr, dec);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSetParallelRunner(dec, nullptr, nullptr));
+  JpegxlDecoderDestroy(dec);
+}
+
 // Creates the header of a JPEG XL file with various custom parameters for
 // testing.
 // xsize, ysize: image dimentions to store in the SizeHeader, max 512.
@@ -115,8 +126,8 @@ TEST(DecodeTest, CustomAllocTest) {
 std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
                                    size_t bits_per_sample, size_t orientation,
                                    size_t alpha_bits, bool have_container,
-                                   bool metadata_default,
-                                   bool insert_extra_box) {
+                                   bool metadata_default, bool insert_extra_box,
+                                   const jxl::PaddedBytes& icc_profile) {
   jxl::BitWriter writer;
   jxl::BitWriter::Allotment allotment(&writer, 65536);  // Large enough
 
@@ -171,7 +182,16 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
     }
   }
 
+  if (!icc_profile.empty()) {
+    jxl::PaddedBytes copy = icc_profile;
+    EXPECT_TRUE(metadata.color_encoding.SetICC(std::move(copy)));
+  }
+
   EXPECT_TRUE(jxl::Bundle::Write(metadata, &writer, 0, nullptr));
+
+  if (!icc_profile.empty()) {
+    EXPECT_TRUE(jxl::WriteICC(icc_profile, &writer, 0, nullptr));
+  }
 
   writer.ZeroPadToByte();
   ReclaimAndCharge(&writer, &allotment, 0, nullptr);
@@ -193,30 +213,31 @@ TEST(DecodeTest, BasicInfoTest) {
   test_samples.push_back(GetTestHeader(
       xsize[0], ysize[0], bits_per_sample[0], orientation[0], alpha_bits[0],
       have_container[0], /*metadata_default=*/false,
-      /*insert_extra_box=*/false));
+      /*insert_extra_box=*/false, {}));
   // Test with container and different parameters
   test_samples.push_back(GetTestHeader(
       xsize[1], ysize[1], bits_per_sample[1], orientation[1], alpha_bits[1],
       have_container[1], /*metadata_default=*/false,
-      /*insert_extra_box=*/false));
+      /*insert_extra_box=*/false, {}));
 
   for (size_t i = 0; i < test_samples.size(); ++i) {
     const std::vector<uint8_t>& data = test_samples[i];
     // Test decoding too small header first, until we reach the final byte.
     for (size_t size = 0; size <= data.size(); ++size) {
-      JpegxlDecoder* dec = JpegxlDecoderCreate(NULL);
+      JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+      EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+                JpegxlDecoderSubscribeEvents(dec, JPEGXL_DEC_BASIC_INFO));
       const uint8_t* next_in = data.data();
       size_t avail_in = size;
       JpegxlDecoderStatus status =
           JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
-      // Since the header is a partial JPEG XL file, the function should always
-      // return 'need more input'.
-      EXPECT_EQ(JPEGXL_DEC_NEED_MORE_INPUT, status);
 
       JpegxlBasicInfo info;
       bool have_basic_info = !JpegxlDecoderGetBasicInfo(dec, &info);
 
       if (size == data.size()) {
+        EXPECT_EQ(JPEGXL_DEC_BASIC_INFO, status);
+
         // All header bytes given so the decoder must have the basic info.
         EXPECT_EQ(true, have_basic_info);
         EXPECT_EQ(JPEGXL_SIG_TYPE_JPEGXL, info.signature_type);
@@ -238,7 +259,7 @@ TEST(DecodeTest, BasicInfoTest) {
           EXPECT_EQ(10, extra.name_length);
           char name[11];
           EXPECT_EQ(
-              0, JpegxlDecoderGetExtraChannelName(dec, 0, sizeof(name), name));
+              0, JpegxlDecoderGetExtraChannelName(dec, 0, name, sizeof(name)));
           EXPECT_EQ(std::string("alpha_test"), std::string(name));
         } else {
           EXPECT_EQ(0, info.num_extra_channels);
@@ -247,7 +268,10 @@ TEST(DecodeTest, BasicInfoTest) {
         // If we did not give the full header, the basic info should not be
         // available. Allow a few bytes of slack due to some bits for default
         // opsinmatrix/extension bits.
-        if (size + 2 < data.size()) EXPECT_EQ(false, have_basic_info);
+        if (size + 2 < data.size()) {
+          EXPECT_EQ(false, have_basic_info);
+          EXPECT_EQ(JPEGXL_DEC_NEED_MORE_INPUT, status);
+        }
       }
 
       JpegxlDecoderDestroy(dec);
@@ -266,10 +290,12 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   std::vector<uint8_t> data =
       GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
                     /*have_container=*/true, /*metadata_default=*/false,
-                    /*insert_extra_box=*/true);
+                    /*insert_extra_box=*/true, {});
 
   JpegxlDecoderStatus status;
-  JpegxlDecoder* dec = JpegxlDecoderCreate(NULL);
+  JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSubscribeEvents(dec, JPEGXL_DEC_BASIC_INFO));
 
   size_t hint0 = JpegxlDecoderSizeHintBasicInfo(dec);
   // Test that the test works as intended: we construct a file on purpose to
@@ -294,7 +320,7 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   avail_in = std::min<size_t>(hint1, data.size() - num_read);
 
   status = JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
-  EXPECT_EQ(JPEGXL_DEC_NEED_MORE_INPUT, status);
+  EXPECT_EQ(JPEGXL_DEC_BASIC_INFO, status);
   JpegxlBasicInfo info;
   // We should have the basic info now, since we only added one box in-between,
   // and the decoder should have known its size, its implementation can return
@@ -308,6 +334,80 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   EXPECT_EQ(ysize, info.ysize);
   EXPECT_EQ(orientation, info.orientation);
   EXPECT_EQ(bits_per_sample, info.bits_per_sample);
+
+  JpegxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, IccProfileTest) {
+  // An ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin.
+  const uint8_t* profile = reinterpret_cast<const uint8_t*>(
+      "\0\0\3\200lcms\0040\0\0mntrRGB XYZ "
+      "\a\344\0\a\0\27\0\21\0$"
+      "\0\37acspAPPL\0\0\0\1\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1\0\0\366"
+      "\326\0\1\0\0\0\0\323-lcms\372c\207\36\227\200{"
+      "\2\232s\255\327\340\0\n\26\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+      "\0\0\0\0\0\0\0\0\rdesc\0\0\1 "
+      "\0\0\0Bcprt\0\0\1d\0\0\1\0wtpt\0\0\2d\0\0\0\24chad\0\0\2x\0\0\0,"
+      "rXYZ\0\0\2\244\0\0\0\24bXYZ\0\0\2\270\0\0\0\24gXYZ\0\0\2\314\0\0\0\24rTR"
+      "C\0\0\2\340\0\0\0 gTRC\0\0\2\340\0\0\0 bTRC\0\0\2\340\0\0\0 "
+      "chrm\0\0\3\0\0\0\0$dmnd\0\0\3$\0\0\0("
+      "dmdd\0\0\3L\0\0\0002mluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0&"
+      "\0\0\0\34\0R\0G\0B\0_\0D\0006\0005\0_\0S\0R\0G\0_\0R\0e\0l\0_"
+      "\0L\0i\0n\0\0mluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0\344\0\0\0\34\0C\0o\0"
+      "p\0y\0r\0i\0g\0h\0t\0 \0002\0000\0001\08\0 \0G\0o\0o\0g\0l\0e\0 "
+      "\0L\0L\0C\0,\0 \0C\0C\0-\0B\0Y\0-\0S\0A\0 \0003\0.\0000\0 "
+      "\0U\0n\0p\0o\0r\0t\0e\0d\0 "
+      "\0l\0i\0c\0e\0n\0s\0e\0(\0h\0t\0t\0p\0s\0:\0/\0/"
+      "\0c\0r\0e\0a\0t\0i\0v\0e\0c\0o\0m\0m\0o\0n\0s\0.\0o\0r\0g\0/"
+      "\0l\0i\0c\0e\0n\0s\0e\0s\0/\0b\0y\0-\0s\0a\0/\0003\0.\0000\0/"
+      "\0l\0e\0g\0a\0l\0c\0o\0d\0e\0)XYZ "
+      "\0\0\0\0\0\0\366\326\0\1\0\0\0\0\323-"
+      "sf32\0\0\0\0\0\1\fB\0\0\5\336\377\377\363%"
+      "\0\0\a\223\0\0\375\220\377\377\373\241\377\377\375\242\0\0\3\334\0\0\300"
+      "nXYZ \0\0\0\0\0\0o\240\0\08\365\0\0\3\220XYZ "
+      "\0\0\0\0\0\0$\237\0\0\17\204\0\0\266\304XYZ "
+      "\0\0\0\0\0\0b\227\0\0\267\207\0\0\30\331para\0\0\0\0\0\3\0\0\0\1\0\0\0\1"
+      "\0\0\0\0\0\0\0\1\0\0\0\0\0\0chrm\0\0\0\0\0\3\0\0\0\0\243\327\0\0T|"
+      "\0\0L\315\0\0\231\232\0\0&"
+      "g\0\0\17\\mluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0\f\0\0\0\34\0G\0o\0o\0g"
+      "\0l\0emluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0\26\0\0\0\34\0I\0m\0a\0g\0e"
+      "\0 \0c\0o\0d\0e\0c\0\0");
+  size_t profile_size = 896;
+  jxl::PaddedBytes icc_profile;
+  icc_profile.assign(profile, profile + profile_size);
+
+  size_t xsize = 50;
+  size_t ysize = 50;
+  size_t bits_per_sample = 16;
+  size_t orientation = 1;
+  size_t alpha_bits = 0;
+  std::vector<uint8_t> data =
+      GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
+                    /*have_container=*/false, /*metadata_default=*/false,
+                    /*insert_extra_box=*/false, icc_profile);
+  const uint8_t* next_in = data.data();
+  size_t avail_in = data.size();
+
+  JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSubscribeEvents(
+                dec, JPEGXL_DEC_BASIC_INFO | JPEGXL_DEC_COLOR_ENCODING));
+
+  EXPECT_EQ(JPEGXL_DEC_BASIC_INFO,
+            JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  EXPECT_EQ(JPEGXL_DEC_COLOR_ENCODING,
+            JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  JpegxlColorProfileSource color_info;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetColorProfileSource(dec, &color_info));
+
+  EXPECT_EQ(profile_size, color_info.icc_profile_size);
+  jxl::PaddedBytes icc_profile2(profile_size);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetICCProfile(dec, icc_profile2.data(),
+                                       icc_profile2.size()));
 
   JpegxlDecoderDestroy(dec);
 }

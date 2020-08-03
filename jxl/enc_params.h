@@ -140,8 +140,8 @@ struct CompressParams {
   // If true, the "modular mode options" members below are used.
   bool modular_group_mode = false;
 
-  // Use "lossless JPEG groups".
-  bool brunsli_group_mode = false;
+  // Change group size in modular mode (0=128, 1=256, 2=512, 3=1024).
+  size_t modular_group_size_shift = 1;
 
   Override preview = Override::kDefault;
   Override noise = Override::kDefault;
@@ -192,6 +192,11 @@ struct CompressParams {
   bool verbose = false;
 
   ButteraugliParams ba_params;
+
+  // Force usage of CfL when doing JPEG recompression. This can have unexpected
+  // effects on the decoded pixels (but it is still guaranteed that the original
+  // JPEG coefficients can be reconstructed).
+  bool force_cfl_jpeg_recompression = false;
 
   // modular mode options below
   ModularOptions options;

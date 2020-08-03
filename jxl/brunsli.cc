@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/brunsli.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
-#include <hwy/foreach_target.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -48,6 +45,10 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/luminance.h"
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
+#include <hwy/foreach_target.h>
 
 // Definitions required by SIMD. Only define once.
 #ifndef JXL_BRUNSLI
@@ -578,19 +579,19 @@ Status JpegDataToCoefficients(const brunsli::JPEGData& jpg, Image3F* out,
 
 namespace {
 
-bool GetMarkerPayload(const std::string& marker, ByteSpan* payload) {
-  if (marker.size() < 3) {
+bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
+  if (size < 3) {
     return false;
   }
-  size_t hi = marker[1];
-  size_t lo = marker[2];
-  size_t size = (hi << 8u) | lo;
+  size_t hi = data[1];
+  size_t lo = data[2];
+  size_t internal_size = (hi << 8u) | lo;
   // Second byte of marker is not counted towards size.
-  if (size != marker.size() - 1) {
+  if (internal_size != size - 1) {
     return false;
   }
   // cut second marker byte and "length" from payload.
-  *payload = ByteSpan(marker);
+  *payload = ByteSpan(data, size);
   payload->remove_prefix(3);
   return true;
 }
@@ -603,12 +604,12 @@ Status ParseChunkedMarker(const brunsli::JPEGData& src, uint8_t marker_type,
   std::vector<bool> presence;
   size_t expected_number_of_parts = 0;
   bool is_first_chunk = true;
-  for (const std::string& marker : src.app_data) {
+  for (const auto& marker : src.app_data) {
     if (marker.empty() || marker[0] != marker_type) {
       continue;
     }
     ByteSpan payload;
-    if (!GetMarkerPayload(marker, &payload)) {
+    if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
       // Something is wrong with this marker; does not care.
       continue;
     }
@@ -681,16 +682,16 @@ Status AddChunkedMarker(brunsli::JPEGData* out, uint8_t marker_type,
     const uint8_t hi = chunk_length >> 8u;
     const uint8_t lo = chunk_length & 0xFFu;
 
-    std::string extension_chunk;
+    std::vector<uint8_t> extension_chunk;
     extension_chunk.push_back(marker_type);
     extension_chunk.push_back(hi);
     extension_chunk.push_back(lo);
-    extension_chunk.append(reinterpret_cast<const char*>(tag.data()),
-                           tag.size());
+    extension_chunk.insert(extension_chunk.end(), tag.data(),
+                           tag.data() + tag.size());
     extension_chunk.push_back(i + 1);
     extension_chunk.push_back(num_chunks);
-    extension_chunk.append(
-        reinterpret_cast<const char*>(payload.data() + start), part_length);
+    extension_chunk.insert(extension_chunk.end(), payload.data() + start,
+                           payload.data() + start + part_length);
 
     // 1 extra for marker byte.
     JXL_ASSERT(extension_chunk.size() == (chunk_length + 1));
@@ -902,11 +903,11 @@ const uint8_t kDefaultQuantMatrix[2][64] = {
      99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99,
      99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99}};
 
-void FillQuantMatrix(bool is_chroma, float scale, std::vector<int>* dst) {
+void FillQuantMatrix(bool is_chroma, float scale, int32_t* dst) {
   const uint8_t* const in = kDefaultQuantMatrix[is_chroma];
   for (uint32_t i = 0; i < kDCTBlockSize; ++i) {
     const uint32_t v = static_cast<float>(in[i]) * scale;
-    dst->at(i) = (v < 1) ? 1 : (v > 255) ? 255u : v;
+    dst[i] = (v < 1) ? 1 : (v > 255) ? 255u : v;
   }
 }
 
@@ -1002,8 +1003,7 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   out.MCU_cols = DivCeil(out.width, out.max_h_samp_factor * N);
   out.has_zero_padding_bit = false;
 
-  out.app_data.emplace_back(reinterpret_cast<const char*>(kApp0Template),
-                            kApp0TemplateSize);
+  out.app_data.emplace_back(kApp0Template, kApp0Template + kApp0TemplateSize);
   out.marker_order.push_back(kApp0);
 
   if (options.hdr_orig_colorspace.empty()) {
@@ -1049,13 +1049,13 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   }
 
   ::brunsli::JPEGQuantTable quant_luma;
-  FillQuantMatrix(false, options.quant_scale, &quant_luma.values);
+  FillQuantMatrix(false, options.quant_scale, quant_luma.values.data());
   quant_luma.precision = 0;
   quant_luma.index = 0;
   quant_luma.is_last = false;
   out.quant.emplace_back(std::move(quant_luma));
   ::brunsli::JPEGQuantTable quant_chroma;
-  FillQuantMatrix(true, options.quant_scale, &quant_chroma.values);
+  FillQuantMatrix(true, options.quant_scale, quant_chroma.values.data());
   quant_chroma.precision = 0;
   quant_chroma.index = 1;
   quant_chroma.is_last = true;
@@ -1102,7 +1102,7 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   scan_info.Se = 63;
   scan_info.Ah = 0;
   scan_info.Al = 0;
-  scan_info.components.resize(num_c);
+  scan_info.num_components = num_c;
   for (size_t i = 0; i < num_c; ++i) {
     scan_info.components[i].comp_idx = i;
     scan_info.components[i].dc_tbl_idx = 0;
@@ -1122,674 +1122,6 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
   compressed->append(Span<uint8_t>(output.data(), output_size));
 
   return true;
-}
-
-class BrunsliFrameEncoderInternal {
- public:
-  BrunsliFrameEncoderInternal(const FrameDimensions& frame_dim,
-                              ThreadPool* pool)
-      : pool_(pool), dc_states_(nullptr), ac_states_(nullptr) {
-    jpg_.width = frame_dim.xsize;
-    jpg_.height = frame_dim.ysize;
-    jpg_.version = 0;           // regular Brunsli
-    jpg_.restart_interval = 0;  // don't care
-    jpg_.has_zero_padding_bit = false;
-  }
-
-  bool ReadSourceImage(const ImageBundle* src,
-                       const std::vector<int32_t>& quant_table,
-                       YCbCrChromaSubsampling subsampling) {
-    if (!src->HasColor()) return false;
-
-    // TODO(eustas): consider grayscale / CMYK.
-    const size_t num_c = 3;
-
-    constexpr size_t kInvPlaneOrder[] = {1, 0, 2};
-    for (size_t c = 0; c < num_c; ++c) {
-      ::brunsli::JPEGQuantTable quant;
-      size_t src_q = kInvPlaneOrder[c] * 64;
-      for (size_t i = 0; i < 64; ++i) {
-        // TODO(eustas): add a sanity check?
-        quant.values[i] = quant_table[i + src_q];
-      }
-      quant.precision = 0;
-      quant.index = c;
-      quant.is_last = (c + 1 == num_c);
-      jpg_.quant.emplace_back(std::move(quant));
-    }
-
-    constexpr size_t N = kBlockDim;
-    constexpr int kQuantMap[] = {0, 1, 2};
-
-    constexpr size_t kPlaneOrder[] = {1, 0, 2};
-
-    for (size_t c = 0; c < num_c; ++c) {
-      ::brunsli::JPEGComponent component;
-      component.id = static_cast<int>(c) + 1;  // YCbCr
-      component.h_samp_factor = 1;
-      component.v_samp_factor = 1;
-      component.quant_idx = kQuantMap[c];
-      jpg_.components.emplace_back(std::move(component));
-    }
-    if (subsampling == YCbCrChromaSubsampling::k420) {
-      jpg_.components[0].h_samp_factor = 2;
-      jpg_.components[0].v_samp_factor = 2;
-    } else if (subsampling == YCbCrChromaSubsampling::k422) {
-      jpg_.components[0].h_samp_factor = 2;
-    } else if (subsampling == YCbCrChromaSubsampling::k411) {
-      jpg_.components[0].h_samp_factor = 4;
-    }
-    jpg_.max_h_samp_factor = jpg_.components[0].h_samp_factor;
-    jpg_.max_v_samp_factor = jpg_.components[0].v_samp_factor;
-    jpg_.MCU_rows = DivCeil(jpg_.height, jpg_.max_v_samp_factor * N);
-    jpg_.MCU_cols = DivCeil(jpg_.width, jpg_.max_h_samp_factor * N);
-
-    for (size_t c = 0; c < num_c; ++c) {
-      const ImageF& plane = src->color().Plane(kPlaneOrder[c]);
-      ::brunsli::JPEGComponent& component = jpg_.components[c];
-      component.quant_idx = kQuantMap[c];
-      const size_t xsize_blocks = component.h_samp_factor * jpg_.MCU_cols;
-      component.width_in_blocks = xsize_blocks;
-      const size_t ysize_blocks = component.v_samp_factor * jpg_.MCU_rows;
-      component.height_in_blocks = ysize_blocks;
-      const size_t num_blocks = xsize_blocks * ysize_blocks;
-      component.num_blocks = num_blocks;
-      std::vector<::brunsli::coeff_t> coeffs(num_blocks * kDCTBlockSize);
-      const size_t from_stride = plane.PixelsPerRow();
-      constexpr size_t group_dim = kGroupDimInBlocks;
-      const size_t xsize_groups = DivCeil(xsize_blocks, group_dim);
-      const size_t ysize_groups = DivCeil(ysize_blocks, group_dim);
-      const auto copy_coeffs = [&](int idx, int /*thread*/) {
-        const size_t gx = idx % xsize_groups;
-        const size_t gy = idx / xsize_groups;
-        const Rect group_rect_blocks(gx * group_dim, gy * group_dim, group_dim,
-                                     group_dim, xsize_blocks, ysize_blocks);
-        const size_t bx0 = group_rect_blocks.x0();
-        const size_t bx1 = bx0 + group_rect_blocks.xsize();
-        const size_t by0 = group_rect_blocks.y0();
-        const size_t by1 = by0 + group_rect_blocks.ysize();
-        const size_t bx_max = std::min<size_t>(DivCeil(plane.xsize(), N), bx1);
-        const size_t by_max = std::min<size_t>(DivCeil(plane.ysize(), N), by1);
-        for (size_t by = by0; by < by_max; ++by) {
-          const float* JXL_RESTRICT from_row = plane.ConstRow(by * N);
-          ::brunsli::coeff_t* JXL_RESTRICT to_row =
-              &coeffs[by * xsize_blocks * kDCTBlockSize];
-          for (size_t bx = bx0; bx < bx_max; ++bx) {
-            const float* JXL_RESTRICT from_block = &from_row[bx * N];
-            ::brunsli::coeff_t* JXL_RESTRICT to_block =
-                &to_row[bx * kDCTBlockSize];
-            // TODO(eustas): SIMDify
-            for (size_t n = 0; n < N * N; ++n) {
-              to_block[n] = from_block[(n % N) + (n / N) * from_stride];
-            }
-          }
-          // Complete the MCU, if necessary.
-          memset(to_row + bx_max * kDCTBlockSize, 0,
-                 (bx1 - bx_max) * kDCTBlockSize * sizeof(::brunsli::coeff_t));
-        }
-        // Complete the MCU, if necessary.
-        for (size_t by = by_max; by < by1; ++by) {
-          ::brunsli::coeff_t* JXL_RESTRICT to_row =
-              &coeffs[(bx0 + by * xsize_blocks) * kDCTBlockSize];
-          memset(to_row, 0,
-                 (bx1 - bx0) * kDCTBlockSize * sizeof(::brunsli::coeff_t));
-        }
-      };
-      RunOnPool(pool_, 0, static_cast<int>(xsize_groups * ysize_groups),
-                ThreadPool::SkipInit(), copy_coeffs, "Brunsli:CopyCoeffs");
-
-      component.coeffs = std::move(coeffs);
-    }
-
-    return true;
-  }
-
-  bool DoEncode() {
-    using brunsli::internal::enc::ComponentMeta;
-    using brunsli::internal::enc::SelectContextBits;
-    using brunsli::internal::enc::State;
-
-    size_t num_components = jpg_.components.size();
-    std::vector<size_t> approx_total_nonzeros(num_components);
-
-    size_t width_in_blocks = jpg_.MCU_cols * jpg_.max_h_samp_factor;
-    size_t height_in_blocks = jpg_.MCU_rows * jpg_.max_v_samp_factor;
-
-    size_t w_ac = (width_in_blocks + kGroupDimInBlocks - 1) / kGroupDimInBlocks;
-    size_t h_ac =
-        (height_in_blocks + kGroupDimInBlocks - 1) / kGroupDimInBlocks;
-
-    size_t w_dc =
-        (width_in_blocks + kDcGroupDimInBlocks - 1) / kDcGroupDimInBlocks;
-    size_t h_dc =
-        (height_in_blocks + kDcGroupDimInBlocks - 1) / kDcGroupDimInBlocks;
-
-    std::vector<std::vector<brunsli::coeff_t>> dc_prediction_errors(
-        num_components);
-    std::vector<std::vector<uint8_t>> block_state(num_components);
-    for (size_t i = 0; i < num_components; ++i) {
-      const brunsli::JPEGComponent& c = jpg_.components[i];
-      dc_prediction_errors[i].resize(c.width_in_blocks * c.height_in_blocks);
-      block_state[i].resize(c.width_in_blocks * c.height_in_blocks);
-    }
-
-    size_t dc_state_size = w_dc * h_dc;
-    size_t ac_state_size = w_ac * h_ac;
-    states_.resize(1 + dc_state_size + ac_state_size);
-    State& state = states_[0];
-    dc_states_ = states_.data() + 1;
-    ac_states_ = dc_states_ + dc_state_size;
-
-    if (!CalculateMeta(jpg_, &state)) return false;
-    for (size_t c = 0; c < num_components; ++c) {
-      ComponentMeta& m = state.meta[c];
-      m.dc_prediction_errors = dc_prediction_errors[c].data();
-      m.block_state = block_state[c].data();
-    }
-
-    for (size_t y = 0; y < h_dc; ++y) {
-      for (size_t x = 0; x < w_dc; ++x) {
-        State& s = dc_states_[x + y * w_dc];
-        std::vector<ComponentMeta>& meta = s.meta;
-        if (!CalculateMeta(jpg_, &s)) return false;
-        for (size_t c = 0; c < num_components; ++c) {
-          ComponentMeta& m = meta[c];
-          size_t h_group_dim =
-              m.h_samp * kDcGroupDimInBlocks / jpg_.max_h_samp_factor;
-          size_t first_x = x * h_group_dim;
-          size_t last_x =
-              std::min<size_t>(first_x + h_group_dim, m.width_in_blocks);
-          size_t v_group_dim =
-              m.v_samp * kDcGroupDimInBlocks / jpg_.max_v_samp_factor;
-          size_t first_y = y * v_group_dim;
-          size_t last_y =
-              std::min<size_t>(first_y + v_group_dim, m.height_in_blocks);
-          m.ac_coeffs +=
-              first_x * brunsli::kDCTBlockSize + first_y * m.ac_stride;
-          m.width_in_blocks = last_x - first_x;
-          m.height_in_blocks = last_y - first_y;
-          m.dc_prediction_errors =
-              dc_prediction_errors[c].data() + first_x + first_y * m.dc_stride;
-          m.block_state =
-              block_state[c].data() + first_x + first_y * m.b_stride;
-        }
-      }
-    }
-
-    for (size_t y = 0; y < h_ac; ++y) {
-      for (size_t x = 0; x < w_ac; ++x) {
-        State& s = ac_states_[x + y * w_ac];
-        std::vector<ComponentMeta>& meta = s.meta;
-        if (!CalculateMeta(jpg_, &s)) return false;
-        for (size_t c = 0; c < num_components; ++c) {
-          ComponentMeta& m = meta[c];
-          size_t h_group_dim =
-              m.h_samp * kGroupDimInBlocks / jpg_.max_h_samp_factor;
-          size_t first_x = x * h_group_dim;
-          size_t last_x =
-              std::min<size_t>(first_x + h_group_dim, m.width_in_blocks);
-          size_t v_group_dim =
-              m.v_samp * kGroupDimInBlocks / jpg_.max_v_samp_factor;
-          size_t first_y = y * v_group_dim;
-          size_t last_y =
-              std::min<size_t>(first_y + v_group_dim, m.height_in_blocks);
-          m.ac_coeffs +=
-              first_x * brunsli::kDCTBlockSize + first_y * m.ac_stride;
-          m.width_in_blocks = last_x - first_x;
-          m.height_in_blocks = last_y - first_y;
-          m.dc_prediction_errors =
-              dc_prediction_errors[c].data() + first_x + first_y * m.dc_stride;
-          m.block_state =
-              block_state[c].data() + first_x + first_y * m.b_stride;
-        }
-      }
-    }
-
-    State* ac_states = ac_states_;
-    const auto sample_nonzeros = [num_components, ac_states](int idx,
-                                                             int /* thread */) {
-      for (size_t c = 0; c < num_components; ++c) {
-        ComponentMeta& m = ac_states[idx].meta[c];
-        m.approx_total_nonzeros = SampleNumNonZeros(&m);
-      }
-    };
-    RunOnPool(pool_, 0, static_cast<int>(ac_state_size), ThreadPool::SkipInit(),
-              sample_nonzeros, "Brunsli:SampleNonzeros");
-
-    // Groups workflow: reduce approx_total_nonzeros.
-    for (size_t y = 0; y < h_ac; ++y) {
-      for (size_t x = 0; x < w_ac; ++x) {
-        for (size_t c = 0; c < num_components; ++c) {
-          approx_total_nonzeros[c] +=
-              ac_states[x + y * w_ac].meta[c].approx_total_nonzeros;
-        }
-      }
-    }
-
-    int32_t num_contexts = num_components;
-    for (size_t c = 0; c < num_components; ++c) {
-      ComponentMeta& m = state.meta[c];
-      m.context_bits = SelectContextBits(approx_total_nonzeros[c] + 1);
-      m.context_offset = num_contexts;
-      num_contexts += brunsli::kNumNonzeroContextSkip[m.context_bits];
-    }
-    state.num_contexts = num_contexts;
-
-    // Groups workflow: distribute context_bits.
-    for (size_t y = 0; y < h_ac; ++y) {
-      for (size_t x = 0; x < w_ac; ++x) {
-        State& s = ac_states[x + y * w_ac];
-        for (size_t c = 0; c < num_components; ++c) {
-          ComponentMeta& m = state.meta[c];
-          s.meta[c].context_bits = m.context_bits;
-          s.meta[c].context_offset = m.context_offset;
-        }
-        s.num_contexts = state.num_contexts;
-      }
-    }
-
-    for (size_t y = 0; y < h_dc; ++y) {
-      for (size_t x = 0; x < w_dc; ++x) {
-        State& s = dc_states_[x + y * w_dc];
-        for (size_t c = 0; c < num_components; ++c) {
-          ComponentMeta& m = state.meta[c];
-          s.meta[c].context_bits = m.context_bits;
-          s.meta[c].context_offset = m.context_offset;
-        }
-        s.num_contexts = state.num_contexts;
-      }
-    }
-
-    std::atomic<int> num_errors{0};
-    State* dc_states = dc_states_;
-    const auto encode_dc = [&num_errors, dc_states](int idx, int /* thread */) {
-      if (!PredictDCCoeffs(&dc_states[idx])) {
-        num_errors.fetch_add(1, std::memory_order_relaxed);
-        return;
-      }
-      EncodeDC(&dc_states[idx]);
-    };
-    RunOnPool(pool_, 0, static_cast<int>(dc_state_size), ThreadPool::SkipInit(),
-              encode_dc, "Brunsli:EncodeDc");
-    if (num_errors.load(std::memory_order_relaxed) != 0) return false;
-
-    const auto encode_ac = [ac_states](int idx, int /* thread */) {
-      EncodeAC(&ac_states[idx]);
-    };
-    RunOnPool(pool_, 0, static_cast<int>(ac_state_size), ThreadPool::SkipInit(),
-              encode_ac, "Brunsli:EncodeAc");
-
-    // Groups workflow: merge histograms.
-    // TODO: SIMDify.
-    state.entropy_source.Resize(num_contexts);
-    for (size_t y = 0; y < h_dc; ++y) {
-      for (size_t x = 0; x < w_dc; ++x) {
-        state.entropy_source.Merge(dc_states[x + y * w_dc].entropy_source);
-      }
-    }
-    for (size_t y = 0; y < h_ac; ++y) {
-      for (size_t x = 0; x < w_ac; ++x) {
-        state.entropy_source.Merge(ac_states[x + y * w_ac].entropy_source);
-      }
-    }
-
-    entropy_codes_ = PrepareEntropyCodes(&state);
-
-    return true;
-  }
-
-  bool SerializeHeader(BitWriter* out) {
-    // TODO: pull entropy codes serialization "side effect".
-    auto& state = states_[0];
-    state.entropy_codes = entropy_codes_.get();
-    size_t part_size = 20480;
-
-    // TODO: take into account histograms.
-    uint32_t skip_flags = ~((1u << brunsli::kBrunsliQuantDataTag) |
-                            (1u << brunsli::kBrunsliHistogramDataTag));
-    PaddedBytes part(part_size);
-    if (!BrunsliSerialize(&state, jpg_, skip_flags, part.data(), &part_size)) {
-      return false;
-    }
-
-    part.resize(part_size);
-    out->AppendByteAligned(BitWriter(std::move(part)));
-
-    return true;
-  }
-
-  bool SerializeDcGroup(size_t idx, BitWriter* out, AuxOut* aux_out) {
-    auto& s = dc_states_[idx];
-    // TODO: reduce for subsampled
-    size_t part_size =
-        kDcGroupDimInBlocks * kDcGroupDimInBlocks * jpg_.components.size();
-    part_size += part_size / 8;
-    PaddedBytes part(part_size);
-    s.entropy_codes = entropy_codes_.get();
-    uint32_t skip_flags = ~(1u << brunsli::kBrunsliDCDataTag);
-    if (!BrunsliSerialize(&s, jpg_, skip_flags, part.data(), &part_size)) {
-      return false;
-    }
-
-    part.resize(part_size);
-    out->AppendByteAligned(BitWriter(std::move(part)));
-
-    return true;
-  }
-
-  bool SerializeAcGroup(size_t idx, BitWriter* out, AuxOut* aux_out) {
-    auto& s = ac_states_[idx];
-    // TODO: reduce for subsampled.
-    size_t part_size = 32 * 32 * 63 * jpg_.components.size();
-    PaddedBytes part(part_size);
-    s.entropy_codes = entropy_codes_.get();
-    uint32_t skip_flags = ~(1u << brunsli::kBrunsliACDataTag);
-    if (!BrunsliSerialize(&s, jpg_, skip_flags, part.data(), &part_size)) {
-      return false;
-    }
-
-    part.resize(part_size);
-    out->AppendByteAligned(BitWriter(std::move(part)));
-
-    return true;
-  }
-
- private:
-  ThreadPool* pool_;
-
-  brunsli::JPEGData jpg_;
-  std::vector<brunsli::internal::enc::State> states_;
-  brunsli::internal::enc::State* dc_states_;
-  brunsli::internal::enc::State* ac_states_;
-  std::unique_ptr<brunsli::internal::enc::EntropyCodes> entropy_codes_;
-};
-
-BrunsliFrameEncoder::BrunsliFrameEncoder(const FrameDimensions& frame_dim,
-                                         ThreadPool* pool)
-    : impl_(make_unique<BrunsliFrameEncoderInternal>(frame_dim, pool)) {}
-BrunsliFrameEncoder::~BrunsliFrameEncoder() = default;
-bool BrunsliFrameEncoder::ReadSourceImage(
-    const ImageBundle* src, const std::vector<int32_t>& quant_table,
-    YCbCrChromaSubsampling subsampling) {
-  return impl_->ReadSourceImage(src, quant_table, subsampling);
-}
-bool BrunsliFrameEncoder::DoEncode() { return impl_->DoEncode(); }
-bool BrunsliFrameEncoder::SerializeHeader(BitWriter* out) {
-  return impl_->SerializeHeader(out);
-}
-bool BrunsliFrameEncoder::SerializeDcGroup(size_t index, BitWriter* out,
-                                           AuxOut* aux_out) {
-  return impl_->SerializeDcGroup(index, out, aux_out);
-}
-bool BrunsliFrameEncoder::SerializeAcGroup(size_t index, BitWriter* out,
-                                           AuxOut* aux_out) {
-  return impl_->SerializeAcGroup(index, out, aux_out);
-}
-
-class BrunsliFrameDecoderInternal {
- public:
-  explicit BrunsliFrameDecoderInternal(ThreadPool* pool)
-      : pool_(pool), dc_states_(nullptr), ac_states_(nullptr) {}
-
-  bool ReadHeader(const FrameDimensions* frame_dim, BitReader* src,
-                  YCbCrChromaSubsampling subsampling) {
-    using brunsli::BrunsliStatus;
-    using brunsli::JPEGQuantTable;
-    using brunsli::internal::dec::ComponentMeta;
-    using brunsli::internal::dec::PrepareMeta;
-    using brunsli::internal::dec::Stage;
-    using brunsli::internal::dec::State;
-    using brunsli::internal::dec::UpdateSubsamplingDerivatives;
-
-    // TODO(eustas): consider grayscale / CMYK.
-    const size_t num_c = 3;
-    jpg_.version = 0;
-    jpg_.width = frame_dim->xsize;
-    jpg_.height = frame_dim->ysize;
-    jpg_.components.resize(num_c);
-    for (size_t c = 0; c < num_c; ++c) {
-      jpg_.components[c].h_samp_factor = 1;
-      jpg_.components[c].v_samp_factor = 1;
-    }
-    if (subsampling == YCbCrChromaSubsampling::k420) {
-      jpg_.components[0].h_samp_factor = 2;
-      jpg_.components[0].v_samp_factor = 2;
-    } else if (subsampling == YCbCrChromaSubsampling::k422) {
-      jpg_.components[0].h_samp_factor = 2;
-    } else if (subsampling == YCbCrChromaSubsampling::k411) {
-      jpg_.components[0].h_samp_factor = 4;
-    }
-    if (!UpdateSubsamplingDerivatives(&jpg_)) return false;
-
-    // == num_c?
-    const int num_q = 3;
-    jpg_.quant.resize(num_q);
-    for (size_t i = 0; i < num_q; ++i) {
-      JPEGQuantTable& q = jpg_.quant[i];
-      q.index = i;
-      q.is_last = (i == num_q - 1);
-      q.precision = 0;
-    }
-
-    const size_t num_dc_groups =
-        frame_dim->xsize_dc_groups * frame_dim->ysize_dc_groups;
-    const size_t num_ac_groups =
-        frame_dim->xsize_groups * frame_dim->ysize_groups;
-    states_.resize(1 + num_dc_groups + num_ac_groups);
-    dc_states_ = states_.data() + 1;
-    ac_states_ = dc_states_ + num_dc_groups;
-
-    size_t pos = src->TotalBitsConsumed();
-    if ((pos & 0x7u) != 0) return false;
-    pos >>= 3u;
-
-    const uint8_t* data = src->FirstByte() + pos;
-    const uint8_t* data_end = src->FirstByte() + src->TotalBytes();
-    const uint8_t* chunk_end = data;
-    if (!SkipSection(&chunk_end, data_end - chunk_end)) return false;
-    if (!SkipSection(&chunk_end, data_end - chunk_end)) return false;
-    const size_t part_length = chunk_end - data;
-
-    State& state = states_[0];
-    state.stage = Stage::SECTION;
-    state.tags_met = ~((1u << brunsli::kBrunsliQuantDataTag) |
-                       (1u << brunsli::kBrunsliHistogramDataTag));
-    state.data = data;
-    state.len = part_length;
-    PrepareMeta(&jpg_, &state);
-
-    BrunsliStatus status = ProcessJpeg(&state, &jpg_);
-    if (status != BrunsliStatus::BRUNSLI_OK) return false;
-    WarmupMeta(&jpg_, &state);
-
-    src->SkipBits(part_length << 3u);
-
-    for (size_t idx = 0; idx < num_dc_groups; ++idx) {
-      size_t y = idx / frame_dim->xsize_dc_groups;
-      size_t x = idx % frame_dim->xsize_dc_groups;
-      State& dc_state = dc_states_[idx];
-      dc_state.stage = Stage::SECTION;
-      dc_state.tags_met = ~(1u << brunsli::kBrunsliDCDataTag);
-
-      dc_state.context_map = state.context_map;
-      dc_state.entropy_codes = state.entropy_codes;
-
-      std::vector<ComponentMeta>& meta = dc_state.meta;
-
-      PrepareMeta(&jpg_, &dc_state);
-      dc_state.is_storage_allocated = true;
-      WarmupMeta(&jpg_, &dc_state);
-      for (size_t c = 0; c < num_c; ++c) {
-        ComponentMeta& m = meta[c];
-        size_t h_group_dim =
-            m.h_samp * kDcGroupDimInBlocks / jpg_.max_h_samp_factor;
-        size_t first_x = x * h_group_dim;
-        size_t last_x =
-            std::min<size_t>(first_x + h_group_dim, m.width_in_blocks);
-        size_t v_group_dim =
-            m.v_samp * kDcGroupDimInBlocks / jpg_.max_v_samp_factor;
-        size_t first_y = y * v_group_dim;
-        size_t last_y =
-            std::min<size_t>(first_y + v_group_dim, m.height_in_blocks);
-        m.ac_coeffs += first_x * brunsli::kDCTBlockSize + first_y * m.ac_stride;
-        m.block_state =
-            state.meta[c].block_state + first_x + first_y * m.b_stride;
-        m.width_in_blocks = last_x - first_x;
-        m.height_in_blocks = last_y - first_y;
-      }
-    }
-
-    for (size_t idx = 0; idx < num_ac_groups; ++idx) {
-      size_t y = idx / frame_dim->xsize_groups;
-      size_t x = idx % frame_dim->xsize_groups;
-      State& ac_state = ac_states_[idx];
-      ac_state.stage = Stage::SECTION;
-      ac_state.tags_met = ~(1u << brunsli::kBrunsliACDataTag);
-
-      ac_state.context_map = state.context_map;
-      ac_state.entropy_codes = state.entropy_codes;
-
-      std::vector<ComponentMeta>& meta = ac_state.meta;
-
-      PrepareMeta(&jpg_, &ac_state);
-      ac_state.is_storage_allocated = true;
-      WarmupMeta(&jpg_, &ac_state);
-      for (size_t c = 0; c < num_c; ++c) {
-        ComponentMeta& m = meta[c];
-        size_t h_group_dim =
-            m.h_samp * kGroupDimInBlocks / jpg_.max_h_samp_factor;
-        size_t first_x = x * h_group_dim;
-        size_t last_x =
-            std::min<size_t>(first_x + h_group_dim, m.width_in_blocks);
-        size_t v_group_dim =
-            m.v_samp * kGroupDimInBlocks / jpg_.max_v_samp_factor;
-        size_t first_y = y * v_group_dim;
-        size_t last_y =
-            std::min<size_t>(first_y + v_group_dim, m.height_in_blocks);
-        m.context_bits = state.meta[c].context_bits;
-        m.context_offset = state.meta[c].context_offset;
-        m.ac_coeffs += first_x * brunsli::kDCTBlockSize + first_y * m.ac_stride;
-        m.block_state =
-            state.meta[c].block_state + first_x + first_y * m.b_stride;
-        m.width_in_blocks = last_x - first_x;
-        m.height_in_blocks = last_y - first_y;
-      }
-    }
-
-    return true;
-  }
-
-  bool DecodeDcGroup(int idx, jxl::BitReader* src) {
-    using brunsli::BrunsliStatus;
-    using brunsli::internal::dec::ProcessJpeg;
-    using brunsli::internal::dec::Stage;
-    using brunsli::internal::dec::State;
-
-    size_t pos = src->TotalBitsConsumed();
-    if ((pos & 0x7u) != 0) return false;
-    pos >>= 3u;
-
-    const uint8_t* data = src->FirstByte() + pos;
-    const uint8_t* data_end = src->FirstByte() + src->TotalBytes();
-    const uint8_t* chunk_end = data;
-    if (!SkipSection(&chunk_end, data_end - chunk_end)) return false;
-    const size_t part_length = chunk_end - data;
-
-    State& dc_state = dc_states_[idx];
-    dc_state.data = data;
-    dc_state.len = part_length;
-
-    BrunsliStatus status = ProcessJpeg(&dc_state, &jpg_);
-    if (status != brunsli::BRUNSLI_OK) return false;
-
-    src->SkipBits(part_length << 3u);
-
-    return true;
-  }
-
-  bool DecodeAcGroup(int idx, jxl::BitReader* src, Image3F* img,
-                     const Rect& rect) {
-    using brunsli::BrunsliStatus;
-    using brunsli::internal::dec::ProcessJpeg;
-    using brunsli::internal::dec::Stage;
-    using brunsli::internal::dec::State;
-
-    size_t pos = src->TotalBitsConsumed();
-    if ((pos & 0x7u) != 0) return false;
-    pos >>= 3u;
-
-    const uint8_t* data = src->FirstByte() + pos;
-    const uint8_t* data_end = src->FirstByte() + src->TotalBytes();
-    const uint8_t* chunk_end = data;
-    if (!SkipSection(&chunk_end, data_end - chunk_end)) return false;
-    const size_t part_length = chunk_end - data;
-
-    State& ac_state = ac_states_[idx];
-    ac_state.data = data;
-    ac_state.len = part_length;
-
-    BrunsliStatus status = ProcessJpeg(&ac_state, &jpg_);
-    if (status != brunsli::BRUNSLI_OK) return false;
-
-    src->SkipBits(part_length << 3u);
-
-    return true;
-  }
-
-  bool FinalizeDecoding(const FrameHeader& frame_header, Image3F&& opsin,
-                        ImageBundle* decoded) {
-    if (decoded->IsJPEG()) {
-      std::vector<int32_t> jpeg_quant_table;
-      JXL_RETURN_IF_ERROR(
-          JpegDataToCoefficients(jpg_, &opsin, &jpeg_quant_table, pool_));
-      decoded->jpeg_xsize = jpg_.width;
-      decoded->jpeg_ysize = jpg_.height;
-      decoded->color_transform = frame_header.color_transform;
-      decoded->chroma_subsampling = frame_header.chroma_subsampling;
-      decoded->jpeg_quant_table = jpeg_quant_table;
-    } else {
-      // TODO(eustas): parse extensions (in ReadHeader?)
-      BrunsliExtensions extensions{};
-      JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(JpegDataToPixels)(
-          jpg_, extensions, &opsin, pool_));
-    }
-
-    decoded->SetFromImage(std::move(opsin),
-                          decoded->metadata()->color_encoding);
-    if (!decoded->IsJPEG()) {
-      JXL_RETURN_IF_ERROR(Map255ToTargetNits(decoded, pool_));
-    }
-    return true;
-  }
-
- private:
-  ThreadPool* pool_;
-
-  brunsli::JPEGData jpg_;
-  std::vector<brunsli::internal::dec::State> states_;
-  brunsli::internal::dec::State* dc_states_;
-  brunsli::internal::dec::State* ac_states_;
-};
-
-BrunsliFrameDecoder::BrunsliFrameDecoder(ThreadPool* pool)
-    : impl_(make_unique<BrunsliFrameDecoderInternal>(pool)) {}
-BrunsliFrameDecoder::~BrunsliFrameDecoder() = default;
-bool BrunsliFrameDecoder::ReadHeader(const FrameDimensions* frame_dim,
-                                     BitReader* src,
-                                     YCbCrChromaSubsampling subsampling) {
-  return impl_->ReadHeader(frame_dim, src, subsampling);
-}
-bool BrunsliFrameDecoder::DecodeDcGroup(int idx, jxl::BitReader* src) {
-  return impl_->DecodeDcGroup(idx, src);
-}
-bool BrunsliFrameDecoder::DecodeAcGroup(int idx, jxl::BitReader* src,
-                                        Image3F* img, const Rect& rect) {
-  return impl_->DecodeAcGroup(idx, src, img, rect);
-}
-bool BrunsliFrameDecoder::FinalizeDecoding(const FrameHeader& frame_header,
-                                           Image3F&& opsin,
-                                           ImageBundle* decoded) {
-  return impl_->FinalizeDecoding(frame_header, std::move(opsin), decoded);
 }
 
 }  // namespace jxl

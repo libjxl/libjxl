@@ -169,6 +169,9 @@ add_custom_command(TARGET hwy POST_BUILD
 
 # -------------------------------------------------------- Examples
 
+# Avoids mismatch between GTest's static CRT and our dynamic.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
 add_executable(skeleton hwy/examples/skeleton_main.cc)
 target_sources(skeleton PRIVATE
     hwy/examples/skeleton-inl.h

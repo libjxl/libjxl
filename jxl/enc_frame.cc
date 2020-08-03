@@ -175,6 +175,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
 
   if (cparams.modular_group_mode) {
     frame_header->encoding = FrameEncoding::kModularGroup;
+    frame_header->group_size_shift = cparams.modular_group_size_shift;
   }
 
   if (ib.IsJPEG()) {
@@ -182,16 +183,9 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->encoding = FrameEncoding::kVarDCT;
     frame_header->color_transform = ib.color_transform;
     frame_header->chroma_subsampling = ib.chroma_subsampling;
-    JXL_ASSERT(frame_header->chroma_subsampling ==
-                   YCbCrChromaSubsampling::k444 ||
-               cparams.brunsli_group_mode);
   } else {
     frame_header->color_transform = cparams.color_transform;
     frame_header->chroma_subsampling = cparams.chroma_subsampling;
-  }
-
-  if (cparams.brunsli_group_mode) {
-    frame_header->encoding = FrameEncoding::kJpegGroup;
   }
 
   if (frame_header->IsLossy()) {
@@ -376,7 +370,8 @@ class LossyFrameEncoder {
         group_caches_[thread].InitOnce();
         TokenizeCoefficients(
             &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
-            shared.ac_strategy, &group_caches_[thread].num_nzeroes,
+            shared.ac_strategy, frame_header->chroma_subsampling,
+            &group_caches_[thread].num_nzeroes,
             &enc_state_->passes[idx_pass].ac_tokens[group_index]);
       }
     };
@@ -411,7 +406,8 @@ class LossyFrameEncoder {
     PassesSharedState& shared = enc_state_->shared;
 
     FrameDimensions frame_dim;
-    frame_dim.Set(opsin_orig.xsize(), opsin_orig.ysize());
+    frame_dim.Set(opsin_orig.xsize(), opsin_orig.ysize(),
+                  frame_header->group_size_shift);
 
     const size_t xsize = opsin_orig.xsize();
     const size_t ysize = opsin_orig.ysize();
@@ -448,6 +444,7 @@ class LossyFrameEncoder {
         }
       }
     }
+
     qe[AcStrategy::Type::DCT] = QuantEncoding::RAW(qt);
     shared.matrices.SetCustom(qe, modular_frame_encoder);
     // Recompute MulDC() and InvMulDC().
@@ -461,8 +458,13 @@ class LossyFrameEncoder {
     intptr_t onerow = opsin_orig.Plane(0).PixelsPerRow();
     bool DCzero =
         (shared.frame_header.color_transform == ColorTransform::kYCbCr);
+    // TODO(veluca): CfL for chroma-subsampled images?
+    // Would use the corresponding top-left DC value / DCT block of luma from
+    // each chroma.
+    //
     // Compute chroma-from-luma for AC (doesn't seem to be useful for DC)
-    if (frame_header->chroma_subsampling == YCbCrChromaSubsampling::k444) {
+    if (frame_header->chroma_subsampling == YCbCrChromaSubsampling::k444 &&
+        enc_state_->cparams.force_cfl_jpeg_recompression) {
       for (size_t c : {0, 2}) {
         ImageSB* map = (c == 0 ? &shared.cmap.ytox_map : &shared.cmap.ytob_map);
         const float kScale = kDefaultColorFactor;
@@ -492,8 +494,8 @@ class LossyFrameEncoder {
               for (size_t x = x0; x < x1; ++x) {
                 int coeffpos = (x % kBlockDim) + kBlockDim * (y % kBlockDim);
                 if (coeffpos == 0) continue;
-                const float scaled_m = row_m[x] * quant_table[64 + coeffpos] /
-                                       quant_table[64 * c + coeffpos];
+                const float scaled_m =
+                    row_m[x] * qt[64 + coeffpos] / qt[64 * c + coeffpos];
                 const float scaled_s =
                     kScale * row_s[x] + (kOffset - kBase * kScale) * scaled_m;
                 if (std::abs(scaled_m) > 1e-8f) {
@@ -540,8 +542,13 @@ class LossyFrameEncoder {
                   "FindCorrelation");
       }
     }
-
+    if (frame_header->chroma_subsampling != YCbCrChromaSubsampling::k444) {
+      ZeroFillImage(&dc);
+      ZeroFillImage(&enc_state_->coeffs[0]);
+    }
     for (size_t c : {1, 0, 2}) {
+      size_t hshift = c == 1 ? 0 : HShift(frame_header->chroma_subsampling);
+      size_t vshift = c == 1 ? 0 : VShift(frame_header->chroma_subsampling);
       ImageSB& map = (c == 0 ? shared.cmap.ytox_map : shared.cmap.ytob_map);
       for (size_t group_index = 0; group_index < frame_dim.num_groups;
            group_index++) {
@@ -551,24 +558,28 @@ class LossyFrameEncoder {
         float* JXL_RESTRICT ac = enc_state_->coeffs[0].PlaneRow(c, group_index);
         for (size_t by = gy * kGroupDimInBlocks;
              by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
-          const float* JXL_RESTRICT inputjpeg = opsin_orig.PlaneRow(c, by * 8);
+          if ((by >> vshift) << vshift != by) continue;
+          const float* JXL_RESTRICT inputjpeg =
+              opsin_orig.PlaneRow(c, (by >> vshift) * 8);
           const float* JXL_RESTRICT inputjpegY = opsin_orig.PlaneRow(1, by * 8);
-          float* JXL_RESTRICT fdc = dc.PlaneRow(c, by);
+          float* JXL_RESTRICT fdc = dc.PlaneRow(c, by >> vshift);
           const int8_t* JXL_RESTRICT cm =
               map.ConstRow(by / kColorTileDimInBlocks);
           for (size_t bx = gx * kGroupDimInBlocks;
                bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
+            if ((bx >> hshift) << hshift != bx) continue;
+            size_t base = (bx >> hshift) * 8;
             int idc;
             if (DCzero) {
-              idc = inputjpeg[bx * 8];
+              idc = inputjpeg[base];
             } else {
-              idc = (inputjpeg[bx * 8] * quant_table[c * 64] + 1024.f) /
+              idc = (inputjpeg[base] * quant_table[c * 64] + 1024.f) /
                     quant_table[c * 64];
             }
-            fdc[bx] = idc * dcquantization_r[c];
-            if (c == 1) {
+            fdc[bx >> hshift] = idc * dcquantization_r[c];
+            if (c == 1 || hshift != 0 || vshift != 0) {
               for (int i = 0; i < 64; i++) {
-                ac[offset + i] = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
+                ac[offset + i] = inputjpeg[base + (i % 8) * onerow + (i / 8)];
               }
             } else {
               const float scale =
@@ -577,12 +588,11 @@ class LossyFrameEncoder {
                        : shared.cmap.YtoBRatio(cm[bx / kColorTileDimInBlocks]));
 
               for (int i = 0; i < 64; i++) {
-                float Y = inputjpegY[8 * bx + (i % 8) * onerow + (i / 8)] *
-                          quant_table[64 + i];
+                float Y = inputjpegY[8 * bx + (i % 8) * onerow + (i / 8)];
                 float QChroma = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
                 // Apply it like this to keep it reversible
                 int QCR = QChroma -
-                          static_cast<int>(Y * scale / quant_table[64 * c + i]);
+                          std::round(Y * scale * qt[64 + i] / qt[64 * c + i]);
                 ac[offset + i] = QCR;
               }
             }
@@ -638,7 +648,8 @@ class LossyFrameEncoder {
         group_caches_[thread].InitOnce();
         TokenizeCoefficients(
             &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
-            shared.ac_strategy, &group_caches_[thread].num_nzeroes,
+            shared.ac_strategy, frame_header->chroma_subsampling,
+            &group_caches_[thread].num_nzeroes,
             &enc_state_->passes[idx_pass].ac_tokens[group_index]);
       }
     };
@@ -775,29 +786,24 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     return JXL_FAILURE("Butteraugli distance is too low");
   }
 
-  FrameDimensions frame_dim;
-  frame_dim.Set(ib.xsize(), ib.ysize());
-
   if (ib.IsJPEG()) {
     cparams.gaborish = Override::kOff;
     cparams.adaptive_reconstruction = Override::kOff;
-
-    if (ib.chroma_subsampling != YCbCrChromaSubsampling::k444 &&
-        !cparams.brunsli_group_mode) {
-      JXL_DEBUG_V(2, "Subsampled JPEG, using kJpegGroup\n");
-      cparams.brunsli_group_mode = true;
-    }
   }
 
   const size_t xsize = ib.xsize();
   const size_t ysize = ib.ysize();
-  const size_t num_groups = frame_dim.num_groups;
   if (xsize == 0 || ysize == 0) return JXL_FAILURE("Empty image");
 
   FrameHeader frame_header;
   LoopFilter loop_filter;
   JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams, animation_frame_or_null, ib,
                                       multiframe, &frame_header, &loop_filter));
+
+  FrameDimensions frame_dim;
+  frame_dim.Set(ib.xsize(), ib.ysize(), frame_header.group_size_shift);
+
+  const size_t num_groups = frame_dim.num_groups;
 
   multiframe->StartFrame(frame_header);
 
@@ -837,16 +843,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   LossyFrameEncoder lossy_frame_encoder(
       cparams, frame_header, loop_filter, metadata, frame_dim, passes_enc_state,
       multiframe, pool, resize_aux_outs, aux_out, &aux_outs);
-  BrunsliFrameEncoder jpeg_frame_encoder(frame_dim, pool);
   ModularFrameEncoder modular_frame_encoder(frame_dim, frame_header, cparams);
 
-  if (cparams.brunsli_group_mode) {
-    if (!ib.IsJPEG()) {
-      return JXL_FAILURE("JpegGroup mode requires JPEG quant table");
-    }
-    JXL_RETURN_IF_ERROR(jpeg_frame_encoder.ReadSourceImage(
-        &ib, ib.jpeg_quant_table, frame_header.chroma_subsampling));
-  } else if (ib.IsJPEG()) {
+  if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
         ib.color(), ib.jpeg_quant_table, &modular_frame_encoder,
         &frame_header));
@@ -906,7 +905,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   // DC global info + DC groups + AC global info + AC groups *
   // num_passes.
-  const bool has_ac_global = !frame_header.IsJpeg();
+  const bool has_ac_global = true;
   std::vector<BitWriter> group_codes(NumTocEntries(frame_dim.num_groups,
                                                    frame_dim.num_dc_groups,
                                                    num_passes, has_ac_global));
@@ -935,14 +934,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                 get_output(0), kLayerNoise, aux_out);
   }
 
-  if (frame_header.IsJpeg()) {
-    // Heavy-lifting happens here.
-    JXL_RETURN_IF_ERROR(jpeg_frame_encoder.DoEncode());
-    JXL_RETURN_IF_ERROR(jpeg_frame_encoder.SerializeHeader(get_output(0)));
-  } else {
-    JXL_RETURN_IF_ERROR(lossy_frame_encoder.State()->shared.matrices.EncodeDC(
-        get_output(0), kLayerDequantTables, aux_out));
-  }
+  JXL_RETURN_IF_ERROR(lossy_frame_encoder.State()->shared.matrices.EncodeDC(
+      get_output(0), kLayerDequantTables, aux_out));
   if (frame_header.IsLossy()) {
     // encoding == kVarDCT
     JXL_RETURN_IF_ERROR(
@@ -965,10 +958,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
           output, my_aux_out, kLayerDC,
           ModularStreamId::VarDCTDC(group_index)));
     }
-    if (frame_header.IsJpeg()) {
-      JXL_CHECK(
-          jpeg_frame_encoder.SerializeDcGroup(group_index, output, my_aux_out));
-    }
     JXL_CHECK(modular_frame_encoder.EncodeStream(
         output, my_aux_out, kLayerModularDcGroup,
         ModularStreamId::ModularDC(group_index)));
@@ -989,8 +978,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
             "EncodeDCGroup");
 
   const bool use_lossy_encoder =
-      (frame_header.encoding != FrameEncoding::kModularGroup &&
-       frame_header.encoding != FrameEncoding::kJpegGroup);
+      frame_header.encoding != FrameEncoding::kModularGroup;
 
   if (use_lossy_encoder) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.EncodeGlobalACInfo(
@@ -1002,17 +990,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
 
     for (size_t i = 0; i < multiframe->GetNumPasses(); i++) {
-      if (frame_header.encoding == FrameEncoding::kJpegGroup) {
-        if (multiframe->GetNumPasses() != 1) {
-          num_errors.fetch_add(1, std::memory_order_relaxed);
-          return;
-        }
-        if (!jpeg_frame_encoder.SerializeAcGroup(
-                group_index, ac_group_code(i, group_index), my_aux_out)) {
-          num_errors.fetch_add(1, std::memory_order_relaxed);
-          return;
-        }
-      } else if (frame_header.encoding == FrameEncoding::kVarDCT) {
+      if (frame_header.encoding == FrameEncoding::kVarDCT) {
         if (!lossy_frame_encoder.EncodeACGroup(
                 i, group_index, ac_group_code(i, group_index), my_aux_out)) {
           num_errors.fetch_add(1, std::memory_order_relaxed);

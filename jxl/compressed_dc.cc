@@ -209,28 +209,50 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
 
 // DC dequantization.
 void DequantDC(const Rect& r, Image3F* dc, const Image& in,
-               const float* dc_factors, float mul, const float* cfl_factors) {
+               const float* dc_factors, float mul, const float* cfl_factors,
+               YCbCrChromaSubsampling chroma_subsampling) {
   const HWY_FULL(float) df;
   const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
-  const auto fac_x = Set(df, dc_factors[0] * mul);
-  const auto fac_y = Set(df, dc_factors[1] * mul);
-  const auto fac_b = Set(df, dc_factors[2] * mul);
-  const auto cfl_fac_x = Set(df, cfl_factors[0]);
-  const auto cfl_fac_b = Set(df, cfl_factors[2]);
-  for (size_t y = 0; y < r.ysize(); y++) {
-    float* dec_row_x = r.PlaneRow(dc, 0, y);
-    float* dec_row_y = r.PlaneRow(dc, 1, y);
-    float* dec_row_b = r.PlaneRow(dc, 2, y);
-    const int32_t* quant_row_x = in.channel[1].plane.Row(y);
-    const int32_t* quant_row_y = in.channel[0].plane.Row(y);
-    const int32_t* quant_row_b = in.channel[2].plane.Row(y);
-    for (size_t x = 0; x < r.xsize(); x += Lanes(di)) {
-      const auto in_x = ConvertTo(df, Load(di, quant_row_x + x)) * fac_x;
-      const auto in_y = ConvertTo(df, Load(di, quant_row_y + x)) * fac_y;
-      const auto in_b = ConvertTo(df, Load(di, quant_row_b + x)) * fac_b;
-      Store(in_y, df, dec_row_y + x);
-      Store(MulAdd(in_y, cfl_fac_x, in_x), df, dec_row_x + x);
-      Store(MulAdd(in_y, cfl_fac_b, in_b), df, dec_row_b + x);
+  if (chroma_subsampling == YCbCrChromaSubsampling::k444) {
+    const auto fac_x = Set(df, dc_factors[0] * mul);
+    const auto fac_y = Set(df, dc_factors[1] * mul);
+    const auto fac_b = Set(df, dc_factors[2] * mul);
+    const auto cfl_fac_x = Set(df, cfl_factors[0]);
+    const auto cfl_fac_b = Set(df, cfl_factors[2]);
+    for (size_t y = 0; y < r.ysize(); y++) {
+      float* dec_row_x = r.PlaneRow(dc, 0, y);
+      float* dec_row_y = r.PlaneRow(dc, 1, y);
+      float* dec_row_b = r.PlaneRow(dc, 2, y);
+      const int32_t* quant_row_x = in.channel[1].plane.Row(y);
+      const int32_t* quant_row_y = in.channel[0].plane.Row(y);
+      const int32_t* quant_row_b = in.channel[2].plane.Row(y);
+      for (size_t x = 0; x < r.xsize(); x += Lanes(di)) {
+        const auto in_x = ConvertTo(df, Load(di, quant_row_x + x)) * fac_x;
+        const auto in_y = ConvertTo(df, Load(di, quant_row_y + x)) * fac_y;
+        const auto in_b = ConvertTo(df, Load(di, quant_row_b + x)) * fac_b;
+        Store(in_y, df, dec_row_y + x);
+        Store(MulAdd(in_y, cfl_fac_x, in_x), df, dec_row_x + x);
+        Store(MulAdd(in_y, cfl_fac_b, in_b), df, dec_row_b + x);
+      }
+    }
+  } else {
+    size_t hshift = HShift(chroma_subsampling);
+    size_t vshift = VShift(chroma_subsampling);
+    Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
+            ChromaSize(r.ysize(), vshift));
+    for (size_t c : {1, 0, 2}) {
+      const auto fac = Set(df, dc_factors[c] * mul);
+      size_t ys = c == 1 ? r.ysize() : cr.ysize();
+      size_t xs = c == 1 ? r.xsize() : cr.xsize();
+      const Channel& ch = in.channel[c < 2 ? c ^ 1 : c];
+      for (size_t y = 0; y < ys; y++) {
+        const int32_t* quant_row = ch.plane.Row(y);
+        float* row = (c == 1 ? r : cr).PlaneRow(dc, c, y);
+        for (size_t x = 0; x < xs; x += Lanes(di)) {
+          const auto in = ConvertTo(df, Load(di, quant_row + x)) * fac;
+          Store(in, df, row + x);
+        }
+      }
     }
   }
 }
@@ -250,9 +272,10 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
 }
 
 void DequantDC(const Rect& r, Image3F* dc, const Image& in,
-               const float* dc_factors, float mul, const float* cfl_factors) {
+               const float* dc_factors, float mul, const float* cfl_factors,
+               YCbCrChromaSubsampling chroma_subsampling) {
   return HWY_DYNAMIC_DISPATCH(DequantDC)(r, dc, in, dc_factors, mul,
-                                         cfl_factors);
+                                         cfl_factors, chroma_subsampling);
 }
 
 }  // namespace jxl

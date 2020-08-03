@@ -87,15 +87,17 @@ struct PassesSharedState {
   Rect GroupRect(size_t group_index) const {
     const size_t gx = group_index % frame_dim.xsize_groups;
     const size_t gy = group_index / frame_dim.xsize_groups;
-    const Rect rect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim,
-                    frame_dim.xsize, frame_dim.ysize);
+    const Rect rect(gx * frame_dim.group_dim, gy * frame_dim.group_dim,
+                    frame_dim.group_dim, frame_dim.group_dim, frame_dim.xsize,
+                    frame_dim.ysize);
     return rect;
   }
 
   Rect PaddedGroupRect(size_t group_index) const {
     const size_t gx = group_index % frame_dim.xsize_groups;
     const size_t gy = group_index / frame_dim.xsize_groups;
-    const Rect rect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim,
+    const Rect rect(gx * frame_dim.group_dim, gy * frame_dim.group_dim,
+                    frame_dim.group_dim, frame_dim.group_dim,
                     frame_dim.xsize_padded, frame_dim.ysize_padded);
     return rect;
   }
@@ -103,17 +105,18 @@ struct PassesSharedState {
   Rect BlockGroupRect(size_t group_index) const {
     const size_t gx = group_index % frame_dim.xsize_groups;
     const size_t gy = group_index / frame_dim.xsize_groups;
-    const Rect rect(gx * kGroupDimInBlocks, gy * kGroupDimInBlocks,
-                    kGroupDimInBlocks, kGroupDimInBlocks,
-                    frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+    const Rect rect(gx * (frame_dim.group_dim >> 3),
+                    gy * (frame_dim.group_dim >> 3), frame_dim.group_dim >> 3,
+                    frame_dim.group_dim >> 3, frame_dim.xsize_blocks,
+                    frame_dim.ysize_blocks);
     return rect;
   }
 
   Rect DCGroupRect(size_t group_index) const {
     const size_t gx = group_index % frame_dim.xsize_dc_groups;
     const size_t gy = group_index / frame_dim.xsize_dc_groups;
-    const Rect rect(gx * kDcGroupDimInBlocks, gy * kDcGroupDimInBlocks,
-                    kDcGroupDimInBlocks, kDcGroupDimInBlocks,
+    const Rect rect(gx * frame_dim.group_dim, gy * frame_dim.group_dim,
+                    frame_dim.group_dim, frame_dim.group_dim,
                     frame_dim.xsize_blocks, frame_dim.ysize_blocks);
     return rect;
   }

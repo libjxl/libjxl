@@ -274,7 +274,7 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
 }
 
 const char* ModeFromArgs(const JxlCompressArgs& args) {
-  if (args.params.brunsli_group_mode || args.jpeg_transcode) return "JPEG";
+  if (args.jpeg_transcode) return "JPEG";
   if (args.params.modular_group_mode) return "Modular";
   if (args.params.pixels_to_jpeg_mode) return "JPEG(encode)";
   return "VarDCT";
@@ -282,7 +282,7 @@ const char* ModeFromArgs(const JxlCompressArgs& args) {
 
 std::string QualityFromArgs(const JxlCompressArgs& args) {
   char buf[100];
-  if (args.params.brunsli_group_mode || args.jpeg_transcode) {
+  if (args.jpeg_transcode) {
     snprintf(buf, sizeof(buf), "lossless transcode");
   } else if (args.params.modular_group_mode) {
     if (args.params.quality_pair.first == 100 &&
@@ -381,8 +381,6 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          &params.modular_group_mode, &SetBooleanTrue, 1);
 
   // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
-  cmdline->AddOptionFlag('b', "jpeg-group", "Use the jpeg mode.",
-                         &params.brunsli_group_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionFlag('\0', "jpeg1", "Compress pixels to JPEG.",
                          &params.pixels_to_jpeg_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionFlag('j', "jpeg_transcode",
@@ -593,9 +591,6 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     // default to RGB for modular
     if (params.modular_group_mode)
       params.color_transform = jxl::ColorTransform::kNone;
-    // default to YCrCb for jpeg
-    if (params.brunsli_group_mode)
-      params.color_transform = jxl::ColorTransform::kYCbCr;
   }
 
   if (cmdline.GetOption(opt_brotli_id)->matched()) {

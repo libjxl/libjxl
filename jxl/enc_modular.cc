@@ -210,7 +210,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
     extra_dc_precision.resize(frame_dim.num_dc_groups);
   }
   tree_splits.push_back(num_streams);
-  cparams.options.max_chan_size = kGroupDim;
+  cparams.options.max_chan_size = frame_dim.group_dim;
 
   // TODO(veluca): figure out how to use different predictor sets per channel.
   stream_options.resize(num_streams, cparams.options);
@@ -471,9 +471,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
   for (size_t group_id = 0; group_id < frame_dim.num_dc_groups; group_id++) {
     const size_t gx = group_id % frame_dim.xsize_dc_groups;
     const size_t gy = group_id / frame_dim.xsize_dc_groups;
-    const Rect rect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
-                    kDcGroupDim);
-    // minShift==3 because kDcGroupDim>>3 == kGroupDim
+    const Rect rect(gx * frame_dim.group_dim << 3,
+                    gy * frame_dim.group_dim << 3, frame_dim.group_dim << 3,
+                    frame_dim.group_dim << 3);
+    // minShift==3 because kDcGroupDim>>3 == frame_dim.group_dim
     // maxShift==1000 is infinity
     stream_params.push_back(
         GroupParams{rect, 3, 1000, ModularStreamId::ModularDC(group_id)});
@@ -483,7 +484,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   for (size_t group_id = 0; group_id < frame_dim.num_groups; group_id++) {
     const size_t gx = group_id % frame_dim.xsize_groups;
     const size_t gy = group_id / frame_dim.xsize_groups;
-    const Rect mrect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim);
+    const Rect mrect(gx * frame_dim.group_dim, gy * frame_dim.group_dim,
+                     frame_dim.group_dim, frame_dim.group_dim);
     int maxShift = 2;
     int minShift = 0;
     for (size_t i = 0; i < enc_state->shared.multiframe->GetNumPasses(); i++) {
@@ -575,6 +577,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
   if (cparams.options.entropy_coder == ModularOptions::EntropyCoder::kBrotli) {
     return true;
   }
+
   // Compute tree.
   size_t num_streams = stream_images.size();
   stream_headers.resize(num_streams);
@@ -601,6 +604,8 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
     // Don't do anything if modular mode does not have any pixels in this image
     if (useful_splits.empty()) return true;
     useful_splits.push_back(tree_splits.back());
+
+    std::atomic_flag invalid_force_wp = ATOMIC_FLAG_INIT;
 
     std::vector<Tree> trees(useful_splits.size() - 1);
     RunOnPool(
@@ -635,12 +640,21 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
           range[0] = {0, max_c};
           range[1] = {start, stop};
 
+          if (stream_options[start].force_no_wp && predictors.size() == 1 &&
+              predictors[0] == Predictor::Weighted) {
+            invalid_force_wp.test_and_set(std::memory_order_acq_rel);
+            return;
+          }
+
           // TODO(veluca): parallelize more.
           trees[chunk] = LearnTree(
               predictors, std::move(props), std::move(residuals), total_pixels,
               stream_options[start], multiplier_info, range);
         },
         "LearnTrees");
+    if (invalid_force_wp.test_and_set(std::memory_order_acq_rel)) {
+      return JXL_FAILURE("PrepareEncoding: force_no_wp with {Weighted}");
+    }
     tree.clear();
     MergeTrees(trees, useful_splits, 0, useful_splits.size() - 1, &tree);
   } else {
@@ -757,11 +771,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   Image& gi = stream_images[stream_id];
   ModularOptions base_options = stream_options[stream_id];
   gi = Image(xsize, ysize, maxval, 0);
-  // start at the first bigger-than-kGroupDim non-metachannel
+  // start at the first bigger-than-frame_dim.group_dim non-metachannel
   int c = full_image.nb_meta_channels;
   for (; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
-    if (fc.w > kGroupDim || fc.h > kGroupDim) break;
+    if (fc.w > frame_dim.group_dim || fc.h > frame_dim.group_dim) break;
   }
   for (; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
@@ -1002,6 +1016,8 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
 
   stream_images[stream_id] = Image(r.xsize(), r.ysize(), 255, 3);
   if (nl_dc) {
+    JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling ==
+               YCbCrChromaSubsampling::k444);
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1033,7 +1049,8 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         }
       }
     }
-  } else {
+  } else if (enc_state->shared.frame_header.chroma_subsampling ==
+             YCbCrChromaSubsampling::k444) {
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1057,11 +1074,33 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         }
       }
     }
+  } else {
+    size_t hshift = HShift(enc_state->shared.frame_header.chroma_subsampling);
+    size_t vshift = VShift(enc_state->shared.frame_header.chroma_subsampling);
+    Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
+            ChromaSize(r.ysize(), vshift));
+    for (size_t c : {1, 0, 2}) {
+      float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
+      size_t ys = c == 1 ? r.ysize() : cr.ysize();
+      size_t xs = c == 1 ? r.xsize() : cr.xsize();
+      Channel& ch = stream_images[stream_id].channel[c < 2 ? c ^ 1 : c];
+      ch.w = xs;
+      ch.h = ys;
+      ch.resize();
+      for (size_t y = 0; y < ys; y++) {
+        int32_t* quant_row = ch.plane.Row(y);
+        const float* row = (c == 1 ? r : cr).ConstPlaneRow(dc, c, y);
+        for (size_t x = 0; x < xs; x++) {
+          quant_row[x] = std::round(row[x] * inv_factor);
+        }
+      }
+    }
   }
 
   DequantDC(r, &enc_state->shared.dc_storage, stream_images[stream_id],
             enc_state->shared.quantizer.MulDC(), 1.0 / mul,
-            enc_state->shared.cmap.DCFactors());
+            enc_state->shared.cmap.DCFactors(),
+            enc_state->shared.frame_header.chroma_subsampling);
 }
 void ModularFrameEncoder::AddACMetadata(size_t group_index,
                                         PassesEncoderState* enc_state) {

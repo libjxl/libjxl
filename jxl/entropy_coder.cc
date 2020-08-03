@@ -163,6 +163,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
                           const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
                           const AcStrategyImage& ac_strategy,
+                          YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
                           std::vector<Token>* JXL_RESTRICT output) {
   const size_t xsize_blocks = rect.xsize();
@@ -172,23 +173,27 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
   output->reserve(output->size() +
                   3 * xsize_blocks * ysize_blocks * kDCTBlockSize);
 
-  size_t offset = 0;
+  size_t offset[3] = {};
   const size_t nzeros_stride = tmp_num_nzeroes->PixelsPerRow();
+  const size_t hshift = HShift(cs);
+  const size_t vshift = VShift(cs);
   for (size_t by = 0; by < ysize_blocks; ++by) {
+    size_t sbyc = by >> vshift;
     int32_t* JXL_RESTRICT row_nzeros[3] = {
-        tmp_num_nzeroes->PlaneRow(0, by),
+        tmp_num_nzeroes->PlaneRow(0, sbyc),
         tmp_num_nzeroes->PlaneRow(1, by),
-        tmp_num_nzeroes->PlaneRow(2, by),
+        tmp_num_nzeroes->PlaneRow(2, sbyc),
     };
     const int32_t* JXL_RESTRICT row_nzeros_top[3] = {
-        by == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(0, by - 1),
+        sbyc == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(0, sbyc - 1),
         by == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(1, by - 1),
-        by == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(2, by - 1),
+        sbyc == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(2, sbyc - 1),
     };
     AcStrategyRow acs_row = ac_strategy.ConstRow(rect, by);
     for (size_t bx = 0; bx < xsize_blocks; ++bx) {
       AcStrategy acs = acs_row[bx];
       if (!acs.IsFirstBlock()) continue;
+      size_t sbxc = bx >> hshift;
       size_t cx = acs.covered_blocks_x();
       size_t cy = acs.covered_blocks_y();
       const size_t covered_blocks = cx * cy;  // = #LLF coefficients
@@ -199,16 +204,19 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
       CoefficientLayout(&cy, &cx);  // swap cx/cy to canonical order
 
       for (size_t c : {1, 0, 2}) {
+        if (c != 1 && sbxc << hshift != bx) continue;
+        if (c != 1 && sbyc << vshift != by) continue;
+        size_t sbx = c == 1 ? bx : sbxc;
         const uint32_t c_ctx_x5_tbl[3] = {5, 0, 5};
         const size_t c_ctx_x5 = c_ctx_x5_tbl[c];
-        const ac_qcoeff_t* JXL_RESTRICT block = ac_rows[c] + offset;
+        const ac_qcoeff_t* JXL_RESTRICT block = ac_rows[c] + offset[c];
 
         int32_t nzeros =
             (covered_blocks == 1)
-                ? NumNonZero8x8ExceptDC(block, row_nzeros[c] + bx)
+                ? NumNonZero8x8ExceptDC(block, row_nzeros[c] + sbx)
                 : NumNonZeroExceptLLF(cx, cy, acs, covered_blocks,
                                       log2_covered_blocks, block, nzeros_stride,
-                                      row_nzeros[c] + bx);
+                                      row_nzeros[c] + sbx);
 
         size_t ord = kStrategyOrder[acs.RawStrategy()];
         const coeff_order_t* JXL_RESTRICT order =
@@ -216,7 +224,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         ord = ord > 2 ? ord / 2 + 1 : ord;
 
         int32_t predicted_nzeros =
-            PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], bx, 32);
+            PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], sbx, 32);
         const int32_t nzero_ctx =
             NonZeroContext(predicted_nzeros, c_ctx_x5 + ord);
         output->emplace_back(nzero_ctx, nzeros);
@@ -234,8 +242,8 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
           nzeros -= prev;
         }
         JXL_DASSERT(nzeros == 0);
+        offset[c] += size;
       }
-      offset += size;
     }
   }
 }
@@ -251,10 +259,11 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
                           const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
                           const AcStrategyImage& ac_strategy,
+                          YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
                           std::vector<Token>* JXL_RESTRICT output) {
   return HWY_DYNAMIC_DISPATCH(TokenizeCoefficients)(
-      orders, rect, ac_rows, ac_strategy, tmp_num_nzeroes, output);
+      orders, rect, ac_rows, ac_strategy, cs, tmp_num_nzeroes, output);
 }
 }  // namespace jxl
 #endif  // HWY_ONCE

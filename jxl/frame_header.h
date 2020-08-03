@@ -20,6 +20,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <string>
 
 #include "jxl/aux_out_fwd.h"
@@ -39,12 +40,45 @@ namespace jxl {
 enum class FrameEncoding : uint32_t {
   kVarDCT,
   kModularGroup,
-  kJpegGroup,
 };
 
 enum class ColorTransform : uint32_t { kXYB, kNone, kYCbCr };
 
 enum class YCbCrChromaSubsampling : uint32_t { k444, k420, k422, k411, kAuto };
+
+static inline size_t HShift(YCbCrChromaSubsampling cs) {
+  switch (cs) {
+    case YCbCrChromaSubsampling::k444:
+      return 0;
+    case YCbCrChromaSubsampling::k422:
+      return 1;
+    case YCbCrChromaSubsampling::k411:
+      return 2;
+    case YCbCrChromaSubsampling::k420:
+      return 1;
+    default:
+      JXL_ABORT("Invalid");
+  };
+}
+
+static inline size_t VShift(YCbCrChromaSubsampling cs) {
+  switch (cs) {
+    case YCbCrChromaSubsampling::k444:
+      return 0;
+    case YCbCrChromaSubsampling::k422:
+      return 0;
+    case YCbCrChromaSubsampling::k411:
+      return 0;
+    case YCbCrChromaSubsampling::k420:
+      return 1;
+    default:
+      JXL_ABORT("Invalid");
+  };
+}
+
+static inline size_t ChromaSize(size_t size, size_t shift) {
+  return (size + ((1 << shift) >> 1)) >> shift;
+}
 
 static inline const char* EnumName(FrameEncoding /*unused*/) {
   return "FrameEncoding";
@@ -52,8 +86,7 @@ static inline const char* EnumName(FrameEncoding /*unused*/) {
 
 static inline constexpr uint64_t EnumBits(FrameEncoding /*unused*/) {
   return MakeBit(FrameEncoding::kVarDCT) |
-         MakeBit(FrameEncoding::kModularGroup) |
-         MakeBit(FrameEncoding::kJpegGroup);
+         MakeBit(FrameEncoding::kModularGroup);
 }
 
 static inline const char* EnumName(ColorTransform /*unused*/) {
@@ -69,8 +102,8 @@ static inline const char* EnumName(YCbCrChromaSubsampling /*unused*/) {
 static inline constexpr uint64_t EnumBits(YCbCrChromaSubsampling /*unused*/) {
   return MakeBit(YCbCrChromaSubsampling::k444) |
          MakeBit(YCbCrChromaSubsampling::k420) |
-         MakeBit(YCbCrChromaSubsampling::k422) |
-         MakeBit(YCbCrChromaSubsampling::k411);
+         MakeBit(YCbCrChromaSubsampling::k411) |
+         MakeBit(YCbCrChromaSubsampling::k422);
 }
 
 template <class Visitor>
@@ -311,8 +344,7 @@ struct FrameHeader {
     JXL_RETURN_IF_ERROR(visitor->Enum(FrameEncoding::kVarDCT, &encoding));
 
     JXL_RETURN_IF_ERROR(visitor->Enum(ColorTransform::kXYB, &color_transform));
-    if (visitor->Conditional(color_transform == ColorTransform::kYCbCr &&
-                             encoding == FrameEncoding::kJpegGroup)) {
+    if (visitor->Conditional(color_transform == ColorTransform::kYCbCr)) {
       JXL_RETURN_IF_ERROR(
           visitor->Enum(YCbCrChromaSubsampling::k444, &chroma_subsampling));
     }
@@ -320,6 +352,9 @@ struct FrameHeader {
                              encoding == FrameEncoding::kModularGroup)) {
       JXL_RETURN_IF_ERROR(visitor->VisitNested(&passes));
       visitor->U64(0, &flags);
+    }
+    if (visitor->Conditional(encoding == FrameEncoding::kModularGroup)) {
+      visitor->Bits(2, 1, &group_size_shift);
     }
     // This field only makes sense for kVarDCT:
     if (visitor->Conditional(IsLossy())) {
@@ -348,7 +383,6 @@ struct FrameHeader {
   }
 
   bool IsLossy() const { return encoding == FrameEncoding::kVarDCT; }
-  bool IsJpeg() const { return encoding == FrameEncoding::kJpegGroup; }
 
   // Sets/clears `flag` based upon `condition`.
   void UpdateFlag(const bool condition, const uint64_t flag) {
@@ -385,6 +419,8 @@ struct FrameHeader {
   Passes passes;  // only if IsLossy()
 
   uint64_t flags;
+
+  uint32_t group_size_shift;  // only if encoding == kModularGroup;
 
   uint32_t x_qm_scale;  // only if IsLossy()
 

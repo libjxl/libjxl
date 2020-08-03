@@ -108,7 +108,8 @@ struct ImageSpec {
   // Flags used for compression. These are mapped to the CompressedParams.
   struct CjxlParams {
     float butteraugli_distance = 1.f;
-    jxl::Predictor modular_predictor = jxl::Predictor::Weighted;
+    // Must not use Weighted - see force_no_wp
+    jxl::Predictor modular_predictor = jxl::Predictor::Gradient;
     jxl::ColorTransform color_transform = jxl::ColorTransform::kXYB;
     jxl::SpeedTier speed_tier = jxl::SpeedTier::kTortoise;
     bool modular_group_mode = false;

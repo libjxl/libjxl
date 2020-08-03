@@ -17,4 +17,4 @@ cat dct_gen.md \
     is_zero_base.md num_nonzeros_base.md brn_proto.md app0.md icc.md ducky.md \
     adobe.md stock_counts.md stock_values.md symbol_order.md stock_quant.md \
     quant.md freq_context.md num_nonzero_context.md nonzero_buckets.md \
-    > all_tables.md
+    context_modes.md > all_tables.md

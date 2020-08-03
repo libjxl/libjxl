@@ -84,7 +84,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
   loop_filter.epf = false;
 
   FrameDimensions frame_dim;
-  frame_dim.Set(opsin.xsize(), opsin.ysize());
+  frame_dim.Set(opsin.xsize(), opsin.ysize(), /*group_size_shift=*/1);
   Multiframe multiframe;
   PassesEncoderState enc_state;
   JXL_CHECK(InitializePassesSharedState(frame_header, loop_filter, io.metadata,

@@ -55,7 +55,8 @@ void HybridUintRoundtrip(HybridUintConfig config, size_t limit = 1 << 24) {
   }
   for (size_t i = 0; i < kNumIntegers; i++) {
     DummyBitReader br{nbits[i], bits[i]};
-    EXPECT_EQ(integers[i], config.Read(&br, token[i]));
+    EXPECT_EQ(integers[i],
+              ANSSymbolReader::ReadHybridUintConfig(config, token[i], &br));
   }
 }
 

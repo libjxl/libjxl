@@ -20,6 +20,7 @@
 #include "jxl/brunsli.h"
 #include "jxl/fields.h"
 #include "jxl/headers.h"
+#include "jxl/icc_codec.h"
 #include "jxl/memory_manager_internal.h"
 
 namespace {
@@ -108,17 +109,38 @@ enum JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf, size_t len) {
   return JPEGXL_SIG_INVALID;
 }
 
+enum class DecoderStage : uint32_t {
+  kInited,
+  kStarted,
+  kFinished,
+  kError,
+};
+
 struct JpegxlDecoderStruct {
   JpegxlMemoryManager memory_manager;
+  std::unique_ptr<jxl::ThreadPool> thread_pool;
+
+  DecoderStage stage = DecoderStage::kInited;
+
+  // Status of progression, internal.
+  bool got_basic_info = false;
+  bool got_all_headers = false;
+
+  // Bitfield, for which informative events (JPEGXL_DEC_BASIC_INFO, etc...) the
+  // decoder returns a status. By default, do not return for any of the events,
+  // only return when the decoder cannot continue becasue it needs mor input or
+  // output data.
+  int events_wanted = 0;
 
   // Fields for reading the basic info from the header.
   size_t basic_info_size_hint = InitialBasicInfoSizeHint();
-  bool basic_info_available = false;
   size_t xsize = 0;
   size_t ysize = 0;
-  int have_container = 0;
+  bool have_container = 0;
+  size_t codestream_pos = 0;  // if have_container, where the codestream starts
   JpegxlSignatureType signature_type = JPEGXL_SIG_TYPE_JPEGXL;
-  jxl::ImageMetadata metadata;
+
+  jxl::CodecInOut io;
 };
 
 JpegxlDecoder* JpegxlDecoderCreate(const JpegxlMemoryManager* memory_manager) {
@@ -144,14 +166,35 @@ void JpegxlDecoderDestroy(JpegxlDecoder* dec) {
   }
 }
 
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderSetParallelRunner(
+    JpegxlDecoder* dec, JpegxlParallelRunner parallel_runner,
+    void* parallel_runner_opaque) {
+  if (dec->thread_pool) return JXL_API_ERROR("parallel runner already set");
+  dec->thread_pool.reset(
+      new jxl::ThreadPool(parallel_runner, parallel_runner_opaque));
+  return JPEGXL_DEC_SUCCESS;
+}
+
 size_t JpegxlDecoderSizeHintBasicInfo(const JpegxlDecoder* dec) {
   return dec->basic_info_size_hint;
 }
 
-namespace jxl {
+JpegxlDecoderStatus JpegxlDecoderSubscribeEvents(JpegxlDecoder* dec,
+                                                 int events_wanted) {
+  if (dec->stage != DecoderStage::kInited) {
+    return JXL_API_ERROR("Must subscribe to events before starting");
+  }
+  if (events_wanted & 63) {
+    return JXL_API_ERROR("Can only subscribe to informative events.");
+  }
+  dec->events_wanted = events_wanted;
+  return JPEGXL_DEC_SUCCESS;
+}
 
+namespace jxl {
 template <class T>
 bool CanRead(Span<const uint8_t> data, BitReader* reader, T* JXL_RESTRICT t) {
+  // Use a copy of the bit reader because CanRead advances bits.
   BitReader reader2(data);
   reader2.SkipBits(reader->TotalBitsConsumed());
   bool result = Bundle::CanRead(&reader2, t);
@@ -159,9 +202,38 @@ bool CanRead(Span<const uint8_t> data, BitReader* reader, T* JXL_RESTRICT t) {
   return result;
 }
 
-JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
-                                                const uint8_t* in,
-                                                size_t size) {
+// Returns JPEGXL_DEC_SUCCESS if the full bundle was successfully read, status
+// indicating either error or need more input otherwise.
+template <class T>
+JpegxlDecoderStatus ReadBundle(Span<const uint8_t> data, BitReader* reader,
+                               T* JXL_RESTRICT t) {
+  if (!CanRead(data, reader, t)) {
+    return JPEGXL_DEC_NEED_MORE_INPUT;
+  }
+  if (!Bundle::Read(reader, t)) {
+    return JPEGXL_DEC_ERROR;
+  }
+  return JPEGXL_DEC_SUCCESS;
+}
+
+#define JXL_API_RETURN_IF_ERROR(expr)                \
+  {                                                  \
+    JpegxlDecoderStatus status = expr;               \
+    if (status != JPEGXL_DEC_SUCCESS) return status; \
+  }
+
+std::unique_ptr<BitReader, std::function<void(BitReader*)>> GetBitReader(
+    Span<const uint8_t> span) {
+  BitReader* reader = new BitReader(span);
+  return std::unique_ptr<BitReader, std::function<void(BitReader*)>>(
+      reader, [](BitReader* reader) {
+        JXL_CHECK(reader->Close());
+        delete reader;
+      });
+}
+
+JpegxlDecoderStatus JpegxlDecoderReadBasicInfo(JpegxlDecoder* dec,
+                                               const uint8_t* in, size_t size) {
   JpegxlSignature sig = JpegxlSignatureCheck(in, size);
   if (sig == JPEGXL_SIG_INVALID) return JXL_API_ERROR("invalid signature");
   if (sig == JPEGXL_SIG_NOT_ENOUGH_BYTES) return JPEGXL_DEC_NEED_MORE_INPUT;
@@ -215,6 +287,7 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
           return JPEGXL_DEC_NEED_MORE_INPUT;
         }
         pos = box_start + box_size;
+        dec->codestream_pos = pos;
       }
     }
   }
@@ -240,47 +313,145 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInput(JpegxlDecoder* dec,
   }
 
   Span<const uint8_t> span(in + pos, size - pos);
-  BitReader reader(span);
-  struct ReaderCloser {
-    ~ReaderCloser() {
-      if (reader->Close()) { /* ignore */
-      };
-    }
-    BitReader* reader;
-  } reader_closer = {&reader};
-
+  auto reader = GetBitReader(span);
   SizeHeader size_header;
-  if (!CanRead(span, &reader, &size_header)) {
-    return JPEGXL_DEC_NEED_MORE_INPUT;
-  }
-  if (!Bundle::Read(&reader, &size_header)) {
-    return JXL_API_ERROR("invalid SizeHeader");
-  }
+  JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &size_header));
 
   dec->xsize = size_header.xsize();
   dec->ysize = size_header.ysize();
 
-  if (!CanRead(span, &reader, &dec->metadata)) {
-    return JPEGXL_DEC_NEED_MORE_INPUT;
-  }
-  if (!Bundle::Read(&reader, &dec->metadata)) {
-    return JXL_API_ERROR("invalid ImageMetadata");
-  }
-  dec->basic_info_available = true;
+  dec->io.metadata.m2.nonserialized_only_parse_basic_info = true;
+  JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dec->io.metadata));
+  dec->got_basic_info = true;
   dec->basic_info_size_hint = 0;
 
-  return JPEGXL_DEC_NEED_MORE_INPUT;
+  return JPEGXL_DEC_SUCCESS;
 }
+
+JpegxlDecoderStatus JpegxlDecoderReadAllHeaders(JpegxlDecoder* dec,
+                                                const uint8_t* in,
+                                                size_t size) {
+  size_t pos = dec->codestream_pos;
+
+  Span<const uint8_t> span(in + pos, size - pos);
+  auto reader = GetBitReader(span);
+
+  // True streaming decoding and remembering state is not yet supported in the
+  // C++ decoder implementation.
+  // Therefore, we read the file from the start including basic info header
+  // again, rather than continue at the part where JpegxlDecoderReadBasicInfo
+  // finished.
+  SizeHeader size_header;
+  JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &size_header));
+
+  JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dec->io.metadata));
+
+  if (dec->io.metadata.m2.have_preview) {
+    JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dec->io.preview));
+  }
+
+  if (dec->io.metadata.m2.have_animation) {
+    JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dec->io.animation));
+  }
+
+  if (dec->io.metadata.color_encoding.WantICC()) {
+    // Parse the ICC size first.
+    if (!reader->JumpToByteBoundary()) return JPEGXL_DEC_ERROR;
+    PaddedBytes icc;
+    jxl::Status status = ReadICC(reader.get(), &icc);
+    if (!status) {
+      if (status.code() == StatusCode::kNotEnoughBytes) {
+        return JPEGXL_DEC_NEED_MORE_INPUT;
+      }
+      // Other non-successful status is an error
+      return JPEGXL_DEC_ERROR;
+    }
+    if (!dec->io.metadata.color_encoding.SetICC(std::move(icc))) {
+      return JPEGXL_DEC_ERROR;
+    }
+  }
+
+  dec->got_all_headers = true;
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
+                                                 const uint8_t* in,
+                                                 size_t size) {
+  // If no parallel runner is set, use the default
+  // TODO(lode): move this initialization to an appropriate location once the
+  // runner is used to decode pixels.
+  if (!dec->thread_pool) {
+    dec->thread_pool.reset(new jxl::ThreadPool(nullptr, nullptr));
+  }
+  if (dec->stage == DecoderStage::kInited) {
+    dec->stage = DecoderStage::kStarted;
+  }
+  if (dec->stage == DecoderStage::kError) {
+    return JXL_API_ERROR("Cannot use decoder after it encountered error");
+  }
+  if (dec->stage == DecoderStage::kFinished) {
+    return JXL_API_ERROR("Cannot reuse decoder after it finished");
+  }
+
+  if (!dec->got_basic_info) {
+    JpegxlDecoderStatus status = JpegxlDecoderReadBasicInfo(dec, in, size);
+    if (status != JPEGXL_DEC_SUCCESS) return status;
+  }
+
+  if (dec->events_wanted & JPEGXL_DEC_BASIC_INFO) {
+    dec->events_wanted &= ~JPEGXL_DEC_BASIC_INFO;
+    return JPEGXL_DEC_BASIC_INFO;
+  }
+
+  if (!dec->got_all_headers) {
+    JpegxlDecoderStatus status = JpegxlDecoderReadAllHeaders(dec, in, size);
+    if (status != JPEGXL_DEC_SUCCESS) return status;
+  }
+
+  if (dec->events_wanted & JPEGXL_DEC_EXTENSIONS) {
+    dec->events_wanted &= ~JPEGXL_DEC_EXTENSIONS;
+    if (dec->io.metadata.m2.extensions != 0) {
+      return JPEGXL_DEC_EXTENSIONS;
+    }
+  }
+
+  if (dec->events_wanted & JPEGXL_DEC_PREVIEW_HEADER) {
+    dec->events_wanted &= ~JPEGXL_DEC_PREVIEW_HEADER;
+    if (dec->io.metadata.m2.have_preview) {
+      return JPEGXL_DEC_PREVIEW_HEADER;
+    }
+  }
+
+  if (dec->events_wanted & JPEGXL_DEC_ANIMATION_HEADER) {
+    dec->events_wanted &= ~JPEGXL_DEC_ANIMATION_HEADER;
+    if (dec->io.metadata.m2.have_animation) {
+      return JPEGXL_DEC_ANIMATION_HEADER;
+    }
+  }
+
+  if (dec->events_wanted & JPEGXL_DEC_COLOR_ENCODING) {
+    dec->events_wanted &= ~JPEGXL_DEC_COLOR_ENCODING;
+    return JPEGXL_DEC_COLOR_ENCODING;
+  }
+
+  // Outputting pixels not yet implemented, indicate error.
+  dec->stage = DecoderStage::kError;
+  return JPEGXL_DEC_ERROR;
+}
+
 }  // namespace jxl
 
 JpegxlDecoderStatus JpegxlDecoderProcessInput(JpegxlDecoder* dec,
                                               const uint8_t** next_in,
                                               size_t* avail_in) {
-  return jxl::JpegxlDecoderReadBasicInput(dec, *next_in, *avail_in);
+  return jxl::JpegxlDecoderProcessInternal(dec, *next_in, *avail_in);
 }
 
-int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info) {
-  if (!dec->basic_info_available) return 1;  // indicate not available
+JpegxlDecoderStatus JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
+                                              JpegxlBasicInfo* info) {
+  if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
 
   if (info) {
     info->have_container = dec->have_container;
@@ -288,10 +459,9 @@ int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info) {
     info->xsize = dec->xsize;
     info->ysize = dec->ysize;
 
-    const jxl::ImageMetadata meta = dec->metadata;
+    const jxl::ImageMetadata& meta = dec->io.metadata;
     info->bits_per_sample = meta.bit_depth.bits_per_sample;
     info->exponent_bits_per_sample = meta.bit_depth.exponent_bits_per_sample;
-    info->have_icc = meta.color_encoding.WantICC();
 
     info->have_preview = meta.m2.have_preview;
     info->have_animation = meta.m2.have_animation;
@@ -320,17 +490,17 @@ int JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec, JpegxlBasicInfo* info) {
     info->num_extra_channels = meta.m2.num_extra_channels;
   }
 
-  return 0;
+  return JPEGXL_DEC_SUCCESS;
 }
 
-int JpegxlDecoderGetExtraChannelInfo(const JpegxlDecoder* dec, size_t index,
-                                     JpegxlExtraChannelInfo* info) {
-  if (!dec->basic_info_available) return 1;
+JpegxlDecoderStatus JpegxlDecoderGetExtraChannelInfo(
+    const JpegxlDecoder* dec, size_t index, JpegxlExtraChannelInfo* info) {
+  if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
 
   const std::vector<jxl::ExtraChannelInfo>& channels =
-      dec->metadata.m2.extra_channel_info;
+      dec->io.metadata.m2.extra_channel_info;
 
-  if (index >= channels.size()) return 1;  // out of bounds
+  if (index >= channels.size()) return JPEGXL_DEC_ERROR;  // out of bounds
   const jxl::ExtraChannelInfo& channel = channels[index];
 
   info->type = static_cast<JpegxlExtraChannelType>(channel.type);
@@ -350,23 +520,145 @@ int JpegxlDecoderGetExtraChannelInfo(const JpegxlDecoder* dec, size_t index,
   info->spot_color[3] = channel.spot_color[3];
   info->cfa_channel = channel.cfa_channel;
 
-  return 0;
+  return JPEGXL_DEC_SUCCESS;
 }
 
-int JpegxlDecoderGetExtraChannelName(const JpegxlDecoder* dec, size_t index,
-                                     size_t n, char* name) {
-  if (!dec->basic_info_available) return 1;
+JpegxlDecoderStatus JpegxlDecoderGetExtraChannelName(const JpegxlDecoder* dec,
+                                                     size_t index, char* name,
+                                                     size_t size) {
+  if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
 
   const std::vector<jxl::ExtraChannelInfo>& channels =
-      dec->metadata.m2.extra_channel_info;
+      dec->io.metadata.m2.extra_channel_info;
 
-  if (index >= channels.size()) return 1;  // out of bounds
+  if (index >= channels.size()) return JPEGXL_DEC_ERROR;  // out of bounds
   const jxl::ExtraChannelInfo& channel = channels[index];
 
   // Also need null-termination character
-  if (channel.name.size() + 1 > n) return 1;
+  if (channel.name.size() + 1 > size) return JPEGXL_DEC_ERROR;
 
   memcpy(name, channel.name.c_str(), channel.name.size() + 1);
 
-  return 0;
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderGetPreviewHeader(
+    const JpegxlDecoder* dec, JpegxlPreviewHeader* preview_header) {
+  if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
+
+  if (!dec->io.metadata.m2.have_preview) return JPEGXL_DEC_ERROR;
+
+  preview_header->xsize = dec->io.preview.xsize();
+  preview_header->ysize = dec->io.preview.ysize();
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
+    const JpegxlDecoder* dec, JpegxlAnimationHeader* animation_header) {
+  if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
+
+  if (!dec->io.metadata.m2.have_animation) return JPEGXL_DEC_ERROR;
+
+  animation_header->composite_still = dec->io.animation.composite_still;
+  animation_header->tps_numerator = dec->io.animation.tps_numerator;
+  animation_header->tps_denominator = dec->io.animation.tps_denominator;
+  animation_header->num_loops = dec->io.animation.num_loops;
+  animation_header->have_timecodes = dec->io.animation.have_timecodes;
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderGetColorProfileSource(
+    const JpegxlDecoder* dec, JpegxlColorProfileSource* color_info) {
+  if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
+
+  if (dec->io.metadata.color_encoding.WantICC()) {
+    color_info->icc_profile_accurate = 1;
+    color_info->color_encoding_valid = 0;
+  } else {
+    // TODO(lode): there are cases where the ICC profile is accurate. It is not
+    // accurate for PQ or HLG transfer functions (possibly others such as sRGB
+    // too), but can be accurate for linear, gamma, ... In that case, this
+    // could be set to 1 so the user has the option of using that rather than
+    // deal with all the JpegxlColorEncoding fields.
+    color_info->icc_profile_accurate = 0;
+    color_info->color_encoding_valid = 1;
+  }
+
+  color_info->icc_profile_size = dec->io.metadata.color_encoding.ICC().size();
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderGetColorEncoding(
+    const JpegxlDecoder* dec, JpegxlColorEncoding* color_encoding) {
+  if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
+
+  if (dec->io.metadata.color_encoding.WantICC()) {
+    return JXL_API_ERROR("Trying to get color encoding but is invalid");
+  }
+
+  color_encoding->color_space = static_cast<JpegxlColorSpace>(
+      dec->io.metadata.color_encoding.GetColorSpace());
+
+  color_encoding->white_point = static_cast<JpegxlWhitePoint>(
+      dec->io.metadata.color_encoding.white_point);
+
+  jxl::CIExy whitepoint = dec->io.metadata.color_encoding.GetWhitePoint();
+  color_encoding->white_point_xy[0] = whitepoint.x;
+  color_encoding->white_point_xy[1] = whitepoint.y;
+
+  color_encoding->primaries =
+      static_cast<JpegxlPrimaries>(dec->io.metadata.color_encoding.primaries);
+  jxl::PrimariesCIExy primaries =
+      dec->io.metadata.color_encoding.GetPrimaries();
+  color_encoding->primaries_red_xy[0] = primaries.r.x;
+  color_encoding->primaries_red_xy[1] = primaries.r.y;
+  color_encoding->primaries_green_xy[0] = primaries.g.x;
+  color_encoding->primaries_green_xy[1] = primaries.g.y;
+  color_encoding->primaries_blue_xy[0] = primaries.b.x;
+  color_encoding->primaries_blue_xy[1] = primaries.b.y;
+
+  if (dec->io.metadata.color_encoding.tf.IsGamma()) {
+    color_encoding->transfer_function = JPEGXL_TRANSFER_FUNCTION_GAMMA;
+    color_encoding->gamma = dec->io.metadata.color_encoding.tf.GetGamma();
+  } else {
+    color_encoding->transfer_function = static_cast<JpegxlTransferFunction>(
+        dec->io.metadata.color_encoding.tf.GetTransferFunction());
+    color_encoding->gamma = 0;
+  }
+
+  color_encoding->rendering_intent = static_cast<JpegxlRenderingIntent>(
+      dec->io.metadata.color_encoding.rendering_intent);
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderGetInverseOpsinMatrix(
+    const JpegxlDecoder* dec, JpegxlInverseOpsinMatrix* matrix) {
+  memcpy(matrix->opsin_inv_matrix,
+         dec->io.metadata.m2.opsin_inverse_matrix.inverse_matrix,
+         sizeof(matrix->opsin_inv_matrix));
+  memcpy(matrix->opsin_biases,
+         dec->io.metadata.m2.opsin_inverse_matrix.opsin_biases,
+         sizeof(matrix->opsin_biases));
+  memcpy(matrix->quant_biases,
+         dec->io.metadata.m2.opsin_inverse_matrix.quant_biases,
+         sizeof(matrix->quant_biases));
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderGetICCProfile(const JpegxlDecoder* dec,
+                                               uint8_t* icc_profile,
+                                               size_t size) {
+  if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
+  if (size < dec->io.metadata.color_encoding.ICC().size())
+    return JPEGXL_DEC_ERROR;
+
+  memcpy(icc_profile, dec->io.metadata.color_encoding.ICC().data(),
+         dec->io.metadata.color_encoding.ICC().size());
+
+  return JPEGXL_DEC_SUCCESS;
 }

@@ -90,44 +90,6 @@ Status PixelsToBrunsli(const jxl::CodecInOut* JXL_RESTRICT io,
                        const BrunsliEncoderOptions& options,
                        jxl::ThreadPool* pool);
 
-// Actual encoder has a lot of brunsli-specific state. Let's not expose it.
-class BrunsliFrameEncoderInternal;
-
-class BrunsliFrameEncoder {
- public:
-  BrunsliFrameEncoder(const FrameDimensions& frame_dim, ThreadPool* pool);
-  ~BrunsliFrameEncoder();
-  bool ReadSourceImage(const ImageBundle* src,
-                       const std::vector<int>& quant_table,
-                       YCbCrChromaSubsampling subsampling);
-  bool DoEncode();
-  bool SerializeHeader(BitWriter* out);
-  bool SerializeDcGroup(size_t index, BitWriter* out, AuxOut* aux_out);
-  bool SerializeAcGroup(size_t index, BitWriter* out, AuxOut* aux_out);
-
- private:
-  std::unique_ptr<BrunsliFrameEncoderInternal> impl_;
-};
-
-// Actual decoder has a lot of brunsli-specific state. Let's not expose it.
-class BrunsliFrameDecoderInternal;
-
-class BrunsliFrameDecoder {
- public:
-  explicit BrunsliFrameDecoder(ThreadPool* pool);
-  ~BrunsliFrameDecoder();
-
-  bool ReadHeader(const FrameDimensions* frame_dim, BitReader* src,
-                  YCbCrChromaSubsampling subsampling);
-  bool DecodeDcGroup(int idx, BitReader* src);
-  bool DecodeAcGroup(int idx, BitReader* src, Image3F* img, const Rect& rect);
-  bool FinalizeDecoding(const FrameHeader& frame_header, Image3F&& opsin,
-                        ImageBundle* decoded);
-
- private:
-  std::unique_ptr<BrunsliFrameDecoderInternal> impl_;
-};
-
 }  // namespace jxl
 
 #endif  // JXL_BRUNSLI_H_
