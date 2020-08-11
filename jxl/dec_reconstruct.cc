@@ -233,6 +233,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     for (size_t c : {0, 2}) {
       ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
       plane.ShrinkTo(idct->xsize() / 2, idct->ysize() / 2);
+      plane.InitializePaddingForUnalignedAccesses();
       plane = UpsampleH2(plane, pool);
       plane = UpsampleV2(plane, pool);
     }
@@ -240,6 +241,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     for (size_t c : {0, 2}) {
       ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
       plane.ShrinkTo(idct->xsize() / 4, idct->ysize());
+      plane.InitializePaddingForUnalignedAccesses();
       plane = UpsampleH2(plane, pool);
       plane = UpsampleH2(plane, pool);
     }
@@ -247,6 +249,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     for (size_t c : {0, 2}) {
       ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
       plane.ShrinkTo(idct->xsize() / 2, idct->ysize());
+      plane.InitializePaddingForUnalignedAccesses();
       plane = UpsampleH2(plane, pool);
     }
   }

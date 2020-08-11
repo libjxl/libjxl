@@ -502,12 +502,6 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
        "used/range is below this (default: 80%)"),
       &params.channel_colors_percent, &ParseFloat, 2);
 
-  opt_brotli_id =
-      cmdline->AddOptionValue('B', "brotli", "effort",
-                              ("[modular encoding] use Brotli instead of MAANS"
-                               " (with encode effort=0..11)"),
-                              &params.options.brotli_effort, &ParseSigned, 2);
-
   cmdline->AddOptionValue('R', "responsive", "K",
                           "[modular encoding] do Squeeze transform, 0=false, "
                           "1=true (default: true if lossy, false if lossless)",
@@ -591,10 +585,6 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     // default to RGB for modular
     if (params.modular_group_mode)
       params.color_transform = jxl::ColorTransform::kNone;
-  }
-
-  if (cmdline.GetOption(opt_brotli_id)->matched()) {
-    params.options.entropy_coder = jxl::ModularOptions::kBrotli;
   }
 
   if (params.near_lossless) {

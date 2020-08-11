@@ -49,9 +49,8 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
   if (std::abs(p - 3.0) < 1E-6) {
     double sum1[3] = {0.0};
 
-    // Manually aligned storage to avoid asan crash on clang-7 due to
-    // unaligned spill.
-#if HWY_CAP_DOUBLE
+// Prefer double if possible, but otherwise use float rather than scalar.
+#if HWY_CAP_FLOAT64
     using T = double;
     const HWY_CAPPED(float, MaxLanes(HWY_FULL(double)())) df;
 #else
@@ -59,6 +58,8 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
 #endif
     const HWY_FULL(T) d;
     constexpr size_t N = MaxLanes(HWY_FULL(T)());
+    // Manually aligned storage to avoid asan crash on clang-7 due to
+    // unaligned spill.
     HWY_ALIGN T sum_totals0[N] = {0};
     HWY_ALIGN T sum_totals1[N] = {0};
     HWY_ALIGN T sum_totals2[N] = {0};
@@ -72,7 +73,7 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
 
       size_t x = border;
       for (; x + Lanes(d) <= distmap.xsize() - border; x += Lanes(d)) {
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
         const auto d1 = PromoteTo(d, Load(df, row + x));
 #else
         const auto d1 = Load(d, row + x);

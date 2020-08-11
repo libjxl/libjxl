@@ -180,8 +180,6 @@ class JxlCodec : public ImageCodec {
           (jxl::ColorTransform)strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param[0] == 'I') {
       cparams_.options.nb_repeats = strtof(param.substr(1).c_str(), nullptr);
-    } else if (param == "Brotli") {
-      cparams_.options.entropy_coder = ModularOptions::kBrotli;
     } else if (param[0] == 'E') {
       cparams_.options.max_properties =
           strtof(param.substr(1).c_str(), nullptr);
@@ -195,9 +193,10 @@ class JxlCodec : public ImageCodec {
     } else if (param == "mg") {
       cparams_.modular_group_mode = true;
       cparams_.color_transform = jxl::ColorTransform::kNone;
+    } else if (param[0] == 'g') {
+      cparams_.modular_group_size_shift =
+          strtof(param.substr(1).c_str(), nullptr);
     } else if (param == "plt") {
-      cparams_.options.entropy_coder = ModularOptions::kBrotli;
-      cparams_.options.brotli_effort = 11;
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;
       cparams_.options.predictor = Predictor::Zero;

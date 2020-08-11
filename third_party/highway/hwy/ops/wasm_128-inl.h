@@ -446,7 +446,16 @@ HWY_API Vec128<int32_t, N> ShiftRightSame(const Vec128<int32_t, N> v,
 
 // ------------------------------ Shift lanes by independent variable #bits
 
-// Unsupported.
+template <typename T, size_t N>
+HWY_API Vec128<T, N> operator>>(const Vec128<T, N> v, const Vec128<T, N> bits) {
+  static_assert(N == 1, "Wasm does not support full variable shift");
+  return ShiftRightSame(v, GetLane(bits));
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> operator<<(const Vec128<T, N> v, const Vec128<T, N> bits) {
+  static_assert(N == 1, "Wasm does not support full variable shift");
+  return ShiftLeftSame(v, GetLane(bits));
+}
 
 // ------------------------------ Minimum
 
@@ -1062,7 +1071,25 @@ HWY_API void Stream(Vec128<T, N> v, Simd<T, N> /* tag */,
 
 // ------------------------------ Gather
 
-// Unsupported.
+template <typename T, size_t N, typename Offset>
+HWY_API Vec128<T, N> GatherOffset(const Simd<T, N> d,
+                                  const T* HWY_RESTRICT base,
+                                  const Vec128<Offset, N> offset) {
+  static_assert(N == 1, "Wasm does not support full gather");
+  static_assert(sizeof(T) == sizeof(Offset), "T must match Offset");
+  const uintptr_t address = reinterpret_cast<uintptr_t>(base) + GetLane(offset);
+  T val;
+  hwy::CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
+  return Set(d, val);
+}
+
+template <typename T, size_t N, typename Index>
+HWY_API Vec128<T, N> GatherIndex(const Simd<T, N> d, const T* HWY_RESTRICT base,
+                                 const Vec128<Index, N> index) {
+  static_assert(N == 1, "Wasm does not support full gather");
+  static_assert(sizeof(T) == sizeof(Index), "T must match Index");
+  return Set(d, base[GetLane(index)]);
+}
 
 // ================================================== SWIZZLE
 

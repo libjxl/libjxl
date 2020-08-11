@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <cmath>  // for scalar-inl.h
 
 #include "hwy/targets.h"

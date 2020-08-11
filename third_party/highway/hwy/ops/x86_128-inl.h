@@ -553,7 +553,20 @@ HWY_API Vec128<int64_t, N> ShiftLeftSame(const Vec128<int64_t, N> v,
 
 // ------------------------------ Shift lanes by independent variable #bits
 
-#if HWY_TARGET != HWY_SSE4 || HWY_IDE
+#if HWY_TARGET == HWY_SSE4
+
+template <typename T, size_t N>
+HWY_API Vec128<T, N> operator>>(const Vec128<T, N> v, const Vec128<T, N> bits) {
+  static_assert(N == 1, "SSE4 does not support full variable shift");
+  return ShiftRightSame(v, GetLane(bits));
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> operator<<(const Vec128<T, N> v, const Vec128<T, N> bits) {
+  static_assert(N == 1, "SSE4 does not support full variable shift");
+  return ShiftLeftSame(v, GetLane(bits));
+}
+
+#else
 
 template <size_t N>
 HWY_API Vec128<uint32_t, N> operator>>(const Vec128<uint32_t, N> v,
@@ -1500,21 +1513,41 @@ HWY_API void Stream(const Vec128<double, N> v, Simd<double, N> /* tag */,
 
 // ------------------------------ Gather
 
-#if HWY_TARGET != HWY_SSE4 || HWY_IDE
+#if HWY_TARGET == HWY_SSE4
+
+template <typename T, size_t N, typename Offset>
+HWY_API Vec128<T, N> GatherOffset(const Simd<T, N> d,
+                                  const T* HWY_RESTRICT base,
+                                  const Vec128<Offset, N> offset) {
+  static_assert(N == 1, "SSE4 does not support full gather");
+  static_assert(sizeof(T) == sizeof(Offset), "T must match Offset");
+  const uintptr_t address = reinterpret_cast<uintptr_t>(base) + GetLane(offset);
+  T val;
+  hwy::CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
+  return Set(d, val);
+}
+
+template <typename T, size_t N, typename Index>
+HWY_API Vec128<T, N> GatherIndex(const Simd<T, N> d, const T* HWY_RESTRICT base,
+                                 const Vec128<Index, N> index) {
+  static_assert(N == 1, "SSE4 does not support full gather");
+  static_assert(sizeof(T) == sizeof(Index), "T must match Index");
+  return Set(d, base[GetLane(index)]);
+}
+
+#else
 
 namespace detail {
 
 template <typename T, size_t N>
-HWY_API Vec128<T, N> GatherOffset(hwy::SizeTag<4> /* tag */,
-                                  Simd<T, N> /* tag */,
+HWY_API Vec128<T, N> GatherOffset(hwy::SizeTag<4> /* tag */, Simd<T, N> /* d */,
                                   const T* HWY_RESTRICT base,
                                   const Vec128<int32_t, N> offset) {
   return Vec128<T, N>{_mm_i32gather_epi32(
       reinterpret_cast<const int32_t*>(base), offset.raw, 1)};
 }
 template <typename T, size_t N>
-HWY_API Vec128<T, N> GatherIndex(hwy::SizeTag<4> /* tag */,
-                                 Simd<T, N> /* tag */,
+HWY_API Vec128<T, N> GatherIndex(hwy::SizeTag<4> /* tag */, Simd<T, N> /* d */,
                                  const T* HWY_RESTRICT base,
                                  const Vec128<int32_t, N> index) {
   return Vec128<T, N>{_mm_i32gather_epi32(
@@ -1522,16 +1555,14 @@ HWY_API Vec128<T, N> GatherIndex(hwy::SizeTag<4> /* tag */,
 }
 
 template <typename T, size_t N>
-HWY_API Vec128<T, N> GatherOffset(hwy::SizeTag<8> /* tag */,
-                                  Simd<T, N> /* tag */,
+HWY_API Vec128<T, N> GatherOffset(hwy::SizeTag<8> /* tag */, Simd<T, N> /* d */,
                                   const T* HWY_RESTRICT base,
                                   const Vec128<int64_t, N> offset) {
   return Vec128<T, N>{_mm_i64gather_epi64(
       reinterpret_cast<const hwy::GatherIndex64*>(base), offset.raw, 1)};
 }
 template <typename T, size_t N>
-HWY_API Vec128<T, N> GatherIndex(hwy::SizeTag<8> /* tag */,
-                                 Simd<T, N> /* tag */,
+HWY_API Vec128<T, N> GatherIndex(hwy::SizeTag<8> /* tag */, Simd<T, N> /* d */,
                                  const T* HWY_RESTRICT base,
                                  const Vec128<int64_t, N> index) {
   return Vec128<T, N>{_mm_i64gather_epi64(
@@ -1606,11 +1637,23 @@ HWY_API float GetLane(const Vec128<float, N> v) {
 }
 template <size_t N>
 HWY_API uint64_t GetLane(const Vec128<uint64_t, N> v) {
+#if HWY_ARCH_X86_32
+  alignas(16) uint64_t lanes[2];
+  Store(v, Simd<uint64_t, N>(), lanes);
+  return lanes[0];
+#else
   return _mm_cvtsi128_si64(v.raw);
+#endif
 }
 template <size_t N>
 HWY_API int64_t GetLane(const Vec128<int64_t, N> v) {
+#if HWY_ARCH_X86_32
+  alignas(16) int64_t lanes[2];
+  Store(v, Simd<int64_t, N>(), lanes);
+  return lanes[0];
+#else
   return _mm_cvtsi128_si64(v.raw);
+#endif
 }
 template <size_t N>
 HWY_API double GetLane(const Vec128<double, N> v) {

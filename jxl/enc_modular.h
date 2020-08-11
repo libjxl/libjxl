@@ -89,6 +89,7 @@ class ModularFrameEncoder {
   std::vector<size_t> tree_splits;
   std::vector<ModularMultiplierInfo> multiplier_info;
   std::vector<std::vector<uint32_t>> gi_channel;
+  std::vector<size_t> image_widths;
 };
 
 }  // namespace jxl

@@ -18,6 +18,8 @@
 #include "tools/ssimulacra.h"
 
 #include <cmath>
+
+#include "jxl/gauss_blur.h"
 #include "jxl/image_ops.h"
 
 namespace ssimulacra {
@@ -26,14 +28,16 @@ namespace {
 using jxl::Image3F;
 using jxl::ImageF;
 
-static const double kC1 = 0.0001;
-static const double kC2 = 0.0004;
+static const float kC1 = 0.0001f;
+static const float kC2 = 0.0004f;
 static const int kNumScales = 6;
+// Premultiplied by chroma weight 0.2
 static const double kScaleWeights[kNumScales][3] = {
     {0.04480, 0.00300, 0.00300}, {0.28560, 0.00896, 0.00896},
     {0.30010, 0.05712, 0.05712}, {0.23630, 0.06002, 0.06002},
     {0.13330, 0.06726, 0.06726}, {0.10000, 0.05000, 0.05000},
 };
+// Premultiplied by min weights 0.1, 0.005, 0.005
 const double kMinScaleWeights[kNumScales][3] = {
     {0.02000, 0.00005, 0.00005}, {0.03000, 0.00025, 0.00025},
     {0.02500, 0.00100, 0.00100}, {0.02000, 0.00150, 0.00150},
@@ -66,54 +70,57 @@ inline void Rgb2Lab(float r, float g, float b, float* L, float* A, float* B) {
 
 Image3F Rgb2Lab(const Image3F& in) {
   Image3F out(in.xsize(), in.ysize());
-  for (int y = 0; y < in.ysize(); ++y) {
-    const float* row_in[3];
-    float* row_out[3];
-    for (int c = 0; c < 3; c++) {
-      row_in[c] = in.PlaneRow(c, y);
-      row_out[c] = out.PlaneRow(c, y);
-    }
-    for (int x = 0; x < in.xsize(); ++x) {
-      Rgb2Lab(row_in[0][x], row_in[1][x], row_in[2][x], &row_out[0][x],
-              &row_out[1][x], &row_out[2][x]);
+  for (size_t y = 0; y < in.ysize(); ++y) {
+    const float* JXL_RESTRICT row_in0 = in.PlaneRow(0, y);
+    const float* JXL_RESTRICT row_in1 = in.PlaneRow(1, y);
+    const float* JXL_RESTRICT row_in2 = in.PlaneRow(2, y);
+    float* JXL_RESTRICT row_out0 = out.PlaneRow(0, y);
+    float* JXL_RESTRICT row_out1 = out.PlaneRow(1, y);
+    float* JXL_RESTRICT row_out2 = out.PlaneRow(2, y);
+
+    for (size_t x = 0; x < in.xsize(); ++x) {
+      Rgb2Lab(row_in0[x], row_in1[x], row_in2[x], &row_out0[x], &row_out1[x],
+              &row_out2[x]);
     }
   }
   return out;
 }
 
-Image3F Downsample(const Image3F& in, int fx, int fy) {
-  int out_xsize = (in.xsize() + fx - 1) / fx;
-  int out_ysize = (in.ysize() + fy - 1) / fy;
+Image3F Downsample(const Image3F& in, size_t fx, size_t fy) {
+  const size_t out_xsize = (in.xsize() + fx - 1) / fx;
+  const size_t out_ysize = (in.ysize() + fy - 1) / fy;
   Image3F out(out_xsize, out_ysize);
-  for (int oy = 0; oy < out_ysize; ++oy) {
-    for (int ox = 0; ox < out_xsize; ++ox) {
-      for (int c = 0; c < 3; ++c) {
-        float sum = 0.0;
-        for (int iy = 0; iy < fy; ++iy) {
-          for (int ix = 0; ix < fx; ++ix) {
-            int x = std::min<int>(ox * fx + ix, in.xsize() - 1);
-            int y = std::min<int>(oy * fy + iy, in.ysize() - 1);
+  const float normalize = 1.0f / (fx * fy);
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t oy = 0; oy < out_ysize; ++oy) {
+      float* JXL_RESTRICT row_out = out.PlaneRow(c, oy);
+      for (size_t ox = 0; ox < out_xsize; ++ox) {
+        float sum = 0.0f;
+        for (size_t iy = 0; iy < fy; ++iy) {
+          for (size_t ix = 0; ix < fx; ++ix) {
+            const size_t x = std::min(ox * fx + ix, in.xsize() - 1);
+            const size_t y = std::min(oy * fy + iy, in.ysize() - 1);
             sum += in.PlaneRow(c, y)[x];
           }
         }
-        sum /= (fx * fy);
-        out.PlaneRow(c, oy)[ox] = sum;
+        row_out[ox] = sum * normalize;
       }
     }
   }
   return out;
 }
 
-Image3F Multiply(const Image3F& a, const Image3F& b) {
-  Image3F out(a.xsize(), a.ysize());
-  for (int y = 0; y < a.ysize(); ++y) {
-    for (int x = 0; x < a.xsize(); ++x) {
-      for (int c = 0; c < 3; ++c) {
-        out.PlaneRow(c, y)[x] = a.PlaneRow(c, y)[x] * b.PlaneRow(c, y)[x];
+void Multiply(const Image3F& a, const Image3F& b, Image3F* mul) {
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < a.ysize(); ++y) {
+      const float* JXL_RESTRICT in1 = a.PlaneRow(c, y);
+      const float* JXL_RESTRICT in2 = b.PlaneRow(c, y);
+      float* JXL_RESTRICT out = mul->PlaneRow(c, y);
+      for (size_t x = 0; x < a.xsize(); ++x) {
+        out[x] = in1[x] * in2[x];
       }
     }
   }
-  return out;
 }
 
 void RowColAvgP2(const ImageF& in, double* rp2, double* cp2) {
@@ -133,96 +140,85 @@ void RowColAvgP2(const ImageF& in, double* rp2, double* cp2) {
   *cp2 = cavg[cavg.size() / 50] / in.ysize();
 }
 
-Image3F EdgeDiffMap(const Image3F& img1, const Image3F& mu1,
-                    const Image3F& img2, const Image3F& mu2) {
-  Image3F out(img1.xsize(), img1.ysize());
-  for (int y = 0; y < img1.ysize(); ++y) {
-    for (int c = 0; c < 3; ++c) {
-      auto row1 = img1.PlaneRow(c, y);
-      auto row2 = img2.PlaneRow(c, y);
-      auto rowm1 = mu1.PlaneRow(c, y);
-      auto rowm2 = mu2.PlaneRow(c, y);
-      for (int x = 0; x < img1.xsize(); ++x) {
+class StreamingAverage {
+ public:
+  void Add(const float v) {
+    // Numerically stable method.
+    double delta = v - result_;
+    n_ += 1;
+    result_ += delta / n_;
+  }
+
+  double Get() const { return result_; }
+
+ private:
+  double result_ = 0.0;
+  size_t n_ = 0;
+};
+
+void EdgeDiffMap(const Image3F& img1, const Image3F& mu1, const Image3F& img2,
+                 const Image3F& mu2, Image3F* out, double* plane_avg) {
+  for (size_t c = 0; c < 3; ++c) {
+    StreamingAverage avg;
+    for (size_t y = 0; y < img1.ysize(); ++y) {
+      const float* JXL_RESTRICT row1 = img1.PlaneRow(c, y);
+      const float* JXL_RESTRICT row2 = img2.PlaneRow(c, y);
+      const float* JXL_RESTRICT rowm1 = mu1.PlaneRow(c, y);
+      const float* JXL_RESTRICT rowm2 = mu2.PlaneRow(c, y);
+      float* JXL_RESTRICT row_out = out->PlaneRow(c, y);
+      for (size_t x = 0; x < img1.xsize(); ++x) {
         float edgediff = std::max(
             std::abs(row2[x] - rowm2[x]) - std::abs(row1[x] - rowm1[x]), 0.0f);
-        out.PlaneRow(c, y)[x] = 1.0f - edgediff;
+        row_out[x] = 1.0f - edgediff;
+        avg.Add(row_out[x]);
       }
     }
-  }
-  return out;
-}
-
-std::vector<float> GaussianKernel(int radius, float sigma) {
-  const float scaler = -1.0 / (2 * sigma * sigma);
-  std::vector<float> kernel(2 * radius + 1);
-  for (int i = -radius; i <= radius; ++i) {
-    kernel[i + radius] = std::exp(scaler * i * i);
-  }
-  return kernel;
-}
-
-inline void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
-                               float* const JXL_RESTRICT row_out,
-                               const int xsize, const int radius) {
-  const int lastcol = xsize - 1;
-  for (int x = 1; x <= radius; ++x) {
-    row_out[-x] = row_in[std::min(x, xsize - 1)];
-  }
-  memcpy(row_out, row_in, xsize * sizeof(row_out[0]));
-  for (int x = 1; x <= radius; ++x) {
-    row_out[lastcol + x] = row_in[std::max(0, lastcol - x)];
+    plane_avg[c] = avg.Get();
   }
 }
 
-ImageF MirrorConvolveXTranspose(const ImageF& in,
-                                const std::vector<float>& kernel) {
-  JXL_CHECK(kernel.size() % 2 == 1);
-  ImageF out(in.ysize(), in.xsize());
-  float weight = 0.0f;
-  for (int i = 0; i < kernel.size(); ++i) {
-    weight += kernel[i];
+// Temporary storage for Gaussian blur, reused for multiple images.
+class Blur {
+ public:
+  Blur(const size_t xsize, const size_t ysize)
+      : rg_(jxl::CreateRecursiveGaussian(1.5)), temp_(xsize, ysize) {}
+
+  void operator()(const ImageF& in, ImageF* JXL_RESTRICT out) {
+    jxl::ThreadPool* null_pool = nullptr;
+    FastGaussian(rg_, in, null_pool, &temp_, out);
   }
-  float scale = 1.0f / weight;
-  const int r = kernel.size() / 2;
-  std::vector<float> row_tmp(in.xsize() + 2 * r);
-  float* const JXL_RESTRICT rowp = &row_tmp[r];
-  const float* const kernelp = &kernel[r];
-  for (int y = 0; y < in.ysize(); ++y) {
-    ExtrapolateBorders(in.Row(y), rowp, in.xsize(), r);
-    for (int x = 0; x < in.xsize(); ++x) {
-      float sum = 0.0f;
-      for (int i = -r; i <= r; ++i) {
-        sum += rowp[x + i] * kernelp[i];
-      }
-      out.Row(x)[y] = sum * scale;
-    }
+
+  Image3F operator()(const Image3F& in) {
+    Image3F out(in.xsize(), in.ysize());
+    operator()(in.Plane(0), const_cast<ImageF*>(&out.Plane(0)));
+    operator()(in.Plane(1), const_cast<ImageF*>(&out.Plane(1)));
+    operator()(in.Plane(2), const_cast<ImageF*>(&out.Plane(2)));
+    return out;
   }
-  return out;
-}
 
-ImageF GaussianBlur(const ImageF& in, int radius, float sigma) {
-  std::vector<float> kernel = GaussianKernel(radius, sigma);
-  return MirrorConvolveXTranspose(MirrorConvolveXTranspose(in, kernel), kernel);
-}
+  // Allows reusing across scales.
+  void ShrinkTo(const size_t xsize, const size_t ysize) {
+    temp_.ShrinkTo(xsize, ysize);
+  }
 
-Image3F GaussianBlur(const Image3F& in, int radius, float sigma) {
-  return Image3F(GaussianBlur(in.Plane(0), radius, sigma),
-                 GaussianBlur(in.Plane(1), radius, sigma),
-                 GaussianBlur(in.Plane(2), radius, sigma));
-}
+ private:
+  hwy::AlignedUniquePtr<jxl::RecursiveGaussian> rg_;
+  ImageF temp_;
+};
 
-Image3F SSIMMap(const Image3F& m1, const Image3F& m2, const Image3F& s11,
-                const Image3F& s22, const Image3F& s12) {
-  Image3F out(m1.xsize(), m1.ysize());
-  for (int c = 0; c < 3; ++c) {
-    for (int y = 0; y < out.ysize(); ++y) {
-      auto row_m1 = m1.PlaneRow(c, y);
-      auto row_m2 = m2.PlaneRow(c, y);
-      auto row_s11 = s11.PlaneRow(c, y);
-      auto row_s22 = s22.PlaneRow(c, y);
-      auto row_s12 = s12.PlaneRow(c, y);
-      auto row_out = out.PlaneRow(c, y);
-      for (int x = 0; x < out.xsize(); ++x) {
+void SSIMMap(const Image3F& m1, const Image3F& m2, const Image3F& s11,
+             const Image3F& s22, const Image3F& s12, Image3F* out,
+             double* plane_averages) {
+  for (size_t c = 0; c < 3; ++c) {
+    StreamingAverage avg;
+    for (size_t y = 0; y < out->ysize(); ++y) {
+      const float* JXL_RESTRICT row_m1 = m1.PlaneRow(c, y);
+      const float* JXL_RESTRICT row_m2 = m2.PlaneRow(c, y);
+      const float* JXL_RESTRICT row_s11 = s11.PlaneRow(c, y);
+      const float* JXL_RESTRICT row_s22 = s22.PlaneRow(c, y);
+      const float* JXL_RESTRICT row_s12 = s12.PlaneRow(c, y);
+      float* JXL_RESTRICT row_out = out->PlaneRow(c, y);
+      for (size_t x = 0; x < out->xsize(); ++x) {
         float mu1 = row_m1[x];
         float mu2 = row_m2[x];
         float mu11 = mu1 * mu1;
@@ -233,10 +229,11 @@ Image3F SSIMMap(const Image3F& m1, const Image3F& m2, const Image3F& s11,
         float denom_m = mu11 + mu22 + kC1;
         float denom_s = (row_s11[x] - mu11) + (row_s22[x] - mu22) + kC2;
         row_out[x] = (nom_m * nom_s) / (denom_m * denom_s);
+        avg.Add(row_out[x]);
       }
     }
+    plane_averages[c] = avg.Get();
   }
-  return out;
 }
 
 }  // namespace
@@ -283,8 +280,13 @@ void Ssimulacra::PrintDetails() const {
 
 Ssimulacra ComputeDiff(const Image3F& img1_arg, const Image3F& img2_arg) {
   Ssimulacra ssimulacra;
+
   Image3F img1 = Rgb2Lab(img1_arg);
   Image3F img2 = Rgb2Lab(img2_arg);
+
+  Image3F mul(img1_arg.xsize(), img1_arg.ysize());
+  Blur blur(img1.xsize(), img1.ysize());
+
   for (int scale = 0; scale < kNumScales; scale++) {
     if (img1.xsize() < 8 || img1.ysize() < 8) {
       break;
@@ -293,34 +295,39 @@ Ssimulacra ComputeDiff(const Image3F& img1_arg, const Image3F& img2_arg) {
       img1 = Downsample(img1, 2, 2);
       img2 = Downsample(img2, 2, 2);
     }
-    SsimulacraScale sscale;
-    Image3F img1_sq = Multiply(img1, img1);
-    Image3F img2_sq = Multiply(img2, img2);
-    Image3F img1_img2 = Multiply(img1, img2);
-    Image3F mu1 = GaussianBlur(img1, 5, 1.5f);
-    Image3F mu2 = GaussianBlur(img2, 5, 1.5f);
-    Image3F sigma1_sq = GaussianBlur(img1_sq, 5, 1.5f);
-    Image3F sigma2_sq = GaussianBlur(img2_sq, 5, 1.5f);
-    Image3F sigma12 = GaussianBlur(img1_img2, 5, 1.5f);
-    Image3F ssim_map = SSIMMap(mu1, mu2, sigma1_sq, sigma2_sq, sigma12);
+    mul.ShrinkTo(img1.xsize(), img2.ysize());
+    blur.ShrinkTo(img1.xsize(), img2.ysize());
 
-    for (unsigned int i = 0; i < 3; i++) {
-      sscale.avg_ssim[i] = jxl::ImageAverage(ssim_map.Plane(i));
-    }
-    ssim_map = Downsample(ssim_map, 4, 4);
-    for (unsigned int c = 0; c < 3; c++) {
+    Multiply(img1, img1, &mul);
+    Image3F sigma1_sq = blur(mul);
+
+    Multiply(img2, img2, &mul);
+    Image3F sigma2_sq = blur(mul);
+
+    Multiply(img1, img2, &mul);
+    Image3F sigma12 = blur(mul);
+
+    Image3F mu1 = blur(img1);
+    Image3F mu2 = blur(img2);
+    // Reuse mul as "ssim_map".
+    SsimulacraScale sscale;
+    SSIMMap(mu1, mu2, sigma1_sq, sigma2_sq, sigma12, &mul, sscale.avg_ssim);
+
+    const Image3F ssim_map = Downsample(mul, 4, 4);
+    for (size_t c = 0; c < 3; c++) {
       float minval, maxval;
       ImageMinMax(ssim_map.Plane(c), &minval, &maxval);
-      sscale.min_ssim[c] = minval;
+      sscale.min_ssim[c] = static_cast<double>(minval);
     }
     ssimulacra.scales.push_back(sscale);
+
     if (scale == 0) {
-      Image3F edgediff = EdgeDiffMap(img1, mu1, img2, mu2);
-      for (unsigned int c = 0; c < 3; c++) {
-        ssimulacra.avg_edgediff[c] = jxl::ImageAverage(edgediff.Plane(c));
+      Image3F* edgediff = &sigma1_sq;  // reuse
+      EdgeDiffMap(img1, mu1, img2, mu2, edgediff, ssimulacra.avg_edgediff);
+      for (size_t c = 0; c < 3; c++) {
         RowColAvgP2(ssim_map.Plane(c), &ssimulacra.row_p2[0][c],
                     &ssimulacra.col_p2[0][c]);
-        RowColAvgP2(edgediff.Plane(c), &ssimulacra.row_p2[1][c],
+        RowColAvgP2(edgediff->Plane(c), &ssimulacra.row_p2[1][c],
                     &ssimulacra.col_p2[1][c]);
       }
     }

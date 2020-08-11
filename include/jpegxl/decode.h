@@ -471,7 +471,7 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetICCProfile(
  * @param dec decoder object
  * @param format format of pixelsformat of pixels.
  * @param size output value, buffer size in bytes
- * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as
+ * @return JPEGXL_DEC_SUCCESS on success, JPEGXL_DEC_ERROR on error, such as
  *    information not available yet.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderDCOutBufferSize(
@@ -489,8 +489,8 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderDCOutBufferSize(
  * copied internally.
  * @param buffer buffer type to output the pixel data to
  * @param size size of buffer in bytes
- * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as size
- *     too small.
+ * @return JPEGXL_DEC_SUCCESS on success, JPEGXL_DEC_ERROR on error, such as
+ * size too small.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus
 JpegxlDecoderSetDCOutBuffer(JpegxlDecoder* dec, const JpegxlPixelFormat* format,
@@ -505,7 +505,7 @@ JpegxlDecoderSetDCOutBuffer(JpegxlDecoder* dec, const JpegxlPixelFormat* format,
  * @param dec decoder object
  * @param format format of pixelsformat of pixels.
  * @param size output value, buffer size in bytes
- * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as
+ * @return JPEGXL_DEC_SUCCESS on success, JPEGXL_DEC_ERROR on error, such as
  *    information not available yet.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
@@ -522,8 +522,8 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
  * contents are copied internally.
  * @param buffer buffer type to output the pixel data to
  * @param size size of buffer in bytes
- * @return JPEG_DEC_SUCCESS on success, JPEG_DEC_ERROR on error, such as size
- *     too small.
+ * @return JPEGXL_DEC_SUCCESS on success, JPEGXL_DEC_ERROR on error, such as
+ * size too small.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderSetImageOutBuffer(
     JpegxlDecoder* dec, const JpegxlPixelFormat* format, void* buffer,

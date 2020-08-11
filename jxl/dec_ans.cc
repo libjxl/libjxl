@@ -45,6 +45,19 @@ inline int DecodeVarLenUint8(BitReader* input) {
   return 0;
 }
 
+// Decodes a number in the range [0..65535], by reading 1 - 21 bits.
+inline int DecodeVarLenUint16(BitReader* input) {
+  if (input->ReadFixedBits<1>()) {
+    int nbits = static_cast<int>(input->ReadFixedBits<4>());
+    if (nbits == 0) {
+      return 1;
+    } else {
+      return static_cast<int>(input->ReadBits(nbits)) + (1 << nbits);
+    }
+  }
+  return 0;
+}
+
 Status ReadHistogram(int precision_bits, std::vector<int>* counts,
                      BitReader* input) {
   int simple_code = input->ReadBits(1);
@@ -192,7 +205,7 @@ Status DecodeANSCodes(const size_t num_histograms,
     result->huffman_data.resize(num_histograms);
     std::vector<uint16_t> alphabet_sizes(num_histograms);
     for (size_t c = 0; c < num_histograms; c++) {
-      alphabet_sizes[c] = DecodeVarLenUint8(in) + 1;
+      alphabet_sizes[c] = DecodeVarLenUint16(in) + 1;
       if (alphabet_sizes[c] > max_alphabet_size) {
         return JXL_FAILURE("Alphabet size is too long: %u", alphabet_sizes[c]);
       }
@@ -232,7 +245,7 @@ Status DecodeANSCodes(const size_t num_histograms,
     size_t consumed_bytes = orig_size - unused_bytes;
     in->SkipBits(consumed_bytes * kBitsPerByte - num_unused_bits - pos);
   } else {
-    JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHA_SIZE);
+    JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHABET_SIZE);
     result->alias_tables =
         AllocateArray(num_histograms * (1 << result->log_alpha_size) *
                       sizeof(AliasTable::Entry));
@@ -276,8 +289,6 @@ Status DecodeUintConfig(size_t log_alpha_size, HybridUintConfig* uint_config,
   return true;
 }
 
-constexpr int8_t ANSSymbolReader::kSpecialDistances[kNumSpecialDistances][2];
-
 Status DecodeUintConfigs(size_t log_alpha_size,
                          std::vector<HybridUintConfig>* uint_config,
                          BitReader* br) {
@@ -297,7 +308,7 @@ Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
   JXL_RETURN_IF_ERROR(Bundle::Read(br, &code->lz77));
   if (code->lz77.enabled) {
     num_contexts++;
-    JXL_RETURN_IF_ERROR(DecodeUintConfig(/*log_alphabet_size=*/7,
+    JXL_RETURN_IF_ERROR(DecodeUintConfig(/*log_alpha_size=*/8,
                                          &code->lz77.length_uint_config, br));
   }
   if (code->lz77.enabled && disallow_lz77) {
@@ -308,7 +319,7 @@ Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
   if (num_contexts > 1) {
     JXL_RETURN_IF_ERROR(DecodeContextMap(context_map, &num_histograms, br));
   }
-  code->lz77.distance_context = context_map->back();
+  code->lz77.nonserialized_distance_context = context_map->back();
   code->use_prefix_code = br->ReadFixedBits<1>();
   if (code->use_prefix_code) {
     code->log_alpha_size = brunsli::kMaxHuffmanBits;

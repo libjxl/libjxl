@@ -16,8 +16,10 @@
 #define HWY_TARGET_INCLUDE "tests/hwy_test.cc"
 #include "hwy/foreach_target.h"
 
+// must come after foreach_target.h.
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"
@@ -101,10 +103,9 @@ struct TestSumMulAdd {
 HWY_NOINLINE void TestExamples() {
   ForPartialVectors<TestFloorLog2>()(float());
 
-  const ForPartialVectors<TestSumMulAdd> test_mul_add;
-  test_mul_add(float());
-#if HWY_CAP_DOUBLE
-  test_mul_add(double());
+  ForPartialVectors<TestSumMulAdd>()(float());
+#if HWY_CAP_FLOAT64
+  ForPartialVectors<TestSumMulAdd>()(double());
 #endif
 }
 

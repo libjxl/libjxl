@@ -16,8 +16,10 @@
 #define HWY_TARGET_INCLUDE "tests/convert_test.cc"
 #include "hwy/foreach_target.h"
 
+// must come after foreach_target.h.
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"
@@ -48,17 +50,17 @@ struct TestBitCastFrom {
     TestBitCastT<uint8_t>()(t, d);
     TestBitCastT<uint16_t>()(t, d);
     TestBitCastT<uint32_t>()(t, d);
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
     TestBitCastT<uint64_t>()(t, d);
 #endif
     TestBitCastT<int8_t>()(t, d);
     TestBitCastT<int16_t>()(t, d);
     TestBitCastT<int32_t>()(t, d);
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
     TestBitCastT<int64_t>()(t, d);
 #endif
     TestBitCastT<float>()(t, d);
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
     TestBitCastT<double>()(t, d);
 #endif
   }
@@ -94,35 +96,35 @@ HWY_NOINLINE void TestBitCast() {
   to_i32(int32_t());
   to_i32(float());
 
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   const ForPartialVectors<TestBitCastT<uint64_t>> to_u64;
   to_u64(uint64_t());
   to_u64(int64_t());
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   to_u64(double());
 #endif
 
   const ForPartialVectors<TestBitCastT<int64_t>> to_i64;
   to_i64(uint64_t());
   to_i64(int64_t());
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   to_i64(double());
 #endif
-#endif  // HWY_CAP_INT64
+#endif  // HWY_CAP_INTEGER64
 
   const ForPartialVectors<TestBitCastT<float>> to_float;
   to_float(uint32_t());
   to_float(int32_t());
   to_float(float());
 
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   const ForPartialVectors<TestBitCastT<double>> to_double;
   to_double(double());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   to_double(uint64_t());
   to_double(int64_t());
-#endif  // HWY_CAP_INT64
-#endif  // HWY_CAP_DOUBLE
+#endif  // HWY_CAP_INTEGER64
+#endif  // HWY_CAP_FLOAT64
 
   // For non-scalar vectors, we can cast all types to all.
   ForAllTypes(ForGE128Vectors<TestBitCastFrom>());
@@ -171,14 +173,14 @@ HWY_NOINLINE void TestPromote() {
   to_i32div4(uint8_t());
   to_i32div4(int8_t());
 
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   const ForPartialVectors<TestPromoteToT<uint64_t>, 2> to_u64div2;
   to_u64div2(uint32_t());
 
   const ForPartialVectors<TestPromoteToT<int64_t>, 2> to_i64div2;
   to_i64div2(int32_t());
 #endif
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   const ForPartialVectors<TestPromoteToT<double>, 2> to_f64div2;
   to_f64div2(float());
 #endif
@@ -220,7 +222,7 @@ HWY_NOINLINE void TestDemoteTo() {
   const ForPartialVectors<TestDemoteToT<uint16_t>> to_u16;
   to_u16(int32_t());
 
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   const ForPartialVectors<TestDemoteToT<float>> to_float;
   to_float(double());
 #endif
@@ -298,7 +300,7 @@ struct TestFloatFromInt {
 HWY_NOINLINE void TestConvertFloatInt() {
   ForPartialVectors<TestIntFromFloat>()(float());
   ForPartialVectors<TestFloatFromInt>()(int32_t());
-#if HWY_CAP_DOUBLE && HWY_CAP_INT64
+#if HWY_CAP_FLOAT64 && HWY_CAP_INTEGER64
   ForPartialVectors<TestIntFromFloat>()(double());
   ForPartialVectors<TestFloatFromInt>()(int64_t());
 #endif

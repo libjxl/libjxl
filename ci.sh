@@ -839,7 +839,7 @@ cmd_arm_benchmark() {
     "--modular-group --responsive=1"
     # Near-lossless options:
     "--adaptive_reconstruction=0 --distance=0.3 --speed=fast"
-    "--modular-group -N 3 -B 11"
+    "--modular-group -N 3 -I 0"
     "--modular-group -Q 97"
   )
 

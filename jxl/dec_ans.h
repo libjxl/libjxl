@@ -110,11 +110,10 @@ struct LZ77Params {
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     visitor->Bool(false, &enabled);
     if (!visitor->Conditional(enabled)) return true;
-    visitor->U32(Val(64), Val(128), Val(2048), BitsOffset(15, 8), 128,
+    visitor->U32(Val(224), Val(512), Val(4096), BitsOffset(15, 8), 224,
                  &min_symbol);
-    visitor->U32(Val(2), Val(4), Val(8), Bits(8), 2, &min_length);
-    visitor->U32(Val(128), Val(256), BitsOffset(8, 2), BitsOffset(12, 258), 256,
-                 &distance_multiplier);
+    visitor->U32(Val(3), Val(4), BitsOffset(2, 5), BitsOffset(8, 9), 3,
+                 &min_length);
     return true;
   }
   bool enabled;
@@ -124,15 +123,31 @@ struct LZ77Params {
   uint32_t min_symbol;
   uint32_t min_length;
 
-  // Multiplier to be used for the special distance codes.
-  uint32_t distance_multiplier;
-
   // Not serialized by VisitFields.
-  HybridUintConfig length_uint_config;
+  HybridUintConfig length_uint_config{2, 0, 0};
 
-  // Not serialized, only used by decoder.
-  size_t distance_context;
+  size_t nonserialized_distance_context;
 };
+
+static constexpr size_t kWindowSize = 1 << 20;
+static constexpr size_t kNumSpecialDistances = 120;
+// Table of special distance codes from WebP lossless.
+static constexpr int8_t kSpecialDistances[kNumSpecialDistances][2] = {
+    {0, 1},  {1, 0},  {1, 1},  {-1, 1}, {0, 2},  {2, 0},  {1, 2},  {-1, 2},
+    {2, 1},  {-2, 1}, {2, 2},  {-2, 2}, {0, 3},  {3, 0},  {1, 3},  {-1, 3},
+    {3, 1},  {-3, 1}, {2, 3},  {-2, 3}, {3, 2},  {-3, 2}, {0, 4},  {4, 0},
+    {1, 4},  {-1, 4}, {4, 1},  {-4, 1}, {3, 3},  {-3, 3}, {2, 4},  {-2, 4},
+    {4, 2},  {-4, 2}, {0, 5},  {3, 4},  {-3, 4}, {4, 3},  {-4, 3}, {5, 0},
+    {1, 5},  {-1, 5}, {5, 1},  {-5, 1}, {2, 5},  {-2, 5}, {5, 2},  {-5, 2},
+    {4, 4},  {-4, 4}, {3, 5},  {-3, 5}, {5, 3},  {-5, 3}, {0, 6},  {6, 0},
+    {1, 6},  {-1, 6}, {6, 1},  {-6, 1}, {2, 6},  {-2, 6}, {6, 2},  {-6, 2},
+    {4, 5},  {-4, 5}, {5, 4},  {-5, 4}, {3, 6},  {-3, 6}, {6, 3},  {-6, 3},
+    {0, 7},  {7, 0},  {1, 7},  {-1, 7}, {5, 5},  {-5, 5}, {7, 1},  {-7, 1},
+    {4, 6},  {-4, 6}, {6, 4},  {-6, 4}, {2, 7},  {-2, 7}, {7, 2},  {-7, 2},
+    {3, 7},  {-3, 7}, {7, 3},  {-7, 3}, {5, 6},  {-5, 6}, {6, 5},  {-6, 5},
+    {8, 0},  {4, 7},  {-4, 7}, {7, 4},  {-7, 4}, {8, 1},  {8, 2},  {6, 6},
+    {-6, 6}, {8, 3},  {5, 7},  {-5, 7}, {7, 5},  {-7, 5}, {8, 4},  {6, 7},
+    {-6, 7}, {7, 6},  {-7, 6}, {8, 5},  {7, 7},  {-7, 7}, {8, 6},  {8, 7}};
 
 struct ANSCode {
   CacheAlignedUniquePtr alias_tables;
@@ -147,7 +162,8 @@ class ANSSymbolReader {
  public:
   // Invalid symbol reader, to be overwritten.
   ANSSymbolReader() = default;
-  ANSSymbolReader(const ANSCode* code, BitReader* JXL_RESTRICT br)
+  ANSSymbolReader(const ANSCode* code, BitReader* JXL_RESTRICT br,
+                  size_t distance_multiplier = 0)
       : alias_tables_(
             reinterpret_cast<AliasTable::Entry*>(code->alias_tables.get())),
         huffman_data_(&code->huffman_data),
@@ -166,14 +182,15 @@ class ANSSymbolReader {
     lz77_window_storage_ = AllocateArray(kWindowSize * sizeof(uint32_t));
     lz77_window_ = reinterpret_cast<uint32_t*>(lz77_window_storage_.get());
     if (!code->lz77.enabled) return;
-    lz77_ctx_ = code->lz77.distance_context;
+    lz77_ctx_ = code->lz77.nonserialized_distance_context;
     lz77_length_uint_ = code->lz77.length_uint_config;
     lz77_threshold_ = code->lz77.min_symbol;
     lz77_min_length_ = code->lz77.min_length;
-    for (size_t i = 0; i < kNumSpecialDistances; i++) {
+    num_special_distances_ =
+        distance_multiplier == 0 ? 0 : kNumSpecialDistances;
+    for (size_t i = 0; i < num_special_distances_; i++) {
       int dist = kSpecialDistances[i][0];
-      dist *= static_cast<int>(code->lz77.distance_multiplier) *
-              kSpecialDistances[i][1];
+      dist += static_cast<int>(distance_multiplier) * kSpecialDistances[i][1];
       if (dist < 1) dist = 1;
       special_distances_[i] = dist;
     }
@@ -273,7 +290,7 @@ class ANSSymbolReader {
   JXL_INLINE size_t ReadHybridUintClustered(size_t ctx,
                                             BitReader* JXL_RESTRICT br) {
     if (JXL_UNLIKELY(num_to_copy_ > 0)) {
-      size_t ret = lz77_window_[copy_pos_++];
+      size_t ret = lz77_window_[(copy_pos_++) & kWindowMask];
       num_to_copy_--;
       lz77_window_[(num_decoded_++) & kWindowMask] = ret;
       return ret;
@@ -288,18 +305,18 @@ class ANSSymbolReader {
       // Distance code.
       size_t token = ReadSymbolWithoutRefill(lz77_ctx_, br);
       size_t distance = ReadHybridUintConfig(configs[lz77_ctx_], token, br);
-      if (JXL_LIKELY(distance < kNumSpecialDistances)) {
+      if (JXL_LIKELY(distance < num_special_distances_)) {
         distance = special_distances_[distance];
       } else {
-        distance -= kNumSpecialDistances;
+        distance = distance + 1 - num_special_distances_;
       }
       if (JXL_UNLIKELY(distance > num_decoded_)) {
         distance = num_decoded_;
       }
-      if (JXL_UNLIKELY(distance >= kWindowSize)) {
-        distance = kWindowSize - 1;
+      if (JXL_UNLIKELY(distance > kWindowSize)) {
+        distance = kWindowSize;
       }
-      copy_pos_ = (num_decoded_ - distance) & kWindowMask;
+      copy_pos_ = num_decoded_ - distance;
       return ReadHybridUintClustered(ctx, br);  // will trigger a copy.
     }
     size_t ret = ReadHybridUintConfig(configs[ctx], token, br);
@@ -313,8 +330,8 @@ class ANSSymbolReader {
   }
 
   // ctx is a *clustered* context!
-  bool IsSingleValue(size_t ctx, uint32_t* value) const {
-    // No optimization for Huffman mode.
+  bool IsSingleValue(size_t ctx, uint32_t* value, size_t count) {
+    // TODO(veluca): No optimization for Huffman mode yet.
     if (use_prefix_code_) return false;
     const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
     const AliasTable::Entry* table = &alias_tables_[ctx << log_alpha_size_];
@@ -322,8 +339,11 @@ class ANSSymbolReader {
         AliasTable::Lookup(table, res, log_entry_size_, entry_size_minus_1_);
     if (symbol.freq != ANS_TAB_SIZE) return false;
     if (configs[ctx].split_token <= symbol.value) return false;
-    *value = symbol.value;
     if (symbol.value >= lz77_threshold_) return false;
+    *value = symbol.value;
+    for (size_t i = 0; i < count; i++) {
+      lz77_window_[(num_decoded_++) & kWindowMask] = symbol.value;
+    }
     return true;
   }
 
@@ -338,9 +358,7 @@ class ANSSymbolReader {
   uint32_t entry_size_minus_1_;
 
   // LZ77 structures and constants.
-  static constexpr size_t kWindowSize = 1 << 20;
   static constexpr size_t kWindowMask = kWindowSize - 1;
-  static constexpr size_t kNumSpecialDistances = 120;
   CacheAlignedUniquePtr lz77_window_storage_;
   uint32_t* lz77_window_;
   uint32_t num_decoded_ = 0;
@@ -350,24 +368,8 @@ class ANSSymbolReader {
   uint32_t lz77_min_length_ = 0;
   uint32_t lz77_threshold_ = 1 << 20;  // bigger than any symbol.
   HybridUintConfig lz77_length_uint_;
-  // Table of special distance codes from WebP lossless.
-  static constexpr int8_t kSpecialDistances[kNumSpecialDistances][2] = {
-      {0, 1},  {1, 0},  {1, 1},  {-1, 1}, {0, 2},  {2, 0},  {1, 2},  {-1, 2},
-      {2, 1},  {-2, 1}, {2, 2},  {-2, 2}, {0, 3},  {3, 0},  {1, 3},  {-1, 3},
-      {3, 1},  {-3, 1}, {2, 3},  {-2, 3}, {3, 2},  {-3, 2}, {0, 4},  {4, 0},
-      {1, 4},  {-1, 4}, {4, 1},  {-4, 1}, {3, 3},  {-3, 3}, {2, 4},  {-2, 4},
-      {4, 2},  {-4, 2}, {0, 5},  {3, 4},  {-3, 4}, {4, 3},  {-4, 3}, {5, 0},
-      {1, 5},  {-1, 5}, {5, 1},  {-5, 1}, {2, 5},  {-2, 5}, {5, 2},  {-5, 2},
-      {4, 4},  {-4, 4}, {3, 5},  {-3, 5}, {5, 3},  {-5, 3}, {0, 6},  {6, 0},
-      {1, 6},  {-1, 6}, {6, 1},  {-6, 1}, {2, 6},  {-2, 6}, {6, 2},  {-6, 2},
-      {4, 5},  {-4, 5}, {5, 4},  {-5, 4}, {3, 6},  {-3, 6}, {6, 3},  {-6, 3},
-      {0, 7},  {7, 0},  {1, 7},  {-1, 7}, {5, 5},  {-5, 5}, {7, 1},  {-7, 1},
-      {4, 6},  {-4, 6}, {6, 4},  {-6, 4}, {2, 7},  {-2, 7}, {7, 2},  {-7, 2},
-      {3, 7},  {-3, 7}, {7, 3},  {-7, 3}, {5, 6},  {-5, 6}, {6, 5},  {-6, 5},
-      {8, 0},  {4, 7},  {-4, 7}, {7, 4},  {-7, 4}, {8, 1},  {8, 2},  {6, 6},
-      {-6, 6}, {8, 3},  {5, 7},  {-5, 7}, {7, 5},  {-7, 5}, {8, 4},  {6, 7},
-      {-6, 7}, {7, 6},  {-7, 6}, {8, 5},  {7, 7},  {-7, 7}, {8, 6},  {8, 7}};
   uint32_t special_distances_[kNumSpecialDistances];
+  uint32_t num_special_distances_;
 };
 
 Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,

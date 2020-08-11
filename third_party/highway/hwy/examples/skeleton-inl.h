@@ -28,9 +28,10 @@
 
 // It is fine to #include normal or *-inl headers.
 #include <stddef.h>
-#include "hwy/examples/skeleton_shared.h"
 
 #include <hwy/before_namespace-inl.h>
+
+#include "hwy/examples/skeleton_shared.h"
 namespace skeleton {
 #include "hwy/begin_target-inl.h"
 
@@ -51,11 +52,12 @@ HWY_MAYBE_UNUSED void ExampleMulAdd(const float* HWY_RESTRICT in1,
 // (This doesn't generate SIMD instructions, so is not required here)
 HWY_MAYBE_UNUSED const char* ExampleGatherStrategy() {
   // Highway functions generate per-target implementations from the same source
-  // code, but if needed, differing codepaths can be selected via #if.
-#if HWY_CAP_GATHER
+  // code via HWY_CAPPED(type, HWY_MIN(any_LANES_constants, ..)). If needed,
+  // entirely different codepaths can also be selected like so:
+#if HWY_GATHER_LANES > 1
   return "Has gather";
 #else
-  return "No gather, use scalar instead?";
+  return "Gather is limited to one lane";
 #endif
 }
 

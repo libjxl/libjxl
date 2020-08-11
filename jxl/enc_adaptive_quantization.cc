@@ -129,11 +129,11 @@ static const float kQuant64[64] = {
 };
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  const float kBase = 1.150;
-  const float kMul1 = 0.011997460360056856;
-  const float kOffset1 = 0.008653861363398005;
-  const float kMul2 = -0.19435889750542837;
-  const float kOffset2 = 0.0779320418139338;
+  const float kBase = 1.132;
+  const float kMul1 = 0.011998188544316451;
+  const float kOffset1 = 0.008630215880595576;
+  const float kMul2 = -0.19617839676853116;
+  const float kOffset2 = 0.07794671871145305;
   const float val = *out_pos;
   // Avoid division by zero.
   const float div = std::max(val + kOffset1, 1e-3f);
@@ -275,21 +275,21 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       y_sum_of_squares += vy * vy;
     }
   }
-  const float xmul = 2.594061271935514;
+  const float xmul = 3.2709800773479873;
   float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
   // than the previous approach of just using range_y.
   float range0 = std::sqrt(range_x * range_y);
-  const float mul0 = -0.3487568186688595;
+  const float mul0 = -2.1445646855668516;
   float range1 = std::sqrt(range_x * range_x + range_y * range_y);
-  const float mul1 = -0.4541809358833795;
+  const float mul1 = 0.015466173725276233;
   float range2 = std::max(range_x, range_y);
-  const float mul2 = 0.1560925882017745;
+  const float mul2 = -0.5428945750810649;
   float range3 = std::min(range_x, range_y);
-  const float mul3 = -0.6983299108674192;
+  const float mul3 = -1.845545830795523;
   float range4 = n == 0 ? 0 : range_x * std::sqrt(y_sum_of_squares / n);
-  const float mul4 = 178.33920534447083;
+  const float mul4 = 117.93368467138596;
   // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
   // some pathological cases and cause problems downstream.
   *out_pos += std::max(
@@ -322,7 +322,7 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   if (n != 0) {
     sum /= n;
   }
-  const float kMul = -6.751862512491382;
+  const float kMul = -0.48800704061872;
   sum *= kMul;
   *out_pos += sum;
 }
@@ -394,14 +394,14 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
   const size_t padded_xsize = RoundUpToBlockDim(xsize);
   const size_t padded_ysize = RoundUpToBlockDim(ysize);
   ImageF padded_diff(padded_xsize, padded_ysize);
-  const float mul0 = 0.025054135231958742f;
+  const float mul0 = 0.030220460298316064f;
 
   // The XYB gamma is 3.0 to be able to decode faster with two muls.
   // Butteraugli's gamma is matching the gamma of human eye, around 2.6.
   // We approximate the gamma difference by adding one cubic root into
   // the adaptive quantization. This gives us a total gamma of 2.6666
   // for quantization uses.
-  const float match_gamma_offset = 0.8642339254766029;
+  const float match_gamma_offset = 0.6542639346391887;
 
   RunOnPool(
       pool, 0, static_cast<int>(ysize), ThreadPool::SkipInit(),

@@ -23,8 +23,9 @@ namespace jxl {
 namespace {
 
 void VerifyAliasDistribution(const std::vector<int>& distribution, int range) {
-  AliasTable::Entry table[ANS_MAX_ALPHA_SIZE];
-  InitAliasTable(distribution, range, 8, table);
+  constexpr size_t log_alpha_size = 8;
+  AliasTable::Entry table[1 << log_alpha_size];
+  InitAliasTable(distribution, range, log_alpha_size, table);
   std::vector<std::vector<int>> offsets(distribution.size());
   for (int i = 0; i < range; i++) {
     AliasTable::Symbol s = AliasTable::Lookup(

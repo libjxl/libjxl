@@ -18,8 +18,10 @@
 #define HWY_TARGET_INCLUDE "tests/memory_test.cc"
 #include "hwy/foreach_target.h"
 
+// must come after foreach_target.h
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"
@@ -112,8 +114,6 @@ struct TestStreamT {
   }
 };
 
-#if HWY_CAP_GATHER || HWY_IDE
-
 // kShift must be log2(sizeof(T)).
 struct TestGatherT {
   template <class T, class D>
@@ -161,7 +161,7 @@ struct TestGatherT {
 };
 
 template <int kShift>
-struct TestFloatGatherT {
+struct TestGatherF {
   template <class T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
     using Offset = MakeSigned<T>;
@@ -198,22 +198,22 @@ struct TestFloatGatherT {
   }
 };
 
-#endif
-
 HWY_NOINLINE void TestGather() {
-#if HWY_CAP_GATHER || HWY_IDE
-  const ForPartialVectors<TestGatherT> test_int;
-  // No u8,u16.
-  test_int(uint32_t());
-  test_int(uint64_t());
-  // No i8,i16.
-  test_int(int32_t());
-  test_int(int64_t());
+  // No u8,u16,i8,i16.
+  const ForPartialVectors<TestGatherT, 1, 1, HWY_GATHER_LANES(uint32_t)> test32;
+  test32(uint32_t());
+  test32(int32_t());
 
-  ForPartialVectors<TestFloatGatherT<2>>()(float());
-#if HWY_CAP_DOUBLE
-  ForPartialVectors<TestFloatGatherT<3>>()(double());
+#if HWY_CAP_INTEGER64
+  const ForPartialVectors<TestGatherT, 1, 1, HWY_GATHER_LANES(uint64_t)> test64;
+  test64(uint64_t());
+  test64(int64_t());
 #endif
+
+  ForPartialVectors<TestGatherF<2>, 1, 1, HWY_GATHER_LANES(float)>()(float());
+
+#if HWY_CAP_FLOAT64
+  ForPartialVectors<TestGatherF<3>, 1, 1, HWY_GATHER_LANES(double)>()(double());
 #endif
 }
 

@@ -16,10 +16,13 @@
 #define HWY_TARGET_INCLUDE "tests/compare_test.cc"
 #include "hwy/foreach_target.h"
 
+//
 #include <string.h>  // memset
 
+// must come after foreach_target.h.
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"
@@ -63,11 +66,11 @@ struct TestStrictT {
 HWY_NOINLINE void TestStrict() {
   const ForPartialVectors<TestStrictT> test;
 
-  // HWY_CAP_INT64 is insufficient, so we cannot use ForSignedTypes.
+  // Cannot use ForSignedTypes - need to check HWY_COMPARE64_LANES.
   test(int8_t());
   test(int16_t());
   test(int32_t());
-#if HWY_CAP_CMP64
+#if HWY_COMPARE64_LANES > 1
   test(int64_t());
 #endif
 

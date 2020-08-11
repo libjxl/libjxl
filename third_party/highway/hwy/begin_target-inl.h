@@ -47,11 +47,12 @@
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
 
-#define HWY_CAP_GATHER 0
-#define HWY_CAP_VARIABLE_SHIFT 0
-#define HWY_CAP_INT64 1
-#define HWY_CAP_CMP64 0
-#define HWY_CAP_DOUBLE 1
+#define HWY_GATHER_LANES(T) 1
+#define HWY_VARIABLE_SHIFT_LANES(T) 1
+#define HWY_COMPARE64_LANES 1
+
+#define HWY_CAP_INTEGER64 1
+#define HWY_CAP_FLOAT64 1
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
@@ -70,11 +71,12 @@ namespace {
 #define HWY_ALIGN alignas(32)
 #define HWY_LANES(T) (32 / sizeof(T))
 
-#define HWY_CAP_GATHER 1
-#define HWY_CAP_VARIABLE_SHIFT 1
-#define HWY_CAP_INT64 1
-#define HWY_CAP_CMP64 1
-#define HWY_CAP_DOUBLE 1
+#define HWY_GATHER_LANES(T) HWY_LANES(T)
+#define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
+#define HWY_COMPARE64_LANES 4
+
+#define HWY_CAP_INTEGER64 1
+#define HWY_CAP_FLOAT64 1
 #define HWY_CAP_GE256 1
 #define HWY_CAP_GE512 0
 
@@ -93,11 +95,12 @@ namespace {
 #define HWY_ALIGN alignas(64)
 #define HWY_LANES(T) (64 / sizeof(T))
 
-#define HWY_CAP_GATHER 1
-#define HWY_CAP_VARIABLE_SHIFT 1
-#define HWY_CAP_INT64 1
-#define HWY_CAP_CMP64 1
-#define HWY_CAP_DOUBLE 1
+#define HWY_GATHER_LANES(T) HWY_LANES(T)
+#define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
+#define HWY_COMPARE64_LANES 8
+
+#define HWY_CAP_INTEGER64 1
+#define HWY_CAP_FLOAT64 1
 #define HWY_CAP_GE256 1
 #define HWY_CAP_GE512 1
 
@@ -116,11 +119,12 @@ namespace {
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
 
-#define HWY_CAP_GATHER 0
-#define HWY_CAP_VARIABLE_SHIFT 1
-#define HWY_CAP_INT64 1
-#define HWY_CAP_CMP64 1
-#define HWY_CAP_DOUBLE 1
+#define HWY_GATHER_LANES(T) 1
+#define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
+#define HWY_COMPARE64_LANES 2
+
+#define HWY_CAP_INTEGER64 1
+#define HWY_CAP_FLOAT64 1
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
@@ -134,19 +138,20 @@ namespace {
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
 
-#define HWY_CAP_VARIABLE_SHIFT 1
-#define HWY_CAP_GATHER 0
+#define HWY_GATHER_LANES(T) 1
+#define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
+
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
 #ifdef __arm__
-#define HWY_CAP_INT64 0
-#define HWY_CAP_CMP64 0
-#define HWY_CAP_DOUBLE 0
+#define HWY_COMPARE64_LANES 1
+#define HWY_CAP_INTEGER64 0
+#define HWY_CAP_FLOAT64 0
 #else
-#define HWY_CAP_INT64 1
-#define HWY_CAP_CMP64 1
-#define HWY_CAP_DOUBLE 1
+#define HWY_COMPARE64_LANES 2
+#define HWY_CAP_INTEGER64 1
+#define HWY_CAP_FLOAT64 1
 #endif
 
 namespace N_NEON {
@@ -164,11 +169,12 @@ namespace {
 #define HWY_ALIGN alignas(16)
 #define HWY_LANES(T) (16 / sizeof(T))
 
-#define HWY_CAP_GATHER 0
-#define HWY_CAP_VARIABLE_SHIFT 0
-#define HWY_CAP_INT64 0
-#define HWY_CAP_CMP64 0
-#define HWY_CAP_DOUBLE 0
+#define HWY_GATHER_LANES(T) 1
+#define HWY_VARIABLE_SHIFT_LANES(T) 1
+#define HWY_COMPARE64_LANES 1
+
+#define HWY_CAP_INTEGER64 0
+#define HWY_CAP_FLOAT64 0
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
@@ -187,11 +193,12 @@ namespace {
 #define HWY_ALIGN
 #define HWY_LANES(T) 1
 
-#define HWY_CAP_GATHER 1
-#define HWY_CAP_VARIABLE_SHIFT 1
-#define HWY_CAP_INT64 1
-#define HWY_CAP_CMP64 1
-#define HWY_CAP_DOUBLE 1
+#define HWY_GATHER_LANES(T) 1
+#define HWY_VARIABLE_SHIFT_LANES(T) 1
+#define HWY_COMPARE64_LANES 1
+
+#define HWY_CAP_INTEGER64 1
+#define HWY_CAP_FLOAT64 1
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 

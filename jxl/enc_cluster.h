@@ -31,28 +31,34 @@ namespace jxl {
 struct Histogram {
   Histogram() { total_count_ = 0; }
   void Clear() {
-    memset(data_, 0, ANS_MAX_ALPHA_SIZE * sizeof(data_[0]));
+    data_.clear();
     total_count_ = 0;
   }
   void Add(size_t symbol) {
-    JXL_DASSERT(symbol < ANS_MAX_ALPHA_SIZE);
+    if (data_.size() <= symbol) {
+      data_.resize(DivCeil(symbol + 1, kRounding) * kRounding);
+    }
     ++data_[symbol];
     ++total_count_;
   }
   void AddHistogram(const Histogram& other) {
-    for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; ++i) {
+    if (other.data_.size() > data_.size()) {
+      data_.resize(other.data_.size());
+    }
+    for (size_t i = 0; i < other.data_.size(); ++i) {
       data_[i] += other.data_[i];
     }
     total_count_ += other.total_count_;
   }
   float PopulationCost() const {
-    return ANSPopulationCost(data_, ANS_MAX_ALPHA_SIZE);
+    return ANSPopulationCost(data_.data(), data_.size());
   }
   double ShannonEntropy() const;
 
-  ANSHistBin data_[ANS_MAX_ALPHA_SIZE] = {};
+  std::vector<ANSHistBin> data_;
   size_t total_count_;
   mutable float entropy_;  // WARNING: not kept up-to-date.
+  static constexpr size_t kRounding = 8;
 };
 
 void ClusterHistograms(HistogramParams params, const std::vector<Histogram>& in,

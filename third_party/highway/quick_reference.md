@@ -218,7 +218,7 @@ bits. ARM requires the count be less than the lane size.
     <code>V **ShiftRight**&lt;int&gt;(V a)</code> returns `a[i] >>` a compile-time
     constant count. Inserts zero or sign bit(s) depending on `V`.
 
-**Note**: independent shifts are only available if `HWY_CAP_VARIABLE_SHIFT`:
+**Note**: Vectors must be `HWY_CAPPED(T, HWY_VARIABLE_SHIFT_LANES(T))`:
 
 *   `V`: `ui32/64` \
     <code>V **operator<<**(V a, V b)</code> returns `a[i] << b[i]`, which is
@@ -228,7 +228,7 @@ bits. ARM requires the count be less than the lane size.
     <code>V **operator>>**(V a, V b)</code> returns `a[i] >> b[i]`, which is
     zero when `b[i] >= sizeof(T)*8`. Inserts zero or sign bit(s).
 
-**Note**: the following are only provided if `!HWY_CAP_VARIABLE_SHIFT`:
+**Note**: the following are only provided if `HWY_VARIABLE_SHIFT_LANES(T) == 1`:
 
 *   `V`: `ui16/32/64` \
     <code>V **ShiftLeftSame**(V a, int bits)</code> returns `a[i] << bits`.
@@ -347,7 +347,7 @@ either naturally-aligned (`aligned`) or possibly unaligned (`p`).
 
 #### Gather
 
-**Note**: only available if `HWY_CAP_GATHER`:
+**Note**: Vectors must be `HWY_CAPPED(T, HWY_GATHER_LANES(T))`:
 
 *   `V`,`VI`: (`uif32,i32`), (`uif64,i64`) \
     <code>VT&lt;D&gt; **GatherOffset**(D, const T* base, VI offsets)</code>.
@@ -581,16 +581,20 @@ would have to support them).
     `#if HWY_TARGET != HWY_SCALAR || HWY_IDE` avoids code appearing greyed out.
 
 The following signal capabilities and expand to 1 or 0.
-*   `HWY_CAP_GATHER`: whether the current target supports GatherIndex/Offset.
-*   `HWY_CAP_VARIABLE_SHIFT`: whether the current target supports variable
-    shifts, i.e. per-lane shift amounts (v1 << v2).
-*   `HWY_CAP_INT64`: whether the current target supports 64-bit integers.
-*   `HWY_CAP_CMP64`: whether the current target supports 64-bit signed
-    comparisons.
-*   `HWY_CAP_DOUBLE`: whether the current target supports double-precision
-    vectors.
+*   `HWY_CAP_INTEGER64`: support for 64-bit signed/unsigned integer lanes.
+*   `HWY_CAP_FLOAT64`: support for double-precision floating-point lanes.
 *   `HWY_CAP_GE256`: the current target supports vectors of >= 256 bits.
 *   `HWY_CAP_GE512`: the current target supports vectors of >= 512 bits.
+
+The following indicate the maximum number of lanes for certain operations. For
+targets that support the feature/operation, the macro evaluates to
+`HWY_LANES(T)`, otherwise 1. Using `HWY_CAPPED(T, HWY_GATHER_LANES(T))`
+generates the best possible code (or scalar fallback) from the same source code.
+*   `HWY_GATHER_LANES(T)`: supports GatherIndex/Offset.
+*   `HWY_VARIABLE_SHIFT_LANES(T)`: supports per-lane shift amounts (v1 << v2).
+
+As above, but the feature implies the type so there is no T parameter:
+*   `HWY_COMPARE64_LANES`: 64-bit signed integer comparisons.
 
 ## Detecting supported targets
 

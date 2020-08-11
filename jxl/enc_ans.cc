@@ -18,8 +18,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <numeric>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -234,6 +236,18 @@ void StoreVarLenUint8(size_t n, Writer* writer) {
 }
 
 template <typename Writer>
+void StoreVarLenUint16(size_t n, Writer* writer) {
+  if (n == 0) {
+    writer->Write(1, 0);
+  } else {
+    writer->Write(1, 1);
+    size_t nbits = FloorLog2Nonzero(n);
+    writer->Write(4, nbits);
+    writer->Write(nbits, n - (1ULL << nbits));
+  }
+}
+
+template <typename Writer>
 void EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
                   const int omit_pos, const int num_symbols, uint32_t shift,
                   const int* symbols, Writer* writer) {
@@ -399,15 +413,15 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
                                     ANSEncSymbolInfo* info, BitWriter* writer) {
   if (use_prefix_code) {
     if (alphabet_size <= 1) return 0;
-    uint32_t histo[ANS_MAX_ALPHA_SIZE];
+    uint32_t histo[PREFIX_MAX_ALPHABET_SIZE];
     size_t total = 0;
     for (size_t i = 0; i < alphabet_size; i++) {
       histo[i] = histogram[i];
       JXL_CHECK(histogram[i] >= 0);
       total += histo[i];
     }
-    uint8_t depths[ANS_MAX_ALPHA_SIZE] = {};
-    uint16_t bits[ANS_MAX_ALPHA_SIZE];
+    uint8_t depths[PREFIX_MAX_ALPHABET_SIZE] = {};
+    uint16_t bits[PREFIX_MAX_ALPHABET_SIZE];
     uint8_t storage[1024] = {};
     brunsli::Storage st(storage, 1024);
     brunsli::BuildAndStoreHuffmanTree(histo, alphabet_size, depths, bits, &st);
@@ -455,7 +469,7 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
   }
   if (method == 0) {
     counts = CreateFlatHistogram(alphabet_size, ANS_TAB_SIZE);
-    AliasTable::Entry a[ANS_MAX_ALPHA_SIZE];
+    AliasTable::Entry a[ANS_MAX_ALPHABET_SIZE];
     InitAliasTable(counts, ANS_TAB_SIZE, log_alpha_size, a);
     ANSBuildInfoTable(counts.data(), a, alphabet_size, log_alpha_size, info);
     if (writer != nullptr) {
@@ -467,7 +481,7 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
   uint32_t shift = method - 1;
   JXL_CHECK(NormalizeCounts(counts.data(), &omit_pos, alphabet_size,
                             ANS_LOG_TAB_SIZE, shift, &num_symbols, symbols));
-  AliasTable::Entry a[ANS_MAX_ALPHA_SIZE];
+  AliasTable::Entry a[ANS_MAX_ALPHABET_SIZE];
   InitAliasTable(counts, ANS_TAB_SIZE, log_alpha_size, a);
   ANSBuildInfoTable(counts.data(), a, alphabet_size, log_alpha_size, info);
   if (writer != nullptr) {
@@ -546,6 +560,8 @@ void ChooseUintConfigs(const HistogramParams& params,
                            std::numeric_limits<float>::max());
   std::vector<float> extra_bits(clustered_histograms->size());
   std::vector<uint8_t> is_valid(clustered_histograms->size());
+  size_t max_alpha =
+      codes->use_prefix_code ? PREFIX_MAX_ALPHABET_SIZE : ANS_MAX_ALPHABET_SIZE;
   for (HybridUintConfig cfg : configs) {
     std::fill(is_valid.begin(), is_valid.end(), true);
     std::fill(extra_bits.begin(), extra_bits.end(), 0);
@@ -556,10 +572,13 @@ void ChooseUintConfigs(const HistogramParams& params,
     for (size_t i = 0; i < tokens.size(); ++i) {
       for (size_t j = 0; j < tokens[i].size(); ++j) {
         const Token token = tokens[i][j];
-        uint32_t tok, nbits, bits;
+        // TODO(veluca): do not ignore lz77 commands.
+        if (token.is_lz77_length) continue;
         size_t histo = context_map[token.context];
+        uint32_t tok, nbits, bits;
         cfg.Encode(token.value, &tok, &nbits, &bits);
-        if (tok >= ANS_MAX_ALPHA_SIZE) {
+        if (tok >= max_alpha ||
+            (codes->lz77.enabled && tok >= codes->lz77.min_symbol)) {
           is_valid[histo] = false;
           continue;
         }
@@ -588,12 +607,19 @@ void ChooseUintConfigs(const HistogramParams& params,
       const Token token = tokens[i][j];
       uint32_t tok, nbits, bits;
       size_t histo = context_map[token.context];
-      codes->uint_config[histo].Encode(token.value, &tok, &nbits, &bits);
+      (token.is_lz77_length ? codes->lz77.length_uint_config
+                            : codes->uint_config[histo])
+          .Encode(token.value, &tok, &nbits, &bits);
+      tok += token.is_lz77_length ? codes->lz77.min_symbol : 0;
       (*clustered_histograms)[histo].Add(tok);
       while (tok >= (1 << *log_alpha_size)) (*log_alpha_size)++;
     }
   }
-  JXL_ASSERT(*log_alpha_size <= 8);
+#if JXL_ENABLE_ASSERT
+  size_t max_log_alpha_size =
+      codes->use_prefix_code ? brunsli::kMaxHuffmanBits : 8;
+  JXL_ASSERT(*log_alpha_size <= max_log_alpha_size);
+#endif
 }
 
 class HistogramBuilder {
@@ -636,7 +662,7 @@ class HistogramBuilder {
       }
     }
     codes->use_prefix_code = use_prefix_code;
-    size_t log_alpha_size = 7;  // Sane default.
+    size_t log_alpha_size = codes->lz77.enabled ? 8 : 7;  // Sane default.
     ChooseUintConfigs(params, tokens, *context_map, &clustered_histograms,
                       codes, &log_alpha_size);
     if (log_alpha_size < 5) log_alpha_size = 5;
@@ -658,66 +684,491 @@ class HistogramBuilder {
     if (use_prefix_code) {
       for (size_t c = 0; c < clustered_histograms.size(); ++c) {
         size_t num_symbol = 1;
-        for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
+        for (size_t i = 0; i < clustered_histograms[c].data_.size(); i++) {
           if (clustered_histograms[c].data_[i]) num_symbol = i + 1;
         }
         if (writer) {
-          StoreVarLenUint8(num_symbol - 1, writer);
+          StoreVarLenUint16(num_symbol - 1, writer);
         } else {
-          StoreVarLenUint8(num_symbol - 1, &size_writer);
+          StoreVarLenUint16(num_symbol - 1, &size_writer);
         }
       }
     }
     cost += size_writer.size;
     for (size_t c = 0; c < clustered_histograms.size(); ++c) {
       size_t num_symbol = 1;
-      for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
+      for (size_t i = 0; i < clustered_histograms[c].data_.size(); i++) {
         if (clustered_histograms[c].data_[i]) num_symbol = i + 1;
       }
       codes->encoding_info.emplace_back();
       codes->encoding_info.back().resize(std::max<size_t>(1, num_symbol));
 
       cost += BuildAndStoreANSEncodingData(
-          clustered_histograms[c].data_, num_symbol, log_alpha_size,
+          clustered_histograms[c].data_.data(), num_symbol, log_alpha_size,
           use_prefix_code, codes->encoding_info.back().data(), writer);
     }
     return cost;
   }
 
+  const Histogram& Histo(size_t i) const { return histograms_[i]; }
+
  private:
   std::vector<Histogram> histograms_;
 };
+
+class SymbolCostEstimator {
+ public:
+  SymbolCostEstimator(size_t num_contexts, bool force_huffman,
+                      const std::vector<std::vector<Token>>& tokens)
+      : builder_(num_contexts) {
+    // Build histograms for estimating lz77 savings.
+    HybridUintConfig uint_config;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+      for (size_t j = 0; j < tokens[i].size(); ++j) {
+        const Token token = tokens[i][j];
+        uint32_t tok, nbits, bits;
+        uint_config.Encode(token.value, &tok, &nbits, &bits);
+        builder_.VisitSymbol(tok, token.context);
+      }
+    }
+    max_alphabet_size_ = 0;
+    for (size_t i = 0; i < num_contexts; i++) {
+      max_alphabet_size_ =
+          std::max(max_alphabet_size_, builder_.Histo(i).data_.size());
+    }
+    bits_.resize(num_contexts * max_alphabet_size_);
+    // TODO(veluca): SIMD?
+    for (size_t i = 0; i < num_contexts; i++) {
+      float inv_total = 1.0f / (builder_.Histo(i).total_count_ + 1e-8f);
+      for (size_t j = 0; j < builder_.Histo(i).data_.size(); j++) {
+        size_t cnt = builder_.Histo(i).data_[j];
+        float cost = 0;
+        if (cnt != 0 && cnt != builder_.Histo(i).total_count_) {
+          cost = -FastLog2f(cnt * inv_total);
+          if (force_huffman) cost = std::ceil(cost);
+        }
+        bits_[i * max_alphabet_size_ + j] = cost;
+      }
+    }
+  }
+  float Bits(size_t ctx, size_t sym) const {
+    return bits_[ctx * max_alphabet_size_ + sym];
+  }
+
+ private:
+  HistogramBuilder builder_;
+  size_t max_alphabet_size_;
+  std::vector<float> bits_;
+};
+
+void ApplyLZ77_RLE(const HistogramParams& params, size_t num_contexts,
+                   const std::vector<std::vector<Token>>& tokens,
+                   LZ77Params& lz77,
+                   std::vector<std::vector<Token>>& tokens_lz77) {
+  // TODO(veluca): tune heuristics here.
+  SymbolCostEstimator sce(num_contexts, params.force_huffman, tokens);
+  float bit_decrease = 0;
+  size_t total_symbols = 0;
+  tokens_lz77.resize(tokens.size());
+  std::vector<float> sym_cost;
+  HybridUintConfig uint_config;
+  for (size_t stream = 0; stream < tokens.size(); stream++) {
+    size_t distance_multiplier =
+        params.image_widths.size() > stream ? params.image_widths[stream] : 0;
+    const auto& in = tokens[stream];
+    auto& out = tokens_lz77[stream];
+    total_symbols += in.size();
+    // Cumulative sum of bit costs.
+    sym_cost.resize(in.size() + 1);
+    for (size_t i = 0; i < in.size(); i++) {
+      uint32_t tok, nbits, unused_bits;
+      uint_config.Encode(in[i].value, &tok, &nbits, &unused_bits);
+      sym_cost[i + 1] = sce.Bits(in[i].context, tok) + nbits + sym_cost[i];
+    }
+    out.reserve(in.size());
+    for (size_t i = 0; i < in.size(); i++) {
+      size_t num_to_copy = 0;
+      size_t distance = 0;  // 1 for RLE.
+      if (distance_multiplier != 0) {
+        distance = 1;  // Special distance 1 if enabled.
+        JXL_DASSERT(kSpecialDistances[1][0] == 1);
+        JXL_DASSERT(kSpecialDistances[1][1] == 0);
+      }
+      if (i > 0) {
+        for (; i + num_to_copy < in.size(); num_to_copy++) {
+          if (in[i + num_to_copy].value != in[i - 1].value) {
+            break;
+          }
+        }
+      }
+      if (num_to_copy == 0) {
+        out.push_back(in[i]);
+        continue;
+      }
+      float cost = sym_cost[i + num_to_copy] - sym_cost[i];
+      // This subtraction might overflow, but that's OK.
+      size_t lz77_len = num_to_copy - lz77.min_length;
+      float lz77_cost = num_to_copy >= lz77.min_length
+                            ? CeilLog2Nonzero(lz77_len + 1) + 1
+                            : 0;
+      if (num_to_copy < lz77.min_length || cost <= lz77_cost) {
+        for (size_t j = 0; j < num_to_copy; j++) {
+          out.push_back(in[i + j]);
+        }
+        i += num_to_copy - 1;
+        continue;
+      }
+      // Output the LZ77 length
+      out.emplace_back(in[i].context, lz77_len);
+      out.back().is_lz77_length = true;
+      i += num_to_copy - 1;
+      bit_decrease += cost - lz77_cost;
+      // Output the LZ77 copy distance.
+      out.emplace_back(lz77.nonserialized_distance_context, distance);
+    }
+  }
+
+  if (bit_decrease > total_symbols * 0.2 + 16) {
+    lz77.enabled = true;
+  }
+}
+
+// Hash chain for LZ77 matching
+struct HashChain {
+  const Token* data_;
+  size_t size_;
+
+  unsigned hash_num_values_ = 32768;
+  unsigned hash_mask_ = hash_num_values_ - 1;
+  unsigned hash_shift_ = 5;
+
+  std::vector<int> head;
+  std::vector<uint32_t> chain;
+  std::vector<int> val;
+
+  // Speed up repetitions of zero
+  std::vector<int> headz;
+  std::vector<uint32_t> chainz;
+  std::vector<uint32_t> zeros;
+  uint32_t numzeros = 0;
+
+  size_t window_size_;
+  size_t window_mask_;
+  size_t min_length_;
+  size_t max_length_;
+
+  uint32_t maxchainlength = 256;  // window_size_ to allow all
+
+  HashChain(const Token* data, size_t size, size_t window_size,
+            size_t min_length, size_t max_length)
+      : data_(data),
+        size_(size),
+        window_size_(window_size),
+        window_mask_(window_size - 1),
+        min_length_(min_length),
+        max_length_(max_length) {
+    head.resize(hash_num_values_, -1);
+    val.resize(window_size_, -1);
+    chain.resize(window_size_);
+    for (uint32_t i = 0; i < window_size_; ++i) {
+      chain[i] = i;  // same value as index indicates uninitialized
+    }
+
+    zeros.resize(window_size_);
+    headz.resize(window_size_ + 1, -1);
+    chainz.resize(window_size_);
+    for (uint32_t i = 0; i < window_size_; ++i) {
+      chainz[i] = i;
+    }
+  }
+
+  uint32_t GetHash(size_t pos) const {
+    uint32_t result = 0;
+    if (pos + 2 < size_) {
+      result ^= (uint32_t)(data_[pos + 0].value << 0u);
+      result ^= (uint32_t)(data_[pos + 1].value << hash_shift_);
+      result ^= (uint32_t)(data_[pos + 2].value << (hash_shift_ * 2));
+    } else {
+      size_t amount, i;
+      if (pos >= size_) return 0;
+      amount = size_ - pos;
+      for (i = 0; i < amount; ++i) {
+        result ^= (uint32_t)(data_[pos + i].value << (i * hash_shift_));
+      }
+    }
+    return result & hash_mask_;
+  }
+
+  uint32_t CountZeros(size_t pos, uint32_t prevzeros) const {
+    size_t end = pos + window_size_;
+    if (end > size_) end = size_;
+    if (prevzeros > 0) {
+      if (prevzeros >= window_mask_ && data_[end - 1].value == 0) {
+        return prevzeros;
+      } else {
+        return prevzeros - 1;
+      }
+    }
+    uint32_t num = 0;
+    while (pos + num < end && data_[pos + num].value == 0) num++;
+    return num;
+  }
+
+  void Update(size_t pos) {
+    uint32_t hashval = GetHash(pos);
+    uint32_t wpos = pos & window_mask_;
+
+    val[wpos] = (int)hashval;
+    if (head[hashval] != -1) chain[wpos] = head[hashval];
+    head[hashval] = wpos;
+
+    if (pos > 0 && data_[pos].value != data_[pos - 1].value) numzeros = 0;
+    numzeros = CountZeros(pos, numzeros);
+
+    zeros[wpos] = numzeros;
+    if (headz[numzeros] != -1) chainz[wpos] = headz[numzeros];
+    headz[numzeros] = wpos;
+  }
+
+  void Update(size_t pos, size_t len) {
+    for (int i = 0; i < len; i++) {
+      Update(pos + i);
+    }
+  }
+
+  void FindMatch(size_t pos, int max_dist, size_t* result_dist,
+                 size_t* result_len) const {
+    uint32_t wpos = pos & window_mask_;
+    uint32_t hashval = GetHash(pos);
+    uint32_t hashpos = chain[wpos];
+
+    int prev_dist = 0;
+    int end = std::min<int>(pos + max_length_, size_);
+    *result_len = 1;
+    *result_dist = 0;
+    uint32_t chainlength = 0;
+    for (;;) {
+      int dist = (hashpos <= wpos) ? (wpos - hashpos)
+                                   : (wpos - hashpos + window_mask_ + 1);
+      if (dist < prev_dist) break;
+      prev_dist = dist;
+      int len = 0;
+      if (dist > 0) {
+        int i = pos;
+        int j = pos - dist;
+        if (numzeros > 3) {
+          int r = std::min<int>(numzeros - 1, zeros[hashpos]);
+          i += r;
+          j += r;
+          len += r;
+        }
+        if (len > max_length_) len = max_length_;
+        while (i < end && data_[i].value == data_[j].value) {
+          i++;
+          j++;
+          len++;
+        }
+        if (len >= min_length_ && len > *result_len) {
+          *result_len = len;
+          *result_dist = dist;
+        }
+      }
+
+      chainlength++;
+      if (chainlength >= maxchainlength) break;
+
+      if (numzeros >= 3 && len > static_cast<int>(numzeros)) {
+        if (hashpos == chainz[hashpos]) break;
+        hashpos = chainz[hashpos];
+        if (zeros[hashpos] != numzeros) break;
+      } else {
+        if (hashpos == chain[hashpos]) break;
+        hashpos = chain[hashpos];
+        if (val[hashpos] != (int)hashval) break;  // outdated hash value
+      }
+    }
+  }
+};
+
+void ApplyLZ77_LZ77(const HistogramParams& params, size_t num_contexts,
+                    const std::vector<std::vector<Token>>& tokens,
+                    LZ77Params& lz77,
+                    std::vector<std::vector<Token>>& tokens_lz77) {
+  // TODO(veluca): tune heuristics here.
+  SymbolCostEstimator sce(num_contexts, params.force_huffman, tokens);
+  float bit_decrease = 0;
+  size_t total_symbols = 0;
+  tokens_lz77.resize(tokens.size());
+  HybridUintConfig uint_config;
+  std::vector<float> sym_cost;
+  for (size_t stream = 0; stream < tokens.size(); stream++) {
+    size_t distance_multiplier =
+        params.image_widths.size() > stream ? params.image_widths[stream] : 0;
+    const auto& in = tokens[stream];
+    auto& out = tokens_lz77[stream];
+    total_symbols += in.size();
+    // Cumulative sum of bit costs.
+    sym_cost.resize(in.size() + 1);
+    for (size_t i = 0; i < in.size(); i++) {
+      uint32_t tok, nbits, unused_bits;
+      uint_config.Encode(in[i].value, &tok, &nbits, &unused_bits);
+      sym_cost[i + 1] = sce.Bits(in[i].context, tok) + nbits + sym_cost[i];
+    }
+    size_t num_special_distances =
+        distance_multiplier ? kNumSpecialDistances : 0;
+
+    // Ttranslate distance to special distance code.
+    std::unordered_map<int, int> special_dist_table;
+    if (distance_multiplier) {
+      // Count down, so if due to small distance multiplier multiple distances
+      // map to the same code, the smallest code will be used in the end.
+      for (int i = kNumSpecialDistances - 1; i >= 0; --i) {
+        int xi = kSpecialDistances[i][0];
+        int yi = kSpecialDistances[i][1];
+        int distance = yi * distance_multiplier + xi;
+        if (distance < 1) continue;
+        special_dist_table[distance] = i;
+      }
+    }
+
+    out.reserve(in.size());
+    size_t max_distance = in.size();
+    size_t min_length = lz77.min_length;
+    JXL_ASSERT(min_length >= 3);
+    size_t max_length = in.size();
+
+    // Use next power of two as window size.
+    size_t window_size = 1;
+    while (window_size < max_distance && window_size < kWindowSize) {
+      window_size <<= 1;
+    }
+
+    HashChain chain(in.data(), in.size(), window_size, min_length, max_length);
+    size_t len, dist;
+
+    const size_t max_lazy_match_len = 256;  // 0 to disable lazy matching
+
+    // Whether the next symbol was already updated (to test lazy matching)
+    bool already_updated = false;
+    for (size_t i = 0; i < in.size(); i++) {
+      out.push_back(in[i]);
+      if (!already_updated) chain.Update(i);
+      already_updated = false;
+      chain.FindMatch(i, max_distance, &dist, &len);
+      if (len >= min_length) {
+        if (len < max_lazy_match_len && i + 1 < in.size()) {
+          // Try length at next symbol lazy matching
+          chain.Update(i + 1);
+          already_updated = true;
+          size_t len2, dist2;
+          chain.FindMatch(i + 1, max_distance, &dist2, &len2);
+          if (len2 > len) {
+            // Use the lazy match. Add literal, and use the next length starting
+            // from the next byte.
+            ++i;
+            already_updated = false;
+            len = len2;
+            dist = dist2;
+            out.push_back(in[i]);
+          }
+        }
+        auto it = special_dist_table.find(dist);
+        size_t dist_symbol = (it == special_dist_table.end())
+                                 ? (num_special_distances + dist - 1)
+                                 : it->second;
+
+        float cost = sym_cost[i + len] - sym_cost[i];
+        size_t lz77_len = len - lz77.min_length;
+        float lz77_cost = CeilLog2Nonzero(lz77_len + 1) + 12 +
+                          CeilLog2Nonzero(dist_symbol + 1);
+
+        if (lz77_cost <= cost) {
+          out.back().value = len - min_length;
+          out.back().is_lz77_length = true;
+          out.emplace_back(lz77.nonserialized_distance_context, dist_symbol);
+          bit_decrease += cost - lz77_cost;
+        } else {
+          // LZ77 match ignored, and symbol already pushed. Push all other
+          // symbols and skip.
+          for (size_t j = 1; j < len; j++) {
+            out.push_back(in[i + j]);
+          }
+        }
+
+        if (already_updated) {
+          chain.Update(i + 2, len - 2);
+          already_updated = false;
+        } else {
+          chain.Update(i + 1, len - 1);
+        }
+        i += len - 1;
+      } else {
+        // Literal, already pushed
+      }
+    }
+  }
+
+  if (bit_decrease > total_symbols * 0.2 + 16) {
+    lz77.enabled = true;
+  }
+}
+
+void ApplyLZ77(const HistogramParams& params, size_t num_contexts,
+               const std::vector<std::vector<Token>>& tokens, LZ77Params& lz77,
+               std::vector<std::vector<Token>>& tokens_lz77) {
+  lz77.enabled = false;
+  if (params.force_huffman) {
+    lz77.min_symbol = std::min(PREFIX_MAX_ALPHABET_SIZE - 32, 512);
+  } else {
+    lz77.min_symbol = 224;
+  }
+  if (params.lz77_method == HistogramParams::LZ77Method::kNone) {
+    return;
+  } else if (params.lz77_method == HistogramParams::LZ77Method::kRLE) {
+    ApplyLZ77_RLE(params, num_contexts, tokens, lz77, tokens_lz77);
+  } else if (params.lz77_method == HistogramParams::LZ77Method::kLZ77) {
+    ApplyLZ77_LZ77(params, num_contexts, tokens, lz77, tokens_lz77);
+  } else {
+    JXL_ABORT("Not implemented");
+  }
+}
 }  // namespace
 
 size_t BuildAndEncodeHistograms(const HistogramParams& params,
                                 size_t num_contexts,
-                                const std::vector<std::vector<Token>>& tokens,
+                                std::vector<std::vector<Token>>& tokens,
                                 EntropyEncodingData* codes,
                                 std::vector<uint8_t>* context_map,
                                 BitWriter* writer, size_t layer,
                                 AuxOut* aux_out) {
-  LZ77Params lz77;
   size_t total_bits = 0;
-  // TODO(veluca): figure out if lz77 should be used, and transform the token
-  // streams.
+  codes->lz77.nonserialized_distance_context = num_contexts;
+  std::vector<std::vector<Token>> tokens_lz77;
+  ApplyLZ77(params, num_contexts, tokens, codes->lz77, tokens_lz77);
+
+  const size_t max_contexts = std::min(num_contexts, kClustersLimit);
+  BitWriter::Allotment allotment(writer, 8192 * (max_contexts + 4));
   if (writer) {
-    JXL_CHECK(Bundle::Write(lz77, writer, layer, aux_out));
+    JXL_CHECK(Bundle::Write(codes->lz77, writer, layer, aux_out));
   } else {
     size_t ebits, bits;
-    JXL_CHECK(Bundle::CanEncode(lz77, &ebits, &bits));
+    JXL_CHECK(Bundle::CanEncode(codes->lz77, &ebits, &bits));
     total_bits += bits;
   }
-  if (lz77.enabled) {
+  if (codes->lz77.enabled) {
     if (writer) {
       size_t b = writer->BitsWritten();
-      EncodeUintConfig(lz77.length_uint_config, writer, /*log_alpha_size=*/7);
+      EncodeUintConfig(codes->lz77.length_uint_config, writer,
+                       /*log_alpha_size=*/8);
       total_bits += writer->BitsWritten() - b;
     } else {
       SizeWriter size_writer;
-      EncodeUintConfig(lz77.length_uint_config, &size_writer,
-                       /*log_alpha_size=*/7);
+      EncodeUintConfig(codes->lz77.length_uint_config, &size_writer,
+                       /*log_alpha_size=*/8);
       total_bits += size_writer.size;
     }
+    num_contexts += 1;
+    tokens = std::move(tokens_lz77);
   }
   size_t total_tokens = 0;
   // Build histograms.
@@ -728,19 +1179,19 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
       const Token token = tokens[i][j];
       total_tokens++;
       uint32_t tok, nbits, bits;
-      uint_config.Encode(token.value, &tok, &nbits, &bits);
+      (token.is_lz77_length ? codes->lz77.length_uint_config : uint_config)
+          .Encode(token.value, &tok, &nbits, &bits);
+      tok += token.is_lz77_length ? codes->lz77.min_symbol : 0;
       builder.VisitSymbol(tok, token.context);
     }
   }
 
   // TODO(veluca): better heuristics.
   bool use_prefix_code =
-      total_tokens < 100 ||
+      params.force_huffman || total_tokens < 100 ||
       params.clustering == HistogramParams::ClusteringType::kFastest;
 
   // Encode histograms.
-  const size_t max_contexts = std::min(num_contexts, kClustersLimit);
-  BitWriter::Allotment allotment(writer, 8192 * (max_contexts + 4));
   total_bits += builder.BuildAndStoreEntropyCodes(
       params, tokens, codes, context_map, use_prefix_code, allotment, writer,
       layer, aux_out);
@@ -762,11 +1213,14 @@ size_t WriteTokens(const std::vector<Token>& tokens,
   if (codes.use_prefix_code) {
     for (size_t i = 0; i < tokens.size(); i++) {
       uint32_t tok, nbits, bits;
-      codes.uint_config[context_map[tokens[i].context]].Encode(
-          tokens[i].value, &tok, &nbits, &bits);
-      const uint8_t histo_idx = context_map[tokens[i].context];
-      writer->Write(codes.encoding_info[histo_idx][tok].depth,
-                    codes.encoding_info[histo_idx][tok].bits);
+      const Token& token = tokens[i];
+      size_t histo = context_map[token.context];
+      (token.is_lz77_length ? codes.lz77.length_uint_config
+                            : codes.uint_config[histo])
+          .Encode(token.value, &tok, &nbits, &bits);
+      tok += token.is_lz77_length ? codes.lz77.min_symbol : 0;
+      writer->Write(codes.encoding_info[histo][tok].depth,
+                    codes.encoding_info[histo][tok].bits);
       writer->Write(nbits, bits);
       num_extra_bits += nbits;
     }
@@ -778,11 +1232,13 @@ size_t WriteTokens(const std::vector<Token>& tokens,
   ANSCoder ans;
   for (int i = end - 1; i >= 0; --i) {
     const Token token = tokens[i];
-    const uint8_t histo_idx = context_map[token.context];
+    const uint8_t histo = context_map[token.context];
     uint32_t tok, unused_nbits, unused_bits;
-    codes.uint_config[context_map[tokens[i].context]].Encode(
-        tokens[i].value, &tok, &unused_nbits, &unused_bits);
-    const ANSEncSymbolInfo& info = codes.encoding_info[histo_idx][tok];
+    (token.is_lz77_length ? codes.lz77.length_uint_config
+                          : codes.uint_config[histo])
+        .Encode(tokens[i].value, &tok, &unused_nbits, &unused_bits);
+    tok += token.is_lz77_length ? codes.lz77.min_symbol : 0;
+    const ANSEncSymbolInfo& info = codes.encoding_info[histo][tok];
     uint8_t nbits = 0;
     uint32_t bits = ans.PutSymbol(info, &nbits);
     if (nbits == 16) {
@@ -797,8 +1253,9 @@ size_t WriteTokens(const std::vector<Token>& tokens,
     for (; tokenidx < nextidx; ++tokenidx) {
       const Token token = tokens[tokenidx];
       uint32_t tok, nbits, bits;
-      codes.uint_config[context_map[token.context]].Encode(token.value, &tok,
-                                                           &nbits, &bits);
+      (token.is_lz77_length ? codes.lz77.length_uint_config
+                            : codes.uint_config[context_map[token.context]])
+          .Encode(token.value, &tok, &nbits, &bits);
       writer->Write(nbits, bits);
       num_extra_bits += nbits;
     }
@@ -820,23 +1277,6 @@ void WriteTokens(const std::vector<Token>& tokens,
   if (aux_out != nullptr) {
     aux_out->layers[layer].extra_bits += num_extra_bits;
   }
-}
-
-float TokenCost(const std::vector<Token>& tokens) {
-  // TODO(veluca): implement this without using a writer.
-  size_t num_contexts = 0;
-  for (Token t : tokens) {
-    if (num_contexts <= t.context) {
-      num_contexts = t.context + 1;
-    }
-  }
-  BitWriter writer;
-  EntropyEncodingData codes;
-  std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(HistogramParams(), num_contexts, {tokens}, &codes,
-                           &context_map, &writer, 0, nullptr);
-  WriteTokens(tokens, codes, context_map, &writer, 0, nullptr);
-  return writer.BitsWritten();
 }
 
 }  // namespace jxl

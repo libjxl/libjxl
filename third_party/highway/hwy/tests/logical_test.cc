@@ -16,8 +16,10 @@
 #define HWY_TARGET_INCLUDE "tests/logical_test.cc"
 #include "hwy/foreach_target.h"
 
+// must come after foreach_target.h.
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"

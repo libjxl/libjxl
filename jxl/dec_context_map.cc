@@ -93,17 +93,12 @@ bool DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
     ANSSymbolReader reader(&code, input);
     size_t i = 0;
     while (i < context_map->size()) {
-      int32_t sym =
-          UnpackSigned(reader.ReadHybridUint(0, input, dummy_ctx_map));
-      if (sym < 0) {
-        i += -sym + 1;
-      } else {
-        if (sym >= kMaxClusters) {
-          return JXL_FAILURE("Invalid cluster ID");
-        }
-        (*context_map)[i] = sym;
-        i++;
+      int32_t sym = reader.ReadHybridUint(0, input, dummy_ctx_map);
+      if (sym >= kMaxClusters) {
+        return JXL_FAILURE("Invalid cluster ID");
       }
+      (*context_map)[i] = sym;
+      i++;
     }
     if (!reader.CheckANSFinalState()) {
       return JXL_FAILURE("Invalid context map");

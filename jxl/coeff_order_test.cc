@@ -30,15 +30,19 @@
 namespace jxl {
 namespace {
 
-size_t RoundtripPermutation(coeff_order_t* perm, coeff_order_t* out,
-                            size_t len) {
+void RoundtripPermutation(coeff_order_t* perm, coeff_order_t* out, size_t len,
+                          size_t* size) {
   BitWriter writer;
   EncodePermutation(perm, 0, len, &writer, 0, nullptr);
   writer.ZeroPadToByte();
-  BitReader reader(writer.GetSpan());
-  EXPECT_TRUE(DecodePermutation(0, len, out, &reader));
-  EXPECT_TRUE(reader.Close());
-  return writer.GetSpan().size();
+  Status status = true;
+  {
+    BitReader reader(writer.GetSpan());
+    BitReaderScopedCloser closer(&reader, &status);
+    ASSERT_TRUE(DecodePermutation(0, len, out, &reader));
+  }
+  ASSERT_TRUE(status);
+  *size = writer.GetSpan().size();
 }
 
 enum Permutation { kIdentity, kFewSwaps, kFewSlides, kRandom };
@@ -83,7 +87,7 @@ void TestPermutation(Permutation kind, size_t len) {
   std::vector<coeff_order_t> out(len);
   size_t size = 0;
   for (size_t i = 0; i < kNumReps; i++) {
-    size = RoundtripPermutation(perm.data(), out.data(), len);
+    RoundtripPermutation(perm.data(), out.data(), len, &size);
     for (size_t idx = 0; idx < len; idx++) {
       EXPECT_EQ(perm[idx], out[idx]);
     }
@@ -92,7 +96,7 @@ void TestPermutation(Permutation kind, size_t len) {
 }
 
 TEST(CoeffOrderTest, IdentitySmall) { TestPermutation(kIdentity, 256); }
-TEST(CoeffOrderTest, kFewSlidesSmall) { TestPermutation(kFewSlides, 256); }
+TEST(CoeffOrderTest, FewSlidesSmall) { TestPermutation(kFewSlides, 256); }
 TEST(CoeffOrderTest, FewSwapsSmall) { TestPermutation(kFewSwaps, 256); }
 TEST(CoeffOrderTest, RandomSmall) { TestPermutation(kRandom, 256); }
 

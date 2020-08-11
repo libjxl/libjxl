@@ -55,10 +55,9 @@ TEST(PatchDictionaryTest, GrayscaleVarDCT) {
 
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, pool, &io2);
-  EXPECT_GE(ButteraugliDistance(io, io2, cparams.ba_params,
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            10)
-      << "Change to EXPECT_LE once the grayscale+patches bug is fixed.";
+            2);
 }
 
 }  // namespace

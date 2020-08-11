@@ -23,12 +23,16 @@
 
 #include "gtest/gtest.h"
 #include "jxl/base/byte_order.h"
+#include "jxl/base/file_io.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
 #include "jxl/brunsli.h"
+#include "jxl/dec_file.h"
+#include "jxl/external_image.h"
 #include "jxl/fields.h"
 #include "jxl/headers.h"
 #include "jxl/icc_codec.h"
+#include "jxl/test_utils.h"
 
 TEST(DecodeTest, JpegxlSignatureCheckTest) {
   std::vector<std::pair<int, std::vector<uint8_t>>> tests = {
@@ -408,6 +412,85 @@ TEST(DecodeTest, IccProfileTest) {
   EXPECT_EQ(JPEGXL_DEC_SUCCESS,
             JpegxlDecoderGetICCProfile(dec, icc_profile2.data(),
                                        icc_profile2.size()));
+
+  JpegxlDecoderDestroy(dec);
+}
+
+namespace jxl {
+namespace {
+PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
+                                    size_t ysize,
+                                    const CompressParams& cparams) {
+  // Compress the pixels with JPEG XL.
+  CodecInOut io;
+  ColorEncoding color_encoding = jxl::test::ColorEncodingFromDescriptor(
+      {ColorSpace::kRGB, WhitePoint::kD65, Primaries::kSRGB,
+       TransferFunction::kSRGB, RenderingIntent::kRelative});
+  ThreadPool pool(nullptr, nullptr);
+  const PackedImage desc(xsize, ysize, color_encoding, /*has_alpha=*/false,
+                         /*alpha_is_premultiplied=*/false, 0, 8, false, false);
+  const Span<const uint8_t> span(pixels.data(), pixels.size());
+  EXPECT_TRUE(CopyTo(desc, span, &pool, &io.Main()));
+  AuxOut aux_out;
+  PaddedBytes compressed;
+  PassesEncoderState enc_state;
+  EXPECT_TRUE(
+      EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out, &pool));
+  return compressed;
+}
+}  // namespace
+}  // namespace jxl
+
+TEST(DecodeTest, PixelTest) {
+  // Create pixel content to test, actual content does not matter as long as it
+  // can be compared after roundtrip.
+  size_t xsize = 256, ysize = 256;
+  std::vector<uint8_t> pixels(xsize * ysize * 3, 128);
+  pixels[0] = 0;
+  pixels[3] = 255;
+
+  // Compress the pixels with JPEG XL.
+  jxl::CompressParams cparams;
+  // Make lossless so we can test pixels exactly.
+  cparams.modular_group_mode = true;
+  cparams.quality_pair.first = 100;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      cparams);
+
+  // Test decoding with the API.
+
+  JpegxlDecoder* dec = JpegxlDecoderCreate(NULL);
+  const uint8_t* next_in = compressed.data();
+  size_t avail_in = compressed.size();
+
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSubscribeEvents(
+                dec, JPEGXL_DEC_BASIC_INFO | JPEGXL_DEC_FULL_IMAGE));
+
+  // TODO(lode): let API have functions to create JpegxlPixelFormat instead of
+  // exposing uninitialized fields like this?
+  JpegxlPixelFormat format;
+  format.num_channels = 3;
+  format.data_type = JPEGXL_TYPE_UINT8;
+
+  EXPECT_EQ(JPEGXL_DEC_BASIC_INFO,
+            JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
+  size_t buffer_size;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  JpegxlBasicInfo info;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
+  std::vector<uint8_t> pixels2(buffer_size);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSetImageOutBuffer(dec, &format, pixels2.data(),
+                                           pixels2.size()));
+
+  EXPECT_EQ(JPEGXL_DEC_FULL_IMAGE,
+            JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  EXPECT_EQ(pixels, pixels2);
 
   JpegxlDecoderDestroy(dec);
 }

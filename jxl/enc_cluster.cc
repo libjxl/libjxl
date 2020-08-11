@@ -13,9 +13,6 @@
 // limitations under the License.
 
 #include "jxl/enc_cluster.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_cluster.cc"
-#include <hwy/foreach_target.h>
 
 #include <algorithm>
 #include <cmath>
@@ -29,34 +26,37 @@
 #include "jxl/base/fast_log.h"
 #include "jxl/base/profiler.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_cluster.cc"
+#include <hwy/foreach_target.h>
+
 #include "jxl/fast_log-inl.h"
 
+// SIMD code
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
 
 template <class V>
-V Entropy(V count, V total) {
-  const HWY_FULL(float) d;
+V Entropy(V count, V inv_total) {
+  const HWY_CAPPED(float, Histogram::kRounding) d;
   const auto zero = Set(d, 0.0f);
-  const auto safe_div = Set(d, 1.0f);
-  const auto nonzero_count = IfThenElse(count == zero, safe_div, count);
-  return count * FastLog2f_18bits(d, total / nonzero_count);
+  return zero - count * FastLog2f_18bits(d, inv_total * count);
 }
 
 void HistogramEntropy(const Histogram& a) {
   a.entropy_ = 0.0f;
   if (a.total_count_ == 0) return;
 
-  const HWY_FULL(float) df;
-  const HWY_FULL(int32_t) di;
+  const HWY_CAPPED(float, Histogram::kRounding) df;
+  const HWY_CAPPED(int32_t, Histogram::kRounding) di;
 
-  const auto tot = Set(df, a.total_count_);
+  const auto inv_tot = Set(df, 1.0f / a.total_count_);
   auto entropy_lanes = Zero(df);
 
-  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += Lanes(di)) {
+  for (size_t i = 0; i < a.data_.size(); i += Lanes(di)) {
     const auto counts = LoadU(di, &a.data_[i]);
-    entropy_lanes += Entropy(ConvertTo(df, counts), tot);
+    entropy_lanes += Entropy(ConvertTo(df, counts), inv_tot);
   }
   a.entropy_ += GetLane(SumOfLanes(entropy_lanes));
 }
@@ -64,17 +64,20 @@ void HistogramEntropy(const Histogram& a) {
 float HistogramDistance(const Histogram& a, const Histogram& b) {
   if (a.total_count_ == 0 || b.total_count_ == 0) return 0;
 
-  const HWY_FULL(float) df;
-  const HWY_FULL(int32_t) di;
+  const HWY_CAPPED(float, Histogram::kRounding) df;
+  const HWY_CAPPED(int32_t, Histogram::kRounding) di;
 
-  const auto tot = Set(df, a.total_count_ + b.total_count_);
+  const auto inv_tot = Set(df, 1.0f / (a.total_count_ + b.total_count_));
   auto distance_lanes = Zero(df);
 
-  for (size_t i = 0; i < ANS_MAX_ALPHA_SIZE; i += Lanes(di)) {
-    const auto a_counts = LoadU(di, &a.data_[i]);
-    const auto b_counts = LoadU(di, &b.data_[i]);
+  for (size_t i = 0; i < std::max(a.data_.size(), b.data_.size());
+       i += Lanes(di)) {
+    const auto a_counts =
+        a.data_.size() > i ? LoadU(di, &a.data_[i]) : Zero(di);
+    const auto b_counts =
+        b.data_.size() > i ? LoadU(di, &b.data_[i]) : Zero(di);
     const auto counts = ConvertTo(df, a_counts + b_counts);
-    distance_lanes += Entropy(counts, tot);
+    distance_lanes += Entropy(counts, inv_tot);
   }
   const float total_distance = GetLane(SumOfLanes(distance_lanes));
   return total_distance - a.entropy_ - b.entropy_;
@@ -164,7 +167,7 @@ inline double ShannonEntropy(const ANSHistBin* data, const size_t data_size) {
 }  // namespace
 
 double Histogram::ShannonEntropy() const {
-  return jxl::ShannonEntropy(data_, ANS_MAX_ALPHA_SIZE);
+  return jxl::ShannonEntropy(data_.data(), data_.size());
 }
 
 namespace {
@@ -224,20 +227,17 @@ void ClusterHistograms(const HistogramParams params,
     return FastestClusterHistograms(in, num_contexts, max_histograms, out,
                                     histogram_symbols);
   } else if (params.clustering == HistogramParams::ClusteringType::kFast) {
-    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)(
-        in, num_contexts, max_histograms, kMinDistanceForDistinctFast, out,
-        histogram_symbols);
+    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)
+    (in, num_contexts, max_histograms, kMinDistanceForDistinctFast, out,
+     histogram_symbols);
   } else {
     PROFILER_FUNC;
-    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)(
-        in, num_contexts, max_histograms, kMinDistanceForDistinctBest, out,
-        histogram_symbols);
-    std::vector<uint8_t> alphabet_size(out->size());
+    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)
+    (in, num_contexts, max_histograms, kMinDistanceForDistinctBest, out,
+     histogram_symbols);
     for (size_t i = 0; i < out->size(); i++) {
-      for (size_t j = 0; j < ANS_MAX_ALPHA_SIZE; j++) {
-        if ((*out)[i].data_[j] != 0) alphabet_size[i] = j + 1;
-      }
-      (*out)[i].entropy_ = ANSPopulationCost((*out)[i].data_, alphabet_size[i]);
+      (*out)[i].entropy_ =
+          ANSPopulationCost((*out)[i].data_.data(), (*out)[i].data_.size());
     }
     uint32_t next_version = 2;
     std::vector<uint32_t> version(out->size(), 1);
@@ -268,10 +268,8 @@ void ClusterHistograms(const HistogramParams params,
         Histogram histo;
         histo.AddHistogram((*out)[i]);
         histo.AddHistogram((*out)[j]);
-        float cost =
-            ANSPopulationCost(histo.data_,
-                              std::max(alphabet_size[i], alphabet_size[j])) -
-            (*out)[i].entropy_ - (*out)[j].entropy_;
+        float cost = ANSPopulationCost(histo.data_.data(), histo.data_.size()) -
+                     (*out)[i].entropy_ - (*out)[j].entropy_;
         // Avoid enqueueing pairs that are not advantageous to merge.
         if (cost >= 0) continue;
         pairs_to_merge.push(
@@ -291,10 +289,8 @@ void ClusterHistograms(const HistogramParams params,
         continue;
       }
       (*out)[first].AddHistogram((*out)[second]);
-      alphabet_size[first] =
-          std::max(alphabet_size[first], alphabet_size[second]);
-      (*out)[first].entropy_ =
-          ANSPopulationCost((*out)[first].data_, alphabet_size[first]);
+      (*out)[first].entropy_ = ANSPopulationCost((*out)[first].data_.data(),
+                                                 (*out)[first].data_.size());
       for (size_t i = 0; i < renumbering.size(); i++) {
         if (renumbering[i] == second) {
           renumbering[i] = first;
@@ -308,10 +304,8 @@ void ClusterHistograms(const HistogramParams params,
         Histogram histo;
         histo.AddHistogram((*out)[first]);
         histo.AddHistogram((*out)[j]);
-        float cost =
-            ANSPopulationCost(
-                histo.data_, std::max(alphabet_size[first], alphabet_size[j])) -
-            (*out)[first].entropy_ - (*out)[j].entropy_;
+        float cost = ANSPopulationCost(histo.data_.data(), histo.data_.size()) -
+                     (*out)[first].entropy_ - (*out)[j].entropy_;
         // Avoid enqueueing pairs that are not advantageous to merge.
         if (cost >= 0) continue;
         pairs_to_merge.push(

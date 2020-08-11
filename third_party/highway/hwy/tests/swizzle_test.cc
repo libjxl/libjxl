@@ -16,8 +16,10 @@
 #define HWY_TARGET_INCLUDE "tests/swizzle_test.cc"
 #include "hwy/foreach_target.h"
 
+// must come after foreach_target.h.
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"
@@ -136,14 +138,14 @@ HWY_NOINLINE void TestBroadcast() {
   // No u8.
   test(uint16_t());
   test(uint32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   test(uint64_t());
 #endif
 
   // No i8.
   test(int16_t());
   test(int32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   test(int64_t());
 #endif
 
@@ -327,28 +329,28 @@ HWY_NOINLINE void TestZip() {
   const ForPartialVectors<TestZipLowerT<MakeWideUnsigned>, 2> lower_unsigned;
   lower_unsigned(uint8_t());
   lower_unsigned(uint16_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   lower_unsigned(uint32_t());  // generates u64
 #endif
 
   const ForPartialVectors<TestZipLowerT<MakeWideSigned>, 2> lower_signed;
   lower_signed(int8_t());
   lower_signed(int16_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   lower_signed(int32_t());  // generates i64
 #endif
 
   const ForGE128Vectors<TestZipUpperT<MakeWideUnsigned>> upper_unsigned;
   upper_unsigned(uint8_t());
   upper_unsigned(uint16_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   upper_unsigned(uint32_t());  // generates u64
 #endif
 
   const ForGE128Vectors<TestZipUpperT<MakeWideSigned>> upper_signed;
   upper_signed(int8_t());
   upper_signed(int16_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   upper_signed(int32_t());  // generates i64
 #endif
 
@@ -458,13 +460,13 @@ HWY_NOINLINE void TestSpecialShuffles() {
   test32(int32_t());
   test32(float());
 
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   const ForGE128Vectors<TestSpecialShuffle64> test64;
   test64(uint64_t());
   test64(int64_t());
 #endif
 
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   const ForGE128Vectors<TestSpecialShuffle64> test_d;
   test_d(double());
 #endif

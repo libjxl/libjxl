@@ -18,6 +18,8 @@
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
 #include "jxl/brunsli.h"
+#include "jxl/dec_file.h"
+#include "jxl/external_image.h"
 #include "jxl/fields.h"
 #include "jxl/headers.h"
 #include "jxl/icc_codec.h"
@@ -125,6 +127,7 @@ struct JpegxlDecoderStruct {
   // Status of progression, internal.
   bool got_basic_info = false;
   bool got_all_headers = false;
+  bool got_full_image = false;
 
   // Bitfield, for which informative events (JPEGXL_DEC_BASIC_INFO, etc...) the
   // decoder returns a status. By default, do not return for any of the events,
@@ -139,6 +142,10 @@ struct JpegxlDecoderStruct {
   bool have_container = 0;
   size_t codestream_pos = 0;  // if have_container, where the codestream starts
   JpegxlSignatureType signature_type = JPEGXL_SIG_TYPE_JPEGXL;
+
+  // Owned by the caller
+  void* image_out_buffer = nullptr;
+  size_t image_out_size = 0;
 
   jxl::CodecInOut io;
 };
@@ -395,6 +402,7 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
     return JXL_API_ERROR("Cannot reuse decoder after it finished");
   }
 
+  // No matter what events are wanted, the basic info is always required.
   if (!dec->got_basic_info) {
     JpegxlDecoderStatus status = JpegxlDecoderReadBasicInfo(dec, in, size);
     if (status != JPEGXL_DEC_SUCCESS) return status;
@@ -436,9 +444,60 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
     return JPEGXL_DEC_COLOR_ENCODING;
   }
 
-  // Outputting pixels not yet implemented, indicate error.
-  dec->stage = DecoderStage::kError;
-  return JPEGXL_DEC_ERROR;
+  // Decode to pixels, only if required for the events the user wants.
+  if (!dec->got_full_image && (dec->events_wanted & JPEGXL_DEC_FULL_IMAGE)) {
+    jxl::DecompressParams dparams;
+    jxl::Span<const uint8_t> compressed(in, size);
+    jxl::Status status =
+        jxl::DecodeFile(dparams, compressed, &dec->io, nullptr, nullptr);
+
+    if (!status) {
+      // The C++ implementation does not yet support streaming, and also does
+      // not yet support indicating whether it failed due to not enough data or
+      // due to codestream error (the jxl::Status object already supports it,
+      // but we need to use it in all cases where it returns). Therefore, it's
+      // impossible to return "JPEGXL_DEC_NEED_MORE_INPUT" here for now until we
+      // implement this feature, e.g. as a start we could get the expected full
+      // image size from the TOC in the frame header.
+      // TODO(lode): support returning JPEGXL_DEC_NEED_MORE_INPUT
+      // TODO(lode): after that, support streaming with partial state
+      return JPEGXL_DEC_ERROR;
+    }
+
+    dec->got_full_image = true;
+  }
+
+  if (dec->events_wanted & JPEGXL_DEC_FULL_IMAGE) {
+    dec->events_wanted &= ~JPEGXL_DEC_FULL_IMAGE;
+
+    // Copy pixels to output buffer
+    if (!dec->image_out_buffer) {
+      return JPEGXL_DEC_NEED_MORE_OUTPUT;
+    }
+    const ColorEncoding& color = dec->io.metadata.color_encoding;
+    bool has_alpha = false;
+    bool alpha_premultiplied = false;
+    const jxl::ImageU* alpha = nullptr;
+    size_t alpha_bits = 0;
+    size_t bits_per_sample = 8;
+    bool big_endian = false;
+    jxl::CodecIntervals* intervals = nullptr;
+    const jxl::ExternalImage external(
+        dec->thread_pool.get(), dec->io.frames[0].color(), jxl::Rect(dec->io),
+        color, color, has_alpha, alpha_premultiplied, alpha, alpha_bits,
+        bits_per_sample, big_endian, intervals);
+    if (dec->image_out_size < external.Bytes().size()) {
+      return JPEGXL_DEC_NEED_MORE_OUTPUT;
+    }
+    memcpy(dec->image_out_buffer, external.Bytes().data(),
+           external.Bytes().size());
+
+    return JPEGXL_DEC_FULL_IMAGE;
+  }
+
+  dec->stage = DecoderStage::kFinished;
+  // Return success, this means there is nothing more to do.
+  return JPEGXL_DEC_SUCCESS;
 }
 
 }  // namespace jxl
@@ -659,6 +718,41 @@ JpegxlDecoderStatus JpegxlDecoderGetICCProfile(const JpegxlDecoder* dec,
 
   memcpy(icc_profile, dec->io.metadata.color_encoding.ICC().data(),
          dec->io.metadata.color_encoding.ICC().size());
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
+    const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size) {
+  if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
+  if (!(format->num_channels == 3 && format->data_type == JPEGXL_TYPE_UINT8)) {
+    return JXL_API_ERROR(
+        "Decoder output formats other than RGB 8-bit not yet implemented");
+  }
+
+  // For now only 8-bit RGB is supported, so the size is hard-coded.
+  *size = dec->xsize * dec->ysize * 3;
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JpegxlDecoderStatus JpegxlDecoderSetImageOutBuffer(
+    JpegxlDecoder* dec, const JpegxlPixelFormat* format, void* buffer,
+    size_t size) {
+  if (!dec->got_basic_info) {
+    // Don't know image dimensions yet, cannot check for valid size.
+    return JPEGXL_DEC_NEED_MORE_INPUT;
+  }
+  size_t min_size;
+  // The JpegxlDecoderImageOutBufferSize call also checks whether the format is
+  // valid and supported.
+  JpegxlDecoderStatus status =
+      JpegxlDecoderImageOutBufferSize(dec, format, &min_size);
+  if (status != JPEGXL_DEC_SUCCESS) return status;
+
+  if (size < min_size) return JPEGXL_DEC_ERROR;
+
+  dec->image_out_buffer = buffer;
+  dec->image_out_size = size;
 
   return JPEGXL_DEC_SUCCESS;
 }

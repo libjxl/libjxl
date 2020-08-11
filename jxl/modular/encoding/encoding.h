@@ -42,13 +42,7 @@ struct GroupHeader {
 
   template <class Visitor>
   Status VisitFields(Visitor *JXL_RESTRICT visitor) {
-    visitor->Bool(false, &use_brotli);
-    if (visitor->Conditional(!use_brotli)) {
-      visitor->Bool(false, &use_global_tree);
-    } else {
-      visitor->U32(Val(2), Val(3), BitsOffset(1, 4), BitsOffset(2, 6), 2,
-                   &bytes_per_pixel);
-    }
+    visitor->Bool(false, &use_global_tree);
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
     uint32_t num_transforms = transforms.size();
     visitor->U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(8, 18), 0,
@@ -60,9 +54,7 @@ struct GroupHeader {
     return true;
   }
 
-  bool use_brotli;
   bool use_global_tree;
-  uint32_t bytes_per_pixel;  // Only for Brotli mode.
   weighted::Header wp_header;
 
   std::vector<Transform> transforms;
@@ -87,7 +79,7 @@ Status ModularGenericCompress(
     size_t *total_pixels = nullptr,
     // For encoding with global tree.
     const Tree *tree = nullptr, GroupHeader *header = nullptr,
-    std::vector<Token> *tokens = nullptr,
+    std::vector<Token> *tokens = nullptr, size_t *widths = nullptr,
     // Plot tree (if enabled) and predictor usage map.
     bool want_debug = false);
 

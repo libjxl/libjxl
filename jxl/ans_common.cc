@@ -96,7 +96,7 @@ void InitAliasTable(std::vector<int> distribution, int range,
   }
   std::vector<int> underfull_posn;
   std::vector<int> overfull_posn;
-  int cutoffs[ANS_MAX_ALPHA_SIZE];
+  std::vector<int> cutoffs(1 << log_alpha_size);
   // Initialize entries.
   for (size_t i = 0; i < distribution.size(); i++) {
     cutoffs[i] = distribution[i];

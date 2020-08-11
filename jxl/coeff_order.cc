@@ -242,13 +242,13 @@ Status DecodePermutation(size_t skip, size_t size, coeff_order_t* order,
 void EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
                        size_t size, BitWriter* writer, int layer,
                        AuxOut* aux_out) {
-  std::vector<Token> tokens;
-  TokenizePermutation(order, skip, size, &tokens);
+  std::vector<std::vector<Token>> tokens(1);
+  TokenizePermutation(order, skip, size, &tokens[0]);
   std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
-  BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, {tokens},
+  BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, tokens,
                            &codes, &context_map, writer, layer, aux_out);
-  WriteTokens(tokens, codes, context_map, writer, layer, aux_out);
+  WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
 namespace {
@@ -268,7 +268,7 @@ void EncodeCoeffOrder(const coeff_order_t* JXL_RESTRICT order, AcStrategy acs,
 void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
                        BitWriter* writer, size_t layer, AuxOut* aux_out) {
   uint16_t computed = 0;
-  std::vector<Token> tokens;
+  std::vector<std::vector<Token>> tokens(1);
   for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
     uint8_t ord = kStrategyOrder[o];
     if (computed & (1 << ord)) continue;
@@ -276,16 +276,16 @@ void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
     if ((used_orders & (1 << ord)) == 0) continue;
     AcStrategy acs = AcStrategy::FromRawStrategy(o);
     for (size_t c = 0; c < 3; c++) {
-      EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)], acs, &tokens);
+      EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)], acs, &tokens[0]);
     }
   }
   // Do not write anything if no order is used.
   if (used_orders != 0) {
     std::vector<uint8_t> context_map;
     EntropyEncodingData codes;
-    BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, {tokens},
+    BuildAndEncodeHistograms(HistogramParams(), kPermutationContexts, tokens,
                              &codes, &context_map, writer, layer, aux_out);
-    WriteTokens(tokens, codes, context_map, writer, layer, aux_out);
+    WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
   }
 }
 

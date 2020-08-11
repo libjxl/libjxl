@@ -434,24 +434,6 @@ void ImageMinMax(const Plane<T>& image, T* const JXL_RESTRICT min,
   }
 }
 
-// Computes the average pixel value.
-template <typename T>
-double ImageAverage(const Plane<T>& image) {
-  double result = 0;
-  size_t n = 0;
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    const T* const JXL_RESTRICT row = image.Row(y);
-    for (size_t x = 0; x < image.xsize(); ++x) {
-      // Numerically stable method.
-      double v = row[x];
-      double delta = v - result;
-      n++;
-      result += delta / n;
-    }
-  }
-  return result;
-}
-
 // Copies pixels, scaling their value relative to the "from" min/max by
 // "to_range". Example: U8 [0, 255] := [0.0, 1.0], to_range = 1.0 =>
 // outputs [0.0, 1.0].

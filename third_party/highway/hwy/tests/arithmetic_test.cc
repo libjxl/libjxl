@@ -16,8 +16,10 @@
 #define HWY_TARGET_INCLUDE "tests/arithmetic_test.cc"
 #include "hwy/foreach_target.h"
 
+// must come after foreach_target.h.
 #include "hwy/tests/test_util-inl.h"
 
+// must come after *-inl.h.
 #include <hwy/before_namespace-inl.h>
 namespace hwy {
 #include "hwy/begin_target-inl.h"
@@ -166,7 +168,7 @@ HWY_NOINLINE void TestAbs() {
 
   const ForPartialVectors<TestFloatAbsT> test_float;
   test_float(float());
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   test_float(double());
 #endif
 }
@@ -182,7 +184,7 @@ struct TestUnsignedShifts {
 
     // Shifting out of right side => zero
     HWY_ASSERT_VEC_EQ(d, v0, ShiftRight<7>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, v0, ShiftRightSame(vi, 7));
 #endif
 
@@ -191,7 +193,7 @@ struct TestUnsignedShifts {
       expected[i] = T(i << 1);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeft<1>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeftSame(vi, 1));
 #endif
 
@@ -200,7 +202,7 @@ struct TestUnsignedShifts {
       expected[i] = T(i >> 1);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftRight<1>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftRightSame(vi, 1));
 #endif
 
@@ -209,7 +211,7 @@ struct TestUnsignedShifts {
       expected[i] = (T(i) << kSign) & ~T(0);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeft<kSign>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeftSame(vi, kSign));
 #endif
   }
@@ -226,7 +228,7 @@ struct TestSignedShifts {
 
     // Shifting out of right side => zero
     HWY_ASSERT_VEC_EQ(d, v0, ShiftRight<7>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, v0, ShiftRightSame(vi, 7));
 #endif
 
@@ -235,7 +237,7 @@ struct TestSignedShifts {
       expected[i] = T(i << 1);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeft<1>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeftSame(vi, 1));
 #endif
 
@@ -244,7 +246,7 @@ struct TestSignedShifts {
       expected[i] = T(i >> 1);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftRight<1>(vi));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftRightSame(vi, 1));
 #endif
 
@@ -259,7 +261,7 @@ struct TestSignedShifts {
       expected[i] = T(minT / 2 + (minT < 0 ? minT % 2 : 0));
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftRight<1>(vn));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftRightSame(vn, 1));
 #endif
 
@@ -268,13 +270,11 @@ struct TestSignedShifts {
       expected[i] = T(TU(min + i) << 1);
     }
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeft<1>(vn));
-#if !HWY_CAP_VARIABLE_SHIFT || HWY_IDE
+#if HWY_VARIABLE_SHIFT_LANES == 1 || HWY_IDE
     HWY_ASSERT_VEC_EQ(d, expected, ShiftLeftSame(vn, 1));
 #endif
   }
 };
-
-#if HWY_CAP_VARIABLE_SHIFT
 
 struct TestUnsignedVarShifts {
   template <typename T, class D>
@@ -384,14 +384,12 @@ struct TestSignedVarRightShifts {
   }
 };
 
-#endif
-
 HWY_NOINLINE void TestShifts() {
   const ForPartialVectors<TestUnsignedShifts> test_unsigned;
   // No u8.
   test_unsigned(uint16_t());
   test_unsigned(uint32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   test_unsigned(uint64_t());
 #endif
 
@@ -401,19 +399,23 @@ HWY_NOINLINE void TestShifts() {
   test_signed(int32_t());
   // No i64/f32/f64.
 
-#if HWY_CAP_VARIABLE_SHIFT
-  const ForPartialVectors<TestUnsignedVarShifts> test_unsigned_var;
-  test_unsigned_var(uint32_t());
-  test_unsigned_var(uint64_t());
-
-  const ForPartialVectors<TestSignedVarLeftShifts> test_signed_var_left;
-  test_signed_var_left(int32_t());
-  test_signed_var_left(int64_t());
-
-  const ForPartialVectors<TestSignedVarRightShifts> test_signed_var_right;
-  test_signed_var_right(int32_t());
-  // No i64 (right-shift).
+  ForPartialVectors<TestUnsignedVarShifts, 1, 1,
+                    HWY_VARIABLE_SHIFT_LANES(uint32_t)>()(uint32_t());
+#if HWY_CAP_INTEGER64
+  ForPartialVectors<TestUnsignedVarShifts, 1, 1,
+                    HWY_VARIABLE_SHIFT_LANES(uint64_t)>()(uint64_t());
 #endif
+
+  ForPartialVectors<TestSignedVarLeftShifts, 1, 1,
+                    HWY_VARIABLE_SHIFT_LANES(int32_t)>()(int32_t());
+#if HWY_CAP_INTEGER64
+  ForPartialVectors<TestSignedVarLeftShifts, 1, 1,
+                    HWY_VARIABLE_SHIFT_LANES(int64_t)>()(int64_t());
+#endif
+
+  ForPartialVectors<TestSignedVarRightShifts, 1, 1,
+                    HWY_VARIABLE_SHIFT_LANES(int32_t)>()(int32_t());
+  // No i64 (right-shift).
 }
 
 struct TestUnsignedMinMax {
@@ -825,7 +827,7 @@ struct TestRound {
 struct TestSumsOfU8T {
   template <typename T, class D>
   HWY_NOINLINE void operator()(T /*unused*/, D d) {
-#if HWY_TARGET != HWY_SCALAR && HWY_CAP_INT64
+#if HWY_TARGET != HWY_SCALAR && HWY_CAP_INTEGER64
     const HWY_CAPPED(uint8_t, MaxLanes(d) * sizeof(uint64_t)) du8;
     HWY_ALIGN uint8_t in_bytes[MaxLanes(du8)];
     uint64_t sums[MaxLanes(d)] = {0};
@@ -843,7 +845,7 @@ struct TestSumsOfU8T {
 };
 
 HWY_NOINLINE void TestSumsOfU8() {
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   ForPartialVectors<TestSumsOfU8T>()(uint64_t());
 #endif
 }
@@ -869,18 +871,18 @@ HWY_NOINLINE void TestSumOfLanes() {
 
   // No u8/u16.
   test(uint32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   test(uint64_t());
 #endif
 
   // No i8/i16.
   test(int32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   test(int64_t());
 #endif
 
   test(float());
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   test(double());
 #endif
 }

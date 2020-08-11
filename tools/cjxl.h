@@ -81,7 +81,6 @@ struct JxlCompressArgs {
   CommandLineParser::OptionId opt_near_lossless_id = -1;
   CommandLineParser::OptionId opt_intensity_target_id = -1;
 
-  CommandLineParser::OptionId opt_brotli_id = -1;
   CommandLineParser::OptionId opt_color_id = -1;
 
   // just for testing: add one extra channel which is a spot color (red)

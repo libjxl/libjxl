@@ -81,15 +81,16 @@ void RoundtripTestcase(int n_histograms, int alphabet_size,
 }
 
 TEST(ANSTest, EmptyRoundtrip) {
-  RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE, std::vector<Token>());
+  RoundtripTestcase(2, ANS_MAX_ALPHABET_SIZE, std::vector<Token>());
 }
 
 TEST(ANSTest, SingleSymbolRoundtrip) {
-  for (uint32_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
-    RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE, {{0, i}});
+  for (uint32_t i = 0; i < ANS_MAX_ALPHABET_SIZE; i++) {
+    RoundtripTestcase(2, ANS_MAX_ALPHABET_SIZE, {{0, i}});
   }
-  for (uint32_t i = 0; i < ANS_MAX_ALPHA_SIZE; i++) {
-    RoundtripTestcase(2, ANS_MAX_ALPHA_SIZE, std::vector<Token>(1024, {0, i}));
+  for (uint32_t i = 0; i < ANS_MAX_ALPHABET_SIZE; i++) {
+    RoundtripTestcase(2, ANS_MAX_ALPHABET_SIZE,
+                      std::vector<Token>(1024, {0, i}));
   }
 }
 
@@ -155,7 +156,7 @@ TEST(ANSTest, RandomStreamRoundtrip3Small) { RoundtripRandomStream(3, 1, 16); }
 TEST(ANSTest, RandomStreamRoundtrip3) { RoundtripRandomStream(3); }
 
 TEST(ANSTest, RandomStreamRoundtripBig) {
-  RoundtripRandomStream(ANS_MAX_ALPHA_SIZE);
+  RoundtripRandomStream(ANS_MAX_ALPHABET_SIZE);
 }
 
 TEST(ANSTest, RandomUnbalancedStreamRoundtrip3) {
@@ -163,7 +164,7 @@ TEST(ANSTest, RandomUnbalancedStreamRoundtrip3) {
 }
 
 TEST(ANSTest, RandomUnbalancedStreamRoundtripBig) {
-  RoundtripRandomUnbalancedStream(ANS_MAX_ALPHA_SIZE);
+  RoundtripRandomUnbalancedStream(ANS_MAX_ALPHABET_SIZE);
 }
 
 TEST(ANSTest, UintConfigRoundtrip) {

@@ -55,6 +55,8 @@ void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
 
 ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
 
+// WARNING: this uses unaligned accesses, so the caller must first call
+// src.InitializePaddingForUnalignedAccesses() to avoid msan crashes.
 ImageF UpsampleH2(const ImageF& src, ThreadPool* pool);
 
 }  // namespace jxl

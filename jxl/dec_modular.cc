@@ -346,14 +346,18 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
 
   int c = 0;
   if (do_color) {
+    const bool rgb_from_gray =
+        decoded->IsGray() &&
+        frame_header.color_transform == ColorTransform::kNone;
     for (; c < 3; c++) {
       float factor = 255.f / (float)full_image.maxval;
       int c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
-        factor = 1.0f;
+        factor = xyb_muls[c];
         // XYB is encoded as YX(B-Y)
         if (c < 2) c_in = 1 - c;
-        factor *= xyb_muls[c];
+      } else if (rgb_from_gray) {
+        c_in = 0;
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         RunOnPool(
@@ -370,15 +374,12 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
             },
             "ModularIntToFloat");
       } else {
-        const bool rgb_from_gray =
-            decoded->IsGray() &&
-            frame_header.color_transform == ColorTransform::kNone;
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
             [&](const int task, const int thread) {
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
-                  gi.channel[decoded->IsGray() ? 0 : c_in].Row(y);
+                  gi.channel[c_in].Row(y);
               if (rgb_from_gray) {
                 HWY_DYNAMIC_DISPATCH(RgbFromSingle)
                 (xsize, row_in, factor, color, c, y);
@@ -389,13 +390,11 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
             },
             "ModularIntToFloat");
       }
-      if (decoded->IsGray() &&
-          frame_header.color_transform == ColorTransform::kNone) {
+      if (rgb_from_gray) {
         break;
       }
     }
-    if (decoded->IsGray() &&
-        frame_header.color_transform == ColorTransform::kNone) {
+    if (rgb_from_gray) {
       c = 1;
     }
   }

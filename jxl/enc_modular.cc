@@ -150,39 +150,36 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
     }
   }
 
-  if (cparams.options.entropy_coder == ModularOptions::kMAANS) {
-    if (cparams.speed_tier > SpeedTier::kWombat) {
-      cparams.options.splitting_heuristics_node_threshold = 192;
-    } else {
-      cparams.options.splitting_heuristics_node_threshold = 96;
-    }
-    switch (cparams.speed_tier) {
-      case SpeedTier::kWombat:
-        cparams.options.splitting_heuristics_max_properties = 4;
-        break;
-      case SpeedTier::kSquirrel:
-        cparams.options.splitting_heuristics_max_properties = 6;
-        break;
-      case SpeedTier::kKitten:
-        cparams.options.splitting_heuristics_max_properties = 8;
-        break;
-      case SpeedTier::kTortoise:
-        cparams.options.splitting_heuristics_max_properties = 128;
-        break;
-      default:
-        cparams.options.splitting_heuristics_max_properties = 4;
-        break;
-    }
+  if (cparams.speed_tier > SpeedTier::kWombat) {
+    cparams.options.splitting_heuristics_node_threshold = 192;
+  } else {
+    cparams.options.splitting_heuristics_node_threshold = 96;
+  }
+  switch (cparams.speed_tier) {
+    case SpeedTier::kWombat:
+      cparams.options.splitting_heuristics_max_properties = 4;
+      break;
+    case SpeedTier::kSquirrel:
+      cparams.options.splitting_heuristics_max_properties = 6;
+      break;
+    case SpeedTier::kKitten:
+      cparams.options.splitting_heuristics_max_properties = 8;
+      break;
+    case SpeedTier::kTortoise:
+      cparams.options.splitting_heuristics_max_properties = 128;
+      break;
+    default:
+      cparams.options.splitting_heuristics_max_properties = 4;
+      break;
   }
 
   if (cparams.options.predictor == static_cast<Predictor>(-1)) {
     // no explicit predictor(s) given, set a good default
-    if (cparams.options.entropy_coder ==
-        ModularOptions::EntropyCoder::kBrotli) {
-      // TODO(veluca): make kBest work again in Brotli mode.
-      cparams.options.predictor = Predictor::Weighted;
-    } else if (cparams.speed_tier <= SpeedTier::kTortoise ||
-               cparams.modular_group_mode == false) {
+    if ((cparams.speed_tier <= SpeedTier::kTortoise ||
+         cparams.modular_group_mode == false) &&
+        quality == 100) {
+      // TODO(veluca): allow all predictors that don't break residual
+      // multipliers in lossy mode.
       cparams.options.predictor = Predictor::Variable;
     } else if (cparams.near_lossless) {
       // weighted predictor for near_lossless
@@ -574,9 +571,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
 Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
   if (!tree.empty()) return true;
-  if (cparams.options.entropy_coder == ModularOptions::EntropyCoder::kBrotli) {
-    return true;
-  }
 
   // Compute tree.
   size_t num_streams = stream_images.size();
@@ -684,6 +678,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
     PrintTree(tree, aux_out->debug_prefix + "/global_tree");
   }
 
+  image_widths.resize(num_streams);
   RunOnPool(
       pool, 0, num_streams, ThreadPool::SkipInit(),
       [&](size_t stream_id, size_t _) {
@@ -702,6 +697,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
             /*total_pixels=*/nullptr,
             /*tree=*/&tree, /*header=*/&stream_headers[stream_id],
             /*tokens=*/&tokens[stream_id],
+            /*width=*/&image_widths[stream_id],
             /*want_debug=*/true));
       },
       "ComputeTokens");
@@ -712,9 +708,7 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
                                              AuxOut* aux_out) {
   BitWriter::Allotment allotment(writer, 1);
   // If we are using brotli, or not using modular mode.
-  if (stream_options[0].entropy_coder ==
-          ModularOptions::EntropyCoder::kBrotli ||
-      tree_tokens.empty() || tree_tokens[0].empty()) {
+  if (tree_tokens.empty() || tree_tokens[0].empty()) {
     writer->Write(1, 0);
     ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
     return true;
@@ -723,15 +717,31 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   ReclaimAndCharge(writer, &allotment, kLayerModularTree, aux_out);
 
   // Write tree
-  BuildAndEncodeHistograms(HistogramParams(), kNumTreeContexts, tree_tokens,
-                           &code, &context_map, writer, kLayerModularTree,
-                           aux_out);
+  HistogramParams params;
+  params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  BuildAndEncodeHistograms(params, kNumTreeContexts, tree_tokens, &code,
+                           &context_map, writer, kLayerModularTree, aux_out);
   WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
               aux_out);
+  params.image_widths = image_widths;
+  // TODO(veluca): avoid multiple calls to BuildAndEncodeHistograms, and copying
+  // the tokens. Enable if it can be shown to give good improvements - for now
+  // it doesn't.
+  if (cparams.speed_tier < SpeedTier::kCheetah && false) {
+    auto tokens_copy = tokens;
+    float cost_ans =
+        BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens_copy,
+                                 &code, &context_map, nullptr, 0, nullptr);
+    params.force_huffman = true;
+    tokens_copy = tokens;
+    float cost_huff =
+        BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens_copy,
+                                 &code, &context_map, nullptr, 0, nullptr);
+    params.force_huffman = cost_ans > cost_huff;
+  }
   // Write histograms.
-  BuildAndEncodeHistograms(HistogramParams(), (tree.size() + 1) / 2, tokens,
-                           &code, &context_map, writer, kLayerModularGlobal,
-                           aux_out);
+  BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens, &code,
+                           &context_map, writer, kLayerModularGlobal, aux_out);
   return true;
 }
 
@@ -739,15 +749,6 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
                                          size_t layer,
                                          const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim);
-  if (stream_options[stream_id].entropy_coder ==
-      ModularOptions::EntropyCoder::kBrotli) {
-    return ModularGenericCompress(
-        stream_images[stream_id], stream_options[stream_id], writer, aux_out,
-        layer, stream_id,
-        /*props=*/nullptr, /*residuals=*/nullptr, /*total_pixels=*/nullptr,
-        /*tree=*/nullptr, /*header=*/nullptr, /*tokens=*/nullptr,
-        /*want_debug=*/true);
-  }
   if (stream_images[stream_id].real_nb_channels < 1) {
     return true;  // Image with no channels, header never gets decoded.
   }
@@ -1164,8 +1165,6 @@ void ModularFrameEncoder::EncodeQuantTable(
     }
   }
   ModularOptions cfopts;
-  cfopts.nb_repeats = 0;
-  cfopts.entropy_coder = ModularOptions::kMAANS;
   JXL_CHECK(ModularGenericCompress(image, cfopts, writer));
 }
 

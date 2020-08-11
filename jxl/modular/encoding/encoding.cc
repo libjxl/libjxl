@@ -380,7 +380,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     size_t ctx_id = tree[0].childID;
     if (predictor == Predictor::Zero) {
       uint32_t value;
-      if (reader->IsSingleValue(ctx_id, &value)) {
+      if (reader->IsSingleValue(ctx_id, &value, channel.w * channel.h)) {
         // Special-case: histogram has a single symbol, with no extra bits, and
         // we use ANS mode.
         JXL_DEBUG_V(8, "Fastest track.");
@@ -626,147 +626,6 @@ Tree LearnTree(std::vector<Predictor> predictors,
   return tree;
 }
 
-template <size_t bytes_per_pixel>
-Status EncodeModularChannelBrotli(const Image &image, pixel_type chan,
-                                  const weighted::Header &wp_header,
-                                  Predictor predictor, size_t total_pixels,
-                                  size_t *JXL_RESTRICT pos,
-                                  size_t *JXL_RESTRICT subpred_pos,
-                                  PaddedBytes *JXL_RESTRICT data) {
-  const Channel &channel = image.channel[chan];
-  JXL_ASSERT(channel.w != 0 && channel.h != 0);
-  Predictor subpredictor = Predictor::Gradient;
-  int min, max;
-  channel.compute_minmax(&min, &max);
-  if (min == max) {
-    predictor = subpredictor = Predictor::Zero;
-  }
-  const intptr_t onerow = channel.plane.PixelsPerRow();
-  weighted::State wp_state(wp_header, channel.w, channel.h);
-  for (size_t y = 0; y < channel.h; y++) {
-    const pixel_type *JXL_RESTRICT p = channel.Row(y);
-    if (predictor == Predictor::Variable) {
-      subpredictor = FindBest(image, chan, p, onerow, y, subpredictor);
-    } else {
-      subpredictor = predictor;
-    }
-    (*data)[*subpred_pos] = (uint8_t)subpredictor;
-    JXL_ASSERT((*data)[*subpred_pos] < kNumModularPredictors);
-    (*subpred_pos)++;
-    for (size_t x = 0; x < channel.w; x++) {
-      pixel_type_w guess = PredictNoTreeWP(channel.w, p + x, onerow, x, y,
-                                           subpredictor, &wp_state)
-                               .guess;
-      pixel_type_w v = PackSigned(p[x] - guess);
-      (*data)[*pos] = (v & 0xff);
-      (*data)[*pos + total_pixels] = ((v >> 8) & 0xff);
-      if (bytes_per_pixel > 2)
-        (*data)[*pos + 2 * total_pixels] = ((v >> 16) & 0xff);
-      if (bytes_per_pixel > 3)
-        (*data)[*pos + 3 * total_pixels] = ((v >> 24) & 0xff);
-      if (bytes_per_pixel > 4)
-        (*data)[*pos + 4 * total_pixels] = ((v >> 32) & 0xff);
-      (*pos)++;
-      wp_state.UpdateErrors(p[x], x, y, channel.w);
-    }
-  }
-  return true;
-}
-
-template <size_t bytes_per_pixel>
-Status DecodeModularChannelBrotli(const PaddedBytes &data,
-                                  const weighted::Header &wp_header,
-                                  size_t total_pixels, size_t *JXL_RESTRICT pos,
-                                  size_t *JXL_RESTRICT subpred_pos,
-                                  Image *image, pixel_type chan) {
-  Channel *channel = &image->channel[chan];
-  JXL_ASSERT(channel->w != 0 && channel->h != 0);
-
-  channel->resize(channel->w, channel->h);
-
-  bool no_predictor = true;
-  bool no_wp = true;
-  for (size_t y = 0; y < channel->h; y++) {
-    if (data[*subpred_pos + y] != (uint8_t)Predictor::Zero) {
-      no_predictor = false;
-    }
-    if (data[*subpred_pos + y] == (uint8_t)Predictor::Weighted) {
-      no_wp = false;
-    }
-    if (data[*subpred_pos + y] >= (uint8_t)Predictor::Best) {
-      return JXL_FAILURE("Invalid predictor");
-    }
-  }
-
-  if (no_predictor) {
-    *subpred_pos += channel->h;
-    // special optimized case: no predictor
-    JXL_DEBUG_V(8, "Fast track.");
-    for (size_t y = 0; y < channel->h; y++) {
-      pixel_type *JXL_RESTRICT r = channel->Row(y);
-      for (size_t x = 0; x < channel->w; x++) {
-        pixel_type_w v = data[*pos];
-        v += (pixel_type_w)data[total_pixels + *pos] << 8;
-        if (bytes_per_pixel > 2)
-          v += (pixel_type_w)data[2 * total_pixels + *pos] << 16;
-        if (bytes_per_pixel > 3)
-          v += (pixel_type_w)data[3 * total_pixels + *pos] << 24;
-        if (bytes_per_pixel > 4)
-          v += (pixel_type_w)data[4 * total_pixels + *pos] << 32;
-        (*pos)++;
-        r[x] = UnpackSigned(v);
-      }
-    }
-  } else if (no_wp) {  // special optimized case: no weighted predictor
-    const intptr_t onerow = channel->plane.PixelsPerRow();
-    for (size_t y = 0; y < channel->h; y++) {
-      pixel_type *JXL_RESTRICT r = channel->Row(y);
-      Predictor predictor = (Predictor)data[*subpred_pos];
-      (*subpred_pos)++;
-      for (size_t x = 0; x < channel->w; x++) {
-        pixel_type_w g =
-            PredictNoTreeNoWP(channel->w, r + x, onerow, x, y, predictor).guess;
-        pixel_type_w v = data[*pos];
-        v += (pixel_type_w)data[total_pixels + *pos] << 8;
-        if (bytes_per_pixel > 2)
-          v += (pixel_type_w)data[2 * total_pixels + *pos] << 16;
-        if (bytes_per_pixel > 3)
-          v += (pixel_type_w)data[3 * total_pixels + *pos] << 24;
-        if (bytes_per_pixel > 4)
-          v += (pixel_type_w)data[4 * total_pixels + *pos] << 32;
-        (*pos)++;
-        r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
-      }
-    }
-  } else {
-    const intptr_t onerow = channel->plane.PixelsPerRow();
-    weighted::State wp_state(wp_header, channel->w, channel->h);
-    for (size_t y = 0; y < channel->h; y++) {
-      pixel_type *JXL_RESTRICT r = channel->Row(y);
-      Predictor predictor = (Predictor)data[*subpred_pos];
-      (*subpred_pos)++;
-      for (size_t x = 0; x < channel->w; x++) {
-        pixel_type_w g = PredictNoTreeWP(channel->w, r + x, onerow, x, y,
-                                         predictor, &wp_state)
-                             .guess;
-        pixel_type_w v = data[*pos];
-        v += (pixel_type_w)data[total_pixels + *pos] << 8;
-        if (bytes_per_pixel > 2)
-          v += (pixel_type_w)data[2 * total_pixels + *pos] << 16;
-        if (bytes_per_pixel > 3)
-          v += (pixel_type_w)data[3 * total_pixels + *pos] << 24;
-        if (bytes_per_pixel > 4)
-          v += (pixel_type_w)data[4 * total_pixels + *pos] << 32;
-        (*pos)++;
-        r[x] = SaturatingAdd<pixel_type>(UnpackSigned(v), g);
-        wp_state.UpdateErrors(r[x], x, y, channel->w);
-      }
-    }
-  }
-
-  return true;
-}
-
 GroupHeader::GroupHeader() { Bundle::Init(this); }
 
 constexpr bool kPrintTree = false;
@@ -799,7 +658,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                      std::vector<std::vector<int32_t>> *residuals,
                      size_t *total_pixels, const Tree *tree,
                      GroupHeader *header, std::vector<Token> *tokens,
-                     bool want_debug) {
+                     size_t *width, bool want_debug) {
   if (image.error) return JXL_FAILURE("Invalid image");
   size_t nb_channels = image.channel.size();
   int bit_depth = 1, maxval = 1;
@@ -821,31 +680,6 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   if (options.predictor == Predictor::Weighted) {
     weighted::PredictorMode(options.wp_mode, &header->wp_header);
   }
-  header->use_brotli =
-      options.entropy_coder == ModularOptions::EntropyCoder::kBrotli;
-  if (header->use_brotli) {
-    pixel_type m = std::numeric_limits<pixel_type>::max();
-    pixel_type M = std::numeric_limits<pixel_type>::min();
-    for (size_t i = options.skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options.max_chan_size ||
-           image.channel[i].h > options.max_chan_size)) {
-        break;
-      }
-      pixel_type cm, cM;
-      image.channel[i].compute_minmax(&cm, &cM);
-      m = std::min(cm, m);
-      M = std::max(cM, M);
-    }
-    size_t largest_value = std::max(PackSigned(m), PackSigned(M));
-    // Add one bit for storing differences.
-    size_t num_bits = CeilLog2Nonzero(largest_value + 1) + 1;
-    size_t num_bytes = std::max<size_t>(DivCeil(num_bits, 8), 2);
-    header->bytes_per_pixel = num_bytes;
-  }
   header->transforms = image.transform;
   // This doesn't actually work
   if (tree != nullptr) {
@@ -853,57 +687,6 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   }
   if (props == nullptr && tree == nullptr) {
     JXL_RETURN_IF_ERROR(Bundle::Write(*header, writer, layer, aux_out));
-  }
-
-  if (header->use_brotli) {
-    JXL_ASSERT(!props && !residuals && !tree && !tokens);
-    auto encode_brotli =
-        header->bytes_per_pixel == 2   ? EncodeModularChannelBrotli<2>
-        : header->bytes_per_pixel == 3 ? EncodeModularChannelBrotli<3>
-        : header->bytes_per_pixel == 4 ? EncodeModularChannelBrotli<4>
-                                       : EncodeModularChannelBrotli<5>;
-    size_t total_pixels = 0;
-    size_t total_height = 0;
-    for (size_t i = options.skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options.max_chan_size ||
-           image.channel[i].h > options.max_chan_size)) {
-        break;
-      }
-      total_pixels += image.channel[i].w * image.channel[i].h;
-      total_height += image.channel[i].h;
-    }
-    if (total_pixels == 0) return true;
-
-    PaddedBytes data(header->bytes_per_pixel * total_pixels + total_height);
-    size_t subpred_pos = 0;
-    size_t pos = total_height;
-
-    for (size_t i = options.skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options.max_chan_size ||
-           image.channel[i].h > options.max_chan_size)) {
-        break;
-      }
-      JXL_RETURN_IF_ERROR(encode_brotli(image, i, header->wp_header,
-                                        options.predictor, total_pixels, &pos,
-                                        &subpred_pos, &data));
-    }
-    writer->ZeroPadToByte();
-
-    PaddedBytes cbuffer;
-    JXL_RETURN_IF_ERROR(BrotliCompress(options.brotli_effort, data, &cbuffer));
-    if (aux_out) {
-      aux_out->layers[layer].total_bits += cbuffer.size() * kBitsPerByte;
-    }
-    (*writer) += cbuffer;
-    return true;
   }
 
   std::vector<Predictor> predictors;
@@ -980,6 +763,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                 aux_out);
   }
 
+  size_t image_width = 0;
   for (size_t i = options.skipchannels; i < nb_channels; i++) {
     if (!image.channel[i].w || !image.channel[i].h) {
       continue;  // skip empty channels
@@ -989,6 +773,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
          image.channel[i].h > options.max_chan_size)) {
       break;
     }
+    if (image.channel[i].w > image_width) image_width = image.channel[i].w;
     JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(image, i, header->wp_header,
                                                   *tree, tokens, aux_out,
                                                   group_id, want_debug));
@@ -998,10 +783,14 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   if (!header->use_global_tree) {
     EntropyEncodingData code;
     std::vector<uint8_t> context_map;
-    BuildAndEncodeHistograms(HistogramParams(), (tree->size() + 1) / 2,
+    HistogramParams histo_params;
+    histo_params.image_widths.push_back(image_width);
+    BuildAndEncodeHistograms(histo_params, (tree->size() + 1) / 2,
                              tokens_storage, &code, &context_map, writer, layer,
                              aux_out);
     WriteTokens(tokens_storage[0], code, context_map, writer, layer, aux_out);
+  } else {
+    *width = image_width;
   }
   return true;
 }
@@ -1044,69 +833,6 @@ Status ModularDecode(BitReader *br, Image &image, size_t group_id,
   }
   if (num_chans == 0) return true;
 
-  if (header.use_brotli) {
-    if (header.bytes_per_pixel > 5) {
-      return JXL_FAILURE("%u bytes per pixel are not supported\n",
-                         header.bytes_per_pixel);
-    }
-    auto decode_brotli =
-        header.bytes_per_pixel == 2   ? DecodeModularChannelBrotli<2>
-        : header.bytes_per_pixel == 3 ? DecodeModularChannelBrotli<3>
-        : header.bytes_per_pixel == 4 ? DecodeModularChannelBrotli<4>
-                                      : DecodeModularChannelBrotli<5>;
-    size_t total_pixels = 0;
-    size_t total_height = 0;
-    for (size_t i = options->skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options->max_chan_size ||
-           image.channel[i].h > options->max_chan_size)) {
-        break;
-      }
-      total_pixels += image.channel[i].w * image.channel[i].h;
-      total_height += image.channel[i].h;
-    }
-
-    JXL_RETURN_IF_ERROR(br->JumpToByteBoundary());
-
-    size_t data_size = header.bytes_per_pixel * total_pixels + total_height;
-    PaddedBytes data;
-    size_t read_size = 0;
-    if (!br->AllReadsWithinBounds()) {
-      return JXL_FAILURE("Read more bits than available in the bit_reader");
-    }
-    auto span = br->GetSpan();
-    bool decodestatus = BrotliDecompress(span, data_size, &read_size, &data);
-    br->SkipBits(kBitsPerByte * read_size);
-    JXL_DEBUG_V(4, "   Decoded %zu bytes for %zu pixels", read_size,
-                total_pixels);
-
-    if (!decodestatus) {
-      return JXL_FAILURE("Problem during Brotli decode");
-    }
-    if (data_size != data.size()) {
-      return JXL_FAILURE("Invalid decoded data size");
-    }
-    size_t subpred_pos = 0;
-    size_t pos = total_height;
-
-    for (size_t i = options->skipchannels; i < nb_channels; i++) {
-      if (!image.channel[i].w || !image.channel[i].h) {
-        continue;  // skip empty channels
-      }
-      if (i >= image.nb_meta_channels &&
-          (image.channel[i].w > options->max_chan_size ||
-           image.channel[i].h > options->max_chan_size)) {
-        break;
-      }
-      JXL_RETURN_IF_ERROR(decode_brotli(data, header.wp_header, total_pixels,
-                                        &pos, &subpred_pos, &image, i));
-    }
-    return true;
-  }
-
   // Read tree.
   Tree tree_storage;
   std::vector<uint8_t> context_map_storage;
@@ -1137,8 +863,22 @@ Status ModularDecode(BitReader *br, Image &image, size_t group_id,
     context_map = global_ctx_map;
   }
 
+  size_t distance_multiplier = 0;
+  for (size_t i = options->skipchannels; i < nb_channels; i++) {
+    Channel &channel = image.channel[i];
+    if (!channel.w || !channel.h) {
+      continue;  // skip empty channels
+    }
+    if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
+                                        channel.h > options->max_chan_size)) {
+      break;
+    }
+    if (channel.w > distance_multiplier) {
+      distance_multiplier = channel.w;
+    }
+  }
   // Read channels
-  ANSSymbolReader reader(code, br);
+  ANSSymbolReader reader(code, br, distance_multiplier);
   for (size_t i = options->skipchannels; i < nb_channels; i++) {
     Channel &channel = image.channel[i];
     if (!channel.w || !channel.h) {
@@ -1165,7 +905,7 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
                               std::vector<std::vector<int32_t>> *residuals,
                               size_t *total_pixels, const Tree *tree,
                               GroupHeader *header, std::vector<Token> *tokens,
-                              bool want_debug) {
+                              size_t *width, bool want_debug) {
   if (image.w == 0 || image.h == 0) return true;
   ModularOptions options = opts;  // Make a copy to modify it.
 
@@ -1176,7 +916,7 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
   size_t bits = writer ? writer->BitsWritten() : 0;
   JXL_RETURN_IF_ERROR(ModularEncode(image, options, writer, aux_out, layer,
                                     group_id, props, residuals, total_pixels,
-                                    tree, header, tokens, want_debug));
+                                    tree, header, tokens, width, want_debug));
   bits = writer ? writer->BitsWritten() - bits : 0;
   if (writer) {
     JXL_DEBUG_V(

@@ -128,13 +128,6 @@ struct ModularOptions {
   // dimension bigger than max_chan_size.
   size_t max_chan_size = 0xFFFFFF;
 
-  // Encoding options (some of which are needed during decoding too):
-  enum EntropyCoder {
-    kBrotli = 0,
-    kMAANS,
-  };
-  EntropyCoder entropy_coder = kMAANS;
-
   // MA options:
   // Number of iterations to do to learn a MA tree (does not have to be an
   // integer; if zero there is no MA context model).
@@ -147,9 +140,6 @@ struct ModularOptions {
   // Alternative heuristic tweaks.
   size_t splitting_heuristics_max_properties = 8;
   float splitting_heuristics_node_threshold = 96;
-
-  // Brotli options
-  int brotli_effort = 11;  // 0..11
 
   // Predictor to use for each channel.
   Predictor predictor = static_cast<Predictor>(-1);

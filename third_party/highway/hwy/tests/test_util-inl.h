@@ -20,13 +20,13 @@
 
 #include <stdio.h>
 #include <string.h>
+
 #include <random>
 #include <string>
 #include <utility>  // std::forward
 
-#include "hwy/targets.h"
-
 #include "gtest/gtest.h"
+#include "hwy/targets.h"
 
 namespace hwy {
 
@@ -358,13 +358,16 @@ struct ForeachSizeR<T, 0, kMinLanes, Test> {
 
 // These adapters may be called directly, or via For*Types:
 
-// Calls Test for all powers of two in [kMinLanes, MaxLanes(d) / kDivLanes].
-template <class Test, size_t kDivLanes = 1, size_t kMinLanes = 1>
+// Calls Test for all powers of two in [kMinLanes, kMaxLanes / kDivLanes].
+// Use a large default for kMaxLanes because we don't have access to T in the
+// template argument list.
+template <class Test, size_t kDivLanes = 1, size_t kMinLanes = 1,
+          size_t kMaxLanes = 1ul << 30>
 struct ForPartialVectors {
   template <typename T>
   void operator()(T /*unused*/) const {
-    ForeachSizeR<T, HWY_LANES(T) / kDivLanes / kMinLanes, kMinLanes,
-                 Test>::Do();
+    ForeachSizeR<T, HWY_MIN(kMaxLanes, HWY_LANES(T)) / kDivLanes / kMinLanes,
+                 kMinLanes, Test>::Do();
   }
 };
 
@@ -394,7 +397,7 @@ void ForSignedTypes(const Func& func) {
   func(int8_t());
   func(int16_t());
   func(int32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   func(int64_t());
 #endif
 }
@@ -404,7 +407,7 @@ void ForUnsignedTypes(const Func& func) {
   func(uint8_t());
   func(uint16_t());
   func(uint32_t());
-#if HWY_CAP_INT64
+#if HWY_CAP_INTEGER64
   func(uint64_t());
 #endif
 }
@@ -418,7 +421,7 @@ void ForIntegerTypes(const Func& func) {
 template <class Func>
 void ForFloatTypes(const Func& func) {
   func(float());
-#if HWY_CAP_DOUBLE
+#if HWY_CAP_FLOAT64
   func(double());
 #endif
 }

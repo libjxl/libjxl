@@ -77,33 +77,17 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   }
 
   std::vector<uint8_t> transformed_symbols = MoveToFrontTransform(context_map);
-  std::vector<Token> tokens;
-  auto encode_rl = [&](int len) {
-    tokens.emplace_back(0, PackSigned(-len - 1));
-  };
-  int zero_start = -1;
-  for (size_t i = 0; i < transformed_symbols.size(); i++) {
-    if (zero_start != -1 && transformed_symbols[i] != 0) {
-      encode_rl(i - zero_start - 2);
-      zero_start = -1;
-    }
-    if (transformed_symbols[i] == 0) {
-      if (zero_start == -1 && i + 1 != transformed_symbols.size() &&
-          transformed_symbols[i + 1] == 0) {
-        zero_start = i;
-      }
-      if (zero_start != -1) continue;
-    }
-    tokens.emplace_back(0, PackSigned(transformed_symbols[i]));
-  }
-  if (zero_start != -1) {
-    encode_rl(transformed_symbols.size() - zero_start - 2);
-  }
+  std::vector<std::vector<Token>> tokens(1);
   EntropyEncodingData codes;
   std::vector<uint8_t> dummy_context_map;
   size_t ans_cost =
-      BuildAndEncodeHistograms(HistogramParams{}, 1, {tokens}, &codes,
+      BuildAndEncodeHistograms(HistogramParams{}, 1, tokens, &codes,
                                &dummy_context_map, nullptr, 0, nullptr);
+  // Rebuild token list because BuildAndEncodeHistograms modified it.
+  tokens[0].clear();
+  for (size_t i = 0; i < transformed_symbols.size(); i++) {
+    tokens[0].emplace_back(0, transformed_symbols[i]);
+  }
   size_t entry_bits = CeilLog2Nonzero(num_histograms);
   size_t simple_cost = entry_bits * context_map.size();
   if (entry_bits < 4 && simple_cost < ans_cost) {
@@ -114,9 +98,9 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
     }
   } else {
     writer->Write(1, 0);
-    BuildAndEncodeHistograms(HistogramParams{}, 1, {tokens}, &codes,
+    BuildAndEncodeHistograms(HistogramParams{}, 1, tokens, &codes,
                              &dummy_context_map, writer, 0, nullptr);
-    WriteTokens(tokens, codes, dummy_context_map, allotment, writer);
+    WriteTokens(tokens[0], codes, dummy_context_map, allotment, writer);
   }
 }
 

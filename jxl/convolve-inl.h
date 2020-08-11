@@ -19,9 +19,9 @@
 #define JXL_CONVOLVE_INL_H_
 #endif
 
-#include "jxl/base/status.h"
-
 #include <hwy/before_namespace-inl.h>
+
+#include "jxl/base/status.h"
 namespace jxl {
 #include <hwy/begin_target-inl.h>
 

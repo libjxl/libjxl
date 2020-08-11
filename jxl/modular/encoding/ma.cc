@@ -39,10 +39,9 @@ const HWY_FULL(float) df;
 const HWY_FULL(int32_t) di;
 size_t Padded(size_t x) { return RoundUpTo(x, Lanes(df)); }
 
-float EstimateBits(const int32_t counts[ANS_MAX_ALPHA_SIZE],
+float EstimateBits(const int32_t *counts, int32_t *rounded_counts,
                    size_t num_symbols) {
   // Try to approximate the effect of rounding up nonzero probabilities.
-  int32_t rounded_counts[ANS_MAX_ALPHA_SIZE];
   int32_t total = std::accumulate(counts, counts + num_symbols, 0);
   const auto min = Set(di, (total + ANS_TAB_SIZE - 1) >> ANS_LOG_TAB_SIZE);
   const auto zero_i = Zero(di);
@@ -75,17 +74,21 @@ float EstimateTotalBits(int64_t offset, const std::vector<int> &residuals,
                         const std::vector<size_t> &indices, size_t begin,
                         size_t end) {
   float ans = 0;
-  int32_t dist[ANS_MAX_ALPHA_SIZE] = {};
+  std::vector<int32_t> dist;
   size_t num_symbols = 0;
   for (size_t i = begin; i < end; i++) {
     uint32_t tok, nbits, bits;
     HybridUintConfig(4, 1, 2).Encode(PackSigned(residuals[indices[i]] - offset),
                                      &tok, &bits, &nbits);
+    if (tok >= dist.size()) {
+      dist.resize(Padded(tok + 1));
+    }
     dist[tok]++;
     ans += nbits;
     num_symbols = num_symbols > tok + 1 ? num_symbols : tok + 1;
   }
-  return ans + EstimateBits(dist, num_symbols);
+  std::vector<int32_t> rounded_dist(dist.size());
+  return ans + EstimateBits(dist.data(), rounded_dist.data(), num_symbols);
 }
 
 float EstimateTotalBitsAndOffset(const std::vector<int> &residuals,
@@ -110,16 +113,17 @@ void EstimateEntropy(
     std::vector<std::pair<float, size_t>> *props_with_entropy) {
   std::vector<uint32_t> tokens;
   tokens.reserve(residuals[0].size());
+  uint32_t num_symbols = 0;
   for (int v : residuals[0]) {
     uint32_t tok, nbits, bits;
     HybridUintConfig(4, 1, 2).Encode(PackSigned(v - offset), &tok, &bits,
                                      &nbits);
     tokens.push_back(tok);
+    num_symbols = std::max(tok + 1, num_symbols);
   }
-  const size_t num_symbols =
-      *std::max_element(tokens.begin(), tokens.end()) + 1;
 
-  int32_t dist[ANS_MAX_ALPHA_SIZE] = {};
+  std::vector<int32_t> dist(Padded(num_symbols));
+  std::vector<int32_t> rounded_dist(Padded(num_symbols));
   std::vector<size_t> indices(tokens.size());
   std::vector<int> prop_counts;
   // Force usage of static properties.
@@ -150,10 +154,11 @@ void EstimateEntropy(
       while (current_position < props.size() &&
              props[indices[current_position]] ==
                  props[indices[previous_position]]) {
-        dist[tokens[indices[current_position]]]++;
+        size_t tok = tokens[indices[current_position]];
+        dist[tok]++;
         current_position++;
       }
-      entropy += EstimateBits(dist, num_symbols);
+      entropy += EstimateBits(dist.data(), rounded_dist.data(), num_symbols);
       while (previous_position < current_position) {
         dist[tokens[indices[previous_position]]]--;
         previous_position++;
@@ -269,6 +274,7 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     }
   }
   max_symbols = Padded(max_symbols);
+  std::vector<int32_t> rounded_counts(max_symbols);
   std::vector<int32_t> counts(max_symbols * residuals.size());
   std::vector<int32_t> tot_extra_bits(residuals.size());
   for (size_t pred = 0; pred < tokens.size(); pred++) {
@@ -286,7 +292,8 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
         pred = i;
       }
     }
-    base_bits = EstimateBits(counts.data() + pred * max_symbols, max_symbols) +
+    base_bits = EstimateBits(counts.data() + pred * max_symbols,
+                             rounded_counts.data(), max_symbols) +
                 tot_extra_bits[pred];
   }
 
@@ -340,13 +347,13 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
       first_used = std::min(first_used, p);
     }
 
+    std::vector<int32_t> counts_above(max_symbols), counts_below(max_symbols);
+
     // For all predictors, compute the right and left costs of each split.
     for (size_t pred = 0; pred < residuals.size(); pred++) {
-      int32_t counts_above[ANS_MAX_ALPHA_SIZE];
-      memcpy(counts_above, counts.data() + pred * max_symbols,
-             max_symbols * sizeof *counts_above);
-      int32_t counts_below[ANS_MAX_ALPHA_SIZE];
-      memset(counts_below, 0, max_symbols * sizeof *counts_below);
+      memcpy(counts_above.data(), counts.data() + pred * max_symbols,
+             max_symbols * sizeof counts_above[0]);
+      memset(counts_below.data(), 0, max_symbols * sizeof counts_below[0]);
       size_t extra_bits_below = 0;
       // Exclude last used: this ensures neither counts_above nor counts_below
       // is empty.
@@ -363,10 +370,12 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
               prop_count_increase[i * max_symbols * residuals.size() +
                                   max_symbols * pred + sym];
         }
-        float rcost = EstimateBits(counts_above, max_symbols) +
+        float rcost = EstimateBits(counts_above.data(), rounded_counts.data(),
+                                   max_symbols) +
                       tot_extra_bits[pred] - extra_bits_below;
-        float lcost =
-            EstimateBits(counts_below, max_symbols) + extra_bits_below;
+        float lcost = EstimateBits(counts_below.data(), rounded_counts.data(),
+                                   max_symbols) +
+                      extra_bits_below;
         float penalty = 0;
         if (predictors[pred] != (*tree)[pos].predictor) {
           penalty = change_pred_penalty;

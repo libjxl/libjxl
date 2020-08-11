@@ -96,12 +96,15 @@ struct EntropyEncodingData {
   std::vector<std::vector<ANSEncSymbolInfo>> encoding_info;
   bool use_prefix_code;
   std::vector<HybridUintConfig> uint_config;
+  LZ77Params lz77;
 };
 
 // Integer to be encoded by an entropy coder, either ANS or Huffman.
 struct Token {
-  Token(uint32_t c, uint32_t value) : context(c), value(value) {}
-  uint32_t context;
+  Token(uint32_t c, uint32_t value)
+      : is_lz77_length(false), context(c), value(value) {}
+  uint32_t is_lz77_length : 1;
+  uint32_t context : 31;
   uint32_t value;
 };
 
@@ -109,17 +112,13 @@ struct Token {
 // histogram (header bits plus data bits).
 float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size);
 
-// Returns an estimate of the number of bits required to encode the given vector
-// of tokens.
-float TokenCost(const std::vector<Token>& tokens);
-
 // Apply context clustering, compute histograms and encode them. Returns an
 // estimate of the total bits used for encoding the stream. If `writer` ==
 // nullptr, the bit estimate will not take into account the context map (which
 // does not get written if `num_contexts` == 1).
 size_t BuildAndEncodeHistograms(const HistogramParams& params,
                                 size_t num_contexts,
-                                const std::vector<std::vector<Token>>& tokens,
+                                std::vector<std::vector<Token>>& tokens,
                                 EntropyEncodingData* codes,
                                 std::vector<uint8_t>* context_map,
                                 BitWriter* writer, size_t layer,

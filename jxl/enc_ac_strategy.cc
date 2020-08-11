@@ -313,7 +313,7 @@ void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
 // AC strategy selection: utility struct and entropy estimation.
 
 // Highest observed token > 64.
-constexpr size_t kNumTokens = ANS_MAX_ALPHA_SIZE;
+constexpr size_t kNumTokens = ANS_MAX_ALPHABET_SIZE;
 
 struct ACSConfig {
   const DequantMatrices* JXL_RESTRICT dequant;
@@ -593,13 +593,14 @@ void FindBestAcStrategy(const Image3F& src,
 
   // Maximum delta that every strategy type is allowed to have in the area
   // it covers. Ignored for 8x8 transforms.
-  const float kMaxDelta = 0.06f * butteraugli_target;  // OPTIMIZE
+  const float kMaxDelta = 0.12f * butteraugli_target;  // OPTIMIZE
+  const float kFlat = 11.1 / butteraugli_target;       // OPTIMIZE
 
   // Scale of channels when computing delta.
   const float kDeltaScale[3] = {
-      17.0f,  // OPTIMIZE
-      1.0f,   // OPTIMIZE
-      0.9f,   // OPTIMIZE
+      5.0f,  // OPTIMIZE
+      1.0f,  // OPTIMIZE
+      0.8f,  // OPTIMIZE
   };
 
   ACSConfig config;
@@ -643,6 +644,7 @@ void FindBestAcStrategy(const Image3F& src,
     // 1) all, 2) not accounting vertical, 3) not accounting horizontal
     HWY_ALIGN float pixels[3][64];
     float max_delta[3][16] = {};
+    float flat[3][16] = {};
     float entropy_estimate[16] = {};
     for (size_t c = 0; c < 3; c++) {
       for (size_t iy = 0; iy < 4; iy++) {
@@ -722,12 +724,42 @@ void FindBestAcStrategy(const Image3F& src,
             max_delta[c][iy * 4 + ix] =
                 std::max(max_delta[c][iy * 4 + ix], mdelta);
           }
+          // How 'flat' is this area, i.e., how observable would ringing
+          // artefacts be here?
+          for (size_t c = 0; c < 3; c++) {
+            flat[c][iy * 4 + ix] = 0;
+            for (size_t y = 0; y < 8; y++) {
+              for (size_t x = 0; x < 8; x++) {
+                float v = pixels[c][y * 8 + x];
+                float s = 0;
+                if (y >= 2) {
+                  s += std::fabs(v - pixels[c][y * 8 + x - 16]);
+                }
+                if (y < 6) {
+                  s += std::fabs(v - pixels[c][y * 8 + x + 16]);
+                }
+                if (x >= 2) {
+                  s += std::fabs(v - pixels[c][y * 8 + x - 2]);
+                }
+                if (x < 6) {
+                  s += std::fabs(v - pixels[c][y * 8 + x + 2]);
+                }
+                s *= 0.25 * kFlat * kDeltaScale[c];
+                flat[c][iy * 4 + ix] += (1.0 / 48.0) / (1.0 + s * s);
+              }
+            }
+          }
         }
       }
+    }
+    for (size_t k = 0; k < 16; ++k) {
+      //      flat[0][k] = std::max<float>(flat[1][k], flat[0][k]);
+      flat[2][k] = flat[1][k];
     }
     for (size_t i = 0; i < 3; ++i) {
       for (size_t k = 0; k < 16; ++k) {
         max_delta[i][k] *= kDeltaScale[i];
+        flat[i][k] += 0.7;
       }
     }
     // Choose the first transform that can be used to cover each block.
@@ -742,6 +774,8 @@ void FindBestAcStrategy(const Image3F& src,
           float max_delta_v[3] = {max_delta[0][iy * 4 + ix],
                                   max_delta[1][iy * 4 + ix],
                                   max_delta[2][iy * 4 + ix]};
+          float max2_delta_v[3] = {0, 0, 0};
+          float max_flatness[3] = {0, 0, 0};
           float max_delta_acs = std::max(
               std::max(max_delta_v[0], max_delta_v[1]), max_delta_v[2]);
           float min_delta_v[3] = {1e30, 1e30, 1e30};
@@ -768,21 +802,38 @@ void FindBestAcStrategy(const Image3F& src,
             if (overwrites_covered) continue;
             for (size_t c = 0; c < 3; ++c) {
               max_delta_v[c] = 0;
+              max2_delta_v[c] = 0;
               min_delta_v[c] = 1e30f;
               ave_delta_v[c] = 0;
+              max_flatness[c] = 0;
               // Max delta in covered area
               for (size_t y = 0; y < cy; y++) {
                 for (size_t x = 0; x < cx; x++) {
                   int pix = (iy + y) * 4 + ix + x;
-                  max_delta_v[c] = std::max(max_delta_v[c], max_delta[c][pix]);
+                  max_flatness[c] =
+                      std::max<float>(max_flatness[c], flat[c][pix]);
+                  if (max_delta_v[c] < max_delta[c][pix]) {
+                    max2_delta_v[c] = max_delta_v[c];
+                    max_delta_v[c] = max_delta[c][pix];
+                  } else if (max2_delta_v[c] < max_delta[c][pix]) {
+                    max2_delta_v[c] = max_delta[c][pix];
+                  }
                   min_delta_v[c] = std::min(min_delta_v[c], max_delta[c][pix]);
                   ave_delta_v[c] += max_delta[c][pix];
                 }
               }
               ave_delta_v[c] -= max_delta_v[c];
-              ave_delta_v[c] /= (cy * cx - 1);
+              if (false && cy * cx >= 4) {
+                ave_delta_v[c] -= max2_delta_v[c];
+                ave_delta_v[c] /= (cy * cx - 2);
+              } else {
+                ave_delta_v[c] /= (cy * cx - 1);
+              }
+              max_delta_v[c] *= 1.0;
+              max_delta_v[c] -= 0.0 * max2_delta_v[c];
               max_delta_v[c] -= 0.25 * min_delta_v[c];
               max_delta_v[c] -= 0.25 * ave_delta_v[c];
+              max_delta_v[c] *= max_flatness[c];
             }
             max_delta_acs = max_delta_v[0] + max_delta_v[1] + max_delta_v[2];
             if (max_delta_acs > kMaxDelta) continue;

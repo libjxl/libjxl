@@ -32,7 +32,13 @@ namespace jxl {
 #define ANS_LOG_TAB_SIZE 12u
 #define ANS_TAB_SIZE (1 << ANS_LOG_TAB_SIZE)
 #define ANS_TAB_MASK (ANS_TAB_SIZE - 1)
-#define ANS_MAX_ALPHA_SIZE 256
+
+// Largest possible symbol to be encoded by either ANS or prefix coding.
+
+// This should be 544 or more (decoder supports up to 1<<15), but there is a
+// limit of 272 in the brunsli Huffman coder.
+#define PREFIX_MAX_ALPHABET_SIZE 272
+#define ANS_MAX_ALPHABET_SIZE 256
 
 #define ANS_SIGNATURE 0x13  // Initial state, used as CRC.
 
@@ -48,11 +54,18 @@ struct HistogramParams {
     kBest,
   };
 
+  enum class LZ77Method {
+    kNone,  // do not try lz77.
+    kRLE,   // only try doing RLE.
+    kLZ77,  // try lz77 with backward references.
+  };
+
   HistogramParams() = default;
 
   HistogramParams(SpeedTier tier, size_t num_ctx) {
     if (tier == SpeedTier::kFalcon) {
       clustering = ClusteringType::kFastest;
+      lz77_method = LZ77Method::kNone;
     } else if (tier > SpeedTier::kTortoise) {
       clustering = ClusteringType::kFast;
     } else {
@@ -65,6 +78,9 @@ struct HistogramParams {
 
   ClusteringType clustering = ClusteringType::kBest;
   HybridUintMethod uint_method = HybridUintMethod::kBest;
+  LZ77Method lz77_method = LZ77Method::kRLE;
+  std::vector<size_t> image_widths;
+  bool force_huffman = false;
 };
 
 }  // namespace jxl
