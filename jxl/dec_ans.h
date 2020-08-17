@@ -124,7 +124,7 @@ struct LZ77Params {
   uint32_t min_length;
 
   // Not serialized by VisitFields.
-  HybridUintConfig length_uint_config{2, 0, 0};
+  HybridUintConfig length_uint_config{0, 0, 0};
 
   size_t nonserialized_distance_context;
 };

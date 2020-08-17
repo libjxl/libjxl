@@ -337,15 +337,15 @@ struct ACSConfig {
 };
 
 void ComputeTokenBits(float butteraugli_target, float* token_bits) {
-  const double kSmallValueBase = 1;       // OPTIMIZE
-  const double kSmallValueMul = 3.8;      // OPTIMIZE
-  const double kLargeValueFactor = 0.02;  // OPTIMIZE
+  const double kSmallValueBase = 7.2618801707528009;
+  const double kSmallValueMul = 61.512220067759564;
+  const double kLargeValueFactor = 0.74418618655898428;
 
   const double kMaxCost = ANS_LOG_TAB_SIZE;
 
   const double kLargeParam = std::max(
       0.05f, 0.01f * std::pow(butteraugli_target, 0.1f) - 0.015f);  // OPTIMIZE
-  const double kSmallParam = 8.25f * kLargeParam - 0.363f;          // OPTIMIZE
+  const double kSmallParam = 8.25f * kLargeParam - 0.08913395766;
 
   for (size_t i = 0; i < 16; i++) {
     token_bits[i] =
@@ -593,14 +593,14 @@ void FindBestAcStrategy(const Image3F& src,
 
   // Maximum delta that every strategy type is allowed to have in the area
   // it covers. Ignored for 8x8 transforms.
-  const float kMaxDelta = 0.12f * butteraugli_target;  // OPTIMIZE
-  const float kFlat = 11.1 / butteraugli_target;       // OPTIMIZE
+  const float kMaxDelta = 0.12f * sqrt(butteraugli_target);  // OPTIMIZE
+  const float kFlat = 11.1 / sqrt(butteraugli_target);       // OPTIMIZE
 
   // Scale of channels when computing delta.
-  const float kDeltaScale[3] = {
-      5.0f,  // OPTIMIZE
-      1.0f,  // OPTIMIZE
-      0.8f,  // OPTIMIZE
+  const double kDeltaScale[3] = {
+    9.4174165405614652,
+    1.0,
+    0.2,
   };
 
   ACSConfig config;
@@ -610,7 +610,7 @@ void FindBestAcStrategy(const Image3F& src,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 42.0f;  // OPTIMIZE
+  config.info_loss_multiplier = 45.893449895090626;
 
   ComputeTokenBits(butteraugli_target, config.token_bits);
 
@@ -759,7 +759,8 @@ void FindBestAcStrategy(const Image3F& src,
     for (size_t i = 0; i < 3; ++i) {
       for (size_t k = 0; k < 16; ++k) {
         max_delta[i][k] *= kDeltaScale[i];
-        flat[i][k] += 0.7;
+        static const float off = 0.05;
+        flat[i][k] += off;
       }
     }
     // Choose the first transform that can be used to cover each block.
@@ -823,7 +824,7 @@ void FindBestAcStrategy(const Image3F& src,
                 }
               }
               ave_delta_v[c] -= max_delta_v[c];
-              if (false && cy * cx >= 4) {
+              if (cy * cx >= 4) {
                 ave_delta_v[c] -= max2_delta_v[c];
                 ave_delta_v[c] /= (cy * cx - 2);
               } else {
@@ -836,6 +837,10 @@ void FindBestAcStrategy(const Image3F& src,
               max_delta_v[c] *= max_flatness[c];
             }
             max_delta_acs = max_delta_v[0] + max_delta_v[1] + max_delta_v[2];
+            max_delta_acs *= pow(1.04427378243, cx * cy);
+            if (cx == 2 && cy == 2) {
+              max_delta_acs *= 0.8;
+            }
             if (max_delta_acs > kMaxDelta) continue;
           }
           // Estimate entropy and qf value

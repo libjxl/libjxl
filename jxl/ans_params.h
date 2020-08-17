@@ -35,9 +35,7 @@ namespace jxl {
 
 // Largest possible symbol to be encoded by either ANS or prefix coding.
 
-// This should be 544 or more (decoder supports up to 1<<15), but there is a
-// limit of 272 in the brunsli Huffman coder.
-#define PREFIX_MAX_ALPHABET_SIZE 272
+#define PREFIX_MAX_ALPHABET_SIZE 4096
 #define ANS_MAX_ALPHABET_SIZE 256
 
 #define ANS_SIGNATURE 0x13  // Initial state, used as CRC.
@@ -55,9 +53,10 @@ struct HistogramParams {
   };
 
   enum class LZ77Method {
-    kNone,  // do not try lz77.
-    kRLE,   // only try doing RLE.
-    kLZ77,  // try lz77 with backward references.
+    kNone,     // do not try lz77.
+    kRLE,      // only try doing RLE.
+    kLZ77,     // try lz77 with backward references.
+    kOptimal,  // optimal-matching LZ77 parsing.
   };
 
   HistogramParams() = default;

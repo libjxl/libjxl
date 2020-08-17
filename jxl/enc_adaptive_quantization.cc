@@ -61,79 +61,12 @@ bool FLAGS_dump_quant_state = false;
 namespace jxl {
 namespace {
 
-static const float kQuant64[64] = {
-    0.0,
-    1.3627035631195761,
-    3.75394603948046884,
-    3.7552562789889619,
-    3.738923115258169,
-    3.2658460689961202,
-    3.3644109735743761,
-    3.407927898760664,
-    3.3435304472886553,
-    0.912932235161943,
-    0.86013076305762415,
-    3.2181857425503768,
-    2.5344889514395561,
-    1.1030971121374131,
-    0.86654135268900234,
-    1.1790809890137122,
-    1.1325855042326589,
-    2.1036916840563111,
-    2.1662829197292539,
-    1.0855127071756325,
-    1.4837636416580766,
-    0.79528165577401788,
-    0.84472454415339238,
-    1.4156418573711551,
-    1.4477267104680289,
-    1.3169293134214741,
-    1.1435971405444745,
-    0.44922571728240968,
-    0.66437130514818066,
-    0.56811538880030854,
-    0.88663683723756648,
-    0.75797820670535709,
-    1.2141376049363837,
-    1.8082860500557918,
-    0.34785192011414331,
-    0.86658716645380518,
-    0.84457566277095242,
-    0.365886424294040194,
-    0.27942131498024103,
-    0.48621389791680419,
-    0.2848216363151751,
-    0.37182998793445576,
-    0.37191251587301016,
-    0.3434673885351725,
-    0.50423064557670205,
-    0.30742301163233954,
-    0.38866381308020725,
-    0.46912603786452162,
-    0.38233313062142565,
-    0.41786679581133063,
-    0.3695788988347995,
-    0.63197592721834761,
-    0.73351761078380862,
-    0.40450080085057888,
-    0.39291869306279764,
-    0.51847970794880838,
-    0.43559898503478928,
-    0.32837421314561244,
-    0.51318960017980164,
-    0.79565824960993681,
-    0.21456893657335676,
-    0.47552975726356284,
-    0.4411023380122629,
-    0.32950033621891689,
-};
-
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  const float kBase = 1.132;
-  const float kMul1 = 0.011998188544316451;
-  const float kOffset1 = 0.008630215880595576;
-  const float kMul2 = -0.19617839676853116;
-  const float kOffset2 = 0.07794671871145305;
+  const float kBase = 0.9;
+  const float kMul1 = 0.012830564950968305;
+  const float kOffset1 = 0.010638874536303307;
+  const float kMul2 = -0.17766197567565159;
+  const float kOffset2 = 0.10647602832848234;
   const float val = *out_pos;
   // Avoid division by zero.
   const float div = std::max(val + kOffset1, 1e-3f);
@@ -158,11 +91,78 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   float entropyQL2 = 0.0f;
   float entropyQL4 = 0.0f;
   float entropyQL8 = 0.0f;
+
+  static const double kQuant64[64] = {
+    0.0,
+    4.1,
+    4.1,
+    3.0,
+    3.3,
+    3.3,
+    3.3,
+    3.3,
+    3.3,
+    0.87,
+    0.87,
+    2.9,
+    2.9,
+    1.1,
+    1.1,
+    1.15,
+    1.15,
+    2.1,
+    2.1,
+    1.4,
+    1.4,
+    0.9,
+    0.9,
+    1.4,
+    1.4,
+    1.3,
+    1.3,
+    0.7,
+    0.7,
+    0.7,
+    0.7,
+    0.7,
+    1.6,
+    1.6,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+    0.5,
+  };
   for (size_t k = 1; k < kDCTBlockSize; ++k) {
     const coeff_order_t i = natural_coeff_order[k];
     float v = dct[i] * dct_rescale[i];
     v *= v;
-    static const float kPow = 1.7656070913325459f;
+    static const double kPow = 4.6629037508279616;
     float q = std::pow(kQuant64[k], kPow);
     entropyQL2 += q * v;
     v *= v;
@@ -173,11 +173,11 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   entropyQL2 = std::sqrt(entropyQL2);
   entropyQL4 = std::sqrt(std::sqrt(entropyQL4));
   entropyQL8 = std::pow(entropyQL8, 0.125f);
-  constexpr float mulQL2 = 0.00064095761586667813f;
-  constexpr float mulQL4 = -0.93103691258798293f;
-  constexpr float mulQL8 = 0.20682345500923968f;
+  const float mulQL2 = 0.03142149886912976;
+  const float mulQL4 = -0.66751878683954047;
+  const float mulQL8 = 0.38537889965210825;
   float v = mulQL2 * entropyQL2 + mulQL4 * entropyQL4 + mulQL8 * entropyQL8;
-  constexpr float kMul = 1.0833857206487167f;
+  const float kMul = 1.2429764719119114;
   *out_pos += kMul * v;
 }
 
@@ -241,8 +241,9 @@ void GammaModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       ++n;
     }
   }
+  static const double gam = 0.44403164676083279;
 
-  *out_pos += -0.777 * std::log(overall_ratio / n);
+  *out_pos += gam * std::log(overall_ratio / n);
 }
 
 // Increase precision in 8x8 blocks that have high dynamic range.
@@ -275,21 +276,21 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       y_sum_of_squares += vy * vy;
     }
   }
-  const float xmul = 3.2709800773479873;
+  const float xmul = 1.7221705747809317;
   float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
   // than the previous approach of just using range_y.
   float range0 = std::sqrt(range_x * range_y);
-  const float mul0 = -2.1445646855668516;
+  const float mul0 = -0.74090628990083873;
   float range1 = std::sqrt(range_x * range_x + range_y * range_y);
-  const float mul1 = 0.015466173725276233;
+  const float mul1 = 0.3768642185315102;
   float range2 = std::max(range_x, range_y);
-  const float mul2 = -0.5428945750810649;
+  const float mul2 = -0.36402038014085836;
   float range3 = std::min(range_x, range_y);
-  const float mul3 = -1.845545830795523;
+  const float mul3 = 0.14396820717087175;
   float range4 = n == 0 ? 0 : range_x * std::sqrt(y_sum_of_squares / n);
-  const float mul4 = 117.93368467138596;
+  const float mul4 = 119.38245772972709;
   // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
   // some pathological cases and cause problems downstream.
   *out_pos += std::max(
@@ -322,7 +323,7 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   if (n != 0) {
     sum /= n;
   }
-  const float kMul = -0.48800704061872;
+  const float kMul = -1.9272205829012994;
   sum *= kMul;
   *out_pos += sum;
 }

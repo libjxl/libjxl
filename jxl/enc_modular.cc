@@ -177,7 +177,8 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
     // no explicit predictor(s) given, set a good default
     if ((cparams.speed_tier <= SpeedTier::kTortoise ||
          cparams.modular_group_mode == false) &&
-        quality == 100) {
+        quality == 100 && cparams.near_lossless == false &&
+        cparams.responsive == false) {
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams.options.predictor = Predictor::Variable;
@@ -724,21 +725,6 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
               aux_out);
   params.image_widths = image_widths;
-  // TODO(veluca): avoid multiple calls to BuildAndEncodeHistograms, and copying
-  // the tokens. Enable if it can be shown to give good improvements - for now
-  // it doesn't.
-  if (cparams.speed_tier < SpeedTier::kCheetah && false) {
-    auto tokens_copy = tokens;
-    float cost_ans =
-        BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens_copy,
-                                 &code, &context_map, nullptr, 0, nullptr);
-    params.force_huffman = true;
-    tokens_copy = tokens;
-    float cost_huff =
-        BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens_copy,
-                                 &code, &context_map, nullptr, 0, nullptr);
-    params.force_huffman = cost_ans > cost_huff;
-  }
   // Write histograms.
   BuildAndEncodeHistograms(params, (tree.size() + 1) / 2, tokens, &code,
                            &context_map, writer, kLayerModularGlobal, aux_out);

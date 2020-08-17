@@ -69,10 +69,10 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 0.6
-  maxval = 5.0
+  minval = 1.15
+  maxval = 6.0
   rangeval = maxval/minval
-  steps = 5
+  steps = 9
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -110,8 +110,8 @@ def Eval(vec, binary_name, cached=True):
   process = subprocess.Popen(
       (binary_name,
        '--input',
-       '/usr/local/google/home/jyrki/jpeg_xl/256/*.png',
-       '--error_pnorm=7',
+       '/usr/local/google/home/jyrki/newcorpus/split/*.png',
+       '--error_pnorm=3',
        '--more_columns',
        '--adaptive_reconstruction=0',
        '--dots=0',

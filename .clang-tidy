@@ -8,6 +8,8 @@
 # - modernize-use-auto: is too aggressive towards using auto.
 # - modernize-use-default-member-init: with a mix of constructors and default
 #   member initialization this can be confusing if enforced.
+# - modernize-use-trailing-return-type: does not improve readability when used
+#   systematically.
 # - modernize-use-using: typedefs are ok.
 #
 # - readability-else-after-return: It doesn't always improve readability.
@@ -15,6 +17,7 @@
 #   It is often more useful and readable to access a constant of a passed
 #   variable (like d.N) instead of using the type of the variable that could be
 #   long and complex.
+# - readability-uppercase-literal-suffix: we write 1.0f, not 1.0F.
 
 Checks: >-
   clang-*,
@@ -28,9 +31,11 @@ Checks: >-
   -modernize-return-braced-init-list,
   -modernize-use-auto,
   -modernize-use-default-member-init,
+  -modernize-use-trailing-return-type,
   -modernize-use-using,
   -readability-else-after-return,
   -readability-static-accessed-through-instance,
+  -readability-uppercase-literal-suffix,
 
 
 WarningsAsErrors: >-

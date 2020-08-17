@@ -210,6 +210,14 @@ struct CompressParams {
   float channel_colors_percent = 80.f;
   int near_lossless = 0;
   int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
+
+  // Sets the parameters required to make the codec lossless.
+  void SetLossless() {
+    modular_group_mode = true;
+    quality_pair.first = 100;
+    quality_pair.second = 100;
+    color_transform = jxl::ColorTransform::kNone;
+  }
 };
 
 // Always on so we notice any changes.
