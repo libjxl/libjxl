@@ -175,9 +175,9 @@ Status SetChromaSubsampling(const YCbCrChromaSubsampling chroma_subsampling,
       cinfo->comp_info[0].v_samp_factor = 2;
       return true;
 
-    case YCbCrChromaSubsampling::k411:
-      cinfo->comp_info[0].h_samp_factor = 4;
-      cinfo->comp_info[0].v_samp_factor = 1;
+    case YCbCrChromaSubsampling::k440:
+      cinfo->comp_info[0].h_samp_factor = 1;
+      cinfo->comp_info[0].v_samp_factor = 2;
       return true;
 
     default:
@@ -307,28 +307,45 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     }
 #endif
 
+    std::vector<int> normalized_h_samp_factor(nbcomp),
+        normalized_v_samp_factor(nbcomp);
+    for (size_t i = 0; i < nbcomp; i++) {
+      normalized_h_samp_factor[i] = cinfo.comp_info[i].h_samp_factor;
+      normalized_v_samp_factor[i] = cinfo.comp_info[i].v_samp_factor;
+    }
+    int div_h = *std::min_element(normalized_h_samp_factor.begin(),
+                                  normalized_h_samp_factor.end());
+    int div_v = *std::min_element(normalized_v_samp_factor.begin(),
+                                  normalized_v_samp_factor.end());
+    bool normalize = true;
+    for (size_t i = 0; i < nbcomp; i++) {
+      if (normalized_h_samp_factor[i] % div_h != 0 ||
+          normalized_v_samp_factor[i] % div_v != 0) {
+        normalize = false;
+      }
+    }
+    if (normalize) {
+      for (size_t i = 0; i < nbcomp; i++) {
+        normalized_h_samp_factor[i] /= div_h;
+        normalized_v_samp_factor[i] /= div_v;
+      }
+    }
+
     YCbCrChromaSubsampling cs = YCbCrChromaSubsampling::k444;
-    if (nbcomp == 3 && cinfo.comp_info[0].h_samp_factor == 2 &&
-        cinfo.comp_info[0].v_samp_factor == 2 &&
-        cinfo.comp_info[1].h_samp_factor == 1 &&
-        cinfo.comp_info[1].v_samp_factor == 1 &&
-        cinfo.comp_info[2].h_samp_factor == 1 &&
-        cinfo.comp_info[2].v_samp_factor == 1) {
+    std::vector<int> sf211 = {2, 1, 1};
+    std::vector<int> sf111 = {1, 1, 1};
+    if (nbcomp == 1 || (normalized_h_samp_factor == sf111 &&
+                        normalized_v_samp_factor == sf111)) {
+      cs = YCbCrChromaSubsampling::k444;
+    } else if (normalized_h_samp_factor == sf211 &&
+               normalized_v_samp_factor == sf211) {
       cs = YCbCrChromaSubsampling::k420;
-    } else if (nbcomp == 3 && cinfo.comp_info[0].h_samp_factor == 2 &&
-               cinfo.comp_info[0].v_samp_factor == 1 &&
-               cinfo.comp_info[1].h_samp_factor == 1 &&
-               cinfo.comp_info[1].v_samp_factor == 1 &&
-               cinfo.comp_info[2].h_samp_factor == 1 &&
-               cinfo.comp_info[2].v_samp_factor == 1) {
+    } else if (normalized_h_samp_factor == sf211 &&
+               normalized_v_samp_factor == sf111) {
       cs = YCbCrChromaSubsampling::k422;
-    } else if (nbcomp == 3 && cinfo.comp_info[0].h_samp_factor == 4 &&
-               cinfo.comp_info[0].v_samp_factor == 1 &&
-               cinfo.comp_info[1].h_samp_factor == 1 &&
-               cinfo.comp_info[1].v_samp_factor == 1 &&
-               cinfo.comp_info[2].h_samp_factor == 1 &&
-               cinfo.comp_info[2].v_samp_factor == 1) {
-      cs = YCbCrChromaSubsampling::k411;
+    } else if (normalized_h_samp_factor == sf111 &&
+               normalized_v_samp_factor == sf211) {
+      cs = YCbCrChromaSubsampling::k440;
     } else {
       for (int ci = 0; ci < nbcomp; ci++) {
         jpeg_component_info* compptr = cinfo.comp_info + ci;
@@ -496,7 +513,8 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
     int chroma_wib = wib;
     int luma_alloc_hib = hib;
     int luma_alloc_wib = wib;
-    if (ib->chroma_subsampling == YCbCrChromaSubsampling::k420) {
+    if (ib->chroma_subsampling == YCbCrChromaSubsampling::k420 ||
+        ib->chroma_subsampling == YCbCrChromaSubsampling::k440) {
       chroma_hib = ((ib->ysize() + 1) / 2 + 7) / 8;
       luma_alloc_hib = 2 * chroma_hib;
     }
@@ -504,10 +522,6 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
         ib->chroma_subsampling == YCbCrChromaSubsampling::k422) {
       chroma_wib = ((ib->xsize() + 1) / 2 + 7) / 8;
       luma_alloc_wib = 2 * chroma_wib;
-    }
-    if (ib->chroma_subsampling == YCbCrChromaSubsampling::k411) {
-      chroma_wib = ((ib->xsize() + 3) / 4 + 7) / 8;
-      luma_alloc_wib = 4 * chroma_wib;
     }
 
     for (int ci = 0; ci < 3; ci++) {
@@ -597,8 +611,8 @@ Status EncodeWithSJpeg(const ImageBundle* ib, size_t quality,
     case YCbCrChromaSubsampling::k420:
       param.yuv_mode = SJPEG_YUV_SHARP;
       break;
-    case YCbCrChromaSubsampling::k411:
-      return JXL_FAILURE("sjpeg does not support 4:1:1 chroma subsampling");
+    case YCbCrChromaSubsampling::k440:
+      return JXL_FAILURE("sjpeg does not support 4:4:0 chroma subsampling");
   }
   std::vector<uint8_t> rgb;
   rgb.reserve(ib->xsize() * ib->ysize() * 3);

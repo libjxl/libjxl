@@ -393,11 +393,11 @@ size_t ACSPossibleReplacements(AcStrategy::Type current,
   }
   if (current == AcStrategy::Type::DCT32X16) {
     return ACSCandidates(
-        {/*AcStrategy::Type::DCT32X8,*/ AcStrategy::Type::DCT16X16}, out);
+        {AcStrategy::Type::DCT32X8, AcStrategy::Type::DCT16X16}, out);
   }
   if (current == AcStrategy::Type::DCT16X32) {
     return ACSCandidates(
-        {/*AcStrategy::Type::DCT8X32,*/ AcStrategy::Type::DCT16X16}, out);
+        {AcStrategy::Type::DCT8X32, AcStrategy::Type::DCT16X16}, out);
   }
   if (current == AcStrategy::Type::DCT32X8) {
     return ACSCandidates({AcStrategy::Type::DCT16X8, AcStrategy::Type::DCT},
@@ -459,7 +459,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   }
 
   // Compute entropy.
-  float entropy = 0.0;
+  float entropy = 15.0;
   float info_loss = 0.0;
   const coeff_order_t* JXL_RESTRICT order = acs.NaturalCoeffOrder();
   for (size_t c = 0; c < 3; c++) {
@@ -503,7 +503,6 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     // bias.
     entropy += CeilLog2Nonzero(nbits + 17) + nbits;
   }
-  info_loss /= quant;  // Scale of information loss should not depend on quant.
   float ret = entropy + config.info_loss_multiplier * info_loss;
   return ret;
 }
@@ -519,10 +518,6 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
   if (num_candidates == 0) return;
   size_t best = num_candidates;
   size_t best_ee = entropy_estimate[0];
-  if (current == AcStrategy::Type::DCT) {
-    // Discourage special transforms.
-    best_ee *= 0.9;  // OPTIMIZE
-  }
   // For each candidate replacement strategy, keep track of its entropy
   // estimate.
   float ee_val[AcStrategy::kNumValidStrategies][AcStrategy::kMaxCoeffBlocks];
@@ -542,14 +537,46 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
         idx++;
       }
     }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT) {
+      total_entropy *= 0.96;
+    }
     if (acs.RawStrategy() == AcStrategy::Type::DCT4X4) {
+      total_entropy += 80.0;
       total_entropy *= 0.91;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT2X2) {
+      total_entropy += 80.0;
+      total_entropy *= 1.03;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT16X16) {
+      total_entropy *= 0.93;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT16X32 ||
+        acs.RawStrategy() == AcStrategy::Type::DCT32X16) {
+      total_entropy *= 0.985;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT32X8 ||
+        acs.RawStrategy() == AcStrategy::Type::DCT8X32) {
+      total_entropy *= 1.0;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT16X8 ||
+        acs.RawStrategy() == AcStrategy::Type::DCT8X16) {
+      total_entropy *= 0.94;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::DCT4X8 ||
+        acs.RawStrategy() == AcStrategy::Type::DCT8X4) {
+      total_entropy += 80.0;
+      total_entropy *= 1.03;
+    }
+    if (acs.RawStrategy() == AcStrategy::Type::IDENTITY) {
+      total_entropy += 80.0;
+      total_entropy *= 1.25;
     }
     if (acs.RawStrategy() == AcStrategy::Type::AFV0 ||
         acs.RawStrategy() == AcStrategy::Type::AFV1 ||
         acs.RawStrategy() == AcStrategy::Type::AFV2 ||
         acs.RawStrategy() == AcStrategy::Type::AFV3) {
-      total_entropy *= 0.97;
+      total_entropy += 20;
     }
     if (total_entropy < best_ee) {
       best_ee = total_entropy;
@@ -594,7 +621,7 @@ void FindBestAcStrategy(const Image3F& src,
   // Maximum delta that every strategy type is allowed to have in the area
   // it covers. Ignored for 8x8 transforms.
   const float kMaxDelta = 0.12f * sqrt(butteraugli_target);  // OPTIMIZE
-  const float kFlat = 11.1 / sqrt(butteraugli_target);       // OPTIMIZE
+  const float kFlat = 5.0f * sqrt(butteraugli_target);       // OPTIMIZE
 
   // Scale of channels when computing delta.
   const double kDeltaScale[3] = {
@@ -610,7 +637,7 @@ void FindBestAcStrategy(const Image3F& src,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 45.893449895090626;
+  config.info_loss_multiplier = 234;
 
   ComputeTokenBits(butteraugli_target, config.token_bits);
 
@@ -839,7 +866,7 @@ void FindBestAcStrategy(const Image3F& src,
             max_delta_acs = max_delta_v[0] + max_delta_v[1] + max_delta_v[2];
             max_delta_acs *= pow(1.04427378243, cx * cy);
             if (cx == 2 && cy == 2) {
-              max_delta_acs *= 0.8;
+              max_delta_acs *= 0.7;
             }
             if (max_delta_acs > kMaxDelta) continue;
           }

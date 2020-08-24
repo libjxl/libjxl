@@ -111,6 +111,23 @@ enum JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf, size_t len) {
   return JPEGXL_SIG_INVALID;
 }
 
+size_t BitsPerChannel(JpegxlDataType data_type) {
+  switch (data_type) {
+    case JPEGXL_TYPE_BOOLEAN:
+      return 1;
+    case JPEGXL_TYPE_UINT8:
+      return 8;
+    case JPEGXL_TYPE_UINT16:
+      return 16;
+    case JPEGXL_TYPE_UINT32:
+      return 32;
+    case JPEGXL_TYPE_FLOAT:
+      return 32;
+      // No default, give compiler error if new type not handled.
+  }
+  return 0;  // Indicate invalid data type.
+}
+
 enum class DecoderStage : uint32_t {
   kInited,
   kStarted,
@@ -146,6 +163,7 @@ struct JpegxlDecoderStruct {
   // Owned by the caller
   void* image_out_buffer = nullptr;
   size_t image_out_size = 0;
+  JpegxlPixelFormat image_out_format;
 
   jxl::CodecInOut io;
 };
@@ -329,6 +347,7 @@ JpegxlDecoderStatus JpegxlDecoderReadBasicInfo(JpegxlDecoder* dec,
 
   dec->io.metadata.m2.nonserialized_only_parse_basic_info = true;
   JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dec->io.metadata));
+  dec->io.metadata.m2.nonserialized_only_parse_basic_info = false;
   dec->got_basic_info = true;
   dec->basic_info_size_hint = 0;
 
@@ -381,6 +400,41 @@ JpegxlDecoderStatus JpegxlDecoderReadAllHeaders(JpegxlDecoder* dec,
   dec->got_all_headers = true;
 
   return JPEGXL_DEC_SUCCESS;
+}
+
+static void ConvertAlpha(size_t bits_in, const jxl::ImageU& in, size_t bits_out,
+                         jxl::ImageU* out) {
+  size_t xsize = in.xsize();
+  size_t ysize = in.ysize();
+
+  // Error checked elsewhere, but ensure clang-tidy does not report division
+  // through zero.
+  if (bits_in == 0 || bits_out == 0) return;
+
+  if (bits_in < bits_out) {
+    // Multiplier such that bits are duplicated, e.g. when going from 4 bits
+    // to 16 bits, converts 0x5 into 0x5555.
+    uint16_t mul = ((1ull << bits_out) - 1ull) / ((1ull << bits_in) - 1ull);
+    for (size_t y = 0; y < ysize; ++y) {
+      const uint16_t* JXL_RESTRICT row_in = in.Row(y);
+      uint16_t* JXL_RESTRICT row_out = out->Row(y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = row_in[x] * mul;
+      }
+    }
+  } else {
+    // E.g. divide through 257 when converting 16-bit to 8-bit
+    uint16_t div = ((1ull << bits_in) - 1ull) / ((1ull << bits_out) - 1ull);
+    // Add for round to nearest division.
+    uint16_t add = 1 << (bits_out - 1);
+    for (size_t y = 0; y < ysize; ++y) {
+      const uint16_t* JXL_RESTRICT row_in = in.Row(y);
+      uint16_t* JXL_RESTRICT row_out = out->Row(y);
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = (row_in[x] + add) / div;
+      }
+    }
+  }
 }
 
 JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
@@ -450,7 +504,6 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
     jxl::Span<const uint8_t> compressed(in, size);
     jxl::Status status =
         jxl::DecodeFile(dparams, compressed, &dec->io, nullptr, nullptr);
-
     if (!status) {
       // The C++ implementation does not yet support streaming, and also does
       // not yet support indicating whether it failed due to not enough data or
@@ -463,7 +516,6 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
       // TODO(lode): after that, support streaming with partial state
       return JPEGXL_DEC_ERROR;
     }
-
     dec->got_full_image = true;
   }
 
@@ -474,21 +526,50 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
     if (!dec->image_out_buffer) {
       return JPEGXL_DEC_NEED_MORE_OUTPUT;
     }
+
+    const JpegxlPixelFormat& format = dec->image_out_format;
+
+    size_t xsize = dec->xsize;
+    size_t ysize = dec->ysize;
+
     const ColorEncoding& color = dec->io.metadata.color_encoding;
-    bool has_alpha = false;
+    bool want_alpha = format.num_channels == 2 || format.num_channels == 4;
     bool alpha_premultiplied = false;
-    const jxl::ImageU* alpha = nullptr;
+    size_t bits_per_sample = BitsPerChannel(format.data_type);
     size_t alpha_bits = 0;
-    size_t bits_per_sample = 8;
-    bool big_endian = false;
+    bool big_endian = true;
+    const jxl::ImageU* alpha = nullptr;
+    jxl::ImageU alpha_temp;
+    if (want_alpha) {
+      if (dec->io.frames[0].HasAlpha()) {
+        alpha = &dec->io.frames[0].alpha();
+        alpha_bits = dec->io.metadata.GetAlphaBits();
+        if (alpha_bits == 0 || bits_per_sample == 0) {
+          return JXL_API_ERROR("invalid bit depth");
+        }
+        if (alpha_bits != bits_per_sample) {
+          alpha_temp = jxl::ImageU(xsize, ysize);
+          ConvertAlpha(alpha_bits, dec->io.frames[0].alpha(), bits_per_sample,
+                       &alpha_temp);
+          alpha_bits = bits_per_sample;
+          alpha = &alpha_temp;
+        }
+      } else {
+        // ExternalImage treats empty alpha image as opaque.
+        alpha = &alpha_temp;
+        alpha_bits = 8;
+      }
+    }
+
     jxl::CodecIntervals* intervals = nullptr;
     const jxl::ExternalImage external(
         dec->thread_pool.get(), dec->io.frames[0].color(), jxl::Rect(dec->io),
-        color, color, has_alpha, alpha_premultiplied, alpha, alpha_bits,
+        color, color, want_alpha, alpha_premultiplied, alpha, alpha_bits,
         bits_per_sample, big_endian, intervals);
     if (dec->image_out_size < external.Bytes().size()) {
       return JPEGXL_DEC_NEED_MORE_OUTPUT;
     }
+
     memcpy(dec->image_out_buffer, external.Bytes().data(),
            external.Bytes().size());
 
@@ -725,13 +806,24 @@ JpegxlDecoderStatus JpegxlDecoderGetICCProfile(const JpegxlDecoder* dec,
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
     const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size) {
   if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
-  if (!(format->num_channels == 3 && format->data_type == JPEGXL_TYPE_UINT8)) {
-    return JXL_API_ERROR(
-        "Decoder output formats other than RGB 8-bit not yet implemented");
+  if (format->num_channels > 4) {
+    return JXL_API_ERROR("More than 4 channels not supported");
+  }
+  if (format->num_channels < 3) {
+    return JXL_API_ERROR("Grayscale not yet supported");
   }
 
-  // For now only 8-bit RGB is supported, so the size is hard-coded.
-  *size = dec->xsize * dec->ysize * 3;
+  size_t bits = BitsPerChannel(format->data_type);
+
+  if (bits == 0) {
+    return JXL_API_ERROR("Invalid data type");
+  }
+
+  size_t row_size =
+      (dec->xsize * format->num_channels * bits + jxl::kBitsPerByte - 1) /
+      jxl::kBitsPerByte;
+  *size = row_size * dec->ysize;
+
   return JPEGXL_DEC_SUCCESS;
 }
 
@@ -753,6 +845,7 @@ JpegxlDecoderStatus JpegxlDecoderSetImageOutBuffer(
 
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
+  dec->image_out_format = *format;
 
   return JPEGXL_DEC_SUCCESS;
 }

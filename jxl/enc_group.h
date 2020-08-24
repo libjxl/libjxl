@@ -29,6 +29,7 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                          AuxOut* aux_out);
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
+                                        size_t histogram_idx,
                                         const PassesEncoderState& enc_state,
                                         BitWriter* writer, AuxOut* aux_out);
 

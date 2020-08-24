@@ -81,6 +81,7 @@ bool DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
       std::fill(context_map->begin(), context_map->end(), 0);
     }
   } else {
+    bool use_mtf = input->ReadFixedBits<1>();
     ANSCode code;
     std::vector<uint8_t> dummy_ctx_map;
     // Usage of LZ77 is disallowed if decoding only two symbols. This doesn't
@@ -103,7 +104,9 @@ bool DecodeContextMap(std::vector<uint8_t>* context_map, size_t* num_htrees,
     if (!reader.CheckANSFinalState()) {
       return JXL_FAILURE("Invalid context map");
     }
-    InverseMoveToFrontTransform(context_map->data(), context_map->size());
+    if (use_mtf) {
+      InverseMoveToFrontTransform(context_map->data(), context_map->size());
+    }
   }
   *num_htrees = *std::max_element(context_map->begin(), context_map->end()) + 1;
   return VerifyContextMap(*context_map, *num_htrees);

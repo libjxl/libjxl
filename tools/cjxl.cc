@@ -665,6 +665,7 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
     }
     const double t1 = jxl::Now();
     stats.NotifyElapsed(t1 - t0);
+    stats.SetImageSize(io.xsize(), io.ysize());
   }
 
   if (print_stats) {
@@ -673,7 +674,7 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
     fprintf(stderr, "Compressed to %zu bytes (%.3f bpp%s).\n",
             compressed->size(), bpp / io.frames.size(),
             io.frames.size() == 1 ? "" : "/frame");
-    JXL_CHECK(stats.Print(io.xsize(), io.ysize(), args.num_threads));
+    JXL_CHECK(stats.Print(args.num_threads));
     if (args.params.verbose) {
       aux_out.Print(1);
     }

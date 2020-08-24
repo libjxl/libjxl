@@ -146,6 +146,24 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   const float quant_scale = dec_state->shared->quantizer.Scale();
 
+  HWY_ALIGN float scaled_qtable[64 * 3];
+
+  if (decoded->IsJPEG()) {
+    const std::vector<QuantEncoding>& qe =
+        dec_state->shared->matrices.encodings();
+    if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
+        qe[0].qraw.qtable_den_shift != 0) {
+      return JXL_FAILURE(
+          "Quantization table is not a JPEG quantization table.");
+    }
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t i = 0; i < 64; i++) {
+        scaled_qtable[64 * c + i] = 1.0f * (*qe[0].qraw.qtable)[64 + i] /
+                                    (*qe[0].qraw.qtable)[64 * c + i];
+      }
+    }
+  }
+
   // Apply image features to
   // - the whole AC group, if no loop filtering is enabled, or
   // - only the interior part of the group, skipping the border
@@ -176,9 +194,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                       yend - ystart);
 
   if (cs != YCbCrChromaSubsampling::k444) {
-    if (decoded->IsJPEG())
-      return JXL_FAILURE(
-          "Decoding to JPEG is not supported with chroma subsampling");
     size_t hshift = HShift(cs);
     size_t vshift = VShift(cs);
     Rect cr(block_rect.x0() >> hshift, block_rect.y0() >> vshift,
@@ -231,6 +246,22 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         JXL_RETURN_IF_ERROR(
             get_block->GetBlock(bx, by, acs, size, log2_covered_blocks, block));
 
+        if (JXL_UNLIKELY(decoded->IsJPEG())) {
+          for (size_t c : {1, 0, 2}) {
+            if ((c != 1 && (bx >> hshift) << hshift != bx) ||
+                (c != 1 && (by >> vshift) << vshift != by)) {
+              continue;
+            }
+            size_t sbx = c == 1 ? bx : bx >> hshift;
+            float* JXL_RESTRICT idct_pos = idct_row[c] + sbx * kBlockDim;
+            Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
+                                 ToLines(idct_pos, idct_stride));
+            idct_pos[0] = dc_rows[c][sbx];
+          }
+          bx += llf_x;
+          continue;
+        }
+
         // Dequantize and add predictions.
         {
           DequantBlock(acs, inv_global_scale, row_quant[bx],
@@ -248,9 +279,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             continue;
           }
           size_t sbx = c == 1 ? bx : bx >> hshift;
-          //          fprintf(stderr, "%lu %f %f\n", c, dc_rows[c][sbx], block[c
-          //          * size]);
-          // IDCT
           float* JXL_RESTRICT idct_pos = idct_row[c] + sbx * kBlockDim;
           TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
                             idct_stride);
@@ -326,39 +354,27 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
               return JXL_FAILURE(
                   "Can only decode to JPEG if only DCT-8 is used.");
             }
-            const std::vector<QuantEncoding>& qe =
-                dec_state->shared->matrices.encodings();
-            if (qe.empty() ||
-                qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
-                qe[0].qraw.qtable_den_shift != 0) {
-              return JXL_FAILURE(
-                  "Quantization table is not a JPEG quantization table.");
-            }
 
             for (size_t c : {1, 0, 2}) {
               float* JXL_RESTRICT idct_pos = idct_row[c] + bx * kBlockDim;
-              idct_pos[0] = dc_rows[c][bx];
+              // JPEG XL is transposed, JPEG is not.
               if (c == 1) {
-                for (int i = 1; i < 64; i++) {
-                  idct_pos[(i % 8) * idct_stride + (i / 8)] =
-                      block[c * size + i];
-                }
+                Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
+                                     ToLines(idct_pos, idct_stride));
               } else {
-                float scale = (c == 0 ? dec_state->shared->cmap.YtoXRatio(
-                                            row_cmap[c][abs_tx])
-                                      : dec_state->shared->cmap.YtoBRatio(
-                                            row_cmap[c][abs_tx]));
-                for (int i = 1; i < 64; i++) {
-                  size_t x = i % 8;
-                  size_t y = i / 8;
-                  // JPEG XL is transposed, JPEG is not.
-                  idct_pos[x * idct_stride + y] =
-                      block[c * size + i] +
-                      std::round(scale * block[size + i] *
-                                 (*qe[0].qraw.qtable)[64 + i] /
-                                 (*qe[0].qraw.qtable)[c * 64 + i]);
+                HWY_ALIGN float transposed_dct[64];
+                const auto scale = c == 0 ? x_cc_mul : b_cc_mul;
+                for (int i = 0; i < 64; i += Lanes(d)) {
+                  auto in = Load(d, block + c * size + i);
+                  auto in_y = Load(d, block + size + i);
+                  auto qt = Load(d, scaled_qtable + c * size + i);
+                  auto cfl_factor = scale * in_y * qt;
+                  Store(in + Round(cfl_factor), d, transposed_dct + i);
                 }
+                Transpose<8, 8>::Run(FromBlock(8, 8, transposed_dct),
+                                     ToLines(idct_pos, idct_stride));
               }
+              idct_pos[0] = dc_rows[c][bx];
             }
             bx += llf_x;
             continue;
@@ -552,7 +568,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
 // Decode quantized AC coefficients of DCT blocks.
 // LLF components in the output block will not be modified.
-Status DecodeACVarBlock(size_t log2_covered_blocks,
+Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         int32_t* JXL_RESTRICT row_nzeros,
                         const int32_t* JXL_RESTRICT row_nzeros_top,
                         size_t nzeros_stride, size_t c, size_t bx, size_t by,
@@ -579,7 +595,7 @@ Status DecodeACVarBlock(size_t log2_covered_blocks,
   size_t block_ctx_id = c_ctx * 5 + ord;
 
   const size_t nzero_ctx = NonZeroContext(predicted_nzeros, block_ctx_id);
-  nzeros = decoder->ReadHybridUint(nzero_ctx, br, context_map);
+  nzeros = decoder->ReadHybridUint(nzero_ctx + ctx_offset, br, context_map);
   if (nzeros + covered_blocks > size) {
     return JXL_FAILURE("Invalid AC: nzeros too large");
   }
@@ -597,8 +613,8 @@ Status DecodeACVarBlock(size_t log2_covered_blocks,
     PROFILER_ZONE("AcDecSkipLLF, reader");
     size_t prev = (nzeros > size / 16 ? 0 : 1);
     for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
-      const size_t ctx =
-          histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
+      const size_t ctx = ctx_offset + histo_offset +
+                         ZeroDensityContext(nzeros, k, covered_blocks,
                                             log2_covered_blocks, prev);
       const size_t u_coeff = decoder->ReadHybridUint(ctx, br, context_map);
       // Hand-rolled version of UnpackSigned, shifting before the conversion to
@@ -652,11 +668,10 @@ struct GetBlockFromBitstream {
 
       for (size_t pass = 0; JXL_UNLIKELY(pass < num_passes); pass++) {
         JXL_RETURN_IF_ERROR(DecodeACVarBlock(
-            log2_covered_blocks, row_nzeros[pass][c], row_nzeros_top[pass][c],
-            nzeros_stride, c, sbx, sby, acs,
-            &coeff_orders[idx[pass] * kCoeffOrderSize], readers[pass],
-            &decoders[pass], context_map[idx[pass]], block_c,
-            shift_for_pass[pass]));
+            ctx_offset[pass], log2_covered_blocks, row_nzeros[pass][c],
+            row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, acs,
+            &coeff_orders[pass * kCoeffOrderSize], readers[pass],
+            &decoders[pass], context_map[pass], block_c, shift_for_pass[pass]));
       }
     }
     return true;
@@ -675,7 +690,7 @@ struct GetBlockFromBitstream {
     this->shift_for_pass = dec_state->shared->frame_header.passes.shift;
     this->group_dec_cache = group_dec_cache;
     for (size_t pass = 0; pass < num_passes; pass++) {
-      // Select which histogram to use among those of the current pass.
+      // Select which histogram set to use among those of the current pass.
       size_t cur_histogram = 0;
       if (histo_selector_bits != 0) {
         cur_histogram = readers[pass]->ReadBits(histo_selector_bits);
@@ -683,13 +698,9 @@ struct GetBlockFromBitstream {
       if (cur_histogram >= dec_state->shared->num_histograms) {
         return JXL_FAILURE("Invalid histogram selector");
       }
-      // GetNumPasses() is *not* the same as num_passes!
-      idx[pass] =
-          cur_histogram * dec_state->shared->frame_header.passes.num_passes +
-          pass;
+      ctx_offset[pass] = cur_histogram * kNumContexts;
 
-      decoders[pass] =
-          ANSSymbolReader(&dec_state->code[idx[pass]], readers[pass]);
+      decoders[pass] = ANSSymbolReader(&dec_state->code[pass], readers[pass]);
     }
     nzeros_stride = group_dec_cache->num_nzeroes[0].PixelsPerRow();
     for (size_t i = 0; i < num_passes; i++) {
@@ -701,12 +712,12 @@ struct GetBlockFromBitstream {
   }
 
   const uint32_t* shift_for_pass = nullptr;  // not owned
-  size_t idx[kMaxNumPasses];
   const coeff_order_t* JXL_RESTRICT coeff_orders;
   const std::vector<uint8_t>* JXL_RESTRICT context_map;
   ANSSymbolReader decoders[kMaxNumPasses];
   BitReader* JXL_RESTRICT* JXL_RESTRICT readers;
   size_t num_passes;
+  size_t ctx_offset[kMaxNumPasses];
   size_t nzeros_stride;
   int32_t* JXL_RESTRICT row_nzeros[kMaxNumPasses][3];
   const int32_t* JXL_RESTRICT row_nzeros_top[kMaxNumPasses][3];
@@ -755,14 +766,12 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
                    AuxOut* aux_out) {
   PROFILER_FUNC;
-  size_t histo_selector_bits =
-      dec_state->shared->num_histograms == 1
-          ? 0
-          : CeilLog2Nonzero(dec_state->shared->num_histograms - 1);
-
   const Rect block_group_rect = dec_state->shared->BlockGroupRect(group_idx);
 
   group_dec_cache->InitOnce(num_passes);
+
+  size_t histo_selector_bits =
+      CeilLog2Nonzero(dec_state->shared->num_histograms);
 
   GetBlockFromBitstream get_block;
   JXL_RETURN_IF_ERROR(get_block.Init(readers, num_passes, group_idx,

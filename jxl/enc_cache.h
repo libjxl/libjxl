@@ -69,6 +69,7 @@ struct PassesEncoderState {
   };
 
   std::vector<PassData> passes;
+  std::vector<uint8_t> histogram_idx;
 
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_qm_multiplier = 1.0f;

@@ -36,7 +36,6 @@
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
 #include "tools/djpegxl.h"
-#include "tools/djxl.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -79,20 +78,11 @@ int DecompressMain(int argc, const char *argv[]) {
   }
 
   jxl::ThreadPoolInternal pool(args.num_threads);
-  jxl::CodecInOut io;
   SpeedStats stats;
 
-  // Set JPEG quality.
-  // TODO(veluca): the decoder should set this value, and the argument should be
-  // an override.
-  // TODO(veluca): the decoder should directly produce a JPEG file, and this
-  // should not be necessary.
-  io.use_sjpeg = args.use_sjpeg;
-  io.jpeg_quality = args.jpeg_quality;
-
-  const auto signature =
-      JpegxlSignatureCheck(compressed.data(), compressed.size());
-  if (signature != JPEGXL_SIG_VALID) {
+  // Quick test that this looks like a valid JXL file.
+  if (JpegxlSignatureCheck(compressed.data(), compressed.size()) !=
+      JPEGXL_SIG_VALID) {
     fprintf(stderr, "Unknown compressed image format\n");
     return 1;
   }
@@ -108,24 +98,52 @@ int DecompressMain(int argc, const char *argv[]) {
   });
 
   jxl::AuxOut aux_out;
-  for (size_t i = 0; i < args.num_reps; ++i) {
-    if (!DecompressJxl(signature, jxl::Span<const uint8_t>(compressed),
-                       args.djxl_args.params, &pool, &io, &aux_out, &stats)) {
-      return 1;
+
+  if (args.decode_to_jpeg) {
+    // --jpeg flag passed, decode to JPEG.
+    args.params.keep_dct = true;
+
+    jxl::PaddedBytes jpg_output;
+    for (size_t i = 0; i < args.num_reps; ++i) {
+      if (!DecompressJxlToJPEG(jxl::Span<const uint8_t>(compressed), args,
+                               &pool, &jpg_output, &aux_out, &stats)) {
+        return 1;
+      }
     }
-  }
 
-  if (!WriteJxlOutput(args.djxl_args, args.file_out, io)) return 1;
+    if (args.file_out != nullptr) {
+      if (!jxl::WriteFile(jpg_output, args.file_out)) return 1;
+    }
+  } else {
+    jxl::CodecInOut io;
+    // Set JPEG quality.
+    // TODO(veluca): the decoder should set this value, and the argument should
+    // be an override.
+    // TODO(veluca): the decoder should directly produce a JPEG file, and this
+    // should not be necessary.
+    io.use_sjpeg = args.use_sjpeg;
+    io.jpeg_quality = args.jpeg_quality;
 
-  if (args.djxl_args.print_read_bytes) {
-    fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
+    // Decode to pixels.
+    for (size_t i = 0; i < args.num_reps; ++i) {
+      if (!DecompressJxlToPixels(jxl::Span<const uint8_t>(compressed),
+                                 args.params, &pool, &io, &aux_out, &stats)) {
+        return 1;
+      }
+    }
+
+    if (!WriteJxlOutput(args, args.file_out, io)) return 1;
+
+    if (args.print_read_bytes) {
+      fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
+    }
   }
 
   if (args.print_info == jxl::Override::kOn) {
     aux_out.Print(args.num_reps);
   }
 
-  JXL_CHECK(stats.Print(io.xsize(), io.ysize(), pool.NumWorkerThreads()));
+  JXL_CHECK(stats.Print(pool.NumWorkerThreads()));
 
   if (args.print_profile == jxl::Override::kOn) {
     PROFILER_PRINT_RESULTS();

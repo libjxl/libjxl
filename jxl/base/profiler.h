@@ -35,6 +35,7 @@
 #include <stdint.h>
 
 #include <hwy/targets.h>
+
 #include "jxl/base/arch_specific.h"
 #include "jxl/base/cache_aligned.h"
 #include "jxl/base/compiler_specific.h"

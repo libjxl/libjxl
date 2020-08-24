@@ -19,6 +19,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <string>
 
 #include "jxl/base/robust_statistics.h"
 
@@ -48,7 +49,7 @@ jxl::Status SpeedStats::GetSummary(SpeedStats::Summary* s) {
   if (elapsed_.size() == 2) {
     s->central_tendency = elapsed_[1];
     s->variability = 0.0;
-    s->type = "second: ";
+    s->type = " second:";
     return true;
   }
 
@@ -61,7 +62,7 @@ jxl::Status SpeedStats::GetSummary(SpeedStats::Summary* s) {
 
     s->central_tendency = std::pow(product, 1.0 / (elapsed_.size() - 1));
     s->variability = 0.0;
-    s->type = "geomean: ";
+    s->type = " geomean:";
     return true;
   }
 
@@ -73,25 +74,40 @@ jxl::Status SpeedStats::GetSummary(SpeedStats::Summary* s) {
   return true;
 }
 
-jxl::Status SpeedStats::Print(const size_t xsize, const size_t ysize,
-                              const size_t worker_threads) {
+namespace {
+
+std::string SummaryStat(double value, const char* unit,
+                        const SpeedStats::Summary& s) {
+  if (value == 0.) return "";
+
+  char stat_str[100] = {'\0'};
+  const double value_tendency = value / s.central_tendency;
+  // Note flipped order: higher elapsed = lower mpps.
+  const double value_min = value / s.max;
+  const double value_max = value / s.min;
+
+  JXL_ASSERT(snprintf(stat_str, sizeof(stat_str), ",%s %.2f %s/s [%.2f, %.2f]",
+                      s.type, value_tendency, unit, value_min,
+                      value_max) < sizeof(stat_str));
+  return stat_str;
+}
+
+}  // namespace
+
+jxl::Status SpeedStats::Print(size_t worker_threads) {
   Summary s;
   JXL_RETURN_IF_ERROR(GetSummary(&s));
+  std::string mps_stats = SummaryStat(xsize_ * ysize_ * 1e-6, "MP", s);
+  std::string mbs_stats = SummaryStat(file_size_ * 1e-6, "MB", s);
+
   char variability[20] = {'\0'};
   if (s.variability != 0.0) {
     snprintf(variability, sizeof(variability), " (var %.2f)", s.variability);
   }
 
-  const double megapixels = xsize * ysize * 1E-6;
-  const double mpps = megapixels / s.central_tendency;
-  // Note flipped order: higher elapsed = lower mpps.
-  const double mpps_min = megapixels / s.max;
-  const double mpps_max = megapixels / s.min;
-
-  fprintf(stderr,
-          "%zu x %zu, %s%.2f MP/s [%.2f, %.2f]%s, %zu reps, %zu threads.\n",
-          xsize, ysize, s.type, mpps, mpps_min, mpps_max, variability,
-          elapsed_.size(), worker_threads);
+  fprintf(stderr, "%zu x %zu%s%s%s, %zu reps, %zu threads.\n", xsize_, ysize_,
+          mps_stats.c_str(), mbs_stats.c_str(), variability, elapsed_.size(),
+          worker_threads);
   return true;
 }
 

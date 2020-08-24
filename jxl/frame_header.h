@@ -44,7 +44,7 @@ enum class FrameEncoding : uint32_t {
 
 enum class ColorTransform : uint32_t { kXYB, kNone, kYCbCr };
 
-enum class YCbCrChromaSubsampling : uint32_t { k444, k420, k422, k411, kAuto };
+enum class YCbCrChromaSubsampling : uint32_t { k444, k420, k422, k440, kAuto };
 
 static inline size_t HShift(YCbCrChromaSubsampling cs) {
   switch (cs) {
@@ -52,8 +52,8 @@ static inline size_t HShift(YCbCrChromaSubsampling cs) {
       return 0;
     case YCbCrChromaSubsampling::k422:
       return 1;
-    case YCbCrChromaSubsampling::k411:
-      return 2;
+    case YCbCrChromaSubsampling::k440:
+      return 0;
     case YCbCrChromaSubsampling::k420:
       return 1;
     default:
@@ -67,8 +67,8 @@ static inline size_t VShift(YCbCrChromaSubsampling cs) {
       return 0;
     case YCbCrChromaSubsampling::k422:
       return 0;
-    case YCbCrChromaSubsampling::k411:
-      return 0;
+    case YCbCrChromaSubsampling::k440:
+      return 1;
     case YCbCrChromaSubsampling::k420:
       return 1;
     default:
@@ -102,7 +102,7 @@ static inline const char* EnumName(YCbCrChromaSubsampling /*unused*/) {
 static inline constexpr uint64_t EnumBits(YCbCrChromaSubsampling /*unused*/) {
   return MakeBit(YCbCrChromaSubsampling::k444) |
          MakeBit(YCbCrChromaSubsampling::k420) |
-         MakeBit(YCbCrChromaSubsampling::k411) |
+         MakeBit(YCbCrChromaSubsampling::k440) |
          MakeBit(YCbCrChromaSubsampling::k422);
 }
 

@@ -71,13 +71,37 @@ uint32_t ComputeUsedOrders(const SpeedTier speed,
   return ret;
 }
 
-void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
+void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
+                       const AcStrategyImage& ac_strategy,
                        const FrameDimensions& frame_dim, uint32_t used_orders,
                        coeff_order_t* JXL_RESTRICT order) {
   int32_t num_zeros[kCoeffOrderSize] = {};
+  // If compressing at high speed and only using 8x8 DCTs, only consider a
+  // subset of blocks.
+  double block_fraction = 1.0f;
+  // TODO(veluca): figure out why sampling blocks if non-8x8s are used makes
+  // encoding significantly less dense.
+  if (speed >= SpeedTier::kSquirrel && used_orders == 1) {
+    block_fraction = 0.5f;
+  }
   // No need to compute number of zero coefficients if all orders are the
   // default.
   if (used_orders != 0) {
+    uint64_t threshold =
+        (std::numeric_limits<uint64_t>::max() >> 32) * block_fraction;
+    uint64_t s[2] = {0x94D049BB133111EBull, 0xBF58476D1CE4E5B9ull};
+    // Xorshift128+ adapted from xorshift128+-inl.h
+    auto use_sample = [&]() {
+      auto s1 = s[0];
+      const auto s0 = s[1];
+      const auto bits = s1 + s0;  // b, c
+      s[0] = s0;
+      s1 ^= s1 << 23;
+      s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
+      s[1] = s1;
+      return (bits >> 32) <= threshold;
+    };
+
     // Count number of zero coefficients, separately for each DCT band.
     for (size_t group_index = 0; group_index < frame_dim.num_groups;
          group_index++) {
@@ -98,14 +122,14 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
         for (size_t bx = 0; bx < rect.xsize(); ++bx) {
           AcStrategy acs = acs_row[bx];
           if (!acs.IsFirstBlock()) continue;
+          if (!use_sample()) continue;
           size_t size = kDCTBlockSize << acs.log2_covered_blocks();
           for (size_t c = 0; c < 3; ++c) {
             const size_t order_offset =
                 CoeffOrderOffset(kStrategyOrder[acs.RawStrategy()], c);
             for (size_t k = 0; k < size; k++) {
-              if (rows[c][ac_offset + k] == 0) {
-                num_zeros[order_offset + k]++;
-              }
+              bool is_zero = rows[c][ac_offset + k] == 0;
+              num_zeros[order_offset + k] += is_zero ? 1 : 0;
             }
             // Ensure LLFs are first in the order.
             size_t cx = acs.covered_blocks_x();
@@ -174,6 +198,7 @@ void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
     }
   }
 }
+
 namespace {
 constexpr uint32_t kPermutationContexts = 8;
 uint32_t Context(uint32_t val) {

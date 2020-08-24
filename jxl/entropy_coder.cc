@@ -158,7 +158,6 @@ int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
 // context; if this number is above 63, a specific context is used.  If the
 // number of nonzeros of a strategy is above 63, it is written directly using a
 // fixed number of bits (that depends on the size of the strategy).
-// TODO(veluca): consider predicting #zeros with predictor-inl.h.
 void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
                           const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,

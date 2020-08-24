@@ -287,19 +287,18 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
 }
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
+                                        size_t histo_idx,
                                         const PassesEncoderState& enc_state,
                                         BitWriter* writer, AuxOut* aux_out) {
   // Select which histogram to use among those of the current pass.
-  const size_t cur_histogram = 0;
   const size_t num_histograms = enc_state.shared.num_histograms;
   // num_histograms is 0 only for lossless.
-  JXL_ASSERT(num_histograms == 0 || cur_histogram < num_histograms);
-  size_t histo_selector_bits =
-      num_histograms == 1 ? 0 : CeilLog2Nonzero(num_histograms - 1);
+  JXL_ASSERT(num_histograms == 0 || histo_idx < num_histograms);
+  size_t histo_selector_bits = CeilLog2Nonzero(num_histograms);
 
   if (histo_selector_bits != 0) {
     BitWriter::Allotment allotment(writer, histo_selector_bits);
-    writer->Write(histo_selector_bits, cur_histogram);
+    writer->Write(histo_selector_bits, histo_idx);
     ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
   }
   WriteTokens(enc_state.passes[pass_idx].ac_tokens[group_idx],

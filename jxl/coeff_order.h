@@ -59,7 +59,8 @@ uint32_t ComputeUsedOrders(SpeedTier speed, const AcStrategyImage& ac_strategy,
 // Modify zig-zag order, so that DCT bands with more zeros go later.
 // Order of DCT bands with same number of zeros is untouched, so
 // permutation will be cheaper to encode.
-void ComputeCoeffOrder(const ACImage3& acs, const AcStrategyImage& ac_strategy,
+void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
+                       const AcStrategyImage& ac_strategy,
                        const FrameDimensions& frame_dim, uint32_t used_orders,
                        coeff_order_t* JXL_RESTRICT order);
 

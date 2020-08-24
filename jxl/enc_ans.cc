@@ -385,17 +385,21 @@ float ComputeHistoAndDataCost(const ANSHistBin* histogram, size_t alphabet_size,
          EstimateDataBits(histogram, counts.data(), alphabet_size);
 }
 
-uint32_t ComputeBestMethod(const ANSHistBin* histogram, size_t alphabet_size,
-                           float* cost, bool approximate = false) {
+uint32_t ComputeBestMethod(
+    const ANSHistBin* histogram, size_t alphabet_size, float* cost,
+    HistogramParams::ANSHistogramStrategy ans_histogram_strategy) {
   size_t method = 0;
   float fcost = ComputeHistoAndDataCost(histogram, alphabet_size, 0);
   for (uint32_t shift = 0; shift <= ANS_LOG_TAB_SIZE;
-       approximate ? shift += 2 : shift++) {
+       ans_histogram_strategy != HistogramParams::ANSHistogramStrategy::kPrecise
+           ? shift += 2
+           : shift++) {
     float c = ComputeHistoAndDataCost(histogram, alphabet_size, shift + 1);
     if (c < fcost) {
       method = shift + 1;
       fcost = c;
-    } else if (approximate) {
+    } else if (ans_histogram_strategy ==
+               HistogramParams::ANSHistogramStrategy::kFast) {
       // do not be as precise if estimating cost.
       break;
     }
@@ -408,10 +412,10 @@ uint32_t ComputeBestMethod(const ANSHistBin* histogram, size_t alphabet_size,
 
 // Returns an estimate of the cost of encoding this histogram and the
 // corresponding data.
-size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
-                                    size_t alphabet_size, size_t log_alpha_size,
-                                    bool use_prefix_code,
-                                    ANSEncSymbolInfo* info, BitWriter* writer) {
+size_t BuildAndStoreANSEncodingData(
+    HistogramParams::ANSHistogramStrategy ans_histogram_strategy,
+    const ANSHistBin* histogram, size_t alphabet_size, size_t log_alpha_size,
+    bool use_prefix_code, ANSEncSymbolInfo* info, BitWriter* writer) {
   if (use_prefix_code) {
     if (alphabet_size <= 1) return 0;
     std::vector<uint32_t> histo(alphabet_size);
@@ -455,7 +459,8 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
     alphabet_size = largest_symbol + 1;
   }
   float cost;
-  uint32_t method = ComputeBestMethod(histogram, alphabet_size, &cost);
+  uint32_t method = ComputeBestMethod(histogram, alphabet_size, &cost,
+                                      ans_histogram_strategy);
   JXL_ASSERT(cost >= 0);
   int num_symbols;
   int symbols[kMaxNumSymbolsForSmallCode] = {};
@@ -495,7 +500,8 @@ size_t BuildAndStoreANSEncodingData(const ANSHistBin* histogram,
 
 float ANSPopulationCost(const ANSHistBin* data, size_t alphabet_size) {
   float c;
-  ComputeBestMethod(data, alphabet_size, &c, /*approximate=*/true);
+  ComputeBestMethod(data, alphabet_size, &c,
+                    HistogramParams::ANSHistogramStrategy::kFast);
   return c;
 }
 
@@ -535,33 +541,43 @@ void ChooseUintConfigs(const HistogramParams& params,
   if (params.uint_method == HistogramParams::HybridUintMethod::kNone) return;
 
   // Brute-force method that tries a few options.
-  HybridUintConfig configs[] = {
-      HybridUintConfig(4, 2, 0),  // default
-      HybridUintConfig(4, 1, 0),  // less precise
-      HybridUintConfig(4, 2, 1),  // add sign
-      HybridUintConfig(4, 2, 2),  // add sign+parity
-      HybridUintConfig(4, 1, 2),  // add parity but less msb
-      // Same as above, but more direct coding.
-      HybridUintConfig(5, 2, 0), HybridUintConfig(5, 1, 0),
-      HybridUintConfig(5, 2, 1), HybridUintConfig(5, 2, 2),
-      HybridUintConfig(5, 1, 2),
-      // Same as above, but less direct coding.
-      HybridUintConfig(3, 2, 0), HybridUintConfig(3, 1, 0),
-      HybridUintConfig(3, 2, 1), HybridUintConfig(3, 1, 2),
-      // For near-lossless.
-      HybridUintConfig(4, 1, 3), HybridUintConfig(5, 1, 4),
-      HybridUintConfig(5, 2, 3), HybridUintConfig(6, 1, 5),
-      HybridUintConfig(6, 2, 4), HybridUintConfig(6, 0, 0),
-      // Other
-      HybridUintConfig(0, 0, 0),   // varlenuint
-      HybridUintConfig(2, 0, 1),   // works well for ctx map
-      HybridUintConfig(7, 0, 0),   // direct coding
-      HybridUintConfig(8, 0, 0),   // direct coding
-      HybridUintConfig(9, 0, 0),   // direct coding
-      HybridUintConfig(10, 0, 0),  // direct coding
-      HybridUintConfig(11, 0, 0),  // direct coding
-      HybridUintConfig(12, 0, 0),  // direct coding
-  };
+  std::vector<HybridUintConfig> configs;
+  if (params.uint_method == HistogramParams::HybridUintMethod::kBest) {
+    configs = {
+        HybridUintConfig(4, 2, 0),  // default
+        HybridUintConfig(4, 1, 0),  // less precise
+        HybridUintConfig(4, 2, 1),  // add sign
+        HybridUintConfig(4, 2, 2),  // add sign+parity
+        HybridUintConfig(4, 1, 2),  // add parity but less msb
+        // Same as above, but more direct coding.
+        HybridUintConfig(5, 2, 0), HybridUintConfig(5, 1, 0),
+        HybridUintConfig(5, 2, 1), HybridUintConfig(5, 2, 2),
+        HybridUintConfig(5, 1, 2),
+        // Same as above, but less direct coding.
+        HybridUintConfig(3, 2, 0), HybridUintConfig(3, 1, 0),
+        HybridUintConfig(3, 2, 1), HybridUintConfig(3, 1, 2),
+        // For near-lossless.
+        HybridUintConfig(4, 1, 3), HybridUintConfig(5, 1, 4),
+        HybridUintConfig(5, 2, 3), HybridUintConfig(6, 1, 5),
+        HybridUintConfig(6, 2, 4), HybridUintConfig(6, 0, 0),
+        // Other
+        HybridUintConfig(0, 0, 0),   // varlenuint
+        HybridUintConfig(2, 0, 1),   // works well for ctx map
+        HybridUintConfig(7, 0, 0),   // direct coding
+        HybridUintConfig(8, 0, 0),   // direct coding
+        HybridUintConfig(9, 0, 0),   // direct coding
+        HybridUintConfig(10, 0, 0),  // direct coding
+        HybridUintConfig(11, 0, 0),  // direct coding
+        HybridUintConfig(12, 0, 0),  // direct coding
+    };
+  } else if (params.uint_method == HistogramParams::HybridUintMethod::kFast) {
+    configs = {
+        HybridUintConfig(4, 2, 0),  // default
+        HybridUintConfig(4, 1, 2),  // add parity but less msb
+        HybridUintConfig(0, 0, 0),  // smallest histograms
+        HybridUintConfig(4, 1, 0),  // less precise
+    };
+  }
 
   std::vector<float> costs(clustered_histograms->size(),
                            std::numeric_limits<float>::max());
@@ -635,7 +651,7 @@ class HistogramBuilder {
       : histograms_(num_contexts) {}
 
   void VisitSymbol(int symbol, size_t histo_idx) {
-    JXL_ASSERT(histo_idx < histograms_.size());
+    JXL_DASSERT(histo_idx < histograms_.size());
     histograms_[histo_idx].Add(symbol);
   }
 
@@ -711,8 +727,9 @@ class HistogramBuilder {
       codes->encoding_info.back().resize(std::max<size_t>(1, num_symbol));
 
       cost += BuildAndStoreANSEncodingData(
-          clustered_histograms[c].data_.data(), num_symbol, log_alpha_size,
-          use_prefix_code, codes->encoding_info.back().data(), writer);
+          params.ans_histogram_strategy, clustered_histograms[c].data_.data(),
+          num_symbol, log_alpha_size, use_prefix_code,
+          codes->encoding_info.back().data(), writer);
     }
     return cost;
   }
@@ -866,8 +883,8 @@ void ApplyLZ77_RLE(const HistogramParams& params, size_t num_contexts,
 
 // Hash chain for LZ77 matching
 struct HashChain {
-  const Token* data_;
   size_t size_;
+  std::vector<uint32_t> data_;
 
   unsigned hash_num_values_ = 32768;
   unsigned hash_mask_ = hash_num_values_ - 1;
@@ -896,12 +913,16 @@ struct HashChain {
 
   HashChain(const Token* data, size_t size, size_t window_size,
             size_t min_length, size_t max_length, size_t distance_multiplier)
-      : data_(data),
-        size_(size),
+      : size_(size),
         window_size_(window_size),
         window_mask_(window_size - 1),
         min_length_(min_length),
         max_length_(max_length) {
+    data_.resize(size);
+    for (size_t i = 0; i < size; i++) {
+      data_[i] = data[i].value;
+    }
+
     head.resize(hash_num_values_, -1);
     val.resize(window_size_, -1);
     chain.resize(window_size_);
@@ -934,16 +955,14 @@ struct HashChain {
   uint32_t GetHash(size_t pos) const {
     uint32_t result = 0;
     if (pos + 2 < size_) {
-      result ^= (uint32_t)(data_[pos + 0].value << 0u);
-      result ^= (uint32_t)(data_[pos + 1].value << hash_shift_);
-      result ^= (uint32_t)(data_[pos + 2].value << (hash_shift_ * 2));
+      // TODO(lode): take the MSB's of the uint32_t values into account as well,
+      // given that the hash code itself is less than 32 bits.
+      result ^= (uint32_t)(data_[pos + 0] << 0u);
+      result ^= (uint32_t)(data_[pos + 1] << hash_shift_);
+      result ^= (uint32_t)(data_[pos + 2] << (hash_shift_ * 2));
     } else {
-      size_t amount, i;
-      if (pos >= size_) return 0;
-      amount = size_ - pos;
-      for (i = 0; i < amount; ++i) {
-        result ^= (uint32_t)(data_[pos + i].value << (i * hash_shift_));
-      }
+      // No need to compute hash of last 2 bytes, the length 2 is too short.
+      return 0;
     }
     return result & hash_mask_;
   }
@@ -952,7 +971,7 @@ struct HashChain {
     size_t end = pos + window_size_;
     if (end > size_) end = size_;
     if (prevzeros > 0) {
-      if (prevzeros >= window_mask_ && data_[end - 1].value == 0 &&
+      if (prevzeros >= window_mask_ && data_[end - 1] == 0 &&
           end == pos + window_size_) {
         return prevzeros;
       } else {
@@ -960,7 +979,7 @@ struct HashChain {
       }
     }
     uint32_t num = 0;
-    while (pos + num < end && data_[pos + num].value == 0) num++;
+    while (pos + num < end && data_[pos + num] == 0) num++;
     return num;
   }
 
@@ -972,7 +991,7 @@ struct HashChain {
     if (head[hashval] != -1) chain[wpos] = head[hashval];
     head[hashval] = wpos;
 
-    if (pos > 0 && data_[pos].value != data_[pos - 1].value) numzeros = 0;
+    if (pos > 0 && data_[pos] != data_[pos - 1]) numzeros = 0;
     numzeros = CountZeros(pos, numzeros);
 
     zeros[wpos] = numzeros;
@@ -995,34 +1014,37 @@ struct HashChain {
     int prev_dist = 0;
     int end = std::min<int>(pos + max_length_, size_);
     uint32_t chainlength = 0;
+    int best_len = 0;
     for (;;) {
       int dist = (hashpos <= wpos) ? (wpos - hashpos)
                                    : (wpos - hashpos + window_mask_ + 1);
       if (dist < prev_dist) break;
       prev_dist = dist;
-      auto it = special_dist_table_.find(dist);
-      int dist_symbol = (it == special_dist_table_.end())
-                            ? (num_special_distances_ + dist - 1)
-                            : it->second;
       int len = 0;
       if (dist > 0) {
         int i = pos;
         int j = pos - dist;
         if (numzeros > 3) {
           int r = std::min<int>(numzeros - 1, zeros[hashpos]);
+          if (i + r >= end) r = end - i - 1;
           i += r;
           j += r;
-          len += r;
         }
-        if (len > max_length_) len = max_length_;
-        JXL_DASSERT(len + pos <= size_);
-        while (i < end && data_[i].value == data_[j].value) {
+        while (i < end && data_[i] == data_[j]) {
           i++;
           j++;
-          len++;
         }
-        if (len >= min_length_) {
+        len = i - pos;
+        // This can trigger even if the new length is slightly smaller than the
+        // best length, because it is possible for a slightly cheaper distance
+        // symbol to occur.
+        if (len >= min_length_ && len + 2 >= best_len) {
+          auto it = special_dist_table_.find(dist);
+          int dist_symbol = (it == special_dist_table_.end())
+                                ? (num_special_distances_ + dist - 1)
+                                : it->second;
           found_match(len, dist_symbol);
+          if (len > best_len) best_len = len;
         }
       }
 

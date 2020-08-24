@@ -15,7 +15,9 @@
 #include "jxl/gauss_blur.h"
 
 #include <cmath>
+#include <hwy/targets.h>
 #include <vector>
+
 #include "gtest/gtest.h"
 #include "jxl/base/os_specific.h"
 #include "jxl/base/robust_statistics.h"
@@ -92,6 +94,35 @@ ImageF Convolve(const ImageF& in, const std::vector<float>& kernel) {
   return ConvolveAndSample(in, kernel, 1);
 }
 
+// Higher-precision version for accuracy test.
+ImageF ConvolveAndTransposeF64(const ImageF& in,
+                               const std::vector<double>& kernel) {
+  JXL_ASSERT(kernel.size() % 2 == 1);
+  ImageF out(in.ysize(), in.xsize());
+  const int r = kernel.size() / 2;
+  std::vector<float> row_tmp(in.xsize() + 2 * r);
+  float* const JXL_RESTRICT rowp = &row_tmp[r];
+  const double* const kernelp = &kernel[r];
+  for (size_t y = 0; y < in.ysize(); ++y) {
+    ExtrapolateBorders(in.Row(y), rowp, in.xsize(), r);
+    for (size_t x = 0, ox = 0; x < in.xsize(); ++x, ++ox) {
+      double sum = 0.0;
+      for (int i = -r; i <= r; ++i) {
+        sum += rowp[std::max<int>(
+                   0, std::min<int>(static_cast<int>(x) + i, in.xsize()))] *
+               kernelp[i];
+      }
+      out.Row(ox)[y] = static_cast<float>(sum);
+    }
+  }
+  return out;
+}
+
+ImageF ConvolveF64(const ImageF& in, const std::vector<double>& kernel) {
+  ImageF tmp = ConvolveAndTransposeF64(in, kernel);
+  return ConvolveAndTransposeF64(tmp, kernel);
+}
+
 void TestDirac2D(size_t xsize, size_t ysize, double sigma) {
   ImageF in(xsize, ysize);
   ZeroFillImage(&in);
@@ -123,6 +154,43 @@ TEST(GaussBlurTest, Test2D) {
       }
     }
   }
+}
+
+// Slow (44 sec). To run, remove the disabled prefix.
+TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
+  const double sigma = 7.0;
+  const auto rg = CreateRecursiveGaussian(sigma);
+
+  // IPOL accuracy test uses 10^-15 tolerance, this is 2*10^-11.
+  const size_t radius = static_cast<size_t>(7 * sigma);
+  const std::vector<double> kernel = GaussianKernel(radius, sigma);
+
+  const size_t length = 16384;
+  ImageF inputs(length, 1);
+  ZeroFillImage(&inputs);
+
+  auto outputs = hwy::AllocateAligned<float>(length);
+
+  // One per center position
+  auto sum_abs_err = hwy::AllocateAligned<double>(length);
+  std::fill(sum_abs_err.get(), sum_abs_err.get() + length, 0.0);
+
+  for (size_t center = radius; center < length - radius; ++center) {
+    inputs.Row(0)[center - 1] = 0.0f;  // reset last peak, entire array now 0
+    inputs.Row(0)[center] = 1.0f;
+    FastGaussian1D(rg, inputs.Row(0), length, outputs.get());
+
+    const ImageF outputs_fir = ConvolveF64(inputs, kernel);
+
+    for (size_t i = 0; i < length; ++i) {
+      const float abs_err = std::abs(outputs[i] - outputs_fir.Row(0)[i]);
+      sum_abs_err[i] += static_cast<double>(abs_err);
+    }
+  }
+
+  const double max_abs_err =
+      *std::max_element(sum_abs_err.get(), sum_abs_err.get() + length);
+  printf("Max abs err: %.8e\n", max_abs_err);
 }
 
 void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
@@ -394,7 +462,13 @@ TEST(GaussBlurTest, TestSign) {
 template <class Func>
 double Measure(const size_t xsize, const size_t ysize, int div,
                const Func& func) {
-  const int reps = 50 / div;
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    defined(THREAD_SANITIZER)
+  int reps = 10 / div;
+#else
+  int reps = 2000 / div;
+#endif
+  if (reps < 2) reps = 2;
   std::vector<double> elapsed;
   for (int i = 0; i < reps; ++i) {
     elapsed.push_back(func(xsize, ysize));
@@ -412,7 +486,39 @@ double Measure(const size_t xsize, const size_t ysize, int div,
   return (xsize * ysize * 1E-6) / mean_elapsed;
 }
 
+void Benchmark1D() {
+  // Uncomment to disable SIMD and force and scalar implementation
+  // hwy::DisableTargets(~HWY_SCALAR);
+
+  const size_t length = 16384;  // (same value used for running IPOL benchmark)
+  const double sigma = 7.0;     // (from Butteraugli application)
+  const double mps_rg1 =
+      Measure(length, 1, 1, [sigma](size_t xsize, size_t ysize) {
+        ImageF in(length, 1);
+        const float expected = length;
+        FillImage(expected, &in);
+
+        ImageF temp(length, 1);
+        ImageF out(length, 1);
+        const auto rg = CreateRecursiveGaussian(sigma);
+        const double t0 = Now();
+        FastGaussian1D(rg, in.Row(0), length, out.Row(0));
+        const double t1 = Now();
+        // Prevent optimizing out
+        const float actual = out.ConstRow(0)[length / 2];
+        const float rel_err = std::abs(actual - expected) / expected;
+        EXPECT_LT(rel_err, 9E-5);
+        return t1 - t0;
+      });
+  // Report milliseconds for comparison with IPOL benchmark
+  const double milliseconds = (1E-6 * length) / mps_rg1 * 1E3;
+  printf("%5zu @%.1f: rg 1D %e\n", length, sigma, milliseconds);
+}
+
 void Benchmark(size_t xsize, size_t ysize, double sigma) {
+  // Uncomment to run AVX2
+  // hwy::DisableTargets(HWY_AVX3);
+
   const double mps_rg =
       Measure(xsize, ysize, 1, [sigma](size_t xsize, size_t ysize) {
         ImageF in(xsize, ysize);
@@ -429,12 +535,12 @@ void Benchmark(size_t xsize, size_t ysize, double sigma) {
         // Prevent optimizing out
         const float actual = out.ConstRow(ysize / 2)[xsize / 2];
         const float rel_err = std::abs(actual - expected) / expected;
-        EXPECT_LT(rel_err, 3E-5);
+        EXPECT_LT(rel_err, 9E-5);
         return t1 - t0;
       });
 
-  const double mps_old =
-      Measure(xsize, ysize, 10, [sigma](size_t xsize, size_t ysize) {
+  const double mps_fir =
+      Measure(xsize, ysize, 100, [sigma](size_t xsize, size_t ysize) {
         ImageF in(xsize, ysize);
         const float expected = xsize + ysize;
         FillImage(expected, &in);
@@ -451,8 +557,8 @@ void Benchmark(size_t xsize, size_t ysize, double sigma) {
         return t1 - t0;
       });
 
-  const double mps_sep7 =
-      Measure(xsize, ysize, 1, [](size_t xsize, size_t ysize) {
+  const double mps_simd7 =
+      Measure(xsize, ysize, 10, [](size_t xsize, size_t ysize) {
         ImageF in(xsize, ysize);
         const float expected = xsize + ysize;
         FillImage(expected, &in);
@@ -475,18 +581,26 @@ void Benchmark(size_t xsize, size_t ysize, double sigma) {
         return t1 - t0;
       });
 
-  printf("%4zu x %4zu @%.1f: old %5.1f, sep7 %5.1f, rg %5.1f\n", xsize, ysize,
-         sigma, mps_old, mps_sep7, mps_rg);
+  printf("%4zu x %4zu @%.1f: fir %5.1f, simd7 %5.1f, rg %5.1f\n", xsize, ysize,
+         sigma, mps_fir, mps_simd7, mps_rg);
 }
 
 TEST(GaussBlurTest, Benchmark) {
-  Benchmark(128, 128, 2);
-  Benchmark(128, 128, 4);
+  Benchmark1D();
 
-  Benchmark(300, 300, 2);
-  Benchmark(300, 300, 4);
+  Benchmark(128, 128, 7);
+  Benchmark(128, 207, 7);
+  Benchmark(207, 128, 7);
+  Benchmark(207, 207, 7);
+  Benchmark(207, 334, 7);
+  Benchmark(334, 207, 7);
+  Benchmark(334, 334, 7);
+  Benchmark(334, 540, 7);
+  Benchmark(540, 334, 7);
+  Benchmark(540, 540, 7);
 
-  Benchmark(501, 501, 7);
+  Benchmark(1920, 1080, 7);
+
   PROFILER_PRINT_RESULTS();
 }
 

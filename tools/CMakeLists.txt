@@ -122,7 +122,6 @@ target_link_libraries(fuzzer_corpus cjpegxltool)
 # Main decompressor.
 add_executable(djpegxl
     codec_config.cc
-    djxl.cc
     djpegxl.cc
     djpegxl_main.cc
     speed_stats.cc

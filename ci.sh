@@ -814,15 +814,20 @@ cmd_cpuset() {
 
 # Return the encoding/decoding speed from the Stats output.
 _speed_from_output() {
-  local speed="$@"
-  speed="${speed%% MP/s*}"
-  speed="${speed##* }"
-  echo "${speed}"
+  local speed="$1"
+  local unit="${2:-MP/s}"
+  if [[ "${speed}" == *"${unit}"* ]]; then
+    speed="${speed%% ${unit}*}"
+    speed="${speed##* }"
+    echo "${speed}"
+  fi
 }
+
 
 # Run benchmarks on ARM for the big and little CPUs.
 cmd_arm_benchmark() {
-  local benchmarks=(
+  # Flags used for cjpegxl encoder with .png inputs
+  local jxl_png_benchmarks=(
     # Lossy options:
     "--jpeg1 --jpeg_quality 90"
     "--jpeg1 --jpeg_quality 85 --jpeg_420"
@@ -843,6 +848,14 @@ cmd_arm_benchmark() {
     "--modular-group -Q 97"
   )
 
+  # Flags used for cjpegxl encoder with .jpg inputs. These should do lossless
+  # JPEG recompression (of pixels or full jpeg).
+  local jxl_jpeg_benchmarks=(
+    "--num_reps=3"
+  )
+
+  # Flags used for cbrunsli encoder with .jpg inputs. These are lossless
+  # JPEG recompression of the whole file only.
   local brunsli_benchmarks=(
     "--num_reps=6 --quant=0"
     "--num_reps=6 --quant=20"
@@ -850,6 +863,10 @@ cmd_arm_benchmark() {
 
   local images=(
     "third_party/testdata/imagecompression.info/flower_foveon.png"
+  )
+
+  local jpg_images=(
+    "third_party/testdata/imagecompression.info/flower_foveon.png.im_q85_420.jpg"
   )
 
   if [[ "${SKIP_CPUSET:-}" == "1" ]]; then
@@ -872,7 +889,6 @@ cmd_arm_benchmark() {
 
   local jpg_dirname="third_party/corpora/jpeg"
   mkdir -p "${jpg_dirname}"
-  local jpg_images=()
   local jpg_qualities=( 50 80 95 )
   for src_img in "${images[@]}"; do
     for q in "${jpg_qualities[@]}"; do
@@ -888,7 +904,7 @@ cmd_arm_benchmark() {
   local runs_file="${output_dir}/runs.txt"
 
   if [[ ! -e "${runs_file}" ]]; then
-    echo -e "flags\tsrc_img\tsrc size\tsrc pixels\tcpuset\tenc size (B)\tenc speed (MP/s)\tdec speed (MP/s)" |
+    echo -e "binary\tflags\tsrc_img\tsrc size\tsrc pixels\tcpuset\tenc size (B)\tenc speed (MP/s)\tdec speed (MP/s)\tJPG dec speed (MP/s)\tJPG dec speed (MB/s)" |
       tee -a "${runs_file}"
   fi
 
@@ -897,61 +913,92 @@ cmd_arm_benchmark() {
   local src_img
   for src_img in "${jpg_images[@]}" "${images[@]}"; do
     local src_img_hash=$(sha1sum "${src_img}" | cut -f 1 -d ' ')
-    local img_benchmarks=("${benchmarks[@]}")
-    local enc_binary="${BUILD_DIR}/tools/cjpegxl"
+    local enc_binaries=("${BUILD_DIR}/tools/cjpegxl")
     local src_ext="${src_img##*.}"
     if [[ "${src_ext}" == "jpg" ]]; then
-      img_benchmarks=("${brunsli_benchmarks[@]}")
-      enc_binary="${BUILD_DIR}/tools/cbrunsli"
+      enc_binaries+=("${BUILD_DIR}/tools/cbrunsli")
     fi
-    for flags in "${img_benchmarks[@]}"; do
-      # Encoding step.
-      local enc_file_hash="$flags || ${src_img} || ${src_img_hash}"
-      enc_file_hash=$(echo "${enc_file_hash}" | sha1sum | cut -f 1 -d ' ')
-      local enc_file="${BUILD_DIR}/arm_benchmark/${enc_file_hash}.jxl"
+    for enc_binary in "${enc_binaries[@]}"; do
+      local enc_binary_base=$(basename "${enc_binary}")
 
-      for cpu_conf in "${cpu_confs[@]}"; do
-        cmd_cpuset "${cpu_conf}"
-        # nproc returns the number of active CPUs, which is given by the cpuset
-        # mask.
-        local num_threads="$(nproc)"
+      # Select the list of flags to use for the current encoder/image pair.
+      local img_benchmarks
+      if [[ enc_binary_base == "cbrunsli" ]]; then
+        img_benchmarks=("${brunsli_benchmarks[@]}")
+      elif [[ "${src_ext}" == "jpg" ]]; then
+        img_benchmarks=("${jxl_jpeg_benchmarks[@]}")
+      else
+        img_benchmarks=("${jxl_png_benchmarks[@]}")
+      fi
 
-        echo "Encoding with: img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
-        local enc_output
-        if [[ "${flags}" == *"modular-group"* ]]; then
-          # We don't benchmark encoding speed in this case.
-          if [[ ! -f "${enc_file}" ]]; then
-            cmd_cpuset "${RUNNER_CPU_ALL:-}"
-            "${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp"
+      for flags in "${img_benchmarks[@]}"; do
+        # Encoding step.
+        local enc_file_hash="${enc_binary_base} || $flags || ${src_img} || ${src_img_hash}"
+        enc_file_hash=$(echo "${enc_file_hash}" | sha1sum | cut -f 1 -d ' ')
+        local enc_file="${BUILD_DIR}/arm_benchmark/${enc_file_hash}.jxl"
+
+        for cpu_conf in "${cpu_confs[@]}"; do
+          cmd_cpuset "${cpu_conf}"
+          # nproc returns the number of active CPUs, which is given by the cpuset
+          # mask.
+          local num_threads="$(nproc)"
+
+          echo "Encoding with: ${enc_binary_base} img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
+          local enc_output
+          if [[ "${flags}" == *"modular-group"* ]]; then
+            # We don't benchmark encoding speed in this case.
+            if [[ ! -f "${enc_file}" ]]; then
+              cmd_cpuset "${RUNNER_CPU_ALL:-}"
+              "${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp"
+              mv "${enc_file}.tmp" "${enc_file}"
+              cmd_cpuset "${cpu_conf}"
+            fi
+            enc_output=" ?? MP/s"
+          else
+            wait_for_temp
+            enc_output=$("${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp" \
+              2>&1 | tee /dev/stderr | grep -F "MP/s [")
             mv "${enc_file}.tmp" "${enc_file}"
-            cmd_cpuset "${cpu_conf}"
           fi
-          enc_output=" ?? MP/s"
-        else
+          local enc_speed=$(_speed_from_output "${enc_output}")
+          local enc_size=$(stat -c "%s" "${enc_file}")
+
+          echo "Decoding with: img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
+
+          local dec_output
           wait_for_temp
-          enc_output=$("${enc_binary}" ${flags} "${src_img}" "${enc_file}.tmp" \
-            2>&1 | grep -F "MP/s [")
-          mv "${enc_file}.tmp" "${enc_file}"
-        fi
-        local enc_speed=$(_speed_from_output "${enc_output}")
-        local enc_size=$(stat -c "%s" "${enc_file}")
+          dec_output=$("${BUILD_DIR}/tools/djpegxl" "${enc_file}" \
+            --num_reps=5 --num_threads="${num_threads}" 2>&1 | tee /dev/stderr |
+            grep -E "M[BP]/s \[")
+          local img_size=$(echo "${dec_output}" | cut -f 1 -d ',')
+          local img_size_x=$(echo "${img_size}" | cut -f 1 -d ' ')
+          local img_size_y=$(echo "${img_size}" | cut -f 3 -d ' ')
+          local img_size_px=$(( ${img_size_x} * ${img_size_y} ))
+          local dec_speed=$(_speed_from_output "${dec_output}")
 
-        echo "Decoding with: img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
+          # For JPEG lossless recompression modes (where the original is a JPEG)
+          # decode to JPG as well.
+          local jpeg_dec_mps_speed=""
+          local jpeg_dec_mbs_speed=""
+          if [[ "${src_ext}" == "jpg" ]]; then
+            wait_for_temp
+            local dec_file="${BUILD_DIR}/arm_benchmark/${enc_file_hash}.jpg"
+            dec_output=$("${BUILD_DIR}/tools/djpegxl" --jpeg "${enc_file}" \
+              "${dec_file}" --num_reps=5 --num_threads="${num_threads}" 2>&1 | \
+                tee /dev/stderr | grep -E "M[BP]/s \[")
+            local jpeg_dec_mps_speed=$(_speed_from_output "${dec_output}")
+            local jpeg_dec_mbs_speed=$(_speed_from_output "${dec_output}" MB/s)
+            if ! cmp --quiet "${src_img}" "${dec_file}"; then
+              # Add a start at the end to signal that the files are different.
+              jpeg_dec_mbs_speed+="*"
+            fi
+          fi
 
-        local dec_output
-        wait_for_temp
-        dec_output=$("${BUILD_DIR}/tools/djpegxl" "${enc_file}" \
-          --num_reps=5 --num_threads="${num_threads}" 2>&1 | grep -F "MP/s [")
-        local img_size=$(echo "${dec_output}" | cut -f 1 -d ',')
-        local img_size_x=$(echo "${img_size}" | cut -f 1 -d ' ')
-        local img_size_y=$(echo "${img_size}" | cut -f 3 -d ' ')
-        local img_size_px=$(( ${img_size_x} * ${img_size_y} ))
-        local dec_speed=$(_speed_from_output "${dec_output}")
-
-        # Record entry in a tab-separated file.
-        local src_img_base=$(basename "${src_img}")
-        echo -e "${flags}\t${src_img_base}\t${img_size}\t${img_size_px}\t${cpu_conf}\t${enc_size}\t${enc_speed}\t${dec_speed}" |
-          tee -a "${runs_file}"
+          # Record entry in a tab-separated file.
+          local src_img_base=$(basename "${src_img}")
+          echo -e "${enc_binary_base}\t${flags}\t${src_img_base}\t${img_size}\t${img_size_px}\t${cpu_conf}\t${enc_size}\t${enc_speed}\t${dec_speed}\t${jpeg_dec_mps_speed}\t${jpeg_dec_mbs_speed}" |
+            tee -a "${runs_file}"
+        done
       done
     done
   done

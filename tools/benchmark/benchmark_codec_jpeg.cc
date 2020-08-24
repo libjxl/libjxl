@@ -48,36 +48,18 @@ JPEGArgs* const jpegargs = new JPEGArgs;
 
 bool ParseChromaSubsampling(const char* param,
                             YCbCrChromaSubsampling* subsampling) {
-  if (strlen(param) != 3) return false;
-  if (param[0] != '4') return false;
-  switch (param[1]) {
-    case '4':
-      if (param[2] != '4') return false;
-      *subsampling = YCbCrChromaSubsampling::k444;
+  std::vector<std::pair<std::string, YCbCrChromaSubsampling>> options = {
+      {"444", YCbCrChromaSubsampling::k444},
+      {"420", YCbCrChromaSubsampling::k420},
+      {"422", YCbCrChromaSubsampling::k422},
+      {"440", YCbCrChromaSubsampling::k440}};
+  for (const auto& option : options) {
+    if (param == option.first) {
+      *subsampling = option.second;
       return true;
-
-    case '2':
-      switch (param[2]) {
-        case '2':
-          *subsampling = YCbCrChromaSubsampling::k422;
-          return true;
-
-        case '0':
-          *subsampling = YCbCrChromaSubsampling::k420;
-          return true;
-
-        default:
-          return false;
-      }
-
-    case '1':
-      if (param[2] != '1') return false;
-      *subsampling = YCbCrChromaSubsampling::k411;
-      return true;
-
-    default:
-      return false;
+    }
   }
+  return false;
 }
 
 }  // namespace

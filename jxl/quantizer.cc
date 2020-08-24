@@ -111,7 +111,7 @@ struct QuantizerParams {
   template <class Visitor>
   Status VisitFields(Visitor* JXL_RESTRICT visitor) {
     visitor->U32(BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
-                 BitsOffset(15, 8193), 1, &global_scale);
+                 BitsOffset(16, 8193), 1, &global_scale);
     visitor->U32(Val(16), BitsOffset(5, 1), BitsOffset(8, 1), BitsOffset(16, 1),
                  1, &quant_dc);
     return true;

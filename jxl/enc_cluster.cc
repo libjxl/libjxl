@@ -23,6 +23,7 @@
 #include <queue>
 #include <tuple>
 
+#include "jxl/ac_context.h"
 #include "jxl/base/fast_log.h"
 #include "jxl/base/profiler.h"
 

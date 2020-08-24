@@ -655,7 +655,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
 
-  EXPECT_LE(compressed.size(), 120);
+  EXPECT_LE(compressed.size(), 170);
 
   // TODO(robryk): Fix the following line in presence of different alpha_bits in
   // the two contexts.
@@ -989,7 +989,7 @@ Rect JpegComponentRect(const ImageBundle& ib, size_t c) {
       1, 1, 1, 1, 1, 1,  // k444
       2, 2, 1, 1, 2, 2,  // k420
       2, 1, 1, 1, 2, 1,  // k422
-      4, 1, 1, 1, 4, 1,  // k411
+      1, 2, 1, 1, 1, 2,  // k440
   };
 
   size_t subsampling_index;
@@ -1000,7 +1000,7 @@ Rect JpegComponentRect(const ImageBundle& ib, size_t c) {
     case YCbCrChromaSubsampling::k422:
       subsampling_index = 2;
       break;
-    case YCbCrChromaSubsampling::k411:
+    case YCbCrChromaSubsampling::k440:
       subsampling_index = 3;
       break;
     default:
@@ -1062,7 +1062,7 @@ TEST(JxlTest, RoundtripJpegRecompression444) {
 
   CodecInOut io2;
   // JPEG size is 326'916 bytes.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 255000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 256000);
 
   EXPECT_TRUE(SameJpegCoeffs(io, io2));
 }
@@ -1124,16 +1124,36 @@ TEST(JxlTest, RoundtripJpegRecompression420) {
   CompressParams cparams;
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
-  // TODO(veluca): restore this check when decode-to-jpeg is implemented for
-  // chroma subsampling.
   DecompressParams dparams;
-  // dparams.keep_dct = true;
+  dparams.keep_dct = true;
 
   CodecInOut io2;
   // JPEG size is 226'018 bytes.
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 181000);
 
-  // EXPECT_TRUE(SameJpegCoeffs(io, io2));
+  EXPECT_TRUE(SameJpegCoeffs(io, io2));
+}
+
+TEST(JxlTest, RoundtripJpegRecompression444_12) {
+  // 444 JPEG that has an interesting sampling-factor (1x2, 1x2, 1x2).
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig = ReadTestData(
+      "imagecompression.info/flower_foveon.png.im_q85_444_1x2.jpg");
+  CodecInOut io;
+  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kYCbCr;
+
+  DecompressParams dparams;
+  dparams.keep_dct = true;
+
+  CodecInOut io2;
+  // JPEG size is 329'942 bytes.
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 256000);
+
+  EXPECT_TRUE(SameJpegCoeffs(io, io2));
 }
 
 #endif  // JPEGXL_ENABLE_JPEG

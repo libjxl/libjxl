@@ -613,6 +613,24 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
           uint32_t start = useful_splits[chunk];
           uint32_t stop = useful_splits[chunk + 1];
           uint32_t max_c = 0;
+          if (stream_options[start].fixed_ac_meta_tree) {
+            // All the data is 0, so no need for a fancy tree.
+            trees[chunk].push_back(PropertyDecisionNode(
+                /*p=*/-1, /*split_val=*/0, /*lchild=*/0, /*rchild=*/0,
+                Predictor::Zero, /*predictor_offset=*/0, /*multiplier=*/1));
+            return;
+          }
+          if (stream_options[start].force_wp_only &&
+              cparams.speed_tier >= SpeedTier::kSquirrel) {
+            std::vector<int32_t> cutoffs = {
+                -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+                -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+                15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
+            trees[chunk] =
+                MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
+                              cutoffs, Predictor::Weighted);
+            return;
+          }
           for (size_t i = start; i < stop; i++) {
             JXL_CHECK(ModularGenericCompress(
                 stream_images[i], stream_options[i], /*writer=*/nullptr,
@@ -719,7 +737,19 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
 
   // Write tree
   HistogramParams params;
-  params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  if (cparams.speed_tier > SpeedTier::kKitten) {
+    params.lz77_method = HistogramParams::LZ77Method::kNone;
+    // Near-lossless DC requires choosing hybrid uint more carefully.
+    if (!extra_dc_precision.empty() && extra_dc_precision[0] != 0) {
+      params.uint_method = HistogramParams::HybridUintMethod::kFast;
+    } else {
+      params.uint_method = HistogramParams::HybridUintMethod::kNone;
+    }
+  } else if (cparams.speed_tier < SpeedTier::kTortoise) {
+    params.lz77_method = HistogramParams::LZ77Method::kOptimal;
+  } else {
+    params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  }
   BuildAndEncodeHistograms(params, kNumTreeContexts, tree_tokens, &code,
                            &context_map, writer, kLayerModularTree, aux_out);
   WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
@@ -1089,13 +1119,20 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
             enc_state->shared.cmap.DCFactors(),
             enc_state->shared.frame_header.chroma_subsampling);
 }
-void ModularFrameEncoder::AddACMetadata(size_t group_index,
+
+void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
                                         PassesEncoderState* enc_state) {
   const Rect r = enc_state->shared.DCGroupRect(group_index);
   size_t stream_id = ModularStreamId::ACMetadata(group_index).ID(frame_dim);
-  // TODO(veluca): might be useful to brotli-encode here.
   stream_options[stream_id].max_chan_size = 0xFFFFFF;
   stream_options[stream_id].force_no_wp = true;
+  stream_options[stream_id].fixed_ac_meta_tree = jpeg_transcode;
+  // If we are using a non-constant CfL field, and are in a slow enough mode,
+  // re-enable tree computation for it.
+  if (cparams.speed_tier < SpeedTier::kSquirrel &&
+      cparams.force_cfl_jpeg_recompression) {
+    stream_options[stream_id].fixed_ac_meta_tree = false;
+  }
   // YToX, YToB, ACS + QF, EPF
   Image& image = stream_images[stream_id];
   image = Image(r.xsize(), r.ysize(), 255, 4);

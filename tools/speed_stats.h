@@ -42,11 +42,27 @@ class SpeedStats {
   // Non-const, may sort elapsed_.
   jxl::Status GetSummary(Summary* summary);
 
-  // Calls GetSummary and prints megapixels/sec.
-  jxl::Status Print(size_t xsize, size_t ysize, size_t worker_threads);
+  // Sets the image size to allow computing MP/s values.
+  void SetImageSize(size_t xsize, size_t ysize) {
+    xsize_ = xsize;
+    ysize_ = ysize;
+  }
+
+  // Sets the file size to allow computing MB/s values.
+  void SetFileSize(size_t file_size) { file_size_ = file_size; }
+
+  // Calls GetSummary and prints megapixels/sec. SetImageSize() must be called
+  // once before this can be used.
+  jxl::Status Print(size_t worker_threads);
 
  private:
   std::vector<double> elapsed_;
+  size_t xsize_ = 0;
+  size_t ysize_ = 0;
+
+  // Size of the source binary file, meaningful when decoding a recompressed
+  // JPEG.
+  size_t file_size_ = 0;
 };
 
 }  // namespace tools

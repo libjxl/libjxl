@@ -78,8 +78,8 @@ struct PassesSharedState {
 
   Multiframe* JXL_RESTRICT multiframe = nullptr;
 
-  // Number of histograms and coefficient orders, per pass (always 1 for
-  // now). Encoded as num_histograms_ - 1.
+  // Number of pre-clustered set of histograms (with the same ctx map), per
+  // pass. Encoded as num_histograms_ - 1.
   size_t num_histograms = 0;
 
   bool IsGrayscale() const { return metadata.color_encoding.IsGray(); }

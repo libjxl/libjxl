@@ -182,7 +182,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   EXPECT_LE(compressed.size(), 240000);
   float target_butteraugli[9] = {};
   target_butteraugli[1] = 2.5f;
-  target_butteraugli[2] = 13.0f;
+  target_butteraugli[2] = 14.0f;
   target_butteraugli[4] = 20.0f;
   target_butteraugli[8] = 60.0f;
 

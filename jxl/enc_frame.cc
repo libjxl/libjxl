@@ -17,8 +17,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
+#include <numeric>
 #include <vector>
 
 #include "jxl/ac_context.h"
@@ -70,6 +73,139 @@
 
 namespace jxl {
 namespace {
+
+void ClusterGroups(PassesEncoderState* enc_state) {
+  // This only considers pass 0 for now.
+  std::vector<uint8_t> context_map;
+  EntropyEncodingData codes;
+  auto& ac = enc_state->passes[0].ac_tokens;
+  size_t limit = std::ceil(std::sqrt(ac.size()));
+  if (limit == 1) return;
+  std::vector<float> costs(ac.size());
+  HistogramParams params;
+  params.uint_method = HistogramParams::HybridUintMethod::kNone;
+  params.lz77_method = HistogramParams::LZ77Method::kNone;
+  params.ans_histogram_strategy =
+      HistogramParams::ANSHistogramStrategy::kApproximate;
+  size_t max = 0;
+  float total_cost = 0;
+  auto token_cost = [&](std::vector<std::vector<Token>>& tokens, size_t num_ctx,
+                        bool estimate = true) {
+    // TODO(veluca): not estimating is very expensive.
+    BitWriter writer;
+    size_t c = BuildAndEncodeHistograms(
+        params, num_ctx, tokens, &codes, &context_map,
+        estimate ? nullptr : &writer, 0, /*aux_out=*/0);
+    if (estimate) return c;
+    for (size_t i = 0; i < tokens.size(); i++) {
+      WriteTokens(tokens[i], codes, context_map, &writer, 0, nullptr);
+    }
+    return writer.BitsWritten();
+  };
+  for (size_t i = 0; i < ac.size(); i++) {
+    std::vector<std::vector<Token>> tokens{ac[i]};
+    costs[i] = token_cost(tokens, kNumContexts);
+    if (costs[i] > costs[max]) {
+      max = i;
+    }
+    total_cost += costs[i];
+  }
+  auto dist = [&](int i, int j) {
+    std::vector<std::vector<Token>> tokens{ac[i], ac[j]};
+    return token_cost(tokens, kNumContexts) - costs[i] - costs[j];
+  };
+  std::vector<size_t> out{max};
+  std::vector<size_t> old_map(ac.size());
+  std::vector<float> dists(ac.size());
+  size_t farthest = 0;
+  for (size_t i = 0; i < ac.size(); i++) {
+    if (i == max) continue;
+    dists[i] = dist(max, i);
+    if (dists[i] > dists[farthest]) {
+      farthest = i;
+    }
+  }
+
+  while (dists[farthest] > 0 && out.size() < limit) {
+    out.push_back(farthest);
+    dists[farthest] = 0;
+    enc_state->histogram_idx[farthest] = out.size() - 1;
+    for (size_t i = 0; i < ac.size(); i++) {
+      float d = dist(out.back(), i);
+      if (d < dists[i]) {
+        dists[i] = d;
+        old_map[i] = enc_state->histogram_idx[i];
+        enc_state->histogram_idx[i] = out.size() - 1;
+      }
+      if (dists[i] > dists[farthest]) {
+        farthest = i;
+      }
+    }
+  }
+
+  std::vector<size_t> remap(out.size());
+  std::iota(remap.begin(), remap.end(), 0);
+  for (size_t i = 0; i < enc_state->histogram_idx.size(); i++) {
+    enc_state->histogram_idx[i] = remap[enc_state->histogram_idx[i]];
+  }
+  auto remap_cost = [&](std::vector<size_t> remap) {
+    std::vector<size_t> re_remap(remap.size(), remap.size());
+    size_t r = 0;
+    for (size_t i = 0; i < remap.size(); i++) {
+      if (re_remap[remap[i]] == remap.size()) {
+        re_remap[remap[i]] = r++;
+      }
+      remap[i] = re_remap[remap[i]];
+    }
+    auto tokens = ac;
+    size_t max_hist = 0;
+    for (size_t i = 0; i < tokens.size(); i++) {
+      for (size_t j = 0; j < tokens[i].size(); j++) {
+        size_t hist = remap[enc_state->histogram_idx[i]];
+        tokens[i][j].context += hist * kNumContexts;
+        max_hist = std::max(hist + 1, max_hist);
+      }
+    }
+    return token_cost(tokens, max_hist * kNumContexts, /*estimate=*/false);
+  };
+
+  for (size_t src = 0; src < out.size(); src++) {
+    float cost = remap_cost(remap);
+    size_t best = src;
+    for (size_t j = src + 1; j < out.size(); j++) {
+      if (remap[src] == remap[j]) continue;
+      auto remap_c = remap;
+      std::replace(remap_c.begin(), remap_c.end(), remap[src], remap[j]);
+      float c = remap_cost(remap_c);
+      if (c < cost) {
+        best = j;
+        cost = c;
+      }
+    }
+    if (src != best) {
+      std::replace(remap.begin(), remap.end(), remap[src], remap[best]);
+    }
+  }
+  std::vector<size_t> re_remap(remap.size(), remap.size());
+  size_t r = 0;
+  for (size_t i = 0; i < remap.size(); i++) {
+    if (re_remap[remap[i]] == remap.size()) {
+      re_remap[remap[i]] = r++;
+    }
+    remap[i] = re_remap[remap[i]];
+  }
+
+  enc_state->shared.num_histograms =
+      *std::max_element(remap.begin(), remap.end()) + 1;
+  for (size_t i = 0; i < enc_state->histogram_idx.size(); i++) {
+    enc_state->histogram_idx[i] = remap[enc_state->histogram_idx[i]];
+  }
+  for (size_t i = 0; i < ac.size(); i++) {
+    for (size_t j = 0; j < ac[i].size(); j++) {
+      ac[i][j].context += enc_state->histogram_idx[i] * kNumContexts;
+    }
+  }
+}
 
 uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
   uint64_t flags = 0;
@@ -348,9 +484,8 @@ class LossyFrameEncoder {
                 compute_group_cache, "PixelsToGroupCoefficients");
     }
 
-    shared.num_histograms = 1;
-
     ComputeAllCoeffOrders(shared.frame_dim);
+    shared.num_histograms = 1;
 
     const auto tokenize_group_init = [&](const size_t num_threads) {
       group_caches_.resize(num_threads);
@@ -447,6 +582,8 @@ class LossyFrameEncoder {
 
     qe[AcStrategy::Type::DCT] = QuantEncoding::RAW(qt);
     shared.matrices.SetCustom(qe, modular_frame_encoder);
+    // Ensure that InvGlobalScale() is 1.
+    shared.quantizer = Quantizer(&shared.matrices, 1, kGlobalScaleDenom);
     // Recompute MulDC() and InvMulDC().
     shared.quantizer.RecomputeFromGlobalScale();
 
@@ -546,6 +683,12 @@ class LossyFrameEncoder {
       ZeroFillImage(&dc);
       ZeroFillImage(&enc_state_->coeffs[0]);
     }
+    std::vector<float> scaled_qtable(192);
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t i = 0; i < 64; i++) {
+        scaled_qtable[64 * c + i] = 1.0f * qt[64 + i] / qt[64 * c + i];
+      }
+    }
     for (size_t c : {1, 0, 2}) {
       size_t hshift = c == 1 ? 0 : HShift(frame_header->chroma_subsampling);
       size_t vshift = c == 1 ? 0 : VShift(frame_header->chroma_subsampling);
@@ -577,7 +720,8 @@ class LossyFrameEncoder {
                     quant_table[c * 64];
             }
             fdc[bx >> hshift] = idc * dcquantization_r[c];
-            if (c == 1 || hshift != 0 || vshift != 0) {
+            if (c == 1 || !enc_state_->cparams.force_cfl_jpeg_recompression ||
+                hshift != 0 || vshift != 0) {
               for (int i = 0; i < 64; i++) {
                 ac[offset + i] = inputjpeg[base + (i % 8) * onerow + (i / 8)];
               }
@@ -591,8 +735,10 @@ class LossyFrameEncoder {
                 float Y = inputjpegY[8 * bx + (i % 8) * onerow + (i / 8)];
                 float QChroma = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
                 // Apply it like this to keep it reversible
-                int QCR = QChroma -
-                          std::round(Y * scale * qt[64 + i] / qt[64 * c + i]);
+                float cfl_factor = Y * scale * scaled_qtable[64 * c + i];
+                float QCR = QChroma - static_cast<int>(cfl_factor > 0.0f
+                                                           ? cfl_factor + 0.5f
+                                                           : cfl_factor - 0.5f);
                 ac[offset + i] = QCR;
               }
             }
@@ -602,12 +748,15 @@ class LossyFrameEncoder {
       }
     }
 
+    enc_state_->histogram_idx.resize(shared.frame_dim.num_groups);
+
     // disable DC frame for now
     shared.frame_header.UpdateFlag(false, FrameHeader::kUseDcFrame);
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
       modular_frame_encoder->AddVarDCTDC(dc, group_index, /*nl_dc=*/false,
                                          enc_state_);
-      modular_frame_encoder->AddACMetadata(group_index, enc_state_);
+      modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/true,
+                                           enc_state_);
     };
     RunOnPool(pool_, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
               compute_dc_coeffs, "Compute DC coeffs");
@@ -623,12 +772,8 @@ class LossyFrameEncoder {
     JXL_CHECK(enc_state_->passes.size() ==
               1);  // skipping coeff splitting so need to have only one pass
 
-    // Number of histograms and coefficient orders, per pass (always 1 for
-    // now). Encoded as shared.num_histograms - 1.
-    shared.num_histograms = 1;
-    JXL_ASSERT(shared.num_histograms <= shared.frame_dim.num_groups);
-
     ComputeAllCoeffOrders(frame_dim);
+    shared.num_histograms = 1;
 
     const auto tokenize_group_init = [&](const size_t num_threads) {
       group_caches_.resize(num_threads);
@@ -672,45 +817,41 @@ class LossyFrameEncoder {
                             ModularFrameEncoder* modular_frame_encoder) {
     JXL_RETURN_IF_ERROR(enc_state_->shared.matrices.Encode(
         writer, kLayerDequantTables, aux_out_, modular_frame_encoder));
+    if (enc_state_->cparams.speed_tier <= SpeedTier::kTortoise) {
+      ClusterGroups(enc_state_);
+    }
     size_t num_histo_bits =
-        enc_state_->shared.frame_dim.num_groups == 1
-            ? 0
-            : CeilLog2Nonzero(enc_state_->shared.frame_dim.num_groups - 1);
+        CeilLog2Nonzero(enc_state_->shared.frame_dim.num_groups);
     if (num_histo_bits != 0) {
       BitWriter::Allotment allotment(writer, num_histo_bits);
       writer->Write(num_histo_bits, enc_state_->shared.num_histograms - 1);
       ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out_);
     }
+
     for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses(); i++) {
       // Encode coefficient orders.
-      for (size_t histo = 0; histo < enc_state_->shared.num_histograms;
-           histo++) {
-        uint32_t used_orders = ComputeUsedOrders(
-            enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
-            Rect(enc_state_->shared.raw_quant_field));
-        size_t order_bits = 0;
-        JXL_RETURN_IF_ERROR(
-            U32Coder::CanEncode(kOrderEnc, used_orders, &order_bits));
-        BitWriter::Allotment allotment(writer, order_bits);
-        JXL_CHECK(U32Coder::Write(kOrderEnc, used_orders, writer));
-        ReclaimAndCharge(writer, &allotment, kLayerOrder, aux_out_);
-        EncodeCoeffOrders(used_orders,
-                          &enc_state_->shared.coeff_orders[i * kCoeffOrderSize],
-                          writer, kLayerOrder, aux_out_);
-      }
+      uint32_t used_orders = ComputeUsedOrders(
+          enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
+          Rect(enc_state_->shared.raw_quant_field));
+      size_t order_bits = 0;
+      JXL_RETURN_IF_ERROR(
+          U32Coder::CanEncode(kOrderEnc, used_orders, &order_bits));
+      BitWriter::Allotment allotment(writer, order_bits);
+      JXL_CHECK(U32Coder::Write(kOrderEnc, used_orders, writer));
+      ReclaimAndCharge(writer, &allotment, kLayerOrder, aux_out_);
+      EncodeCoeffOrders(used_orders,
+                        &enc_state_->shared.coeff_orders[i * kCoeffOrderSize],
+                        writer, kLayerOrder, aux_out_);
 
       // Encode histograms.
       HistogramParams hist_params(enc_state_->cparams.speed_tier, kNumContexts);
-      for (size_t histo = 0; histo < enc_state_->shared.num_histograms;
-           histo++) {
-        // Same histogram encoding even in fast mode - the cost of
-        // clustering is now lower (one per frame, not group), and it avoids
-        // huge size penalties for small images.
-        BuildAndEncodeHistograms(
-            hist_params, kNumContexts, enc_state_->passes[i].ac_tokens,
-            &enc_state_->passes[i].codes, &enc_state_->passes[i].context_map,
-            writer, kLayerAC, aux_out_);
+      if (enc_state_->cparams.speed_tier > SpeedTier::kTortoise) {
+        hist_params.lz77_method = HistogramParams::LZ77Method::kNone;
       }
+      BuildAndEncodeHistograms(
+          hist_params, enc_state_->shared.num_histograms * kNumContexts,
+          enc_state_->passes[i].ac_tokens, &enc_state_->passes[i].codes,
+          &enc_state_->passes[i].context_map, writer, kLayerAC, aux_out_);
     }
 
     return true;
@@ -718,8 +859,9 @@ class LossyFrameEncoder {
 
   Status EncodeACGroup(size_t pass, size_t group_index, BitWriter* group_code,
                        AuxOut* local_aux_out) {
-    return EncodeGroupTokenizedCoefficients(group_index, pass, *enc_state_,
-                                            group_code, local_aux_out);
+    return EncodeGroupTokenizedCoefficients(
+        group_index, pass, enc_state_->histogram_idx[group_index], *enc_state_,
+        group_code, local_aux_out);
   }
 
   PassesEncoderState* State() { return enc_state_; }
@@ -727,20 +869,17 @@ class LossyFrameEncoder {
  private:
   void ComputeAllCoeffOrders(const FrameDimensions& frame_dim) {
     PROFILER_FUNC;
-    for (size_t histo = 0; histo < enc_state_->shared.num_histograms; histo++) {
-      for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses();
-           i++) {
-        uint32_t used_orders = 0;
-        // No coefficient reordering in Falcon mode.
-        if (enc_state_->cparams.speed_tier != SpeedTier::kFalcon) {
-          used_orders = ComputeUsedOrders(
-              enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
-              Rect(enc_state_->shared.raw_quant_field));
-        }
-        ComputeCoeffOrder(
-            enc_state_->coeffs[i], enc_state_->shared.ac_strategy, frame_dim,
-            used_orders, &enc_state_->shared.coeff_orders[i * kCoeffOrderSize]);
+    for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses(); i++) {
+      uint32_t used_orders = 0;
+      // No coefficient reordering in Falcon mode.
+      if (enc_state_->cparams.speed_tier != SpeedTier::kFalcon) {
+        used_orders = ComputeUsedOrders(
+            enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
+            Rect(enc_state_->shared.raw_quant_field));
       }
+      ComputeCoeffOrder(enc_state_->cparams.speed_tier, enc_state_->coeffs[i],
+                        enc_state_->shared.ac_strategy, frame_dim, used_orders,
+                        &enc_state_->shared.coeff_orders[i * kCoeffOrderSize]);
     }
   }
 

@@ -44,35 +44,6 @@
 
 namespace jxl {
 
-// Tries all the predictors, excluding Weighted, per row.
-Predictor FindBest(const Image &image, pixel_type chan,
-                   const pixel_type *JXL_RESTRICT p, intptr_t onerow, size_t y,
-                   Predictor prev_predictor) {
-  const Channel &channel = image.channel[chan];
-  // TODO(veluca): use entropy/lz77 complexity?
-  uint64_t sum_of_abs_residuals[kNumModularPredictors] = {};
-  pixel_type_w predictions[kNumModularPredictors] = {};
-  for (size_t x = 0; x < channel.w; x++) {
-    PredictAllNoWP(channel.w, p + x, onerow, x, y, predictions);
-    for (size_t i = 0; i < kNumModularPredictors; i++) {
-      sum_of_abs_residuals[i] += abs(p[x] - predictions[i]);
-    }
-  }
-  uint64_t best = sum_of_abs_residuals[0];
-  uint64_t best_predictor = 0;
-  for (size_t i = 1; i < kNumModularPredictors; i++) {
-    if (i == (int)Predictor::Weighted) continue;
-    if (best > sum_of_abs_residuals[i]) {
-      best = sum_of_abs_residuals[i];
-      best_predictor = i;
-    }
-  }
-  uint64_t prev = sum_of_abs_residuals[(int)prev_predictor];
-  // only change predictor if residuals are 10% smaller
-  if (prev < best * 1.1) return prev_predictor;
-  return (Predictor)best_predictor;
-}
-
 namespace {
 constexpr size_t kWPProp = kNumNonrefProperties - weighted::kNumProperties;
 constexpr int32_t kWPPropRange = 512;
@@ -215,27 +186,131 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
 
-  const intptr_t onerow = channel.plane.PixelsPerRow();
-  Channel references(properties.size() - kNumNonrefProperties, channel.w);
-  weighted::State wp_state(wp_header, channel.w, channel.h);
-  for (size_t y = 0; y < channel.h; y++) {
-    const pixel_type *JXL_RESTRICT p = channel.Row(y);
-    PrecomputeReferences(channel, y, image, chan, &references);
-    float *pred_img_row[3] = {predictor_img.PlaneRow(0, y),
-                              predictor_img.PlaneRow(1, y),
-                              predictor_img.PlaneRow(2, y)};
-    InitPropsRow(&properties, static_props, y);
-    for (size_t x = 0; x < channel.w; x++) {
-      PredictionResult res =
-          PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
-                        tree_lookup, references, &wp_state);
-      for (size_t i = 0; i < 3; i++) {
-        pred_img_row[i][x] = PredictorColor(res.predictor)[i];
+  // Check if this tree is a WP-only tree with a small enough property value
+  // range.
+  // Initialized to avoid clang-tidy complaining.
+  uint16_t context_lookup[2 * kWPPropRange] = {};
+  // TODO(veluca): de-duplicate code in Decode.
+  if (is_wp_only) {
+    struct TreeRange {
+      // Begin *excluded*, end *included*. This works best with > vs <= decision
+      // nodes.
+      int begin, end;
+      size_t pos;
+    };
+    std::vector<TreeRange> ranges;
+    ranges.push_back(TreeRange{-kWPPropRange - 1, kWPPropRange - 1, 0});
+    while (!ranges.empty()) {
+      TreeRange cur = ranges.back();
+      ranges.pop_back();
+      if (cur.begin < -kWPPropRange - 1 || cur.begin >= kWPPropRange - 1 ||
+          cur.end > kWPPropRange - 1) {
+        // Tree is outside the allowed range, exit.
+        is_wp_only = false;
+        break;
       }
-      pixel_type_w residual = p[x] - res.guess;
-      JXL_ASSERT(residual % res.multiplier == 0);
-      tokens->emplace_back(res.context, PackSigned(residual / res.multiplier));
-      wp_state.UpdateErrors(p[x], x, y, channel.w);
+      auto &node = tree[cur.pos];
+      // Leaf.
+      if (node.property0 == -1) {
+        if (node.predictor_offset < std::numeric_limits<int8_t>::min() ||
+            node.predictor_offset > std::numeric_limits<int8_t>::max() ||
+            node.multiplier != 1 || node.predictor_offset != 0) {
+          is_wp_only = false;
+          break;
+        }
+        for (int i = cur.begin + 1; i < cur.end + 1; i++) {
+          context_lookup[i + kWPPropRange] = node.childID;
+        }
+        continue;
+      }
+      // > side of top node.
+      if (node.properties[0] >= kNumStaticProperties) {
+        ranges.push_back(TreeRange({node.splitvals[0], cur.end, node.childID}));
+        ranges.push_back(
+            TreeRange({node.splitval0, node.splitvals[0], node.childID + 1}));
+      } else {
+        ranges.push_back(TreeRange({node.splitval0, cur.end, node.childID}));
+      }
+      // <= side
+      if (node.properties[1] >= kNumStaticProperties) {
+        ranges.push_back(
+            TreeRange({node.splitvals[1], node.splitval0, node.childID + 2}));
+        ranges.push_back(
+            TreeRange({cur.begin, node.splitvals[1], node.childID + 3}));
+      } else {
+        ranges.push_back(
+            TreeRange({cur.begin, node.splitval0, node.childID + 2}));
+      }
+    }
+  }
+
+  tokens->reserve(tokens->size() + channel.w * channel.h);
+  if (is_wp_only) {
+    for (size_t c = 0; c < 3; c++) {
+      FillImage(static_cast<float>(PredictorColor(Predictor::Weighted)[c]),
+                const_cast<ImageF *>(&predictor_img.Plane(c)));
+    }
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    Properties properties(1);
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT r = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        size_t offset = 0;
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        pixel_type_w topright =
+            (x + 1 < channel.w && y ? *(r + x + 1 - onerow) : top);
+        pixel_type_w toptop = (y > 1 ? *(r + x - onerow - onerow) : top);
+        int32_t guess = wp_state.Predict</*compute_properties=*/true>(
+            x, y, channel.w, top, left, topright, topleft, toptop, &properties,
+            offset);
+        uint32_t pos =
+            kWPPropRange +
+            std::min(std::max(-kWPPropRange, properties[0]), kWPPropRange - 1);
+        uint32_t ctx_id = context_lookup[pos];
+        int32_t residual = r[x] - guess;
+        tokens->emplace_back(ctx_id, PackSigned(residual));
+        wp_state.UpdateErrors(r[x], x, y, channel.w);
+      }
+    }
+  } else if (tree.size() == 1 && tree[0].predictor == Predictor::Zero &&
+             tree[0].multiplier == 1 && tree[0].predictor_offset == 0) {
+    for (size_t c = 0; c < 3; c++) {
+      FillImage(static_cast<float>(PredictorColor(Predictor::Zero)[c]),
+                const_cast<ImageF *>(&predictor_img.Plane(c)));
+    }
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT p = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        tokens->emplace_back(tree[0].childID, PackSigned(p[x]));
+      }
+    }
+  } else {
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    weighted::State wp_state(wp_header, channel.w, channel.h);
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT p = channel.Row(y);
+      PrecomputeReferences(channel, y, image, chan, &references);
+      float *pred_img_row[3] = {predictor_img.PlaneRow(0, y),
+                                predictor_img.PlaneRow(1, y),
+                                predictor_img.PlaneRow(2, y)};
+      InitPropsRow(&properties, static_props, y);
+      for (size_t x = 0; x < channel.w; x++) {
+        PredictionResult res =
+            PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
+                          tree_lookup, references, &wp_state);
+        for (size_t i = 0; i < 3; i++) {
+          pred_img_row[i][x] = PredictorColor(res.predictor)[i];
+        }
+        pixel_type_w residual = p[x] - res.guess;
+        JXL_ASSERT(residual % res.multiplier == 0);
+        tokens->emplace_back(res.context,
+                             PackSigned(residual / res.multiplier));
+        wp_state.UpdateErrors(p[x], x, y, channel.w);
+      }
     }
   }
   if (want_debug && WantDebugOutput(aux_out)) {
@@ -283,7 +358,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
   // Check if this tree is a WP-only tree with a small enough property value
   // range.
-  // those contexts are *clustered* context ids. This reduces stack usages and
+  // Those contexts are *clustered* context ids. This reduces stack usages and
   // avoids an extra memory lookup.
   // Initialized to avoid clang-tidy complaining.
   uint8_t context_lookup[2 * kWPPropRange] = {};
@@ -498,14 +573,26 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
                                                                (int)group_id};
   Properties properties(kNumNonrefProperties +
                         kExtraPropsPerChannel * options.max_properties);
-  std::mt19937_64 gen(1);  // deterministic learning (also between threads)
-  float pixel_fraction = std::min(1.0f, options.nb_repeats);
+  double pixel_fraction = std::min(1.0f, options.nb_repeats);
   // a fraction of 0 is used to disable learning entirely.
   if (pixel_fraction > 0) {
-    pixel_fraction = std::max(
-        pixel_fraction, std::min(1.0f, 1024.0f / (channel.w * channel.h)));
+    pixel_fraction = std::max(pixel_fraction,
+                              std::min(1.0, 1024.0 / (channel.w * channel.h)));
   }
-  std::bernoulli_distribution dist(pixel_fraction);
+  uint64_t threshold =
+      (std::numeric_limits<uint64_t>::max() >> 32) * pixel_fraction;
+  uint64_t s[2] = {0x94D049BB133111EBull, 0xBF58476D1CE4E5B9ull};
+  // Xorshift128+ adapted from xorshift128+-inl.h
+  auto use_sample = [&]() {
+    auto s1 = s[0];
+    const auto s0 = s[1];
+    const auto bits = s1 + s0;  // b, c
+    s[0] = s0;
+    s1 ^= s1 << 23;
+    s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
+    s[1] = s1;
+    return (bits >> 32) <= threshold;
+  };
 
   const intptr_t onerow = channel.plane.PixelsPerRow();
   Channel references(properties.size() - kNumNonrefProperties, channel.w);
@@ -513,6 +600,13 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
   if (props.empty()) {
     props.resize(properties.size());
     residuals.resize(predictors.size());
+  }
+  for (size_t i = 0; i < predictors.size(); i++) {
+    residuals[i].reserve(residuals[i].size() +
+                         pixel_fraction * channel.h * channel.w);
+  }
+  for (size_t i = 0; i < properties.size(); i++) {
+    props[i].reserve(props[i].size() + pixel_fraction * channel.h * channel.w);
   }
   JXL_ASSERT(props.size() == properties.size());
   for (size_t y = 0; y < channel.h; y++) {
@@ -534,7 +628,7 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
         res[0] = p[x] - pres.guess;
       }
       (*total_pixels)++;
-      if (dist(gen)) {
+      if (use_sample()) {
         for (size_t i = 0; i < predictors.size(); i++) {
           residuals[i].push_back(res[i]);
         }

@@ -97,8 +97,6 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
 
   if (jxl::IsJPG(jxl::Span<const uint8_t>(file_content))) {
     SpeedStats stats;
-    size_t xsize = 0;
-    size_t ysize = 0;
     for (size_t i = 0; i < args.num_reps; ++i) {
       compressed->clear();
       const double t0 = jxl::Now();
@@ -119,10 +117,9 @@ jxl::Status CompressBrunsli(jxl::ThreadPool* pool,
 
       const double t1 = jxl::Now();
       stats.NotifyElapsed(t1 - t0);
-      xsize = jpg.width;
-      ysize = jpg.height;
+      stats.SetImageSize(jpg.width, jpg.height);
     }
-    JXL_CHECK(stats.Print(xsize, ysize, /* num_threads */ 1));
+    JXL_CHECK(stats.Print(/* num_threads */ 1));
 
     return true;
   }

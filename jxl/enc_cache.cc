@@ -126,6 +126,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
 
   PassesSharedState& JXL_RESTRICT shared = enc_state->shared;
 
+  enc_state->histogram_idx.resize(shared.frame_dim.num_groups);
+
   if (shared.frame_header.color_transform == ColorTransform::kXYB) {
     enc_state->x_qm_multiplier =
         std::pow(2.0f, 0.5f * shared.frame_header.x_qm_scale - 0.5f);
@@ -208,7 +210,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     }
   }
   auto compute_ac_meta = [&](int group_index, int /* thread */) {
-    modular_frame_encoder->AddACMetadata(group_index, enc_state);
+    modular_frame_encoder->AddACMetadata(group_index, /*jpeg_transcode=*/false,
+                                         enc_state);
   };
   RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),
             compute_ac_meta, "Compute AC Metadata");

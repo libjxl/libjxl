@@ -152,6 +152,9 @@ struct ModularOptions {
   // decode path (or with the no-wp path).
   bool force_wp_only = false;
   bool force_no_wp = false;
+
+  // JPEG transcoding speeding up settings.
+  bool fixed_ac_meta_tree = false;
 };
 
 }  // namespace jxl

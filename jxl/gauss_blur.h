@@ -16,10 +16,11 @@
 #define JXL_GAUSS_BLUR_H_
 
 #include <stddef.h>
+
 #include <cmath>
+#include <hwy/aligned_allocator.h>
 #include <vector>
 
-#include <hwy/aligned_allocator.h>
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
 #include "jxl/image.h"
@@ -54,6 +55,11 @@ std::vector<T> GaussianKernel(int radius, T sigma) {
 // REQUIRES: in.xsize() and in.ysize() are integer multiples of res.
 ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel,
                          const size_t res);
+
+// Private, used by test.
+void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
+                        float* const JXL_RESTRICT row_out, const int xsize,
+                        const int radius);
 
 // Only for use by CreateRecursiveGaussian and FastGaussian*.
 #pragma pack(push, 1)

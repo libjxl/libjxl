@@ -237,13 +237,12 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       plane = UpsampleH2(plane, pool);
       plane = UpsampleV2(plane, pool);
     }
-  } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k411) {
+  } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k440) {
     for (size_t c : {0, 2}) {
       ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
-      plane.ShrinkTo(idct->xsize() / 4, idct->ysize());
+      plane.ShrinkTo(idct->xsize(), idct->ysize() / 2);
       plane.InitializePaddingForUnalignedAccesses();
-      plane = UpsampleH2(plane, pool);
-      plane = UpsampleH2(plane, pool);
+      plane = UpsampleV2(plane, pool);
     }
   } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k422) {
     for (size_t c : {0, 2}) {

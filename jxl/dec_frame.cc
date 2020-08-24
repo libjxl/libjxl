@@ -149,37 +149,23 @@ class LossyFrameDecoder {
         reader, modular_frame_decoder));
 
     size_t num_histo_bits =
-        dec_state_.shared->frame_dim.num_groups == 1
-            ? 0
-            : CeilLog2Nonzero(dec_state_.shared->frame_dim.num_groups - 1);
+        CeilLog2Nonzero(dec_state_.shared->frame_dim.num_groups);
     dec_state_.shared_storage.num_histograms =
         1 + reader->ReadBits(num_histo_bits);
-    dec_state_.code.resize(kMaxNumPasses * dec_state_.shared->num_histograms);
-    dec_state_.context_map.resize(kMaxNumPasses *
-                                  dec_state_.shared->num_histograms);
+
+    dec_state_.code.resize(kMaxNumPasses);
+    dec_state_.context_map.resize(kMaxNumPasses);
     // Read coefficient orders and histograms.
     for (size_t i = 0;
          i < dec_state_.shared_storage.frame_header.passes.num_passes; i++) {
-      for (size_t histo = 0; histo < dec_state_.shared->num_histograms;
-           histo++) {
-        uint16_t used_orders = U32Coder::Read(kOrderEnc, reader);
-        size_t idx =
-            histo * dec_state_.shared_storage.frame_header.passes.num_passes +
-            i;
-        JXL_RETURN_IF_ERROR(DecodeCoeffOrders(
-            used_orders,
-            &dec_state_.shared_storage.coeff_orders[idx * kCoeffOrderSize],
-            reader));
-      }
-      for (size_t histo = 0; histo < dec_state_.shared->num_histograms;
-           histo++) {
-        size_t idx =
-            histo * dec_state_.shared_storage.frame_header.passes.num_passes +
-            i;
-        JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumContexts,
-                                             &dec_state_.code[idx],
-                                             &dec_state_.context_map[idx]));
-      }
+      uint16_t used_orders = U32Coder::Read(kOrderEnc, reader);
+      JXL_RETURN_IF_ERROR(DecodeCoeffOrders(
+          used_orders,
+          &dec_state_.shared_storage.coeff_orders[i * kCoeffOrderSize],
+          reader));
+      JXL_RETURN_IF_ERROR(DecodeHistograms(
+          reader, dec_state_.shared->num_histograms * kNumContexts,
+          &dec_state_.code[i], &dec_state_.context_map[i]));
     }
     return true;
   }

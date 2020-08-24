@@ -822,8 +822,8 @@ YCbCrChromaSubsampling GetSubsamplingFromJpegData(
   if (max_h_samp_factor == 2 && max_v_samp_factor == 1) {
     return YCbCrChromaSubsampling::k422;
   }
-  if (max_h_samp_factor == 4 && max_v_samp_factor == 1) {
-    return YCbCrChromaSubsampling::k411;
+  if (max_h_samp_factor == 1 && max_v_samp_factor == 2) {
+    return YCbCrChromaSubsampling::k440;
   }
   return YCbCrChromaSubsampling::kAuto;
 }

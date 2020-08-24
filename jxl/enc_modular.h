@@ -53,7 +53,8 @@ class ModularFrameEncoder {
                    PassesEncoderState* enc_state);
   // Creates a modular image for the AC metadata of the given group
   // (`group_index`).
-  void AddACMetadata(size_t group_index, PassesEncoderState* enc_state);
+  void AddACMetadata(size_t group_index, bool jpeg_transcode,
+                     PassesEncoderState* enc_state);
   // Encodes a RAW quantization table in `writer`. If `modular_frame_encoder` is
   // null, the quantization table in `encoding` is used, with dimensions `size_x
   // x size_y`. Otherwise, the table with ID `idx` is encoded from the given

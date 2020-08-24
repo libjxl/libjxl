@@ -77,20 +77,31 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   }
 
   std::vector<uint8_t> transformed_symbols = MoveToFrontTransform(context_map);
-  std::vector<std::vector<Token>> tokens(1);
+  std::vector<std::vector<Token>> tokens(1), mtf_tokens(1);
   EntropyEncodingData codes;
   std::vector<uint8_t> dummy_context_map;
-  size_t ans_cost =
-      BuildAndEncodeHistograms(HistogramParams{}, 1, tokens, &codes,
-                               &dummy_context_map, nullptr, 0, nullptr);
-  // Rebuild token list because BuildAndEncodeHistograms modified it.
+  for (size_t i = 0; i < context_map.size(); i++) {
+    tokens[0].emplace_back(0, context_map[i]);
+  }
+  for (size_t i = 0; i < transformed_symbols.size(); i++) {
+    mtf_tokens[0].emplace_back(0, transformed_symbols[i]);
+  }
+  HistogramParams params;
+  params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  size_t ans_cost = BuildAndEncodeHistograms(
+      params, 1, tokens, &codes, &dummy_context_map, nullptr, 0, nullptr);
+  size_t mtf_cost = BuildAndEncodeHistograms(
+      params, 1, mtf_tokens, &codes, &dummy_context_map, nullptr, 0, nullptr);
+  bool use_mtf = mtf_cost < ans_cost;
+  // Rebuild token list.
   tokens[0].clear();
   for (size_t i = 0; i < transformed_symbols.size(); i++) {
-    tokens[0].emplace_back(0, transformed_symbols[i]);
+    tokens[0].emplace_back(0,
+                           use_mtf ? transformed_symbols[i] : context_map[i]);
   }
   size_t entry_bits = CeilLog2Nonzero(num_histograms);
   size_t simple_cost = entry_bits * context_map.size();
-  if (entry_bits < 4 && simple_cost < ans_cost) {
+  if (entry_bits < 4 && simple_cost < ans_cost && simple_cost < mtf_cost) {
     writer->Write(1, 1);
     writer->Write(2, entry_bits);
     for (size_t i = 0; i < context_map.size(); i++) {
@@ -98,8 +109,9 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
     }
   } else {
     writer->Write(1, 0);
-    BuildAndEncodeHistograms(HistogramParams{}, 1, tokens, &codes,
-                             &dummy_context_map, writer, 0, nullptr);
+    writer->Write(1, use_mtf);  // Use/don't use MTF.
+    BuildAndEncodeHistograms(params, 1, tokens, &codes, &dummy_context_map,
+                             writer, 0, nullptr);
     WriteTokens(tokens[0], codes, dummy_context_map, allotment, writer);
   }
 }

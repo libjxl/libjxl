@@ -21,6 +21,7 @@
 
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/gauss_blur.cc"
+#include <hwy/cache_control.h>
 #include <hwy/foreach_target.h>
 //
 
@@ -30,6 +31,7 @@
 #include "jxl/image_ops.h"
 #include "jxl/linalg.h"
 
+//
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>
@@ -198,24 +200,106 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   }
 }
 
-// Apply 1D vertical scan to multiple columns (one per vector lane).
-// Not yet parallelized.
-void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
-                          const ImageF& in, ThreadPool* /*pool*/,
-                          ImageF* JXL_RESTRICT out) {
-  PROFILER_FUNC;
-  JXL_CHECK(SameSize(in, *out));
+// Ring buffer is for n, n-1, n-2; round up to 4 for faster modulo.
+constexpr size_t kMod = 4;
 
-  // Ring buffer is for n, n-1, n-2; round up to 4 for faster modulo.
-  constexpr size_t kMod = 4;
+// Avoids an unnecessary store during warmup.
+struct OutputNone {
+  template <class V>
+  void operator()(const V& /*unused*/, float* JXL_RESTRICT /*pos*/) const {}
+};
 
-  // We're iterating vertically, so use full-length vectors of multiple columns
-  // in each row. This is about 5 times as fast as the horizontal case.
+// Common case: write output vectors in all VerticalBlock except warmup.
+struct OutputStore {
+  template <class V>
+  void operator()(const V& out, float* JXL_RESTRICT pos) const {
+    // Stream helps for large images but is slower for images that fit in cache.
+    Store(out, HWY_FULL(float)(), pos);
+  }
+};
+
+// At top/bottom borders, we don't have two inputs to load, so avoid addition.
+// pos may even point to all zeros if the row is outside the input image.
+class SingleInput {
+ public:
+  explicit SingleInput(const float* pos) : pos_(pos) {}
+  Vec<HWY_FULL(float)> operator()(const size_t offset) const {
+    return Load(HWY_FULL(float)(), pos_ + offset);
+  }
+  const float* pos_;
+};
+
+// In the middle of the image, we need to load from a row above and below, and
+// return the sum.
+class TwoInputs {
+ public:
+  TwoInputs(const float* pos1, const float* pos2) : pos1_(pos1), pos2_(pos2) {}
+  Vec<HWY_FULL(float)> operator()(const size_t offset) const {
+    const auto in1 = Load(HWY_FULL(float)(), pos1_ + offset);
+    const auto in2 = Load(HWY_FULL(float)(), pos2_ + offset);
+    return in1 + in2;
+  }
+
+ private:
+  const float* pos1_;
+  const float* pos2_;
+};
+
+// Block := kVectors consecutive full vectors (one cache line except on the
+// right boundary, where we can only rely on having one vector). Unrolling to
+// the cache line size improves cache utilization.
+template <size_t kVectors, class V, class Input, class Output>
+void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
+                   const V& n2_3, const V& n2_5, const Input& input,
+                   size_t& ctr, float* ring_buffer, const Output output,
+                   float* JXL_RESTRICT out_pos) {
+  const HWY_FULL(float) d;
+  constexpr size_t kVN = MaxLanes(d);
+  // More cache-friendly to process an entirely cache line at a time
+  constexpr size_t kLanes = kVectors * kVN;
+
+  float* JXL_RESTRICT y_1 = ring_buffer + 0 * kLanes * kMod;
+  float* JXL_RESTRICT y_3 = ring_buffer + 1 * kLanes * kMod;
+  float* JXL_RESTRICT y_5 = ring_buffer + 2 * kLanes * kMod;
+
+  const size_t n_0 = (++ctr) % kMod;
+  const size_t n_1 = (ctr - 1) % kMod;
+  const size_t n_2 = (ctr - 2) % kMod;
+
+  for (size_t idx_vec = 0; idx_vec < kVectors; ++idx_vec) {
+    const V sum = input(idx_vec * kVN);
+
+    const V y_n1_1 = Load(d, y_1 + kLanes * n_1 + idx_vec * kVN);
+    const V y_n1_3 = Load(d, y_3 + kLanes * n_1 + idx_vec * kVN);
+    const V y_n1_5 = Load(d, y_5 + kLanes * n_1 + idx_vec * kVN);
+    const V y_n2_1 = Load(d, y_1 + kLanes * n_2 + idx_vec * kVN);
+    const V y_n2_3 = Load(d, y_3 + kLanes * n_2 + idx_vec * kVN);
+    const V y_n2_5 = Load(d, y_5 + kLanes * n_2 + idx_vec * kVN);
+    // (35)
+    const V y1 = MulAdd(n2_1, sum, NegMulSub(d1_1, y_n1_1, y_n2_1));
+    const V y3 = MulAdd(n2_3, sum, NegMulSub(d1_3, y_n1_3, y_n2_3));
+    const V y5 = MulAdd(n2_5, sum, NegMulSub(d1_5, y_n1_5, y_n2_5));
+    Store(y1, d, y_1 + kLanes * n_0 + idx_vec * kVN);
+    Store(y3, d, y_3 + kLanes * n_0 + idx_vec * kVN);
+    Store(y5, d, y_5 + kLanes * n_0 + idx_vec * kVN);
+    output(y1 + y3 + y5, out_pos + idx_vec * kVN);
+  }
+  // NOTE: flushing cache line out_pos hurts performance - less so with
+  // clflushopt than clflush but still a significant slowdown.
+}
+
+// Reads/writes one block (kVectors full vectors) in each row.
+template <size_t kVectors>
+void VerticalStrip(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                   const ImageF& in, const size_t x, ImageF* JXL_RESTRICT out) {
+  // We're iterating vertically, so use multiple full-length vectors (each lane
+  // is one column of row n).
   using D = HWY_FULL(float);
   using V = Vec<D>;
   const D d;
   constexpr size_t kVN = MaxLanes(d);
-  const V zero = Zero(d);
+  // More cache-friendly to process an entirely cache line at a time
+  constexpr size_t kLanes = kVectors * kVN;
 #if HWY_TARGET == HWY_SCALAR
   const V d1_1 = Set(d, rg->d1[0 * 4]);
   const V d1_3 = Set(d, rg->d1[1 * 4]);
@@ -232,65 +316,75 @@ void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   const V n2_5 = LoadDup128(d, rg->n2 + 2 * 4);
 #endif
 
+  const intptr_t N = rg->radius;
   const intptr_t ysize = in.ysize();
-  for (size_t x = 0; x < in.xsize(); x += Lanes(d)) {
-    size_t ctr = 0;
 
-    HWY_ALIGN float y_1[kVN * kMod] = {0};
-    HWY_ALIGN float y_3[kVN * kMod] = {0};
-    HWY_ALIGN float y_5[kVN * kMod] = {0};
-    const auto feed = [&](const V sum) {
-      const size_t n_0 = (++ctr) % kMod;
-      const size_t n_1 = (ctr - 1) % kMod;
-      const size_t n_2 = (ctr - 2) % kMod;
-      const V y_n1_1 = Load(d, y_1 + kVN * n_1);
-      const V y_n1_3 = Load(d, y_3 + kVN * n_1);
-      const V y_n1_5 = Load(d, y_5 + kVN * n_1);
-      const V y_n2_1 = Load(d, y_1 + kVN * n_2);
-      const V y_n2_3 = Load(d, y_3 + kVN * n_2);
-      const V y_n2_5 = Load(d, y_5 + kVN * n_2);
-      // (35)
-      const V y1 = MulAdd(n2_1, sum, NegMulSub(d1_1, y_n1_1, y_n2_1));
-      const V y3 = MulAdd(n2_3, sum, NegMulSub(d1_3, y_n1_3, y_n2_3));
-      const V y5 = MulAdd(n2_5, sum, NegMulSub(d1_5, y_n1_5, y_n2_5));
-      Store(y1, d, y_1 + kVN * n_0);
-      Store(y3, d, y_3 + kVN * n_0);
-      Store(y5, d, y_5 + kVN * n_0);
-      return y1 + y3 + y5;
-    };
+  size_t ctr = 0;
+  HWY_ALIGN float ring_buffer[3 * kLanes * kMod] = {0};
+  HWY_ALIGN static constexpr float zero[kLanes] = {0};
 
-    const intptr_t N = rg->radius;
+  // Warmup: top is out of bounds (zero padded), bottom is usually in-bounds.
+  intptr_t n = -N + 1;
+  for (; n < 0; ++n) {
+    const intptr_t bottom = n + N - 1;
+    VerticalBlock<kVectors>(
+        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+        SingleInput(bottom < ysize ? in.ConstRow(bottom) + x : zero), ctr,
+        ring_buffer, OutputNone(), nullptr);
+  }
 
-    // Warmup: top is out of bounds (zero padded), bottom is usually in-bounds.
-    intptr_t n = -N + 1;
-    for (; n < 0; ++n) {
-      const intptr_t bottom = n + N - 1;
-      feed(bottom < ysize ? Load(d, in.ConstRow(bottom) + x) : zero);
-    }
+  // Start producing output; top is still out of bounds.
+  for (; n < std::min(N + 1, ysize); ++n) {
+    const intptr_t bottom = n + N - 1;
+    VerticalBlock<kVectors>(
+        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+        SingleInput(bottom < ysize ? in.ConstRow(bottom) + x : zero), ctr,
+        ring_buffer, OutputStore(), out->Row(n) + x);
+  }
 
-    // Start producing output; top is still out of bounds.
-    for (; n < std::min(N + 1, ysize); ++n) {
-      const intptr_t bottom = n + N - 1;
-      const V v =
-          feed(bottom < ysize ? Load(d, in.ConstRow(bottom) + x) : zero);
-      Store(v, d, out->Row(n) + x);
-    }
+  // Interior outputs with prefetching and without bounds checks.
+  constexpr intptr_t kPrefetchRows = 8;
+  for (; n < ysize - N + 1 - kPrefetchRows; ++n) {
+    const size_t top = n - N - 1;
+    const size_t bottom = n + N - 1;
+    VerticalBlock<kVectors>(
+        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+        TwoInputs(in.ConstRow(top) + x, in.ConstRow(bottom) + x), ctr,
+        ring_buffer, OutputStore(), out->Row(n) + x);
+    hwy::Prefetch(in.ConstRow(top + kPrefetchRows) + x);
+    hwy::Prefetch(in.ConstRow(bottom + kPrefetchRows) + x);
+  }
 
-    // Interior outputs without bounds checks.
-    for (; n < ysize - N + 1; ++n) {
-      const size_t top = n - N - 1;
-      const size_t bottom = n + N - 1;
-      const V v = feed(Load(d, in.ConstRow(top) + x) +
-                       Load(d, in.ConstRow(bottom) + x));
-      Store(v, d, out->Row(n) + x);
-    }
+  // Bottom border without prefetching and with bounds checks.
+  for (; n < ysize; ++n) {
+    const size_t top = n - N - 1;
+    const size_t bottom = n + N - 1;
+    VerticalBlock<kVectors>(
+        d1_1, d1_3, d1_5, n2_1, n2_3, n2_5,
+        TwoInputs(in.ConstRow(top) + x,
+                  bottom < ysize ? in.ConstRow(bottom) + x : zero),
+        ctr, ring_buffer, OutputStore(), out->Row(n) + x);
+  }
+}
 
-    // Bottom border (assumes zero padding).
-    for (; n < ysize; ++n) {
-      const size_t top = n - N - 1;
-      const V v = feed(Load(d, in.ConstRow(top) + x) /* + 0*/);
-      Store(v, d, out->Row(n) + x);
-    }
+// Apply 1D vertical scan to multiple columns (one per vector lane).
+// Not yet parallelized.
+void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
+                          const ImageF& in, ThreadPool* /*pool*/,
+                          ImageF* JXL_RESTRICT out) {
+  PROFILER_FUNC;
+  JXL_CHECK(SameSize(in, *out));
+
+  constexpr size_t kCacheLineLanes = 64 / sizeof(float);
+  constexpr size_t kVN = MaxLanes(HWY_FULL(float)());
+  constexpr size_t kCacheLineVectors = kCacheLineLanes / kVN;
+
+  size_t x = 0;
+  for (; x + kCacheLineLanes <= in.xsize(); x += kCacheLineLanes) {
+    VerticalStrip<kCacheLineVectors>(rg, in, x, out);
+  }
+  for (; x < in.xsize(); x += kVN) {
+    VerticalStrip<1>(rg, in, x, out);
   }
 }
 
@@ -310,9 +404,9 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 
 HWY_EXPORT(FastGaussianVertical)  // Local function.
 
-inline void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
-                               float* const JXL_RESTRICT row_out,
-                               const int xsize, const int radius) {
+void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
+                        float* const JXL_RESTRICT row_out, const int xsize,
+                        const int radius) {
   const int lastcol = xsize - 1;
   for (int x = 1; x <= radius; ++x) {
     row_out[-x] = row_in[std::min(x, xsize - 1)];

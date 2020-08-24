@@ -2032,6 +2032,13 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
       cur_mixed0 *= sensitivity[0];
       cur_mixed1 *= sensitivity[1];
       cur_mixed2 *= sensitivity[2];
+      // This is a kludge. The negative values should be zeroed away before blurring.
+      // Ideally there would be no negative values in the first place.
+      static const double mixi3 = 1.7557483643287353;
+      static const double mixi11 = 12.226454707163354;
+      if (cur_mixed0 < mixi3) { cur_mixed0 = mixi3; }
+      if (cur_mixed1 < mixi3) { cur_mixed1 = mixi3; }
+      if (cur_mixed2 < mixi11) { cur_mixed2 = mixi11; }
       RgbToXyb(cur_mixed0, cur_mixed1, cur_mixed2, &row_out_x[x], &row_out_y[x],
                &row_out_b[x]);
     }

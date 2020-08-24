@@ -412,17 +412,17 @@ inline std::string PropertyName(size_t i) {
     case 1:
       return "g";
     case 2:
-      return "|N|";
-    case 3:
-      return "|W|";
-    case 4:
-      return "N";
-    case 5:
-      return "W";
-    case 6:
       return "y";
-    case 7:
+    case 3:
       return "x";
+    case 4:
+      return "|N|";
+    case 5:
+      return "|W|";
+    case 6:
+      return "N";
+    case 7:
+      return "W";
     case 8:
       return "W+N-NW";
     case 9:

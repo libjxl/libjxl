@@ -418,19 +418,31 @@ TEST(DecodeTest, IccProfileTest) {
 
 namespace jxl {
 namespace {
+// Input pixels always given as 16-bit RGBA, 8 bytes per pixel.
+// include_alpha determines if the encoded image should contain the alpha
+// channel.
 PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
-                                    size_t ysize,
-                                    const CompressParams& cparams) {
+                                    size_t ysize, const CompressParams& cparams,
+                                    bool include_alpha, bool grayscale) {
   // Compress the pixels with JPEG XL.
+  size_t bitdepth = 16;
   CodecInOut io;
   ColorEncoding color_encoding = jxl::test::ColorEncodingFromDescriptor(
-      {ColorSpace::kRGB, WhitePoint::kD65, Primaries::kSRGB,
-       TransferFunction::kSRGB, RenderingIntent::kRelative});
+      {grayscale ? ColorSpace::kGray : ColorSpace::kRGB, WhitePoint::kD65,
+       Primaries::kSRGB, TransferFunction::kSRGB, RenderingIntent::kRelative});
   ThreadPool pool(nullptr, nullptr);
-  const PackedImage desc(xsize, ysize, color_encoding, /*has_alpha=*/false,
-                         /*alpha_is_premultiplied=*/false, 0, 8, false, false);
-  const Span<const uint8_t> span(pixels.data(), pixels.size());
-  EXPECT_TRUE(CopyTo(desc, span, &pool, &io.Main()));
+  const PackedImage desc(
+      xsize, ysize, color_encoding, /*has_alpha=*/include_alpha,
+      /*alpha_is_premultiplied=*/false, include_alpha ? bitdepth : 0, bitdepth,
+      /*big_endian=*/true, /*flipped_y=*/false);
+  io.metadata.SetUintSamples(bitdepth);
+  if (include_alpha) {
+    io.metadata.SetAlphaBits(bitdepth);
+  }
+  // Make the grayscale-ness of the io metadata color_encoding and the packed
+  // image match.
+  io.metadata.color_encoding = color_encoding;
+  EXPECT_TRUE(CopyTo(desc, pixels, &pool, &io.Main()));
   AuxOut aux_out;
   PaddedBytes compressed;
   PassesEncoderState enc_state;
@@ -470,29 +482,208 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
 
   return pixels;
 }
+
 }  // namespace
 }  // namespace jxl
 
+namespace {
+bool Near(uint32_t expected, uint32_t value, uint32_t max_dist) {
+  uint32_t dist = expected > value ? expected - value : value - expected;
+  return dist <= max_dist;
+}
+
+// Procedure to convert pixels to highest possible integer precision, not
+// efficient, but well-controlled for testing. It uses 32-bit integer to
+// be able to test the uint32_t output format as well, once supported.
+std::vector<uint32_t> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
+                                      size_t ysize,
+                                      const JpegxlPixelFormat& format) {
+  std::vector<uint32_t> result(xsize * ysize * 4);
+  EXPECT_TRUE(format.data_type == JPEGXL_TYPE_BOOLEAN ||
+              format.data_type == JPEGXL_TYPE_UINT8 ||
+              format.data_type == JPEGXL_TYPE_UINT16);
+  size_t num_channels = format.num_channels;
+  bool gray = num_channels == 1 || num_channels == 2;
+  bool alpha = num_channels == 2 || num_channels == 4;
+  if (format.data_type == JPEGXL_TYPE_BOOLEAN) {
+    size_t row_size = (xsize * num_channels + 7) >> 3;
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t j = (y * xsize + x) * 4;
+        size_t i = y * row_size + ((x * num_channels + 7) >> 3);
+        uint8_t byte = pixels[i];
+        size_t bit = (x * num_channels) & 7;
+        if (bit != 0) byte >>= (8 - bit);
+        uint32_t r = (byte & 1);
+        uint32_t g = gray ? r : ((byte & 2) >> 1);
+        uint32_t b = gray ? r : ((byte & 4) >> 2);
+        uint32_t a = alpha ? ((byte >> (num_channels - 1)) & 1) : 1;
+        result[j + 0] = r * 4294967295;
+        result[j + 1] = g * 4294967295;
+        result[j + 2] = b * 4294967295;
+        result[j + 3] = a * 4294967295;
+      }
+    }
+  } else if (format.data_type == JPEGXL_TYPE_UINT8) {
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t j = (y * xsize + x) * 4;
+        size_t i = (y * xsize + x) * num_channels;
+        uint32_t r = pixels[i];
+        uint32_t g = gray ? r : pixels[i + 1];
+        uint32_t b = gray ? r : pixels[i + 2];
+        uint32_t a = alpha ? pixels[i + num_channels - 1] : 255;
+        // Multiply by 4294967295 / 255.
+        result[j + 0] = r * 16843009;
+        result[j + 1] = g * 16843009;
+        result[j + 2] = b * 16843009;
+        result[j + 3] = a * 16843009;
+      }
+    }
+  } else if (format.data_type == JPEGXL_TYPE_UINT16) {
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t j = (y * xsize + x) * 4;
+        size_t i = (y * xsize + x) * num_channels * 2;
+        uint32_t r = (pixels[i + 0] << 8) + pixels[i + 1];
+        uint32_t g = gray ? r : (pixels[i + 2] << 8) + pixels[i + 3];
+        uint32_t b = gray ? r : (pixels[i + 4] << 8) + pixels[i + 5];
+        uint32_t a = alpha ? (pixels[i + num_channels * 2 - 2] << 8) +
+                                 pixels[i + num_channels * 2 - 1]
+                           : 65535;
+        // Multiply by 4294967295 / 65535.
+        result[j + 0] = r * 65537;
+        result[j + 1] = g * 65537;
+        result[j + 2] = b * 65537;
+        result[j + 3] = a * 65537;
+      }
+    }
+  }
+  return result;
+}
+
+// Returns amount of pixels which differ between the two pictures. Image b is
+// the image after roundtrip after roundtrip, image a before roundtrip. There
+// are more strict requirements for the alpha channel and grayscale values of
+// the output image.
+size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
+                     size_t ysize, const JpegxlPixelFormat& format_a,
+                     const JpegxlPixelFormat& format_b) {
+  std::vector<uint32_t> a32 = ConvertToRGBA32(a, xsize, ysize, format_a);
+  std::vector<uint32_t> b32 = ConvertToRGBA32(b, xsize, ysize, format_b);
+  bool gray_a = format_a.num_channels < 3;
+  bool gray_b = format_b.num_channels < 3;
+  bool alpha_a = !(format_a.num_channels & 1);
+  bool alpha_b = !(format_b.num_channels & 1);
+  size_t bits_a =
+      format_a.data_type == JPEGXL_TYPE_BOOLEAN
+          ? 1
+          : (format_a.data_type == JPEGXL_TYPE_UINT8
+                 ? 8
+                 : (format_a.data_type == JPEGXL_TYPE_UINT16 ? 16 : 32));
+  size_t bits_b =
+      format_b.data_type == JPEGXL_TYPE_BOOLEAN
+          ? 1
+          : (format_b.data_type == JPEGXL_TYPE_UINT8
+                 ? 8
+                 : (format_b.data_type == JPEGXL_TYPE_UINT16 ? 16 : 32));
+  size_t bits = std::min(bits_a, bits_b);
+  // How much distance is allowed in case of pixels with lower bit depths, e.g.
+  // in case of 1-bit this is 2147483647 since 2147483647 must map to 0 and
+  // 2147483648 must map to 1.
+  uint32_t precision = 2147483647ull / ((1ull << bits) - 1ull);
+  size_t numdiff = 0;
+  for (size_t y = 0; y < ysize; y++) {
+    for (size_t x = 0; x < xsize; x++) {
+      size_t i = (y * xsize + x) * 4;
+      bool ok = true;
+      if (gray_a || gray_b) {
+        if (!Near(a32[i + 0], b32[i + 0], precision)) ok = false;
+        // If the input was grayscale and the output not, then the output must
+        // have all channels equal.
+        if (gray_a && b32[i + 0] != b32[i + 1] && b32[i + 2] != b32[i + 2]) {
+          ok = false;
+        }
+      } else {
+        if (!Near(a32[i + 0], b32[i + 0], precision) ||
+            !Near(a32[i + 1], b32[i + 1], precision) ||
+            !Near(a32[i + 2], b32[i + 2], precision)) {
+          ok = false;
+        }
+      }
+      if (alpha_a && alpha_b) {
+        if (!Near(a32[i + 3], b32[i + 3], precision)) ok = false;
+      } else {
+        // If the input had no alpha channel, the output should be opaque
+        // after roundtrip.
+        if (alpha_b && !Near(4294967295, b32[i + 3], precision)) ok = false;
+      }
+      if (!ok) numdiff++;
+    }
+  }
+  return numdiff;
+}
+}  // namespace
+
 TEST(DecodeTest, PixelTest) {
+  size_t xsize = 123, ysize = 77;
+  size_t num_pixels = xsize * ysize;
+  // 16 bits per channel, big endian, 4 channels
+  size_t orig_bytes_per_channel = 8;
+  std::vector<uint8_t> pixels(num_pixels * 8);
   // Create pixel content to test, actual content does not matter as long as it
   // can be compared after roundtrip.
-  size_t xsize = 256, ysize = 256;
-  std::vector<uint8_t> pixels(xsize * ysize * 3, 128);
-  pixels[0] = 0;
-  pixels[3] = 255;
+  for (size_t y = 0; y < ysize; y++) {
+    for (size_t x = 0; x < xsize; x++) {
+      uint16_t r = 65535 - x * y;
+      uint16_t g = (x << 8) + y;
+      uint16_t b = (y << 8) + x;
+      uint16_t a = 32768 + x * 256 - y;
+      size_t i = (y * xsize + x) * orig_bytes_per_channel;
+      pixels[i + 0] = (r >> 8);
+      pixels[i + 1] = (r & 255);
+      pixels[i + 2] = (g >> 8);
+      pixels[i + 3] = (g & 255);
+      pixels[i + 4] = (b >> 8);
+      pixels[i + 5] = (b & 255);
+      pixels[i + 6] = (a >> 8);
+      pixels[i + 7] = (a & 255);
+    }
+  }
+  JpegxlPixelFormat format_orig = {4, JPEGXL_TYPE_UINT16};
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
-      cparams);
+      cparams, true, false);
 
-  JpegxlPixelFormat format;
-  format.num_channels = 3;
-  format.data_type = JPEGXL_TYPE_UINT8;
+  {
+    JpegxlPixelFormat format = {3, JPEGXL_TYPE_UINT8};
 
-  std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-      jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 3, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
 
-  EXPECT_EQ(pixels, pixels2);
+  {
+    JpegxlPixelFormat format = {4, JPEGXL_TYPE_UINT8};
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 4, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
+
+  {
+    JpegxlPixelFormat format = {3, JPEGXL_TYPE_UINT16};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 6, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
 }

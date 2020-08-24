@@ -17,11 +17,17 @@
 
 #include <stddef.h>
 
+#include "jpegxl/decode.h"
+#include "jxl/aux_out.h"
+#include "jxl/base/data_parallel.h"
 #include "jxl/base/override.h"
+#include "jxl/base/padded_bytes.h"
 #include "jxl/base/status.h"
+#include "jxl/codec_in_out.h"
+#include "jxl/dec_params.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
-#include "tools/djxl.h"
+#include "tools/speed_stats.h"
 
 namespace jpegxl {
 namespace tools {
@@ -45,17 +51,48 @@ struct DecompressArgs {
   size_t num_threads;
   bool use_sjpeg = false;
   size_t jpeg_quality = 95;
+  bool decode_to_jpeg = false;
   bool version = false;
   jxl::Override print_profile = jxl::Override::kDefault;
   jxl::Override print_info = jxl::Override::kDefault;
 
   size_t num_reps = 1;
 
-  JxlDecompressArgs djxl_args;
+  // Format parameters:
+
+  size_t bits_per_sample = 0;
+  std::string color_space;  // description
+
+  bool brunsli_fix_dc_staircase = false;
+  bool brunsli_gaborish = false;
+
+  jxl::DecompressParams params;
+
+  // If true, print the effective amount of bytes read from the bitstream.
+  bool print_read_bytes = false;
+
+  bool coalesce = false;
 
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_num_threads_id = -1;
 };
+
+// Decompresses and notifies SpeedStats of elapsed time.
+jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
+                                  const jxl::DecompressParams& params,
+                                  jxl::ThreadPool* pool,
+                                  jxl::CodecInOut* JXL_RESTRICT io,
+                                  jxl::AuxOut* aux_out,
+                                  SpeedStats* JXL_RESTRICT stats);
+
+jxl::Status DecompressJxlToJPEG(const jxl::Span<const uint8_t> compressed,
+                                const DecompressArgs& args,
+                                jxl::ThreadPool* pool, jxl::PaddedBytes* output,
+                                jxl::AuxOut* aux_out,
+                                SpeedStats* JXL_RESTRICT stats);
+
+jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
+                           const jxl::CodecInOut& io);
 
 }  // namespace tools
 }  // namespace jpegxl

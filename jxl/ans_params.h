@@ -49,6 +49,7 @@ struct HistogramParams {
 
   enum class HybridUintMethod {
     kNone,  // just use kHybridUint420Config.
+    kFast,  // just try a couple of options.
     kBest,
   };
 
@@ -57,6 +58,12 @@ struct HistogramParams {
     kRLE,      // only try doing RLE.
     kLZ77,     // try lz77 with backward references.
     kOptimal,  // optimal-matching LZ77 parsing.
+  };
+
+  enum class ANSHistogramStrategy {
+    kFast,         // Only try some methods, early exit.
+    kApproximate,  // Only try some methods.
+    kPrecise,      // Try all methods.
   };
 
   HistogramParams() = default;
@@ -73,11 +80,15 @@ struct HistogramParams {
     if (tier > SpeedTier::kTortoise) {
       uint_method = HybridUintMethod::kNone;
     }
+    if (tier >= SpeedTier::kSquirrel) {
+      ans_histogram_strategy = ANSHistogramStrategy::kApproximate;
+    }
   }
 
   ClusteringType clustering = ClusteringType::kBest;
   HybridUintMethod uint_method = HybridUintMethod::kBest;
   LZ77Method lz77_method = LZ77Method::kRLE;
+  ANSHistogramStrategy ans_histogram_strategy = ANSHistogramStrategy::kPrecise;
   std::vector<size_t> image_widths;
   bool force_huffman = false;
 };
