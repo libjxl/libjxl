@@ -195,22 +195,6 @@ void HistogramReindex(std::vector<Histogram>* out,
   }
 }
 
-// Clusters together all the histograms.
-// Note that most of the speedup from FastestClusterHistograms actually comes
-// from having a single context during ANS encoding.
-void FastestClusterHistograms(const std::vector<Histogram>& in,
-                              const size_t num_contexts, size_t max_histograms,
-                              std::vector<Histogram>* out,
-                              std::vector<uint32_t>* histogram_symbols) {
-  PROFILER_FUNC;
-  histogram_symbols->resize(num_contexts, 0);
-  out->resize(1);
-  (*out)[0] = in[0];
-  for (size_t i = 1; i < num_contexts; i++) {
-    (*out)[0].AddHistogram(in[i]);
-  }
-}
-
 }  // namespace
 
 // Clusters similar histograms in 'in' together, the selected histograms are
@@ -224,9 +208,8 @@ void ClusterHistograms(const HistogramParams params,
   constexpr float kMinDistanceForDistinctFast = 64.0f;
   constexpr float kMinDistanceForDistinctBest = 16.0f;
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
-    // No reindexing needed.
-    return FastestClusterHistograms(in, num_contexts, max_histograms, out,
-                                    histogram_symbols);
+    HWY_DYNAMIC_DISPATCH(FastClusterHistograms)
+    (in, num_contexts, 4, kMinDistanceForDistinctFast, out, histogram_symbols);
   } else if (params.clustering == HistogramParams::ClusteringType::kFast) {
     HWY_DYNAMIC_DISPATCH(FastClusterHistograms)
     (in, num_contexts, max_histograms, kMinDistanceForDistinctFast, out,

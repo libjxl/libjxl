@@ -60,30 +60,97 @@ static const float squeeze_chroma_qtable[16] = {
 
 // `cutoffs` must be sorted.
 Tree MakeFixedTree(int property, const std::vector<int32_t>& cutoffs,
-                   Predictor pred) {
+                   Predictor pred, size_t num_pixels) {
+  size_t log_px = CeilLog2Nonzero(num_pixels);
+  size_t min_gap = 0;
+  // Reduce fixed tree height when encoding small images.
+  if (log_px < 14) {
+    min_gap = 8 * (14 - log_px);
+  }
   Tree tree;
   struct NodeInfo {
     size_t begin, end, pos;
   };
   std::queue<NodeInfo> q;
   // Leaf IDs will be set by roundtrip decoding the tree.
-  tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0, 1));
+  tree.push_back(PropertyDecisionNode::Leaf(pred));
   q.push(NodeInfo{0, cutoffs.size(), 0});
   while (!q.empty()) {
     NodeInfo info = q.front();
     q.pop();
-    if (info.begin == info.end) continue;
+    if (info.begin + min_gap >= info.end) continue;
     uint32_t split = (info.begin + info.end) / 2;
-    tree[info.pos].lchild = tree.size();
-    tree[info.pos].rchild = tree.size() + 1;
-    tree[info.pos].property = property;
-    tree[info.pos].splitval = cutoffs[split];
+    tree[info.pos] =
+        PropertyDecisionNode::Split(property, cutoffs[split], tree.size());
     q.push(NodeInfo{split + 1, info.end, tree.size()});
-    tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0, 1));
+    tree.push_back(PropertyDecisionNode::Leaf(pred));
     q.push(NodeInfo{info.begin, split, tree.size()});
-    tree.push_back(PropertyDecisionNode(-1, 0, 0, 0, pred, 0, 1));
+    tree.push_back(PropertyDecisionNode::Leaf(pred));
   }
   return tree;
+}
+
+Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
+  if (tree_kind == ModularOptions::TreeKind::kJpegTranscodeACMeta) {
+    // All the data is 0, so no need for a fancy tree.
+    return {PropertyDecisionNode::Leaf(Predictor::Zero)};
+  }
+  if (tree_kind == ModularOptions::TreeKind::kFalconACMeta) {
+    // All the data is 0 except the quant field. TODO(veluca): make that 0 too.
+    return {PropertyDecisionNode::Leaf(Predictor::Left)};
+  }
+  if (tree_kind == ModularOptions::TreeKind::kACMeta) {
+    // Small image.
+    if (total_pixels < 1024) {
+      return {PropertyDecisionNode::Leaf(Predictor::Left)};
+    }
+    Tree tree;
+    // 0: c > 1
+    tree.push_back(PropertyDecisionNode::Split(0, 1, 1));
+    // 1: c > 2
+    tree.push_back(PropertyDecisionNode::Split(0, 2, 3));
+    // 2: c > 0
+    tree.push_back(PropertyDecisionNode::Split(0, 0, 5));
+    // 3: EPF control field (all 0)
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    // 4: ACS+QF, y > 0
+    tree.push_back(PropertyDecisionNode::Split(2, 0, 7));
+    // 5: CfL x
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Gradient));
+    // 6: CfL b
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Gradient));
+    // 7: QF: split according to the left quant value.
+    tree.push_back(PropertyDecisionNode::Split(7, 5, 9));
+    // 8: ACS: split in 4 segments (8x8 from 0 to 3, large square 4-5, large
+    // rectangular 6-11, 8x8 12+), according to previous ACS value.
+    tree.push_back(PropertyDecisionNode::Split(7, 5, 15));
+    // QF
+    tree.push_back(PropertyDecisionNode::Split(7, 11, 11));
+    tree.push_back(PropertyDecisionNode::Split(7, 3, 13));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Left));
+    // ACS
+    tree.push_back(PropertyDecisionNode::Split(7, 11, 17));
+    tree.push_back(PropertyDecisionNode::Split(7, 3, 19));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    // QF other nodes
+    return tree;
+  }
+  if (tree_kind == ModularOptions::TreeKind::kWPFixedDC) {
+    std::vector<int32_t> cutoffs = {
+        -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+        -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+        15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
+    return MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
+                         cutoffs, Predictor::Weighted, total_pixels);
+  }
+  JXL_ABORT("Unreachable");
+  return {};
 }
 
 // Merges the trees in `trees` using nodes that decide on stream_id, as defined
@@ -613,22 +680,15 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
           uint32_t start = useful_splits[chunk];
           uint32_t stop = useful_splits[chunk + 1];
           uint32_t max_c = 0;
-          if (stream_options[start].fixed_ac_meta_tree) {
-            // All the data is 0, so no need for a fancy tree.
-            trees[chunk].push_back(PropertyDecisionNode(
-                /*p=*/-1, /*split_val=*/0, /*lchild=*/0, /*rchild=*/0,
-                Predictor::Zero, /*predictor_offset=*/0, /*multiplier=*/1));
-            return;
-          }
-          if (stream_options[start].force_wp_only &&
-              cparams.speed_tier >= SpeedTier::kSquirrel) {
-            std::vector<int32_t> cutoffs = {
-                -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
-                -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
-                15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
+          if (stream_options[start].tree_kind !=
+              ModularOptions::TreeKind::kLearn) {
+            for (size_t i = start; i < stop; i++) {
+              for (const Channel& ch : stream_images[i].channel) {
+                total_pixels += ch.w * ch.h;
+              }
+            }
             trees[chunk] =
-                MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
-                              cutoffs, Predictor::Weighted);
+                PredefinedTree(stream_options[start].tree_kind, total_pixels);
             return;
           }
           for (size_t i = start; i < stop; i++) {
@@ -677,8 +737,14 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool, AuxOut* aux_out) {
                                     -15,  -11,  -7,   -4,  -3,  -1,  0,   1,
                                     3,    5,    7,    11,  15,  23,  31,  47,
                                     63,   95,   127,  191, 255};
+    size_t total_pixels = 0;
+    for (const Image& img : stream_images) {
+      for (const Channel& ch : img.channel) {
+        total_pixels += ch.w * ch.h;
+      }
+    }
     tree = MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
-                         cutoffs, Predictor::Weighted);
+                         cutoffs, Predictor::Weighted, total_pixels);
   }
   // TODO(veluca): do this somewhere else.
   if (cparams.near_lossless) {
@@ -738,6 +804,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   // Write tree
   HistogramParams params;
   if (cparams.speed_tier > SpeedTier::kKitten) {
+    params.clustering = HistogramParams::ClusteringType::kFast;
+    params.ans_histogram_strategy =
+        HistogramParams::ANSHistogramStrategy::kApproximate;
     params.lz77_method = HistogramParams::LZ77Method::kNone;
     // Near-lossless DC requires choosing hybrid uint more carefully.
     if (!extra_dc_precision.empty() && extra_dc_precision[0] != 0) {
@@ -1030,8 +1099,15 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   stream_options[stream_id].max_chan_size = 0xFFFFFF;
   stream_options[stream_id].predictor = Predictor::Weighted;
   stream_options[stream_id].force_wp_only = true;
+  if (cparams.speed_tier >= SpeedTier::kSquirrel) {
+    stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
+  }
 
   stream_images[stream_id] = Image(r.xsize(), r.ysize(), 255, 3);
+  size_t hshift = HShift(enc_state->shared.frame_header.chroma_subsampling);
+  size_t vshift = VShift(enc_state->shared.frame_header.chroma_subsampling);
+  Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
+          ChromaSize(r.ysize(), vshift));
   if (nl_dc) {
     JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling ==
                YCbCrChromaSubsampling::k444);
@@ -1092,10 +1168,6 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       }
     }
   } else {
-    size_t hshift = HShift(enc_state->shared.frame_header.chroma_subsampling);
-    size_t vshift = VShift(enc_state->shared.frame_header.chroma_subsampling);
-    Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
-            ChromaSize(r.ysize(), vshift));
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       size_t ys = c == 1 ? r.ysize() : cr.ysize();
@@ -1114,9 +1186,9 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
     }
   }
 
-  DequantDC(r, &enc_state->shared.dc_storage, stream_images[stream_id],
-            enc_state->shared.quantizer.MulDC(), 1.0 / mul,
-            enc_state->shared.cmap.DCFactors(),
+  DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,
+            stream_images[stream_id], enc_state->shared.quantizer.MulDC(),
+            1.0 / mul, enc_state->shared.cmap.DCFactors(),
             enc_state->shared.frame_header.chroma_subsampling);
 }
 
@@ -1126,12 +1198,20 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
   size_t stream_id = ModularStreamId::ACMetadata(group_index).ID(frame_dim);
   stream_options[stream_id].max_chan_size = 0xFFFFFF;
   stream_options[stream_id].force_no_wp = true;
-  stream_options[stream_id].fixed_ac_meta_tree = jpeg_transcode;
+  if (jpeg_transcode) {
+    stream_options[stream_id].tree_kind =
+        ModularOptions::TreeKind::kJpegTranscodeACMeta;
+  } else if (cparams.speed_tier == SpeedTier::kFalcon) {
+    stream_options[stream_id].tree_kind =
+        ModularOptions::TreeKind::kFalconACMeta;
+  } else if (cparams.speed_tier > SpeedTier::kKitten) {
+    stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kACMeta;
+  }
   // If we are using a non-constant CfL field, and are in a slow enough mode,
   // re-enable tree computation for it.
   if (cparams.speed_tier < SpeedTier::kSquirrel &&
       cparams.force_cfl_jpeg_recompression) {
-    stream_options[stream_id].fixed_ac_meta_tree = false;
+    stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kLearn;
   }
   // YToX, YToB, ACS + QF, EPF
   Image& image = stream_images[stream_id];

@@ -55,6 +55,12 @@ static_assert(kGroupDimInBlocks % kColorTileDimInBlocks == 0,
 
 static constexpr uint8_t kDefaultColorFactor = 84;
 
+// JPEG DCT coefficients are at most 1024. CfL constants are at most 127, and
+// the ratio of two entries in a JPEG quantization table is at most 255. Thus,
+// since the CfL denominator is 84, this leaves 12 bits of mantissa to be used.
+// For extra caution, we use 11.
+static constexpr uint8_t kCFLFixedPointPrecision = 11;
+
 static constexpr U32Enc kColorFactorDist(Val(kDefaultColorFactor), Val(256),
                                          BitsOffset(2, 8), BitsOffset(258, 12));
 
@@ -105,6 +111,19 @@ struct ColorCorrelationMap {
                std::numeric_limits<int8_t>::min();
     RecomputeDCFactors();
     return true;
+  }
+
+  // We consider a CfL map to be JPEG-reconstruction-compatible if base
+  // correlation is 0, no DC correlation is used, and we use the default color
+  // factor.
+  bool IsJPEGCompatible() const {
+    return base_correlation_x_ == 0 && base_correlation_b_ == 0 &&
+           ytob_dc_ == 0 && ytox_dc_ == 0 &&
+           color_factor_ == kDefaultColorFactor;
+  }
+
+  int32_t RatioJPEG(int32_t factor) const {
+    return factor * (1 << kCFLFixedPointPrecision) / kDefaultColorFactor;
   }
 
   void SetColorFactor(uint32_t factor) {

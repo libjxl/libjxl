@@ -15,6 +15,7 @@
 #ifndef JXL_PASSES_STATE_H_
 #define JXL_PASSES_STATE_H_
 
+#include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
 #include "jxl/chroma_from_luma.h"
 #include "jxl/common.h"
@@ -72,9 +73,12 @@ struct PassesSharedState {
   std::vector<coeff_order_t> coeff_orders =
       std::vector<coeff_order_t>(kMaxNumPasses * kCoeffOrderSize);
 
-  // Decoder-side DC and DC quantization information.
+  // Decoder-side DC and quantized DC.
+  Image3I quant_dc;
   Image3F dc_storage;
   const Image3F* JXL_RESTRICT dc = &dc_storage;
+
+  BlockCtxMap block_ctx_map;
 
   Multiframe* JXL_RESTRICT multiframe = nullptr;
 

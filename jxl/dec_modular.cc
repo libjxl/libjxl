@@ -116,17 +116,15 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     JXL_RETURN_IF_ERROR(
         DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
   }
-  int nb_chans = 3, depth_chan = 3;
+  size_t nb_chans = 3, nb_extra = 0;
   if (decoded->IsGray() &&
       frame_header.color_transform == ColorTransform::kNone) {
     nb_chans = 1;
-    depth_chan = 1;
   }
   do_color = decode_color;
-  if (!do_color) nb_chans = depth_chan = 0;
+  if (!do_color) nb_chans = 0;
   if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
-    size_t num_extra = decoded->extra_channels().size();
-    nb_chans += num_extra;
+    nb_extra = decoded->extra_channels().size();
   }
 
   if (decoded->metadata()->bit_depth.bits_per_sample >= 32) {
@@ -143,15 +141,14 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                     decoded->metadata()->bit_depth.bits_per_sample)) -
                1;
 
-  Image gi(xsize, ysize, maxval, nb_chans);
-  if (decoded->HasDepth()) {
-    gi.channel[depth_chan].resize(decoded->depth().xsize(),
-                                  decoded->depth().ysize());
-    const ExtraChannelInfo* eci =
-        decoded->metadata()->m2.Find(ExtraChannel::kDepth);
-    gi.channel[depth_chan].hshift = eci->dim_shift;
-    gi.channel[depth_chan].vshift = eci->dim_shift;
+  Image gi(xsize, ysize, maxval, nb_chans + nb_extra);
+
+  for (size_t ec = 0, c = nb_chans; ec < nb_extra; ec++, c++) {
+    const ExtraChannelInfo& eci = decoded->metadata()->m2.extra_channel_info[ec];
+    gi.channel[c].resize(eci.Size(decoded->xsize()), eci.Size(decoded->ysize()));
+    gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
   }
+
   ModularOptions options;
   options.max_chan_size = frame_dim.group_dim;
   if (!ModularGenericDecompress(
@@ -253,7 +250,8 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
                                 &context_map)) {
     return JXL_FAILURE("Failed to decode modular DC group");
   }
-  DequantDC(r, &dec_state->shared_storage.dc_storage, image,
+  DequantDC(r, &dec_state->shared_storage.dc_storage,
+            &dec_state->shared_storage.quant_dc, image,
             dec_state->shared->quantizer.MulDC(), mul,
             dec_state->shared->cmap.DCFactors(),
             dec_state->shared->frame_header.chroma_subsampling);

@@ -208,7 +208,7 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
 }
 
 // DC dequantization.
-void DequantDC(const Rect& r, Image3F* dc, const Image& in,
+void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
                const float* dc_factors, float mul, const float* cfl_factors,
                YCbCrChromaSubsampling chroma_subsampling) {
   const HWY_FULL(float) df;
@@ -223,13 +223,22 @@ void DequantDC(const Rect& r, Image3F* dc, const Image& in,
       float* dec_row_x = r.PlaneRow(dc, 0, y);
       float* dec_row_y = r.PlaneRow(dc, 1, y);
       float* dec_row_b = r.PlaneRow(dc, 2, y);
+      int32_t* qdec_row_x = r.PlaneRow(quant_dc, 0, y);
+      int32_t* qdec_row_y = r.PlaneRow(quant_dc, 1, y);
+      int32_t* qdec_row_b = r.PlaneRow(quant_dc, 2, y);
       const int32_t* quant_row_x = in.channel[1].plane.Row(y);
       const int32_t* quant_row_y = in.channel[0].plane.Row(y);
       const int32_t* quant_row_b = in.channel[2].plane.Row(y);
       for (size_t x = 0; x < r.xsize(); x += Lanes(di)) {
-        const auto in_x = ConvertTo(df, Load(di, quant_row_x + x)) * fac_x;
-        const auto in_y = ConvertTo(df, Load(di, quant_row_y + x)) * fac_y;
-        const auto in_b = ConvertTo(df, Load(di, quant_row_b + x)) * fac_b;
+        const auto in_q_x = Load(di, quant_row_x + x);
+        const auto in_q_y = Load(di, quant_row_y + x);
+        const auto in_q_b = Load(di, quant_row_b + x);
+        Store(in_q_x, di, qdec_row_x + x);
+        Store(in_q_b, di, qdec_row_b + x);
+        Store(in_q_y, di, qdec_row_y + x);
+        const auto in_x = ConvertTo(df, in_q_x) * fac_x;
+        const auto in_y = ConvertTo(df, in_q_y) * fac_y;
+        const auto in_b = ConvertTo(df, in_q_b) * fac_b;
         Store(in_y, df, dec_row_y + x);
         Store(MulAdd(in_y, cfl_fac_x, in_x), df, dec_row_x + x);
         Store(MulAdd(in_y, cfl_fac_b, in_b), df, dec_row_b + x);
@@ -248,8 +257,11 @@ void DequantDC(const Rect& r, Image3F* dc, const Image& in,
       for (size_t y = 0; y < ys; y++) {
         const int32_t* quant_row = ch.plane.Row(y);
         float* row = (c == 1 ? r : cr).PlaneRow(dc, c, y);
+        int32_t* qrow = (c == 1 ? r : cr).PlaneRow(quant_dc, c, y);
         for (size_t x = 0; x < xs; x += Lanes(di)) {
-          const auto in = ConvertTo(df, Load(di, quant_row + x)) * fac;
+          const auto in_q = Load(di, quant_row + x);
+          Store(in_q, di, qrow + x);
+          const auto in = ConvertTo(df, in_q) * fac;
           Store(in, df, row + x);
         }
       }
@@ -271,10 +283,10 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
   return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(dc_factors, dc, pool);
 }
 
-void DequantDC(const Rect& r, Image3F* dc, const Image& in,
+void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
                const float* dc_factors, float mul, const float* cfl_factors,
                YCbCrChromaSubsampling chroma_subsampling) {
-  return HWY_DYNAMIC_DISPATCH(DequantDC)(r, dc, in, dc_factors, mul,
+  return HWY_DYNAMIC_DISPATCH(DequantDC)(r, dc, quant_dc, in, dc_factors, mul,
                                          cfl_factors, chroma_subsampling);
 }
 

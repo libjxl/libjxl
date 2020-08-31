@@ -655,7 +655,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
 
-  EXPECT_LE(compressed.size(), 170);
+  EXPECT_LE(compressed.size(), 200);
 
   // TODO(robryk): Fix the following line in presence of different alpha_bits in
   // the two contexts.
@@ -1088,7 +1088,7 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
 
   // TODO(eustas): investigate, why SJPEG and JpegRecompression pixels are
   // different.
-  EXPECT_GE(1.5, ButteraugliDistance(io2, io3, cparams.ba_params,
+  EXPECT_GE(1.8, ButteraugliDistance(io2, io3, cparams.ba_params,
                                      /*distmap=*/nullptr, &pool));
 }
 
@@ -1108,7 +1108,7 @@ TEST(JxlTest, RoundtripJpegRecompressionGray) {
 
   CodecInOut io2;
   // JPEG size is 167'025 bytes.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 135000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 140000);
 
   EXPECT_TRUE(SameJpegCoeffs(io, io2));
 }

@@ -69,10 +69,10 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 1.15
-  maxval = 6.0
+  minval = 0.5
+  maxval = 8.0
   rangeval = maxval/minval
-  steps = 9
+  steps = 35
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -111,7 +111,7 @@ def Eval(vec, binary_name, cached=True):
       (binary_name,
        '--input',
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
-       '--error_pnorm=16',
+       '--error_pnorm=8',
        '--more_columns',
        '--adaptive_reconstruction=1',
        '--dots=1',
@@ -134,6 +134,7 @@ def Eval(vec, binary_name, cached=True):
     sys.stdout.flush()
     if line[0:3] == "jxl":
       bpp = line.split()[3]
+      dist_max = line.split()[7]
       dist_pnorm = line.split()[8]
       dct2str = line.split()[11]
       dct4str = line.split()[12]
@@ -144,6 +145,7 @@ def Eval(vec, binary_name, cached=True):
       dct16x32str = line.split()[17]
       dct32str = line.split()[18]
       vec[0] *= float(dist_pnorm) * float(bpp) / 16.0;
+      vec[0] *= float(dist_max) * float(bpp) / 16.0;
       dct2 += float(dct2str)
       dct4 += float(dct4str)
       dct16 += float(dct16str)

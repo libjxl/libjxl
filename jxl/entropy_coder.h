@@ -25,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/bits.h"
@@ -41,6 +42,7 @@
 #include "jxl/enc_bit_writer.h"
 #include "jxl/enc_cluster.h"
 #include "jxl/enc_context_map.h"
+#include "jxl/fields.h"
 #include "jxl/image.h"
 #include "jxl/quantizer.h"
 
@@ -58,7 +60,9 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const AcStrategyImage& ac_strategy,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
-                          std::vector<Token>* JXL_RESTRICT output);
+                          std::vector<Token>* JXL_RESTRICT output,
+                          const Image3I& qdc, const ImageI& qf,
+                          const BlockCtxMap& block_ctx_map);
 
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
 constexpr uint32_t PackSigned(int32_t value) {
@@ -83,6 +87,17 @@ static JXL_INLINE int32_t PredictFromTopAndLeft(
   return (row_top[x] + row[x - 1] + 1) / 2;
 }
 
+static constexpr U32Enc kDCThresholdDist(Bits(4), BitsOffset(8, 16),
+                                         BitsOffset(16, 272),
+                                         BitsOffset(32, 65808));
+
+static constexpr U32Enc kQFThresholdDist(Bits(2), BitsOffset(3, 4),
+                                         BitsOffset(5, 12), BitsOffset(8, 44));
+
+void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
+                       AuxOut* aux_out);
+
+Status DecodeBlockCtxMap(BitReader* br, BlockCtxMap* block_ctx_map);
 }  // namespace jxl
 
 #endif  // JXL_ENTROPY_CODER_H_

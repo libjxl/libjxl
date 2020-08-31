@@ -153,6 +153,8 @@ class LossyFrameDecoder {
     dec_state_.shared_storage.num_histograms =
         1 + reader->ReadBits(num_histo_bits);
 
+    JXL_RETURN_IF_ERROR(
+        DecodeBlockCtxMap(reader, &dec_state_.shared_storage.block_ctx_map));
     dec_state_.code.resize(kMaxNumPasses);
     dec_state_.context_map.resize(kMaxNumPasses);
     // Read coefficient orders and histograms.
@@ -164,7 +166,9 @@ class LossyFrameDecoder {
           &dec_state_.shared_storage.coeff_orders[i * kCoeffOrderSize],
           reader));
       JXL_RETURN_IF_ERROR(DecodeHistograms(
-          reader, dec_state_.shared->num_histograms * kNumContexts,
+          reader,
+          dec_state_.shared->num_histograms *
+              dec_state_.shared_storage.block_ctx_map.NumACContexts(),
           &dec_state_.code[i], &dec_state_.context_map[i]));
     }
     return true;

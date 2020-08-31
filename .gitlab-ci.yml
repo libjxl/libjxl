@@ -78,6 +78,7 @@ variables:
   - build/gcno.tar.xz
   # The packed html doxygen documentation, only produced by the coverage build.
   - build/htmldoc.tar.gz
+  - build/stats.json
 
 # Helper template to add the default artifacts paths to all build stages. If
 # files in the "paths:" section are not present only a warning is generated.
@@ -260,6 +261,7 @@ build:aarch64:clang:release:
     - BUILD_TARGET=aarch64-linux-gnu
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
         ./ci.sh release
+    - tools/build_stats.py --save build/stats.json djpegxl libjpegxl.so.0.0.1
 
 test:aarch64:clang:release:
   <<: *linux_host_template
@@ -284,6 +286,7 @@ build:armhf:clang:release:
     - BUILD_TARGET=arm-linux-gnueabihf
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
         ./ci.sh release
+    - tools/build_stats.py --save build/stats.json djpegxl libjpegxl.so.0.0.1
 
 test:armhf:clang:release:
   <<: *linux_host_template

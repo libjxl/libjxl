@@ -153,8 +153,17 @@ struct ModularOptions {
   bool force_wp_only = false;
   bool force_no_wp = false;
 
-  // JPEG transcoding speeding up settings.
-  bool fixed_ac_meta_tree = false;
+  // Kind of tree to use.
+  // TODO(veluca): add tree kinds for JPEG recompression with CfL enabled,
+  // general AC metadata, different DC qualities, and others.
+  enum class TreeKind {
+    kLearn,
+    kJpegTranscodeACMeta,
+    kFalconACMeta,
+    kACMeta,
+    kWPFixedDC,
+  };
+  TreeKind tree_kind = TreeKind::kLearn;
 };
 
 }  // namespace jxl

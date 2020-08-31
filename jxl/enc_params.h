@@ -194,10 +194,9 @@ struct CompressParams {
   ButteraugliParams ba_params;
 
   // Force usage of CfL when doing JPEG recompression. This can have unexpected
-  // effects on the decoded pixels, and will likely make the resulting JPEG
-  // output dependant on the details of the floating point implementation on the
-  // decoder. Not recommended.
-  bool force_cfl_jpeg_recompression = false;
+  // effects on the decoded pixels, while still being JPEG-compliant and
+  // allowing reconstruction of the original JPEG.
+  bool force_cfl_jpeg_recompression = true;
 
   // modular mode options below
   ModularOptions options;

@@ -459,7 +459,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   }
 
   // Compute entropy.
-  float entropy = 15.0;
+  float entropy = 35.0;
   float info_loss = 0.0;
   const coeff_order_t* JXL_RESTRICT order = acs.NaturalCoeffOrder();
   for (size_t c = 0; c < 3; c++) {
@@ -532,51 +532,52 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
            ix += acs.covered_blocks_x()) {
         float entropy = EstimateEntropy(acs, (bx + ix) * 8, (by + iy) * 8,
                                         config, cmap_factors);
+        if (acs.RawStrategy() == AcStrategy::Type::DCT) {
+          entropy *= 0.90;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT4X4) {
+          entropy += 40.0;
+          entropy *= 0.88;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT2X2) {
+          entropy += 40.0;
+          entropy *= 1.028;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT16X16) {
+          entropy *= 0.94;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT16X32 ||
+            acs.RawStrategy() == AcStrategy::Type::DCT32X16) {
+          entropy *= 0.998;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT32X8 ||
+            acs.RawStrategy() == AcStrategy::Type::DCT8X32) {
+          entropy *= 1.0;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT16X8 ||
+            acs.RawStrategy() == AcStrategy::Type::DCT8X16) {
+          entropy *= 0.905;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT4X8 ||
+            acs.RawStrategy() == AcStrategy::Type::DCT8X4) {
+          entropy += 30.0;
+          entropy *= 1.045;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::IDENTITY) {
+          entropy += 80.0;
+          entropy *= 1.33;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::AFV0 ||
+            acs.RawStrategy() == AcStrategy::Type::AFV1 ||
+            acs.RawStrategy() == AcStrategy::Type::AFV2 ||
+            acs.RawStrategy() == AcStrategy::Type::AFV3) {
+          entropy += 30;
+          entropy *= 0.995;
+        }
         ee_val[cand][idx] = entropy;
         total_entropy += entropy;
         idx++;
       }
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT) {
-      total_entropy *= 0.96;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT4X4) {
-      total_entropy += 80.0;
-      total_entropy *= 0.91;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT2X2) {
-      total_entropy += 80.0;
-      total_entropy *= 1.03;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT16X16) {
-      total_entropy *= 0.93;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT16X32 ||
-        acs.RawStrategy() == AcStrategy::Type::DCT32X16) {
-      total_entropy *= 0.985;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT32X8 ||
-        acs.RawStrategy() == AcStrategy::Type::DCT8X32) {
-      total_entropy *= 1.0;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT16X8 ||
-        acs.RawStrategy() == AcStrategy::Type::DCT8X16) {
-      total_entropy *= 0.94;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::DCT4X8 ||
-        acs.RawStrategy() == AcStrategy::Type::DCT8X4) {
-      total_entropy += 80.0;
-      total_entropy *= 1.03;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::IDENTITY) {
-      total_entropy += 80.0;
-      total_entropy *= 1.25;
-    }
-    if (acs.RawStrategy() == AcStrategy::Type::AFV0 ||
-        acs.RawStrategy() == AcStrategy::Type::AFV1 ||
-        acs.RawStrategy() == AcStrategy::Type::AFV2 ||
-        acs.RawStrategy() == AcStrategy::Type::AFV3) {
-      total_entropy += 20;
     }
     if (total_entropy < best_ee) {
       best_ee = total_entropy;

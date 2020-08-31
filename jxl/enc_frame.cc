@@ -21,6 +21,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -81,6 +82,7 @@ void ClusterGroups(PassesEncoderState* enc_state) {
   auto& ac = enc_state->passes[0].ac_tokens;
   size_t limit = std::ceil(std::sqrt(ac.size()));
   if (limit == 1) return;
+  size_t num_contexts = enc_state->shared.block_ctx_map.NumACContexts();
   std::vector<float> costs(ac.size());
   HistogramParams params;
   params.uint_method = HistogramParams::HybridUintMethod::kNone;
@@ -104,7 +106,8 @@ void ClusterGroups(PassesEncoderState* enc_state) {
   };
   for (size_t i = 0; i < ac.size(); i++) {
     std::vector<std::vector<Token>> tokens{ac[i]};
-    costs[i] = token_cost(tokens, kNumContexts);
+    costs[i] =
+        token_cost(tokens, enc_state->shared.block_ctx_map.NumACContexts());
     if (costs[i] > costs[max]) {
       max = i;
     }
@@ -112,7 +115,7 @@ void ClusterGroups(PassesEncoderState* enc_state) {
   }
   auto dist = [&](int i, int j) {
     std::vector<std::vector<Token>> tokens{ac[i], ac[j]};
-    return token_cost(tokens, kNumContexts) - costs[i] - costs[j];
+    return token_cost(tokens, num_contexts) - costs[i] - costs[j];
   };
   std::vector<size_t> out{max};
   std::vector<size_t> old_map(ac.size());
@@ -162,11 +165,11 @@ void ClusterGroups(PassesEncoderState* enc_state) {
     for (size_t i = 0; i < tokens.size(); i++) {
       for (size_t j = 0; j < tokens[i].size(); j++) {
         size_t hist = remap[enc_state->histogram_idx[i]];
-        tokens[i][j].context += hist * kNumContexts;
+        tokens[i][j].context += hist * num_contexts;
         max_hist = std::max(hist + 1, max_hist);
       }
     }
-    return token_cost(tokens, max_hist * kNumContexts, /*estimate=*/false);
+    return token_cost(tokens, max_hist * num_contexts, /*estimate=*/false);
   };
 
   for (size_t src = 0; src < out.size(); src++) {
@@ -202,9 +205,112 @@ void ClusterGroups(PassesEncoderState* enc_state) {
   }
   for (size_t i = 0; i < ac.size(); i++) {
     for (size_t j = 0; j < ac[i].size(); j++) {
-      ac[i][j].context += enc_state->histogram_idx[i] * kNumContexts;
+      ac[i][j].context += enc_state->histogram_idx[i] * num_contexts;
     }
   }
+}
+
+void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
+  if (enc_state.cparams.speed_tier == SpeedTier::kFalcon) {
+    return;
+  }
+  const ImageI& rqf = enc_state.shared.raw_quant_field;
+  // No need to change context modeling for small images.
+  size_t tot = rqf.xsize() * rqf.ysize();
+  size_t size_for_ctx_model =
+      (1 << 10) * enc_state.cparams.butteraugli_distance;
+  if (tot < size_for_ctx_model) return;
+  // count the occurrences of each qf value and each strategy type.
+  size_t qf_counts[256] = {};
+  size_t qf_ord_counts[7][256] = {};
+  size_t ord_counts[7] = {};
+  for (size_t y = 0; y < rqf.ysize(); y++) {
+    const int32_t* qf_row = rqf.Row(y);
+    AcStrategyRow acs_row = enc_state.shared.ac_strategy.ConstRow(y);
+    for (size_t x = 0; x < rqf.xsize(); x++) {
+      int ord = kStrategyOrder[acs_row[x].RawStrategy()];
+      int qf = qf_row[x] - 1;
+      qf_counts[qf]++;
+      qf_ord_counts[ord][qf]++;
+      ord_counts[ord]++;
+    }
+  }
+
+  // Splitting the context model according to the quantization field seems to
+  // mostly benefit only large images.
+  size_t size_for_qf_split = (1 << 13) * enc_state.cparams.butteraugli_distance;
+  size_t num_qf_segments = tot < size_for_qf_split ? 1 : 2;
+  std::vector<int>& qft = enc_state.shared.block_ctx_map.qf_thresholds;
+  qft.clear();
+  // Divide the quant field in up to num_qf_segments segments.
+  size_t cumsum = 0;
+  size_t next = 1;
+  size_t last_cut = 256;
+  size_t cut = tot * next / num_qf_segments;
+  for (size_t j = 0; j < 256; j++) {
+    cumsum += qf_counts[j];
+    if (cumsum > cut) {
+      qft.push_back(j);
+      last_cut = j;
+      while (cumsum > cut) {
+        next++;
+        cut = tot * next / num_qf_segments;
+      }
+    } else if (next > qft.size() + 1) {
+      if (j - 1 == last_cut) {
+        qft.push_back(j);
+      }
+    }
+  }
+
+  // Count the occurrences of each segment.
+  std::vector<size_t> counts(7 * (qft.size() + 1));
+  size_t qft_pos = 0;
+  for (size_t j = 0; j < 256; j++) {
+    if (qft_pos < qft.size() && j == qft[qft_pos]) {
+      qft_pos++;
+    }
+    for (size_t i = 0; i < 7; i++) {
+      counts[qft_pos + i * (qft.size() + 1)] += qf_ord_counts[i][j];
+    }
+  }
+
+  // Repeatedly merge the lowest-count pair.
+  std::vector<uint8_t> remap((qft.size() + 1) * 7);
+  std::iota(remap.begin(), remap.end(), 0);
+  std::vector<uint8_t> clusters(remap);
+  // This is O(n^2 log n), but n <= 14.
+  while (clusters.size() > 5) {
+    std::sort(clusters.begin(), clusters.end(),
+              [&](int a, int b) { return counts[a] > counts[b]; });
+    counts[clusters[clusters.size() - 2]] += counts[clusters.back()];
+    counts[clusters.back()] = 0;
+    remap[clusters.back()] = clusters[clusters.size() - 2];
+    clusters.pop_back();
+  }
+  for (size_t i = 0; i < remap.size(); i++) {
+    while (remap[remap[i]] != remap[i]) {
+      remap[i] = remap[remap[i]];
+    }
+  }
+  // Relabel starting from 0.
+  std::vector<uint8_t> remap_remap(remap.size(), remap.size());
+  size_t num = 0;
+  for (size_t i = 0; i < remap.size(); i++) {
+    if (remap_remap[remap[i]] == remap.size()) {
+      remap_remap[remap[i]] = num++;
+    }
+    remap[i] = remap_remap[remap[i]];
+  }
+  // Write the block context map.
+  auto& ctx_map = enc_state.shared.block_ctx_map.ctx_map;
+  ctx_map = remap;
+  ctx_map.resize(remap.size() * 3);
+  for (size_t i = remap.size(); i < remap.size() * 3; i++) {
+    ctx_map[i] = remap[i % remap.size()] + num;
+  }
+  enc_state.shared.block_ctx_map.num_ctxs =
+      *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 }
 
 uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
@@ -294,6 +400,7 @@ Status JxlLossyFrameHeuristics(PassesEncoderState* enc_state,
         &enc_state->shared.raw_quant_field, &enc_state->shared.quantizer, pool,
         &enc_state->shared.cmap);
   }
+  FindBestBlockEntropyModel(*enc_state);
   return true;
 }
 
@@ -507,7 +614,9 @@ class LossyFrameEncoder {
             &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
             shared.ac_strategy, frame_header->chroma_subsampling,
             &group_caches_[thread].num_nzeroes,
-            &enc_state_->passes[idx_pass].ac_tokens[group_index]);
+            &enc_state_->passes[idx_pass].ac_tokens[group_index],
+            enc_state_->shared.quant_dc, enc_state_->shared.raw_quant_field,
+            enc_state_->shared.block_ctx_map);
       }
     };
     RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
@@ -595,10 +704,6 @@ class LossyFrameEncoder {
     intptr_t onerow = opsin_orig.Plane(0).PixelsPerRow();
     bool DCzero =
         (shared.frame_header.color_transform == ColorTransform::kYCbCr);
-    // TODO(veluca): CfL for chroma-subsampled images?
-    // Would use the corresponding top-left DC value / DCT block of luma from
-    // each chroma.
-    //
     // Compute chroma-from-luma for AC (doesn't seem to be useful for DC)
     if (frame_header->chroma_subsampling == YCbCrChromaSubsampling::k444 &&
         enc_state_->cparams.force_cfl_jpeg_recompression) {
@@ -683,12 +788,16 @@ class LossyFrameEncoder {
       ZeroFillImage(&dc);
       ZeroFillImage(&enc_state_->coeffs[0]);
     }
-    std::vector<float> scaled_qtable(192);
+    std::vector<int32_t> scaled_qtable(192);
     for (size_t c = 0; c < 3; c++) {
       for (size_t i = 0; i < 64; i++) {
-        scaled_qtable[64 * c + i] = 1.0f * qt[64 + i] / qt[64 * c + i];
+        scaled_qtable[64 * c + i] =
+            (1 << kCFLFixedPointPrecision) * qt[64 + i] / qt[64 * c + i];
       }
     }
+    // JPEG DC is from -1024 to 1023.
+    size_t dc_counts[2][2048] = {};
+    size_t total_dc[2] = {};
     for (size_t c : {1, 0, 2}) {
       size_t hshift = c == 1 ? 0 : HShift(frame_header->chroma_subsampling);
       size_t vshift = c == 1 ? 0 : VShift(frame_header->chroma_subsampling);
@@ -719,6 +828,9 @@ class LossyFrameEncoder {
               idc = (inputjpeg[base] * quant_table[c * 64] + 1024.f) /
                     quant_table[c * 64];
             }
+            size_t bucket = c == 1 ? 0 : 1;
+            dc_counts[bucket][idc + 1024]++;
+            total_dc[bucket]++;
             fdc[bx >> hshift] = idc * dcquantization_r[c];
             if (c == 1 || !enc_state_->cparams.force_cfl_jpeg_recompression ||
                 hshift != 0 || vshift != 0) {
@@ -726,19 +838,21 @@ class LossyFrameEncoder {
                 ac[offset + i] = inputjpeg[base + (i % 8) * onerow + (i / 8)];
               }
             } else {
-              const float scale =
-                  (c == 0
-                       ? shared.cmap.YtoXRatio(cm[bx / kColorTileDimInBlocks])
-                       : shared.cmap.YtoBRatio(cm[bx / kColorTileDimInBlocks]));
+              const int32_t scale =
+                  shared.cmap.RatioJPEG(cm[bx / kColorTileDimInBlocks]);
 
               for (int i = 0; i < 64; i++) {
-                float Y = inputjpegY[8 * bx + (i % 8) * onerow + (i / 8)];
-                float QChroma = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
-                // Apply it like this to keep it reversible
-                float cfl_factor = Y * scale * scaled_qtable[64 * c + i];
-                float QCR = QChroma - static_cast<int>(cfl_factor > 0.0f
-                                                           ? cfl_factor + 0.5f
-                                                           : cfl_factor - 0.5f);
+                int Y = inputjpegY[8 * bx + (i % 8) * onerow + (i / 8)];
+                int QChroma = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
+                // Fixed-point multiply of CfL scale with quant table ratio
+                // first, and Y value second.
+                int coeff_scale = (scale * scaled_qtable[64 * c + i] +
+                                   (1 << (kCFLFixedPointPrecision - 1))) >>
+                                  kCFLFixedPointPrecision;
+                int cfl_factor =
+                    (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
+                    kCFLFixedPointPrecision;
+                int QCR = QChroma - cfl_factor;
                 ac[offset + i] = QCR;
               }
             }
@@ -775,6 +889,52 @@ class LossyFrameEncoder {
     ComputeAllCoeffOrders(frame_dim);
     shared.num_histograms = 1;
 
+    auto& dct = enc_state_->shared.block_ctx_map.dc_thresholds;
+    dct.clear();
+    // luma, chroma
+    std::vector<int> thresholds[2] = {};
+    for (size_t i = 0; i < 2; i++) {
+      int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 10) / 2;
+      num_thresholds = std::min(std::max(num_thresholds, 0), 7);
+      size_t cumsum = 0;
+      size_t cut =
+          total_dc[i] * (thresholds[i].size() + 1) / (num_thresholds + 1);
+      for (int j = 0; j < 2048; j++) {
+        cumsum += dc_counts[i][j];
+        if (cumsum > cut) {
+          thresholds[i].push_back(j - 1025);
+          cut = total_dc[i] * (thresholds[i].size() + 1) / (num_thresholds + 1);
+        }
+      }
+      dct.insert(dct.end(), thresholds[i].begin(), thresholds[i].end());
+    }
+    std::sort(dct.begin(), dct.end());
+
+    auto& ctx_map = enc_state_->shared.block_ctx_map.ctx_map;
+
+    ctx_map.clear();
+    ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders * (dct.size() + 1));
+
+    size_t ctxl = 0;
+    size_t ctxc = 0;
+    for (size_t i = 0; i < dct.size() + 1; i++) {
+      ctx_map[i] = ctxl;
+      ctx_map[BlockCtxMap::kNumStrategyOrders * (dct.size() + 1) + i] =
+          ctxc + thresholds[0].size() + 1;
+      ctx_map[2 * BlockCtxMap::kNumStrategyOrders * (dct.size() + 1) + i] =
+          ctxc + thresholds[0].size() + 1;
+      if (i < dct.size()) {
+        if (ctxl < thresholds[0].size() && dct[i] == thresholds[0][ctxl]) {
+          ctxl++;
+        }
+        if (ctxc < thresholds[1].size() && dct[i] == thresholds[1][ctxc]) {
+          ctxc++;
+        }
+      }
+    }
+    enc_state_->shared.block_ctx_map.num_ctxs =
+        *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
+
     const auto tokenize_group_init = [&](const size_t num_threads) {
       group_caches_.resize(num_threads);
       return true;
@@ -795,7 +955,9 @@ class LossyFrameEncoder {
             &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
             shared.ac_strategy, frame_header->chroma_subsampling,
             &group_caches_[thread].num_nzeroes,
-            &enc_state_->passes[idx_pass].ac_tokens[group_index]);
+            &enc_state_->passes[idx_pass].ac_tokens[group_index],
+            enc_state_->shared.quant_dc, enc_state_->shared.raw_quant_field,
+            enc_state_->shared.block_ctx_map);
       }
     };
     RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
@@ -828,6 +990,7 @@ class LossyFrameEncoder {
       ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out_);
     }
 
+    EncodeBlockCtxMap(enc_state_->shared.block_ctx_map, writer, aux_out_);
     for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses(); i++) {
       // Encode coefficient orders.
       uint32_t used_orders = ComputeUsedOrders(
@@ -844,12 +1007,16 @@ class LossyFrameEncoder {
                         writer, kLayerOrder, aux_out_);
 
       // Encode histograms.
-      HistogramParams hist_params(enc_state_->cparams.speed_tier, kNumContexts);
+      HistogramParams hist_params(
+          enc_state_->cparams.speed_tier,
+          enc_state_->shared.block_ctx_map.NumACContexts());
       if (enc_state_->cparams.speed_tier > SpeedTier::kTortoise) {
         hist_params.lz77_method = HistogramParams::LZ77Method::kNone;
       }
       BuildAndEncodeHistograms(
-          hist_params, enc_state_->shared.num_histograms * kNumContexts,
+          hist_params,
+          enc_state_->shared.num_histograms *
+              enc_state_->shared.block_ctx_map.NumACContexts(),
           enc_state_->passes[i].ac_tokens, &enc_state_->passes[i].codes,
           &enc_state_->passes[i].context_map, writer, kLayerAC, aux_out_);
     }

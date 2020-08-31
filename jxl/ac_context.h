@@ -15,6 +15,8 @@
 #ifndef JXL_AC_CONTEXT_H_
 #define JXL_AC_CONTEXT_H_
 
+#include <vector>
+
 #include "jxl/base/bits.h"
 #include "jxl/base/status.h"
 #include "jxl/coeff_order_fwd.h"
@@ -24,7 +26,6 @@ namespace jxl {
 // Block context used for scanning order, number of non-zeros, AC coefficients.
 // Equal to the channel.
 constexpr uint32_t kDCTOrderContextStart = 0;
-constexpr uint32_t kOrderContexts = 10;
 
 // The number of predicted nonzeros goes from 0 to 1008. We use
 // ceil(log2(predicted+1)) as a context for the number of nonzeros, so from 0 to
@@ -84,35 +85,74 @@ static JXL_INLINE size_t ZeroDensityContext(size_t nonzeros_left, size_t k,
          prev;
 }
 
-// Context map for AC coefficients consists of 2 blocks:
-//  |kOrderContexts x          : context for number of non-zeros in the block
-//   kNonZeroBuckets|            computed from block context and predicted value
-//                               (based top and left values)
-//  |kOrderContexts x          : context for AC coefficient symbols,
-//   kZeroDensityContextCount|   computed from block context,
-//                               number of non-zeros left and
-//                               index in scan order
-constexpr uint32_t kNumContexts = (kOrderContexts * kNonZeroBuckets) +
-                                  (kOrderContexts * kZeroDensityContextCount);
+struct BlockCtxMap {
+  std::vector<int> dc_delta_thresholds;
+  std::vector<int> dc_thresholds;
+  std::vector<int> qf_thresholds;
+  std::vector<uint8_t> ctx_map;
+  size_t num_ctxs;
 
-// Non-zero context is based on number of non-zeros and block context.
-// For better clustering, contexts with same number of non-zeros are grouped.
-static inline uint32_t NonZeroContext(uint32_t non_zeros, uint32_t block_ctx) {
-  uint32_t ctx;
-  if (non_zeros >= 64) non_zeros = 64;
-  if (non_zeros < 8)
-    ctx = non_zeros;
-  else
-    ctx = 4 + non_zeros / 2;
-  return ctx * kOrderContexts + block_ctx;
-}
+  static constexpr uint8_t kNumStrategyOrders = 7;
+  static constexpr uint8_t kDefaultCtxMap[kNumStrategyOrders * 3] = {
+      0, 1, 2, 2, 3, 3, 4,  //
+      5, 6, 7, 7, 8, 8, 9,  //
+      5, 6, 7, 7, 8, 8, 9};
 
-// Non-zero context is based on number of non-zeros and block context.
-// For better clustering, contexts with same number of non-zeros are grouped.
-constexpr uint32_t ZeroDensityContextsOffset(uint32_t block_ctx) {
-  return kOrderContexts * kNonZeroBuckets +
-         kZeroDensityContextCount * block_ctx;
-}
+  size_t Context(int ldc, int dc, int qf, size_t ord, size_t c) const {
+    size_t qf_idx = 0;
+    for (int t : qf_thresholds) {
+      if (qf > t) qf_idx++;
+    }
+    size_t dc_idx = 0;
+    for (int t : dc_thresholds) {
+      if (dc > t) dc_idx++;
+    }
+    size_t dc_delta_idx = 0;
+    for (int t : dc_delta_thresholds) {
+      if (dc - ldc > t) dc_delta_idx++;
+    }
+    size_t idx = c < 2 ? c ^ 1 : 2;
+    idx = idx * kNumStrategyOrders + ord;
+    idx = idx * (qf_thresholds.size() + 1) + qf_idx;
+    idx = idx * (dc_thresholds.size() + 1) + dc_idx;
+    idx = idx * (dc_delta_thresholds.size() + 1) + dc_delta_idx;
+    return ctx_map[idx];
+  }
+  // Non-zero context is based on number of non-zeros and block context.
+  // For better clustering, contexts with same number of non-zeros are grouped.
+  constexpr uint32_t ZeroDensityContextsOffset(uint32_t block_ctx) const {
+    return num_ctxs * kNonZeroBuckets + kZeroDensityContextCount * block_ctx;
+  }
+
+  // Context map for AC coefficients consists of 2 blocks:
+  //  |num_ctxs x                : context for number of non-zeros in the block
+  //   kNonZeroBuckets|            computed from block context and predicted
+  //                               value (based top and left values)
+  //  |num_ctxs x                : context for AC coefficient symbols,
+  //   kZeroDensityContextCount|   computed from block context,
+  //                               number of non-zeros left and
+  //                               index in scan order
+  constexpr uint32_t NumACContexts() const {
+    return num_ctxs * (kNonZeroBuckets + kZeroDensityContextCount);
+  }
+
+  // Non-zero context is based on number of non-zeros and block context.
+  // For better clustering, contexts with same number of non-zeros are grouped.
+  inline uint32_t NonZeroContext(uint32_t non_zeros, uint32_t block_ctx) const {
+    uint32_t ctx;
+    if (non_zeros >= 64) non_zeros = 64;
+    if (non_zeros < 8)
+      ctx = non_zeros;
+    else
+      ctx = 4 + non_zeros / 2;
+    return ctx * num_ctxs + block_ctx;
+  }
+
+  BlockCtxMap() {
+    ctx_map.assign(std::begin(kDefaultCtxMap), std::end(kDefaultCtxMap));
+    num_ctxs = 10;
+  }
+};
 
 }  // namespace jxl
 

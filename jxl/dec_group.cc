@@ -54,7 +54,9 @@ namespace jxl {
 
 using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
+using DI = HWY_FULL(int32_t);
 constexpr D d;
+constexpr DI di;
 
 template <class V>
 void DequantLane(V scaled_dequant, V x_dm_multiplier,
@@ -146,9 +148,12 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   const float quant_scale = dec_state->shared->quantizer.Scale();
 
-  HWY_ALIGN float scaled_qtable[64 * 3];
+  HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
   if (decoded->IsJPEG()) {
+    if (!dec_state->shared->cmap.IsJPEGCompatible()) {
+      return JXL_FAILURE("The CfL map is not JPEG-compatible");
+    }
     const std::vector<QuantEncoding>& qe =
         dec_state->shared->matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
@@ -158,7 +163,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     }
     for (size_t c = 0; c < 3; c++) {
       for (size_t i = 0; i < 64; i++) {
-        scaled_qtable[64 * c + i] = 1.0f * (*qe[0].qraw.qtable)[64 + i] /
+        scaled_qtable[64 * c + i] = (1 << kCFLFixedPointPrecision) *
+                                    (*qe[0].qraw.qtable)[64 + i] /
                                     (*qe[0].qraw.qtable)[64 * c + i];
       }
     }
@@ -358,18 +364,23 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             for (size_t c : {1, 0, 2}) {
               float* JXL_RESTRICT idct_pos = idct_row[c] + bx * kBlockDim;
               // JPEG XL is transposed, JPEG is not.
-              if (c == 1) {
+              if (c == 1 || row_cmap[c][abs_tx] == 0) {
                 Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
                                      ToLines(idct_pos, idct_stride));
               } else {
                 HWY_ALIGN float transposed_dct[64];
-                const auto scale = c == 0 ? x_cc_mul : b_cc_mul;
+                const auto scale = Set(
+                    di, dec_state->shared->cmap.RatioJPEG(row_cmap[c][abs_tx]));
+                const auto round = Set(di, 1 << (kCFLFixedPointPrecision - 1));
                 for (int i = 0; i < 64; i += Lanes(d)) {
-                  auto in = Load(d, block + c * size + i);
-                  auto in_y = Load(d, block + size + i);
-                  auto qt = Load(d, scaled_qtable + c * size + i);
-                  auto cfl_factor = scale * in_y * qt;
-                  Store(in + Round(cfl_factor), d, transposed_dct + i);
+                  auto in = ConvertTo(di, Load(d, block + c * size + i));
+                  auto in_y = ConvertTo(di, Load(d, block + size + i));
+                  auto qt = Load(di, scaled_qtable + c * size + i);
+                  auto coeff_scale =
+                      ShiftRight<kCFLFixedPointPrecision>(qt * scale + round);
+                  auto cfl_factor = ShiftRight<kCFLFixedPointPrecision>(
+                      in_y * coeff_scale + round);
+                  Store(ConvertTo(d, in + cfl_factor), d, transposed_dct + i);
                 }
                 Transpose<8, 8>::Run(FromBlock(8, 8, transposed_dct),
                                      ToLines(idct_pos, idct_stride));
@@ -577,25 +588,26 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         BitReader* JXL_RESTRICT br,
                         ANSSymbolReader* JXL_RESTRICT decoder,
                         const std::vector<uint8_t>& context_map,
+                        const int32_t* quant_dc_row, const int32_t* qf_row,
+                        const BlockCtxMap& block_ctx_map,
                         ac_qcoeff_t* JXL_RESTRICT block, size_t shift = 0) {
   PROFILER_FUNC;
-  size_t c_ctx = c == 1 ? 0 : 1;
   // Equal to number of LLF coefficients.
   const size_t covered_blocks = 1 << log2_covered_blocks;
   const size_t size = covered_blocks * kDCTBlockSize;
   int32_t predicted_nzeros =
       PredictFromTopAndLeft(row_nzeros_top, row_nzeros, bx, 32);
-  size_t nzeros = 0;
 
   size_t ord = kStrategyOrder[acs.RawStrategy()];
   const coeff_order_t* JXL_RESTRICT order =
       &coeff_order[CoeffOrderOffset(ord, c)];
-  ord = ord > 2 ? ord / 2 + 1 : ord;
-  // ord is in [0, 5), so we multiply c_ctx by 5.
-  size_t block_ctx_id = c_ctx * 5 + ord;
 
-  const size_t nzero_ctx = NonZeroContext(predicted_nzeros, block_ctx_id);
-  nzeros = decoder->ReadHybridUint(nzero_ctx + ctx_offset, br, context_map);
+  size_t block_ctx = block_ctx_map.Context(
+      bx == 0 ? 0 : quant_dc_row[bx - 1], quant_dc_row[bx], qf_row[bx], ord, c);
+  const int32_t nzero_ctx =
+      block_ctx_map.NonZeroContext(predicted_nzeros, block_ctx) + ctx_offset;
+
+  size_t nzeros = decoder->ReadHybridUint(nzero_ctx, br, context_map);
   if (nzeros + covered_blocks > size) {
     return JXL_FAILURE("Invalid AC: nzeros too large");
   }
@@ -606,15 +618,16 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
     }
   }
 
-  const size_t histo_offset = ZeroDensityContextsOffset(block_ctx_id);
+  const size_t histo_offset =
+      ctx_offset + block_ctx_map.ZeroDensityContextsOffset(block_ctx);
 
   // Skip LLF
   {
     PROFILER_ZONE("AcDecSkipLLF, reader");
     size_t prev = (nzeros > size / 16 ? 0 : 1);
     for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
-      const size_t ctx = ctx_offset + histo_offset +
-                         ZeroDensityContext(nzeros, k, covered_blocks,
+      const size_t ctx =
+          histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                             log2_covered_blocks, prev);
       const size_t u_coeff = decoder->ReadHybridUint(ctx, br, context_map);
       // Hand-rolled version of UnpackSigned, shifting before the conversion to
@@ -629,7 +642,8 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
       nzeros -= prev;
     }
     if (JXL_UNLIKELY(nzeros != 0)) {
-      return JXL_FAILURE("Invalid AC: nzeros not 0.");
+      return JXL_FAILURE(
+          "Invalid AC: nzeros not 0. Block (%zu, %zu), channel %zu", bx, by, c);
     }
   }
   return true;
@@ -642,9 +656,14 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
 
 struct GetBlockFromBitstream {
   void StartRow(size_t by) {
-    for (size_t i = 0; i < num_passes; i++) {
-      for (size_t c = 0; c < 3; c++) {
-        size_t sby = c == 1 ? by : by >> vshift;
+    qf_row = rect.ConstRow(*qf, by);
+    for (size_t c = 0; c < 3; c++) {
+      size_t vs = c == 1 ? 0 : vshift;
+      size_t hs = c == 1 ? 0 : hshift;
+      size_t sby = by >> vs;
+      quant_dc_row[c] = quant_dc->ConstPlaneRow(c, (rect.y0() + by) >> vs) +
+                        (rect.x0() >> hs);
+      for (size_t i = 0; i < num_passes; i++) {
         row_nzeros[i][c] = group_dec_cache->num_nzeroes[i].PlaneRow(c, sby);
         row_nzeros_top[i][c] =
             sby == 0
@@ -671,14 +690,15 @@ struct GetBlockFromBitstream {
             ctx_offset[pass], log2_covered_blocks, row_nzeros[pass][c],
             row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, acs,
             &coeff_orders[pass * kCoeffOrderSize], readers[pass],
-            &decoders[pass], context_map[pass], block_c, shift_for_pass[pass]));
+            &decoders[pass], context_map[pass], quant_dc_row[c], qf_row,
+            *block_ctx_map, block_c, shift_for_pass[pass]));
       }
     }
     return true;
   }
 
   Status Init(BitReader* JXL_RESTRICT* JXL_RESTRICT readers, size_t num_passes,
-              size_t group_idx, size_t histo_selector_bits,
+              size_t group_idx, size_t histo_selector_bits, const Rect& rect,
               GroupDecCache* JXL_RESTRICT group_dec_cache,
               PassesDecoderState* dec_state) {
     this->hshift = HShift(dec_state->shared->frame_header.chroma_subsampling);
@@ -689,6 +709,11 @@ struct GetBlockFromBitstream {
     this->num_passes = num_passes;
     this->shift_for_pass = dec_state->shared->frame_header.passes.shift;
     this->group_dec_cache = group_dec_cache;
+    this->rect = rect;
+    block_ctx_map = &dec_state->shared->block_ctx_map;
+    qf = &dec_state->shared->raw_quant_field;
+    quant_dc = &dec_state->shared->quant_dc;
+
     for (size_t pass = 0; pass < num_passes; pass++) {
       // Select which histogram set to use among those of the current pass.
       size_t cur_histogram = 0;
@@ -698,7 +723,7 @@ struct GetBlockFromBitstream {
       if (cur_histogram >= dec_state->shared->num_histograms) {
         return JXL_FAILURE("Invalid histogram selector");
       }
-      ctx_offset[pass] = cur_histogram * kNumContexts;
+      ctx_offset[pass] = cur_histogram * block_ctx_map->NumACContexts();
 
       decoders[pass] = ANSSymbolReader(&dec_state->code[pass], readers[pass]);
     }
@@ -722,6 +747,12 @@ struct GetBlockFromBitstream {
   int32_t* JXL_RESTRICT row_nzeros[kMaxNumPasses][3];
   const int32_t* JXL_RESTRICT row_nzeros_top[kMaxNumPasses][3];
   GroupDecCache* JXL_RESTRICT group_dec_cache;
+  const BlockCtxMap* block_ctx_map;
+  const ImageI* qf;
+  const Image3I* quant_dc;
+  const int32_t* qf_row;
+  const int32_t* quant_dc_row[3];
+  Rect rect;
   size_t hshift, vshift;
 };
 
@@ -775,8 +806,8 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
 
   GetBlockFromBitstream get_block;
   JXL_RETURN_IF_ERROR(get_block.Init(readers, num_passes, group_idx,
-                                     histo_selector_bits, group_dec_cache,
-                                     dec_state));
+                                     histo_selector_bits, block_group_rect,
+                                     group_dec_cache, dec_state));
 
   JXL_RETURN_IF_ERROR(
       DecodeGroupImpl(&get_block, dec_state, thread, block_group_rect,

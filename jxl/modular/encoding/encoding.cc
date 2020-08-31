@@ -287,6 +287,19 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
         tokens->emplace_back(tree[0].childID, PackSigned(p[x]));
       }
     }
+  } else if (tree.size() == 1 && tree[0].predictor != Predictor::Weighted &&
+             tree[0].multiplier == 1 && tree[0].predictor_offset == 0) {
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT r = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        PredictionResult pred = PredictNoTreeNoWP(channel.w, r + x, onerow, x,
+                                                  y, tree[0].predictor);
+        pixel_type_w residual = r[x] - pred.guess;
+        tokens->emplace_back(tree[0].childID, PackSigned(residual));
+      }
+    }
+
   } else {
     const intptr_t onerow = channel.plane.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);

@@ -48,6 +48,16 @@ struct PropertyDecisionNode {
         predictor(Predictor::Zero),
         predictor_offset(0),
         multiplier(1){};
+  static PropertyDecisionNode Leaf(Predictor predictor, int64_t offset = 0,
+                                   uint32_t multiplier = 1) {
+    return PropertyDecisionNode(-1, 0, 0, 0, predictor, offset, multiplier);
+  }
+  static PropertyDecisionNode Split(int p, int split_val, int lchild,
+                                    int rchild = -1) {
+    if (rchild == -1) rchild = lchild + 1;
+    return PropertyDecisionNode(p, split_val, lchild, rchild, Predictor::Zero,
+                                0, 1);
+  }
 };
 
 using Tree = std::vector<PropertyDecisionNode>;

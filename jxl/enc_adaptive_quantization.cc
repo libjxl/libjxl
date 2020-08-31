@@ -689,7 +689,7 @@ void AdjustQuantField(const AcStrategyImage& ac_strategy, ImageF* quant_field) {
 }
 
 static const float kDcQuantPow = 0.55;
-static const float kDcQuant = 1.13;
+static const float kDcQuant = 1.18;
 static const float kAcQuant = 0.84;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
@@ -1142,9 +1142,10 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 }  // namespace
 
 float InitialQuantDC(float butteraugli_target) {
+  const float kDcMul = 2.9;  // Butteraugli target where non-linearity kicks in.
   const float butteraugli_target_dc =
       std::min<float>(butteraugli_target,
-                      2.5 * std::pow(0.4 * butteraugli_target, kDcQuantPow));
+                      kDcMul * std::pow((1.0 / kDcMul) * butteraugli_target, kDcQuantPow));
   // We want the maximum DC value to be at most 2**15 * kInvDCQuant / quant_dc.
   // The maximum DC value might not be in the kXybRange because of inverse
   // gaborish, so we add some slack to the maximum theoretical quant obtained

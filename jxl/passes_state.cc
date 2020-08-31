@@ -42,6 +42,7 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
 
   shared->opsin_params = image_metadata.m2.opsin_inverse_matrix.ToOpsinParams();
 
+  shared->quant_dc = Image3I(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   if (!(frame_header.flags & FrameHeader::kUseDcFrame) || encoder) {
     shared->dc_storage =
         Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
@@ -57,6 +58,7 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
           "with level %u",
           frame_header.dc_level, frame_header.dc_level + 1);
     }
+    ZeroFillImage(&shared->quant_dc);
   }
   shared->image_features.patches.SetReferenceFrames(
       multiframe->GetReferenceFrames());

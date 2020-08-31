@@ -42,7 +42,7 @@ namespace jxl {
 
 struct HistogramParams {
   enum class ClusteringType {
-    kFastest,  // Cluster everything together
+    kFastest,  // Only 4 clusters.
     kFast,
     kBest,
   };
