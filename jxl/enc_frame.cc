@@ -796,8 +796,8 @@ class LossyFrameEncoder {
       }
     }
     // JPEG DC is from -1024 to 1023.
-    size_t dc_counts[2][2048] = {};
-    size_t total_dc[2] = {};
+    size_t dc_counts[3][2048] = {};
+    size_t total_dc[3] = {};
     for (size_t c : {1, 0, 2}) {
       size_t hshift = c == 1 ? 0 : HShift(frame_header->chroma_subsampling);
       size_t vshift = c == 1 ? 0 : VShift(frame_header->chroma_subsampling);
@@ -828,9 +828,8 @@ class LossyFrameEncoder {
               idc = (inputjpeg[base] * quant_table[c * 64] + 1024.f) /
                     quant_table[c * 64];
             }
-            size_t bucket = c == 1 ? 0 : 1;
-            dc_counts[bucket][idc + 1024]++;
-            total_dc[bucket]++;
+            dc_counts[c][idc + 1024]++;
+            total_dc[c]++;
             fdc[bx >> hshift] = idc * dcquantization_r[c];
             if (c == 1 || !enc_state_->cparams.force_cfl_jpeg_recompression ||
                 hshift != 0 || vshift != 0) {
@@ -862,6 +861,44 @@ class LossyFrameEncoder {
       }
     }
 
+    auto& dct = enc_state_->shared.block_ctx_map.dc_thresholds;
+    auto& num_dc_ctxs = enc_state_->shared.block_ctx_map.num_dc_ctxs;
+    enc_state_->shared.block_ctx_map.num_dc_ctxs = 1;
+    for (size_t i = 0; i < 3; i++) {
+      dct[i].clear();
+      int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 10) / 2;
+      // up to 3 buckets per channel:
+      // dark/medium/bright, yellow/unsat/blue, green/unsat/red
+      num_thresholds = std::min(std::max(num_thresholds, 0), 2);
+      size_t cumsum = 0;
+      size_t cut = total_dc[i] / (num_thresholds + 1);
+      for (int j = 0; j < 2048; j++) {
+        cumsum += dc_counts[i][j];
+        if (cumsum > cut) {
+          dct[i].push_back(j - 1025);
+          cut = total_dc[i] * (dct[i].size() + 1) / (num_thresholds + 1);
+        }
+      }
+      num_dc_ctxs *= dct[i].size() + 1;
+    }
+
+    auto& ctx_map = enc_state_->shared.block_ctx_map.ctx_map;
+    ctx_map.clear();
+    ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs, 0);
+
+    int lbuckets = (dct[1].size()+1);
+    for (size_t i = 0; i < num_dc_ctxs; i++) {
+        // up to 9 contexts for luma
+        ctx_map[i] = i / lbuckets;
+        // up to 3 contexts for chroma
+        ctx_map[BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
+          num_dc_ctxs / lbuckets + (i % lbuckets);
+        ctx_map[2 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
+          num_dc_ctxs / lbuckets + (i % lbuckets);
+    }
+    enc_state_->shared.block_ctx_map.num_ctxs =
+        *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
+
     enc_state_->histogram_idx.resize(shared.frame_dim.num_groups);
 
     // disable DC frame for now
@@ -888,52 +925,6 @@ class LossyFrameEncoder {
 
     ComputeAllCoeffOrders(frame_dim);
     shared.num_histograms = 1;
-
-    auto& dct = enc_state_->shared.block_ctx_map.dc_thresholds;
-    dct.clear();
-    // luma, chroma
-    std::vector<int> thresholds[2] = {};
-    for (size_t i = 0; i < 2; i++) {
-      int num_thresholds = (CeilLog2Nonzero(total_dc[i]) - 10) / 2;
-      num_thresholds = std::min(std::max(num_thresholds, 0), 7);
-      size_t cumsum = 0;
-      size_t cut =
-          total_dc[i] * (thresholds[i].size() + 1) / (num_thresholds + 1);
-      for (int j = 0; j < 2048; j++) {
-        cumsum += dc_counts[i][j];
-        if (cumsum > cut) {
-          thresholds[i].push_back(j - 1025);
-          cut = total_dc[i] * (thresholds[i].size() + 1) / (num_thresholds + 1);
-        }
-      }
-      dct.insert(dct.end(), thresholds[i].begin(), thresholds[i].end());
-    }
-    std::sort(dct.begin(), dct.end());
-
-    auto& ctx_map = enc_state_->shared.block_ctx_map.ctx_map;
-
-    ctx_map.clear();
-    ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders * (dct.size() + 1));
-
-    size_t ctxl = 0;
-    size_t ctxc = 0;
-    for (size_t i = 0; i < dct.size() + 1; i++) {
-      ctx_map[i] = ctxl;
-      ctx_map[BlockCtxMap::kNumStrategyOrders * (dct.size() + 1) + i] =
-          ctxc + thresholds[0].size() + 1;
-      ctx_map[2 * BlockCtxMap::kNumStrategyOrders * (dct.size() + 1) + i] =
-          ctxc + thresholds[0].size() + 1;
-      if (i < dct.size()) {
-        if (ctxl < thresholds[0].size() && dct[i] == thresholds[0][ctxl]) {
-          ctxl++;
-        }
-        if (ctxc < thresholds[1].size() && dct[i] == thresholds[1][ctxc]) {
-          ctxc++;
-        }
-      }
-    }
-    enc_state_->shared.block_ctx_map.num_ctxs =
-        *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 
     const auto tokenize_group_init = [&](const size_t num_threads) {
       group_caches_.resize(num_threads);
@@ -971,6 +962,7 @@ class LossyFrameEncoder {
     // Encode quantizer DC and global scale.
     JXL_RETURN_IF_ERROR(
         enc_state_->shared.quantizer.Encode(writer, kLayerQuant, aux_out_));
+    EncodeBlockCtxMap(enc_state_->shared.block_ctx_map, writer, aux_out_);
     enc_state_->shared.cmap.EncodeDC(writer, kLayerDC, aux_out_);
     return true;
   }
@@ -990,7 +982,6 @@ class LossyFrameEncoder {
       ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out_);
     }
 
-    EncodeBlockCtxMap(enc_state_->shared.block_ctx_map, writer, aux_out_);
     for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses(); i++) {
       // Encode coefficient orders.
       uint32_t used_orders = ComputeUsedOrders(
@@ -1105,6 +1096,25 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   LoopFilter loop_filter;
   JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams, animation_frame_or_null, ib,
                                       multiframe, &frame_header, &loop_filter));
+  // Check that if the codestream header says xyb_encoded, the color_transform
+  // matches the requirement. This is checked from the cparams here, even though
+  // optimally we'd be able to check this against what has actually been written
+  // in the main codestream header, but since ib is a const object and the data
+  // written to the main codestream header is (in modified form) in ib, the
+  // encoder cannot indicate this fact in the ib's metadata.
+  if (cparams_orig.color_transform == ColorTransform::kXYB) {
+    if (frame_header.color_transform != ColorTransform::kXYB) {
+      return JXL_FAILURE(
+          "The color transform of frames must be xyb if the codestream is xyb "
+          "encoded");
+    }
+  } else {
+    if (frame_header.color_transform == ColorTransform::kXYB) {
+      return JXL_FAILURE(
+          "The color transform of frames cannot be xyb if the codestream is "
+          "not xyb encoded");
+    }
+  }
 
   FrameDimensions frame_dim;
   frame_dim.Set(ib.xsize(), ib.ysize(), frame_header.group_size_shift);

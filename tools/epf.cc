@@ -61,43 +61,14 @@ jxl::ImageF ComputeSigma(const jxl::Image3F& opsin,
                          const jxl::LoopFilter& lf) {
   jxl::ImageF sigma(frame_dim.xsize_blocks + 4, frame_dim.ysize_blocks + 4);
   const size_t sigma_stride = sigma.PixelsPerRow();
-  const size_t dc_stride = state->shared.dc->PixelsPerRow();
   const float quant_scale = state->shared.quantizer.Scale();
   for (size_t by = 0; by < sigma.ysize(); ++by) {
     float* const JXL_RESTRICT sigma_row = sigma.Row(by);
     const int* const JXL_RESTRICT row_quant =
         state->shared.raw_quant_field.ConstRow(by);
-    const float* const JXL_RESTRICT dc_rows[3] = {
-        state->shared.dc->ConstPlaneRow(0, by),
-        state->shared.dc->ConstPlaneRow(1, by),
-        state->shared.dc->ConstPlaneRow(2, by),
-    };
     for (size_t bx = 0; bx < sigma.xsize(); ++bx) {
       float quant = 1.0f / (row_quant[bx] * quant_scale);
-      float sigma_quant = quant * lf.epf_quant_mul;
-      // Increase sigma near edges.
-      float dc_range = 0;
-      for (size_t c = 0; c < 3; c++) {
-        const float* JXL_RESTRICT base_dc_ptr = dc_rows[c] + bx;
-        // UBSAN complains about overflowing unsigned addition here,
-        // hence we use a slightly more convoluted syntax than simple
-        // array access to ensure we only ever add or subtract positive
-        // quantities.
-        float dc_ref = *base_dc_ptr;
-        float dc_top = *(base_dc_ptr - (by == 0 ? 0 : dc_stride));
-        float dc_bottom =
-            base_dc_ptr[by + 1 == frame_dim.ysize_blocks ? 0 : dc_stride];
-        float dc_left = *(base_dc_ptr - (bx == 0 ? 0 : 1));
-        float dc_right = base_dc_ptr[bx + 1 == frame_dim.xsize_blocks ? 0 : 1];
-
-        float dc_range_c = std::abs(dc_top - dc_ref);
-        dc_range_c = std::max(dc_range_c, std::abs(dc_bottom - dc_ref));
-        dc_range_c = std::max(dc_range_c, std::abs(dc_left - dc_ref));
-        dc_range_c = std::max(dc_range_c, std::abs(dc_right - dc_ref));
-        dc_range = std::max(dc_range_c * lf.epf_channel_scale[c], dc_range);
-      }
-      float sigma =
-          sigma_quant * (2.0f - 1.0f / (1.0f + lf.epf_dc_range_mul * dc_range));
+      float sigma = quant * lf.epf_quant_mul;
       sigma *= lf.epf_sharp_lut[sharpness_parameter];
       // Avoid infinities.
       sigma = std::max(1e-4f, sigma);

@@ -254,7 +254,8 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
             &dec_state->shared_storage.quant_dc, image,
             dec_state->shared->quantizer.MulDC(), mul,
             dec_state->shared->cmap.DCFactors(),
-            dec_state->shared->frame_header.chroma_subsampling);
+            dec_state->shared->frame_header.chroma_subsampling,
+            dec_state->shared->block_ctx_map);
   return true;
 }
 

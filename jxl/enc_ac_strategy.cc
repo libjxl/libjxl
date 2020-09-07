@@ -442,7 +442,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   const size_t size = (1 << acs.log2_covered_blocks()) * kDCTBlockSize;
 
   // Apply transform.
-  HWY_ALIGN_MAX float block[3 * AcStrategy::kMaxCoeffArea];
+  HWY_ALIGN float block[3 * AcStrategy::kMaxCoeffArea];
   for (size_t c = 0; c < 3; c++) {
     float* JXL_RESTRICT block_c = block + size * c;
     std::fill(block_c, block_c + size, 0.0f);
@@ -459,40 +459,46 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   }
 
   // Compute entropy.
-  float entropy = 35.0;
-  float info_loss = 0.0;
+  // Keep separate accumulators for integer and float parts to avoid unnecessary
+  // conversions.
+  float entropy_f = 35.0;
+  int entropy_i = 0;
+  HWY_FULL(float) df;
+  HWY_FULL(int) di;
+  auto info_loss = Zero(df);
   const coeff_order_t* JXL_RESTRICT order = acs.NaturalCoeffOrder();
   for (size_t c = 0; c < 3; c++) {
     int extra_nbits = 0;
     float extra_tbits = 0.0;
     size_t num_nzeros = 0;
-    size_t cx = acs.covered_blocks_x();
-    size_t cy = acs.covered_blocks_y();
-    CoefficientLayout(&cy, &cx);
-    for (size_t y = 0; y < cy * kBlockDim; y++) {
-      for (size_t x = 0; x < cx * kBlockDim; x++) {
-        // Leave out the lowest frequencies.
-        size_t k = order[y * cx * kBlockDim + x];
-        if (x < cx && y < cy) {
-          continue;
-        }
-        float val = (block[c * size + k] - block[size + k] * cmap_factors[c]) *
-                    config.dequant->InvMatrix(acs.RawStrategy(), c)[k];
-        val *= quant;
-
-        uint32_t token, nbits, bits;
-        int v = std::lrint(val);
-        info_loss += std::fabs(v - val);
-        HybridUintConfig().Encode(PackSigned(v), &token, &nbits, &bits);
-        // nbits + bits for token. Skip trailing zeros in natural coeff order.
-        extra_nbits += nbits;
-        extra_tbits += config.token_bits[token];
-        if (v != 0) {
-          num_nzeros++;
-          entropy += extra_nbits + extra_tbits;
-          extra_tbits = 0;
-          extra_nbits = 0;
-        }
+    size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
+    const float* inv_matrix = config.dequant->InvMatrix(acs.RawStrategy(), c);
+    HWY_ALIGN int quantized[AcStrategy::kMaxCoeffArea];
+    const auto cmap_factor = Set(df, cmap_factors[c]);
+    const auto q = Set(df, quant);
+    for (size_t i = 0; i < num_blocks * kDCTBlockSize; i += Lanes(df)) {
+      const auto in = Load(df, block + c * size + i);
+      const auto in_y = Load(df, block + size + i) * cmap_factor;
+      const auto im = Load(df, inv_matrix + i);
+      const auto val = (in - in_y) * im * q;
+      const auto rval = Round(val);
+      info_loss += AbsDiff(val, rval);
+      Store(ConvertTo(di, rval), di, quantized + i);
+    }
+    for (size_t i = num_blocks; i < num_blocks * kDCTBlockSize; i++) {
+      size_t k = order[i];
+      uint32_t token, nbits, bits;
+      HybridUintConfig().Encode(PackSigned(quantized[k]), &token, &nbits,
+                                &bits);
+      // nbits + bits for token. Skip trailing zeros in natural coeff order.
+      extra_nbits += nbits;
+      extra_tbits += config.token_bits[token];
+      if (quantized[k] != 0) {
+        num_nzeros++;
+        entropy_i += extra_nbits;
+        entropy_f += extra_tbits;
+        extra_tbits = 0;
+        extra_nbits = 0;
       }
     }
 
@@ -501,9 +507,10 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     size_t nbits = CeilLog2Nonzero(num_nzeros + 1) + 1;
     // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
     // bias.
-    entropy += CeilLog2Nonzero(nbits + 17) + nbits;
+    entropy_i += CeilLog2Nonzero(nbits + 17) + nbits;
   }
-  float ret = entropy + config.info_loss_multiplier * info_loss;
+  float ret = entropy_i + entropy_f +
+              config.info_loss_multiplier * GetLane(SumOfLanes(info_loss));
   return ret;
 }
 
@@ -625,10 +632,10 @@ void FindBestAcStrategy(const Image3F& src,
   const float kFlat = 5.0f * sqrt(butteraugli_target);       // OPTIMIZE
 
   // Scale of channels when computing delta.
-  const double kDeltaScale[3] = {
-    9.4174165405614652,
-    1.0,
-    0.2,
+  const float kDeltaScale[3] = {
+      9.4174165405614652,
+      1.0,
+      0.2,
   };
 
   ACSConfig config;
@@ -755,7 +762,7 @@ void FindBestAcStrategy(const Image3F& src,
           // How 'flat' is this area, i.e., how observable would ringing
           // artefacts be here?
           for (size_t c = 0; c < 3; c++) {
-            flat[c][iy * 4 + ix] = 0;
+            HWY_ALIGN float s_vals[64];
             for (size_t y = 0; y < 8; y++) {
               for (size_t x = 0; x < 8; x++) {
                 float v = pixels[c][y * 8 + x];
@@ -772,10 +779,18 @@ void FindBestAcStrategy(const Image3F& src,
                 if (x < 6) {
                   s += std::fabs(v - pixels[c][y * 8 + x + 2]);
                 }
-                s *= 0.25 * kFlat * kDeltaScale[c];
-                flat[c][iy * 4 + ix] += (1.0 / 48.0) / (1.0 + s * s);
+                s_vals[y * 8 + x] = s;
               }
             }
+            const auto smul = Set(d, 0.25f * kFlat * kDeltaScale[c]);
+            const auto one = Set(d, 1.0f);
+            const auto numerator = Set(d, 1.0f / 48.0f);
+            auto accum = Zero(d);
+            for (size_t i = 0; i < 64; i += Lanes(d)) {
+              const auto sv = Load(d, s_vals + i) * smul;
+              accum += numerator / MulAdd(sv, sv, one);
+            }
+            flat[c][iy * 4 + ix] = GetLane(SumOfLanes(accum));
           }
         }
       }

@@ -111,6 +111,9 @@ Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
     metadata->color_encoding.DecideIfWantICC();
   }
 
+  metadata->xyb_encoded =
+      cparams.color_transform == ColorTransform::kXYB ? true : false;
+
   return true;
 }
 

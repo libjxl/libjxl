@@ -208,11 +208,14 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
 }
 
 // DC dequantization.
-void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
+void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
                const float* dc_factors, float mul, const float* cfl_factors,
-               YCbCrChromaSubsampling chroma_subsampling) {
+               YCbCrChromaSubsampling chroma_subsampling,
+               const BlockCtxMap& bctx) {
   const HWY_FULL(float) df;
   const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
+  size_t hshift = HShift(chroma_subsampling);
+  size_t vshift = VShift(chroma_subsampling);
   if (chroma_subsampling == YCbCrChromaSubsampling::k444) {
     const auto fac_x = Set(df, dc_factors[0] * mul);
     const auto fac_y = Set(df, dc_factors[1] * mul);
@@ -223,9 +226,6 @@ void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
       float* dec_row_x = r.PlaneRow(dc, 0, y);
       float* dec_row_y = r.PlaneRow(dc, 1, y);
       float* dec_row_b = r.PlaneRow(dc, 2, y);
-      int32_t* qdec_row_x = r.PlaneRow(quant_dc, 0, y);
-      int32_t* qdec_row_y = r.PlaneRow(quant_dc, 1, y);
-      int32_t* qdec_row_b = r.PlaneRow(quant_dc, 2, y);
       const int32_t* quant_row_x = in.channel[1].plane.Row(y);
       const int32_t* quant_row_y = in.channel[0].plane.Row(y);
       const int32_t* quant_row_b = in.channel[2].plane.Row(y);
@@ -233,9 +233,6 @@ void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
         const auto in_q_x = Load(di, quant_row_x + x);
         const auto in_q_y = Load(di, quant_row_y + x);
         const auto in_q_b = Load(di, quant_row_b + x);
-        Store(in_q_x, di, qdec_row_x + x);
-        Store(in_q_b, di, qdec_row_b + x);
-        Store(in_q_y, di, qdec_row_y + x);
         const auto in_x = ConvertTo(df, in_q_x) * fac_x;
         const auto in_y = ConvertTo(df, in_q_y) * fac_y;
         const auto in_b = ConvertTo(df, in_q_b) * fac_b;
@@ -245,8 +242,6 @@ void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
       }
     }
   } else {
-    size_t hshift = HShift(chroma_subsampling);
-    size_t vshift = VShift(chroma_subsampling);
     Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
             ChromaSize(r.ysize(), vshift));
     for (size_t c : {1, 0, 2}) {
@@ -257,13 +252,42 @@ void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
       for (size_t y = 0; y < ys; y++) {
         const int32_t* quant_row = ch.plane.Row(y);
         float* row = (c == 1 ? r : cr).PlaneRow(dc, c, y);
-        int32_t* qrow = (c == 1 ? r : cr).PlaneRow(quant_dc, c, y);
         for (size_t x = 0; x < xs; x += Lanes(di)) {
           const auto in_q = Load(di, quant_row + x);
-          Store(in_q, di, qrow + x);
           const auto in = ConvertTo(df, in_q) * fac;
           Store(in, df, row + x);
         }
+      }
+    }
+  }
+  if (bctx.num_dc_ctxs <= 1) {
+    for (size_t y = 0; y < r.ysize(); y++) {
+      uint8_t* qdc_row = r.Row(quant_dc, y);
+      memset(qdc_row, 0, sizeof(*qdc_row) * r.xsize());
+    }
+  } else {
+    for (size_t y = 0; y < r.ysize(); y++) {
+      uint8_t* qdc_row_val = r.Row(quant_dc, y);
+      const int32_t* quant_row_x = in.channel[1].plane.Row(y >> vshift);
+      const int32_t* quant_row_y = in.channel[0].plane.Row(y);
+      const int32_t* quant_row_b = in.channel[2].plane.Row(y >> vshift);
+      for (size_t x = 0; x < r.xsize(); x++) {
+        int bucket_x = 0, bucket_y = 0, bucket_b = 0;
+        for (int t : bctx.dc_thresholds[0]) {
+          if (quant_row_x[x >> hshift] > t) bucket_x++;
+        }
+        for (int t : bctx.dc_thresholds[1]) {
+          if (quant_row_y[x] > t) bucket_y++;
+        }
+        for (int t : bctx.dc_thresholds[2]) {
+          if (quant_row_b[x >> hshift] > t) bucket_b++;
+        }
+        int bucket = bucket_x;
+        bucket *= bctx.dc_thresholds[2].size() + 1;
+        bucket += bucket_b;
+        bucket *= bctx.dc_thresholds[0].size() + 1;
+        bucket += bucket_y;
+        qdc_row_val[x] = bucket;
       }
     }
   }
@@ -283,11 +307,12 @@ void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
   return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(dc_factors, dc, pool);
 }
 
-void DequantDC(const Rect& r, Image3F* dc, Image3I* quant_dc, const Image& in,
+void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
                const float* dc_factors, float mul, const float* cfl_factors,
-               YCbCrChromaSubsampling chroma_subsampling) {
+               YCbCrChromaSubsampling chroma_subsampling,
+               const BlockCtxMap& bctx) {
   return HWY_DYNAMIC_DISPATCH(DequantDC)(r, dc, quant_dc, in, dc_factors, mul,
-                                         cfl_factors, chroma_subsampling);
+                                         cfl_factors, chroma_subsampling, bctx);
 }
 
 }  // namespace jxl

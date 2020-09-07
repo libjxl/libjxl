@@ -23,6 +23,7 @@
 
 #include "jxl/rational_polynomial-inl.h"
 
+// Code
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>

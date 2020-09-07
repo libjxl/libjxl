@@ -185,9 +185,9 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
     float* JXL_RESTRICT row_x = opsin_rect.PlaneRow(opsin, 0, y);
     float* JXL_RESTRICT row_y = opsin_rect.PlaneRow(opsin, 1, y);
     float* JXL_RESTRICT row_b = opsin_rect.PlaneRow(opsin, 2, y);
-    const float* JXL_RESTRICT row_rnd_r = noise_rect.PlaneRow(opsin, 0, y);
-    const float* JXL_RESTRICT row_rnd_g = noise_rect.PlaneRow(opsin, 1, y);
-    const float* JXL_RESTRICT row_rnd_c = noise_rect.PlaneRow(opsin, 2, y);
+    const float* JXL_RESTRICT row_rnd_r = noise_rect.ConstPlaneRow(noise, 0, y);
+    const float* JXL_RESTRICT row_rnd_g = noise_rect.ConstPlaneRow(noise, 1, y);
+    const float* JXL_RESTRICT row_rnd_c = noise_rect.ConstPlaneRow(noise, 2, y);
     for (size_t x = 0; x < xsize; x += Lanes(d)) {
       const auto vx = Load(d, row_x + x);
       const auto vy = Load(d, row_y + x);

@@ -169,27 +169,28 @@ typedef enum {
 /** Data type for the sample values per channel per pixel.
  */
 typedef enum {
+  /** use type float, with range 0.0-1.0 (within gamut, may go outside this
+   * range for wide color gamut). This is the recommended data type to handle
+   * HDR and wide color gamut images. */
+  JPEGXL_TYPE_FLOAT = 0,
+
   /** Use 1-bit packed in uint8_t, first pixel in LSB, padded to uint8_t per
    * row.
    * TODO(lode): support first in MSB, other padding.
    */
   JPEGXL_TYPE_BOOLEAN,
 
-  /** Use type uint8_t.
+  /** Use type uint8_t. May clip wide color gamut data.
    */
   JPEGXL_TYPE_UINT8,
 
-  /** Use type uint16_t.
+  /** Use type uint16_t. May clip wide color gamut data.
    */
   JPEGXL_TYPE_UINT16,
 
-  /** Use type uint32_t.
+  /** Use type uint32_t. May clip wide color gamut data.
    */
   JPEGXL_TYPE_UINT32,
-
-  /** use type float.
-   */
-  JPEGXL_TYPE_FLOAT,
 } JpegxlDataType;
 
 /** Data type for the sample values per channel per pixel for the output buffer

@@ -1146,17 +1146,31 @@ Status DequantMatrices::Compute() {
                                      AcStrategy::kNumValidStrategies +
                                  table % kNum];
     }
+    size_t prev_pos = pos;
     JXL_RETURN_IF_ERROR(ComputeQuantTable(encodings[table], table_.get(),
                                           offsets.data(), table,
                                           QuantTable(table % kNum), &pos));
+    for (size_t i = prev_pos; i < pos; i++) {
+      InvTable()[i] = 1.0f / table_[i];
+    }
+    // Ensure that the lowest frequencies have a 0 inverse table.
+    // This does not affect en/decoding, but allows AC strategy selection to be
+    // slightly simpler.
+    size_t xs = required_size_x_[QuantTable(table % kNum)];
+    size_t ys = required_size_y_[QuantTable(table % kNum)];
+    CoefficientLayout(&ys, &xs);
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t y = 0; y < ys; y++) {
+        for (size_t x = 0; x < xs; x++) {
+          InvTable()[prev_pos + c * ys * xs * kDCTBlockSize +
+                     y * kBlockDim * xs + x] = 0;
+        }
+      }
+    }
   }
 
   JXL_ASSERT(pos == kTotalTableSize);
 
-  size_ = pos;
-  for (size_t i = 0; i < pos; i++) {
-    InvTable()[i] = 1.0f / table_[i];
-  }
   for (size_t i = 0; i < AcStrategy::kNumValidStrategies; i++) {
     for (size_t c = 0; c < 3; c++) {
       table_offsets_[i * 3 + c] = offsets[kQuantTable[i] * 3 + c];

@@ -892,6 +892,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
     cparams.quality_pair.second = (100 + cparams.quality_pair.second) * 0.5f;
   }
   ImageMetadata metadata;
+  // The xyb_encoded bit applies globally to all frames of the codestream.
+  metadata.xyb_encoded = cparams.color_transform == ColorTransform::kXYB;
   // The encoding used here does not really matter much but it should have the
   // same number of channels as the image. If `is_xyb` is true, then the
   // reference frame is in XYB and thus has three channels even if the original

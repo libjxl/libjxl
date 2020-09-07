@@ -306,41 +306,16 @@ void ImageBundle::VerifySizes() const {
 }
 
 size_t ImageBundle::DetectRealBitdepth() const {
-  JXL_CHECK(!metadata_->bit_depth.floating_point_sample);
-  const size_t orig_d = metadata_->bit_depth.bits_per_sample;
-  const size_t maxval = (1 << orig_d) - 1;
-  const double factor = maxval / 255.;
-  size_t real_d = 1;
-  double f = maxval;
+  return metadata_->bit_depth.bits_per_sample;
 
-  // Start with assuming that 1-bit is enough, then go over all pixels and check
-  // if the original value can be reconstructed (within a margin of 0.6) at that
-  // bit depth (it won't, unless it's a pure black & white image). As soon as
-  // you find a pixel that needs more bit depth, you increment the assumed
-  // bit-depth and try again. You don't need to revisit the pixels that were
-  // already OK at the lower bit depth (you can assume they will still be OK at
-  // the higher bit depth), but you do need to revisit the current pixel.
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < ysize(); y++) {
-      const float* JXL_RESTRICT row = color_.PlaneRow(c, y);
-      for (size_t x = 0; x < xsize(); x++) {
-        int32_t po = row[x] * factor + 0.5;
-        // allow a rescaling error of +- 0.6
-        // if you set this to 1.0 or more, the 'real' bit depth will be too low
-        // (e.g. 7-bit becomes enough to encode 8-bit) if you set this to 0.5 or
-        // less, it will fail to find the real bit depth
-        if (std::abs(row[x] * factor - (po >> (orig_d - real_d)) * f) > 0.6) {
-          real_d++;
-          if (real_d == orig_d) return orig_d;
-          f = ((double)maxval) / ((1 << real_d) - 1);
-          x--;
-        }
-      }
-    }
-  }
-  JXL_WARNING("Interpreting input as %zu-bit (nominally it is %zu-bit)", real_d,
-              orig_d);
-  return real_d;
+  // TODO(lode): let this function return lower bit depth if possible, e.g.
+  // return 8 bits in case the original image came from a 16-bit PNG that
+  // was in fact representable as 8-bit PNG. Ensure that the implementation
+  // returns 16 if e.g. two consecutive 16-bit values appeared in the original
+  // image (such as 32768 and 32769), take into account that e.g. the values
+  // 3-bit can represent is not a superset of the values 2-bit can represent,
+  // and there may be slight imprecisions in the nits-scaled or 255-scaled
+  // floating point image.
 }
 
 const ImageU& ImageBundle::alpha() const {

@@ -581,23 +581,29 @@ void Benchmark(size_t xsize, size_t ysize, double sigma) {
         return t1 - t0;
       });
 
-  printf("%4zu x %4zu @%.1f: fir %5.1f, simd7 %5.1f, rg %5.1f\n", xsize, ysize,
-         sigma, mps_fir, mps_simd7, mps_rg);
+  printf("%zu,%zu,%.1f,%.1f,%.1f\n", xsize, ysize, mps_fir, mps_simd7, mps_rg);
 }
 
 TEST(GaussBlurTest, Benchmark) {
   Benchmark1D();
 
-  Benchmark(128, 128, 7);
-  Benchmark(128, 207, 7);
-  Benchmark(207, 128, 7);
-  Benchmark(207, 207, 7);
-  Benchmark(207, 334, 7);
-  Benchmark(334, 207, 7);
-  Benchmark(334, 334, 7);
-  Benchmark(334, 540, 7);
-  Benchmark(540, 334, 7);
-  Benchmark(540, 540, 7);
+  // Euler's gamma as a nothing-up-my-sleeve number, so sizes are unlikely to
+  // interact with cache properties
+  const float g = 0.57721566;
+  const size_t d0 = 128;
+  const size_t d1 = static_cast<size_t>(d0 / g);
+  const size_t d2 = static_cast<size_t>(d1 / g);
+  const size_t d3 = static_cast<size_t>(d2 / g);
+  Benchmark(d0, d0, 7);
+  Benchmark(d0, d1, 7);
+  Benchmark(d1, d0, 7);
+  Benchmark(d1, d1, 7);
+  Benchmark(d1, d2, 7);
+  Benchmark(d2, d1, 7);
+  Benchmark(d2, d2, 7);
+  Benchmark(d2, d3, 7);
+  Benchmark(d3, d2, 7);
+  Benchmark(d3, d3, 7);
 
   Benchmark(1920, 1080, 7);
 

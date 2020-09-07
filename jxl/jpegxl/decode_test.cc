@@ -487,21 +487,47 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
 }  // namespace jxl
 
 namespace {
-bool Near(uint32_t expected, uint32_t value, uint32_t max_dist) {
-  uint32_t dist = expected > value ? expected - value : value - expected;
+bool Near(double expected, double value, double max_dist) {
+  double dist = expected > value ? expected - value : value - expected;
   return dist <= max_dist;
 }
 
-// Procedure to convert pixels to highest possible integer precision, not
-// efficient, but well-controlled for testing. It uses 32-bit integer to
-// be able to test the uint32_t output format as well, once supported.
-std::vector<uint32_t> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
-                                      size_t ysize,
-                                      const JpegxlPixelFormat& format) {
-  std::vector<uint32_t> result(xsize * ysize * 4);
-  EXPECT_TRUE(format.data_type == JPEGXL_TYPE_BOOLEAN ||
-              format.data_type == JPEGXL_TYPE_UINT8 ||
-              format.data_type == JPEGXL_TYPE_UINT16);
+// Loads a Big-Endian float
+// TODO(lode): support little endian here and in the API
+float LoadBEFloat(const uint8_t* p) {
+  uint32_t u = LoadBE32(p);
+  float result;
+  memcpy(&result, &u, 4);
+  return result;
+}
+
+size_t GetPrecision(JpegxlDataType data_type) {
+  switch (data_type) {
+    case JPEGXL_TYPE_BOOLEAN:
+      return 1;
+    case JPEGXL_TYPE_UINT8:
+      return 8;
+    case JPEGXL_TYPE_UINT16:
+      return 16;
+    case JPEGXL_TYPE_UINT32:
+      return 32;
+    case JPEGXL_TYPE_FLOAT:
+      // Floating point mantissa precision
+      return 24;
+    default:
+      JXL_ASSERT(false);  // unknown type
+  }
+}
+
+// Procedure to convert pixels to double precision, not efficient, but
+// well-controlled for testing. It uses double, to be able to represent all
+// precisions needed for the maximum data types the API supports: uint32_t
+// integers, and, single precision float. The values are in range 0-255 for
+// SDR.
+std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
+                                    size_t ysize,
+                                    const JpegxlPixelFormat& format) {
+  std::vector<double> result(xsize * ysize * 4);
   size_t num_channels = format.num_channels;
   bool gray = num_channels == 1 || num_channels == 2;
   bool alpha = num_channels == 2 || num_channels == 4;
@@ -518,13 +544,14 @@ std::vector<uint32_t> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
         uint32_t g = gray ? r : ((byte & 2) >> 1);
         uint32_t b = gray ? r : ((byte & 4) >> 2);
         uint32_t a = alpha ? ((byte >> (num_channels - 1)) & 1) : 1;
-        result[j + 0] = r * 4294967295;
-        result[j + 1] = g * 4294967295;
-        result[j + 2] = b * 4294967295;
-        result[j + 3] = a * 4294967295;
+        result[j + 0] = r;
+        result[j + 1] = g;
+        result[j + 2] = b;
+        result[j + 3] = a;
       }
     }
   } else if (format.data_type == JPEGXL_TYPE_UINT8) {
+    double mul = 1.0 / 255.0;  // Multiplier to bring to 0-1.0 range
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
@@ -533,14 +560,14 @@ std::vector<uint32_t> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
         uint32_t g = gray ? r : pixels[i + 1];
         uint32_t b = gray ? r : pixels[i + 2];
         uint32_t a = alpha ? pixels[i + num_channels - 1] : 255;
-        // Multiply by 4294967295 / 255.
-        result[j + 0] = r * 16843009;
-        result[j + 1] = g * 16843009;
-        result[j + 2] = b * 16843009;
-        result[j + 3] = a * 16843009;
+        result[j + 0] = r * mul;
+        result[j + 1] = g * mul;
+        result[j + 2] = b * mul;
+        result[j + 3] = a * mul;
       }
     }
   } else if (format.data_type == JPEGXL_TYPE_UINT16) {
+    double mul = 1.0 / 65535.0;  // Multiplier to bring to 0-1.0 range
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
@@ -551,13 +578,46 @@ std::vector<uint32_t> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
         uint32_t a = alpha ? (pixels[i + num_channels * 2 - 2] << 8) +
                                  pixels[i + num_channels * 2 - 1]
                            : 65535;
-        // Multiply by 4294967295 / 65535.
-        result[j + 0] = r * 65537;
-        result[j + 1] = g * 65537;
-        result[j + 2] = b * 65537;
-        result[j + 3] = a * 65537;
+        result[j + 0] = r * mul;
+        result[j + 1] = g * mul;
+        result[j + 2] = b * mul;
+        result[j + 3] = a * mul;
       }
     }
+  } else if (format.data_type == JPEGXL_TYPE_UINT32) {
+    double mul = 1.0 / 4294967295.0;  // Multiplier to bring to 0-1.0 range
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t j = (y * xsize + x) * 4;
+        size_t i = (y * xsize + x) * num_channels * 4;
+        uint32_t r = LoadBE32(pixels + i);
+        uint32_t g = gray ? r : LoadBE32(pixels + i + 4);
+        uint32_t b = gray ? r : LoadBE32(pixels + i + 8);
+        uint32_t a =
+            alpha ? LoadBE32(pixels + i + num_channels * 2 - 4) : 4294967295;
+        result[j + 0] = r * mul;
+        result[j + 1] = g * mul;
+        result[j + 2] = b * mul;
+        result[j + 3] = a * mul;
+      }
+    }
+  } else if (format.data_type == JPEGXL_TYPE_FLOAT) {
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t j = (y * xsize + x) * 4;
+        size_t i = (y * xsize + x) * num_channels * 4;
+        float r = LoadBEFloat(pixels + i);
+        float g = gray ? r : LoadBEFloat(pixels + i + 4);
+        float b = gray ? r : LoadBEFloat(pixels + i + 8);
+        float a = alpha ? LoadBEFloat(pixels + i + num_channels * 4 - 4) : 1.0;
+        result[j + 0] = r;
+        result[j + 1] = g;
+        result[j + 2] = b;
+        result[j + 3] = a;
+      }
+    }
+  } else {
+    JXL_ASSERT(false);  // Unsupported type
   }
   return result;
 }
@@ -569,54 +629,47 @@ std::vector<uint32_t> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
 size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
                      size_t ysize, const JpegxlPixelFormat& format_a,
                      const JpegxlPixelFormat& format_b) {
-  std::vector<uint32_t> a32 = ConvertToRGBA32(a, xsize, ysize, format_a);
-  std::vector<uint32_t> b32 = ConvertToRGBA32(b, xsize, ysize, format_b);
+  // Convert both images to equal full precision for comparison.
+  std::vector<double> a_full = ConvertToRGBA32(a, xsize, ysize, format_a);
+  std::vector<double> b_full = ConvertToRGBA32(b, xsize, ysize, format_b);
   bool gray_a = format_a.num_channels < 3;
   bool gray_b = format_b.num_channels < 3;
   bool alpha_a = !(format_a.num_channels & 1);
   bool alpha_b = !(format_b.num_channels & 1);
-  size_t bits_a =
-      format_a.data_type == JPEGXL_TYPE_BOOLEAN
-          ? 1
-          : (format_a.data_type == JPEGXL_TYPE_UINT8
-                 ? 8
-                 : (format_a.data_type == JPEGXL_TYPE_UINT16 ? 16 : 32));
-  size_t bits_b =
-      format_b.data_type == JPEGXL_TYPE_BOOLEAN
-          ? 1
-          : (format_b.data_type == JPEGXL_TYPE_UINT8
-                 ? 8
-                 : (format_b.data_type == JPEGXL_TYPE_UINT16 ? 16 : 32));
+  size_t bits_a = GetPrecision(format_a.data_type);
+  size_t bits_b = GetPrecision(format_b.data_type);
   size_t bits = std::min(bits_a, bits_b);
-  // How much distance is allowed in case of pixels with lower bit depths, e.g.
-  // in case of 1-bit this is 2147483647 since 2147483647 must map to 0 and
-  // 2147483648 must map to 1.
-  uint32_t precision = 2147483647ull / ((1ull << bits) - 1ull);
+  // How much distance is allowed in case of pixels with lower bit depths, given
+  // that the double precision float images use range 0-1.0.
+  // E.g. in case of 1-bit this is 0.5 since 0.499 must map to 0 and 0.501 must
+  // map to 1.
+  double precision = 0.5 / ((1ull << bits) - 1ull);
   size_t numdiff = 0;
   for (size_t y = 0; y < ysize; y++) {
     for (size_t x = 0; x < xsize; x++) {
       size_t i = (y * xsize + x) * 4;
       bool ok = true;
       if (gray_a || gray_b) {
-        if (!Near(a32[i + 0], b32[i + 0], precision)) ok = false;
+        if (!Near(a_full[i + 0], b_full[i + 0], precision)) ok = false;
         // If the input was grayscale and the output not, then the output must
         // have all channels equal.
-        if (gray_a && b32[i + 0] != b32[i + 1] && b32[i + 2] != b32[i + 2]) {
+        if (gray_a && b_full[i + 0] != b_full[i + 1] &&
+            b_full[i + 2] != b_full[i + 2]) {
           ok = false;
         }
       } else {
-        if (!Near(a32[i + 0], b32[i + 0], precision) ||
-            !Near(a32[i + 1], b32[i + 1], precision) ||
-            !Near(a32[i + 2], b32[i + 2], precision)) {
+        if (!Near(a_full[i + 0], b_full[i + 0], precision) ||
+            !Near(a_full[i + 1], b_full[i + 1], precision) ||
+            !Near(a_full[i + 2], b_full[i + 2], precision)) {
           ok = false;
         }
       }
       if (alpha_a && alpha_b) {
-        if (!Near(a32[i + 3], b32[i + 3], precision)) ok = false;
+        if (!Near(a_full[i + 3], b_full[i + 3], precision)) ok = false;
       } else {
         // If the input had no alpha channel, the output should be opaque
         // after roundtrip.
-        if (alpha_b && !Near(4294967295, b32[i + 3], precision)) ok = false;
+        if (alpha_b && !Near(255.0, b_full[i + 3], precision)) ok = false;
       }
       if (!ok) numdiff++;
     }
@@ -683,6 +736,48 @@ TEST(DecodeTest, PixelTest) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
     EXPECT_EQ(num_pixels * 6, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
+
+  {
+    JpegxlPixelFormat format = {4, JPEGXL_TYPE_UINT16};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 8, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
+
+#if 0  // Disabled since external_image doesn't currently support uint32_t
+  {
+    JpegxlPixelFormat format = {4, JPEGXL_TYPE_UINT32};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 16, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
+#endif
+
+  {
+    JpegxlPixelFormat format = {3, JPEGXL_TYPE_FLOAT};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 12, pixels2.size());
+    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                               format_orig, format));
+  }
+
+  {
+    JpegxlPixelFormat format = {4, JPEGXL_TYPE_FLOAT};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+    EXPECT_EQ(num_pixels * 16, pixels2.size());
     EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
                                format_orig, format));
   }

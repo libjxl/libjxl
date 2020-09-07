@@ -110,6 +110,9 @@ class LossyFrameDecoder {
     PROFILER_FUNC;
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.quantizer.Decode(reader));
 
+    JXL_RETURN_IF_ERROR(
+        DecodeBlockCtxMap(reader, &dec_state_.shared_storage.block_ctx_map));
+
     JXL_RETURN_IF_ERROR(dec_state_.shared_storage.cmap.DecodeDC(reader));
 
     // Pre-compute info for decoding a group.
@@ -153,8 +156,6 @@ class LossyFrameDecoder {
     dec_state_.shared_storage.num_histograms =
         1 + reader->ReadBits(num_histo_bits);
 
-    JXL_RETURN_IF_ERROR(
-        DecodeBlockCtxMap(reader, &dec_state_.shared_storage.block_ctx_map));
     dec_state_.code.resize(kMaxNumPasses);
     dec_state_.context_map.resize(kMaxNumPasses);
     // Read coefficient orders and histograms.
@@ -336,6 +337,19 @@ Status DecodeFrame(const DecompressParams& dparams,
       animation_or_null, reader, &frame_header, frame_dim, &loop_filter));
   if (frame_dim->xsize == 0 || frame_dim->ysize == 0) {
     return JXL_FAILURE("Empty frame");
+  }
+  if (decoded->metadata()->xyb_encoded) {
+    if (frame_header.color_transform != ColorTransform::kXYB) {
+      return JXL_FAILURE(
+          "The color transform of frames must be xyb if the codestream is xyb "
+          "encoded");
+    }
+  } else {
+    if (frame_header.color_transform == ColorTransform::kXYB) {
+      return JXL_FAILURE(
+          "The color transform of frames cannot be xyb if the codestream is "
+          "not xyb encoded");
+    }
   }
   const size_t num_passes = frame_header.passes.num_passes;
   const size_t xsize = frame_dim->xsize;

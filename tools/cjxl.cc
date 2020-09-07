@@ -656,6 +656,13 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
                                compressed, jxl::DecodeTarget::kPixels);
 #endif
     } else {
+      if (io.Main().IsJPEG()) {
+        // TODO(lode): automate this in the encoder. The encoder must in the
+        // beginning choose to either do all in xyb, or all in non-xyb, write
+        // that in the xyb_encoded header flag, and persistently keep that state
+        // to check if every frame uses an allowed color transform.
+        args.params.color_transform = io.Main().color_transform;
+      }
       ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
                       &aux_out, pool);
     }

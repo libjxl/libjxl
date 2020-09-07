@@ -74,7 +74,7 @@ struct PassesSharedState {
       std::vector<coeff_order_t>(kMaxNumPasses * kCoeffOrderSize);
 
   // Decoder-side DC and quantized DC.
-  Image3I quant_dc;
+  ImageB quant_dc;
   Image3F dc_storage;
   const Image3F* JXL_RESTRICT dc = &dc_storage;
 

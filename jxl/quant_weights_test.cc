@@ -200,9 +200,8 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
       // DCTSlow doesn't multiply/divide by 1/N, so we do it manually.
       slow_coeffs[i] =
           std::round(slow_coeffs[i] / 8 / kUniformQuant) * 8 * kUniformQuant;
-      coeffs[i] =
-          std::round(coeffs[i] * dequant_matrices.InvMatrix(dct, 0)[i]) *
-          dequant_matrices.Matrix(dct, 0)[i];
+      coeffs[i] = std::round(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
+                  dequant_matrices.Matrix(dct, 0)[i];
     }
     IDCTSlow<8>(slow_coeffs);
     TransformToPixels(dct, coeffs, pixels, 8);
@@ -225,9 +224,8 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     for (size_t i = 0; i < 64 * 4; i++) {
       slow_coeffs[i] =
           std::round(slow_coeffs[i] / 16 / kUniformQuant) * 16 * kUniformQuant;
-      coeffs[i] =
-          std::round(coeffs[i] * dequant_matrices.InvMatrix(dct, 0)[i]) *
-          dequant_matrices.Matrix(dct, 0)[i];
+      coeffs[i] = std::round(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
+                  dequant_matrices.Matrix(dct, 0)[i];
     }
 
     IDCTSlow<16>(slow_coeffs);

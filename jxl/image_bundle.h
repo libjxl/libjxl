@@ -434,6 +434,7 @@ struct ImageMetadata {
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
     visitor->Bool(true, &modular_16_bit_buffer_sufficient);
 
+    visitor->Bool(true, &xyb_encoded);
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
 
@@ -488,6 +489,59 @@ struct ImageMetadata {
 
   BitDepth bit_depth;
   bool modular_16_bit_buffer_sufficient;  // otherwise 32 is.
+
+  // Whether the colors values of the pixels of frames are encoded in the
+  // codestream using the absolute XYB color space (or a built-in transform
+  // thereof, such as linear sRGB), or the frames are encoded using values that
+  // follow the color space defined by the ColorEncoding or ICC profile. This
+  // determines when or whether a CMS (Color Management System) is needed to get
+  // the pixels in a desired color space. In one case, the pixels have one known
+  // color space and a CMS is needed to convert them to the original image's
+  // color space, in the other case the pixels have the color space of the
+  // original image and a CMS is required if a different display space, or a
+  // single known consistent color space for multiple decoded images, is
+  // desired. In all cases, the color space of all frames from a single image is
+  // the same (or can be transformed to the same color space without use of a
+  // CMS).
+  //
+  // If true: then frames can be decoded to xyb or linear sRGB without use of a
+  // CMS (Color Management System). The pixels are in one known color space that
+  // is consistent through all JXL images with xyb = true. The attached
+  // ColorEncoding or ICC profile has no effect on the meaning of the pixel's
+  // color values, but instead indicates what the color profile of the original
+  // image was, and what color profile one should convert to when decoding to
+  // integers to prevent clipping and precision loss. To do that conversion
+  // requires a CMS. This mode is typically used for lossy image data
+  // compressed with XYB. VarDCT and modular frames are all encoded in XYB
+  // color.
+  //
+  // TODO(lode): here also allow sRGB8 for modular frames (this is an encoding
+  // that we can convert from/to xyb without CMS, this encoding must be
+  // indicated at the frame with a new FrameEncoding value, since the attached
+  // ICC Profile can be something else just as it can be for XYB)
+  //
+  // If false: then the color values of decoded frames are in the space defined
+  // by the attached ColorEncoding or ICC profile. To instead get the pixels in
+  // a chosen known color space, such as sRGB, requires a CMS, since the
+  // attached ColorEncoding or ICC profile could be any arbitrary color space.
+  // This mode is typically used for lossless images encoded as integers. VarDCT
+  // and modular frames are all encoded in RGB, YCbCr, or other multichannel
+  // data that is in the attached color space.
+  //
+  // Note: if !xyb_encoded, but the attached color profile indicates XYB (which
+  // can happen either if it's a ColorEncoding with color_space_ ==
+  // ColorSpace::kXYB, or if it's an ICC Profile that has been crafted to
+  // represent XYB), then the frames still may not use ColorEncoding kXYB, they
+  // must still use kNone (or kYCbCr, which would mean applying the YCbCr
+  // transform to the 3-channel XYB data), since with !xyb_encoded, the 3
+  // channels are stored as-is, no matter what meaning the color profile assigns
+  // to them. To use ColorEncoding::kXYB, xyb_encoded must be true.
+  //
+  // This value is defined in image metadata because this is the global
+  // codestream header. This value does not affect the image itself, so is not
+  // image metadata per se, it only affects the encoding, and what color space
+  // the decoder can receive the pixels in without needing a CMS.
+  bool xyb_encoded;
 
   ColorEncoding color_encoding;
 

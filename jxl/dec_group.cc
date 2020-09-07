@@ -412,49 +412,15 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           }
 
           if (dec_state->shared->image_features.loop_filter.epf) {
-            size_t sbx = block_rect.x0() + bx;
-            size_t sby = block_rect.y0() + by;
-            size_t xbl = dec_state->shared->frame_dim.xsize_blocks;
-            size_t ybl = dec_state->shared->frame_dim.ysize_blocks;
-            float quant = 1.0f / (row_quant[bx] * quant_scale);
-            float sigma_quant = quant * lf.epf_quant_mul;
+            float sigma_quant = lf.epf_quant_mul / (row_quant[bx] * quant_scale * kInvSigmaNum);
             for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
               for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-                // Increase sigma near edges.
-                float dc_range = 0;
-                for (size_t c = 0; c < 3; c++) {
-                  const float* JXL_RESTRICT base_dc_ptr =
-                      dc_rows[c] + bx + ix + iy * dc_stride;
-                  // UBSAN complains about overflowing unsigned addition here,
-                  // hence we use a slightly more convoluted syntax than simple
-                  // array access to ensure we only ever add or subtract
-                  // positive quantities.
-                  float dc_ref = *base_dc_ptr;
-                  float dc_top =
-                      *(base_dc_ptr - (sby + iy == 0 ? 0 : dc_stride));
-                  float dc_bottom =
-                      base_dc_ptr[sby + iy + 1 == ybl ? 0 : dc_stride];
-                  float dc_left = *(base_dc_ptr - (sbx + ix == 0 ? 0 : 1));
-                  float dc_right = base_dc_ptr[sbx + ix + 1 == xbl ? 0 : 1];
-
-                  float dc_range_c = std::abs(dc_top - dc_ref);
-                  dc_range_c =
-                      std::max(dc_range_c, std::abs(dc_bottom - dc_ref));
-                  dc_range_c = std::max(dc_range_c, std::abs(dc_left - dc_ref));
-                  dc_range_c =
-                      std::max(dc_range_c, std::abs(dc_right - dc_ref));
-                  dc_range =
-                      std::max(dc_range_c * lf.epf_channel_scale[c], dc_range);
-                }
-                float sigma =
-                    sigma_quant *
-                    (2.0f - 1.0f / (1.0f + lf.epf_dc_range_mul * dc_range));
-                sigma *= lf.epf_sharp_lut[sharpness_row[bx + ix +
-                                                        iy * sharpness_stride]];
+                float sigma = sigma_quant *
+                              lf.epf_sharp_lut[sharpness_row[bx + ix +
+                                                             iy * sharpness_stride]];
                 // Avoid infinities.
-                sigma = std::max(1e-4f, sigma);
-                sigma_row[bx + ix + 2 + (iy + 2) * sigma_stride] =
-                    kInvSigmaNum / sigma;
+                sigma = std::min(-1e-4f, sigma);
+                sigma_row[bx + ix + 2 + (iy + 2) * sigma_stride] = 1.0 / sigma;
               }
             }
             // Left padding with mirroring.
@@ -582,13 +548,13 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         int32_t* JXL_RESTRICT row_nzeros,
                         const int32_t* JXL_RESTRICT row_nzeros_top,
-                        size_t nzeros_stride, size_t c, size_t bx, size_t by,
+                        size_t nzeros_stride, size_t c, size_t bx, size_t by, size_t lbx,
                         AcStrategy acs,
                         const coeff_order_t* JXL_RESTRICT coeff_order,
                         BitReader* JXL_RESTRICT br,
                         ANSSymbolReader* JXL_RESTRICT decoder,
                         const std::vector<uint8_t>& context_map,
-                        const int32_t* quant_dc_row, const int32_t* qf_row,
+                        const uint8_t* qdc_row, const int32_t* qf_row,
                         const BlockCtxMap& block_ctx_map,
                         ac_qcoeff_t* JXL_RESTRICT block, size_t shift = 0) {
   PROFILER_FUNC;
@@ -602,8 +568,7 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
   const coeff_order_t* JXL_RESTRICT order =
       &coeff_order[CoeffOrderOffset(ord, c)];
 
-  size_t block_ctx = block_ctx_map.Context(
-      bx == 0 ? 0 : quant_dc_row[bx - 1], quant_dc_row[bx], qf_row[bx], ord, c);
+  size_t block_ctx = block_ctx_map.Context(qdc_row[lbx], qf_row[bx], ord, c);
   const int32_t nzero_ctx =
       block_ctx_map.NonZeroContext(predicted_nzeros, block_ctx) + ctx_offset;
 
@@ -659,10 +624,8 @@ struct GetBlockFromBitstream {
     qf_row = rect.ConstRow(*qf, by);
     for (size_t c = 0; c < 3; c++) {
       size_t vs = c == 1 ? 0 : vshift;
-      size_t hs = c == 1 ? 0 : hshift;
       size_t sby = by >> vs;
-      quant_dc_row[c] = quant_dc->ConstPlaneRow(c, (rect.y0() + by) >> vs) +
-                        (rect.x0() >> hs);
+      quant_dc_row = quant_dc->ConstRow(rect.y0() + by) + rect.x0();
       for (size_t i = 0; i < num_passes; i++) {
         row_nzeros[i][c] = group_dec_cache->num_nzeroes[i].PlaneRow(c, sby);
         row_nzeros_top[i][c] =
@@ -688,9 +651,9 @@ struct GetBlockFromBitstream {
       for (size_t pass = 0; JXL_UNLIKELY(pass < num_passes); pass++) {
         JXL_RETURN_IF_ERROR(DecodeACVarBlock(
             ctx_offset[pass], log2_covered_blocks, row_nzeros[pass][c],
-            row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, acs,
+            row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, bx, acs,
             &coeff_orders[pass * kCoeffOrderSize], readers[pass],
-            &decoders[pass], context_map[pass], quant_dc_row[c], qf_row,
+            &decoders[pass], context_map[pass], quant_dc_row, qf_row,
             *block_ctx_map, block_c, shift_for_pass[pass]));
       }
     }
@@ -749,9 +712,9 @@ struct GetBlockFromBitstream {
   GroupDecCache* JXL_RESTRICT group_dec_cache;
   const BlockCtxMap* block_ctx_map;
   const ImageI* qf;
-  const Image3I* quant_dc;
+  const ImageB* quant_dc;
   const int32_t* qf_row;
-  const int32_t* quant_dc_row[3];
+  const uint8_t* quant_dc_row;
   Rect rect;
   size_t hshift, vshift;
 };

@@ -65,6 +65,13 @@ JXL_INLINE size_t InitialBasicInfoSizeHint() {
    JPEGXL_DEC_ERROR)
 #endif  // JXL_CRASH_ON_ERROR
 
+// Stores a float in big endian
+void StoreBEFloat(float value, uint8_t* p) {
+  uint32_t u;
+  memcpy(&u, &value, 4);
+  StoreBE32(u, p);
+}
+
 }  // namespace
 
 uint32_t JpegxlDecoderVersion(void) {
@@ -437,6 +444,106 @@ static void ConvertAlpha(size_t bits_in, const jxl::ImageU& in, size_t bits_out,
   }
 }
 
+static JpegxlDecoderStatus ConvertImage(const jxl::CodecInOut& io,
+                                        const JpegxlPixelFormat& format,
+                                        jxl::ThreadPool* thread_pool,
+                                        void* out_image, size_t out_size) {
+  size_t xsize = io.xsize();
+  size_t ysize = io.ysize();
+
+  const ColorEncoding& color = io.metadata.color_encoding;
+  bool want_alpha = format.num_channels == 2 || format.num_channels == 4;
+  bool alpha_premultiplied = false;
+  size_t bits_per_sample = BitsPerChannel(format.data_type);
+  bool float_out = format.data_type == JPEGXL_TYPE_FLOAT;
+  size_t alpha_bits = 0;
+  bool big_endian = true;
+  const jxl::ImageU* alpha = nullptr;
+  jxl::ImageU alpha_temp;
+  if (want_alpha) {
+    if (io.frames[0].HasAlpha() && !float_out) {
+      alpha = &io.frames[0].alpha();
+      alpha_bits = io.metadata.GetAlphaBits();
+      if (alpha_bits == 0 || bits_per_sample == 0) {
+        return JXL_API_ERROR("invalid bit depth");
+      }
+      if (alpha_bits != bits_per_sample) {
+        alpha_temp = jxl::ImageU(xsize, ysize);
+        // Converting alpha is not (yet) implemented in ExternalImage, it
+        // expects the alpha channel values to already be in the output
+        // range. Convert here instead.
+        ConvertAlpha(alpha_bits, io.frames[0].alpha(), bits_per_sample,
+                     &alpha_temp);
+        alpha_bits = bits_per_sample;
+        alpha = &alpha_temp;
+      }
+    } else {
+      alpha_temp = jxl::ImageU(xsize, ysize);
+      for (size_t y = 0; y < ysize; ++y) {
+        uint16_t* JXL_RESTRICT row = alpha_temp.Row(y);
+        for (size_t x = 0; x < xsize; ++x) {
+          row[x] = 255;
+        }
+      }
+      alpha = &alpha_temp;
+      alpha_bits = 8;
+    }
+  }
+
+  jxl::CodecIntervals* intervals = nullptr;
+  const jxl::ExternalImage external(thread_pool, io.frames[0].color(),
+                                    jxl::Rect(io), color, color, want_alpha,
+                                    alpha_premultiplied, alpha, alpha_bits,
+                                    bits_per_sample, big_endian, intervals);
+  if (out_size < external.Bytes().size()) {
+    return JPEGXL_DEC_NEED_MORE_OUTPUT;
+  }
+
+  memcpy(out_image, external.Bytes().data(), external.Bytes().size());
+
+  // For floating point output, manually convert alpha at the end. Unlike the
+  // integer case, ExternalImage doesn't already output the correct values
+  // in the final buffer so post processing is used in this case.
+  if (want_alpha && float_out && io.frames[0].HasAlpha()) {
+    // Multiplier for 0.0-1.0 nominal range.
+    float mul = 1.0 / ((1ull << io.metadata.GetAlphaBits()) - 1ull);
+    size_t i = 0;
+    uint8_t* out = reinterpret_cast<uint8_t*>(out_image);
+    for (size_t y = 0; y < ysize; ++y) {
+      const uint16_t* JXL_RESTRICT row_in = io.frames[0].alpha().Row(y);
+      for (size_t x = 0; x < xsize; ++x) {
+        float alpha = row_in[x] * mul;
+        StoreBEFloat(alpha, out + i * 16 + 12);
+        i++;
+      }
+    }
+  }
+
+  // Use 0-1 nominal range for RGB floating point output
+  // TODO(lode): support this multiplier in ExternalImage instead to avoid
+  // extra pass over the data.
+  if (float_out) {
+    size_t i = 0;
+    uint8_t* out = reinterpret_cast<uint8_t*>(out_image);
+    float mul = 1.0 / 255.0;
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        for (size_t c = 0; c < 3; ++c) {
+          uint32_t u = LoadBE32(out + i);
+          float value;
+          memcpy(&value, &u, 4);
+          value *= mul;
+          StoreBEFloat(value, out + i);
+          i += 4;
+        }
+        if (want_alpha) i += 4;  // Skip alpha channel
+      }
+    }
+  }
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
 JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
                                                  const uint8_t* in,
                                                  size_t size) {
@@ -527,51 +634,10 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
       return JPEGXL_DEC_NEED_MORE_OUTPUT;
     }
 
-    const JpegxlPixelFormat& format = dec->image_out_format;
-
-    size_t xsize = dec->xsize;
-    size_t ysize = dec->ysize;
-
-    const ColorEncoding& color = dec->io.metadata.color_encoding;
-    bool want_alpha = format.num_channels == 2 || format.num_channels == 4;
-    bool alpha_premultiplied = false;
-    size_t bits_per_sample = BitsPerChannel(format.data_type);
-    size_t alpha_bits = 0;
-    bool big_endian = true;
-    const jxl::ImageU* alpha = nullptr;
-    jxl::ImageU alpha_temp;
-    if (want_alpha) {
-      if (dec->io.frames[0].HasAlpha()) {
-        alpha = &dec->io.frames[0].alpha();
-        alpha_bits = dec->io.metadata.GetAlphaBits();
-        if (alpha_bits == 0 || bits_per_sample == 0) {
-          return JXL_API_ERROR("invalid bit depth");
-        }
-        if (alpha_bits != bits_per_sample) {
-          alpha_temp = jxl::ImageU(xsize, ysize);
-          ConvertAlpha(alpha_bits, dec->io.frames[0].alpha(), bits_per_sample,
-                       &alpha_temp);
-          alpha_bits = bits_per_sample;
-          alpha = &alpha_temp;
-        }
-      } else {
-        // ExternalImage treats empty alpha image as opaque.
-        alpha = &alpha_temp;
-        alpha_bits = 8;
-      }
-    }
-
-    jxl::CodecIntervals* intervals = nullptr;
-    const jxl::ExternalImage external(
-        dec->thread_pool.get(), dec->io.frames[0].color(), jxl::Rect(dec->io),
-        color, color, want_alpha, alpha_premultiplied, alpha, alpha_bits,
-        bits_per_sample, big_endian, intervals);
-    if (dec->image_out_size < external.Bytes().size()) {
-      return JPEGXL_DEC_NEED_MORE_OUTPUT;
-    }
-
-    memcpy(dec->image_out_buffer, external.Bytes().data(),
-           external.Bytes().size());
+    JpegxlDecoderStatus status =
+        ConvertImage(dec->io, dec->image_out_format, dec->thread_pool.get(),
+                     dec->image_out_buffer, dec->image_out_size);
+    if (status != JPEGXL_DEC_SUCCESS) return status;
 
     return JPEGXL_DEC_FULL_IMAGE;
   }

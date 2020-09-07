@@ -61,7 +61,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
                           std::vector<Token>* JXL_RESTRICT output,
-                          const Image3I& qdc, const ImageI& qf,
+                          const ImageB& qdc, const ImageI& qf,
                           const BlockCtxMap& block_ctx_map);
 
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)

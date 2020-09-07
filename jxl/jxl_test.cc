@@ -83,7 +83,7 @@ TEST(JxlTest, HeaderSize) {
     io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
     AuxOut aux_out;
     Roundtrip(&io, cparams, dparams, pool, &io2, &aux_out);
-    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 75);
+    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 76);
   }
 }
 
@@ -411,7 +411,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 40000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            2.2);
+            2.23);
 }
 
 TEST(JxlTest, RoundtripSmallNoGaborish) {

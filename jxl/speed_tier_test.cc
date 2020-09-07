@@ -107,7 +107,7 @@ TEST_P(SpeedTierTest, Roundtrip) {
   // Can be 2.2 in non-hare mode.
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, /*pool=*/nullptr),
-            2.6);
+            2.7);
 }
 }  // namespace
 }  // namespace jxl

@@ -78,8 +78,7 @@ struct LoopFilter {
 
       visitor->Bool(false, &epf_sigma_custom);
       if (visitor->Conditional(epf_sigma_custom)) {
-        visitor->F16(0.315f, &epf_quant_mul);
-        visitor->F16(4.0f, &epf_dc_range_mul);
+        visitor->F16(0.46f, &epf_quant_mul);
         visitor->F16(6.5f, &epf_pass2_sigma_scale);
         visitor->F16(0.6666666666666666f, &epf_border_sad_mul);
       }
@@ -148,7 +147,6 @@ struct LoopFilter {
 
   bool epf_sigma_custom;        // Custom sigma parameters
   float epf_quant_mul;          // Sigma is ~ this * quant
-  float epf_dc_range_mul;       // How much to increase sigma with DC range
   float epf_pass2_sigma_scale;  // Multiplier for sigma in the second pass
   float epf_border_sad_mul;     // (inverse) multiplier for sigma on borders
 

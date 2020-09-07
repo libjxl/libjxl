@@ -42,7 +42,7 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
 
   shared->opsin_params = image_metadata.m2.opsin_inverse_matrix.ToOpsinParams();
 
-  shared->quant_dc = Image3I(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+  shared->quant_dc = ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   if (!(frame_header.flags & FrameHeader::kUseDcFrame) || encoder) {
     shared->dc_storage =
         Image3F(frame_dim.xsize_blocks, frame_dim.ysize_blocks);

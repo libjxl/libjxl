@@ -42,7 +42,13 @@ enum class FrameEncoding : uint32_t {
   kModularGroup,
 };
 
-enum class ColorTransform : uint32_t { kXYB, kNone, kYCbCr };
+enum class ColorTransform : uint32_t {
+  kXYB,   // Values are encoded with XYB, must be used if and only if
+          // ImageBundle::xyb_encoded
+  kNone,  // Values are encoded according to the attached color profile
+  kYCbCr  // Values are encoded according to the attached color profile, but
+          // transformed to YCbCr
+};
 
 enum class YCbCrChromaSubsampling : uint32_t { k444, k420, k422, k440, kAuto };
 

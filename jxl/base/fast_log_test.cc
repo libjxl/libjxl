@@ -13,17 +13,21 @@
 // limitations under the License.
 
 #include "jxl/base/fast_log.h"
+
+#include <stdio.h>
+
+#include <random>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
 #include <hwy/foreach_target.h>
 
-#include <random>
-
-#include <stdio.h>
 #include "jxl/fast_log-inl.h"
 
+// Test utils
 #include <hwy/tests/test_util-inl.h>
 
+// SIMD code
 #include <hwy/before_namespace-inl.h>
 namespace jxl {
 #include <hwy/begin_target-inl.h>

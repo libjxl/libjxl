@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <hwy/aligned_allocator.h>
 #include <array>
+#include <hwy/aligned_allocator.h>
 #include <utility>
 #include <vector>
 
@@ -403,8 +403,6 @@ class DequantMatrices {
 
   JXL_INLINE float InvDCQuant(size_t c) const { return inv_dc_quant_[c]; }
 
-  size_t Size() const { return size_; }
-
   void SetCustom(const std::vector<QuantEncoding>& encodings,
                  ModularFrameEncoder* modular_frame_encoder);
 
@@ -447,6 +445,7 @@ class DequantMatrices {
                                                     2, 4, 4, 1, 1};
   static constexpr size_t required_size_[kNum] = {1, 1, 1, 1, 4, 16,
                                                   2, 4, 8, 1, 1};
+
   static constexpr size_t kTotalTableSize =
       ArraySum(required_size_) * kDCTBlockSize * 3;
 
@@ -455,7 +454,6 @@ class DequantMatrices {
   float dc_quant_[3] = {kDCQuant[0], kDCQuant[1], kDCQuant[2]};
   float inv_dc_quant_[3] = {kInvDCQuant[0], kInvDCQuant[1], kInvDCQuant[2]};
   size_t table_offsets_[AcStrategy::kNumValidStrategies * 3];
-  size_t size_;
   std::vector<QuantEncoding> encodings_;
 };
 

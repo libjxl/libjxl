@@ -86,11 +86,10 @@ static JXL_INLINE size_t ZeroDensityContext(size_t nonzeros_left, size_t k,
 }
 
 struct BlockCtxMap {
-  std::vector<int> dc_delta_thresholds;
-  std::vector<int> dc_thresholds;
+  std::vector<int> dc_thresholds[3];
   std::vector<int> qf_thresholds;
   std::vector<uint8_t> ctx_map;
-  size_t num_ctxs;
+  size_t num_ctxs, num_dc_ctxs;
 
   static constexpr uint8_t kNumStrategyOrders = 7;
   static constexpr uint8_t kDefaultCtxMap[kNumStrategyOrders * 3] = {
@@ -98,24 +97,15 @@ struct BlockCtxMap {
       5, 6, 7, 7, 8, 8, 9,  //
       5, 6, 7, 7, 8, 8, 9};
 
-  size_t Context(int ldc, int dc, int qf, size_t ord, size_t c) const {
+  size_t Context(int dc_idx, int qf, size_t ord, size_t c) const {
     size_t qf_idx = 0;
     for (int t : qf_thresholds) {
       if (qf > t) qf_idx++;
     }
-    size_t dc_idx = 0;
-    for (int t : dc_thresholds) {
-      if (dc > t) dc_idx++;
-    }
-    size_t dc_delta_idx = 0;
-    for (int t : dc_delta_thresholds) {
-      if (dc - ldc > t) dc_delta_idx++;
-    }
     size_t idx = c < 2 ? c ^ 1 : 2;
     idx = idx * kNumStrategyOrders + ord;
     idx = idx * (qf_thresholds.size() + 1) + qf_idx;
-    idx = idx * (dc_thresholds.size() + 1) + dc_idx;
-    idx = idx * (dc_delta_thresholds.size() + 1) + dc_delta_idx;
+    idx = idx * num_dc_ctxs + dc_idx;
     return ctx_map[idx];
   }
   // Non-zero context is based on number of non-zeros and block context.
@@ -151,6 +141,7 @@ struct BlockCtxMap {
   BlockCtxMap() {
     ctx_map.assign(std::begin(kDefaultCtxMap), std::end(kDefaultCtxMap));
     num_ctxs = 10;
+    num_dc_ctxs = 1;
   }
 };
 

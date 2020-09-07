@@ -388,6 +388,54 @@ void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   }
 }
 
+// TODO(veluca): consider replacing with FastGaussian.
+ImageF ConvolveXSampleAndTranspose(const ImageF& in,
+                                   const std::vector<float>& kernel,
+                                   const size_t res) {
+  JXL_ASSERT(kernel.size() % 2 == 1);
+  JXL_ASSERT(in.xsize() % res == 0);
+  const size_t offset = res / 2;
+  const size_t out_xsize = in.xsize() / res;
+  ImageF out(in.ysize(), out_xsize);
+  const int r = kernel.size() / 2;
+  HWY_FULL(float) df;
+  std::vector<float> row_tmp(in.xsize() + 2 * r + Lanes(df));
+  float* const JXL_RESTRICT rowp = &row_tmp[r];
+  std::vector<float> padded_k = kernel;
+  padded_k.resize(padded_k.size() + Lanes(df));
+  const float* const kernelp = &padded_k[r];
+  for (size_t y = 0; y < in.ysize(); ++y) {
+    ExtrapolateBorders(in.Row(y), rowp, in.xsize(), r);
+    size_t x = offset, ox = 0;
+    for (; x < r && x < in.xsize(); x += res, ++ox) {
+      float sum = 0.0f;
+      for (int i = -r; i <= r; ++i) {
+        sum += rowp[std::max<int>(
+                   0, std::min<int>(static_cast<int>(x) + i, in.xsize()))] *
+               kernelp[i];
+      }
+      out.Row(ox)[y] = sum;
+    }
+    for (; x + r < in.xsize(); x += res, ++ox) {
+      auto sum = Zero(df);
+      for (int i = -r; i <= r; i += Lanes(df)) {
+        sum = MulAdd(LoadU(df, rowp + x + i), LoadU(df, kernelp + i), sum);
+      }
+      out.Row(ox)[y] = GetLane(SumOfLanes(sum));
+    }
+    for (; x < in.xsize(); x += res, ++ox) {
+      float sum = 0.0f;
+      for (int i = -r; i <= r; ++i) {
+        sum += rowp[std::max<int>(
+                   0, std::min<int>(static_cast<int>(x) + i, in.xsize()))] *
+               kernelp[i];
+      }
+      out.Row(ox)[y] = sum;
+    }
+  }
+  return out;
+}
+
 #include <hwy/end_target-inl.h>
 }  // namespace jxl
 #include <hwy/after_namespace-inl.h>
@@ -396,6 +444,7 @@ void FastGaussianVertical(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 namespace jxl {
 
 HWY_EXPORT(FastGaussian1D)
+HWY_EXPORT(ConvolveXSampleAndTranspose);
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                     const float* JXL_RESTRICT in, intptr_t width,
                     float* JXL_RESTRICT out) {
@@ -420,28 +469,7 @@ void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
 ImageF ConvolveXSampleAndTranspose(const ImageF& in,
                                    const std::vector<float>& kernel,
                                    const size_t res) {
-  JXL_ASSERT(kernel.size() % 2 == 1);
-  JXL_ASSERT(in.xsize() % res == 0);
-  const size_t offset = res / 2;
-  const size_t out_xsize = in.xsize() / res;
-  ImageF out(in.ysize(), out_xsize);
-  const int r = kernel.size() / 2;
-  std::vector<float> row_tmp(in.xsize() + 2 * r);
-  float* const JXL_RESTRICT rowp = &row_tmp[r];
-  const float* const kernelp = &kernel[r];
-  for (size_t y = 0; y < in.ysize(); ++y) {
-    ExtrapolateBorders(in.Row(y), rowp, in.xsize(), r);
-    for (size_t x = offset, ox = 0; x < in.xsize(); x += res, ++ox) {
-      float sum = 0.0f;
-      for (int i = -r; i <= r; ++i) {
-        sum += rowp[std::max<int>(
-                   0, std::min<int>(static_cast<int>(x) + i, in.xsize()))] *
-               kernelp[i];
-      }
-      out.Row(ox)[y] = sum;
-    }
-  }
-  return out;
+  return HWY_DYNAMIC_DISPATCH(ConvolveXSampleAndTranspose)(in, kernel, res);
 }
 
 Image3F ConvolveXSampleAndTranspose(const Image3F& in,

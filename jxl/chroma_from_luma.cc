@@ -219,14 +219,14 @@ JXL_NOINLINE void FindBestCorrelation(
           // coefficients get stored does not matter.
           size_t cx = acs.covered_blocks_x();
           size_t cy = acs.covered_blocks_y();
-          CoefficientLayout(&cx, &cy);
+          CoefficientLayout(&cy, &cx);
           for (size_t iy = 0; iy < cy * kBlockDim; iy++) {
             for (size_t ix = 0; ix < cx * kBlockDim; ix++) {
               if (iy < cy && ix < cx) {
                 continue;
               }
-              JXL_ASSERT(cx * kBlockDim * iy + ix <
-                         acs.covered_blocks_y() * xs * 64);
+              JXL_DASSERT(cx * kBlockDim * iy + ix <
+                          acs.covered_blocks_y() * xs * 64);
               coeffs_m[num_ac] = block_m[cx * kBlockDim * iy + ix] * q *
                                  qm[cx * kBlockDim * iy + ix];
               coeffs_s[num_ac] = block_s[cx * kBlockDim * iy + ix] * q *

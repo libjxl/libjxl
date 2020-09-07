@@ -56,8 +56,6 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
     }
   }
 
-  CoefficientLayout(&ysize, &xsize);
-
   if (!error_diffusion) {
     HWY_CAPPED(float, kBlockDim) df;
     HWY_CAPPED(uint32_t, kBlockDim) du;
@@ -195,8 +193,8 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
   // quantization is chosen.
 
   {
-    // Only use error diffusion in Wombat mode or slower.
-    const bool error_diffusion = cparams.speed_tier <= SpeedTier::kWombat;
+    // Only use error diffusion in Squirrel mode or slower.
+    const bool error_diffusion = cparams.speed_tier <= SpeedTier::kSquirrel;
     constexpr HWY_CAPPED(float, kDCTBlockSize) d;
 
     ac_qcoeff_t* JXL_RESTRICT coeffs[kMaxNumPasses][3];

@@ -53,13 +53,23 @@ TEST(JPEGkPassesTest, RoundtripLarge) {
   io3.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
   JXL_CHECK(SetFromBytes(Span<const uint8_t>(encoded), &io3, pool,
                          /*orig_codec=*/nullptr));
-
   CompressParams cparams;
   DecompressParams dparams;
 
   PaddedBytes compressed;
   AuxOut* aux_out = nullptr;
   PassesEncoderState enc_state;
+  // The color transform of a frame header is set to ib.color_transform if
+  // JPEG image, to cparams.color_transform otherwise. The cparams
+  // color_transform determines whether all frames must be XYB, or all frames
+  // must be non-XYB (but color profile dependent instead). Therefore, it must
+  // be set to match here.
+  // TODO(lode): can this be automated instead? The encoder needs to
+  // consistently know which one of the two options (all xyb, or all profile
+  // dependent) it is, but the encoder can't edit the cparams nor the image
+  // bundle to choose this main codestream header value since both are const, so
+  // all the work to make them consistent is now manually on the caller.
+  cparams.color_transform = io3.Main().color_transform;
 
   // encode DCT coeffs as kVarDCT JXL
   EXPECT_TRUE(

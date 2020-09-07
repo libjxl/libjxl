@@ -167,7 +167,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
                           std::vector<Token>* JXL_RESTRICT output,
-                          const Image3I& qdc, const ImageI& qf,
+                          const ImageB& qdc, const ImageI& qf,
                           const BlockCtxMap& block_ctx_map) {
   const size_t xsize_blocks = rect.xsize();
   const size_t ysize_blocks = rect.ysize();
@@ -192,13 +192,8 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         by == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(1, by - 1),
         sbyc == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(2, sbyc - 1),
     };
-    const int32_t* JXL_RESTRICT row_qdc[3] = {
-        qdc.ConstPlaneRow(0, (rect.y0() + by) >> vshift) +
-            (rect.x0() >> hshift),
-        qdc.ConstPlaneRow(1, rect.y0() + by) + rect.x0(),
-        qdc.ConstPlaneRow(2, (rect.y0() + by) >> vshift) +
-            (rect.x0() >> hshift),
-    };
+    const uint8_t* JXL_RESTRICT row_qdc =
+        qdc.ConstRow(rect.y0() + by) + rect.x0();
     const int32_t* JXL_RESTRICT row_qf = rect.ConstRow(qf, by);
     AcStrategyRow acs_row = ac_strategy.ConstRow(rect, by);
     for (size_t bx = 0; bx < xsize_blocks; ++bx) {
@@ -234,8 +229,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         int32_t predicted_nzeros =
             PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], sbx, 32);
         size_t block_ctx =
-            block_ctx_map.Context(sbx == 0 ? 0 : row_qdc[c][sbx - 1],
-                                  row_qdc[c][sbx], row_qf[sbx], ord, c);
+            block_ctx_map.Context(row_qdc[bx], row_qf[sbx], ord, c);
         const int32_t nzero_ctx =
             block_ctx_map.NonZeroContext(predicted_nzeros, block_ctx);
 
@@ -275,7 +269,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
                           std::vector<Token>* JXL_RESTRICT output,
-                          const Image3I& qdc, const ImageI& qf,
+                          const ImageB& qdc, const ImageI& qf,
                           const BlockCtxMap& block_ctx_map) {
   return HWY_DYNAMIC_DISPATCH(TokenizeCoefficients)(
       orders, rect, ac_rows, ac_strategy, cs, tmp_num_nzeroes, output, qdc, qf,
@@ -284,27 +278,26 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
 
 void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
                        AuxOut* aux_out) {
-  const std::vector<int>& ddct = block_ctx_map.dc_delta_thresholds;
-  const std::vector<int>& dct = block_ctx_map.dc_thresholds;
-  const std::vector<int>& qft = block_ctx_map.qf_thresholds;
-  const std::vector<uint8_t>& ctx_map = block_ctx_map.ctx_map;
+  auto& dct = block_ctx_map.dc_thresholds;
+  auto& qft = block_ctx_map.qf_thresholds;
+  auto& ctx_map = block_ctx_map.ctx_map;
   BitWriter::Allotment allotment(
       writer,
-      (dct.size() + qft.size()) * 34 + 1 + 4 + 4 + ctx_map.size() * 10 + 1024);
-  if (dct.empty() && qft.empty() && ctx_map.size() == 21 &&
+      (dct[0].size() + dct[1].size() + dct[2].size() + qft.size()) * 34 + 1 +
+          4 + 4 + ctx_map.size() * 10 + 1024);
+  if (dct[0].empty() && dct[1].empty() && dct[2].empty() && qft.empty() &&
+      ctx_map.size() == 21 &&
       std::equal(ctx_map.begin(), ctx_map.end(), BlockCtxMap::kDefaultCtxMap)) {
     writer->Write(1, 1);  // default
     ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
     return;
   }
   writer->Write(1, 0);
-  writer->Write(4, ddct.size());
-  for (int i : ddct) {
-    JXL_CHECK(U32Coder::Write(kDCThresholdDist, PackSigned(i), writer));
-  }
-  writer->Write(4, dct.size());
-  for (int i : dct) {
-    JXL_CHECK(U32Coder::Write(kDCThresholdDist, PackSigned(i), writer));
+  for (int j : {0, 1, 2}) {
+    writer->Write(4, dct[j].size());
+    for (int i : dct[j]) {
+      JXL_CHECK(U32Coder::Write(kDCThresholdDist, PackSigned(i), writer));
+    }
   }
   writer->Write(4, qft.size());
   for (int i : qft) {
@@ -315,32 +308,33 @@ void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
 }
 
 Status DecodeBlockCtxMap(BitReader* br, BlockCtxMap* block_ctx_map) {
-  std::vector<int>& ddct = block_ctx_map->dc_delta_thresholds;
-  std::vector<int>& dct = block_ctx_map->dc_thresholds;
-  std::vector<int>& qft = block_ctx_map->qf_thresholds;
-  std::vector<uint8_t>& ctx_map = block_ctx_map->ctx_map;
+  auto& dct = block_ctx_map->dc_thresholds;
+  auto& qft = block_ctx_map->qf_thresholds;
+  auto& ctx_map = block_ctx_map->ctx_map;
   bool is_default = br->ReadFixedBits<1>();
   if (is_default) {
     *block_ctx_map = BlockCtxMap();
     return true;
   }
-  ddct.resize(br->ReadFixedBits<4>());
-  for (int& i : ddct) {
-    i = UnpackSigned(U32Coder::Read(kDCThresholdDist, br));
-  }
-  dct.resize(br->ReadFixedBits<4>());
-  for (int& i : dct) {
-    i = UnpackSigned(U32Coder::Read(kDCThresholdDist, br));
+  block_ctx_map->num_dc_ctxs = 1;
+  for (int j : {0, 1, 2}) {
+    dct[j].resize(br->ReadFixedBits<4>());
+    block_ctx_map->num_dc_ctxs *= dct[j].size() + 1;
+    for (int& i : dct[j]) {
+      i = UnpackSigned(U32Coder::Read(kDCThresholdDist, br));
+    }
   }
   qft.resize(br->ReadFixedBits<4>());
   for (int& i : qft) {
     i = U32Coder::Read(kQFThresholdDist, br) + 1;
   }
-  if ((dct.size() + 1) * (qft.size() + 1) * (ddct.size() + 1) > 64) {
+
+  if (block_ctx_map->num_dc_ctxs * (qft.size() + 1) > 64) {
     return JXL_FAILURE("Invalid block context map: too big");
   }
-  ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders * (dct.size() + 1) *
-                 (qft.size() + 1) * (ddct.size() + 1));
+
+  ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders *
+                 block_ctx_map->num_dc_ctxs * (qft.size() + 1));
   JXL_RETURN_IF_ERROR(DecodeContextMap(&ctx_map, &block_ctx_map->num_ctxs, br));
   if (block_ctx_map->num_ctxs > 16) {
     return JXL_FAILURE("Invalid block context map: too many distinct contexts");

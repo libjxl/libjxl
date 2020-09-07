@@ -27,7 +27,6 @@
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
-#include "jxl/base/fast_log.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
 #include "jxl/butteraugli/butteraugli.h"
@@ -54,12 +53,20 @@
 #include "jxl/opsin_params.h"
 #include "jxl/quant_weights.h"
 
-bool FLAGS_log_search_state = false;
-// If true, prints the quantization maps at each iteration.
-bool FLAGS_dump_quant_state = false;
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_adaptive_quantization.cc"
+#include <hwy/foreach_target.h>
 
+#include "jxl/enc_transforms-inl.h"
+#include "jxl/fast_log-inl.h"
+
+//
+#include <hwy/before_namespace-inl.h>
 namespace jxl {
+#include <hwy/begin_target-inl.h>
 namespace {
+using DF = HWY_FULL(float);
+DF df;
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
   const float kBase = 0.9;
@@ -73,103 +80,47 @@ void ComputeMask(float* JXL_RESTRICT out_pos) {
   *out_pos = kBase + kMul1 / div + kMul2 / (val * val + kOffset2);
 }
 
+const float* Quant64() {
+  static const double kQuant64[64] = {
+      0.00, 4.10, 3.30, 3.30, 1.10, 1.15, 0.70, 0.70, 4.10, 3.30, 3.30,
+      1.10, 1.15, 1.30, 0.70, 0.50, 3.00, 3.30, 2.90, 2.10, 1.30, 0.70,
+      0.50, 0.50, 0.87, 2.90, 2.10, 1.40, 0.70, 0.50, 0.50, 0.50, 0.87,
+      1.40, 1.40, 1.60, 0.50, 0.50, 0.50, 0.50, 1.40, 0.90, 1.60, 0.50,
+      0.50, 0.50, 0.50, 0.50, 0.90, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
+      0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
+  };
+  static const double kPow = 4.6629037508279616;
+  HWY_ALIGN_MAX static float quant[64];
+  for (size_t i = 0; i < 64; i++) {
+    quant[i] = std::pow(kQuant64[i], kPow);
+  }
+  return quant;
+}
+
 // Increase precision in 8x8 blocks that are complicated in DCT space.
 void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
-                   const coeff_order_t* natural_coeff_order,
                    const float* JXL_RESTRICT dct_rescale,
                    float* JXL_RESTRICT out_pos) {
-  HWY_ALIGN_MAX float dct[kDCTBlockSize] = {0};
-  for (size_t dy = 0; dy < 8; ++dy) {
-    const size_t yclamp = std::min(y + dy, xyb.ysize() - 1);
-    const float* const JXL_RESTRICT row_in = xyb.Row(yclamp);
-    for (size_t dx = 0; dx < 8; ++dx) {
-      const size_t xclamp = std::min(x + dx, xyb.xsize() - 1);
-      dct[dy * 8 + dx] = row_in[xclamp];
-    }
+  HWY_ALIGN_MAX float dct[kDCTBlockSize];
+  ComputeTransposedScaledDCT<8>()(FromLines(xyb.Row(y) + x, xyb.PixelsPerRow()),
+                                  ToBlock(8, 8, dct));
+  auto entropyQL2v = Zero(df);
+  auto entropyQL4v = Zero(df);
+  auto entropyQL8v = Zero(df);
+  static const float* quant = Quant64();
+  for (size_t i = 0; i < kDCTBlockSize; i += Lanes(df)) {
+    auto v = Load(df, dct + i) * Load(df, dct_rescale + i);
+    v *= v;
+    const auto q = Load(df, quant + i);
+    entropyQL2v = MulAdd(q, v, entropyQL2v);
+    v *= v;
+    entropyQL4v = MulAdd(q, v, entropyQL4v);
+    v *= v;
+    entropyQL8v = MulAdd(q, v, entropyQL8v);
   }
-  TransposedScaledDCT8(dct);
-  float entropyQL2 = 0.0f;
-  float entropyQL4 = 0.0f;
-  float entropyQL8 = 0.0f;
-
-  static const double kQuant64[64] = {
-    0.0,
-    4.1,
-    4.1,
-    3.0,
-    3.3,
-    3.3,
-    3.3,
-    3.3,
-    3.3,
-    0.87,
-    0.87,
-    2.9,
-    2.9,
-    1.1,
-    1.1,
-    1.15,
-    1.15,
-    2.1,
-    2.1,
-    1.4,
-    1.4,
-    0.9,
-    0.9,
-    1.4,
-    1.4,
-    1.3,
-    1.3,
-    0.7,
-    0.7,
-    0.7,
-    0.7,
-    0.7,
-    1.6,
-    1.6,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-    0.5,
-  };
-  for (size_t k = 1; k < kDCTBlockSize; ++k) {
-    const coeff_order_t i = natural_coeff_order[k];
-    float v = dct[i] * dct_rescale[i];
-    v *= v;
-    static const double kPow = 4.6629037508279616;
-    float q = std::pow(kQuant64[k], kPow);
-    entropyQL2 += q * v;
-    v *= v;
-    entropyQL4 += q * v;
-    v *= v;
-    entropyQL8 += q * v;
-  }
+  float entropyQL2 = GetLane(SumOfLanes(entropyQL2v));
+  float entropyQL4 = GetLane(SumOfLanes(entropyQL4v));
+  float entropyQL8 = GetLane(SumOfLanes(entropyQL8v));
   entropyQL2 = std::sqrt(entropyQL2);
   entropyQL4 = std::sqrt(std::sqrt(entropyQL4));
   entropyQL8 = std::pow(entropyQL8, 0.125f);
@@ -181,72 +132,106 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   *out_pos += kMul * v;
 }
 
-static float SimpleGamma(float v) {
+// mul and mul2 represent a scaling difference between jxl and butteraugli.
+constexpr float kSGmul = 200.f;
+constexpr float kSGmul2 = 1.0f / 74.f;
+constexpr float kLog2 = 0.693147181f;
+// Includes correction factor for std::log -> log2.
+constexpr float kSGRetMul = kSGmul2 * 18.6580932135f * kLog2;
+constexpr float kSGRetAdd = kSGmul2 * -20.2789020414f;
+constexpr float kSGVOffset = 7.14672470003f;
+
+template <typename D, typename V>
+V SimpleGamma(const D d, V v) {
   // A simple HDR compatible gamma function.
-  // mul and mul2 represent a scaling difference between jxl and butteraugli.
-  static const float mul = 200.f;
-  static const float mul2 = 1 / 74.f;
+  const auto mul = Set(d, kSGmul);
+  const auto kRetMul = Set(d, kSGRetMul);
+  const auto kRetAdd = Set(d, kSGRetAdd);
+  const auto kVOffset = Set(d, kSGVOffset);
 
   v *= mul;
 
-  // Includes correction factor for std::log -> log2.
-  static const float kRetMul = mul2 * 18.6580932135f * 0.693147181f;
-  static const float kRetAdd = mul2 * -20.2789020414f;
-  static const float kVOffset = 7.14672470003f;
-
-  if (v < 0) {
-    // This should happen rarely, but may lead to a NaN, which is rather
-    // undesirable. Since negative photons don't exist we solve the NaNs by
-    // clamping here.
-    v = 0;
-  }
-  return kRetMul * FastLog2f(v + kVOffset) + kRetAdd;
+  // This should happen rarely, but may lead to a NaN, which is rather
+  // undesirable. Since negative photons don't exist we solve the NaNs by
+  // clamping here.
+  // TODO(veluca): with FastLog2f, this no longer leads to NaNs.
+  v = IfThenElse(v < Zero(d), Zero(d), v);
+  return kRetMul * FastLog2f_18bits(d, v + kVOffset) + kRetAdd;
 }
 
+template <bool invert, typename D, typename V>
+V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
+  // The opsin space in jxl is the cubic root of photons, i.e., v * v * v
+  // is related to the number of photons.
+  //
+  // SimpleGamma(v * v * v) is the psychovisual space in butteraugli.
+  // This ratio allows quantization to move from jxl's opsin space to
+  // butteraugli's log-gamma space.
+  v = IfThenElse(v < Zero(d), Zero(d), v);
+  const auto kNumMul = Set(d, kSGRetMul * 3 * kSGmul);
+  const auto kVOffset = Set(d, kSGVOffset * kLog2);
+  const auto kDenMul = Set(d, kLog2 * kSGmul);
+
+  const auto v2 = v * v;
+
+  const auto num = kNumMul * v2;
+  const auto den = MulAdd(kDenMul * v, v2, kVOffset);
+  return invert ? num / den : den / num;
+}
+
+float SimpleGamma(float v) {
+  using DScalar = HWY_CAPPED(float, 1);
+  auto vscalar = Load(DScalar(), &v);
+  return GetLane(SimpleGamma(DScalar(), vscalar));
+}
+
+template <bool invert = false>
+static float RatioOfDerivativesOfCubicRootToSimpleGamma(float v) {
+  using DScalar = HWY_CAPPED(float, 1);
+  auto vscalar = Load(DScalar(), &v);
+  return GetLane(
+      RatioOfDerivativesOfCubicRootToSimpleGamma<invert>(DScalar(), vscalar));
+}
+
+// TODO(veluca): this function computes an approximation of the derivative of
+// SimpleGamma with (f(x+eps)-f(x))/eps. Consider two-sided approximation or
+// exact derivatives.
 void GammaModulation(const size_t x, const size_t y, const ImageF& xyb_x,
                      const ImageF& xyb_y, float* JXL_RESTRICT out_pos) {
   float overall_ratio = 0.f;
-  size_t n = 0;
-  for (size_t dy = 0; dy < 8 && y + dy < xyb_x.ysize(); ++dy) {
+  const float kBias = 0.16;
+  JXL_DASSERT(kBias > kOpsinAbsorbanceBias[0]);
+  JXL_DASSERT(kBias > kOpsinAbsorbanceBias[1]);
+  JXL_DASSERT(kBias > kOpsinAbsorbanceBias[2]);
+  using DF8 = HWY_CAPPED(float, 8);
+  DF8 df;
+  auto overall_ratio_v = Zero(df);
+  auto bias = Set(df, kBias);
+  auto half = Set(df, 0.5f);
+  for (size_t dy = 0; dy < 8; ++dy) {
     const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
     const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
-    for (size_t dx = 0; dx < 8 && x + dx < xyb_x.xsize(); ++dx) {
-      const float kBias = 0.16;
-      JXL_DASSERT(kBias > kOpsinAbsorbanceBias[0]);
-      JXL_DASSERT(kBias > kOpsinAbsorbanceBias[1]);
-      JXL_DASSERT(kBias > kOpsinAbsorbanceBias[2]);
-      const float r = row_in_y[x + dx] - row_in_x[x + dx] + kBias;
-      const float g = row_in_y[x + dx] + row_in_x[x + dx] + kBias;
-      const float linear_r = r * r * r;
-      const float linear_g = g * g * g;
-      const float kEpsilon = 0.01;
-      const float r_eps = r + kEpsilon;
-      const float g_eps = g + kEpsilon;
+    for (size_t dx = 0; dx < 8; dx += Lanes(df)) {
+      const auto iny = Load(df, row_in_y + x + dx) + bias;
+      const auto inx = Load(df, row_in_x + x + dx);
+      const auto r = iny - inx;
+      const auto g = iny + inx;
+      const auto ratio_r =
+          RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/true>(df, r);
+      const auto ratio_g =
+          RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/true>(df, g);
+      const auto avg_ratio = half * (ratio_r + ratio_g);
 
-      const float linear_r_eps = r_eps * r_eps * r_eps;
-      const float linear_g_eps = g_eps * g_eps * g_eps;
-      const float log_r = SimpleGamma(linear_r);
-      const float log_g = SimpleGamma(linear_g);
-      const float log_r_eps = SimpleGamma(linear_r_eps);
-      const float log_g_eps = SimpleGamma(linear_g_eps);
-      const float r_delta = r_eps - r;
-      const float g_delta = g_eps - g;
-      const float log_r_delta = log_r_eps - log_r;
-      const float log_g_delta = log_g_eps - log_g;
-      const float ratio_r = log_r_delta / r_delta;
-      const float ratio_g = log_g_delta / g_delta;
-      const float avg_ratio = 0.5 * (ratio_r + ratio_g);
-
-      overall_ratio += avg_ratio;
-      ++n;
+      overall_ratio_v += avg_ratio;
     }
   }
-  static const double gam = 0.44403164676083279;
-
-  *out_pos += gam * std::log(overall_ratio / n);
+  overall_ratio = GetLane(SumOfLanes(overall_ratio_v));
+  const float gam = 0.34403164676083279;
+  *out_pos += gam * std::log(overall_ratio / 64);
 }
 
 // Increase precision in 8x8 blocks that have high dynamic range.
+// TODO(veluca): consider SIMD-fication.
 void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
                      const ImageF& xyb_y, float* JXL_RESTRICT out_pos) {
   float minval_x = 1e30f;
@@ -254,11 +239,10 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
   float maxval_x = -1e30f;
   float maxval_y = -1e30f;
   float y_sum_of_squares = 0.f;
-  size_t n = 0;
-  for (size_t dy = 0; dy < 8 && y + dy < xyb_x.ysize(); ++dy) {
+  for (size_t dy = 0; dy < 8; ++dy) {
     const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
     const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
-    for (size_t dx = 0; dx < 8 && x + dx < xyb_x.xsize(); ++dx, ++n) {
+    for (size_t dx = 0; dx < 8; ++dx) {
       float vx = row_in_x[x + dx];
       float vy = row_in_y[x + dx];
       if (minval_x > vx) {
@@ -289,7 +273,7 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
   const float mul2 = -0.36402038014085836;
   float range3 = std::min(range_x, range_y);
   const float mul3 = 0.14396820717087175;
-  float range4 = n == 0 ? 0 : range_x * std::sqrt(y_sum_of_squares / n);
+  float range4 = range_x * std::sqrt(y_sum_of_squares / 64);
   const float mul4 = 119.38245772972709;
   // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
   // some pathological cases and cause problems downstream.
@@ -299,22 +283,23 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
 }
 
 // Change precision in 8x8 blocks that have high frequency content.
+// TODO(veluca): consider SIMD-fication.
 void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
                   float* JXL_RESTRICT out_pos) {
   float sum = 0;
   int n = 0;
-  for (size_t dy = 0; dy < 8 && y + dy < xyb.ysize(); ++dy) {
+  for (size_t dy = 0; dy < 8; ++dy) {
     const float* JXL_RESTRICT row_in = xyb.Row(y + dy);
-    for (size_t dx = 0; dx < 7 && x + dx + 1 < xyb.xsize(); ++dx) {
+    for (size_t dx = 0; dx < 7; ++dx) {
       float v = std::fabs(row_in[x + dx] - row_in[x + dx + 1]);
       sum += v;
       ++n;
     }
   }
-  for (size_t dy = 0; dy < 7 && y + dy + 1 < xyb.ysize(); ++dy) {
+  for (size_t dy = 0; dy < 7; ++dy) {
     const float* JXL_RESTRICT row_in = xyb.Row(y + dy);
     const float* JXL_RESTRICT row_in_next = xyb.Row(y + dy + 1);
-    for (size_t dx = 0; dx < 8 && x + dx < xyb.xsize(); ++dx) {
+    for (size_t dx = 0; dx < 8; ++dx) {
       float v = std::abs(row_in[x + dx] - row_in_next[x + dx]);
       sum += v;
       ++n;
@@ -334,9 +319,7 @@ void PerBlockModulations(const ImageF& xyb_x, const ImageF& xyb_y,
   JXL_ASSERT(DivCeil(xyb_x.ysize(), kBlockDim) == out->ysize());
   JXL_ASSERT(DivCeil(xyb_y.xsize(), kBlockDim) == out->xsize());
   JXL_ASSERT(DivCeil(xyb_y.ysize(), kBlockDim) == out->ysize());
-  const coeff_order_t* natural_coeff_order =
-      AcStrategy::FromRawStrategy(AcStrategy::Type::DCT).NaturalCoeffOrder();
-  float dct_rescale[kDCTBlockSize] = {0};
+  HWY_ALIGN_MAX float dct_rescale[kDCTBlockSize] = {0};
   {
     const float* dct_scale = DCTScales<8>();
     for (size_t i = 0; i < kDCTBlockSize; ++i) {
@@ -354,7 +337,7 @@ void PerBlockModulations(const ImageF& xyb_x, const ImageF& xyb_y,
         for (size_t x = 0; x < xyb_x.xsize(); x += 8) {
           float* JXL_RESTRICT out_pos = row_out + x / 8;
           ComputeMask(out_pos);
-          DctModulation(x, y, xyb_y, natural_coeff_order, dct_rescale, out_pos);
+          DctModulation(x, y, xyb_y, dct_rescale, out_pos);
           RangeModulation(x, y, xyb_x, xyb_y, out_pos);
           HfModulation(x, y, xyb_y, out_pos);
           GammaModulation(x, y, xyb_x, xyb_y, out_pos);
@@ -365,25 +348,6 @@ void PerBlockModulations(const ImageF& xyb_x, const ImageF& xyb_y,
         }
       },
       "AQ per block modulation");
-}
-
-static float RatioOfDerivativesOfCubicRootToSimpleGamma(float v) {
-  // The opsin space in jxl is the cubic root of photons, i.e., v * v * v
-  // is related to the number of photons.
-  //
-  // SimpleGamma(v * v * v) is the psychovisual space in butteraugli.
-  // This ratio allows quantization to move from jxl's opsin space to
-  // butteraugli's log-gamma space.
-  const float linear = v * v * v;
-  const float kEpsilon = 0.01;
-  const float v_eps = v + kEpsilon;
-
-  const float linear_eps = v_eps * v_eps * v_eps;
-  const float log_v = SimpleGamma(linear);
-  const float log_v_eps = SimpleGamma(linear_eps);
-  const float v_delta = v_eps - v;
-  const float log_v_delta = log_v_eps - log_v;
-  return v_delta / log_v_delta;
 }
 
 // Returns image (padded to multiple of 8x8) of local pixel differences.
@@ -445,6 +409,27 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
           row_out[x] = std::min(cutoff, diff);
           ++x;
         }
+        // SIMD
+        const auto mul0v = Set(df, mul0);
+        const auto three = Set(df, 3);
+        const auto match_gamma_offset_v = Set(df, match_gamma_offset);
+        const auto cutoff_v = Set(df, cutoff);
+        for (; x + 1 + Lanes(df) < xsize; x += Lanes(df)) {
+          const auto in = LoadU(df, row_in + x);
+          const auto in_r = LoadU(df, row_in + x + 1);
+          const auto in_l = LoadU(df, row_in + x - 1);
+          const auto in_t = LoadU(df, row_in2 + x);
+          const auto in_b = LoadU(df, row_in1 + x);
+          auto diff =
+              mul0v * (AbsDiff(in, in_r) + AbsDiff(in, in_l) +
+                       AbsDiff(in, in_b) + AbsDiff(in, in_t) +
+                       three * (AbsDiff(in_t, in_b) + AbsDiff(in_l, in_r)));
+          diff *= RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/false>(
+              df, in + match_gamma_offset_v);
+          diff = IfThenElse(diff > cutoff_v, cutoff_v, diff);
+          StoreU(diff, df, row_out + x);
+        }
+        // Scalar
         for (; x + 1 < xsize; ++x) {
           const size_t x2 = x + 1;
           const size_t x1 = x - 1;
@@ -523,6 +508,75 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
   }
 
   return padded_diff;
+}
+
+}  // namespace
+
+ImageF AdaptiveQuantizationMap(const Image3F& opsin,
+                               const ImageF& intensity_ac_x,
+                               const ImageF& intensity_ac_y,
+                               const FrameDimensions& frame_dim, float scale,
+                               ThreadPool* pool) {
+  PROFILER_ZONE("aq AdaptiveQuantMap");
+  const float kSigma = 8.2553856725566153f;
+  static const int kRadius = static_cast<int>(2 * kSigma + 0.5f);
+  std::vector<float> kernel = GaussianKernel(kRadius, kSigma);
+
+  constexpr float kDiffCutoff = 0.11883287948847132f;
+  ImageF out = DiffPrecompute(opsin, frame_dim, kDiffCutoff, pool);
+  JXL_ASSERT(out.xsize() % kBlockDim == 0 && out.ysize() % kBlockDim == 0);
+  out = ConvolveAndSample(out, kernel, kBlockDim);
+  PerBlockModulations(intensity_ac_x, intensity_ac_y, scale, pool, &out);
+  return out;
+}
+
+#include <hwy/end_target-inl.h>
+}  // namespace jxl
+#include <hwy/after_namespace-inl.h>
+
+#if HWY_ONCE
+namespace jxl {
+HWY_EXPORT(AdaptiveQuantizationMap)
+
+namespace {
+bool FLAGS_log_search_state = false;
+// If true, prints the quantization maps at each iteration.
+bool FLAGS_dump_quant_state = false;
+
+bool AdjustQuantVal(float* const JXL_RESTRICT q, const float d,
+                    const float factor, const float quant_max) {
+  if (*q >= 0.999f * quant_max) return false;
+  const float inv_q = 1.0f / *q;
+  const float adj_inv_q = inv_q - factor / (d + 1.0f);
+  *q = 1.0f / std::max(1.0f / quant_max, adj_inv_q);
+  return true;
+}
+
+void DumpHeatmap(const AuxOut* aux_out, const std::string& label,
+                 const ImageF& image, float good_threshold,
+                 float bad_threshold) {
+  Image3B heatmap = CreateHeatMapImage(image, good_threshold, bad_threshold);
+  char filename[200];
+  snprintf(filename, sizeof(filename), "%s%05d", label.c_str(),
+           aux_out->num_butteraugli_iters);
+  aux_out->DumpImage(filename, heatmap);
+}
+
+void DumpHeatmaps(const AuxOut* aux_out, float ba_target,
+                  const ImageF& quant_field, const ImageF& tile_heatmap) {
+  if (!WantDebugOutput(aux_out)) return;
+  ImageF inv_qmap(quant_field.xsize(), quant_field.ysize());
+  for (size_t y = 0; y < quant_field.ysize(); ++y) {
+    const float* JXL_RESTRICT row_q = quant_field.ConstRow(y);
+    float* JXL_RESTRICT row_inv_q = inv_qmap.Row(y);
+    for (size_t x = 0; x < quant_field.xsize(); ++x) {
+      row_inv_q[x] = 1.0f / row_q[x];  // never zero
+    }
+  }
+  DumpHeatmap(aux_out, "quant_heatmap", inv_qmap, 4.0f * ba_target,
+              6.0f * ba_target);
+  DumpHeatmap(aux_out, "tile_heatmap", tile_heatmap, ba_target,
+              1.5f * ba_target);
 }
 
 ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
@@ -624,43 +678,6 @@ ImageF DistToPeakMap(const ImageF& field, float peak_min, int local_radius,
   }
   return result;
 }
-
-bool AdjustQuantVal(float* const JXL_RESTRICT q, const float d,
-                    const float factor, const float quant_max) {
-  if (*q >= 0.999f * quant_max) return false;
-  const float inv_q = 1.0f / *q;
-  const float adj_inv_q = inv_q - factor / (d + 1.0f);
-  *q = 1.0f / std::max(1.0f / quant_max, adj_inv_q);
-  return true;
-}
-
-void DumpHeatmap(const AuxOut* aux_out, const std::string& label,
-                 const ImageF& image, float good_threshold,
-                 float bad_threshold) {
-  Image3B heatmap = CreateHeatMapImage(image, good_threshold, bad_threshold);
-  char filename[200];
-  snprintf(filename, sizeof(filename), "%s%05d", label.c_str(),
-           aux_out->num_butteraugli_iters);
-  aux_out->DumpImage(filename, heatmap);
-}
-
-void DumpHeatmaps(const AuxOut* aux_out, float ba_target,
-                  const ImageF& quant_field, const ImageF& tile_heatmap) {
-  if (!WantDebugOutput(aux_out)) return;
-  ImageF inv_qmap(quant_field.xsize(), quant_field.ysize());
-  for (size_t y = 0; y < quant_field.ysize(); ++y) {
-    const float* JXL_RESTRICT row_q = quant_field.ConstRow(y);
-    float* JXL_RESTRICT row_inv_q = inv_qmap.Row(y);
-    for (size_t x = 0; x < quant_field.xsize(); ++x) {
-      row_inv_q[x] = 1.0f / row_q[x];  // never zero
-    }
-  }
-  DumpHeatmap(aux_out, "quant_heatmap", inv_qmap, 4.0f * ba_target,
-              6.0f * ba_target);
-  DumpHeatmap(aux_out, "tile_heatmap", tile_heatmap, ba_target,
-              1.5f * ba_target);
-}
-
 void AdjustQuantField(const AcStrategyImage& ac_strategy, ImageF* quant_field) {
   // Replace the whole quant_field in non-8x8 blocks with the maximum of each
   // 8x8 block.
@@ -928,9 +945,8 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
         // compensate. If the error is below the target, decrease the qf.
         // However, to avoid an excessive increase of the qf, only do so if the
         // error is less than half the maximum allowed error.
-        float qf_mul = max_error < 0.5f   ? max_error * 2.0f
-                       : max_error > 1.0f ? max_error
-                                          : 1.0f;
+        float qf_mul = max_error < 0.5f ? max_error * 2.0f
+                                        : max_error > 1.0f ? max_error : 1.0f;
         for (size_t qy = by; qy < by + acs.covered_blocks_y(); qy++) {
           float* JXL_RESTRICT quant_field_row = quant_field.Row(qy);
           for (size_t qx = bx; qx < bx + acs.covered_blocks_x(); qx++) {
@@ -1088,24 +1104,6 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
   quantizer.SetQuantField(best_quant_dc, best_quant_field, &raw_quant_field);
 }
 
-ImageF AdaptiveQuantizationMap(const Image3F& opsin,
-                               const ImageF& intensity_ac_x,
-                               const ImageF& intensity_ac_y,
-                               const FrameDimensions& frame_dim, float scale,
-                               ThreadPool* pool) {
-  PROFILER_ZONE("aq AdaptiveQuantMap");
-  const float kSigma = 8.2553856725566153f;
-  static const int kRadius = static_cast<int>(2 * kSigma + 0.5f);
-  std::vector<float> kernel = GaussianKernel(kRadius, kSigma);
-
-  constexpr float kDiffCutoff = 0.11883287948847132f;
-  ImageF out = DiffPrecompute(opsin, frame_dim, kDiffCutoff, pool);
-  JXL_ASSERT(out.xsize() % kBlockDim == 0 && out.ysize() % kBlockDim == 0);
-  out = ConvolveAndSample(out, kernel, kBlockDim);
-  PerBlockModulations(intensity_ac_x, intensity_ac_y, scale, pool, &out);
-  return out;
-}
-
 const WeightsSymmetric3& WeightsSymmetric3GaussianDC() {
   constexpr float w0 = 0.320356f;
   constexpr float w1 = 0.122822f;
@@ -1117,7 +1115,7 @@ const WeightsSymmetric3& WeightsSymmetric3GaussianDC() {
 
 ImageF IntensityAcEstimate(const ImageF& opsin_y,
                            const FrameDimensions& frame_dim, ThreadPool* pool) {
-  const Rect rect(0, 0, frame_dim.xsize, frame_dim.ysize);  // not padded
+  const Rect rect(0, 0, frame_dim.xsize_padded, frame_dim.ysize_padded);
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
 
@@ -1143,9 +1141,9 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 
 float InitialQuantDC(float butteraugli_target) {
   const float kDcMul = 2.9;  // Butteraugli target where non-linearity kicks in.
-  const float butteraugli_target_dc =
-      std::min<float>(butteraugli_target,
-                      kDcMul * std::pow((1.0 / kDcMul) * butteraugli_target, kDcQuantPow));
+  const float butteraugli_target_dc = std::min<float>(
+      butteraugli_target,
+      kDcMul * std::pow((1.0 / kDcMul) * butteraugli_target, kDcQuantPow));
   // We want the maximum DC value to be at most 2**15 * kInvDCQuant / quant_dc.
   // The maximum DC value might not be in the kXybRange because of inverse
   // gaborish, so we add some slack to the maximum theoretical quant obtained
@@ -1160,8 +1158,9 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
   const float quant_ac = kAcQuant / butteraugli_target;
   ImageF intensity_ac_x = IntensityAcEstimate(opsin.Plane(0), frame_dim, pool);
   ImageF intensity_ac_y = IntensityAcEstimate(opsin.Plane(1), frame_dim, pool);
-  return AdaptiveQuantizationMap(opsin, intensity_ac_x, intensity_ac_y,
-                                 frame_dim, quant_ac * rescale, pool);
+  return HWY_DYNAMIC_DISPATCH(AdaptiveQuantizationMap)(
+      opsin, intensity_ac_x, intensity_ac_y, frame_dim, quant_ac * rescale,
+      pool);
 }
 
 void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
@@ -1245,3 +1244,4 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 }
 
 }  // namespace jxl
+#endif  // HWY_ONCE
