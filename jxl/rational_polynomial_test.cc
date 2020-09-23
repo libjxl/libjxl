@@ -15,26 +15,30 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/rational_polynomial_test.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <stdio.h>
 
 #include <cmath>
+#include <hwy/highway.h>
+#include <hwy/tests/test_util-inl.h>
 #include <string>
 
 #include "jxl/base/descriptive_statistics.h"
 #include "jxl/base/status.h"
 #include "jxl/common.h"
-
 #include "jxl/rational_polynomial-inl.h"
 
-#include <hwy/tests/test_util-inl.h>
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 using T = float;  // required by EvalLog2
 using D = HWY_FULL(T);
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftLeft;
+using hwy::HWY_NAMESPACE::ShiftRight;
 
 // Generic: only computes polynomial
 struct EvalPoly {
@@ -223,9 +227,10 @@ HWY_NOINLINE void TestRationalPolynomial() {
   TestLog();
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
@@ -233,12 +238,12 @@ namespace jxl {
 class RationalPolynomialTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(RationalPolynomialTest);
 
-HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestSimpleGamma)
-HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestLinearToSrgb8Direct)
-HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestExp)
-HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestNegExp)
-HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestSin)
-HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestLog)
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestSimpleGamma);
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestLinearToSrgb8Direct);
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestExp);
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestNegExp);
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestSin);
+HWY_EXPORT_AND_TEST_P(RationalPolynomialTest, TestLog);
 
 }  // namespace jxl
 #endif  // HWY_ONCE

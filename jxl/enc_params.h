@@ -130,7 +130,7 @@ struct CompressParams {
   int max_butteraugli_iters_guetzli_mode = 100;
 
   ColorTransform color_transform = ColorTransform::kXYB;
-  YCbCrChromaSubsampling chroma_subsampling = YCbCrChromaSubsampling::k444;
+  YCbCrChromaSubsampling chroma_subsampling;
 
   // Compress pixels to JPEG.
   bool pixels_to_jpeg_mode = false;

@@ -17,14 +17,13 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/memory_test.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
-// must come after foreach_target.h
+#include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
-
-// must come after *-inl.h.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 struct TestLoadStore {
   template <class T, class D>
@@ -236,9 +235,10 @@ HWY_NOINLINE void TestAllLoadDup128() {
   ForAllTypes(ForGE128Vectors<TestLoadDup128>());
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
@@ -247,10 +247,10 @@ class HwyMemoryTest : public hwy::TestWithParamTarget {};
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyMemoryTest);
 
-HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestAllLoadStore)
-HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestAllLoadDup128)
-HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestGather)
-HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestStream)
+HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestAllLoadStore);
+HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestAllLoadDup128);
+HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestGather);
+HWY_EXPORT_AND_TEST_P(HwyMemoryTest, TestStream);
 
 TEST(HwyMemoryTest, TestCompile) {
   // Test that these functions compile.

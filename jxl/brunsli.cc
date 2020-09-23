@@ -31,6 +31,13 @@
 #include "c/enc/state.h"
 //
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
 #include "jxl/common.h"
@@ -45,10 +52,6 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/luminance.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/brunsli.cc"
-#include <hwy/foreach_target.h>
 
 // Definitions required by SIMD. Only define once.
 #ifndef JXL_BRUNSLI
@@ -292,9 +295,9 @@ void FixDc(const ::brunsli::coeff_t* JXL_RESTRICT coeffs,
 }  // namespace jxl
 #endif  // JXL_BRUNSLI
 
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 Status JpegDataToPixels(const brunsli::JPEGData& src,
                         const BrunsliExtensions& extensions, Image3F* out,
@@ -485,14 +488,15 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
   return true;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(JpegDataToPixels)  // Local function.
+HWY_EXPORT(JpegDataToPixels);  // Local function.
 
 namespace {
 
@@ -788,44 +792,19 @@ bool SkipSection(const uint8_t** data, size_t len) {
 YCbCrChromaSubsampling GetSubsamplingFromJpegData(
     const brunsli::JPEGData& jpg) {
   if (jpg.components.size() != 3) {
-    return YCbCrChromaSubsampling::kAuto;
+    return YCbCrChromaSubsampling();
   }
-  const size_t max_v_samp_factor = jpg.max_v_samp_factor;
-  const size_t max_h_samp_factor = jpg.max_h_samp_factor;
-
-  // Check consistency of chroma subsampling.
-  for (size_t c = 0; c < 3; ++c) {
-    const ::brunsli::JPEGComponent& component = jpg.components[c];
-    if (c == 0) {  // Luma
-      if (component.h_samp_factor != max_h_samp_factor) {
-        return YCbCrChromaSubsampling::kAuto;
-      }
-      if (component.v_samp_factor != max_v_samp_factor) {
-        return YCbCrChromaSubsampling::kAuto;
-      }
-    } else {  // Chroma
-      if (component.h_samp_factor != 1) {
-        return YCbCrChromaSubsampling::kAuto;
-      }
-      if (component.v_samp_factor != 1) {
-        return YCbCrChromaSubsampling::kAuto;
-      }
-    }
+  size_t nbcomp = jpg.components.size();
+  std::vector<uint8_t> hsample(nbcomp), vsample(nbcomp);
+  for (size_t i = 0; i < nbcomp; i++) {
+    hsample[i] = jpg.components[i].h_samp_factor;
+    vsample[i] = jpg.components[i].v_samp_factor;
   }
-
-  if (max_h_samp_factor == 1 && max_v_samp_factor == 1) {
-    return YCbCrChromaSubsampling::k444;
+  YCbCrChromaSubsampling cs;
+  if (!cs.Set(hsample.data(), vsample.data())) {
+    return YCbCrChromaSubsampling();
   }
-  if (max_h_samp_factor == 2 && max_v_samp_factor == 2) {
-    return YCbCrChromaSubsampling::k420;
-  }
-  if (max_h_samp_factor == 2 && max_v_samp_factor == 1) {
-    return YCbCrChromaSubsampling::k422;
-  }
-  if (max_h_samp_factor == 1 && max_v_samp_factor == 2) {
-    return YCbCrChromaSubsampling::k440;
-  }
-  return YCbCrChromaSubsampling::kAuto;
+  return cs;
 }
 
 void SetColorEncodingFromJpegData(const brunsli::JPEGData& jpg,

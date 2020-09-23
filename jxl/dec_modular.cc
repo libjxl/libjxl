@@ -21,6 +21,9 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/dec_modular.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
 
 #include "jxl/alpha.h"
 #include "jxl/aux_out.h"
@@ -30,11 +33,9 @@
 #include "jxl/compressed_dc.h"
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/modular/image/image.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 void MultiplySum(const size_t xsize,
                  const pixel_type* const JXL_RESTRICT row_in,
@@ -86,15 +87,16 @@ void SingleFromSingle(const size_t xsize,
     Store(out, df, row_out + x);
   }
 }
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(MultiplySum)       // Local function
-HWY_EXPORT(RgbFromSingle)     // Local function
-HWY_EXPORT(SingleFromSingle)  // Local function
+HWY_EXPORT(MultiplySum);       // Local function
+HWY_EXPORT(RgbFromSingle);     // Local function
+HWY_EXPORT(SingleFromSingle);  // Local function
 
 Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
@@ -144,8 +146,10 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   Image gi(xsize, ysize, maxval, nb_chans + nb_extra);
 
   for (size_t ec = 0, c = nb_chans; ec < nb_extra; ec++, c++) {
-    const ExtraChannelInfo& eci = decoded->metadata()->m2.extra_channel_info[ec];
-    gi.channel[c].resize(eci.Size(decoded->xsize()), eci.Size(decoded->ysize()));
+    const ExtraChannelInfo& eci =
+        decoded->metadata()->m2.extra_channel_info[ec];
+    gi.channel[c].resize(eci.Size(decoded->xsize()),
+                         eci.Size(decoded->ysize()));
     gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
   }
 
@@ -237,12 +241,10 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   size_t extra_precision = reader->ReadFixedBits<2>();
   float mul = 1.0f / (1 << extra_precision);
   ModularOptions options;
-  size_t hshift = HShift(dec_state->shared->frame_header.chroma_subsampling);
-  size_t vshift = VShift(dec_state->shared->frame_header.chroma_subsampling);
-  for (size_t c = 1; c < 3; c++) {
-    Channel& ch = image.channel[c];
-    ch.h = ChromaSize(ch.h, vshift);
-    ch.w = ChromaSize(ch.w, hshift);
+  for (size_t c = 0; c < 3; c++) {
+    Channel& ch = image.channel[c < 2 ? c ^ 1 : c];
+    ch.w >>= dec_state->shared->frame_header.chroma_subsampling.HShift(c);
+    ch.h >>= dec_state->shared->frame_header.chroma_subsampling.VShift(c);
     ch.resize();
   }
   if (!ModularGenericDecompress(reader, image, stream_id, &options,
@@ -285,10 +287,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   ConvertPlaneAndClamp(Rect(image.channel[1].plane), image.channel[1].plane, cr,
                        &dec_state->shared->cmap.ytob_map);
   size_t num = 0;
-  const size_t hshift =
-      HShift(dec_state->shared->frame_header.chroma_subsampling);
-  const size_t vshift =
-      VShift(dec_state->shared->frame_header.chroma_subsampling);
+  bool is444 = dec_state->shared->frame_header.chroma_subsampling.Is444();
   for (size_t y = 0; y < r.ysize(); y++) {
     int* row_qf = r.MutableRow(&dec_state->shared_storage.raw_quant_field, y);
     uint8_t* row_epf =
@@ -307,8 +306,8 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
         return JXL_FAILURE("Invalid AC strategy");
       }
       AcStrategy acs = AcStrategy::FromRawStrategy(row_in_1[num]);
-      if ((acs.covered_blocks_x() > 1 && hshift != 0) ||
-          (acs.covered_blocks_y() > 1 && vshift != 0)) {
+      if ((acs.covered_blocks_x() > 1 || acs.covered_blocks_y() > 1) &&
+          !is444) {
         return JXL_FAILURE(
             "AC strategy not compatible with chroma subsampling");
       }

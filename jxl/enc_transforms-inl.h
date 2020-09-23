@@ -21,15 +21,16 @@
 
 #include <stddef.h>
 
+#include <hwy/highway.h>
+
 #include "jxl/ac_strategy.h"
 #include "jxl/coeff_order_fwd.h"
 #include "jxl/dct_scales.h"
 #include "jxl/enc_dct-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
 
 template <size_t ROWS, size_t COLS>
 struct DoDCT {
@@ -740,8 +741,10 @@ HWY_MAYBE_UNUSED void LowestFrequenciesFromDC(const AcStrategy::Type strategy,
   };
 }
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

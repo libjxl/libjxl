@@ -13,12 +13,15 @@
 // limitations under the License.
 
 #include "jxl/enc_xyb.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/enc_xyb.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <algorithm>
 #include <cstdlib>
+#include <hwy/highway.h>
 
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/compiler_specific.h"
@@ -32,10 +35,12 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/opsin_params.h"
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftRight;
 
 // Returns cbrt(x) + add with 6 ulp max error.
 // Modified from vectormath_exp.h, Apache 2 license.
@@ -320,20 +325,21 @@ void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
             transform, "RgbToYcbCr");
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(ToXYB)
+HWY_EXPORT(ToXYB);
 const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
                          Image3F* JXL_RESTRICT xyb,
                          ImageBundle* JXL_RESTRICT linear_storage) {
   return HWY_DYNAMIC_DISPATCH(ToXYB)(in, pool, xyb, linear_storage);
 }
 
-HWY_EXPORT(RgbToYcbcr)
+HWY_EXPORT(RgbToYcbcr);
 void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
                 const ImageF& b_plane, ImageF* y_plane, ImageF* cb_plane,
                 ImageF* cr_plane, ThreadPool* pool) {
@@ -341,7 +347,7 @@ void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
                                           cb_plane, cr_plane, pool);
 }
 
-HWY_EXPORT(TestCubeRoot)
+HWY_EXPORT(TestCubeRoot);
 void TestCubeRoot() { return HWY_DYNAMIC_DISPATCH(TestCubeRoot)(); }
 
 // DEPRECATED

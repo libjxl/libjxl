@@ -37,6 +37,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/common.h"
 #include "jxl/modular/image/image.h"
+#include "jxl/modular/transform/transform.h"
 
 #define JXL_MAX_FIRST_PREVIEW_SIZE 8
 
@@ -444,7 +445,7 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
     SqueezeParams params;
     // horizontal chroma squeeze
     params.horizontal = true;
-    params.in_place = true;
+    params.in_place = false;
     params.begin_c = image.nb_meta_channels + 1;
     params.num_c = 2;
     parameters->push_back(params);
@@ -455,6 +456,7 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
   SqueezeParams params;
   params.begin_c = image.nb_meta_channels;
   params.num_c = nb_channels;
+  params.in_place = true;
 
   if (!wide) {
     if (h > JXL_MAX_FIRST_PREVIEW_SIZE) {
@@ -511,7 +513,7 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
     if (in_place) {
       offset = endc + 1;
     } else {
-      offset = image.nb_meta_channels + image.nb_channels;
+      offset = image.channel.size();
     }
     for (uint32_t c = beginc; c <= endc; c++) {
       Channel dummy;
@@ -559,14 +561,10 @@ Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
     if (in_place) {
       offset = endc + 1;
     } else {
-      offset = input.nb_meta_channels + input.nb_channels;
+      offset = input.channel.size() + beginc - endc - 1;
     }
     for (uint32_t c = beginc; c <= endc; c++) {
       if (input.channel[offset + c - beginc].is_empty()) {
-        // stop unsqueezing luma; keep unsqueezing chroma channels
-        //                if (input.channel[beginc].w == input.channel[c].w &&
-        //                input.channel[beginc].h == input.channel[c].h)
-        //                continue;
         input.channel[offset + c - beginc].resize();  // assume all zeroes
       }
       if (horizontal) {
@@ -598,7 +596,7 @@ Status FwdSqueeze(Image &input, std::vector<SqueezeParams> parameters,
     if (in_place) {
       offset = endc + 1;
     } else {
-      offset = input.nb_meta_channels + input.nb_channels;
+      offset = input.channel.size();
     }
     for (uint32_t c = beginc; c <= endc; c++) {
       if (horizontal) {

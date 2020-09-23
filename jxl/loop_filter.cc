@@ -20,6 +20,58 @@
 namespace jxl {
 
 LoopFilter::LoopFilter() { Bundle::Init(this); }
+Status LoopFilter::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  // Must come before AllDefault.
+
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+
+  visitor->Bool(true, &gab);
+  if (visitor->Conditional(gab)) {
+    visitor->Bool(false, &gab_custom);
+    if (visitor->Conditional(gab_custom)) {
+      visitor->F16(1.1 * 0.104699568f, &gab_x_weight1);
+      visitor->F16(1.1 * 0.055680538f, &gab_x_weight2);
+      visitor->F16(1.1 * 0.104699568f, &gab_y_weight1);
+      visitor->F16(1.1 * 0.055680538f, &gab_y_weight2);
+      visitor->F16(1.1 * 0.104699568f, &gab_b_weight1);
+      visitor->F16(1.1 * 0.055680538f, &gab_b_weight2);
+    }
+  }
+
+  visitor->Bool(true, &epf);
+  if (visitor->Conditional(epf)) {
+    visitor->Bool(false, &epf_sharp_custom);
+    if (visitor->Conditional(epf_sharp_custom)) {
+      for (size_t i = 0; i < kEpfSharpEntries; ++i) {
+        visitor->F16(float(i) / float(kEpfSharpEntries - 1), &epf_sharp_lut[i]);
+      }
+    }
+
+    visitor->Bool(false, &epf_weight_custom);
+    if (visitor->Conditional(epf_weight_custom)) {
+      visitor->F16(40.0f, &epf_channel_scale[0]);
+      visitor->F16(5.0f, &epf_channel_scale[1]);
+      visitor->F16(3.5f, &epf_channel_scale[2]);
+      visitor->F16(0.45f, &epf_pass1_zeroflush);
+      visitor->F16(0.6f, &epf_pass2_zeroflush);
+    }
+
+    visitor->Bool(false, &epf_sigma_custom);
+    if (visitor->Conditional(epf_sigma_custom)) {
+      visitor->F16(0.46f, &epf_quant_mul);
+      visitor->F16(6.5f, &epf_pass2_sigma_scale);
+      visitor->F16(0.6666666666666666f, &epf_border_sad_mul);
+    }
+  }
+
+  visitor->BeginExtensions(&extensions);
+  // Extensions: in chronological order of being added to the format.
+  return visitor->EndExtensions();
+}
 
 Status ReadLoopFilter(BitReader* JXL_RESTRICT reader,
                       LoopFilter* JXL_RESTRICT loop_filter) {

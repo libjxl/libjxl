@@ -13,25 +13,25 @@
 // limitations under the License.
 
 #include "tools/butteraugli_pnorm.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tools/butteraugli_pnorm.cc"
-#include "hwy/foreach_target.h"
-//
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include <atomic>
+#include <hwy/highway.h>
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/profiler.h"
 #include "jxl/color_encoding.h"
-
-//
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
                         double p) {
@@ -192,19 +192,20 @@ double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2) {
   return sum + result;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(ComputeDistanceP)
+HWY_EXPORT(ComputeDistanceP);
 double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
                         double p) {
   return HWY_DYNAMIC_DISPATCH(ComputeDistanceP)(distmap, params, p);
 }
 
-HWY_EXPORT(ComputeDistance2)
+HWY_EXPORT(ComputeDistance2);
 double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2) {
   return HWY_DYNAMIC_DISPATCH(ComputeDistance2)(ib1, ib2);
 }

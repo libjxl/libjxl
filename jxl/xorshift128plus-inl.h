@@ -23,9 +23,15 @@
 
 #include <stddef.h>
 
-#include <hwy/before_namespace-inl.h>
+#include <hwy/highway.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftLeft;
+using hwy::HWY_NAMESPACE::ShiftRight;
 
 // Adapted from https://github.com/vpxyz/xorshift/blob/master/xorshift128plus/
 // (MIT-license)
@@ -44,7 +50,7 @@ class Xorshift128Plus {
     }
   }
 
-  HWY_FUNC void Fill(uint64_t* HWY_RESTRICT random_bits) {
+  HWY_INLINE HWY_MAYBE_UNUSED void Fill(uint64_t* HWY_RESTRICT random_bits) {
 #if HWY_CAP_INTEGER64
     const HWY_FULL(uint64_t) d;
     for (size_t i = 0; i < N; i += Lanes(d)) {
@@ -82,8 +88,10 @@ class Xorshift128Plus {
   HWY_ALIGN uint64_t s1_[N];
 };
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

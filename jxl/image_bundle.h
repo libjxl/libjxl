@@ -20,6 +20,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Brunsli headers
+#include <brunsli/jpeg_data.h>
+
 #include <vector>
 
 #include "jxl/aux_out_fwd.h"
@@ -88,45 +91,11 @@ static inline constexpr uint64_t EnumBits(ExtraChannel /*unused*/) {
 }
 
 // Used in ImageMetadata and ExtraChannelInfo.
-struct BitDepth {
+struct BitDepth : public Fields {
   BitDepth();
-  static const char* Name() { return "BitDepth"; }
+  const char* Name() const override { return "BitDepth"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->Bool(false, &floating_point_sample);
-    // The same fields (bits_per_sample and exponent_bits_per_sample) are read
-    // in a different way depending on floating_point_sample's value. It's still
-    // default-initialized correctly so using visitor->Conditional is not
-    // required.
-    if (!floating_point_sample) {
-      visitor->U32(Val(8), Val(10), Val(12), BitsOffset(5, 1), 8,
-                   &bits_per_sample);
-      exponent_bits_per_sample = 0;
-    } else {
-      visitor->U32(Val(32), Val(16), Val(24), BitsOffset(6, 1), 32,
-                   &bits_per_sample);
-      // The encoded value is exponent_bits_per_sample - 1, encoded in 3 bits
-      // so the value can be in range [1, 8].
-      const uint32_t offset = 1;
-      exponent_bits_per_sample -= offset;
-      visitor->Bits(3, 8 - offset, &exponent_bits_per_sample);
-      exponent_bits_per_sample += offset;
-    }
-
-    // Error-checking for floating point ranges.
-    if (floating_point_sample) {
-      if (exponent_bits_per_sample < 2 || exponent_bits_per_sample > 8) {
-        return JXL_FAILURE("Invalid exponent_bits_per_sample");
-      }
-      int mantissa_bits =
-          static_cast<int>(bits_per_sample) - exponent_bits_per_sample - 1;
-      if (mantissa_bits < 2 || mantissa_bits > 23) {
-        return JXL_FAILURE("Invalid bits_per_sample");
-      }
-    }
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   // Whether the original (uncompressed) samples are floating point or
   // unsigned integer.
@@ -150,52 +119,11 @@ struct BitDepth {
 };
 
 // Describes one extra channel.
-struct ExtraChannelInfo {
+struct ExtraChannelInfo : public Fields {
   ExtraChannelInfo();
-  static const char* Name() { return "ExtraChannelInfo"; }
+  const char* Name() const override { return "ExtraChannelInfo"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) {
-      // Overwrite all serialized fields, but not any nonserialized_*.
-      visitor->SetDefault(this);
-      return true;
-    }
-
-    // General
-    JXL_RETURN_IF_ERROR(visitor->Enum(ExtraChannel::kAlpha, &type));
-
-    JXL_RETURN_IF_ERROR(VisitNewBase(visitor, &new_base));
-
-    JXL_RETURN_IF_ERROR(VisitBlendMode(visitor, &blend_mode));
-    if (blend_mode == BlendMode::kBlend && type == ExtraChannel::kAlpha) {
-      return JXL_FAILURE("Cannot blend alpha");
-    }
-
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
-
-    visitor->U32(Val(0), Val(3), Val(4), BitsOffset(3, 1), 0, &dim_shift);
-    if ((1U << dim_shift) > kGroupDim) {
-      return JXL_FAILURE("dim_shift %u too large", dim_shift);
-    }
-
-    VisitNameString(visitor, &name);
-
-    // Conditional
-    if (visitor->Conditional(type == ExtraChannel::kAlpha)) {
-      visitor->Bool(false, &alpha_associated);
-    }
-    if (visitor->Conditional(type == ExtraChannel::kSpotColor)) {
-      for (float& c : spot_color) {
-        visitor->F16(0, &c);
-      }
-    }
-    if (visitor->Conditional(type == ExtraChannel::kCFA)) {
-      visitor->U32(Val(1), Bits(2), BitsOffset(4, 3), BitsOffset(8, 19), 1,
-                   &cfa_channel);
-    }
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   size_t Size(size_t size) const {
     const size_t mask = (1u << dim_shift) - 1;
@@ -218,29 +146,11 @@ struct ExtraChannelInfo {
   uint32_t cfa_channel;
 };
 
-struct OpsinInverseMatrix {
+struct OpsinInverseMatrix : public Fields {
   OpsinInverseMatrix();
-  static const char* Name() { return "OpsinInverseMatrix"; }
+  const char* Name() const override { return "OpsinInverseMatrix"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) {
-      // Overwrite all serialized fields, but not any nonserialized_*.
-      visitor->SetDefault(this);
-      return true;
-    }
-    for (int i = 0; i < 9; ++i) {
-      visitor->F16(DefaultInverseOpsinAbsorbanceMatrix()[i],
-                   &inverse_matrix[i]);
-    }
-    for (int i = 0; i < 3; ++i) {
-      visitor->F16(kNegOpsinAbsorbanceBiasRGB[i], &opsin_biases[i]);
-    }
-    for (int i = 0; i < 4; ++i) {
-      visitor->F16(kDefaultQuantBias[i], &quant_biases[i]);
-    }
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   OpsinParams ToOpsinParams() const {
     OpsinParams opsin_params;
@@ -265,39 +175,11 @@ struct OpsinInverseMatrix {
 };
 
 // Information useful for mapping HDR images to lower dynamic range displays.
-struct ToneMapping {
+struct ToneMapping : public Fields {
   ToneMapping();
-  static const char* Name() { return "ToneMapping"; }
+  const char* Name() const override { return "ToneMapping"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) {
-      // Overwrite all serialized fields, but not any nonserialized_*.
-      visitor->SetDefault(this);
-      return true;
-    }
-
-    visitor->F16(kDefaultIntensityTarget, &intensity_target);
-    if (intensity_target <= 0.f) {
-      return JXL_FAILURE("invalid intensity target");
-    }
-
-    visitor->F16(0.0f, &min_nits);
-    if (min_nits < 0.f || min_nits > intensity_target) {
-      return JXL_FAILURE("invalid min %f vs max %f", min_nits,
-                         intensity_target);
-    }
-
-    visitor->Bool(false, &relative_to_max_display);
-
-    visitor->F16(0.0f, &linear_below);
-    if (linear_below < 0 || (relative_to_max_display && linear_below > 1.0f)) {
-      return JXL_FAILURE("invalid linear_below %f (%s)", linear_below,
-                         relative_to_max_display ? "relative" : "absolute");
-    }
-
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   mutable bool all_default;
 
@@ -323,55 +205,11 @@ struct ToneMapping {
 
 // Less frequently changed fields, grouped into a separate bundle so they do not
 // need to be signaled when some ImageMetadata fields are non-default.
-struct ImageMetadata2 {
+struct ImageMetadata2 : public Fields {
   ImageMetadata2();
-  static const char* Name() { return "ImageMetadata2"; }
+  const char* Name() const override { return "ImageMetadata2"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) {
-      // Overwrite all serialized fields, but not any nonserialized_*.
-      visitor->SetDefault(this);
-      return true;
-    }
-
-    visitor->Bool(false, &have_preview);
-    visitor->Bool(false, &have_animation);
-
-    visitor->Bool(false, &have_intrinsic_size);
-    if (visitor->Conditional(have_intrinsic_size)) {
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&intrinsic_size));
-    }
-
-    visitor->Bits(3, 0, &orientation_minus_1);
-    // (No need for bounds checking because we read exactly 3 bits)
-
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
-
-    num_extra_channels = extra_channel_info.size();
-    visitor->U32(Val(0), Bits(4), BitsOffset(8, 16), BitsOffset(12, 1), 0,
-                 &num_extra_channels);
-
-    if (visitor->Conditional(num_extra_channels != 0)) {
-      if (visitor->IsReading()) {
-        extra_channel_info.resize(num_extra_channels);
-      }
-      for (ExtraChannelInfo& eci : extra_channel_info) {
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&eci));
-      }
-    }
-
-    // Treat as if only the fields up to extra channels exist.
-    if (visitor->IsReading() && nonserialized_only_parse_basic_info) {
-      return true;
-    }
-
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
-
-    visitor->BeginExtensions(&extensions);
-    // Extensions: in chronological order of being added to the format.
-    return visitor->EndExtensions();
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   // Returns first ExtraChannelInfo of the given type, or nullptr if none.
   const ExtraChannelInfo* Find(ExtraChannel type) const {
@@ -419,27 +257,11 @@ struct ImageMetadata2 {
 
 // Properties of the original image bundle. This enables Encode(Decode()) to
 // re-create an equivalent image without user input.
-struct ImageMetadata {
+struct ImageMetadata : public Fields {
   ImageMetadata();
-  static const char* Name() { return "ImageMetadata"; }
+  const char* Name() const override { return "ImageMetadata"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) {
-      // Overwrite all serialized fields, but not any nonserialized_*.
-      visitor->SetDefault(this);
-      return true;
-    }
-
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
-    visitor->Bool(true, &modular_16_bit_buffer_sufficient);
-
-    visitor->Bool(true, &xyb_encoded);
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
-
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   // Returns bit depth of the JPEG XL compressed alpha channel, or 0 if no alpha
   // channel present. In the theoretical case that there are multiple alpha
@@ -576,10 +398,8 @@ class ImageBundle {
       copy.extra_channels_.emplace_back(CopyImage(plane));
     }
 
-    copy.is_jpeg = is_jpeg;
-    copy.jpeg_quant_table = jpeg_quant_table;
-    copy.jpeg_xsize = jpeg_xsize;
-    copy.jpeg_ysize = jpeg_ysize;
+    copy.jpeg_data =
+        jpeg_data ? make_unique<brunsli::JPEGData>(*jpeg_data) : nullptr;
     copy.color_transform = color_transform;
     copy.chroma_subsampling = chroma_subsampling;
 
@@ -589,12 +409,12 @@ class ImageBundle {
   // -- SIZE
 
   size_t xsize() const {
-    if (jpeg_xsize != 0) return jpeg_xsize;
+    if (IsJPEG()) return jpeg_data->width;
     if (color_.xsize() != 0) return color_.xsize();
     return extra_channels_.empty() ? 0 : extra_channels_[0].xsize();
   }
   size_t ysize() const {
-    if (jpeg_ysize != 0) return jpeg_ysize;
+    if (IsJPEG()) return jpeg_data->height;
     if (color_.ysize() != 0) return color_.ysize();
     return extra_channels_.empty() ? 0 : extra_channels_[0].ysize();
   }
@@ -744,15 +564,14 @@ class ImageBundle {
 
   // Returns true if image does or will represent quantized DCT-8 coefficients,
   // stored in 8x8 pixel regions.
-  bool IsJPEG() const { return is_jpeg; }
+  bool IsJPEG() const { return jpeg_data != nullptr; }
 
-  bool is_jpeg = false;
-  std::vector<int32_t> jpeg_quant_table;
-  size_t jpeg_xsize = 0;  // image dimensions of input JPEG
-  size_t jpeg_ysize = 0;  // (can be up to 7 smaller than color_ dimensions)
+  std::unique_ptr<brunsli::JPEGData> jpeg_data;
   // these fields are used to signal the input JPEG color space
+  // NOTE: JPEG doesn't actually provide a way to determine whether YCbCr was
+  // applied or not.
   ColorTransform color_transform = ColorTransform::kNone;
-  YCbCrChromaSubsampling chroma_subsampling = YCbCrChromaSubsampling::k444;
+  YCbCrChromaSubsampling chroma_subsampling;
 
  private:
   // Called after any Set* to ensure their sizes are compatible.

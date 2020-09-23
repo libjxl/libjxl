@@ -25,7 +25,7 @@ namespace jxl {
 
 namespace {
 const char *transform_name[static_cast<uint32_t>(TransformId::kNumTransforms)] =
-    {"RCT", "Palette", "Squeeze", "Near-Lossless"};
+    {"RCT", "Palette", "Squeeze", "Invalid", "Near-Lossless"};
 }  // namespace
 
 SqueezeParams::SqueezeParams() { Bundle::Init(this); }
@@ -62,7 +62,8 @@ Status Transform::Inverse(Image &input, ThreadPool *pool) {
     case TransformId::kSqueeze:
       return InvSqueeze(input, squeezes, pool);
     case TransformId::kPalette:
-      return InvPalette(input, begin_c, nb_colors, pool);
+      return InvPalette(input, begin_c, nb_colors, nb_deltas, predictor,
+                        wp_header, pool);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }
@@ -75,7 +76,8 @@ Status Transform::MetaApply(Image &input) {
     case TransformId::kSqueeze:
       return MetaSqueeze(input, &squeezes);
     case TransformId::kPalette:
-      return MetaPalette(input, begin_c, begin_c + num_c - 1, nb_colors);
+      return MetaPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
+                         nb_deltas);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }

@@ -21,13 +21,14 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/dec_dct.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
 
 #include "jxl/dec_dct-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
            const ImageF& dequantized, ThreadPool* pool,
@@ -85,14 +86,15 @@ void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(IDct8)
+HWY_EXPORT(IDct8);
 void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
            const ImageF& dequantized, ThreadPool* pool,
            ImageF* JXL_RESTRICT pixels) {
@@ -100,7 +102,7 @@ void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
                                      pool, pixels);
 }
 
-HWY_EXPORT(TransposedScaledIDCT)
+HWY_EXPORT(TransposedScaledIDCT);
 void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
   return HWY_DYNAMIC_DISPATCH(TransposedScaledIDCT)(dct, idct);
 }

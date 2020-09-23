@@ -18,11 +18,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>   // memcpy
+#include <string.h>  // memcpy
+
 #include <algorithm>  // sort
 #include <atomic>
 #include <cinttypes>  // PRIu64
 #include <new>
+
 #include "jxl/base/robust_statistics.h"
 
 // Non-portable aspects:
@@ -41,9 +43,10 @@
 
 #define PROFILER_PRINT_OVERHEAD 0
 
-#include <hwy/before_namespace-inl.h>
+#include <hwy/highway.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 #if PROFILER_BUFFER
 // Overwrites `to` without loading it into cache (read-for-ownership).
@@ -51,7 +54,7 @@ namespace jxl {
 void StreamCacheLine(const Packet* JXL_RESTRICT from, Packet* JXL_RESTRICT to) {
   constexpr size_t kLanes = 16 / sizeof(Packet);
   static_assert(kLanes == 2, "Update descriptor type");
-  const hwy::Simd<uint64_t, kLanes> d;
+  const HWY_CAPPED(uint64_t, kLanes) d;
   JXL_COMPILER_FENCE;
   const uint64_t* JXL_RESTRICT from64 = reinterpret_cast<const uint64_t*>(from);
   const auto v0 = Load(d, from64 + 0 * kLanes);
@@ -70,9 +73,10 @@ void StreamCacheLine(const Packet* JXL_RESTRICT from, Packet* JXL_RESTRICT to) {
 }
 #endif  // PROFILER_BUFFER
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 namespace jxl {
 namespace {
@@ -471,9 +475,7 @@ void ThreadSpecific::ComputeOverhead() {
 
       for (size_t idx_duration = 0; idx_duration < kNumDurations;
            ++idx_duration) {
-        {
-          PROFILER_ZONE("Dummy Zone (never shown)");
-        }
+        { PROFILER_ZONE("Dummy Zone (never shown)"); }
 #if PROFILER_BUFFER
         const uint64_t duration = results_->ZoneDuration(buffer_);
         buffer_size_ = 0;

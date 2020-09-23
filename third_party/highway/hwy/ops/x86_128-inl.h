@@ -12,23 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// 128-bit SSE4 vectors and operations. External include guard.
+// 128-bit vectors and SSE4 instructions, plus some AVX2 and AVX512-VL
+// operations when compiling for those targets.
+// External include guard in highway.h - see comment there.
 
-// This header is included by begin_target-inl.h, possibly inside a namespace,
-// so do not include system headers (already done by highway.h). HWY_ALIGN is
-// already defined unless an IDE is only parsing this file, in which case we
-// include headers to avoid warnings.
-#ifndef HWY_ALIGN
+#include <smmintrin.h>  // SSE4
 #include <stddef.h>
 #include <stdint.h>
 
-#include "hwy/highway.h"
+#include "hwy/ops/shared-inl.h"
 
-#define HWY_NESTED_BEGIN  // prevent re-including this header
-#undef HWY_TARGET
-#define HWY_TARGET HWY_SSE4
-#include "hwy/begin_target-inl.h"
-#endif  // HWY_ALIGN
+HWY_BEFORE_NAMESPACE();
+namespace hwy {
+namespace HWY_NAMESPACE {
 
 template <typename T>
 struct Raw128 {
@@ -44,10 +40,7 @@ struct Raw128<double> {
 };
 
 template <typename T>
-using Full128 = hwy::Simd<T, 16 / sizeof(T)>;
-
-template <typename T, size_t N>
-using Simd = hwy::Simd<T, N>;
+using Full128 = Simd<T, 16 / sizeof(T)>;
 
 template <typename T, size_t N = 16 / sizeof(T)>
 class Vec128 {
@@ -56,25 +49,25 @@ class Vec128 {
  public:
   // Compound assignment. Only usable if there is a corresponding non-member
   // binary operator overload. For example, only f32 and f64 support division.
-  HWY_API Vec128& operator*=(const Vec128 other) {
+  HWY_INLINE Vec128& operator*=(const Vec128 other) {
     return *this = (*this * other);
   }
-  HWY_API Vec128& operator/=(const Vec128 other) {
+  HWY_INLINE Vec128& operator/=(const Vec128 other) {
     return *this = (*this / other);
   }
-  HWY_API Vec128& operator+=(const Vec128 other) {
+  HWY_INLINE Vec128& operator+=(const Vec128 other) {
     return *this = (*this + other);
   }
-  HWY_API Vec128& operator-=(const Vec128 other) {
+  HWY_INLINE Vec128& operator-=(const Vec128 other) {
     return *this = (*this - other);
   }
-  HWY_API Vec128& operator&=(const Vec128 other) {
+  HWY_INLINE Vec128& operator&=(const Vec128 other) {
     return *this = (*this & other);
   }
-  HWY_API Vec128& operator|=(const Vec128 other) {
+  HWY_INLINE Vec128& operator|=(const Vec128 other) {
     return *this = (*this | other);
   }
-  HWY_API Vec128& operator^=(const Vec128 other) {
+  HWY_INLINE Vec128& operator^=(const Vec128 other) {
     return *this = (*this ^ other);
   }
 
@@ -104,15 +97,15 @@ HWY_API Vec128<uint8_t, N * sizeof(T)> cast_to_u8(Vec128<T, N> v) {
 // Cannot rely on function overloading because return types differ.
 template <typename T>
 struct BitCastFromInteger128 {
-  HWY_API __m128i operator()(__m128i v) { return v; }
+  HWY_INLINE __m128i operator()(__m128i v) { return v; }
 };
 template <>
 struct BitCastFromInteger128<float> {
-  HWY_API __m128 operator()(__m128i v) { return _mm_castsi128_ps(v); }
+  HWY_INLINE __m128 operator()(__m128i v) { return _mm_castsi128_ps(v); }
 };
 template <>
 struct BitCastFromInteger128<double> {
-  HWY_API __m128d operator()(__m128i v) { return _mm_castsi128_pd(v); }
+  HWY_INLINE __m128d operator()(__m128i v) { return _mm_castsi128_pd(v); }
 };
 
 template <typename T, size_t N>
@@ -1347,7 +1340,7 @@ HWY_API Vec128<T, 8 / sizeof(T)> Load(Simd<T, 8 / sizeof(T)> /* tag */,
                                       const T* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128i v = _mm_setzero_si128();
-  hwy::CopyBytes<8>(p, &v);
+  CopyBytes<8>(p, &v);
   return Vec128<T, 8 / sizeof(T)>{v};
 #else
   return Vec128<T, 8 / sizeof(T)>{
@@ -1359,7 +1352,7 @@ HWY_API Vec128<float, 2> Load(Simd<float, 2> /* tag */,
                               const float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128 v = _mm_setzero_ps();
-  hwy::CopyBytes<8>(p, &v);
+  CopyBytes<8>(p, &v);
   return Vec128<float, 2>{v};
 #else
   const __m128 hi = _mm_setzero_ps();
@@ -1371,7 +1364,7 @@ HWY_API Vec128<double, 1> Load(Simd<double, 1> /* tag */,
                                const double* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128d v = _mm_setzero_pd();
-  hwy::CopyBytes<8>(p, &v);
+  CopyBytes<8>(p, &v);
   return Vec128<double, 1>{v};
 #else
   return Vec128<double, 1>{_mm_load_sd(p)};
@@ -1382,7 +1375,7 @@ HWY_API Vec128<float, 1> Load(Simd<float, 1> /* tag */,
                               const float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128 v = _mm_setzero_ps();
-  hwy::CopyBytes<4>(p, &v);
+  CopyBytes<4>(p, &v);
   return Vec128<float, 1>{v};
 #else
   return Vec128<float, 1>{_mm_load_ss(p)};
@@ -1395,12 +1388,12 @@ HWY_API Vec128<T, N> Load(Simd<T, N> /* tag */, const T* HWY_RESTRICT p) {
   constexpr size_t kSize = sizeof(T) * N;
 #if HWY_SAFE_PARTIAL_LOAD_STORE
   __m128 v = _mm_setzero_ps();
-  hwy::CopyBytes<kSize>(p, &v);
+  CopyBytes<kSize>(p, &v);
   return Vec128<T, N>{v};
 #else
   // TODO(janwas): load_ss?
   int32_t bits;
-  hwy::CopyBytes<kSize>(p, &bits);
+  CopyBytes<kSize>(p, &bits);
   return Vec128<T, N>{_mm_cvtsi32_si128(bits)};
 #endif
 }
@@ -1449,7 +1442,7 @@ template <typename T>
 HWY_API void Store(Vec128<T, 8 / sizeof(T)> v, Simd<T, 8 / sizeof(T)> /* tag */,
                    T* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  hwy::CopyBytes<8>(&v, p);
+  CopyBytes<8>(&v, p);
 #else
   _mm_storel_epi64(reinterpret_cast<__m128i*>(p), v.raw);
 #endif
@@ -1457,7 +1450,7 @@ HWY_API void Store(Vec128<T, 8 / sizeof(T)> v, Simd<T, 8 / sizeof(T)> /* tag */,
 HWY_API void Store(const Vec128<float, 2> v, Simd<float, 2> /* tag */,
                    float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  hwy::CopyBytes<8>(&v, p);
+  CopyBytes<8>(&v, p);
 #else
   _mm_storel_pi(reinterpret_cast<__m64*>(p), v.raw);
 #endif
@@ -1465,7 +1458,7 @@ HWY_API void Store(const Vec128<float, 2> v, Simd<float, 2> /* tag */,
 HWY_API void Store(const Vec128<double, 1> v, Simd<double, 1> /* tag */,
                    double* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  hwy::CopyBytes<8>(&v, p);
+  CopyBytes<8>(&v, p);
 #else
   _mm_storel_pd(p, v.raw);
 #endif
@@ -1474,12 +1467,12 @@ HWY_API void Store(const Vec128<double, 1> v, Simd<double, 1> /* tag */,
 // Any <= 32 bit except <float, 1>
 template <typename T, size_t N, HWY_IF_LE32(T, N)>
 HWY_API void Store(Vec128<T, N> v, Simd<T, N> /* tag */, T* HWY_RESTRICT p) {
-  hwy::CopyBytes<sizeof(T) * N>(&v, p);
+  CopyBytes<sizeof(T) * N>(&v, p);
 }
 HWY_API void Store(const Vec128<float, 1> v, Simd<float, 1> /* tag */,
                    float* HWY_RESTRICT p) {
 #if HWY_SAFE_PARTIAL_LOAD_STORE
-  hwy::CopyBytes<4>(&v, p);
+  CopyBytes<4>(&v, p);
 #else
   _mm_store_ss(p, v.raw);
 #endif
@@ -1523,7 +1516,7 @@ HWY_API Vec128<T, N> GatherOffset(const Simd<T, N> d,
   static_assert(sizeof(T) == sizeof(Offset), "T must match Offset");
   const uintptr_t address = reinterpret_cast<uintptr_t>(base) + GetLane(offset);
   T val;
-  hwy::CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
+  CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
   return Set(d, val);
 }
 
@@ -1674,11 +1667,11 @@ HWY_API Vec128<T, 8 / sizeof(T)> UpperHalf(Vec128<T> v) {
   return Vec128<T, 8 / sizeof(T)>{_mm_unpackhi_epi64(v.raw, v.raw)};
 }
 template <>
-HWY_API Vec128<float, 2> UpperHalf(Vec128<float> v) {
+HWY_INLINE Vec128<float, 2> UpperHalf(Vec128<float> v) {
   return Vec128<float, 2>{_mm_movehl_ps(v.raw, v.raw)};
 }
 template <>
-HWY_API Vec128<double, 1> UpperHalf(Vec128<double> v) {
+HWY_INLINE Vec128<double, 1> UpperHalf(Vec128<double> v) {
   return Vec128<double, 1>{_mm_unpackhi_pd(v.raw, v.raw)};
 }
 
@@ -2094,13 +2087,13 @@ HWY_API Vec128<T> ConcatUpperLower(const Vec128<T> hi, const Vec128<T> lo) {
   return Vec128<T>{_mm_blend_epi16(hi.raw, lo.raw, 0x0F)};
 }
 template <>
-HWY_API Vec128<float> ConcatUpperLower(const Vec128<float> hi,
-                                       const Vec128<float> lo) {
+HWY_INLINE Vec128<float> ConcatUpperLower(const Vec128<float> hi,
+                                          const Vec128<float> lo) {
   return Vec128<float>{_mm_blend_ps(hi.raw, lo.raw, 3)};
 }
 template <>
-HWY_API Vec128<double> ConcatUpperLower(const Vec128<double> hi,
-                                        const Vec128<double> lo) {
+HWY_INLINE Vec128<double> ConcatUpperLower(const Vec128<double> hi,
+                                           const Vec128<double> lo) {
   return Vec128<double>{_mm_blend_pd(hi.raw, lo.raw, 1)};
 }
 
@@ -2140,14 +2133,14 @@ HWY_API Vec128<T> OddEven(const Vec128<T> a, const Vec128<T> b) {
   return detail::OddEven(hwy::SizeTag<sizeof(T)>(), a, b);
 }
 template <>
-HWY_API Vec128<float> OddEven<float>(const Vec128<float> a,
-                                     const Vec128<float> b) {
+HWY_INLINE Vec128<float> OddEven<float>(const Vec128<float> a,
+                                        const Vec128<float> b) {
   return Vec128<float>{_mm_blend_ps(a.raw, b.raw, 5)};
 }
 
 template <>
-HWY_API Vec128<double> OddEven<double>(const Vec128<double> a,
-                                       const Vec128<double> b) {
+HWY_INLINE Vec128<double> OddEven<double>(const Vec128<double> a,
+                                          const Vec128<double> b) {
   return Vec128<double>{_mm_blend_pd(a.raw, b.raw, 1)};
 }
 
@@ -2390,7 +2383,7 @@ HWY_API bool AllTrue(const Mask128<T> mask) {
 
 template <typename T>
 HWY_API size_t CountTrue(const Mask128<T> mask) {
-  return hwy::PopCount(BitsFromMask(mask));
+  return PopCount(BitsFromMask(mask));
 }
 
 // ------------------------------ Horizontal sum (reduction)
@@ -2428,3 +2421,8 @@ template <typename T, size_t N>
 HWY_API Vec128<T, N> SumOfLanes(const Vec128<T, N> v) {
   return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(), v);
 }
+
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace hwy
+HWY_AFTER_NAMESPACE();

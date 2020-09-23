@@ -17,26 +17,26 @@
 #include <cmath>
 #include <numeric>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dct_test.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+#include <hwy/tests/test_util-inl.h>
+
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/common.h"
 #include "jxl/dct_for_test.h"
 #include "jxl/dct_scales.h"
+#include "jxl/dec_dct-inl.h"
+#include "jxl/enc_dct-inl.h"
 #include "jxl/image.h"
 #include "jxl/test_utils.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dct_test.cc"
-#include <hwy/foreach_target.h>
-
-#include "jxl/dec_dct-inl.h"
-#include "jxl/enc_dct-inl.h"
-
-#include <hwy/tests/test_util-inl.h>
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // Computes the in-place NxN DCT of block.
 // Requires that block is HWY_ALIGN'ed.
@@ -524,9 +524,10 @@ void TestSlowInverseShard(size_t shard) {
   TestSlowInverse<32>(1E-5f, 32 * shard, 32 * (shard + 1));
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
@@ -535,13 +536,13 @@ class TransposeTest : public hwy::TestWithParamTarget {};
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(TransposeTest);
 
-HWY_EXPORT_AND_TEST_P(TransposeTest, TransposeTest)
-HWY_EXPORT_AND_TEST_P(TransposeTest, InverseTest)
-HWY_EXPORT_AND_TEST_P(TransposeTest, IDCTOrthonormalTest)
-HWY_EXPORT_AND_TEST_P(TransposeTest, DCTOrthonormalTest)
-HWY_EXPORT_AND_TEST_P(TransposeTest, ColumnDctRoundtrip)
-HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectInverse)
-HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectTranspose)
+HWY_EXPORT_AND_TEST_P(TransposeTest, TransposeTest);
+HWY_EXPORT_AND_TEST_P(TransposeTest, InverseTest);
+HWY_EXPORT_AND_TEST_P(TransposeTest, IDCTOrthonormalTest);
+HWY_EXPORT_AND_TEST_P(TransposeTest, DCTOrthonormalTest);
+HWY_EXPORT_AND_TEST_P(TransposeTest, ColumnDctRoundtrip);
+HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectInverse);
+HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectTranspose);
 
 // Tests in the DctShardedTest class are sharded for N=32.
 class DctShardedTest : public ::hwy::TestWithParamTargetAndT<uint32_t> {};
@@ -560,12 +561,12 @@ std::vector<uint32_t> ShardRange(uint32_t n) {
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(DctShardedTest,
                                       ::testing::ValuesIn(ShardRange(32)));
 
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctAccuracyShard)
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestIdctAccuracyShard)
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctTransposeShard)
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameDCTShard)
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameIDCTShard)
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowInverseShard)
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctAccuracyShard);
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestIdctAccuracyShard);
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctTransposeShard);
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameDCTShard);
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameIDCTShard);
+HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowInverseShard);
 
 }  // namespace jxl
 #endif  // HWY_ONCE

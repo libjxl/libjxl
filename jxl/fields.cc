@@ -23,6 +23,667 @@
 
 namespace jxl {
 
+namespace {
+
+// A bundle can be in one of three states concerning extensions: not-begun,
+// active, ended. Bundles may be nested, so we need a stack of states.
+class ExtensionStates {
+ public:
+  void Push() {
+    // Initial state = not-begun.
+    begun_ <<= 1;
+    ended_ <<= 1;
+  }
+
+  // Clears current state; caller must check IsEnded beforehand.
+  void Pop() {
+    begun_ >>= 1;
+    ended_ >>= 1;
+  }
+
+  // Returns true if state == active || state == ended.
+  Status IsBegun() const { return (begun_ & 1) != 0; }
+  // Returns true if state != not-begun && state != active.
+  Status IsEnded() const { return (ended_ & 1) != 0; }
+
+  void Begin() {
+    JXL_ASSERT(!IsBegun());
+    JXL_ASSERT(!IsEnded());
+    begun_ += 1;
+  }
+
+  void End() {
+    JXL_ASSERT(IsBegun());
+    JXL_ASSERT(!IsEnded());
+    ended_ += 1;
+  }
+
+ private:
+  // Current state := least-significant bit of begun_ and ended_.
+  uint64_t begun_ = 0;
+  uint64_t ended_ = 0;
+};
+
+// Visitors generate Init/AllDefault/Read/Write logic for all fields. Each
+// bundle's VisitFields member function calls visitor->U32 etc. We do not
+// overload operator() because a function name is easier to search for.
+
+class VisitorBase : public Visitor {
+ public:
+  explicit VisitorBase(bool print_bundles = false)
+      : print_bundles_(print_bundles) {}
+  ~VisitorBase() override { JXL_ASSERT(depth_ == 0); }
+
+  // This is the only call site of Fields::VisitFields. Adds tracing and
+  // ensures EndExtensions was called.
+  Status Visit(Fields* fields, const char* visitor_name) override {
+    fputs(visitor_name, stdout);  // No newline; no effect if empty
+    if (print_bundles_) {
+      Trace("%s\n", print_bundles_ ? fields->Name() : "");
+    }
+
+    depth_ += 1;
+    JXL_ASSERT(depth_ <= Bundle::kMaxExtensions);
+    extension_states_.Push();
+
+    const Status ok = fields->VisitFields(this);
+
+    if (ok) {
+      // If VisitFields called BeginExtensions, must also call
+      // EndExtensions.
+      JXL_ASSERT(!extension_states_.IsBegun() || extension_states_.IsEnded());
+    } else {
+      // Failed, undefined state: don't care whether EndExtensions was
+      // called.
+    }
+
+    extension_states_.Pop();
+    JXL_ASSERT(depth_ != 0);
+    depth_ -= 1;
+
+    return ok;
+  }
+
+  // For visitors accepting a const Visitor, need to const-cast so we can call
+  // the non-const Visitor::VisitFields. NOTE: C is not modified except the
+  // `all_default` field by CanEncodeVisitor.
+  Status VisitConst(const Fields& t, const char* message) {
+    return Visit(const_cast<Fields*>(&t), message);
+  }
+
+  // Derived types (overridden by InitVisitor because it is unsafe to read
+  // from *value there)
+
+  void Bool(bool default_value, bool* JXL_RESTRICT value) override {
+    uint32_t bits = *value ? 1 : 0;
+    Bits(1, static_cast<uint32_t>(default_value), &bits);
+    JXL_DASSERT(bits <= 1);
+    *value = bits == 1;
+  }
+
+  // Overriden by ReadVisitor and WriteVisitor.
+  // Called before any conditional visit based on "extensions".
+  // Overridden by ReadVisitor, CanEncodeVisitor and WriteVisitor.
+  void BeginExtensions(uint64_t* JXL_RESTRICT extensions) override {
+    U64(0, extensions);
+
+    extension_states_.Begin();
+  }
+
+  // Called after all extension fields (if any). Although non-extension
+  // fields could be visited afterward, we prefer the convention that
+  // extension fields are always the last to be visited. Overridden by
+  // ReadVisitor.
+  Status EndExtensions() override {
+    extension_states_.End();
+    return true;
+  }
+
+ protected:
+  // Prints indentation, <format>.
+  JXL_FORMAT(2, 3)  // 1-based plus one because member function
+  void Trace(const char* format, ...) const {
+    // Indentation.
+    printf("%*s", static_cast<int>(2 * depth_), "");
+
+    va_list args;
+    va_start(args, format);
+    vfprintf(stdout, format, args);
+    va_end(args);
+  }
+
+ private:
+  size_t depth_ = 0;  // for indentation.
+  ExtensionStates extension_states_;
+  const bool print_bundles_;
+};
+
+struct InitVisitor : public VisitorBase {
+  void Bits(const size_t /*unused*/, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void U32(const U32Enc /*unused*/, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void Bool(bool default_value, bool* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  // Always visit conditional fields to ensure they are initialized.
+  Status Conditional(bool condition) override { return true; }
+
+  Status AllDefault(const Fields& fields,
+                    bool* JXL_RESTRICT all_default) override {
+    // Just initialize this field and don't skip initializing others.
+    Bool(true, all_default);
+    return false;
+  }
+
+  Status VisitNested(Fields* fields) override {
+    // Avoid re-initializing nested bundles (their ctors already called
+    // Bundle::Init for their fields).
+    return true;
+  }
+};
+
+// Similar to InitVisitor, but also initializes nested fields.
+struct SetDefaultVisitor : public VisitorBase {
+  void Bits(const size_t /*unused*/, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void U32(const U32Enc /*unused*/, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void Bool(bool default_value, bool* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    *value = default_value;
+  }
+
+  // Always visit conditional fields to ensure they are initialized.
+  Status Conditional(bool condition) override { return true; }
+
+  Status AllDefault(const Fields& fields,
+                    bool* JXL_RESTRICT all_default) override {
+    // Just initialize this field and don't skip initializing others.
+    Bool(true, all_default);
+    return false;
+  }
+};
+
+class AllDefaultVisitor : public VisitorBase {
+ public:
+  explicit AllDefaultVisitor(bool print_all_default)
+      : VisitorBase(print_all_default), print_all_default_(print_all_default) {}
+
+  void Bits(const size_t bits, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    if (print_all_default_) {
+      Trace("  u(%zu) = %u, default %u\n", bits, *value, default_value);
+    }
+
+    all_default_ &= *value == default_value;
+  }
+
+  void U32(const U32Enc /*unused*/, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    if (print_all_default_) {
+      Trace("  U32 = %u, default %u\n", *value, default_value);
+    }
+
+    all_default_ &= *value == default_value;
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    if (print_all_default_) {
+      Trace("  U64 = %" PRIu64 ", default %" PRIu64 "\n", *value,
+            default_value);
+    }
+
+    all_default_ &= *value == default_value;
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    if (print_all_default_) {
+      Trace("  F16 = %.6f, default %.6f\n", *value, default_value);
+    }
+    all_default_ &= std::abs(*value - default_value) < 1E-6f;
+  }
+
+  Status AllDefault(const Fields& fields,
+                    bool* JXL_RESTRICT all_default) override {
+    // Visit all fields so we can compute the actual all_default_ value.
+    return false;
+  }
+
+  bool AllDefault() const { return all_default_; }
+
+ private:
+  const bool print_all_default_;
+  bool all_default_ = true;
+};
+
+class ReadVisitor : public VisitorBase {
+ public:
+  ReadVisitor(BitReader* reader, bool print_read)
+      : VisitorBase(print_read), print_read_(print_read), reader_(reader) {}
+
+  void Bits(const size_t bits, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    if (!enough_bytes_) return;
+    *value = BitsCoder::Read(bits, reader_);
+    if (!reader_->AllReadsWithinBounds()) {
+      enough_bytes_ = false;
+    }
+    if (print_read_) Trace("  u(%zu) = %u\n", bits, *value);
+  }
+
+  void U32(const U32Enc dist, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    if (!enough_bytes_) return;
+    *value = U32Coder::Read(dist, reader_);
+    if (!reader_->AllReadsWithinBounds()) {
+      enough_bytes_ = false;
+    }
+    if (print_read_) Trace("  U32 = %u\n", *value);
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    if (!enough_bytes_) return;
+    *value = U64Coder::Read(reader_);
+    if (!reader_->AllReadsWithinBounds()) {
+      enough_bytes_ = false;
+    }
+    if (print_read_) Trace("  U64 = %" PRIu64 "\n", *value);
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    if (!enough_bytes_) return;
+    ok_ &= F16Coder::Read(reader_, value);
+    if (!reader_->AllReadsWithinBounds()) {
+      enough_bytes_ = false;
+    }
+    if (print_read_) Trace("  F16 = %f\n", *value);
+  }
+
+  void SetDefault(Fields* fields) override { Bundle::SetDefault(fields); }
+
+  Status IsReading() const override { return true; }
+
+  // This never fails because visitors are expected to keep reading until
+  // EndExtensions, see comment there.
+  void BeginExtensions(uint64_t* JXL_RESTRICT extensions) override {
+    VisitorBase::BeginExtensions(extensions);
+    if (!enough_bytes_ || *extensions == 0) return;
+
+    // For each nonzero bit, i.e. extension that is present:
+    for (uint64_t remaining_extensions = *extensions; remaining_extensions != 0;
+         remaining_extensions &= remaining_extensions - 1) {
+      const size_t idx_extension =
+          Num0BitsBelowLS1Bit_Nonzero(remaining_extensions);
+      // Read additional U64 (one per extension) indicating the number of bits
+      // (allows skipping individual extensions).
+      extension_bits_[idx_extension] = U64Coder::Read(reader_);  // >= 0
+      if (!reader_->AllReadsWithinBounds()) {
+        enough_bytes_ = false;
+        return;
+      }
+      if (!SafeAdd(total_extension_bits_, extension_bits_[idx_extension],
+                   total_extension_bits_)) {
+        JXL_WARNING("Extension bits overflowed, invalid codestream");
+        ok_ = false;
+      }
+    }
+    // Used by EndExtensions to skip past any _remaining_ extensions.
+    pos_after_ext_size_ = reader_->TotalBitsConsumed();
+    JXL_ASSERT(pos_after_ext_size_ != 0);
+  }
+
+  Status EndExtensions() override {
+    JXL_RETURN_IF_ERROR(VisitorBase::EndExtensions());
+    // Happens if extensions == 0: don't read size, done.
+    if (pos_after_ext_size_ == 0) return true;
+
+    // Not enough bytes as set by BeginExtensions or earlier. Do not return
+    // this as an JXL_FAILURE or false (which can also propagate to error
+    // through e.g. JXL_RETURN_IF_ERROR), since this may be used while
+    // silently checking whether there are enough bytes. If this case must be
+    // treated as an error, reader_>Close() will do this, just like is already
+    // done for non-extension fields.
+    if (!enough_bytes_) return true;
+
+    // Skip new fields this (old?) decoder didn't know about, if any.
+    const size_t bits_read = reader_->TotalBitsConsumed();
+    uint64_t end;
+    if (!SafeAdd(pos_after_ext_size_, total_extension_bits_, end)) {
+      return JXL_FAILURE("Invalid extension size, caused overflow");
+    }
+    if (bits_read > end) {
+      return JXL_FAILURE("Read more extension bits than budgeted");
+    }
+    const size_t remaining_bits = end - bits_read;
+    if (remaining_bits != 0) {
+      JXL_WARNING("Skipping %zu-bit extension(s)", remaining_bits);
+      reader_->SkipBits(remaining_bits);
+      if (!reader_->AllReadsWithinBounds()) {
+        enough_bytes_ = false;
+      }
+    }
+    return true;
+  }
+
+  Status OK() const { return ok_ && enough_bytes_; }
+
+  Status EnoughBytes() const { return enough_bytes_; }
+
+ private:
+  const bool print_read_;
+
+  // Whether any error other than not enough bytes occurred.
+  bool ok_ = true;
+
+  // Whether there are enough input bytes to read from.
+  bool enough_bytes_ = true;
+  BitReader* const reader_;
+  // May be 0 even if the corresponding extension is present.
+  uint64_t extension_bits_[Bundle::kMaxExtensions] = {0};
+  uint64_t total_extension_bits_ = 0;
+  size_t pos_after_ext_size_ = 0;  // 0 iff extensions == 0.
+};
+
+class MaxBitsVisitor : public VisitorBase {
+ public:
+  void Bits(const size_t bits, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    max_bits_ += BitsCoder::MaxEncodedBits(bits);
+  }
+
+  void U32(const U32Enc enc, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    max_bits_ += U32Coder::MaxEncodedBits(enc);
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    max_bits_ += U64Coder::MaxEncodedBits();
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    max_bits_ += F16Coder::MaxEncodedBits();
+  }
+
+  Status AllDefault(const Fields& fields,
+                    bool* JXL_RESTRICT all_default) override {
+    Bool(true, all_default);
+    return false;
+  }
+
+  // Always visit conditional fields to get a (loose) upper bound.
+  Status Conditional(bool condition) override { return true; }
+
+  void BeginExtensions(uint64_t* JXL_RESTRICT extensions) override {
+    // Skip - extensions are not included in "MaxBits" because their length
+    // is potentially unbounded.
+  }
+
+  Status EndExtensions() override { return true; }
+
+  size_t MaxBits() const { return max_bits_; }
+
+ private:
+  size_t max_bits_ = 0;
+};
+
+class CanEncodeVisitor : public VisitorBase {
+ public:
+  explicit CanEncodeVisitor(bool print_sizes)
+      : VisitorBase(print_sizes), print_sizes_(print_sizes) {}
+
+  void Bits(const size_t bits, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    size_t encoded_bits = 0;
+    ok_ &= BitsCoder::CanEncode(bits, *value, &encoded_bits);
+    if (print_sizes_) Trace("u(%zu) = %u\n", bits, *value);
+    encoded_bits_ += encoded_bits;
+  }
+
+  void U32(const U32Enc enc, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    size_t encoded_bits = 0;
+    ok_ &= U32Coder::CanEncode(enc, *value, &encoded_bits);
+    if (print_sizes_) Trace("U32(%zu) = %u\n", encoded_bits, *value);
+    encoded_bits_ += encoded_bits;
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    size_t encoded_bits = 0;
+    ok_ &= U64Coder::CanEncode(*value, &encoded_bits);
+    if (print_sizes_) {
+      Trace("U64(%zu) = %" PRIu64 "\n", encoded_bits, *value);
+    }
+    encoded_bits_ += encoded_bits;
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    size_t encoded_bits = 0;
+    ok_ &= F16Coder::CanEncode(*value, &encoded_bits);
+    if (print_sizes_) {
+      Trace("F16(%zu) = %.6f\n", encoded_bits, *value);
+    }
+    encoded_bits_ += encoded_bits;
+  }
+
+  Status AllDefault(const Fields& fields,
+                    bool* JXL_RESTRICT all_default) override {
+    *all_default = Bundle::AllDefault(fields);
+    Bool(true, all_default);
+    return *all_default;
+  }
+
+  void BeginExtensions(uint64_t* JXL_RESTRICT extensions) override {
+    VisitorBase::BeginExtensions(extensions);
+    extensions_ = *extensions;
+    if (*extensions != 0) {
+      JXL_ASSERT(pos_after_ext_ == 0);
+      pos_after_ext_ = encoded_bits_;
+      JXL_ASSERT(pos_after_ext_ != 0);  // visited "extensions"
+    }
+  }
+  // EndExtensions = default.
+
+  Status GetSizes(size_t* JXL_RESTRICT extension_bits,
+                  size_t* JXL_RESTRICT total_bits) {
+    JXL_RETURN_IF_ERROR(ok_);
+    *extension_bits = 0;
+    *total_bits = encoded_bits_;
+    // Only if extension field was nonzero will we encode their sizes.
+    if (pos_after_ext_ != 0) {
+      JXL_ASSERT(encoded_bits_ >= pos_after_ext_);
+      *extension_bits = encoded_bits_ - pos_after_ext_;
+      // Also need to encode *extension_bits and bill it to *total_bits.
+      size_t encoded_bits = 0;
+      ok_ &= U64Coder::CanEncode(*extension_bits, &encoded_bits);
+      *total_bits += encoded_bits;
+
+      // TODO(janwas): support encoding individual extension sizes. We
+      // currently ascribe all bits to the first and send zeros for the
+      // others.
+      for (size_t i = 1; i < PopCount(extensions_); ++i) {
+        encoded_bits = 0;
+        ok_ &= U64Coder::CanEncode(0, &encoded_bits);
+        *total_bits += encoded_bits;
+      }
+    }
+    return true;
+  }
+
+ private:
+  const bool print_sizes_;
+  bool ok_ = true;
+  size_t encoded_bits_ = 0;
+  uint64_t extensions_ = 0;
+  // Snapshot of encoded_bits_ after visiting the extension field, but NOT
+  // including the hidden extension sizes.
+  uint64_t pos_after_ext_ = 0;
+};
+
+class WriteVisitor : public VisitorBase {
+ public:
+  WriteVisitor(const size_t extension_bits, BitWriter* JXL_RESTRICT writer)
+      : extension_bits_(extension_bits), writer_(writer) {}
+
+  void Bits(const size_t bits, const uint32_t default_value,
+            uint32_t* JXL_RESTRICT value) override {
+    ok_ &= BitsCoder::Write(bits, *value, writer_);
+  }
+  void U32(const U32Enc enc, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) override {
+    ok_ &= U32Coder::Write(enc, *value, writer_);
+  }
+
+  void U64(const uint64_t default_value,
+           uint64_t* JXL_RESTRICT value) override {
+    ok_ &= U64Coder::Write(*value, writer_);
+  }
+
+  void F16(const float default_value, float* JXL_RESTRICT value) override {
+    ok_ &= F16Coder::Write(*value, writer_);
+  }
+
+  void BeginExtensions(uint64_t* JXL_RESTRICT extensions) override {
+    VisitorBase::BeginExtensions(extensions);
+    if (*extensions == 0) {
+      JXL_ASSERT(extension_bits_ == 0);
+      return;
+    }
+    // TODO(janwas): extend API to pass in array of extension_bits, one per
+    // extension. We currently ascribe all bits to the first extension, but
+    // this is only an encoder limitation. NOTE: extension_bits_ can be zero
+    // if an extension does not require any additional fields.
+    ok_ &= U64Coder::Write(extension_bits_, writer_);
+    // For each nonzero bit except the lowest/first (already written):
+    for (uint64_t remaining_extensions = *extensions & (*extensions - 1);
+         remaining_extensions != 0;
+         remaining_extensions &= remaining_extensions - 1) {
+      ok_ &= U64Coder::Write(0, writer_);
+    }
+  }
+  // EndExtensions = default.
+
+  Status OK() const { return ok_; }
+
+ private:
+  const size_t extension_bits_;
+  BitWriter* JXL_RESTRICT writer_;
+  bool ok_ = true;
+};
+
+}  // namespace
+
+void Bundle::Init(Fields* fields) {
+  InitVisitor visitor;
+  if (!visitor.Visit(fields, PrintVisitors() ? "-- Init\n" : "")) {
+    JXL_ASSERT(false);  // Init should never fail.
+  }
+}
+void Bundle::SetDefault(Fields* fields) {
+  SetDefaultVisitor visitor;
+  if (!visitor.Visit(fields, PrintVisitors() ? "-- SetDefault\n" : "")) {
+    JXL_ASSERT(false);  // Init should never fail.
+  }
+}
+bool Bundle::AllDefault(const Fields& fields) {
+  AllDefaultVisitor visitor(/*print_all_default=*/PrintAllDefault());
+  const char* name =
+      (PrintVisitors() || PrintAllDefault()) ? "[[AllDefault\n" : "";
+  if (!visitor.VisitConst(fields, name)) {
+    JXL_ASSERT(false);  // AllDefault should never fail.
+  }
+
+  if (PrintAllDefault()) printf("  %d]]\n", visitor.AllDefault());
+  return visitor.AllDefault();
+}
+size_t Bundle::MaxBits(const Fields& fields) {
+  MaxBitsVisitor visitor;
+#if JXL_ENABLE_ASSERT
+  Status ret =
+#else
+  (void)
+#endif  // JXL_ENABLE_ASSERT
+      visitor.VisitConst(fields, PrintVisitors() ? "-- MaxBits\n" : "");
+  JXL_ASSERT(ret);
+  return visitor.MaxBits();
+}
+Status Bundle::CanEncode(const Fields& fields, size_t* extension_bits,
+                         size_t* total_bits) {
+  CanEncodeVisitor visitor(/*print_sizes=*/PrintSizes());
+  const char* name = (PrintVisitors() || PrintSizes()) ? "[[CanEncode\n" : "";
+  JXL_RETURN_IF_ERROR(visitor.VisitConst(fields, name));
+  JXL_RETURN_IF_ERROR(visitor.GetSizes(extension_bits, total_bits));
+  if (PrintSizes()) printf("  %zu]]\n", *total_bits);
+  return true;
+}
+Status Bundle::Read(BitReader* reader, Fields* fields) {
+  ReadVisitor visitor(reader, /*print_read=*/PrintRead());
+  JXL_RETURN_IF_ERROR(
+      visitor.Visit(fields, PrintVisitors() ? "-- Read\n" : ""));
+  if (!visitor.EnoughBytes()) {
+    return JXL_FAILURE("Read more bits than available for bundle");
+  }
+  return visitor.OK();
+}
+bool Bundle::CanRead(BitReader* reader, Fields* fields) {
+  ReadVisitor visitor(reader, /*print_read=*/PrintRead());
+  Status status = visitor.Visit(fields, PrintVisitors() ? "-- Read\n" : "");
+  // The status is ignored: we are only checking here whether there are enough
+  // bytes. If the error is due to not enough bytes, then that's returned
+  // below. If the error is due to another reason than enough bytes, then we'd
+  // return true, because it means there are enough bytes to determine there's
+  // an error, but that must be checked with another function such as Read.
+  (void)status;
+  return visitor.EnoughBytes();
+}
+Status Bundle::Write(const Fields& fields, BitWriter* writer, size_t layer,
+                     AuxOut* aux_out) {
+  size_t extension_bits, total_bits;
+  JXL_RETURN_IF_ERROR(CanEncode(fields, &extension_bits, &total_bits));
+
+  BitWriter::Allotment allotment(writer, total_bits);
+  WriteVisitor visitor(extension_bits, writer);
+  JXL_RETURN_IF_ERROR(
+      visitor.VisitConst(fields, PrintVisitors() ? "-- Write\n" : ""));
+  JXL_RETURN_IF_ERROR(visitor.OK());
+  ReclaimAndCharge(writer, &allotment, layer, aux_out);
+  return true;
+}
+
 size_t U32Coder::MaxEncodedBits(const U32Enc enc) {
   size_t extra_bits = 0;
   for (uint32_t selector = 0; selector < 4; ++selector) {
@@ -78,7 +739,7 @@ Status U32Coder::ChooseSelector(const U32Enc enc, const uint32_t value,
                                 uint32_t* JXL_RESTRICT selector,
                                 size_t* JXL_RESTRICT total_bits) {
 #if JXL_ENABLE_ASSERT
-  const size_t bits_required = 32 - NumZeroBitsAboveMSB(value);
+  const size_t bits_required = 32 - Num0BitsAboveMS1Bit(value);
 #endif  // JXL_ENABLE_ASSERT
   JXL_ASSERT(bits_required <= 32);
 

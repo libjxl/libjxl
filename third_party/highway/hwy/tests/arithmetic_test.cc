@@ -15,14 +15,13 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/arithmetic_test.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
-// must come after foreach_target.h.
+#include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
-
-// must come after *-inl.h.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 struct TestPlusMinus {
   template <class T, class D>
@@ -931,9 +930,10 @@ HWY_NOINLINE void TestAllAbsDiff() {
   ForPartialVectors<TestAbsDiffT>()(float());
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {

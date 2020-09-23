@@ -15,14 +15,13 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/convert_test.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
-// must come after foreach_target.h.
+#include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
-
-// must come after *-inl.h.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 // Cast and ensure bytes are the same. Called directly from TestBitCast or
 // via TestBitCastFrom.
@@ -339,9 +338,10 @@ HWY_NOINLINE void TestAllNearestInt() {
   ForPartialVectors<TestNearestInt>()(int32_t());
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
@@ -350,12 +350,12 @@ class HwyConvertTest : public hwy::TestWithParamTarget {};
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyConvertTest);
 
-HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestBitCast)
-HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestPromote)
-HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestDemoteTo)
-HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllConvertU8)
-HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestConvertFloatInt)
-HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllNearestInt)
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestBitCast);
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestPromote);
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestDemoteTo);
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllConvertU8);
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestConvertFloatInt);
+HWY_EXPORT_AND_TEST_P(HwyConvertTest, TestAllNearestInt);
 
 }  // namespace hwy
 #endif

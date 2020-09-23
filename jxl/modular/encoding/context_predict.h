@@ -31,13 +31,12 @@ constexpr static int64_t kPredExtraBits = 3;
 constexpr static int64_t kPredictionRound = ((1 << kPredExtraBits) >> 1) - 1;
 constexpr static size_t kNumProperties = 1;
 
-struct Header {
-  static const char *Name() { return "WeightedPredictorHeader"; }
+struct Header : public Fields {
+  const char *Name() const override { return "WeightedPredictorHeader"; }
   // TODO(janwas): move to cc file, avoid including fields.h.
   Header() { Bundle::Init(this); }
 
-  template <class Visitor>
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
       visitor->SetDefault(this);

@@ -19,11 +19,20 @@
 #define JXL_CONVOLVE_INL_H_
 #endif
 
-#include <hwy/before_namespace-inl.h>
+#include <hwy/highway.h>
 
 #include "jxl/base/status.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Broadcast;
+#if HWY_TARGET != HWY_SCALAR
+using hwy::HWY_NAMESPACE::CombineShiftRightBytes;
+#endif
+using hwy::HWY_NAMESPACE::Vec;
 
 // Synthesizes left/right neighbors from a vector of center pixels.
 class Neighbors {
@@ -37,7 +46,7 @@ class Neighbors {
   using V = Vec<D>;
 
   // Returns l[i] == c[Mirror(i - 1)].
-  HWY_FUNC static V FirstL1(const V c) {
+  HWY_INLINE HWY_MAYBE_UNUSED static V FirstL1(const V c) {
 #if HWY_CAP_GE256
     const D d;
     HWY_ALIGN constexpr int lanes[8] = {0, 0, 1, 2, 3, 4, 5, 6};
@@ -62,7 +71,7 @@ class Neighbors {
   }
 
   // Returns l[i] == c[Mirror(i - 2)].
-  HWY_FUNC static V FirstL2(const V c) {
+  HWY_INLINE HWY_MAYBE_UNUSED static V FirstL2(const V c) {
 #if HWY_CAP_GE256
     const D d;
     HWY_ALIGN constexpr int lanes[8] = {1, 0, 0, 1, 2, 3, 4, 5};
@@ -87,7 +96,7 @@ class Neighbors {
   }
 
   // Returns l[i] == c[Mirror(i - 3)].
-  HWY_FUNC static V FirstL3(const V c) {
+  HWY_INLINE HWY_MAYBE_UNUSED static V FirstL3(const V c) {
 #if HWY_CAP_GE256
     const D d;
     HWY_ALIGN constexpr int lanes[8] = {2, 1, 0, 0, 1, 2, 3, 4};
@@ -112,7 +121,7 @@ class Neighbors {
   }
 
   // Returns r[i] == c[i + 1].
-  HWY_FUNC static V R1(const V c, const V n) {
+  HWY_INLINE HWY_MAYBE_UNUSED static V R1(const V c, const V n) {
 #if HWY_CAP_GE256
     // c = PONM'LKJI, n = xxxx'xxxQ
     const V Q_M = ConcatLowerUpper(n, c);      // Right-aligned (lower lane)
@@ -126,7 +135,7 @@ class Neighbors {
   }
 
   // Returns r[i] == c[i + 1].
-  HWY_FUNC static V LastR1(const V c) {
+  HWY_INLINE HWY_MAYBE_UNUSED static V LastR1(const V c) {
 #if HWY_CAP_GE256
     HWY_ALIGN constexpr uint32_t lanes[8] = {1, 2, 3, 4, 5, 6, 7, 7};
     const auto indices = Load(HWY_CAPPED(uint32_t, 8)(), lanes);
@@ -142,8 +151,10 @@ class Neighbors {
   }
 };
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

@@ -104,12 +104,11 @@ void Quantizer::SetQuant(float quant_dc, float quant_ac,
   FillImage(val, raw_quant_field);
 }
 
-struct QuantizerParams {
+struct QuantizerParams : public Fields {
   QuantizerParams() { Bundle::Init(this); }
-  static const char* Name() { return "QuantizerParams"; }
+  const char* Name() const override { return "QuantizerParams"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     visitor->U32(BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
                  BitsOffset(16, 8193), 1, &global_scale);
     visitor->U32(Val(16), BitsOffset(5, 1), BitsOffset(8, 1), BitsOffset(16, 1),

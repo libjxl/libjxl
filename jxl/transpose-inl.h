@@ -23,13 +23,14 @@
 
 #include <stddef.h>
 
+#include <hwy/highway.h>
+
 #include "jxl/base/status.h"
 #include "jxl/dct_block-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
 
 #ifndef JXL_INLINE_TRANSPOSE
 // Workaround for issue #42 - (excessive?) inlining causes invalid codegen.
@@ -165,8 +166,11 @@ struct Transpose {
     GenericTransposeBlock<N, M>(tag, from, to);
   }
 };
-#include <hwy/end_target-inl.h>
+
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

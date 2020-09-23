@@ -46,7 +46,7 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/butteraugli/butteraugli.cc"
 #include <hwy/foreach_target.h>
-//
+// ^ must come before highway.h and any *-inl.h.
 
 #include "jxl/base/os_specific.h"
 #include "jxl/base/profiler.h"
@@ -460,10 +460,13 @@ inline float InterpolateClampNegative(const float* array, int size, float ix) {
 
 #endif  // JXL_BUTTERAUGLI_ONCE
 
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+#include <hwy/highway.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Vec;
 
 template <class D, class V>
 HWY_INLINE V MaximumClamp(D d, V v, double kMaxVal) {
@@ -1790,21 +1793,22 @@ static void L2DiffAsymmetric(const ImageF& i0, const ImageF& i1, double w_0gt1,
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(SeparateFrequencies)       // Local function.
-HWY_EXPORT(MaskPsychoImage)           // Local function.
-HWY_EXPORT(L2DiffAsymmetric)          // Local function.
-HWY_EXPORT(L2Diff)                    // Local function.
-HWY_EXPORT(SetL2Diff)                 // Local function.
-HWY_EXPORT(CombineChannelsToDiffmap)  // Local function.
-HWY_EXPORT(MaltaDiffMap)              // Local function.
-HWY_EXPORT(MaltaDiffMapLF)            // Local function.
+HWY_EXPORT(SeparateFrequencies);       // Local function.
+HWY_EXPORT(MaskPsychoImage);           // Local function.
+HWY_EXPORT(L2DiffAsymmetric);          // Local function.
+HWY_EXPORT(L2Diff);                    // Local function.
+HWY_EXPORT(SetL2Diff);                 // Local function.
+HWY_EXPORT(CombineChannelsToDiffmap);  // Local function.
+HWY_EXPORT(MaltaDiffMap);              // Local function.
+HWY_EXPORT(MaltaDiffMapLF);            // Local function.
 
 #if BUTTERAUGLI_ENABLE_CHECKS
 
@@ -2032,13 +2036,19 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
       cur_mixed0 *= sensitivity[0];
       cur_mixed1 *= sensitivity[1];
       cur_mixed2 *= sensitivity[2];
-      // This is a kludge. The negative values should be zeroed away before blurring.
-      // Ideally there would be no negative values in the first place.
+      // This is a kludge. The negative values should be zeroed away before
+      // blurring. Ideally there would be no negative values in the first place.
       static const double mixi3 = 1.7557483643287353;
       static const double mixi11 = 12.226454707163354;
-      if (cur_mixed0 < mixi3) { cur_mixed0 = mixi3; }
-      if (cur_mixed1 < mixi3) { cur_mixed1 = mixi3; }
-      if (cur_mixed2 < mixi11) { cur_mixed2 = mixi11; }
+      if (cur_mixed0 < mixi3) {
+        cur_mixed0 = mixi3;
+      }
+      if (cur_mixed1 < mixi3) {
+        cur_mixed1 = mixi3;
+      }
+      if (cur_mixed2 < mixi11) {
+        cur_mixed2 = mixi11;
+      }
       RgbToXyb(cur_mixed0, cur_mixed1, cur_mixed2, &row_out_x[x], &row_out_y[x],
                &row_out_b[x]);
     }

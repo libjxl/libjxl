@@ -14,12 +14,19 @@
 
 #include "jxl/chroma_from_luma.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/chroma_from_luma.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
 #include <float.h>
 #include <stdlib.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <hwy/aligned_allocator.h>
+#include <hwy/highway.h>
 
 #include "jxl/aux_out.h"
 #include "jxl/base/bits.h"
@@ -28,23 +35,16 @@
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
 #include "jxl/common.h"
+#include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_dct.h"
+#include "jxl/enc_transforms-inl.h"
 #include "jxl/entropy_coder.h"
 #include "jxl/image_ops.h"
 #include "jxl/modular/encoding/encoding.h"
 #include "jxl/quantizer.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/chroma_from_luma.cc"
-#include <hwy/foreach_target.h>
-
-#include "jxl/dec_transforms-inl.h"
-#include "jxl/enc_transforms-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 static HWY_FULL(float) df;
 
@@ -135,11 +135,18 @@ int32_t FindBestMultiplier(const float* values_m, const float* values_s,
 }
 
 template <int MAIN_CHANNEL, int SIDE_CHANNEL, bool use_dct8, int SCALE>
-JXL_NOINLINE void FindBestCorrelation(
-    const Image3F& opsin, ImageSB* JXL_RESTRICT map, int* JXL_RESTRICT dc,
-    float base, const DequantMatrices& dequant,
-    const AcStrategyImage* ac_strategy, const ImageI* raw_quant_field,
-    const Quantizer* quantizer, ThreadPool* pool) {
+JXL_NOINLINE void FindBestCorrelation(const Image3F& opsin,
+                                      ImageSB* JXL_RESTRICT map,
+                                      int* JXL_RESTRICT dc, float base,
+                                      const DequantMatrices& dequant,
+                                      const AcStrategyImage* ac_strategy,
+                                      const Quantizer* quantizer,
+                                      ThreadPool* pool) {
+  // Params are actually used inside lambda.
+  (void)dequant;
+  (void)ac_strategy;
+  (void)quantizer;
+
   size_t xsize_blocks = opsin.xsize() / kBlockDim;
   size_t ysize_blocks = opsin.ysize() / kBlockDim;
   // First row: main channel
@@ -159,16 +166,33 @@ JXL_NOINLINE void FindBestCorrelation(
   constexpr float kDistanceMultiplierDC = 1e-5f;
   constexpr float kDistanceMultiplierAC = 1e-3f;
 
+  // Working set is too large for stack; allocate dynamically.
+  const size_t items_per_thread =
+      AcStrategy::kMaxCoeffArea * 2 + kColorTileDim * kColorTileDim * 2;
+  JXL_ASSERT(items_per_thread % MaxLanes(df) == 0);
+  hwy::AlignedUniquePtr<float[]> mem(nullptr, hwy::AlignedDeleter(nullptr));
+  const auto init_func = [&](size_t num_threads) {
+    mem = hwy::AllocateAligned<float>(num_threads * items_per_thread);
+    return true;
+  };
+
   auto process_row = [&](int ty, int thread) HWY_ATTR {
-    HWY_ALIGN_MAX float block_m[AcStrategy::kMaxCoeffArea];
-    HWY_ALIGN_MAX float block_s[AcStrategy::kMaxCoeffArea];
-    HWY_ALIGN_MAX float coeffs_m[kColorTileDim * kColorTileDim];
-    HWY_ALIGN_MAX float coeffs_s[kColorTileDim * kColorTileDim];
+    int8_t* JXL_RESTRICT row_out = map->Row(ty);
+
+    // All are aligned.
+    float* HWY_RESTRICT block_m = mem.get() + thread * items_per_thread;
+    float* HWY_RESTRICT block_s = block_m + AcStrategy::kMaxCoeffArea;
+    float* HWY_RESTRICT coeffs_m = block_s + AcStrategy::kMaxCoeffArea;
+    float* HWY_RESTRICT coeffs_s = coeffs_m + kColorTileDim * kColorTileDim;
+    JXL_DASSERT(coeffs_s + kColorTileDim * kColorTileDim ==
+                block_m + items_per_thread);
+
+    // Small (~64 bytes each)
     HWY_ALIGN_MAX float
         dc_m[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
     HWY_ALIGN_MAX float
         dc_s[AcStrategy::kMaxCoeffBlocks * AcStrategy::kMaxCoeffBlocks] = {};
-    int8_t* JXL_RESTRICT row_out = map->Row(ty);
+
     for (size_t tx = 0; tx < map->xsize(); ++tx) {
       const size_t y0 = ty * kColorTileDimInBlocks;
       const size_t x0 = tx * kColorTileDimInBlocks;
@@ -247,8 +271,7 @@ JXL_NOINLINE void FindBestCorrelation(
     }
   };
 
-  RunOnPool(pool, 0, map->ysize(), ThreadPool::SkipInit(), process_row,
-            "FindCorrelation");
+  RunOnPool(pool, 0, map->ysize(), init_func, process_row, "FindCorrelation");
 
   *dc = FindBestMultiplier(dc_values_m, dc_values_s, dc_values.xsize(), base,
                            kDistanceMultiplierDC);
@@ -260,7 +283,7 @@ void FindBestColorCorrelationMap(const Image3F& opsin,
                                  const ImageI* raw_quant_field,
                                  const Quantizer* quantizer, ThreadPool* pool,
                                  ColorCorrelationMap* cmap) {
-  PROFILER_ZONE("enc YTo* correlation");
+  PROFILER_ZONE("enc FindBestColorCorrelationMap");
 
   int32_t ytob_dc = 0;
   int32_t ytox_dc = 0;
@@ -269,37 +292,38 @@ void FindBestColorCorrelationMap(const Image3F& opsin,
     JXL_ASSERT(raw_quant_field == nullptr);
     JXL_ASSERT(quantizer == nullptr);
     FindBestCorrelation</* from Y */ 1, /* to B */ 2, /*use_dct8=*/true,
-                        kDefaultColorFactor>(
-        opsin, &cmap->ytob_map, &ytob_dc, cmap->YtoBRatio(0), dequant,
-        ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(opsin, &cmap->ytob_map, &ytob_dc,
+                                             cmap->YtoBRatio(0), dequant,
+                                             ac_strategy, quantizer, pool);
     FindBestCorrelation</* from Y */ 1, /* to X */ 0, /*use_dct8=*/true,
-                        kDefaultColorFactor>(
-        opsin, &cmap->ytox_map, &ytox_dc, cmap->YtoXRatio(0), dequant,
-        ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(opsin, &cmap->ytox_map, &ytox_dc,
+                                             cmap->YtoXRatio(0), dequant,
+                                             ac_strategy, quantizer, pool);
   } else {
     JXL_ASSERT(raw_quant_field != nullptr);
     JXL_ASSERT(quantizer != nullptr);
     FindBestCorrelation</* from Y */ 1, /* to B */ 2, /*use_dct8=*/false,
-                        kDefaultColorFactor>(
-        opsin, &cmap->ytob_map, &ytob_dc, cmap->YtoBRatio(0), dequant,
-        ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(opsin, &cmap->ytob_map, &ytob_dc,
+                                             cmap->YtoBRatio(0), dequant,
+                                             ac_strategy, quantizer, pool);
     FindBestCorrelation</* from Y */ 1, /* to X */ 0, /*use_dct8=*/false,
-                        kDefaultColorFactor>(
-        opsin, &cmap->ytox_map, &ytox_dc, cmap->YtoXRatio(0), dequant,
-        ac_strategy, raw_quant_field, quantizer, pool);
+                        kDefaultColorFactor>(opsin, &cmap->ytox_map, &ytox_dc,
+                                             cmap->YtoXRatio(0), dequant,
+                                             ac_strategy, quantizer, pool);
   }
   cmap->SetYToBDC(ytob_dc);
   cmap->SetYToXDC(ytox_dc);
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(FindBestColorCorrelationMap)
+HWY_EXPORT(FindBestColorCorrelationMap);
 void FindBestColorCorrelationMap(const Image3F& opsin,
                                  const DequantMatrices& dequant,
                                  const AcStrategyImage* ac_strategy,

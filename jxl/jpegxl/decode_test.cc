@@ -194,6 +194,7 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
   EXPECT_TRUE(jxl::Bundle::Write(metadata, &writer, 0, nullptr));
 
   if (!icc_profile.empty()) {
+    EXPECT_TRUE(metadata.color_encoding.WantICC());
     EXPECT_TRUE(jxl::WriteICC(icc_profile, &writer, 0, nullptr));
   }
 
@@ -403,15 +404,28 @@ TEST(DecodeTest, IccProfileTest) {
   EXPECT_EQ(JPEGXL_DEC_COLOR_ENCODING,
             JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
 
-  JpegxlColorProfileSource color_info;
-  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
-            JpegxlDecoderGetColorProfileSource(dec, &color_info));
+  // the encoded color profile expected to be not available, since the image
+  // has an ICC profile instead
+  EXPECT_EQ(JPEGXL_DEC_ERROR,
+            JpegxlDecoderGetColorAsEncodedProfile(dec, nullptr));
 
-  EXPECT_EQ(profile_size, color_info.icc_profile_size);
-  jxl::PaddedBytes icc_profile2(profile_size);
+  // Check that can get return status with NULL size
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetICCProfileSize(dec, nullptr));
+
+  size_t dec_profile_size;
   EXPECT_EQ(JPEGXL_DEC_SUCCESS,
-            JpegxlDecoderGetICCProfile(dec, icc_profile2.data(),
-                                       icc_profile2.size()));
+            JpegxlDecoderGetICCProfileSize(dec, &dec_profile_size));
+
+  // The profiles must be equal. This requires they have equal size, and if
+  // they do, we can get the profile and compare the contents.
+  EXPECT_EQ(profile_size, dec_profile_size);
+  if (profile_size == dec_profile_size) {
+    jxl::PaddedBytes icc_profile2(profile_size);
+    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+              JpegxlDecoderGetColorAsICCProfile(dec, icc_profile2.data(),
+                                                icc_profile2.size()));
+    EXPECT_EQ(0, memcmp(profile, icc_profile2.data(), icc_profile2.size()));
+  }
 
   JpegxlDecoderDestroy(dec);
 }
@@ -501,6 +515,14 @@ float LoadBEFloat(const uint8_t* p) {
   return result;
 }
 
+// Loads a Little-Endian float
+float LoadLEFloat(const uint8_t* p) {
+  uint32_t u = LoadLE32(p);
+  float result;
+  memcpy(&result, &u, 4);
+  return result;
+}
+
 size_t GetPrecision(JpegxlDataType data_type) {
   switch (data_type) {
     case JPEGXL_TYPE_BOOLEAN:
@@ -540,10 +562,10 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
         uint8_t byte = pixels[i];
         size_t bit = (x * num_channels) & 7;
         if (bit != 0) byte >>= (8 - bit);
-        uint32_t r = (byte & 1);
-        uint32_t g = gray ? r : ((byte & 2) >> 1);
-        uint32_t b = gray ? r : ((byte & 4) >> 2);
-        uint32_t a = alpha ? ((byte >> (num_channels - 1)) & 1) : 1;
+        double r = (byte & 1);
+        double g = gray ? r : ((byte & 2) >> 1);
+        double b = gray ? r : ((byte & 4) >> 2);
+        double a = alpha ? ((byte >> (num_channels - 1)) & 1) : 1;
         result[j + 0] = r;
         result[j + 1] = g;
         result[j + 2] = b;
@@ -556,10 +578,10 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = (y * xsize + x) * num_channels;
-        uint32_t r = pixels[i];
-        uint32_t g = gray ? r : pixels[i + 1];
-        uint32_t b = gray ? r : pixels[i + 2];
-        uint32_t a = alpha ? pixels[i + num_channels - 1] : 255;
+        double r = pixels[i];
+        double g = gray ? r : pixels[i + 1];
+        double b = gray ? r : pixels[i + 2];
+        double a = alpha ? pixels[i + num_channels - 1] : 255;
         result[j + 0] = r * mul;
         result[j + 1] = g * mul;
         result[j + 2] = b * mul;
@@ -572,12 +594,22 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = (y * xsize + x) * num_channels * 2;
-        uint32_t r = (pixels[i + 0] << 8) + pixels[i + 1];
-        uint32_t g = gray ? r : (pixels[i + 2] << 8) + pixels[i + 3];
-        uint32_t b = gray ? r : (pixels[i + 4] << 8) + pixels[i + 5];
-        uint32_t a = alpha ? (pixels[i + num_channels * 2 - 2] << 8) +
-                                 pixels[i + num_channels * 2 - 1]
-                           : 65535;
+        double r, g, b, a;
+        if (format.endianness == JPEGXL_BIG_ENDIAN) {
+          r = (pixels[i + 0] << 8) + pixels[i + 1];
+          g = gray ? r : (pixels[i + 2] << 8) + pixels[i + 3];
+          b = gray ? r : (pixels[i + 4] << 8) + pixels[i + 5];
+          a = alpha ? (pixels[i + num_channels * 2 - 2] << 8) +
+                          pixels[i + num_channels * 2 - 1]
+                    : 65535;
+        } else {
+          r = (pixels[i + 1] << 8) + pixels[i + 0];
+          g = gray ? r : (pixels[i + 3] << 8) + pixels[i + 2];
+          b = gray ? r : (pixels[i + 5] << 8) + pixels[i + 4];
+          a = alpha ? (pixels[i + num_channels * 2 - 1] << 8) +
+                          pixels[i + num_channels * 2 - 2]
+                    : 65535;
+        }
         result[j + 0] = r * mul;
         result[j + 1] = g * mul;
         result[j + 2] = b * mul;
@@ -590,11 +622,20 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = (y * xsize + x) * num_channels * 4;
-        uint32_t r = LoadBE32(pixels + i);
-        uint32_t g = gray ? r : LoadBE32(pixels + i + 4);
-        uint32_t b = gray ? r : LoadBE32(pixels + i + 8);
-        uint32_t a =
-            alpha ? LoadBE32(pixels + i + num_channels * 2 - 4) : 4294967295;
+        double r, g, b, a;
+        if (format.endianness == JPEGXL_BIG_ENDIAN) {
+          r = LoadBE32(pixels + i);
+          g = gray ? r : LoadBE32(pixels + i + 4);
+          b = gray ? r : LoadBE32(pixels + i + 8);
+          a = alpha ? LoadBE32(pixels + i + num_channels * 2 - 4) : 4294967295;
+
+        } else {
+          r = LoadLE32(pixels + i);
+          g = gray ? r : LoadLE32(pixels + i + 4);
+          b = gray ? r : LoadLE32(pixels + i + 8);
+          a = alpha ? LoadLE32(pixels + i + num_channels * 2 - 4) : 4294967295;
+
+        }
         result[j + 0] = r * mul;
         result[j + 1] = g * mul;
         result[j + 2] = b * mul;
@@ -606,10 +647,18 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
         size_t i = (y * xsize + x) * num_channels * 4;
-        float r = LoadBEFloat(pixels + i);
-        float g = gray ? r : LoadBEFloat(pixels + i + 4);
-        float b = gray ? r : LoadBEFloat(pixels + i + 8);
-        float a = alpha ? LoadBEFloat(pixels + i + num_channels * 4 - 4) : 1.0;
+        double r, g, b, a;
+        if (format.endianness == JPEGXL_BIG_ENDIAN) {
+          r = LoadBEFloat(pixels + i);
+          g = gray ? r : LoadBEFloat(pixels + i + 4);
+          b = gray ? r : LoadBEFloat(pixels + i + 8);
+          a = alpha ? LoadBEFloat(pixels + i + num_channels * 4 - 4) : 1.0;
+        } else {
+          r = LoadLEFloat(pixels + i);
+          g = gray ? r : LoadLEFloat(pixels + i + 4);
+          b = gray ? r : LoadLEFloat(pixels + i + 8);
+          a = alpha ? LoadLEFloat(pixels + i + num_channels * 4 - 4) : 1.0;
+        }
         result[j + 0] = r;
         result[j + 1] = g;
         result[j + 2] = b;
@@ -669,20 +718,19 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
       } else {
         // If the input had no alpha channel, the output should be opaque
         // after roundtrip.
-        if (alpha_b && !Near(255.0, b_full[i + 3], precision)) ok = false;
+        if (alpha_b && !Near(1.0, b_full[i + 3], precision)) ok = false;
       }
       if (!ok) numdiff++;
     }
   }
   return numdiff;
 }
-}  // namespace
 
-TEST(DecodeTest, PixelTest) {
-  size_t xsize = 123, ysize = 77;
+// Returns a test image with some autogenerated pixel content, using 16 bits per
+// channel, big endian order, 4 channels
+std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize) {
   size_t num_pixels = xsize * ysize;
   // 16 bits per channel, big endian, 4 channels
-  size_t orig_bytes_per_channel = 8;
   std::vector<uint8_t> pixels(num_pixels * 8);
   // Create pixel content to test, actual content does not matter as long as it
   // can be compared after roundtrip.
@@ -692,7 +740,7 @@ TEST(DecodeTest, PixelTest) {
       uint16_t g = (x << 8) + y;
       uint16_t b = (y << 8) + x;
       uint16_t a = 32768 + x * 256 - y;
-      size_t i = (y * xsize + x) * orig_bytes_per_channel;
+      size_t i = (y * xsize + x) * 8;
       pixels[i + 0] = (r >> 8);
       pixels[i + 1] = (r & 255);
       pixels[i + 2] = (g >> 8);
@@ -703,7 +751,15 @@ TEST(DecodeTest, PixelTest) {
       pixels[i + 7] = (a & 255);
     }
   }
-  JpegxlPixelFormat format_orig = {4, JPEGXL_TYPE_UINT16};
+  return pixels;
+}
+}  // namespace
+
+TEST(DecodeTest, PixelTest) {
+  size_t xsize = 123, ysize = 77;
+  size_t num_pixels = xsize * ysize;
+  std::vector<uint8_t> pixels = GetSomeTestImage(xsize, ysize);
+  JpegxlPixelFormat format_orig = {4, JPEGXL_BIG_ENDIAN, JPEGXL_TYPE_UINT16};
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
@@ -711,74 +767,117 @@ TEST(DecodeTest, PixelTest) {
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
       cparams, true, false);
 
-  {
-    JpegxlPixelFormat format = {3, JPEGXL_TYPE_UINT8};
+  for (int big_endian = 0; big_endian <= 1; ++big_endian) {
+    JpegxlEndianness endianness =
+        big_endian ? JPEGXL_BIG_ENDIAN : JPEGXL_LITTLE_ENDIAN;
 
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 3, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
-  }
+    for (size_t channels = 3; channels <= 4; ++channels) {
+      {
+        JpegxlPixelFormat format = {channels, endianness, JPEGXL_TYPE_UINT8};
 
-  {
-    JpegxlPixelFormat format = {4, JPEGXL_TYPE_UINT8};
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 4, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
-  }
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+            jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+            format);
+        EXPECT_EQ(num_pixels * channels, pixels2.size());
+        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                   format_orig, format));
+      }
+      {
+        JpegxlPixelFormat format = {channels, endianness, JPEGXL_TYPE_UINT16};
 
-  {
-    JpegxlPixelFormat format = {3, JPEGXL_TYPE_UINT16};
-
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 6, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
-  }
-
-  {
-    JpegxlPixelFormat format = {4, JPEGXL_TYPE_UINT16};
-
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 8, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
-  }
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+            jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+            format);
+        EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
+        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                   format_orig, format));
+      }
 
 #if 0  // Disabled since external_image doesn't currently support uint32_t
-  {
-    JpegxlPixelFormat format = {4, JPEGXL_TYPE_UINT32};
+      {
+        JpegxlPixelFormat format = {channels, endianness, JPEGXL_TYPE_UINT32};
 
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 16, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
-  }
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+            jxl::Span<const uint8_t>(compressed.data(),
+                compressed.size()), format);
+        EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                  format_orig, format));
+      }
 #endif
 
-  {
-    JpegxlPixelFormat format = {3, JPEGXL_TYPE_FLOAT};
+      {
+        JpegxlPixelFormat format = {channels, endianness, JPEGXL_TYPE_FLOAT};
 
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 12, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+            jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+            format);
+        EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                   format_orig, format));
+      }
+    }
   }
+}
 
-  {
-    JpegxlPixelFormat format = {4, JPEGXL_TYPE_FLOAT};
+// Tests the return status when trying to decode pixels on incomplete file: it
+// should return JPEGXL_DEC_NEED_MORE_INPUT, not error.
+TEST(DecodeTest, PixelPartialTest) {
+  size_t xsize = 123, ysize = 77;
+  std::vector<uint8_t> pixels = GetSomeTestImage(xsize, ysize);
+  jxl::CompressParams cparams;
+  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      cparams, true, false);
+  JpegxlPixelFormat format_orig = {4, JPEGXL_BIG_ENDIAN, JPEGXL_TYPE_UINT16};
 
-    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-        jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
-    EXPECT_EQ(num_pixels * 16, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
+  std::vector<uint8_t> pixels2;
+  pixels2.resize(pixels.size());
+
+  for (size_t size = 1; size < data.size(); size = ((size * 3 + 1) / 2)) {
+    if (((size * 3 + 1) / 2) > data.size()) size = data.size();
+    bool expect_complete = (size == data.size());
+
+    // TODO(lode): instead of creating new decoder each time, test appending
+    // bytes to existing decoder (requires implementing this in decoder)
+    auto dec_ptr =
+        std::unique_ptr<JpegxlDecoder, std::function<void(JpegxlDecoder*)>>(
+            JpegxlDecoderCreate(nullptr),
+            [](JpegxlDecoder* dec) { JpegxlDecoderDestroy(dec); });
+    JpegxlDecoder* dec = dec_ptr.get();
+
+    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+              JpegxlDecoderSubscribeEvents(
+                  dec, JPEGXL_DEC_BASIC_INFO | JPEGXL_DEC_FULL_IMAGE));
+    const uint8_t* next_in = data.data();
+    size_t avail_in = size;
+    JpegxlDecoderStatus status =
+        JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
+    EXPECT_TRUE(status == JPEGXL_DEC_BASIC_INFO ||
+                status == JPEGXL_DEC_NEED_MORE_INPUT);
+
+    if (expect_complete) {
+      EXPECT_EQ(JPEGXL_DEC_BASIC_INFO, status);
+    } else if (status == JPEGXL_DEC_NEED_MORE_INPUT) {
+      continue;
+    }
+
+    JpegxlBasicInfo info;
+    EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
+    EXPECT_EQ(info.xsize, xsize);
+    EXPECT_EQ(info.ysize, ysize);
+    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+              JpegxlDecoderSetImageOutBuffer(dec, &format_orig, pixels2.data(),
+                                             pixels2.size()));
+
+    status = JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
+    EXPECT_TRUE(status == JPEGXL_DEC_FULL_IMAGE ||
+                status == JPEGXL_DEC_NEED_MORE_INPUT);
+
+    if (expect_complete) {
+      EXPECT_EQ(JPEGXL_DEC_FULL_IMAGE, status);
+      EXPECT_EQ(pixels, pixels2);
+    }
   }
 }

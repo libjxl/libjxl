@@ -32,16 +32,16 @@
 #include "jxl/modular/encoding/ma.h"
 #include "jxl/modular/image/image.h"
 #include "jxl/modular/options.h"
+#include "jxl/modular/transform/transform.h"
 
 namespace jxl {
 
-struct GroupHeader {
+struct GroupHeader : public Fields {
   GroupHeader();
 
-  static const char *Name() { return "GroupHeader"; }
+  const char *Name() const override { return "GroupHeader"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     visitor->Bool(false, &use_global_tree);
     JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
     uint32_t num_transforms = transforms.size();

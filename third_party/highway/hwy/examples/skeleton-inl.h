@@ -29,11 +29,12 @@
 // It is fine to #include normal or *-inl headers.
 #include <stddef.h>
 
-#include <hwy/before_namespace-inl.h>
-
 #include "hwy/examples/skeleton_shared.h"
+#include "hwy/highway.h"
+
+HWY_BEFORE_NAMESPACE();
 namespace skeleton {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 // Computes out[i] = in1[i] * kMultiplier + in2[i] for i < 256.
 HWY_MAYBE_UNUSED void ExampleMulAdd(const float* HWY_RESTRICT in1,
@@ -61,8 +62,9 @@ HWY_MAYBE_UNUSED const char* ExampleGatherStrategy() {
 #endif
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace skeleton
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

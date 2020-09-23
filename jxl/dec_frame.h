@@ -34,6 +34,12 @@
 
 namespace jxl {
 
+Status DecodeFrameHeader(const AnimationHeader* animation_or_null,
+                         BitReader* JXL_RESTRICT reader,
+                         FrameHeader* JXL_RESTRICT frame_header,
+                         FrameDimensions* frame_dim,
+                         LoopFilter* JXL_RESTRICT loop_filter);
+
 // Decodes a frame, either a single image or animation frame (depending on
 // `multiframe`). Groups may be processed in parallel by `pool`.
 // `frame_dim` must already be set from SizeHeader and may be overridden if

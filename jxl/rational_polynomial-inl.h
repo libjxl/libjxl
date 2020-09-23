@@ -23,9 +23,11 @@
 
 #include <stddef.h>
 
-#include <hwy/before_namespace-inl.h>
+#include <hwy/highway.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
 
 // Primary template: default to actual division.
 template <typename T, class V>
@@ -57,8 +59,9 @@ struct FastDivision<float, V> {
 // Clenshaw recurrence for Chebyshev polynomials. LoadDup128 allows us to
 // specify constants (replicated 4x) independently of the lane count.
 template <size_t NP, size_t NQ, class D, class V, typename T>
-HWY_FUNC V EvalRationalPolynomial(const D d, const V x, const T (&p)[NP],
-                                  const T (&q)[NQ]) {
+HWY_INLINE HWY_MAYBE_UNUSED V EvalRationalPolynomial(const D d, const V x,
+                                                     const T (&p)[NP],
+                                                     const T (&q)[NQ]) {
   constexpr size_t kDegP = NP / 4 - 1;
   constexpr size_t kDegQ = NQ / 4 - 1;
   auto yp = LoadDup128(d, &p[kDegP * 4]);
@@ -92,7 +95,9 @@ HWY_FUNC V EvalRationalPolynomial(const D d, const V x, const T (&p)[NP],
   return FastDivision<T, V>()(yp, yq);
 }
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 #endif  // include guard

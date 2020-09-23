@@ -62,26 +62,27 @@ int DecompressMain(int argc, const char *argv[]) {
   fprintf(stderr, "Read %zu compressed bytes [%s]\n", compressed.size(),
           CodecConfigString().c_str());
 
-  // Detect whether the file uses the box format container. If so, extract the
-  // primary codestream, and continue with only the codestream.
+  // Detect whether the file uses the box format container. If so, unpack the
+  // boxes into `container`. Otherwise, fill `container.codestream` accordingly.
   const uint8_t box_header[] = {0,   0,   0,   0xc, 'J',  'X',
                                 'L', ' ', 0xd, 0xa, 0x87, 0xa};
+  JpegXlContainer container;
   if (compressed.size() >= 12 && !memcmp(box_header, compressed.data(), 12)) {
-    JpegXlContainer container;
     if (!DecodeJpegXlContainerOneShot(compressed.data(), compressed.size(),
                                       &container)) {
       fprintf(stderr, "Decoding container format failed.\n");
       return 1;
     }
-    compressed.assign(container.codestream,
-                      container.codestream + container.codestream_size);
+  } else {
+    container.codestream = compressed.data();
+    container.codestream_size = compressed.size();
   }
 
   jxl::ThreadPoolInternal pool(args.num_threads);
   SpeedStats stats;
 
   // Quick test that this looks like a valid JXL file.
-  if (JpegxlSignatureCheck(compressed.data(), compressed.size()) !=
+  if (JpegxlSignatureCheck(container.codestream, container.codestream_size) !=
       JPEGXL_SIG_VALID) {
     fprintf(stderr, "Unknown compressed image format\n");
     return 1;
@@ -105,8 +106,8 @@ int DecompressMain(int argc, const char *argv[]) {
 
     jxl::PaddedBytes jpg_output;
     for (size_t i = 0; i < args.num_reps; ++i) {
-      if (!DecompressJxlToJPEG(jxl::Span<const uint8_t>(compressed), args,
-                               &pool, &jpg_output, &aux_out, &stats)) {
+      if (!DecompressJxlToJPEG(container, args, &pool, &jpg_output, &aux_out,
+                               &stats)) {
         return 1;
       }
     }
@@ -126,8 +127,10 @@ int DecompressMain(int argc, const char *argv[]) {
 
     // Decode to pixels.
     for (size_t i = 0; i < args.num_reps; ++i) {
-      if (!DecompressJxlToPixels(jxl::Span<const uint8_t>(compressed),
-                                 args.params, &pool, &io, &aux_out, &stats)) {
+      if (!DecompressJxlToPixels(
+              jxl::Span<const uint8_t>(container.codestream,
+                                       container.codestream_size),
+              args.params, &pool, &io, &aux_out, &stats)) {
         return 1;
       }
     }

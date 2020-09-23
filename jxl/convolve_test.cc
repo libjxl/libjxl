@@ -13,17 +13,20 @@
 // limitations under the License.
 
 #include "jxl/convolve.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/convolve_test.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
+#include <hwy/highway.h>
+#include <hwy/tests/test_util-inl.h>
 #include <random>
 #include <vector>
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/thread_pool_internal.h"
-
 #include "jxl/image_ops.h"
 #include "jxl/image_test_utils.h"
 
@@ -33,11 +36,9 @@
 
 #include "jxl/convolve-inl.h"
 
-#include <hwy/tests/test_util-inl.h>
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 void TestNeighbors() {
   const Neighbors::D d;
@@ -179,9 +180,10 @@ void TestConvolve() {
            });
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
@@ -189,7 +191,7 @@ namespace jxl {
 class ConvolveTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(ConvolveTest);
 
-HWY_EXPORT_AND_TEST_P(ConvolveTest, TestConvolve)
+HWY_EXPORT_AND_TEST_P(ConvolveTest, TestConvolve);
 
 }  // namespace jxl
 #endif

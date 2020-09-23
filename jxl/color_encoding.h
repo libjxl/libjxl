@@ -35,7 +35,16 @@ namespace jxl {
 
 // (All CIE units are for the standard 1931 2 degree observer)
 
-enum class ColorSpace : uint32_t { kRGB, kGray, kXYB, kUnknown };
+enum class ColorSpace : uint32_t {
+  // Includes CMYK if a kBlack ExtraChannelInfo is present.
+  kRGB,
+  // Side effect: modular encoding uses only 1 channel.
+  kGray,
+  // Like RGB, but implies fixed values for primaries etc.
+  kXYB,
+  // For non-RGB/gray data, e.g. from non-electro-optical sensors.
+  kUnknown
+};
 
 static inline const char* EnumName(ColorSpace /*unused*/) {
   return "ColorSpace";
@@ -128,18 +137,11 @@ struct PrimariesCIExy {
 };
 
 // Serializable form of CIExy.
-struct Customxy {
+struct Customxy : public Fields {
   Customxy();
-  static const char* Name() { return "Customxy"; }
+  const char* Name() const override { return "Customxy"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->S32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
-                 BitsOffset(21, 2097152), 0, &x);
-    visitor->S32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
-                 BitsOffset(21, 2097152), 0, &y);
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   CIExy Get() const;
   // Returns false if x or y do not fit in the encoding.
@@ -149,9 +151,9 @@ struct Customxy {
   int32_t y;
 };
 
-struct CustomTransferFunction {
+struct CustomTransferFunction : public Fields {
   CustomTransferFunction();
-  static const char* Name() { return "CustomTransferFunction"; }
+  const char* Name() const override { return "CustomTransferFunction"; }
 
   // Sets fields and returns true if nonserialized_color_space has an implicit
   // transfer function, otherwise leaves fields unchanged and returns false.
@@ -199,26 +201,7 @@ struct CustomTransferFunction {
     return true;
   }
 
-  template <class Visitor>
-  bool VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->Conditional(!SetImplicit())) {
-      visitor->Bool(false, &have_gamma_);
-
-      if (visitor->Conditional(have_gamma_)) {
-        visitor->Bits(24, kGammaMul, &gamma_);
-        if (gamma_ > kGammaMul) {
-          return JXL_FAILURE("Invalid gamma %u", gamma_);
-        }
-      }
-
-      if (visitor->Conditional(!have_gamma_)) {
-        JXL_RETURN_IF_ERROR(
-            visitor->Enum(TransferFunction::kSRGB, &transfer_function_));
-      }
-    }
-
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   // Must be set before calling VisitFields!
   ColorSpace nonserialized_color_space = ColorSpace::kRGB;
@@ -237,9 +220,9 @@ struct CustomTransferFunction {
 
 // Compact encoding of data required to interpret and translate pixels to a
 // known color space. Stored in Metadata. Thread-compatible.
-struct ColorEncoding {
+struct ColorEncoding : public Fields {
   ColorEncoding();
-  static const char* Name() { return "ColorEncoding"; }
+  const char* Name() const override { return "ColorEncoding"; }
 
   // Returns ready-to-use color encodings (initialized on-demand).
   static const ColorEncoding& SRGB(bool is_gray = false);
@@ -319,61 +302,7 @@ struct ColorEncoding {
     return CreateICC();
   }
 
-  template <class Visitor>
-  bool VisitFields(Visitor* JXL_RESTRICT visitor) {
-    if (visitor->AllDefault(*this, &all_default)) {
-      // Overwrite all serialized fields, but not any nonserialized_*.
-      visitor->SetDefault(this);
-      return true;
-    }
-
-    visitor->Bool(false, &want_icc_);
-
-    if (visitor->Conditional(!WantICC())) {
-      // Serialize enums. NOTE: we set the defaults to the most common values so
-      // ImageMetadata.all_default is true in the common case.
-
-      JXL_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
-
-      if (visitor->Conditional(!ImplicitWhitePoint())) {
-        JXL_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
-        if (visitor->Conditional(white_point == WhitePoint::kCustom)) {
-          JXL_RETURN_IF_ERROR(visitor->VisitNested(&white_));
-        }
-      }
-
-      if (visitor->Conditional(HasPrimaries())) {
-        JXL_RETURN_IF_ERROR(visitor->Enum(Primaries::kSRGB, &primaries));
-        if (visitor->Conditional(primaries == Primaries::kCustom)) {
-          JXL_RETURN_IF_ERROR(visitor->VisitNested(&red_));
-          JXL_RETURN_IF_ERROR(visitor->VisitNested(&green_));
-          JXL_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
-        }
-      }
-
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&tf));
-
-      JXL_RETURN_IF_ERROR(
-          visitor->Enum(RenderingIntent::kRelative, &rendering_intent));
-
-      // We didn't have ICC, so all fields should be known.
-      if (color_space_ == ColorSpace::kUnknown || tf.IsUnknown()) {
-        return JXL_FAILURE("No ICC but cs %u and tf %u%s", color_space_,
-                           tf.IsGamma() ? 0 : tf.GetTransferFunction(),
-                           tf.IsGamma() ? "(gamma)" : "");
-      }
-
-      JXL_RETURN_IF_ERROR(CreateICC());
-    }
-
-    if (WantICC() && visitor->IsReading()) {
-      // Haven't called SetICC() yet, do nothing.
-    } else {
-      if (ICC().empty()) return JXL_FAILURE("Empty ICC");
-    }
-
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   // Accessors ensure tf.nonserialized_color_space is updated at the same time.
   ColorSpace GetColorSpace() const { return color_space_; }

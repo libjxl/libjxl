@@ -27,6 +27,14 @@
 
 namespace jxl {
 
+class Visitor;
+class Fields {
+ public:
+  virtual ~Fields() = default;
+  virtual const char* Name() const = 0;
+  virtual Status VisitFields(Visitor* JXL_RESTRICT visitor) = 0;
+};
+
 // Distribution of U32 values for one particular selector. Represents either a
 // power of two-sized range, or a single value. A separate type ensures this is
 // only passed to the U32Enc ctor.
@@ -78,28 +86,6 @@ class U32Enc {
   U32Distr d_[4];
 };
 
-// Convert between two's complement and sign bit in LSB so S64 can use
-// U64Coder etc.
-static inline constexpr uint32_t U32FromS32(const int32_t v) {
-  return v < 0 ? (static_cast<uint32_t>(-(v + 1)) << 1) + 1
-               : (static_cast<uint32_t>(v) << 1);
-}
-
-static inline constexpr uint64_t U64FromS64(const int64_t v) {
-  return v < 0 ? (static_cast<uint64_t>(-(v + 1)) << 1) + 1
-               : (static_cast<uint64_t>(v) << 1);
-}
-
-static inline constexpr int32_t S32FromU32(const uint32_t u) {
-  return (u & 1) ? -static_cast<int32_t>((u >> 1) + 1)
-                 : static_cast<int32_t>(u >> 1);
-}
-
-static inline constexpr int64_t S64FromU64(const uint64_t u) {
-  return (u & 1) ? -static_cast<int64_t>((u >> 1) + 1)
-                 : static_cast<int64_t>(u >> 1);
-}
-
 // Returns bit with the given `index` (0 = least significant).
 template <typename T>
 static inline constexpr uint64_t MakeBit(T index) {
@@ -118,7 +104,7 @@ std::vector<Enum> Values() {
 
   // For each 1-bit in bits: add its index as value
   while (bits != 0) {
-    const int index = NumZeroBitsBelowLSBNonzero(bits);
+    const int index = Num0BitsBelowLS1Bit_Nonzero(bits);
     values.push_back(static_cast<Enum>(index));
     bits &= bits - 1;  // clear least-significant bit
   }

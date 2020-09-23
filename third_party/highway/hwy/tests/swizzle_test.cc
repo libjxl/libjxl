@@ -15,14 +15,151 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/swizzle_test.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
-// must come after foreach_target.h.
+#include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
-
-// must come after *-inl.h.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
+
+struct TestLowerHalfT {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    constexpr size_t N2 = (MaxLanes(d) + 1) / 2;
+    const Simd<T, N2> d2;
+
+    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
+    const auto v = Iota(d, 1);
+    Store(LowerHalf(v), d2, lanes);
+    size_t i = 0;
+    for (; i < N2; ++i) {
+      HWY_ASSERT_EQ(T(1 + i), lanes[i]);
+    }
+    // Other half remains unchanged
+    for (; i < Lanes(d); ++i) {
+      HWY_ASSERT_EQ(T(0), lanes[i]);
+    }
+  }
+};
+
+struct TestLowerQuarterT {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    constexpr size_t N4 = (MaxLanes(d) + 3) / 4;
+    const HWY_CAPPED(T, N4) d4;
+
+    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
+    const auto v = Iota(d, 1);
+    const auto lo = LowerHalf(LowerHalf(v));
+    Store(lo, d4, lanes);
+    size_t i = 0;
+    for (; i < N4; ++i) {
+      HWY_ASSERT_EQ(T(i + 1), lanes[i]);
+    }
+    // Upper 3/4 remain unchanged
+    for (; i < Lanes(d); ++i) {
+      HWY_ASSERT_EQ(T(0), lanes[i]);
+    }
+  }
+};
+
+HWY_NOINLINE void TestLowerHalf() {
+  ForAllTypes(
+      ForPartialVectors<TestLowerHalfT, /*kDivLanes=*/1, /*kMinLanes=*/2>());
+  ForAllTypes(
+      ForPartialVectors<TestLowerQuarterT, /*kDivLanes=*/1, /*kMinLanes=*/4>());
+}
+
+struct TestUpperHalfT {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    // Scalar does not define UpperHalf.
+#if HWY_TARGET != HWY_SCALAR
+    constexpr size_t N2 = (MaxLanes(d) + 1) / 2;
+    const Simd<T, N2> d2;
+
+    const auto v = Iota(d, 1);
+    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
+
+    Store(UpperHalf(v), d2, lanes);
+    size_t i = 0;
+    for (; i < N2; ++i) {
+      HWY_ASSERT_EQ(T(N2 + 1 + i), lanes[i]);
+    }
+    // Other half remains unchanged
+    for (; i < Lanes(d); ++i) {
+      HWY_ASSERT_EQ(T(0), lanes[i]);
+    }
+#else
+    (void)d;
+#endif
+  }
+};
+
+HWY_NOINLINE void TestUpperHalf() {
+  ForAllTypes(ForGE128Vectors<TestUpperHalfT>());
+}
+
+struct TestZeroExtendVectorT {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+#if HWY_CAP_GE256
+    constexpr size_t N2 = MaxLanes(d) * 2;
+    const Simd<T, N2> d2;
+
+    const auto v = Iota(d, 1);
+    HWY_ALIGN T lanes[N2];
+    Store(v, d, lanes);
+    Store(v, d, lanes + N2 / 2);
+
+    const auto ext = ZeroExtendVector(v);
+    Store(ext, d2, lanes);
+
+    size_t i = 0;
+    // Lower half is unchanged
+    for (; i < N2 / 2; ++i) {
+      HWY_ASSERT_EQ(T(1 + i), lanes[i]);
+    }
+    // Upper half is zero
+    for (; i < N2; ++i) {
+      HWY_ASSERT_EQ(T(0), lanes[i]);
+    }
+    printf("xx zext ok %zu", N2 * sizeof(T) * 8);
+#else
+    (void)d;
+#endif
+  }
+};
+
+HWY_NOINLINE void TestZeroExtendVector() {
+  ForAllTypes(ForExtendableVectors<TestZeroExtendVectorT>());
+}
+
+struct TestCombineT {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+#if HWY_CAP_GE256
+    constexpr size_t N2 = MaxLanes(d) * 2;
+    const Simd<T, N2> d2;
+
+    const auto lo = Iota(d, 1);
+    const auto hi = Iota(d, N2 / 2 + 1);
+    HWY_ALIGN T lanes[N2];
+    const auto combined = Combine(hi, lo);
+    Store(combined, d2, lanes);
+
+    const auto expected = Iota(d2, 1);
+    HWY_ASSERT_VEC_EQ(d2, expected, combined);
+#else
+    (void)d;
+#endif
+  }
+};
+
+HWY_NOINLINE void TestCombine() {
+  ForAllTypes(ForExtendableVectors<TestCombineT>());
+}
 
 struct TestShiftBytesT {
   template <class T, class D>
@@ -614,9 +751,10 @@ HWY_NOINLINE void TestOddEven() {
   ForAllTypes(ForGE128Vectors<TestOddEvenT>());
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
@@ -625,18 +763,22 @@ class HwySwizzleTest : public hwy::TestWithParamTarget {};
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwySwizzleTest);
 
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShiftBytes)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestBroadcast)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestPermute)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestInterleave)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestZip)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShuffle)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestSpecialShuffles)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestCombineShiftRight)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatHalves)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatLowerUpper)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatUpperLower)
-HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestOddEven)
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestLowerHalf);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestUpperHalf);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestZeroExtendVector);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestCombine);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShiftBytes);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestBroadcast);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestPermute);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestInterleave);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestZip);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShuffle);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestSpecialShuffles);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestCombineShiftRight);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatHalves);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatLowerUpper);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestConcatUpperLower);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestOddEven);
 
 }  // namespace hwy
 #endif

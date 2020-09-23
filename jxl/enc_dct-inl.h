@@ -23,13 +23,17 @@
 
 #include <stddef.h>
 
+#include <hwy/highway.h>
+
 #include "jxl/dct_block-inl.h"
 #include "jxl/transpose-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Broadcast;
 
 // Column IDCTs with (part of) one row per vector argument. Called by the
 // facades below which take From/To template arguments.
@@ -1033,8 +1037,10 @@ struct ComputeScaledDCT<1, 2> {
   }
 };
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

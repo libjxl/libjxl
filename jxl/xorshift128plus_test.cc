@@ -15,23 +15,26 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/xorshift128plus_test.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <stdint.h>
 #include <stdio.h>
 
 #include <algorithm>
+#include <hwy/highway.h>
+#include <hwy/tests/test_util-inl.h>
 #include <vector>
 
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/thread_pool_internal.h"
-
 #include "jxl/xorshift128plus-inl.h"
 
-#include <hwy/tests/test_util-inl.h>
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftRight;
 
 // Define to nonzero in order to print the (new) golden outputs.
 #define PRINT_RESULTS 0
@@ -295,7 +298,7 @@ void TestFloat() {
 
 #ifdef JXL_DISABLE_SLOW_TESTS
   const uint32_t kMaxSeed = 2048;
-#else   // JXL_DISABLE_SLOW_TESTS
+#else  // JXL_DISABLE_SLOW_TESTS
   const uint32_t kMaxSeed = 16384;  // All 14-bit seeds
 #endif  // JXL_DISABLE_SLOW_TESTS
   pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
@@ -339,7 +342,7 @@ void TestNotZero() {
 
 #ifdef JXL_DISABLE_SLOW_TESTS
   const uint32_t kMaxSeed = 500;
-#else   // JXL_DISABLE_SLOW_TESTS
+#else  // JXL_DISABLE_SLOW_TESTS
   const uint32_t kMaxSeed = 2000;
 #endif  // JXL_DISABLE_SLOW_TESTS
   pool.Run(0, kMaxSeed, ThreadPool::SkipInit(),
@@ -358,9 +361,10 @@ void TestNotZero() {
            });
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {

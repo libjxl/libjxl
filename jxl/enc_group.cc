@@ -16,6 +16,13 @@
 
 #include <utility>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
@@ -26,18 +33,11 @@
 #include "jxl/dct_util.h"
 #include "jxl/enc_params.h"
 #include "jxl/image.h"
-#include "jxl/quantizer.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_group.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/quantizer-inl.h"
-
-// SIMD code.
-#include <hwy/before_namespace-inl.h>
+#include "jxl/quantizer.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // NOTE: caller takes care of extracting quant from rect of RawQuantField.
 void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
@@ -271,13 +271,14 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(ComputeCoefficients)
+HWY_EXPORT(ComputeCoefficients);
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                          AuxOut* aux_out) {
   return HWY_DYNAMIC_DISPATCH(ComputeCoefficients)(group_idx, enc_state,

@@ -21,11 +21,16 @@
 #define JXL_DEC_XYB_INL_H_
 #endif
 
-#include "jxl/dec_xyb.h"
+#include <hwy/highway.h>
 
-#include <hwy/before_namespace-inl.h>
+#include "jxl/dec_xyb.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Broadcast;
 
 // Inverts the pixel-wise RGB->XYB conversion in OpsinDynamicsImage() (including
 // the gamma mixing and simple gamma). Avoids clamping to [0, 255] - out of
@@ -34,11 +39,12 @@ namespace jxl {
 // of the (row-major) opsin absorbance matrix inverse. Pre-multiplying its
 // entries by c is equivalent to multiplying linear_* by c afterwards.
 template <class D, class V>
-HWY_FUNC void XybToRgb(D d, const V opsin_x, const V opsin_y, const V opsin_b,
-                       const OpsinParams& opsin_params,
-                       V* const HWY_RESTRICT linear_r,
-                       V* const HWY_RESTRICT linear_g,
-                       V* const HWY_RESTRICT linear_b) {
+HWY_INLINE HWY_MAYBE_UNUSED void XybToRgb(D d, const V opsin_x, const V opsin_y,
+                                          const V opsin_b,
+                                          const OpsinParams& opsin_params,
+                                          V* const HWY_RESTRICT linear_r,
+                                          V* const HWY_RESTRICT linear_g,
+                                          V* const HWY_RESTRICT linear_b) {
 #if HWY_TARGET == HWY_SCALAR
   const auto inv_scale_x = Set(d, kInvScaleR);
   const auto inv_scale_y = Set(d, kInvScaleG);
@@ -87,8 +93,10 @@ HWY_FUNC void XybToRgb(D d, const V opsin_x, const V opsin_y, const V opsin_b,
   *linear_b = MulAdd(LoadDup128(d, &inverse_matrix[8 * 4]), mixed_b, *linear_b);
 }
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif

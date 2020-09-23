@@ -20,6 +20,13 @@
 #include <algorithm>
 #include <utility>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_group.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
@@ -32,31 +39,29 @@
 #include "jxl/dct_scales.h"
 #include "jxl/dec_cache.h"
 #include "jxl/dec_reconstruct.h"
+#include "jxl/dec_transforms-inl.h"
 #include "jxl/dec_xyb.h"
+#include "jxl/enc_transforms-inl.h"
 #include "jxl/entropy_coder.h"
 #include "jxl/epf.h"
 #include "jxl/opsin_params.h"
 #include "jxl/quant_weights.h"
-#include "jxl/quantizer.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_group.cc"
-#include <hwy/foreach_target.h>
-
-#include "jxl/dec_transforms-inl.h"
-#include "jxl/enc_transforms-inl.h"
 #include "jxl/quantizer-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+#include "jxl/quantizer.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftRight;
 
 using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
 using DI = HWY_FULL(int32_t);
+using DI16 = HWY_CAPPED(int16_t, MaxLanes(DI()));
 constexpr D d;
 constexpr DI di;
+constexpr DI16 di16;
 
 template <class V>
 void DequantLane(V scaled_dequant, V x_dm_multiplier,
@@ -90,7 +95,7 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                   float x_dm_multiplier, V x_cc_mul, V b_cc_mul, size_t kind,
                   size_t size, const Quantizer& quantizer,
                   const float* JXL_RESTRICT dequant_matrices,
-                  size_t covered_blocks, size_t bx, size_t sbx,
+                  size_t covered_blocks, const size_t* sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
                   size_t dc_stride, const float* JXL_RESTRICT biases,
                   float* JXL_RESTRICT block) {
@@ -106,8 +111,8 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                 size, k, x_cc_mul, b_cc_mul, biases, block);
   }
   for (size_t c = 0; c < 3; c++) {
-    LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + (c == 1 ? bx : sbx),
-                            dc_stride, block + c * size);
+    LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + sbx[c], dc_stride,
+                            block + c * size);
   }
 }
 
@@ -136,11 +141,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const size_t sharpness_stride =
       dec_state->shared->epf_sharpness.PixelsPerRow();
 
-  YCbCrChromaSubsampling cs =
+  const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
-  bool save_to_decoded = !decoded->IsJPEG() && (lf.epf || lf.gab) &&
-                         cs == YCbCrChromaSubsampling::k444;
+  bool save_to_decoded = !decoded->IsJPEG() && (lf.epf || lf.gab) && cs.Is444();
   size_t padding = save_to_decoded ? 2 : 0;
 
   const size_t idct_stride =
@@ -163,9 +167,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     }
     for (size_t c = 0; c < 3; c++) {
       for (size_t i = 0; i < 64; i++) {
-        scaled_qtable[64 * c + i] = (1 << kCFLFixedPointPrecision) *
-                                    (*qe[0].qraw.qtable)[64 + i] /
-                                    (*qe[0].qraw.qtable)[64 * c + i];
+        // Transpose the matrix, as it will be used on the transposed block.
+        scaled_qtable[64 * c + (i % 8) * 8 + (i / 8)] =
+            (1 << kCFLFixedPointPrecision) * (*qe[0].qraw.qtable)[64 + i] /
+            (*qe[0].qraw.qtable)[64 * c + i];
       }
     }
   }
@@ -189,9 +194,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
   // be done after decoding the whole image (this allows it to work on the
   // chroma channels too).
-  bool run_apply_image_features = xstart < xend && ystart < yend &&
-                                  !decoded->IsJPEG() &&
-                                  cs == YCbCrChromaSubsampling::k444;
+  bool run_apply_image_features =
+      xstart < xend && ystart < yend && !decoded->IsJPEG() && cs.Is444();
 
   static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
                 "Groups are too large");
@@ -199,34 +203,48 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                       block_rect.y0() * kBlockDim + ystart, xend - xstart,
                       yend - ystart);
 
-  if (cs != YCbCrChromaSubsampling::k444) {
-    size_t hshift = HShift(cs);
-    size_t vshift = VShift(cs);
-    Rect cr(block_rect.x0() >> hshift, block_rect.y0() >> vshift,
-            ChromaSize(block_rect.xsize(), hshift),
-            ChromaSize(block_rect.ysize(), vshift));
+  int jpeg_c_map[3] = {1, 0, 2};
+  if (decoded->IsJPEG() && decoded->jpeg_data->components.size() == 1) {
+    jpeg_c_map[0] = jpeg_c_map[2] = 0;
+  }
+
+  if (!cs.Is444()) {
+    size_t hshift[3] = {cs.HShift(0), cs.HShift(1), cs.HShift(2)};
+    size_t vshift[3] = {cs.VShift(0), cs.VShift(1), cs.VShift(2)};
+    Rect r[3];
+    for (size_t i = 0; i < 3; i++) {
+      r[i] = Rect(block_rect.x0() >> hshift[i], block_rect.y0() >> vshift[i],
+                  block_rect.xsize() >> hshift[i],
+                  block_rect.ysize() >> vshift[i]);
+    }
 
     for (size_t by = 0; by < ysize_blocks; ++by) {
       get_block->StartRow(by);
-      size_t sby = by >> vshift;
+      size_t sby[3] = {by >> vshift[0], by >> vshift[1], by >> vshift[2]};
 
       const int32_t* JXL_RESTRICT row_quant =
           block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
 
       const float* JXL_RESTRICT dc_rows[3] = {
-          cr.ConstPlaneRow(*dec_state->shared->dc, 0, sby),
-          block_rect.ConstPlaneRow(*dec_state->shared->dc, 1, by),
-          cr.ConstPlaneRow(*dec_state->shared->dc, 2, sby),
+          r[0].ConstPlaneRow(*dec_state->shared->dc, 0, sby[0]),
+          r[1].ConstPlaneRow(*dec_state->shared->dc, 1, sby[1]),
+          r[2].ConstPlaneRow(*dec_state->shared->dc, 2, sby[2]),
       };
 
       AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
 
       float* JXL_RESTRICT idct_row[3];
+      int16_t* JXL_RESTRICT jpeg_row[3];
       for (size_t c = 0; c < 3; c++) {
-        Rect r = c == 1 ? block_rect : cr;
-        size_t y = c == 1 ? by : sby;
-        idct_row[c] =
-            idct->PlaneRow(c, (r.y0() + y) * kBlockDim) + r.x0() * kBlockDim;
+        idct_row[c] = idct->PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
+                      r[c].x0() * kBlockDim;
+        if (decoded->IsJPEG()) {
+          auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
+          jpeg_row[c] =
+              component.coeffs.data() +
+              (component.width_in_blocks * (r[c].y0() + sby[c]) + r[c].x0()) *
+                  kDCTBlockSize;
+        }
       }
 
       auto x_cc_mul = Set(d, 0.0f);
@@ -234,6 +252,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       // Increment bx by llf_x because those iterations would otherwise
       // immediately continue (!IsFirstBlock). Reduces mispredictions.
       for (size_t bx = 0; bx < xsize_blocks;) {
+        size_t sbx[3] = {bx >> hshift[0], bx >> hshift[1], bx >> hshift[2]};
         AcStrategy acs = acs_row[bx];
         const size_t llf_x = acs.covered_blocks_x();
 
@@ -253,16 +272,25 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             get_block->GetBlock(bx, by, acs, size, log2_covered_blocks, block));
 
         if (JXL_UNLIKELY(decoded->IsJPEG())) {
+          HWY_ALIGN float local_block[AcStrategy::kMaxCoeffArea];
           for (size_t c : {1, 0, 2}) {
-            if ((c != 1 && (bx >> hshift) << hshift != bx) ||
-                (c != 1 && (by >> vshift) << vshift != by)) {
+            if (decoded->jpeg_data->components.size() == 1 && c != 1) {
               continue;
             }
-            size_t sbx = c == 1 ? bx : bx >> hshift;
-            float* JXL_RESTRICT idct_pos = idct_row[c] + sbx * kBlockDim;
+            if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
+              continue;
+            }
             Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
-                                 ToLines(idct_pos, idct_stride));
-            idct_pos[0] = dc_rows[c][sbx];
+                                 ToBlock(8, 8, local_block));
+            local_block[0] = dc_rows[c][sbx[c]];
+            int16_t* JXL_RESTRICT jpeg_pos =
+                jpeg_row[c] + sbx[c] * kDCTBlockSize;
+            for (size_t i = 0; i < 64; i += Lanes(d)) {
+              const auto inf = Load(d, local_block + i);
+              const auto ini = ConvertTo(di, inf);
+              const auto ini16 = DemoteTo(di16, ini);
+              StoreU(ini16, di16, jpeg_pos + i);
+            }
           }
           bx += llf_x;
           continue;
@@ -270,22 +298,19 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
         // Dequantize and add predictions.
         {
-          DequantBlock(acs, inv_global_scale, row_quant[bx],
-                       dec_state->x_dm_multiplier, x_cc_mul, b_cc_mul,
-                       acs.RawStrategy(), size, dec_state->shared->quantizer,
-                       dequant_matrices,
-                       acs.covered_blocks_y() * acs.covered_blocks_x(), bx,
-                       bx >> hshift, dc_rows, dc_stride,
-                       dec_state->shared->opsin_params.quant_biases, block);
+          DequantBlock(
+              acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
+              x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
+              dec_state->shared->quantizer, dequant_matrices,
+              acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
+              dc_stride, dec_state->shared->opsin_params.quant_biases, block);
         }
 
         for (size_t c : {1, 0, 2}) {
-          if ((c != 1 && (bx >> hshift) << hshift != bx) ||
-              (c != 1 && (by >> vshift) << vshift != by)) {
+          if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
             continue;
           }
-          size_t sbx = c == 1 ? bx : bx >> hshift;
-          float* JXL_RESTRICT idct_pos = idct_row[c] + sbx * kBlockDim;
+          float* JXL_RESTRICT idct_pos = idct_row[c] + sbx[c] * kBlockDim;
           TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
                             idct_stride);
         }
@@ -320,10 +345,18 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       const uint8_t* JXL_RESTRICT sharpness_row =
           block_rect.ConstRow(dec_state->shared->epf_sharpness, by);
       float* JXL_RESTRICT idct_row[3];
+      int16_t* JXL_RESTRICT jpeg_row[3];
       for (size_t c = 0; c < 3; c++) {
         idct_row[c] = (!save_to_decoded ? *idct : dec_state->decoded)
                           .PlaneRow(c, (block_rect.y0() + by) * kBlockDim) +
                       (block_rect.x0()) * kBlockDim;
+        if (decoded->IsJPEG()) {
+          auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
+          jpeg_row[c] = component.coeffs.data() +
+                        (component.width_in_blocks * (block_rect.y0() + by) +
+                         block_rect.x0()) *
+                            kDCTBlockSize;
+        }
       }
 
       for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
@@ -337,6 +370,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         // immediately continue (!IsFirstBlock). Reduces mispredictions.
         for (size_t bx = tx * kColorTileDimInBlocks;
              bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
+          size_t sbx[3] = {bx, bx, bx};
           AcStrategy acs = acs_row[bx];
           const size_t llf_x = acs.covered_blocks_x();
 
@@ -361,31 +395,50 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                   "Can only decode to JPEG if only DCT-8 is used.");
             }
 
+            HWY_ALIGN int transposed_dct_int[64];
             for (size_t c : {1, 0, 2}) {
-              float* JXL_RESTRICT idct_pos = idct_row[c] + bx * kBlockDim;
+              if (decoded->jpeg_data->components.size() == 1 && c != 1) {
+                continue;
+              }
+              int16_t* JXL_RESTRICT jpeg_pos = jpeg_row[c] + bx * kDCTBlockSize;
               // JPEG XL is transposed, JPEG is not.
-              if (c == 1 || row_cmap[c][abs_tx] == 0) {
-                Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
-                                     ToLines(idct_pos, idct_stride));
+              HWY_ALIGN float transposed_dct[64];
+              Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
+                                   ToBlock(8, 8, transposed_dct));
+              // No CfL - no need to store the block converted to integers.
+              if (row_cmap[0][abs_tx] == 0 && row_cmap[2][abs_tx] == 0) {
+                for (size_t i = 0; i < 64; i += Lanes(d)) {
+                  const auto inf = Load(d, transposed_dct + i);
+                  const auto ini = ConvertTo(di, inf);
+                  const auto ini16 = DemoteTo(di16, ini);
+                  StoreU(ini16, di16, jpeg_pos + i);
+                }
+              } else if (c == 1) {
+                for (size_t i = 0; i < 64; i += Lanes(d)) {
+                  const auto inf = Load(d, transposed_dct + i);
+                  const auto ini = ConvertTo(di, inf);
+                  Store(ini, di, transposed_dct_int + i);
+                  const auto ini16 = DemoteTo(di16, ini);
+                  StoreU(ini16, di16, jpeg_pos + i);
+                }
               } else {
-                HWY_ALIGN float transposed_dct[64];
+                // transposed_dct_int contains the y channel block, converted to
+                // ints and transposed.
                 const auto scale = Set(
                     di, dec_state->shared->cmap.RatioJPEG(row_cmap[c][abs_tx]));
                 const auto round = Set(di, 1 << (kCFLFixedPointPrecision - 1));
                 for (int i = 0; i < 64; i += Lanes(d)) {
-                  auto in = ConvertTo(di, Load(d, block + c * size + i));
-                  auto in_y = ConvertTo(di, Load(d, block + size + i));
+                  auto in = ConvertTo(di, Load(d, transposed_dct + i));
+                  auto in_y = Load(di, transposed_dct_int + i);
                   auto qt = Load(di, scaled_qtable + c * size + i);
                   auto coeff_scale =
                       ShiftRight<kCFLFixedPointPrecision>(qt * scale + round);
                   auto cfl_factor = ShiftRight<kCFLFixedPointPrecision>(
                       in_y * coeff_scale + round);
-                  Store(ConvertTo(d, in + cfl_factor), d, transposed_dct + i);
+                  Store(DemoteTo(di16, in + cfl_factor), di16, jpeg_pos + i);
                 }
-                Transpose<8, 8>::Run(FromBlock(8, 8, transposed_dct),
-                                     ToLines(idct_pos, idct_stride));
               }
-              idct_pos[0] = dc_rows[c][bx];
+              jpeg_pos[0] = dc_rows[c][bx];
             }
             bx += llf_x;
             continue;
@@ -397,8 +450,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                          dec_state->x_dm_multiplier, x_cc_mul, b_cc_mul,
                          acs.RawStrategy(), size, dec_state->shared->quantizer,
                          dequant_matrices,
-                         acs.covered_blocks_y() * acs.covered_blocks_x(), bx,
-                         bx, dc_rows, dc_stride,
+                         acs.covered_blocks_y() * acs.covered_blocks_x(), sbx,
+                         dc_rows, dc_stride,
                          dec_state->shared->opsin_params.quant_biases, block);
           }
 
@@ -412,12 +465,14 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           }
 
           if (dec_state->shared->image_features.loop_filter.epf) {
-            float sigma_quant = lf.epf_quant_mul / (row_quant[bx] * quant_scale * kInvSigmaNum);
+            float sigma_quant =
+                lf.epf_quant_mul / (row_quant[bx] * quant_scale * kInvSigmaNum);
             for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
               for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-                float sigma = sigma_quant *
-                              lf.epf_sharp_lut[sharpness_row[bx + ix +
-                                                             iy * sharpness_stride]];
+                float sigma =
+                    sigma_quant *
+                    lf.epf_sharp_lut[sharpness_row[bx + ix +
+                                                   iy * sharpness_stride]];
                 // Avoid infinities.
                 sigma = std::min(-1e-4f, sigma);
                 sigma_row[bx + ix + 2 + (iy + 2) * sigma_stride] = 1.0 / sigma;
@@ -548,8 +603,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         int32_t* JXL_RESTRICT row_nzeros,
                         const int32_t* JXL_RESTRICT row_nzeros_top,
-                        size_t nzeros_stride, size_t c, size_t bx, size_t by, size_t lbx,
-                        AcStrategy acs,
+                        size_t nzeros_stride, size_t c, size_t bx, size_t by,
+                        size_t lbx, AcStrategy acs,
                         const coeff_order_t* JXL_RESTRICT coeff_order,
                         BitReader* JXL_RESTRICT br,
                         ANSSymbolReader* JXL_RESTRICT decoder,
@@ -623,8 +678,7 @@ struct GetBlockFromBitstream {
   void StartRow(size_t by) {
     qf_row = rect.ConstRow(*qf, by);
     for (size_t c = 0; c < 3; c++) {
-      size_t vs = c == 1 ? 0 : vshift;
-      size_t sby = by >> vs;
+      size_t sby = by >> vshift[c];
       quant_dc_row = quant_dc->ConstRow(rect.y0() + by) + rect.x0();
       for (size_t i = 0; i < num_passes; i++) {
         row_nzeros[i][c] = group_dec_cache->num_nzeroes[i].PlaneRow(c, sby);
@@ -641,10 +695,9 @@ struct GetBlockFromBitstream {
     memset(block, 0, sizeof(float) * size * 3);
     for (size_t c : {1, 0, 2}) {
       float* JXL_RESTRICT block_c = block + c * size;
-      size_t sbx = c == 1 ? bx : bx >> hshift;
-      size_t sby = c == 1 ? by : by >> hshift;
-      if (JXL_UNLIKELY(c != 1 && (bx >> hshift) << hshift != bx) ||
-          JXL_UNLIKELY(c != 1 && (by >> vshift) << vshift != by)) {
+      size_t sbx = bx >> hshift[c];
+      size_t sby = by >> vshift[c];
+      if (JXL_UNLIKELY((sbx << hshift[c] != bx) || (sby << vshift[c] != by))) {
         continue;
       }
 
@@ -664,8 +717,10 @@ struct GetBlockFromBitstream {
               size_t group_idx, size_t histo_selector_bits, const Rect& rect,
               GroupDecCache* JXL_RESTRICT group_dec_cache,
               PassesDecoderState* dec_state) {
-    this->hshift = HShift(dec_state->shared->frame_header.chroma_subsampling);
-    this->vshift = VShift(dec_state->shared->frame_header.chroma_subsampling);
+    for (size_t i = 0; i < 3; i++) {
+      hshift[i] = dec_state->shared->frame_header.chroma_subsampling.HShift(i);
+      vshift[i] = dec_state->shared->frame_header.chroma_subsampling.VShift(i);
+    }
     this->coeff_orders = dec_state->shared->coeff_orders.data();
     this->context_map = dec_state->context_map.data();
     this->readers = readers;
@@ -716,7 +771,7 @@ struct GetBlockFromBitstream {
   const int32_t* qf_row;
   const uint8_t* quant_dc_row;
   Rect rect;
-  size_t hshift, vshift;
+  size_t hshift[3], vshift[3];
 };
 
 struct GetBlockFromEncoder {
@@ -803,13 +858,14 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                          opsin, decoded);
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(DecodeGroup)
+HWY_EXPORT(DecodeGroup);
 Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
@@ -821,7 +877,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                                            opsin, decoded, aux_out);
 }
 
-HWY_EXPORT(DecodeGroupForRoundtrip)
+HWY_EXPORT(DecodeGroupForRoundtrip);
 Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,

@@ -193,12 +193,19 @@ typedef enum {
   JPEGXL_TYPE_UINT32,
 } JpegxlDataType;
 
+/** Ordering of multi-byte data.
+ */
+typedef enum {
+  // TODO(lode): add native endian option
+  JPEGXL_LITTLE_ENDIAN,
+  JPEGXL_BIG_ENDIAN,
+} JpegxlEndianness;
+
 /** Data type for the sample values per channel per pixel for the output buffer
  * for pixels. This is not necessarily the same as the data type encoded in the
  * codestream. The channels are interleaved per pixel. The pixels are
  * organized row by row, left to right, top to bottom.
  * TODO(lode): support padding / alignment (row stride)
- * TODO(lode): support outputting >8-bit data into uint8_t (and endianness)
  * TODO(lode): support non-interleaved (may be a no-op here, involves getting
  *     single channels separately instead)
  * TODO(lode): support different channel orders if needed (RGB, BGR, ...)
@@ -213,6 +220,12 @@ typedef struct {
    * chooses output color space. CMYK+alpha needs 5 channels.
    */
   size_t num_channels;
+
+  /** Whether multi-byte data types are represented in big endian or little
+   * endian format. This applies to JPEGXL_TYPE_UINT16, JPEGXL_TYPE_UINT32
+   * and JPEGXL_TYPE_FLOAT.
+   */
+  JpegxlEndianness endianness;
 
   /** Data type of each channel.
    */
@@ -234,45 +247,6 @@ typedef struct {
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderSetParallelRunner(
     JpegxlDecoder* dec, JpegxlParallelRunner parallel_runner,
     void* parallel_runner_opaque);
-
-/** Specifies how the color profile information of the image can be retrieved,
- * Either through ICC profile, or through JpegxlColorEncoding.
- *
- * The following scenarios are possible:
- * - The ICC profile is accurate and the color encoding is invalid. Only the
- * ICC profile may be requested.
- * - the ICC profile is inaccurate and the color encoding is valid. Both can
- * be requested, but only the color encoding correctly specifies the color, the
- * ICC profile is an approximation that can be used when only ICC profile is
- * supported.
- * - Both are valid and accurate, any can be used equally well.
- *
- * Example: for PQ or HLG color, JpegxlDecoderGetColorEncoding describes the
- * transfer function more correctly and the ICC profile will not be accurate. On
- * the other hand, there exist transfer functions that can only be described by
- * an ICC profile, in that case icc_profile_accurate is JPEGXL_TRUE and
- * color_encoding_valid is JPEGXL_FALSE.
- */
-typedef struct {
-  /** If JPEGXL_TRUE, the ICC profile describes the image color encoding, once
-   * the ICC profile has been decoded. If JPEGXL_FALSE, the ICC profile is not
-   * accurate and a JpegxlDecoderGetColorEncoding must be used instead to
-   * accurately describe the color profile of the image. An ICC profile can
-   * still be requested, but it will only be an approximation.
-   */
-  JPEGXL_BOOL icc_profile_accurate;
-
-  /** If JPEGXL_TRUE, JpegxlDecoderGetColorEncoding describes the image color
-   * encoding, once its information is available. If JPEGXL_FALSE, only the ICC
-   * profile can be used.
-   */
-  JPEGXL_BOOL color_encoding_valid;
-
-  /**
-   * ICC profile size in bytes.
-   */
-  size_t icc_profile_size;
-} JpegxlColorProfileSource;
 
 /**
  * Returns a hint indicating how many more bytes the decoder is expected to
@@ -420,47 +394,86 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
     const JpegxlDecoder* dec, JpegxlAnimationHeader* animation_header);
 
 /**
- * Outputs the color information, if available. The color info tells whether
- * JpegxlDecoderGetColorEncoding and/or JpegxlDecoderGetICCProfile should be
- * used to get the correct image color profile.
+ * Outputs the color profile as JPEG XL encoded structured data, if available.
+ * This is an alternative to an ICC Profile, which can represent a more limited
+ * amount of color spaces, but represents them exactly through enum values.
  *
- * @param dec decoder object
- * @param color_info struct to copy the information into, or NULL to only
- * check whether the information is available through the return value.
- * @return JPEGXL_DEC_SUCCESS if the value is available,
- *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
- *    of other error conditions.
+ * It is often possible to use JpegxlDecoderGetColorAsICCProfile as an
+ * alternative anyway. The following scenarios are possible:
+ * - The JPEG XL image has an attached ICC Profile, in that case, the encoded
+ *   structured data is not available, this function will return an error status
+ *   and you must use JpegxlDecoderGetColorAsICCProfile instead.
+ * - The JPEG XL image has an encoded structured color profile, and it
+ *   represents an RGB or grayscale color space. This function will return it.
+ *   You can still use JpegxlDecoderGetColorAsICCProfile as well as an
+ *   alternative if desired, though depending on which RGB color space is
+ *   represented, the ICC profile may be a close approximation. It is also not
+ *   always feasible to deduce from an ICC profile which named color space it
+ *   exactly represents, if any, as it can reprsent any arbitrary space.
+ * - The JPEG XL image has an encoded structured color profile, and it indicates
+ *   an unknown or xyb color space. In that case,
+ *   JpegxlDecoderGetColorAsICCProfile is not available.
  *
- */
-JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorProfileSource(
-    const JpegxlDecoder* dec, JpegxlColorProfileSource* color_info);
-
-/**
- * Outputs the color profile information, if available. Only may be used if
- * JpegxlColorProfileSource.color_encoding_valid.
+ * If you wish to render the image using a system that supports ICC profiles,
+ * use JpegxlDecoderGetColorAsICCProfile first. If you're looking for a specific
+ * color space possibly indicated in the JPEG XL image, use
+ * JpegxlDecoderGetColorAsEncodedProfile first.
+ *
+ * TODO(lode): add parameter to choose between getting original color profile
+ * or color profile of the decoded pixels.
  *
  * @param dec decoder object
  * @param color_encoding struct to copy the information into, or NULL to only
  * check whether the information is available through the return value.
- * @return JPEGXL_DEC_SUCCESS if the value is available,
+ * @return JPEGXL_DEC_SUCCESS if the data is available and returned,
  *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
- *    of other error conditions.
+ *    the encuded structured color profile does not exist in the codestream.
  */
-JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorEncoding(
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorAsEncodedProfile(
     const JpegxlDecoder* dec, JpegxlColorEncoding* color_encoding);
 
 /**
- * Outputs ICC profile. The output buffer should have enough bytes allocated
- * to contain the icc_size given in the JpegxlColorEncoding.
+ * Outputs the size in bytes of the ICC profile returned by
+ * JpegxlDecoderGetColorAsICCProfile, if available, or indicates there is none
+ * available. In most cases, the image will have an ICC profile available, but
+ * if it does not, JpegxlDecoderGetColorAsEncodedProfile must be used instead.
+ * @see JpegxlDecoderGetColorAsEncodedProfile for more information. The ICC
+ * profile is either the exact ICC profile attached to the codestream metadata,
+ * or a close approximation generated from JPEG XL encoded structured data,
+ * depending of what is encoded in the codestream.
+ *
+ * TODO(lode): add parameter to choose between getting original color profile
+ * or color profile of the decoded pixels.
+ *
+ * @param dec decoder object
+ * @param size variable to output the size into, or NULL to only check the
+ *    return status.
+ * @return JPEGXL_DEC_SUCCESS if the ICC profile is available,
+ *    JPEGXL_DEC_NEED_MORE_INPUT if the decoder has not yet received enough
+ *    input data to determine whether an ICC profile is available or what its
+ *    size is, JPEGXL_DEC_ERROR in case the ICC profile is not available and
+ *    cannot be generated.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus
+JpegxlDecoderGetICCProfileSize(const JpegxlDecoder* dec, size_t* size);
+
+/**
+ * Outputs ICC profile if available. The profile is only available if
+ * JpegxlDecoderGetICCProfileSize returns success. The output buffer must have
+ * at least as many bytes as given by JpegxlDecoderGetICCProfileSize.
+ *
+ * TODO(lode): add parameter to choose between getting original color profile
+ * or color profile of the decoded pixels.
  *
  * @param dec decoder object
  * @param icc_profile buffer to copy the ICC profile into
  * @param size size of the icc_profile buffer in bytes
- * @return JPEGXL_DEC_SUCCESS if the value is available,
- *    JPEGXL_DEC_NEED_MORE_INPUT if not yet available, JPEGXL_DEC_ERROR in case
- *    of other error conditions.
+ * @return JPEGXL_DEC_SUCCESS if the profile was successfully returned is
+ *    available, JPEGXL_DEC_NEED_MORE_INPUT if not yet available,
+ *    JPEGXL_DEC_ERROR if the profile doesn't exist or the output size is not
+ *    large enough.
  */
-JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetICCProfile(
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorAsICCProfile(
     const JpegxlDecoder* dec, uint8_t* icc_profile, size_t size);
 
 /**
@@ -470,7 +483,7 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetICCProfile(
  * information is available in the decoder.
  *
  * @param dec decoder object
- * @param format format of pixelsformat of pixels.
+ * @param format format of pixels
  * @param size output value, buffer size in bytes
  * @return JPEGXL_DEC_SUCCESS on success, JPEGXL_DEC_ERROR on error, such as
  *    information not available yet.

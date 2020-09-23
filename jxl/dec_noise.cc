@@ -22,6 +22,13 @@
 #include <numeric>
 #include <utility>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_noise.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/robust_statistics.h"
 #include "jxl/chroma_from_luma.h"
@@ -29,17 +36,14 @@
 #include "jxl/image_ops.h"
 #include "jxl/opsin_params.h"
 #include "jxl/optimize.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_noise.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/xorshift128plus-inl.h"
-
-// SIMD code.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftRight;
+using hwy::HWY_NAMESPACE::Vec;
 
 using D = HWY_CAPPED(float, 1);
 
@@ -218,14 +222,15 @@ void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
   RandomImage(&temp, &rng, rect, &noise->Plane(2));
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(AddNoise)
+HWY_EXPORT(AddNoise);
 void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
               const Image3F& noise, const Rect& opsin_rect,
               const ColorCorrelationMap& cmap, Image3F* opsin) {
@@ -233,7 +238,7 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
                                         opsin_rect, cmap, opsin);
 }
 
-HWY_EXPORT(RandomImage3)
+HWY_EXPORT(RandomImage3);
 void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
   return HWY_DYNAMIC_DISPATCH(RandomImage3)(rect, noise);
 }

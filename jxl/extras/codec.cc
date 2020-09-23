@@ -162,12 +162,9 @@ Status Encode(const CodecInOut& io, const Codec codec,
 #if JPEGXL_ENABLE_JPEG
       return EncodeImageJPG(
           &io, io.use_sjpeg ? JpegEncoder::kSJpeg : JpegEncoder::kLibJpeg,
-          io.jpeg_quality,
-          io.use_sjpeg ? YCbCrChromaSubsampling::kAuto
-                       : YCbCrChromaSubsampling::k444,
-          pool, bytes,
-          io.Main().jpeg_xsize ? DecodeTarget::kQuantizedCoeffs
-                               : DecodeTarget::kPixels);
+          io.jpeg_quality, YCbCrChromaSubsampling(), pool, bytes,
+          io.Main().IsJPEG() ? DecodeTarget::kQuantizedCoeffs
+                             : DecodeTarget::kPixels);
 #else
       return JXL_FAILURE("JPEG XL was built without JPEG support");
 #endif

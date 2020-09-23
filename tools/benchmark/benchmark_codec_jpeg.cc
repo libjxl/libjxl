@@ -41,21 +41,23 @@ namespace {
 
 struct JPEGArgs {
   JpegEncoder encoder = JpegEncoder::kLibJpeg;
-  YCbCrChromaSubsampling chroma_subsampling = YCbCrChromaSubsampling::kAuto;
+  YCbCrChromaSubsampling chroma_subsampling;
 };
 
 JPEGArgs* const jpegargs = new JPEGArgs;
 
 bool ParseChromaSubsampling(const char* param,
                             YCbCrChromaSubsampling* subsampling) {
-  std::vector<std::pair<std::string, YCbCrChromaSubsampling>> options = {
-      {"444", YCbCrChromaSubsampling::k444},
-      {"420", YCbCrChromaSubsampling::k420},
-      {"422", YCbCrChromaSubsampling::k422},
-      {"440", YCbCrChromaSubsampling::k440}};
+  std::vector<std::pair<
+      std::string, std::pair<std::array<uint8_t, 3>, std::array<uint8_t, 3>>>>
+      options = {{"444", {{1, 1, 1}, {1, 1, 1}}},
+                 {"420", {{2, 1, 1}, {2, 1, 1}}},
+                 {"422", {{2, 1, 1}, {1, 1, 1}}},
+                 {"440", {{1, 1, 1}, {2, 1, 1}}}};
   for (const auto& option : options) {
     if (param == option.first) {
-      *subsampling = option.second;
+      JXL_CHECK(subsampling->Set(option.second.first.data(),
+                                 option.second.second.data()));
       return true;
     }
   }
@@ -97,14 +99,7 @@ class JPEGCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    if (encoder_ == JpegEncoder::kLibJpeg &&
-        chroma_subsampling_ == YCbCrChromaSubsampling::kAuto) {
-      if (jpegargs->chroma_subsampling != YCbCrChromaSubsampling::kAuto) {
-        chroma_subsampling_ = jpegargs->chroma_subsampling;
-      } else {
-        chroma_subsampling_ = YCbCrChromaSubsampling::k444;
-      }
-    }
+    chroma_subsampling_ = jpegargs->chroma_subsampling;
     const double start = Now();
     JXL_RETURN_IF_ERROR(EncodeImageJPG(io, encoder_,
                                        static_cast<int>(std::round(q_target_)),

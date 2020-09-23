@@ -13,18 +13,23 @@
 // limitations under the License.
 
 #include "jxl/convolve.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/convolve.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
-#include "jxl/image_ops.h"
+#include <hwy/highway.h>
 
 #include "jxl/common.h"  // RoundUpTo
 #include "jxl/convolve-inl.h"
-
-#include <hwy/before_namespace-inl.h>
+#include "jxl/image_ops.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Vec;
 
 // Weighted sum of 1x5 pixels around ix, iy with [wx2 wx1 wx0 wx1 wx2].
 template <class WrapY>
@@ -529,7 +534,7 @@ class Separable5 : public StrategyBase {
     const V mul2 = MulAdd(sum2, wh2, mul1);
     return mul2;
   }
-};  // namespace strategy
+};
 
 // 7x7 convolution by separable kernel with a single scan through the input.
 // Extended version of Separable5, see documentation there.
@@ -762,7 +767,7 @@ class Separable7 : public StrategyBase {
     const V mul3 = MulAdd(sum3, wh3, mul2);
     return mul3;
   }
-};  // namespace jxl
+};
 
 }  // namespace strategy
 
@@ -954,7 +959,7 @@ void Separable7_3(const Image3F& in, const Rect& rect,
   return SlowSeparable7(in, rect, weights, pool, out);
 }
 
-// Semi-vectorized (interior pixels only); called directly like slow::, unlike
+// Semi-vectorized (interior pixels Fonly); called directly like slow::, unlike
 // the fully vectorized strategies below.
 void Symmetric5(const ImageF& in, const Rect& rect,
                 const WeightsSymmetric5& weights, ThreadPool* pool,
@@ -1002,56 +1007,57 @@ void Symmetric5_3(const Image3F& in, const Rect& rect,
       "Symmetric5x5Convolution3");
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(Symmetric3)
+HWY_EXPORT(Symmetric3);
 void Symmetric3(const ImageF& in, const Rect& rect,
                 const WeightsSymmetric3& weights, ThreadPool* pool,
                 ImageF* out) {
   return HWY_DYNAMIC_DISPATCH(Symmetric3)(in, rect, weights, pool, out);
 }
 
-HWY_EXPORT(Symmetric5)
+HWY_EXPORT(Symmetric5);
 void Symmetric5(const ImageF& in, const Rect& rect,
                 const WeightsSymmetric5& weights, ThreadPool* pool,
                 ImageF* JXL_RESTRICT out) {
   return HWY_DYNAMIC_DISPATCH(Symmetric5)(in, rect, weights, pool, out);
 }
 
-HWY_EXPORT(Symmetric5_3)
+HWY_EXPORT(Symmetric5_3);
 void Symmetric5_3(const Image3F& in, const Rect& rect,
                   const WeightsSymmetric5& weights, ThreadPool* pool,
                   Image3F* JXL_RESTRICT out) {
   return HWY_DYNAMIC_DISPATCH(Symmetric5_3)(in, rect, weights, pool, out);
 }
 
-HWY_EXPORT(Separable5)
+HWY_EXPORT(Separable5);
 void Separable5(const ImageF& in, const Rect& rect,
                 const WeightsSeparable5& weights, ThreadPool* pool,
                 ImageF* out) {
   return HWY_DYNAMIC_DISPATCH(Separable5)(in, rect, weights, pool, out);
 }
 
-HWY_EXPORT(Separable5_3)
+HWY_EXPORT(Separable5_3);
 void Separable5_3(const Image3F& in, const Rect& rect,
                   const WeightsSeparable5& weights, ThreadPool* pool,
                   Image3F* out) {
   return HWY_DYNAMIC_DISPATCH(Separable5_3)(in, rect, weights, pool, out);
 }
 
-HWY_EXPORT(Separable7)
+HWY_EXPORT(Separable7);
 void Separable7(const ImageF& in, const Rect& rect,
                 const WeightsSeparable7& weights, ThreadPool* pool,
                 ImageF* out) {
   return HWY_DYNAMIC_DISPATCH(Separable7)(in, rect, weights, pool, out);
 }
 
-HWY_EXPORT(Separable7_3)
+HWY_EXPORT(Separable7_3);
 void Separable7_3(const Image3F& in, const Rect& rect,
                   const WeightsSeparable7& weights, ThreadPool* pool,
                   Image3F* out) {

@@ -178,6 +178,7 @@ class JxlCodec : public ImageCodec {
     } else if (param[0] == 'c') {
       cparams_.color_transform =
           (jxl::ColorTransform)strtol(param.substr(1).c_str(), nullptr, 10);
+      has_ctransform_ = true;
     } else if (param[0] == 'I') {
       cparams_.options.nb_repeats = strtof(param.substr(1).c_str(), nullptr);
     } else if (param[0] == 'E') {
@@ -285,6 +286,10 @@ class JxlCodec : public ImageCodec {
 
     cparams_.quality_pair.first = q_target_;
     cparams_.quality_pair.second = q_target_;
+    if (q_target_ != 100 && cparams_.color_transform == ColorTransform::kNone &&
+        cparams_.modular_group_mode && !has_ctransform_) {
+      cparams_.color_transform = ColorTransform::kXYB;
+    }
 
     const double start = Now();
     PassesEncoderState passes_encoder_state;
@@ -328,6 +333,7 @@ class JxlCodec : public ImageCodec {
   AuxOut cinfo_;
   AuxOut dinfo_;
   CompressParams cparams_;
+  bool has_ctransform_ = false;
   DecompressParams dparams_;
   BrunsliEncoderOptions brunsli_params_;
   bool brunsli_mode_{false};

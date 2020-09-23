@@ -13,18 +13,21 @@
 // limitations under the License.
 
 #include "jxl/enc_transforms.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/enc_transforms.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
 
 #include "jxl/dct_scales.h"
-
 #include "jxl/enc_transforms-inl.h"
 
 namespace jxl {
 
 #if HWY_ONCE
-HWY_EXPORT(TransformFromPixels)
+HWY_EXPORT(TransformFromPixels);
 void TransformFromPixels(const AcStrategy::Type strategy,
                          const float* JXL_RESTRICT pixels, size_t pixels_stride,
                          float* JXL_RESTRICT coefficients) {
@@ -32,14 +35,14 @@ void TransformFromPixels(const AcStrategy::Type strategy,
                                                    pixels_stride, coefficients);
 }
 
-HWY_EXPORT(LowestFrequenciesFromDC)
+HWY_EXPORT(LowestFrequenciesFromDC);
 void LowestFrequenciesFromDC(const jxl::AcStrategy::Type strategy,
                              const float* dc, size_t dc_stride, float* llf) {
   return HWY_DYNAMIC_DISPATCH(LowestFrequenciesFromDC)(strategy, dc, dc_stride,
                                                        llf);
 }
 
-HWY_EXPORT(AFVDCT4x4)
+HWY_EXPORT(AFVDCT4x4);
 void AFVDCT4x4(const float* JXL_RESTRICT pixels, float* JXL_RESTRICT coeffs) {
   return HWY_DYNAMIC_DISPATCH(AFVDCT4x4)(pixels, coeffs);
 }

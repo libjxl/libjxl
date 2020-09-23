@@ -26,7 +26,7 @@
 #include <utility>  // std::forward
 
 #include "gtest/gtest.h"
-#include "hwy/targets.h"
+#include "hwy/highway.h"
 
 namespace hwy {
 
@@ -136,14 +136,16 @@ std::string TestParamTargetNameAndT(
 //    ...
 //   };
 //   HWY_TARGET_INSTANTIATE_TEST_SUITE_P(MyTestSuite);
-//   HWY_EXPORT_AND_TEST_P(MyTestSuite, MyTest)
-#define HWY_EXPORT_AND_TEST_P(suite, func_name) \
-  HWY_EXPORT(func_name)                         \
-  TEST_P(suite, func_name) { HWY_DYNAMIC_DISPATCH(func_name)(); }
+//   HWY_EXPORT_AND_TEST_P(MyTestSuite, MyTest);
+#define HWY_EXPORT_AND_TEST_P(suite, func_name)                   \
+  HWY_EXPORT(func_name);                                          \
+  TEST_P(suite, func_name) { HWY_DYNAMIC_DISPATCH(func_name)(); } \
+  static_assert(true, "For requiring trailing semicolon")
 
-#define HWY_EXPORT_AND_TEST_P_T(suite, func_name) \
-  HWY_EXPORT(func_name)                           \
-  TEST_P(suite, func_name) { HWY_DYNAMIC_DISPATCH(func_name)(GetParam()); }
+#define HWY_EXPORT_AND_TEST_P_T(suite, func_name)                           \
+  HWY_EXPORT(func_name);                                                    \
+  TEST_P(suite, func_name) { HWY_DYNAMIC_DISPATCH(func_name)(GetParam()); } \
+  static_assert(true, "For requiring trailing semicolon")
 
 // Calls test for each enabled and available target.
 template <class Func, typename... Args>
@@ -260,9 +262,9 @@ inline bool StringsEqual(const char* s1, const char* s2) {
 #define HWY_TESTS_TEST_UTIL_INL_H_
 #endif
 
-#include "hwy/before_namespace-inl.h"
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 HWY_NORETURN void NotifyFailure(const char* filename, const int line,
                                 const char* type_name, const size_t lane,
@@ -345,7 +347,7 @@ template <typename T, size_t N, size_t kMinLanes, class Test>
 struct ForeachSizeR {
   static void Do() {
     static_assert(N != 0, "End of recursion");
-    Test()(T(), hwy::Simd<T, N * kMinLanes>());
+    Test()(T(), Simd<T, N * kMinLanes>());
     ForeachSizeR<T, N / 2, kMinLanes, Test>::Do();
   }
 };
@@ -377,6 +379,16 @@ struct ForGE128Vectors {
   template <typename T>
   void operator()(T /*unused*/) const {
     ForeachSizeR<T, HWY_LANES(T) / (16 / sizeof(T)), (16 / sizeof(T)),
+                 Test>::Do();
+  }
+};
+
+// Calls Test for all powers of two in [128 bits, max bits/2].
+template <class Test>
+struct ForExtendableVectors {
+  template <typename T>
+  void operator()(T /*unused*/) const {
+    ForeachSizeR<T, HWY_LANES(T) / 2 / (16 / sizeof(T)), (16 / sizeof(T)),
                  Test>::Do();
   }
 };
@@ -432,8 +444,9 @@ void ForAllTypes(const Func& func) {
   ForFloatTypes(func);
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include "hwy/after_namespace-inl.h"
+HWY_AFTER_NAMESPACE();
 
 #endif  // per-target include guard

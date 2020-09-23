@@ -21,16 +21,16 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/base/fast_log_test.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include "jxl/fast_log-inl.h"
 
 // Test utils
+#include <hwy/highway.h>
 #include <hwy/tests/test_util-inl.h>
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 HWY_NOINLINE void TestFastLog12() {
   constexpr size_t kNumTrials = 1 << 23;
@@ -40,7 +40,7 @@ HWY_NOINLINE void TestFastLog12() {
   HWY_FULL(float) d;
   for (size_t i = 0; i < kNumTrials; i++) {
     const float f = dist(rng);
-    const F32xN actual_v = FastLog2f_18bits(d, Set(d, f));
+    const auto actual_v = FastLog2f_18bits(d, Set(d, f));
     const float actual = GetLane(actual_v);
     const float abs_err = std::abs(std::log2(f) - actual);
     EXPECT_LT(abs_err, 2.9E-6) << "f = " << f;
@@ -49,9 +49,10 @@ HWY_NOINLINE void TestFastLog12() {
   printf("18: max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
@@ -73,7 +74,7 @@ TEST(FastLogTest, TestFastLog) {
 class FastLogTargetTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(FastLogTargetTest);
 
-HWY_EXPORT_AND_TEST_P(FastLogTargetTest, TestFastLog12)
+HWY_EXPORT_AND_TEST_P(FastLogTargetTest, TestFastLog12);
 
 }  // namespace jxl
 #endif  // HWY_ONCE

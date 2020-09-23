@@ -32,6 +32,11 @@ if(POLICY CMP0065)
   cmake_policy(SET CMP0065 NEW)
 endif()
 
+# Set PIE flags for POSITION_INDEPENDENT_CODE targets, added in 3.14.
+if(POLICY CMP0083)
+  cmake_policy(SET CMP0083 NEW)
+endif()
+
 project(JPEGXL LANGUAGES C CXX)
 
 include(CheckCXXSourceCompiles)
@@ -48,11 +53,16 @@ check_cxx_source_compiles(
 message(STATUS "CMAKE_SYSTEM_PROCESSOR is ${CMAKE_SYSTEM_PROCESSOR}")
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-fsanitize=fuzzer-no-link" CXX_FUZZERS_SUPPORTED)
-set(CXX_PIC_FLAGS "\
-  -Xclang -mrelocation-model -Xclang pic \
-  -Xclang -pic-level -Xclang 2")
-check_cxx_compiler_flag("${CXX_PIC_FLAGS}" CXX_PIC_FLAGS_SUPPORTED)
 check_cxx_compiler_flag("-Xclang -mconstructor-aliases" CXX_CONSTRUCTOR_ALIASES_SUPPORTED)
+
+# Enabled PIE binaries by default if supported.
+include(CheckPIESupported OPTIONAL RESULT_VARIABLE CHECK_PIE_SUPPORTED)
+if(CHECK_PIE_SUPPORTED)
+  check_pie_supported(LANGUAGES CXX)
+  if(CMAKE_CXX_LINK_PIE_SUPPORTED)
+    set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
+  endif()
+endif()
 
 ### Project build options:
 if(${CXX_FUZZERS_SUPPORTED})
@@ -76,8 +86,8 @@ set(JPEGXL_ENABLE_BENCHMARK true CACHE BOOL
     "Build JPEGXL benchmark tools.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
     "Build JPEGXL with support for encoding with sjpeg.")
-set(JPEGXL_ENABLE_SKCMS false CACHE BOOL
-    "Where possible, use skcms instead of lcms2.")
+set(JPEGXL_ENABLE_SKCMS true CACHE BOOL
+    "Build with skcms instead of lcms2.")
 set(JPEGXL_ENABLE_VIEWERS true CACHE BOOL
     "Build JPEGXL viewer tools for evaluation.")
 set(JPEGXL_ENABLE_TCMALLOC ${ENABLE_TCMALLOC_DEFAULT} CACHE BOOL
@@ -120,11 +130,7 @@ add_definitions(
 # Machine flags.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
   -Xclang -mrelax-all \
-  -Xclang -mpie-copy-relocations \
   -funwind-tables")
-if ("${CXX_PIC_FLAGS_SUPPORTED}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_PIC_FLAGS}")
-endif()
 if ("${CXX_CONSTRUCTOR_ALIASES_SUPPORTED}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -mconstructor-aliases")
 endif()

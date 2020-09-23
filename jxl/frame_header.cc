@@ -19,7 +19,11 @@
 
 namespace jxl {
 
+constexpr uint8_t YCbCrChromaSubsampling::kHShift[];
+constexpr uint8_t YCbCrChromaSubsampling::kVShift[];
+
 AnimationFrame::AnimationFrame() { Bundle::Init(this); }
+YCbCrChromaSubsampling::YCbCrChromaSubsampling() { Bundle::Init(this); }
 Passes::Passes() { Bundle::Init(this); }
 FrameHeader::FrameHeader() { Bundle::Init(this); }
 

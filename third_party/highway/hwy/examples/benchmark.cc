@@ -15,6 +15,7 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/examples/benchmark.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
 #include <stddef.h>
 #include <stdio.h>
@@ -24,13 +25,17 @@
 #include <numeric>  // iota
 
 #include "hwy/aligned_allocator.h"
+#include "hwy/highway.h"
 #include "hwy/nanobenchmark.h"
-
-#include "hwy/targets.h"  // SupportedAndGeneratedTargets
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Broadcast;
+#if HWY_TARGET != HWY_SCALAR
+using hwy::HWY_NAMESPACE::CombineShiftRightBytes;
+#endif
 
 class TwoArray {
  public:
@@ -237,13 +242,14 @@ void RunBenchmarks(int unpredictable1) {
   RunBenchmark<BenchmarkDelta>("delta", unpredictable1);
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
-HWY_EXPORT(RunBenchmarks)
+HWY_EXPORT(RunBenchmarks);
 }  // namespace hwy
 
 int main(int argc, char** /*argv*/) {

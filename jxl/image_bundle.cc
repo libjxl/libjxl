@@ -141,11 +141,195 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 }  // namespace
 
 BitDepth::BitDepth() { Bundle::Init(this); }
+Status BitDepth::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  visitor->Bool(false, &floating_point_sample);
+  // The same fields (bits_per_sample and exponent_bits_per_sample) are read
+  // in a different way depending on floating_point_sample's value. It's still
+  // default-initialized correctly so using visitor->Conditional is not
+  // required.
+  if (!floating_point_sample) {
+    visitor->U32(Val(8), Val(10), Val(12), BitsOffset(5, 1), 8,
+                 &bits_per_sample);
+    exponent_bits_per_sample = 0;
+  } else {
+    visitor->U32(Val(32), Val(16), Val(24), BitsOffset(6, 1), 32,
+                 &bits_per_sample);
+    // The encoded value is exponent_bits_per_sample - 1, encoded in 3 bits
+    // so the value can be in range [1, 8].
+    const uint32_t offset = 1;
+    exponent_bits_per_sample -= offset;
+    visitor->Bits(3, 8 - offset, &exponent_bits_per_sample);
+    exponent_bits_per_sample += offset;
+  }
+
+  // Error-checking for floating point ranges.
+  if (floating_point_sample) {
+    if (exponent_bits_per_sample < 2 || exponent_bits_per_sample > 8) {
+      return JXL_FAILURE("Invalid exponent_bits_per_sample");
+    }
+    int mantissa_bits =
+        static_cast<int>(bits_per_sample) - exponent_bits_per_sample - 1;
+    if (mantissa_bits < 2 || mantissa_bits > 23) {
+      return JXL_FAILURE("Invalid bits_per_sample");
+    }
+  }
+  return true;
+}
+
 ExtraChannelInfo::ExtraChannelInfo() { Bundle::Init(this); }
+Status ExtraChannelInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+
+  // General
+  JXL_RETURN_IF_ERROR(visitor->Enum(ExtraChannel::kAlpha, &type));
+
+  JXL_RETURN_IF_ERROR(VisitNewBase(visitor, &new_base));
+
+  JXL_RETURN_IF_ERROR(VisitBlendMode(visitor, &blend_mode));
+  if (blend_mode == BlendMode::kBlend && type == ExtraChannel::kAlpha) {
+    return JXL_FAILURE("Cannot blend alpha");
+  }
+
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
+
+  visitor->U32(Val(0), Val(3), Val(4), BitsOffset(3, 1), 0, &dim_shift);
+  if ((1U << dim_shift) > kGroupDim) {
+    return JXL_FAILURE("dim_shift %u too large", dim_shift);
+  }
+
+  VisitNameString(visitor, &name);
+
+  // Conditional
+  if (visitor->Conditional(type == ExtraChannel::kAlpha)) {
+    visitor->Bool(false, &alpha_associated);
+  }
+  if (visitor->Conditional(type == ExtraChannel::kSpotColor)) {
+    for (float& c : spot_color) {
+      visitor->F16(0, &c);
+    }
+  }
+  if (visitor->Conditional(type == ExtraChannel::kCFA)) {
+    visitor->U32(Val(1), Bits(2), BitsOffset(4, 3), BitsOffset(8, 19), 1,
+                 &cfa_channel);
+  }
+  return true;
+}
+
 ImageMetadata::ImageMetadata() { Bundle::Init(this); }
+Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
+  visitor->Bool(true, &modular_16_bit_buffer_sufficient);
+
+  visitor->Bool(true, &xyb_encoded);
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&m2));
+
+  return true;
+}
+
 ImageMetadata2::ImageMetadata2() { Bundle::Init(this); }
+Status ImageMetadata2::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+
+  visitor->Bool(false, &have_preview);
+  visitor->Bool(false, &have_animation);
+
+  visitor->Bool(false, &have_intrinsic_size);
+  if (visitor->Conditional(have_intrinsic_size)) {
+    JXL_RETURN_IF_ERROR(visitor->VisitNested(&intrinsic_size));
+  }
+
+  visitor->Bits(3, 0, &orientation_minus_1);
+  // (No need for bounds checking because we read exactly 3 bits)
+
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
+
+  num_extra_channels = extra_channel_info.size();
+  visitor->U32(Val(0), Bits(4), BitsOffset(8, 16), BitsOffset(12, 1), 0,
+               &num_extra_channels);
+
+  if (visitor->Conditional(num_extra_channels != 0)) {
+    if (visitor->IsReading()) {
+      extra_channel_info.resize(num_extra_channels);
+    }
+    for (ExtraChannelInfo& eci : extra_channel_info) {
+      JXL_RETURN_IF_ERROR(visitor->VisitNested(&eci));
+    }
+  }
+
+  // Treat as if only the fields up to extra channels exist.
+  if (visitor->IsReading() && nonserialized_only_parse_basic_info) {
+    return true;
+  }
+
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
+
+  visitor->BeginExtensions(&extensions);
+  // Extensions: in chronological order of being added to the format.
+  return visitor->EndExtensions();
+}
+
 OpsinInverseMatrix::OpsinInverseMatrix() { Bundle::Init(this); }
+Status OpsinInverseMatrix::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+  for (int i = 0; i < 9; ++i) {
+    visitor->F16(DefaultInverseOpsinAbsorbanceMatrix()[i], &inverse_matrix[i]);
+  }
+  for (int i = 0; i < 3; ++i) {
+    visitor->F16(kNegOpsinAbsorbanceBiasRGB[i], &opsin_biases[i]);
+  }
+  for (int i = 0; i < 4; ++i) {
+    visitor->F16(kDefaultQuantBias[i], &quant_biases[i]);
+  }
+  return true;
+}
+
 ToneMapping::ToneMapping() { Bundle::Init(this); }
+Status ToneMapping::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+
+  visitor->F16(kDefaultIntensityTarget, &intensity_target);
+  if (intensity_target <= 0.f) {
+    return JXL_FAILURE("invalid intensity target");
+  }
+
+  visitor->F16(0.0f, &min_nits);
+  if (min_nits < 0.f || min_nits > intensity_target) {
+    return JXL_FAILURE("invalid min %f vs max %f", min_nits, intensity_target);
+  }
+
+  visitor->Bool(false, &relative_to_max_display);
+
+  visitor->F16(0.0f, &linear_below);
+  if (linear_below < 0 || (relative_to_max_display && linear_below > 1.0f)) {
+    return JXL_FAILURE("invalid linear_below %f (%s)", linear_below,
+                       relative_to_max_display ? "relative" : "absolute");
+  }
+
+  return true;
+}
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
                          ImageMetadata* JXL_RESTRICT metadata) {

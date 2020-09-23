@@ -26,6 +26,7 @@
 #include "jxl/codec_in_out.h"
 #include "jxl/dec_params.h"
 #include "tools/args.h"
+#include "tools/box/box.h"
 #include "tools/cmdline.h"
 #include "tools/speed_stats.h"
 
@@ -85,7 +86,7 @@ jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
                                   jxl::AuxOut* aux_out,
                                   SpeedStats* JXL_RESTRICT stats);
 
-jxl::Status DecompressJxlToJPEG(const jxl::Span<const uint8_t> compressed,
+jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 const DecompressArgs& args,
                                 jxl::ThreadPool* pool, jxl::PaddedBytes* output,
                                 jxl::AuxOut* aux_out,

@@ -584,7 +584,12 @@ void Benchmark(size_t xsize, size_t ysize, double sigma) {
   printf("%zu,%zu,%.1f,%.1f,%.1f\n", xsize, ysize, mps_fir, mps_simd7, mps_rg);
 }
 
-TEST(GaussBlurTest, Benchmark) {
+TEST(GaussBlurTest, BenchmarkTest) {
+  Benchmark1D();
+  Benchmark(77, 177, 7);
+}
+
+TEST(GaussBlurTest, DISABLED_SlowBenchmark) {
   Benchmark1D();
 
   // Euler's gamma as a nothing-up-my-sleeve number, so sizes are unlikely to

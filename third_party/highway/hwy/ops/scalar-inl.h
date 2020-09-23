@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Single-element vectors and operations. External include guard.
+// Single-element vectors and operations.
+// External include guard in highway.h - see comment there.
 
-// This header is included by begin_target-inl.h, possibly inside a namespace,
-// so do not include system headers (already done by highway.h). HWY_ALIGN is
-// already defined unless an IDE is only parsing this file, in which case we
-// include headers to avoid warnings.
-#ifndef HWY_ALIGN
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>  // memcpy
 
-#include "hwy/highway.h"
-#endif  // HWY_ALIGN
+#include <cmath>
+
+#include "hwy/ops/shared-inl.h"
+
+HWY_BEFORE_NAMESPACE();
+namespace hwy {
+namespace HWY_NAMESPACE {
 
 // Single instruction, single data.
 template <typename T>
-using Sisd = hwy::Simd<T, 1>;
+using Sisd = Simd<T, 1>;
 
 // (Wrapper class required for overloading comparison operators.)
 template <typename T>
@@ -83,7 +85,7 @@ template <typename T, typename FromT>
 HWY_INLINE Vec1<T> BitCast(Sisd<T> /* tag */, Vec1<FromT> v) {
   static_assert(sizeof(T) <= sizeof(FromT), "Promoting is undefined");
   T to;
-  hwy::CopyBytes<sizeof(FromT)>(&v.raw, &to);
+  CopyBytes<sizeof(FromT)>(&v.raw, &to);
   return Vec1<T>(to);
 }
 
@@ -140,11 +142,11 @@ struct BitwiseOp {
   Vec1<T> operator()(const Vec1<T> a, const Vec1<T> b, const Op& op) const {
     static_assert(sizeof(T) == sizeof(Bits), "Float/int size mismatch");
     Bits ia, ib;
-    hwy::CopyBytes<sizeof(Bits)>(&a, &ia);
-    hwy::CopyBytes<sizeof(Bits)>(&b, &ib);
+    CopyBytes<sizeof(Bits)>(&a, &ia);
+    CopyBytes<sizeof(Bits)>(&b, &ib);
     ia = op(ia, ib);
     T ret;
-    hwy::CopyBytes<sizeof(Bits)>(&ia, &ret);
+    CopyBytes<sizeof(Bits)>(&ia, &ret);
     return Vec1<T>(ret);
   }
 };
@@ -466,10 +468,10 @@ HWY_INLINE Vec1<float> ApproximateReciprocalSqrt(const Vec1<float> v) {
   float f = v.raw;
   const float half = f * 0.5f;
   uint32_t bits;
-  hwy::CopyBytes<4>(&f, &bits);
+  CopyBytes<4>(&f, &bits);
   // Initial guess based on log2(f)
   bits = 0x5F3759DF - (bits >> 1);
-  hwy::CopyBytes<4>(&bits, &f);
+  CopyBytes<4>(&bits, &f);
   // One Newton-Raphson iteration
   return Vec1<float>(f * (1.5f - (half * f * f)));
 }
@@ -520,7 +522,7 @@ V Ceiling(const V v) {
   const bool positive = f > Float(0.0);
 
   Bits bits;
-  hwy::CopyBytes<sizeof(Bits)>(&v, &bits);
+  CopyBytes<sizeof(Bits)>(&v, &bits);
 
   const int exponent = ((bits >> kMantissaBits) & kExponentMask) - kBias;
   // Already an integer.
@@ -536,7 +538,7 @@ V Ceiling(const V v) {
   if (positive) bits += (kMantissaMask + 1) >> exponent;
   bits &= ~mantissa_mask;
 
-  hwy::CopyBytes<sizeof(Bits)>(&bits, &f);
+  CopyBytes<sizeof(Bits)>(&bits, &f);
   return V(f);
 }
 
@@ -551,7 +553,7 @@ V Floor(const V v) {
   const bool negative = f < Float(0.0);
 
   Bits bits;
-  hwy::CopyBytes<sizeof(Bits)>(&v, &bits);
+  CopyBytes<sizeof(Bits)>(&v, &bits);
 
   const int exponent = ((bits >> kMantissaBits) & kExponentMask) - kBias;
   // Already an integer.
@@ -567,7 +569,7 @@ V Floor(const V v) {
   if (negative) bits += (kMantissaMask + 1) >> exponent;
   bits &= ~mantissa_mask;
 
-  hwy::CopyBytes<sizeof(Bits)>(&bits, &f);
+  CopyBytes<sizeof(Bits)>(&bits, &f);
   return V(f);
 }
 
@@ -625,7 +627,7 @@ HWY_INLINE Mask1<T> operator>=(const Vec1<T> a, const Vec1<T> b) {
 template <typename T>
 HWY_INLINE Vec1<T> Load(Sisd<T> /* tag */, const T* HWY_RESTRICT aligned) {
   T t;
-  hwy::CopyBytes<sizeof(T)>(aligned, &t);
+  CopyBytes<sizeof(T)>(aligned, &t);
   return Vec1<T>(t);
 }
 
@@ -645,7 +647,7 @@ HWY_INLINE Vec1<T> LoadDup128(Sisd<T> d, const T* HWY_RESTRICT aligned) {
 template <typename T>
 HWY_INLINE void Store(const Vec1<T> v, Sisd<T> /* tag */,
                       T* HWY_RESTRICT aligned) {
-  hwy::CopyBytes<sizeof(T)>(&v.raw, aligned);
+  CopyBytes<sizeof(T)>(&v.raw, aligned);
 }
 
 template <typename T>
@@ -789,3 +791,8 @@ template <typename T>
 HWY_INLINE Vec1<T> SumOfLanes(const Vec1<T> v0) {
   return v0;
 }
+
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace hwy
+HWY_AFTER_NAMESPACE();

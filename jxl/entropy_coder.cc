@@ -21,6 +21,13 @@
 #include <utility>
 #include <vector>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/entropy_coder.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
@@ -39,14 +46,9 @@
 #include "jxl/image.h"
 #include "jxl/image_ops.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/entropy_coder.cc"
-#include <hwy/foreach_target.h>
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // Returns number of non-zero coefficients (but skip LLF).
 // We cannot rely on block[] being all-zero bits, so first truncate to integer.
@@ -178,19 +180,18 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
 
   size_t offset[3] = {};
   const size_t nzeros_stride = tmp_num_nzeroes->PixelsPerRow();
-  const size_t hshift = HShift(cs);
-  const size_t vshift = VShift(cs);
   for (size_t by = 0; by < ysize_blocks; ++by) {
-    size_t sbyc = by >> vshift;
+    size_t sby[3] = {by >> cs.VShift(0), by >> cs.VShift(1),
+                     by >> cs.VShift(2)};
     int32_t* JXL_RESTRICT row_nzeros[3] = {
-        tmp_num_nzeroes->PlaneRow(0, sbyc),
-        tmp_num_nzeroes->PlaneRow(1, by),
-        tmp_num_nzeroes->PlaneRow(2, sbyc),
+        tmp_num_nzeroes->PlaneRow(0, sby[0]),
+        tmp_num_nzeroes->PlaneRow(1, sby[1]),
+        tmp_num_nzeroes->PlaneRow(2, sby[2]),
     };
     const int32_t* JXL_RESTRICT row_nzeros_top[3] = {
-        sbyc == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(0, sbyc - 1),
-        by == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(1, by - 1),
-        sbyc == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(2, sbyc - 1),
+        sby[0] == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(0, sby[0] - 1),
+        sby[1] == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(1, sby[1] - 1),
+        sby[2] == 0 ? nullptr : tmp_num_nzeroes->ConstPlaneRow(2, sby[2] - 1),
     };
     const uint8_t* JXL_RESTRICT row_qdc =
         qdc.ConstRow(rect.y0() + by) + rect.x0();
@@ -199,37 +200,37 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
     for (size_t bx = 0; bx < xsize_blocks; ++bx) {
       AcStrategy acs = acs_row[bx];
       if (!acs.IsFirstBlock()) continue;
-      size_t sbxc = bx >> hshift;
+      size_t sbx[3] = {bx >> cs.HShift(0), bx >> cs.HShift(1),
+                       bx >> cs.HShift(2)};
       size_t cx = acs.covered_blocks_x();
       size_t cy = acs.covered_blocks_y();
       const size_t covered_blocks = cx * cy;  // = #LLF coefficients
       const size_t log2_covered_blocks =
-          NumZeroBitsBelowLSBNonzero(covered_blocks);
+          Num0BitsBelowLS1Bit_Nonzero(covered_blocks);
       const size_t size = covered_blocks * kDCTBlockSize;
 
       CoefficientLayout(&cy, &cx);  // swap cx/cy to canonical order
 
       for (int c : {1, 0, 2}) {
-        if (c != 1 && sbxc << hshift != bx) continue;
-        if (c != 1 && sbyc << vshift != by) continue;
-        size_t sbx = c == 1 ? bx : sbxc;
+        if (sbx[c] << cs.HShift(c) != bx) continue;
+        if (sby[c] << cs.VShift(c) != by) continue;
         const ac_qcoeff_t* JXL_RESTRICT block = ac_rows[c] + offset[c];
 
         int32_t nzeros =
             (covered_blocks == 1)
-                ? NumNonZero8x8ExceptDC(block, row_nzeros[c] + sbx)
+                ? NumNonZero8x8ExceptDC(block, row_nzeros[c] + sbx[c])
                 : NumNonZeroExceptLLF(cx, cy, acs, covered_blocks,
                                       log2_covered_blocks, block, nzeros_stride,
-                                      row_nzeros[c] + sbx);
+                                      row_nzeros[c] + sbx[c]);
 
         int ord = kStrategyOrder[acs.RawStrategy()];
         const coeff_order_t* JXL_RESTRICT order =
             &orders[CoeffOrderOffset(ord, c)];
 
         int32_t predicted_nzeros =
-            PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], sbx, 32);
+            PredictFromTopAndLeft(row_nzeros_top[c], row_nzeros[c], sbx[c], 32);
         size_t block_ctx =
-            block_ctx_map.Context(row_qdc[bx], row_qf[sbx], ord, c);
+            block_ctx_map.Context(row_qdc[bx], row_qf[sbx[c]], ord, c);
         const int32_t nzero_ctx =
             block_ctx_map.NonZeroContext(predicted_nzeros, block_ctx);
 
@@ -255,13 +256,14 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(TokenizeCoefficients)
+HWY_EXPORT(TokenizeCoefficients);
 void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
                           const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,

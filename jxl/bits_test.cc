@@ -38,25 +38,25 @@ TEST(BitsTest, TestPopCount) {
 
 TEST(BitsTest, TestNumZeroBits) {
   // Zero input is well-defined.
-  EXPECT_EQ(32, NumZeroBitsAboveMSB(0u));
-  EXPECT_EQ(64, NumZeroBitsAboveMSB(0ull));
-  EXPECT_EQ(32, NumZeroBitsBelowLSB(0u));
-  EXPECT_EQ(64, NumZeroBitsBelowLSB(0ull));
+  EXPECT_EQ(32, Num0BitsAboveMS1Bit(0u));
+  EXPECT_EQ(64, Num0BitsAboveMS1Bit(0ull));
+  EXPECT_EQ(32, Num0BitsBelowLS1Bit(0u));
+  EXPECT_EQ(64, Num0BitsBelowLS1Bit(0ull));
 
-  EXPECT_EQ(31, NumZeroBitsAboveMSB(1u));
-  EXPECT_EQ(30, NumZeroBitsAboveMSB(2u));
-  EXPECT_EQ(63, NumZeroBitsAboveMSB(1ull));
-  EXPECT_EQ(62, NumZeroBitsAboveMSB(2ull));
+  EXPECT_EQ(31, Num0BitsAboveMS1Bit(1u));
+  EXPECT_EQ(30, Num0BitsAboveMS1Bit(2u));
+  EXPECT_EQ(63, Num0BitsAboveMS1Bit(1ull));
+  EXPECT_EQ(62, Num0BitsAboveMS1Bit(2ull));
 
-  EXPECT_EQ(0, NumZeroBitsBelowLSB(1u));
-  EXPECT_EQ(0, NumZeroBitsBelowLSB(1ull));
-  EXPECT_EQ(1, NumZeroBitsBelowLSB(2u));
-  EXPECT_EQ(1, NumZeroBitsBelowLSB(2ull));
+  EXPECT_EQ(0, Num0BitsBelowLS1Bit(1u));
+  EXPECT_EQ(0, Num0BitsBelowLS1Bit(1ull));
+  EXPECT_EQ(1, Num0BitsBelowLS1Bit(2u));
+  EXPECT_EQ(1, Num0BitsBelowLS1Bit(2ull));
 
-  EXPECT_EQ(0, NumZeroBitsAboveMSB(0x80000000u));
-  EXPECT_EQ(0, NumZeroBitsAboveMSB(0x8000000000000000ull));
-  EXPECT_EQ(31, NumZeroBitsBelowLSB(0x80000000u));
-  EXPECT_EQ(63, NumZeroBitsBelowLSB(0x8000000000000000ull));
+  EXPECT_EQ(0, Num0BitsAboveMS1Bit(0x80000000u));
+  EXPECT_EQ(0, Num0BitsAboveMS1Bit(0x8000000000000000ull));
+  EXPECT_EQ(31, Num0BitsBelowLS1Bit(0x80000000u));
+  EXPECT_EQ(63, Num0BitsBelowLS1Bit(0x8000000000000000ull));
 }
 
 TEST(BitsTest, TestFloorLog2) {

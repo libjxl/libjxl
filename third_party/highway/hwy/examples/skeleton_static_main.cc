@@ -15,14 +15,15 @@
 // Example of static dispatch.
 
 #include <stdio.h>
+
 #include "hwy/examples/skeleton_shared.h"  // kMultiplier
 
 // SIMD modules can optionally reside in inl headers, or below:
 #include "hwy/examples/skeleton-inl.h"  // ExampleMulAdd
-
-#include <hwy/before_namespace-inl.h>
+#include "hwy/highway.h"
+HWY_BEFORE_NAMESPACE();
 namespace skeleton {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
               float* HWY_RESTRICT out) {
@@ -32,9 +33,10 @@ void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
   ExampleMulAdd(in1, in2, out);
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace skeleton
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 namespace skeleton {
 

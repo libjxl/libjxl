@@ -21,7 +21,7 @@
 
 #include "jxl/base/data_parallel.h"
 #include "jxl/fields.h"
-#include "jxl/modular/image/image.h"
+#include "jxl/modular/encoding/context_predict.h"
 #include "jxl/modular/options.h"
 
 namespace jxl {
@@ -36,24 +36,26 @@ enum class TransformId : uint32_t {
   // Squeezing (Haar-style)
   kSqueeze = 2,
 
+  // Invalid for now.
+  kInvalid = 3,
+
   // this is lossy preprocessing, doesn't have an inverse transform and doesn't
   // exist from the decoder point of view
-  kNearLossless = 3,
+  kNearLossless = 4,
 
   // The total number of transforms. Update this if adding more transformations.
-  kNumTransforms = 4,
+  kNumTransforms = 5,
 };
 
-struct SqueezeParams {
-  static const char *Name() { return "SqueezeParams"; }
+struct SqueezeParams : public Fields {
+  const char *Name() const override { return "SqueezeParams"; }
   bool horizontal;
   bool in_place;
   bool subsample_mode;
   uint32_t begin_c;
   uint32_t num_c;
   SqueezeParams();
-  template <class Visitor>
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     visitor->Bool(false, &horizontal);
     visitor->Bool(false, &in_place);
     visitor->Bool(false, &subsample_mode);
@@ -64,7 +66,7 @@ struct SqueezeParams {
   }
 };
 
-class Transform {
+class Transform : public Fields {
  public:
   TransformId id;
   // for Palette and RCT.
@@ -75,11 +77,15 @@ class Transform {
   uint32_t num_c;
   // Only for Palette.
   uint32_t nb_colors;
+  uint32_t nb_deltas;
   // for Squeeze. Default squeeze if empty.
   std::vector<SqueezeParams> squeezes;
   // for NearLossless, not serialized.
   int max_delta_error;
+  // Serialized for Palette.
   Predictor predictor;
+  // Serialized if predictor == Weighted and Palette.
+  weighted::Header wp_header;
   // for Palette, not serialized.
   bool ordered_palette = true;
 
@@ -87,12 +93,15 @@ class Transform {
   // default constructor for bundles.
   Transform() : Transform(TransformId::kNumTransforms) {}
 
-  template <class Visitor>
-  Status VisitFields(Visitor *JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     visitor->U32(
         Val((uint32_t)TransformId::kRCT), Val((uint32_t)TransformId::kPalette),
-        Val((uint32_t)TransformId::kSqueeze), Val((uint32_t)TransformId::kRCT),
-        (uint32_t)TransformId::kRCT, reinterpret_cast<uint32_t *>(&id));
+        Val((uint32_t)TransformId::kSqueeze),
+        Val((uint32_t)TransformId::kInvalid), (uint32_t)TransformId::kRCT,
+        reinterpret_cast<uint32_t *>(&id));
+    if (id == TransformId::kInvalid) {
+      return JXL_FAILURE("Invalid transform ID");
+    }
     if (visitor->Conditional(id == TransformId::kRCT ||
                              id == TransformId::kPalette)) {
       visitor->U32(Bits(3), BitsOffset(6, 8), BitsOffset(10, 72),
@@ -107,6 +116,16 @@ class Transform {
       visitor->U32(Val(1), Val(3), Val(4), BitsOffset(13, 1), 3, &num_c);
       visitor->U32(BitsOffset(8, 1), BitsOffset(10, 257), BitsOffset(12, 1281),
                    BitsOffset(16, 5377), 256, &nb_colors);
+      visitor->U32(Val(0), BitsOffset(8, 1), BitsOffset(10, 257),
+                   BitsOffset(16, 1281), 0, &nb_deltas);
+      visitor->Bits(4, (uint32_t)Predictor::Zero,
+                    reinterpret_cast<uint32_t *>(&predictor));
+      if (predictor >= Predictor::Best) {
+        return JXL_FAILURE("Invalid predictor");
+      }
+      if (visitor->Conditional(predictor == Predictor::Weighted)) {
+        JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
+      }
     }
 
     if (visitor->Conditional(id == TransformId::kSqueeze)) {
@@ -121,7 +140,7 @@ class Transform {
     return true;
   }
 
-  static const char *Name() { return "Transform"; }
+  const char *Name() const override { return "Transform"; }
 
   // Returns the name of the transform.
   const char *TransformName() const;

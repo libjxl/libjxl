@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.1)
-
 # ICC detection library used by the comparison and viewer tools.
 if(JPEGXL_ENABLE_VIEWERS)
 if(WIN32)
@@ -119,13 +117,26 @@ target_link_libraries(cjpegxl cjpegxltool)
 
 target_link_libraries(fuzzer_corpus cjpegxltool)
 
+
 # Main decompressor.
+add_library(djpegxltool STATIC
+  djpegxl.cc
+  speed_stats.cc
+)
+target_link_libraries(djpegxltool
+    box
+    jpegxl-static
+    jpegxl_extras-static
+    jpegxl_threads
+)
+target_compile_definitions(djpegxltool
+  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
+
 add_executable(djpegxl
     codec_config.cc
-    djpegxl.cc
     djpegxl_main.cc
-    speed_stats.cc
 )
+target_link_libraries(djpegxl djpegxltool)
 target_compile_definitions(djpegxl
   PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 

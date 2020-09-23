@@ -54,7 +54,7 @@ Status DecodePreview(const DecompressParams& dparams,
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   FrameDimensions frame_dim;
   frame_dim.Set(io->preview.xsize(), io->preview.ysize(),
-                /*group_size_shift=*/1);
+                /*group_size_shift=*/1, /*max_hshift=*/0, /*max_vshift=*/0);
 
   const AnimationHeader* animation = nullptr;
   if (dparams.preview == Override::kOff) {
@@ -108,9 +108,9 @@ Status DecodeFile(const DecompressParams& dparams,
   }
 
   if (IsBrunsliFile(file) == jxl::BrunsliFileSignature::kBrunsli) {
-    brunsli::JPEGData jpg;
+    std::unique_ptr<brunsli::JPEGData> jpg = make_unique<brunsli::JPEGData>();
     brunsli::BrunsliStatus status =
-        brunsli::BrunsliDecodeJpeg(file.data(), file.size(), &jpg);
+        brunsli::BrunsliDecodeJpeg(file.data(), file.size(), jpg.get());
     if (status != brunsli::BRUNSLI_OK) {
       return JXL_FAILURE("Failed to parse Brunsli input.");
     }
@@ -118,29 +118,28 @@ Status DecodeFile(const DecompressParams& dparams,
     if (dparams.keep_dct) {
       std::vector<int32_t> jpeg_quant_table;
       ImageBundle& decoded = io->Main();
-      const size_t xsize_blocks = DivCeil(jpg.width, kBlockDim);
-      const size_t ysize_blocks = DivCeil(jpg.height, kBlockDim);
-      Image3F coeffs(xsize_blocks * kBlockDim, ysize_blocks * kBlockDim);
-      JXL_RETURN_IF_ERROR(
-          JpegDataToCoefficients(jpg, &coeffs, &jpeg_quant_table, pool));
-      decoded.jpeg_xsize = jpg.width;
-      decoded.jpeg_ysize = jpg.height;
       decoded.color_transform = ColorTransform::kYCbCr;
-      decoded.chroma_subsampling = GetSubsamplingFromJpegData(jpg);
-      decoded.jpeg_quant_table = jpeg_quant_table;
-      ColorEncoding color_encoding;
-      SetColorEncodingFromJpegData(jpg, &color_encoding);
-      decoded.SetFromImage(std::move(coeffs), color_encoding);
+      decoded.chroma_subsampling = GetSubsamplingFromJpegData(*jpg);
+      SetColorEncodingFromJpegData(*jpg, &io->metadata.color_encoding);
+      decoded.jpeg_data = std::move(jpg);
     } else {
       BrunsliDecoderMeta meta;
       JXL_RETURN_IF_ERROR(
-          BrunsliToPixels(jpg, io, dparams.brunsli, &meta, pool));
+          BrunsliToPixels(*jpg, io, dparams.brunsli, &meta, pool));
     }
 
     io->CheckMetadata();
     return true;
   }
   // Note: JPEG1 is handled by djpegxl to avoid depending on codec_jpg here.
+
+  std::unique_ptr<brunsli::JPEGData> jpeg_data = nullptr;
+  if (dparams.keep_dct) {
+    if (io->Main().jpeg_data == nullptr) {
+      return JXL_FAILURE("Caller must set jpeg_data");
+    }
+    jpeg_data = std::move(io->Main().jpeg_data);
+  }
 
   Status ret = true;
   {
@@ -153,7 +152,9 @@ Status DecodeFile(const DecompressParams& dparams,
       size_t xsize, ysize;
       JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, &xsize, &ysize, io));
       JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
-      main_frame_dim.Set(xsize, ysize, /*group_size_shift=*/1);
+      main_frame_dim.Set(xsize, ysize, /*group_size_shift=*/1,
+                         /*max_hshift=*/0,
+                         /*max_vshift=*/0);
     }
 
     if (io->metadata.color_encoding.WantICC()) {
@@ -167,6 +168,9 @@ Status DecodeFile(const DecompressParams& dparams,
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
+    if (io->metadata.m2.have_animation && dparams.keep_dct) {
+      return JXL_FAILURE("Cannot decode to JPEG an animation");
+    }
 
     Multiframe multiframe;
 
@@ -189,6 +193,7 @@ Status DecodeFile(const DecompressParams& dparams,
       } while (!io->animation_frames.back().is_last);
     } else {
       io->frames.emplace_back(&io->metadata);
+      io->frames.back().jpeg_data = std::move(jpeg_data);
       FrameDimensions frame_dim;
       // Skip frames that are not displayed.
       do {

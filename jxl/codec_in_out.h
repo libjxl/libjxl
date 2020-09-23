@@ -240,7 +240,6 @@ class CodecInOut {
 
   bool use_sjpeg = false;
   // If the image should be written to a JPEG, use this quality for encoding.
-  // If the image was read from a JPEG, this represents the
   size_t jpeg_quality;
 };
 

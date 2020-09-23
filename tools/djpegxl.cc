@@ -33,6 +33,7 @@
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "tools/args.h"
+#include "tools/box/box.h"
 
 #if JPEGXL_ENABLE_JPEG
 #include "jxl/extras/codec_jpg.h"
@@ -213,12 +214,17 @@ size_t PaddedBytesWriter(void* data, const uint8_t* buf, size_t count) {
 
 }  // namespace
 
-jxl::Status DecompressJxlToJPEG(const jxl::Span<const uint8_t> compressed,
+jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 const DecompressArgs& args,
                                 jxl::ThreadPool* pool, jxl::PaddedBytes* output,
                                 jxl::AuxOut* aux_out,
                                 SpeedStats* JXL_RESTRICT stats) {
+  output->clear();
   const double t0 = jxl::Now();
+
+  jxl::Span<const uint8_t> compressed(container.codestream,
+                                      container.codestream_size);
+
   JXL_RETURN_IF_ERROR(compressed.size() >= 2);
 
   if (compressed[0] == 0xff && compressed[1] != jxl::kCodestreamMarker) {
@@ -242,7 +248,7 @@ jxl::Status DecompressJxlToJPEG(const jxl::Span<const uint8_t> compressed,
       ok = brunsli::DecodeGroups(compressed.data(), compressed.size(), &jpg, 32,
                                  128, &executor);
     }
-#else  // BRUNSLI_EXPERIMENTAL_GROUPS
+#else   // BRUNSLI_EXPERIMENTAL_GROUPS
     brunsli::BrunsliStatus status =
         brunsli::BrunsliDecodeJpeg(compressed.data(), compressed.size(), &jpg);
     ok = (status == brunsli::BRUNSLI_OK);
@@ -268,19 +274,14 @@ jxl::Status DecompressJxlToJPEG(const jxl::Span<const uint8_t> compressed,
     io.use_sjpeg = args.use_sjpeg;
     io.jpeg_quality = args.jpeg_quality;
 
-    if (!jxl::DecodeFile(args.params, compressed, &io, aux_out, pool)) {
+    if (!DecodeJpegXlToJpeg(args.params, container, &io, aux_out, pool)) {
       return JXL_FAILURE("Failed to decode JXL to JPEG");
     }
     if (!EncodeImageJPG(&io,
                         io.use_sjpeg ? jxl::JpegEncoder::kSJpeg
                                      : jxl::JpegEncoder::kLibJpeg,
-                        io.jpeg_quality,
-                        io.use_sjpeg ? jxl::YCbCrChromaSubsampling::kAuto
-                                     : jxl::YCbCrChromaSubsampling::k444,
-                        pool, output,
-                        io.Main().jpeg_xsize
-                            ? jxl::DecodeTarget::kQuantizedCoeffs
-                            : jxl::DecodeTarget::kPixels)) {
+                        io.jpeg_quality, jxl::YCbCrChromaSubsampling(), pool,
+                        output, jxl::DecodeTarget::kQuantizedCoeffs)) {
       return JXL_FAILURE("Failed to generate JPEG");
     }
     stats->SetImageSize(io.xsize(), io.ysize());

@@ -103,19 +103,10 @@ struct HybridUintConfig {
   }
 };
 
-struct LZ77Params {
+struct LZ77Params : public Fields {
   LZ77Params();
-  static const char* Name() { return "LZ77Params"; }
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->Bool(false, &enabled);
-    if (!visitor->Conditional(enabled)) return true;
-    visitor->U32(Val(224), Val(512), Val(4096), BitsOffset(15, 8), 224,
-                 &min_symbol);
-    visitor->U32(Val(3), Val(4), BitsOffset(2, 5), BitsOffset(8, 9), 3,
-                 &min_length);
-    return true;
-  }
+  const char* Name() const override { return "LZ77Params"; }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
   bool enabled;
 
   // Symbols above min_symbol use a special hybrid uint encoding and

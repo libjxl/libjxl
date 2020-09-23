@@ -32,87 +32,130 @@
 #include "jxl/common.h"
 #include "jxl/dec_bit_reader.h"
 #include "jxl/enc_bit_writer.h"
-#include "jxl/field_encodings.h"
+#include "jxl/fields.h"
 #include "jxl/gaborish.h"
 
 namespace jxl {
 
 enum class FrameEncoding : uint32_t {
   kVarDCT,
-  kModularGroup,
+  kModular,
 };
 
 enum class ColorTransform : uint32_t {
-  kXYB,   // Values are encoded with XYB, must be used if and only if
-          // ImageBundle::xyb_encoded
-  kNone,  // Values are encoded according to the attached color profile
-  kYCbCr  // Values are encoded according to the attached color profile, but
-          // transformed to YCbCr
+  kXYB,    // Values are encoded with XYB. May only be used if
+           // ImageBundle::xyb_encoded.
+  kNone,   // Values are encoded according to the attached color profile. May
+           // only be used if !ImageBundle::xyb_encoded.
+  kYCbCr,  // Values are encoded according to the attached color profile, but
+           // transformed to YCbCr. May only be used if
+           // !ImageBundle::xyb_encoded.
+  kSRGB    // Values are encoded with sRGB, which may differ from the attached
+         // color profile. May only be used if ImageBundle::xyb_encoded. If you
+         // have !ImageBundle::xyb_encoded and sRGB is desired, use an sRGB
+         // color profile and set this to kNone instead.
+         // TODO(lode): support kSRGB in encoder and decoder.
 };
 
-enum class YCbCrChromaSubsampling : uint32_t { k444, k420, k422, k440, kAuto };
+struct YCbCrChromaSubsampling : public Fields {
+  YCbCrChromaSubsampling();
+  const char* Name() const override { return "YCbCrChromaSubsampling"; }
+  size_t HShift(size_t c) const { return maxhs_ - kHShift[channel_mode_[c]]; }
+  size_t VShift(size_t c) const { return maxvs_ - kVShift[channel_mode_[c]]; }
 
-static inline size_t HShift(YCbCrChromaSubsampling cs) {
-  switch (cs) {
-    case YCbCrChromaSubsampling::k444:
-      return 0;
-    case YCbCrChromaSubsampling::k422:
-      return 1;
-    case YCbCrChromaSubsampling::k440:
-      return 0;
-    case YCbCrChromaSubsampling::k420:
-      return 1;
-    default:
-      JXL_ABORT("Invalid");
-  };
-}
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
+    // TODO(veluca): consider allowing 4x downsamples
+    for (size_t i = 0; i < 3; i++) {
+      visitor->Bits(2, 0, &channel_mode_[i]);
+    }
+    Recompute();
+    return true;
+  }
 
-static inline size_t VShift(YCbCrChromaSubsampling cs) {
-  switch (cs) {
-    case YCbCrChromaSubsampling::k444:
-      return 0;
-    case YCbCrChromaSubsampling::k422:
-      return 0;
-    case YCbCrChromaSubsampling::k440:
-      return 1;
-    case YCbCrChromaSubsampling::k420:
-      return 1;
-    default:
-      JXL_ABORT("Invalid");
-  };
-}
+  uint8_t MaxHShift() const { return maxhs_; }
+  uint8_t MaxVShift() const { return maxvs_; }
 
-static inline size_t ChromaSize(size_t size, size_t shift) {
-  return (size + ((1 << shift) >> 1)) >> shift;
-}
+  // Uses JPEG channel order (Y, Cb, Cr).
+  Status Set(const uint8_t* hsample, const uint8_t* vsample) {
+    for (size_t c = 0; c < 3; c++) {
+      size_t cjpeg = c < 2 ? c ^ 1 : c;
+      size_t i = 0;
+      for (; i < 4; i++) {
+        if (1 << kHShift[i] == hsample[cjpeg] &&
+            1 << kVShift[i] == vsample[cjpeg]) {
+          channel_mode_[c] = i;
+          break;
+        }
+      }
+      if (i == 4) {
+        return JXL_FAILURE("Invalid subsample mode");
+      }
+    }
+    Recompute();
+    return true;
+  }
 
-static inline const char* EnumName(FrameEncoding /*unused*/) {
-  return "FrameEncoding";
-}
+  bool Is444() const {
+    for (size_t c : {0, 2}) {
+      if (channel_mode_[c] != channel_mode_[1]) {
+        return false;
+      }
+    }
+    return true;
+  }
 
-static inline constexpr uint64_t EnumBits(FrameEncoding /*unused*/) {
-  return MakeBit(FrameEncoding::kVarDCT) |
-         MakeBit(FrameEncoding::kModularGroup);
-}
+  bool Is420() const {
+    return channel_mode_[0] == 1 && channel_mode_[1] == 0 &&
+           channel_mode_[2] == 1;
+  }
+
+  bool Is422() const {
+    for (size_t c : {0, 2}) {
+      if (kHShift[channel_mode_[c]] == kHShift[channel_mode_[1]] + 1 &&
+          kVShift[channel_mode_[c]] == kVShift[channel_mode_[1]]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool Is440() const {
+    for (size_t c : {0, 2}) {
+      if (kHShift[channel_mode_[c]] == kHShift[channel_mode_[1]] &&
+          kVShift[channel_mode_[c]] == kVShift[channel_mode_[1]] + 1) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+ private:
+  void Recompute() {
+    maxhs_ = 0;
+    maxvs_ = 0;
+    for (size_t i = 0; i < 3; i++) {
+      maxhs_ = std::max(maxhs_, kHShift[channel_mode_[i]]);
+      maxvs_ = std::max(maxvs_, kVShift[channel_mode_[i]]);
+    }
+  }
+  static constexpr uint8_t kHShift[4] = {0, 1, 1, 0};
+  static constexpr uint8_t kVShift[4] = {0, 1, 0, 1};
+  uint32_t channel_mode_[3];
+  uint8_t maxhs_;
+  uint8_t maxvs_;
+};
 
 static inline const char* EnumName(ColorTransform /*unused*/) {
   return "ColorTransform";
 }
 static inline constexpr uint64_t EnumBits(ColorTransform /*unused*/) {
   return MakeBit(ColorTransform::kXYB) | MakeBit(ColorTransform::kNone) |
-         MakeBit(ColorTransform::kYCbCr);
+         MakeBit(ColorTransform::kYCbCr) | MakeBit(ColorTransform::kSRGB);
 }
 static inline const char* EnumName(YCbCrChromaSubsampling /*unused*/) {
   return "YCbCrChromaSubsampling";
 }
-static inline constexpr uint64_t EnumBits(YCbCrChromaSubsampling /*unused*/) {
-  return MakeBit(YCbCrChromaSubsampling::k444) |
-         MakeBit(YCbCrChromaSubsampling::k420) |
-         MakeBit(YCbCrChromaSubsampling::k440) |
-         MakeBit(YCbCrChromaSubsampling::k422);
-}
 
-template <class Visitor>
 static inline void VisitNameString(Visitor* JXL_RESTRICT visitor,
                                    std::string* name) {
   uint32_t name_length = name->length();
@@ -145,7 +188,6 @@ enum class NewBase {
   kNone,
 };
 
-template <class Visitor>
 static inline Status VisitNewBase(Visitor* JXL_RESTRICT visitor,
                                   NewBase* new_base) {
   uint32_t encoded = static_cast<uint32_t>(*new_base);
@@ -173,7 +215,6 @@ enum class BlendMode {
   kBlend,
 };
 
-template <class Visitor>
 static inline Status VisitBlendMode(Visitor* JXL_RESTRICT visitor,
                                     BlendMode* blend_mode) {
   uint32_t encoded = static_cast<uint32_t>(*blend_mode);
@@ -188,12 +229,11 @@ static inline Status VisitBlendMode(Visitor* JXL_RESTRICT visitor,
   return true;
 }
 
-struct AnimationFrame {
+struct AnimationFrame : public Fields {
   AnimationFrame();
-  static const char* Name() { return "AnimationFrame"; }
+  const char* Name() const override { return "AnimationFrame"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     if (visitor->Conditional(!nonserialized_composite_still)) {
       visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
     }
@@ -213,10 +253,10 @@ struct AnimationFrame {
     if (visitor->Conditional(have_crop)) {
       const U32Enc enc(Bits(8), BitsOffset(11, 256), BitsOffset(14, 2304),
                        BitsOffset(30, 18688));
-      visitor->U32WithEnc(enc, 0, &x0);
-      visitor->U32WithEnc(enc, 0, &y0);
-      visitor->U32WithEnc(enc, 0, &xsize);
-      visitor->U32WithEnc(enc, 0, &ysize);
+      visitor->U32(enc, 0, &x0);
+      visitor->U32(enc, 0, &y0);
+      visitor->U32(enc, 0, &xsize);
+      visitor->U32(enc, 0, &ysize);
     }
 
     visitor->Bool(true, &is_last);
@@ -248,12 +288,11 @@ struct AnimationFrame {
 };
 
 // For decoding to lower resolutions. Cannot mix with animation.
-struct Passes {
+struct Passes : public Fields {
   Passes();
-  static const char* Name() { return "Passes"; }
+  const char* Name() const override { return "Passes"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     visitor->U32(Val(1), Val(2), Val(3), BitsOffset(3, 4), 1, &num_passes);
     JXL_ASSERT(num_passes <= kMaxNumPasses);  // Cannot happen when reading
 
@@ -300,7 +339,7 @@ struct Passes {
 
 // Image/frame := one of more of these, where the last has is_last = true.
 // Starts at a byte-aligned address "a"; the next pass starts at "a + size".
-struct FrameHeader {
+struct FrameHeader : public Fields {
   // Optional postprocessing steps. These flags are the source of truth;
   // Override must set/clear them rather than change their meaning. Values
   // chosen such that typical flags == 0 (encoded in only two bits).
@@ -328,10 +367,9 @@ struct FrameHeader {
   };
 
   FrameHeader();
-  static const char* Name() { return "FrameHeader"; }
+  const char* Name() const override { return "FrameHeader"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     if (visitor->AllDefault(*this, &all_default)) {
       // Overwrite all serialized fields, but not any nonserialized_*.
       visitor->SetDefault(this);
@@ -347,19 +385,33 @@ struct FrameHeader {
         JXL_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
     }
 
-    JXL_RETURN_IF_ERROR(visitor->Enum(FrameEncoding::kVarDCT, &encoding));
+    bool is_modular = (encoding == FrameEncoding::kModular);
+    visitor->Bool(false, &is_modular);
+    encoding = (is_modular ? FrameEncoding::kModular : FrameEncoding::kVarDCT);
 
-    JXL_RETURN_IF_ERROR(visitor->Enum(ColorTransform::kXYB, &color_transform));
+    // In case of xyb_encoded, the options are kXYB or kSRGB. In case of
+    // !xyb_encoded, the options are kNone or kYCbCr. The alternate options are
+    // respectively kSRGB and kYCbCr.
+    bool alternate =
+        (nonserialized_xyb_image ? (color_transform == ColorTransform::kSRGB)
+                                 : (color_transform == ColorTransform::kYCbCr));
+    visitor->Bool(false, &alternate);
+    if (nonserialized_xyb_image) {
+      color_transform =
+          (alternate ? ColorTransform::kSRGB : ColorTransform::kXYB);
+    } else {
+      color_transform =
+          (alternate ? ColorTransform::kYCbCr : ColorTransform::kNone);
+    }
     if (visitor->Conditional(color_transform == ColorTransform::kYCbCr)) {
-      JXL_RETURN_IF_ERROR(
-          visitor->Enum(YCbCrChromaSubsampling::k444, &chroma_subsampling));
+      JXL_RETURN_IF_ERROR(visitor->VisitNested(&chroma_subsampling));
     }
     if (visitor->Conditional(IsLossy() ||
-                             encoding == FrameEncoding::kModularGroup)) {
+                             encoding == FrameEncoding::kModular)) {
       JXL_RETURN_IF_ERROR(visitor->VisitNested(&passes));
       visitor->U64(0, &flags);
     }
-    if (visitor->Conditional(encoding == FrameEncoding::kModularGroup)) {
+    if (visitor->Conditional(encoding == FrameEncoding::kModular)) {
       visitor->Bits(2, 1, &group_size_shift);
     }
     // This field only makes sense for kVarDCT:
@@ -373,14 +425,6 @@ struct FrameHeader {
     }
     if (visitor->Conditional(save_as_reference == 0 && dc_level == 0)) {
       visitor->Bool(false, &is_displayed);
-    }
-
-    if (visitor->Conditional(dc_level == 0)) {
-      visitor->Bool(false, &has_alpha);
-    }
-
-    if (visitor->Conditional(has_alpha)) {
-      visitor->Bool(false, &alpha_is_premultiplied);
     }
 
     visitor->BeginExtensions(&extensions);
@@ -405,9 +449,6 @@ struct FrameHeader {
     return (save_as_reference == 0 || is_displayed) && dc_level == 0;
   }
 
-  bool HasAlpha() const { return has_alpha; }
-  bool AlphaIsPremultiplied() const { return alpha_is_premultiplied; }
-
   mutable bool all_default;
 
   uint32_t dc_level;
@@ -426,7 +467,7 @@ struct FrameHeader {
 
   uint64_t flags;
 
-  uint32_t group_size_shift;  // only if encoding == kModularGroup;
+  uint32_t group_size_shift;  // only if encoding == kModular;
 
   uint32_t x_qm_scale;  // only if IsLossy()
 
@@ -435,11 +476,8 @@ struct FrameHeader {
   uint32_t save_as_reference;  // if !animation_frame.is_last && dc_level == 0.
   bool is_displayed;           // if dc_level == 0 && save_as_reference == 0
 
-  // Per-frame alpha flag - may differ between reference and displayed frames.
-  bool has_alpha;  // only if dc_level == 0
-
-  // Whether the color data has been "premultiplied" by alpha or not.
-  bool alpha_is_premultiplied;  // only if has_alpha
+  // Must match the xyb_encoded in image metadata
+  bool nonserialized_xyb_image = true;
 
   uint64_t extensions;
 };

@@ -288,7 +288,10 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       }
     }
   } else if (tree.size() == 1 && tree[0].predictor != Predictor::Weighted &&
-             tree[0].multiplier == 1 && tree[0].predictor_offset == 0) {
+             (tree[0].multiplier & (tree[0].multiplier - 1)) == 0 &&
+             tree[0].predictor_offset == 0) {
+    // multiplier is a power of 2.
+    uint32_t mul_shift = FloorLog2Nonzero((uint32_t)tree[0].multiplier);
     const intptr_t onerow = channel.plane.PixelsPerRow();
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT r = channel.Row(y);
@@ -296,7 +299,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
         PredictionResult pred = PredictNoTreeNoWP(channel.w, r + x, onerow, x,
                                                   y, tree[0].predictor);
         pixel_type_w residual = r[x] - pred.guess;
-        tokens->emplace_back(tree[0].childID, PackSigned(residual));
+        JXL_DASSERT((residual >> mul_shift) * tree[0].multiplier == residual);
+        tokens->emplace_back(tree[0].childID,
+                             PackSigned(residual >> mul_shift));
       }
     }
 

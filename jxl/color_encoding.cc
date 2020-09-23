@@ -18,6 +18,7 @@
 #include <cmath>
 
 #include "jxl/color_management.h"
+#include "jxl/entropy_coder.h"
 #include "jxl/fields.h"
 
 namespace jxl {
@@ -521,8 +522,95 @@ Status ParseDescription(const std::string& description,
 }
 
 Customxy::Customxy() { Bundle::Init(this); }
-CustomTransferFunction::CustomTransferFunction() { Bundle::Init(this); }
-ColorEncoding::ColorEncoding() { Bundle::Init(this); }
+Status Customxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  uint32_t ux = PackSigned(x);
+  visitor->U32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
+               BitsOffset(21, 2097152), 0, &ux);
+  x = UnpackSigned(ux);
+  uint32_t uy = PackSigned(y);
+  visitor->U32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
+               BitsOffset(21, 2097152), 0, &uy);
+  y = UnpackSigned(uy);
+  return true;
+}
 
+CustomTransferFunction::CustomTransferFunction() { Bundle::Init(this); }
+Status CustomTransferFunction::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->Conditional(!SetImplicit())) {
+    visitor->Bool(false, &have_gamma_);
+
+    if (visitor->Conditional(have_gamma_)) {
+      visitor->Bits(24, kGammaMul, &gamma_);
+      if (gamma_ > kGammaMul) {
+        return JXL_FAILURE("Invalid gamma %u", gamma_);
+      }
+    }
+
+    if (visitor->Conditional(!have_gamma_)) {
+      JXL_RETURN_IF_ERROR(
+          visitor->Enum(TransferFunction::kSRGB, &transfer_function_));
+    }
+  }
+
+  return true;
+}
+
+ColorEncoding::ColorEncoding() { Bundle::Init(this); }
+Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  if (visitor->AllDefault(*this, &all_default)) {
+    // Overwrite all serialized fields, but not any nonserialized_*.
+    visitor->SetDefault(this);
+    return true;
+  }
+
+  visitor->Bool(false, &want_icc_);
+
+  // Always send even if want_icc_ because this affects decoding.
+  // We can skip the white point/primaries because they do not.
+  JXL_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
+
+  if (visitor->Conditional(!WantICC())) {
+    // Serialize enums. NOTE: we set the defaults to the most common values so
+    // ImageMetadata.all_default is true in the common case.
+
+    if (visitor->Conditional(!ImplicitWhitePoint())) {
+      JXL_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
+      if (visitor->Conditional(white_point == WhitePoint::kCustom)) {
+        JXL_RETURN_IF_ERROR(visitor->VisitNested(&white_));
+      }
+    }
+
+    if (visitor->Conditional(HasPrimaries())) {
+      JXL_RETURN_IF_ERROR(visitor->Enum(Primaries::kSRGB, &primaries));
+      if (visitor->Conditional(primaries == Primaries::kCustom)) {
+        JXL_RETURN_IF_ERROR(visitor->VisitNested(&red_));
+        JXL_RETURN_IF_ERROR(visitor->VisitNested(&green_));
+        JXL_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
+      }
+    }
+
+    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tf));
+
+    JXL_RETURN_IF_ERROR(
+        visitor->Enum(RenderingIntent::kRelative, &rendering_intent));
+
+    // We didn't have ICC, so all fields should be known.
+    if (color_space_ == ColorSpace::kUnknown || tf.IsUnknown()) {
+      return JXL_FAILURE("No ICC but cs %u and tf %u%s", color_space_,
+                         tf.IsGamma() ? 0 : tf.GetTransferFunction(),
+                         tf.IsGamma() ? "(gamma)" : "");
+    }
+
+    JXL_RETURN_IF_ERROR(CreateICC());
+  }
+
+  if (WantICC() && visitor->IsReading()) {
+    // Haven't called SetICC() yet, do nothing.
+  } else {
+    if (ICC().empty()) return JXL_FAILURE("Empty ICC");
+  }
+
+  return true;
+}
 
 }  // namespace jxl

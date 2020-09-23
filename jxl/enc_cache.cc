@@ -19,6 +19,13 @@
 
 #include <type_traits>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
@@ -31,26 +38,19 @@
 #include "jxl/dct_scales.h"
 #include "jxl/dct_util.h"
 #include "jxl/dec_frame.h"
+#include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_frame.h"
 #include "jxl/enc_modular.h"
+#include "jxl/enc_transforms-inl.h"
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/passes_state.h"
 #include "jxl/quantizer.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
-#include <hwy/foreach_target.h>
-
-#include "jxl/dec_transforms-inl.h"
-#include "jxl/enc_transforms-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // Returns dc.
 Image3F ComputeCoeffs(const Image3F& opsin,
@@ -109,14 +109,15 @@ Image3F ComputeCoeffs(const Image3F& opsin,
   return dc;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(ComputeCoeffs)  // Local function.
+HWY_EXPORT(ComputeCoeffs);  // Local function.
 
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                              PassesEncoderState* enc_state,
@@ -166,11 +167,13 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     FrameDimensions frame_dim;
     frame_dim.Set(enc_state->shared.frame_dim.xsize << (3 * cparams.dc_level),
                   enc_state->shared.frame_dim.ysize << (3 * cparams.dc_level),
-                  shared.frame_header.group_size_shift);
+                  shared.frame_header.group_size_shift,
+                  shared.frame_header.chroma_subsampling.MaxHShift(),
+                  shared.frame_header.chroma_subsampling.MaxVShift());
     cparams.dc_level++;
     cparams.progressive_dc--;
     // Use kVarDCT in max_error_mode for intermediate progressive DC,
-    // and kModularGroup for the smallest DC (first in the bitstream)
+    // and kModular for the smallest DC (first in the bitstream)
     if (cparams.progressive_dc == 0) {
       cparams.modular_group_mode = true;
       cparams.quality_pair.first = cparams.quality_pair.second =

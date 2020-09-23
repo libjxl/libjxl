@@ -15,14 +15,13 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/logical_test.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
-// must come after foreach_target.h.
+#include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
-
-// must come after *-inl.h.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 struct TestLogicalT {
   template <class T, class D>
@@ -308,9 +307,10 @@ HWY_NOINLINE void TestAllCountTrue() {
   ForAllTypes(ForFullVectors<TestCountTrue>());
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
@@ -319,13 +319,13 @@ class HwyLogicalTest : public hwy::TestWithParamTarget {};
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyLogicalTest);
 
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllLogicalT)
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllLogicalFloat)
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllIfThenElse)
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllTestBit)
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllAllTrueFalse)
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllBitsFromMask)
-HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllCountTrue)
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllLogicalT);
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllLogicalFloat);
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllIfThenElse);
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllTestBit);
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllAllTrueFalse);
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllBitsFromMask);
+HWY_EXPORT_AND_TEST_P(HwyLogicalTest, TestAllCountTrue);
 
 }  // namespace hwy
 #endif

@@ -12,160 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// NOTE: this header also has a per-target section after this include guard.
 #ifndef HWY_HIGHWAY_H_
 #define HWY_HIGHWAY_H_
 
-// For SIMD module implementations; their callers only need base.h/targets.h.
-
-#include <stddef.h>
-#include <stdint.h>
-
-#include <cmath>  // for scalar-inl.h
+// Definitions for use by SIMD module implementations (*.cc or *-inl.h); their
+// callers typically only need base.h/targets.h.
 
 #include "hwy/targets.h"
 
-// Clang 3.9 generates VINSERTF128 instead of the desired VBROADCASTF128,
-// which would free up port5. However, inline assembly isn't supported on
-// MSVC, results in incorrect output on GCC 8.3, and raises "invalid output size
-// for constraint" errors on Clang (https://gcc.godbolt.org/z/-Jt_-F), hence we
-// disable it.
-#ifndef HWY_LOADDUP_ASM
-#define HWY_LOADDUP_ASM 0
-#endif
-
-// Include platform-specific headers required by ops/*-inl.h. This must happen
-// before the namespace hwy in this header, and cannot be done inside ops/*.h
-// because those are potentially included inside the user's namespace.
-#if HWY_TARGETS & (HWY_AVX2 | HWY_AVX3)
-#include <immintrin.h>  // AVX2+
-#elif HWY_TARGETS & HWY_SSE4
-#include <smmintrin.h>  // SSE4
-#elif HWY_TARGETS & HWY_WASM
-#include <wasm_simd128.h>
-#elif HWY_TARGETS & HWY_NEON
-#include <arm_neon.h>
-#endif
-
 namespace hwy {
 
-// Shorthand for implementations of Highway ops.
-#define HWY_API HWY_INLINE HWY_FLATTEN HWY_MAYBE_UNUSED
-
-// For functions in *-inl that use Highway (prevents IDE from showing as unused)
-#define HWY_FUNC HWY_INLINE HWY_MAYBE_UNUSED
-
-// Unfortunately the GCC/Clang intrinsics do not accept int64_t*.
-using GatherIndex64 = long long int;  // NOLINT(google-runtime-int)
-static_assert(sizeof(GatherIndex64) == 8, "Must be 64-bit type");
-
-// The source/destination must not overlap/alias.
-template <size_t kBytes, typename From, typename To>
-HWY_INLINE void CopyBytes(const From* from, To* to) {
-#if HWY_COMPILER_MSVC
-  const uint8_t* HWY_RESTRICT from_bytes =
-      reinterpret_cast<const uint8_t*>(from);
-  uint8_t* HWY_RESTRICT to_bytes = reinterpret_cast<uint8_t*>(to);
-  for (size_t i = 0; i < kBytes; ++i) {
-    to_bytes[i] = from_bytes[i];
-  }
-#else
-  // Avoids horrible codegen on Clang (series of PINSRB)
-  __builtin_memcpy(to, from, kBytes);
-#endif
-}
-
-static HWY_INLINE HWY_MAYBE_UNUSED size_t PopCount(const uint64_t x) {
-#if HWY_COMPILER_CLANG || HWY_COMPILER_GCC
-  return static_cast<size_t>(__builtin_popcountll(x));
-#elif HWY_COMPILER_MSVC
-  return _mm_popcnt_u64(x);
-#else
-#error "not supported"
-#endif
-}
-
 //------------------------------------------------------------------------------
-// Controlling overload resolution
+// Shorthand for descriptors (defined in shared-inl.h) used to select overloads.
 
-// Insert into template/function arguments to enable this overload only for
-// vectors of AT MOST this many bits.
-//
-// Note that enabling for exactly 128 bits is unnecessary because a function can
-// simply be overloaded with Vec128<T> and Full128<T> descriptor. Enabling for
-// other sizes (e.g. 64 bit) can be achieved with Simd<T, 8 / sizeof(T)>.
-#define HWY_IF_LE128(T, N) hwy::EnableIf<N * sizeof(T) <= 16>* = nullptr
-#define HWY_IF_LE64(T, N) hwy::EnableIf<N * sizeof(T) <= 8>* = nullptr
-#define HWY_IF_LE32(T, N) hwy::EnableIf<N * sizeof(T) <= 4>* = nullptr
+// Because Highway functions take descriptor and/or vector arguments, ADL finds
+// these functions without requiring users in project::HWY_NAMESPACE to
+// qualify Highway functions with hwy::HWY_NAMESPACE. However, ADL rules for
+// templates require `using hwy::HWY_NAMESPACE::ShiftLeft;` etc. declarations.
 
-#define HWY_IF_FLOAT(T) hwy::EnableIf<hwy::IsFloat<T>()>* = nullptr
+// Full (native-width) vector.
+#define HWY_FULL(T) hwy::HWY_NAMESPACE::Simd<T, HWY_LANES(T)>
 
-// Empty struct used as a size tag type.
-template <size_t N>
-struct SizeTag {};
-
-//------------------------------------------------------------------------------
-// Conversion between types of the same size
-
-// Unsigned/signed/floating-point types whose sizes are kSize bytes.
-template <size_t kSize>
-struct TypesOfSize;
-template <>
-struct TypesOfSize<1> {
-  using Unsigned = uint8_t;
-  using Signed = int8_t;
-};
-template <>
-struct TypesOfSize<2> {
-  using Unsigned = uint16_t;
-  using Signed = int16_t;
-};
-template <>
-struct TypesOfSize<4> {
-  using Unsigned = uint32_t;
-  using Signed = int32_t;
-  using Float = float;
-};
-template <>
-struct TypesOfSize<8> {
-  using Unsigned = uint64_t;
-  using Signed = int64_t;
-  using Float = double;
-};
-
-template <typename T>
-using MakeUnsigned = typename TypesOfSize<sizeof(T)>::Unsigned;
-template <typename T>
-using MakeSigned = typename TypesOfSize<sizeof(T)>::Signed;
-template <typename T>
-using MakeFloat = typename TypesOfSize<sizeof(T)>::Float;
-
-//------------------------------------------------------------------------------
-// Descriptors
-
-// SIMD operations are implemented as overloaded functions selected using a
-// "descriptor" D := Simd<T, N>. T is the lane type, N the requested number of
-// lanes >= 1 (always a power of two). In the common case, users do not choose N
-// directly, but instead use HWY_FULL (the largest available size). N may differ
-// from the hardware vector size. If N is less, only that many lanes will be
-// loaded/stored.
-//
-// Only HWY_FULL(T) and N <= 16 / sizeof(T) are guaranteed to be available - the
-// latter are useful if >128 bit vectors are unnecessary or undesirable.
-//
-// Users should not use the N of a Simd<> but instead query the actual number of
-// lanes via Lanes(). MaxLanes() is provided for template arguments and array
-// dimensions, but this is discouraged because an upper bound might not exist.
-template <typename Lane, size_t N>
-struct Simd {
-  constexpr Simd() = default;
-  using T = Lane;
-  static_assert((N & (N - 1)) == 0 && N != 0, "N must be a power of two");
-};
-
-#define HWY_FULL(T) hwy::Simd<T, HWY_LANES(T)>
-
-// A vector of up to MAX_N lanes.
-#define HWY_CAPPED(T, MAX_N) hwy::Simd<T, HWY_MIN(MAX_N, HWY_LANES(T))>
+// Vector of up to MAX_N lanes.
+#define HWY_CAPPED(T, MAX_N) \
+  hwy::HWY_NAMESPACE::Simd<T, HWY_MIN(MAX_N, HWY_LANES(T))>
 
 //------------------------------------------------------------------------------
 // Export user functions for static/dynamic dispatch
@@ -192,7 +63,6 @@ struct Simd {
 #define HWY_STATIC_DISPATCH(FUNC_NAME) N_AVX2::FUNC_NAME
 #elif HWY_STATIC_TARGET == HWY_AVX3
 #define HWY_STATIC_DISPATCH(FUNC_NAME) N_AVX3::FUNC_NAME
-
 #endif
 
 // Dynamic dispatch declarations.
@@ -274,7 +144,7 @@ FunctionCache<RetType, Args...> FunctionCacheFactory(RetType (*)(Args...)) {
 #define HWY_DISPATCH_TABLE(FUNC_NAME) \
   HWY_CONCAT(FUNC_NAME, HighwayDispatchTable)
 
-// HWY_EXPORT(FUNC_NAME) expands to a static array that is used by
+// HWY_EXPORT(FUNC_NAME); expands to a static array that is used by
 // HWY_DYNAMIC_DISPATCH() to call the appropriate function at runtime. This
 // static array must be defined at the same namespace level as the function
 // it is exporting.
@@ -282,18 +152,20 @@ FunctionCache<RetType, Args...> FunctionCacheFactory(RetType (*)(Args...)) {
 // file using HWY_DYNAMIC_DISTPATCH(), in particular from a function wrapper
 // like in the following example:
 //
-//   #include <hwy/before_namespace-inl.h>
+//   #include "hwy/highway.h"
+//   HWY_BEFORE_NAMESPACE();
 //   namespace skeleton {
-//   #include "hwy/begin_target-inl.h"
+//   namespace HWY_NAMESPACE {
 //
 //   void MyFunction(int a, char b, const char* c) { ... }
 //
-//   #include "hwy/end_target-inl.h"
+//   // NOLINTNEXTLINE(google-readability-namespace-comments)
+//   }  // namespace HWY_NAMESPACE
 //   }  // namespace skeleton
-//   #include <hwy/after_namespace-inl.h>
+//   HWY_AFTER_NAMESPACE();
 //
 //   namespace skeleton {
-//   HWY_EXPORT(MyFunction)  // Defines the dispatch table in this scope.
+//   HWY_EXPORT(MyFunction);  // Defines the dispatch table in this scope.
 //
 //   void MyFunction(int a, char b, const char* c) {
 //     return HWY_DYNAMIC_DISPATCH(MyFunction)(a, b, c);
@@ -309,7 +181,7 @@ FunctionCache<RetType, Args...> FunctionCacheFactory(RetType (*)(Args...)) {
 // targets are being compiled.
 #define HWY_EXPORT(FUNC_NAME)                                                \
   static decltype(&HWY_STATIC_DISPATCH(FUNC_NAME)) const HWY_DISPATCH_TABLE( \
-      FUNC_NAME)[1] = {&HWY_STATIC_DISPATCH(FUNC_NAME)};
+      FUNC_NAME)[1] = {&HWY_STATIC_DISPATCH(FUNC_NAME)}
 #define HWY_DYNAMIC_DISPATCH(FUNC_NAME) (*(HWY_DISPATCH_TABLE(FUNC_NAME)[0]))
 
 #else
@@ -325,7 +197,7 @@ FunctionCache<RetType, Args...> FunctionCacheFactory(RetType (*)(Args...)) {
               FUNC_NAME)))::ChooseAndCall<HWY_DISPATCH_TABLE(FUNC_NAME)>,  \
           HWY_CHOOSE_TARGET_LIST(FUNC_NAME),                               \
           HWY_CHOOSE_SCALAR(FUNC_NAME),                                    \
-  };
+  }
 #define HWY_DYNAMIC_DISPATCH(FUNC_NAME) \
   (*(HWY_DISPATCH_TABLE(FUNC_NAME)[hwy::chosen_target.GetIndex()]))
 
@@ -334,3 +206,82 @@ FunctionCache<RetType, Args...> FunctionCacheFactory(RetType (*)(Args...)) {
 }  // namespace hwy
 
 #endif  // HWY_HIGHWAY_H_
+
+//------------------------------------------------------------------------------
+
+// NOTE: ops/*.h cannot use regular include guards because their definitions
+// depend on HWY_TARGET, e.g. enabling AVX3 instructions on 128-bit vectors, so
+// we want to include them once per target. However, each *-inl.h includes
+// highway.h, so we still need an external per-target include guard.
+#if defined(HWY_HIGHWAY_PER_TARGET) == defined(HWY_TARGET_TOGGLE)
+#ifdef HWY_HIGHWAY_PER_TARGET
+#undef HWY_HIGHWAY_PER_TARGET
+#else
+#define HWY_HIGHWAY_PER_TARGET
+#endif
+
+// These define ops inside namespace hwy::HWY_NAMESPACE.
+#if HWY_TARGET == HWY_SSE4
+#include "hwy/ops/x86_128-inl.h"
+#elif HWY_TARGET == HWY_AVX2
+#include "hwy/ops/x86_256-inl.h"
+#elif HWY_TARGET == HWY_AVX3
+#include "hwy/ops/x86_512-inl.h"
+#elif HWY_TARGET == HWY_PPC8
+#elif HWY_TARGET == HWY_NEON
+#include "hwy/ops/arm_neon-inl.h"
+#elif HWY_TARGET == HWY_WASM
+#include "hwy/ops/wasm_128-inl.h"
+#elif HWY_TARGET == HWY_SCALAR
+#include "hwy/ops/scalar-inl.h"
+#else
+#pragma message("HWY_TARGET does not match any known target")
+#endif  // HWY_TARGET
+
+// Commonly used functions/types that depend on the ops already having been
+// defined. These could be moved into a separate *-inl.h.
+HWY_BEFORE_NAMESPACE();
+namespace hwy {
+namespace HWY_NAMESPACE {
+
+// Returns the closest value to v within [lo, hi].
+template <class V>
+HWY_API V Clamp(const V v, const V lo, const V hi) {
+  return Min(Max(lo, v), hi);
+}
+
+// Corresponding vector type, e.g. Vec128<float> for Simd<float, 4>,
+template <class D>
+using Vec = decltype(Zero(D()));
+
+using U8xN = Vec<HWY_FULL(uint8_t)>;
+using U16xN = Vec<HWY_FULL(uint16_t)>;
+using U32xN = Vec<HWY_FULL(uint32_t)>;
+using U64xN = Vec<HWY_FULL(uint64_t)>;
+
+using I8xN = Vec<HWY_FULL(int8_t)>;
+using I16xN = Vec<HWY_FULL(int16_t)>;
+using I32xN = Vec<HWY_FULL(int32_t)>;
+using I64xN = Vec<HWY_FULL(int64_t)>;
+
+using F32xN = Vec<HWY_FULL(float)>;
+using F64xN = Vec<HWY_FULL(double)>;
+
+// Returns a vector with lane i=[0, N) set to "first" + i. Unique per-lane
+// values are required to detect lane-crossing bugs.
+template <class D, typename T2>
+Vec<D> Iota(const D d, const T2 first) {
+  using T = typename D::T;
+  HWY_ALIGN T lanes[MaxLanes(d)];
+  for (size_t i = 0; i < Lanes(d); ++i) {
+    lanes[i] = first + static_cast<T2>(i);
+  }
+  return Load(d, lanes);
+}
+
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace hwy
+HWY_AFTER_NAMESPACE();
+
+#endif  // HWY_HIGHWAY_PER_TARGET

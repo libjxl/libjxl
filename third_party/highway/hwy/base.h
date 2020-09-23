@@ -19,6 +19,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
 #include <atomic>
 
 // Add to #if conditions to prevent IDE from graying out code.
@@ -131,6 +132,23 @@
 #define HWY_ASSUME_ALIGNED(ptr, align) __builtin_assume_aligned((ptr), (align))
 #else
 #define HWY_ASSUME_ALIGNED(ptr, align) (ptr) /* not supported */
+#endif
+
+// Clang and GCC require attributes on each function into which SIMD intrinsics
+// are inlined. Support both per-function annotation (HWY_ATTR) for lambdas and
+// automatic annotation via pragmas.
+#if HWY_COMPILER_CLANG
+#define HWY_PUSH_ATTRIBUTES(targets_str)                                     \
+  _Pragma(HWY_STR(clang attribute push(__attribute__((target(targets_str))), \
+                                       apply_to = function)))
+#define HWY_POP_ATTRIBUTES _Pragma("clang attribute pop")
+#elif HWY_COMPILER_GCC
+#define HWY_PUSH_ATTRIBUTES(targets_str) \
+  _Pragma("GCC push_options") _Pragma(STRINGIFY(GCC target(targets_str)))
+#define HWY_POP_ATTRIBUTES _Pragma("GCC pop_options")
+#else
+#define HWY_PUSH_ATTRIBUTES
+#define HWY_POP_ATTRIBUTES
 #endif
 
 //------------------------------------------------------------------------------
@@ -259,7 +277,7 @@ using EnableIf = typename EnableIfT<Condition, T>::type;
 
 // Undefined results for x == 0.
 static HWY_INLINE HWY_MAYBE_UNUSED size_t
-NumZeroBitsBelowLSBNonzero32(const uint32_t x) {
+Num0BitsBelowLS1Bit_Nonzero32(const uint32_t x) {
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanForward(&index, x);

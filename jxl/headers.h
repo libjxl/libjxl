@@ -36,39 +36,16 @@ static constexpr uint8_t kCodestreamMarker = 0x0A;
 
 // Compact representation of image dimensions (best case: 9 bits) so decoders
 // can preallocate early.
-class SizeHeader {
+class SizeHeader : public Fields {
  public:
   // All fields are valid after reading at most this many bits. WriteSizeHeader
   // verifies this matches Bundle::MaxBits(SizeHeader).
   static constexpr size_t kMaxBits = 78;
 
   SizeHeader();
-  static const char* Name() { return "SizeHeader"; }
+  const char* Name() const override { return "SizeHeader"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->Bool(false, &small_);
-
-    if (visitor->Conditional(small_)) {
-      visitor->Bits(5, 0, &ysize_div8_minus_1_);
-    }
-    if (visitor->Conditional(!small_)) {
-      // (Could still be small, but non-multiple of 8.)
-      visitor->U32(BitsOffset(9, 1), BitsOffset(13, 1), BitsOffset(18, 1),
-                   BitsOffset(30, 1), 1, &ysize_);
-    }
-
-    visitor->Bits(3, 0, &ratio_);
-    if (visitor->Conditional(ratio_ == 0 && small_)) {
-      visitor->Bits(5, 0, &xsize_div8_minus_1_);
-    }
-    if (visitor->Conditional(ratio_ == 0 && !small_)) {
-      visitor->U32(BitsOffset(9, 1), BitsOffset(13, 1), BitsOffset(18, 1),
-                   BitsOffset(30, 1), 1, &xsize_);
-    }
-
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   Status Set(size_t xsize, size_t ysize);
 
@@ -89,36 +66,12 @@ class SizeHeader {
 };
 
 // (Similar to SizeHeader but different encoding because previews are smaller)
-class PreviewHeader {
+class PreviewHeader : public Fields {
  public:
   PreviewHeader();
-  static const char* Name() { return "PreviewHeader"; }
+  const char* Name() const override { return "PreviewHeader"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->Bool(false, &div8_);
-
-    if (visitor->Conditional(div8_)) {
-      visitor->U32(Val(16), Val(32), BitsOffset(5, 1), BitsOffset(9, 33), 1,
-                   &ysize_div8_);
-    }
-    if (visitor->Conditional(!div8_)) {
-      visitor->U32(BitsOffset(6, 1), BitsOffset(8, 65), BitsOffset(10, 321),
-                   BitsOffset(12, 1345), 1, &ysize_);
-    }
-
-    visitor->Bits(3, 0, &ratio_);
-    if (visitor->Conditional(ratio_ == 0 && div8_)) {
-      visitor->U32(Val(16), Val(32), BitsOffset(5, 1), BitsOffset(9, 33), 1,
-                   &xsize_div8_);
-    }
-    if (visitor->Conditional(ratio_ == 0 && !div8_)) {
-      visitor->U32(BitsOffset(6, 1), BitsOffset(8, 65), BitsOffset(10, 321),
-                   BitsOffset(12, 1345), 1, &xsize_);
-    }
-
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   Status Set(size_t xsize, size_t ysize);
 
@@ -136,25 +89,11 @@ class PreviewHeader {
   uint32_t xsize_;
 };
 
-struct AnimationHeader {
+struct AnimationHeader : public Fields {
   AnimationHeader();
-  static const char* Name() { return "AnimationHeader"; }
+  const char* Name() const override { return "AnimationHeader"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->Bool(false, &composite_still);
-    if (visitor->Conditional(!composite_still)) {
-      visitor->U32(Val(100), Val(1000), BitsOffset(10, 1), BitsOffset(30, 1), 1,
-                   &tps_numerator);
-      visitor->U32(Val(1), Val(1001), BitsOffset(8, 1), BitsOffset(10, 1), 1,
-                   &tps_denominator);
-
-      visitor->U32(Val(0), Bits(3), Bits(16), Bits(32), 0, &num_loops);
-
-      visitor->Bool(false, &have_timecodes);
-    }
-    return true;
-  }
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
   bool composite_still;
 

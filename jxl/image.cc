@@ -13,31 +13,35 @@
 // limitations under the License.
 
 #include "jxl/image.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/image.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <algorithm>  // swap
+#include <hwy/highway.h>
 
 #include "jxl/base/profiler.h"
 #include "jxl/common.h"
 #include "jxl/image_ops.h"
 
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
 
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 size_t GetVectorSize() { return HWY_LANES(uint8_t); }
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 namespace {
 
-HWY_EXPORT(GetVectorSize)  // Local function.
+HWY_EXPORT(GetVectorSize);  // Local function.
 
 size_t VectorSize() {
   static size_t bytes = HWY_DYNAMIC_DISPATCH(GetVectorSize)();

@@ -12,23 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// 128-bit ARM64 NEON vectors and operations. External include guard.
+// 128-bit ARM64 NEON vectors and operations.
+// External include guard in highway.h - see comment there.
 
-// This header is included by begin_target-inl.h, possibly inside a namespace,
-// so do not include system headers (already done by highway.h). HWY_ALIGN is
-// already defined unless an IDE is only parsing this file, in which case we
-// include headers to avoid warnings.
-#ifndef HWY_ALIGN
-#include <stddef.h>
-#include <stdint.h>
+#include <arm_neon.h>
 
-#include "hwy/highway.h"
+#include "hwy/ops/shared-inl.h"
 
-#define HWY_NESTED_BEGIN  // prevent re-including this header
-#undef HWY_TARGET
-#define HWY_TARGET HWY_NEON
-#include "hwy/begin_target-inl.h"
-#endif  // HWY_ALIGN
+HWY_BEFORE_NAMESPACE();
+namespace hwy {
+namespace HWY_NAMESPACE {
 
 // Macros used to define single and double function calls for multiple types
 // for full and half vectors. These macros are undefined at the end of the file.
@@ -422,10 +415,7 @@ struct Raw128<int8_t, 1> {
 };
 
 template <typename T>
-using Full128 = hwy::Simd<T, 16 / sizeof(T)>;
-
-template <typename T, size_t N>
-using Simd = hwy::Simd<T, N>;
+using Full128 = Simd<T, 16 / sizeof(T)>;
 
 template <typename T, size_t N = 16 / sizeof(T)>
 class Vec128 {
@@ -1824,7 +1814,7 @@ HWY_API Vec128<T, N> GatherOffset(const Simd<T, N> d,
   static_assert(sizeof(T) == sizeof(Offset), "T must match Offset");
   const uintptr_t address = reinterpret_cast<uintptr_t>(base) + GetLane(offset);
   T val;
-  hwy::CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
+  CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
   return Set(d, val);
 }
 
@@ -3172,3 +3162,8 @@ HWY_INLINE size_t CountTrue(const Mask128<T> mask) {
 #undef HWY_NEON_DEF_FUNCTION_UINT_8_16_32
 #undef HWY_NEON_DEF_FUNCTION_UINTS
 #undef HWY_NEON_EVAL
+
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace hwy
+HWY_AFTER_NAMESPACE();

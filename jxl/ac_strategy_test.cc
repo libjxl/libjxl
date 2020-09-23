@@ -17,10 +17,9 @@
 #include <string.h>
 
 #include <cmath>
-#include <utility>
-
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/test_util-inl.h>
+#include <utility>
 
 #include "jxl/common.h"
 #include "jxl/dct_scales.h"

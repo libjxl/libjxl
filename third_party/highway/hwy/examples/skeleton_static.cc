@@ -17,18 +17,21 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "hwy/examples/skeleton.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
 #include <assert.h>
 #include <stdio.h>
+
+#include "hwy/highway.h"
 #include "hwy/examples/skeleton_shared.h"
 
 // Optional: include any shared *-inl.h
 #include "hwy/examples/skeleton-inl.h"
 
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace skeleton {
 
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 // Compiled once per target via multiple inclusion.
 void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
@@ -39,14 +42,15 @@ void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
   ExampleMulAdd(in1, in2, out);
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace skeleton
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace skeleton {
 
-HWY_EXPORT(Skeleton)
+HWY_EXPORT(Skeleton);
 
 // Optional: anything to compile only once, e.g. non-SIMD implementations of
 // public functions provided by this module, can go inside #if HWY_ONCE

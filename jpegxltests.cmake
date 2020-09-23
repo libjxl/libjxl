@@ -46,7 +46,6 @@ set(TEST_FILES
   jxl/icc_codec_test.cc
   jxl/image_bundle_test.cc
   jxl/image_test.cc
-  jxl/jpeg_kpasses_test.cc
   jxl/jpegxl/decode_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
@@ -99,6 +98,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
   )
   target_link_libraries(${TESTNAME}
     box
+    djpegxltool
     jpegxl-static
     jpegxl_threads
     jpegxl_extras-static

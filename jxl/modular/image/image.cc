@@ -69,4 +69,41 @@ bool Image::do_transform(const Transform &tr) {
   return did_it;
 }
 
+Image::Image(size_t iw, size_t ih, int maxval, int nb_chans)
+    : w(iw),
+      h(ih),
+      minval(0),
+      maxval(maxval),
+      nb_channels(nb_chans),
+      real_nb_channels(nb_chans),
+      nb_meta_channels(0),
+      error(false) {
+  for (int i = 0; i < nb_chans; i++) channel.emplace_back(Channel(iw, ih));
+}
+Image::Image()
+    : w(0),
+      h(0),
+      minval(0),
+      maxval(255),
+      nb_channels(0),
+      real_nb_channels(0),
+      nb_meta_channels(0),
+      error(true) {}
+
+Image::~Image() = default;
+
+Image &Image::operator=(Image &&other) noexcept {
+  w = other.w;
+  h = other.h;
+  minval = other.minval;
+  maxval = other.maxval;
+  nb_channels = other.nb_channels;
+  real_nb_channels = other.real_nb_channels;
+  nb_meta_channels = other.nb_meta_channels;
+  error = other.error;
+  channel = std::move(other.channel);
+  transform = std::move(other.transform);
+  return *this;
+}
+
 }  // namespace jxl

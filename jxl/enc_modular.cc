@@ -43,12 +43,21 @@ namespace {
 // these quantization factors are for -Q 50  (other qualities simply scale the
 // factors; things are rounded down and obviously cannot get below 1)
 static const float squeeze_quality_factor =
-    0.3;  // for easy tweaking of the quality range (decrease this number for
-          // higher quality)
+    0.35;  // for easy tweaking of the quality range (decrease this number for
+           // higher quality)
 static const float squeeze_luma_factor =
-    1.2;  // for easy tweaking of the balance between luma (or anything
+    1.1;  // for easy tweaking of the balance between luma (or anything
           // non-chroma) and chroma (decrease this number for higher quality
           // luma)
+static const float squeeze_quality_factor_xyb = 2.4f;
+static const float squeeze_xyb_qtable[3][16] = {
+    {163.84, 81.92, 40.96, 20.48, 10.24, 5.12, 2.56, 1.28, 0.64, 0.32, 0.16,
+     0.08, 0.04, 0.02, 0.01, 0.005},  // Y
+    {1024, 512, 256, 128, 64, 32, 16, 8, 4, 2, 1, 0.5, 0.5, 0.5, 0.5,
+     0.5},  // X
+    {2048, 1024, 512, 256, 128, 64, 32, 16, 8, 4, 2, 1, 0.5, 0.5, 0.5,
+     0.5},  // B-Y
+};
 
 static const float squeeze_luma_qtable[16] = {
     163.84, 81.92, 40.96, 20.48, 10.24, 5.12, 2.56, 1.28,
@@ -111,8 +120,8 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
     tree.push_back(PropertyDecisionNode::Split(0, 2, 3));
     // 2: c > 0
     tree.push_back(PropertyDecisionNode::Split(0, 0, 5));
-    // 3: EPF control field (all 0)
-    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    // 3: EPF control field (all 0 or 4), top > 0
+    tree.push_back(PropertyDecisionNode::Split(6, 0, 21));
     // 4: ACS+QF, y > 0
     tree.push_back(PropertyDecisionNode::Split(2, 0, 7));
     // 5: CfL x
@@ -138,7 +147,13 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
-    // QF other nodes
+    // EPF, left > 0
+    tree.push_back(PropertyDecisionNode::Split(7, 0, 23));
+    tree.push_back(PropertyDecisionNode::Split(7, 0, 25));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
+    tree.push_back(PropertyDecisionNode::Leaf(Predictor::Zero));
     return tree;
   }
   if (tree_kind == ModularOptions::TreeKind::kWPFixedDC) {
@@ -503,11 +518,16 @@ Status ModularFrameEncoder::ComputeEncodingData(
         component = 1;
       }
 
-      if (cparams.colorspace != 0 && component > 0 && component < 3) {
-        q = cquality * squeeze_quality_factor * squeeze_chroma_qtable[shift];
+      if (cparams.color_transform == ColorTransform::kXYB && component < 3) {
+        q = (component == 0 ? quality : cquality) * squeeze_quality_factor_xyb *
+            squeeze_xyb_qtable[component][shift];
       } else {
-        q = quality * squeeze_quality_factor * squeeze_luma_factor *
-            squeeze_luma_qtable[shift];
+        if (cparams.colorspace != 0 && component > 0 && component < 3) {
+          q = cquality * squeeze_quality_factor * squeeze_chroma_qtable[shift];
+        } else {
+          q = quality * squeeze_quality_factor * squeeze_luma_factor *
+              squeeze_luma_qtable[shift];
+        }
       }
       if (q < 1) q = 1;
       // preserve the old (buggy) behaviour of quantize.h.
@@ -1104,13 +1124,8 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   }
 
   stream_images[stream_id] = Image(r.xsize(), r.ysize(), 255, 3);
-  size_t hshift = HShift(enc_state->shared.frame_header.chroma_subsampling);
-  size_t vshift = VShift(enc_state->shared.frame_header.chroma_subsampling);
-  Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
-          ChromaSize(r.ysize(), vshift));
   if (nl_dc) {
-    JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling ==
-               YCbCrChromaSubsampling::k444);
+    JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling.Is444());
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1142,8 +1157,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         }
       }
     }
-  } else if (enc_state->shared.frame_header.chroma_subsampling ==
-             YCbCrChromaSubsampling::k444) {
+  } else if (enc_state->shared.frame_header.chroma_subsampling.Is444()) {
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
       float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
@@ -1169,16 +1183,23 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
     }
   } else {
     for (size_t c : {1, 0, 2}) {
+      Rect rect(
+          r.x0() >> enc_state->shared.frame_header.chroma_subsampling.HShift(c),
+          r.y0() >> enc_state->shared.frame_header.chroma_subsampling.VShift(c),
+          r.xsize() >>
+              enc_state->shared.frame_header.chroma_subsampling.HShift(c),
+          r.ysize() >>
+              enc_state->shared.frame_header.chroma_subsampling.VShift(c));
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
-      size_t ys = c == 1 ? r.ysize() : cr.ysize();
-      size_t xs = c == 1 ? r.xsize() : cr.xsize();
+      size_t ys = rect.ysize();
+      size_t xs = rect.xsize();
       Channel& ch = stream_images[stream_id].channel[c < 2 ? c ^ 1 : c];
       ch.w = xs;
       ch.h = ys;
       ch.resize();
       for (size_t y = 0; y < ys; y++) {
         int32_t* quant_row = ch.plane.Row(y);
-        const float* row = (c == 1 ? r : cr).ConstPlaneRow(dc, c, y);
+        const float* row = rect.ConstPlaneRow(dc, c, y);
         for (size_t x = 0; x < xs; x++) {
           quant_row[x] = std::round(row[x] * inv_factor);
         }
@@ -1189,7 +1210,8 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   DequantDC(r, &enc_state->shared.dc_storage, &enc_state->shared.quant_dc,
             stream_images[stream_id], enc_state->shared.quantizer.MulDC(),
             1.0 / mul, enc_state->shared.cmap.DCFactors(),
-            enc_state->shared.frame_header.chroma_subsampling, enc_state->shared.block_ctx_map);
+            enc_state->shared.frame_header.chroma_subsampling,
+            enc_state->shared.block_ctx_map);
 }
 
 void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,

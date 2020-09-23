@@ -16,5 +16,7 @@ add_library(lodepng STATIC
   lodepng/lodepng.cpp
   lodepng/lodepng.h
 )
+# This library can be included into position independent binaries.
+set_target_properties(lodepng PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 target_include_directories(lodepng
     PUBLIC "${CMAKE_CURRENT_LIST_DIR}/lodepng")

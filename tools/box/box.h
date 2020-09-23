@@ -22,6 +22,9 @@
 
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/status.h"
+#include "jxl/codec_in_out.h"
+#include "jxl/dec_file.h"
+#include "jxl/enc_file.h"
 
 namespace jpegxl {
 namespace tools {
@@ -84,6 +87,10 @@ struct JpegXlContainer {
 
   // TODO(lode): add frame index data
 
+  // JPEG reconstruction data, or null if not present in the container.
+  const uint8_t* jpeg_reconstruction = nullptr;
+  size_t jpeg_reconstruction_size = 0;
+
   // The main JPEG XL codestream, of which there must be 1 in the container.
   const uint8_t* codestream = nullptr;  // Not owned
   size_t codestream_size = 0;
@@ -97,6 +104,19 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
 // TODO(lode): streaming C API
 jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          jxl::PaddedBytes* out);
+
+// TODO(veluca): this doesn't really belong here.
+jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
+                               const JpegXlContainer& container,
+                               jxl::CodecInOut* io,
+                               jxl::AuxOut* aux_out = nullptr,
+                               jxl::ThreadPool* pool = nullptr);
+jxl::Status EncodeJpegToJpegXL(const jxl::CompressParams& params,
+                               const jxl::CodecInOut* io,
+                               jxl::PassesEncoderState* passes_enc_state,
+                               jxl::PaddedBytes* compressed,
+                               jxl::AuxOut* aux_out = nullptr,
+                               jxl::ThreadPool* pool = nullptr);
 
 }  // namespace tools
 }  // namespace jpegxl

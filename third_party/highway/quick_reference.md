@@ -26,23 +26,28 @@ The public headers are:
     `HWY_TARGET_INCLUDE`) once per enabled target to generate code from the
     same source code. Only needed if dynamic dispatch is desired.
 
+*   hwy/highway.h: main header, included from all translation units that
+    implement SIMD functionality inside `HWY_NAMESPACE`.
+
 *   hwy/aligned_allocator.h: defines functions for allocating memory with
     alignment suitable for `Load`/`Store`.
 
 *   hwy/cache_control.h: defines stand-alone functions to control caching (e.g.
     prefetching) and memory barriers, independent of actual SIMD.
 
-SIMD implementations must be preceded and followed by two #includes:
+SIMD implementations must be preceded and followed by the following:
 ```
-#include <hwy/before_namespace-inl.h>  // at file scope
+#include <hwy/highway.h>
+HWY_BEFORE_NAMESPACE();  // at file scope
 namespace project {  // optional
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // implementation
 
-#include <hwy/end_target-inl.h>
-}  // namespace - if used above
-#include <hwy/after_namespace-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace project - optional
+HWY_AFTER_NAMESPACE();
 ```
 
 ## Preprocessor macros
@@ -90,6 +95,12 @@ descriptor. Using it as an array size is discouraged because the bound may be
 loose in case 3, leading to excessive stack usage. Where possible, prefer
 aligned dynamic allocation of `Lanes(d)` elements.
 
+Note that case 3 does not imply the API will use more than one native vector.
+Highway is designed to map a user-specified vector to a single
+(possibly partial) vector. By discouraging user-specified `N`, we improve
+performance portability (e.g. by reducing spills to memory for platforms that
+have smaller vectors than the developer expected).
+
 To construct vectors, call factory functions (see "Initialization" below) with
 a tag parameter `d`.
 
@@ -100,6 +111,15 @@ Local variables typically use auto for type deduction. If `d` is
 For function arguments, it is often sufficient to return the same type as the
 argument: `template<class V> V Squared(V v) { return v * v; }`. Otherwise, use
 the alias `Vec<D>`.
+
+Note that Highway functions reside in `hwy::HWY_NAMESPACE`, whereas user-defined
+functions reside in `project::[nested]::HWY_NAMESPACE`. Because all Highway
+functions generally take either a `Simd` or vector argument, which are also
+defined in namespace `hwy`, they will typically be found via Argument-Dependent
+Lookup and namespace qualifiers are not necessary. As an exception, Highway
+functions that are templates (e.g. because they require a compile-time argument
+such as a lane index or shift count) require a using-declaration such as
+`using hwy::HWY_NAMESPACE::ShiftLeft`.
 
 ## Operations
 
@@ -429,6 +449,12 @@ All functions except Stream are defined in cache_control.h.
 
 *   <code>V2 **Upper/LowerHalf**(V)</code>: returns upper or lower half of
     the vector `V`.
+
+*   <code>V **ZeroExtendVector**(V2)</code>: returns vector whose UpperHalf is
+    zero and whose LowerHalf is the argument.
+
+*   <code>V **Combine**(V2, V2)</code>: returns vector whose UpperHalf is
+    the first argument and whose LowerHalf is the second argument.
 
 *   <code>V **OddEven**(V a, V b)</code>: returns a vector whose odd lanes are
     taken from `a` and the even lanes from `b`.

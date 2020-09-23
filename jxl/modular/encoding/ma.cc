@@ -14,6 +14,12 @@
 
 #include "jxl/modular/encoding/ma.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/modular/encoding/ma.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
 #include <limits>
 #include <numeric>
 #include <queue>
@@ -22,18 +28,11 @@
 #include <unordered_set>
 
 #include "jxl/enc_ans.h"
-#include "jxl/modular/encoding/context_predict.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/modular/encoding/ma.cc"
-#include <hwy/foreach_target.h>
-
-// SIMD code.
-#include <hwy/before_namespace-inl.h>
-
 #include "jxl/fast_log-inl.h"
+#include "jxl/modular/encoding/context_predict.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 const HWY_FULL(float) df;
 const HWY_FULL(int32_t) di;
@@ -218,337 +217,355 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
                    const std::vector<std::vector<int>> &props,
                    const std::vector<Predictor> predictors,
                    const std::vector<std::vector<int>> &compact_properties,
-                   std::vector<size_t> *indices, size_t pos, size_t begin,
-                   size_t end, const std::vector<size_t> &props_to_use,
-                   float threshold, uint64_t used_properties,
+                   std::vector<size_t> *indices,
+                   const std::vector<size_t> &props_to_use, float threshold,
                    const std::vector<ModularMultiplierInfo> &mul_info,
-                   StaticPropRange static_prop_range,
+                   StaticPropRange initial_static_prop_range,
                    float fast_decode_multiplier, Tree *tree) {
-  if (begin == end) return;
-
-  int wp_prop = props_to_use.size();
-  for (size_t i = 0; i < props_to_use.size(); i++) {
-    if (props_to_use[i] == kNumNonrefProperties - weighted::kNumProperties) {
-      wp_prop = i;
-    }
-  }
-
-  struct SplitInfo {
-    size_t prop = 0;
-    int val = 0;
-    size_t pos = 0;
-    float lcost = std::numeric_limits<float>::max();
-    float rcost = std::numeric_limits<float>::max();
-    Predictor lpred = Predictor::Zero;
-    Predictor rpred = Predictor::Zero;
-    float Cost() { return lcost + rcost; }
+  struct NodeInfo {
+    size_t pos;
+    size_t begin;
+    size_t end;
+    uint64_t used_properties;
+    StaticPropRange static_prop_range;
   };
+  std::vector<NodeInfo> nodes;
+  nodes.push_back(
+      NodeInfo{0, 0, indices->size(), 0, initial_static_prop_range});
+  // TODO(veluca): consider parallelizing the search (processing multiple nodes
+  // at a time).
+  while (!nodes.empty()) {
+    size_t pos = nodes.back().pos;
+    size_t begin = nodes.back().begin;
+    size_t end = nodes.back().end;
+    uint64_t used_properties = nodes.back().used_properties;
+    StaticPropRange static_prop_range = nodes.back().static_prop_range;
+    nodes.pop_back();
+    if (begin == end) continue;
 
-  SplitInfo best_split_static_constant;
-  SplitInfo best_split_static;
-  SplitInfo best_split_nonstatic;
-  SplitInfo best_split_nowp;
-
-  JXL_ASSERT(begin <= end);
-  JXL_ASSERT(end <= indices->size());
-
-  std::vector<std::vector<uint32_t>> tokens(residuals.size());
-  for (auto &v : tokens) {
-    v.reserve(end - begin);
-  }
-  std::vector<std::vector<uint32_t>> extra_bits(residuals.size());
-  for (auto &v : extra_bits) {
-    v.reserve(end - begin);
-  }
-
-  // Compute the tokens corresponding to the residuals.
-  size_t max_symbols = 0;
-  for (size_t pred = 0; pred < residuals.size(); pred++) {
-    for (size_t i = begin; i < end; i++) {
-      uint32_t tok, nbits, bits;
-      HybridUintConfig(4, 1, 2).Encode(
-          PackSigned(residuals[pred][(*indices)[i]]), &tok, &bits, &nbits);
-      tokens[pred].push_back(tok);
-      extra_bits[pred].push_back(nbits);
-      max_symbols = max_symbols > tok + 1 ? max_symbols : tok + 1;
-    }
-  }
-  max_symbols = Padded(max_symbols);
-  std::vector<int32_t> rounded_counts(max_symbols);
-  std::vector<int32_t> counts(max_symbols * residuals.size());
-  std::vector<int32_t> tot_extra_bits(residuals.size());
-  for (size_t pred = 0; pred < tokens.size(); pred++) {
-    for (size_t i = 0; i < tokens[pred].size(); i++) {
-      counts[pred * max_symbols + tokens[pred][i]]++;
-      tot_extra_bits[pred] += extra_bits[pred][i];
-    }
-  }
-
-  float base_bits;
-  {
-    size_t pred = 0;
-    for (size_t i = 0; i < predictors.size(); i++) {
-      if (predictors[i] == (*tree)[pos].predictor) {
-        pred = i;
+    int wp_prop = props_to_use.size();
+    for (size_t i = 0; i < props_to_use.size(); i++) {
+      if (props_to_use[i] == kNumNonrefProperties - weighted::kNumProperties) {
+        wp_prop = i;
       }
     }
-    base_bits = EstimateBits(counts.data() + pred * max_symbols,
-                             rounded_counts.data(), max_symbols) +
-                tot_extra_bits[pred];
-  }
 
-  std::vector<int> prop_value_used_count;
-  std::vector<int> prop_count_increase;
-  std::vector<size_t> extra_bits_increase;
-  // For each property, compute which of its values are used, and what
-  // tokens correspond to those usages. Then, iterate through the values,
-  // and compute the entropy of each side of the split (of the form `prop >
-  // threshold`). Finally, find the split that minimizes the cost.
-  struct CostInfo {
-    float cost = std::numeric_limits<float>::max();
-    float extra_cost = 0;
-    float Cost() const { return cost + extra_cost; }
-    Predictor pred;  // will be uninitialized in some cases, but never used.
-  };
-  std::vector<CostInfo> costs_l;
-  std::vector<CostInfo> costs_r;
-  // The lower the threshold, the higher the expected noisiness of the estimate.
-  // Thus, discourage changing predictors.
-  float change_pred_penalty = 800.0f / (100.0f + threshold);
-  for (size_t prop = 0; prop < props.size() && base_bits > threshold; prop++) {
-    costs_l.clear();
-    costs_r.clear();
-    costs_l.resize(end - begin);
-    costs_r.resize(end - begin);
-    if (prop_value_used_count.size() < compact_properties[prop].size()) {
-      prop_value_used_count.resize(compact_properties[prop].size());
-      prop_count_increase.resize(compact_properties[prop].size() * max_symbols *
-                                 residuals.size());
-      extra_bits_increase.resize(compact_properties[prop].size() *
-                                 residuals.size());
+    struct SplitInfo {
+      size_t prop = 0;
+      int val = 0;
+      size_t pos = 0;
+      float lcost = std::numeric_limits<float>::max();
+      float rcost = std::numeric_limits<float>::max();
+      Predictor lpred = Predictor::Zero;
+      Predictor rpred = Predictor::Zero;
+      float Cost() { return lcost + rcost; }
+    };
+
+    SplitInfo best_split_static_constant;
+    SplitInfo best_split_static;
+    SplitInfo best_split_nonstatic;
+    SplitInfo best_split_nowp;
+
+    JXL_ASSERT(begin <= end);
+    JXL_ASSERT(end <= indices->size());
+
+    std::vector<std::vector<uint32_t>> tokens(residuals.size());
+    for (auto &v : tokens) {
+      v.reserve(end - begin);
+    }
+    std::vector<std::vector<uint32_t>> extra_bits(residuals.size());
+    for (auto &v : extra_bits) {
+      v.reserve(end - begin);
     }
 
-    size_t first_used = compact_properties[prop].size();
-    size_t last_used = 0;
-
-    // TODO(veluca): consider finding multiple splits along a single property at
-    // the same time, possibly with a bottom-up approach.
-    for (size_t i = begin; i < end; i++) {
-      size_t p = props[prop][(*indices)[i]];
-      prop_value_used_count[p]++;
-      for (size_t pred = 0; pred < residuals.size(); pred++) {
-        size_t sym = tokens[pred][i - begin];
-        prop_count_increase[p * max_symbols * residuals.size() +
-                            max_symbols * pred + sym]++;
-        extra_bits_increase[p * residuals.size() + pred] +=
-            extra_bits[pred][i - begin];
-      }
-      last_used = std::max(last_used, p);
-      first_used = std::min(first_used, p);
-    }
-
-    std::vector<int32_t> counts_above(max_symbols), counts_below(max_symbols);
-
-    // For all predictors, compute the right and left costs of each split.
+    // Compute the tokens corresponding to the residuals.
+    size_t max_symbols = 0;
     for (size_t pred = 0; pred < residuals.size(); pred++) {
-      memcpy(counts_above.data(), counts.data() + pred * max_symbols,
-             max_symbols * sizeof counts_above[0]);
-      memset(counts_below.data(), 0, max_symbols * sizeof counts_below[0]);
-      size_t extra_bits_below = 0;
-      // Exclude last used: this ensures neither counts_above nor counts_below
-      // is empty.
+      for (size_t i = begin; i < end; i++) {
+        uint32_t tok, nbits, bits;
+        HybridUintConfig(4, 1, 2).Encode(
+            PackSigned(residuals[pred][(*indices)[i]]), &tok, &bits, &nbits);
+        tokens[pred].push_back(tok);
+        extra_bits[pred].push_back(nbits);
+        max_symbols = max_symbols > tok + 1 ? max_symbols : tok + 1;
+      }
+    }
+    max_symbols = Padded(max_symbols);
+    std::vector<int32_t> rounded_counts(max_symbols);
+    std::vector<int32_t> counts(max_symbols * residuals.size());
+    std::vector<int32_t> tot_extra_bits(residuals.size());
+    for (size_t pred = 0; pred < tokens.size(); pred++) {
+      for (size_t i = 0; i < tokens[pred].size(); i++) {
+        counts[pred * max_symbols + tokens[pred][i]]++;
+        tot_extra_bits[pred] += extra_bits[pred][i];
+      }
+    }
+
+    float base_bits;
+    {
+      size_t pred = 0;
+      for (size_t i = 0; i < predictors.size(); i++) {
+        if (predictors[i] == (*tree)[pos].predictor) {
+          pred = i;
+        }
+      }
+      base_bits = EstimateBits(counts.data() + pred * max_symbols,
+                               rounded_counts.data(), max_symbols) +
+                  tot_extra_bits[pred];
+    }
+
+    std::vector<int> prop_value_used_count;
+    std::vector<int> prop_count_increase;
+    std::vector<size_t> extra_bits_increase;
+    // For each property, compute which of its values are used, and what
+    // tokens correspond to those usages. Then, iterate through the values,
+    // and compute the entropy of each side of the split (of the form `prop >
+    // threshold`). Finally, find the split that minimizes the cost.
+    struct CostInfo {
+      float cost = std::numeric_limits<float>::max();
+      float extra_cost = 0;
+      float Cost() const { return cost + extra_cost; }
+      Predictor pred;  // will be uninitialized in some cases, but never used.
+    };
+    std::vector<CostInfo> costs_l;
+    std::vector<CostInfo> costs_r;
+    // The lower the threshold, the higher the expected noisiness of the
+    // estimate. Thus, discourage changing predictors.
+    float change_pred_penalty = 800.0f / (100.0f + threshold);
+    for (size_t prop = 0; prop < props.size() && base_bits > threshold;
+         prop++) {
+      costs_l.clear();
+      costs_r.clear();
+      costs_l.resize(end - begin);
+      costs_r.resize(end - begin);
+      if (prop_value_used_count.size() < compact_properties[prop].size()) {
+        prop_value_used_count.resize(compact_properties[prop].size());
+        prop_count_increase.resize(compact_properties[prop].size() *
+                                   max_symbols * residuals.size());
+        extra_bits_increase.resize(compact_properties[prop].size() *
+                                   residuals.size());
+      }
+
+      size_t first_used = compact_properties[prop].size();
+      size_t last_used = 0;
+
+      // TODO(veluca): consider finding multiple splits along a single property
+      // at the same time, possibly with a bottom-up approach.
+      for (size_t i = begin; i < end; i++) {
+        size_t p = props[prop][(*indices)[i]];
+        prop_value_used_count[p]++;
+        for (size_t pred = 0; pred < residuals.size(); pred++) {
+          size_t sym = tokens[pred][i - begin];
+          prop_count_increase[p * max_symbols * residuals.size() +
+                              max_symbols * pred + sym]++;
+          extra_bits_increase[p * residuals.size() + pred] +=
+              extra_bits[pred][i - begin];
+        }
+        last_used = std::max(last_used, p);
+        first_used = std::min(first_used, p);
+      }
+
+      std::vector<int32_t> counts_above(max_symbols), counts_below(max_symbols);
+
+      // For all predictors, compute the right and left costs of each split.
+      for (size_t pred = 0; pred < residuals.size(); pred++) {
+        memcpy(counts_above.data(), counts.data() + pred * max_symbols,
+               max_symbols * sizeof counts_above[0]);
+        memset(counts_below.data(), 0, max_symbols * sizeof counts_below[0]);
+        size_t extra_bits_below = 0;
+        // Exclude last used: this ensures neither counts_above nor counts_below
+        // is empty.
+        size_t split = begin;
+        for (size_t i = first_used; i < last_used; i++) {
+          if (!prop_value_used_count[i]) continue;
+          split += prop_value_used_count[i];
+          extra_bits_below += extra_bits_increase[i * residuals.size() + pred];
+          for (size_t sym = 0; sym < max_symbols; sym++) {
+            counts_above[sym] -=
+                prop_count_increase[i * max_symbols * residuals.size() +
+                                    max_symbols * pred + sym];
+            counts_below[sym] +=
+                prop_count_increase[i * max_symbols * residuals.size() +
+                                    max_symbols * pred + sym];
+          }
+          float rcost = EstimateBits(counts_above.data(), rounded_counts.data(),
+                                     max_symbols) +
+                        tot_extra_bits[pred] - extra_bits_below;
+          float lcost = EstimateBits(counts_below.data(), rounded_counts.data(),
+                                     max_symbols) +
+                        extra_bits_below;
+          float penalty = 0;
+          if (predictors[pred] != (*tree)[pos].predictor) {
+            penalty = change_pred_penalty;
+          }
+          if (rcost + penalty < costs_r[split - begin].Cost()) {
+            costs_r[split - begin].cost = rcost;
+            costs_r[split - begin].extra_cost = penalty;
+            costs_r[split - begin].pred = predictors[pred];
+          }
+          if (lcost + penalty < costs_l[split - begin].Cost()) {
+            costs_l[split - begin].cost = lcost;
+            costs_l[split - begin].extra_cost = penalty;
+            ;
+            costs_l[split - begin].pred = predictors[pred];
+          }
+        }
+      }
+      // Iterate through the possible splits and find the one with minimum sum
+      // of costs of the two sides.
       size_t split = begin;
       for (size_t i = first_used; i < last_used; i++) {
         if (!prop_value_used_count[i]) continue;
         split += prop_value_used_count[i];
-        extra_bits_below += extra_bits_increase[i * residuals.size() + pred];
-        for (size_t sym = 0; sym < max_symbols; sym++) {
-          counts_above[sym] -=
-              prop_count_increase[i * max_symbols * residuals.size() +
-                                  max_symbols * pred + sym];
-          counts_below[sym] +=
-              prop_count_increase[i * max_symbols * residuals.size() +
-                                  max_symbols * pred + sym];
-        }
-        float rcost = EstimateBits(counts_above.data(), rounded_counts.data(),
-                                   max_symbols) +
-                      tot_extra_bits[pred] - extra_bits_below;
-        float lcost = EstimateBits(counts_below.data(), rounded_counts.data(),
-                                   max_symbols) +
-                      extra_bits_below;
-        float penalty = 0;
-        if (predictors[pred] != (*tree)[pos].predictor) {
-          penalty = change_pred_penalty;
-        }
-        if (rcost + penalty < costs_r[split - begin].Cost()) {
-          costs_r[split - begin].cost = rcost;
-          costs_r[split - begin].extra_cost = penalty;
-          costs_r[split - begin].pred = predictors[pred];
-        }
-        if (lcost + penalty < costs_l[split - begin].Cost()) {
-          costs_l[split - begin].cost = lcost;
-          costs_l[split - begin].extra_cost = penalty;
-          ;
-          costs_l[split - begin].pred = predictors[pred];
-        }
-      }
-    }
-    // Iterate through the possible splits and find the one with minimum sum of
-    // costs of the two sides.
-    size_t split = begin;
-    for (size_t i = first_used; i < last_used; i++) {
-      if (!prop_value_used_count[i]) continue;
-      split += prop_value_used_count[i];
-      float rcost = costs_r[split - begin].cost;
-      float lcost = costs_l[split - begin].cost;
-      // WP was not used + we would use the WP property or predictor
-      bool uses_wp = prop == wp_prop ||
-                     costs_l[split - begin].pred == Predictor::Weighted ||
-                     costs_r[split - begin].pred == Predictor::Weighted;
-      bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
-                     (*tree)[pos].predictor == Predictor::Weighted;
-      bool adds_wp = uses_wp && !used_wp;
-      bool zero_entropy_side = rcost == 0 || lcost == 0;
+        float rcost = costs_r[split - begin].cost;
+        float lcost = costs_l[split - begin].cost;
+        // WP was not used + we would use the WP property or predictor
+        bool uses_wp = prop == wp_prop ||
+                       costs_l[split - begin].pred == Predictor::Weighted ||
+                       costs_r[split - begin].pred == Predictor::Weighted;
+        bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
+                       (*tree)[pos].predictor == Predictor::Weighted;
+        bool adds_wp = uses_wp && !used_wp;
+        bool zero_entropy_side = rcost == 0 || lcost == 0;
 
-      SplitInfo &best =
-          prop < kNumStaticProperties
-              ? (zero_entropy_side ? best_split_static_constant
-                                   : best_split_static)
-              : (adds_wp ? best_split_nonstatic : best_split_nowp);
-      if (lcost + rcost < best.Cost()) {
-        best.prop = prop;
-        best.val = i;
-        best.pos = split;
-        best.lcost = lcost;
-        best.lpred = costs_l[split - begin].pred;
-        best.rcost = rcost;
-        best.rpred = costs_r[split - begin].pred;
-      }
-    }
-    // Clear prop_count_increase, extra_bits_increase and prop_value_used_count
-    // arrays.
-    for (size_t pred = 0; pred < residuals.size(); pred++) {
-      for (size_t i = begin; i < end; i++) {
-        size_t p = props[prop][(*indices)[i]];
-        size_t sym = tokens[pred][i - begin];
-        prop_count_increase[p * max_symbols * residuals.size() +
-                            max_symbols * pred + sym] = 0;
-        prop_value_used_count[p] = 0;
-        extra_bits_increase[p * residuals.size() + pred] = 0;
-      }
-    }
-  }
-
-  SplitInfo *best = &best_split_nonstatic;
-  // Try to avoid introducing WP.
-  if (best_split_nowp.Cost() + threshold < base_bits &&
-      best_split_nowp.Cost() <= fast_decode_multiplier * best->Cost()) {
-    best = &best_split_nowp;
-  }
-  // Split along static props if possible and not significantly more expensive.
-  if (best_split_static.Cost() + threshold < base_bits &&
-      best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
-    best = &best_split_static;
-  }
-  // Split along static props to create constant nodes if possible.
-  if (best_split_static_constant.Cost() + threshold < base_bits) {
-    best = &best_split_static_constant;
-  }
-  SplitInfo forced_split;
-  // The multiplier ranges cut halfway through the current ranges of static
-  // properties. We do this even if the current node is not a leaf, to minimize
-  // the number of nodes in the resulting tree.
-  for (size_t i = 0; i < mul_info.size(); i++) {
-    uint32_t axis, val;
-    IntersectionType t =
-        BoxIntersects(static_prop_range, mul_info[i].range, axis, val);
-    if (t == IntersectionType::kNone) continue;
-    if (t == IntersectionType::kInside) {
-      (*tree)[pos].multiplier = mul_info[i].multiplier;
-      break;
-    }
-    if (t == IntersectionType::kPartial) {
-      forced_split.val = val;
-      forced_split.prop = axis;
-      forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
-      best = &forced_split;
-      best->pos = begin;
-      JXL_ASSERT(best->prop == props_to_use[best->prop]);
-      for (size_t x = begin; x < end; x++) {
-        if (props[best->prop][(*indices)[x]] <= best->val) {
-          best->pos++;
+        SplitInfo &best =
+            prop < kNumStaticProperties
+                ? (zero_entropy_side ? best_split_static_constant
+                                     : best_split_static)
+                : (adds_wp ? best_split_nonstatic : best_split_nowp);
+        if (lcost + rcost < best.Cost()) {
+          best.prop = prop;
+          best.val = i;
+          best.pos = split;
+          best.lcost = lcost;
+          best.lpred = costs_l[split - begin].pred;
+          best.rcost = rcost;
+          best.rpred = costs_r[split - begin].pred;
         }
       }
-      break;
+      // Clear prop_count_increase, extra_bits_increase and
+      // prop_value_used_count arrays.
+      for (size_t pred = 0; pred < residuals.size(); pred++) {
+        for (size_t i = begin; i < end; i++) {
+          size_t p = props[prop][(*indices)[i]];
+          size_t sym = tokens[pred][i - begin];
+          prop_count_increase[p * max_symbols * residuals.size() +
+                              max_symbols * pred + sym] = 0;
+          prop_value_used_count[p] = 0;
+          extra_bits_increase[p * residuals.size() + pred] = 0;
+        }
+      }
     }
-  }
 
-  if (best->Cost() + threshold < base_bits) {
-    // Split node and try to split children.
-    MakeSplitNode(pos, props_to_use[best->prop],
-                  best->val < compact_properties[best->prop].size()
-                      ? compact_properties[best->prop][best->val]
-                      : best->val,
-                  best->lpred, 0, best->rpred, 0, tree);
-    // "Sort" according to winning property
-    std::nth_element(indices->begin() + begin, indices->begin() + best->pos,
-                     indices->begin() + end, [&](size_t a, size_t b) {
-                       return props[best->prop][a] < props[best->prop][b];
-                     });
-    uint32_t p = props_to_use[best->prop];
-    if (p >= kNumStaticProperties) {
-      used_properties |= 1 << best->prop;
+    SplitInfo *best = &best_split_nonstatic;
+    // Try to avoid introducing WP.
+    if (best_split_nowp.Cost() + threshold < base_bits &&
+        best_split_nowp.Cost() <= fast_decode_multiplier * best->Cost()) {
+      best = &best_split_nowp;
     }
-    auto new_sp_range = static_prop_range;
-    if (p < kNumStaticProperties) {
-      JXL_ASSERT(best->val + 1 <= new_sp_range[p][1]);
-      new_sp_range[p][1] = best->val + 1;
-      JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+    // Split along static props if possible and not significantly more
+    // expensive.
+    if (best_split_static.Cost() + threshold < base_bits &&
+        best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
+      best = &best_split_static;
     }
-    FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].rchild, begin, best->pos, props_to_use,
-                  threshold, used_properties, mul_info, new_sp_range,
-                  fast_decode_multiplier, tree);
-    new_sp_range = static_prop_range;
-    if (p < kNumStaticProperties) {
-      JXL_ASSERT(new_sp_range[p][0] <= best->val + 1);
-      new_sp_range[p][0] = best->val + 1;
-      JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+    // Split along static props to create constant nodes if possible.
+    if (best_split_static_constant.Cost() + threshold < base_bits) {
+      best = &best_split_static_constant;
     }
-    FindBestSplit(residuals, props, predictors, compact_properties, indices,
-                  (*tree)[pos].lchild, best->pos, end, props_to_use, threshold,
-                  used_properties, mul_info, new_sp_range,
-                  fast_decode_multiplier, tree);
-  } else if ((*tree)[pos].multiplier == 1) {
-    // try to pick an offset for the leaves.
-    size_t pred = 0;
-    for (size_t i = 0; i < predictors.size(); i++) {
-      if (predictors[i] == (*tree)[pos].predictor) {
-        pred = i;
+    SplitInfo forced_split;
+    // The multiplier ranges cut halfway through the current ranges of static
+    // properties. We do this even if the current node is not a leaf, to
+    // minimize the number of nodes in the resulting tree.
+    for (size_t i = 0; i < mul_info.size(); i++) {
+      uint32_t axis, val;
+      IntersectionType t =
+          BoxIntersects(static_prop_range, mul_info[i].range, axis, val);
+      if (t == IntersectionType::kNone) continue;
+      if (t == IntersectionType::kInside) {
+        (*tree)[pos].multiplier = mul_info[i].multiplier;
+        break;
+      }
+      if (t == IntersectionType::kPartial) {
+        forced_split.val = val;
+        forced_split.prop = axis;
+        forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
+        best = &forced_split;
+        best->pos = begin;
+        JXL_ASSERT(best->prop == props_to_use[best->prop]);
+        for (size_t x = begin; x < end; x++) {
+          if (props[best->prop][(*indices)[x]] <= best->val) {
+            best->pos++;
+          }
+        }
         break;
       }
     }
-    int64_t o;
-    float c =
-        EstimateTotalBitsAndOffset(residuals[pred], *indices, begin, end, &o);
-    // Cost estimate of encoding the offset. Huge constant penalty to avoid
-    // significant increases in tree size.
-    c += 200.0f + FloorLog2Nonzero(PackSigned(o) + 1);
-    if (c < base_bits) {
-      (*tree)[pos].predictor_offset = o;
+
+    if (best->Cost() + threshold < base_bits) {
+      // Split node and try to split children.
+      MakeSplitNode(pos, props_to_use[best->prop],
+                    best->val < compact_properties[best->prop].size()
+                        ? compact_properties[best->prop][best->val]
+                        : best->val,
+                    best->lpred, 0, best->rpred, 0, tree);
+      // "Sort" according to winning property
+      std::nth_element(indices->begin() + begin, indices->begin() + best->pos,
+                       indices->begin() + end, [&](size_t a, size_t b) {
+                         return props[best->prop][a] < props[best->prop][b];
+                       });
+      uint32_t p = props_to_use[best->prop];
+      if (p >= kNumStaticProperties) {
+        used_properties |= 1 << best->prop;
+      }
+      auto new_sp_range = static_prop_range;
+      if (p < kNumStaticProperties) {
+        JXL_ASSERT(best->val + 1 <= new_sp_range[p][1]);
+        new_sp_range[p][1] = best->val + 1;
+        JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+      }
+      nodes.push_back(NodeInfo{(*tree)[pos].rchild, begin, best->pos,
+                               used_properties, new_sp_range});
+      new_sp_range = static_prop_range;
+      if (p < kNumStaticProperties) {
+        JXL_ASSERT(new_sp_range[p][0] <= best->val + 1);
+        new_sp_range[p][0] = best->val + 1;
+        JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
+      }
+      nodes.push_back(NodeInfo{(*tree)[pos].lchild, best->pos, end,
+                               used_properties, new_sp_range});
+    } else if ((*tree)[pos].multiplier == 1) {
+      // try to pick an offset for the leaves.
+      size_t pred = 0;
+      for (size_t i = 0; i < predictors.size(); i++) {
+        if (predictors[i] == (*tree)[pos].predictor) {
+          pred = i;
+          break;
+        }
+      }
+      int64_t o;
+      float c =
+          EstimateTotalBitsAndOffset(residuals[pred], *indices, begin, end, &o);
+      // Cost estimate of encoding the offset. Huge constant penalty to avoid
+      // significant increases in tree size.
+      c += 200.0f + FloorLog2Nonzero(PackSigned(o) + 1);
+      if (c < base_bits) {
+        (*tree)[pos].predictor_offset = o;
+      }
     }
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(EstimateEntropy)  // Local function.
-HWY_EXPORT(FindBestSplit)    // Local function.
+HWY_EXPORT(EstimateEntropy);  // Local function.
+HWY_EXPORT(FindBestSplit);    // Local function.
 
 void ChooseAndQuantizeProperties(
     size_t max_properties, size_t max_property_values,
@@ -721,9 +738,8 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   std::vector<size_t> indices(residuals[0].size());
   std::iota(indices.begin(), indices.end(), 0);
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
-  (residuals, props, predictors, compact_properties, &indices, 0, 0,
-   indices.size(), props_to_use, threshold, /*used_properties=*/0, mul_info,
-   static_prop_range, fast_decode_multiplier, tree);
+  (residuals, props, predictors, compact_properties, &indices, props_to_use,
+   threshold, mul_info, static_prop_range, fast_decode_multiplier, tree);
 }
 
 namespace {
@@ -755,7 +771,7 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
                            static_cast<int>(tree[cur].predictor));
       tokens->emplace_back(kOffsetContext,
                            PackSigned(tree[cur].predictor_offset));
-      uint32_t mul_log = NumZeroBitsBelowLSBNonzero(tree[cur].multiplier);
+      uint32_t mul_log = Num0BitsBelowLS1Bit_Nonzero(tree[cur].multiplier);
       uint32_t mul_bits = (tree[cur].multiplier >> mul_log) - 1;
       tokens->emplace_back(kMultiplierLogContext, mul_log);
       tokens->emplace_back(kMultiplierBitsContext, mul_bits);

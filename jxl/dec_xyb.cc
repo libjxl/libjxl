@@ -13,25 +13,30 @@
 // limitations under the License.
 
 #include "jxl/dec_xyb.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/dec_xyb.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <string.h>
+
+#include <hwy/highway.h>
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
+#include "jxl/dec_xyb-inl.h"
 #include "jxl/fields.h"
 #include "jxl/image.h"
 #include "jxl/opsin_params.h"
 #include "jxl/quantizer.h"
-
-#include "jxl/dec_xyb-inl.h"
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Broadcast;
 
 void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
                           const OpsinParams& opsin_params) {
@@ -323,20 +328,21 @@ ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
   return dst;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(OpsinToLinearInplace)
+HWY_EXPORT(OpsinToLinearInplace);
 void OpsinToLinearInplace(Image3F* JXL_RESTRICT inout, ThreadPool* pool,
                           const OpsinParams& opsin_params) {
   return HWY_DYNAMIC_DISPATCH(OpsinToLinearInplace)(inout, pool, opsin_params);
 }
 
-HWY_EXPORT(OpsinToLinear)
+HWY_EXPORT(OpsinToLinear);
 void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
                    Image3F* JXL_RESTRICT linear,
                    const OpsinParams& opsin_params) {
@@ -344,7 +350,7 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
                                              opsin_params);
 }
 
-HWY_EXPORT(YcbcrToRgb)
+HWY_EXPORT(YcbcrToRgb);
 void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
                 const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
                 ImageF* b_plane, ThreadPool* pool) {
@@ -352,12 +358,12 @@ void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
                                           g_plane, b_plane, pool);
 }
 
-HWY_EXPORT(UpsampleV2)
+HWY_EXPORT(UpsampleV2);
 ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
   return HWY_DYNAMIC_DISPATCH(UpsampleV2)(src, pool);
 }
 
-HWY_EXPORT(UpsampleH2)
+HWY_EXPORT(UpsampleH2);
 ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
   return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, pool);
 }

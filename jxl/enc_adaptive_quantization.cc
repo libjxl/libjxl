@@ -23,6 +23,13 @@
 #include <string>
 #include <vector>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_adaptive_quantization.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
@@ -45,6 +52,8 @@
 #include "jxl/enc_group.h"
 #include "jxl/enc_modular.h"
 #include "jxl/enc_params.h"
+#include "jxl/enc_transforms-inl.h"
+#include "jxl/fast_log-inl.h"
 #include "jxl/gauss_blur.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
@@ -52,28 +61,19 @@
 #include "jxl/multiframe.h"
 #include "jxl/opsin_params.h"
 #include "jxl/quant_weights.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_adaptive_quantization.cc"
-#include <hwy/foreach_target.h>
-
-#include "jxl/enc_transforms-inl.h"
-#include "jxl/fast_log-inl.h"
-
-//
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 namespace {
 using DF = HWY_FULL(float);
 DF df;
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  const float kBase = 0.9;
-  const float kMul1 = 0.012830564950968305;
-  const float kOffset1 = 0.010638874536303307;
-  const float kMul2 = -0.17766197567565159;
-  const float kOffset2 = 0.10647602832848234;
+  const float kBase = -0.0446227394092218927;
+  const float kMul1 = 0.015000360119857135;
+  const float kOffset1 = 0.0094582156312296526;
+  const float kMul2 = -0.19626464621511328;
+  const float kOffset2 = 0.11202992195155807;
   const float val = *out_pos;
   // Avoid division by zero.
   const float div = std::max(val + kOffset1, 1e-3f);
@@ -89,7 +89,7 @@ const float* Quant64() {
       0.50, 0.50, 0.50, 0.50, 0.90, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
       0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
   };
-  static const double kPow = 4.6629037508279616;
+  static const double kPow = 4.7119883373365008;
   HWY_ALIGN_MAX static float quant[64];
   for (size_t i = 0; i < 64; i++) {
     quant[i] = std::pow(kQuant64[i], kPow);
@@ -124,16 +124,16 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   entropyQL2 = std::sqrt(entropyQL2);
   entropyQL4 = std::sqrt(std::sqrt(entropyQL4));
   entropyQL8 = std::pow(entropyQL8, 0.125f);
-  const float mulQL2 = 0.03142149886912976;
-  const float mulQL4 = -0.66751878683954047;
-  const float mulQL8 = 0.38537889965210825;
+  const float mulQL2 = 0.041743192094330188;
+  const float mulQL4 = -0.46624823461238474;
+  const float mulQL8 = 0.40395514836861013;
   float v = mulQL2 * entropyQL2 + mulQL4 * entropyQL4 + mulQL8 * entropyQL8;
-  const float kMul = 1.2429764719119114;
+  const float kMul = 2.2071515242246593;
   *out_pos += kMul * v;
 }
 
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
-constexpr float kSGmul = 200.f;
+constexpr float kSGmul = 200.08476068f;
 constexpr float kSGmul2 = 1.0f / 74.f;
 constexpr float kLog2 = 0.693147181f;
 // Includes correction factor for std::log -> log2.
@@ -226,7 +226,9 @@ void GammaModulation(const size_t x, const size_t y, const ImageF& xyb_x,
     }
   }
   overall_ratio = GetLane(SumOfLanes(overall_ratio_v));
-  const float gam = 0.34403164676083279;
+  // ideally -1.0, but likely optimal correction adds some entropy, so slightly
+  // less than that.
+  const float gam = -0.82451765747203909;
   *out_pos += gam * std::log(overall_ratio / 64);
 }
 
@@ -260,21 +262,21 @@ void RangeModulation(const size_t x, const size_t y, const ImageF& xyb_x,
       y_sum_of_squares += vy * vy;
     }
   }
-  const float xmul = 1.7221705747809317;
+  const float xmul = 1.2887921448965145;
   float range_x = xmul * (maxval_x - minval_x);
   float range_y = maxval_y - minval_y;
   // This is not really a sound approach but it seems to yield better results
   // than the previous approach of just using range_y.
   float range0 = std::sqrt(range_x * range_y);
-  const float mul0 = -0.74090628990083873;
+  const float mul0 = -0.35496224064875914;
   float range1 = std::sqrt(range_x * range_x + range_y * range_y);
-  const float mul1 = 0.3768642185315102;
+  const float mul1 = 0.60474167943699886;
   float range2 = std::max(range_x, range_y);
-  const float mul2 = -0.36402038014085836;
+  const float mul2 = -0.69346126987049983;
   float range3 = std::min(range_x, range_y);
-  const float mul3 = 0.14396820717087175;
-  float range4 = range_x * std::sqrt(y_sum_of_squares / 64);
-  const float mul4 = 119.38245772972709;
+  const float mul3 = -0.30224514315551554;
+  float range4 = range_x;
+  const float mul4 = 4.217073530322276;
   // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
   // some pathological cases and cause problems downstream.
   *out_pos += std::max(
@@ -530,13 +532,14 @@ ImageF AdaptiveQuantizationMap(const Image3F& opsin,
   return out;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(AdaptiveQuantizationMap)
+HWY_EXPORT(AdaptiveQuantizationMap);
 
 namespace {
 bool FLAGS_log_search_state = false;
@@ -945,8 +948,9 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
         // compensate. If the error is below the target, decrease the qf.
         // However, to avoid an excessive increase of the qf, only do so if the
         // error is less than half the maximum allowed error.
-        float qf_mul = max_error < 0.5f ? max_error * 2.0f
-                                        : max_error > 1.0f ? max_error : 1.0f;
+        float qf_mul = max_error < 0.5f   ? max_error * 2.0f
+                       : max_error > 1.0f ? max_error
+                                          : 1.0f;
         for (size_t qy = by; qy < by + acs.covered_blocks_y(); qy++) {
           float* JXL_RESTRICT quant_field_row = quant_field.Row(qy);
           for (size_t qx = bx; qx < bx + acs.covered_blocks_x(); qx++) {
@@ -1141,9 +1145,11 @@ ImageF IntensityAcEstimate(const ImageF& opsin_y,
 
 float InitialQuantDC(float butteraugli_target) {
   const float kDcMul = 2.9;  // Butteraugli target where non-linearity kicks in.
-  const float butteraugli_target_dc = std::min<float>(
-      butteraugli_target,
-      kDcMul * std::pow((1.0 / kDcMul) * butteraugli_target, kDcQuantPow));
+  const float butteraugli_target_dc = std::max<float>(
+      0.85 * butteraugli_target,
+      std::min<float>(
+          butteraugli_target,
+          kDcMul * std::pow((1.0 / kDcMul) * butteraugli_target, kDcQuantPow)));
   // We want the maximum DC value to be at most 2**15 * kInvDCQuant / quant_dc.
   // The maximum DC value might not be in the kXybRange because of inverse
   // gaborish, so we add some slack to the maximum theoretical quant obtained

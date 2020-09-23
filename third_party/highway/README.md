@@ -120,9 +120,9 @@ and their parameters.
     GCC's ifunc (indirect functions). The latter is compiler-specific and risks
     crashes due to ODR violations when compiling the same function with
     different compiler flags. We solve this problem via target-specific
-    attributes (see HOWTO section below). We also permit a mix of static
-    target selection and runtime dispatch for hotspots that may benefit from
-    newer instruction sets if available.
+    namespaces and attributes (see HOWTO section below). We also permit a mix of
+    static target selection and runtime dispatch for hotspots that may benefit
+    from newer instruction sets if available.
 
 1.  Using built-in PPC vector types without a wrapper class. This leads to much
     better code generation with GCC 6.3: https://godbolt.org/z/pd2PNP.
@@ -131,19 +131,19 @@ and their parameters.
     typedefs are non-members. 2019-04 update: Clang power64le does not have
     this issue, so we simplified get_part(d, v) to GetLane(v).
 
-*   Omitting inefficient or non-performance-portable operations such as `hmax`,
+1.  Omitting inefficient or non-performance-portable operations such as `hmax`,
     `operator[]`, and unsupported integer comparisons. Applications can often
     replace these operations at lower cost than emulating that exact behavior.
 
-*   Omitting `long double` types: these are not commonly available in hardware.
+1.  Omitting `long double` types: these are not commonly available in hardware.
 
-*   Ensuring signed integer overflow has well-defined semantics (wraparound).
+1.  Ensuring signed integer overflow has well-defined semantics (wraparound).
 
-*   Simple header-only implementation and less than a tenth of the size of the
+1.  Simple header-only implementation and less than a tenth of the size of the
     Vc library from which P0214 was derived (98,000 lines in
     https://github.com/VcDevel/Vc according to the gloc Chrome extension).
 
-*   Avoiding hidden performance costs. P0214R5 allows implicit conversions from
+1.  Avoiding hidden performance costs. P0214R5 allows implicit conversions from
     integer to float, which costs 3-4 cycles on x86. We make these conversions
     explicit to ensure their cost is visible.
 
@@ -187,7 +187,7 @@ vectors cannot be default-constructed. We instead use a dedicated 'descriptor'
 type `Simd` for overloading, abbreviated to `D` for template arguments and
 `d` in lvalues.
 
-Note that generic function templates are possible (see begin_target-inl.h).
+Note that generic function templates are possible (see highway.h).
 
 ## Masks
 
@@ -206,20 +206,23 @@ set, we provide a special `ZeroIfNegative` function.
 ## Use cases and HOWTO
 
 Whenever possible, use full-width descriptors for maximum performance
-portability: `HWY_FULL(float)`. When necessary, applications may also rely on
-128-bit vectors: `Simd<float, 4>`. There is also the option of a vector of up
-to N lanes: `HWY_CAPPED(float, N)` (the length is always a power of two).
+portability: `HWY_FULL(float)`. There is also the option of a vector of up
+to `N` (a power of two) lanes: `HWY_CAPPED(T, N)`. 128-bit vectors are
+guaranteed to be available for lanes of type `T` if `HWY_TARGET != HWY_SCALAR`
+and `N == 16 / sizeof(T)`.
 
-Functions using Highway must reside between `#include <hwy/begin_target-inl.h>`
-and `#include <hwy/end_target-inl.h>`.
+Functions using Highway must be inside a namespace `namespace HWY_NAMESPACE {`
+(possibly nested in one or more other namespaces defined by the project), and
+additionally either prefixed with `HWY_ATTR`, or residing between
+`HWY_BEFORE_NAMESPACE()` and `HWY_AFTER_NAMESPACE()`.
 
 *   For static dispatch, `HWY_TARGET` will be the best available target among
     `HWY_BASELINE_TARGETS`, i.e. those allowed for use by the compiler (see
-    [quick-reference](quick_reference.md)). Functions defined between
-    begin/end_target can be called using `HWY_STATIC_DISPATCH(func)(args)`
-    within the same module they are defined in. This `HWY_STATIC_DISPATCH` call
-    can be wrapped in a regular function and expose it to other modules
-    declaring it in a header file.
+    [quick-reference](quick_reference.md)). Functions inside `HWY_NAMESPACE`
+    can be called using `HWY_STATIC_DISPATCH(func)(args)` within the same module
+    they are defined in. You can call the function from other modules by
+    wrapping it in a regular function and declaring the regular function in a
+    header.
 
 *   For dynamic dispatch, a table of function pointers is generated via the
     `HWY_EXPORT` macro that is used by `HWY_DYNAMIC_DISPATCH(func)(args)` to
@@ -229,31 +232,40 @@ and `#include <hwy/end_target-inl.h>`.
     and foreach_target.h is included:
 ```c++
 #include "project/module.h"
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "project/module.cc"
-#include <hwy/foreach_target.h>
-// INSERT other headers
 
-#include <hwy/before_namespace-inl.h>
+// First undef to prevent error when re-included.
+#undef HWY_TARGET_INCLUDE
+// For runtime dispatch, specify the name of the current file (unfortunately
+// __FILE__ is not reliable) so that foreach_target.h can re-include it.
+#define HWY_TARGET_INCLUDE "project/module.cc"
+// Re-include this file once per enabled target to generate code for it.
+#include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+// INSERT other headers (C++, then project)
+
+HWY_BEFORE_NAMESPACE();
 namespace project {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // INSERT implementations
 bool Func1(int x) { ... }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace project
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace project {
-HWY_EXPORT(Func1)
-HWY_EXPORT(Func2)
+HWY_EXPORT(Func1);
+HWY_EXPORT(Func2);
 
 // Optional wrapper to call Func1 from outside this module using a regular
 // function declared in module.h.
 bool Func1(int x) {
-  return  HWY_DYNAMIC_DISPATCH(Func1)(x);
+  return HWY_DYNAMIC_DISPATCH(Func1)(x);
 }
 
 // INSERT any non-SIMD definitions (optional)

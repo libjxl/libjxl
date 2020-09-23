@@ -14,6 +14,11 @@
 
 #include "tools/box/box.h"
 
+#include <brunsli/brunsli_encode.h>
+
+#include "c/common/constants.h"
+#include "c/dec/state.h"
+#include "c/enc/state.h"
 #include "jxl/base/byte_order.h"
 
 namespace jpegxl {
@@ -134,6 +139,8 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
   container->jumb_size = 0;
   container->codestream = nullptr;
   container->codestream_size = 0;
+  container->jpeg_reconstruction = nullptr;
+  container->jpeg_reconstruction_size = 0;
 
   size_t box_index = 0;
 
@@ -183,6 +190,9 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
     } else if (!memcmp("jumb", box.type, 4)) {
       container->jumb = in;
       container->jumb_size = data_size;
+    } else if (!memcmp("jbrd", box.type, 4)) {
+      container->jpeg_reconstruction = in;
+      container->jpeg_reconstruction_size = data_size;
     } else {
       // Do nothing: box not recognized here but may be recognizeable by
       // other software.
@@ -226,6 +236,12 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
                                          container.xml[i].second, out));
   }
 
+  if (container.jpeg_reconstruction) {
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("jbrd", container.jpeg_reconstruction,
+                                         container.jpeg_reconstruction_size,
+                                         out));
+  }
+
   if (container.codestream) {
     JXL_RETURN_IF_ERROR(AppendBoxAndData("jxlc", container.codestream,
                                          container.codestream_size, out));
@@ -239,6 +255,71 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
   }
 
   return true;
+}
+
+// TODO(veluca): the format defined here encode some things multiple times. Fix
+// that.
+jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
+                               const JpegXlContainer& container,
+                               jxl::CodecInOut* io, jxl::AuxOut* aux_out,
+                               jxl::ThreadPool* pool) {
+  params.keep_dct = true;
+  if (container.jpeg_reconstruction == nullptr) {
+    return JXL_FAILURE(
+        "Cannot decode to JPEG without a JPEG reconstruction box");
+  }
+  brunsli::internal::dec::State state;
+  state.tags_met = (1 << brunsli::kBrunsliHistogramDataTag) |
+                   (1 << brunsli::kBrunsliDCDataTag) |
+                   (1 << brunsli::kBrunsliACDataTag);
+  state.data = container.jpeg_reconstruction;
+  state.len = container.jpeg_reconstruction_size;
+  io->Main().jpeg_data = jxl::make_unique<brunsli::JPEGData>();
+  PrepareMeta(io->Main().jpeg_data.get(), &state);
+
+  brunsli::BrunsliStatus status =
+      ProcessJpeg(&state, io->Main().jpeg_data.get());
+  if (status != brunsli::BrunsliStatus::BRUNSLI_OK) {
+    return JXL_FAILURE("Failed to decode JPEG reconstruction box");
+  }
+  for (auto& v : io->Main().jpeg_data->components) {
+    v.coeffs.resize(v.width_in_blocks * v.height_in_blocks *
+                    jxl::kDCTBlockSize);
+  }
+  JXL_RETURN_IF_ERROR(DecodeFile(
+      params,
+      jxl::Span<const uint8_t>(container.codestream, container.codestream_size),
+      io, aux_out, pool));
+  return true;
+}
+jxl::Status EncodeJpegToJpegXL(const jxl::CompressParams& params,
+                               const jxl::CodecInOut* io,
+                               jxl::PassesEncoderState* passes_enc_state,
+                               jxl::PaddedBytes* compressed,
+                               jxl::AuxOut* aux_out, jxl::ThreadPool* pool) {
+  if (io->frames.size() != 1 || !io->Main().IsJPEG()) {
+    return JXL_FAILURE("Cannot transcode a non-JPEG file");
+  }
+  compressed->clear();
+  JpegXlContainer container;
+  jxl::PaddedBytes cs;
+  JXL_RETURN_IF_ERROR(
+      EncodeFile(params, io, passes_enc_state, &cs, aux_out, pool));
+  container.codestream = cs.data();
+  container.codestream_size = cs.size();
+  brunsli::internal::enc::State state;
+  jxl::PaddedBytes brn(
+      brunsli::GetMaximumBrunsliEncodedSize(*io->Main().jpeg_data));
+  size_t skip_sections = (1 << brunsli::kBrunsliHistogramDataTag) |
+                         (1 << brunsli::kBrunsliDCDataTag) |
+                         (1 << brunsli::kBrunsliACDataTag);
+  container.jpeg_reconstruction = brn.data();
+  container.jpeg_reconstruction_size = brn.size();
+  JXL_RETURN_IF_ERROR(BrunsliSerialize(&state, *io->Main().jpeg_data,
+                                       skip_sections, brn.data(),
+                                       &container.jpeg_reconstruction_size));
+  brn.resize(container.jpeg_reconstruction_size);
+  return EncodeJpegXlContainerOneShot(container, compressed);
 }
 
 }  // namespace tools

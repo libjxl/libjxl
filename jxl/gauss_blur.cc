@@ -14,27 +14,33 @@
 
 #include "jxl/gauss_blur.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/gauss_blur.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
 #include <string.h>
 
 #include <algorithm>
 #include <cmath>
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/gauss_blur.cc"
 #include <hwy/cache_control.h>
-#include <hwy/foreach_target.h>
-//
+#include <hwy/highway.h>
 
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/profiler.h"
 #include "jxl/common.h"
 #include "jxl/image_ops.h"
 #include "jxl/linalg.h"
-
-//
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Broadcast;
+#if HWY_TARGET != HWY_SCALAR
+using hwy::HWY_NAMESPACE::ShiftLeftLanes;
+#endif
+using hwy::HWY_NAMESPACE::Vec;
 
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                     const float* JXL_RESTRICT in, intptr_t width,
@@ -436,14 +442,15 @@ ImageF ConvolveXSampleAndTranspose(const ImageF& in,
   return out;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(FastGaussian1D)
+HWY_EXPORT(FastGaussian1D);
 HWY_EXPORT(ConvolveXSampleAndTranspose);
 void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
                     const float* JXL_RESTRICT in, intptr_t width,
@@ -451,7 +458,7 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
   return HWY_DYNAMIC_DISPATCH(FastGaussian1D)(rg, in, width, out);
 }
 
-HWY_EXPORT(FastGaussianVertical)  // Local function.
+HWY_EXPORT(FastGaussianVertical);  // Local function.
 
 void ExtrapolateBorders(const float* const JXL_RESTRICT row_in,
                         float* const JXL_RESTRICT row_out, const int xsize,

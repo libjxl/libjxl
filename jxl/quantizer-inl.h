@@ -21,14 +21,20 @@
 
 #include <stddef.h>
 
-#include <hwy/before_namespace-inl.h>
+#include <hwy/highway.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Vec;
 
 template <class DF>
-HWY_FUNC Vec<DF> AdjustQuantBias(DF df, const size_t c, const Vec<DF> quant,
-                                 const float* HWY_RESTRICT biases) {
-  const hwy::Simd<int32_t, MaxLanes(df)> di;
+HWY_INLINE HWY_MAYBE_UNUSED Vec<DF> AdjustQuantBias(
+    DF df, const size_t c, const Vec<DF> quant,
+    const float* HWY_RESTRICT biases) {
+  const hwy::HWY_NAMESPACE::Simd<int32_t, MaxLanes(df)> di;
 
   // Compare |quant|, keep sign bit for negating result.
   const auto kSign = BitCast(df, Set(di, INT32_MIN));
@@ -57,8 +63,10 @@ HWY_FUNC Vec<DF> AdjustQuantBias(DF df, const size_t c, const Vec<DF> quant,
   return IfThenElse(is_01, one_bias, bias);
 }
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

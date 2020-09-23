@@ -17,12 +17,20 @@
 
 // Re-includes the translation unit zero or more times to compile for any
 // targets except HWY_STATIC_TARGET. Defines unique HWY_TARGET each time so that
-// begin_target-inl.h defines the corresponding macro/namespace.
+// highway.h defines the corresponding macro/namespace.
+
+#ifdef HWY_HIGHWAY_H_
+#error "Must include foreach_target.h before highway.h."
+#endif
 
 #include "hwy/targets.h"
 
-#if !defined(HWY_TARGET_INCLUDE) && !HWY_IDE
-#error "Must define HWY_TARGET_INCLUDE before including foreach_target.h"
+// Avoid warnings on #include HWY_TARGET_INCLUDE by hiding them from the IDE;
+// also skip if only 1 target defined (no re-inclusion will be necessary).
+#if !HWY_IDE && (HWY_TARGETS != HWY_STATIC_TARGET)
+
+#if !defined(HWY_TARGET_INCLUDE)
+#error ">1 target enabled => define HWY_TARGET_INCLUDE before foreach_target.h"
 #endif
 
 // *_inl.h may include other headers, which requires include guards to prevent
@@ -110,6 +118,8 @@
 #define HWY_TARGET_TOGGLE
 #endif
 #endif
+
+#endif  // !HWY_IDE && (HWY_TARGETS != HWY_STATIC_TARGET)
 
 // If we re-include once per enabled target, the translation unit's
 // implementation would have to be skipped via #if to avoid redefining symbols.

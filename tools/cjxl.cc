@@ -41,6 +41,7 @@
 #include "jxl/image_bundle.h"
 #include "jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
+#include "tools/box/box.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -582,9 +583,15 @@ jxl::Status JxlCompressArgs::ValidateArgs(
   }
 
   if (!cmdline.GetOption(opt_color_id)->matched()) {
-    // default to RGB for modular
-    if (params.modular_group_mode)
-      params.color_transform = jxl::ColorTransform::kNone;
+    // default to RGB for lossless modular
+    if (params.modular_group_mode) {
+      if (params.quality_pair.first != 100 ||
+          params.quality_pair.second != 100) {
+        params.color_transform = jxl::ColorTransform::kXYB;
+      } else {
+        params.color_transform = jxl::ColorTransform::kNone;
+      }
+    }
   }
 
   if (params.near_lossless) {
@@ -648,9 +655,11 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
     jxl::Status ok = false;
     if (args.params.pixels_to_jpeg_mode) {
 #if JPEGXL_ENABLE_JPEG
-      const auto subsample = args.params.jpeg_420
-                                 ? jxl::YCbCrChromaSubsampling::k420
-                                 : jxl::YCbCrChromaSubsampling::k444;
+      jxl::YCbCrChromaSubsampling subsample;
+      if (args.params.jpeg_420) {
+        uint8_t ss[3] = {2, 1, 1};
+        JXL_CHECK(subsample.Set(ss, ss));
+      }
       ok = jxl::EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg,
                                args.params.jpeg_quality, subsample, pool,
                                compressed, jxl::DecodeTarget::kPixels);
@@ -662,9 +671,12 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
         // that in the xyb_encoded header flag, and persistently keep that state
         // to check if every frame uses an allowed color transform.
         args.params.color_transform = io.Main().color_transform;
+        ok = EncodeJpegToJpegXL(args.params, &io, &passes_encoder_state,
+                                compressed, &aux_out, pool);
+      } else {
+        ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
+                        &aux_out, pool);
       }
-      ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
-                      &aux_out, pool);
     }
     if (!ok) {
       fprintf(stderr, "Failed to compress to %s.\n", ModeFromArgs(args));

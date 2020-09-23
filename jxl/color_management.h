@@ -27,9 +27,6 @@
 #include "jxl/color_encoding.h"
 #include "jxl/common.h"
 #include "jxl/image.h"
-#if JPEGXL_ENABLE_SKCMS
-#include "skcms.h"
-#endif
 
 namespace jxl {
 
@@ -43,7 +40,7 @@ enum class ExtraTF {
 // Run is thread-safe.
 class ColorSpaceTransform {
  public:
-  ColorSpaceTransform() = default;
+  ColorSpaceTransform();
   ~ColorSpaceTransform();
 
   // Cannot copy (transforms_ holds pointers).
@@ -59,9 +56,8 @@ class ColorSpaceTransform {
   float* BufDst(const size_t thread) { return buf_dst_.Row(thread); }
 
 #if JPEGXL_ENABLE_SKCMS
-  // Parsed skcms_ICCProfiles retain pointers to the original data.
-  PaddedBytes icc_src_, icc_dst_;
-  skcms_ICCProfile profile_src_, profile_dst_;
+  struct SkcmsICC;
+  std::unique_ptr<SkcmsICC> skcms_icc_;
 #else
   // One per thread - cannot share because of caching.
   std::vector<void*> transforms_;

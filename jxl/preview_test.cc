@@ -40,7 +40,7 @@ namespace jxl {
 namespace {
 using test::Roundtrip;
 
-TEST(PreviewTest, RoundtripGivenPreview) {
+TEST(PreviewTest, DISABLED_RoundtripGivenPreview) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
@@ -57,6 +57,7 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   cparams.butteraugli_distance = 2.0;
   cparams.speed_tier = SpeedTier::kSquirrel;
   DecompressParams dparams;
+
   dparams.preview = Override::kOff;
 
   CodecInOut io2;

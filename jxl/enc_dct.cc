@@ -14,20 +14,20 @@
 
 #include "jxl/enc_dct.h"
 
-#include "jxl/base/profiler.h"
-#include "jxl/common.h"
-#include "jxl/dct_scales.h"
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/enc_dct.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
+#include <hwy/highway.h>
+
+#include "jxl/base/profiler.h"
+#include "jxl/common.h"
+#include "jxl/dct_scales.h"
 #include "jxl/enc_dct-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 void TransposedScaledDCT8(float* block) {
   ComputeTransposedScaledDCT<8>()(FromBlock(8, 8, block), ToBlock(8, 8, block));
@@ -79,21 +79,22 @@ void TransposedScaledDCT(const Image3F& image, Image3F* JXL_RESTRICT dct) {
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(TransposedScaledDCT8)
+HWY_EXPORT(TransposedScaledDCT8);
 void TransposedScaledDCT8(float* block) {
   return HWY_DYNAMIC_DISPATCH(TransposedScaledDCT8)(block);
 }
 
-HWY_EXPORT(Dct8)
+HWY_EXPORT(Dct8);
 ImageF Dct8(const ImageF& image) { return HWY_DYNAMIC_DISPATCH(Dct8)(image); }
 
-HWY_EXPORT(TransposedScaledDCT)
+HWY_EXPORT(TransposedScaledDCT);
 void TransposedScaledDCT(const Image3F& image, Image3F* JXL_RESTRICT dct) {
   return HWY_DYNAMIC_DISPATCH(TransposedScaledDCT)(image, dct);
 }

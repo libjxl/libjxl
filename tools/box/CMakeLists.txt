@@ -16,6 +16,8 @@ add_library(box STATIC
   box.cc
   box.h
 )
+# This library can be included into position independent binaries.
+set_target_properties(box PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 target_link_libraries(box
   jpegxl-static
   jpegxl_threads

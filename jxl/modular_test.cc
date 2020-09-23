@@ -94,10 +94,10 @@ TEST(ModularTest, RoundtripLossy) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 150000);
+  EXPECT_LE(compressed_size, 40000);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            1.0);
+            3.0);
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {

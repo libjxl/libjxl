@@ -21,6 +21,13 @@
 #include <cmath>
 #include <cstdio>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/ac_strategy.h"
 #include "jxl/ans_params.h"
 #include "jxl/base/bits.h"
@@ -31,13 +38,8 @@
 #include "jxl/convolve.h"
 #include "jxl/dct_scales.h"
 #include "jxl/enc_params.h"
-#include "jxl/entropy_coder.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_ac_strategy.cc"
-#include <hwy/foreach_target.h>
-
 #include "jxl/enc_transforms-inl.h"
+#include "jxl/entropy_coder.h"
 
 // This must come before the begin/end_target, but HWY_ONCE is only true
 // after that, so use an "include guard".
@@ -432,9 +434,9 @@ size_t ACSPossibleReplacements(AcStrategy::Type current,
 }  // namespace jxl
 #endif  // JXL_ENC_AC_STRATEGY_
 
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
                       const ACSConfig& config,
@@ -982,13 +984,14 @@ void FindBestAcStrategy(const Image3F& src,
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(FindBestAcStrategy)
+HWY_EXPORT(FindBestAcStrategy);
 void FindBestAcStrategy(const Image3F& src,
                         PassesEncoderState* JXL_RESTRICT enc_state,
                         ThreadPool* pool, AuxOut* aux_out) {

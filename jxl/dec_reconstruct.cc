@@ -17,11 +17,19 @@
 #include <mutex>
 #include <utility>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/aux_out.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/profiler.h"
 #include "jxl/common.h"
 #include "jxl/dec_noise.h"
+#include "jxl/dec_xyb-inl.h"
 #include "jxl/dec_xyb.h"
 #include "jxl/epf.h"
 #include "jxl/frame_header.h"
@@ -29,17 +37,9 @@
 #include "jxl/loop_filter.h"
 #include "jxl/multiframe.h"
 #include "jxl/passes_state.h"
-
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/dec_reconstruct.cc"
-#include <hwy/foreach_target.h>
-
-#include "jxl/dec_xyb-inl.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 // TODO(deymo): Rename LocalApplyImageFeaturesRow to ApplyImageFeaturesRow. This
 // currently has a different name than the public wrapper function because the
@@ -145,14 +145,15 @@ Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
   return true;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(LocalApplyImageFeaturesRow)
+HWY_EXPORT(LocalApplyImageFeaturesRow);
 Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
                              PassesDecoderState* dec_state, size_t y,
                              size_t thread, AuxOut* aux_out,
@@ -163,7 +164,7 @@ Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
       apply_color_transform);
 }
 
-HWY_EXPORT(ApplyImageFeatures)
+HWY_EXPORT(ApplyImageFeatures);
 Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
                           PassesDecoderState* dec_state, size_t thread,
                           AuxOut* aux_out, bool save_decompressed,
@@ -182,8 +183,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
 
-  if ((lf.epf || lf.gab) &&
-      frame_header.chroma_subsampling == YCbCrChromaSubsampling::k444) {
+  if ((lf.epf || lf.gab) && frame_header.chroma_subsampling.Is444()) {
     size_t xsize = dec_state->shared->frame_dim.xsize_padded;
     size_t ysize = dec_state->shared->frame_dim.ysize_padded;
     size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;
@@ -229,31 +229,24 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   }
   // If we used chroma subsampling, we upsample chroma now and run
   // ApplyImageFeatures after.
-  if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k420) {
-    for (size_t c : {0, 2}) {
+  if (!frame_header.chroma_subsampling.Is444()) {
+    for (size_t c = 0; c < 3; c++) {
       ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
-      plane.ShrinkTo(idct->xsize() / 2, idct->ysize() / 2);
-      plane.InitializePaddingForUnalignedAccesses();
-      plane = UpsampleH2(plane, pool);
-      plane = UpsampleV2(plane, pool);
-    }
-  } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k440) {
-    for (size_t c : {0, 2}) {
-      ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
-      plane.ShrinkTo(idct->xsize(), idct->ysize() / 2);
-      plane.InitializePaddingForUnalignedAccesses();
-      plane = UpsampleV2(plane, pool);
-    }
-  } else if (frame_header.chroma_subsampling == YCbCrChromaSubsampling::k422) {
-    for (size_t c : {0, 2}) {
-      ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
-      plane.ShrinkTo(idct->xsize() / 2, idct->ysize());
-      plane.InitializePaddingForUnalignedAccesses();
-      plane = UpsampleH2(plane, pool);
+      plane.ShrinkTo(
+          idct->xsize() >> frame_header.chroma_subsampling.HShift(c),
+          idct->ysize() >> frame_header.chroma_subsampling.VShift(c));
+      for (size_t i = 0; i < frame_header.chroma_subsampling.HShift(c); i++) {
+        plane.InitializePaddingForUnalignedAccesses();
+        plane = UpsampleH2(plane, pool);
+      }
+      for (size_t i = 0; i < frame_header.chroma_subsampling.VShift(c); i++) {
+        plane.InitializePaddingForUnalignedAccesses();
+        plane = UpsampleV2(plane, pool);
+      }
     }
   }
-  if (frame_header.encoding == FrameEncoding::kModularGroup ||
-      frame_header.chroma_subsampling != YCbCrChromaSubsampling::k444) {
+  if (frame_header.encoding == FrameEncoding::kModular ||
+      !frame_header.chroma_subsampling.Is444()) {
     for (size_t y = 0; y < idct->ysize(); y += kGroupDim) {
       for (size_t x = 0; x < idct->xsize(); x += kGroupDim) {
         rects_to_process.emplace_back(x, y, kGroupDim, kGroupDim, idct->xsize(),

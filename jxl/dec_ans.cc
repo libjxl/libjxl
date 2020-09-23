@@ -301,6 +301,15 @@ Status DecodeUintConfigs(size_t log_alpha_size,
 }
 
 LZ77Params::LZ77Params() { Bundle::Init(this); }
+Status LZ77Params::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  visitor->Bool(false, &enabled);
+  if (!visitor->Conditional(enabled)) return true;
+  visitor->U32(Val(224), Val(512), Val(4096), BitsOffset(15, 8), 224,
+               &min_symbol);
+  visitor->U32(Val(3), Val(4), BitsOffset(2, 5), BitsOffset(8, 9), 3,
+               &min_length);
+  return true;
+}
 
 Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
                         std::vector<uint8_t>* context_map, bool disallow_lz77) {

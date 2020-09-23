@@ -15,14 +15,13 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "tests/hwy_test.cc"
 #include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
 
-// must come after foreach_target.h.
+#include "hwy/highway.h"
 #include "hwy/tests/test_util-inl.h"
-
-// must come after *-inl.h.
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace hwy {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 template <class DF>
 HWY_NOINLINE void FloorLog2(const DF df, const uint8_t* HWY_RESTRICT values,
@@ -263,85 +262,6 @@ struct TestCopyAndAssign {
   }
 };
 
-struct TestLowerHalfT {
-  template <class T, class D>
-  HWY_NOINLINE void operator()(T /*unused*/, D d) {
-    constexpr size_t N2 = (MaxLanes(d) + 1) / 2;
-    const Simd<T, N2> d2;
-
-    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
-    const auto v = Iota(d, 1);
-    Store(LowerHalf(v), d2, lanes);
-    size_t i = 0;
-    for (; i < N2; ++i) {
-      HWY_ASSERT_EQ(T(1 + i), lanes[i]);
-    }
-    // Other half remains unchanged
-    for (; i < Lanes(d); ++i) {
-      HWY_ASSERT_EQ(T(0), lanes[i]);
-    }
-  }
-};
-
-struct TestLowerQuarterT {
-  template <class T, class D>
-  HWY_NOINLINE void operator()(T /*unused*/, D d) {
-    constexpr size_t N4 = (MaxLanes(d) + 3) / 4;
-    const HWY_CAPPED(T, N4) d4;
-
-    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
-    const auto v = Iota(d, 1);
-    const auto lo = LowerHalf(LowerHalf(v));
-    Store(lo, d4, lanes);
-    size_t i = 0;
-    for (; i < N4; ++i) {
-      HWY_ASSERT_EQ(T(i + 1), lanes[i]);
-    }
-    // Upper 3/4 remain unchanged
-    for (; i < Lanes(d); ++i) {
-      HWY_ASSERT_EQ(T(0), lanes[i]);
-    }
-  }
-};
-
-HWY_NOINLINE void TestLowerHalf() {
-  ForAllTypes(
-      ForPartialVectors<TestLowerHalfT, /*kDivLanes=*/1, /*kMinLanes=*/2>());
-  ForAllTypes(
-      ForPartialVectors<TestLowerQuarterT, /*kDivLanes=*/1, /*kMinLanes=*/4>());
-}
-
-struct TestUpperHalfT {
-  template <class T, class D>
-  HWY_NOINLINE void operator()(T /*unused*/, D d) {
-    // Scalar does not define UpperHalf.
-#if HWY_TARGET != HWY_SCALAR
-    size_t i;
-    constexpr size_t N2 = (MaxLanes(d) + 1) / 2;
-    const Simd<T, N2> d2;
-
-    const auto v = Iota(d, 1);
-    HWY_ALIGN T lanes[MaxLanes(d)] = {0};
-
-    Store(UpperHalf(v), d2, lanes);
-    i = 0;
-    for (; i < N2; ++i) {
-      HWY_ASSERT_EQ(T(N2 + 1 + i), lanes[i]);
-    }
-    // Other half remains unchanged
-    for (; i < Lanes(d); ++i) {
-      HWY_ASSERT_EQ(T(0), lanes[i]);
-    }
-#else
-    (void)d;
-#endif
-  }
-};
-
-HWY_NOINLINE void TestUpperHalf() {
-  ForAllTypes(ForGE128Vectors<TestUpperHalfT>());
-}
-
 HWY_NOINLINE void TestAllSet() { ForAllTypes(ForPartialVectors<TestSet>()); }
 
 HWY_NOINLINE void TestAllNameBasic() {
@@ -352,9 +272,10 @@ HWY_NOINLINE void TestAllCopyAndAssign() {
   ForAllTypes(ForPartialVectors<TestCopyAndAssign>());
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace hwy
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace hwy {
@@ -363,16 +284,14 @@ class HwyHwyTest : public hwy::TestWithParamTarget {};
 
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(HwyHwyTest);
 
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestLimits)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestToString)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestType)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestOverflow)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestLowerHalf)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestUpperHalf)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllSet)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllNameBasic)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllCopyAndAssign)
-HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestExamples)
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestLimits);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestToString);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestType);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestOverflow);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllSet);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllNameBasic);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestAllCopyAndAssign);
+HWY_EXPORT_AND_TEST_P(HwyHwyTest, TestExamples);
 
 }  // namespace hwy
 #endif

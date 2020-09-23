@@ -15,9 +15,11 @@
 // Edge-preserving smoothing: weighted average based on L1 patch similarity.
 
 #include "jxl/epf.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/epf.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <math.h>
 #include <stdint.h>
@@ -27,6 +29,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <hwy/highway.h>
 #include <mutex>
 #include <numeric>  // std::accumulate
 #include <vector>
@@ -44,10 +47,12 @@
 #include "jxl/loop_filter.h"
 #include "jxl/quant_weights.h"
 #include "jxl/quantizer.h"
-
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Vec;
 
 // Avoid compiler complaints about % 0 not being defined.
 template <size_t m>
@@ -426,13 +431,14 @@ Status ApplyLoopFiltersRowImpl(const LoopFilter& lf, const Rect& in_rect,
   return true;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(ApplyLoopFiltersRowImpl)  // Local function
+HWY_EXPORT(ApplyLoopFiltersRowImpl);  // Local function
 
 Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
                            size_t y, size_t thread, Image3F* JXL_RESTRICT out,

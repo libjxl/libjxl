@@ -168,99 +168,6 @@ TEST(FieldsTest, U64CoderTest) {
   TestU64Coder(18446744073709551615ull, 73);
 }
 
-struct S32Bundle {
-  S32Bundle() { Bundle::Init(this); }
-  static const char* Name() { return "S32Bundle"; }
-
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->S32(Val(U32FromS32(-1)), Val(U32FromS32(-64)), Bits(8), Bits(10),
-                 -1, &s);
-    return true;
-  }
-  int32_t s;
-};
-
-struct S64Bundle {
-  S64Bundle() { Bundle::Init(this); }
-  static const char* Name() { return "S64Bundle"; }
-
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
-    visitor->S64(-1, &s);
-    return true;
-  }
-  int64_t s;
-};
-
-template <class BundleT, class T>
-void TestSigned(const T value, size_t expected_bits_written) {
-  BundleT bundle;
-  bundle.s = value;
-  size_t extension_bits = 999, total_bits = 999;  // Initialize as garbage.
-  EXPECT_TRUE(Bundle::CanEncode(bundle, &extension_bits, &total_bits));
-  EXPECT_EQ(0, extension_bits);
-  EXPECT_EQ(expected_bits_written, total_bits);
-
-  BitWriter writer;
-
-  AuxOut aux_out;
-  ASSERT_TRUE(Bundle::Write(bundle, &writer, 0, &aux_out));
-  EXPECT_EQ(expected_bits_written, aux_out.layers[0].total_bits);
-
-  BitWriter::Allotment allotment(&writer, 8);
-  writer.ZeroPadToByte();
-  ReclaimAndCharge(&writer, &allotment, kLayerHeader, nullptr);
-
-  BitReader reader(writer.GetSpan());
-  BundleT bundle2;
-  EXPECT_TRUE(Bundle::Read(&reader, &bundle2));
-  EXPECT_EQ(value, bundle2.s);
-  EXPECT_TRUE(reader.Close());
-}
-
-TEST(FieldsTest, S32Test) {
-  TestSigned<S32Bundle>(0, 10);
-  TestSigned<S32Bundle>(-1, 2);
-  TestSigned<S32Bundle>(-64, 2);
-  TestSigned<S32Bundle>(1, 10);
-  TestSigned<S32Bundle>(127, 10);
-  TestSigned<S32Bundle>(-128, 10);
-  TestSigned<S32Bundle>(128, 12);
-  TestSigned<S32Bundle>(-129, 12);
-  TestSigned<S32Bundle>(511, 12);
-  TestSigned<S32Bundle>(-512, 12);
-}
-
-TEST(FieldsTest, S64Test) {
-  TestSigned<S64Bundle>(0, 2);
-  TestSigned<S64Bundle>(-1, 6);
-  TestSigned<S64Bundle>(1, 6);
-  TestSigned<S64Bundle>(-8, 6);
-  TestSigned<S64Bundle>(8, 6);
-  TestSigned<S64Bundle>(-9, 10);
-  TestSigned<S64Bundle>(9, 10);
-  TestSigned<S64Bundle>(-136, 10);
-  TestSigned<S64Bundle>(136, 10);
-  TestSigned<S64Bundle>(-137, 15);
-  TestSigned<S64Bundle>(137, 15);
-  TestSigned<S64Bundle>(2047, 15);
-  TestSigned<S64Bundle>(-2048, 15);
-  TestSigned<S64Bundle>(2048, 24);
-  TestSigned<S64Bundle>(-2049, 24);
-  TestSigned<S64Bundle>(524287, 24);
-  TestSigned<S64Bundle>(-524288, 24);
-  TestSigned<S64Bundle>(524288, 33);
-  TestSigned<S64Bundle>(-524289, 33);
-  TestSigned<S64Bundle>(-134217727, 33);
-  TestSigned<S64Bundle>(134217727, 33);
-  TestSigned<S64Bundle>(-134217728, 33);
-  TestSigned<S64Bundle>(134217728, 42);
-  TestSigned<S64Bundle>(-134217729, 42);
-  TestSigned<S64Bundle>(2147483647, 42);
-  TestSigned<S64Bundle>(-2147483648, 42);
-}
-
 Status TestF16Coder(const float value) {
   F16Coder coder;
 
@@ -389,12 +296,11 @@ TEST(FieldsTest, TestOutOfRange) {
 }
 #endif
 
-struct OldBundle {
+struct OldBundle : public Fields {
   OldBundle() { Bundle::Init(this); }
-  static const char* Name() { return "OldBundle"; }
+  const char* Name() const override { return "OldBundle"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     visitor->U32(Val(1), Bits(2), Bits(3), Bits(4), 1, &old_small);
     visitor->F16(1.125f, &old_f);
     visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
@@ -409,20 +315,21 @@ struct OldBundle {
   uint64_t extensions;
 };
 
-struct NewBundle {
+struct NewBundle : public Fields {
   NewBundle() { Bundle::Init(this); }
-  static const char* Name() { return "NewBundle"; }
+  const char* Name() const override { return "NewBundle"; }
 
-  template <class Visitor>
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) {
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     visitor->U32(Val(1), Bits(2), Bits(3), Bits(4), 1, &old_small);
     visitor->F16(1.125f, &old_f);
     visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
 
     visitor->BeginExtensions(&extensions);
-    if (extensions & 1) {
+    if (visitor->Conditional(extensions & 1)) {
       visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small);
       visitor->F16(-2.0f, &new_f);
+    }
+    if (visitor->Conditional(extensions & 2)) {
       visitor->U32(Bits(9), Bits(12), Bits(16), Bits(32), 0, &new_large);
     }
     return visitor->EndExtensions();
@@ -436,6 +343,7 @@ struct NewBundle {
   // If extensions & 1
   uint32_t new_small = 2;
   float new_f = -2.0f;
+  // If extensions & 2
   uint32_t new_large = 0;
 };
 
@@ -485,7 +393,7 @@ TEST(FieldsTest, TestNewDecoderOldData) {
 TEST(FieldsTest, TestOldDecoderNewData) {
   NewBundle new_bundle;
   new_bundle.old_large = 123;
-  new_bundle.extensions = 1;
+  new_bundle.extensions = 3;
   new_bundle.new_f = 999.0f;
   new_bundle.new_large = 456;
 

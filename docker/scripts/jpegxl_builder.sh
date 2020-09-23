@@ -184,6 +184,13 @@ install_pkgs() {
 
     # To generate API documentation.
     doxygen
+
+    # Freezes version that builds (passes tests). Newer version
+    # (2.30-21ubuntu1~18.04.4) claims to fix "On Intel Skylake
+    # (-march=native) generated avx512 instruction can be wrong",
+    # but newly added tests does not pass. Perhaps the problem is
+    # that mingw package is not updated.
+    binutils-source=2.30-15ubuntu1
   )
 
   # Install packages that are arch-dependent.
@@ -323,6 +330,10 @@ install_from_source() {
         -DCMAKE_FIND_ROOT_PATH="${prefix}"
         -DCMAKE_PREFIX_PATH="${prefix}"
       )
+      # Static and shared library link to the same file -> race condition.
+      nproc=1
+    else
+      nproc=`nproc --all`
     fi
     cmake_args+=(-DCMAKE_SYSTEM_NAME="${system_name}")
 
@@ -350,7 +361,7 @@ install_from_source() {
         ${cmake} \
           -DCMAKE_INSTALL_PREFIX="${prefix}" \
           "${cmake_args[@]}" ${pkgflags}
-        ${make} -j$(nproc --all)
+        ${make} -j${nproc}
         ${make} install
       )
     elif [[ "${package}" == "GIFLIB" ]]; then
@@ -368,8 +379,8 @@ install_from_source() {
         fi
         # giflib make dependencies are not properly set up so parallel building
         # doesn't work for everything.
-        ${make} -j$(nproc --all) libgif.a "${giflib_make_flags[@]}"
-        ${make} -j$(nproc --all) all "${giflib_make_flags[@]}"
+        ${make} -j${nproc} libgif.a "${giflib_make_flags[@]}"
+        ${make} -j${nproc} all "${giflib_make_flags[@]}"
         ${make} install "${giflib_make_flags[@]}"
       )
     else

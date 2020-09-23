@@ -14,11 +14,25 @@
 
 cmake_minimum_required(VERSION 3.10)
 
+# Set PIE flags for POSITION_INDEPENDENT_CODE targets, added in 3.14.
+if(POLICY CMP0083)
+  cmake_policy(SET CMP0083 NEW)
+endif()
+
 project(hwy VERSION 0.1)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
+
+# Enabled PIE binaries by default if supported.
+include(CheckPIESupported OPTIONAL RESULT_VARIABLE CHECK_PIE_SUPPORTED)
+if(CHECK_PIE_SUPPORTED)
+  check_pie_supported(LANGUAGES CXX)
+  if(CMAKE_CXX_LINK_PIE_SUPPORTED)
+    set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
+  endif()
+endif()
 
 include(GNUInstallDirs)
 
@@ -38,18 +52,15 @@ check_cxx_source_compiles(
 )
 
 set(HWY_SOURCES
-    hwy/after_namespace-inl.h
     hwy/aligned_allocator.cc
     hwy/aligned_allocator.h
     hwy/base.h
-    hwy/before_namespace-inl.h
-    hwy/begin_target-inl.h
     hwy/cache_control.h
-    hwy/end_target-inl.h
     hwy/foreach_target.h
     hwy/highway.h
     hwy/ops/arm_neon-inl.h
     hwy/ops/scalar-inl.h
+    hwy/ops/shared-inl.h
     hwy/ops/wasm_128-inl.h
     hwy/ops/x86_128-inl.h
     hwy/ops/x86_256-inl.h

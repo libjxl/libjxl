@@ -220,21 +220,30 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   size_t size_for_ctx_model =
       (1 << 10) * enc_state.cparams.butteraugli_distance;
   if (tot < size_for_ctx_model) return;
-  // count the occurrences of each qf value and each strategy type.
-  size_t qf_counts[256] = {};
-  size_t qf_ord_counts[7][256] = {};
-  size_t ord_counts[7] = {};
-  for (size_t y = 0; y < rqf.ysize(); y++) {
-    const int32_t* qf_row = rqf.Row(y);
-    AcStrategyRow acs_row = enc_state.shared.ac_strategy.ConstRow(y);
-    for (size_t x = 0; x < rqf.xsize(); x++) {
-      int ord = kStrategyOrder[acs_row[x].RawStrategy()];
-      int qf = qf_row[x] - 1;
-      qf_counts[qf]++;
-      qf_ord_counts[ord][qf]++;
-      ord_counts[ord]++;
+
+  struct OccCounters {
+    // count the occurrences of each qf value and each strategy type.
+    OccCounters(const ImageI& rqf, const AcStrategyImage& ac_strategy) {
+      for (size_t y = 0; y < rqf.ysize(); y++) {
+        const int32_t* qf_row = rqf.Row(y);
+        AcStrategyRow acs_row = ac_strategy.ConstRow(y);
+        for (size_t x = 0; x < rqf.xsize(); x++) {
+          int ord = kStrategyOrder[acs_row[x].RawStrategy()];
+          int qf = qf_row[x] - 1;
+          qf_counts[qf]++;
+          qf_ord_counts[ord][qf]++;
+          ord_counts[ord]++;
+        }
+      }
     }
-  }
+
+    size_t qf_counts[256] = {};
+    size_t qf_ord_counts[7][256] = {};
+    size_t ord_counts[7] = {};
+  };
+  // The OccCounters struct is too big to allocate on the stack.
+  std::unique_ptr<OccCounters> counters(
+      new OccCounters(rqf, enc_state.shared.ac_strategy));
 
   // Splitting the context model according to the quantization field seems to
   // mostly benefit only large images.
@@ -248,7 +257,7 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   size_t last_cut = 256;
   size_t cut = tot * next / num_qf_segments;
   for (size_t j = 0; j < 256; j++) {
-    cumsum += qf_counts[j];
+    cumsum += counters->qf_counts[j];
     if (cumsum > cut) {
       qft.push_back(j);
       last_cut = j;
@@ -271,7 +280,7 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
       qft_pos++;
     }
     for (size_t i = 0; i < 7; i++) {
-      counts[qft_pos + i * (qft.size() + 1)] += qf_ord_counts[i][j];
+      counts[qft_pos + i * (qft.size() + 1)] += counters->qf_ord_counts[i][j];
     }
   }
 
@@ -409,6 +418,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
                        const ImageBundle& ib, Multiframe* multiframe,
                        FrameHeader* JXL_RESTRICT frame_header,
                        LoopFilter* JXL_RESTRICT loop_filter) {
+  frame_header->nonserialized_xyb_image = (cparams.color_transform == ColorTransform::kXYB);
   frame_header->has_animation = animation_frame_or_null != nullptr;
   if (frame_header->has_animation) {
     frame_header->animation_frame = *animation_frame_or_null;
@@ -417,7 +427,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
   multiframe->InitPasses(&frame_header->passes);
 
   if (cparams.modular_group_mode) {
-    frame_header->encoding = FrameEncoding::kModularGroup;
+    frame_header->encoding = FrameEncoding::kModular;
     frame_header->group_size_shift = cparams.modular_group_size_shift;
   }
 
@@ -428,6 +438,12 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->chroma_subsampling = ib.chroma_subsampling;
   } else {
     frame_header->color_transform = cparams.color_transform;
+    if (cparams.chroma_subsampling.MaxHShift() != 0 ||
+        cparams.chroma_subsampling.MaxVShift() != 0) {
+      // TODO(veluca): properly pad the input image to support this.
+      return JXL_FAILURE(
+          "Chroma subsampling is not supported when not recompressing JPEGs");
+    }
     frame_header->chroma_subsampling = cparams.chroma_subsampling;
   }
 
@@ -443,13 +459,6 @@ Status MakeFrameHeader(const CompressParams& cparams,
   frame_header->save_as_reference = cparams.save_as_reference;
   if (cparams.save_as_reference == 0 && cparams.dc_level == 0) {
     frame_header->is_displayed = true;
-  }
-
-  frame_header->has_alpha = ib.HasAlpha();
-  frame_header->alpha_is_premultiplied = ib.AlphaIsPremultiplied();
-  if (!frame_header->IsDisplayed()) {
-    frame_header->has_alpha = false;
-    frame_header->alpha_is_premultiplied = false;
   }
 
   return true;
@@ -491,7 +500,7 @@ class LossyFrameEncoder {
     PassesSharedState& shared = enc_state_->shared;
 
     if (!enc_state_->cparams.max_error_mode) {
-      float x_qm_scale_steps[3] = {1.2f, 2.4f, 4.8f};
+      float x_qm_scale_steps[3] = { 0.65f, 1.25f, 9.0f };
       shared.frame_header.x_qm_scale = 0;
       for (float x_qm_scale_step : x_qm_scale_steps) {
         if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
@@ -641,22 +650,22 @@ class LossyFrameEncoder {
     return true;
   }
 
-  Status ComputeJPEGTranscodingData(const Image3F& opsin_orig,
-                                    const std::vector<int32_t>& quant_table,
+  Status ComputeJPEGTranscodingData(const brunsli::JPEGData& jpeg_data,
                                     ModularFrameEncoder* modular_frame_encoder,
                                     FrameHeader* frame_header) {
-    constexpr size_t N = kBlockDim;
     PROFILER_ZONE("ComputeJPEGTranscodingData uninstrumented");
     PassesSharedState& shared = enc_state_->shared;
 
     FrameDimensions frame_dim;
-    frame_dim.Set(opsin_orig.xsize(), opsin_orig.ysize(),
-                  frame_header->group_size_shift);
+    frame_dim.Set(jpeg_data.width, jpeg_data.height,
+                  frame_header->group_size_shift,
+                  frame_header->chroma_subsampling.MaxHShift(),
+                  frame_header->chroma_subsampling.MaxVShift());
 
-    const size_t xsize = opsin_orig.xsize();
-    const size_t ysize = opsin_orig.ysize();
-    const size_t xsize_blocks = xsize / N;
-    const size_t ysize_blocks = ysize / N;
+    const size_t xsize = frame_dim.xsize_padded;
+    const size_t ysize = frame_dim.ysize_padded;
+    const size_t xsize_blocks = frame_dim.xsize_blocks;
+    const size_t ysize_blocks = frame_dim.ysize_blocks;
 
     shared.frame_header.x_qm_scale = 0;
 
@@ -670,24 +679,33 @@ class LossyFrameEncoder {
         ACImage3(kGroupDim * kGroupDim, frame_dim.num_groups));
 
     // convert JPEG quantization table to a Quantizer object
-    float dcquantization[3] = {8.0f / quant_table[0],
-                               8.0f / quant_table[1 * 64],
-                               8.0f / quant_table[2 * 64]};
-    float dcquantization_r[3] = {1.0f / dcquantization[0],
-                                 1.0f / dcquantization[1],
-                                 1.0f / dcquantization[2]};
-    shared.matrices.SetCustomDC(dcquantization);
+    float dcquantization[3];
     std::vector<QuantEncoding> qe(DequantMatrices::kNum,
                                   QuantEncoding::Library(0));
+
+    int jpeg_c_map[3] = {1, 0, 2};
+    if (jpeg_data.components.size() != 3) {
+      jpeg_c_map[0] = jpeg_c_map[2] = 0;
+    }
+
     std::vector<int> qt(192);
     for (size_t c = 0; c < 3; c++) {
+      size_t jpeg_c = jpeg_c_map[c];
+      const int* quant =
+          jpeg_data.quant[jpeg_data.components[jpeg_c].quant_idx].values.data();
+
+      dcquantization[c] = 8.0f / quant[0];
       for (size_t y = 0; y < 8; y++) {
         for (size_t x = 0; x < 8; x++) {
           // JPEG XL transposes the DCT, JPEG doesn't.
-          qt[c * 64 + 8 * x + y] = quant_table[c * 64 + 8 * y + x];
+          qt[c * 64 + 8 * x + y] = quant[8 * y + x];
         }
       }
     }
+    shared.matrices.SetCustomDC(dcquantization);
+    float dcquantization_r[3] = {1.0f / dcquantization[0],
+                                 1.0f / dcquantization[1],
+                                 1.0f / dcquantization[2]};
 
     qe[AcStrategy::Type::DCT] = QuantEncoding::RAW(qt);
     shared.matrices.SetCustom(qe, modular_frame_encoder);
@@ -700,13 +718,27 @@ class LossyFrameEncoder {
     FillImage(static_cast<int>(shared.quantizer.InvGlobalScale()),
               &shared.raw_quant_field);
 
+    std::vector<int32_t> scaled_qtable(192);
+    for (size_t c = 0; c < 3; c++) {
+      for (size_t i = 0; i < 64; i++) {
+        scaled_qtable[64 * c + i] =
+            (1 << kCFLFixedPointPrecision) * qt[64 + i] / qt[64 * c + i];
+      }
+    }
+
+    auto jpeg_row = [&](size_t c, size_t y) {
+      return jpeg_data.components[jpeg_c_map[c]].coeffs.data() +
+             jpeg_data.components[jpeg_c_map[c]].width_in_blocks *
+                 kDCTBlockSize * y;
+    };
+
     Image3F dc = Image3F(xsize_blocks, ysize_blocks);
-    intptr_t onerow = opsin_orig.Plane(0).PixelsPerRow();
     bool DCzero =
         (shared.frame_header.color_transform == ColorTransform::kYCbCr);
     // Compute chroma-from-luma for AC (doesn't seem to be useful for DC)
-    if (frame_header->chroma_subsampling == YCbCrChromaSubsampling::k444 &&
-        enc_state_->cparams.force_cfl_jpeg_recompression) {
+    if (frame_header->chroma_subsampling.Is444() &&
+        enc_state_->cparams.force_cfl_jpeg_recompression &&
+        jpeg_data.components.size() == 3) {
       for (size_t c : {0, 2}) {
         ImageSB* map = (c == 0 ? &shared.cmap.ytox_map : &shared.cmap.ytob_map);
         const float kScale = kDefaultColorFactor;
@@ -721,45 +753,48 @@ class LossyFrameEncoder {
           size_t ty = task;
           int8_t* JXL_RESTRICT row_out = map->Row(ty);
           for (size_t tx = 0; tx < map->xsize(); ++tx) {
-            const size_t y0 = ty * kColorTileDimInBlocks * kBlockDim;
-            const size_t x0 = tx * kColorTileDimInBlocks * kBlockDim;
-            const size_t y1 =
-                std::min(opsin_orig.ysize(),
-                         (ty + 1) * kColorTileDimInBlocks * kBlockDim);
-            const size_t x1 =
-                std::min(opsin_orig.xsize(),
-                         (tx + 1) * kColorTileDimInBlocks * kBlockDim);
+            const size_t y0 = ty * kColorTileDimInBlocks;
+            const size_t x0 = tx * kColorTileDimInBlocks;
+            const size_t y1 = std::min(frame_dim.ysize_blocks,
+                                       (ty + 1) * kColorTileDimInBlocks);
+            const size_t x1 = std::min(frame_dim.xsize_blocks,
+                                       (tx + 1) * kColorTileDimInBlocks);
             int32_t d_num_zeros[257] = {0};
+            // TODO(veluca): this needs SIMD + fixed point adaptation, and/or
+            // conversion to the new CfL algorithm.
             for (size_t y = y0; y < y1; ++y) {
-              const float* JXL_RESTRICT row_m = opsin_orig.PlaneRow(1, y);
-              const float* JXL_RESTRICT row_s = opsin_orig.PlaneRow(c, y);
+              const int16_t* JXL_RESTRICT row_m = jpeg_row(1, y);
+              const int16_t* JXL_RESTRICT row_s = jpeg_row(c, y);
               for (size_t x = x0; x < x1; ++x) {
-                int coeffpos = (x % kBlockDim) + kBlockDim * (y % kBlockDim);
-                if (coeffpos == 0) continue;
-                const float scaled_m =
-                    row_m[x] * qt[64 + coeffpos] / qt[64 * c + coeffpos];
-                const float scaled_s =
-                    kScale * row_s[x] + (kOffset - kBase * kScale) * scaled_m;
-                if (std::abs(scaled_m) > 1e-8f) {
-                  float from, to;
-                  if (scaled_m > 0) {
-                    from = (scaled_s - kZeroThresh) / scaled_m;
-                    to = (scaled_s + kZeroThresh) / scaled_m;
-                  } else {
-                    from = (scaled_s + kZeroThresh) / scaled_m;
-                    to = (scaled_s - kZeroThresh) / scaled_m;
-                  }
-                  if (from < 0.0f) {
-                    from = 0.0f;
-                  }
-                  if (to > 255.0f) {
-                    to = 255.0f;
-                  }
-                  // Instead of clamping the both values
-                  // we just check that range is sane.
-                  if (from <= to) {
-                    d_num_zeros[static_cast<int>(std::ceil(from))]++;
-                    d_num_zeros[static_cast<int>(std::floor(to + 1))]--;
+                for (int coeffpos = 1; coeffpos < kDCTBlockSize; coeffpos++) {
+                  const float scaled_m =
+                      row_m[x * kDCTBlockSize + coeffpos] *
+                      scaled_qtable[64 * c + coeffpos] *
+                      (1.0f / (1 << kCFLFixedPointPrecision));
+                  const float scaled_s =
+                      kScale * row_s[x * kDCTBlockSize + coeffpos] +
+                      (kOffset - kBase * kScale) * scaled_m;
+                  if (std::abs(scaled_m) > 1e-8f) {
+                    float from, to;
+                    if (scaled_m > 0) {
+                      from = (scaled_s - kZeroThresh) / scaled_m;
+                      to = (scaled_s + kZeroThresh) / scaled_m;
+                    } else {
+                      from = (scaled_s + kZeroThresh) / scaled_m;
+                      to = (scaled_s - kZeroThresh) / scaled_m;
+                    }
+                    if (from < 0.0f) {
+                      from = 0.0f;
+                    }
+                    if (to > 255.0f) {
+                      to = 255.0f;
+                    }
+                    // Instead of clamping the both values
+                    // we just check that range is sane.
+                    if (from <= to) {
+                      d_num_zeros[static_cast<int>(std::ceil(from))]++;
+                      d_num_zeros[static_cast<int>(std::floor(to + 1))]--;
+                    }
                   }
                 }
               }
@@ -784,23 +819,27 @@ class LossyFrameEncoder {
                   "FindCorrelation");
       }
     }
-    if (frame_header->chroma_subsampling != YCbCrChromaSubsampling::k444) {
+    if (!frame_header->chroma_subsampling.Is444()) {
       ZeroFillImage(&dc);
       ZeroFillImage(&enc_state_->coeffs[0]);
     }
-    std::vector<int32_t> scaled_qtable(192);
-    for (size_t c = 0; c < 3; c++) {
-      for (size_t i = 0; i < 64; i++) {
-        scaled_qtable[64 * c + i] =
-            (1 << kCFLFixedPointPrecision) * qt[64 + i] / qt[64 * c + i];
-      }
-    }
     // JPEG DC is from -1024 to 1023.
-    size_t dc_counts[3][2048] = {};
+    std::vector<size_t> dc_counts[3] = {};
+    dc_counts[0].resize(2048);
+    dc_counts[1].resize(2048);
+    dc_counts[2].resize(2048);
     size_t total_dc[3] = {};
     for (size_t c : {1, 0, 2}) {
-      size_t hshift = c == 1 ? 0 : HShift(frame_header->chroma_subsampling);
-      size_t vshift = c == 1 ? 0 : VShift(frame_header->chroma_subsampling);
+      if (jpeg_data.components.size() == 1 && c != 1) {
+        ZeroFillImage(const_cast<ImageF*>(&enc_state_->coeffs[0].Plane(c)));
+        ZeroFillImage(const_cast<ImageF*>(&dc.Plane(c)));
+        // Ensure no division by 0.
+        dc_counts[c][1024] = 1;
+        total_dc[c] = 1;
+        continue;
+      }
+      size_t hshift = frame_header->chroma_subsampling.HShift(c);
+      size_t vshift = frame_header->chroma_subsampling.VShift(c);
       ImageSB& map = (c == 0 ? shared.cmap.ytox_map : shared.cmap.ytob_map);
       for (size_t group_index = 0; group_index < frame_dim.num_groups;
            group_index++) {
@@ -811,48 +850,50 @@ class LossyFrameEncoder {
         for (size_t by = gy * kGroupDimInBlocks;
              by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
           if ((by >> vshift) << vshift != by) continue;
-          const float* JXL_RESTRICT inputjpeg =
-              opsin_orig.PlaneRow(c, (by >> vshift) * 8);
-          const float* JXL_RESTRICT inputjpegY = opsin_orig.PlaneRow(1, by * 8);
+          const int16_t* JXL_RESTRICT inputjpeg = jpeg_row(c, by >> vshift);
+          const int16_t* JXL_RESTRICT inputjpegY = jpeg_row(1, by);
           float* JXL_RESTRICT fdc = dc.PlaneRow(c, by >> vshift);
           const int8_t* JXL_RESTRICT cm =
               map.ConstRow(by / kColorTileDimInBlocks);
           for (size_t bx = gx * kGroupDimInBlocks;
                bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
             if ((bx >> hshift) << hshift != bx) continue;
-            size_t base = (bx >> hshift) * 8;
+            size_t base = (bx >> hshift) * kDCTBlockSize;
             int idc;
             if (DCzero) {
               idc = inputjpeg[base];
             } else {
-              idc = (inputjpeg[base] * quant_table[c * 64] + 1024.f) /
-                    quant_table[c * 64];
+              idc = (inputjpeg[base] * qt[c * 64] + 1024.f) / qt[c * 64];
             }
             dc_counts[c][idc + 1024]++;
             total_dc[c]++;
             fdc[bx >> hshift] = idc * dcquantization_r[c];
             if (c == 1 || !enc_state_->cparams.force_cfl_jpeg_recompression ||
-                hshift != 0 || vshift != 0) {
-              for (int i = 0; i < 64; i++) {
-                ac[offset + i] = inputjpeg[base + (i % 8) * onerow + (i / 8)];
+                !frame_header->chroma_subsampling.Is444()) {
+              for (size_t y = 0; y < 8; y++) {
+                for (size_t x = 0; x < 8; x++) {
+                  ac[offset + y * 8 + x] = inputjpeg[base + x * 8 + y];
+                }
               }
             } else {
               const int32_t scale =
                   shared.cmap.RatioJPEG(cm[bx / kColorTileDimInBlocks]);
 
-              for (int i = 0; i < 64; i++) {
-                int Y = inputjpegY[8 * bx + (i % 8) * onerow + (i / 8)];
-                int QChroma = inputjpeg[8 * bx + (i % 8) * onerow + (i / 8)];
-                // Fixed-point multiply of CfL scale with quant table ratio
-                // first, and Y value second.
-                int coeff_scale = (scale * scaled_qtable[64 * c + i] +
-                                   (1 << (kCFLFixedPointPrecision - 1))) >>
-                                  kCFLFixedPointPrecision;
-                int cfl_factor =
-                    (Y * coeff_scale + (1 << (kCFLFixedPointPrecision - 1))) >>
-                    kCFLFixedPointPrecision;
-                int QCR = QChroma - cfl_factor;
-                ac[offset + i] = QCR;
+              for (size_t y = 0; y < 8; y++) {
+                for (size_t x = 0; x < 8; x++) {
+                  int Y = inputjpegY[kDCTBlockSize * bx + x * 8 + y];
+                  int QChroma = inputjpeg[kDCTBlockSize * bx + x * 8 + y];
+                  // Fixed-point multiply of CfL scale with quant table ratio
+                  // first, and Y value second.
+                  int coeff_scale = (scale * scaled_qtable[64 * c + y * 8 + x] +
+                                     (1 << (kCFLFixedPointPrecision - 1))) >>
+                                    kCFLFixedPointPrecision;
+                  int cfl_factor = (Y * coeff_scale +
+                                    (1 << (kCFLFixedPointPrecision - 1))) >>
+                                   kCFLFixedPointPrecision;
+                  int QCR = QChroma - cfl_factor;
+                  ac[offset + y * 8 + x] = QCR;
+                }
               }
             }
             offset += 64;
@@ -886,14 +927,14 @@ class LossyFrameEncoder {
     ctx_map.clear();
     ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs, 0);
 
-    int lbuckets = (dct[1].size()+1);
+    int lbuckets = (dct[1].size() + 1);
     for (size_t i = 0; i < num_dc_ctxs; i++) {
-        // up to 9 contexts for luma
-        ctx_map[i] = i / lbuckets;
-        // up to 3 contexts for chroma
-        ctx_map[BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
+      // up to 9 contexts for luma
+      ctx_map[i] = i / lbuckets;
+      // up to 3 contexts for chroma
+      ctx_map[BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
           num_dc_ctxs / lbuckets + (i % lbuckets);
-        ctx_map[2 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
+      ctx_map[2 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
           num_dc_ctxs / lbuckets + (i % lbuckets);
     }
     enc_state_->shared.block_ctx_map.num_ctxs =
@@ -1117,7 +1158,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   }
 
   FrameDimensions frame_dim;
-  frame_dim.Set(ib.xsize(), ib.ysize(), frame_header.group_size_shift);
+  frame_dim.Set(ib.xsize(), ib.ysize(), frame_header.group_size_shift,
+                frame_header.chroma_subsampling.MaxHShift(),
+                frame_header.chroma_subsampling.MaxVShift());
 
   const size_t num_groups = frame_dim.num_groups;
 
@@ -1163,8 +1206,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
-        ib.color(), ib.jpeg_quant_table, &modular_frame_encoder,
-        &frame_header));
+        *ib.jpeg_data, &modular_frame_encoder, &frame_header));
   } else {
     // Avoid a copy in PadImageToMultiple by allocating a large enough image
     // to begin with.
@@ -1178,7 +1220,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
       // We only need linear sRGB in slow VarDCT modes.
       if (cparams.speed_tier > SpeedTier::kKitten ||
-          frame_header.encoding == FrameEncoding::kModularGroup) {
+          frame_header.encoding == FrameEncoding::kModular) {
         linear = nullptr;
         linear_storage = ImageBundle();  // free the memory
       }
@@ -1202,8 +1244,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.
   JXL_RETURN_IF_ERROR(modular_frame_encoder.ComputeEncodingData(
       frame_header, ib, &opsin, lossy_frame_encoder.State(), pool, aux_out,
-      /* encode_color= */ frame_header.encoding ==
-          FrameEncoding::kModularGroup));
+      /* encode_color= */ frame_header.encoding == FrameEncoding::kModular));
 
   writer->AppendByteAligned(lossy_frame_encoder.State()->special_frames);
   frame_header.UpdateFlag(
@@ -1293,10 +1334,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   RunOnPool(pool, 0, frame_dim.num_dc_groups, resize_aux_outs, process_dc_group,
             "EncodeDCGroup");
 
-  const bool use_lossy_encoder =
-      frame_header.encoding != FrameEncoding::kModularGroup;
-
-  if (use_lossy_encoder) {
+  if (frame_header.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.EncodeGlobalACInfo(
         get_output(global_ac_index), &modular_frame_encoder));
   }

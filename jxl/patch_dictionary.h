@@ -49,16 +49,22 @@ enum class PatchBlendMode : uint8_t {
 struct QuantizedPatch {
   size_t xsize;
   size_t ysize;
-  int8_t pixels[3][kMaxPatchSize * kMaxPatchSize] = {};
+  QuantizedPatch() {
+    for (size_t i = 0; i < 3; i++) {
+      pixels[i].resize(kMaxPatchSize * kMaxPatchSize);
+      fpixels[i].resize(kMaxPatchSize * kMaxPatchSize);
+    }
+  }
+  std::vector<int8_t> pixels[3] = {};
   // Not compared. Used only to retrieve original pixels to construct the
   // reference image.
-  float fpixels[3][kMaxPatchSize * kMaxPatchSize] = {};
+  std::vector<float> fpixels[3] = {};
   bool operator==(const QuantizedPatch& other) const {
     if (xsize != other.xsize) return false;
     if (ysize != other.ysize) return false;
     for (size_t c = 0; c < 3; c++) {
-      if (memcmp(pixels[c], other.pixels[c], sizeof(int8_t) * xsize * ysize) !=
-          0)
+      if (memcmp(pixels[c].data(), other.pixels[c].data(),
+                 sizeof(int8_t) * xsize * ysize) != 0)
         return false;
     }
     return true;
@@ -68,26 +74,14 @@ struct QuantizedPatch {
     if (xsize != other.xsize) return xsize < other.xsize;
     if (ysize != other.ysize) return ysize < other.ysize;
     for (size_t c = 0; c < 3; c++) {
-      int cmp =
-          memcmp(pixels[c], other.pixels[c], sizeof(int8_t) * xsize * ysize);
+      int cmp = memcmp(pixels[c].data(), other.pixels[c].data(),
+                       sizeof(int8_t) * xsize * ysize);
       if (cmp > 0) return false;
       if (cmp < 0) return true;
     }
     return false;
   }
 };
-
-JXL_INLINE void swap(QuantizedPatch& a, QuantizedPatch& b) {
-  std::swap(a.xsize, b.xsize);
-  std::swap(a.ysize, b.ysize);
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t i = 0; i < std::max(a.xsize * a.ysize, b.xsize * b.ysize);
-         i++) {
-      std::swap(a.pixels[c][i], b.pixels[c][i]);
-      std::swap(a.fpixels[c][i], b.fpixels[c][i]);
-    }
-  }
-}
 
 // Pair (patch, vector of occurences).
 using PatchInfo =

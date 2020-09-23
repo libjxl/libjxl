@@ -21,11 +21,12 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/compressed_dc.cc"
 #include <hwy/foreach_target.h>
-//
+// ^ must come before highway.h and any *-inl.h.
 
 #include <algorithm>
 #include <array>
 #include <hwy/aligned_allocator.h>
+#include <hwy/highway.h>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -48,15 +49,15 @@
 #include "jxl/enc_cache.h"
 #include "jxl/entropy_coder.h"
 #include "jxl/image.h"
-
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 using D = HWY_FULL(float);
 using DScalar = HWY_CAPPED(float, 1);
-using V = Vec<D>;
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Vec;
 
 // TODO(veluca): optimize constants.
 const float w1 = 0.20345139757231578f;
@@ -214,9 +215,7 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
                const BlockCtxMap& bctx) {
   const HWY_FULL(float) df;
   const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
-  size_t hshift = HShift(chroma_subsampling);
-  size_t vshift = VShift(chroma_subsampling);
-  if (chroma_subsampling == YCbCrChromaSubsampling::k444) {
+  if (chroma_subsampling.Is444()) {
     const auto fac_x = Set(df, dc_factors[0] * mul);
     const auto fac_y = Set(df, dc_factors[1] * mul);
     const auto fac_b = Set(df, dc_factors[2] * mul);
@@ -242,17 +241,17 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
       }
     }
   } else {
-    Rect cr(r.x0() >> hshift, r.y0() >> vshift, ChromaSize(r.xsize(), hshift),
-            ChromaSize(r.ysize(), vshift));
     for (size_t c : {1, 0, 2}) {
+      Rect rect(r.x0() >> chroma_subsampling.HShift(c),
+                r.y0() >> chroma_subsampling.VShift(c),
+                r.xsize() >> chroma_subsampling.HShift(c),
+                r.ysize() >> chroma_subsampling.VShift(c));
       const auto fac = Set(df, dc_factors[c] * mul);
-      size_t ys = c == 1 ? r.ysize() : cr.ysize();
-      size_t xs = c == 1 ? r.xsize() : cr.xsize();
       const Channel& ch = in.channel[c < 2 ? c ^ 1 : c];
-      for (size_t y = 0; y < ys; y++) {
+      for (size_t y = 0; y < rect.ysize(); y++) {
         const int32_t* quant_row = ch.plane.Row(y);
-        float* row = (c == 1 ? r : cr).PlaneRow(dc, c, y);
-        for (size_t x = 0; x < xs; x += Lanes(di)) {
+        float* row = rect.PlaneRow(dc, c, y);
+        for (size_t x = 0; x < rect.xsize(); x += Lanes(di)) {
           const auto in_q = Load(di, quant_row + x);
           const auto in = ConvertTo(df, in_q) * fac;
           Store(in, df, row + x);
@@ -268,19 +267,22 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
   } else {
     for (size_t y = 0; y < r.ysize(); y++) {
       uint8_t* qdc_row_val = r.Row(quant_dc, y);
-      const int32_t* quant_row_x = in.channel[1].plane.Row(y >> vshift);
-      const int32_t* quant_row_y = in.channel[0].plane.Row(y);
-      const int32_t* quant_row_b = in.channel[2].plane.Row(y >> vshift);
+      const int32_t* quant_row_x =
+          in.channel[1].plane.Row(y >> chroma_subsampling.VShift(0));
+      const int32_t* quant_row_y =
+          in.channel[0].plane.Row(y >> chroma_subsampling.VShift(1));
+      const int32_t* quant_row_b =
+          in.channel[2].plane.Row(y >> chroma_subsampling.VShift(2));
       for (size_t x = 0; x < r.xsize(); x++) {
         int bucket_x = 0, bucket_y = 0, bucket_b = 0;
         for (int t : bctx.dc_thresholds[0]) {
-          if (quant_row_x[x >> hshift] > t) bucket_x++;
+          if (quant_row_x[x >> chroma_subsampling.HShift(0)] > t) bucket_x++;
         }
         for (int t : bctx.dc_thresholds[1]) {
-          if (quant_row_y[x] > t) bucket_y++;
+          if (quant_row_y[x >> chroma_subsampling.HShift(1)] > t) bucket_y++;
         }
         for (int t : bctx.dc_thresholds[2]) {
-          if (quant_row_b[x >> hshift] > t) bucket_b++;
+          if (quant_row_b[x >> chroma_subsampling.HShift(2)] > t) bucket_b++;
         }
         int bucket = bucket_x;
         bucket *= bctx.dc_thresholds[2].size() + 1;
@@ -293,15 +295,16 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
   }
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(DequantDC)
-HWY_EXPORT(AdaptiveDCSmoothing)
+HWY_EXPORT(DequantDC);
+HWY_EXPORT(AdaptiveDCSmoothing);
 void AdaptiveDCSmoothing(const float* dc_factors, Image3F* dc,
                          ThreadPool* pool) {
   return HWY_DYNAMIC_DISPATCH(AdaptiveDCSmoothing)(dc_factors, dc, pool);

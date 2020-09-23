@@ -19,9 +19,11 @@
 #endif
 
 #include "jxl/color_management.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "jxl/color_management.cc"
 #include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 
 #include <math.h>
 #include <stdint.h>
@@ -31,6 +33,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <hwy/highway.h>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -51,9 +54,26 @@
 
 #include "jxl/rational_polynomial-inl.h"
 
-#include <hwy/before_namespace-inl.h>
+// Define these only once. We can't use HWY_ONCE here because it is defined as
+// 1 only on the last pass.
+#ifndef JXL_COLOR_MANAGEMENT_CC_
+#define JXL_COLOR_MANAGEMENT_CC_
+
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+#if JPEGXL_ENABLE_SKCMS
+struct ColorSpaceTransform::SkcmsICC {
+  // Parsed skcms_ICCProfiles retain pointers to the original data.
+  PaddedBytes icc_src_, icc_dst_;
+  skcms_ICCProfile profile_src_, profile_dst_;
+};
+#endif  // JPEGXL_ENABLE_SKCMS
+}  // namespace jxl
+
+#endif  // JXL_COLOR_MANAGEMENT_CC_
+
+HWY_BEFORE_NAMESPACE();
+namespace jxl {
+namespace HWY_NAMESPACE {
 
 // Definitions for BT.2100-2 transfer functions (used inside/outside SIMD):
 // "display" is linear light (nits) normalized to [0, 1].
@@ -367,9 +387,9 @@ void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
 #if JPEGXL_ENABLE_SKCMS
     JXL_CHECK(skcms_Transform(
         xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
-        &t->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
-        skcms_AlphaFormat_Opaque, &t->profile_dst_, t->xsize_));
-#else   // JPEGXL_ENABLE_SKCMS
+        &t->skcms_icc_->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
+        skcms_AlphaFormat_Opaque, &t->skcms_icc_->profile_dst_, t->xsize_));
+#else  // JPEGXL_ENABLE_SKCMS
     JXL_DASSERT(thread < t->transforms_.size());
     cmsHTRANSFORM xform = t->transforms_[thread];
     cmsDoTransform(xform, xform_src, buf_dst,
@@ -444,27 +464,28 @@ cmsToneCurve* CreateTableCurve(const cmsContext context, uint32_t N,
 }
 #endif  // JPEGXL_ENABLE_SKCMS
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(DoColorSpaceTransform)
+HWY_EXPORT(DoColorSpaceTransform);
 void DoColorSpaceTransform(ColorSpaceTransform* t, size_t thread,
                            const float* buf_src, float* buf_dst) {
   return HWY_DYNAMIC_DISPATCH(DoColorSpaceTransform)(t, thread, buf_src,
                                                      buf_dst);
 }
 
-HWY_EXPORT(SRGBToLinear)
+HWY_EXPORT(SRGBToLinear);
 void SRGBToLinear(size_t n, const float* JXL_RESTRICT srgb,
                   float* JXL_RESTRICT linear) {
   return HWY_DYNAMIC_DISPATCH(SRGBToLinear)(n, srgb, linear);
 }
 
-HWY_EXPORT(CreateTableCurve)  // Local function.
+HWY_EXPORT(CreateTableCurve);  // Local function.
 
 namespace {
 
@@ -640,7 +661,7 @@ Status DecodeProfile(const PaddedBytes& icc, skcms_ICCProfile* const profile) {
   }
   return true;
 }
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
                      Profile* profile) {
   profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
@@ -1346,7 +1367,7 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
 
   if (c.IsGray()) {
     // Finer sampling and replicate each component.
-    for (in [0] = init; in[0] < 1.0; in[0] += step / 8) {
+    for (in[0] = init; in[0] < 1.0; in[0] += step / 8) {
       cmsDoTransform(xform1.get(), in, out1, 1);
       cmsDoTransform(xform2.get(), in, out2, 1);
       if (!ApproxEq(out1[0], out2[0], 2E-4)) {
@@ -1354,9 +1375,9 @@ Status ProfileEquivalentToICC(const cmsContext context, const Profile& profile1,
       }
     }
   } else {
-    for (in [0] = init; in[0] < 1.0; in[0] += step) {
-      for (in [1] = init; in[1] < 1.0; in[1] += step) {
-        for (in [2] = init; in[2] < 1.0; in[2] += step) {
+    for (in[0] = init; in[0] < 1.0; in[0] += step) {
+      for (in[1] = init; in[1] < 1.0; in[1] += step) {
+        for (in[2] = init; in[2] < 1.0; in[2] += step) {
           cmsDoTransform(xform1.get(), in, out1, 1);
           cmsDoTransform(xform2.get(), in, out2, 1);
           for (size_t i = 0; i < 3; ++i) {
@@ -1509,7 +1530,7 @@ Status ColorEncoding::SetFieldsFromICC() {
   DetectTransferFunction(profile, this);
   // ICC and RenderingIntent have the same values (0..3).
   rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
 
   std::lock_guard<std::mutex> guard(lcms_mutex);
   const cmsContext context = GetContext();
@@ -1547,7 +1568,7 @@ Status ColorEncoding::CreateICC() {
 
 #if JPEGXL_ENABLE_SKCMS
   if (!MaybeCreateProfile(*this, &icc_)) {
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   if (!MaybeCreateProfile(context, *this, &icc_)) {
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -1564,7 +1585,7 @@ void ColorEncoding::DecideIfWantICC() {
   if (!DecodeProfile(ICC(), &profile)) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
   equivalent = ProfileEquivalentToICC(profile, icc_new);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile;
   if (!DecodeProfile(context, ICC(), &profile)) return;
@@ -1586,6 +1607,13 @@ ColorSpaceTransform::~ColorSpaceTransform() {
 #endif
 }
 
+ColorSpaceTransform::ColorSpaceTransform()
+#if JPEGXL_ENABLE_SKCMS
+    : skcms_icc_(new SkcmsICC())
+#endif  // JPEGXL_ENABLE_SKCMS
+{
+}
+
 Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
                                  const ColorEncoding& c_dst, size_t xsize,
                                  const size_t num_threads) {
@@ -1595,11 +1623,13 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
 #endif
 
 #if JPEGXL_ENABLE_SKCMS
-  icc_src_ = c_src.ICC();
-  icc_dst_ = c_dst.ICC();
-  JXL_RETURN_IF_ERROR(DecodeProfile(icc_src_, &profile_src_));
-  JXL_RETURN_IF_ERROR(DecodeProfile(icc_dst_, &profile_dst_));
-#else   // JPEGXL_ENABLE_SKCMS
+  skcms_icc_->icc_src_ = c_src.ICC();
+  skcms_icc_->icc_dst_ = c_dst.ICC();
+  JXL_RETURN_IF_ERROR(
+      DecodeProfile(skcms_icc_->icc_src_, &skcms_icc_->profile_src_));
+  JXL_RETURN_IF_ERROR(
+      DecodeProfile(skcms_icc_->icc_dst_, &skcms_icc_->profile_dst_));
+#else  // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
   JXL_RETURN_IF_ERROR(DecodeProfile(context, c_src.ICC(), &profile_src));
@@ -1628,14 +1658,14 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
     PaddedBytes icc_src, icc_dst;
 #if JPEGXL_ENABLE_SKCMS
     skcms_ICCProfile new_src, new_dst;
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
     Profile new_src, new_dst;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.
 #if JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(c_linear_src, &new_src, &icc_src) &&
         MaybeCreateProfile(c_linear_dst, &new_dst, &icc_dst)) {
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(context, c_linear_src, &icc_src) &&
         MaybeCreateProfile(context, c_linear_dst, &icc_dst) &&
         DecodeProfile(context, icc_src, &new_src) &&
@@ -1648,11 +1678,11 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       printf("Special linear <-> HLG/PQ/sRGB; skip=%d\n", skip_lcms_);
 #endif
 #if JPEGXL_ENABLE_SKCMS
-      icc_src_ = PaddedBytes();
-      profile_src_ = new_src;
-      icc_dst_ = PaddedBytes();
-      profile_dst_ = new_dst;
-#else   // JPEGXL_ENABLE_SKCMS
+      skcms_icc_->icc_src_ = PaddedBytes();
+      skcms_icc_->profile_src_ = new_src;
+      skcms_icc_->icc_dst_ = PaddedBytes();
+      skcms_icc_->profile_dst_ = new_dst;
+#else  // JPEGXL_ENABLE_SKCMS
       profile_src.swap(new_src);
       profile_dst.swap(new_dst);
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -1672,7 +1702,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
   }
 
 #if JPEGXL_ENABLE_SKCMS
-  if (!skcms_MakeUsableAsDestination(&profile_dst_)) {
+  if (!skcms_MakeUsableAsDestination(&skcms_icc_->profile_dst_)) {
     return JXL_FAILURE(
         "Failed to make %s usable as a color transform destination",
         Description(c_dst).c_str());

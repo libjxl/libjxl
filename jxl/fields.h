@@ -28,6 +28,7 @@
 #include <cstdarg>
 
 #include "jxl/aux_out_fwd.h"
+#include "jxl/base/bits.h"
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/status.h"
 #include "jxl/common.h"
@@ -187,6 +188,8 @@ class F16Coder {
 
 class Bundle {
  public:
+  static constexpr size_t kMaxExtensions = 64;  // bits in u64
+
   // Print the type of each visitor called.
   static constexpr bool PrintVisitors() { return false; }
   // Print default value for each field and AllDefault result.
@@ -199,75 +202,26 @@ class Bundle {
   // Initializes fields to the default values. It is not recursive to nested
   // fields, this function is intended to be called in the constructors so
   // each nested field will already Init itself.
-  template <class T>
-  static void Init(T* JXL_RESTRICT t) {
-    InitVisitor visitor;
-    if (!visitor.Visit(t, PrintVisitors() ? "-- Init\n" : "")) {
-      JXL_ASSERT(false);  // Init should never fail.
-    }
-  }
+  static void Init(Fields* JXL_RESTRICT fields);
 
   // Similar to Init, but recursive to nested fields.
-  template <class T>
-  static void SetDefault(T* JXL_RESTRICT t) {
-    SetDefaultVisitor visitor;
-    if (!visitor.Visit(t, PrintVisitors() ? "-- SetDefault\n" : "")) {
-      JXL_ASSERT(false);  // Init should never fail.
-    }
-  }
+  static void SetDefault(Fields* JXL_RESTRICT fields);
 
   // Returns whether ALL fields (including `extensions`, if present) are equal
   // to their default value.
-  template <class T>
-  static bool AllDefault(const T& t) {
-    AllDefaultVisitor visitor;
-    const char* name =
-        (PrintVisitors() || PrintAllDefault()) ? "[[AllDefault\n" : "";
-    if (!visitor.VisitConst(t, name)) {
-      JXL_ASSERT(false);  // AllDefault should never fail.
-    }
-
-    if (PrintAllDefault()) printf("  %d]]\n", visitor.AllDefault());
-    return visitor.AllDefault();
-  }
+  static bool AllDefault(const Fields& fields);
 
   // Returns max number of bits required to encode a T.
-  template <class T>
-  static size_t MaxBits(const T& t) {
-    MaxBitsVisitor visitor;
-#if JXL_ENABLE_ASSERT
-    Status ret =
-#else
-    (void)
-#endif  // JXL_ENABLE_ASSERT
-        visitor.VisitConst(t, PrintVisitors() ? "-- MaxBits\n" : "");
-    JXL_ASSERT(ret);
-    return visitor.MaxBits();
-  }
+  static size_t MaxBits(const Fields& fields);
 
   // Returns whether a header's fields can all be encoded, i.e. they have a
   // valid representation. If so, "*total_bits" is the exact number of bits
   // required. Called by Write.
-  template <class T>
-  static Status CanEncode(const T& t, size_t* JXL_RESTRICT extension_bits,
-                          size_t* JXL_RESTRICT total_bits) {
-    CanEncodeVisitor visitor;
-    const char* name = (PrintVisitors() || PrintSizes()) ? "[[CanEncode\n" : "";
-    JXL_RETURN_IF_ERROR(visitor.VisitConst(t, name));
-    JXL_RETURN_IF_ERROR(visitor.GetSizes(extension_bits, total_bits));
-    if (PrintSizes()) printf("  %zu]]\n", *total_bits);
-    return true;
-  }
+  static Status CanEncode(const Fields& fields,
+                          size_t* JXL_RESTRICT extension_bits,
+                          size_t* JXL_RESTRICT total_bits);
 
-  template <class T>
-  static Status Read(BitReader* reader, T* JXL_RESTRICT t) {
-    ReadVisitor visitor(reader);
-    JXL_RETURN_IF_ERROR(visitor.Visit(t, PrintVisitors() ? "-- Read\n" : ""));
-    if (!visitor.EnoughBytes()) {
-      return JXL_FAILURE("Read more bits than available for bundle");
-    }
-    return visitor.OK();
-  }
+  static Status Read(BitReader* reader, Fields* JXL_RESTRICT fields);
 
   // Returns whether enough bits are available to fully read this bundle using
   // Read. Also returns true in case of a codestream error (other than not being
@@ -276,686 +230,75 @@ class Bundle {
   // NOTE: this advances the BitReader, a different one pointing back at the
   // original bit position in the codestream must be created to use Read after
   // this.
-  template <class T>
-  static bool CanRead(BitReader* reader, T* JXL_RESTRICT t) {
-    ReadVisitor visitor(reader);
-    Status status = visitor.Visit(t, PrintVisitors() ? "-- Read\n" : "");
-    // The status is ignored: we are only checking here whether there are enough
-    // bytes. If the error is due to not enough bytes, then that's returned
-    // below. If the error is due to another reason than enough bytes, then we'd
-    // return true, because it means there are enough bytes to determine there's
-    // an error, but that must be checked with another function such as Read.
-    (void)status;
-    return visitor.EnoughBytes();
-  }
+  static bool CanRead(BitReader* reader, Fields* JXL_RESTRICT fields);
 
-  template <class T>
-  static Status Write(const T& t, BitWriter* JXL_RESTRICT writer, size_t layer,
-                      AuxOut* aux_out) {
-    size_t extension_bits, total_bits;
-    JXL_RETURN_IF_ERROR(CanEncode(t, &extension_bits, &total_bits));
-
-    BitWriter::Allotment allotment(writer, total_bits);
-    WriteVisitor visitor(extension_bits, writer);
-    JXL_RETURN_IF_ERROR(
-        visitor.VisitConst(t, PrintVisitors() ? "-- Write\n" : ""));
-    JXL_RETURN_IF_ERROR(visitor.OK());
-    ReclaimAndCharge(writer, &allotment, layer, aux_out);
-    return true;
-  }
+  static Status Write(const Fields& fields, BitWriter* JXL_RESTRICT writer,
+                      size_t layer, AuxOut* aux_out);
 
  private:
-  // A bundle can be in one of three states concerning extensions: not-begun,
-  // active, ended. Bundles may be nested, so we need a stack of states.
-  class ExtensionStates {
-   public:
-    static constexpr size_t kMaxDepth = 64;
-
-    void Push() {
-      // Initial state = not-begun.
-      begun_ <<= 1;
-      ended_ <<= 1;
-    }
-
-    // Clears current state; caller must check IsEnded beforehand.
-    void Pop() {
-      begun_ >>= 1;
-      ended_ >>= 1;
-    }
-
-    // Returns true if state == active || state == ended.
-    Status IsBegun() const { return (begun_ & 1) != 0; }
-    // Returns true if state != not-begun && state != active.
-    Status IsEnded() const { return (ended_ & 1) != 0; }
-
-    void Begin() {
-      JXL_ASSERT(!IsBegun());
-      JXL_ASSERT(!IsEnded());
-      begun_ += 1;
-    }
-
-    void End() {
-      JXL_ASSERT(IsBegun());
-      JXL_ASSERT(!IsEnded());
-      ended_ += 1;
-    }
-
-   private:
-    // Current state := least-significant bit of begun_ and ended_.
-    uint64_t begun_ = 0;
-    uint64_t ended_ = 0;
-  };
-
-  // Visitors generate Init/AllDefault/Read/Write logic for all fields. Each
-  // bundle's VisitFields member function calls visitor->U32 etc. We do not
-  // overload operator() because a function name is easier to search for.
-
-  template <class Derived>
-  class VisitorBase {
-   public:
-    explicit VisitorBase(bool print_bundles = false)
-        : print_bundles_(print_bundles) {}
-    ~VisitorBase() { JXL_ASSERT(depth_ == 0); }
-
-    // This is the only call site of T::VisitFields. Adds tracing and ensures
-    // EndExtensions was called.
-    template <class T>
-    Status Visit(T* t, const char* visitor_name) {
-      fputs(visitor_name, stdout);  // No newline; no effect if empty
-      if (print_bundles_) {
-        Trace("%s\n", print_bundles_ ? T::Name() : "");
-      }
-
-      depth_ += 1;
-      JXL_ASSERT(depth_ <= ExtensionStates::kMaxDepth);
-      extension_states_.Push();
-
-      Derived* self = static_cast<Derived*>(this);
-      const Status ok = t->VisitFields(self);
-
-      if (ok) {
-        // If VisitFields called BeginExtensions, must also call
-        // EndExtensions.
-        JXL_ASSERT(!extension_states_.IsBegun() || extension_states_.IsEnded());
-      } else {
-        // Failed, undefined state: don't care whether EndExtensions was
-        // called.
-      }
-
-      extension_states_.Pop();
-      JXL_ASSERT(depth_ != 0);
-      depth_ -= 1;
-
-      return ok;
-    }
-
-    // For visitors accepting a const T, need to const-cast so we can call the
-    // non-const T::VisitFields. NOTE: T is not modified except the
-    // `all_default` field by CanEncodeVisitor.
-    template <class T>
-    Status VisitConst(const T& t, const char* message) {
-      return Visit(const_cast<T*>(&t), message);
-    }
-
-    // Helper to construct U32Enc from U32Distr.
-    void U32(const U32Distr d0, const U32Distr d1, const U32Distr d2,
-             const U32Distr d3, const uint32_t default_value,
-             uint32_t* JXL_RESTRICT value) {
-      Derived* self = static_cast<Derived*>(this);
-      // The rarely-used function that takes a U32Enc must have a different
-      // name, else it would HIDE the base class U32() member.
-      self->U32WithEnc(U32Enc(d0, d1, d2, d3), default_value, value);
-    }
-
-    // Derived types (overridden by InitVisitor because it is unsafe to read
-    // from *value there)
-
-    void Bool(bool default_value, bool* JXL_RESTRICT value) {
-      uint32_t bits = *value ? 1 : 0;
-      Derived* self = static_cast<Derived*>(this);
-      self->Bits(1, static_cast<uint32_t>(default_value), &bits);
-      JXL_DASSERT(bits <= 1);
-      *value = bits == 1;
-    }
-
-    template <typename EnumT>
-    Status Enum(const EnumT default_value, EnumT* JXL_RESTRICT value) {
-      Derived* self = static_cast<Derived*>(this);
-      uint32_t u32 = static_cast<uint32_t>(*value);
-      // 00 -> 0
-      // 01 -> 1
-      // 10xxxx -> 2..17
-      // 11yyyyyy -> 18..81
-      self->U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(6, 18),
-                static_cast<uint32_t>(default_value), &u32);
-      *value = static_cast<EnumT>(u32);
-      return EnumValid(*value);
-    }
-
-    void S32(const U32Distr d0, const U32Distr d1, const U32Distr d2,
-             const U32Distr d3, const int32_t default_value,
-             int32_t* JXL_RESTRICT value) {
-      uint32_t u32 = U32FromS32(*value);
-      Derived* self = static_cast<Derived*>(this);
-      self->U32(d0, d1, d2, d3, U32FromS32(default_value), &u32);
-      *value = S32FromU32(u32);
-    }
-
-    void S64(const int64_t default_value, int64_t* JXL_RESTRICT value) {
-      uint64_t u64 = U64FromS64(*value);
-      Derived* self = static_cast<Derived*>(this);
-      self->U64(U64FromS64(default_value), &u64);
-      *value = S64FromU64(u64);
-    }
-
-    // Returns whether VisitFields should visit some subsequent fields.
-    // "condition" is typically from prior fields, e.g. flags.
-    // Overridden by InitVisitor and MaxBitsVisitor.
-    Status Conditional(bool condition) { return condition; }
-
-    // Overridden by InitVisitor, AllDefaultVisitor and CanEncodeVisitor.
-    template <class Fields>
-    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
-      Derived* self = static_cast<Derived*>(this);
-      self->Bool(true, all_default);
-      return *all_default;
-    }
-
-    template <class Fields>
-    void SetDefault(Fields* fields) {
-      // Do nothing by default, this is overridden by ReadVisitor.
-    }
-
-    // Returns the result of visiting a nested Bundle.
-    // Overridden by InitVisitor.
-    template <class Fields>
-    Status VisitNested(Fields* fields) {
-      Derived* self = static_cast<Derived*>(this);
-      return self->Visit(fields, "");
-    }
-
-    // Overridden by ReadVisitor. Enables dynamically-sized fields.
-    Status IsReading() const { return false; }
-
-    // Overriden by ReadVisitor and WriteVisitor.
-    // Called before any conditional visit based on "extensions".
-    // Overridden by ReadVisitor, CanEncodeVisitor and WriteVisitor.
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      Derived* self = static_cast<Derived*>(this);
-      self->U64(0, extensions);
-
-      extension_states_.Begin();
-    }
-
-    // Called after all extension fields (if any). Although non-extension
-    // fields could be visited afterward, we prefer the convention that
-    // extension fields are always the last to be visited. Overridden by
-    // ReadVisitor.
-    Status EndExtensions() {
-      extension_states_.End();
-      return true;
-    }
-
-   protected:
-    // Prints indentation, <format_in>.
-    JXL_FORMAT(2, 3)  // 1-based plus one because member function
-    void Trace(const char* format_in, ...) const {
-      // New format string with indentation included
-      char format[200];
-      memset(format, ' ', depth_ * 2);  // indentation
-      const size_t pos = depth_ * 2;
-      strncpy(format + pos, format_in, sizeof(format) - pos - 1);
-      format[sizeof(format) - 1] = '\0';
-
-      char buf[2000];
-      va_list args;
-      va_start(args, format_in);
-      vsnprintf(buf, sizeof(buf), format, args);
-      va_end(args);
-      fputs(buf, stdout);  // unlike puts, does not add newline
-    }
-
-   private:
-    size_t depth_ = 0;  // for indentation.
-    ExtensionStates extension_states_;
-    const bool print_bundles_;
-  };
-
-  struct InitVisitor : public VisitorBase<InitVisitor> {
-    void Bits(const size_t /*unused*/, const uint32_t default_value,
-              uint32_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void U32WithEnc(const U32Enc /*unused*/, const uint32_t default_value,
-                    uint32_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void U64(const uint64_t default_value, uint64_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void Bool(bool default_value, bool* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    template <typename T>
-    Status Enum(const T default_value, T* JXL_RESTRICT value) {
-      *value = default_value;
-      return EnumValid(*value);
-    }
-
-    void S32(U32Distr /*unused*/, U32Distr /*unused*/, U32Distr /*unused*/,
-             U32Distr /*unused*/, const int32_t default_value,
-             int32_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void S64(const int64_t default_value, int64_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void F16(const float default_value, float* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    // Always visit conditional fields to ensure they are initialized.
-    Status Conditional(bool condition) { return true; }
-
-    template <class Fields>
-    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
-      // Just initialize this field and don't skip initializing others.
-      Bool(true, all_default);
-      return false;
-    }
-
-    template <class Fields>
-    Status VisitNested(Fields* fields) {
-      // Avoid re-initializing nested bundles (their ctors already called
-      // Bundle::Init for their fields).
-      return true;
-    }
-  };
-
-  // Similar to InitVisitor, but also initializes nested fields.
-  struct SetDefaultVisitor : public VisitorBase<SetDefaultVisitor> {
-    void Bits(const size_t /*unused*/, const uint32_t default_value,
-              uint32_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void U32WithEnc(const U32Enc /*unused*/, const uint32_t default_value,
-                    uint32_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void U64(const uint64_t default_value, uint64_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void Bool(bool default_value, bool* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    template <typename T>
-    Status Enum(const T default_value, T* JXL_RESTRICT value) {
-      *value = default_value;
-      return EnumValid(*value);
-    }
-
-    void S32(U32Distr /*unused*/, U32Distr /*unused*/, U32Distr /*unused*/,
-             U32Distr /*unused*/, const int32_t default_value,
-             int32_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void S64(const int64_t default_value, int64_t* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    void F16(const float default_value, float* JXL_RESTRICT value) {
-      *value = default_value;
-    }
-
-    // Always visit conditional fields to ensure they are initialized.
-    Status Conditional(bool condition) { return true; }
-
-    template <class Fields>
-    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
-      // Just initialize this field and don't skip initializing others.
-      Bool(true, all_default);
-      return false;
-    }
-  };
-
-  class AllDefaultVisitor : public VisitorBase<AllDefaultVisitor> {
-   public:
-    AllDefaultVisitor() : VisitorBase<AllDefaultVisitor>(PrintAllDefault()) {}
-
-    void Bits(const size_t bits, const uint32_t default_value,
-              const uint32_t* JXL_RESTRICT value) {
-      if (PrintAllDefault()) {
-        Trace("  u(%zu) = %u, default %u\n", bits, *value, default_value);
-      }
-
-      all_default_ &= *value == default_value;
-    }
-
-    void U32WithEnc(const U32Enc /*unused*/, const uint32_t default_value,
-                    const uint32_t* JXL_RESTRICT value) {
-      if (PrintAllDefault()) {
-        Trace("  U32 = %u, default %u\n", *value, default_value);
-      }
-
-      all_default_ &= *value == default_value;
-    }
-
-    void U64(const uint64_t default_value, const uint64_t* JXL_RESTRICT value) {
-      if (PrintAllDefault()) {
-        Trace("  U64 = %" PRIu64 ", default %" PRIu64 "\n", *value,
-              default_value);
-      }
-
-      all_default_ &= *value == default_value;
-    }
-
-    void F16(const float default_value, const float* JXL_RESTRICT value) {
-      if (PrintAllDefault()) {
-        Trace("  F16 = %.6f, default %.6f\n", *value, default_value);
-      }
-      all_default_ &= std::abs(*value - default_value) < 1E-6f;
-    }
-
-    template <class Fields>
-    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
-      // Visit all fields so we can compute the actual all_default_ value.
-      return false;
-    }
-
-    bool AllDefault() const { return all_default_; }
-
-   private:
-    bool all_default_ = true;
-  };
-
-  class ReadVisitor : public VisitorBase<ReadVisitor> {
-   public:
-    explicit ReadVisitor(BitReader* reader)
-        : VisitorBase(PrintRead()), reader_(reader) {}
-
-    void Bits(const size_t bits, const uint32_t default_value,
-              uint32_t* JXL_RESTRICT value) {
-      if (!enough_bytes_) return;
-      *value = BitsCoder::Read(bits, reader_);
-      if (!reader_->AllReadsWithinBounds()) {
-        enough_bytes_ = false;
-      }
-      if (PrintRead()) Trace("  u(%zu) = %u\n", bits, *value);
-    }
-
-    void U32WithEnc(const U32Enc dist, const uint32_t default_value,
-                    uint32_t* JXL_RESTRICT value) {
-      if (!enough_bytes_) return;
-      *value = U32Coder::Read(dist, reader_);
-      if (!reader_->AllReadsWithinBounds()) {
-        enough_bytes_ = false;
-      }
-      if (PrintRead()) Trace("  U32 = %u\n", *value);
-    }
-
-    void U64(const uint64_t default_value, uint64_t* JXL_RESTRICT value) {
-      if (!enough_bytes_) return;
-      *value = U64Coder::Read(reader_);
-      if (!reader_->AllReadsWithinBounds()) {
-        enough_bytes_ = false;
-      }
-      if (PrintRead()) Trace("  U64 = %" PRIu64 "\n", *value);
-    }
-
-    void F16(const float default_value, float* JXL_RESTRICT value) {
-      if (!enough_bytes_) return;
-      ok_ &= F16Coder::Read(reader_, value);
-      if (!reader_->AllReadsWithinBounds()) {
-        enough_bytes_ = false;
-      }
-      if (PrintRead()) Trace("  F16 = %f\n", *value);
-    }
-
-    template <class Fields>
-    void SetDefault(Fields* fields) {
-      Bundle::SetDefault(fields);
-    }
-
-    Status IsReading() const { return true; }
-
-    // This never fails because visitors are expected to keep reading until
-    // EndExtensions, see comment there.
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      VisitorBase<ReadVisitor>::BeginExtensions(extensions);
-      if (!enough_bytes_) return;
-      if (*extensions != 0) {
-        // Read the additional U64 indicating the number of extension bits
-        // (more compact than sending the total size).
-        extension_bits_ = U64Coder::Read(reader_);  // >= 0
-        if (!reader_->AllReadsWithinBounds()) {
-          enough_bytes_ = false;
-          return;
-        }
-        // Used by EndExtensions to skip past any _remaining_ extensions.
-        pos_after_ext_size_ = reader_->TotalBitsConsumed();
-        JXL_ASSERT(pos_after_ext_size_ != 0);
-      }
-    }
-
-    Status EndExtensions() {
-      JXL_RETURN_IF_ERROR(VisitorBase<ReadVisitor>::EndExtensions());
-      // Happens if extensions == 0: don't read size, done.
-      if (pos_after_ext_size_ == 0) return true;
-
-      // Not enough bytes as set by BeginExtensions or earlier. Do not return
-      // this as an JXL_FAILURE or false (which can also propagate to error
-      // through e.g. JXL_RETURN_IF_ERROR), since this may be used while
-      // silently checking whether there are enough bytes. If this case must be
-      // treated as an error, reader_>Close() will do this, just like is already
-      // done for non-extension fields.
-      if (!enough_bytes_) return true;
-
-      // Skip new fields this (old?) decoder didn't know about, if any.
-      const size_t bits_read = reader_->TotalBitsConsumed();
-      const uint64_t end = pos_after_ext_size_ + extension_bits_;
-      if (bits_read > end) {
-        return JXL_FAILURE("Read more extension bits than budgeted");
-      }
-      const size_t remaining_bits = end - bits_read;
-      if (remaining_bits != 0) {
-        JXL_WARNING("Skipping %zu-bit extension(s)", remaining_bits);
-        reader_->SkipBits(remaining_bits);
-        if (!reader_->AllReadsWithinBounds()) {
-          enough_bytes_ = false;
-        }
-      }
-      return true;
-    }
-
-    Status OK() const { return ok_ && enough_bytes_; }
-
-    Status EnoughBytes() const { return enough_bytes_; }
-
-   private:
-    // Whether any error other than not enough bytes occurred.
-    bool ok_ = true;
-
-    // Whether there are enough input bytes to read from.
-    bool enough_bytes_ = true;
-    BitReader* const reader_;
-    uint64_t extension_bits_ = 0;    // May be 0 even if extensions present.
-    size_t pos_after_ext_size_ = 0;  // 0 iff extensions == 0.
-  };
-
-  class MaxBitsVisitor : public VisitorBase<MaxBitsVisitor> {
-   public:
-    void Bits(const size_t bits, const uint32_t default_value,
-              const uint32_t* JXL_RESTRICT value) {
-      max_bits_ += BitsCoder::MaxEncodedBits(bits);
-    }
-
-    void U32WithEnc(const U32Enc enc, const uint32_t default_value,
-                    const uint32_t* JXL_RESTRICT value) {
-      max_bits_ += U32Coder::MaxEncodedBits(enc);
-    }
-
-    void U64(const uint64_t default_value, const uint64_t* JXL_RESTRICT value) {
-      max_bits_ += U64Coder::MaxEncodedBits();
-    }
-
-    void F16(const float default_value, const float* JXL_RESTRICT value) {
-      max_bits_ += F16Coder::MaxEncodedBits();
-    }
-
-    template <class Fields>
-    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
-      Bool(true, all_default);
-      return false;
-    }
-
-    // Always visit conditional fields to get a (loose) upper bound.
-    Status Conditional(bool condition) { return true; }
-
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      // Skip - extensions are not included in "MaxBits" because their length
-      // is potentially unbounded.
-    }
-
-    Status EndExtensions() { return true; }
-
-    size_t MaxBits() const { return max_bits_; }
-
-   private:
-    size_t max_bits_ = 0;
-  };
-
-  class CanEncodeVisitor : public VisitorBase<CanEncodeVisitor> {
-   public:
-    CanEncodeVisitor() : VisitorBase<CanEncodeVisitor>(PrintSizes()) {}
-
-    void Bits(const size_t bits, const uint32_t default_value,
-              const uint32_t* JXL_RESTRICT value) {
-      size_t encoded_bits = 0;
-      ok_ &= BitsCoder::CanEncode(bits, *value, &encoded_bits);
-      if (PrintSizes()) Trace("u(%zu) = %u\n", bits, *value);
-      encoded_bits_ += encoded_bits;
-    }
-
-    void U32WithEnc(const U32Enc enc, const uint32_t default_value,
-                    const uint32_t* JXL_RESTRICT value) {
-      size_t encoded_bits = 0;
-      ok_ &= U32Coder::CanEncode(enc, *value, &encoded_bits);
-      if (PrintSizes()) Trace("U32(%zu) = %u\n", encoded_bits, *value);
-      encoded_bits_ += encoded_bits;
-    }
-
-    void U64(const uint64_t default_value, const uint64_t* JXL_RESTRICT value) {
-      size_t encoded_bits = 0;
-      ok_ &= U64Coder::CanEncode(*value, &encoded_bits);
-      if (PrintSizes()) {
-        Trace("U64(%zu) = %" PRIu64 "\n", encoded_bits, *value);
-      }
-      encoded_bits_ += encoded_bits;
-    }
-
-    void F16(const float default_value, const float* JXL_RESTRICT value) {
-      size_t encoded_bits = 0;
-      ok_ &= F16Coder::CanEncode(*value, &encoded_bits);
-      if (PrintSizes()) {
-        Trace("F16(%zu) = %.6f\n", encoded_bits, *value);
-      }
-      encoded_bits_ += encoded_bits;
-    }
-
-    template <class Fields>
-    Status AllDefault(const Fields& fields, bool* JXL_RESTRICT all_default) {
-      *all_default = Bundle::AllDefault(fields);
-      Bool(true, all_default);
-      return *all_default;
-    }
-
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      VisitorBase<CanEncodeVisitor>::BeginExtensions(extensions);
-      if (*extensions != 0) {
-        JXL_ASSERT(pos_after_ext_ == 0);
-        pos_after_ext_ = encoded_bits_;
-        JXL_ASSERT(pos_after_ext_ != 0);  // visited "extensions"
-      }
-    }
-    // EndExtensions = default.
-
-    Status GetSizes(size_t* JXL_RESTRICT extension_bits,
-                    size_t* JXL_RESTRICT total_bits) {
-      JXL_RETURN_IF_ERROR(ok_);
-      *extension_bits = 0;
-      *total_bits = encoded_bits_;
-      // Only if extension field was nonzero will we encode the size.
-      if (pos_after_ext_ != 0) {
-        JXL_ASSERT(encoded_bits_ >= pos_after_ext_);
-        *extension_bits = encoded_bits_ - pos_after_ext_;
-        // Also need to encode *extension_bits and bill it to *total_bits.
-        size_t encoded_bits = 0;
-        ok_ &= U64Coder::CanEncode(*extension_bits, &encoded_bits);
-        *total_bits += encoded_bits;
-      }
-      return true;
-    }
-
-   private:
-    bool ok_ = true;
-    size_t encoded_bits_ = 0;
-    // Snapshot of encoded_bits_ after visiting the extension field, but NOT
-    // including the hidden "extension_bits" u64.
-    uint64_t pos_after_ext_ = 0;
-  };
-
-  class WriteVisitor : public VisitorBase<WriteVisitor> {
-   public:
-    WriteVisitor(const size_t extension_bits, BitWriter* JXL_RESTRICT writer)
-        : extension_bits_(extension_bits), writer_(writer) {}
-
-    void Bits(const size_t bits, const uint32_t default_value,
-              const uint32_t* JXL_RESTRICT value) {
-      ok_ &= BitsCoder::Write(bits, *value, writer_);
-    }
-    void U32WithEnc(const U32Enc enc, const uint32_t default_value,
-                    const uint32_t* JXL_RESTRICT value) {
-      ok_ &= U32Coder::Write(enc, *value, writer_);
-    }
-
-    void U64(const uint64_t default_value, const uint64_t* JXL_RESTRICT value) {
-      ok_ &= U64Coder::Write(*value, writer_);
-    }
-
-    void F16(const float default_value, const float* JXL_RESTRICT value) {
-      ok_ &= F16Coder::Write(*value, writer_);
-    }
-
-    void BeginExtensions(uint64_t* JXL_RESTRICT extensions) {
-      VisitorBase<WriteVisitor>::BeginExtensions(extensions);
-      if (*extensions == 0) {
-        JXL_ASSERT(extension_bits_ == 0);
-      } else {
-        // NOTE: extension_bits_ can be zero if the extensions do not require
-        // any additional fields.
-        ok_ &= U64Coder::Write(extension_bits_, writer_);
-      }
-    }
-    // EndExtensions = default.
-
-    Status OK() const { return ok_; }
-
-   private:
-    const size_t extension_bits_;
-    BitWriter* JXL_RESTRICT writer_;
-    bool ok_ = true;
-  };
+};
+
+// Different subclasses of Visitor are passed to implementations of Fields
+// throughout their lifetime. Templates used to be used for this but dynamic
+// polymorphism produces more compact executables than template reification did.
+class Visitor {
+ public:
+  virtual ~Visitor() = default;
+  virtual Status Visit(Fields* fields, const char* visitor_name) = 0;
+
+  virtual void Bool(bool default_value, bool* JXL_RESTRICT value) = 0;
+  virtual void U32(U32Enc, uint32_t, uint32_t*) = 0;
+
+  // Helper to construct U32Enc from U32Distr.
+  void U32(const U32Distr d0, const U32Distr d1, const U32Distr d2,
+           const U32Distr d3, const uint32_t default_value,
+           uint32_t* JXL_RESTRICT value) {
+    U32(U32Enc(d0, d1, d2, d3), default_value, value);
+  }
+
+  template <typename EnumT>
+  Status Enum(const EnumT default_value, EnumT* JXL_RESTRICT value) {
+    uint32_t u32 = static_cast<uint32_t>(*value);
+    // 00 -> 0
+    // 01 -> 1
+    // 10xxxx -> 2..17
+    // 11yyyyyy -> 18..81
+    U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(6, 18),
+        static_cast<uint32_t>(default_value), &u32);
+    *value = static_cast<EnumT>(u32);
+    return EnumValid(*value);
+  }
+
+  virtual void Bits(size_t bits, uint32_t default_value,
+                    uint32_t* JXL_RESTRICT value) = 0;
+  virtual void U64(uint64_t default_value, uint64_t* JXL_RESTRICT value) = 0;
+  virtual void F16(float default_value, float* JXL_RESTRICT value) = 0;
+
+  // Returns whether VisitFields should visit some subsequent fields.
+  // "condition" is typically from prior fields, e.g. flags.
+  // Overridden by InitVisitor and MaxBitsVisitor.
+  virtual Status Conditional(bool condition) { return condition; }
+
+  // Overridden by InitVisitor, AllDefaultVisitor and CanEncodeVisitor.
+  virtual Status AllDefault(const Fields& fields,
+                            bool* JXL_RESTRICT all_default) {
+    Bool(true, all_default);
+    return *all_default;
+  }
+
+  virtual void SetDefault(Fields* fields) {
+    // Do nothing by default, this is overridden by ReadVisitor.
+  }
+
+  // Returns the result of visiting a nested Bundle.
+  // Overridden by InitVisitor.
+  virtual Status VisitNested(Fields* fields) { return Visit(fields, ""); }
+
+  // Overridden by ReadVisitor. Enables dynamically-sized fields.
+  virtual Status IsReading() const { return false; }
+
+  virtual void BeginExtensions(uint64_t* JXL_RESTRICT extensions) = 0;
+  virtual Status EndExtensions() = 0;
 };
 
 }  // namespace jxl

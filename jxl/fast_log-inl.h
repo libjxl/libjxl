@@ -21,12 +21,17 @@
 #define JXL_FAST_LOG_INL_H_
 #endif
 
-#include "jxl/rational_polynomial-inl.h"
+#include <hwy/highway.h>
 
-// Code
-#include <hwy/before_namespace-inl.h>
+#include "jxl/rational_polynomial-inl.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::ShiftLeft;
+using hwy::HWY_NAMESPACE::ShiftRight;
 
 // Computes natural logarithm like std::log. Undefined if negative / NaN.
 // L1 error ~3.9E-6 (see fast_log_test).
@@ -40,7 +45,7 @@ HWY_MAYBE_UNUSED V FastLog2f_18bits(const DF df, V x) {
                                           HWY_REP4(1.0096718572241148E+00f),
                                           HWY_REP4(1.7409343003366853E-01f)};
 
-  const hwy::Simd<int32_t, MaxLanes(df)> di;
+  const hwy::HWY_NAMESPACE::Simd<int32_t, MaxLanes(df)> di;
   const auto x_bits = BitCast(di, x);
 
   // Range reduction to [-1/3, 1/3] - 3 integer, 2 float ops
@@ -52,9 +57,10 @@ HWY_MAYBE_UNUSED V FastLog2f_18bits(const DF df, V x) {
   return EvalRationalPolynomial(df, mantissa - Set(df, 1.0f), p, q) + exp_val;
 }
 
-#include <hwy/end_target-inl.h>
-
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

@@ -23,6 +23,13 @@
 #include <utility>
 #include <vector>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
+
+#include <hwy/highway.h>
+
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/profiler.h"
@@ -35,10 +42,6 @@
 #include "jxl/linalg.h"
 #include "jxl/optimize.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/detect_dots.cc"
-#include <hwy/foreach_target.h>
-
 // Set JXL_DEBUG_DOT_DETECT to 1 to enable debugging.
 #ifndef JXL_DEBUG_DOT_DETECT
 #define JXL_DEBUG_DOT_DETECT 0
@@ -48,9 +51,9 @@
 #include "jxl/aux_out.h"
 #endif
 
-#include <hwy/before_namespace-inl.h>
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
 
 ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
                               ThreadPool* pool) {
@@ -90,13 +93,14 @@ ImageF SumOfSquareDifferences(const Image3F& forig, const Image3F& smooth,
   return sum_of_squares;
 }
 
-#include <hwy/end_target-inl.h>
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 namespace jxl {
-HWY_EXPORT(SumOfSquareDifferences)  // Local function
+HWY_EXPORT(SumOfSquareDifferences);  // Local function
 
 const int kEllipseWindowSize = 5;
 

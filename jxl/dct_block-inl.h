@@ -23,12 +23,16 @@
 
 #include <stddef.h>
 
-#include "jxl/base/status.h"
+#include <hwy/highway.h>
 
-// SIMD code
-#include <hwy/before_namespace-inl.h>
+#include "jxl/base/status.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-#include <hwy/begin_target-inl.h>
+namespace HWY_NAMESPACE {
+namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Vec;
 
 // Block: (x, y) <-> (N * y + x)
 // Lines: (x, y) <-> (stride * y + x)
@@ -174,8 +178,10 @@ class ToLines {
   size_t stride_;  // move to next line by adding this to pointer
 };
 
-#include <hwy/end_target-inl.h>
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace jxl
-#include <hwy/after_namespace-inl.h>
+HWY_AFTER_NAMESPACE();
 
 #endif  // include guard

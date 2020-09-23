@@ -31,6 +31,11 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/googletest/CMakeLists.txt")
   add_library(GTest::GTest ALIAS gtest)
   add_library(GTest::Main ALIAS gtest_main)
 
+  set_target_properties(gtest PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+  set_target_properties(gmock PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+  set_target_properties(gtest_main PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+  set_target_properties(gmock_main PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
+
   # googletest doesn't compile clean with clang-cl (-Wundef)
   if (WIN32 AND ${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
     set_target_properties(gtest PROPERTIES COMPILE_FLAGS "-Wno-error")

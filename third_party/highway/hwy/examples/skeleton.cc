@@ -14,20 +14,28 @@
 
 #include "hwy/examples/skeleton.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "hwy/examples/skeleton.cc"
-#include "hwy/foreach_target.h"
-
 #include <assert.h>
 #include <stdio.h>
+
+// First undef to prevent error when re-included.
+#undef HWY_TARGET_INCLUDE
+// For runtime dispatch, specify the name of the current file (unfortunately
+// __FILE__ is not reliable) so that foreach_target.h can re-include it.
+#define HWY_TARGET_INCLUDE "hwy/examples/skeleton.cc"
+// Re-include this file once per enabled target to generate code for it.
+#include "hwy/foreach_target.h"
+// ^ must come before highway.h and any *-inl.h.
+
 #include "hwy/examples/skeleton_shared.h"
+#include "hwy/highway.h"
 
 // Optional: factor out parts of the implementation into *-inl.h
 #include "hwy/examples/skeleton-inl.h"
 
-#include "hwy/before_namespace-inl.h"
+// Optional, can instead add HWY_ATTR to all functions.
+HWY_BEFORE_NAMESPACE();
 namespace skeleton {
-#include "hwy/begin_target-inl.h"
+namespace HWY_NAMESPACE {
 
 // Compiled once per target via multiple inclusion.
 void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
@@ -38,9 +46,10 @@ void Skeleton(const float* HWY_RESTRICT in1, const float* HWY_RESTRICT in2,
   ExampleMulAdd(in1, in2, out);
 }
 
-#include "hwy/end_target-inl.h"
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
 }  // namespace skeleton
-#include "hwy/after_namespace-inl.h"
+HWY_AFTER_NAMESPACE();
 
 #if HWY_ONCE
 
@@ -49,7 +58,7 @@ namespace skeleton {
 // This macro declares a static array SkeletonHighwayDispatchTable used for
 // dynamic dispatch. This macro should be placed in the same namespace that
 // defines the Skeleton function above.
-HWY_EXPORT(Skeleton)
+HWY_EXPORT(Skeleton);
 
 // This function is optional and only needed in the case of exposing it in the
 // header file. Otherwise using HWY_DYNAMIC_DISPATCH(Skeleton) multiple times in

@@ -67,10 +67,11 @@ void RunRGBRoundTrip(float distance, bool fast) {
   CompressParams cparams;
   cparams.butteraugli_distance = distance;
   if (fast) {
-    cparams.speed_tier = SpeedTier::kSquirrel;
+    cparams.speed_tier = SpeedTier::kWombat;
   }
 
   FrameHeader frame_header;
+  frame_header.color_transform = ColorTransform::kXYB;
   frame_header.animation_frame.nonserialized_have_timecode = false;
   LoopFilter loop_filter;
   loop_filter.gab = true;
@@ -84,7 +85,8 @@ void RunRGBRoundTrip(float distance, bool fast) {
   loop_filter.epf = false;
 
   FrameDimensions frame_dim;
-  frame_dim.Set(opsin.xsize(), opsin.ysize(), /*group_size_shift=*/1);
+  frame_dim.Set(opsin.xsize(), opsin.ysize(), /*group_size_shift=*/1,
+                /*max_hshift=*/0, /*max_vshift=*/0);
   Multiframe multiframe;
   PassesEncoderState enc_state;
   JXL_CHECK(InitializePassesSharedState(frame_header, loop_filter, io.metadata,
