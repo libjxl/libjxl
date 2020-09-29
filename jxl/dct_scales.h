@@ -20,128 +20,32 @@
 #include <stddef.h>
 
 namespace jxl {
+template <size_t V>
+struct square_root {
+  static constexpr float value = square_root<V / 4>::value * 2;
+};
 
-// Final scaling factors of outputs/inputs in the Arai, Agui, and Nakajima
-// algorithm computing the DCT/IDCT (described in the book JPEG: Still Image
-// Data Compression Standard, section 4.3.5) and the "A low multiplicative
-// complexity fast recursive DCT-2 algorithm" (Maxim Vashkevich, Alexander
-// Pertrovsky) algorithm. Note that the DCT and the IDCT scales of these two
-// algorithms are flipped. We use the first algorithm for DCT8, and the second
-// one for all other DCTs.
-/* Python snippet to produce these tables for the Arai, Agui, Nakajima
- * algorithm:
- *
-from mpmath import *
-N = 8
-def iscale(u):
-  eps = sqrt(mpf(0.5)) if u == 0 else mpf(1.0)
-  return sqrt(mpf(2) / mpf(N)) * eps * cos(mpf(u) * pi / mpf(2 * N))
-def scale(u):
-  return mpf(1) / (mpf(N) * iscale(i))
-mp.dps = 18
-print(", ".join([str(scale(i)) + 'f' for i in range(N)]))
-print(", ".join([str(iscale(i)) + 'f' for i in range(N)]))
- */
-static constexpr float kDCTScales1[1] = {1.0f};
-static constexpr float kIDCTScales1[1] = {1.0f};
-static constexpr float kDCTScales2[2] = {0.707106781186547524f,
-                                         0.707106781186547524f};
-static constexpr float kIDCTScales2[2] = {0.707106781186547524f,
-                                          0.707106781186547524f};
-static constexpr float kDCTScales4[4] = {0.5f, 0.653281482438188264f, 0.5f,
-                                         0.270598050073098492f};
-static constexpr float kIDCTScales4[4] = {0.5f, 0.382683432365089772f, 0.5f,
-                                          0.923879532511286756f};
-static constexpr float kDCTScales8[8] = {
-    0.353553390593273762f, 0.254897789552079584f, 0.270598050073098492f,
-    0.30067244346752264f,  0.353553390593273762f, 0.449988111568207852f,
-    0.653281482438188264f, 1.28145772387075309f};
+template <>
+struct square_root<1> {
+  static constexpr float value = 1.0f;
+};
 
-static constexpr float kIDCTScales8[8] = {
-    0.353553390593273762f, 0.490392640201615225f, 0.461939766255643378f,
-    0.415734806151272619f, 0.353553390593273762f, 0.277785116509801112f,
-    0.191341716182544886f, 0.0975451610080641339f};
+template <>
+struct square_root<2> {
+  static constexpr float value = 1.4142135623730951f;
+};
 
-static constexpr float kIDCTScales16[16] = {0.25f,
-                                            0.177632042131274808f,
-                                            0.180239955501736978f,
-                                            0.184731156892216368f,
-                                            0.191341716182544886f,
-                                            0.200444985785954314f,
-                                            0.212607523691814112f,
-                                            0.228686034616512494f,
-                                            0.25f,
-                                            0.278654739432954475f,
-                                            0.318189645143208485f,
-                                            0.375006192208515097f,
-                                            0.461939766255643378f,
-                                            0.608977011699708658f,
-                                            0.906127446352887843f,
-                                            1.80352839005774887f};
-
-static constexpr float kDCTScales16[16] = {0.25f,
-                                           0.351850934381595615f,
-                                           0.346759961330536865f,
-                                           0.33832950029358817f,
-                                           0.326640741219094132f,
-                                           0.311806253246667808f,
-                                           0.293968900604839679f,
-                                           0.273300466750439372f,
-                                           0.25f,
-                                           0.224291896585659071f,
-                                           0.196423739596775545f,
-                                           0.166663914619436624f,
-                                           0.135299025036549246f,
-                                           0.102631131880589345f,
-                                           0.0689748448207357531f,
-                                           0.0346542922997728657f};
-
-static constexpr float kIDCTScales32[32] = {
-    0.176776695296636881f, 0.125150749558799075f, 0.125604821547038926f,
-    0.126367739974385915f, 0.127448894776039792f, 0.128861827480656137f,
-    0.13062465373492222f,  0.132760647772446044f, 0.135299025036549246f,
-    0.138275974008611132f, 0.141736008704089426f, 0.145733742051533468f,
-    0.15033622173376132f,  0.155626030758916204f, 0.161705445839997532f,
-    0.168702085363751436f, 0.176776695296636881f, 0.186134067750574612f,
-    0.197038655862812556f, 0.20983741135388176f,  0.224994055784103926f,
-    0.243142059465490173f, 0.265169421497586868f, 0.292359983358221239f,
-    0.326640741219094132f, 0.371041154078541569f, 0.430611774559583482f,
-    0.514445252488352888f, 0.640728861935376545f, 0.851902104617179697f,
-    1.27528715467229096f,  2.5475020308870142f};
-
-static constexpr float kDCTScales32[32] = {
-    0.176776695296636881f,  0.249698864051293098f,  0.248796181668049222f,
-    0.247294127491195243f,  0.245196320100807612f,  0.242507813298635998f,
-    0.239235083933052216f,  0.235386016295755195f,  0.230969883127821689f,
-    0.225997323280860833f,  0.220480316087088757f,  0.214432152500068017f,
-    0.207867403075636309f,  0.200801882870161227f,  0.19325261334068424f,
-    0.185237781338739773f,  0.176776695296636881f,  0.1678897387117546f,
-    0.158598321040911375f,  0.148924826123108336f,  0.138892558254900556f,
-    0.128525686048305432f,  0.117849184206499412f,  0.106888773357570524f,
-    0.0956708580912724429f, 0.0842224633480550127f, 0.0725711693136155919f,
-    0.0607450449758159725f, 0.048772580504032067f,  0.0366826186138404379f,
-    0.0245042850823901505f, 0.0122669185818545036f};
-
-// TODO(veluca): switch to struct template
+// Constants such that multiplying the outputs of FastDCT<N>() by DCTScale<N>()
+// is equivalent to SlowDCT<N>(); similarly for the inputs for IDCT. These
+// constants are 1/sqrt(N) for this specific DCT implementation.
 template <size_t N>
-constexpr const float* DCTScales() {
-  return N == 1 ? kDCTScales1
-                : (N == 2 ? kDCTScales2
-                          : (N == 4 ? kDCTScales4
-                                    : (N == 8 ? kDCTScales8
-                                              : (N == 16 ? kDCTScales16
-                                                         : kDCTScales32))));
-}
-
+struct DCTScale {
+  static constexpr float value = 1.0f / square_root<N>::value;
+};
 template <size_t N>
-constexpr const float* IDCTScales() {
-  return N == 1 ? kIDCTScales1
-                : (N == 2 ? kIDCTScales2
-                          : (N == 4 ? kIDCTScales4
-                                    : (N == 8 ? kIDCTScales8
-                                              : (N == 16 ? kIDCTScales16
-                                                         : kIDCTScales32))));
-}
+struct IDCTScale {
+  static constexpr float value = 1.0f / square_root<N>::value;
+};
 
 // For n != 0, the n-th basis function of a N-DCT, evaluated in pixel k, has a
 // value of cos((k+1/2) n/(2N) pi). When downsampling by 2x, we average
@@ -266,27 +170,71 @@ struct DCTResampleScales<8, 32> {
   };
 };
 
-template <size_t V>
-struct square_root {
-  static constexpr float value =
-      square_root<V / 2>::value * 1.4142135623730951f;
+// Constants for DCT implementation. Generated by the following snippet:
+// for i in range(N // 2):
+//    print(1.0 / (2 * math.cos((i + 0.5) * math.pi / N)), end=", ")
+template <size_t N>
+struct WcMultipliers;
+
+template <>
+struct WcMultipliers<4> {
+  static constexpr float kMultipliers[2] = {
+      0.541196100146197,
+      1.3065629648763764,
+  };
 };
 
 template <>
-struct square_root<1> {
-  static constexpr float value = 1.0f;
+struct WcMultipliers<8> {
+  static constexpr float kMultipliers[4] = {
+      0.5097955791041592,
+      0.6013448869350453,
+      0.8999762231364156,
+      2.5629154477415055,
+  };
+};
+
+template <>
+struct WcMultipliers<16> {
+  static constexpr float kMultipliers[8] = {
+      0.5024192861881557, 0.5224986149396889, 0.5669440348163577,
+      0.6468217833599901, 0.7881546234512502, 1.060677685990347,
+      1.7224470982383342, 5.101148618689155,
+  };
+};
+
+template <>
+struct WcMultipliers<32> {
+  static constexpr float kMultipliers[16] = {
+      0.5006029982351963, 0.5054709598975436, 0.5154473099226246,
+      0.5310425910897841, 0.5531038960344445, 0.5829349682061339,
+      0.6225041230356648, 0.6748083414550057, 0.7445362710022986,
+      0.8393496454155268, 0.9725682378619608, 1.1694399334328847,
+      1.4841646163141662, 2.057781009953411,  3.407608418468719,
+      10.190008123548033,
+  };
+};
+template <>
+struct WcMultipliers<64> {
+  static constexpr float kMultipliers[32] = {
+      0.500150636020651,  0.5013584524464084, 0.5037887256810443,
+      0.5074711720725553, 0.5124514794082247, 0.5187927131053328,
+      0.52657731515427,   0.535909816907992,  0.5469204379855088,
+      0.5597698129470802, 0.57465518403266,   0.5918185358574165,
+      0.6115573478825099, 0.6342389366884031, 0.6603198078137061,
+      0.6903721282002123, 0.7251205223771985, 0.7654941649730891,
+      0.8127020908144905, 0.8683447152233481, 0.9345835970364075,
+      1.0144082649970547, 1.1120716205797176, 1.233832737976571,
+      1.3892939586328277, 1.5939722833856311, 1.8746759800084078,
+      2.282050068005162,  2.924628428158216,  4.084611078129248,
+      6.796750711673633,  20.373878167231453,
+  };
 };
 
 // Apply the DCT algorithm-intrinsic constants to DCTResampleScale.
-// Note that the DCTScales constants give results that are scaled with a factor
-// proportional to 1/sqrt(N), so we counteract that here.
-// We also use the fact that 1/(sqrt(N) DCTScales(N)) == sqrt(N) IDCTScales(N)
-// to avoid a division.
 template <size_t FROM, size_t TO>
 constexpr float DCTTotalResampleScale(size_t x) {
-  return square_root<FROM>::value * DCTScales<FROM>()[x] *
-         square_root<TO>::value * IDCTScales<TO>()[x] *
-         DCTResampleScales<FROM, TO>::kScales[x];
+  return DCTResampleScales<FROM, TO>::kScales[x];
 }
 
 }  // namespace jxl

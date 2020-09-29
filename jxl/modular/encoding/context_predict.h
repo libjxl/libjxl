@@ -44,20 +44,21 @@ struct Header : public Fields {
     }
     auto visit_p = [visitor](pixel_type val, pixel_type *p) {
       uint32_t up = *p;
-      visitor->Bits(5, val, &up);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(5, val, &up));
       *p = up;
+      return Status(true);
     };
-    visit_p(16, &p1C);
-    visit_p(10, &p2C);
-    visit_p(7, &p3Ca);
-    visit_p(7, &p3Cb);
-    visit_p(7, &p3Cc);
-    visit_p(0, &p3Cd);
-    visit_p(0, &p3Ce);
-    visitor->Bits(4, 0xd, &w[0]);
-    visitor->Bits(4, 0xc, &w[1]);
-    visitor->Bits(4, 0xc, &w[2]);
-    visitor->Bits(4, 0xc, &w[3]);
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(16, &p1C));
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(10, &p2C));
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(7, &p3Ca));
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(7, &p3Cb));
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(7, &p3Cc));
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(0, &p3Cd));
+    JXL_QUIET_RETURN_IF_ERROR(visit_p(0, &p3Ce));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(4, 0xd, &w[0]));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(4, 0xc, &w[1]));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(4, 0xc, &w[2]));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(4, 0xc, &w[3]));
     return true;
   }
 

@@ -23,8 +23,8 @@
 
 #include "jxl/base/profiler.h"
 #include "jxl/common.h"
+#include "jxl/dct-inl.h"
 #include "jxl/dct_scales.h"
-#include "jxl/enc_dct-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {

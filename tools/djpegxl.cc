@@ -182,21 +182,10 @@ jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
                                   jxl::AuxOut* aux_out,
                                   SpeedStats* JXL_RESTRICT stats) {
   const double t0 = jxl::Now();
-
-  jxl::Status ok = false;
-  // JPEG1, not JXL nor Brunsli
-  if (compressed[0] == 0xff && compressed[1] != jxl::kCodestreamMarker) {
-#if JPEGXL_ENABLE_JPEG
-    ok = DecodeImageJPG(compressed, pool, io);
-#endif
-  } else {
-    ok = DecodeFile(params, compressed, io, aux_out, pool);
-  }
-  if (!ok) {
+  if (!jxl::DecodeFile(params, compressed, io, aux_out, pool)) {
     fprintf(stderr, "Failed to decompress to pixels.\n");
     return false;
   }
-
   const double t1 = jxl::Now();
   stats->NotifyElapsed(t1 - t0);
   stats->SetImageSize(io->xsize(), io->ysize());
@@ -227,15 +216,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
 
   JXL_RETURN_IF_ERROR(compressed.size() >= 2);
 
-  if (compressed[0] == 0xff && compressed[1] != jxl::kCodestreamMarker) {
-    // JPEG1 case, just copy the file.
-    // TODO: We should signal that the file was not compressed.
-    output->assign(compressed.data(), compressed.data() + compressed.size());
-    // TODO: In this case we don't know the size of the pixel data so we can't
-    // report stats on it.
-  } else if (jxl::IsBrunsliFile(compressed) ==
-             jxl::BrunsliFileSignature::kBrunsli) {
-    // Brunsli file.
+  if (jxl::IsBrunsliFile(compressed) == jxl::BrunsliFileSignature::kBrunsli) {
     brunsli::JPEGData jpg;
     bool ok = false;
 
@@ -248,7 +229,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
       ok = brunsli::DecodeGroups(compressed.data(), compressed.size(), &jpg, 32,
                                  128, &executor);
     }
-#else   // BRUNSLI_EXPERIMENTAL_GROUPS
+#else  // BRUNSLI_EXPERIMENTAL_GROUPS
     brunsli::BrunsliStatus status =
         brunsli::BrunsliDecodeJpeg(compressed.data(), compressed.size(), &jpg);
     ok = (status == brunsli::BRUNSLI_OK);

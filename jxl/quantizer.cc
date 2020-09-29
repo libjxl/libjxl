@@ -109,10 +109,12 @@ struct QuantizerParams : public Fields {
   const char* Name() const override { return "QuantizerParams"; }
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
-    visitor->U32(BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
-                 BitsOffset(16, 8193), 1, &global_scale);
-    visitor->U32(Val(16), BitsOffset(5, 1), BitsOffset(8, 1), BitsOffset(16, 1),
-                 1, &quant_dc);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
+        BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
+        BitsOffset(16, 8193), 1, &global_scale));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(16), BitsOffset(5, 1),
+                                           BitsOffset(8, 1), BitsOffset(16, 1),
+                                           1, &quant_dc));
     return true;
   }
 

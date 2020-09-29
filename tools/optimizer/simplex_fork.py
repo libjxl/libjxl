@@ -69,10 +69,10 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 1.25
-  maxval = 8.0
+  minval = 0.5
+  maxval = 15.5
   rangeval = maxval/minval
-  steps = 5
+  steps = 17
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -144,8 +144,8 @@ def Eval(vec, binary_name, cached=True):
       dct16str = line.split()[16]
       dct16x32str = line.split()[17]
       dct32str = line.split()[18]
-      vec[0] *= float(dist_pnorm) * float(bpp) / 16.0;
-      vec[0] *= float(dist_max) * float(bpp) / 16.0;
+      vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
+      vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.02
       dct2 += float(dct2str)
       dct4 += float(dct4str)
       dct16 += float(dct16str)

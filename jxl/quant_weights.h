@@ -372,6 +372,11 @@ class DequantMatrices {
     JXL_CHECK(Compute());
   }
 
+  // `modular_frame_encoder` is not owned. Used by SetCustom.
+  void SetModularFrameEncoder(ModularFrameEncoder* modular_frame_encoder) {
+    modular_frame_encoder_ = modular_frame_encoder;
+  }
+
   static const QuantEncoding* Library();
 
   typedef std::array<QuantEncodingInternal, kNumPredefinedTables * kNum>
@@ -403,8 +408,7 @@ class DequantMatrices {
 
   JXL_INLINE float InvDCQuant(size_t c) const { return inv_dc_quant_[c]; }
 
-  void SetCustom(const std::vector<QuantEncoding>& encodings,
-                 ModularFrameEncoder* modular_frame_encoder);
+  void SetCustom(const std::vector<QuantEncoding>& encodings);
 
   // For consistency with QuantEncoding, higher values correspond to more
   // precision.
@@ -450,17 +454,17 @@ class DequantMatrices {
       ArraySum(required_size_) * kDCTBlockSize * 3;
 
   // kTotalTableSize entries followed by kTotalTableSize for inv_table
-  hwy::AlignedUniquePtr<float[]> table_;
+  hwy::AlignedFreeUniquePtr<float[]> table_;
   float dc_quant_[3] = {kDCQuant[0], kDCQuant[1], kDCQuant[2]};
   float inv_dc_quant_[3] = {kInvDCQuant[0], kInvDCQuant[1], kInvDCQuant[2]};
   size_t table_offsets_[AcStrategy::kNumValidStrategies * 3];
   std::vector<QuantEncoding> encodings_;
+  ModularFrameEncoder* modular_frame_encoder_ = nullptr;
 };
 
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
-                             DequantMatrices* dequant_matrices,
-                             ModularFrameEncoder* modular_frame_encoder);
+                             DequantMatrices* dequant_matrices);
 
 }  // namespace jxl
 

@@ -58,6 +58,7 @@ set(HWY_SOURCES
     hwy/cache_control.h
     hwy/foreach_target.h
     hwy/highway.h
+    hwy/nanobenchmark.cc
     hwy/ops/arm_neon-inl.h
     hwy/ops/scalar-inl.h
     hwy/ops/shared-inl.h
@@ -233,7 +234,8 @@ set(HWY_TEST_FILES
   hwy/tests/logical_test.cc
   hwy/tests/memory_test.cc
   hwy/tests/swizzle_test.cc
-  hwy/tests/targets_test.cc
+  hwy/aligned_allocator_test.cc
+  hwy/targets_test.cc
 )
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)

@@ -35,7 +35,7 @@ constexpr size_t kAlias = kAlignment * 4;
 #pragma pack(push, 1)
 struct AllocationHeader {
   void* allocated;
-  size_t allocated_size;
+  size_t payload_size;
 };
 #pragma pack(pop)
 
@@ -88,9 +88,10 @@ void* AllocateAlignedBytes(const size_t payload_size, AllocPtr alloc_ptr) {
   const uintptr_t payload = aligned + offset;  // still aligned
 
   // Stash `allocated` and payload_size inside header for FreeAlignedBytes().
+  // The allocated_size can be reconstructed from the payload_size.
   AllocationHeader* header = reinterpret_cast<AllocationHeader*>(payload) - 1;
   header->allocated = allocated;
-  header->allocated_size = allocated_size;
+  header->payload_size = payload_size;
 
   return HWY_ASSUME_ALIGNED(reinterpret_cast<void*>(payload), kMaxVectorSize);
 }
@@ -102,6 +103,27 @@ void FreeAlignedBytes(const void* aligned_pointer, FreePtr free_ptr) {
   HWY_DASSERT(payload % kAlignment == 0);
   const AllocationHeader* header =
       reinterpret_cast<const AllocationHeader*>(payload) - 1;
+
+  if (free_ptr == nullptr) {
+    free(header->allocated);
+  } else {
+    (*free_ptr)(header->allocated);
+  }
+}
+
+// static
+void AlignedDeleter::DeleteAlignedArray(void* aligned_pointer, FreePtr free_ptr,
+                                        ArrayDeleter deleter) {
+  if (aligned_pointer == nullptr) return;
+
+  const uintptr_t payload = reinterpret_cast<uintptr_t>(aligned_pointer);
+  HWY_DASSERT(payload % kAlignment == 0);
+  const AllocationHeader* header =
+      reinterpret_cast<const AllocationHeader*>(payload) - 1;
+
+  if (deleter) {
+    (*deleter)(aligned_pointer, header->payload_size);
+  }
 
   if (free_ptr == nullptr) {
     free(header->allocated);

@@ -21,7 +21,6 @@ set(TEST_FILES
   jxl/base/fast_log_test.cc
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
-  jxl/brotli_test.cc
   jxl/brunsli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc

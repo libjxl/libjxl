@@ -56,12 +56,14 @@ struct SqueezeParams : public Fields {
   uint32_t num_c;
   SqueezeParams();
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
-    visitor->Bool(false, &horizontal);
-    visitor->Bool(false, &in_place);
-    visitor->Bool(false, &subsample_mode);
-    visitor->U32(Bits(3), BitsOffset(6, 8), BitsOffset(10, 72),
-                 BitsOffset(13, 1096), 0, &begin_c);
-    visitor->U32(Val(1), Val(2), Val(3), BitsOffset(4, 4), 2, &num_c);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &horizontal));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &in_place));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &subsample_mode));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(3), BitsOffset(6, 8),
+                                           BitsOffset(10, 72),
+                                           BitsOffset(13, 1096), 0, &begin_c));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(1), Val(2), Val(3), BitsOffset(4, 4), 2, &num_c));
     return true;
   }
 };
@@ -88,53 +90,60 @@ class Transform : public Fields {
   weighted::Header wp_header;
   // for Palette, not serialized.
   bool ordered_palette = true;
+  bool lossy_palette = false;
 
   explicit Transform(TransformId id);
   // default constructor for bundles.
   Transform() : Transform(TransformId::kNumTransforms) {}
 
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
-    visitor->U32(
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
         Val((uint32_t)TransformId::kRCT), Val((uint32_t)TransformId::kPalette),
         Val((uint32_t)TransformId::kSqueeze),
         Val((uint32_t)TransformId::kInvalid), (uint32_t)TransformId::kRCT,
-        reinterpret_cast<uint32_t *>(&id));
+        reinterpret_cast<uint32_t *>(&id)));
     if (id == TransformId::kInvalid) {
       return JXL_FAILURE("Invalid transform ID");
     }
     if (visitor->Conditional(id == TransformId::kRCT ||
                              id == TransformId::kPalette)) {
-      visitor->U32(Bits(3), BitsOffset(6, 8), BitsOffset(10, 72),
-                   BitsOffset(13, 1096), 0, &begin_c);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Bits(3), BitsOffset(6, 8), BitsOffset(10, 72),
+                       BitsOffset(13, 1096), 0, &begin_c));
     }
     if (visitor->Conditional(id == TransformId::kRCT)) {
       // 0-41, default YCoCg.
-      visitor->U32(Val(6), Bits(2), BitsOffset(4, 2), BitsOffset(6, 10), 6,
-                   &rct_type);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(6), Bits(2), BitsOffset(4, 2),
+                                             BitsOffset(6, 10), 6, &rct_type));
     }
     if (visitor->Conditional(id == TransformId::kPalette)) {
-      visitor->U32(Val(1), Val(3), Val(4), BitsOffset(13, 1), 3, &num_c);
-      visitor->U32(BitsOffset(8, 1), BitsOffset(10, 257), BitsOffset(12, 1281),
-                   BitsOffset(16, 5377), 256, &nb_colors);
-      visitor->U32(Val(0), BitsOffset(8, 1), BitsOffset(10, 257),
-                   BitsOffset(16, 1281), 0, &nb_deltas);
-      visitor->Bits(4, (uint32_t)Predictor::Zero,
-                    reinterpret_cast<uint32_t *>(&predictor));
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(1), Val(3), Val(4), BitsOffset(13, 1), 3, &num_c));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
+          BitsOffset(8, 0), BitsOffset(10, 256), BitsOffset(12, 1280),
+          BitsOffset(16, 5376), 256, &nb_colors));
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(0), BitsOffset(8, 1), BitsOffset(10, 257),
+                       BitsOffset(16, 1281), 0, &nb_deltas));
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->Bits(4, (uint32_t)Predictor::Zero,
+                        reinterpret_cast<uint32_t *>(&predictor)));
       if (predictor >= Predictor::Best) {
         return JXL_FAILURE("Invalid predictor");
       }
       if (visitor->Conditional(predictor == Predictor::Weighted)) {
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
       }
     }
 
     if (visitor->Conditional(id == TransformId::kSqueeze)) {
-      uint32_t num_squeezes = squeezes.size();
-      visitor->U32(Val(0), BitsOffset(4, 1), BitsOffset(6, 9),
-                   BitsOffset(8, 41), 0, &num_squeezes);
+      uint32_t num_squeezes = static_cast<uint32_t>(squeezes.size());
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(0), BitsOffset(4, 1), BitsOffset(6, 9),
+                       BitsOffset(8, 41), 0, &num_squeezes));
       if (visitor->IsReading()) squeezes.resize(num_squeezes);
       for (size_t i = 0; i < num_squeezes; i++) {
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&squeezes[i]));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&squeezes[i]));
       }
     }
     return true;

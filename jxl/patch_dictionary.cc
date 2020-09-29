@@ -334,16 +334,17 @@ std::vector<PatchInfo> FindTextLikePatches(
   PatchColorspaceInfo pci(is_xyb);
   float kSimilarThreshold = 0.8f;
 
-  auto is_similar_impl =
-      [&](std::pair<uint32_t, uint32_t> p1, std::pair<uint32_t, uint32_t> p2,
-          const float* JXL_RESTRICT rows[3], size_t stride, float threshold) {
-        float v1[3], v2[3];
-        for (size_t c = 0; c < 3; c++) {
-          v1[c] = rows[c][p1.second * stride + p1.first];
-          v2[c] = rows[c][p2.second * stride + p2.first];
-        }
-        return pci.is_similar_v(v1, v2, threshold);
-      };
+  auto is_similar_impl = [&pci](std::pair<uint32_t, uint32_t> p1,
+                                std::pair<uint32_t, uint32_t> p2,
+                                const float* JXL_RESTRICT rows[3],
+                                size_t stride, float threshold) {
+    float v1[3], v2[3];
+    for (size_t c = 0; c < 3; c++) {
+      v1[c] = rows[c][p1.second * stride + p1.first];
+      v2[c] = rows[c][p2.second * stride + p2.first];
+    }
+    return pci.is_similar_v(v1, v2, threshold);
+  };
 
   std::atomic<bool> has_screenshot_areas{false};
   const size_t opsin_stride = opsin.PixelsPerRow();
@@ -351,8 +352,8 @@ std::vector<PatchInfo> FindTextLikePatches(
                                              opsin.ConstPlaneRow(1, 0),
                                              opsin.ConstPlaneRow(2, 0)};
 
-  auto is_same = [&](std::pair<uint32_t, uint32_t> p1,
-                     std::pair<uint32_t, uint32_t> p2) {
+  auto is_same = [&opsin_rows, opsin_stride](std::pair<uint32_t, uint32_t> p1,
+                                             std::pair<uint32_t, uint32_t> p2) {
     for (size_t c = 0; c < 3; c++) {
       float v1 = opsin_rows[c][p1.second * opsin_stride + p1.first];
       float v2 = opsin_rows[c][p2.second * opsin_stride + p2.first];
@@ -678,11 +679,14 @@ std::vector<PatchInfo> FindTextLikePatches(
   // don't depend on bit depth.
   if (state->cparams.modular_group_mode &&
       state->cparams.quality_pair.first >= 100) {
+    constexpr size_t kMaxPatchArea = kMaxPatchSize * kMaxPatchSize;
+    std::vector<float> min_then_max_px(2 * kMaxPatchArea);
     for (size_t i = 0; i < info.size(); i++) {
       for (size_t c = 0; c < 3; c++) {
-        float min_px[kMaxPatchSize * kMaxPatchSize];
-        float max_px[kMaxPatchSize * kMaxPatchSize] = {};
-        std::fill(std::begin(min_px), std::end(min_px), 255);
+        float* JXL_RESTRICT min_px = min_then_max_px.data();
+        float* JXL_RESTRICT max_px = min_px + kMaxPatchArea;
+        std::fill(min_px, min_px + kMaxPatchArea, 255);
+        std::fill(max_px, max_px + kMaxPatchArea, 0);
         size_t xsize = info[i].first.xsize;
         for (size_t j = 0; j < info[i].second.size(); j++) {
           size_t bx = info[i].second[j].first;
@@ -711,7 +715,6 @@ std::vector<PatchInfo> FindTextLikePatches(
       }
     }
   }
-
   return info;
 }
 

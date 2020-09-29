@@ -125,7 +125,7 @@ uint32_t JpegxlDecoderVersion(void) {
          JPEGXL_PATCH_VERSION;
 }
 
-enum JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf, size_t len) {
+JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf, size_t len) {
   if (len == 0) return JPEGXL_SIG_NOT_ENOUGH_BYTES;
 
   // Transcoded JPEG
@@ -182,10 +182,10 @@ size_t BitsPerChannel(JpegxlDataType data_type) {
 }
 
 enum class DecoderStage : uint32_t {
-  kInited,
-  kStarted,
-  kFinished,
-  kError,
+  kInited,    // Decoder created, no JpegxlDecoderProcessInput called yet
+  kStarted,   // Running JpegxlDecoderProcessInput calls
+  kFinished,  // Everything done, nothing left to process
+  kError,     // Error occured, decoder object no longer useable
 };
 
 struct JpegxlDecoderStruct {
@@ -197,6 +197,11 @@ struct JpegxlDecoderStruct {
   // Status of progression, internal.
   bool got_basic_info = false;
   bool got_all_headers = false;
+  // For current frame
+  bool got_toc = false;
+  // This means either we actually got the DC image, or determined we cannot
+  // get it.
+  bool got_dc_image = false;
   bool got_full_image = false;
 
   // Bit position of next frame, after the codestream headers, relative to
@@ -225,7 +230,23 @@ struct JpegxlDecoderStruct {
   JpegxlPixelFormat image_out_format;
 
   jxl::CodecInOut io;
+
+  // headers and TOC for the current frame
+  jxl::FrameHeader frame_header;
+  jxl::FrameDimensions frame_dim;
+  std::vector<uint64_t> group_offsets;
+  std::vector<uint32_t> group_sizes;
+  size_t frame_start;
+  size_t frame_end;
 };
+
+// TODO(zond): Make this depend on the data loaded into the decoder.
+JpegxlDecoderStatus JpegxlDecoderDefaultPixelFormat(const JpegxlDecoder* dec,
+                                                    JpegxlPixelFormat* format) {
+  if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
+  *format = {4, JPEGXL_LITTLE_ENDIAN, JPEGXL_TYPE_FLOAT};
+  return JPEGXL_DEC_SUCCESS;
+}
 
 JpegxlDecoder* JpegxlDecoderCreate(const JpegxlMemoryManager* memory_manager) {
   JpegxlMemoryManager local_memory_manager;
@@ -543,7 +564,7 @@ static JpegxlDecoderStatus ConvertImage(const jxl::CodecInOut& io,
                                     alpha_premultiplied, alpha, alpha_bits,
                                     bits_per_sample, big_endian, intervals);
   if (out_size < external.Bytes().size()) {
-    return JPEGXL_DEC_NEED_MORE_OUTPUT;
+    return JXL_API_ERROR("output buffer too small");
   }
 
   memcpy(out_image, external.Bytes().data(), external.Bytes().size());
@@ -674,63 +695,93 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
     return JPEGXL_DEC_COLOR_ENCODING;
   }
 
+  // Read TOC to find required filesize for DC and full frame
+  if (!dec->got_toc &&
+      (dec->events_wanted & (JPEGXL_DEC_FULL_IMAGE | JPEGXL_DEC_DC))) {
+    size_t pos = (dec->next_frame_bitpos >> 3);
+    Span<const uint8_t> span(in + pos, size - pos);
+    auto reader = GetBitReader(span);
+    reader->SkipBits(dec->next_frame_bitpos - pos * jxl::kBitsPerByte);
+    JXL_API_RETURN_IF_ERROR(reader->JumpToByteBoundary());
+
+    dec->frame_dim.Set(dec->xsize, dec->ysize, /*group_size_shift=*/1,
+                       /*max_hshift=*/0,
+                       /*max_vshift=*/0);
+
+    LoopFilter loop_filter;
+    jxl::Status status =
+        DecodeFrameHeader(nullptr, reader.get(), &dec->frame_header,
+                          &dec->frame_dim, &loop_filter);
+
+    if (status.code() == StatusCode::kNotEnoughBytes) {
+      return JPEGXL_DEC_NEED_MORE_INPUT;
+    } else if (!status) {
+      return JXL_API_ERROR("invalid frame header");
+    }
+
+    // Read TOC.
+    uint64_t groups_total_size;
+    const bool has_ac_global = true;
+    const size_t toc_entries =
+        NumTocEntries(dec->frame_dim.num_groups, dec->frame_dim.num_dc_groups,
+                      dec->frame_header.passes.num_passes, has_ac_global);
+    status = ReadGroupOffsets(toc_entries, reader.get(), &dec->group_offsets,
+                              &dec->group_sizes, &groups_total_size);
+
+    // TODO(lode): we're actually relying on AllReadsWithinBounds() here
+    // instead of on status.code(), change the internal TOC C++ code to
+    // correctly set the status.code() instead so we can rely on that one.
+    if (!reader->AllReadsWithinBounds() ||
+        status.code() == StatusCode::kNotEnoughBytes) {
+      return JPEGXL_DEC_NEED_MORE_INPUT;
+    } else if (!status) {
+      return JXL_API_ERROR("invalid toc entries");
+    }
+
+    JXL_API_RETURN_IF_ERROR(reader->JumpToByteBoundary());
+    dec->frame_start = pos + (reader->TotalBitsConsumed() >> 3);
+    dec->frame_end = dec->frame_start + groups_total_size;
+
+    dec->got_toc = true;
+  }
+
+  // Decode to pixels, only if required for the events the user wants.
+  if (!dec->got_dc_image && (dec->events_wanted & JPEGXL_DEC_DC)) {
+    // Compute amount of bytes for the DC image only from the TOC. That is the
+    // bytes of all DC groups.
+
+    // If there is one pass and one group, the TOC only has one entry and
+    // doesn't allow to distinguish the DC size, so it's not easy to tell
+    // whether we got all DC bytes or not. This will happen for very small
+    // images only. Instead, do not return the DC at all, mark DC as done but do
+    // not return it: subscribing to the JPEGXL_DEC_DC event is no guarantee of
+    // receiving it for all images.
+    if (dec->frame_header.passes.num_passes == 1 &&
+        dec->frame_dim.num_groups == 1) {
+      // Mark DC done and fall through to next decoding stage.
+      dec->got_dc_image = true;
+    } else {
+      size_t dc_size = 0;
+      // one DcGlobal entry, N dc group entries.
+      size_t num_dc_toc_entries = 1 + dec->frame_dim.num_dc_groups;
+      const std::vector<uint32_t>& sizes = dec->group_sizes;
+      if (sizes.size() < num_dc_toc_entries)
+        return JXL_API_ERROR("too small TOC");
+      for (size_t i = 0; i < num_dc_toc_entries; i++) {
+        dc_size += sizes[i];
+      }
+      size_t dc_end = dec->frame_start + dc_size;
+      // Not yet enough bytes to decode the DC.
+      if (dc_end > size) return JPEGXL_DEC_NEED_MORE_INPUT;
+
+      // Decoding of the DC itself not yet implemented.
+      return JXL_API_ERROR("not implemented");
+    }
+  }
+
   // Decode to pixels, only if required for the events the user wants.
   if (!dec->got_full_image && (dec->events_wanted & JPEGXL_DEC_FULL_IMAGE)) {
-    // Decode the TOC to find the framesize and compare it to the filesize.
-    {
-      size_t pos = (dec->next_frame_bitpos >> 3);
-      Span<const uint8_t> span(in + pos, size - pos);
-      auto reader = GetBitReader(span);
-      reader->SkipBits(dec->next_frame_bitpos - pos * jxl::kBitsPerByte);
-      JXL_API_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-
-      FrameHeader frame_header;
-      FrameDimensions frame_dim;
-
-      frame_dim.Set(dec->xsize, dec->ysize, /*group_size_shift=*/1,
-                    /*max_hshift=*/0,
-                    /*max_vshift=*/0);
-
-      LoopFilter loop_filter;
-      jxl::Status status = DecodeFrameHeader(
-          nullptr, reader.get(), &frame_header, &frame_dim, &loop_filter);
-
-      // TODO(lode): we're actually relying on AllReadsWithinBounds() here
-      // instead of on status.code(), change the internal C++ code to correctly
-      // set the status.code() instead so we can rely on that one. Same below.
-      if (!reader->AllReadsWithinBounds() ||
-          status.code() == StatusCode::kNotEnoughBytes) {
-        return JPEGXL_DEC_NEED_MORE_INPUT;
-      } else if (!status) {
-        return JXL_API_ERROR("invalid frame header");
-      }
-
-      // Read TOC.
-      std::vector<uint64_t> group_offsets;
-      std::vector<uint32_t> group_sizes;
-      uint64_t groups_total_size;
-      const bool has_ac_global = true;
-      const size_t toc_entries =
-          NumTocEntries(frame_dim.num_groups, frame_dim.num_dc_groups,
-                        frame_header.passes.num_passes, has_ac_global);
-      status = ReadGroupOffsets(toc_entries, reader.get(), &group_offsets,
-                                &group_sizes, &groups_total_size);
-
-      if (!reader->AllReadsWithinBounds() ||
-          status.code() == StatusCode::kNotEnoughBytes) {
-        return JPEGXL_DEC_NEED_MORE_INPUT;
-      } else if (!status) {
-        return JXL_API_ERROR("invalid toc entries");
-      }
-
-      JXL_API_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-      size_t frame_start = pos + (reader->TotalBitsConsumed() >> 3);
-      size_t frame_end = frame_start + groups_total_size;
-
-      // TODO(lode): support decoding DC only or passes already if some sections
-      // are already available.
-      if (frame_end > size) return JPEGXL_DEC_NEED_MORE_INPUT;
-    }
+    if (dec->frame_end > size) return JPEGXL_DEC_NEED_MORE_INPUT;
 
     jxl::DecompressParams dparams;
     jxl::Span<const uint8_t> compressed(in, size);
@@ -747,7 +798,7 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
 
     // Copy pixels to output buffer
     if (!dec->image_out_buffer) {
-      return JPEGXL_DEC_NEED_MORE_OUTPUT;
+      return JXL_API_ERROR("must set output buffer");
     }
 
     JpegxlDecoderStatus status =
@@ -776,12 +827,14 @@ JpegxlDecoderStatus JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
   if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
 
   if (info) {
+    const jxl::ImageMetadata& meta = dec->io.metadata;
+
     info->have_container = dec->have_container;
     info->signature_type = dec->signature_type;
     info->xsize = dec->xsize;
     info->ysize = dec->ysize;
+    info->uses_original_profile = !meta.xyb_encoded;
 
-    const jxl::ImageMetadata& meta = dec->io.metadata;
     info->bits_per_sample = meta.bit_depth.bits_per_sample;
     info->exponent_bits_per_sample = meta.bit_depth.exponent_bits_per_sample;
 
@@ -891,55 +944,95 @@ JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
   return JPEGXL_DEC_SUCCESS;
 }
 
-JpegxlDecoderStatus JpegxlDecoderGetColorAsEncodedProfile(
-    const JpegxlDecoder* dec, JpegxlColorEncoding* color_encoding) {
+namespace {
+// Gets the jxl::ColorEncoding for the desired target, and checks errors.
+// Returns the object regardless of whether the actual color space is in ICC,
+// but ensures that if the color encoding is not the encoding from the
+// codestream header metadata, it cannot require ICC profile.
+JpegxlDecoderStatus GetColorEncodingForTarget(
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target,
+    const jxl::ColorEncoding** encoding) {
   if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
 
-  if (dec->io.metadata.color_encoding.WantICC()) {
-    return JXL_API_ERROR("Trying to get color encoding but is invalid");
-  }
-
-  color_encoding->color_space = static_cast<JpegxlColorSpace>(
-      dec->io.metadata.color_encoding.GetColorSpace());
-
-  color_encoding->white_point = static_cast<JpegxlWhitePoint>(
-      dec->io.metadata.color_encoding.white_point);
-
-  jxl::CIExy whitepoint = dec->io.metadata.color_encoding.GetWhitePoint();
-  color_encoding->white_point_xy[0] = whitepoint.x;
-  color_encoding->white_point_xy[1] = whitepoint.y;
-
-  color_encoding->primaries =
-      static_cast<JpegxlPrimaries>(dec->io.metadata.color_encoding.primaries);
-  jxl::PrimariesCIExy primaries =
-      dec->io.metadata.color_encoding.GetPrimaries();
-  color_encoding->primaries_red_xy[0] = primaries.r.x;
-  color_encoding->primaries_red_xy[1] = primaries.r.y;
-  color_encoding->primaries_green_xy[0] = primaries.g.x;
-  color_encoding->primaries_green_xy[1] = primaries.g.y;
-  color_encoding->primaries_blue_xy[0] = primaries.b.x;
-  color_encoding->primaries_blue_xy[1] = primaries.b.y;
-
-  if (dec->io.metadata.color_encoding.tf.IsGamma()) {
-    color_encoding->transfer_function = JPEGXL_TRANSFER_FUNCTION_GAMMA;
-    color_encoding->gamma = dec->io.metadata.color_encoding.tf.GetGamma();
+  *encoding = nullptr;
+  if (target == JPEGXL_COLOR_PROFILE_TARGET_DATA &&
+      dec->io.metadata.xyb_encoded) {
+    // In this case, the color profile of the pixels differs from that of the
+    // metadata so get the current pixel profile.
+    *encoding = &dec->io.Main().c_current();
+    if ((*encoding)->WantICC()) {
+      // The built-in color spaces supported by the JXL decoder always use a
+      // struct, not a ICC profile bytestream, so it would be suspicious if
+      // WantICC is true. Of course, it is still possible to get it as an ICC
+      // profile by generating it, but there cannot be an encoded ICC profile
+      // bytestream because the only ICC profile bytestream that can be present
+      // in the JPEG XL codestream header metadata is the original one.
+      return JXL_API_ERROR(
+          "XYB/absolute color space encoding shoulnd't use ICC");
+    }
   } else {
-    color_encoding->transfer_function = static_cast<JpegxlTransferFunction>(
-        dec->io.metadata.color_encoding.tf.GetTransferFunction());
-    color_encoding->gamma = 0;
+    *encoding = &dec->io.metadata.color_encoding;
   }
+  return JPEGXL_DEC_SUCCESS;
+}
+}  // namespace
 
-  color_encoding->rendering_intent = static_cast<JpegxlRenderingIntent>(
-      dec->io.metadata.color_encoding.rendering_intent);
+JpegxlDecoderStatus JpegxlDecoderGetColorAsEncodedProfile(
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target,
+    JpegxlColorEncoding* color_encoding) {
+  const jxl::ColorEncoding* jxl_color_encoding = nullptr;
+  JpegxlDecoderStatus status =
+      GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
+  if (status) return status;
+
+  if (jxl_color_encoding->WantICC())
+    return JPEGXL_DEC_ERROR;  // Indicate no encoded profile available.
+
+  if (color_encoding) {
+    color_encoding->color_space =
+        static_cast<JpegxlColorSpace>(jxl_color_encoding->GetColorSpace());
+
+    color_encoding->white_point =
+        static_cast<JpegxlWhitePoint>(jxl_color_encoding->white_point);
+
+    jxl::CIExy whitepoint = jxl_color_encoding->GetWhitePoint();
+    color_encoding->white_point_xy[0] = whitepoint.x;
+    color_encoding->white_point_xy[1] = whitepoint.y;
+
+    color_encoding->primaries =
+        static_cast<JpegxlPrimaries>(jxl_color_encoding->primaries);
+    jxl::PrimariesCIExy primaries = jxl_color_encoding->GetPrimaries();
+    color_encoding->primaries_red_xy[0] = primaries.r.x;
+    color_encoding->primaries_red_xy[1] = primaries.r.y;
+    color_encoding->primaries_green_xy[0] = primaries.g.x;
+    color_encoding->primaries_green_xy[1] = primaries.g.y;
+    color_encoding->primaries_blue_xy[0] = primaries.b.x;
+    color_encoding->primaries_blue_xy[1] = primaries.b.y;
+
+    if (jxl_color_encoding->tf.IsGamma()) {
+      color_encoding->transfer_function = JPEGXL_TRANSFER_FUNCTION_GAMMA;
+      color_encoding->gamma = jxl_color_encoding->tf.GetGamma();
+    } else {
+      color_encoding->transfer_function = static_cast<JpegxlTransferFunction>(
+          jxl_color_encoding->tf.GetTransferFunction());
+      color_encoding->gamma = 0;
+    }
+
+    color_encoding->rendering_intent = static_cast<JpegxlRenderingIntent>(
+        jxl_color_encoding->rendering_intent);
+  }
 
   return JPEGXL_DEC_SUCCESS;
 }
 
-JpegxlDecoderStatus JpegxlDecoderGetICCProfileSize(const JpegxlDecoder* dec,
-                                                   size_t* size) {
-  if (!dec->got_all_headers) return JPEGXL_DEC_NEED_MORE_INPUT;
+JpegxlDecoderStatus JpegxlDecoderGetICCProfileSize(
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target, size_t* size) {
+  const jxl::ColorEncoding* jxl_color_encoding = nullptr;
+  JpegxlDecoderStatus status =
+      GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
+  if (status != JPEGXL_DEC_SUCCESS) return status;
 
-  if (!dec->io.metadata.color_encoding.WantICC()) {
+  if (jxl_color_encoding->WantICC()) {
     jxl::ColorSpace color_space =
         dec->io.metadata.color_encoding.GetColorSpace();
     if (color_space == jxl::ColorSpace::kUnknown ||
@@ -953,24 +1046,28 @@ JpegxlDecoderStatus JpegxlDecoderGetICCProfileSize(const JpegxlDecoder* dec,
   }
 
   if (size) {
-    *size = dec->io.metadata.color_encoding.ICC().size();
+    *size = jxl_color_encoding->ICC().size();
   }
 
   return JPEGXL_DEC_SUCCESS;
 }
 
-JpegxlDecoderStatus JpegxlDecoderGetColorAsICCProfile(const JpegxlDecoder* dec,
-                                                      uint8_t* icc_profile,
-                                                      size_t size) {
+JpegxlDecoderStatus JpegxlDecoderGetColorAsICCProfile(
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target,
+    uint8_t* icc_profile, size_t size) {
   size_t wanted_size;
   // This also checks the NEED_MORE_INPUT and the unknown/xyb cases
   JpegxlDecoderStatus status =
-      JpegxlDecoderGetICCProfileSize(dec, &wanted_size);
+      JpegxlDecoderGetICCProfileSize(dec, target, &wanted_size);
   if (status != JPEGXL_DEC_SUCCESS) return status;
   if (size < wanted_size) return JXL_API_ERROR("ICC profile output too small");
 
-  memcpy(icc_profile, dec->io.metadata.color_encoding.ICC().data(),
-         dec->io.metadata.color_encoding.ICC().size());
+  const jxl::ColorEncoding* jxl_color_encoding = nullptr;
+  status = GetColorEncodingForTarget(dec, target, &jxl_color_encoding);
+  if (status != JPEGXL_DEC_SUCCESS) return status;
+
+  memcpy(icc_profile, jxl_color_encoding->ICC().data(),
+         jxl_color_encoding->ICC().size());
 
   return JPEGXL_DEC_SUCCESS;
 }

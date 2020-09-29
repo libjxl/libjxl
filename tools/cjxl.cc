@@ -277,7 +277,6 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
 const char* ModeFromArgs(const JxlCompressArgs& args) {
   if (args.jpeg_transcode) return "JPEG";
   if (args.params.modular_group_mode) return "Modular";
-  if (args.params.pixels_to_jpeg_mode) return "JPEG(encode)";
   return "VarDCT";
 }
 
@@ -296,8 +295,6 @@ std::string QualityFromArgs(const JxlCompressArgs& args) {
     } else {
       snprintf(buf, sizeof(buf), "Q%.2f", args.params.quality_pair.first);
     }
-  } else if (args.params.pixels_to_jpeg_mode) {
-    snprintf(buf, sizeof(buf), "q%u", args.params.jpeg_quality);
   } else {
     snprintf(buf, sizeof(buf), "d%.3f", args.params.butteraugli_distance);
   }
@@ -382,18 +379,10 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          &params.modular_group_mode, &SetBooleanTrue, 1);
 
   // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
-  cmdline->AddOptionFlag('\0', "jpeg1", "Compress pixels to JPEG.",
-                         &params.pixels_to_jpeg_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionFlag('j', "jpeg_transcode",
                          "Do lossy transcode of input JPEG file (decode to "
                          "pixels instead of doing lossless transcode).",
                          &jpeg_transcode, &SetBooleanFalse, 1);
-  cmdline->AddOptionValue('\0', "jpeg_quality", "0-100",
-                          "Target JPEG quality .", &params.jpeg_quality,
-                          &ParseUint32, 1);
-  cmdline->AddOptionFlag('\0', "jpeg_420",
-                         "Do 4:2:0 chroma subsampling for JPEG.",
-                         &params.jpeg_420, &SetBooleanTrue, 1);
 
   opt_num_threads_id = cmdline->AddOptionValue(
       '\0', "num_threads", "N", "number of worker threads (zero = none).",
@@ -490,6 +479,14 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "[modular encoding] use a palette if image has at "
                           "most K colors (default: 1024)",
                           &params.palette_colors, &ParseSigned, 1);
+
+  cmdline->AddOptionFlag(
+      '\0', "lossy-palette",
+      "[modular encoding] quantize to a palette that has fewer entries than "
+      "would be necessary for perfect preservation; for the time being, it is "
+      "recommended to set --palette=0 with this option to use the default "
+      "palette only",
+      &params.lossy_palette, &SetBooleanTrue, 1);
 
   cmdline->AddOptionValue(
       'X', "pre-compact", "PERCENT",
@@ -604,11 +601,6 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     return false;
   }
 
-  if (params.jpeg_quality > 100) {
-    fprintf(stderr, "jpeg_quality must be <= 100\n");
-    return false;
-  }
-
   // User didn't override num_threads, so we have to compute a default, which
   // might fail, so only do so when necessary. Don't just check num_threads != 0
   // because the user may have set it to that.
@@ -653,30 +645,17 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
   for (size_t i = 0; i < args.num_reps; ++i) {
     const double t0 = jxl::Now();
     jxl::Status ok = false;
-    if (args.params.pixels_to_jpeg_mode) {
-#if JPEGXL_ENABLE_JPEG
-      jxl::YCbCrChromaSubsampling subsample;
-      if (args.params.jpeg_420) {
-        uint8_t ss[3] = {2, 1, 1};
-        JXL_CHECK(subsample.Set(ss, ss));
-      }
-      ok = jxl::EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg,
-                               args.params.jpeg_quality, subsample, pool,
-                               compressed, jxl::DecodeTarget::kPixels);
-#endif
+    if (io.Main().IsJPEG()) {
+      // TODO(lode): automate this in the encoder. The encoder must in the
+      // beginning choose to either do all in xyb, or all in non-xyb, write
+      // that in the xyb_encoded header flag, and persistently keep that state
+      // to check if every frame uses an allowed color transform.
+      args.params.color_transform = io.Main().color_transform;
+      ok = EncodeJpegToJpegXL(args.params, &io, &passes_encoder_state,
+                              compressed, &aux_out, pool);
     } else {
-      if (io.Main().IsJPEG()) {
-        // TODO(lode): automate this in the encoder. The encoder must in the
-        // beginning choose to either do all in xyb, or all in non-xyb, write
-        // that in the xyb_encoded header flag, and persistently keep that state
-        // to check if every frame uses an allowed color transform.
-        args.params.color_transform = io.Main().color_transform;
-        ok = EncodeJpegToJpegXL(args.params, &io, &passes_encoder_state,
-                                compressed, &aux_out, pool);
-      } else {
-        ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
-                        &aux_out, pool);
-      }
+      ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
+                      &aux_out, pool);
     }
     if (!ok) {
       fprintf(stderr, "Failed to compress to %s.\n", ModeFromArgs(args));

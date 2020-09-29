@@ -62,12 +62,10 @@ int DecompressMain(int argc, const char *argv[]) {
   fprintf(stderr, "Read %zu compressed bytes [%s]\n", compressed.size(),
           CodecConfigString().c_str());
 
-  // Detect whether the file uses the box format container. If so, unpack the
-  // boxes into `container`. Otherwise, fill `container.codestream` accordingly.
-  const uint8_t box_header[] = {0,   0,   0,   0xc, 'J',  'X',
-                                'L', ' ', 0xd, 0xa, 0x87, 0xa};
+  // If the file uses the box format container, unpack the boxes into
+  // `container`. Otherwise, fill `container.codestream` accordingly.
   JpegXlContainer container;
-  if (compressed.size() >= 12 && !memcmp(box_header, compressed.data(), 12)) {
+  if (IsContainerHeader(compressed.data(), compressed.size())) {
     if (!DecodeJpegXlContainerOneShot(compressed.data(), compressed.size(),
                                       &container)) {
       fprintf(stderr, "Decoding container format failed.\n");

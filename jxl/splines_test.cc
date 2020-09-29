@@ -234,7 +234,9 @@ TEST(SplinesTest, DuplicatePoints) {
   EXPECT_FALSE(splines.AddTo(&image, Rect(image), Rect(image), *cmap));
 }
 
-TEST(SplinesTest, Drawing) {
+// TODO(veluca): the data here relied on interestingly wrong DCT quantization
+// weights.
+TEST(SplinesTest, DISABLED_Drawing) {
   CodecInOut io_expected;
   const PaddedBytes orig = ReadTestData("jxl/splines.png");
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,

@@ -34,6 +34,12 @@
 #define JXL_SLOW_TEST(X) X
 #endif  // JXL_DISABLE_SLOW_TESTS
 
+#ifdef THREAD_SANITIZER
+#define JXL_TSAN_SLOW_TEST(X) DISABLED_##X
+#else
+#define JXL_TSAN_SLOW_TEST(X) X
+#endif  // THREAD_SANITIZER
+
 namespace jxl {
 namespace test {
 

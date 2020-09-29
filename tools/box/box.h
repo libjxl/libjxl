@@ -96,6 +96,10 @@ struct JpegXlContainer {
   size_t codestream_size = 0;
 };
 
+// Returns whether `data` starts with a container header; definitely returns
+// false if `size` is less than 12 bytes.
+bool IsContainerHeader(const uint8_t* data, size_t size);
+
 // NOTE: the input data must remain valid as long as `container` is used,
 // because its exif etc. pointers point to that data.
 jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,

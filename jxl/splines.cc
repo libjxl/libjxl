@@ -31,12 +31,6 @@ namespace {
 
 constexpr float kDesiredRenderingDistance = 1.f;
 
-template <int N>
-constexpr float DCTScale(int i) {
-  return DCTScales<N>()[i] * (i == 0 ? splines_internal::InvSqrt<N>()
-                                     : splines_internal::InvSqrt<N / 2>());
-}
-
 // X, Y, B, sigma.
 float ColorQuantizationWeight(const int32_t adjustment, const int channel,
                               const int i) {
@@ -45,7 +39,7 @@ float ColorQuantizationWeight(const int32_t adjustment, const int channel,
 
   static constexpr float kChannelWeight[] = {0.025f, 0.45f, 0.42f, 2.f};
 
-  return multiplier / (DCTScale<32>(i) * kChannelWeight[channel]);
+  return multiplier / kChannelWeight[channel];
 }
 
 enum SplineEntropyContexts : size_t {
@@ -165,9 +159,12 @@ std::vector<Spline::Point> DrawCentripetalCatmullRomSpline(
 // interpolation on the original samples.
 template <int N>
 float ContinuousIDCT(const float dct[N], float t) {
-  float result = DCTScale<N>(0) * dct[0];
+  // We compute here the DCT-3 of the `dct` vector, rescaled by a factor of
+  // sqrt(32). This is such that an input vector vector {x, 0, ..., 0} produces
+  // a constant result of x.
+  float result = dct[0];
   for (int i = 1; i < N; ++i) {
-    result += DCTScale<N>(i) * dct[i] *
+    result += square_root<2>::value * dct[i] *
               splines_internal::Cos((kPi / N) * i * (t + 0.5f));
   }
   return result;

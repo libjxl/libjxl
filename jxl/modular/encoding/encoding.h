@@ -42,14 +42,15 @@ struct GroupHeader : public Fields {
   const char *Name() const override { return "GroupHeader"; }
 
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
-    visitor->Bool(false, &use_global_tree);
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
-    uint32_t num_transforms = transforms.size();
-    visitor->U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(8, 18), 0,
-                 &num_transforms);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &use_global_tree));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
+    uint32_t num_transforms = static_cast<uint32_t>(transforms.size());
+    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(0), Val(1), BitsOffset(4, 2),
+                                           BitsOffset(8, 18), 0,
+                                           &num_transforms));
     if (visitor->IsReading()) transforms.resize(num_transforms);
     for (size_t i = 0; i < num_transforms; i++) {
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&transforms[i]));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&transforms[i]));
     }
     return true;
   }

@@ -12,12 +12,23 @@ components.
 
 import argparse
 import collections
+import itertools
 import json
 import os
+import re
+import struct
 import subprocess
-import sys
+import tempfile
+
+# Ignore functions with stack size smaller than this value.
+MIN_STACK_SIZE = 32
+
 
 Symbol = collections.namedtuple('Symbol', ['address', 'size', 'typ', 'name'])
+
+# Represents the stack size information of a function (defined by its address).
+SymbolStack = collections.namedtuple('SymbolStack',
+                                     ['address', 'stack_size'])
 
 ObjectStats = collections.namedtuple('ObjectStats',
                                      ['name', 'in_partition', 'size_map'])
@@ -54,6 +65,55 @@ def LoadSymbols(filename):
         int(symlist[3], 16) if len(symlist) > 3 else None,
         symlist[1],
         symlist[0]))
+  return ret
+
+
+def LoadStackSizes(filename, binutils=''):
+  """Loads the stack size used by functions from the ELF.
+
+  This function loads the stack size the compiler stored in the .stack_sizes
+  section, which can be done by compiling with -fstack-size-section in clang.
+  """
+  with tempfile.NamedTemporaryFile() as stack_sizes_sec:
+    subprocess.check_call(
+        [binutils + 'objcopy', '-O', 'binary', '--only-section=.stack_sizes',
+         '--set-section-flags', '.stack_sizes=alloc', filename,
+         stack_sizes_sec.name])
+    stack_sizes = stack_sizes_sec.read()
+  # From the documentation:
+  #  The section will contain an array of pairs of function symbol values
+  #  (pointer size) and stack sizes (unsigned LEB128). The stack size values
+  #  only include the space allocated in the function prologue. Functions with
+  #  dynamic stack allocations are not included.
+
+  # Get the pointer format based on the ELF file.
+  output = subprocess.check_output(
+      [binutils + 'objdump', '-a', filename]).decode('utf-8')
+  elf_format = re.search('file format (.*)$', output, re.MULTILINE).group(1)
+  if elf_format.startswith('elf64-little') or elf_format == 'elf64-x86-64':
+    pointer_fmt = '<Q'
+  elif elf_format.startswith('elf32-little') or elf_format == 'elf32-i386':
+    pointer_fmt = '<I'
+  else:
+    raise Exception('Unknown ELF format: %s' % elf_format)
+  pointer_size = struct.calcsize(pointer_fmt)
+
+  ret = []
+  i = 0
+  while i < len(stack_sizes):
+    assert len(stack_sizes) >= i + pointer_size
+    addr, = struct.unpack_from(pointer_fmt, stack_sizes, i)
+    i += pointer_size
+    # Parse LEB128
+    size = 0
+    for j in range(10):
+      b = stack_sizes[i]
+      i += 1
+      size += (b & 0x7f) << (7 * j)
+      if (b & 0x80) == 0:
+        break
+    if size >= MIN_STACK_SIZE:
+      ret.append(SymbolStack(addr, size))
   return ret
 
 
@@ -109,11 +169,24 @@ def PrintStats(stats):
   print()
 
 
+def PrintStackStats(tgt_stack_sizes, top_entries=20):
+  if not tgt_stack_sizes:
+    return
+  print(' Stack   Symbol name')
+  for i, (name, size) in zip(itertools.count(), tgt_stack_sizes.items()):
+    if top_entries > 0 and i >= top_entries:
+      break
+    print('%8d %s' % (size, name))
+  print()
+
+
 def SizeStats(args):
   """Main entry point of the program after parsing parameters.
 
   Computes the size statistics of the given targets and their components."""
-  stats = []
+  # The dictionary with the stats that we store on disk as a json. This includes
+  # one entry per passed args.target.
+  stats = {}
 
   syms = {}
   for target in args.target:
@@ -139,7 +212,8 @@ def SizeStats(args):
         syms[entry] = LoadSymbols(fn)
 
     target_filename = link_params[link_params.index('-o') + 1]
-    tgt_syms = LoadSymbols(os.path.join(args.build_dir, target_filename))
+    target_path = os.path.join(args.build_dir, target_filename)
+    tgt_syms = LoadSymbols(target_path)
     used_syms = set()
     for sym in tgt_syms:
       if sym.typ.lower() in BIN_SIZE + RAM_SIZE:
@@ -148,6 +222,14 @@ def SizeStats(args):
         continue
       else:
         print('Unknown: %s %s' % (sym.typ, sym.name))
+
+    sym_stacks = LoadStackSizes(target_path, args.binutils)
+    symbols_by_addr = {sym.address: sym for sym in tgt_syms
+                          if sym.typ.lower() in 'tw'}
+    tgt_stack_sizes = collections.OrderedDict()
+    for sym_stack in sorted(sym_stacks, key=lambda s: -s.stack_size):
+      tgt_stack_sizes[
+          symbols_by_addr[sym_stack.address].name] = sym_stack.stack_size
 
     tgt_size = TargetSize(tgt_syms)
     tgt_stats.append(ObjectStats(target, False, tgt_size))
@@ -159,7 +241,7 @@ def SizeStats(args):
         continue
       ret = {}
       for sym in tgt_syms:
-        if not sym.size or not mangled in sym.name:
+        if not sym.size or mangled not in sym.name:
           continue
         t = sym.typ.lower()
         ret.setdefault(t, 0)
@@ -176,7 +258,11 @@ def SizeStats(args):
         continue
       tgt_stats.append(ObjectStats(os.path.basename(obj), True, obj_size))
     PrintStats(tgt_stats)
-    stats.append(tgt_stats)
+    PrintStackStats(tgt_stack_sizes)
+    stats[target] = {
+        'build': tgt_stats,
+        'stack': tgt_stack_sizes,
+    }
 
   if args.save:
     with open(args.save, 'w') as f:
@@ -191,6 +277,9 @@ def main():
                       help='path to the build directory')
   parser.add_argument('--save', default=None,
                       help='path to save the stats as JSON file')
+  parser.add_argument('--binutils', default='',
+                      help='prefix path to binutils tools, such as '
+                           'aarch64-linux-gnu-')
   args = parser.parse_args()
   SizeStats(args)
 

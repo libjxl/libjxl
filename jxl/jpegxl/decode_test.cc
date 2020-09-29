@@ -129,9 +129,10 @@ TEST(DecodeTest, DefaultParallelRunnerTest) {
 // farther away from the front than is ideal. Only used if have_container.
 std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
                                    size_t bits_per_sample, size_t orientation,
-                                   size_t alpha_bits, bool have_container,
-                                   bool metadata_default, bool insert_extra_box,
-                                   const jxl::PaddedBytes& icc_profile) {
+                                   size_t alpha_bits, bool xyb_encoded,
+                                   bool have_container, bool metadata_default,
+                                   bool insert_extra_box,
+                                   const std::vector<uint8_t>& icc_profile) {
   jxl::BitWriter writer;
   jxl::BitWriter::Allotment allotment(&writer, 65536);  // Large enough
 
@@ -181,13 +182,17 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
     metadata.SetUintSamples(bits_per_sample);
     metadata.m2.orientation_minus_1 = orientation - 1;
     metadata.SetAlphaBits(alpha_bits);
+    metadata.xyb_encoded = xyb_encoded;
     if (alpha_bits != 0) {
       metadata.m2.extra_channel_info[0].name = "alpha_test";
     }
   }
 
+  jxl::PaddedBytes icc_padded(icc_profile.size());
+  memcpy(icc_padded.data(), icc_profile.data(), icc_profile.size());
+
   if (!icc_profile.empty()) {
-    jxl::PaddedBytes copy = icc_profile;
+    jxl::PaddedBytes copy = icc_padded;
     EXPECT_TRUE(metadata.color_encoding.SetICC(std::move(copy)));
   }
 
@@ -195,7 +200,7 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
 
   if (!icc_profile.empty()) {
     EXPECT_TRUE(metadata.color_encoding.WantICC());
-    EXPECT_TRUE(jxl::WriteICC(icc_profile, &writer, 0, nullptr));
+    EXPECT_TRUE(jxl::WriteICC(icc_padded, &writer, 0, nullptr));
   }
 
   writer.ZeroPadToByte();
@@ -212,17 +217,18 @@ TEST(DecodeTest, BasicInfoTest) {
   size_t orientation[2] = {3, 5};
   size_t alpha_bits[2] = {0, 8};
   size_t have_container[2] = {0, 1};
+  bool xyb_encoded = false;
 
   std::vector<std::vector<uint8_t>> test_samples;
   // Test with direct codestream
   test_samples.push_back(GetTestHeader(
       xsize[0], ysize[0], bits_per_sample[0], orientation[0], alpha_bits[0],
-      have_container[0], /*metadata_default=*/false,
+      xyb_encoded, have_container[0], /*metadata_default=*/false,
       /*insert_extra_box=*/false, {}));
   // Test with container and different parameters
   test_samples.push_back(GetTestHeader(
       xsize[1], ysize[1], bits_per_sample[1], orientation[1], alpha_bits[1],
-      have_container[1], /*metadata_default=*/false,
+      xyb_encoded, have_container[1], /*metadata_default=*/false,
       /*insert_extra_box=*/false, {}));
 
   for (size_t i = 0; i < test_samples.size(); ++i) {
@@ -292,10 +298,11 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   size_t bits_per_sample = 16;
   size_t orientation = 1;
   size_t alpha_bits = 0;
-  std::vector<uint8_t> data =
-      GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
-                    /*have_container=*/true, /*metadata_default=*/false,
-                    /*insert_extra_box=*/true, {});
+  bool xyb_encoded = false;
+  std::vector<uint8_t> data = GetTestHeader(
+      xsize, ysize, bits_per_sample, orientation, alpha_bits, xyb_encoded,
+      /*have_container=*/true, /*metadata_default=*/false,
+      /*insert_extra_box=*/true, {});
 
   JpegxlDecoderStatus status;
   JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
@@ -343,8 +350,11 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   JpegxlDecoderDestroy(dec);
 }
 
-TEST(DecodeTest, IccProfileTest) {
-  // An ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin.
+// Returns an ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin,
+// but with, on purpose, rXYZ, bXYZ and gXYZ (the RGB primaries) switched to a
+// different order to ensure the profile does not match any known profile, so
+// the encoder cannot encode it in a compact struct instead.
+std::vector<uint8_t> GetIccTestProfile() {
   const uint8_t* profile = reinterpret_cast<const uint8_t*>(
       "\0\0\3\200lcms\0040\0\0mntrRGB XYZ "
       "\a\344\0\a\0\27\0\21\0$"
@@ -353,7 +363,7 @@ TEST(DecodeTest, IccProfileTest) {
       "\2\232s\255\327\340\0\n\26\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
       "\0\0\0\0\0\0\0\0\rdesc\0\0\1 "
       "\0\0\0Bcprt\0\0\1d\0\0\1\0wtpt\0\0\2d\0\0\0\24chad\0\0\2x\0\0\0,"
-      "rXYZ\0\0\2\244\0\0\0\24bXYZ\0\0\2\270\0\0\0\24gXYZ\0\0\2\314\0\0\0\24rTR"
+      "bXYZ\0\0\2\244\0\0\0\24gXYZ\0\0\2\270\0\0\0\24rXYZ\0\0\2\314\0\0\0\24rTR"
       "C\0\0\2\340\0\0\0 gTRC\0\0\2\340\0\0\0 bTRC\0\0\2\340\0\0\0 "
       "chrm\0\0\3\0\0\0\0$dmnd\0\0\3$\0\0\0("
       "dmdd\0\0\3L\0\0\0002mluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0&"
@@ -378,18 +388,30 @@ TEST(DecodeTest, IccProfileTest) {
       "\0l\0emluc\0\0\0\0\0\0\0\1\0\0\0\fenUS\0\0\0\26\0\0\0\34\0I\0m\0a\0g\0e"
       "\0 \0c\0o\0d\0e\0c\0\0");
   size_t profile_size = 896;
-  jxl::PaddedBytes icc_profile;
+  std::vector<uint8_t> icc_profile;
   icc_profile.assign(profile, profile + profile_size);
+  return icc_profile;
+}
 
+std::vector<uint8_t> GetIccTestHeader(const std::vector<uint8_t>& icc_profile,
+                                      bool xyb_encoded) {
   size_t xsize = 50;
   size_t ysize = 50;
   size_t bits_per_sample = 16;
   size_t orientation = 1;
   size_t alpha_bits = 0;
-  std::vector<uint8_t> data =
-      GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
-                    /*have_container=*/false, /*metadata_default=*/false,
-                    /*insert_extra_box=*/false, icc_profile);
+  return GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
+                       xyb_encoded,
+                       /*have_container=*/false, /*metadata_default=*/false,
+                       /*insert_extra_box=*/false, icc_profile);
+}
+
+// Tests the case where pixels and metadata ICC profile are the same
+TEST(DecodeTest, IccProfileTestOriginal) {
+  std::vector<uint8_t> icc_profile = GetIccTestProfile();
+  bool xyb_encoded = false;
+  std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
+
   const uint8_t* next_in = data.data();
   size_t avail_in = data.size();
 
@@ -401,30 +423,144 @@ TEST(DecodeTest, IccProfileTest) {
   EXPECT_EQ(JPEGXL_DEC_BASIC_INFO,
             JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
 
+  // Expect the opposite of xyb_encoded for uses_original_profile
+  JpegxlBasicInfo info;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(JPEGXL_TRUE, info.uses_original_profile);
+
   EXPECT_EQ(JPEGXL_DEC_COLOR_ENCODING,
             JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
 
   // the encoded color profile expected to be not available, since the image
   // has an ICC profile instead
   EXPECT_EQ(JPEGXL_DEC_ERROR,
-            JpegxlDecoderGetColorAsEncodedProfile(dec, nullptr));
-
-  // Check that can get return status with NULL size
-  EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetICCProfileSize(dec, nullptr));
+            JpegxlDecoderGetColorAsEncodedProfile(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
 
   size_t dec_profile_size;
   EXPECT_EQ(JPEGXL_DEC_SUCCESS,
-            JpegxlDecoderGetICCProfileSize(dec, &dec_profile_size));
+            JpegxlDecoderGetICCProfileSize(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL, &dec_profile_size));
+
+  // Check that can get return status with NULL size
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetICCProfileSize(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
 
   // The profiles must be equal. This requires they have equal size, and if
   // they do, we can get the profile and compare the contents.
-  EXPECT_EQ(profile_size, dec_profile_size);
-  if (profile_size == dec_profile_size) {
-    jxl::PaddedBytes icc_profile2(profile_size);
+  EXPECT_EQ(icc_profile.size(), dec_profile_size);
+  if (icc_profile.size() == dec_profile_size) {
+    std::vector<uint8_t> icc_profile2(icc_profile.size());
     EXPECT_EQ(JPEGXL_DEC_SUCCESS,
-              JpegxlDecoderGetColorAsICCProfile(dec, icc_profile2.data(),
-                                                icc_profile2.size()));
-    EXPECT_EQ(0, memcmp(profile, icc_profile2.data(), icc_profile2.size()));
+              JpegxlDecoderGetColorAsICCProfile(
+                  dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                  icc_profile2.data(), icc_profile2.size()));
+    EXPECT_EQ(icc_profile, icc_profile2);
+  }
+
+  // the data is not xyb_encoded, so same result expected for the pixel data
+  // color profile
+  EXPECT_EQ(JPEGXL_DEC_ERROR,
+            JpegxlDecoderGetColorAsEncodedProfile(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_DATA, nullptr));
+
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetICCProfileSize(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_DATA, &dec_profile_size));
+  EXPECT_EQ(icc_profile.size(), dec_profile_size);
+
+  JpegxlDecoderDestroy(dec);
+}
+
+// Tests the case where pixels and metadata ICC profile are different
+TEST(DecodeTest, IccProfileTestXybEncoded) {
+  std::vector<uint8_t> icc_profile = GetIccTestProfile();
+  bool xyb_encoded = true;
+  std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
+
+  const uint8_t* next_in = data.data();
+  size_t avail_in = data.size();
+
+  JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSubscribeEvents(
+                dec, JPEGXL_DEC_BASIC_INFO | JPEGXL_DEC_COLOR_ENCODING));
+
+  EXPECT_EQ(JPEGXL_DEC_BASIC_INFO,
+            JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  // Expect the opposite of xyb_encoded for uses_original_profile
+  JpegxlBasicInfo info;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(JPEGXL_FALSE, info.uses_original_profile);
+
+  EXPECT_EQ(JPEGXL_DEC_COLOR_ENCODING,
+            JpegxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  // the encoded color profile expected to be not available, since the image
+  // has an ICC profile instead
+  EXPECT_EQ(JPEGXL_DEC_ERROR,
+            JpegxlDecoderGetColorAsEncodedProfile(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
+
+  // Check that can get return status with NULL size
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetICCProfileSize(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL, nullptr));
+
+  size_t dec_profile_size;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetICCProfileSize(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL, &dec_profile_size));
+
+  // The profiles must be equal. This requires they have equal size, and if
+  // they do, we can get the profile and compare the contents.
+  EXPECT_EQ(icc_profile.size(), dec_profile_size);
+  if (icc_profile.size() == dec_profile_size) {
+    std::vector<uint8_t> icc_profile2(icc_profile.size());
+    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+              JpegxlDecoderGetColorAsICCProfile(
+                  dec, JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                  icc_profile2.data(), icc_profile2.size()));
+    EXPECT_EQ(icc_profile, icc_profile2);
+  }
+
+  // Data is xyb_encoded, so the data profile is a different profile, encoded
+  // as structured profile.
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetColorAsEncodedProfile(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_DATA, nullptr));
+  JpegxlColorEncoding pixel_encoding;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetColorAsEncodedProfile(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
+  EXPECT_EQ(JPEGXL_PRIMARIES_SRGB, pixel_encoding.primaries);
+  // TODO(lode): should this return JPEGXL_TRANSFER_FUNCTION_LINEAR instead,
+  // so that we have linear sRGB? This depends on the C++ decoder's behavior,
+  // but we may need linear to support HDR in floating point without transfer
+  // function ambiguity.
+  EXPECT_EQ(JPEGXL_TRANSFER_FUNCTION_SRGB, pixel_encoding.transfer_function);
+
+  // The decoder can also output this as a generated ICC profile anyway, and
+  // we're certain that it will differ from the above defined profile since
+  // the sRGB data should not have swapped R/G/B primaries.
+
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderGetICCProfileSize(
+                dec, JPEGXL_COLOR_PROFILE_TARGET_DATA, &dec_profile_size));
+  // We don't need to dictate exactly what size the generated ICC profile
+  // must be (since there are many ways to represent the same color space),
+  // but it should not be zero.
+  EXPECT_NE(0, dec_profile_size);
+  if (0 != dec_profile_size) {
+    std::vector<uint8_t> icc_profile2(dec_profile_size);
+    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+              JpegxlDecoderGetColorAsICCProfile(
+                  dec, JPEGXL_COLOR_PROFILE_TARGET_DATA, icc_profile2.data(),
+                  icc_profile2.size()));
+    // expected not equal
+    EXPECT_NE(icc_profile, icc_profile2);
   }
 
   JpegxlDecoderDestroy(dec);
@@ -835,8 +971,24 @@ TEST(DecodeTest, PixelPartialTest) {
   std::vector<uint8_t> pixels2;
   pixels2.resize(pixels.size());
 
-  for (size_t size = 1; size < data.size(); size = ((size * 3 + 1) / 2)) {
-    if (((size * 3 + 1) / 2) > data.size()) size = data.size();
+  // Create the different partial filesizes to test on beforehand
+  std::vector<size_t> sizes;
+  for (;;) {
+    // In the beginning of the file, test all possible byte sizes, but after
+    // that grow exponentially: test the header and TOC  parsing exhaustively,
+    // but do not test every single possible partial byte size of the pixel
+    // data.
+    size_t prev_size = sizes.empty() ? 0 : sizes.back();
+    size_t size =
+        prev_size < 200 ? (prev_size + 1) : (((prev_size + 1) * 3) / 2);
+    sizes.push_back(size);
+    if (sizes.back() >= data.size()) {
+      sizes.back() = data.size();
+      break;
+    }
+  }
+
+  for (const size_t size : sizes) {
     bool expect_complete = (size == data.size());
 
     // TODO(lode): instead of creating new decoder each time, test appending

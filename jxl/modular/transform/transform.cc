@@ -46,7 +46,7 @@ Status Transform::Forward(Image &input, ThreadPool *pool) {
       return FwdSqueeze(input, squeezes, pool);
     case TransformId::kPalette:
       return FwdPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
-                        ordered_palette);
+                        ordered_palette, lossy_palette, predictor, wp_header);
     case TransformId::kNearLossless:
       return FwdNearLossless(input, begin_c, begin_c + num_c - 1,
                              max_delta_error, predictor);
@@ -77,7 +77,7 @@ Status Transform::MetaApply(Image &input) {
       return MetaSqueeze(input, &squeezes);
     case TransformId::kPalette:
       return MetaPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
-                         nb_deltas);
+                         nb_deltas, lossy_palette);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)", id);
   }

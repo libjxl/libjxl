@@ -16,7 +16,7 @@
 EMSDK_URL="https://github.com/emscripten-core/emsdk/archive/master.tar.gz"
 EMSDK_DIR="/opt/emsdk"
 
-EMSDK_RELEASE="1.39.16"
+EMSDK_RELEASE="2.0.4"
 
 set -eu -x
 

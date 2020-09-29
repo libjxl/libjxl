@@ -53,6 +53,8 @@
 #include "jxl/image_ops.h"
 #include "jxl/luminance.h"
 
+// TODO(veluca): figure out what is actually needed here.
+
 // Definitions required by SIMD. Only define once.
 #ifndef JXL_BRUNSLI
 #define JXL_BRUNSLI
@@ -217,7 +219,7 @@ void FixDc(const ::brunsli::coeff_t* JXL_RESTRICT coeffs,
   static_assert(N == 8, "JPEG block dim must be 8");
   static_assert(kDCTBlockSize == N * N, "JPEG block size must be 64");
   const float dequant_mult =
-      static_cast<float>(q_dc) * IDCTScales<N>()[0] * IDCTScales<N>()[0];
+      static_cast<float>(q_dc) * IDCTScale<N>::value * IDCTScale<N>::value;
   const float q_ach_dc = static_cast<float>(q_ach) / static_cast<float>(q_dc);
   const float q_acv_dc = static_cast<float>(q_acv) / static_cast<float>(q_dc);
 
@@ -358,7 +360,7 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
       for (size_t x = 0; x < N; ++x) {
         const size_t i = y * N + x;
         quant[i] = static_cast<float>(quant_table.values[i]) *
-                   IDCTScales<N>()[x] * IDCTScales<N>()[y];
+                   IDCTScale<N>::value * IDCTScale<N>::value;
       }
     }
 
@@ -927,8 +929,8 @@ void ConvertPixels(const Image3F& from, brunsli::JPEGData* to,
           for (size_t v = 0; v < N; ++v) {
             size_t to_idx = u * N + v;
             size_t from_idx = v * N + u;
-            float raw = (static_cast<float>(N * N) * DCTScales<N>()[u] *
-                         DCTScales<N>()[v]) *
+            float raw = (static_cast<float>(N * N) * DCTScale<N>::value *
+                         DCTScale<N>::value) *
                         from_block[from_idx];
             raw += std::copysign(0.5f * static_cast<float>(quant_table[to_idx]),
                                  raw);

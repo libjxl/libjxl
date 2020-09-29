@@ -27,10 +27,9 @@
 
 #include "jxl/base/thread_pool_internal.h"
 #include "jxl/common.h"
+#include "jxl/dct-inl.h"
 #include "jxl/dct_for_test.h"
 #include "jxl/dct_scales.h"
-#include "jxl/dec_dct-inl.h"
-#include "jxl/enc_dct-inl.h"
 #include "jxl/image.h"
 #include "jxl/test_utils.h"
 
@@ -55,7 +54,7 @@ void ComputeDCT(float block[N * N]) {
   // Unscale.
   for (size_t y = 0; y < N; ++y) {
     for (size_t x = 0; x < N; ++x) {
-      block[N * y + x] *= DCTScales<N>()[x] * DCTScales<N>()[y];
+      block[N * y + x] *= DCTScale<N>::value * DCTScale<N>::value;
     }
   }
 }
@@ -67,7 +66,7 @@ void ComputeIDCT(float block[N * N]) {
   // Unscale.
   for (int y = 0; y < N; ++y) {
     for (int x = 0; x < N; ++x) {
-      block[N * y + x] *= IDCTScales<N>()[x] * IDCTScales<N>()[y];
+      block[N * y + x] *= IDCTScale<N>::value * IDCTScale<N>::value;
     }
   }
 
@@ -129,8 +128,8 @@ void ColumnDctRoundtripT(float accuracy) {
   ToBlock to_tmp(N, N, tmp);
   FromBlock from_tmp(N, N, tmp);
 
-  ColumnDCT(DCTSizeTag<N>(), from, to_tmp);
-  ColumnIDCT(DCTSizeTag<N>(), from_tmp, to);
+  DCT1D<N, N>(from, to_tmp);
+  IDCT1D<N, N>(from_tmp, to);
   constexpr float scale = 1.0f / N;
 
   for (size_t i = 0; i < N; ++i) {
@@ -148,52 +147,6 @@ void ColumnDctRoundtrip() {
   ColumnDctRoundtripT<32>(1e-6f);
 }
 
-// (inside begin/end because From/To are from dct_block-inl.h)
-namespace slow_dct {
-
-// These functions should be equivalent to ComputeTransposedScaledDCT in the jxl
-// namespace (but slower and implemented for more transform sizes).
-template <size_t N, class From, class To>
-void ComputeTransposedScaledDCT(const From& from, const To& to) {
-  double blockd[N * N] = {};
-  for (size_t y = 0; y < N; y++) {
-    for (size_t x = 0; x < N; x++) {
-      blockd[y * N + x] = from.Read(y, x);
-    }
-  }
-  DCTSlow<N>(blockd);
-
-  // Scale.
-  for (size_t y = 0; y < N; ++y) {
-    for (size_t x = 0; x < N; ++x) {
-      to.Write(
-          blockd[N * x + y] * N * N * IDCTScales<N>()[x] * IDCTScales<N>()[y],
-          y, x);
-    }
-  }
-}
-
-template <size_t N, class From, class To>
-void ComputeTransposedScaledIDCT(const From& from, const To& to) {
-  // Scale.
-  double blockd[N * N] = {};
-  for (size_t y = 0; y < N; y++) {
-    for (size_t x = 0; x < N; x++) {
-      blockd[x * N + y] =
-          from.Read(y, x) * N * N * DCTScales<N>()[x] * DCTScales<N>()[y];
-    }
-  }
-  IDCTSlow<N>(blockd);
-
-  for (size_t y = 0; y < N; ++y) {
-    for (size_t x = 0; x < N; ++x) {
-      to.Write(blockd[N * y + x], y, x);
-    }
-  }
-}
-
-}  // namespace slow_dct
-
 template <size_t N>
 void TestDctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
@@ -205,7 +158,8 @@ void TestDctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
     DCTSlow<N>(slow);
     ComputeDCT<N>(fast);
     for (size_t k = 0; k < kBlockSize; ++k) {
-      EXPECT_NEAR(fast[k], slow[k], accuracy) << "i = " << i << ", k = " << k;
+      EXPECT_NEAR(fast[k], slow[k], accuracy)
+          << "i = " << i << ", k = " << k << ", N = " << N;
     }
   }
 }
@@ -221,7 +175,8 @@ void TestIdctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
     IDCTSlow<N>(slow);
     ComputeIDCT<N>(fast);
     for (size_t k = 0; k < kBlockSize; ++k) {
-      EXPECT_NEAR(fast[k], slow[k], accuracy) << "i = " << i << ", k = " << k;
+      EXPECT_NEAR(fast[k], slow[k], accuracy)
+          << "i = " << i << ", k = " << k << ", N = " << N;
     }
   }
 }
@@ -270,14 +225,17 @@ void TestIdctOrthonormal(float accuracy) {
         product += xs.Row(i)[k] * xs.Row(j)[k];
       }
       EXPECT_NEAR(product, (i == j) ? 1.0f : 0.0f, accuracy)
-          << "i = " << i << ", j = " << j;
+          << "i = " << i << ", j = " << j << ", N = " << N;
     }
   }
 }
 
 void IDCTOrthonormalTest() {
+  TestIdctOrthonormal<1>(1e-6f);
+  TestIdctOrthonormal<2>(1e-6f);
+  TestIdctOrthonormal<4>(1e-6f);
   TestIdctOrthonormal<8>(1e-6f);
-  TestIdctOrthonormal<16>(1.2e-6f);
+  TestIdctOrthonormal<16>(1e-6f);
   TestIdctOrthonormal<32>(5e-6f);
 }
 
@@ -297,15 +255,18 @@ void TestDctOrthonormal(float accuracy) {
         product += xs.Row(i)[k] * xs.Row(j)[k];
       }
       EXPECT_NEAR(product, (i == j) ? 1.0f : 0.0f, accuracy)
-          << "i = " << i << ", j = " << j;
+          << "i = " << i << ", j = " << j << ", N = " << N;
     }
   }
 }
 
 void DCTOrthonormalTest() {
+  TestDctOrthonormal<1>(1e-6f);
+  TestDctOrthonormal<2>(1e-6f);
+  TestDctOrthonormal<4>(1e-6f);
   TestDctOrthonormal<8>(1e-6f);
   TestDctOrthonormal<16>(1e-6f);
-  TestDctOrthonormal<32>(1e-6f);
+  TestDctOrthonormal<32>(1.1e-6f);
 }
 
 template <size_t N>
@@ -331,50 +292,14 @@ void TestDctTranspose(float accuracy, size_t start = 0, size_t end = N * N) {
 }
 
 template <size_t N>
-void TestSlowIsSameDCT(float accuracy, size_t start = 0, size_t end = N * N) {
-  for (size_t i = start; i < end; i++) {
-    HWY_ALIGN float block1[N * N] = {};
-    HWY_ALIGN float block2[N * N] = {};
-    block1[i] = 1.0;
-    block2[i] = 1.0;
-    ComputeTransposedScaledDCT<N>()(FromBlock(N, N, block1),
-                                    ToBlock(N, N, block1));
-    slow_dct::ComputeTransposedScaledDCT<N>(FromBlock(N, N, block2),
-                                            ToBlock(N, N, block2));
-    for (int j = 0; j < N * N; j++) {
-      EXPECT_NEAR(block1[j], block2[j], accuracy);
-    }
-  }
-}
-
-template <size_t N>
-void TestSlowIsSameIDCT(float accuracy, size_t start = 0, size_t end = N * N) {
-  for (size_t i = start; i < end; i++) {
-    HWY_ALIGN float block1[N * N] = {};
-    HWY_ALIGN float block2[N * N] = {};
-    block1[i] = 1.0;
-    block2[i] = 1.0;
-    ComputeTransposedScaledIDCT<N>()(FromBlock(N, N, block1),
-                                     ToBlock(N, N, block1));
-    slow_dct::ComputeTransposedScaledIDCT<N>(FromBlock(N, N, block2),
-                                             ToBlock(N, N, block2));
-    for (int j = 0; j < N * N; j++) {
-      EXPECT_NEAR(block1[j], block2[j], accuracy);
-    }
-  }
-}
-
-template <size_t N>
 void TestSlowInverse(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
   for (size_t i = start; i < end; i++) {
-    float x[kBlockSize] = {0.0f};
+    double x[kBlockSize] = {0.0f};
     x[i] = 1.0;
 
-    slow_dct::ComputeTransposedScaledDCT<N>(FromBlock(N, N, x),
-                                            ScaleToBlock(N, N, x));
-    slow_dct::ComputeTransposedScaledIDCT<N>(FromBlock(N, N, x),
-                                             ToBlock(N, N, x));
+    DCTSlow<N>(x);
+    IDCTSlow<N>(x);
 
     for (int k = 0; k < kBlockSize; ++k) {
       EXPECT_NEAR(x[k], (k == i) ? 1.0f : 0.0f, accuracy)
@@ -472,14 +397,20 @@ void TestRectTranspose() {
 
 void TestDctAccuracyShard(size_t shard) {
   if (shard == 0) {
+    TestDctAccuracy<1>(1.1E-7f);
+    TestDctAccuracy<2>(1.1E-7f);
+    TestDctAccuracy<4>(1.1E-7f);
     TestDctAccuracy<8>(1.1E-7f);
-    TestDctAccuracy<16>(1.1E-7f);
+    TestDctAccuracy<16>(1.3E-7f);
   }
   TestDctAccuracy<32>(1.1E-7f, 32 * shard, 32 * (shard + 1));
 }
 
 void TestIdctAccuracyShard(size_t shard) {
   if (shard == 0) {
+    TestIdctAccuracy<1>(1E-7f);
+    TestIdctAccuracy<2>(1E-7f);
+    TestIdctAccuracy<4>(1E-7f);
     TestIdctAccuracy<8>(1E-7f);
     TestIdctAccuracy<16>(1E-7f);
   }
@@ -494,28 +425,9 @@ void TestDctTransposeShard(size_t shard) {
   TestDctTranspose<32>(3E-6f, 32 * shard, 32 * (shard + 1));
 }
 
-void TestSlowIsSameDCTShard(size_t shard) {
-  if (shard == 0) {
-    TestSlowIsSameDCT<2>(1E-5f);
-    TestSlowIsSameDCT<4>(1E-5f);
-    TestSlowIsSameDCT<8>(1E-5f);
-    TestSlowIsSameDCT<16>(3E-5f);
-  }
-  TestSlowIsSameDCT<32>(1E-4f, 32 * shard, 32 * (shard + 1));
-}
-
-void TestSlowIsSameIDCTShard(size_t shard) {
-  if (shard == 0) {
-    TestSlowIsSameIDCT<2>(1E-5f);
-    TestSlowIsSameIDCT<4>(1E-5f);
-    TestSlowIsSameIDCT<8>(1E-5f);
-    TestSlowIsSameIDCT<16>(2E-5f);
-  }
-  TestSlowIsSameIDCT<32>(1E-4f, 32 * shard, 32 * (shard + 1));
-}
-
 void TestSlowInverseShard(size_t shard) {
   if (shard == 0) {
+    TestSlowInverse<1>(1E-5f);
     TestSlowInverse<2>(1E-5f);
     TestSlowInverse<4>(1E-5f);
     TestSlowInverse<8>(1E-5f);
@@ -564,8 +476,6 @@ HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(DctShardedTest,
 HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctAccuracyShard);
 HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestIdctAccuracyShard);
 HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestDctTransposeShard);
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameDCTShard);
-HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowIsSameIDCTShard);
 HWY_EXPORT_AND_TEST_P_T(DctShardedTest, TestSlowInverseShard);
 
 }  // namespace jxl

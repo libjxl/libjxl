@@ -36,12 +36,96 @@ void* AllocateAlignedBytes(size_t payload_size, AllocPtr alloc_ptr);
 // Calls `free` to free the memory; if null, uses the default free().
 void FreeAlignedBytes(const void* aligned_pointer, FreePtr free_ptr);
 
+// Class that deletes the aligned pointer passed to operator() calling the
+// destructor before freeing the pointer. This is equivalent to the
+// std::default_delete but for aligned objects. For a similar deleter equivalent
+// to free() for aligned memory see AlignedFreer().
 class AlignedDeleter {
  public:
   explicit AlignedDeleter(FreePtr free) : free_(free) {}
 
   template <typename T>
   void operator()(T* aligned_pointer) const {
+    return DeleteAlignedArray(aligned_pointer, free_, TypedArrayDeleter<T>);
+  }
+
+ private:
+  template <typename T>
+  static void TypedArrayDeleter(void* ptr, size_t size_in_bytes) {
+    size_t elems = size_in_bytes / sizeof(T);
+    for (size_t i = 0; i < elems; i++) {
+      // Explicitly call the destructor on each element.
+      (static_cast<T*>(ptr) + i)->~T();
+    }
+  }
+
+  // Function prototype that calls the destructor for each element in a typed
+  // array. TypeArrayDeleter<T> would match this prototype.
+  using ArrayDeleter = void (*)(void* t_ptr, size_t t_size);
+
+  static void DeleteAlignedArray(void* aligned_pointer, FreePtr free_ptr,
+                                 ArrayDeleter deleter);
+
+  FreePtr free_;
+};
+
+// Unique pointer to T with custom aligned deleter. This can be a single
+// element U or an array of element if T is a U[]. The custom aligned deleter
+// will call the destructor on U or each element of a U[] in the array case.
+template <typename T>
+using AlignedUniquePtr = std::unique_ptr<T, AlignedDeleter>;
+
+// Aligned memory equivalent of make_unique<T> using the custom allocators
+// alloc/free. This function calls the constructor with the passed Args... and
+// calls the destructor of the object when the AlignedUniquePtr is destroyed.
+template <typename T, typename... Args>
+AlignedUniquePtr<T> MakeUniqueAlignedWithAlloc(AllocPtr alloc, FreePtr free,
+                                               Args&&... args) {
+  T* ptr = static_cast<T*>(AllocateAlignedBytes(sizeof(T), alloc));
+  return AlignedUniquePtr<T>(new (ptr) T(std::forward<Args>(args)...),
+                             AlignedDeleter(free));
+}
+
+// Similar to MakeUniqueAlignedWithAlloc but using the default alloc/free
+// functions.
+template <typename T, typename... Args>
+AlignedUniquePtr<T> MakeUniqueAligned(Args&&... args) {
+  T* ptr = static_cast<T*>(AllocateAlignedBytes(sizeof(T), /*alloc*/ nullptr));
+  return AlignedUniquePtr<T>(new (ptr) T(std::forward<Args>(args)...),
+                             AlignedDeleter(nullptr));
+}
+
+// Aligned memory equivalent of make_unique<T[]> for array types using the
+// custom allocators alloc/free. This function calls the constructor with the
+// passed Args... on every created item. The destructor of each element will be
+// called when the AlignedUniquePtr is destroyed.
+template <typename T, typename... Args>
+AlignedUniquePtr<T[]> MakeUniqueAlignedArrayWithAlloc(size_t items,
+                                                      AllocPtr alloc,
+                                                      FreePtr free,
+                                                      Args&&... args) {
+  T* ptr = static_cast<T*>(AllocateAlignedBytes(items * sizeof(T), alloc));
+  for (size_t i = 0; i < items; i++) {
+    new (ptr + i) T(std::forward<Args>(args)...);
+  }
+  return AlignedUniquePtr<T[]>(ptr, AlignedDeleter(free));
+}
+
+template <typename T, typename... Args>
+AlignedUniquePtr<T[]> MakeUniqueAlignedArray(size_t items, Args&&... args) {
+  return MakeUniqueAlignedArrayWithAlloc<T, Args...>(
+      items, nullptr, nullptr, std::forward<Args>(args)...);
+}
+
+// Custom deleter for std::unique_ptr equivalent to using free() as a deleter
+// but for aligned memory.
+class AlignedFreer {
+ public:
+  explicit AlignedFreer(FreePtr free) : free_(free) {}
+
+  template <typename T>
+  void operator()(T* aligned_pointer) const {
+    // TODO(deymo): assert that we are using a POD type T.
     return FreeAlignedBytes(aligned_pointer, free_);
   }
 
@@ -49,32 +133,25 @@ class AlignedDeleter {
   FreePtr free_;
 };
 
-// Unique pointer to single POD, or (if T is U[]) an array of POD.
+// Unique pointer to single POD, or (if T is U[]) an array of POD. For non POD
+// data use AlignedUniquePtr.
 template <typename T>
-using AlignedUniquePtr = std::unique_ptr<T, AlignedDeleter>;
+using AlignedFreeUniquePtr = std::unique_ptr<T, AlignedFreer>;
 
+// Allocate an aligned and uninitialized array of POD values as a unique_ptr.
+// Upon destruction of the unique_ptr the aligned array will be freed.
 template <typename T>
-AlignedUniquePtr<T[]> AllocateAligned(const size_t items, AllocPtr alloc,
-                                      FreePtr free) {
-  return AlignedUniquePtr<T[]>(
+AlignedFreeUniquePtr<T[]> AllocateAligned(const size_t items, AllocPtr alloc,
+                                          FreePtr free) {
+  return AlignedFreeUniquePtr<T[]>(
       static_cast<T*>(AllocateAlignedBytes(items * sizeof(T), alloc)),
-      AlignedDeleter(free));
-}
-template <typename T>
-AlignedUniquePtr<T> AllocateSingleAligned(AllocPtr alloc, FreePtr free) {
-  return AlignedUniquePtr<T>(
-      static_cast<T*>(AllocateAlignedBytes(sizeof(T), alloc)),
-      AlignedDeleter(free));
+      AlignedFreer(free));
 }
 
-// Same, using default allocate/free functions.
+// Same as previous AllocateAligned(), using default allocate/free functions.
 template <typename T>
-AlignedUniquePtr<T[]> AllocateAligned(const size_t items) {
+AlignedFreeUniquePtr<T[]> AllocateAligned(const size_t items) {
   return AllocateAligned<T>(items, nullptr, nullptr);
-}
-template <typename T>
-AlignedUniquePtr<T> AllocateSingleAligned() {
-  return AllocateSingleAligned<T>(nullptr, nullptr);
 }
 
 }  // namespace hwy

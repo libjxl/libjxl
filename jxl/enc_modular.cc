@@ -410,7 +410,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Global channel palette
-  if (cparams.channel_colors_pre_transform_percent > 0 && quality == 100) {
+  if (cparams.channel_colors_pre_transform_percent > 0 && quality == 100 &&
+      !cparams.lossy_palette) {
     // single channel palette (like FLIF's ChannelCompact)
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;
@@ -432,7 +433,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   // Global palette
-  if (cparams.palette_colors != 0 && cparams.speed_tier < SpeedTier::kFalcon) {
+  if ((cparams.palette_colors != 0 || cparams.lossy_palette) &&
+      cparams.speed_tier < SpeedTier::kFalcon) {
     // all-channel palette (e.g. RGBA)
     if (gi.nb_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
@@ -440,6 +442,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette.num_c = gi.nb_channels;
       maybe_palette.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
+      maybe_palette.lossy_palette = cparams.lossy_palette;
+      if (maybe_palette.lossy_palette) {
+        maybe_palette.predictor = Predictor::Gradient;
+      }
       gi.do_transform(maybe_palette);
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
@@ -450,6 +456,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette_3.num_c = gi.nb_channels - 1;
       maybe_palette_3.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
+      maybe_palette_3.lossy_palette = cparams.lossy_palette;
+      if (maybe_palette_3.lossy_palette) {
+        maybe_palette_3.predictor = Predictor::Weighted;
+      }
       gi.do_transform(maybe_palette_3);
     }
   }
@@ -932,13 +942,17 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       maybe_palette_3.num_c = gi.nb_channels - 1;
       maybe_palette_3.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
+      maybe_palette_3.lossy_palette = cparams.lossy_palette;
+      if (maybe_palette_3.lossy_palette) {
+        maybe_palette_3.predictor = Predictor::Weighted;
+      }
       gi.do_transform(maybe_palette_3);
     }
   }
 
   // Local channel palette
   if (cparams.channel_colors_percent > 0 && quality == 100 &&
-      cparams.speed_tier < SpeedTier::kCheetah) {
+      !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
     // single channel palette (like FLIF's ChannelCompact)
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;

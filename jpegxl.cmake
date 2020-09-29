@@ -77,8 +77,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/tsc_timer.h
-  jxl/brotli.cc
-  jxl/brotli.h
   jxl/brunsli.cc
   jxl/brunsli.h
   jxl/butteraugli/butteraugli.cc
@@ -98,6 +96,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/convolve.cc
   jxl/convolve.h
   jxl/convolve-inl.h
+  jxl/dct-inl.h
   jxl/dct_block-inl.h
   jxl/dct_scales.cc
   jxl/dct_scales.h
@@ -109,7 +108,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/dec_cache.h
   jxl/dec_context_map.cc
   jxl/dec_context_map.h
-  jxl/dec_dct-inl.h
   jxl/dec_dct.cc
   jxl/dec_dct.h
   jxl/dec_file.cc
@@ -153,7 +151,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
-  jxl/enc_dct-inl.h
   jxl/enc_dct.cc
   jxl/enc_dct.h
   jxl/enc_file.cc
@@ -163,6 +160,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_gamma_correct.h
   jxl/enc_group.cc
   jxl/enc_group.h
+  jxl/enc_heuristics.cc
+  jxl/enc_heuristics.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
   jxl/enc_noise.cc

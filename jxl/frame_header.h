@@ -66,7 +66,7 @@ struct YCbCrChromaSubsampling : public Fields {
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     // TODO(veluca): consider allowing 4x downsamples
     for (size_t i = 0; i < 3; i++) {
-      visitor->Bits(2, 0, &channel_mode_[i]);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(2, 0, &channel_mode_[i]));
     }
     Recompute();
     return true;
@@ -156,20 +156,21 @@ static inline const char* EnumName(YCbCrChromaSubsampling /*unused*/) {
   return "YCbCrChromaSubsampling";
 }
 
-static inline void VisitNameString(Visitor* JXL_RESTRICT visitor,
-                                   std::string* name) {
-  uint32_t name_length = name->length();
+static inline Status VisitNameString(Visitor* JXL_RESTRICT visitor,
+                                     std::string* name) {
+  uint32_t name_length = static_cast<uint32_t>(name->length());
   // Allows layer name lengths up to 1071 bytes
-  visitor->U32(Val(0), Bits(4), BitsOffset(5, 16), BitsOffset(10, 48), 0,
-               &name_length);
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(0), Bits(4), BitsOffset(5, 16),
+                                         BitsOffset(10, 48), 0, &name_length));
   if (visitor->IsReading()) {
     name->resize(name_length);
   }
   for (size_t i = 0; i < name_length; i++) {
     uint32_t c = (*name)[i];
-    visitor->Bits(8, 0, &c);
-    (*name)[i] = c;
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(8, 0, &c));
+    (*name)[i] = static_cast<char>(c);
   }
+  return true;
 }
 
 // Indicates what the next frame will be "based" on.
@@ -191,10 +192,11 @@ enum class NewBase {
 static inline Status VisitNewBase(Visitor* JXL_RESTRICT visitor,
                                   NewBase* new_base) {
   uint32_t encoded = static_cast<uint32_t>(*new_base);
-  visitor->U32(Val(static_cast<uint32_t>(NewBase::kExisting)),
-               Val(static_cast<uint32_t>(NewBase::kCurrentFrame)),
-               Val(static_cast<uint32_t>(NewBase::kNone)), Val(3),
-               static_cast<uint32_t>(NewBase::kCurrentFrame), &encoded);
+  JXL_QUIET_RETURN_IF_ERROR(
+      visitor->U32(Val(static_cast<uint32_t>(NewBase::kExisting)),
+                   Val(static_cast<uint32_t>(NewBase::kCurrentFrame)),
+                   Val(static_cast<uint32_t>(NewBase::kNone)), Val(3),
+                   static_cast<uint32_t>(NewBase::kCurrentFrame), &encoded));
   if (encoded == 3) {
     return JXL_FAILURE("Invalid new_base");
   }
@@ -218,10 +220,11 @@ enum class BlendMode {
 static inline Status VisitBlendMode(Visitor* JXL_RESTRICT visitor,
                                     BlendMode* blend_mode) {
   uint32_t encoded = static_cast<uint32_t>(*blend_mode);
-  visitor->U32(Val(static_cast<uint32_t>(BlendMode::kReplace)),
-               Val(static_cast<uint32_t>(BlendMode::kAdd)),
-               Val(static_cast<uint32_t>(BlendMode::kBlend)), Val(3),
-               static_cast<uint32_t>(BlendMode::kReplace), &encoded);
+  JXL_QUIET_RETURN_IF_ERROR(
+      visitor->U32(Val(static_cast<uint32_t>(BlendMode::kReplace)),
+                   Val(static_cast<uint32_t>(BlendMode::kAdd)),
+                   Val(static_cast<uint32_t>(BlendMode::kBlend)), Val(3),
+                   static_cast<uint32_t>(BlendMode::kReplace), &encoded));
   if (encoded == 3) {
     return JXL_FAILURE("Invalid blend_mode");
   }
@@ -235,31 +238,32 @@ struct AnimationFrame : public Fields {
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
     if (visitor->Conditional(!nonserialized_composite_still)) {
-      visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration));
     }
 
-    VisitNameString(visitor, &name);
+    JXL_QUIET_RETURN_IF_ERROR(VisitNameString(visitor, &name));
 
     if (visitor->Conditional(duration > 0)) {
-      JXL_RETURN_IF_ERROR(VisitNewBase(visitor, &new_base));
+      JXL_QUIET_RETURN_IF_ERROR(VisitNewBase(visitor, &new_base));
     }
-    JXL_RETURN_IF_ERROR(VisitBlendMode(visitor, &blend_mode));
+    JXL_QUIET_RETURN_IF_ERROR(VisitBlendMode(visitor, &blend_mode));
 
     if (visitor->Conditional(nonserialized_have_timecode)) {
-      visitor->Bits(32, 0, &timecode);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(32, 0, &timecode));
     }
 
-    visitor->Bool(false, &have_crop);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_crop));
     if (visitor->Conditional(have_crop)) {
       const U32Enc enc(Bits(8), BitsOffset(11, 256), BitsOffset(14, 2304),
                        BitsOffset(30, 18688));
-      visitor->U32(enc, 0, &x0);
-      visitor->U32(enc, 0, &y0);
-      visitor->U32(enc, 0, &xsize);
-      visitor->U32(enc, 0, &ysize);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &x0));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &y0));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &xsize));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &ysize));
     }
 
-    visitor->Bool(true, &is_last);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &is_last));
 
     return true;
   }
@@ -293,12 +297,13 @@ struct Passes : public Fields {
   const char* Name() const override { return "Passes"; }
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
-    visitor->U32(Val(1), Val(2), Val(3), BitsOffset(3, 4), 1, &num_passes);
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(1), Val(2), Val(3), BitsOffset(3, 4), 1, &num_passes));
     JXL_ASSERT(num_passes <= kMaxNumPasses);  // Cannot happen when reading
 
     if (visitor->Conditional(num_passes != 1)) {
-      visitor->U32(Val(0), Val(1), Val(2), BitsOffset(1, 3), 0,
-                   &num_downsample);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
+          Val(0), Val(1), Val(2), BitsOffset(1, 3), 0, &num_downsample));
       JXL_ASSERT(num_downsample <= 4);  // 1,2,4,8
       if (num_downsample > num_passes) {
         return JXL_FAILURE("num_downsample %u > num_passes %u", num_downsample,
@@ -306,15 +311,17 @@ struct Passes : public Fields {
       }
 
       for (uint32_t i = 0; i < num_passes - 1; i++) {
-        visitor->Bits(2, 0, &shift[i]);
+        JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(2, 0, &shift[i]));
       }
       shift[num_passes - 1] = 0;
 
       for (uint32_t i = 0; i < num_downsample; ++i) {
-        visitor->U32(Val(1), Val(2), Val(4), Val(8), 1, &downsample[i]);
+        JXL_QUIET_RETURN_IF_ERROR(
+            visitor->U32(Val(1), Val(2), Val(4), Val(8), 1, &downsample[i]));
       }
       for (uint32_t i = 0; i < num_downsample; ++i) {
-        visitor->U32(Val(0), Val(1), Val(2), Bits(3), 0, &last_pass[i]);
+        JXL_QUIET_RETURN_IF_ERROR(
+            visitor->U32(Val(0), Val(1), Val(2), Bits(3), 0, &last_pass[i]));
         if (last_pass[i] >= num_passes) {
           return JXL_FAILURE("last_pass %u >= num_passes %u", last_pass[i],
                              num_passes);
@@ -377,16 +384,17 @@ struct FrameHeader : public Fields {
     }
 
     // Up to 3 pyramid levels - for up to 4096x downsampling.
-    visitor->U32(Val(0), Val(1), Val(2), Val(3), 0, &dc_level);
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(0), Val(1), Val(2), Val(3), 0, &dc_level));
 
     if (visitor->Conditional(dc_level == 0)) {
-      visitor->Bool(false, &has_animation);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &has_animation));
       if (visitor->Conditional(has_animation))
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
     }
 
     bool is_modular = (encoding == FrameEncoding::kModular);
-    visitor->Bool(false, &is_modular);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &is_modular));
     encoding = (is_modular ? FrameEncoding::kModular : FrameEncoding::kVarDCT);
 
     // In case of xyb_encoded, the options are kXYB or kSRGB. In case of
@@ -395,7 +403,7 @@ struct FrameHeader : public Fields {
     bool alternate =
         (nonserialized_xyb_image ? (color_transform == ColorTransform::kSRGB)
                                  : (color_transform == ColorTransform::kYCbCr));
-    visitor->Bool(false, &alternate);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &alternate));
     if (nonserialized_xyb_image) {
       color_transform =
           (alternate ? ColorTransform::kSRGB : ColorTransform::kXYB);
@@ -404,30 +412,32 @@ struct FrameHeader : public Fields {
           (alternate ? ColorTransform::kYCbCr : ColorTransform::kNone);
     }
     if (visitor->Conditional(color_transform == ColorTransform::kYCbCr)) {
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&chroma_subsampling));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&chroma_subsampling));
     }
     if (visitor->Conditional(IsLossy() ||
                              encoding == FrameEncoding::kModular)) {
-      JXL_RETURN_IF_ERROR(visitor->VisitNested(&passes));
-      visitor->U64(0, &flags);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&passes));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->U64(0, &flags));
     }
     if (visitor->Conditional(encoding == FrameEncoding::kModular)) {
-      visitor->Bits(2, 1, &group_size_shift);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(2, 1, &group_size_shift));
     }
     // This field only makes sense for kVarDCT:
     if (visitor->Conditional(IsLossy())) {
-      visitor->U32(Val(0), Val(1), Val(2), Val(3), 1, &x_qm_scale);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(0), Val(1), Val(2), Val(3), 1, &x_qm_scale));
     }
 
     // Save frame as a reference frame.
     if (visitor->Conditional(!animation_frame.is_last && dc_level == 0)) {
-      visitor->U32(Val(0), Val(1), Val(2), Val(3), 0, &save_as_reference);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(0), Val(1), Val(2), Val(3), 0, &save_as_reference));
     }
     if (visitor->Conditional(save_as_reference == 0 && dc_level == 0)) {
-      visitor->Bool(false, &is_displayed);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &is_displayed));
     }
 
-    visitor->BeginExtensions(&extensions);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     // Extensions: in chronological order of being added to the format.
     return visitor->EndExtensions();
   }

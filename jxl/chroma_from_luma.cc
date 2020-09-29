@@ -170,7 +170,7 @@ JXL_NOINLINE void FindBestCorrelation(const Image3F& opsin,
   const size_t items_per_thread =
       AcStrategy::kMaxCoeffArea * 2 + kColorTileDim * kColorTileDim * 2;
   JXL_ASSERT(items_per_thread % MaxLanes(df) == 0);
-  hwy::AlignedUniquePtr<float[]> mem(nullptr, hwy::AlignedDeleter(nullptr));
+  hwy::AlignedFreeUniquePtr<float[]> mem(nullptr, hwy::AlignedFreer(nullptr));
   const auto init_func = [&](size_t num_threads) {
     mem = hwy::AllocateAligned<float>(num_threads * items_per_thread);
     return true;

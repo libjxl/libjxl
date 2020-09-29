@@ -28,7 +28,6 @@
 
 #include "jxl/base/fast_log.h"
 #include "jxl/base/status.h"
-#include "jxl/brotli.h"
 #include "jxl/common.h"
 #include "jxl/dec_ans.h"
 #include "jxl/dec_bit_reader.h"

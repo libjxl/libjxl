@@ -24,6 +24,7 @@ OS=`uname -s`
 MYDIR=$(dirname $(realpath "$0"))
 
 ### Environment parameters:
+TEST_STACK_LIMIT="${TEST_STACK_LIMIT:-128}"
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-RelWithDebInfo}
 CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH:-}
 CMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER:-}
@@ -83,9 +84,9 @@ CMAKE_SHARED_LINKER_FLAGS=${CMAKE_SHARED_LINKER_FLAGS:-}
 CMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE:-}
 
 if [[ "${ENABLE_WASM_SIMD}" -ne "0" ]]; then
-  CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -s SIMD=1"
-  CMAKE_C_FLAGS="${CMAKE_C_FLAGS} -s SIMD=1"
-  CMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS} -s SIMD=1"
+  CMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS} -msimd128"
+  CMAKE_C_FLAGS="${CMAKE_C_FLAGS} -msimd128"
+  CMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS} -msimd128"
 fi
 
 if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
@@ -316,6 +317,14 @@ export_env() {
 
 cmake_configure() {
   export_env
+
+  if [[ "${STACK_SIZE:-0}" == 1 ]]; then
+    # Dump the stack size of each function in the .stack_sizes section for
+    # analysis.
+    CMAKE_C_FLAGS+=" -fstack-size-section"
+    CMAKE_CXX_FLAGS+=" -fstack-size-section"
+  fi
+
   local args=(
     -B"${BUILD_DIR}" -H"${MYDIR}"
     -DCMAKE_BUILD_TYPE="${CMAKE_BUILD_TYPE}"
@@ -353,6 +362,11 @@ cmake_configure() {
         # Only the first element of the target triplet.
         -DCMAKE_SYSTEM_PROCESSOR="${BUILD_TARGET%%-*}"
         -DCMAKE_SYSTEM_NAME="${system_name}"
+      )
+    else
+      # sjpeg confuses WASM SIMD with SSE.
+      args+=(
+        -DSJPEG_ENABLE_SIMD=OFF
       )
     fi
     args+=(
@@ -438,6 +452,7 @@ cmake_build_and_test() {
   if [[ "${SKIP_TEST}" -ne "1" ]]; then
     (cd "${BUILD_DIR}"
      export UBSAN_OPTIONS=print_stacktrace=1
+     ulimit -s "${TEST_STACK_LIMIT}"
      ctest -j $(nproc --all || echo 1) --output-on-failure)
   fi
 }
@@ -531,6 +546,7 @@ cmd_test() {
   fi
   (cd "${BUILD_DIR}"
    export UBSAN_OPTIONS=print_stacktrace=1
+   ulimit -s "${TEST_STACK_LIMIT}"
    ctest -j $(nproc --all || echo 1) --output-on-failure "$@")
 }
 
@@ -757,10 +773,14 @@ run_benchmark() {
   if [[ "${STORE_IMAGES}" == "1" ]]; then
     benchmark_args+=(--save_decompressed --save_compressed)
   fi
-  "${BUILD_DIR}/tools/benchmark_xl" "${benchmark_args[@]}" | \
-     tee "${output_dir}/results.txt"
-  # Check error code for benckmark_xl command. This will exit if not.
-  [[ "${PIPESTATUS[0]}" == 0 ]]
+  (
+    ulimit -s "${TEST_STACK_LIMIT}"
+    "${BUILD_DIR}/tools/benchmark_xl" "${benchmark_args[@]}" | \
+       tee "${output_dir}/results.txt"
+
+    # Check error code for benckmark_xl command. This will exit if not.
+    return ${PIPESTATUS[0]}
+  )
 
   if [[ -n "${CI_BUILD_NAME:-}" ]]; then
     { set +x; } 2>/dev/null
@@ -829,8 +849,6 @@ cmd_arm_benchmark() {
   # Flags used for cjpegxl encoder with .png inputs
   local jxl_png_benchmarks=(
     # Lossy options:
-    "--jpeg1 --jpeg_quality 90"
-    "--jpeg1 --jpeg_quality 85 --jpeg_420"
     "--adaptive_reconstruction=1 --distance=1.0 --speed=cheetah"
     "--adaptive_reconstruction=0 --distance=1.0 --speed=cheetah"
     "--adaptive_reconstruction=1 --distance=8.0 --speed=cheetah"
@@ -893,7 +911,7 @@ cmd_arm_benchmark() {
   for src_img in "${images[@]}"; do
     for q in "${jpg_qualities[@]}"; do
       local jpeg_name="${jpg_dirname}/"$(basename "${src_img}" .png)"-q${q}.jpg"
-      "${BUILD_DIR}/tools/cjpegxl" --jpeg1 --jpeg_quality "${q}" \
+      convert -sampling-factor 1x1 -quality "${q}" \
         "${src_img}" "${jpeg_name}"
       jpg_images+=("${jpeg_name}")
     done
@@ -1195,6 +1213,8 @@ You can pass some optional environment variables as well:
  - SKIP_CPUSET=1: Skip modifying the cpuset in the arm_benchmark.
  - SKIP_TEST=1: Skip the test stage.
  - STORE_IMAGES=0: Makes the benchmark discard the computed images.
+ - TEST_STACK_LIMIT: Stack size limit (ulimit -s) during tests, in KiB.
+ - STACK_SIZE=1: Generate binaries with the .stack_sizes sections.
 
 These optional environment variables are forwarded to the cmake call as
 parameters:

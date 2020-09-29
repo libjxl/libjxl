@@ -60,6 +60,9 @@
 //------------------------------------------------------------------------------
 // Compiler-specific definitions
 
+#define HWY_STR_IMPL(macro) #macro
+#define HWY_STR(macro) HWY_STR_IMPL(macro)
+
 #if HWY_COMPILER_MSVC
 
 #include <intrin.h>
@@ -144,7 +147,7 @@
 #define HWY_POP_ATTRIBUTES _Pragma("clang attribute pop")
 #elif HWY_COMPILER_GCC
 #define HWY_PUSH_ATTRIBUTES(targets_str) \
-  _Pragma("GCC push_options") _Pragma(STRINGIFY(GCC target(targets_str)))
+  _Pragma("GCC push_options") _Pragma(HWY_STR(GCC target(targets_str)))
 #define HWY_POP_ATTRIBUTES _Pragma("GCC pop_options")
 #else
 #define HWY_PUSH_ATTRIBUTES
@@ -197,9 +200,6 @@
 
 //------------------------------------------------------------------------------
 // Macros
-
-#define HWY_STR_IMPL(macro) #macro
-#define HWY_STR(macro) HWY_STR_IMPL(macro)
 
 #define HWY_CONCAT_IMPL(a, b) a##b
 #define HWY_CONCAT(a, b) HWY_CONCAT_IMPL(a, b)

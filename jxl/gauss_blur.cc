@@ -212,15 +212,17 @@ constexpr size_t kMod = 4;
 // Avoids an unnecessary store during warmup.
 struct OutputNone {
   template <class V>
-  void operator()(const V& /*unused*/, float* JXL_RESTRICT /*pos*/) const {}
+  void operator()(const V& /*unused*/, float* JXL_RESTRICT /*pos*/,
+                  ptrdiff_t /*offset*/) const {}
 };
 
 // Common case: write output vectors in all VerticalBlock except warmup.
 struct OutputStore {
   template <class V>
-  void operator()(const V& out, float* JXL_RESTRICT pos) const {
+  void operator()(const V& out, float* JXL_RESTRICT pos,
+                  ptrdiff_t offset) const {
     // Stream helps for large images but is slower for images that fit in cache.
-    Store(out, HWY_FULL(float)(), pos);
+    Store(out, HWY_FULL(float)(), pos + offset);
   }
 };
 
@@ -288,7 +290,7 @@ void VerticalBlock(const V& d1_1, const V& d1_3, const V& d1_5, const V& n2_1,
     Store(y1, d, y_1 + kLanes * n_0 + idx_vec * kVN);
     Store(y3, d, y_3 + kLanes * n_0 + idx_vec * kVN);
     Store(y5, d, y_5 + kLanes * n_0 + idx_vec * kVN);
-    output(y1 + y3 + y5, out_pos + idx_vec * kVN);
+    output(y1 + y3 + y5, out_pos, idx_vec * kVN);
   }
   // NOTE: flushing cache line out_pos hurts performance - less so with
   // clflushopt than clflush but still a significant slowdown.
@@ -497,8 +499,7 @@ ImageF ConvolveAndSample(const ImageF& in, const std::vector<float>& kernel,
 // Cosine Functions" by Charalampidis [2016].
 hwy::AlignedUniquePtr<RecursiveGaussian> CreateRecursiveGaussian(double sigma) {
   PROFILER_FUNC;
-  hwy::AlignedUniquePtr<RecursiveGaussian> rg =
-      hwy::AllocateSingleAligned<RecursiveGaussian>();
+  auto rg = hwy::MakeUniqueAligned<RecursiveGaussian>();
   constexpr double kPi = 3.141592653589793238;
 
   const double radius = std::round(3.2795 * sigma + 0.2546);  // (57), "N"

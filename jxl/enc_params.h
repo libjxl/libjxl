@@ -132,11 +132,6 @@ struct CompressParams {
   ColorTransform color_transform = ColorTransform::kXYB;
   YCbCrChromaSubsampling chroma_subsampling;
 
-  // Compress pixels to JPEG.
-  bool pixels_to_jpeg_mode = false;
-  uint32_t jpeg_quality = 100;
-  bool jpeg_420 = false;
-
   // If true, the "modular mode options" members below are used.
   bool modular_group_mode = false;
 
@@ -210,6 +205,7 @@ struct CompressParams {
   float channel_colors_percent = 80.f;
   int near_lossless = 0;
   int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
+  bool lossy_palette = false;
 
   // Sets the parameters required to make the codec lossless.
   void SetLossless() {

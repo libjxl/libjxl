@@ -171,6 +171,8 @@ class JxlCodec : public ImageCodec {
           strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param[0] == 'p') {
       cparams_.palette_colors = strtol(param.substr(1).c_str(), nullptr, 10);
+    } else if (param == "lp") {
+      cparams_.lossy_palette = true;
     } else if (param[0] == 'N') {
       cparams_.near_lossless = strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param[0] == 'C') {

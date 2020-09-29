@@ -74,9 +74,13 @@ void TestLosslessGroups(size_t group_size_shift) {
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
 
-TEST(ModularTest, RoundtripLosslessGroups512) { TestLosslessGroups(2); }
+TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups512)) {
+  TestLosslessGroups(2);
+}
 
-TEST(ModularTest, RoundtripLosslessGroups1024) { TestLosslessGroups(3); }
+TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
+  TestLosslessGroups(3);
+}
 
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;

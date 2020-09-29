@@ -51,13 +51,13 @@ void TestImpulseResponse(size_t width, size_t peak) {
   const auto rg5 = CreateRecursiveGaussian(5.0);
 
   // Extra padding for 4x unrolling
-  hwy::AlignedUniquePtr<float[]> in(hwy::AllocateAligned<float>(width + 3));
+  auto in = hwy::AllocateAligned<float>(width + 3);
   memset(in.get(), 0, sizeof(float) * (width + 3));
   in[peak] = 1.0f;
 
-  hwy::AlignedUniquePtr<float[]> out3(hwy::AllocateAligned<float>(width + 3));
-  hwy::AlignedUniquePtr<float[]> out4(hwy::AllocateAligned<float>(width + 3));
-  hwy::AlignedUniquePtr<float[]> out5(hwy::AllocateAligned<float>(width + 3));
+  auto out3 = hwy::AllocateAligned<float>(width + 3);
+  auto out4 = hwy::AllocateAligned<float>(width + 3);
+  auto out5 = hwy::AllocateAligned<float>(width + 3);
   FastGaussian1D(rg3, in.get(), width, out3.get());
   FastGaussian1D(rg4, out3.get(), width, out4.get());
   FastGaussian1D(rg5, in.get(), width, out5.get());

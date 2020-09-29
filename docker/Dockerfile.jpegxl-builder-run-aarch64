@@ -29,6 +29,7 @@ RUN set -ex; \
     curl \
     extra-cmake-modules \
     git \
+    imagemagick \
     libjpeg8 \
     libgif7 \
     libgoogle-perftools4 \

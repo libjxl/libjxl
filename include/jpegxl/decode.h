@@ -45,7 +45,7 @@ JPEGXL_EXPORT uint32_t JpegxlDecoderVersion(void);
 
 /** The result of JpegxlSignatureCheck.
  */
-enum JpegxlSignature {
+typedef enum {
   /** Not enough bytes were passed to determine if a valid signature was found.
    */
   JPEGXL_SIG_NOT_ENOUGH_BYTES = 0,
@@ -60,7 +60,7 @@ enum JpegxlSignature {
    * extensions (marker segments).
    */
   JPEGXL_SIG_VALID = 2,
-};
+} JpegxlSignature;
 
 /**
  * JPEG XL signature identification.
@@ -75,8 +75,8 @@ enum JpegxlSignature {
  *   - JPEGXL_SIG_NOT_ENOUGH_BYTES not enough bytes were passed to determine
  *       if a valid signature is there.
  */
-JPEGXL_EXPORT enum JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf,
-                                                        size_t len);
+JPEGXL_EXPORT JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf,
+                                                   size_t len);
 
 /**
  * Opaque structure that holds the JPEGXL decoder.
@@ -130,11 +130,6 @@ typedef enum {
    */
   JPEGXL_DEC_NEED_MORE_INPUT = 2,
 
-  /** The decoder needs an output buffer to continue. Which output buffers it
-   * needs depends on events subscribed to with JpegxlDecoderSubscribeEvents.
-   */
-  JPEGXL_DEC_NEED_MORE_OUTPUT = 3,
-
   /** Informative event: basic information such as image dimensions and extra
    * channels.
    */
@@ -163,7 +158,7 @@ typedef enum {
 
   /** Informative event: full image decoded.
    */
-  JPEGXL_DEC_FULL_IMAGE = 2048,
+  JPEGXL_DEC_FULL_IMAGE = 4096,
 } JpegxlDecoderStatus;
 
 /** Data type for the sample values per channel per pixel.
@@ -231,6 +226,20 @@ typedef struct {
    */
   JpegxlDataType data_type;
 } JpegxlPixelFormat;
+
+/**
+ * Get the default pixel format for this decoder.
+ *
+ * Requires that the decoder can produce JpegxlBasicInfo.
+ *
+ * @param dec JpegxlDecoder to query when creating the recommended pixel format.
+ * @param format JpegxlPixelFormat to populate with the recommended settings for
+ * the data loaded into this decoder.
+ * @return JPEGXL_DEC_SUCCESS if no error, JPEGXL_DEC_NEED_MORE_INPUT if the
+ * basic info isn't yet available, and JPEGXL_DEC_ERROR otherwise.
+ */
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderDefaultPixelFormat(
+    const JpegxlDecoder* dec, JpegxlPixelFormat* format);
 
 /**
  * Set the parallel runner for multithreading. May only be set before starting
@@ -393,6 +402,20 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetPreviewHeader(
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
     const JpegxlDecoder* dec, JpegxlAnimationHeader* animation_header);
 
+/** Defines which color profile to get: the profile from the codestream
+ * metadata header, which represents the color profile of the original image,
+ * or the color profile from the pixel data received by the decoder. Both are
+ * the same if the basic has uses_original_profile set.
+ */
+typedef enum {
+  /** Get the color profile of the original image from the metadata..
+   */
+  JPEGXL_COLOR_PROFILE_TARGET_ORIGINAL = 0,
+
+  /** Get the color profile of the pixel data the decoder outputs. */
+  JPEGXL_COLOR_PROFILE_TARGET_DATA = 1,
+} JpegxlColorProfileTarget;
+
 /**
  * Outputs the color profile as JPEG XL encoded structured data, if available.
  * This is an alternative to an ICC Profile, which can represent a more limited
@@ -419,10 +442,9 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
  * color space possibly indicated in the JPEG XL image, use
  * JpegxlDecoderGetColorAsEncodedProfile first.
  *
- * TODO(lode): add parameter to choose between getting original color profile
- * or color profile of the decoded pixels.
- *
  * @param dec decoder object
+ * @param target whether to get the original color profile from the metadata
+ *     or the color profile of the decoded pixels.
  * @param color_encoding struct to copy the information into, or NULL to only
  * check whether the information is available through the return value.
  * @return JPEGXL_DEC_SUCCESS if the data is available and returned,
@@ -430,7 +452,8 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetAnimationHeader(
  *    the encuded structured color profile does not exist in the codestream.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorAsEncodedProfile(
-    const JpegxlDecoder* dec, JpegxlColorEncoding* color_encoding);
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target,
+    JpegxlColorEncoding* color_encoding);
 
 /**
  * Outputs the size in bytes of the ICC profile returned by
@@ -442,10 +465,9 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorAsEncodedProfile(
  * or a close approximation generated from JPEG XL encoded structured data,
  * depending of what is encoded in the codestream.
  *
- * TODO(lode): add parameter to choose between getting original color profile
- * or color profile of the decoded pixels.
- *
  * @param dec decoder object
+ * @param target whether to get the original color profile from the metadata
+ *     or the color profile of the decoded pixels.
  * @param size variable to output the size into, or NULL to only check the
  *    return status.
  * @return JPEGXL_DEC_SUCCESS if the ICC profile is available,
@@ -454,18 +476,17 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorAsEncodedProfile(
  *    size is, JPEGXL_DEC_ERROR in case the ICC profile is not available and
  *    cannot be generated.
  */
-JPEGXL_EXPORT JpegxlDecoderStatus
-JpegxlDecoderGetICCProfileSize(const JpegxlDecoder* dec, size_t* size);
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetICCProfileSize(
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target, size_t* size);
 
 /**
  * Outputs ICC profile if available. The profile is only available if
  * JpegxlDecoderGetICCProfileSize returns success. The output buffer must have
  * at least as many bytes as given by JpegxlDecoderGetICCProfileSize.
  *
- * TODO(lode): add parameter to choose between getting original color profile
- * or color profile of the decoded pixels.
- *
  * @param dec decoder object
+ * @param target whether to get the original color profile from the metadata
+ *     or the color profile of the decoded pixels.
  * @param icc_profile buffer to copy the ICC profile into
  * @param size size of the icc_profile buffer in bytes
  * @return JPEGXL_DEC_SUCCESS if the profile was successfully returned is
@@ -474,7 +495,8 @@ JpegxlDecoderGetICCProfileSize(const JpegxlDecoder* dec, size_t* size);
  *    large enough.
  */
 JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderGetColorAsICCProfile(
-    const JpegxlDecoder* dec, uint8_t* icc_profile, size_t size);
+    const JpegxlDecoder* dec, JpegxlColorProfileTarget target,
+    uint8_t* icc_profile, size_t size);
 
 /**
  * Returns the size in bytes the DC image output pixel buffer requires at least

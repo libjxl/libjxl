@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include <hwy/base.h>  // HWY_ALIGN_MAX
+
 #include "jxl/ac_strategy.h"
 #include "jxl/coeff_order.h"
 #include "jxl/common.h"
@@ -142,9 +144,16 @@ struct GroupDecCache {
     }
   }
 
+  // Scratch space used by DecGroupImpl().
+  HWY_ALIGN_MAX float dec_group_block[3 * AcStrategy::kMaxCoeffArea];
+  HWY_ALIGN_MAX float dec_group_local_block[AcStrategy::kMaxCoeffArea];
+
   // AC decoding
   Image3I num_nzeroes[kMaxNumPasses];
 };
+
+static_assert(sizeof(GroupDecCache) % hwy::kMaxVectorSize == 0,
+              "GroupDecCache must be aligned to vector size.");
 
 }  // namespace jxl
 

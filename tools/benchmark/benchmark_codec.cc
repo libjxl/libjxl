@@ -166,8 +166,10 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   ImageCodecPtr result;
   if (name == "jxl") {
     result.reset(CreateNewJxlCodec(*Args()));
+#if !defined(__wasm__)
   } else if (name == "custom") {
     result.reset(CreateNewCustomCodec(*Args()));
+#endif
 #ifdef BENCHMARK_JPEG
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));

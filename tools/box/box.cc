@@ -127,6 +127,13 @@ jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out) {
   return true;
 }
 
+bool IsContainerHeader(const uint8_t* data, size_t size) {
+  const uint8_t box_header[] = {0,   0,   0,   0xc, 'J',  'X',
+                                'L', ' ', 0xd, 0xa, 0x87, 0xa};
+  if (size < sizeof(box_header)) return false;
+  return memcmp(box_header, data, sizeof(box_header)) == 0;
+}
+
 jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
                                          JpegXlContainer* container) {
   const uint8_t* in = data;

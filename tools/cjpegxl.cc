@@ -146,7 +146,8 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
     } break;
   }
 
-  if (args.use_container) {
+  if (args.use_container &&
+      !IsContainerHeader(compressed.data(), compressed.size())) {
     JpegXlContainer container;
     container.codestream = compressed.data();
     container.codestream_size = compressed.size();

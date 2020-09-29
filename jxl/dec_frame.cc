@@ -22,6 +22,8 @@
 #include <utility>
 #include <vector>
 
+#include <hwy/aligned_allocator.h>
+
 #include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
 #include "jxl/ans_params.h"
@@ -100,7 +102,10 @@ class LossyFrameDecoder {
   // parameter passed to DecodeDCGroup and DecodeACGroup must be smaller than
   // the "num_threads" passed here.
   void SetNumThreads(size_t num_threads) {
-    group_dec_caches_.resize(num_threads);
+    if (num_threads > group_dec_caches_size_) {
+      group_dec_caches_size_ = num_threads;
+      group_dec_caches_ = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+    }
     dec_state_.EnsureStorage(num_threads);
   }
 
@@ -240,7 +245,12 @@ class LossyFrameDecoder {
   ThreadPool* pool_;
   AuxOut* aux_out_;
 
-  std::vector<GroupDecCache> group_dec_caches_;
+  // Number of allocated GroupDecCache entries in the group_dec_caches_ smart
+  // pointer. This is only needed to tell whether we need to reallocate the
+  // cache.
+  size_t group_dec_caches_size_ = 0;
+  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches_{
+      nullptr, hwy::AlignedDeleter(nullptr)};
 };
 
 Status DecodeFrameHeader(const AnimationHeader* animation_or_null,

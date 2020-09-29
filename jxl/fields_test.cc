@@ -301,11 +301,13 @@ struct OldBundle : public Fields {
   const char* Name() const override { return "OldBundle"; }
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
-    visitor->U32(Val(1), Bits(2), Bits(3), Bits(4), 1, &old_small);
-    visitor->F16(1.125f, &old_f);
-    visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(1), Bits(2), Bits(3), Bits(4), 1, &old_small));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->F16(1.125f, &old_f));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large));
 
-    visitor->BeginExtensions(&extensions);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     return visitor->EndExtensions();
   }
 
@@ -320,17 +322,21 @@ struct NewBundle : public Fields {
   const char* Name() const override { return "NewBundle"; }
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
-    visitor->U32(Val(1), Bits(2), Bits(3), Bits(4), 1, &old_small);
-    visitor->F16(1.125f, &old_f);
-    visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large);
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Val(1), Bits(2), Bits(3), Bits(4), 1, &old_small));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->F16(1.125f, &old_f));
+    JXL_QUIET_RETURN_IF_ERROR(
+        visitor->U32(Bits(7), Bits(12), Bits(16), Bits(32), 0, &old_large));
 
-    visitor->BeginExtensions(&extensions);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
     if (visitor->Conditional(extensions & 1)) {
-      visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small);
-      visitor->F16(-2.0f, &new_f);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Val(2), Bits(2), Bits(3), Bits(4), 2, &new_small));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->F16(-2.0f, &new_f));
     }
     if (visitor->Conditional(extensions & 2)) {
-      visitor->U32(Bits(9), Bits(12), Bits(16), Bits(32), 0, &new_large);
+      JXL_QUIET_RETURN_IF_ERROR(
+          visitor->U32(Bits(9), Bits(12), Bits(16), Bits(32), 0, &new_large));
     }
     return visitor->EndExtensions();
   }

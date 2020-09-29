@@ -23,8 +23,9 @@
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/byte_order.h"
-#include "jxl/brotli.h"
 #include "jxl/common.h"
+#include "jxl/enc_ans.h"
+#include "jxl/fields.h"
 
 namespace jxl {
 namespace {
@@ -285,8 +286,6 @@ bool PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
   if (width > 1) Unshuffle(result->data() + start, num, width);
   return true;
 }
-
-const int kBrotliEffort = 9;
 
 }  // namespace
 
@@ -808,35 +807,90 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   return true;
 }
 
+static constexpr size_t kNumICCContexts = 41;
+
+static uint8_t ByteKind1(uint8_t b) {
+  if ('a' <= b && b <= 'z') return 0;
+  if ('A' <= b && b <= 'Z') return 0;
+  if ('0' <= b && b <= '9') return 1;
+  if (b == '.' || b == ',') return 1;
+  if (b == 0) return 2;
+  if (b == 1) return 3;
+  if (b < 16) return 4;
+  if (b == 255) return 6;
+  if (b > 240) return 5;
+  return 7;
+}
+
+static uint8_t ByteKind2(uint8_t b) {
+  if ('a' <= b && b <= 'z') return 0;
+  if ('A' <= b && b <= 'Z') return 0;
+  if ('0' <= b && b <= '9') return 1;
+  if (b == '.' || b == ',') return 1;
+  if (b < 16) return 2;
+  if (b > 240) return 3;
+  return 4;
+}
+
+size_t Context(size_t i, size_t b1, size_t b2) {
+  if (i <= 128) return 0;
+  return 1 + ByteKind1(b1) + ByteKind2(b2) * 8;
+}
+
 Status WriteICC(const PaddedBytes& icc, BitWriter* JXL_RESTRICT writer,
                 size_t layer, AuxOut* JXL_RESTRICT aux_out) {
   if (icc.empty()) return JXL_FAILURE("ICC must be non-empty");
   PaddedBytes enc;
   JXL_RETURN_IF_ERROR(PredictICC(icc.data(), icc.size(), &enc));
-  PaddedBytes compressed;
-  JXL_RETURN_IF_ERROR(BrotliCompress(kBrotliEffort, enc, &compressed));
-  // Extra byte for padding so Brotli can call BitReader::GetSpan.
-  const size_t max_bits = kBitsPerByte + compressed.size() * kBitsPerByte;
-  BitWriter::Allotment allotment(writer, max_bits);
-  writer->ZeroPadToByte();
-  *writer += compressed;
+  std::vector<std::vector<Token>> tokens(1);
+  BitWriter::Allotment allotment(writer, 128);
+  JXL_RETURN_IF_ERROR(U64Coder::Write(enc.size(), writer));
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
+
+  for (size_t i = 0; i < enc.size(); i++) {
+    tokens[0].emplace_back(
+        Context(i, i > 0 ? enc[i - 1] : 0, i > 1 ? enc[i - 2] : 0), enc[i]);
+  }
+  HistogramParams params;
+  params.lz77_method = HistogramParams::LZ77Method::kOptimal;
+  EntropyEncodingData code;
+  std::vector<uint8_t> context_map;
+  params.force_huffman = true;
+  BuildAndEncodeHistograms(params, kNumICCContexts, tokens, &code, &context_map,
+                           writer, layer, aux_out);
+  WriteTokens(tokens[0], code, context_map, writer, layer, aux_out);
   return true;
 }
 
 Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc) {
   icc->clear();
-  JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   if (!reader->AllReadsWithinBounds()) {
     return JXL_FAILURE(
         "Read more bits than available before reading ICC profile");
   }
-  const size_t kMaxOutput = 1ULL << 30;
-  size_t bytes_read = 0;
-  PaddedBytes decompressed;
-  JXL_RETURN_IF_ERROR(BrotliDecompress(reader->GetSpan(), kMaxOutput,
-                                       &bytes_read, &decompressed));
-  reader->SkipBits(bytes_read * kBitsPerByte);
+  uint64_t enc_size = U64Coder::Read(reader);
+  if (enc_size > 268435456) {
+    // Avoid too large memory allocation for invalid file.
+    // TODO(lode): a more accurate limit would be the filesize of the JXL file,
+    // if we can have it available here.
+    return JXL_FAILURE("Too large encoded profile");
+  }
+  PaddedBytes decompressed(enc_size);
+  std::vector<uint8_t> context_map;
+  ANSCode code;
+  JXL_RETURN_IF_ERROR(
+      DecodeHistograms(reader, kNumICCContexts, &code, &context_map));
+  ANSSymbolReader ans_reader(&code, reader);
+  for (size_t i = 0; i < decompressed.size(); i++) {
+    decompressed[i] =
+        ans_reader.ReadHybridUint(Context(i, i > 0 ? decompressed[i - 1] : 0,
+                                          i > 1 ? decompressed[i - 2] : 0),
+                                  reader, context_map);
+  }
+  if (!ans_reader.CheckANSFinalState()) {
+    return JXL_FAILURE("Corrupted ICC profile");
+  }
+
   JXL_RETURN_IF_ERROR(
       UnpredictICC(decompressed.data(), decompressed.size(), icc));
   return true;

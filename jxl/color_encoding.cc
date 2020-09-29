@@ -524,12 +524,14 @@ Status ParseDescription(const std::string& description,
 Customxy::Customxy() { Bundle::Init(this); }
 Status Customxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
   uint32_t ux = PackSigned(x);
-  visitor->U32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
-               BitsOffset(21, 2097152), 0, &ux);
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(19), BitsOffset(19, 524288),
+                                         BitsOffset(20, 1048576),
+                                         BitsOffset(21, 2097152), 0, &ux));
   x = UnpackSigned(ux);
   uint32_t uy = PackSigned(y);
-  visitor->U32(Bits(19), BitsOffset(19, 524288), BitsOffset(20, 1048576),
-               BitsOffset(21, 2097152), 0, &uy);
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Bits(19), BitsOffset(19, 524288),
+                                         BitsOffset(20, 1048576),
+                                         BitsOffset(21, 2097152), 0, &uy));
   y = UnpackSigned(uy);
   return true;
 }
@@ -537,17 +539,17 @@ Status Customxy::VisitFields(Visitor* JXL_RESTRICT visitor) {
 CustomTransferFunction::CustomTransferFunction() { Bundle::Init(this); }
 Status CustomTransferFunction::VisitFields(Visitor* JXL_RESTRICT visitor) {
   if (visitor->Conditional(!SetImplicit())) {
-    visitor->Bool(false, &have_gamma_);
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_gamma_));
 
     if (visitor->Conditional(have_gamma_)) {
-      visitor->Bits(24, kGammaMul, &gamma_);
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(24, kGammaMul, &gamma_));
       if (gamma_ > kGammaMul) {
         return JXL_FAILURE("Invalid gamma %u", gamma_);
       }
     }
 
     if (visitor->Conditional(!have_gamma_)) {
-      JXL_RETURN_IF_ERROR(
+      JXL_QUIET_RETURN_IF_ERROR(
           visitor->Enum(TransferFunction::kSRGB, &transfer_function_));
     }
   }
@@ -563,35 +565,35 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
     return true;
   }
 
-  visitor->Bool(false, &want_icc_);
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &want_icc_));
 
   // Always send even if want_icc_ because this affects decoding.
   // We can skip the white point/primaries because they do not.
-  JXL_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(ColorSpace::kRGB, &color_space_));
 
   if (visitor->Conditional(!WantICC())) {
     // Serialize enums. NOTE: we set the defaults to the most common values so
     // ImageMetadata.all_default is true in the common case.
 
     if (visitor->Conditional(!ImplicitWhitePoint())) {
-      JXL_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(WhitePoint::kD65, &white_point));
       if (visitor->Conditional(white_point == WhitePoint::kCustom)) {
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&white_));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&white_));
       }
     }
 
     if (visitor->Conditional(HasPrimaries())) {
-      JXL_RETURN_IF_ERROR(visitor->Enum(Primaries::kSRGB, &primaries));
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Enum(Primaries::kSRGB, &primaries));
       if (visitor->Conditional(primaries == Primaries::kCustom)) {
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&red_));
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&green_));
-        JXL_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&red_));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&green_));
+        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&blue_));
       }
     }
 
-    JXL_RETURN_IF_ERROR(visitor->VisitNested(&tf));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tf));
 
-    JXL_RETURN_IF_ERROR(
+    JXL_QUIET_RETURN_IF_ERROR(
         visitor->Enum(RenderingIntent::kRelative, &rendering_intent));
 
     // We didn't have ICC, so all fields should be known.

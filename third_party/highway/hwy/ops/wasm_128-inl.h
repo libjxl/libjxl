@@ -573,62 +573,49 @@ template <size_t N>
 HWY_API Vec128<uint16_t, N> MulHigh(const Vec128<uint16_t, N> a,
                                     const Vec128<uint16_t, N> b) {
   // TODO(eustas): replace, when implemented in WASM.
-  alignas(16) uint16_t a_lanes[8];
-  alignas(16) uint16_t b_lanes[8];
-  alignas(16) uint16_t c_lanes[8];
-  wasm_v128_store(a_lanes, a.raw);
-  wasm_v128_store(b_lanes, b.raw);
-  for (size_t i = 0; i < 8; ++i) {
-    uint32_t ab = static_cast<uint32_t>(a_lanes[i]) * b_lanes[i];
-    c_lanes[i] = static_cast<uint16_t>(ab >> 16);
-  }
-  return Vec128<uint16_t, N>{wasm_v128_load(c_lanes)};
+  const auto al = wasm_i32x4_widen_low_u16x8(a.raw);
+  const auto ah = wasm_i32x4_widen_high_u16x8(a.raw);
+  const auto bl = wasm_i32x4_widen_low_u16x8(b.raw);
+  const auto bh = wasm_i32x4_widen_high_u16x8(b.raw);
+  const auto l = wasm_i32x4_mul(al, bl);
+  const auto h = wasm_i32x4_mul(ah, bh);
+  // TODO(eustas): shift-right + narrow?
+  return Vec128<uint16_t, N>{
+      wasm_v16x8_shuffle(l, h, 1, 3, 5, 7, 9, 11, 13, 15)};
 }
 template <size_t N>
 HWY_API Vec128<int16_t, N> MulHigh(const Vec128<int16_t, N> a,
                                    const Vec128<int16_t, N> b) {
   // TODO(eustas): replace, when implemented in WASM.
-  alignas(16) int16_t a_lanes[8];
-  alignas(16) int16_t b_lanes[8];
-  alignas(16) int16_t c_lanes[8];
-  wasm_v128_store(a_lanes, a.raw);
-  wasm_v128_store(b_lanes, b.raw);
-  for (size_t i = 0; i < 8; ++i) {
-    int32_t ab = static_cast<int32_t>(a_lanes[i]) * b_lanes[i];
-    c_lanes[i] = static_cast<int16_t>(ab >> 16);
-  }
-  return Vec128<int16_t, N>{wasm_v128_load(c_lanes)};
+  const auto al = wasm_i32x4_widen_low_i16x8(a.raw);
+  const auto ah = wasm_i32x4_widen_high_i16x8(a.raw);
+  const auto bl = wasm_i32x4_widen_low_i16x8(b.raw);
+  const auto bh = wasm_i32x4_widen_high_i16x8(b.raw);
+  const auto l = wasm_i32x4_mul(al, bl);
+  const auto h = wasm_i32x4_mul(ah, bh);
+  // TODO(eustas): shift-right + narrow?
+  return Vec128<int16_t, N>{
+      wasm_v16x8_shuffle(l, h, 1, 3, 5, 7, 9, 11, 13, 15)};
 }
 
-// Multiplies even lanes (0, 2 ..) and places the double-wide result into
-// even and the upper half into its odd neighbor lane.
+// Multiplies even lanes (0, 2 ..) and returns the double-width result.
 template <size_t N>
 HWY_API Vec128<int64_t, (N + 1) / 2> MulEven(const Vec128<int32_t, N> a,
                                              const Vec128<int32_t, N> b) {
   // TODO(eustas): replace, when implemented in WASM.
-  alignas(16) int32_t a_lanes[4];
-  alignas(16) int32_t b_lanes[4];
-  alignas(16) int64_t c_lanes[2];
-  wasm_v128_store(a_lanes, a.raw);
-  wasm_v128_store(b_lanes, b.raw);
-  for (size_t i = 0; i < 2; ++i) {
-    c_lanes[i] = static_cast<int64_t>(a_lanes[2 * i]) * b_lanes[2 * i];
-  }
-  return Vec128<int64_t, (N + 1) / 2>{wasm_v128_load(c_lanes)};
+  const auto kEvenMask = wasm_i32x4_make(0xFFFFFFFF, 0, 0xFFFFFFFF, 0);
+  const auto ae = wasm_v128_and(a.raw, kEvenMask);
+  const auto be = wasm_v128_and(b.raw, kEvenMask);
+  return Vec128<int64_t, (N + 1) / 2>{wasm_i64x2_mul(ae, be)};
 }
 template <size_t N>
 HWY_API Vec128<uint64_t, (N + 1) / 2> MulEven(const Vec128<uint32_t, N> a,
                                               const Vec128<uint32_t, N> b) {
   // TODO(eustas): replace, when implemented in WASM.
-  alignas(16) uint32_t a_lanes[4];
-  alignas(16) uint32_t b_lanes[4];
-  alignas(16) uint64_t c_lanes[2];
-  wasm_v128_store(a_lanes, a.raw);
-  wasm_v128_store(b_lanes, b.raw);
-  for (size_t i = 0; i < 2; ++i) {
-    c_lanes[i] = static_cast<uint64_t>(a_lanes[2 * i]) * b_lanes[2 * i];
-  }
-  return Vec128<uint64_t, (N + 1) / 2>{wasm_v128_load(c_lanes)};
+  const auto kEvenMask = wasm_i32x4_make(0xFFFFFFFF, 0, 0xFFFFFFFF, 0);
+  const auto ae = wasm_v128_and(a.raw, kEvenMask);
+  const auto be = wasm_v128_and(b.raw, kEvenMask);
+  return Vec128<uint64_t, (N + 1) / 2>{wasm_i64x2_mul(ae, be)};
 }
 
 // ------------------------------ Floating-point negate
@@ -730,19 +717,7 @@ HWY_API Vec128<float, N> ApproximateReciprocalSqrt(const Vec128<float, N> v) {
 // Toward nearest integer, ties to even
 template <size_t N>
 HWY_API Vec128<float, N> Round(const Vec128<float, N> v) {
-  // TODO(eustas): workaround does not work - wasm_i32x4_trunc_saturate_f32x4
-  //               limits feasible input to +-2^31.
-  // TODO(eustas): how to do "ties to even"?
-  // TODO(eustas): 8 ops; isn't it cheaper to store/convert/load?
-  // const __f32x4 c00 = wasm_f32x4_splat(0.0f);
-  // const __f32x4 corr = wasm_f32x4_convert_i32x4(wasm_f32x4_le(v.raw, c00));
-  // const __f32x4 c05 = wasm_f32x4_splat(0.5f);
-  // +0.5 for non-negative lane, -0.5 for other.
-  // const __f32x4 delta = wasm_f32x4_add(c05, corr);
-  // Shift input by 0.5 away from 0.
-  // const __f32x4 fixed = wasm_f32x4_add(v.raw, delta);
-  // const __i32x4 result = wasm_i32x4_trunc_saturate_f32x4(fixed);
-  // return Vec128<float, N>{wasm_f32x4_convert_i32x4(result)};
+  // TODO(eustas): is it f32x4.nearest? (not implemented yet)
   alignas(16) float input[4];
   alignas(16) float output[4];
   wasm_v128_store(input, v.raw);
@@ -755,9 +730,7 @@ HWY_API Vec128<float, N> Round(const Vec128<float, N> v) {
 // Toward zero, aka truncate
 template <size_t N>
 HWY_API Vec128<float, N> Trunc(const Vec128<float, N> v) {
-  // TODO(eustas): impossible
-  // const __i32x4 result = wasm_i32x4_trunc_saturate_f32x4(v.raw);
-  // return Vec128<float, N>{wasm_f32x4_convert_i32x4(result)};
+  // TODO(eustas): is it f32x4.trunc? (not implemented yet)
   alignas(16) float input[4];
   alignas(16) float output[4];
   wasm_v128_store(input, v.raw);
@@ -770,13 +743,7 @@ HWY_API Vec128<float, N> Trunc(const Vec128<float, N> v) {
 // Toward +infinity, aka ceiling
 template <size_t N>
 HWY_API Vec128<float, N> Ceil(const Vec128<float, N> v) {
-  // TODO(eustas): impossible
-  // const __i32x4 truncated = wasm_i32x4_trunc_saturate_f32x4(v.raw);
-  // const __f32x4 draft = wasm_f32x4_convert_i32x4(truncated);
-  // -1 for positive with fractional part, 0 for negative and integer.
-  // const __i32x4 delta = wasm_f32x4_gt(v.raw, draft);
-  // const __f32x4 corr = wasm_f32x4_convert_i32x4(delta);
-  // return Vec128<float, N>{wasm_f32x4_sub(draft, corr)};
+  // TODO(eustas): is it f32x4.ceil? (not implemented yet)
   alignas(16) float input[4];
   alignas(16) float output[4];
   wasm_v128_store(input, v.raw);
@@ -789,13 +756,7 @@ HWY_API Vec128<float, N> Ceil(const Vec128<float, N> v) {
 // Toward -infinity, aka floor
 template <size_t N>
 HWY_API Vec128<float, N> Floor(const Vec128<float, N> v) {
-  // TODO(eustas): impossible
-  // const __i32x4 truncated = wasm_i32x4_trunc_saturate_f32x4(v.raw);
-  // const __f32x4 draft = wasm_f32x4_convert_i32x4(truncated);
-  // -1 for negative with fractional part, 0 for positive and integer.
-  // const __i32x4 delta = wasm_f32x4_lt(v.raw, draft);
-  // const __f32x4 corr = wasm_f32x4_convert_i32x4(delta);
-  // return Vec128<float, N>{wasm_f32x4_add(draft, corr)};
+  // TODO(eustas): is it f32x4.floor? (not implemented yet)
   alignas(16) float input[4];
   alignas(16) float output[4];
   wasm_v128_store(input, v.raw);
@@ -932,7 +893,7 @@ HWY_API Vec128<T, N> And(Vec128<T, N> a, Vec128<T, N> b) {
 // Returns ~not_mask & mask.
 template <typename T, size_t N>
 HWY_API Vec128<T, N> AndNot(Vec128<T, N> not_mask, Vec128<T, N> mask) {
-  return Vec128<T, N>{wasm_v128_and(wasm_v128_not(not_mask.raw), mask.raw)};
+  return Vec128<T, N>{wasm_v128_andnot(mask.raw, not_mask.raw)};
 }
 
 // ------------------------------ Bitwise OR
@@ -1958,13 +1919,13 @@ HWY_API size_t CountTrue(const Mask128<float> v) {
 // TODO(eustas): optimize
 // Returns 64-bit sums of 8-byte groups.
 HWY_API Vec128<uint64_t> SumsOfU8x8(const Vec128<uint8_t> v) {
-  alignas(16) uint8_t lanes[16];
-  wasm_v128_store(lanes, v.raw);
-  uint32_t sums[2] = {0};
-  for (size_t i = 0; i < 16; ++i) {
-    sums[i / 8] += lanes[i];
-  }
-  return Vec128<uint64_t>{wasm_i32x4_make(sums[0], 0, sums[1], 0)};
+  const auto kMask = wasm_i16x8_splat(0xFF);
+  const auto kMix = wasm_i16x8_splat(1);
+  const auto l = wasm_v128_and(v.raw, kMask);
+  const auto h = wasm_u16x8_shr(v.raw, 8);
+  const auto s16 = wasm_i16x8_add(h, l);
+  const auto s64 = wasm_i64x2_mul(s16, kMix);
+  return Vec128<uint64_t>{wasm_u64x2_shr(s64, 48)};
 }
 
 namespace {

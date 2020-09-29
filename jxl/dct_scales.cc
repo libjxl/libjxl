@@ -29,5 +29,10 @@ constexpr float DCTResampleScales<16, 2>::kScales[];
 constexpr float DCTResampleScales<16, 4>::kScales[];
 constexpr float DCTResampleScales<32, 4>::kScales[];
 constexpr float DCTResampleScales<32, 8>::kScales[];
+constexpr float WcMultipliers<4>::kMultipliers[];
+constexpr float WcMultipliers<8>::kMultipliers[];
+constexpr float WcMultipliers<16>::kMultipliers[];
+constexpr float WcMultipliers<32>::kMultipliers[];
+constexpr float WcMultipliers<64>::kMultipliers[];
 
 }  // namespace jxl

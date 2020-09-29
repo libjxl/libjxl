@@ -45,9 +45,6 @@ using hwy::HWY_NAMESPACE::Vec;
 template <size_t N>
 using BlockDesc = HWY_CAPPED(float, N);
 
-template <size_t N>
-struct DCTSizeTag {};
-
 // Here and in the following, the SZ template parameter specifies the number of
 // values to load/store. Needed because we want to handle 4x4 sub-blocks of
 // 16x16 blocks.

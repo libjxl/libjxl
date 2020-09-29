@@ -208,6 +208,17 @@ JXL_NORETURN bool Abort();
     }                                                                         \
   } while (0)
 
+// As above, but without calling StatusMessage. Intended for bundles (see
+// fields.h), which have numerous call sites (-> relevant for code size) and do
+// not want to generate excessive messages when decoding partial headers.
+#define JXL_QUIET_RETURN_IF_ERROR(status)                \
+  do {                                                   \
+    ::jxl::Status jxl_return_if_error_status = (status); \
+    if (!jxl_return_if_error_status) {                   \
+      return jxl_return_if_error_status;                 \
+    }                                                    \
+  } while (0)
+
 enum class StatusCode : int32_t {
   // Non-fatal errors (negative values).
   kNotEnoughBytes = -1,

@@ -32,7 +32,6 @@ namespace hwy {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
-using hwy::HWY_NAMESPACE::Broadcast;
 #if HWY_TARGET != HWY_SCALAR
 using hwy::HWY_NAMESPACE::CombineShiftRightBytes;
 #endif
@@ -51,7 +50,7 @@ class TwoArray {
   }
 
  protected:
-  AlignedUniquePtr<float[]> a_;
+  AlignedFreeUniquePtr<float[]> a_;
   float* b_;
 };
 

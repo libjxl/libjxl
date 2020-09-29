@@ -28,7 +28,6 @@
 #include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
 #include "jxl/ans_params.h"
-#include "jxl/ar_control_field.h"
 #include "jxl/aux_out.h"
 #include "jxl/aux_out_fwd.h"
 #include "jxl/base/bits.h"
@@ -46,8 +45,6 @@
 #include "jxl/common.h"
 #include "jxl/compressed_dc.h"
 #include "jxl/dct_util.h"
-#include "jxl/dot_dictionary.h"
-#include "jxl/enc_ac_strategy.h"
 #include "jxl/enc_adaptive_quantization.h"
 #include "jxl/enc_ans.h"
 #include "jxl/enc_bit_writer.h"
@@ -210,118 +207,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
   }
 }
 
-void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
-  if (enc_state.cparams.speed_tier == SpeedTier::kFalcon) {
-    return;
-  }
-  const ImageI& rqf = enc_state.shared.raw_quant_field;
-  // No need to change context modeling for small images.
-  size_t tot = rqf.xsize() * rqf.ysize();
-  size_t size_for_ctx_model =
-      (1 << 10) * enc_state.cparams.butteraugli_distance;
-  if (tot < size_for_ctx_model) return;
-
-  struct OccCounters {
-    // count the occurrences of each qf value and each strategy type.
-    OccCounters(const ImageI& rqf, const AcStrategyImage& ac_strategy) {
-      for (size_t y = 0; y < rqf.ysize(); y++) {
-        const int32_t* qf_row = rqf.Row(y);
-        AcStrategyRow acs_row = ac_strategy.ConstRow(y);
-        for (size_t x = 0; x < rqf.xsize(); x++) {
-          int ord = kStrategyOrder[acs_row[x].RawStrategy()];
-          int qf = qf_row[x] - 1;
-          qf_counts[qf]++;
-          qf_ord_counts[ord][qf]++;
-          ord_counts[ord]++;
-        }
-      }
-    }
-
-    size_t qf_counts[256] = {};
-    size_t qf_ord_counts[7][256] = {};
-    size_t ord_counts[7] = {};
-  };
-  // The OccCounters struct is too big to allocate on the stack.
-  std::unique_ptr<OccCounters> counters(
-      new OccCounters(rqf, enc_state.shared.ac_strategy));
-
-  // Splitting the context model according to the quantization field seems to
-  // mostly benefit only large images.
-  size_t size_for_qf_split = (1 << 13) * enc_state.cparams.butteraugli_distance;
-  size_t num_qf_segments = tot < size_for_qf_split ? 1 : 2;
-  std::vector<int>& qft = enc_state.shared.block_ctx_map.qf_thresholds;
-  qft.clear();
-  // Divide the quant field in up to num_qf_segments segments.
-  size_t cumsum = 0;
-  size_t next = 1;
-  size_t last_cut = 256;
-  size_t cut = tot * next / num_qf_segments;
-  for (size_t j = 0; j < 256; j++) {
-    cumsum += counters->qf_counts[j];
-    if (cumsum > cut) {
-      qft.push_back(j);
-      last_cut = j;
-      while (cumsum > cut) {
-        next++;
-        cut = tot * next / num_qf_segments;
-      }
-    } else if (next > qft.size() + 1) {
-      if (j - 1 == last_cut) {
-        qft.push_back(j);
-      }
-    }
-  }
-
-  // Count the occurrences of each segment.
-  std::vector<size_t> counts(7 * (qft.size() + 1));
-  size_t qft_pos = 0;
-  for (size_t j = 0; j < 256; j++) {
-    if (qft_pos < qft.size() && j == qft[qft_pos]) {
-      qft_pos++;
-    }
-    for (size_t i = 0; i < 7; i++) {
-      counts[qft_pos + i * (qft.size() + 1)] += counters->qf_ord_counts[i][j];
-    }
-  }
-
-  // Repeatedly merge the lowest-count pair.
-  std::vector<uint8_t> remap((qft.size() + 1) * 7);
-  std::iota(remap.begin(), remap.end(), 0);
-  std::vector<uint8_t> clusters(remap);
-  // This is O(n^2 log n), but n <= 14.
-  while (clusters.size() > 5) {
-    std::sort(clusters.begin(), clusters.end(),
-              [&](int a, int b) { return counts[a] > counts[b]; });
-    counts[clusters[clusters.size() - 2]] += counts[clusters.back()];
-    counts[clusters.back()] = 0;
-    remap[clusters.back()] = clusters[clusters.size() - 2];
-    clusters.pop_back();
-  }
-  for (size_t i = 0; i < remap.size(); i++) {
-    while (remap[remap[i]] != remap[i]) {
-      remap[i] = remap[remap[i]];
-    }
-  }
-  // Relabel starting from 0.
-  std::vector<uint8_t> remap_remap(remap.size(), remap.size());
-  size_t num = 0;
-  for (size_t i = 0; i < remap.size(); i++) {
-    if (remap_remap[remap[i]] == remap.size()) {
-      remap_remap[remap[i]] = num++;
-    }
-    remap[i] = remap_remap[remap[i]];
-  }
-  // Write the block context map.
-  auto& ctx_map = enc_state.shared.block_ctx_map.ctx_map;
-  ctx_map = remap;
-  ctx_map.resize(remap.size() * 3);
-  for (size_t i = remap.size(); i < remap.size() * 3; i++) {
-    ctx_map[i] = remap[i % remap.size()] + num;
-  }
-  enc_state.shared.block_ctx_map.num_ctxs =
-      *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
-}
-
 uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
   uint64_t flags = 0;
 
@@ -354,71 +239,13 @@ Status LoopFilterFromParams(const CompressParams& cparams,
   return true;
 }
 
-// Returns the target size based on whether bitrate or direct targetsize is
-// given.
-size_t TargetSize(const CompressParams& cparams,
-                  const FrameDimensions& frame_dim) {
-  if (cparams.target_size > 0) {
-    return cparams.target_size;
-  }
-  if (cparams.target_bitrate > 0.0) {
-    return 0.5 + cparams.target_bitrate * frame_dim.xsize * frame_dim.ysize /
-                     kBitsPerByte;
-  }
-  return 0;
-}
-
-// Also modifies the block, e.g. by removing patches.
-Status JxlLossyFrameHeuristics(PassesEncoderState* enc_state,
-                               const ImageBundle* linear, Image3F* opsin,
-                               ThreadPool* pool, AuxOut* aux_out,
-                               ModularFrameEncoder* modular_frame_encoder) {
-  CompressParams& cparams = enc_state->cparams;
-  const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
-  size_t target_size = TargetSize(cparams, frame_dim);
-  size_t opsin_target_size = target_size;
-  if (cparams.target_size > 0 || cparams.target_bitrate > 0.0) {
-    cparams.target_size = opsin_target_size;
-  } else if (cparams.butteraugli_distance < 0) {
-    return JXL_FAILURE("Expected non-negative distance");
-  }
-
-  PROFILER_ZONE("JxlLossyFrameHeuristics uninstrumented");
-
-  FindBestDequantMatrices(cparams, *opsin, &enc_state->shared.matrices,
-                          modular_frame_encoder);
-
-  // Non-default cmap is on only for Hare or slower.
-  if (cparams.speed_tier <= SpeedTier::kHare) {
-    FindBestColorCorrelationMap(
-        *opsin, enc_state->shared.matrices,
-        /*ac_strategy=*/nullptr, /*raw_quant_field=*/nullptr,
-        /*quantizer=*/nullptr, pool, &enc_state->shared.cmap);
-  }
-
-  FindBestAcStrategy(*opsin, enc_state, pool, aux_out);
-
-  FindBestArControlField(*opsin, enc_state, pool);
-
-  FindBestQuantizer(linear, *opsin, enc_state, pool, aux_out);
-
-  // Cmap is updated for different block sizes only for Wombat or slower.
-  if (cparams.speed_tier <= SpeedTier::kWombat) {
-    FindBestColorCorrelationMap(
-        *opsin, enc_state->shared.matrices, &enc_state->shared.ac_strategy,
-        &enc_state->shared.raw_quant_field, &enc_state->shared.quantizer, pool,
-        &enc_state->shared.cmap);
-  }
-  FindBestBlockEntropyModel(*enc_state);
-  return true;
-}
-
 Status MakeFrameHeader(const CompressParams& cparams,
                        const AnimationFrame* animation_frame_or_null,
                        const ImageBundle& ib, Multiframe* multiframe,
                        FrameHeader* JXL_RESTRICT frame_header,
                        LoopFilter* JXL_RESTRICT loop_filter) {
-  frame_header->nonserialized_xyb_image = (cparams.color_transform == ColorTransform::kXYB);
+  frame_header->nonserialized_xyb_image =
+      (cparams.color_transform == ColorTransform::kXYB);
   frame_header->has_animation = animation_frame_or_null != nullptr;
   if (frame_header->has_animation) {
     frame_header->animation_frame = *animation_frame_or_null;
@@ -500,7 +327,7 @@ class LossyFrameEncoder {
     PassesSharedState& shared = enc_state_->shared;
 
     if (!enc_state_->cparams.max_error_mode) {
-      float x_qm_scale_steps[3] = { 0.65f, 1.25f, 9.0f };
+      float x_qm_scale_steps[3] = {0.65f, 1.25f, 9.0f};
       shared.frame_header.x_qm_scale = 0;
       for (float x_qm_scale_step : x_qm_scale_steps) {
         if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
@@ -509,72 +336,8 @@ class LossyFrameEncoder {
       }
     }
 
-    if (enc_state_->cparams.speed_tier != SpeedTier::kFalcon) {
-      // Call InitialQuantField only in Hare mode or slower. Otherwise, rely
-      // on simple heuristics in FindBestAcStrategy.
-      if (enc_state_->cparams.speed_tier > SpeedTier::kHare) {
-        enc_state_->initial_quant_field = ImageF(shared.frame_dim.xsize_blocks,
-                                                 shared.frame_dim.ysize_blocks);
-      } else {
-        // Call this here, as it relies on pre-gaborish values.
-        // TODO(veluca): adjust to post-gaborish values.
-        // TODO(veluca): call after image features.
-        enc_state_->initial_quant_field =
-            InitialQuantField(enc_state_->cparams.butteraugli_distance, *opsin,
-                              shared.frame_dim, pool, 1.0f);
-      }
-    }
-
-    if (shared.frame_header.flags & FrameHeader::kNoise) {
-      PROFILER_ZONE("enc GetNoiseParam");
-      // Don't start at zero amplitude since adding noise is expensive -- it
-      // significantly slows down decoding, and this is unlikely to
-      // completely go away even with advanced optimizations. After the
-      // kNoiseModelingRampUpDistanceRange we have reached the full level,
-      // i.e. noise is no longer represented by the compressed image, so we
-      // can add full noise by the noise modeling itself.
-      static const float kNoiseModelingRampUpDistanceRange = 0.6;
-      static const float kNoiseLevelAtStartOfRampUp = 0.25;
-      static const float kNoiseRampupStart = 1.0;
-      // TODO(user) test and properly select quality_coef with smooth
-      // filter
-      float quality_coef = 1.0f;
-      const float rampup =
-          (enc_state_->cparams.butteraugli_distance - kNoiseRampupStart) /
-          kNoiseModelingRampUpDistanceRange;
-      if (rampup < 1.0f) {
-        quality_coef = kNoiseLevelAtStartOfRampUp +
-                       (1.0f - kNoiseLevelAtStartOfRampUp) * rampup;
-      }
-      if (rampup < 0.0f) {
-        quality_coef = kNoiseRampupStart;
-      }
-      if (!GetNoiseParameter(*opsin, &shared.image_features.noise_params,
-                             quality_coef)) {
-        shared.frame_header.flags &= ~FrameHeader::kNoise;
-      }
-    }
-
-    shared.multiframe->DecorrelateOpsin(opsin);
-
-    if (enc_state_->cparams.speed_tier <= SpeedTier::kSquirrel) {
-      shared.image_features.splines = FindSplines(*opsin);
-      JXL_RETURN_IF_ERROR(shared.image_features.splines.SubtractFrom(
-          opsin, enc_state_->shared.cmap));
-    }
-
-    if (ApplyOverride(enc_state_->cparams.patches,
-                      enc_state_->cparams.speed_tier <= SpeedTier::kSquirrel)) {
-      FindBestPatchDictionary(*opsin, enc_state_, pool, aux_out_);
-      enc_state_->shared.image_features.patches.SubtractFrom(opsin);
-    }
-
-    if (shared.image_features.loop_filter.gab) {
-      *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
-    }
-
-    JXL_RETURN_IF_ERROR(JxlLossyFrameHeuristics(
-        enc_state_, linear, opsin, pool_, aux_out_, modular_frame_encoder));
+    JXL_RETURN_IF_ERROR(enc_state_->heuristics->LossyFrameHeuristics(
+        enc_state_, linear, opsin, pool_, aux_out_));
 
     InitializePassesEncoder(*opsin, pool_, enc_state_, modular_frame_encoder,
                             aux_out_);
@@ -708,7 +471,7 @@ class LossyFrameEncoder {
                                  1.0f / dcquantization[2]};
 
     qe[AcStrategy::Type::DCT] = QuantEncoding::RAW(qt);
-    shared.matrices.SetCustom(qe, modular_frame_encoder);
+    shared.matrices.SetCustom(qe);
     // Ensure that InvGlobalScale() is 1.
     shared.quantizer = Quantizer(&shared.matrices, 1, kGlobalScaleDenom);
     // Recompute MulDC() and InvMulDC().
@@ -1204,6 +967,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       multiframe, pool, resize_aux_outs, aux_out, &aux_outs);
   ModularFrameEncoder modular_frame_encoder(frame_dim, frame_header, cparams);
 
+  // Used by SetCustom.
+  passes_enc_state->shared.matrices.SetModularFrameEncoder(
+      &modular_frame_encoder);
+
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
         *ib.jpeg_data, &modular_frame_encoder, &frame_header));
@@ -1244,7 +1011,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.
   JXL_RETURN_IF_ERROR(modular_frame_encoder.ComputeEncodingData(
       frame_header, ib, &opsin, lossy_frame_encoder.State(), pool, aux_out,
-      /* encode_color= */ frame_header.encoding == FrameEncoding::kModular));
+      /* do_color=*/frame_header.encoding == FrameEncoding::kModular));
 
   writer->AppendByteAligned(lossy_frame_encoder.State()->special_frames);
   frame_header.UpdateFlag(

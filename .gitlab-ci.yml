@@ -30,7 +30,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:f0f9ff386a2c8473785ac83427454d0cca9d7d9142b1bddec8afe4d718ba8685
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:f7aa050c4374a4fa78928ba6d38030f439e5fbd7dadfa67b26c718e1aa347d84
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -105,9 +105,12 @@ build:x86_64:clang:release:
     - schedules
     - tags
   script:
-    - SKIP_TEST=1 PACK_TEST=1 ./ci.sh release -DCMAKE_INSTALL_PREFIX=`pwd`/prefix
+    - SKIP_TEST=1 PACK_TEST=1 STACK_SIZE=1
+      ./ci.sh release -DCMAKE_INSTALL_PREFIX=`pwd`/prefix
     # Test that the package can be installed.
     - ninja -C build install
+    - tools/build_stats.py --save build/stats.json
+        cjpegxl djpegxl libjpegxl.so.0.0.1
 
 test:x86_64:clang:release:
   <<: *linux_host_template
@@ -151,6 +154,8 @@ test:x86_64:clang:coverage:
     CXX: clang++-7
     # Headers from submodules might be needed when generating the HTML reports.
     GIT_SUBMODULE_STRATEGY: recursive
+    # Coverage builds use more stack for coverage tracking.
+    TEST_STACK_LIMIT: 1024
   artifacts:
     name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
     expire_in: 1 year
@@ -213,8 +218,11 @@ build:i686:clang:release:
     - schedules
     - tags
   script:
-    - BUILD_TARGET=i686-linux-gnu SKIP_TEST=1 PACK_TEST=1
+    - BUILD_TARGET=i686-linux-gnu SKIP_TEST=1 PACK_TEST=1 STACK_SIZE=1
         ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
+    - tools/build_stats.py --save build/stats.json
+        --binutils=i686-linux-gnu-
+        cjpegxl djpegxl libjpegxl.so.0.0.1
 
 test:i686:clang:release:
   <<: *linux_host_template
@@ -260,8 +268,11 @@ build:aarch64:clang:release:
   script:
     - BUILD_TARGET=aarch64-linux-gnu
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
+        STACK_SIZE=1
         ./ci.sh release
-    - tools/build_stats.py --save build/stats.json djpegxl libjpegxl.so.0.0.1
+    - tools/build_stats.py --save build/stats.json
+        --binutils=aarch64-linux-gnu-
+        cjpegxl djpegxl libjpegxl.so.0.0.1
 
 test:aarch64:clang:release:
   <<: *linux_host_template
@@ -285,8 +296,11 @@ build:armhf:clang:release:
   script:
     - BUILD_TARGET=arm-linux-gnueabihf
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
+        STACK_SIZE=1
         ./ci.sh release
-    - tools/build_stats.py --save build/stats.json djpegxl libjpegxl.so.0.0.1
+    - tools/build_stats.py --save build/stats.json
+        --binutils=arm-linux-gnueabihf-
+        cjpegxl djpegxl libjpegxl.so.0.0.1
 
 test:armhf:clang:release:
   <<: *linux_host_template
@@ -361,7 +375,8 @@ test:x86_64:clang:tsan:
   dependencies:
     - build:x86_64:clang:tsan
   script:
-    - ./ci.sh test
+    # tsan test runs fail with a small stack.
+    - TEST_STACK_LIMIT=1024 ./ci.sh test
 
 build:x86_64:clang:msan:
   <<: *linux_host_build_template
@@ -448,7 +463,7 @@ test:fast_benchmark.msan:
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
   <<: *linux_host_template
-  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:74ad8996a25f3f78db6a3c8a9131a6404e0fc256efb7f541360334a1ac305745
+  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:f262597eb9c45a1b6ee9c18524abe84f340d6ef64b82285976776883813300bb
   stage: test
   tags:
     - aarch64

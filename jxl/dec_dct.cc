@@ -25,7 +25,7 @@
 
 #include <hwy/highway.h>
 
-#include "jxl/dec_dct-inl.h"
+#include "jxl/dct-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {

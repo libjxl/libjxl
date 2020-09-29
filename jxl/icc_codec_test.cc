@@ -25,6 +25,7 @@ namespace {
 void TestProfile(const PaddedBytes& icc) {
   BitWriter writer;
   EXPECT_TRUE(WriteICC(icc, &writer, 0, nullptr));
+  writer.ZeroPadToByte();
   PaddedBytes dec;
   BitReader reader(writer.GetSpan());
   EXPECT_TRUE(ReadICC(&reader, &dec));

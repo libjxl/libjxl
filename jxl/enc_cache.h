@@ -30,6 +30,7 @@
 #include "jxl/dct_util.h"
 #include "jxl/dot_dictionary.h"
 #include "jxl/enc_ans.h"
+#include "jxl/enc_heuristics.h"
 #include "jxl/enc_params.h"
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
@@ -73,6 +74,10 @@ struct PassesEncoderState {
 
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_qm_multiplier = 1.0f;
+
+  // Heuristics to be used by the encoder.
+  std::unique_ptr<EncoderHeuristics> heuristics =
+      make_unique<DefaultEncoderHeuristics>();
 };
 
 // Initialize per-frame information.

@@ -698,10 +698,26 @@ constant-propagation issues with Clang on ARM.
 ## Memory allocation
 
 `AllocateAligned<T>(items)` returns a unique pointer to newly allocated memory
-for `items` elements of type `T`. The start address is aligned as required by
-`Load/Store`. Furthermore, successive allocations are not congruent modulo a
+for `items` elements of POD type `T`. The start address is aligned as required
+by `Load/Store`. Furthermore, successive allocations are not congruent modulo a
 platform-specific alignment. This helps prevent false dependencies or cache
-conflicts.
-`AllocateSingleAligned<T>()` is as above, but returns a pointer to a single
-POD item (typically a struct containing multiple members with `HWY_ALIGN`, or
-arrays whose lengths are known to be a multiple of the vector size).
+conflicts. The memory allocation is analogous to using `malloc()` and `free()`
+with a `std::unique_ptr` since the returned items are *not* initialized or
+default constructed and it is released using `FreeAlignedBytes()` without
+calling `~T()`.
+
+`MakeUniqueAligned<T>(Args&&... args)` creates a single object in newly
+allocated aligned memory as above but constructed passing the `args` argument to
+`T`'s constructor and returning a unique pointer to it. This is analogous to
+using `std::make_unique` with `new` but for aligned memory since the object is
+constructed and later destructed when the unique pointer is deleted. Typically
+this type `T` is a struct containing multiple members with `HWY_ALIGN` or
+`HWY_ALIGN_MAX`, or arrays whose lengths are known to be a multiple of the
+vector size.
+
+`MakeUniqueAlignedArray<T>(size_t items, Args&&... args)` creates an array of
+objects in newly allocated aligned memory as above and constructs every element
+of the new array using the passed constructor parameters, returning a unique
+pointer to the array. Note that only the first element is guaranteed to be
+aligned to the vector size and since there is no padding between elements
+whether the remaining elements are also aligned will depend on the size of `T`.

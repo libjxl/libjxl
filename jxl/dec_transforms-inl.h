@@ -25,8 +25,8 @@
 
 #include "jxl/ac_strategy.h"
 #include "jxl/coeff_order_fwd.h"
+#include "jxl/dct-inl.h"
 #include "jxl/dct_scales.h"
-#include "jxl/dec_dct-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {

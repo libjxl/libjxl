@@ -160,6 +160,21 @@ typedef struct JpegxlBasicInfo {
    */
   uint32_t bits_per_sample;
 
+  /** Whether the data in the codestream is encoded in the original color
+   * profile that is attached to the codestream metadata header, or is
+   * encoded in an internally supported absolute color space (which the decoder
+   * can always convert to linear or non-linear sRGB or to XYB). If the original
+   * profile is used, the decoder outputs pixel data in the color space matching
+   * that profile, but doesn't convert it to any other color space. If the
+   * original profile is not used, the decoder only outputs the data as sRGB,
+   * but will not convert it to to the original color profile. The decoder also
+   * does not convert to the target display color profile, but instead will
+   * always indicate which color profile the returned pixel data is encoded in
+   * when using @see JPEGXL_COLOR_PROFILE_TARGET_DATA so that a CMS can be used
+   * to convert the data.
+   */
+  JPEGXL_BOOL uses_original_profile;
+
   /** Original image color channel floating point exponent bits, or 0 if they
    * are unsigned integer. For example, if the original data is half-precision
    * (binary16) floating point, bits_per_sample is 16 and

@@ -246,14 +246,14 @@ class Visitor {
   virtual ~Visitor() = default;
   virtual Status Visit(Fields* fields, const char* visitor_name) = 0;
 
-  virtual void Bool(bool default_value, bool* JXL_RESTRICT value) = 0;
-  virtual void U32(U32Enc, uint32_t, uint32_t*) = 0;
+  virtual Status Bool(bool default_value, bool* JXL_RESTRICT value) = 0;
+  virtual Status U32(U32Enc, uint32_t, uint32_t*) = 0;
 
   // Helper to construct U32Enc from U32Distr.
-  void U32(const U32Distr d0, const U32Distr d1, const U32Distr d2,
-           const U32Distr d3, const uint32_t default_value,
-           uint32_t* JXL_RESTRICT value) {
-    U32(U32Enc(d0, d1, d2, d3), default_value, value);
+  Status U32(const U32Distr d0, const U32Distr d1, const U32Distr d2,
+             const U32Distr d3, const uint32_t default_value,
+             uint32_t* JXL_RESTRICT value) {
+    return U32(U32Enc(d0, d1, d2, d3), default_value, value);
   }
 
   template <typename EnumT>
@@ -263,16 +263,16 @@ class Visitor {
     // 01 -> 1
     // 10xxxx -> 2..17
     // 11yyyyyy -> 18..81
-    U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(6, 18),
-        static_cast<uint32_t>(default_value), &u32);
+    JXL_RETURN_IF_ERROR(U32(Val(0), Val(1), BitsOffset(4, 2), BitsOffset(6, 18),
+                            static_cast<uint32_t>(default_value), &u32));
     *value = static_cast<EnumT>(u32);
     return EnumValid(*value);
   }
 
-  virtual void Bits(size_t bits, uint32_t default_value,
-                    uint32_t* JXL_RESTRICT value) = 0;
-  virtual void U64(uint64_t default_value, uint64_t* JXL_RESTRICT value) = 0;
-  virtual void F16(float default_value, float* JXL_RESTRICT value) = 0;
+  virtual Status Bits(size_t bits, uint32_t default_value,
+                      uint32_t* JXL_RESTRICT value) = 0;
+  virtual Status U64(uint64_t default_value, uint64_t* JXL_RESTRICT value) = 0;
+  virtual Status F16(float default_value, float* JXL_RESTRICT value) = 0;
 
   // Returns whether VisitFields should visit some subsequent fields.
   // "condition" is typically from prior fields, e.g. flags.
@@ -280,13 +280,13 @@ class Visitor {
   virtual Status Conditional(bool condition) { return condition; }
 
   // Overridden by InitVisitor, AllDefaultVisitor and CanEncodeVisitor.
-  virtual Status AllDefault(const Fields& fields,
+  virtual Status AllDefault(const Fields& /*fields*/,
                             bool* JXL_RESTRICT all_default) {
-    Bool(true, all_default);
+    JXL_RETURN_IF_ERROR(Bool(true, all_default));
     return *all_default;
   }
 
-  virtual void SetDefault(Fields* fields) {
+  virtual void SetDefault(Fields* /*fields*/) {
     // Do nothing by default, this is overridden by ReadVisitor.
   }
 
@@ -295,9 +295,9 @@ class Visitor {
   virtual Status VisitNested(Fields* fields) { return Visit(fields, ""); }
 
   // Overridden by ReadVisitor. Enables dynamically-sized fields.
-  virtual Status IsReading() const { return false; }
+  virtual bool IsReading() const { return false; }
 
-  virtual void BeginExtensions(uint64_t* JXL_RESTRICT extensions) = 0;
+  virtual Status BeginExtensions(uint64_t* JXL_RESTRICT extensions) = 0;
   virtual Status EndExtensions() = 0;
 };
 

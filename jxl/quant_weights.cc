@@ -331,13 +331,8 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
                          size_t* offsets, size_t table_num,
                          DequantMatrices::QuantTable kind, size_t* pos) {
   double weights[3 * kMaxQuantTableSize];
-  double numerators[kMaxQuantTableSize];
 
   constexpr size_t N = kBlockDim;
-  const float* idct4_scales = IDCTScales<N / 2>();
-  const float* idct_scales = IDCTScales<N>();
-  const float* idct16_scales = IDCTScales<2 * N>();
-  const float* idct32_scales = IDCTScales<4 * N>();
   size_t wrows = 8, wcols = 8;
   size_t num = 0;
   switch (kind) {
@@ -345,120 +340,52 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
       num = kDCTBlockSize;
       wrows = 8;
       wcols = 8;
-      for (size_t i = 0; i < num; i++) {
-        const size_t x = i % N;
-        const size_t y = i / N;
-        const float idct_scale = idct_scales[x] * idct_scales[y] * 8;
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT16X16: {
       num = 4 * kDCTBlockSize;
       wrows = 16;
       wcols = 16;
-      for (size_t i = 0; i < num; i++) {
-        const size_t x = i % (2 * N);
-        const size_t y = i / (2 * N);
-        const float idct_scale = idct16_scales[x] * idct16_scales[y] * 16;
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT32X32: {
       num = 16 * kDCTBlockSize;
       wrows = 32;
       wcols = 32;
-      for (size_t i = 0; i < num; i++) {
-        const size_t x = i % (4 * N);
-        const size_t y = i / (4 * N);
-        const float idct_scale = idct32_scales[x] * idct32_scales[y] * 32;
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT8X16: {
       wrows = 8;
       wcols = 16;
       num = 2 * kDCTBlockSize;
-      for (size_t i = 0; i < num; i++) {
-        const size_t x = i % (2 * N);
-        const size_t y = i / (2 * N);
-        const float idct_scale =
-            idct16_scales[x] * idct_scales[y] * std::sqrt(8 * 16);
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT8X32: {
       num = 4 * kDCTBlockSize;
       wrows = 8;
       wcols = 32;
-      for (size_t i = 0; i < num; i++) {
-        const size_t x = i % (4 * N);
-        const size_t y = i / (4 * N);
-        const float idct_scale = idct32_scales[x] * idct_scales[y] * 16;
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT16X32: {
       num = 8 * kDCTBlockSize;
       wrows = 16;
       wcols = 32;
-      for (size_t i = 0; i < num; i++) {
-        const size_t x = i % (4 * N);
-        const size_t y = i / (4 * N);
-        const float idct_scale =
-            idct32_scales[x] * idct16_scales[y] * std::sqrt(16 * 32);
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT4X4: {
       num = kDCTBlockSize;
-      for (size_t i = 0; i < N * N; i++) {
-        const size_t x = i % N;
-        const size_t y = i / N;
-        float idct_scale = idct4_scales[x / 2] * idct4_scales[y / 2] * 4;
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::DCT4X8: {
       num = kDCTBlockSize;
-      for (size_t i = 0; i < N * N; i++) {
-        const size_t x = i % N;
-        const size_t y = i / N;
-        float idct_scale =
-            idct_scales[x] * idct4_scales[y / 2] * std::sqrt(4 * 8);
-        numerators[i] = idct_scale;
-      }
       break;
     }
     case DequantMatrices::IDENTITY:
     case DequantMatrices::DCT2X2:
       num = kDCTBlockSize;
-      std::fill_n(numerators, kDCTBlockSize, 1.0);
       break;
     case DequantMatrices::AFV0: {
       num = kDCTBlockSize;
-      for (size_t i = 0; i < N * N; i++) {
-        const size_t x = i % N;
-        const size_t y = i / N;
-        if (y & 1) {
-          float idct_scale =
-              idct_scales[x] * idct4_scales[y / 2] * std::sqrt(4 * 8);
-          numerators[i] = idct_scale;
-        } else {
-          if (x & 1) {
-            float idct_scale = idct4_scales[x / 2] * idct4_scales[y / 2] * 4;
-            numerators[i] = idct_scale;
-          } else {
-            numerators[i] = 1;
-          }
-        }
-      }
       break;
     }
     default: {
@@ -621,7 +548,7 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
   for (size_t c = 0; c < 3; c++) {
     offsets[table_num * 3 + c] = *pos;
     for (size_t i = 0; i < num; i++) {
-      double val = numerators[i] / weights[c * num + i];
+      double val = 1.0f / weights[c * num + i];
       if (val > std::numeric_limits<float>::max() || val < 0) {
         return JXL_FAILURE("Invalid quantization table");
       }
@@ -1179,15 +1106,15 @@ Status DequantMatrices::Compute() {
   return true;
 }
 
-void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings,
-                                ModularFrameEncoder* modular_frame_encoder) {
+void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings) {
   JXL_ASSERT(encodings.size() == kNum);
+  JXL_ASSERT(modular_frame_encoder_ != nullptr);
   encodings_ = encodings;
   for (size_t i = 0; i < encodings_.size(); i++) {
     if (encodings_[i].mode == QuantEncodingInternal::kQuantModeRAW) {
-      modular_frame_encoder->AddQuantTable(required_size_x_[i] * kBlockDim,
-                                           required_size_y_[i] * kBlockDim,
-                                           encodings_[i], i);
+      modular_frame_encoder_->AddQuantTable(required_size_x_[i] * kBlockDim,
+                                            required_size_y_[i] * kBlockDim,
+                                            encodings_[i], i);
     }
   }
   // Roundtrip encode/decode the matrices to ensure same values as decoder.
@@ -1203,8 +1130,7 @@ void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings,
 
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
-                             DequantMatrices* dequant_matrices,
-                             ModularFrameEncoder* modular_frame_encoder) {
+                             DequantMatrices* dequant_matrices) {
   // TODO(veluca): heuristics for in-bitstream quant tables.
   *dequant_matrices = DequantMatrices();
   if (cparams.max_error_mode) {
@@ -1215,7 +1141,7 @@ void FindBestDequantMatrices(const CompressParams& cparams,
     DctQuantWeightParams dct_params(weights);
     std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
                                          QuantEncoding::DCT(dct_params));
-    dequant_matrices->SetCustom(encodings, modular_frame_encoder);
+    dequant_matrices->SetCustom(encodings);
     float dc_weights[3] = {1.0f / cparams.max_error[0],
                            1.0f / cparams.max_error[1],
                            1.0f / cparams.max_error[2]};
