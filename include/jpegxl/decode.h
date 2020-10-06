@@ -152,11 +152,19 @@ typedef enum {
    */
   JPEGXL_DEC_COLOR_ENCODING = 1024,
 
-  /** Informative event: DC image, 8x8 sub-sampled image.
+  /** Informative event: DC image, 8x8 sub-sampled image. It is not guaranteed
+   * that the decoder will always return DC separately, but when it does it will
+   * do so before outputting the full image. JpegxlDecoderSetDCOutBuffer must
+   * be used after getting the basic image information to be able to get the
+   * DC pixels, if not this return status only indicates we're past this point
+   * in the codestream.
    */
   JPEGXL_DEC_DC = 2048,
 
-  /** Informative event: full image decoded.
+  /** Informative event: full image decoded. JpegxlDecoderSetImageOutBuffer must
+   * be used after getting the basic image information to be able to get the
+   * image pixels, if not this return status only indicates we're past this
+   * point in the codestream.
    */
   JPEGXL_DEC_FULL_IMAGE = 4096,
 } JpegxlDecoderStatus;

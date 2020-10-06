@@ -95,6 +95,7 @@ PlaneBase::PlaneBase(const size_t xsize, const size_t ysize,
   if (xsize != 0 && ysize != 0) {
     bytes_per_row_ = BytesPerRow(xsize, sizeof_t);
     bytes_ = AllocateArray(bytes_per_row_ * ysize);
+    JXL_CHECK(bytes_.get());
     InitializePadding(sizeof_t, Padding::kRoundUp);
   }
 }

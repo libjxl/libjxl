@@ -235,6 +235,7 @@ TEST(DecodeTest, BasicInfoTest) {
     const std::vector<uint8_t>& data = test_samples[i];
     // Test decoding too small header first, until we reach the final byte.
     for (size_t size = 0; size <= data.size(); ++size) {
+      // Test with a new decoder for each tested byte size.
       JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
       EXPECT_EQ(JPEGXL_DEC_SUCCESS,
                 JpegxlDecoderSubscribeEvents(dec, JPEGXL_DEC_BASIC_INFO));
@@ -288,6 +289,49 @@ TEST(DecodeTest, BasicInfoTest) {
       JpegxlDecoderDestroy(dec);
     }
   }
+}
+
+TEST(DecodeTest, BufferSizeTest) {
+  size_t xsize = 33;
+  size_t ysize = 77;
+  size_t bits_per_sample = 8;
+  size_t orientation = 1;
+  size_t alpha_bits = 8;
+  bool have_container = false;
+  bool xyb_encoded = false;
+
+  std::vector<uint8_t> header =
+      GetTestHeader(xsize, ysize, bits_per_sample, orientation, alpha_bits,
+                    xyb_encoded, have_container, /*metadata_default=*/false,
+                    /*insert_extra_box=*/false, {});
+
+  JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSubscribeEvents(dec, JPEGXL_DEC_BASIC_INFO));
+  const uint8_t* next_in = header.data();
+  size_t avail_in = header.size();
+  JpegxlDecoderStatus status =
+      JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
+  EXPECT_EQ(JPEGXL_DEC_BASIC_INFO, status);
+
+  JpegxlBasicInfo info;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(xsize, info.xsize);
+  EXPECT_EQ(ysize, info.ysize);
+
+  JpegxlPixelFormat format = {4, JPEGXL_LITTLE_ENDIAN, JPEGXL_TYPE_UINT8};
+  size_t image_out_size;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderImageOutBufferSize(dec, &format, &image_out_size));
+  EXPECT_EQ(xsize * ysize * 4, image_out_size);
+
+  size_t dc_out_size;
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderDCOutBufferSize(dec, &format, &dc_out_size));
+  // expected dc size: ceil(33 / 8) * ceil(77 / 8) * 4 channels
+  EXPECT_EQ(5 * 10 * 4, dc_out_size);
+
+  JpegxlDecoderDestroy(dec);
 }
 
 TEST(DecodeTest, BasicInfoSizeHintTest) {
@@ -971,65 +1015,77 @@ TEST(DecodeTest, PixelPartialTest) {
   std::vector<uint8_t> pixels2;
   pixels2.resize(pixels.size());
 
-  // Create the different partial filesizes to test on beforehand
-  std::vector<size_t> sizes;
+  const uint8_t* next_in = data.data();
+  size_t avail_in = 0;
+
+  JpegxlDecoder* dec = JpegxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+            JpegxlDecoderSubscribeEvents(
+                dec, JPEGXL_DEC_BASIC_INFO | JPEGXL_DEC_FULL_IMAGE));
+
+  bool seen_basic_info = false;
+  bool seen_full_image = false;
+
+  size_t total_size = 0;
+
   for (;;) {
-    // In the beginning of the file, test all possible byte sizes, but after
-    // that grow exponentially: test the header and TOC  parsing exhaustively,
-    // but do not test every single possible partial byte size of the pixel
-    // data.
-    size_t prev_size = sizes.empty() ? 0 : sizes.back();
-    size_t size =
-        prev_size < 200 ? (prev_size + 1) : (((prev_size + 1) * 3) / 2);
-    sizes.push_back(size);
-    if (sizes.back() >= data.size()) {
-      sizes.back() = data.size();
+    JpegxlDecoderStatus status =
+        JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
+
+    if (status == JPEGXL_DEC_NEED_MORE_INPUT) {
+      if (total_size >= data.size()) {
+        // End of test data reached, it should have successfully decoded the
+        // image now.
+        FAIL();
+        break;
+      }
+
+      size_t increment = 1;
+      // Go faster once we're past the headers to speed up the test: testing
+      // with increments of 1 byte during header and TOC parsing is interesting,
+      // in the much larger pixel region testing just a few partial spots is
+      // sufficient.
+      if (total_size > 200) increment = total_size / 4;
+      // End of the file reached, should be the final test.
+      if (total_size + increment > data.size()) {
+        increment = data.size() - total_size;
+      }
+      total_size += increment;
+      avail_in += increment;
+    } else if (status == JPEGXL_DEC_BASIC_INFO) {
+      // This event should happen exactly once
+      EXPECT_FALSE(seen_basic_info);
+      if (seen_basic_info) break;
+      seen_basic_info = true;
+      JpegxlBasicInfo info;
+      EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
+      EXPECT_EQ(info.xsize, xsize);
+      EXPECT_EQ(info.ysize, ysize);
+      EXPECT_EQ(JPEGXL_DEC_SUCCESS,
+                JpegxlDecoderSetImageOutBuffer(dec, &format_orig,
+                                               pixels2.data(), pixels2.size()));
+    } else if (status == JPEGXL_DEC_FULL_IMAGE) {
+      // This event should happen exactly once
+      EXPECT_FALSE(seen_full_image);
+      if (seen_full_image) break;
+      // This event should happen after basic info
+      EXPECT_TRUE(seen_basic_info);
+      seen_full_image = true;
+      EXPECT_EQ(pixels, pixels2);
+    } else if (status == JPEGXL_DEC_SUCCESS) {
+      EXPECT_TRUE(seen_full_image);
+      break;
+    } else {
+      // We do not expect any other events or errors
+      FAIL();
       break;
     }
   }
 
-  for (const size_t size : sizes) {
-    bool expect_complete = (size == data.size());
+  // Ensure the decoder emitted the basic info and full image events
+  EXPECT_TRUE(seen_basic_info);
+  EXPECT_TRUE(seen_full_image);
 
-    // TODO(lode): instead of creating new decoder each time, test appending
-    // bytes to existing decoder (requires implementing this in decoder)
-    auto dec_ptr =
-        std::unique_ptr<JpegxlDecoder, std::function<void(JpegxlDecoder*)>>(
-            JpegxlDecoderCreate(nullptr),
-            [](JpegxlDecoder* dec) { JpegxlDecoderDestroy(dec); });
-    JpegxlDecoder* dec = dec_ptr.get();
-
-    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
-              JpegxlDecoderSubscribeEvents(
-                  dec, JPEGXL_DEC_BASIC_INFO | JPEGXL_DEC_FULL_IMAGE));
-    const uint8_t* next_in = data.data();
-    size_t avail_in = size;
-    JpegxlDecoderStatus status =
-        JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
-    EXPECT_TRUE(status == JPEGXL_DEC_BASIC_INFO ||
-                status == JPEGXL_DEC_NEED_MORE_INPUT);
-
-    if (expect_complete) {
-      EXPECT_EQ(JPEGXL_DEC_BASIC_INFO, status);
-    } else if (status == JPEGXL_DEC_NEED_MORE_INPUT) {
-      continue;
-    }
-
-    JpegxlBasicInfo info;
-    EXPECT_EQ(JPEGXL_DEC_SUCCESS, JpegxlDecoderGetBasicInfo(dec, &info));
-    EXPECT_EQ(info.xsize, xsize);
-    EXPECT_EQ(info.ysize, ysize);
-    EXPECT_EQ(JPEGXL_DEC_SUCCESS,
-              JpegxlDecoderSetImageOutBuffer(dec, &format_orig, pixels2.data(),
-                                             pixels2.size()));
-
-    status = JpegxlDecoderProcessInput(dec, &next_in, &avail_in);
-    EXPECT_TRUE(status == JPEGXL_DEC_FULL_IMAGE ||
-                status == JPEGXL_DEC_NEED_MORE_INPUT);
-
-    if (expect_complete) {
-      EXPECT_EQ(JPEGXL_DEC_FULL_IMAGE, status);
-      EXPECT_EQ(pixels, pixels2);
-    }
-  }
+  JpegxlDecoderDestroy(dec);
 }

@@ -184,7 +184,7 @@ class CodecInOut {
 
   // -- DECODER INPUT:
 
-  // Upper limit on pixel dimensions/area, enforced by DimensionsWithinLimits
+  // Upper limit on pixel dimensions/area, enforced by VerifyDimensions
   // (called from decoders). Fuzzers set smaller values to limit memory use.
   uint32_t dec_max_xsize = 0xFFFFFFFFu;
   uint32_t dec_max_ysize = 0xFFFFFFFFu;

@@ -55,6 +55,12 @@ TEST(ColorEncodingTest, RoundTripAll) {
 
 // Verify Set(Get) for specific custom values
 
+TEST(ColorEncodingTest, NanGamma) {
+  const std::string description = "Gra_2_Per_gnan";
+  ColorEncoding c;
+  EXPECT_FALSE(ParseDescription(description, &c));
+}
+
 TEST(ColorEncodingTest, CustomWhitePoint) {
   ColorEncoding c;
   // Nonsensical values

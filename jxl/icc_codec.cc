@@ -271,12 +271,14 @@ bool OutOfBounds(size_t a, size_t b, size_t size) {
   return false;
 }
 
-// Return value is only advisory.
-bool PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
-                       const uint8_t* data, size_t size, size_t* pos,
-                       PaddedBytes* result) {
-  if (OutOfBounds(*pos, num, size)) return false;
-  if (*pos < stride * 4) return false;
+// This is performed by the encoder, the encoder must be able to encode any
+// random byte stream (not just byte streams that are a valid ICC profile), so
+// an error returned by this function is an implementation error.
+Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
+                         const uint8_t* data, size_t size, size_t* pos,
+                         PaddedBytes* result) {
+  if (OutOfBounds(*pos, num, size)) return JXL_FAILURE("Out of bounds");
+  if (*pos < stride * 4) return JXL_FAILURE("Too large stride");
   size_t start = result->size();
   for (size_t i = 0; i < num; i++) {
     uint8_t predicted = PredictValue(data, *pos, i, stride, width, order);
@@ -678,8 +680,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           int order = 1, width = 2, stride = width;
           commands_add.push_back((order << 2) | (width - 1));
           EncodeVarInt(num, &commands_add);
-          PredictAndShuffle(stride, width, order, num, icc, size, &pos,
-                            &data_add);
+          JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
+                                                size, &pos, &data_add));
         }
       }
     }
@@ -697,8 +699,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           int order = 1, width = 2, stride = width;
           commands_add.push_back((order << 2) | (width - 1));
           EncodeVarInt(num, &commands_add);
-          PredictAndShuffle(stride, width, order, num, icc, size, &pos,
-                            &data_add);
+          JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
+                                                size, &pos, &data_add));
         }
       }
 
@@ -719,7 +721,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           num *= icc[clutstart + i];
         }
         if ((width == 1 || width == 2) && num > 64 && num < (1 << 28) &&
-            pos + num <= size) {
+            pos + num <= size && pos >= stride * 4) {
           commands_add.push_back(kCommandPredict);
           int order = 1;
           uint8_t flags =
@@ -727,14 +729,14 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
           commands_add.push_back(flags);
           if (flags & 16) EncodeVarInt(stride, &commands_add);
           EncodeVarInt(num, &commands_add);
-          PredictAndShuffle(stride, width, order, num, icc, size, &pos,
-                            &data_add);
+          JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
+                                                size, &pos, &data_add));
         }
       }
     }
 
     if (commands_add.empty() && data_add.empty() && tagtype == "gbd " &&
-        pos == tagstart + 8 && pos + tagsize - 8 <= size) {
+        pos == tagstart + 8 && pos + tagsize - 8 <= size && pos >= 16) {
       size_t width = 4, order = 0, stride = width;
       size_t num = tagsize - 8;
       uint8_t flags = (order << 2) | (width - 1) | (stride == width ? 0 : 16);
@@ -742,7 +744,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       commands_add.push_back(flags);
       if (flags & 16) EncodeVarInt(stride, &commands_add);
       EncodeVarInt(num, &commands_add);
-      PredictAndShuffle(stride, width, order, num, icc, size, &pos, &data_add);
+      JXL_RETURN_IF_ERROR(PredictAndShuffle(stride, width, order, num, icc,
+                                            size, &pos, &data_add));
     }
 
     if (commands_add.empty() && data_add.empty() && pos + 20 <= size) {

@@ -110,16 +110,17 @@ const float* Quant64() {
 
 // Increase precision in 8x8 blocks that are complicated in DCT space.
 void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
-                   const float dct_rescale, float* JXL_RESTRICT out_pos) {
-  HWY_ALIGN_MAX float dct[kDCTBlockSize];
-  ComputeTransposedScaledDCT<8>()(FromLines(xyb.Row(y) + x, xyb.PixelsPerRow()),
-                                  ToBlock(8, 8, dct));
+                   float* JXL_RESTRICT out_pos) {
+  HWY_ALIGN float dct[kDCTBlockSize];
+  HWY_ALIGN float scratch_space[kDCTBlockSize * 2];
+  ComputeTransposedScaledDCT<8>()(DCTFrom(xyb.Row(y) + x, xyb.PixelsPerRow()),
+                                  DCTTo(dct, 8), scratch_space);
   auto entropyQL2v = Zero(df);
   auto entropyQL4v = Zero(df);
   auto entropyQL8v = Zero(df);
   static const float* quant = Quant64();
   for (size_t i = 0; i < kDCTBlockSize; i += Lanes(df)) {
-    auto v = Load(df, dct + i) * Set(df, dct_rescale);
+    auto v = Load(df, dct + i);
     v *= v;
     const auto q = Load(df, quant + i);
     entropyQL2v = MulAdd(q, v, entropyQL2v);
@@ -138,7 +139,7 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   static const float mulQL4 = -0.46444076773581316;
   static const float mulQL8 = 0.36332928423385757;
   float v = mulQL2 * entropyQL2 + mulQL4 * entropyQL4 + mulQL8 * entropyQL8;
-  const float kMul = 0.74718448352037614;
+  const float kMul = 0.74718448352037614 * 8.0f;
   *out_pos += kMul * v;
 }
 
@@ -327,15 +328,13 @@ void HfModulation(const size_t x, const size_t y, const ImageF& xyb,
   *out_pos += sum;
 }
 
-void PerBlockModulations(const float butteraugli_target,
-                         const ImageF& xyb_x, const ImageF& xyb_y,
-                         const float scale, ThreadPool* pool, ImageF* out) {
+void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
+                         const ImageF& xyb_y, const float scale,
+                         ThreadPool* pool, ImageF* out) {
   JXL_ASSERT(DivCeil(xyb_x.xsize(), kBlockDim) == out->xsize());
   JXL_ASSERT(DivCeil(xyb_x.ysize(), kBlockDim) == out->ysize());
   JXL_ASSERT(DivCeil(xyb_y.xsize(), kBlockDim) == out->xsize());
   JXL_ASSERT(DivCeil(xyb_y.ysize(), kBlockDim) == out->ysize());
-  // DCTScales<8>::value == 1.0f / sqrt(8).
-  float dct_rescale = 1.0f / 8;
 
   float base_level = 0.5 * scale;
   float kDampenRampStart = 7.0f;
@@ -358,14 +357,15 @@ void PerBlockModulations(const float butteraugli_target,
         for (size_t x = 0; x < xyb_x.xsize(); x += 8) {
           float* JXL_RESTRICT out_pos = row_out + x / 8;
           ComputeMask(out_pos);
-          DctModulation(x, y, xyb_y, dct_rescale, out_pos);
+          DctModulation(x, y, xyb_y, out_pos);
           RangeModulation(x, y, xyb_x, xyb_y, out_pos);
           HfModulation(x, y, xyb_y, out_pos);
           GammaModulation(x, y, xyb_x, xyb_y, out_pos);
 
           // We want multiplicative quantization field, so everything
           // until this point has been modulating the exponent.
-          *out_pos = std::exp(*out_pos) * scale * dampen + (1.0 - dampen) * base_level;
+          *out_pos =
+              std::exp(*out_pos) * scale * dampen + (1.0 - dampen) * base_level;
         }
       },
       "AQ per block modulation");
@@ -377,7 +377,6 @@ float MaskingLog(const float v) {
   return std::log2(mul * 100000 * v + kLogOffset);
 }
 
-
 template <typename D, typename V>
 V MaskingLog(const D d, V v) {
   static const float kLogOffset = 13.362478857394517;
@@ -387,7 +386,6 @@ V MaskingLog(const D d, V v) {
   v *= mul_v;
   return FastLog2f_18bits(d, v + offset_v);
 }
-
 
 // Returns image (padded to multiple of 8x8) of local pixel differences.
 ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
@@ -436,8 +434,9 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
         // First pixel of the row.
         {
           const float base = 0.5f * (row_in2[x] + row_in1[x]);
-          const float mul_gammac = mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
-              row_in[x] + match_gamma_offset);
+          const float mul_gammac =
+              mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
+                         row_in[x] + match_gamma_offset);
           float diff = mul_gammac * (row_in[x] - base);
           diff *= diff;
           row_out[x] = MaskingLog(diff);
@@ -455,8 +454,10 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
           const auto in_b = LoadU(df, row_in1 + x);
           auto base0 = half * (in_r + in_l);
           auto base1 = half * (in_t + in_b);
-          auto mul0v_gammac = mul0v * RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/false>(
-              df, in + match_gamma_offset_v);
+          auto mul0v_gammac =
+              mul0v *
+              RatioOfDerivativesOfCubicRootToSimpleGamma</*invert=*/false>(
+                  df, in + match_gamma_offset_v);
           auto diff0 = mul0v_gammac * (in - base0);
           auto diff1 = mul0v_gammac * (in - base1);
           auto diff = diff0 * diff0 + diff1 * diff1;
@@ -469,8 +470,9 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
           const size_t x1 = x - 1;
           const float base0 = 0.5f * (row_in2[x] + row_in1[x]);
           const float base1 = 0.5f * (row_in[x1] + row_in[x2]);
-          const float mul_gammac = mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
-              row_in[x] + match_gamma_offset);
+          const float mul_gammac =
+              mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
+                         row_in[x] + match_gamma_offset);
           float diff0 = mul_gammac * (row_in[x] - base0);
           float diff1 = mul_gammac * (row_in[x] - base1);
           float diff = diff0 * diff0 + diff1 * diff1;
@@ -479,8 +481,9 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
         // Last pixel of the row.
         {
           const float base = (1.0f / 2.0f) * (row_in2[x] + row_in1[x]);
-          const float mul_gammac = mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
-              row_in[x] + match_gamma_offset);
+          const float mul_gammac =
+              mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
+                         row_in[x] + match_gamma_offset);
           float diff = mul_gammac * (row_in[x] - base);
           diff *= diff;
           row_out[x] = MaskingLog(diff);
@@ -512,8 +515,9 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
       const size_t x2 = x + 1;
       const size_t x1 = (x == 0) ? x2 : x - 1;
       const float base = 0.5f * (row_in[x1] + row_in[x2]);
-      const float mul_gammac = mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(
-          row_in[x] + match_gamma_offset);
+      const float mul_gammac =
+          mul0 * RatioOfDerivativesOfCubicRootToSimpleGamma(row_in[x] +
+                                                            match_gamma_offset);
       float diff = mul_gammac * (row_in[x] - base);
       diff *= diff;
       row_out[x] = MaskingLog(diff);
@@ -561,15 +565,16 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
   static const float kSigmaBase = 7;
   static const float kSigmaMul = 0.3;
 
-  static const float kSigma = kSigmaBase + kSigmaMul * limited_butteraugli_target;
-  static const int kRadius =static_cast<int>(2 * kSigma + 0.5f);
+  static const float kSigma =
+      kSigmaBase + kSigmaMul * limited_butteraugli_target;
+  static const int kRadius = static_cast<int>(2 * kSigma + 0.5f);
   std::vector<float> kernel = GaussianKernel(kRadius, kSigma);
 
   ImageF out = DiffPrecompute(opsin, frame_dim, pool);
   JXL_ASSERT(out.xsize() % kBlockDim == 0 && out.ysize() % kBlockDim == 0);
   out = ConvolveAndSample(out, kernel, kBlockDim);
-  PerBlockModulations(butteraugli_target, intensity_ac_x, intensity_ac_y,
-                      scale, pool, &out);
+  PerBlockModulations(butteraugli_target, intensity_ac_x, intensity_ac_y, scale,
+                      pool, &out);
   return out;
 }
 
@@ -1154,9 +1159,9 @@ float InitialQuantDC(float butteraugli_target) {
   const float kDcMul = 2.9;  // Butteraugli target where non-linearity kicks in.
   const float butteraugli_target_dc = std::max<float>(
       0.85f * butteraugli_target,
-      std::min<float>(
-          butteraugli_target,
-          kDcMul * std::pow((1.0f / kDcMul) * butteraugli_target, kDcQuantPow)));
+      std::min<float>(butteraugli_target,
+                      kDcMul * std::pow((1.0f / kDcMul) * butteraugli_target,
+                                        kDcQuantPow)));
   // We want the maximum DC value to be at most 2**15 * kInvDCQuant / quant_dc.
   // The maximum DC value might not be in the kXybRange because of inverse
   // gaborish, so we add some slack to the maximum theoretical quant obtained
@@ -1170,8 +1175,8 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
   PROFILER_FUNC;
   const float quant_ac = kAcQuant / butteraugli_target;
   return HWY_DYNAMIC_DISPATCH(AdaptiveQuantizationMap)(
-      butteraugli_target, opsin, opsin.Plane(0), opsin.Plane(1),
-      frame_dim, quant_ac * rescale, pool);
+      butteraugli_target, opsin, opsin.Plane(0), opsin.Plane(1), frame_dim,
+      quant_ac * rescale, pool);
 }
 
 void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,

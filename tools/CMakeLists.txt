@@ -244,8 +244,9 @@ if(${JPEGXL_ENABLE_FUZZERS})
   endforeach()
 endif()  # JPEGXL_ENABLE_FUZZERS
 
-if(TARGET jpegxl)
-
+# EMSCRIPTEN doesn't support dynamic libraries so testing for linkage there
+# doesn't make much sense.
+if(TARGET jpegxl AND NOT JPEGXL_EMSCRIPTEN)
 # Library API test. This test is only to check that we can link against the
 # shared library from C99 file and don't need to use internal symbols.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
@@ -265,8 +266,7 @@ if(NOT WIN32)
 endif()
 
 add_test(NAME LibraryCLinkageTest COMMAND libjpegxl_test)
-
-endif()  # TARGET jpegxl
+endif()  # TARGET jpegxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
 if(${JPEGXL_ENABLE_VIEWERS})

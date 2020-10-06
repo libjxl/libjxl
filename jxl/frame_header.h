@@ -152,9 +152,6 @@ static inline constexpr uint64_t EnumBits(ColorTransform /*unused*/) {
   return MakeBit(ColorTransform::kXYB) | MakeBit(ColorTransform::kNone) |
          MakeBit(ColorTransform::kYCbCr) | MakeBit(ColorTransform::kSRGB);
 }
-static inline const char* EnumName(YCbCrChromaSubsampling /*unused*/) {
-  return "YCbCrChromaSubsampling";
-}
 
 static inline Status VisitNameString(Visitor* JXL_RESTRICT visitor,
                                      std::string* name) {

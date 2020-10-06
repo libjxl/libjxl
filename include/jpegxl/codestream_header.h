@@ -197,7 +197,7 @@ typedef struct JpegxlBasicInfo {
    */
   float min_nits;
 
-  /** See the description of relative_to_max_display.
+  /** See the description of @see linear_below.
    */
   JPEGXL_BOOL relative_to_max_display;
 

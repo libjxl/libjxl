@@ -77,6 +77,7 @@ Status InvSubtractGreen(Image& input, size_t begin_c, size_t rct_type) {
   }
   // Permutation: 0=RGB, 1=GBR, 2=BRG, 3=RBG, 4=GRB, 5=BGR
   int permutation = rct_type / 7;
+  JXL_CHECK(permutation < 6);
   // 0-5 values have the low bit corresponding to Third and the high bits
   // corresponding to Second. 6 corresponds to YCoCg.
   //

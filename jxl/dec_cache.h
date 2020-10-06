@@ -147,6 +147,8 @@ struct GroupDecCache {
   // Scratch space used by DecGroupImpl().
   HWY_ALIGN_MAX float dec_group_block[3 * AcStrategy::kMaxCoeffArea];
   HWY_ALIGN_MAX float dec_group_local_block[AcStrategy::kMaxCoeffArea];
+  // For TransformToPixels.
+  HWY_ALIGN_MAX float scratch_space[2 * AcStrategy::kMaxCoeffArea];
 
   // AC decoding
   Image3I num_nzeroes[kMaxNumPasses];

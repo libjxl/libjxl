@@ -130,6 +130,7 @@ class ModularFrameDecoder {
   Tree tree;
   ANSCode code;
   std::vector<uint8_t> context_map;
+  GroupHeader global_header;
 };
 
 }  // namespace jxl

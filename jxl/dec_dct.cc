@@ -33,6 +33,7 @@ namespace HWY_NAMESPACE {
 void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
            const ImageF& dequantized, ThreadPool* pool,
            ImageF* JXL_RESTRICT pixels) {
+  HWY_ALIGN float scratch_space[64 * 2];
   constexpr size_t N = kBlockDim;
   const size_t xsize_groups = DivCeil(xsize_blocks, kGroupDimInBlocks);
   const size_t ysize_groups = DivCeil(ysize_blocks, kGroupDimInBlocks);
@@ -54,36 +55,15 @@ void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
       float* JXL_RESTRICT pixels_row = pixels->Row(by * N);
       for (size_t bx = bx0; bx < bx1; ++bx) {
         ComputeTransposedScaledIDCT<N>()(
-            FromBlock(N, N, dequantized_row + bx * kDCTBlockSize),
-            ToBlock(N, N, block));
-        Transpose<N, N>::Run(FromBlock(N, N, block),
-                             ToLines(pixels_row + bx * N, pixels_stride));
+            DCTFrom(dequantized_row + bx * kDCTBlockSize, N), DCTTo(block, N),
+            scratch_space);
+        Transpose<N, N>::Run(DCTFrom(block, N),
+                             DCTTo(pixels_row + bx * N, pixels_stride));
       }
     }
   };
   RunOnPool(pool, 0, static_cast<int>(xsize_groups * ysize_groups),
             ThreadPool::SkipInit(), idct, "Brunsli:IDCT");
-}
-
-void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
-  PROFILER_ZONE("IDCT facade");
-  JXL_ASSERT(dct.xsize() % kDCTBlockSize == 0);
-  const size_t xsize_blocks = dct.xsize() / kDCTBlockSize;
-  const size_t ysize_blocks = dct.ysize();
-  JXL_ASSERT(idct->xsize() == xsize_blocks * kBlockDim);
-  JXL_ASSERT(idct->ysize() == ysize_blocks * kBlockDim);
-
-  for (size_t c = 0; c < 3; ++c) {
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      const float* JXL_RESTRICT row_dct = dct.ConstPlaneRow(c, by);
-      float* JXL_RESTRICT row_idct = idct->PlaneRow(c, by * kBlockDim);
-      for (size_t bx = 0; bx < xsize_blocks; ++bx) {
-        ComputeTransposedScaledIDCT<kBlockDim>()(
-            FromBlock(kBlockDim, kBlockDim, row_dct + bx * kDCTBlockSize),
-            ToLines(row_idct + bx * kBlockDim, idct->PixelsPerRow()));
-      }
-    }
-  }
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -100,11 +80,6 @@ void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
            ImageF* JXL_RESTRICT pixels) {
   return HWY_DYNAMIC_DISPATCH(IDct8)(xsize_blocks, ysize_blocks, dequantized,
                                      pool, pixels);
-}
-
-HWY_EXPORT(TransposedScaledIDCT);
-void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct) {
-  return HWY_DYNAMIC_DISPATCH(TransposedScaledIDCT)(dct, idct);
 }
 
 }  // namespace jxl

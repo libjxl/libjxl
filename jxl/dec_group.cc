@@ -281,8 +281,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
               continue;
             }
-            Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
-                                 ToBlock(8, 8, local_block));
+            Transpose<8, 8>::Run(DCTFrom(block + c * size, 8),
+                                 DCTTo(local_block, 8));
             local_block[0] = dc_rows[c][sbx[c]];
             int16_t* JXL_RESTRICT jpeg_pos =
                 jpeg_row[c] + sbx[c] * kDCTBlockSize;
@@ -313,7 +313,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           }
           float* JXL_RESTRICT idct_pos = idct_row[c] + sbx[c] * kBlockDim;
           TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
-                            idct_stride);
+                            idct_stride, group_dec_cache->scratch_space);
         }
 
         bx += llf_x;
@@ -404,8 +404,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
               int16_t* JXL_RESTRICT jpeg_pos = jpeg_row[c] + bx * kDCTBlockSize;
               // JPEG XL is transposed, JPEG is not.
               HWY_ALIGN float transposed_dct[64];
-              Transpose<8, 8>::Run(FromBlock(8, 8, block + c * size),
-                                   ToBlock(8, 8, transposed_dct));
+              Transpose<8, 8>::Run(DCTFrom(block + c * size, 8),
+                                   DCTTo(transposed_dct, 8));
               // No CfL - no need to store the block converted to integers.
               if (row_cmap[0][abs_tx] == 0 && row_cmap[2][abs_tx] == 0) {
                 for (size_t i = 0; i < 64; i += Lanes(d)) {
@@ -462,7 +462,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                 idct_row[c] +
                 (padding + bx + padding * idct_stride) * kBlockDim;
             TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
-                              idct_stride);
+                              idct_stride, group_dec_cache->scratch_space);
           }
 
           if (dec_state->shared->image_features.loop_filter.epf) {

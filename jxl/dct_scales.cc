@@ -18,21 +18,18 @@ namespace jxl {
 
 // Definition of constexpr arrays.
 constexpr float DCTResampleScales<1, 8>::kScales[];
-constexpr float DCTResampleScales<2, 8>::kScales[];
 constexpr float DCTResampleScales<2, 16>::kScales[];
-constexpr float DCTResampleScales<4, 16>::kScales[];
 constexpr float DCTResampleScales<4, 32>::kScales[];
-constexpr float DCTResampleScales<8, 32>::kScales[];
+constexpr float DCTResampleScales<8, 64>::kScales[];
 constexpr float DCTResampleScales<8, 1>::kScales[];
-constexpr float DCTResampleScales<8, 2>::kScales[];
 constexpr float DCTResampleScales<16, 2>::kScales[];
-constexpr float DCTResampleScales<16, 4>::kScales[];
 constexpr float DCTResampleScales<32, 4>::kScales[];
-constexpr float DCTResampleScales<32, 8>::kScales[];
+constexpr float DCTResampleScales<64, 8>::kScales[];
 constexpr float WcMultipliers<4>::kMultipliers[];
 constexpr float WcMultipliers<8>::kMultipliers[];
 constexpr float WcMultipliers<16>::kMultipliers[];
 constexpr float WcMultipliers<32>::kMultipliers[];
 constexpr float WcMultipliers<64>::kMultipliers[];
+constexpr float WcMultipliers<128>::kMultipliers[];
 
 }  // namespace jxl

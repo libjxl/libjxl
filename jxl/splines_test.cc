@@ -44,7 +44,7 @@ const ColorCorrelationMap* const cmap = new ColorCorrelationMap;
 const float kYToX = cmap->YtoXRatio(0);
 const float kYToB = cmap->YtoBRatio(0);
 
-constexpr float kTolerance = 0.1;
+constexpr float kTolerance = 0.003125;
 
 std::vector<Spline> DequantizeSplines(const Splines& splines) {
   const auto& quantized_splines = splines.TestOnlyQuantizedSplines();
@@ -234,9 +234,7 @@ TEST(SplinesTest, DuplicatePoints) {
   EXPECT_FALSE(splines.AddTo(&image, Rect(image), Rect(image), *cmap));
 }
 
-// TODO(veluca): the data here relied on interestingly wrong DCT quantization
-// weights.
-TEST(SplinesTest, DISABLED_Drawing) {
+TEST(SplinesTest, Drawing) {
   CodecInOut io_expected;
   const PaddedBytes orig = ReadTestData("jxl/splines.png");
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,
@@ -246,8 +244,8 @@ TEST(SplinesTest, DISABLED_Drawing) {
       {/*control_points=*/{
            {9, 54}, {118, 159}, {97, 3}, {10, 40}, {150, 25}, {120, 300}},
        /*color_dct=*/
-       {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
-       /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}}};
+       {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
+       /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}}};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {

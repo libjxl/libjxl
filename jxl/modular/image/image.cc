@@ -35,12 +35,13 @@ void Channel::compute_minmax(pixel_type *min, pixel_type *max) const {
   if (max) *max = realmax;
 }
 
-void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
+void Image::undo_transforms(const weighted::Header &wp_header, int keep,
+                            jxl::ThreadPool *pool) {
   if (keep == -2) return;
   while ((int)transform.size() > keep && transform.size() > 0) {
     Transform t = transform.back();
     JXL_DEBUG_V(4, "Undoing transform %s", t.Name());
-    Status result = t.Inverse(*this, pool);
+    Status result = t.Inverse(*this, wp_header, pool);
     if (result == false) {
       JXL_NOTIFY_ERROR("Error while undoing transform %s.", t.Name());
       error = true;
@@ -62,9 +63,10 @@ void Image::undo_transforms(int keep, jxl::ThreadPool *pool) {
   }
 }
 
-bool Image::do_transform(const Transform &tr) {
+bool Image::do_transform(const Transform &tr,
+                         const weighted::Header &wp_header) {
   Transform t = tr;
-  bool did_it = t.Forward(*this);
+  bool did_it = t.Forward(*this, wp_header);
   if (did_it) transform.push_back(t);
   return did_it;
 }

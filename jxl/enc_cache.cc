@@ -65,6 +65,8 @@ Image3F ComputeCoeffs(const Image3F& opsin,
   const size_t opsin_stride = static_cast<size_t>(opsin.PixelsPerRow());
 
   auto compute_coeffs = [&](int group_index, int /* thread */) {
+    auto mem = hwy::AllocateAligned<float>(2 * AcStrategy::kMaxCoeffArea);
+    float* JXL_RESTRICT scratch_space = mem.get();
     const size_t gx = group_index % shared->frame_dim.xsize_groups;
     const size_t gy = group_index / shared->frame_dim.xsize_groups;
     size_t offset = 0;
@@ -92,7 +94,7 @@ Image3F ComputeCoeffs(const Image3F& opsin,
         const AcStrategy::Type type = acs.Strategy();
         for (size_t c = 0; c < 3; ++c) {
           TransformFromPixels(type, opsin_rows[c] + bx * kBlockDim,
-                              opsin_stride, rows[c] + offset);
+                              opsin_stride, rows[c] + offset, scratch_space);
           DCFromLowestFrequencies(type, rows[c] + offset, dc_rows[c] + bx,
                                   dc_stride);
         }
@@ -177,7 +179,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     if (cparams.progressive_dc == 0) {
       cparams.modular_group_mode = true;
       cparams.quality_pair.first = cparams.quality_pair.second =
-          99.f - enc_state->cparams.butteraugli_distance * 2.f;
+          99.f - enc_state->cparams.butteraugli_distance * 0.2f;
     }
     ImageMetadata metadata;
     metadata.color_encoding = ColorEncoding::LinearSRGB();
@@ -198,6 +200,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                           pool, &br, nullptr, &decoded));
     shared.dc_storage =
         CopyImage(*shared.multiframe->SavedDc(cparams.dc_level));
+    ZeroFillImage(&shared.quant_dc);
     JXL_CHECK(br.Close());
   } else {
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {

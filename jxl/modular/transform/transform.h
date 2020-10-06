@@ -86,8 +86,6 @@ class Transform : public Fields {
   int max_delta_error;
   // Serialized for Palette.
   Predictor predictor;
-  // Serialized if predictor == Weighted and Palette.
-  weighted::Header wp_header;
   // for Palette, not serialized.
   bool ordered_palette = true;
   bool lossy_palette = false;
@@ -115,6 +113,9 @@ class Transform : public Fields {
       // 0-41, default YCoCg.
       JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(6), Bits(2), BitsOffset(4, 2),
                                              BitsOffset(6, 10), 6, &rct_type));
+      if (rct_type >= 42) {
+        return JXL_FAILURE("Invalid transform RCT type");
+      }
     }
     if (visitor->Conditional(id == TransformId::kPalette)) {
       JXL_QUIET_RETURN_IF_ERROR(
@@ -130,9 +131,6 @@ class Transform : public Fields {
                         reinterpret_cast<uint32_t *>(&predictor)));
       if (predictor >= Predictor::Best) {
         return JXL_FAILURE("Invalid predictor");
-      }
-      if (visitor->Conditional(predictor == Predictor::Weighted)) {
-        JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&wp_header));
       }
     }
 
@@ -154,8 +152,10 @@ class Transform : public Fields {
   // Returns the name of the transform.
   const char *TransformName() const;
 
-  Status Forward(Image &input, ThreadPool *pool = nullptr);
-  Status Inverse(Image &input, ThreadPool *pool = nullptr);
+  Status Forward(Image &input, const weighted::Header &wp_header,
+                 ThreadPool *pool = nullptr);
+  Status Inverse(Image &input, const weighted::Header &wp_header,
+                 ThreadPool *pool = nullptr);
   Status MetaApply(Image &input);
 };
 

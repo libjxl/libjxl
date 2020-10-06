@@ -688,16 +688,16 @@ class LossyFrameEncoder {
 
     auto& ctx_map = enc_state_->shared.block_ctx_map.ctx_map;
     ctx_map.clear();
-    ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs, 0);
+    ctx_map.resize(3 * kNumOrders * num_dc_ctxs, 0);
 
     int lbuckets = (dct[1].size() + 1);
     for (size_t i = 0; i < num_dc_ctxs; i++) {
       // up to 9 contexts for luma
       ctx_map[i] = i / lbuckets;
       // up to 3 contexts for chroma
-      ctx_map[BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
+      ctx_map[kNumOrders * num_dc_ctxs + i] =
           num_dc_ctxs / lbuckets + (i % lbuckets);
-      ctx_map[2 * BlockCtxMap::kNumStrategyOrders * num_dc_ctxs + i] =
+      ctx_map[2 * kNumOrders * num_dc_ctxs + i] =
           num_dc_ctxs / lbuckets + (i % lbuckets);
     }
     enc_state_->shared.block_ctx_map.num_ctxs =

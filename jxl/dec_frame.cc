@@ -140,13 +140,6 @@ class LossyFrameDecoder {
 
   Status DecodeGlobalACInfo(BitReader* reader,
                             ModularFrameDecoder* modular_frame_decoder) {
-    uint64_t flags = dec_state_.shared_storage.frame_header.flags;
-    if (!(flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
-        !(flags & FrameHeader::kUseDcFrame)) {
-      AdaptiveDCSmoothing(dec_state_.shared->quantizer.MulDC(),
-                          &dec_state_.shared_storage.dc_storage, pool_);
-    }
-
     if (aux_out_ && aux_out_->testing_aux.dc) {
       *aux_out_->testing_aux.dc = CopyImage(*dec_state_.shared_storage.dc);
     }
@@ -324,7 +317,8 @@ Status DecodeFrame(const DecompressParams& dparams,
                    Multiframe* JXL_RESTRICT multiframe,
                    ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, AnimationFrame* animation) {
+                   ImageBundle* decoded, const CodecInOut* io,
+                   AnimationFrame* animation) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
   FrameHeader frame_header;
@@ -334,6 +328,10 @@ Status DecodeFrame(const DecompressParams& dparams,
       animation_or_null, reader, &frame_header, frame_dim, &loop_filter));
   if (frame_dim->xsize == 0 || frame_dim->ysize == 0) {
     return JXL_FAILURE("Empty frame");
+  }
+  if (io) {
+    JXL_RETURN_IF_ERROR(
+        io->VerifyDimensions(frame_dim->xsize, frame_dim->ysize));
   }
   const size_t num_passes = frame_header.passes.num_passes;
   const size_t xsize = frame_dim->xsize;
@@ -355,8 +353,10 @@ Status DecodeFrame(const DecompressParams& dparams,
   if (decoded->metadata()->m2.num_extra_channels > 0 &&
       frame_header.IsDisplayed()) {
     std::vector<ImageU> ecv;
-    for (size_t i = 0; i < decoded->metadata()->m2.num_extra_channels; i++)
-      ecv.push_back(ImageU(xsize, ysize));
+    for (size_t i = 0; i < decoded->metadata()->m2.num_extra_channels; i++) {
+      const auto eci = decoded->metadata()->m2.extra_channel_info[i];
+      ecv.push_back(ImageU(eci.Size(xsize), eci.Size(ysize)));
+    }
     decoded->SetExtraChannels(std::move(ecv));
   }
   if (frame_header.encoding == FrameEncoding::kModular) {
@@ -555,6 +555,16 @@ Status DecodeFrame(const DecompressParams& dparams,
   };
   RunOnPool(pool, 0, frame_dim->num_dc_groups, process_dc_group_init,
             process_dc_group, "DecodeDCGroup");
+
+  // Do Adaptive DC smoothing if enabled.
+  if (frame_header.encoding == FrameEncoding::kVarDCT &&
+      !(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
+      !(frame_header.flags & FrameHeader::kUseDcFrame)) {
+    AdaptiveDCSmoothing(lossy_frame_decoder.State()->shared->quantizer.MulDC(),
+                        &lossy_frame_decoder.State()->shared_storage.dc_storage,
+                        pool);
+  }
+
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
   if (downsampling < 16 && frame_dim->num_groups > 1) {
     decoded->SetDecodedBytes(group_offsets[frame_dim->num_dc_groups] +

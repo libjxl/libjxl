@@ -168,7 +168,7 @@ JXL_NOINLINE void FindBestCorrelation(const Image3F& opsin,
 
   // Working set is too large for stack; allocate dynamically.
   const size_t items_per_thread =
-      AcStrategy::kMaxCoeffArea * 2 + kColorTileDim * kColorTileDim * 2;
+      AcStrategy::kMaxCoeffArea * 4 + kColorTileDim * kColorTileDim * 2;
   JXL_ASSERT(items_per_thread % MaxLanes(df) == 0);
   hwy::AlignedFreeUniquePtr<float[]> mem(nullptr, hwy::AlignedFreer(nullptr));
   const auto init_func = [&](size_t num_threads) {
@@ -184,7 +184,9 @@ JXL_NOINLINE void FindBestCorrelation(const Image3F& opsin,
     float* HWY_RESTRICT block_s = block_m + AcStrategy::kMaxCoeffArea;
     float* HWY_RESTRICT coeffs_m = block_s + AcStrategy::kMaxCoeffArea;
     float* HWY_RESTRICT coeffs_s = coeffs_m + kColorTileDim * kColorTileDim;
-    JXL_DASSERT(coeffs_s + kColorTileDim * kColorTileDim ==
+    float* HWY_RESTRICT scratch_space =
+        coeffs_s + kColorTileDim * kColorTileDim;
+    JXL_DASSERT(scratch_space + 2 * AcStrategy::kMaxCoeffArea ==
                 block_m + items_per_thread);
 
     // Small (~64 bytes each)
@@ -216,10 +218,10 @@ JXL_NOINLINE void FindBestCorrelation(const Image3F& opsin,
           if (!acs.IsFirstBlock()) continue;
           size_t xs = acs.covered_blocks_x();
           TransformFromPixels(acs.Strategy(), row_m + x * kBlockDim, stride,
-                              block_m);
+                              block_m, scratch_space);
           DCFromLowestFrequencies(acs.Strategy(), block_m, dc_m, xs);
           TransformFromPixels(acs.Strategy(), row_s + x * kBlockDim, stride,
-                              block_s);
+                              block_s, scratch_space);
           DCFromLowestFrequencies(acs.Strategy(), block_s, dc_s, xs);
           const float* const JXL_RESTRICT qm =
               dequant.InvMatrix(acs.Strategy(), SIDE_CHANNEL);

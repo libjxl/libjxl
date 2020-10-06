@@ -452,7 +452,7 @@ cmake_build_and_test() {
   if [[ "${SKIP_TEST}" -ne "1" ]]; then
     (cd "${BUILD_DIR}"
      export UBSAN_OPTIONS=print_stacktrace=1
-     ulimit -s "${TEST_STACK_LIMIT}"
+     [[ "${TEST_STACK_LIMIT}" == "none" ]] || ulimit -s "${TEST_STACK_LIMIT}"
      ctest -j $(nproc --all || echo 1) --output-on-failure)
   fi
 }
@@ -546,7 +546,7 @@ cmd_test() {
   fi
   (cd "${BUILD_DIR}"
    export UBSAN_OPTIONS=print_stacktrace=1
-   ulimit -s "${TEST_STACK_LIMIT}"
+   [[ "${TEST_STACK_LIMIT}" == "none" ]] || ulimit -s "${TEST_STACK_LIMIT}"
    ctest -j $(nproc --all || echo 1) --output-on-failure "$@")
 }
 
@@ -774,7 +774,7 @@ run_benchmark() {
     benchmark_args+=(--save_decompressed --save_compressed)
   fi
   (
-    ulimit -s "${TEST_STACK_LIMIT}"
+    [[ "${TEST_STACK_LIMIT}" == "none" ]] || ulimit -s "${TEST_STACK_LIMIT}"
     "${BUILD_DIR}/tools/benchmark_xl" "${benchmark_args[@]}" | \
        tee "${output_dir}/results.txt"
 

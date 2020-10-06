@@ -448,7 +448,7 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
   if (!lf.gab && !lf.epf) {
     if (y < 2 * kBlockDim || y >= 2 * kBlockDim + in_rect.ysize()) return false;
     *output_row = y - 2 * kBlockDim;
-    return true;
+    return *output_row < dec_state->shared->frame_dim.ysize;
   }
   Rect sigma_rect(in_rect.x0() / kBlockDim, in_rect.y0() / kBlockDim,
                   DivCeil(in_rect.xsize(), kBlockDim),

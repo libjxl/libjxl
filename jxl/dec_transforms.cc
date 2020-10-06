@@ -30,9 +30,10 @@ namespace jxl {
 HWY_EXPORT(TransformToPixels);
 void TransformToPixels(AcStrategy::Type strategy,
                        const float* JXL_RESTRICT coefficients,
-                       float* JXL_RESTRICT pixels, size_t pixels_stride) {
+                       float* JXL_RESTRICT pixels, size_t pixels_stride,
+                       float* scratch_space) {
   return HWY_DYNAMIC_DISPATCH(TransformToPixels)(strategy, coefficients, pixels,
-                                                 pixels_stride);
+                                                 pixels_stride, scratch_space);
 }
 
 HWY_EXPORT(DCFromLowestFrequencies);

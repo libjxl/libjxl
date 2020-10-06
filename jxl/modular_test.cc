@@ -64,9 +64,10 @@ void TestLosslessGroups(size_t group_size_shift) {
 
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(io.xsize() / 4, io.ysize() / 4);
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 4400000);
+  EXPECT_LE(compressed_size, 280000);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             0.2);
@@ -131,8 +132,8 @@ TEST(ModularTest, RoundtripExtraProperties) {
   {
     BitReader reader(writer.GetSpan());
     BitReaderScopedCloser closer(&reader, &status);
-    ASSERT_TRUE(
-        ModularGenericDecompress(&reader, decoded, /*group_id=*/0, &options));
+    ASSERT_TRUE(ModularGenericDecompress(&reader, decoded, /*header=*/nullptr,
+                                         /*group_id=*/0, &options));
   }
   ASSERT_TRUE(status);
   ASSERT_EQ(image.channel.size(), decoded.channel.size());

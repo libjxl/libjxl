@@ -27,7 +27,8 @@ namespace jxl {
 
 void TransformToPixels(AcStrategy::Type strategy,
                        const float* JXL_RESTRICT coefficients,
-                       float* JXL_RESTRICT pixels, size_t pixels_stride);
+                       float* JXL_RESTRICT pixels, size_t pixels_stride,
+                       float* JXL_RESTRICT scratch_space);
 
 // Equivalent of the above for DC image.
 void DCFromLowestFrequencies(AcStrategy::Type strategy, const float* block,

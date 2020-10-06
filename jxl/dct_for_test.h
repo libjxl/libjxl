@@ -29,11 +29,11 @@ namespace jxl {
 namespace test {
 static inline double alpha(int u) { return u == 0 ? 0.7071067811865475 : 1.0; }
 
-// N-DCT on M columns.
+// N-DCT on M columns, divided by sqrt(N). Matches the definition in the spec.
 template <size_t N, size_t M>
 void DCT1D(double block[N * M], double out[N * M]) {
   std::vector<double> matrix(N * N);
-  const double scale = std::sqrt(2.0 / N);
+  const double scale = std::sqrt(2.0) / N;
   for (size_t y = 0; y < N; y++) {
     for (size_t u = 0; u < N; u++) {
       matrix[N * u + y] = alpha(u) * cos((y + 0.5) * u * Pi(1.0 / N)) * scale;
@@ -49,11 +49,12 @@ void DCT1D(double block[N * M], double out[N * M]) {
   }
 }
 
-// N-IDCT on M columns.
+// N-IDCT on M columns, multiplied by sqrt(N). Matches the definition in the
+// spec.
 template <size_t N, size_t M>
 void IDCT1D(double block[N * M], double out[N * M]) {
   std::vector<double> matrix(N * N);
-  const double scale = std::sqrt(2.0 / N);
+  const double scale = std::sqrt(2.0);
   for (size_t y = 0; y < N; y++) {
     for (size_t u = 0; u < N; u++) {
       // Transpose of DCT matrix.

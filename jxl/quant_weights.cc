@@ -315,6 +315,8 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       break;
     }
     case QuantEncoding::kQuantModeRAW: {
+      // Set mode early, to avoid mem-leak.
+      encoding->mode = QuantEncoding::kQuantModeRAW;
       JXL_RETURN_IF_ERROR(ModularFrameDecoder::DecodeQuantTable(
           required_size_x, required_size_y, br, encoding, idx,
           modular_frame_decoder));
@@ -330,68 +332,12 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
 Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
                          size_t* offsets, size_t table_num,
                          DequantMatrices::QuantTable kind, size_t* pos) {
-  double weights[3 * kMaxQuantTableSize];
+  std::vector<double> weights(3 * kMaxQuantTableSize);
 
   constexpr size_t N = kBlockDim;
-  size_t wrows = 8, wcols = 8;
-  size_t num = 0;
-  switch (kind) {
-    case DequantMatrices::DCT: {
-      num = kDCTBlockSize;
-      wrows = 8;
-      wcols = 8;
-      break;
-    }
-    case DequantMatrices::DCT16X16: {
-      num = 4 * kDCTBlockSize;
-      wrows = 16;
-      wcols = 16;
-      break;
-    }
-    case DequantMatrices::DCT32X32: {
-      num = 16 * kDCTBlockSize;
-      wrows = 32;
-      wcols = 32;
-      break;
-    }
-    case DequantMatrices::DCT8X16: {
-      wrows = 8;
-      wcols = 16;
-      num = 2 * kDCTBlockSize;
-      break;
-    }
-    case DequantMatrices::DCT8X32: {
-      num = 4 * kDCTBlockSize;
-      wrows = 8;
-      wcols = 32;
-      break;
-    }
-    case DequantMatrices::DCT16X32: {
-      num = 8 * kDCTBlockSize;
-      wrows = 16;
-      wcols = 32;
-      break;
-    }
-    case DequantMatrices::DCT4X4: {
-      num = kDCTBlockSize;
-      break;
-    }
-    case DequantMatrices::DCT4X8: {
-      num = kDCTBlockSize;
-      break;
-    }
-    case DequantMatrices::IDENTITY:
-    case DequantMatrices::DCT2X2:
-      num = kDCTBlockSize;
-      break;
-    case DequantMatrices::AFV0: {
-      num = kDCTBlockSize;
-      break;
-    }
-    default: {
-      JXL_ABORT("Invalid AC strategy value");
-    }
-  }
+  size_t wrows = 8 * DequantMatrices::required_size_x[kind],
+         wcols = 8 * DequantMatrices::required_size_y[kind];
+  size_t num = wrows * wcols;
 
   switch (encoding.mode) {
     case QuantEncoding::kQuantModeLibrary: {
@@ -402,12 +348,12 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
     }
     case QuantEncoding::kQuantModeID: {
       JXL_ASSERT(num == kDCTBlockSize);
-      GetQuantWeightsIdentity(encoding.idweights, weights);
+      GetQuantWeightsIdentity(encoding.idweights, weights.data());
       break;
     }
     case QuantEncoding::kQuantModeDCT2: {
       JXL_ASSERT(num == kDCTBlockSize);
-      GetQuantWeightsDCT2(encoding.dct2weights, weights);
+      GetQuantWeightsDCT2(encoding.dct2weights, weights.data());
       break;
     }
     case QuantEncoding::kQuantModeDCT4: {
@@ -449,9 +395,9 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
       break;
     }
     case QuantEncoding::kQuantModeDCT: {
-      JXL_RETURN_IF_ERROR(
-          GetQuantWeights(wrows, wcols, encoding.dct_params.distance_bands,
-                          encoding.dct_params.num_distance_bands, weights));
+      JXL_RETURN_IF_ERROR(GetQuantWeights(
+          wrows, wcols, encoding.dct_params.distance_bands,
+          encoding.dct_params.num_distance_bands, weights.data()));
       break;
     }
     case QuantEncoding::kQuantModeRAW: {
@@ -562,8 +508,8 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
 
 // These definitions are needed before C++17.
 constexpr size_t DequantMatrices::required_size_[];
-constexpr size_t DequantMatrices::required_size_x_[];
-constexpr size_t DequantMatrices::required_size_y_[];
+constexpr size_t DequantMatrices::required_size_x[];
+constexpr size_t DequantMatrices::required_size_y[];
 constexpr DequantMatrices::QuantTable DequantMatrices::kQuantTable[];
 
 Status DequantMatrices::Encode(
@@ -581,8 +527,8 @@ Status DequantMatrices::Encode(
   writer->Write(1, all_default);
   if (!all_default) {
     for (size_t i = 0; i < encodings_.size(); i++) {
-      JXL_RETURN_IF_ERROR(EncodeQuant(encodings_[i], i, required_size_x_[i],
-                                      required_size_y_[i], writer,
+      JXL_RETURN_IF_ERROR(EncodeQuant(encodings_[i], i, required_size_x[i],
+                                      required_size_y[i], writer,
                                       modular_frame_encoder));
     }
   }
@@ -617,8 +563,8 @@ Status DequantMatrices::Decode(BitReader* br,
   encodings_.resize(kNum, QuantEncoding::Library(0));
   for (size_t i = 0; i < num_tables; i++) {
     JXL_RETURN_IF_ERROR(
-        jxl::Decode(br, &encodings_[i], required_size_x_[i % kNum],
-                    required_size_y_[i % kNum], i, modular_frame_decoder));
+        jxl::Decode(br, &encodings_[i], required_size_x[i % kNum],
+                    required_size_y[i % kNum], i, modular_frame_decoder));
   }
   return DequantMatrices::Compute();
 }
@@ -958,7 +904,6 @@ struct DequantMatricesLibraryDef {
             V(1.0),
         }});
   }
-
   // AFV
   static const QuantEncodingInternal AFV0() {
     return QuantEncodingInternal::AFV(DCT4X8().dct_params, DCT4X4().dct_params,
@@ -1005,11 +950,83 @@ struct DequantMatricesLibraryDef {
                                             V(-0.25),
                                         }}});
   }
+
+  // DCT64
+  static const QuantEncodingInternal DCT64X64() {
+    return QuantEncodingInternal::DCT(
+        DctQuantWeightParams({{{
+                                   V(0.9 * 26629.073922049845),
+                                   V(-1.025),
+                                   V(-0.78),
+                                   V(-0.65012),
+                                   V(-0.19041574084286472),
+                                   V(-0.20819395464),
+                                   V(-0.421064),
+                                   V(-0.32733845535848671),
+                               },
+                               {
+                                   V(0.9 * 9311.3238710010046),
+                                   V(-0.3041958212306401),
+                                   V(-0.3633036457487539),
+                                   V(-0.35660379990111464),
+                                   V(-0.3443074455424403),
+                                   V(-0.33699592683512467),
+                                   V(-0.30180866526242109),
+                                   V(-0.27321683125358037),
+                                },
+                               {
+                                   V(0.9 * 4992.2486445538634),
+                                   V(-1.2),
+                                   V(-1.2),
+                                   V(-0.8),
+                                   V(-0.7),
+                                   V(-0.7),
+                                   V(-0.4),
+                                   V(-0.5),
+                               }}},
+                             8));
+  }
+
+  // DCT64X32
+  static const QuantEncodingInternal DCT32X64() {
+    return QuantEncodingInternal::DCT(
+        DctQuantWeightParams({{{
+                                   V(0.65 * 23629.073922049845),
+                                   V(-1.025),
+                                   V(-0.78),
+                                   V(-0.65012),
+                                   V(-0.19041574084286472),
+                                   V(-0.20819395464),
+                                   V(-0.421064),
+                                   V(-0.32733845535848671),
+                               },
+                               {
+                                   V(0.65 * 8611.3238710010046),
+                                   V(-0.3041958212306401),
+                                   V(-0.3633036457487539),
+                                   V(-0.35660379990111464),
+                                   V(-0.3443074455424403),
+                                   V(-0.33699592683512467),
+                                   V(-0.30180866526242109),
+                                   V(-0.27321683125358037),
+                                },
+                               {
+                                   V(0.65 * 4492.2486445538634),
+                                   V(-1.2),
+                                   V(-1.2),
+                                   V(-0.8),
+                                   V(-0.7),
+                                   V(-0.7),
+                                   V(-0.4),
+                                   V(-0.5),
+                               }}},
+                             8));
+  }
 };
 }  // namespace
 
 const DequantMatrices::DequantLibraryInternal DequantMatrices::LibraryInit() {
-  static_assert(kNum == 11,
+  static_assert(kNum == 13,
                 "Update this function when adding new quantization kinds.");
   static_assert(kNumPredefinedTables == 1,
                 "Update this function when adding new quantization matrices to "
@@ -1027,6 +1044,8 @@ const DequantMatrices::DequantLibraryInternal DequantMatrices::LibraryInit() {
   static_assert(8 == DCT16X32, "Update the DequantLibrary array below.");
   static_assert(9 == DCT4X8, "Update the DequantLibrary array below.");
   static_assert(10 == AFV0, "Update the DequantLibrary array below.");
+  static_assert(11 == DCT64X64, "Update the DequantLibrary array below.");
+  static_assert(12 == DCT32X64, "Update the DequantLibrary array below.");
   return DequantMatrices::DequantLibraryInternal{
       DequantMatricesLibraryDef::DCT(),
       DequantMatricesLibraryDef::IDENTITY(),
@@ -1039,6 +1058,8 @@ const DequantMatrices::DequantLibraryInternal DequantMatrices::LibraryInit() {
       DequantMatricesLibraryDef::DCT16X32(),
       DequantMatricesLibraryDef::DCT4X8(),
       DequantMatricesLibraryDef::AFV0(),
+      DequantMatricesLibraryDef::DCT64X64(),
+      DequantMatricesLibraryDef::DCT32X64(),
   };
 }
 
@@ -1083,8 +1104,8 @@ Status DequantMatrices::Compute() {
     // Ensure that the lowest frequencies have a 0 inverse table.
     // This does not affect en/decoding, but allows AC strategy selection to be
     // slightly simpler.
-    size_t xs = required_size_x_[QuantTable(table % kNum)];
-    size_t ys = required_size_y_[QuantTable(table % kNum)];
+    size_t xs = required_size_x[QuantTable(table % kNum)];
+    size_t ys = required_size_y[QuantTable(table % kNum)];
     CoefficientLayout(&ys, &xs);
     for (size_t c = 0; c < 3; c++) {
       for (size_t y = 0; y < ys; y++) {
@@ -1112,8 +1133,8 @@ void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings) {
   encodings_ = encodings;
   for (size_t i = 0; i < encodings_.size(); i++) {
     if (encodings_[i].mode == QuantEncodingInternal::kQuantModeRAW) {
-      modular_frame_encoder_->AddQuantTable(required_size_x_[i] * kBlockDim,
-                                            required_size_y_[i] * kBlockDim,
+      modular_frame_encoder_->AddQuantTable(required_size_x[i] * kBlockDim,
+                                            required_size_y[i] * kBlockDim,
                                             encodings_[i], i);
     }
   }

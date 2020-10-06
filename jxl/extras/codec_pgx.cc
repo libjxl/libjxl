@@ -91,11 +91,15 @@ class Parser {
 
   Status SkipLineBreak() {
     if (pos_ == end_) return JXL_FAILURE("PGX: reached end before line break");
-    if (!IsLineBreak(*pos_)) return JXL_FAILURE("PGX: expected line break");
-    ++pos_;
-    // 0xd 0xa linebreak is possible
-    if (pos_ != end_ && IsLineBreak(*pos_)) ++pos_;
-    return true;
+    // Line break can be either "\n" (0a) or "\r\n" (0d 0a).
+    if (*pos_ == '\n') {
+      pos_++;
+      return true;
+    } else if (*pos_ == '\r' && pos_ + 1 != end_ && *(pos_ + 1) == '\n') {
+      pos_ += 2;
+      return true;
+    }
+    return JXL_FAILURE("PGX: expected line break");
   }
 
   Status SkipSingleWhitespace() {

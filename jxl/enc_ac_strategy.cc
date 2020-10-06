@@ -54,7 +54,7 @@ namespace {
 // Returns a linear sRGB color (as bytes) for each AC strategy.
 const uint8_t* TypeColor(const uint8_t& raw_strategy) {
   JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
-  static_assert(AcStrategy::kNumValidStrategies == 18, "Change colors");
+  static_assert(AcStrategy::kNumValidStrategies == 21, "Change colors");
   static constexpr uint8_t kColors[][3] = {
       {0x00, 0xBB, 0xBB},  // DCT8
       {0x00, 0xFF, 0xFF},  // IDENTITY
@@ -74,13 +74,16 @@ const uint8_t* TypeColor(const uint8_t& raw_strategy) {
       {0x00, 0xFF, 0xFF},  // AFV1
       {0x00, 0xFF, 0xFF},  // AFV2
       {0x00, 0xFF, 0xFF},  // AFV3
+      {0x00, 0x00, 0x00},  // DCT64x64
+      {0x00, 0x19, 0x19},  // DCT64x32
+      {0x00, 0x19, 0x19},  // DCT32x64
   };
   return kColors[raw_strategy];
 }
 
 const uint8_t* TypeMask(const uint8_t& raw_strategy) {
   JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
-  static_assert(AcStrategy::kNumValidStrategies == 18, "Add masks");
+  static_assert(AcStrategy::kNumValidStrategies == 21, "Add masks");
   static constexpr uint8_t kMask[][64] = {
       {
           0, 0, 0, 0, 0, 0, 0, 0,  //
@@ -262,6 +265,36 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
           0, 0, 0, 0, 0, 0, 0, 1,  //
           0, 0, 0, 0, 0, 0, 1, 1,  //
       },                           // AFV3
+      {
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+      },                           // DCT64x64
+      {
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 1, 1, 0, 0, 0,  //
+      },                           // DCT64x32
+      {
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+      },                           // DCT32x64
   };
   return kMask[raw_strategy];
 }
@@ -374,6 +407,9 @@ size_t ACSCandidates(const AcStrategy::Type (&in)[N],
 // Order in which transforms are tested for max delta: the first
 // acceptable one is chosen as initial guess.
 constexpr AcStrategy::Type kACSOrder[] = {
+    AcStrategy::Type::DCT64X64,
+    AcStrategy::Type::DCT64X32,
+    AcStrategy::Type::DCT32X64,
     AcStrategy::Type::DCT32X32,
     AcStrategy::Type::DCT32X16,
     AcStrategy::Type::DCT16X32,
@@ -389,6 +425,14 @@ constexpr AcStrategy::Type kACSOrder[] = {
 size_t ACSPossibleReplacements(AcStrategy::Type current,
                                AcStrategy::Type* JXL_RESTRICT out) {
   // TODO(veluca): is this decision tree optimal?
+  if (current == AcStrategy::Type::DCT64X64) {
+    return ACSCandidates(
+        {AcStrategy::Type::DCT64X32, AcStrategy::Type::DCT32X64, AcStrategy::Type::DCT32X32}, out);
+  }
+  if (current == AcStrategy::Type::DCT64X32 ||
+      current == AcStrategy::Type::DCT32X64) {
+    return ACSCandidates({AcStrategy::Type::DCT32X32}, out);
+  }
   if (current == AcStrategy::Type::DCT32X32) {
     return ACSCandidates(
         {AcStrategy::Type::DCT32X16, AcStrategy::Type::DCT16X32}, out);
@@ -440,16 +484,16 @@ namespace HWY_NAMESPACE {
 
 float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
                       const ACSConfig& config,
-                      const float* JXL_RESTRICT cmap_factors) {
+                      const float* JXL_RESTRICT cmap_factors, float* block,
+                      float* scratch_space, int* quantized) {
   const size_t size = (1 << acs.log2_covered_blocks()) * kDCTBlockSize;
 
   // Apply transform.
-  HWY_ALIGN float block[3 * AcStrategy::kMaxCoeffArea];
   for (size_t c = 0; c < 3; c++) {
     float* JXL_RESTRICT block_c = block + size * c;
     std::fill(block_c, block_c + size, 0.0f);
     TransformFromPixels(acs.Strategy(), &config.Pixel(c, x, y),
-                        config.src_stride, block_c);
+                        config.src_stride, block_c, scratch_space);
   }
 
   float quant = 0;
@@ -475,7 +519,6 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     size_t num_nzeros = 0;
     size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
     const float* inv_matrix = config.dequant->InvMatrix(acs.RawStrategy(), c);
-    HWY_ALIGN int quantized[AcStrategy::kMaxCoeffArea];
     const auto cmap_factor = Set(df, cmap_factors[c]);
     const auto q = Set(df, quant);
     for (size_t i = 0; i < num_blocks * kDCTBlockSize; i += Lanes(df)) {
@@ -519,7 +562,8 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
 void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
                      const float* JXL_RESTRICT cmap_factors,
                      AcStrategyImage* JXL_RESTRICT ac_strategy,
-                     float* JXL_RESTRICT entropy_estimate) {
+                     float* JXL_RESTRICT entropy_estimate, float* block,
+                     float* scratch_space, int* quantized) {
   AcStrategy::Type current =
       AcStrategy::Type(ac_strategy->ConstRow(by)[bx].RawStrategy());
   AcStrategy::Type candidates[AcStrategy::kNumValidStrategies];
@@ -531,6 +575,9 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
   // estimate.
   float ee_val[AcStrategy::kNumValidStrategies][AcStrategy::kMaxCoeffBlocks];
   AcStrategy current_acs = AcStrategy::FromRawStrategy(current);
+  if (current == AcStrategy::Type::DCT64X64) {
+    best_ee *= 0.69;
+  }
   for (size_t cand = 0; cand < num_candidates; cand++) {
     AcStrategy acs = AcStrategy::FromRawStrategy(candidates[cand]);
     size_t idx = 0;
@@ -539,10 +586,11 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
          iy += acs.covered_blocks_y()) {
       for (size_t ix = 0; ix < current_acs.covered_blocks_x();
            ix += acs.covered_blocks_x()) {
-        float entropy = EstimateEntropy(acs, (bx + ix) * 8, (by + iy) * 8,
-                                        config, cmap_factors);
+        float entropy =
+            EstimateEntropy(acs, (bx + ix) * 8, (by + iy) * 8, config,
+                            cmap_factors, block, scratch_space, quantized);
         if (acs.RawStrategy() == AcStrategy::Type::DCT) {
-          entropy *= 0.90;
+          entropy *= 0.96;
         }
         if (acs.RawStrategy() == AcStrategy::Type::DCT4X4) {
           entropy += 40.0;
@@ -553,19 +601,26 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
           entropy *= 1.028;
         }
         if (acs.RawStrategy() == AcStrategy::Type::DCT16X16) {
-          entropy *= 0.94;
+          entropy *= 0.99;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT64X32 ||
+            acs.RawStrategy() == AcStrategy::Type::DCT32X64) {
+          entropy *= 0.73;
+        }
+        if (acs.RawStrategy() == AcStrategy::Type::DCT32X32) {
+          entropy *= 0.8;
         }
         if (acs.RawStrategy() == AcStrategy::Type::DCT16X32 ||
             acs.RawStrategy() == AcStrategy::Type::DCT32X16) {
-          entropy *= 0.998;
+          entropy *= 0.992;
         }
         if (acs.RawStrategy() == AcStrategy::Type::DCT32X8 ||
             acs.RawStrategy() == AcStrategy::Type::DCT8X32) {
-          entropy *= 1.0;
+          entropy *= 0.96;
         }
         if (acs.RawStrategy() == AcStrategy::Type::DCT16X8 ||
             acs.RawStrategy() == AcStrategy::Type::DCT8X16) {
-          entropy *= 0.905;
+          entropy *= 0.95;
         }
         if (acs.RawStrategy() == AcStrategy::Type::DCT4X8 ||
             acs.RawStrategy() == AcStrategy::Type::DCT8X4) {
@@ -604,7 +659,7 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
       ac_strategy->Set(bx + x, by + y, candidates[best]);
       for (size_t iy = y; iy < y + acs.covered_blocks_y(); iy++) {
         for (size_t ix = x; ix < x + acs.covered_blocks_x(); ix++) {
-          entropy_estimate[iy * 4 + ix] = ee_val[best][idx];
+          entropy_estimate[iy * 8 + ix] = ee_val[best][idx];
         }
       }
       idx++;
@@ -628,9 +683,28 @@ void FindBestAcStrategy(const Image3F& src,
     return;
   }
 
+  constexpr bool kOnly64 = false;
+  if (kOnly64) {
+    ac_strategy->FillDCT8();
+    for (size_t y = 0; y + 7 < ysize_blocks; y += 8) {
+      for (size_t x = 0; x + 7 < xsize_blocks; x += 8) {
+        if ((x + y) % 16 == 0) {
+          ac_strategy->Set(x, y, AcStrategy::DCT64X64);
+        } else if ((x + y) % 32 == 8) {
+          ac_strategy->Set(x, y, AcStrategy::DCT64X32);
+          ac_strategy->Set(x + 4, y, AcStrategy::DCT64X32);
+        } else if ((x + y) % 32 == 24) {
+          ac_strategy->Set(x, y, AcStrategy::DCT32X64);
+          ac_strategy->Set(x, y + 4, AcStrategy::DCT32X64);
+        }
+      }
+    }
+    return;
+  }
+
   // Maximum delta that every strategy type is allowed to have in the area
   // it covers. Ignored for 8x8 transforms.
-  const float kMaxDelta = 0.12f * sqrt(butteraugli_target);  // OPTIMIZE
+  const float kMaxDelta = 0.10f * sqrt(butteraugli_target);  // OPTIMIZE
   const float kFlat = 5.0f * sqrt(butteraugli_target);       // OPTIMIZE
 
   // Scale of channels when computing delta.
@@ -660,13 +734,19 @@ void FindBestAcStrategy(const Image3F& src,
   config.src_rows[2] = src.ConstPlaneRow(2, 0);
   config.src_stride = src.PixelsPerRow();
 
-  size_t xsize32 = DivCeil(xsize_blocks, 4);
-  size_t ysize32 = DivCeil(ysize_blocks, 4);
-  const auto compute_initial_acs_guess = [&](int block32, int _) {
-    size_t bx = block32 % xsize32;
-    size_t by = block32 / xsize32;
-    size_t tx = bx * 4 / kColorTileDimInBlocks;
-    size_t ty = by * 4 / kColorTileDimInBlocks;
+  size_t xsize64 = DivCeil(xsize_blocks, 8);
+  size_t ysize64 = DivCeil(ysize_blocks, 8);
+  const auto compute_initial_acs_guess = [&](int block64, int _) {
+    auto mem = hwy::AllocateAligned<float>(5 * AcStrategy::kMaxCoeffArea);
+    auto qmem = hwy::AllocateAligned<int>(AcStrategy::kMaxCoeffArea);
+    int* JXL_RESTRICT quantized = qmem.get();
+    float* JXL_RESTRICT block = mem.get();
+    float* JXL_RESTRICT scratch_space =
+        mem.get() + 3 * AcStrategy::kMaxCoeffArea;
+    size_t bx = block64 % xsize64;
+    size_t by = block64 / xsize64;
+    size_t tx = bx * 8 / kColorTileDimInBlocks;
+    size_t ty = by * 8 / kColorTileDimInBlocks;
     const float cmap_factors[3] = {
         enc_state->shared.cmap.YtoXRatio(
             enc_state->shared.cmap.ytox_map.ConstRow(ty)[tx]),
@@ -680,15 +760,15 @@ void FindBestAcStrategy(const Image3F& src,
     // Find a minimum delta of three options:
     // 1) all, 2) not accounting vertical, 3) not accounting horizontal
     HWY_ALIGN float pixels[3][64];
-    float max_delta[3][16] = {};
-    float flat[3][16] = {};
-    float entropy_estimate[16] = {};
+    float max_delta[3][64] = {};
+    float flat[3][64] = {};
+    float entropy_estimate[64] = {};
     for (size_t c = 0; c < 3; c++) {
-      for (size_t iy = 0; iy < 4; iy++) {
-        size_t dy = by * 4 + iy;
+      for (size_t iy = 0; iy < 8; iy++) {
+        size_t dy = by * 8 + iy;
         if (dy >= ysize_blocks) continue;
-        for (size_t ix = 0; ix < 4; ix++) {
-          size_t dx = bx * 4 + ix;
+        for (size_t ix = 0; ix < 8; ix++) {
+          size_t dx = bx * 8 + ix;
           if (dx >= xsize_blocks) continue;
           for (size_t c = 0; c < 3; c++) {
             for (size_t y = 0; y < 8; y++) {
@@ -758,8 +838,8 @@ void FindBestAcStrategy(const Image3F& src,
                 mdelta = std::max(mdelta, lmax[i]);
               }
             }
-            max_delta[c][iy * 4 + ix] =
-                std::max(max_delta[c][iy * 4 + ix], mdelta);
+            max_delta[c][iy * 8 + ix] =
+                std::max(max_delta[c][iy * 8 + ix], mdelta);
           }
           // How 'flat' is this area, i.e., how observable would ringing
           // artefacts be here?
@@ -792,34 +872,32 @@ void FindBestAcStrategy(const Image3F& src,
               const auto sv = Load(d, s_vals + i) * smul;
               accum += numerator / MulAdd(sv, sv, one);
             }
-            flat[c][iy * 4 + ix] = GetLane(SumOfLanes(accum));
+            flat[c][iy * 8 + ix] = GetLane(SumOfLanes(accum));
           }
         }
       }
     }
-    for (size_t k = 0; k < 16; ++k) {
+    for (size_t k = 0; k < 64; ++k) {
       //      flat[0][k] = std::max<float>(flat[1][k], flat[0][k]);
       flat[2][k] = flat[1][k];
     }
     for (size_t i = 0; i < 3; ++i) {
-      for (size_t k = 0; k < 16; ++k) {
+      for (size_t k = 0; k < 64; ++k) {
         max_delta[i][k] *= kDeltaScale[i];
-        static const float off = 0.05;
-        flat[i][k] += off;
       }
     }
     // Choose the first transform that can be used to cover each block.
-    uint8_t chosen_mask[16] = {};
-    for (size_t iy = 0; iy < 4 && by * 4 + iy < ysize_blocks; iy++) {
-      for (size_t ix = 0; ix < 4 && bx * 4 + ix < xsize_blocks; ix++) {
-        if (chosen_mask[iy * 4 + ix]) continue;
+    uint8_t chosen_mask[64] = { 0 };
+    for (size_t iy = 0; iy < 8 && by * 8 + iy < ysize_blocks; iy++) {
+      for (size_t ix = 0; ix < 8 && bx * 8 + ix < xsize_blocks; ix++) {
+        if (chosen_mask[iy * 8 + ix]) continue;
         for (auto i : kACSOrder) {
           AcStrategy acs = AcStrategy::FromRawStrategy(i);
           size_t cx = acs.covered_blocks_x();
           size_t cy = acs.covered_blocks_y();
-          float max_delta_v[3] = {max_delta[0][iy * 4 + ix],
-                                  max_delta[1][iy * 4 + ix],
-                                  max_delta[2][iy * 4 + ix]};
+          float max_delta_v[3] = {max_delta[0][iy * 8 + ix],
+                                  max_delta[1][iy * 8 + ix],
+                                  max_delta[2][iy * 8 + ix]};
           float max2_delta_v[3] = {0, 0, 0};
           float max_flatness[3] = {0, 0, 0};
           float max_delta_acs = std::max(
@@ -831,17 +909,17 @@ void FindBestAcStrategy(const Image3F& src,
             // Alignment
             if ((iy & (cy - 1)) != 0) continue;
             if ((ix & (cx - 1)) != 0) continue;
-            // Out of block32 bounds
-            if (iy + cy > 4) continue;
-            if (ix + cx > 4) continue;
+            // Out of block64 bounds
+            if (iy + cy > 8) continue;
+            if (ix + cx > 8) continue;
             // Out of image bounds
-            if (by * 4 + iy + cy > ysize_blocks) continue;
-            if (bx * 4 + ix + cx > xsize_blocks) continue;
+            if (by * 8 + iy + cy > ysize_blocks) continue;
+            if (bx * 8 + ix + cx > xsize_blocks) continue;
             // Block would overwrite an already-chosen block
             bool overwrites_covered = false;
             for (size_t y = 0; y < cy; y++) {
               for (size_t x = 0; x < cx; x++) {
-                if (chosen_mask[(y + iy) * 4 + x + ix])
+                if (chosen_mask[(y + iy) * 8 + x + ix])
                   overwrites_covered = true;
               }
             }
@@ -855,7 +933,7 @@ void FindBestAcStrategy(const Image3F& src,
               // Max delta in covered area
               for (size_t y = 0; y < cy; y++) {
                 for (size_t x = 0; x < cx; x++) {
-                  int pix = (iy + y) * 4 + ix + x;
+                  int pix = (iy + y) * 8 + ix + x;
                   max_flatness[c] =
                       std::max<float>(max_flatness[c], flat[c][pix]);
                   if (max_delta_v[c] < max_delta[c][pix]) {
@@ -869,23 +947,19 @@ void FindBestAcStrategy(const Image3F& src,
                 }
               }
               ave_delta_v[c] -= max_delta_v[c];
-              if (cy * cx >= 4) {
+              if (cy * cx >= 5) {
                 ave_delta_v[c] -= max2_delta_v[c];
                 ave_delta_v[c] /= (cy * cx - 2);
               } else {
                 ave_delta_v[c] /= (cy * cx - 1);
               }
-              max_delta_v[c] *= 1.0;
-              max_delta_v[c] -= 0.0 * max2_delta_v[c];
+              max_delta_v[c] -= 0.03 * max2_delta_v[c];
               max_delta_v[c] -= 0.25 * min_delta_v[c];
               max_delta_v[c] -= 0.25 * ave_delta_v[c];
               max_delta_v[c] *= max_flatness[c];
             }
             max_delta_acs = max_delta_v[0] + max_delta_v[1] + max_delta_v[2];
-            max_delta_acs *= pow(1.04427378243, cx * cy);
-            if (cx == 2 && cy == 2) {
-              max_delta_acs *= 0.7;
-            }
+            max_delta_acs *= pow(1.044, cx * cy);
             if (max_delta_acs > kMaxDelta) continue;
           }
           // Estimate entropy and qf value
@@ -893,8 +967,9 @@ void FindBestAcStrategy(const Image3F& src,
           // In modes faster than Wombat mode, AC strategy replacement is not
           // attempted: no need to estimate entropy.
           if (cparams.speed_tier <= SpeedTier::kWombat) {
-            entropy = EstimateEntropy(acs, bx * 32 + ix * 8, by * 32 + iy * 8,
-                                      config, cmap_factors);
+            entropy =
+                EstimateEntropy(acs, bx * 64 + ix * 8, by * 64 + iy * 8, config,
+                                cmap_factors, block, scratch_space, quantized);
           }
           // In modes faster than Hare mode, we don't use InitialQuantField -
           // hence, we need to come up with quant field values.
@@ -903,16 +978,16 @@ void FindBestAcStrategy(const Image3F& src,
             float quant = 1.1f / (1.0f + max_delta_acs) / butteraugli_target;
             for (size_t y = 0; y < cy; y++) {
               for (size_t x = 0; x < cx; x++) {
-                config.SetQuant(bx * 4 + ix + x, by * 4 + iy + y, quant);
+                config.SetQuant(bx * 8 + ix + x, by * 8 + iy + y, quant);
               }
             }
           }
           // Mark blocks as chosen and write to acs image.
-          ac_strategy->Set(bx * 4 + ix, by * 4 + iy, i);
+          ac_strategy->Set(bx * 8 + ix, by * 8 + iy, i);
           for (size_t y = 0; y < cy; y++) {
             for (size_t x = 0; x < cx; x++) {
-              chosen_mask[(y + iy) * 4 + x + ix] = 1;
-              entropy_estimate[(iy + y) * 4 + ix + x] = entropy;
+              chosen_mask[(y + iy) * 8 + x + ix] = 1;
+              entropy_estimate[(iy + y) * 8 + ix + x] = entropy;
             }
           }
           break;
@@ -924,37 +999,39 @@ void FindBestAcStrategy(const Image3F& src,
     // Iterate through the 32-block attempting to replace the current strategy.
     // If replaced, repeat for the top-left new block and let the other ones be
     // taken care of by future iterations.
-    uint8_t computed_mask[16] = {};
-    for (size_t iy = 0; iy < 4; iy++) {
-      if (by * 4 + iy >= ysize_blocks) continue;
-      for (size_t ix = 0; ix < 4; ix++) {
-        if (bx * 4 + ix >= xsize_blocks) continue;
-        if (computed_mask[iy * 4 + ix]) continue;
+    uint8_t computed_mask[64] = {};
+    for (size_t iy = 0; iy < 8; iy++) {
+      if (by * 8 + iy >= ysize_blocks) continue;
+      for (size_t ix = 0; ix < 8; ix++) {
+        if (bx * 8 + ix >= xsize_blocks) continue;
+        if (computed_mask[iy * 8 + ix]) continue;
         uint8_t prev = AcStrategy::kNumValidStrategies;
         while (prev !=
-               ac_strategy->ConstRow(by * 4 + iy)[bx * 4 + ix].RawStrategy()) {
-          prev = ac_strategy->ConstRow(by * 4 + iy)[bx * 4 + ix].RawStrategy();
-          MaybeReplaceACS(bx * 4 + ix, by * 4 + iy, config, cmap_factors,
-                          ac_strategy, entropy_estimate + (iy * 4 + ix));
+               ac_strategy->ConstRow(by * 8 + iy)[bx * 8 + ix].RawStrategy()) {
+          prev = ac_strategy->ConstRow(by * 8 + iy)[bx * 8 + ix].RawStrategy();
+          MaybeReplaceACS(bx * 8 + ix, by * 8 + iy, config, cmap_factors,
+                          ac_strategy, entropy_estimate + (iy * 8 + ix), block,
+                          scratch_space, quantized);
         }
-        AcStrategy acs = ac_strategy->ConstRow(by * 4 + iy)[bx * 4 + ix];
+        AcStrategy acs = ac_strategy->ConstRow(by * 8 + iy)[bx * 8 + ix];
         for (size_t y = 0; y < acs.covered_blocks_y(); y++) {
           for (size_t x = 0; x < acs.covered_blocks_x(); x++) {
-            computed_mask[(iy + y) * 4 + ix + x] = 1;
+            computed_mask[(iy + y) * 8 + ix + x] = 1;
           }
         }
       }
     }
   };
-  RunOnPool(pool, 0, xsize32 * ysize32, ThreadPool::SkipInit(),
+  RunOnPool(pool, 0, xsize64 * ysize64, ThreadPool::SkipInit(),
             compute_initial_acs_guess, "ChooseACS");
 
   // Accounting and debug output.
   if (aux_out != nullptr) {
     aux_out->num_dct2_blocks =
-        ac_strategy->CountBlocks(AcStrategy::Type::DCT2X2);
+        32 * (ac_strategy->CountBlocks(AcStrategy::Type::DCT32X64) +
+              ac_strategy->CountBlocks(AcStrategy::Type::DCT64X32));
     aux_out->num_dct4_blocks =
-        ac_strategy->CountBlocks(AcStrategy::Type::DCT4X4);
+        64 * ac_strategy->CountBlocks(AcStrategy::Type::DCT64X64);
     aux_out->num_dct4x8_blocks =
         ac_strategy->CountBlocks(AcStrategy::Type::DCT4X8) +
         ac_strategy->CountBlocks(AcStrategy::Type::DCT8X4);

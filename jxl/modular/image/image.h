@@ -36,6 +36,10 @@ typedef int32_t pixel_type;  // can use int16_t if it's only for 8-bit images.
 
 typedef int64_t pixel_type_w;
 
+namespace weighted {
+struct Header;
+}
+
 class Channel {
  public:
   jxl::Plane<pixel_type> plane;
@@ -150,9 +154,10 @@ class Image {
   Image& operator=(Image&& other) noexcept;
   Image(Image&& other) noexcept = default;
 
-  bool do_transform(const Transform& t);
+  bool do_transform(const Transform& t, const weighted::Header& wp_header);
   // undo all except the first 'keep' transforms
-  void undo_transforms(int keep = 0, jxl::ThreadPool* pool = nullptr);
+  void undo_transforms(const weighted::Header& wp_header, int keep = 0,
+                       jxl::ThreadPool* pool = nullptr);
 };
 
 }  // namespace jxl

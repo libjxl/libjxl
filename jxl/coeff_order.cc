@@ -75,7 +75,7 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
                        const AcStrategyImage& ac_strategy,
                        const FrameDimensions& frame_dim, uint32_t used_orders,
                        coeff_order_t* JXL_RESTRICT order) {
-  int32_t num_zeros[kCoeffOrderSize] = {};
+  std::vector<int32_t> num_zeros(kCoeffOrderSize);
   // If compressing at high speed and only using 8x8 DCTs, only consider a
   // subset of blocks.
   double block_fraction = 1.0f;
@@ -146,6 +146,11 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
       }
     }
   }
+  struct PosAndCount {
+    uint32_t pos;
+    uint32_t count;
+  };
+  auto mem = hwy::AllocateAligned<PosAndCount>(AcStrategy::kMaxCoeffArea);
 
   uint16_t computed = 0;
   for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
@@ -167,13 +172,8 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
     const coeff_order_t* natural_coeff_order = acs.NaturalCoeffOrder();
 
     for (uint8_t c = 0; c < 3; c++) {
-      struct PosAndCount {
-        uint32_t pos;
-        uint32_t count;
-      };
-
       // Apply zig-zag order.
-      PosAndCount pos_and_val[AcStrategy::kMaxCoeffArea];
+      PosAndCount* pos_and_val = mem.get();
       size_t offset = CoeffOrderOffset(ord, c);
       JXL_DASSERT(CoeffOrderOffset(ord, c + 1) - offset == sz);
       for (size_t i = 0; i < sz; ++i) {
@@ -278,10 +278,9 @@ void EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
 
 namespace {
 void EncodeCoeffOrder(const coeff_order_t* JXL_RESTRICT order, AcStrategy acs,
-                      std::vector<Token>* tokens) {
+                      std::vector<Token>* tokens, coeff_order_t* order_zigzag) {
   const size_t llf = acs.covered_blocks_x() * acs.covered_blocks_y();
   const size_t size = kDCTBlockSize * llf;
-  coeff_order_t order_zigzag[AcStrategy::kMaxCoeffArea];
   const coeff_order_t* natural_coeff_order_lut = acs.NaturalCoeffOrderLut();
   for (size_t i = 0; i < size; ++i) {
     order_zigzag[i] = natural_coeff_order_lut[order[i]];
@@ -292,6 +291,7 @@ void EncodeCoeffOrder(const coeff_order_t* JXL_RESTRICT order, AcStrategy acs,
 
 void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
                        BitWriter* writer, size_t layer, AuxOut* aux_out) {
+  auto mem = hwy::AllocateAligned<coeff_order_t>(AcStrategy::kMaxCoeffArea);
   uint16_t computed = 0;
   std::vector<std::vector<Token>> tokens(1);
   for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
@@ -301,7 +301,8 @@ void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
     if ((used_orders & (1 << ord)) == 0) continue;
     AcStrategy acs = AcStrategy::FromRawStrategy(o);
     for (size_t c = 0; c < 3; c++) {
-      EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)], acs, &tokens[0]);
+      EncodeCoeffOrder(&order[CoeffOrderOffset(ord, c)], acs, &tokens[0],
+                       mem.get());
     }
   }
   // Do not write anything if no order is used.

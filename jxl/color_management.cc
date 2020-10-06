@@ -782,6 +782,9 @@ void ICCComputeMD5(const PaddedBytes& data, uint8_t sum[16]) {
 
 Status CreateICCChadMatrix(CIExy w, float result[9]) {
   skcms_Matrix3x3 m;
+  if (w.y == 0) {  // WhitePoint can not be pitch-black.
+    return JXL_FAILURE("Invalid WhitePoint");
+  }
   JXL_RETURN_IF_ERROR(skcms_AdaptToXYZD50(w.x, w.y, &m));
   memcpy(result, m.vals, sizeof(float) * 9);
   return true;
@@ -1226,22 +1229,29 @@ void MatrixProduct(const skcms_Matrix3x3& matrix, const float vector_in[3],
 }
 
 // Returns white point that was specified when creating the profile.
-JXL_MUST_USE_RESULT CIExy UnadaptedWhitePoint(const skcms_ICCProfile& profile) {
+JXL_MUST_USE_RESULT Status UnadaptedWhitePoint(const skcms_ICCProfile& profile,
+                                               CIExy* out) {
   float media_white_point_XYZ[3];
-  JXL_CHECK(skcms_GetWTPT(&profile, media_white_point_XYZ));
+  if (!skcms_GetWTPT(&profile, media_white_point_XYZ)) {
+    return JXL_FAILURE("ICC profile does not contain WhitePoint tag");
+  }
   skcms_Matrix3x3 CHAD;
   if (!skcms_GetCHAD(&profile, &CHAD)) {
     // If there is no chromatic adaptation matrix, it means that the white point
     // is already unadapted.
-    return CIExyFromXYZ(media_white_point_XYZ);
+    *out = CIExyFromXYZ(media_white_point_XYZ);
+    return true;
   }
   // Otherwise, it has been adapted to the PCS white point using said matrix,
   // and the adaptation needs to be undone.
   skcms_Matrix3x3 inverse_CHAD;
-  JXL_CHECK(skcms_Matrix3x3_invert(&CHAD, &inverse_CHAD));
+  if (!skcms_Matrix3x3_invert(&CHAD, &inverse_CHAD)) {
+    return JXL_FAILURE("Non-invertible ChromaticAdaptation matrix");
+  }
   float unadapted_white_point_XYZ[3];
   MatrixProduct(inverse_CHAD, media_white_point_XYZ, unadapted_white_point_XYZ);
-  return CIExyFromXYZ(unadapted_white_point_XYZ);
+  *out = CIExyFromXYZ(unadapted_white_point_XYZ);
+  return true;
 }
 
 Status IdentifyPrimaries(const skcms_ICCProfile& profile,
@@ -1520,7 +1530,8 @@ Status ColorEncoding::SetFieldsFromICC() {
 
   SetColorSpace(ColorSpaceFromProfile(profile));
 
-  const CIExy wp_unadapted = UnadaptedWhitePoint(profile);
+  CIExy wp_unadapted;
+  JXL_RETURN_IF_ERROR(UnadaptedWhitePoint(profile, &wp_unadapted));
   JXL_RETURN_IF_ERROR(SetWhitePoint(wp_unadapted));
 
   // Relies on color_space.

@@ -37,7 +37,7 @@ float ColorQuantizationWeight(const int32_t adjustment, const int channel,
   const float multiplier = adjustment >= 0 ? 1.f + .125f * adjustment
                                            : 1.f / (1.f + .125f * -adjustment);
 
-  static constexpr float kChannelWeight[] = {0.025f, 0.45f, 0.42f, 2.f};
+  static constexpr float kChannelWeight[] = {0.0042f, 0.075f, 0.07f, .3333f};
 
   return multiplier / kChannelWeight[channel];
 }

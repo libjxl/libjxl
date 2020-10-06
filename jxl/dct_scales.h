@@ -35,18 +35,6 @@ struct square_root<2> {
   static constexpr float value = 1.4142135623730951f;
 };
 
-// Constants such that multiplying the outputs of FastDCT<N>() by DCTScale<N>()
-// is equivalent to SlowDCT<N>(); similarly for the inputs for IDCT. These
-// constants are 1/sqrt(N) for this specific DCT implementation.
-template <size_t N>
-struct DCTScale {
-  static constexpr float value = 1.0f / square_root<N>::value;
-};
-template <size_t N>
-struct IDCTScale {
-  static constexpr float value = 1.0f / square_root<N>::value;
-};
-
 // For n != 0, the n-th basis function of a N-DCT, evaluated in pixel k, has a
 // value of cos((k+1/2) n/(2N) pi). When downsampling by 2x, we average
 // the values for pixel k and k+1 to get the value for pixel (k/2), thus we get
@@ -62,6 +50,15 @@ struct IDCTScale {
 // factors for a DCT-(N/4) etc can then be obtained by successive
 // multiplications. The structs below contain the above-mentioned scaling
 // factors.
+//
+// Python code for the tables below:
+//
+// for i in range(N // 8):
+//    v = math.cos(i / (2 * N) * math.pi)
+//    v *= math.cos(i / (N) * math.pi)
+//    v *= math.cos(i / (N / 2) * math.pi)
+//    print(v, end=", ")
+
 template <size_t FROM, size_t TO>
 struct DCTResampleScales;
 
@@ -73,28 +70,10 @@ struct DCTResampleScales<8, 1> {
 };
 
 template <>
-struct DCTResampleScales<8, 2> {
-  static constexpr float kScales[2] = {
-      1.000000000000000000,
-      0.906127446352887778,
-  };
-};
-
-template <>
 struct DCTResampleScales<16, 2> {
   static constexpr float kScales[2] = {
       1.000000000000000000,
       0.901764195028874394,
-  };
-};
-
-template <>
-struct DCTResampleScales<16, 4> {
-  static constexpr float kScales[4] = {
-      1.000000000000000000,
-      0.976062531202202877,
-      0.906127446352887778,
-      0.795666809947927156,
   };
 };
 
@@ -109,11 +88,11 @@ struct DCTResampleScales<32, 4> {
 };
 
 template <>
-struct DCTResampleScales<32, 8> {
+struct DCTResampleScales<64, 8> {
   static constexpr float kScales[8] = {
-      1.000000000000000000, 0.993985983084976765, 0.976062531202202877,
-      0.946582901544112176, 0.906127446352887778, 0.855491189274751540,
-      0.795666809947927156, 0.727823404688121345,
+      1.0000000000000000, 0.9936866130906366, 0.9748868211368796,
+      0.9440180941651672, 0.9017641950288744, 0.8490574973847023,
+      0.7870549181591013, 0.7171081282466044,
   };
 };
 
@@ -126,28 +105,10 @@ struct DCTResampleScales<1, 8> {
 };
 
 template <>
-struct DCTResampleScales<2, 8> {
-  static constexpr float kScales[2] = {
-      1.000000000000000000,
-      1.103597517131772232,
-  };
-};
-
-template <>
 struct DCTResampleScales<2, 16> {
   static constexpr float kScales[2] = {
       1.000000000000000000,
       1.108937353592731823,
-  };
-};
-
-template <>
-struct DCTResampleScales<4, 16> {
-  static constexpr float kScales[4] = {
-      1.000000000000000000,
-      1.024524523821556565,
-      1.103597517131772232,
-      1.256807482098500017,
   };
 };
 
@@ -162,11 +123,11 @@ struct DCTResampleScales<4, 32> {
 };
 
 template <>
-struct DCTResampleScales<8, 32> {
+struct DCTResampleScales<8, 64> {
   static constexpr float kScales[8] = {
-      1.000000000000000000, 1.006050404147911470, 1.024524523821556565,
-      1.056431505754806377, 1.103597517131772232, 1.168919110491081437,
-      1.256807482098500017, 1.373959663235216677,
+      1.0000000000000000, 1.0063534990068217, 1.0257600967811158,
+      1.0593017296817173, 1.1089373535927318, 1.1777765381970435,
+      1.2705593687654873, 1.3944898413647777,
   };
 };
 
@@ -228,6 +189,33 @@ struct WcMultipliers<64> {
       1.3892939586328277, 1.5939722833856311, 1.8746759800084078,
       2.282050068005162,  2.924628428158216,  4.084611078129248,
       6.796750711673633,  20.373878167231453,
+  };
+};
+template <>
+struct WcMultipliers<128> {
+  static constexpr float kMultipliers[64] = {
+      0.5000376519155477, 0.5003390374428216, 0.5009427176380873,
+      0.5018505174842379, 0.5030651913013697, 0.5045904432216454,
+      0.5064309549285542, 0.5085924210498143, 0.5110815927066812,
+      0.5139063298475396, 0.5170756631334912, 0.5205998663018917,
+      0.524490540114724,  0.5287607092074876, 0.5334249333971333,
+      0.538499435291984,  0.5440022463817783, 0.549953374183236,
+      0.5563749934898856, 0.5632916653417023, 0.5707305880121454,
+      0.5787218851348208, 0.5872989370937893, 0.5964987630244563,
+      0.606362462272146,  0.6169357260050706, 0.6282694319707711,
+      0.6404203382416639, 0.6534518953751283, 0.6674352009263413,
+      0.6824501259764195, 0.6985866506472291, 0.7159464549705746,
+      0.7346448236478627, 0.7548129391165311, 0.776600658233963,
+      0.8001798956216941, 0.8257487738627852, 0.8535367510066064,
+      0.8838110045596234, 0.9168844461846523, 0.9531258743921193,
+      0.9929729612675466, 1.036949040910389,  1.0856850642580145,
+      1.1399486751015042, 1.2006832557294167, 1.2690611716991191,
+      1.346557628206286,  1.4350550884414341, 1.5369941008524954,
+      1.6555965242641195, 1.7952052190778898, 1.961817848571166,
+      2.163957818751979,  2.4141600002500763, 2.7316450287739396,
+      3.147462191781909,  3.7152427383269746, 4.5362909369693565,
+      5.827688377844654,  8.153848602466814,  13.58429025728446,
+      40.744688103351834,
   };
 };
 

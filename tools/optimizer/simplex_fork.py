@@ -69,10 +69,10 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 0.5
-  maxval = 15.5
+  minval = 1.0
+  maxval = 8.5
   rangeval = maxval/minval
-  steps = 17
+  steps = 5
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -145,7 +145,7 @@ def Eval(vec, binary_name, cached=True):
       dct16x32str = line.split()[17]
       dct32str = line.split()[18]
       vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
-      vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.02
+      #vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.02
       dct2 += float(dct2str)
       dct4 += float(dct4str)
       dct16 += float(dct16str)
@@ -153,7 +153,7 @@ def Eval(vec, binary_name, cached=True):
       n += 1
       found_score = True
       distance = float(line.split()[0].split('d')[-1])
-      faultybpp = 1.0 + 0.23 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
+      faultybpp = 1.0 + 0.0023 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
       vec[0] *= faultybpp
 
   """

@@ -47,12 +47,7 @@ void RoundtripPermutation(coeff_order_t* perm, coeff_order_t* out, size_t len,
 
 enum Permutation { kIdentity, kFewSwaps, kFewSlides, kRandom };
 
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-    defined(THREAD_SANITIZER)
 constexpr size_t kNumReps = 128;
-#else
-constexpr size_t kNumReps = 1024;
-#endif
 constexpr size_t kSwaps = 32;
 
 void TestPermutation(Permutation kind, size_t len) {

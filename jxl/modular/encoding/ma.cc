@@ -814,6 +814,7 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
   size_t to_decode = 1;
   tree->clear();
   while (to_decode > 0) {
+    JXL_RETURN_IF_ERROR(br->AllReadsWithinBounds());
     if (tree->size() > kMaxTreeSize) {
       return JXL_FAILURE("Tree is too large");
     }

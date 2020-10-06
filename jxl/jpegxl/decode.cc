@@ -224,7 +224,12 @@ struct JpegxlDecoderStruct {
   size_t codestream_pos = 0;  // if have_container, where the codestream starts
   JpegxlSignatureType signature_type = JPEGXL_SIG_TYPE_JPEGXL;
 
-  // Owned by the caller
+  // Owned by the caller, buffers for DC image (8x8 downscaled)
+  void* dc_out_buffer = nullptr;
+  size_t dc_out_size = 0;
+  JpegxlPixelFormat dc_out_format;
+
+  // Owned by the caller, buffer for full resolution image.
   void* image_out_buffer = nullptr;
   size_t image_out_size = 0;
   JpegxlPixelFormat image_out_format;
@@ -238,6 +243,10 @@ struct JpegxlDecoderStruct {
   std::vector<uint32_t> group_sizes;
   size_t frame_start;
   size_t frame_end;
+
+  // User input data is stored here, when the decoder takes in and stores the
+  // user input bytes. If the decoder does not do that, this field is unused.
+  std::vector<uint8_t> input;
 };
 
 // TODO(zond): Make this depend on the data loaded into the decoder.
@@ -796,15 +805,14 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
   if (dec->events_wanted & JPEGXL_DEC_FULL_IMAGE) {
     dec->events_wanted &= ~JPEGXL_DEC_FULL_IMAGE;
 
-    // Copy pixels to output buffer
-    if (!dec->image_out_buffer) {
-      return JXL_API_ERROR("must set output buffer");
+    // Copy pixels to output buffer if desired. If no output buffer was set, we
+    // merely return the JPEGXL_DEC_FULL_IMAGE status without outputting pixels.
+    if (dec->image_out_buffer) {
+      JpegxlDecoderStatus status =
+          ConvertImage(dec->io, dec->image_out_format, dec->thread_pool.get(),
+                       dec->image_out_buffer, dec->image_out_size);
+      if (status != JPEGXL_DEC_SUCCESS) return status;
     }
-
-    JpegxlDecoderStatus status =
-        ConvertImage(dec->io, dec->image_out_format, dec->thread_pool.get(),
-                     dec->image_out_buffer, dec->image_out_size);
-    if (status != JPEGXL_DEC_SUCCESS) return status;
 
     return JPEGXL_DEC_FULL_IMAGE;
   }
@@ -819,7 +827,37 @@ JpegxlDecoderStatus JpegxlDecoderProcessInternal(JpegxlDecoder* dec,
 JpegxlDecoderStatus JpegxlDecoderProcessInput(JpegxlDecoder* dec,
                                               const uint8_t** next_in,
                                               size_t* avail_in) {
+  // Two possible ways of consuming the next bytes are implemented here:
+  // Either never consume them (next_in and avail_in are not changed, user
+  // keeps all bytes), or always consume all (bytes copied into internal
+  // vector).
+  // Eventually, a middle ground needs to be implemented instead, where the
+  // decoder consumes as many bytes as it can and leaves the remaining bytes to
+  // the user, e.g. as per frame or per group. Since per frame and per group
+  // parsing are not yet implemented, that is not yet possible now. The C++
+  // decoder can only process the AC image in one go currently, so cannot yet
+  // consume and remember bytes in smaller chunks. Note that it does not matter
+  // which of the two strategies here is used, since the user must be able to
+  // cope with both behaviours and everything in-between, both are implemented
+  // currently for testing. Not consuming and copying bytes may have a slight
+  // performance benefit since the user can control how to copy.
+#ifdef JPEGXL_API_DEC_CONSUME_BYTES
+  // TODO(lode): if dec->input is empty, we can call
+  // jxl::JpegxlDecoderProcessInternal directly on next_in without copying. If
+  // the processing finishes successfully when the user already gave all bytes
+  // (one shot), we may never need to copy the bytes. However since process will
+  // typically return multiple status codes (so require multiple calls), the
+  // copy would happen anyway, unless the decoder marks that it no longer needs
+  // to read them.
+  dec->input.insert(dec->input.end(), *next_in, *next_in + *avail_in);
+  JpegxlDecoderStatus status = jxl::JpegxlDecoderProcessInternal(
+      dec, dec->input.data(), dec->input.size());
+  *next_in += *avail_in;
+  *avail_in = 0;
+  return status;
+#else   // JPEGXL_API_DEC_CONSUME_BYTES
   return jxl::JpegxlDecoderProcessInternal(dec, *next_in, *avail_in);
+#endif  // JPEGXL_API_DEC_CONSUME_BYTES
 }
 
 JpegxlDecoderStatus JpegxlDecoderGetBasicInfo(const JpegxlDecoder* dec,
@@ -1087,9 +1125,16 @@ JpegxlDecoderStatus JpegxlDecoderGetInverseOpsinMatrix(
   return JPEGXL_DEC_SUCCESS;
 }
 
-JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
-    const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size) {
-  if (!dec->got_basic_info) return JPEGXL_DEC_NEED_MORE_INPUT;
+namespace {
+// Returns the amount of bits needed for getting memory buffer size, and does
+// all error checking required for size checking and format validity.
+JpegxlDecoderStatus PrepareSizeCheck(const JpegxlDecoder* dec,
+                                     const JpegxlPixelFormat* format,
+                                     size_t* bits) {
+  if (!dec->got_basic_info) {
+    // Don't know image dimensions yet, cannot check for valid size.
+    return JPEGXL_DEC_NEED_MORE_INPUT;
+  }
   if (format->num_channels > 4) {
     return JXL_API_ERROR("More than 4 channels not supported");
   }
@@ -1097,11 +1142,56 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
     return JXL_API_ERROR("Grayscale not yet supported");
   }
 
-  size_t bits = BitsPerChannel(format->data_type);
+  *bits = BitsPerChannel(format->data_type);
 
-  if (bits == 0) {
+  if (*bits == 0) {
     return JXL_API_ERROR("Invalid data type");
   }
+
+  return JPEGXL_DEC_SUCCESS;
+}
+}  // namespace
+
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderDCOutBufferSize(
+    const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size) {
+  size_t bits;
+  JpegxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
+  if (status != JPEGXL_DEC_SUCCESS) return status;
+
+  size_t xsize = (dec->xsize + jxl::kBlockDim - 1) / jxl::kBlockDim;
+  size_t ysize = (dec->ysize + jxl::kBlockDim - 1) / jxl::kBlockDim;
+
+  size_t row_size =
+      (xsize * format->num_channels * bits + jxl::kBitsPerByte - 1) /
+      jxl::kBitsPerByte;
+  *size = row_size * ysize;
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JPEGXL_EXPORT JpegxlDecoderStatus
+JpegxlDecoderSetDCOutBuffer(JpegxlDecoder* dec, const JpegxlPixelFormat* format,
+                            void* buffer, size_t size) {
+  size_t min_size;
+  // This also checks whether the format is valid and supported and basic info
+  // is available.
+  JpegxlDecoderStatus status =
+      JpegxlDecoderImageOutBufferSize(dec, format, &min_size);
+  if (status != JPEGXL_DEC_SUCCESS) return status;
+
+  if (size < min_size) return JPEGXL_DEC_ERROR;
+
+  dec->dc_out_buffer = buffer;
+  dec->dc_out_size = size;
+  dec->dc_out_format = *format;
+
+  return JPEGXL_DEC_SUCCESS;
+}
+
+JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
+    const JpegxlDecoder* dec, const JpegxlPixelFormat* format, size_t* size) {
+  size_t bits;
+  JpegxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
+  if (status != JPEGXL_DEC_SUCCESS) return status;
 
   size_t row_size =
       (dec->xsize * format->num_channels * bits + jxl::kBitsPerByte - 1) /
@@ -1114,13 +1204,9 @@ JPEGXL_EXPORT JpegxlDecoderStatus JpegxlDecoderImageOutBufferSize(
 JpegxlDecoderStatus JpegxlDecoderSetImageOutBuffer(
     JpegxlDecoder* dec, const JpegxlPixelFormat* format, void* buffer,
     size_t size) {
-  if (!dec->got_basic_info) {
-    // Don't know image dimensions yet, cannot check for valid size.
-    return JPEGXL_DEC_NEED_MORE_INPUT;
-  }
   size_t min_size;
-  // The JpegxlDecoderImageOutBufferSize call also checks whether the format is
-  // valid and supported.
+  // This also checks whether the format is valid and supported and basic info
+  // is available.
   JpegxlDecoderStatus status =
       JpegxlDecoderImageOutBufferSize(dec, format, &min_size);
   if (status != JPEGXL_DEC_SUCCESS) return status;

@@ -31,7 +31,7 @@ using coeff_order_t = uint32_t;
 // Maximum number of orders to be used. Note that this needs to be multiplied by
 // the number of channels. One per "size class" (plus one extra for DCT8),
 // shared between transforms of size XxY and of size YxX.
-constexpr uint8_t kNumOrders = 7;
+constexpr uint8_t kNumOrders = 9;
 
 // DCT coefficients are laid out in such a way that the number of rows of
 // coefficients is always the smaller coordinate.

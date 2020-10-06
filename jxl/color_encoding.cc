@@ -151,6 +151,9 @@ Status ParseDouble(const std::string& num, double* JXL_RESTRICT d) {
   if (*d == 0.0 && end == num.c_str()) {
     return JXL_FAILURE("Invalid double: %s", num.c_str());
   }
+  if (std::isnan(*d)) {
+    return JXL_FAILURE("Invalid double: %s", num.c_str());
+  }
   if (errno == ERANGE) {
     return JXL_FAILURE("Double out of range: %s", num.c_str());
   }

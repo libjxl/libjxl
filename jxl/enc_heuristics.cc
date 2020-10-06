@@ -58,8 +58,8 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
     }
 
     size_t qf_counts[256] = {};
-    size_t qf_ord_counts[7][256] = {};
-    size_t ord_counts[7] = {};
+    size_t qf_ord_counts[kNumOrders][256] = {};
+    size_t ord_counts[kNumOrders] = {};
   };
   // The OccCounters struct is too big to allocate on the stack.
   std::unique_ptr<OccCounters> counters(
@@ -93,19 +93,19 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   }
 
   // Count the occurrences of each segment.
-  std::vector<size_t> counts(7 * (qft.size() + 1));
+  std::vector<size_t> counts(kNumOrders * (qft.size() + 1));
   size_t qft_pos = 0;
   for (size_t j = 0; j < 256; j++) {
     if (qft_pos < qft.size() && j == qft[qft_pos]) {
       qft_pos++;
     }
-    for (size_t i = 0; i < 7; i++) {
+    for (size_t i = 0; i < kNumOrders; i++) {
       counts[qft_pos + i * (qft.size() + 1)] += counters->qf_ord_counts[i][j];
     }
   }
 
   // Repeatedly merge the lowest-count pair.
-  std::vector<uint8_t> remap((qft.size() + 1) * 7);
+  std::vector<uint8_t> remap((qft.size() + 1) * kNumOrders);
   std::iota(remap.begin(), remap.end(), 0);
   std::vector<uint8_t> clusters(remap);
   // This is O(n^2 log n), but n <= 14.

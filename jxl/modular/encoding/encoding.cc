@@ -906,14 +906,13 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
   return true;
 }
 
-Status ModularDecode(BitReader *br, Image &image, size_t group_id,
-                     ModularOptions *options, const Tree *global_tree,
-                     const ANSCode *global_code,
+Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
+                     size_t group_id, ModularOptions *options,
+                     const Tree *global_tree, const ANSCode *global_code,
                      const std::vector<uint8_t> *global_ctx_map) {
   if (image.nb_channels < 1) return true;
 
   // decode transforms
-  GroupHeader header;
   JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
   JXL_DEBUG_V(4, "Global option: up to %i back-referencing MA properties.",
               options->max_properties);
@@ -1038,13 +1037,17 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
   return true;
 }
 
-Status ModularGenericDecompress(BitReader *br, Image &image, size_t group_id,
+Status ModularGenericDecompress(BitReader *br, Image &image,
+                                GroupHeader *header, size_t group_id,
                                 ModularOptions *options, int undo_transforms,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map) {
-  JXL_RETURN_IF_ERROR(
-      ModularDecode(br, image, group_id, options, tree, code, ctx_map));
-  image.undo_transforms(undo_transforms);
+  GroupHeader local_header;
+  if (header == nullptr) header = &local_header;
+  JXL_RETURN_IF_ERROR(ModularDecode(br, image, *header, group_id, options, tree,
+                                    code, ctx_map));
+  image.undo_transforms(header->wp_header, undo_transforms);
+  if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %zu bytes",
               image.w, image.h, image.real_nb_channels,

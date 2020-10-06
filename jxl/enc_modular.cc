@@ -35,6 +35,7 @@
 #include "jxl/modular/options.h"
 #include "jxl/modular/transform/transform.h"
 #include "jxl/toc.h"
+#include "modular/encoding/context_predict.h"
 
 namespace jxl {
 
@@ -428,7 +429,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette_1.nb_colors = std::min(
           (int)(xsize * ysize * 0.8),
           (int)(cparams.channel_colors_pre_transform_percent / 100. * colors));
-      gi.do_transform(maybe_palette_1);
+      gi.do_transform(maybe_palette_1, weighted::Header());
     }
   }
 
@@ -446,7 +447,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (maybe_palette.lossy_palette) {
         maybe_palette.predictor = Predictor::Gradient;
       }
-      gi.do_transform(maybe_palette);
+      // TODO(veluca): use a custom weighted header if using the weighted
+      // predictor.
+      gi.do_transform(maybe_palette, weighted::Header());
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
@@ -460,7 +463,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (maybe_palette_3.lossy_palette) {
         maybe_palette_3.predictor = Predictor::Weighted;
       }
-      gi.do_transform(maybe_palette_3);
+      gi.do_transform(maybe_palette_3, weighted::Header());
     }
   }
 
@@ -471,17 +474,18 @@ Status ModularFrameEncoder::ComputeEncodingData(
       Transform ycocg{TransformId::kRCT};
       ycocg.rct_type = 6;
       ycocg.begin_c = gi.nb_meta_channels;
-      gi.do_transform(ycocg);
+      gi.do_transform(ycocg, weighted::Header());
     } else if (cparams.colorspace >= 2) {
       Transform sg(TransformId::kRCT);
       sg.begin_c = gi.nb_meta_channels;
       sg.rct_type = cparams.colorspace - 2;
-      gi.do_transform(sg);
+      gi.do_transform(sg, weighted::Header());
     }
   }
 
   if (cparams.responsive) {
-    gi.do_transform(Transform(TransformId::kSqueeze));  // use default squeezing
+    gi.do_transform(Transform(TransformId::kSqueeze),
+                    weighted::Header());  // use default squeezing
   }
 
   std::vector<uint32_t> quants;
@@ -844,7 +848,7 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
     } else {
       params.uint_method = HistogramParams::HybridUintMethod::kNone;
     }
-  } else if (cparams.speed_tier < SpeedTier::kTortoise) {
+  } else if (cparams.speed_tier <= SpeedTier::kTortoise) {
     params.lz77_method = HistogramParams::LZ77Method::kOptimal;
   } else {
     params.lz77_method = HistogramParams::LZ77Method::kLZ77;
@@ -932,7 +936,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       maybe_palette.num_c = gi.nb_channels;
       maybe_palette.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
-      gi.do_transform(maybe_palette);
+      gi.do_transform(maybe_palette, weighted::Header());
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
@@ -946,7 +950,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       if (maybe_palette_3.lossy_palette) {
         maybe_palette_3.predictor = Predictor::Weighted;
       }
-      gi.do_transform(maybe_palette_3);
+      gi.do_transform(maybe_palette_3, weighted::Header());
     }
   }
 
@@ -969,7 +973,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       maybe_palette_1.nb_colors =
           std::min((int)(xsize * ysize * 0.8),
                    (int)(cparams.channel_colors_percent / 100. * colors));
-      gi.do_transform(maybe_palette_1);
+      gi.do_transform(maybe_palette_1, weighted::Header());
     }
   }
   if (cparams.near_lossless > 0 && gi.nb_channels != 0) {
@@ -981,15 +985,15 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     if (cparams.colorspace == 0) {
       nl.num_c = gi.nb_channels;
       nl.max_delta_error = cparams.near_lossless;
-      gi.do_transform(nl);
+      gi.do_transform(nl, weighted::Header());
     } else {
       nl.num_c = 1;
       nl.max_delta_error = cparams.near_lossless;
-      gi.do_transform(nl);
+      gi.do_transform(nl, weighted::Header());
       nl.begin_c += 1;
       nl.num_c = gi.nb_channels - 1;
       nl.max_delta_error++;  // more loss for chroma
-      gi.do_transform(nl);
+      gi.do_transform(nl, weighted::Header());
     }
   }
 
@@ -1093,17 +1097,18 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       if (nb_rcts_to_try == 0) break;
       int num_transforms_to_keep = gi.transform.size();
       sg.rct_type = i;
-      gi.do_transform(sg);
+      gi.do_transform(sg, weighted::Header());
       JXL_RETURN_IF_ERROR(try_compress(/*new_best=*/i));
       nb_rcts_to_try--;
       // Ensure we do not clamp channels to their supposed range, as this
       // otherwise breaks in the presence of patches.
-      gi.undo_transforms(num_transforms_to_keep == 0 ? -1
-                                                     : num_transforms_to_keep);
+      gi.undo_transforms(weighted::Header(), num_transforms_to_keep == 0
+                                                 ? -1
+                                                 : num_transforms_to_keep);
     }
     // Apply the best RCT to the image for future encoding.
     sg.rct_type = best_rct;
-    gi.do_transform(sg);
+    gi.do_transform(sg, weighted::Header());
   } else {
     // No need to try anything, just use the default options.
   }

@@ -45,52 +45,40 @@ namespace HWY_NAMESPACE {
 template <size_t N>
 void ComputeDCT(float block[N * N]) {
   HWY_ALIGN float tmp_block[N * N];
-  ComputeTransposedScaledDCT<N>()(FromBlock(N, N, block),
-                                  ToBlock(N, N, tmp_block));
+  HWY_ALIGN float scratch_space[N * N * 2];
+  ComputeTransposedScaledDCT<N>()(DCTFrom(block, N), DCTTo(tmp_block, N),
+                                  scratch_space);
 
   // Untranspose.
-  Transpose<N, N>::Run(FromBlock(N, N, tmp_block), ToBlock(N, N, block));
-
-  // Unscale.
-  for (size_t y = 0; y < N; ++y) {
-    for (size_t x = 0; x < N; ++x) {
-      block[N * y + x] *= DCTScale<N>::value * DCTScale<N>::value;
-    }
-  }
+  Transpose<N, N>::Run(DCTFrom(tmp_block, N), DCTTo(block, N));
 }
 
 // Computes the in-place 8x8 iDCT of block.
 // Requires that block is HWY_ALIGN'ed.
 template <int N>
 void ComputeIDCT(float block[N * N]) {
-  // Unscale.
-  for (int y = 0; y < N; ++y) {
-    for (int x = 0; x < N; ++x) {
-      block[N * y + x] *= IDCTScale<N>::value * IDCTScale<N>::value;
-    }
-  }
-
   HWY_ALIGN float tmp_block[N * N];
+  HWY_ALIGN float scratch_space[N * N * 2];
   // Untranspose.
-  Transpose<N, N>::Run(FromBlock(N, N, block), ToBlock(N, N, tmp_block));
+  Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(tmp_block, N));
 
-  ComputeTransposedScaledIDCT<N>()(FromBlock(N, N, tmp_block),
-                                   ToBlock(N, N, block));
+  ComputeTransposedScaledIDCT<N>()(DCTFrom(tmp_block, N), DCTTo(block, N),
+                                   scratch_space);
 }
 
 template <size_t N>
 void TransposeTestT(float accuracy) {
   constexpr size_t kBlockSize = N * N;
   HWY_ALIGN float src[kBlockSize];
-  ToBlock to_src(N, N, src);
+  DCTTo to_src(src, N);
   for (int y = 0; y < N; ++y) {
     for (int x = 0; x < N; ++x) {
       to_src.Write(y * N + x, y, x);
     }
   }
   HWY_ALIGN float dst[kBlockSize];
-  Transpose<N, N>::Run(FromBlock(N, N, src), ToBlock(N, N, dst));
-  FromBlock from_dst(N, N, dst);
+  Transpose<N, N>::Run(DCTFrom(src, N), DCTTo(dst, N));
+  DCTFrom from_dst(dst, N);
   for (int y = 0; y < N; ++y) {
     for (int x = 0; x < N; ++x) {
       float expected = x * N + y;
@@ -114,8 +102,8 @@ void ColumnDctRoundtripT(float accuracy) {
   // regular 8x8 block transformation. On the bright side - we could check all
   // 8 basis vectors at once.
   HWY_ALIGN float block[kBlockSize];
-  ToBlock to(N, N, block);
-  FromBlock from(N, N, block);
+  DCTTo to(block, N);
+  DCTFrom from(block, N);
   for (size_t i = 0; i < N; ++i) {
     for (size_t j = 0; j < N; ++j) {
       to.Write((i == j) ? 1.0f : 0.0f, i, j);
@@ -125,17 +113,16 @@ void ColumnDctRoundtripT(float accuracy) {
   // Running (I)DCT on the same memory block seems to trigger a compiler bug on
   // ARMv7 with clang6.
   HWY_ALIGN float tmp[kBlockSize];
-  ToBlock to_tmp(N, N, tmp);
-  FromBlock from_tmp(N, N, tmp);
+  DCTTo to_tmp(tmp, N);
+  DCTFrom from_tmp(tmp, N);
 
   DCT1D<N, N>(from, to_tmp);
   IDCT1D<N, N>(from_tmp, to);
-  constexpr float scale = 1.0f / N;
 
   for (size_t i = 0; i < N; ++i) {
     for (size_t j = 0; j < N; ++j) {
       float expected = (i == j) ? 1.0f : 0.0f;
-      float actual = from.Read(i, j) * scale;
+      float actual = from.Read(i, j);
       EXPECT_NEAR(expected, actual, accuracy) << " i=" << i << ", j=" << j;
     }
   }
@@ -158,7 +145,7 @@ void TestDctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
     DCTSlow<N>(slow);
     ComputeDCT<N>(fast);
     for (size_t k = 0; k < kBlockSize; ++k) {
-      EXPECT_NEAR(fast[k], slow[k], accuracy)
+      EXPECT_NEAR(fast[k], slow[k], accuracy / N)
           << "i = " << i << ", k = " << k << ", N = " << N;
     }
   }
@@ -175,7 +162,7 @@ void TestIdctAccuracy(float accuracy, size_t start = 0, size_t end = N * N) {
     IDCTSlow<N>(slow);
     ComputeIDCT<N>(fast);
     for (size_t k = 0; k < kBlockSize; ++k) {
-      EXPECT_NEAR(fast[k], slow[k], accuracy)
+      EXPECT_NEAR(fast[k], slow[k], accuracy * N)
           << "i = " << i << ", k = " << k << ", N = " << N;
     }
   }
@@ -210,66 +197,6 @@ void InverseTest() {
 }
 
 template <size_t N>
-void TestIdctOrthonormal(float accuracy) {
-  constexpr size_t kBlockSize = N * N;
-  ImageF xs(kBlockSize, kBlockSize);
-  for (int i = 0; i < kBlockSize; ++i) {
-    float* x = xs.Row(i);
-    for (int j = 0; j < kBlockSize; ++j) x[j] = (i == j) ? 1.0f : 0.0f;
-    ComputeIDCT<N>(x);
-  }
-  for (int i = 0; i < kBlockSize; ++i) {
-    for (int j = 0; j < kBlockSize; ++j) {
-      float product = 0.0f;
-      for (int k = 0; k < kBlockSize; ++k) {
-        product += xs.Row(i)[k] * xs.Row(j)[k];
-      }
-      EXPECT_NEAR(product, (i == j) ? 1.0f : 0.0f, accuracy)
-          << "i = " << i << ", j = " << j << ", N = " << N;
-    }
-  }
-}
-
-void IDCTOrthonormalTest() {
-  TestIdctOrthonormal<1>(1e-6f);
-  TestIdctOrthonormal<2>(1e-6f);
-  TestIdctOrthonormal<4>(1e-6f);
-  TestIdctOrthonormal<8>(1e-6f);
-  TestIdctOrthonormal<16>(1e-6f);
-  TestIdctOrthonormal<32>(5e-6f);
-}
-
-template <size_t N>
-void TestDctOrthonormal(float accuracy) {
-  constexpr size_t kBlockSize = N * N;
-  ImageF xs(kBlockSize, kBlockSize);
-  for (int i = 0; i < kBlockSize; ++i) {
-    float* x = xs.Row(i);
-    for (int j = 0; j < kBlockSize; ++j) x[j] = (i == j) ? 1.0f : 0.0f;
-    ComputeDCT<N>(x);
-  }
-  for (int i = 0; i < kBlockSize; ++i) {
-    for (int j = 0; j < kBlockSize; ++j) {
-      float product = 0.0f;
-      for (int k = 0; k < kBlockSize; ++k) {
-        product += xs.Row(i)[k] * xs.Row(j)[k];
-      }
-      EXPECT_NEAR(product, (i == j) ? 1.0f : 0.0f, accuracy)
-          << "i = " << i << ", j = " << j << ", N = " << N;
-    }
-  }
-}
-
-void DCTOrthonormalTest() {
-  TestDctOrthonormal<1>(1e-6f);
-  TestDctOrthonormal<2>(1e-6f);
-  TestDctOrthonormal<4>(1e-6f);
-  TestDctOrthonormal<8>(1e-6f);
-  TestDctOrthonormal<16>(1e-6f);
-  TestDctOrthonormal<32>(1.1e-6f);
-}
-
-template <size_t N>
 void TestDctTranspose(float accuracy, size_t start = 0, size_t end = N * N) {
   constexpr size_t kBlockSize = N * N;
   for (size_t i = start; i < end; i++) {
@@ -286,7 +213,7 @@ void TestDctTranspose(float accuracy, size_t start = 0, size_t end = N * N) {
       y[i] = 1.0;
       ComputeDCT<N>(y);
 
-      EXPECT_NEAR(x[i], y[j], accuracy) << "i = " << i << ", j = " << j;
+      EXPECT_NEAR(x[i] / N, y[j] * N, accuracy) << "i = " << i << ", j = " << j;
     }
   }
 }
@@ -316,14 +243,14 @@ void TestRectInverseT(float accuracy) {
     HWY_ALIGN float out[kBlockSize] = {0.0f};
     x[i] = 1.0;
     HWY_ALIGN float coeffs[kBlockSize] = {0.0f};
+    HWY_ALIGN float scratch_space[kBlockSize * 2];
 
-    constexpr size_t OUT_ROWS = ROWS < COLS ? ROWS : COLS;
     constexpr size_t OUT_COLS = ROWS < COLS ? COLS : ROWS;
 
-    ComputeScaledDCT<ROWS, COLS>()(FromBlock(ROWS, COLS, x),
-                                   ScaleToBlock(OUT_ROWS, OUT_COLS, coeffs));
-    ComputeScaledIDCT<ROWS, COLS>()(FromBlock(OUT_ROWS, OUT_COLS, coeffs),
-                                    ToBlock(ROWS, COLS, out));
+    ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x, COLS), DCTTo(coeffs, OUT_COLS),
+                                   scratch_space);
+    ComputeScaledIDCT<ROWS, COLS>()(DCTFrom(coeffs, OUT_COLS), DCTTo(out, COLS),
+                                    scratch_space);
 
     for (int k = 0; k < kBlockSize; ++k) {
       EXPECT_NEAR(out[k], (k == i) ? 1.0f : 0.0f, accuracy)
@@ -353,6 +280,7 @@ void TestRectInverse() {
 template <size_t ROWS, size_t COLS>
 void TestRectTransposeT(float accuracy) {
   constexpr size_t kBlockSize = ROWS * COLS;
+  HWY_ALIGN float scratch_space[kBlockSize * 2];
   for (int px = 0; px < COLS; ++px) {
     for (int py = 0; py < ROWS; ++py) {
       HWY_ALIGN float x1[kBlockSize] = {0.0f};
@@ -365,10 +293,10 @@ void TestRectTransposeT(float accuracy) {
       constexpr size_t OUT_ROWS = ROWS < COLS ? ROWS : COLS;
       constexpr size_t OUT_COLS = ROWS < COLS ? COLS : ROWS;
 
-      ComputeScaledDCT<ROWS, COLS>()(FromBlock(ROWS, COLS, x1),
-                                     ScaleToBlock(OUT_ROWS, OUT_COLS, coeffs1));
-      ComputeScaledDCT<COLS, ROWS>()(FromBlock(COLS, ROWS, x2),
-                                     ScaleToBlock(OUT_ROWS, OUT_COLS, coeffs2));
+      ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x1, COLS),
+                                     DCTTo(coeffs1, OUT_COLS), scratch_space);
+      ComputeScaledDCT<COLS, ROWS>()(DCTFrom(x2, ROWS),
+                                     DCTTo(coeffs2, OUT_COLS), scratch_space);
 
       for (int x = 0; x < OUT_COLS; ++x) {
         for (int y = 0; y < OUT_ROWS; ++y) {
@@ -450,8 +378,6 @@ HWY_TARGET_INSTANTIATE_TEST_SUITE_P(TransposeTest);
 
 HWY_EXPORT_AND_TEST_P(TransposeTest, TransposeTest);
 HWY_EXPORT_AND_TEST_P(TransposeTest, InverseTest);
-HWY_EXPORT_AND_TEST_P(TransposeTest, IDCTOrthonormalTest);
-HWY_EXPORT_AND_TEST_P(TransposeTest, DCTOrthonormalTest);
 HWY_EXPORT_AND_TEST_P(TransposeTest, ColumnDctRoundtrip);
 HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectInverse);
 HWY_EXPORT_AND_TEST_P(TransposeTest, TestRectTranspose);

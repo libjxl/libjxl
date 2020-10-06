@@ -33,8 +33,8 @@ namespace jxl {
 
 // Those offsets get multiplied by kDCTBlockSize.
 static constexpr size_t kCoeffOrderOffset[3 * kNumOrders + 1] = {
-    0,  1,  2,  3,  4,  5,  6,  10, 14, 18,  34,
-    50, 66, 68, 70, 72, 76, 80, 84, 92, 100, 108,
+    0,  1,  2,  3,  4,  5,  6,   10,  14,  18,  34,  50,  66,  68,
+    70, 72, 76, 80, 84, 92, 100, 108, 172, 236, 300, 332, 364, 396,
 };
 
 static constexpr size_t CoeffOrderOffset(size_t order, size_t c) {
@@ -47,9 +47,9 @@ static constexpr size_t kCoeffOrderSize =
 // Mapping from AC strategy to order bucket. Strategies with different natural
 // orders must have different buckets.
 constexpr uint8_t kStrategyOrder[AcStrategy::kNumValidStrategies] = {
-    0, 1, 1, 1, 2, 3, 4, 4, 5, 5, 6, 6, 1, 1, 1, 1, 1, 1};
+    0, 1, 1, 1, 2, 3, 4, 4, 5, 5, 6, 6, 1, 1, 1, 1, 1, 1, 7, 8, 8};
 
-static_assert(AcStrategy::kNumValidStrategies == 18,
+static_assert(AcStrategy::kNumValidStrategies == 21,
               "Update this array when adding or removing AC strategies.");
 
 // Orders that are actually used in part of image. `rect` is in block units.

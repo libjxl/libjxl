@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cstring>
 #include <vector>
 
 #include "c/dec/huffman_decode.h"
@@ -308,6 +309,10 @@ class ANSSymbolReader {
         distance = kWindowSize;
       }
       copy_pos_ = num_decoded_ - distance;
+      if (JXL_UNLIKELY(distance == 0)) {
+        // distance 0 -> num_decoded_ == copy_pos_ == 0
+        memset(lz77_window_, 0, std::min<size_t>(num_to_copy_, kWindowSize));
+      }
       return ReadHybridUintClustered(ctx, br);  // will trigger a copy.
     }
     size_t ret = ReadHybridUintConfig(configs[ctx], token, br);

@@ -54,6 +54,9 @@ WEBP_RELEASE="1.0.2"
 WEBP_URL="https://codeload.github.com/webmproject/libwebp/tar.gz/v${WEBP_RELEASE}"
 WEBP_SHA256="347cf85ddc3497832b5fa9eee62164a37b249c83adae0ba583093e039bf4881f"
 
+# V8
+V8_VERSION="8.7.230"
+
 # Temporary files cleanup hooks.
 CLEANUP_FILES=()
 cleanup() {
@@ -460,12 +463,11 @@ main() {
   install_from_source WEBP "${LIST_TARGETS[@]}" "${LIST_MINGW_TARGETS[@]}"
 
   # Install v8. v8 has better WASM SIMD support than NodeJS 14.
-  local v8_version="8.5.133"
-  # install installer
+  # First we need the installer to install v8.
   npm install jsvu -g
   # install specific version;
-  HOME=/opt jsvu --os=linux64 "v8@${v8_version}"
-  ln -s "/opt/.jsvu/v8-${v8_version}" "/opt/.jsvu/v8"
+  HOME=/opt jsvu --os=linux64 "v8@${V8_VERSION}"
+  ln -s "/opt/.jsvu/v8-${V8_VERSION}" "/opt/.jsvu/v8"
 
   # Cleanup.
   rm -rf /var/lib/apt/lists/*

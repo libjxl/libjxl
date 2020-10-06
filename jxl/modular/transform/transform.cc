@@ -38,7 +38,8 @@ const char *Transform::TransformName() const {
   return transform_name[static_cast<uint32_t>(id)];
 }
 
-Status Transform::Forward(Image &input, ThreadPool *pool) {
+Status Transform::Forward(Image &input, const weighted::Header &wp_header,
+                          ThreadPool *pool) {
   switch (id) {
     case TransformId::kRCT:
       return FwdSubtractGreen(input, begin_c, rct_type);
@@ -55,7 +56,8 @@ Status Transform::Forward(Image &input, ThreadPool *pool) {
   }
 }
 
-Status Transform::Inverse(Image &input, ThreadPool *pool) {
+Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
+                          ThreadPool *pool) {
   switch (id) {
     case TransformId::kRCT:
       return InvSubtractGreen(input, begin_c, rct_type);

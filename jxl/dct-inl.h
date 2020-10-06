@@ -80,7 +80,7 @@ struct CoeffBundle {
     auto in1 = Load(FV<SZ>(), coeff);
     Store(in1 * sqrt2, FV<SZ>(), coeff);
   }
-  // Ideally optimized away by compiler.
+  // Ideally optimized away by compiler (except the multiply).
   static void InverseEvenOdd(const float* JXL_RESTRICT ain,
                              float* JXL_RESTRICT aout) {
     for (size_t i = 0; i < N / 2; i++) {
@@ -136,6 +136,14 @@ struct CoeffBundle {
                            size_t off) {
     for (size_t i = 0; i < N; i++) {
       out.StorePart(FV<SZ>(), Load(FV<SZ>(), coeff + i * SZ), i, off);
+    }
+  }
+  template <typename Block>
+  static void StoreToBlockAndScale(const float* JXL_RESTRICT coeff,
+                                   const Block& out, size_t off) {
+    auto mul = Set(FV<SZ>(), 1.0f / N);
+    for (size_t i = 0; i < N; i++) {
+      out.StorePart(FV<SZ>(), mul * Load(FV<SZ>(), coeff + i * SZ), i, off);
     }
   }
 };
@@ -211,7 +219,7 @@ void DCT1D(const FromBlock& from, const ToBlock& to) {
   for (size_t i = 0; i < M; i += Lanes(FV<M>())) {
     CoeffBundle<N, SZ>::LoadFromBlock(from, i, tmp);
     DCT1DImpl<N, SZ>()(tmp);
-    CoeffBundle<N, SZ>::StoreToBlock(tmp, to, i);
+    CoeffBundle<N, SZ>::StoreToBlockAndScale(tmp, to, i);
   }
 }
 
@@ -228,75 +236,69 @@ void IDCT1D(const FromBlock& from, const ToBlock& to) {
 // Computes the in-place NxN transposed-scaled-DCT (tsDCT) of block.
 // Requires that block is HWY_ALIGN'ed.
 //
-// Final DCT coefficients could be obtained the following way:
-//   unscaled(f)[x, y] = f[x, y] * DCTScales<N>[x] * DCTScales<N>[y]
-//   untransposed(f)[x, y] = f[y, x]
-//   DCT(input) = unscaled(untransposed(tsDCT(input)))
-//
-// NB: DCT denotes scaled variant of DCT-II, which is orthonormal.
-//
 // See also DCTSlow, ComputeDCT
 template <size_t N>
 struct ComputeTransposedScaledDCT {
+  // scratch_space must be aligned, and should have space for 2*N*N floats.
   template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+                                   float* JXL_RESTRICT scratch_space) {
     // TODO(user): it is possible to avoid using temporary array,
     // after generalizing "To" to be bi-directional; all sub-transforms could
     // be performed "in-place".
-    HWY_ALIGN float block[N * N];
-    HWY_ALIGN float transposed_block[N * N];
-    DCT1D<N, N>(from, ToBlock(N, N, block));
-    Transpose<N, N>::Run(FromBlock(N, N, block),
-                         ToBlock(N, N, transposed_block));
-    DCT1D<N, N>(FromBlock(N, N, transposed_block), to);
+    float* JXL_RESTRICT block = scratch_space;
+    // Vector size is capped to N, so this is aligned for all values of N.
+    float* JXL_RESTRICT transposed_block = scratch_space + N * N;
+    DCT1D<N, N>(from, DCTTo(block, N));
+    Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(transposed_block, N));
+    DCT1D<N, N>(DCTFrom(transposed_block, N), to);
   }
 };
 
 // Computes the in-place NxN transposed-scaled-iDCT (tsIDCT)of block.
 // Requires that block is HWY_ALIGN'ed.
 //
-// Final DCT coefficients could be obtained the following way:
-//   unscaled(f)[x, y] = f[x, y] * IDCTScales<N>[x] * IDCTScales<N>[y]
-//   untransposed(f)[x, y] = f[y, x]
-//   IDCT(input) = tsIDCT(untransposed(unscaled(input)))
-//
-// NB: IDCT denotes scaled variant of DCT-III, which is orthonormal.
-//
 // See also IDCTSlow, ComputeIDCT.
 
 template <size_t N>
 struct ComputeTransposedScaledIDCT {
+  // scratch_space must be aligned, and should have space for 2*N*N floats.
   template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+                                   float* JXL_RESTRICT scratch_space) {
     // TODO(user): it is possible to avoid using temporary array,
     // after generalizing "To" to be bi-directional; all sub-transforms could
     // be performed "in-place".
-    HWY_ALIGN float block[N * N];
-    HWY_ALIGN float transposed_block[N * N];
-    IDCT1D<N, N>(from, ToBlock(N, N, block));
-    Transpose<N, N>::Run(FromBlock(N, N, block),
-                         ToBlock(N, N, transposed_block));
-    IDCT1D<N, N>(FromBlock(N, N, transposed_block), to);
+    float* JXL_RESTRICT block = scratch_space;
+    // Vector size is capped to N, so this is aligned for all values of N.
+    float* JXL_RESTRICT transposed_block = scratch_space + N * N;
+    IDCT1D<N, N>(from, DCTTo(block, N));
+    Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(transposed_block, N));
+    IDCT1D<N, N>(DCTFrom(transposed_block, N), to);
   }
 };
 // Computes the non-transposed, scaled DCT of a block, that needs to be
 // HWY_ALIGN'ed. Used for rectangular blocks.
 template <size_t ROWS, size_t COLS>
 struct ComputeScaledDCT {
+  // scratch_space must be aligned, and should have space for 2*ROWS*COLS
+  // floats.
   template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[ROWS * COLS];
-    HWY_ALIGN float transposed_block[ROWS * COLS];
-    DCT1D<ROWS, COLS>(from, ToBlock(ROWS, COLS, block));
-    Transpose<ROWS, COLS>::Run(FromBlock(ROWS, COLS, block),
-                               ToBlock(COLS, ROWS, transposed_block));
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+                                   float* JXL_RESTRICT scratch_space) {
+    float* JXL_RESTRICT block = scratch_space;
+    // Vector size is capped to ROWS or COLS, so this is aligned for all values
+    // of ROWS and COLS.
+    float* JXL_RESTRICT transposed_block = scratch_space + ROWS * COLS;
+    DCT1D<ROWS, COLS>(from, DCTTo(block, COLS));
+    Transpose<ROWS, COLS>::Run(DCTFrom(block, COLS),
+                               DCTTo(transposed_block, ROWS));
     // Reusing block to reduce stack usage.
     if (ROWS < COLS) {
-      DCT1D<COLS, ROWS>(FromBlock(COLS, ROWS, transposed_block),
-                        ToBlock(COLS, ROWS, block));
-      Transpose<COLS, ROWS>::Run(FromBlock(COLS, ROWS, block), to);
+      DCT1D<COLS, ROWS>(DCTFrom(transposed_block, ROWS), DCTTo(block, ROWS));
+      Transpose<COLS, ROWS>::Run(DCTFrom(block, ROWS), to);
     } else {
-      DCT1D<COLS, ROWS>(FromBlock(COLS, ROWS, transposed_block), to);
+      DCT1D<COLS, ROWS>(DCTFrom(transposed_block, ROWS), to);
     }
   }
 };
@@ -304,21 +306,25 @@ struct ComputeScaledDCT {
 // HWY_ALIGN'ed. Used for rectangular blocks.
 template <size_t ROWS, size_t COLS>
 struct ComputeScaledIDCT {
+  // scratch_space must be aligned, and should have space for 2*ROWS*COLS
+  // floats.
   template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to) {
-    HWY_ALIGN float block[ROWS * COLS];
-    HWY_ALIGN float transposed_block[ROWS * COLS];
+  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+                                   float* JXL_RESTRICT scratch_space) {
+    float* JXL_RESTRICT block = scratch_space;
+    // Vector size is capped to ROWS or COLS, so this is aligned for all values
+    // of ROWS and COLS.
+    float* JXL_RESTRICT transposed_block = scratch_space + ROWS * COLS;
     // Reverse the steps done in ComputeScaledDCT.
     if (ROWS < COLS) {
-      Transpose<ROWS, COLS>::Run(from, ToBlock(COLS, ROWS, block));
-      IDCT1D<COLS, ROWS>(FromBlock(COLS, ROWS, block),
-                         ToBlock(COLS, ROWS, transposed_block));
+      Transpose<ROWS, COLS>::Run(from, DCTTo(block, ROWS));
+      IDCT1D<COLS, ROWS>(DCTFrom(block, ROWS), DCTTo(transposed_block, ROWS));
     } else {
-      IDCT1D<COLS, ROWS>(from, ToBlock(COLS, ROWS, transposed_block));
+      IDCT1D<COLS, ROWS>(from, DCTTo(transposed_block, ROWS));
     }
-    Transpose<COLS, ROWS>::Run(FromBlock(COLS, ROWS, transposed_block),
-                               ToBlock(ROWS, COLS, block));
-    IDCT1D<ROWS, COLS>(FromBlock(ROWS, COLS, block), to);
+    Transpose<COLS, ROWS>::Run(DCTFrom(transposed_block, ROWS),
+                               DCTTo(block, COLS));
+    IDCT1D<ROWS, COLS>(DCTFrom(block, COLS), to);
   }
 };
 

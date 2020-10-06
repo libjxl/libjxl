@@ -37,9 +37,8 @@ static constexpr int kMaxImplicitPaletteIndexPastExplicitEntries = 1 << 9;
 // palette indices to implicit values. If index < nb_deltas, indicating that the
 // result is a delta palette entry, it is the responsibility of the caller to
 // treat it as such.
-static pixel_type GetPaletteValue(const pixel_type *const JXL_RESTRICT palette,
-                                  int index, const int c,
-                                  const int palette_size, const int nb,
+static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
+                                  const int c, const int palette_size,
                                   const int onerow, const int bit_depth) {
   if (index < 0) {
     static constexpr std::array<std::array<pixel_type, 3>, 52> kDeltaPalette = {
@@ -66,10 +65,23 @@ static pixel_type GetPaletteValue(const pixel_type *const JXL_RESTRICT palette,
     }
   } else if (index >= palette_size) {
     index -= palette_size;
-    return ((index >> (3 * c)) & 7) * ((1 << bit_depth) - 1) / 7;
+    return ((index >> (3 * c)) & 0b111) * ((1 << bit_depth) - 1) / 0b111;
   }
 
   return palette[c * onerow + index];
+}
+
+int QuantizeColorToImplicitPaletteIndex(const std::vector<pixel_type> &color,
+                                        const int palette_size,
+                                        const int bit_depth) {
+  int index = 0;
+  for (int c = 0; c < color.size(); c++) {
+    const int quantized =
+        (0b111 * color[c] + (1 << (bit_depth - 1))) / ((1 << bit_depth) - 1);
+    JXL_DASSERT((quantized & 0b111) == quantized);
+    index |= (quantized & 0b111) << (3 * c);
+  }
+  return palette_size + index;
 }
 
 }  // namespace palette_internal
@@ -111,7 +123,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
               const int index = p[x];
               p[x] = palette_internal::GetPaletteValue(
                   p_palette, std::max(0, index), /*c=*/0,
-                  /*palette_size=*/palette.w, /*nb=*/nb, /*onerow=*/onerow,
+                  /*palette_size=*/palette.w, /*onerow=*/onerow,
                   /*bit_depth=*/bit_depth);
             }
           },
@@ -130,7 +142,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
               for (int c = 0; c < nb; c++)
                 p_out[c][x] = palette_internal::GetPaletteValue(
                     p_palette, std::max(0, index), /*c=*/c,
-                    /*palette_size=*/palette.w, /*nb=*/nb, /*onerow=*/onerow,
+                    /*palette_size=*/palette.w, /*onerow=*/onerow,
                     /*bit_depth=*/bit_depth);
             }
           },
@@ -154,7 +166,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
                         p_palette, index, /*c=*/c, /*palette_size=*/palette.w,
-                        /*nb=*/nb,
                         /*onerow=*/onerow, /*bit_depth=*/bit_depth);
                 if (index < static_cast<int32_t>(nb_deltas)) {
                   PredictionResult pred =
@@ -186,7 +197,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
                         p_palette, index, /*c=*/c, /*palette_size=*/palette.w,
-                        /*nb=*/nb,
                         /*onerow=*/onerow, /*bit_depth=*/bit_depth);
                 if (index < static_cast<int32_t>(nb_deltas)) {
                   pixel_type_w left =
@@ -217,7 +227,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
                         p_palette, index, /*c=*/c, /*palette_size=*/palette.w,
-                        /*nb=*/nb,
                         /*onerow=*/onerow, /*bit_depth=*/bit_depth);
                 if (index < static_cast<int32_t>(nb_deltas)) {
                   PredictionResult pred = PredictNoTreeNoWP(
@@ -400,17 +409,12 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                                              y, predictor, &wp_states[c])
                                  .guess;
           }
-          for (index = palette_internal::kMinImplicitPaletteIndex;
-               index <
-               static_cast<int32_t>(
-                   nb_colors + palette_internal::
-                                   kMaxImplicitPaletteIndexPastExplicitEntries);
-               index++) {
+          const auto TryIndex = [&](const int index) {
             pixel_type_w l2_squared = 0;
             for (int c = 0; c < nb; c++) {
               quantized_val[c] = palette_internal::GetPaletteValue(
                   p_palette, index, /*c=*/c, /*palette_size=*/nb_colors,
-                  /*nb=*/nb, /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+                  /*onerow=*/onerow, /*bit_depth=*/bit_depth);
               if (index < nb_deltas) {
                 quantized_val[c] += predictions[c];
               }
@@ -425,7 +429,13 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
               std::copy(quantized_val.begin(), quantized_val.end(),
                         best_val.begin());
             }
+          };
+          for (index = palette_internal::kMinImplicitPaletteIndex;
+               index < static_cast<int32_t>(nb_colors); index++) {
+            TryIndex(index);
           }
+          TryIndex(palette_internal::QuantizeColorToImplicitPaletteIndex(
+              color, nb_colors, bit_depth));
           index = best_index;
           for (int c = 0; c < nb; ++c) {
             wp_states[c].UpdateErrors(best_val[c], x, y, w);

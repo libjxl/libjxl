@@ -31,7 +31,6 @@ set(TEST_FILES
   jxl/convolve_test.cc
   jxl/data_parallel_test.cc
   jxl/dct_test.cc
-  jxl/dct_util_test.cc
   jxl/descriptive_statistics_test.cc
   jxl/entropy_coder_test.cc
   jxl/external_image_test.cc

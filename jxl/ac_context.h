@@ -15,6 +15,7 @@
 #ifndef JXL_AC_CONTEXT_H_
 #define JXL_AC_CONTEXT_H_
 
+#include <algorithm>
 #include <vector>
 
 #include "jxl/base/bits.h"
@@ -91,11 +92,12 @@ struct BlockCtxMap {
   std::vector<uint8_t> ctx_map;
   size_t num_ctxs, num_dc_ctxs;
 
-  static constexpr uint8_t kNumStrategyOrders = 7;
-  static constexpr uint8_t kDefaultCtxMap[kNumStrategyOrders * 3] = {
-      0, 1, 2, 2, 3, 3, 4,  //
-      5, 6, 7, 7, 8, 8, 9,  //
-      5, 6, 7, 7, 8, 8, 9};
+  static_assert(kNumOrders == 9, "Update default context map");
+  static constexpr uint8_t kDefaultCtxMap[kNumOrders * 3] = {
+      0, 1, 2, 2, 3,  3,  4,  5,  6,   //
+      7, 8, 9, 9, 10, 11, 12, 13, 14,  //
+      7, 8, 9, 9, 10, 11, 12, 13, 14,  //
+  };
 
   size_t Context(int dc_idx, int qf, size_t ord, size_t c) const {
     size_t qf_idx = 0;
@@ -103,7 +105,7 @@ struct BlockCtxMap {
       if (qf > t) qf_idx++;
     }
     size_t idx = c < 2 ? c ^ 1 : 2;
-    idx = idx * kNumStrategyOrders + ord;
+    idx = idx * kNumOrders + ord;
     idx = idx * (qf_thresholds.size() + 1) + qf_idx;
     idx = idx * num_dc_ctxs + dc_idx;
     return ctx_map[idx];
@@ -131,16 +133,17 @@ struct BlockCtxMap {
   inline uint32_t NonZeroContext(uint32_t non_zeros, uint32_t block_ctx) const {
     uint32_t ctx;
     if (non_zeros >= 64) non_zeros = 64;
-    if (non_zeros < 8)
+    if (non_zeros < 8) {
       ctx = non_zeros;
-    else
+    } else {
       ctx = 4 + non_zeros / 2;
+    }
     return ctx * num_ctxs + block_ctx;
   }
 
   BlockCtxMap() {
     ctx_map.assign(std::begin(kDefaultCtxMap), std::end(kDefaultCtxMap));
-    num_ctxs = 10;
+    num_ctxs = *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
     num_dc_ctxs = 1;
   }
 };

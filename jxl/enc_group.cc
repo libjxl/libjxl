@@ -192,6 +192,7 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
   // TODO(user): it would be better to find & apply correlation here, when
   // quantization is chosen.
 
+  auto mem = hwy::AllocateAligned<ac_qcoeff_t>(4 * AcStrategy::kMaxCoeffArea);
   {
     // Only use error diffusion in Squirrel mode or slower.
     const bool error_diffusion = cparams.speed_tier <= SpeedTier::kSquirrel;
@@ -206,8 +207,8 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
       }
     }
 
-    HWY_ALIGN float roundtrip_y[AcStrategy::kMaxCoeffArea];
-    HWY_ALIGN ac_qcoeff_t quantized[3 * AcStrategy::kMaxCoeffArea];
+    HWY_ALIGN float* roundtrip_y = mem.get();
+    HWY_ALIGN ac_qcoeff_t* quantized = mem.get() + AcStrategy::kMaxCoeffArea;
 
     size_t offset = 0;
 

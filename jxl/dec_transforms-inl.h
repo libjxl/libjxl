@@ -35,16 +35,18 @@ namespace {
 template <size_t ROWS, size_t COLS>
 struct DoIDCT {
   template <typename From, typename To>
-  void operator()(const From& from, const To& to) {
-    ComputeScaledIDCT<ROWS, COLS>()(from, to);
+  void operator()(const From& from, const To& to,
+                  float* JXL_RESTRICT scratch_space) {
+    ComputeScaledIDCT<ROWS, COLS>()(from, to, scratch_space);
   }
 };
 
 template <size_t N>
 struct DoIDCT<N, N> {
   template <typename From, typename To>
-  void operator()(const From& from, const To& to) const {
-    ComputeTransposedScaledIDCT<N>()(from, to);
+  void operator()(const From& from, const To& to,
+                  float* JXL_RESTRICT scratch_space) const {
+    ComputeTransposedScaledIDCT<N>()(from, to, scratch_space);
   }
 };
 
@@ -54,7 +56,6 @@ template <size_t DCT_ROWS, size_t DCT_COLS, size_t LF_ROWS, size_t LF_COLS,
 HWY_INLINE void ReinterpretingIDCT(const float* input,
                                    const size_t input_stride, float* output,
                                    const size_t output_stride) {
-  // TODO(veluca): avoid copy using special FromBlock adapters.
   HWY_ALIGN float block[ROWS * COLS] = {};
   if (ROWS < COLS) {
     for (size_t y = 0; y < LF_ROWS; y++) {
@@ -74,16 +75,11 @@ HWY_INLINE void ReinterpretingIDCT(const float* input,
     }
   }
 
-  constexpr size_t IN_ROWS = CoefficientRows(ROWS, COLS);
   constexpr size_t IN_COLS = CoefficientColumns(ROWS, COLS);
-  DoIDCT<ROWS, COLS>()(FromBlock(IN_ROWS, IN_COLS, block),
-                       ToBlock(ROWS, COLS, block));
-
-  for (size_t y = 0; y < ROWS; y++) {
-    for (size_t x = 0; x < COLS; x++) {
-      output[y * output_stride + x] = block[y * COLS + x];
-    }
-  }
+  // ROWS, COLS <= 8, so we can put scratch space on the stack.
+  HWY_ALIGN float scratch_space[ROWS * COLS * 2];
+  DoIDCT<ROWS, COLS>()(DCTFrom(block, IN_COLS), DCTTo(output, output_stride),
+                       scratch_space);
 }
 
 template <size_t S>
@@ -422,6 +418,7 @@ void AFVIDCT4x4(const float* JXL_RESTRICT coeffs, float* JXL_RESTRICT pixels) {
 template <size_t afv_kind>
 void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
                           float* JXL_RESTRICT pixels, size_t pixels_stride) {
+  HWY_ALIGN float scratch_space[4 * 8 * 2];
   size_t afv_x = afv_kind & 1;
   size_t afv_y = afv_kind / 2;
   float dcs[3] = {};
@@ -457,9 +454,10 @@ void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
     }
   }
   ComputeTransposedScaledIDCT<4>()(
-      FromBlock(4, 4, block),
-      ToLines(pixels + afv_y * 4 * pixels_stride + (afv_x == 1 ? 0 : 4),
-              pixels_stride));
+      DCTFrom(block, 4),
+      DCTTo(pixels + afv_y * 4 * pixels_stride + (afv_x == 1 ? 0 : 4),
+            pixels_stride),
+      scratch_space);
   // IDCT4x8.
   block[0] = dcs[2];
   for (size_t iy = 0; iy < 4; iy++) {
@@ -469,14 +467,16 @@ void AFVTransformToPixels(const float* JXL_RESTRICT coefficients,
     }
   }
   ComputeScaledIDCT<4, 8>()(
-      FromBlock(4, 8, block),
-      ToLines(pixels + (afv_y == 1 ? 0 : 4) * pixels_stride, pixels_stride));
+      DCTFrom(block, 8),
+      DCTTo(pixels + (afv_y == 1 ? 0 : 4) * pixels_stride, pixels_stride),
+      scratch_space);
 }
 
 HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
                                         const float* JXL_RESTRICT coefficients,
                                         float* JXL_RESTRICT pixels,
-                                        size_t pixels_stride) {
+                                        size_t pixels_stride,
+                                        float* scratch_space) {
   using Type = AcStrategy::Type;
   switch (strategy) {
     case Type::IDENTITY: {
@@ -533,8 +533,9 @@ HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
             block[iy * 8 + ix] = coefficients[(x + iy * 2) * 8 + ix];
           }
         }
-        ComputeScaledIDCT<8, 4>()(FromBlock(4, 8, block),
-                                  ToLines(pixels + x * 4, pixels_stride));
+        ComputeScaledIDCT<8, 4>()(DCTFrom(block, 8),
+                                  DCTTo(pixels + x * 4, pixels_stride),
+                                  scratch_space);
       }
       break;
     }
@@ -555,8 +556,9 @@ HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
           }
         }
         ComputeScaledIDCT<4, 8>()(
-            FromBlock(4, 8, block),
-            ToLines(pixels + y * 4 * pixels_stride, pixels_stride));
+            DCTFrom(block, 8),
+            DCTTo(pixels + y * 4 * pixels_stride, pixels_stride),
+            scratch_space);
       }
       break;
     }
@@ -582,8 +584,9 @@ HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
             }
           }
           ComputeTransposedScaledIDCT<4>()(
-              FromBlock(4, 4, block),
-              ToLines(pixels + y * 4 * pixels_stride + x * 4, pixels_stride));
+              DCTFrom(block, 4),
+              DCTTo(pixels + y * 4 * pixels_stride + x * 4, pixels_stride),
+              scratch_space);
         }
       }
       break;
@@ -605,58 +608,58 @@ HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
     case Type::DCT16X16: {
       PROFILER_ZONE("IDCT 16");
       ComputeTransposedScaledIDCT<2 * kBlockDim>()(
-          FromBlock(2 * kBlockDim, 2 * kBlockDim, coefficients),
-          ToLines(pixels, pixels_stride));
+          DCTFrom(coefficients, 2 * kBlockDim), DCTTo(pixels, pixels_stride),
+          scratch_space);
       break;
     }
     case Type::DCT16X8: {
       PROFILER_ZONE("IDCT 16x8");
-      ComputeScaledIDCT<16, 8>()(FromBlock(8, 16, coefficients),
-                                 ToLines(pixels, pixels_stride));
+      ComputeScaledIDCT<16, 8>()(DCTFrom(coefficients, 16),
+                                 DCTTo(pixels, pixels_stride), scratch_space);
       break;
     }
     case Type::DCT8X16: {
       PROFILER_ZONE("IDCT 8x16");
-      ComputeScaledIDCT<8, 16>()(FromBlock(8, 16, coefficients),
-                                 ToLines(pixels, pixels_stride));
+      ComputeScaledIDCT<8, 16>()(DCTFrom(coefficients, 16),
+                                 DCTTo(pixels, pixels_stride), scratch_space);
       break;
     }
     case Type::DCT32X8: {
       PROFILER_ZONE("IDCT 32x8");
-      ComputeScaledIDCT<32, 8>()(FromBlock(8, 32, coefficients),
-                                 ToLines(pixels, pixels_stride));
+      ComputeScaledIDCT<32, 8>()(DCTFrom(coefficients, 32),
+                                 DCTTo(pixels, pixels_stride), scratch_space);
       break;
     }
     case Type::DCT8X32: {
       PROFILER_ZONE("IDCT 8x32");
-      ComputeScaledIDCT<8, 32>()(FromBlock(8, 32, coefficients),
-                                 ToLines(pixels, pixels_stride));
+      ComputeScaledIDCT<8, 32>()(DCTFrom(coefficients, 32),
+                                 DCTTo(pixels, pixels_stride), scratch_space);
       break;
     }
     case Type::DCT32X16: {
       PROFILER_ZONE("IDCT 32x16");
-      ComputeScaledIDCT<32, 16>()(FromBlock(16, 32, coefficients),
-                                  ToLines(pixels, pixels_stride));
+      ComputeScaledIDCT<32, 16>()(DCTFrom(coefficients, 32),
+                                  DCTTo(pixels, pixels_stride), scratch_space);
       break;
     }
     case Type::DCT16X32: {
       PROFILER_ZONE("IDCT 16x32");
-      ComputeScaledIDCT<16, 32>()(FromBlock(16, 32, coefficients),
-                                  ToLines(pixels, pixels_stride));
+      ComputeScaledIDCT<16, 32>()(DCTFrom(coefficients, 32),
+                                  DCTTo(pixels, pixels_stride), scratch_space);
       break;
     }
     case Type::DCT32X32: {
       PROFILER_ZONE("IDCT 32");
       ComputeTransposedScaledIDCT<4 * kBlockDim>()(
-          FromBlock(4 * kBlockDim, 4 * kBlockDim, coefficients),
-          ToLines(pixels, pixels_stride));
+          DCTFrom(coefficients, 4 * kBlockDim), DCTTo(pixels, pixels_stride),
+          scratch_space);
       break;
     }
     case Type::DCT: {
       PROFILER_ZONE("IDCT 8");
-      ComputeTransposedScaledIDCT<kBlockDim>()(
-          FromBlock(kBlockDim, kBlockDim, coefficients),
-          ToLines(pixels, pixels_stride));
+      ComputeTransposedScaledIDCT<kBlockDim>()(DCTFrom(coefficients, kBlockDim),
+                                               DCTTo(pixels, pixels_stride),
+                                               scratch_space);
       break;
     }
     case Type::AFV0: {
@@ -677,6 +680,25 @@ HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
     case Type::AFV3: {
       PROFILER_ZONE("IAFV3");
       AFVTransformToPixels<3>(coefficients, pixels, pixels_stride);
+      break;
+    }
+    case Type::DCT64X32: {
+      PROFILER_ZONE("IDCT 64x32");
+      ComputeScaledIDCT<64, 32>()(DCTFrom(coefficients, 64),
+                                  DCTTo(pixels, pixels_stride), scratch_space);
+      break;
+    }
+    case Type::DCT32X64: {
+      PROFILER_ZONE("IDCT 32x64");
+      ComputeScaledIDCT<32, 64>()(DCTFrom(coefficients, 64),
+                                  DCTTo(pixels, pixels_stride), scratch_space);
+      break;
+    }
+    case Type::DCT64X64: {
+      PROFILER_ZONE("IDCT 64");
+      ComputeTransposedScaledIDCT<8 * kBlockDim>()(
+          DCTFrom(coefficients, 8 * kBlockDim), DCTTo(pixels, pixels_stride),
+          scratch_space);
       break;
     }
     case Type::kNumValidStrategies:
@@ -735,6 +757,24 @@ HWY_MAYBE_UNUSED void DCFromLowestFrequencies(const AcStrategy::Type strategy,
       ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
                          /*LF_ROWS=*/4, /*LF_COLS=*/4, /*ROWS=*/4, /*COLS=*/4>(
           block, 4 * kBlockDim, dc, dc_stride);
+      break;
+    }
+    case Type::DCT64X32: {
+      ReinterpretingIDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
+                         /*LF_ROWS=*/8, /*LF_COLS=*/4, /*ROWS=*/8, /*COLS=*/4>(
+          block, 8 * kBlockDim, dc, dc_stride);
+      break;
+    }
+    case Type::DCT32X64: {
+      ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
+                         /*LF_ROWS=*/4, /*LF_COLS=*/8, /*ROWS=*/4, /*COLS=*/8>(
+          block, 8 * kBlockDim, dc, dc_stride);
+      break;
+    }
+    case Type::DCT64X64: {
+      ReinterpretingIDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
+                         /*LF_ROWS=*/8, /*LF_COLS=*/8, /*ROWS=*/8, /*COLS=*/8>(
+          block, 8 * kBlockDim, dc, dc_stride);
       break;
     }
     case Type::DCT:

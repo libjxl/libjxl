@@ -43,7 +43,7 @@ constexpr T ArraySum(T (&a)[N], size_t i = N - 1) {
   return i == 0 ? a[0] : a[i] + ArraySum(a, i - 1);
 }
 
-static constexpr size_t kMaxQuantTableSize = kDCTBlockSize * 16;
+static constexpr size_t kMaxQuantTableSize = AcStrategy::kMaxCoeffArea;
 static constexpr size_t kNumPredefinedTables = 1;
 static constexpr size_t kCeilLog2NumPredefinedTables = 0;
 static constexpr size_t kLog2NumQuantModes = 3;
@@ -347,18 +347,22 @@ class DequantMatrices {
     // AFV1
     // AFV2
     // AFV3
+    DCT64X64,
+    // DCT64X32,
+    DCT32X64,
     kNum
   };
 
-  static_assert(AcStrategy::kNumValidStrategies == 18,
+  static_assert(AcStrategy::kNumValidStrategies == 21,
                 "Update this array when adding or removing AC strategies.");
   static constexpr QuantTable kQuantTable[] = {
-      QuantTable::DCT,     QuantTable::IDENTITY, QuantTable::DCT2X2,
-      QuantTable::DCT4X4,  QuantTable::DCT16X16, QuantTable::DCT32X32,
-      QuantTable::DCT8X16, QuantTable::DCT8X16,  QuantTable::DCT8X32,
-      QuantTable::DCT8X32, QuantTable::DCT16X32, QuantTable::DCT16X32,
-      QuantTable::DCT4X8,  QuantTable::DCT4X8,   QuantTable::AFV0,
-      QuantTable::AFV0,    QuantTable::AFV0,     QuantTable::AFV0,
+      QuantTable::DCT,      QuantTable::IDENTITY, QuantTable::DCT2X2,
+      QuantTable::DCT4X4,   QuantTable::DCT16X16, QuantTable::DCT32X32,
+      QuantTable::DCT8X16,  QuantTable::DCT8X16,  QuantTable::DCT8X32,
+      QuantTable::DCT8X32,  QuantTable::DCT16X32, QuantTable::DCT16X32,
+      QuantTable::DCT4X8,   QuantTable::DCT4X8,   QuantTable::AFV0,
+      QuantTable::AFV0,     QuantTable::AFV0,     QuantTable::AFV0,
+      QuantTable::DCT64X64, QuantTable::DCT32X64, QuantTable::DCT32X64,
   };
 
   DequantMatrices()
@@ -437,19 +441,22 @@ class DequantMatrices {
 
   const std::vector<QuantEncoding>& encodings() const { return encodings_; }
 
+  static_assert(kNum == 13,
+                "Update this array when adding or removing quant tables.");
+  static constexpr size_t required_size_x[kNum] = {1, 1, 1, 1, 2, 4, 1,
+                                                   1, 2, 1, 1, 8, 4};
+  static constexpr size_t required_size_y[kNum] = {1, 1, 1, 1, 2, 4, 2,
+                                                   4, 4, 1, 1, 8, 8};
+
  private:
   float* InvTable() const { return table_.get() + kTotalTableSize; }
 
   Status Compute();
-  static_assert(kNum == 11,
-                "Update this array when adding or removing quant tables.");
-  static constexpr size_t required_size_x_[kNum] = {1, 1, 1, 1, 2, 4,
-                                                    1, 1, 2, 1, 1};
-  static constexpr size_t required_size_y_[kNum] = {1, 1, 1, 1, 2, 4,
-                                                    2, 4, 4, 1, 1};
-  static constexpr size_t required_size_[kNum] = {1, 1, 1, 1, 4, 16,
-                                                  2, 4, 8, 1, 1};
 
+  static_assert(kNum == 13,
+                "Update this array when adding or removing quant tables.");
+  static constexpr size_t required_size_[kNum] = {1, 1, 1, 1, 4,  16, 2,
+                                                  4, 8, 1, 1, 64, 32};
   static constexpr size_t kTotalTableSize =
       ArraySum(required_size_) * kDCTBlockSize * 3;
 

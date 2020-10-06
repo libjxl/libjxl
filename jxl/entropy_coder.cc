@@ -335,8 +335,8 @@ Status DecodeBlockCtxMap(BitReader* br, BlockCtxMap* block_ctx_map) {
     return JXL_FAILURE("Invalid block context map: too big");
   }
 
-  ctx_map.resize(3 * BlockCtxMap::kNumStrategyOrders *
-                 block_ctx_map->num_dc_ctxs * (qft.size() + 1));
+  ctx_map.resize(3 * kNumOrders * block_ctx_map->num_dc_ctxs *
+                 (qft.size() + 1));
   JXL_RETURN_IF_ERROR(DecodeContextMap(&ctx_map, &block_ctx_map->num_ctxs, br));
   if (block_ctx_map->num_ctxs > 16) {
     return JXL_FAILURE("Invalid block context map: too many distinct contexts");

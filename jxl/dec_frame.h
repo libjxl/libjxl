@@ -23,6 +23,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
+#include "jxl/codec_in_out.h"
 #include "jxl/common.h"
 #include "jxl/dec_bit_reader.h"
 #include "jxl/dec_cache.h"
@@ -53,7 +54,8 @@ Status DecodeFrame(const DecompressParams& dparams,
                    Multiframe* JXL_RESTRICT multiframe,
                    ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, AnimationFrame* animation = nullptr);
+                   ImageBundle* decoded, const CodecInOut* io = nullptr,
+                   AnimationFrame* animation = nullptr);
 
 // Leaves reader in the same state as DecodeFrame would. Used to skip preview.
 // `frame_dim` must already be set from SizeHeader and may be overridden if

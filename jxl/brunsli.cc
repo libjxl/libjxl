@@ -218,8 +218,7 @@ void FixDc(const ::brunsli::coeff_t* JXL_RESTRICT coeffs,
   constexpr size_t N = kBlockDim;
   static_assert(N == 8, "JPEG block dim must be 8");
   static_assert(kDCTBlockSize == N * N, "JPEG block size must be 64");
-  const float dequant_mult =
-      static_cast<float>(q_dc) * IDCTScale<N>::value * IDCTScale<N>::value;
+  const float dequant_mult = static_cast<float>(q_dc) / N;
   const float q_ach_dc = static_cast<float>(q_ach) / static_cast<float>(q_dc);
   const float q_acv_dc = static_cast<float>(q_acv) / static_cast<float>(q_dc);
 
@@ -359,8 +358,7 @@ Status JpegDataToPixels(const brunsli::JPEGData& src,
     for (size_t y = 0; y < N; ++y) {
       for (size_t x = 0; x < N; ++x) {
         const size_t i = y * N + x;
-        quant[i] = static_cast<float>(quant_table.values[i]) *
-                   IDCTScale<N>::value * IDCTScale<N>::value;
+        quant[i] = static_cast<float>(quant_table.values[i]) / N;
       }
     }
 
@@ -929,9 +927,7 @@ void ConvertPixels(const Image3F& from, brunsli::JPEGData* to,
           for (size_t v = 0; v < N; ++v) {
             size_t to_idx = u * N + v;
             size_t from_idx = v * N + u;
-            float raw = (static_cast<float>(N * N) * DCTScale<N>::value *
-                         DCTScale<N>::value) *
-                        from_block[from_idx];
+            float raw = from_block[from_idx] * N;
             raw += std::copysign(0.5f * static_cast<float>(quant_table[to_idx]),
                                  raw);
             to_block[to_idx] = raw / static_cast<float>(quant_table[to_idx]);

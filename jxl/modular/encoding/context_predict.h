@@ -95,7 +95,7 @@ struct State {
   }
 
   // Approximates 4+(maxweight<<24)/(x+1), avoiding division
-  JXL_INLINE uint32_t ErrorWeight(uint32_t x, uint32_t maxweight) const {
+  JXL_INLINE uint32_t ErrorWeight(uint64_t x, uint32_t maxweight) const {
     int shift = FloorLog2Nonzero(x + 1) - 5;
     if (shift < 0) shift = 0;
     return 4 + ((maxweight * divlookup[x >> shift]) >> shift);

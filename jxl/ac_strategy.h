@@ -39,19 +39,23 @@ namespace jxl {
 class AcStrategy {
  public:
   // Extremal values for the number of blocks/coefficients of a single strategy.
-  static constexpr size_t kMaxCoeffBlocks = 4;
+  static constexpr size_t kMaxCoeffBlocks = 8;
   static constexpr size_t kMaxBlockDim = kBlockDim * kMaxCoeffBlocks;
+  // Maximum number of coefficients in a block. Guaranteed to be a multiple of
+  // the vector size.
   static constexpr size_t kMaxCoeffArea = kMaxBlockDim * kMaxBlockDim;
+  static_assert((kMaxCoeffArea * sizeof(float)) % hwy::kMaxVectorSize == 0,
+                "Coefficient area is not a multiple of vector size");
 
   // Raw strategy types.
   enum Type : uint32_t {
-    // Regular block size DCT (value matches kQuantKind)
+    // Regular block size DCT
     DCT = 0,
-    // Encode pixels without transforming (value matches kQuantKind)
+    // Encode pixels without transforming
     IDENTITY = 1,
-    // Use 2-by-2 DCT (value matches kQuantKind)
+    // Use 2-by-2 DCT
     DCT2X2 = 2,
-    // Use 4-by-4 DCT (value matches kQuantKind)
+    // Use 4-by-4 DCT
     DCT4X4 = 3,
     // Use 16-by-16 DCT
     DCT16X16 = 4,
@@ -77,6 +81,10 @@ class AcStrategy {
     AFV1 = 15,
     AFV2 = 16,
     AFV3 = 17,
+    // Larger DCTs
+    DCT64X64 = 18,
+    DCT64X32 = 19,
+    DCT32X64 = 20,
     // Marker for num of valid strategies.
     kNumValidStrategies
   };
@@ -94,7 +102,9 @@ class AcStrategy {
                               TypeBit(Type::DCT32X32) | TypeBit(Type::DCT16X8) |
                               TypeBit(Type::DCT8X16) | TypeBit(Type::DCT32X8) |
                               TypeBit(Type::DCT8X32) | TypeBit(Type::DCT16X32) |
-                              TypeBit(Type::DCT32X16);
+                              TypeBit(Type::DCT32X16) |
+                              TypeBit(Type::DCT32X64) |
+                              TypeBit(Type::DCT64X32) | TypeBit(Type::DCT64X64);
     JXL_DASSERT(Strategy() < kNumValidStrategies);
     return ((1u << static_cast<uint32_t>(Strategy())) & bits) != 0;
   }
@@ -136,58 +146,34 @@ class AcStrategy {
   // Number of 8x8 blocks that this strategy will cover. 0 for non-top-left
   // blocks inside a multi-block transform.
   JXL_INLINE size_t covered_blocks_x() const {
-    static constexpr uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 1, 2, 1,
-                                       4, 2, 4, 1, 1, 1, 1, 1, 1};
+    static constexpr uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 1, 2, 1, 4, 2,
+                                       4, 1, 1, 1, 1, 1, 1, 8, 4, 8};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
     return kLut[size_t(strategy_)];
   }
 
   JXL_INLINE size_t covered_blocks_y() const {
-    static constexpr uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 2, 1, 4,
-                                       1, 4, 2, 1, 1, 1, 1, 1, 1};
+    static constexpr uint8_t kLut[] = {1, 1, 1, 1, 2, 4, 2, 1, 4, 1, 4,
+                                       2, 1, 1, 1, 1, 1, 1, 8, 8, 4};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
     return kLut[size_t(strategy_)];
   }
 
   JXL_INLINE size_t log2_covered_blocks() const {
-    static constexpr uint8_t kLut[] = {0, 0, 0, 0, 2, 4, 1, 1, 2,
-                                       2, 3, 3, 0, 0, 0, 0, 0, 0};
+    static constexpr uint8_t kLut[] = {0, 0, 0, 0, 2, 4, 1, 1, 2, 2, 3,
+                                       3, 0, 0, 0, 0, 0, 0, 6, 5, 5};
     static_assert(sizeof(kLut) / sizeof(*kLut) == kNumValidStrategies,
                   "Update LUT");
     return kLut[size_t(strategy_)];
   }
 
-  // 1 / covered_block_x() / covered_block_y(), for fast division.
-  // Should only be called with block_ == 0.
-  JXL_INLINE float inverse_covered_blocks() const {
-    if (strategy_ == Type::DCT32X32) return 1.0f / 16;
-    if (strategy_ == Type::DCT16X16) return 0.25f;
-    if (strategy_ == Type::DCT8X16 || strategy_ == Type::DCT16X8) return 0.5f;
-    if (strategy_ == Type::DCT8X32 || strategy_ == Type::DCT32X8) return 0.25f;
-    if (strategy_ == Type::DCT32X16 || strategy_ == Type::DCT16X32)
-      return 1.0f / 8;
-    return 1.0f;
-  }
-
-  JXL_INLINE float InverseNumACCoefficients() const {
-    JXL_DASSERT(IsFirstBlock());
-    if (strategy_ == Type::DCT32X32) return 1.0f / (32 * 32 - 16);
-    if (strategy_ == Type::DCT16X16) return 1.0f / (16 * 16 - 4);
-    if (strategy_ == Type::DCT8X16 || strategy_ == Type::DCT16X8)
-      return 1.0f / (8 * 16 - 2);
-    if (strategy_ == Type::DCT8X32 || strategy_ == Type::DCT32X8)
-      return 1.0f / (8 * 32 - 4);
-    if (strategy_ == Type::DCT32X16 || strategy_ == Type::DCT16X32)
-      return 1.0f / (32 * 16 - 8);
-    return 1.0f / (8 * 8 - 1);
-  }
-
   struct CoeffOrderAndLut {
     // Those offsets get multiplied by kDCTBlockSize.
     static constexpr size_t kOffset[kNumValidStrategies + 1] = {
-        0, 1, 2, 3, 4, 8, 24, 26, 28, 32, 36, 44, 52, 53, 54, 55, 56, 57, 58};
+        0,  1,  2,  3,  4,  8,  24, 26, 28,  32,  36,
+        44, 52, 53, 54, 55, 56, 57, 58, 122, 154, 186};
     static constexpr size_t kTotalTableSize =
         kOffset[kNumValidStrategies] * kDCTBlockSize;
     coeff_order_t order[kTotalTableSize];

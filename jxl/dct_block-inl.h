@@ -48,14 +48,13 @@ using BlockDesc = HWY_CAPPED(float, N);
 // Here and in the following, the SZ template parameter specifies the number of
 // values to load/store. Needed because we want to handle 4x4 sub-blocks of
 // 16x16 blocks.
-class FromBlock {
+class DCTFrom {
  public:
-  FromBlock(size_t rows, size_t cols, const float* block)
-      : cols_(cols), block_(block) {}
+  DCTFrom(const float* data, size_t stride) : stride_(stride), data_(data) {}
 
   template <typename D>
   HWY_INLINE Vec<D> LoadPart(D, const size_t row, size_t i) const {
-    JXL_DASSERT(Lanes(D()) <= cols_);
+    JXL_DASSERT(Lanes(D()) <= stride_);
     return Load(D(), Address(row, i));
   }
 
@@ -65,23 +64,22 @@ class FromBlock {
 
   constexpr HWY_INLINE const float* Address(const size_t row,
                                             const size_t i) const {
-    return block_ + row * cols_ + i;
+    return data_ + row * stride_ + i;
   }
 
  private:
-  size_t cols_;
-  const float* block_;
+  size_t stride_;
+  const float* JXL_RESTRICT data_;
 };
 
-class ToBlock {
+class DCTTo {
  public:
-  ToBlock(size_t rows, size_t cols, float* block)
-      : cols_(cols), block_(block) {}
+  DCTTo(float* data, size_t stride) : stride_(stride), data_(data) {}
 
   template <typename D>
   HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
-                            const size_t i) const {
-    JXL_DASSERT(Lanes(D()) <= cols_);
+                            size_t i) const {
+    JXL_DASSERT(Lanes(D()) <= stride_);
     Store(v, D(), Address(row, i));
   }
 
@@ -90,89 +88,12 @@ class ToBlock {
   }
 
   constexpr HWY_INLINE float* Address(const size_t row, const size_t i) const {
-    return block_ + row * cols_ + i;
+    return data_ + row * stride_ + i;
   }
 
  private:
-  size_t cols_;
-  float* block_;
-};
-
-// Same as ToBlock, but multiplies result by (N * N)
-class ScaleToBlock {
- public:
-  ScaleToBlock(size_t rows, size_t cols, float* block)
-      : cols_(cols), mul_(1.0f / (cols * rows)), block_(block) {}
-
-  template <typename D>
-  HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
-                            const size_t i) const {
-    JXL_DASSERT(Lanes(D()) <= cols_);
-    const auto mul = Set(D(), mul_);
-    StoreU(v * mul, D(), Address(row, i));
-  }
-
-  HWY_INLINE void Write(float v, const size_t row, const size_t i) const {
-    *Address(row, i) = v * mul_;
-  }
-
-  constexpr HWY_INLINE float* Address(const size_t row, const size_t i) const {
-    return block_ + row * cols_ + i;
-  }
-
- private:
-  size_t cols_;
-  float mul_;
-  float* block_;
-};
-
-class FromLines {
- public:
-  FromLines(const float* top_left, size_t stride)
-      : top_left_(top_left), stride_(stride) {}
-
-  template <typename D>
-  HWY_INLINE Vec<D> LoadPart(D, const size_t row, const size_t i) const {
-    return LoadU(D(), Address(row, i));
-  }
-
-  HWY_INLINE float Read(const size_t row, const size_t i) const {
-    return *Address(row, i);
-  }
-
-  HWY_INLINE const float* Address(const size_t row, const size_t i) const {
-    return top_left_ + row * stride_ + i;
-  }
-
- private:
-  const float* HWY_RESTRICT top_left_;
-  size_t stride_;  // move to next line by adding this to pointer
-};
-
-// Pointers are restrict-qualified: assumes we don't use both FromLines and
-// ToLines in the same DCT. NOTE: Transpose uses From/ToBlock, not *Lines.
-class ToLines {
- public:
-  ToLines(float* top_left, size_t stride)
-      : top_left_(top_left), stride_(stride) {}
-
-  template <typename D>
-  HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
-                            const size_t i) const {
-    StoreU(v, D(), Address(row, i));
-  }
-
-  HWY_INLINE void Write(float v, const size_t row, const size_t i) const {
-    *Address(row, i) = v;
-  }
-
-  HWY_INLINE float* Address(const size_t row, const size_t i) const {
-    return top_left_ + row * stride_ + i;
-  }
-
- private:
-  float* HWY_RESTRICT top_left_;
-  size_t stride_;  // move to next line by adding this to pointer
+  size_t stride_;
+  float* JXL_RESTRICT data_;
 };
 
 }  // namespace

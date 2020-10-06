@@ -88,6 +88,9 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
 
     const int current_marker = marker->data[sizeof kICCSignature];
     const int current_num_markers = marker->data[sizeof kICCSignature + 1];
+    if (current_marker > current_num_markers) {
+      return JXL_FAILURE("inconsistent JPEG ICC marker numbering");
+    }
     if (has_num_markers) {
       if (current_num_markers != num_markers) {
         return JXL_FAILURE("inconsistent numbers of JPEG ICC markers");

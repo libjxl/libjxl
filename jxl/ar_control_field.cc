@@ -72,6 +72,15 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
     for (size_t bx = 0; bx < xsize_blocks; bx++) {
       AcStrategy acs = acs_row[bx];
       if (!acs.IsFirstBlock()) continue;
+      // TODO(veluca): adapt to larger (64) transforms.
+      if (acs.covered_blocks_x() > 4 || acs.covered_blocks_y() > 4) {
+        for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+          for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+            out_row[bx + sharpness_stride * iy + ix] = 4;
+          }
+        }
+        continue;
+      }
       // Calculate the L2 of the 3x3 Laplacian in an integral transform
       // (for example 32x32 dct). This relates to transforms ability
       // to propagate artefacts.

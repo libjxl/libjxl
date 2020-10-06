@@ -30,7 +30,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:f7aa050c4374a4fa78928ba6d38030f439e5fbd7dadfa67b26c718e1aa347d84
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:b068f90b767194574e80005a8ddcbf7c960a9daad31b64831449a240fe7a880d
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be

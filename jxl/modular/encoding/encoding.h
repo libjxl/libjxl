@@ -89,7 +89,8 @@ Status ModularGenericCompress(
 // undo_transforms == 0: undo all transforms
 // undo_transforms == -1: undo all transforms but don't clamp to range
 // undo_transforms == -2: don't undo any transform
-Status ModularGenericDecompress(BitReader *br, Image &image, size_t group_id,
+Status ModularGenericDecompress(BitReader *br, Image &image,
+                                GroupHeader *header, size_t group_id,
                                 ModularOptions *options,
                                 int undo_transforms = -1,
                                 const Tree *tree = nullptr,

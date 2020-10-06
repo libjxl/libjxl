@@ -187,13 +187,15 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
                              1.0f / kUniformQuant};
   dequant_matrices.SetCustomDC(dc_quant);
 
+  HWY_ALIGN_MAX float scratch_space[16 * 16 * 2];
+
   // DCT8
   {
     HWY_ALIGN_MAX float pixels[64];
     std::iota(std::begin(pixels), std::end(pixels), 0);
     HWY_ALIGN_MAX float coeffs[64];
     const AcStrategy::Type dct = AcStrategy::DCT;
-    TransformFromPixels(dct, pixels, 8, coeffs);
+    TransformFromPixels(dct, pixels, 8, coeffs, scratch_space);
     HWY_ALIGN_MAX double slow_coeffs[64];
     for (size_t i = 0; i < 64; i++) slow_coeffs[i] = pixels[i];
     DCTSlow<8>(slow_coeffs);
@@ -201,12 +203,12 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     for (size_t i = 0; i < 64; i++) {
       // DCTSlow doesn't multiply/divide by 1/N, so we do it manually.
       slow_coeffs[i] =
-          std::round(slow_coeffs[i] / 8 / kUniformQuant) * 8 * kUniformQuant;
+          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
       coeffs[i] = std::round(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
                   dequant_matrices.Matrix(dct, 0)[i];
     }
     IDCTSlow<8>(slow_coeffs);
-    TransformToPixels(dct, coeffs, pixels, 8);
+    TransformToPixels(dct, coeffs, pixels, 8, scratch_space);
     for (size_t i = 0; i < 64; i++) {
       EXPECT_NEAR(pixels[i], slow_coeffs[i], 1e-4);
     }
@@ -218,20 +220,20 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     std::iota(std::begin(pixels), std::end(pixels), 0);
     HWY_ALIGN_MAX float coeffs[64 * 4];
     const AcStrategy::Type dct = AcStrategy::DCT16X16;
-    TransformFromPixels(dct, pixels, 16, coeffs);
+    TransformFromPixels(dct, pixels, 16, coeffs, scratch_space);
     HWY_ALIGN_MAX double slow_coeffs[64 * 4];
     for (size_t i = 0; i < 64 * 4; i++) slow_coeffs[i] = pixels[i];
     DCTSlow<16>(slow_coeffs);
 
     for (size_t i = 0; i < 64 * 4; i++) {
       slow_coeffs[i] =
-          std::round(slow_coeffs[i] / 16 / kUniformQuant) * 16 * kUniformQuant;
+          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
       coeffs[i] = std::round(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
                   dequant_matrices.Matrix(dct, 0)[i];
     }
 
     IDCTSlow<16>(slow_coeffs);
-    TransformToPixels(dct, coeffs, pixels, 16);
+    TransformToPixels(dct, coeffs, pixels, 16, scratch_space);
     for (size_t i = 0; i < 64 * 4; i++) {
       EXPECT_NEAR(pixels[i], slow_coeffs[i], 1e-4);
     }

@@ -26,11 +26,6 @@ void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
            const ImageF& dequantized, ThreadPool* pool,
            ImageF* JXL_RESTRICT pixels);
 
-// Fills a preallocated N*W x N*H `idct` with NxN blocks produced by
-// ComputeTransposedScaledIDCT() from the (N*N)x1 blocks of `dct`.
-// REQUIRES: dct.xsize() == N*N*W, dct.ysize() == H
-void TransposedScaledIDCT(const Image3F& dct, Image3F* JXL_RESTRICT idct);
-
 }  // namespace jxl
 
 #endif  // JXL_DEC_DCT_H_

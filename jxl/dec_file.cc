@@ -66,7 +66,7 @@ Status DecodePreview(const DecompressParams& dparams,
   Multiframe multiframe;
   JXL_RETURN_IF_ERROR(DecodeFrame(dparams, file, animation, &frame_dim,
                                   &multiframe, pool, reader, aux_out,
-                                  &io->preview_frame));
+                                  &io->preview_frame, io));
   io->dec_pixels += frame_dim.xsize * frame_dim.ysize;
   return true;
 }
@@ -187,7 +187,7 @@ Status DecodeFile(const DecompressParams& dparams,
           JXL_RETURN_IF_ERROR(DecodeFrame(dparams, file, &io->animation,
                                           &frame_dim, &multiframe, pool,
                                           &reader, aux_out, &io->frames.back(),
-                                          &io->animation_frames.back()));
+                                          io, &io->animation_frames.back()));
         } while (!multiframe.IsDisplayed());
         io->dec_pixels += frame_dim.xsize * frame_dim.ysize;
       } while (!io->animation_frames.back().is_last);
@@ -201,7 +201,7 @@ Status DecodeFile(const DecompressParams& dparams,
         JXL_RETURN_IF_ERROR(
             DecodeFrame(dparams, file, /*animation_or_null=*/nullptr,
                         &frame_dim, &multiframe, pool, &reader, aux_out,
-                        &io->frames.back(), /*animation=*/nullptr));
+                        &io->frames.back(), io, /*animation=*/nullptr));
       } while (!multiframe.IsDisplayed());
       io->dec_pixels += frame_dim.xsize * frame_dim.ysize;
     }
