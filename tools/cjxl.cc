@@ -347,9 +347,9 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // High-level options
   opt_quality_id = cmdline->AddOptionValue(
       'q', "quality", "QUALITY",
-      "Quality setting for modular mode. Range: 0 .. 100.\n"
+      "Quality setting. Range: -inf .. 100.\n"
       "    100 = mathematically lossless. Default for already-lossy input "
-      "(JPEG/GIF).\n",
+      "(JPEG/GIF). Positive quality values roughly match libjpeg quality.\n",
       &quality, &ParseFloat);
 
   cmdline->AddOptionValue(
@@ -461,8 +461,10 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue(
       'P', "predictor", "K",
       "[modular encoding] predictor(s) to use: 0=zero, "
-      "1=left, 2=top, 3=avg, 4=select, 5=gradient, 6=variable, "
-      "7=weighted (default: best of 5,7)",
+      "1=left, 2=top, 3=avg0, 4=select, 5=gradient, 6=weighted, "
+      "7=topright, 8=topleft, 9=leftleft, 10=avg1, 11=avg2, 12=avg3, "
+      "13=mix 5 and 6, 14=mix everything. Default 13, at slowest speed "
+      "default 14",
       &params.options.predictor, &ParsePredictor, 1);
 
   cmdline->AddOptionValue(
@@ -522,10 +524,22 @@ jxl::Status JxlCompressArgs::ValidateArgs(
       cmdline.GetOption(opt_intensity_target_id)->matched();
 
   if (got_quality) {
-    params.modular_group_mode = true;
-    if (quality < 100) jpeg_transcode = false;
-    params.quality_pair.first = params.quality_pair.second = quality;
     default_settings = false;
+    if (quality < 100) jpeg_transcode = false;
+    // Quality settings roughly match libjpeg qualities.
+    if (quality < 7 || quality == 100) {
+      params.modular_group_mode = true;
+      // Internal modular quality to roughly match VarDCT size.
+      params.quality_pair.first = params.quality_pair.second =
+          std::min(35 + (quality - 7) * 3.0f, 100.0f);
+    } else {
+      if (quality >= 30) {
+        params.butteraugli_distance = 0.1 + (100 - quality) * 0.09;
+      } else {
+        params.butteraugli_distance =
+            6.4 + pow(2.5, (30 - quality) / 5.0f) / 6.25f;
+      }
+    }
   }
 
   if (progressive) {

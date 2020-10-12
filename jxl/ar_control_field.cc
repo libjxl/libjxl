@@ -47,7 +47,7 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
              epf_sharpness->ysize() == ysize_blocks);
 
   if (enc_state->cparams.speed_tier > SpeedTier::kWombat ||
-      !enc_state->shared.image_features.loop_filter.epf) {
+      enc_state->shared.image_features.loop_filter.epf_iters == 0) {
     FillImage(static_cast<uint8_t>(4), epf_sharpness);
     return;
   }

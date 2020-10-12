@@ -14,7 +14,6 @@
 
 #include "jxl/dec_file.h"
 
-#include <brunsli/brunsli_decode.h>
 #include <stddef.h>
 
 #include <utility>
@@ -24,7 +23,6 @@
 #include "jxl/base/compiler_specific.h"
 #include "jxl/base/override.h"
 #include "jxl/base/profiler.h"
-#include "jxl/brunsli.h"
 #include "jxl/color_management.h"
 #include "jxl/common.h"
 #include "jxl/dec_bit_reader.h"
@@ -106,32 +104,6 @@ Status DecodeFile(const DecompressParams& dparams,
   if (JpegxlSignatureCheck(file.data(), file.size()) != JPEGXL_SIG_VALID) {
     return JXL_FAILURE("File does not start with known JPEG XL signature");
   }
-
-  if (IsBrunsliFile(file) == jxl::BrunsliFileSignature::kBrunsli) {
-    std::unique_ptr<brunsli::JPEGData> jpg = make_unique<brunsli::JPEGData>();
-    brunsli::BrunsliStatus status =
-        brunsli::BrunsliDecodeJpeg(file.data(), file.size(), jpg.get());
-    if (status != brunsli::BRUNSLI_OK) {
-      return JXL_FAILURE("Failed to parse Brunsli input.");
-    }
-
-    if (dparams.keep_dct) {
-      std::vector<int32_t> jpeg_quant_table;
-      ImageBundle& decoded = io->Main();
-      decoded.color_transform = ColorTransform::kYCbCr;
-      decoded.chroma_subsampling = GetSubsamplingFromJpegData(*jpg);
-      SetColorEncodingFromJpegData(*jpg, &io->metadata.color_encoding);
-      decoded.jpeg_data = std::move(jpg);
-    } else {
-      BrunsliDecoderMeta meta;
-      JXL_RETURN_IF_ERROR(
-          BrunsliToPixels(*jpg, io, dparams.brunsli, &meta, pool));
-    }
-
-    io->CheckMetadata();
-    return true;
-  }
-  // Note: JPEG1 is handled by djpegxl to avoid depending on codec_jpg here.
 
   std::unique_ptr<brunsli::JPEGData> jpeg_data = nullptr;
   if (dparams.keep_dct) {

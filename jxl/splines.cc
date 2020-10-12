@@ -480,7 +480,7 @@ Status Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
       const float multiplier =
           add ? point_to_draw.second : -point_to_draw.second;
       const float progress_along_arc =
-          (k * kDesiredRenderingDistance) / arc_length;
+          std::min(1.f, (k * kDesiredRenderingDistance) / arc_length);
       ++k;
       float color[3];
       for (size_t c = 0; c < 3; ++c) {

@@ -17,8 +17,7 @@
 namespace {
 
 int CompressMain(int argc, const char** argv) {
-  return jpegxl::tools::CompressJpegXlMain(
-      jpegxl::tools::CompressionMode::kJpegXL, argc, argv);
+  return jpegxl::tools::CompressJpegXlMain(argc, argv);
 }
 
 }  // namespace

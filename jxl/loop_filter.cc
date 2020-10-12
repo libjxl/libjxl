@@ -48,8 +48,8 @@ Status LoopFilter::VisitFields(Visitor* JXL_RESTRICT visitor) {
     }
   }
 
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &epf));
-  if (visitor->Conditional(epf)) {
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(2, 2, &epf_iters));
+  if (visitor->Conditional(epf_iters > 0)) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &epf_sharp_custom));
     if (visitor->Conditional(epf_sharp_custom)) {
       for (size_t i = 0; i < kEpfSharpEntries; ++i) {

@@ -69,13 +69,13 @@ using DF = HWY_FULL(float);
 DF df;
 
 void ComputeMask(float* JXL_RESTRICT out_pos) {
-  static const float kBase = -0.75074198942923331;
-  static const float kMul4 = 3.5679454110355913;
-  static const float kMul2 = 12.922411049392476;
-  static const float kOffset2 = 304.79134236526278;
-  static const float kMul3 = 4.9317013412351525;
-  static const float kOffset3 = 1.9251828251393233;
-  static const float kMul0 = 0.75558830247369591;
+  static constexpr float kBase = -0.75074198942923331;
+  static constexpr float kMul4 = 3.5679454110355913;
+  static constexpr float kMul2 = 12.922411049392476;
+  static constexpr float kOffset2 = 304.79134236526278;
+  static constexpr float kMul3 = 4.9317013412351525;
+  static constexpr float kOffset3 = 1.9251828251393233;
+  static constexpr float kMul0 = 0.75558830247369591;
 
   const float val = out_pos[0] * kMul0;
   // Avoid division by zero.
@@ -92,7 +92,7 @@ void ComputeMask(float* JXL_RESTRICT out_pos) {
 }
 
 const float* Quant64() {
-  static const double kQuant64[64] = {
+  static constexpr double kQuant64[64] = {
       0.00, 4.10, 3.30, 3.30, 1.10, 1.15, 0.70, 0.70, 4.10, 3.30, 3.30,
       1.10, 1.15, 1.30, 0.70, 0.50, 3.00, 3.30, 2.90, 2.10, 1.30, 0.70,
       0.50, 0.50, 0.87, 2.90, 2.10, 1.40, 0.70, 0.50, 0.50, 0.50, 0.87,
@@ -100,7 +100,7 @@ const float* Quant64() {
       0.50, 0.50, 0.50, 0.50, 0.90, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
       0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
   };
-  static const double kPow = 2.0757549489102436;
+  static constexpr double kPow = 2.0757549489102436;
   HWY_ALIGN_MAX static float quant[64];
   for (size_t i = 0; i < 64; i++) {
     quant[i] = std::pow(kQuant64[i], kPow);
@@ -135,9 +135,9 @@ void DctModulation(const size_t x, const size_t y, const ImageF& xyb,
   entropyQL2 = std::sqrt(entropyQL2);
   entropyQL4 = std::sqrt(std::sqrt(entropyQL4));
   entropyQL8 = std::pow(entropyQL8, 0.125f);
-  static const float mulQL2 = 0.045655288457332764;
-  static const float mulQL4 = -0.46444076773581316;
-  static const float mulQL8 = 0.36332928423385757;
+  static constexpr float mulQL2 = 0.045655288457332764;
+  static constexpr float mulQL4 = -0.46444076773581316;
+  static constexpr float mulQL8 = 0.36332928423385757;
   float v = mulQL2 * entropyQL2 + mulQL4 * entropyQL4 + mulQL8 * entropyQL8;
   const float kMul = 0.74718448352037614 * 8.0f;
   *out_pos += kMul * v;
@@ -372,15 +372,15 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
 }
 
 float MaskingLog(const float v) {
-  static const float kLogOffset = 13.362478857394517;
-  static const float mul = 3.1101290961753842;
+  static constexpr float kLogOffset = 13.362478857394517;
+  static constexpr float mul = 3.1101290961753842;
   return std::log2(mul * 100000 * v + kLogOffset);
 }
 
 template <typename D, typename V>
 V MaskingLog(const D d, V v) {
-  static const float kLogOffset = 13.362478857394517;
-  static const float kMul = 3.1101290961753842;
+  static constexpr float kLogOffset = 13.362478857394517;
+  static constexpr float kMul = 3.1101290961753842;
   const auto mul_v = Set(d, kMul * 10000);
   const auto offset_v = Set(d, kLogOffset);
   v *= mul_v;
@@ -562,12 +562,11 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
                                ThreadPool* pool) {
   PROFILER_ZONE("aq AdaptiveQuantMap");
   const float limited_butteraugli_target = std::min(16.0f, butteraugli_target);
-  static const float kSigmaBase = 7;
-  static const float kSigmaMul = 0.3;
+  static constexpr float kSigmaBase = 7;
+  static constexpr float kSigmaMul = 0.3;
 
-  static const float kSigma =
-      kSigmaBase + kSigmaMul * limited_butteraugli_target;
-  static const int kRadius = static_cast<int>(2 * kSigma + 0.5f);
+  const float kSigma = kSigmaBase + kSigmaMul * limited_butteraugli_target;
+  const int kRadius = static_cast<int>(2 * kSigma + 0.5f);
   std::vector<float> kernel = GaussianKernel(kRadius, kSigma);
 
   ImageF out = DiffPrecompute(opsin, frame_dim, pool);
@@ -653,8 +652,8 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
       double pixels = 0;
       for (int y = y_begin; y < y_end; ++y) {
         float ymul = 1.0;
-        static const float kBorderMul = 0.98f;
-        static const float kCornerMul = 0.7f;
+        static constexpr float kBorderMul = 0.98f;
+        static constexpr float kCornerMul = 0.7f;
         if (margin != 0 && (y == y_begin || y == y_end - 1)) {
           ymul = kBorderMul;
         }
@@ -680,8 +679,8 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
       if (pixels == 0) pixels = 1;
       // 16th norm is less than the max norm, we reduce the difference
       // with this normalization factor.
-      static const double kTileNorm = 1.2;
-      const double tile_dist =
+      static constexpr float kTileNorm = 1.2;
+      const float tile_dist =
           kTileNorm * std::pow(dist_norm / pixels, 1.0f / 16.0f);
       dist_row[tile_x] = tile_dist;
       for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
@@ -754,9 +753,9 @@ void AdjustQuantField(const AcStrategyImage& ac_strategy, ImageF* quant_field) {
   }
 }
 
-static const float kDcQuantPow = 0.55;
-static const float kDcQuant = 1.18;
-static const float kAcQuant = 0.84;
+static constexpr float kDcQuantPow = 0.55;
+static constexpr float kDcQuant = 1.18;
+static constexpr float kAcQuant = 0.84;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state, ThreadPool* pool,
@@ -820,7 +819,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       score = -score;
       diffmap = ScaleImage(-1.0f, diffmap);
     }
-    static const int kMargins[100] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+    static constexpr int kMargins[100] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     tile_distmap =
         TileDistMap(diffmap, 8, kMargins[i], enc_state->shared.ac_strategy);
     tile_distmap_localopt =
@@ -1026,7 +1025,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
   float best_score = 1000000.0f;
   ImageF tile_distmap;
-  static const int kMaxOuterIters = 2;
+  static constexpr int kMaxOuterIters = 2;
   int outer_iter = 0;
   int butteraugli_iter = 0;
   int search_radius = 0;
@@ -1110,7 +1109,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
           const float* const JXL_RESTRICT row_dist = dist_to_peak_map.Row(y);
           for (size_t x = 0; x < quant_field.xsize(); ++x) {
             if (row_dist[x] >= 0.0f) {
-              static const float kAdjSpeed[kMaxOuterIters] = {0.1f, 0.04f};
+              static constexpr float kAdjSpeed[kMaxOuterIters] = {0.1f, 0.04f};
               const float factor =
                   kAdjSpeed[outer_iter] * tile_distmap.Row(y)[x];
               if (AdjustQuantVal(&row_q[x], row_dist[x], factor, quant_ceil)) {
@@ -1141,7 +1140,7 @@ void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
     }
     if (!changed) {
       if (++outer_iter == kMaxOuterIters) break;
-      static const float kQuantScale = 0.75f;
+      static constexpr float kQuantScale = 0.75f;
       for (size_t y = 0; y < quant_field.ysize(); ++y) {
         for (size_t x = 0; x < quant_field.xsize(); ++x) {
           quant_field.Row(y)[x] *= kQuantScale;
@@ -1249,7 +1248,6 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
     return true;
   };
   const auto process_group = [&](const int group_index, const int thread) {
-    ComputeCoefficients(group_index, enc_state, nullptr);
     JXL_CHECK(DecodeGroupForRoundtrip(
         enc_state->coeffs, group_index, &dec_state, &group_dec_caches[thread],
         thread, &idct, &decoded, nullptr, save_decompressed,

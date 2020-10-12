@@ -285,7 +285,7 @@ TEST(JxlTest, RoundtripMultiGroup) {
 
   cparams.butteraugli_distance = 2.0f;
   CodecInOut io3;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io3), 21000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io3), 22000);
   EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
             3.0f);

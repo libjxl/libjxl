@@ -19,10 +19,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <hwy/aligned_allocator.h>
 #include <utility>
 #include <vector>
-
-#include <hwy/aligned_allocator.h>
 
 #include "jxl/ac_context.h"
 #include "jxl/ac_strategy.h"
@@ -33,7 +32,6 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
-#include "jxl/brunsli.h"
 #include "jxl/chroma_from_luma.h"
 #include "jxl/coeff_order.h"
 #include "jxl/coeff_order_fwd.h"
@@ -78,7 +76,7 @@ class LossyFrameDecoder {
     pool_ = pool;
     aux_out_ = aux_out;
     if (!frame_header.chroma_subsampling.Is444() &&
-        (loop_filter.gab || loop_filter.epf) &&
+        (loop_filter.gab || loop_filter.epf_iters > 0) &&
         frame_header.encoding == FrameEncoding::kVarDCT) {
       // TODO(veluca): actually implement this.
       return JXL_FAILURE(
@@ -104,7 +102,8 @@ class LossyFrameDecoder {
   void SetNumThreads(size_t num_threads) {
     if (num_threads > group_dec_caches_size_) {
       group_dec_caches_size_ = num_threads;
-      group_dec_caches_ = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+      group_dec_caches_ =
+          hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     }
     dec_state_.EnsureStorage(num_threads);
   }
@@ -278,6 +277,10 @@ Status DecodeFrameHeader(const AnimationHeader* animation_or_null,
     JXL_RETURN_IF_ERROR(ReadLoopFilter(reader, loop_filter));
   }
 
+  if (loop_filter->epf_iters == 1 || loop_filter->epf_iters == 3) {
+    return JXL_FAILURE("epf_iters 1 and 3 are not implemented");
+  }
+
   return true;
 }
 
@@ -310,15 +313,121 @@ Status SkipFrame(const Span<const uint8_t> file,
   return true;
 }
 
-Status DecodeFrame(const DecompressParams& dparams,
-                   const Span<const uint8_t> file,
-                   const AnimationHeader* animation_or_null,
-                   FrameDimensions* frame_dim,
-                   Multiframe* JXL_RESTRICT multiframe,
-                   ThreadPool* JXL_RESTRICT pool,
-                   BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, const CodecInOut* io,
-                   AnimationFrame* animation) {
+static BitReader* GetReaderForSection(
+    size_t num_groups, size_t num_passes, size_t group_codes_begin,
+    const std::vector<uint64_t>& group_offsets,
+    const std::vector<uint32_t>& group_sizes, const Span<const uint8_t> file,
+    BitReader* JXL_RESTRICT reader, BitReader* JXL_RESTRICT store,
+    size_t index) {
+  if (num_groups == 1 && num_passes == 1) return reader;
+  const size_t group_offset = group_codes_begin + group_offsets[index];
+  const size_t next_group_offset =
+      group_codes_begin + group_offsets[index] + group_sizes[index];
+  // The order of these variables must be:
+  // group_codes_begin <= group_offset <= next_group_offset <= file.size()
+  JXL_DASSERT(group_codes_begin <= group_offset);
+  JXL_DASSERT(group_offset <= next_group_offset);
+  JXL_DASSERT(next_group_offset <= file.size());
+  const size_t group_size = next_group_offset - group_offset;
+  const size_t remaining_size = file.size() - group_offset;
+  const size_t size = std::min(group_size + 8, remaining_size);
+  *store = BitReader(Span<const uint8_t>(file.data() + group_offset, size));
+  return store;
+};
+
+static void ResizeAuxOuts(std::vector<AuxOut>& aux_outs, size_t num_threads,
+                          AuxOut* JXL_RESTRICT aux_out) {
+  // Updates aux_outs size Assimilating its elements if the size decreases.
+  if (aux_out != nullptr) {
+    size_t old_size = aux_outs.size();
+    for (size_t i = num_threads; i < old_size; i++) {
+      aux_out->Assimilate(aux_outs[i]);
+    }
+    aux_outs.resize(num_threads);
+    // Each thread needs these INPUTS. Don't copy the entire AuxOut
+    // because it may contain stats which would be Assimilated multiple
+    // times below.
+    for (size_t i = old_size; i < aux_outs.size(); i++) {
+      aux_outs[i].testing_aux = aux_out->testing_aux;
+      aux_outs[i].dump_image = aux_out->dump_image;
+      aux_outs[i].debug_prefix = aux_out->debug_prefix;
+    }
+  }
+};
+
+Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
+                PassesDecoderState* dec_state,
+                ModularFrameDecoder& modular_frame_decoder,
+                size_t group_codes_begin,
+                const std::vector<uint64_t>& group_offsets,
+                const std::vector<uint32_t>& group_sizes,
+                ThreadPool* JXL_RESTRICT pool, const Span<const uint8_t> file,
+                BitReader* JXL_RESTRICT reader, std::vector<AuxOut>& aux_outs,
+                AuxOut* JXL_RESTRICT aux_out) {
+  std::atomic<int> num_errors{0};
+  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
+  size_t num_groups = frame_dim->num_groups;
+  size_t num_passes = frame_header.passes.num_passes;
+
+  auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
+                     &group_sizes, &file,
+                     &reader](BitReader* JXL_RESTRICT store, size_t index) {
+    return GetReaderForSection(num_groups, num_passes, group_codes_begin,
+                               group_offsets, group_sizes, file, reader, store,
+                               index);
+  };
+  const auto process_dc_group_init = [&](size_t num_threads) {
+    dec_state->EnsureStorage(num_threads);
+    ResizeAuxOuts(aux_outs, num_threads, aux_out);
+    return true;
+  };
+  const auto process_dc_group = [&](const int group_index, const int thread) {
+    PROFILER_ZONE("DC group");
+    BitReader group_store;
+    BitReader* group_reader = get_reader(&group_store, group_index + 1);
+    const size_t gx = group_index % frame_dim->xsize_dc_groups;
+    const size_t gy = group_index / frame_dim->xsize_dc_groups;
+    AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
+    bool ok = true;
+    const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
+                     kDcGroupDim);
+    if (frame_header.IsLossy() &&
+        !(frame_header.flags & FrameHeader::kUseDcFrame)) {
+      ok &= modular_frame_decoder.DecodeVarDCTDC(group_index, group_reader,
+                                                 dec_state, my_aux_out);
+    }
+    ok &= modular_frame_decoder.DecodeGroup(
+        mrect, group_reader, my_aux_out, 3, 1000,
+        ModularStreamId::ModularDC(group_index));
+    if (frame_header.IsLossy()) {
+      ok &= modular_frame_decoder.DecodeAcMetadata(group_index, group_reader,
+                                                   dec_state, my_aux_out);
+    }
+    if (!group_store.Close() || !ok) {
+      num_errors.fetch_add(1, std::memory_order_relaxed);
+    }
+  };
+  RunOnPool(pool, 0, frame_dim->num_dc_groups, process_dc_group_init,
+            process_dc_group, "DecodeDCGroup");
+
+  // Do Adaptive DC smoothing if enabled.
+  if (frame_header.encoding == FrameEncoding::kVarDCT &&
+      !(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
+      !(frame_header.flags & FrameHeader::kUseDcFrame)) {
+    AdaptiveDCSmoothing(dec_state->shared->quantizer.MulDC(),
+                        &dec_state->shared_storage.dc_storage, pool);
+  }
+
+  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
+  return true;
+}
+
+Status DecodeFrame(
+    const DecompressParams& dparams, const Span<const uint8_t> file,
+    const AnimationHeader* animation_or_null, FrameDimensions* frame_dim,
+    Multiframe* JXL_RESTRICT multiframe, ThreadPool* JXL_RESTRICT pool,
+    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
+    ImageBundle* decoded, const CodecInOut* io, AnimationFrame* animation) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
   FrameHeader frame_header;
@@ -363,7 +472,7 @@ Status DecodeFrame(const DecompressParams& dparams,
     decoded->SetFromImage(Image3F(xsize, ysize),
                           decoded->metadata()->color_encoding);
     loop_filter.gab = false;
-    loop_filter.epf = false;
+    loop_filter.epf_iters = 0;
   }
 
   // Handling of progressive decoding for kVarDCT mode.
@@ -394,21 +503,6 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   multiframe->StartFrame(frame_header);
 
-  LossyFrameDecoder lossy_frame_decoder;
-  JXL_RETURN_IF_ERROR(lossy_frame_decoder.Init(
-      frame_header, loop_filter, *decoded->metadata(), *frame_dim, multiframe,
-      downsampling, pool, aux_out));
-  ModularFrameDecoder modular_frame_decoder(*frame_dim);
-
-  if (dparams.keep_dct) {
-    if (frame_header.encoding == FrameEncoding::kModular) {
-      return JXL_FAILURE("Cannot output JPEG from Modular");
-    }
-    if (!decoded->IsJPEG()) {
-      return JXL_FAILURE("Caller must set jpeg_data");
-    }
-  }
-
   // Read TOC.
   std::vector<uint64_t> group_offsets;
   std::vector<uint32_t> group_sizes;
@@ -434,21 +528,25 @@ Status DecodeFrame(const DecompressParams& dparams,
   auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
                      &group_sizes, &file,
                      &reader](BitReader* JXL_RESTRICT store, size_t index) {
-    if (num_groups == 1 && num_passes == 1) return reader;
-    const size_t group_offset = group_codes_begin + group_offsets[index];
-    const size_t next_group_offset =
-        group_codes_begin + group_offsets[index] + group_sizes[index];
-    // The order of these variables must be:
-    // group_codes_begin <= group_offset <= next_group_offset <= file.size()
-    JXL_DASSERT(group_codes_begin <= group_offset);
-    JXL_DASSERT(group_offset <= next_group_offset);
-    JXL_DASSERT(next_group_offset <= file.size());
-    const size_t group_size = next_group_offset - group_offset;
-    const size_t remaining_size = file.size() - group_offset;
-    const size_t size = std::min(group_size + 8, remaining_size);
-    *store = BitReader(Span<const uint8_t>(file.data() + group_offset, size));
-    return store;
+    return GetReaderForSection(num_groups, num_passes, group_codes_begin,
+                               group_offsets, group_sizes, file, reader, store,
+                               index);
   };
+
+  LossyFrameDecoder lossy_frame_decoder;
+  JXL_RETURN_IF_ERROR(lossy_frame_decoder.Init(
+      frame_header, loop_filter, *decoded->metadata(), *frame_dim, multiframe,
+      downsampling, pool, aux_out));
+  ModularFrameDecoder modular_frame_decoder(*frame_dim);
+
+  if (dparams.keep_dct) {
+    if (frame_header.encoding == FrameEncoding::kModular) {
+      return JXL_FAILURE("Cannot output JPEG from Modular");
+    }
+    if (!decoded->IsJPEG()) {
+      return JXL_FAILURE("Caller must set jpeg_data");
+    }
+  }
 
   Status res = true;
   {
@@ -496,76 +594,18 @@ Status DecodeFrame(const DecompressParams& dparams,
   // code here.
   JXL_RETURN_IF_ERROR(res);
 
-  // Decode DC groups.
-  std::atomic<int> num_errors{0};
   std::vector<AuxOut> aux_outs;
-  const auto resize_aux_outs = [&](size_t num_threads) {
-    // Updates aux_outs size Assimilating its elements if the size decreases.
-    if (aux_out != nullptr) {
-      size_t old_size = aux_outs.size();
-      for (size_t i = num_threads; i < old_size; i++) {
-        aux_out->Assimilate(aux_outs[i]);
-      }
-      aux_outs.resize(num_threads);
-      // Each thread needs these INPUTS. Don't copy the entire AuxOut
-      // because it may contain stats which would be Assimilated multiple
-      // times below.
-      for (size_t i = old_size; i < aux_outs.size(); i++) {
-        aux_outs[i].testing_aux = aux_out->testing_aux;
-        aux_outs[i].dump_image = aux_out->dump_image;
-        aux_outs[i].debug_prefix = aux_out->debug_prefix;
-      }
-    }
-  };
 
-  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
+  // Decode DC groups.
+
   decoded->SetDecodedBytes(group_offsets[0] + group_sizes[0] +
                            group_codes_begin);
 
-  const auto process_dc_group_init = [&](size_t num_threads) {
-    lossy_frame_decoder.SetNumThreads(num_threads);
-    resize_aux_outs(num_threads);
-    return true;
-  };
-  const auto process_dc_group = [&](const int group_index, const int thread) {
-    PROFILER_ZONE("DC group");
-    BitReader group_store;
-    BitReader* group_reader = get_reader(&group_store, group_index + 1);
-    const size_t gx = group_index % frame_dim->xsize_dc_groups;
-    const size_t gy = group_index / frame_dim->xsize_dc_groups;
-    AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
-    bool ok = true;
-    const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
-                     kDcGroupDim);
-    if (frame_header.IsLossy() &&
-        !(frame_header.flags & FrameHeader::kUseDcFrame)) {
-      ok &= modular_frame_decoder.DecodeVarDCTDC(
-          group_index, group_reader, lossy_frame_decoder.State(), my_aux_out);
-    }
-    ok &= modular_frame_decoder.DecodeGroup(
-        mrect, group_reader, my_aux_out, 3, 1000,
-        ModularStreamId::ModularDC(group_index));
-    if (frame_header.IsLossy()) {
-      ok &= modular_frame_decoder.DecodeAcMetadata(
-          group_index, group_reader, lossy_frame_decoder.State(), my_aux_out);
-    }
-    if (!group_store.Close() || !ok) {
-      num_errors.fetch_add(1, std::memory_order_relaxed);
-    }
-  };
-  RunOnPool(pool, 0, frame_dim->num_dc_groups, process_dc_group_init,
-            process_dc_group, "DecodeDCGroup");
+  JXL_RETURN_IF_ERROR(
+      DecodeDC(frame_header, frame_dim, lossy_frame_decoder.State(),
+               modular_frame_decoder, group_codes_begin, group_offsets,
+               group_sizes, pool, file, reader, aux_outs, aux_out));
 
-  // Do Adaptive DC smoothing if enabled.
-  if (frame_header.encoding == FrameEncoding::kVarDCT &&
-      !(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
-      !(frame_header.flags & FrameHeader::kUseDcFrame)) {
-    AdaptiveDCSmoothing(lossy_frame_decoder.State()->shared->quantizer.MulDC(),
-                        &lossy_frame_decoder.State()->shared_storage.dc_storage,
-                        pool);
-  }
-
-  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
   if (downsampling < 16 && frame_dim->num_groups > 1) {
     decoded->SetDecodedBytes(group_offsets[frame_dim->num_dc_groups] +
                              group_sizes[frame_dim->num_dc_groups] +
@@ -598,11 +638,14 @@ Status DecodeFrame(const DecompressParams& dparams,
   max_passes = std::min<size_t>(max_passes, frame_header.passes.num_passes);
 
   // Decode groups.
+  std::atomic<int> num_errors{0};
+  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
+
   const auto process_group_init = [&](size_t num_threads) {
     // The number of threads here might be different from the previous run, so
     // we need to re-update them.
     lossy_frame_decoder.SetNumThreads(num_threads);
-    resize_aux_outs(num_threads);
+    ResizeAuxOuts(aux_outs, num_threads, aux_out);
     return true;
   };
 
@@ -695,7 +738,7 @@ Status DecodeFrame(const DecompressParams& dparams,
   }
 
   // Resizing to 0 assimilates all the results when needed.
-  resize_aux_outs(0);
+  ResizeAuxOuts(aux_outs, 0, aux_out);
   // undo global modular transforms and copy int pixel buffers to float ones
   JXL_RETURN_IF_ERROR(modular_frame_decoder.FinalizeDecoding(
       &opsin, decoded, pool,

@@ -15,4 +15,10 @@
 add_library(skcms STATIC skcms/skcms.cc)
 target_include_directories(skcms PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
 
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-Wno-psabi" CXX_WPSABI_SUPPORTED)
+if(CXX_WPSABI_SUPPORTED)
+  target_compile_options(skcms PRIVATE -Wno-psabi)
+endif()
+
 set_property(TARGET skcms PROPERTY POSITION_INDEPENDENT_CODE ON)

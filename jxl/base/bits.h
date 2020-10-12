@@ -18,6 +18,7 @@
 // Specialized instructions for processing register-sized bit arrays.
 
 #include "jxl/base/compiler_specific.h"
+#include "jxl/base/status.h"
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -66,6 +67,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(T x) {
 // Undefined results for x == 0.
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsAboveMS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
+  JXL_DASSERT(x != 0);
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanReverse(&index, x);
@@ -76,6 +78,7 @@ Num0BitsAboveMS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
 }
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsAboveMS1Bit_Nonzero(SizeTag<8> /* tag */, const uint64_t x) {
+  JXL_DASSERT(x != 0);
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanReverse64(&index, x);
@@ -94,6 +97,7 @@ Num0BitsAboveMS1Bit_Nonzero(const T x) {
 // Undefined results for x == 0.
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsBelowLS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
+  JXL_DASSERT(x != 0);
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanForward(&index, x);
@@ -104,6 +108,7 @@ Num0BitsBelowLS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
 }
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsBelowLS1Bit_Nonzero(SizeTag<8> /* tag */, const uint64_t x) {
+  JXL_DASSERT(x != 0);
 #ifdef _MSC_VER
   unsigned long index;
   _BitScanForward64(&index, x);

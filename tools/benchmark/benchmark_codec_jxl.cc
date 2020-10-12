@@ -13,11 +13,6 @@
 // limitations under the License.
 #include "tools/benchmark/benchmark_codec_jxl.h"
 
-#include <brunsli/brunsli_decode.h>
-#include <brunsli/brunsli_encode.h>
-#include <brunsli/jpeg_data.h>
-#include <brunsli/jpeg_data_reader.h>
-
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -32,7 +27,6 @@
 #include "jxl/base/override.h"
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/span.h"
-#include "jxl/brunsli.h"
 #include "jxl/codec_in_out.h"
 #include "jxl/dec_file.h"
 #include "jxl/dec_params.h"
@@ -53,29 +47,6 @@ size_t OutputToBytes(void* data, const uint8_t* buf, size_t count) {
   PaddedBytes* output = reinterpret_cast<PaddedBytes*>(data);
   output->append(buf, buf + count);
   return count;
-}
-
-// TODO(lode): This is copied from brunsli/c/enc/encode.cc, use that one, once
-// the latest version of brunsli is checked out as submodule.
-int EncodeBrunsli(size_t insize, const unsigned char* in, void* outdata,
-                  size_t (*outfun)(void* outdata, const unsigned char* buf,
-                                   size_t size)) {
-  std::vector<uint8_t> output;
-  brunsli::JPEGData jpg;
-  if (!brunsli::ReadJpeg(in, insize, brunsli::JPEG_READ_ALL, &jpg)) {
-    return 0;
-  }
-  size_t output_size = brunsli::GetMaximumBrunsliEncodedSize(jpg);
-  output.resize(output_size);
-  if (!brunsli::BrunsliEncodeJpeg(jpg, output.data(), &output_size)) {
-    return 0;
-  }
-  output.resize(output_size);
-  if (!outfun(outdata, reinterpret_cast<const unsigned char*>(output.data()),
-              output.size())) {
-    return 0;
-  }
-  return 1; /* ok */
 }
 
 struct JxlArgs {
@@ -147,8 +118,6 @@ class JxlCodec : public ImageCodec {
     } else if (param[0] == 'u') {
       cparams_.uniform_quant = strtof(param.substr(1).c_str(), nullptr);
       ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
-    } else if (param[0] == 'Q') {
-      brunsli_params_.quant_scale = strtof(param.substr(1).c_str(), nullptr);
     } else if (param.substr(0, kMaxPassesPrefix.size()) == kMaxPassesPrefix) {
       std::istringstream parser(param.substr(kMaxPassesPrefix.size()));
       parser >> dparams_.max_passes;
@@ -207,10 +176,6 @@ class JxlCodec : public ImageCodec {
       cparams_.colorspace = 0;
       cparams_.channel_colors_pre_transform_percent = 0;
       cparams_.channel_colors_percent = 0;
-    } else if (param == "b") {
-      brunsli_mode_ = true;
-    } else if (param == "file") {
-      brunsli_file_ = true;  // Use jxl:b:file
     } else {
       return JXL_FAILURE("Unrecognized param");
     }
@@ -232,33 +197,6 @@ class JxlCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    if (brunsli_mode_) {
-      if (brunsli_file_) {
-        // Encode the original JPG file (or get failure if it was not JPG),
-        // rather than the CodecInOut pixels.
-        PaddedBytes bytes;
-        JXL_RETURN_IF_ERROR(ReadFile(filename, &bytes));
-        const double start = Now();
-        if (!EncodeBrunsli(bytes.size(), bytes.data(), compressed,
-                           OutputToBytes)) {
-          return JXL_FAILURE("Failed to encode file to brunsli");
-        }
-        const double end = Now();
-        speed_stats->NotifyElapsed(end - start);
-        return true;
-      } else {
-        if (io->metadata.HasAlpha()) {
-          // Prevent Abort in ImageBundle::VerifyMetadata when decompressing.
-          return JXL_FAILURE("Alpha not supported for brunsli");
-        }
-        const double start = Now();
-        JXL_RETURN_IF_ERROR(
-            PixelsToBrunsli(io, compressed, brunsli_params_, pool));
-        const double end = Now();
-        speed_stats->NotifyElapsed(end - start);
-        return true;
-      }
-    }
     if (!jxlargs->debug_image_dir.empty()) {
       cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
         return EncodeToFile(io, path);
@@ -337,9 +275,6 @@ class JxlCodec : public ImageCodec {
   CompressParams cparams_;
   bool has_ctransform_ = false;
   DecompressParams dparams_;
-  BrunsliEncoderOptions brunsli_params_;
-  bool brunsli_mode_{false};
-  bool brunsli_file_{false};  // Brunsli on original JPG file instead of pixels
 };
 
 ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args) {

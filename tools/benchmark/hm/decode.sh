@@ -62,15 +62,16 @@ bin="$(mktemp)"
 yuv="$(mktemp)"
 width_file="$(mktemp)"
 height_file="$(mktemp)"
+icc_file="$(mktemp --suffix=.icc)"
 
 cleanup() {
-  rm -- "$bin" "$yuv" "$width_file" "$height_file"
+  rm -- "$bin" "$yuv" "$width_file" "$height_file" "$icc_file"
 }
 trap cleanup EXIT
 
 unpack_program="$(cat <<'END'
   use File::Copy;
-  my ($input, $bin, $width_file, $height_file) = @ARGV;
+  my ($input, $bin, $width_file, $height_file, $icc_file) = @ARGV;
   open my $input_fh, '<:raw', $input;
   sysread($input_fh, my $size, 8) == 8 or die;
   my ($width, $height) = unpack 'NN', $size;
@@ -78,10 +79,15 @@ unpack_program="$(cat <<'END'
   print {$width_fh} "$width\n";
   open my $height_fh, '>', $height_file;
   print {$height_fh} "$height\n";
+  sysread($input_fh, my $icc_size, 4) == 4 or die;
+  $icc_size = unpack 'N', $icc_size;
+  sysread($input_fh, my $icc_data, $icc_size) == $icc_size or die;
+  open my $icc_fh, '>', $icc_file;
+  print {$icc_fh} $icc_data;
   copy $input_fh, $bin;
 END
 )"
-run perl -Mstrict -Mwarnings -Mautodie -e "$unpack_program" -- "$input" "$bin" "$width_file" "$height_file"
+run perl -Mstrict -Mwarnings -Mautodie -e "$unpack_program" -- "$input" "$bin" "$width_file" "$height_file" "$icc_file"
 
 width="$(cat "$width_file")"
 height="$(cat "$height_file")"
@@ -96,3 +102,6 @@ run echo "Completed in $elapsed seconds"
 echo "$elapsed" > "${output%.png}".time
 
 run ffmpeg -hide_banner -f rawvideo -vcodec rawvideo -s "${width}x$height" -r 25 -pix_fmt yuv444p10le -i "$yuv" -pix_fmt rgb24 -vf scale=in_color_matrix=bt709 -y "$output"
+if [ -s "$icc_file" ]; then
+  mogrify -profile "$icc_file" "$output"
+fi

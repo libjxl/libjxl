@@ -138,14 +138,15 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const float* JXL_RESTRICT dequant_matrices =
       dec_state->shared->quantizer.DequantMatrix(0, 0);
 
-  const size_t sigma_stride = dec_state->sigma.PixelsPerRow();
+  const size_t sigma_stride = dec_state->filter_weights.sigma.PixelsPerRow();
   const size_t sharpness_stride =
       dec_state->shared->epf_sharpness.PixelsPerRow();
 
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
-  bool save_to_decoded = !decoded->IsJPEG() && (lf.epf || lf.gab) && cs.Is444();
+  bool save_to_decoded =
+      !decoded->IsJPEG() && (lf.epf_iters > 0 || lf.gab) && cs.Is444();
   size_t padding = save_to_decoded ? 2 : 0;
 
   const size_t idct_stride =
@@ -342,7 +343,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       };
 
       float* JXL_RESTRICT sigma_row =
-          lf.epf ? block_rect.Row(&dec_state->sigma, by) : nullptr;
+          lf.epf_iters > 0
+              ? block_rect.Row(&dec_state->filter_weights.sigma, by)
+              : nullptr;
       const uint8_t* JXL_RESTRICT sharpness_row =
           block_rect.ConstRow(dec_state->shared->epf_sharpness, by);
       float* JXL_RESTRICT idct_row[3];
@@ -465,7 +468,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                               idct_stride, group_dec_cache->scratch_space);
           }
 
-          if (dec_state->shared->image_features.loop_filter.epf) {
+          if (dec_state->shared->image_features.loop_filter.epf_iters > 0) {
             float sigma_quant =
                 lf.epf_quant_mul / (row_quant[bx] * quant_scale * kInvSigmaNum);
             for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {

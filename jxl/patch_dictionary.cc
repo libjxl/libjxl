@@ -48,15 +48,16 @@ namespace jxl {
 
 constexpr int kMaxPatches = 1 << 24;
 
+// Context numbers as specified in Section C.4.5, Listing C.2:
 enum Contexts {
-  kNumRefPatchContext,
-  kReferenceFrameContext,
-  kPatchSizeContext,
-  kPatchReferencePositionContext,
-  kPatchPositionContext,
-  kPatchBlendModeContext,
-  kPatchOffsetContext,
-  kPatchCountContext,
+  kNumRefPatchContext = 0,
+  kReferenceFrameContext = 1,
+  kPatchSizeContext = 2,
+  kPatchReferencePositionContext = 3,
+  kPatchPositionContext = 4,
+  kPatchBlendModeContext = 5,
+  kPatchOffsetContext = 6,
+  kPatchCountContext = 7,
   kNumPatchDictionaryContexts
 };
 
@@ -86,12 +87,12 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
     }
     size_t num = i - i_start;
     JXL_ASSERT(num > 0);
-    add_num(kPatchCountContext, num - 1);
     add_num(kReferenceFrameContext, positions_[i_start].ref_pos.ref);
     add_num(kPatchReferencePositionContext, positions_[i_start].ref_pos.x0);
     add_num(kPatchReferencePositionContext, positions_[i_start].ref_pos.y0);
     add_num(kPatchSizeContext, positions_[i_start].ref_pos.xsize - 1);
     add_num(kPatchSizeContext, positions_[i_start].ref_pos.ysize - 1);
+    add_num(kPatchCountContext, num - 1);
     for (size_t j = i_start; j < i; j++) {
       const PatchPosition& pos = positions_[j];
       if (j == i_start) {
@@ -133,11 +134,6 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
   }
 
   for (size_t id = 0; id < num_ref_patch; id++) {
-    size_t id_count = read_num(kPatchCountContext) + 1;
-    if (id_count > kMaxPatches) {
-      return JXL_FAILURE("Too many patches in dictionary");
-    }
-    positions_.reserve(positions_.size() + id_count);
     PatchReferencePosition ref_pos;
     ref_pos.ref = read_num(kReferenceFrameContext);
     if (ref_pos.ref >= kMaxNumReferenceFrames ||
@@ -155,6 +151,11 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
     if (ref_pos.y0 + ref_pos.ysize > reference_frames_[ref_pos.ref].ysize()) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
+    size_t id_count = read_num(kPatchCountContext) + 1;
+    if (id_count > kMaxPatches) {
+      return JXL_FAILURE("Too many patches in dictionary");
+    }
+    positions_.reserve(positions_.size() + id_count);
     for (size_t i = 0; i < id_count; i++) {
       PatchPosition pos;
       pos.ref_pos = ref_pos;
@@ -886,13 +887,16 @@ void FindBestPatchDictionary(const Image3F& opsin,
   cparams.dots = Override::kOff;
   cparams.modular_group_mode = true;
   cparams.responsive = 0;
+  // Use gradient predictor and not Predictor::Best.
+  cparams.options.predictor = Predictor::Gradient;
   // TODO(veluca): possibly change heuristics here.
   if (!cparams.modular_group_mode) {
     cparams.quality_pair.first = cparams.quality_pair.second =
         80 - cparams.butteraugli_distance * 12;
   } else {
-    cparams.quality_pair.first = (100 + cparams.quality_pair.first) * 0.5f;
-    cparams.quality_pair.second = (100 + cparams.quality_pair.second) * 0.5f;
+    cparams.quality_pair.first = (100 + 3 * cparams.quality_pair.first) * 0.25f;
+    cparams.quality_pair.second =
+        (100 + 3 * cparams.quality_pair.second) * 0.25f;
   }
   ImageMetadata metadata;
   // The xyb_encoded bit applies globally to all frames of the codestream.

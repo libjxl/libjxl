@@ -37,7 +37,6 @@
 #include "jxl/base/padded_bytes.h"
 #include "jxl/base/profiler.h"
 #include "jxl/base/status.h"
-#include "jxl/brunsli.h"
 #include "jxl/chroma_from_luma.h"
 #include "jxl/coeff_order.h"
 #include "jxl/color_encoding.h"
@@ -232,9 +231,13 @@ Status LoopFilterFromParams(const CompressParams& cparams,
   loop_filter->gab =
       ApplyOverride(cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare);
 
-  loop_filter->epf = ApplyOverride(
-      cparams.adaptive_reconstruction,
-      cparams.butteraugli_distance >= kMinButteraugliForAdaptiveReconstruction);
+  // By default we only use epf_iters=2 when EPF is enabled.
+  loop_filter->epf_iters =
+      ApplyOverride(cparams.adaptive_reconstruction,
+                    cparams.butteraugli_distance >=
+                        kMinButteraugliForAdaptiveReconstruction)
+          ? 2
+          : 0;
 
   return true;
 }
@@ -301,14 +304,8 @@ class LossyFrameEncoder {
                     const ImageMetadata& image_metadata,
                     const FrameDimensions& frame_dim,
                     PassesEncoderState* JXL_RESTRICT enc_state,
-                    Multiframe* multiframe, ThreadPool* pool,
-                    const std::function<Status(size_t)>& pool_init,
-                    AuxOut* aux_out, std::vector<AuxOut>* aux_outs)
-      : enc_state_(enc_state),
-        pool_(pool),
-        pool_init_(pool_init),
-        aux_out_(aux_out),
-        aux_outs_(aux_outs) {
+                    Multiframe* multiframe, ThreadPool* pool, AuxOut* aux_out)
+      : enc_state_(enc_state), pool_(pool), aux_out_(aux_out) {
     JXL_CHECK(InitializePassesSharedState(
         frame_header, loop_filter, image_metadata, frame_dim, multiframe,
         &enc_state_->shared, /*encoder=*/true));
@@ -345,22 +342,6 @@ class LossyFrameEncoder {
     enc_state_->passes.resize(shared.multiframe->GetNumPasses());
     for (PassesEncoderState::PassData& pass : enc_state_->passes) {
       pass.ac_tokens.resize(shared.frame_dim.num_groups);
-    }
-
-    {
-      PROFILER_ZONE("PixelsToGroupCoefficients");
-      const auto compute_group_cache_init = [&](const size_t num_threads) {
-        group_caches_.resize(num_threads);
-        return pool_init_(num_threads);
-      };
-      const auto compute_group_cache = [&](const int group_index,
-                                           const int thread) {
-        // Compute coefficients and coefficient split.
-        AuxOut* my_aux_out = aux_out_ ? &(*aux_outs_)[thread] : nullptr;
-        ComputeCoefficients(group_index, enc_state_, my_aux_out);
-      };
-      RunOnPool(pool_, 0, shared.frame_dim.num_groups, compute_group_cache_init,
-                compute_group_cache, "PixelsToGroupCoefficients");
     }
 
     ComputeAllCoeffOrders(shared.frame_dim);
@@ -865,9 +846,7 @@ class LossyFrameEncoder {
 
   PassesEncoderState* JXL_RESTRICT enc_state_;
   ThreadPool* pool_;
-  const std::function<Status(size_t)>& pool_init_;
   AuxOut* aux_out_;
-  std::vector<AuxOut>* aux_outs_;
   std::vector<EncCache> group_caches_;
 };
 
@@ -962,9 +941,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     return true;
   };
 
-  LossyFrameEncoder lossy_frame_encoder(
-      cparams, frame_header, loop_filter, metadata, frame_dim, passes_enc_state,
-      multiframe, pool, resize_aux_outs, aux_out, &aux_outs);
+  LossyFrameEncoder lossy_frame_encoder(cparams, frame_header, loop_filter,
+                                        metadata, frame_dim, passes_enc_state,
+                                        multiframe, pool, aux_out);
   ModularFrameEncoder modular_frame_encoder(frame_dim, frame_header, cparams);
 
   // Used by SetCustom.

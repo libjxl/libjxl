@@ -55,7 +55,14 @@ class DCTFrom {
   template <typename D>
   HWY_INLINE Vec<D> LoadPart(D, const size_t row, size_t i) const {
     JXL_DASSERT(Lanes(D()) <= stride_);
+    // Accesses are guaranteed to be aligned only up to the smaller of 8 floats
+    // and vector width. On more-than-256-bit vectors, those accesses might be
+    // unaligned.
+#if HWY_CAP_GE512
+    return LoadU(D(), Address(row, i));
+#else
     return Load(D(), Address(row, i));
+#endif
   }
 
   HWY_INLINE float Read(const size_t row, const size_t i) const {
@@ -80,7 +87,14 @@ class DCTTo {
   HWY_INLINE void StorePart(D, const Vec<D>& v, const size_t row,
                             size_t i) const {
     JXL_DASSERT(Lanes(D()) <= stride_);
+    // Accesses are guaranteed to be aligned only up to the smaller of 8 floats
+    // and vector width. On more-than-256-bit vectors, those accesses might be
+    // unaligned.
+#if HWY_CAP_GE512
+    StoreU(v, D(), Address(row, i));
+#else
     Store(v, D(), Address(row, i));
+#endif
   }
 
   HWY_INLINE void Write(float v, const size_t row, const size_t i) const {

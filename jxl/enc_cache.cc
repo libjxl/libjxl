@@ -19,13 +19,6 @@
 
 #include <type_traits>
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "jxl/enc_cache.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
-#include <hwy/highway.h>
-
 #include "jxl/ac_strategy.h"
 #include "jxl/aux_out.h"
 #include "jxl/base/compiler_specific.h"
@@ -38,88 +31,17 @@
 #include "jxl/dct_scales.h"
 #include "jxl/dct_util.h"
 #include "jxl/dec_frame.h"
-#include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_frame.h"
+#include "jxl/enc_group.h"
 #include "jxl/enc_modular.h"
-#include "jxl/enc_transforms-inl.h"
 #include "jxl/frame_header.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
 #include "jxl/passes_state.h"
 #include "jxl/quantizer.h"
-HWY_BEFORE_NAMESPACE();
+
 namespace jxl {
-namespace HWY_NAMESPACE {
-
-// Returns dc.
-Image3F ComputeCoeffs(const Image3F& opsin,
-                      PassesSharedState* JXL_RESTRICT shared,
-                      PassesEncoderState* enc_state, ThreadPool* pool,
-                      AuxOut* aux_out) {
-  const size_t xsize_blocks = shared->frame_dim.xsize_blocks;
-  const size_t ysize_blocks = shared->frame_dim.ysize_blocks;
-
-  Image3F dc = Image3F(xsize_blocks, ysize_blocks);
-  const size_t dc_stride = static_cast<size_t>(dc.PixelsPerRow());
-  const size_t opsin_stride = static_cast<size_t>(opsin.PixelsPerRow());
-
-  auto compute_coeffs = [&](int group_index, int /* thread */) {
-    auto mem = hwy::AllocateAligned<float>(2 * AcStrategy::kMaxCoeffArea);
-    float* JXL_RESTRICT scratch_space = mem.get();
-    const size_t gx = group_index % shared->frame_dim.xsize_groups;
-    const size_t gy = group_index / shared->frame_dim.xsize_groups;
-    size_t offset = 0;
-    float* JXL_RESTRICT rows[3] = {
-        enc_state->coeffs[0].PlaneRow(0, group_index),
-        enc_state->coeffs[0].PlaneRow(1, group_index),
-        enc_state->coeffs[0].PlaneRow(2, group_index),
-    };
-    for (size_t by = gy * kGroupDimInBlocks;
-         by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
-      const float* JXL_RESTRICT opsin_rows[3] = {
-          opsin.ConstPlaneRow(0, by * kBlockDim),
-          opsin.ConstPlaneRow(1, by * kBlockDim),
-          opsin.ConstPlaneRow(2, by * kBlockDim),
-      };
-      float* JXL_RESTRICT dc_rows[3] = {
-          dc.PlaneRow(0, by),
-          dc.PlaneRow(1, by),
-          dc.PlaneRow(2, by),
-      };
-      for (size_t bx = gx * kGroupDimInBlocks;
-           bx < xsize_blocks && bx < (gx + 1) * kGroupDimInBlocks; ++bx) {
-        AcStrategy acs = shared->ac_strategy.ConstRow(by)[bx];
-        if (!acs.IsFirstBlock()) continue;
-        const AcStrategy::Type type = acs.Strategy();
-        for (size_t c = 0; c < 3; ++c) {
-          TransformFromPixels(type, opsin_rows[c] + bx * kBlockDim,
-                              opsin_stride, rows[c] + offset, scratch_space);
-          DCFromLowestFrequencies(type, rows[c] + offset, dc_rows[c] + bx,
-                                  dc_stride);
-        }
-        offset += kDCTBlockSize << acs.log2_covered_blocks();
-      }
-    }
-  };
-
-  RunOnPool(pool, 0, shared->frame_dim.num_groups, ThreadPool::SkipInit(),
-            compute_coeffs, "Compute coeffs");
-  if (aux_out != nullptr) {
-    aux_out->InspectImage3F("compressed_image:InitializeFrameEncCache:dc", dc);
-  }
-  return dc;
-}
-
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
-HWY_AFTER_NAMESPACE();
-
-#if HWY_ONCE
-namespace jxl {
-
-HWY_EXPORT(ComputeCoeffs);  // Local function.
 
 void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
                              PassesEncoderState* enc_state,
@@ -149,8 +71,13 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     }
   }
 
-  Image3F dc = HWY_DYNAMIC_DISPATCH(ComputeCoeffs)(opsin, &shared, enc_state,
-                                                   pool, aux_out);
+  Image3F dc(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
+  RunOnPool(
+      pool, 0, shared.frame_dim.num_groups, ThreadPool::SkipInit(),
+      [&](size_t group_idx, size_t _) {
+        ComputeCoefficients(group_idx, enc_state, opsin, &dc);
+      },
+      "Compute coeffs");
 
   if (shared.frame_header.flags & FrameHeader::kUseDcFrame) {
     CompressParams cparams = enc_state->cparams;
@@ -239,4 +166,3 @@ void EncCache::InitOnce() {
 }
 
 }  // namespace jxl
-#endif  //  HWY_ONCE

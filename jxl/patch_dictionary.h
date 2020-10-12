@@ -40,9 +40,8 @@ namespace jxl {
 constexpr size_t kMaxPatchSize = 32;
 
 enum class PatchBlendMode : uint8_t {
-  kAdd,
-  kReplace,
-  // TODO(veluca): Add kBlendAbove, kBlendBelow
+  kAdd = 0,
+  kReplace = 1,
   kNumBlendModes,
 };
 

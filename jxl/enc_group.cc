@@ -31,7 +31,9 @@
 #include "jxl/base/profiler.h"
 #include "jxl/common.h"
 #include "jxl/dct_util.h"
+#include "jxl/dec_transforms-inl.h"
 #include "jxl/enc_params.h"
+#include "jxl/enc_transforms-inl.h"
 #include "jxl/image.h"
 #include "jxl/quantizer-inl.h"
 #include "jxl/quantizer.h"
@@ -174,9 +176,10 @@ void QuantizeRoundtripYBlockAC(const Quantizer& quantizer,
 }
 
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         AuxOut* aux_out) {
+                         const Image3F& opsin, Image3F* dc) {
   PROFILER_FUNC;
   const Rect block_group_rect = enc_state->shared.BlockGroupRect(group_idx);
+  const Rect group_rect = enc_state->shared.GroupRect(group_idx);
   const Rect cmap_rect(
       block_group_rect.x0() / kColorTileDimInBlocks,
       block_group_rect.y0() / kColorTileDimInBlocks,
@@ -186,13 +189,14 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
   const size_t xsize_blocks = block_group_rect.xsize();
   const size_t ysize_blocks = block_group_rect.ysize();
 
+  const size_t dc_stride = static_cast<size_t>(dc->PixelsPerRow());
+  const size_t opsin_stride = static_cast<size_t>(opsin.PixelsPerRow());
+
   const ImageI& full_quant_field = enc_state->shared.raw_quant_field;
   const CompressParams& cparams = enc_state->cparams;
 
-  // TODO(user): it would be better to find & apply correlation here, when
-  // quantization is chosen.
-
-  auto mem = hwy::AllocateAligned<ac_qcoeff_t>(4 * AcStrategy::kMaxCoeffArea);
+  auto mem = hwy::AllocateAligned<ac_qcoeff_t>(6 * AcStrategy::kMaxCoeffArea);
+  float* JXL_RESTRICT scratch_space = mem.get() + 4 * AcStrategy::kMaxCoeffArea;
   {
     // Only use error diffusion in Squirrel mode or slower.
     const bool error_diffusion = cparams.speed_tier <= SpeedTier::kSquirrel;
@@ -221,6 +225,16 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
           nullptr,
           cmap_rect.ConstRow(enc_state->shared.cmap.ytob_map, ty),
       };
+      const float* JXL_RESTRICT opsin_rows[3] = {
+          group_rect.ConstPlaneRow(opsin, 0, by * kBlockDim),
+          group_rect.ConstPlaneRow(opsin, 1, by * kBlockDim),
+          group_rect.ConstPlaneRow(opsin, 2, by * kBlockDim),
+      };
+      float* JXL_RESTRICT dc_rows[3] = {
+          block_group_rect.PlaneRow(dc, 0, by),
+          block_group_rect.PlaneRow(dc, 1, by),
+          block_group_rect.PlaneRow(dc, 2, by),
+      };
       AcStrategyRow ac_strategy_row =
           enc_state->shared.ac_strategy.ConstRow(block_group_rect, by);
       for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
@@ -233,6 +247,14 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
              bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks; ++bx) {
           const AcStrategy acs = ac_strategy_row[bx];
           if (!acs.IsFirstBlock()) continue;
+
+          for (size_t c = 0; c < 3; ++c) {
+            TransformFromPixels(acs.Strategy(), opsin_rows[c] + bx * kBlockDim,
+                                opsin_stride, coeffs[0][c] + offset,
+                                scratch_space);
+            DCFromLowestFrequencies(acs.Strategy(), coeffs[0][c] + offset,
+                                    dc_rows[c] + bx, dc_stride);
+          }
 
           size_t xblocks = acs.covered_blocks_x();
           size_t yblocks = acs.covered_blocks_y();
@@ -281,9 +303,9 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 HWY_EXPORT(ComputeCoefficients);
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         AuxOut* aux_out) {
-  return HWY_DYNAMIC_DISPATCH(ComputeCoefficients)(group_idx, enc_state,
-                                                   aux_out);
+                         const Image3F& opsin, Image3F* dc) {
+  return HWY_DYNAMIC_DISPATCH(ComputeCoefficients)(group_idx, enc_state, opsin,
+                                                   dc);
 }
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,

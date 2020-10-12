@@ -539,6 +539,12 @@ void ChooseUintConfigs(const HistogramParams& params,
                        EntropyEncodingData* codes, size_t* log_alpha_size) {
   codes->uint_config.resize(clustered_histograms->size());
   if (params.uint_method == HistogramParams::HybridUintMethod::kNone) return;
+  if (params.uint_method == HistogramParams::HybridUintMethod::kContextMap) {
+    codes->uint_config.clear();
+    codes->uint_config.resize(clustered_histograms->size(),
+                              HybridUintConfig(2, 0, 1));
+    return;
+  }
 
   // Brute-force method that tries a few options.
   std::vector<HybridUintConfig> configs;
@@ -575,7 +581,7 @@ void ChooseUintConfigs(const HistogramParams& params,
         HybridUintConfig(4, 2, 0),  // default
         HybridUintConfig(4, 1, 2),  // add parity but less msb
         HybridUintConfig(0, 0, 0),  // smallest histograms
-        HybridUintConfig(4, 1, 0),  // less precise
+        HybridUintConfig(2, 0, 1),  // works well for ctx map
     };
   }
 
@@ -1452,6 +1458,10 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   // Build histograms.
   HistogramBuilder builder(num_contexts);
   HybridUintConfig uint_config;  //  Default config for clustering.
+  // Unless we are using the kContextMap histogram option.
+  if (params.uint_method == HistogramParams::HybridUintMethod::kContextMap) {
+    uint_config = HybridUintConfig(2, 0, 1);
+  }
   for (size_t i = 0; i < tokens.size(); ++i) {
     for (size_t j = 0; j < tokens[i].size(); ++j) {
       const Token token = tokens[i][j];
@@ -1497,49 +1507,58 @@ size_t WriteTokens(const std::vector<Token>& tokens,
                             : codes.uint_config[histo])
           .Encode(token.value, &tok, &nbits, &bits);
       tok += token.is_lz77_length ? codes.lz77.min_symbol : 0;
-      writer->Write(codes.encoding_info[histo][tok].depth,
-                    codes.encoding_info[histo][tok].bits);
-      writer->Write(nbits, bits);
+      // Combine two calls to the BitWriter. Equivalent to:
+      // writer->Write(codes.encoding_info[histo][tok].depth,
+      //               codes.encoding_info[histo][tok].bits);
+      // writer->Write(nbits, bits);
+      uint64_t data = codes.encoding_info[histo][tok].bits;
+      data |= bits << codes.encoding_info[histo][tok].depth;
+      writer->Write(codes.encoding_info[histo][tok].depth + nbits, data);
       num_extra_bits += nbits;
     }
     return num_extra_bits;
   }
-  std::vector<std::pair<uint32_t, uint32_t>> out;
+  std::vector<uint64_t> out;
+  std::vector<uint8_t> out_nbits;
   out.reserve(tokens.size());
+  out_nbits.reserve(tokens.size());
+  uint64_t allbits = 0;
+  size_t numallbits = 0;
+  // Writes in *reversed* order.
+  auto addbits = [&](size_t bits, size_t nbits) {
+    JXL_DASSERT(bits >> nbits == 0);
+    if (JXL_UNLIKELY(numallbits + nbits > BitWriter::kMaxBitsPerCall)) {
+      out.push_back(allbits);
+      out_nbits.push_back(numallbits);
+      numallbits = allbits = 0;
+    }
+    allbits <<= nbits;
+    allbits |= bits;
+    numallbits += nbits;
+  };
   const int end = tokens.size();
   ANSCoder ans;
   for (int i = end - 1; i >= 0; --i) {
     const Token token = tokens[i];
     const uint8_t histo = context_map[token.context];
-    uint32_t tok, unused_nbits, unused_bits;
+    uint32_t tok, nbits, bits;
     (token.is_lz77_length ? codes.lz77.length_uint_config
                           : codes.uint_config[histo])
-        .Encode(tokens[i].value, &tok, &unused_nbits, &unused_bits);
+        .Encode(tokens[i].value, &tok, &nbits, &bits);
     tok += token.is_lz77_length ? codes.lz77.min_symbol : 0;
     const ANSEncSymbolInfo& info = codes.encoding_info[histo][tok];
-    uint8_t nbits = 0;
-    uint32_t bits = ans.PutSymbol(info, &nbits);
-    if (nbits == 16) {
-      out.push_back(std::make_pair(i, bits));
-    }
+    // Extra bits first as this is reversed.
+    addbits(bits, nbits);
+    num_extra_bits += nbits;
+    uint8_t ans_nbits = 0;
+    uint32_t ans_bits = ans.PutSymbol(info, &ans_nbits);
+    addbits(ans_bits, ans_nbits);
   }
   const uint32_t state = ans.GetState();
   writer->Write(32, state);
-  int tokenidx = 0;
-  for (int i = out.size(); i >= 0; --i) {
-    int nextidx = i > 0 ? out[i - 1].first : end;
-    for (; tokenidx < nextidx; ++tokenidx) {
-      const Token token = tokens[tokenidx];
-      uint32_t tok, nbits, bits;
-      (token.is_lz77_length ? codes.lz77.length_uint_config
-                            : codes.uint_config[context_map[token.context]])
-          .Encode(token.value, &tok, &nbits, &bits);
-      writer->Write(nbits, bits);
-      num_extra_bits += nbits;
-    }
-    if (i > 0) {
-      writer->Write(16, out[i - 1].second);
-    }
+  writer->Write(numallbits, allbits);
+  for (int i = out.size(); i > 0; --i) {
+    writer->Write(out_nbits[i - 1], out[i - 1]);
   }
   return num_extra_bits;
 }

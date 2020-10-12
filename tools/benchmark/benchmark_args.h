@@ -156,6 +156,8 @@ struct BenchmarkArgs {
   double error_pnorm;
   bool show_progress;
 
+  std::string extra_metrics;
+
   jpegxl::tools::CommandLineParser cmdline;
 
  private:

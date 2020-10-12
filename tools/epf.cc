@@ -52,21 +52,22 @@ jxl::Image3F ComputeDC(const jxl::Image3F& opsin) {
 }
 
 // Expects `state` to have `quantizer`, `raw_quant_field` and `dc` usable.
+// Computes the sigma values into the `sigma` variable.
 // TODO(sboukortt): extract this from dec_group.cc (DecodeGroupImpl) instead of
 // copying it.
-jxl::ImageF ComputeSigma(const jxl::Image3F& opsin,
-                         const int sharpness_parameter,
-                         const jxl::FrameDimensions& frame_dim,
-                         jxl::PassesEncoderState* state,
-                         const jxl::LoopFilter& lf) {
-  jxl::ImageF sigma(frame_dim.xsize_blocks + 4, frame_dim.ysize_blocks + 4);
-  const size_t sigma_stride = sigma.PixelsPerRow();
+void ComputeSigma(jxl::ImageF* sigma, const jxl::Image3F& opsin,
+                  const int sharpness_parameter,
+                  const jxl::FrameDimensions& frame_dim,
+                  jxl::PassesEncoderState* state, const jxl::LoopFilter& lf) {
+  JXL_DASSERT(sigma->xsize() == frame_dim.xsize_blocks + 4);
+  JXL_DASSERT(sigma->ysize() == frame_dim.ysize_blocks + 4);
+  const size_t sigma_stride = sigma->PixelsPerRow();
   const float quant_scale = state->shared.quantizer.Scale();
-  for (size_t by = 0; by < sigma.ysize(); ++by) {
-    float* const JXL_RESTRICT sigma_row = sigma.Row(by);
+  for (size_t by = 0; by < sigma->ysize(); ++by) {
+    float* const JXL_RESTRICT sigma_row = sigma->Row(by);
     const int* const JXL_RESTRICT row_quant =
         state->shared.raw_quant_field.ConstRow(by);
-    for (size_t bx = 0; bx < sigma.xsize(); ++bx) {
+    for (size_t bx = 0; bx < sigma->xsize(); ++bx) {
       float quant = 1.0f / (row_quant[bx] * quant_scale);
       float sigma = quant * lf.epf_quant_mul;
       sigma *= lf.epf_sharp_lut[sharpness_parameter];
@@ -100,13 +101,13 @@ jxl::ImageF ComputeSigma(const jxl::Image3F& opsin,
       }
     }
   }
-  return sigma;
 }
 
 }  // namespace
 
-jxl::Status RunEPF(const float distance, const int sharpness_parameter,
-                   jxl::CodecInOut* const io, jxl::ThreadPool* const pool) {
+jxl::Status RunEPF(uint32_t epf_iters, const float distance,
+                   const int sharpness_parameter, jxl::CodecInOut* const io,
+                   jxl::ThreadPool* const pool) {
   const jxl::ColorEncoding original_color_encoding =
       io->metadata.color_encoding;
   jxl::Image3F opsin(io->xsize(), io->ysize());
@@ -135,20 +136,22 @@ jxl::Status RunEPF(const float distance, const int sharpness_parameter,
   state.shared.dc_storage = ComputeDC(opsin);
 
   jxl::LoopFilter lf;
-  jxl::Image3F storage1(frame_dim.xsize_padded + 4 * jxl::kBlockDim,
-                        jxl::kEpf1InputRows);
-  jxl::Image3F storage2(frame_dim.xsize_padded + 2 * jxl::kBlockDim,
-                        jxl::kEpf2InputRows);
+  jxl::FilterStorage storage(frame_dim.xsize_padded);
   lf.gab = false;
-  const jxl::ImageF sigma =
-      ComputeSigma(opsin, sharpness_parameter, frame_dim, &state, lf);
+  lf.epf_iters = epf_iters;
+
+  jxl::FilterWeights filter_weights;
+  filter_weights.Init(lf, frame_dim);
+  ComputeSigma(&filter_weights.sigma, opsin, sharpness_parameter, frame_dim,
+               &state, lf);
+
   const jxl::Image3F padded = PadImageSymmetric(opsin, 2 * jxl::kBlockDim);
 
   jxl::Rect image_rect(0, 0, frame_dim.xsize_padded, frame_dim.ysize_padded);
   jxl::Rect sigma_rect(0, 0, frame_dim.xsize_blocks, frame_dim.ysize_blocks);
 
-  EdgePreservingFilter(lf, image_rect, padded, sigma_rect, sigma, image_rect,
-                       &opsin, &storage1, &storage2);
+  EdgePreservingFilter(lf, filter_weights, image_rect, padded, sigma_rect,
+                       image_rect, &opsin, &storage);
 
   opsin.ShrinkTo(original_xsize, original_ysize);
   jxl::OpsinParams opsin_params;

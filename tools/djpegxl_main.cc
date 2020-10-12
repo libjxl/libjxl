@@ -30,7 +30,6 @@
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
 #include "jxl/base/thread_pool_internal.h"
-#include "jxl/brunsli.h"
 #include "jxl/codec_in_out.h"
 #include "tools/box/box.h"
 #include "tools/cmdline.h"

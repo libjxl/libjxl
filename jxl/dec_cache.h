@@ -23,18 +23,12 @@
 #include "jxl/coeff_order.h"
 #include "jxl/common.h"
 #include "jxl/dec_noise.h"
+#include "jxl/filters.h"
 #include "jxl/image.h"
 #include "jxl/passes_state.h"
 #include "jxl/quant_weights.h"
 
 namespace jxl {
-
-// Line-based EPF only needs to keep in cache 13 lines of the image, so 256 is
-// sufficient for everything to fit in the L2 cache.
-constexpr size_t kApplyImageFeaturesTileDim = 256;
-
-constexpr size_t kEpf1InputRows = 7;
-constexpr size_t kEpf2InputRows = 3;
 
 // Per-frame decoder state. All the images here should be accessed through a
 // group rect (either with block units or pixel units).
@@ -57,32 +51,20 @@ struct PassesDecoderState {
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_dm_multiplier;
 
-  // Normalized weights for gaborish, in XYB order, each weight for Manhattan
-  // distance of 0, 1 and 2 respectively.
-  float gab_weights[9];
-
   // Decoded image, with padding.
   Image3F decoded;
 
-  // Sigma values for EPF, if enabled.
-  // Note that, for speed reasons, this is actually kInvSigmaNum / sigma.
-  ImageF sigma;
-
-  // Tile storage for ApplyImageFeatures steps. Storage1 has 2 blocks of padding
-  // per side, storage2 has 1.
-  std::vector<Image3F> storage1;
-  std::vector<Image3F> storage2;
+  // Tile storage used by ApplyImageFeatures. One storage entry is needed per
+  // thread.
+  std::vector<FilterStorage> filter_storage;
+  // Input weights used by the filters. These are shared from multiple threads
+  // but are read-only for the filter application.
+  FilterWeights filter_weights;
 
   void EnsureStorage(size_t num_threads) {
-    for (size_t i = storage1.size(); i < num_threads; i++) {
-      // We allocate twice what is needed since the last rects are larger in one
-      // dimension.
-      // Since we use row-based processing and cyclic addressing, we only need 7
-      // rows in storage1 and 3 in storage2.
-      storage1.emplace_back(kApplyImageFeaturesTileDim + 4 * kBlockDim,
-                            kEpf1InputRows);
-      storage2.emplace_back(kApplyImageFeaturesTileDim + 2 * kBlockDim,
-                            kEpf2InputRows);
+    // We need one filter_storage per thread, ensure we have at least that many.
+    if (filter_storage.size() < num_threads) {
+      filter_storage.resize(num_threads);
     }
   }
 
@@ -110,7 +92,7 @@ struct PassesDecoderState {
     }
 
     const LoopFilter& lf = shared->image_features.loop_filter;
-    if (lf.epf || lf.gab) {
+    if (lf.epf_iters > 0 || lf.gab) {
       decoded = Image3F(shared->frame_dim.xsize_padded + 4 * kBlockDim,
                         shared->frame_dim.ysize_padded + 4 * kBlockDim);
 #if MEMORY_SANITIZER
@@ -118,13 +100,7 @@ struct PassesDecoderState {
       ZeroFillImage(&decoded);
 #endif
     }
-    if (lf.epf) {
-      sigma = ImageF(shared->frame_dim.xsize_blocks + 4,
-                     shared->frame_dim.ysize_blocks + 4);
-    }
-    if (lf.gab) {
-      lf.GaborishWeights(gab_weights);
-    }
+    filter_weights.Init(lf, shared->frame_dim);
   }
 };
 

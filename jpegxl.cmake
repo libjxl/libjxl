@@ -77,8 +77,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/tsc_timer.h
-  jxl/brunsli.cc
-  jxl/brunsli.h
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
   jxl/chroma_from_luma.cc
@@ -182,6 +180,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
+  jxl/filters.cc
+  jxl/filters.h
   jxl/frame_header.cc
   jxl/frame_header.h
   jxl/gaborish.cc
@@ -198,6 +198,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/image_bundle.h
   jxl/image_ops.h
   jxl/jpegxl/decode.cc
+  jxl/jpegxl/encode.cc
   jxl/jxl_inspection.h
   jxl/lehmer_code.h
   jxl/linalg.cc

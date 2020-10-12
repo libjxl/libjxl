@@ -87,7 +87,7 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
     mtf_tokens[0].emplace_back(0, transformed_symbols[i]);
   }
   HistogramParams params;
-  params.lz77_method = HistogramParams::LZ77Method::kLZ77;
+  params.uint_method = HistogramParams::HybridUintMethod::kContextMap;
   size_t ans_cost = BuildAndEncodeHistograms(
       params, 1, tokens, &codes, &dummy_context_map, nullptr, 0, nullptr);
   size_t mtf_cost = BuildAndEncodeHistograms(

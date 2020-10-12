@@ -69,6 +69,14 @@ Status BenchmarkArgs::AddCommandLineOptions() {
           false);
   AddFlag(&print_details_csv, "print_details_csv",
           "When print_details is used, print as CSV.", false);
+  AddString(&extra_metrics, "extra_metrics",
+            "Extra metrics to be computed. Only displayed with --print_details "
+            "or --print_details_csv. Comma-separated list of NAME:COMMAND "
+            "pairs; COMMAND is invoked with the original image as the first "
+            "argument, the decompressed image as a second argument, and the "
+            "name of the file where to write the metric value (as a single "
+            "floating point number) as the third argument.",
+            "");
   AddFlag(
       &print_more_stats, "print_more_stats",
       "Prints codec-specific stats. Not safe for concurrent benchmark runs.",

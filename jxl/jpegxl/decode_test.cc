@@ -26,7 +26,6 @@
 #include "jxl/base/file_io.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
-#include "jxl/brunsli.h"
 #include "jxl/dec_file.h"
 #include "jxl/external_image.h"
 #include "jxl/fields.h"
@@ -47,14 +46,6 @@ TEST(DecodeTest, JpegxlSignatureCheckTest) {
       {JPEGXL_SIG_NOT_ENOUGH_BYTES, {0xff}},  // Part of a signature.
       {JPEGXL_SIG_VALID, {0xff, 0xD8}},
       {JPEGXL_SIG_VALID, {0xff, 0x0a}},
-
-      // A header could start with 0x0a, but it is not a complete signature.
-      {JPEGXL_SIG_NOT_ENOUGH_BYTES, {0x0a}},
-
-      // This is the beginning of a Brunsli file, but not a complete signature.
-      {JPEGXL_SIG_NOT_ENOUGH_BYTES, {0x0a, 0x04, 'B', 0xd2}},
-      {JPEGXL_SIG_VALID, {0x0a, 0x04, 'B', 0xd2, 0xd5, 'N', 0x12}},
-      {JPEGXL_SIG_INVALID, {0x0a, 0x04, 'B', 0xd2, 0xd5, 'N', 0x13}},
 
       // JPEGXL container file.
       {JPEGXL_SIG_VALID,
@@ -814,7 +805,6 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
           g = gray ? r : LoadLE32(pixels + i + 4);
           b = gray ? r : LoadLE32(pixels + i + 8);
           a = alpha ? LoadLE32(pixels + i + num_channels * 2 - 4) : 4294967295;
-
         }
         result[j + 0] = r * mul;
         result[j + 1] = g * mul;

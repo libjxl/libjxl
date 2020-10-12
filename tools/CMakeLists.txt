@@ -54,7 +54,6 @@ if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
 endif()
 
 set(TOOL_BINARIES
-  cbrunsli_tool
   cjpegxl
   djpegxl
   fuzzer_corpus
@@ -87,7 +86,6 @@ target_link_libraries(epf jpegxl-static)
 add_library(cjpegxltool STATIC
   cjpegxl.cc
   cjxl.cc
-  cbrunsli.cc
   codec_config.cc
   speed_stats.cc
 )
@@ -105,14 +103,9 @@ target_link_libraries(cjpegxltool
     jpegxl_threads
 )
 
-add_executable(cbrunsli_tool cbrunsli_main.cc)
 add_executable(cjpegxl cjpegxl_main.cc)
 add_executable(fuzzer_corpus fuzzer_corpus.cc)
 
-# TODO: make brunsli own targets less "public"?
-set_target_properties (cbrunsli_tool PROPERTIES OUTPUT_NAME "cbrunsli" )
-
-target_link_libraries(cbrunsli_tool cjpegxltool)
 target_link_libraries(cjpegxl cjpegxltool)
 
 target_link_libraries(fuzzer_corpus cjpegxltool)
@@ -161,6 +154,8 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec.cc
     benchmark/benchmark_file_io.cc
     benchmark/benchmark_stats.cc
+    benchmark/benchmark_utils.cc
+    benchmark/benchmark_utils.h
     benchmark/benchmark_codec_custom.cc
     benchmark/benchmark_codec_custom.h
     benchmark/benchmark_codec_jxl.cc

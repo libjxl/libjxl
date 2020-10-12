@@ -41,6 +41,7 @@
 #include "jxl/base/status.h"
 #include "jxl/common.h"
 #include "jxl/convolve.h"
+#include "jxl/filters.h"
 #include "jxl/image.h"
 #include "jxl/image_bundle.h"
 #include "jxl/image_ops.h"
@@ -65,25 +66,33 @@ struct Mod<0> {
 };
 
 // Utility struct to define input/output rows of row-based loop filters.
-template <int kBorder>
+constexpr size_t kMaxBorderSize = 2;
 struct LoopFilterRows {
+  explicit LoopFilterRows(int border_size) : border_size_(border_size) {
+    JXL_DASSERT(border_size <= kMaxBorderSize);
+  }
+
   template <int row>
   const float* GetInputRow(size_t c) const {
-    static_assert(-kBorder <= row && row <= kBorder, "Invalid row accessed");
-    return rows_in_[c] + offsets_in_[kBorder + row];
+    // Check that row is within range.
+    JXL_DASSERT(-border_size_ <= row && row <= border_size_);
+    return rows_in_[c] + offsets_in_[kMaxBorderSize + row];
   }
 
   float* GetOutputRow(size_t c) const { return rows_out_[c]; }
 
   template <size_t row_mod>
   void SetInput(const Image3F& in, size_t y0, size_t x0) {
-    JXL_DASSERT(row_mod + y0 >= kBorder);
+    JXL_DASSERT(row_mod + y0 >= border_size_);
+    JXL_DASSERT(row_mod == 0 || in.ysize() >= row_mod);
+    JXL_DASSERT(row_mod != 0 ||
+                (in.ysize() >= y0 + border_size_ && y0 >= border_size_));
     for (size_t c = 0; c < 3; c++) {
       rows_in_[c] = in.ConstPlaneRow(c, 0);
     }
-    for (int i = -kBorder; i <= kBorder; i++) {
+    for (int i = -border_size_; i <= border_size_; i++) {
       size_t y = Mod<row_mod>()(row_mod + y0 + i);
-      offsets_in_[i + kBorder] = y * in.PixelsPerRow() + x0;
+      offsets_in_[i + kMaxBorderSize] = y * in.PixelsPerRow() + x0;
     }
   }
 
@@ -96,9 +105,17 @@ struct LoopFilterRows {
   }
 
  private:
+  // Base pointer to each one of the planes.
   const float* JXL_RESTRICT rows_in_[3];
-  size_t offsets_in_[2 * kBorder + 1];
+
+  // Offset to the pixel x0 at the different rows. offsets_in_[kMaxBorderSize]
+  // references the center row, regardless of the border_size_. Only the center
+  // row, border_size_ before and border_size_ after are initialized. The offset
+  // is relative to the base pointer in rows_in_.
+  size_t offsets_in_[2 * kMaxBorderSize + 1];
+
   float* JXL_RESTRICT rows_out_[3];
+  const int border_size_;
 };
 
 using DF = HWY_CAPPED(float, 8);
@@ -116,8 +133,8 @@ JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
 }
 
 template <bool aligned, int row>
-JXL_INLINE void AddPixelStep1(const LoopFilterRows<2>& rows, size_t x,
-                              Vec<DF> sad, Vec<DF> sad_mul, Vec<DF> inv_sigma,
+JXL_INLINE void AddPixelStep1(const LoopFilterRows& rows, size_t x, Vec<DF> sad,
+                              Vec<DF> sad_mul, Vec<DF> inv_sigma,
                               const LoopFilter& lf, Vec<DF>* JXL_RESTRICT X,
                               Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
                               Vec<DF>* JXL_RESTRICT w) {
@@ -137,11 +154,11 @@ JXL_INLINE void AddPixelStep1(const LoopFilterRows<2>& rows, size_t x,
 }
 
 template <bool aligned, int row>
-JXL_INLINE void AddPixelStep2(const LoopFilterRows<1>& rows, size_t x,
-                              Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
-                              Vec<DF> sad_mul, Vec<DF> inv_sigma,
-                              const LoopFilter& lf, Vec<DF>* JXL_RESTRICT X,
-                              Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
+JXL_INLINE void AddPixelStep2(const LoopFilterRows& rows, size_t x, Vec<DF> rx,
+                              Vec<DF> ry, Vec<DF> rb, Vec<DF> sad_mul,
+                              Vec<DF> inv_sigma, const LoopFilter& lf,
+                              Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
+                              Vec<DF>* JXL_RESTRICT B,
                               Vec<DF>* JXL_RESTRICT w) {
   auto cx = aligned ? Load(DF(), rows.GetInputRow<row>(0) + x)
                     : LoadU(DF(), rows.GetInputRow<row>(0) + x);
@@ -163,8 +180,9 @@ JXL_INLINE void AddPixelStep2(const LoopFilterRows<1>& rows, size_t x,
   *B = MulAdd(weight, cb, *B);
 }
 
-void GaborishRow(const LoopFilterRows<1>& rows, size_t xsize,
-                 const float* JXL_RESTRICT gab_weights) {
+void GaborishRow(const LoopFilterRows& rows, const LoopFilter& /* lf */,
+                 size_t /* iy */, const float* JXL_RESTRICT gab_weights,
+                 size_t xsize) {
   for (size_t c = 0; c < 3; c++) {
     float* JXL_RESTRICT row_out = rows.GetOutputRow(c);
     const auto w0 = Set(df, gab_weights[3 * c]);
@@ -190,8 +208,8 @@ void GaborishRow(const LoopFilterRows<1>& rows, size_t xsize,
 }
 
 // Step 1: 3x3 plus-shaped kernel with 5 SADs per pixel (also 3x3
-// plus-shaped).
-void Epf1Row(const LoopFilterRows<2>& rows, const LoopFilter& lf, size_t iy,
+// plus-shaped). So this makes this filter a 5x5 filter.
+void Epf1Row(const LoopFilterRows& rows, const LoopFilter& lf, size_t iy,
              const float* JXL_RESTRICT row_sigma, size_t xsize) {
   HWY_ALIGN float sad_mul[kBlockDim] = {
       lf.epf_border_sad_mul, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
@@ -307,7 +325,7 @@ void Epf1Row(const LoopFilterRows<2>& rows, const LoopFilter& lf, size_t iy,
 
 // Step 2: 3x3 plus-shaped kernel with a single reference pixel, ran on
 // the output of the previous step.
-void Epf2Row(const LoopFilterRows<1>& rows, const LoopFilter& lf, size_t iy,
+void Epf2Row(const LoopFilterRows& rows, const LoopFilter& lf, size_t iy,
              const float* JXL_RESTRICT row_sigma, size_t xsize) {
   HWY_ALIGN float sad_mul[kBlockDim] = {
       lf.epf_border_sad_mul, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
@@ -361,73 +379,100 @@ void Epf2Row(const LoopFilterRows<1>& rows, const LoopFilter& lf, size_t iy,
   }
 }
 
-Status ApplyLoopFiltersRowImpl(const LoopFilter& lf, const Rect& in_rect,
-                               const Image3F& in, const Rect& sigma_rect,
-                               const ImageF& sigma, size_t y,
-                               const float* JXL_RESTRICT gab_weights,
+Status ApplyLoopFiltersRowImpl(const LoopFilter& lf,
+                               const FilterWeights& filter_weights,
+                               const Rect& in_rect, const Image3F& in,
+                               const Rect& sigma_rect, size_t y,
                                const Rect& out_rect, Image3F* JXL_RESTRICT out,
-                               Image3F* JXL_RESTRICT storage1,
-                               Image3F* JXL_RESTRICT storage2,
+                               FilterStorage* storage,
                                size_t* JXL_RESTRICT output_row) {
   PROFILER_ZONE("Gaborish+EPF");
   const size_t num_xborder_pixels = RoundUpTo(3, Lanes(df));
   size_t y_corr = in_rect.y0() % kBlockDim;
   const size_t xsize = in_rect.xsize();
-  size_t gab_x0 = lf.epf ? 2 * kBlockDim - num_xborder_pixels : 2 * kBlockDim;
-  size_t gab_xsize = lf.epf ? xsize + 2 * num_xborder_pixels : xsize;
 
-  // First 2*lf.FirstStageRow() should not cause anything to run.
-  if (y < 2 * kBlockDim - lf.PaddingRows() + 2 * lf.FirstStageRows())
-    return false;
+  const size_t xpadding_size = lf.epf_iters > 0 ? num_xborder_pixels : 0;
+  size_t gab_x0 = 2 * kBlockDim - xpadding_size;
+  size_t gab_xsize = xsize + 2 * xpadding_size;
+
   if (y >= 2 * kBlockDim + in_rect.ysize() + lf.PaddingRows()) {
     return false;
   }
 
-  // y is now the center row for the first stage.
-  y -= lf.FirstStageRows();
-
-  size_t first_epf1_row = lf.gab ? 2 * kBlockDim + 1 : 2 * kBlockDim - 1;
-  size_t first_epf2_row = lf.gab ? 2 * kBlockDim + 3 : 2 * kBlockDim + 1;
+  // The minimum value of the center row "y" needed to process the current
+  // filter.
+  size_t rows_needed = 2 * kBlockDim - lf.PaddingRows();
 
   if (lf.gab) {
-    LoopFilterRows<1> gab_rows;
-    gab_rows.SetInput<0>(in, in_rect.y0() + y, in_rect.x0() + gab_x0);
-    if (lf.epf) {
-      gab_rows.SetOutput<kEpf1InputRows>(storage1, y, gab_x0);
+    LoopFilterRows gab_rows(1);
+    rows_needed += 1;  // Gaborish border.
+
+    // Source row for the center of Gaborish.
+    const size_t gab_sy = y - 1;
+    if (gab_sy < rows_needed) return false;
+
+    gab_rows.SetInput<0>(in, in_rect.y0() + gab_sy, in_rect.x0() + gab_x0);
+    if (lf.epf_iters > 0) {
+      gab_rows.SetOutput<kEpf1InputRows>(&storage->storage1, gab_sy, gab_x0);
     } else {
-      gab_rows.SetOutput<0>(out, out_rect.y0() + y - 2 * kBlockDim,
+      gab_rows.SetOutput<0>(out, out_rect.y0() + gab_sy - 2 * kBlockDim,
                             out_rect.x0());
     }
-    GaborishRow(gab_rows, gab_xsize, gab_weights);
+    GaborishRow(gab_rows, lf, 0 /* unused */, filter_weights.gab_weights,
+                gab_xsize);
+    y = gab_sy;
   }
 
-  if (!lf.epf) {
+  if (lf.epf_iters == 0) {
     *output_row = y - 2 * kBlockDim;
     return true;
   }
-  if (y < first_epf1_row) return false;
 
-  size_t sy = lf.gab ? y - 2 : y;
-  size_t dy = sy - kBlockDim;
-  LoopFilterRows<2> epf1_rows;
-  if (lf.gab) {
-    epf1_rows.SetInput<kEpf1InputRows>(*storage1, sy, 0);
-  } else {
-    epf1_rows.SetInput<0>(in, in_rect.y0() + sy, in_rect.x0());
+  // Apply EPF1.
+  {
+    LoopFilterRows epf1_rows(2);
+    rows_needed += 2;  // EPF1 border.
+
+    // "sy" is the source center row used to compute EPF1.
+    const size_t sy = y - 2;
+    if (sy < rows_needed) return false;
+
+    // The "y" coordinate used for the sigma image in EPF1.
+    const size_t sigma_y = sy + y_corr;
+    const size_t dy = sy;
+    if (lf.gab) {
+      epf1_rows.SetInput<kEpf1InputRows>(storage->storage1, sy, 0);
+    } else {
+      epf1_rows.SetInput<0>(in, in_rect.y0() + sy, in_rect.x0());
+    }
+    epf1_rows.SetOutput<kEpf2InputRows>(&storage->storage2, dy, 0);
+    Epf1Row(epf1_rows, lf, sigma_y % kBlockDim,
+            sigma_rect.ConstRow(filter_weights.sigma, sigma_y / kBlockDim),
+            xsize);
+    y = dy;
   }
-  epf1_rows.SetOutput<kEpf2InputRows>(storage2, dy, 0);
-  Epf1Row(epf1_rows, lf, (sy + y_corr) % kBlockDim,
-          sigma_rect.ConstRow(sigma, (sy + y_corr) / kBlockDim), xsize);
-  if (y < first_epf2_row) return false;
 
-  size_t sy2 = dy - 1;
-  size_t dy2 = sy2 - kBlockDim;
-  LoopFilterRows<1> epf2_rows;
-  epf2_rows.SetInput<kEpf2InputRows>(*storage2, sy2, 0);
-  epf2_rows.SetOutput<0>(out, out_rect.y0() + dy2, out_rect.x0());
-  Epf2Row(epf2_rows, lf, (sy2 + y_corr) % kBlockDim,
-          sigma_rect.ConstRow(sigma, (sy2 + y_corr) / kBlockDim + 1), xsize);
-  *output_row = dy2;
+  {
+    LoopFilterRows epf2_rows(1);
+    rows_needed += 1;  // EPF2 border.
+
+    // "sy2" is the source center row used to compute EPF2.
+    const size_t sy2 = y - 1;
+    if (sy2 < rows_needed) return false;
+
+    // The "y" coordinate used for the sigma image in EPF2.
+    const size_t sigma_y2 = sy2 + y_corr;
+    // Due to the 2 blocks of input padding, the output "y" is 2 * kBlockDim
+    // smaller.
+    const size_t dy2 = sy2 - 2 * kBlockDim;
+    epf2_rows.SetInput<kEpf2InputRows>(storage->storage2, sy2, 0);
+    epf2_rows.SetOutput<0>(out, out_rect.y0() + dy2, out_rect.x0());
+    Epf2Row(epf2_rows, lf, sigma_y2 % kBlockDim,
+            sigma_rect.ConstRow(filter_weights.sigma, sigma_y2 / kBlockDim),
+            xsize);
+    y = dy2;
+  }
+  *output_row = y;
   return true;
 }
 
@@ -445,7 +490,7 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
                            size_t* JXL_RESTRICT output_row) {
   JXL_DASSERT(in_rect.x0() % kBlockDim == 0);
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
-  if (!lf.gab && !lf.epf) {
+  if (!lf.gab && lf.epf_iters == 0) {
     if (y < 2 * kBlockDim || y >= 2 * kBlockDim + in_rect.ysize()) return false;
     *output_row = y - 2 * kBlockDim;
     return *output_row < dec_state->shared->frame_dim.ysize;
@@ -455,36 +500,30 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& in_rect,
                   DivCeil(in_rect.ysize(), kBlockDim));
   // TODO(janwas): hoist to caller
   return HWY_DYNAMIC_DISPATCH(ApplyLoopFiltersRowImpl)(
-      lf, in_rect, dec_state->decoded, sigma_rect, dec_state->sigma, y,
-      dec_state->gab_weights, in_rect, out, &dec_state->storage1[thread],
-      &dec_state->storage2[thread], output_row);
+      lf, dec_state->filter_weights, in_rect, dec_state->decoded, sigma_rect, y,
+      in_rect, out, &dec_state->filter_storage[thread], output_row);
 }
 
-void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
-                          const Image3F& in, const Rect& sigma_rect,
-                          const ImageF& sigma, const Rect& out_rect,
-                          Image3F* JXL_RESTRICT out,
-                          Image3F* JXL_RESTRICT storage1,
-                          Image3F* JXL_RESTRICT storage2) {
+void EdgePreservingFilter(const LoopFilter& lf,
+                          const FilterWeights& filter_weights,
+                          const Rect& in_rect, const Image3F& in,
+                          const Rect& sigma_rect, const Rect& out_rect,
+                          Image3F* JXL_RESTRICT out, FilterStorage* storage) {
   JXL_ASSERT(SameSize(in_rect, out_rect));
   JXL_ASSERT(in_rect.xsize() == sigma_rect.xsize() * kBlockDim);
   JXL_ASSERT(in_rect.ysize() == sigma_rect.ysize() * kBlockDim);
-  JXL_ASSERT(storage1->xsize() >= out_rect.xsize() + 4 * kBlockDim);
-  JXL_ASSERT(storage1->ysize() >= kEpf1InputRows);
-  JXL_ASSERT(storage2->xsize() >= out_rect.xsize() + 2 * kBlockDim);
-  JXL_ASSERT(storage2->ysize() >= kEpf2InputRows);
+  JXL_ASSERT(storage->storage1.xsize() >= out_rect.xsize() + 4 * kBlockDim);
+  JXL_ASSERT(storage->storage1.ysize() >= kEpf1InputRows);
+  JXL_ASSERT(storage->storage2.xsize() >= out_rect.xsize() + 2 * kBlockDim);
+  JXL_ASSERT(storage->storage2.ysize() >= kEpf2InputRows);
 
   const size_t ysize = in_rect.ysize();
-
-  float gab_weights[9];
-  lf.GaborishWeights(gab_weights);
-
   for (size_t y = 2 * kBlockDim - lf.PaddingRows();
        y < ysize + 2 * kBlockDim + lf.PaddingRows(); y++) {
     size_t output_row;
     (void)HWY_DYNAMIC_DISPATCH(ApplyLoopFiltersRowImpl)(
-        lf, in_rect, in, sigma_rect, sigma, y, gab_weights, out_rect, out,
-        storage1, storage2, &output_row);
+        lf, filter_weights, in_rect, in, sigma_rect, y, out_rect, out, storage,
+        &output_row);
   }
 }
 

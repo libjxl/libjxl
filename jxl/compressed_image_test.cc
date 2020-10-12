@@ -82,7 +82,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
   loop_filter.gab_y_weight2 = 0.089979079587015454;
   loop_filter.gab_b_weight1 = 0.11501538179658321;
   loop_filter.gab_b_weight2 = 0.089979079587015454;
-  loop_filter.epf = false;
+  loop_filter.epf_iters = 0;
 
   FrameDimensions frame_dim;
   frame_dim.Set(opsin.xsize(), opsin.ysize(), /*group_size_shift=*/1,

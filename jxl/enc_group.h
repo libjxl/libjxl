@@ -25,8 +25,9 @@
 
 namespace jxl {
 
+// Fills DC
 void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
-                         AuxOut* aux_out);
+                         const Image3F& opsin, Image3F* dc);
 
 Status EncodeGroupTokenizedCoefficients(size_t group_idx, size_t pass_idx,
                                         size_t histogram_idx,

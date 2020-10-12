@@ -60,7 +60,7 @@ uint32_t ComputeUsedOrders(const SpeedTier speed,
   uint32_t ret = 0;
   size_t xsize_blocks = rect.xsize();
   size_t ysize_blocks = rect.ysize();
-  // TODO(janwas): parallelize
+  // TODO(veluca): precompute when doing DCT.
   for (size_t by = 0; by < ysize_blocks; ++by) {
     AcStrategyRow acs_row = ac_strategy.ConstRow(rect, by);
     for (size_t bx = 0; bx < xsize_blocks; ++bx) {
@@ -103,6 +103,7 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
     };
 
     // Count number of zero coefficients, separately for each DCT band.
+    // TODO(veluca): precompute when doing DCT.
     for (size_t group_index = 0; group_index < frame_dim.num_groups;
          group_index++) {
       const size_t gx = group_index % frame_dim.xsize_groups;

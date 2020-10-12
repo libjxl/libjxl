@@ -23,7 +23,6 @@
 #include "jxl/base/file_io.h"
 #include "jxl/base/os_specific.h"
 #include "jxl/base/override.h"
-#include "jxl/brunsli.h"
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
 #include "jxl/dec_file.h"
@@ -38,12 +37,6 @@
 #if JPEGXL_ENABLE_JPEG
 #include "jxl/extras/codec_jpg.h"
 #endif
-
-#include <brunsli/brunsli_decode.h>
-#include <brunsli/jpeg_data.h>
-#include <brunsli/jpeg_data_writer.h>
-#include <brunsli/status.h>
-#include <brunsli/types.h>
 
 namespace jpegxl {
 namespace tools {
@@ -121,15 +114,6 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('\0', "print_read_bytes",
                          "print total number of decoded bytes",
                          &print_read_bytes, &SetBooleanTrue);
-
-  cmdline->AddOptionFlag(
-      't', "fix_dc_staircase",
-      "Fix DC staircase, for recompressed JPEG1 files (brunsli) only",
-      &brunsli_fix_dc_staircase, &SetBooleanTrue);
-  cmdline->AddOptionFlag(
-      'g', "gaborish",
-      "Gaborish deblocking, for recompressed JPEG1 files (brunsli) only",
-      &brunsli_gaborish, &SetBooleanTrue);
 }
 
 jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
@@ -157,8 +141,6 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     fprintf(stderr, "Noise can only be enabled by the encoder.\n");
     return JXL_FAILURE("Cannot force noise on");
   }
-  params.brunsli.fix_dc_staircase = brunsli_fix_dc_staircase;
-  params.brunsli.gaborish = brunsli_gaborish;
 
   if (!decode_to_jpeg && file_out) {
     const std::string extension = jxl::Extension(file_out);
@@ -192,17 +174,6 @@ jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
   return true;
 }
 
-namespace {
-
-// Writer function needed for the Brunsli API.
-size_t PaddedBytesWriter(void* data, const uint8_t* buf, size_t count) {
-  jxl::PaddedBytes* output = reinterpret_cast<jxl::PaddedBytes*>(data);
-  output->append(buf, buf + count);
-  return count;
-}
-
-}  // namespace
-
 jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 const DecompressArgs& args,
                                 jxl::ThreadPool* pool, jxl::PaddedBytes* output,
@@ -216,57 +187,27 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
 
   JXL_RETURN_IF_ERROR(compressed.size() >= 2);
 
-  if (jxl::IsBrunsliFile(compressed) == jxl::BrunsliFileSignature::kBrunsli) {
-    brunsli::JPEGData jpg;
-    bool ok = false;
+  // JXL case
+  // Decode to DCT when possible and generate a JPG file.
+  jxl::CodecInOut io;
+  // Set JPEG quality.
+  // TODO(deymo): We should probably fail to give a JPEG file if the
+  // original image can't be transcoded to a JPEG file without passing
+  // through pixels, or at least signal this to the user.
+  io.use_sjpeg = args.use_sjpeg;
+  io.jpeg_quality = args.jpeg_quality;
 
-#ifdef BRUNSLI_EXPERIMENTAL_GROUPS
-    {
-      brunsli::Executor executor = [&](const brunsli::Runnable& runnable,
-                                       size_t num_tasks) {
-        RunOnPool(pool, 0, num_tasks, runnable);
-      };
-      ok = brunsli::DecodeGroups(compressed.data(), compressed.size(), &jpg, 32,
-                                 128, &executor);
-    }
-#else  // BRUNSLI_EXPERIMENTAL_GROUPS
-    brunsli::BrunsliStatus status =
-        brunsli::BrunsliDecodeJpeg(compressed.data(), compressed.size(), &jpg);
-    ok = (status == brunsli::BRUNSLI_OK);
-#endif  // BRUNSLI_EXPERIMENTAL_GROUPS
-    if (!ok) {
-      return JXL_FAILURE("Failed to parse Brunsli input.");
-    }
-
-    output->clear();
-    brunsli::JPEGOutput writer(PaddedBytesWriter, output);
-    if (!brunsli::WriteJpeg(jpg, writer)) {
-      return JXL_FAILURE("Failed to generate JPEG from Brunsli input.");
-    }
-    stats->SetImageSize(jpg.width, jpg.height);
-  } else {
-    // JXL case
-    // Decode to DCT when possible and generate a JPG file.
-    jxl::CodecInOut io;
-    // Set JPEG quality.
-    // TODO(deymo): We should probably fail to give a JPEG file if the
-    // original image can't be transcoded to a JPEG file without passing
-    // through pixels, or at least signal this to the user.
-    io.use_sjpeg = args.use_sjpeg;
-    io.jpeg_quality = args.jpeg_quality;
-
-    if (!DecodeJpegXlToJpeg(args.params, container, &io, aux_out, pool)) {
-      return JXL_FAILURE("Failed to decode JXL to JPEG");
-    }
-    if (!EncodeImageJPG(&io,
-                        io.use_sjpeg ? jxl::JpegEncoder::kSJpeg
-                                     : jxl::JpegEncoder::kLibJpeg,
-                        io.jpeg_quality, jxl::YCbCrChromaSubsampling(), pool,
-                        output, jxl::DecodeTarget::kQuantizedCoeffs)) {
-      return JXL_FAILURE("Failed to generate JPEG");
-    }
-    stats->SetImageSize(io.xsize(), io.ysize());
+  if (!DecodeJpegXlToJpeg(args.params, container, &io, aux_out, pool)) {
+    return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
+  if (!EncodeImageJPG(
+          &io,
+          io.use_sjpeg ? jxl::JpegEncoder::kSJpeg : jxl::JpegEncoder::kLibJpeg,
+          io.jpeg_quality, jxl::YCbCrChromaSubsampling(), pool, output,
+          jxl::DecodeTarget::kQuantizedCoeffs)) {
+    return JXL_FAILURE("Failed to generate JPEG");
+  }
+  stats->SetImageSize(io.xsize(), io.ysize());
 
   const double t1 = jxl::Now();
   stats->NotifyElapsed(t1 - t0);

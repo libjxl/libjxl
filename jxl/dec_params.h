@@ -26,11 +26,6 @@
 
 namespace jxl {
 
-struct BrunsliDecoderOptions {
-  bool fix_dc_staircase = false;
-  bool gaborish = false;
-};
-
 struct DecompressParams {
   // If true, checks at the end of decoding that all of the compressed data
   // was consumed by the decoder.
@@ -50,8 +45,6 @@ struct DecompressParams {
   // with respect to the full size of the image. By default, nothing less than
   // the full size is requested.
   size_t max_downsampling = 1;
-
-  BrunsliDecoderOptions brunsli;
 };
 
 }  // namespace jxl

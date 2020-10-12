@@ -67,8 +67,9 @@ output="$2"
 yuv="$(mktemp)"
 bin="$(mktemp)"
 
+to_clean=("$yuv" "$bin")
 cleanup() {
-  rm -- "$yuv" "$bin"
+  rm -- "${to_clean[@]}"
 }
 trap cleanup EXIT
 
@@ -86,13 +87,20 @@ run echo "Completed in $elapsed seconds"
 
 echo "$elapsed" > "${output%.bin}".time
 
+icc="${output%.*}.icc"
+if run convert "$input" "$icc"; then
+  to_clean+=("$icc")
+fi
+
 pack_program="$(cat <<'END'
   use File::Copy;
   use IO::Handle;
-  my ($width, $height, $bin, $output) = @ARGV;
+  my ($width, $height, $bin, $icc, $output) = @ARGV;
   open my $output_fh, '>:raw', $output;
   syswrite $output_fh, pack 'NN', $width, $height;
+  syswrite $output_fh, pack 'N', -s $icc;
+  copy $icc, $output_fh;
   copy $bin, $output_fh;
 END
 )"
-run perl -Mstrict -Mwarnings -Mautodie -e "$pack_program" -- "$width" "$height" "$bin" "$output"
+run perl -Mstrict -Mwarnings -Mautodie -e "$pack_program" -- "$width" "$height" "$bin" "$icc" "$output"

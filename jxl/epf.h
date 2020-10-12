@@ -22,6 +22,7 @@
 #include "jxl/base/data_parallel.h"
 #include "jxl/base/status.h"
 #include "jxl/dec_cache.h"
+#include "jxl/filters.h"
 
 namespace jxl {
 
@@ -38,12 +39,11 @@ static constexpr float kInvSigmaNum = -1.1715728752538099024f;
 // have at least 7 rows, while `storage2` should be at least as wide as the
 // output rect plus one block of padding on each side and should have at least 3
 // rows.
-void EdgePreservingFilter(const LoopFilter& lf, const Rect& in_rect,
-                          const Image3F& in, const Rect& sigma_rect,
-                          const ImageF& sigma, const Rect& out_rect,
-                          Image3F* JXL_RESTRICT out,
-                          Image3F* JXL_RESTRICT storage1,
-                          Image3F* JXL_RESTRICT storage2);
+void EdgePreservingFilter(const LoopFilter& lf,
+                          const FilterWeights& filter_weights,
+                          const Rect& in_rect, const Image3F& in,
+                          const Rect& sigma_rect, const Rect& out_rect,
+                          Image3F* JXL_RESTRICT out, FilterStorage* storage);
 
 // Same as EdgePreservingFilter, but only processes row `y` of
 // dec_state->decoded. If an output row was produced, it is returned in

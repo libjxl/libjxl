@@ -195,7 +195,7 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
 
   // Warn about incorrect usage of PBM/PGM/PGX/PPM - only the latter supports
   // color, but CodecFromExtension lumps them all together.
-  if (codec == Codec::kPNM) {
+  if (codec == Codec::kPNM && extension != ".pfm") {
     if (!io.Main().IsGray() && extension != ".ppm") {
       JXL_WARNING("For color images, the filename should end with .ppm.\n");
     } else if (io.Main().IsGray() && extension == ".ppm") {

@@ -872,13 +872,6 @@ cmd_arm_benchmark() {
     "--num_reps=3"
   )
 
-  # Flags used for cbrunsli encoder with .jpg inputs. These are lossless
-  # JPEG recompression of the whole file only.
-  local brunsli_benchmarks=(
-    "--num_reps=6 --quant=0"
-    "--num_reps=6 --quant=20"
-  )
-
   local images=(
     "third_party/testdata/imagecompression.info/flower_foveon.png"
   )
@@ -933,17 +926,12 @@ cmd_arm_benchmark() {
     local src_img_hash=$(sha1sum "${src_img}" | cut -f 1 -d ' ')
     local enc_binaries=("${BUILD_DIR}/tools/cjpegxl")
     local src_ext="${src_img##*.}"
-    if [[ "${src_ext}" == "jpg" ]]; then
-      enc_binaries+=("${BUILD_DIR}/tools/cbrunsli")
-    fi
     for enc_binary in "${enc_binaries[@]}"; do
       local enc_binary_base=$(basename "${enc_binary}")
 
       # Select the list of flags to use for the current encoder/image pair.
       local img_benchmarks
-      if [[ enc_binary_base == "cbrunsli" ]]; then
-        img_benchmarks=("${brunsli_benchmarks[@]}")
-      elif [[ "${src_ext}" == "jpg" ]]; then
+      if [[ "${src_ext}" == "jpg" ]]; then
         img_benchmarks=("${jxl_jpeg_benchmarks[@]}")
       else
         img_benchmarks=("${jxl_png_benchmarks[@]}")

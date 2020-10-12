@@ -36,35 +36,14 @@ struct LoopFilter : public Fields {
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
-  void GaborishWeights(float* JXL_RESTRICT gab_weights) const {
-    gab_weights[0] = 1;
-    gab_weights[1] = gab_x_weight1;
-    gab_weights[2] = gab_x_weight2;
-    gab_weights[3] = 1;
-    gab_weights[4] = gab_y_weight1;
-    gab_weights[5] = gab_y_weight2;
-    gab_weights[6] = 1;
-    gab_weights[7] = gab_b_weight1;
-    gab_weights[8] = gab_b_weight2;
-    // Normalize
-    for (size_t c = 0; c < 3; c++) {
-      const float mul =
-          1.0f / (gab_weights[3 * c] +
-                  4 * (gab_weights[3 * c + 1] + gab_weights[3 * c + 2]));
-      gab_weights[3 * c] *= mul;
-      gab_weights[3 * c + 1] *= mul;
-      gab_weights[3 * c + 2] *= mul;
-    }
-  }
-
-  size_t FirstStageRows() const { return gab ? 1 : epf ? 2 : 0; }
-  size_t PaddingRows() const { return (epf ? 3 : 0) + (gab ? 1 : 0); }
+  // TODO(deymo): Adjust padding based on the number of iterations.
+  size_t PaddingRows() const { return (epf_iters ? 3 : 0) + (gab ? 1 : 0); }
   size_t PaddingCols() const {
     // Having less than one full block here breaks handling of sigma in EPF.
     // If no loop filter is used, no padding is necessary - indeed, adding
     // padding breaks the output as the padding area will not be processed
     // separately.
-    return (epf || gab) ? kBlockDim : 0;
+    return (epf_iters || gab) ? kBlockDim : 0;
   }
 
   mutable bool all_default;
@@ -81,7 +60,11 @@ struct LoopFilter : public Fields {
   float gab_b_weight2;
 
   // --- Edge-preserving filter
-  bool epf;
+
+  // Number of EPF stages to apply. 0 means EPF disabled. 1 applies only the
+  // first stage, 2 applies both stages and 3 applies the first stage twice and
+  // the second stage once.
+  uint32_t epf_iters;
 
   bool epf_sharp_custom;
   enum { kEpfSharpEntries = 8 };

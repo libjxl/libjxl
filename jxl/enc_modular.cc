@@ -314,7 +314,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
   const size_t ysize = ib.ysize();
 
   int nb_chans = 3;
-  if (ib.IsGray()) nb_chans = 1;
+  if (ib.IsGray() && cparams.color_transform == ColorTransform::kNone) {
+    nb_chans = 1;
+  }
   if (!do_color) nb_chans = 0;
 
   if (ib.HasExtraChannels() && frame_header.IsDisplayed()) {
@@ -349,7 +351,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   if (do_color) {
     for (; c < 3; c++) {
-      if (ib.IsGray() &&
+      if (ib.IsGray() && cparams.color_transform == ColorTransform::kNone &&
           c != (cparams.color_transform == ColorTransform::kXYB ? 1 : 0))
         continue;
       int c_out = c;
@@ -379,7 +381,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
         }
       }
     }
-    if (ib.IsGray()) c = 1;
+    if (ib.IsGray() && cparams.color_transform == ColorTransform::kNone) c = 1;
   }
   if (ib.HasExtraChannels() && frame_header.IsDisplayed()) {
     for (size_t ec = 0; ec < ib.extra_channels().size(); ec++, c++) {

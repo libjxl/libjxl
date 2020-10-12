@@ -33,7 +33,6 @@
 #include <brunsli/jpeg_data_writer.h>
 
 #include "jxl/base/compiler_specific.h"
-#include "jxl/brunsli.h"
 #include "jxl/color_encoding.h"
 #include "jxl/color_management.h"
 #include "jxl/common.h"
@@ -185,6 +184,103 @@ void MyOutputMessage(j_common_ptr cinfo) {
 #endif
 }
 
+using ByteSpan = Span<const uint8_t>;
+bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
+  if (size < 3) {
+    return false;
+  }
+  size_t hi = data[1];
+  size_t lo = data[2];
+  size_t internal_size = (hi << 8u) | lo;
+  // Second byte of marker is not counted towards size.
+  if (internal_size != size - 1) {
+    return false;
+  }
+  // cut second marker byte and "length" from payload.
+  *payload = ByteSpan(data, size);
+  payload->remove_prefix(3);
+  return true;
+}
+
+constexpr uint8_t kApp2 = 0xE2;
+const uint8_t kIccProfileTag[] = {'I', 'C', 'C', '_', 'P', 'R',
+                                  'O', 'F', 'I', 'L', 'E', 0x00};
+Status ParseChunkedMarker(const brunsli::JPEGData& src, uint8_t marker_type,
+                          const ByteSpan& tag, PaddedBytes* output) {
+  output->clear();
+
+  std::vector<ByteSpan> chunks;
+  std::vector<bool> presence;
+  size_t expected_number_of_parts = 0;
+  bool is_first_chunk = true;
+  for (const auto& marker : src.app_data) {
+    if (marker.empty() || marker[0] != marker_type) {
+      continue;
+    }
+    ByteSpan payload;
+    if (!GetMarkerPayload(marker.data(), marker.size(), &payload)) {
+      // Something is wrong with this marker; does not care.
+      continue;
+    }
+    if ((payload.size() < tag.size()) ||
+        memcmp(payload.data(), tag.data(), tag.size()) != 0) {
+      continue;
+    }
+    payload.remove_prefix(tag.size());
+    if (payload.size() < 2) {
+      return JXL_FAILURE("Chunk is too small.");
+    }
+    uint8_t index = payload[0];
+    uint8_t total = payload[1];
+    payload.remove_prefix(2);
+
+    JXL_RETURN_IF_ERROR(total != 0);
+    if (is_first_chunk) {
+      is_first_chunk = false;
+      expected_number_of_parts = total;
+      // 1-based indices; 0-th element is added for convenience.
+      chunks.resize(total + 1);
+      presence.resize(total + 1);
+    } else {
+      JXL_RETURN_IF_ERROR(expected_number_of_parts == total);
+    }
+
+    if (index == 0 || index > total) {
+      return JXL_FAILURE("Invalid chunk index.");
+    }
+
+    if (presence[index]) {
+      return JXL_FAILURE("Duplicate chunk.");
+    }
+    presence[index] = true;
+    chunks[index] = payload;
+  }
+
+  for (size_t i = 0; i < expected_number_of_parts; ++i) {
+    // 0-th element is not used.
+    size_t index = i + 1;
+    if (!presence[index]) {
+      return JXL_FAILURE("Missing chunk.");
+    }
+    output->append(chunks[index]);
+  }
+
+  return true;
+}
+void SetColorEncodingFromJpegData(const brunsli::JPEGData& jpg,
+                                  ColorEncoding* color_encoding) {
+  PaddedBytes icc_profile;
+  if (!ParseChunkedMarker(jpg, kApp2, ByteSpan(kIccProfileTag), &icc_profile)) {
+    JXL_WARNING("ReJPEG: corrupted ICC profile\n");
+    icc_profile.clear();
+  }
+
+  if (!color_encoding->SetICC(std::move(icc_profile))) {
+    bool is_gray = (jpg.components.size() == 1);
+    *color_encoding = ColorEncoding::SRGB(is_gray);
+  }
+}
+
 }  // namespace
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
@@ -248,87 +344,100 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   std::unique_ptr<JSAMPLE[]> row;
   ImageBundle bundle(&io->metadata);
 
-  jpeg_decompress_struct cinfo;
+  const auto try_catch_block = [&]() -> bool {
+    jpeg_decompress_struct cinfo;
 #ifdef MEMORY_SANITIZER
-  // cinfo is initialized by libjpeg, which we are not instrumenting with
-  // msan, therefore we need to initialize cinfo here.
-  memset(&cinfo, 0, sizeof(cinfo));
+    // cinfo is initialized by libjpeg, which we are not instrumenting with
+    // msan, therefore we need to initialize cinfo here.
+    memset(&cinfo, 0, sizeof(cinfo));
 #endif
-  // Setup error handling in jpeg library so we can deal with broken jpegs in
-  // the fuzzer.
-  jpeg_error_mgr jerr;
-  jmp_buf env;
-  cinfo.err = jpeg_std_error(&jerr);
-  jerr.error_exit = &MyErrorExit;
-  jerr.output_message = &MyOutputMessage;
-  if (setjmp(env)) {
-    return false;
-  }
-  cinfo.client_data = static_cast<void*>(&env);
+    // Setup error handling in jpeg library so we can deal with broken jpegs in
+    // the fuzzer.
+    jpeg_error_mgr jerr;
+    jmp_buf env;
+    cinfo.err = jpeg_std_error(&jerr);
+    jerr.error_exit = &MyErrorExit;
+    jerr.output_message = &MyOutputMessage;
+    if (setjmp(env)) {
+      return false;
+    }
+    cinfo.client_data = static_cast<void*>(&env);
 
-  jpeg_create_decompress(&cinfo);
-  jpeg_mem_src(&cinfo, reinterpret_cast<const unsigned char*>(bytes.data()),
-               bytes.size());
-  jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
-  jpeg_read_header(&cinfo, TRUE);
-  if (ReadICCProfile(&cinfo, &icc)) {
-    if (!color_encoding.SetICC(std::move(icc))) {
+    jpeg_create_decompress(&cinfo);
+    jpeg_mem_src(&cinfo, reinterpret_cast<const unsigned char*>(bytes.data()),
+                 bytes.size());
+    jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
+    jpeg_read_header(&cinfo, TRUE);
+    if (ReadICCProfile(&cinfo, &icc)) {
+      if (!color_encoding.SetICC(std::move(icc))) {
+        jpeg_abort_decompress(&cinfo);
+        jpeg_destroy_decompress(&cinfo);
+        return JXL_FAILURE("read an invalid ICC profile");
+      }
+    } else {
+      color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
+    }
+    io->metadata.SetUintSamples(BITS_IN_JSAMPLE);
+    io->metadata.color_encoding = color_encoding;
+    io->enc_size = bytes.size();
+    int nbcomp = cinfo.num_components;
+    if (nbcomp != 1 && nbcomp != 3) {
       jpeg_abort_decompress(&cinfo);
       jpeg_destroy_decompress(&cinfo);
-      return JXL_FAILURE("read an invalid ICC profile");
+      return JXL_FAILURE("unsupported number of components (%d) in JPEG",
+                         cinfo.output_components);
     }
-  } else {
-    color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
-  }
-  io->metadata.SetUintSamples(BITS_IN_JSAMPLE);
-  io->metadata.color_encoding = color_encoding;
-  io->enc_size = bytes.size();
-  int nbcomp = cinfo.num_components;
-  if (nbcomp != 1 && nbcomp != 3) {
-    jpeg_abort_decompress(&cinfo);
-    jpeg_destroy_decompress(&cinfo);
-    return JXL_FAILURE("unsupported number of components (%d) in JPEG",
-                       cinfo.output_components);
-  }
-  (void)io->dec_hints.Foreach(
-      [](const std::string& key, const std::string& /*value*/) {
-        JXL_WARNING("JPEG decoder ignoring %s hint", key.c_str());
-        return true;
-      });
+    (void)io->dec_hints.Foreach(
+        [](const std::string& key, const std::string& /*value*/) {
+          JXL_WARNING("JPEG decoder ignoring %s hint", key.c_str());
+          return true;
+        });
 
-  jpeg_start_decompress(&cinfo);
-  JXL_ASSERT(cinfo.output_components == nbcomp);
-  image = Image3F(cinfo.image_width, cinfo.image_height);
-  row.reset(new JSAMPLE[cinfo.output_components * cinfo.image_width]);
-  for (size_t y = 0; y < image.ysize(); ++y) {
-    JSAMPROW rows[] = {row.get()};
-    jpeg_read_scanlines(&cinfo, rows, 1);
+    jpeg_start_decompress(&cinfo);
+    if (!io->VerifyDimensions(cinfo.image_width, cinfo.image_height)) {
+      jpeg_abort_decompress(&cinfo);
+      jpeg_destroy_decompress(&cinfo);
+      return JXL_FAILURE("image too big");
+    }
+    JXL_ASSERT(cinfo.output_components == nbcomp);
+    image = Image3F(cinfo.image_width, cinfo.image_height);
+    row.reset(new JSAMPLE[cinfo.output_components * cinfo.image_width]);
+    for (size_t y = 0; y < image.ysize(); ++y) {
+      JSAMPROW rows[] = {row.get()};
+      jpeg_read_scanlines(&cinfo, rows, 1);
 #ifdef MEMORY_SANITIZER
-    __msan_unpoison(row.get(), sizeof(JSAMPLE) * cinfo.output_components *
-                                   cinfo.image_width);
+      __msan_unpoison(row.get(), sizeof(JSAMPLE) * cinfo.output_components *
+                                     cinfo.image_width);
 #endif
-    float* const JXL_RESTRICT output_row[] = {
-        image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
-    if (cinfo.output_components == 1) {
-      for (size_t x = 0; x < image.xsize(); ++x) {
-        output_row[0][x] = output_row[1][x] = output_row[2][x] =
-            row[x] * (1.f / kJPEGSampleMultiplier);
-      }
-    } else {  // 3 components
-      for (size_t x = 0; x < image.xsize(); ++x) {
-        for (size_t c = 0; c < 3; ++c) {
-          output_row[c][x] = row[3 * x + c] * (1.f / kJPEGSampleMultiplier);
+      float* const JXL_RESTRICT output_row[] = {
+          image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
+      if (cinfo.output_components == 1) {
+        for (size_t x = 0; x < image.xsize(); ++x) {
+          output_row[0][x] = output_row[1][x] = output_row[2][x] =
+              row[x] * (1.f / kJPEGSampleMultiplier);
+        }
+      } else {  // 3 components
+        for (size_t x = 0; x < image.xsize(); ++x) {
+          for (size_t c = 0; c < 3; ++c) {
+            output_row[c][x] = row[3 * x + c] * (1.f / kJPEGSampleMultiplier);
+          }
         }
       }
     }
-  }
-  io->SetFromImage(std::move(image), color_encoding);
-  JXL_RETURN_IF_ERROR(Map255ToTargetNits(io, pool));
+    io->SetFromImage(std::move(image), color_encoding);
+    if (!Map255ToTargetNits(io, pool)) {
+      jpeg_abort_decompress(&cinfo);
+      jpeg_destroy_decompress(&cinfo);
+      return JXL_FAILURE("failed to map 255 to tatget nits");
+    }
 
-  jpeg_finish_decompress(&cinfo);
-  jpeg_destroy_decompress(&cinfo);
-  io->dec_pixels = io->xsize() * io->ysize();
-  return true;
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    io->dec_pixels = io->xsize() * io->ysize();
+    return true;
+  };
+
+  return try_catch_block();
 }
 
 Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,

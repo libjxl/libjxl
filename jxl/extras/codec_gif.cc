@@ -94,12 +94,22 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
 
 #ifdef MEMORY_SANITIZER
   __msan_unpoison(gif.get(), sizeof(*gif));
-  __msan_unpoison(gif->SColorMap, sizeof(*gif->SColorMap));
-  __msan_unpoison(gif->SColorMap->Colors,
-                  sizeof(*gif->SColorMap->Colors) * gif->SColorMap->ColorCount);
+  if (gif->SColorMap) {
+    __msan_unpoison(gif->SColorMap, sizeof(*gif->SColorMap));
+    __msan_unpoison(gif->SColorMap->Colors, sizeof(*gif->SColorMap->Colors) *
+                                                gif->SColorMap->ColorCount);
+  }
   __msan_unpoison(gif->SavedImages,
                   sizeof(*gif->SavedImages) * gif->ImageCount);
 #endif
+
+  if (!gif->SColorMap) {
+    for (int i = 0; i < gif->ImageCount; ++i) {
+      if (!gif->SavedImages[i].ImageDesc.ColorMap) {
+        return JXL_FAILURE("Missing GIF color map");
+      }
+    }
+  }
 
   if (gif->ImageCount > 1) {
     io->metadata.m2.have_animation = true;
@@ -180,12 +190,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     if (!image_rect.IsInside(canvas)) {
       return JXL_FAILURE("GIF frame extends outside of the canvas");
     }
-    const ColorMapObject* const color_map = image.ImageDesc.ColorMap != nullptr
-                                                ? image.ImageDesc.ColorMap
-                                                : gif->SColorMap;
-    if (color_map == nullptr) {
-      return JXL_FAILURE("Missing GIF color map");
-    }
+    const ColorMapObject* const color_map =
+        image.ImageDesc.ColorMap ? image.ImageDesc.ColorMap : gif->SColorMap;
+    JXL_CHECK(color_map);
 #ifdef MEMORY_SANITIZER
     __msan_unpoison(color_map, sizeof(*color_map));
     __msan_unpoison(color_map->Colors,

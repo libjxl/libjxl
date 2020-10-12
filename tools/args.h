@@ -27,6 +27,7 @@
 #include "jxl/base/status.h"
 #include "jxl/codec_in_out.h"  // DecoderHints
 #include "jxl/gaborish.h"
+#include "jxl/modular/options.h"
 
 namespace jpegxl {
 namespace tools {
@@ -120,14 +121,18 @@ static inline bool ParseAndAppendKeyValue(const char* arg,
 }
 
 static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
-  for (; *arg; arg++) {
-    if (*arg >= '0' && *arg <= '9') {
-      *out = static_cast<jxl::Predictor>(*arg - '0');
-    } else {
-      fprintf(stderr, "Invalid predictor value '%c', must be a digit.", *arg);
-      return JXL_FAILURE("Args");
-    }
+  char* end;
+  size_t p = static_cast<size_t>(strtoull(arg, &end, 0));
+  if (end[0] != '\0') {
+    fprintf(stderr, "Invalid predictor: %s.\n", arg);
+    return JXL_FAILURE("Args");
   }
+  if (p >= jxl::kNumModularPredictors) {
+    fprintf(stderr, "Invalid predictor value %zu, must be less than %zu.", p,
+            jxl::kNumModularPredictors);
+    return JXL_FAILURE("Args");
+  }
+  *out = static_cast<jxl::Predictor>(p);
   return true;
 }
 

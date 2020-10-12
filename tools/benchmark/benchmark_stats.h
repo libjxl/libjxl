@@ -46,8 +46,8 @@ struct JxlStats {
 // size_t or double should be used.
 struct ColumnValue {
   std::string s;  // for TYPE_STRING
-  size_t i;  // for TYPE_SIZE and TYPE_COUNT
-  double f;  // for TYPE_POSITIVE_FLOAT
+  size_t i;       // for TYPE_SIZE and TYPE_COUNT
+  double f;       // for TYPE_POSITIVE_FLOAT
 };
 
 struct BenchmarkStats {
@@ -76,6 +76,7 @@ struct BenchmarkStats {
   std::vector<float> distances;
   size_t total_errors = 0;
   JxlStats jxl_stats;
+  std::vector<float> extra_metrics;
 };
 
 std::string PrintHeader();

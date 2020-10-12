@@ -53,6 +53,7 @@
 #include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
+#include "tools/benchmark/benchmark_utils.h"
 #include "tools/butteraugli_pnorm.h"
 #include "tools/codec_config.h"
 #include "tools/speed_stats.h"
@@ -125,6 +126,7 @@ static bool HasValidAlpha(const CodecInOut& io) {
 }
 
 void DoCompress(const std::string& filename, const CodecInOut& io,
+                const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPool* inner_pool,
                 PaddedBytes* compressed, BenchmarkStats* s) {
   PROFILER_FUNC;
@@ -367,6 +369,46 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       }
     }
   }
+  if (!extra_metrics_commands.empty()) {
+    CodecInOut in_copy;
+    in_copy.SetFromImage(std::move(*io.Main().Copy().MutableColor()),
+                         io.Main().c_current());
+    TemporaryFile tmp_in("original", "pfm");
+    TemporaryFile tmp_out("decoded", "pfm");
+    TemporaryFile tmp_res("result", "txt");
+    std::string tmp_in_fn, tmp_out_fn, tmp_res_fn;
+    JXL_CHECK(tmp_in.GetFileName(&tmp_in_fn));
+    JXL_CHECK(tmp_out.GetFileName(&tmp_out_fn));
+    JXL_CHECK(tmp_res.GetFileName(&tmp_res_fn));
+
+    // Convert everything to non-linear SRGB - this is what most metrics expect.
+    const ColorEncoding& c_desired = ColorEncoding::SRGB(io.Main().IsGray());
+    JXL_CHECK(EncodeToFile(io, c_desired, io.metadata.bit_depth.bits_per_sample,
+                           tmp_in_fn));
+    JXL_CHECK(EncodeToFile(io2, c_desired,
+                           io.metadata.bit_depth.bits_per_sample, tmp_out_fn));
+    for (size_t i = 0; i < extra_metrics_commands.size(); i++) {
+      float res = nanf("");
+      bool error = false;
+      if (RunCommand(extra_metrics_commands[i],
+                     {tmp_in_fn, tmp_out_fn, tmp_res_fn})) {
+        FILE* f = fopen(tmp_res_fn.c_str(), "r");
+        if (fscanf(f, "%f", &res) != 1) {
+          error = true;
+        }
+        fclose(f);
+      } else {
+        error = true;
+      }
+      if (error) {
+        fprintf(stderr,
+                "WARNING: Computation of metric with command %s failed\n",
+                extra_metrics_commands[i].c_str());
+      }
+      s->extra_metrics.push_back(res);
+    }
+  }
+
   if (Args()->show_progress) {
     fprintf(stderr, ".");
     fflush(stderr);
@@ -529,9 +571,11 @@ void WriteHtmlReport(const std::string& codec_desc,
 // soon as possible when multithreaded tasks are done.
 struct StatPrinter {
   StatPrinter(const std::vector<std::string>& methods,
+              const std::vector<std::string>& extra_metrics_names,
               const std::vector<std::string>& fnames,
               const std::vector<Task>& tasks)
       : methods_(&methods),
+        extra_metrics_names_(&extra_metrics_names),
         fnames_(&fnames),
         tasks_(&tasks),
         tasks_done_(0),
@@ -609,10 +653,10 @@ struct StatPrinter {
 
     const double rmse =
         std::sqrt(t.stats.distance_2 / t.stats.total_input_pixels);
-    const double psnr = t.stats.total_compressed_size == 0 ? 0.0
-                        : (t.stats.distance_2 == 0)
-                            ? 99.99
-                            : (20 * std::log10(255 / rmse));
+    const double psnr =
+        t.stats.total_compressed_size == 0
+            ? 0.0
+            : (t.stats.distance_2 == 0) ? 99.99 : (20 * std::log10(255 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =
@@ -620,12 +664,16 @@ struct StatPrinter {
     const double dec_mps =
         t.stats.total_input_pixels / (1000000.0 * t.stats.total_time_decode);
     if (Args()->print_details_csv) {
-      printf("%s,%s,%zd,%zd,%zd,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f\n",
+      printf("%s,%s,%zd,%zd,%zd,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
              (*methods_)[t.idx_method].c_str(),
              FileBaseName((*fnames_)[t.idx_image]).c_str(),
              t.stats.total_errors, t.stats.total_compressed_size, pixels,
              enc_mps, dec_mps, comp_bpp, t.stats.max_distance, psnr, p_norm,
              bpp_p_norm, adj_comp_bpp);
+      for (float m : t.stats.extra_metrics) {
+        printf(",%.8f", m);
+      }
+      printf("\n");
     } else {
       printf("%s", (*methods_)[t.idx_method].c_str());
       for (size_t i = (*methods_)[t.idx_method].size(); i <= max_method_width_;
@@ -640,10 +688,15 @@ struct StatPrinter {
       printf(
           "error:%zd    size:%8zd    pixels:%9zd    enc_speed:%8.8f"
           "    dec_speed:%8.8f    bpp:%10.8f    dist:%10.8f"
-          "    psnr:%10.8f    p:%10.8f    bppp:%10.8f    qabpp:%10.8f\n",
+          "    psnr:%10.8f    p:%10.8f    bppp:%10.8f    qabpp:%10.8f ",
           t.stats.total_errors, t.stats.total_compressed_size, pixels, enc_mps,
           dec_mps, comp_bpp, t.stats.max_distance, psnr, p_norm, bpp_p_norm,
           adj_comp_bpp);
+      for (size_t i = 0; i < t.stats.extra_metrics.size(); i++) {
+        printf(" %s:%.8f", (*extra_metrics_names_)[i].c_str(),
+               t.stats.extra_metrics[i]);
+      }
+      printf("\n");
     }
     fflush(stdout);
   }
@@ -700,6 +753,7 @@ struct StatPrinter {
   }
 
   const std::vector<std::string>* methods_;
+  const std::vector<std::string>* extra_metrics_names_;
   const std::vector<std::string>* fnames_;
   const std::vector<Task>* tasks_;
 
@@ -730,6 +784,8 @@ class Benchmark {
       PROFILER_FUNC;
 
       const StringVec methods = GetMethods();
+      const StringVec extra_metrics_names = GetExtraMetricsNames();
+      const StringVec extra_metrics_commands = GetExtraMetricsCommands();
       const StringVec fnames = GetFilenames();
       bool all_color_aware;
       bool jpeg_transcoding_requested;
@@ -744,8 +800,8 @@ class Benchmark {
       const std::vector<CodecInOut> loaded_images = LoadImages(
           fnames, all_color_aware, jpeg_transcoding_requested, pool.get());
 
-      if (RunTasks(methods, fnames, loaded_images, pool.get(), inner_pools,
-                   &tasks) != 0) {
+      if (RunTasks(methods, extra_metrics_names, extra_metrics_commands, fnames,
+                   loaded_images, pool.get(), inner_pools, &tasks) != 0) {
         ret = EXIT_FAILURE;
         if (!Args()->silent_errors) {
           fprintf(stderr, "There were error(s) in the benchmark.\n");
@@ -862,6 +918,34 @@ class Benchmark {
       }
     }
     return methods;
+  }
+
+  static StringVec GetExtraMetricsNames() {
+    StringVec metrics = SplitString(Args()->extra_metrics, ',');
+    for (auto it = metrics.begin(); it != metrics.end();) {
+      if (it->empty()) {
+        it = metrics.erase(it);
+      } else {
+        *it = SplitString(*it, ':')[0];
+        ++it;
+      }
+    }
+    return metrics;
+  }
+
+  static StringVec GetExtraMetricsCommands() {
+    StringVec metrics = SplitString(Args()->extra_metrics, ',');
+    for (auto it = metrics.begin(); it != metrics.end();) {
+      if (it->empty()) {
+        it = metrics.erase(it);
+      } else {
+        auto s = SplitString(*it, ':');
+        JXL_CHECK(s.size() == 2);
+        *it = s[1];
+        ++it;
+      }
+    }
+    return metrics;
   }
 
   static StringVec SampleFromInput(const StringVec& fnames,
@@ -1004,17 +1088,22 @@ class Benchmark {
 
   // Return the total number of errors.
   static size_t RunTasks(
-      const StringVec& methods, const StringVec& fnames,
+      const StringVec& methods, const StringVec& extra_metrics_names,
+      const StringVec& extra_metrics_commands, const StringVec& fnames,
       const std::vector<CodecInOut>& loaded_images, ThreadPoolInternal* pool,
       const std::vector<std::unique_ptr<ThreadPoolInternal>>& inner_pools,
       std::vector<Task>* tasks) {
     PROFILER_FUNC;
-    StatPrinter printer(methods, fnames, *tasks);
+    StatPrinter printer(methods, extra_metrics_names, fnames, *tasks);
     if (Args()->print_details_csv) {
       // Print CSV header
       printf(
           "method,image,error,size,pixels,enc_speed,dec_speed,"
-          "bpp,dist,psnr,p,bppp,qabpp\n");
+          "bpp,dist,psnr,p,bppp,qabpp");
+      for (const std::string& s : extra_metrics_names) {
+        printf(",%s", s.c_str());
+      }
+      printf("\n");
     }
 
     std::vector<uint64_t> errors_thread;
@@ -1030,8 +1119,9 @@ class Benchmark {
           const CodecInOut& image = loaded_images[t.idx_image];
           t.image = &image;
           PaddedBytes compressed;
-          DoCompress(fnames[t.idx_image], image, t.codec.get(),
-                     inner_pools[thread].get(), &compressed, &t.stats);
+          DoCompress(fnames[t.idx_image], image, extra_metrics_commands,
+                     t.codec.get(), inner_pools[thread].get(), &compressed,
+                     &t.stats);
           printer.TaskDone(i, t);
           errors_thread[8 * thread] += t.stats.total_errors;
         },

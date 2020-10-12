@@ -21,10 +21,10 @@
 namespace jpegxl {
 namespace tools {
 
-jxl::Status RunEPF(float distance, int sharpness_parameter, jxl::CodecInOut* io,
-                   jxl::ThreadPool* pool);
+jxl::Status RunEPF(uint32_t epf_iters, float distance, int sharpness_parameter,
+                   jxl::CodecInOut* io, jxl::ThreadPool* pool);
 
-}
+}  // namespace tools
 }  // namespace jpegxl
 
 #endif  // TOOLS_EPF_H_

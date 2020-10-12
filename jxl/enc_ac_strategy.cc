@@ -704,12 +704,12 @@ void FindBestAcStrategy(const Image3F& src,
 
   // Maximum delta that every strategy type is allowed to have in the area
   // it covers. Ignored for 8x8 transforms.
-  const float kMaxDelta = 0.10f * sqrt(butteraugli_target);  // OPTIMIZE
-  const float kFlat = 5.0f * sqrt(butteraugli_target);       // OPTIMIZE
+  const float kMaxDelta = 0.12f * sqrt(butteraugli_target);  // OPTIMIZE
+  const float kFlat = 3.2f * sqrt(butteraugli_target);       // OPTIMIZE
 
   // Scale of channels when computing delta.
   const float kDeltaScale[3] = {
-      9.4174165405614652,
+      3.0,
       1.0,
       0.2,
   };
@@ -776,39 +776,6 @@ void FindBestAcStrategy(const Image3F& src,
                 const auto v =
                     Load(d, &config.Pixel(c, dx * 8 + x, dy * 8 + y));
                 Store(v, d, &pixels[c][y * 8 + x]);
-              }
-            }
-          }
-          for (auto& pixel : pixels) {
-            // Sums of rows
-            float side[8];
-            for (size_t y = 0; y < 8; y++) {
-              auto sum = Load(d, &pixel[y * 8]);
-              for (size_t x = N; x < 8; x += N) {
-                sum += Load(d, &pixel[y * 8 + x]);
-              }
-              side[y] = GetLane(SumOfLanes(sum));
-            }
-
-            // Sum of columns (one per lane).
-            HWY_ALIGN float top[8];
-            for (size_t x = 0; x < 8; x += N) {
-              auto sums_of_columns = Load(d, &pixel[x]);
-              for (size_t y = 1; y < 8; y++) {
-                sums_of_columns += Load(d, &pixel[y * 8 + x]);
-              }
-              Store(sums_of_columns, d, top + x);
-            }
-
-            // Subtract fraction of row+col sums from each pixel
-            const auto mul = Set(d, 1.0f / 8);
-            for (size_t y = 0; y < 8; y++) {
-              const auto side_y = Set(d, side[y]) * mul;
-              for (size_t x = 0; x < 8; x += N) {
-                const auto top_x = Load(d, &top[x]);
-                auto v = Load(d, &pixel[y * 8 + x]);
-                v -= MulAdd(mul, top_x, side_y);
-                Store(v, d, &pixel[y * 8 + x]);
               }
             }
           }

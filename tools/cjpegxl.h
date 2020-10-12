@@ -19,27 +19,20 @@
 
 #include "jxl/base/override.h"
 #include "jxl/base/status.h"
-#include "tools/cbrunsli.h"
 #include "tools/cjxl.h"
 #include "tools/cmdline.h"
 
 namespace jpegxl {
 namespace tools {
 
-enum class CompressionMode {
-  kBrunsli,
-  kJpegXL,
-};
-
 struct CompressArgs {
   // Add all the command line options to the CommandLineParser. Note that the
   // options are tied to the instance that this was called on.
-  void AddCommandLineOptions(CommandLineParser* cmdline, CompressionMode mode);
+  void AddCommandLineOptions(CommandLineParser* cmdline);
 
   // Validate the passed arguments, checking whether all passed options are
   // compatible. Returns whether the validation was successful.
-  jxl::Status ValidateArgs(const CommandLineParser& cmdline,
-                           CompressionMode mode);
+  jxl::Status ValidateArgs(const CommandLineParser& cmdline);
 
   // Common flags.
   // TODO(deymo): Move more flags here.
@@ -53,10 +46,9 @@ struct CompressArgs {
 
   // Algorithm-specific flags.
   JxlCompressArgs cjxl_args;
-  BrunsliCompressArgs cbrunsli_args;
 };
 
-int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]);
+int CompressJpegXlMain(int argc, const char* argv[]);
 
 }  // namespace tools
 }  // namespace jpegxl

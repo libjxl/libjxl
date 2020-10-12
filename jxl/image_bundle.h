@@ -253,6 +253,10 @@ struct ImageMetadata2 : public Fields {
   // fields do not participate. Use to parse only basic image information
   // excluding the final larger or variable sized data.
   bool nonserialized_only_parse_basic_info = false;
+
+  // Must be set before calling VisitFields. Must equal xyb_encoded of
+  // ImageMetadata, should be set by ImageMetadata during VisitFields.
+  bool nonserialized_xyb_encoded = false;
 };
 
 // Properties of the original image bundle. This enables Encode(Decode()) to

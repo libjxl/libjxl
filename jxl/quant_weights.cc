@@ -973,7 +973,7 @@ struct DequantMatricesLibraryDef {
                                    V(-0.33699592683512467),
                                    V(-0.30180866526242109),
                                    V(-0.27321683125358037),
-                                },
+                               },
                                {
                                    V(0.9 * 4992.2486445538634),
                                    V(-1.2),
@@ -1009,7 +1009,7 @@ struct DequantMatricesLibraryDef {
                                    V(-0.33699592683512467),
                                    V(-0.30180866526242109),
                                    V(-0.27321683125358037),
-                                },
+                               },
                                {
                                    V(0.65 * 4492.2486445538634),
                                    V(-1.2),
@@ -1081,7 +1081,21 @@ const QuantEncoding* DequantMatrices::Library() {
 Status DequantMatrices::Compute() {
   size_t pos = 0;
 
-  const QuantEncoding* library = Library();
+  struct DefaultMatrices {
+    DefaultMatrices() {
+      const QuantEncoding* library = Library();
+      std::vector<size_t> offsets(kNum * 3);
+      size_t pos = 0;
+      for (size_t i = 0; i < kNum; i++) {
+        JXL_CHECK(ComputeQuantTable(library[i], table, offsets.data(), i,
+                                    QuantTable(i), &pos));
+      }
+      JXL_CHECK(pos == kTotalTableSize);
+    }
+    float table[kTotalTableSize];
+  };
+
+  static const DefaultMatrices default_matrices;
 
   // Avoid changing encodings_.
   auto encodings = encodings_;
@@ -1089,15 +1103,20 @@ Status DequantMatrices::Compute() {
   std::vector<size_t> offsets(kNum * 3);
 
   for (size_t table = 0; table < encodings.size(); table++) {
-    if (encodings[table].mode == QuantEncoding::kQuantModeLibrary) {
-      encodings[table] = library[encodings[table].predefined *
-                                     AcStrategy::kNumValidStrategies +
-                                 table % kNum];
-    }
     size_t prev_pos = pos;
-    JXL_RETURN_IF_ERROR(ComputeQuantTable(encodings[table], table_.get(),
-                                          offsets.data(), table,
-                                          QuantTable(table % kNum), &pos));
+    if (encodings[table].mode == QuantEncoding::kQuantModeLibrary) {
+      size_t num = required_size_[table] * kDCTBlockSize;
+      for (size_t i = 0; i < 3; i++) {
+        offsets[3 * table + i] = pos + i * num;
+      }
+      memcpy(table_.get() + prev_pos, default_matrices.table + prev_pos,
+             num * sizeof(float) * 3);
+      pos += num * 3;
+    } else {
+      JXL_RETURN_IF_ERROR(ComputeQuantTable(encodings[table], table_.get(),
+                                            offsets.data(), table,
+                                            QuantTable(table % kNum), &pos));
+    }
     for (size_t i = prev_pos; i < pos; i++) {
       InvTable()[i] = 1.0f / table_[i];
     }

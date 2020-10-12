@@ -167,7 +167,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
 
-  Image3F predictor_img(channel.w, channel.h);
+  Image3F predictor_img;
+  if (want_debug) predictor_img = Image3F(channel.w, channel.h);
 
   JXL_DEBUG_V(6,
               "Encoding %zux%zu channel %d, "
@@ -290,6 +291,10 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
              (tree[0].multiplier & (tree[0].multiplier - 1)) == 0 &&
              tree[0].predictor_offset == 0) {
     // multiplier is a power of 2.
+    for (size_t c = 0; c < 3; c++) {
+      FillImage(static_cast<float>(PredictorColor(tree[0].predictor)[c]),
+                const_cast<ImageF *>(&predictor_img.Plane(c)));
+    }
     uint32_t mul_shift = FloorLog2Nonzero((uint32_t)tree[0].multiplier);
     const intptr_t onerow = channel.plane.PixelsPerRow();
     for (size_t y = 0; y < channel.h; y++) {
@@ -304,6 +309,34 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       }
     }
 
+  } else if (!use_wp) {
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    Channel references(properties.size() - kNumNonrefProperties, channel.w);
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT p = channel.Row(y);
+      PrecomputeReferences(channel, y, image, chan, &references);
+      float *pred_img_row[3];
+      if (want_debug) {
+        for (size_t c = 0; c < 3; c++) {
+          pred_img_row[c] = predictor_img.PlaneRow(c, y);
+        }
+      }
+      InitPropsRow(&properties, static_props, y);
+      for (size_t x = 0; x < channel.w; x++) {
+        PredictionResult res =
+            PredictTreeNoWP(&properties, channel.w, p + x, onerow, x, y,
+                            tree_lookup, references);
+        if (want_debug) {
+          for (size_t i = 0; i < 3; i++) {
+            pred_img_row[i][x] = PredictorColor(res.predictor)[i];
+          }
+        }
+        pixel_type_w residual = p[x] - res.guess;
+        JXL_ASSERT(residual % res.multiplier == 0);
+        tokens->emplace_back(res.context,
+                             PackSigned(residual / res.multiplier));
+      }
+    }
   } else {
     const intptr_t onerow = channel.plane.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
@@ -311,16 +344,21 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
       PrecomputeReferences(channel, y, image, chan, &references);
-      float *pred_img_row[3] = {predictor_img.PlaneRow(0, y),
-                                predictor_img.PlaneRow(1, y),
-                                predictor_img.PlaneRow(2, y)};
+      float *pred_img_row[3];
+      if (want_debug) {
+        for (size_t c = 0; c < 3; c++) {
+          pred_img_row[c] = predictor_img.PlaneRow(c, y);
+        }
+      }
       InitPropsRow(&properties, static_props, y);
       for (size_t x = 0; x < channel.w; x++) {
         PredictionResult res =
             PredictTreeWP(&properties, channel.w, p + x, onerow, x, y,
                           tree_lookup, references, &wp_state);
-        for (size_t i = 0; i < 3; i++) {
-          pred_img_row[i][x] = PredictorColor(res.predictor)[i];
+        if (want_debug) {
+          for (size_t i = 0; i < 3; i++) {
+            pred_img_row[i][x] = PredictorColor(res.predictor)[i];
+          }
         }
         pixel_type_w residual = p[x] - res.guess;
         JXL_ASSERT(residual % res.multiplier == 0);

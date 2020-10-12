@@ -157,39 +157,44 @@ double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2) {
 
   JXL_CHECK(SameSize(*srgb1, *srgb2));
 
-  const HWY_FULL(float) d;
-  const size_t N = Lanes(d);
-  HWY_ALIGN float sum_total[MaxLanes(d)] = {0.0f};
-
-  double result = 0;
-  // Weighted PSNR as in JPEG-XL: chroma counts 1/8 (they compute on YCbCr).
-  // Avoid squaring the weight - 1/64 is too extreme.
-  const float weights[3] = {1.0f / 8, 6.0f / 8, 1.0f / 8};
-  for (size_t c = 0; c < 3; ++c) {
-    const auto weight = Set(d, weights[c]);
-
-    for (size_t y = 0; y < srgb1->ysize(); ++y) {
-      const float* JXL_RESTRICT row1 = srgb1->ConstPlaneRow(c, y);
-      const float* JXL_RESTRICT row2 = srgb2->ConstPlaneRow(c, y);
-
-      auto sums = Zero(d);
-      size_t x = 0;
-      for (; x + N <= srgb1->xsize(); x += N) {
-        const auto diff = Load(d, row1 + x) - Load(d, row2 + x);
-        sums += diff * diff * weight;
+  // TODO(veluca): SIMD.
+  float yuvmatrix[3][3] = {{0.299, 0.587, 0.114},
+                           {-0.14713, -0.28886, 0.436},
+                           {0.615, -0.51499, -0.10001}};
+  double sum_of_squares[3] = {};
+  for (size_t y = 0; y < srgb1->ysize(); ++y) {
+    const float* JXL_RESTRICT row1[3];
+    const float* JXL_RESTRICT row2[3];
+    for (size_t j = 0; j < 3; j++) {
+      row1[j] = srgb1->ConstPlaneRow(j, y);
+      row2[j] = srgb2->ConstPlaneRow(j, y);
+    }
+    for (size_t x = 0; x < srgb1->xsize(); ++x) {
+      float cdiff[3] = {};
+      // YUV conversion is linear, so we can run it on the difference.
+      for (size_t j = 0; j < 3; j++) {
+        cdiff[j] = row1[j][x] - row2[j][x];
       }
-      // Workaround for clang-7 asan crash if sums is hoisted outside loops
-      // (unaligned spill).
-      Store(sums + Load(d, sum_total), d, sum_total);
-
-      for (; x < srgb1->xsize(); ++x) {
-        const float diff = row1[x] - row2[x];
-        result += diff * diff * weights[c];
+      float yuvdiff[3] = {};
+      for (size_t j = 0; j < 3; j++) {
+        for (size_t k = 0; k < 3; k++) {
+          yuvdiff[j] += yuvmatrix[j][k] * cdiff[k];
+        }
+      }
+      for (size_t j = 0; j < 3; j++) {
+        sum_of_squares[j] += yuvdiff[j] * yuvdiff[j];
       }
     }
   }
-  const float sum = GetLane(SumOfLanes(Load(d, sum_total)));
-  return sum + result;
+  // Weighted PSNR as in JPEG-XL: chroma counts 1/8.
+  const float weights[3] = {6.0f / 8, 1.0f / 8, 1.0f / 8};
+  // Avoid squaring the weight - 1/64 is too extreme.
+  double norm = 0;
+  for (size_t i = 0; i < 3; i++) {
+    norm += std::sqrt(sum_of_squares[i]) * weights[i];
+  }
+  // This function returns distance *squared*.
+  return norm * norm;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

@@ -149,7 +149,7 @@ Status BitDepth::VisitFields(Visitor* JXL_RESTRICT visitor) {
   // required.
   if (!floating_point_sample) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
-        Val(8), Val(10), Val(12), BitsOffset(5, 1), 8, &bits_per_sample));
+        Val(8), Val(10), Val(12), BitsOffset(6, 1), 8, &bits_per_sample));
     exponent_bits_per_sample = 0;
   } else {
     JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
@@ -159,19 +159,24 @@ Status BitDepth::VisitFields(Visitor* JXL_RESTRICT visitor) {
     const uint32_t offset = 1;
     exponent_bits_per_sample -= offset;
     JXL_QUIET_RETURN_IF_ERROR(
-        visitor->Bits(3, 8 - offset, &exponent_bits_per_sample));
+        visitor->Bits(4, 8 - offset, &exponent_bits_per_sample));
     exponent_bits_per_sample += offset;
   }
 
   // Error-checking for floating point ranges.
   if (floating_point_sample) {
     if (exponent_bits_per_sample < 2 || exponent_bits_per_sample > 8) {
-      return JXL_FAILURE("Invalid exponent_bits_per_sample");
+      return JXL_FAILURE("Invalid exponent_bits_per_sample: %u",
+                         exponent_bits_per_sample);
     }
     int mantissa_bits =
         static_cast<int>(bits_per_sample) - exponent_bits_per_sample - 1;
     if (mantissa_bits < 2 || mantissa_bits > 23) {
-      return JXL_FAILURE("Invalid bits_per_sample");
+      return JXL_FAILURE("Invalid bits_per_sample: %u", bits_per_sample);
+    }
+  } else {
+    if (bits_per_sample > 31) {
+      return JXL_FAILURE("Invalid bits_per_sample: %u", bits_per_sample);
     }
   }
   return true;
@@ -235,6 +240,8 @@ Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
   JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &xyb_encoded));
   JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
+
+  m2.nonserialized_xyb_encoded = xyb_encoded;
   JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&m2));
 
   return true;
@@ -280,7 +287,9 @@ Status ImageMetadata2::VisitFields(Visitor* JXL_RESTRICT visitor) {
     return true;
   }
 
-  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
+  if (nonserialized_xyb_encoded) {
+    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&opsin_inverse_matrix));
+  }
 
   JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
   // Extensions: in chronological order of being added to the format.

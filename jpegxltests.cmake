@@ -21,7 +21,6 @@ set(TEST_FILES
   jxl/base/fast_log_test.cc
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
-  jxl/brunsli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc
   jxl/color_encoding_test.cc
@@ -45,6 +44,7 @@ set(TEST_FILES
   jxl/image_bundle_test.cc
   jxl/image_test.cc
   jxl/jpegxl/decode_test.cc
+  jxl/jpegxl/encode_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
   jxl/linalg_test.cc

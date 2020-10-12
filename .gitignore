@@ -5,3 +5,12 @@
 
 # The downloaded corpora files for benchmark.
 /third_party/corpora
+
+# hdrvdp source code
+third_party/hdrvdp-2.2.2
+third_party/hdrvdp-2.2.2.zip
+third_party/hdrvdp-2.2.2.zip.tmp
+
+# Output plots
+tools/benchmark/metrics/plots
+tools/benchmark/metrics/results.csv

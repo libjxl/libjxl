@@ -183,7 +183,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
 
-  if ((lf.epf || lf.gab) && frame_header.chroma_subsampling.Is444()) {
+  if ((lf.epf_iters > 0 || lf.gab) && frame_header.chroma_subsampling.Is444()) {
     size_t xsize = dec_state->shared->frame_dim.xsize_padded;
     size_t ysize = dec_state->shared->frame_dim.ysize_padded;
     size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;

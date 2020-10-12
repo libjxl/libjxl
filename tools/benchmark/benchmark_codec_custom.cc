@@ -18,11 +18,6 @@
 #ifndef _WIN32
 
 #include <libgen.h>
-#include <spawn.h>
-#include <stdio.h>
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include <fstream>
 
@@ -31,49 +26,10 @@
 #include "jxl/codec_in_out.h"
 #include "jxl/extras/codec_png.h"
 #include "jxl/image_bundle.h"
-
-extern char** environ;
+#include "tools/benchmark/benchmark_utils.h"
 
 namespace jxl {
 namespace {
-
-class TemporaryFile final {
- public:
-  explicit TemporaryFile(std::string basename, std::string extension)
-      : temp_filename_(std::move(basename) + "_XXXXXX"),
-        extension_('.' + std::move(extension)) {
-    const int fd = mkstemp(&temp_filename_[0]);
-    if (fd == -1) {
-      ok_ = false;
-      return;
-    }
-    close(fd);
-  }
-  TemporaryFile(const TemporaryFile&) = delete;
-  TemporaryFile& operator=(const TemporaryFile&) = delete;
-  ~TemporaryFile() {
-    if (ok_) {
-      unlink(temp_filename_.c_str());
-      unlink((temp_filename_ + extension_).c_str());
-    }
-  }
-
-  Status GetFileName(std::string* const output) const {
-    JXL_RETURN_IF_ERROR(ok_);
-    *output = temp_filename_ + extension_;
-    return true;
-  }
-
- private:
-  bool ok_ = true;
-
-  // Name of a file that is kept existing to ensure name uniqueness.
-  std::string temp_filename_;
-
-  // Extension to add to the filename when giving it to the clients of this
-  // class.
-  const std::string extension_;
-};
 
 std::string GetBaseName(std::string filename) {
   std::string result = std::move(filename);
@@ -108,23 +64,6 @@ Status ReportCodecRunningTime(F&& function, std::string output_filename,
     remove(time_filename.c_str());
   }
   return true;
-}
-
-Status RunCommand(const std::string& command,
-                  const std::vector<std::string>& arguments) {
-  std::vector<char*> args;
-  args.reserve(arguments.size() + 2);
-  args.push_back(const_cast<char*>(command.c_str()));
-  for (const std::string& argument : arguments) {
-    args.push_back(const_cast<char*>(argument.c_str()));
-  }
-  args.push_back(nullptr);
-  pid_t pid;
-  JXL_RETURN_IF_ERROR(posix_spawnp(&pid, command.c_str(), nullptr, nullptr,
-                                   args.data(), environ) == 0);
-  int wstatus;
-  waitpid(pid, &wstatus, 0);
-  return WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == EXIT_SUCCESS;
 }
 
 class CustomCodec : public ImageCodec {

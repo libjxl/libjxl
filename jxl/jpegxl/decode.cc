@@ -17,7 +17,6 @@
 #include "jxl/base/byte_order.h"
 #include "jxl/base/span.h"
 #include "jxl/base/status.h"
-#include "jxl/brunsli.h"
 #include "jxl/dec_file.h"
 #include "jxl/dec_frame.h"
 #include "jxl/external_image.h"
@@ -127,17 +126,6 @@ uint32_t JpegxlDecoderVersion(void) {
 
 JpegxlSignature JpegxlSignatureCheck(const uint8_t* buf, size_t len) {
   if (len == 0) return JPEGXL_SIG_NOT_ENOUGH_BYTES;
-
-  // Transcoded JPEG
-  if (len >= 1 && buf[0] == 0x0A) {
-    jxl::BrunsliFileSignature brn =
-        IsBrunsliFile(jxl::Span<const uint8_t>(buf, len));
-    if (brn == jxl::BrunsliFileSignature::kBrunsli) {
-      return JPEGXL_SIG_VALID;
-    } else if (brn == jxl::BrunsliFileSignature::kNotEnoughData) {
-      return JPEGXL_SIG_NOT_ENOUGH_BYTES;
-    }
-  }
 
   // Marker: JPEG1 or JPEG XL
   if (len >= 1 && buf[0] == 0xff) {

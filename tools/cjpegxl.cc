@@ -33,8 +33,7 @@
 namespace jpegxl {
 namespace tools {
 
-void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline,
-                                         CompressionMode mode) {
+void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
   cmdline->AddPositionalOption("INPUT", /* required = */ true,
                                "the input can be PNG"
@@ -72,42 +71,25 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline,
                           "print timing information before exiting",
                           &print_profile, &ParseOverride, 1);
 
-  switch (mode) {
-    case CompressionMode::kJpegXL:
-      JXL_ASSERT(cjxl_args.AddCommandLineOptions(cmdline));
-      break;
-    case CompressionMode::kBrunsli:
-      JXL_ASSERT(cbrunsli_args.AddCommandLineOptions(cmdline));
-      break;
-  }
+  JXL_ASSERT(cjxl_args.AddCommandLineOptions(cmdline));
 }
 
-jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline,
-                                       CompressionMode mode) {
+jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   cjxl_args.params.file_in = file_in;
   cjxl_args.params.file_out = file_out;
-  cbrunsli_args.file_in = file_in;
-  cbrunsli_args.file_out = file_out;
 
   if (file_in == nullptr) {
     fprintf(stderr, "Missing INPUT filename.\n");
     return false;
   }
 
-  switch (mode) {
-    case CompressionMode::kJpegXL:
-      return cjxl_args.ValidateArgs(cmdline);
-    case CompressionMode::kBrunsli:
-      return cbrunsli_args.ValidateArgs(cmdline);
-  }
-
-  return true;
+  return cjxl_args.ValidateArgs(cmdline);
 }
 
-int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
+int CompressJpegXlMain(int argc, const char* argv[]) {
   CommandLineParser cmdline;
   CompressArgs args;
-  args.AddCommandLineOptions(&cmdline, mode);
+  args.AddCommandLineOptions(&cmdline);
 
   bool printhelp = false;
   if (!cmdline.Parse(argc, argv)) {
@@ -126,25 +108,15 @@ int CompressJpegXlMain(CompressionMode mode, int argc, const char* argv[]) {
             CodecConfigString().c_str());
   }
 
-  if (printhelp || !args.ValidateArgs(cmdline, mode)) {
+  if (printhelp || !args.ValidateArgs(cmdline)) {
     cmdline.PrintHelp();
     return 1;
   }
 
   jxl::PaddedBytes compressed;
 
-  switch (mode) {
-    case CompressionMode::kJpegXL: {
-      jxl::ThreadPoolInternal pool(args.cjxl_args.num_threads);
-      if (!CompressJxl(&pool, args.cjxl_args, &compressed, !args.quiet))
-        return 1;
-    } break;
-    case CompressionMode::kBrunsli: {
-      // TODO(eustas): add num_threads parameter.
-      jxl::ThreadPoolInternal pool(0);
-      if (!CompressBrunsli(&pool, args.cbrunsli_args, &compressed)) return 1;
-    } break;
-  }
+  jxl::ThreadPoolInternal pool(args.cjxl_args.num_threads);
+  if (!CompressJxl(&pool, args.cjxl_args, &compressed, !args.quiet)) return 1;
 
   if (args.use_container &&
       !IsContainerHeader(compressed.data(), compressed.size())) {
