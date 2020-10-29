@@ -18,7 +18,7 @@
 #include <QImage>
 #include <QString>
 
-#include "jxl/base/padded_bytes.h"
+#include "lib/jxl/base/padded_bytes.h"
 
 namespace jxl {
 

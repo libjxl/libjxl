@@ -697,7 +697,7 @@ HWY_API Vec512<int64_t> operator<<(const Vec512<int64_t> v,
 
 // ------------------------------ Minimum
 
-// Unsigned (no u64)
+// Unsigned
 HWY_API Vec512<uint8_t> Min(const Vec512<uint8_t> a, const Vec512<uint8_t> b) {
   return Vec512<uint8_t>{_mm512_min_epu8(a.raw, b.raw)};
 }
@@ -709,8 +709,12 @@ HWY_API Vec512<uint32_t> Min(const Vec512<uint32_t> a,
                              const Vec512<uint32_t> b) {
   return Vec512<uint32_t>{_mm512_min_epu32(a.raw, b.raw)};
 }
+HWY_API Vec512<uint64_t> Min(const Vec512<uint64_t> a,
+                             const Vec512<uint64_t> b) {
+  return Vec512<uint64_t>{_mm512_min_epu64(a.raw, b.raw)};
+}
 
-// Signed (no i64)
+// Signed
 HWY_API Vec512<int8_t> Min(const Vec512<int8_t> a, const Vec512<int8_t> b) {
   return Vec512<int8_t>{_mm512_min_epi8(a.raw, b.raw)};
 }
@@ -719,6 +723,9 @@ HWY_API Vec512<int16_t> Min(const Vec512<int16_t> a, const Vec512<int16_t> b) {
 }
 HWY_API Vec512<int32_t> Min(const Vec512<int32_t> a, const Vec512<int32_t> b) {
   return Vec512<int32_t>{_mm512_min_epi32(a.raw, b.raw)};
+}
+HWY_API Vec512<int64_t> Min(const Vec512<int64_t> a, const Vec512<int64_t> b) {
+  return Vec512<int64_t>{_mm512_min_epi64(a.raw, b.raw)};
 }
 
 // Float
@@ -731,7 +738,7 @@ HWY_API Vec512<double> Min(const Vec512<double> a, const Vec512<double> b) {
 
 // ------------------------------ Maximum
 
-// Unsigned (no u64)
+// Unsigned
 HWY_API Vec512<uint8_t> Max(const Vec512<uint8_t> a, const Vec512<uint8_t> b) {
   return Vec512<uint8_t>{_mm512_max_epu8(a.raw, b.raw)};
 }
@@ -743,8 +750,12 @@ HWY_API Vec512<uint32_t> Max(const Vec512<uint32_t> a,
                              const Vec512<uint32_t> b) {
   return Vec512<uint32_t>{_mm512_max_epu32(a.raw, b.raw)};
 }
+HWY_API Vec512<uint64_t> Max(const Vec512<uint64_t> a,
+                             const Vec512<uint64_t> b) {
+  return Vec512<uint64_t>{_mm512_max_epu64(a.raw, b.raw)};
+}
 
-// Signed (no i64)
+// Signed
 HWY_API Vec512<int8_t> Max(const Vec512<int8_t> a, const Vec512<int8_t> b) {
   return Vec512<int8_t>{_mm512_max_epi8(a.raw, b.raw)};
 }
@@ -753,6 +764,9 @@ HWY_API Vec512<int16_t> Max(const Vec512<int16_t> a, const Vec512<int16_t> b) {
 }
 HWY_API Vec512<int32_t> Max(const Vec512<int32_t> a, const Vec512<int32_t> b) {
   return Vec512<int32_t>{_mm512_max_epi32(a.raw, b.raw)};
+}
+HWY_API Vec512<int64_t> Max(const Vec512<int64_t> a, const Vec512<int64_t> b) {
+  return Vec512<int64_t>{_mm512_max_epi64(a.raw, b.raw)};
 }
 
 // Float
@@ -1216,7 +1230,7 @@ HWY_API Vec512<T> LoadDup128(Full512<T> /* tag */,
   // https://gcc.godbolt.org/z/-Jt_-F
 #if HWY_LOADDUP_ASM
   __m512i out;
-  asm("vbroadcasti128 %1, %[reg]" : [reg] "=x"(out) : "m"(p[0]));
+  asm("vbroadcasti128 %1, %[reg]" : [ reg ] "=x"(out) : "m"(p[0]));
   return Vec512<T>{out};
 #else
   const auto x4 = LoadU(Full128<T>(), p);
@@ -1227,7 +1241,7 @@ HWY_API Vec512<float> LoadDup128(Full512<float> /* tag */,
                                  const float* const HWY_RESTRICT p) {
 #if HWY_LOADDUP_ASM
   __m512 out;
-  asm("vbroadcastf128 %1, %[reg]" : [reg] "=x"(out) : "m"(p[0]));
+  asm("vbroadcastf128 %1, %[reg]" : [ reg ] "=x"(out) : "m"(p[0]));
   return Vec512<float>{out};
 #else
   const __m128 x4 = _mm_loadu_ps(p);
@@ -1239,7 +1253,7 @@ HWY_API Vec512<double> LoadDup128(Full512<double> /* tag */,
                                   const double* const HWY_RESTRICT p) {
 #if HWY_LOADDUP_ASM
   __m512d out;
-  asm("vbroadcastf128 %1, %[reg]" : [reg] "=x"(out) : "m"(p[0]));
+  asm("vbroadcastf128 %1, %[reg]" : [ reg ] "=x"(out) : "m"(p[0]));
   return Vec512<double>{out};
 #else
   const __m128d x2 = _mm_loadu_pd(p);
@@ -1399,20 +1413,45 @@ HWY_INLINE Vec256<double> UpperHalf(Vec512<double> v) {
   return Vec256<double>{_mm512_extractf64x4_pd(v.raw, 1)};
 }
 
-// ------------------------------ Combine
+// ------------------------------ ZeroExtendVector
+
+// Unfortunately the initial _mm512_castsi256_si512 intrinsic leaves the upper
+// bits undefined. Although it makes sense for them to be zero (EVEX encoded
+// instructions have that effect), a compiler could decide to optimize out code
+// that relies on this.
+//
+// The newer _mm512_zextsi256_si512 intrinsic fixes this by specifying the
+// zeroing, but it is not available on GCC until 10.1. For older GCC, we can
+// still obtain the desired code thanks to pattern recognition; note that the
+// expensive insert instruction is not actually generated, see
+// https://gcc.godbolt.org/z/1MKGaP.
 
 template <typename T>
 HWY_API Vec512<T> ZeroExtendVector(Vec256<T> lo) {
+#if !HWY_COMPILER_CLANG && HWY_COMPILER_GCC && (HWY_COMPILER_GCC < 1000)
+  return Vec512<T>{_mm512_inserti32x8(_mm512_setzero_si512(), lo.raw, 0)};
+#else
   return Vec512<T>{_mm512_zextsi256_si512(lo.raw)};
+#endif
 }
 template <>
 HWY_INLINE Vec512<float> ZeroExtendVector(Vec256<float> lo) {
+#if !HWY_COMPILER_CLANG && HWY_COMPILER_GCC && (HWY_COMPILER_GCC < 1000)
+  return Vec512<float>{_mm512_insertf32x8(_mm512_setzero_ps(), lo.raw, 0)};
+#else
   return Vec512<float>{_mm512_zextps256_ps512(lo.raw)};
+#endif
 }
 template <>
 HWY_INLINE Vec512<double> ZeroExtendVector(Vec256<double> lo) {
+#if !HWY_COMPILER_CLANG && HWY_COMPILER_GCC && (HWY_COMPILER_GCC < 1000)
+  return Vec512<double>{_mm512_insertf64x4(_mm512_setzero_pd(), lo.raw, 0)};
+#else
   return Vec512<double>{_mm512_zextpd256_pd512(lo.raw)};
+#endif
 }
+
+// ------------------------------ Combine
 
 template <typename T>
 HWY_API Vec512<T> Combine(Vec256<T> hi, Vec256<T> lo) {
@@ -1441,7 +1480,9 @@ HWY_API Vec512<T> ShiftLeftBytes(const Vec512<T> v) {
 
 template <int kLanes, typename T>
 HWY_API Vec512<T> ShiftLeftLanes(const Vec512<T> v) {
-  return ShiftLeftBytes<kLanes * sizeof(T)>(v);
+  const Full512<uint8_t> d8;
+  const Full512<T> d;
+  return BitCast(d, ShiftLeftBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // 0x01..0F, kBytes = 1 => 0x0001..0E
@@ -1453,7 +1494,9 @@ HWY_API Vec512<T> ShiftRightBytes(const Vec512<T> v) {
 
 template <int kLanes, typename T>
 HWY_API Vec512<T> ShiftRightLanes(const Vec512<T> v) {
-  return ShiftRightBytes<kLanes * sizeof(T)>(v);
+  const Full512<uint8_t> d8;
+  const Full512<T> d;
+  return BitCast(d, ShiftRightBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // ------------------------------ Extract from 2x 128-bit at constant offset
@@ -2178,7 +2221,7 @@ HWY_API size_t CountTrue(const Mask512<T> mask) {
   return PopCount(mask.raw);
 }
 
-// ------------------------------ Horizontal sum (reduction)
+// ------------------------------ Reductions
 
 // Returns 64-bit sums of 8-byte groups.
 HWY_API Vec512<uint64_t> SumsOfU8x8(const Vec512<uint8_t> v) {
@@ -2196,11 +2239,35 @@ HWY_API Vec512<T> SumOfLanes(hwy::SizeTag<4> /* tag */, const Vec512<T> v3210) {
   const auto v20_31_20_31 = Shuffle0321(v31_20_31_20);
   return v20_31_20_31 + v31_20_31_20;
 }
+template <typename T>
+HWY_API Vec512<T> MinOfLanes(hwy::SizeTag<4> /* tag */, const Vec512<T> v3210) {
+  const auto v1032 = Shuffle1032(v3210);
+  const auto v31_20_31_20 = Min(v3210, v1032);
+  const auto v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Min(v20_31_20_31, v31_20_31_20);
+}
+template <typename T>
+HWY_API Vec512<T> MaxOfLanes(hwy::SizeTag<4> /* tag */, const Vec512<T> v3210) {
+  const auto v1032 = Shuffle1032(v3210);
+  const auto v31_20_31_20 = Max(v3210, v1032);
+  const auto v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Max(v20_31_20_31, v31_20_31_20);
+}
 
 template <typename T>
 HWY_API Vec512<T> SumOfLanes(hwy::SizeTag<8> /* tag */, const Vec512<T> v10) {
   const auto v01 = Shuffle01(v10);
   return v10 + v01;
+}
+template <typename T>
+HWY_API Vec512<T> MinOfLanes(hwy::SizeTag<8> /* tag */, const Vec512<T> v10) {
+  const auto v01 = Shuffle01(v10);
+  return Min(v10, v01);
+}
+template <typename T>
+HWY_API Vec512<T> MaxOfLanes(hwy::SizeTag<8> /* tag */, const Vec512<T> v10) {
+  const auto v01 = Shuffle01(v10);
+  return Max(v10, v01);
 }
 
 }  // namespace detail
@@ -2236,6 +2303,24 @@ HWY_API Vec512<T> SumOfLanes(const Vec512<T> v3210) {
   const Vec512<T> v10_10_32_32{Blocks1032(v32_32_10_10.raw)};
   return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(),
                             v32_32_10_10 + v10_10_32_32);
+}
+template <typename T>
+HWY_API Vec512<T> MinOfLanes(const Vec512<T> v3210) {
+  // Min of all 128-bit blocks in each 128-bit block.
+  const Vec512<T> v2301{Blocks2301(v3210.raw)};
+  const Vec512<T> v32_32_10_10 = Min(v2301, v3210);
+  const Vec512<T> v10_10_32_32{Blocks1032(v32_32_10_10.raw)};
+  return detail::MinOfLanes(hwy::SizeTag<sizeof(T)>(),
+                            Min(v32_32_10_10, v10_10_32_32));
+}
+template <typename T>
+HWY_API Vec512<T> MaxOfLanes(const Vec512<T> v3210) {
+  // Max of all 128-bit blocks in each 128-bit block.
+  const Vec512<T> v2301{Blocks2301(v3210.raw)};
+  const Vec512<T> v32_32_10_10 = Max(v2301, v3210);
+  const Vec512<T> v10_10_32_32{Blocks1032(v32_32_10_10.raw)};
+  return detail::MaxOfLanes(hwy::SizeTag<sizeof(T)>(),
+                            Max(v32_32_10_10, v10_10_32_32));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

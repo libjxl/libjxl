@@ -28,16 +28,18 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 
 add_executable(viewer WIN32
-  load_jpegxl.cc
-  load_jpegxl.h
+  load_jxl.cc
+  load_jxl.h
   main.cc
   viewer_window.cc
   viewer_window.h
   viewer_window.ui
 )
 target_link_libraries(viewer
-  jpegxl
-  jpegxl_threads
+  # TODO(deymo): icc_detect is using jxl-static so we need to use jxl-static
+  # here too.
+  jxl-static
+  jxl_threads-static
   Qt5::Widgets
   icc_detect
 )

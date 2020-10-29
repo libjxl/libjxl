@@ -21,11 +21,12 @@
 
 #include <fstream>
 
-#include "jxl/base/file_io.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/extras/codec_png.h"
-#include "jxl/image_bundle.h"
+#include "lib/extras/codec.h"
+#include "lib/extras/codec_png.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"
 
 namespace jxl {
@@ -102,6 +103,7 @@ class CustomCodec : public ImageCodec {
     std::string png_filename, encoded_filename;
     JXL_RETURN_IF_ERROR(png_file.GetFileName(&png_filename));
     JXL_RETURN_IF_ERROR(encoded_file.GetFileName(&encoded_filename));
+    saved_intensity_target_ = io->metadata.IntensityTarget();
 
     const size_t bits = io->metadata.bit_depth.bits_per_sample;
     PaddedBytes png;
@@ -135,9 +137,8 @@ class CustomCodec : public ImageCodec {
               std::vector<std::string>{encoded_filename, png_filename});
         },
         png_filename, speed_stats));
-    PaddedBytes png;
-    JXL_RETURN_IF_ERROR(ReadFile(png_filename, &png));
-    return DecodeImagePNG(Span<const uint8_t>(png), pool, io);
+    io->target_nits = saved_intensity_target_;
+    return SetFromFile(png_filename, io, pool);
   }
 
  private:
@@ -146,6 +147,7 @@ class CustomCodec : public ImageCodec {
   std::string decompress_command_;
   std::vector<std::string> compress_args_;
   int param_index_ = 0;
+  int saved_intensity_target_ = 255;
 };
 
 }  // namespace

@@ -125,7 +125,6 @@ struct TestZeroExtendVectorT {
     for (; i < N2; ++i) {
       HWY_ASSERT_EQ(T(0), lanes[i]);
     }
-    printf("xx zext ok %zu", N2 * sizeof(T) * 8);
 #else
     (void)d;
 #endif
@@ -190,21 +189,6 @@ struct TestShiftBytesT {
     const auto v = BitCast(d, Iota(du8, 1));
     Store(v, d, in);
 
-    // Shifting by one lane is the same as shifting #bytes
-    HWY_ASSERT_VEC_EQ(d, ShiftLeftLanes<1>(v), ShiftLeftBytes<sizeof(T)>(v));
-    HWY_ASSERT_VEC_EQ(d, ShiftRightLanes<1>(v), ShiftRightBytes<sizeof(T)>(v));
-    // We can only try to shift lanes if there are at least two lanes.
-    if (kN > 2) {
-      // If there are only two lanes we just define the one lane version to
-      // avoid running into static_asserts.
-      constexpr size_t kShiftBytes = kN > 2 ? 2 * sizeof(T) : sizeof(T);
-      constexpr size_t kShiftLanes = kN > 2 ? 2 : 1;
-      HWY_ASSERT_VEC_EQ(d, ShiftLeftLanes<kShiftLanes>(v),
-                        ShiftLeftBytes<kShiftBytes>(v));
-      HWY_ASSERT_VEC_EQ(d, ShiftRightLanes<kShiftLanes>(v),
-                        ShiftRightBytes<kShiftBytes>(v));
-    }
-
     HWY_ALIGN T shifted[kN];
     const uint8_t* shifted_bytes = reinterpret_cast<const uint8_t*>(shifted);
 
@@ -230,6 +214,49 @@ struct TestShiftBytesT {
 
 HWY_NOINLINE void TestShiftBytes() {
   ForIntegerTypes(ForGE128Vectors<TestShiftBytesT>());
+}
+
+struct TestShiftLanesT {
+  template <class T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    // Scalar does not define Shift*Lanes.
+#if HWY_TARGET != HWY_SCALAR || HWY_IDE
+    const auto v = Iota(d, T(1));
+    HWY_ALIGN T lanes[MaxLanes(d)];
+    {
+      const auto left0 = ShiftLeftLanes<0>(v);
+      const auto right0 = ShiftRightLanes<0>(v);
+      HWY_ASSERT_VEC_EQ(d, left0, v);
+      HWY_ASSERT_VEC_EQ(d, right0, v);
+    }
+
+    constexpr size_t kLanesPerBlock = 16 / sizeof(T);
+
+    {
+      const auto left1 = ShiftLeftLanes<1>(v);
+      Store(left1, d, lanes);
+      for (size_t i = 0; i < Lanes(d); ++i) {
+        const T expected = (i % kLanesPerBlock) == 0 ? T(0) : T(i);
+        HWY_ASSERT_EQ(expected, lanes[i]);
+      }
+    }
+    {
+      const auto right1 = ShiftRightLanes<1>(v);
+      Store(right1, d, lanes);
+      for (size_t i = 0; i < Lanes(d); ++i) {
+        const T expected =
+            (i % kLanesPerBlock) == (kLanesPerBlock - 1) ? T(0) : T(2 + i);
+        HWY_ASSERT_EQ(expected, lanes[i]);
+      }
+    }
+#else
+    (void)d;
+#endif  // #if HWY_TARGET != HWY_SCALAR
+  }
+};
+
+HWY_NOINLINE void TestShiftLanes() {
+  ForAllTypes(ForGE128Vectors<TestShiftLanesT>());
 }
 
 template <typename D, int kLane>
@@ -768,6 +795,7 @@ HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestUpperHalf);
 HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestZeroExtendVector);
 HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestCombine);
 HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShiftBytes);
+HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestShiftLanes);
 HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestBroadcast);
 HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestPermute);
 HWY_EXPORT_AND_TEST_P(HwySwizzleTest, TestInterleave);

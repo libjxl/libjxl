@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "jxl/aux_out.h"
+#include "lib/jxl/aux_out.h"
 
 namespace jxl {
 

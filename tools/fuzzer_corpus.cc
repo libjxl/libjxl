@@ -31,17 +31,17 @@
 #include <random>
 #include <vector>
 
-#include "jxl/aux_out.h"
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/file_io.h"
-#include "jxl/base/span.h"
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/enc_cache.h"
-#include "jxl/enc_file.h"
-#include "jxl/enc_params.h"
-#include "jxl/external_image.h"
-#include "jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_file.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/external_image.h"
+#include "lib/jxl/modular/encoding/context_predict.h"
 
 namespace {
 
@@ -169,17 +169,14 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
     jxl::ImageBundle ib(&io.metadata);
-    const jxl::PackedImage desc(
-        spec.width, spec.height, io.metadata.color_encoding,
-        /*has_alpha=*/spec.alpha_bit_depth != 0,
-        /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.GetAlphaBits(), io.metadata.bit_depth.bits_per_sample,
-        false /* big_endian */, false /* flipped_y */);
-
-    size_t bytes_per_pixel = desc.row_size / desc.xsize;
-    std::vector<uint8_t> img_data(desc.row_size * desc.ysize, 0);
+    const bool has_alpha = spec.alpha_bit_depth != 0;
+    size_t row_size = jxl::RowSize(
+        spec.width, io.metadata.color_encoding.Channels() + has_alpha,
+        io.metadata.bit_depth.bits_per_sample);
+    size_t bytes_per_pixel = row_size / spec.width;
+    std::vector<uint8_t> img_data(row_size * spec.height, 0);
     for (size_t y = 0; y < spec.height; y++) {
-      size_t pos = desc.row_size * y;
+      size_t pos = row_size * y;
       for (size_t x = 0; x < spec.width; x++) {
         for (size_t b = 0; b < bytes_per_pixel; b++) {
           img_data[pos++] = gen();
@@ -188,9 +185,12 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     }
 
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
-    if (!CopyTo(desc, span, nullptr, &ib)) {
-      return false;
-    }
+    JXL_RETURN_IF_ERROR(ConvertImage(
+        span, spec.width, spec.height, io.metadata.color_encoding,
+        /*has_alpha=*/has_alpha,
+        /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
+        io.metadata.GetAlphaBits(), io.metadata.bit_depth.bits_per_sample,
+        false /* big_endian */, false /* flipped_y */, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }
 

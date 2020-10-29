@@ -53,8 +53,8 @@ HWY_AFTER_NAMESPACE();
 ## Preprocessor macros
 
 *   `HWY_ALIGN`: Ensures an array is aligned and suitable for Load()/Store()
-    functions. Example: `HWY_ALIGN T lanes[MaxLanes(d)];` This can only be used
-    between including begin/end_target-inl.h.
+    functions. Example: `HWY_ALIGN T lanes[MaxLanes(d)];` Note the caveat on
+    `MaxLanes` below.
 
 *   `HWY_ALIGN_MAX`: As `HWY_ALIGN`, but aligns to an upper bound suitable for
     all targets on this platform. Use this for caller of SIMD modules, e.g. for
@@ -64,7 +64,8 @@ HWY_AFTER_NAMESPACE();
 
 SIMD vectors consist of one or more 'lanes' of the same built-in type `T =
 uint##_t, int##_t, float or double` for `## = 8, 16, 32, 64`. Highway provides
-vectors with `N <= kMaxVectorSize / sizeof(T)` lanes, where N is a power of two.
+vectors with `N <= kMaxVectorSize / sizeof(T)` lanes, where `N` is a power of
+two.
 
 Platforms such as x86 support multiple vector types, and other platforms require
 that vectors are built-in types. Thus the Highway API consists of overloaded
@@ -93,7 +94,7 @@ which to advance loop counters (at most `N`). The constexpr `MaxLanes(d)`
 returns an upper bound, typically used as a template argument to another
 descriptor. Using it as an array size is discouraged because the bound may be
 loose in case 3, leading to excessive stack usage. Where possible, prefer
-aligned dynamic allocation of `Lanes(d)` elements.
+aligned dynamic allocation of `Lanes(d)` elements via aligned_allocator.h.
 
 Note that case 3 does not imply the API will use more than one native vector.
 Highway is designed to map a user-specified vector to a single
@@ -106,7 +107,7 @@ a tag parameter `d`.
 
 Local variables typically use auto for type deduction. If `d` is
 `HWY_FULL(int32_t)`, users may instead use the full-width vector alias `I32xN`
-(or `U16xN', `F64xN' etc.) to document the types used.
+(or `U16xN`, `F64xN` etc.) to document the types used.
 
 For function arguments, it is often sufficient to return the same type as the
 argument: `template<class V> V Squared(V v) { return v * v; }`. Otherwise, use
@@ -471,7 +472,7 @@ their operands into independently processed 128-bit *blocks*.
     except that `Ret` is a vector with double-width lanes (required in order to
     use this operation with `scalar`).
 
-**Note**: the following are only available for full vectors (`N > 1), and split
+**Note**: the following are only available for full vectors (`N` > 1), and split
 their operands into independently processed 128-bit *blocks*:
 
 *   `Ret`: double-width u/i; `V`: `u8/16/32`, `i8/16/32` \
@@ -483,17 +484,17 @@ their operands into independently processed 128-bit *blocks*:
     <code>V **ShiftLeftBytes**&lt;int&gt;(V)</code>: returns the result of
     shifting independent *blocks* left by `int` bytes \[1, 15\].
 
-*   `V`: `ui` \
+*   `V`: \
     <code>V **ShiftLeftLanes**&lt;int&gt;(V)</code>: returns the result of
-    shifting independent *blocks* left by `int` lanes \[1, 15\].
+    shifting independent *blocks* left by `int` lanes.
 
 *   `V`: `ui` \
     <code>V **ShiftRightBytes**&lt;int&gt;(V)</code>: returns the result of
     shifting independent *blocks* right by `int` bytes \[1, 15\].
 
-*   `V`: `ui` \
+*   `V`: \
     <code>V **ShiftRightLanes**&lt;int&gt;(V)</code>: returns the result of
-    shifting independent *blocks* right by `int` lanes \[1, 15\].
+    shifting independent *blocks* right by `int` lanes.
 
 *   `V`: `ui` \
     <code>V **CombineShiftRightBytes**&lt;int&gt;(V hi, V lo)</code>: returns
@@ -560,9 +561,14 @@ more expensive on AVX2/AVX-512 than within-block operations.
 *   <code>VI **SetTableIndices**(D, int* idx)</code> prepares for
     `TableLookupLanes` with lane indices `idx = [0, N)` (need not be unique).
 
-### Misc
+### Reductions
 
-**Note**: the following are only available for full vectors (`N > 1`):
+**Note**: the following are only available for full vectors (including scalar).
+These 'reduce' all lanes to a single result. This result is broadcasted to all
+lanes at no extra cost; you can use `GetLane` to obtain the value.
+
+Being a horizontal operation (across lanes of the same vector), these are slower
+than normal SIMD operations and are typically used outside critical loops.
 
 *   `V`: `u8`; `Ret`: `u64` \
     <code>Ret **SumsOfU8x8**(V)</code>: returns the sums of 8 consecutive
@@ -570,9 +576,13 @@ more expensive on AVX2/AVX-512 than within-block operations.
 
 *   `V`: `uif32/64` \
     <code>V **SumOfLanes**(V v)</code>: returns the sum of all lanes in
-    each lane; to obtain the result, use `GetLane(horz_sum_result)`. This is a
-    "reduction" (horizontally across lanes), which is less efficient than
-    normal ("vertical") SIMD operations.
+    each lane.
+*   `V`: `uif32/64` \
+    <code>V **MinOfLanes**(V v)</code>: returns the minimum-valued lane in
+    each lane.
+*   `V`: `uif32/64` \
+    <code>V **MaxOfLanes**(V v)</code>: returns the maximum-valued lane in
+    each lane.
 
 ## Advanced macros
 
@@ -621,6 +631,7 @@ generates the best possible code (or scalar fallback) from the same source code.
 
 As above, but the feature implies the type so there is no T parameter:
 *   `HWY_COMPARE64_LANES`: 64-bit signed integer comparisons.
+*   `HWY_MINMAX64_LANES`: 64-bit signed/unsigned integer min/max.
 
 ## Detecting supported targets
 
@@ -651,11 +662,11 @@ least one baseline target which `HWY_EXPORT` can use.
 The following `*_TARGETS` are zero or more `HWY_Target` bits and can be defined
 as an expression, e.g. `-DHWY_DISABLED_TARGETS=(HWY_SSE4|HWY_AVX3)`.
 
-*   `HWY_BROKEN_TARGETS` defaults to a blacklist of known compiler bugs.
-    Defining to 0 disables the blacklist.
+*   `HWY_BROKEN_TARGETS` defaults to a blocklist of known compiler bugs.
+    Defining to 0 disables the blocklist.
 
 *   `HWY_DISABLED_TARGETS` defaults to zero. This allows explicitly disabling
-    targets without interfering with the blacklist.
+    targets without interfering with the blocklist.
 
 *   `HWY_BASELINE_TARGETS` defaults to the set whose predefined macros are
     defined (i.e. those for which the corresponding flag, e.g. -mavx2, was
@@ -682,18 +693,18 @@ Clang and GCC require e.g. -mavx2 flags in order to use SIMD intrinsics.
 However, this enables AVX2 instructions in the entire translation unit, which
 may violate the one-definition rule and cause crashes. Instead, we use
 target-specific attributes introduced via #pragma. Function using SIMD must
-reside between `#include <begin/end_target-inl.h>`.
+reside between `HWY_BEFORE_NAMESPACE` and `HWY_AFTER_NAMESPACE`.
 
 Immediates (compile-time constants) are specified as template arguments to avoid
 constant-propagation issues with Clang on ARM.
 
 ## Type traits
 
-*   `IsFloat<T>()` returns true if the T is a floating-point type.
-*   `IsSigned<T>()` returns true if the T is a signed or floating-point type.
-*   `LimitsMin/Max<T>()` return the smallest/largest value representable in T.
+*   `IsFloat<T>()` returns true if the `T` is a floating-point type.
+*   `IsSigned<T>()` returns true if the `T` is a signed or floating-point type.
+*   `LimitsMin/Max<T>()` return the smallest/largest value representable in `T`.
 *   `SizeTag<N>` is an empty struct, used to select overloaded functions
-    appropriate for N bytes.
+    appropriate for `N` bytes.
 
 ## Memory allocation
 
@@ -719,5 +730,5 @@ vector size.
 objects in newly allocated aligned memory as above and constructs every element
 of the new array using the passed constructor parameters, returning a unique
 pointer to the array. Note that only the first element is guaranteed to be
-aligned to the vector size and since there is no padding between elements
-whether the remaining elements are also aligned will depend on the size of `T`.
+aligned to the vector size; because there is no padding between elements,
+the alignment of the remaining elements depends on the size of `T`.

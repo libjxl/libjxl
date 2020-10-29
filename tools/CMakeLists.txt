@@ -23,7 +23,7 @@ if(WIN32)
       icc_detect/icc_detect_win32.cc
       icc_detect/icc_detect.h
     )
-    target_link_libraries(icc_detect PUBLIC jpegxl-static Qt5::Widgets)
+    target_link_libraries(icc_detect PUBLIC jxl-static Qt5::Widgets)
   endif()
 else()
   find_package(Qt5 QUIET COMPONENTS Widgets X11Extras)
@@ -42,7 +42,7 @@ else()
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h
       )
-      target_link_libraries(icc_detect PUBLIC jpegxl-static Qt5::Widgets Qt5::X11Extras XCB::XCB)
+      target_link_libraries(icc_detect PUBLIC jxl-static Qt5::Widgets Qt5::X11Extras XCB::XCB)
     endif ()
   endif()
 endif()
@@ -54,93 +54,86 @@ if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
 endif()
 
 set(TOOL_BINARIES
-  cjpegxl
-  djpegxl
-  fuzzer_corpus
-
-  butteraugli_main
-  decode_and_encode
-  epf_main
-  ssimulacra_main
-
-  xyb_range
-
-  # Other tools added conditionally below:
-  #  benchmark_xl
+  cjxl
+  djxl
+  # Other tools are added conditionally below.
 )
 
-add_library(jpegxl_tool STATIC
+add_library(jxl_tool STATIC
   butteraugli_pnorm.cc
   cmdline.cc
 )
-target_compile_options(jpegxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
-target_link_libraries(jpegxl_tool jpegxl-static)
+target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
+target_link_libraries(jxl_tool jxl-static)
 
-target_include_directories(jpegxl_tool
-  PUBLIC "${CMAKE_SOURCE_DIR}")
-
-add_library(epf epf.cc epf.h)
-target_link_libraries(epf jpegxl-static)
+target_include_directories(jxl_tool
+  PUBLIC "${PROJECT_SOURCE_DIR}")
 
 # Main compressors.
-add_library(cjpegxltool STATIC
-  cjpegxl.cc
+add_library(cjxltool STATIC
   cjxl.cc
   codec_config.cc
   speed_stats.cc
 )
-target_compile_definitions(cjpegxltool
+target_compile_definitions(cjxltool
   PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
-target_include_directories(cjpegxltool
-  PUBLIC "${CMAKE_SOURCE_DIR}")
-target_include_directories(cjpegxltool PRIVATE
+target_include_directories(cjxltool
+  PUBLIC "${PROJECT_SOURCE_DIR}")
+target_include_directories(cjxltool PRIVATE
   $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
 )
-target_link_libraries(cjpegxltool
+target_link_libraries(cjxltool
     box
-    jpegxl-static
-    jpegxl_extras-static
-    jpegxl_threads
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
 )
 
-add_executable(cjpegxl cjpegxl_main.cc)
-add_executable(fuzzer_corpus fuzzer_corpus.cc)
-
-target_link_libraries(cjpegxl cjpegxltool)
-
-target_link_libraries(fuzzer_corpus cjpegxltool)
-
+add_executable(cjxl cjxl_main.cc)
+target_link_libraries(cjxl cjxltool)
 
 # Main decompressor.
-add_library(djpegxltool STATIC
-  djpegxl.cc
+add_library(djxltool STATIC
+  djxl.cc
   speed_stats.cc
 )
-target_link_libraries(djpegxltool
+target_link_libraries(djxltool
     box
-    jpegxl-static
-    jpegxl_extras-static
-    jpegxl_threads
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
 )
-target_compile_definitions(djpegxltool
+target_compile_definitions(djxltool
   PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 
-add_executable(djpegxl
+add_executable(djxl
     codec_config.cc
-    djpegxl_main.cc
+    djxl_main.cc
 )
-target_link_libraries(djpegxl djpegxltool)
-target_compile_definitions(djpegxl
+target_link_libraries(djxl djxltool)
+target_compile_definitions(djxl
   PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 
-# Other tools.
-add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
-add_executable(butteraugli_main butteraugli_main.cc)
-add_executable(decode_and_encode decode_and_encode.cc)
-add_executable(epf_main epf_main.cc)
-add_executable(xyb_range xyb_range.cc)
+# Other developer tools.
+if(${JPEGXL_ENABLE_DEVTOOLS})
+  list(APPEND TOOL_BINARIES
+    fuzzer_corpus
+    butteraugli_main
+    decode_and_encode
+    epf_main
+    ssimulacra_main
+    xyb_range
+  )
 
-target_link_libraries(epf_main epf)
+  add_executable(fuzzer_corpus fuzzer_corpus.cc)
+  target_link_libraries(fuzzer_corpus cjxltool)
+
+  add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
+  add_executable(butteraugli_main butteraugli_main.cc)
+  add_executable(decode_and_encode decode_and_encode.cc)
+  add_executable(epf_main epf_main.cc epf.cc epf.h)
+  add_executable(xyb_range xyb_range.cc)
+endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.
 if(${JPEGXL_ENABLE_BENCHMARK})
@@ -179,6 +172,7 @@ if(${JPEGXL_ENABLE_BENCHMARK})
   target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
   endif() # MINGW
 
+  find_package(JPEG)
   if(JPEG_FOUND)
     target_sources(benchmark_xl PRIVATE
       "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_jpeg.cc"
@@ -213,10 +207,10 @@ if(${JPEGXL_ENABLE_BENCHMARK})
   endif()
 endif()  # JPEGXL_ENABLE_BENCHMARK
 
-# All tool binaries depend on "jpegxl" library and the tool helpers.
+# All tool binaries depend on "jxl" library and the tool helpers.
 foreach(BINARY IN LISTS TOOL_BINARIES)
-  target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-  target_link_libraries("${BINARY}" box jpegxl-static jpegxl_extras-static jpegxl_threads jpegxl_tool)
+  target_include_directories("${BINARY}" PRIVATE "${PROJECT_SOURCE_DIR}")
+  target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
@@ -233,7 +227,7 @@ if(${JPEGXL_ENABLE_FUZZERS})
   foreach(BINARY IN LISTS FUZZER_BINARIES)
     add_executable("${BINARY}" "${BINARY}.cc")
     target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-    target_link_libraries("${BINARY}" jpegxl-static jpegxl_extras-static jpegxl_threads jpegxl_tool)
+    target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
     target_compile_options("${BINARY}" PRIVATE "-fsanitize=fuzzer-no-link")
     target_link_libraries("${BINARY}" -fsanitize=fuzzer)
   endforeach()
@@ -241,27 +235,27 @@ endif()  # JPEGXL_ENABLE_FUZZERS
 
 # EMSCRIPTEN doesn't support dynamic libraries so testing for linkage there
 # doesn't make much sense.
-if(TARGET jpegxl AND NOT JPEGXL_EMSCRIPTEN)
+if(BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN)
 # Library API test. This test is only to check that we can link against the
 # shared library from C99 file and don't need to use internal symbols.
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
-add_executable(libjpegxl_test libjpegxl_test.c)
-set_property(TARGET libjpegxl_test PROPERTY C_STANDARD 99)
+add_executable(libjxl_test libjxl_test.c)
+set_property(TARGET libjxl_test PROPERTY C_STANDARD 99)
 if(NOT ${SANITIZER} STREQUAL "none")
   # Linking a C test binary with the C++ JPEG XL implementation when using
   # address sanitizer is not well supported by clang 9, so force using clang++
   # for linking this test if a sanitizer is used.
-  set_target_properties(libjpegxl_test PROPERTIES LINKER_LANGUAGE CXX)
-endif()
-set_target_properties(libjpegxl_test PROPERTIES PREFIX "tests/")
-target_link_libraries(libjpegxl_test jpegxl)
-target_compile_options(libjpegxl_test PRIVATE -Wall -Wextra -Werror)
+  set_target_properties(libjxl_test PROPERTIES LINKER_LANGUAGE CXX)
+endif()  # SANITIZER != "none"
+set_target_properties(libjxl_test PROPERTIES PREFIX "tests/")
+target_link_libraries(libjxl_test jxl)
+target_compile_options(libjxl_test PRIVATE -Wall -Wextra -Werror)
 if(NOT WIN32)
-  target_compile_options(libjpegxl_test PRIVATE -pedantic)
-endif()
+  target_compile_options(libjxl_test PRIVATE -pedantic)
+endif()  # NOT WIN32
 
-add_test(NAME LibraryCLinkageTest COMMAND libjpegxl_test)
-endif()  # TARGET jpegxl AND NOT JPEGXL_EMSCRIPTEN
+add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
+endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
 if(${JPEGXL_ENABLE_VIEWERS})
@@ -274,9 +268,9 @@ add_subdirectory(box)
 
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
-add_executable(jpegxl_emcc jpegxl_emcc.cc)
-target_link_libraries(jpegxl_emcc jpegxl-static jpegxl_extras-static)
-set_target_properties(jpegxl_emcc PROPERTIES LINK_FLAGS "\
+add_executable(jxl_emcc jxl_emcc.cc)
+target_link_libraries(jxl_emcc jxl-static jxl_extras-static)
+set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -O3\
   --closure 1 \
   -s ALLOW_MEMORY_GROWTH=1 \

@@ -22,7 +22,7 @@
 #include <QSet>
 
 #include "tools/icc_detect/icc_detect.h"
-#include "tools/viewer/load_jpegxl.h"
+#include "tools/viewer/load_jxl.h"
 
 namespace jxl {
 
@@ -98,8 +98,8 @@ void ViewerWindow::refreshImage() {
   qint64 elapsed_ns;
   bool usedRequestedProfile;
   const QImage image =
-      loadJpegXlImage(filenames_[currentFileIndex_], monitorProfile_,
-                      &elapsed_ns, &usedRequestedProfile);
+      loadJxlImage(filenames_[currentFileIndex_], monitorProfile_, &elapsed_ns,
+                   &usedRequestedProfile);
   if (image.isNull()) {
     const QString message =
         tr("Failed to load \"%1\".").arg(filenames_[currentFileIndex_]);

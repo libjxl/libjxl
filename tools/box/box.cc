@@ -19,7 +19,7 @@
 #include "c/common/constants.h"
 #include "c/dec/state.h"
 #include "c/enc/state.h"
-#include "jxl/base/byte_order.h"
+#include "lib/jxl/base/byte_order.h"
 
 namespace jpegxl {
 namespace tools {

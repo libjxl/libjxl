@@ -18,7 +18,7 @@
 #include <QMainWindow>
 #include <QStringList>
 
-#include "jxl/base/padded_bytes.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "tools/viewer/ui_viewer_window.h"
 
 namespace jxl {

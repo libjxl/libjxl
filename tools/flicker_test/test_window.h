@@ -20,7 +20,7 @@
 #include <QStringList>
 #include <QTextStream>
 
-#include "jxl/base/padded_bytes.h"
+#include "lib/jxl/base/padded_bytes.h"
 #include "tools/comparison_viewer/image_loading.h"
 #include "tools/flicker_test/parameters.h"
 #include "tools/flicker_test/ui_test_window.h"

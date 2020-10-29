@@ -21,7 +21,7 @@
 #include <algorithm>
 #include <string>
 
-#include "jxl/base/robust_statistics.h"
+#include "lib/jxl/base/robust_statistics.h"
 
 namespace jpegxl {
 namespace tools {
@@ -86,9 +86,10 @@ std::string SummaryStat(double value, const char* unit,
   const double value_min = value / s.max;
   const double value_max = value / s.min;
 
-  JXL_ASSERT(snprintf(stat_str, sizeof(stat_str), ",%s %.2f %s/s [%.2f, %.2f]",
-                      s.type, value_tendency, unit, value_min,
-                      value_max) < sizeof(stat_str));
+  int ret = snprintf(stat_str, sizeof(stat_str), ",%s %.2f %s/s [%.2f, %.2f]",
+                     s.type, value_tendency, unit, value_min, value_max);
+  (void)ret;  // ret is unused when JXL_ASSERT is disabled.
+  JXL_ASSERT(ret < static_cast<int>(sizeof(stat_str)));
   return stat_str;
 }
 

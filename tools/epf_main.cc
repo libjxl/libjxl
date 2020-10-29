@@ -14,9 +14,9 @@
 
 #include <stdio.h>
 
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/enc_adaptive_quantization.h"
-#include "jxl/extras/codec.h"
+#include "lib/extras/codec.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/enc_adaptive_quantization.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 #include "tools/epf.h"
@@ -25,6 +25,7 @@ int main(int argc, const char** argv) {
   float distance = 1.f;
   size_t sharpness = 1;
   size_t epf_iters = 2;
+  size_t num_threads = 8;
   const char* input_filename = nullptr;
   const char* output_filename = nullptr;
 
@@ -36,8 +37,11 @@ int main(int argc, const char** argv) {
   cmdline.AddOptionValue('s', "sharpness", "1..7",
                          "EPF sharpness value from 1 to 7", &sharpness,
                          &jpegxl::tools::ParseUnsigned);
-  cmdline.AddOptionValue('\0', "iters", "1..3", "number of epf iterations",
+  cmdline.AddOptionValue('\0', "epf", "1..3", "number of epf iterations",
                          &epf_iters, &jpegxl::tools::ParseUnsigned);
+  cmdline.AddOptionValue('\0', "num_threads", "N",
+                         "The number of threads to use", &num_threads,
+                         &jpegxl::tools::ParseUnsigned);
   cmdline.AddPositionalOption("INPUT", /* required = */ true, "Input image",
                               &input_filename);
   cmdline.AddPositionalOption("OUTPUT", /* required = */ true, "Output image",
@@ -53,7 +57,7 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
 
-  jxl::ThreadPoolInternal pool;
+  jxl::ThreadPoolInternal pool(num_threads);
   jxl::CodecInOut io;
   if (!jxl::SetFromFile(input_filename, &io, &pool)) {
     fprintf(stderr, "Failed to read from \"%s\".\n", input_filename);

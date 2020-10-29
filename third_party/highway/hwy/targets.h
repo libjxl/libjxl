@@ -30,7 +30,7 @@
 // Uncomment to override the default baseline determined from predefined macros:
 // #define HWY_BASELINE_TARGETS (HWY_SSE4 | HWY_SCALAR)
 
-// Uncomment to override the default blacklist:
+// Uncomment to override the default blocklist:
 // #define HWY_BROKEN_TARGETS HWY_AVX3
 
 // Uncomment to definitely avoid generating those target(s):
@@ -88,16 +88,16 @@
 // Cannot use higher values, otherwise HWY_TARGETS computation might overflow.
 
 //------------------------------------------------------------------------------
-// Set default blacklists
+// Set default blocklists
 
 // Disabled means excluded from enabled at user's request. A separate config
-// macro allows disabling without deactivating the blacklist below.
+// macro allows disabling without deactivating the blocklist below.
 #ifndef HWY_DISABLED_TARGETS
 #define HWY_DISABLED_TARGETS 0
 #endif
 
 // Broken means excluded from enabled due to known compiler issues. Allow the
-// user to override this blacklist without any guarantee of success.
+// user to override this blocklist without any guarantee of success.
 #ifndef HWY_BROKEN_TARGETS
 
 // x86 clang-6: we saw multiple AVX2/3 compile errors and in one case invalid
@@ -127,7 +127,7 @@
 
 #endif  // HWY_BROKEN_TARGETS
 
-// Enabled means not disabled nor blacklisted.
+// Enabled means not disabled nor blocklisted.
 #define HWY_ENABLED(targets) \
   ((targets) & ~((HWY_DISABLED_TARGETS) | (HWY_BROKEN_TARGETS)))
 
@@ -136,7 +136,7 @@
 
 // Baseline means the targets for which the compiler is allowed to generate
 // instructions, implying the target CPU would have to support them. Do not use
-// this directly because it does not take the blacklist into account. Allow the
+// this directly because it does not take the blocklist into account. Allow the
 // user to override this without any guarantee of success.
 #ifndef HWY_BASELINE_TARGETS
 
@@ -445,7 +445,7 @@ struct ChosenTarget {
   // those targets that were actually compiled in this module.
   uint32_t HWY_INLINE GetIndex() const {
     return hwy::Num0BitsBelowLS1Bit_Nonzero32(mask_.load() &
-                                             HWY_CHOSEN_TARGET_MASK_TARGETS);
+                                              HWY_CHOSEN_TARGET_MASK_TARGETS);
   }
 
  private:

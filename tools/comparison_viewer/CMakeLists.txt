@@ -33,9 +33,9 @@ add_library(image_loading STATIC
 )
 target_link_libraries(image_loading PUBLIC
   Qt5::Widgets
-  jpegxl-static
-  jpegxl_threads
-  jpegxl_extras-static
+  jxl-static
+  jxl_threads-static
+  jxl_extras-static
 )
 
 add_executable(compare_codecs WIN32

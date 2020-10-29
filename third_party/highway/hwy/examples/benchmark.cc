@@ -54,24 +54,6 @@ class TwoArray {
   float* b_;
 };
 
-// Calls operator() of the given closure (lambda function).
-template <class Closure>
-static FuncOutput CallClosure(const Closure* f, const FuncInput input) {
-  return (*f)(input);
-}
-
-// Same as Measure, except "closure" is typically a lambda function of
-// FuncInput -> FuncOutput with a capture list.
-template <class Closure>
-static inline size_t MeasureClosure(const Closure& closure,
-                                    const FuncInput* inputs,
-                                    const size_t num_inputs, Result* results,
-                                    const Params& p = Params()) {
-  return Measure(reinterpret_cast<Func>(&CallClosure<Closure>),
-                 reinterpret_cast<const uint8_t*>(&closure), inputs, num_inputs,
-                 results, p);
-}
-
 // Measures durations, verifies results, prints timings. `unpredictable1`
 // must have value 1 (unknown to the compiler to prevent elision).
 template <class Benchmark>
@@ -89,7 +71,7 @@ void RunBenchmark(const char* caption, const int unpredictable1) {
   p.max_evals = 7;
   p.target_rel_mad = 0.002;
   const size_t num_results = MeasureClosure(
-      [&benchmark](const uint64_t input) { return benchmark(input); }, inputs,
+      [&benchmark](const FuncInput input) { return benchmark(input); }, inputs,
       kNumInputs, results, p);
   if (num_results != kNumInputs) {
     fprintf(stderr, "MeasureClosure failed.\n");
@@ -123,7 +105,7 @@ class BenchmarkDot : public TwoArray {
  public:
   explicit BenchmarkDot(size_t num_items) : TwoArray(num_items), dot_{-1.0f} {}
 
-  uint64_t operator()(const size_t num_items) {
+  FuncOutput operator()(const size_t num_items) {
     HWY_FULL(float) d;
     const size_t N = Lanes(d);
     using V = decltype(Zero(d));
@@ -179,7 +161,7 @@ class BenchmarkDot : public TwoArray {
 struct BenchmarkDelta : public TwoArray {
   explicit BenchmarkDelta(size_t num_items) : TwoArray(num_items) {}
 
-  uint64_t operator()(const size_t num_items) const {
+  FuncOutput operator()(const size_t num_items) const {
 #if HWY_TARGET == HWY_SCALAR
     b_[0] = a_[0];
     for (size_t i = 1; i < num_items; ++i) {

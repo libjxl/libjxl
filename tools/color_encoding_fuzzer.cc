@@ -14,7 +14,7 @@
 
 #include <string>
 
-#include "jxl/color_encoding.h"
+#include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
 

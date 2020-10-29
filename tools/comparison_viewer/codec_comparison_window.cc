@@ -35,7 +35,7 @@
 #include <functional>
 #include <utility>
 
-#include "jxl/extras/codec.h"
+#include "lib/extras/codec.h"
 #include "tools/comparison_viewer/image_loading.h"
 #include "tools/comparison_viewer/split_image_view.h"
 #include "tools/icc_detect/icc_detect.h"

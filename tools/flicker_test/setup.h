@@ -50,4 +50,4 @@ class FlickerTestWizard : public QWizard {
 
 }  // namespace jxl
 
-#endif
+#endif  // TOOLS_FLICKER_TEST_SETUP_H_

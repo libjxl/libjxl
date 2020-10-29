@@ -19,8 +19,8 @@
 
 #include <cmath>
 
-#include "jxl/gauss_blur.h"
-#include "jxl/image_ops.h"
+#include "lib/jxl/gauss_blur.h"
+#include "lib/jxl/image_ops.h"
 
 namespace ssimulacra {
 namespace {
@@ -126,9 +126,9 @@ void Multiply(const Image3F& a, const Image3F& b, Image3F* mul) {
 void RowColAvgP2(const ImageF& in, double* rp2, double* cp2) {
   std::vector<double> ravg(in.ysize());
   std::vector<double> cavg(in.xsize());
-  for (int y = 0; y < in.ysize(); ++y) {
+  for (size_t y = 0; y < in.ysize(); ++y) {
     auto row = in.Row(y);
-    for (int x = 0; x < in.xsize(); ++x) {
+    for (size_t x = 0; x < in.xsize(); ++x) {
       const float val = row[x];
       ravg[y] += val;
       cavg[x] += val;
@@ -241,8 +241,8 @@ void SSIMMap(const Image3F& m1, const Image3F& m2, const Image3F& s11,
 double Ssimulacra::Score() const {
   double ssim = 0.0;
   double ssim_max = 0.0;
-  for (int c = 0; c < 3; ++c) {
-    for (int scale = 0; scale < scales.size(); ++scale) {
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t scale = 0; scale < scales.size(); ++scale) {
       ssim += kScaleWeights[scale][c] * scales[scale].avg_ssim[c];
       ssim_max += kScaleWeights[scale][c];
       ssim += kMinScaleWeights[scale][c] * scales[scale].min_ssim[c];
@@ -265,7 +265,7 @@ inline void PrintItem(const char* name, int scale, const double* vals,
 }
 
 void Ssimulacra::PrintDetails() const {
-  for (int s = 0; s < scales.size(); ++s) {
+  for (size_t s = 0; s < scales.size(); ++s) {
     PrintItem("avg ssim", s, scales[s].avg_ssim, &kScaleWeights[s][0]);
     PrintItem("min ssim", s, scales[s].min_ssim, &kMinScaleWeights[s][0]);
     if (s == 0) {

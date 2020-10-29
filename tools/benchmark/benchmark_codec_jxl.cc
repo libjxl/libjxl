@@ -21,21 +21,21 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/aux_out.h"
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/base/override.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/span.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/dec_file.h"
-#include "jxl/dec_params.h"
-#include "jxl/enc_cache.h"
-#include "jxl/enc_file.h"
-#include "jxl/enc_params.h"
-#include "jxl/extras/codec.h"
-#include "jxl/image_bundle.h"
-#include "jxl/modular/encoding/encoding.h"
+#include "lib/extras/codec.h"
+#include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/dec_file.h"
+#include "lib/jxl/dec_params.h"
+#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_file.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/cmdline.h"
@@ -59,10 +59,8 @@ struct JxlArgs {
   size_t progressive_dc;
 
   Override noise;
-  Override adaptive_reconstruction;
   Override dots;
   Override patches;
-  Override gaborish;
 
   std::string debug_image_dir;
 };
@@ -86,14 +84,10 @@ Status AddCommandLineOptionsJxlCodec(BenchmarkArgs* args) {
 
   args->AddOverride(&jxlargs->noise, "noise",
                     "Enable(1)/disable(0) noise generation.");
-  args->AddOverride(
-      &jxlargs->adaptive_reconstruction, "adaptive_reconstruction",
-      "Enable(1)/disable(0) adaptive reconstruction (deringing).");
   args->AddOverride(&jxlargs->dots, "dots",
                     "Enable(1)/disable(0) dots generation.");
   args->AddOverride(&jxlargs->patches, "patches",
                     "Enable(1)/disable(0) patch dictionary.");
-  args->AddOverride(&jxlargs->gaborish, "gaborish", "Disable gaborish if 0.");
 
   args->AddString(
       &jxlargs->debug_image_dir, "debug_image_dir",
@@ -112,8 +106,12 @@ class JxlCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override {
     const std::string kMaxPassesPrefix = "max_passes=";
     const std::string kDownsamplingPrefix = "downsampling=";
+    const std::string kResamplingPrefix = "resampling=";
 
-    if (ImageCodec::ParseParam(param)) {
+    if (param.substr(0, kResamplingPrefix.size()) == kResamplingPrefix) {
+      std::istringstream parser(param.substr(kResamplingPrefix.size()));
+      parser >> cparams_.resampling;
+    } else if (ImageCodec::ParseParam(param)) {
       // Nothing to do.
     } else if (param[0] == 'u') {
       cparams_.uniform_quant = strtof(param.substr(1).c_str(), nullptr);
@@ -165,9 +163,20 @@ class JxlCodec : public ImageCodec {
     } else if (param == "mg") {
       cparams_.modular_group_mode = true;
       cparams_.color_transform = jxl::ColorTransform::kNone;
+    } else if (param.substr(0, 3) == "gab") {
+      long gab = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (gab != 0 && gab != 1) {
+        return JXL_FAILURE("Invalid gab value");
+      }
+      cparams_.gaborish = static_cast<Override>(gab);
     } else if (param[0] == 'g') {
-      cparams_.modular_group_size_shift =
-          strtof(param.substr(1).c_str(), nullptr);
+      long gsize = strtol(param.substr(1).c_str(), nullptr, 10);
+      if (gsize < 0) {
+        return JXL_FAILURE("Invalid gab value");
+      }
+      cparams_.modular_group_size_shift = gsize;
+    } else if (param == "new_heuristics") {
+      cparams_.use_new_heuristics = true;
     } else if (param == "plt") {
       cparams_.options.max_properties = 0;
       cparams_.options.nb_repeats = 0;
@@ -176,6 +185,11 @@ class JxlCodec : public ImageCodec {
       cparams_.colorspace = 0;
       cparams_.channel_colors_pre_transform_percent = 0;
       cparams_.channel_colors_percent = 0;
+    } else if (param.substr(0, 3) == "epf") {
+      cparams_.epf = strtol(param.substr(3).c_str(), nullptr, 10);
+      if (cparams_.epf > 3) {
+        return JXL_FAILURE("Invalid epf value");
+      }
     } else {
       return JXL_FAILURE("Unrecognized param");
     }
@@ -217,8 +231,6 @@ class JxlCodec : public ImageCodec {
     cparams_.progressive_dc = jxlargs->progressive_dc;
 
     cparams_.noise = jxlargs->noise;
-    cparams_.adaptive_reconstruction = jxlargs->adaptive_reconstruction;
-    cparams_.gaborish = jxlargs->gaborish;
 
     cparams_.quant_border_bias = static_cast<float>(jxlargs->quant_bias);
     cparams_.ba_params.hf_asymmetry = ba_params_.hf_asymmetry;
@@ -233,6 +245,10 @@ class JxlCodec : public ImageCodec {
 
     const double start = Now();
     PassesEncoderState passes_encoder_state;
+    if (cparams_.use_new_heuristics) {
+      passes_encoder_state.heuristics =
+          jxl::make_unique<jxl::FastEncoderHeuristics>();
+    }
     JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
                                    compressed, &cinfo_, pool));
     const double end = Now();
@@ -254,7 +270,6 @@ class JxlCodec : public ImageCodec {
       JXL_RETURN_IF_ERROR(MakeDir(dinfo_.debug_prefix));
     }
     dparams_.noise = jxlargs->noise;
-    dparams_.adaptive_reconstruction = jxlargs->adaptive_reconstruction;
     const double start = Now();
     JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, &dinfo_, pool));
     const double end = Now();

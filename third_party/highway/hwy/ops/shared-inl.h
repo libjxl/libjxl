@@ -114,6 +114,7 @@ namespace macros_only {  // for code folding
 #undef HWY_GATHER_LANES
 #undef HWY_VARIABLE_SHIFT_LANES
 #undef HWY_COMPARE64_LANES
+#undef HWY_MINMAX64_LANES
 
 #undef HWY_CAP_INTEGER64
 #undef HWY_CAP_FLOAT64
@@ -135,6 +136,7 @@ namespace macros_only {  // for code folding
 #define HWY_GATHER_LANES(T) 1
 #define HWY_VARIABLE_SHIFT_LANES(T) 1
 #define HWY_COMPARE64_LANES 1
+#define HWY_MINMAX64_LANES 1
 
 #define HWY_CAP_INTEGER64 1
 #define HWY_CAP_FLOAT64 1
@@ -154,6 +156,7 @@ namespace macros_only {  // for code folding
 #define HWY_GATHER_LANES(T) HWY_LANES(T)
 #define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
 #define HWY_COMPARE64_LANES 4
+#define HWY_MINMAX64_LANES 1
 
 #define HWY_CAP_INTEGER64 1
 #define HWY_CAP_FLOAT64 1
@@ -176,6 +179,7 @@ namespace macros_only {  // for code folding
 #define HWY_GATHER_LANES(T) HWY_LANES(T)
 #define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
 #define HWY_COMPARE64_LANES 8
+#define HWY_MINMAX64_LANES 8
 
 #define HWY_CAP_INTEGER64 1
 #define HWY_CAP_FLOAT64 1
@@ -200,6 +204,7 @@ namespace macros_only {  // for code folding
 #define HWY_GATHER_LANES(T) 1
 #define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
 #define HWY_COMPARE64_LANES 2
+#define HWY_MINMAX64_LANES 2
 
 #define HWY_CAP_INTEGER64 1
 #define HWY_CAP_FLOAT64 1
@@ -219,17 +224,17 @@ namespace macros_only {  // for code folding
 
 #define HWY_GATHER_LANES(T) 1
 #define HWY_VARIABLE_SHIFT_LANES(T) HWY_LANES(T)
+#define HWY_MINMAX64_LANES 1
 
+#define HWY_CAP_INTEGER64 1
 #define HWY_CAP_GE256 0
 #define HWY_CAP_GE512 0
 
 #ifdef __arm__
 #define HWY_COMPARE64_LANES 1
-#define HWY_CAP_INTEGER64 0
 #define HWY_CAP_FLOAT64 0
 #else
 #define HWY_COMPARE64_LANES 2
-#define HWY_CAP_INTEGER64 1
 #define HWY_CAP_FLOAT64 1
 #endif
 
@@ -247,6 +252,7 @@ namespace macros_only {  // for code folding
 #define HWY_GATHER_LANES(T) 1
 #define HWY_VARIABLE_SHIFT_LANES(T) 1
 #define HWY_COMPARE64_LANES 1
+#define HWY_MINMAX64_LANES 1
 
 #define HWY_CAP_INTEGER64 0
 #define HWY_CAP_FLOAT64 0
@@ -267,6 +273,7 @@ namespace macros_only {  // for code folding
 #define HWY_GATHER_LANES(T) 1
 #define HWY_VARIABLE_SHIFT_LANES(T) 1
 #define HWY_COMPARE64_LANES 1
+#define HWY_MINMAX64_LANES 1
 
 #define HWY_CAP_INTEGER64 1
 #define HWY_CAP_FLOAT64 1

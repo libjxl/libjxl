@@ -18,13 +18,13 @@
 
 #include <string>
 
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/span.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/extras/codec_png.h"
-#include "jxl/image_bundle.h"
+#include "lib/extras/codec_png.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 

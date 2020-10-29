@@ -1,0 +1,5 @@
+jpeg-xl (0.0.2-1) UNRELEASED; urgency=medium
+
+  * Initial debian package.
+
+ -- Alex Deymo <deymo@google.com>  Tue, 27 Oct 2020 15:27:59 +0100

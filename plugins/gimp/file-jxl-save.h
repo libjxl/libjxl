@@ -17,7 +17,7 @@
 
 #include <libgimp/gimp.h>
 
-#include "jxl/base/status.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 

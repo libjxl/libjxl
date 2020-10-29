@@ -1209,32 +1209,9 @@ HWY_NEON_DEF_FUNCTION_ALL_FLOATS(operator==, vceq, _, HWY_COMPARE)
 #if defined(__aarch64__)
 HWY_NEON_DEF_FUNCTION_INTS_UINTS(operator==, vceq, _, HWY_COMPARE);
 #else
-// No 64-bit comparisons on armv7: emulate them.
+// No 64-bit comparisons on armv7: emulate them below, after Shuffle2301.
 HWY_NEON_DEF_FUNCTION_INT_8_16_32(operator==, vceq, _, HWY_COMPARE)
 HWY_NEON_DEF_FUNCTION_UINT_8_16_32(operator==, vceq, _, HWY_COMPARE)
-
-HWY_INLINE Mask128<int64_t, 2> operator==(const Vec128<int64_t, 2> a,
-                                          const Vec128<int64_t, 2> b) {
-  const Full128<int32_t> d;
-  const Full128<int64_t> d64;
-  auto a32 = BitCast(d, a);
-  auto b32 = BitCast(d, b);
-  auto cmp = a32 == b32;
-  auto cmp_and = Vec128<int32_t, 4>(vandq_u32(cmp.raw, vrev64q_u32(cmp.raw)));
-  return Mask128<int64_t, 2>(BitCast(d64, cmp_and).raw);
-}
-
-HWY_INLINE Mask128<uint64_t, 2> operator==(const Vec128<uint64_t, 2> a,
-                                           const Vec128<uint64_t, 2> b) {
-  const Full128<uint32_t> d;
-  const Full128<uint64_t> d64;
-  auto a32 = BitCast(d, a);
-  auto b32 = BitCast(d, b);
-  auto cmp = a32 == b32;
-  auto cmp_and = Vec128<uint32_t, 4>(vandq_u32(cmp.raw, vrev64q_u32(cmp.raw)));
-  return Mask128<uint64_t, 2>(BitCast(d64, cmp_and).raw);
-}
-
 #endif
 
 // ------------------------------ Strict inequality
@@ -1804,28 +1781,6 @@ HWY_INLINE void Stream(const Vec128<T, N> v, Simd<T, N> d,
   Store(v, d, aligned);
 }
 
-// ------------------------------ Gather
-
-template <typename T, size_t N, typename Offset>
-HWY_API Vec128<T, N> GatherOffset(const Simd<T, N> d,
-                                  const T* HWY_RESTRICT base,
-                                  const Vec128<Offset, N> offset) {
-  static_assert(N == 1, "NEON does not support full gather");
-  static_assert(sizeof(T) == sizeof(Offset), "T must match Offset");
-  const uintptr_t address = reinterpret_cast<uintptr_t>(base) + GetLane(offset);
-  T val;
-  CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
-  return Set(d, val);
-}
-
-template <typename T, size_t N, typename Index>
-HWY_API Vec128<T, N> GatherIndex(const Simd<T, N> d, const T* HWY_RESTRICT base,
-                                 const Vec128<Index, N> index) {
-  static_assert(N == 1, "NEON does not support full gather");
-  static_assert(sizeof(T) == sizeof(Index), "T must match Index");
-  return Set(d, base[GetLane(index)]);
-}
-
 // ================================================== CONVERT
 
 // ------------------------------ Promotions (part w/ narrow lanes -> full)
@@ -2183,7 +2138,6 @@ HWY_INLINE int32_t GetLane(const Vec128<int32_t, N> v) {
   return vget_lane_s32(v.raw, 0);
 }
 
-#if defined(__aarch64__)
 HWY_INLINE uint64_t GetLane(const Vec128<uint64_t, 2> v) {
   return vget_lane_u64(vget_low_u64(v.raw), 0);
 }
@@ -2196,7 +2150,6 @@ HWY_INLINE int64_t GetLane(const Vec128<int64_t, 2> v) {
 HWY_INLINE int64_t GetLane(const Vec128<int64_t, 1> v) {
   return vget_lane_s64(v.raw, 0);
 }
-#endif
 
 HWY_INLINE float GetLane(const Vec128<float, 4> v) {
   return vget_lane_f32(vget_low_f32(v.raw), 0);
@@ -2305,26 +2258,66 @@ HWY_INLINE Vec128<T> CombineShiftRightBytes(const Vec128<T> hi,
 
 // ------------------------------ Shift vector by constant #bytes
 
+namespace impl {
+
+// Need to partially specialize because CombineShiftRightBytes<16> and <0> are
+// compile errors.
+template <int kBytes>
+struct ShiftLeftBytesT {
+  template <class T, size_t N>
+  HWY_INLINE Vec128<T, N> operator()(const Vec128<T, N> v) {
+    return CombineShiftRightBytes<16 - kBytes>(v, Zero(Full128<T>()));
+  }
+};
+template <>
+struct ShiftLeftBytesT<0> {
+  template <class T, size_t N>
+  HWY_INLINE Vec128<T, N> operator()(const Vec128<T, N> v) {
+    return v;
+  }
+};
+
+template <int kBytes>
+struct ShiftRightBytesT {
+  template <class T, size_t N>
+  HWY_INLINE Vec128<T, N> operator()(const Vec128<T, N> v) {
+    return CombineShiftRightBytes<kBytes>(Zero(Full128<T>()), v);
+  }
+};
+template <>
+struct ShiftRightBytesT<0> {
+  template <class T, size_t N>
+  HWY_INLINE Vec128<T, N> operator()(const Vec128<T, N> v) {
+    return v;
+  }
+};
+
+}  // namespace impl
+
 // 0x01..0F, kBytes = 1 => 0x02..0F00
 template <int kBytes, typename T, size_t N>
 HWY_INLINE Vec128<T, N> ShiftLeftBytes(const Vec128<T, N> v) {
-  return CombineShiftRightBytes<16 - kBytes>(v, Zero(Full128<T>()));
+  return impl::ShiftLeftBytesT<kBytes>()(v);
 }
 
-template <int kLanes, typename T>
-HWY_INLINE Vec128<T> ShiftLeftLanes(const Vec128<T> v) {
-  return ShiftLeftBytes<kLanes * sizeof(T)>(v);
+template <int kLanes, typename T, size_t N>
+HWY_INLINE Vec128<T, N> ShiftLeftLanes(const Vec128<T, N> v) {
+  const Simd<uint8_t, N * sizeof(T)> d8;
+  const Simd<T, N> d;
+  return BitCast(d, ShiftLeftBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // 0x01..0F, kBytes = 1 => 0x0001..0E
 template <int kBytes, typename T, size_t N>
 HWY_INLINE Vec128<T, N> ShiftRightBytes(const Vec128<T, N> v) {
-  return CombineShiftRightBytes<kBytes>(Zero(Full128<T>()), v);
+  return impl::ShiftRightBytesT<kBytes>()(v);
 }
 
-template <int kLanes, typename T>
-HWY_INLINE Vec128<T> ShiftRightLanes(const Vec128<T> v) {
-  return ShiftRightBytes<kLanes * sizeof(T)>(v);
+template <int kLanes, typename T, size_t N>
+HWY_INLINE Vec128<T, N> ShiftRightLanes(const Vec128<T, N> v) {
+  const Simd<uint8_t, N * sizeof(T)> d8;
+  const Simd<T, N> d;
+  return BitCast(d, ShiftRightBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // ------------------------------ Broadcast/splat any lane
@@ -2524,11 +2517,23 @@ HWY_INLINE Vec128<T> TableLookupBytes(const Vec128<T> bytes,
 // CombineShiftRightBytes but the shuffle_abcd notation is more convenient.
 
 // Swap 32-bit halves in 64-bits
-template <typename T>
-HWY_INLINE Vec128<T> Shuffle2301(const Vec128<T> v) {
-  static constexpr uint8_t bytes[16] = {4,  5,  6,  7,  0, 1, 2,  3,
-                                        12, 13, 14, 15, 8, 9, 10, 11};
-  return TableLookupBytes(v, Load(Full128<uint8_t>(), bytes));
+HWY_INLINE Vec128<uint32_t, 2> Shuffle2301(const Vec128<uint32_t, 2> v) {
+  return Vec128<uint32_t, 2>(vrev64_u32(v.raw));
+}
+HWY_INLINE Vec128<int32_t, 2> Shuffle2301(const Vec128<int32_t, 2> v) {
+  return Vec128<int32_t, 2>(vrev64_s32(v.raw));
+}
+HWY_INLINE Vec128<float, 2> Shuffle2301(const Vec128<float, 2> v) {
+  return Vec128<float, 2>(vrev64_f32(v.raw));
+}
+HWY_INLINE Vec128<uint32_t> Shuffle2301(const Vec128<uint32_t> v) {
+  return Vec128<uint32_t>(vrev64q_u32(v.raw));
+}
+HWY_INLINE Vec128<int32_t> Shuffle2301(const Vec128<int32_t> v) {
+  return Vec128<int32_t>(vrev64q_s32(v.raw));
+}
+HWY_INLINE Vec128<float> Shuffle2301(const Vec128<float> v) {
+  return Vec128<float>(vrev64q_f32(v.raw));
 }
 
 // Swap 64-bit halves
@@ -2865,6 +2870,54 @@ HWY_INLINE Vec128<T> OddEven(const Vec128<T> a, const Vec128<T> b) {
 
 // ================================================== MISC
 
+// ------------------------------ Gather (requires GetLane)
+
+template <typename T, size_t N, typename Offset>
+HWY_API Vec128<T, N> GatherOffset(const Simd<T, N> d,
+                                  const T* HWY_RESTRICT base,
+                                  const Vec128<Offset, N> offset) {
+  static_assert(N == 1, "NEON does not support full gather");
+  static_assert(sizeof(T) == sizeof(Offset), "T must match Offset");
+  const uintptr_t address = reinterpret_cast<uintptr_t>(base) + GetLane(offset);
+  T val;
+  CopyBytes<sizeof(T)>(reinterpret_cast<const T*>(address), &val);
+  return Set(d, val);
+}
+
+template <typename T, size_t N, typename Index>
+HWY_API Vec128<T, N> GatherIndex(const Simd<T, N> d, const T* HWY_RESTRICT base,
+                                 const Vec128<Index, N> index) {
+  static_assert(N == 1, "NEON does not support full gather");
+  static_assert(sizeof(T) == sizeof(Index), "T must match Index");
+  return Set(d, base[GetLane(index)]);
+}
+
+// ------------------------------ ARMv7 int64 equality (requires Shuffle2301)
+
+#if !defined(__aarch64__)
+
+template <size_t N>
+HWY_INLINE Mask128<int64_t, N> operator==(const Vec128<int64_t, N> a,
+                                          const Vec128<int64_t, N> b) {
+  const Simd<int32_t, N * 2> d32;
+  const Simd<int64_t, N> d64;
+  const auto cmp32 = VecFromMask(BitCast(d32, a) == BitCast(d32, b));
+  const auto cmp64 = cmp32 & Shuffle2301(cmp32);
+  return MaskFromVec(BitCast(d64, cmp64));
+}
+
+template <size_t N>
+HWY_INLINE Mask128<uint64_t, N> operator==(const Vec128<uint64_t, N> a,
+                                           const Vec128<uint64_t, N> b) {
+  const Simd<uint32_t, N * 2> d32;
+  const Simd<uint64_t, N> d64;
+  const auto cmp32 = VecFromMask(BitCast(d32, a) == BitCast(d32, b));
+  const auto cmp64 = cmp32 & Shuffle2301(cmp32);
+  return MaskFromVec(BitCast(d64, cmp64));
+}
+
+#endif
+
 // ------------------------------ Horizontal sum (reduction)
 
 // Returns 64-bit sums of 8-byte groups.
@@ -2928,7 +2981,52 @@ HWY_INLINE Vec128<int64_t> SumOfLanes(const Vec128<int64_t> v) {
 }
 #endif
 
-// ------------------------------ mask
+namespace detail {
+
+// For u32/i32/f32.
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
+  const Vec128<T> v1032 = Shuffle1032(v3210);
+  const Vec128<T> v31_20_31_20 = Min(v3210, v1032);
+  const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Min(v20_31_20_31, v31_20_31_20);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
+  const Vec128<T> v1032 = Shuffle1032(v3210);
+  const Vec128<T> v31_20_31_20 = Max(v3210, v1032);
+  const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Max(v20_31_20_31, v31_20_31_20);
+}
+
+// For u64/i64[/f64].
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
+  const Vec128<T> v01 = Shuffle01(v10);
+  return Min(v10, v01);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
+  const Vec128<T> v01 = Shuffle01(v10);
+  return Max(v10, v01);
+}
+
+}  // namespace detail
+
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(const Vec128<T, N> v) {
+  return detail::MinOfLanes(hwy::SizeTag<sizeof(T)>(), v);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(const Vec128<T, N> v) {
+  return detail::MaxOfLanes(hwy::SizeTag<sizeof(T)>(), v);
+}
+
+// ------------------------------ Mask
 
 template <typename T>
 HWY_INLINE bool AllFalse(const Mask128<T> v) {
@@ -2997,15 +3095,17 @@ HWY_INLINE uint64_t BitsFromMask(hwy::SizeTag<4> /*tag*/,
 #endif
 }
 
-#if defined(__aarch64__)
 template <typename T>
 HWY_INLINE uint64_t BitsFromMask(hwy::SizeTag<8> /*tag*/, const Mask128<T> v) {
   constexpr uint64x2_t kCollapseMask = {1, 2};
   const Full128<uint64_t> du;
   const uint64x2_t values = BitCast(du, VecFromMask(v)).raw & kCollapseMask;
+#if defined(__aarch64__)
   return vaddvq_u64(values);
-}
+#else
+  return values[0] + values[1];
 #endif
+}
 
 // Returns number of lanes whose mask is set.
 //
@@ -3054,14 +3154,18 @@ HWY_INLINE size_t CountTrue(hwy::SizeTag<4> /*tag*/, const Mask128<T> mask) {
 #endif
 }
 
-#if defined(__aarch64__)
 template <typename T>
 HWY_INLINE size_t CountTrue(hwy::SizeTag<8> /*tag*/, const Mask128<T> mask) {
+#if defined(__aarch64__)
   const Full128<int64_t> di;
   const int64x2_t ones = vnegq_s64(BitCast(di, VecFromMask(mask)).raw);
   return vaddvq_s64(ones);
-}
+#else
+  const Full128<int64_t> di;
+  const int64x2_t ones = vshrq_n_u64(BitCast(di, VecFromMask(mask)).raw, 63);
+  return ones[0] + ones[1];
 #endif
+}
 
 }  // namespace impl
 

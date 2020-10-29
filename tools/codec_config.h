@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef JXL_CODEC_CONFIG_H_
-#define JXL_CODEC_CONFIG_H_
+#ifndef TOOLS_CODEC_CONFIG_H_
+#define TOOLS_CODEC_CONFIG_H_
 
 #include <string>
 
@@ -23,9 +23,9 @@ namespace tools {
 // Returns a short string describing the codec version (if known) and build
 // settings such as sanitizers and SIMD targets. Used in the benchmark and
 // command-line tools.
-std::string CodecConfigString();
+std::string CodecConfigString(uint32_t lib_version);
 
 }  // namespace tools
 }  // namespace jpegxl
 
-#endif  // JXL_CODEC_CONFIG_H_
+#endif  // TOOLS_CODEC_CONFIG_H_

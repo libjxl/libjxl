@@ -203,6 +203,7 @@ install_pkgs() {
       # Library dependencies. These normally depend on the target architecture
       # we are compiling for and can't usually be installed for multiple
       # architectures at the same time.
+      libgif7:"${ubarch}"
       libjpeg-dev:"${ubarch}"
       libpng-dev:"${ubarch}"
       libqt5x11extras5-dev:"${ubarch}"

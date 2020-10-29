@@ -864,25 +864,73 @@ struct TestSumOfLanesT {
   }
 };
 
-HWY_NOINLINE void TestSumOfLanes() {
+struct TestMinOfLanesT {
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    HWY_ALIGN T in_lanes[MaxLanes(d)];
+    T min = LimitsMax<T>();
+    for (size_t i = 0; i < Lanes(d); ++i) {
+      in_lanes[i] = static_cast<T>(1u << i);
+      min = std::min(min, in_lanes[i]);
+    }
+    const auto v = Load(d, in_lanes);
+    const auto expected = Set(d, min);
+    HWY_ASSERT_VEC_EQ(d, expected, MinOfLanes(v));
+  }
+};
+
+struct TestMaxOfLanesT {
+  template <typename T, class D>
+  HWY_NOINLINE void operator()(T /*unused*/, D d) {
+    HWY_ALIGN T in_lanes[MaxLanes(d)];
+    T max = LimitsMin<T>();
+    for (size_t i = 0; i < Lanes(d); ++i) {
+      in_lanes[i] = static_cast<T>(1u << i);
+      max = std::max(max, in_lanes[i]);
+    }
+    const auto v = Load(d, in_lanes);
+    const auto expected = Set(d, max);
+    HWY_ASSERT_VEC_EQ(d, expected, MaxOfLanes(v));
+  }
+};
+
+HWY_NOINLINE void TestReductions() {
   // Only full vectors because lanes in partial vectors are undefined.
-  const ForFullVectors<TestSumOfLanesT> test;
+  const ForFullVectors<TestSumOfLanesT> sum;
+  const ForFullVectors<TestMinOfLanesT> min;
+  const ForFullVectors<TestMaxOfLanesT> max;
 
   // No u8/u16.
-  test(uint32_t());
+  sum(uint32_t());
+  min(uint32_t());
+  max(uint32_t());
 #if HWY_CAP_INTEGER64
-  test(uint64_t());
+  sum(uint64_t());
+#if HWY_MINMAX64_LANES > 1
+  min(uint64_t());
+  max(uint64_t());
+#endif
 #endif
 
   // No i8/i16.
-  test(int32_t());
+  sum(int32_t());
+  min(int32_t());
+  max(int32_t());
 #if HWY_CAP_INTEGER64
-  test(int64_t());
+  sum(int64_t());
+#if HWY_MINMAX64_LANES > 1
+  min(int64_t());
+  max(int64_t());
+#endif
 #endif
 
-  test(float());
+  sum(float());
+  min(float());
+  max(float());
 #if HWY_CAP_FLOAT64
-  test(double());
+  sum(double());
+  min(double());
+  max(double());
 #endif
 }
 
@@ -955,7 +1003,7 @@ HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestAllMulAdd);
 HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestAllSquareRoot);
 HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestAllReciprocalSquareRoot);
 HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestSumsOfU8);
-HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestSumOfLanes);
+HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestReductions);
 HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestAllRound);
 HWY_EXPORT_AND_TEST_P(HwyArithmeticTest, TestAllAbsDiff);
 

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef JXL_THIRD_PARTY_DIRENT_H_
-#define JXL_THIRD_PARTY_DIRENT_H_
+#ifndef LIB_JXL_THIRD_PARTY_DIRENT_H_
+#define LIB_JXL_THIRD_PARTY_DIRENT_H_
 
 // Emulates POSIX readdir for Windows
 
@@ -46,4 +46,4 @@ int closedir(DIR* dir);
 dirent* readdir(DIR* d);
 
 #endif  // #if defined(_WIN32) || defined(_WIN64)
-#endif  // JXL_THIRD_PARTY_DIRENT_H_
+#endif  // LIB_JXL_THIRD_PARTY_DIRENT_H_

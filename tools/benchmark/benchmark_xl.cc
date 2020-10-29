@@ -27,28 +27,29 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/alpha.h"
-#include "jxl/base/arch_specific.h"
-#include "jxl/base/cache_aligned.h"
-#include "jxl/base/compiler_specific.h"
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/file_io.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/profiler.h"
-#include "jxl/base/robust_statistics.h"
-#include "jxl/base/span.h"
-#include "jxl/base/status.h"
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/butteraugli/butteraugli.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/color_encoding.h"
-#include "jxl/color_management.h"
-#include "jxl/extras/codec.h"
-#include "jxl/extras/codec_png.h"
-#include "jxl/image.h"
-#include "jxl/image_bundle.h"
-#include "jxl/image_ops.h"
+#include "jxl/decode.h"
+#include "lib/extras/codec.h"
+#include "lib/extras/codec_png.h"
+#include "lib/jxl/alpha.h"
+#include "lib/jxl/base/arch_specific.h"
+#include "lib/jxl/base/cache_aligned.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/profiler.h"
+#include "lib/jxl/base/robust_statistics.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/color_management.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 #include "tools/benchmark/benchmark_file_io.h"
@@ -78,24 +79,6 @@ Status ReadPNG(const std::string& filename, Image3B* image) {
   JXL_CHECK(SetFromFile(filename, &io));
   *image = StaticCastImage3<uint8_t>(io.Main().color());
   return true;
-}
-
-// Side effect: may sort `elapsed`.
-double SummarizeElapsedTimes(std::vector<double>& elapsed) {
-  JXL_CHECK(!elapsed.empty());
-  if (elapsed.size() == 1) return elapsed[0];
-  // Two: skip first (noisier)
-  if (elapsed.size() == 2) return elapsed[1];
-
-  // Prefer geomean unless numerically unreliable (too many reps)
-  if (std::pow(elapsed[0], elapsed.size()) < 1E100) {
-    // Skip first(noisier)
-    return Geomean(elapsed.data() + 1, elapsed.size() - 1);
-  }
-
-  // Else: mode; also skip first (noisier)
-  std::sort(elapsed.begin() + 1, elapsed.end());
-  return jxl::HalfSampleMode()(elapsed.data() + 1, elapsed.size());
 }
 
 static bool HasValidAlpha(const CodecInOut& io) {
@@ -277,9 +260,16 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::LinearSRGB(ib2.IsGray()),
                              &linear_rgb2, inner_pool));
         double distance_double;
-        JXL_CHECK(ButteraugliInterface(linear_rgb1, linear_rgb2,
-                                       codec->BaParams(), distmap,
-                                       distance_double));
+        ButteraugliParams params = codec->BaParams();
+        if (ib1.metadata()->IntensityTarget() !=
+            ib2.metadata()->IntensityTarget()) {
+          fprintf(stderr,
+                  "WARNING: input and output images have different intensity "
+                  "targets");
+        }
+        params.intensity_target = ib1.metadata()->IntensityTarget();
+        JXL_CHECK(ButteraugliInterface(linear_rgb1, linear_rgb2, params,
+                                       distmap, distance_double));
         distance = static_cast<float>(distance_double);
         // Ensure pixels in range 0-255
         s->distance_2 += ComputeDistance2(ib1, ib2);
@@ -387,11 +377,23 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                            tmp_in_fn));
     JXL_CHECK(EncodeToFile(io2, c_desired,
                            io.metadata.bit_depth.bits_per_sample, tmp_out_fn));
+    if (io.metadata.IntensityTarget() != io2.metadata.IntensityTarget()) {
+      fprintf(stderr,
+              "WARNING: original and decoded have different intensity targets "
+              "(%f vs. %f).\n",
+              io.metadata.IntensityTarget(), io2.metadata.IntensityTarget());
+    }
+    std::string intensity_target;
+    {
+      std::ostringstream intensity_target_oss;
+      intensity_target_oss << io.metadata.IntensityTarget();
+      intensity_target = intensity_target_oss.str();
+    }
     for (size_t i = 0; i < extra_metrics_commands.size(); i++) {
       float res = nanf("");
       bool error = false;
       if (RunCommand(extra_metrics_commands[i],
-                     {tmp_in_fn, tmp_out_fn, tmp_res_fn})) {
+                     {tmp_in_fn, tmp_out_fn, tmp_res_fn, intensity_target})) {
         FILE* f = fopen(tmp_res_fn.c_str(), "r");
         if (fscanf(f, "%f", &res) != 1) {
           error = true;
@@ -1133,7 +1135,7 @@ class Benchmark {
 
 int BenchmarkMain(int argc, char** argv) {
   fprintf(stderr, "benchmark_xl [%s]\n",
-          jpegxl::tools::CodecConfigString().c_str());
+          jpegxl::tools::CodecConfigString(JxlDecoderVersion()).c_str());
 
   JXL_CHECK(Args()->AddCommandLineOptions());
   if (!Args()->Parse(argc, const_cast<const char**>(argv)) ||

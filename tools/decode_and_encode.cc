@@ -16,11 +16,11 @@
 
 #include <string>
 
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/status.h"
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/extras/codec.h"
+#include "lib/extras/codec.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
 namespace {

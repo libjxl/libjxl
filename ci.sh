@@ -41,6 +41,10 @@ fi
 # Whether we should post a message in the MR when the build fails.
 POST_MESSAGE_ON_ERROR="${POST_MESSAGE_ON_ERROR:-1}"
 
+# Set default compilers to clang if not already set
+export CC=${CC:-clang}
+export CXX=${CXX:-clang++}
+
 # Time limit for the "fuzz" command in seconds (0 means no limit).
 FUZZER_MAX_TIME="${FUZZER_MAX_TIME:-0}"
 
@@ -299,7 +303,8 @@ export_env() {
       | grep -F 'libraries: =' | cut -f 2- -d '=' | tr ':' ';')
     # We also need our own libraries in the wine path.
     local real_build_dir=$(realpath "${BUILD_DIR}")
-    export WINEPATH="${WINEPATH};${real_build_dir}"
+    # Some library .dll dependencies are installed in /bin:
+    export WINEPATH="${WINEPATH};${real_build_dir};/usr/${BUILD_TARGET}/bin"
 
     local prefix="${BUILD_DIR}/wineprefix"
     mkdir -p "${prefix}"
@@ -337,6 +342,10 @@ cmake_configure() {
     -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS}"
     -DJPEGXL_VERSION="${JPEGXL_VERSION}"
     -DSANITIZER="${SANITIZER}"
+    # These are not enabled by default in cmake.
+    -DJPEGXL_ENABLE_VIEWERS=ON
+    -DJPEGXL_ENABLE_PLUGINS=ON
+    -DJPEGXL_ENABLE_DEVTOOLS=ON
   )
   if [[ -n "${BUILD_TARGET}" ]]; then
     local system_name="Linux"
@@ -846,13 +855,15 @@ _speed_from_output() {
 
 # Run benchmarks on ARM for the big and little CPUs.
 cmd_arm_benchmark() {
-  # Flags used for cjpegxl encoder with .png inputs
+  # Flags used for cjxl encoder with .png inputs
   local jxl_png_benchmarks=(
     # Lossy options:
-    "--adaptive_reconstruction=1 --distance=1.0 --speed=cheetah"
-    "--adaptive_reconstruction=0 --distance=1.0 --speed=cheetah"
-    "--adaptive_reconstruction=1 --distance=8.0 --speed=cheetah"
-    "--adaptive_reconstruction=0 --distance=8.0 --speed=cheetah"
+    "--epf=0 --distance=1.0 --speed=cheetah"
+    "--epf=2 --distance=1.0 --speed=cheetah"
+    "--epf=0 --distance=8.0 --speed=cheetah"
+    "--epf=1 --distance=8.0 --speed=cheetah"
+    "--epf=2 --distance=8.0 --speed=cheetah"
+    "--epf=3 --distance=8.0 --speed=cheetah"
     "--modular-group -Q 90"
     "--modular-group -Q 50"
     # Lossless options:
@@ -861,12 +872,12 @@ cmd_arm_benchmark() {
     "--modular-group -P 5"
     "--modular-group --responsive=1"
     # Near-lossless options:
-    "--adaptive_reconstruction=0 --distance=0.3 --speed=fast"
+    "--epf=0 --distance=0.3 --speed=fast"
     "--modular-group -N 3 -I 0"
     "--modular-group -Q 97"
   )
 
-  # Flags used for cjpegxl encoder with .jpg inputs. These should do lossless
+  # Flags used for cjxl encoder with .jpg inputs. These should do lossless
   # JPEG recompression (of pixels or full jpeg).
   local jxl_jpeg_benchmarks=(
     "--num_reps=3"
@@ -924,7 +935,7 @@ cmd_arm_benchmark() {
   local src_img
   for src_img in "${jpg_images[@]}" "${images[@]}"; do
     local src_img_hash=$(sha1sum "${src_img}" | cut -f 1 -d ' ')
-    local enc_binaries=("${BUILD_DIR}/tools/cjpegxl")
+    local enc_binaries=("${BUILD_DIR}/tools/cjxl")
     local src_ext="${src_img##*.}"
     for enc_binary in "${enc_binaries[@]}"; do
       local enc_binary_base=$(basename "${enc_binary}")
@@ -973,7 +984,7 @@ cmd_arm_benchmark() {
 
           local dec_output
           wait_for_temp
-          dec_output=$("${BUILD_DIR}/tools/djpegxl" "${enc_file}" \
+          dec_output=$("${BUILD_DIR}/tools/djxl" "${enc_file}" \
             --num_reps=5 --num_threads="${num_threads}" 2>&1 | tee /dev/stderr |
             grep -E "M[BP]/s \[")
           local img_size=$(echo "${dec_output}" | cut -f 1 -d ',')
@@ -989,7 +1000,7 @@ cmd_arm_benchmark() {
           if [[ "${src_ext}" == "jpg" ]]; then
             wait_for_temp
             local dec_file="${BUILD_DIR}/arm_benchmark/${enc_file_hash}.jpg"
-            dec_output=$("${BUILD_DIR}/tools/djpegxl" --jpeg "${enc_file}" \
+            dec_output=$("${BUILD_DIR}/tools/djxl" --jpeg "${enc_file}" \
               "${dec_file}" --num_reps=5 --num_threads="${num_threads}" 2>&1 | \
                 tee /dev/stderr | grep -E "M[BP]/s \[")
             local jpeg_dec_mps_speed=$(_speed_from_output "${dec_output}")
@@ -1158,6 +1169,58 @@ EOF
   return ${ret}
 }
 
+# Print stats about all the packages built in ${BUILD_DIR}/debs/.
+cmd_debian_stats() {
+  { set +x; } 2>/dev/null
+  local debsdir="${BUILD_DIR}/debs"
+  local f
+  while IFS='' read -r -d '' f; do
+    echo "====================================================================="
+    echo "Package $f:"
+    dpkg --info $f
+    dpkg --contents $f
+  done < <(find "${BUILD_DIR}/debs" -maxdepth 1 -mindepth 1 -type f \
+           -name '*.deb' -print0)
+}
+
+build_debian_pkg() {
+  local srcdir="$1"
+  local srcpkg="$2"
+
+  local debsdir="${BUILD_DIR}/debs"
+  local builddir="${debsdir}/${srcpkg}"
+
+  # debuild doesn't have an easy way to build out of tree, so we make a copy
+  # of with all symlinks on the first level.
+  mkdir -p "${builddir}"
+  for f in $(find "${srcdir}" -mindepth 1 -maxdepth 1 -printf '%P\n'); do
+    if [[ ! -L "${builddir}/$f" ]]; then
+      rm -f "${builddir}/$f"
+      ln -s "${srcdir}/$f" "${builddir}/$f"
+    fi
+  done
+  (
+    cd "${builddir}"
+    debuild -b -uc -us
+  )
+}
+
+cmd_debian_build() {
+  local srcpkg="${1:-}"
+
+  case "${srcpkg}" in
+    jpeg-xl)
+      build_debian_pkg "${MYDIR}" "jpeg-xl"
+      ;;
+    highway)
+      build_debian_pkg "${MYDIR}/third_party/highway" "highway"
+      ;;
+    *)
+      echo "ERROR: Must pass a valid source package name to build." >&2
+      ;;
+  esac
+}
+
 main() {
   local cmd="${1:-}"
   if [[ -z "${cmd}" ]]; then
@@ -1189,6 +1252,9 @@ Where cmd is one of:
 
  msan_install Install the libc++ libraries required to build in msan mode. This
               needs to be done once.
+
+ debian_build <srcpkg> Build the given source package.
+ debian_stats  Print stats about the built packages.
 
 You can pass some optional environment variables as well:
  - BUILD_DIR: The output build directory (by default "$$repo/build")

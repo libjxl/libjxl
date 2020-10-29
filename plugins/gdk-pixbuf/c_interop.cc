@@ -14,10 +14,10 @@
 
 #include "c_interop.h"
 
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/dec_file.h"
-#include "jxl/image.h"
-#include "jxl/image_bundle.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/dec_file.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
 
 extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
                                       size_t *stride, size_t *xsize,
@@ -52,7 +52,7 @@ extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
     *has_alpha = 1;
     const int alpha_right_shift_amount =
         static_cast<int>(io.metadata.GetAlphaBits()) - 8;
-    for (int y = 0; y < *ysize; ++y) {
+    for (size_t y = 0; y < *ysize; ++y) {
       uint8_t *JXL_RESTRICT const row = image + y * *stride;
       const uint16_t *const alpha_row = io.Main().alpha().ConstRow(y);
       const uint8_t *JXL_RESTRICT const red_row = converted.ConstPlaneRow(0, y);
@@ -60,7 +60,7 @@ extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
           converted.ConstPlaneRow(1, y);
       const uint8_t *JXL_RESTRICT const blue_row =
           converted.ConstPlaneRow(2, y);
-      for (int x = 0; x < *xsize; ++x) {
+      for (size_t x = 0; x < *xsize; ++x) {
         row[4 * x] = red_row[x];
         row[4 * x + 1] = green_row[x];
         row[4 * x + 2] = blue_row[x];
@@ -79,14 +79,14 @@ extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
     *xsize = io.xsize();
     *ysize = io.ysize();
     *has_alpha = 0;
-    for (int y = 0; y < *ysize; ++y) {
+    for (size_t y = 0; y < *ysize; ++y) {
       uint8_t *JXL_RESTRICT const row = image + y * *stride;
       const uint8_t *JXL_RESTRICT const red_row = converted.ConstPlaneRow(0, y);
       const uint8_t *JXL_RESTRICT const green_row =
           converted.ConstPlaneRow(1, y);
       const uint8_t *JXL_RESTRICT const blue_row =
           converted.ConstPlaneRow(2, y);
-      for (int x = 0; x < *xsize; ++x) {
+      for (size_t x = 0; x < *xsize; ++x) {
         row[3 * x] = red_row[x];
         row[3 * x + 1] = green_row[x];
         row[3 * x + 2] = blue_row[x];

@@ -32,7 +32,7 @@ add_executable(file-jxl
 if (JPEGXL_ENABLE_GIMP_SAVING)
   target_compile_definitions(file-jxl PRIVATE -DJPEGXL_ENABLE_GIMP_SAVING=1)
 endif ()
-target_link_libraries(file-jxl jpegxl-static jpegxl_threads PkgConfig::Gimp)
+target_link_libraries(file-jxl jxl-static jxl_threads-static PkgConfig::Gimp)
 
 pkg_get_variable(GIMP_LIB_DIR gimp-2.0 gimplibdir)
 install(TARGETS file-jxl RUNTIME DESTINATION "${GIMP_LIB_DIR}/plug-ins/file-jxl/")

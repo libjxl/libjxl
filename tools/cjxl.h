@@ -20,35 +20,43 @@
 #include <string>
 #include <utility>
 
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/status.h"
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/enc_params.h"
-#include "jxl/jxl_inspection.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/jxl_inspection.h"
 #include "tools/cmdline.h"
 
 namespace jpegxl {
 namespace tools {
 
-struct JxlCompressArgs {
-  // Initialize non-static default options.
-  JxlCompressArgs();
-
+struct CompressArgs {
   void SetInspectorImage3F(const jxl::InspectorImage3F& inspector) {
     inspector_image3f = inspector;
   }
 
   // Add all the command line options to the CommandLineParser. Note that the
   // options are tied to the instance that this was called on.
-  jxl::Status AddCommandLineOptions(CommandLineParser* cmdline);
+  void AddCommandLineOptions(CommandLineParser* cmdline);
 
   // Post-processes and validates the passed arguments, checking whether all
   // passed options are compatible. Returns whether the validation was
   // successful.
   jxl::Status ValidateArgs(const CommandLineParser& cmdline);
 
+  // Common flags.
+  bool version = false;
+  bool use_container = false;
+  bool quiet = false;
+
+  const char* file_in = nullptr;
+  const char* file_out = nullptr;
+  jxl::Override print_profile = jxl::Override::kDefault;
+
+  // JXL flags
   jxl::DecoderHints dec_hints;
   size_t override_bitdepth = 0;
   jxl::CompressParams params;
@@ -87,7 +95,7 @@ struct JxlCompressArgs {
   const char* spot_in = nullptr;
 };
 
-jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
+jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, CompressArgs& args,
                         jxl::PaddedBytes* compressed, bool print_stats = true);
 
 }  // namespace tools

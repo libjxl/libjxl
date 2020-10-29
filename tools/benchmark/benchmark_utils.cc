@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#define _DEFAULT_SOURCE  // for mkstemps().
+
 #include "tools/benchmark/benchmark_utils.h"
 
 // Not supported on Windows due to Linux-specific functions.
@@ -26,11 +28,11 @@
 
 #include <fstream>
 
-#include "jxl/base/file_io.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/extras/codec_png.h"
-#include "jxl/image_bundle.h"
+#include "lib/extras/codec_png.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/image_bundle.h"
 
 extern char** environ;
 

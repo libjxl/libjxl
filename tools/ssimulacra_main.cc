@@ -14,8 +14,8 @@
 
 #include <stdio.h>
 
-#include "jxl/color_management.h"
-#include "jxl/extras/codec.h"
+#include "lib/extras/codec.h"
+#include "lib/jxl/color_management.h"
 #include "tools/ssimulacra.h"
 
 namespace ssimulacra {

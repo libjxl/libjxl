@@ -70,13 +70,13 @@ def EvalCacheForget():
 def RandomizedJxlCodecs():
   retval = []
   minval = 1.0
-  maxval = 8.5
+  maxval = 6.5
   rangeval = maxval/minval
-  steps = 5
+  steps = 15
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
-    retval.append("jxl:fast:d%.3f" % mul)
+    retval.append("jxl:new_heuristics:d%.3f" % mul)
   steps = 0
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
@@ -113,9 +113,6 @@ def Eval(vec, binary_name, cached=True):
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
        '--error_pnorm=3',
        '--more_columns',
-       '--adaptive_reconstruction=1',
-       '--dots=1',
-       '--noprofiler',
        '--codec', g_codecs),
       stdout=subprocess.PIPE,
       stderr=subprocess.PIPE,
@@ -153,7 +150,7 @@ def Eval(vec, binary_name, cached=True):
       n += 1
       found_score = True
       distance = float(line.split()[0].split('d')[-1])
-      faultybpp = 1.0 + 0.0023 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
+      faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
       vec[0] *= faultybpp
 
   """

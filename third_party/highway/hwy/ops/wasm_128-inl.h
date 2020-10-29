@@ -1173,9 +1173,11 @@ HWY_API Vec128<T> ShiftLeftBytes(const Vec128<T> v) {
   return Vec128<T>{zero};
 }
 
-template <int kLanes, typename T>
-HWY_API Vec128<T> ShiftLeftLanes(const Vec128<T> v) {
-  return ShiftLeftBytes<kLanes * sizeof(T)>(v);
+template <int kLanes, typename T, size_t N>
+HWY_API Vec128<T, N> ShiftLeftLanes(const Vec128<T, N> v) {
+  const Simd<uint8_t, N * sizeof(T)> d8;
+  const Simd<T, N> d;
+  return BitCast(d, ShiftLeftBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // 0x01..0F, kBytes = 1 => 0x0001..0E
@@ -1257,9 +1259,11 @@ HWY_API Vec128<T> ShiftRightBytes(const Vec128<T> v) {
   return Vec128<T>{zero};
 }
 
-template <int kLanes, typename T>
-HWY_API Vec128<T> ShiftRightLanes(const Vec128<T> v) {
-  return ShiftRightBytes<kLanes * sizeof(T)>(v);
+template <int kLanes, typename T, size_t N>
+HWY_API Vec128<T, N> ShiftRightLanes(const Vec128<T, N> v) {
+  const Simd<uint8_t, N * sizeof(T)> d8;
+  const Simd<T, N> d;
+  return BitCast(d, ShiftRightBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // ------------------------------ Extract from 2x 128-bit at constant offset
@@ -1914,7 +1918,7 @@ HWY_API size_t CountTrue(const Mask128<float> v) {
   return PopCount(lanes[0] | lanes[1]);
 }
 
-// ------------------------------ Horizontal sum (reduction)
+// ------------------------------ Reductions
 
 // TODO(eustas): optimize
 // Returns 64-bit sums of 8-byte groups.
@@ -1928,32 +1932,68 @@ HWY_API Vec128<uint64_t> SumsOfU8x8(const Vec128<uint8_t> v) {
   return Vec128<uint64_t>{wasm_u64x2_shr(s64, 48)};
 }
 
-namespace {
+namespace detail {
 
 // For u32/i32/f32.
 template <typename T, size_t N>
-HWY_API Vec128<T, N> horz_sum_impl(hwy::SizeTag<4> /* tag */,
-                                   const Vec128<T, N> v3210) {
+HWY_API Vec128<T, N> SumOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
   const Vec128<T> v1032 = Shuffle1032(v3210);
   const Vec128<T> v31_20_31_20 = v3210 + v1032;
   const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
   return v20_31_20_31 + v31_20_31_20;
 }
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
+  const Vec128<T> v1032 = Shuffle1032(v3210);
+  const Vec128<T> v31_20_31_20 = Min(v3210, v1032);
+  const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Min(v20_31_20_31, v31_20_31_20);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
+  const Vec128<T> v1032 = Shuffle1032(v3210);
+  const Vec128<T> v31_20_31_20 = Max(v3210, v1032);
+  const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Max(v20_31_20_31, v31_20_31_20);
+}
 
 // For u64/i64/f64.
 template <typename T, size_t N>
-HWY_API Vec128<T, N> horz_sum_impl(hwy::SizeTag<8> /* tag */,
-                                   const Vec128<T, N> v10) {
+HWY_API Vec128<T, N> SumOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
   const Vec128<T> v01 = Shuffle01(v10);
   return v10 + v01;
 }
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
+  const Vec128<T> v01 = Shuffle01(v10);
+  return Min(v10, v01);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
+  const Vec128<T> v01 = Shuffle01(v10);
+  return Max(v10, v01);
+}
 
-}  // namespace
+}  // namespace detail
 
 // Supported for u/i/f 32/64. Returns the sum in each lane.
 template <typename T, size_t N>
 HWY_API Vec128<T, N> SumOfLanes(const Vec128<T, N> v) {
-  return horz_sum_impl(hwy::SizeTag<sizeof(T)>(), v);
+  return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(), v);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(const Vec128<T, N> v) {
+  return detail::MinOfLanes(hwy::SizeTag<sizeof(T)>(), v);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(const Vec128<T, N> v) {
+  return detail::MaxOfLanes(hwy::SizeTag<sizeof(T)>(), v);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

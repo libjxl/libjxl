@@ -19,10 +19,10 @@
 #undef MIN
 #undef CLAMP
 
-#include "jxl/alpha.h"
-#include "jxl/base/file_io.h"
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/enc_file.h"
+#include "lib/jxl/alpha.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/enc_file.h"
 #include "plugins/gimp/common.h"
 
 namespace jxl {

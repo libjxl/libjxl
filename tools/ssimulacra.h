@@ -17,7 +17,7 @@
 
 #include <vector>
 
-#include "jxl/image.h"
+#include "lib/jxl/image.h"
 
 namespace ssimulacra {
 

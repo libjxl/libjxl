@@ -23,11 +23,11 @@
 #include <string>
 #include <vector>
 
-#include "jxl/base/override.h"
-#include "jxl/base/status.h"
-#include "jxl/codec_in_out.h"  // DecoderHints
-#include "jxl/gaborish.h"
-#include "jxl/modular/options.h"
+#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"  // DecoderHints
+#include "lib/jxl/gaborish.h"
+#include "lib/jxl/modular/options.h"
 
 namespace jpegxl {
 namespace tools {

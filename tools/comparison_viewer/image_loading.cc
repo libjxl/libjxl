@@ -17,12 +17,12 @@
 #include <QRgb>
 #include <QThread>
 
-#include "jxl/base/file_io.h"
-#include "jxl/base/thread_pool_internal.h"
-#include "jxl/color_management.h"
-#include "jxl/dec_file.h"
-#include "jxl/extras/codec.h"
-#include "jxl/luminance.h"
+#include "lib/extras/codec.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/color_management.h"
+#include "lib/jxl/dec_file.h"
+#include "lib/jxl/luminance.h"
 
 namespace jxl {
 
@@ -56,8 +56,7 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
   if (!sourceColorSpaceHint.isEmpty()) {
     decoded.dec_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
-  if (!(loadFromFile(filename, &decoded, &pool) &&
-        MapTargetNitsTo255(&decoded, &pool))) {
+  if (!loadFromFile(filename, &decoded, &pool)) {
     return QImage();
   }
   const ImageBundle& ib = decoded.Main();

@@ -1,0 +1,107 @@
+/* Copyright (c) the JPEG XL Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/** @file types.h
+ * @brief Data types for the JPEG XL API, for both encoding and decoding.
+ */
+
+#ifndef JXL_TYPES_H_
+#define JXL_TYPES_H_
+
+/**
+ * A portable @c bool replacement.
+ *
+ * ::JXL_BOOL is a "documentation" type: actually it is @c int, but in API it
+ * denotes a type, whose only values are ::JXL_TRUE and ::JXL_FALSE.
+ */
+#define JXL_BOOL int
+/** Portable @c true replacement. */
+#define JXL_TRUE 1
+/** Portable @c false replacement. */
+#define JXL_FALSE 0
+
+/** Data type for the sample values per channel per pixel.
+ */
+typedef enum {
+  /** use type float, with range 0.0-1.0 (within gamut, may go outside this
+   * range for wide color gamut). This is the recommended data type to handle
+   * HDR and wide color gamut images. */
+  JXL_TYPE_FLOAT = 0,
+
+  /** Use 1-bit packed in uint8_t, first pixel in LSB, padded to uint8_t per
+   * row.
+   * TODO(lode): support first in MSB, other padding.
+   */
+  JXL_TYPE_BOOLEAN,
+
+  /** Use type uint8_t. May clip wide color gamut data.
+   */
+  JXL_TYPE_UINT8,
+
+  /** Use type uint16_t. May clip wide color gamut data.
+   */
+  JXL_TYPE_UINT16,
+
+  /** Use type uint32_t. May clip wide color gamut data.
+   */
+  JXL_TYPE_UINT32,
+} JxlDataType;
+
+/** Ordering of multi-byte data.
+ */
+typedef enum {
+  /** Use the endianness of the system, either little endian or big endian,
+   * without forcing either specific endianness. Do not use if pixel data
+   * should be exported to a well defined format.
+   */
+  JXL_NATIVE_ENDIAN,
+  /** Force little endian */
+  JXL_LITTLE_ENDIAN,
+  /** Force big endian */
+  JXL_BIG_ENDIAN,
+} JxlEndianness;
+
+/** Data type for the sample values per channel per pixel for the output buffer
+ * for pixels. This is not necessarily the same as the data type encoded in the
+ * codestream. The channels are interleaved per pixel. The pixels are
+ * organized row by row, left to right, top to bottom.
+ * TODO(lode): support padding / alignment (row stride)
+ * TODO(lode): support non-interleaved (may be a no-op here, involves getting
+ *     single channels separately instead)
+ * TODO(lode): support different channel orders if needed (RGB, BGR, ...)
+ */
+typedef struct {
+  /** Amount of channels available in a pixel buffer.
+   * 1: single-channel data, e.g. grayscale
+   * 2: single-channel + alpha
+   * 3: trichromatic, e.g. RGB
+   * 4: trichromatic + alpha
+   * TODO(lode): this needs finetuning. It is not yet defined how the user
+   * chooses output color space. CMYK+alpha needs 5 channels.
+   */
+  size_t num_channels;
+
+  /** Whether multi-byte data types are represented in big endian or little
+   * endian format. This applies to JXL_TYPE_UINT16, JXL_TYPE_UINT32
+   * and JXL_TYPE_FLOAT.
+   */
+  JxlEndianness endianness;
+
+  /** Data type of each channel.
+   */
+  JxlDataType data_type;
+} JxlPixelFormat;
+
+#endif /* JXL_TYPES_H_ */

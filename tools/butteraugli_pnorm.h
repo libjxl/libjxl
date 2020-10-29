@@ -17,8 +17,8 @@
 
 #include <stdint.h>
 
-#include "jxl/butteraugli/butteraugli.h"
-#include "jxl/image_bundle.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/image_bundle.h"
 
 namespace jxl {
 

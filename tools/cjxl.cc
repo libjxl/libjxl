@@ -23,23 +23,30 @@
 #include <utility>
 #include <vector>
 
-#include "jxl/aux_out.h"
-#include "jxl/base/arch_specific.h"
-#include "jxl/base/compiler_specific.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/common.h"
-#include "jxl/enc_cache.h"
-#include "jxl/enc_file.h"
-#include "jxl/extras/codec.h"
+#include "lib/extras/codec.h"
 #if JPEGXL_ENABLE_JPEG
-#include "jxl/extras/codec_jpg.h"
+#include "lib/extras/codec_jpg.h"
 #endif
-#include "jxl/frame_header.h"
-#include "jxl/image.h"
-#include "jxl/image_bundle.h"
-#include "jxl/modular/encoding/encoding.h"
+
+#include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/arch_specific.h"
+#include "lib/jxl/base/cache_aligned.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/profiler.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_file.h"
+#include "lib/jxl/enc_params.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
 #include "tools/speed_stats.h"
@@ -88,7 +95,7 @@ jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
   return true;
 }
 
-jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
+jxl::Status LoadSpotColors(const CompressArgs& args, jxl::CodecInOut* io) {
   jxl::CodecInOut spot_io;
   spot_io.target_nits = args.intensity_target;
   spot_io.dec_hints = args.dec_hints;
@@ -98,7 +105,6 @@ jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
   }
   jxl::ExtraChannelInfo example;
   example.type = jxl::ExtraChannel::kSpotColor;
-  example.blend_mode = jxl::BlendMode::kBlend;
   example.bit_depth.bits_per_sample = 8;
   example.dim_shift = 0;
   example.name = "spot";
@@ -121,7 +127,7 @@ jxl::Status LoadSpotColors(const JxlCompressArgs& args, jxl::CodecInOut* io) {
   return true;
 }
 
-jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
+jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                     jxl::CodecInOut* io, double* decode_mps) {
   const double t0 = jxl::Now();
 
@@ -129,6 +135,9 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
   io->dec_hints = args.dec_hints;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
+  if (args.params.modular_group_mode && args.params.quality_pair.first == 100) {
+    io->dec_target = jxl::DecodeTarget::kLosslessFloat;
+  }
   jxl::Codec input_codec;
   if (!SetFromFile(args.params.file_in, io, nullptr, &input_codec)) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
@@ -145,7 +154,12 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
     args.params.channel_colors_percent = 0;
     args.params.quality_pair.first = args.params.quality_pair.second = 100;
   }
-
+  if (args.params.modular_group_mode && args.params.quality_pair.first < 100) {
+    if (io->metadata.bit_depth.floating_point_sample) {
+      // for lossy modular, pretend pfm/exr is integer data
+      io->metadata.SetUintSamples(12);
+    }
+  }
   if (args.override_bitdepth != 0) {
     if (args.override_bitdepth == 32) {
       io->metadata.SetFloat32Samples();
@@ -181,10 +195,10 @@ jxl::Status LoadAll(JxlCompressArgs& args, jxl::ThreadPoolInternal* pool,
 // Search algorithm for modular mode instead of Butteraugli distance.
 void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
                                  const size_t pixels, const double target_size,
-                                 JxlCompressArgs* args) {
+                                 CompressArgs* args) {
   JXL_ASSERT(args->params.modular_group_mode);
 
-  JxlCompressArgs s = *args;  // Args for search.
+  CompressArgs s = *args;  // Args for search.
   // 5 bpp => 100, 0.1 bpp => 2
   float quality = s.params.target_bitrate * 20;
   s.params.target_bitrate = 0;
@@ -223,8 +237,8 @@ void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
 }
 
 void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
-                                   const size_t pixels, JxlCompressArgs* args) {
-  JxlCompressArgs s = *args;  // Args for search.
+                                   const size_t pixels, CompressArgs* args) {
+  CompressArgs s = *args;  // Args for search.
 
   // If fixed size, convert to bitrate.
   if (s.params.target_size > 0) {
@@ -274,13 +288,13 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
   args->params.target_size = 0;
 }
 
-const char* ModeFromArgs(const JxlCompressArgs& args) {
+const char* ModeFromArgs(const CompressArgs& args) {
   if (args.jpeg_transcode) return "JPEG";
   if (args.params.modular_group_mode) return "Modular";
   return "VarDCT";
 }
 
-std::string QualityFromArgs(const JxlCompressArgs& args) {
+std::string QualityFromArgs(const CompressArgs& args) {
   char buf[100];
   if (args.jpeg_transcode) {
     snprintf(buf, sizeof(buf), "lossless transcode");
@@ -302,23 +316,57 @@ std::string QualityFromArgs(const JxlCompressArgs& args) {
 }
 
 void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
-               const double decode_mps, const JxlCompressArgs& args) {
+               const double decode_mps, const CompressArgs& args) {
   const char* mode = ModeFromArgs(args);
   const char* speed = SpeedTierName(args.params.speed_tier);
   const std::string quality = QualityFromArgs(args);
   fprintf(stderr,
-          "Read %zu bytes (%zux%zu, %.3f bpp, %.1f MP/s)\n"
+          "Read %zux%zu image, %.1f MP/s\n"
           "Encoding [%s, %s, %s], %zu threads.\n",
-          io.enc_size, io.xsize(), io.ysize(),
-          io.enc_size * 8.0 / (io.xsize() * io.ysize()), decode_mps, mode,
-          quality.c_str(), speed, pool->NumWorkerThreads());
+          io.xsize(), io.ysize(), decode_mps, mode, quality.c_str(), speed,
+          pool->NumWorkerThreads());
 }
 
 }  // namespace
 
-JxlCompressArgs::JxlCompressArgs() {}
+void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
+  // Positional arguments.
+  cmdline->AddPositionalOption("INPUT", /* required = */ true,
+                               "the input can be PNG"
+#if JPEGXL_ENABLE_APNG
+                               ", APNG"
+#endif
+#if JPEGXL_ENABLE_GIF
+                               ", GIF"
+#endif
+#if JPEGXL_ENABLE_JPEG
+                               ", JPEG"
+#endif
+#if JPEGXL_ENABLE_EXR
+                               ", EXR"
+#endif
+                               ", PPM, PFM, or PGX",
+                               &file_in);
+  cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
+                               "the compressed output file (optional)",
+                               &file_out);
 
-jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
+  // Flags.
+  cmdline->AddOptionFlag('V', "version", "print version number and exit",
+                         &version, &SetBooleanTrue);
+  cmdline->AddOptionFlag('\0', "quiet", "be more silent", &quiet,
+                         &SetBooleanTrue, 1);
+
+  // TODO(lode): also add options to add exif/xmp/other metadata in the
+  // container.
+  // TODO(lode): decide on good name for this flag: box, container, bmff, ...
+  cmdline->AddOptionFlag('\0', "container", "encode using container format",
+                         &use_container, &SetBooleanTrue);
+
+  cmdline->AddOptionValue('\0', "print_profile", "0|1",
+                          "print timing information before exiting",
+                          &print_profile, &ParseOverride, 1);
+
   cmdline->AddPositionalOption("SPOT", /* required = */ false,
                                "spot color channel (optional, for testing)",
                                &spot_in, 2);
@@ -377,6 +425,9 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('g', "modular-group",
                          "Use the modular mode (lossy / lossless).",
                          &params.modular_group_mode, &SetBooleanTrue, 1);
+  cmdline->AddOptionFlag('\0', "use_new_heuristics",
+                         "use new and not yet ready encoder heuristics",
+                         &params.use_new_heuristics, &SetBooleanTrue);
 
   // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
   cmdline->AddOptionFlag('j', "jpeg_transcode",
@@ -399,10 +450,13 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "patches", "0|1",
                           "force enable/disable patches generation.",
                           &params.patches, &ParseOverride, 1);
+  cmdline->AddOptionValue('\0', "resampling", "1|2|4|8",
+                          "Subsample all color channels by this factor",
+                          &params.resampling, &ParseUnsigned, 1);
 
-  cmdline->AddOptionValue('\0', "adaptive_reconstruction", "0|1",
-                          "force enable/disable loop filter.",
-                          &params.adaptive_reconstruction, &ParseOverride, 1);
+  cmdline->AddOptionValue('\0', "epf", "0..3",
+                          "Edge preserving filter level (default 2)",
+                          &params.epf, &ParseUnsigned, 1);
 
   cmdline->AddOptionValue('\0', "gaborish", "0|1", "force disable gaborish.",
                           &params.gaborish, &ParseOverride, 1);
@@ -510,12 +564,17 @@ jxl::Status JxlCompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('v', "verbose",
                          "Verbose output (also applies to help).",
                          &params.verbose, &SetBooleanTrue);
-
-  return true;
 }
 
-jxl::Status JxlCompressArgs::ValidateArgs(
-    const tools::CommandLineParser& cmdline) {
+jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
+  params.file_in = file_in;
+  params.file_out = file_out;
+
+  if (file_in == nullptr) {
+    fprintf(stderr, "Missing INPUT filename.\n");
+    return false;
+  }
+
   bool got_distance = cmdline.GetOption(opt_distance_id)->matched();
   bool got_target_size = cmdline.GetOption(opt_target_size_id)->matched();
   bool got_target_bpp = cmdline.GetOption(opt_target_bpp_id)->matched();
@@ -615,6 +674,11 @@ jxl::Status JxlCompressArgs::ValidateArgs(
     return false;
   }
 
+  if (params.epf > 3) {
+    fprintf(stderr, "--epf must be in the 0..3 range\n");
+    return false;
+  }
+
   // User didn't override num_threads, so we have to compute a default, which
   // might fail, so only do so when necessary. Don't just check num_threads != 0
   // because the user may have set it to that.
@@ -633,7 +697,7 @@ jxl::Status JxlCompressArgs::ValidateArgs(
   return true;
 }
 
-jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
+jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, CompressArgs& args,
                         jxl::PaddedBytes* compressed, bool print_stats) {
   JXL_CHECK(pool);
 
@@ -656,6 +720,10 @@ jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, JxlCompressArgs& args,
   }
   SpeedStats stats;
   jxl::PassesEncoderState passes_encoder_state;
+  if (args.params.use_new_heuristics) {
+    passes_encoder_state.heuristics =
+        jxl::make_unique<jxl::FastEncoderHeuristics>();
+  }
   for (size_t i = 0; i < args.num_reps; ++i) {
     const double t0 = jxl::Now();
     jxl::Status ok = false;

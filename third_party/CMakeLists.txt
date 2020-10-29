@@ -16,16 +16,19 @@
 enable_testing()
 include(CTest)
 
+if(BUILD_TESTING)
 # Add GTest from source and alias it to what the find_package(GTest) workflow
 # defines. Omitting googletest/ directory would require it to be available in
 # the base system instead, but it would work just fine. This makes packages
 # using GTest and calling find_package(GTest) actually work.
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/googletest/CMakeLists.txt")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/googletest/CMakeLists.txt" AND
+    NOT JPEGXL_FORCE_SYSTEM_GTEST)
   add_subdirectory(googletest EXCLUDE_FROM_ALL)
 
   set(GTEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/googletest/googletest")
   set(GTEST_INCLUDE_DIR "$<TARGET_PROPERTY:INCLUDE_DIRECTORIES,gtest>"
       CACHE STRING "")
+  set(GMOCK_INCLUDE_DIR "$<TARGET_PROPERTY:INCLUDE_DIRECTORIES,gmock>")
   set(GTEST_LIBRARY "$<TARGET_FILE:gtest>")
   set(GTEST_MAIN_LIBRARY "$<TARGET_FILE:gtest_main>")
   add_library(GTest::GTest ALIAS gtest)
@@ -44,10 +47,49 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/googletest/CMakeLists.txt")
     set_target_properties(gmock_main PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
 endif()
-find_package(GTest REQUIRED)
+find_package(GTest)
+if (NOT GTEST_FOUND)
+  set(BUILD_TESTING OFF CACHE BOOL "Build tests" FORCE)
+  message(SEND_ERROR "GTest not found. Install googletest package "
+          "(libgtest-dev) in the system or download googletest to "
+          "third_party/googletest from https://github.com/google/googletest ."
+          "To disable tests instead re-run cmake with -DBUILD_TESTING=OFF.")
+endif()  # NOT GTEST_FOUND
+
+# Look for gmock in the system too.
+if (NOT DEFINED GMOCK_INCLUDE_DIR)
+  find_path(
+      GMOCK_INCLUDE_DIR "gmock/gmock.h"
+      HINTS ${GTEST_INCLUDE_DIRS})
+  if ("${GMOCK_INCLUDE_DIR}" STREQUAL "GMOCK_INCLUDE_DIR-NOTFOUND")
+    set(BUILD_TESTING OFF CACHE BOOL "Build tests" FORCE)
+    message(SEND_ERROR "GMock not found. Install googletest package "
+            "(libgmock-dev) in the system or download googletest to "
+            "third_party/googletest from https://github.com/google/googletest ."
+            "To disable tests instead re-run cmake with -DBUILD_TESTING=OFF.")
+  else()
+    message(STATUS "Found GMock: ${GMOCK_INCLUDE_DIR}")
+  endif()  # GMOCK_INCLUDE_DIR-NOTFOUND
+endif()  # NOT DEFINED GMOCK_INCLUDE_DIR
+endif()  # BUILD_TESTING
 
 # Highway
-add_subdirectory(highway)
+if (JPEGXL_FORCE_SYSTEM_HWY)
+  pkg_check_modules(HWY libhwy)
+  if (NOT HWY_FOUND)
+    message(FATAL_ERROR
+        "Highway library (hwy) not found. Install libhwy-dev or download it "
+        "to third_party/highway from https://github.com/google/highway . "
+        "Highway is required to build JPEG XL.")
+  endif()
+  add_library(hwy INTERFACE IMPORTED GLOBAL)
+  target_include_directories(hwy INTERFACE ${HWY_INCLUDE_DIRS})
+  target_link_libraries(hwy INTERFACE ${HWY_LINK_LIBRARIES})
+  target_link_options(hwy INTERFACE ${HWY_LDFLAGS_OTHER})
+  target_compile_options(hwy INTERFACE ${HWY_CFLAGS_OTHER})
+else()
+  add_subdirectory(highway)
+endif()
 
 # lodepng
 if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lodepng/.git" )
@@ -56,11 +98,48 @@ endif()
 include(lodepng.cmake)
 
 # brotli
-if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h")
-  message(SEND_ERROR "Please run git submodule update --init")
-endif ()
-set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
-add_subdirectory(brotli EXCLUDE_FROM_ALL)
+if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
+    JPEGXL_FORCE_SYSTEM_BROTLI)
+  # Create the libbrotli* and libbrotli*-static targets.
+  foreach(brlib IN ITEMS brotlienc brotlidec brotlicommon)
+    # Use uppercase like "BROTLIENC" for the cmake variables
+    string(TOUPPER "${brlib}" BRPREFIX)
+    pkg_check_modules(${BRPREFIX} lib${brlib})
+    if (${BRPREFIX}_FOUND)
+      add_library(${brlib} INTERFACE IMPORTED GLOBAL)
+      target_include_directories(${brlib}
+          INTERFACE ${${BRPREFIX}_INCLUDE_DIRS})
+      target_link_libraries(${brlib}
+          INTERFACE ${${BRPREFIX}_LINK_LIBRARIES})
+      target_link_options(${brlib}
+          INTERFACE ${${BRPREFIX}_LDFLAGS_OTHER})
+      target_compile_options(${brlib}
+          INTERFACE ${${BRPREFIX}_CFLAGS_OTHER})
+
+      # TODO(deymo): Remove the -static library versions, this target is
+      # currently needed by brunsli.cmake. When importing it this way, the
+      # brotli*-static target is just an alias.
+      add_library(${brlib}-static ALIAS ${brlib})
+    endif()
+    unset(BRPREFIX)
+  endforeach()
+
+  if (BROTLIENC_FOUND AND BROTLIDEC_FOUND AND BROTLICOMMON_FOUND)
+    set(BROTLI_FOUND 1)
+  else()
+    set(BROTLI_FOUND 0)
+  endif()
+
+  if (NOT BROTLI_FOUND)
+    message(SEND_ERROR
+        "Brotli not found, install brotli-dev or download brotli source code to"
+        " third_party/brotli from https://github.com/google/brotli.")
+  endif ()
+else()
+  # Compile brotli from sources.
+  set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
+  add_subdirectory(brotli EXCLUDE_FROM_ALL)
+endif()
 
 # *cms
 if (JPEGXL_ENABLE_SKCMS)
@@ -80,7 +159,12 @@ endif()
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brunsli/c/include/brunsli/brunsli_decode.h")
   message(SEND_ERROR "Please run git submodule update --init")
 endif ()
+if (NOT TARGET gtest_main)
+  # Disable googletest in brunsli by defining this target.
+  add_custom_target(gtest_main)
+endif()
 add_subdirectory(brunsli EXCLUDE_FROM_ALL)
+target_compile_options(brunslienc-static PRIVATE -Wno-sign-compare)
 
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)

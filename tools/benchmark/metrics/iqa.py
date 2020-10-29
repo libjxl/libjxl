@@ -1,4 +1,17 @@
 #!/usr/bin/env python3
+# Copyright (c) the JPEG XL Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
 import sys
@@ -8,7 +21,7 @@ from torchvision import transforms
 import numpy as np
 
 path = pathlib.Path(__file__).parent.absolute(
-) / ".." / ".." / ".." / "third_party" / "IQA-optimization"
+) / '..' / '..' / '..' / 'third_party' / 'IQA-optimization'
 sys.path.append(str(path))
 
 from IQA_pytorch import SSIM, MS_SSIM, CW_SSIM, GMSD, LPIPSvgg, DISTS, NLPD, FSIM, VSI, VIFs, VIF, MAD
@@ -17,17 +30,20 @@ from IQA_pytorch import SSIM, MS_SSIM, CW_SSIM, GMSD, LPIPSvgg, DISTS, NLPD, FSI
 # only really works with the output from JXL, but we don't need more than that.
 def read_pfm(fname):
     with open(fname, 'rb') as f:
-        header, width, height = f.readline().rstrip().split()
+        header_width_height = []
+        while len(header_width_height) < 3:
+            header_width_height += f.readline().rstrip().split()
+        header, width, height = header_width_height
         assert header == b'PF' or header == b'Pf'
         width, height = int(width), int(height)
         scale = float(f.readline().rstrip())
         fmt = '<f' if scale < 0 else '>f'
-        scale = abs(scale)
         data = np.fromfile(f, fmt)
         if header == b'PF':
-            return np.reshape(data, (height, width, 3))[::-1, :, :] * scale
+            out = np.reshape(data, (height, width, 3))[::-1, :, :]
         else:
-            return np.reshape(data, (height, width))[::-1, :] * scale
+            out = np.reshape(data, (height, width))[::-1, :]
+        return out.astype(np.float)
 
 
 D_dict = {
@@ -69,7 +85,6 @@ def Load(path):
         gray = img
         img = np.zeros((img.shape[0], img.shape[1], 3), dtype=float)
         img[:, :, 0] = img[:, :, 1] = img[:, :, 2] = gray
-    img *= 1 / 255
     if len(img.shape) == 3:
         img = np.transpose(img, axes=(2, 0, 1)).copy()
     return torch.FloatTensor(img).unsqueeze(0).to(device)

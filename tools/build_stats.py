@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright (c) the JPEG XL Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 
 """build_stats.py: Gather statistics about sizes of dependencies.
 
@@ -37,7 +51,8 @@ ObjectStats = collections.namedtuple('ObjectStats',
 # t - text (code), d - global non-const data, n/r - read-only data,
 # w - weak symbols (likely inline code not inlined),
 # v - weak symbols (vtable / typeinfo)
-BIN_SIZE = 'tdnrwv'
+# u - unique symbols
+BIN_SIZE = 'tdnrwvu'
 
 # Sections that end up in static RAM.
 RAM_SIZE = 'dbs'
@@ -66,6 +81,14 @@ def LoadSymbols(filename):
         symlist[1],
         symlist[0]))
   return ret
+
+def LoadTargetCommand(target, build_dir):
+  stdout = subprocess.check_output(
+      ['ninja', '-C', build_dir, '-t', 'commands', target])
+  # The last command is always the command to build (link) the requested
+  # target.
+  command = stdout.splitlines()[-1]
+  return command.decode('utf-8')
 
 
 def LoadStackSizes(filename, binutils=''):
@@ -191,14 +214,14 @@ def SizeStats(args):
   syms = {}
   for target in args.target:
     tgt_stats = []
-    stdout = subprocess.check_output(
-        ['ninja', '-C', args.build_dir, '-t', 'commands', target])
-    # The last command is always the command to build (link) the requested
-    # target.
-    link_command = stdout.splitlines()[-1]
+    link_params = LoadTargetCommand(target, args.build_dir).split()
+    if 'cmake_symlink_library' in link_params:
+      # The target is a library symlinked, use the target of the symlink
+      # instead.
+      target = link_params[link_params.index('cmake_symlink_library') + 1]
+      link_params = LoadTargetCommand(target, args.build_dir).split()
 
     tgt_libs = []
-    link_params = link_command.decode('utf-8').split()
     for entry in link_params:
       if not entry or not (entry.endswith('.o') or entry.endswith('.a')):
         continue

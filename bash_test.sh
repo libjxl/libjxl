@@ -18,18 +18,17 @@
 
 MYDIR=$(dirname $(realpath "$0"))
 
-set -x
 set -u
 
 test_includes() {
   local ret=0
   local f
   for f in $(git ls-files | grep -E '(\.cc|\.cpp|\.h)$'); do
-    # Check that the public file (in include/ directory) doesn't use the full
+    # Check that the public files (in lib/include/ directory) don't use the full
     # path to the public header since users of the library will include the
-    # library as: #include "jpegxl/foobar.h".
-    if [[ "${f#include/}" != "${f}" ]]; then
-      if grep -i -H -n -E '#include\s*[<"]include/jpegxl' "$f" >&2; then
+    # library as: #include "jxl/foobar.h".
+    if [[ "${f#lib/include/}" != "${f}" ]]; then
+      if grep -i -H -n -E '#include\s*[<"]lib/include/jxl' "$f" >&2; then
         echo "Don't add \"include/\" to the include path of public headers." >&2
         ret=1
       fi
@@ -45,8 +44,9 @@ test_includes() {
           grep -i -H -n -E '#include\s*[<"]third_party/' >&2 &&
           [[ $ret -eq 0 ]]; then
         cat >&2 <<EOF
-Don't add third_party/ to the include path of third_party projects. This makes
-it harder to use installed system libraries instead of the third_party/ ones.
+$f: Don't add third_party/ to the include path of third_party projects. This \
+makes it harder to use installed system libraries instead of the third_party/ \
+ones.
 EOF
         ret=1
       fi
@@ -54,6 +54,85 @@ EOF
 
   done
   return ${ret}
+}
+
+test_include_collision() {
+  local ret=0
+  local f
+  for f in $(git ls-files | grep -E '^lib/include/'); do
+    local base=${f#lib/include/}
+    if [[ -e "lib/${base}" ]]; then
+      echo "$f: Name collision, both $f and lib/${base} exist." >&2
+      ret=1
+    fi
+  done
+  return ${ret}
+}
+
+test_copyright() {
+  local ret=0
+  local f
+  for f in $(git ls-files | grep -E '(\.cc|\.cpp|\.h|\.sh|\.m|\.py)$'); do
+    if [[ "${f#third_party/}" == "$f" ]]; then
+      # $f is not in third_party/
+      if ! head -n 10 "$f" |
+          grep -F 'Copyright (c) the JPEG XL Project' >/dev/null ; then
+        echo "$f: Missing Copyright blob near the top of the file." >&2
+        ret=1
+      fi
+    fi
+  done
+  return ${ret}
+}
+
+# Check for git merge conflict markers.
+test_merge_conflict() {
+  local ret=0
+  TEXT_FILES='(\.cc|\.cpp|\.h|\.sh|\.m|\.py|\.md|\.txt|\.cmake)$'
+  for f in $(git ls-files | grep -E "${TEXT_FILES}"); do
+    if grep -E '^<<<<<<< ' "$f"; then
+      echo "$f: Found git merge conflict marker. Please resolve." >&2
+      ret=1
+    fi
+  done
+  return ${ret}
+}
+
+# Check that the library and the package have the same version. This prevents
+# accidentally having them out of sync.
+get_version() {
+  local varname=$1
+  local line=$(grep -F "set(${varname} " lib/CMakeLists.txt | head -n 1)
+  [[ -n "${line}" ]]
+  line="${line#set(${varname} }"
+  line="${line%)}"
+  echo "${line}"
+}
+
+test_version() {
+  local major=$(get_version JPEGXL_MAJOR_VERSION)
+  local minor=$(get_version JPEGXL_MINOR_VERSION)
+  local patch=$(get_version JPEGXL_PATCH_VERSION)
+  # Check that the version is not empty
+  if [[ -z "${major}${minor}${patch}" ]]; then
+    echo "Couldn't parse version from CMakeLists.txt" >&2
+    return 1
+  fi
+  local pkg_version=$(head -n 1 debian/changelog)
+  # Get only the part between the first "jpeg-xl (" and the following ")".
+  pkg_version="${pkg_version#jpeg-xl (}"
+  pkg_version="${pkg_version%%)*}"
+  if [[ -z "${pkg_version}" ]]; then
+    echo "Couldn't parse version from debian package" >&2
+    return 1
+  fi
+
+  if [[ "${pkg_version}" != "${major}.${minor}.${patch}"* ]]; then
+    echo "Debian package version (${pkg_version}) doesn't match library" \
+      "version (${major}.${minor}.${patch})." >&2
+    return 1
+  fi
+  return 0
 }
 
 main() {

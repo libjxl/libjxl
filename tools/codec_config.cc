@@ -16,13 +16,21 @@
 
 #include <hwy/targets.h>
 
-#include "jxl/base/status.h"
+#include "lib/jxl/base/status.h"
 
 namespace jpegxl {
 namespace tools {
 
-std::string CodecConfigString() {
+std::string CodecConfigString(uint32_t lib_version) {
   std::string config;
+
+  if (lib_version != 0) {
+    char version_str[20];
+    snprintf(version_str, sizeof(version_str), "v%d.%d.%d ",
+             lib_version / 1000000, (lib_version / 1000) % 1000,
+             lib_version % 1000);
+    config += version_str;
+  }
 
   std::string version = JPEGXL_VERSION;
   if (version != "(unknown)") {

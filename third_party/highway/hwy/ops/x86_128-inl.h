@@ -601,7 +601,7 @@ HWY_API Vec128<int64_t, N> operator<<(const Vec128<int64_t, N> v,
 
 // ------------------------------ Minimum
 
-// Unsigned (no u64)
+// Unsigned (no u64 unless AVX3)
 template <size_t N>
 HWY_API Vec128<uint8_t, N> Min(const Vec128<uint8_t, N> a,
                                const Vec128<uint8_t, N> b) {
@@ -617,8 +617,15 @@ HWY_API Vec128<uint32_t, N> Min(const Vec128<uint32_t, N> a,
                                 const Vec128<uint32_t, N> b) {
   return Vec128<uint32_t, N>{_mm_min_epu32(a.raw, b.raw)};
 }
+#if HWY_TARGET == HWY_AVX3
+template <size_t N>
+HWY_API Vec128<uint64_t, N> Min(const Vec128<uint64_t, N> a,
+                                const Vec128<uint64_t, N> b) {
+  return Vec128<uint64_t, N>{_mm_min_epu64(a.raw, b.raw)};
+}
+#endif
 
-// Signed (no i64)
+// Signed (no i64 unless AVX3)
 template <size_t N>
 HWY_API Vec128<int8_t, N> Min(const Vec128<int8_t, N> a,
                               const Vec128<int8_t, N> b) {
@@ -634,6 +641,13 @@ HWY_API Vec128<int32_t, N> Min(const Vec128<int32_t, N> a,
                                const Vec128<int32_t, N> b) {
   return Vec128<int32_t, N>{_mm_min_epi32(a.raw, b.raw)};
 }
+#if HWY_TARGET == HWY_AVX3
+template <size_t N>
+HWY_API Vec128<int64_t, N> Min(const Vec128<int64_t, N> a,
+                               const Vec128<int64_t, N> b) {
+  return Vec128<int64_t, N>{_mm_min_epi64(a.raw, b.raw)};
+}
+#endif
 
 // Float
 template <size_t N>
@@ -649,7 +663,7 @@ HWY_API Vec128<double, N> Min(const Vec128<double, N> a,
 
 // ------------------------------ Maximum
 
-// Unsigned (no u64)
+// Unsigned (no u64 unless AVX3)
 template <size_t N>
 HWY_API Vec128<uint8_t, N> Max(const Vec128<uint8_t, N> a,
                                const Vec128<uint8_t, N> b) {
@@ -665,8 +679,15 @@ HWY_API Vec128<uint32_t, N> Max(const Vec128<uint32_t, N> a,
                                 const Vec128<uint32_t, N> b) {
   return Vec128<uint32_t, N>{_mm_max_epu32(a.raw, b.raw)};
 }
+#if HWY_TARGET == HWY_AVX3
+template <size_t N>
+HWY_API Vec128<uint64_t, N> Max(const Vec128<uint64_t, N> a,
+                                const Vec128<uint64_t, N> b) {
+  return Vec128<uint64_t, N>{_mm_max_epu64(a.raw, b.raw)};
+}
+#endif
 
-// Signed (no i64)
+// Signed (no i64 unless AVX3)
 template <size_t N>
 HWY_API Vec128<int8_t, N> Max(const Vec128<int8_t, N> a,
                               const Vec128<int8_t, N> b) {
@@ -682,6 +703,13 @@ HWY_API Vec128<int32_t, N> Max(const Vec128<int32_t, N> a,
                                const Vec128<int32_t, N> b) {
   return Vec128<int32_t, N>{_mm_max_epi32(a.raw, b.raw)};
 }
+#if HWY_TARGET == HWY_AVX3
+template <size_t N>
+HWY_API Vec128<int64_t, N> Max(const Vec128<int64_t, N> a,
+                               const Vec128<int64_t, N> b) {
+  return Vec128<int64_t, N>{_mm_max_epi64(a.raw, b.raw)};
+}
+#endif
 
 // Float
 template <size_t N>
@@ -1684,9 +1712,11 @@ HWY_API Vec128<T> ShiftLeftBytes(const Vec128<T> v) {
   return Vec128<T>{_mm_slli_si128(v.raw, kBytes)};
 }
 
-template <int kLanes, typename T>
-HWY_API Vec128<T> ShiftLeftLanes(const Vec128<T> v) {
-  return ShiftLeftBytes<kLanes * sizeof(T)>(v);
+template <int kLanes, typename T, size_t N>
+HWY_API Vec128<T, N> ShiftLeftLanes(const Vec128<T, N> v) {
+  const Simd<uint8_t, N * sizeof(T)> d8;
+  const Simd<T, N> d;
+  return BitCast(d, ShiftLeftBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // 0x01..0F, kBytes = 1 => 0x0001..0E
@@ -1696,9 +1726,11 @@ HWY_API Vec128<T> ShiftRightBytes(const Vec128<T> v) {
   return Vec128<T>{_mm_srli_si128(v.raw, kBytes)};
 }
 
-template <int kLanes, typename T>
-HWY_API Vec128<T> ShiftRightLanes(const Vec128<T> v) {
-  return ShiftRightBytes<kLanes * sizeof(T)>(v);
+template <int kLanes, typename T, size_t N>
+HWY_API Vec128<T, N> ShiftRightLanes(const Vec128<T, N> v) {
+  const Simd<uint8_t, N * sizeof(T)> d8;
+  const Simd<T, N> d;
+  return BitCast(d, ShiftRightBytes<kLanes * sizeof(T)>(BitCast(d8, v)));
 }
 
 // ------------------------------ Extract from 2x 128-bit at constant offset
@@ -2386,7 +2418,7 @@ HWY_API size_t CountTrue(const Mask128<T> mask) {
   return PopCount(BitsFromMask(mask));
 }
 
-// ------------------------------ Horizontal sum (reduction)
+// ------------------------------ Reductions
 
 // Returns 64-bit sums of 8-byte groups.
 template <size_t N>
@@ -2405,6 +2437,22 @@ HWY_API Vec128<T, N> SumOfLanes(hwy::SizeTag<4> /* tag */,
   const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
   return v20_31_20_31 + v31_20_31_20;
 }
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
+  const Vec128<T> v1032 = Shuffle1032(v3210);
+  const Vec128<T> v31_20_31_20 = Min(v3210, v1032);
+  const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Min(v20_31_20_31, v31_20_31_20);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(hwy::SizeTag<4> /* tag */,
+                                const Vec128<T, N> v3210) {
+  const Vec128<T> v1032 = Shuffle1032(v3210);
+  const Vec128<T> v31_20_31_20 = Max(v3210, v1032);
+  const Vec128<T> v20_31_20_31 = Shuffle0321(v31_20_31_20);
+  return Max(v20_31_20_31, v31_20_31_20);
+}
 
 // For u64/i64/f64.
 template <typename T, size_t N>
@@ -2413,6 +2461,18 @@ HWY_API Vec128<T, N> SumOfLanes(hwy::SizeTag<8> /* tag */,
   const Vec128<T> v01 = Shuffle01(v10);
   return v10 + v01;
 }
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
+  const Vec128<T> v01 = Shuffle01(v10);
+  return Min(v10, v01);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(hwy::SizeTag<8> /* tag */,
+                                const Vec128<T, N> v10) {
+  const Vec128<T> v01 = Shuffle01(v10);
+  return Max(v10, v01);
+}
 
 }  // namespace detail
 
@@ -2420,6 +2480,14 @@ HWY_API Vec128<T, N> SumOfLanes(hwy::SizeTag<8> /* tag */,
 template <typename T, size_t N>
 HWY_API Vec128<T, N> SumOfLanes(const Vec128<T, N> v) {
   return detail::SumOfLanes(hwy::SizeTag<sizeof(T)>(), v);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MinOfLanes(const Vec128<T, N> v) {
+  return detail::MinOfLanes(hwy::SizeTag<sizeof(T)>(), v);
+}
+template <typename T, size_t N>
+HWY_API Vec128<T, N> MaxOfLanes(const Vec128<T, N> v) {
+  return detail::MaxOfLanes(hwy::SizeTag<sizeof(T)>(), v);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

@@ -20,11 +20,11 @@
 #include <string>
 #include <vector>
 
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/status.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/dec_file.h"
-#include "jxl/enc_file.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/dec_file.h"
+#include "lib/jxl/enc_file.h"
 
 namespace jpegxl {
 namespace tools {

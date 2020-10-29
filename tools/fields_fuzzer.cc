@@ -14,11 +14,11 @@
 
 #include <stdint.h>
 
-#include "jxl/dec_bit_reader.h"
-#include "jxl/frame_header.h"
-#include "jxl/headers.h"
-#include "jxl/image_bundle.h"
-#include "jxl/loop_filter.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/headers.h"
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/loop_filter.h"
 
 namespace jxl {
 
@@ -52,7 +52,8 @@ int TestOneInput(const uint8_t* data, size_t size) {
     }
 
     case 4: {
-      FrameHeader frame;
+      ImageMetadata metadata;
+      FrameHeader frame(&metadata);
       (void)ReadFrameHeader(&reader, &frame);
       break;
     }

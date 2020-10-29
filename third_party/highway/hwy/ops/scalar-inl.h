@@ -717,8 +717,8 @@ HWY_INLINE Vec1<int32_t> NearestInt(const Vec1<float> v) {
 // ================================================== SWIZZLE
 
 // Unsupported: Shift*Bytes, CombineShiftRightBytes, Interleave*,
-// Shuffle*, SumsOfU8x8, SumOfLanes, UpperHalf - these require
-// more than one lane and/or actual 128-bit vectors.
+// Shuffle*, SumsOfU8x8, UpperHalf - these require more than one lane and/or
+// actual 128-bit vectors.
 
 template <typename T>
 HWY_INLINE T GetLane(const Vec1<T> v) {
@@ -764,7 +764,7 @@ HWY_INLINE Vec1<int64_t> ZipLower(const Vec1<int32_t> a,
   return Vec1<int64_t>((int64_t(b.raw) << 32) + a.raw);
 }
 
-// ================================================== MISC
+// ------------------------------ Mask
 
 template <typename T>
 HWY_INLINE bool AllFalse(const Mask1<T> mask) {
@@ -786,10 +786,20 @@ HWY_INLINE size_t CountTrue(const Mask1<T> mask) {
   return mask.bits == 0 ? 0 : 1;
 }
 
+// ------------------------------ Reductions
+
 // Sum of all lanes, i.e. the only one.
 template <typename T>
 HWY_INLINE Vec1<T> SumOfLanes(const Vec1<T> v0) {
   return v0;
+}
+template <typename T>
+HWY_INLINE Vec1<T> MinOfLanes(const Vec1<T> v) {
+  return v;
+}
+template <typename T>
+HWY_INLINE Vec1<T> MaxOfLanes(const Vec1<T> v) {
+  return v;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

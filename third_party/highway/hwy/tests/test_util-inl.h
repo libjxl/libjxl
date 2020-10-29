@@ -38,6 +38,14 @@ constexpr size_t kTestMaxVectorSize = 64;
 static_assert(kTestMaxVectorSize >= kMaxVectorSize,
               "All kTestMaxVectorSize test arrays need to be updated");
 
+// googletest before 1.10 didn't define INSTANTIATE_TEST_SUITE_P() but instead
+// used INSTANTIATE_TEST_CASE_P which is now deprecated.
+#ifdef INSTANTIATE_TEST_SUITE_P
+#define HWY_GTEST_INSTANTIATE_TEST_SUITE_P INSTANTIATE_TEST_SUITE_P
+#else
+#define HWY_GTEST_INSTANTIATE_TEST_SUITE_P INSTANTIATE_TEST_CASE_P
+#endif
+
 // Helper class to run parametric tests using the hwy target as parameter. To
 // use this define the following in your test:
 //   class MyTestSuite : public TestWithParamTarget {
@@ -69,7 +77,7 @@ std::string TestParamTargetName(const testing::TestParamInfo<uint32_t>& info) {
 }
 
 #define HWY_TARGET_INSTANTIATE_TEST_SUITE_P(suite)              \
-  INSTANTIATE_TEST_SUITE_P(                                     \
+  HWY_GTEST_INSTANTIATE_TEST_SUITE_P(                           \
       suite##Group, suite,                                      \
       testing::ValuesIn(::hwy::SupportedAndGeneratedTargets()), \
       ::hwy::TestParamTargetName);
@@ -123,7 +131,7 @@ std::string TestParamTargetNameAndT(
 }
 
 #define HWY_TARGET_INSTANTIATE_TEST_SUITE_P_T(suite, generator)     \
-  INSTANTIATE_TEST_SUITE_P(                                         \
+  HWY_GTEST_INSTANTIATE_TEST_SUITE_P(                               \
       suite##Group, suite,                                          \
       ::testing::Combine(                                           \
           testing::ValuesIn(::hwy::SupportedAndGeneratedTargets()), \

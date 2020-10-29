@@ -15,7 +15,7 @@
 #ifndef TOOLS_BENCHMARK_BENCHMARK_CODEC_JPEG_H_
 #define TOOLS_BENCHMARK_BENCHMARK_CODEC_JPEG_H_
 
-#include "jxl/base/status.h"
+#include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 

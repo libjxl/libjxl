@@ -15,8 +15,8 @@
 #ifndef TOOLS_EPF_H_
 #define TOOLS_EPF_H_
 
-#include "jxl/base/status.h"
-#include "jxl/codec_in_out.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/codec_in_out.h"
 
 namespace jpegxl {
 namespace tools {

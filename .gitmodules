@@ -28,3 +28,6 @@
 [submodule "third_party/vmaf"]
 	path = third_party/vmaf
 	url = https://github.com/Netflix/vmaf.git
+[submodule "third_party/difftest_ng"]
+	path = third_party/difftest_ng
+	url = https://github.com/thorfdbg/difftest_ng.git

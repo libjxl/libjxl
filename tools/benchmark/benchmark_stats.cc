@@ -22,7 +22,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "jxl/base/status.h"
+#include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 
 namespace jxl {

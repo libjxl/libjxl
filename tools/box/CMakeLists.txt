@@ -19,13 +19,19 @@ add_library(box STATIC
 # This library can be included into position independent binaries.
 set_target_properties(box PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 target_link_libraries(box
-  jpegxl-static
-  jpegxl_threads
+  jxl-static
+  jxl_threads-static
+)
+target_include_directories(box
+  PRIVATE
+  "${PROJECT_SOURCE_DIR}"
 )
 
+if(${JPEGXL_ENABLE_DEVTOOLS})
 add_executable(box_list
   box_list_main.cc
 )
 target_link_libraries(box_list
   box
 )
+endif()  # JPEGXL_ENABLE_DEVTOOLS

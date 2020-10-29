@@ -21,20 +21,37 @@
 #include <string>
 #include <vector>
 
-#include "jxl/base/compiler_specific.h"
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/os_specific.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/span.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/image.h"
-#include "jxl/image_bundle.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/os_specific.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/external_image.h"
+#include "lib/jxl/image.h"
+#include "lib/jxl/image_bundle.h"
 
 #ifdef MEMORY_SANITIZER
 #include "sanitizer/msan_interface.h"
 #endif
 
 namespace jxl {
+
+// Sets image data from 8-bit sRGB pixel array in bytes.
+// Amount of input bytes per pixel must be:
+// (is_gray ? 1 : 3) + (has_alpha ? 1 : 0)
+Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
+                const bool has_alpha, const bool alpha_is_premultiplied,
+                const bool is_16bit, const bool big_endian,
+                const uint8_t* pixels, const uint8_t* end, ThreadPool* pool,
+                ImageBundle* ib) {
+  const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
+  const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
+  const Span<const uint8_t> span(pixels, end - pixels);
+  return ConvertImage(span, xsize, ysize, c, has_alpha, alpha_is_premultiplied,
+                      /*bits_per_alpha=*/bits_per_sample, bits_per_sample,
+                      big_endian, /*flipped_y=*/false, pool, ib);
+}
 
 struct WebPArgs {
   // Empty, no WebP-specific args currently.
@@ -179,12 +196,12 @@ class WebPCodec : public ImageCodec {
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
     io->metadata.SetAlphaBits(8);
-    const Status ok = io->Main().SetFromSRGB(
-        buf->width, buf->height, is_gray, has_alpha,
-        /*alpha_is_premultiplied=*/false, data_begin, data_end, pool);
+    const Status ok =
+        FromSRGB(buf->width, buf->height, is_gray, has_alpha,
+                 /*alpha_is_premultiplied=*/false, /*is_16bit=*/false,
+                 /*big_endian=*/false, data_begin, data_end, pool, &io->Main());
     WebPFreeDecBuffer(buf);
     JXL_RETURN_IF_ERROR(ok);
-    io->enc_size = compressed.size();
     io->dec_pixels = buf->width * buf->height;
     return true;
   }

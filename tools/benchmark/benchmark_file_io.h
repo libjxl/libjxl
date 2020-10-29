@@ -21,8 +21,8 @@
 #include <string>
 #include <vector>
 
-#include "jxl/base/file_io.h"
-#include "jxl/base/status.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 

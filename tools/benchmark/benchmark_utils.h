@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 
-#include "jxl/base/status.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 
@@ -41,4 +41,4 @@ Status RunCommand(const std::string& command,
 
 }  // namespace jxl
 
-#endif  // TOOLS_BENCHMARK_BENCHMARK_CODEC_CUSTOM_H_
+#endif  // TOOLS_BENCHMARK_BENCHMARK_UTILS_H_

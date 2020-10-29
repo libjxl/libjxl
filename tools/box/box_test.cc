@@ -19,10 +19,10 @@
 #include <string.h>
 
 #include "gtest/gtest.h"
-#include "jxl/base/file_io.h"
-#include "jxl/base/override.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/status.h"
+#include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/status.h"
 
 TEST(BoxTest, BoxTest) {
   size_t test_size = 256;

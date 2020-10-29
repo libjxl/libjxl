@@ -20,6 +20,7 @@
 stages:
   - build
   - test
+  - release
   - deploy
 
 variables:
@@ -30,7 +31,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:b068f90b767194574e80005a8ddcbf7c960a9daad31b64831449a240fe7a880d
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:2add2725e5b9c3fb655bb90cdcb4fd2a48353714a86794f542b289addad6a5d0
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -59,13 +60,12 @@ variables:
 
 # Common artifacts for the build stage
 .default_build_paths: &default_build_paths
-  - build/libjpegxl.so*
-  - build/libjpegxl.dll
-  # Binary tools like cjpegxl are "cjpegxl.exe" in windows builds. These
+  - build/libjxl.so*
+  - build/libjxl.dll
+  # Binary tools like cjxl are "cjxl.exe" in windows builds. These
   # matches will match against either one.
-  - build/tools/cbrunsli*
-  - build/tools/cjpegxl*
-  - build/tools/djpegxl*
+  - build/tools/cjxl*
+  - build/tools/djxl*
   - build/tools/benchmark_xl*
   - build/tools/decode_and_encode*
   - build/tools/comparison_viewer/compare_codecs*
@@ -110,7 +110,7 @@ build:x86_64:clang:release:
     # Test that the package can be installed.
     - ninja -C build install
     - tools/build_stats.py --save build/stats.json
-        cjpegxl djpegxl libjpegxl.so.0.0.1
+        cjxl djxl libjxl.so
 
 test:x86_64:clang:release:
   <<: *linux_host_template
@@ -125,12 +125,35 @@ test:x86_64:clang:release:
   script:
     - ./ci.sh test
 
+# linux x86_64 with gcc in Release mode.
+build:x86_64:gcc7:debug:
+  <<: *linux_host_build_template
+  stage: build
+  only:
+    - master
+    - merge_requests
+    - schedules
+    - tags
+  script:
+    - CC=gcc-7 CXX=g++-7 SKIP_TEST=1 PACK_TEST=1 ./ci.sh debug
+    - tools/build_stats.py --save build/stats.json
+        cjxl djxl libjxl.so
+
+test:x86_64:gcc7:debug:
+  <<: *linux_host_template
+  stage: test
+  dependencies:
+    - build:x86_64:gcc7:debug
+  script:
+    - TEST_STACK_LIMIT=1024 ./ci.sh test
+
 # x86_84 test coverage build
 build:x86_64:clang:coverage:
   <<: *linux_host_build_template
   stage: build
   only:
     - master
+    - merge_requests
     - schedules
     - tags
   script:
@@ -222,7 +245,7 @@ build:i686:clang:release:
         ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
     - tools/build_stats.py --save build/stats.json
         --binutils=i686-linux-gnu-
-        cjpegxl djpegxl libjpegxl.so.0.0.1
+        cjxl djxl libjxl.so
 
 test:i686:clang:release:
   <<: *linux_host_template
@@ -272,7 +295,7 @@ build:aarch64:clang:release:
         ./ci.sh release
     - tools/build_stats.py --save build/stats.json
         --binutils=aarch64-linux-gnu-
-        cjpegxl djpegxl libjpegxl.so.0.0.1
+        cjxl djxl libjxl.so
 
 test:aarch64:clang:release:
   <<: *linux_host_template
@@ -300,7 +323,7 @@ build:armhf:clang:release:
         ./ci.sh release
     - tools/build_stats.py --save build/stats.json
         --binutils=arm-linux-gnueabihf-
-        cjpegxl djpegxl libjpegxl.so.0.0.1
+        cjxl djxl libjxl.so
 
 test:armhf:clang:release:
   <<: *linux_host_template
@@ -573,3 +596,59 @@ test:ems_simd:all:
     - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
     - BUILD_TARGET=wasm32 emconfigure ./ci.sh test
+
+### Release builds
+
+# Debian package build template.
+.linux_host_debian_template: &linux_host_debian_template
+  <<: *linux_host_template
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    BUILD_DIR: build
+    # Prevent "apt" asking interactive questions.
+    DEBIAN_FRONTEND: noninteractive
+    TARGET_DIR: jpegxl-$CI_COMMIT_REF_NAME-$CI_BUILD_NAME
+  stage: release
+  only:
+    - master
+    - tags
+  script:
+    - apt update
+    - apt install -y devscripts build-essential
+    # Build and install highway.
+    - apt build-dep -y ./third_party/highway
+    - ./ci.sh debian_build highway
+    - dpkg -i build/debs/libhwy-dev_*_amd64.deb
+    # Build jpeg-xl
+    - apt build-dep -y .
+    - ./ci.sh debian_build jpeg-xl
+    # Print package stats.
+    - ./ci.sh debian_stats
+    - mkdir -p ${TARGET_DIR}
+    - mv -v build/debs/*.* ${TARGET_DIR}/
+  artifacts:
+    name: "jpegxl-$CI_COMMIT_REF_NAME-$CI_BUILD_NAME"
+    expire_in: 1 week
+    paths:
+      - jpegxl-*/*
+
+# Debian package build.
+debian10:
+  <<: *linux_host_debian_template
+  image: debian:10.6
+
+ubuntu18.04:
+  <<: *linux_host_debian_template
+  before_script:
+    # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev installs
+    # the source files only.
+    - apt update
+    - apt install -y build-essential libgtest-dev cmake
+    - (cd /usr/src/gtest &&
+         cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
+         make all install)
+  image: ubuntu:18.04
+
+ubuntu20.04:
+  <<: *linux_host_debian_template
+  image: ubuntu:20.04

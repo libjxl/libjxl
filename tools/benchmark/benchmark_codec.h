@@ -21,14 +21,14 @@
 #include <string>
 #include <vector>
 
-#include "jxl/aux_out.h"
-#include "jxl/base/data_parallel.h"
-#include "jxl/base/padded_bytes.h"
-#include "jxl/base/span.h"
-#include "jxl/base/status.h"
-#include "jxl/butteraugli/butteraugli.h"
-#include "jxl/codec_in_out.h"
-#include "jxl/image.h"
+#include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/butteraugli/butteraugli.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/image.h"
 #include "tools/args.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_stats.h"

@@ -26,9 +26,9 @@
 #include <atomic>
 #include <hwy/highway.h>
 
-#include "jxl/base/compiler_specific.h"
-#include "jxl/base/profiler.h"
-#include "jxl/color_encoding.h"
+#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/profiler.h"
+#include "lib/jxl/color_encoding_internal.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {

@@ -59,6 +59,7 @@ set(HWY_SOURCES
     hwy/foreach_target.h
     hwy/highway.h
     hwy/nanobenchmark.cc
+    hwy/nanobenchmark.h
     hwy/ops/arm_neon-inl.h
     hwy/ops/scalar-inl.h
     hwy/ops/shared-inl.h

@@ -24,9 +24,9 @@
 #include <string>
 #include <vector>
 
-#include "jxl/base/override.h"
-#include "jxl/base/status.h"
-#include "jxl/color_encoding.h"
+#include "lib/jxl/base/override.h"
+#include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 

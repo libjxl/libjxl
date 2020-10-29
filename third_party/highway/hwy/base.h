@@ -39,6 +39,12 @@
 #define HWY_COMPILER_MSVC 0
 #endif
 
+#ifdef __INTEL_COMPILER
+#define HWY_COMPILER_ICC __INTEL_COMPILER
+#else
+#define HWY_COMPILER_ICC 0
+#endif
+
 #ifdef __GNUC__
 #define HWY_COMPILER_GCC (__GNUC__ * 100 + __GNUC_MINOR__)
 #else
@@ -53,7 +59,8 @@
 #endif
 
 // More than one may be nonzero, but we want at least one.
-#if !HWY_COMPILER_MSVC && !HWY_COMPILER_GCC && !HWY_COMPILER_CLANG
+#if !HWY_COMPILER_MSVC && !HWY_COMPILER_ICC && !HWY_COMPILER_GCC && \
+    !HWY_COMPILER_CLANG
 #error "Unsupported compiler"
 #endif
 

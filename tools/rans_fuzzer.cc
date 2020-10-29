@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "jxl/dec_ans.h"
-#include "jxl/entropy_coder.h"
+#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/entropy_coder.h"
 
 namespace jxl {
 

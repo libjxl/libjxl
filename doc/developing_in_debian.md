@@ -27,12 +27,12 @@ sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-7 1
 sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-7 100
 ```
 
-Optionally, to compile some of the extra tool support you can install the
-following packages:
+Optionally, to compile some of the extra tool support and tests you can install
+the following packages:
 
 ```bash
 sudo apt install qtbase5-dev libqt5x11extras5-dev libwebp-dev libgimp2.0-dev \
-  libopenexr-dev
+  libopenexr-dev libgtest-dev libgmock-dev
 ```
 
 For the lint/coverage commands, you will also need additional packages:

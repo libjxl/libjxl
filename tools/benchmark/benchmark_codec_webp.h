@@ -18,7 +18,7 @@
 
 #include <string>
 
-#include "jxl/base/status.h"
+#include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 #include "tools/benchmark/benchmark_codec.h"
 
