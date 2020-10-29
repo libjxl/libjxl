@@ -637,18 +637,6 @@ debian10:
   <<: *linux_host_debian_template
   image: debian:10.6
 
-ubuntu18.04:
-  <<: *linux_host_debian_template
-  before_script:
-    # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev installs
-    # the source files only.
-    - apt update
-    - apt install -y build-essential libgtest-dev cmake
-    - (cd /usr/src/gtest &&
-         cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
-         make all install)
-  image: ubuntu:18.04
-
 ubuntu20.04:
   <<: *linux_host_debian_template
   image: ubuntu:20.04
