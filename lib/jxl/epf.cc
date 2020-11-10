@@ -506,7 +506,7 @@ void FilterPipelineInit(FilterPipeline* fp, const LoopFilter& lf,
     fp->filters[i].output_col_border = RoundUpTo(col_border, Lanes(df));
     col_border += fp->filters[i].filter_def.border;
   }
-  fp->total_border += col_border;
+  fp->total_border = col_border;
   JXL_ASSERT(fp->total_border == lf.PaddingRows());
   JXL_ASSERT(fp->total_border <= kMaxFilterBorder);
 }
@@ -525,7 +525,8 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& rect,
                            ssize_t y, size_t thread, Image3F* JXL_RESTRICT out,
                            size_t* JXL_RESTRICT output_row) {
   JXL_DASSERT(rect.x0() % kBlockDim == 0);
-  const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
+  const LoopFilter& lf =
+      dec_state->shared->frame_header.nonserialized_loop_filter;
   if (!lf.gab && lf.epf_iters == 0) {
     if (y < 0 || y >= static_cast<ssize_t>(rect.ysize())) return false;
     *output_row = y;

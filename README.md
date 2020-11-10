@@ -142,27 +142,22 @@ control the encoder effort in ascending order.
 *   `kitten` optimizes the adaptive quantization for a psychovisual metric.
 *   `tortoise` enables a more thorough adaptive quantization search.
 
-Mode: JPEG XL has several modes for various types of content. The default mode
-is suitable for photographic material. One of the following alternatives may be
-selected:
+Mode: JPEG XL has two modes. The default is Var-DCT mode, which is suitable for
+lossy compression. The other mode is Modular mode, which is suitable for lossless
+compression. Modular mode can also do lossy compression (e.g. `jxl:m:q50`).
 
-*   `mg` activates modular mode (useful for non-photographic images such as
-    screen content).
-*   `bg` activates lossless JPEG reconstruction with parallel decoding (the
-    input must have been a JPEG file).
-*   `b:file` activates lossless JPEG reconstruction with more compact encodings,
-    but without the option of parallel decoding.
+*   `m` activates modular mode.
 
 Other arguments to benchmark_xl include:
 
-*   `save_compressed`: save codestreams to `output_dir`.
-*   `save_decompressed`: save decompressed outputs to `output_dir`.
-*   `output_extension`: selects the format used to output decoded images.
-*   `num_threads`: number of codec instances that will independently
+*   `--save_compressed`: save codestreams to `output_dir`.
+*   `--save_decompressed`: save decompressed outputs to `output_dir`.
+*   `--output_extension`: selects the format used to output decoded images.
+*   `--num_threads`: number of codec instances that will independently
     encode/decode images, or 0.
-*   `inner_threads`: how many threads each instance should use for parallel
+*   `--inner_threads`: how many threads each instance should use for parallel
     encoding/decoding, or 0.
-*   `encode_reps`/`decode_reps`: how many times to repeat encoding/decoding
+*   `--encode_reps`/`--decode_reps`: how many times to repeat encoding/decoding
     each image, for more consistent measurements (we recommend 10).
 
 The benchmark output begins with a header:
@@ -193,11 +188,9 @@ This software is available under Apache 2.0 license which can be found in the
 ### Codec description
 
 *   [Introductory paper](https://www.spiedigitallibrary.org/proceedings/Download?fullDOI=10.1117%2F12.2529237) (open-access)
-*   [XL Overview](doc/xl_overview.md) - a brief introduction to the
-    source code modules
-*   [JPEG XL committee draft](https://arxiv.org/abs/1908.03565)
-*   JPEG XL white paper with overview of applications and coding tools:
-    WG1 output document number wg1n86059
+*   [XL Overview](doc/xl_overview.md) - a brief introduction to the source code modules
+*   [JPEG XL white paper](http://ds.jpeg.org/whitepapers/jpeg-xl-whitepaper.pdf)
+*   [JPEG XL website](https://jpeg.org/jpegxl/)
 
 ### Development process
 *   [Docker setup - **start here**](doc/developing_in_docker.md)

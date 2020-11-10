@@ -192,6 +192,28 @@ struct ToneMapping : public Fields {
   float linear_below;
 };
 
+// Contains weights to customize some trasnforms - in particular, XYB and
+// upsampling.
+struct CustomTransformData : public Fields {
+  CustomTransformData();
+  const char* Name() const override { return "CustomTransformData"; }
+
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
+
+  // Must be set before calling VisitFields. Must equal xyb_encoded of
+  // ImageMetadata, should be set by ImageMetadata during VisitFields.
+  bool nonserialized_xyb_encoded = false;
+
+  mutable bool all_default;
+
+  OpsinInverseMatrix opsin_inverse_matrix;
+
+  uint32_t custom_weights_mask;
+  float upsampling2_weights[15];
+  float upsampling4_weights[55];
+  float upsampling8_weights[210];
+};
+
 // Less frequently changed fields, grouped into a separate bundle so they do not
 // need to be signaled when some ImageMetadata fields are non-default.
 struct ImageMetadata2 : public Fields {
@@ -216,6 +238,10 @@ struct ImageMetadata2 : public Fields {
     return nullptr;
   }
 
+  Orientation GetOrientation() const {
+    return static_cast<Orientation>(orientation_minus_1 + 1);
+  }
+
   mutable bool all_default;
 
   bool have_preview;
@@ -234,7 +260,7 @@ struct ImageMetadata2 : public Fields {
   uint32_t num_extra_channels;
   std::vector<ExtraChannelInfo> extra_channel_info;
 
-  OpsinInverseMatrix opsin_inverse_matrix;
+  CustomTransformData transform_data;  // often default
 
   uint64_t extensions;
 
@@ -303,14 +329,18 @@ struct ImageMetadata : public Fields {
     return m2.tone_mapping.intensity_target;
   }
 
+  // Image size is taken from `nonserialized_size`, which is part of the
+  // codestream but not serialized by VisitFields().
+  size_t xsize() const { return nonserialized_size.xsize(); }
+  size_t ysize() const { return nonserialized_size.ysize(); }
+
   mutable bool all_default;
 
   BitDepth bit_depth;
   bool modular_16_bit_buffer_sufficient;  // otherwise 32 is.
 
   // Whether the colors values of the pixels of frames are encoded in the
-  // codestream using the absolute XYB color space (or a built-in transform
-  // thereof, such as linear sRGB), or the frames are encoded using values that
+  // codestream using the absolute XYB color space, or the using values that
   // follow the color space defined by the ColorEncoding or ICC profile. This
   // determines when or whether a CMS (Color Management System) is needed to get
   // the pixels in a desired color space. In one case, the pixels have one known
@@ -319,32 +349,24 @@ struct ImageMetadata : public Fields {
   // original image and a CMS is required if a different display space, or a
   // single known consistent color space for multiple decoded images, is
   // desired. In all cases, the color space of all frames from a single image is
-  // the same (or can be transformed to the same color space without use of a
-  // CMS).
+  // the same, both VarDCT and modular frames.
   //
-  // If true: then frames can be decoded to xyb or linear sRGB without use of a
-  // CMS (Color Management System). The pixels are in one known color space that
-  // is consistent through all JXL images with xyb = true. The attached
-  // ColorEncoding or ICC profile has no effect on the meaning of the pixel's
-  // color values, but instead indicates what the color profile of the original
-  // image was, and what color profile one should convert to when decoding to
-  // integers to prevent clipping and precision loss. To do that conversion
-  // requires a CMS. This mode is typically used for lossy image data
-  // compressed with XYB. VarDCT and modular frames are all encoded in XYB
-  // color.
-  //
-  // TODO(lode): here also allow sRGB8 for modular frames (this is an encoding
-  // that we can convert from/to xyb without CMS, this encoding must be
-  // indicated at the frame with a new FrameEncoding value, since the attached
-  // ICC Profile can be something else just as it can be for XYB)
+  // If true: then frames can be decoded to XYB (which can also be converted to
+  // linear and non-linear sRGB with the built in conversion without CMS). The
+  // attached ColorEncoding or ICC profile has no effect on the meaning of the
+  // pixel's color values, but instead indicates what the color profile of the
+  // original image was, and what color profile one should convert to when
+  // decoding to integers to prevent clipping and precision loss. To do that
+  // conversion requires a CMS.
   //
   // If false: then the color values of decoded frames are in the space defined
   // by the attached ColorEncoding or ICC profile. To instead get the pixels in
   // a chosen known color space, such as sRGB, requires a CMS, since the
   // attached ColorEncoding or ICC profile could be any arbitrary color space.
-  // This mode is typically used for lossless images encoded as integers. VarDCT
-  // and modular frames are all encoded in RGB, YCbCr, or other multichannel
-  // data that is in the attached color space.
+  // This mode is typically used for lossless images encoded as integers.
+  // Frames can also use YCbCr encoding, some frames may and some may not, but
+  // this is not a different color space but a certain encoding of the RGB
+  // values.
   //
   // Note: if !xyb_encoded, but the attached color profile indicates XYB (which
   // can happen either if it's a ColorEncoding with color_space_ ==
@@ -364,6 +386,14 @@ struct ImageMetadata : public Fields {
   ColorEncoding color_encoding;
 
   ImageMetadata2 m2;  // often default
+
+  // These fields are not used by the visitor, but are the actual structs that
+  // are encoded to/decoded from the code stream; no other
+  // Size/Preview/Animation header is present.
+  SizeHeader nonserialized_size;
+  PreviewHeader nonserialized_preview;
+  // If m2.have_animation
+  AnimationHeader nonserialized_animation;
 };
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,

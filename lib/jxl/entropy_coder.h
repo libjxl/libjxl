@@ -64,17 +64,6 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const ImageB& qdc, const ImageI& qf,
                           const BlockCtxMap& block_ctx_map);
 
-// Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
-constexpr uint32_t PackSigned(int32_t value) {
-  return (static_cast<uint32_t>(value) << 1) ^
-         ((static_cast<uint32_t>(~value) >> 31) - 1);
-}
-
-// Reverse to PackSigned, i.e. UnpackSigned(PackSigned(X)) == X.
-constexpr intptr_t UnpackSigned(size_t value) {
-  return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
-}
-
 static JXL_INLINE int32_t PredictFromTopAndLeft(
     const int32_t* const JXL_RESTRICT row_top,
     const int32_t* const JXL_RESTRICT row, size_t x, int32_t default_val) {

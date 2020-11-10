@@ -63,10 +63,10 @@ Status ReadBuffer(const size_t xsize, const size_t ysize,
 
   ColorEncoding color_encoding;
   JXL_RETURN_IF_ERROR(color_encoding.SetICC(std::move(icc)));
-  io->metadata.color_encoding = color_encoding;
+  io->metadata.m.color_encoding = color_encoding;
   io->SetFromImage(std::move(image), color_encoding);
   if (has_alpha) {
-    io->metadata.SetAlphaBits(alpha_bits);
+    io->metadata.m.SetAlphaBits(alpha_bits);
     io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
   return true;
@@ -106,18 +106,18 @@ Status SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   // from gegl_buffer_get_format instead?
   GimpPrecision precision = gimp_image_get_precision(image_id);
   if (precision == GIMP_PRECISION_HALF_GAMMA) {
-    io.metadata.bit_depth.bits_per_sample = 16;
-    io.metadata.bit_depth.exponent_bits_per_sample = 5;
+    io.metadata.m.bit_depth.bits_per_sample = 16;
+    io.metadata.m.bit_depth.exponent_bits_per_sample = 5;
   } else if (precision == GIMP_PRECISION_FLOAT_GAMMA) {
-    io.metadata.SetFloat32Samples();
+    io.metadata.m.SetFloat32Samples();
   } else {  // unsigned integer
     // TODO(lode): handle GIMP_PRECISION_DOUBLE_GAMMA. 64-bit per channel is not
-    // supported by io.metadata.
+    // supported by io.metadata.m.
     const Babl* native_format = gegl_buffer_get_format(gegl_buffer);
     uint32_t bits_per_sample = 8 *
                                babl_format_get_bytes_per_pixel(native_format) /
                                babl_format_get_n_components(native_format);
-    io.metadata.SetUintSamples(bits_per_sample);
+    io.metadata.m.SetUintSamples(bits_per_sample);
   }
 
   const GeglRectangle rect = *gegl_buffer_get_extent(gegl_buffer);

@@ -55,7 +55,7 @@ int Run(int argc, char** argv) {
     return 1;
   }
 
-  Ssimulacra ssimulacra = ComputeDiff(io1.Main().color(), io2.Main().color());
+  Ssimulacra ssimulacra = ComputeDiff(*io1.Main().color(), *io2.Main().color());
 
   if (verbose) {
     ssimulacra.PrintDetails();

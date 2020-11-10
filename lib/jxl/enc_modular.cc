@@ -202,10 +202,10 @@ void MergeTrees(const std::vector<Tree>& trees,
   MergeTrees(trees, tree_splits, begin, mid, tree);
 }
 
-void QuantizeChannel(const Channel& ch, const int q) {
+void QuantizeChannel(Channel& ch, const int q) {
   if (q == 1) return;
   for (size_t y = 0; y < ch.plane.ysize(); y++) {
-    pixel_type* row = ch.plane.MutableRow(y);
+    pixel_type* row = ch.plane.Row(y);
     for (size_t x = 0; x < ch.plane.xsize(); x++) {
       if (row[x] < 0) {
         row[x] = -((-row[x] + q / 2) / q) * q;
@@ -217,10 +217,9 @@ void QuantizeChannel(const Channel& ch, const int q) {
 }
 }  // namespace
 
-ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
-                                         const FrameHeader& frame_header,
+ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
                                          const CompressParams& cparams_orig)
-    : frame_dim(frame_dim), cparams(cparams_orig) {
+    : frame_dim(frame_header.ToFrameDimensions()), cparams(cparams_orig) {
   size_t num_streams =
       ModularStreamId::Num(frame_dim, frame_header.passes.num_passes);
   stream_images.resize(num_streams);
@@ -262,7 +261,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
   if (cparams.options.predictor == static_cast<Predictor>(-1)) {
     // no explicit predictor(s) given, set a good default
     if ((cparams.speed_tier <= SpeedTier::kTortoise ||
-         cparams.modular_group_mode == false) &&
+         cparams.modular_mode == false) &&
         quality == 100 && cparams.near_lossless == false &&
         cparams.responsive == false) {
       // TODO(veluca): allow all predictors that don't break residual
@@ -274,6 +273,9 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
     } else if (cparams.responsive) {
       // zero predictor for Squeeze residues
       cparams.options.predictor = Predictor::Zero;
+    } else if (quality < 100) {
+      // If not responsive and lossy. TODO(veluca): use near_lossless instead?
+      cparams.options.predictor = Predictor::Gradient;
     } else if (cparams.speed_tier < SpeedTier::kFalcon) {
       // try median and weighted predictor for anything else
       cparams.options.predictor = Predictor::Best;
@@ -283,7 +285,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameDimensions& frame_dim,
     }
   }
   tree_splits.push_back(0);
-  if (cparams.modular_group_mode == false) {
+  if (cparams.modular_mode == false) {
     cparams.options.fast_decode_multiplier = 1.0f;
     tree_splits.push_back(ModularStreamId::VarDCTDC(0).ID(frame_dim));
     tree_splits.push_back(ModularStreamId::ModularDC(0).ID(frame_dim));
@@ -322,7 +324,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   if (!do_color) nb_chans = 0;
 
-  if (ib.HasExtraChannels() && frame_header.IsDisplayed()) {
+  if (ib.HasExtraChannels()) {
     nb_chans += ib.extra_channels().size();
   }
 
@@ -352,7 +354,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   gi = Image(xsize, ysize, maxval, nb_chans);
   int c = 0;
   if (cparams.color_transform == ColorTransform::kXYB &&
-      cparams.modular_group_mode == true) {
+      cparams.modular_mode == true) {
     static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
     enc_state->shared.matrices.SetCustomDC(enc_factors);
   }
@@ -430,7 +432,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
   // TODO: make extra channels 32-bit too, add fp support, and drop the
   // IsDisplayed
-  if (ib.HasExtraChannels() && frame_header.IsDisplayed()) {
+  if (ib.HasExtraChannels()) {
     for (size_t ec = 0; ec < ib.extra_channels().size(); ec++, c++) {
       const ExtraChannelInfo& eci = ib.metadata()->m2.extra_channel_info[ec];
       gi.channel[c].resize(eci.Size(ib.xsize()), eci.Size(ib.ysize()));
@@ -485,12 +487,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
   // Global palette
   if ((cparams.palette_colors != 0 || cparams.lossy_palette) &&
       cparams.speed_tier < SpeedTier::kFalcon) {
-    if (cparams.lossy_palette) {
-      Transform ycocg{TransformId::kRCT};
-      ycocg.rct_type = 6;
-      ycocg.begin_c = gi.nb_meta_channels;
-      gi.do_transform(ycocg, weighted::Header());
-    }
     // all-channel palette (e.g. RGBA)
     if (gi.nb_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
@@ -500,7 +496,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
       maybe_palette.lossy_palette = cparams.lossy_palette;
       if (maybe_palette.lossy_palette) {
-        maybe_palette.predictor = Predictor::Gradient;
+        maybe_palette.predictor = Predictor::Average4;
       }
       // TODO(veluca): use a custom weighted header if using the weighted
       // predictor.
@@ -642,7 +638,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
                      frame_dim.group_dim, frame_dim.group_dim);
     int maxShift = 2;
     int minShift = 0;
-    for (size_t i = 0; i < enc_state->shared.multiframe->GetNumPasses(); i++) {
+    for (size_t i = 0; i < enc_state->progressive_splitter.GetNumPasses();
+         i++) {
       for (uint32_t j = 0; j < frame_header.passes.num_downsample; ++j) {
         if (i <= frame_header.passes.last_pass[j]) {
           if (frame_header.passes.downsample[j] == 8) minShift = 3;
@@ -741,7 +738,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
   if (heuristics->CustomFixedTreeLossless(frame_dim, &tree)) {
     // Using a fixed tree.
   } else if (cparams.speed_tier != SpeedTier::kFalcon || quality != 100 ||
-             !cparams.modular_group_mode) {
+             !cparams.modular_mode) {
     // Avoid creating a tree with leaves that don't correspond to any pixels.
     std::vector<size_t> useful_splits;
     useful_splits.reserve(tree_splits.size());
@@ -906,8 +903,7 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
     if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
-        (cparams.modular_group_mode &&
-         cparams.speed_tier < SpeedTier::kCheetah)) {
+        (cparams.modular_mode && cparams.speed_tier < SpeedTier::kCheetah)) {
       params.uint_method = HistogramParams::HybridUintMethod::kFast;
     } else {
       params.uint_method = HistogramParams::HybridUintMethod::kNone;

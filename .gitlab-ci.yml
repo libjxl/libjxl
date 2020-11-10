@@ -637,6 +637,58 @@ debian10:
   <<: *linux_host_debian_template
   image: debian:10.6
 
+ubuntu18.04:
+  <<: *linux_host_debian_template
+  before_script:
+    # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev installs
+    # the source files only.
+    - apt update
+    - apt install -y build-essential libgtest-dev cmake
+    - for prj in googletest googlemock; do
+        (cd /usr/src/googletest/${prj}/ &&
+         cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
+         make all install)
+      done
+    # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
+    - sed '/libgmock-dev,/d' -i debian/control
+  image: ubuntu:18.04
+
 ubuntu20.04:
   <<: *linux_host_debian_template
   image: ubuntu:20.04
+
+# Static builds.
+x86_64:static:
+  <<: *linux_host_build_template
+  stage: release
+  only:
+    - master
+    - tags
+  script:
+    # OpenEXR doesn't install the static libraries in the docker image.
+    - SKIP_TEST=1 ./ci.sh release
+        -DJPEGXL_STATIC=ON
+        -DBUILD_TESTING=OFF
+        -DJPEGXL_ENABLE_VIEWERS=OFF
+        -DJPEGXL_ENABLE_PLUGINS=OFF
+        -DJPEGXL_ENABLE_OPENEXR=OFF
+
+win64:static:
+  <<: *linux_host_build_template
+  stage: release
+  only:
+    - master
+    - tags
+  script:
+    # OpenEXR doesn't install the static libraries in the docker image.
+    - BUILD_TARGET=x86_64-w64-mingw32 SKIP_TEST=1 ./ci.sh release
+        -DJPEGXL_STATIC=ON
+        -DBUILD_TESTING=OFF
+        -DJPEGXL_ENABLE_VIEWERS=OFF
+        -DJPEGXL_ENABLE_PLUGINS=OFF
+        -DJPEGXL_ENABLE_OPENEXR=OFF
+        -DJPEGXL_ENABLE_TCMALLOC=OFF
+        -DJPEGXL_ENABLE_FUZZERS=OFF
+    # Make sure the binary runs without any other environment variables set.
+    - wine64 build/tools/cjxl.exe
+        third_party/testdata/wesaturate/64px/cvo9xd_keong_macan_srgb8.png

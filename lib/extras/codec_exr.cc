@@ -149,7 +149,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   const float intensity_target = (io->dec_target != DecodeTarget::kLosslessFloat
                                       ? GetIntensityTarget(*io, input.header())
                                       : 1.0f);
-  io->metadata.SetIntensityTarget(intensity_target);
+  io->metadata.m.SetIntensityTarget(intensity_target);
 
   auto image_size = input.displayWindow().size();
   // Size is computed as max - min, but both bounds are inclusive.
@@ -235,15 +235,15 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   JXL_RETURN_IF_ERROR(color_encoding.SetWhitePoint(white_point));
   JXL_RETURN_IF_ERROR(color_encoding.CreateICC());
 
-  io->metadata.bit_depth.bits_per_sample = kExrBitsPerSample;
+  io->metadata.m.bit_depth.bits_per_sample = kExrBitsPerSample;
   // EXR uses binary16 or binary32 floating point format.
-  io->metadata.bit_depth.exponent_bits_per_sample =
+  io->metadata.m.bit_depth.exponent_bits_per_sample =
       kExrBitsPerSample == 16 ? 5 : 8;
-  io->metadata.bit_depth.floating_point_sample = true;
+  io->metadata.m.bit_depth.floating_point_sample = true;
   io->SetFromImage(std::move(image), color_encoding);
-  io->metadata.color_encoding = color_encoding;
+  io->metadata.m.color_encoding = color_encoding;
   if (has_alpha) {
-    io->metadata.SetAlphaBits(kExrAlphaBits);
+    io->metadata.m.SetAlphaBits(kExrAlphaBits);
     io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/true);
   }
   return true;
@@ -258,7 +258,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   ColorEncoding c_linear = c_desired;
   c_linear.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(c_linear.CreateICC());
-  ImageMetadata metadata = io->metadata;
+  ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* linear;
   JXL_RETURN_IF_ERROR(
@@ -278,7 +278,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   chromaticities.white =
       Imath::V2f(c_linear.GetWhitePoint().x, c_linear.GetWhitePoint().y);
   OpenEXR::addChromaticities(header, chromaticities);
-  OpenEXR::addWhiteLuminance(header, io->metadata.IntensityTarget());
+  OpenEXR::addWhiteLuminance(header, io->metadata.m.IntensityTarget());
 
   // Ensure that the destructor of RgbaOutputFile has run before we look at the
   // size of `bytes`.
@@ -291,9 +291,9 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
     const int y_chunk_size = io->ysize();
     std::vector<OpenEXR::Rgba> output_rows(io->xsize() * y_chunk_size);
 
-    const float multiplier = 1.f / io->metadata.IntensityTarget();
+    const float multiplier = 1.f / io->metadata.m.IntensityTarget();
     const float alpha_normalizer =
-        has_alpha ? 1.f / MaxAlpha(io->metadata.GetAlphaBits()) : 0;
+        has_alpha ? 1.f / MaxAlpha(io->metadata.m.GetAlphaBits()) : 0;
 
     for (size_t start_y = 0; start_y < io->ysize(); start_y += y_chunk_size) {
       // Inclusive.

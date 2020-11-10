@@ -72,8 +72,6 @@ struct DecompressArgs {
   // If true, print the effective amount of bytes read from the bitstream.
   bool print_read_bytes = false;
 
-  bool coalesce = false;
-
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_num_threads_id = -1;
 };
@@ -93,7 +91,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 SpeedStats* JXL_RESTRICT stats);
 
 jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
-                           const jxl::CodecInOut& io);
+                           jxl::CodecInOut& io);
 
 }  // namespace tools
 }  // namespace jpegxl

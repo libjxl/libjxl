@@ -232,9 +232,9 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
 
   io->frames.clear();
   io->dec_pixels = 0;
-  io->metadata.SetUintSamples(8);
-  io->metadata.SetAlphaBits(8);
-  io->metadata.color_encoding =
+  io->metadata.m.SetUintSamples(8);
+  io->metadata.m.SetAlphaBits(8);
+  io->metadata.m.color_encoding =
       ColorEncoding::SRGB();  // todo: get data from png metadata
   (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
@@ -266,6 +266,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
 
     if (!processing_start(png_ptr, info_ptr, (void*)&frameRaw, hasInfo,
                           chunkIHDR, chunksInfo)) {
+      bool last_base_was_none = true;
       while (!feof(f)) {
         id = read_chunk(f, &chunk);
         if (!id) break;
@@ -274,45 +275,38 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
         if (id == id_acTL && !hasInfo && !isAnimated) {
           isAnimated = true;
           skipFirst = true;
-          io->metadata.m2.have_animation = true;
-          io->animation.tps_numerator = 1000;
+          io->metadata.m.m2.have_animation = true;
+          io->metadata.m.nonserialized_animation.tps_numerator = 1000;
         } else if (id == id_IEND ||
                    (id == id_fcTL && (!hasInfo || isAnimated))) {
           if (hasInfo) {
             if (!processing_finish(png_ptr, info_ptr)) {
-              AnimationFrame animation_frame(&io->metadata);
-              animation_frame.duration = delay_num * 1000 / delay_den;
-              animation_frame.have_crop = (w != w0 || h != h0);
-              if (animation_frame.have_crop) {
-                animation_frame.x0 = x0;
-                animation_frame.y0 = y0;
-                animation_frame.xsize = w0;
-                animation_frame.ysize = h0;
-              } else {
-                if (!io->animation_frames.empty()) {
-                  io->animation_frames.back().new_base = NewBase::kNone;
-                }
+              ImageBundle bundle(&io->metadata.m);
+              bundle.duration = delay_num * 1000 / delay_den;
+              bundle.origin.x0 = x0;
+              bundle.origin.y0 = y0;
+              // TODO(veluca): this could in principle be implemented.
+              if (last_base_was_none &&
+                  (x0 != 0 || y0 != 0 || w0 != w || h0 != h || bop != 0)) {
+                return JXL_FAILURE(
+                    "APNG with dispose-to-0 is not supported for non-full or "
+                    "blended frames");
               }
               switch (dop) {
                 case 0:
-                  animation_frame.new_base = NewBase::kCurrentFrame;
-                  break;
-                case 1:
-                  animation_frame.new_base = NewBase::kNone;
+                  bundle.use_for_next_frame = true;
+                  last_base_was_none = false;
                   break;
                 case 2:
-                  animation_frame.new_base = NewBase::kExisting;
+                  bundle.use_for_next_frame = false;
                   break;
                 default:
-                  animation_frame.new_base = NewBase::kNone;
-                  break;
+                  bundle.use_for_next_frame = false;
+                  last_base_was_none = true;
               }
-              animation_frame.blend_mode =
-                  (bop == 0) ? BlendMode::kReplace : BlendMode::kBlend;
-              io->animation_frames.push_back(animation_frame);
+              bundle.blend = bop != 0;
               io->dec_pixels += w0 * h0;
 
-              ImageBundle bundle(&io->metadata);
               Image3F sub_frame(w0, h0);
               ImageU sub_frame_alpha(w0, h0);
               for (size_t y = 0; y < h0; ++y) {

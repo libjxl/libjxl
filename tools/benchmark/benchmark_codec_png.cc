@@ -46,7 +46,7 @@ class PNGCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    const size_t bits = io->metadata.bit_depth.bits_per_sample;
+    const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     const double start = Now();
     JXL_RETURN_IF_ERROR(
         EncodeImagePNG(io, io->Main().c_current(), bits, pool, compressed));

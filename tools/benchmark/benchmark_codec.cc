@@ -144,9 +144,9 @@ class NoneCodec : public ImageCodec {
     memcpy(&ysize, compressed.data() + 4, 4);
     Image3F image(xsize, ysize);
     ZeroFillImage(&image);
-    io->metadata.SetFloat32Samples();
-    io->metadata.color_encoding = ColorEncoding::SRGB();
-    io->SetFromImage(std::move(image), io->metadata.color_encoding);
+    io->metadata.m.SetFloat32Samples();
+    io->metadata.m.color_encoding = ColorEncoding::SRGB();
+    io->SetFromImage(std::move(image), io->metadata.m.color_encoding);
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

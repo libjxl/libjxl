@@ -113,16 +113,9 @@ struct CompressParams {
   float uniform_quant = 0.0f;
   float quant_border_bias = 0.0f;
 
-  // What reference frame number this should be saved as.
-  size_t save_as_reference = 0;
-
   // Try to achieve a maximum pixel-by-pixel error on each channel.
   bool max_error_mode = false;
   float max_error[3] = {0.0, 0.0, 0.0};
-
-  // Encode a special DC frame (recursively, if > 1).
-  // Up to 3 pyramid levels - for up to 4096x downsampling.
-  size_t dc_level = 0;
 
   SpeedTier speed_tier = SpeedTier::kSquirrel;
 
@@ -134,7 +127,7 @@ struct CompressParams {
   YCbCrChromaSubsampling chroma_subsampling;
 
   // If true, the "modular mode options" members below are used.
-  bool modular_group_mode = false;
+  bool modular_mode = false;
 
   // Change group size in modular mode (0=128, 1=256, 2=512, 3=1024).
   size_t modular_group_size_shift = 1;
@@ -210,7 +203,7 @@ struct CompressParams {
 
   // Sets the parameters required to make the codec lossless.
   void SetLossless() {
-    modular_group_mode = true;
+    modular_mode = true;
     quality_pair.first = 100;
     quality_pair.second = 100;
     color_transform = jxl::ColorTransform::kNone;

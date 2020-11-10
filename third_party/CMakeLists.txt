@@ -74,7 +74,10 @@ endif()  # NOT DEFINED GMOCK_INCLUDE_DIR
 endif()  # BUILD_TESTING
 
 # Highway
-if (JPEGXL_FORCE_SYSTEM_HWY)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/highway/CMakeLists.txt" AND
+    NOT JPEGXL_FORCE_SYSTEM_HWY)
+  add_subdirectory(highway)
+else()
   pkg_check_modules(HWY libhwy)
   if (NOT HWY_FOUND)
     message(FATAL_ERROR
@@ -83,12 +86,16 @@ if (JPEGXL_FORCE_SYSTEM_HWY)
         "Highway is required to build JPEG XL.")
   endif()
   add_library(hwy INTERFACE IMPORTED GLOBAL)
-  target_include_directories(hwy INTERFACE ${HWY_INCLUDE_DIRS})
-  target_link_libraries(hwy INTERFACE ${HWY_LINK_LIBRARIES})
-  target_link_options(hwy INTERFACE ${HWY_LDFLAGS_OTHER})
-  target_compile_options(hwy INTERFACE ${HWY_CFLAGS_OTHER})
-else()
-  add_subdirectory(highway)
+  if(${CMAKE_VERSION} VERSION_LESS "3.13.5")
+    set_property(TARGET hwy PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${HWY_INCLUDE_DIR})
+    target_link_libraries(hwy INTERFACE ${HWY_LDFLAGS})
+    set_property(TARGET hwy PROPERTY INTERFACE_COMPILE_OPTIONS ${HWY_CFLAGS_OTHER})
+  else()
+    target_include_directories(hwy INTERFACE ${HWY_INCLUDE_DIRS})
+    target_link_libraries(hwy INTERFACE ${HWY_LINK_LIBRARIES})
+    target_link_options(hwy INTERFACE ${HWY_LDFLAGS_OTHER})
+    target_compile_options(hwy INTERFACE ${HWY_CFLAGS_OTHER})
+  endif()
 endif()
 
 # lodepng
@@ -106,20 +113,32 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
     string(TOUPPER "${brlib}" BRPREFIX)
     pkg_check_modules(${BRPREFIX} lib${brlib})
     if (${BRPREFIX}_FOUND)
-      add_library(${brlib} INTERFACE IMPORTED GLOBAL)
-      target_include_directories(${brlib}
-          INTERFACE ${${BRPREFIX}_INCLUDE_DIRS})
-      target_link_libraries(${brlib}
-          INTERFACE ${${BRPREFIX}_LINK_LIBRARIES})
-      target_link_options(${brlib}
-          INTERFACE ${${BRPREFIX}_LDFLAGS_OTHER})
-      target_compile_options(${brlib}
-          INTERFACE ${${BRPREFIX}_CFLAGS_OTHER})
+      if(${CMAKE_VERSION} VERSION_LESS "3.13.5")
+        add_library(${brlib} INTERFACE IMPORTED GLOBAL)
+        set_property(TARGET ${brlib} PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${${BRPREFIX}_INCLUDE_DIR})
+        target_link_libraries(${brlib} INTERFACE ${${BRPREFIX}_LDFLAGS})
+        set_property(TARGET ${brlib} PROPERTY INTERFACE_COMPILE_OPTIONS ${${BRPREFIX}_CFLAGS_OTHER})
 
-      # TODO(deymo): Remove the -static library versions, this target is
-      # currently needed by brunsli.cmake. When importing it this way, the
-      # brotli*-static target is just an alias.
-      add_library(${brlib}-static ALIAS ${brlib})
+        add_library(${brlib}-static INTERFACE IMPORTED GLOBAL)
+        set_property(TARGET ${brlib}-static PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${${BRPREFIX}_INCLUDE_DIR})
+        target_link_libraries(${brlib}-static INTERFACE ${${BRPREFIX}_LDFLAGS})
+        set_property(TARGET ${brlib}-static PROPERTY INTERFACE_COMPILE_OPTIONS ${${BRPREFIX}_CFLAGS_OTHER})
+      else()
+        add_library(${brlib} INTERFACE IMPORTED GLOBAL)
+        target_include_directories(${brlib}
+            INTERFACE ${${BRPREFIX}_INCLUDE_DIRS})
+        target_link_libraries(${brlib}
+            INTERFACE ${${BRPREFIX}_LINK_LIBRARIES})
+        target_link_options(${brlib}
+            INTERFACE ${${BRPREFIX}_LDFLAGS_OTHER})
+        target_compile_options(${brlib}
+            INTERFACE ${${BRPREFIX}_CFLAGS_OTHER})
+
+        # TODO(deymo): Remove the -static library versions, this target is
+        # currently needed by brunsli.cmake. When importing it this way, the
+        # brotli*-static target is just an alias.
+        add_library(${brlib}-static ALIAS ${brlib})
+      endif()
     endif()
     unset(BRPREFIX)
   endforeach()
@@ -174,13 +193,3 @@ if (JPEGXL_ENABLE_SJPEG)
   include(sjpeg.cmake)
 endif ()
 
-# std::thread support when cross-compiling with mingw.
-# jpeglx lib uses <mutex> and therefore needs mingw-std-threads when compiling
-# with mingw.
-if(MINGW)
-option(MINGW_STDTHREADS_GENERATE_STDHEADERS "" ON)
-if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mingw-std-threads/mingw.thread.h")
-  message(SEND_ERROR "Please run git submodule update --init")
-endif ()
-add_subdirectory(mingw-std-threads)
-endif()

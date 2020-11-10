@@ -61,6 +61,7 @@ set(TEST_FILES
   jxl/quantizer_test.cc
   jxl/rational_polynomial_test.cc
   jxl/robust_statistics_test.cc
+  jxl/roundtrip_test.cc
   jxl/speed_tier_test.cc
   jxl/splines_test.cc
   jxl/toc_test.cc

@@ -44,9 +44,9 @@ void PrintXybRange() {
     }
   }
   CodecInOut io;
-  io.metadata.SetUintSamples(8);
-  io.metadata.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(std::move(linear), io.metadata.color_encoding);
+  io.metadata.m.SetUintSamples(8);
+  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  io.SetFromImage(std::move(linear), io.metadata.m.color_encoding);
   const ImageBundle& ib = io.Main();
   ThreadPool* null_pool = nullptr;
   Image3F opsin(ib.xsize(), ib.ysize());

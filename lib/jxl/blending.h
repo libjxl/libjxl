@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC
+// Copyright (c) the JPEG XL Project
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef HWY_EXAMPLES_SKELETON_SHARED_H_
-#define HWY_EXAMPLES_SKELETON_SHARED_H_
+#ifndef LIB_JXL_BLENDING_H_
+#define LIB_JXL_BLENDING_H_
+#include "lib/jxl/image_bundle.h"
+#include "lib/jxl/passes_state.h"
 
-// Definitions shared between SIMD implementation and normal code. Such a
-// header is optional and can be omitted if the SIMD implementation is
-// self-contained (does not share any constants with normal code).
+namespace jxl {
 
-namespace skeleton {
+Status DoBlending(const PassesSharedState& state, ImageBundle* foreground);
 
-constexpr float kMultiplier = 1.5f;
+}
 
-}  // namespace skeleton
-
-#endif  // HWY_EXAMPLES_SKELETON_SHARED_H_
+#endif  // LIB_JXL_BLENDING_H_

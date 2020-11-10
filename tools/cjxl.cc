@@ -85,7 +85,7 @@ jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
   jxl::ImageF heatmap(io_heatmap.xsize(), io_heatmap.ysize());
   for (size_t num_row = 0; num_row < io_heatmap.ysize(); num_row++) {
     const float* JXL_RESTRICT row_src =
-        io_heatmap.Main().color().ConstPlaneRow(0, num_row);
+        io_heatmap.Main().color()->ConstPlaneRow(0, num_row);
     float* JXL_RESTRICT row_dst = heatmap.Row(num_row);
     for (size_t num_col = 0; num_col < io_heatmap.xsize(); num_col++) {
       row_dst[num_col] = row_src[num_col] / 255.0f;
@@ -108,14 +108,14 @@ jxl::Status LoadSpotColors(const CompressArgs& args, jxl::CodecInOut* io) {
   example.bit_depth.bits_per_sample = 8;
   example.dim_shift = 0;
   example.name = "spot";
-  example.spot_color[0] = io->metadata.IntensityTarget();  // R
+  example.spot_color[0] = io->metadata.m.IntensityTarget();  // R
   example.spot_color[1] = 0.0f;                            // G
   example.spot_color[2] = 0.0f;                            // B
   example.spot_color[3] = 1.0f;                            // A
-  io->metadata.m2.extra_channel_info.push_back(example);
+  io->metadata.m.m2.extra_channel_info.push_back(example);
   jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
   for (size_t y = 0; y < spot_io.ysize(); ++y) {
-    const float* JXL_RESTRICT from = spot_io.Main().color().PlaneRow(1, y);
+    const float* JXL_RESTRICT from = spot_io.Main().color()->PlaneRow(1, y);
     uint16_t* JXL_RESTRICT to = sc.Row(y);
     for (size_t x = 0; x < spot_io.xsize(); ++x) {
       to[x] = from[x];
@@ -135,7 +135,7 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   io->dec_hints = args.dec_hints;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
-  if (args.params.modular_group_mode && args.params.quality_pair.first == 100) {
+  if (args.params.modular_mode && args.params.quality_pair.first == 100) {
     io->dec_target = jxl::DecodeTarget::kLosslessFloat;
   }
   jxl::Codec input_codec;
@@ -146,7 +146,7 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   if (input_codec != jxl::Codec::kJPG) args.jpeg_transcode = false;
 
   if (input_codec == jxl::Codec::kGIF && args.default_settings) {
-    args.params.modular_group_mode = true;
+    args.params.modular_mode = true;
     args.params.options.predictor = jxl::Predictor::Select;
     args.params.responsive = 0;
     args.params.colorspace = 0;
@@ -154,17 +154,17 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
     args.params.channel_colors_percent = 0;
     args.params.quality_pair.first = args.params.quality_pair.second = 100;
   }
-  if (args.params.modular_group_mode && args.params.quality_pair.first < 100) {
-    if (io->metadata.bit_depth.floating_point_sample) {
+  if (args.params.modular_mode && args.params.quality_pair.first < 100) {
+    if (io->metadata.m.bit_depth.floating_point_sample) {
       // for lossy modular, pretend pfm/exr is integer data
-      io->metadata.SetUintSamples(12);
+      io->metadata.m.SetUintSamples(12);
     }
   }
   if (args.override_bitdepth != 0) {
     if (args.override_bitdepth == 32) {
-      io->metadata.SetFloat32Samples();
+      io->metadata.m.SetFloat32Samples();
     } else {
-      io->metadata.SetUintSamples(args.override_bitdepth);
+      io->metadata.m.SetUintSamples(args.override_bitdepth);
     }
   }
 
@@ -196,7 +196,7 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
 void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
                                  const size_t pixels, const double target_size,
                                  CompressArgs* args) {
-  JXL_ASSERT(args->params.modular_group_mode);
+  JXL_ASSERT(args->params.modular_mode);
 
   CompressArgs s = *args;  // Args for search.
   // 5 bpp => 100, 0.1 bpp => 2
@@ -247,7 +247,7 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
   }
   const double target_size = s.params.target_bitrate * (1 / 8.) * pixels;
 
-  if (args->params.modular_group_mode) {
+  if (args->params.modular_mode) {
     SetModularQualityForBitrate(pool, pixels, target_size, args);
     return;
   }
@@ -290,7 +290,7 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
 
 const char* ModeFromArgs(const CompressArgs& args) {
   if (args.jpeg_transcode) return "JPEG";
-  if (args.params.modular_group_mode) return "Modular";
+  if (args.params.modular_mode) return "Modular";
   return "VarDCT";
 }
 
@@ -298,7 +298,7 @@ std::string QualityFromArgs(const CompressArgs& args) {
   char buf[100];
   if (args.jpeg_transcode) {
     snprintf(buf, sizeof(buf), "lossless transcode");
-  } else if (args.params.modular_group_mode) {
+  } else if (args.params.modular_mode) {
     if (args.params.quality_pair.first == 100 &&
         args.params.quality_pair.second == 100) {
       snprintf(buf, sizeof(buf), "lossless");
@@ -422,9 +422,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "progressive_dc", "num_dc_frames",
                           "Use progressive mode for DC.",
                           &params.progressive_dc, &ParseUnsigned, 1);
-  cmdline->AddOptionFlag('g', "modular-group",
+  cmdline->AddOptionFlag('m', "modular",
                          "Use the modular mode (lossy / lossless).",
-                         &params.modular_group_mode, &SetBooleanTrue, 1);
+                         &params.modular_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionFlag('\0', "use_new_heuristics",
                          "use new and not yet ready encoder heuristics",
                          &params.use_new_heuristics, &SetBooleanTrue);
@@ -502,7 +502,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 
   cmdline->AddOptionValue(
       'I', "iterations", "F",
-      "[modular encoding] number of mock encodes to learn MABEGABRAC trees "
+      "[modular encoding] fraction of pixels used to learn MA trees "
       "(default=0.5, try 0 for no MA and fast decode)",
       &params.options.nb_repeats, &ParseFloat, 2);
 
@@ -512,13 +512,19 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
        "2-37=RCT (default: try several, depending on speed)"),
       &params.colorspace, &ParseSigned, 1);
 
+  cmdline->AddOptionValue('g', "group-size", "K",
+                          ("[modular encoding] set group size to 128 << K "
+                           "(default: 1)"),
+                          &params.modular_group_size_shift, &ParseUnsigned, 1);
+
   cmdline->AddOptionValue(
       'P', "predictor", "K",
       "[modular encoding] predictor(s) to use: 0=zero, "
       "1=left, 2=top, 3=avg0, 4=select, 5=gradient, 6=weighted, "
       "7=topright, 8=topleft, 9=leftleft, 10=avg1, 11=avg2, 12=avg3, "
-      "13=mix 5 and 6, 14=mix everything. Default 13, at slowest speed "
-      "default 14",
+      "13=toptop predictive average "
+      "14=mix 5 and 6, 15=mix everything. Default 14, at slowest speed "
+      "default 15",
       &params.options.predictor, &ParsePredictor, 1);
 
   cmdline->AddOptionValue(
@@ -587,7 +593,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     if (quality < 100) jpeg_transcode = false;
     // Quality settings roughly match libjpeg qualities.
     if (quality < 7 || quality == 100) {
-      params.modular_group_mode = true;
+      params.modular_mode = true;
       // Internal modular quality to roughly match VarDCT size.
       params.quality_pair.first = params.quality_pair.second =
           std::min(35 + (quality - 7) * 3.0f, 100.0f);
@@ -622,7 +628,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     }
     if (params.butteraugli_distance == 0) {
       // Use modular for lossless.
-      params.modular_group_mode = true;
+      params.modular_mode = true;
     } else if (params.butteraugli_distance < butteraugli_min_dist) {
       params.butteraugli_distance = butteraugli_min_dist;
     }
@@ -654,7 +660,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
 
   if (!cmdline.GetOption(opt_color_id)->matched()) {
     // default to RGB for lossless modular
-    if (params.modular_group_mode) {
+    if (params.modular_mode) {
       if (params.quality_pair.first != 100 ||
           params.quality_pair.second != 100) {
         params.color_transform = jxl::ColorTransform::kXYB;

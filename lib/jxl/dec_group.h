@@ -33,7 +33,6 @@
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/quantizer.h"
 
 namespace jxl {
@@ -51,8 +50,7 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
                                size_t thread, Image3F* JXL_RESTRICT opsin,
                                ImageBundle* JXL_RESTRICT decoded,
-                               AuxOut* aux_out, bool save_decompressed,
-                               bool apply_color_transform);
+                               AuxOut* aux_out);
 
 }  // namespace jxl
 

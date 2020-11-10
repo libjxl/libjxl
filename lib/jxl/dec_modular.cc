@@ -127,7 +127,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
   do_color = decode_color;
   if (!do_color) nb_chans = 0;
-  if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
+  if (decoded->HasExtraChannels()) {
     nb_extra = decoded->extra_channels().size();
   }
 
@@ -229,7 +229,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
            rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
     if (r.xsize() == 0 || r.ysize() == 0) continue;
     for (size_t y = 0; y < r.ysize(); ++y) {
-      pixel_type* const JXL_RESTRICT row_out = r.MutableRow(&fc.plane, y);
+      pixel_type* const JXL_RESTRICT row_out = r.Row(&fc.plane, y);
       const pixel_type* const JXL_RESTRICT row_in = gi.channel[gic].Row(y);
       for (size_t x = 0; x < r.xsize(); ++x) {
         row_out[x] = row_in[x];
@@ -291,15 +291,14 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
     return JXL_FAILURE("Failed to decode AC metadata");
   }
   ConvertPlaneAndClamp(Rect(image.channel[0].plane), image.channel[0].plane, cr,
-                       &dec_state->shared->cmap.ytox_map);
+                       &dec_state->shared_storage.cmap.ytox_map);
   ConvertPlaneAndClamp(Rect(image.channel[1].plane), image.channel[1].plane, cr,
-                       &dec_state->shared->cmap.ytob_map);
+                       &dec_state->shared_storage.cmap.ytob_map);
   size_t num = 0;
   bool is444 = dec_state->shared->frame_header.chroma_subsampling.Is444();
   for (size_t y = 0; y < r.ysize(); y++) {
-    int* row_qf = r.MutableRow(&dec_state->shared_storage.raw_quant_field, y);
-    uint8_t* row_epf =
-        r.MutableRow(&dec_state->shared_storage.epf_sharpness, y);
+    int* row_qf = r.Row(&dec_state->shared_storage.raw_quant_field, y);
+    uint8_t* row_epf = r.Row(&dec_state->shared_storage.epf_sharpness, y);
     int* row_in_1 = image.channel[2].plane.Row(0);
     int* row_in_2 = image.channel[2].plane.Row(1);
     int* row_in_3 = image.channel[3].plane.Row(y);
@@ -447,7 +446,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       c = 1;
     }
   }
-  if (decoded->HasExtraChannels() && frame_header.IsDisplayed()) {
+  if (decoded->HasExtraChannels()) {
     for (size_t ec = 0; ec < decoded->extra_channels().size(); ec++, c++) {
       const jxl::ExtraChannelInfo& eci =
           decoded->metadata()->m2.extra_channel_info[ec];
@@ -456,7 +455,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       const size_t ec_ysize = eci.Size(ysize);
       for (size_t y = 0; y < ec_ysize; ++y) {
         uint16_t* const JXL_RESTRICT row_out =
-            decoded->extra_channels()[ec].MutableRow(y);
+            decoded->extra_channels()[ec].Row(y);
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
         for (size_t x = 0; x < ec_xsize; ++x) {
           row_out[x] = Clamp1(row_in[x], 0, max_extra);

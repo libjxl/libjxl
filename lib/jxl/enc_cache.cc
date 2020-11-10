@@ -94,44 +94,41 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       cparams.max_error[c] = shared.quantizer.MulDC()[c];
     }
     FrameDimensions frame_dim;
-    frame_dim.Set(enc_state->shared.frame_dim.xsize << (3 * cparams.dc_level),
-                  enc_state->shared.frame_dim.ysize << (3 * cparams.dc_level),
-                  shared.frame_header.group_size_shift,
-                  shared.frame_header.chroma_subsampling.MaxHShift(),
-                  shared.frame_header.chroma_subsampling.MaxVShift());
-    cparams.dc_level++;
+    frame_dim.Set(
+        enc_state->shared.frame_dim.xsize << (3 * shared.frame_header.dc_level),
+        enc_state->shared.frame_dim.ysize << (3 * shared.frame_header.dc_level),
+        shared.frame_header.group_size_shift,
+        shared.frame_header.chroma_subsampling.MaxHShift(),
+        shared.frame_header.chroma_subsampling.MaxVShift());
     cparams.progressive_dc--;
     // Use kVarDCT in max_error_mode for intermediate progressive DC,
     // and kModular for the smallest DC (first in the bitstream)
     if (cparams.progressive_dc == 0) {
-      cparams.modular_group_mode = true;
+      cparams.modular_mode = true;
       cparams.quality_pair.first = cparams.quality_pair.second =
           99.f - enc_state->cparams.butteraugli_distance * 0.2f;
     }
-    ImageMetadata metadata;
-    metadata.color_encoding = ColorEncoding::LinearSRGB();
-    ImageBundle ib(&metadata);
+    ImageBundle ib(shared.metadata);
     // This is a lie - dc is in XYB
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
     ib.SetFromImage(std::move(dc), ColorEncoding::LinearSRGB());
     PassesEncoderState state;
     enc_state->special_frames.emplace_back();
-    // TODO(lode): If this is encoding the frame to codestream output bytes seen
-    // by a decoder expecting the ImageMetadata from the codestream header to be
-    // used, then give the correct main ImageMetadata object here, with the
-    // correct extra channels and xyb_encoded value in it, not the temporary
-    // constructed one from here.
-    JXL_CHECK(EncodeFrame(cparams, nullptr, &metadata, ib, &state, pool,
-                          &enc_state->special_frames.back(), nullptr,
-                          enc_state->shared.multiframe));
+    FrameInfo dc_frame_info;
+    dc_frame_info.frame_type = FrameType::kDCFrame;
+    dc_frame_info.dc_level = shared.frame_header.dc_level + 1;
+    dc_frame_info.ib_needs_color_transform = false;
+    dc_frame_info.save_before_color_transform = true;  // Implicitly true
+    JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib, &state,
+                          pool, &enc_state->special_frames.back(), nullptr));
     const Span<const uint8_t> encoded =
         enc_state->special_frames.back().GetSpan();
     BitReader br(encoded);
-    ImageBundle decoded(&metadata);
-    JXL_CHECK(DecodeFrame({}, encoded, nullptr, &frame_dim, shared.multiframe,
-                          pool, &br, nullptr, &decoded));
+    ImageBundle decoded(shared.metadata);
+    PassesDecoderState dec_state;
+    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded));
     shared.dc_storage =
-        CopyImage(*shared.multiframe->SavedDc(cparams.dc_level));
+        CopyImage(dec_state.shared->dc_frames[shared.frame_header.dc_level]);
     ZeroFillImage(&shared.quant_dc);
     JXL_CHECK(br.Close());
   } else {

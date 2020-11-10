@@ -37,6 +37,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/patch_dictionary.h"
+#include "lib/jxl/progressive_split.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 
@@ -56,10 +57,8 @@ struct PassesEncoderState {
   // Raw data for special (reference+DC) frames.
   std::vector<BitWriter> special_frames;
 
-  // Storage for reference frames. More than one to allow for photographic and
-  // non-photographic patches, as well as mixing previous frames and special
-  // frames as sources.
-  Image3F reference_frames[kMaxNumReferenceFrames];
+  // For splitting into passes.
+  ProgressiveSplitter progressive_splitter;
 
   CompressParams cparams;
 

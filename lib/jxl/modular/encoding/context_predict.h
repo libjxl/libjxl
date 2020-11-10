@@ -480,6 +480,7 @@ inline PredictionResult Predict(
   pixel_type_w topright = (x + 1 < w && y ? pp[1 - onerow] : top);
   pixel_type_w leftleft = (x > 1 ? pp[-2] : left);
   pixel_type_w toptop = (y > 1 ? pp[-onerow - onerow] : top);
+  pixel_type_w toprightright = (x + 2 < w && y ? pp[2 - onerow] : topright);
 
   if (compute_properties) {
     // location
@@ -542,7 +543,8 @@ inline PredictionResult Predict(
   predictions[(int)Predictor::Average1] = (left + topleft) / 2;
   predictions[(int)Predictor::Average2] = (topleft + top) / 2;
   predictions[(int)Predictor::Average3] = (top + topright) / 2;
-
+  predictions[(int)Predictor::Average4] =
+      (6 * top - 2 * toptop + 7 * left + 1 * leftleft + 1 * toprightright + 3 * topright + 8) / 16;
   result.guess += predictions[(int)predictor];
   result.predictor = predictor;
 

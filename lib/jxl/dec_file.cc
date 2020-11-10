@@ -31,17 +31,15 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/multiframe.h"
 
 namespace jxl {
 namespace {
 
 Status DecodePreview(const DecompressParams& dparams,
-                     BitReader* JXL_RESTRICT reader,
-                     const Span<const uint8_t> file, AuxOut* aux_out,
+                     BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
                      ThreadPool* pool, CodecInOut* JXL_RESTRICT io) {
   // No preview present in file.
-  if (!io->metadata.m2.have_preview) {
+  if (!io->metadata.m.m2.have_preview) {
     if (dparams.preview == Override::kOn) {
       return JXL_FAILURE("preview == kOn but no preview present");
     }
@@ -50,41 +48,35 @@ Status DecodePreview(const DecompressParams& dparams,
 
   // Have preview; prepare to skip or read it.
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  FrameDimensions frame_dim;
-  frame_dim.Set(io->preview.xsize(), io->preview.ysize(),
-                /*group_size_shift=*/1, /*max_hshift=*/0, /*max_vshift=*/0);
 
-  const AnimationHeader* animation = nullptr;
   if (dparams.preview == Override::kOff) {
-    JXL_RETURN_IF_ERROR(
-        SkipFrame(file, animation, &io->metadata, &frame_dim, reader));
+    JXL_RETURN_IF_ERROR(SkipFrame(io->metadata.m, reader, /*is_preview=*/true));
     return true;
   }
 
   // Else: default or kOn => decode preview.
-  Multiframe multiframe;
-  JXL_RETURN_IF_ERROR(DecodeFrame(dparams, file, animation, &frame_dim,
-                                  &multiframe, pool, reader, aux_out,
-                                  &io->preview_frame, io));
-  io->dec_pixels += frame_dim.xsize_upsampled * frame_dim.ysize_upsampled;
+  PassesDecoderState dec_state;
+  JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, aux_out,
+                                  &io->preview_frame, io, /*is_preview=*/true));
+  io->dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
+                    dec_state.shared->frame_dim.ysize_upsampled;
   return true;
 }
 
-Status DecodeHeaders(BitReader* reader, size_t* JXL_RESTRICT xsize,
-                     size_t* JXL_RESTRICT ysize, CodecInOut* io) {
-  SizeHeader size;
-  JXL_RETURN_IF_ERROR(ReadSizeHeader(reader, &size));
-  *xsize = size.xsize();
-  *ysize = size.ysize();
+Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
+  JXL_RETURN_IF_ERROR(
+      ReadSizeHeader(reader, &io->metadata.m.nonserialized_size));
 
-  JXL_RETURN_IF_ERROR(ReadImageMetadata(reader, &io->metadata));
+  JXL_RETURN_IF_ERROR(ReadImageMetadata(reader, &io->metadata.m));
 
-  if (io->metadata.m2.have_preview) {
-    JXL_RETURN_IF_ERROR(ReadPreviewHeader(reader, &io->preview));
+  if (io->metadata.m.m2.have_preview) {
+    JXL_RETURN_IF_ERROR(
+        ReadPreviewHeader(reader, &io->metadata.m.nonserialized_preview));
   }
 
-  if (io->metadata.m2.have_animation) {
-    JXL_RETURN_IF_ERROR(ReadAnimationHeader(reader, &io->animation));
+  if (io->metadata.m.m2.have_animation) {
+    JXL_RETURN_IF_ERROR(
+        ReadAnimationHeader(reader, &io->metadata.m.nonserialized_animation));
   }
 
   return true;
@@ -119,69 +111,48 @@ Status DecodeFile(const DecompressParams& dparams,
     BitReaderScopedCloser reader_closer(&reader, &ret);
     (void)reader.ReadFixedBits<16>();  // skip marker
 
-    FrameDimensions main_frame_dim;
     {
-      size_t xsize, ysize;
-      JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, &xsize, &ysize, io));
+      JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, io));
+      size_t xsize = io->metadata.m.xsize();
+      size_t ysize = io->metadata.m.ysize();
       JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
-      main_frame_dim.Set(xsize, ysize, /*group_size_shift=*/1,
-                         /*max_hshift=*/0,
-                         /*max_vshift=*/0);
     }
 
-    if (io->metadata.color_encoding.WantICC()) {
+    if (io->metadata.m.color_encoding.WantICC()) {
       PaddedBytes icc;
       JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
-      JXL_RETURN_IF_ERROR(io->metadata.color_encoding.SetICC(std::move(icc)));
+      JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(std::move(icc)));
     }
 
-    JXL_RETURN_IF_ERROR(
-        DecodePreview(dparams, &reader, file, aux_out, pool, io));
+    JXL_RETURN_IF_ERROR(DecodePreview(dparams, &reader, aux_out, pool, io));
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
-    if (io->metadata.m2.have_animation && dparams.keep_dct) {
+    if (io->metadata.m.m2.have_animation && dparams.keep_dct) {
       return JXL_FAILURE("Cannot decode to JPEG an animation");
     }
 
-    if (io->metadata.bit_depth.floating_point_sample &&
-        !io->metadata.xyb_encoded) {
+    if (io->metadata.m.bit_depth.floating_point_sample &&
+        !io->metadata.m.xyb_encoded) {
       io->dec_target = DecodeTarget::kLosslessFloat;
     }
 
-    Multiframe multiframe;
+    PassesDecoderState dec_state;
 
     io->frames.clear();
-    io->animation_frames.clear();
-    if (io->metadata.m2.have_animation) {
-      do {
-        io->animation_frames.emplace_back(&io->metadata);
-        io->frames.emplace_back(&io->metadata);
-        FrameDimensions frame_dim;
-        // Skip frames that are not displayed.
-        do {
-          frame_dim = main_frame_dim;
-          JXL_RETURN_IF_ERROR(DecodeFrame(dparams, file, &io->animation,
-                                          &frame_dim, &multiframe, pool,
-                                          &reader, aux_out, &io->frames.back(),
-                                          io, &io->animation_frames.back()));
-        } while (!multiframe.IsDisplayed());
-        io->dec_pixels += frame_dim.xsize_upsampled * frame_dim.ysize_upsampled;
-      } while (!io->animation_frames.back().is_last);
-    } else {
-      io->frames.emplace_back(&io->metadata);
-      io->frames.back().jpeg_data = std::move(jpeg_data);
-      FrameDimensions frame_dim;
+    do {
+      io->frames.emplace_back(&io->metadata.m);
+      if (jpeg_data) {
+        io->frames.back().jpeg_data = std::move(jpeg_data);
+      }
       // Skip frames that are not displayed.
       do {
-        frame_dim = main_frame_dim;
-        JXL_RETURN_IF_ERROR(
-            DecodeFrame(dparams, file, /*animation_or_null=*/nullptr,
-                        &frame_dim, &multiframe, pool, &reader, aux_out,
-                        &io->frames.back(), io, /*animation=*/nullptr));
-      } while (!multiframe.IsDisplayed());
-      io->dec_pixels += frame_dim.xsize_upsampled * frame_dim.ysize_upsampled;
-    }
+        JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, &reader,
+                                        aux_out, &io->frames.back(), io));
+      } while (dec_state.shared->frame_header.frame_type !=
+               FrameType::kRegularFrame);
+      io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
+    } while (!dec_state.shared->frame_header.is_last);
 
     if (dparams.check_decompressed_size && dparams.max_downsampling == 1) {
       if (reader.TotalBitsConsumed() != file.size() * kBitsPerByte) {

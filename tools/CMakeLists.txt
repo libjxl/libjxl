@@ -218,6 +218,7 @@ install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 if(${JPEGXL_ENABLE_FUZZERS})
   set(FUZZER_BINARIES
     color_encoding_fuzzer
+    decode_basic_info_fuzzer
     djxl_fuzzer
     icc_codec_fuzzer
     fields_fuzzer

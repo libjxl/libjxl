@@ -189,16 +189,16 @@ TEST_P(ColorManagementTest, VerifyAllProfiles) {
 testing::Matcher<CIExy> CIExyIs(const double x, const double y) {
   static constexpr double kMaxError = 1e-4;
   return testing::AllOf(
-      testing::Field("x", &CIExy::x, testing::DoubleNear(x, kMaxError)),
-      testing::Field("y", &CIExy::y, testing::DoubleNear(y, kMaxError)));
+      testing::Field(&CIExy::x, testing::DoubleNear(x, kMaxError)),
+      testing::Field(&CIExy::y, testing::DoubleNear(y, kMaxError)));
 }
 
 testing::Matcher<PrimariesCIExy> PrimariesAre(
     const testing::Matcher<CIExy>& r, const testing::Matcher<CIExy>& g,
     const testing::Matcher<CIExy>& b) {
-  return testing::AllOf(testing::Field("r", &PrimariesCIExy::r, r),
-                        testing::Field("g", &PrimariesCIExy::g, g),
-                        testing::Field("b", &PrimariesCIExy::b, b));
+  return testing::AllOf(testing::Field(&PrimariesCIExy::r, r),
+                        testing::Field(&PrimariesCIExy::g, g),
+                        testing::Field(&PrimariesCIExy::b, b));
 }
 
 TEST_F(ColorManagementTest, sRGBChromaticity) {

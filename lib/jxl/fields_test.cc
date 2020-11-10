@@ -237,13 +237,13 @@ TEST(FieldsTest, TestRoundtripSize) {
 // Ensure all values can be reached by the encoding.
 TEST(FieldsTest, TestCropRect) {
   ImageMetadata metadata;
-  for (uint32_t i = 0; i < 19000; ++i) {
-    AnimationFrame f(&metadata);
-    f.have_crop = true;
-    f.x0 = i;
-    f.y0 = i;
-    f.xsize = i;
-    f.ysize = i;
+  for (int32_t i = -1000; i < 19000; ++i) {
+    FrameHeader f(&metadata);
+    f.custom_size_or_origin = true;
+    f.frame_origin.x0 = i;
+    f.frame_origin.y0 = i;
+    f.frame_size.xsize = 1000 + i;
+    f.frame_size.ysize = 1000 + i;
     size_t extension_bits = 0, total_bits = 0;
     ASSERT_TRUE(Bundle::CanEncode(f, &extension_bits, &total_bits));
     EXPECT_EQ(0, extension_bits);
@@ -266,7 +266,6 @@ TEST(FieldsTest, TestPreview) {
 TEST(FieldsTest, TestRoundtripFrame) {
   ImageMetadata metadata;
   FrameHeader h(&metadata);
-  h.animation_frame.nonserialized_have_timecode = false;
   h.extensions = 0x800;
 
   size_t extension_bits = 999, total_bits = 999;  // Initialize as garbage.
@@ -278,7 +277,6 @@ TEST(FieldsTest, TestRoundtripFrame) {
   writer.ZeroPadToByte();
 
   FrameHeader h2(&metadata);
-  h2.animation_frame.nonserialized_have_timecode = false;
   BitReader reader(writer.GetSpan());
   ASSERT_TRUE(ReadFrameHeader(&reader, &h2));
   EXPECT_EQ(total_bits, reader.TotalBitsConsumed());

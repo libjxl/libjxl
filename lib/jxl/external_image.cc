@@ -14,10 +14,15 @@
 
 #include "lib/jxl/external_image.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/external_image.cc"
+#include <hwy/foreach_target.h>
+// ^ must come before highway.h and any *-inl.h.
 #include <string.h>
 
 #include <algorithm>
 #include <array>
+#include <hwy/highway.h>
 #include <utility>
 #include <vector>
 
@@ -28,6 +33,47 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/transfer_functions-inl.h"
+
+HWY_BEFORE_NAMESPACE();
+namespace jxl {
+namespace HWY_NAMESPACE {
+
+// Input/output uses the codec.h scaling: nominally 0-255 if in-gamut.
+template <class V>
+V LinearToSRGB(V v255) {
+  const HWY_FULL(float) d;
+  const auto encoded = v255 * Set(d, 1.0f / 255);
+  const auto display = TF_SRGB().EncodedFromDisplay(encoded);
+  return display * Set(d, 255.0f);
+}
+
+void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
+                         size_t color_channels) {
+  size_t xsize = image->xsize();
+  size_t ysize = image->ysize();
+  const HWY_FULL(float) d;
+  for (size_t c = 0; c < color_channels; ++c) {
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          float* JXL_RESTRICT row = image->PlaneRow(c, y);
+          for (size_t x = 0; x < xsize; x += Lanes(d)) {
+            const auto v = LinearToSRGB(Load(d, row + x));
+            Store(v, d, row + x);
+          }
+        },
+        "LinearToSRGB");
+  }
+}
+
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace jxl
+HWY_AFTER_NAMESPACE();
+
+#if HWY_ONCE
 
 namespace jxl {
 namespace {
@@ -169,15 +215,15 @@ struct Interleave {
   static JXL_INLINE void Temp255ToImage3(Channels1 /*tag*/,
                                          const float* JXL_RESTRICT row_temp,
                                          size_t y,
-                                         const Image3F* JXL_RESTRICT image) {
+                                         Image3F* JXL_RESTRICT image) {
     const size_t xsize = image->xsize();
-    float* JXL_RESTRICT row0 = const_cast<float*>(image->PlaneRow(0, y));
+    float* JXL_RESTRICT row0 = image->PlaneRow(0, y);
     for (size_t x = 0; x < xsize; ++x) {
       row0[x] = row_temp[x];
     }
 
     for (size_t c = 1; c < 3; ++c) {
-      float* JXL_RESTRICT row = const_cast<float*>(image->PlaneRow(c, y));
+      float* JXL_RESTRICT row = image->PlaneRow(c, y);
       memcpy(row, row0, xsize * sizeof(float));
     }
   }
@@ -185,10 +231,10 @@ struct Interleave {
   static JXL_INLINE void Temp255ToImage3(Channels3 /*tag*/,
                                          const float* JXL_RESTRICT row_temp,
                                          size_t y,
-                                         const Image3F* JXL_RESTRICT image) {
-    float* JXL_RESTRICT row_image0 = const_cast<float*>(image->PlaneRow(0, y));
-    float* JXL_RESTRICT row_image1 = const_cast<float*>(image->PlaneRow(1, y));
-    float* JXL_RESTRICT row_image2 = const_cast<float*>(image->PlaneRow(2, y));
+                                         Image3F* JXL_RESTRICT image) {
+    float* JXL_RESTRICT row_image0 = image->PlaneRow(0, y);
+    float* JXL_RESTRICT row_image1 = image->PlaneRow(1, y);
+    float* JXL_RESTRICT row_image2 = image->PlaneRow(2, y);
     for (size_t x = 0; x < image->xsize(); ++x) {
       row_image0[x] = row_temp[3 * x + 0];
       row_image1[x] = row_temp[3 * x + 1];
@@ -199,14 +245,14 @@ struct Interleave {
   static JXL_INLINE void Temp255ToImage3(Channels2 /*tag*/,
                                          const float* JXL_RESTRICT row_temp,
                                          size_t y,
-                                         const Image3F* JXL_RESTRICT image) {
+                                         Image3F* JXL_RESTRICT image) {
     Temp255ToImage3(Channels1(), row_temp, y, image);
   }
 
   static JXL_INLINE void Temp255ToImage3(Channels4 /*tag*/,
                                          const float* JXL_RESTRICT row_temp,
                                          size_t y,
-                                         const Image3F* JXL_RESTRICT image) {
+                                         Image3F* JXL_RESTRICT image) {
     Temp255ToImage3(Channels3(), row_temp, y, image);
   }
 };
@@ -948,11 +994,6 @@ class Converter {
     // Always set, so we can properly remove below.
     ib->SetAlpha(std::move(alpha_), desc_->alpha_is_premultiplied);
 
-    // Remove if no value is (semi)transparent.
-    if (and_bits == max_alpha) {
-      ib->RemoveAlpha();
-    }
-
     return true;
   }
 
@@ -1139,12 +1180,113 @@ void ConvertAlpha(size_t bits_in, const jxl::ImageU& in, size_t bits_out,
         "ConvertAlphaU");
   }
 }
+
+// The orientation may not be identity.
+// TODO(lode): SIMDify where possible
+template <typename T>
+void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
+                     Plane<T>& out, jxl::ThreadPool* pool) {
+  const size_t xsize = image.xsize();
+  const size_t ysize = image.ysize();
+
+  if (undo_orientation == Orientation::kFlipHorizontal) {
+    out = Plane<T>(xsize, ysize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          T* JXL_RESTRICT row_out = out.Row(y);
+          for (size_t x = 0; x < xsize; ++x) {
+            row_out[xsize - x - 1] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  } else if (undo_orientation == Orientation::kRotate180) {
+    out = Plane<T>(xsize, ysize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          T* JXL_RESTRICT row_out = out.Row(ysize - y - 1);
+          for (size_t x = 0; x < xsize; ++x) {
+            row_out[xsize - x - 1] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  } else if (undo_orientation == Orientation::kFlipVertical) {
+    out = Plane<T>(xsize, ysize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          T* JXL_RESTRICT row_out = out.Row(ysize - y - 1);
+          for (size_t x = 0; x < xsize; ++x) {
+            row_out[x] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  } else if (undo_orientation == Orientation::kTranspose) {
+    out = Plane<T>(ysize, xsize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          for (size_t x = 0; x < xsize; ++x) {
+            out.Row(x)[y] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  } else if (undo_orientation == Orientation::kRotate90) {
+    out = Plane<T>(ysize, xsize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          for (size_t x = 0; x < xsize; ++x) {
+            out.Row(x)[ysize - y - 1] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  } else if (undo_orientation == Orientation::kAntiTranspose) {
+    out = Plane<T>(ysize, xsize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          for (size_t x = 0; x < xsize; ++x) {
+            out.Row(xsize - x - 1)[ysize - y - 1] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  } else if (undo_orientation == Orientation::kRotate270) {
+    out = Plane<T>(ysize, xsize);
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          const T* JXL_RESTRICT row_in = image.Row(y);
+          for (size_t x = 0; x < xsize; ++x) {
+            out.Row(xsize - x - 1)[y] = row_in[x];
+          }
+        },
+        "UndoOrientation");
+  }
+}
 }  // namespace
 
+HWY_EXPORT(LinearToSRGBInPlace);
+
 Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
-                    bool float_out, bool lossless_float, size_t num_channels,
-                    bool little_endian, jxl::ThreadPool* pool, void* out_image,
-                    size_t out_size) {
+                    bool float_out, bool lossless_float, bool apply_srgb_tf,
+                    size_t num_channels, bool little_endian, size_t stride,
+                    jxl::ThreadPool* pool, void* out_image, size_t out_size,
+                    jxl::Orientation undo_orientation) {
   size_t xsize = ib.xsize();
   size_t ysize = ib.ysize();
 
@@ -1153,7 +1295,40 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
   bool want_alpha = num_channels == 2 || num_channels == 4;
   size_t color_channels = num_channels <= 2 ? 1 : 3;
 
+  // Increment per output pixel
   const size_t inc = num_channels * bits_per_sample / jxl::kBitsPerByte;
+
+  if (stride < inc * xsize) {
+    return JXL_FAILURE("stride is smaller than scanline width in bytes");
+  }
+
+  const Image3F* color = &ib.color();
+  Image3F temp_color;
+  const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
+  ImageU temp_alpha;
+  if (apply_srgb_tf) {
+    temp_color = CopyImage(*color);
+    HWY_DYNAMIC_DISPATCH(LinearToSRGBInPlace)
+    (pool, &temp_color, color_channels);
+    color = &temp_color;
+  }
+
+  if (undo_orientation != Orientation::kIdentity) {
+    Image3F transformed;
+    for (size_t c = 0; c < color_channels; ++c) {
+      UndoOrientation(undo_orientation, color->Plane(c), transformed.Plane(c),
+                      pool);
+    }
+    transformed.Swap(temp_color);
+    color = &temp_color;
+    if (ib.HasAlpha()) {
+      UndoOrientation(undo_orientation, *alpha, temp_alpha, pool);
+      alpha = &temp_alpha;
+    }
+
+    xsize = color->xsize();
+    ysize = color->ysize();
+  }
 
   if (float_out) {
     if (bits_per_sample != 32) {
@@ -1167,10 +1342,8 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const int64_t y = task;
-            size_t i = (xsize * y * num_channels + c) * bits_per_sample /
-                       jxl::kBitsPerByte;
-
-            const float* JXL_RESTRICT row_in = ib.color().PlaneRow(c, y);
+            size_t i = stride * y + (c * bits_per_sample / jxl::kBitsPerByte);
+            const float* JXL_RESTRICT row_in = color->PlaneRow(c, y);
             if (lossless_float) {
               // for lossless PFM, we need to avoid the * (1./255.) * 255
               // so just interleave and don't touch
@@ -1180,7 +1353,6 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                   i += inc;
                 }
               } else {
-                // BitsPerChannel
                 for (size_t x = 0; x < xsize; ++x) {
                   StoreBEFloat(row_in[x], out + i);
                   i += inc;
@@ -1193,7 +1365,6 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                   i += inc;
                 }
               } else {
-                // BitsPerChannel
                 for (size_t x = 0; x < xsize; ++x) {
                   StoreBEFloat(row_in[x] * mul, out + i);
                   i += inc;
@@ -1218,9 +1389,8 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const int64_t y = task;
-            size_t i = (xsize * y * num_channels + c) * bits_per_sample /
-                       jxl::kBitsPerByte;
-            const float* JXL_RESTRICT row_in = ib.color().PlaneRow(c, y);
+            size_t i = stride * y + (c * bits_per_sample / jxl::kBitsPerByte);
+            const float* JXL_RESTRICT row_in = color->PlaneRow(c, y);
             if (bits_per_sample == 8) {
               for (size_t x = 0; x < xsize; ++x) {
                 float v = row_in[x];
@@ -1255,10 +1425,8 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
     // Alpha is stored as a 16-bit ImageU, rather than a floating point Image3F,
     // in the CodecInOut.
     size_t alpha_bits = 0;
-    const jxl::ImageU* alpha = nullptr;
     jxl::ImageU alpha_temp;
     if (ib.HasAlpha()) {
-      alpha = &ib.alpha();
       alpha_bits = ib.metadata()->GetAlphaBits();
       if (alpha_bits == 0) {
         return JXL_FAILURE("invalid alpha bit depth");
@@ -1285,8 +1453,8 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const int64_t y = task;
-            size_t i = (xsize * y * num_channels + color_channels) *
-                       bits_per_sample / jxl::kBitsPerByte;
+            size_t i = stride * y +
+                       (color_channels * bits_per_sample / jxl::kBitsPerByte);
             const uint16_t* JXL_RESTRICT row_in = alpha->Row(y);
             if (little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
@@ -1313,8 +1481,7 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
         // Since both the input and output alpha can have multiple possible
         // bit-depths, this is implemented as a 2-step process: convert to an
         // ImageU with the target bit depth, then store it in the output buffer.
-        ConvertAlpha(alpha_bits, ib.alpha(), bits_per_sample, &alpha_temp,
-                     pool);
+        ConvertAlpha(alpha_bits, *alpha, bits_per_sample, &alpha_temp, pool);
         alpha_bits = bits_per_sample;
         alpha = &alpha_temp;
       }
@@ -1322,9 +1489,8 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const int64_t y = task;
-            size_t i = (xsize * y * num_channels + color_channels) *
-                       bits_per_sample / jxl::kBitsPerByte;
-
+            size_t i = stride * y +
+                       (color_channels * bits_per_sample / jxl::kBitsPerByte);
             const uint16_t* JXL_RESTRICT row_in = alpha->Row(y);
             if (alpha_bits == 8) {
               for (size_t x = 0; x < xsize; ++x) {
@@ -1359,5 +1525,5 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
                    bits_per_alpha, bits_per_sample, big_endian, flipped_y);
   return CopyTo(desc, bytes, pool, ib);
 }
-
 }  // namespace jxl
+#endif  // HWY_ONCE

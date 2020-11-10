@@ -63,8 +63,8 @@ MATCHER(ControlPointIs, "") {
   const Spline::Point& actual = std::get<0>(arg);
   const Spline::Point& expected = std::get<1>(arg);
   return testing::ExplainMatchResult(
-      AllOf(Field("x", &Spline::Point::x, FloatNear(expected.x, kTolerance)),
-            Field("y", &Spline::Point::y, FloatNear(expected.y, kTolerance))),
+      AllOf(Field(&Spline::Point::x, FloatNear(expected.x, kTolerance)),
+            Field(&Spline::Point::y, FloatNear(expected.y, kTolerance))),
       actual, result_listener);
 }
 
@@ -72,7 +72,7 @@ MATCHER(ControlPointsMatch, "") {
   const Spline& actual = std::get<0>(arg);
   const Spline& expected = std::get<1>(arg);
   return testing::ExplainMatchResult(
-      Field("control_points", &Spline::control_points,
+      Field(&Spline::control_points,
             Pointwise(ControlPointIs(), expected.control_points)),
       actual, result_listener);
 }
@@ -85,20 +85,30 @@ MATCHER(SplinesMatch, "") {
     return false;
   }
   for (int i = 0; i < 3; ++i) {
-    testing::StringMatchResultListener color_dct_listener;
-    if (!testing::ExplainMatchResult(
-            Pointwise(FloatNear(kTolerance), expected.color_dct[i]),
-            actual.color_dct[i], &color_dct_listener)) {
-      *result_listener << ", where color_dct[" << i << "] don't match, "
-                       << color_dct_listener.str();
-      return false;
+    size_t color_dct_size =
+        sizeof(expected.color_dct[i]) / sizeof(expected.color_dct[i][0]);
+    for (size_t j = 0; j < color_dct_size; j++) {
+      testing::StringMatchResultListener color_dct_listener;
+      if (!testing::ExplainMatchResult(
+              FloatNear(expected.color_dct[i][j], kTolerance),
+              actual.color_dct[i][j], &color_dct_listener)) {
+        *result_listener << ", where color_dct[" << i << "][" << j
+                         << "] don't match, " << color_dct_listener.str();
+        return false;
+      }
     }
   }
-  if (!testing::ExplainMatchResult(
-          Field("sigma_dct", &Spline::sigma_dct,
-                Pointwise(FloatNear(kTolerance), expected.sigma_dct)),
-          actual, result_listener)) {
-    return false;
+  size_t sigma_dct_size =
+      sizeof(expected.sigma_dct) / sizeof(expected.sigma_dct[0]);
+  for (size_t i = 0; i < sigma_dct_size; i++) {
+    testing::StringMatchResultListener sigma_listener;
+    if (!testing::ExplainMatchResult(
+            FloatNear(expected.sigma_dct[i], kTolerance), actual.sigma_dct[i],
+            &sigma_listener)) {
+      *result_listener << ", where sigma_dct[" << i << "] don't match, "
+                       << sigma_listener.str();
+      return false;
+    }
   }
   return true;
 }
@@ -268,7 +278,7 @@ TEST(SplinesTest, Drawing) {
   io_actual.SetFromImage(CopyImage(image), ColorEncoding::LinearSRGB());
   ASSERT_TRUE(io_actual.TransformTo(io_expected.Main().c_current()));
 
-  VerifyRelativeError(io_expected.Main().color(), io_actual.Main().color(),
+  VerifyRelativeError(*io_expected.Main().color(), *io_actual.Main().color(),
                       1e-2f, 1e-1f);
 }
 

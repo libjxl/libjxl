@@ -32,7 +32,6 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/multiframe.h"
 
 namespace jxl {
 
@@ -76,6 +75,26 @@ PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
      /*suitable_for_downsampling_of_at_least=*/0},
 };
 
+Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
+                         ImageMetadata* metadata) {
+  *metadata = io->metadata.m;
+
+  // Keep ICC profile in lossless modes because a reconstructed profile may be
+  // slightly different (quantization).
+  const bool lossless_modular =
+      cparams.modular_mode && cparams.quality_pair.first == 100.0f;
+  if (!lossless_modular) {
+    metadata->color_encoding.DecideIfWantICC();
+  }
+
+  metadata->xyb_encoded =
+      cparams.color_transform == ColorTransform::kXYB ? true : false;
+
+  return true;
+}
+
+}  // namespace
+
 Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
                      const ImageMetadata* metadata, ThreadPool* pool,
                      BitWriter* JXL_RESTRICT writer) {
@@ -83,15 +102,15 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
   // TODO(janwas): also support generating preview by downsampling
   if (ib.HasColor()) {
     AuxOut aux_out;
-    Multiframe multiframe;
-    const AnimationFrame* animation_frame = nullptr;
     PassesEncoderState passes_enc_state;
     // TODO(lode): check if we want all extra channels and matching xyb_encoded
     // for the preview, such that using the main ImageMetadata object for
     // encoding this frame is warrented.
-    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, animation_frame, metadata, ib,
+    FrameInfo frame_info;
+    frame_info.is_preview = true;
+    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, frame_info, metadata, ib,
                                     &passes_enc_state, pool, &preview_writer,
-                                    &aux_out, &multiframe));
+                                    &aux_out));
     preview_writer.ZeroPadToByte();
   }
 
@@ -99,24 +118,6 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
     writer->ZeroPadToByte();
     writer->AppendByteAligned(preview_writer);
   }
-
-  return true;
-}
-
-Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
-                         ImageMetadata* metadata) {
-  *metadata = io->metadata;
-
-  // Keep ICC profile in lossless modes because a reconstructed profile may be
-  // slightly different (quantization).
-  const bool lossless_modular =
-      cparams.modular_group_mode && cparams.quality_pair.first == 100.0f;
-  if (!lossless_modular) {
-    metadata->color_encoding.DecideIfWantICC();
-  }
-
-  metadata->xyb_encoded =
-      cparams.color_transform == ColorTransform::kXYB ? true : false;
 
   return true;
 }
@@ -130,28 +131,28 @@ Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
   writer->Write(8, kCodestreamMarker);
   ReclaimAndCharge(writer, &allotment, kLayerHeader, aux_out);
 
-  SizeHeader size;
-  JXL_RETURN_IF_ERROR(size.Set(io->xsize(), io->ysize()));
-  JXL_RETURN_IF_ERROR(WriteSizeHeader(size, writer, kLayerHeader, aux_out));
-
   JXL_RETURN_IF_ERROR(MakeImageMetadata(cparams, io, metadata));
+
+  JXL_RETURN_IF_ERROR(
+      metadata->nonserialized_size.Set(io->xsize(), io->ysize()));
+  JXL_RETURN_IF_ERROR(WriteSizeHeader(metadata->nonserialized_size, writer,
+                                      kLayerHeader, aux_out));
+
   JXL_RETURN_IF_ERROR(
       WriteImageMetadata(*metadata, writer, kLayerHeader, aux_out));
 
   if (metadata->m2.have_preview) {
-    JXL_RETURN_IF_ERROR(
-        WritePreviewHeader(io->preview, writer, kLayerHeader, aux_out));
+    JXL_RETURN_IF_ERROR(WritePreviewHeader(io->metadata.m.nonserialized_preview,
+                                           writer, kLayerHeader, aux_out));
   }
 
   if (metadata->m2.have_animation) {
-    JXL_RETURN_IF_ERROR(
-        WriteAnimationHeader(io->animation, writer, kLayerHeader, aux_out));
+    JXL_RETURN_IF_ERROR(WriteAnimationHeader(
+        io->metadata.m.nonserialized_animation, writer, kLayerHeader, aux_out));
   }
 
   return true;
 }
-
-}  // namespace
 
 Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state, PaddedBytes* compressed,
@@ -176,37 +177,38 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
   // Each frame should start on byte boundaries.
   writer.ZeroPadToByte();
 
-  Multiframe multiframe;
   if (cparams.progressive_mode || cparams.qprogressive_mode) {
     if (cparams.saliency_map != nullptr) {
-      multiframe.SetSaliencyMap(cparams.saliency_map);
+      passes_enc_state->progressive_splitter.SetSaliencyMap(
+          cparams.saliency_map);
     }
-    multiframe.SetSaliencyThreshold(cparams.saliency_threshold);
+    passes_enc_state->progressive_splitter.SetSaliencyThreshold(
+        cparams.saliency_threshold);
     if (cparams.qprogressive_mode) {
-      multiframe.SetProgressiveMode(
+      passes_enc_state->progressive_splitter.SetProgressiveMode(
           ProgressiveMode{progressive_passes_dc_quant_ac_full_ac});
     } else {
       switch (cparams.saliency_num_progressive_steps) {
         case 1:
-          multiframe.SetProgressiveMode(
+          passes_enc_state->progressive_splitter.SetProgressiveMode(
               ProgressiveMode{progressive_passes_dc_vlf});
           break;
         case 2:
-          multiframe.SetProgressiveMode(
+          passes_enc_state->progressive_splitter.SetProgressiveMode(
               ProgressiveMode{progressive_passes_dc_lf});
           break;
         case 3:
-          multiframe.SetProgressiveMode(
+          passes_enc_state->progressive_splitter.SetProgressiveMode(
               ProgressiveMode{progressive_passes_dc_lf_salient_ac});
           break;
         case 4:
           if (cparams.saliency_threshold == 0.0f) {
             // No need for a 4th pass if saliency-threshold regards everything
             // as salient.
-            multiframe.SetProgressiveMode(
+            passes_enc_state->progressive_splitter.SetProgressiveMode(
                 ProgressiveMode{progressive_passes_dc_lf_salient_ac});
           } else {
-            multiframe.SetProgressiveMode(
+            passes_enc_state->progressive_splitter.SetProgressiveMode(
                 ProgressiveMode{progressive_passes_dc_lf_salient_ac_other_ac});
           }
           break;
@@ -216,23 +218,20 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
     }
   }
 
-  if (metadata.m2.have_animation) {
-    JXL_CHECK(io->animation_frames.size() == io->frames.size());
-    for (size_t i = 0; i < io->frames.size(); i++) {
-      AnimationFrame animation_frame = io->animation_frames[i];
-      animation_frame.nonserialized_have_timecode =
-          io->animation.have_timecodes;
-      animation_frame.nonserialized_have_animation = metadata.m2.have_animation;
-      animation_frame.is_last = i == io->frames.size() - 1;
-      JXL_RETURN_IF_ERROR(EncodeFrame(cparams, &animation_frame, &metadata,
-                                      io->frames[i], passes_enc_state, pool,
-                                      &writer, aux_out, &multiframe));
+  for (size_t i = 0; i < io->frames.size(); i++) {
+    FrameInfo info;
+    info.is_last = i == io->frames.size() - 1;
+    if (io->frames[i].use_for_next_frame) {
+      info.save_as_reference = 1;
     }
-  } else {
-    const AnimationFrame* animation_frame = nullptr;
-    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, animation_frame, &metadata,
-                                    io->frames[0], passes_enc_state, pool,
-                                    &writer, aux_out, &multiframe));
+    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, &metadata, io->frames[i],
+                                    passes_enc_state, pool, &writer, aux_out));
+  }
+
+  // Clean up passes_enc_state in case it gets reused.
+  for (size_t i = 0; i < 4; i++) {
+    passes_enc_state->shared.dc_frames[i] = Image3F();
+    passes_enc_state->shared.reference_frames[i].storage = ImageBundle();
   }
 
   *compressed = std::move(writer).TakeBytes();

@@ -83,11 +83,7 @@ std::vector<PatchInfo> FindDotDictionary(const CompressParams& cparams,
         kEllipseAngleQ,     kEllipseMinIntensity, kEllipseMaxIntensity,
         kEllipseIntensityQ, kEllipsePosQ <= 5,    cmap.YtoXRatio(0),
         cmap.YtoBRatio(0)};
-    // cparams.butteraugli_distance < 1.5};
     GaussianDetectParams eDetectParams = kEllipseDetectParams;
-    /*if (cparams.butteraugli_distance > 2.5) {
-      eDetectParams.maxNegPixels = 30;
-    }*/
 
     return DetectGaussianEllipses(opsin, eDetectParams, qParams, pool);
   }

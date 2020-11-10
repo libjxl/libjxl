@@ -58,18 +58,18 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
   CodecInOut io;
 
   if (bits_per_sample == 32) {
-    io.metadata.SetFloat32Samples();
+    io.metadata.m.SetFloat32Samples();
   } else {
-    io.metadata.SetUintSamples(bits_per_sample);
+    io.metadata.m.SetUintSamples(bits_per_sample);
   }
-  io.metadata.color_encoding = c_native;
+  io.metadata.m.color_encoding = c_native;
   io.SetFromImage(std::move(image), c_native);
   if (add_alpha) {
     ImageU alpha(xsize, ysize);
     const size_t alpha_bits = bits_per_sample <= 8 ? 8 : 16;
     const uint16_t max = (1U << alpha_bits) - 1;
     RandomFillImage(&alpha, max);
-    io.metadata.SetAlphaBits(alpha_bits);
+    io.metadata.m.SetAlphaBits(alpha_bits);
     io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
   return io;
@@ -115,7 +115,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   JXL_CHECK(Encode(io, codec, c_external, bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
-  io2.target_nits = io.metadata.IntensityTarget();
+  io2.target_nits = io.metadata.m.IntensityTarget();
   // Only for PNM because PNG will warn about ignoring them.
   if (codec == Codec::kPNM) {
     io2.dec_hints.Add("color_space", Description(c_external));
@@ -123,7 +123,8 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   JXL_CHECK(SetFromBytes(Span<const uint8_t>(encoded), &io2, pool));
   ImageBundle& ib2 = io2.Main();
 
-  EXPECT_EQ(Description(c_external), Description(io2.metadata.color_encoding));
+  EXPECT_EQ(Description(c_external),
+            Description(io2.metadata.m.color_encoding));
 
   // See c_external above - for low bits_per_sample the encoded space is
   // already the same.
@@ -132,7 +133,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   }
 
   if (add_alpha) {
-    EXPECT_TRUE(SamePixels(ib1.alpha(), ib2.alpha()));
+    EXPECT_TRUE(SamePixels(ib1.alpha(), *ib2.alpha()));
   }
 
   JXL_CHECK(ib2.TransformTo(ib1.c_current(), pool));
@@ -168,7 +169,7 @@ void TestRoundTrip(Codec codec, const size_t xsize, const size_t ysize,
   }
 #endif  // JPEGXL_ENABLE_SKCMS
 
-  VerifyRelativeError(ib1.color(), ib2.color(), max_l1, max_rel);
+  VerifyRelativeError(ib1.color(), *ib2.color(), max_l1, max_rel);
 }
 
 #if 0
@@ -202,8 +203,8 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
 
   // Encode/Decode again to make sure Encode carries through all metadata.
   PaddedBytes encoded;
-  JXL_CHECK(Encode(io, expected_codec, io.metadata.color_encoding,
-                   io.metadata.bit_depth.bits_per_sample, &encoded, pool));
+  JXL_CHECK(Encode(io, expected_codec, io.metadata.m.color_encoding,
+                   io.metadata.m.bit_depth.bits_per_sample, &encoded, pool));
 
   CodecInOut io2;
   io2.dec_hints = dec_hints;
@@ -213,7 +214,7 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
             Description(ib2.metadata()->color_encoding));
   EXPECT_EQ(Description(ib1.c_current()), Description(ib2.c_current()));
 
-  size_t bits_per_sample = io2.metadata.bit_depth.bits_per_sample;
+  size_t bits_per_sample = io2.metadata.m.bit_depth.bits_per_sample;
 
   // "Same" pixels?
   double max_l1 = bits_per_sample <= 12 ? 1.3 : 2E-3;
@@ -229,8 +230,8 @@ CodecInOut DecodeRoundtrip(const std::string& pathname, Codec expected_codec,
 
   // Simulate the encoder removing profile and decoder restoring it.
   if (!ib2.metadata()->color_encoding.WantICC()) {
-    io2.metadata.color_encoding.InternalRemoveICC();
-    EXPECT_TRUE(io2.metadata.color_encoding.CreateICC());
+    io2.metadata.m.color_encoding.InternalRemoveICC();
+    EXPECT_TRUE(io2.metadata.m.color_encoding.CreateICC());
   }
 
   return io2;
@@ -248,15 +249,15 @@ TEST(CodecTest, TestMetadataSRGB) {
   for (const char* relative_pathname : paths) {
     const CodecInOut io =
         DecodeRoundtrip(relative_pathname, Codec::kPNG, &pool);
-    EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
-    EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
-    EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
+    EXPECT_EQ(8, io.metadata.m.bit_depth.bits_per_sample);
+    EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
+    EXPECT_EQ(0, io.metadata.m.bit_depth.exponent_bits_per_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
-    EXPECT_FALSE(io.metadata.HasAlpha());
+    EXPECT_FALSE(io.metadata.m.HasAlpha());
 
-    const ColorEncoding& c_original = io.metadata.color_encoding;
+    const ColorEncoding& c_original = io.metadata.m.color_encoding;
     EXPECT_FALSE(c_original.ICC().empty());
     EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
     EXPECT_EQ(WhitePoint::kD65, c_original.white_point);
@@ -280,15 +281,15 @@ TEST(CodecTest, TestMetadataLinear) {
 
   for (size_t i = 0; i < 3; ++i) {
     const CodecInOut io = DecodeRoundtrip(paths[i], Codec::kPNG, &pool);
-    EXPECT_EQ(16, io.metadata.bit_depth.bits_per_sample);
-    EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
-    EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
+    EXPECT_EQ(16, io.metadata.m.bit_depth.bits_per_sample);
+    EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
+    EXPECT_EQ(0, io.metadata.m.bit_depth.exponent_bits_per_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
-    EXPECT_FALSE(io.metadata.HasAlpha());
+    EXPECT_FALSE(io.metadata.m.HasAlpha());
 
-    const ColorEncoding& c_original = io.metadata.color_encoding;
+    const ColorEncoding& c_original = io.metadata.m.color_encoding;
     EXPECT_FALSE(c_original.ICC().empty());
     EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
     EXPECT_EQ(white_points[i], c_original.white_point);
@@ -307,14 +308,14 @@ TEST(CodecTest, TestMetadataICC) {
   for (const char* relative_pathname : paths) {
     const CodecInOut io =
         DecodeRoundtrip(relative_pathname, Codec::kPNG, &pool);
-    EXPECT_GE(16, io.metadata.bit_depth.bits_per_sample);
-    EXPECT_LE(14, io.metadata.bit_depth.bits_per_sample);
+    EXPECT_GE(16, io.metadata.m.bit_depth.bits_per_sample);
+    EXPECT_LE(14, io.metadata.m.bit_depth.bits_per_sample);
 
     EXPECT_EQ(64, io.xsize());
     EXPECT_EQ(64, io.ysize());
-    EXPECT_FALSE(io.metadata.HasAlpha());
+    EXPECT_FALSE(io.metadata.m.HasAlpha());
 
-    const ColorEncoding& c_original = io.metadata.color_encoding;
+    const ColorEncoding& c_original = io.metadata.m.color_encoding;
     EXPECT_FALSE(c_original.ICC().empty());
     EXPECT_EQ(RenderingIntent::kPerceptual, c_original.rendering_intent);
     EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());
@@ -354,11 +355,11 @@ void VerifyWideGamutMetadata(const std::string& relative_pathname,
                              const Primaries primaries, ThreadPool* pool) {
   const CodecInOut io = DecodeRoundtrip(relative_pathname, Codec::kPNG, pool);
 
-  EXPECT_EQ(8, io.metadata.bit_depth.bits_per_sample);
-  EXPECT_FALSE(io.metadata.bit_depth.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.bit_depth.exponent_bits_per_sample);
+  EXPECT_EQ(8, io.metadata.m.bit_depth.bits_per_sample);
+  EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
+  EXPECT_EQ(0, io.metadata.m.bit_depth.exponent_bits_per_sample);
 
-  const ColorEncoding& c_original = io.metadata.color_encoding;
+  const ColorEncoding& c_original = io.metadata.m.color_encoding;
   EXPECT_FALSE(c_original.ICC().empty());
   EXPECT_EQ(RenderingIntent::kAbsolute, c_original.rendering_intent);
   EXPECT_EQ(ColorSpace::kRGB, c_original.GetColorSpace());

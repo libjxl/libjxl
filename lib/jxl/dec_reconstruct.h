@@ -27,27 +27,27 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
 
 namespace jxl {
 
-// Finalizes the decoding of a pass by running per-pass post processing:
-// smoothing and adaptive reconstruction. Writes linear sRGB to `idct` and
-// shrinks it to `x/ysize` to undo prior padding.
+// Finalizes the decoding of a frame by applying image features if necessary,
+// doing color transforms (unless the frame header specifies
+// `SaveBeforeColorTransform()`) and applying upsampling.
+//
+// Writes pixels in the appropriate colorspace to `idct`, shrinking it if
+// necessary.
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             AuxOut* aux_out, bool save_decompressed,
-                             bool apply_color_transform);
+                             AuxOut* aux_out);
 
 // Applies image features on the given `idct_rect` of `idct`, interpreted as the
 // `image_rect` region of the full image.
 Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
                           PassesDecoderState* dec_state, size_t thread,
-                          AuxOut* aux_out, bool save_decompressed,
-                          bool apply_color_transform);
+                          AuxOut* aux_out);
 
 // Same as ApplyImageFeatures, but only processes row `y` of
 // dec_state->decoded. `y` should be relative to `rect`.
@@ -56,9 +56,7 @@ Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
 // values of `y`, in increasing order, starting from `y=-lf.PaddingRows()`.
 Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
                              PassesDecoderState* dec_state, ssize_t y,
-                             size_t thread, AuxOut* aux_out,
-                             bool save_decompressed,
-                             bool apply_color_transform);
+                             size_t thread, AuxOut* aux_out);
 
 }  // namespace jxl
 

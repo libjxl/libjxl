@@ -139,12 +139,14 @@ typedef struct JxlBasicInfo {
    * can always convert to linear or non-linear sRGB or to XYB). If the original
    * profile is used, the decoder outputs pixel data in the color space matching
    * that profile, but doesn't convert it to any other color space. If the
-   * original profile is not used, the decoder only outputs the data as sRGB,
-   * but will not convert it to to the original color profile. The decoder also
-   * does not convert to the target display color profile, but instead will
-   * always indicate which color profile the returned pixel data is encoded in
-   * when using @see JXL_COLOR_PROFILE_TARGET_DATA so that a CMS can be used
-   * to convert the data.
+   * original profile is not used, the decoder only outputs the data as sRGB
+   * (linear if outputting to floating point, nonlinear with standard sRGB
+   * transfer function if outputting to unsigned integers) but will not convert
+   * it to to the original color profile. The decoder also does not convert to
+   * the target display color profile, but instead will always indicate which
+   * color profile the returned pixel data is encoded in when using @see
+   * JXL_COLOR_PROFILE_TARGET_DATA so that a CMS can be used to convert the
+   * data.
    */
   JXL_BOOL uses_original_profile;
 

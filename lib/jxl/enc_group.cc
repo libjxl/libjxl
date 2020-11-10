@@ -203,7 +203,7 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
     constexpr HWY_CAPPED(float, kDCTBlockSize) d;
 
     ac_qcoeff_t* JXL_RESTRICT coeffs[kMaxNumPasses][3];
-    size_t num_passes = enc_state->shared.multiframe->GetNumPasses();
+    size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
     JXL_DASSERT(num_passes > 0);
     for (size_t i = 0; i < num_passes; i++) {
       for (size_t c = 0; c < 3; c++) {
@@ -285,7 +285,7 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
                 c == 0 ? enc_state->x_qm_multiplier : 1.0f, acs.RawStrategy(),
                 xblocks, yblocks, coeffs[0][c] + offset, quantized + c * size);
           }
-          enc_state->shared.multiframe->SplitACCoefficients(
+          enc_state->progressive_splitter.SplitACCoefficients(
               quantized, size, acs, bx, by, offset, coeffs);
           offset += size;
         }

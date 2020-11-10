@@ -29,7 +29,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
@@ -47,8 +46,7 @@ namespace jxl {
 // used in the FindBestQuantization loops and in some tests.
 // TODO(veluca): this doesn't seem the best possible file for this function.
 Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                       ThreadPool* pool, bool save_decompressed = false,
-                       bool apply_color_transform = true);
+                       ThreadPool* pool);
 
 // Returns an image subsampled by kBlockDim in each direction. If the value
 // at pixel (x,y) in the returned image is greater than 1.0, it means that

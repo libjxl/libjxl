@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_MULTIFRAME_H_
-#define LIB_JXL_MULTIFRAME_H_
+#ifndef LIB_JXL_PROGRESSIVE_SPLIT_H_
+#define LIB_JXL_PROGRESSIVE_SPLIT_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -36,10 +36,8 @@
 #include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/splines.h"
 
-// A multiframe handler/manager to encode single images. It will run heuristics
-// for quantization, AC strategy and color correlation map only the first time
-// we want to encode a lossy pass, and will then re-use the existing heuristics
-// for further passes. All the passes of a single image are added together.
+// Functions to split DCT coefficients in multiple passes. All the passes of a
+// single frame are added together.
 
 namespace jxl {
 
@@ -99,85 +97,8 @@ struct ProgressiveMode {
   }
 };
 
-// Multiframe holds information about passes and manages
-// MultiframeHandlers. It is assumed that parallelization goes below the manager
-// level (at group level), so all the methods of Multiframe should be
-// invoked from a single thread.
-class Multiframe {
+class ProgressiveSplitter {
  public:
-  Multiframe() : current_header_(nullptr) {}
-
-  // Called at the start of each frame.
-  void StartFrame(const FrameHeader& frame_header) {
-    current_header_ = frame_header;
-  }
-
-  bool NeedsSaving() {
-    return current_header_.dc_level != 0 ||
-           (current_header_.save_as_reference != 0) ||
-           (!current_header_.animation_frame.is_last &&
-            !current_header_.animation_frame.have_crop &&
-            current_header_.animation_frame.new_base == NewBase::kCurrentFrame);
-  }
-
-  bool NeedsRestoring() {
-    return current_header_.dc_level == 0 &&
-           current_header_.save_as_reference == 0 &&
-           !current_header_.animation_frame.have_crop && has_previous_frame_;
-  }
-
-  Image3F* FrameStorage(size_t xsize, size_t ysize) {
-    if (!NeedsSaving() && !NeedsRestoring()) return nullptr;
-    if (current_header_.dc_level != 0) {
-      dc_storage_[current_header_.dc_level - 1] = Image3F(xsize, ysize);
-      return &dc_storage_[current_header_.dc_level - 1];
-    }
-    if (current_header_.save_as_reference != 0) {
-      reference_frames_[current_header_.save_as_reference - 1] =
-          Image3F(xsize, ysize);
-      return &reference_frames_[current_header_.save_as_reference - 1];
-    }
-    if (!NeedsRestoring()) {
-      frame_storage_ = Image3F(xsize, ysize);
-    }
-    JXL_CHECK(frame_storage_.xsize() == xsize);
-    JXL_CHECK(frame_storage_.ysize() == ysize);
-    return &frame_storage_;
-  }
-
-  const Image3F* SavedDc(size_t level) const { return &dc_storage_[level - 1]; }
-
-  // Called when a frame is done.
-  void SetDecodedFrame() {
-    if (!IsDisplayed()) return;
-    if (!current_header_.animation_frame.is_last &&
-        !current_header_.animation_frame.have_crop) {
-      switch (current_header_.animation_frame.new_base) {
-        case NewBase::kExisting:
-          break;
-        case NewBase::kCurrentFrame:
-          has_previous_frame_ = true;
-          break;
-        case NewBase::kNone:
-          frame_storage_ = Image3F();
-          has_previous_frame_ = false;
-          break;
-      }
-    } else {
-      if (current_header_.animation_frame.new_base != NewBase::kExisting) {
-        frame_storage_ = Image3F();
-        has_previous_frame_ = false;
-      }
-    }
-  }
-
-  // Modifies img by subtracting the current reference frame.
-  void DecorrelateOpsin(Image3F* img) {
-    if (NeedsRestoring()) {
-      SubtractFrom(frame_storage_, img);
-    }
-  }
-
   void SetProgressiveMode(ProgressiveMode mode) { mode_ = mode; }
 
   void SetSaliencyMap(const ImageF* saliency_map) {
@@ -214,29 +135,16 @@ class Multiframe {
                            size_t offset,
                            ac_qcoeff_t* JXL_RESTRICT output[kMaxNumPasses][3]);
 
-  const Image3F* GetReferenceFrames() const { return reference_frames_; }
-
-  bool IsDisplayed() const { return current_header_.IsDisplayed(); }
-
  private:
-  friend class MultiframeHandler;
-
   bool SuperblockIsSalient(size_t row_start, size_t col_start, size_t num_rows,
                            size_t num_cols) const;
-
-  FrameHeader current_header_;
   ProgressiveMode mode_;
 
   // Not owned, must remain valid.
   const ImageF* saliency_map_ = nullptr;
   float saliency_threshold_ = 0.0;
-
-  Image3F frame_storage_;
-  Image3F dc_storage_[3];
-  Image3F reference_frames_[kMaxNumReferenceFrames];
-  bool has_previous_frame_ = false;
 };
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_MULTIFRAME_H_
+#endif  // LIB_JXL_PROGRESSIVE_SPLIT_H_

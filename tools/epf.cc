@@ -14,6 +14,7 @@
 
 #include "tools/epf.h"
 
+#include "jxl/headers.h"
 #include "lib/jxl/ar_control_field.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/common.h"
@@ -132,37 +133,33 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
                    const int sharpness_parameter, jxl::CodecInOut* const io,
                    jxl::ThreadPool* const pool) {
   const jxl::ColorEncoding original_color_encoding =
-      io->metadata.color_encoding;
+      io->metadata.m.color_encoding;
   jxl::Image3F opsin(io->xsize(), io->ysize());
   (void)ToXYB(io->Main(), pool, &opsin);
 
-  const size_t original_xsize = opsin.xsize(), original_ysize = opsin.ysize();
+  JXL_CHECK(
+      io->metadata.m.nonserialized_size.Set(opsin.xsize(), opsin.ysize()));
+
   opsin = PadImageToMultiple(opsin, jxl::kBlockDim);
 
-  jxl::FrameDimensions frame_dim;
-  frame_dim.Set(original_xsize, original_ysize, /*group_size_shift=*/1,
-                /*max_hshift=*/0, /*max_vshift=*/0);
-
-  jxl::LoopFilter lf;
-  lf.gab = false;
-  lf.epf_iters = epf_iters;
-
-  jxl::FrameHeader frame_header(&io->metadata);
+  jxl::FrameHeader frame_header(&io->metadata.m);
+  frame_header.nonserialized_loop_filter.gab = false;
+  frame_header.nonserialized_loop_filter.epf_iters = epf_iters;
+  jxl::FrameDimensions frame_dim = frame_header.ToFrameDimensions();
+  const jxl::LoopFilter& lf = frame_header.nonserialized_loop_filter;
   frame_header.color_transform = jxl::ColorTransform::kXYB;
-  frame_header.animation_frame.nonserialized_have_timecode = false;
 
   static constexpr float kAcQuant = 0.84f;
   const float dc_quant = jxl::InitialQuantDC(distance);
   const float ac_quant = kAcQuant / distance;
   jxl::PassesEncoderState state;
-  jxl::Multiframe multiframe;
-  JXL_RETURN_IF_ERROR(jxl::InitializePassesSharedState(
-      frame_header, lf, io->metadata, frame_dim, &multiframe, &state.shared));
+  JXL_RETURN_IF_ERROR(
+      jxl::InitializePassesSharedState(frame_header, &state.shared));
   // TODO(lode): must this be a separate one, or can the frame_header from
   // above be used for this?
-  jxl::FrameHeader modular_frame_header(&io->metadata);
-  jxl::ModularFrameEncoder modular_frame_encoder(
-      frame_dim, modular_frame_header, jxl::CompressParams{});
+  jxl::FrameHeader modular_frame_header(&io->metadata.m);
+  jxl::ModularFrameEncoder modular_frame_encoder(modular_frame_header,
+                                                 jxl::CompressParams{});
   state.shared.ac_strategy.FillDCT8();
   jxl::InitializePassesEncoder(opsin, pool, &state, &modular_frame_encoder,
                                /*aux_out=*/nullptr);
@@ -183,7 +180,7 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
 
   EdgePreservingFilter(lf, filter_weights, image_rect, padded, &opsin);
 
-  opsin.ShrinkTo(original_xsize, original_ysize);
+  opsin.ShrinkTo(frame_dim.xsize, frame_dim.xsize);
   jxl::OpsinParams opsin_params;
   opsin_params.Init(jxl::kDefaultIntensityTarget);
   jxl::OpsinToLinearInplace(&opsin, pool, opsin_params);

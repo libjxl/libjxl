@@ -91,6 +91,17 @@ struct Blobs {
   PaddedBytes xmp;
 };
 
+// All metadata applicable to the entire codestream (dimensions, extra channels,
+// ...)
+struct CodecMetadata {
+  // TODO(lode): use the other fields too, this is work in progress, currently
+  // only "m" is used. SizeHeader should be used instead of m.nonserialized_size
+  ImageMetadata m;
+  SizeHeader size;
+  PreviewHeader preview;
+  AnimationHeader animation;
+};
+
 // For Codec::kJPG, convert between JPEG and pixels or between JPEG and
 // quantized DCT coefficients
 // For float data (pfm,exr): kPixels uses 0..maxnits, kLosslessFloat doesn't
@@ -101,9 +112,9 @@ enum class DecodeTarget { kPixels, kQuantizedCoeffs, kLosslessFloat };
 // to/from decoding/encoding.
 class CodecInOut {
  public:
-  CodecInOut() : preview_frame(&metadata) {
+  CodecInOut() : preview_frame(&metadata.m) {
     frames.reserve(1);
-    frames.emplace_back(&metadata);
+    frames.emplace_back(&metadata.m);
   }
 
   // Move-only.
@@ -123,31 +134,34 @@ class CodecInOut {
   void SetFromImage(Image3F&& color, const ColorEncoding& c_current) {
     Main().SetFromImage(std::move(color), c_current);
     SetIntensityTarget(this);
+    SetSize(color.xsize(), color.ysize());
+  }
+
+  void SetSize(size_t xsize, size_t ysize) {
+    JXL_CHECK(metadata.m.nonserialized_size.Set(xsize, ysize));
   }
 
   void CheckMetadata() const {
-    JXL_CHECK(metadata.bit_depth.bits_per_sample != 0);
-    JXL_CHECK(!metadata.color_encoding.ICC().empty());
+    JXL_CHECK(metadata.m.bit_depth.bits_per_sample != 0);
+    JXL_CHECK(!metadata.m.color_encoding.ICC().empty());
 
     if (preview_frame.xsize() != 0) preview_frame.VerifyMetadata();
-    JXL_CHECK(preview_frame.metadata() == &metadata);
+    JXL_CHECK(preview_frame.metadata() == &metadata.m);
 
     for (const ImageBundle& ib : frames) {
       ib.VerifyMetadata();
-      JXL_CHECK(ib.metadata() == &metadata);
+      JXL_CHECK(ib.metadata() == &metadata.m);
     }
   }
 
-  // These functions refer to the size of the whole image or "canvas" (as
-  // opposed to individual frames), which for animations corresponds to the size
-  // of the first frame.
-  size_t xsize() const { return frames[0].xsize(); }
-  size_t ysize() const { return frames[0].ysize(); }
+  size_t xsize() const { return metadata.m.xsize(); }
+  size_t ysize() const { return metadata.m.ysize(); }
   void ShrinkTo(size_t xsize, size_t ysize) {
     // preview is unaffected.
     for (ImageBundle& ib : frames) {
       ib.ShrinkTo(xsize, ysize);
     }
+    SetSize(xsize, ysize);
   }
 
   template <typename T>
@@ -165,7 +179,7 @@ class CodecInOut {
   // Calls TransformTo for each ImageBundle (preview/frames).
   Status TransformTo(const ColorEncoding& c_desired,
                      ThreadPool* pool = nullptr) {
-    if (metadata.m2.have_preview) {
+    if (metadata.m.m2.have_preview) {
       JXL_RETURN_IF_ERROR(preview_frame.TransformTo(c_desired, pool));
     }
     for (ImageBundle& ib : frames) {
@@ -218,15 +232,11 @@ class CodecInOut {
   // Metadata stored into / retrieved from bitstreams.
 
   Blobs blobs;
-  ImageMetadata metadata;  // applies to preview and all frames
+
+  CodecMetadata metadata;  // applies to preview and all frames
 
   // If metadata.have_preview:
-  PreviewHeader preview;
   ImageBundle preview_frame;
-
-  // If metadata.have_animation:
-  AnimationHeader animation;
-  std::vector<AnimationFrame> animation_frames;
 
   std::vector<ImageBundle> frames;  // size=1 if !metadata.have_animation
 

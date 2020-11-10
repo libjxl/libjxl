@@ -61,7 +61,6 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
@@ -238,20 +237,18 @@ Status LoopFilterFromParams(const CompressParams& cparams,
 }
 
 Status MakeFrameHeader(const CompressParams& cparams,
-                       const AnimationFrame* animation_frame_or_null,
-                       const ImageBundle& ib, Multiframe* multiframe,
-                       FrameHeader* JXL_RESTRICT frame_header,
-                       LoopFilter* JXL_RESTRICT loop_filter) {
-  frame_header->has_animation = animation_frame_or_null != nullptr;
-  if (frame_header->has_animation) {
-    frame_header->animation_frame = *animation_frame_or_null;
-    frame_header->animation_frame.nonserialized_image_metadata =
-        frame_header->nonserialized_image_metadata;
-  }
+                       const ProgressiveSplitter& progressive_splitter,
+                       const FrameInfo& frame_info, const ImageBundle& ib,
+                       FrameHeader* JXL_RESTRICT frame_header) {
+  frame_header->nonserialized_is_preview = frame_info.is_preview;
+  frame_header->is_last = frame_info.is_last;
+  frame_header->save_before_color_transform =
+      frame_info.save_before_color_transform;
+  frame_header->frame_type = frame_info.frame_type;
 
-  multiframe->InitPasses(&frame_header->passes);
+  progressive_splitter.InitPasses(&frame_header->passes);
 
-  if (cparams.modular_group_mode) {
+  if (cparams.modular_mode) {
     frame_header->encoding = FrameEncoding::kModular;
     frame_header->group_size_shift = cparams.modular_group_size_shift;
   }
@@ -272,14 +269,15 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->chroma_subsampling = cparams.chroma_subsampling;
   }
 
-  if (frame_header->IsLossy()) {
+  if (frame_header->encoding == FrameEncoding::kVarDCT) {
     frame_header->flags = FrameFlagsFromParams(cparams);
 
-    JXL_RETURN_IF_ERROR(LoopFilterFromParams(cparams, loop_filter));
+    JXL_RETURN_IF_ERROR(LoopFilterFromParams(
+        cparams, &frame_header->nonserialized_loop_filter));
   }
 
-  if (cparams.dc_level) {
-    frame_header->dc_level = cparams.dc_level;
+  if (frame_info.dc_level) {
+    frame_header->dc_level = frame_info.dc_level;
   }
   if (cparams.progressive_dc && cparams.resampling != 1) {
     return JXL_FAILURE("Resampling not supported with DC frames");
@@ -288,11 +286,8 @@ Status MakeFrameHeader(const CompressParams& cparams,
       cparams.resampling != 4 && cparams.resampling != 8) {
     return JXL_FAILURE("Invalid resampling factor");
   }
-  frame_header->upsampling.upsampling_factor = cparams.resampling;
-  frame_header->save_as_reference = cparams.save_as_reference;
-  if (cparams.save_as_reference == 0 && cparams.dc_level == 0) {
-    frame_header->is_displayed = true;
-  }
+  frame_header->upsampling = cparams.resampling;
+  frame_header->save_as_reference = frame_info.save_as_reference;
 
   // Set blend_channel to the first alpha channel, the only implemented mode for
   // now and what the encoder currently uses. These values are only encoded in
@@ -300,21 +295,46 @@ Status MakeFrameHeader(const CompressParams& cparams,
   // channels.
   const std::vector<ExtraChannelInfo>& extra_channels =
       frame_header->nonserialized_image_metadata->m2.extra_channel_info;
-  if (frame_header->has_animation && extra_channels.size() > 1) {
-    size_t index = 0;
-    for (size_t i = 0; i < extra_channels.size(); i++) {
-      if (extra_channels[i].type == ExtraChannel::kAlpha) {
-        index = i;
-        break;
-      }
-    }
-    // This value is only stored if the blend mode involves an alpha channel,
-    // but it does no harm filling it in for any mode.
-    frame_header->animation_frame.blend_channel = index;
-    for (size_t i = 0; i < extra_channels.size(); i++) {
-      frame_header->animation_frame.extra_channels.blend_channel[i] = index;
+  // Resized frames.
+  if (frame_info.frame_type != FrameType::kDCFrame) {
+    frame_header->frame_origin = ib.origin;
+    frame_header->frame_size.xsize = ib.xsize();
+    frame_header->frame_size.ysize = ib.ysize();
+    if (ib.origin.x0 != 0 || ib.origin.y0 != 0 ||
+        ib.xsize() != frame_header->default_xsize() ||
+        ib.ysize() != frame_header->default_ysize()) {
+      frame_header->custom_size_or_origin = true;
     }
   }
+
+  // Set blending-related information. TODO(veluca): only supports kReplace or
+  // kBlend for now.
+  if (ib.blend || frame_header->custom_size_or_origin) {
+    size_t index = 0;
+    if (extra_channels.size() > 1) {
+      for (size_t i = 0; i < extra_channels.size(); i++) {
+        if (extra_channels[i].type == ExtraChannel::kAlpha) {
+          index = i;
+          break;
+        }
+      }
+    }
+    frame_header->blending_info.alpha_channel = index;
+    frame_header->blending_info.mode =
+        ib.blend ? BlendMode::kBlend : BlendMode::kReplace;
+    // previous frames are saved with ID 1.
+    frame_header->blending_info.source = 1;
+    for (size_t i = 0; i < extra_channels.size(); i++) {
+      frame_header->extra_channel_blending_info[i].alpha_channel = index;
+      frame_header->extra_channel_blending_info[i].mode =
+          ib.blend ? BlendMode::kBlend : BlendMode::kReplace;
+      frame_header->extra_channel_blending_info[i].source = 1;
+    }
+  }
+
+  frame_header->animation_frame.duration = ib.duration;
+
+  // TODO(veluca): timecode.
 
   return true;
 }
@@ -355,15 +375,11 @@ class LossyFrameEncoder {
  public:
   LossyFrameEncoder(const CompressParams& cparams,
                     const FrameHeader& frame_header,
-                    const LoopFilter& loop_filter,
-                    const ImageMetadata& image_metadata,
-                    const FrameDimensions& frame_dim,
                     PassesEncoderState* JXL_RESTRICT enc_state,
-                    Multiframe* multiframe, ThreadPool* pool, AuxOut* aux_out)
+                    ThreadPool* pool, AuxOut* aux_out)
       : enc_state_(enc_state), pool_(pool), aux_out_(aux_out) {
-    JXL_CHECK(InitializePassesSharedState(
-        frame_header, loop_filter, image_metadata, frame_dim, multiframe,
-        &enc_state_->shared, /*encoder=*/true));
+    JXL_CHECK(InitializePassesSharedState(frame_header, &enc_state_->shared,
+                                          /*encoder=*/true));
     enc_state_->cparams = cparams;
     enc_state_->passes.clear();
   }
@@ -394,7 +410,7 @@ class LossyFrameEncoder {
     InitializePassesEncoder(*opsin, pool_, enc_state_, modular_frame_encoder,
                             aux_out_);
 
-    enc_state_->passes.resize(shared.multiframe->GetNumPasses());
+    enc_state_->passes.resize(enc_state_->progressive_splitter.GetNumPasses());
     for (PassesEncoderState::PassData& pass : enc_state_->passes) {
       pass.ac_tokens.resize(shared.frame_dim.num_groups);
     }
@@ -430,19 +446,12 @@ class LossyFrameEncoder {
     RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
               tokenize_group, "TokenizeGroup");
 
-    if (!shared.frame_header.animation_frame.is_last &&
-        !shared.frame_header.animation_frame.have_crop) {
-      RoundtripImage(*opsin, enc_state_, pool_,
-                     /*save_decompressed=*/true);
-    }
-
     if (aux_out_ && aux_out_->testing_aux.dc) {
       *aux_out_->testing_aux.dc = CopyImage(shared.dc_storage);
     }
     if (aux_out_ && aux_out_->testing_aux.decoded) {
       *aux_out_->testing_aux.decoded =
-          RoundtripImage(*opsin, enc_state_, pool_,
-                         /*save_decompressed=*/false);
+          RoundtripImage(*opsin, enc_state_, pool_);
     }
 
     *frame_header = shared.frame_header;
@@ -631,8 +640,8 @@ class LossyFrameEncoder {
     size_t total_dc[3] = {};
     for (size_t c : {1, 0, 2}) {
       if (jpeg_data.components.size() == 1 && c != 1) {
-        ZeroFillImage(const_cast<ImageF*>(&enc_state_->coeffs[0].Plane(c)));
-        ZeroFillImage(const_cast<ImageF*>(&dc.Plane(c)));
+        ZeroFillImage(&enc_state_->coeffs[0].Plane(c));
+        ZeroFillImage(&dc.Plane(c));
         // Ensure no division by 0.
         dc_counts[c][1024] = 1;
         total_dc[c] = 1;
@@ -756,7 +765,7 @@ class LossyFrameEncoder {
     // Must happen before WriteFrameHeader!
     shared.frame_header.UpdateFlag(true, FrameHeader::kSkipAdaptiveDCSmoothing);
 
-    enc_state_->passes.resize(shared.multiframe->GetNumPasses());
+    enc_state_->passes.resize(enc_state_->progressive_splitter.GetNumPasses());
     for (PassesEncoderState::PassData& pass : enc_state_->passes) {
       pass.ac_tokens.resize(shared.frame_dim.num_groups);
     }
@@ -823,7 +832,8 @@ class LossyFrameEncoder {
       ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out_);
     }
 
-    for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses(); i++) {
+    for (size_t i = 0; i < enc_state_->progressive_splitter.GetNumPasses();
+         i++) {
       // Encode coefficient orders.
       uint32_t used_orders = ComputeUsedOrders(
           enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
@@ -868,7 +878,8 @@ class LossyFrameEncoder {
  private:
   void ComputeAllCoeffOrders(const FrameDimensions& frame_dim) {
     PROFILER_FUNC;
-    for (size_t i = 0; i < enc_state_->shared.multiframe->GetNumPasses(); i++) {
+    for (size_t i = 0; i < enc_state_->progressive_splitter.GetNumPasses();
+         i++) {
       uint32_t used_orders = 0;
       // No coefficient reordering in Falcon mode.
       if (enc_state_->cparams.speed_tier != SpeedTier::kFalcon) {
@@ -907,13 +918,12 @@ class LossyFrameEncoder {
 };
 
 Status EncodeFrame(const CompressParams& cparams_orig,
-                   const AnimationFrame* animation_frame_or_null,
-                   const ImageMetadata* metadata, const ImageBundle& ib,
-                   PassesEncoderState* passes_enc_state, ThreadPool* pool,
-                   BitWriter* writer, AuxOut* aux_out, Multiframe* multiframe) {
+                   const FrameInfo& frame_info, const ImageMetadata* metadata,
+                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
+                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out) {
   ib.VerifyMetadata();
   CompressParams cparams = cparams_orig;
-  if (cparams.dc_level + cparams.progressive_dc > 3) {
+  if (frame_info.dc_level + cparams.progressive_dc > 4) {
     return JXL_FAILURE("Too many levels of progressive DC");
   }
 
@@ -936,10 +946,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_ASSERT(metadata->xyb_encoded ==
              (cparams.color_transform == ColorTransform::kXYB));
   FrameHeader frame_header(metadata);
-  // FrameHeader frame_header(&metadata_linear);
-  LoopFilter loop_filter;
-  JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams, animation_frame_or_null, ib,
-                                      multiframe, &frame_header, &loop_filter));
+  JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams,
+                                      passes_enc_state->progressive_splitter,
+                                      frame_info, ib, &frame_header));
   // Check that if the codestream header says xyb_encoded, the color_transform
   // matches the requirement. This is checked from the cparams here, even though
   // optimally we'd be able to check this against what has actually been written
@@ -960,15 +969,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
   }
 
-  FrameDimensions frame_dim;
-  frame_dim.Set(ib.xsize(), ib.ysize(), frame_header.group_size_shift,
-                frame_header.chroma_subsampling.MaxHShift(),
-                frame_header.chroma_subsampling.MaxVShift(),
-                frame_header.upsampling.upsampling_factor);
+  FrameDimensions frame_dim = frame_header.ToFrameDimensions();
 
   const size_t num_groups = frame_dim.num_groups;
-
-  multiframe->StartFrame(frame_header);
 
   Image3F opsin;
   const ColorEncoding& c_linear = ColorEncoding::LinearSRGB(ib.IsGray());
@@ -1004,10 +1007,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     return true;
   };
 
-  LossyFrameEncoder lossy_frame_encoder(
-      cparams, frame_header, loop_filter, *ib.metadata(), frame_dim,
-      passes_enc_state, multiframe, pool, aux_out);
-  ModularFrameEncoder modular_frame_encoder(frame_dim, frame_header, cparams);
+  LossyFrameEncoder lossy_frame_encoder(cparams, frame_header, passes_enc_state,
+                                        pool, aux_out);
+  ModularFrameEncoder modular_frame_encoder(frame_header, cparams);
 
   // Used by SetCustom.
   passes_enc_state->shared.matrices.SetModularFrameEncoder(
@@ -1027,7 +1029,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     const ImageBundle* JXL_RESTRICT ib_or_linear = &ib;
 
     if (frame_header.color_transform == ColorTransform::kXYB &&
-        cparams.dc_level == 0 && cparams.save_as_reference == 0) {
+        frame_info.ib_needs_color_transform) {
       // linear_storage would only be used by the Butteraugli loop (passing
       // linear sRGB avoids a color conversion there). Otherwise, don't
       // fill it to reduce memory usage.
@@ -1068,11 +1070,13 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       lossy_frame_encoder.State()->shared.image_features.splines.HasAny(),
       FrameHeader::kSplines);
   JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, writer, aux_out));
-  if (frame_header.IsLossy()) {
-    JXL_RETURN_IF_ERROR(WriteLoopFilter(loop_filter, writer, aux_out));
+  if (frame_header.encoding == FrameEncoding::kVarDCT) {
+    JXL_RETURN_IF_ERROR(WriteLoopFilter(frame_header.nonserialized_loop_filter,
+                                        writer, aux_out));
   }
 
-  const size_t num_passes = multiframe->GetNumPasses();
+  const size_t num_passes =
+      passes_enc_state->progressive_splitter.GetNumPasses();
 
   // DC global info + DC groups + AC global info + AC groups *
   // num_passes.
@@ -1107,8 +1111,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   JXL_RETURN_IF_ERROR(lossy_frame_encoder.State()->shared.matrices.EncodeDC(
       get_output(0), kLayerDequantTables, aux_out));
-  if (frame_header.IsLossy()) {
-    // encoding == kVarDCT
+  if (frame_header.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         lossy_frame_encoder.EncodeGlobalDCInfo(frame_header, get_output(0)));
   }
@@ -1120,7 +1123,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   const auto process_dc_group = [&](const int group_index, const int thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
     BitWriter* output = get_output(group_index + 1);
-    if (frame_header.IsLossy() &&
+    if (frame_header.encoding == FrameEncoding::kVarDCT &&
         !(frame_header.flags & FrameHeader::kUseDcFrame)) {
       BitWriter::Allotment allotment(output, 2);
       output->Write(2, modular_frame_encoder.extra_dc_precision[group_index]);
@@ -1132,7 +1135,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     JXL_CHECK(modular_frame_encoder.EncodeStream(
         output, my_aux_out, kLayerModularDcGroup,
         ModularStreamId::ModularDC(group_index)));
-    if (frame_header.IsLossy()) {
+    if (frame_header.encoding == FrameEncoding::kVarDCT) {
       const Rect& rect =
           lossy_frame_encoder.State()->shared.DCGroupRect(group_index);
       size_t nb_bits = CeilLog2Nonzero(rect.xsize() * rect.ysize());
@@ -1157,7 +1160,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   const auto process_group = [&](const int group_index, const int thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
 
-    for (size_t i = 0; i < multiframe->GetNumPasses(); i++) {
+    for (size_t i = 0; i < num_passes; i++) {
       if (frame_header.encoding == FrameEncoding::kVarDCT) {
         if (!lossy_frame_encoder.EncodeACGroup(
                 i, group_index, ac_group_code(i, group_index), my_aux_out)) {

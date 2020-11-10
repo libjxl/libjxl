@@ -55,7 +55,7 @@ void TestLosslessGroups(size_t group_size_shift) {
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png");
   CompressParams cparams;
-  cparams.modular_group_mode = true;
+  cparams.modular_mode = true;
   cparams.modular_group_size_shift = group_size_shift;
   DecompressParams dparams;
 
@@ -88,7 +88,7 @@ TEST(ModularTest, RoundtripLossy) {
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
-  cparams.modular_group_mode = true;
+  cparams.modular_mode = true;
   cparams.quality_pair = {90.0f, 90.0f};
   DecompressParams dparams;
 

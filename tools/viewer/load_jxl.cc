@@ -81,7 +81,7 @@ QImage loadJxlImage(const QString& filename, PaddedBytes targetIccProfile,
 
   if (ib.HasAlpha()) {
     const int alphaLeftShiftAmount =
-        16 - static_cast<int>(io.metadata.GetAlphaBits());
+        16 - static_cast<int>(io.metadata.m.GetAlphaBits());
     for (int y = 0; y < result.height(); ++y) {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
       QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));

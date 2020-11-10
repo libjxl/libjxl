@@ -66,9 +66,9 @@ Status WritePNG(const Image3B& image, ThreadPool* pool,
                 const std::string& filename) {
   std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
-  io.metadata.SetUintSamples(8);
-  io.metadata.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
+  io.metadata.m.SetUintSamples(8);
+  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  io.SetFromImage(StaticCastImage3<float>(image), io.metadata.m.color_encoding);
   PaddedBytes compressed;
   JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
   return WriteFile(compressed, filename);
@@ -77,7 +77,7 @@ Status WritePNG(const Image3B& image, ThreadPool* pool,
 Status ReadPNG(const std::string& filename, Image3B* image) {
   CodecInOut io;
   JXL_CHECK(SetFromFile(filename, &io));
-  *image = StaticCastImage3<uint8_t>(io.Main().color());
+  *image = StaticCastImage3<uint8_t>(*io.Main().color());
   return true;
 }
 
@@ -178,7 +178,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
   // Decompress
   CodecInOut io2;
-  io2.metadata = io.metadata;
+  io2.metadata.m = io.metadata.m;
   if (valid) {
     speed_stats = jpegxl::tools::SpeedStats();
     for (size_t i = 0; i < Args()->decode_reps; ++i) {
@@ -342,8 +342,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         fprintf(stderr, "WARNING: scaling outputs by %f\n", Args()->mul_output);
         JXL_CHECK(ib2.TransformTo(ColorEncoding::LinearSRGB(ib2.IsGray()),
                                   inner_pool));
-        ScaleImage(static_cast<float>(Args()->mul_output),
-                   const_cast<Image3F*>(&ib2.color()));
+        ScaleImage(static_cast<float>(Args()->mul_output), ib2.color());
       }
 
       JXL_CHECK(EncodeToFile(io2, *c_desired,
@@ -361,7 +360,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   }
   if (!extra_metrics_commands.empty()) {
     CodecInOut in_copy;
-    in_copy.SetFromImage(std::move(*io.Main().Copy().MutableColor()),
+    in_copy.SetFromImage(std::move(*io.Main().Copy().color()),
                          io.Main().c_current());
     TemporaryFile tmp_in("original", "pfm");
     TemporaryFile tmp_out("decoded", "pfm");
@@ -373,20 +372,21 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
 
     // Convert everything to non-linear SRGB - this is what most metrics expect.
     const ColorEncoding& c_desired = ColorEncoding::SRGB(io.Main().IsGray());
-    JXL_CHECK(EncodeToFile(io, c_desired, io.metadata.bit_depth.bits_per_sample,
-                           tmp_in_fn));
-    JXL_CHECK(EncodeToFile(io2, c_desired,
-                           io.metadata.bit_depth.bits_per_sample, tmp_out_fn));
-    if (io.metadata.IntensityTarget() != io2.metadata.IntensityTarget()) {
+    JXL_CHECK(EncodeToFile(io, c_desired,
+                           io.metadata.m.bit_depth.bits_per_sample, tmp_in_fn));
+    JXL_CHECK(EncodeToFile(
+        io2, c_desired, io.metadata.m.bit_depth.bits_per_sample, tmp_out_fn));
+    if (io.metadata.m.IntensityTarget() != io2.metadata.m.IntensityTarget()) {
       fprintf(stderr,
               "WARNING: original and decoded have different intensity targets "
               "(%f vs. %f).\n",
-              io.metadata.IntensityTarget(), io2.metadata.IntensityTarget());
+              io.metadata.m.IntensityTarget(),
+              io2.metadata.m.IntensityTarget());
     }
     std::string intensity_target;
     {
       std::ostringstream intensity_target_oss;
-      intensity_target_oss << io.metadata.IntensityTarget();
+      intensity_target_oss << io.metadata.m.IntensityTarget();
       intensity_target = intensity_target_oss.str();
     }
     for (size_t i = 0; i < extra_metrics_commands.size(); i++) {
@@ -1053,9 +1053,9 @@ class Benchmark {
 
           if (!Args()->decode_only && Args()->override_bitdepth != 0) {
             if (Args()->override_bitdepth == 32) {
-              loaded_images[i].metadata.SetFloat32Samples();
+              loaded_images[i].metadata.m.SetFloat32Samples();
             } else {
-              loaded_images[i].metadata.SetUintSamples(
+              loaded_images[i].metadata.m.SetUintSamples(
                   Args()->override_bitdepth);
             }
           }

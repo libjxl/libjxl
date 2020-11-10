@@ -141,7 +141,7 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
  * @return JXL_ENC_NEED_MORE_OUTPUT more output buffer is necessary.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(
-    JxlEncoder* enc, const uint8_t** next_out, size_t* avail_out);
+    JxlEncoder* enc, uint8_t** next_out, size_t* avail_out);
 
 /**
  * Sets the buffer to read from for the next image to encode.
@@ -159,13 +159,15 @@ JxlEncoderAddImageFrame(JxlEncoder* enc, const JxlFrameFormat* frame_format,
                         void* buffer, size_t size);
 
 /**
- * Declares that this encoder will not encode anything further. Must be called once
- * per encoded file, or JxlEncoderProcessOutput will keep returning
- * JXL_ENC_NEED_MORE_INPUT.
+ * Declares that this encoder will not encode anything further.
+ *
+ * Must be called between JxlEncoderAddImageFrame of the last frame and the next
+ * call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput won't output the
+ * last frame correctly.
  *
  * @param enc encoder object
  */
-JXL_EXPORT void JxlEncoderClose(JxlEncoder* enc);
+JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

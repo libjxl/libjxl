@@ -659,13 +659,13 @@ class WriteVisitor : public VisitorBase {
 void Bundle::Init(Fields* fields) {
   InitVisitor visitor;
   if (!visitor.Visit(fields, PrintVisitors() ? "-- Init\n" : "")) {
-    JXL_ASSERT(false);  // Init should never fail.
+    JXL_ABORT("Init should never fail");
   }
 }
 void Bundle::SetDefault(Fields* fields) {
   SetDefaultVisitor visitor;
   if (!visitor.Visit(fields, PrintVisitors() ? "-- SetDefault\n" : "")) {
-    JXL_ASSERT(false);  // Init should never fail.
+    JXL_ABORT("SetDefault should never fail");
   }
 }
 bool Bundle::AllDefault(const Fields& fields) {
@@ -673,7 +673,7 @@ bool Bundle::AllDefault(const Fields& fields) {
   const char* name =
       (PrintVisitors() || PrintAllDefault()) ? "[[AllDefault\n" : "";
   if (!visitor.VisitConst(fields, name)) {
-    JXL_ASSERT(false);  // AllDefault should never fail.
+    JXL_ABORT("AllDefault should never fail");
   }
 
   if (PrintAllDefault()) printf("  %d]]\n", visitor.AllDefault());

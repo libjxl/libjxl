@@ -54,7 +54,7 @@ Status Heuristics(PassesEncoderState* enc_state, const ImageBundle* linear,
 
   // Apply inverse-gaborish.
   // TODO(veluca): make this tiled and make GaborishInverse in-place.
-  if (shared.image_features.loop_filter.gab) {
+  if (shared.frame_header.nonserialized_loop_filter.gab) {
     *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
   }
   // Compute image of high frequencies by removing a blurred version.
@@ -63,7 +63,7 @@ Status Heuristics(PassesEncoderState* enc_state, const ImageBundle* linear,
   Image3F padded = PadImageMirror(*opsin, pad, pad);
   // Make the image (X, Y, B-Y)
   // TODO(veluca): SubtractFrom is not parallel *and* not SIMD-fied.
-  SubtractFrom(padded.Plane(1), const_cast<ImageF*>(&padded.Plane(2)));
+  SubtractFrom(padded.Plane(1), &padded.Plane(2));
   // Ensure that OOB access for CfL does nothing. Not necessary if doing things
   // properly...
   Image3F hf(padded.xsize() + 64, padded.ysize());
@@ -73,9 +73,8 @@ Status Heuristics(PassesEncoderState* enc_state, const ImageBundle* linear,
   // TODO(veluca): consider some faster blurring method.
   auto g = CreateRecursiveGaussian(11.415258091746161);
   for (size_t c = 0; c < 3; c++) {
-    FastGaussian(g, padded.Plane(c), pool, &temp,
-                 const_cast<ImageF*>(&hf.Plane(c)));
-    SubtractFrom(padded.Plane(c), const_cast<ImageF*>(&hf.Plane(c)));
+    FastGaussian(g, padded.Plane(c), pool, &temp, &hf.Plane(c));
+    SubtractFrom(padded.Plane(c), &hf.Plane(c));
   }
   // TODO(veluca): DC CfL?
   size_t xcolortiles = DivCeil(frame_dim.xsize_blocks, kColorTileDimInBlocks);
@@ -242,7 +241,8 @@ Status Heuristics(PassesEncoderState* enc_state, const ImageBundle* linear,
     {AcStrategy::Type::DCT4X4, 1.4f},
     {AcStrategy::Type::DCT4X8, 1.2f},
     {AcStrategy::Type::DCT8X4, 1.2f},
-    {AcStrategy::Type::AFV0, 1.15f},  // doesn't really work with these heuristics
+    {AcStrategy::Type::AFV0,
+     1.15f},  // doesn't really work with these heuristics
     {AcStrategy::Type::AFV1, 1.15f},
     {AcStrategy::Type::AFV2, 1.15f},
     {AcStrategy::Type::AFV3, 1.15f},

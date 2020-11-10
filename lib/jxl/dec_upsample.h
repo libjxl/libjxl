@@ -15,12 +15,12 @@
 #ifndef LIB_JXL_UPSAMPLE_H_
 #define LIB_JXL_UPSAMPLE_H_
 
-#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 
 namespace jxl {
 
-void Upsample(Image3F* src, const UpsamplingMode& mode);
+void Upsample(Image3F* src, size_t upsampling, const CustomTransformData& data);
 
 }
 

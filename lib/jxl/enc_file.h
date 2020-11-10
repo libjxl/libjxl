@@ -28,8 +28,18 @@
 
 namespace jxl {
 
+// Write preview from `io`.
+Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
+                     const ImageMetadata* metadata, ThreadPool* pool,
+                     BitWriter* JXL_RESTRICT writer);
+
+// Write headers from `io`.
+Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
+                    ImageMetadata* metadata, BitWriter* writer,
+                    AuxOut* aux_out);
+
 // Compresses pixels from `io` (given in any ColorEncoding).
-// `io->metadata.original` must be set.
+// `io->metadata.m.original` must be set.
 Status EncodeFile(const CompressParams& params, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state, PaddedBytes* compressed,
                   AuxOut* aux_out = nullptr, ThreadPool* pool = nullptr);

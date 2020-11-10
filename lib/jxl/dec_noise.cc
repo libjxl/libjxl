@@ -61,7 +61,7 @@ void BitsToFloat(const uint32_t* JXL_RESTRICT random_bits,
 }
 
 void RandomImage(ImageF* JXL_RESTRICT temp, Xorshift128Plus* rng,
-                 const Rect& rect, const ImageF* JXL_RESTRICT noise) {
+                 const Rect& rect, ImageF* JXL_RESTRICT noise) {
   const size_t xsize = temp->xsize();
   const size_t ysize = temp->ysize();
 

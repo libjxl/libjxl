@@ -15,6 +15,9 @@
 #include "jxl/encode.h"
 
 #include "gtest/gtest.h"
+#include "lib/jxl/dec_file.h"
+#include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/test_utils.h"
 
 TEST(EncodeTest, DefaultAllocTest) {
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
@@ -47,12 +50,58 @@ TEST(EncodeTest, CustomAllocTest) {
   EXPECT_LE(1, counters.frees);
 }
 
-// TODO(zond): add multi-threaded test when multithreaded pixel encoding from
-// API is implemented.
 TEST(EncodeTest, DefaultParallelRunnerTest) {
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
   EXPECT_NE(nullptr, enc);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetParallelRunner(enc, nullptr, nullptr));
+  JxlEncoderDestroy(enc);
+}
+
+TEST(EncodeTest, FrameEncodingTest) {
+  JxlEncoder* enc = JxlEncoderCreate(nullptr);
+  EXPECT_NE(nullptr, enc);
+
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  uint32_t width = 63;
+  uint32_t height = 129;
+  JxlFrameFormat frame_format = JxlFrameFormat{pixel_format, width, height};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(width, height, 4);
+
+  jxl::CodecInOut input_io =
+      jxl::test::SomeTestImageToCodecInOut(pixels, width, height);
+
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(enc, &frame_format, pixels.data(),
+                                    pixels.size()));
+  JxlEncoderCloseInput(enc);
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+    process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
+    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed.data();
+      compressed.resize(compressed.size() * 2);
+      next_out = compressed.data() + offset;
+      avail_out = compressed.size() - offset;
+    }
+  }
+  compressed.resize(next_out - compressed.data());
+  EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
+
+  jxl::DecompressParams dparams;
+  jxl::CodecInOut decoded_io;
+  EXPECT_TRUE(jxl::DecodeFile(
+      dparams, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+      &decoded_io, /*aux_out=*/nullptr, /*pool=*/nullptr));
+
+  jxl::ButteraugliParams ba;
+  EXPECT_LE(ButteraugliDistance(input_io, decoded_io, ba,
+                                /*distmap=*/nullptr, nullptr),
+            2.0f);
+
   JxlEncoderDestroy(enc);
 }

@@ -787,7 +787,7 @@ class ConvolveT {
   // "Image" is ImageF or Image3F.
   template <class Image, class Weights>
   static void Run(const Image& in, const Rect& rect, const Weights& weights,
-                  ThreadPool* pool, const Image* out) {
+                  ThreadPool* pool, Image* out) {
     PROFILER_ZONE("ConvolveT::Run");
     JXL_CHECK(SameSize(rect, *out));
     JXL_CHECK(rect.xsize() >= MinWidth());
@@ -811,16 +811,15 @@ class ConvolveT {
   static JXL_INLINE void RunRow(const float* JXL_RESTRICT in,
                                 const size_t xsize, const int64_t stride,
                                 const WrapRow& wrap_row, const Weights& weights,
-                                const float* JXL_RESTRICT out) {
+                                float* JXL_RESTRICT out) {
     Strategy::template ConvolveRow<kSizeModN>(in, xsize, stride, wrap_row,
-                                              weights, const_cast<float*>(out));
+                                              weights, out);
   }
 
   template <size_t kSizeModN, class Weights>
   static JXL_INLINE void RunBorderRows(const ImageF& in, const Rect& rect,
                                        const int64_t ybegin, const int64_t yend,
-                                       const Weights& weights,
-                                       const ImageF* out) {
+                                       const Weights& weights, ImageF* out) {
     const int64_t stride = in.PixelsPerRow();
     const WrapRowMirror wrap_row(in, rect.ysize());
     for (int64_t y = ybegin; y < yend; ++y) {
@@ -833,8 +832,7 @@ class ConvolveT {
   template <size_t kSizeModN, class Weights>
   static JXL_INLINE void RunBorderRows(const Image3F& in, const Rect& rect,
                                        const int64_t ybegin, const int64_t yend,
-                                       const Weights& weights,
-                                       const Image3F* out) {
+                                       const Weights& weights, Image3F* out) {
     const int64_t stride = in.PixelsPerRow();
     for (int64_t y = ybegin; y < yend; ++y) {
       for (size_t c = 0; c < 3; ++c) {
@@ -850,7 +848,7 @@ class ConvolveT {
                                          const int64_t ybegin,
                                          const int64_t yend,
                                          const Weights& weights,
-                                         ThreadPool* pool, const ImageF* out) {
+                                         ThreadPool* pool, ImageF* out) {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
@@ -867,7 +865,7 @@ class ConvolveT {
                                          const int64_t ybegin,
                                          const int64_t yend,
                                          const Weights& weights,
-                                         ThreadPool* pool, const Image3F* out) {
+                                         ThreadPool* pool, Image3F* out) {
     const int64_t stride = in.PixelsPerRow();
     RunOnPool(
         pool, ybegin, yend, ThreadPool::SkipInit(),
@@ -884,7 +882,7 @@ class ConvolveT {
   template <size_t kSizeModN, class Image, class Weights>
   static JXL_INLINE void RunRows(const Image& in, const Rect& rect,
                                  const Weights& weights, ThreadPool* pool,
-                                 const Image* out) {
+                                 Image* out) {
     const int64_t ysize = rect.ysize();
     RunBorderRows<kSizeModN>(in, rect, 0, std::min(int64_t(kRadius), ysize),
                              weights, out);
@@ -1266,8 +1264,7 @@ void SlowSeparable5(const Image3F& in, const Rect& rect,
                     const WeightsSeparable5& weights, ThreadPool* pool,
                     Image3F* out) {
   for (size_t c = 0; c < 3; ++c) {
-    SlowSeparable5(in.Plane(c), rect, weights, pool,
-                   const_cast<ImageF*>(&out->Plane(c)));
+    SlowSeparable5(in.Plane(c), rect, weights, pool, &out->Plane(c));
   }
 }
 
@@ -1297,8 +1294,7 @@ void SlowSeparable7(const Image3F& in, const Rect& rect,
                     const WeightsSeparable7& weights, ThreadPool* pool,
                     Image3F* out) {
   for (size_t c = 0; c < 3; ++c) {
-    SlowSeparable7(in.Plane(c), rect, weights, pool,
-                   const_cast<ImageF*>(&out->Plane(c)));
+    SlowSeparable7(in.Plane(c), rect, weights, pool, &out->Plane(c));
   }
 }
 
@@ -1339,8 +1335,7 @@ void SlowLaplacian5(const ImageF& in, const Rect& rect, ThreadPool* pool,
 void SlowLaplacian5(const Image3F& in, const Rect& rect, ThreadPool* pool,
                     Image3F* out) {
   for (size_t c = 0; c < 3; ++c) {
-    SlowLaplacian5(in.Plane(c), rect, pool,
-                   const_cast<ImageF*>(&out->Plane(c)));
+    SlowLaplacian5(in.Plane(c), rect, pool, &out->Plane(c));
   }
 }
 

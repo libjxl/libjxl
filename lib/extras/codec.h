@@ -65,7 +65,7 @@ std::string ExtensionFromCodec(Codec codec, bool is_gray,
 Codec CodecFromExtension(const std::string& extension,
                          size_t* JXL_RESTRICT bits_per_sample);
 
-// Decodes "bytes" and sets io->metadata.
+// Decodes "bytes" and sets io->metadata.m.
 // dec_hints may specify the "color_space" (otherwise, defaults to sRGB).
 Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
                     ThreadPool* pool = nullptr, Codec* orig_codec = nullptr);

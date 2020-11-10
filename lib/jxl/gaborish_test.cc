@@ -45,12 +45,9 @@ void ConvolveGaborish(const ImageF& in, float weight1, float weight2,
 void TestRoundTrip(const Image3F& in, float max_l1) {
   Image3F fwd(in.xsize(), in.ysize());
   ThreadPool* null_pool = nullptr;
-  ConvolveGaborish(in.Plane(0), 0, 0, null_pool,
-                   const_cast<ImageF*>(&fwd.Plane(0)));
-  ConvolveGaborish(in.Plane(1), 0, 0, null_pool,
-                   const_cast<ImageF*>(&fwd.Plane(1)));
-  ConvolveGaborish(in.Plane(2), 0, 0, null_pool,
-                   const_cast<ImageF*>(&fwd.Plane(2)));
+  ConvolveGaborish(in.Plane(0), 0, 0, null_pool, &fwd.Plane(0));
+  ConvolveGaborish(in.Plane(1), 0, 0, null_pool, &fwd.Plane(1));
+  ConvolveGaborish(in.Plane(2), 0, 0, null_pool, &fwd.Plane(2));
   const Image3F rev = GaborishInverse(fwd, 0.92718927264540152f, null_pool);
   VerifyRelativeError(in, rev, max_l1, 1E-4f);
 }

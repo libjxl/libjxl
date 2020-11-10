@@ -34,13 +34,13 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
 
   CompressParams cparams;
   cparams.color_transform = jxl::ColorTransform::kNone;
-  cparams.modular_group_mode = true;
+  cparams.modular_mode = true;
   cparams.patches = jxl::Override::kOn;
   DecompressParams dparams;
 
   CodecInOut io2;
   Roundtrip(&io, cparams, dparams, pool, &io2);
-  VerifyEqual(io.Main().color(), io2.Main().color());
+  VerifyEqual(*io.Main().color(), *io2.Main().color());
 }
 
 TEST(PatchDictionaryTest, GrayscaleVarDCT) {

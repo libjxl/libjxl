@@ -40,7 +40,7 @@ namespace jxl {
 namespace {
 using test::Roundtrip;
 
-TEST(PreviewTest, DISABLED_RoundtripGivenPreview) {
+TEST(PreviewTest, RoundtripGivenPreview) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
@@ -49,9 +49,10 @@ TEST(PreviewTest, DISABLED_RoundtripGivenPreview) {
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
   // Same as main image
   io.preview_frame = io.Main().Copy();
-  io.metadata.m2.have_preview = true;
-  ASSERT_TRUE(
-      io.preview.Set(io.preview_frame.xsize(), io.preview_frame.ysize()));
+  io.preview_frame.ShrinkTo(16, 24);
+  io.metadata.m.m2.have_preview = true;
+  ASSERT_TRUE(io.metadata.m.nonserialized_preview.Set(
+      io.preview_frame.xsize(), io.preview_frame.ysize()));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;
@@ -72,12 +73,6 @@ TEST(PreviewTest, DISABLED_RoundtripGivenPreview) {
   CodecInOut io3;
   Roundtrip(&io, cparams, dparams, pool, &io3);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            2.5);
-
-  // Preview image also close to original
-  EXPECT_NE(0, io3.preview_frame.xsize());
-  EXPECT_LE(ButteraugliDistance(io.Main(), io3.preview_frame, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             2.5);
 }

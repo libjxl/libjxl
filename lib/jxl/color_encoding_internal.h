@@ -35,14 +35,23 @@ namespace jxl {
 
 // (All CIE units are for the standard 1931 2 degree observer)
 
+// Color space the color pixel data is encoded in. The color pixel data is
+// 3-channel in all cases except in case of kGray, where it uses only 1 channel.
+// This also determines the amount of channels used in modular encoding.
 enum class ColorSpace : uint32_t {
-  // Includes CMYK if a kBlack ExtraChannelInfo is present.
+  // Trichromatic color data. This also includes CMYK if a kBlack
+  // ExtraChannelInfo is present. This implies, if there is an ICC profile, that
+  // the ICC profile uses a 3-channel color space if no kBlack extra channel is
+  // present, or uses color space 'CMYK' if a kBlack extra channel is present.
   kRGB,
-  // Side effect: modular encoding uses only 1 channel.
+  // Single-channel data. This implies, if there is an ICC profile, that the ICC
+  // profile also represents single-channel data and has the appropriate color
+  // space ('GRAY').
   kGray,
-  // Like RGB, but implies fixed values for primaries etc.
+  // Like kRGB, but implies fixed values for primaries etc.
   kXYB,
-  // For non-RGB/gray data, e.g. from non-electro-optical sensors.
+  // For non-RGB/gray data, e.g. from non-electro-optical sensors. Otherwise
+  // the same conditions as kRGB apply.
   kUnknown
 };
 
@@ -287,6 +296,14 @@ struct ColorEncoding : public Fields {
     if (white_point != WhitePoint::kD65) return false;
     if (primaries != Primaries::kSRGB) return false;
     if (!tf.IsSRGB()) return false;
+    return true;
+  }
+
+  bool IsLinearSRGB() const {
+    if (!IsGray() && color_space_ != ColorSpace::kRGB) return false;
+    if (white_point != WhitePoint::kD65) return false;
+    if (primaries != Primaries::kSRGB) return false;
+    if (!tf.IsLinear()) return false;
     return true;
   }
 

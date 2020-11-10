@@ -222,7 +222,7 @@ class ColorEncodingReaderPNG {
   // Fills original->color_encoding or returns false.
   Status operator()(const Span<const uint8_t> bytes, const bool is_gray,
                     CodecInOut* io) {
-    ColorEncoding* c_original = &io->metadata.color_encoding;
+    ColorEncoding* c_original = &io->metadata.m.color_encoding;
     JXL_RETURN_IF_ERROR(Decode(bytes, &io->blobs));
 
     const ColorSpace color_space =
@@ -664,6 +664,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
     return false;  // not an error - just wrong format
   }
   JXL_RETURN_IF_ERROR(io->VerifyDimensions(w, h));
+  io->SetSize(w, h);
   // Palette RGB values
   if (!InspectChunkType(bytes, "PLTE", &state.s)) {
     return false;
@@ -687,9 +688,9 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   if (bits_per_sample != 8 && bits_per_sample != 16) {
     return JXL_FAILURE("Unexpected PNG bit depth");
   }
-  io->metadata.SetUintSamples(static_cast<uint32_t>(bits_per_sample));
-  io->metadata.SetAlphaBits(has_alpha ? io->metadata.bit_depth.bits_per_sample
-                                      : 0);
+  io->metadata.m.SetUintSamples(static_cast<uint32_t>(bits_per_sample));
+  io->metadata.m.SetAlphaBits(
+      has_alpha ? io->metadata.m.bit_depth.bits_per_sample : 0);
 
   (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
@@ -715,7 +716,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   ColorEncodingReaderPNG reader;
   JXL_RETURN_IF_ERROR(reader(bytes, is_gray, io));
 #if JXL_PNG_VERBOSE >= 1
-  printf("PNG read %s\n", Description(io->metadata.color_encoding).c_str());
+  printf("PNG read %s\n", Description(io->metadata.m.color_encoding).c_str());
 #endif
 
   const size_t num_channels = (is_gray ? 1 : 3) + has_alpha;
@@ -724,13 +725,13 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   const bool big_endian = true;  // PNG requirement
   const Span<const uint8_t> span(out, out_size);
   const bool ok = ConvertImage(
-      span, w, h, io->metadata.color_encoding, has_alpha,
-      /*alpha_is_premultiplied=*/false, io->metadata.GetAlphaBits(),
-      io->metadata.bit_depth.bits_per_sample, big_endian, /*flipped_y=*/false,
+      span, w, h, io->metadata.m.color_encoding, has_alpha,
+      /*alpha_is_premultiplied=*/false, io->metadata.m.GetAlphaBits(),
+      io->metadata.m.bit_depth.bits_per_sample, big_endian, /*flipped_y=*/false,
       pool, &io->Main());
   JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
-  io->metadata.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
+  io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
   SetIntensityTarget(io);
   return true;
 }
@@ -739,19 +740,22 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes) {
   ImageBundle ib = io->Main().Copy();
-  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.GetAlphaBits() : 0;
-  ImageMetadata metadata = io->metadata;
+  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.m.GetAlphaBits() : 0;
+  ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
   JXL_RETURN_IF_ERROR(
       TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
-  PaddedBytes raw_bytes(ib.xsize() * ib.ysize() *
-                        (c_desired.Channels() * bits_per_sample + alpha_bits) /
-                        kBitsPerByte);
+  size_t stride =
+      ib.xsize() * DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
+                           kBitsPerByte);
+  PaddedBytes raw_bytes(stride * ib.ysize());
   JXL_RETURN_IF_ERROR(ConvertImage(
       *transformed, bits_per_sample,
-      /*float_out=*/false, /*lossless_float=*/false, c_desired.Channels(),
-      /*little_endian=*/false, pool, raw_bytes.data(), raw_bytes.size()));
+      /*float_out=*/false, /*lossless_float=*/false, /*apply_srgb_tf=*/false,
+      c_desired.Channels() + (ib.HasAlpha() ? 1 : 0), /*little_endian=*/false,
+      stride, pool, raw_bytes.data(), raw_bytes.size(),
+      jxl::Orientation::kIdentity));
 
   PNGState state;
   // For maximum compatibility, still store 8-bit even if pixels are all zero.

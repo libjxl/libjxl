@@ -24,21 +24,36 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/multiframe.h"
 
 namespace jxl {
 
-// Encodes a single frame (including its header) into a byte stream. A frame is
-// either a single image, or animation frame (depending on multiframe),
-// and consists of one or more passes. Groups may be processed in parallel by
-// `pool`.
-// metadata is the ImageMetadata encoded in the codestream, and must be used for
-// the FrameHeaders, do not use ib.metadata.
+// Information needed for encoding a frame that is not contained elsewhere and
+// does not belong to `cparams`.
+struct FrameInfo {
+  // TODO(veluca): consider adding more parameters, such as custom patches.
+  bool save_before_color_transform = false;
+  // Whether or not the input image bundle is already in the codestream
+  // colorspace (as deduced by cparams).
+  // TODO(veluca): this is a hack - ImageBundle doesn't have a simple way to say
+  // "this is already in XYB".
+  bool ib_needs_color_transform = true;
+  FrameType frame_type = FrameType::kRegularFrame;
+  size_t dc_level = 0;
+  // Only used for kRegularFrame.
+  bool is_last = true;
+  bool is_preview = false;
+  // Information for storing this frame for future use (only for non-DC frames).
+  size_t save_as_reference = 0;
+};
+
+// Encodes a single frame (including its header) into a byte stream.  Groups may
+// be processed in parallel by `pool`. metadata is the ImageMetadata encoded in
+// the codestream, and must be used for the FrameHeaders, do not use
+// ib.metadata.
 Status EncodeFrame(const CompressParams& cparams_orig,
-                   const AnimationFrame* animation_frame_or_null,
-                   const ImageMetadata* metadata, const ImageBundle& ib,
-                   PassesEncoderState* passes_enc_state, ThreadPool* pool,
-                   BitWriter* writer, AuxOut* aux_out, Multiframe* multiframe);
+                   const FrameInfo& frame_info, const ImageMetadata* metadata,
+                   const ImageBundle& ib, PassesEncoderState* passes_enc_state,
+                   ThreadPool* pool, BitWriter* writer, AuxOut* aux_out);
 
 }  // namespace jxl
 

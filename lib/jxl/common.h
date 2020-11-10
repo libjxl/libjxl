@@ -99,7 +99,8 @@ constexpr size_t kMaxNumPasses = 11;
 constexpr size_t kMaxNumReferenceFrames = 3;
 
 // Dimensions of a frame, in pixels, and other derived dimensions.
-// Initially set from Preview/SizeHeader, may be overridden by AnimationFrame.
+// Computed from FrameHeader.
+// TODO(veluca): add extra channels.
 struct FrameDimensions {
   void Set(size_t xsize, size_t ysize, size_t group_size_shift,
            size_t max_hshift, size_t max_vshift, size_t upsampling = 1) {
@@ -169,6 +170,17 @@ JXL_INLINE T SaturatingMul(int64_t a, int64_t b) {
 template <typename T>
 JXL_INLINE T SaturatingAdd(int64_t a, int64_t b) {
   return ClampToRange<T>(a + b);
+}
+
+// Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
+constexpr uint32_t PackSigned(int32_t value) {
+  return (static_cast<uint32_t>(value) << 1) ^
+         ((static_cast<uint32_t>(~value) >> 31) - 1);
+}
+
+// Reverse to PackSigned, i.e. UnpackSigned(PackSigned(X)) == X.
+constexpr intptr_t UnpackSigned(size_t value) {
+  return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 
 }  // namespace jxl

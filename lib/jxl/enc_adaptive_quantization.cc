@@ -58,7 +58,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quant_weights.h"
 HWY_BEFORE_NAMESPACE();
@@ -965,6 +964,10 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
 void FindBestQuantizationMaxError(const Image3F& opsin,
                                   PassesEncoderState* enc_state,
                                   ThreadPool* pool, AuxOut* aux_out) {
+  // TODO(veluca): this only works if opsin is in XYB. The current encoder does
+  // not have code paths that produce non-XYB opsin here.
+  JXL_CHECK(enc_state->shared.frame_header.color_transform ==
+            ColorTransform::kXYB);
   const CompressParams& cparams = enc_state->cparams;
   Quantizer& quantizer = enc_state->shared.quantizer;
   ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
@@ -983,9 +986,7 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     if (aux_out)
       aux_out->DumpXybImage(("ops" + std::to_string(i)).c_str(), opsin);
-    Image3F decoded =
-        RoundtripImage(opsin, enc_state, pool, /*save_decompressed=*/false,
-                       /*apply_color_transform=*/false);
+    Image3F decoded = RoundtripImage(opsin, enc_state, pool);
     if (aux_out)
       aux_out->DumpXybImage(("dec" + std::to_string(i)).c_str(), decoded);
 
@@ -1240,8 +1241,7 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
 }
 
 Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                       ThreadPool* pool, bool save_decompressed,
-                       bool apply_color_transform) {
+                       ThreadPool* pool) {
   PROFILER_ZONE("enc roundtrip");
   PassesDecoderState dec_state;
   dec_state.shared = &enc_state->shared;
@@ -1252,12 +1252,10 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   const size_t num_groups = xsize_groups * ysize_groups;
 
   // Dummy metadata with grayscale = off.
-  ImageMetadata metadata;
-  metadata.SetIntensityTarget(enc_state->shared.metadata.IntensityTarget());
+  ImageMetadata metadata = *enc_state->shared.metadata;
   metadata.color_encoding = ColorEncoding::SRGB();
 
-  ModularFrameEncoder modular_frame_encoder(enc_state->shared.frame_dim,
-                                            enc_state->shared.frame_header,
+  ModularFrameEncoder modular_frame_encoder(enc_state->shared.frame_header,
                                             enc_state->cparams);
   InitializePassesEncoder(opsin, pool, enc_state, &modular_frame_encoder,
                           nullptr);
@@ -1275,17 +1273,15 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
     return true;
   };
   const auto process_group = [&](const int group_index, const int thread) {
-    JXL_CHECK(DecodeGroupForRoundtrip(
-        enc_state->coeffs, group_index, &dec_state, &group_dec_caches[thread],
-        thread, &idct, &decoded, nullptr, save_decompressed,
-        apply_color_transform));
+    JXL_CHECK(DecodeGroupForRoundtrip(enc_state->coeffs, group_index,
+                                      &dec_state, &group_dec_caches[thread],
+                                      thread, &idct, &decoded, nullptr));
   };
   RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
 
   // Fine to do a JXL_ASSERT instead of error handling, since this only happens
   // on the encoder side where we can't be fed with invalid data.
-  JXL_CHECK(FinalizeFrameDecoding(&idct, &dec_state, pool, nullptr,
-                                  save_decompressed, apply_color_transform));
+  JXL_CHECK(FinalizeFrameDecoding(&idct, &dec_state, pool, nullptr));
   return idct;
 }
 

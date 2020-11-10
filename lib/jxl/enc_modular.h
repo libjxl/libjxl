@@ -32,8 +32,7 @@ namespace jxl {
 
 class ModularFrameEncoder {
  public:
-  ModularFrameEncoder(const FrameDimensions& frame_dim,
-                      const FrameHeader& frame_header,
+  ModularFrameEncoder(const FrameHeader& frame_header,
                       const CompressParams& cparams_orig);
   Status ComputeEncodingData(const FrameHeader& frame_header,
                              const ImageBundle& ib, Image3F* JXL_RESTRICT color,

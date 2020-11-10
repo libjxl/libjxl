@@ -774,7 +774,7 @@ run_benchmark() {
 
   local benchmark_args=(
     --input "${src_img_dir}/*.png"
-    --codec=jpeg:yuv420:q85,webp:q80,jxl:fast:d1,jxl:fast:d1:downsampling=8,jxl:fast:d4,jxl:fast:d4:downsampling=8,jxl:mg:cheetah:nl,jxl:cheetah:mg,jxl:mg:cheetah:P6,jxl:mg:falcon:q80
+    --codec=jpeg:yuv420:q85,webp:q80,jxl:fast:d1,jxl:fast:d1:downsampling=8,jxl:fast:d4,jxl:fast:d4:downsampling=8,jxl:m:cheetah:nl,jxl:cheetah:m,jxl:m:cheetah:P6,jxl:m:falcon:q80
     --output_dir "${output_dir}"
     --noprofiler --show_progress
     --num_threads="${num_threads}"
@@ -864,17 +864,17 @@ cmd_arm_benchmark() {
     "--epf=1 --distance=8.0 --speed=cheetah"
     "--epf=2 --distance=8.0 --speed=cheetah"
     "--epf=3 --distance=8.0 --speed=cheetah"
-    "--modular-group -Q 90"
-    "--modular-group -Q 50"
+    "--modular -Q 90"
+    "--modular -Q 50"
     # Lossless options:
-    "--modular-group"
-    "--modular-group -E 0 -I 0"
-    "--modular-group -P 5"
-    "--modular-group --responsive=1"
+    "--modular"
+    "--modular -E 0 -I 0"
+    "--modular -P 5"
+    "--modular --responsive=1"
     # Near-lossless options:
     "--epf=0 --distance=0.3 --speed=fast"
-    "--modular-group -N 3 -I 0"
-    "--modular-group -Q 97"
+    "--modular -N 3 -I 0"
+    "--modular -Q 97"
   )
 
   # Flags used for cjxl encoder with .jpg inputs. These should do lossless
@@ -962,7 +962,7 @@ cmd_arm_benchmark() {
 
           echo "Encoding with: ${enc_binary_base} img=${src_img} cpus=${cpu_conf} enc_flags=${flags}"
           local enc_output
-          if [[ "${flags}" == *"modular-group"* ]]; then
+          if [[ "${flags}" == *"modular"* ]]; then
             # We don't benchmark encoding speed in this case.
             if [[ ! -f "${enc_file}" ]]; then
               cmd_cpuset "${RUNNER_CPU_ALL:-}"

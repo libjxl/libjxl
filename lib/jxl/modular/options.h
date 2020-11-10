@@ -39,10 +39,11 @@ enum class Predictor : uint32_t {
   Average1 = 10,
   Average2 = 11,
   Average3 = 12,
+  Average4 = 13,
   // The following predictors are encoder-only.
-  Best = 13,  // Best of Gradient and Weighted
+  Best = 14,  // Best of Gradient and Weighted
   Variable =
-      14,  // Find the best decision tree for predictors/predictor per row
+      15,  // Find the best decision tree for predictors/predictor per row
 };
 
 inline const char* PredictorName(Predictor p) {
@@ -61,6 +62,8 @@ inline const char* PredictorName(Predictor p) {
       return "Avg2";
     case Predictor::Average3:
       return "Avg3";
+    case Predictor::Average4:
+      return "Avg4";
     case Predictor::Select:
       return "Sel";
     case Predictor::Gradient:
@@ -86,6 +89,8 @@ inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
       return {0, 255, 0};
     case Predictor::Average0:
       return {0, 0, 255};
+    case Predictor::Average4:
+      return {192, 128, 128};
     case Predictor::Select:
       return {255, 255, 0};
     case Predictor::Gradient:

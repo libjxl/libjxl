@@ -79,14 +79,16 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   for (uint32_t j = 0; j < 256; j++) {
     cumsum += counters->qf_counts[j];
     if (cumsum > cut) {
-      qft.push_back(j);
+      if (j != 0) {
+        qft.push_back(j);
+      }
       last_cut = j;
       while (cumsum > cut) {
         next++;
         cut = tot * next / num_qf_segments;
       }
     } else if (next > qft.size() + 1) {
-      if (j - 1 == last_cut) {
+      if (j - 1 == last_cut && j != 0) {
         qft.push_back(j);
       }
     }
@@ -217,8 +219,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     }
   }
 
-  // Subtract previous frame.
-  shared.multiframe->DecorrelateOpsin(opsin);
+  // TODO(veluca): do something about animations.
 
   // Find and subtract splines.
   if (cparams.speed_tier <= SpeedTier::kSquirrel) {
@@ -235,7 +236,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   }
 
   // Apply inverse-gaborish.
-  if (shared.image_features.loop_filter.gab) {
+  if (shared.frame_header.nonserialized_loop_filter.gab) {
     *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
   }
 

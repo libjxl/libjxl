@@ -193,14 +193,11 @@ struct AuxOut {
     std::ostringstream pathname;
     pathname << debug_prefix << label << ".png";
     CodecInOut io;
-    // This assumes T is only float, uint8_t or uint16_t.
-    if (sizeof(T) == 32) {
-      io.metadata.SetFloat32Samples();
-    } else {
-      io.metadata.SetUintSamples(sizeof(T) * kBitsPerByte);
-    }
-    io.metadata.color_encoding = ColorEncoding::SRGB();
-    io.SetFromImage(StaticCastImage3<float>(image), io.metadata.color_encoding);
+    // Always save to 16-bit png.
+    io.metadata.m.SetUintSamples(16);
+    io.metadata.m.color_encoding = ColorEncoding::SRGB();
+    io.SetFromImage(StaticCastImage3<float>(image),
+                    io.metadata.m.color_encoding);
     (void)dump_image(io, pathname.str());
   }
   template <typename T>
@@ -222,14 +219,9 @@ struct AuxOut {
     OpsinToLinear(image, Rect(linear), nullptr, &linear, opsin_params);
 
     CodecInOut io;
-    // This assumes T is only float, uint8_t or uint16_t.
-    if (sizeof(T) == 32) {
-      io.metadata.SetFloat32Samples();
-    } else {
-      io.metadata.SetUintSamples(sizeof(T) * kBitsPerByte);
-    }
-    io.metadata.color_encoding = ColorEncoding::LinearSRGB();
-    io.SetFromImage(std::move(linear), io.metadata.color_encoding);
+    io.metadata.m.SetUintSamples(16);
+    io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+    io.SetFromImage(std::move(linear), io.metadata.m.color_encoding);
 
     (void)dump_image(io, pathname.str());
   }

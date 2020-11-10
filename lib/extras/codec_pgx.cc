@@ -190,14 +190,14 @@ Status ApplyHints(CodecInOut* io) {
   JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
       [io, &got_color_space](const std::string& key,
                              const std::string& value) -> Status {
-        ColorEncoding* c_original = &io->metadata.color_encoding;
+        ColorEncoding* c_original = &io->metadata.m.color_encoding;
         if (key == "color_space") {
           if (!ParseDescription(value, c_original) ||
               !c_original->CreateICC()) {
             return JXL_FAILURE("PGX: Failed to apply color_space");
           }
 
-          if (!io->metadata.color_encoding.IsGray()) {
+          if (!io->metadata.m.color_encoding.IsGray()) {
             return JXL_FAILURE("PGX: color_space hint must be grayscale");
           }
 
@@ -215,7 +215,8 @@ Status ApplyHints(CodecInOut* io) {
 
   if (!got_color_space) {
     JXL_WARNING("PGX: no color_space/icc_pathname given, assuming sRGB");
-    JXL_RETURN_IF_ERROR(io->metadata.color_encoding.SetSRGB(ColorSpace::kGray));
+    JXL_RETURN_IF_ERROR(
+        io->metadata.m.color_encoding.SetSRGB(ColorSpace::kGray));
   }
 
   return true;
@@ -245,21 +246,23 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   }
 
   JXL_RETURN_IF_ERROR(ApplyHints(io));
-  io->metadata.SetUintSamples(header.bits_per_sample);
-  io->metadata.SetAlphaBits(0);
+  io->metadata.m.SetUintSamples(header.bits_per_sample);
+  io->metadata.m.SetAlphaBits(0);
   io->dec_pixels = header.xsize * header.ysize;
+  io->SetSize(header.xsize, header.ysize);
   io->frames.clear();
   io->frames.reserve(1);
-  ImageBundle ib(&io->metadata);
+  ImageBundle ib(&io->metadata.m);
 
   const bool has_alpha = false;
   const bool flipped_y = false;
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
-  JXL_RETURN_IF_ERROR(ConvertImage(
-      span, header.xsize, header.ysize, io->metadata.color_encoding, has_alpha,
-      /*alpha_is_premultiplied=*/false, io->metadata.GetAlphaBits(),
-      io->metadata.bit_depth.bits_per_sample, header.big_endian, flipped_y,
-      pool, &ib));
+  JXL_RETURN_IF_ERROR(ConvertImage(span, header.xsize, header.ysize,
+                                   io->metadata.m.color_encoding, has_alpha,
+                                   /*alpha_is_premultiplied=*/false,
+                                   io->metadata.m.GetAlphaBits(),
+                                   io->metadata.m.bit_depth.bits_per_sample,
+                                   header.big_endian, flipped_y, pool, &ib));
   io->frames.push_back(std::move(ib));
   SetIntensityTarget(io);
   return true;
@@ -268,7 +271,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
 Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes) {
-  if (!Bundle::AllDefault(io->metadata)) {
+  if (!Bundle::AllDefault(io->metadata.m)) {
     JXL_WARNING("PGX encoder ignoring metadata - use a different codec");
   }
   if (!c_desired.IsSRGB()) {
@@ -279,17 +282,19 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
 
   ImageBundle ib = io->Main().Copy();
 
-  ImageMetadata metadata = io->metadata;
+  ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
   JXL_RETURN_IF_ERROR(
       TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
   PaddedBytes pixels(ib.xsize() * ib.ysize() *
                      (bits_per_sample / kBitsPerByte));
+  size_t stride = ib.xsize() * (bits_per_sample / kBitsPerByte);
   JXL_RETURN_IF_ERROR(ConvertImage(
       *transformed, bits_per_sample,
-      /*float_out=*/false, /*lossless_float=*/false, /*num_channels=*/1,
-      /*little_endian=*/false, pool, pixels.data(), pixels.size()));
+      /*float_out=*/false, /*lossless_float=*/false, /*apply_srgb_tf=*/false,
+      /*num_channels=*/1, /*little_endian=*/false, stride, pool, pixels.data(),
+      pixels.size(), jxl::Orientation::kIdentity));
 
   char header[kMaxHeaderSize];
   int header_size = 0;
@@ -312,17 +317,17 @@ void TestCodecPGX() {
     Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
     JXL_CHECK(ok == true);
 
-    JXL_CHECK(!io.metadata.bit_depth.floating_point_sample);
-    JXL_CHECK(io.metadata.bit_depth.bits_per_sample == 8);
-    JXL_CHECK(io.metadata.color_encoding.IsGray());
+    JXL_CHECK(!io.metadata.m.bit_depth.floating_point_sample);
+    JXL_CHECK(io.metadata.m.bit_depth.bits_per_sample == 8);
+    JXL_CHECK(io.metadata.m.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);
-    JXL_CHECK(io.Main().color().Plane(0).Row(0)[0] == 'p');
-    JXL_CHECK(io.Main().color().Plane(0).Row(0)[1] == 'i');
-    JXL_CHECK(io.Main().color().Plane(0).Row(1)[0] == 'x');
-    JXL_CHECK(io.Main().color().Plane(0).Row(1)[1] == 'e');
-    JXL_CHECK(io.Main().color().Plane(0).Row(2)[0] == 'l');
-    JXL_CHECK(io.Main().color().Plane(0).Row(2)[1] == 's');
+    JXL_CHECK(io.Main().color()->Plane(0).Row(0)[0] == 'p');
+    JXL_CHECK(io.Main().color()->Plane(0).Row(0)[1] == 'i');
+    JXL_CHECK(io.Main().color()->Plane(0).Row(1)[0] == 'x');
+    JXL_CHECK(io.Main().color()->Plane(0).Row(1)[1] == 'e');
+    JXL_CHECK(io.Main().color()->Plane(0).Row(2)[0] == 'l');
+    JXL_CHECK(io.Main().color()->Plane(0).Row(2)[1] == 's');
   }
 
   {
@@ -334,13 +339,13 @@ void TestCodecPGX() {
     Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
     JXL_CHECK(ok == true);
 
-    JXL_CHECK(!io.metadata.bit_depth.floating_point_sample);
-    JXL_CHECK(io.metadata.bit_depth.bits_per_sample == 16);
-    JXL_CHECK(io.metadata.color_encoding.IsGray());
+    JXL_CHECK(!io.metadata.m.bit_depth.floating_point_sample);
+    JXL_CHECK(io.metadata.m.bit_depth.bits_per_sample == 16);
+    JXL_CHECK(io.metadata.m.color_encoding.IsGray());
     JXL_CHECK(io.xsize() == 2);
     JXL_CHECK(io.ysize() == 3);
     float eps = 1e-7;
-    const auto& plane = io.Main().color().Plane(0);
+    const auto& plane = io.Main().color()->Plane(0);
     ExpectNear(256.0f * 'p' + '_', plane.Row(0)[0] * 257, eps);
     ExpectNear(256.0f * 'i' + '_', plane.Row(0)[1] * 257, eps);
     ExpectNear(256.0f * 'x' + '_', plane.Row(1)[0] * 257, eps);

@@ -38,7 +38,6 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
@@ -69,28 +68,22 @@ void RunRGBRoundTrip(float distance, bool fast) {
     cparams.speed_tier = SpeedTier::kWombat;
   }
 
-  FrameHeader frame_header(&io.metadata);
+  JXL_CHECK(io.metadata.m.nonserialized_size.Set(opsin.xsize(), opsin.ysize()));
+  FrameHeader frame_header(&io.metadata.m);
   frame_header.color_transform = ColorTransform::kXYB;
-  frame_header.animation_frame.nonserialized_have_timecode = false;
-  LoopFilter loop_filter;
-  loop_filter.gab = true;
-  loop_filter.gab_custom = true;
-  loop_filter.gab_x_weight1 = 0.11501538179658321f;
-  loop_filter.gab_x_weight2 = 0.089979079587015454f;
-  loop_filter.gab_y_weight1 = 0.11501538179658321f;
-  loop_filter.gab_y_weight2 = 0.089979079587015454f;
-  loop_filter.gab_b_weight1 = 0.11501538179658321f;
-  loop_filter.gab_b_weight2 = 0.089979079587015454f;
-  loop_filter.epf_iters = 0;
+  frame_header.nonserialized_loop_filter.epf_iters = 0;
 
-  FrameDimensions frame_dim;
-  frame_dim.Set(opsin.xsize(), opsin.ysize(), /*group_size_shift=*/1,
-                /*max_hshift=*/0, /*max_vshift=*/0);
-  Multiframe multiframe;
+  // Use custom weights for Gaborish.
+  frame_header.nonserialized_loop_filter.gab_custom = true;
+  frame_header.nonserialized_loop_filter.gab_x_weight1 = 0.11501538179658321f;
+  frame_header.nonserialized_loop_filter.gab_x_weight2 = 0.089979079587015454f;
+  frame_header.nonserialized_loop_filter.gab_y_weight1 = 0.11501538179658321f;
+  frame_header.nonserialized_loop_filter.gab_y_weight2 = 0.089979079587015454f;
+  frame_header.nonserialized_loop_filter.gab_b_weight1 = 0.11501538179658321f;
+  frame_header.nonserialized_loop_filter.gab_b_weight2 = 0.089979079587015454f;
+
   PassesEncoderState enc_state;
-  JXL_CHECK(InitializePassesSharedState(frame_header, loop_filter, io.metadata,
-                                        frame_dim, &multiframe,
-                                        &enc_state.shared));
+  JXL_CHECK(InitializePassesSharedState(frame_header, &enc_state.shared));
 
   enc_state.x_qm_multiplier = 1.0f;
   enc_state.shared.quantizer.SetQuant(4.0f, 4.0f,
@@ -101,9 +94,9 @@ void RunRGBRoundTrip(float distance, bool fast) {
   Image3F recon = RoundtripImage(opsin, &enc_state, &pool);
 
   CodecInOut io1;
-  io1.metadata.bit_depth = io.metadata.bit_depth;
-  io1.metadata.color_encoding = ColorEncoding::LinearSRGB();
-  io1.SetFromImage(std::move(recon), io1.metadata.color_encoding);
+  io1.metadata.m.bit_depth = io.metadata.m.bit_depth;
+  io1.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  io1.SetFromImage(std::move(recon), io1.metadata.m.color_encoding);
 
   EXPECT_LE(ButteraugliDistance(io, io1, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),

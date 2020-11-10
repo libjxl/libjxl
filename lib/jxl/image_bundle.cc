@@ -221,6 +221,13 @@ const ImageU& ImageBundle::alpha() const {
   JXL_ASSERT(ec < extra_channels_.size());
   return extra_channels_[ec];
 }
+ImageU* ImageBundle::alpha() {
+  JXL_ASSERT(HasAlpha());
+  const size_t ec = metadata_->m2.Find(ExtraChannel::kAlpha) -
+                    metadata_->m2.extra_channel_info.data();
+  JXL_ASSERT(ec < extra_channels_.size());
+  return &extra_channels_[ec];
+}
 
 const ImageU& ImageBundle::depth() const {
   JXL_ASSERT(HasDepth());
@@ -230,46 +237,17 @@ const ImageU& ImageBundle::depth() const {
   return extra_channels_[ec];
 }
 
-void ImageBundle::RemoveAlpha() {
-  const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
-  JXL_ASSERT(eci != nullptr);
-  const size_t ec = eci - metadata_->m2.extra_channel_info.data();
-  JXL_ASSERT(ec < extra_channels_.size());
-  extra_channels_.erase(extra_channels_.begin() + ec);
-  metadata_->SetAlphaBits(0);  // maintain invariant for VerifyMetadata
-  JXL_ASSERT(!HasAlpha());
-}
-
 void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
-  ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+  const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
   // Must call SetAlphaBits first, otherwise we don't know which channel index
   JXL_CHECK(eci != nullptr);
   JXL_CHECK(alpha.xsize() != 0 && alpha.ysize() != 0);
-  eci->alpha_associated = alpha_is_premultiplied;
+  JXL_CHECK(eci->alpha_associated == alpha_is_premultiplied);
   extra_channels_.insert(
       extra_channels_.begin() + (eci - metadata_->m2.extra_channel_info.data()),
       std::move(alpha));
   // num_extra_channels is automatically set in visitor
   VerifySizes();
-}
-
-void ImageBundle::PremultiplyAlphaIfNeeded(ThreadPool* pool) {
-  ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
-  JXL_ASSERT(eci != nullptr);
-  const ImageU& alpha_ =
-      extra_channels()[eci - metadata_->m2.extra_channel_info.data()];
-  JXL_CHECK(alpha_.xsize() == color_.xsize() &&
-            alpha_.ysize() == color_.ysize());
-  if (eci->alpha_associated) return;
-  eci->alpha_associated = true;
-  RunOnPool(
-      pool, 0, alpha_.ysize(), ThreadPool::SkipInit(),
-      [this, &alpha_](const int y, const int /*thread*/) {
-        PremultiplyAlpha(color_.PlaneRow(0, y), color_.PlaneRow(1, y),
-                         color_.PlaneRow(2, y), alpha_.ConstRow(y),
-                         metadata_->GetAlphaBits(), color_.xsize());
-      },
-      "premultiply alpha");
 }
 
 void ImageBundle::SetDepth(ImageU&& depth) {

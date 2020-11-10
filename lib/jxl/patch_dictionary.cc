@@ -58,6 +58,8 @@ enum Contexts {
   kPatchBlendModeContext = 5,
   kPatchOffsetContext = 6,
   kPatchCountContext = 7,
+  kPatchAlphaChannelContext = 8,
+  kPatchClampContext = 9,
   kNumPatchDictionaryContexts
 };
 
@@ -102,7 +104,20 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
         add_num(kPatchOffsetContext, PackSigned(pos.x - positions_[j - 1].x));
         add_num(kPatchOffsetContext, PackSigned(pos.y - positions_[j - 1].y));
       }
-      add_num(kPatchBlendModeContext, static_cast<uint8_t>(pos.blend_mode));
+      JXL_ASSERT(shared_->metadata->m2.extra_channel_info.size() + 1 ==
+                 pos.blending.size());
+      for (size_t i = 0;
+           i < shared_->metadata->m2.extra_channel_info.size() + 1; i++) {
+        const PatchBlending& info = pos.blending[i];
+        add_num(kPatchBlendModeContext, static_cast<uint32_t>(info.mode));
+        if (UsesAlpha(info.mode) &&
+            shared_->metadata->m2.extra_channel_info.size() > 1) {
+          add_num(kPatchAlphaChannelContext, info.alpha_channel);
+        }
+        if (UsesClamp(info.mode)) {
+          add_num(kPatchClampContext, info.clamp);
+        }
+      }
     }
   }
 
@@ -114,8 +129,7 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
-Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
-                               size_t save_as_reference) {
+Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize) {
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(
@@ -137,18 +151,18 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
     PatchReferencePosition ref_pos;
     ref_pos.ref = read_num(kReferenceFrameContext);
     if (ref_pos.ref >= kMaxNumReferenceFrames ||
-        ref_pos.ref + 1 == save_as_reference ||
-        reference_frames_[ref_pos.ref].xsize() == 0) {
+        shared_->reference_frames[ref_pos.ref].frame->xsize() == 0) {
       return JXL_FAILURE("Invalid reference frame ID");
     }
+    const ImageBundle& ib = *shared_->reference_frames[ref_pos.ref].frame;
     ref_pos.x0 = read_num(kPatchReferencePositionContext);
     ref_pos.y0 = read_num(kPatchReferencePositionContext);
     ref_pos.xsize = read_num(kPatchSizeContext) + 1;
     ref_pos.ysize = read_num(kPatchSizeContext) + 1;
-    if (ref_pos.x0 + ref_pos.xsize > reference_frames_[ref_pos.ref].xsize()) {
+    if (ref_pos.x0 + ref_pos.xsize > ib.xsize()) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
-    if (ref_pos.y0 + ref_pos.ysize > reference_frames_[ref_pos.ref].ysize()) {
+    if (ref_pos.y0 + ref_pos.ysize > ib.ysize()) {
       return JXL_FAILURE("Invalid position specified in reference frame");
     }
     size_t id_count = read_num(kPatchCountContext) + 1;
@@ -176,11 +190,39 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
         return JXL_FAILURE("Invalid patch y: at %zu + %zu > %zu", pos.y,
                            ref_pos.ysize, ysize);
       }
-      uint8_t blend_mode = read_num(kPatchBlendModeContext);
-      if (blend_mode >= uint8_t(PatchBlendMode::kNumBlendModes)) {
-        return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
+      for (size_t i = 0;
+           i < shared_->metadata->m2.extra_channel_info.size() + 1; i++) {
+        uint32_t blend_mode = read_num(kPatchBlendModeContext);
+        if (blend_mode >= uint32_t(PatchBlendMode::kNumBlendModes)) {
+          return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
+        }
+        PatchBlending info;
+        info.mode = static_cast<PatchBlendMode>(blend_mode);
+        if (i != 0 && info.mode != PatchBlendMode::kNone) {
+          return JXL_FAILURE(
+              "Blending of extra channels with patches is not supported yet");
+        }
+        if (info.mode != PatchBlendMode::kAdd &&
+            info.mode != PatchBlendMode::kNone &&
+            info.mode != PatchBlendMode::kReplace) {
+          return JXL_FAILURE("Blending mode not supported yet: %u", blend_mode);
+        }
+        if (UsesAlpha(info.mode) &&
+            shared_->metadata->m2.extra_channel_info.size() > 1) {
+          info.alpha_channel = read_num(kPatchAlphaChannelContext);
+          if (info.alpha_channel >=
+              shared_->metadata->m2.extra_channel_info.size()) {
+            return JXL_FAILURE(
+                "Invalid alpha channel for blending: %u out of %u\n",
+                info.alpha_channel,
+                (uint32_t)shared_->metadata->m2.extra_channel_info.size());
+          }
+        }
+        if (UsesClamp(info.mode)) {
+          info.clamp = read_num(kPatchClampContext);
+        }
+        pos.blending.push_back(info);
       }
-      pos.blend_mode = static_cast<PatchBlendMode>(blend_mode);
       positions_.push_back(std::move(pos));
     }
   }
@@ -246,29 +288,48 @@ void PatchDictionary::Apply(Image3F* opsin, const Rect& opsin_rect,
       size_t ref = pos.ref_pos.ref;
       if (bx >= image_rect.x0() + image_rect.xsize()) continue;
       if (bx + xsize < image_rect.x0()) continue;
+      // TODO(veluca): check that the reference frame is in XYB.
       const float* JXL_RESTRICT ref_rows[3] = {
-          reference_frames_[ref].ConstPlaneRow(0, pos.ref_pos.y0 + iy) +
+          shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
+              0, pos.ref_pos.y0 + iy) +
               pos.ref_pos.x0,
-          reference_frames_[ref].ConstPlaneRow(1, pos.ref_pos.y0 + iy) +
+          shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
+              1, pos.ref_pos.y0 + iy) +
               pos.ref_pos.x0,
-          reference_frames_[ref].ConstPlaneRow(2, pos.ref_pos.y0 + iy) +
+          shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
+              2, pos.ref_pos.y0 + iy) +
               pos.ref_pos.x0,
       };
+      // TODO(veluca): use the same code as in dec_reconstruct.cc.
       for (size_t ix = 0; ix < xsize; ix++) {
+        // TODO(veluca): hoist branches and checks.
+        // TODO(veluca): implement for extra channels.
         if (bx + ix < image_rect.x0()) continue;
         if (bx + ix >= image_rect.x0() + image_rect.xsize()) continue;
         for (size_t c = 0; c < 3; c++) {
           if (add) {
-            if (pos.blend_mode == PatchBlendMode::kAdd) {
+            if (pos.blending[0].mode == PatchBlendMode::kAdd) {
               rows[c][bx + ix - image_rect.x0()] += ref_rows[c][ix];
-            } else {
+            } else if (pos.blending[0].mode == PatchBlendMode::kReplace) {
               rows[c][bx + ix - image_rect.x0()] = ref_rows[c][ix];
+            } else if (pos.blending[0].mode == PatchBlendMode::kNone) {
+              // Nothing to do.
+            } else {
+              // Checked in decoding code.
+              JXL_ABORT("Blending mode %u not yet implemented",
+                        (uint32_t)pos.blending[0].mode);
             }
           } else {
-            if (pos.blend_mode == PatchBlendMode::kAdd) {
+            if (pos.blending[0].mode == PatchBlendMode::kAdd) {
               rows[c][bx + ix - image_rect.x0()] -= ref_rows[c][ix];
-            } else {
+            } else if (pos.blending[0].mode == PatchBlendMode::kReplace) {
               rows[c][bx + ix - image_rect.x0()] = 0;
+            } else if (pos.blending[0].mode == PatchBlendMode::kNone) {
+              // Nothing to do.
+            } else {
+              // Checked in decoding code.
+              JXL_ABORT("Blending mode %u not yet implemented",
+                        (uint32_t)pos.blending[0].mode);
             }
           }
         }
@@ -678,8 +739,7 @@ std::vector<PatchInfo> FindTextLikePatches(
   // pixels.
   // TODO(veluca): figure out why this is still necessary even with RCTs that
   // don't depend on bit depth.
-  if (state->cparams.modular_group_mode &&
-      state->cparams.quality_pair.first >= 100) {
+  if (state->cparams.modular_mode && state->cparams.quality_pair.first >= 100) {
     constexpr size_t kMaxPatchArea = kMaxPatchSize * kMaxPatchSize;
     std::vector<float> min_then_max_px(2 * kMaxPatchArea);
     for (size_t i = 0; i < info.size(); i++) {
@@ -725,6 +785,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
                              PassesEncoderState* JXL_RESTRICT state,
                              ThreadPool* pool, AuxOut* aux_out, bool is_xyb) {
   state->shared.image_features.patches = PatchDictionary();
+  state->shared.image_features.patches.SetPassesSharedState(&state->shared);
 
   std::vector<PatchInfo> info =
       FindTextLikePatches(opsin, state, pool, aux_out, is_xyb);
@@ -860,30 +921,31 @@ void FindBestPatchDictionary(const Image3F& opsin,
         }
       }
     }
+    // Add color channels, ignore other channels.
+    std::vector<PatchBlending> blending_info(
+        state->shared.metadata->m2.extra_channel_info.size() + 1,
+        PatchBlending{PatchBlendMode::kNone, 0, false});
+    blending_info[0].mode = PatchBlendMode::kAdd;
     for (const auto& pos : info[i].second) {
       positions.emplace_back(
-          PatchPosition{pos.first, pos.second, PatchBlendMode::kAdd, ref_pos});
+          PatchPosition{pos.first, pos.second, blending_info, ref_pos});
     }
-  }
-
-  if (state->cparams.butteraugli_distance >=
-      kMinButteraugliToSubtractOriginalPatches) {
-    state->reference_frames[0] = CopyImage(reference_frame);
   }
 
   CompressParams cparams = state->cparams;
   cparams.resampling = 1;
-  FrameDimensions frame_dim = state->shared.frame_dim;
-  cparams.save_as_reference = 1;
   // Recursive application of patches could create very weird issues.
   cparams.patches = Override::kOff;
   cparams.dots = Override::kOff;
-  cparams.modular_group_mode = true;
+  cparams.modular_mode = true;
   cparams.responsive = 0;
+  cparams.progressive_dc = false;
+  cparams.progressive_mode = false;
+  cparams.qprogressive_mode = false;
   // Use gradient predictor and not Predictor::Best.
   cparams.options.predictor = Predictor::Gradient;
   // TODO(veluca): possibly change heuristics here.
-  if (!cparams.modular_group_mode) {
+  if (!cparams.modular_mode) {
     cparams.quality_pair.first = cparams.quality_pair.second =
         80 - cparams.butteraugli_distance * 12;
   } else {
@@ -891,49 +953,41 @@ void FindBestPatchDictionary(const Image3F& opsin,
     cparams.quality_pair.second =
         (100 + 3 * cparams.quality_pair.second) * 0.25f;
   }
-  ImageMetadata metadata;
-  // The xyb_encoded bit applies globally to all frames of the codestream.
-  metadata.xyb_encoded = cparams.color_transform == ColorTransform::kXYB;
-  // The encoding used here does not really matter much but it should have the
-  // same number of channels as the image. If `is_xyb` is true, then the
-  // reference frame is in XYB and thus has three channels even if the original
-  // image does not.
-  metadata.color_encoding =
-      ColorEncoding::LinearSRGB(state->shared.IsGrayscale() && !is_xyb);
+  FrameInfo patch_frame_info;
+  patch_frame_info.save_as_reference = 0;  // always saved.
+  patch_frame_info.frame_type = FrameType::kReferenceOnly;
+  patch_frame_info.save_before_color_transform = true;
 
-  AnimationFrame animation_frame(&metadata);
-  animation_frame.duration = 0;
-  animation_frame.is_last = 0;
-  animation_frame.have_crop = true;
-  animation_frame.x0 = 0;
-  animation_frame.y0 = 0;
-  animation_frame.xsize = ref_xsize;
-  animation_frame.ysize = ref_ysize;
+  ImageBundle ib(state->shared.metadata);
+  // TODO(veluca): metadata.color_encoding is a lie: ib is in XYB, but there is
+  // no simple way to express that yet.
+  patch_frame_info.ib_needs_color_transform = false;
+  patch_frame_info.save_as_reference = 0;
+  ib.SetFromImage(std::move(reference_frame),
+                  state->shared.metadata->color_encoding);
 
-  ImageBundle ib(&metadata);
-  ib.SetFromImage(std::move(reference_frame), metadata.color_encoding);
   PassesEncoderState roundtrip_state;
   state->special_frames.emplace_back();
-  Multiframe multiframe;
-  // TODO(lode): If this is encoding the frame to codestream output bytes seen
-  // by a decoder expecting the ImageMetadata from the codestream header to be
-  // used, then give the correct main ImageMetadata object here, with the
-  // correct extra channels and xyb_encoded value in it, not the temporary
-  // constructed one from here.
-  JXL_CHECK(EncodeFrame(cparams, &animation_frame, &metadata, ib,
+  JXL_CHECK(EncodeFrame(cparams, patch_frame_info, state->shared.metadata, ib,
                         &roundtrip_state, pool, &state->special_frames.back(),
-                        nullptr, &multiframe));
+                        nullptr));
   const Span<const uint8_t> encoded = state->special_frames.back().GetSpan();
   if (cparams.butteraugli_distance < kMinButteraugliToSubtractOriginalPatches) {
     BitReader br(encoded);
-    ImageBundle decoded(&metadata);
-    JXL_CHECK(DecodeFrame({}, encoded, nullptr, &frame_dim, &multiframe, pool,
-                          &br, nullptr, &decoded));
+    ImageBundle decoded(state->shared.metadata);
+    PassesDecoderState dec_state;
+    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded));
     JXL_CHECK(br.Close());
-    state->reference_frames[0] = CopyImage(multiframe.GetReferenceFrames()[0]);
+    state->shared.reference_frames[0].storage = std::move(decoded);
+  } else {
+    state->shared.reference_frames[0].storage = std::move(ib);
   }
-  state->shared.image_features.patches.SetReferenceFrames(
-      state->reference_frames);
+  state->shared.reference_frames[0].frame =
+      &state->shared.reference_frames[0].storage;
+  // TODO(veluca): this assumes that applying patches is commutative, which is
+  // not true for all blending modes. This code only produces kAdd patches, so
+  // this works out.
+  std::sort(positions.begin(), positions.end());
   state->shared.image_features.patches.SetPositions(std::move(positions));
 }
 }  // namespace jxl

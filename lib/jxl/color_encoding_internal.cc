@@ -18,7 +18,7 @@
 #include <cmath>
 
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/entropy_coder.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {

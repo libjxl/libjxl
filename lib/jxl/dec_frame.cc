@@ -32,6 +32,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/blending.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
@@ -55,7 +56,6 @@
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/luminance.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quant_weights.h"
@@ -81,11 +81,7 @@ Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
     state->shared_storage.quantizer.ClearDCMul();  // Don't dequant DC
   }
 
-  if (downsampling != 16) {
-    state->shared_storage.ac_strategy.FillInvalid();
-  } else {
-    state->shared_storage.ac_strategy.FillDCT8();
-  }
+  state->shared_storage.ac_strategy.FillInvalid();
   state->Init(pool);
   return true;
 }
@@ -93,15 +89,15 @@ Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class LossyFrameDecoder {
  public:
-  Status Init(const FrameHeader& frame_header, const LoopFilter& loop_filter,
-              const ImageMetadata& image_metadata,
-              const FrameDimensions& frame_dim, Multiframe* multiframe,
+  Status Init(const FrameHeader& frame_header, PassesDecoderState* dec_state,
               size_t downsampling, ThreadPool* pool, AuxOut* aux_out) {
     downsampling_ = downsampling;
     pool_ = pool;
     aux_out_ = aux_out;
+    dec_state_ = dec_state;
+    const LoopFilter& lf = frame_header.nonserialized_loop_filter;
     if (!frame_header.chroma_subsampling.Is444() &&
-        (loop_filter.gab || loop_filter.epf_iters > 0) &&
+        (lf.gab || lf.epf_iters > 0) &&
         frame_header.encoding == FrameEncoding::kVarDCT) {
       // TODO(veluca): actually implement this.
       return JXL_FAILURE(
@@ -116,9 +112,8 @@ class LossyFrameDecoder {
           "Non-444 chroma subsampling is not supported when adaptive DC "
           "smoothing is enabled");
     }
-    return InitializePassesSharedState(frame_header, loop_filter,
-                                       image_metadata, frame_dim, multiframe,
-                                       &dec_state_.shared_storage);
+    return InitializePassesSharedState(frame_header,
+                                       &dec_state_->shared_storage);
   }
 
   // Sets the number of threads that will be used. The value of the "thread"
@@ -130,49 +125,49 @@ class LossyFrameDecoder {
       group_dec_caches_ =
           hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     }
-    dec_state_.EnsureStorage(num_threads);
+    dec_state_->EnsureStorage(num_threads);
   }
 
   Status DecodeGlobalDCInfo(BitReader* reader, ImageBundle* decoded) {
-    return jxl::DecodeGlobalDCInfo(downsampling_, reader, decoded, &dec_state_,
+    return jxl::DecodeGlobalDCInfo(downsampling_, reader, decoded, dec_state_,
                                    pool_);
   }
   Status DecodeModularGlobalInfo(BitReader* reader) {
     // currently just initializes the dec_state
     // TODO: add patches and maybe other features
-    dec_state_.Init(pool_);
+    dec_state_->Init(pool_);
     return true;
   }
 
   Status DecodeGlobalACInfo(BitReader* reader,
                             ModularFrameDecoder* modular_frame_decoder) {
     if (aux_out_ && aux_out_->testing_aux.dc) {
-      *aux_out_->testing_aux.dc = CopyImage(*dec_state_.shared_storage.dc);
+      *aux_out_->testing_aux.dc = CopyImage(*dec_state_->shared_storage.dc);
     }
 
-    JXL_RETURN_IF_ERROR(dec_state_.shared_storage.matrices.Decode(
+    JXL_RETURN_IF_ERROR(dec_state_->shared_storage.matrices.Decode(
         reader, modular_frame_decoder));
 
     size_t num_histo_bits =
-        CeilLog2Nonzero(dec_state_.shared->frame_dim.num_groups);
-    dec_state_.shared_storage.num_histograms =
+        CeilLog2Nonzero(dec_state_->shared->frame_dim.num_groups);
+    dec_state_->shared_storage.num_histograms =
         1 + reader->ReadBits(num_histo_bits);
 
-    dec_state_.code.resize(kMaxNumPasses);
-    dec_state_.context_map.resize(kMaxNumPasses);
+    dec_state_->code.resize(kMaxNumPasses);
+    dec_state_->context_map.resize(kMaxNumPasses);
     // Read coefficient orders and histograms.
     for (size_t i = 0;
-         i < dec_state_.shared_storage.frame_header.passes.num_passes; i++) {
+         i < dec_state_->shared_storage.frame_header.passes.num_passes; i++) {
       uint16_t used_orders = U32Coder::Read(kOrderEnc, reader);
       JXL_RETURN_IF_ERROR(DecodeCoeffOrders(
           used_orders,
-          &dec_state_.shared_storage.coeff_orders[i * kCoeffOrderSize],
+          &dec_state_->shared_storage.coeff_orders[i * kCoeffOrderSize],
           reader));
       JXL_RETURN_IF_ERROR(DecodeHistograms(
           reader,
-          dec_state_.shared->num_histograms *
-              dec_state_.shared_storage.block_ctx_map.NumACContexts(),
-          &dec_state_.code[i], &dec_state_.context_map[i]));
+          dec_state_->shared->num_histograms *
+              dec_state_->shared_storage.block_ctx_map.NumACContexts(),
+          &dec_state_->code[i], &dec_state_->context_map[i]));
     }
     return true;
   }
@@ -182,7 +177,7 @@ class LossyFrameDecoder {
                        size_t num_passes, Image3F* JXL_RESTRICT opsin,
                        ImageBundle* JXL_RESTRICT decoded,
                        AuxOut* local_aux_out) {
-    return DecodeGroup(readers, num_passes, group_index, &dec_state_,
+    return DecodeGroup(readers, num_passes, group_index, dec_state_,
                        &group_dec_caches_[thread], thread, opsin, decoded,
                        local_aux_out);
   }
@@ -191,11 +186,11 @@ class LossyFrameDecoder {
     decoded->SetFromImage(std::move(*opsin),
                           decoded->metadata()->color_encoding);
     decoded->color_transform =
-        dec_state_.shared_storage.frame_header.color_transform;
+        dec_state_->shared_storage.frame_header.color_transform;
     decoded->chroma_subsampling =
-        dec_state_.shared_storage.frame_header.chroma_subsampling;
+        dec_state_->shared_storage.frame_header.chroma_subsampling;
     const std::vector<QuantEncoding>& qe =
-        dec_state_.shared_storage.matrices.encodings();
+        dec_state_->shared_storage.matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
         qe[0].qraw.qtable_den_shift != 0) {
       return JXL_FAILURE(
@@ -206,19 +201,15 @@ class LossyFrameDecoder {
     return true;
   }
 
-  Status FinalizeDecoding(Image3F* JXL_RESTRICT opsin,
-                          const LoopFilter& loop_filter, ImageBundle* decoded) {
+  Status FinalizeDecoding(Image3F* JXL_RESTRICT opsin, ImageBundle* decoded) {
     if (decoded->IsJPEG()) {
       JXL_RETURN_IF_ERROR(FinalizeJPEG(opsin, decoded));
       return true;
     }
     JXL_RETURN_IF_ERROR(
-        FinalizeFrameDecoding(opsin, &dec_state_, pool_, aux_out_,
-                              /*save_decompressed=*/true,
-                              /*apply_color_transform=*/
-                              dec_state_.shared->multiframe->IsDisplayed()));
+        FinalizeFrameDecoding(opsin, dec_state_, pool_, aux_out_));
 
-    if (dec_state_.shared_storage.frame_header.color_transform ==
+    if (dec_state_->shared_storage.frame_header.color_transform ==
         ColorTransform::kXYB) {
       // Do not use decoded->IsGray() - c_current is not yet valid.
       const bool is_gray = decoded->metadata()->color_encoding.IsGray();
@@ -228,13 +219,30 @@ class LossyFrameDecoder {
       decoded->SetFromImage(std::move(*opsin),
                             decoded->metadata()->color_encoding);
     }
+    decoded->origin = dec_state_->shared->frame_header.frame_origin;
+    // TODO(veluca): should be in dec_reconstruct.
+    JXL_RETURN_IF_ERROR(DoBlending(*dec_state_->shared, decoded));
+    if (dec_state_->shared->frame_header.CanBeReferenced()) {
+      size_t id = dec_state_->shared->frame_header.save_as_reference;
+      dec_state_->shared_storage.reference_frames[id].storage = decoded->Copy();
+      dec_state_->shared_storage.reference_frames[id].frame =
+          &dec_state_->shared_storage.reference_frames[id].storage;
+      dec_state_->shared_storage.reference_frames[id].ib_is_in_xyb =
+          dec_state_->shared->frame_header.save_before_color_transform;
+    }
+    if (dec_state_->shared->frame_header.dc_level != 0) {
+      dec_state_->shared_storage
+          .dc_frames[dec_state_->shared->frame_header.dc_level - 1] =
+          std::move(*decoded->color());
+      decoded->RemoveColor();
+    }
     return true;
   }
 
-  PassesDecoderState* State() { return &dec_state_; }
+  PassesDecoderState* State() { return dec_state_; }
 
  private:
-  PassesDecoderState dec_state_;
+  PassesDecoderState* dec_state_;
   size_t downsampling_;
 
   ThreadPool* pool_;
@@ -248,66 +256,42 @@ class LossyFrameDecoder {
       nullptr, hwy::AlignedDeleter(nullptr)};
 };
 
-Status DecodeFrameHeader(const AnimationHeader* animation_or_null,
-                         BitReader* JXL_RESTRICT reader,
-                         FrameHeader* JXL_RESTRICT frame_header,
-                         FrameDimensions* frame_dim,
-                         LoopFilter* JXL_RESTRICT loop_filter) {
-  frame_header->animation_frame.nonserialized_have_timecode =
-      animation_or_null ? animation_or_null->have_timecodes : false;
-  frame_header->animation_frame.nonserialized_have_animation =
-      frame_header->nonserialized_image_metadata->m2.have_animation;
+Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
+                         FrameHeader* JXL_RESTRICT frame_header) {
+  JXL_ASSERT(frame_header->nonserialized_image_metadata != nullptr);
+  const ImageMetadata& metadata = *frame_header->nonserialized_image_metadata;
+  frame_header->nonserialized_image_metadata = &metadata;
   JXL_RETURN_IF_ERROR(ReadFrameHeader(reader, frame_header));
 
-  size_t xsize = frame_dim->xsize;
-  size_t ysize = frame_dim->ysize;
-
-  if (frame_header->animation_frame.have_crop) {
-    xsize = frame_header->animation_frame.xsize;
-    ysize = frame_header->animation_frame.ysize;
-  }
-
-  if (frame_header->dc_level != 0) {
-    xsize = DivCeil(xsize, 1 << (3 * frame_header->dc_level));
-    ysize = DivCeil(ysize, 1 << (3 * frame_header->dc_level));
-  }
-
-  frame_dim->Set(xsize, ysize, frame_header->group_size_shift,
-                 frame_header->chroma_subsampling.MaxHShift(),
-                 frame_header->chroma_subsampling.MaxVShift(),
-                 frame_header->upsampling.upsampling_factor);
-
-  if (frame_header->IsLossy()) {
-    JXL_RETURN_IF_ERROR(ReadLoopFilter(reader, loop_filter));
+  if (frame_header->encoding == FrameEncoding::kVarDCT) {
+    JXL_RETURN_IF_ERROR(
+        ReadLoopFilter(reader, &frame_header->nonserialized_loop_filter));
   }
 
   return true;
 }
 
-Status SkipFrame(const Span<const uint8_t> file,
-                 const AnimationHeader* animation_or_null,
-                 const ImageMetadata* metadata,
-                 FrameDimensions* JXL_RESTRICT frame_dim,
-                 BitReader* JXL_RESTRICT reader) {
-  FrameHeader frame_header(metadata);
-  LoopFilter loop_filter;
-  JXL_RETURN_IF_ERROR(DecodeFrameHeader(
-      animation_or_null, reader, &frame_header, frame_dim, &loop_filter));
+Status SkipFrame(const ImageMetadata& metadata, BitReader* JXL_RESTRICT reader,
+                 bool is_preview) {
+  FrameHeader header(&metadata);
+  header.nonserialized_is_preview = is_preview;
+  JXL_RETURN_IF_ERROR(DecodeFrameHeader(reader, &header));
 
   // Read TOC.
   std::vector<uint64_t> group_offsets;
   std::vector<uint32_t> group_sizes;
   uint64_t groups_total_size;
   const bool has_ac_global = true;
+  const FrameDimensions frame_dim = header.ToFrameDimensions();
   const size_t toc_entries =
-      NumTocEntries(frame_dim->num_groups, frame_dim->num_dc_groups,
-                    frame_header.passes.num_passes, has_ac_global);
+      NumTocEntries(frame_dim.num_groups, frame_dim.num_dc_groups,
+                    header.passes.num_passes, has_ac_global);
   JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets,
                                        &group_sizes, &groups_total_size));
 
   // Pretend all groups are read.
   reader->SkipBits(groups_total_size * kBitsPerByte);
-  if (reader->TotalBitsConsumed() > file.size() * kBitsPerByte) {
+  if (reader->TotalBitsConsumed() > reader->TotalBytes() * kBitsPerByte) {
     return JXL_FAILURE("Group code extends after stream end");
   }
 
@@ -317,9 +301,8 @@ Status SkipFrame(const Span<const uint8_t> file,
 static BitReader* GetReaderForSection(
     size_t num_groups, size_t num_passes, size_t group_codes_begin,
     const std::vector<uint64_t>& group_offsets,
-    const std::vector<uint32_t>& group_sizes, const Span<const uint8_t> file,
-    BitReader* JXL_RESTRICT reader, BitReader* JXL_RESTRICT store,
-    size_t index) {
+    const std::vector<uint32_t>& group_sizes, BitReader* JXL_RESTRICT reader,
+    BitReader* JXL_RESTRICT store, size_t index) {
   if (num_groups == 1 && num_passes == 1) return reader;
   const size_t group_offset = group_codes_begin + group_offsets[index];
   const size_t next_group_offset =
@@ -328,11 +311,12 @@ static BitReader* GetReaderForSection(
   // group_codes_begin <= group_offset <= next_group_offset <= file.size()
   JXL_DASSERT(group_codes_begin <= group_offset);
   JXL_DASSERT(group_offset <= next_group_offset);
-  JXL_DASSERT(next_group_offset <= file.size());
+  JXL_DASSERT(next_group_offset <= reader->TotalBytes());
   const size_t group_size = next_group_offset - group_offset;
-  const size_t remaining_size = file.size() - group_offset;
+  const size_t remaining_size = reader->TotalBytes() - group_offset;
   const size_t size = std::min(group_size + 8, remaining_size);
-  *store = BitReader(Span<const uint8_t>(file.data() + group_offset, size));
+  *store =
+      BitReader(Span<const uint8_t>(reader->FirstByte() + group_offset, size));
   return store;
 };
 
@@ -356,25 +340,24 @@ static void ResizeAuxOuts(std::vector<AuxOut>& aux_outs, size_t num_threads,
   }
 };
 
-Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
-                PassesDecoderState* dec_state,
+Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
                 ModularFrameDecoder& modular_frame_decoder,
                 size_t group_codes_begin,
                 const std::vector<uint64_t>& group_offsets,
                 const std::vector<uint32_t>& group_sizes,
-                ThreadPool* JXL_RESTRICT pool, const Span<const uint8_t> file,
-                BitReader* JXL_RESTRICT reader, std::vector<AuxOut>* aux_outs,
-                AuxOut* JXL_RESTRICT aux_out) {
+                ThreadPool* JXL_RESTRICT pool, BitReader* JXL_RESTRICT reader,
+                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out) {
   std::atomic<int> num_errors{0};
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
-  size_t num_groups = frame_dim->num_groups;
+  FrameDimensions frame_dim = frame_header.ToFrameDimensions();
+  size_t num_groups = frame_dim.num_groups;
   size_t num_passes = frame_header.passes.num_passes;
 
   auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
-                     &group_sizes, &file,
+                     &group_sizes,
                      &reader](BitReader* JXL_RESTRICT store, size_t index) {
     return GetReaderForSection(num_groups, num_passes, group_codes_begin,
-                               group_offsets, group_sizes, file, reader, store,
+                               group_offsets, group_sizes, reader, store,
                                index);
   };
   const auto process_dc_group_init = [&](size_t num_threads) {
@@ -386,13 +369,13 @@ Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
     PROFILER_ZONE("DC group");
     BitReader group_store;
     BitReader* group_reader = get_reader(&group_store, group_index + 1);
-    const size_t gx = group_index % frame_dim->xsize_dc_groups;
-    const size_t gy = group_index / frame_dim->xsize_dc_groups;
+    const size_t gx = group_index % frame_dim.xsize_dc_groups;
+    const size_t gy = group_index / frame_dim.xsize_dc_groups;
     AuxOut* my_aux_out = aux_out ? &(*aux_outs)[thread] : nullptr;
     bool ok = true;
     const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
                      kDcGroupDim);
-    if (frame_header.IsLossy() &&
+    if (frame_header.encoding == FrameEncoding::kVarDCT &&
         !(frame_header.flags & FrameHeader::kUseDcFrame)) {
       ok &= modular_frame_decoder.DecodeVarDCTDC(group_index, group_reader,
                                                  dec_state, my_aux_out);
@@ -400,7 +383,7 @@ Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
     ok &= modular_frame_decoder.DecodeGroup(
         mrect, group_reader, my_aux_out, 3, 1000,
         ModularStreamId::ModularDC(group_index));
-    if (frame_header.IsLossy()) {
+    if (frame_header.encoding == FrameEncoding::kVarDCT) {
       ok &= modular_frame_decoder.DecodeAcMetadata(group_index, group_reader,
                                                    dec_state, my_aux_out);
     }
@@ -408,7 +391,7 @@ Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
       num_errors.fetch_add(1, std::memory_order_relaxed);
     }
   };
-  RunOnPool(pool, 0, frame_dim->num_dc_groups, process_dc_group_init,
+  RunOnPool(pool, 0, frame_dim.num_dc_groups, process_dc_group_init,
             process_dc_group, "DecodeDCGroup");
 
   // Do Adaptive DC smoothing if enabled.
@@ -423,35 +406,32 @@ Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
   return true;
 }
 
-Status DecodeFrame(
-    const DecompressParams& dparams, const Span<const uint8_t> file,
-    const AnimationHeader* animation_or_null, FrameDimensions* frame_dim,
-    Multiframe* JXL_RESTRICT multiframe, ThreadPool* JXL_RESTRICT pool,
-    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-    ImageBundle* decoded, const CodecInOut* io, AnimationFrame* animation) {
+Status DecodeFrame(const DecompressParams& dparams,
+                   PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
+                   BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
+                   ImageBundle* decoded, const CodecInOut* io,
+                   bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
+  // Reset the dequantization matrices to their default values.
+  dec_state->shared_storage.matrices = DequantMatrices();
+
   FrameHeader frame_header(decoded->metadata());
-  LoopFilter loop_filter;
-  JXL_RETURN_IF_ERROR(DecodeFrameHeader(
-      animation_or_null, reader, &frame_header, frame_dim, &loop_filter));
-  if (frame_dim->xsize == 0 || frame_dim->ysize == 0) {
+  frame_header.nonserialized_is_preview = is_preview;
+  JXL_RETURN_IF_ERROR(DecodeFrameHeader(reader, &frame_header));
+  FrameDimensions frame_dim = frame_header.ToFrameDimensions();
+  if (frame_dim.xsize == 0 || frame_dim.ysize == 0) {
     return JXL_FAILURE("Empty frame");
   }
   if (io) {
-    JXL_RETURN_IF_ERROR(
-        io->VerifyDimensions(frame_dim->xsize, frame_dim->ysize));
+    JXL_RETURN_IF_ERROR(io->VerifyDimensions(frame_dim.xsize, frame_dim.ysize));
   }
   const size_t num_passes = frame_header.passes.num_passes;
-  const size_t xsize = frame_dim->xsize;
-  const size_t ysize = frame_dim->ysize;
-  const size_t num_groups = frame_dim->num_groups;
+  const size_t xsize = frame_dim.xsize;
+  const size_t ysize = frame_dim.ysize;
+  const size_t num_groups = frame_dim.num_groups;
 
-  if (animation != nullptr) {
-    *animation = frame_header.animation_frame;
-  }
-
-  // If the previous frame was not displayed, `decoded` may have different
+  // If the previous frame was not a kRegularFrame, `decoded` may have different
   // dimensions; must reset to avoid error when setting alpha.
   decoded->RemoveColor();
 
@@ -459,8 +439,7 @@ Status DecodeFrame(
     decoded->SetDepth(
         ImageU(decoded->DepthSize(xsize), decoded->DepthSize(ysize)));
   }
-  if (decoded->metadata()->m2.num_extra_channels > 0 &&
-      frame_header.IsDisplayed()) {
+  if (decoded->metadata()->m2.num_extra_channels > 0) {
     std::vector<ImageU> ecv;
     for (size_t i = 0; i < decoded->metadata()->m2.num_extra_channels; i++) {
       const auto eci = decoded->metadata()->m2.extra_channel_info[i];
@@ -471,29 +450,31 @@ Status DecodeFrame(
   if (frame_header.encoding == FrameEncoding::kModular) {
     decoded->SetFromImage(Image3F(xsize, ysize),
                           decoded->metadata()->color_encoding);
-    loop_filter.gab = false;
-    loop_filter.epf_iters = 0;
+    frame_header.nonserialized_loop_filter.gab = false;
+    frame_header.nonserialized_loop_filter.epf_iters = 0;
   }
 
-  // Handling of progressive decoding for kVarDCT mode.
+  // Handling of progressive decoding.
   size_t downsampling;
   size_t max_passes = dparams.max_passes;
+  size_t max_downsampling = std::max(
+      dparams.max_downsampling >> (frame_header.dc_level * 3), size_t(1));
   // TODO(veluca): deal with downsamplings >= 8.
-  if (dparams.max_downsampling >= 8) {
+  if (max_downsampling >= 8) {
     downsampling = 8;
     max_passes = 0;
   } else {
     downsampling = 1;
     for (uint32_t i = 0; i < frame_header.passes.num_downsample; ++i) {
-      if (dparams.max_downsampling >= frame_header.passes.downsample[i] &&
+      if (max_downsampling >= frame_header.passes.downsample[i] &&
           max_passes > frame_header.passes.last_pass[i]) {
         downsampling = frame_header.passes.downsample[i];
         max_passes = frame_header.passes.last_pass[i] + 1;
       }
     }
   }
-  // Do not use downsampling for animation frames or non-displayed frames.
-  if (!multiframe->IsDisplayed() || !frame_header.animation_frame.is_last) {
+  // Do not use downsampling for kReferenceOnly frames.
+  if (frame_header.frame_type == FrameType::kReferenceOnly) {
     downsampling = 1;
     max_passes = frame_header.passes.num_passes;
   }
@@ -501,43 +482,40 @@ Status DecodeFrame(
     aux_out->downsampling = downsampling;
   }
 
-  multiframe->StartFrame(frame_header);
-
   // Read TOC.
   std::vector<uint64_t> group_offsets;
   std::vector<uint32_t> group_sizes;
   uint64_t groups_total_size;
   const bool has_ac_global = true;
-  const size_t toc_entries = NumTocEntries(num_groups, frame_dim->num_dc_groups,
+  const size_t toc_entries = NumTocEntries(num_groups, frame_dim.num_dc_groups,
                                            num_passes, has_ac_global);
   JXL_RETURN_IF_ERROR(ReadGroupOffsets(toc_entries, reader, &group_offsets,
                                        &group_sizes, &groups_total_size));
 
-  const size_t global_ac_index = frame_dim->num_dc_groups + 1;
+  const size_t global_ac_index = frame_dim.num_dc_groups + 1;
 
   JXL_DASSERT((reader->TotalBitsConsumed() % kBitsPerByte) == 0);
   const size_t group_codes_begin = reader->TotalBitsConsumed() / kBitsPerByte;
   // group_offsets can be permuted, so we need to check the groups_total_size.
   JXL_DASSERT(!group_offsets.empty());
-  if (group_codes_begin + groups_total_size > file.size() ||
+  if (group_codes_begin + groups_total_size > reader->TotalBytes() ||
       group_codes_begin + groups_total_size < group_codes_begin) {
     // The second check is for overflow on the
     // "group_codes_begin + group_offsets.back()" calculation.
     return JXL_FAILURE("group offset is out of bounds");
   }
   auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
-                     &group_sizes, &file,
+                     &group_sizes,
                      &reader](BitReader* JXL_RESTRICT store, size_t index) {
     return GetReaderForSection(num_groups, num_passes, group_codes_begin,
-                               group_offsets, group_sizes, file, reader, store,
+                               group_offsets, group_sizes, reader, store,
                                index);
   };
 
   LossyFrameDecoder lossy_frame_decoder;
-  JXL_RETURN_IF_ERROR(lossy_frame_decoder.Init(
-      frame_header, loop_filter, *decoded->metadata(), *frame_dim, multiframe,
-      downsampling, pool, aux_out));
-  ModularFrameDecoder modular_frame_decoder(*frame_dim);
+  JXL_RETURN_IF_ERROR(lossy_frame_decoder.Init(frame_header, dec_state,
+                                               downsampling, pool, aux_out));
+  ModularFrameDecoder modular_frame_decoder(frame_header.ToFrameDimensions());
 
   if (dparams.keep_dct) {
     if (frame_header.encoding == FrameEncoding::kModular) {
@@ -560,8 +538,7 @@ Status DecodeFrame(
       if (shared.frame_header.flags & FrameHeader::kPatches) {
         JXL_RETURN_IF_ERROR(shared.image_features.patches.Decode(
             global_reader, shared.frame_dim.xsize_padded,
-            shared.frame_dim.ysize_padded,
-            shared.frame_header.save_as_reference));
+            shared.frame_dim.ysize_padded));
       }
       if (shared.frame_header.flags & FrameHeader::kSplines) {
         JXL_RETURN_IF_ERROR(
@@ -576,7 +553,7 @@ Status DecodeFrame(
     JXL_RETURN_IF_ERROR(
         lossy_frame_decoder.State()->shared_storage.matrices.DecodeDC(
             global_reader));
-    if (frame_header.IsLossy()) {
+    if (frame_header.encoding == FrameEncoding::kVarDCT) {
       JXL_RETURN_IF_ERROR(
           lossy_frame_decoder.DecodeGlobalDCInfo(global_reader, decoded));
     } else if (frame_header.encoding == FrameEncoding::kModular) {
@@ -601,19 +578,18 @@ Status DecodeFrame(
   decoded->SetDecodedBytes(group_offsets[0] + group_sizes[0] +
                            group_codes_begin);
 
-  JXL_RETURN_IF_ERROR(
-      DecodeDC(frame_header, frame_dim, lossy_frame_decoder.State(),
-               modular_frame_decoder, group_codes_begin, group_offsets,
-               group_sizes, pool, file, reader, &aux_outs, aux_out));
+  JXL_RETURN_IF_ERROR(DecodeDC(frame_header, dec_state, modular_frame_decoder,
+                               group_codes_begin, group_offsets, group_sizes,
+                               pool, reader, &aux_outs, aux_out));
 
-  if (downsampling < 16 && frame_dim->num_groups > 1) {
-    decoded->SetDecodedBytes(group_offsets[frame_dim->num_dc_groups] +
-                             group_sizes[frame_dim->num_dc_groups] +
+  if (downsampling < 16 && frame_dim.num_groups > 1) {
+    decoded->SetDecodedBytes(group_offsets[frame_dim.num_dc_groups] +
+                             group_sizes[frame_dim.num_dc_groups] +
                              group_codes_begin);
   }
 
-  Image3F opsin(frame_dim->xsize_blocks * kBlockDim,
-                frame_dim->ysize_blocks * kBlockDim);
+  Image3F opsin(frame_dim.xsize_blocks * kBlockDim,
+                frame_dim.ysize_blocks * kBlockDim);
 
   // Read global AC info.
   {
@@ -624,7 +600,7 @@ Status DecodeFrame(
       BitReaderScopedCloser ac_info_store_closer(&ac_info_store, &res);
       BitReader* ac_info_reader = get_reader(&ac_info_store, global_ac_index);
 
-      if (frame_header.IsLossy()) {
+      if (frame_header.encoding == FrameEncoding::kVarDCT) {
         JXL_RETURN_IF_ERROR(lossy_frame_decoder.DecodeGlobalACInfo(
             ac_info_reader, &modular_frame_decoder));
       }
@@ -652,21 +628,21 @@ Status DecodeFrame(
   const auto process_group = [&](const int task, const int thread) {
     PROFILER_ZONE("process_group");
     const size_t group_index = static_cast<size_t>(task);
-    const size_t gx = group_index % frame_dim->xsize_groups;
-    const size_t gy = group_index / frame_dim->xsize_groups;
-    const size_t x = gx * frame_dim->group_dim;
-    const size_t y = gy * frame_dim->group_dim;
-    Rect rect(x, y, frame_dim->group_dim, frame_dim->group_dim, xsize, ysize);
+    const size_t gx = group_index % frame_dim.xsize_groups;
+    const size_t gy = group_index / frame_dim.xsize_groups;
+    const size_t x = gx * frame_dim.group_dim;
+    const size_t y = gy * frame_dim.group_dim;
+    Rect rect(x, y, frame_dim.group_dim, frame_dim.group_dim, xsize, ysize);
 
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
     BitReader pass0_reader_store;
     BitReader* pass0_group_reader =
         get_reader(&pass0_reader_store,
                    AcGroupIndex(0, group_index, num_groups,
-                                frame_dim->num_dc_groups, has_ac_global));
+                                frame_dim.num_dc_groups, has_ac_global));
 
     // don't limit to image dimensions here (is done in DecodeGroup)
-    const Rect mrect(x, y, frame_dim->group_dim, frame_dim->group_dim);
+    const Rect mrect(x, y, frame_dim.group_dim, frame_dim.group_dim);
 
     // Read passes.
     BitReader storage[kMaxNumPasses];
@@ -676,9 +652,9 @@ Status DecodeFrame(
       readers[i] =
           get_reader(&storage[i - 1],
                      AcGroupIndex(i, group_index, num_groups,
-                                  frame_dim->num_dc_groups, has_ac_global));
+                                  frame_dim.num_dc_groups, has_ac_global));
     }
-    if (frame_header.IsLossy()) {
+    if (frame_header.encoding == FrameEncoding::kVarDCT) {
       if (!lossy_frame_decoder.DecodeACGroup(group_index, thread, readers,
                                              max_passes, &opsin, decoded,
                                              my_aux_out)) {
@@ -726,10 +702,10 @@ Status DecodeFrame(
     JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
   }
 
-  if (downsampling < 8 && frame_dim->num_groups > 1) {
+  if (downsampling < 8 && frame_dim.num_groups > 1) {
     uint64_t last_end_offset = 0;
     size_t end_index = AcGroupIndex(max_passes, 0, num_groups,
-                                    frame_dim->num_dc_groups, has_ac_global);
+                                    frame_dim.num_dc_groups, has_ac_global);
     for (size_t i = 0; i < end_index; i++) {
       uint64_t end_offset = group_offsets[i] + group_sizes[i];
       last_end_offset = std::max(last_end_offset, end_offset);
@@ -744,8 +720,7 @@ Status DecodeFrame(
       &opsin, decoded, pool,
       lossy_frame_decoder.State()->shared->matrices.DCQuants(), frame_header));
 
-  JXL_RETURN_IF_ERROR(
-      lossy_frame_decoder.FinalizeDecoding(&opsin, loop_filter, decoded));
+  JXL_RETURN_IF_ERROR(lossy_frame_decoder.FinalizeDecoding(&opsin, decoded));
 
   if (num_groups == 1 && num_passes == 1) {
     // get_reader used reader, so AC groups have already been consumed by
@@ -761,12 +736,26 @@ Status DecodeFrame(
   }
 
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  if ((reader->TotalBitsConsumed()) > file.size() * kBitsPerByte) {
+  if ((reader->TotalBitsConsumed()) > reader->TotalBytes() * kBitsPerByte) {
     return JXL_FAILURE("Read past stream end");
   }
 
   if (!decoded->IsJPEG()) {
-    decoded->ShrinkTo(frame_dim->xsize_upsampled, frame_dim->ysize_upsampled);
+    // A kRegularFrame is blended with the other frames, and thus results in a
+    // coalesced frame of size equal to image dimensions. Other frames are not
+    // blended, thus their final size is the size that was defined in the
+    // frame_header.
+    if (dec_state->shared->frame_header.frame_type == kRegularFrame) {
+      decoded->ShrinkTo(
+          dec_state->shared->frame_header.nonserialized_image_metadata
+              ->nonserialized_size.xsize(),
+          dec_state->shared->frame_header.nonserialized_image_metadata
+              ->nonserialized_size.ysize());
+    } else {
+      // xsize_upsampled is the actual frame size, after any upsampling has been
+      // applied.
+      decoded->ShrinkTo(frame_dim.xsize_upsampled, frame_dim.ysize_upsampled);
+    }
   }
   return true;
 }

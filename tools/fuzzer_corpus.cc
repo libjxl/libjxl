@@ -77,7 +77,7 @@ struct ImageSpec {
       << ") x frames=" << spec.num_frames << " seed=" << spec.seed
       << ", speed=" << static_cast<int>(spec.params.speed_tier)
       << ", butteraugli=" << spec.params.butteraugli_distance
-      << ", modular_group_mode=" << spec.params.modular_group_mode << ">";
+      << ", modular_mode=" << spec.params.modular_mode << ">";
     return o;
   }
 
@@ -112,7 +112,7 @@ struct ImageSpec {
     jxl::Predictor modular_predictor = jxl::Predictor::Gradient;
     jxl::ColorTransform color_transform = jxl::ColorTransform::kXYB;
     jxl::SpeedTier speed_tier = jxl::SpeedTier::kTortoise;
-    bool modular_group_mode = false;
+    bool modular_mode = false;
     uint8_t padding_[3] = {};
   } params;
 };
@@ -147,11 +147,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   jxl::CodecInOut io;
   if (spec.bit_depth == 32) {
-    io.metadata.SetFloat32Samples();
+    io.metadata.m.SetFloat32Samples();
   } else {
-    io.metadata.SetUintSamples(spec.bit_depth);
+    io.metadata.m.SetUintSamples(spec.bit_depth);
   }
-  io.metadata.SetAlphaBits(spec.alpha_bit_depth);
+  io.metadata.m.SetAlphaBits(spec.alpha_bit_depth);
   io.dec_pixels = spec.width * spec.height;
   io.frames.clear();
   io.frames.reserve(spec.num_frames);
@@ -168,11 +168,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   PixelGenerator gen = [&]() -> uint8_t { return dis(mt); };
 
   for (uint32_t frame = 0; frame < spec.num_frames; frame++) {
-    jxl::ImageBundle ib(&io.metadata);
+    jxl::ImageBundle ib(&io.metadata.m);
     const bool has_alpha = spec.alpha_bit_depth != 0;
     size_t row_size = jxl::RowSize(
-        spec.width, io.metadata.color_encoding.Channels() + has_alpha,
-        io.metadata.bit_depth.bits_per_sample);
+        spec.width, io.metadata.m.color_encoding.Channels() + has_alpha,
+        io.metadata.m.bit_depth.bits_per_sample);
     size_t bytes_per_pixel = row_size / spec.width;
     std::vector<uint8_t> img_data(row_size * spec.height, 0);
     for (size_t y = 0; y < spec.height; y++) {
@@ -186,17 +186,17 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
     JXL_RETURN_IF_ERROR(ConvertImage(
-        span, spec.width, spec.height, io.metadata.color_encoding,
+        span, spec.width, spec.height, io.metadata.m.color_encoding,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.GetAlphaBits(), io.metadata.bit_depth.bits_per_sample,
+        io.metadata.m.GetAlphaBits(), io.metadata.m.bit_depth.bits_per_sample,
         false /* big_endian */, false /* flipped_y */, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }
 
   jxl::CompressParams params;
   params.speed_tier = spec.params.speed_tier;
-  params.modular_group_mode = spec.params.modular_group_mode;
+  params.modular_mode = spec.params.modular_mode;
   params.color_transform = spec.params.color_transform;
   params.butteraugli_distance = spec.params.butteraugli_distance;
   params.options.predictor = {spec.params.modular_predictor};
@@ -232,7 +232,7 @@ std::vector<ImageSpec::CjxlParams> CompressParamsList() {
   {
     // Lossless
     ImageSpec::CjxlParams params;
-    params.modular_group_mode = true;
+    params.modular_mode = true;
     params.color_transform = jxl::ColorTransform::kNone;
     params.modular_predictor = {jxl::Predictor::Weighted};
     ret.push_back(params);

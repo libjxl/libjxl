@@ -190,9 +190,9 @@ class Blur {
 
   Image3F operator()(const Image3F& in) {
     Image3F out(in.xsize(), in.ysize());
-    operator()(in.Plane(0), const_cast<ImageF*>(&out.Plane(0)));
-    operator()(in.Plane(1), const_cast<ImageF*>(&out.Plane(1)));
-    operator()(in.Plane(2), const_cast<ImageF*>(&out.Plane(2)));
+    operator()(in.Plane(0), &out.Plane(0));
+    operator()(in.Plane(1), &out.Plane(1));
+    operator()(in.Plane(2), &out.Plane(2));
     return out;
   }
 

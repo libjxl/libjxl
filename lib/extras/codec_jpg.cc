@@ -293,14 +293,14 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   if (target == DecodeTarget::kQuantizedCoeffs) {
     io->frames.clear();
     io->frames.reserve(1);
-    io->frames.push_back(ImageBundle(&io->metadata));
+    io->frames.push_back(ImageBundle(&io->metadata.m));
     io->Main().jpeg_data = make_unique<brunsli::JPEGData>();
     brunsli::JPEGData* jpeg_data = io->Main().jpeg_data.get();
     if (!ReadJpeg(bytes.data(), bytes.size(), brunsli::JPEG_READ_ALL,
                   jpeg_data)) {
       return JXL_FAILURE("Error reading JPEG");
     }
-    SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.color_encoding);
+    SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding);
     size_t nbcomp = jpeg_data->components.size();
     if (nbcomp != 1 && nbcomp != 3) {
       return JXL_FAILURE(
@@ -325,11 +325,11 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     io->Main().color_transform =
         !is_rgb ? ColorTransform::kYCbCr : ColorTransform::kNone;
 
-    io->metadata.SetIntensityTarget(
+    io->metadata.m.SetIntensityTarget(
         io->target_nits != 0 ? io->target_nits : kDefaultIntensityTarget);
-    io->metadata.SetUintSamples(BITS_IN_JSAMPLE);
+    io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
     io->SetFromImage(Image3F(jpeg_data->width, jpeg_data->height),
-                     io->metadata.color_encoding);
+                     io->metadata.m.color_encoding);
     SetIntensityTarget(io);
     return true;
   }
@@ -343,7 +343,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   Image3F coeffs;
   Image3F image;
   std::unique_ptr<JSAMPLE[]> row;
-  ImageBundle bundle(&io->metadata);
+  ImageBundle bundle(&io->metadata.m);
 
   const auto try_catch_block = [&]() -> bool {
     jpeg_decompress_struct cinfo;
@@ -378,8 +378,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     } else {
       color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
     }
-    io->metadata.SetUintSamples(BITS_IN_JSAMPLE);
-    io->metadata.color_encoding = color_encoding;
+    io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
+    io->metadata.m.color_encoding = color_encoding;
     int nbcomp = cinfo.num_components;
     if (nbcomp != 1 && nbcomp != 3) {
       jpeg_abort_decompress(&cinfo);
@@ -570,9 +570,9 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
 
   ImageBundle ib_0_255 = io->Main().Copy();
   const ImageBundle* ib;
-  ImageMetadata metadata = io->metadata;
+  ImageMetadata metadata = io->metadata.m;
   ImageBundle ib_store(&metadata);
-  JXL_RETURN_IF_ERROR(TransformIfNeeded(ib_0_255, io->metadata.color_encoding,
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(ib_0_255, io->metadata.m.color_encoding,
                                         pool, &ib_store, &ib));
 
   switch (encoder) {

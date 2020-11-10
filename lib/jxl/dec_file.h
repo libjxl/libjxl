@@ -32,7 +32,7 @@ namespace jxl {
 
 // Implementation detail: currently decodes to linear sRGB. The contract is:
 // `io` appears 'identical' (modulo compression artifacts) to the encoder input
-// in a color-aware viewer. Note that `io->metadata.color_encoding`
+// in a color-aware viewer. Note that `io->metadata.m.color_encoding`
 // identifies the color space that was passed to the encoder; clients that want
 // that same encoding must call `io->TransformTo` afterwards.
 Status DecodeFile(const DecompressParams& params,

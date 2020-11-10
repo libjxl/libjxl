@@ -83,7 +83,7 @@ class CompressedDCTest : public testing::TestWithParam<CompressedDCTestParams> {
     const float kErrorThreshold = 7e-6f;
     VerifyRelativeError(decoding_dc, encoding_dc, kErrorThreshold,
                         kErrorThreshold);
-    VerifyRelativeError(io->Main().color(), encoding_dec, kErrorThreshold,
+    VerifyRelativeError(*io->Main().color(), encoding_dec, kErrorThreshold,
                         kErrorThreshold);
   }
 };

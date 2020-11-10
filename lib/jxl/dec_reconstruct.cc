@@ -36,23 +36,16 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/gaborish.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/passes_state.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-// TODO(deymo): Rename LocalApplyImageFeaturesRow to ApplyImageFeaturesRow. This
-// currently has a different name than the public wrapper function because the
-// function call from ApplyImageFeatures to ApplyImageFeaturesRow is ambiguous
-// due to ADL rules and it can't be disambiguated without access to the
-// namespace name formerly known as HWY_NAMESPACE.
+// TODO(deymo): Rename LocalApplyImageFeaturesRow to ApplyImageFeaturesRow.
 Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
                                   const Rect& in_rect,
                                   PassesDecoderState* dec_state, ssize_t y,
-                                  size_t thread, AuxOut* /*aux_out*/,
-                                  bool save_decompressed,
-                                  bool apply_color_transform) {
+                                  size_t thread, AuxOut* /*aux_out*/) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
@@ -69,31 +62,22 @@ Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 
   // TODO(veluca): Consider collapsing/inlining some of the following loops.
   image_features.patches.AddTo(idct, rect, rect);
-  JXL_RETURN_IF_ERROR(
-      image_features.splines.AddTo(idct, rect, rect, dec_state->shared->cmap));
-
-  if (dec_state->shared->multiframe->NeedsRestoring()) {
-    PROFILER_ZONE("MultiframeRestore");
-    for (size_t c = 0; c < 3; c++) {
-      AddTo(rect, dec_state->frame_storage->Plane(c), rect, &idct->Plane(c));
-    }
-  }
-
-  if (dec_state->shared->multiframe->NeedsSaving() && save_decompressed) {
-    PROFILER_ZONE("MultiframeSave");
-    CopyImageTo(rect, *idct, rect, dec_state->frame_storage);
-  }
+  JXL_RETURN_IF_ERROR(image_features.splines.AddTo(
+      idct, rect, rect, dec_state->shared_storage.cmap));
 
   if (frame_header.flags & FrameHeader::kNoise) {
     PROFILER_ZONE("AddNoise");
     AddNoise(image_features.noise_params, rect, dec_state->noise, rect,
-             dec_state->shared->cmap, idct);
+             dec_state->shared_storage.cmap, idct);
   }
 
-  // TODO(veluca): should skip the color transform if doing upsampling and
-  // blending in XYB.
-  if (apply_color_transform &&
-      frame_header.color_transform == ColorTransform::kXYB) {
+  // TODO(veluca): all blending and upsampling should happen in this function,
+  // either before or after the color transform. For now, we just skip the color
+  // transform entirely if save_before_color_transform, and error out if the
+  // frame is supposed to be displayed.
+
+  if (frame_header.color_transform == ColorTransform::kXYB &&
+      !frame_header.save_before_color_transform) {
     PROFILER_ZONE("ToXYB");
     float* JXL_RESTRICT row0 = rect.PlaneRow(idct, 0, 0);
     float* JXL_RESTRICT row1 = rect.PlaneRow(idct, 1, 0);
@@ -135,15 +119,14 @@ Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 
 Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
                           PassesDecoderState* dec_state, size_t thread,
-                          AuxOut* aux_out, bool save_decompressed,
-                          bool apply_color_transform) {
-  const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
+                          AuxOut* aux_out) {
+  const LoopFilter& lf =
+      dec_state->shared->frame_header.nonserialized_loop_filter;
 
   for (ssize_t y = -lf.PaddingRows();
        y < static_cast<ssize_t>(lf.PaddingRows() + rect.ysize()); y++) {
     JXL_RETURN_IF_ERROR(
-        LocalApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out,
-                                   save_decompressed, apply_color_transform));
+        LocalApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out));
   }
   return true;
 }
@@ -159,31 +142,26 @@ namespace jxl {
 HWY_EXPORT(LocalApplyImageFeaturesRow);
 Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
                              PassesDecoderState* dec_state, ssize_t y,
-                             size_t thread, AuxOut* aux_out,
-                             bool save_decompressed,
-                             bool apply_color_transform) {
+                             size_t thread, AuxOut* aux_out) {
   return HWY_DYNAMIC_DISPATCH(LocalApplyImageFeaturesRow)(
-      idct, in_rect, dec_state, y, thread, aux_out, save_decompressed,
-      apply_color_transform);
+      idct, in_rect, dec_state, y, thread, aux_out);
 }
 
 HWY_EXPORT(ApplyImageFeatures);
 Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
                           PassesDecoderState* dec_state, size_t thread,
-                          AuxOut* aux_out, bool save_decompressed,
-                          bool apply_color_transform) {
+                          AuxOut* aux_out) {
   return HWY_DYNAMIC_DISPATCH(ApplyImageFeatures)(idct, rect, dec_state, thread,
-                                                  aux_out, save_decompressed,
-                                                  apply_color_transform);
+                                                  aux_out);
 }
 
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             AuxOut* aux_out, bool save_decompressed,
-                             bool apply_color_transform) {
+                             AuxOut* aux_out) {
   std::vector<Rect> rects_to_process;
 
-  const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
+  const LoopFilter& lf =
+      dec_state->shared->frame_header.nonserialized_loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
 
   if ((lf.epf_iters > 0 || lf.gab) && frame_header.chroma_subsampling.Is444()) {
@@ -266,8 +244,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   std::mutex apply_features_ok_mutex;
   auto run_apply_features = [&](size_t rect_id, size_t thread) {
     if (!ApplyImageFeatures(idct, rects_to_process[rect_id], dec_state, thread,
-                            aux_out, save_decompressed,
-                            apply_color_transform)) {
+                            aux_out)) {
       std::unique_lock<std::mutex> lock(apply_features_ok_mutex);
       apply_features_ok = false;
     }
@@ -278,23 +255,21 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
   JXL_RETURN_IF_ERROR(apply_features_ok);
 
-  if (dec_state->shared->multiframe->NeedsSaving() && save_decompressed) {
-    dec_state->shared->multiframe->SetDecodedFrame();
-  }
-
-  if (apply_color_transform &&
-      frame_header.color_transform == ColorTransform::kYCbCr) {
+  if (frame_header.color_transform == ColorTransform::kYCbCr &&
+      !frame_header.save_before_color_transform) {
     // TODO(veluca): create per-pixel version of YcbcrToRgb for line-based
     // decoding in ApplyImageFeatures.
-    YcbcrToRgb(idct->Plane(1), idct->Plane(0), idct->Plane(2),
-               const_cast<ImageF*>(&idct->Plane(0)),
-               const_cast<ImageF*>(&idct->Plane(1)),
-               const_cast<ImageF*>(&idct->Plane(2)), pool);
+    YcbcrToRgb(idct->Plane(1), idct->Plane(0), idct->Plane(2), &idct->Plane(0),
+               &idct->Plane(1), &idct->Plane(2), pool);
   }  // otherwise no color transform needed
 
   idct->ShrinkTo(dec_state->shared->frame_dim.xsize,
                  dec_state->shared->frame_dim.ysize);
-  Upsample(idct, frame_header.upsampling);
+  // TODO(veluca): consider making upsampling happen per-line.
+  // TODO(veluca): if save_before_color_transform is true, upsampling should
+  // also happen before the color transform is done.
+  Upsample(idct, frame_header.upsampling,
+           frame_header.nonserialized_image_metadata->m2.transform_data);
 
   const size_t xsize = dec_state->shared->frame_dim.xsize_upsampled;
   const size_t ysize = dec_state->shared->frame_dim.ysize_upsampled;

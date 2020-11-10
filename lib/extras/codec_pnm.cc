@@ -272,14 +272,14 @@ Status ApplyHints(const bool is_gray, CodecInOut* io) {
   JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
       [is_gray, io, &got_color_space](const std::string& key,
                                       const std::string& value) -> Status {
-        ColorEncoding* c_original = &io->metadata.color_encoding;
+        ColorEncoding* c_original = &io->metadata.m.color_encoding;
         if (key == "color_space") {
           if (!ParseDescription(value, c_original) ||
               !c_original->CreateICC()) {
             return JXL_FAILURE("PNM: Failed to apply color_space");
           }
 
-          if (is_gray != io->metadata.color_encoding.IsGray()) {
+          if (is_gray != io->metadata.m.color_encoding.IsGray()) {
             return JXL_FAILURE(
                 "PNM: mismatch between file and color_space hint");
           }
@@ -298,7 +298,7 @@ Status ApplyHints(const bool is_gray, CodecInOut* io) {
 
   if (!got_color_space) {
     JXL_WARNING("PNM: no color_space/icc_pathname given, assuming sRGB");
-    JXL_RETURN_IF_ERROR(io->metadata.color_encoding.SetSRGB(
+    JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetSRGB(
         is_gray ? ColorSpace::kGray : ColorSpace::kRGB));
   }
 
@@ -342,31 +342,31 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   JXL_RETURN_IF_ERROR(ApplyHints(header.is_gray, io));
   if (header.floating_point) {
-    io->metadata.SetFloat32Samples();
+    io->metadata.m.SetFloat32Samples();
   } else {
-    io->metadata.SetUintSamples(header.bits_per_sample);
+    io->metadata.m.SetUintSamples(header.bits_per_sample);
   }
-  io->metadata.SetAlphaBits(0);
+  io->metadata.m.SetAlphaBits(0);
   io->dec_pixels = header.xsize * header.ysize;
   io->frames.clear();
   io->frames.reserve(1);
-  ImageBundle ib(&io->metadata);
+  ImageBundle ib(&io->metadata.m);
 
   const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
   JXL_RETURN_IF_ERROR(ConvertImage(
-      span, header.xsize, header.ysize, io->metadata.color_encoding,
+      span, header.xsize, header.ysize, io->metadata.m.color_encoding,
       /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
-      io->metadata.GetAlphaBits(), io->metadata.bit_depth.bits_per_sample,
+      io->metadata.m.GetAlphaBits(), io->metadata.m.bit_depth.bits_per_sample,
       header.big_endian, flipped_y, pool, &ib));
   if (!header.floating_point) {
-    io->metadata.bit_depth.bits_per_sample = ib.DetectRealBitdepth();
+    io->metadata.m.bit_depth.bits_per_sample = ib.DetectRealBitdepth();
   }
   if (header.floating_point && io->dec_target != DecodeTarget::kLosslessFloat) {
     // pfm uses nominal range 0..1 while internally JPEG XL uses 0..255. pfm
     // has a "scale" value in the header but it appears software only uses its
     // sign, so its value is ignored in this scaling.
-    ScaleImage<float>(255, ib.MutableColor());
+    ScaleImage<float>(255, ib.color());
   }
   io->frames.push_back(std::move(ib));
   SetIntensityTarget(io);
@@ -380,7 +380,7 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   // Choose native for PFM; PGM/PPM require big-endian (N/A for PBM)
   const bool little_endian = floating_point ? IsLittleEndian() : false;
 
-  ImageMetadata metadata_copy = io->metadata;
+  ImageMetadata metadata_copy = io->metadata.m;
   // AllDefault sets all_default, which can cause a race condition.
   if (!Bundle::AllDefault(metadata_copy)) {
     JXL_WARNING("PNM encoder ignoring metadata - use a different codec");
@@ -398,20 +398,22 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageBundle flipped;
   if (floating_point) {
     flipped = ib.Copy();
-    VerticallyFlipImage(flipped.MutableColor());
+    VerticallyFlipImage(flipped.color());
     to_color_transform = &flipped;
   }
-  ImageMetadata metadata = io->metadata;
+  ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
   JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired, pool,
                                         &store, &transformed));
-  PaddedBytes pixels(ib.xsize() * ib.ysize() *
-                     (c_desired.Channels() * bits_per_sample / kBitsPerByte));
+  size_t stride =
+      ib.xsize() * (c_desired.Channels() * bits_per_sample) / kBitsPerByte;
+  PaddedBytes pixels(stride * ib.ysize());
   JXL_RETURN_IF_ERROR(ConvertImage(
       *transformed, bits_per_sample, floating_point,
       to_color_transform->c_current().SameColorEncoding(c_desired),
-      c_desired.Channels(), little_endian, pool, pixels.data(), pixels.size()));
+      /*apply_srgb_tf=*/false, c_desired.Channels(), little_endian, stride,
+      pool, pixels.data(), pixels.size(), jxl::Orientation::kIdentity));
 
   char header[kMaxHeaderSize];
   int header_size = 0;

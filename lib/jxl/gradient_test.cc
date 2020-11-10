@@ -164,9 +164,9 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   Image3F gradient = GenerateTestGradient(color0, color1, angle, xsize, ysize);
 
   CodecInOut io;
-  io.metadata.SetUintSamples(8);
-  io.metadata.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(std::move(gradient), io.metadata.color_encoding);
+  io.metadata.m.SetUintSamples(8);
+  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+  io.SetFromImage(std::move(gradient), io.metadata.m.color_encoding);
 
   CodecInOut io2;
 
@@ -175,7 +175,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   PassesEncoderState enc_state;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
-  EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.color_encoding, pool));
+  EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding, pool));
 
   if (use_gradient) {
     // Test that the gradient map worked. For that, we take a second derivative
@@ -184,7 +184,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
     // 0.1, while if there is noticeable banding, which means the gradient map
     // failed, the values are around 0.5-1.0 (regardless of
     // butteraugli_distance).
-    Image3F gradient2 = Gradient2(io2.Main().color());
+    Image3F gradient2 = Gradient2(*io2.Main().color());
 
     std::array<float, 3> image_max;
     Image3Max(gradient2, &image_max);

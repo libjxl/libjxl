@@ -50,7 +50,7 @@ class ImageBundle {
   // Uninitialized state for use as output parameter.
   ImageBundle() : metadata_(nullptr) {}
   // Caller is responsible for setting metadata before calling Set*.
-  explicit ImageBundle(ImageMetadata* metadata) : metadata_(metadata) {}
+  explicit ImageBundle(const ImageMetadata* metadata) : metadata_(metadata) {}
 
   // Move-only (allows storing in std::vector).
   ImageBundle(ImageBundle&&) = default;
@@ -105,13 +105,9 @@ class ImageBundle {
   }
 
   // Do not use if !HasColor().
-  Image3F* MutableColor() {
+  Image3F* color() {
     JXL_DASSERT(HasColor());
     return &color_;
-  }
-  Image3F* MutableColor() const {
-    JXL_DASSERT(HasColor());
-    return const_cast<Image3F*>(&color_);
   }
 
   // If c_current.IsGray(), all planes must be identical. NOTE: c_current is
@@ -163,15 +159,9 @@ class ImageBundle {
     return (eci == nullptr) ? false : eci->alpha_associated;
   }
   const ImageU& alpha() const;
-
-  void PremultiplyAlphaIfNeeded(ThreadPool* pool = nullptr);
-
-  // Reverts SetAlpha AND sets metadata alpha bits to 0. Called after noticing
-  // that all alpha values are opaque.
-  void RemoveAlpha();
+  ImageU* alpha();
 
   // -- DEPTH
-
   void SetDepth(ImageU&& depth);
   bool HasDepth() const {
     return metadata_->m2.Find(ExtraChannel::kDepth) != nullptr;
@@ -188,6 +178,10 @@ class ImageBundle {
   void SetExtraChannels(std::vector<ImageU>&& extra_channels);
   bool HasExtraChannels() const { return !extra_channels_.empty(); }
   const std::vector<ImageU>& extra_channels() const {
+    JXL_ASSERT(HasExtraChannels());
+    return extra_channels_;
+  }
+  std::vector<ImageU>& extra_channels() {
     JXL_ASSERT(HasExtraChannels());
     return extra_channels_;
   }
@@ -212,15 +206,20 @@ class ImageBundle {
   ColorTransform color_transform = ColorTransform::kNone;
   YCbCrChromaSubsampling chroma_subsampling;
 
+  FrameOrigin origin{0, 0};
+  // Animation-related information. This assumes GIF- and APNG- like animation.
+  uint32_t duration = 0;
+  bool use_for_next_frame = false;
+  bool blend = false;
+
  private:
   // Called after any Set* to ensure their sizes are compatible.
   void VerifySizes() const;
 
   // Required for TransformTo so that an ImageBundle is self-sufficient. Always
   // points to the same thing, but cannot be const-pointer because that prevents
-  // the compiler from generating a move ctor. Mostly pointer-to-const except as
-  // required by RemoveAlpha.
-  ImageMetadata* metadata_;
+  // the compiler from generating a move ctor.
+  const ImageMetadata* metadata_;
 
   // Initialized by Set*:
   Image3F color_;  // If empty, planes_ is not; all planes equal if IsGray().

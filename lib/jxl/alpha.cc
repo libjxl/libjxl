@@ -20,6 +20,7 @@
 
 namespace jxl {
 
+// TODO(veluca): alpha is either always premultiplied, or never.
 void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
                           const AlphaBlendingInputLayer& fg,
                           const AlphaBlendingOutput& out, size_t num_pixels) {

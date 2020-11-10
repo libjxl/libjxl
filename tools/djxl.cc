@@ -87,16 +87,10 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "defaults to original (input) color space",
                           &color_space, &ParseString);
 
-  cmdline->AddOptionValue('\0', "noise", "0", "disables noise generation",
-                          &params.noise, &ParseOverride);
-
   cmdline->AddOptionValue('s', "downsampling", "1,2,4,8,16",
                           "maximum permissible downsampling factor (values "
                           "greater than 16 will return the LQIP if available)",
                           &params.max_downsampling, &ParseUnsigned);
-
-  cmdline->AddOptionFlag('c', "coalesce", "decode coalesced animation frames",
-                         &coalesce, &SetBooleanTrue);
 
   cmdline->AddOptionFlag(
       'j', "jpeg",
@@ -131,11 +125,6 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
       return false;
     }
     num_threads = topology.packages * topology.cores_per_package;
-  }
-
-  if (params.noise == jxl::Override::kOn) {
-    fprintf(stderr, "Noise can only be enabled by the encoder.\n");
-    return JXL_FAILURE("Cannot force noise on");
   }
 
   if (!decode_to_jpeg && file_out) {
@@ -211,12 +200,12 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   return true;
 }
 
-void RenderSpotColor(const jxl::Image3F& img, const jxl::ImageU& sc,
+void RenderSpotColor(jxl::Image3F& img, const jxl::ImageU& sc,
                      const float color[4], int ec_bit_depth) {
   float scale = color[3] / ((1 << ec_bit_depth) - 1.0f);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < img.ysize(); y++) {
-      float* JXL_RESTRICT p = img.Plane(c).MutableRow(y);
+      float* JXL_RESTRICT p = img.Plane(c).Row(y);
       const uint16_t* JXL_RESTRICT s = sc.ConstRow(y);
       for (size_t x = 0; x < img.xsize(); x++) {
         float mix = scale * s[x];
@@ -227,14 +216,14 @@ void RenderSpotColor(const jxl::Image3F& img, const jxl::ImageU& sc,
 }
 
 jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
-                           const jxl::CodecInOut& io) {
+                           jxl::CodecInOut& io) {
   // Can only write if we decoded and have an output filename.
   // (Writing large PNGs is slow, so allow skipping it for benchmarks.)
   if (file_out == nullptr) return true;
 
-  for (size_t i = 0; i < io.metadata.m2.num_extra_channels; i++) {
+  for (size_t i = 0; i < io.metadata.m.m2.num_extra_channels; i++) {
     // Don't use Find() because there may be multiple spot color channels.
-    const jxl::ExtraChannelInfo& eci = io.metadata.m2.extra_channel_info[i];
+    const jxl::ExtraChannelInfo& eci = io.metadata.m.m2.extra_channel_info[i];
     if (eci.type == jxl::ExtraChannel::kOptional) {
       continue;
     }
@@ -247,14 +236,14 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     }
     if (eci.type == jxl::ExtraChannel::kSpotColor) {
       for (size_t fr = 0; fr < io.frames.size(); fr++)
-        RenderSpotColor(io.frames[fr].color(),
+        RenderSpotColor(*io.frames[fr].color(),
                         io.frames[fr].extra_channels()[i], eci.spot_color,
                         eci.bit_depth.bits_per_sample);
     }
   }
 
   // Override original color space with arg if specified.
-  jxl::ColorEncoding c_out = io.metadata.color_encoding;
+  jxl::ColorEncoding c_out = io.metadata.m.color_encoding;
   if (!args.color_space.empty()) {
     if (!jxl::ParseDescription(args.color_space, &c_out) ||
         !c_out.CreateICC()) {
@@ -264,10 +253,10 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   }
 
   // Override original #bits with arg if specified.
-  size_t bits_per_sample = io.metadata.bit_depth.bits_per_sample;
+  size_t bits_per_sample = io.metadata.m.bit_depth.bits_per_sample;
   if (args.bits_per_sample != 0) bits_per_sample = args.bits_per_sample;
 
-  if (!io.metadata.m2.have_animation) {
+  if (!io.metadata.m.m2.have_animation) {
     if (!EncodeToFile(io, c_out, bits_per_sample, file_out)) {
       fprintf(stderr, "Failed to write decoded image.\n");
       return false;
@@ -284,165 +273,23 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     output_filename.resize(base.size() + 1 + digits + strlen(extension) + 1);
 
     jxl::CodecInOut frame_io;
-    if (args.coalesce) {
-      frame_io.SetFromImage(jxl::CopyImage(io.frames[0].color()),
-                            io.frames[0].c_current());
-      frame_io.metadata = *io.frames[0].metadata();
-      if (io.frames[0].HasAlpha())
-        frame_io.Main().SetAlpha(
-            jxl::CopyImage(io.frames[0].alpha()),
-            /*alpha_is_premultiplied=*/io.frames[0].AlphaIsPremultiplied());
-    }
 
-    // This value should be 0 if there is no alpha channel.
-    size_t first_alpha = 0;
-    const std::vector<jxl::ExtraChannelInfo>& extra_channels =
-        io.metadata.m2.extra_channel_info;
-    for (size_t i = 0; i < extra_channels.size(); i++) {
-      if (extra_channels[i].type == jxl::ExtraChannel::kAlpha) {
-        first_alpha = i;
-        break;
-      }
-    }
-
-    // TODO: take NewBase into account
     for (size_t i = 0; i < io.frames.size(); ++i) {
-      if (args.coalesce) {
-        if (i > 0) {
-          const jxl::AnimationFrame& af = io.animation_frames[i];
-          if (af.blend_color_space != jxl::BlendColorSpace::kDefault) {
-            return JXL_FAILURE("XYB blending not yet implemented");
-          }
-          if (af.blend_channel != first_alpha ||
-              (extra_channels.size() > 1 &&
-               af.extra_channels.blend_channel[first_alpha] != first_alpha)) {
-            return JXL_FAILURE(
-                "Blending from different alpha channels not yet implemented");
-          }
-          jxl::Rect cropbox(frame_io.Main().color());
-          if (af.have_crop)
-            cropbox = jxl::Rect(af.x0, af.y0, af.xsize, af.ysize);
-          if (af.blend_mode == jxl::BlendMode::kAdd) {
-            for (int p = 0; p < 3; p++) {
-              jxl::AddTo(jxl::Rect(io.frames[i].color()),
-                         io.frames[i].color().Plane(p), cropbox,
-                         &frame_io.Main().color().Plane(p));
-            }
-            if (frame_io.Main().HasAlpha()) {
-              jxl::AddTo(jxl::Rect(io.frames[i].alpha()), io.frames[i].alpha(),
-                         cropbox, &frame_io.Main().alpha());
-            }
-          } else if (af.blend_mode == jxl::BlendMode::kBlend
-                     // blend without alpha is just replace
-                     && io.frames[i].HasAlpha()) {
-            if (io.frames[i].AlphaIsPremultiplied()) {
-              // The whole frame needs to be converted to premultiplied alpha,
-              // not just the part corresponding to the crop of the new frame.
-              frame_io.Main().PremultiplyAlphaIfNeeded();
-            }
-            for (size_t y = 0; y < cropbox.ysize(); y++) {
-              const uint16_t* JXL_RESTRICT a1 = io.frames[i].alpha().Row(y);
-              const float* JXL_RESTRICT r1 =
-                  io.frames[i].color().PlaneRow(0, y);
-              const float* JXL_RESTRICT g1 =
-                  io.frames[i].color().PlaneRow(1, y);
-              const float* JXL_RESTRICT b1 =
-                  io.frames[i].color().PlaneRow(2, y);
-              uint16_t* JXL_RESTRICT a =
-                  cropbox.MutableRow(&frame_io.Main().alpha(), y);
-              float* JXL_RESTRICT r =
-                  cropbox.MutableRow(&frame_io.Main().color().Plane(0), y);
-              float* JXL_RESTRICT g =
-                  cropbox.MutableRow(&frame_io.Main().color().Plane(1), y);
-              float* JXL_RESTRICT b =
-                  cropbox.MutableRow(&frame_io.Main().color().Plane(2), y);
-              jxl::PerformAlphaBlending(
-                  /*bg=*/{r, g, b, a, io.metadata.GetAlphaBits(),
-                          frame_io.Main().AlphaIsPremultiplied()},
-                  /*fg=*/
-                  {r1, g1, b1, a1, io.metadata.GetAlphaBits(),
-                   io.frames[i].AlphaIsPremultiplied()},
-                  /*out=*/
-                  {r, g, b, a, io.metadata.GetAlphaBits(),
-                   frame_io.Main().AlphaIsPremultiplied()},
-                  cropbox.xsize());
-            }
-          } else if (af.blend_mode == jxl::BlendMode::kAlphaWeightedAdd) {
-            return JXL_FAILURE(
-                "BlendMode::kAlphaWeightedAdd not yet implemented");
-          } else if (af.blend_mode == jxl::BlendMode::kMul) {
-            return JXL_FAILURE("BlendMode::kMul not yet implemented");
-          } else {  // kReplace
-            if (!frame_io.Main().HasAlpha() ||
-                !frame_io.Main().AlphaIsPremultiplied() ||
-                io.frames[i].AlphaIsPremultiplied()) {
-              if (io.frames[i].AlphaIsPremultiplied()) {
-                frame_io.Main().PremultiplyAlphaIfNeeded();
-              }
-              jxl::CopyImageTo(
-                  io.frames[i].color(), cropbox,
-                  const_cast<jxl::Image3F*>(&frame_io.Main().color()));
-              if (frame_io.Main().HasAlpha())
-                jxl::CopyImageTo(
-                    io.frames[i].alpha(), cropbox,
-                    const_cast<jxl::ImageU*>(&frame_io.Main().alpha()));
-            } else {
-              JXL_ASSERT(frame_io.Main().AlphaIsPremultiplied() &&
-                         !io.frames[i].AlphaIsPremultiplied());
-              float max_alpha = jxl::MaxAlpha(io.metadata.GetAlphaBits());
-              float rmax_alpha = 1.0f / max_alpha;
-              for (size_t y = 0; y < cropbox.ysize(); ++y) {
-                const uint16_t* JXL_RESTRICT a1 = io.frames[i].alpha().Row(y);
-                const float* JXL_RESTRICT r1 =
-                    io.frames[i].color().PlaneRow(0, y);
-                const float* JXL_RESTRICT g1 =
-                    io.frames[i].color().PlaneRow(1, y);
-                const float* JXL_RESTRICT b1 =
-                    io.frames[i].color().PlaneRow(2, y);
-                uint16_t* JXL_RESTRICT a =
-                    cropbox.MutableRow(&frame_io.Main().alpha(), y);
-                float* JXL_RESTRICT r =
-                    cropbox.MutableRow(&frame_io.Main().color().Plane(0), y);
-                float* JXL_RESTRICT g =
-                    cropbox.MutableRow(&frame_io.Main().color().Plane(1), y);
-                float* JXL_RESTRICT b =
-                    cropbox.MutableRow(&frame_io.Main().color().Plane(2), y);
-                for (size_t x = 0; x < cropbox.xsize(); ++x) {
-                  const float normalized_a1 = a1[x] * rmax_alpha;
-                  r[x] = r1[x] * normalized_a1;
-                  g[x] = g1[x] * normalized_a1;
-                  b[x] = b1[x] * normalized_a1;
-                  a[x] = a1[x];
-                }
-              }
-            }
-          }
-        }
-
-        snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
-                 base.c_str(), digits, i, extension);
-        if (!EncodeToFile(frame_io, c_out, bits_per_sample,
-                          output_filename.data())) {
-          fprintf(stderr, "Failed to write decoded image for frame %zu/%zu.\n",
-                  i + 1, io.frames.size());
-        }
-
-      } else {
-        jxl::CodecInOut frame_io;
-        frame_io.SetFromImage(jxl::CopyImage(io.frames[i].color()),
-                              io.frames[i].c_current());
-        frame_io.metadata = *io.frames[i].metadata();
-        if (io.frames[i].HasAlpha())
-          frame_io.Main().SetAlpha(
-              jxl::CopyImage(io.frames[i].alpha()),
-              /*alpha_is_premultiplied=*/io.frames[i].AlphaIsPremultiplied());
-        snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
-                 base.c_str(), digits, i, extension);
-        if (!EncodeToFile(frame_io, c_out, bits_per_sample,
-                          output_filename.data())) {
-          fprintf(stderr, "Failed to write decoded image for frame %zu/%zu.\n",
-                  i + 1, io.frames.size());
-        }
+      jxl::CodecInOut frame_io;
+      frame_io.SetFromImage(jxl::CopyImage(*io.frames[i].color()),
+                            io.frames[i].c_current());
+      frame_io.metadata.m = *io.frames[i].metadata();
+      if (io.frames[i].HasAlpha()) {
+        frame_io.Main().SetAlpha(
+            jxl::CopyImage(*io.frames[i].alpha()),
+            /*alpha_is_premultiplied=*/io.frames[i].AlphaIsPremultiplied());
+      }
+      snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
+               base.c_str(), digits, i, extension);
+      if (!EncodeToFile(frame_io, c_out, bits_per_sample,
+                        output_filename.data())) {
+        fprintf(stderr, "Failed to write decoded image for frame %zu/%zu.\n",
+                i + 1, io.frames.size());
       }
     }
   }

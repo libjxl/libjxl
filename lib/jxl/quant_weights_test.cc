@@ -57,8 +57,7 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   DequantMatrices mat;
   ImageMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(FrameDimensions{}, frame_header,
-                              CompressParams{});
+  ModularFrameEncoder encoder(frame_header, CompressParams{});
   mat.SetModularFrameEncoder(&encoder);
   mat.SetCustom(encodings);
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
@@ -182,8 +181,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   DequantMatrices dequant_matrices;
   ImageMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(FrameDimensions{}, frame_header,
-                              CompressParams{});
+  ModularFrameEncoder encoder(frame_header, CompressParams{});
   dequant_matrices.SetModularFrameEncoder(&encoder);
   dequant_matrices.SetCustom(encodings);
 

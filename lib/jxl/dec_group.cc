@@ -144,13 +144,12 @@ template <class GetBlock>
 Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
-                       size_t thread, const Rect& block_rect,
-                       bool save_decompressed, bool apply_color_transform,
-                       AuxOut* aux_out, Image3F* JXL_RESTRICT idct,
-                       const ImageBundle* decoded) {
+                       size_t thread, const Rect& block_rect, AuxOut* aux_out,
+                       Image3F* JXL_RESTRICT idct, const ImageBundle* decoded) {
   PROFILER_FUNC;
 
-  const LoopFilter& lf = dec_state->shared->image_features.loop_filter;
+  const LoopFilter& lf =
+      dec_state->shared->frame_header.nonserialized_loop_filter;
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
 
   const size_t xsize_blocks = block_rect.xsize();
@@ -491,7 +490,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                               idct_stride, group_dec_cache->scratch_space);
           }
 
-          if (dec_state->shared->image_features.loop_filter.epf_iters > 0) {
+          if (lf.epf_iters > 0) {
             // quant_scale is smaller for low quality.
             // quant_scale is roughly 0.08 / butteraugli score.
             //
@@ -601,9 +600,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             kBlockDim + (by == ysize_blocks - 1 ? kMaxFilterBorder : 0);
         for (ssize_t y = yb; y < ye; y++) {
           ssize_t aif_y = by * kBlockDim + y - ystart;
-          JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(
-              idct, aif_rect, dec_state, aif_y, thread, aux_out,
-              save_decompressed, apply_color_transform));
+          JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(idct, aif_rect, dec_state,
+                                                    aif_y, thread, aux_out));
         }
       }
     }
@@ -840,10 +838,9 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                                      histo_selector_bits, block_group_rect,
                                      group_dec_cache, dec_state));
 
-  JXL_RETURN_IF_ERROR(DecodeGroupImpl(
-      &get_block, group_dec_cache, dec_state, thread, block_group_rect,
-      /*save_decompressed=*/true,
-      /*apply_color_transform=*/true, aux_out, opsin, decoded));
+  JXL_RETURN_IF_ERROR(DecodeGroupImpl(&get_block, group_dec_cache, dec_state,
+                                      thread, block_group_rect, aux_out, opsin,
+                                      decoded));
 
   for (size_t pass = 0; pass < num_passes; pass++) {
     if (!get_block.decoders[pass].CheckANSFinalState()) {
@@ -859,8 +856,7 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
                                size_t thread, Image3F* JXL_RESTRICT opsin,
                                ImageBundle* JXL_RESTRICT decoded,
-                               AuxOut* aux_out, bool save_decompressed,
-                               bool apply_color_transform) {
+                               AuxOut* aux_out) {
   PROFILER_FUNC;
 
   const Rect block_group_rect = dec_state->shared->BlockGroupRect(group_idx);
@@ -868,8 +864,7 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
   GetBlockFromEncoder get_block(ac, group_idx);
 
   return DecodeGroupImpl(&get_block, group_dec_cache, dec_state, thread,
-                         block_group_rect, save_decompressed,
-                         apply_color_transform, aux_out, opsin, decoded);
+                         block_group_rect, aux_out, opsin, decoded);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -898,11 +893,10 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
                                size_t thread, Image3F* JXL_RESTRICT opsin,
                                ImageBundle* JXL_RESTRICT decoded,
-                               AuxOut* aux_out, bool save_decompressed,
-                               bool apply_color_transform) {
-  return HWY_DYNAMIC_DISPATCH(DecodeGroupForRoundtrip)(
-      ac, group_idx, dec_state, group_dec_cache, thread, opsin, decoded,
-      aux_out, save_decompressed, apply_color_transform);
+                               AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(DecodeGroupForRoundtrip)(ac, group_idx, dec_state,
+                                                       group_dec_cache, thread,
+                                                       opsin, decoded, aux_out);
 }
 
 }  // namespace jxl

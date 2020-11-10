@@ -248,7 +248,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   if (is_wp_only) {
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(Predictor::Weighted)[c]),
-                const_cast<ImageF *>(&predictor_img.Plane(c)));
+                &predictor_img.Plane(c));
     }
     const intptr_t onerow = channel.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, channel.w, channel.h);
@@ -279,7 +279,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
              tree[0].multiplier == 1 && tree[0].predictor_offset == 0) {
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(Predictor::Zero)[c]),
-                const_cast<ImageF *>(&predictor_img.Plane(c)));
+                &predictor_img.Plane(c));
     }
     for (size_t y = 0; y < channel.h; y++) {
       const pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -293,7 +293,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     // multiplier is a power of 2.
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(tree[0].predictor)[c]),
-                const_cast<ImageF *>(&predictor_img.Plane(c)));
+                &predictor_img.Plane(c));
     }
     uint32_t mul_shift = FloorLog2Nonzero((uint32_t)tree[0].multiplier);
     const intptr_t onerow = channel.plane.PixelsPerRow();

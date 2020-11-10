@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "gtest/gtest.h"
+#include "jxl/image_ops.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -256,6 +257,55 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
         << "downsampling: " << downsampling;
   };
   pool.Run(0, downsamplings.size(), ThreadPool::SkipInit(), check);
+}
+
+TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  CodecInOut io_orig;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_orig, &pool));
+  Rect rect(0, 0, io_orig.xsize(), 128);
+  // need 2 DC groups for the DC frame to actually be progressive.
+  Image3F large(4242, rect.ysize());
+  ZeroFillImage(&large);
+  CopyImageTo(rect, *io_orig.Main().color(), rect, &large);
+  CodecInOut io;
+  io.SetFromImage(std::move(large), io_orig.Main().c_current());
+
+  PaddedBytes compressed;
+  AuxOut aux;
+
+  CompressParams cparams;
+  cparams.speed_tier = SpeedTier::kSquirrel;
+  cparams.progressive_dc = 1;
+  cparams.responsive = true;
+  cparams.qprogressive_mode = true;
+  cparams.butteraugli_distance = 1.0;
+  PassesEncoderState enc_state;
+  ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, &aux, &pool));
+
+  EXPECT_LE(compressed.size(), 220000);
+
+  DecompressParams dparams;
+  dparams.max_downsampling = 1;
+  CodecInOut output;
+  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr, nullptr));
+
+  dparams.max_downsampling = 2;
+  CodecInOut output_d2;
+  AuxOut aux_downsampled;
+  ASSERT_TRUE(
+      DecodeFile(dparams, compressed, &output_d2, &aux_downsampled, nullptr));
+  EXPECT_EQ(aux_downsampled.downsampling, 2);
+
+  // 0 if reading all the passes, ~15 if skipping the 8x pass.
+  float butteraugli_distance_down2_full =
+      ButteraugliDistance(output, output_d2, cparams.ba_params,
+                          /*distmap=*/nullptr, nullptr);
+
+  EXPECT_LE(butteraugli_distance_down2_full, 3.0f);
+  EXPECT_GE(butteraugli_distance_down2_full, 1.0f);
 }
 
 TEST(PassesTest, NonProgressiveDCImage) {

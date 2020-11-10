@@ -47,7 +47,7 @@ std::string CodecConfigString(uint32_t lib_version) {
 #endif
 
   bool saw_target = false;
-  config += "Supported/generated: ";
+  config += "| SIMD supported: ";
   for (const uint32_t target : hwy::SupportedAndGeneratedTargets()) {
     config += hwy::TargetName(target);
     config += ',';

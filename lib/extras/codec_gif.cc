@@ -113,19 +113,18 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   }
 
   if (gif->ImageCount > 1) {
-    io->metadata.m2.have_animation = true;
+    io->metadata.m.m2.have_animation = true;
     // Delays in GIF are specified in 100ths of a second.
-    io->animation.tps_numerator = 100;
-    io->animation_frames.reserve(gif->ImageCount);
+    io->metadata.m.nonserialized_animation.tps_numerator = 100;
   }
 
   io->frames.clear();
   io->frames.reserve(gif->ImageCount);
   io->dec_pixels = 0;
 
-  io->metadata.SetUintSamples(8);
-  io->metadata.color_encoding = ColorEncoding::SRGB();
-  io->metadata.SetAlphaBits(0);
+  io->metadata.m.SetUintSamples(8);
+  io->metadata.m.color_encoding = ColorEncoding::SRGB();
+  io->metadata.m.SetAlphaBits(0);
   (void)io->dec_hints.Foreach(
       [](const std::string& key, const std::string& /*value*/) {
         JXL_WARNING("GIF decoder ignoring %s hint", key.c_str());
@@ -133,6 +132,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
       });
 
   Image3F canvas(gif->SWidth, gif->SHeight);
+  io->SetSize(gif->SWidth, gif->SHeight);
   ImageU alpha(gif->SWidth, gif->SHeight);
   GifColorType background_color;
   if (gif->SColorMap == nullptr) {
@@ -143,18 +143,16 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     }
     background_color = gif->SColorMap->Colors[gif->SBackGroundColor];
   }
-  FillPlane<float>(background_color.Red,
-                   const_cast<Plane<float>*>(&canvas.Plane(0)));
-  FillPlane<float>(background_color.Green,
-                   const_cast<Plane<float>*>(&canvas.Plane(1)));
-  FillPlane<float>(background_color.Blue,
-                   const_cast<Plane<float>*>(&canvas.Plane(2)));
+  FillPlane<float>(background_color.Red, &canvas.Plane(0));
+  FillPlane<float>(background_color.Green, &canvas.Plane(1));
+  FillPlane<float>(background_color.Blue, &canvas.Plane(2));
   ZeroFillImage(&alpha);
 
   Rect previous_rect_if_restore_to_background;
 
   bool has_alpha = false;
   bool replace = true;
+  bool last_base_was_none = true;
   for (int i = 0; i < gif->ImageCount; ++i) {
     const SavedImage& image = gif->SavedImages[i];
 #ifdef MEMORY_SANITIZER
@@ -204,52 +202,45 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     __msan_unpoison(&gcb, sizeof(gcb));
 #endif
 
-    if (io->metadata.m2.have_animation) {
-      AnimationFrame animation_frame(&io->metadata);
-      animation_frame.duration = gcb.DelayTime;
-      animation_frame.have_crop = total_rect.x0() != 0 ||
-                                  total_rect.y0() != 0 ||
-                                  total_rect.xsize() != canvas.xsize() ||
-                                  total_rect.ysize() != canvas.ysize();
-      if (animation_frame.have_crop) {
-        animation_frame.x0 = total_rect.x0();
-        animation_frame.y0 = total_rect.y0();
-        animation_frame.xsize = total_rect.xsize();
-        animation_frame.ysize = total_rect.ysize();
-      } else {
-        if (!io->animation_frames.empty()) {
-          io->animation_frames.back().new_base = NewBase::kNone;
-        }
+    ImageBundle bundle(&io->metadata.m);
+    if (io->metadata.m.m2.have_animation) {
+      bundle.duration = gcb.DelayTime;
+      bundle.origin.x0 = total_rect.x0();
+      bundle.origin.y0 = total_rect.y0();
+      if (last_base_was_none) {
+        replace = true;
+      }
+      bundle.blend = !replace;
+      // TODO(veluca): this could in principle be implemented.
+      if (last_base_was_none &&
+          (total_rect.x0() != 0 || total_rect.y0() != 0 ||
+           total_rect.xsize() != canvas.xsize() ||
+           total_rect.ysize() != canvas.ysize() || !replace)) {
+        return JXL_FAILURE(
+            "GIF with dispose-to-0 is not supported for non-full or "
+            "blended frames");
       }
       switch (gcb.DisposalMode) {
         case DISPOSE_DO_NOT:
         case DISPOSE_BACKGROUND:
-          animation_frame.new_base = NewBase::kCurrentFrame;
+          bundle.use_for_next_frame = true;
+          last_base_was_none = false;
           break;
         case DISPOSE_PREVIOUS:
-          animation_frame.new_base = NewBase::kExisting;
+          bundle.use_for_next_frame = false;
           break;
-        case DISPOSAL_UNSPECIFIED:
         default:
-          animation_frame.new_base = NewBase::kNone;
-          break;
+          bundle.use_for_next_frame = false;
+          last_base_was_none = true;
       }
-      animation_frame.blend_mode =
-          replace ? BlendMode::kReplace : BlendMode::kBlend;
-      io->animation_frames.push_back(animation_frame);
     }
-    ImageBundle bundle(&io->metadata);
     Image3F frame = CopyImage(canvas);
     ImageU frame_alpha = CopyImage(alpha);
     for (size_t y = 0, byte_index = 0; y < image_rect.ysize(); ++y) {
-      float* const JXL_RESTRICT row_r =
-          image_rect.MutableRow(&frame.Plane(0), y);
-      float* const JXL_RESTRICT row_g =
-          image_rect.MutableRow(&frame.Plane(1), y);
-      float* const JXL_RESTRICT row_b =
-          image_rect.MutableRow(&frame.Plane(2), y);
-      uint16_t* const JXL_RESTRICT row_alpha =
-          image_rect.MutableRow(&frame_alpha, y);
+      float* const JXL_RESTRICT row_r = image_rect.Row(&frame.Plane(0), y);
+      float* const JXL_RESTRICT row_g = image_rect.Row(&frame.Plane(1), y);
+      float* const JXL_RESTRICT row_b = image_rect.Row(&frame.Plane(2), y);
+      uint16_t* const JXL_RESTRICT row_alpha = image_rect.Row(&frame_alpha, y);
       for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
         const GifByteType byte = image.RasterBits[byte_index];
         if (byte >= color_map->ColorCount) {
@@ -301,7 +292,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     if (has_alpha || !AllOpaque(frame_alpha) || blend_alpha) {
       if (!has_alpha) {
         has_alpha = true;
-        io->metadata.SetAlphaBits(8);
+        io->metadata.m.SetAlphaBits(8);
         for (ImageBundle& previous_frame : io->frames) {
           ImageU previous_alpha(previous_frame.xsize(), previous_frame.ysize());
           FillImage<uint16_t>(255, &previous_alpha);
@@ -320,15 +311,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
         break;
 
       case DISPOSE_BACKGROUND:
-        FillPlane<float>(background_color.Red,
-                         const_cast<Plane<float>*>(&canvas.Plane(0)),
-                         image_rect);
-        FillPlane<float>(background_color.Green,
-                         const_cast<Plane<float>*>(&canvas.Plane(1)),
-                         image_rect);
-        FillPlane<float>(background_color.Blue,
-                         const_cast<Plane<float>*>(&canvas.Plane(2)),
-                         image_rect);
+        FillPlane<float>(background_color.Red, &canvas.Plane(0), image_rect);
+        FillPlane<float>(background_color.Green, &canvas.Plane(1), image_rect);
+        FillPlane<float>(background_color.Blue, &canvas.Plane(2), image_rect);
         FillPlane<uint16_t>(0, &alpha, image_rect);
         previous_rect_if_restore_to_background = image_rect;
         break;
@@ -338,12 +323,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
 
       case DISPOSAL_UNSPECIFIED:
       default:
-        FillPlane<float>(background_color.Red,
-                         const_cast<Plane<float>*>(&canvas.Plane(0)));
-        FillPlane<float>(background_color.Green,
-                         const_cast<Plane<float>*>(&canvas.Plane(1)));
-        FillPlane<float>(background_color.Blue,
-                         const_cast<Plane<float>*>(&canvas.Plane(2)));
+        FillPlane<float>(background_color.Red, &canvas.Plane(0));
+        FillPlane<float>(background_color.Green, &canvas.Plane(1));
+        FillPlane<float>(background_color.Blue, &canvas.Plane(2));
         ZeroFillImage(&alpha);
     }
   }

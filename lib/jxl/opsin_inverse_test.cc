@@ -31,9 +31,9 @@ TEST(OpsinInverseTest, LinearInverseInverts) {
   RandomFillImage(&linear, 255.0f);
 
   CodecInOut io;
-  io.metadata.SetFloat32Samples();
-  io.metadata.color_encoding = ColorEncoding::LinearSRGB();
-  io.SetFromImage(CopyImage(linear), io.metadata.color_encoding);
+  io.metadata.m.SetFloat32Samples();
+  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  io.SetFromImage(CopyImage(linear), io.metadata.m.color_encoding);
   ThreadPool* null_pool = nullptr;
   Image3F opsin(io.xsize(), io.ysize());
   (void)ToXYB(io.Main(), null_pool, &opsin);
@@ -51,16 +51,12 @@ TEST(OpsinInverseTest, YcbCrInverts) {
 
   ThreadPool* null_pool = nullptr;
   Image3F ycbcr(rgb.xsize(), rgb.ysize());
-  RgbToYcbcr(rgb.Plane(0), rgb.Plane(1), rgb.Plane(2),
-             const_cast<ImageF*>(&ycbcr.Plane(0)),
-             const_cast<ImageF*>(&ycbcr.Plane(1)),
-             const_cast<ImageF*>(&ycbcr.Plane(2)), null_pool);
+  RgbToYcbcr(rgb.Plane(0), rgb.Plane(1), rgb.Plane(2), &ycbcr.Plane(0),
+             &ycbcr.Plane(1), &ycbcr.Plane(2), null_pool);
 
   Image3F rgb2(rgb.xsize(), rgb.ysize());
-  YcbcrToRgb(ycbcr.Plane(0), ycbcr.Plane(1), ycbcr.Plane(2),
-             const_cast<ImageF*>(&rgb2.Plane(0)),
-             const_cast<ImageF*>(&rgb2.Plane(1)),
-             const_cast<ImageF*>(&rgb2.Plane(2)), null_pool);
+  YcbcrToRgb(ycbcr.Plane(0), ycbcr.Plane(1), ycbcr.Plane(2), &rgb2.Plane(0),
+             &rgb2.Plane(1), &rgb2.Plane(2), null_pool);
 
   VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7);
 }

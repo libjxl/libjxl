@@ -68,6 +68,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/tsc_timer.h
+  jxl/blending.cc
+  jxl/blending.h
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
   jxl/chroma_from_luma.cc
@@ -214,8 +216,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/luminance.h
   jxl/memory_manager_internal.cc
   jxl/memory_manager_internal.h
-  jxl/multiframe.cc
-  jxl/multiframe.h
   jxl/noise.h
   jxl/noise_distributions.h
   jxl/opsin_params.cc
@@ -226,6 +226,8 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/passes_state.h
   jxl/patch_dictionary.cc
   jxl/patch_dictionary.h
+  jxl/progressive_split.cc
+  jxl/progressive_split.h
   jxl/quant_weights.cc
   jxl/quant_weights.h
   jxl/quantizer.cc
@@ -337,8 +339,8 @@ target_compile_definitions(jxl-static INTERFACE -DJXL_EXPORT=)
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
 if(${JPEGXL_ENABLE_TCMALLOC})
-  pkg_check_modules(TCMalloc REQUIRED IMPORTED_TARGET libtcmalloc)
-  target_link_libraries(jxl-static PUBLIC PkgConfig::TCMalloc)
+  pkg_check_modules(TCMallocMinimal REQUIRED IMPORTED_TARGET libtcmalloc_minimal)
+  target_link_libraries(jxl-static PUBLIC PkgConfig::TCMallocMinimal)
 endif()  # JPEGXL_ENABLE_TCMALLOC
 
 # Install the static library too, but as jxl.a file without the -static except
@@ -348,15 +350,8 @@ if (NOT WIN32)
 endif()
 install(TARGETS jxl-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-if(MINGW)
-# TODO(deymo): Remove threads from jxl-obj and jxl-static once we don't
-# use mutex inside the jxl library.
-target_include_directories(jxl-obj PUBLIC
-  $<TARGET_PROPERTY:mingw_stdthreads,INTERFACE_INCLUDE_DIRECTORIES>)
-target_link_libraries(jxl-static PUBLIC mingw_stdthreads)
-endif()
-
-if ((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR "${TARGET_SUPPORTS_SHARED_LIBS}")
+if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
+     TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC)
 
 # Public shared library.
 add_library(jxl SHARED $<TARGET_OBJECTS:jxl-obj>)
@@ -397,4 +392,6 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 
-endif()  # TARGET_SUPPORTS_SHARED_LIBS
+else()
+add_library(jxl ALIAS jxl-static)
+endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC

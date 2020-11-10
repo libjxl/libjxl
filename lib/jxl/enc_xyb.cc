@@ -296,7 +296,7 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   // Linear sRGB inputs are rare but can be useful for the fastest encoders, for
   // which undoing the sRGB transfer function would be a large part of the cost.
   if (c_linear_srgb.SameColorEncoding(in.c_current())) {
-    LinearSRGBToXYB(*in.MutableColor(), premul_absorb, pool, xyb);
+    LinearSRGBToXYB(in.color(), premul_absorb, pool, xyb);
     // This only happens if kitten or slower, moving ImageBundle might be
     // possible but the encoder is much slower than this copy.
     if (want_linear) {
@@ -310,14 +310,13 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   if (in.IsSRGB()) {
     // Common case: can avoid allocating/copying
     if (!want_linear) {
-      SRGBToXYB(*in.MutableColor(), premul_absorb, pool, xyb);
+      SRGBToXYB(in.color(), premul_absorb, pool, xyb);
       return &in;
     }
 
     // Slow encoder also wants linear sRGB.
     linear->SetFromImage(Image3F(xsize, ysize), c_linear_srgb);
-    SRGBToXYBAndLinear(*in.MutableColor(), premul_absorb, pool, xyb,
-                       linear->MutableColor());
+    SRGBToXYBAndLinear(in.color(), premul_absorb, pool, xyb, linear->color());
     return linear;
   }
 
@@ -335,7 +334,7 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   // If no transform was necessary, should have taken the above codepath.
   JXL_ASSERT(ptr == linear);
 
-  LinearSRGBToXYB(*linear->MutableColor(), premul_absorb, pool, xyb);
+  LinearSRGBToXYB(*linear->color(), premul_absorb, pool, xyb);
   return want_linear ? linear : &in;
 }
 

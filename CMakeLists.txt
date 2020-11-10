@@ -82,6 +82,8 @@ set(JPEGXL_ENABLE_EXAMPLES true CACHE BOOL
     "Build JPEGXL library usage examples.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
     "Build JPEGXL with support for encoding with sjpeg.")
+set(JPEGXL_ENABLE_OPENEXR true CACHE BOOL
+    "Build JPEGXL with support for OpenEXR if available.")
 set(JPEGXL_ENABLE_SKCMS true CACHE BOOL
     "Build with skcms instead of lcms2.")
 set(JPEGXL_ENABLE_VIEWERS false CACHE BOOL
@@ -92,6 +94,8 @@ set(JPEGXL_ENABLE_PLUGINS false CACHE BOOL
     "Build third-party plugings to support JPEG XL in other applications.")
 set(JPEGXL_ENABLE_COVERAGE false CACHE BOOL
     "Enable code coverage tracking for libjxl. This also enables debug and disables optimizations.")
+set(JPEGXL_STATIC false CACHE BOOL
+    "Build tools as static binaries.")
 set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
     "Treat warnings as errors during compilation.")
 
@@ -127,6 +131,31 @@ message(STATUS
 # CMAKE_EXPORT_COMPILE_COMMANDS is used to generate the compilation database
 # used by clang-tidy.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+if(JPEGXL_STATIC)
+  set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
+  set(BUILD_SHARED_LIBS 0)
+  set(CMAKE_EXE_LINKER_FLAGS
+      "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+  if (MINGW)
+    # In MINGW libstdc++ uses pthreads directly. When building statically a
+    # program (regardless of whether the source code uses pthread or not) the
+    # toolchain will add stdc++ and pthread to the linking step but stdc++ will
+    # be linked statically while pthread will be linked dynamically.
+    # To avoid this and have pthread statically linked with need to pass it in
+    # the command line with "-Wl,-Bstatic -lpthread -Wl,-Bdynamic" but the
+    # linker will discard it if not used by anything else up to that point in
+    # the linker command line. If the program or any dependency don't use
+    # pthread directly -lpthread is discarded and libstdc++ (added by the
+    # toolchain later) will then use the dynamic version. For this we also need
+    # to pass -lstdc++ explicitly before -lpthread. For pure C programs -lstdc++
+    # will be discarded anyway.
+    # This adds these flags as dependencies for *all* targets. Adding this to
+    # CMAKE_EXE_LINKER_FLAGS instead would cause them to be included before any
+    # object files and therefore discarded.
+    link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
+  endif()  # MINGW
+endif()  # JPEGXL_STATIC
 
 # Global compiler flags for all targets here and in subdirectories.
 add_definitions(

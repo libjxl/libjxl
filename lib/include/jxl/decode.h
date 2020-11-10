@@ -103,6 +103,15 @@ typedef struct JxlDecoderStruct JxlDecoder;
 JXL_EXPORT JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager);
 
 /**
+ * Re-initializes a JxlDecoder instance, so it can be re-used for decoding
+ * another image. All state and settings are reset as if the object was
+ * newly created with JxlDecoderCreate, but the memory manager is kept.
+ *
+ * @param dec instance to be re-initialized.
+ */
+JXL_EXPORT void JxlDecoderReset(JxlDecoder* dec);
+
+/**
  * Deinitializes and frees JxlDecoder instance.
  *
  * @param dec instance to be cleaned up and deallocated.
@@ -267,6 +276,38 @@ JXL_EXPORT size_t JxlDecoderSizeHintBasicInfo(const JxlDecoder* dec);
 JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
                                                       int events_wanted);
 
+/** Enables or disables preserving of original orientation. Some images are
+ * encoded with an orientation tag indicating the image is rotated and/or
+ * mirrored (here called the original orientation).
+ *
+ * *) If keep_orientation is JXL_FALSE (the default): the decoder will perform
+ * work to undo the transformation. This ensures the decoded pixels will not
+ * be rotated or mirrored. The decoder will always set the orientation field
+ * of the JxlBasicInfo to JXL_ORIENT_IDENTITY to match the returned pixel data.
+ * The decoder may also swap xsize and ysize in the JxlBasicInfo compared to the
+ * values inside of the codestream, to correctly match the decoded pixel data,
+ * e.g. when a 90 degree rotation was performed.
+ *
+ * *) If this option is JXL_TRUE: then the image is returned as-is, which may be
+ * rotated or mirrored, and the user must check the orientation field in
+ * JxlBasicInfo after decoding to correctly interpret the decoded pixel data.
+ * This may be faster to decode since the decoder doesn't have to apply the
+ * transformation, but can cause wrong display of the image if the orientation
+ * tag is not correctly taken into account by the user.
+ *
+ * By default, this option is disabled, and the decoder automatically corrects
+ * the orientation.
+ *
+ * @see JxlBasicInfo for the orientation field, and @see JxlOrientation for the
+ * possible values.
+ *
+ * @param dec decoder object
+ * @param keep_orientation JXL_TRUE to enable, JXL_FALSE to disable.
+ * @return JXL_DEC_SUCCESS if no error, JXL_DEC_ERROR otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus
+JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
+
 /**
  * Decodes JPEG XL file using the available bytes. @p *avail_in indicates how
  * many input bytes are available, and @p *next_in points to the input bytes.
@@ -425,6 +466,8 @@ typedef enum {
  * JxlDecoderGetColorAsEncodedProfile first.
  *
  * @param dec decoder object
+ * @param format pixel format to output the data to. Only used for
+ * JXL_COLOR_PROFILE_TARGET_DATA, may be nullptr otherwise.
  * @param target whether to get the original color profile from the metadata
  *     or the color profile of the decoded pixels.
  * @param color_encoding struct to copy the information into, or NULL to only
@@ -434,8 +477,8 @@ typedef enum {
  *    the encuded structured color profile does not exist in the codestream.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
-    const JxlDecoder* dec, JxlColorProfileTarget target,
-    JxlColorEncoding* color_encoding);
+    const JxlDecoder* dec, const JxlPixelFormat* format,
+    JxlColorProfileTarget target, JxlColorEncoding* color_encoding);
 
 /**
  * Outputs the size in bytes of the ICC profile returned by
@@ -448,6 +491,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
  * depending of what is encoded in the codestream.
  *
  * @param dec decoder object
+ * @param format pixel format to output the data to. Only used for
+ * JXL_COLOR_PROFILE_TARGET_DATA, may be nullptr otherwise.
  * @param target whether to get the original color profile from the metadata
  *     or the color profile of the decoded pixels.
  * @param size variable to output the size into, or NULL to only check the
@@ -458,8 +503,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
  *    size is, JXL_DEC_ERROR in case the ICC profile is not available and
  *    cannot be generated.
  */
-JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
-    const JxlDecoder* dec, JxlColorProfileTarget target, size_t* size);
+JXL_EXPORT JxlDecoderStatus
+JxlDecoderGetICCProfileSize(const JxlDecoder* dec, const JxlPixelFormat* format,
+                            JxlColorProfileTarget target, size_t* size);
 
 /**
  * Outputs ICC profile if available. The profile is only available if
@@ -467,6 +513,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
  * at least as many bytes as given by JxlDecoderGetICCProfileSize.
  *
  * @param dec decoder object
+ * @param format pixel format to output the data to. Only used for
+ * JXL_COLOR_PROFILE_TARGET_DATA, may be nullptr otherwise.
  * @param target whether to get the original color profile from the metadata
  *     or the color profile of the decoded pixels.
  * @param icc_profile buffer to copy the ICC profile into
@@ -477,8 +525,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetICCProfileSize(
  *    large enough.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
-    const JxlDecoder* dec, JxlColorProfileTarget target, uint8_t* icc_profile,
-    size_t size);
+    const JxlDecoder* dec, const JxlPixelFormat* format,
+    JxlColorProfileTarget target, uint8_t* icc_profile, size_t size);
 
 /**
  * Outputs the information from an animation frame, such as duration. This

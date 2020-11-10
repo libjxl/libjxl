@@ -94,7 +94,7 @@ Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
                     ThreadPool* pool, Codec* orig_codec) {
   if (bytes.size() < kMinBytes) return JXL_FAILURE("Too few bytes");
 
-  io->metadata.bit_depth.bits_per_sample = 0;  // (For is-set check below)
+  io->metadata.m.bit_depth.bits_per_sample = 0;  // (For is-set check below)
 
   Codec codec;
   if (DecodeImagePNG(bytes, pool, io)) {
@@ -158,7 +158,7 @@ Status Encode(const CodecInOut& io, const Codec codec,
     // we have lossless float data in 0..1 range, which is OK for PFM/EXR
     // but for other output codecs, we first need to normalize to 0..255
     if (codec != Codec::kPNM && codec != Codec::kEXR) {
-        ScaleImage(255.f, io.Main().MutableColor());
+      ScaleImage(255.f, io.Main().color());
     }
   }
 
@@ -221,8 +221,8 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
 Status EncodeToFile(const CodecInOut& io, const std::string& pathname,
                     ThreadPool* pool) {
   // TODO(lode): need to take the floating_point_sample field into account
-  return EncodeToFile(io, io.metadata.color_encoding,
-                      io.metadata.bit_depth.bits_per_sample, pathname, pool);
+  return EncodeToFile(io, io.metadata.m.color_encoding,
+                      io.metadata.m.bit_depth.bits_per_sample, pathname, pool);
 }
 
 }  // namespace jxl

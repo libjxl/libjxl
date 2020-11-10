@@ -47,28 +47,16 @@ Plane<T> CopyImage(const Plane<T>& from) {
   return to;
 }
 
-// Copies `from:rect_from` to `to`.
+// Copies `from:rect_from` to `to:rect_to`.
 template <typename T>
 void CopyImageTo(const Rect& rect_from, const Plane<T>& from,
-                 const Plane<T>* JXL_RESTRICT to) {
+                 const Rect& rect_to, Plane<T>* JXL_RESTRICT to) {
   PROFILER_ZONE("CopyImageR");
-  JXL_ASSERT(SameSize(rect_from, *to));
+  JXL_ASSERT(SameSize(rect_from, rect_to));
   for (size_t y = 0; y < rect_from.ysize(); ++y) {
     const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
-    T* JXL_RESTRICT row_to = to->MutableRow(y);
+    T* JXL_RESTRICT row_to = rect_to.Row(to, y);
     memcpy(row_to, row_from, rect_from.xsize() * sizeof(T));
-  }
-}
-
-template <typename T>
-void CopyImageTo(const Plane<T>& from, const Rect& rect_to,
-                 const Plane<T>* JXL_RESTRICT to) {
-  PROFILER_ZONE("CopyImageR");
-  JXL_ASSERT(SameSize(from, rect_to));
-  for (size_t y = 0; y < rect_to.ysize(); ++y) {
-    const T* JXL_RESTRICT row_from = from.Row(y);
-    T* JXL_RESTRICT row_to = rect_to.MutableRow(to, y);
-    memcpy(row_to, row_from, rect_to.xsize() * sizeof(T));
   }
 }
 
@@ -87,24 +75,19 @@ void CopyImageTo(const Rect& rect_from, const Image3<T>& from,
   PROFILER_ZONE("CopyImageR");
   JXL_ASSERT(SameSize(rect_from, rect_to));
   for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < rect_to.ysize(); ++y) {
-      const T* JXL_RESTRICT row_from = rect_from.ConstPlaneRow(from, c, y);
-      T* JXL_RESTRICT row_to = rect_to.PlaneRow(to, c, y);
-      memcpy(row_to, row_from, rect_to.xsize() * sizeof(T));
-    }
+    CopyImageTo(rect_from, from.Plane(c), rect_to, &to->Plane(c));
   }
 }
 
 template <typename T, typename U>
 void ConvertPlaneAndClamp(const Rect& rect_from, const Plane<T>& from,
-                          const Rect& rect_to,
-                          const Plane<U>* JXL_RESTRICT to) {
+                          const Rect& rect_to, Plane<U>* JXL_RESTRICT to) {
   PROFILER_ZONE("ConvertPlane");
   JXL_ASSERT(SameSize(rect_from, rect_to));
   using M = decltype(T() + U());
   for (size_t y = 0; y < rect_to.ysize(); ++y) {
     const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
-    U* JXL_RESTRICT row_to = rect_to.MutableRow(to, y);
+    U* JXL_RESTRICT row_to = rect_to.Row(to, y);
     for (size_t x = 0; x < rect_to.xsize(); ++x) {
       row_to[x] =
           std::min<M>(std::max<M>(row_from[x], std::numeric_limits<U>::min()),
@@ -113,21 +96,21 @@ void ConvertPlaneAndClamp(const Rect& rect_from, const Plane<T>& from,
   }
 }
 
+// Copies `from` to `to`.
 template <typename T>
-void CopyImageTo(const Image3<T>& from, Image3<T>* JXL_RESTRICT to) {
+void CopyImageTo(const T& from, T* JXL_RESTRICT to) {
   return CopyImageTo(Rect(from), from, Rect(*to), to);
 }
 
+// Copies `from:rect_from` to `to`.
 template <typename T>
-void CopyImageTo(const Rect& rect_from, const Image3<T>& from,
-                 Image3<T>* JXL_RESTRICT to) {
+void CopyImageTo(const Rect& rect_from, const T& from, T* JXL_RESTRICT to) {
   return CopyImageTo(rect_from, from, Rect(*to), to);
 }
 
 // Copies `from` to `to:rect_to`.
 template <typename T>
-void CopyImageTo(const Image3<T>& from, const Rect& rect_to,
-                 Image3<T>* JXL_RESTRICT to) {
+void CopyImageTo(const T& from, const Rect& rect_to, T* JXL_RESTRICT to) {
   return CopyImageTo(Rect(from), from, rect_to, to);
 }
 
@@ -143,9 +126,9 @@ Image3<T> CopyImage(const Image3<T>& from) {
 template <typename T>
 Image3<T> CopyImage(const Rect& rect, const Image3<T>& from) {
   Image3<T> to(rect.xsize(), rect.ysize());
-  CopyImageTo(rect, from.Plane(0), const_cast<ImageF*>(&to.Plane(0)));
-  CopyImageTo(rect, from.Plane(1), const_cast<ImageF*>(&to.Plane(1)));
-  CopyImageTo(rect, from.Plane(2), const_cast<ImageF*>(&to.Plane(2)));
+  CopyImageTo(rect, from.Plane(0), to.Plane(0));
+  CopyImageTo(rect, from.Plane(1), to.Plane(1));
+  CopyImageTo(rect, from.Plane(2), to.Plane(2));
   return to;
 }
 
@@ -228,13 +211,13 @@ void AddTo(const Plane<Tin>& what, Plane<Tout>* to) {
 
 template <typename Tin, typename Tout>
 void AddTo(Rect rectFrom, const Plane<Tin>& what, Rect rectTo,
-           const Plane<Tout>* to) {
+           Plane<Tout>* to) {
   JXL_ASSERT(SameSize(rectFrom, rectTo));
   const size_t xsize = rectTo.xsize();
   const size_t ysize = rectTo.ysize();
   for (size_t y = 0; y < ysize; ++y) {
     const Tin* JXL_RESTRICT row_what = rectFrom.ConstRow(what, y);
-    Tout* JXL_RESTRICT row_to = rectTo.MutableRow(to, y);
+    Tout* JXL_RESTRICT row_to = rectTo.Row(to, y);
     for (size_t x = 0; x < xsize; ++x) {
       row_to[x] += row_what[x];
     }
@@ -744,7 +727,7 @@ void FillImage(const T value, Image3<T>* image) {
 template <typename T>
 void FillPlane(const T value, Plane<T>* image) {
   for (size_t y = 0; y < image->ysize(); ++y) {
-    T* JXL_RESTRICT row = image->MutableRow(y);
+    T* JXL_RESTRICT row = image->Row(y);
     for (size_t x = 0; x < image->xsize(); ++x) {
       row[x] = value;
     }

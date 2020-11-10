@@ -19,6 +19,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <vector>
 
@@ -26,13 +27,13 @@
 #include "jxl/thread_parallel_runner.h"
 
 /** Decodes JPEG XL image to floating point pixels and ICC Profile. Pixel are
- * stored as little endian 32-bit floating point bytes in pixels, as interleaved
- * RGBA, line per line from top to bottom. The output has 16 bytes per pixel.
- * Pixel values have nominal range 0..1 but may go beyond this range for HDR
- * or wide gamut. The ICC profile describes the color format of the pixel data.
+ * stored as floating point, as interleaved RGBA (4 floating point values per
+ * pixel), line per line from top to bottom.  Pixel values have nominal range
+ * 0..1 but may go beyond this range for HDR or wide gamut. The ICC profile
+ * describes the color format of the pixel data.
  */
 bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
-                         std::vector<uint8_t>* pixels, size_t* xsize,
+                         std::vector<float>* pixels, size_t* xsize,
                          size_t* ysize, std::vector<uint8_t>* icc_profile) {
   const uint8_t* next_in = jxl;
   size_t avail_in = size;
@@ -60,6 +61,8 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
 
   bool success = false;
 
+  JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+
   for (;;) {
     JxlDecoderStatus status =
         JxlDecoderProcessInput(dec, (const uint8_t**)&next_in, &avail_in);
@@ -77,7 +80,6 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       }
       *xsize = info.xsize;
       *ysize = info.ysize;
-      JxlPixelFormat format = {4, JXL_LITTLE_ENDIAN, JXL_TYPE_FLOAT};
       size_t buffer_size;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderImageOutBufferSize(dec, &format, &buffer_size)) {
@@ -89,10 +91,12 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
                 *xsize * *ysize * 16);
         break;
       }
-      pixels->resize(buffer_size);
+      pixels->resize(*xsize * *ysize * 4);
+      void* pixels_buffer = (void*)pixels->data();
+      size_t pixels_buffer_size = pixels->size() * sizeof(float);
       if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec, &format,
-                                                         pixels->data(),
-                                                         pixels->size())) {
+                                                         pixels_buffer,
+                                                         pixels_buffer_size)) {
         fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
         break;
       }
@@ -101,14 +105,14 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       // Get the ICC color profile of the pixel data
       size_t icc_size;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(dec, JXL_COLOR_PROFILE_TARGET_DATA,
-                                      &icc_size)) {
+          JxlDecoderGetICCProfileSize(
+              dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
         break;
       }
       icc_profile->resize(icc_size);
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec, JXL_COLOR_PROFILE_TARGET_DATA,
+                                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
                                  icc_profile->data(), icc_profile->size())) {
         fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
         break;
@@ -133,21 +137,26 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
 
 /** Writes to .pfm file (Portable FloatMap). Gimp, tev viewer and ImageMagick
  * support viewing this format.
- * The input pixels are given as 32-bit little endian floating point
- * RGBA, 16 bytes per pixel.
+ * The input pixels are given as 32-bit floating point with 4-channel RGBA.
+ * The alpha channel will not be written since .pfm does not support it.
  */
-bool WritePFM(const char* filename, const uint8_t* pixels, size_t xsize,
+bool WritePFM(const char* filename, const float* pixels, size_t xsize,
               size_t ysize) {
   FILE* file = fopen(filename, "wb");
   if (!file) {
     fprintf(stderr, "Could not open %s for writing", filename);
     return false;
   }
-  fprintf(file, "PF\n%d %d\n-1.0\n", (int)xsize, (int)ysize);
+  uint32_t endian_test = 1;
+  uint8_t little_endian[4];
+  memcpy(little_endian, &endian_test, 4);
+
+  fprintf(file, "PF\n%d %d\n%s\n", (int)xsize, (int)ysize,
+          little_endian[0] ? "-1.0" : "1.0");
   for (int y = ysize - 1; y >= 0; y--) {
     for (size_t x = 0; x < xsize; x++) {
       for (size_t c = 0; c < 3; c++) {
-        const uint8_t* f = &pixels[(y * xsize + x) * 16 + c * 4];
+        const float* f = &pixels[(y * xsize + x) * 4 + c];
         fwrite(f, 4, 1, file);
       }
     }
@@ -226,7 +235,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  std::vector<uint8_t> pixels;
+  std::vector<float> pixels;
   std::vector<uint8_t> icc_profile;
   size_t xsize = 0, ysize = 0;
   if (!DecodeJpegXlOneShot(jxl.data(), jxl.size(), &pixels, &xsize, &ysize,

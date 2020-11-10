@@ -24,7 +24,6 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/multiframe.h"
 #include "lib/jxl/noise.h"
 #include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quant_weights.h"
@@ -37,7 +36,6 @@
 namespace jxl {
 
 struct ImageFeatures {
-  LoopFilter loop_filter;
   NoiseParams noise_params;
   PatchDictionary patches;
   Splines splines;
@@ -46,12 +44,10 @@ struct ImageFeatures {
 // State common to both encoder and decoder.
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct PassesSharedState {
-  // TODO(lode): must be able to set metadata from a CodecInOut to the
-  // frame_header instead?
-  PassesSharedState() : frame_header(&metadata) {}
+  PassesSharedState() : frame_header(nullptr) {}
 
   // Headers and metadata.
-  ImageMetadata metadata;
+  const ImageMetadata* metadata;
   FrameHeader frame_header;
 
   FrameDimensions frame_dim;
@@ -84,13 +80,24 @@ struct PassesSharedState {
 
   BlockCtxMap block_ctx_map;
 
-  Multiframe* JXL_RESTRICT multiframe = nullptr;
+  Image3F dc_frames[4];
+
+  struct {
+    ImageBundle storage;
+    // Can either point to `storage`, if this is a frame that is not stored in
+    // the CodecInOut, or can point to an existing ImageBundle.
+    // TODO(veluca): pointing to ImageBundles in CodecInOut is not possible for
+    // now, as they are stored in a vector and thus may be moved. Fix this.
+    ImageBundle* JXL_RESTRICT frame = &storage;
+    // ImageBundle doesn't yet have a simple way to state it is in XYB.
+    bool ib_is_in_xyb = true;
+  } reference_frames[4] = {};
 
   // Number of pre-clustered set of histograms (with the same ctx map), per
   // pass. Encoded as num_histograms_ - 1.
   size_t num_histograms = 0;
 
-  bool IsGrayscale() const { return metadata.color_encoding.IsGray(); }
+  bool IsGrayscale() const { return metadata->color_encoding.IsGray(); }
 
   Rect GroupRect(size_t group_index) const {
     const size_t gx = group_index % frame_dim.xsize_groups;
@@ -132,10 +139,6 @@ struct PassesSharedState {
 
 // Initialized the state information that is shared between encoder and decoder.
 Status InitializePassesSharedState(const FrameHeader& frame_header,
-                                   const LoopFilter& loop_filter,
-                                   const ImageMetadata& image_metadata,
-                                   const FrameDimensions& frame_dim,
-                                   Multiframe* JXL_RESTRICT multiframe,
                                    PassesSharedState* JXL_RESTRICT shared,
                                    bool encoder = false);
 

@@ -40,9 +40,55 @@ namespace jxl {
 constexpr size_t kMaxPatchSize = 32;
 
 enum class PatchBlendMode : uint8_t {
-  kAdd = 0,
+  // The new values are the old ones. Useful to skip some channels.
+  kNone = 0,
+  // The new values (in the crop) replace the old ones: sample = new
   kReplace = 1,
+  // The new values (in the crop) get added to the old ones: sample = old + new
+  kAdd = 2,
+  // The new values (in the crop) get multiplied by the old ones:
+  // sample = old * new
+  // This blend mode is only supported if BlendColorSpace is kEncoded. The
+  // range of the new value matters for multiplication purposes, and its
+  // nominal range of 0..1 is computed the same way as this is done for the
+  // alpha values in kBlend and kAlphaWeightedAdd.
+  kMul = 3,
+  // The new values (in the crop) replace the old ones if alpha>0:
+  // For first alpha channel:
+  // alpha = old + new * (1 - old)
+  // For other channels if !alpha_associated:
+  // sample = ((1 - new_alpha) * old * old_alpha + new_alpha * new) / alpha
+  // For other channels if alpha_associated:
+  // sample = (1 - new_alpha) * old + new
+  // The alpha formula applies to the alpha used for the division in the other
+  // channels formula, and applies to the alpha channel itself if its
+  // blend_channel value matches itself.
+  // If using kBlendAbove, new is the patch and old is the original image; if
+  // using kBlendBelow, the meaning is inverted.
+  kBlendAbove = 4,
+  kBlendBelow = 5,
+  // The new values (in the crop) are added to the old ones if alpha>0:
+  // For first alpha channel: sample = sample = old + new * (1 - old)
+  // For other channels: sample = old + alpha * new
+  kAlphaWeightedAddAbove = 6,
+  kAlphaWeightedAddBelow = 7,
   kNumBlendModes,
+};
+
+inline bool UsesAlpha(PatchBlendMode mode) {
+  return mode == PatchBlendMode::kBlendAbove ||
+         mode == PatchBlendMode::kBlendBelow ||
+         mode == PatchBlendMode::kAlphaWeightedAddAbove ||
+         mode == PatchBlendMode::kAlphaWeightedAddBelow;
+}
+inline bool UsesClamp(PatchBlendMode mode) {
+  return UsesAlpha(mode) || mode == PatchBlendMode::kMul;
+}
+
+struct PatchBlending {
+  PatchBlendMode mode;
+  uint32_t alpha_channel;
+  bool clamp;
 };
 
 struct QuantizedPatch {
@@ -101,7 +147,8 @@ struct PatchReferencePosition {
 struct PatchPosition {
   // Position of top-left corner of the patch in the image.
   size_t x, y;
-  PatchBlendMode blend_mode;
+  // Different blend mode for color and extra channels.
+  std::vector<PatchBlending> blending;
   PatchReferencePosition ref_pos;
   bool operator<(const PatchPosition& oth) const {
     return std::make_tuple(ref_pos, x, y) <
@@ -109,16 +156,17 @@ struct PatchPosition {
   }
 };
 
+struct PassesSharedState;
+
 class PatchDictionary {
  public:
   PatchDictionary() = default;
 
-  void SetReferenceFrames(const Image3F* JXL_RESTRICT reference_frames) {
-    reference_frames_ = reference_frames;
+  void SetPassesSharedState(const PassesSharedState* shared) {
+    shared_ = shared;
   }
   void SetPositions(std::vector<PatchPosition> positions) {
     positions_ = std::move(positions);
-    std::sort(positions_.begin(), positions_.end());
     ComputePatchCache();
   }
 
@@ -126,8 +174,7 @@ class PatchDictionary {
   // Only call if HasAny().
   void Encode(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
 
-  Status Decode(BitReader* br, size_t xsize, size_t ysize,
-                size_t save_as_reference);
+  Status Decode(BitReader* br, size_t xsize, size_t ysize);
 
   // Only adds patches that belong to the `image_rect` area of the decoded
   // image, writing them to the `opsin_rect` area of `opsin`.
@@ -137,7 +184,7 @@ class PatchDictionary {
   void SubtractFrom(Image3F* opsin) const;
 
  private:
-  const Image3F* JXL_RESTRICT reference_frames_;
+  const PassesSharedState* shared_;
   std::vector<PatchPosition> positions_;
 
   // Patch occurences sorted by y.
@@ -148,8 +195,10 @@ class PatchDictionary {
   // Patch IDs in position [patch_starts_[y], patch_start_[y+1]) of
   // sorted_patches_ are all the patches that intersect the horizontal line at
   // y.
+  // The relative order of patches that affect the same pixels is the same -
+  // important when applying patches is noncommutative.
 
-  // Compute sorted_patches_ and patch_start_ after updating positions_.
+  // Compute patches_by_y_ after updating positions_.
   void ComputePatchCache();
 
   template <bool>

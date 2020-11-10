@@ -187,15 +187,15 @@ class WebPCodec : public ImageCodec {
     // with msan.
     __msan_unpoison(data_begin, data_end - data_begin);
 #endif
-    if (io->metadata.color_encoding.IsGray() != is_gray) {
+    if (io->metadata.m.color_encoding.IsGray() != is_gray) {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
-      // io->metadata.color_encoding = ColorEncoding::SRGB(is_gray);
+      // io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
       // Return a standard failure becuase SetFromSRGB triggers a fatal assert
       // for this instead.
       return JXL_FAILURE("Color profile is-gray mismatch");
     }
-    io->metadata.SetAlphaBits(8);
+    io->metadata.m.SetAlphaBits(8);
     const Status ok =
         FromSRGB(buf->width, buf->height, is_gray, has_alpha,
                  /*alpha_is_premultiplied=*/false, /*is_16bit=*/false,

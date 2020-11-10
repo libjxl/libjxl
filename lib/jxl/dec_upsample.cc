@@ -118,8 +118,8 @@ void Upsample4x(const Image3F& src, Image3F* out, const float* weights) {
             float v = src_rows[iy][src_x[ix]];
             result += kernel[y % 4 < 2 ? y % 2 : 1 - y % 2]
                             [x % 4 < 2 ? x % 2 : 1 - x % 2]
-                            [y % 4 < 2 ? iy : 4 - iy]
-                            [x % 4 < 2 ? ix : 4 - ix] *  v;
+                            [y % 4 < 2 ? iy : 4 - iy][x % 4 < 2 ? ix : 4 - ix] *
+                      v;
             min = std::min(v, min);
             max = std::max(v, max);
           }
@@ -274,8 +274,8 @@ void Upsample8x(const Image3F& src, Image3F* out, const float* weights) {
             float v = src_rows[iy][src_x[ix]];
             result += kernel[y % 8 < 4 ? y % 4 : 3 - y % 4]
                             [x % 8 < 4 ? x % 4 : 3 - x % 4]
-                            [y % 8 < 4 ? iy : 4 - iy]
-                            [x % 8 < 4 ? ix : 4 - ix] * v;
+                            [y % 8 < 4 ? iy : 4 - iy][x % 8 < 4 ? ix : 4 - ix] *
+                      v;
             min = std::min(v, min);
             max = std::max(v, max);
           }
@@ -288,16 +288,16 @@ void Upsample8x(const Image3F& src, Image3F* out, const float* weights) {
 }
 }  // namespace
 
-void Upsample(Image3F* src, const UpsamplingMode& mode) {
-  if (mode.upsampling_factor == 1) return;
-  size_t factor = mode.upsampling_factor;
-  Image3F out(src->xsize() * factor, src->ysize() * factor);
-  if (factor == 2) {
-    Upsample2x(*src, &out, mode.upsampling2_weights);
-  } else if (factor == 4) {
-    Upsample4x(*src, &out, mode.upsampling4_weights);
-  } else if (factor == 8) {
-    Upsample8x(*src, &out, mode.upsampling8_weights);
+void Upsample(Image3F* src, size_t upsampling,
+              const CustomTransformData& data) {
+  if (upsampling == 1) return;
+  Image3F out(src->xsize() * upsampling, src->ysize() * upsampling);
+  if (upsampling == 2) {
+    Upsample2x(*src, &out, data.upsampling2_weights);
+  } else if (upsampling == 4) {
+    Upsample4x(*src, &out, data.upsampling4_weights);
+  } else if (upsampling == 8) {
+    Upsample8x(*src, &out, data.upsampling8_weights);
   } else {
     JXL_ABORT("Not implemented");
   }

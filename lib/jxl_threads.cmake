@@ -51,10 +51,6 @@ if (NOT WIN32)
 endif()
 install(TARGETS ${_target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-if(MINGW)
-target_link_libraries(${_target} PUBLIC mingw_stdthreads)
-endif()
-
 endfunction()
 
 
@@ -70,7 +66,8 @@ target_compile_definitions(jxl_threads-static
 
 
 ### Public shared library.
-if ((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR "${TARGET_SUPPORTS_SHARED_LIBS}")
+if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
+     TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC)
 add_library(jxl_threads SHARED)
 _set_jxl_threads(jxl_threads)
 
@@ -92,12 +89,13 @@ generate_export_header(jxl_threads
   BASE_NAME JXL_THREADS
   EXPORT_FILE_NAME include/jxl/jxl_threads_export.h)
 else()
+add_library(jxl_threads ALIAS jxl_threads-static)
 # When not building the shared library generate the jxl_threads_export.h header
 # only based on the static target.
 generate_export_header(jxl_threads-static
   BASE_NAME JXL_THREADS
   EXPORT_FILE_NAME include/jxl/jxl_threads_export.h)
-endif()  # TARGET_SUPPORTS_SHARED_LIBS
+endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC
 
 
 ### Add a pkg-config file for libjxl_threads.

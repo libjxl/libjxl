@@ -37,7 +37,7 @@ extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
     return nullptr;
   }
 
-  size_t io_stride = io.Main().color().PixelsPerRow();
+  size_t io_stride = io.Main().color()->PixelsPerRow();
 
   if (io.Main().HasAlpha()) {
     uint8_t *image = new uint8_t[4 * io_stride * io.ysize()];
@@ -51,10 +51,10 @@ extern "C" uint8_t *JxlMemoryToPixels(const uint8_t *data, size_t size,
     *ysize = io.ysize();
     *has_alpha = 1;
     const int alpha_right_shift_amount =
-        static_cast<int>(io.metadata.GetAlphaBits()) - 8;
+        static_cast<int>(io.metadata.m.GetAlphaBits()) - 8;
     for (size_t y = 0; y < *ysize; ++y) {
       uint8_t *JXL_RESTRICT const row = image + y * *stride;
-      const uint16_t *const alpha_row = io.Main().alpha().ConstRow(y);
+      const uint16_t *const alpha_row = io.Main().alpha()->ConstRow(y);
       const uint8_t *JXL_RESTRICT const red_row = converted.ConstPlaneRow(0, y);
       const uint8_t *JXL_RESTRICT const green_row =
           converted.ConstPlaneRow(1, y);

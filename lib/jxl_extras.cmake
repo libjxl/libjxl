@@ -77,6 +77,7 @@ if (JPEGXL_ENABLE_SJPEG)
   target_link_libraries(jxl_extras-static PUBLIC sjpeg)
 endif ()
 
+if (JPEGXL_ENABLE_OPENEXR)
 pkg_check_modules(OpenEXR IMPORTED_TARGET OpenEXR)
 if (OpenEXR_FOUND)
   target_sources(jxl_extras-static PRIVATE
@@ -85,4 +86,5 @@ if (OpenEXR_FOUND)
   )
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_EXR=1)
   target_link_libraries(jxl_extras-static PUBLIC PkgConfig::OpenEXR)
-endif ()
+endif() # OpenEXR_FOUND
+endif() # JPEGXL_ENABLE_OPENEXR

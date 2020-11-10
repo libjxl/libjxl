@@ -40,10 +40,6 @@ struct PassesDecoderState {
   // Storage for RNG output for noise synthesis.
   Image3F noise;
 
-  // Pointer to previous/next frame, to be added to the current one, if any.
-  // Gets updated by adding the currently decoded frame to it.
-  Image3F* JXL_RESTRICT frame_storage = nullptr;
-
   // For ANS decoding.
   std::vector<ANSCode> code;
   std::vector<std::vector<uint8_t>> context_map;
@@ -76,9 +72,6 @@ struct PassesDecoderState {
 
   // Initializes decoder-specific structures using information from *shared.
   void Init(ThreadPool* pool) {
-    frame_storage = shared->multiframe->FrameStorage(
-        shared->frame_dim.xsize_padded, shared->frame_dim.ysize_padded);
-
     if (shared->frame_header.color_transform == ColorTransform::kXYB) {
       x_dm_multiplier =
           std::pow(0.5f, 0.5f * shared->frame_header.x_qm_scale - 0.5f);
@@ -97,7 +90,7 @@ struct PassesDecoderState {
                 generate_noise, "Generate noise");
     }
 
-    const LoopFilter& lf = shared->image_features.loop_filter;
+    const LoopFilter& lf = shared->frame_header.nonserialized_loop_filter;
     if (lf.epf_iters > 0 || lf.gab) {
       // decoded must be padded to a multiple of kBlockDim rows since the last
       // rows may be used by the filters even if they are outside the frame

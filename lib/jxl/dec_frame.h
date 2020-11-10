@@ -31,40 +31,29 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/multiframe.h"
 
 namespace jxl {
 
-Status DecodeFrameHeader(const AnimationHeader* animation_or_null,
-                         BitReader* JXL_RESTRICT reader,
-                         FrameHeader* JXL_RESTRICT frame_header,
-                         FrameDimensions* frame_dim,
-                         LoopFilter* JXL_RESTRICT loop_filter);
+// `frame_header` must have nonserialized_image_metadata and
+// nonserialized_is_preview set.
+Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
+                         FrameHeader* JXL_RESTRICT frame_header);
 
-// Decodes a frame, either a single image or animation frame (depending on
-// `multiframe`). Groups may be processed in parallel by `pool`.
-// `frame_dim` must already be set from SizeHeader and may be overridden if
-// animation_frame.have_crop.
+// Decodes a frame. Groups may be processed in parallel by `pool`.
 // See DecodeFile for explanation of c_decoded.
-// decoded->metadata must already be set!
+// `io` is only used for reading maximum image size. Also updates
+// `dec_state` with the new frame header.
+// `decoded->metadata` must already be set!
 Status DecodeFrame(const DecompressParams& dparams,
-                   const Span<const uint8_t> file,
-                   const AnimationHeader* animation_or_null,
-                   FrameDimensions* JXL_RESTRICT frame_dim,
-                   Multiframe* JXL_RESTRICT multiframe,
-                   ThreadPool* JXL_RESTRICT pool,
+                   PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
                    ImageBundle* decoded, const CodecInOut* io = nullptr,
-                   AnimationFrame* animation = nullptr);
+                   bool is_preview = false);
 
 // Leaves reader in the same state as DecodeFrame would. Used to skip preview.
-// `frame_dim` must already be set from SizeHeader and may be overridden if
-// animation_frame.have_crop.
-Status SkipFrame(const Span<const uint8_t> file,
-                 const AnimationHeader* animation_or_null,
-                 const ImageMetadata* metadata,
-                 FrameDimensions* JXL_RESTRICT frame_dim,
-                 BitReader* JXL_RESTRICT reader);
+// Also updates `dec_state` with the new frame header.
+Status SkipFrame(const ImageMetadata& metadata, BitReader* JXL_RESTRICT reader,
+                 bool is_preview = false);
 
 // Decodes the global DC info from a frame section, exposed for use by API.
 Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
@@ -73,15 +62,13 @@ Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
 
 // Decodes the DC image, exposed for use by API.
 // aux_outs may be nullptr if aux_out is nullptr.
-Status DecodeDC(const FrameHeader& frame_header, FrameDimensions* frame_dim,
-                PassesDecoderState* dec_state,
+Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
                 ModularFrameDecoder& modular_frame_decoder,
                 size_t group_codes_begin,
                 const std::vector<uint64_t>& group_offsets,
                 const std::vector<uint32_t>& group_sizes,
-                ThreadPool* JXL_RESTRICT pool, const Span<const uint8_t> file,
-                BitReader* JXL_RESTRICT reader, std::vector<AuxOut>* aux_outs,
-                AuxOut* JXL_RESTRICT aux_out);
+                ThreadPool* JXL_RESTRICT pool, BitReader* JXL_RESTRICT reader,
+                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out);
 
 }  // namespace jxl
 

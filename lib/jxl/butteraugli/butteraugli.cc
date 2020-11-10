@@ -560,8 +560,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
   ps.lf = Image3F(xyb.xsize(), xyb.ysize());
   ps.mf = Image3F(xyb.xsize(), xyb.ysize());
   for (int i = 0; i < 3; ++i) {
-    Blur(xyb.Plane(i), kSigmaLf, params, blur_temp,
-         const_cast<ImageF*>(&ps.lf.Plane(i)));
+    Blur(xyb.Plane(i), kSigmaLf, params, blur_temp, &ps.lf.Plane(i));
 
     // ... and keep everything else in mf.
     for (size_t y = 0; y < ysize; ++y) {
@@ -574,8 +573,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
       }
     }
     if (i == 2) {
-      Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp,
-           const_cast<ImageF*>(&ps.mf.Plane(i)));
+      Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp, &ps.mf.Plane(i));
       break;
     }
     // Divide mf into mf and hf.
@@ -586,8 +584,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
         Store(Load(d, row_mf + x), d, row_hf + x);
       }
     }
-    Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp,
-         const_cast<ImageF*>(&ps.mf.Plane(i)));
+    Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp, &ps.mf.Plane(i));
     static const double kRemoveMfRange = 0.3;
     static const double kAddMfRange = 0.1;
     if (i == 0) {
@@ -1528,9 +1525,9 @@ void Mask(const Image3F& xyb0, const Image3F& xyb1,
   static const double r1 = 5.5;
   static const double r2 = 8.0;
 
-  ImageF& diff0 = const_cast<ImageF&>(temp->Plane(0));
-  ImageF& diff1 = const_cast<ImageF&>(temp->Plane(1));
-  ImageF& blurred0_a = const_cast<ImageF&>(temp->Plane(2));
+  ImageF& diff0 = temp->Plane(0);
+  ImageF& diff1 = temp->Plane(1);
+  ImageF& blurred0_a = temp->Plane(2);
 
   {
     // X component
@@ -1651,9 +1648,9 @@ void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
   };
   for (int i = 0; i < 2; ++i) {
     LinearCombination(pi0.uhf[i], pi0.hf[i], muls[2 * i], muls[2 * i + 1],
-                      const_cast<ImageF*>(&mask_xyb0.Plane(i)));
+                      &mask_xyb0.Plane(i));
     LinearCombination(pi1.uhf[i], pi1.hf[i], muls[2 * i], muls[2 * i + 1],
-                      const_cast<ImageF*>(&mask_xyb1.Plane(i)));
+                      &mask_xyb1.Plane(i));
   }
   Mask(mask_xyb0, mask_xyb1, params, temp, blur_temp, mask, mask_dc, diff_ac);
 }
@@ -1813,7 +1810,7 @@ V Gamma(const DF df, V v) {
   return MulAdd(kRetMul, log, kRetAdd);
 }
 
-template <class DF, class V>
+template <bool Clamp, class DF, class V>
 BUTTERAUGLI_INLINE void OpsinAbsorbance(const DF df, const V& in0, const V& in1,
                                         const V& in2, V* JXL_RESTRICT out0,
                                         V* JXL_RESTRICT out1,
@@ -1848,6 +1845,12 @@ BUTTERAUGLI_INLINE void OpsinAbsorbance(const DF df, const V& in0, const V& in1,
   *out0 = mix0 * in0 + mix1 * in1 + mix2 * in2 + mix3;
   *out1 = mix4 * in0 + mix5 * in1 + mix6 * in2 + mix7;
   *out2 = mix8 * in0 + mix9 * in1 + mix10 * in2 + mix11;
+
+  if (Clamp) {
+    *out0 = Max(*out0, mix3);
+    *out1 = Max(*out1, mix7);
+    *out2 = Max(*out2, mix11);
+  }
 }
 
 // `blurred` is a temporary image used inside this function and not returned.
@@ -1856,12 +1859,9 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
   PROFILER_FUNC;
   Image3F xyb(rgb.xsize(), rgb.ysize());
   const double kSigma = 1.2;
-  Blur(rgb.Plane(0), kSigma, params, blur_temp,
-       const_cast<ImageF*>(&blurred->Plane(0)));
-  Blur(rgb.Plane(1), kSigma, params, blur_temp,
-       const_cast<ImageF*>(&blurred->Plane(1)));
-  Blur(rgb.Plane(2), kSigma, params, blur_temp,
-       const_cast<ImageF*>(&blurred->Plane(2)));
+  Blur(rgb.Plane(0), kSigma, params, blur_temp, &blurred->Plane(0));
+  Blur(rgb.Plane(1), kSigma, params, blur_temp, &blurred->Plane(1));
+  Blur(rgb.Plane(2), kSigma, params, blur_temp, &blurred->Plane(2));
   const HWY_FULL(float) df;
   const auto intensity_target_multiplier =
       Set(df, params.intensity_target / 255.0f);
@@ -1888,7 +1888,7 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
         auto pre_mixed0 = Undefined(df);
         auto pre_mixed1 = Undefined(df);
         auto pre_mixed2 = Undefined(df);
-        OpsinAbsorbance(
+        OpsinAbsorbance<true>(
             df, Load(df, row_blurred_r + x) * intensity_target_multiplier,
             Load(df, row_blurred_g + x) * intensity_target_multiplier,
             Load(df, row_blurred_b + x) * intensity_target_multiplier,
@@ -1906,10 +1906,11 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
       auto cur_mixed0 = Undefined(df);
       auto cur_mixed1 = Undefined(df);
       auto cur_mixed2 = Undefined(df);
-      OpsinAbsorbance(df, Load(df, row_r + x) * intensity_target_multiplier,
-                      Load(df, row_g + x) * intensity_target_multiplier,
-                      Load(df, row_b + x) * intensity_target_multiplier,
-                      &cur_mixed0, &cur_mixed1, &cur_mixed2);
+      OpsinAbsorbance<false>(df,
+                             Load(df, row_r + x) * intensity_target_multiplier,
+                             Load(df, row_g + x) * intensity_target_multiplier,
+                             Load(df, row_b + x) * intensity_target_multiplier,
+                             &cur_mixed0, &cur_mixed1, &cur_mixed2);
       cur_mixed0 *= sensitivity0;
       cur_mixed1 *= sensitivity1;
       cur_mixed2 *= sensitivity2;
@@ -2224,7 +2225,7 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   MaskImage mask_xyb_dc;
   HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
   (pi0_, pi1, xsize_, ysize_, params_, Temp(), &blur_temp_, &mask_xyb_ac,
-   &mask_xyb_dc, const_cast<ImageF*>(&block_diff_ac.Plane(1)));
+   &mask_xyb_dc, &block_diff_ac.Plane(1));
   ReleaseTemp();
 
   HWY_DYNAMIC_DISPATCH(CombineChannelsToDiffmap)

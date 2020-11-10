@@ -148,12 +148,6 @@ class Plane : public PlaneBase {
 
   JXL_INLINE T* Row(const size_t y) { return static_cast<T*>(VoidRow(y)); }
 
-  // Returns pointer to non-const - required for writing to individual planes
-  // of an Image3.
-  JXL_INLINE T* MutableRow(const size_t y) const {
-    return static_cast<T*>(VoidRow(y));
-  }
-
   // Returns pointer to const (see above).
   JXL_INLINE const T* Row(const size_t y) const {
     return static_cast<const T*>(VoidRow(y));
@@ -230,8 +224,8 @@ class Rect {
   }
 
   template <typename T>
-  T* MutableRow(const Plane<T>* image, size_t y) const {
-    return image->MutableRow(y + y0_) + x0_;
+  const T* Row(const Plane<T>* image, size_t y) const {
+    return image->Row(y + y0_) + x0_;
   }
 
   template <typename T>
@@ -293,7 +287,7 @@ class Rect {
 // temporary non-owning Image pointing to one plane of an existing Image3 risks
 // dangling references, especially if the wrapper is moved. Therefore, we
 // store an array of Image (which are compact enough that size is not a concern)
-// and provide a Plane+MutableRow accessors.
+// and provide Plane+Row accessors.
 template <typename ComponentType>
 class Image3 {
  public:
@@ -357,6 +351,8 @@ class Image3 {
   }
 
   JXL_INLINE const PlaneT& Plane(size_t idx) const { return planes_[idx]; }
+
+  JXL_INLINE PlaneT& Plane(size_t idx) { return planes_[idx]; }
 
   void Swap(Image3& other) {
     for (size_t c = 0; c < 3; ++c) {

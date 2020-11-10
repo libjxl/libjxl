@@ -48,7 +48,7 @@ void CommandLineParser::PrintHelp() const {
       fprintf(out, "    %s\n", help_text);
     }
   }
-  fprintf(out, " --help\n    Prints this help message%s.\n",
+  fprintf(out, " -h, --help\n    Prints this help message%s.\n",
           (showed_all ? "" : " (use -v to see more options)"));
 }
 
@@ -56,10 +56,10 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
   if (argc) program_name_ = argv[0];
   int i = 1;  // argv[0] is the program name.
   while (i < argc) {
-    if (!strcmp("--help", argv[i])) {
+    if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
       help_ = true;
-      // Returning false on Parse() forces to print the help message.
-      return false;
+      i++;
+      continue;
     }
     if (!strcmp("-v", argv[i]) || !strcmp("--verbose", argv[i])) {
       verbosity++;
@@ -83,6 +83,8 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
       return false;
     }
   }
+  // Returning false on Parse() forces to print the help message.
+  if (help_) return false;
   return true;
 }
 

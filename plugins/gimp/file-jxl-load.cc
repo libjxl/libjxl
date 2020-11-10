@@ -35,7 +35,7 @@ void FillBuffer(
     std::vector<typename BufferFormat<precision>::Sample>* const pixel_data) {
   pixel_data->reserve(io.xsize() * io.ysize() * (num_channels + has_alpha));
   const float alpha_normalizer =
-      has_alpha ? 1.f / MaxAlpha(io.metadata.GetAlphaBits()) : 0.f;
+      has_alpha ? 1.f / MaxAlpha(io.metadata.m.GetAlphaBits()) : 0.f;
   for (size_t y = 0; y < io.ysize(); ++y) {
     const float* rows[num_channels];
     for (size_t c = 0; c < num_channels; ++c) {
@@ -106,9 +106,9 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
   JXL_RETURN_IF_ERROR(
       DecodeFile(dparams, compressed, &io, /*aux_out=*/nullptr, &pool));
 
-  JXL_RETURN_IF_ERROR(io.TransformTo(io.metadata.color_encoding, &pool));
+  JXL_RETURN_IF_ERROR(io.TransformTo(io.metadata.m.color_encoding, &pool));
 
-  const PaddedBytes& icc = io.metadata.color_encoding.ICC();
+  const PaddedBytes& icc = io.metadata.m.color_encoding.ICC();
   GimpColorProfile* profile =
       gimp_color_profile_new_from_icc_profile(icc.data(), icc.size(),
                                               /*error=*/nullptr);
@@ -139,8 +139,8 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
 
   GimpPrecision precision;
   Status (*fill_layer)(gint32 layer, const CodecInOut& io, GimpImageType);
-  if (io.metadata.bit_depth.floating_point_sample) {
-    if (io.metadata.bit_depth.bits_per_sample <= 16) {
+  if (io.metadata.m.bit_depth.floating_point_sample) {
+    if (io.metadata.m.bit_depth.bits_per_sample <= 16) {
       precision = GIMP_PRECISION_HALF_GAMMA;
       fill_layer = &FillGimpLayer<GIMP_PRECISION_HALF_GAMMA>;
     } else {
@@ -148,10 +148,10 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
       fill_layer = &FillGimpLayer<GIMP_PRECISION_FLOAT_GAMMA>;
     }
   } else {
-    if (io.metadata.bit_depth.bits_per_sample <= 8) {
+    if (io.metadata.m.bit_depth.bits_per_sample <= 8) {
       precision = GIMP_PRECISION_U8_GAMMA;
       fill_layer = &FillGimpLayer<GIMP_PRECISION_U8_GAMMA>;
-    } else if (io.metadata.bit_depth.bits_per_sample <= 16) {
+    } else if (io.metadata.m.bit_depth.bits_per_sample <= 16) {
       precision = GIMP_PRECISION_U16_GAMMA;
       fill_layer = &FillGimpLayer<GIMP_PRECISION_U16_GAMMA>;
     } else {

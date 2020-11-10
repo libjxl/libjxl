@@ -114,6 +114,7 @@ int PrintBasicInfo(FILE* file) {
         printf("  cfa_channel: %u\n", extra.cfa_channel);
       }
     } else if (status == JXL_DEC_COLOR_ENCODING) {
+      JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
       JxlColorProfileTarget targets[2] = {JXL_COLOR_PROFILE_TARGET_ORIGINAL,
                                           JXL_COLOR_PROFILE_TARGET_DATA};
       for (size_t i = 0; i < 2; i++) {
@@ -128,8 +129,8 @@ int PrintBasicInfo(FILE* file) {
         }
 
         JxlColorEncoding color_encoding;
-        if (JXL_DEC_SUCCESS ==
-            JxlDecoderGetColorAsEncodedProfile(dec, target, &color_encoding)) {
+        if (JXL_DEC_SUCCESS == JxlDecoderGetColorAsEncodedProfile(
+                                   dec, &format, target, &color_encoding)) {
           printf("  format: JPEG XL encoded color profile\n");
           printf("  color_space: %d\n", color_encoding.color_space);
           printf("  white_point: %d\n", color_encoding.white_point);
@@ -155,8 +156,8 @@ int PrintBasicInfo(FILE* file) {
           // instead.
           printf("  format: ICC profile\n");
           size_t profile_size;
-          if (JXL_DEC_SUCCESS !=
-              JxlDecoderGetICCProfileSize(dec, target, &profile_size)) {
+          if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(
+                                     dec, &format, target, &profile_size)) {
             fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
             continue;
           }
@@ -166,8 +167,9 @@ int PrintBasicInfo(FILE* file) {
             continue;
           }
           uint8_t* profile = (uint8_t*)malloc(profile_size);
-          if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                     dec, target, profile, profile_size)) {
+          if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(dec, &format,
+                                                                target, profile,
+                                                                profile_size)) {
             fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
             free(profile);
             continue;

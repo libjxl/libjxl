@@ -160,8 +160,8 @@ class JxlCodec : public ImageCodec {
       cparams_.options.nb_repeats = 2;
     } else if (param == "R") {
       cparams_.responsive = 1;
-    } else if (param == "mg") {
-      cparams_.modular_group_mode = true;
+    } else if (param == "m") {
+      cparams_.modular_mode = true;
       cparams_.color_transform = jxl::ColorTransform::kNone;
     } else if (param.substr(0, 3) == "gab") {
       long gab = strtol(param.substr(3).c_str(), nullptr, 10);
@@ -171,8 +171,8 @@ class JxlCodec : public ImageCodec {
       cparams_.gaborish = static_cast<Override>(gab);
     } else if (param[0] == 'g') {
       long gsize = strtol(param.substr(1).c_str(), nullptr, 10);
-      if (gsize < 0) {
-        return JXL_FAILURE("Invalid gab value");
+      if (gsize < 0 || gsize > 3) {
+        return JXL_FAILURE("Invalid group size shift value");
       }
       cparams_.modular_group_size_shift = gsize;
     } else if (param == "new_heuristics") {
@@ -198,7 +198,7 @@ class JxlCodec : public ImageCodec {
 
   bool IsColorAware() const override {
     // Can't deal with negative values from color space conversion.
-    if (cparams_.modular_group_mode) return false;
+    if (cparams_.modular_mode) return false;
     // Otherwise, input may be in any color space.
     return true;
   }
@@ -239,7 +239,7 @@ class JxlCodec : public ImageCodec {
     cparams_.quality_pair.first = q_target_;
     cparams_.quality_pair.second = q_target_;
     if (q_target_ != 100 && cparams_.color_transform == ColorTransform::kNone &&
-        cparams_.modular_group_mode && !has_ctransform_) {
+        cparams_.modular_mode && !has_ctransform_) {
       cparams_.color_transform = ColorTransform::kXYB;
     }
 
@@ -269,7 +269,6 @@ class JxlCodec : public ImageCodec {
           ".jxl:" + params_ + ".dbg/";
       JXL_RETURN_IF_ERROR(MakeDir(dinfo_.debug_prefix));
     }
-    dparams_.noise = jxlargs->noise;
     const double start = Now();
     JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, &dinfo_, pool));
     const double end = Now();

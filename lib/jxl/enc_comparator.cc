@@ -76,8 +76,8 @@ void AlphaBlend(float background_linear255, ImageBundle* io_linear_srgb) {
   const uint16_t opaque =
       (1U << io_linear_srgb->metadata()->GetAlphaBits()) - 1;
   for (size_t c = 0; c < 3; ++c) {
-    AlphaBlend(io_linear_srgb->color(), c, background_linear255,
-               io_linear_srgb->alpha(), opaque, io_linear_srgb->MutableColor());
+    AlphaBlend(*io_linear_srgb->color(), c, background_linear255,
+               *io_linear_srgb->alpha(), opaque, io_linear_srgb->color());
   }
 }
 

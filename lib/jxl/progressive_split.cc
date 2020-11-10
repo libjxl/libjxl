@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/multiframe.h"
+#include "lib/jxl/progressive_split.h"
 
 #include <string.h>
 
@@ -24,8 +24,9 @@
 
 namespace jxl {
 
-bool Multiframe::SuperblockIsSalient(size_t row_start, size_t col_start,
-                                     size_t num_rows, size_t num_cols) const {
+bool ProgressiveSplitter::SuperblockIsSalient(size_t row_start,
+                                              size_t col_start, size_t num_rows,
+                                              size_t num_cols) const {
   if (saliency_map_ == nullptr || saliency_map_->xsize() == 0 ||
       saliency_threshold_ == 0.0) {
     // If we do not have a saliency-map, or the threshold says to include
@@ -48,7 +49,7 @@ bool Multiframe::SuperblockIsSalient(size_t row_start, size_t col_start,
   return false;
 }
 
-void Multiframe::SplitACCoefficients(
+void ProgressiveSplitter::SplitACCoefficients(
     const ac_qcoeff_t* JXL_RESTRICT block, size_t size, const AcStrategy& acs,
     size_t bx, size_t by, size_t offset,
     ac_qcoeff_t* JXL_RESTRICT output[kMaxNumPasses][3]) {

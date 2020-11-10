@@ -27,64 +27,135 @@ namespace jxl {
 
 namespace palette_internal {
 
+static constexpr bool kEncodeToHighQualityImplicitPalette = true;
+
+// 5x5x5 color cube for the larger cube.
+static constexpr int kLargeCube = 5;
+
+// Smaller interleaved color cube to fill the holes of the larger cube.
+static constexpr int kSmallCube = kLargeCube - 1;
+static constexpr int kLargeCubeOffset = kSmallCube * kSmallCube * kSmallCube;
+
+// Inclusive.
+static constexpr int kMinImplicitPaletteIndex = -(2 * 69 - 1);
+
+// The purpose of this function is solely to extend the interpretation of
+// palette indices to implicit values. If index < nb_deltas, indicating that the
+// result is a delta palette entry, it is the responsibility of the caller to
+// treat it as such.
 static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
-                                  const int c, const int nb_channels,
-                                  const int palette_size, const int nb_deltas,
-                                  const int onerow, const int bit_depth,
-                                  bool *const is_delta) {
-  *is_delta = index < nb_deltas;
+                                  const size_t c, const int palette_size,
+                                  const int onerow, const int bit_depth) {
   if (index < 0) {
-    const int a = -index - 1;
-    // One bit to indicate whether the entry is absolute (1) or delta (0), then
-    // one bit per channel.
-    const int signflips = a & ((1 << (nb_channels + 1)) - 1);
-    index = a >> (nb_channels + 1);
-    // No further recursion now that index is positive.
-    pixel_type result =
-        GetPaletteValue(palette, index, c, nb_channels, palette_size, nb_deltas,
-                        onerow, bit_depth, is_delta);
-    if (signflips & (1 << nb_channels)) {
-      *is_delta = false;
-    } else {
-      *is_delta = true;
-      if (index > nb_deltas) result = (1 << (result >> (bit_depth - 3))) - 1;
+    static constexpr std::array<std::array<pixel_type, 3>, 69> kDeltaPalette = {
+        {
+            {0, 0, 0},       {-3, -3, -3},    {-6, 0, -2},     {0, 0, -10},
+            {0, -9, 0},     {-8, -8, -8},    {-14, -14, -14}, {-21, -21, -21},
+            {0, 0, -24},     {-24, 0, 0},     {-27, -27, -27}, {0, -24, -24},
+            {18, 18, 34},    {38, 38, 38},    {-34, -18, -18}, {-18, -34, -34},
+            {-24, -24, 0},   {-34, -34, -18}, {48, 48, 48},    {-24, 0, -24},
+            {0, -24, 0},     {-24, 0, 24},    {-18, -34, -18}, {18, -18, -34},
+            {60, 60, 60},    {34, 18, 34},    {-34, -18, 18},  {48, 0, 0},
+            {0, 0, -48},     {0, -48, -48},   {-18, -18, 34},  {72, 72, 72},
+            {48, 48, 0},     {34, -18, -18},  {24, -24, 0},    {84, 84, 84},
+            {18, -34, -34},  {34, 34, -18},   {0, -24, 24},    {18, -18, 34},
+            {0, 72, 72},     {34, -18, 18},   {18, -34, -18},  {-18, -34, 18},
+            {0, -48, 0},     {72, 0, 0},      {96, 96, 96},    {48, 0, 48},
+            {108, 108, 108}, {72, 72, 0},     {-27, -27, 27},  {34, -18, -34},
+            {34, -34, -18},  {0, 0, -72},     {0, 96, 96},     {0, 72, 0},
+            {34, 18, -34},   {-96, 0, 0},     {18, -34, 18},   {-34, 18, -34},
+            {48, 0, -48},    {48, -48, -48},  {72, 0, 72},     {34, -34, 18},
+            {18, 34, -34},   {48, 48, -48},   {96, 96, 0},     {0, 0, -96},
+            {-18, 34, -34},
+        }};
+    if (c >= kDeltaPalette[0].size()) {
+      return 0;
     }
-    if (signflips & (1 << c)) result = -result;
-    return result;
-  } else if (index >= palette_size) {
+    index = -index - 1;
+    index %= 1 + 2 * (kDeltaPalette.size() - 1);
+    static constexpr int kMultiplier[] = {-1, 1};
+    return 4 * kDeltaPalette[((index + 1) >> 1)][c] * kMultiplier[index & 1] / 3;
+  } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
     index -= palette_size;
-    return ((index >> (3 * c)) & 0b111) * ((1 << bit_depth) - 1) / 0b111;
+    if (c > 0) {
+      int divisor = kSmallCube;
+      for (size_t i = 1; i < c; ++i) {
+        divisor *= kSmallCube;
+      }
+      index /= divisor;
+    }
+    index %= kSmallCube;
+    return (index * ((1 << bit_depth) - 1)) / kSmallCube +
+           ((1 << bit_depth) - 1) / 12;
+  } else if (palette_size + kLargeCubeOffset <= index) {
+    index -= palette_size + kLargeCubeOffset;
+    if (c > 0) {
+      int divisor = kLargeCube;
+      for (size_t i = 1; i < c; ++i) {
+        divisor *= kLargeCube;
+      }
+      index /= divisor;
+    }
+    index %= kLargeCube;
+    return (index * ((1 << bit_depth) - 1)) / (kLargeCube - 1);
   }
 
-  return palette[c * onerow + index];
+  return palette[c * onerow + static_cast<size_t>(index)];
+}
+
+// Template so that it can take vectors of pixel_type or pixel_type_w
+// indifferently.
+template <typename T, typename U>
+float ColorDistance(const T &JXL_RESTRICT a, const U &JXL_RESTRICT b) {
+  JXL_ASSERT(a.size() == b.size());
+  float distance = 0;
+  float sum_a = 0, sum_b = 0;
+  for (size_t c = 0; c < a.size(); ++c) {
+    const float difference =
+        static_cast<float>(a[c]) - static_cast<float>(b[c]);
+    const int weight = c == 0 ? 3 : c == 1 ? 5 : 2;
+    distance += difference * difference * weight * weight;
+    const int sum_weight = c == 0 ? 3 : c == 1 ? 5 : 1;
+    sum_a += a[c] * sum_weight;
+    sum_b += b[c] * sum_weight;
+  }
+  distance *= 4;
+  float sum_difference = sum_a - sum_b;
+  distance += sum_difference * sum_difference;
+  return distance;
 }
 
 static int QuantizeColorToImplicitPaletteIndex(
     const std::vector<pixel_type> &color, const int palette_size,
-    const int bit_depth) {
-  bool all_positive = true;
+    const int bit_depth, bool high_quality) {
   int index = 0;
-  for (size_t c = 0; c < color.size(); c++) {
-    const int quantized =
-        (0b111 * std::abs(color[c]) + (1 << (bit_depth - 1))) /
-        ((1 << bit_depth) - 1);
-    JXL_DASSERT((quantized & 0b111) == quantized);
-    index |= (quantized & 0b111) << (3 * c);
-    all_positive = all_positive && color[c] >= 0;
-  }
-
-  index += palette_size;
-
-  if (!all_positive) {
-    index <<= color.size() + 1;
-    index |= 1 << color.size();
-    for (size_t c = 0; c < color.size(); ++c) {
-      index |= (color[c] < 0) << c;
+  if (high_quality) {
+    int multiplier = 1;
+    for (size_t c = 0; c < color.size(); c++) {
+      int quantized = ((kLargeCube - 1) * color[c] + (1 << (bit_depth - 1))) /
+                      ((1 << bit_depth) - 1);
+      JXL_ASSERT((quantized % kLargeCube) == quantized);
+      index += quantized * multiplier;
+      multiplier *= kLargeCube;
     }
-    index = -index - 1;
+    return index + palette_size + kLargeCubeOffset;
+  } else {
+    int multiplier = 1;
+    for (size_t c = 0; c < color.size(); c++) {
+      int value = color[c];
+      value -= ((1 << bit_depth) - 1) / 12;
+      value = std::max(0, value);
+      int quantized = ((kLargeCube - 1) * value + (1 << (bit_depth - 1))) /
+                      ((1 << bit_depth) - 1);
+      JXL_ASSERT((quantized % kLargeCube) == quantized);
+      if (quantized > kSmallCube - 1) {
+        quantized = kSmallCube - 1;
+      }
+      index += quantized * multiplier;
+      multiplier *= kSmallCube;
+    }
+    return index + palette_size;
   }
-
-  return index;
 }
 
 }  // namespace palette_internal
@@ -125,12 +196,10 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
             pixel_type *p = input.channel[c0].Row(y);
             for (size_t x = 0; x < w; x++) {
               const int index = p[x];
-              bool is_delta;
               p[x] = palette_internal::GetPaletteValue(
-                  p_palette, std::max(0, index), /*c=*/0, /*nb_channels=*/nb,
-                  /*palette_size=*/palette.w, /*nb_deltas=*/nb_deltas,
-                  /*onerow=*/onerow, /*bit_depth=*/bit_depth,
-                  /*is_delta=*/&is_delta);
+                  p_palette, index, /*c=*/0,
+                  /*palette_size=*/palette.w,
+                  /*onerow=*/onerow, /*bit_depth=*/bit_depth);
             }
           },
           "UndoChannelPalette");
@@ -144,14 +213,12 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
             for (int c = 0; c < nb; c++)
               p_out[c] = input.channel[c0 + c].Row(y);
             for (size_t x = 0; x < w; x++) {
-              const int index = std::max(0, p_index[x]);
-              bool is_delta;
+              const int index = p_index[x];
               for (int c = 0; c < nb; c++)
                 p_out[c][x] = palette_internal::GetPaletteValue(
-                    p_palette, std::max(0, index), /*c=*/c, /*nb_channels=*/nb,
-                    /*palette_size=*/palette.w, /*nb_deltas=*/nb_deltas,
-                    /*onerow=*/onerow, /*bit_depth=*/bit_depth,
-                    /*is_delta=*/&is_delta);
+                    p_palette, index, /*c=*/c,
+                    /*palette_size=*/palette.w,
+                    /*onerow=*/onerow, /*bit_depth=*/bit_depth);
             }
           },
           "UndoPalette");
@@ -170,15 +237,13 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
               const pixel_type *JXL_RESTRICT idx = indices.Row(y);
               for (size_t x = 0; x < channel.w; x++) {
                 int index = idx[x];
-                bool is_delta;
                 pixel_type_w val = 0;
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
-                        p_palette, index, /*c=*/c, /*nb_channels=*/nb,
-                        /*palette_size=*/palette.w,
-                        /*nb_deltas=*/nb_deltas, /*onerow=*/onerow,
-                        /*bit_depth=*/bit_depth, /*is_delta=*/&is_delta);
-                if (is_delta) {
+                        p_palette, index, /*c=*/c,
+                        /*palette_size=*/palette.w, /*onerow=*/onerow,
+                        /*bit_depth=*/bit_depth);
+                if (index < static_cast<int32_t>(nb_deltas)) {
                   PredictionResult pred =
                       PredictNoTreeWP(channel.w, p + x, onerow_image, x, y,
                                       predictor, &wp_state);
@@ -204,16 +269,13 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
               const pixel_type *JXL_RESTRICT idx = indices.Row(y);
               for (size_t x = 0; x < channel.w; x++) {
                 int index = idx[x];
-                bool is_delta;
                 pixel_type_w val = 0;
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
-                        p_palette, index, /*c=*/c, /*nb_channels=*/nb,
+                        p_palette, index, /*c=*/c,
                         /*palette_size=*/palette.w,
-                        /*nb_deltas=*/nb_deltas,
-                        /*onerow=*/onerow, /*bit_depth=*/bit_depth,
-                        /*is_delta=*/&is_delta);
-                if (is_delta) {
+                        /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+                if (index < static_cast<int32_t>(nb_deltas)) {
                   pixel_type_w left =
                       x ? p[x - 1] : (y ? *(p + x - onerow_image) : 0);
                   pixel_type_w top = y ? *(p + x - onerow_image) : left;
@@ -238,16 +300,13 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
               const pixel_type *JXL_RESTRICT idx = indices.Row(y);
               for (size_t x = 0; x < channel.w; x++) {
                 int index = idx[x];
-                bool is_delta;
                 pixel_type_w val = 0;
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
-                        p_palette, index, /*c=*/c, /*nb_channels=*/nb,
+                        p_palette, index, /*c=*/c,
                         /*palette_size=*/palette.w,
-                        /*nb_deltas=*/nb_deltas,
-                        /*onerow=*/onerow, /*bit_depth=*/bit_depth,
-                        /*is_delta=*/&is_delta);
-                if (is_delta) {
+                        /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+                if (index < static_cast<int32_t>(nb_deltas)) {
                   PredictionResult pred = PredictNoTreeNoWP(
                       channel.w, p + x, onerow_image, x, y, predictor);
                   val = pred.guess + palette_entry;
@@ -323,12 +382,13 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   JXL_DEBUG_V(
       7, "Trying to represent channels %i-%i using at most a %i-color palette.",
       begin_c, end_c, nb_colors);
-  constexpr int nb_deltas = 0;
+  int nb_deltas = 0;
   bool delta_used = false;
-  std::set<std::vector<pixel_type> >
+  std::set<std::vector<pixel_type>>
       candidate_palette;  // ordered lexicographically
-  std::vector<std::vector<pixel_type> > candidate_palette_imageorder;
+  std::vector<std::vector<pixel_type>> candidate_palette_imageorder;
   std::vector<pixel_type> color(nb);
+  std::vector<float> color_with_error(nb);
   std::vector<const pixel_type *> p_in(nb);
   for (size_t y = 0; y < h; y++) {
     for (uint32_t c = 0; c < nb; c++) {
@@ -395,6 +455,14 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     wp_states.emplace_back(wp_header, w, h);
   }
   std::vector<pixel_type *> p_quant(nb);
+  std::vector<std::vector<float>> error_current_row(nb);
+  std::vector<std::vector<float>> error_next_row(nb);
+  if (lossy) {
+    for (size_t c = 0; c < nb; ++c) {
+      error_current_row[c].resize(w);
+      error_next_row[c].resize(w);
+    }
+  }
   for (size_t y = 0; y < h; y++) {
     for (size_t c = 0; c < nb; c++) {
       p_in[c] = input.channel[begin_c + c].Row(y);
@@ -405,9 +473,9 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
       for (size_t x = 0; x < w; x++) p[x] = lookup[p[x] - minval];
     } else {
       for (size_t x = 0; x < w; x++) {
-        for (size_t c = 0; c < nb; c++) color[c] = p_in[c][x];
         int index;
         if (!lossy) {
+          for (size_t c = 0; c < nb; c++) color[c] = p_in[c][x];
           // Exact search.
           for (index = 0; static_cast<uint32_t>(index) < nb_colors; index++) {
             bool found = true;
@@ -418,10 +486,20 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
               }
             if (found) break;
           }
+          if (index < nb_deltas) {
+            delta_used = true;
+          }
         } else {
-          pixel_type_w best_l2_squared =
-              std::numeric_limits<pixel_type_w>::max();
+          for (size_t c = 0; c < nb; c++) {
+            color_with_error[c] = p_in[c][x] + error_current_row[c][x];
+            color[c] =
+                std::min(input.maxval,
+                         std::max<pixel_type>(
+                             input.minval, std::lround(color_with_error[c])));
+          }
+          float best_distance = std::numeric_limits<float>::infinity();
           int best_index = 0;
+          bool best_is_delta = false;
           std::vector<pixel_type> best_val(nb, 0);
           std::vector<pixel_type> quantized_val(nb);
           std::vector<pixel_type_w> predictions(nb);
@@ -431,45 +509,116 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                                  .guess;
           }
           const auto TryIndex = [&](const int index) {
-            pixel_type_w l2_squared = 0;
             for (size_t c = 0; c < nb; c++) {
-              bool is_delta;
               quantized_val[c] = palette_internal::GetPaletteValue(
-                  p_palette, index, /*c=*/c, /*nb_channels=*/nb,
+                  p_palette, index, /*c=*/c,
                   /*palette_size=*/nb_colors,
-                  /*nb_deltas=*/nb_deltas,
-                  /*onerow=*/onerow, /*bit_depth=*/bit_depth,
-                  /*is_delta=*/&is_delta);
-              if (is_delta) {
+                  /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+              if (index < nb_deltas) {
                 quantized_val[c] += predictions[c];
               }
-              const pixel_type_w channel_difference =
-                  static_cast<pixel_type_w>(color[c]) - quantized_val[c];
-              l2_squared +=
-                  channel_difference * channel_difference * (c == 0 ? 2 : 1);
             }
-            if (l2_squared < best_l2_squared) {
-              best_l2_squared = l2_squared;
+            const float color_distance =
+                32 * palette_internal::ColorDistance(color_with_error,
+                                                     quantized_val);
+            pixel_type_w index_penalty = 0;
+            if (index == -1) {
+              index_penalty = -128;
+            } else if (index < static_cast<int>(nb_colors)) {
+              index_penalty = 2 * std::abs(index);
+            } else if (index < static_cast<int>(nb_colors) +
+                                   palette_internal::kLargeCubeOffset) {
+              index_penalty = 96;
+            } else {
+              index_penalty = 256;
+            }
+            const float distance = color_distance + index_penalty;
+            if (distance < best_distance) {
+              best_distance = distance;
               best_index = index;
-              std::copy(quantized_val.begin(), quantized_val.end(),
-                        best_val.begin());
+              best_is_delta = index < nb_deltas;
+              best_val.swap(quantized_val);
             }
           };
-          for (index = 0; static_cast<uint32_t>(index) < nb_colors; index++) {
+          for (index = palette_internal::kMinImplicitPaletteIndex;
+               index < static_cast<int32_t>(nb_colors); index++) {
             TryIndex(index);
           }
           TryIndex(palette_internal::QuantizeColorToImplicitPaletteIndex(
-              color, nb_colors, bit_depth));
+              color, nb_colors, bit_depth,
+              /*high_quality=*/false));
+          if (palette_internal::kEncodeToHighQualityImplicitPalette) {
+            TryIndex(palette_internal::QuantizeColorToImplicitPaletteIndex(
+                color, nb_colors, bit_depth,
+                /*high_quality=*/true));
+          }
           index = best_index;
+          delta_used |= best_is_delta;
           for (size_t c = 0; c < nb; ++c) {
             wp_states[c].UpdateErrors(best_val[c], x, y, w);
             p_quant[c][x] = best_val[c];
           }
+          for (size_t c = 0; c < nb; ++c) {
+            const float local_error = color_with_error[c] - best_val[c];
+            float weight = 0.03;
+            if (best_index >= -17 && best_index < 0) {
+              weight = 0.09;
+              if (best_index == -1) {
+                weight = 0.13;
+              }
+            }
+            float total_error = 4 * weight * local_error;
+
+            // If the neighboring pixels have some error in the opposite
+            // direction of total_error, cancel some or all of it out before
+            // spreading among them.
+            if (std::signbit(error_next_row[c][x]) !=
+                std::signbit(total_error)) {
+              if (std::abs(total_error) >= std::abs(error_next_row[c][x])) {
+                total_error += error_next_row[c][x];
+                error_next_row[c][x] = 0;
+              } else {
+                error_next_row[c][x] += total_error;
+                total_error = 0;
+              }
+            }
+            if (x + 1 < w && std::signbit(error_current_row[c][x + 1]) !=
+                                 std::signbit(total_error)) {
+              if (std::abs(total_error) >=
+                  std::abs(error_current_row[c][x + 1])) {
+                total_error += error_current_row[c][x + 1];
+                error_current_row[c][x + 1] = 0;
+              } else {
+                error_current_row[c][x + 1] += total_error;
+                total_error = 0;
+              }
+            }
+            if (x > 0 && std::signbit(error_next_row[c][x - 1]) !=
+                             std::signbit(total_error)) {
+              if (std::abs(total_error) >= std::abs(error_next_row[c][x - 1])) {
+                total_error += error_next_row[c][x - 1];
+                error_next_row[c][x - 1] = 0;
+              } else {
+                error_next_row[c][x - 1] += total_error;
+                total_error = 0;
+              }
+            }
+            const float remaining_error = 0.25f * total_error;
+            error_next_row[c][x] += remaining_error;
+            if (x + 1 < w) {
+              error_current_row[c][x + 1] += remaining_error;
+              error_next_row[c][x + 1] += remaining_error;
+            }
+            if (x > 0) {
+              error_next_row[c][x - 1] += remaining_error;
+            }
+          }
         }
         p[x] = index;
-        if (index < nb_deltas) {
-          delta_used = true;
-        }
+      }
+      for (size_t c = 0; c < nb; ++c) {
+        error_current_row[c].swap(error_next_row[c]);
+        std::fill(error_next_row[c].begin(), error_next_row[c].end(), 0.f);
       }
     }
   }
