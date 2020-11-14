@@ -26,6 +26,7 @@
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
 
 namespace jxl {
@@ -159,8 +160,9 @@ size_t TargetSize(const CompressParams& cparams,
 }  // namespace
 
 Status DefaultEncoderHeuristics::LossyFrameHeuristics(
-    PassesEncoderState* enc_state, const ImageBundle* linear, Image3F* opsin,
-    ThreadPool* pool, AuxOut* aux_out) {
+    PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
+    const ImageBundle* linear, Image3F* opsin, ThreadPool* pool,
+    AuxOut* aux_out) {
   PROFILER_ZONE("JxlLossyFrameHeuristics uninstrumented");
   CompressParams& cparams = enc_state->cparams;
   PassesSharedState& shared = enc_state->shared;
@@ -236,12 +238,12 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   }
 
   // Apply inverse-gaborish.
-  if (shared.frame_header.nonserialized_loop_filter.gab) {
+  if (shared.frame_header.loop_filter.gab) {
     *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
   }
 
-  // Choose custom quantization matrices.
-  FindBestDequantMatrices(cparams, *opsin, &enc_state->shared.matrices);
+  FindBestDequantMatrices(cparams, *opsin, modular_frame_encoder,
+                          &enc_state->shared.matrices);
 
   // For speeds up to Wombat, we only compute the color correlation map
   // once we know the transform type and the quantization map.

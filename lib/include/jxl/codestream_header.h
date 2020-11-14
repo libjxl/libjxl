@@ -70,6 +70,34 @@ typedef enum {
   JXL_CHANNEL_OPTIONAL
 } JxlExtraChannelType;
 
+/** The codestream preview header */
+typedef struct {
+  /** Preview width in pixels */
+  uint32_t xsize;
+
+  /** Preview height in pixels */
+  uint32_t ysize;
+} JxlPreviewHeader;
+
+/** The codestream animation header, optionally present in the beginning of
+ * the codestream, and if it is it applies to all animation frames, unlike
+ * JxlAnimationFrameHeader which applies to an individual frame.
+ */
+typedef struct {
+  /** Numerator of ticks per second of a single animation frame time unit */
+  uint32_t tps_numerator;
+
+  /** Denominator of ticks per second of a single animation frame time unit */
+  uint32_t tps_denominator;
+
+  /** Amount of animation loops, or 0 to repeat infinitely */
+  uint32_t num_loops;
+
+  /** Whether animation time codes are present at animation frames in the
+   * codestream */
+  JXL_BOOL have_timecodes;
+} JxlAnimationHeader;
+
 /** Basic image information. This information is available from the file
  * signature and first part of the codestream header.
  */
@@ -185,6 +213,16 @@ typedef struct JxlBasicInfo {
   /** Whether the alpha channel is premultiplied
    */
   JXL_BOOL alpha_premultiplied;
+
+  /** Dimensions of encoded preview image, only used if have_preview is
+   * JXL_TRUE.
+   */
+  JxlPreviewHeader preview;
+
+  /** Animation header with global animation properties for all frames, only
+   * used if have_animation is JXL_TRUE.
+   */
+  JxlAnimationHeader animation;
 } JxlBasicInfo;
 
 /** Information for a single extra channel.
@@ -237,34 +275,6 @@ typedef struct {
   /** Extension bits. */
   uint64_t extensions;
 } JxlHeaderExtensions;
-
-/** The codestream preview header */
-typedef struct {
-  /** Preview width in pixels */
-  uint32_t xsize;
-
-  /** Preview height in pixels */
-  uint32_t ysize;
-} JxlPreviewHeader;
-
-/** The codestream animation header, optionally present in the beginning of
- * the codestream, and if it is it applies to all animation frames, unlike
- * JxlAnimationFrameHeader which applies to an individual frame.
- */
-typedef struct {
-  /** Numerator of ticks per second of a single animation frame time unit */
-  uint32_t tps_numerator;
-
-  /** Denominator of ticks per second of a single animation frame time unit */
-  uint32_t tps_denominator;
-
-  /** Amount of animation loops, or 0 to repeat infinitely */
-  uint32_t num_loops;
-
-  /** Whether animation time codes are present at animation frames in the
-   * codestream */
-  JXL_BOOL have_timecodes;
-} JxlAnimationHeader;
 
 /** The header of one animation frame. This only exists if have_animation in
  * JxlBasicInfo is JXL_TRUE */

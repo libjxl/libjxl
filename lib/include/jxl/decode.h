@@ -140,19 +140,27 @@ typedef enum {
    */
   JXL_DEC_NEED_MORE_INPUT = 2,
 
+  /** The decoder is able to decode a preview image and requests setting a
+   * preview output buffer using JxlDecoderSetPreviewOutBuffer. This occurs if
+   * JXL_DEC_PREVIEW_IMAGE is requested and it is possible to decode a preview
+   * image from the codestream and the preview out buffer was not yet set. There
+   * is maximum one preview image in a codestream.
+   */
+  JXL_DEC_NEED_PREVIEW_OUT_BUFFER = 3,
+
   /** The decoder is able to decode a DC image and requests setting a DC output
    * buffer using JxlDecoderSetDCOutBuffer. This occurs if JXL_DEC_DC_IMAGE is
    * requested and it is possible to decode a DC image from the codestream and
    * the DC out buffer was not yet set. This event re-occurs for new frames
    * if there are multiple animation frames.
    */
-  JXL_DEC_NEED_DC_OUT_BUFFER = 3,
+  JXL_DEC_NEED_DC_OUT_BUFFER = 4,
 
   /** The decoder requests and output buffer to store the full resolution image,
    * which can be set with JxlDecoderSetImageOutBuffer.This event re-occurs for
    * new frames if there are multiple animation frames.
    */
-  JXL_DEC_NEED_IMAGE_OUT_BUFFER = 4,
+  JXL_DEC_NEED_IMAGE_OUT_BUFFER = 5,
 
   /** Informative event by JxlDecoderProcessInput: basic information such as
    * image dimensions and extra channels. This event occurs max once per image.
@@ -165,24 +173,21 @@ typedef enum {
    */
   JXL_DEC_EXTENSIONS = 0x80,
 
-  /** Informative event by JxlDecoderProcessInput: preview header from the
-   * codestream header. This event occurs max once per image and always later
-   * than JXL_DEC_BASIC_INFO and earlier than any pixel data.
-   */
-  JXL_DEC_PREVIEW_HEADER = 0x100,
-
-  /** Informative event by JxlDecoderProcessInput: animation header from the
-   * codestream header. This event occurs max once per image and always later
-   * than JXL_DEC_BASIC_INFO and earlier than any pixel data.
-   */
-  JXL_DEC_ANIMATION_HEADER = 0x200,
-
   /** Informative event by JxlDecoderProcessInput: color encoding or ICC
    * profile from the codestream header. This event occurs max once per image
    * and always later than JXL_DEC_BASIC_INFO and earlier than any pixel
    * data.
    */
-  JXL_DEC_COLOR_ENCODING = 0x400,
+  JXL_DEC_COLOR_ENCODING = 0x100,
+
+  /** Informative event by JxlDecoderProcessInput: Preview image, a small
+   * frame, decoded. This event can only happen if the image has a preview
+   * frame encoded. This event occurs max once for the codestream and always
+   * later than JXL_DEC_COLOR_ENCODING and before JXL_DEC_ANIMATION_FRAME.
+   * This event is different than JXL_DEC_PREVIEW_HEADER because the latter only
+   * outputs the dimensions of the preview image.
+   */
+  JXL_DEC_PREVIEW_IMAGE = 0x200,
 
   /** Informative event by JxlDecoderProcessInput: Beginning of an animation
    * frame. This event is only given if have_animation in JxlBasicInfo is
@@ -193,7 +198,7 @@ typedef enum {
    * multiple internal sub-frames also called frames, this event is not
    * indicated for the internal frames.
    */
-  JXL_DEC_ANIMATION_FRAME = 0x800,
+  JXL_DEC_ANIMATION_FRAME = 0x400,
 
   /** Informative event by JxlDecoderProcessInput: DC image, 8x8 sub-sampled
    * frame, decoded. It is not guaranteed that the decoder will always return DC
@@ -204,7 +209,7 @@ typedef enum {
    * occurs max once per frame and always later than JXL_DEC_FRAME_HEADER
    * and other header events and earlier than full resolution pixel data.
    */
-  JXL_DEC_DC_IMAGE = 0x1000,
+  JXL_DEC_DC_IMAGE = 0x800,
 
   /** Informative event by JxlDecoderProcessInput: full frame decoded.
    * JxlDecoderSetImageOutBuffer must be used after getting the basic image
@@ -212,7 +217,7 @@ typedef enum {
    * only indicates we're past this point in the codestream. This event occurs
    * max once per frame and always later than JXL_DEC_DC_IMAGE.
    */
-  JXL_DEC_FULL_IMAGE = 0x2000,
+  JXL_DEC_FULL_IMAGE = 0x1000,
 } JxlDecoderStatus;
 
 /**
@@ -336,12 +341,10 @@ JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
  * available and this informative event is subscribed to.
  * @return JXL_DEC_EXTENSIONS when JPEG XL codestream user extensions are
  * available and this informative event is subscribed to.
- * @return JXL_DEC_PREVIEW_HEADER when preview dimensions are available and
- * this informative event is subscribed to.
- * @return JXL_DEC_ANIMATION_HEADER when animation information is available
- * and this informative event is subscribed to.
  * @return JXL_DEC_COLOR_ENCODING when color profile information is
  * available and this informative event is subscribed to.
+ * @return JXL_DEC_PREVIEW_IMAGE when preview pixel information is available and
+ * output in the preview buffer.
  * @return JXL_DEC_DC_IMAGE when DC pixel information (8x8 downscaled version
  * of the image) is available and output in the DC buffer.
  * @return JXL_DEC_FULL_IMAGE when all pixel information at highest detail is
@@ -398,32 +401,6 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetExtraChannelName(const JxlDecoder* dec,
                                                           size_t index,
                                                           char* name,
                                                           size_t size);
-
-/**
- * Outputs the preview header, if available.
- *
- * @param dec decoder object
- * @param preview_header struct to copy the information into, or NULL to only
- * check whether the information is available through the return value.
- * @return JXL_DEC_SUCCESS if the value is available,
- *    JXL_DEC_NEED_MORE_INPUT if not yet available, JXL_DEC_ERROR in case
- *    of other error conditions.
- */
-JXL_EXPORT JxlDecoderStatus JxlDecoderGetPreviewHeader(
-    const JxlDecoder* dec, JxlPreviewHeader* preview_header);
-
-/**
- * Outputs the animation header, if available.
- *
- * @param dec decoder object
- * @param animation_header struct to copy the information into, or NULL to only
- * check whether the information is available through the return value.
- * @return JXL_DEC_SUCCESS if the value is available,
- *    JXL_DEC_NEED_MORE_INPUT if not yet available, JXL_DEC_ERROR in case
- *    of other error conditions.
- */
-JXL_EXPORT JxlDecoderStatus JxlDecoderGetAnimationHeader(
-    const JxlDecoder* dec, JxlAnimationHeader* animation_header);
 
 /** Defines which color profile to get: the profile from the codestream
  * metadata header, which represents the color profile of the original image,
@@ -529,6 +506,38 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
     JxlColorProfileTarget target, uint8_t* icc_profile, size_t size);
 
 /**
+ * Returns the minimum size in bytes of the preview image output pixel buffer
+ * for the given format. This is the buffer for JxlDecoderSetPreviewOutBuffer.
+ * Requires the preview header information is available in the decoder.
+ *
+ * @param dec decoder object
+ * @param format format of pixels
+ * @param size output value, buffer size in bytes
+ * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as
+ *    information not available yet.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
+    const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size);
+
+/**
+ * Sets the buffer to write the small resolution preview image
+ * to. The size of the buffer must be at least as large as given by
+ * JxlDecoderPreviewOutBufferSize. The buffer follows the format described by
+ * JxlPixelFormat. The preview image dimensions are given by the
+ * JxlPreviewHeader. The buffer is owned by the caller.
+ *
+ * @param dec decoder object
+ * @param format format of pixels. Object owned by user and its contents are
+ * copied internally.
+ * @param buffer buffer type to output the pixel data to
+ * @param size size of buffer in bytes
+ * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as
+ * size too small.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
+    JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size);
+
+/**
  * Outputs the information from an animation frame, such as duration. This
  * function can be called when JXL_DEC_ANIMATION_FRAME occured for the
  * current frame.
@@ -559,10 +568,9 @@ JXL_EXPORT JxlDecoderStatus
 JxlDecoderGetAnimationFrameName(const JxlDecoder* dec, char* name, size_t size);
 
 /**
- * Returns the size in bytes the DC image output pixel buffer requires at least
- * to contain the DC image pixels in the given format. This is the minumum size
- * of the buffer for JxlDecoderSetDCOutBuffer. Requires the basic image
- * information is available in the decoder.
+ * Returns the minimum size in bytes of the DC image output buffer
+ * for the given format. This is the buffer for JxlDecoderSetDCOutBuffer.
+ * Requires the basic image information is available in the decoder.
  *
  * @param dec decoder object
  * @param format format of pixels
@@ -592,10 +600,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetDCOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size);
 
 /**
- * Returns the size in bytes the image output pixel buffer requires at least to
- * contain all pixels in the given format. This is the minumum size of the
- * buffer for JxlDecoderSetImageOutBuffer. Requires the basic image
- * information is available in the decoder.
+ * Returns the minimum size in bytes of the image output pixel buffer for the
+ * given format. This is the buffer for JxlDecoderSetImageOutBuffer. Requires
+ * the basic image information is available in the decoder.
  *
  * @param dec decoder object
  * @param format format of pixelsformat of pixels.

@@ -20,8 +20,10 @@
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 
 #include "lib/jxl/ac_strategy.h"
+#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_noise.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/image.h"
@@ -37,6 +39,10 @@ struct PassesDecoderState {
   // Allows avoiding copies for encoder loop.
   const PassesSharedState* JXL_RESTRICT shared = &shared_storage;
 
+  // Whether some AC groups are only partially present. This implies that we
+  // need to run ApplyImageFeatures at the end, and not per-group.
+  bool has_partial_ac_groups = false;
+
   // Storage for RNG output for noise synthesis.
   Image3F noise;
 
@@ -46,11 +52,15 @@ struct PassesDecoderState {
 
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_dm_multiplier;
+  float b_dm_multiplier;
 
   // Padded decoded image. This image has two blocks of padding on each left and
   // and right sides and xsize() rounded up to a block size, but it has no
   // vertical padding.
   Image3F decoded;
+
+  // Seed for noise, to have different noise per-frame.
+  size_t noise_seed = 0;
 
   // Filter application pipeline used by ApplyImageFeatures. One entry is needed
   // per thread.
@@ -72,25 +82,39 @@ struct PassesDecoderState {
 
   // Initializes decoder-specific structures using information from *shared.
   void Init(ThreadPool* pool) {
-    if (shared->frame_header.color_transform == ColorTransform::kXYB) {
-      x_dm_multiplier =
-          std::pow(0.5f, 0.5f * shared->frame_header.x_qm_scale - 0.5f);
-    } else {
-      x_dm_multiplier = 1.0f;  // don't scale X quantization in YCbCr
-    }
+    x_dm_multiplier =
+        std::pow(1 / (1.25f), shared->frame_header.x_qm_scale - 2.0f);
+    b_dm_multiplier =
+        std::pow(1 / (1.25f), shared->frame_header.b_qm_scale - 2.0f);
 
     if (shared->frame_header.flags & FrameHeader::kNoise) {
       noise = Image3F(shared->frame_dim.xsize_padded,
                       shared->frame_dim.ysize_padded);
       PROFILER_ZONE("GenerateNoise");
       auto generate_noise = [&](int group_index, int _) {
-        RandomImage3(shared->PaddedGroupRect(group_index), &noise);
+        RandomImage3(noise_seed + group_index,
+                     shared->PaddedGroupRect(group_index), &noise);
       };
       RunOnPool(pool, 0, shared->frame_dim.num_groups, ThreadPool::SkipInit(),
                 generate_noise, "Generate noise");
+      {
+        PROFILER_ZONE("High pass noise");
+        // 4 * (1 - box kernel)
+        WeightsSymmetric5 weights{{HWY_REP4(-3.84)}, {HWY_REP4(0.16)},
+                                  {HWY_REP4(0.16)},  {HWY_REP4(0.16)},
+                                  {HWY_REP4(0.16)},  {HWY_REP4(0.16)}};
+        // TODO(veluca): avoid copy.
+        // TODO(veluca): avoid having a full copy of the image in main memory.
+        ImageF noise_tmp(noise.xsize(), noise.ysize());
+        for (size_t c = 0; c < 3; c++) {
+          Symmetric5(noise.Plane(c), Rect(noise), weights, pool, &noise_tmp);
+          std::swap(noise.Plane(c), noise_tmp);
+        }
+        noise_seed += shared->frame_dim.num_groups;
+      }
     }
 
-    const LoopFilter& lf = shared->frame_header.nonserialized_loop_filter;
+    const LoopFilter& lf = shared->frame_header.loop_filter;
     if (lf.epf_iters > 0 || lf.gab) {
       // decoded must be padded to a multiple of kBlockDim rows since the last
       // rows may be used by the filters even if they are outside the frame

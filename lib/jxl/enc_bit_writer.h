@@ -72,6 +72,7 @@ struct BitWriter {
   // Must be byte-aligned before calling.
   // NOTE: no allotment needed, the other BitWriters have already been charged.
   void AppendByteAligned(const BitWriter& other);
+  void AppendByteAligned(const std::vector<std::unique_ptr<BitWriter>>& others);
   void AppendByteAligned(const std::vector<BitWriter>& others);
 
   class Allotment {

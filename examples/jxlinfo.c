@@ -77,7 +77,17 @@ int PrintBasicInfo(FILE* file) {
       printf("relative_to_max_display: %d\n", info.relative_to_max_display);
       printf("linear_below: %f\n", info.linear_below);
       printf("have_preview: %d\n", info.have_preview);
+      if (info.have_preview) {
+        printf("preview xsize: %u\n", info.preview.xsize);
+        printf("preview ysize: %u\n", info.preview.ysize);
+      }
       printf("have_animation: %d\n", info.have_animation);
+      if (info.have_animation) {
+        printf("ticks per second (numerator / denominator): %u / %u\n",
+               info.animation.tps_numerator, info.animation.tps_denominator);
+        printf("num_loops: %u\n", info.animation.num_loops);
+        printf("have_timecodes: %d\n", info.animation.have_timecodes);
+      }
       printf("orientation: %d\n", info.orientation);
       printf("num_extra_channels: %d\n", info.num_extra_channels);
       printf("alpha_bits: %d\n", info.alpha_bits);

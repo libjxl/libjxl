@@ -88,7 +88,7 @@ constexpr DI di;
 constexpr DI16 di16;
 
 template <class V>
-void DequantLane(V scaled_dequant, V x_dm_multiplier,
+void DequantLane(V scaled_dequant, V x_dm_multiplier, V b_dm_multiplier,
                  const float* JXL_RESTRICT dequant_matrices, size_t dq_ofs,
                  size_t size, size_t k, V x_cc_mul, V b_cc_mul,
                  const float* JXL_RESTRICT biases, float* JXL_RESTRICT block) {
@@ -96,8 +96,8 @@ void DequantLane(V scaled_dequant, V x_dm_multiplier,
       Load(d, dequant_matrices + dq_ofs + k) * scaled_dequant * x_dm_multiplier;
   const auto y_mul =
       Load(d, dequant_matrices + dq_ofs + size + k) * scaled_dequant;
-  const auto b_mul =
-      Load(d, dequant_matrices + dq_ofs + 2 * size + k) * scaled_dequant;
+  const auto b_mul = Load(d, dequant_matrices + dq_ofs + 2 * size + k) *
+                     scaled_dequant * b_dm_multiplier;
 
   const auto quantized_x = Load(d, block + k);
   const auto quantized_y = Load(d, block + size + k);
@@ -116,8 +116,9 @@ void DequantLane(V scaled_dequant, V x_dm_multiplier,
 
 template <class V>
 void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
-                  float x_dm_multiplier, V x_cc_mul, V b_cc_mul, size_t kind,
-                  size_t size, const Quantizer& quantizer,
+                  float x_dm_multiplier, float b_dm_multiplier, V x_cc_mul,
+                  V b_cc_mul, size_t kind, size_t size,
+                  const Quantizer& quantizer,
                   const float* JXL_RESTRICT dequant_matrices,
                   size_t covered_blocks, const size_t* sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
@@ -127,12 +128,14 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
 
   const auto scaled_dequant = Set(d, inv_global_scale / quant);
   const auto x_dm_multiplier_v = Set(d, x_dm_multiplier);
+  const auto b_dm_multiplier_v = Set(d, b_dm_multiplier);
 
   const size_t dq_ofs = quantizer.DequantMatrixOffset(kind, 0);
 
   for (size_t k = 0; k < covered_blocks * kDCTBlockSize; k += Lanes(d)) {
-    DequantLane(scaled_dequant, x_dm_multiplier_v, dequant_matrices, dq_ofs,
-                size, k, x_cc_mul, b_cc_mul, biases, block);
+    DequantLane(scaled_dequant, x_dm_multiplier_v, b_dm_multiplier_v,
+                dequant_matrices, dq_ofs, size, k, x_cc_mul, b_cc_mul, biases,
+                block);
   }
   for (size_t c = 0; c < 3; c++) {
     LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + sbx[c], dc_stride,
@@ -148,8 +151,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        Image3F* JXL_RESTRICT idct, const ImageBundle* decoded) {
   PROFILER_FUNC;
 
-  const LoopFilter& lf =
-      dec_state->shared->frame_header.nonserialized_loop_filter;
+  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
 
   const size_t xsize_blocks = block_rect.xsize();
@@ -218,9 +220,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
   // be done after decoding the whole image (this allows it to work on the
-  // chroma channels too).
-  bool run_apply_image_features =
-      xstart < xend && ystart < yend && !decoded->IsJPEG() && cs.Is444();
+  // chroma channels too), or if there is not at least one pass per AC group.
+  bool run_apply_image_features = xstart < xend && ystart < yend &&
+                                  !decoded->IsJPEG() && cs.Is444() &&
+                                  !dec_state->has_partial_ac_groups;
 
   static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
                 "Groups are too large");
@@ -325,8 +328,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         {
           DequantBlock(
               acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
-              x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
-              dec_state->shared->quantizer, dequant_matrices,
+              dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.RawStrategy(),
+              size, dec_state->shared->quantizer, dequant_matrices,
               acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
               dc_stride, dec_state->shared->opsin_params.quant_biases, block);
         }
@@ -474,9 +477,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           // Dequantize and add predictions.
           {
             DequantBlock(acs, inv_global_scale, row_quant[bx],
-                         dec_state->x_dm_multiplier, x_cc_mul, b_cc_mul,
-                         acs.RawStrategy(), size, dec_state->shared->quantizer,
-                         dequant_matrices,
+                         dec_state->x_dm_multiplier, dec_state->b_dm_multiplier,
+                         x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
+                         dec_state->shared->quantizer, dequant_matrices,
                          acs.covered_blocks_y() * acs.covered_blocks_x(), sbx,
                          dc_rows, dc_stride,
                          dec_state->shared->opsin_params.quant_biases, block);

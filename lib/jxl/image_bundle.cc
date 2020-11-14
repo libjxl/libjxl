@@ -182,7 +182,7 @@ void ImageBundle::VerifyMetadata() const {
   const uint32_t alpha_bits = metadata_->GetAlphaBits();
   JXL_CHECK(alpha_bits <= 16);
 
-  // metadata_->m2.num_extra_channels may temporarily differ from
+  // metadata_->num_extra_channels may temporarily differ from
   // extra_channels_.size(), e.g. after SetAlpha. They are synced by the next
   // call to VisitFields.
 }
@@ -193,8 +193,8 @@ void ImageBundle::VerifySizes() const {
 
   if (HasExtraChannels()) {
     JXL_CHECK(xs != 0 && ys != 0);
-    for (size_t ec = 0; ec < metadata_->m2.extra_channel_info.size(); ++ec) {
-      const ExtraChannelInfo& eci = metadata_->m2.extra_channel_info[ec];
+    for (size_t ec = 0; ec < metadata_->extra_channel_info.size(); ++ec) {
+      const ExtraChannelInfo& eci = metadata_->extra_channel_info[ec];
       JXL_CHECK(extra_channels_[ec].xsize() == eci.Size(xs));
       JXL_CHECK(extra_channels_[ec].ysize() == eci.Size(ys));
     }
@@ -216,35 +216,35 @@ size_t ImageBundle::DetectRealBitdepth() const {
 
 const ImageU& ImageBundle::alpha() const {
   JXL_ASSERT(HasAlpha());
-  const size_t ec = metadata_->m2.Find(ExtraChannel::kAlpha) -
-                    metadata_->m2.extra_channel_info.data();
+  const size_t ec = metadata_->Find(ExtraChannel::kAlpha) -
+                    metadata_->extra_channel_info.data();
   JXL_ASSERT(ec < extra_channels_.size());
   return extra_channels_[ec];
 }
 ImageU* ImageBundle::alpha() {
   JXL_ASSERT(HasAlpha());
-  const size_t ec = metadata_->m2.Find(ExtraChannel::kAlpha) -
-                    metadata_->m2.extra_channel_info.data();
+  const size_t ec = metadata_->Find(ExtraChannel::kAlpha) -
+                    metadata_->extra_channel_info.data();
   JXL_ASSERT(ec < extra_channels_.size());
   return &extra_channels_[ec];
 }
 
 const ImageU& ImageBundle::depth() const {
   JXL_ASSERT(HasDepth());
-  const size_t ec = metadata_->m2.Find(ExtraChannel::kDepth) -
-                    metadata_->m2.extra_channel_info.data();
+  const size_t ec = metadata_->Find(ExtraChannel::kDepth) -
+                    metadata_->extra_channel_info.data();
   JXL_ASSERT(ec < extra_channels_.size());
   return extra_channels_[ec];
 }
 
 void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
-  const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+  const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
   // Must call SetAlphaBits first, otherwise we don't know which channel index
   JXL_CHECK(eci != nullptr);
   JXL_CHECK(alpha.xsize() != 0 && alpha.ysize() != 0);
   JXL_CHECK(eci->alpha_associated == alpha_is_premultiplied);
   extra_channels_.insert(
-      extra_channels_.begin() + (eci - metadata_->m2.extra_channel_info.data()),
+      extra_channels_.begin() + (eci - metadata_->extra_channel_info.data()),
       std::move(alpha));
   // num_extra_channels is automatically set in visitor
   VerifySizes();
@@ -252,9 +252,9 @@ void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
 
 void ImageBundle::SetDepth(ImageU&& depth) {
   JXL_CHECK(depth.xsize() != 0 && depth.ysize() != 0);
-  const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kDepth);
+  const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kDepth);
   JXL_CHECK(eci != nullptr);
-  const size_t ec = eci - metadata_->m2.extra_channel_info.data();
+  const size_t ec = eci - metadata_->extra_channel_info.data();
   JXL_ASSERT(ec < extra_channels_.size());
   extra_channels_[ec] = std::move(depth);
   VerifySizes();

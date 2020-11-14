@@ -56,7 +56,7 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
 
   if (enc_state->cparams.butteraugli_distance < kMinButteraugliForDynamicAR ||
       enc_state->cparams.speed_tier > SpeedTier::kWombat ||
-      enc_state->shared.frame_header.nonserialized_loop_filter.epf_iters == 0) {
+      enc_state->shared.frame_header.loop_filter.epf_iters == 0) {
     FillImage(static_cast<uint8_t>(4), epf_sharpness);
     return;
   }

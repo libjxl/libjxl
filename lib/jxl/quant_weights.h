@@ -483,6 +483,7 @@ class DequantMatrices {
 
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
+                             ModularFrameEncoder* modular_frame_encoder,
                              DequantMatrices* dequant_matrices);
 
 }  // namespace jxl

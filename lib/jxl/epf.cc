@@ -171,7 +171,7 @@ void GaborishRow(const FilterRows& rows, const LoopFilter& /* lf */,
 
     // For AVX3, x0 might only be aligned to 8, not 16; if so, do a capped
     // vector first to ensure full (Store-only!) alignment, then full vectors.
-    const uintptr_t addr = reinterpret_cast<uintptr_t>(row_out) + ix;
+    const uintptr_t addr = reinterpret_cast<uintptr_t>(row_out + ix);
     if ((addr % 64) != 0 && ix < x1) {
       const auto w0 = Set(df, gab_weights[3 * c + 0]);
       const auto w1 = Set(df, gab_weights[3 * c + 1]);
@@ -525,8 +525,7 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& rect,
                            ssize_t y, size_t thread, Image3F* JXL_RESTRICT out,
                            size_t* JXL_RESTRICT output_row) {
   JXL_DASSERT(rect.x0() % kBlockDim == 0);
-  const LoopFilter& lf =
-      dec_state->shared->frame_header.nonserialized_loop_filter;
+  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   if (!lf.gab && lf.epf_iters == 0) {
     if (y < 0 || y >= static_cast<ssize_t>(rect.ysize())) return false;
     *output_row = y;

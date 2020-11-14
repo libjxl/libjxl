@@ -43,6 +43,9 @@ struct DecompressParams {
   // with respect to the full size of the image. By default, nothing less than
   // the full size is requested.
   size_t max_downsampling = 1;
+
+  // Try to decode as much as possible of a truncated codestream.
+  bool allow_partial_files = false;
 };
 
 }  // namespace jxl

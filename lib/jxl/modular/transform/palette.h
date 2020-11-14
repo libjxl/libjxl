@@ -37,7 +37,7 @@ static constexpr int kSmallCube = kLargeCube - 1;
 static constexpr int kLargeCubeOffset = kSmallCube * kSmallCube * kSmallCube;
 
 // Inclusive.
-static constexpr int kMinImplicitPaletteIndex = -(2 * 69 - 1);
+static constexpr int kMinImplicitPaletteIndex = -(2 * 72 - 1);
 
 // The purpose of this function is solely to extend the interpretation of
 // palette indices to implicit values. If index < nb_deltas, indicating that the
@@ -47,26 +47,29 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
                                   const size_t c, const int palette_size,
                                   const int onerow, const int bit_depth) {
   if (index < 0) {
-    static constexpr std::array<std::array<pixel_type, 3>, 69> kDeltaPalette = {
+    static constexpr std::array<std::array<pixel_type, 3>, 72> kDeltaPalette = {
         {
-            {0, 0, 0},       {-3, -3, -3},    {-6, 0, -2},     {0, 0, -10},
-            {0, -9, 0},     {-8, -8, -8},    {-14, -14, -14}, {-21, -21, -21},
-            {0, 0, -24},     {-24, 0, 0},     {-27, -27, -27}, {0, -24, -24},
-            {18, 18, 34},    {38, 38, 38},    {-34, -18, -18}, {-18, -34, -34},
-            {-24, -24, 0},   {-34, -34, -18}, {48, 48, 48},    {-24, 0, -24},
-            {0, -24, 0},     {-24, 0, 24},    {-18, -34, -18}, {18, -18, -34},
-            {60, 60, 60},    {34, 18, 34},    {-34, -18, 18},  {48, 0, 0},
-            {0, 0, -48},     {0, -48, -48},   {-18, -18, 34},  {72, 72, 72},
-            {48, 48, 0},     {34, -18, -18},  {24, -24, 0},    {84, 84, 84},
-            {18, -34, -34},  {34, 34, -18},   {0, -24, 24},    {18, -18, 34},
-            {0, 72, 72},     {34, -18, 18},   {18, -34, -18},  {-18, -34, 18},
-            {0, -48, 0},     {72, 0, 0},      {96, 96, 96},    {48, 0, 48},
-            {108, 108, 108}, {72, 72, 0},     {-27, -27, 27},  {34, -18, -34},
-            {34, -34, -18},  {0, 0, -72},     {0, 96, 96},     {0, 72, 0},
-            {34, 18, -34},   {-96, 0, 0},     {18, -34, 18},   {-34, 18, -34},
-            {48, 0, -48},    {48, -48, -48},  {72, 0, 72},     {34, -34, 18},
-            {18, 34, -34},   {48, 48, -48},   {96, 96, 0},     {0, 0, -96},
-            {-18, 34, -34},
+            {0, 0, 0},       {-4, -4, -4},    {-9, 0, 0},     {0, 0, -13},
+            {0, -12, 0},     {-10, -10, -10}, {-18, -18, -18}, {-28, -28, -28},
+            {0, 0, -32},     {-32, 0, 0},     {-36, -36, -36}, {0, -32, -32},
+            {-17, -17, 0},
+            {24, 24, 45},    {50, 50, 50},    {-45, -24, -24}, {-24, -45, -45},
+            {0, -24, -24},   {-24, 0, -24},
+            {-32, -32, 0},   {-45, -45, -24}, {64, 64, 64},    {-32, 0, -32},
+            {0, -32, 0},     {-32, 0, 32},    {-24, -45, -24}, {24, -24, -45},
+            {80, 80, 80},    {45, 24, 45},    {-45, -24, 24},  {64, 0, 0},
+            {0, 0, -64},     {0, -64, -64},   {-24, -24, 45},  {96, 96, 96},
+            {64, 64, 0},     {45, -24, -24},  {32, -32, 0},    {112, 112, 112},
+            {24, -45, -45},  {45, 45, -24},   {0, -32, 32},    {24, -24, 45},
+            {0, 96, 96},     {45, -24, 24},   {24, -45, -24},  {-24, -45, 24},
+            {0, -64, 0},     {96, 0, 0},      {128, 128, 128}, {64, 0, 64},
+            {144, 144, 144}, {96, 96, 0},     {-36, -36, 36},  {45, -24, -45},
+            {45, -45, -24},  {0, 0, -96},     {0, 128, 128},   {0, 96, 0},
+            {45, 24, -45},   {-128, 0, 0},    {24, -45, 24},   {-45, 24, -45},
+            {64, 0, -64},    {64, -64, -64},  {96, 0, 96},     {45, -45, 24},
+            {24, 45, -45},   {64, 64, -64},   {128, 128, 0},   {0, 0, -128},
+            {-24, 45, -45},
+
         }};
     if (c >= kDeltaPalette[0].size()) {
       return 0;
@@ -74,7 +77,12 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     index = -index - 1;
     index %= 1 + 2 * (kDeltaPalette.size() - 1);
     static constexpr int kMultiplier[] = {-1, 1};
-    return 4 * kDeltaPalette[((index + 1) >> 1)][c] * kMultiplier[index & 1] / 3;
+    pixel_type result =
+        kDeltaPalette[((index + 1) >> 1)][c] * kMultiplier[index & 1];
+    if (bit_depth > 8) {
+      result <<= bit_depth - 8;
+    }
+    return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
     index -= palette_size;
     if (c > 0) {
@@ -455,12 +463,16 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     wp_states.emplace_back(wp_header, w, h);
   }
   std::vector<pixel_type *> p_quant(nb);
-  std::vector<std::vector<float>> error_current_row(nb);
-  std::vector<std::vector<float>> error_next_row(nb);
+  // Three rows of error for dithering: y to y + 2.
+  // Each row has two pixels of padding in the ends, which is
+  // beneficial for both precision and encoding speed.
+  std::vector<std::vector<float>> error_row[3];
   if (lossy) {
-    for (size_t c = 0; c < nb; ++c) {
-      error_current_row[c].resize(w);
-      error_next_row[c].resize(w);
+    for (int i = 0; i < 3; ++i) {
+      error_row[i].resize(nb);
+      for (size_t c = 0; c < nb; ++c) {
+        error_row[i][c].resize(w + 4);
+      }
     }
   }
   for (size_t y = 0; y < h; y++) {
@@ -491,7 +503,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
           }
         } else {
           for (size_t c = 0; c < nb; c++) {
-            color_with_error[c] = p_in[c][x] + error_current_row[c][x];
+            color_with_error[c] = p_in[c][x] + error_row[0][c][x + 2];
             color[c] =
                 std::min(input.maxval,
                          std::max<pixel_type>(
@@ -558,67 +570,67 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
             wp_states[c].UpdateErrors(best_val[c], x, y, w);
             p_quant[c][x] = best_val[c];
           }
+          float len_error = 0;
           for (size_t c = 0; c < nb; ++c) {
-            const float local_error = color_with_error[c] - best_val[c];
-            float weight = 0.03;
-            if (best_index >= -17 && best_index < 0) {
-              weight = 0.09;
-              if (best_index == -1) {
-                weight = 0.13;
-              }
-            }
-            float total_error = 4 * weight * local_error;
+            float local_error = color_with_error[c] - best_val[c];
+            len_error += local_error * local_error;
+          }
+          len_error = sqrt(len_error);
+          float modulate = 1.0;
+          if (len_error > 38) {
+            modulate *= 38 / len_error;
+          }
+          for (size_t c = 0; c < nb; ++c) {
+            float local_error = (color_with_error[c] - best_val[c]);
+            float total_error = 0.65f * local_error;
+            total_error *= modulate;
 
             // If the neighboring pixels have some error in the opposite
             // direction of total_error, cancel some or all of it out before
             // spreading among them.
-            if (std::signbit(error_next_row[c][x]) !=
-                std::signbit(total_error)) {
-              if (std::abs(total_error) >= std::abs(error_next_row[c][x])) {
-                total_error += error_next_row[c][x];
-                error_next_row[c][x] = 0;
-              } else {
-                error_next_row[c][x] += total_error;
-                total_error = 0;
+            constexpr int offsets[12][2] = { {1, 2}, {0, 3}, {0, 4}, {1, 1},
+                                             {1, 3}, {2, 2}, {1, 0}, {1, 4},
+                                             {2, 1}, {2, 3}, {2, 0}, {2, 2} };
+            float total_available = 0;
+            int n = 0;
+            for (int i = 0; i < 11; ++i) {
+              const int row = offsets[i][0];
+              const int col = offsets[i][1];
+              if (std::signbit(error_row[row][c][x + col]) !=
+                  std::signbit(total_error)) {
+                total_available += error_row[row][c][x + col];
+                n++;
               }
             }
-            if (x + 1 < w && std::signbit(error_current_row[c][x + 1]) !=
-                                 std::signbit(total_error)) {
-              if (std::abs(total_error) >=
-                  std::abs(error_current_row[c][x + 1])) {
-                total_error += error_current_row[c][x + 1];
-                error_current_row[c][x + 1] = 0;
-              } else {
-                error_current_row[c][x + 1] += total_error;
-                total_error = 0;
+            float weight = std::abs(total_error) / (std::abs(total_available) + 1e-3);
+            weight = std::min(weight, 1.0f);
+            for (int i = 0; i < 11; ++i) {
+              const int row = offsets[i][0];
+              const int col = offsets[i][1];
+              if (std::signbit(error_row[row][c][x + col]) !=
+                  std::signbit(total_error)) {
+                total_error += weight * error_row[row][c][x + col];
+                error_row[row][c][x + col] *= (1 - weight);
               }
             }
-            if (x > 0 && std::signbit(error_next_row[c][x - 1]) !=
-                             std::signbit(total_error)) {
-              if (std::abs(total_error) >= std::abs(error_next_row[c][x - 1])) {
-                total_error += error_next_row[c][x - 1];
-                error_next_row[c][x - 1] = 0;
-              } else {
-                error_next_row[c][x - 1] += total_error;
-                total_error = 0;
-              }
-            }
-            const float remaining_error = 0.25f * total_error;
-            error_next_row[c][x] += remaining_error;
-            if (x + 1 < w) {
-              error_current_row[c][x + 1] += remaining_error;
-              error_next_row[c][x + 1] += remaining_error;
-            }
-            if (x > 0) {
-              error_next_row[c][x - 1] += remaining_error;
+            const float remaining_error = (1.0f / 14) * total_error;
+            error_row[0][c][x + 3] += 2 * remaining_error;
+            error_row[1][c][x + 1] += remaining_error;
+            error_row[0][c][x + 4] += remaining_error;
+            for (int i = 0; i < 5; ++i) {
+              error_row[1][c][x + i] += remaining_error;
+              error_row[2][c][x + i] += remaining_error;
             }
           }
         }
         p[x] = index;
       }
-      for (size_t c = 0; c < nb; ++c) {
-        error_current_row[c].swap(error_next_row[c]);
-        std::fill(error_next_row[c].begin(), error_next_row[c].end(), 0.f);
+      if (lossy) {
+        for (size_t c = 0; c < nb; ++c) {
+          error_row[0][c].swap(error_row[1][c]);
+          error_row[1][c].swap(error_row[2][c]);
+          std::fill(error_row[2][c].begin(), error_row[2][c].end(), 0.f);
+        }
       }
     }
   }

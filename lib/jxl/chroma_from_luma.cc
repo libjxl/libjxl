@@ -117,6 +117,9 @@ struct CFLFunction {
 int32_t FindBestMultiplier(const float* values_m, const float* values_s,
                            size_t num, float base, float distance_mul,
                            bool fast) {
+  if (num == 0) {
+    return 0;
+  }
   float x;
   if (fast) {
     static constexpr float kInvColorFactor = 1.0f / kDefaultColorFactor;
@@ -277,6 +280,12 @@ JXL_NOINLINE void FindBestCorrelation(
               dc_values_b[(iy + y) * xsize_blocks + ix + x] =
                   dc_b[iy * xs + ix] * q_dc_b;
             }
+          }
+
+          // Do not use this block for computing AC CfL.
+          if (acs.covered_blocks_x() + x0 > x1 ||
+              acs.covered_blocks_y() + y0 > y1) {
+            continue;
           }
 
           // Copy AC coefficients in the local block. The order in which

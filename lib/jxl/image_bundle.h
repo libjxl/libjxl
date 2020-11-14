@@ -113,6 +113,8 @@ class ImageBundle {
   // If c_current.IsGray(), all planes must be identical. NOTE: c_current is
   // independent of metadata()->color_encoding, which is the original, whereas
   // a decoder might return pixels in a different c_current.
+  // This only sets the color channels, you must also make extra channels
+  // match the amount that is in the metadata.
   void SetFromImage(Image3F&& color, const ColorEncoding& c_current);
 
   // -- COLOR ENCODING
@@ -152,10 +154,10 @@ class ImageBundle {
 
   void SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied);
   bool HasAlpha() const {
-    return metadata_->m2.Find(ExtraChannel::kAlpha) != nullptr;
+    return metadata_->Find(ExtraChannel::kAlpha) != nullptr;
   }
   bool AlphaIsPremultiplied() const {
-    const ExtraChannelInfo* eci = metadata_->m2.Find(ExtraChannel::kAlpha);
+    const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
     return (eci == nullptr) ? false : eci->alpha_associated;
   }
   const ImageU& alpha() const;
@@ -164,12 +166,12 @@ class ImageBundle {
   // -- DEPTH
   void SetDepth(ImageU&& depth);
   bool HasDepth() const {
-    return metadata_->m2.Find(ExtraChannel::kDepth) != nullptr;
+    return metadata_->Find(ExtraChannel::kDepth) != nullptr;
   }
   const ImageU& depth() const;
   // Returns the dimensions of the depth image. Do not call if !HasDepth.
   size_t DepthSize(size_t size) const {
-    return metadata_->m2.Find(ExtraChannel::kDepth)->Size(size);
+    return metadata_->Find(ExtraChannel::kDepth)->Size(size);
   }
 
   // -- EXTRA CHANNELS

@@ -55,7 +55,7 @@ struct PassesEncoderState {
   std::vector<ACImage3> coeffs;
 
   // Raw data for special (reference+DC) frames.
-  std::vector<BitWriter> special_frames;
+  std::vector<std::unique_ptr<BitWriter>> special_frames;
 
   // For splitting into passes.
   ProgressiveSplitter progressive_splitter;
@@ -73,6 +73,7 @@ struct PassesEncoderState {
 
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_qm_multiplier = 1.0f;
+  float b_qm_multiplier = 1.0f;
 
   // Heuristics to be used by the encoder.
   std::unique_ptr<EncoderHeuristics> heuristics =

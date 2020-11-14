@@ -44,8 +44,10 @@ using DF4 = HWY_CAPPED(float, 4);
 DF4 df4;
 HWY_FULL(float) df;
 
-Status Heuristics(PassesEncoderState* enc_state, const ImageBundle* linear,
-                  Image3F* opsin, ThreadPool* pool, AuxOut* aux_out) {
+Status Heuristics(PassesEncoderState* enc_state,
+                  ModularFrameEncoder* modular_frame_encoder,
+                  const ImageBundle* linear, Image3F* opsin, ThreadPool* pool,
+                  AuxOut* aux_out) {
   PROFILER_ZONE("JxlLossyFrameHeuristics uninstrumented");
   CompressParams& cparams = enc_state->cparams;
   PassesSharedState& shared = enc_state->shared;
@@ -54,7 +56,7 @@ Status Heuristics(PassesEncoderState* enc_state, const ImageBundle* linear,
 
   // Apply inverse-gaborish.
   // TODO(veluca): make this tiled and make GaborishInverse in-place.
-  if (shared.frame_header.nonserialized_loop_filter.gab) {
+  if (shared.frame_header.loop_filter.gab) {
     *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
   }
   // Compute image of high frequencies by removing a blurred version.
@@ -360,10 +362,11 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 HWY_EXPORT(Heuristics);
 Status FastEncoderHeuristics::LossyFrameHeuristics(
-    PassesEncoderState* enc_state, const ImageBundle* linear, Image3F* opsin,
-    ThreadPool* pool, AuxOut* aux_out) {
-  return HWY_DYNAMIC_DISPATCH(Heuristics)(enc_state, linear, opsin, pool,
-                                          aux_out);
+    PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
+    const ImageBundle* linear, Image3F* opsin, ThreadPool* pool,
+    AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(Heuristics)(enc_state, modular_frame_encoder,
+                                          linear, opsin, pool, aux_out);
 }
 
 }  // namespace jxl

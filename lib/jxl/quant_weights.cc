@@ -1322,9 +1322,11 @@ void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings) {
 
 void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
+                             ModularFrameEncoder* modular_frame_encoder,
                              DequantMatrices* dequant_matrices) {
   // TODO(veluca): heuristics for in-bitstream quant tables.
   *dequant_matrices = DequantMatrices();
+  dequant_matrices->SetModularFrameEncoder(modular_frame_encoder);
   if (cparams.max_error_mode) {
     // Set numerators of all quantization matrices to constant values.
     float weights[3][1] = {{1.0f / cparams.max_error[0]},

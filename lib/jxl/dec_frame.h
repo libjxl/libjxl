@@ -34,7 +34,7 @@
 
 namespace jxl {
 
-// `frame_header` must have nonserialized_image_metadata and
+// `frame_header` must have nonserialized_metadata and
 // nonserialized_is_preview set.
 Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
                          FrameHeader* JXL_RESTRICT frame_header);
@@ -43,16 +43,17 @@ Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
 // See DecodeFile for explanation of c_decoded.
 // `io` is only used for reading maximum image size. Also updates
 // `dec_state` with the new frame header.
-// `decoded->metadata` must already be set!
+// `metadata` is the metadata that applies to all frames of the codestream
+// `decoded->metadata` must already be set and must match metadata.m.
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, const CodecInOut* io = nullptr,
-                   bool is_preview = false);
+                   ImageBundle* decoded, const CodecMetadata& metadata,
+                   const CodecInOut* io = nullptr, bool is_preview = false);
 
 // Leaves reader in the same state as DecodeFrame would. Used to skip preview.
 // Also updates `dec_state` with the new frame header.
-Status SkipFrame(const ImageMetadata& metadata, BitReader* JXL_RESTRICT reader,
+Status SkipFrame(const CodecMetadata& metadata, BitReader* JXL_RESTRICT reader,
                  bool is_preview = false);
 
 // Decodes the global DC info from a frame section, exposed for use by API.

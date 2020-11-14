@@ -15,6 +15,7 @@
 #include "lib/jxl/loop_filter.h"
 
 #include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {
@@ -50,11 +51,13 @@ Status LoopFilter::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
   JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(2, 2, &epf_iters));
   if (visitor->Conditional(epf_iters > 0)) {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &epf_sharp_custom));
-    if (visitor->Conditional(epf_sharp_custom)) {
-      for (size_t i = 0; i < kEpfSharpEntries; ++i) {
-        JXL_QUIET_RETURN_IF_ERROR(visitor->F16(
-            float(i) / float(kEpfSharpEntries - 1), &epf_sharp_lut[i]));
+    if (visitor->Conditional(!nonserialized_is_modular)) {
+      JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &epf_sharp_custom));
+      if (visitor->Conditional(epf_sharp_custom)) {
+        for (size_t i = 0; i < kEpfSharpEntries; ++i) {
+          JXL_QUIET_RETURN_IF_ERROR(visitor->F16(
+              float(i) / float(kEpfSharpEntries - 1), &epf_sharp_lut[i]));
+        }
       }
     }
 
@@ -69,27 +72,22 @@ Status LoopFilter::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &epf_sigma_custom));
     if (visitor->Conditional(epf_sigma_custom)) {
-      JXL_QUIET_RETURN_IF_ERROR(visitor->F16(0.46f, &epf_quant_mul));
+      if (visitor->Conditional(!nonserialized_is_modular)) {
+        JXL_QUIET_RETURN_IF_ERROR(visitor->F16(0.46f, &epf_quant_mul));
+      }
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(0.9f, &epf_pass0_sigma_scale));
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(6.5f, &epf_pass2_sigma_scale));
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->F16(0.6666666666666666f, &epf_border_sad_mul));
+    }
+    if (visitor->Conditional(nonserialized_is_modular)) {
+      JXL_QUIET_RETURN_IF_ERROR(visitor->F16(1.0f, &epf_sigma_for_modular));
     }
   }
 
   JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
   // Extensions: in chronological order of being added to the format.
   return visitor->EndExtensions();
-}
-
-Status ReadLoopFilter(BitReader* JXL_RESTRICT reader,
-                      LoopFilter* JXL_RESTRICT loop_filter) {
-  return Bundle::Read(reader, loop_filter);
-}
-
-Status WriteLoopFilter(const LoopFilter& loop_filter,
-                       BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
-  return Bundle::Write(loop_filter, writer, kLayerHeader, aux_out);
 }
 
 }  // namespace jxl

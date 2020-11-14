@@ -39,7 +39,7 @@ Status DecodePreview(const DecompressParams& dparams,
                      BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
                      ThreadPool* pool, CodecInOut* JXL_RESTRICT io) {
   // No preview present in file.
-  if (!io->metadata.m.m2.have_preview) {
+  if (!io->metadata.m.have_preview) {
     if (dparams.preview == Override::kOn) {
       return JXL_FAILURE("preview == kOn but no preview present");
     }
@@ -50,34 +50,28 @@ Status DecodePreview(const DecompressParams& dparams,
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
 
   if (dparams.preview == Override::kOff) {
-    JXL_RETURN_IF_ERROR(SkipFrame(io->metadata.m, reader, /*is_preview=*/true));
+    JXL_RETURN_IF_ERROR(SkipFrame(io->metadata, reader, /*is_preview=*/true));
     return true;
   }
 
   // Else: default or kOn => decode preview.
   PassesDecoderState dec_state;
   JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, aux_out,
-                                  &io->preview_frame, io, /*is_preview=*/true));
+                                  &io->preview_frame, io->metadata, io,
+                                  /*is_preview=*/true));
   io->dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
                     dec_state.shared->frame_dim.ysize_upsampled;
   return true;
 }
 
 Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
-  JXL_RETURN_IF_ERROR(
-      ReadSizeHeader(reader, &io->metadata.m.nonserialized_size));
+  JXL_RETURN_IF_ERROR(ReadSizeHeader(reader, &io->metadata.size));
 
   JXL_RETURN_IF_ERROR(ReadImageMetadata(reader, &io->metadata.m));
 
-  if (io->metadata.m.m2.have_preview) {
-    JXL_RETURN_IF_ERROR(
-        ReadPreviewHeader(reader, &io->metadata.m.nonserialized_preview));
-  }
-
-  if (io->metadata.m.m2.have_animation) {
-    JXL_RETURN_IF_ERROR(
-        ReadAnimationHeader(reader, &io->metadata.m.nonserialized_animation));
-  }
+  io->metadata.transform_data.nonserialized_xyb_encoded =
+      io->metadata.m.xyb_encoded;
+  JXL_RETURN_IF_ERROR(Bundle::Read(reader, &io->metadata.transform_data));
 
   return true;
 }
@@ -113,8 +107,8 @@ Status DecodeFile(const DecompressParams& dparams,
 
     {
       JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, io));
-      size_t xsize = io->metadata.m.xsize();
-      size_t ysize = io->metadata.m.ysize();
+      size_t xsize = io->metadata.xsize();
+      size_t ysize = io->metadata.ysize();
       JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
     }
 
@@ -128,7 +122,7 @@ Status DecodeFile(const DecompressParams& dparams,
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
-    if (io->metadata.m.m2.have_animation && dparams.keep_dct) {
+    if (io->metadata.m.have_animation && dparams.keep_dct) {
       return JXL_FAILURE("Cannot decode to JPEG an animation");
     }
 
@@ -148,13 +142,15 @@ Status DecodeFile(const DecompressParams& dparams,
       // Skip frames that are not displayed.
       do {
         JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, &reader,
-                                        aux_out, &io->frames.back(), io));
+                                        aux_out, &io->frames.back(),
+                                        io->metadata, io));
       } while (dec_state.shared->frame_header.frame_type !=
                FrameType::kRegularFrame);
       io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
     } while (!dec_state.shared->frame_header.is_last);
 
-    if (dparams.check_decompressed_size && dparams.max_downsampling == 1) {
+    if (dparams.check_decompressed_size && !dparams.allow_partial_files &&
+        dparams.max_downsampling == 1) {
       if (reader.TotalBitsConsumed() != file.size() * kBitsPerByte) {
         return JXL_FAILURE("DecodeFile reader position not at EOF.");
       }

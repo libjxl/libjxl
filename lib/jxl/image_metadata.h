@@ -214,66 +214,6 @@ struct CustomTransformData : public Fields {
   float upsampling8_weights[210];
 };
 
-// Less frequently changed fields, grouped into a separate bundle so they do not
-// need to be signaled when some ImageMetadata fields are non-default.
-struct ImageMetadata2 : public Fields {
-  ImageMetadata2();
-  const char* Name() const override { return "ImageMetadata2"; }
-
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
-
-  // Returns first ExtraChannelInfo of the given type, or nullptr if none.
-  const ExtraChannelInfo* Find(ExtraChannel type) const {
-    for (const ExtraChannelInfo& eci : extra_channel_info) {
-      if (eci.type == type) return &eci;
-    }
-    return nullptr;
-  }
-
-  // Returns first ExtraChannelInfo of the given type, or nullptr if none.
-  ExtraChannelInfo* Find(ExtraChannel type) {
-    for (ExtraChannelInfo& eci : extra_channel_info) {
-      if (eci.type == type) return &eci;
-    }
-    return nullptr;
-  }
-
-  Orientation GetOrientation() const {
-    return static_cast<Orientation>(orientation_minus_1 + 1);
-  }
-
-  mutable bool all_default;
-
-  bool have_preview;
-  bool have_animation;
-
-  // If present, the stored image has the dimensions of the first SizeHeader,
-  // but decoders are advised to resample or display per `intrinsic_size`.
-  bool have_intrinsic_size;
-  SizeHeader intrinsic_size;  // only if have_intrinsic_size
-
-  uint32_t orientation_minus_1;
-
-  ToneMapping tone_mapping;
-
-  // When reading: deserialized. When writing: automatically set from vector.
-  uint32_t num_extra_channels;
-  std::vector<ExtraChannelInfo> extra_channel_info;
-
-  CustomTransformData transform_data;  // often default
-
-  uint64_t extensions;
-
-  // Option to stop parsing after basic info, and treat as if the later
-  // fields do not participate. Use to parse only basic image information
-  // excluding the final larger or variable sized data.
-  bool nonserialized_only_parse_basic_info = false;
-
-  // Must be set before calling VisitFields. Must equal xyb_encoded of
-  // ImageMetadata, should be set by ImageMetadata during VisitFields.
-  bool nonserialized_xyb_encoded = false;
-};
-
 // Properties of the original image bundle. This enables Encode(Decode()) to
 // re-create an equivalent image without user input.
 struct ImageMetadata : public Fields {
@@ -286,7 +226,7 @@ struct ImageMetadata : public Fields {
   // channel present. In the theoretical case that there are multiple alpha
   // channels, returns the bit depht of the first.
   uint32_t GetAlphaBits() const {
-    const ExtraChannelInfo* alpha = m2.Find(ExtraChannel::kAlpha);
+    const ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);
     if (alpha == nullptr) return 0;
     JXL_ASSERT(alpha->bit_depth.bits_per_sample != 0);
     return alpha->bit_depth.bits_per_sample;
@@ -296,10 +236,10 @@ struct ImageMetadata : public Fields {
   // removing all alpha channels if bits is 0.
   // Assumes integer alpha channel and not designed to support multiple
   // alpha channels (it's possible to use those features by manipulating
-  // m2.extra_channel_info directly).
+  // extra_channel_info directly).
   //
   // Callers must insert the actual channel image at the same index before any
-  // further modifications to m2.extra_channel_info.
+  // further modifications to extra_channel_info.
   void SetAlphaBits(uint32_t bits);
 
   bool HasAlpha() const { return GetAlphaBits() != 0; }
@@ -322,17 +262,34 @@ struct ImageMetadata : public Fields {
   }
 
   void SetIntensityTarget(float intensity_target) {
-    m2.tone_mapping.intensity_target = intensity_target;
+    tone_mapping.intensity_target = intensity_target;
   }
   float IntensityTarget() const {
-    JXL_ASSERT(m2.tone_mapping.intensity_target != 0);
-    return m2.tone_mapping.intensity_target;
+    JXL_ASSERT(tone_mapping.intensity_target != 0);
+    return tone_mapping.intensity_target;
   }
 
-  // Image size is taken from `nonserialized_size`, which is part of the
-  // codestream but not serialized by VisitFields().
-  size_t xsize() const { return nonserialized_size.xsize(); }
-  size_t ysize() const { return nonserialized_size.ysize(); }
+  // Returns first ExtraChannelInfo of the given type, or nullptr if none.
+  const ExtraChannelInfo* Find(ExtraChannel type) const {
+    for (const ExtraChannelInfo& eci : extra_channel_info) {
+      if (eci.type == type) return &eci;
+    }
+    return nullptr;
+  }
+
+  // Returns first ExtraChannelInfo of the given type, or nullptr if none.
+  ExtraChannelInfo* Find(ExtraChannel type) {
+    for (ExtraChannelInfo& eci : extra_channel_info) {
+      if (eci.type == type) return &eci;
+    }
+    return nullptr;
+  }
+
+  Orientation GetOrientation() const {
+    return static_cast<Orientation>(orientation);
+  }
+
+  bool ExtraFieldsDefault() const;
 
   mutable bool all_default;
 
@@ -385,15 +342,37 @@ struct ImageMetadata : public Fields {
 
   ColorEncoding color_encoding;
 
-  ImageMetadata2 m2;  // often default
+  // These values are initialized to defaults such that the 'extra_fields'
+  // condition in VisitFields uses correctly initialized values.
+  uint32_t orientation = 1;
+  bool have_preview = false;
+  bool have_animation = false;
+  bool have_intrinsic_size = false;
 
-  // These fields are not used by the visitor, but are the actual structs that
-  // are encoded to/decoded from the code stream; no other
-  // Size/Preview/Animation header is present.
-  SizeHeader nonserialized_size;
-  PreviewHeader nonserialized_preview;
-  // If m2.have_animation
-  AnimationHeader nonserialized_animation;
+  // If present, the stored image has the dimensions of the first SizeHeader,
+  // but decoders are advised to resample or display per `intrinsic_size`.
+  SizeHeader intrinsic_size;  // only if have_intrinsic_size
+
+
+  ToneMapping tone_mapping;
+
+  // When reading: deserialized. When writing: automatically set from vector.
+  uint32_t num_extra_channels;
+  std::vector<ExtraChannelInfo> extra_channel_info;
+
+  CustomTransformData transform_data;  // often default
+
+  // Only present if m.have_preview.
+  PreviewHeader preview_size;
+  // Only present if m.have_animation.
+  AnimationHeader animation;
+
+  uint64_t extensions;
+
+  // Option to stop parsing after basic info, and treat as if the later
+  // fields do not participate. Use to parse only basic image information
+  // excluding the final larger or variable sized data.
+  bool nonserialized_only_parse_basic_info = false;
 };
 
 Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
@@ -402,6 +381,23 @@ Status ReadImageMetadata(BitReader* JXL_RESTRICT reader,
 Status WriteImageMetadata(const ImageMetadata& metadata,
                           BitWriter* JXL_RESTRICT writer, size_t layer,
                           AuxOut* aux_out);
+
+// All metadata applicable to the entire codestream (dimensions, extra channels,
+// ...)
+struct CodecMetadata {
+  // TODO(lode): use the preview and animation fields too, in place of the
+  // nonserialized_ ones in ImageMetadata.
+  ImageMetadata m;
+  // The size of the codestream: this is the nominal size applicable to all
+  // frames, although some frames can have a different effective size through
+  // crop, dc_level or representing a the preview.
+  SizeHeader size;
+  // Often default.
+  CustomTransformData transform_data;
+
+  size_t xsize() const { return size.xsize(); }
+  size_t ysize() const { return size.ysize(); }
+};
 
 }  // namespace jxl
 

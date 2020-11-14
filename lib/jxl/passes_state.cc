@@ -22,9 +22,9 @@ namespace jxl {
 Status InitializePassesSharedState(const FrameHeader& frame_header,
                                    PassesSharedState* JXL_RESTRICT shared,
                                    bool encoder) {
-  JXL_ASSERT(frame_header.nonserialized_image_metadata != nullptr);
+  JXL_ASSERT(frame_header.nonserialized_metadata != nullptr);
   shared->frame_header = frame_header;
-  shared->metadata = frame_header.nonserialized_image_metadata;
+  shared->metadata = frame_header.nonserialized_metadata;
   shared->frame_dim = frame_header.ToFrameDimensions();
   shared->image_features.patches.SetPassesSharedState(shared);
 
@@ -39,8 +39,8 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
   shared->cmap = ColorCorrelationMap(frame_dim.xsize, frame_dim.ysize);
 
   shared->opsin_params =
-      shared->metadata->m2.transform_data.opsin_inverse_matrix.ToOpsinParams(
-          shared->metadata->IntensityTarget());
+      shared->metadata->transform_data.opsin_inverse_matrix.ToOpsinParams(
+          shared->metadata->m.IntensityTarget());
 
   shared->quant_dc = ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   if (!(frame_header.flags & FrameHeader::kUseDcFrame) || encoder) {

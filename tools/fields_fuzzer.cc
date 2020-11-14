@@ -34,33 +34,22 @@ int TestOneInput(const uint8_t* data, size_t size) {
     }
 
     case 1: {
-      PreviewHeader preview;
-      (void)ReadPreviewHeader(&reader, &preview);
-      break;
-    }
-
-    case 2: {
-      AnimationHeader animation;
-      (void)ReadAnimationHeader(&reader, &animation);
-      break;
-    }
-
-    case 3: {
       ImageMetadata metadata;
       (void)ReadImageMetadata(&reader, &metadata);
       break;
     }
 
-    case 4: {
-      ImageMetadata metadata;
+    case 2: {
+      CodecMetadata metadata;
       FrameHeader frame(&metadata);
       (void)ReadFrameHeader(&reader, &frame);
       break;
     }
 
     default: {
-      LoopFilter loop_filter;
-      (void)ReadLoopFilter(&reader, &loop_filter);
+      CustomTransformData transform_data;
+      transform_data.nonserialized_xyb_encoded = true;
+      (void)Bundle::Read(&reader, &transform_data);
       break;
     }
   }

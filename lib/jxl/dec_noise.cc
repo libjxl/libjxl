@@ -32,7 +32,6 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/robust_statistics.h"
 #include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/convolve.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/optimize.h"
@@ -47,7 +46,9 @@ using hwy::HWY_NAMESPACE::Vec;
 
 using D = HWY_CAPPED(float, 1);
 
-// Converts one vector's worth of random bits to floats in [0, 1).
+// Converts one vector's worth of random bits to floats in [1, 2).
+// NOTE: as the convolution kernel sums to 0, it doesn't matter if inputs are in
+// [0, 1) or in [1, 2).
 void BitsToFloat(const uint32_t* JXL_RESTRICT random_bits,
                  float* JXL_RESTRICT floats) {
   const HWY_FULL(float) df;
@@ -56,14 +57,13 @@ void BitsToFloat(const uint32_t* JXL_RESTRICT random_bits,
   const auto bits = Load(du, random_bits);
   // 1.0 + 23 random mantissa bits = [1, 2)
   const auto rand12 = BitCast(df, ShiftRight<9>(bits) | Set(du, 0x3F800000));
-  const auto rand01 = rand12 - Set(df, 1.0f);
-  Store(rand01, df, floats);
+  Store(rand12, df, floats);
 }
 
-void RandomImage(ImageF* JXL_RESTRICT temp, Xorshift128Plus* rng,
-                 const Rect& rect, ImageF* JXL_RESTRICT noise) {
-  const size_t xsize = temp->xsize();
-  const size_t ysize = temp->ysize();
+void RandomImage(Xorshift128Plus* rng, const Rect& rect,
+                 ImageF* JXL_RESTRICT noise) {
+  const size_t xsize = rect.xsize();
+  const size_t ysize = rect.ysize();
 
   // May exceed the vector size, hence we have two loops over x below.
   constexpr size_t kFloatsPerBatch =
@@ -74,7 +74,7 @@ void RandomImage(ImageF* JXL_RESTRICT temp, Xorshift128Plus* rng,
   const size_t N = Lanes(df);
 
   for (size_t y = 0; y < ysize; ++y) {
-    float* JXL_RESTRICT row = temp->Row(y);
+    float* JXL_RESTRICT row = rect.Row(noise, y);
 
     size_t x = 0;
     // Only entire batches (avoids exceeding the image padding).
@@ -94,12 +94,6 @@ void RandomImage(ImageF* JXL_RESTRICT temp, Xorshift128Plus* rng,
       batch_pos += N;
     }
   }
-
-  // TODO(veluca): SIMD-fy & avoid intermediate copy.
-  ImageF out(xsize, ysize);
-  ThreadPool* null_pool = nullptr;  // Parallelized at group level
-  SlowLaplacian5(*temp, Rect(*temp), null_pool, &out);
-  CopyImageTo(out, rect, noise);
 }
 
 // [0, max_value]
@@ -211,15 +205,11 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
   }
 }
 
-void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
-  const size_t xsize = rect.xsize();
-  const size_t ysize = rect.ysize();
-
-  HWY_ALIGN Xorshift128Plus rng((uint64_t(rect.y0()) << 32) + rect.x0());
-  ImageF temp(xsize, ysize);
-  RandomImage(&temp, &rng, rect, &noise->Plane(0));
-  RandomImage(&temp, &rng, rect, &noise->Plane(1));
-  RandomImage(&temp, &rng, rect, &noise->Plane(2));
+void RandomImage3(size_t seed, const Rect& rect, Image3F* JXL_RESTRICT noise) {
+  HWY_ALIGN Xorshift128Plus rng(seed);
+  RandomImage(&rng, rect, &noise->Plane(0));
+  RandomImage(&rng, rect, &noise->Plane(1));
+  RandomImage(&rng, rect, &noise->Plane(2));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -239,8 +229,8 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
 }
 
 HWY_EXPORT(RandomImage3);
-void RandomImage3(const Rect& rect, Image3F* JXL_RESTRICT noise) {
-  return HWY_DYNAMIC_DISPATCH(RandomImage3)(rect, noise);
+void RandomImage3(size_t seed, const Rect& rect, Image3F* JXL_RESTRICT noise) {
+  return HWY_DYNAMIC_DISPATCH(RandomImage3)(seed, rect, noise);
 }
 
 void DecodeFloatParam(float precision, float* val, BitReader* br) {

@@ -53,12 +53,10 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
 
   enc_state->histogram_idx.resize(shared.frame_dim.num_groups);
 
-  if (shared.frame_header.color_transform == ColorTransform::kXYB) {
-    enc_state->x_qm_multiplier =
-        std::pow(2.0f, 0.5f * shared.frame_header.x_qm_scale - 0.5f);
-  } else {
-    enc_state->x_qm_multiplier = 1.0f;  // don't scale X quantization in YCbCr
-  }
+  enc_state->x_qm_multiplier =
+      std::pow(1.25f, shared.frame_header.x_qm_scale - 2.0f);
+  enc_state->b_qm_multiplier =
+      std::pow(1.25f, shared.frame_header.b_qm_scale - 2.0f);
 
   if (enc_state->coeffs.size() != shared.frame_header.passes.num_passes) {
     enc_state->coeffs.resize(shared.frame_header.passes.num_passes);
@@ -86,6 +84,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
         std::max(kMinButteraugliDistance,
                  enc_state->cparams.butteraugli_distance * 0.1f);
     cparams.dots = Override::kOff;
+    cparams.noise = Override::kOff;
     cparams.patches = Override::kOff;
     cparams.gaborish = Override::kOff;
     cparams.epf = 0;
@@ -108,25 +107,54 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       cparams.quality_pair.first = cparams.quality_pair.second =
           99.f - enc_state->cparams.butteraugli_distance * 0.2f;
     }
-    ImageBundle ib(shared.metadata);
+    ImageBundle ib(&shared.metadata->m);
     // This is a lie - dc is in XYB
     // (but EncodeFrame will skip RGB->XYB conversion anyway)
-    ib.SetFromImage(std::move(dc), ColorEncoding::LinearSRGB());
+    ib.SetFromImage(
+        std::move(dc),
+        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray()));
+    if (!ib.metadata()->extra_channel_info.empty()) {
+      // Add dummy extra channels to the patch image: dc_level frames do not yet
+      // support extra channels, but the codec expects that the amount of extra
+      // channels in frames matches that in the metadata of the codestream.
+      std::vector<ImageU> extra_channels;
+      extra_channels.reserve(ib.metadata()->extra_channel_info.size());
+      for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
+        extra_channels.emplace_back(ib.xsize(), ib.ysize());
+        // Must initialize the image with data to not affect blending with
+        // uninitialized memory.
+        // TODO(lode): dc_level must copy and use the real extra channels
+        // instead.
+        ZeroFillImage(&extra_channels.back());
+      }
+      ib.SetExtraChannels(std::move(extra_channels));
+    }
     PassesEncoderState state;
-    enc_state->special_frames.emplace_back();
+
+    auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
     FrameInfo dc_frame_info;
     dc_frame_info.frame_type = FrameType::kDCFrame;
     dc_frame_info.dc_level = shared.frame_header.dc_level + 1;
     dc_frame_info.ib_needs_color_transform = false;
     dc_frame_info.save_before_color_transform = true;  // Implicitly true
+    // TODO(lode): the EncodeFrame / DecodeFrame pair here is likely broken in
+    // case of dc_level >= 3, since EncodeFrame may output multiple frames
+    // to the bitwriter, while DecodeFrame reads only one.
     JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib, &state,
-                          pool, &enc_state->special_frames.back(), nullptr));
-    const Span<const uint8_t> encoded =
-        enc_state->special_frames.back().GetSpan();
+                          pool, special_frame.get(), nullptr));
+    const Span<const uint8_t> encoded = special_frame->GetSpan();
+    enc_state->special_frames.emplace_back(std::move(special_frame));
+
     BitReader br(encoded);
-    ImageBundle decoded(shared.metadata);
+    ImageBundle decoded(&shared.metadata->m);
     PassesDecoderState dec_state;
-    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded));
+    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
+                          *shared.metadata));
+    // TODO(lode): shared.frame_header.dc_level should be equal to
+    // dec_state.shared->frame_header.dc_level - 1 here, since above we set
+    // dc_frame_info.dc_level = shared.frame_header.dc_level + 1, and
+    // dc_frame_info.dc_level is used by EncodeFrame. However, if EncodeFrame
+    // outputs multiple frames, this assumption could be wrong.
     shared.dc_storage =
         CopyImage(dec_state.shared->dc_frames[shared.frame_header.dc_level]);
     ZeroFillImage(&shared.quant_dc);

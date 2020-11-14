@@ -232,7 +232,7 @@ struct FrameSize {
 
 // AnimationFrame defines duration of animation frames.
 struct AnimationFrame : public Fields {
-  explicit AnimationFrame(const ImageMetadata* metadata);
+  explicit AnimationFrame(const CodecMetadata* metadata);
   const char* Name() const override { return "AnimationFrame"; }
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
@@ -245,7 +245,7 @@ struct AnimationFrame : public Fields {
 
   // Must be set to the one ImageMetadata acting as the full codestream header,
   // with correct xyb_encoded, list of extra channels, etc...
-  const ImageMetadata* nonserialized_image_metadata = nullptr;
+  const CodecMetadata* nonserialized_metadata = nullptr;
 };
 
 // For decoding to lower resolutions. Only used for kRegular frames.
@@ -310,7 +310,7 @@ struct FrameHeader : public Fields {
     kSkipAdaptiveDCSmoothing = 128,
   };
 
-  explicit FrameHeader(const ImageMetadata* metadata);
+  explicit FrameHeader(const CodecMetadata* metadata);
   const char* Name() const override { return "FrameHeader"; }
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
@@ -348,7 +348,8 @@ struct FrameHeader : public Fields {
 
   uint32_t group_size_shift;  // only if encoding == kModular;
 
-  uint32_t x_qm_scale;  // only if IsLossy() and color_transform == kXYB
+  uint32_t x_qm_scale;  // only if VarDCT and color_transform == kXYB
+  uint32_t b_qm_scale;  // only if VarDCT and color_transform == kXYB
 
   std::string name;
 
@@ -360,8 +361,8 @@ struct FrameHeader : public Fields {
   FrameSize frame_size;
 
   // upsampling factors for color and extra channels.
-  // For color channels, upsampling is performed in the same color space that
-  // the frame is blended or saved in. Skipped (1) if kUseDCFrame
+  // Upsampling is always performed before applying any inverse color transform.
+  // Skipped (1) if kUseDCFrame
   uint32_t upsampling;
   std::vector<uint32_t> extra_channel_upsampling;
 
@@ -395,28 +396,27 @@ struct FrameHeader : public Fields {
 
   // Must be set to the one ImageMetadata acting as the full codestream header,
   // with correct xyb_encoded, list of extra channels, etc...
-  const ImageMetadata* nonserialized_image_metadata = nullptr;
+  const CodecMetadata* nonserialized_metadata = nullptr;
 
-  // This is the only LoopFilter instance for this frame; it's not serialized by
-  // VisitFields, but is kept here for convenience.
-  LoopFilter nonserialized_loop_filter;
+  // NOTE: This is ignored by AllDefault.
+  LoopFilter loop_filter;
 
   bool nonserialized_is_preview = false;
 
   size_t default_xsize() const {
-    if (!nonserialized_image_metadata) return 0;
+    if (!nonserialized_metadata) return 0;
     if (nonserialized_is_preview) {
-      return nonserialized_image_metadata->nonserialized_preview.xsize();
+      return nonserialized_metadata->m.preview_size.xsize();
     }
-    return nonserialized_image_metadata->xsize();
+    return nonserialized_metadata->xsize();
   }
 
   size_t default_ysize() const {
-    if (!nonserialized_image_metadata) return 0;
+    if (!nonserialized_metadata) return 0;
     if (nonserialized_is_preview) {
-      return nonserialized_image_metadata->nonserialized_preview.ysize();
+      return nonserialized_metadata->m.preview_size.ysize();
     }
-    return nonserialized_image_metadata->ysize();
+    return nonserialized_metadata->ysize();
   }
 
   FrameDimensions ToFrameDimensions() const {

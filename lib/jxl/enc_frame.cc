@@ -225,13 +225,40 @@ uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
 }
 
 Status LoopFilterFromParams(const CompressParams& cparams,
-                            LoopFilter* JXL_RESTRICT loop_filter) {
-  // Gaborish defaults to enabled in Hare or slower.
-  loop_filter->gab =
-      ApplyOverride(cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare);
+                            FrameHeader* JXL_RESTRICT frame_header) {
+  LoopFilter* loop_filter = &frame_header->loop_filter;
 
-  // The default epf_iters setting is defined in CompressParams.
-  loop_filter->epf_iters = cparams.epf;
+  // Gaborish defaults to enabled in Hare or slower.
+  loop_filter->gab = ApplyOverride(
+      cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare &&
+                            frame_header->encoding == FrameEncoding::kVarDCT);
+
+  if (cparams.epf != -1) {
+    loop_filter->epf_iters = cparams.epf;
+  } else {
+    if (frame_header->encoding == FrameEncoding::kModular) {
+      loop_filter->epf_iters = 0;
+    } else {
+      constexpr float kThresholds[3] = {0.7, 1.5, 4.0};
+      loop_filter->epf_iters = 0;
+      for (size_t i = 0; i < 3; i++) {
+        if (cparams.butteraugli_distance >= kThresholds[i]) {
+          loop_filter->epf_iters++;
+        }
+      }
+    }
+  }
+  // Strength of EPF in modular mode.
+  if (frame_header->encoding == FrameEncoding::kModular &&
+      cparams.quality_pair.first < 100) {
+    // TODO(veluca): this formula is nonsense.
+    loop_filter->epf_sigma_for_modular =
+        20.0f * (1.0f - cparams.quality_pair.first / 100);
+  }
+  if (frame_header->encoding == FrameEncoding::kModular &&
+      cparams.lossy_palette) {
+    loop_filter->epf_sigma_for_modular = 1.0f;
+  }
 
   return true;
 }
@@ -269,15 +296,19 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->chroma_subsampling = cparams.chroma_subsampling;
   }
 
-  if (frame_header->encoding == FrameEncoding::kVarDCT) {
-    frame_header->flags = FrameFlagsFromParams(cparams);
-
-    JXL_RETURN_IF_ERROR(LoopFilterFromParams(
-        cparams, &frame_header->nonserialized_loop_filter));
+  frame_header->flags = FrameFlagsFromParams(cparams);
+  // Noise is not supported in the Modular encoder for now.
+  if (frame_header->encoding != FrameEncoding::kVarDCT) {
+    frame_header->UpdateFlag(false, FrameHeader::Flags::kNoise);
   }
 
-  if (frame_info.dc_level) {
-    frame_header->dc_level = frame_info.dc_level;
+  JXL_RETURN_IF_ERROR(LoopFilterFromParams(cparams, frame_header));
+
+  frame_header->dc_level = frame_info.dc_level;
+  if (frame_header->dc_level > 2) {
+    // With 3 or more progressive_dc frames, the implementation does not yet
+    // work, see enc_cache.cc.
+    return JXL_FAILURE("progressive_dc > 2 is not yet supported");
   }
   if (cparams.progressive_dc && cparams.resampling != 1) {
     return JXL_FAILURE("Resampling not supported with DC frames");
@@ -294,7 +325,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
   // case a blend mode involving alpha is used and there are more than one extra
   // channels.
   const std::vector<ExtraChannelInfo>& extra_channels =
-      frame_header->nonserialized_image_metadata->m2.extra_channel_info;
+      frame_header->nonserialized_metadata->m.extra_channel_info;
   // Resized frames.
   if (frame_info.frame_type != FrameType::kDCFrame) {
     frame_header->frame_origin = ib.origin;
@@ -396,7 +427,7 @@ class LossyFrameEncoder {
 
     if (!enc_state_->cparams.max_error_mode) {
       float x_qm_scale_steps[3] = {0.65f, 1.25f, 9.0f};
-      shared.frame_header.x_qm_scale = 0;
+      shared.frame_header.x_qm_scale = 1;
       for (float x_qm_scale_step : x_qm_scale_steps) {
         if (enc_state_->cparams.butteraugli_distance > x_qm_scale_step) {
           shared.frame_header.x_qm_scale++;
@@ -405,7 +436,7 @@ class LossyFrameEncoder {
     }
 
     JXL_RETURN_IF_ERROR(enc_state_->heuristics->LossyFrameHeuristics(
-        enc_state_, linear, opsin, pool_, aux_out_));
+        enc_state_, modular_frame_encoder, linear, opsin, pool_, aux_out_));
 
     InitializePassesEncoder(*opsin, pool_, enc_state_, modular_frame_encoder,
                             aux_out_);
@@ -464,18 +495,15 @@ class LossyFrameEncoder {
     PROFILER_ZONE("ComputeJPEGTranscodingData uninstrumented");
     PassesSharedState& shared = enc_state_->shared;
 
-    FrameDimensions frame_dim;
-    frame_dim.Set(jpeg_data.width, jpeg_data.height,
-                  frame_header->group_size_shift,
-                  frame_header->chroma_subsampling.MaxHShift(),
-                  frame_header->chroma_subsampling.MaxVShift());
+    frame_header->x_qm_scale = 2;
+    frame_header->b_qm_scale = 2;
+
+    FrameDimensions frame_dim = frame_header->ToFrameDimensions();
 
     const size_t xsize = frame_dim.xsize_padded;
     const size_t ysize = frame_dim.ysize_padded;
     const size_t xsize_blocks = frame_dim.xsize_blocks;
     const size_t ysize_blocks = frame_dim.ysize_blocks;
-
-    shared.frame_header.x_qm_scale = 0;
 
     // no-op chroma from luma
     shared.cmap = ColorCorrelationMap(xsize, ysize, false);
@@ -918,7 +946,7 @@ class LossyFrameEncoder {
 };
 
 Status EncodeFrame(const CompressParams& cparams_orig,
-                   const FrameInfo& frame_info, const ImageMetadata* metadata,
+                   const FrameInfo& frame_info, const CodecMetadata* metadata,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
                    ThreadPool* pool, BitWriter* writer, AuxOut* aux_out) {
   ib.VerifyMetadata();
@@ -943,7 +971,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   // Assert that this metadata is correctly set up for the compression params,
   // this should have been done by enc_file.cc
-  JXL_ASSERT(metadata->xyb_encoded ==
+  JXL_ASSERT(metadata->m.xyb_encoded ==
              (cparams.color_transform == ColorTransform::kXYB));
   FrameHeader frame_header(metadata);
   JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams,
@@ -1070,10 +1098,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       lossy_frame_encoder.State()->shared.image_features.splines.HasAny(),
       FrameHeader::kSplines);
   JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, writer, aux_out));
-  if (frame_header.encoding == FrameEncoding::kVarDCT) {
-    JXL_RETURN_IF_ERROR(WriteLoopFilter(frame_header.nonserialized_loop_filter,
-                                        writer, aux_out));
-  }
 
   const size_t num_passes =
       passes_enc_state->progressive_splitter.GetNumPasses();
@@ -1139,10 +1163,12 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       const Rect& rect =
           lossy_frame_encoder.State()->shared.DCGroupRect(group_index);
       size_t nb_bits = CeilLog2Nonzero(rect.xsize() * rect.ysize());
-      BitWriter::Allotment allotment(output, nb_bits);
-      output->Write(nb_bits,
-                    modular_frame_encoder.ac_metadata_size[group_index] - 1);
-      ReclaimAndCharge(output, &allotment, kLayerControlFields, my_aux_out);
+      if (nb_bits != 0) {
+        BitWriter::Allotment allotment(output, nb_bits);
+        output->Write(nb_bits,
+                      modular_frame_encoder.ac_metadata_size[group_index] - 1);
+        ReclaimAndCharge(output, &allotment, kLayerControlFields, my_aux_out);
+      }
       JXL_CHECK(modular_frame_encoder.EncodeStream(
           output, my_aux_out, kLayerControlFields,
           ModularStreamId::ACMetadata(group_index)));

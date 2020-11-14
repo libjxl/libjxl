@@ -160,6 +160,8 @@ class JxlCodec : public ImageCodec {
       cparams_.options.nb_repeats = 2;
     } else if (param == "R") {
       cparams_.responsive = 1;
+    } else if (param[0] == 'R') {
+      cparams_.responsive = strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param == "m") {
       cparams_.modular_mode = true;
       cparams_.color_transform = jxl::ColorTransform::kNone;

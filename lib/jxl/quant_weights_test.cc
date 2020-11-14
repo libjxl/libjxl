@@ -55,7 +55,7 @@ TEST(QuantWeightsTest, DC) {
 void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   ASSERT_TRUE(encodings.size() == DequantMatrices::kNum);
   DequantMatrices mat;
-  ImageMetadata metadata;
+  CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
   ModularFrameEncoder encoder(frame_header, CompressParams{});
   mat.SetModularFrameEncoder(&encoder);
@@ -179,7 +179,7 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
                                        QuantEncoding::DCT(dct_params));
   DequantMatrices dequant_matrices;
-  ImageMetadata metadata;
+  CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
   ModularFrameEncoder encoder(frame_header, CompressParams{});
   dequant_matrices.SetModularFrameEncoder(&encoder);

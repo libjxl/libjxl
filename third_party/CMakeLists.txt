@@ -46,6 +46,13 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/googletest/CMakeLists.txt" AND
     set_target_properties(gtest_main PROPERTIES COMPILE_FLAGS "-Wno-error")
     set_target_properties(gmock_main PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/googletest/LICENSE"
+                 ${PROJECT_BINARY_DIR}/LICENSE.googletest COPYONLY)
+else()
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/googletest/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.googletest COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 find_package(GTest)
 if (NOT GTEST_FOUND)
@@ -77,13 +84,16 @@ endif()  # BUILD_TESTING
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/highway/CMakeLists.txt" AND
     NOT JPEGXL_FORCE_SYSTEM_HWY)
   add_subdirectory(highway)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/highway/LICENSE"
+                 ${PROJECT_BINARY_DIR}/LICENSE.highway COPYONLY)
 else()
   pkg_check_modules(HWY libhwy)
   if (NOT HWY_FOUND)
     message(FATAL_ERROR
         "Highway library (hwy) not found. Install libhwy-dev or download it "
         "to third_party/highway from https://github.com/google/highway . "
-        "Highway is required to build JPEG XL.")
+        "Highway is required to build JPEG XL. You can run "
+        "${PROJECT_SOURCE_DIR}/deps.sh to download this dependency.")
   endif()
   add_library(hwy INTERFACE IMPORTED GLOBAL)
   if(${CMAKE_VERSION} VERSION_LESS "3.13.5")
@@ -96,13 +106,20 @@ else()
     target_link_options(hwy INTERFACE ${HWY_LDFLAGS_OTHER})
     target_compile_options(hwy INTERFACE ${HWY_CFLAGS_OTHER})
   endif()
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libhwy-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.highway COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 # lodepng
-if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lodepng/.git" )
-  message(SEND_ERROR "Please run git submodule update --init")
+if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lodepng/lodepng.h" )
+  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+          "build dependencies.")
 endif()
 include(lodepng.cmake)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lodepng/LICENSE"
+               ${PROJECT_BINARY_DIR}/LICENSE.lodepng COPYONLY)
 
 # brotli
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
@@ -150,33 +167,46 @@ if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brotli/c/include/brotli/decode.h" OR
   endif()
 
   if (NOT BROTLI_FOUND)
-    message(SEND_ERROR
+    message(FATAL_ERROR
         "Brotli not found, install brotli-dev or download brotli source code to"
-        " third_party/brotli from https://github.com/google/brotli.")
+        " third_party/brotli from https://github.com/google/brotli. You can use"
+        " ${PROJECT_SOURCE_DIR}/deps.sh to download this dependency.")
   endif ()
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libbrotli-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.brotli COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 else()
   # Compile brotli from sources.
   set(BROTLI_DISABLE_TESTS ON CACHE STRING "Disable Brotli tests")
   add_subdirectory(brotli EXCLUDE_FROM_ALL)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brotli/LICENSE"
+                 ${PROJECT_BINARY_DIR}/LICENSE.brotli COPYONLY)
 endif()
 
 # *cms
 if (JPEGXL_ENABLE_SKCMS)
-  if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/skcms/.git" )
-    message(SEND_ERROR "Please run git submodule update --init")
+  if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/skcms/skcms.h" )
+    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+            "build dependencies.")
   endif()
   include(skcms.cmake)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/skcms/LICENSE"
+                 ${PROJECT_BINARY_DIR}/LICENSE.skcms COPYONLY)
 else ()
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" )
     message(SEND_ERROR "Please run git submodule update --init")
   endif()
   include(lcms2.cmake)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
+                 ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
 endif()
 
 # brunsli
 # depends both on brotli and googletest, so should be added after them.
 if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brunsli/c/include/brunsli/brunsli_decode.h")
-  message(SEND_ERROR "Please run git submodule update --init")
+  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+          "build dependencies.")
 endif ()
 if (NOT TARGET gtest_main)
   # Disable googletest in brunsli by defining this target.
@@ -184,12 +214,17 @@ if (NOT TARGET gtest_main)
 endif()
 add_subdirectory(brunsli EXCLUDE_FROM_ALL)
 target_compile_options(brunslienc-static PRIVATE -Wno-sign-compare)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brunsli/LICENSE"
+               ${PROJECT_BINARY_DIR}/LICENSE.brunsli COPYONLY)
 
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)
-  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/.git")
-    message(SEND_ERROR "Please run git submodule update --init")
+  if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/CMakeLists.txt")
+    message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
+            "build dependencies.")
   endif()
   include(sjpeg.cmake)
+  configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sjpeg/COPYING"
+                 ${PROJECT_BINARY_DIR}/LICENSE.sjpeg COPYONLY)
 endif ()
 

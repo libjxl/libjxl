@@ -82,14 +82,12 @@ struct LoopFilter : public Fields {
   float epf_pass2_sigma_scale;  // Multiplier for sigma in the second pass
   float epf_border_sad_mul;     // (inverse) multiplier for sigma on borders
 
+  float epf_sigma_for_modular;
+
   uint64_t extensions;
+
+  bool nonserialized_is_modular = false;
 };
-
-Status ReadLoopFilter(BitReader* JXL_RESTRICT reader,
-                      LoopFilter* JXL_RESTRICT loop_filter);
-
-Status WriteLoopFilter(const LoopFilter& loop_filter,
-                       BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
 
 }  // namespace jxl
 

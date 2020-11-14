@@ -112,7 +112,7 @@ jxl::Status LoadSpotColors(const CompressArgs& args, jxl::CodecInOut* io) {
   example.spot_color[1] = 0.0f;                            // G
   example.spot_color[2] = 0.0f;                            // B
   example.spot_color[3] = 1.0f;                            // A
-  io->metadata.m.m2.extra_channel_info.push_back(example);
+  io->metadata.m.extra_channel_info.push_back(example);
   jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
   for (size_t y = 0; y < spot_io.ysize(); ++y) {
     const float* JXL_RESTRICT from = spot_io.Main().color()->PlaneRow(1, y);
@@ -454,9 +454,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "Subsample all color channels by this factor",
                           &params.resampling, &ParseUnsigned, 1);
 
-  cmdline->AddOptionValue('\0', "epf", "0..3",
-                          "Edge preserving filter level (default 2)",
-                          &params.epf, &ParseUnsigned, 1);
+  cmdline->AddOptionValue(
+      '\0', "epf", "-1..3",
+      "Edge preserving filter level (-1 = choose based on quality, default)",
+      &params.epf, &ParseSigned, 1);
 
   cmdline->AddOptionValue('\0', "gaborish", "0|1", "force disable gaborish.",
                           &params.gaborish, &ParseOverride, 1);

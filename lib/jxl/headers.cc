@@ -200,16 +200,6 @@ Status ReadSizeHeader(BitReader* JXL_RESTRICT reader,
   return Bundle::Read(reader, size);
 }
 
-Status ReadPreviewHeader(BitReader* JXL_RESTRICT reader,
-                         PreviewHeader* JXL_RESTRICT preview) {
-  return Bundle::Read(reader, preview);
-}
-
-Status ReadAnimationHeader(BitReader* JXL_RESTRICT reader,
-                           AnimationHeader* JXL_RESTRICT animation) {
-  return Bundle::Read(reader, animation);
-}
-
 Status WriteSizeHeader(const SizeHeader& size, BitWriter* JXL_RESTRICT writer,
                        size_t layer, AuxOut* aux_out) {
   const size_t max_bits = Bundle::MaxBits(size);
@@ -226,18 +216,6 @@ Status WriteSizeHeader(const SizeHeader& size, BitWriter* JXL_RESTRICT writer,
   JXL_ASSERT(total_bits - extension_bits < SizeHeader::kMaxBits);
 
   return Bundle::Write(size, writer, layer, aux_out);
-}
-
-Status WritePreviewHeader(const PreviewHeader& preview,
-                          BitWriter* JXL_RESTRICT writer, size_t layer,
-                          AuxOut* aux_out) {
-  return Bundle::Write(preview, writer, layer, aux_out);
-}
-
-Status WriteAnimationHeader(const AnimationHeader& animation,
-                            BitWriter* JXL_RESTRICT writer, size_t layer,
-                            AuxOut* aux_out) {
-  return Bundle::Write(animation, writer, layer, aux_out);
 }
 
 }  // namespace jxl

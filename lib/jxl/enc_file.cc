@@ -76,18 +76,18 @@ PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
 };
 
 Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
-                         ImageMetadata* metadata) {
-  *metadata = io->metadata.m;
+                         CodecMetadata* metadata) {
+  *metadata = io->metadata;
 
   // Keep ICC profile in lossless modes because a reconstructed profile may be
   // slightly different (quantization).
   const bool lossless_modular =
       cparams.modular_mode && cparams.quality_pair.first == 100.0f;
   if (!lossless_modular) {
-    metadata->color_encoding.DecideIfWantICC();
+    metadata->m.color_encoding.DecideIfWantICC();
   }
 
-  metadata->xyb_encoded =
+  metadata->m.xyb_encoded =
       cparams.color_transform == ColorTransform::kXYB ? true : false;
 
   return true;
@@ -96,7 +96,7 @@ Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
 }  // namespace
 
 Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
-                     const ImageMetadata* metadata, ThreadPool* pool,
+                     const CodecMetadata* metadata, ThreadPool* pool,
                      BitWriter* JXL_RESTRICT writer) {
   BitWriter preview_writer;
   // TODO(janwas): also support generating preview by downsampling
@@ -123,7 +123,7 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
 }
 
 Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
-                    ImageMetadata* metadata, BitWriter* writer,
+                    CodecMetadata* metadata, BitWriter* writer,
                     AuxOut* aux_out) {
   // Marker/signature
   BitWriter::Allotment allotment(writer, 16);
@@ -133,23 +133,17 @@ Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
 
   JXL_RETURN_IF_ERROR(MakeImageMetadata(cparams, io, metadata));
 
+  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize(), io->ysize()));
   JXL_RETURN_IF_ERROR(
-      metadata->nonserialized_size.Set(io->xsize(), io->ysize()));
-  JXL_RETURN_IF_ERROR(WriteSizeHeader(metadata->nonserialized_size, writer,
-                                      kLayerHeader, aux_out));
+      WriteSizeHeader(metadata->size, writer, kLayerHeader, aux_out));
 
   JXL_RETURN_IF_ERROR(
-      WriteImageMetadata(*metadata, writer, kLayerHeader, aux_out));
+      WriteImageMetadata(metadata->m, writer, kLayerHeader, aux_out));
 
-  if (metadata->m2.have_preview) {
-    JXL_RETURN_IF_ERROR(WritePreviewHeader(io->metadata.m.nonserialized_preview,
-                                           writer, kLayerHeader, aux_out));
-  }
-
-  if (metadata->m2.have_animation) {
-    JXL_RETURN_IF_ERROR(WriteAnimationHeader(
-        io->metadata.m.nonserialized_animation, writer, kLayerHeader, aux_out));
-  }
+  metadata->transform_data.nonserialized_xyb_encoded =
+      io->metadata.m.xyb_encoded;
+  JXL_RETURN_IF_ERROR(
+      Bundle::Write(metadata->transform_data, writer, kLayerHeader, aux_out));
 
   return true;
 }
@@ -160,16 +154,16 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
   io->CheckMetadata();
   BitWriter writer;
 
-  ImageMetadata metadata;
+  CodecMetadata metadata;
   JXL_RETURN_IF_ERROR(WriteHeaders(cparams, io, &metadata, &writer, aux_out));
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
-  if (metadata.color_encoding.WantICC()) {
-    JXL_RETURN_IF_ERROR(WriteICC(metadata.color_encoding.ICC(), &writer,
+  if (metadata.m.color_encoding.WantICC()) {
+    JXL_RETURN_IF_ERROR(WriteICC(metadata.m.color_encoding.ICC(), &writer,
                                  kLayerHeader, aux_out));
   }
 
-  if (metadata.m2.have_preview) {
+  if (metadata.m.have_preview) {
     JXL_RETURN_IF_ERROR(
         EncodePreview(cparams, io->preview_frame, &metadata, pool, &writer));
   }

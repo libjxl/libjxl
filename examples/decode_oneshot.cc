@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This example decodes a JPEG XL image in one shot (all input bytes available
-// at once). The example outputs the pixels and color information to a floating
-// point image and an ICC profile on disk.
+// This C++ example decodes a JPEG XL image in one shot (all input bytes
+// available at once). The example outputs the pixels and color information to a
+// floating point image and an ICC profile on disk.
 
 #include <limits.h>
 #include <stdint.h>
@@ -24,7 +24,9 @@
 #include <vector>
 
 #include "jxl/decode.h"
+#include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
+#include "jxl/thread_parallel_runner_cxx.h"
 
 /** Decodes JPEG XL image to floating point pixels and ICC Profile. Pixel are
  * stored as floating point, as interleaved RGBA (4 floating point values per
@@ -37,23 +39,24 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
                          size_t* ysize, std::vector<uint8_t>* icc_profile) {
   const uint8_t* next_in = jxl;
   size_t avail_in = size;
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
 
-  if (JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(
-                             dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
-                                      JXL_DEC_FULL_IMAGE)) {
+  // Multi-threaded parallel runner.
+  auto runner = JxlThreadParallelRunnerMake(
+      nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+
+  auto dec = JxlDecoderMake(nullptr);
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
+                                               JXL_DEC_COLOR_ENCODING |
+                                               JXL_DEC_FULL_IMAGE)) {
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
-    JxlDecoderDestroy(dec);
     return false;
   }
 
-  void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
-  if (JXL_DEC_SUCCESS !=
-      JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner)) {
+  if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
+                                                     JxlThreadParallelRunner,
+                                                     runner.get())) {
     fprintf(stderr, "JxlDecoderSetParallelRunner failed\n");
-    JxlThreadParallelRunnerDestroy(runner);
-    JxlDecoderDestroy(dec);
     return false;
   }
 
@@ -65,7 +68,7 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
 
   for (;;) {
     JxlDecoderStatus status =
-        JxlDecoderProcessInput(dec, (const uint8_t**)&next_in, &avail_in);
+        JxlDecoderProcessInput(dec.get(), (const uint8_t**)&next_in, &avail_in);
 
     if (status == JXL_DEC_ERROR) {
       fprintf(stderr, "Decoder error\n");
@@ -74,7 +77,7 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       fprintf(stderr, "Error, already provided all input\n");
       break;
     } else if (status == JXL_DEC_BASIC_INFO) {
-      if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) {
+      if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec.get(), &info)) {
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
         break;
       }
@@ -82,7 +85,7 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       *ysize = info.ysize;
       size_t buffer_size;
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderImageOutBufferSize(dec, &format, &buffer_size)) {
+          JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size)) {
         fprintf(stderr, "JxlDecoderImageOutBufferSize failed\n");
         break;
       }
@@ -94,7 +97,7 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       pixels->resize(*xsize * *ysize * 4);
       void* pixels_buffer = (void*)pixels->data();
       size_t pixels_buffer_size = pixels->size() * sizeof(float);
-      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec, &format,
+      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
                                                          pixels_buffer,
                                                          pixels_buffer_size)) {
         fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
@@ -106,13 +109,14 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       size_t icc_size;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderGetICCProfileSize(
-              dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
+              dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
         fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
         break;
       }
       icc_profile->resize(icc_size);
       if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                                 dec.get(), &format,
+                                 JXL_COLOR_PROFILE_TARGET_DATA,
                                  icc_profile->data(), icc_profile->size())) {
         fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
         break;
@@ -130,8 +134,6 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
     }
   }
 
-  JxlThreadParallelRunnerDestroy(runner);
-  JxlDecoderDestroy(dec);
   return success;
 }
 

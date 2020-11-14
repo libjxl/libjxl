@@ -32,7 +32,7 @@ Status DoBlending(const PassesSharedState& state, ImageBundle* foreground) {
   // This value should be 0 if there is no alpha channel.
   size_t first_alpha = 0;
   const std::vector<jxl::ExtraChannelInfo>& extra_channels =
-      state.metadata->m2.extra_channel_info;
+      state.metadata->m.extra_channel_info;
   for (size_t i = 0; i < extra_channels.size(); i++) {
     if (extra_channels[i].type == jxl::ExtraChannel::kAlpha) {
       first_alpha = i;
@@ -49,8 +49,8 @@ Status DoBlending(const PassesSharedState& state, ImageBundle* foreground) {
     return JXL_FAILURE(
         "Blending from different alpha channels not yet implemented");
   }
-  size_t image_xsize = state.frame_header.nonserialized_image_metadata->xsize();
-  size_t image_ysize = state.frame_header.nonserialized_image_metadata->ysize();
+  size_t image_xsize = state.frame_header.nonserialized_metadata->xsize();
+  size_t image_ysize = state.frame_header.nonserialized_metadata->ysize();
   if (state.reference_frames[info.source].ib_is_in_xyb == true) {
     return JXL_FAILURE("Trying to blend XYB and non-XYB frames");
   }

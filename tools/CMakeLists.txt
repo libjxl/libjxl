@@ -24,6 +24,10 @@ if(WIN32)
       icc_detect/icc_detect.h
     )
     target_link_libraries(icc_detect PUBLIC jxl-static Qt5::Widgets)
+    if(JPEGXL_DEP_LICENSE_DIR)
+      configure_file("${JPEGXL_DEP_LICENSE_DIR}/libqt5widgets5/copyright"
+                     ${PROJECT_BINARY_DIR}/LICENSE.libqt5widgets5 COPYONLY)
+    endif()  # JPEGXL_DEP_LICENSE_DIR
   endif()
 else()
   find_package(Qt5 QUIET COMPONENTS Widgets X11Extras)

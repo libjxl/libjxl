@@ -29,7 +29,7 @@ TEST(ImageBundleTest, ExtraChannelName) {
   ExtraChannelInfo eci;
   eci.type = ExtraChannel::kBlack;
   eci.name = "testK";
-  metadata.m2.extra_channel_info.push_back(std::move(eci));
+  metadata.extra_channel_info.push_back(std::move(eci));
   ASSERT_TRUE(WriteImageMetadata(metadata, &writer, /*layer=*/0, &aux_out));
   writer.ZeroPadToByte();
   ReclaimAndCharge(&writer, &allotment, /*layer=*/0, &aux_out);
@@ -38,7 +38,7 @@ TEST(ImageBundleTest, ExtraChannelName) {
   ImageMetadata metadata_out;
   ASSERT_TRUE(ReadImageMetadata(&reader, &metadata_out));
   EXPECT_TRUE(reader.Close());
-  EXPECT_EQ("testK", metadata_out.m2.Find(ExtraChannel::kBlack)->name);
+  EXPECT_EQ("testK", metadata_out.Find(ExtraChannel::kBlack)->name);
 }
 
 }  // namespace

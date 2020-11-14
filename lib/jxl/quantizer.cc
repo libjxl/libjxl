@@ -47,19 +47,20 @@ void Quantizer::ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
   const float kQuantFieldTarget = 3.80987740592518214386f;
   // We reduce the median of the quant field by the median absolute deviation:
   // higher resolution on highly varying quant fields.
-  int new_global_scale =
-      static_cast<int>(kGlobalScaleDenom * (quant_median - quant_median_absd) /
-                       kQuantFieldTarget);
+  float scale = kGlobalScaleDenom * (quant_median - quant_median_absd) /
+                kQuantFieldTarget;
+  // Ensure that new_global_scale is positive and no more than 1<<15.
+  if (scale < 1) scale = 1;
+  if (scale > (1 << 15)) scale = 1 << 15;
+  int new_global_scale = static_cast<int>(scale);
   // Ensure that quant_dc_ will always be at least
   // kGlobalScaleDenom/kGlobalScaleNumerator.
   const int scaled_quant_dc =
       static_cast<int>(quant_dc * kGlobalScaleNumerator);
   if (new_global_scale > scaled_quant_dc) {
     new_global_scale = scaled_quant_dc;
+    if (new_global_scale <= 0) new_global_scale = 1;
   }
-  // Ensure that new_global_scale is positive and no more than 1<<15.
-  if (new_global_scale <= 0) new_global_scale = 1;
-  if (new_global_scale > (1 << 15)) new_global_scale = 1 << 15;
   global_scale_ = new_global_scale;
   // Code below uses inv_global_scale_.
   RecomputeFromGlobalScale();

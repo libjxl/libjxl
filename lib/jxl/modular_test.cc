@@ -89,7 +89,7 @@ TEST(ModularTest, RoundtripLossy) {
       ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
   CompressParams cparams;
   cparams.modular_mode = true;
-  cparams.quality_pair = {90.0f, 90.0f};
+  cparams.quality_pair = {80.0f, 80.0f};
   DecompressParams dparams;
 
   CodecInOut io_out;

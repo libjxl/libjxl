@@ -383,6 +383,9 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
       Channel dummy;
       dummy.hcshift = image.channel[c].hcshift;
       dummy.vcshift = image.channel[c].vcshift;
+      if (image.channel[c].hshift > 30 || image.channel[c].vshift > 30) {
+        return JXL_FAILURE("Too many squeezes: shift > 30");
+      }
       if (horizontal) {
         size_t w = image.channel[c].w;
         image.channel[c].w = (w + 1) / 2;
@@ -427,13 +430,18 @@ Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
       offset = input.channel.size() + beginc - endc - 1;
     }
     for (uint32_t c = beginc; c <= endc; c++) {
-      if (input.channel[offset + c - beginc].is_empty()) {
-        input.channel[offset + c - beginc].resize();  // assume all zeroes
+      uint32_t rc = offset + c - beginc;
+      if ((input.channel[c].w < input.channel[rc].w) ||
+          (input.channel[c].h < input.channel[rc].h)) {
+        return JXL_FAILURE("Corrupted squeeze transform");
+      }
+      if (input.channel[rc].is_empty()) {
+        input.channel[rc].resize();  // assume all zeroes
       }
       if (horizontal) {
-        InvHSqueeze(input, c, offset + c - beginc, pool);
+        InvHSqueeze(input, c, rc, pool);
       } else {
-        InvVSqueeze(input, c, offset + c - beginc, pool);
+        InvVSqueeze(input, c, rc, pool);
       }
     }
     input.channel.erase(input.channel.begin() + offset,

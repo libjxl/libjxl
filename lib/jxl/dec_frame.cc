@@ -47,9 +47,11 @@
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/dec_reconstruct.h"
+#include "lib/jxl/dec_upsample.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -95,7 +97,7 @@ class LossyFrameDecoder {
     pool_ = pool;
     aux_out_ = aux_out;
     dec_state_ = dec_state;
-    const LoopFilter& lf = frame_header.nonserialized_loop_filter;
+    const LoopFilter& lf = frame_header.loop_filter;
     if (!frame_header.chroma_subsampling.Is444() &&
         (lf.gab || lf.epf_iters > 0) &&
         frame_header.encoding == FrameEncoding::kVarDCT) {
@@ -258,20 +260,13 @@ class LossyFrameDecoder {
 
 Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
                          FrameHeader* JXL_RESTRICT frame_header) {
-  JXL_ASSERT(frame_header->nonserialized_image_metadata != nullptr);
-  const ImageMetadata& metadata = *frame_header->nonserialized_image_metadata;
-  frame_header->nonserialized_image_metadata = &metadata;
+  JXL_ASSERT(frame_header->nonserialized_metadata != nullptr);
   JXL_RETURN_IF_ERROR(ReadFrameHeader(reader, frame_header));
-
-  if (frame_header->encoding == FrameEncoding::kVarDCT) {
-    JXL_RETURN_IF_ERROR(
-        ReadLoopFilter(reader, &frame_header->nonserialized_loop_filter));
-  }
 
   return true;
 }
 
-Status SkipFrame(const ImageMetadata& metadata, BitReader* JXL_RESTRICT reader,
+Status SkipFrame(const CodecMetadata& metadata, BitReader* JXL_RESTRICT reader,
                  bool is_preview) {
   FrameHeader header(&metadata);
   header.nonserialized_is_preview = is_preview;
@@ -409,14 +404,14 @@ Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, const CodecInOut* io,
-                   bool is_preview) {
+                   ImageBundle* decoded, const CodecMetadata& metadata,
+                   const CodecInOut* io, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
   // Reset the dequantization matrices to their default values.
   dec_state->shared_storage.matrices = DequantMatrices();
 
-  FrameHeader frame_header(decoded->metadata());
+  FrameHeader frame_header(&metadata);
   frame_header.nonserialized_is_preview = is_preview;
   JXL_RETURN_IF_ERROR(DecodeFrameHeader(reader, &frame_header));
   FrameDimensions frame_dim = frame_header.ToFrameDimensions();
@@ -435,23 +430,20 @@ Status DecodeFrame(const DecompressParams& dparams,
   // dimensions; must reset to avoid error when setting alpha.
   decoded->RemoveColor();
 
-  if (decoded->metadata()->m2.Find(ExtraChannel::kDepth)) {
+  if (metadata.m.Find(ExtraChannel::kDepth)) {
     decoded->SetDepth(
         ImageU(decoded->DepthSize(xsize), decoded->DepthSize(ysize)));
   }
-  if (decoded->metadata()->m2.num_extra_channels > 0) {
+  if (metadata.m.num_extra_channels > 0) {
     std::vector<ImageU> ecv;
-    for (size_t i = 0; i < decoded->metadata()->m2.num_extra_channels; i++) {
-      const auto eci = decoded->metadata()->m2.extra_channel_info[i];
+    for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
+      const auto eci = metadata.m.extra_channel_info[i];
       ecv.push_back(ImageU(eci.Size(xsize), eci.Size(ysize)));
     }
     decoded->SetExtraChannels(std::move(ecv));
   }
   if (frame_header.encoding == FrameEncoding::kModular) {
-    decoded->SetFromImage(Image3F(xsize, ysize),
-                          decoded->metadata()->color_encoding);
-    frame_header.nonserialized_loop_filter.gab = false;
-    frame_header.nonserialized_loop_filter.epf_iters = 0;
+    decoded->SetFromImage(Image3F(xsize, ysize), metadata.m.color_encoding);
   }
 
   // Handling of progressive decoding.
@@ -481,6 +473,7 @@ Status DecodeFrame(const DecompressParams& dparams,
   if (aux_out != nullptr) {
     aux_out->downsampling = downsampling;
   }
+  max_passes = std::min<size_t>(max_passes, frame_header.passes.num_passes);
 
   // Read TOC.
   std::vector<uint64_t> group_offsets;
@@ -498,11 +491,44 @@ Status DecodeFrame(const DecompressParams& dparams,
   const size_t group_codes_begin = reader->TotalBitsConsumed() / kBitsPerByte;
   // group_offsets can be permuted, so we need to check the groups_total_size.
   JXL_DASSERT(!group_offsets.empty());
-  if (group_codes_begin + groups_total_size > reader->TotalBytes() ||
-      group_codes_begin + groups_total_size < group_codes_begin) {
-    // The second check is for overflow on the
-    // "group_codes_begin + group_offsets.back()" calculation.
-    return JXL_FAILURE("group offset is out of bounds");
+
+  // Overflow check.
+  if (group_codes_begin + groups_total_size < group_codes_begin) {
+    return JXL_FAILURE("Invalid group codes");
+  }
+
+  bool ac_global_available = true;
+  std::vector<size_t> max_passes_for_group(num_groups, max_passes);
+  if (!dparams.allow_partial_files ||
+      frame_header.frame_type != FrameType::kRegularFrame ||
+      !frame_header.is_last) {
+    if (group_codes_begin + groups_total_size > reader->TotalBytes()) {
+      return JXL_FAILURE("group offset is out of bounds");
+    }
+  } else {
+    auto has_section = [&](size_t i) {
+      return group_codes_begin + group_offsets[i] + group_sizes[i] <=
+             reader->TotalBytes();
+    };
+    // check that all of DC is available.
+    for (size_t i = 0; i < global_ac_index; i++) {
+      if (!has_section(i)) {
+        return JXL_FAILURE("file truncated before all of DC was read");
+      }
+    }
+    if (!has_section(global_ac_index)) {
+      std::fill(max_passes_for_group.begin(), max_passes_for_group.end(), 0);
+      ac_global_available = false;
+    }
+    for (size_t g = 0; g < num_groups; g++) {
+      for (size_t p = 0; p < num_passes; p++) {
+        size_t sid = AcGroupIndex(p, g, num_groups, frame_dim.num_dc_groups,
+                                  has_ac_global);
+        if (!has_section(sid)) {
+          max_passes_for_group[g] = std::min(p, max_passes_for_group[g]);
+        }
+      }
+    }
   }
   auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
                      &group_sizes,
@@ -582,17 +608,33 @@ Status DecodeFrame(const DecompressParams& dparams,
                                group_codes_begin, group_offsets, group_sizes,
                                pool, reader, &aux_outs, aux_out));
 
+  Image3F opsin;
+
+  if (*std::min_element(max_passes_for_group.begin(),
+                        max_passes_for_group.end()) == 0 &&
+      frame_header.encoding == FrameEncoding::kVarDCT &&
+      !decoded->HasExtraChannels()) {
+    // Upsample DC.
+    opsin = CopyImage(*dec_state->shared->dc);
+    Upsample(&opsin, /*upsampling=*/8,
+             frame_header.nonserialized_metadata->transform_data);
+    dec_state->has_partial_ac_groups = true;
+    dec_state->decoded = PadImageMirror(opsin, kMaxFilterPadding, 0);
+    // TODO(veluca): this value just disables EPF in the DC areas.
+    FillImage(-10.0f, &dec_state->filter_weights.sigma);
+  } else {
+    opsin = Image3F(frame_dim.xsize_blocks * kBlockDim,
+                    frame_dim.ysize_blocks * kBlockDim);
+  }
+
   if (downsampling < 16 && frame_dim.num_groups > 1) {
     decoded->SetDecodedBytes(group_offsets[frame_dim.num_dc_groups] +
                              group_sizes[frame_dim.num_dc_groups] +
                              group_codes_begin);
   }
 
-  Image3F opsin(frame_dim.xsize_blocks * kBlockDim,
-                frame_dim.ysize_blocks * kBlockDim);
-
   // Read global AC info.
-  {
+  if (ac_global_available) {
     PROFILER_ZONE("Global AC");
     res = true;
     {
@@ -611,8 +653,6 @@ Status DecodeFrame(const DecompressParams& dparams,
     JXL_RETURN_IF_ERROR(res);
   }
 
-  max_passes = std::min<size_t>(max_passes, frame_header.passes.num_passes);
-
   // Decode groups.
   std::atomic<int> num_errors{0};
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
@@ -628,6 +668,13 @@ Status DecodeFrame(const DecompressParams& dparams,
   const auto process_group = [&](const int task, const int thread) {
     PROFILER_ZONE("process_group");
     const size_t group_index = static_cast<size_t>(task);
+    // DC has been upsampled and this group has no other information, don't
+    // overwrite it.
+    if (max_passes_for_group[group_index] == 0 &&
+        frame_header.encoding == FrameEncoding::kVarDCT &&
+        !decoded->HasExtraChannels()) {
+      return;
+    }
     const size_t gx = group_index % frame_dim.xsize_groups;
     const size_t gy = group_index / frame_dim.xsize_groups;
     const size_t x = gx * frame_dim.group_dim;
@@ -646,9 +693,9 @@ Status DecodeFrame(const DecompressParams& dparams,
 
     // Read passes.
     BitReader storage[kMaxNumPasses];
-    BitReader* JXL_RESTRICT readers[kMaxNumPasses];
+    BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
     readers[0] = pass0_group_reader;
-    for (size_t i = 1; i < max_passes; i++) {
+    for (size_t i = 1; i < max_passes_for_group[group_index]; i++) {
       readers[i] =
           get_reader(&storage[i - 1],
                      AcGroupIndex(i, group_index, num_groups,
@@ -656,15 +703,15 @@ Status DecodeFrame(const DecompressParams& dparams,
     }
     if (frame_header.encoding == FrameEncoding::kVarDCT) {
       if (!lossy_frame_decoder.DecodeACGroup(group_index, thread, readers,
-                                             max_passes, &opsin, decoded,
-                                             my_aux_out)) {
+                                             max_passes_for_group[group_index],
+                                             &opsin, decoded, my_aux_out)) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
         return;
       }
     }
     int minShift = 0;
     int maxShift = 2;
-    for (size_t i = 0; i < max_passes; i++) {
+    for (size_t i = 0; i < max_passes_for_group[group_index]; i++) {
       for (uint32_t j = 0; j < frame_header.passes.num_downsample; ++j) {
         if (i <= frame_header.passes.last_pass[j]) {
           if (frame_header.passes.downsample[j] == 8) minShift = 3;
@@ -682,7 +729,7 @@ Status DecodeFrame(const DecompressParams& dparams,
       maxShift = minShift - 1;
       minShift = 0;
     }
-    for (size_t i = 1; i < max_passes; i++) {
+    for (size_t i = 1; i < max_passes_for_group[group_index]; i++) {
       if (!storage[i - 1].Close()) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -732,11 +779,17 @@ Status DecodeFrame(const DecompressParams& dparams,
     }
   } else {
     // Used per-group readers, need to skip groups in main reader.
-    reader->SkipBits(groups_total_size * kBitsPerByte);  // aligned
+    // Don't go beyond the bit_reader boundaries, as either we are OK with a
+    // truncated file, or we checked that we don't go beyond bounds already
+    // anyway.
+    reader->SkipBits(std::min<size_t>(
+        reader->TotalBytes() * kBitsPerByte - reader->TotalBitsConsumed(),
+        groups_total_size * kBitsPerByte));  // aligned
   }
 
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
-  if ((reader->TotalBitsConsumed()) > reader->TotalBytes() * kBitsPerByte) {
+  if ((reader->TotalBitsConsumed()) > reader->TotalBytes() * kBitsPerByte &&
+      !dparams.allow_partial_files) {
     return JXL_FAILURE("Read past stream end");
   }
 
@@ -747,10 +800,8 @@ Status DecodeFrame(const DecompressParams& dparams,
     // frame_header.
     if (dec_state->shared->frame_header.frame_type == kRegularFrame) {
       decoded->ShrinkTo(
-          dec_state->shared->frame_header.nonserialized_image_metadata
-              ->nonserialized_size.xsize(),
-          dec_state->shared->frame_header.nonserialized_image_metadata
-              ->nonserialized_size.ysize());
+          dec_state->shared->frame_header.nonserialized_metadata->xsize(),
+          dec_state->shared->frame_header.nonserialized_metadata->ysize());
     } else {
       // xsize_upsampled is the actual frame size, after any upsampling has been
       // applied.

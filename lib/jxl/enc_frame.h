@@ -51,7 +51,7 @@ struct FrameInfo {
 // the codestream, and must be used for the FrameHeaders, do not use
 // ib.metadata.
 Status EncodeFrame(const CompressParams& cparams_orig,
-                   const FrameInfo& frame_info, const ImageMetadata* metadata,
+                   const FrameInfo& frame_info, const CodecMetadata* metadata,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
                    ThreadPool* pool, BitWriter* writer, AuxOut* aux_out);
 

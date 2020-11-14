@@ -5,9 +5,12 @@ decoder).
 
 **NOTE**
 
-JPEG XL is in the final stages of standardization, but minor changes to the
-codestream are still likely. **WARNING:** until further notice, do not depend on
-future decoders being able to decode the output of a current encoder.
+JPEG XL is in the final stages of standardization and is ready for freezing of
+the codestream format. The current version is a release candidate, and we are
+not expecting any changes beyond what is required by bug fixing.
+
+**WARNING:** until further notice, do not depend on future decoders being able
+to decode the output of a current encoder.
 
 ## Quick start guide
 
@@ -25,8 +28,9 @@ didn't check out with `--recursive`, or any submodule has changed, run:
 `git submodule update --init --recursive`.
 
 Important: If you downloaded a zip file or tarball from the web interface you
-won't get the needed submodules and the code will not compile. Use `git clone`
-as described before.
+won't get the needed submodules and the code will not compile. You can download
+these external dependencies from source running `./deps.sh`. The git workflow
+described above is recommended instead.
 
 ### Installing dependencies
 
@@ -34,7 +38,7 @@ Required dependencies for compiling the code, in a Debian/Ubuntu based
 distribution run:
 
 ```bash
-sudo apt install cmake pkg-config
+sudo apt install cmake pkg-config libbrotli-dev
 ```
 
 Optional dependencies for supporting other formats in the `cjxl`/`djxl` tools,
@@ -56,8 +60,10 @@ export CC=clang-7 CXX=clang++-7
 
 ```bash
 cd jpeg-xl
-cmake -Bbuild -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF .
-cmake --build build
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF ..
+cmake --build . -- -j
 ```
 
 The encoder/decoder tools will be available in the `build/tools` directory.

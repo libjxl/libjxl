@@ -236,7 +236,7 @@ TEST(FieldsTest, TestRoundtripSize) {
 
 // Ensure all values can be reached by the encoding.
 TEST(FieldsTest, TestCropRect) {
-  ImageMetadata metadata;
+  CodecMetadata metadata;
   for (int32_t i = -1000; i < 19000; ++i) {
     FrameHeader f(&metadata);
     f.custom_size_or_origin = true;
@@ -264,7 +264,7 @@ TEST(FieldsTest, TestPreview) {
 
 // Ensures Read(Write()) returns the same fields.
 TEST(FieldsTest, TestRoundtripFrame) {
-  ImageMetadata metadata;
+  CodecMetadata metadata;
   FrameHeader h(&metadata);
   h.extensions = 0x800;
 

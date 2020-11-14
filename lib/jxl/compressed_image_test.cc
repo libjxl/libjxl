@@ -68,24 +68,23 @@ void RunRGBRoundTrip(float distance, bool fast) {
     cparams.speed_tier = SpeedTier::kWombat;
   }
 
-  JXL_CHECK(io.metadata.m.nonserialized_size.Set(opsin.xsize(), opsin.ysize()));
-  FrameHeader frame_header(&io.metadata.m);
+  JXL_CHECK(io.metadata.size.Set(opsin.xsize(), opsin.ysize()));
+  FrameHeader frame_header(&io.metadata);
   frame_header.color_transform = ColorTransform::kXYB;
-  frame_header.nonserialized_loop_filter.epf_iters = 0;
+  frame_header.loop_filter.epf_iters = 0;
 
   // Use custom weights for Gaborish.
-  frame_header.nonserialized_loop_filter.gab_custom = true;
-  frame_header.nonserialized_loop_filter.gab_x_weight1 = 0.11501538179658321f;
-  frame_header.nonserialized_loop_filter.gab_x_weight2 = 0.089979079587015454f;
-  frame_header.nonserialized_loop_filter.gab_y_weight1 = 0.11501538179658321f;
-  frame_header.nonserialized_loop_filter.gab_y_weight2 = 0.089979079587015454f;
-  frame_header.nonserialized_loop_filter.gab_b_weight1 = 0.11501538179658321f;
-  frame_header.nonserialized_loop_filter.gab_b_weight2 = 0.089979079587015454f;
+  frame_header.loop_filter.gab_custom = true;
+  frame_header.loop_filter.gab_x_weight1 = 0.11501538179658321f;
+  frame_header.loop_filter.gab_x_weight2 = 0.089979079587015454f;
+  frame_header.loop_filter.gab_y_weight1 = 0.11501538179658321f;
+  frame_header.loop_filter.gab_y_weight2 = 0.089979079587015454f;
+  frame_header.loop_filter.gab_b_weight1 = 0.11501538179658321f;
+  frame_header.loop_filter.gab_b_weight2 = 0.089979079587015454f;
 
   PassesEncoderState enc_state;
   JXL_CHECK(InitializePassesSharedState(frame_header, &enc_state.shared));
 
-  enc_state.x_qm_multiplier = 1.0f;
   enc_state.shared.quantizer.SetQuant(4.0f, 4.0f,
                                       &enc_state.shared.raw_quant_field);
   enc_state.shared.ac_strategy.FillDCT8();

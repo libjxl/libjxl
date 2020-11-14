@@ -15,6 +15,7 @@
 #include "lib/jxl/frame_header.h"
 
 #include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {
@@ -86,20 +87,20 @@ Status BlendingInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   return true;
 }
 
-AnimationFrame::AnimationFrame(const ImageMetadata* metadata)
-    : nonserialized_image_metadata(metadata) {
+AnimationFrame::AnimationFrame(const CodecMetadata* metadata)
+    : nonserialized_metadata(metadata) {
   Bundle::Init(this);
 }
 Status AnimationFrame::VisitFields(Visitor* JXL_RESTRICT visitor) {
-  if (visitor->Conditional(nonserialized_image_metadata != nullptr &&
-                           nonserialized_image_metadata->m2.have_animation)) {
+  if (visitor->Conditional(nonserialized_metadata != nullptr &&
+                           nonserialized_metadata->m.have_animation)) {
     JXL_QUIET_RETURN_IF_ERROR(
         visitor->U32(Val(0), Val(1), Bits(8), Bits(32), 0, &duration));
   }
 
-  if (visitor->Conditional(nonserialized_image_metadata != nullptr &&
-                           nonserialized_image_metadata->nonserialized_animation
-                               .have_timecodes)) {
+  if (visitor->Conditional(
+          nonserialized_metadata != nullptr &&
+          nonserialized_metadata->m.animation.have_timecodes)) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(32, 0, &timecode));
   }
   return true;
@@ -142,8 +143,8 @@ Status Passes::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
   return true;
 }
-FrameHeader::FrameHeader(const ImageMetadata* metadata)
-    : animation_frame(metadata), nonserialized_image_metadata(metadata) {
+FrameHeader::FrameHeader(const CodecMetadata* metadata)
+    : animation_frame(metadata), nonserialized_metadata(metadata) {
   Bundle::Init(this);
 }
 
@@ -176,8 +177,8 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   JXL_QUIET_RETURN_IF_ERROR(visitor->U64(0, &flags));
 
   // Color transform
-  bool xyb_encoded = nonserialized_image_metadata == nullptr ||
-                     nonserialized_image_metadata->xyb_encoded;
+  bool xyb_encoded = nonserialized_metadata == nullptr ||
+                     nonserialized_metadata->m.xyb_encoded;
 
   if (xyb_encoded) {
     color_transform = ColorTransform::kXYB;
@@ -196,19 +197,23 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
 
   size_t num_extra_channels =
-      nonserialized_image_metadata != nullptr
-          ? nonserialized_image_metadata->m2.extra_channel_info.size()
+      nonserialized_metadata != nullptr
+          ? nonserialized_metadata->m.extra_channel_info.size()
           : 0;
 
   // Upsampling
   if (visitor->Conditional((flags & kUseDcFrame) == 0)) {
     JXL_QUIET_RETURN_IF_ERROR(
         visitor->U32(Val(1), Val(2), Val(4), Val(8), 1, &upsampling));
+    if (upsampling != 1 && (flags & Flags::kNoise)) {
+      return JXL_FAILURE(
+          "Upsampling and noise are not supported at the same time for now.");
+    }
 
-    if (nonserialized_image_metadata != nullptr &&
+    if (nonserialized_metadata != nullptr &&
         visitor->Conditional(num_extra_channels != 0)) {
       const std::vector<ExtraChannelInfo>& extra_channels =
-          nonserialized_image_metadata->m2.extra_channel_info;
+          nonserialized_metadata->m.extra_channel_info;
       extra_channel_upsampling.resize(extra_channels.size(), 1);
       for (uint32_t& ec_upsampling : extra_channel_upsampling) {
         JXL_QUIET_RETURN_IF_ERROR(
@@ -228,8 +233,10 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
   if (visitor->Conditional(encoding == FrameEncoding::kVarDCT &&
                            color_transform == ColorTransform::kXYB)) {
-    JXL_QUIET_RETURN_IF_ERROR(
-        visitor->U32(Val(0), Val(1), Val(2), Val(3), 2, &x_qm_scale));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(3, 3, &x_qm_scale));
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(3, 2, &b_qm_scale));
+  } else {
+    x_qm_scale = b_qm_scale = 2;  // noop
   }
 
   // Not useful for kPatchSource
@@ -299,17 +306,16 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       }
     }
     if ((num_extra_channels > 1 ||
-         (num_extra_channels == 1 && nonserialized_image_metadata != nullptr &&
-          nonserialized_image_metadata->m2.extra_channel_info[0].type !=
+         (num_extra_channels == 1 && nonserialized_metadata != nullptr &&
+          nonserialized_metadata->m.extra_channel_info[0].type !=
               ExtraChannel::kAlpha)) &&
         (is_partial_frame || blending_info.mode != BlendMode::kReplace)) {
       return JXL_FAILURE(
           "Non-keyframes are not supported with multiple channels for now");
     }
-    if (visitor->Conditional(nonserialized_image_metadata != nullptr &&
-                             nonserialized_image_metadata->m2.have_animation)) {
-      animation_frame.nonserialized_image_metadata =
-          nonserialized_image_metadata;
+    if (visitor->Conditional(nonserialized_metadata != nullptr &&
+                             nonserialized_metadata->m.have_animation)) {
+      animation_frame.nonserialized_metadata = nonserialized_metadata;
       JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&animation_frame));
     }
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &is_last));
@@ -353,6 +359,10 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
 
   JXL_QUIET_RETURN_IF_ERROR(VisitNameString(visitor, &name));
+
+  loop_filter.nonserialized_is_modular = is_modular;
+  JXL_RETURN_IF_ERROR(visitor->VisitNested(&loop_filter));
+
   JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
   // Extensions: in chronological order of being added to the format.
   return visitor->EndExtensions();

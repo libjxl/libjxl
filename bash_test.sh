@@ -127,17 +127,52 @@ test_version() {
     return 1
   fi
 
-  if [[ "${pkg_version}" != "${major}.${minor}.${patch}"* ]]; then
+  local lib_version="${major}.${minor}.${patch}"
+  lib_version="${lib_version%.0}"
+  if [[ "${pkg_version}" != "${lib_version}"* ]]; then
     echo "Debian package version (${pkg_version}) doesn't match library" \
-      "version (${major}.${minor}.${patch})." >&2
+      "version (${lib_version})." >&2
     return 1
   fi
   return 0
 }
 
+# Check that the SHA versions in deps.sh matches the git submodules.
+test_deps_version() {
+  while IFS= read -r line; do
+    if [[ "${line:0:10}" != "[submodule" ]]; then
+      continue
+    fi
+    line="${line#[submodule \"}"
+    line="${line%\"]}"
+    local varname="${line^^}"
+    varname="${varname/\//_}"
+    if ! grep -F "${varname}=" deps.sh >/dev/null; then
+      # Ignoring submodule not in deps.sh
+      continue
+    fi
+    local deps_sha=$(grep -F "${varname}=" deps.sh | cut -f 2 -d '"')
+    [[ -n "${deps_sha}" ]]
+    local git_sha=$(git ls-tree -r HEAD "${line}" | cut -f 1 | cut -f 3 -d ' ')
+    if [[ "${deps_sha}" != "${git_sha}" ]]; then
+      cat >&2 <<EOF
+deps.sh: SHA for project ${line} is at ${deps_sha} but the git submodule is at
+${git_sha}. Please update deps.sh
+EOF
+      return 1
+    fi
+  done < .gitmodules
+}
+
 main() {
   local ret=0
   cd "${MYDIR}"
+
+  if ! git rev-parse >/dev/null 2>/dev/null; then
+    echo "Not a git checkout, skipping bash_test"
+    return 0
+  fi
+
   IFS=$'\n'
   for f in $(declare -F); do
     local test_name=$(echo "$f" | cut -f 3 -d ' ')

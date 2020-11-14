@@ -153,8 +153,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   Image gi(xsize, ysize, maxval, nb_chans + nb_extra);
 
   for (size_t ec = 0, c = nb_chans; ec < nb_extra; ec++, c++) {
-    const ExtraChannelInfo& eci =
-        decoded->metadata()->m2.extra_channel_info[ec];
+    const ExtraChannelInfo& eci = decoded->metadata()->extra_channel_info[ec];
     gi.channel[c].resize(eci.Size(decoded->xsize()),
                          eci.Size(decoded->ysize()));
     gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
@@ -449,7 +448,7 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
   if (decoded->HasExtraChannels()) {
     for (size_t ec = 0; ec < decoded->extra_channels().size(); ec++, c++) {
       const jxl::ExtraChannelInfo& eci =
-          decoded->metadata()->m2.extra_channel_info[ec];
+          decoded->metadata()->extra_channel_info[ec];
       const pixel_type max_extra = (1u << eci.bit_depth.bits_per_sample) - 1;
       const size_t ec_xsize = eci.Size(xsize);  // includes shift
       const size_t ec_ysize = eci.Size(ysize);

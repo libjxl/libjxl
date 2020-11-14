@@ -254,42 +254,41 @@ Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
     return true;
   }
 
+  bool extra_fields =
+      (orientation != 1 || have_preview || have_animation ||
+       have_intrinsic_size || !Bundle::AllDefault(tone_mapping));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &extra_fields));
+  if (visitor->Conditional(extra_fields)) {
+    orientation--;
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(3, 0, &orientation));
+    orientation++;
+    // (No need for bounds checking because we read exactly 3 bits)
+
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_intrinsic_size));
+    if (visitor->Conditional(have_intrinsic_size)) {
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&intrinsic_size));
+    }
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_preview));
+    if (visitor->Conditional(have_preview)) {
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&preview_size));
+    }
+    JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_animation));
+    if (visitor->Conditional(have_animation)) {
+      JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&animation));
+    }
+  } else {
+    orientation = 1;  // identity
+    have_intrinsic_size = false;
+    have_preview = false;
+    have_animation = false;
+  }
+
   JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&bit_depth));
   JXL_QUIET_RETURN_IF_ERROR(
       visitor->Bool(true, &modular_16_bit_buffer_sufficient));
 
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &xyb_encoded));
-  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
-
-  m2.nonserialized_xyb_encoded = xyb_encoded;
-  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&m2));
-
-  return true;
-}
-
-ImageMetadata2::ImageMetadata2() { Bundle::Init(this); }
-Status ImageMetadata2::VisitFields(Visitor* JXL_RESTRICT visitor) {
-  if (visitor->AllDefault(*this, &all_default)) {
-    // Overwrite all serialized fields, but not any nonserialized_*.
-    visitor->SetDefault(this);
-    return true;
-  }
-
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_preview));
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_animation));
-
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_intrinsic_size));
-  if (visitor->Conditional(have_intrinsic_size)) {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&intrinsic_size));
-  }
-
-  JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(3, 0, &orientation_minus_1));
-  // (No need for bounds checking because we read exactly 3 bits)
-
-  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
-
   num_extra_channels = extra_channel_info.size();
-  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(0), Bits(4), BitsOffset(8, 16),
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(0), Val(1), BitsOffset(4, 2),
                                          BitsOffset(12, 1), 0,
                                          &num_extra_channels));
 
@@ -302,13 +301,16 @@ Status ImageMetadata2::VisitFields(Visitor* JXL_RESTRICT visitor) {
     }
   }
 
+  JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(true, &xyb_encoded));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&color_encoding));
+  if (visitor->Conditional(extra_fields)) {
+    JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&tone_mapping));
+  }
+
   // Treat as if only the fields up to extra channels exist.
   if (visitor->IsReading() && nonserialized_only_parse_basic_info) {
     return true;
   }
-
-  transform_data.nonserialized_xyb_encoded = nonserialized_xyb_encoded;
-  JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&transform_data));
 
   JXL_QUIET_RETURN_IF_ERROR(visitor->BeginExtensions(&extensions));
   // Extensions: in chronological order of being added to the format.
@@ -379,8 +381,8 @@ Status WriteImageMetadata(const ImageMetadata& metadata,
 }
 
 void ImageMetadata::SetAlphaBits(uint32_t bits) {
-  std::vector<ExtraChannelInfo>& eciv = m2.extra_channel_info;
-  ExtraChannelInfo* alpha = m2.Find(ExtraChannel::kAlpha);
+  std::vector<ExtraChannelInfo>& eciv = extra_channel_info;
+  ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);
   if (bits == 0) {
     if (alpha != nullptr) {
       // Remove the alpha channel from the extra channel info. It's
@@ -409,5 +411,6 @@ void ImageMetadata::SetAlphaBits(uint32_t bits) {
       alpha->bit_depth.exponent_bits_per_sample = 0;
     }
   }
+  num_extra_channels = extra_channel_info.size();
 }
 }  // namespace jxl

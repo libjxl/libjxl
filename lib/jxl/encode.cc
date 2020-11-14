@@ -25,7 +25,6 @@
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/external_image.h"
 #include "lib/jxl/icc_codec.h"
-#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/memory_manager_internal.h"
 
 // Debug-printing failure macro similar to JXL_FAILURE, but for the status code
@@ -57,7 +56,7 @@ struct JxlEncoderStruct {
   std::vector<std::unique_ptr<JxlEncoderQueuedFrame>> input_frame_queue;
   std::vector<uint8_t> output_byte_queue;
   bool wrote_headers;
-  jxl::ImageMetadata metadata;
+  jxl::CodecMetadata metadata;
 
   JxlEncoderStatus RefillOutputByteQueue() {
     std::unique_ptr<JxlEncoderQueuedFrame> input_frame =
@@ -108,13 +107,13 @@ struct JxlEncoderStruct {
         return JXL_ENC_ERROR;
       }
       // Only send ICC (at least several hundred bytes) if fields aren't enough.
-      if (this->metadata.color_encoding.WantICC()) {
-        if (!jxl::WriteICC(this->metadata.color_encoding.ICC(), &writer,
+      if (this->metadata.m.color_encoding.WantICC()) {
+        if (!jxl::WriteICC(this->metadata.m.color_encoding.ICC(), &writer,
                            jxl::kLayerHeader, nullptr)) {
           return JXL_ENC_ERROR;
         }
       }
-      if (this->metadata.m2.have_preview) {
+      if (this->metadata.m.have_preview) {
         if (!jxl::EncodePreview(cparams, io.preview_frame, &this->metadata,
                                 this->thread_pool.get(), &writer)) {
           return JXL_ENC_ERROR;

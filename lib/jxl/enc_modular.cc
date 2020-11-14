@@ -308,6 +308,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
     ThreadPool* pool, AuxOut* aux_out, bool do_color) {
   const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
 
+  if (do_color && frame_header.loop_filter.gab) {
+    *color = GaborishInverse(*color, 0.9908511000000001f, pool);
+  }
+
   if (do_color && cparams.speed_tier < SpeedTier::kCheetah) {
     FindBestPatchDictionary(*color, enc_state, nullptr, nullptr,
                             cparams.color_transform == ColorTransform::kXYB);
@@ -434,7 +438,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   // IsDisplayed
   if (ib.HasExtraChannels()) {
     for (size_t ec = 0; ec < ib.extra_channels().size(); ec++, c++) {
-      const ExtraChannelInfo& eci = ib.metadata()->m2.extra_channel_info[ec];
+      const ExtraChannelInfo& eci = ib.metadata()->extra_channel_info[ec];
       gi.channel[c].resize(eci.Size(ib.xsize()), eci.Size(ib.ysize()));
       gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
 
@@ -595,15 +599,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
         }
       }
       if (q < 1) q = 1;
-      // preserve the old (buggy) behaviour of quantize.h.
-      if (i != gi.nb_meta_channels) {
-        QuantizeChannel(gi.channel[i - 1], q);
-        quants[i - 1] = q;
-      }
+      QuantizeChannel(gi.channel[i], q);
+      quants[i] = q;
     }
-    size_t r = gi.channel.size() - 1;
-    quants[r] = quants[r - 1];
-    QuantizeChannel(gi.channel[r], quants[r]);
   }
 
   // Fill other groups.

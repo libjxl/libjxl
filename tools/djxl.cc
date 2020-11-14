@@ -92,6 +92,10 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "greater than 16 will return the LQIP if available)",
                           &params.max_downsampling, &ParseUnsigned);
 
+  cmdline->AddOptionFlag('\0', "allow_partial_files",
+                         "allow decoding of truncated files",
+                         &params.allow_partial_files, &SetBooleanTrue);
+
   cmdline->AddOptionFlag(
       'j', "jpeg",
       "decode directly to JPEG when possible. Depending on the JPEG XL mode "
@@ -221,9 +225,9 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   // (Writing large PNGs is slow, so allow skipping it for benchmarks.)
   if (file_out == nullptr) return true;
 
-  for (size_t i = 0; i < io.metadata.m.m2.num_extra_channels; i++) {
+  for (size_t i = 0; i < io.metadata.m.num_extra_channels; i++) {
     // Don't use Find() because there may be multiple spot color channels.
-    const jxl::ExtraChannelInfo& eci = io.metadata.m.m2.extra_channel_info[i];
+    const jxl::ExtraChannelInfo& eci = io.metadata.m.extra_channel_info[i];
     if (eci.type == jxl::ExtraChannel::kOptional) {
       continue;
     }
@@ -256,7 +260,7 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   size_t bits_per_sample = io.metadata.m.bit_depth.bits_per_sample;
   if (args.bits_per_sample != 0) bits_per_sample = args.bits_per_sample;
 
-  if (!io.metadata.m.m2.have_animation) {
+  if (!io.metadata.m.have_animation) {
     if (!EncodeToFile(io, c_out, bits_per_sample, file_out)) {
       fprintf(stderr, "Failed to write decoded image.\n");
       return false;

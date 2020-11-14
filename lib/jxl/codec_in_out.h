@@ -91,17 +91,6 @@ struct Blobs {
   PaddedBytes xmp;
 };
 
-// All metadata applicable to the entire codestream (dimensions, extra channels,
-// ...)
-struct CodecMetadata {
-  // TODO(lode): use the other fields too, this is work in progress, currently
-  // only "m" is used. SizeHeader should be used instead of m.nonserialized_size
-  ImageMetadata m;
-  SizeHeader size;
-  PreviewHeader preview;
-  AnimationHeader animation;
-};
-
 // For Codec::kJPG, convert between JPEG and pixels or between JPEG and
 // quantized DCT coefficients
 // For float data (pfm,exr): kPixels uses 0..maxnits, kLosslessFloat doesn't
@@ -138,7 +127,7 @@ class CodecInOut {
   }
 
   void SetSize(size_t xsize, size_t ysize) {
-    JXL_CHECK(metadata.m.nonserialized_size.Set(xsize, ysize));
+    JXL_CHECK(metadata.size.Set(xsize, ysize));
   }
 
   void CheckMetadata() const {
@@ -154,8 +143,8 @@ class CodecInOut {
     }
   }
 
-  size_t xsize() const { return metadata.m.xsize(); }
-  size_t ysize() const { return metadata.m.ysize(); }
+  size_t xsize() const { return metadata.size.xsize(); }
+  size_t ysize() const { return metadata.size.ysize(); }
   void ShrinkTo(size_t xsize, size_t ysize) {
     // preview is unaffected.
     for (ImageBundle& ib : frames) {
@@ -179,7 +168,7 @@ class CodecInOut {
   // Calls TransformTo for each ImageBundle (preview/frames).
   Status TransformTo(const ColorEncoding& c_desired,
                      ThreadPool* pool = nullptr) {
-    if (metadata.m.m2.have_preview) {
+    if (metadata.m.have_preview) {
       JXL_RETURN_IF_ERROR(preview_frame.TransformTo(c_desired, pool));
     }
     for (ImageBundle& ib : frames) {

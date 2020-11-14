@@ -269,7 +269,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
 
   dec->io.reset(new jxl::CodecInOut());
 
-  dec->frame_header.reset(new jxl::FrameHeader(&dec->io->metadata.m));
+  dec->frame_header.reset(new jxl::FrameHeader(&dec->io->metadata));
   dec->frame_dim = jxl::FrameDimensions();
   dec->group_offsets.clear();
   dec->group_sizes.clear();
@@ -443,11 +443,11 @@ JxlDecoderStatus JxlDecoderReadBasicInfo(JxlDecoder* dec, const uint8_t* in,
   Span<const uint8_t> span(in + pos, size - pos);
   auto reader = GetBitReader(span);
   JXL_API_RETURN_IF_ERROR(
-      ReadBundle(span, reader.get(), &dec->io->metadata.m.nonserialized_size));
+      ReadBundle(span, reader.get(), &dec->io->metadata.size));
 
-  dec->io->metadata.m.m2.nonserialized_only_parse_basic_info = true;
+  dec->io->metadata.m.nonserialized_only_parse_basic_info = true;
   JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dec->io->metadata.m));
-  dec->io->metadata.m.m2.nonserialized_only_parse_basic_info = false;
+  dec->io->metadata.m.nonserialized_only_parse_basic_info = false;
   dec->got_basic_info = true;
   dec->basic_info_size_hint = 0;
 
@@ -478,15 +478,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
   ImageMetadata dummy_metadata;
   JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dummy_metadata));
 
-  if (dec->io->metadata.m.m2.have_preview) {
-    JXL_API_RETURN_IF_ERROR(ReadBundle(
-        span, reader.get(), &dec->io->metadata.m.nonserialized_preview));
-  }
-
-  if (dec->io->metadata.m.m2.have_animation) {
-    JXL_API_RETURN_IF_ERROR(ReadBundle(
-        span, reader.get(), &dec->io->metadata.m.nonserialized_animation));
-  }
+  JXL_API_RETURN_IF_ERROR(
+      ReadBundle(span, reader.get(), &dec->io->metadata.transform_data));
 
   if (dec->io->metadata.m.color_encoding.WantICC()) {
     PaddedBytes icc;
@@ -563,7 +556,7 @@ static JxlDecoderStatus ConvertImage(const JxlDecoder* dec,
     }
   }
   jxl::Orientation undo_orientation = dec->keep_orientation
-                                          ? io.metadata.m.m2.GetOrientation()
+                                          ? io.metadata.m.GetOrientation()
                                           : jxl::Orientation::kIdentity;
   jxl::Status status = jxl::ConvertImage(
       io.Main(), BitsPerChannel(format.data_type),
@@ -637,11 +630,10 @@ jxl::Status DecodeDC(JxlDecoder* dec, const uint8_t* in, size_t size) {
   if (dec->dc_out_buffer) {
     PassesSharedState& shared = dec_state.shared_storage;
     Image3F dc(shared.dc_storage.xsize(), shared.dc_storage.ysize());
-    OpsinToLinear(shared.dc_storage, Rect(dc), dec->thread_pool.get(), &dc,
-                  dec->io->Main()
-                      .metadata()
-                      ->m2.transform_data.opsin_inverse_matrix.ToOpsinParams(
-                          dec->io->metadata.m.IntensityTarget()));
+    OpsinToLinear(
+        shared.dc_storage, Rect(dc), dec->thread_pool.get(), &dc,
+        dec->io->metadata.transform_data.opsin_inverse_matrix.ToOpsinParams(
+            dec->io->metadata.m.IntensityTarget()));
     CodecInOut dc_io;
     dc_io.SetFromImage(
         std::move(dc),
@@ -689,22 +681,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
   if (dec->events_wanted & JXL_DEC_EXTENSIONS) {
     dec->events_wanted &= ~JXL_DEC_EXTENSIONS;
-    if (dec->io->metadata.m.m2.extensions != 0) {
+    if (dec->io->metadata.m.extensions != 0) {
       return JXL_DEC_EXTENSIONS;
-    }
-  }
-
-  if (dec->events_wanted & JXL_DEC_PREVIEW_HEADER) {
-    dec->events_wanted &= ~JXL_DEC_PREVIEW_HEADER;
-    if (dec->io->metadata.m.m2.have_preview) {
-      return JXL_DEC_PREVIEW_HEADER;
-    }
-  }
-
-  if (dec->events_wanted & JXL_DEC_ANIMATION_HEADER) {
-    dec->events_wanted &= ~JXL_DEC_ANIMATION_HEADER;
-    if (dec->io->metadata.m.m2.have_animation) {
-      return JXL_DEC_ANIMATION_HEADER;
     }
   }
 
@@ -718,7 +696,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       (dec->events_wanted & (JXL_DEC_FULL_IMAGE | JXL_DEC_DC_IMAGE))) {
     for (;;) {
       bool is_preview =
-          dec->frames_seen == 0 && dec->io->metadata.m.m2.have_preview;
+          dec->frames_seen == 0 && dec->io->metadata.m.have_preview;
       size_t pos = dec->next_frame_pos;
       if (pos >= size) {
         return JXL_DEC_NEED_MORE_INPUT;
@@ -726,7 +704,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       Span<const uint8_t> span(in + pos, size - pos);
       auto reader = GetBitReader(span);
 
-      dec->frame_header.reset(new FrameHeader(&dec->io->metadata.m));
+      dec->frame_header.reset(new FrameHeader(&dec->io->metadata));
       dec->frame_header->nonserialized_is_preview = is_preview;
       jxl::Status status =
           DecodeFrameHeader(reader.get(), dec->frame_header.get());
@@ -944,11 +922,10 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
     info->bits_per_sample = meta.bit_depth.bits_per_sample;
     info->exponent_bits_per_sample = meta.bit_depth.exponent_bits_per_sample;
 
-    info->have_preview = meta.m2.have_preview;
-    info->have_animation = meta.m2.have_animation;
+    info->have_preview = meta.have_preview;
+    info->have_animation = meta.have_animation;
     // TODO(janwas): intrinsic_size
-    info->orientation =
-        static_cast<JxlOrientation>(meta.m2.orientation_minus_1 + 1);
+    info->orientation = static_cast<JxlOrientation>(meta.orientation);
 
     if (!dec->keep_orientation) {
       if (info->orientation >= JXL_ORIENT_TRANSPOSE) {
@@ -958,13 +935,11 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
     }
 
     info->intensity_target = meta.IntensityTarget();
-    info->min_nits = meta.m2.tone_mapping.min_nits;
-    info->relative_to_max_display =
-        meta.m2.tone_mapping.relative_to_max_display;
-    info->linear_below = meta.m2.tone_mapping.linear_below;
+    info->min_nits = meta.tone_mapping.min_nits;
+    info->relative_to_max_display = meta.tone_mapping.relative_to_max_display;
+    info->linear_below = meta.tone_mapping.linear_below;
 
-    const jxl::ExtraChannelInfo* alpha =
-        meta.m2.Find(jxl::ExtraChannel::kAlpha);
+    const jxl::ExtraChannelInfo* alpha = meta.Find(jxl::ExtraChannel::kAlpha);
     if (alpha != nullptr) {
       info->alpha_bits = alpha->bit_depth.bits_per_sample;
       info->alpha_exponent_bits = alpha->bit_depth.exponent_bits_per_sample;
@@ -975,7 +950,22 @@ JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
       info->alpha_premultiplied = 0;
     }
 
-    info->num_extra_channels = meta.m2.num_extra_channels;
+    info->num_extra_channels = meta.num_extra_channels;
+
+    if (info->have_preview) {
+      info->preview.xsize = dec->io->metadata.m.preview_size.xsize();
+      info->preview.ysize = dec->io->metadata.m.preview_size.ysize();
+    }
+
+    if (info->have_animation) {
+      info->animation.tps_numerator =
+          dec->io->metadata.m.animation.tps_numerator;
+      info->animation.tps_denominator =
+          dec->io->metadata.m.animation.tps_denominator;
+      info->animation.num_loops = dec->io->metadata.m.animation.num_loops;
+      info->animation.have_timecodes =
+          dec->io->metadata.m.animation.have_timecodes;
+    }
   }
 
   return JXL_DEC_SUCCESS;
@@ -987,7 +977,7 @@ JxlDecoderStatus JxlDecoderGetExtraChannelInfo(const JxlDecoder* dec,
   if (!dec->got_basic_info) return JXL_DEC_NEED_MORE_INPUT;
 
   const std::vector<jxl::ExtraChannelInfo>& channels =
-      dec->io->metadata.m.m2.extra_channel_info;
+      dec->io->metadata.m.extra_channel_info;
 
   if (index >= channels.size()) return JXL_DEC_ERROR;  // out of bounds
   const jxl::ExtraChannelInfo& channel = channels[index];
@@ -1016,7 +1006,7 @@ JxlDecoderStatus JxlDecoderGetExtraChannelName(const JxlDecoder* dec,
   if (!dec->got_basic_info) return JXL_DEC_NEED_MORE_INPUT;
 
   const std::vector<jxl::ExtraChannelInfo>& channels =
-      dec->io->metadata.m.m2.extra_channel_info;
+      dec->io->metadata.m.extra_channel_info;
 
   if (index >= channels.size()) return JXL_DEC_ERROR;  // out of bounds
   const jxl::ExtraChannelInfo& channel = channels[index];
@@ -1025,36 +1015,6 @@ JxlDecoderStatus JxlDecoderGetExtraChannelName(const JxlDecoder* dec,
   if (channel.name.size() + 1 > size) return JXL_DEC_ERROR;
 
   memcpy(name, channel.name.c_str(), channel.name.size() + 1);
-
-  return JXL_DEC_SUCCESS;
-}
-
-JxlDecoderStatus JxlDecoderGetPreviewHeader(const JxlDecoder* dec,
-                                            JxlPreviewHeader* preview_header) {
-  if (!dec->got_all_headers) return JXL_DEC_NEED_MORE_INPUT;
-
-  if (!dec->io->metadata.m.m2.have_preview) return JXL_DEC_ERROR;
-
-  preview_header->xsize = dec->io->metadata.m.nonserialized_preview.xsize();
-  preview_header->ysize = dec->io->metadata.m.nonserialized_preview.ysize();
-
-  return JXL_DEC_SUCCESS;
-}
-
-JxlDecoderStatus JxlDecoderGetAnimationHeader(
-    const JxlDecoder* dec, JxlAnimationHeader* animation_header) {
-  if (!dec->got_all_headers) return JXL_DEC_NEED_MORE_INPUT;
-
-  if (!dec->io->metadata.m.m2.have_animation) return JXL_DEC_ERROR;
-
-  animation_header->tps_numerator =
-      dec->io->metadata.m.nonserialized_animation.tps_numerator;
-  animation_header->tps_denominator =
-      dec->io->metadata.m.nonserialized_animation.tps_denominator;
-  animation_header->num_loops =
-      dec->io->metadata.m.nonserialized_animation.num_loops;
-  animation_header->have_timecodes =
-      dec->io->metadata.m.nonserialized_animation.have_timecodes;
 
   return JXL_DEC_SUCCESS;
 }
@@ -1196,18 +1156,15 @@ JxlDecoderStatus JxlDecoderGetColorAsICCProfile(const JxlDecoder* dec,
 
 JxlDecoderStatus JxlDecoderGetInverseOpsinMatrix(
     const JxlDecoder* dec, JxlInverseOpsinMatrix* matrix) {
-  memcpy(
-      matrix->opsin_inv_matrix,
-      dec->io->metadata.m.m2.transform_data.opsin_inverse_matrix.inverse_matrix,
-      sizeof(matrix->opsin_inv_matrix));
-  memcpy(
-      matrix->opsin_biases,
-      dec->io->metadata.m.m2.transform_data.opsin_inverse_matrix.opsin_biases,
-      sizeof(matrix->opsin_biases));
-  memcpy(
-      matrix->quant_biases,
-      dec->io->metadata.m.m2.transform_data.opsin_inverse_matrix.quant_biases,
-      sizeof(matrix->quant_biases));
+  memcpy(matrix->opsin_inv_matrix,
+         dec->io->metadata.transform_data.opsin_inverse_matrix.inverse_matrix,
+         sizeof(matrix->opsin_inv_matrix));
+  memcpy(matrix->opsin_biases,
+         dec->io->metadata.transform_data.opsin_inverse_matrix.opsin_biases,
+         sizeof(matrix->opsin_biases));
+  memcpy(matrix->quant_biases,
+         dec->io->metadata.transform_data.opsin_inverse_matrix.quant_biases,
+         sizeof(matrix->quant_biases));
 
   return JXL_DEC_SUCCESS;
 }

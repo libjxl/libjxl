@@ -72,9 +72,9 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
   if (add_preview) {
     io.preview_frame = io.Main().Copy();
     io.preview_frame.ShrinkTo(xsize / 16, ysize / 16);
-    io.metadata.m.m2.have_preview = true;
-    EXPECT_TRUE(io.metadata.m.nonserialized_preview.Set(
-        io.preview_frame.xsize(), io.preview_frame.ysize()));
+    io.metadata.m.have_preview = true;
+    EXPECT_TRUE(io.metadata.m.preview_size.Set(io.preview_frame.xsize(),
+                                               io.preview_frame.ysize()));
   }
   AuxOut aux_out;
   PaddedBytes compressed;
@@ -486,18 +486,17 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
   writer.Write(8, 0x0a);
 
   // SizeHeader
-  jxl::ImageMetadata metadata;
-  EXPECT_TRUE(metadata.nonserialized_size.Set(xsize, ysize));
-  EXPECT_TRUE(
-      WriteSizeHeader(metadata.nonserialized_size, &writer, 0, nullptr));
+  jxl::CodecMetadata metadata;
+  EXPECT_TRUE(metadata.size.Set(xsize, ysize));
+  EXPECT_TRUE(WriteSizeHeader(metadata.size, &writer, 0, nullptr));
 
   if (!metadata_default) {
-    metadata.SetUintSamples(bits_per_sample);
-    metadata.m2.orientation_minus_1 = orientation - 1;
-    metadata.SetAlphaBits(alpha_bits);
-    metadata.xyb_encoded = xyb_encoded;
+    metadata.m.SetUintSamples(bits_per_sample);
+    metadata.m.orientation = orientation;
+    metadata.m.SetAlphaBits(alpha_bits);
+    metadata.m.xyb_encoded = xyb_encoded;
     if (alpha_bits != 0) {
-      metadata.m2.extra_channel_info[0].name = "alpha_test";
+      metadata.m.extra_channel_info[0].name = "alpha_test";
     }
   }
 
@@ -506,13 +505,15 @@ std::vector<uint8_t> GetTestHeader(size_t xsize, size_t ysize,
 
   if (!icc_profile.empty()) {
     jxl::PaddedBytes copy = icc_padded;
-    EXPECT_TRUE(metadata.color_encoding.SetICC(std::move(copy)));
+    EXPECT_TRUE(metadata.m.color_encoding.SetICC(std::move(copy)));
   }
 
-  EXPECT_TRUE(jxl::Bundle::Write(metadata, &writer, 0, nullptr));
+  EXPECT_TRUE(jxl::Bundle::Write(metadata.m, &writer, 0, nullptr));
+  metadata.transform_data.nonserialized_xyb_encoded = metadata.m.xyb_encoded;
+  EXPECT_TRUE(jxl::Bundle::Write(metadata.transform_data, &writer, 0, nullptr));
 
   if (!icc_profile.empty()) {
-    EXPECT_TRUE(metadata.color_encoding.WantICC());
+    EXPECT_TRUE(metadata.m.color_encoding.WantICC());
     EXPECT_TRUE(jxl::WriteICC(icc_padded, &writer, 0, nullptr));
   }
 

@@ -104,14 +104,14 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
         add_num(kPatchOffsetContext, PackSigned(pos.x - positions_[j - 1].x));
         add_num(kPatchOffsetContext, PackSigned(pos.y - positions_[j - 1].y));
       }
-      JXL_ASSERT(shared_->metadata->m2.extra_channel_info.size() + 1 ==
+      JXL_ASSERT(shared_->metadata->m.extra_channel_info.size() + 1 ==
                  pos.blending.size());
-      for (size_t i = 0;
-           i < shared_->metadata->m2.extra_channel_info.size() + 1; i++) {
+      for (size_t i = 0; i < shared_->metadata->m.extra_channel_info.size() + 1;
+           i++) {
         const PatchBlending& info = pos.blending[i];
         add_num(kPatchBlendModeContext, static_cast<uint32_t>(info.mode));
         if (UsesAlpha(info.mode) &&
-            shared_->metadata->m2.extra_channel_info.size() > 1) {
+            shared_->metadata->m.extra_channel_info.size() > 1) {
           add_num(kPatchAlphaChannelContext, info.alpha_channel);
         }
         if (UsesClamp(info.mode)) {
@@ -190,8 +190,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize) {
         return JXL_FAILURE("Invalid patch y: at %zu + %zu > %zu", pos.y,
                            ref_pos.ysize, ysize);
       }
-      for (size_t i = 0;
-           i < shared_->metadata->m2.extra_channel_info.size() + 1; i++) {
+      for (size_t i = 0; i < shared_->metadata->m.extra_channel_info.size() + 1;
+           i++) {
         uint32_t blend_mode = read_num(kPatchBlendModeContext);
         if (blend_mode >= uint32_t(PatchBlendMode::kNumBlendModes)) {
           return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
@@ -208,14 +208,14 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize) {
           return JXL_FAILURE("Blending mode not supported yet: %u", blend_mode);
         }
         if (UsesAlpha(info.mode) &&
-            shared_->metadata->m2.extra_channel_info.size() > 1) {
+            shared_->metadata->m.extra_channel_info.size() > 1) {
           info.alpha_channel = read_num(kPatchAlphaChannelContext);
           if (info.alpha_channel >=
-              shared_->metadata->m2.extra_channel_info.size()) {
+              shared_->metadata->m.extra_channel_info.size()) {
             return JXL_FAILURE(
                 "Invalid alpha channel for blending: %u out of %u\n",
                 info.alpha_channel,
-                (uint32_t)shared_->metadata->m2.extra_channel_info.size());
+                (uint32_t)shared_->metadata->m.extra_channel_info.size());
           }
         }
         if (UsesClamp(info.mode)) {
@@ -923,7 +923,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
     }
     // Add color channels, ignore other channels.
     std::vector<PatchBlending> blending_info(
-        state->shared.metadata->m2.extra_channel_info.size() + 1,
+        state->shared.metadata->m.extra_channel_info.size() + 1,
         PatchBlending{PatchBlendMode::kNone, 0, false});
     blending_info[0].mode = PatchBlendMode::kAdd;
     for (const auto& pos : info[i].second) {
@@ -937,6 +937,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
   // Recursive application of patches could create very weird issues.
   cparams.patches = Override::kOff;
   cparams.dots = Override::kOff;
+  cparams.noise = Override::kOff;
   cparams.modular_mode = true;
   cparams.responsive = 0;
   cparams.progressive_dc = false;
@@ -958,25 +959,41 @@ void FindBestPatchDictionary(const Image3F& opsin,
   patch_frame_info.frame_type = FrameType::kReferenceOnly;
   patch_frame_info.save_before_color_transform = true;
 
-  ImageBundle ib(state->shared.metadata);
+  ImageBundle ib(&state->shared.metadata->m);
   // TODO(veluca): metadata.color_encoding is a lie: ib is in XYB, but there is
   // no simple way to express that yet.
   patch_frame_info.ib_needs_color_transform = false;
   patch_frame_info.save_as_reference = 0;
   ib.SetFromImage(std::move(reference_frame),
-                  state->shared.metadata->color_encoding);
+                  state->shared.metadata->m.color_encoding);
+  if (!ib.metadata()->extra_channel_info.empty()) {
+    // Add dummy extra channels to the patch image: patches do not yet support
+    // extra channels, but the codec expects that the amount of extra channels
+    // in frames matches that in the metadata of the codestream.
+    std::vector<ImageU> extra_channels;
+    extra_channels.reserve(ib.metadata()->extra_channel_info.size());
+    for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
+      extra_channels.emplace_back(ib.xsize(), ib.ysize());
+      // Must initialize the image with data to not affect blending with
+      // uninitialized memory.
+      // TODO(lode): patches must copy and use the real extra channels instead.
+      ZeroFillImage(&extra_channels.back());
+    }
+    ib.SetExtraChannels(std::move(extra_channels));
+  }
 
   PassesEncoderState roundtrip_state;
-  state->special_frames.emplace_back();
+  auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
   JXL_CHECK(EncodeFrame(cparams, patch_frame_info, state->shared.metadata, ib,
-                        &roundtrip_state, pool, &state->special_frames.back(),
-                        nullptr));
-  const Span<const uint8_t> encoded = state->special_frames.back().GetSpan();
+                        &roundtrip_state, pool, special_frame.get(), nullptr));
+  const Span<const uint8_t> encoded = special_frame->GetSpan();
+  state->special_frames.emplace_back(std::move(special_frame));
   if (cparams.butteraugli_distance < kMinButteraugliToSubtractOriginalPatches) {
     BitReader br(encoded);
-    ImageBundle decoded(state->shared.metadata);
+    ImageBundle decoded(&state->shared.metadata->m);
     PassesDecoderState dec_state;
-    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded));
+    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
+                          *state->shared.metadata));
     JXL_CHECK(br.Close());
     state->shared.reference_frames[0].storage = std::move(decoded);
   } else {

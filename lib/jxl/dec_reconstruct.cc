@@ -17,6 +17,9 @@
 #include <mutex>
 #include <utility>
 
+#include "lib/jxl/filters.h"
+#include "lib/jxl/image_ops.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_reconstruct.cc"
 #include <hwy/foreach_target.h>
@@ -71,13 +74,15 @@ Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
              dec_state->shared_storage.cmap, idct);
   }
 
-  // TODO(veluca): all blending and upsampling should happen in this function,
-  // either before or after the color transform. For now, we just skip the color
-  // transform entirely if save_before_color_transform, and error out if the
-  // frame is supposed to be displayed.
+  // TODO(veluca): all blending should happen in this function, after the color
+  // transform; all upsampling should happen before the color transform *and
+  // before noise*. For now, we just skip the color transform entirely if
+  // save_before_color_transform, and error out if the frame is supposed to be
+  // displayed.
 
   if (frame_header.color_transform == ColorTransform::kXYB &&
-      !frame_header.save_before_color_transform) {
+      !frame_header.save_before_color_transform &&
+      frame_header.upsampling == 1) {
     PROFILER_ZONE("ToXYB");
     float* JXL_RESTRICT row0 = rect.PlaneRow(idct, 0, 0);
     float* JXL_RESTRICT row1 = rect.PlaneRow(idct, 1, 0);
@@ -120,8 +125,7 @@ Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
 Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
                           PassesDecoderState* dec_state, size_t thread,
                           AuxOut* aux_out) {
-  const LoopFilter& lf =
-      dec_state->shared->frame_header.nonserialized_loop_filter;
+  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
 
   for (ssize_t y = -lf.PaddingRows();
        y < static_cast<ssize_t>(lf.PaddingRows() + rect.ysize()); y++) {
@@ -160,11 +164,12 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              AuxOut* aux_out) {
   std::vector<Rect> rects_to_process;
 
-  const LoopFilter& lf =
-      dec_state->shared->frame_header.nonserialized_loop_filter;
+  LoopFilter& lf = dec_state->shared_storage.frame_header.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
 
-  if ((lf.epf_iters > 0 || lf.gab) && frame_header.chroma_subsampling.Is444()) {
+  if ((lf.epf_iters > 0 || lf.gab) && frame_header.chroma_subsampling.Is444() &&
+      frame_header.encoding != FrameEncoding::kModular &&
+      !dec_state->has_partial_ac_groups) {
     size_t xsize = dec_state->shared->frame_dim.xsize_padded;
     size_t ysize = dec_state->shared->frame_dim.ysize_padded;
     size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;
@@ -226,8 +231,26 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       }
     }
   }
+  // In modular mode, image features have not been applied yet.
   if (frame_header.encoding == FrameEncoding::kModular ||
-      !frame_header.chroma_subsampling.Is444()) {
+      !frame_header.chroma_subsampling.Is444() ||
+      dec_state->has_partial_ac_groups) {
+    if ((lf.gab || lf.epf_iters > 0) &&
+        frame_header.encoding == FrameEncoding::kModular) {
+      idct->ShrinkTo(dec_state->shared->frame_dim.xsize,
+                     dec_state->shared->frame_dim.ysize);
+      dec_state->decoded = PadImageMirror(*idct, kMaxFilterPadding, 0);
+    }
+    if (lf.epf_iters > 0 && frame_header.encoding == FrameEncoding::kModular) {
+      FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
+                &dec_state->filter_weights.sigma);
+      // TODO(veluca): remove this once RGB is in 0-1 range too.
+      if (frame_header.color_transform != ColorTransform::kXYB) {
+        for (size_t i = 0; i < 3; i++) {
+          lf.epf_channel_scale[i] /= 255.0f;
+        }
+      }
+    }
     for (size_t y = 0; y < idct->ysize(); y += kGroupDim) {
       for (size_t x = 0; x < idct->xsize(); x += kGroupDim) {
         rects_to_process.emplace_back(x, y, kGroupDim, kGroupDim, idct->xsize(),
@@ -266,10 +289,15 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   idct->ShrinkTo(dec_state->shared->frame_dim.xsize,
                  dec_state->shared->frame_dim.ysize);
   // TODO(veluca): consider making upsampling happen per-line.
-  // TODO(veluca): if save_before_color_transform is true, upsampling should
-  // also happen before the color transform is done.
   Upsample(idct, frame_header.upsampling,
-           frame_header.nonserialized_image_metadata->m2.transform_data);
+           frame_header.nonserialized_metadata->transform_data);
+  // Do color transform now if upsampling was done.
+  if (frame_header.color_transform == ColorTransform::kXYB &&
+      frame_header.upsampling != 1 &&
+      !frame_header.save_before_color_transform) {
+    const OpsinParams& opsin_params = dec_state->shared->opsin_params;
+    OpsinToLinearInplace(idct, pool, opsin_params);
+  }
 
   const size_t xsize = dec_state->shared->frame_dim.xsize_upsampled;
   const size_t ysize = dec_state->shared->frame_dim.ysize_upsampled;

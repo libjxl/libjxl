@@ -280,10 +280,12 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
 
           for (size_t c : {0, 2}) {
             // Quantize
-            QuantizeBlockAC(
-                enc_state->shared.quantizer, error_diffusion, c, quant_ac,
-                c == 0 ? enc_state->x_qm_multiplier : 1.0f, acs.RawStrategy(),
-                xblocks, yblocks, coeffs[0][c] + offset, quantized + c * size);
+            QuantizeBlockAC(enc_state->shared.quantizer, error_diffusion, c,
+                            quant_ac,
+                            c == 0 ? enc_state->x_qm_multiplier
+                                   : enc_state->b_qm_multiplier,
+                            acs.RawStrategy(), xblocks, yblocks,
+                            coeffs[0][c] + offset, quantized + c * size);
           }
           enc_state->progressive_splitter.SplitACCoefficients(
               quantized, size, acs, bx, by, offset, coeffs);

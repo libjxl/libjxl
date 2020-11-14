@@ -975,7 +975,7 @@ class Converter {
 
     // Also don't remove alpha for animations, since a single frame is not
     // enough to know that it is safe to do so.
-    if (ib->metadata()->m2.have_animation) return true;
+    if (ib->metadata()->have_animation) return true;
 
     const size_t max_alpha = MaxAlpha(bits_per_alpha_);
 

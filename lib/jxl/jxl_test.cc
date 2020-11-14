@@ -67,7 +67,7 @@ TEST(JxlTest, HeaderSize) {
   CreateImage1x1(&io);
 
   CompressParams cparams;
-  cparams.butteraugli_distance = 1.3;
+  cparams.butteraugli_distance = 1.5;
   DecompressParams dparams;
   ThreadPool* pool = nullptr;
 
@@ -86,7 +86,7 @@ TEST(JxlTest, HeaderSize) {
     io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
     AuxOut aux_out;
     Roundtrip(&io, cparams, dparams, pool, &io2, &aux_out);
-    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 58);
+    EXPECT_LE(aux_out.layers[kLayerHeader].total_bits, 57);
   }
 }
 

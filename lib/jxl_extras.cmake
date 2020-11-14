@@ -47,6 +47,10 @@ if(GIF_FOUND)
   target_include_directories(jxl_extras-static PUBLIC "${GIF_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${GIF_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_GIF=1)
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libgif-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libgif COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 find_package(JPEG)
@@ -58,6 +62,10 @@ if(JPEG_FOUND)
   target_include_directories(jxl_extras-static PUBLIC "${JPEG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${JPEG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_JPEG=1)
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libjpeg-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libjpeg COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 find_package(ZLIB)  # dependency of PNG
@@ -70,6 +78,12 @@ if(PNG_FOUND AND ZLIB_FOUND)
   target_include_directories(jxl_extras-static PUBLIC "${PNG_INCLUDE_DIRS}")
   target_link_libraries(jxl_extras-static PUBLIC ${PNG_LIBRARIES})
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_APNG=1)
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/zlib1g-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.zlib COPYONLY)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libpng-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libpng COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif()
 
 if (JPEGXL_ENABLE_SJPEG)
@@ -86,5 +100,9 @@ if (OpenEXR_FOUND)
   )
   target_compile_definitions(jxl_extras-static PUBLIC -DJPEGXL_ENABLE_EXR=1)
   target_link_libraries(jxl_extras-static PUBLIC PkgConfig::OpenEXR)
+  if(JPEGXL_DEP_LICENSE_DIR)
+    configure_file("${JPEGXL_DEP_LICENSE_DIR}/libopenexr-dev/copyright"
+                   ${PROJECT_BINARY_DIR}/LICENSE.libopenexr COPYONLY)
+  endif()  # JPEGXL_DEP_LICENSE_DIR
 endif() # OpenEXR_FOUND
 endif() # JPEGXL_ENABLE_OPENEXR

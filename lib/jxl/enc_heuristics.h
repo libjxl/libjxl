@@ -32,6 +32,7 @@ namespace jxl {
 
 struct PassesEncoderState;
 class ImageBundle;
+class ModularFrameEncoder;
 
 class EncoderHeuristics {
  public:
@@ -42,9 +43,10 @@ class EncoderHeuristics {
   // modifications if necessary.
   // `pool` is used for running the computations on multiple threads. `aux_out`
   // collects statistics and can be used to print debug images.
-  virtual Status LossyFrameHeuristics(PassesEncoderState* enc_state,
-                                      const ImageBundle* linear, Image3F* opsin,
-                                      ThreadPool* pool, AuxOut* aux_out) = 0;
+  virtual Status LossyFrameHeuristics(
+      PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
+      const ImageBundle* linear, Image3F* opsin, ThreadPool* pool,
+      AuxOut* aux_out) = 0;
 
   // Custom fixed tree for lossless mode. Must set `tree` to a valid tree if
   // the function returns true.
@@ -57,6 +59,7 @@ class EncoderHeuristics {
 class DefaultEncoderHeuristics : public EncoderHeuristics {
  public:
   Status LossyFrameHeuristics(PassesEncoderState* enc_state,
+                              ModularFrameEncoder* modular_frame_encoder,
                               const ImageBundle* linear, Image3F* opsin,
                               ThreadPool* pool, AuxOut* aux_out) override;
 };
@@ -64,6 +67,7 @@ class DefaultEncoderHeuristics : public EncoderHeuristics {
 class FastEncoderHeuristics : public EncoderHeuristics {
  public:
   Status LossyFrameHeuristics(PassesEncoderState* enc_state,
+                              ModularFrameEncoder* modular_frame_encoder,
                               const ImageBundle* linear, Image3F* opsin,
                               ThreadPool* pool, AuxOut* aux_out) override;
 };

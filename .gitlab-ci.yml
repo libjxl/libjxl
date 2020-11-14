@@ -79,6 +79,7 @@ variables:
   # The packed html doxygen documentation, only produced by the coverage build.
   - build/htmldoc.tar.gz
   - build/stats.json
+  - build/LICENSE*
 
 # Helper template to add the default artifacts paths to all build stages. If
 # files in the "paths:" section are not present only a warning is generated.
@@ -94,6 +95,28 @@ variables:
     BUILD_DIR: build
     CC: clang-7
     CXX: clang++-7
+
+# Build from tarball source using README.md instructions.
+build:x86_64:clang:tarball:
+  <<: *linux_host_build_template
+  stage: build
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    BUILD_DIR: build
+    CC: clang-7
+    CXX: clang++-7
+  script:
+    # Simulate a tarball checkout by removing .git and not fetching any
+    # submodule.
+    - mv .git .git-ignore || true
+    - ./deps.sh
+    - apt update
+    - apt install -y cmake pkg-config libbrotli-dev
+        libgif-dev libjpeg-dev libopenexr-dev libpng-dev libwebp-dev
+    - mkdir build
+    - cd build
+    - cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF ..
+    - cmake --build . -- -j
 
 # linux x86_64 default Release mode.
 build:x86_64:clang:release:
@@ -667,6 +690,7 @@ x86_64:static:
   script:
     # OpenEXR doesn't install the static libraries in the docker image.
     - SKIP_TEST=1 ./ci.sh release
+        -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc
         -DJPEGXL_STATIC=ON
         -DBUILD_TESTING=OFF
         -DJPEGXL_ENABLE_VIEWERS=OFF
@@ -682,6 +706,7 @@ win64:static:
   script:
     # OpenEXR doesn't install the static libraries in the docker image.
     - BUILD_TARGET=x86_64-w64-mingw32 SKIP_TEST=1 ./ci.sh release
+        -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc
         -DJPEGXL_STATIC=ON
         -DBUILD_TESTING=OFF
         -DJPEGXL_ENABLE_VIEWERS=OFF

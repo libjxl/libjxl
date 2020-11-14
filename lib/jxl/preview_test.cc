@@ -50,9 +50,9 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   // Same as main image
   io.preview_frame = io.Main().Copy();
   io.preview_frame.ShrinkTo(16, 24);
-  io.metadata.m.m2.have_preview = true;
-  ASSERT_TRUE(io.metadata.m.nonserialized_preview.Set(
-      io.preview_frame.xsize(), io.preview_frame.ysize()));
+  io.metadata.m.have_preview = true;
+  ASSERT_TRUE(io.metadata.m.preview_size.Set(io.preview_frame.xsize(),
+                                             io.preview_frame.ysize()));
 
   CompressParams cparams;
   cparams.butteraugli_distance = 2.0;

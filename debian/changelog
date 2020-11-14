@@ -1,3 +1,9 @@
+jpeg-xl (0.1) UNRELEASED; urgency=medium
+
+  * JPEG XL format release candidate.
+
+ -- Alex Deymo <deymo@google.com>  Fri, 13 Nov 2020 17:42:24 +0100
+
 jpeg-xl (0.0.2-1) UNRELEASED; urgency=medium
 
   * Initial debian package.

@@ -113,9 +113,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   }
 
   if (gif->ImageCount > 1) {
-    io->metadata.m.m2.have_animation = true;
+    io->metadata.m.have_animation = true;
     // Delays in GIF are specified in 100ths of a second.
-    io->metadata.m.nonserialized_animation.tps_numerator = 100;
+    io->metadata.m.animation.tps_numerator = 100;
   }
 
   io->frames.clear();
@@ -203,7 +203,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
 #endif
 
     ImageBundle bundle(&io->metadata.m);
-    if (io->metadata.m.m2.have_animation) {
+    if (io->metadata.m.have_animation) {
       bundle.duration = gcb.DelayTime;
       bundle.origin.x0 = total_rect.x0();
       bundle.origin.y0 = total_rect.y0();

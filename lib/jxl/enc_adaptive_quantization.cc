@@ -1252,7 +1252,7 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   const size_t num_groups = xsize_groups * ysize_groups;
 
   // Dummy metadata with grayscale = off.
-  ImageMetadata metadata = *enc_state->shared.metadata;
+  ImageMetadata metadata = enc_state->shared.metadata->m;
   metadata.color_encoding = ColorEncoding::SRGB();
 
   ModularFrameEncoder modular_frame_encoder(enc_state->shared.frame_header,

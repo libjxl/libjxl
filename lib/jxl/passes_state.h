@@ -47,7 +47,7 @@ struct PassesSharedState {
   PassesSharedState() : frame_header(nullptr) {}
 
   // Headers and metadata.
-  const ImageMetadata* metadata;
+  const CodecMetadata* metadata;
   FrameHeader frame_header;
 
   FrameDimensions frame_dim;
@@ -97,7 +97,7 @@ struct PassesSharedState {
   // pass. Encoded as num_histograms_ - 1.
   size_t num_histograms = 0;
 
-  bool IsGrayscale() const { return metadata->color_encoding.IsGray(); }
+  bool IsGrayscale() const { return metadata->m.color_encoding.IsGray(); }
 
   Rect GroupRect(size_t group_index) const {
     const size_t gx = group_index % frame_dim.xsize_groups;

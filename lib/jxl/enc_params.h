@@ -137,7 +137,7 @@ struct CompressParams {
   Override dots = Override::kDefault;
   Override patches = Override::kDefault;
   Override gaborish = Override::kDefault;
-  size_t epf = 2;
+  int epf = -1;
 
   // TODO(deymo): Remove "gradient" once all clients stop setting this value.
   // This flag is already deprecated and is unused in the encoder.

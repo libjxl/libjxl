@@ -20,6 +20,10 @@
 #ifndef JXL_TYPES_H_
 #define JXL_TYPES_H_
 
+#if defined(__cplusplus) || defined(c_plusplus)
+extern "C" {
+#endif
+
 /**
  * A portable @c bool replacement.
  *
@@ -106,5 +110,9 @@ typedef struct {
    */
   size_t align;
 } JxlPixelFormat;
+
+#if defined(__cplusplus) || defined(c_plusplus)
+}
+#endif
 
 #endif /* JXL_TYPES_H_ */

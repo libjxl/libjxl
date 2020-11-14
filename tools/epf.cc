@@ -137,16 +137,15 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   jxl::Image3F opsin(io->xsize(), io->ysize());
   (void)ToXYB(io->Main(), pool, &opsin);
 
-  JXL_CHECK(
-      io->metadata.m.nonserialized_size.Set(opsin.xsize(), opsin.ysize()));
+  JXL_CHECK(io->metadata.size.Set(opsin.xsize(), opsin.ysize()));
 
   opsin = PadImageToMultiple(opsin, jxl::kBlockDim);
 
-  jxl::FrameHeader frame_header(&io->metadata.m);
-  frame_header.nonserialized_loop_filter.gab = false;
-  frame_header.nonserialized_loop_filter.epf_iters = epf_iters;
+  jxl::FrameHeader frame_header(&io->metadata);
+  frame_header.loop_filter.gab = false;
+  frame_header.loop_filter.epf_iters = epf_iters;
   jxl::FrameDimensions frame_dim = frame_header.ToFrameDimensions();
-  const jxl::LoopFilter& lf = frame_header.nonserialized_loop_filter;
+  const jxl::LoopFilter& lf = frame_header.loop_filter;
   frame_header.color_transform = jxl::ColorTransform::kXYB;
 
   static constexpr float kAcQuant = 0.84f;
@@ -157,7 +156,7 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
       jxl::InitializePassesSharedState(frame_header, &state.shared));
   // TODO(lode): must this be a separate one, or can the frame_header from
   // above be used for this?
-  jxl::FrameHeader modular_frame_header(&io->metadata.m);
+  jxl::FrameHeader modular_frame_header(&io->metadata);
   jxl::ModularFrameEncoder modular_frame_encoder(modular_frame_header,
                                                  jxl::CompressParams{});
   state.shared.ac_strategy.FillDCT8();

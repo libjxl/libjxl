@@ -106,19 +106,9 @@ struct AnimationHeader : public Fields {
 
 Status ReadSizeHeader(BitReader* JXL_RESTRICT reader,
                       SizeHeader* JXL_RESTRICT size);
-Status ReadPreviewHeader(BitReader* JXL_RESTRICT reader,
-                         PreviewHeader* JXL_RESTRICT preview);
-Status ReadAnimationHeader(BitReader* JXL_RESTRICT reader,
-                           AnimationHeader* JXL_RESTRICT animation);
 
 Status WriteSizeHeader(const SizeHeader& size, BitWriter* JXL_RESTRICT writer,
                        size_t layer, AuxOut* aux_out);
-Status WritePreviewHeader(const PreviewHeader& preview,
-                          BitWriter* JXL_RESTRICT writer, size_t layer,
-                          AuxOut* aux_out);
-Status WriteAnimationHeader(const AnimationHeader& animation,
-                            BitWriter* JXL_RESTRICT writer, size_t layer,
-                            AuxOut* aux_out);
 
 }  // namespace jxl
 

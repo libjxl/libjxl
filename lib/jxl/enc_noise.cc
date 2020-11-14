@@ -405,7 +405,7 @@ Status GetNoiseParameter(const Image3F& opsin, NoiseParams* noise_params,
 
   OptimizeNoiseParameters(nl, noise_params);
   for (float& i : noise_params->lut) {
-    i *= quality_coef;
+    i *= quality_coef * 1.4;
   }
   return noise_params->HasAny();
 }
