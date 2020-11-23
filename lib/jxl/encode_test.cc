@@ -63,13 +63,13 @@ TEST(EncodeTest, FrameEncodingTest) {
   EXPECT_NE(nullptr, enc);
 
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  uint32_t width = 63;
-  uint32_t height = 129;
-  JxlFrameFormat frame_format = JxlFrameFormat{pixel_format, width, height};
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(width, height, 4);
+  uint32_t xsize = 63;
+  uint32_t ysize = 129;
+  JxlFrameFormat frame_format = JxlFrameFormat{pixel_format, xsize, ysize};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4);
 
   jxl::CodecInOut input_io =
-      jxl::test::SomeTestImageToCodecInOut(pixels, width, height);
+      jxl::test::SomeTestImageToCodecInOut(pixels, xsize, ysize);
 
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderAddImageFrame(enc, &frame_format, pixels.data(),

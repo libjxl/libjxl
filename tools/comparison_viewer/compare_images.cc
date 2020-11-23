@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
 
   jxl::SplitImageView view;
 
-  const jxl::PaddedBytes monitorIccProfile = jxl::GetMonitorIccProfile(&view);
+  const QByteArray monitorIccProfile = jxl::GetMonitorIccProfile(&view);
 
   const QString leftImagePath = arguments.takeFirst();
   QImage leftImage =

@@ -73,7 +73,7 @@ void ViewerWindow::loadFilesAndDirectories(QStringList entries) {
 void ViewerWindow::on_actionOpen_triggered() {
   QFileDialog dialog(this, tr("Select JPEG XL files to open…"));
   dialog.setFileMode(QFileDialog::ExistingFiles);
-  dialog.setNameFilter(tr("JPEG XL images (*.xl);;All files (*)"));
+  dialog.setNameFilter(tr("JPEG XL images (*.jxl);;All files (*)"));
   if (dialog.exec()) {
     loadFilesAndDirectories(dialog.selectedFiles());
   }

@@ -306,6 +306,23 @@ TEST(JxlTest, RoundtripLargeFast) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 265000);
 }
 
+TEST(JxlTest, RoundtripDotsForceEpf) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CompressParams cparams;
+  cparams.epf = 2;
+  cparams.dots = Override::kOn;
+  cparams.speed_tier = SpeedTier::kSquirrel;
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 265000);
+}
+
 // Checks for differing size/distance in two consecutive runs of distance 2,
 // which involves additional processing including adaptive reconstruction.
 // Failing this may be a sign of race conditions or invalid memory accesses.

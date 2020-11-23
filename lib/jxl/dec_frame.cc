@@ -341,7 +341,8 @@ Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
                 const std::vector<uint64_t>& group_offsets,
                 const std::vector<uint32_t>& group_sizes,
                 ThreadPool* JXL_RESTRICT pool, BitReader* JXL_RESTRICT reader,
-                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out) {
+                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out,
+                std::vector<bool>* has_dc_group) {
   std::atomic<int> num_errors{0};
   JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
   FrameDimensions frame_dim = frame_header.ToFrameDimensions();
@@ -362,6 +363,11 @@ Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
   };
   const auto process_dc_group = [&](const int group_index, const int thread) {
     PROFILER_ZONE("DC group");
+    if (has_dc_group != nullptr && (*has_dc_group)[group_index] == false) {
+      FillImage(0.0f, &dec_state->shared_storage.dc_storage,
+                dec_state->shared->DCGroupRect(group_index));
+      return;
+    }
     BitReader group_store;
     BitReader* group_reader = get_reader(&group_store, group_index + 1);
     const size_t gx = group_index % frame_dim.xsize_dc_groups;
@@ -413,7 +419,21 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   FrameHeader frame_header(&metadata);
   frame_header.nonserialized_is_preview = is_preview;
-  JXL_RETURN_IF_ERROR(DecodeFrameHeader(reader, &frame_header));
+  Status frame_header_status = DecodeFrameHeader(reader, &frame_header);
+  if (!frame_header_status) {
+    if (!dparams.allow_partial_files || frame_header_status.IsFatalError()) {
+      return frame_header_status;
+    } else {
+      // If we didn't get a frame_header, try to guess whether this frame uses a
+      // DC frame.
+      bool has_dc_frame = false;
+      if (dec_state->shared->dc_frames[0].xsize() != 0 &&
+          dec_state->shared->dc_frames[0].ysize() != 0) {
+        has_dc_frame = true;
+      }
+      frame_header.UpdateFlag(has_dc_frame, FrameHeader::Flags::kUseDcFrame);
+    }
+  }
   FrameDimensions frame_dim = frame_header.ToFrameDimensions();
   if (frame_dim.xsize == 0 || frame_dim.ysize == 0) {
     return JXL_FAILURE("Empty frame");
@@ -498,10 +518,11 @@ Status DecodeFrame(const DecompressParams& dparams,
   }
 
   bool ac_global_available = true;
+  bool dc_global_available = true;
   std::vector<size_t> max_passes_for_group(num_groups, max_passes);
+  std::vector<bool> has_dc_group(frame_dim.num_dc_groups, true);
   if (!dparams.allow_partial_files ||
-      frame_header.frame_type != FrameType::kRegularFrame ||
-      !frame_header.is_last) {
+      frame_header.frame_type == FrameType::kReferenceOnly) {
     if (group_codes_begin + groups_total_size > reader->TotalBytes()) {
       return JXL_FAILURE("group offset is out of bounds");
     }
@@ -510,13 +531,36 @@ Status DecodeFrame(const DecompressParams& dparams,
       return group_codes_begin + group_offsets[i] + group_sizes[i] <=
              reader->TotalBytes();
     };
-    // check that all of DC is available.
-    for (size_t i = 0; i < global_ac_index; i++) {
-      if (!has_section(i)) {
-        return JXL_FAILURE("file truncated before all of DC was read");
+    // check that global DC is available, unless we already have a DC frame or
+    // we are in Modular mode.
+    if (!has_section(0) && !(frame_header.flags & FrameHeader::kUseDcFrame) &&
+        !(frame_header.encoding == FrameEncoding::kModular &&
+          dparams.allow_more_progressive_steps)) {
+      return JXL_FAILURE("file truncated before DC global was available");
+    }
+    bool all_dc_available = true;
+    if (!has_section(0)) {
+      if (frame_header.encoding != FrameEncoding::kModular ||
+          !dparams.allow_more_progressive_steps) {
+        all_dc_available = false;
+        dc_global_available = false;
+      }
+      std::fill(has_dc_group.begin(), has_dc_group.end(), false);
+    }
+    for (size_t i = 0; i < frame_dim.num_dc_groups; i++) {
+      if (!has_section(1 + i)) {
+        has_dc_group[i] = false;
+        all_dc_available = false;
       }
     }
-    if (!has_section(global_ac_index)) {
+    if (!all_dc_available) {
+      // If not all DC is available, what EPF does doesn't really matter (as the
+      // areas where DC is not available are all black and the areas with DC
+      // available get computed).
+      // Filling with -10.0 skips most of the compute in those areas.
+      FillImage(-10.0f, &dec_state->filter_weights.sigma);
+    }
+    if (!has_section(global_ac_index) || !dc_global_available) {
       std::fill(max_passes_for_group.begin(), max_passes_for_group.end(), 0);
       ac_global_available = false;
     }
@@ -553,7 +597,7 @@ Status DecodeFrame(const DecompressParams& dparams,
   }
 
   Status res = true;
-  {
+  if (dc_global_available) {
     BitReader global_store;
     BitReaderScopedCloser global_store_closer(&global_store, &res);
     BitReader* global_reader = get_reader(&global_store, 0);
@@ -589,7 +633,12 @@ Status DecodeFrame(const DecompressParams& dparams,
     JXL_RETURN_IF_ERROR(modular_frame_decoder.DecodeGlobalInfo(
         global_reader, frame_header, decoded,
         /*decode_color = */
-        (frame_header.encoding == FrameEncoding::kModular), xsize, ysize));
+        (frame_header.encoding == FrameEncoding::kModular), xsize, ysize,
+        dparams.allow_partial_files));
+  } else {
+    // Decoder state would normally get initialized when reading the DC global
+    // section.
+    dec_state->Init(pool);
   }
 
   // global_store is either never used (in which case Close() is optional
@@ -606,7 +655,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   JXL_RETURN_IF_ERROR(DecodeDC(frame_header, dec_state, modular_frame_decoder,
                                group_codes_begin, group_offsets, group_sizes,
-                               pool, reader, &aux_outs, aux_out));
+                               pool, reader, &aux_outs, aux_out,
+                               &has_dc_group));
 
   Image3F opsin;
 
@@ -620,8 +670,6 @@ Status DecodeFrame(const DecompressParams& dparams,
              frame_header.nonserialized_metadata->transform_data);
     dec_state->has_partial_ac_groups = true;
     dec_state->decoded = PadImageMirror(opsin, kMaxFilterPadding, 0);
-    // TODO(veluca): this value just disables EPF in the DC areas.
-    FillImage(-10.0f, &dec_state->filter_weights.sigma);
   } else {
     opsin = Image3F(frame_dim.xsize_blocks * kBlockDim,
                     frame_dim.ysize_blocks * kBlockDim);
@@ -793,7 +841,11 @@ Status DecodeFrame(const DecompressParams& dparams,
     return JXL_FAILURE("Read past stream end");
   }
 
-  if (!decoded->IsJPEG()) {
+  if (is_preview) {
+    // Fix possible larger image size (multiple of kBlockDim)
+    // TODO(lode): verify if and when that happens.
+    decoded->ShrinkTo(frame_dim.xsize, frame_dim.ysize);
+  } else if (!decoded->IsJPEG()) {
     // A kRegularFrame is blended with the other frames, and thus results in a
     // coalesced frame of size equal to image dimensions. Other frames are not
     // blended, thus their final size is the size that was defined in the

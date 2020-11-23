@@ -100,7 +100,7 @@ class ModularFrameDecoder {
       : frame_dim(frame_dim) {}
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
                           ImageBundle* decoded, bool decode_color, size_t xsize,
-                          size_t ysize);
+                          size_t ysize, bool allow_truncated_group = false);
   Status DecodeGroup(const Rect& rect, BitReader* reader, AuxOut* aux_out,
                      size_t minShift, size_t maxShift,
                      const ModularStreamId& stream);

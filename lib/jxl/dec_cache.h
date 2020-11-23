@@ -140,11 +140,12 @@ struct GroupDecCache {
   void InitOnce(size_t num_passes) {
     PROFILER_FUNC;
 
-    if (num_passes != 0 && num_nzeroes[0].xsize() == 0) {
-      // Allocate enough for a whole group - partial groups on the right/bottom
-      // border just use a subset. The valid size is passed via Rect.
+    for (size_t i = 0; i < num_passes; i++) {
+      if (num_nzeroes[i].xsize() == 0) {
+        // Allocate enough for a whole group - partial groups on the
+        // right/bottom border just use a subset. The valid size is passed via
+        // Rect.
 
-      for (size_t i = 0; i < num_passes; i++) {
         num_nzeroes[i] = Image3I(kGroupDimInBlocks, kGroupDimInBlocks);
       }
     }

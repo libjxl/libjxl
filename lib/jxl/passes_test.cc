@@ -18,7 +18,6 @@
 #include <utility>
 
 #include "gtest/gtest.h"
-#include "jxl/image_ops.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
@@ -35,6 +34,7 @@
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 

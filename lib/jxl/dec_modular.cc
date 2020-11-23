@@ -33,6 +33,7 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/compressed_dc.h"
+#include "lib/jxl/epf.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/image/image.h"
 HWY_BEFORE_NAMESPACE();
@@ -100,11 +101,9 @@ HWY_EXPORT(MultiplySum);       // Local function
 HWY_EXPORT(RgbFromSingle);     // Local function
 HWY_EXPORT(SingleFromSingle);  // Local function
 
-Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
-                                             const FrameHeader& frame_header,
-                                             ImageBundle* decoded,
-                                             bool decode_color, size_t xsize,
-                                             size_t ysize) {
+Status ModularFrameDecoder::DecodeGlobalInfo(
+    BitReader* reader, const FrameHeader& frame_header, ImageBundle* decoded,
+    bool decode_color, size_t xsize, size_t ysize, bool allow_truncated_group) {
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
     std::vector<uint8_t> tree_context_map;
@@ -161,10 +160,11 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 
   ModularOptions options;
   options.max_chan_size = frame_dim.group_dim;
-  if (!ModularGenericDecompress(
-          reader, gi, &global_header, ModularStreamId::Global().ID(frame_dim),
-          &options,
-          /*undo_transforms=*/-2, &tree, &code, &context_map)) {
+  if (!ModularGenericDecompress(reader, gi, &global_header,
+                                ModularStreamId::Global().ID(frame_dim),
+                                &options,
+                                /*undo_transforms=*/-2, &tree, &code,
+                                &context_map, allow_truncated_group)) {
     return JXL_FAILURE("Failed to decode global modular info");
   }
 
@@ -335,6 +335,9 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       row_qf[x] = 1 + std::max(0, row_in_2[num]);
       num++;
     }
+  }
+  if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
+    ComputeSigma(dec_state->shared->DCGroupRect(group_id), dec_state);
   }
   return true;
 }

@@ -21,8 +21,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/luminance.h"
+#include "tools/viewer/load_jxl.h"
 
 namespace jxl {
 
@@ -33,9 +32,7 @@ Status loadFromFile(const QString& filename, CodecInOut* const decoded,
   PaddedBytes compressed;
   JXL_RETURN_IF_ERROR(ReadFile(filename.toStdString(), &compressed));
   const Span<const uint8_t> compressed_span(compressed);
-  jxl::DecompressParams dparams;
-  return DecodeFile(dparams, compressed, decoded, /*aux_out=*/nullptr, pool) ||
-         SetFromBytes(compressed_span, decoded, pool);
+  return SetFromBytes(compressed_span, decoded, pool);
 }
 
 }  // namespace
@@ -48,8 +45,13 @@ bool canLoadImageWithExtension(QString extension) {
                             &bitsPerSampleUnused) != jxl::Codec::kUnknown;
 }
 
-QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
+QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
                  const QString& sourceColorSpaceHint) {
+  qint64 elapsed;
+  QImage img = loadJxlImage(filename, targetIccProfile, &elapsed);
+  if (img.width() != 0 && img.height() != 0) {
+    return img;
+  }
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
   CodecInOut decoded;
@@ -62,7 +64,11 @@ QImage loadImage(const QString& filename, PaddedBytes targetIccProfile,
   const ImageBundle& ib = decoded.Main();
 
   ColorEncoding targetColorSpace;
-  if (!targetColorSpace.SetICC(std::move(targetIccProfile))) {
+  PaddedBytes icc;
+  icc.assign(reinterpret_cast<const uint8_t*>(targetIccProfile.data()),
+             reinterpret_cast<const uint8_t*>(targetIccProfile.data() +
+                                              targetIccProfile.size()));
+  if (!targetColorSpace.SetICC(std::move(icc))) {
     targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
   }
   Image3F converted;

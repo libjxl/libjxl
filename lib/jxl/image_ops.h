@@ -738,7 +738,7 @@ template <typename T>
 void FillImage(const T value, Image3<T>* image, Rect rect) {
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < rect.ysize(); ++y) {
-      T* JXL_RESTRICT row = rect.Row(image, y);
+      T* JXL_RESTRICT row = rect.PlaneRow(image, c, y);
       for (size_t x = 0; x < rect.xsize(); ++x) {
         row[x] = value;
       }

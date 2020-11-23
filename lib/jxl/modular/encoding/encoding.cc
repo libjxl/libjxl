@@ -35,6 +35,7 @@
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"
+#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/ma.h"
 #include "lib/jxl/modular/options.h"
@@ -947,7 +948,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
 Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                      size_t group_id, ModularOptions *options,
                      const Tree *global_tree, const ANSCode *global_code,
-                     const std::vector<uint8_t> *global_ctx_map) {
+                     const std::vector<uint8_t> *global_ctx_map,
+                     bool allow_truncated_group) {
   if (image.nb_channels < 1) return true;
 
   // decode transforms
@@ -1039,6 +1041,11 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(br, &reader, *context_map,
                                                   *tree, header.wp_header, i,
                                                   group_id, &image));
+    // Truncated group.
+    if (allow_truncated_group && !br->AllReadsWithinBounds()) {
+      ZeroFillImage(&channel.plane);
+      return true;
+    }
   }
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
@@ -1079,11 +1086,12 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                 GroupHeader *header, size_t group_id,
                                 ModularOptions *options, int undo_transforms,
                                 const Tree *tree, const ANSCode *code,
-                                const std::vector<uint8_t> *ctx_map) {
+                                const std::vector<uint8_t> *ctx_map,
+                                bool allow_truncated_group) {
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
   JXL_RETURN_IF_ERROR(ModularDecode(br, image, *header, group_id, options, tree,
-                                    code, ctx_map));
+                                    code, ctx_map, allow_truncated_group));
   image.undo_transforms(header->wp_header, undo_transforms);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();

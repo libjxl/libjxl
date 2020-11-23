@@ -69,7 +69,8 @@ Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
                 const std::vector<uint64_t>& group_offsets,
                 const std::vector<uint32_t>& group_sizes,
                 ThreadPool* JXL_RESTRICT pool, BitReader* JXL_RESTRICT reader,
-                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out);
+                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out,
+                std::vector<bool>* has_dc_group = nullptr);
 
 }  // namespace jxl
 

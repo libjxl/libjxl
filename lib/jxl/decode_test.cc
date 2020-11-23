@@ -35,6 +35,7 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/test_utils.h"
+#include "tools/box/box.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -45,12 +46,11 @@ namespace {
 // channel.
 PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
                                     size_t ysize, size_t num_channels,
-                                    const CompressParams& cparams) {
+                                    const CompressParams& cparams,
+                                    bool add_container, bool add_preview) {
   // Compress the pixels with JPEG XL.
   bool grayscale = (num_channels <= 2);
   bool include_alpha = !(num_channels & 1);
-  // Always add for now, tests extra non-full displayed frames.
-  bool add_preview = true;
   size_t bitdepth = 16;
   CodecInOut io;
   io.SetSize(xsize, ysize);
@@ -71,7 +71,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
       /*big_endian=*/true, /*flipped_y=*/false, &pool, &io.Main()));
   if (add_preview) {
     io.preview_frame = io.Main().Copy();
-    io.preview_frame.ShrinkTo(xsize / 16, ysize / 16);
+    io.preview_frame.ShrinkTo(xsize / 7, ysize / 7);
     io.metadata.m.have_preview = true;
     EXPECT_TRUE(io.metadata.m.preview_size.Set(io.preview_frame.xsize(),
                                                io.preview_frame.ysize()));
@@ -81,6 +81,19 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
   PassesEncoderState enc_state;
   EXPECT_TRUE(
       EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out, &pool));
+
+  if (add_container) {
+    jpegxl::tools::JpegXlContainer container;
+    container.codestream = compressed.data();
+    container.codestream_size = compressed.size();
+    jxl::PaddedBytes container_file;
+    if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
+      fprintf(stderr, "Failed to encode container format\n");
+      return {};
+    }
+    compressed.swap(container_file);
+  }
+
   return compressed;
 }
 
@@ -163,9 +176,24 @@ size_t GetPrecision(JxlDataType data_type) {
     case JXL_TYPE_FLOAT:
       // Floating point mantissa precision
       return 24;
-    default:
-      JXL_ASSERT(false);  // unknown type
   }
+  JXL_ASSERT(false);  // unknown type
+}
+
+size_t GetDataBits(JxlDataType data_type) {
+  switch (data_type) {
+    case JXL_TYPE_BOOLEAN:
+      return 1;
+    case JXL_TYPE_UINT8:
+      return 8;
+    case JXL_TYPE_UINT16:
+      return 16;
+    case JXL_TYPE_UINT32:
+      return 32;
+    case JXL_TYPE_FLOAT:
+      return 32;
+  }
+  JXL_ASSERT(false);  // unknown type
 }
 
 // Procedure to convert pixels to double precision, not efficient, but
@@ -180,31 +208,34 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
   size_t num_channels = format.num_channels;
   bool gray = num_channels == 1 || num_channels == 2;
   bool alpha = num_channels == 2 || num_channels == 4;
+
+  size_t stride =
+      xsize * jxl::DivCeil(GetDataBits(format.data_type) * num_channels,
+                           jxl::kBitsPerByte);
+  if (format.align > 1) stride = jxl::RoundUpTo(stride, format.align);
+
   if (format.data_type == JXL_TYPE_BOOLEAN) {
-    size_t row_size = (xsize * num_channels + 7) >> 3;
     for (size_t y = 0; y < ysize; ++y) {
+      jxl::BitReader br(jxl::Span<const uint8_t>(pixels + stride * y, stride));
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
-        size_t i = y * row_size + ((x * num_channels + 7) >> 3);
-        uint8_t byte = pixels[i];
-        size_t bit = (x * num_channels) & 7;
-        if (bit != 0) byte >>= (8 - bit);
-        double r = (byte & 1);
-        double g = gray ? r : ((byte & 2) >> 1);
-        double b = gray ? r : ((byte & 4) >> 2);
-        double a = alpha ? ((byte >> (num_channels - 1)) & 1) : 1;
+        double r = br.ReadBits(1);
+        double g = gray ? r : br.ReadBits(1);
+        double b = gray ? r : br.ReadBits(1);
+        double a = alpha ? br.ReadBits(1) : 1;
         result[j + 0] = r;
         result[j + 1] = g;
         result[j + 2] = b;
         result[j + 3] = a;
       }
+      JXL_CHECK(br.Close());
     }
   } else if (format.data_type == JXL_TYPE_UINT8) {
     double mul = 1.0 / 255.0;  // Multiplier to bring to 0-1.0 range
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
-        size_t i = (y * xsize + x) * num_channels;
+        size_t i = y * stride + x * num_channels;
         double r = pixels[i];
         double g = gray ? r : pixels[i + 1];
         double b = gray ? r : pixels[i + 2];
@@ -220,7 +251,7 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
-        size_t i = (y * xsize + x) * num_channels * 2;
+        size_t i = y * stride + x * num_channels * 2;
         double r, g, b, a;
         if (format.endianness == JXL_BIG_ENDIAN) {
           r = (pixels[i + 0] << 8) + pixels[i + 1];
@@ -248,7 +279,7 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
-        size_t i = (y * xsize + x) * num_channels * 4;
+        size_t i = y * stride + x * num_channels * 4;
         double r, g, b, a;
         if (format.endianness == JXL_BIG_ENDIAN) {
           r = LoadBE32(pixels + i);
@@ -272,7 +303,7 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
     for (size_t y = 0; y < ysize; ++y) {
       for (size_t x = 0; x < xsize; ++x) {
         size_t j = (y * xsize + x) * 4;
-        size_t i = (y * xsize + x) * num_channels * 4;
+        size_t i = y * stride + x * num_channels * 4;
         double r, g, b, a;
         if (format.endianness == JXL_BIG_ENDIAN) {
           r = LoadBEFloat(pixels + i);
@@ -959,9 +990,14 @@ TEST(DecodeTest, PixelTest) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  // For variation: some have container and no preview, others have preview
+  // and no container.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams);
+      cparams, false, true);
+  jxl::PaddedBytes compressed_with_container = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, true, false);
 
   for (int big_endian = 0; big_endian <= 1; ++big_endian) {
     JxlEndianness endianness = big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN;
@@ -981,8 +1017,10 @@ TEST(DecodeTest, PixelTest) {
       {
         JxlPixelFormat format = {channels, JXL_TYPE_UINT16, endianness, 0};
 
+        // Test with the container for one of the pixel formats.
         std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-            jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+            jxl::Span<const uint8_t>(compressed_with_container.data(),
+                                     compressed_with_container.size()),
             format);
         EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
         EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
@@ -1026,7 +1064,7 @@ TEST(DecodeTest, GrayscaleTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 2,
-      cparams);
+      cparams, false, true);
 
   for (int big_endian = 0; big_endian <= 1; ++big_endian) {
     JxlEndianness endianness = big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN;
@@ -1091,7 +1129,7 @@ TEST(DecodeTest, PixelPartialTest) {
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams);
+      cparams, true, true);
   JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
   std::vector<uint8_t> pixels2;
@@ -1187,7 +1225,7 @@ TEST(DecodeTest, DCTest) {
   jxl::CompressParams cparams;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-      cparams);
+      cparams, true, true);
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
@@ -1224,7 +1262,6 @@ TEST(DecodeTest, DCTest) {
   jxl::Image3F dc1(xsize_dc, ysize_dc);
 
   // Downscale the original image 8x8 to allow comparing with the DC.
-  std::vector<uint8_t> dc_orig(buffer_size);
   for (size_t y = 0; y < ysize_dc; y++) {
     for (size_t x = 0; x < xsize_dc; x++) {
       double r = 0, g = 0, b = 0;
@@ -1277,4 +1314,107 @@ TEST(DecodeTest, DCTest) {
             3.0f);
 
   JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, PreviewTest) {
+  size_t xsize = 77, ysize = 120;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4);
+
+  jxl::CompressParams cparams;
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, true, /*add_preview=*/true);
+
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  const uint8_t* next_in = compressed.data();
+  size_t avail_in = compressed.size();
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_PREVIEW_IMAGE));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO,
+            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderPreviewOutBufferSize(dec, &format, &buffer_size));
+
+  // GetSomeTestImage is hardcoded to use a top-left cropped preview with
+  // floor of 1/7th of the size
+  size_t xsize_preview = (xsize / 7);
+  size_t ysize_preview = (ysize / 7);
+  EXPECT_EQ(xsize_preview, info.preview.xsize);
+  EXPECT_EQ(ysize_preview, info.preview.ysize);
+  EXPECT_EQ(xsize_preview * ysize_preview * 3, buffer_size);
+
+  EXPECT_EQ(JXL_DEC_NEED_PREVIEW_OUT_BUFFER,
+            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  std::vector<uint8_t> preview(buffer_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetPreviewOutBuffer(
+                                 dec, &format, preview.data(), preview.size()));
+
+  EXPECT_EQ(JXL_DEC_PREVIEW_IMAGE,
+            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+
+  jxl::Image3F preview0(xsize_preview, ysize_preview);
+  jxl::Image3F preview1(xsize_preview, ysize_preview);
+
+  // For preview0, the original: top-left crop the preview image the way
+  // GetSomeTestImage does.
+  for (size_t y = 0; y < ysize_preview; y++) {
+    for (size_t x = 0; x < xsize_preview; x++) {
+      preview0.PlaneRow(0, y)[x] = (pixels[(y * xsize + x) * 8 + 0]);
+      preview0.PlaneRow(1, y)[x] = (pixels[(y * xsize + x) * 8 + 2]);
+      preview0.PlaneRow(2, y)[x] = (pixels[(y * xsize + x) * 8 + 4]);
+      preview1.PlaneRow(0, y)[x] = (preview[(y * xsize_preview + x) * 3 + 0]);
+      preview1.PlaneRow(1, y)[x] = (preview[(y * xsize_preview + x) * 3 + 1]);
+      preview1.PlaneRow(2, y)[x] = (preview[(y * xsize_preview + x) * 3 + 2]);
+    }
+  }
+
+  jxl::CodecInOut io0;
+  io0.SetFromImage(std::move(preview0), jxl::ColorEncoding::SRGB(false));
+  jxl::CodecInOut io1;
+  io1.SetFromImage(std::move(preview1), jxl::ColorEncoding::SRGB(false));
+
+  jxl::ButteraugliParams ba;
+  // TODO(lode): this ButteraugliDistance silently returns 0 (dangerous for
+  // tests) if xsize or ysize is < 8, no matter how different the images, a tiny
+  // size that could happen for a preview. ButteraugliDiffmap does support
+  // smaller than 8x8, but jxl's ButteraugliDistance does not. Perhaps move
+  // butteraugli's <8x8 handling from ButteraugliDiffmap to
+  // ButteraugliComparator::Diffmap in butteraugli.cc.
+  EXPECT_LE(ButteraugliDistance(io0, io1, ba,
+                                /*distmap=*/nullptr, nullptr),
+            0.7f);
+
+  JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, AlignTest) {
+  size_t xsize = 123, ysize = 77;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4);
+  JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  jxl::CompressParams cparams;
+  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, false, false);
+
+  size_t align = 17;
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, align};
+  // On purpose not using jxl::RoundUpTo to test it independently.
+  size_t expected_line_bytes = (1 * 3 * xsize + align - 1) / align * align;
+
+  std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+      jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format);
+  EXPECT_EQ(expected_line_bytes * ysize, pixels2.size());
+  EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                             format_orig, format));
 }

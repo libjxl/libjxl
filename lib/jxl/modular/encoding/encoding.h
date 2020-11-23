@@ -95,7 +95,8 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                 int undo_transforms = -1,
                                 const Tree *tree = nullptr,
                                 const ANSCode *code = nullptr,
-                                const std::vector<uint8_t> *ctx_map = nullptr);
+                                const std::vector<uint8_t> *ctx_map = nullptr,
+                                bool allow_truncated_group = false);
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_ENCODING_ENCODING_H_

@@ -124,7 +124,7 @@ class BitReader {
     // callers reside between begin/end_target, especially because only the
     // callers in dec_ans are time-critical. Therefore only enabled if the
     // entire binary is compiled for (and thus requires) BMI2.
-#ifdef __BMI2__
+#if defined(__BMI2__) && defined(__x86_64__)
     return _bzhi_u64(buf_, nbits);
 #else
     const uint64_t mask = (1ULL << nbits) - 1;

@@ -35,38 +35,37 @@ using HandleUniquePtr =
 
 }  // namespace
 
-PaddedBytes GetMonitorIccProfile(const QWidget* const widget) {
+QByteArray GetMonitorIccProfile(const QWidget* const widget) {
   const HWND window = reinterpret_cast<HWND>(widget->effectiveWinId());
   const HDC dc = GetDC(window);
   wchar_t profile_path[MAX_PATH];
   DWORD profile_path_size = MAX_PATH;
   if (!GetICMProfileW(dc, &profile_path_size, profile_path)) {
     ReleaseDC(window, dc);
-    return PaddedBytes();
+    return QByteArray();
   }
   ReleaseDC(window, dc);
   HandleUniquePtr file(CreateFileW(profile_path, GENERIC_READ, FILE_SHARE_READ,
                                    nullptr, OPEN_EXISTING,
                                    FILE_FLAG_SEQUENTIAL_SCAN, nullptr));
   if (file.get() == INVALID_HANDLE_VALUE) {
-    return PaddedBytes();
+    return QByteArray();
   }
   LARGE_INTEGER profile_size;
   if (!GetFileSizeEx(file.get(), &profile_size)) {
-    return PaddedBytes();
+    return QByteArray();
   }
   HandleUniquePtr mapping(
       CreateFileMappingW(file.get(), nullptr, PAGE_READONLY, 0, 0, nullptr));
   if (mapping == nullptr) {
-    return PaddedBytes();
+    return QByteArray();
   }
-  const uint8_t* const view = reinterpret_cast<const uint8_t*>(
+  const char* const view = reinterpret_cast<const char*>(
       MapViewOfFile(mapping.get(), FILE_MAP_READ, 0, 0, 0));
   if (view == nullptr) {
-    return PaddedBytes();
+    return QByteArray();
   }
-  PaddedBytes profile;
-  profile.assign(view, view + profile_size.QuadPart);
+  QByteArray profile(view, profile_size.QuadPart);
   UnmapViewOfFile(view);
   return profile;
 }

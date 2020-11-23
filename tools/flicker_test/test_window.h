@@ -15,12 +15,12 @@
 #ifndef TOOLS_FLICKER_TEST_TEST_WINDOW_H_
 #define TOOLS_FLICKER_TEST_TEST_WINDOW_H_
 
+#include <QByteArray>
 #include <QDir>
 #include <QMainWindow>
 #include <QStringList>
 #include <QTextStream>
 
-#include "lib/jxl/base/padded_bytes.h"
 #include "tools/comparison_viewer/image_loading.h"
 #include "tools/flicker_test/parameters.h"
 #include "tools/flicker_test/ui_test_window.h"
@@ -46,7 +46,7 @@ class FlickerTestWindow : public QMainWindow {
 
   Ui::FlickerTestWindow ui_;
   bool proceed_ = true;
-  PaddedBytes monitorProfile_;
+  const QByteArray monitorProfile_;
   FlickerTestParameters parameters_;
   QDir originalFolder_, alteredFolder_;
   QFile outputFile_;

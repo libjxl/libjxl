@@ -15,10 +15,9 @@
 #ifndef TOOLS_COMPARISON_VIEWER_IMAGE_LOADING_H_
 #define TOOLS_COMPARISON_VIEWER_IMAGE_LOADING_H_
 
+#include <QByteArray>
 #include <QImage>
 #include <QString>
-
-#include "lib/jxl/base/padded_bytes.h"
 
 namespace jxl {
 
@@ -28,7 +27,7 @@ bool canLoadImageWithExtension(QString extension);
 // Converts the loaded image to the given display profile, or sRGB if not
 // specified. Thread-hostile.
 QImage loadImage(const QString& filename,
-                 PaddedBytes targetIccProfile = PaddedBytes(),
+                 const QByteArray& targetIccProfile = QByteArray(),
                  const QString& sourceColorSpaceHint = QString());
 
 }  // namespace jxl

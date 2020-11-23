@@ -39,6 +39,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
+#include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
@@ -1214,7 +1215,51 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     bw.ZeroPadToByte();  // end of group.
   }
 
-  JXL_RETURN_IF_ERROR(WriteGroupOffsets(group_codes, nullptr, writer, aux_out));
+  std::vector<coeff_order_t>* permutation_ptr = nullptr;
+  std::vector<coeff_order_t> permutation;
+  if (cparams.middleout && !(num_passes == 1 && num_groups == 1)) {
+    permutation_ptr = &permutation;
+    // Don't permute global DC/AC or DC.
+    permutation.resize(global_ac_index + 1);
+    std::iota(permutation.begin(), permutation.end(), 0);
+    std::vector<coeff_order_t> ac_group_order(num_groups);
+    std::iota(ac_group_order.begin(), ac_group_order.end(), 0);
+    int64_t cx = ib.xsize() / 2;
+    int64_t cy = ib.ysize() / 2;
+    auto get_distance_from_center = [&](size_t gid) {
+      Rect r = passes_enc_state->shared.GroupRect(gid);
+      int64_t gcx = r.x0() + r.xsize() / 2;
+      int64_t gcy = r.y0() + r.ysize() / 2;
+      int64_t dx = gcx - cx;
+      int64_t dy = gcy - cy;
+      // Concentric squares in counterclockwise order.
+      return std::make_pair(std::max(std::abs(dx), std::abs(dy)),
+                            std::atan2(dy, dx));
+    };
+    std::sort(ac_group_order.begin(), ac_group_order.end(),
+              [&](coeff_order_t a, coeff_order_t b) {
+                return get_distance_from_center(a) <
+                       get_distance_from_center(b);
+              });
+    std::vector<coeff_order_t> inv_ac_group_order(ac_group_order.size(), 0);
+    for (size_t i = 0; i < ac_group_order.size(); i++) {
+      inv_ac_group_order[ac_group_order[i]] = i;
+    }
+    for (size_t i = 0; i < num_passes; i++) {
+      size_t pass_start = permutation.size();
+      for (coeff_order_t v : inv_ac_group_order) {
+        permutation.push_back(pass_start + v);
+      }
+    }
+    std::vector<BitWriter> new_group_codes(group_codes.size());
+    for (size_t i = 0; i < permutation.size(); i++) {
+      new_group_codes[permutation[i]] = std::move(group_codes[i]);
+    }
+    group_codes = std::move(new_group_codes);
+  }
+
+  JXL_RETURN_IF_ERROR(
+      WriteGroupOffsets(group_codes, permutation_ptr, writer, aux_out));
   writer->AppendByteAligned(group_codes);
   writer->ZeroPadToByte();  // end of frame.
 

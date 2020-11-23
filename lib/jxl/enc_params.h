@@ -149,6 +149,9 @@ struct CompressParams {
   // Quantized-progressive mode.
   bool qprogressive_mode = false;
 
+  // Put center groups first in the bitstream.
+  bool middleout = false;
+
   size_t progressive_dc = 0;
 
   // Progressive-mode saliency.

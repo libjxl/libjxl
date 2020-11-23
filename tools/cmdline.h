@@ -109,8 +109,11 @@ class CommandLineParser {
     return options_[id].get();
   }
 
-  // Print the help message.
+  // Print the help message to stdout.
   void PrintHelp() const;
+
+  // Whether a help flag was specified
+  bool HelpFlagPassed() const { return help_; }
 
   int verbosity = 0;
 

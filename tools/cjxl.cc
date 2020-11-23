@@ -109,9 +109,9 @@ jxl::Status LoadSpotColors(const CompressArgs& args, jxl::CodecInOut* io) {
   example.dim_shift = 0;
   example.name = "spot";
   example.spot_color[0] = io->metadata.m.IntensityTarget();  // R
-  example.spot_color[1] = 0.0f;                            // G
-  example.spot_color[2] = 0.0f;                            // B
-  example.spot_color[3] = 1.0f;                            // A
+  example.spot_color[1] = 0.0f;                              // G
+  example.spot_color[2] = 0.0f;                              // B
+  example.spot_color[3] = 1.0f;                              // A
   io->metadata.m.extra_channel_info.push_back(example);
   jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
   for (size_t y = 0; y < spot_io.ysize(); ++y) {
@@ -411,6 +411,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('p', "progressive",
                          "Enable progressive/responsive decoding.",
                          &progressive, &SetBooleanTrue);
+
+  cmdline->AddOptionFlag('\0', "middleout",
+                         "Put center groups first in the compressed file.",
+                         &params.middleout, &SetBooleanTrue);
 
   // Flags.
   cmdline->AddOptionFlag('\0', "progressive_ac",

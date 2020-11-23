@@ -35,6 +35,20 @@
 namespace jxl {
 namespace {
 
+Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
+  JXL_RETURN_IF_ERROR(ReadSizeHeader(reader, &io->metadata.size));
+
+  JXL_RETURN_IF_ERROR(ReadImageMetadata(reader, &io->metadata.m));
+
+  io->metadata.transform_data.nonserialized_xyb_encoded =
+      io->metadata.m.xyb_encoded;
+  JXL_RETURN_IF_ERROR(Bundle::Read(reader, &io->metadata.transform_data));
+
+  return true;
+}
+
+}  // namespace
+
 Status DecodePreview(const DecompressParams& dparams,
                      BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
                      ThreadPool* pool, CodecInOut* JXL_RESTRICT io) {
@@ -63,20 +77,6 @@ Status DecodePreview(const DecompressParams& dparams,
                     dec_state.shared->frame_dim.ysize_upsampled;
   return true;
 }
-
-Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
-  JXL_RETURN_IF_ERROR(ReadSizeHeader(reader, &io->metadata.size));
-
-  JXL_RETURN_IF_ERROR(ReadImageMetadata(reader, &io->metadata.m));
-
-  io->metadata.transform_data.nonserialized_xyb_encoded =
-      io->metadata.m.xyb_encoded;
-  JXL_RETURN_IF_ERROR(Bundle::Read(reader, &io->metadata.transform_data));
-
-  return true;
-}
-
-}  // namespace
 
 // To avoid the complexity of file I/O and buffering, we assume the bitstream
 // is loaded (or for large images/sequences: mapped into) memory.
@@ -154,6 +154,10 @@ Status DecodeFile(const DecompressParams& dparams,
       if (reader.TotalBitsConsumed() != file.size() * kBitsPerByte) {
         return JXL_FAILURE("DecodeFile reader position not at EOF.");
       }
+    }
+    // Suppress errors when decoding partial files with DC frames.
+    if (!reader.AllReadsWithinBounds() && dparams.allow_partial_files) {
+      (void)reader.Close();
     }
 
     io->CheckMetadata();

@@ -17,61 +17,104 @@
 #include <stdint.h>
 
 #include <QElapsedTimer>
-#include <utility>
+#include <QFile>
 
 #include "jxl/decode.h"
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/base/arch_specific.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/color_encoding_internal.h"
-#include "lib/jxl/color_management.h"
-#include "lib/jxl/dec_file.h"
-#include "lib/jxl/dec_params.h"
-#include "lib/jxl/image.h"
-#include "lib/jxl/image_bundle.h"
+#include "jxl/decode_cxx.h"
+#include "jxl/thread_parallel_runner_cxx.h"
+#include "jxl/types.h"
+#include "skcms.h"
 
 namespace jxl {
 
-QImage loadJxlImage(const QString& filename, PaddedBytes targetIccProfile,
+QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
                     qint64* elapsed_ns, bool* usedRequestedProfile) {
-  static ProcessorTopology topology;
-  static ThreadPoolInternal pool(topology.packages *
-                                 topology.cores_per_package);
+  auto runner = JxlThreadParallelRunnerMake(
+      nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
 
-  PaddedBytes jpegXlData;
-  if (!ReadFile(filename.toStdString(), &jpegXlData)) {
+  auto dec = JxlDecoderMake(nullptr);
+
+#define EXPECT_TRUE(a)                                             \
+  if (!(a)) {                                                      \
+    fprintf(stderr, "Assertion failure (%d): %s\n", __LINE__, #a); \
+    return QImage();                                               \
+  }
+#define EXPECT_EQ(a, b)                                               \
+  {                                                                   \
+    int a_ = a;                                                       \
+    int b_ = b;                                                       \
+    if (a_ != b_) {                                                   \
+      fprintf(stderr, "Assertion failure (%d): %s (%d) != %s (%d)\n", \
+              __LINE__, #a, a_, #b, b_);                              \
+      return QImage();                                                \
+    }                                                                 \
+  }
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
+                                                     JXL_DEC_COLOR_ENCODING |
+                                                     JXL_DEC_FULL_IMAGE));
+  QFile jpegXlFile(filename);
+  if (!jpegXlFile.open(QIODevice::ReadOnly)) {
     return QImage();
   }
+  const QByteArray jpegXlData = jpegXlFile.readAll();
   if (jpegXlData.size() < 4) {
     return QImage();
   }
-  CodecInOut io;
+
   QElapsedTimer timer;
-  DecompressParams params;
-  AuxOut localInfo;
   timer.start();
-  if (!DecodeFile(params, jpegXlData, &io, &localInfo, &pool)) {
-    return QImage();
+  const uint8_t* next_in = reinterpret_cast<const uint8_t*>(jpegXlData.data());
+  size_t avail_in = jpegXlData.size();
+  EXPECT_EQ(JXL_DEC_BASIC_INFO,
+            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec.get(), &info));
+  size_t pixel_count = info.xsize * info.ysize;
+
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING,
+            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+  static const JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN,
+                                        0};
+  size_t icc_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetICCProfileSize(
+                dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
+  std::vector<uint8_t> icc_profile(icc_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetColorAsICCProfile(
+                dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                icc_profile.data(), icc_profile.size()));
+
+  std::vector<float> float_pixels(pixel_count * 4);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec.get(), &format, float_pixels.data(),
+                                        pixel_count * 4 * sizeof(float)));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE,
+            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+
+  std::vector<uint16_t> uint16_pixels(pixel_count * 4);
+  skcms_ICCProfile jxl_profile;
+  EXPECT_TRUE(
+      skcms_Parse(icc_profile.data(), icc_profile.size(), &jxl_profile));
+  skcms_ICCProfile target_profile;
+  if (!skcms_Parse(targetIccProfile.data(), targetIccProfile.size(),
+                   &target_profile)) {
+    target_profile = *skcms_sRGB_profile();
+    if (usedRequestedProfile) *usedRequestedProfile = false;
+  } else {
+    if (usedRequestedProfile) *usedRequestedProfile = true;
   }
+  EXPECT_TRUE(skcms_Transform(
+      float_pixels.data(), skcms_PixelFormat_RGBA_ffff,
+      info.alpha_premultiplied ? skcms_AlphaFormat_PremulAsEncoded
+                               : skcms_AlphaFormat_Unpremul,
+      &jxl_profile, uint16_pixels.data(), skcms_PixelFormat_RGBA_16161616LE,
+      skcms_AlphaFormat_Unpremul, &target_profile, pixel_count));
   if (elapsed_ns != nullptr) *elapsed_ns = timer.nsecsElapsed();
 
-  const jxl::ImageBundle& ib = io.Main();
-  ColorEncoding targetColorSpace;
-  const bool profileSet = targetColorSpace.SetICC(std::move(targetIccProfile));
-  if (usedRequestedProfile != nullptr) *usedRequestedProfile = profileSet;
-  if (!profileSet) {
-    targetColorSpace = ColorEncoding::SRGB(ib.IsGray());
-  }
-  Image3U decoded;
-  if (!ib.CopyTo(Rect(ib), targetColorSpace, &decoded, &pool)) {
-    return QImage();
-  }
-
-  QImage result(ib.xsize(), ib.ysize(),
+  QImage result(info.xsize, info.ysize,
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
                 QImage::Format_RGBA64
 #else
@@ -79,63 +122,30 @@ QImage loadJxlImage(const QString& filename, PaddedBytes targetIccProfile,
 #endif
   );
 
-  if (ib.HasAlpha()) {
-    const int alphaLeftShiftAmount =
-        16 - static_cast<int>(io.metadata.m.GetAlphaBits());
-    for (int y = 0; y < result.height(); ++y) {
+  for (int y = 0; y < result.height(); ++y) {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-      QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
+    QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
 #else
-      QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
+    QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
 #endif
-      const uint16_t* const alphaRow = ib.alpha().ConstRow(y);
-      const uint16_t* const redRow = decoded.ConstPlaneRow(0, y);
-      const uint16_t* const greenRow = decoded.ConstPlaneRow(1, y);
-      const uint16_t* const blueRow = decoded.ConstPlaneRow(2, y);
-      for (int x = 0; x < result.width(); ++x) {
+    const uint16_t* const data = uint16_pixels.data() + result.width() * y * 4;
+    for (int x = 0; x < result.width(); ++x) {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
-        row[x] = qRgba64(redRow[x], greenRow[x], blueRow[x],
-                         alphaRow[x] << alphaLeftShiftAmount)
+      row[x] = qRgba64(data[4 * x + 0], data[4 * x + 1], data[4 * x + 2],
+                       data[4 * x + 3])
 #if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-                     .unpremultiplied()
+                   .unpremultiplied()
 #else
-                     .toArgb32()
+                   .toArgb32()
 #endif
-            ;
+          ;
 #else
-        // Qt version older than 5.6 doesn't have a qRgba64.
-        row[x] = qRgba(redRow[x] >> 8, greenRow[x] >> 8, blueRow[x] >> 8,
-                       alphaRow[x] << alphaLeftShiftAmount);
+      // Qt version older than 5.6 doesn't have a qRgba64.
+      row[x] = qRgba(data[4 * x + 0], data[4 * x + 1], data[4 * x + 2],
+                     data[4 * x + 3]);
 #endif
-      }
-    }
-  } else {
-    for (int y = 0; y < result.height(); ++y) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-      QRgba64* const row = reinterpret_cast<QRgba64*>(result.scanLine(y));
-#else
-      QRgb* const row = reinterpret_cast<QRgb*>(result.scanLine(y));
-#endif
-      const uint16_t* const redRow = decoded.ConstPlaneRow(0, y);
-      const uint16_t* const greenRow = decoded.ConstPlaneRow(1, y);
-      const uint16_t* const blueRow = decoded.ConstPlaneRow(2, y);
-      for (int x = 0; x < result.width(); ++x) {
-#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
-        row[x] = qRgba64(redRow[x], greenRow[x], blueRow[x], 65535)
-#if QT_VERSION >= QT_VERSION_CHECK(5, 12, 0)
-                     .unpremultiplied()
-#else
-                     .toArgb32()
-#endif
-            ;
-#else
-        // Qt version older than 5.6 doesn't have a qRgba64.
-        row[x] = qRgb(redRow[x] >> 8, greenRow[x] >> 8, blueRow[x] >> 8);
-#endif
-      }
     }
   }
-
   return result;
 }
 

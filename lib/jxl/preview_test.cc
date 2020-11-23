@@ -49,7 +49,9 @@ TEST(PreviewTest, RoundtripGivenPreview) {
   io.ShrinkTo(io.xsize() / 8, io.ysize() / 8);
   // Same as main image
   io.preview_frame = io.Main().Copy();
-  io.preview_frame.ShrinkTo(16, 24);
+  const size_t preview_xsize = 15;
+  const size_t preview_ysize = 27;
+  io.preview_frame.ShrinkTo(preview_xsize, preview_ysize);
   io.metadata.m.have_preview = true;
   ASSERT_TRUE(io.metadata.m.preview_size.Set(io.preview_frame.xsize(),
                                              io.preview_frame.ysize()));
@@ -72,7 +74,16 @@ TEST(PreviewTest, RoundtripGivenPreview) {
 
   CodecInOut io3;
   Roundtrip(&io, cparams, dparams, pool, &io3);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+  EXPECT_EQ(preview_xsize, io3.metadata.m.preview_size.xsize());
+  EXPECT_EQ(preview_ysize, io3.metadata.m.preview_size.ysize());
+  EXPECT_EQ(preview_xsize, io3.preview_frame.xsize());
+  EXPECT_EQ(preview_ysize, io3.preview_frame.ysize());
+
+  EXPECT_LE(ButteraugliDistance(io.preview_frame, io3.preview_frame,
+                                cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            2.5);
+  EXPECT_LE(ButteraugliDistance(io.Main(), io3.Main(), cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             2.5);
 }

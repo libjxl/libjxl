@@ -37,11 +37,11 @@ using XcbUniquePtr = std::unique_ptr<T, FreeDeleter>;
 
 }  // namespace
 
-PaddedBytes GetMonitorIccProfile(const QWidget* const widget) {
+QByteArray GetMonitorIccProfile(const QWidget* const widget) {
   Q_UNUSED(widget)
   xcb_connection_t* const connection = QX11Info::connection();
   if (connection == nullptr) {
-    return PaddedBytes();
+    return QByteArray();
   }
   const int screen_number = QX11Info::appScreen();
 
@@ -51,7 +51,7 @@ PaddedBytes GetMonitorIccProfile(const QWidget* const widget) {
   const XcbUniquePtr<xcb_intern_atom_reply_t> atomReply(
       xcb_intern_atom_reply(connection, atomRequest, nullptr));
   if (atomReply == nullptr) {
-    return PaddedBytes();
+    return QByteArray();
   }
   const xcb_atom_t iccProfileAtom = atomReply->atom;
 
@@ -67,7 +67,7 @@ PaddedBytes GetMonitorIccProfile(const QWidget* const widget) {
     ++i;
   }
   if (screen == nullptr) {
-    return PaddedBytes();
+    return QByteArray();
   }
   const xcb_get_property_cookie_t profileRequest = xcb_get_property(
       connection, /*_delete=*/0, screen->root, iccProfileAtom,
@@ -75,14 +75,12 @@ PaddedBytes GetMonitorIccProfile(const QWidget* const widget) {
   const XcbUniquePtr<xcb_get_property_reply_t> profile(
       xcb_get_property_reply(connection, profileRequest, nullptr));
   if (profile == nullptr || profile->bytes_after > 0) {
-    return PaddedBytes();
+    return QByteArray();
   }
 
-  PaddedBytes result(xcb_get_property_value_length(profile.get()));
-  std::copy_n(
-      reinterpret_cast<const uint8_t*>(xcb_get_property_value(profile.get())),
-      xcb_get_property_value_length(profile.get()), result.begin());
-  return result;
+  return QByteArray(
+      reinterpret_cast<const char*>(xcb_get_property_value(profile.get())),
+      xcb_get_property_value_length(profile.get()));
 }
 
 }  // namespace jxl

@@ -77,12 +77,12 @@ typedef struct {
   /**
    * Pixel width of frame.
    */
-  uint32_t frame_width;
+  uint32_t xsize;
 
   /**
    * Pixel height of frame.
    */
-  uint32_t frame_height;
+  uint32_t ysize;
 } JxlFrameFormat;
 
 /**
@@ -146,6 +146,11 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(
 /**
  * Sets the buffer to read from for the next image to encode.
  * The buffer is owned by the caller.
+ *
+ * Currently only some pixel formats are supported:
+ * - JXL_TYPE_UINT8, input pixels assumed to be nonlinear SRGB encoded
+ * - JXL_TYPE_UINT16, input pixels assumed to be nonlinear SRGB encoded
+ * - JXL_TYPE_FLOAT, input pixels are assumed to be linear SRGB encoded
  *
  * @param enc encoder object
  * @param frame_format frame format for pixels. Object owned by user and its

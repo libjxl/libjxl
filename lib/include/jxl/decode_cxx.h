@@ -29,12 +29,18 @@
 #error "This a C++ only header. Use jxl/decode.h from C sources."
 #endif
 
+/// Struct to call JxlDecoderDestroy from the JxlDecoderPtr unique_ptr.
+struct JxlDecoderDestroyStruct {
+  /// Calls @ref JxlDecoderDestroy() on the passed decoder.
+  void operator()(JxlDecoder* decoder) { JxlDecoderDestroy(decoder); }
+};
+
 /// std::unique_ptr<> type that calls JxlDecoderDestroy() when releasing the
 /// decoder.
 ///
 /// Use this helper type from C++ sources to ensure the decoder is destroyed and
 /// their internal resources released.
-typedef std::unique_ptr<JxlDecoder, void (*)(JxlDecoder*)> JxlDecoderPtr;
+typedef std::unique_ptr<JxlDecoder, JxlDecoderDestroyStruct> JxlDecoderPtr;
 
 /// Creates an instance of JxlDecoder into a JxlDecoderPtr and initializes it.
 ///
@@ -48,7 +54,7 @@ typedef std::unique_ptr<JxlDecoder, void (*)(JxlDecoder*)> JxlDecoderPtr;
 ///         initialized
 /// @return initialized JxlDecoderPtr instance otherwise.
 JxlDecoderPtr JxlDecoderMake(const JxlMemoryManager* memory_manager) {
-  return JxlDecoderPtr(JxlDecoderCreate(memory_manager), JxlDecoderDestroy);
+  return JxlDecoderPtr(JxlDecoderCreate(memory_manager));
 }
 
 #endif  // JXL_DECODE_CXX_H_

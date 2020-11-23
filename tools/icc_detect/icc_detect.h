@@ -15,14 +15,13 @@
 #ifndef TOOLS_ICC_DETECT_ICC_DETECT_H_
 #define TOOLS_ICC_DETECT_ICC_DETECT_H_
 
+#include <QByteArray>
 #include <QWidget>
-
-#include "lib/jxl/base/padded_bytes.h"
 
 namespace jxl {
 
 // Should be cached if possible.
-PaddedBytes GetMonitorIccProfile(const QWidget* widget);
+QByteArray GetMonitorIccProfile(const QWidget* widget);
 
 }  // namespace jxl
 

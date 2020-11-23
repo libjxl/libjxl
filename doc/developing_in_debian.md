@@ -9,7 +9,7 @@ Apart from the dependencies in third_party, some of the tools use external
 dependencies that need to be installed in your system first:
 
 ```bash
-sudo apt install cmake clang-7 doxygen g++-8 extra-cmake-modules libgif-dev \
+sudo apt install cmake clang doxygen g++-8 extra-cmake-modules libgif-dev \
   libjpeg-dev ninja-build libgoogle-perftools-dev
 ```
 
@@ -19,7 +19,7 @@ Make sure your default "clang" compiler is at least version 6 running
 clang --version
 ```
 
-If it still shows an old version despite having a clang-7 installed, you need
+If it still shows an old version despite having for example a clang-7 installed, you need
 to update the default clang compiler. In Debian-based systems run:
 
 ```bash
@@ -38,7 +38,7 @@ sudo apt install qtbase5-dev libqt5x11extras5-dev libwebp-dev libgimp2.0-dev \
 For the lint/coverage commands, you will also need additional packages:
 
 ```bash
-sudo apt install clang-format-7 clang-tidy-7 curl parallel gcovr
+sudo apt install clang-format clang-tidy curl parallel gcovr
 ```
 
 ## Building

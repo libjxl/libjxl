@@ -23,7 +23,8 @@ if(WIN32)
       icc_detect/icc_detect_win32.cc
       icc_detect/icc_detect.h
     )
-    target_link_libraries(icc_detect PUBLIC jxl-static Qt5::Widgets)
+    target_include_directories(icc_detect PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(icc_detect PUBLIC Qt5::Widgets)
     if(JPEGXL_DEP_LICENSE_DIR)
       configure_file("${JPEGXL_DEP_LICENSE_DIR}/libqt5widgets5/copyright"
                      ${PROJECT_BINARY_DIR}/LICENSE.libqt5widgets5 COPYONLY)
@@ -264,9 +265,9 @@ endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
 if(${JPEGXL_ENABLE_VIEWERS})
+add_subdirectory(viewer)
 add_subdirectory(comparison_viewer)
 add_subdirectory(flicker_test)
-add_subdirectory(viewer)
 endif()
 
 add_subdirectory(box)

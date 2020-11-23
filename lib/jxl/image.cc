@@ -179,9 +179,21 @@ Image3F PadImageMirror(const Image3F& in, const size_t xborder,
                        const size_t yborder) {
   size_t xsize = in.xsize();
   size_t ysize = in.ysize();
-  JXL_ASSERT(xborder <= xsize);
-  JXL_ASSERT(yborder <= ysize);
   Image3F out(xsize + 2 * xborder, ysize + 2 * yborder);
+  if (xborder > xsize || yborder > ysize) {
+    for (size_t c = 0; c < 3; c++) {
+      for (int32_t y = 0; y < static_cast<int32_t>(out.ysize()); y++) {
+        float* row_out = out.PlaneRow(c, y);
+        const float* row_in = in.PlaneRow(
+            c, Mirror(y - static_cast<int32_t>(yborder), in.ysize()));
+        for (int32_t x = 0; x < static_cast<int32_t>(out.xsize()); x++) {
+          int32_t xin = Mirror(x - static_cast<int32_t>(xborder), in.xsize());
+          row_out[x] = row_in[xin];
+        }
+      }
+    }
+    return out;
+  }
   CopyImageTo(in, Rect(xborder, yborder, xsize, ysize), &out);
   for (size_t c = 0; c < 3; c++) {
     // Horizontal pad.

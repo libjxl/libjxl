@@ -56,13 +56,13 @@ ICC profile.
 ### Embedded ICC profile
 
 -   Create an 8-bit or 16-bit PNG with an iCCP chunk, e.g. using darktable.
--   Pass it to `cpik`, then `dpik` with no special arguments. The decoded output
+-   Pass it to `cjxl`, then `djxl` with no special arguments. The decoded output
     will have the same bit depth (can override with `--output_bit_depth`) and
     color space.
 
 ### Images without metadata (e.g. HDR)
 
 -   Create a PGM/PPM/PFM file in a known color space.
--   Invoke `cpik` with `-x color_space RGB_D65_202_Rel_Lin` (linear 2020). For
+-   Invoke `cjxl` with `-x color_space=RGB_D65_202_Rel_Lin` (linear 2020). For
     details/possible values, see color_encoding.cc `Description`.
--   Invoke `dpik` as above.
+-   Invoke `djxl` as above with no special arguments.

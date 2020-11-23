@@ -96,6 +96,11 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "allow decoding of truncated files",
                          &params.allow_partial_files, &SetBooleanTrue);
 
+  cmdline->AddOptionFlag('\0', "allow_more_progressive_steps",
+                         "allow decoding more progressive steps in truncated "
+                         "files. No effect without --allow_partial_files",
+                         &params.allow_more_progressive_steps, &SetBooleanTrue);
+
   cmdline->AddOptionFlag(
       'j', "jpeg",
       "decode directly to JPEG when possible. Depending on the JPEG XL mode "
@@ -189,6 +194,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   if (!DecodeJpegXlToJpeg(args.params, container, &io, aux_out, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
+#if JPEGXL_ENABLE_JPEG
   if (!EncodeImageJPG(
           &io,
           io.use_sjpeg ? jxl::JpegEncoder::kSJpeg : jxl::JpegEncoder::kLibJpeg,
@@ -196,6 +202,12 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
           jxl::DecodeTarget::kQuantizedCoeffs)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
+#else   // JPEGXL_ENABLE_JPEG
+  fprintf(
+      stderr,
+      "ERROR: Support for decoding to JPEG was not compiled in this tool.\n");
+  return false;
+#endif  // JPEGXL_ENABLE_JPEG
   stats->SetImageSize(io.xsize(), io.ysize());
 
   const double t1 = jxl::Now();

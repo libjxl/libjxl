@@ -44,8 +44,11 @@ struct DecompressParams {
   // the full size is requested.
   size_t max_downsampling = 1;
 
-  // Try to decode as much as possible of a truncated codestream.
+  // Try to decode as much as possible of a truncated codestream, but only whole
+  // sections at a time.
   bool allow_partial_files = false;
+  // Allow even more progression.
+  bool allow_more_progressive_steps = false;
 };
 
 }  // namespace jxl

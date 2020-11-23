@@ -49,29 +49,6 @@
 #include "lib/jxl/quantizer-inl.h"
 #include "lib/jxl/quantizer.h"
 
-#ifndef LIB_JXL_DEC_GRUOP_CC_
-#define LIB_JXL_DEC_GRUOP_CC_
-
-namespace {
-
-// Mirror n floats starting at *p and store them before p.
-JXL_INLINE void LeftMirror(float* p, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    *(p - 1 - i) = p[i];
-  }
-}
-
-// Mirror n floats starting at *(p - n) and store them at *p.
-JXL_INLINE void RightMirror(float* p, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    p[i] = *(p - 1 - i);
-  }
-}
-
-}  // namespace
-
-#endif  // LIB_JXL_DEC_GRUOP_CC_
-
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -163,10 +140,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const float* JXL_RESTRICT dequant_matrices =
       dec_state->shared->quantizer.DequantMatrix(0, 0);
 
-  const size_t sigma_stride = dec_state->filter_weights.sigma.PixelsPerRow();
-  const size_t sharpness_stride =
-      dec_state->shared->epf_sharpness.PixelsPerRow();
-
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
@@ -176,8 +149,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   const size_t idct_stride =
       (!save_to_decoded ? *idct : dec_state->decoded).PixelsPerRow();
-
-  const float quant_scale = dec_state->shared->quantizer.Scale();
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
@@ -368,12 +339,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           dec_state->shared->cmap.ytob_map.ConstRow(ty),
       };
 
-      float* JXL_RESTRICT sigma_row =
-          lf.epf_iters > 0
-              ? block_rect.Row(&dec_state->filter_weights.sigma, by)
-              : nullptr;
-      const uint8_t* JXL_RESTRICT sharpness_row =
-          block_rect.ConstRow(dec_state->shared->epf_sharpness, by);
       float* JXL_RESTRICT idct_row[3];
       int16_t* JXL_RESTRICT jpeg_row[3];
       for (size_t c = 0; c < 3; c++) {
@@ -491,81 +456,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                 idct_row[c] + (xpadding_blocks + bx) * kBlockDim;
             TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
                               idct_stride, group_dec_cache->scratch_space);
-          }
-
-          if (lf.epf_iters > 0) {
-            // quant_scale is smaller for low quality.
-            // quant_scale is roughly 0.08 / butteraugli score.
-            //
-            // row_quant is smaller for low quality.
-            // row_quant is a quantization multiplier of form 1.0 /
-            // row_quant[bx]
-            //
-            // lf.epf_quant_mul is a parameter in the format
-            // kInvSigmaNum is a constant
-            float sigma_quant =
-                lf.epf_quant_mul / (quant_scale * row_quant[bx] * kInvSigmaNum);
-            for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-              for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-                float sigma =
-                    sigma_quant *
-                    lf.epf_sharp_lut[sharpness_row[bx + ix +
-                                                   iy * sharpness_stride]];
-                // Avoid infinities.
-                sigma = std::min(-1e-4f, sigma);  // TODO(veluca): remove this.
-                sigma_row[bx + ix + kSigmaPadding +
-                          (iy + kSigmaPadding) * sigma_stride] = 1.0f / sigma;
-              }
-            }
-            // Left padding with mirroring.
-            if (bx + block_rect.x0() == 0) {
-              for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-                LeftMirror(sigma_row + kSigmaPadding +
-                               (iy + kSigmaPadding) * sigma_stride,
-                           kSigmaBorder);
-              }
-            }
-            // Right padding with mirroring.
-            if (bx + block_rect.x0() + llf_x ==
-                dec_state->shared->frame_dim.xsize_blocks) {
-              for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
-                RightMirror(sigma_row + kSigmaPadding + bx + llf_x +
-                                (iy + kSigmaPadding) * sigma_stride,
-                            kSigmaBorder);
-              }
-            }
-            // Offsets for row copying, in blocks.
-            size_t offset_before =
-                bx + block_rect.x0() == 0 ? 1 : bx + kSigmaPadding;
-            size_t offset_after =
-                bx + block_rect.x0() + llf_x ==
-                        dec_state->shared->frame_dim.xsize_blocks
-                    ? kSigmaPadding + llf_x + bx + kSigmaBorder
-                    : kSigmaPadding + llf_x + bx;
-            size_t num = offset_after - offset_before;
-            // Above
-            if (by + block_rect.y0() == 0) {
-              for (size_t iy = 0; iy < kSigmaBorder; iy++) {
-                memcpy(sigma_row + offset_before +
-                           (kSigmaPadding - 1 - iy) * sigma_stride,
-                       sigma_row + offset_before +
-                           (kSigmaPadding + iy) * sigma_stride,
-                       num * sizeof(*sigma_row));
-              }
-            }
-            // Below
-            if (by + block_rect.y0() + acs.covered_blocks_y() ==
-                dec_state->shared->frame_dim.ysize_blocks) {
-              for (size_t iy = 0; iy < kSigmaBorder; iy++) {
-                memcpy(sigma_row + offset_before +
-                           sigma_stride *
-                               (acs.covered_blocks_y() + kSigmaPadding + iy),
-                       sigma_row + offset_before +
-                           sigma_stride * (acs.covered_blocks_y() +
-                                           kSigmaPadding - 1 - iy),
-                       num * sizeof(*sigma_row));
-              }
-            }
           }
 
           if (save_to_decoded) {

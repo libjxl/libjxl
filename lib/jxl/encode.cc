@@ -50,6 +50,28 @@ typedef struct JxlEncoderQueuedFrame {
   std::vector<uint8_t> buffer;
 } JxlEncoderQueuedFrame;
 
+// Returns whether the JxlEndianness value indicates little endian. If not,
+// then big endian is assumed.
+static bool IsLittleEndian(const JxlEndianness& endianness) {
+  switch (endianness) {
+    case JXL_LITTLE_ENDIAN:
+      return true;
+    case JXL_BIG_ENDIAN:
+      return false;
+    case JXL_NATIVE_ENDIAN: {
+      // JXL_BYTE_ORDER_LITTLE from byte_order.h cannot be used because it only
+      // distinguishes between little endian and unknown.
+      uint32_t u = 1;
+      char c[4];
+      memcpy(c, &u, 4);
+      return c[0] == 1;
+    }
+  }
+
+  JXL_ASSERT(false);
+  return false;
+}
+
 struct JxlEncoderStruct {
   JxlMemoryManager memory_manager;
   std::unique_ptr<jxl::ThreadPool> thread_pool;
@@ -65,35 +87,55 @@ struct JxlEncoderStruct {
 
     jxl::CodecInOut io;
     jxl::ColorEncoding c_current;
-    bool has_alpha;
-    // TODO(zond): Make this accept more than bitdepth 16.
-    size_t bitdepth = 16;
+    bool has_alpha = true;
+    bool is_gray = false;
+    size_t bitdepth = 32;
 
-    io.metadata.m.SetUintSamples(bitdepth);
-    // TODO(zond): Make this accept more than sRGB, and also gray+alpha.
+    // TODO(zond): Make this accept more than float and uint8/16.
+    if (input_frame->frame_format.pixel_format.data_type == JXL_TYPE_FLOAT) {
+      io.metadata.m.SetFloat32Samples();
+    } else if (input_frame->frame_format.pixel_format.data_type ==
+               JXL_TYPE_UINT8) {
+      bitdepth = 8;
+      io.metadata.m.SetUintSamples(bitdepth);
+    } else if (input_frame->frame_format.pixel_format.data_type ==
+               JXL_TYPE_UINT16) {
+      bitdepth = 16;
+      io.metadata.m.SetUintSamples(bitdepth);
+    } else {
+      return JXL_ENC_ERROR;
+    }
+
     if (input_frame->frame_format.pixel_format.num_channels == 1) {
-      c_current = jxl::ColorEncoding::SRGB(/*is_gray=*/true);
+      is_gray = true;
       has_alpha = false;
+    } else if (input_frame->frame_format.pixel_format.num_channels == 2) {
+      is_gray = true;
+      io.metadata.m.SetAlphaBits(bitdepth);
     } else if (input_frame->frame_format.pixel_format.num_channels == 3) {
-      c_current = jxl::ColorEncoding::SRGB(/*is_gray=*/false);
       has_alpha = false;
     } else if (input_frame->frame_format.pixel_format.num_channels == 4) {
-      c_current = jxl::ColorEncoding::SRGB(/*is_gray=*/false);
-      has_alpha = true;
       io.metadata.m.SetAlphaBits(bitdepth);
     } else {
       return JXL_ENC_ERROR;
     }
 
-    if (!ConvertImage(jxl::Span<const uint8_t>(input_frame->buffer.data(),
-                                               input_frame->buffer.size()),
-                      input_frame->frame_format.frame_width,
-                      input_frame->frame_format.frame_height, c_current,
-                      has_alpha, /*alpha_is_premultiplied=*/false,
-                      /*bits_per_alpha=*/has_alpha ? bitdepth : 0, bitdepth,
-                      /*big_endian=*/true,
-                      /*flipped_y=*/false, this->thread_pool.get(),
-                      &io.Main())) {
+    if (input_frame->frame_format.pixel_format.data_type == JXL_TYPE_FLOAT) {
+      c_current = jxl::ColorEncoding::LinearSRGB(is_gray);
+    } else {
+      c_current = jxl::ColorEncoding::SRGB(is_gray);
+    }
+
+    if (!ConvertImage(
+            jxl::Span<const uint8_t>(input_frame->buffer.data(),
+                                     input_frame->buffer.size()),
+            input_frame->frame_format.xsize, input_frame->frame_format.ysize,
+            c_current, has_alpha,
+            /*alpha_is_premultiplied=*/false,
+            /*bits_per_alpha=*/has_alpha ? bitdepth : 0, bitdepth,
+            /*big_endian=*/
+            !IsLittleEndian(input_frame->frame_format.pixel_format.endianness),
+            /*flipped_y=*/false, this->thread_pool.get(), &io.Main())) {
       return JXL_ENC_ERROR;
     }
     io.SetSize(io.Main().xsize(), io.Main().ysize());

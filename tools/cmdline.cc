@@ -21,7 +21,8 @@ namespace jpegxl {
 namespace tools {
 
 void CommandLineParser::PrintHelp() const {
-  FILE* out = help_ ? stdout : stderr;
+  // Use stdout, not stderr, so help can easily be grepped.
+  FILE* out = stdout;
   fprintf(out, "Usage: %s", program_name_ ? program_name_ : "command");
 
   for (const auto& option : options_) {
@@ -83,8 +84,6 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
       return false;
     }
   }
-  // Returning false on Parse() forces to print the help message.
-  if (help_) return false;
   return true;
 }
 

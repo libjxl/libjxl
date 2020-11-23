@@ -269,7 +269,7 @@ void SRGBToXYBAndLinear(const Image3F& srgb,
 // it does not contain a sensitivity multiplier based on the blurred image.
 const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
                          Image3F* JXL_RESTRICT xyb,
-                         ImageBundle* JXL_RESTRICT linear) {
+                         ImageBundle* const JXL_RESTRICT linear) {
   PROFILER_FUNC;
 
   const size_t xsize = in.xsize();
@@ -321,20 +321,26 @@ const ImageBundle* ToXYB(const ImageBundle& in, ThreadPool* pool,
   }
 
   // General case: not sRGB, need color transform.
-  ImageBundle linear_storage;
-  // Caller didn't ask for linear, create our own local storage
-  if (!want_linear) {
+  ImageBundle linear_storage;  // Local storage only used if !want_linear.
+
+  ImageBundle* linear_storage_ptr;
+  if (want_linear) {
+    // Caller asked for linear, use that storage directly.
+    linear_storage_ptr = linear;
+  } else {
+    // Caller didn't ask for linear, create our own local storage
     // OK to reuse metadata, it will not be changed.
     linear_storage = ImageBundle(const_cast<ImageMetadata*>(in.metadata()));
-    linear = &linear_storage;
+    linear_storage_ptr = &linear_storage;
   }
 
   const ImageBundle* ptr;
-  JXL_CHECK(TransformIfNeeded(in, c_linear_srgb, pool, linear, &ptr));
+  JXL_CHECK(
+      TransformIfNeeded(in, c_linear_srgb, pool, linear_storage_ptr, &ptr));
   // If no transform was necessary, should have taken the above codepath.
-  JXL_ASSERT(ptr == linear);
+  JXL_ASSERT(ptr == linear_storage_ptr);
 
-  LinearSRGBToXYB(*linear->color(), premul_absorb, pool, xyb);
+  LinearSRGBToXYB(*linear_storage_ptr->color(), premul_absorb, pool, xyb);
   return want_linear ? linear : &in;
 }
 

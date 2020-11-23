@@ -76,7 +76,7 @@ class CodecComparisonWindow : public QMainWindow {
   ImageSets imageSets_;
   QSet<QString> visited_;
 
-  const PaddedBytes monitorIccProfile_;
+  const QByteArray monitorIccProfile_;
 };
 
 }  // namespace jxl

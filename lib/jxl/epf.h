@@ -23,11 +23,31 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/filters.h"
+#include "lib/jxl/passes_state.h"
 
 namespace jxl {
 
 // 4 * (sqrt(0.5)-1), so that Weight(sigma) = 0.5.
 static constexpr float kInvSigmaNum = -1.1715728752538099024f;
+
+// Mirror n floats starting at *p and store them before p.
+JXL_INLINE void LeftMirror(float* p, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    *(p - 1 - i) = p[i];
+  }
+}
+
+// Mirror n floats starting at *(p - n) and store them at *p.
+JXL_INLINE void RightMirror(float* p, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    p[i] = *(p - 1 - i);
+  }
+}
+
+// Fills the `state->filter_weights.sigma` image with the precomputed sigma
+// values in the area inside `block_rect`. Accesses the AC strategy, quant field
+// and epf_sharpness fields in the corresponding positions.
+void ComputeSigma(const Rect& block_rect, PassesDecoderState* state);
 
 // Applies gaborish + EPF to the given `rect` part of the input image `in`,
 // storing the result in the same `rect` rect of the output image and reading

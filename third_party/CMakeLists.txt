@@ -185,7 +185,7 @@ else()
 endif()
 
 # *cms
-if (JPEGXL_ENABLE_SKCMS)
+if (JPEGXL_ENABLE_SKCMS OR JPEGXL_ENABLE_VIEWERS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/skcms/skcms.h" )
     message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
             "build dependencies.")
@@ -193,7 +193,8 @@ if (JPEGXL_ENABLE_SKCMS)
   include(skcms.cmake)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/skcms/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.skcms COPYONLY)
-else ()
+endif ()
+if (NOT JPEGXL_ENABLE_SKCMS)
   if( NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lcms/.git" )
     message(SEND_ERROR "Please run git submodule update --init")
   endif()

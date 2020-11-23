@@ -30,6 +30,13 @@
 
 namespace jxl {
 
+// Decodes the preview image, if present, and stores it in io->preview_frame.
+// Must be the first frame in the file. Does nothing if there is no preview
+// frame present according to the metadata.
+Status DecodePreview(const DecompressParams& dparams,
+                     BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
+                     ThreadPool* pool, CodecInOut* JXL_RESTRICT io);
+
 // Implementation detail: currently decodes to linear sRGB. The contract is:
 // `io` appears 'identical' (modulo compression artifacts) to the encoder input
 // in a color-aware viewer. Note that `io->metadata.m.color_encoding`

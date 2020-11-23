@@ -92,14 +92,10 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     for (size_t c = 0; c < 3; c++) {
       cparams.max_error[c] = shared.quantizer.MulDC()[c];
     }
-    FrameDimensions frame_dim;
-    frame_dim.Set(
-        enc_state->shared.frame_dim.xsize << (3 * shared.frame_header.dc_level),
-        enc_state->shared.frame_dim.ysize << (3 * shared.frame_header.dc_level),
-        shared.frame_header.group_size_shift,
-        shared.frame_header.chroma_subsampling.MaxHShift(),
-        shared.frame_header.chroma_subsampling.MaxVShift());
     cparams.progressive_dc--;
+    // No EPF or Gaborish in DC frames.
+    cparams.epf = 0;
+    cparams.gaborish = Override::kOff;
     // Use kVarDCT in max_error_mode for intermediate progressive DC,
     // and kModular for the smallest DC (first in the bitstream)
     if (cparams.progressive_dc == 0) {

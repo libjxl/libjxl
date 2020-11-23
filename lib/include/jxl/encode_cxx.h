@@ -29,12 +29,18 @@
 #error "This a C++ only header. Use jxl/encode.h from C sources."
 #endif
 
+/// Struct to call JxlEncoderDestroy from the JxlEncoderPtr unique_ptr.
+struct JxlEncoderDestroyStruct {
+  /// Calls @ref JxlEncoderDestroy() on the passed encoder.
+  void operator()(JxlEncoder* encoder) { JxlEncoderDestroy(encoder); }
+};
+
 /// std::unique_ptr<> type that calls JxlEncoderDestroy() when releasing the
 /// encoder.
 ///
 /// Use this helper type from C++ sources to ensure the encoder is destroyed and
 /// their internal resources released.
-typedef std::unique_ptr<JxlEncoder, void (*)(JxlEncoder*)> JxlEncoderPtr;
+typedef std::unique_ptr<JxlEncoder, JxlEncoderDestroyStruct> JxlEncoderPtr;
 
 /// Creates an instance of JxlEncoder into a JxlEncoderPtr and initializes it.
 ///
@@ -48,7 +54,7 @@ typedef std::unique_ptr<JxlEncoder, void (*)(JxlEncoder*)> JxlEncoderPtr;
 ///         initialized
 /// @return initialized JxlEncoderPtr instance otherwise.
 JxlEncoderPtr JxlEncoderMake(const JxlMemoryManager* memory_manager) {
-  return JxlEncoderPtr(JxlEncoderCreate(memory_manager), JxlEncoderDestroy);
+  return JxlEncoderPtr(JxlEncoderCreate(memory_manager));
 }
 
 #endif  // JXL_ENCODE_CXX_H_

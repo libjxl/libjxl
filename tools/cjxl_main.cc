@@ -28,15 +28,16 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   CompressArgs args;
   args.AddCommandLineOptions(&cmdline);
 
-  bool printhelp = false;
   if (!cmdline.Parse(argc, argv)) {
-    printhelp = true;
+    // Parse already printed the actual error cause.
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
+    return 1;
   }
 
   if (args.version) {
-    fprintf(stderr, "cjxl [%s]\n",
+    fprintf(stdout, "cjxl [%s]\n",
             CodecConfigString(JxlEncoderVersion()).c_str());
-    fprintf(stderr, "Copyright (c) the JPEG XL Project\n");
+    fprintf(stdout, "Copyright (c) the JPEG XL Project\n");
     return 0;
   }
 
@@ -46,8 +47,14 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
             CodecConfigString(JxlEncoderVersion()).c_str());
   }
 
-  if (printhelp || !args.ValidateArgs(cmdline)) {
+  if (cmdline.HelpFlagPassed()) {
     cmdline.PrintHelp();
+    return 0;
+  }
+
+  if (!args.ValidateArgs(cmdline)) {
+    // ValidateArgs already printed the actual error cause.
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
     return 1;
   }
 
@@ -70,7 +77,10 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   }
 
   if (args.file_out) {
-    if (!jxl::WriteFile(compressed, args.file_out)) return 1;
+    if (!jxl::WriteFile(compressed, args.file_out)) {
+      fprintf(stderr, "Failed to write to \"%s\"\n", args.file_out);
+      return 1;
+    }
   }
 
   if (args.print_profile == jxl::Override::kOn) {

@@ -58,7 +58,7 @@ FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
   outputStream_.setDevice(&outputFile_);
   outputStream_ << "image name,original side,clicked side,click delay (ms)\n";
 
-  if (monitorProfile_.empty()) {
+  if (monitorProfile_.isEmpty()) {
     QMessageBox messageBox;
     messageBox.setIcon(QMessageBox::Warning);
     messageBox.setStandardButtons(QMessageBox::Ok);

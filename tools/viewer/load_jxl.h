@@ -15,14 +15,13 @@
 #ifndef TOOLS_VIEWER_LOAD_JXL_H_
 #define TOOLS_VIEWER_LOAD_JXL_H_
 
+#include <QByteArray>
 #include <QImage>
 #include <QString>
 
-#include "lib/jxl/base/padded_bytes.h"
-
 namespace jxl {
 
-QImage loadJxlImage(const QString& filename, PaddedBytes targetIccProfile,
+QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
                     qint64* elapsed, bool* usedRequestedProfile = nullptr);
 
 }  // namespace jxl

@@ -272,8 +272,8 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
 }
 
 // Returns a CodecInOut based on the buf, xsize, ysize, and the assumption
-// that the buffer was created using `GetSomeTestImage`.
-jxl::CodecInOut SomeTestImageToCodecInOut(std::vector<uint8_t>& buf,
+// that the buffer was created using `GetSomeTestImage` with 4 channels.
+jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
                                           size_t xsize, size_t ysize) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);

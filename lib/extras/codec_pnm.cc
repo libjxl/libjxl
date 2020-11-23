@@ -348,9 +348,6 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
   }
   io->metadata.m.SetAlphaBits(0);
   io->dec_pixels = header.xsize * header.ysize;
-  io->frames.clear();
-  io->frames.reserve(1);
-  ImageBundle ib(&io->metadata.m);
 
   const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
@@ -358,17 +355,17 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
       span, header.xsize, header.ysize, io->metadata.m.color_encoding,
       /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
       io->metadata.m.GetAlphaBits(), io->metadata.m.bit_depth.bits_per_sample,
-      header.big_endian, flipped_y, pool, &ib));
+      header.big_endian, flipped_y, pool, &io->Main()));
   if (!header.floating_point) {
-    io->metadata.m.bit_depth.bits_per_sample = ib.DetectRealBitdepth();
+    io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
   }
+  io->SetSize(header.xsize, header.ysize);
   if (header.floating_point && io->dec_target != DecodeTarget::kLosslessFloat) {
     // pfm uses nominal range 0..1 while internally JPEG XL uses 0..255. pfm
     // has a "scale" value in the header but it appears software only uses its
     // sign, so its value is ignored in this scaling.
-    ScaleImage<float>(255, ib.color());
+    ScaleImage<float>(255, io->Main().color());
   }
-  io->frames.push_back(std::move(ib));
   SetIntensityTarget(io);
   return true;
 }

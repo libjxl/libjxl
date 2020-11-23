@@ -35,11 +35,14 @@ add_executable(viewer WIN32
   viewer_window.h
   viewer_window.ui
 )
+target_include_directories(viewer PRIVATE
+  $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  "${PROJECT_SOURCE_DIR}"
+)
 target_link_libraries(viewer
-  # TODO(deymo): icc_detect is using jxl-static so we need to use jxl-static
-  # here too.
-  jxl-static
-  jxl_threads-static
   Qt5::Widgets
   icc_detect
+  jxl
+  jxl_threads
+  skcms
 )

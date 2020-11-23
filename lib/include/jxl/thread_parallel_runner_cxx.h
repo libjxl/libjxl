@@ -31,12 +31,20 @@
     "sources."
 #endif
 
+/// Struct to call JxlThreadParallelRunnerDestroy from the
+/// JxlThreadParallelRunnerPtr unique_ptr.
+struct JxlThreadParallelRunnerDestroyStruct {
+  /// Calls @ref JxlThreadParallelRunnerDestroy() on the passed runner.
+  void operator()(void* runner) { JxlThreadParallelRunnerDestroy(runner); }
+};
+
 /// std::unique_ptr<> type that calls JxlThreadParallelRunnerDestroy() when
 /// releasing the runner.
 ///
 /// Use this helper type from C++ sources to ensure the runner is destroyed and
 /// their internal resources released.
-typedef std::unique_ptr<void, void (*)(void*)> JxlThreadParallelRunnerPtr;
+typedef std::unique_ptr<void, JxlThreadParallelRunnerDestroyStruct>
+    JxlThreadParallelRunnerPtr;
 
 /// Creates an instance of JxlThreadParallelRunner into a
 /// JxlThreadParallelRunnerPtr and initializes it.
@@ -54,8 +62,7 @@ typedef std::unique_ptr<void, void (*)(void*)> JxlThreadParallelRunnerPtr;
 JxlThreadParallelRunnerPtr JxlThreadParallelRunnerMake(
     const JxlMemoryManager* memory_manager, size_t num_worker_threads) {
   return JxlThreadParallelRunnerPtr(
-      JxlThreadParallelRunnerCreate(memory_manager, num_worker_threads),
-      JxlThreadParallelRunnerDestroy);
+      JxlThreadParallelRunnerCreate(memory_manager, num_worker_threads));
 }
 
 #endif /* JXL_THREAD_PARALLEL_RUNNER_H_ */

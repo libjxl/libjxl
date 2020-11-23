@@ -15,10 +15,10 @@
 #ifndef TOOLS_VIEWER_VIEWER_WINDOW_H_
 #define TOOLS_VIEWER_VIEWER_WINDOW_H_
 
+#include <QByteArray>
 #include <QMainWindow>
 #include <QStringList>
 
-#include "lib/jxl/base/padded_bytes.h"
 #include "tools/viewer/ui_viewer_window.h"
 
 namespace jxl {
@@ -38,7 +38,7 @@ class ViewerWindow : public QMainWindow {
   void refreshImage();
 
  private:
-  const PaddedBytes monitorProfile_;
+  const QByteArray monitorProfile_;
   Ui::ViewerWindow ui_;
   QStringList filenames_;
   int currentFileIndex_ = 0;

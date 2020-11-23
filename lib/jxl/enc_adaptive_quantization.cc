@@ -53,6 +53,7 @@
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_transforms-inl.h"
+#include "lib/jxl/epf.h"
 #include "lib/jxl/fast_log-inl.h"
 #include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image.h"
@@ -1016,9 +1017,9 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
         // compensate. If the error is below the target, decrease the qf.
         // However, to avoid an excessive increase of the qf, only do so if the
         // error is less than half the maximum allowed error.
-        const float qf_mul = (max_error < 0.5f)
-                                 ? max_error * 2.0f
-                                 : (max_error > 1.0f) ? max_error : 1.0f;
+        const float qf_mul = (max_error < 0.5f)   ? max_error * 2.0f
+                             : (max_error > 1.0f) ? max_error
+                                                  : 1.0f;
         for (size_t qy = by; qy < by + acs.covered_blocks_y(); qy++) {
           float* JXL_RESTRICT quant_field_row = quant_field.Row(qy);
           for (size_t qx = bx; qx < bx + acs.covered_blocks_x(); qx++) {
@@ -1273,6 +1274,9 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
     return true;
   };
   const auto process_group = [&](const int group_index, const int thread) {
+    if (dec_state.shared->frame_header.loop_filter.epf_iters > 0) {
+      ComputeSigma(dec_state.shared->BlockGroupRect(group_index), &dec_state);
+    }
     JXL_CHECK(DecodeGroupForRoundtrip(enc_state->coeffs, group_index,
                                       &dec_state, &group_dec_caches[thread],
                                       thread, &idct, &decoded, nullptr));
