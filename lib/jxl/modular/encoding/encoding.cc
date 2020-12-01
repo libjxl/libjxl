@@ -664,10 +664,11 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
         PredictLearnAll(&properties, channel.w, p + x, onerow, x, y, references,
                         &wp_state, pred);
       } else {
-        pred[0] = PredictLearn(&properties, channel.w, p + x, onerow, x, y,
-                               tree_samples.PredictorFromIndex(0), references,
-                               &wp_state)
-                      .guess;
+        pred[static_cast<int>(tree_samples.PredictorFromIndex(0))] =
+            PredictLearn(&properties, channel.w, p + x, onerow, x, y,
+                         tree_samples.PredictorFromIndex(0), references,
+                         &wp_state)
+                .guess;
       }
       (*total_pixels)++;
       if (use_sample()) {

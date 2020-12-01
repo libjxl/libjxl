@@ -42,6 +42,13 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
       shared->metadata->transform_data.opsin_inverse_matrix.ToOpsinParams(
           shared->metadata->m.IntensityTarget());
 
+  if (shared->coeff_orders.size() <
+          frame_header.passes.num_passes * kCoeffOrderSize &&
+      frame_header.encoding == FrameEncoding::kVarDCT) {
+    shared->coeff_orders.resize(frame_header.passes.num_passes *
+                                kCoeffOrderSize);
+  }
+
   shared->quant_dc = ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   if (!(frame_header.flags & FrameHeader::kUseDcFrame) || encoder) {
     shared->dc_storage =

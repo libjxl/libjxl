@@ -61,8 +61,17 @@ const Image3F* AlphaBlend(const ImageBundle& ib, const Image3F& linear,
   // No alpha => all opaque.
   if (!ib.HasAlpha()) return &linear;
 
+  size_t alpha_bits = ib.metadata()->GetAlphaBits();
+
+  // Alpha bits > 16, and float alpha, not supported yet
+  JXL_ASSERT(alpha_bits <= 16);
+
+  // Despite not supporting it yet, proactively already ensuring the shift
+  // works correct for 32 bits too.
+  const uint16_t opaque = static_cast<uint16_t>((alpha_bits == 32) ?
+      4294967295 : ((1U << alpha_bits) - 1));
+
   *copy = Image3F(linear.xsize(), linear.ysize());
-  const uint16_t opaque = (1U << ib.metadata()->GetAlphaBits()) - 1;
   for (size_t c = 0; c < 3; ++c) {
     AlphaBlend(linear, c, background_linear255, ib.alpha(), opaque, copy);
   }
@@ -73,8 +82,15 @@ void AlphaBlend(float background_linear255, ImageBundle* io_linear_srgb) {
   // No alpha => all opaque.
   if (!io_linear_srgb->HasAlpha()) return;
 
-  const uint16_t opaque =
-      (1U << io_linear_srgb->metadata()->GetAlphaBits()) - 1;
+  size_t alpha_bits = io_linear_srgb->metadata()->GetAlphaBits();
+
+  // Alpha bits > 16, and float alpha, not supported yet
+  JXL_ASSERT(alpha_bits <= 16);
+
+  // Despite not supporting it yet, proactively already ensuring the shift
+  // works correct for 32 bits too.
+  const uint16_t opaque = static_cast<uint16_t>((alpha_bits == 32) ?
+      4294967295 : ((1U << alpha_bits) - 1));
   for (size_t c = 0; c < 3; ++c) {
     AlphaBlend(*io_linear_srgb->color(), c, background_linear255,
                *io_linear_srgb->alpha(), opaque, io_linear_srgb->color());

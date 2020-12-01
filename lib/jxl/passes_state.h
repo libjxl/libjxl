@@ -70,8 +70,7 @@ struct PassesSharedState {
   ImageFeatures image_features;
 
   // Memory area for storing coefficient orders.
-  std::vector<coeff_order_t> coeff_orders =
-      std::vector<coeff_order_t>(kMaxNumPasses * kCoeffOrderSize);
+  std::vector<coeff_order_t> coeff_orders;
 
   // Decoder-side DC and quantized DC.
   ImageB quant_dc;

@@ -55,7 +55,8 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
           ? jxl::ColorSpace::kGray
           : jxl::ColorSpace::kRGB);
   if (pixel_format.num_channels == 2 || pixel_format.num_channels == 4) {
-    io.metadata.m.SetAlphaBits(32);
+    // Note: alpha > 16 not yet supported by the C++ codec
+    io.metadata.m.SetAlphaBits(16);
   }
   size_t bitdepth = 0;
   switch (pixel_format.data_type) {
@@ -65,7 +66,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
       break;
     case JXL_TYPE_UINT8:
       bitdepth = 8;
-      io.metadata.m.SetUintSamples(16);
+      io.metadata.m.SetUintSamples(8);
       break;
     case JXL_TYPE_UINT16:
       bitdepth = 16;

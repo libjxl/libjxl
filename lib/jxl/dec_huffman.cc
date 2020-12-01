@@ -218,6 +218,7 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
     const int code_len_idx = kCodeLengthCodeOrder[i];
     const HuffmanCode* p = huff;
     uint8_t v;
+    br->Refill();
     p += br->PeekFixedBits<4>();
     br->Consume(p->bits);
     v = (uint8_t)p->value;
