@@ -240,7 +240,7 @@ struct ImageMetadata : public Fields {
   //
   // Callers must insert the actual channel image at the same index before any
   // further modifications to extra_channel_info.
-  void SetAlphaBits(uint32_t bits);
+  void SetAlphaBits(uint32_t bits, bool alpha_is_premultiplied = false);
 
   bool HasAlpha() const { return GetAlphaBits() != 0; }
 

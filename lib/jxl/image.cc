@@ -14,12 +14,11 @@
 
 #include "lib/jxl/image.h"
 
+#include <algorithm>  // swap
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/image.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
-#include <algorithm>  // swap
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/profiler.h"

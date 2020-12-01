@@ -14,13 +14,12 @@
 
 #include "lib/jxl/enc_xyb.h"
 
+#include <algorithm>
+#include <cstdlib>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_xyb.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
-#include <algorithm>
-#include <cstdlib>
 #include <hwy/highway.h>
 
 #include "lib/jxl/aux_out_fwd.h"

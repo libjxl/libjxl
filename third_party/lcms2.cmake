@@ -48,5 +48,7 @@ target_include_directories(lcms2
 # bytes.
 target_compile_definitions(lcms2
   PRIVATE "-DCMS_PTR_ALIGNMENT=8")
+target_compile_definitions(lcms2
+  PUBLIC "-DCMS_NO_REGISTER_KEYWORD=1")
 
 set_property(TARGET lcms2 PROPERTY POSITION_INDEPENDENT_CODE ON)

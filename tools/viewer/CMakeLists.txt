@@ -36,7 +36,7 @@ add_executable(viewer WIN32
   viewer_window.ui
 )
 target_include_directories(viewer PRIVATE
-  $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
   "${PROJECT_SOURCE_DIR}"
 )
 target_link_libraries(viewer
@@ -44,5 +44,5 @@ target_link_libraries(viewer
   icc_detect
   jxl
   jxl_threads
-  skcms
+  lcms2
 )

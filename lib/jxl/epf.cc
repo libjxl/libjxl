@@ -28,12 +28,9 @@
 #include <numeric>  // std::accumulate
 #include <vector>
 
-#include "lib/jxl/dec_cache.h"
-
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/epf.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"
@@ -42,6 +39,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/filters_internal.h"
 #include "lib/jxl/image.h"

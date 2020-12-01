@@ -14,20 +14,19 @@
 
 #include "lib/jxl/external_image.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/external_image.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
 #include <string.h>
 
 #include <algorithm>
 #include <array>
 #include <functional>
-#include <hwy/highway.h>
 #include <utility>
 #include <vector>
 
-#include "hwy/base.h"  // EnableIf
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/external_image.cc"
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
+
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/cache_aligned.h"
@@ -260,11 +259,38 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
 
 HWY_EXPORT(LinearToSRGBInPlace);
 
+namespace {
+
+typedef void(StoreFuncType)(uint32_t value, uint8_t* dest);
+template <StoreFuncType StoreFunc>
+void JXL_INLINE StoreFloatRow(const float* JXL_RESTRICT row_in, uint8_t* out,
+                              float mul, size_t xsize, size_t bytes_per_pixel) {
+  size_t i = 0;
+  for (size_t x = 0; x < xsize; ++x) {
+    float v = row_in[x];
+    v = (v < 0) ? 0 : (v > 255 ? 255 * mul : (v * mul));
+    uint32_t value = static_cast<uint32_t>(v + 0.5);
+    StoreFunc(value, out + i);
+    i += bytes_per_pixel;
+  }
+}
+
+void JXL_INLINE Store8(uint32_t value, uint8_t* dest) { *dest = value & 0xff; }
+
+}  // namespace
+
 Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                     bool float_out, bool lossless_float, bool apply_srgb_tf,
                     size_t num_channels, bool little_endian, size_t stride,
                     jxl::ThreadPool* pool, void* out_image, size_t out_size,
                     jxl::Orientation undo_orientation) {
+  if (bits_per_sample < 1 || bits_per_sample > 32) {
+    return JXL_FAILURE("Invalid bits_per_sample value.");
+  }
+  // TODO(deymo): Implement 1-bit per pixel packed in 8 samples per byte.
+  if (bits_per_sample == 1) {
+    return JXL_FAILURE("packed 1-bit per sample is not yet supported");
+  }
   size_t xsize = ib.xsize();
   size_t ysize = ib.ysize();
 
@@ -273,10 +299,12 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
   bool want_alpha = num_channels == 2 || num_channels == 4;
   size_t color_channels = num_channels <= 2 ? 1 : 3;
 
-  // Increment per output pixel
-  const size_t inc = num_channels * bits_per_sample / jxl::kBitsPerByte;
+  // bytes_per_channel and bytes_per_pixel are only valid for
+  // bits_per_sample > 1.
+  const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
+  const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
-  if (stride < inc * xsize) {
+  if (stride < bytes_per_pixel * xsize) {
     return JXL_FAILURE("stride is smaller than scanline width in bytes");
   }
 
@@ -328,24 +356,24 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
               if (little_endian) {
                 for (size_t x = 0; x < xsize; ++x) {
                   StoreLEFloat(row_in[x], out + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               } else {
                 for (size_t x = 0; x < xsize; ++x) {
                   StoreBEFloat(row_in[x], out + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               }
             } else {
               if (little_endian) {
                 for (size_t x = 0; x < xsize; ++x) {
                   StoreLEFloat(row_in[x] * mul, out + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               } else {
                 for (size_t x = 0; x < xsize; ++x) {
                   StoreBEFloat(row_in[x] * mul, out + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               }
             }
@@ -358,40 +386,42 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
     float mul = (bits_per_sample == 32)
                     ? 16843009.0f  // 4294967295 / 255.0f
                     : (((1ull << bits_per_sample) - 1) * (1 / 255.0f));
+    // TODO(deymo): Move the for(c) inside the StoreFloatRow() function so it is
+    // more write-cache friendly.
     for (size_t c = 0; c < color_channels; ++c) {
-      if (bits_per_sample != 8 && bits_per_sample != 16) {
-        return JXL_FAILURE("32-bit and 1-bit not yet implemented");
-      }
-
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const int64_t y = task;
             size_t i = stride * y + (c * bits_per_sample / jxl::kBitsPerByte);
             const float* JXL_RESTRICT row_in = color->PlaneRow(c, y);
-            if (bits_per_sample == 8) {
-              for (size_t x = 0; x < xsize; ++x) {
-                float v = row_in[x];
-                v = (v < 0) ? 0 : (v > 255 ? 255 * mul : (v * mul));
-                uint32_t value = static_cast<uint32_t>(v + 0.5);
-                out[i] = value;
-                i += inc;
+            // TODO(deymo): add bits_per_sample == 1 case here.
+            if (bits_per_sample <= 8) {
+              StoreFloatRow<Store8>(row_in, out + i, mul, xsize,
+                                    bytes_per_pixel);
+            } else if (bits_per_sample <= 16) {
+              if (little_endian) {
+                StoreFloatRow<StoreLE16>(row_in, out + i, mul, xsize,
+                                         bytes_per_pixel);
+              } else {
+                StoreFloatRow<StoreBE16>(row_in, out + i, mul, xsize,
+                                         bytes_per_pixel);
               }
-            } else if (bits_per_sample == 16 && little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                float v = row_in[x];
-                v = (v < 0) ? 0 : (v > 255 ? 255 * mul : (v * mul));
-                uint32_t value = static_cast<uint32_t>(v + 0.5);
-                StoreLE16(value, out + i);
-                i += inc;
+            } else if (bits_per_sample <= 24) {
+              if (little_endian) {
+                StoreFloatRow<StoreLE24>(row_in, out + i, mul, xsize,
+                                         bytes_per_pixel);
+              } else {
+                StoreFloatRow<StoreBE24>(row_in, out + i, mul, xsize,
+                                         bytes_per_pixel);
               }
-            } else if (bits_per_sample == 16 && !little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                float v = row_in[x];
-                v = (v < 0) ? 0 : (v > 255 ? 255 * mul : (v * mul));
-                uint32_t value = static_cast<uint32_t>(v + 0.5);
-                StoreBE16(value, out + i);
-                i += inc;
+            } else {
+              if (little_endian) {
+                StoreFloatRow<StoreLE32>(row_in, out + i, mul, xsize,
+                                         bytes_per_pixel);
+              } else {
+                StoreFloatRow<StoreBE32>(row_in, out + i, mul, xsize,
+                                         bytes_per_pixel);
               }
             }
           },
@@ -438,13 +468,13 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
               for (size_t x = 0; x < xsize; ++x) {
                 float alpha = row_in[x] * mul;
                 StoreLEFloat(alpha, out + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             } else {
               for (size_t x = 0; x < xsize; ++x) {
                 float alpha = row_in[x] * mul;
                 StoreBEFloat(alpha, out + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             }
           },
@@ -473,17 +503,17 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
             if (alpha_bits == 8) {
               for (size_t x = 0; x < xsize; ++x) {
                 out[i] = row_in[x];
-                i += inc;
+                i += bytes_per_pixel;
               }
             } else if (alpha_bits == 16 && little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
                 StoreLE16(row_in[x], out + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             } else if (alpha_bits == 16 && !little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
                 StoreBE16(row_in[x], out + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             }
           },
@@ -494,15 +524,47 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
   return true;
 }
 
+namespace {
+
+typedef uint32_t(LoadFuncType)(const uint8_t* p);
+template <LoadFuncType LoadFunc>
+void JXL_INLINE LoadFloatRow(float* JXL_RESTRICT row_out, const uint8_t* in,
+                             float mul, size_t xsize, size_t bytes_per_pixel) {
+  size_t i = 0;
+  for (size_t x = 0; x < xsize; ++x) {
+    row_out[x] = mul * LoadFunc(in + i);
+    i += bytes_per_pixel;
+  }
+}
+
+uint32_t JXL_INLINE Load8(const uint8_t* p) { return *p; }
+
+}  // namespace
+
 Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
                     const ColorEncoding& c_current, bool has_alpha,
                     bool alpha_is_premultiplied, size_t bits_per_alpha,
                     size_t bits_per_sample, bool big_endian, bool flipped_y,
                     ThreadPool* pool, ImageBundle* ib) {
+  if (bits_per_sample < 1 || bits_per_sample > 32) {
+    return JXL_FAILURE("Invalid bits_per_sample value.");
+  }
+  // TODO(deymo): Implement 1-bit per sample as 8 samples per byte. In
+  // any other case we use DivCeil(bits_per_sample, 8) bytes per pixel per
+  // channel.
+  if (bits_per_sample == 1) {
+    return JXL_FAILURE("packed 1-bit per sample is not yet supported");
+  }
+
   const size_t color_channels = c_current.Channels();
   const size_t channels = color_channels + has_alpha;
-  const size_t row_size =
-      xsize * channels * DivCeil(bits_per_sample, kBitsPerByte);
+
+  // bytes_per_channel and bytes_per_pixel are only valid for
+  // bits_per_sample > 1.
+  const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
+  const size_t bytes_per_pixel = channels * bytes_per_channel;
+
+  const size_t row_size = xsize * bytes_per_pixel;
   if (ysize && bytes.size() / ysize < row_size) {
     return JXL_FAILURE("Buffer size is too small");
   }
@@ -510,9 +572,6 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
   const bool little_endian = !big_endian;
 
   const uint8_t* const in = bytes.data();
-
-  // Increment per input pixel
-  const size_t inc = channels * bits_per_sample / jxl::kBitsPerByte;
 
   Image3F color(xsize, ysize);
   ImageU alpha;
@@ -551,24 +610,24 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
               if (little_endian) {
                 for (size_t x = 0; x < xsize; ++x) {
                   row_out[x] = LoadLEFloat(in + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               } else {
                 for (size_t x = 0; x < xsize; ++x) {
                   row_out[x] = LoadBEFloat(in + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               }
             } else {
               if (little_endian) {
                 for (size_t x = 0; x < xsize; ++x) {
                   row_out[x] = mul * LoadLEFloat(in + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               } else {
                 for (size_t x = 0; x < xsize; ++x) {
                   row_out[x] = mul * LoadBEFloat(in + i);
-                  i += inc;
+                  i += bytes_per_pixel;
                 }
               }
             }
@@ -582,30 +641,39 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
                     ? 5.937181414556033e-08  // 255.f / 4294967295
                     : 255.f / ((1ull << bits_per_sample) - 1);
     for (size_t c = 0; c < color_channels; ++c) {
-      if (bits_per_sample != 8 && bits_per_sample != 16) {
-        return JXL_FAILURE("32-bit and 1-bit not yet implemented");
-      }
-
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * y + (c * bits_per_sample / jxl::kBitsPerByte);
+            size_t i = row_size * y + c * bytes_per_channel;
             float* JXL_RESTRICT row_out = color.PlaneRow(c, y);
-            if (bits_per_sample == 8) {
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = mul * in[i];
-                i += inc;
+            // TODO(deymo): add bits_per_sample == 1 case here. Also maybe
+            // implement masking if bits_per_sample is not a multiple of 8.
+            if (bits_per_sample <= 8) {
+              LoadFloatRow<Load8>(row_out, in + i, mul, xsize, bytes_per_pixel);
+            } else if (bits_per_sample <= 16) {
+              if (little_endian) {
+                LoadFloatRow<LoadLE16>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
+              } else {
+                LoadFloatRow<LoadBE16>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
               }
-            } else if (bits_per_sample == 16 && little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = mul * LoadLE16(in + i);
-                i += inc;
+            } else if (bits_per_sample <= 24) {
+              if (little_endian) {
+                LoadFloatRow<LoadLE24>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
+              } else {
+                LoadFloatRow<LoadBE24>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
               }
-            } else if (bits_per_sample == 16 && !little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = mul * LoadBE16(in + i);
-                i += inc;
+            } else {
+              if (little_endian) {
+                LoadFloatRow<LoadLE32>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
+              } else {
+                LoadFloatRow<LoadBE32>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
               }
             }
           },
@@ -639,21 +707,17 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
             if (little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
                 row_out[x] = mul * LoadLEFloat(in + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             } else {
               for (size_t x = 0; x < xsize; ++x) {
                 row_out[x] = mul * LoadBEFloat(in + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             }
           },
           "ConvertAlphaFloat");
     } else {
-      if (bits_per_sample != 8 && bits_per_sample != 16) {
-        return JXL_FAILURE("32-bit and 1-bit not yet implemented");
-      }
-
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
@@ -664,17 +728,17 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
             if (bits_per_sample == 8) {
               for (size_t x = 0; x < xsize; ++x) {
                 row_out[x] = in[i];
-                i += inc;
+                i += bytes_per_pixel;
               }
             } else if (bits_per_sample == 16 && little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
                 row_out[x] = LoadLE16(in + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             } else if (bits_per_sample == 16 && !little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
                 row_out[x] = LoadBE16(in + i);
-                i += inc;
+                i += bytes_per_pixel;
               }
             }
           },

@@ -47,10 +47,8 @@ static Status VisitFrameType(Visitor* JXL_RESTRICT visitor,
       visitor->U32(Val(static_cast<uint32_t>(FrameType::kRegularFrame)),
                    Val(static_cast<uint32_t>(FrameType::kDCFrame)),
                    Val(static_cast<uint32_t>(FrameType::kReferenceOnly)),
-                   Val(3), static_cast<uint32_t>(default_value), &encoded));
-  if (encoded > 2) {
-    return JXL_FAILURE("Invalid frame_type");
-  }
+                   Val(static_cast<uint32_t>(FrameType::kSkipProgressive)),
+                   static_cast<uint32_t>(default_value), &encoded));
   *frame_type = static_cast<FrameType>(encoded);
   return true;
 }
@@ -259,8 +257,9 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
     if (visitor->Conditional(custom_size_or_origin)) {
       const U32Enc enc(Bits(8), BitsOffset(11, 256), BitsOffset(14, 2304),
                        BitsOffset(30, 18688));
-      // Frame offset, only if kRegularFrame.
-      if (visitor->Conditional(frame_type == FrameType::kRegularFrame)) {
+      // Frame offset, only if kRegularFrame or kSkipProgressive.
+      if (visitor->Conditional(frame_type == FrameType::kRegularFrame ||
+                               frame_type == FrameType::kSkipProgressive)) {
         uint32_t ux0 = PackSigned(frame_origin.x0);
         uint32_t uy0 = PackSigned(frame_origin.y0);
         JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &ux0));
@@ -273,7 +272,8 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->U32(enc, 0, &frame_size.ysize));
       int32_t image_xsize = default_xsize();
       int32_t image_ysize = default_ysize();
-      if (frame_type == FrameType::kRegularFrame) {
+      if (frame_type == FrameType::kRegularFrame ||
+          frame_type == FrameType::kSkipProgressive) {
         is_partial_frame |= frame_origin.x0 > 0;
         is_partial_frame |= frame_origin.y0 > 0;
         is_partial_frame |= (static_cast<int32_t>(frame_size.xsize) +
@@ -285,7 +285,8 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   }
 
   // Blending info, animation info and whether this is the last frame or not.
-  if (visitor->Conditional(frame_type == FrameType::kRegularFrame)) {
+  if (visitor->Conditional(frame_type == FrameType::kRegularFrame ||
+                           frame_type == FrameType::kSkipProgressive)) {
     blending_info.nonserialized_has_multiple_extra_channels =
         num_extra_channels > 0;
     blending_info.nonserialized_is_partial_frame = is_partial_frame;
@@ -339,9 +340,11 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   // full frame, as samples outside the partial region are from a
   // post-color-transform frame.
   if (frame_type != FrameType::kDCFrame) {
-    if (visitor->Conditional(
-            CanBeReferenced() && blending_info.mode == BlendMode::kReplace &&
-            !is_partial_frame && frame_type == FrameType::kRegularFrame)) {
+    if (visitor->Conditional(CanBeReferenced() &&
+                             blending_info.mode == BlendMode::kReplace &&
+                             !is_partial_frame &&
+                             (frame_type == FrameType::kRegularFrame ||
+                              frame_type == FrameType::kSkipProgressive))) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->Bool(false, &save_before_color_transform));
     } else if (visitor->Conditional(frame_type == FrameType::kReferenceOnly)) {

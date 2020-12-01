@@ -23,8 +23,6 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_reconstruct.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <hwy/highway.h>
 
 #include "lib/jxl/aux_out.h"
@@ -164,7 +162,10 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              AuxOut* aux_out) {
   std::vector<Rect> rects_to_process;
 
-  LoopFilter& lf = dec_state->shared_storage.frame_header.loop_filter;
+  // We need to copy `lf` for now because we might rescale the weights if
+  // running EPF on a non-XYB image.
+  // TODO(veluca): remove this copy if we no longer need the rescaling.
+  LoopFilter lf = dec_state->shared->frame_header.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
 
   if ((lf.epf_iters > 0 || lf.gab) && frame_header.chroma_subsampling.Is444() &&

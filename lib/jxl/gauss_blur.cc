@@ -14,16 +14,15 @@
 
 #include "lib/jxl/gauss_blur.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/gauss_blur.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <string.h>
 
 #include <algorithm>
 #include <cmath>
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/gauss_blur.cc"
 #include <hwy/cache_control.h>
+#include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"

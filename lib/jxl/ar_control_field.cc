@@ -22,7 +22,6 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/ar_control_field.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"
@@ -70,7 +69,21 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
   const size_t sharpness_stride =
       static_cast<size_t>(epf_sharpness->PixelsPerRow());
 
-  const auto process_row = [&](size_t gid, int _) {
+  struct TempImages {
+    void InitOnce() {
+      if (laplacian_sqrsum.xsize() != 0) return;
+      laplacian_sqrsum = ImageF(kGroupDim + 4, kGroupDim + 4);
+      sqrsum_00 = ImageF(kGroupDim / 4, kGroupDim / 4);
+      sqrsum_22 = ImageF(kGroupDim / 4 + 1, kGroupDim / 4 + 1);
+    }
+
+    ImageF laplacian_sqrsum;
+    ImageF sqrsum_00;
+    ImageF sqrsum_22;
+  };
+  std::vector<TempImages> temp_images;
+
+  const auto process_row = [&](size_t gid, int thread) {
     size_t gx = gid % enc_state->shared.frame_dim.xsize_groups;
     size_t gy = gid / enc_state->shared.frame_dim.xsize_groups;
     size_t by0 = gy * kGroupDimInBlocks;
@@ -79,7 +92,8 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
     size_t bx0 = gx * kGroupDimInBlocks;
     size_t bx1 = std::min((gx + 1) * kGroupDimInBlocks,
                           enc_state->shared.frame_dim.xsize_blocks);
-    ImageF laplacian_sqrsum(kGroupDim + 4, kGroupDim + 4);
+    temp_images[thread].InitOnce();
+    ImageF& laplacian_sqrsum = temp_images[thread].laplacian_sqrsum;
     // Calculate the L2 of the 3x3 Laplacian in an integral transform
     // (for example 32x32 dct). This relates to transforms ability
     // to propagate artefacts.
@@ -156,7 +170,7 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
     // of the integral transform. Sample them within the integral transform
     // with two offsets (0,0) and (-2, -2) pixels (sqrsum_00 and sqrsum_22,
     //  respectively).
-    ImageF sqrsum_00(kGroupDim / 4, kGroupDim / 4);
+    ImageF& sqrsum_00 = temp_images[thread].sqrsum_00;
     size_t sqrsum_00_stride = sqrsum_00.PixelsPerRow();
     float* JXL_RESTRICT sqrsum_00_row = sqrsum_00.Row(0);
     for (size_t y = 0; y < (by1 - by0) * 2; y++) {
@@ -179,7 +193,7 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
     // around the block for evenness calculations. This is similar to what
     // we did in guetzli for the observability of artefacts, except there
     // the element is a sliding 5x5, not sparsely sampled 4x4 box like here.
-    ImageF sqrsum_22(kGroupDim / 4 + 1, kGroupDim / 4 + 1);
+    ImageF& sqrsum_22 = temp_images[thread].sqrsum_22;
     size_t sqrsum_22_stride = sqrsum_22.PixelsPerRow();
     float* JXL_RESTRICT sqrsum_22_row = sqrsum_22.Row(0);
     for (size_t y = 0; y < (by1 - by0) * 2 + 1; y++) {
@@ -311,8 +325,15 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
     }
   };
 
-  RunOnPool(pool, 0, enc_state->shared.frame_dim.num_groups,
-            ThreadPool::SkipInit(), process_row, "AR CF");
+  RunOnPool(
+      pool, 0, enc_state->shared.frame_dim.num_groups,
+      [&temp_images](const size_t num_threads) {
+        // Each of these allocates memory only when first used to avoid wasted
+        // allocations in case we have too many threads.
+        temp_images.resize(num_threads);
+        return true;
+      },
+      process_row, "AR CF");
 }
 
 }  // namespace

@@ -24,8 +24,6 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_ac_strategy.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"
@@ -412,20 +410,19 @@ void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
 
 // AC strategy selection: utility struct and entropy estimation.
 
-// Highest observed token > 64.
-constexpr size_t kNumTokens = ANS_MAX_ALPHABET_SIZE;
-// Size of the cost cache for most frequent quantized values.
-constexpr size_t kCostCacheSize = 1024;
-
 struct ACSConfig {
   const DequantMatrices* JXL_RESTRICT dequant;
-  float token_bits[kNumTokens];
-  float cost_cache[kCostCacheSize];
   float info_loss_multiplier;
   float* JXL_RESTRICT quant_field_row;
   size_t quant_field_stride;
   const float* JXL_RESTRICT src_rows[3];
   size_t src_stride;
+  // We are assuming that DCT coefficients have a laplacian distribution here.
+  // Cost is given by base_cost + cost_delta * |coeff| for any nonzero
+  // coefficient.
+  float base_cost;
+  float cost_delta;
+  float base_entropy;
   const float& Pixel(size_t c, size_t x, size_t y) const {
     return src_rows[c][y * src_stride + x];
   }
@@ -438,37 +435,6 @@ struct ACSConfig {
     quant_field_row[by * quant_field_stride + bx] = value;
   }
 };
-
-void ComputeTokenBitsAndCostCache(float butteraugli_target,
-                                  float* JXL_RESTRICT token_bits,
-                                  float* JXL_RESTRICT cost_cache) {
-  const double kSmallValueBase = 7.2618801707528009;
-  const double kSmallValueMul = 61.512220067759564;
-  const double kLargeValueFactor = 0.74418618655898428;
-
-  const double kMaxCost = ANS_LOG_TAB_SIZE;
-
-  const double kLargeParam = std::max(
-      0.05f, 0.01f * std::pow(butteraugli_target, 0.1f) - 0.015f);  // OPTIMIZE
-  const double kSmallParam = 8.25f * kLargeParam - 0.08913395766;
-
-  for (size_t i = 0; i < 16; i++) {
-    token_bits[i] =
-        kSmallValueBase + kSmallValueMul *
-                              (pow((i + 1) / 2, kSmallParam) +
-                               pow(i ? (i - 1) / 2 : 0, kSmallParam)) *
-                              0.5f;
-  }
-  for (size_t i = 16; i < kNumTokens; i++) {
-    token_bits[i] = std::min(
-        kMaxCost, std::exp(kLargeParam * i * (i * kLargeValueFactor + 1)));
-  }
-  for (size_t i = 0; i < kCostCacheSize; i++) {
-    uint32_t token, nbits, bits;
-    HybridUintConfig().Encode(i, &token, &nbits, &bits);
-    cost_cache[i] = nbits + token_bits[token];
-  }
-}
 
 // AC strategy selection: recursive block splitting.
 
@@ -576,7 +542,6 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
 
   HWY_FULL(float) df;
   HWY_FULL(int) di;
-  HWY_FULL(uint32_t) du;
 
   float quant = 0;
   // Load QF value
@@ -588,16 +553,16 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   const auto q = Set(df, quant);
 
   // Compute entropy.
-  float entropy = 35.0;
+  float entropy = config.base_entropy;
   auto info_loss = Zero(df);
-  const coeff_order_t* JXL_RESTRICT order = acs.NaturalCoeffOrder();
 
   for (size_t c = 0; c < 3; c++) {
-    size_t num_nzeros = 0;
     const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
     const float* inv_matrix = config.dequant->InvMatrix(acs.RawStrategy(), c);
     const auto cmap_factor = Set(df, cmap_factors[c]);
 
+    auto entropy_v = Zero(df);
+    auto nzeros_v = Zero(di);
     for (size_t i = 0; i < num_blocks * kDCTBlockSize; i += Lanes(df)) {
       const auto in = Load(df, block + c * size + i);
       const auto in_y = Load(df, block + size + i) * cmap_factor;
@@ -605,30 +570,16 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
       const auto val = (in - in_y) * im * q;
       const auto rval = Round(val);
       info_loss += AbsDiff(val, rval);
-      const auto q = ConvertTo(di, rval);
-      // Hand-rolled PackSigned.
-      const auto q2 = ShiftLeft<1>(BitCast(du, q));
-      const auto qmask = BitCast(du, ShiftRight<31>(q));
-      Store(q2 ^ qmask, du, quantized + i);
+      const auto q = Abs(rval);
+      const auto q_is_zero = q == Zero(df);
+      entropy_v += IfThenZeroElse(
+          q_is_zero,
+          MulAdd(q, Set(df, config.cost_delta), Set(df, config.base_cost)));
+      nzeros_v +=
+          BitCast(di, IfThenZeroElse(q_is_zero, BitCast(df, Set(di, 1))));
     }
-    size_t tz = 0;
-    for (size_t i = num_blocks; i < num_blocks * kDCTBlockSize; i++) {
-      size_t k = order[i];
-      float cost = 0;
-      if (JXL_LIKELY(quantized[k] < kCostCacheSize)) {
-        cost = config.cost_cache[quantized[k]];
-      } else {
-        uint32_t token, nbits, bits;
-        HybridUintConfig().Encode(quantized[k], &token, &nbits, &bits);
-        cost = nbits + config.token_bits[token];
-      }
-      num_nzeros += quantized[k] == 0 ? 0 : 1;
-      tz = quantized[k] == 0 ? tz + 1 : 0;
-      entropy += cost;
-    }
-    // Remove entropy of trailing zeros.
-    entropy -= config.cost_cache[0] * tz;
-
+    entropy += GetLane(SumOfLanes(entropy_v));
+    size_t num_nzeros = GetLane(SumOfLanes(nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
     // number of non-zeros of the block.
     size_t nbits = CeilLog2Nonzero(num_nzeros + 1) + 1;
@@ -843,15 +794,6 @@ void FindBestAcStrategy(const Image3F& src,
   ACSConfig config;
   config.dequant = &enc_state->shared.matrices;
 
-  // Entropy estimate is composed of two factors:
-  //  - estimate of the number of bits that will be used by the block
-  //  - information loss due to quantization
-  // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 234;
-
-  ComputeTokenBitsAndCostCache(butteraugli_target, config.token_bits,
-                               config.cost_cache);
-
   // Image row pointers and strides.
   config.quant_field_row = enc_state->initial_quant_field.Row(0);
   config.quant_field_stride = enc_state->initial_quant_field.PixelsPerRow();
@@ -863,6 +805,18 @@ void FindBestAcStrategy(const Image3F& src,
 
   float entropy_adjust[2 * AcStrategy::kNumValidStrategies];
   InitEntropyAdjustTable(entropy_adjust);
+
+  // Entropy estimate is composed of two factors:
+  //  - estimate of the number of bits that will be used by the block
+  //  - information loss due to quantization
+  // The following constant controls the relative weights of these components.
+  // TODO(jyrki): better choice of constants/parameterization.
+  config.info_loss_multiplier = 77.0f;
+  // entropy = base_entropy + (base_cost + cost_delta * |coeff| for every
+  // nonzero coefficient) + log2(num_nonzeros)
+  config.base_cost = std::max(7.0f - 0.2f * cparams.butteraugli_distance, 1.0f);
+  config.cost_delta = 7.0f + 0.7f * cparams.butteraugli_distance;
+  config.base_entropy = 7.0f;
 
   size_t xsize64 = DivCeil(xsize_blocks, 8);
   size_t ysize64 = DivCeil(ysize_blocks, 8);

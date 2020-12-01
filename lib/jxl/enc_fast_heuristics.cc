@@ -32,8 +32,6 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_fast_heuristics.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <hwy/highway.h>
 
 HWY_BEFORE_NAMESPACE();
@@ -54,10 +52,9 @@ Status Heuristics(PassesEncoderState* enc_state,
   const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
   JXL_CHECK(cparams.butteraugli_distance > 0);
 
-  // Apply inverse-gaborish.
-  // TODO(veluca): make this tiled and make GaborishInverse in-place.
+  // TODO(veluca): make this tiled.
   if (shared.frame_header.loop_filter.gab) {
-    *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
+    GaborishInverse(opsin, 0.9908511000000001f, pool);
   }
   // Compute image of high frequencies by removing a blurred version.
   // TODO(veluca): certainly can be made faster, and use less memory...

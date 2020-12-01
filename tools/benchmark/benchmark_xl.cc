@@ -43,10 +43,10 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -239,27 +239,9 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
       ImageBundle& ib2 = io2.frames[i];
 
       // Verify output
-      // TODO(robryk): Reenable once we reproduce the same alpha bitdepth.
-      // Currently alpha equality is sort-of included in Butteraugli distance.
-#if 0
-      JXL_CHECK(ib1.HasAlpha() == ib2.HasAlpha());
-      if (ib1.HasAlpha()) {
-        JXL_CHECK(SamePixels(ib1.alpha(), ib2.alpha()));
-      }
-#endif
-
       PROFILER_ZONE("Benchmark stats");
       float distance;
       if (SameSize(ib1, ib2)) {
-        // This needs to be ib2 because the codec will have set it on the
-        // encoded image if needed, but we currently don't set it on the
-        // reference.
-        Image3F linear_rgb1, linear_rgb2;
-        JXL_CHECK(ib1.CopyTo(Rect(ib1), ColorEncoding::LinearSRGB(ib1.IsGray()),
-                             &linear_rgb1, inner_pool));
-        JXL_CHECK(ib2.CopyTo(Rect(ib2), ColorEncoding::LinearSRGB(ib2.IsGray()),
-                             &linear_rgb2, inner_pool));
-        double distance_double;
         ButteraugliParams params = codec->BaParams();
         if (ib1.metadata()->IntensityTarget() !=
             ib2.metadata()->IntensityTarget()) {
@@ -268,9 +250,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                   "targets");
         }
         params.intensity_target = ib1.metadata()->IntensityTarget();
-        JXL_CHECK(ButteraugliInterface(linear_rgb1, linear_rgb2, params,
-                                       distmap, distance_double));
-        distance = static_cast<float>(distance_double);
+        distance = ButteraugliDistance(ib1, ib2, params, &distmap, inner_pool);
         // Ensure pixels in range 0-255
         s->distance_2 += ComputeDistance2(ib1, ib2);
       } else {
@@ -655,10 +635,10 @@ struct StatPrinter {
 
     const double rmse =
         std::sqrt(t.stats.distance_2 / t.stats.total_input_pixels);
-    const double psnr =
-        t.stats.total_compressed_size == 0
-            ? 0.0
-            : (t.stats.distance_2 == 0) ? 99.99 : (20 * std::log10(255 / rmse));
+    const double psnr = t.stats.total_compressed_size == 0 ? 0.0
+                        : (t.stats.distance_2 == 0)
+                            ? 99.99
+                            : (20 * std::log10(255 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =

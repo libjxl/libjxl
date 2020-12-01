@@ -106,7 +106,6 @@ float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
   JXL_CHECK(TransformIfNeeded(rgb1, ColorEncoding::LinearSRGB(rgb1.IsGray()),
                               pool, &store1, &linear_srgb1));
 
-  return ComputeScoreImpl(*linear_srgb0, *linear_srgb1, comparator, diffmap);
   // No alpha: skip blending, only need a single call to Butteraugli.
   if (!rgb0.HasAlpha() && !rgb1.HasAlpha()) {
     return ComputeScoreImpl(*linear_srgb0, *linear_srgb1, comparator, diffmap);
@@ -115,24 +114,14 @@ float ComputeScore(const ImageBundle& rgb0, const ImageBundle& rgb1,
   // Blend on black and white backgrounds
 
   const float black = 0.0f;
-  ImageBundle blended_black0(&metadata0);
-  blended_black0.SetFromImage(CopyImage(linear_srgb0->color()),
-                              linear_srgb0->c_current());
-  ImageBundle blended_black1(&metadata1);
-  blended_black1.SetFromImage(CopyImage(linear_srgb1->color()),
-                              linear_srgb1->c_current());
+  ImageBundle blended_black0 = linear_srgb0->Copy();
+  ImageBundle blended_black1 = linear_srgb1->Copy();
   AlphaBlend(black, &blended_black0);
   AlphaBlend(black, &blended_black1);
 
-  // TODO(lode): this is incorrect in case of intensity multiplier, consider
-  // making intensity multiplier part of comparator
   const float white = 255.0f;
-  ImageBundle blended_white0(&metadata0);
-  blended_white0.SetFromImage(CopyImage(linear_srgb0->color()),
-                              linear_srgb0->c_current());
-  ImageBundle blended_white1(&metadata1);
-  blended_white1.SetFromImage(CopyImage(linear_srgb1->color()),
-                              linear_srgb1->c_current());
+  ImageBundle blended_white0 = linear_srgb0->Copy();
+  ImageBundle blended_white1 = linear_srgb1->Copy();
   AlphaBlend(white, &blended_white0);
   AlphaBlend(white, &blended_white1);
 

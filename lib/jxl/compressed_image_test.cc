@@ -60,7 +60,7 @@ void RunRGBRoundTrip(float distance, bool fast) {
   Image3F opsin(io.xsize(), io.ysize());
   (void)ToXYB(io.Main(), &pool, &opsin);
   opsin = PadImageToMultiple(opsin, kBlockDim);
-  opsin = GaborishInverse(opsin, 1.0f, &pool);
+  GaborishInverse(&opsin, 1.0f, &pool);
 
   CompressParams cparams;
   cparams.butteraugli_distance = distance;

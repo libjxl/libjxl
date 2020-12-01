@@ -272,20 +272,26 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
 }
 
 // Returns a CodecInOut based on the buf, xsize, ysize, and the assumption
-// that the buffer was created using `GetSomeTestImage` with 4 channels.
+// that the buffer was created using `GetSomeTestImage`.
 jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
-                                          size_t xsize, size_t ysize) {
+                                          size_t num_channels, size_t xsize,
+                                          size_t ysize) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
   io.metadata.m.SetAlphaBits(16);
-  EXPECT_TRUE(ConvertImage(jxl::Span<const uint8_t>(buf.data(), buf.size()),
-                           xsize, ysize,
-                           jxl::ColorEncoding::SRGB(/*is_gray=*/false),
-                           /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
-                           /*bits_per_alpha=*/16, /*bitdepth=*/16,
-                           /*big_endian=*/true,
-                           /*flipped_y=*/false, /*pool=*/nullptr,
-                           /*ib=*/&io.Main()));
+  io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
+      /*is_gray=*/num_channels == 1 || num_channels == 2);
+  EXPECT_TRUE(ConvertImage(
+      jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
+      jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels == 1 ||
+                               num_channels == 2),
+      /*has_alpha=*/num_channels == 2 || num_channels == 4,
+      /*alpha_is_premultiplied=*/false,
+      /*bits_per_alpha=*/num_channels == 2 || num_channels == 4 ? 16 : 0,
+      /*bitdepth=*/16,
+      /*big_endian=*/true,
+      /*flipped_y=*/false, /*pool=*/nullptr,
+      /*ib=*/&io.Main()));
   return io;
 }
 

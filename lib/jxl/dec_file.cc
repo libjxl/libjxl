@@ -145,7 +145,9 @@ Status DecodeFile(const DecompressParams& dparams,
                                         aux_out, &io->frames.back(),
                                         io->metadata, io));
       } while (dec_state.shared->frame_header.frame_type !=
-               FrameType::kRegularFrame);
+                   FrameType::kRegularFrame &&
+               dec_state.shared->frame_header.frame_type !=
+                   FrameType::kSkipProgressive);
       io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
     } while (!dec_state.shared->frame_header.is_last);
 

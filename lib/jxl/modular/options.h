@@ -74,6 +74,8 @@ inline const char* PredictorName(Predictor p) {
       return "TopL";
     case Predictor::TopRight:
       return "TopR";
+    case Predictor::LeftLeft:
+      return "LL";
     default:
       return "INVALID";
   };
@@ -143,8 +145,12 @@ struct ModularOptions {
   int max_properties = 0;  // no previous channels
 
   // Alternative heuristic tweaks.
-  size_t splitting_heuristics_max_properties = 8;
+  // Properties default to channel, group, weighted, gradient residual, W-NW,
+  // NW-N, N-NE, N-NN
+  std::vector<uint32_t> splitting_heuristics_properties = {0,  1,  15, 9,
+                                                           10, 11, 12, 13};
   float splitting_heuristics_node_threshold = 96;
+  size_t max_property_values = 32;
 
   // Predictor to use for each channel.
   Predictor predictor = static_cast<Predictor>(-1);
@@ -155,8 +161,8 @@ struct ModularOptions {
 
   // Forces the encoder to produce a tree that is compatible with the WP-only
   // decode path (or with the no-wp path).
-  bool force_wp_only = false;
-  bool force_no_wp = false;
+  enum class WPTreeMode { kWPOnly, kNoWP, kDefault };
+  WPTreeMode wp_tree_mode = WPTreeMode::kDefault;
 
   // Kind of tree to use.
   // TODO(veluca): add tree kinds for JPEG recompression with CfL enabled,

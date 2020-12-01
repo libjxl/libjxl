@@ -12,18 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/xorshift128plus_test.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <stdint.h>
 #include <stdio.h>
 
 #include <algorithm>
+#include <vector>
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/xorshift128plus_test.cc"
+#include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 #include <hwy/tests/test_util-inl.h>
-#include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/thread_pool_internal.h"

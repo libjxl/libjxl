@@ -239,7 +239,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
 
   // Apply inverse-gaborish.
   if (shared.frame_header.loop_filter.gab) {
-    *opsin = GaborishInverse(*opsin, 0.9908511000000001f, pool);
+    GaborishInverse(opsin, 0.9908511000000001f, pool);
   }
 
   FindBestDequantMatrices(cparams, *opsin, modular_frame_encoder,

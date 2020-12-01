@@ -380,7 +380,7 @@ Status WriteImageMetadata(const ImageMetadata& metadata,
   return Bundle::Write(metadata, writer, layer, aux_out);
 }
 
-void ImageMetadata::SetAlphaBits(uint32_t bits) {
+void ImageMetadata::SetAlphaBits(uint32_t bits, bool alpha_is_premultiplied) {
   std::vector<ExtraChannelInfo>& eciv = extra_channel_info;
   ExtraChannelInfo* alpha = Find(ExtraChannel::kAlpha);
   if (bits == 0) {
@@ -400,7 +400,7 @@ void ImageMetadata::SetAlphaBits(uint32_t bits) {
       info.type = ExtraChannel::kAlpha;
       info.bit_depth.bits_per_sample = bits;
       info.dim_shift = 0;
-      info.alpha_associated = false;  // may be set by SetAlpha() later
+      info.alpha_associated = alpha_is_premultiplied;
       // Prepend rather than append: in case there already are other extra
       // channels, prefer alpha channel to be listed first.
       eciv.insert(eciv.begin(), info);
@@ -409,6 +409,7 @@ void ImageMetadata::SetAlphaBits(uint32_t bits) {
       alpha->bit_depth.bits_per_sample = bits;
       alpha->bit_depth.floating_point_sample = false;
       alpha->bit_depth.exponent_bits_per_sample = 0;
+      alpha->alpha_associated = alpha_is_premultiplied;
     }
   }
   num_extra_channels = extra_channel_info.size();

@@ -522,7 +522,8 @@ Status DecodeFrame(const DecompressParams& dparams,
   std::vector<size_t> max_passes_for_group(num_groups, max_passes);
   std::vector<bool> has_dc_group(frame_dim.num_dc_groups, true);
   if (!dparams.allow_partial_files ||
-      frame_header.frame_type == FrameType::kReferenceOnly) {
+      (frame_header.frame_type == FrameType::kReferenceOnly ||
+       frame_header.frame_type == FrameType::kSkipProgressive)) {
     if (group_codes_begin + groups_total_size > reader->TotalBytes()) {
       return JXL_FAILURE("group offset is out of bounds");
     }
@@ -850,7 +851,8 @@ Status DecodeFrame(const DecompressParams& dparams,
     // coalesced frame of size equal to image dimensions. Other frames are not
     // blended, thus their final size is the size that was defined in the
     // frame_header.
-    if (dec_state->shared->frame_header.frame_type == kRegularFrame) {
+    if (dec_state->shared->frame_header.frame_type == kRegularFrame ||
+        dec_state->shared->frame_header.frame_type == kSkipProgressive) {
       decoded->ShrinkTo(
           dec_state->shared->frame_header.nonserialized_metadata->xsize(),
           dec_state->shared->frame_header.nonserialized_metadata->ysize());

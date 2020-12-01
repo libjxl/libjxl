@@ -169,9 +169,15 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
   }
 
   JxlPixelFormat pixel_format = {3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-  JxlFrameFormat frame_format = JxlFrameFormat{pixel_format, xsize, ysize};
+  if (JXL_ENC_SUCCESS != JxlEncoderSetDimensions(enc, xsize, ysize)) {
+    fprintf(stderr, "JxlEncoderSetDimensions failed\n");
+    JxlThreadParallelRunnerDestroy(runner);
+    JxlEncoderDestroy(enc);
+    return false;
+  }
+
   if (JXL_ENC_SUCCESS !=
-      JxlEncoderAddImageFrame(enc, &frame_format, (void*)pixels.data(),
+      JxlEncoderAddImageFrame(enc, &pixel_format, (void*)pixels.data(),
                               sizeof(float) * pixels.size())) {
     fprintf(stderr, "JxlEncoderAddImageFrame failed\n");
     JxlThreadParallelRunnerDestroy(runner);

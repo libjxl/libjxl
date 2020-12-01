@@ -243,7 +243,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   io->SetFromImage(std::move(image), color_encoding);
   io->metadata.m.color_encoding = color_encoding;
   if (has_alpha) {
-    io->metadata.m.SetAlphaBits(kExrAlphaBits);
+    io->metadata.m.SetAlphaBits(kExrAlphaBits, /*alpha_is_premultiplied=*/true);
     io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/true);
   }
   return true;

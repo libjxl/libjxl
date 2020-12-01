@@ -34,14 +34,14 @@ add_library(image_loading STATIC
   image_loading.h
 )
 target_include_directories(image_loading PRIVATE
-  $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
 )
 target_link_libraries(image_loading PUBLIC
   Qt5::Widgets
   jxl-static
   jxl_threads-static
   jxl_extras-static
-  skcms
+  lcms2
 )
 
 add_executable(compare_codecs WIN32

@@ -240,22 +240,51 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
   } else {
     cparams.options.splitting_heuristics_node_threshold = 96;
   }
-  switch (cparams.speed_tier) {
-    case SpeedTier::kWombat:
-      cparams.options.splitting_heuristics_max_properties = 4;
-      break;
-    case SpeedTier::kSquirrel:
-      cparams.options.splitting_heuristics_max_properties = 6;
-      break;
-    case SpeedTier::kKitten:
-      cparams.options.splitting_heuristics_max_properties = 8;
-      break;
-    case SpeedTier::kTortoise:
-      cparams.options.splitting_heuristics_max_properties = 128;
-      break;
-    default:
-      cparams.options.splitting_heuristics_max_properties = 4;
-      break;
+  {
+    // Set properties.
+    std::vector<uint32_t> prop_order;
+    if (cparams.responsive) {
+      // Properties in order of their likelyhood of being useful for Squeeze
+      // residuals.
+      prop_order = {0, 1, 4, 5, 6, 7, 8, 15, 9, 10, 11, 12, 13, 14, 2, 3};
+    } else {
+      // Same, but for the non-Squeeze case.
+      prop_order = {0, 1, 15, 9, 10, 11, 12, 13, 14, 2, 3, 4, 5, 6, 7, 8};
+    }
+    switch (cparams.speed_tier) {
+      case SpeedTier::kSquirrel:
+        cparams.options.splitting_heuristics_properties.assign(
+            prop_order.begin(), prop_order.begin() + 8);
+        cparams.options.max_property_values = 32;
+        break;
+      case SpeedTier::kKitten:
+        cparams.options.splitting_heuristics_properties.assign(
+            prop_order.begin(), prop_order.begin() + 10);
+        cparams.options.max_property_values = 64;
+        break;
+      case SpeedTier::kTortoise:
+        cparams.options.splitting_heuristics_properties = prop_order;
+        cparams.options.max_property_values = 256;
+        break;
+      default:
+        cparams.options.splitting_heuristics_properties.assign(
+            prop_order.begin(), prop_order.begin() + 6);
+        cparams.options.max_property_values = 16;
+        break;
+    }
+    if (cparams.speed_tier > SpeedTier::kTortoise) {
+      // Gradient in previous channels.
+      for (int i = 0; i < cparams.options.max_properties; i++) {
+        cparams.options.splitting_heuristics_properties.push_back(
+            kNumNonrefProperties + i * 4 + 3);
+      }
+    } else {
+      // All the extra properties in Tortoise mode.
+      for (int i = 0; i < cparams.options.max_properties * 4; i++) {
+        cparams.options.splitting_heuristics_properties.push_back(
+            kNumNonrefProperties + i);
+      }
+    }
   }
 
   if (cparams.options.predictor == static_cast<Predictor>(-1)) {
@@ -309,7 +338,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
 
   if (do_color && frame_header.loop_filter.gab) {
-    *color = GaborishInverse(*color, 0.9908511000000001f, pool);
+    GaborishInverse(color, 0.9908511000000001f, pool);
   }
 
   if (do_color && cparams.speed_tier < SpeedTier::kCheetah) {
@@ -663,10 +692,24 @@ Status ModularFrameEncoder::ComputeEncodingData(
             stream_params[i].maxShift, stream_params[i].id, do_color));
       },
       "ChooseParams");
+  {
+    // Clear out channels that have been copied to groups.
+    Image& full_image = stream_images[0];
+    size_t c = full_image.nb_meta_channels;
+    for (; c < full_image.channel.size(); c++) {
+      Channel& fc = full_image.channel[c];
+      if (fc.w > frame_dim.group_dim || fc.h > frame_dim.group_dim) break;
+    }
+    for (; c < full_image.channel.size(); c++) {
+      full_image.channel[c].plane = ImageI();
+    }
+  }
 
   if (!quants.empty()) {
     for (uint32_t stream_id = 0; stream_id < stream_images.size();
          stream_id++) {
+      // skip non-modular stream_ids
+      if (stream_id > 0 && gi_channel[stream_id].empty()) continue;
       Image& image = stream_images[stream_id];
       const ModularOptions& options = stream_options[stream_id];
       for (uint32_t i = image.nb_meta_channels; i < image.channel.size(); i++) {
@@ -764,8 +807,6 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
         pool, 0, useful_splits.size() - 1, ThreadPool::SkipInit(),
         [&](size_t chunk, size_t _) {
           // TODO(veluca): parallelize more.
-          std::vector<std::vector<int32_t>> props;
-          std::vector<std::vector<int32_t>> residuals;
           size_t total_pixels = 0;
           uint32_t start = useful_splits[chunk];
           uint32_t stop = useful_splits[chunk + 1];
@@ -781,38 +822,47 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
                 PredefinedTree(stream_options[start].tree_kind, total_pixels);
             return;
           }
-          for (size_t i = start; i < stop; i++) {
-            JXL_CHECK(ModularGenericCompress(
-                stream_images[i], stream_options[i], /*writer=*/nullptr,
-                /*aux_out=*/nullptr, 0, i, &props, &residuals, &total_pixels));
-            max_c = std::max<uint32_t>(stream_images[i].channel.size(), max_c);
+          TreeSamples tree_samples;
+          if (!tree_samples.SetPredictor(stream_options[start].predictor,
+                                         stream_options[start].wp_tree_mode)) {
+            invalid_force_wp.test_and_set(std::memory_order_acq_rel);
+            return;
           }
-
-          std::vector<Predictor> predictors;
-          if (stream_options[start].predictor == Predictor::Variable) {
-            predictors.resize(kNumModularPredictors);
-            for (size_t i = 0; i < kNumModularPredictors; i++) {
-              predictors[i] = static_cast<Predictor>(i);
-            }
-          } else if (stream_options[start].predictor == Predictor::Best) {
-            predictors = {Predictor::Gradient, Predictor::Weighted};
-          } else {
-            predictors = {stream_options[start].predictor};
+          if (!tree_samples.SetProperties(
+                  stream_options[start].splitting_heuristics_properties,
+                  stream_options[start].wp_tree_mode)) {
+            invalid_force_wp.test_and_set(std::memory_order_acq_rel);
+            return;
+          }
+          std::vector<pixel_type> pixel_samples;
+          std::vector<pixel_type> diff_samples;
+          std::vector<uint32_t> group_pixel_count;
+          std::vector<uint32_t> channel_pixel_count;
+          for (size_t i = start; i < stop; i++) {
+            max_c = std::max<uint32_t>(stream_images[i].channel.size(), max_c);
+            CollectPixelSamples(stream_images[i], stream_options[i], i,
+                                group_pixel_count, channel_pixel_count,
+                                pixel_samples, diff_samples);
           }
           StaticPropRange range;
           range[0] = {0, max_c};
           range[1] = {start, stop};
+          auto local_multiplier_info = multiplier_info;
 
-          if (stream_options[start].force_no_wp && predictors.size() == 1 &&
-              predictors[0] == Predictor::Weighted) {
-            invalid_force_wp.test_and_set(std::memory_order_acq_rel);
-            return;
+          tree_samples.PreQuantizeProperties(
+              range, local_multiplier_info, group_pixel_count,
+              channel_pixel_count, pixel_samples, diff_samples,
+              stream_options[start].max_property_values);
+          for (size_t i = start; i < stop; i++) {
+            JXL_CHECK(ModularGenericCompress(
+                stream_images[i], stream_options[i], /*writer=*/nullptr,
+                /*aux_out=*/nullptr, 0, i, &tree_samples, &total_pixels));
           }
 
           // TODO(veluca): parallelize more.
-          trees[chunk] = LearnTree(
-              predictors, std::move(props), std::move(residuals), total_pixels,
-              stream_options[start], multiplier_info, range);
+          trees[chunk] =
+              LearnTree(std::move(tree_samples), total_pixels,
+                        stream_options[start], local_multiplier_info, range);
         },
         "LearnTrees");
     if (invalid_force_wp.test_and_set(std::memory_order_acq_rel)) {
@@ -824,7 +874,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
     // Fixed tree.
     // TODO(veluca): determine cutoffs?
     std::vector<int32_t> cutoffs = {-255, -191, -127, -95, -63, -47, -31, -23,
-                                    -15,  -11,  -7,   -4,  -3,  -1,  0,   1,
+                                    -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
                                     3,    5,    7,    11,  15,  23,  31,  47,
                                     63,   95,   127,  191, 255};
     size_t total_pixels = 0;
@@ -867,13 +917,11 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
         JXL_CHECK(ModularGenericCompress(
             stream_images[stream_id], stream_options[stream_id],
             /*writer=*/nullptr, &my_aux_out, 0, stream_id,
-            /*props=*/nullptr,
-            /*residuals=*/nullptr,
+            /*tree_samples=*/nullptr,
             /*total_pixels=*/nullptr,
             /*tree=*/&tree, /*header=*/&stream_headers[stream_id],
             /*tokens=*/&tokens[stream_id],
-            /*width=*/&image_widths[stream_id],
-            /*want_debug=*/true));
+            /*width=*/&image_widths[stream_id]));
       },
       "ComputeTokens");
   return true;
@@ -936,11 +984,6 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
 }
 
 namespace {
-// Use the weighted predictor with a fixed context model to evaluate the choice
-// of RCT. Rationale:
-// - it's much faster than trying an actual encode
-// - on photographic content, this is a good proxy for entropy of the channel
-// - on nonphoto content, the choice of RCT doesn't matter as much.
 float EstimateWPCost(const Image& img, size_t i) {
   size_t extra_bits = 0;
   float histo_cost = 0;
@@ -990,7 +1033,43 @@ float EstimateWPCost(const Image& img, size_t i) {
   return histo_cost + extra_bits;
 }
 
-float EstimateCost(const Image& img) { return EstimateWPCost(img, 0); }
+float EstimateCost(const Image& img) {
+  // TODO(veluca): consider SIMDfication of this code.
+  size_t extra_bits = 0;
+  float histo_cost = 0;
+  HybridUintConfig config;
+  uint32_t cutoffs[] = {0,  1,  3,  5,   7,   11,  15,  23, 31,
+                        47, 63, 95, 127, 191, 255, 392, 500};
+  constexpr size_t nc = sizeof(cutoffs) / sizeof(*cutoffs) + 1;
+  Histogram histo[nc] = {};
+  for (const Channel& ch : img.channel) {
+    const intptr_t onerow = ch.plane.PixelsPerRow();
+    for (size_t y = 0; y < ch.h; y++) {
+      const pixel_type* JXL_RESTRICT r = ch.Row(y);
+      for (size_t x = 0; x < ch.w; x++) {
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        size_t maxdiff = std::max(std::max(left, top), topleft) -
+                         std::min(std::min(left, top), topleft);
+        size_t ctx = 0;
+        for (uint32_t c : cutoffs) {
+          ctx += c > maxdiff;
+        }
+        pixel_type res = r[x] - ClampedGradient(top, left, topleft);
+        uint32_t token, nbits, bits;
+        config.Encode(PackSigned(res), &token, &nbits, &bits);
+        histo[ctx].Add(token);
+        extra_bits += nbits;
+      }
+    }
+    for (size_t h = 0; h < nc; h++) {
+      histo_cost += histo[h].ShannonEntropy();
+      histo[h].Clear();
+    }
+  }
+  return histo_cost + extra_bits;
+}
 
 }  // namespace
 
@@ -1241,7 +1320,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   size_t stream_id = ModularStreamId::VarDCTDC(group_index).ID(frame_dim);
   stream_options[stream_id].max_chan_size = 0xFFFFFF;
   stream_options[stream_id].predictor = Predictor::Weighted;
-  stream_options[stream_id].force_wp_only = true;
+  stream_options[stream_id].wp_tree_mode = ModularOptions::WPTreeMode::kWPOnly;
   if (cparams.speed_tier >= SpeedTier::kSquirrel) {
     stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
   }
@@ -1342,7 +1421,7 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
   const Rect r = enc_state->shared.DCGroupRect(group_index);
   size_t stream_id = ModularStreamId::ACMetadata(group_index).ID(frame_dim);
   stream_options[stream_id].max_chan_size = 0xFFFFFF;
-  stream_options[stream_id].force_no_wp = true;
+  stream_options[stream_id].wp_tree_mode = ModularOptions::WPTreeMode::kNoWP;
   if (jpeg_transcode) {
     stream_options[stream_id].tree_kind =
         ModularOptions::TreeKind::kJpegTranscodeACMeta;

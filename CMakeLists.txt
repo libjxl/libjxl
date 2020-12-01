@@ -61,9 +61,20 @@ if(${CXX_FUZZERS_SUPPORTED})
   # Enabled by default except on arm64, Windows and Apple builds.
   set(ENABLE_FUZZERS_DEFAULT true)
 endif()
+find_package(PkgConfig)
 if(NOT APPLE AND NOT WIN32 AND NOT HAIKU AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "x86_64")
-  # Enabled by default except on Windows and Apple builds.
-  set(ENABLE_TCMALLOC_DEFAULT true)
+  pkg_check_modules(TCMallocMinimalVersionCheck QUIET IMPORTED_TARGET
+      libtcmalloc_minimal)
+  if(TCMallocMinimalVersionCheck_FOUND AND
+     TCMallocMinimalVersionCheck_VERSION VERSION_LESS 2.8)
+    # Enabled by default except on Windows and Apple builds for tcmalloc < 2.8
+    set(ENABLE_TCMALLOC_DEFAULT true)
+  else()
+    message(STATUS
+        "tcmalloc version ${TCMallocMinimalVersionCheck_VERSION} -- "
+        "default is tcmalloc disabled due to "
+        "https://github.com/gperftools/gperftools/issues/1204")
+  endif()
 endif()
 
 if(WIN32)
@@ -215,7 +226,6 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
-find_package(PkgConfig)
 add_subdirectory(third_party)
 
 set(THREADS_PREFER_PTHREAD_FLAG YES)

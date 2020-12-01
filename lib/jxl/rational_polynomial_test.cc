@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/rational_polynomial_test.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <stdio.h>
 
 #include <cmath>
+#include <string>
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/rational_polynomial_test.cc"
+#include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 #include <hwy/tests/test_util-inl.h>
-#include <string>
 
 #include "lib/jxl/base/descriptive_statistics.h"
 #include "lib/jxl/base/status.h"

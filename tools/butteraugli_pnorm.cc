@@ -14,16 +14,15 @@
 
 #include "tools/butteraugli_pnorm.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "tools/butteraugli_pnorm.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include <atomic>
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "tools/butteraugli_pnorm.cc"
+#include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"

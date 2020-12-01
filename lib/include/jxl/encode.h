@@ -50,12 +50,12 @@ typedef struct JxlEncoderStruct JxlEncoder;
  * Return value for multiple encoder functions.
  */
 typedef enum {
-  /** Function call finished sucessfully, or encoding is finished and there is
+  /** Function call finished successfully, or encoding is finished and there is
    * nothing more to be done.
    */
   JXL_ENC_SUCCESS = 0,
 
-  /** An error occured, for example out of memory.
+  /** An error occurred, for example out of memory.
    */
   JXL_ENC_ERROR = 1,
 
@@ -64,26 +64,6 @@ typedef enum {
   JXL_ENC_NEED_MORE_OUTPUT = 2,
 
 } JxlEncoderStatus;
-
-/**
- * Data type for the minimum format necessary to encode a single frame.
- */
-typedef struct {
-  /**
-   * Pixel format of frame.
-   */
-  JxlPixelFormat pixel_format;
-
-  /**
-   * Pixel width of frame.
-   */
-  uint32_t xsize;
-
-  /**
-   * Pixel height of frame.
-   */
-  uint32_t ysize;
-} JxlFrameFormat;
 
 /**
  * Creates an instance of JxlEncoder and initializes it.
@@ -153,14 +133,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(
  * - JXL_TYPE_FLOAT, input pixels are assumed to be linear SRGB encoded
  *
  * @param enc encoder object
- * @param frame_format frame format for pixels. Object owned by user and its
+ * @param pixel_format format for pixels. Object owned by user and its
  * contents are copied internally.
  * @param buffer buffer type to input the pixel data from
  * @param size size of buffer in bytes
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus
-JxlEncoderAddImageFrame(JxlEncoder* enc, const JxlFrameFormat* frame_format,
+JxlEncoderAddImageFrame(JxlEncoder* enc, const JxlPixelFormat* pixel_format,
                         void* buffer, size_t size);
 
 /**
@@ -173,6 +153,19 @@ JxlEncoderAddImageFrame(JxlEncoder* enc, const JxlFrameFormat* frame_format,
  * @param enc encoder object
  */
 JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
+
+/**
+ * Sets the dimensions of the image encoded by this encoder.
+ *
+ * @param enc encoder object
+ * @param xsize width of image
+ * @param ysize height of image
+ * @return JXL_ENC_SUCCESS if the dimensions are within jxl spec limitations,
+ * JXL_ENC_ERROR otherwise
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc,
+                                                    const size_t xsize,
+                                                    const size_t ysize);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

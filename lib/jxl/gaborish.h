@@ -26,8 +26,9 @@
 namespace jxl {
 
 // Used in encoder to reduce the impact of the decoder's smoothing.
-// This is approximate and slow (unoptimized 5x5 convolution).
-Image3F GaborishInverse(const Image3F& opsin, float mul, ThreadPool* pool);
+// This is not exact. Works in-place to reduce memory use.
+// The input is typically in XYB space.
+void GaborishInverse(Image3F* in_out, float mul, ThreadPool* pool);
 
 }  // namespace jxl
 

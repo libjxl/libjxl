@@ -26,8 +26,6 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/detect_dots.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"

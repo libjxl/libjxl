@@ -44,43 +44,159 @@ bool IsLittleEndian(const JxlEndianness& endianness) {
   return false;
 }
 
-// Returns a 3 channel, 32 bit float, native endian image.
-std::vector<float> GetFloatTestImage(size_t xsize, size_t ysize) {
-  size_t num_pixels = xsize * ysize;
-  // One float per channel, 3 channels
-  std::vector<float> pixels(num_pixels * 3);
-  // Create pixel content to test, actual content does not matter as long as it
-  // can be compared after roundtrip.
-  for (size_t y = 0; y < ysize; y++) {
-    for (size_t x = 0; x < xsize; x++) {
-      float r = static_cast<float>(y) / static_cast<float>(ysize);
-      float g = static_cast<float>(x) / static_cast<float>(xsize);
-      float b = static_cast<float>(x + y) / static_cast<float>(xsize + ysize);
-      size_t i = (y * xsize + x) * 3;
-      pixels[i] = r;
-      pixels[i + 1] = g;
-      pixels[i + 2] = b;
-    }
+// Converts a test image to a CodecInOut.
+jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
+                                 const size_t xsize, const size_t ysize,
+                                 const JxlPixelFormat& pixel_format) {
+  jxl::CodecInOut io;
+  io.SetSize(xsize, ysize);
+  io.metadata.m.color_encoding.SetColorSpace(
+      pixel_format.num_channels == 1 || pixel_format.num_channels == 2
+          ? jxl::ColorSpace::kGray
+          : jxl::ColorSpace::kRGB);
+  if (pixel_format.num_channels == 2 || pixel_format.num_channels == 4) {
+    io.metadata.m.SetAlphaBits(32);
   }
-  return pixels;
+  size_t bitdepth = 0;
+  switch (pixel_format.data_type) {
+    case JXL_TYPE_FLOAT:
+      bitdepth = 32;
+      io.metadata.m.SetFloat32Samples();
+      break;
+    case JXL_TYPE_UINT8:
+      bitdepth = 8;
+      io.metadata.m.SetUintSamples(16);
+      break;
+    case JXL_TYPE_UINT16:
+      bitdepth = 16;
+      io.metadata.m.SetUintSamples(16);
+      break;
+    default:
+      EXPECT_TRUE(false) << "Roundtrip tests for data type "
+                         << pixel_format.data_type << " not yet implemented.";
+  }
+  EXPECT_TRUE(ConvertImage(
+      jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
+      /*c_current=*/pixel_format.data_type == JXL_TYPE_FLOAT
+          ? jxl::ColorEncoding::LinearSRGB(
+                /*is_gray=*/pixel_format.num_channels < 3)
+          : jxl::ColorEncoding::SRGB(
+                /*is_gray=*/pixel_format.num_channels < 3),
+      /*has_alpha=*/pixel_format.num_channels == 2 ||
+          pixel_format.num_channels == 4,
+      /*alpha_is_premultiplied=*/false,
+      /*bits_per_alpha=*/pixel_format.num_channels == 2 ||
+              pixel_format.num_channels == 4
+          ? (bitdepth == 32 ? 16 : bitdepth)
+          : 0,
+      /*bitdepth=*/bitdepth,
+      /*big_endian=*/!IsLittleEndian(pixel_format.endianness),
+      /*flipped_y=*/false, /*pool=*/nullptr,
+      /*ib=*/&io.Main()));
+  return io;
 }
 
-// Compresses some pixels using some frame_format, verifying that the decoded
-// version is similar to some original CodecInOut.
-void VerifyRoundtripCompression(
-    const std::vector<uint8_t>& original_bytes,
-    const JxlFrameFormat& original_frame_format,
-    const std::function<jxl::CodecInOut(const std::vector<uint8_t>&)>&
-        converter) {
-  jxl::CodecInOut original_io = converter(original_bytes);
+// Stores a float in big endian
+void StoreBEFloat(float value, uint8_t* p) {
+  uint32_t u;
+  memcpy(&u, &value, 4);
+  StoreBE32(u, p);
+}
+
+// Stores a float in little endian
+void StoreLEFloat(float value, uint8_t* p) {
+  uint32_t u;
+  memcpy(&u, &value, 4);
+  StoreLE32(u, p);
+}
+
+// Loads a float in big endian
+float LoadBEFloat(const uint8_t* p) {
+  float value;
+  const uint32_t u = LoadBE32(p);
+  memcpy(&value, &u, 4);
+  return value;
+}
+
+// Loads a float in little endian
+float LoadLEFloat(const uint8_t* p) {
+  float value;
+  const uint32_t u = LoadLE32(p);
+  memcpy(&value, &u, 4);
+  return value;
+}
+
+template <typename T>
+T ConvertTestPixel(const float val);
+
+template <>
+float ConvertTestPixel<float>(const float val) {
+  return val;
+}
+
+template <>
+uint16_t ConvertTestPixel<uint16_t>(const float val) {
+  return (uint16_t)(val * UINT16_MAX);
+}
+
+template <>
+uint8_t ConvertTestPixel<uint8_t>(const float val) {
+  return (uint8_t)(val * UINT8_MAX);
+}
+
+// Returns a test image.
+template <typename T>
+std::vector<uint8_t> GetTestImage(const size_t xsize, const size_t ysize,
+                                  const JxlPixelFormat& pixel_format) {
+  std::vector<T> pixels(xsize * ysize * pixel_format.num_channels);
+  for (size_t y = 0; y < ysize; y++) {
+    for (size_t x = 0; x < xsize; x++) {
+      for (size_t chan = 0; chan < pixel_format.num_channels; chan++) {
+        float val;
+        switch (chan % 4) {
+          case 0:
+            val = static_cast<float>(y) / static_cast<float>(ysize);
+            break;
+          case 1:
+            val = static_cast<float>(x) / static_cast<float>(xsize);
+            break;
+          case 2:
+            val = static_cast<float>(x + y) / static_cast<float>(xsize + ysize);
+            break;
+          case 3:
+            val = static_cast<float>(x * y) / static_cast<float>(xsize * ysize);
+            break;
+        }
+        pixels[(y * xsize + x) * pixel_format.num_channels + chan] =
+            ConvertTestPixel<T>(val);
+      }
+    }
+    std::vector<uint8_t> bytes(pixels.size() * sizeof(T));
+    memcpy(bytes.data(), pixels.data(), sizeof(T) * pixels.size());
+    return bytes;
+  }
+  return {};
+}
+
+// Generates some pixels using using some dimensions and pixel_format,
+// compresses them, and verifies that the decoded version is similar to the
+// original pixels.
+template <typename T>
+void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
+                                const JxlPixelFormat& pixel_format) {
+  const std::vector<uint8_t> original_bytes =
+      GetTestImage<T>(xsize, ysize, pixel_format);
+  jxl::CodecInOut original_io =
+      ConvertTestImage(original_bytes, xsize, ysize, pixel_format);
 
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
   EXPECT_NE(nullptr, enc);
 
-  EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderAddImageFrame(enc, &original_frame_format,
-                                    (void*)original_bytes.data(),
-                                    original_bytes.size()));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetDimensions(enc, xsize, ysize));
+  EXPECT_EQ(
+      JXL_ENC_SUCCESS,
+      JxlEncoderAddImageFrame(enc, &pixel_format, (void*)original_bytes.data(),
+                              original_bytes.size()));
   JxlEncoderCloseInput(enc);
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
@@ -114,30 +230,30 @@ void VerifyRoundtripCompression(
             JxlDecoderProcessInput(dec, &next_in, &avail_in));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderImageOutBufferSize(
-                dec, &original_frame_format.pixel_format, &buffer_size));
+            JxlDecoderImageOutBufferSize(dec, &pixel_format, &buffer_size));
   EXPECT_EQ(buffer_size, original_bytes.size());
 
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
-  EXPECT_EQ(original_frame_format.xsize, info.xsize);
-  EXPECT_EQ(original_frame_format.ysize, info.ysize);
+  EXPECT_EQ(xsize, info.xsize);
+  EXPECT_EQ(ysize, info.ysize);
 
   std::vector<uint8_t> decoded_bytes(buffer_size);
 
   EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER,
             JxlDecoderProcessInput(dec, &next_in, &avail_in));
 
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
-                                 dec, &original_frame_format.pixel_format,
-                                 decoded_bytes.data(), decoded_bytes.size()));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(dec, &pixel_format,
+                                                         decoded_bytes.data(),
+                                                         decoded_bytes.size()));
 
   EXPECT_EQ(JXL_DEC_FULL_IMAGE,
             JxlDecoderProcessInput(dec, &next_in, &avail_in));
 
   JxlDecoderDestroy(dec);
 
-  jxl::CodecInOut decoded_io = converter(decoded_bytes);
+  jxl::CodecInOut decoded_io =
+      ConvertTestImage(decoded_bytes, xsize, ysize, pixel_format);
 
   jxl::ButteraugliParams ba;
   float butteraugli_score = ButteraugliDistance(original_io, decoded_io, ba,
@@ -148,46 +264,25 @@ void VerifyRoundtripCompression(
 }  // namespace
 
 TEST(RoundtripTest, FloatFrameRoundtripTest) {
-  JxlPixelFormat pixel_format = {3, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-  uint32_t xsize = 63;
-  uint32_t ysize = 129;
-  JxlFrameFormat original_frame_format =
-      JxlFrameFormat{pixel_format, xsize, ysize};
-  std::vector<float> original_pixels = GetFloatTestImage(xsize, ysize);
-  std::vector<uint8_t> original_bytes(original_pixels.size() * sizeof(float));
-  memcpy(original_bytes.data(), original_pixels.data(),
-         sizeof(float) * original_pixels.size());
-
-  VerifyRoundtripCompression(
-      original_bytes, original_frame_format,
-      [xsize, ysize](const std::vector<uint8_t>& buf) {
-        jxl::CodecInOut io;
-        io.SetSize(xsize, ysize);
-        EXPECT_TRUE(ConvertImage(
-            jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
-            jxl::ColorEncoding::SRGB(/*is_gray=*/false),
-            /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
-            /*bits_per_alpha=*/0, /*bitdepth=*/32,
-            /*big_endian=*/!IsLittleEndian(JXL_NATIVE_ENDIAN),
-            /*flipped_y=*/false, /*pool=*/nullptr,
-            /*ib=*/&io.Main()));
-        return io;
-      });
+  for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
+    JxlPixelFormat pixel_format =
+        JxlPixelFormat{num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+    VerifyRoundtripCompression<float>(63, 129, pixel_format);
+  }
 }
 
 TEST(RoundtripTest, Uint16FrameRoundtripTest) {
-  uint32_t channels = 4;
-  JxlPixelFormat pixel_format = {channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  uint32_t xsize = 63;
-  uint32_t ysize = 129;
-  JxlFrameFormat original_frame_format =
-      JxlFrameFormat{pixel_format, xsize, ysize};
-  std::vector<uint8_t> original_bytes =
-      jxl::test::GetSomeTestImage(xsize, ysize, channels);
+  for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
+    JxlPixelFormat pixel_format =
+        JxlPixelFormat{num_channels, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
+    VerifyRoundtripCompression<uint16_t>(63, 129, pixel_format);
+  }
+}
 
-  VerifyRoundtripCompression(original_bytes, original_frame_format,
-                             [xsize, ysize](const std::vector<uint8_t>& buf) {
-                               return jxl::test::SomeTestImageToCodecInOut(
-                                   buf, xsize, ysize);
-                             });
+TEST(RoundtripTest, Uint8FrameRoundtripTest) {
+  for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
+    JxlPixelFormat pixel_format =
+        JxlPixelFormat{num_channels, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+    VerifyRoundtripCompression<uint8_t>(63, 129, pixel_format);
+  }
 }

@@ -46,7 +46,7 @@ uint32_t JxlEncoderVersion(void) {
 }
 
 typedef struct JxlEncoderQueuedFrame {
-  JxlFrameFormat frame_format;
+  JxlPixelFormat pixel_format;
   std::vector<uint8_t> buffer;
 } JxlEncoderQueuedFrame;
 
@@ -87,54 +87,58 @@ struct JxlEncoderStruct {
 
     jxl::CodecInOut io;
     jxl::ColorEncoding c_current;
-    bool has_alpha = true;
-    bool is_gray = false;
-    size_t bitdepth = 32;
+    bool has_alpha;
+    bool is_gray;
+    size_t bitdepth;
 
     // TODO(zond): Make this accept more than float and uint8/16.
-    if (input_frame->frame_format.pixel_format.data_type == JXL_TYPE_FLOAT) {
+    if (input_frame->pixel_format.data_type == JXL_TYPE_FLOAT) {
+      bitdepth = 32;
       io.metadata.m.SetFloat32Samples();
-    } else if (input_frame->frame_format.pixel_format.data_type ==
-               JXL_TYPE_UINT8) {
+    } else if (input_frame->pixel_format.data_type == JXL_TYPE_UINT8) {
       bitdepth = 8;
       io.metadata.m.SetUintSamples(bitdepth);
-    } else if (input_frame->frame_format.pixel_format.data_type ==
-               JXL_TYPE_UINT16) {
+    } else if (input_frame->pixel_format.data_type == JXL_TYPE_UINT16) {
       bitdepth = 16;
       io.metadata.m.SetUintSamples(bitdepth);
     } else {
       return JXL_ENC_ERROR;
     }
 
-    if (input_frame->frame_format.pixel_format.num_channels == 1) {
-      is_gray = true;
+    if (input_frame->pixel_format.num_channels == 1) {
       has_alpha = false;
-    } else if (input_frame->frame_format.pixel_format.num_channels == 2) {
       is_gray = true;
-      io.metadata.m.SetAlphaBits(bitdepth);
-    } else if (input_frame->frame_format.pixel_format.num_channels == 3) {
+    } else if (input_frame->pixel_format.num_channels == 2) {
+      is_gray = true;
+      has_alpha = true;
+      io.metadata.m.SetAlphaBits(bitdepth == 32 ? 16 : bitdepth);
+    } else if (input_frame->pixel_format.num_channels == 3) {
+      is_gray = false;
       has_alpha = false;
-    } else if (input_frame->frame_format.pixel_format.num_channels == 4) {
-      io.metadata.m.SetAlphaBits(bitdepth);
+    } else if (input_frame->pixel_format.num_channels == 4) {
+      is_gray = false;
+      has_alpha = true;
+      io.metadata.m.SetAlphaBits(bitdepth == 32 ? 16 : bitdepth);
     } else {
       return JXL_ENC_ERROR;
     }
 
-    if (input_frame->frame_format.pixel_format.data_type == JXL_TYPE_FLOAT) {
+    if (input_frame->pixel_format.data_type == JXL_TYPE_FLOAT) {
       c_current = jxl::ColorEncoding::LinearSRGB(is_gray);
     } else {
       c_current = jxl::ColorEncoding::SRGB(is_gray);
     }
+    io.metadata.m.color_encoding = c_current;
 
     if (!ConvertImage(
             jxl::Span<const uint8_t>(input_frame->buffer.data(),
                                      input_frame->buffer.size()),
-            input_frame->frame_format.xsize, input_frame->frame_format.ysize,
-            c_current, has_alpha,
+            metadata.xsize(), metadata.ysize(), c_current, has_alpha,
             /*alpha_is_premultiplied=*/false,
-            /*bits_per_alpha=*/has_alpha ? bitdepth : 0, bitdepth,
+            /*bits_per_alpha=*/has_alpha ? (bitdepth == 32 ? 16 : bitdepth) : 0,
+            bitdepth,
             /*big_endian=*/
-            !IsLittleEndian(input_frame->frame_format.pixel_format.endianness),
+            !IsLittleEndian(input_frame->pixel_format.endianness),
             /*flipped_y=*/false, this->thread_pool.get(), &io.Main())) {
       return JXL_ENC_ERROR;
     }
@@ -145,18 +149,18 @@ struct JxlEncoderStruct {
     jxl::BitWriter writer;
 
     if (!wrote_headers) {
-      if (!WriteHeaders(cparams, &io, &this->metadata, &writer, nullptr)) {
+      if (!WriteHeaders(cparams, &io, &metadata, &writer, nullptr)) {
         return JXL_ENC_ERROR;
       }
       // Only send ICC (at least several hundred bytes) if fields aren't enough.
-      if (this->metadata.m.color_encoding.WantICC()) {
-        if (!jxl::WriteICC(this->metadata.m.color_encoding.ICC(), &writer,
+      if (metadata.m.color_encoding.WantICC()) {
+        if (!jxl::WriteICC(metadata.m.color_encoding.ICC(), &writer,
                            jxl::kLayerHeader, nullptr)) {
           return JXL_ENC_ERROR;
         }
       }
-      if (this->metadata.m.have_preview) {
-        if (!jxl::EncodePreview(cparams, io.preview_frame, &this->metadata,
+      if (metadata.m.have_preview) {
+        if (!jxl::EncodePreview(cparams, io.preview_frame, &metadata,
                                 this->thread_pool.get(), &writer)) {
           return JXL_ENC_ERROR;
         }
@@ -173,9 +177,9 @@ struct JxlEncoderStruct {
     //             last animation frame).
 
     jxl::PassesEncoderState enc_state;
-    if (!jxl::EncodeFrame(cparams, jxl::FrameInfo{}, &this->metadata,
-                          io.frames[0], &enc_state, this->thread_pool.get(),
-                          &writer, /*aux_out=*/nullptr)) {
+    if (!jxl::EncodeFrame(cparams, jxl::FrameInfo{}, &metadata, io.frames[0],
+                          &enc_state, this->thread_pool.get(), &writer,
+                          /*aux_out=*/nullptr)) {
       return JXL_ENC_ERROR;
     }
 
@@ -185,6 +189,14 @@ struct JxlEncoderStruct {
     return JXL_ENC_SUCCESS;
   }
 };
+
+JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc, const size_t xsize,
+                                         const size_t ysize) {
+  if (enc->metadata.size.Set(xsize, ysize)) {
+    return JXL_ENC_SUCCESS;
+  }
+  return JXL_ENC_ERROR;
+}
 
 JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   JxlMemoryManager local_memory_manager;
@@ -221,12 +233,12 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
 }
 
 JxlEncoderStatus JxlEncoderAddImageFrame(JxlEncoder* enc,
-                                         const JxlFrameFormat* frame_format,
+                                         const JxlPixelFormat* pixel_format,
                                          void* buffer, size_t size) {
   // TODO(zond): Return error if the input has been closed.
   enc->input_frame_queue.push_back(
       std::unique_ptr<JxlEncoderQueuedFrame>(new JxlEncoderQueuedFrame{
-          *frame_format,
+          *pixel_format,
           std::vector<uint8_t>(static_cast<uint8_t*>(buffer),
                                static_cast<uint8_t*>(buffer) + size)}));
   return JXL_ENC_SUCCESS;

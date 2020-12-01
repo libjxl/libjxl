@@ -337,6 +337,8 @@ static constexpr size_t kExtraPropsPerChannel = 4;
 static constexpr size_t kNumNonrefProperties =
     kNumStaticProperties + 13 + weighted::kNumProperties;
 
+constexpr size_t kWPProp = kNumNonrefProperties - weighted::kNumProperties;
+
 // Clamps gradient to the min/max of n, w (and l, implicitly).
 static JXL_INLINE int32_t ClampedGradient(const int32_t n, const int32_t w,
                                           const int32_t l) {
@@ -544,7 +546,9 @@ inline PredictionResult Predict(
   predictions[(int)Predictor::Average2] = (topleft + top) / 2;
   predictions[(int)Predictor::Average3] = (top + topright) / 2;
   predictions[(int)Predictor::Average4] =
-      (6 * top - 2 * toptop + 7 * left + 1 * leftleft + 1 * toprightright + 3 * topright + 8) / 16;
+      (6 * top - 2 * toptop + 7 * left + 1 * leftleft + 1 * toprightright +
+       3 * topright + 8) /
+      16;
   result.guess += predictions[(int)predictor];
   result.predictor = predictor;
 

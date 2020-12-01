@@ -14,12 +14,7 @@
 
 #include "lib/jxl/modular/encoding/ma.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/modular/encoding/ma.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
-#include <hwy/highway.h>
+#include <algorithm>
 #include <limits>
 #include <numeric>
 #include <queue>
@@ -27,9 +22,39 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/modular/encoding/ma.cc"
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
+
+#ifndef LIB_JXL_ENC_MODULAR_ENCODING_MA_
+#define LIB_JXL_ENC_MODULAR_ENCODING_MA_
+namespace {
+struct Rng {
+  uint64_t s[2];
+  explicit Rng(size_t seed)
+      : s{0x94D049BB133111EBull, 0xBF58476D1CE4E5B9ull + seed} {}
+  // Xorshift128+ adapted from xorshift128+-inl.h
+  uint64_t operator()() {
+    uint64_t s1 = s[0];
+    const uint64_t s0 = s[1];
+    const uint64_t bits = s1 + s0;  // b, c
+    s[0] = s0;
+    s1 ^= s1 << 23;
+    s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
+    s[1] = s1;
+    return bits;
+  }
+  static constexpr uint64_t max() { return ~0ULL; }
+  static constexpr uint64_t min() { return 0; }
+};
+}  // namespace
+#endif
+
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/fast_log-inl.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/options.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -67,104 +92,6 @@ float EstimateBits(const int32_t *counts, int32_t *rounded_counts,
         IfThenElse(counts_v == zero, zero, counts_v * BitCast(df, nbps));
   }
   return GetLane(SumOfLanes(bits_lanes));
-}
-
-float EstimateTotalBits(int64_t offset, const std::vector<int> &residuals,
-                        const std::vector<size_t> &indices, size_t begin,
-                        size_t end) {
-  float ans = 0;
-  std::vector<int32_t> dist;
-  size_t num_symbols = 0;
-  for (size_t i = begin; i < end; i++) {
-    uint32_t tok, nbits, bits;
-    HybridUintConfig(4, 1, 2).Encode(PackSigned(residuals[indices[i]] - offset),
-                                     &tok, &bits, &nbits);
-    if (tok >= dist.size()) {
-      dist.resize(Padded(tok + 1));
-    }
-    dist[tok]++;
-    ans += nbits;
-    num_symbols = num_symbols > tok + 1 ? num_symbols : tok + 1;
-  }
-  std::vector<int32_t> rounded_dist(dist.size());
-  return ans + EstimateBits(dist.data(), rounded_dist.data(), num_symbols);
-}
-
-float EstimateTotalBitsAndOffset(const std::vector<int> &residuals,
-                                 const std::vector<size_t> &indices,
-                                 size_t begin, size_t end, int64_t *offset) {
-  JXL_ASSERT(begin < end);
-  int64_t sum = 0;
-  // Minimize sum-of-abs-values.
-  for (size_t j = begin; j < end; j++) {
-    sum += residuals[indices[j]];
-  }
-  int64_t tot = end - begin;
-  *offset = sum > 0 ? (sum + tot / 2) / tot : (sum - tot / 2) / tot;
-  return EstimateTotalBits(*offset, residuals, indices, begin, end);
-}
-
-// Compute the entropy obtained by splitting up along each property.
-void EstimateEntropy(
-    int64_t offset, const std::vector<std::vector<int>> &residuals,
-    const std::vector<std::vector<int>> &all_props,
-    const std::vector<std::vector<int>> &compact_properties,
-    std::vector<std::pair<float, size_t>> *props_with_entropy) {
-  std::vector<uint32_t> tokens;
-  tokens.reserve(residuals[0].size());
-  uint32_t num_symbols = 0;
-  for (int v : residuals[0]) {
-    uint32_t tok, nbits, bits;
-    HybridUintConfig(4, 1, 2).Encode(PackSigned(v - offset), &tok, &bits,
-                                     &nbits);
-    tokens.push_back(tok);
-    num_symbols = std::max(tok + 1, num_symbols);
-  }
-
-  std::vector<int32_t> dist(Padded(num_symbols));
-  std::vector<int32_t> rounded_dist(Padded(num_symbols));
-  std::vector<size_t> indices(tokens.size());
-  std::vector<int> prop_counts;
-  // Force usage of static properties.
-  for (size_t i = 0; i < kNumStaticProperties; i++) {
-    props_with_entropy->emplace_back(0, i);
-  }
-  for (size_t i = kNumStaticProperties; i < all_props.size(); i++) {
-    const auto &props = all_props[i];
-
-    // Counting sort.
-    prop_counts.clear();
-    prop_counts.resize(compact_properties[i].size() + 1);
-    for (size_t j = 0; j < props.size(); j++) {
-      prop_counts[props[j] + 1]++;
-    }
-    for (size_t j = 0; j < prop_counts.size() - 1; j++) {
-      prop_counts[j + 1] += prop_counts[j];
-    }
-    for (size_t j = 0; j < props.size(); j++) {
-      indices[prop_counts[props[j]]++] = j;
-    }
-
-    size_t previous_position = 0;
-    size_t current_position = 0;
-    float entropy = 0;
-    for (; current_position < props.size(); current_position++) {
-      previous_position = current_position;
-      while (current_position < props.size() &&
-             props[indices[current_position]] ==
-                 props[indices[previous_position]]) {
-        size_t tok = tokens[indices[current_position]];
-        dist[tok]++;
-        current_position++;
-      }
-      entropy += EstimateBits(dist.data(), rounded_dist.data(), num_symbols);
-      while (previous_position < current_position) {
-        dist[tokens[indices[previous_position]]]--;
-        previous_position++;
-      }
-    }
-    props_with_entropy->emplace_back(entropy, i);
-  }
 }
 
 void MakeSplitNode(size_t pos, int property, int splitval, Predictor lpred,
@@ -213,12 +140,62 @@ IntersectionType BoxIntersects(StaticPropRange needle, StaticPropRange haystack,
   return partial ? IntersectionType::kPartial : IntersectionType::kInside;
 }
 
-void FindBestSplit(const std::vector<std::vector<int>> &residuals,
-                   const std::vector<std::vector<int>> &props,
-                   const std::vector<Predictor> predictors,
-                   const std::vector<std::vector<int>> &compact_properties,
-                   std::vector<size_t> *indices,
-                   const std::vector<size_t> &props_to_use, float threshold,
+void SplitTreeSamples(TreeSamples &tree_samples, size_t begin, size_t pos,
+                      size_t end, size_t prop) {
+  auto cmp = [&](size_t a, size_t b) {
+    return int32_t(tree_samples.Property(prop, a)) -
+           int32_t(tree_samples.Property(prop, b));
+  };
+  Rng rng(0);
+  while (end > begin + 1) {
+    {
+      JXL_ASSERT(end > begin);  // silence clang-tidy.
+      size_t pivot = rng() % (end - begin) + begin;
+      tree_samples.Swap(begin, pivot);
+    }
+    size_t pivot_begin = begin;
+    size_t pivot_end = pivot_begin + 1;
+    for (size_t i = begin + 1; i < end; i++) {
+      JXL_DASSERT(i >= pivot_end);
+      JXL_DASSERT(pivot_end > pivot_begin);
+      int32_t cmp_result = cmp(i, pivot_begin);
+      if (cmp_result < 0) {  // i < pivot, move pivot forward and put i before
+                             // the pivot.
+        tree_samples.ThreeShuffle(pivot_begin, pivot_end, i);
+        pivot_begin++;
+        pivot_end++;
+      } else if (cmp_result == 0) {
+        tree_samples.Swap(pivot_end, i);
+        pivot_end++;
+      }
+    }
+    JXL_DASSERT(pivot_begin >= begin);
+    JXL_DASSERT(pivot_end > pivot_begin);
+    JXL_DASSERT(pivot_end <= end);
+    for (size_t i = begin; i < pivot_begin; i++) {
+      JXL_DASSERT(cmp(i, pivot_begin) < 0);
+    }
+    for (size_t i = pivot_end; i < end; i++) {
+      JXL_DASSERT(cmp(i, pivot_begin) > 0);
+    }
+    for (size_t i = pivot_begin; i < pivot_end; i++) {
+      JXL_DASSERT(cmp(i, pivot_begin) == 0);
+    }
+    // We now have that [begin, pivot_begin) is < pivot, [pivot_begin,
+    // pivot_end) is = pivot, and [pivot_end, end) is > pivot.
+    // If pos falls in the first or the last interval, we continue in that
+    // interval; otherwise, we are done.
+    if (pivot_begin > pos) {
+      end = pivot_begin;
+    } else if (pivot_end < pos) {
+      begin = pivot_end;
+    } else {
+      break;
+    }
+  }
+}
+
+void FindBestSplit(TreeSamples &tree_samples, float threshold,
                    const std::vector<ModularMultiplierInfo> &mul_info,
                    StaticPropRange initial_static_prop_range,
                    float fast_decode_multiplier, Tree *tree) {
@@ -230,8 +207,14 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     StaticPropRange static_prop_range;
   };
   std::vector<NodeInfo> nodes;
-  nodes.push_back(
-      NodeInfo{0, 0, indices->size(), 0, initial_static_prop_range});
+  nodes.push_back(NodeInfo{0, 0, tree_samples.NumDistinctSamples(), 0,
+                           initial_static_prop_range});
+
+  size_t num_predictors = tree_samples.NumPredictors();
+  size_t num_properties = tree_samples.NumProperties();
+
+  int wp_prop = tree_samples.PropertyIndex(kWPProp);
+
   // TODO(veluca): consider parallelizing the search (processing multiple nodes
   // at a time).
   while (!nodes.empty()) {
@@ -242,13 +225,6 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     StaticPropRange static_prop_range = nodes.back().static_prop_range;
     nodes.pop_back();
     if (begin == end) continue;
-
-    int wp_prop = props_to_use.size();
-    for (size_t i = 0; i < props_to_use.size(); i++) {
-      if (props_to_use[i] == kNumNonrefProperties - weighted::kNumProperties) {
-        wp_prop = i;
-      }
-    }
 
     struct SplitInfo {
       size_t prop = 0;
@@ -266,213 +242,40 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
     SplitInfo best_split_nonstatic;
     SplitInfo best_split_nowp;
 
-    JXL_ASSERT(begin <= end);
-    JXL_ASSERT(end <= indices->size());
+    JXL_DASSERT(begin <= end);
+    JXL_DASSERT(end <= tree_samples.NumDistinctSamples());
 
-    std::vector<std::vector<uint32_t>> tokens(residuals.size());
-    for (auto &v : tokens) {
-      v.reserve(end - begin);
-    }
-    std::vector<std::vector<uint32_t>> extra_bits(residuals.size());
-    for (auto &v : extra_bits) {
-      v.reserve(end - begin);
-    }
-
-    // Compute the tokens corresponding to the residuals.
+    // Compute the maximum token in the range.
     size_t max_symbols = 0;
-    for (size_t pred = 0; pred < residuals.size(); pred++) {
+    for (size_t pred = 0; pred < num_predictors; pred++) {
       for (size_t i = begin; i < end; i++) {
-        uint32_t tok, nbits, bits;
-        HybridUintConfig(4, 1, 2).Encode(
-            PackSigned(residuals[pred][(*indices)[i]]), &tok, &bits, &nbits);
-        tokens[pred].push_back(tok);
-        extra_bits[pred].push_back(nbits);
+        uint32_t tok = tree_samples.Token(pred, i);
         max_symbols = max_symbols > tok + 1 ? max_symbols : tok + 1;
       }
     }
     max_symbols = Padded(max_symbols);
     std::vector<int32_t> rounded_counts(max_symbols);
-    std::vector<int32_t> counts(max_symbols * residuals.size());
-    std::vector<int32_t> tot_extra_bits(residuals.size());
-    for (size_t pred = 0; pred < tokens.size(); pred++) {
-      for (size_t i = 0; i < tokens[pred].size(); i++) {
-        counts[pred * max_symbols + tokens[pred][i]]++;
-        tot_extra_bits[pred] += extra_bits[pred][i];
+    std::vector<int32_t> counts(max_symbols * num_predictors);
+    std::vector<int32_t> tot_extra_bits(num_predictors);
+    for (size_t pred = 0; pred < num_predictors; pred++) {
+      for (size_t i = begin; i < end; i++) {
+        counts[pred * max_symbols + tree_samples.Token(pred, i)] +=
+            tree_samples.Count(i);
+        tot_extra_bits[pred] +=
+            tree_samples.NBits(pred, i) * tree_samples.Count(i);
       }
     }
 
     float base_bits;
     {
-      size_t pred = 0;
-      for (size_t i = 0; i < predictors.size(); i++) {
-        if (predictors[i] == (*tree)[pos].predictor) {
-          pred = i;
-        }
-      }
+      size_t pred = tree_samples.PredictorIndex((*tree)[pos].predictor);
       base_bits = EstimateBits(counts.data() + pred * max_symbols,
                                rounded_counts.data(), max_symbols) +
                   tot_extra_bits[pred];
     }
 
-    std::vector<int> prop_value_used_count;
-    std::vector<int> prop_count_increase;
-    std::vector<size_t> extra_bits_increase;
-    // For each property, compute which of its values are used, and what
-    // tokens correspond to those usages. Then, iterate through the values,
-    // and compute the entropy of each side of the split (of the form `prop >
-    // threshold`). Finally, find the split that minimizes the cost.
-    struct CostInfo {
-      float cost = std::numeric_limits<float>::max();
-      float extra_cost = 0;
-      float Cost() const { return cost + extra_cost; }
-      Predictor pred;  // will be uninitialized in some cases, but never used.
-    };
-    std::vector<CostInfo> costs_l;
-    std::vector<CostInfo> costs_r;
-    // The lower the threshold, the higher the expected noisiness of the
-    // estimate. Thus, discourage changing predictors.
-    float change_pred_penalty = 800.0f / (100.0f + threshold);
-    for (size_t prop = 0; prop < props.size() && base_bits > threshold;
-         prop++) {
-      costs_l.clear();
-      costs_r.clear();
-      costs_l.resize(end - begin);
-      costs_r.resize(end - begin);
-      if (prop_value_used_count.size() < compact_properties[prop].size()) {
-        prop_value_used_count.resize(compact_properties[prop].size());
-        prop_count_increase.resize(compact_properties[prop].size() *
-                                   max_symbols * residuals.size());
-        extra_bits_increase.resize(compact_properties[prop].size() *
-                                   residuals.size());
-      }
-
-      size_t first_used = compact_properties[prop].size();
-      size_t last_used = 0;
-
-      // TODO(veluca): consider finding multiple splits along a single property
-      // at the same time, possibly with a bottom-up approach.
-      for (size_t i = begin; i < end; i++) {
-        size_t p = props[prop][(*indices)[i]];
-        prop_value_used_count[p]++;
-        for (size_t pred = 0; pred < residuals.size(); pred++) {
-          size_t sym = tokens[pred][i - begin];
-          prop_count_increase[p * max_symbols * residuals.size() +
-                              max_symbols * pred + sym]++;
-          extra_bits_increase[p * residuals.size() + pred] +=
-              extra_bits[pred][i - begin];
-        }
-        last_used = std::max(last_used, p);
-        first_used = std::min(first_used, p);
-      }
-
-      std::vector<int32_t> counts_above(max_symbols), counts_below(max_symbols);
-
-      // For all predictors, compute the right and left costs of each split.
-      for (size_t pred = 0; pred < residuals.size(); pred++) {
-        memcpy(counts_above.data(), counts.data() + pred * max_symbols,
-               max_symbols * sizeof counts_above[0]);
-        memset(counts_below.data(), 0, max_symbols * sizeof counts_below[0]);
-        size_t extra_bits_below = 0;
-        // Exclude last used: this ensures neither counts_above nor counts_below
-        // is empty.
-        size_t split = begin;
-        for (size_t i = first_used; i < last_used; i++) {
-          if (!prop_value_used_count[i]) continue;
-          split += prop_value_used_count[i];
-          extra_bits_below += extra_bits_increase[i * residuals.size() + pred];
-          for (size_t sym = 0; sym < max_symbols; sym++) {
-            counts_above[sym] -=
-                prop_count_increase[i * max_symbols * residuals.size() +
-                                    max_symbols * pred + sym];
-            counts_below[sym] +=
-                prop_count_increase[i * max_symbols * residuals.size() +
-                                    max_symbols * pred + sym];
-          }
-          float rcost = EstimateBits(counts_above.data(), rounded_counts.data(),
-                                     max_symbols) +
-                        tot_extra_bits[pred] - extra_bits_below;
-          float lcost = EstimateBits(counts_below.data(), rounded_counts.data(),
-                                     max_symbols) +
-                        extra_bits_below;
-          float penalty = 0;
-          if (predictors[pred] != (*tree)[pos].predictor) {
-            penalty = change_pred_penalty;
-          }
-          if (rcost + penalty < costs_r[split - begin].Cost()) {
-            costs_r[split - begin].cost = rcost;
-            costs_r[split - begin].extra_cost = penalty;
-            costs_r[split - begin].pred = predictors[pred];
-          }
-          if (lcost + penalty < costs_l[split - begin].Cost()) {
-            costs_l[split - begin].cost = lcost;
-            costs_l[split - begin].extra_cost = penalty;
-            ;
-            costs_l[split - begin].pred = predictors[pred];
-          }
-        }
-      }
-      // Iterate through the possible splits and find the one with minimum sum
-      // of costs of the two sides.
-      size_t split = begin;
-      for (size_t i = first_used; i < last_used; i++) {
-        if (!prop_value_used_count[i]) continue;
-        split += prop_value_used_count[i];
-        float rcost = costs_r[split - begin].cost;
-        float lcost = costs_l[split - begin].cost;
-        // WP was not used + we would use the WP property or predictor
-        bool uses_wp = prop == wp_prop ||
-                       costs_l[split - begin].pred == Predictor::Weighted ||
-                       costs_r[split - begin].pred == Predictor::Weighted;
-        bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
-                       (*tree)[pos].predictor == Predictor::Weighted;
-        bool adds_wp = uses_wp && !used_wp;
-        bool zero_entropy_side = rcost == 0 || lcost == 0;
-
-        SplitInfo &best =
-            prop < kNumStaticProperties
-                ? (zero_entropy_side ? best_split_static_constant
-                                     : best_split_static)
-                : (adds_wp ? best_split_nonstatic : best_split_nowp);
-        if (lcost + rcost < best.Cost()) {
-          best.prop = prop;
-          best.val = i;
-          best.pos = split;
-          best.lcost = lcost;
-          best.lpred = costs_l[split - begin].pred;
-          best.rcost = rcost;
-          best.rpred = costs_r[split - begin].pred;
-        }
-      }
-      // Clear prop_count_increase, extra_bits_increase and
-      // prop_value_used_count arrays.
-      for (size_t pred = 0; pred < residuals.size(); pred++) {
-        for (size_t i = begin; i < end; i++) {
-          size_t p = props[prop][(*indices)[i]];
-          size_t sym = tokens[pred][i - begin];
-          prop_count_increase[p * max_symbols * residuals.size() +
-                              max_symbols * pred + sym] = 0;
-          prop_value_used_count[p] = 0;
-          extra_bits_increase[p * residuals.size() + pred] = 0;
-        }
-      }
-    }
-
     SplitInfo *best = &best_split_nonstatic;
-    // Try to avoid introducing WP.
-    if (best_split_nowp.Cost() + threshold < base_bits &&
-        best_split_nowp.Cost() <= fast_decode_multiplier * best->Cost()) {
-      best = &best_split_nowp;
-    }
-    // Split along static props if possible and not significantly more
-    // expensive.
-    if (best_split_static.Cost() + threshold < base_bits &&
-        best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
-      best = &best_split_static;
-    }
-    // Split along static props to create constant nodes if possible.
-    if (best_split_static_constant.Cost() + threshold < base_bits) {
-      best = &best_split_static_constant;
-    }
+
     SplitInfo forced_split;
     // The multiplier ranges cut halfway through the current ranges of static
     // properties. We do this even if the current node is not a leaf, to
@@ -487,14 +290,14 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
         break;
       }
       if (t == IntersectionType::kPartial) {
-        forced_split.val = val;
+        forced_split.val = tree_samples.QuantizeProperty(axis, val);
         forced_split.prop = axis;
         forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
         best = &forced_split;
         best->pos = begin;
-        JXL_ASSERT(best->prop == props_to_use[best->prop]);
+        JXL_ASSERT(best->prop == tree_samples.PropertyFromIndex(best->prop));
         for (size_t x = begin; x < end; x++) {
-          if (props[best->prop][(*indices)[x]] <= best->val) {
+          if (tree_samples.Property(best->prop, x) <= best->val) {
             best->pos++;
           }
         }
@@ -502,56 +305,202 @@ void FindBestSplit(const std::vector<std::vector<int>> &residuals,
       }
     }
 
+    if (best != &forced_split) {
+      std::vector<int> prop_value_used_count;
+      std::vector<int> count_increase;
+      std::vector<size_t> extra_bits_increase;
+      // For each property, compute which of its values are used, and what
+      // tokens correspond to those usages. Then, iterate through the values,
+      // and compute the entropy of each side of the split (of the form `prop >
+      // threshold`). Finally, find the split that minimizes the cost.
+      struct CostInfo {
+        float cost = std::numeric_limits<float>::max();
+        float extra_cost = 0;
+        float Cost() const { return cost + extra_cost; }
+        Predictor pred;  // will be uninitialized in some cases, but never used.
+      };
+      std::vector<CostInfo> costs_l;
+      std::vector<CostInfo> costs_r;
+
+      std::vector<int32_t> counts_above(max_symbols);
+      std::vector<int32_t> counts_below(max_symbols);
+
+      // The lower the threshold, the higher the expected noisiness of the
+      // estimate. Thus, discourage changing predictors.
+      float change_pred_penalty = 800.0f / (100.0f + threshold);
+      for (size_t prop = 0; prop < num_properties && base_bits > threshold;
+           prop++) {
+        costs_l.clear();
+        costs_r.clear();
+        size_t prop_size = tree_samples.NumPropertyValues(prop);
+        if (extra_bits_increase.size() < prop_size) {
+          count_increase.resize(prop_size * max_symbols);
+          extra_bits_increase.resize(prop_size);
+        }
+        // Clear prop_value_used_count (which cannot be cleared "on the go")
+        prop_value_used_count.clear();
+        prop_value_used_count.resize(prop_size);
+
+        size_t first_used = prop_size;
+        size_t last_used = 0;
+
+        // TODO(veluca): consider finding multiple splits along a single
+        // property at the same time, possibly with a bottom-up approach.
+        for (size_t i = begin; i < end; i++) {
+          size_t p = tree_samples.Property(prop, i);
+          prop_value_used_count[p]++;
+          last_used = std::max(last_used, p);
+          first_used = std::min(first_used, p);
+        }
+        costs_l.resize(last_used - first_used);
+        costs_r.resize(last_used - first_used);
+        // For all predictors, compute the right and left costs of each split.
+        for (size_t pred = 0; pred < num_predictors; pred++) {
+          // Compute cost and histogram increments for each property value.
+          for (size_t i = begin; i < end; i++) {
+            size_t p = tree_samples.Property(prop, i);
+            size_t cnt = tree_samples.Count(i);
+            size_t sym = tree_samples.Token(pred, i);
+            count_increase[p * max_symbols + sym] += cnt;
+            extra_bits_increase[p] += tree_samples.NBits(pred, i) * cnt;
+          }
+          memcpy(counts_above.data(), counts.data() + pred * max_symbols,
+                 max_symbols * sizeof counts_above[0]);
+          memset(counts_below.data(), 0, max_symbols * sizeof counts_below[0]);
+          size_t extra_bits_below = 0;
+          // Exclude last used: this ensures neither counts_above nor
+          // counts_below is empty.
+          for (size_t i = first_used; i < last_used; i++) {
+            if (!prop_value_used_count[i]) continue;
+            extra_bits_below += extra_bits_increase[i];
+            // The increase for this property value has been used, and will not
+            // be used again: clear it. Also below.
+            extra_bits_increase[i] = 0;
+            for (size_t sym = 0; sym < max_symbols; sym++) {
+              counts_above[sym] -= count_increase[i * max_symbols + sym];
+              counts_below[sym] += count_increase[i * max_symbols + sym];
+              count_increase[i * max_symbols + sym] = 0;
+            }
+            float rcost = EstimateBits(counts_above.data(),
+                                       rounded_counts.data(), max_symbols) +
+                          tot_extra_bits[pred] - extra_bits_below;
+            float lcost = EstimateBits(counts_below.data(),
+                                       rounded_counts.data(), max_symbols) +
+                          extra_bits_below;
+            JXL_DASSERT(extra_bits_below <= tot_extra_bits[pred]);
+            float penalty = 0;
+            // Never discourage moving away from the Weighted predictor.
+            if (tree_samples.PredictorFromIndex(pred) !=
+                    (*tree)[pos].predictor &&
+                (*tree)[pos].predictor != Predictor::Weighted) {
+              penalty = change_pred_penalty;
+            }
+            // If everything else is equal, disfavour Weighted (slower) and
+            // favour Zero (faster if it's the only predictor used in a
+            // group+channel combination)
+            if (tree_samples.PredictorFromIndex(pred) == Predictor::Weighted) {
+              penalty += 1e-8;
+            }
+            if (tree_samples.PredictorFromIndex(pred) == Predictor::Zero) {
+              penalty -= 1e-8;
+            }
+            if (rcost + penalty < costs_r[i - first_used].Cost()) {
+              costs_r[i - first_used].cost = rcost;
+              costs_r[i - first_used].extra_cost = penalty;
+              costs_r[i - first_used].pred =
+                  tree_samples.PredictorFromIndex(pred);
+            }
+            if (lcost + penalty < costs_l[i - first_used].Cost()) {
+              costs_l[i - first_used].cost = lcost;
+              costs_l[i - first_used].extra_cost = penalty;
+              costs_l[i - first_used].pred =
+                  tree_samples.PredictorFromIndex(pred);
+            }
+          }
+        }
+        // Iterate through the possible splits and find the one with minimum sum
+        // of costs of the two sides.
+        size_t split = begin;
+        for (size_t i = first_used; i < last_used; i++) {
+          if (!prop_value_used_count[i]) continue;
+          split += prop_value_used_count[i];
+          float rcost = costs_r[i - first_used].cost;
+          float lcost = costs_l[i - first_used].cost;
+          // WP was not used + we would use the WP property or predictor
+          bool uses_wp = prop == wp_prop ||
+                         costs_l[i - first_used].pred == Predictor::Weighted ||
+                         costs_r[i - first_used].pred == Predictor::Weighted;
+          bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
+                         (*tree)[pos].predictor == Predictor::Weighted;
+          bool adds_wp = uses_wp && !used_wp;
+          bool zero_entropy_side = rcost == 0 || lcost == 0;
+
+          SplitInfo &best =
+              prop < kNumStaticProperties
+                  ? (zero_entropy_side ? best_split_static_constant
+                                       : best_split_static)
+                  : (adds_wp ? best_split_nonstatic : best_split_nowp);
+          if (lcost + rcost < best.Cost()) {
+            best.prop = prop;
+            best.val = i;
+            best.pos = split;
+            best.lcost = lcost;
+            best.lpred = costs_l[i - first_used].pred;
+            best.rcost = rcost;
+            best.rpred = costs_r[i - first_used].pred;
+          }
+        }
+        // Clear extra_bits_increase and cost_increase for last_used.
+        extra_bits_increase[last_used] = 0;
+        for (size_t sym = 0; sym < max_symbols; sym++) {
+          count_increase[last_used * max_symbols + sym] = 0;
+        }
+      }
+
+      // Try to avoid introducing WP.
+      if (best_split_nowp.Cost() + threshold < base_bits &&
+          best_split_nowp.Cost() <= fast_decode_multiplier * best->Cost()) {
+        best = &best_split_nowp;
+      }
+      // Split along static props if possible and not significantly more
+      // expensive.
+      if (best_split_static.Cost() + threshold < base_bits &&
+          best_split_static.Cost() <= fast_decode_multiplier * best->Cost()) {
+        best = &best_split_static;
+      }
+      // Split along static props to create constant nodes if possible.
+      if (best_split_static_constant.Cost() + threshold < base_bits) {
+        best = &best_split_static_constant;
+      }
+    }
+
     if (best->Cost() + threshold < base_bits) {
+      uint32_t p = tree_samples.PropertyFromIndex(best->prop);
+      pixel_type dequant =
+          tree_samples.UnquantizeProperty(best->prop, best->val);
       // Split node and try to split children.
-      MakeSplitNode(pos, props_to_use[best->prop],
-                    best->val < compact_properties[best->prop].size()
-                        ? compact_properties[best->prop][best->val]
-                        : best->val,
-                    best->lpred, 0, best->rpred, 0, tree);
+      MakeSplitNode(pos, p, dequant, best->lpred, 0, best->rpred, 0, tree);
       // "Sort" according to winning property
-      std::nth_element(indices->begin() + begin, indices->begin() + best->pos,
-                       indices->begin() + end, [&](size_t a, size_t b) {
-                         return props[best->prop][a] < props[best->prop][b];
-                       });
-      uint32_t p = props_to_use[best->prop];
+      SplitTreeSamples(tree_samples, begin, best->pos, end, best->prop);
       if (p >= kNumStaticProperties) {
         used_properties |= 1 << best->prop;
       }
       auto new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
-        JXL_ASSERT(best->val + 1 <= new_sp_range[p][1]);
-        new_sp_range[p][1] = best->val + 1;
+        JXL_ASSERT(dequant + 1 <= new_sp_range[p][1]);
+        new_sp_range[p][1] = dequant + 1;
         JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
       nodes.push_back(NodeInfo{(*tree)[pos].rchild, begin, best->pos,
                                used_properties, new_sp_range});
       new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
-        JXL_ASSERT(new_sp_range[p][0] <= best->val + 1);
-        new_sp_range[p][0] = best->val + 1;
+        JXL_ASSERT(new_sp_range[p][0] <= dequant + 1);
+        new_sp_range[p][0] = dequant + 1;
         JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
       nodes.push_back(NodeInfo{(*tree)[pos].lchild, best->pos, end,
                                used_properties, new_sp_range});
-    } else if ((*tree)[pos].multiplier == 1) {
-      // try to pick an offset for the leaves.
-      size_t pred = 0;
-      for (size_t i = 0; i < predictors.size(); i++) {
-        if (predictors[i] == (*tree)[pos].predictor) {
-          pred = i;
-          break;
-        }
-      }
-      int64_t o;
-      float c =
-          EstimateTotalBitsAndOffset(residuals[pred], *indices, begin, end, &o);
-      // Cost estimate of encoding the offset. Huge constant penalty to avoid
-      // significant increases in tree size.
-      c += 200.0f + FloorLog2Nonzero(PackSigned(o) + 1);
-      if (c < base_bits) {
-        (*tree)[pos].predictor_offset = o;
-      }
     }
   }
 }
@@ -564,163 +513,9 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(EstimateEntropy);  // Local function.
-HWY_EXPORT(FindBestSplit);    // Local function.
+HWY_EXPORT(FindBestSplit);  // Local function.
 
-void ChooseAndQuantizeProperties(
-    size_t max_properties, size_t max_property_values,
-    const std::vector<std::vector<int>> &residuals, bool force_wp_only,
-    std::vector<std::vector<int>> *props,
-    std::vector<std::vector<int>> *compact_properties,
-    std::vector<size_t> *props_to_use) {
-  // Remap all properties so that there are no holes nor negative numbers.
-  std::unordered_map<int, int> remap;
-  std::unordered_set<int> is_present;
-
-  std::vector<int> remap_v;
-  std::vector<int> is_present_v;
-
-  // Threshold to switch to using a hash table for property remapping.
-  static constexpr size_t kVectorMaxRange = 4096;
-
-  for (size_t i = 0; i < props->size(); i++) {
-    if (force_wp_only && i >= kNumStaticProperties &&
-        i != kNumNonrefProperties - weighted::kNumProperties) {
-      continue;
-    }
-    PropertyVal min = std::numeric_limits<PropertyVal>::max();
-    PropertyVal max = std::numeric_limits<PropertyVal>::min();
-    for (PropertyVal x : (*props)[i]) {
-      min = std::min(min, x);
-      max = std::max(max, x);
-    }
-    if (i < kNumStaticProperties) {
-      (*compact_properties)[i].resize(max + 1);
-      std::iota((*compact_properties)[i].begin(),
-                (*compact_properties)[i].end(), 0);
-      continue;
-    }
-    if (max - min + 1 < kVectorMaxRange) {
-      is_present_v.clear();
-      is_present_v.resize(max - min + 1);
-      remap_v.resize(max - min + 1);
-      for (size_t j = 0; j < (*props)[i].size(); j++) {
-        size_t idx = (*props)[i][j] - min;
-        if (!is_present_v[idx]) {
-          (*compact_properties)[i].push_back((*props)[i][j]);
-        }
-        is_present_v[idx] = 1;
-      }
-      std::sort((*compact_properties)[i].begin(),
-                (*compact_properties)[i].end());
-      for (size_t j = 0; j < (*compact_properties)[i].size(); j++) {
-        remap_v[(*compact_properties)[i][j] - min] = j;
-      }
-      for (size_t j = 0; j < (*props)[i].size(); j++) {
-        (*props)[i][j] = remap_v[(*props)[i][j] - min];
-      }
-    } else {
-      is_present.clear();
-      for (size_t j = 0; j < (*props)[i].size(); j++) {
-        is_present.insert((*props)[i][j]);
-      }
-      (*compact_properties)[i].assign(is_present.begin(), is_present.end());
-      std::sort((*compact_properties)[i].begin(),
-                (*compact_properties)[i].end());
-      for (size_t j = 0; j < (*compact_properties)[i].size(); j++) {
-        remap[(*compact_properties)[i][j]] = j;
-      }
-      for (size_t j = 0; j < (*props)[i].size(); j++) {
-        (*props)[i][j] = remap.at((*props)[i][j]);
-      }
-    }
-  }
-
-  if (force_wp_only) {
-    props_to_use->resize(kNumStaticProperties);
-    std::iota(props_to_use->begin(), props_to_use->end(), 0);
-    props_to_use->back() = kNumNonrefProperties - weighted::kNumProperties;
-  } else if (max_properties + kNumStaticProperties >= props->size()) {
-    props_to_use->resize(props->size());
-    std::iota(props_to_use->begin(), props_to_use->end(), 0);
-  } else {
-    std::vector<std::pair<float, size_t>> props_with_entropy;
-    HWY_DYNAMIC_DISPATCH(EstimateEntropy)
-    (0, residuals, *props, *compact_properties, &props_with_entropy);
-    std::sort(props_with_entropy.begin(), props_with_entropy.end());
-
-    // Limit the search to the properties with the smallest resulting entropy
-    // (including static properties).
-    max_properties = std::min(max_properties + kNumStaticProperties,
-                              props_with_entropy.size());
-    props_to_use->resize(max_properties);
-    for (size_t i = 0; i < max_properties; i++) {
-      (*props_to_use)[i] = props_with_entropy[i].second;
-    }
-  }
-
-  // Remove other properties from the data.
-  size_t num_property_values = 0;
-  std::sort(props_to_use->begin(), props_to_use->end());
-  for (size_t i = 0; i < props_to_use->size(); i++) {
-    if (i == (*props_to_use)[i]) continue;
-    (*props)[i] = std::move((*props)[(*props_to_use)[i]]);
-    (*compact_properties)[i] =
-        std::move((*compact_properties)[(*props_to_use)[i]]);
-    num_property_values += (*compact_properties)[i].size();
-  }
-  props->resize(props_to_use->size());
-  compact_properties->resize(props_to_use->size());
-
-  if (num_property_values > max_property_values) {
-    // Quantize properties.
-    // Note that tree uses *strictly greater* comparison nodes, so when merging
-    // together a sequence of consecutive values we should keep the largest one.
-    // TODO(veluca): find a smarter way to do the quantization, taking into
-    // account the actual distribution of symbols.
-    size_t thres = residuals[0].size() / 256;
-    std::vector<int> counts;
-    std::vector<int> remap;
-    std::vector<int> new_cp;
-    for (size_t i = 0; i < max_properties; i++) {
-      if (i < kNumStaticProperties) continue;
-      counts.clear();
-      counts.resize((*compact_properties)[i].size());
-      remap.resize((*compact_properties)[i].size());
-      new_cp.clear();
-      for (int v : (*props)[i]) {
-        counts[v]++;
-      }
-      size_t running_count = 0;
-      size_t remapped = 0;
-      for (size_t j = 0; j < counts.size(); j++) {
-        remap[j] = remapped;
-        running_count += counts[j];
-        if (running_count > thres) {
-          remapped++;
-          running_count = 0;
-        }
-      }
-      if (running_count != 0) remapped++;
-      new_cp.resize(remapped, std::numeric_limits<int>::min());
-      for (size_t j = 0; j < counts.size(); j++) {
-        new_cp[remap[j]] =
-            std::max(new_cp[remap[j]], (*compact_properties)[i][j]);
-      }
-      (*compact_properties)[i] = new_cp;
-      for (size_t j = 0; j < (*props)[i].size(); j++) {
-        (*props)[i][j] = remap[(*props)[i][j]];
-      }
-    }
-  }
-}
-
-void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
-                     const std::vector<std::vector<int>> &props,
-                     const std::vector<Predictor> &predictors,
-                     const std::vector<std::vector<int>> compact_properties,
-                     const std::vector<size_t> &props_to_use, float threshold,
-                     size_t max_properties,
+void ComputeBestTree(TreeSamples &tree_samples, float threshold,
                      const std::vector<ModularMultiplierInfo> &mul_info,
                      StaticPropRange static_prop_range,
                      float fast_decode_multiplier, Tree *tree) {
@@ -730,16 +525,480 @@ void ComputeBestTree(const std::vector<std::vector<int>> &residuals,
   // Initialize tree.
   tree->emplace_back();
   tree->back().property = -1;
-  tree->back().predictor = predictors[0];
+  tree->back().predictor = tree_samples.PredictorFromIndex(0);
   tree->back().predictor_offset = 0;
   tree->back().multiplier = 1;
-  JXL_ASSERT(props.size() < 64);
+  JXL_ASSERT(tree_samples.NumProperties() < 64);
 
-  std::vector<size_t> indices(residuals[0].size());
-  std::iota(indices.begin(), indices.end(), 0);
+  JXL_ASSERT(tree_samples.NumDistinctSamples() <=
+             std::numeric_limits<uint32_t>::max());
   HWY_DYNAMIC_DISPATCH(FindBestSplit)
-  (residuals, props, predictors, compact_properties, &indices, props_to_use,
-   threshold, mul_info, static_prop_range, fast_decode_multiplier, tree);
+  (tree_samples, threshold, mul_info, static_prop_range, fast_decode_multiplier,
+   tree);
+}
+
+Status TreeSamples::SetPredictor(Predictor predictor,
+                                 ModularOptions::WPTreeMode wp_tree_mode) {
+  if (wp_tree_mode == ModularOptions::WPTreeMode::kWPOnly) {
+    predictors = {Predictor::Weighted};
+    residuals.resize(1);
+    return true;
+  }
+  if (wp_tree_mode == ModularOptions::WPTreeMode::kNoWP &&
+      predictor == Predictor::Weighted) {
+    return JXL_FAILURE("Invalid predictor settings");
+  }
+  if (predictor == Predictor::Variable) {
+    for (size_t i = 0; i < kNumModularPredictors; i++) {
+      predictors.push_back(static_cast<Predictor>(i));
+    }
+    std::swap(predictors[0], predictors[static_cast<int>(Predictor::Weighted)]);
+    std::swap(predictors[1], predictors[static_cast<int>(Predictor::Gradient)]);
+  } else if (predictor == Predictor::Best) {
+    predictors = {Predictor::Weighted, Predictor::Gradient};
+  } else {
+    predictors = {predictor};
+  }
+  if (wp_tree_mode == ModularOptions::WPTreeMode::kNoWP) {
+    auto wp_it =
+        std::find(predictors.begin(), predictors.end(), Predictor::Weighted);
+    if (wp_it != predictors.end()) {
+      predictors.erase(wp_it);
+    }
+  }
+  residuals.resize(predictors.size());
+  return true;
+}
+
+Status TreeSamples::SetProperties(const std::vector<uint32_t> &properties,
+                                  ModularOptions::WPTreeMode wp_tree_mode) {
+  props_to_use = properties;
+  if (wp_tree_mode == ModularOptions::WPTreeMode::kWPOnly) {
+    props_to_use = {kWPProp};
+  }
+  if (wp_tree_mode == ModularOptions::WPTreeMode::kNoWP) {
+    auto it = std::find(props_to_use.begin(), props_to_use.end(), kWPProp);
+    if (it != props_to_use.end()) {
+      props_to_use.erase(it);
+    }
+  }
+  if (props_to_use.empty()) {
+    return JXL_FAILURE("Invalid property set configuration");
+  }
+  props.resize(props_to_use.size());
+  return true;
+}
+
+void TreeSamples::InitTable(size_t size) {
+  JXL_DASSERT((size & (size - 1)) == 0);
+  if (dedup_table_.size() == size) return;
+  dedup_table_.resize(size, -1);
+  for (size_t i = 0; i < NumDistinctSamples(); i++) {
+    if (sample_counts[i] != std::numeric_limits<uint16_t>::max()) {
+      AddToTable(i);
+    }
+  }
+}
+
+bool TreeSamples::AddToTableAndMerge(size_t a) {
+  size_t pos1 = Hash1(a);
+  size_t pos2 = Hash2(a);
+  if (dedup_table_[pos1] != -1 && IsSameSample(a, dedup_table_[pos1])) {
+    JXL_DASSERT(sample_counts[a] == 1);
+    sample_counts[dedup_table_[pos1]]++;
+    // Remove from hash table samples that are saturated.
+    if (sample_counts[dedup_table_[pos1]] ==
+        std::numeric_limits<uint16_t>::max()) {
+      dedup_table_[pos1] = -1;
+    }
+    return true;
+  }
+  if (dedup_table_[pos2] != -1 && IsSameSample(a, dedup_table_[pos2])) {
+    JXL_DASSERT(sample_counts[a] == 1);
+    sample_counts[dedup_table_[pos2]]++;
+    // Remove from hash table samples that are saturated.
+    if (sample_counts[dedup_table_[pos2]] ==
+        std::numeric_limits<uint16_t>::max()) {
+      dedup_table_[pos2] = -1;
+    }
+    return true;
+  }
+  AddToTable(a);
+  return false;
+}
+
+void TreeSamples::AddToTable(size_t a) {
+  size_t pos1 = Hash1(a);
+  size_t pos2 = Hash2(a);
+  if (dedup_table_[pos1] == -1) {
+    dedup_table_[pos1] = a;
+  } else if (dedup_table_[pos2] == -1) {
+    dedup_table_[pos2] = a;
+  }
+}
+
+void TreeSamples::PrepareForSamples(size_t num_samples) {
+  for (auto &res : residuals) {
+    res.reserve(res.size() + num_samples);
+  }
+  for (auto &p : props) {
+    p.reserve(p.size() + num_samples);
+  }
+  size_t total_num_samples = num_samples + sample_counts.size();
+  size_t next_pow2 = 1LLU << CeilLog2Nonzero(total_num_samples * 3 / 2);
+  InitTable(next_pow2);
+}
+
+size_t TreeSamples::Hash1(size_t a) const {
+  constexpr uint64_t constant = 0x1e35a7bd;
+  uint64_t h = constant;
+  for (const auto &r : residuals) {
+    h = h * constant + r[a].tok;
+    h = h * constant + r[a].nbits;
+  }
+  for (const auto &p : props) {
+    h = h * constant + p[a];
+  }
+  return (h >> 16) & (dedup_table_.size() - 1);
+}
+size_t TreeSamples::Hash2(size_t a) const {
+  constexpr uint64_t constant = 0x1e35a7bd1e35a7bd;
+  uint64_t h = constant;
+  for (const auto &p : props) {
+    h = h * constant ^ p[a];
+  }
+  for (const auto &r : residuals) {
+    h = h * constant ^ r[a].tok;
+    h = h * constant ^ r[a].nbits;
+  }
+  return (h >> 16) & (dedup_table_.size() - 1);
+}
+
+bool TreeSamples::IsSameSample(size_t a, size_t b) const {
+  bool ret = true;
+  for (const auto &r : residuals) {
+    if (r[a].tok != r[b].tok) {
+      ret = false;
+    }
+    if (r[a].nbits != r[b].nbits) {
+      ret = false;
+    }
+  }
+  for (const auto &p : props) {
+    if (p[a] != p[b]) {
+      ret = false;
+    }
+  }
+  return ret;
+}
+
+void TreeSamples::AddSample(pixel_type_w pixel, const Properties &properties,
+                            const pixel_type_w *predictions) {
+  for (size_t i = 0; i < predictors.size(); i++) {
+    pixel_type v = pixel - predictions[static_cast<int>(predictors[i])];
+    uint32_t tok, nbits, bits;
+    HybridUintConfig(4, 1, 2).Encode(PackSigned(v), &tok, &nbits, &bits);
+    JXL_DASSERT(tok < 256);
+    JXL_DASSERT(nbits < 256);
+    residuals[i].emplace_back(
+        ResidualToken{static_cast<uint8_t>(tok), static_cast<uint8_t>(nbits)});
+  }
+  for (size_t i = 0; i < props_to_use.size(); i++) {
+    props[i].push_back(QuantizeProperty(i, properties[props_to_use[i]]));
+  }
+  sample_counts.push_back(1);
+  num_samples++;
+  if (AddToTableAndMerge(sample_counts.size() - 1)) {
+    for (auto &r : residuals) r.pop_back();
+    for (auto &p : props) p.pop_back();
+    sample_counts.pop_back();
+  }
+}
+
+void TreeSamples::Swap(size_t a, size_t b) {
+  if (a == b) return;
+  for (auto &r : residuals) {
+    std::swap(r[a], r[b]);
+  }
+  for (auto &p : props) {
+    std::swap(p[a], p[b]);
+  }
+  std::swap(sample_counts[a], sample_counts[b]);
+}
+
+void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
+  if (b == c) return Swap(a, b);
+  for (auto &r : residuals) {
+    auto tmp = r[a];
+    r[a] = r[c];
+    r[c] = r[b];
+    r[b] = tmp;
+  }
+  for (auto &p : props) {
+    auto tmp = p[a];
+    p[a] = p[c];
+    p[c] = p[b];
+    p[b] = tmp;
+  }
+  auto tmp = sample_counts[a];
+  sample_counts[a] = sample_counts[c];
+  sample_counts[c] = sample_counts[b];
+  sample_counts[b] = tmp;
+}
+
+constexpr int TreeSamples::kPropertyRange;
+
+namespace {
+std::vector<int> QuantizeHistogram(const std::vector<uint32_t> &histogram,
+                                   size_t num_chunks) {
+  if (histogram.empty()) return {};
+  // TODO(veluca): selecting distinct quantiles is likely not the best
+  // way to go about this.
+  std::vector<int> thresholds;
+  size_t sum = std::accumulate(histogram.begin(), histogram.end(), 0LU);
+  size_t cumsum = 0;
+  size_t threshold = 0;
+  for (size_t i = 0; i + 1 < histogram.size(); i++) {
+    cumsum += histogram[i];
+    if (cumsum > (threshold + 1) * sum / num_chunks) {
+      thresholds.push_back(i);
+      while (cumsum >= (threshold + 1) * sum / num_chunks) threshold++;
+    }
+  }
+  return thresholds;
+}
+
+std::vector<int> QuantizeSamples(const std::vector<int32_t> &samples,
+                                 size_t num_chunks) {
+  if (samples.empty()) return {};
+  int min = *std::min_element(samples.begin(), samples.end());
+  constexpr int kRange = 512;
+  if (min < -kRange) min = -kRange;
+  std::vector<uint32_t> counts(2 * kRange + 1);
+  for (int s : samples) {
+    s = std::min(std::max(s, -kRange), kRange) - min;
+    counts[s]++;
+  }
+  std::vector<int> thresholds = QuantizeHistogram(counts, num_chunks);
+  for (auto &v : thresholds) v += min;
+  return thresholds;
+}
+}  // namespace
+
+void TreeSamples::PreQuantizeProperties(
+    const StaticPropRange &range,
+    const std::vector<ModularMultiplierInfo> &multiplier_info,
+    const std::vector<uint32_t> &group_pixel_count,
+    const std::vector<uint32_t> &channel_pixel_count,
+    std::vector<pixel_type> &pixel_samples,
+    std::vector<pixel_type> &diff_samples, size_t max_property_values) {
+  // If we have forced splits because of multipliers, choose channel and group
+  // thresholds accordingly.
+  std::vector<int32_t> group_multiplier_thresholds;
+  std::vector<int32_t> channel_multiplier_thresholds;
+  for (const auto &v : multiplier_info) {
+    if (v.range[0][0] != range[0][0]) {
+      channel_multiplier_thresholds.push_back(v.range[0][0] - 1);
+    }
+    if (v.range[0][1] != range[0][1]) {
+      channel_multiplier_thresholds.push_back(v.range[0][1] - 1);
+    }
+    if (v.range[1][0] != range[1][0]) {
+      group_multiplier_thresholds.push_back(v.range[1][0] - 1);
+    }
+    if (v.range[1][1] != range[1][1]) {
+      group_multiplier_thresholds.push_back(v.range[1][1] - 1);
+    }
+  }
+  std::sort(channel_multiplier_thresholds.begin(),
+            channel_multiplier_thresholds.end());
+  channel_multiplier_thresholds.resize(
+      std::unique(channel_multiplier_thresholds.begin(),
+                  channel_multiplier_thresholds.end()) -
+      channel_multiplier_thresholds.begin());
+  std::sort(group_multiplier_thresholds.begin(),
+            group_multiplier_thresholds.end());
+  group_multiplier_thresholds.resize(
+      std::unique(group_multiplier_thresholds.begin(),
+                  group_multiplier_thresholds.end()) -
+      group_multiplier_thresholds.begin());
+
+  compact_properties.resize(props_to_use.size());
+  auto quantize_channel = [&]() {
+    if (!channel_multiplier_thresholds.empty()) {
+      return channel_multiplier_thresholds;
+    }
+    return QuantizeHistogram(channel_pixel_count, max_property_values);
+  };
+  auto quantize_group_id = [&]() {
+    if (!group_multiplier_thresholds.empty()) {
+      return group_multiplier_thresholds;
+    }
+    return QuantizeHistogram(group_pixel_count, max_property_values);
+  };
+  auto quantize_coordinate = [&]() {
+    std::vector<int> quantized;
+    quantized.reserve(max_property_values - 1);
+    for (size_t i = 0; i + 1 < max_property_values; i++) {
+      quantized.push_back((i + 1) * 256 / max_property_values - 1);
+    }
+    return quantized;
+  };
+  std::vector<int> abs_pixel_thr;
+  std::vector<int> pixel_thr;
+  auto quantize_pixel_property = [&]() {
+    if (pixel_thr.empty()) {
+      pixel_thr = QuantizeSamples(pixel_samples, max_property_values);
+    }
+    return pixel_thr;
+  };
+  auto quantize_abs_pixel_property = [&]() {
+    if (abs_pixel_thr.empty()) {
+      quantize_pixel_property();  // Compute the non-abs thresholds.
+      for (auto &v : pixel_samples) v = std::abs(v);
+      abs_pixel_thr = QuantizeSamples(pixel_samples, max_property_values);
+    }
+    return abs_pixel_thr;
+  };
+  std::vector<int> abs_diff_thr;
+  std::vector<int> diff_thr;
+  auto quantize_diff_property = [&]() {
+    if (diff_thr.empty()) {
+      diff_thr = QuantizeSamples(diff_samples, max_property_values);
+    }
+    return diff_thr;
+  };
+  auto quantize_abs_diff_property = [&]() {
+    if (abs_diff_thr.empty()) {
+      quantize_diff_property();  // Compute the non-abs thresholds.
+      for (auto &v : diff_samples) v = std::abs(v);
+      abs_diff_thr = QuantizeSamples(diff_samples, max_property_values);
+    }
+    return abs_diff_thr;
+  };
+  auto quantize_wp = [&]() {
+    if (max_property_values < 32) {
+      return std::vector<int>{-127, -63, -31, -15, -7, -3, -1, 0,
+                              1,    3,   7,   15,  31, 63, 127};
+    }
+    if (max_property_values < 64) {
+      return std::vector<int>{-255, -191, -127, -95, -63, -47, -31, -23,
+                              -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
+                              3,    5,    7,    11,  15,  23,  31,  47,
+                              63,   95,   127,  191, 255};
+    }
+    return std::vector<int>{
+        -255, -223, -191, -159, -127, -111, -95, -79, -63, -55, -47,
+        -39,  -31,  -27,  -23,  -19,  -15,  -13, -11, -9,  -7,  -6,
+        -5,   -4,   -3,   -2,   -1,   0,    1,   2,   3,   4,   5,
+        6,    7,    9,    11,   13,   15,   19,  23,  27,  31,  39,
+        47,   55,   63,   79,   95,   111,  127, 159, 191, 223, 255};
+  };
+
+  property_mapping.resize(props_to_use.size());
+  for (size_t i = 0; i < props_to_use.size(); i++) {
+    if (props_to_use[i] == 0) {
+      compact_properties[i] = quantize_channel();
+    } else if (props_to_use[i] == 1) {
+      compact_properties[i] = quantize_group_id();
+    } else if (props_to_use[i] == 2 || props_to_use[i] == 3) {
+      compact_properties[i] = quantize_coordinate();
+    } else if (props_to_use[i] == 6 || props_to_use[i] == 7 ||
+               props_to_use[i] == 8 ||
+               (props_to_use[i] >= kNumNonrefProperties &&
+                (props_to_use[i] - kNumNonrefProperties) % 4 == 1)) {
+      compact_properties[i] = quantize_pixel_property();
+    } else if (props_to_use[i] == 4 || props_to_use[i] == 5 ||
+               (props_to_use[i] >= kNumNonrefProperties &&
+                (props_to_use[i] - kNumNonrefProperties) % 4 == 0)) {
+      compact_properties[i] = quantize_abs_pixel_property();
+    } else if (props_to_use[i] >= kNumNonrefProperties &&
+               (props_to_use[i] - kNumNonrefProperties) % 4 == 2) {
+      compact_properties[i] = quantize_abs_diff_property();
+    } else if (props_to_use[i] == kWPProp) {
+      compact_properties[i] = quantize_wp();
+    } else {
+      compact_properties[i] = quantize_diff_property();
+    }
+    property_mapping[i].resize(kPropertyRange * 2 + 1);
+    size_t mapped = 0;
+    for (int j = 0; j < property_mapping[i].size(); j++) {
+      while (mapped < compact_properties[i].size() &&
+             j - kPropertyRange > compact_properties[i][mapped]) {
+        mapped++;
+      }
+      // property_mapping[i] of a value V is `mapped` if
+      // compact_properties[i][mapped] <= j and
+      // compact_properties[i][mapped-1] > j
+      // This is because the decision node in the tree splits on (property) > j,
+      // hence everything that is not > of a threshold should be clustered
+      // together.
+      property_mapping[i][j] = mapped;
+    }
+  }
+}
+
+void CollectPixelSamples(const Image &image, const ModularOptions &options,
+                         size_t group_id,
+                         std::vector<uint32_t> &group_pixel_count,
+                         std::vector<uint32_t> &channel_pixel_count,
+                         std::vector<pixel_type> &pixel_samples,
+                         std::vector<pixel_type> &diff_samples) {
+  if (group_pixel_count.size() <= group_id) {
+    group_pixel_count.resize(group_id + 1);
+  }
+  if (channel_pixel_count.size() < image.channel.size()) {
+    channel_pixel_count.resize(image.channel.size());
+  }
+  Rng rng(group_id);
+  // Sample 10% of the final number of samples for property quantization.
+  float fraction = options.nb_repeats * 0.1;
+  std::geometric_distribution<uint32_t> dist(fraction);
+  size_t total_pixels = 0;
+  std::vector<size_t> channel_ids;
+  for (size_t i = 0; i < image.channel.size(); i++) {
+    if (image.channel[i].w <= 1 || image.channel[i].h == 0) {
+      continue;  // skip empty or width-1 channels.
+    }
+    if (i >= image.nb_meta_channels &&
+        (image.channel[i].w > options.max_chan_size ||
+         image.channel[i].h > options.max_chan_size)) {
+      break;
+    }
+    channel_ids.push_back(i);
+    group_pixel_count[group_id] += image.channel[i].w * image.channel[i].h;
+    channel_pixel_count[i] += image.channel[i].w * image.channel[i].h;
+    total_pixels += image.channel[i].w * image.channel[i].h;
+  }
+  if (channel_ids.empty()) return;
+  pixel_samples.reserve(pixel_samples.size() + fraction * total_pixels);
+  diff_samples.reserve(diff_samples.size() + fraction * total_pixels);
+  size_t i = 0;
+  size_t y = 0;
+  size_t x = 0;
+  auto advance = [&](size_t amount) {
+    x += amount;
+    // Detect row overflow (rare).
+    while (x >= image.channel[channel_ids[i]].w) {
+      x -= image.channel[channel_ids[i]].w;
+      y++;
+      // Detect end-of-channel (even rarer).
+      if (y == image.channel[channel_ids[i]].h) {
+        i++;
+        y = 0;
+        if (i >= channel_ids.size()) {
+          return;
+        }
+      }
+    }
+  };
+  advance(dist(rng));
+  for (; i < channel_ids.size(); advance(dist(rng) + 1)) {
+    const pixel_type *row = image.channel[channel_ids[i]].Row(y);
+    pixel_samples.push_back(row[x]);
+    size_t xp = x == 0 ? 1 : x - 1;
+    diff_samples.push_back(row[x] - row[xp]);
+  }
 }
 
 namespace {

@@ -123,7 +123,7 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
  * The values above 64 are optional informal events that can be subscribed to.
  */
 typedef enum {
-  /** Function call finished sucessfully, or decoding is finished and there is
+  /** Function call finished successfully, or decoding is finished and there is
    * nothing more to be done.
    */
   JXL_DEC_SUCCESS = 0,
@@ -432,7 +432,7 @@ typedef enum {
  *   alternative if desired, though depending on which RGB color space is
  *   represented, the ICC profile may be a close approximation. It is also not
  *   always feasible to deduce from an ICC profile which named color space it
- *   exactly represents, if any, as it can reprsent any arbitrary space.
+ *   exactly represents, if any, as it can represent any arbitrary space.
  * - The JPEG XL image has an encoded structured color profile, and it indicates
  *   an unknown or xyb color space. In that case,
  *   JxlDecoderGetColorAsICCProfile is not available.
@@ -539,7 +539,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
 
 /**
  * Outputs the information from an animation frame, such as duration. This
- * function can be called when JXL_DEC_ANIMATION_FRAME occured for the
+ * function can be called when JXL_DEC_ANIMATION_FRAME occurred for the
  * current frame.
  *
  * @param dec decoder object

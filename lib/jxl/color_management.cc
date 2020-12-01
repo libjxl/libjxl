@@ -20,11 +20,6 @@
 
 #include "lib/jxl/color_management.h"
 
-#undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/color_management.cc"
-#include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -33,11 +28,15 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <hwy/highway.h>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <utility>
+
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/color_management.cc"
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -194,7 +193,7 @@ void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
         xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
         &t->skcms_icc_->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
         skcms_AlphaFormat_Opaque, &t->skcms_icc_->profile_dst_, t->xsize_));
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     JXL_DASSERT(thread < t->transforms_.size());
     cmsHTRANSFORM xform = t->transforms_[thread];
     cmsDoTransform(xform, xform_src, buf_dst,
@@ -450,7 +449,7 @@ Status DecodeProfile(const PaddedBytes& icc, skcms_ICCProfile* const profile) {
   }
   return true;
 }
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
                      Profile* profile) {
   profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
@@ -1331,7 +1330,7 @@ Status ColorEncoding::SetFieldsFromICC() {
   DetectTransferFunction(profile, this);
   // ICC and RenderingIntent have the same values (0..3).
   rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
 
   std::lock_guard<std::mutex> guard(lcms_mutex);
   const cmsContext context = GetContext();
@@ -1369,7 +1368,7 @@ Status ColorEncoding::CreateICC() {
 
 #if JPEGXL_ENABLE_SKCMS
   if (!MaybeCreateProfile(*this, &icc_)) {
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   if (!MaybeCreateProfile(context, *this, &icc_)) {
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -1386,7 +1385,7 @@ void ColorEncoding::DecideIfWantICC() {
   if (!DecodeProfile(ICC(), &profile)) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
   equivalent = ProfileEquivalentToICC(profile, icc_new);
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile;
   if (!DecodeProfile(context, ICC(), &profile)) return;
@@ -1430,7 +1429,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       DecodeProfile(skcms_icc_->icc_src_, &skcms_icc_->profile_src_));
   JXL_RETURN_IF_ERROR(
       DecodeProfile(skcms_icc_->icc_dst_, &skcms_icc_->profile_dst_));
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
   JXL_RETURN_IF_ERROR(DecodeProfile(context, c_src.ICC(), &profile_src));
@@ -1459,14 +1458,14 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
     PaddedBytes icc_src, icc_dst;
 #if JPEGXL_ENABLE_SKCMS
     skcms_ICCProfile new_src, new_dst;
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     Profile new_src, new_dst;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.
 #if JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(c_linear_src, &new_src, &icc_src) &&
         MaybeCreateProfile(c_linear_dst, &new_dst, &icc_dst)) {
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(context, c_linear_src, &icc_src) &&
         MaybeCreateProfile(context, c_linear_dst, &icc_dst) &&
         DecodeProfile(context, icc_src, &new_src) &&
@@ -1483,7 +1482,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       skcms_icc_->profile_src_ = new_src;
       skcms_icc_->icc_dst_ = PaddedBytes();
       skcms_icc_->profile_dst_ = new_dst;
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
       profile_src.swap(new_src);
       profile_dst.swap(new_dst);
 #endif  // JPEGXL_ENABLE_SKCMS

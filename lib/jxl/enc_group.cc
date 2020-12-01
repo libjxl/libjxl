@@ -19,8 +19,6 @@
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_group.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_strategy.h"

@@ -21,7 +21,8 @@ namespace jxl {
 
 Status DoBlending(const PassesSharedState& state, ImageBundle* foreground) {
   // No need to blend anything in this case.
-  if (state.frame_header.frame_type != FrameType::kRegularFrame) {
+  if (!(state.frame_header.frame_type == FrameType::kRegularFrame ||
+        state.frame_header.frame_type == FrameType::kSkipProgressive)) {
     return true;
   }
   // Replace the full frame: nothing to do.

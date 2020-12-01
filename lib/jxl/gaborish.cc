@@ -22,7 +22,7 @@
 
 namespace jxl {
 
-Image3F GaborishInverse(const Image3F& in, float mul, ThreadPool* pool) {
+void GaborishInverse(Image3F* in_out, float mul, ThreadPool* pool) {
   JXL_ASSERT(mul >= 0.0f);
 
   // Only an approximation. One or even two 3x3, and rank-1 (separable) 5x5
@@ -43,13 +43,13 @@ Image3F GaborishInverse(const Image3F& in, float mul, ThreadPool* pool) {
                                {HWY_REP4(mul * kGaborish[1])},
                                {HWY_REP4(mul * kGaborish[4])},
                                {HWY_REP4(mul * kGaborish[3])}};
-  double sum = weights.c[0];
+  double sum = static_cast<double>(weights.c[0]);
   sum += 4 * weights.r[0];
   sum += 4 * weights.R[0];
   sum += 4 * weights.d[0];
   sum += 4 * weights.D[0];
   sum += 8 * weights.L[0];
-  const float normalize = 1.0f / sum;
+  const float normalize = static_cast<float>(1.0 / sum);
   for (size_t i = 0; i < 4; ++i) {
     weights.c[i] *= normalize;
     weights.r[i] *= normalize;
@@ -59,9 +59,15 @@ Image3F GaborishInverse(const Image3F& in, float mul, ThreadPool* pool) {
     weights.L[i] *= normalize;
   }
 
-  Image3F sharpened(in.xsize(), in.ysize());
-  Symmetric5_3(in, Rect(in), weights, pool, &sharpened);
-  return sharpened;
+  // Reduce memory footprint by only allocating a single plane and swapping it
+  // into the output Image3F. Better still would be tiling.
+  ImageF out(in_out->xsize(), in_out->ysize());
+  Symmetric5(in_out->Plane(0), Rect(*in_out), weights, pool, &out);
+  in_out->Plane(0).Swap(out);
+  Symmetric5(in_out->Plane(1), Rect(*in_out), weights, pool, &out);
+  in_out->Plane(1).Swap(out);
+  Symmetric5(in_out->Plane(2), Rect(*in_out), weights, pool, &out);
+  in_out->Plane(2).Swap(out);
 }
 
 }  // namespace jxl

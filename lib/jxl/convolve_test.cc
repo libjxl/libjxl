@@ -14,13 +14,11 @@
 
 #include "lib/jxl/convolve.h"
 
+#include <time.h>
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/convolve_test.cc"
 #include <hwy/foreach_target.h>
-// ^ must come before highway.h and any *-inl.h.
-
-#include <time.h>
-
 #include <hwy/highway.h>
 #include <hwy/nanobenchmark.h>
 #include <hwy/tests/test_util-inl.h>

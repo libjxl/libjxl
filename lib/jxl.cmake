@@ -339,7 +339,19 @@ target_compile_definitions(jxl-static INTERFACE -DJXL_EXPORT=)
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
 if(${JPEGXL_ENABLE_TCMALLOC})
-  pkg_check_modules(TCMallocMinimal REQUIRED IMPORTED_TARGET libtcmalloc_minimal)
+  pkg_check_modules(TCMallocMinimal REQUIRED IMPORTED_TARGET
+      libtcmalloc_minimal)
+  # tcmalloc 2.8 has concurrency issues that makes it sometimes return nullptr
+  # for large allocs. See https://github.com/gperftools/gperftools/issues/1204
+  # for details.
+  if(NOT TCMallocMinimal_VERSION VERSION_LESS 2.8)
+    message(FATAL_ERROR
+        "tcmalloc version >= 2.8 have a concurrency bug. You have installed "
+        "version ${TCMallocMinimal_VERSION}, please either downgrade tcmalloc "
+        "to version 2.7 or pass -DJPEGXL_ENABLE_TCMALLOC=OFF to jpeg-xl "
+        "cmake line. See the following bug for details:\n"
+        "   https://github.com/gperftools/gperftools/issues/1204\n")
+  endif()
   target_link_libraries(jxl-static PUBLIC PkgConfig::TCMallocMinimal)
 endif()  # JPEGXL_ENABLE_TCMALLOC
 

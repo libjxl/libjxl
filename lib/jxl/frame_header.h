@@ -279,6 +279,9 @@ enum FrameType {
   // A PatchesSource frame: this frame will be only used as a source frame for
   // taking patches. Can be cropped, but cannot have non-(0, 0) x0 and y0.
   kReferenceOnly = 2,
+  // Same as kRegularFrame, but not used for progressive rendering. This also
+  // implies no early display of DC.
+  kSkipProgressive = 3,
 };
 
 // Image/frame := one of more of these, where the last has is_last = true.
