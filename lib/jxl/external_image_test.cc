@@ -37,22 +37,19 @@ TEST(ExternalImageTest, InvalidSize) {
   const uint8_t buf[10 * 100 * 8] = {};
   EXPECT_FALSE(
       ConvertImage(Span<const uint8_t>(buf, 10), /*xsize=*/10, /*ysize=*/100,
-                   /*c_current=*/ColorEncoding::SRGB(),
-                   /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
-                   /*bits_per_alpha=*/8, /*bits_per_sample=*/16,
+                   /*c_current=*/ColorEncoding::SRGB(), /*has_alpha=*/true,
+                   /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
                    /*big_endian=*/true, /*flipped_y=*/false, nullptr, &ib));
   EXPECT_FALSE(ConvertImage(
       Span<const uint8_t>(buf, sizeof(buf) - 1), /*xsize=*/10, /*ysize=*/100,
-      /*c_current=*/ColorEncoding::SRGB(),
-      /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
-      /*bits_per_alpha=*/8, /*bits_per_sample=*/16,
+      /*c_current=*/ColorEncoding::SRGB(), /*has_alpha=*/true,
+      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
       /*big_endian=*/true, /*flipped_y=*/false, nullptr, &ib));
-  EXPECT_TRUE(ConvertImage(
-      Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10, /*ysize=*/100,
-      /*c_current=*/ColorEncoding::SRGB(),
-      /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
-      /*bits_per_alpha=*/8, /*bits_per_sample=*/16,
-      /*big_endian=*/true, /*flipped_y=*/false, nullptr, &ib));
+  EXPECT_TRUE(ConvertImage(Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10,
+                           /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
+                           /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
+                           /*bits_per_sample=*/16, /*big_endian=*/true,
+                           /*flipped_y=*/false, nullptr, &ib));
 }
 #endif
 

@@ -50,10 +50,6 @@ inline void Rgb2Lab(float r, float g, float b, float* L, float* A, float* B) {
   const float epsilon = 0.00885645167903563081f;
   const float s = 0.13793103448275862068f;
   const float k = 7.78703703703703703703f;
-  const float scale = 1.0f / 255.0f;
-  r *= scale;
-  g *= scale;
-  b *= scale;
   float fx = (r * 0.43393624408206207259f + g * 0.37619779063650710152f +
               b * 0.18983429773803261441f);
   float fy = (r * 0.2126729f + g * 0.7151522f + b * 0.0721750f);

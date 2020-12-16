@@ -35,7 +35,6 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_transforms-inl.h"
-#include "lib/jxl/enc_dct.h"
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/image_ops.h"
@@ -196,7 +195,7 @@ JXL_NOINLINE void FindBestCorrelation(
       + kColorTileDim * kColorTileDim * 4  // AC coeff storage
       + AcStrategy::kMaxCoeffArea * 2;     // Scratch space
   JXL_ASSERT(items_per_thread % MaxLanes(df) == 0);
-  hwy::AlignedFreeUniquePtr<float[]> mem(nullptr, hwy::AlignedFreer(nullptr));
+  hwy::AlignedFreeUniquePtr<float[]> mem;
   const auto init_func = [&](size_t num_threads) {
     mem = hwy::AllocateAligned<float>(num_threads * items_per_thread);
     return true;

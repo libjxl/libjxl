@@ -27,13 +27,13 @@ class Comparator {
   virtual ~Comparator() = default;
 
   // Sets the reference image, the first to compare
-  // Image must be in linear sRGB (gamma expanded) in range 0.0f-255.0f as
+  // Image must be in linear sRGB (gamma expanded) in range 0.0f-1.0f as
   // the range from standard black point to standard white point, but values
   // outside permitted.
   virtual Status SetReferenceImage(const ImageBundle& ref) = 0;
 
   // Sets the actual image (with loss), the second to compare
-  // Image must be in linear sRGB (gamma expanded) in range 0.0f-255.0f as
+  // Image must be in linear sRGB (gamma expanded) in range 0.0f-1.0f as
   // the range from standard black point to standard white point, but values
   // outside permitted.
   // In diffmap it outputs the local score per pixel, while in score it outputs

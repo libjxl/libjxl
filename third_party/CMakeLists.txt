@@ -81,6 +81,7 @@ endif()  # NOT DEFINED GMOCK_INCLUDE_DIR
 endif()  # BUILD_TESTING
 
 # Highway
+set(HWY_SYSTEM_GTEST ON CACHE INTERNAL "")
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/highway/CMakeLists.txt" AND
     NOT JPEGXL_FORCE_SYSTEM_HWY)
   add_subdirectory(highway)
@@ -202,21 +203,6 @@ if (JPEGXL_ENABLE_VIEWERS OR NOT JPEGXL_ENABLE_SKCMS)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/lcms/COPYING"
                  ${PROJECT_BINARY_DIR}/LICENSE.lcms COPYONLY)
 endif()
-
-# brunsli
-# depends both on brotli and googletest, so should be added after them.
-if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/brunsli/c/include/brunsli/brunsli_decode.h")
-  message(FATAL_ERROR "Please run ${PROJECT_SOURCE_DIR}/deps.sh to fetch the "
-          "build dependencies.")
-endif ()
-if (NOT TARGET gtest_main)
-  # Disable googletest in brunsli by defining this target.
-  add_custom_target(gtest_main)
-endif()
-add_subdirectory(brunsli EXCLUDE_FROM_ALL)
-target_compile_options(brunslienc-static PRIVATE -Wno-sign-compare)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brunsli/LICENSE"
-               ${PROJECT_BINARY_DIR}/LICENSE.brunsli COPYONLY)
 
 # sjpeg
 if (JPEGXL_ENABLE_SJPEG)

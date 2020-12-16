@@ -354,18 +354,12 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
   JXL_RETURN_IF_ERROR(ConvertImage(
       span, header.xsize, header.ysize, io->metadata.m.color_encoding,
       /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
-      io->metadata.m.GetAlphaBits(), io->metadata.m.bit_depth.bits_per_sample,
-      header.big_endian, flipped_y, pool, &io->Main()));
+      io->metadata.m.bit_depth.bits_per_sample, header.big_endian, flipped_y,
+      pool, &io->Main()));
   if (!header.floating_point) {
     io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
   }
   io->SetSize(header.xsize, header.ysize);
-  if (header.floating_point && io->dec_target != DecodeTarget::kLosslessFloat) {
-    // pfm uses nominal range 0..1 while internally JPEG XL uses 0..255. pfm
-    // has a "scale" value in the header but it appears software only uses its
-    // sign, so its value is ignored in this scaling.
-    ScaleImage<float>(255, io->Main().color());
-  }
   SetIntensityTarget(io);
   return true;
 }
@@ -408,7 +402,6 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   PaddedBytes pixels(stride * ib.ysize());
   JXL_RETURN_IF_ERROR(ConvertImage(
       *transformed, bits_per_sample, floating_point,
-      to_color_transform->c_current().SameColorEncoding(c_desired),
       /*apply_srgb_tf=*/false, c_desired.Channels(), little_endian, stride,
       pool, pixels.data(), pixels.size(), jxl::Orientation::kIdentity));
 

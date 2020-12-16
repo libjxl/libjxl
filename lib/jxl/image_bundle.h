@@ -20,9 +20,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Brunsli headers
-#include <brunsli/jpeg_data.h>
-
 #include <vector>
 
 #include "lib/jxl/aux_out_fwd.h"
@@ -39,6 +36,7 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quantizer.h"
 
@@ -61,12 +59,12 @@ class ImageBundle {
     copy.color_ = CopyImage(color_);
     copy.c_current_ = c_current_;
     copy.extra_channels_.reserve(extra_channels_.size());
-    for (const ImageU& plane : extra_channels_) {
+    for (const ImageF& plane : extra_channels_) {
       copy.extra_channels_.emplace_back(CopyImage(plane));
     }
 
     copy.jpeg_data =
-        jpeg_data ? make_unique<brunsli::JPEGData>(*jpeg_data) : nullptr;
+        jpeg_data ? make_unique<jpeg::JPEGData>(*jpeg_data) : nullptr;
     copy.color_transform = color_transform;
     copy.chroma_subsampling = chroma_subsampling;
 
@@ -152,7 +150,7 @@ class ImageBundle {
 
   // -- ALPHA
 
-  void SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied);
+  void SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied);
   bool HasAlpha() const {
     return metadata_->Find(ExtraChannel::kAlpha) != nullptr;
   }
@@ -160,15 +158,15 @@ class ImageBundle {
     const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
     return (eci == nullptr) ? false : eci->alpha_associated;
   }
-  const ImageU& alpha() const;
-  ImageU* alpha();
+  const ImageF& alpha() const;
+  ImageF* alpha();
 
   // -- DEPTH
-  void SetDepth(ImageU&& depth);
+  void SetDepth(ImageF&& depth);
   bool HasDepth() const {
     return metadata_->Find(ExtraChannel::kDepth) != nullptr;
   }
-  const ImageU& depth() const;
+  const ImageF& depth() const;
   // Returns the dimensions of the depth image. Do not call if !HasDepth.
   size_t DepthSize(size_t size) const {
     return metadata_->Find(ExtraChannel::kDepth)->Size(size);
@@ -177,13 +175,13 @@ class ImageBundle {
   // -- EXTRA CHANNELS
 
   // Extra channels of unknown interpretation (e.g. spot colors).
-  void SetExtraChannels(std::vector<ImageU>&& extra_channels);
+  void SetExtraChannels(std::vector<ImageF>&& extra_channels);
   bool HasExtraChannels() const { return !extra_channels_.empty(); }
-  const std::vector<ImageU>& extra_channels() const {
+  const std::vector<ImageF>& extra_channels() const {
     JXL_ASSERT(HasExtraChannels());
     return extra_channels_;
   }
-  std::vector<ImageU>& extra_channels() {
+  std::vector<ImageF>& extra_channels() {
     JXL_ASSERT(HasExtraChannels());
     return extra_channels_;
   }
@@ -201,7 +199,7 @@ class ImageBundle {
   // stored in 8x8 pixel regions.
   bool IsJPEG() const { return jpeg_data != nullptr; }
 
-  std::unique_ptr<brunsli::JPEGData> jpeg_data;
+  std::unique_ptr<jpeg::JPEGData> jpeg_data;
   // these fields are used to signal the input JPEG color space
   // NOTE: JPEG doesn't actually provide a way to determine whether YCbCr was
   // applied or not.
@@ -213,6 +211,7 @@ class ImageBundle {
   uint32_t duration = 0;
   bool use_for_next_frame = false;
   bool blend = false;
+  std::string name;
 
  private:
   // Called after any Set* to ensure their sizes are compatible.
@@ -228,8 +227,7 @@ class ImageBundle {
   ColorEncoding c_current_;  // of color_
 
   // Initialized by SetPlanes; size = ImageMetadata.num_extra_channels
-  // TODO(janwas): change to pixel_type
-  std::vector<ImageU> extra_channels_;
+  std::vector<ImageF> extra_channels_;
 
   // How many bytes of the input were actually read.
   size_t decoded_bytes_ = 0;

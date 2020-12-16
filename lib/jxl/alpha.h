@@ -32,47 +32,33 @@ namespace jxl {
 // 2^-24, so 2^-26 should be a good choice.
 static constexpr float kSmallAlpha = 1.f / (1u << 26u);
 
-static inline constexpr uint16_t MaxAlpha(const size_t alpha_bits) {
-  return alpha_bits == 16 ? std::numeric_limits<uint16_t>::max()
-                          : (uint16_t{1} << alpha_bits) - 1;
-}
-
-static inline constexpr bool RecommendPremultipliedAlphaForOutput(
-    const bool bg_alpha_is_premultiplied,
-    const bool fg_alpha_is_premultiplied) {
-  return bg_alpha_is_premultiplied || fg_alpha_is_premultiplied;
-}
-
 struct AlphaBlendingInputLayer {
   const float* r;
   const float* g;
   const float* b;
-  const uint16_t* a;
-  size_t alpha_bits;
-  bool alpha_is_premultiplied;
+  const float* a;
 };
 
 struct AlphaBlendingOutput {
   float* r;
   float* g;
   float* b;
-  uint16_t* a;
-  size_t alpha_bits;
-  bool alpha_is_premultiplied;
+  float* a;
 };
 
 // Note: The pointers in `out` are allowed to alias those in `bg` or `fg`.
 // No pointer shall be null.
 void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
                           const AlphaBlendingInputLayer& fg,
-                          const AlphaBlendingOutput& out, size_t num_pixels);
+                          const AlphaBlendingOutput& out, size_t num_pixels,
+                          bool alpha_is_premultiplied);
 
 void PremultiplyAlpha(float* JXL_RESTRICT r, float* JXL_RESTRICT g,
-                      float* JXL_RESTRICT b, const uint16_t* JXL_RESTRICT a,
-                      size_t alpha_bits, size_t num_pixels);
+                      float* JXL_RESTRICT b, const float* JXL_RESTRICT a,
+                      size_t num_pixels);
 void UnpremultiplyAlpha(float* JXL_RESTRICT r, float* JXL_RESTRICT g,
-                        float* JXL_RESTRICT b, const uint16_t* JXL_RESTRICT a,
-                        size_t alpha_bits, size_t num_pixels);
+                        float* JXL_RESTRICT b, const float* JXL_RESTRICT a,
+                        size_t num_pixels);
 
 }  // namespace jxl
 

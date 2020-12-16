@@ -34,24 +34,22 @@ void FillBuffer(
     const CodecInOut& io,
     std::vector<typename BufferFormat<precision>::Sample>* const pixel_data) {
   pixel_data->reserve(io.xsize() * io.ysize() * (num_channels + has_alpha));
-  const float alpha_normalizer =
-      has_alpha ? 1.f / MaxAlpha(io.metadata.m.GetAlphaBits()) : 0.f;
   for (size_t y = 0; y < io.ysize(); ++y) {
     const float* rows[num_channels];
     for (size_t c = 0; c < num_channels; ++c) {
       rows[c] = io.Main().color().ConstPlaneRow(c, y);
     }
-    const uint16_t* const alpha_row =
+    const float* const alpha_row =
         has_alpha ? io.Main().alpha().ConstRow(y) : nullptr;
     for (size_t x = 0; x < io.xsize(); ++x) {
-      const float alpha = has_alpha ? alpha_row[x] * alpha_normalizer : 1.f;
+      const float alpha = has_alpha ? alpha_row[x] : 1.f;
       const float alpha_multiplier =
           has_alpha && io.Main().AlphaIsPremultiplied()
               ? 1.f / std::max(kSmallAlpha, alpha)
               : 1.f;
       for (const float* const row : rows) {
         pixel_data->push_back(BufferFormat<precision>::FromFloat(
-            std::max(0.f, std::min(255.f, alpha_multiplier * row[x]))));
+            std::max(0.f, std::min(1.f, alpha_multiplier * row[x]))));
       }
       if (has_alpha) {
         pixel_data->push_back(

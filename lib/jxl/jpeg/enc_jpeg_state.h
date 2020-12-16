@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_ENC_DCT_H_
-#define LIB_JXL_ENC_DCT_H_
+#ifndef LIB_JXL_JPEG_ENC_JPEG_STATE_H_
+#define LIB_JXL_JPEG_ENC_JPEG_STATE_H_
 
-// DCT interface.
+#include <stddef.h>
+#include <stdint.h>
 
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/image.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
+namespace jpeg {
 
-ImageF Dct8(const ImageF& image);
+bool BrunsliSerialize(const JPEGData& jpg, uint32_t skip_sections,
+                      uint8_t* data, size_t* len);
 
+}  // namespace jpeg
 }  // namespace jxl
 
-#endif  // LIB_JXL_ENC_DCT_H_
+#endif  // LIB_JXL_JPEG_ENC_JPEG_STATE_H_

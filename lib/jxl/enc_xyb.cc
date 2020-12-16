@@ -161,13 +161,10 @@ void LinearRGBToXYB(const V r, const V g, const V b,
   // For wide-gamut inputs, r/g/b and valx (but not y/z) are often negative.
 }
 
-// Input/output uses the codec.h scaling: nominally 0-255 if in-gamut.
+// Input/output uses the codec.h scaling: nominally 0-1 if in-gamut.
 template <class V>
-V LinearFromSRGB(V v255) {
-  const HWY_FULL(float) d;
-  const auto encoded = v255 * Set(d, 1.0f / 255);
-  const auto display = TF_SRGB().DisplayFromEncoded(encoded);
-  return display * Set(d, 255.0f);
+V LinearFromSRGB(V encoded) {
+  return TF_SRGB().DisplayFromEncoded(encoded);
 }
 
 void LinearSRGBToXYB(const Image3F& linear,
@@ -357,7 +354,7 @@ void RgbToYcbcr(const ImageF& r_plane, const ImageF& g_plane,
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
-  const auto k128 = Set(df, 128.0f);
+  const auto k128 = Set(df, 128.0f / 255);
   const auto kR = Set(df, 0.299f);  // NTSC luma
   const auto kG = Set(df, 0.587f);
   const auto kB = Set(df, 0.114f);

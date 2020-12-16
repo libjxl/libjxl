@@ -58,15 +58,11 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
                                 num_threads);
       },
       [&](const int y, const int thread) {
-        float* JXL_RESTRICT src_buf = c_transform.BufSrc(thread);
+        float* mutable_src_buf = c_transform.BufSrc(thread);
+        const float* src_buf = mutable_src_buf;
         // Interleave input.
         if (is_gray) {
-          // TODO(veluca): skip this copy when we have 0-1 range.
-          const float* JXL_RESTRICT row_in =
-              rect.ConstPlaneRow(ib->color(), 0, y);
-          for (size_t x = 0; x < rect.xsize(); x++) {
-            src_buf[x] = row_in[x] * (1.0f / 255.0f);
-          }
+          src_buf = rect.ConstPlaneRow(ib->color(), 0, y);
         } else {
           const float* JXL_RESTRICT row_in0 =
               rect.ConstPlaneRow(ib->color(), 0, y);
@@ -75,9 +71,9 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
           const float* JXL_RESTRICT row_in2 =
               rect.ConstPlaneRow(ib->color(), 2, y);
           for (size_t x = 0; x < rect.xsize(); x++) {
-            src_buf[3 * x + 0] = row_in0[x] * (1.0f / 255.0f);
-            src_buf[3 * x + 1] = row_in1[x] * (1.0f / 255.0f);
-            src_buf[3 * x + 2] = row_in2[x] * (1.0f / 255.0f);
+            mutable_src_buf[3 * x + 0] = row_in0[x];
+            mutable_src_buf[3 * x + 1] = row_in1[x];
+            mutable_src_buf[3 * x + 2] = row_in2[x];
           }
         }
         float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
@@ -89,15 +85,15 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
         if (std::is_same<float, T>::value) {  // deinterleave to float.
           if (is_gray) {
             for (size_t x = 0; x < rect.xsize(); x++) {
-              row_out0[x] = dst_buf[x] * 255.0f;
-              row_out1[x] = dst_buf[x] * 255.0f;
-              row_out2[x] = dst_buf[x] * 255.0f;
+              row_out0[x] = dst_buf[x];
+              row_out1[x] = dst_buf[x];
+              row_out2[x] = dst_buf[x];
             }
           } else {
             for (size_t x = 0; x < rect.xsize(); x++) {
-              row_out0[x] = dst_buf[3 * x + 0] * 255.0f;
-              row_out1[x] = dst_buf[3 * x + 1] * 255.0f;
-              row_out2[x] = dst_buf[3 * x + 2] * 255.0f;
+              row_out0[x] = dst_buf[3 * x + 0];
+              row_out1[x] = dst_buf[3 * x + 1];
+              row_out2[x] = dst_buf[3 * x + 2];
             }
           }
         } else {
@@ -129,7 +125,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 }  // namespace
 void ImageBundle::ShrinkTo(size_t xsize, size_t ysize) {
   color_.ShrinkTo(xsize, ysize);
-  for (ImageU& plane : extra_channels_) {
+  for (ImageF& plane : extra_channels_) {
     plane.ShrinkTo(xsize, ysize);
   }
 }
@@ -210,18 +206,17 @@ size_t ImageBundle::DetectRealBitdepth() const {
   // returns 16 if e.g. two consecutive 16-bit values appeared in the original
   // image (such as 32768 and 32769), take into account that e.g. the values
   // 3-bit can represent is not a superset of the values 2-bit can represent,
-  // and there may be slight imprecisions in the nits-scaled or 255-scaled
-  // floating point image.
+  // and there may be slight imprecisions in the floating point image.
 }
 
-const ImageU& ImageBundle::alpha() const {
+const ImageF& ImageBundle::alpha() const {
   JXL_ASSERT(HasAlpha());
   const size_t ec = metadata_->Find(ExtraChannel::kAlpha) -
                     metadata_->extra_channel_info.data();
   JXL_ASSERT(ec < extra_channels_.size());
   return extra_channels_[ec];
 }
-ImageU* ImageBundle::alpha() {
+ImageF* ImageBundle::alpha() {
   JXL_ASSERT(HasAlpha());
   const size_t ec = metadata_->Find(ExtraChannel::kAlpha) -
                     metadata_->extra_channel_info.data();
@@ -229,7 +224,7 @@ ImageU* ImageBundle::alpha() {
   return &extra_channels_[ec];
 }
 
-const ImageU& ImageBundle::depth() const {
+const ImageF& ImageBundle::depth() const {
   JXL_ASSERT(HasDepth());
   const size_t ec = metadata_->Find(ExtraChannel::kDepth) -
                     metadata_->extra_channel_info.data();
@@ -237,7 +232,7 @@ const ImageU& ImageBundle::depth() const {
   return extra_channels_[ec];
 }
 
-void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
+void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
   const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
   // Must call SetAlphaBits first, otherwise we don't know which channel index
   JXL_CHECK(eci != nullptr);
@@ -250,7 +245,7 @@ void ImageBundle::SetAlpha(ImageU&& alpha, bool alpha_is_premultiplied) {
   VerifySizes();
 }
 
-void ImageBundle::SetDepth(ImageU&& depth) {
+void ImageBundle::SetDepth(ImageF&& depth) {
   JXL_CHECK(depth.xsize() != 0 && depth.ysize() != 0);
   const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kDepth);
   JXL_CHECK(eci != nullptr);
@@ -260,9 +255,9 @@ void ImageBundle::SetDepth(ImageU&& depth) {
   VerifySizes();
 }
 
-void ImageBundle::SetExtraChannels(std::vector<ImageU>&& extra_channels) {
+void ImageBundle::SetExtraChannels(std::vector<ImageF>&& extra_channels) {
   JXL_CHECK(!extra_channels.empty());
-  for (const ImageU& plane : extra_channels) {
+  for (const ImageF& plane : extra_channels) {
     JXL_CHECK(plane.xsize() != 0 && plane.ysize() != 0);
   }
   extra_channels_ = std::move(extra_channels);
@@ -282,8 +277,8 @@ Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
 
   // Must at least copy the alpha channel for use by external_image.
   if (in.HasExtraChannels()) {
-    std::vector<ImageU> extra_channels;
-    for (const ImageU& extra_channel : in.extra_channels()) {
+    std::vector<ImageF> extra_channels;
+    for (const ImageF& extra_channel : in.extra_channels()) {
       extra_channels.emplace_back(CopyImage(extra_channel));
     }
     store->SetExtraChannels(std::move(extra_channels));

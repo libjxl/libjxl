@@ -103,7 +103,8 @@ constexpr size_t kMaxNumReferenceFrames = 3;
 // TODO(veluca): add extra channels.
 struct FrameDimensions {
   void Set(size_t xsize, size_t ysize, size_t group_size_shift,
-           size_t max_hshift, size_t max_vshift, size_t upsampling = 1) {
+           size_t max_hshift, size_t max_vshift, bool modular_mode,
+           size_t upsampling) {
     group_dim = (kGroupDim >> 1) << group_size_shift;
     static_assert(
         kGroupDim == kDcGroupDimInBlocks,
@@ -116,6 +117,11 @@ struct FrameDimensions {
     ysize_blocks = DivCeil(this->ysize, kBlockDim << max_vshift) << max_vshift;
     xsize_padded = xsize_blocks * kBlockDim;
     ysize_padded = ysize_blocks * kBlockDim;
+    if (modular_mode) {
+      // Modular mode doesn't have any padding.
+      xsize_padded = xsize;
+      ysize_padded = ysize;
+    }
     xsize_groups = DivCeil(this->xsize, group_dim);
     ysize_groups = DivCeil(this->ysize, group_dim);
     xsize_dc_groups = DivCeil(xsize_blocks, group_dim);

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
 
@@ -46,8 +47,8 @@ struct ButteraugliParams {
   // Multiplier for the psychovisual difference in the X channel.
   float xmul = 1.0f;
 
-  // Number of nits that correspond to 255.0f input values.
-  float intensity_target = 255.0f;
+  // Number of nits that correspond to 1.0f input values.
+  float intensity_target = kDefaultIntensityTarget;
 
   bool approximate_border = false;
 };
@@ -63,8 +64,8 @@ struct ButteraugliParams {
 // Value of pixels of images rgb0 and rgb1 need to be represented as raw
 // intensity. Most image formats store gamma corrected intensity in pixel
 // values. This gamma correction has to be removed, by applying the following
-// function:
-// butteraugli_val = 255.0 * pow(png_val / 255.0, gamma);
+// function to values in the 0-1 range:
+// butteraugli_val = pow(input_val, gamma);
 // A typical value of gamma is 2.2. It is usually stored in the image header.
 // Take care not to confuse that value with its inverse. The gamma value should
 // be always greater than one.

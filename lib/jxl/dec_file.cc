@@ -50,10 +50,12 @@ Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
 }  // namespace
 
 Status DecodePreview(const DecompressParams& dparams,
+                     const CodecMetadata& metadata,
                      BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
-                     ThreadPool* pool, CodecInOut* JXL_RESTRICT io) {
+                     ThreadPool* pool, ImageBundle* JXL_RESTRICT preview,
+                     uint64_t* dec_pixels) {
   // No preview present in file.
-  if (!io->metadata.m.have_preview) {
+  if (!metadata.m.have_preview) {
     if (dparams.preview == Override::kOn) {
       return JXL_FAILURE("preview == kOn but no preview present");
     }
@@ -64,17 +66,19 @@ Status DecodePreview(const DecompressParams& dparams,
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
 
   if (dparams.preview == Override::kOff) {
-    JXL_RETURN_IF_ERROR(SkipFrame(io->metadata, reader, /*is_preview=*/true));
+    JXL_RETURN_IF_ERROR(SkipFrame(metadata, reader, /*is_preview=*/true));
     return true;
   }
 
   // Else: default or kOn => decode preview.
   PassesDecoderState dec_state;
   JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, aux_out,
-                                  &io->preview_frame, io->metadata, io,
+                                  preview, metadata, nullptr,
                                   /*is_preview=*/true));
-  io->dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
-                    dec_state.shared->frame_dim.ysize_upsampled;
+  if (dec_pixels) {
+    *dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
+                   dec_state.shared->frame_dim.ysize_upsampled;
+  }
   return true;
 }
 
@@ -91,7 +95,7 @@ Status DecodeFile(const DecompressParams& dparams,
     return JXL_FAILURE("File does not start with known JPEG XL signature");
   }
 
-  std::unique_ptr<brunsli::JPEGData> jpeg_data = nullptr;
+  std::unique_ptr<jpeg::JPEGData> jpeg_data = nullptr;
   if (dparams.keep_dct) {
     if (io->Main().jpeg_data == nullptr) {
       return JXL_FAILURE("Caller must set jpeg_data");
@@ -118,17 +122,14 @@ Status DecodeFile(const DecompressParams& dparams,
       JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(std::move(icc)));
     }
 
-    JXL_RETURN_IF_ERROR(DecodePreview(dparams, &reader, aux_out, pool, io));
+    JXL_RETURN_IF_ERROR(DecodePreview(dparams, io->metadata, &reader, aux_out,
+                                      pool, &io->preview_frame,
+                                      &io->dec_pixels));
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
     if (io->metadata.m.have_animation && dparams.keep_dct) {
       return JXL_FAILURE("Cannot decode to JPEG an animation");
-    }
-
-    if (io->metadata.m.bit_depth.floating_point_sample &&
-        !io->metadata.m.xyb_encoded) {
-      io->dec_target = DecodeTarget::kLosslessFloat;
     }
 
     PassesDecoderState dec_state;

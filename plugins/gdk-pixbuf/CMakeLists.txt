@@ -21,7 +21,7 @@ if (NOT Gdk-Pixbuf_FOUND)
   return ()
 endif ()
 
-add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c c_interop.cc c_interop.h)
+add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c)
 target_link_libraries(pixbufloader-jxl jxl-static jxl_threads-static PkgConfig::Gdk-Pixbuf)
 
 pkg_get_variable(GDK_PIXBUF_MODULEDIR gdk-pixbuf-2.0 gdk_pixbuf_moduledir)

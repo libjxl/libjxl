@@ -49,8 +49,8 @@ Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
   const Span<const uint8_t> span(pixels, end - pixels);
   return ConvertImage(span, xsize, ysize, c, has_alpha, alpha_is_premultiplied,
-                      /*bits_per_alpha=*/bits_per_sample, bits_per_sample,
-                      big_endian, /*flipped_y=*/false, pool, ib);
+                      bits_per_sample, big_endian, /*flipped_y=*/false, pool,
+                      ib);
 }
 
 struct WebPArgs {
@@ -97,7 +97,7 @@ class WebPCodec : public ImageCodec {
     const double start = Now();
     const ImageBundle& ib = io->Main();
 
-    const ImageU* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
+    const ImageF* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
     if (ib.HasAlpha() && ib.metadata()->GetAlphaBits() > 8) {
       return JXL_FAILURE("WebP alpha must be 8-bit");
     }
@@ -236,7 +236,7 @@ class WebPCodec : public ImageCodec {
     WebPPictureImportRGB(pic, &rgb[0], 3 * srgb.xsize());
   }
 
-  static void Import(const Image3B& srgb, const ImageU& alpha,
+  static void Import(const Image3B& srgb, const ImageF& alpha,
                      WebPPicture* pic) {
     const size_t xsize = srgb.xsize();
     const size_t ysize = srgb.ysize();
@@ -245,19 +245,19 @@ class WebPCodec : public ImageCodec {
       const uint8_t* JXL_RESTRICT row0 = srgb.ConstPlaneRow(0, y);
       const uint8_t* JXL_RESTRICT row1 = srgb.ConstPlaneRow(1, y);
       const uint8_t* JXL_RESTRICT row2 = srgb.ConstPlaneRow(2, y);
-      const uint16_t* JXL_RESTRICT rowa = alpha.ConstRow(y);
+      const float* JXL_RESTRICT rowa = alpha.ConstRow(y);
       uint8_t* const JXL_RESTRICT row_rgba = &rgba[y * xsize * 4];
       for (size_t x = 0; x < xsize; ++x) {
         row_rgba[4 * x + 0] = row0[x];
         row_rgba[4 * x + 1] = row1[x];
         row_rgba[4 * x + 2] = row2[x];
-        row_rgba[4 * x + 3] = rowa[x] & 0xFF;
+        row_rgba[4 * x + 3] = rowa[x] * 255 + .5f;
       }
     }
     WebPPictureImportRGBA(pic, &rgba[0], 4 * srgb.xsize());
   }
 
-  Status CompressInternal(const Image3B& srgb, const ImageU* alpha, int quality,
+  Status CompressInternal(const Image3B& srgb, const ImageF* alpha, int quality,
                           PaddedBytes* compressed) {
     *compressed = PaddedBytes();
     WebPConfig config;

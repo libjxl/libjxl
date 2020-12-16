@@ -21,6 +21,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/codec_png.h
   extras/codec_pnm.cc
   extras/codec_pnm.h
+  extras/codec_psd.cc
+  extras/codec_psd.h
 )
 
 # We only define a static library for jxl_extras since it uses internal parts

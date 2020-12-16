@@ -82,16 +82,7 @@ jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
   if (!SetFromFile(filename_heatmap, &io_heatmap, pool)) {
     return JXL_FAILURE("Could not load heatmap.");
   }
-  jxl::ImageF heatmap(io_heatmap.xsize(), io_heatmap.ysize());
-  for (size_t num_row = 0; num_row < io_heatmap.ysize(); num_row++) {
-    const float* JXL_RESTRICT row_src =
-        io_heatmap.Main().color()->ConstPlaneRow(0, num_row);
-    float* JXL_RESTRICT row_dst = heatmap.Row(num_row);
-    for (size_t num_col = 0; num_col < io_heatmap.xsize(); num_col++) {
-      row_dst[num_col] = row_src[num_col] / 255.0f;
-    }
-  }
-  *out_map = std::move(heatmap);
+  *out_map = std::move(io_heatmap.Main().color()->Plane(0));
   return true;
 }
 
@@ -113,15 +104,9 @@ jxl::Status LoadSpotColors(const CompressArgs& args, jxl::CodecInOut* io) {
   example.spot_color[2] = 0.0f;                              // B
   example.spot_color[3] = 1.0f;                              // A
   io->metadata.m.extra_channel_info.push_back(example);
-  jxl::ImageU sc(spot_io.xsize(), spot_io.ysize());
-  for (size_t y = 0; y < spot_io.ysize(); ++y) {
-    const float* JXL_RESTRICT from = spot_io.Main().color()->PlaneRow(1, y);
-    uint16_t* JXL_RESTRICT to = sc.Row(y);
-    for (size_t x = 0; x < spot_io.xsize(); ++x) {
-      to[x] = from[x];
-    }
-  }
-  std::vector<jxl::ImageU> scv;
+  jxl::ImageF sc(spot_io.xsize(), spot_io.ysize());
+  jxl::CopyImageTo(spot_io.Main().color()->Plane(1), &sc);
+  std::vector<jxl::ImageF> scv;
   scv.push_back(std::move(sc));
   io->Main().SetExtraChannels(std::move(scv));
   return true;
@@ -135,9 +120,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   io->dec_hints = args.dec_hints;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
-  if (args.params.modular_mode && args.params.quality_pair.first == 100) {
-    io->dec_target = jxl::DecodeTarget::kLosslessFloat;
-  }
   jxl::Codec input_codec;
   if (!SetFromFile(args.params.file_in, io, nullptr, &input_codec)) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);

@@ -135,7 +135,8 @@ void EnsureUnchanged(const float background, const float foreground,
 
   FrameDimensions frame_dim;
   frame_dim.Set(xsize, ysize, /*group_size_shift=*/1,
-                /*max_hshift=*/0, /*max_vshift=*/0);
+                /*max_hshift=*/0, /*max_vshift=*/0, /*modular_mode=*/false,
+                /*upsampling=*/1);
   FilterWeights filter_weights;
   filter_weights.Init(lf, frame_dim);
   FillImage(-0.5f, &filter_weights.sigma);

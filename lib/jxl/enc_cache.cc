@@ -113,7 +113,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       // Add dummy extra channels to the patch image: dc_level frames do not yet
       // support extra channels, but the codec expects that the amount of extra
       // channels in frames matches that in the metadata of the codestream.
-      std::vector<ImageU> extra_channels;
+      std::vector<ImageF> extra_channels;
       extra_channels.reserve(ib.metadata()->extra_channel_info.size());
       for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
         extra_channels.emplace_back(ib.xsize(), ib.ysize());

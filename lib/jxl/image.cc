@@ -216,6 +216,63 @@ Image3F PadImageMirror(const Image3F& in, const size_t xborder,
   return out;
 }
 
+void PadRectMirrorInPlace(Image3F* img, const Rect& rect, size_t xsize,
+                          size_t xborder, size_t xpadding) {
+  JXL_ASSERT(2 * xpadding + xsize <= img->xsize());
+  if (xborder > xsize) {
+    if (rect.x0() == 0) {
+      for (size_t c = 0; c < 3; c++) {
+        // Left padding with mirroring.
+        for (size_t iy = 0; iy < rect.ysize(); iy++) {
+          float* row = rect.PlaneRow(img, c, iy);
+          for (size_t ix = 0; ix < xborder; ix++) {
+            row[xpadding - ix - 1] = row[xpadding + Mirror(-ix - 1, xsize)];
+          }
+        }
+      }
+    }
+
+    // Right padding with mirroring.
+    if (rect.x0() + rect.xsize() == xsize) {
+      for (size_t c = 0; c < 3; c++) {
+        // Right padding with mirroring.
+        for (size_t iy = 0; iy < rect.ysize(); iy++) {
+          float* row = img->PlaneRow(c, rect.y0() + iy);
+          for (size_t ix = 0; ix < xborder; ix++) {
+            row[xpadding + xsize + ix] =
+                row[xpadding + Mirror(xsize + ix, xsize)];
+          }
+        }
+      }
+    }
+    return;
+  }
+  if (rect.x0() == 0) {
+    for (size_t c = 0; c < 3; c++) {
+      // Left padding with mirroring.
+      for (size_t iy = 0; iy < rect.ysize(); iy++) {
+        float* row = rect.PlaneRow(img, c, iy);
+        for (size_t ix = 0; ix < xborder; ix++) {
+          row[xpadding - ix - 1] = row[xpadding + ix];
+        }
+      }
+    }
+  }
+
+  // Right padding with mirroring.
+  if (rect.x0() + rect.xsize() == xsize) {
+    for (size_t c = 0; c < 3; c++) {
+      // Right padding with mirroring.
+      for (size_t iy = 0; iy < rect.ysize(); iy++) {
+        float* row = img->PlaneRow(c, rect.y0() + iy);
+        for (size_t ix = 0; ix < xborder; ix++) {
+          row[xpadding + xsize + ix] = row[xpadding + xsize - ix - 1];
+        }
+      }
+    }
+  }
+}
+
 Image3F PadImageToMultiple(const Image3F& in, const size_t N) {
   PROFILER_FUNC;
   const size_t xsize_blocks = DivCeil(in.xsize(), N);

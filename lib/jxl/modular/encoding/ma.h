@@ -81,12 +81,16 @@ struct TreeSamples {
   size_t NBits(size_t pred, size_t i) const { return residuals[pred][i].nbits; }
   size_t Count(size_t i) const { return sample_counts[i]; }
   size_t PredictorIndex(Predictor predictor) const {
-    return std::find(predictors.begin(), predictors.end(), predictor) -
-           predictors.begin();
+    const auto predictor_elem =
+        std::find(predictors.begin(), predictors.end(), predictor);
+    JXL_DASSERT(predictor_elem != predictors.end());
+    return predictor_elem - predictors.begin();
   }
   size_t PropertyIndex(size_t property) const {
-    return std::find(props_to_use.begin(), props_to_use.end(), property) -
-           props_to_use.begin();
+    const auto property_elem =
+        std::find(props_to_use.begin(), props_to_use.end(), property);
+    JXL_DASSERT(property_elem != props_to_use.end());
+    return property_elem - props_to_use.begin();
   }
   size_t NumPropertyValues(size_t property_index) const {
     return compact_properties[property_index].size() + 1;
@@ -100,8 +104,14 @@ struct TreeSamples {
     return compact_properties[property_index][quant];
   }
 
-  Predictor PredictorFromIndex(size_t index) const { return predictors[index]; }
-  size_t PropertyFromIndex(size_t index) const { return props_to_use[index]; }
+  Predictor PredictorFromIndex(size_t index) const {
+    JXL_DASSERT(index < predictors.size());
+    return predictors[index];
+  }
+  size_t PropertyFromIndex(size_t index) const {
+    JXL_DASSERT(index < props_to_use.size());
+    return props_to_use[index];
+  }
   size_t NumPredictors() const { return predictors.size(); }
   size_t NumProperties() const { return props_to_use.size(); }
 

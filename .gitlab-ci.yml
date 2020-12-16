@@ -148,7 +148,7 @@ test:x86_64:clang:release:
   script:
     - ./ci.sh test
 
-# linux x86_64 with gcc in Release mode.
+# linux x86_64 with gcc in Debug mode.
 build:x86_64:gcc7:debug:
   <<: *linux_host_build_template
   stage: build
@@ -167,6 +167,11 @@ test:x86_64:gcc7:debug:
   stage: test
   dependencies:
     - build:x86_64:gcc7:debug
+  only:
+    - master
+    - merge_requests
+    - schedules
+    - tags
   script:
     - TEST_STACK_LIMIT=1024 ./ci.sh test
 

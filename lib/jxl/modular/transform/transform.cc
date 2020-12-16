@@ -76,10 +76,25 @@ Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
 Status Transform::MetaApply(Image &input) {
   switch (id) {
     case TransformId::kRCT:
+      JXL_DEBUG_V(2, "Transform: kRCT, rct_type=%" PRIu32, rct_type);
       return true;
     case TransformId::kSqueeze:
+      JXL_DEBUG_V(2, "Transform: kSqueeze:");
+#if JXL_DEBUG_V_LEVEL >= 2
+      for (const auto &params : squeezes) {
+        JXL_DEBUG_V(
+            2,
+            "  squeeze params: horizontal=%d, in_place=%d, begin_c=%" PRIu32
+            ", num_c=%" PRIu32,
+            params.horizontal, params.in_place, params.begin_c, params.num_c);
+      }
+#endif
       return MetaSqueeze(input, &squeezes);
     case TransformId::kPalette:
+      JXL_DEBUG_V(2,
+                  "Transform: kPalette, begin_c=%" PRIu32 ", num_c=%" PRIu32
+                  ", nb_colors=%" PRIu32 ", nb_deltas=%" PRIu32,
+                  begin_c, num_c, nb_colors, nb_deltas);
       return MetaPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
                          nb_deltas, lossy_palette);
     default:

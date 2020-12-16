@@ -52,12 +52,13 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::ShiftRight;
 
 using D = HWY_FULL(float);
 using DU = HWY_FULL(uint32_t);
 using DI = HWY_FULL(int32_t);
-using DI16 = HWY_CAPPED(int16_t, MaxLanes(DI()));
+using DI16 = Rebind<int16_t, DI>;
 constexpr D d;
 constexpr DI di;
 constexpr DI16 di16;
@@ -123,7 +124,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
                        size_t thread, const Rect& block_rect, AuxOut* aux_out,
-                       Image3F* JXL_RESTRICT idct, const ImageBundle* decoded) {
+                       Image3F* JXL_RESTRICT output,
+                       const ImageBundle* decoded) {
   PROFILER_FUNC;
 
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
@@ -141,12 +143,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
-  bool save_to_decoded =
-      !decoded->IsJPEG() && (lf.epf_iters > 0 || lf.gab) && cs.Is444();
-  size_t xpadding_blocks = save_to_decoded ? kMaxFilterPadding / kBlockDim : 0;
+  size_t xpadding_blocks =
+      !decoded->IsJPEG() ? dec_state->decoded_padding / kBlockDim : 0;
 
-  const size_t idct_stride =
-      (!save_to_decoded ? *idct : dec_state->decoded).PixelsPerRow();
+  const size_t idct_stride = dec_state->decoded.PixelsPerRow();
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
@@ -157,7 +157,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     const std::vector<QuantEncoding>& qe =
         dec_state->shared->matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
-        qe[0].qraw.qtable_den_shift != 0) {
+        std::abs(qe[0].qraw.qtable_den - 1.f / (8 * 255)) > 1e-8f) {
       return JXL_FAILURE(
           "Quantization table is not a JPEG quantization table.");
     }
@@ -170,35 +170,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       }
     }
   }
-
-  // Apply image features to
-  // - the whole AC group, if no loop filtering is enabled, or
-  // - only the interior part of the group, skipping the border
-  // ... unless this is the first or the last group in a row, in which case we
-  // process the corresponding border too.
-  size_t xsize = xsize_blocks * kBlockDim;
-  size_t ysize = ysize_blocks * kBlockDim;
-  size_t xstart = block_rect.x0() != 0 ? lf.PaddingCols() : 0;
-  size_t ystart = block_rect.y0() != 0 ? lf.PaddingRows() : 0;
-  bool is_last_group_x = dec_state->shared->frame_dim.xsize_blocks ==
-                         block_rect.x0() + block_rect.xsize();
-  bool is_last_group_y = dec_state->shared->frame_dim.ysize_blocks ==
-                         block_rect.y0() + block_rect.ysize();
-  size_t xend = is_last_group_x ? xsize : xsize - lf.PaddingCols();
-  size_t yend = is_last_group_y ? ysize : ysize - lf.PaddingRows();
-
-  // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
-  // be done after decoding the whole image (this allows it to work on the
-  // chroma channels too), or if there is not at least one pass per AC group.
-  bool run_apply_image_features = xstart < xend && ystart < yend &&
-                                  !decoded->IsJPEG() && cs.Is444() &&
-                                  !dec_state->has_partial_ac_groups;
-
-  static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
-                "Groups are too large");
-  const Rect aif_rect(block_rect.x0() * kBlockDim + xstart,
-                      block_rect.y0() * kBlockDim + ystart, xend - xstart,
-                      yend - ystart);
 
   int jpeg_c_map[3] = {1, 0, 2};
   if (decoded->IsJPEG() && decoded->jpeg_data->components.size() == 1) {
@@ -233,8 +204,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       float* JXL_RESTRICT idct_row[3];
       int16_t* JXL_RESTRICT jpeg_row[3];
       for (size_t c = 0; c < 3; c++) {
-        idct_row[c] = idct->PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
-                      r[c].x0() * kBlockDim;
+        idct_row[c] =
+            dec_state->decoded.PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
+            r[c].x0() * kBlockDim + dec_state->decoded_padding;
         if (decoded->IsJPEG()) {
           auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
           jpeg_row[c] =
@@ -340,9 +312,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       float* JXL_RESTRICT idct_row[3];
       int16_t* JXL_RESTRICT jpeg_row[3];
       for (size_t c = 0; c < 3; c++) {
-        idct_row[c] = (!save_to_decoded ? *idct : dec_state->decoded)
-                          .PlaneRow(c, (block_rect.y0() + by) * kBlockDim) +
-                      (block_rect.x0()) * kBlockDim;
+        idct_row[c] =
+            dec_state->decoded.PlaneRow(c, (block_rect.y0() + by) * kBlockDim) +
+            (block_rect.x0()) * kBlockDim;
         if (decoded->IsJPEG()) {
           auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
           jpeg_row[c] = component.coeffs.data() +
@@ -456,46 +428,52 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                               idct_stride, group_dec_cache->scratch_space);
           }
 
-          if (save_to_decoded) {
-            for (size_t c : {1, 0, 2}) {
-              // Left padding with mirroring.
-              if (bx + block_rect.x0() == 0) {
-                for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y();
-                     iy++) {
-                  // We need kMaxFilterBorder worth of mirrored pixels but the
-                  // image is padded with kMaxFilterPadding pixels.
-                  LeftMirror(idct_row[c] + kMaxFilterPadding + idct_stride * iy,
-                             kMaxFilterBorder);
-                }
-              }
-              // Right padding with mirroring.
-              if (bx + block_rect.x0() + llf_x ==
-                  dec_state->shared->frame_dim.xsize_blocks) {
-                for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y();
-                     iy++) {
-                  RightMirror(idct_row[c] + kMaxFilterPadding +
-                                  (bx + llf_x) * kBlockDim + idct_stride * iy,
-                              kMaxFilterBorder);
-                }
-              }
-            }
-          }
           bx += llf_x;
         }
       }
-      // When a row of blocks is done, run ApplyImageFeaturesRow.
-      // TODO(veluca): consider switching this to 4 rows of blocks.
-      if (JXL_LIKELY(run_apply_image_features)) {
-        ssize_t yb = by == 0 ? -kMaxFilterBorder : 0;
-        ssize_t ye =
-            kBlockDim + (by == ysize_blocks - 1 ? kMaxFilterBorder : 0);
-        for (ssize_t y = yb; y < ye; y++) {
-          ssize_t aif_y = by * kBlockDim + y - ystart;
-          JXL_RETURN_IF_ERROR(ApplyImageFeaturesRow(idct, aif_rect, dec_state,
-                                                    aif_y, thread, aux_out));
-        }
-      }
     }
+  }
+  // Apply image features to
+  // - the whole AC group, if no loop filtering is enabled, or
+  // - only the interior part of the group, skipping the border
+  // ... unless this is the first or the last group in a row, in which case we
+  // process the corresponding border too.
+  size_t xsize = xsize_blocks * kBlockDim;
+  size_t ysize = ysize_blocks * kBlockDim;
+  size_t xstart = block_rect.x0() != 0 ? lf.PaddingCols() : 0;
+  size_t ystart = block_rect.y0() != 0 ? lf.PaddingRows() : 0;
+  bool is_last_group_x = dec_state->shared->frame_dim.xsize_blocks ==
+                         block_rect.x0() + block_rect.xsize();
+  bool is_last_group_y = dec_state->shared->frame_dim.ysize_blocks ==
+                         block_rect.y0() + block_rect.ysize();
+  size_t xend = is_last_group_x ? xsize : xsize - lf.PaddingCols();
+  size_t yend = is_last_group_y ? ysize : ysize - lf.PaddingRows();
+
+  // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
+  // be done after decoding the whole image (this allows it to work on the
+  // chroma channels too), or if there is not at least one pass per AC group.
+  // TODO(veluca): if there are no passes for this AC group, upsample DC here
+  // instead, then call FinalizeImageRect.
+  bool run_apply_image_features = xstart < xend && ystart < yend &&
+                                  !decoded->IsJPEG() && cs.Is444() &&
+                                  !dec_state->has_partial_ac_groups;
+
+  static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
+                "Groups are too large");
+  const Rect aif_rect(block_rect.x0() * kBlockDim + xstart,
+                      block_rect.y0() * kBlockDim + ystart, xend - xstart,
+                      yend - ystart);
+  if (lf.PaddingCols() != 0) {
+    PadRectMirrorInPlace(
+        &dec_state->decoded,
+        Rect(block_rect.x0() * kBlockDim, block_rect.y0() * kBlockDim,
+             block_rect.xsize() * kBlockDim, block_rect.ysize() * kBlockDim),
+        dec_state->shared->frame_dim.xsize_padded, lf.PaddingCols(),
+        dec_state->decoded_padding);
+  }
+
+  if (JXL_LIKELY(run_apply_image_features)) {
+    return FinalizeImageRect(output, aif_rect, dec_state, thread, aux_out);
   }
   return true;
 }
@@ -714,7 +692,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
-                   Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
+                   Image3F* output, ImageBundle* JXL_RESTRICT decoded,
                    AuxOut* aux_out) {
   PROFILER_FUNC;
   const Rect block_group_rect = dec_state->shared->BlockGroupRect(group_idx);
@@ -730,7 +708,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                                      group_dec_cache, dec_state));
 
   JXL_RETURN_IF_ERROR(DecodeGroupImpl(&get_block, group_dec_cache, dec_state,
-                                      thread, block_group_rect, aux_out, opsin,
+                                      thread, block_group_rect, aux_out, output,
                                       decoded));
 
   for (size_t pass = 0; pass < num_passes; pass++) {
@@ -745,7 +723,7 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
-                               size_t thread, Image3F* JXL_RESTRICT opsin,
+                               size_t thread, Image3F* JXL_RESTRICT output,
                                ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out) {
   PROFILER_FUNC;
@@ -755,7 +733,7 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
   GetBlockFromEncoder get_block(ac, group_idx);
 
   return DecodeGroupImpl(&get_block, group_dec_cache, dec_state, thread,
-                         block_group_rect, aux_out, opsin, decoded);
+                         block_group_rect, aux_out, output, decoded);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)

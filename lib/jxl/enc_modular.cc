@@ -25,7 +25,6 @@
 
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/fast_log.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/compressed_dc.h"
@@ -380,9 +379,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
                           ib.metadata()->bit_depth.bits_per_sample)) -
                          1);
 
-  if (cparams.color_transform == ColorTransform::kXYB) {
-    maxval = 255;  // not true, but bits_per_sample doesn't matter either
-  }
   Image& gi = stream_images[0];
   gi = Image(xsize, ysize, maxval, nb_chans);
   int c = 0;
@@ -400,9 +396,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       // XYB is encoded as YX(B-Y)
       if (cparams.color_transform == ColorTransform::kXYB && c < 2)
         c_out = 1 - c_out;
-      float factor = maxval / 255.f;
+      float factor = maxval;
       if (cparams.color_transform == ColorTransform::kXYB)
-        factor *= enc_state->shared.matrices.InvDCQuant(c);
+        factor = enc_state->shared.matrices.InvDCQuant(c);
       if (c == 2 && cparams.color_transform == ColorTransform::kXYB) {
         for (size_t y = 0; y < ysize; ++y) {
           const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
@@ -428,15 +424,33 @@ Status ModularFrameEncoder::ComputeEncodingData(
             memcpy(&f, &row_in[x], 4);
             int signbit = (f >> 31);
             f &= 0x7fffffff;
+            if (f == 0) {
+              row_out[x] = (signbit ? sign : 0);
+              continue;
+            }
             int exp = (f >> 23) - 127;
+            if (exp == 128) return JXL_FAILURE("Inf/NaN not allowed");
             int mantissa = (f & 0x007fffff);
             // broke up the binary32 into its parts, now reassemble into
             // arbitrary float
             exp += exp_bias;
+            if (exp < 0) {  // will become a subnormal number
+              // add implicit leading 1 to mantissa
+              mantissa |= 0x00800000;
+              if (exp < -mant_bits)
+                return JXL_FAILURE(
+                    "Invalid float number: %g cannot be represented with %i "
+                    "exp_bits and %i mant_bits (exp %i)",
+                    row_in[x], exp_bits, mant_bits, exp);
+              mantissa >>= 1 - exp;
+              exp = 0;
+            }
             // exp should be representable in exp_bits, otherwise input was
             // invalid
-            if (exp > max_exp || exp < 0)
-              return JXL_FAILURE("Invalid float exponent");
+            if (exp > max_exp) return JXL_FAILURE("Invalid float exponent");
+            if (mantissa & ((1 << mant_shift) - 1))
+              return JXL_FAILURE("%g is losing precision (mant: %x)", row_in[x],
+                                 mantissa);
             mantissa >>= mant_shift;
             f = (signbit ? sign : 0);
             f |= (exp << mant_bits);
@@ -472,11 +486,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
       gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
 
       for (size_t y = 0; y < ysize; ++y) {
-        const uint16_t* const JXL_RESTRICT row_in =
-            ib.extra_channels()[ec].Row(y);
+        const float* const JXL_RESTRICT row_in = ib.extra_channels()[ec].Row(y);
         pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
         for (size_t x = 0; x < xsize; ++x) {
-          row_out[x] = row_in[x];
+          row_out[x] =
+              row_in[x] * ((1u << eci.bit_depth.bits_per_sample) - 1) + .5f;
         }
       }
     }
@@ -489,13 +503,15 @@ Status ModularFrameEncoder::ComputeEncodingData(
     if (cparams.palette_colors != 0) {
       JXL_DEBUG_V(3, "Lossy encode, not doing palette transforms");
     }
-    cparams.channel_colors_pre_transform_percent = 0;
+    if (cparams.color_transform == ColorTransform::kXYB) {
+      cparams.channel_colors_pre_transform_percent = 0;
+    }
     cparams.channel_colors_percent = 0;
     cparams.palette_colors = 0;
   }
 
   // Global channel palette
-  if (cparams.channel_colors_pre_transform_percent > 0 && quality == 100 &&
+  if (cparams.channel_colors_pre_transform_percent > 0 &&
       !cparams.lossy_palette) {
     // single channel palette (like FLIF's ChannelCompact)
     for (size_t i = 0; i < gi.nb_channels; i++) {
@@ -513,7 +529,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette_1.nb_colors = std::min(
           (int)(xsize * ysize * 0.8),
           (int)(cparams.channel_colors_pre_transform_percent / 100. * colors));
-      gi.do_transform(maybe_palette_1, weighted::Header());
+      if (gi.do_transform(maybe_palette_1, weighted::Header())) {
+        // effective bit depth is lower, adjust quantization accordingly
+        gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
+        if (max < maxval) maxval = max;
+      }
     }
   }
 
@@ -718,6 +738,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
              image.channel[i].h > options.max_chan_size)) {
           continue;
         }
+        if (stream_id > 0 && gi_channel[stream_id].empty()) continue;
         size_t ch_id = stream_id == 0
                            ? i
                            : gi_channel[stream_id][i - image.nb_meta_channels];
@@ -1476,7 +1497,7 @@ void ModularFrameEncoder::EncodeQuantTable(
     ModularFrameEncoder* modular_frame_encoder) {
   JXL_ASSERT(encoding.qraw.qtable != nullptr);
   JXL_ASSERT(size_x * size_y * 3 == encoding.qraw.qtable->size());
-  writer->Write(3, encoding.qraw.qtable_den_shift);
+  JXL_CHECK(F16Coder::Write(encoding.qraw.qtable_den, writer));
   if (modular_frame_encoder) {
     JXL_CHECK(modular_frame_encoder->EncodeStream(
         writer, nullptr, 0, ModularStreamId::QuantTable(idx)));

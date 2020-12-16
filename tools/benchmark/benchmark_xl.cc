@@ -81,33 +81,6 @@ Status ReadPNG(const std::string& filename, Image3B* image) {
   return true;
 }
 
-static bool HasValidAlpha(const CodecInOut& io) {
-  // Test whether the image doesn't have invalid alpha channel values in the
-  // image bundle (values larger than the bit depth indicates), otherwise
-  // an assert (which immediately exits the binary) gets triggered in
-  // external_image.cc.
-  const ImageBundle& ib = io.Main();
-  if (ib.HasAlpha()) {
-    size_t actual_max = MaxAlpha(ib.metadata()->GetAlphaBits());
-    const ImageU& alpha = ib.alpha();
-    for (size_t y = 0; y < alpha.ysize(); ++y) {
-      auto* const JXL_RESTRICT row = alpha.Row(y);
-      for (size_t x = 0; x < alpha.xsize(); ++x) {
-        if (row[x] > actual_max) {
-          if (!Args()->silent_errors) {
-            JXL_WARNING(
-                "alpha value too large for given bit depth:"
-                " depth: %d, value: %d",
-                ib.metadata()->GetAlphaBits(), row[x]);
-          }
-          return false;
-        }
-      }
-    }
-  }
-  return true;
-}
-
 void DoCompress(const std::string& filename, const CodecInOut& io,
                 const std::vector<std::string>& extra_metrics_commands,
                 ImageCodec* codec, ThreadPool* inner_pool,
@@ -204,13 +177,6 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
   std::string name = FileBaseName(filename);
   std::string codec_name = codec->description();
 
-  if (valid && !HasValidAlpha(io2)) {
-    valid = false;
-    if (!Args()->silent_errors) {
-      JXL_WARNING("invalid alpha in decoder result: codec: %s, file: %s",
-                  codec_name.c_str(), name.c_str());
-    }
-  }
   if (!valid) {
     s->total_errors++;
   }
@@ -251,7 +217,7 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
         }
         params.intensity_target = ib1.metadata()->IntensityTarget();
         distance = ButteraugliDistance(ib1, ib2, params, &distmap, inner_pool);
-        // Ensure pixels in range 0-255
+        // Ensure pixels in range 0-1
         s->distance_2 += ComputeDistance2(ib1, ib2);
       } else {
         // TODO(veluca): re-upsample and compute proper distance.
@@ -638,7 +604,7 @@ struct StatPrinter {
     const double psnr = t.stats.total_compressed_size == 0 ? 0.0
                         : (t.stats.distance_2 == 0)
                             ? 99.99
-                            : (20 * std::log10(255 / rmse));
+                            : (20 * std::log10(1 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =

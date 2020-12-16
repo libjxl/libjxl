@@ -57,9 +57,8 @@ Status SkipFrame(const CodecMetadata& metadata, BitReader* JXL_RESTRICT reader,
                  bool is_preview = false);
 
 // Decodes the global DC info from a frame section, exposed for use by API.
-Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
-                          ImageBundle* decoded, PassesDecoderState* state,
-                          ThreadPool* pool);
+Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader, bool is_jpeg,
+                          PassesDecoderState* state, ThreadPool* pool);
 
 // Decodes the DC image, exposed for use by API.
 // aux_outs may be nullptr if aux_out is nullptr.

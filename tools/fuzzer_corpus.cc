@@ -189,8 +189,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.m.GetAlphaBits(), io.metadata.m.bit_depth.bits_per_sample,
-        false /* big_endian */, false /* flipped_y */, nullptr, &ib));
+        io.metadata.m.bit_depth.bits_per_sample, false /* big_endian */,
+        false /* flipped_y */, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }
 

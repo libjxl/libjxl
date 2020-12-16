@@ -12,20 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_DEC_DCT_H_
-#define LIB_JXL_DEC_DCT_H_
+// Data structures that represent the contents of a jpeg file.
 
-// IDCT interface.
+#ifndef LIB_JXL_JPEG_JPEG_QUANT_MATRIX_H_
+#define LIB_JXL_JPEG_JPEG_QUANT_MATRIX_H_
 
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/image.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "lib/jxl/jpeg/jpeg_constants.h"
 
 namespace jxl {
+namespace jpeg {
 
-void IDct8(const size_t xsize_blocks, const size_t ysize_blocks,
-           const ImageF& dequantized, ThreadPool* pool,
-           ImageF* JXL_RESTRICT pixels);
+static const size_t kQFactorBits = 6;
+static const size_t kQFactorLimit = 1u << kQFactorBits;
 
+void FillQuantMatrix(bool is_chroma, uint32_t q, uint8_t dst[kDCTBlockSize]);
+uint32_t FindBestMatrix(const int* src, bool is_chroma,
+                        uint8_t dst[kDCTBlockSize]);
+
+}  // namespace jpeg
 }  // namespace jxl
 
-#endif  // LIB_JXL_DEC_DCT_H_
+#endif  // LIB_JXL_JPEG_JPEG_QUANT_MATRIX_H_

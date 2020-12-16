@@ -28,13 +28,14 @@ namespace HWY_NAMESPACE {
 namespace {
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Vec;
 
 template <class DF>
 HWY_INLINE HWY_MAYBE_UNUSED Vec<DF> AdjustQuantBias(
     DF df, const size_t c, const Vec<DF> quant,
     const float* HWY_RESTRICT biases) {
-  const hwy::HWY_NAMESPACE::Simd<int32_t, MaxLanes(df)> di;
+  const Rebind<int32_t, DF> di;
 
   // Compare |quant|, keep sign bit for negating result.
   const auto kSign = BitCast(df, Set(di, INT32_MIN));

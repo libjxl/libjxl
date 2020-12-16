@@ -57,7 +57,7 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
 
 // WARNING: this uses unaligned accesses, so the caller must first call
 // src.InitializePaddingForUnalignedAccesses() to avoid msan crashes.
-ImageF UpsampleH2(const ImageF& src, ThreadPool* pool);
+ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool);
 
 }  // namespace jxl
 

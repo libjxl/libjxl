@@ -70,21 +70,25 @@ void BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
   }
 }
 
-void BitWriter::AppendByteAligned(const BitWriter& other) {
-  JXL_ASSERT(other.BitsWritten() % kBitsPerByte == 0);
-  const size_t other_bytes = other.BitsWritten() / kBitsPerByte;
-  JXL_ASSERT(other_bytes != 0);
-  storage_.resize(storage_.size() + other_bytes + 1);  // extra zero padding
+void BitWriter::AppendByteAligned(const Span<const uint8_t>& span) {
+  if (!span.size()) return;
+  storage_.resize(storage_.size() + span.size() + 1);  // extra zero padding
 
   // Concatenate by copying bytes because both source and destination are bytes.
   JXL_ASSERT(BitsWritten() % kBitsPerByte == 0);
   size_t pos = BitsWritten() / kBitsPerByte;
-  const Span<const uint8_t> span = other.GetSpan();
   memcpy(storage_.data() + pos, span.data(), span.size());
   pos += span.size();
   storage_[pos++] = 0;  // for next Write
   JXL_ASSERT(pos <= storage_.size());
-  bits_written_ += other_bytes * kBitsPerByte;
+  bits_written_ += span.size() * kBitsPerByte;
+}
+
+void BitWriter::AppendByteAligned(const BitWriter& other) {
+  JXL_ASSERT(other.BitsWritten() % kBitsPerByte == 0);
+  JXL_ASSERT(other.BitsWritten() / kBitsPerByte != 0);
+
+  AppendByteAligned(other.GetSpan());
 }
 
 void BitWriter::AppendByteAligned(const std::vector<BitWriter>& others) {

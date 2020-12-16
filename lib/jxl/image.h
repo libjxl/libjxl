@@ -81,7 +81,7 @@ struct PlaneBase {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
     if (y >= ysize_) {
-      JXL_ABORT("Row(%zu) >= %u\n", y, ysize_);
+      JXL_ABORT("Row(%zu) in (%u x %u) image\n", y, xsize_, ysize_);
     }
 #endif
 
@@ -347,6 +347,7 @@ class Image3 {
 
   // Returns const row pointer, even if called from a non-const Image3.
   JXL_INLINE const T* ConstPlaneRow(const size_t c, const size_t y) const {
+    PlaneRowBoundsCheck(c, y);
     return PlaneRow(c, y);
   }
 
@@ -383,7 +384,8 @@ class Image3 {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
     if (c >= kNumPlanes || y >= ysize()) {
-      JXL_ABORT("PlaneRow(%zu, %zu) >= %zu\n", c, y, ysize());
+      JXL_ABORT("PlaneRow(%zu, %zu) in (%zu x %zu) image\n", c, y, xsize(),
+                ysize());
     }
 #endif
   }

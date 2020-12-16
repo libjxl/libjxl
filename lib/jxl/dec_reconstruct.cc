@@ -14,7 +14,7 @@
 
 #include "lib/jxl/dec_reconstruct.h"
 
-#include <mutex>
+#include <atomic>
 #include <utility>
 
 #include "lib/jxl/filters.h"
@@ -42,33 +42,32 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-// TODO(deymo): Rename LocalApplyImageFeaturesRow to ApplyImageFeaturesRow.
-Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
-                                  const Rect& in_rect,
-                                  PassesDecoderState* dec_state, ssize_t y,
-                                  size_t thread, AuxOut* /*aux_out*/) {
+Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                             PassesDecoderState* dec_state, ssize_t y,
+                             size_t thread, AuxOut* /*aux_out*/) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
 
+  // ApplyLoopFiltersRow does a memcpy if no filters are applied.
   size_t output_y;
   bool has_output_row =
-      ApplyLoopFiltersRow(dec_state, in_rect, y, thread, idct, &output_y);
+      ApplyLoopFiltersRow(dec_state, rect, y, thread, idct, &output_y);
   if (!has_output_row) return true;
 
-  const Rect rect(in_rect.x0(), in_rect.y0() + output_y, in_rect.xsize(), 1);
+  const Rect row_rect(rect.x0(), rect.y0() + output_y, rect.xsize(), 1);
 
   // At this point, `idct:rect` holds the decoded pixels, independently of epf
   // or gaborish having been applied.
 
   // TODO(veluca): Consider collapsing/inlining some of the following loops.
-  image_features.patches.AddTo(idct, rect, rect);
+  image_features.patches.AddTo(idct, row_rect, row_rect);
   JXL_RETURN_IF_ERROR(image_features.splines.AddTo(
-      idct, rect, rect, dec_state->shared_storage.cmap));
+      idct, row_rect, row_rect, dec_state->shared_storage.cmap));
 
   if (frame_header.flags & FrameHeader::kNoise) {
     PROFILER_ZONE("AddNoise");
-    AddNoise(image_features.noise_params, rect, dec_state->noise, rect,
+    AddNoise(image_features.noise_params, row_rect, dec_state->noise, row_rect,
              dec_state->shared_storage.cmap, idct);
   }
 
@@ -82,9 +81,9 @@ Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
       !frame_header.save_before_color_transform &&
       frame_header.upsampling == 1) {
     PROFILER_ZONE("ToXYB");
-    float* JXL_RESTRICT row0 = rect.PlaneRow(idct, 0, 0);
-    float* JXL_RESTRICT row1 = rect.PlaneRow(idct, 1, 0);
-    float* JXL_RESTRICT row2 = rect.PlaneRow(idct, 2, 0);
+    float* JXL_RESTRICT row0 = row_rect.PlaneRow(idct, 0, 0);
+    float* JXL_RESTRICT row1 = row_rect.PlaneRow(idct, 1, 0);
+    float* JXL_RESTRICT row2 = row_rect.PlaneRow(idct, 2, 0);
 
     const HWY_FULL(float) d;
 
@@ -120,15 +119,16 @@ Status LocalApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct,
   return true;
 }
 
-Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                          PassesDecoderState* dec_state, size_t thread,
-                          AuxOut* aux_out) {
+Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                         PassesDecoderState* dec_state, size_t thread,
+                         AuxOut* aux_out) {
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
+  JXL_DASSERT(dec_state->decoded_padding >= kMaxFilterBorder);
 
   for (ssize_t y = -lf.PaddingRows();
        y < static_cast<ssize_t>(lf.PaddingRows() + rect.ysize()); y++) {
     JXL_RETURN_IF_ERROR(
-        LocalApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out));
+        ApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out));
   }
   return true;
 }
@@ -141,20 +141,12 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 
-HWY_EXPORT(LocalApplyImageFeaturesRow);
-Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
-                             PassesDecoderState* dec_state, ssize_t y,
-                             size_t thread, AuxOut* aux_out) {
-  return HWY_DYNAMIC_DISPATCH(LocalApplyImageFeaturesRow)(
-      idct, in_rect, dec_state, y, thread, aux_out);
-}
-
-HWY_EXPORT(ApplyImageFeatures);
-Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                          PassesDecoderState* dec_state, size_t thread,
-                          AuxOut* aux_out) {
-  return HWY_DYNAMIC_DISPATCH(ApplyImageFeatures)(idct, rect, dec_state, thread,
-                                                  aux_out);
+HWY_EXPORT(FinalizeImageRect);
+Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                         PassesDecoderState* dec_state, size_t thread,
+                         AuxOut* aux_out) {
+  return HWY_DYNAMIC_DISPATCH(FinalizeImageRect)(idct, rect, dec_state, thread,
+                                                 aux_out);
 }
 
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
@@ -162,19 +154,17 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                              AuxOut* aux_out) {
   std::vector<Rect> rects_to_process;
 
-  // We need to copy `lf` for now because we might rescale the weights if
-  // running EPF on a non-XYB image.
-  // TODO(veluca): remove this copy if we no longer need the rescaling.
-  LoopFilter lf = dec_state->shared->frame_header.loop_filter;
+  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
+  const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
   if ((lf.epf_iters > 0 || lf.gab) && frame_header.chroma_subsampling.Is444() &&
       frame_header.encoding != FrameEncoding::kModular &&
       !dec_state->has_partial_ac_groups) {
-    size_t xsize = dec_state->shared->frame_dim.xsize_padded;
-    size_t ysize = dec_state->shared->frame_dim.ysize_padded;
-    size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;
-    size_t ysize_groups = dec_state->shared->frame_dim.ysize_groups;
+    size_t xsize = frame_dim.xsize_padded;
+    size_t ysize = frame_dim.ysize_padded;
+    size_t xsize_groups = frame_dim.xsize_groups;
+    size_t ysize_groups = frame_dim.ysize_groups;
     size_t padx = lf.PaddingCols();
     size_t pady = lf.PaddingRows();
     // For every gap between groups, vertically, enqueue bottom gap with next
@@ -218,13 +208,15 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   // ApplyImageFeatures after.
   if (!frame_header.chroma_subsampling.Is444()) {
     for (size_t c = 0; c < 3; c++) {
-      ImageF& plane = const_cast<ImageF&>(idct->Plane(c));
+      ImageF& plane = const_cast<ImageF&>(dec_state->decoded.Plane(c));
       plane.ShrinkTo(
-          idct->xsize() >> frame_header.chroma_subsampling.HShift(c),
-          idct->ysize() >> frame_header.chroma_subsampling.VShift(c));
+          (frame_dim.xsize_padded >>
+           frame_header.chroma_subsampling.HShift(c)) +
+              2 * dec_state->decoded_padding,
+          frame_dim.ysize_padded >> frame_header.chroma_subsampling.VShift(c));
       for (size_t i = 0; i < frame_header.chroma_subsampling.HShift(c); i++) {
         plane.InitializePaddingForUnalignedAccesses();
-        plane = UpsampleH2(plane, pool);
+        plane = UpsampleH2(plane, dec_state->decoded_padding, pool);
       }
       for (size_t i = 0; i < frame_header.chroma_subsampling.VShift(c); i++) {
         plane.InitializePaddingForUnalignedAccesses();
@@ -232,30 +224,25 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       }
     }
   }
-  // In modular mode, image features have not been applied yet.
+  // ApplyImageFeatures was not yet run.
   if (frame_header.encoding == FrameEncoding::kModular ||
       !frame_header.chroma_subsampling.Is444() ||
       dec_state->has_partial_ac_groups) {
-    if ((lf.gab || lf.epf_iters > 0) &&
-        frame_header.encoding == FrameEncoding::kModular) {
-      idct->ShrinkTo(dec_state->shared->frame_dim.xsize,
-                     dec_state->shared->frame_dim.ysize);
-      dec_state->decoded = PadImageMirror(*idct, kMaxFilterPadding, 0);
+    // Pad the image if needed.
+    if (lf.PaddingCols() != 0) {
+      PadRectMirrorInPlace(
+          &dec_state->decoded,
+          Rect(0, 0, frame_dim.xsize_padded, frame_dim.ysize_padded),
+          frame_dim.xsize_padded, lf.PaddingCols(), dec_state->decoded_padding);
     }
     if (lf.epf_iters > 0 && frame_header.encoding == FrameEncoding::kModular) {
       FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
                 &dec_state->filter_weights.sigma);
-      // TODO(veluca): remove this once RGB is in 0-1 range too.
-      if (frame_header.color_transform != ColorTransform::kXYB) {
-        for (size_t i = 0; i < 3; i++) {
-          lf.epf_channel_scale[i] /= 255.0f;
-        }
-      }
     }
     for (size_t y = 0; y < idct->ysize(); y += kGroupDim) {
       for (size_t x = 0; x < idct->xsize(); x += kGroupDim) {
-        rects_to_process.emplace_back(x, y, kGroupDim, kGroupDim, idct->xsize(),
-                                      idct->ysize());
+        rects_to_process.emplace_back(x, y, kGroupDim, kGroupDim,
+                                      frame_dim.xsize, frame_dim.ysize);
       }
     }
   }
@@ -264,12 +251,10 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     return true;
   };
 
-  bool apply_features_ok = true;
-  std::mutex apply_features_ok_mutex;
+  std::atomic<bool> apply_features_ok{true};
   auto run_apply_features = [&](size_t rect_id, size_t thread) {
-    if (!ApplyImageFeatures(idct, rects_to_process[rect_id], dec_state, thread,
-                            aux_out)) {
-      std::unique_lock<std::mutex> lock(apply_features_ok_mutex);
+    if (!FinalizeImageRect(idct, rects_to_process[rect_id], dec_state, thread,
+                           aux_out)) {
       apply_features_ok = false;
     }
   };
@@ -277,7 +262,9 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   RunOnPool(pool, 0, rects_to_process.size(), allocate_storage,
             run_apply_features, "ApplyFeatures");
 
-  JXL_RETURN_IF_ERROR(apply_features_ok);
+  if (!apply_features_ok) {
+    return JXL_FAILURE("FinalizeImageRect failed");
+  }
 
   if (frame_header.color_transform == ColorTransform::kYCbCr &&
       !frame_header.save_before_color_transform) {
@@ -287,8 +274,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
                &idct->Plane(1), &idct->Plane(2), pool);
   }  // otherwise no color transform needed
 
-  idct->ShrinkTo(dec_state->shared->frame_dim.xsize,
-                 dec_state->shared->frame_dim.ysize);
+  idct->ShrinkTo(frame_dim.xsize, frame_dim.ysize);
   // TODO(veluca): consider making upsampling happen per-line.
   Upsample(idct, frame_header.upsampling,
            frame_header.nonserialized_metadata->transform_data);
@@ -300,8 +286,8 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     OpsinToLinearInplace(idct, pool, opsin_params);
   }
 
-  const size_t xsize = dec_state->shared->frame_dim.xsize_upsampled;
-  const size_t ysize = dec_state->shared->frame_dim.ysize_upsampled;
+  const size_t xsize = frame_dim.xsize_upsampled;
+  const size_t ysize = frame_dim.ysize_upsampled;
 
   idct->ShrinkTo(xsize, ysize);
 

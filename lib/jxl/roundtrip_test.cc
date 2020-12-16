@@ -86,10 +86,6 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
       /*has_alpha=*/pixel_format.num_channels == 2 ||
           pixel_format.num_channels == 4,
       /*alpha_is_premultiplied=*/false,
-      /*bits_per_alpha=*/pixel_format.num_channels == 2 ||
-              pixel_format.num_channels == 4
-          ? (bitdepth == 32 ? 16 : bitdepth)
-          : 0,
       /*bitdepth=*/bitdepth,
       /*big_endian=*/!IsLittleEndian(pixel_format.endianness),
       /*flipped_y=*/false, /*pool=*/nullptr,
@@ -184,7 +180,8 @@ std::vector<uint8_t> GetTestImage(const size_t xsize, const size_t ysize,
 // original pixels.
 template <typename T>
 void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
-                                const JxlPixelFormat& pixel_format) {
+                                const JxlPixelFormat& pixel_format,
+                                const bool lossless) {
   const std::vector<uint8_t> original_bytes =
       GetTestImage<T>(xsize, ysize, pixel_format);
   jxl::CodecInOut original_io =
@@ -194,9 +191,11 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
   EXPECT_NE(nullptr, enc);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetDimensions(enc, xsize, ysize));
+  JxlEncoderOptions* opts = JxlEncoderOptionsCreate(enc, nullptr);
+  JxlEncoderOptionsSetLossless(opts, lossless);
   EXPECT_EQ(
       JXL_ENC_SUCCESS,
-      JxlEncoderAddImageFrame(enc, &pixel_format, (void*)original_bytes.data(),
+      JxlEncoderAddImageFrame(opts, &pixel_format, (void*)original_bytes.data(),
                               original_bytes.size()));
   JxlEncoderCloseInput(enc);
 
@@ -259,31 +258,42 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
   jxl::ButteraugliParams ba;
   float butteraugli_score = ButteraugliDistance(original_io, decoded_io, ba,
                                                 /*distmap=*/nullptr, nullptr);
-  EXPECT_LE(butteraugli_score, 2.0f);
+  if (lossless) {
+    EXPECT_LE(butteraugli_score, 0.0f);
+  } else {
+    EXPECT_LE(butteraugli_score, 2.0f);
+  }
 }
 
 }  // namespace
 
 TEST(RoundtripTest, FloatFrameRoundtripTest) {
+  // TODO(zond): Add a lossless test here as well.
   for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
     JxlPixelFormat pixel_format =
         JxlPixelFormat{num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-    VerifyRoundtripCompression<float>(63, 129, pixel_format);
+    VerifyRoundtripCompression<float>(63, 129, pixel_format, false);
   }
 }
 
 TEST(RoundtripTest, Uint16FrameRoundtripTest) {
-  for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
-    JxlPixelFormat pixel_format =
-        JxlPixelFormat{num_channels, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
-    VerifyRoundtripCompression<uint16_t>(63, 129, pixel_format);
+  for (int lossless = 0; lossless < 2; lossless++) {
+    for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
+      JxlPixelFormat pixel_format =
+          JxlPixelFormat{num_channels, JXL_TYPE_UINT16, JXL_NATIVE_ENDIAN, 0};
+      VerifyRoundtripCompression<uint16_t>(63, 129, pixel_format,
+                                           (bool)lossless);
+    }
   }
 }
 
 TEST(RoundtripTest, Uint8FrameRoundtripTest) {
-  for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
-    JxlPixelFormat pixel_format =
-        JxlPixelFormat{num_channels, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
-    VerifyRoundtripCompression<uint8_t>(63, 129, pixel_format);
+  for (int lossless = 0; lossless < 2; lossless++) {
+    for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
+      JxlPixelFormat pixel_format =
+          JxlPixelFormat{num_channels, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+      VerifyRoundtripCompression<uint8_t>(63, 129, pixel_format,
+                                          (bool)lossless);
+    }
   }
 }

@@ -34,6 +34,8 @@
 
 namespace jxl {
 
+static constexpr float kDesiredRenderingDistance = 1.f;
+
 struct Spline {
   struct Point {
     float x, y;

@@ -177,7 +177,8 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
   }
 
   if (JXL_ENC_SUCCESS !=
-      JxlEncoderAddImageFrame(enc, &pixel_format, (void*)pixels.data(),
+      JxlEncoderAddImageFrame(JxlEncoderOptionsCreate(enc, nullptr),
+                              &pixel_format, (void*)pixels.data(),
                               sizeof(float) * pixels.size())) {
     fprintf(stderr, "JxlEncoderAddImageFrame failed\n");
     JxlThreadParallelRunnerDestroy(runner);

@@ -53,7 +53,7 @@ struct Histogram {
   float PopulationCost() const {
     return ANSPopulationCost(data_.data(), data_.size());
   }
-  double ShannonEntropy() const;
+  float ShannonEntropy() const;
 
   std::vector<ANSHistBin> data_;
   size_t total_count_;

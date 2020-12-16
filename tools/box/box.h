@@ -71,14 +71,24 @@ struct JpegXlContainer {
   // TODO(lode): That means it first has 4 bytes exif_tiff_header_offset,
   // followed by the payload (EXIF and TIFF) in the next bytes. Offer the offset
   // adn payload as separate fields in the API here instead?
+  // TODO(lode): support the theoretical case of multiple exif boxes
   const uint8_t* exif = nullptr;  // Not owned
   size_t exif_size = 0;
+
+  // Brotli-compressed exif metadata, if present. The data points to the brotli
+  // compressed stream, it is not decompressed here.
+  const uint8_t* exfc = nullptr;  // Not owned
+  size_t exfc_size = 0;
 
   // XML boxes for XMP. There may be multiple XML boxes.
   // Each entry points to XML location and provides size.
   // The memory is not owned.
   // TODO(lode): for C API, cannot use std::vector.
   std::vector<std::pair<const uint8_t*, size_t>> xml;
+
+  // Brotli-compressed xml boxes. The bytes are given in brotli-compressed form
+  // and are not decompressed here.
+  std::vector<std::pair<const uint8_t*, size_t>> xmlc;
 
   // JUMBF superbox data, or null if not present in the container.
   // The parsing of the nested boxes inside is not handled here.
@@ -92,6 +102,7 @@ struct JpegXlContainer {
   size_t jpeg_reconstruction_size = 0;
 
   // The main JPEG XL codestream, of which there must be 1 in the container.
+  // TODO(lode): support split codestream: there may be multiple jxlp boxes.
   const uint8_t* codestream = nullptr;  // Not owned
   size_t codestream_size = 0;
 };

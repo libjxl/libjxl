@@ -30,6 +30,7 @@
 #include "lib/extras/codec_pgx.h"
 #include "lib/extras/codec_png.h"
 #include "lib/extras/codec_pnm.h"
+#include "lib/extras/codec_psd.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {
@@ -56,6 +57,8 @@ std::string ExtensionFromCodec(Codec codec, const bool is_gray,
       return ".gif";
     case Codec::kEXR:
       return ".exr";
+    case Codec::kPSD:
+      return ".psd";
     case Codec::kUnknown:
       return std::string();
   }
@@ -86,6 +89,8 @@ Codec CodecFromExtension(const std::string& extension,
   if (extension == ".gif") return Codec::kGIF;
 
   if (extension == ".exr") return Codec::kEXR;
+
+  if (extension == ".psd") return Codec::kPSD;
 
   return Codec::kUnknown;
 }
@@ -120,6 +125,9 @@ Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
     codec = Codec::kJPG;
   }
 #endif
+  else if (DecodeImagePSD(bytes, pool, io)) {
+    codec = Codec::kPSD;
+  }
 #if JPEGXL_ENABLE_EXR
   else if (DecodeImageEXR(bytes, pool, io)) {
     codec = Codec::kEXR;
@@ -154,13 +162,6 @@ Status Encode(const CodecInOut& io, const Codec codec,
         "Output format has to be JPEG for losslessly recompressed JPEG "
         "reconstruction");
   }
-  if (io.dec_target == DecodeTarget::kLosslessFloat) {
-    // we have lossless float data in 0..1 range, which is OK for PFM/EXR
-    // but for other output codecs, we first need to normalize to 0..255
-    if (codec != Codec::kPNM && codec != Codec::kEXR) {
-      ScaleImage(255.f, io.Main().color());
-    }
-  }
 
   switch (codec) {
     case Codec::kPNG:
@@ -181,6 +182,8 @@ Status Encode(const CodecInOut& io, const Codec codec,
       return EncodeImagePGX(&io, c_desired, bits_per_sample, pool, bytes);
     case Codec::kGIF:
       return JXL_FAILURE("Encoding to GIF is not implemented");
+    case Codec::kPSD:
+      return EncodeImagePSD(&io, c_desired, bits_per_sample, pool, bytes);
     case Codec::kEXR:
 #if JPEGXL_ENABLE_EXR
       return EncodeImageEXR(&io, c_desired, pool, bytes);

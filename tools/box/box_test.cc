@@ -47,6 +47,7 @@ TEST(BoxTest, BoxTest) {
   container.exif_size = exif.size();
   container.xml.emplace_back(xml0.data(), xml0.size());
   container.xml.emplace_back(xml1.data(), xml1.size());
+  container.xmlc.emplace_back(xml1.data(), xml1.size());
   container.jumb = jumb.data();
   container.jumb_size = jumb.size();
   container.codestream = codestream.data();
@@ -70,6 +71,12 @@ TEST(BoxTest, BoxTest) {
     EXPECT_EQ(xml1.size(), container2.xml[1].second);
     EXPECT_EQ(0, memcmp(xml1.data(), container2.xml[1].first,
                         container2.xml[1].second));
+  }
+  EXPECT_EQ(1, container2.xmlc.size());
+  if (container2.xmlc.size() == 1) {
+    EXPECT_EQ(xml1.size(), container2.xmlc[0].second);
+    EXPECT_EQ(0, memcmp(xml1.data(), container2.xmlc[0].first,
+                        container2.xmlc[0].second));
   }
   EXPECT_EQ(jumb.size(), container2.jumb_size);
   EXPECT_EQ(0, memcmp(jumb.data(), container2.jumb, container2.jumb_size));

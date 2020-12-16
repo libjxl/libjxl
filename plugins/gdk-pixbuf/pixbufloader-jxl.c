@@ -16,11 +16,9 @@
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #undef GDK_PIXBUF_ENABLE_BACKEND
 
-#include "c_interop.h"
+#include "jxl/decode.h"
 
-static void DestroyPixels(guchar *pixels, gpointer data) {
-  JxlFreePixels(pixels);
-}
+static void DestroyPixels(guchar *pixels, gpointer data) { free(pixels); }
 
 typedef struct {
   GdkPixbufModuleSizeFunc size_func;
@@ -35,6 +33,85 @@ typedef struct {
   size_t increment_buffer_size;
 
 } JxlContext;
+
+uint8_t *JxlMemoryToPixels(const uint8_t *next_in, size_t size, size_t *stride,
+                           size_t *xsize, size_t *ysize, int *has_alpha) {
+  JxlDecoder *dec = JxlDecoderCreate(NULL);
+  *has_alpha = 1;
+  uint8_t *pixels = NULL;
+  if (!dec) {
+    fprintf(stderr, "JxlDecoderCreate failed\n");
+    return 0;
+  }
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE)) {
+    fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
+    JxlDecoderDestroy(dec);
+    return 0;
+  }
+
+  JxlBasicInfo info;
+  int success = 0;
+  JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+
+  for (;;) {
+    JxlDecoderStatus status =
+        JxlDecoderProcessInput(dec, (const uint8_t **)&next_in, &size);
+
+    if (status == JXL_DEC_ERROR) {
+      fprintf(stderr, "Decoder error\n");
+      break;
+    } else if (status == JXL_DEC_NEED_MORE_INPUT) {
+      fprintf(stderr, "Error, already provided all input\n");
+      break;
+    } else if (status == JXL_DEC_BASIC_INFO) {
+      if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) {
+        fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
+        break;
+      }
+      *xsize = info.xsize;
+      *ysize = info.ysize;
+      *stride = info.xsize * 4;
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      size_t buffer_size;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderImageOutBufferSize(dec, &format, &buffer_size)) {
+        fprintf(stderr, "JxlDecoderImageOutBufferSize failed\n");
+        break;
+      }
+      if (buffer_size != *stride * *ysize) {
+        fprintf(stderr, "Invalid out buffer size %zu %zu\n", buffer_size,
+                *stride * *ysize);
+        break;
+      }
+      size_t pixels_buffer_size = buffer_size * sizeof(uint8_t);
+      pixels = malloc(pixels_buffer_size);
+      void *pixels_buffer = (void *)pixels;
+      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec, &format,
+                                                         pixels_buffer,
+                                                         pixels_buffer_size)) {
+        fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
+        break;
+      }
+    } else if (status == JXL_DEC_FULL_IMAGE) {
+      // This means the decoder has decoded all pixels into the buffer.
+      success = 1;
+      break;
+    } else if (status == JXL_DEC_SUCCESS) {
+      fprintf(stderr, "Decoding finished before receiving pixel data\n");
+      break;
+    } else {
+      fprintf(stderr, "Unexpected decoder status: %d\n", status);
+      break;
+    }
+  }
+  if (success){
+    return pixels;
+  } else {
+    free(pixels);
+    return NULL;
+  }
+}
 
 static GdkPixbuf *gdk_pixbuf__jxl_image_load(FILE *f, GError **error) {
   size_t data_size;
@@ -82,8 +159,7 @@ static GdkPixbuf *gdk_pixbuf__jxl_image_load(FILE *f, GError **error) {
   if (!pixbuf) {
     g_set_error(error, GDK_PIXBUF_ERROR, GDK_PIXBUF_ERROR_FAILED,
                 "Failed to create output pixbuf");
-    JxlFreePixels(decoded);
-
+    free(decoded);
     return NULL;
   }
 

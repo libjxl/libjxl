@@ -29,9 +29,8 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/ac_context.h"
-#include "lib/jxl/base/fast_log.h"
 #include "lib/jxl/base/profiler.h"
-#include "lib/jxl/fast_log-inl.h"
+#include "lib/jxl/fast_math-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -40,7 +39,7 @@ template <class V>
 V Entropy(V count, V inv_total) {
   const HWY_CAPPED(float, Histogram::kRounding) d;
   const auto zero = Set(d, 0.0f);
-  return zero - count * FastLog2f_18bits(d, inv_total * count);
+  return zero - count * FastLog2f(d, inv_total * count);
 }
 
 void HistogramEntropy(const Histogram& a) {
@@ -139,35 +138,11 @@ HWY_AFTER_NAMESPACE();
 #if HWY_ONCE
 namespace jxl {
 HWY_EXPORT(FastClusterHistograms);  // Local function
+HWY_EXPORT(HistogramEntropy);       // Local function
 
-namespace {
-inline double CrossEntropy(const ANSHistBin* counts, const size_t counts_len,
-                           const ANSHistBin* codes, const size_t codes_len) {
-  double sum = 0.0f;
-  uint32_t total_count = 0;
-  uint32_t total_codes = 0;
-  for (size_t i = 0; i < codes_len; ++i) {
-    if (codes[i] > 0) {
-      if (i < counts_len && counts[i] > 0) {
-        sum -= counts[i] * FastLog2f(codes[i]);
-        total_count += counts[i];
-      }
-      total_codes += codes[i];
-    }
-  }
-  if (total_codes > 0) {
-    sum += total_count * FastLog2f(total_codes);
-  }
-  return sum;
-}
-
-inline double ShannonEntropy(const ANSHistBin* data, const size_t data_size) {
-  return CrossEntropy(data, data_size, data, data_size);
-}
-}  // namespace
-
-double Histogram::ShannonEntropy() const {
-  return jxl::ShannonEntropy(data_.data(), data_.size());
+float Histogram::ShannonEntropy() const {
+  HWY_DYNAMIC_DISPATCH(HistogramEntropy)(*this);
+  return entropy_;
 }
 
 namespace {

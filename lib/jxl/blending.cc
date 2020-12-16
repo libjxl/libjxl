@@ -96,12 +96,10 @@ Status DoBlending(const PassesSharedState& state, ImageBundle* foreground) {
   } else if (info.mode == BlendMode::kBlend
              // blend without alpha is just replace
              && foreground->HasAlpha()) {
-    size_t alpha_bits = foreground->metadata()->GetAlphaBits();
     bool is_premultiplied = foreground->AlphaIsPremultiplied();
     for (size_t y = 0; y < cropbox.ysize(); y++) {
       // Foreground.
-      const uint16_t* JXL_RESTRICT a1 =
-          overlap.ConstRow(*foreground->alpha(), y);
+      const float* JXL_RESTRICT a1 = overlap.ConstRow(*foreground->alpha(), y);
       const float* JXL_RESTRICT r1 =
           overlap.ConstRow(foreground->color()->Plane(0), y);
       const float* JXL_RESTRICT g1 =
@@ -109,17 +107,13 @@ Status DoBlending(const PassesSharedState& state, ImageBundle* foreground) {
       const float* JXL_RESTRICT b1 =
           overlap.ConstRow(foreground->color()->Plane(2), y);
       // Background & destination.
-      uint16_t* JXL_RESTRICT a = cropbox.Row(dest.alpha(), y);
+      float* JXL_RESTRICT a = cropbox.Row(dest.alpha(), y);
       float* JXL_RESTRICT r = cropbox.Row(&dest.color()->Plane(0), y);
       float* JXL_RESTRICT g = cropbox.Row(&dest.color()->Plane(1), y);
       float* JXL_RESTRICT b = cropbox.Row(&dest.color()->Plane(2), y);
-      PerformAlphaBlending(
-          /*bg=*/
-          {r, g, b, a, alpha_bits, is_premultiplied},
-          /*fg=*/
-          {r1, g1, b1, a1, alpha_bits, is_premultiplied},
-          /*out=*/
-          {r, g, b, a, alpha_bits, is_premultiplied}, cropbox.xsize());
+      PerformAlphaBlending(/*bg=*/{r, g, b, a}, /*fg=*/{r1, g1, b1, a1},
+                           /*out=*/{r, g, b, a}, cropbox.xsize(),
+                           is_premultiplied);
     }
   } else if (info.mode == BlendMode::kAlphaWeightedAdd) {
     return JXL_FAILURE("BlendMode::kAlphaWeightedAdd not yet implemented");

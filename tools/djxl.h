@@ -64,9 +64,6 @@ struct DecompressArgs {
   size_t bits_per_sample = 0;
   std::string color_space;  // description
 
-  bool brunsli_fix_dc_staircase = false;
-  bool brunsli_gaborish = false;
-
   jxl::DecompressParams params;
 
   // If true, print the effective amount of bytes read from the bitstream.

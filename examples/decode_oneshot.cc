@@ -62,8 +62,6 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
 
   JxlBasicInfo info;
 
-  bool success = false;
-
   JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
 
   for (;;) {
@@ -72,27 +70,45 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
 
     if (status == JXL_DEC_ERROR) {
       fprintf(stderr, "Decoder error\n");
-      break;
+      return false;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
       fprintf(stderr, "Error, already provided all input\n");
-      break;
+      return false;
     } else if (status == JXL_DEC_BASIC_INFO) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec.get(), &info)) {
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
-        break;
+        return false;
       }
       *xsize = info.xsize;
       *ysize = info.ysize;
+    } else if (status == JXL_DEC_COLOR_ENCODING) {
+      // Get the ICC color profile of the pixel data
+      size_t icc_size;
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetICCProfileSize(
+              dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
+        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
+        return false;
+      }
+      icc_profile->resize(icc_size);
+      if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
+                                 dec.get(), &format,
+                                 JXL_COLOR_PROFILE_TARGET_DATA,
+                                 icc_profile->data(), icc_profile->size())) {
+        fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
+        return false;
+      }
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       size_t buffer_size;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size)) {
         fprintf(stderr, "JxlDecoderImageOutBufferSize failed\n");
-        break;
+        return false;
       }
       if (buffer_size != *xsize * *ysize * 16) {
         fprintf(stderr, "Invalid out buffer size %zu %zu\n", buffer_size,
                 *xsize * *ysize * 16);
-        break;
+        return false;
       }
       pixels->resize(*xsize * *ysize * 4);
       void* pixels_buffer = (void*)pixels->data();
@@ -101,40 +117,19 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
                                                          pixels_buffer,
                                                          pixels_buffer_size)) {
         fprintf(stderr, "JxlDecoderSetImageOutBuffer failed\n");
-        break;
-      }
-
-    } else if (status == JXL_DEC_COLOR_ENCODING) {
-      // Get the ICC color profile of the pixel data
-      size_t icc_size;
-      if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetICCProfileSize(
-              dec.get(), &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size)) {
-        fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
-        break;
-      }
-      icc_profile->resize(icc_size);
-      if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                 dec.get(), &format,
-                                 JXL_COLOR_PROFILE_TARGET_DATA,
-                                 icc_profile->data(), icc_profile->size())) {
-        fprintf(stderr, "JxlDecoderGetColorAsICCProfile failed\n");
-        break;
+        return false;
       }
     } else if (status == JXL_DEC_FULL_IMAGE) {
-      // This means the decoder has decoded all pixels into the buffer.
-      success = true;
-      break;
+      // Nothing to do. Do not yet return. If the image is an animation, more
+      // full frames may be decoded. This example only keeps the last one.
     } else if (status == JXL_DEC_SUCCESS) {
-      fprintf(stderr, "Decoding finished before receiving pixel data\n");
-      break;
+      // All decoding successfully finished.
+      return true;
     } else {
       fprintf(stderr, "Unknown decoder status\n");
-      break;
+      return false;
     }
   }
-
-  return success;
 }
 
 /** Writes to .pfm file (Portable FloatMap). Gimp, tev viewer and ImageMagick

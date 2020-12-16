@@ -99,6 +99,7 @@ void info_fn(png_structp png_ptr, png_infop info_ptr) {
   png_set_expand(png_ptr);
   png_set_strip_16(png_ptr);
   png_set_gray_to_rgb(png_ptr);
+  png_set_palette_to_rgb(png_ptr);
   png_set_add_alpha(png_ptr, 0xff, PNG_FILLER_AFTER);
   (void)png_set_interlace_handling(png_ptr);
   png_read_update_info(png_ptr, info_ptr);
@@ -308,12 +309,12 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
               io->dec_pixels += w0 * h0;
 
               Image3F sub_frame(w0, h0);
-              ImageU sub_frame_alpha(w0, h0);
+              ImageF sub_frame_alpha(w0, h0);
               for (size_t y = 0; y < h0; ++y) {
                 float* const JXL_RESTRICT row_r = sub_frame.PlaneRow(0, y);
                 float* const JXL_RESTRICT row_g = sub_frame.PlaneRow(1, y);
                 float* const JXL_RESTRICT row_b = sub_frame.PlaneRow(2, y);
-                uint16_t* const JXL_RESTRICT row_alpha = sub_frame_alpha.Row(y);
+                float* const JXL_RESTRICT row_alpha = sub_frame_alpha.Row(y);
                 uint8_t* const f = frameRaw.rows[y];
                 for (size_t x = 0; x < w0; ++x) {
                   if (f[4 * x + 3] == 0) {
@@ -323,10 +324,10 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
                     row_b[x] = 0;
                     continue;
                   }
-                  row_r[x] = f[4 * x + 0];
-                  row_g[x] = f[4 * x + 1];
-                  row_b[x] = f[4 * x + 2];
-                  row_alpha[x] = f[4 * x + 3];
+                  row_r[x] = f[4 * x + 0] * (1.f / 255);
+                  row_g[x] = f[4 * x + 1] * (1.f / 255);
+                  row_b[x] = f[4 * x + 2] * (1.f / 255);
+                  row_alpha[x] = f[4 * x + 3] * (1.f / 255);
                 }
               }
               bundle.SetFromImage(std::move(sub_frame), ColorEncoding::SRGB());

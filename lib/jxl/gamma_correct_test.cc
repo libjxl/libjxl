@@ -27,20 +27,19 @@ TEST(GammaCorrectTest, TestLinearToSrgbEdgeCases) {
   EXPECT_NEAR(0, LinearToSrgb8Direct(1E-6f), 2E-5);
   EXPECT_EQ(0, LinearToSrgb8Direct(-1E-6f));
   EXPECT_EQ(0, LinearToSrgb8Direct(-1E6));
-  EXPECT_NEAR(255, LinearToSrgb8Direct(255 - 1E-6f), 1E-5);
-  EXPECT_EQ(255, LinearToSrgb8Direct(255 + 1E-6f));
-  EXPECT_EQ(255, LinearToSrgb8Direct(1E6));
+  EXPECT_NEAR(1, LinearToSrgb8Direct(1 - 1E-6f), 1E-5);
+  EXPECT_EQ(1, LinearToSrgb8Direct(1 + 1E-6f));
+  EXPECT_EQ(1, LinearToSrgb8Direct(1E6));
 }
 
 TEST(GammaCorrectTest, TestRoundTrip) {
-  double max_err = 0.0;
   // NOLINTNEXTLINE(clang-analyzer-security.FloatLoopCounter)
-  for (double linear = 0.0; linear <= 255.0; linear += 1E-4) {
+  for (double linear = 0.0; linear <= 1.0; linear += 1E-7) {
     const double srgb = LinearToSrgb8Direct(linear);
     const double linear2 = Srgb8ToLinearDirect(srgb);
-    max_err = std::max(max_err, std::abs(linear - linear2));
+    ASSERT_LT(std::abs(linear - linear2), 2E-13)
+        << "linear = " << linear << ", linear2 = " << linear2;
   }
-  EXPECT_LT(max_err, 2E-13);
 }
 
 }  // namespace

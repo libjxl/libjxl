@@ -34,8 +34,10 @@ namespace jxl {
 // Must be the first frame in the file. Does nothing if there is no preview
 // frame present according to the metadata.
 Status DecodePreview(const DecompressParams& dparams,
+                     const CodecMetadata& metadata,
                      BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
-                     ThreadPool* pool, CodecInOut* JXL_RESTRICT io);
+                     ThreadPool* pool, ImageBundle* JXL_RESTRICT preview,
+                     uint64_t* dec_pixels);
 
 // Implementation detail: currently decodes to linear sRGB. The contract is:
 // `io` appears 'identical' (modulo compression artifacts) to the encoder input

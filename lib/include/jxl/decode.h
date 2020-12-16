@@ -120,7 +120,9 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
 
 /**
  * Return value for JxlDecoderProcessInput.
- * The values above 64 are optional informal events that can be subscribed to.
+ * The values above 0x40 are optional informal events that can be subscribed to,
+ * they are never returned if they have not been registered with
+ * JxlDecoderSubscribeEvents.
  */
 typedef enum {
   /** Function call finished successfully, or decoding is finished and there is
@@ -157,7 +159,7 @@ typedef enum {
   JXL_DEC_NEED_DC_OUT_BUFFER = 4,
 
   /** The decoder requests and output buffer to store the full resolution image,
-   * which can be set with JxlDecoderSetImageOutBuffer.This event re-occurs for
+   * which can be set with JxlDecoderSetImageOutBuffer. This event re-occurs for
    * new frames if there are multiple animation frames.
    */
   JXL_DEC_NEED_IMAGE_OUT_BUFFER = 5,
@@ -183,22 +185,24 @@ typedef enum {
   /** Informative event by JxlDecoderProcessInput: Preview image, a small
    * frame, decoded. This event can only happen if the image has a preview
    * frame encoded. This event occurs max once for the codestream and always
-   * later than JXL_DEC_COLOR_ENCODING and before JXL_DEC_ANIMATION_FRAME.
+   * later than JXL_DEC_COLOR_ENCODING and before JXL_DEC_FRAME.
    * This event is different than JXL_DEC_PREVIEW_HEADER because the latter only
    * outputs the dimensions of the preview image.
    */
   JXL_DEC_PREVIEW_IMAGE = 0x200,
 
-  /** Informative event by JxlDecoderProcessInput: Beginning of an animation
-   * frame. This event is only given if have_animation in JxlBasicInfo is
-   * JXL_TRUE. This event is then given for all displayed frames.
-   * This event occurs max once per animation frame, always later than
-   * JXL_DEC_COLOR_ENCODING, and always earlier than any pixel data.
-   * While JPEG XL supports encoding a single frame as the composition of
-   * multiple internal sub-frames also called frames, this event is not
-   * indicated for the internal frames.
+  /** Informative event by JxlDecoderProcessInput: Beginning of a frame.
+   * JxlDecoderGetFrameHeader can be used at this point. A note on frames:
+   * a JPEG XL image can have internal frames that are not intended to be
+   * displayed (e.g. used for compositing a final frame), but this only returns
+   * displayed frames. A displayed frame either has an animation duration or is
+   * the only or last frame in the image. This event occurs max once per
+   * displayed frame, always later than JXL_DEC_COLOR_ENCODING, and always
+   * earlier than any pixel data. While JPEG XL supports encoding a single frame
+   * as the composition of multiple internal sub-frames also called frames, this
+   * event is not indicated for the internal frames.
    */
-  JXL_DEC_ANIMATION_FRAME = 0x400,
+  JXL_DEC_FRAME = 0x400,
 
   /** Informative event by JxlDecoderProcessInput: DC image, 8x8 sub-sampled
    * frame, decoded. It is not guaranteed that the decoder will always return DC
@@ -538,9 +542,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size);
 
 /**
- * Outputs the information from an animation frame, such as duration. This
- * function can be called when JXL_DEC_ANIMATION_FRAME occurred for the
- * current frame.
+ * Outputs the information from the frame, such as duration when have_animagion.
+ * This function can be called when JXL_DEC_FRAME occurred for the current
+ * frame, even when have_animation in the JxlBasicInfo is JXL_FALSE.
  *
  * @param dec decoder object
  * @param header struct to copy the information into, or NULL to only check
@@ -549,23 +553,24 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
  *    JXL_DEC_NEED_MORE_INPUT if not yet available, JXL_DEC_ERROR in case
  *    of other error conditions.
  */
-JXL_EXPORT JxlDecoderStatus JxlDecoderGetAnimationFrameHeader(
-    const JxlDecoder* dec, JxlAnimationFrameHeader* header);
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
+                                                     JxlFrameHeader* header);
 
 /**
  * Outputs name for the current frame. The buffer
  * for name must have at least name_length + 1 bytes allocated, gotten from
- * the associated JxlAnimationFrameHeader.
+ * the associated JxlFrameHeader.
  *
  * @param dec decoder object
  * @param name buffer to copy the name into
- * @param size size of the name buffer in bytes
+ * @param size size of the name buffer in bytes, includig zero termination
+ *    character, so this must be at least JxlFrameHeader.name_length + 1.
  * @return JXL_DEC_SUCCESS if the value is available,
  *    JXL_DEC_NEED_MORE_INPUT if not yet available, JXL_DEC_ERROR in case
  *    of other error conditions.
  */
-JXL_EXPORT JxlDecoderStatus
-JxlDecoderGetAnimationFrameName(const JxlDecoder* dec, char* name, size_t size);
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec,
+                                                   char* name, size_t size);
 
 /**
  * Returns the minimum size in bytes of the DC image output buffer

@@ -23,14 +23,9 @@
 
 #include <algorithm>
 #include <iterator>
-#include <limits>
 #include <numeric>
 #include <utility>
 #include <vector>
-
-// Brunsli JPEG en/decoder
-#include <brunsli/jpeg_data_reader.h>
-#include <brunsli/jpeg_data_writer.h>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/color_encoding_internal.h"
@@ -39,6 +34,8 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
+#include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 #include "lib/jxl/luminance.h"
 #if JPEGXL_ENABLE_SJPEG
 #include "sjpeg.h"
@@ -52,14 +49,14 @@ namespace jxl {
 
 namespace {
 
-constexpr float kJPEGSampleMultiplier = 1 << (BITS_IN_JSAMPLE - 8);
+constexpr float kJPEGSampleMultiplier = MAXJSAMPLE;
 constexpr unsigned char kICCSignature[12] = {
     0x49, 0x43, 0x43, 0x5F, 0x50, 0x52, 0x4F, 0x46, 0x49, 0x4C, 0x45, 0x00};
 constexpr int kICCMarker = JPEG_APP0 + 2;
 constexpr size_t kMaxBytesInMarker = 65533;
 
-constexpr float kJPEGSampleMin = std::numeric_limits<JSAMPLE>::min();
-constexpr float kJPEGSampleMax = std::numeric_limits<JSAMPLE>::max();
+constexpr float kJPEGSampleMin = 0;
+constexpr float kJPEGSampleMax = MAXJSAMPLE;
 
 bool MarkerIsICC(const jpeg_saved_marker_ptr marker) {
   return marker->marker == kICCMarker &&
@@ -205,7 +202,7 @@ bool GetMarkerPayload(const uint8_t* data, size_t size, ByteSpan* payload) {
 constexpr uint8_t kApp2 = 0xE2;
 const uint8_t kIccProfileTag[] = {'I', 'C', 'C', '_', 'P', 'R',
                                   'O', 'F', 'I', 'L', 'E', 0x00};
-Status ParseChunkedMarker(const brunsli::JPEGData& src, uint8_t marker_type,
+Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
                           const ByteSpan& tag, PaddedBytes* output) {
   output->clear();
 
@@ -267,7 +264,7 @@ Status ParseChunkedMarker(const brunsli::JPEGData& src, uint8_t marker_type,
 
   return true;
 }
-void SetColorEncodingFromJpegData(const brunsli::JPEGData& jpg,
+void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
                                   ColorEncoding* color_encoding) {
   PaddedBytes icc_profile;
   if (!ParseChunkedMarker(jpg, kApp2, ByteSpan(kIccProfileTag), &icc_profile)) {
@@ -294,10 +291,10 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     io->frames.clear();
     io->frames.reserve(1);
     io->frames.push_back(ImageBundle(&io->metadata.m));
-    io->Main().jpeg_data = make_unique<brunsli::JPEGData>();
-    brunsli::JPEGData* jpeg_data = io->Main().jpeg_data.get();
-    if (!ReadJpeg(bytes.data(), bytes.size(), brunsli::JPEG_READ_ALL,
-                  jpeg_data)) {
+    io->Main().jpeg_data = make_unique<jpeg::JPEGData>();
+    jpeg::JPEGData* jpeg_data = io->Main().jpeg_data.get();
+    if (!jpeg::ReadJpeg(bytes.data(), bytes.size(),
+                        jpeg::JpegReadMode::kReadAll, jpeg_data)) {
       return JXL_FAILURE("Error reading JPEG");
     }
     SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding);
@@ -340,7 +337,6 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   // the call to setjmp().
   ColorEncoding color_encoding;
   PaddedBytes icc;
-  Image3F coeffs;
   Image3F image;
   std::unique_ptr<JSAMPLE[]> row;
   ImageBundle bundle(&io->metadata.m);
@@ -532,7 +528,7 @@ Status EncodeWithSJpeg(const ImageBundle* ib, size_t quality,
     for (size_t x = 0; x < ib->xsize(); ++x) {
       for (const float* const row : rows) {
         rgb.push_back(static_cast<uint8_t>(
-            std::max(0.f, std::min(255.f, std::round(row[x])))));
+            std::max(0.f, std::min(255.f, std::round(255.f * row[x])))));
       }
     }
   }
@@ -563,17 +559,16 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
       bytes->append(buf, buf + len);
       return len;
     };
-    brunsli::JPEGOutput out(static_cast<brunsli::JPEGOutputHook>(write),
-                            reinterpret_cast<void*>(bytes));
-    return brunsli::WriteJpeg(*io->Main().jpeg_data, out);
+    jpeg::JPEGOutput out(static_cast<jpeg::JPEGOutputHook>(write),
+                         reinterpret_cast<void*>(bytes));
+    return jpeg::WriteJpeg(*io->Main().jpeg_data, out);
   }
 
-  ImageBundle ib_0_255 = io->Main().Copy();
   const ImageBundle* ib;
   ImageMetadata metadata = io->metadata.m;
   ImageBundle ib_store(&metadata);
-  JXL_RETURN_IF_ERROR(TransformIfNeeded(ib_0_255, io->metadata.m.color_encoding,
-                                        pool, &ib_store, &ib));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(
+      io->Main(), io->metadata.m.color_encoding, pool, &ib_store, &ib));
 
   switch (encoder) {
     case JpegEncoder::kLibJpeg:

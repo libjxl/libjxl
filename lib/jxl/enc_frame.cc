@@ -218,7 +218,7 @@ uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
     flags |= FrameHeader::kNoise;
   }
 
-  if (cparams.progressive_dc) {
+  if (cparams.progressive_dc && cparams.modular_mode == false) {
     flags |= FrameHeader::kUseDcFrame;
   }
 
@@ -273,6 +273,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
   frame_header->save_before_color_transform =
       frame_info.save_before_color_transform;
   frame_header->frame_type = frame_info.frame_type;
+  frame_header->name = ib.name;
 
   progressive_splitter.InitPasses(&frame_header->passes);
 
@@ -358,8 +359,13 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->blending_info.source = 1;
     for (size_t i = 0; i < extra_channels.size(); i++) {
       frame_header->extra_channel_blending_info[i].alpha_channel = index;
+      BlendMode default_blend = BlendMode::kBlend;
+      if (extra_channels[i].type != ExtraChannel::kBlack && i != index) {
+        // K needs to be blended, spot colors and other stuff gets added
+        default_blend = BlendMode::kAdd;
+      }
       frame_header->extra_channel_blending_info[i].mode =
-          ib.blend ? BlendMode::kBlend : BlendMode::kReplace;
+          ib.blend ? default_blend : BlendMode::kReplace;
       frame_header->extra_channel_blending_info[i].source = 1;
     }
   }
@@ -399,6 +405,73 @@ void DownsampleImage(Image3F* opsin, size_t factor) {
     }
   }
   *opsin = std::move(downsampled);
+}
+
+// Invisible (alpha = 0) pixels tend to be a mess in optimized PNGs.
+// Since they have no visual impact whatsoever, we can replace them with
+// something that compresses better and reduces artifacts near the edges. This
+// does some kind of smooth stuff that seems to work.
+// Replace invisible pixels with a weighted average of the pixel to the left,
+// the pixel to the topright, and non-invisible neighbours.
+// Produces downward-blurry smears, with in the upwards direction only a 1px
+// edge duplication but not more. It would probably be better to smear in all
+// directions. That requires an alpha-weighed convolution with a large enough
+// kernel though, which might be overkill...
+void SimplifyInvisible(Image3F* image, const ImageF& alpha) {
+  for (size_t c = 0; c < 3; ++c) {
+    for (size_t y = 0; y < image->ysize(); ++y) {
+      float* JXL_RESTRICT row = image->PlaneRow(c, y);
+      const float* JXL_RESTRICT prow =
+          (y > 0 ? image->PlaneRow(c, y - 1) : nullptr);
+      const float* JXL_RESTRICT nrow =
+          (y + 1 < image->ysize() ? image->PlaneRow(c, y + 1) : nullptr);
+      const float* JXL_RESTRICT a = alpha.Row(y);
+      const float* JXL_RESTRICT pa = (y > 0 ? alpha.Row(y - 1) : nullptr);
+      const float* JXL_RESTRICT na =
+          (y + 1 < image->ysize() ? alpha.Row(y + 1) : nullptr);
+      for (size_t x = 0; x < image->xsize(); ++x) {
+        if (a[x] == 0) {
+          float d = 0.f;
+          row[x] = 0;
+          if (x > 0) {
+            row[x] += row[x - 1];
+            d++;
+            if (a[x - 1] > 0.f) {
+              row[x] += row[x - 1];
+              d++;
+            }
+          }
+          if (x + 1 < image->xsize()) {
+            if (y > 0) {
+              row[x] += prow[x + 1];
+              d++;
+            }
+            if (a[x + 1] > 0.f) {
+              row[x] += 2.f * row[x + 1];
+              d += 2.f;
+            }
+            if (y > 0 && pa[x + 1] > 0.f) {
+              row[x] += 2.f * prow[x + 1];
+              d += 2.f;
+            }
+            if (y + 1 < image->ysize() && na[x + 1] > 0.f) {
+              row[x] += 2.f * nrow[x + 1];
+              d += 2.f;
+            }
+          }
+          if (y > 0 && pa[x] > 0.f) {
+            row[x] += 2.f * prow[x];
+            d += 2.f;
+          }
+          if (y + 1 < image->ysize() && na[x] > 0.f) {
+            row[x] += 2.f * nrow[x];
+            d += 2.f;
+          }
+          if (d > 1.f) row[x] /= d;
+        }
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -490,7 +563,7 @@ class LossyFrameEncoder {
     return true;
   }
 
-  Status ComputeJPEGTranscodingData(const brunsli::JPEGData& jpeg_data,
+  Status ComputeJPEGTranscodingData(const jpeg::JPEGData& jpeg_data,
                                     ModularFrameEncoder* modular_frame_encoder,
                                     FrameHeader* frame_header) {
     PROFILER_ZONE("ComputeJPEGTranscodingData uninstrumented");
@@ -531,7 +604,7 @@ class LossyFrameEncoder {
       const int* quant =
           jpeg_data.quant[jpeg_data.components[jpeg_c].quant_idx].values.data();
 
-      dcquantization[c] = 8.0f / quant[0];
+      dcquantization[c] = 255 * 8.0f / quant[0];
       for (size_t y = 0; y < 8; y++) {
         for (size_t x = 0; x < 8; x++) {
           // JPEG XL transposes the DCT, JPEG doesn't.
@@ -960,6 +1033,12 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       cparams.butteraugli_distance < kMinButteraugliDistance) {
     return JXL_FAILURE("Butteraugli distance is too low");
   }
+  if (cparams.butteraugli_distance > 0.9f && cparams.modular_mode == false &&
+      cparams.quality_pair.first == 100) {
+    // in case the color image is lossy, make the alpha slightly lossy too
+    cparams.quality_pair.first =
+        std::max(90.f, 99.f - 0.3f * cparams.butteraugli_distance);
+  }
 
   if (ib.IsJPEG()) {
     cparams.gaborish = Override::kOff;
@@ -1070,6 +1149,15 @@ Status EncodeFrame(const CompressParams& cparams_orig,
               // If encoding a special DC or reference frame, don't do anything:
               // input is already in XYB.
       CopyImageTo(ib.color(), &opsin);
+    }
+    if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
+        (frame_header.encoding == FrameEncoding::kVarDCT ||
+         cparams.quality_pair.first < 100)) {
+      // if lossy, simplify invisible pixels
+      SimplifyInvisible(&opsin, ib.alpha());
+      if (want_linear)
+        SimplifyInvisible(const_cast<Image3F*>(&ib_or_linear->color()),
+                          ib.alpha());
     }
     if (cparams.resampling != 1) {
       // TODO(veluca): should we do this in linear sRGB?

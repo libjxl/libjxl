@@ -50,11 +50,11 @@ using GifUniquePtr = std::unique_ptr<GifFileType, DGifCloser>;
 
 // Gif does not support partial transparency, so this considers anything non-0
 // as opaque.
-bool AllOpaque(const ImageU& alpha) {
+bool AllOpaque(const ImageF& alpha) {
   for (size_t y = 0; y < alpha.ysize(); ++y) {
-    const uint16_t* const JXL_RESTRICT row = alpha.ConstRow(y);
+    const float* const JXL_RESTRICT row = alpha.ConstRow(y);
     for (size_t x = 0; x < alpha.xsize(); ++x) {
-      if (!row[x]) {
+      if (row[x] == 0.f) {
         return false;
       }
     }
@@ -133,7 +133,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
 
   Image3F canvas(gif->SWidth, gif->SHeight);
   io->SetSize(gif->SWidth, gif->SHeight);
-  ImageU alpha(gif->SWidth, gif->SHeight);
+  ImageF alpha(gif->SWidth, gif->SHeight);
   GifColorType background_color;
   if (gif->SColorMap == nullptr) {
     background_color = {0, 0, 0};
@@ -235,12 +235,12 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
       }
     }
     Image3F frame = CopyImage(canvas);
-    ImageU frame_alpha = CopyImage(alpha);
+    ImageF frame_alpha = CopyImage(alpha);
     for (size_t y = 0, byte_index = 0; y < image_rect.ysize(); ++y) {
       float* const JXL_RESTRICT row_r = image_rect.Row(&frame.Plane(0), y);
       float* const JXL_RESTRICT row_g = image_rect.Row(&frame.Plane(1), y);
       float* const JXL_RESTRICT row_b = image_rect.Row(&frame.Plane(2), y);
-      uint16_t* const JXL_RESTRICT row_alpha = image_rect.Row(&frame_alpha, y);
+      float* const JXL_RESTRICT row_alpha = image_rect.Row(&frame_alpha, y);
       for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
         const GifByteType byte = image.RasterBits[byte_index];
         if (byte >= color_map->ColorCount) {
@@ -248,14 +248,14 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
         }
         if (byte == gcb.TransparentColor) continue;
         GifColorType color = color_map->Colors[byte];
-        row_alpha[x] = 255;
-        row_r[x] = color.Red;
-        row_g[x] = color.Green;
-        row_b[x] = color.Blue;
+        row_alpha[x] = 1.f;
+        row_r[x] = (1.f / 255) * color.Red;
+        row_g[x] = (1.f / 255) * color.Green;
+        row_b[x] = (1.f / 255) * color.Blue;
       }
     }
     Image3F sub_frame(total_rect.xsize(), total_rect.ysize());
-    ImageU sub_frame_alpha(total_rect.xsize(), total_rect.ysize());
+    ImageF sub_frame_alpha(total_rect.xsize(), total_rect.ysize());
     bool blend_alpha = false;
     if (replace) {
       CopyImageTo(total_rect, frame, &sub_frame);
@@ -265,7 +265,7 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
         float* const JXL_RESTRICT row_r = sub_frame.PlaneRow(0, y);
         float* const JXL_RESTRICT row_g = sub_frame.PlaneRow(1, y);
         float* const JXL_RESTRICT row_b = sub_frame.PlaneRow(2, y);
-        uint16_t* const JXL_RESTRICT row_alpha = sub_frame_alpha.Row(y);
+        float* const JXL_RESTRICT row_alpha = sub_frame_alpha.Row(y);
         for (size_t x = 0; x < image_rect.xsize(); ++x, ++byte_index) {
           const GifByteType byte = image.RasterBits[byte_index];
           if (byte > color_map->ColorCount) {
@@ -281,10 +281,10 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
             continue;
           }
           GifColorType color = color_map->Colors[byte];
-          row_alpha[x] = 255;
-          row_r[x] = color.Red;
-          row_g[x] = color.Green;
-          row_b[x] = color.Blue;
+          row_alpha[x] = 1.f;
+          row_r[x] = (1.f / 255) * color.Red;
+          row_g[x] = (1.f / 255) * color.Green;
+          row_b[x] = (1.f / 255) * color.Blue;
         }
       }
     }
@@ -294,8 +294,8 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
         has_alpha = true;
         io->metadata.m.SetAlphaBits(8);
         for (ImageBundle& previous_frame : io->frames) {
-          ImageU previous_alpha(previous_frame.xsize(), previous_frame.ysize());
-          FillImage<uint16_t>(255, &previous_alpha);
+          ImageF previous_alpha(previous_frame.xsize(), previous_frame.ysize());
+          FillImage(1.f, &previous_alpha);
           previous_frame.SetAlpha(std::move(previous_alpha),
                                   /*alpha_is_premultiplied=*/false);
         }
@@ -311,10 +311,13 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
         break;
 
       case DISPOSE_BACKGROUND:
-        FillPlane<float>(background_color.Red, &canvas.Plane(0), image_rect);
-        FillPlane<float>(background_color.Green, &canvas.Plane(1), image_rect);
-        FillPlane<float>(background_color.Blue, &canvas.Plane(2), image_rect);
-        FillPlane<uint16_t>(0, &alpha, image_rect);
+        FillPlane<float>((1.f / 255) * background_color.Red, &canvas.Plane(0),
+                         image_rect);
+        FillPlane<float>((1.f / 255) * background_color.Green, &canvas.Plane(1),
+                         image_rect);
+        FillPlane<float>((1.f / 255) * background_color.Blue, &canvas.Plane(2),
+                         image_rect);
+        FillPlane(0.f, &alpha, image_rect);
         previous_rect_if_restore_to_background = image_rect;
         break;
 
@@ -323,9 +326,10 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
 
       case DISPOSAL_UNSPECIFIED:
       default:
-        FillPlane<float>(background_color.Red, &canvas.Plane(0));
-        FillPlane<float>(background_color.Green, &canvas.Plane(1));
-        FillPlane<float>(background_color.Blue, &canvas.Plane(2));
+        FillPlane<float>((1.f / 255) * background_color.Red, &canvas.Plane(0));
+        FillPlane<float>((1.f / 255) * background_color.Green,
+                         &canvas.Plane(1));
+        FillPlane<float>((1.f / 255) * background_color.Blue, &canvas.Plane(2));
         ZeroFillImage(&alpha);
     }
   }

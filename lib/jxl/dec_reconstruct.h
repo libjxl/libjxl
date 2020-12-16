@@ -45,18 +45,9 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
 // Applies image features on the given `idct_rect` of `idct`, interpreted as the
 // `image_rect` region of the full image.
-Status ApplyImageFeatures(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                          PassesDecoderState* dec_state, size_t thread,
-                          AuxOut* aux_out);
-
-// Same as ApplyImageFeatures, but only processes row `y` of
-// dec_state->decoded. `y` should be relative to `rect`.
-// The first row in `rect` corresponds to a value of `y` of `2*kBlockDim`.
-// This function should be called for `rect.ysize() + 2 * lf.PaddingRows()`
-// values of `y`, in increasing order, starting from `y=-lf.PaddingRows()`.
-Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& in_rect,
-                             PassesDecoderState* dec_state, ssize_t y,
-                             size_t thread, AuxOut* aux_out);
+Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
+                         PassesDecoderState* dec_state, size_t thread,
+                         AuxOut* aux_out);
 
 }  // namespace jxl
 

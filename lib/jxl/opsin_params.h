@@ -25,8 +25,6 @@
 
 namespace jxl {
 
-static const float kScale = 255.0f;
-
 static const float kScaleR = 1.0f;
 static const float kScaleG = 1.0f;
 static const float kInvScaleR = 1.0f;
@@ -49,22 +47,21 @@ static const float kBScale = 1.0f;
 static const float kYToBRatio = 1.0f;  // works better with 0.50017729543783418
 static const float kBToYRatio = 1.0f / kYToBRatio;
 
-// Unscaled values for kOpsinAbsorbanceBias
-static const float kB0 = 0.96723368009523958;
+static const float kB0 = 0.0037930732552754493;
 static const float kB1 = kB0;
 static const float kB2 = kB0;
 
 // Opsin absorbance matrix is now frozen.
 static const float kOpsinAbsorbanceMatrix[9] = {
-    kM00 / kScale, kM01 / kScale, kM02 / kScale, kM10 / kScale, kM11 / kScale,
-    kM12 / kScale, kM20 / kScale, kM21 / kScale, kM22 / kScale,
+    kM00, kM01, kM02, kM10, kM11, kM12, kM20, kM21, kM22,
 };
 
 // Must be the inverse matrix of kOpsinAbsorbanceMatrix and match the spec.
 static inline const float* DefaultInverseOpsinAbsorbanceMatrix() {
   static float kDefaultInverseOpsinAbsorbanceMatrix[9] = {
-      2813.04956,  -2516.07070, -41.9788641, -829.807582, 1126.78645,
-      -41.9788641, -933.007078, 691.795377,  496.211701};
+      11.031566901960783,  -9.866943921568629, -0.16462299647058826,
+      -3.254147380392157,  4.418770392156863,  -0.16462299647058826,
+      -3.6588512862745097, 2.7129230470588235, 1.9459282392156863};
   return kDefaultInverseOpsinAbsorbanceMatrix;
 }
 
@@ -77,14 +74,14 @@ void InitSIMDInverseMatrix(const float* JXL_RESTRICT inverse,
                            float intensity_target);
 
 static const float kOpsinAbsorbanceBias[3] = {
-    kB0 / kScale,
-    kB1 / kScale,
-    kB2 / kScale,
+    kB0,
+    kB1,
+    kB2,
 };
 
 static const float kNegOpsinAbsorbanceBiasRGB[4] = {
     -kOpsinAbsorbanceBias[0], -kOpsinAbsorbanceBias[1],
-    -kOpsinAbsorbanceBias[2], 255.0f};
+    -kOpsinAbsorbanceBias[2], 1.0f};
 
 }  // namespace jxl
 

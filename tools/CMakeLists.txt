@@ -84,9 +84,6 @@ target_compile_definitions(cjxltool
   PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
 target_include_directories(cjxltool
   PUBLIC "${PROJECT_SOURCE_DIR}")
-target_include_directories(cjxltool PRIVATE
-  $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
-)
 target_link_libraries(cjxltool
     box
     jxl-static
@@ -165,9 +162,6 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     speed_stats.cc
     speed_stats.h
     ../third_party/dirent.cc
-  )
-  target_include_directories(benchmark_xl PRIVATE
-    $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
   )
   target_link_libraries(benchmark_xl Threads::Threads)
   target_compile_definitions(benchmark_xl

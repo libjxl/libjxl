@@ -42,7 +42,12 @@ class BitReader {
   static constexpr size_t kMaxBitsPerCall = 56;
 
   // Constructs an invalid BitReader, to be overwritten before usage.
-  BitReader() : first_byte_(nullptr) {}
+  BitReader()
+      : buf_(0),
+        bits_in_buf_(0),
+        next_byte_{nullptr},
+        end_minus_8_{nullptr},
+        first_byte_(nullptr) {}
   BitReader(const BitReader&) = delete;
 
   // bytes need not be aligned nor padded!
@@ -60,6 +65,32 @@ class BitReader {
     // Close() must be called before destroying an initialized bit reader.
     // Invalid bit readers will have a nullptr in first_byte_.
     JXL_ASSERT(close_called_ || !first_byte_);
+  }
+
+  // Release all the unread whole bytes and returns the number of these unread
+  // bytes. If the last byte read was partially read the remaining bits are
+  // still available in the bit reader after Resume() is called. Before calling
+  // this method the caller must check that AllReadsWithinBounds() is true.
+  size_t Suspend();
+
+  // Resume a released bit reader continuing from the beginning of the passed
+  // array. If any remaining bits in the last byte were available when calling
+  // Suspend() those will be available first.
+  template <class ArrayLike>
+  void Resume(const ArrayLike& bytes) {
+    if (first_byte_ == nullptr) {
+      *this = BitReader(bytes);
+      return;
+    }
+    JXL_ASSERT(bits_in_buf_ < 8);
+    size_t bytes_consumed = next_byte_ - first_byte_;
+    next_byte_ = bytes.data();
+    end_minus_8_ = bytes.data() - 8 + bytes.size();
+    // This is potentially outside the passed array (if bytes_consumed > 0) but
+    // it will never be accessed and keeps the TotalBitsConsumed() count
+    // accurate.
+    first_byte_ = bytes.data() - bytes_consumed;
+    Refill();
   }
 
   // Move operator needs to invalidate the other BitReader such that it is
@@ -195,6 +226,15 @@ class BitReader {
   size_t TotalBitsConsumed() const {
     const size_t bytes_read = static_cast<size_t>(next_byte_ - first_byte_);
     return (bytes_read + overread_bytes_) * kBitsPerByte - bits_in_buf_;
+  }
+
+  // Return whether reading nbits would be a read within bounds. A more
+  // efficient approach is to call ReadBits() without checking and call
+  // AllReadsWithinBounds() at the end of the process.
+  bool CanReadWithinBounds(size_t nbits) {
+    return overread_bytes_ * kBitsPerByte + nbits <=
+           static_cast<size_t>(end_minus_8_ + 8 - next_byte_) * kBitsPerByte +
+               bits_in_buf_;
   }
 
   Status JumpToByteBoundary() {

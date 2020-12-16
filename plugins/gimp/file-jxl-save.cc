@@ -33,12 +33,11 @@ template <bool has_alpha, size_t alpha_bits = 16>
 Status ReadBuffer(const size_t xsize, const size_t ysize,
                   const std::vector<float>& pixel_data, PaddedBytes icc,
                   CodecInOut* const io) {
-  constexpr float alpha_multiplier =
-      has_alpha ? MaxAlpha(alpha_bits) / 255.f : 0.f;
+  constexpr float alpha_multiplier = has_alpha ? 1.f / 255 : 0.f;
   Image3F image(xsize, ysize);
-  ImageU alpha;
+  ImageF alpha;
   if (has_alpha) {
-    alpha = ImageU(xsize, ysize);
+    alpha = ImageF(xsize, ysize);
   }
   const float* current_sample = pixel_data.data();
   for (size_t y = 0; y < ysize; ++y) {
@@ -46,17 +45,16 @@ Status ReadBuffer(const size_t xsize, const size_t ysize,
     for (size_t c = 0; c < 3; ++c) {
       rows[c] = image.PlaneRow(c, y);
     }
-    uint16_t* const alpha_row = has_alpha ? alpha.Row(y) : nullptr;
+    float* const alpha_row = has_alpha ? alpha.Row(y) : nullptr;
     for (size_t x = 0; x < xsize; ++x) {
       for (float* const row : rows) {
         row[x] = BufferFormat<GIMP_PRECISION_FLOAT_GAMMA>::ToFloat(
             *current_sample++);
       }
       if (has_alpha) {
-        alpha_row[x] = static_cast<uint16_t>(
-            std::round(alpha_multiplier *
+        alpha_row[x] = alpha_multiplier *
                        BufferFormat<GIMP_PRECISION_FLOAT_GAMMA>::ToFloat(
-                           *current_sample++)));
+                           *current_sample++);
       }
     }
   }

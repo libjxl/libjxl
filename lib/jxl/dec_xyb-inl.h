@@ -33,8 +33,8 @@ namespace {
 using hwy::HWY_NAMESPACE::Broadcast;
 
 // Inverts the pixel-wise RGB->XYB conversion in OpsinDynamicsImage() (including
-// the gamma mixing and simple gamma). Avoids clamping to [0, 255] - out of
-// (sRGB) gamut values may be in-gamut after transforming to a wider space.
+// the gamma mixing and simple gamma). Avoids clamping to [0, 1] - out of (sRGB)
+// gamut values may be in-gamut after transforming to a wider space.
 // "inverse_matrix" points to 9 broadcasted vectors, which are the 3x3 entries
 // of the (row-major) opsin absorbance matrix inverse. Pre-multiplying its
 // entries by c is equivalent to multiplying linear_* by c afterwards.

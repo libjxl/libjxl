@@ -269,7 +269,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
             const size_t y = task;
             pixel_type *p = input.channel[c0].Row(y);
             for (size_t x = 0; x < w; x++) {
-              const int index = p[x];
+              const int index = Clamp1(p[x], 0, (pixel_type) palette.w-1);
               p[x] = palette_internal::GetPaletteValue(
                   p_palette, index, /*c=*/0,
                   /*palette_size=*/palette.w,
@@ -407,6 +407,13 @@ static Status CheckPaletteParams(const Image &image, uint32_t begin_c,
   // The range is including c1 and c2, so c2 may not be num_channels.
   if (c1 > image.channel.size() || c2 >= image.channel.size() || c2 < c1) {
     return JXL_FAILURE("Invalid channel range");
+  }
+  for (size_t c = begin_c + 1; c <= end_c; c++) {
+    if (image.channel[c].w != image.channel[begin_c].w ||
+        image.channel[c].h != image.channel[begin_c].h) {
+      return JXL_FAILURE("Palette input channels [%" PRIu32 " to %" PRIu32
+                         "] must have the same size", begin_c, end_c);
+    }
   }
 
   return true;

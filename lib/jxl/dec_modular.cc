@@ -38,12 +38,15 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Rebind;
+
 void MultiplySum(const size_t xsize,
                  const pixel_type* const JXL_RESTRICT row_in,
                  const pixel_type* const JXL_RESTRICT row_in_Y,
                  const float factor, float* const JXL_RESTRICT row_out) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
+  const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
     const auto in = Load(di, row_in + x) + Load(di, row_in_Y + x);
@@ -54,13 +57,17 @@ void MultiplySum(const size_t xsize,
 
 void RgbFromSingle(const size_t xsize,
                    const pixel_type* const JXL_RESTRICT row_in,
-                   const float factor, Image3F* color, size_t /*c*/, size_t y) {
+                   const float factor, Image3F* decoded, size_t decoded_padding,
+                   size_t /*c*/, size_t y) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
+  const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
-  float* const JXL_RESTRICT row_out_r = color->PlaneRow(0, y);
-  float* const JXL_RESTRICT row_out_g = color->PlaneRow(1, y);
-  float* const JXL_RESTRICT row_out_b = color->PlaneRow(2, y);
+  float* const JXL_RESTRICT row_out_r =
+      decoded->PlaneRow(0, y) + decoded_padding;
+  float* const JXL_RESTRICT row_out_g =
+      decoded->PlaneRow(1, y) + decoded_padding;
+  float* const JXL_RESTRICT row_out_b =
+      decoded->PlaneRow(2, y) + decoded_padding;
 
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
@@ -75,11 +82,12 @@ void RgbFromSingle(const size_t xsize,
 // Same signature as RgbFromSingle so we can assign to the same pointer.
 void SingleFromSingle(const size_t xsize,
                       const pixel_type* const JXL_RESTRICT row_in,
-                      const float factor, Image3F* color, size_t c, size_t y) {
+                      const float factor, Image3F* decoded,
+                      size_t decoded_padding, size_t c, size_t y) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
+  const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
-  float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
+  float* const JXL_RESTRICT row_out = decoded->PlaneRow(c, y) + decoded_padding;
 
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
@@ -99,9 +107,13 @@ HWY_EXPORT(MultiplySum);       // Local function
 HWY_EXPORT(RgbFromSingle);     // Local function
 HWY_EXPORT(SingleFromSingle);  // Local function
 
-Status ModularFrameDecoder::DecodeGlobalInfo(
-    BitReader* reader, const FrameHeader& frame_header, ImageBundle* decoded,
-    bool decode_color, size_t xsize, size_t ysize, bool allow_truncated_group) {
+Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
+                                             const FrameHeader& frame_header,
+                                             const FrameDimensions& frame_dim,
+                                             bool allow_truncated_group) {
+  bool decode_color = frame_header.encoding == FrameEncoding::kModular;
+  const auto& metadata = frame_header.nonserialized_metadata->m;
+  bool is_gray = metadata.color_encoding.IsGray();
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
     std::vector<uint8_t> tree_context_map;
@@ -117,42 +129,38 @@ Status ModularFrameDecoder::DecodeGlobalInfo(
     JXL_RETURN_IF_ERROR(
         DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
   }
-  size_t nb_chans = 3, nb_extra = 0;
-  if (decoded->IsGray() &&
-      frame_header.color_transform == ColorTransform::kNone) {
+  size_t nb_chans = 3;
+  if (is_gray && frame_header.color_transform == ColorTransform::kNone) {
     nb_chans = 1;
   }
   do_color = decode_color;
   if (!do_color) nb_chans = 0;
-  if (decoded->HasExtraChannels()) {
-    nb_extra = decoded->extra_channels().size();
-  }
+  size_t nb_extra = metadata.extra_channel_info.size();
 
-  bool fp = decoded->metadata()->bit_depth.floating_point_sample;
+  bool fp = metadata.bit_depth.floating_point_sample;
 
   // bits_per_sample is just metadata for XYB images.
-  if (decoded->metadata()->bit_depth.bits_per_sample >= 32 && do_color &&
+  if (metadata.bit_depth.bits_per_sample >= 32 && do_color &&
       frame_header.color_transform != ColorTransform::kXYB) {
-    if (decoded->metadata()->bit_depth.bits_per_sample == 32 && fp == false) {
+    if (metadata.bit_depth.bits_per_sample == 32 && fp == false) {
       // TODO(lode): does modular support uint32_t? maxval is signed int so
       // cannot represent 32 bits.
       return JXL_FAILURE("uint32_t not supported in dec_modular");
-    } else if (decoded->metadata()->bit_depth.bits_per_sample > 32) {
+    } else if (metadata.bit_depth.bits_per_sample > 32) {
       return JXL_FAILURE("bits_per_sample > 32 not supported");
     }
   }
-  // TODO(lode): must handle decoded->metadata()->floating_point_channel?
-  int maxval = (fp ? 1
-                   : (1u << static_cast<uint32_t>(
-                          decoded->metadata()->bit_depth.bits_per_sample)) -
-                         1);
+  // TODO(lode): must handle metadata.floating_point_channel?
+  int maxval =
+      (fp ? 1
+          : (1u << static_cast<uint32_t>(metadata.bit_depth.bits_per_sample)) -
+                1);
 
-  Image gi(xsize, ysize, maxval, nb_chans + nb_extra);
+  Image gi(frame_dim.xsize, frame_dim.ysize, maxval, nb_chans + nb_extra);
 
   for (size_t ec = 0, c = nb_chans; ec < nb_extra; ec++, c++) {
-    const ExtraChannelInfo& eci = decoded->metadata()->extra_channel_info[ec];
-    gi.channel[c].resize(eci.Size(decoded->xsize()),
-                         eci.Size(decoded->ysize()));
+    const ExtraChannelInfo& eci = metadata.extra_channel_info[ec];
+    gi.channel[c].resize(eci.Size(frame_dim.xsize), eci.Size(frame_dim.ysize));
     gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
   }
 
@@ -340,14 +348,15 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   return true;
 }
 
-Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
-                                             ImageBundle* decoded,
+Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
                                              jxl::ThreadPool* pool,
-                                             const float* xyb_muls,
-                                             const FrameHeader& frame_header) {
+                                             ImageBundle* output) {
   Image& gi = full_image;
   size_t xsize = gi.w;
   size_t ysize = gi.h;
+
+  const auto& frame_header = dec_state->shared->frame_header;
+  const auto* metadata = frame_header.nonserialized_metadata;
 
   // Don't use threads if total image size is smaller than a group
   if (xsize * ysize < frame_dim.group_dim * frame_dim.group_dim) pool = nullptr;
@@ -355,18 +364,21 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
   // Undo the global transforms
   gi.undo_transforms(global_header.wp_header, -1, pool);
 
+  auto& decoded = dec_state->decoded;
+  size_t decoded_padding = dec_state->decoded_padding;
+
   int c = 0;
   if (do_color) {
     const bool rgb_from_gray =
-        decoded->IsGray() &&
+        metadata->m.color_encoding.IsGray() &&
         frame_header.color_transform == ColorTransform::kNone;
-    const bool fp = decoded->metadata()->bit_depth.floating_point_sample;
+    const bool fp = metadata->m.bit_depth.floating_point_sample;
 
     for (; c < 3; c++) {
-      float factor = 255.f / (float)full_image.maxval;
+      float factor = 1.f / (float)full_image.maxval;
       int c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
-        factor = xyb_muls[c];
+        factor = dec_state->shared->matrices.DCQuants()[c];
         // XYB is encoded as YX(B-Y)
         if (c < 2) c_in = 1 - c;
       } else if (rgb_from_gray) {
@@ -381,32 +393,48 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
                   gi.channel[c_in].Row(y);
               const pixel_type* const JXL_RESTRICT row_in_Y =
                   gi.channel[0].Row(y);
-              float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
+              float* const JXL_RESTRICT row_out =
+                  decoded.PlaneRow(c, y) + decoded_padding;
               HWY_DYNAMIC_DISPATCH(MultiplySum)
               (xsize, row_in, row_in_Y, factor, row_out);
             },
             "ModularIntToFloat");
-      } else if (fp && decoded->metadata()->bit_depth.bits_per_sample < 32) {
-        int exp_bits = decoded->metadata()->bit_depth.exponent_bits_per_sample;
+      } else if (fp && metadata->m.bit_depth.bits_per_sample < 32) {
+        int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
         int exp_bias = (1 << (exp_bits - 1)) - 1;
-        int sign_shift = (decoded->metadata()->bit_depth.bits_per_sample - 1);
-        int mant_bits =
-            decoded->metadata()->bit_depth.bits_per_sample - exp_bits - 1;
+        int sign_shift = (metadata->m.bit_depth.bits_per_sample - 1);
+        int mant_bits = metadata->m.bit_depth.bits_per_sample - exp_bits - 1;
         int mant_shift = 23 - mant_bits;
         for (size_t y = 0; y < ysize; ++y) {
-          float* const JXL_RESTRICT row_out = color->PlaneRow(c, y);
+          float* const JXL_RESTRICT row_out =
+              dec_state->decoded.PlaneRow(c, y) + dec_state->decoded_padding;
           const pixel_type* const JXL_RESTRICT row_in = gi.channel[c_in].Row(y);
           for (size_t x = 0; x < xsize; ++x) {
             uint32_t f;
             memcpy(&f, &row_in[x], 4);
             int signbit = (f >> sign_shift);
             f &= (1 << sign_shift) - 1;
-            int exp = (f >> mant_bits) - exp_bias;
+            if (f == 0) {
+              row_out[x] = (signbit ? -0.f : 0.f);
+              continue;
+            }
+            int exp = (f >> mant_bits);
             int mantissa = (f & ((1 << mant_bits) - 1));
+            mantissa <<= mant_shift;
+            if (exp == 0) {
+              // subnormal number
+              while ((mantissa & 0x800000) == 0) {
+                mantissa <<= 1;
+                exp--;
+              }
+              exp++;
+              // remove leading 1 because it is implicit now
+              mantissa &= 0x7fffff;
+            }
+            exp -= exp_bias;
             // broke up the arbitrary float into its parts, now reassemble into
             // binary32
             exp += 127;
-            mantissa <<= mant_shift;
             f = (signbit ? 0x80000000 : 0);
             f |= (exp << 23);
             f |= mantissa;
@@ -415,11 +443,11 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
         }
       } else if (fp) {
         JXL_ASSERT(sizeof(pixel_type) == sizeof(float));
-        JXL_ASSERT(SameSize(color->Plane(c), gi.channel[c_in].plane));
+        const auto& plane = gi.channel[c_in].plane;
         // Convert Plane<int> to Plane<float> using memcpy() for lossless mode.
-        for (size_t y = 0; y < color->ysize(); y++) {
-          memcpy(color->PlaneRow(c, y), gi.channel[c_in].plane.ConstRow(y),
-                 color->xsize() * sizeof(float));
+        for (size_t y = 0; y < plane.ysize(); y++) {
+          memcpy(decoded.PlaneRow(c, y) + decoded_padding, plane.ConstRow(y),
+                 plane.xsize() * sizeof(float));
         }
       } else {
         RunOnPool(
@@ -430,10 +458,10 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
                   gi.channel[c_in].Row(y);
               if (rgb_from_gray) {
                 HWY_DYNAMIC_DISPATCH(RgbFromSingle)
-                (xsize, row_in, factor, color, c, y);
+                (xsize, row_in, factor, &decoded, decoded_padding, c, y);
               } else {
                 HWY_DYNAMIC_DISPATCH(SingleFromSingle)
-                (xsize, row_in, factor, color, c, y);
+                (xsize, row_in, factor, &decoded, decoded_padding, c, y);
               }
             },
             "ModularIntToFloat");
@@ -446,19 +474,18 @@ Status ModularFrameDecoder::FinalizeDecoding(Image3F* color,
       c = 1;
     }
   }
-  if (decoded->HasExtraChannels()) {
-    for (size_t ec = 0; ec < decoded->extra_channels().size(); ec++, c++) {
+  if (output->HasExtraChannels()) {
+    for (size_t ec = 0; ec < output->extra_channels().size(); ec++, c++) {
       const jxl::ExtraChannelInfo& eci =
-          decoded->metadata()->extra_channel_info[ec];
+          output->metadata()->extra_channel_info[ec];
       const pixel_type max_extra = (1u << eci.bit_depth.bits_per_sample) - 1;
       const size_t ec_xsize = eci.Size(xsize);  // includes shift
       const size_t ec_ysize = eci.Size(ysize);
       for (size_t y = 0; y < ec_ysize; ++y) {
-        uint16_t* const JXL_RESTRICT row_out =
-            decoded->extra_channels()[ec].Row(y);
+        float* const JXL_RESTRICT row_out = output->extra_channels()[ec].Row(y);
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
         for (size_t x = 0; x < ec_xsize; ++x) {
-          row_out[x] = Clamp1(row_in[x], 0, max_extra);
+          row_out[x] = Clamp1(row_in[x], 0, max_extra) * (1.f / max_extra);
         }
       }
     }
@@ -470,7 +497,7 @@ Status ModularFrameDecoder::DecodeQuantTable(
     size_t required_size_x, size_t required_size_y, BitReader* br,
     QuantEncoding* encoding, size_t idx,
     ModularFrameDecoder* modular_frame_decoder) {
-  encoding->qraw.qtable_den_shift = br->ReadFixedBits<3>();
+  JXL_RETURN_IF_ERROR(F16Coder::Read(br, &encoding->qraw.qtable_den));
   Image image(required_size_x, required_size_y, 255, 3);
   ModularOptions options;
   if (modular_frame_decoder) {

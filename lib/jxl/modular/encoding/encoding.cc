@@ -26,7 +26,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "lib/jxl/base/fast_log.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
@@ -1013,6 +1012,12 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {
+#ifdef JXL_ENABLE_ASSERT
+  std::vector<std::pair<uint32_t, uint32_t>> req_sizes(image.channel.size());
+  for (size_t c = 0; c < req_sizes.size(); c++) {
+    req_sizes[c] = {image.channel[c].w, image.channel[c].h};
+  }
+#endif
   GroupHeader local_header;
   if (header == nullptr) header = &local_header;
   JXL_RETURN_IF_ERROR(ModularDecode(br, image, *header, group_id, options, tree,
@@ -1024,6 +1029,17 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
               image.w, image.h, image.real_nb_channels,
               (br->TotalBitsConsumed() - bit_pos) / 8);
   (void)bit_pos;
+#ifdef JXL_ENABLE_ASSERT
+  // Check that after applying all transforms we are back to the requested image
+  // sizes, otherwise there's a programming error with the transformations.
+  if (undo_transforms == -1 || undo_transforms == 0) {
+    JXL_ASSERT(image.channel.size() == req_sizes.size());
+    for (size_t c = 0; c < req_sizes.size(); c++) {
+      JXL_ASSERT(req_sizes[c].first == image.channel[c].w);
+      JXL_ASSERT(req_sizes[c].second == image.channel[c].h);
+    }
+  }
+#endif
   return true;
 }
 

@@ -16,10 +16,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "jxl/decode.h"
 
 int PrintBasicInfo(FILE* file) {
+  uint8_t* data = NULL;
   uint8_t* next_in = NULL;
   size_t avail_in = 0;
   // In how large chunks to read from the file and try decoding the basic info.
@@ -43,10 +45,6 @@ int PrintBasicInfo(FILE* file) {
   int seen_basic_info = 0;
 
   for (;;) {
-    next_in = (uint8_t*)realloc(next_in, avail_in + chunk_size);
-    size_t readsize = fread(next_in + avail_in, 1, chunk_size, file);
-    avail_in += readsize;
-
     JxlDecoderStatus status =
         JxlDecoderProcessInput(dec, (const uint8_t**)&next_in, &avail_in);
 
@@ -54,7 +52,12 @@ int PrintBasicInfo(FILE* file) {
       fprintf(stderr, "Decoder error\n");
       break;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
-      continue;
+      size_t pos = next_in - data;  // Position next_in has advanced.
+      data = (uint8_t*)realloc(data, avail_in + chunk_size);
+      if (avail_in != 0) memcpy(data, data + pos, avail_in);
+      size_t readsize = fread(data + avail_in, 1, chunk_size, file);
+      avail_in += readsize;
+      next_in = data;
     } else if (status == JXL_DEC_SUCCESS) {
       // Finished all processing.
       break;
@@ -146,16 +149,19 @@ int PrintBasicInfo(FILE* file) {
           printf("  white_point: %d\n", color_encoding.white_point);
           printf("  white_point XY: %f %f\n", color_encoding.white_point_xy[0],
                  color_encoding.white_point_xy[1]);
-          printf("  primaries: %d\n", color_encoding.primaries);
-          printf("  red primaries XY: %f %f\n",
-                 color_encoding.primaries_red_xy[0],
-                 color_encoding.primaries_red_xy[1]);
-          printf("  green primaries XY: %f %f\n",
-                 color_encoding.primaries_green_xy[0],
-                 color_encoding.primaries_green_xy[1]);
-          printf("  blue primaries XY: %f %f\n",
-                 color_encoding.primaries_blue_xy[0],
-                 color_encoding.primaries_blue_xy[1]);
+          if (color_encoding.color_space == JXL_COLOR_SPACE_RGB ||
+              color_encoding.color_space == JXL_COLOR_SPACE_UNKNOWN) {
+            printf("  primaries: %d\n", color_encoding.primaries);
+            printf("  red primaries XY: %f %f\n",
+                   color_encoding.primaries_red_xy[0],
+                   color_encoding.primaries_red_xy[1]);
+            printf("  green primaries XY: %f %f\n",
+                   color_encoding.primaries_green_xy[0],
+                   color_encoding.primaries_green_xy[1]);
+            printf("  blue primaries XY: %f %f\n",
+                   color_encoding.primaries_blue_xy[0],
+                   color_encoding.primaries_blue_xy[1]);
+          }
           printf("  transfer_function: %d\n", color_encoding.transfer_function);
           if (color_encoding.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
             printf("  transfer_function gamma: %f\n", color_encoding.gamma);
@@ -197,6 +203,7 @@ int PrintBasicInfo(FILE* file) {
     }
   }
 
+  free(data);
   JxlDecoderDestroy(dec);
 
   return seen_basic_info;

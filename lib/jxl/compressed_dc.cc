@@ -56,6 +56,7 @@ using D = HWY_FULL(float);
 using DScalar = HWY_CAPPED(float, 1);
 
 // These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Vec;
 
 // TODO(veluca): optimize constants.
@@ -213,7 +214,7 @@ void DequantDC(const Rect& r, Image3F* dc, ImageB* quant_dc, const Image& in,
                YCbCrChromaSubsampling chroma_subsampling,
                const BlockCtxMap& bctx) {
   const HWY_FULL(float) df;
-  const HWY_CAPPED(pixel_type, MaxLanes(df)) di;  // assumes pixel_type <= float
+  const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
   if (chroma_subsampling.Is444()) {
     const auto fac_x = Set(df, dc_factors[0] * mul);
     const auto fac_y = Set(df, dc_factors[1] * mul);

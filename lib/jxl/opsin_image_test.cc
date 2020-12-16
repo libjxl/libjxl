@@ -96,21 +96,21 @@ TEST(OpsinImageTest, VerifyOpsinAbsorbanceInverseMatrix) {
 
 TEST(OpsinImageTest, OpsinRoundtrip) {
   OpsinRoundtripTestRGB(0, 0, 0);
+  OpsinRoundtripTestRGB(1. / 255, 1. / 255, 1. / 255);
+  OpsinRoundtripTestRGB(128. / 255, 128. / 255, 128. / 255);
   OpsinRoundtripTestRGB(1, 1, 1);
-  OpsinRoundtripTestRGB(128, 128, 128);
-  OpsinRoundtripTestRGB(255, 255, 255);
 
+  OpsinRoundtripTestRGB(0, 0, 1. / 255);
+  OpsinRoundtripTestRGB(0, 0, 128. / 255);
   OpsinRoundtripTestRGB(0, 0, 1);
-  OpsinRoundtripTestRGB(0, 0, 128);
-  OpsinRoundtripTestRGB(0, 0, 255);
 
+  OpsinRoundtripTestRGB(0, 1. / 255, 0);
+  OpsinRoundtripTestRGB(0, 128. / 255, 0);
   OpsinRoundtripTestRGB(0, 1, 0);
-  OpsinRoundtripTestRGB(0, 128, 0);
-  OpsinRoundtripTestRGB(0, 255, 0);
 
+  OpsinRoundtripTestRGB(1. / 255, 0, 0);
+  OpsinRoundtripTestRGB(128. / 255, 0, 0);
   OpsinRoundtripTestRGB(1, 0, 0);
-  OpsinRoundtripTestRGB(128, 0, 0);
-  OpsinRoundtripTestRGB(255, 0, 0);
 }
 
 TEST(OpsinImageTest, VerifyZero) {
@@ -126,9 +126,9 @@ TEST(OpsinImageTest, VerifyGray) {
   // Test that grayscale colors have a fixed y/b ratio and x==0.
   for (size_t i = 1; i < 255; i++) {
     float x, y, b;
-    LinearSrgbToOpsin(i, i, i, &x, &y, &b);
+    LinearSrgbToOpsin(i / 255., i / 255., i / 255., &x, &y, &b);
     EXPECT_NEAR(0, x, 1e-6);
-    EXPECT_NEAR(kYToBRatio, b / y, 2e-6);
+    EXPECT_NEAR(kYToBRatio, b / y, 3e-5);
   }
 }
 

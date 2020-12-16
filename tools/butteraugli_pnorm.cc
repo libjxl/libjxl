@@ -32,6 +32,9 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Rebind;
+
 double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
                         double p) {
   PROFILER_FUNC;
@@ -51,7 +54,7 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
 // Prefer double if possible, but otherwise use float rather than scalar.
 #if HWY_CAP_FLOAT64
     using T = double;
-    const HWY_CAPPED(float, MaxLanes(HWY_FULL(double)())) df;
+    const Rebind<float, HWY_FULL(double)> df;
 #else
     using T = float;
 #endif

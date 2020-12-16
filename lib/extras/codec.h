@@ -42,6 +42,7 @@ enum class Codec : uint32_t {
   kJPG,
   kGIF,
   kEXR,
+  kPSD
 };
 
 static inline constexpr uint64_t EnumBits(Codec /*unused*/) {
@@ -53,7 +54,7 @@ static inline constexpr uint64_t EnumBits(Codec /*unused*/) {
 #if JPEGXL_ENABLE_EXR
          | MakeBit(Codec::kEXR)
 #endif
-      ;
+         | MakeBit(Codec::kPSD);
 }
 
 // Lower case ASCII including dot, e.g. ".png".

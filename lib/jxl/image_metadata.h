@@ -20,15 +20,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Brunsli headers
-#include <brunsli/jpeg_data.h>
-
 #include <vector>
 
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/opsin_params.h"
 
 namespace jxl {
@@ -150,7 +148,7 @@ struct OpsinInverseMatrix : public Fields {
       opsin_params.opsin_biases_cbrt[i] =
           std::cbrt(opsin_params.opsin_biases[i]);
     }
-    opsin_params.opsin_biases_cbrt[3] = opsin_params.opsin_biases[3] = 255;
+    opsin_params.opsin_biases_cbrt[3] = opsin_params.opsin_biases[3] = 1;
     std::copy(std::begin(quant_biases), std::end(quant_biases),
               opsin_params.quant_biases);
     return opsin_params;

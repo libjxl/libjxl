@@ -724,11 +724,11 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   const bool big_endian = true;  // PNG requirement
   const Span<const uint8_t> span(out, out_size);
-  const bool ok = ConvertImage(
-      span, w, h, io->metadata.m.color_encoding, has_alpha,
-      /*alpha_is_premultiplied=*/false, io->metadata.m.GetAlphaBits(),
-      io->metadata.m.bit_depth.bits_per_sample, big_endian, /*flipped_y=*/false,
-      pool, &io->Main());
+  const bool ok =
+      ConvertImage(span, w, h, io->metadata.m.color_encoding, has_alpha,
+                   /*alpha_is_premultiplied=*/false,
+                   io->metadata.m.bit_depth.bits_per_sample, big_endian,
+                   /*flipped_y=*/false, pool, &io->Main());
   JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
   io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
@@ -750,12 +750,12 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
       ib.xsize() * DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
                            kBitsPerByte);
   PaddedBytes raw_bytes(stride * ib.ysize());
-  JXL_RETURN_IF_ERROR(ConvertImage(
-      *transformed, bits_per_sample,
-      /*float_out=*/false, /*lossless_float=*/false, /*apply_srgb_tf=*/false,
-      c_desired.Channels() + (ib.HasAlpha() ? 1 : 0), /*little_endian=*/false,
-      stride, pool, raw_bytes.data(), raw_bytes.size(),
-      jxl::Orientation::kIdentity));
+  JXL_RETURN_IF_ERROR(
+      ConvertImage(*transformed, bits_per_sample,
+                   /*float_out=*/false, /*apply_srgb_tf=*/false,
+                   c_desired.Channels() + (ib.HasAlpha() ? 1 : 0),
+                   /*little_endian=*/false, stride, pool, raw_bytes.data(),
+                   raw_bytes.size(), jxl::Orientation::kIdentity));
 
   PNGState state;
   // For maximum compatibility, still store 8-bit even if pixels are all zero.

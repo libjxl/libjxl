@@ -137,8 +137,11 @@ class X64_Topology {
   // if the topology cannot be detected (e.g. due to missing OS support).
   static Status Detect(ProcessorTopology* topology) {
     const Info info;
-    const uint32_t core_bits = CoreBits(info);
-    const uint32_t logical_bits = LogicalBits(info, core_bits);
+
+    uint32_t core_bits;
+    uint32_t logical_bits;
+    const bool cpuid11_usable =
+        DetectFieldWidths(info, &core_bits, &logical_bits);
 
     uint32_t total_bits = 0;
     // Order matters:
@@ -154,14 +157,7 @@ class X64_Topology {
         return false;
       }
 
-      const uint32_t id = ProcessorId(info);
-      // xAPIC ID of 255 is invalid. Systems with >= 255 logical processors or
-      // >= 64 cores require x2APIC (Nehalem) and CPUID:11 detection, which is a
-      // separate codepath that we have not yet implemented.
-      if (id >= 255) {
-        JXL_WARNING("x2APIC ID (%x); TODO: implement CPUID:11", id);
-      }
-
+      const uint32_t id = ProcessorId(info, cpuid11_usable);
       logical.AddValue(id);
       core.AddValue(id);
       package.AddValue(id);
@@ -175,7 +171,7 @@ class X64_Topology {
     return true;
   }
 
- public:
+ private:
   // How many bits in the xAPIC ID identify the core (per package).
   // #active cores <= (1 << bits).
   static uint32_t CoreBits(const Info& info) {
@@ -189,7 +185,10 @@ class X64_Topology {
     if (info.AMD()) {
       if (info.MaxExtFunc() < 0x80000008u) return 0;
       Cpuid(0x80000008u, 0, &r);
-      return static_cast<uint32_t>(CeilLog2Nonzero((r.c & 0xFF) + 1));
+      const uint32_t core_bits = (r.c >> 12) & 0xF;  // ignore if 0
+      const uint32_t num_cores = (r.c & 0xFF) + 1;
+      return core_bits != 0 ? core_bits
+                            : static_cast<uint32_t>(CeilLog2Nonzero(num_cores));
     }
 
     return 0;
@@ -200,17 +199,81 @@ class X64_Topology {
     Regs r;
     Cpuid(1, 0, &r);
 
-    // No hyperthreading
-    if ((r.d & (1U << 28)) == 0) return 0;
+    if ((r.d & (1U << 28)) == 0) {
+      return 0;  // No hyperthreading
+    }
 
-    // Early AMD falsely claim hyperthreading
-    if (info.AMD() && (r.c & 2)) return 0;
-
+    // On AMD TR3960X this is the actual count, which is less than 2^actual
+    // field width. However, we do not reach this code there because CPUID:11 is
+    // preferred.
     const uint32_t logical_per_package = (r.b >> 16) & 0xFF;
     const uint32_t core_and_logical_bits =
         static_cast<uint32_t>(CeilLog2Nonzero(logical_per_package));
     JXL_ASSERT(core_and_logical_bits >= core_bits);
     return core_and_logical_bits - core_bits;
+  }
+
+  // Returns whether the CPUID:11 method was used (if so, x2APIC should be
+  // available).
+  // Assumes the current processor is representative of all others!
+  static bool DetectFieldWidths(const Info& info,
+                                uint32_t* JXL_RESTRICT core_bits,
+                                uint32_t* JXL_RESTRICT logical_bits) {
+    // Prevent spurious uninitialized-variable error
+    *core_bits = *logical_bits = 0;
+
+    // Newer method is preferred (less CPU-specific) if available.
+    if (info.MaxFunc() >= 11) {
+      bool got_smt = false;
+      bool got_core = false;
+
+      for (uint32_t level = 0; level < 16; ++level) {
+        Regs r;
+        Cpuid(11, level, &r);
+
+        // We finished all levels if this one has no enabled logical processors.
+        if ((r.b & 0xFFFF) == 0) break;
+
+        JXL_ASSERT(level == (r.c & 0xFF));  // Sanity check: should match input
+
+        const uint32_t level_type = (r.c >> 8) & 0xFF;
+        const uint32_t level_bits = r.a & 0x1F;
+
+        switch (level_type) {
+          case 0:
+            Debug("Invalid CPUID level %u despite enabled>0", level);
+            break;
+
+          case 1:  // SMT
+            *logical_bits = level_bits;
+            got_smt = true;
+            break;
+
+          case 2:  // core
+            *core_bits = level_bits;
+            got_core = true;
+            break;
+
+          default:
+            Debug("Ignoring CPUID:11 level %u type %u (%u bits)\n", level,
+                  level_type, level_bits);
+            break;
+        }
+      }
+
+      if (got_core && got_smt) {
+        // Core is actually all logical within a package, so subtract now that
+        // we also know logical_bits.
+        JXL_ASSERT(*core_bits >= *logical_bits);
+        *core_bits -= *logical_bits;
+        return true;
+      }
+    }
+
+    // CPUID:11 not available or failed
+    *core_bits = CoreBits(info);
+    *logical_bits = LogicalBits(info, *core_bits);
+    return false;
   }
 
   // Variable-length/position field within an xAPIC ID. Counts the total
@@ -234,19 +297,17 @@ class X64_Topology {
 
   // Returns initial APIC ID or x2APIC ID, which uniquely identifies the current
   // logical processor. Returns 0 on old CPUs.
-  static uint32_t ProcessorId(const Info& info) {
+  static uint32_t ProcessorId(const Info& info, const bool cpuid11_usable) {
     Regs r;
 
-    // Support 32-bit IDs: we will only use 8 bits, but returning the full ID
-    // allows the caller to raise a warning when x2APIC is active.
-    if (info.MaxFunc() >= 11) {
+    // 32-bit x2APIC ID.
+    if (cpuid11_usable) {
       Cpuid(11, 0, &r);
-      // Ensure we have CPUID:11 (number of enabled logical processors != 0).
-      if (r.b != 0) {
-        // r.d is a 32-bit ID; whether or not x2APIC is actually supported and
-        // enabled, its lower 8 bits match the initial APIC ID (CPUID:1b).
-        return r.d;
-      }
+      JXL_ASSERT(r.b != 0);  // #enabled != 0 implied by cpuid11_usable.
+
+      // Note: whether or not x2APIC is actually supported and enabled, its
+      // lower 8 bits match the initial APIC ID (CPUID:1b).
+      return r.d;
     }
 
     // No CPUID:11 => just return initial APIC ID (8-bit).

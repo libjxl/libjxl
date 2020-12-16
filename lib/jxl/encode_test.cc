@@ -65,15 +65,15 @@ TEST(EncodeTest, FrameEncodingTest) {
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   uint32_t xsize = 63;
   uint32_t ysize = 129;
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4);
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
 
   jxl::CodecInOut input_io =
       jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetDimensions(enc, xsize, ysize));
-  EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderAddImageFrame(enc, &pixel_format, pixels.data(),
-                                    pixels.size()));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderAddImageFrame(
+                                 JxlEncoderOptionsCreate(enc, NULL),
+                                 &pixel_format, pixels.data(), pixels.size()));
   JxlEncoderCloseInput(enc);
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
@@ -102,6 +102,22 @@ TEST(EncodeTest, FrameEncodingTest) {
   EXPECT_LE(ButteraugliDistance(input_io, decoded_io, ba,
                                 /*distmap=*/nullptr, nullptr),
             2.0f);
+
+  JxlEncoderDestroy(enc);
+}
+
+TEST(EncodeTest, OptionsTest) {
+  JxlEncoder* enc = JxlEncoderCreate(nullptr);
+  EXPECT_NE(nullptr, enc);
+
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc, NULL);
+
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetLossless(options, JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetEffort(options, 5));
+  // Lower than currently supported values
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 2));
+  // Higher than currently supported values
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 10));
 
   JxlEncoderDestroy(enc);
 }

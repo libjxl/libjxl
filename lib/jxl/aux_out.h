@@ -226,7 +226,7 @@ struct AuxOut {
     (void)dump_image(io, pathname.str());
   }
 
-  // Normalizes all the channels to range 0-255, creating a false-color image
+  // Normalizes all the channels to range 0-1, creating a false-color image
   // which allows seeing the information from non-RGB channels in an RGB debug
   // image.
   template <typename T>
@@ -236,7 +236,7 @@ struct AuxOut {
     Image3MinMax(image, &min, &max);
     Image3B normalized(image.xsize(), image.ysize());
     for (size_t c = 0; c < 3; ++c) {
-      float mul = min[c] == max[c] ? 0 : (255.0f / (max[c] - min[c]));
+      float mul = min[c] == max[c] ? 0 : (1.0f / (max[c] - min[c]));
       for (size_t y = 0; y < image.ysize(); ++y) {
         const T* JXL_RESTRICT row_in = image.ConstPlaneRow(c, y);
         uint8_t* JXL_RESTRICT row_out = normalized.PlaneRow(c, y);
@@ -255,7 +255,7 @@ struct AuxOut {
     ImageMinMax(image, &min, &max);
     Image3B normalized(image.xsize(), image.ysize());
     for (size_t c = 0; c < 3; ++c) {
-      float mul = min == max ? 0 : (255.0f / (max - min));
+      float mul = min == max ? 0 : (1.0f / (max - min));
       for (size_t y = 0; y < image.ysize(); ++y) {
         const T* JXL_RESTRICT row_in = image.ConstRow(y);
         uint8_t* JXL_RESTRICT row_out = normalized.PlaneRow(c, y);

@@ -72,7 +72,7 @@ void FastGaussian1D(const hwy::AlignedUniquePtr<RecursiveGaussian>& rg,
 
   intptr_t n = -N + 1;
   // Left side with bounds checks and only write output after n >= 0.
-  const intptr_t first_aligned = RoundUpTo(N + 1, MaxLanes(d));
+  const intptr_t first_aligned = RoundUpTo(N + 1, Lanes(d));
   for (; n < std::min(first_aligned, width); ++n) {
     const intptr_t left = n - N - 1;
     const intptr_t right = n + N - 1;

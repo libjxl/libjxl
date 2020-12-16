@@ -85,7 +85,7 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
       for (size_t j = 0; j < e.qraw.qtable->size(); j++) {
         EXPECT_EQ((*e.qraw.qtable)[j], (*d.qraw.qtable)[j]);
       }
-      EXPECT_EQ(e.qraw.qtable_den_shift, d.qraw.qtable_den_shift);
+      EXPECT_NEAR(e.qraw.qtable_den, d.qraw.qtable_den, 1e-7f);
     } else {
       // modes different than kQuantModeRAW use one of the other fields used
       // here, which all happen to be arrays of floats.

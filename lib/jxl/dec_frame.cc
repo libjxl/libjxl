@@ -67,9 +67,8 @@
 
 namespace jxl {
 
-Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
-                          ImageBundle* decoded, PassesDecoderState* state,
-                          ThreadPool* pool) {
+Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader, bool is_jpeg,
+                          PassesDecoderState* state, ThreadPool* pool) {
   PROFILER_FUNC;
   JXL_RETURN_IF_ERROR(state->shared_storage.quantizer.Decode(reader));
 
@@ -79,7 +78,7 @@ Status DecodeGlobalDCInfo(size_t downsampling, BitReader* reader,
   JXL_RETURN_IF_ERROR(state->shared_storage.cmap.DecodeDC(reader));
 
   // Pre-compute info for decoding a group.
-  if (decoded->IsJPEG()) {
+  if (is_jpeg) {
     state->shared_storage.quantizer.ClearDCMul();  // Don't dequant DC
   }
 
@@ -97,15 +96,6 @@ class LossyFrameDecoder {
     pool_ = pool;
     aux_out_ = aux_out;
     dec_state_ = dec_state;
-    const LoopFilter& lf = frame_header.loop_filter;
-    if (!frame_header.chroma_subsampling.Is444() &&
-        (lf.gab || lf.epf_iters > 0) &&
-        frame_header.encoding == FrameEncoding::kVarDCT) {
-      // TODO(veluca): actually implement this.
-      return JXL_FAILURE(
-          "Non-444 chroma subsampling is not supported when loop filters are "
-          "enabled");
-    }
     if (!frame_header.chroma_subsampling.Is444() &&
         !(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
         frame_header.encoding == FrameEncoding::kVarDCT) {
@@ -131,8 +121,8 @@ class LossyFrameDecoder {
   }
 
   Status DecodeGlobalDCInfo(BitReader* reader, ImageBundle* decoded) {
-    return jxl::DecodeGlobalDCInfo(downsampling_, reader, decoded, dec_state_,
-                                   pool_);
+    return jxl::DecodeGlobalDCInfo(downsampling_, reader, decoded->IsJPEG(),
+                                   dec_state_, pool_);
   }
   Status DecodeModularGlobalInfo(BitReader* reader) {
     // currently just initializes the dec_state
@@ -176,17 +166,15 @@ class LossyFrameDecoder {
 
   Status DecodeACGroup(size_t group_index, size_t thread,
                        BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
-                       size_t num_passes, Image3F* JXL_RESTRICT opsin,
+                       size_t num_passes, Image3F* JXL_RESTRICT output,
                        ImageBundle* JXL_RESTRICT decoded,
                        AuxOut* local_aux_out) {
     return DecodeGroup(readers, num_passes, group_index, dec_state_,
-                       &group_dec_caches_[thread], thread, opsin, decoded,
+                       &group_dec_caches_[thread], thread, output, decoded,
                        local_aux_out);
   }
 
-  Status FinalizeJPEG(Image3F* JXL_RESTRICT opsin, ImageBundle* decoded) {
-    decoded->SetFromImage(std::move(*opsin),
-                          decoded->metadata()->color_encoding);
+  Status FinalizeJPEG(ImageBundle* decoded) {
     decoded->color_transform =
         dec_state_->shared_storage.frame_header.color_transform;
     decoded->chroma_subsampling =
@@ -194,7 +182,7 @@ class LossyFrameDecoder {
     const std::vector<QuantEncoding>& qe =
         dec_state_->shared_storage.matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
-        qe[0].qraw.qtable_den_shift != 0) {
+        std::abs(qe[0].qraw.qtable_den - 1.f / (8 * 255)) > 1e-8f) {
       return JXL_FAILURE(
           "Quantization table is not a JPEG quantization table.");
     }
@@ -203,24 +191,14 @@ class LossyFrameDecoder {
     return true;
   }
 
-  Status FinalizeDecoding(Image3F* JXL_RESTRICT opsin, ImageBundle* decoded) {
+  Status FinalizeDecoding(ImageBundle* decoded) {
     if (decoded->IsJPEG()) {
-      JXL_RETURN_IF_ERROR(FinalizeJPEG(opsin, decoded));
+      JXL_RETURN_IF_ERROR(FinalizeJPEG(decoded));
       return true;
     }
     JXL_RETURN_IF_ERROR(
-        FinalizeFrameDecoding(opsin, dec_state_, pool_, aux_out_));
+        FinalizeFrameDecoding(decoded->color(), dec_state_, pool_, aux_out_));
 
-    if (dec_state_->shared_storage.frame_header.color_transform ==
-        ColorTransform::kXYB) {
-      // Do not use decoded->IsGray() - c_current is not yet valid.
-      const bool is_gray = decoded->metadata()->color_encoding.IsGray();
-      decoded->SetFromImage(std::move(*opsin),
-                            ColorEncoding::LinearSRGB(is_gray));
-    } else {
-      decoded->SetFromImage(std::move(*opsin),
-                            decoded->metadata()->color_encoding);
-    }
     decoded->origin = dec_state_->shared->frame_header.frame_origin;
     // TODO(veluca): should be in dec_reconstruct.
     JXL_RETURN_IF_ERROR(DoBlending(*dec_state_->shared, decoded));
@@ -254,8 +232,7 @@ class LossyFrameDecoder {
   // pointer. This is only needed to tell whether we need to reallocate the
   // cache.
   size_t group_dec_caches_size_ = 0;
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches_{
-      nullptr, hwy::AlignedDeleter(nullptr)};
+  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches_;
 };
 
 Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
@@ -450,20 +427,19 @@ Status DecodeFrame(const DecompressParams& dparams,
   // dimensions; must reset to avoid error when setting alpha.
   decoded->RemoveColor();
 
+  // TODO(veluca): this might be done by the loop afterwards.
   if (metadata.m.Find(ExtraChannel::kDepth)) {
-    decoded->SetDepth(
-        ImageU(decoded->DepthSize(xsize), decoded->DepthSize(ysize)));
+    decoded->SetDepth(ImageF(decoded->DepthSize(frame_dim.xsize_padded),
+                             decoded->DepthSize(frame_dim.ysize_padded)));
   }
   if (metadata.m.num_extra_channels > 0) {
-    std::vector<ImageU> ecv;
+    std::vector<ImageF> ecv;
     for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
       const auto eci = metadata.m.extra_channel_info[i];
-      ecv.push_back(ImageU(eci.Size(xsize), eci.Size(ysize)));
+      ecv.push_back(ImageF(eci.Size(frame_dim.xsize_padded),
+                           eci.Size(frame_dim.ysize_padded)));
     }
     decoded->SetExtraChannels(std::move(ecv));
-  }
-  if (frame_header.encoding == FrameEncoding::kModular) {
-    decoded->SetFromImage(Image3F(xsize, ysize), metadata.m.color_encoding);
   }
 
   // Handling of progressive decoding.
@@ -632,10 +608,7 @@ Status DecodeFrame(const DecompressParams& dparams,
           lossy_frame_decoder.DecodeModularGlobalInfo(global_reader));
     }
     JXL_RETURN_IF_ERROR(modular_frame_decoder.DecodeGlobalInfo(
-        global_reader, frame_header, decoded,
-        /*decode_color = */
-        (frame_header.encoding == FrameEncoding::kModular), xsize, ysize,
-        dparams.allow_partial_files));
+        global_reader, frame_header, frame_dim, dparams.allow_partial_files));
   } else {
     // Decoder state would normally get initialized when reading the DC global
     // section.
@@ -659,21 +632,28 @@ Status DecodeFrame(const DecompressParams& dparams,
                                pool, reader, &aux_outs, aux_out,
                                &has_dc_group));
 
-  Image3F opsin;
-
   if (*std::min_element(max_passes_for_group.begin(),
                         max_passes_for_group.end()) == 0 &&
       frame_header.encoding == FrameEncoding::kVarDCT &&
       !decoded->HasExtraChannels()) {
     // Upsample DC.
-    opsin = CopyImage(*dec_state->shared->dc);
+    Image3F opsin = CopyImage(*dec_state->shared->dc);
     Upsample(&opsin, /*upsampling=*/8,
              frame_header.nonserialized_metadata->transform_data);
     dec_state->has_partial_ac_groups = true;
     dec_state->decoded = PadImageMirror(opsin, kMaxFilterPadding, 0);
-  } else {
-    opsin = Image3F(frame_dim.xsize_blocks * kBlockDim,
-                    frame_dim.ysize_blocks * kBlockDim);
+  }
+
+  // Allocate output image.
+  {
+    const auto output_encoding =
+        frame_header.color_transform == ColorTransform::kXYB
+            ? ColorEncoding::LinearSRGB(
+                  decoded->metadata()->color_encoding.IsGray())
+            : decoded->metadata()->color_encoding;
+    decoded->SetFromImage(
+        Image3F(frame_dim.xsize_padded, frame_dim.ysize_padded),
+        output_encoding);
   }
 
   if (downsampling < 16 && frame_dim.num_groups > 1) {
@@ -751,9 +731,9 @@ Status DecodeFrame(const DecompressParams& dparams,
                                   frame_dim.num_dc_groups, has_ac_global));
     }
     if (frame_header.encoding == FrameEncoding::kVarDCT) {
-      if (!lossy_frame_decoder.DecodeACGroup(group_index, thread, readers,
-                                             max_passes_for_group[group_index],
-                                             &opsin, decoded, my_aux_out)) {
+      if (!lossy_frame_decoder.DecodeACGroup(
+              group_index, thread, readers, max_passes_for_group[group_index],
+              decoded->color(), decoded, my_aux_out)) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
         return;
       }
@@ -813,10 +793,9 @@ Status DecodeFrame(const DecompressParams& dparams,
   ResizeAuxOuts(aux_outs, 0, aux_out);
   // undo global modular transforms and copy int pixel buffers to float ones
   JXL_RETURN_IF_ERROR(modular_frame_decoder.FinalizeDecoding(
-      &opsin, decoded, pool,
-      lossy_frame_decoder.State()->shared->matrices.DCQuants(), frame_header));
+      lossy_frame_decoder.State(), pool, decoded));
 
-  JXL_RETURN_IF_ERROR(lossy_frame_decoder.FinalizeDecoding(&opsin, decoded));
+  JXL_RETURN_IF_ERROR(lossy_frame_decoder.FinalizeDecoding(decoded));
 
   if (num_groups == 1 && num_passes == 1) {
     // get_reader used reader, so AC groups have already been consumed by

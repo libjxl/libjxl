@@ -42,7 +42,7 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
                            const ColorEncoding& c_native) {
   Image3F image(xsize, ysize);
   std::mt19937_64 rng(129);
-  std::uniform_real_distribution<float> dist(0.0f, 255.0f);
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   if (is_gray) {
     for (size_t y = 0; y < ysize; ++y) {
       float* JXL_RESTRICT row0 = image.PlaneRow(0, y);
@@ -53,7 +53,7 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
       }
     }
   } else {
-    RandomFillImage(&image, 255.0f);
+    RandomFillImage(&image, 1.0f);
   }
   CodecInOut io;
 
@@ -65,11 +65,9 @@ CodecInOut CreateTestImage(const size_t xsize, const size_t ysize,
   io.metadata.m.color_encoding = c_native;
   io.SetFromImage(std::move(image), c_native);
   if (add_alpha) {
-    ImageU alpha(xsize, ysize);
-    const size_t alpha_bits = bits_per_sample <= 8 ? 8 : 16;
-    const uint16_t max = (1U << alpha_bits) - 1;
-    RandomFillImage(&alpha, max);
-    io.metadata.m.SetAlphaBits(alpha_bits);
+    ImageF alpha(xsize, ysize);
+    RandomFillImage(&alpha, 1.f);
+    io.metadata.m.SetAlphaBits(bits_per_sample <= 8 ? 8 : 16);
     io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
   }
   return io;

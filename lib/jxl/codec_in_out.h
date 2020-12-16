@@ -93,9 +93,8 @@ struct Blobs {
 
 // For Codec::kJPG, convert between JPEG and pixels or between JPEG and
 // quantized DCT coefficients
-// For float data (pfm,exr): kPixels uses 0..maxnits, kLosslessFloat doesn't
-// touch range
-enum class DecodeTarget { kPixels, kQuantizedCoeffs, kLosslessFloat };
+// For pixel data, the nominal range is 0..1.
+enum class DecodeTarget { kPixels, kQuantizedCoeffs };
 
 // Holds a preview, a main image or one or more frames, plus the inputs/outputs
 // to/from decoding/encoding.
@@ -110,14 +109,18 @@ class CodecInOut {
   CodecInOut(CodecInOut&&) = default;
   CodecInOut& operator=(CodecInOut&&) = default;
 
-  ImageBundle& Main() {
-    JXL_DASSERT(frames.size() == 1);
-    return frames[0];
+  size_t LastStillFrame() const {
+    JXL_DASSERT(frames.size() > 0);
+    size_t last = 0;
+    for (size_t i = 0; i < frames.size(); i++) {
+      last = i;
+      if (frames[i].duration > 0) break;
+    }
+    return last;
   }
-  const ImageBundle& Main() const {
-    JXL_DASSERT(frames.size() == 1);
-    return frames[0];
-  }
+
+  ImageBundle& Main() { return frames[LastStillFrame()]; }
+  const ImageBundle& Main() const { return frames[LastStillFrame()]; }
 
   // If c_current.IsGray(), all planes must be identical.
   void SetFromImage(Image3F&& color, const ColorEncoding& c_current) {

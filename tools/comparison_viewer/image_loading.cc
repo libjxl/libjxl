@@ -75,21 +75,20 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   if (!ib.CopyTo(Rect(ib), targetColorSpace, &converted, &pool)) {
     return QImage();
   }
+  ScaleImage(255.f, &converted);
 
   QImage image(converted.xsize(), converted.ysize(), QImage::Format_ARGB32);
 
   if (ib.HasAlpha()) {
-    const int alphaRightShiftAmount =
-        static_cast<int>(decoded.metadata.m.GetAlphaBits()) - 8;
     for (int y = 0; y < image.height(); ++y) {
       QRgb* const row = reinterpret_cast<QRgb*>(image.scanLine(y));
-      const uint16_t* const alphaRow = ib.alpha().ConstRow(y);
+      const float* const alphaRow = ib.alpha().ConstRow(y);
       const float* const redRow = converted.ConstPlaneRow(0, y);
       const float* const greenRow = converted.ConstPlaneRow(1, y);
       const float* const blueRow = converted.ConstPlaneRow(2, y);
       for (int x = 0; x < image.width(); ++x) {
-        row[x] = qRgba(redRow[x], greenRow[x], blueRow[x],
-                       alphaRow[x] >> alphaRightShiftAmount);
+        row[x] =
+            qRgba(redRow[x], greenRow[x], blueRow[x], alphaRow[x] * 255 + .5f);
       }
     }
   } else {

@@ -146,10 +146,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   const bool has_alpha = (input.channels() & OpenEXR::RgbaChannels::WRITE_A) ==
                          OpenEXR::RgbaChannels::WRITE_A;
 
-  const float intensity_target = (io->dec_target != DecodeTarget::kLosslessFloat
-                                      ? GetIntensityTarget(*io, input.header())
-                                      : 1.0f);
-  io->metadata.m.SetIntensityTarget(intensity_target);
+  const float intensity_target = GetIntensityTarget(*io, input.header());
 
   auto image_size = input.displayWindow().size();
   // Size is computed as max - min, but both bounds are inclusive.
@@ -157,11 +154,10 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   ++image_size.y;
   Image3F image(image_size.x, image_size.y);
   ZeroFillImage(&image);
-  ImageU alpha;
-  static constexpr uint16_t kMaxAlpha = MaxAlpha(kExrAlphaBits);
+  ImageF alpha;
   if (has_alpha) {
-    alpha = ImageU(image_size.x, image_size.y);
-    FillImage(kMaxAlpha, &alpha);
+    alpha = ImageF(image_size.x, image_size.y);
+    FillImage(1.f, &alpha);
   }
 
   const int row_size = input.dataWindow().size().x + 1;
@@ -194,7 +190,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
               image.PlaneRow(1, image_y),
               image.PlaneRow(2, image_y),
           };
-          uint16_t* const JXL_RESTRICT alpha_row =
+          float* const JXL_RESTRICT alpha_row =
               has_alpha ? alpha.Row(image_y) : nullptr;
           for (int exr_x = std::max(input.dataWindow().min.x,
                                     input.displayWindow().min.x);
@@ -204,11 +200,11 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
             const int image_x = exr_x - input.displayWindow().min.x;
             const OpenEXR::Rgba& pixel =
                 input_row[exr_x - input.dataWindow().min.x];
-            rows[0][image_x] = intensity_target * pixel.r;
-            rows[1][image_x] = intensity_target * pixel.g;
-            rows[2][image_x] = intensity_target * pixel.b;
+            rows[0][image_x] = pixel.r;
+            rows[1][image_x] = pixel.g;
+            rows[2][image_x] = pixel.b;
             if (has_alpha) {
-              alpha_row[image_x] = kMaxAlpha * pixel.a;
+              alpha_row[image_x] = pixel.a;
             }
           }
         },
@@ -242,6 +238,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   io->metadata.m.bit_depth.floating_point_sample = true;
   io->SetFromImage(std::move(image), color_encoding);
   io->metadata.m.color_encoding = color_encoding;
+  io->metadata.m.SetIntensityTarget(intensity_target);
   if (has_alpha) {
     io->metadata.m.SetAlphaBits(kExrAlphaBits, /*alpha_is_premultiplied=*/true);
     io->Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/true);
@@ -291,10 +288,6 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
     const int y_chunk_size = io->ysize();
     std::vector<OpenEXR::Rgba> output_rows(io->xsize() * y_chunk_size);
 
-    const float multiplier = 1.f / io->metadata.m.IntensityTarget();
-    const float alpha_normalizer =
-        has_alpha ? 1.f / MaxAlpha(io->metadata.m.GetAlphaBits()) : 0;
-
     for (size_t start_y = 0; start_y < io->ysize(); start_y += y_chunk_size) {
       // Inclusive.
       const size_t end_y =
@@ -312,30 +305,26 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
             OpenEXR::Rgba* const JXL_RESTRICT row_data =
                 &output_rows[(y - start_y) * io->xsize()];
             if (has_alpha) {
-              const uint16_t* const JXL_RESTRICT alpha_row =
+              const float* const JXL_RESTRICT alpha_row =
                   io->Main().alpha().ConstRow(y);
               if (alpha_is_premultiplied) {
                 for (size_t x = 0; x < io->xsize(); ++x) {
-                  const float alpha = alpha_normalizer * alpha_row[x];
                   row_data[x] =
-                      OpenEXR::Rgba(multiplier * input_rows[0][x],
-                                    multiplier * input_rows[1][x],
-                                    multiplier * input_rows[2][x], alpha);
+                      OpenEXR::Rgba(input_rows[0][x], input_rows[1][x],
+                                    input_rows[2][x], alpha_row[x]);
                 }
               } else {
                 for (size_t x = 0; x < io->xsize(); ++x) {
-                  const float alpha = alpha_normalizer * alpha_row[x];
-                  row_data[x] = OpenEXR::Rgba(
-                      multiplier * alpha * input_rows[0][x],
-                      multiplier * alpha * input_rows[1][x],
-                      multiplier * alpha * input_rows[2][x], alpha);
+                  row_data[x] = OpenEXR::Rgba(alpha_row[x] * input_rows[0][x],
+                                              alpha_row[x] * input_rows[1][x],
+                                              alpha_row[x] * input_rows[2][x],
+                                              alpha_row[x]);
                 }
               }
             } else {
               for (size_t x = 0; x < io->xsize(); ++x) {
-                row_data[x] = OpenEXR::Rgba(multiplier * input_rows[0][x],
-                                            multiplier * input_rows[1][x],
-                                            multiplier * input_rows[2][x], 1.f);
+                row_data[x] = OpenEXR::Rgba(input_rows[0][x], input_rows[1][x],
+                                            input_rows[2][x], 1.f);
               }
             }
           },

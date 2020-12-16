@@ -19,7 +19,7 @@
 
 namespace jxl {
 
-// FromFloat expects a value between 0 and 255, and ToFloat returns such values
+// FromFloat expects a value between 0 and 1, and ToFloat returns such values
 // from GIMP values.
 template <GimpPrecision>
 struct BufferFormat;
@@ -27,7 +27,7 @@ template <>
 struct BufferFormat<GIMP_PRECISION_U8_GAMMA> {
   using Sample = uint8_t;
   static Sample FromFloat(const float x) {
-    return static_cast<Sample>(std::round(x));
+    return static_cast<Sample>(std::round(x * 255.f));
   }
   static float ToFloat(const Sample s) { return s; }
 };
@@ -35,29 +35,29 @@ template <>
 struct BufferFormat<GIMP_PRECISION_U16_GAMMA> {
   using Sample = uint16_t;
   static Sample FromFloat(const float x) {
-    return static_cast<Sample>(std::round(x * (65535.f / 255.f)));
+    return static_cast<Sample>(std::round(x * 65535.f));
   }
-  static float ToFloat(const Sample s) { return s * (255.f / 65535.f); }
+  static float ToFloat(const Sample s) { return s * (1.f / 65535.f); }
 };
 template <>
 struct BufferFormat<GIMP_PRECISION_U32_GAMMA> {
   using Sample = uint32_t;
   static Sample FromFloat(const float x) {
-    return static_cast<Sample>(std::round(x * (4294967295.f / 255.f)));
+    return static_cast<Sample>(std::round(x * 4294967295.f));
   }
-  static float ToFloat(const Sample s) { return s * (255.f / 4294967295.f); }
+  static float ToFloat(const Sample s) { return s * (1.f / 4294967295.f); }
 };
 template <>
 struct BufferFormat<GIMP_PRECISION_HALF_GAMMA> {
   using Sample = float;
-  static Sample FromFloat(const float x) { return x * (1.f / 255.f); }
-  static float ToFloat(const Sample s) { return s * 255.f; }
+  static Sample FromFloat(const float x) { return x; }
+  static float ToFloat(const Sample s) { return s; }
 };
 template <>
 struct BufferFormat<GIMP_PRECISION_FLOAT_GAMMA> {
   using Sample = float;
-  static Sample FromFloat(const float x) { return x * (1.f / 255.f); }
-  static float ToFloat(const Sample s) { return s * 255.f; }
+  static Sample FromFloat(const float x) { return x; }
+  static float ToFloat(const Sample s) { return s; }
 };
 
 }  // namespace jxl

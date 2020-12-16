@@ -19,7 +19,6 @@ set(TEST_FILES
   jxl/alpha_test.cc
   jxl/ans_common_test.cc
   jxl/ans_test.cc
-  jxl/base/fast_log_test.cc
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
   jxl/byte_order_test.cc
@@ -36,6 +35,7 @@ set(TEST_FILES
   jxl/encode_test.cc
   jxl/entropy_coder_test.cc
   jxl/external_image_test.cc
+  jxl/fast_math_test.cc
   jxl/fields_test.cc
   jxl/filters_internal_test.cc
   jxl/gaborish_test.cc
@@ -45,7 +45,7 @@ set(TEST_FILES
   jxl/iaca_test.cc
   jxl/icc_codec_test.cc
   jxl/image_bundle_test.cc
-  jxl/image_test.cc
+  jxl/image_ops_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
   jxl/linalg_test.cc

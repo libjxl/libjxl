@@ -24,7 +24,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <mutex>
 #include <numeric>  // std::accumulate
 #include <vector>
 
@@ -617,10 +616,17 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& rect,
                            ssize_t y, size_t thread, Image3F* JXL_RESTRICT out,
                            size_t* JXL_RESTRICT output_row) {
   JXL_DASSERT(rect.x0() % kBlockDim == 0);
+  JXL_ASSERT(dec_state->decoded_padding == kMaxFilterPadding);
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   if (!lf.gab && lf.epf_iters == 0) {
     if (y < 0 || y >= static_cast<ssize_t>(rect.ysize())) return false;
     *output_row = y;
+    for (size_t c = 0; c < 3; c++) {
+      memcpy(rect.PlaneRow(out, c, y),
+             rect.ConstPlaneRow(dec_state->decoded, c, y) +
+                 dec_state->decoded_padding,
+             rect.xsize() * sizeof(float));
+    }
     return *output_row < dec_state->shared->frame_dim.ysize;
   }
   // decoded.ysize() is used for mirroring of the input image last rows. This

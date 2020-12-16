@@ -52,7 +52,7 @@ struct Rng {
 #endif
 
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/fast_log-inl.h"
+#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
 HWY_BEFORE_NAMESPACE();
@@ -87,7 +87,7 @@ float EstimateBits(const int32_t *counts, int32_t *rounded_counts,
     const auto round_counts_v = LoadU(di, &rounded_counts[i]);
     const auto probs = ConvertTo(df, round_counts_v) * inv_total;
     const auto nbps = IfThenElse(round_counts_v == total_v, BitCast(di, zero),
-                                 BitCast(di, FastLog2f_18bits(df, probs)));
+                                 BitCast(di, FastLog2f(df, probs)));
     bits_lanes -=
         IfThenElse(counts_v == zero, zero, counts_v * BitCast(df, nbps));
   }
@@ -213,8 +213,6 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
   size_t num_predictors = tree_samples.NumPredictors();
   size_t num_properties = tree_samples.NumProperties();
 
-  int wp_prop = tree_samples.PropertyIndex(kWPProp);
-
   // TODO(veluca): consider parallelizing the search (processing multiple nodes
   // at a time).
   while (!nodes.empty()) {
@@ -293,6 +291,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
         forced_split.val = tree_samples.QuantizeProperty(axis, val);
         forced_split.prop = axis;
         forced_split.lcost = forced_split.rcost = base_bits / 2 - threshold;
+        forced_split.lpred = forced_split.rpred = (*tree)[pos].predictor;
         best = &forced_split;
         best->pos = begin;
         JXL_ASSERT(best->prop == tree_samples.PropertyFromIndex(best->prop));
@@ -427,12 +426,12 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
           float rcost = costs_r[i - first_used].cost;
           float lcost = costs_l[i - first_used].cost;
           // WP was not used + we would use the WP property or predictor
-          bool uses_wp = prop == wp_prop ||
-                         costs_l[i - first_used].pred == Predictor::Weighted ||
-                         costs_r[i - first_used].pred == Predictor::Weighted;
-          bool used_wp = (used_properties & (1LU << wp_prop)) != 0 ||
-                         (*tree)[pos].predictor == Predictor::Weighted;
-          bool adds_wp = uses_wp && !used_wp;
+          bool adds_wp =
+              (tree_samples.PropertyFromIndex(prop) == kWPProp &&
+               (used_properties & (1LU << prop)) == 0) ||
+              ((costs_l[i - first_used].pred == Predictor::Weighted ||
+                costs_r[i - first_used].pred == Predictor::Weighted) &&
+               (*tree)[pos].predictor != Predictor::Weighted);
           bool zero_entropy_side = rcost == 0 || lcost == 0;
 
           SplitInfo &best =

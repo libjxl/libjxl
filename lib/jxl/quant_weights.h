@@ -198,7 +198,7 @@ struct QuantEncodingInternal {
     struct {
       // explicit quantization table (like in JPEG)
       std::vector<int>* qtable = nullptr;
-      int qtable_den_shift = 0;
+      float qtable_den = 1.f / (8 * 255);
     } qraw;
   };
 
@@ -291,7 +291,7 @@ class QuantEncoding final : public QuantEncodingInternal {
     QuantEncoding encoding(kQuantModeRAW);
     encoding.qraw.qtable = new std::vector<int>();
     *encoding.qraw.qtable = qtable;
-    encoding.qraw.qtable_den_shift = shift;
+    encoding.qraw.qtable_den = (1 << shift) * (1.f / (8 * 255));
     return encoding;
   }
 

@@ -216,13 +216,13 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   return true;
 }
 
-void RenderSpotColor(jxl::Image3F& img, const jxl::ImageU& sc,
-                     const float color[4], int ec_bit_depth) {
-  float scale = color[3] / ((1 << ec_bit_depth) - 1.0f);
+void RenderSpotColor(jxl::Image3F& img, const jxl::ImageF& sc,
+                     const float color[4]) {
+  float scale = color[3];
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < img.ysize(); y++) {
       float* JXL_RESTRICT p = img.Plane(c).Row(y);
-      const uint16_t* JXL_RESTRICT s = sc.ConstRow(y);
+      const float* JXL_RESTRICT s = sc.ConstRow(y);
       for (size_t x = 0; x < img.xsize(); x++) {
         float mix = scale * s[x];
         p[x] = mix * color[c] + (1.0 - mix) * p[x];
@@ -253,8 +253,7 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     if (eci.type == jxl::ExtraChannel::kSpotColor) {
       for (size_t fr = 0; fr < io.frames.size(); fr++)
         RenderSpotColor(*io.frames[fr].color(),
-                        io.frames[fr].extra_channels()[i], eci.spot_color,
-                        eci.bit_depth.bits_per_sample);
+                        io.frames[fr].extra_channels()[i], eci.spot_color);
     }
   }
 
@@ -287,8 +286,6 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
                                1, static_cast<int>(io.frames.size() - 1))));
     std::vector<char> output_filename;
     output_filename.resize(base.size() + 1 + digits + strlen(extension) + 1);
-
-    jxl::CodecInOut frame_io;
 
     for (size_t i = 0; i < io.frames.size(); ++i) {
       jxl::CodecInOut frame_io;

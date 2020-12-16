@@ -20,27 +20,24 @@
 #include <cmath>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/transfer_functions-inl.h"
 
 namespace jxl {
 
-// Values are in [0, 255].
-static JXL_INLINE double Srgb8ToLinearDirect(double srgb8) {
-  if (srgb8 <= 0.0) return 0.0;
-  if (srgb8 <= 10.31475) return srgb8 / 12.92;
-  if (srgb8 >= 255.0) return 255.0;
-  const double srgb01 = srgb8 / 255.0;
-  const double linear01 = std::pow((srgb01 + 0.055) / 1.055, 2.4);
-  return linear01 * 255.0;
+// Values are in [0, 1].
+static JXL_INLINE double Srgb8ToLinearDirect(double srgb) {
+  if (srgb <= 0.0) return 0.0;
+  if (srgb <= 0.04045) return srgb / 12.92;
+  if (srgb >= 1.0) return 1.0;
+  return std::pow((srgb + 0.055) / 1.055, 2.4);
 }
 
-// Values are in [0, 255].
+// Values are in [0, 1].
 static JXL_INLINE double LinearToSrgb8Direct(double linear) {
   if (linear <= 0.0) return 0.0;
-  if (linear >= 255.0) return 255.0;
-  if (linear <= 10.31475 / 12.92) return linear * 12.92;
-  const double linear01 = linear / 255.0;
-  const double srgb01 = std::pow(linear01, 1.0 / 2.4) * 1.055 - 0.055;
-  return srgb01 * 255.0;
+  if (linear >= 1.0) return 1.0;
+  if (linear <= 0.0031308) return linear * 12.92;
+  return std::pow(linear, 1.0 / 2.4) * 1.055 - 0.055;
 }
 
 }  // namespace jxl

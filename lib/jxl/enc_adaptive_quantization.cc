@@ -46,13 +46,12 @@
 #include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_cache.h"
-#include "lib/jxl/enc_dct.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/epf.h"
-#include "lib/jxl/fast_log-inl.h"
+#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -63,6 +62,9 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 namespace {
+
+// These templates are not found via ADL.
+using hwy::HWY_NAMESPACE::Rebind;
 
 // The following functions modulate an exponent (out_val) and return the updated
 // value. Their descriptor is limited to 8 lanes for 8x8 blocks.
@@ -185,7 +187,7 @@ V SimpleGamma(const D d, V v) {
   // clamping here.
   // TODO(veluca): with FastLog2f, this no longer leads to NaNs.
   v = ZeroIfNegative(v);
-  return kRetMul * FastLog2f_18bits(d, v + kVOffset) + kRetAdd;
+  return kRetMul * FastLog2f(d, v + kVOffset) + kRetAdd;
 }
 
 template <bool invert, typename D, typename V>
@@ -252,7 +254,7 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   // less than that.
   // ln(2) constant folded in because we want std::log but have FastLog2f.
   const auto kGam = Set(d, -0.15526878023684174f * 0.693147180559945f);
-  return MulAdd(kGam, FastLog2f_18bits(d, overall_ratio), out_val);
+  return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
 }
 
 // Increase precision in 8x8 blocks that have high dynamic range.
@@ -312,7 +314,7 @@ template <class D, class V>
 V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
                const V out_val) {
   // Zero out the invalid differences for the rightmost value per row.
-  const HWY_CAPPED(uint32_t, MaxLanes(d)) du;
+  const Rebind<uint32_t, D> du;
   HWY_ALIGN constexpr uint32_t kMaskRight[kBlockDim] = {~0u, ~0u, ~0u, ~0u,
                                                         ~0u, ~0u, ~0u, 0};
 
@@ -390,7 +392,7 @@ V MaskingLog(const D d, V v) {
   constexpr float kMul = 3.1101290961753842f;
   const auto mul_v = Set(d, kMul * 10000);
   const auto offset_v = Set(d, kLogOffset);
-  return FastLog2f_18bits(d, MulAdd(v, mul_v, offset_v));
+  return FastLog2f(d, MulAdd(v, mul_v, offset_v));
 }
 
 float MaskingLog(const float v) {
@@ -1263,9 +1265,7 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   Image3F idct(opsin.xsize(), opsin.ysize());
   ImageBundle decoded(&metadata);
 
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches(
-      nullptr, hwy::AlignedDeleter(nullptr));
-
+  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](size_t num_threads) {
     dec_state.EnsureStorage(num_threads);
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);

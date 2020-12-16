@@ -87,7 +87,7 @@ inline pixel_type_w SmoothTendency(pixel_type_w B, pixel_type_w a,
 void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
-  if (chin_residual.w == 0) return;
+  if (chin_residual.w == 0 || chin_residual.h == 0) return;
   Channel chout(chin.w + chin_residual.w, chin.h, chin.hshift - 1, chin.vshift,
                 chin.hcshift - 1, chin.vcshift);
   JXL_DEBUG_V(4,
@@ -179,7 +179,7 @@ void FwdHSqueeze(Image &input, int c, int rc) {
 void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
-  if (chin_residual.h == 0) return;
+  if (chin_residual.w == 0 || chin_residual.h == 0) return;
   Channel chout(chin.w, chin.h + chin_residual.h, chin.hshift, chin.vshift - 1,
                 chin.hcshift, chin.vcshift - 1);
   JXL_DEBUG_V(

@@ -119,8 +119,9 @@ typedef struct {
   double white_point_xy[2];
 
   /** Built-in RGB primaries. If this value is JXL_PRIMARIES_CUSTOM, must
-   * use the numerical primaries values below. This field must be ignored
-   * if the color space is grayscale.
+   * use the numerical primaries values below. This field and the custom values
+   * below are unused and must be ignored if the color space is
+   * JXL_COLOR_SPACE_GRAY or JXL_COLOR_SPACE_XYB.
    */
   JxlPrimaries primaries;
 

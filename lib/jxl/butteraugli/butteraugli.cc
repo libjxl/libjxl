@@ -51,7 +51,7 @@
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/fast_log-inl.h"
+#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
 
@@ -1195,8 +1195,7 @@ void MaltaDiffMapLF(const ImageF& lum0, const ImageF& lum1, const double w_0gt1,
                 diffs, block_diff_ac, c);
 }
 
-void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg,
-                    ImageF *out) {
+void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg, ImageF* out) {
   PROFILER_FUNC;
   const size_t xsize = xyb.xsize();
   const size_t ysize = xyb.ysize();
@@ -1290,8 +1289,8 @@ void Mask(const Image3F& xyb0, const Image3F& xyb1,
     static const float kMul = 6.29;
     static const float kBias = 1.2;
     static const float kRadius = 5.5;
-    //ImageF diff0(xsize, ysize);
-    //ImageF diff1(xsize, ysize);
+    // ImageF diff0(xsize, ysize);
+    // ImageF diff1(xsize, ysize);
     ImageF blurred0(xsize, ysize);
     ImageF blurred1(xsize, ysize);
     DiffPrecompute(xyb0.Plane(1), kMul, kBias, &diff0);
@@ -1531,7 +1530,7 @@ V Gamma(const DF df, V v) {
   v = ZeroIfNegative(v);
 
   const auto biased = v + Set(df, 9.9710635769299145);
-  const auto log = FastLog2f_18bits(df, biased);
+  const auto log = FastLog2f(df, biased);
   // We could fold this into a custom Log2 polynomial, but there would be
   // relatively little gain.
   return MulAdd(kRetMul, log, kRetAdd);
@@ -1590,8 +1589,7 @@ Image3F OpsinDynamicsImage(const Image3F& rgb, const ButteraugliParams& params,
   Blur(rgb.Plane(1), kSigma, params, blur_temp, &blurred->Plane(1));
   Blur(rgb.Plane(2), kSigma, params, blur_temp, &blurred->Plane(2));
   const HWY_FULL(float) df;
-  const auto intensity_target_multiplier =
-      Set(df, params.intensity_target / 255.0f);
+  const auto intensity_target_multiplier = Set(df, params.intensity_target);
   for (size_t y = 0; y < rgb.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row_r = rgb.ConstPlaneRow(0, y);
     const float* BUTTERAUGLI_RESTRICT row_g = rgb.ConstPlaneRow(1, y);
@@ -1925,15 +1923,9 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
                  norm1MfX, &diffs, &block_diff_ac, 0);
 
   static const double wmul[9] = {
-    16.941000115,
-    3.02783891312,
-    0,
-    66.326605101,
-    10.4149123202,
-    8.78328001732,
-    0.897267960122,
-    0.836712483387,
-    0.632318353626,
+      16.941000115,   3.02783891312,  0,
+      66.326605101,   10.4149123202,  8.78328001732,
+      0.897267960122, 0.836712483387, 0.632318353626,
   };
   Image3F block_diff_dc(xsize_, ysize_);
   for (size_t c = 0; c < 3; ++c) {

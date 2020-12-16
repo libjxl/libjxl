@@ -437,7 +437,8 @@ struct FrameHeader : public Fields {
     FrameDimensions frame_dim;
     frame_dim.Set(xsize, ysize, group_size_shift,
                   chroma_subsampling.MaxHShift(),
-                  chroma_subsampling.MaxVShift(), upsampling);
+                  chroma_subsampling.MaxVShift(),
+                  encoding == FrameEncoding::kModular, upsampling);
     return frame_dim;
   }
 

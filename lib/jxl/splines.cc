@@ -23,13 +23,158 @@
 #include "lib/jxl/dct_scales.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/opsin_params.h"
-#include "lib/jxl/splines_fastmath.h"
 
+#undef HWY_TARGET_INCLUDE
+#define HWY_TARGET_INCLUDE "lib/jxl/splines.cc"
+#include <hwy/foreach_target.h>
+#include <hwy/highway.h>
+
+#include "lib/jxl/fast_math-inl.h"
+HWY_BEFORE_NAMESPACE();
 namespace jxl {
-
+namespace HWY_NAMESPACE {
 namespace {
 
-constexpr float kDesiredRenderingDistance = 1.f;
+// Given a set of DCT coefficients, this returns the result of performing cosine
+// interpolation on the original samples.
+float ContinuousIDCT(const float dct[32], float t) {
+  // We compute here the DCT-3 of the `dct` vector, rescaled by a factor of
+  // sqrt(32). This is such that an input vector vector {x, 0, ..., 0} produces
+  // a constant result of x. dct[0] was scaled in Dequantize() to allow uniform
+  // treatment of all the coefficients.
+  constexpr float kMultipliers[32] = {
+      kPi / 32 * 0,  kPi / 32 * 1,  kPi / 32 * 2,  kPi / 32 * 3,  kPi / 32 * 4,
+      kPi / 32 * 5,  kPi / 32 * 6,  kPi / 32 * 7,  kPi / 32 * 8,  kPi / 32 * 9,
+      kPi / 32 * 10, kPi / 32 * 11, kPi / 32 * 12, kPi / 32 * 13, kPi / 32 * 14,
+      kPi / 32 * 15, kPi / 32 * 16, kPi / 32 * 17, kPi / 32 * 18, kPi / 32 * 19,
+      kPi / 32 * 20, kPi / 32 * 21, kPi / 32 * 22, kPi / 32 * 23, kPi / 32 * 24,
+      kPi / 32 * 25, kPi / 32 * 26, kPi / 32 * 27, kPi / 32 * 28, kPi / 32 * 29,
+      kPi / 32 * 30, kPi / 32 * 31,
+  };
+  HWY_CAPPED(float, 32) df;
+  auto result = Zero(df);
+  const auto tandhalf = Set(df, t + 0.5f);
+  for (int i = 0; i < 32; i += Lanes(df)) {
+    auto cos_arg = LoadU(df, kMultipliers + i) * tandhalf;
+    auto cos = FastCosf(df, cos_arg);
+    auto local_res = LoadU(df, dct + i) * cos;
+    result = MulAdd(Set(df, square_root<2>::value), local_res, result);
+  }
+  return GetLane(SumOfLanes(result));
+}
+
+// Splats a single Gaussian on the image.
+void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
+                  const Rect& image_rect, const Spline::Point& center,
+                  const float intensity, const float color[3],
+                  const float sigma, std::vector<int32_t>& xs,
+                  std::vector<int32_t>& ys,
+                  std::vector<float>& local_intensity_storage) {
+  constexpr float kDistanceMultiplier = 4.605170185988091f;  // -2 * log(0.1)
+  // Distance beyond which exp(-d^2 / (2 * sigma^2)) drops below 0.1.
+  const float maximum_distance = sigma * sigma * kDistanceMultiplier;
+  const auto xbegin =
+      std::max<size_t>(image_rect.x0(), center.x - maximum_distance + .5f);
+  const auto xend = std::min<size_t>(center.x + maximum_distance + .5f,
+                                     image_rect.x0() + image_rect.xsize() - 1);
+  const auto ybegin =
+      std::max<size_t>(image_rect.y0(), center.y - maximum_distance + .5f);
+  const auto yend = std::min<size_t>(center.y + maximum_distance + .5f,
+                                     image_rect.y0() + image_rect.ysize() - 1);
+  size_t opsin_stride = opsin->PixelsPerRow();
+  float* JXL_RESTRICT rows[3] = {
+      opsin_rect.PlaneRow(opsin, 0, ybegin - image_rect.y0()),
+      opsin_rect.PlaneRow(opsin, 1, ybegin - image_rect.y0()),
+      opsin_rect.PlaneRow(opsin, 2, ybegin - image_rect.y0()),
+  };
+  size_t nx = xend + 1 - xbegin;
+  size_t ny = yend + 1 - ybegin;
+  HWY_FULL(float) df;
+  if (xs.size() < nx * ny) {
+    size_t sz = DivCeil(nx * ny, Lanes(df)) * Lanes(df);
+    xs.resize(sz);
+    ys.resize(sz);
+    local_intensity_storage.resize(sz);
+  }
+  for (size_t y = ybegin; y <= yend; ++y) {
+    for (size_t x = xbegin; x <= xend; ++x) {
+      xs[(y - ybegin) * nx + (x - xbegin)] = x;
+      ys[(y - ybegin) * nx + (x - xbegin)] = y;
+    }
+  }
+  Rebind<int32_t, decltype(df)> di;
+  const auto inv_sigma = Set(df, 1.0f / sigma);
+  const auto half = Set(df, 0.5f);
+  const auto one_over_2s2 = Set(df, 0.353553391f);
+  const auto sigma_over_4_times_intensity = Set(df, .25f * sigma * intensity);
+  for (size_t i = 0; i < nx * ny; i += Lanes(df)) {
+    const auto x = ConvertTo(df, LoadU(di, &xs[i]));
+    const auto y = ConvertTo(df, LoadU(di, &ys[i]));
+    const auto dx = x - Set(df, center.x);
+    const auto dy = y - Set(df, center.y);
+    const auto sqd = MulAdd(dx, dx, dy * dy);
+    const auto distance = Sqrt(sqd);
+    const auto one_dimensional_factor =
+        FastErff(df, MulAdd(distance, half, one_over_2s2) * inv_sigma) -
+        FastErff(df, MulSub(distance, half, one_over_2s2) * inv_sigma);
+    const auto local_intensity = sigma_over_4_times_intensity *
+                                 one_dimensional_factor *
+                                 one_dimensional_factor;
+    StoreU(local_intensity, df, &local_intensity_storage[i]);
+  }
+  ssize_t off = -static_cast<ssize_t>(image_rect.x0());
+  for (size_t y = ybegin; y <= yend; ++y) {
+    HWY_CAPPED(float, 1) df;
+    for (size_t x = xbegin; x <= xend; ++x) {
+      const auto local_intensity = Load(
+          df, local_intensity_storage.data() + (y - ybegin) * nx + x - xbegin);
+      for (size_t c = 0; c < 3; ++c) {
+        const auto cm = Set(df, color[c]);
+        const auto in = LoadU(df, rows[c] + x + off);
+        StoreU(MulAdd(cm, local_intensity, in), df, rows[c] + x + off);
+      }
+    }
+    off += opsin_stride;
+  }
+}
+
+void DrawFromPoints(
+    Image3F* const opsin, const Rect& opsin_rect, const Rect& image_rect,
+    const Spline& spline, bool add,
+    const std::vector<std::pair<Spline::Point, float>>& points_to_draw,
+    float arc_length) {
+  float inv_arc_length = 1.0f / arc_length;
+  int k = 0;
+  std::vector<int32_t> xs, ys;
+  std::vector<float> local_intensity_storage;
+  for (const auto& point_to_draw : points_to_draw) {
+    const Spline::Point& point = point_to_draw.first;
+    const float multiplier = add ? point_to_draw.second : -point_to_draw.second;
+    const float progress_along_arc =
+        std::min(1.f, (k * kDesiredRenderingDistance) * inv_arc_length);
+    ++k;
+    float color[3];
+    for (size_t c = 0; c < 3; ++c) {
+      color[c] =
+          ContinuousIDCT(spline.color_dct[c], (32 - 1) * progress_along_arc);
+    }
+    const float sigma =
+        ContinuousIDCT(spline.sigma_dct, (32 - 1) * progress_along_arc);
+    DrawGaussian(opsin, opsin_rect, image_rect, point, multiplier, color, sigma,
+                 xs, ys, local_intensity_storage);
+  }
+}
+}  // namespace
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace jxl
+HWY_AFTER_NAMESPACE();
+
+#if HWY_ONCE
+namespace jxl {
+HWY_EXPORT(DrawFromPoints);
+
+namespace {
 
 // X, Y, B, sigma.
 float ColorQuantizationWeight(const int32_t adjustment, const int channel,
@@ -155,71 +300,6 @@ std::vector<Spline::Point> DrawCentripetalCatmullRomSpline(
   return result;
 }
 
-// Given a set of DCT coefficients, this returns the result of performing cosine
-// interpolation on the original samples.
-template <int N>
-float ContinuousIDCT(const float dct[N], float t) {
-  // We compute here the DCT-3 of the `dct` vector, rescaled by a factor of
-  // sqrt(32). This is such that an input vector vector {x, 0, ..., 0} produces
-  // a constant result of x.
-  float result = dct[0];
-  for (int i = 1; i < N; ++i) {
-    result += square_root<2>::value * dct[i] *
-              splines_internal::Cos((kPi / N) * i * (t + 0.5f));
-  }
-  return result;
-}
-
-// Used for Gaussian splatting. This gives the intensity of the Gaussian for a
-// given distance from its center.
-float BrushIntensity(const float distance, const float sigma) {
-  const float one_dimensional_delta = (1.f / 1.4142135623730951f) * distance;
-  const float inv_sqrt2_times_sigma = 1.f / (1.4142135623730951f * sigma);
-  const float one_dimensional_factor =
-      splines_internal::Erf((one_dimensional_delta + .5f) *
-                            inv_sqrt2_times_sigma) -
-      splines_internal::Erf((one_dimensional_delta - .5f) *
-                            inv_sqrt2_times_sigma);
-  return .25f * sigma * one_dimensional_factor * one_dimensional_factor;
-}
-
-// Splats a single Gaussian on the image.
-void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
-                  const Rect& image_rect, const Spline::Point& center,
-                  const float intensity, const float color[3],
-                  const float sigma) {
-  constexpr float kDistanceMultiplier = 4.605170185988091f;  // -2 * log(0.1)
-  // Distance beyond which exp(-d^2 / (2 * sigma^2)) drops below 0.1.
-  const float maximum_distance = sigma * sigma * kDistanceMultiplier;
-  const auto xbegin =
-      static_cast<size_t>(std::max(0.f, center.x - maximum_distance + .5f));
-  const auto xend =
-      std::min<size_t>(center.x + maximum_distance + .5f, opsin->xsize() - 1);
-  const auto ybegin =
-      static_cast<size_t>(std::max(0.f, center.y - maximum_distance + .5f));
-  const auto yend =
-      std::min<size_t>(center.y + maximum_distance + .5f, opsin->ysize() - 1);
-  for (size_t y = ybegin; y <= yend; ++y) {
-    if (y < image_rect.y0() || y >= image_rect.y0() + image_rect.ysize())
-      continue;
-    float* JXL_RESTRICT rows[3] = {
-        opsin_rect.PlaneRow(opsin, 0, y - image_rect.y0()),
-        opsin_rect.PlaneRow(opsin, 1, y - image_rect.y0()),
-        opsin_rect.PlaneRow(opsin, 2, y - image_rect.y0()),
-    };
-    for (size_t x = xbegin; x <= xend; ++x) {
-      if (x < image_rect.x0() || x >= image_rect.x0() + image_rect.xsize())
-        continue;
-      const Spline::Point point{static_cast<float>(x), static_cast<float>(y)};
-      const float distance = std::sqrt((point - center).SquaredNorm());
-      const float local_intensity = intensity * BrushIntensity(distance, sigma);
-      for (size_t c = 0; c < 3; ++c) {
-        rows[c][x - image_rect.x0()] += local_intensity * color[c];
-      }
-    }
-  }
-}
-
 // Move along the line segments defined by `points`, `kDesiredRenderingDistance`
 // pixels at a time, and call `functor` with each point and the actual distance
 // to the previous point (which will always be kDesiredRenderingDistance except
@@ -323,7 +403,7 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   for (int c = 0; c < 3; ++c) {
     for (int i = 0; i < 32; ++i) {
       result.color_dct[c][i] =
-          color_dct_[c][i] /
+          color_dct_[c][i] * (i == 0 ? 1.0f / square_root<2>::value : 1.0f) /
           ColorQuantizationWeight(quantization_adjustment, c, i);
     }
   }
@@ -333,7 +413,8 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   }
   for (int i = 0; i < 32; ++i) {
     result.sigma_dct[i] =
-        sigma_dct_[i] / ColorQuantizationWeight(quantization_adjustment, 3, i);
+        sigma_dct_[i] * (i == 0 ? 1.0f / square_root<2>::value : 1.0f) /
+        ColorQuantizationWeight(quantization_adjustment, 3, i);
   }
 
   return result;
@@ -474,24 +555,8 @@ Status Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
       // This spline wouldn't have any effect.
       continue;
     }
-    int k = 0;
-    for (const auto& point_to_draw : points_to_draw) {
-      const Spline::Point& point = point_to_draw.first;
-      const float multiplier =
-          add ? point_to_draw.second : -point_to_draw.second;
-      const float progress_along_arc =
-          std::min(1.f, (k * kDesiredRenderingDistance) / arc_length);
-      ++k;
-      float color[3];
-      for (size_t c = 0; c < 3; ++c) {
-        color[c] = ContinuousIDCT<32>(spline.color_dct[c],
-                                      (32 - 1) * progress_along_arc);
-      }
-      const float sigma =
-          ContinuousIDCT<32>(spline.sigma_dct, (32 - 1) * progress_along_arc);
-      DrawGaussian(opsin, opsin_rect, image_rect, point, multiplier, color,
-                   sigma);
-    }
+    HWY_DYNAMIC_DISPATCH(DrawFromPoints)
+    (opsin, opsin_rect, image_rect, spline, add, points_to_draw, arc_length);
   }
   return true;
 }
@@ -502,3 +567,4 @@ Splines FindSplines(const Image3F& opsin) {
 }
 
 }  // namespace jxl
+#endif  // HWY_ONCE

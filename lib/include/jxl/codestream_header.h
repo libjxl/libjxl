@@ -81,7 +81,7 @@ typedef struct {
 
 /** The codestream animation header, optionally present in the beginning of
  * the codestream, and if it is it applies to all animation frames, unlike
- * JxlAnimationFrameHeader which applies to an individual frame.
+ * JxlFrameHeader which applies to an individual frame.
  */
 typedef struct {
   /** Numerator of ticks per second of a single animation frame time unit */
@@ -276,8 +276,7 @@ typedef struct {
   uint64_t extensions;
 } JxlHeaderExtensions;
 
-/** The header of one animation frame. This only exists if have_animation in
- * JxlBasicInfo is JXL_TRUE */
+/** The header of one displayed frame. */
 typedef struct {
   /** How long to wait after rendering in ticks. The duration in seconds of a
    * tick is given by tps_numerator and tps_denominator in JxlAnimationHeader.
@@ -302,7 +301,7 @@ typedef struct {
   /** Indicates this is the last animation frame.
    */
   JXL_BOOL is_last;
-} JxlAnimationFrameHeader;
+} JxlFrameHeader;
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

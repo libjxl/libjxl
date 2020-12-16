@@ -99,8 +99,8 @@ class ModularFrameDecoder {
   explicit ModularFrameDecoder(const FrameDimensions& frame_dim)
       : frame_dim(frame_dim) {}
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
-                          ImageBundle* decoded, bool decode_color, size_t xsize,
-                          size_t ysize, bool allow_truncated_group = false);
+                          const FrameDimensions& frame_dim,
+                          bool allow_truncated_group = false);
   Status DecodeGroup(const Rect& rect, BitReader* reader, AuxOut* aux_out,
                      size_t minShift, size_t maxShift,
                      const ModularStreamId& stream);
@@ -117,10 +117,9 @@ class ModularFrameDecoder {
                                  BitReader* br, QuantEncoding* encoding,
                                  size_t idx,
                                  ModularFrameDecoder* modular_frame_decoder);
-  Status FinalizeDecoding(Image3F* color, ImageBundle* decoded,
-                          jxl::ThreadPool* pool, const float* xyb_muls,
-                          const FrameHeader& frame_header);
-  bool have_dc() { return have_something; };
+  Status FinalizeDecoding(PassesDecoderState* dec_state, jxl::ThreadPool* pool,
+                          ImageBundle* output);
+  bool have_dc() const { return have_something; };
 
  private:
   Image full_image;

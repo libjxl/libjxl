@@ -53,7 +53,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/base/data_parallel.h
   jxl/base/descriptive_statistics.cc
   jxl/base/descriptive_statistics.h
-  jxl/base/fast_log.h
   jxl/base/file_io.h
   jxl/base/iaca.h
   jxl/base/os_specific.cc
@@ -95,12 +94,11 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/dct_util.h
   jxl/dec_ans.cc
   jxl/dec_ans.h
+  jxl/dec_bit_reader.cc
   jxl/dec_bit_reader.h
   jxl/dec_cache.h
   jxl/dec_context_map.cc
   jxl/dec_context_map.h
-  jxl/dec_dct.cc
-  jxl/dec_dct.h
   jxl/dec_file.cc
   jxl/dec_file.h
   jxl/dec_frame.cc
@@ -147,8 +145,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
-  jxl/enc_dct.cc
-  jxl/enc_dct.h
   jxl/enc_fast_heuristics.cc
   jxl/enc_file.cc
   jxl/enc_file.h
@@ -178,7 +174,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/epf.h
   jxl/external_image.cc
   jxl/external_image.h
-  jxl/fast_log-inl.h
+  jxl/fast_math-inl.h
   jxl/field_encodings.h
   jxl/fields.cc
   jxl/fields.h
@@ -206,6 +202,28 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/image_metadata.cc
   jxl/image_metadata.h
   jxl/image_ops.h
+  jxl/jpeg/brunsli_decode.cc
+  jxl/jpeg/brunsli_encode.cc
+  jxl/jpeg/brunsli_encode.h
+  jxl/jpeg/brunsli_status.h
+  jxl/jpeg/dec_jpeg_data_writer.cc
+  jxl/jpeg/dec_jpeg_data_writer.h
+  jxl/jpeg/dec_jpeg_output_chunk.h
+  jxl/jpeg/dec_jpeg_serialization_state.h
+  jxl/jpeg/dec_jpeg_state.cc
+  jxl/jpeg/dec_jpeg_state.h
+  jxl/jpeg/dec_jpeg_state_internal.h
+  jxl/jpeg/enc_jpeg_data_reader.cc
+  jxl/jpeg/enc_jpeg_data_reader.h
+  jxl/jpeg/enc_jpeg_huffman_decode.cc
+  jxl/jpeg/enc_jpeg_huffman_decode.h
+  jxl/jpeg/enc_jpeg_state.h
+  jxl/jpeg/jpeg_constants.h
+  jxl/jpeg/jpeg_constants.cc
+  jxl/jpeg/jpeg_data.h
+  jxl/jpeg/jpeg_lehmer_code.h
+  jxl/jpeg/jpeg_quant_matrix.cc
+  jxl/jpeg/jpeg_quant_matrix.h
   jxl/jxl_inspection.h
   jxl/lehmer_code.h
   jxl/linalg.cc
@@ -230,13 +248,12 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/progressive_split.h
   jxl/quant_weights.cc
   jxl/quant_weights.h
+  jxl/quantizer-inl.h
   jxl/quantizer.cc
   jxl/quantizer.h
-  jxl/quantizer-inl.h
   jxl/rational_polynomial-inl.h
   jxl/splines.cc
   jxl/splines.h
-  jxl/splines_fastmath.h
   jxl/toc.cc
   jxl/toc.h
   jxl/transfer_functions-inl.h
@@ -256,9 +273,6 @@ set(JPEGXL_INTERNAL_LIBS
   brotlicommon-static
   brotlienc-static
   brotlidec-static
-  brunslicommon-static
-  brunslidec-static
-  brunslienc-static
   hwy
   Threads::Threads
   ${CMAKE_DL_LIBS}
@@ -281,7 +295,6 @@ target_include_directories(jxl-obj PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/include
   $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
   $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:brunslicommon-static,INCLUDE_DIRECTORIES>
 )
 target_compile_definitions(jxl-obj PUBLIC
   JPEGXL_MAJOR_VERSION=${JPEGXL_MAJOR_VERSION}

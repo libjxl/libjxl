@@ -746,7 +746,7 @@ std::vector<PatchInfo> FindTextLikePatches(
       for (size_t c = 0; c < 3; c++) {
         float* JXL_RESTRICT min_px = min_then_max_px.data();
         float* JXL_RESTRICT max_px = min_px + kMaxPatchArea;
-        std::fill(min_px, min_px + kMaxPatchArea, 255);
+        std::fill(min_px, min_px + kMaxPatchArea, 1);
         std::fill(max_px, max_px + kMaxPatchArea, 0);
         size_t xsize = info[i].first.xsize;
         for (size_t j = 0; j < info[i].second.size(); j++) {
@@ -767,10 +767,10 @@ std::vector<PatchInfo> FindTextLikePatches(
             JXL_ASSERT(smallest <= biggest);
             float& out = info[i].first.fpixels[c][iy * xsize + ix];
             // Clamp fpixels so that subtracting the patch never creates a
-            // negative value, or a value above 255.
-            JXL_ASSERT(biggest - 255 <= smallest);
+            // negative value, or a value above 1.
+            JXL_ASSERT(biggest - 1 <= smallest);
             out = std::max(smallest, out);
-            out = std::min(biggest - 255.f, out);
+            out = std::min(biggest - 1.f, out);
           }
         }
       }
@@ -970,7 +970,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
     // Add dummy extra channels to the patch image: patches do not yet support
     // extra channels, but the codec expects that the amount of extra channels
     // in frames matches that in the metadata of the codestream.
-    std::vector<ImageU> extra_channels;
+    std::vector<ImageF> extra_channels;
     extra_channels.reserve(ib.metadata()->extra_channel_info.size());
     for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
       extra_channels.emplace_back(ib.xsize(), ib.ysize());

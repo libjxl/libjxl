@@ -128,7 +128,7 @@ void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
-  const auto c128 = Set(df, 128.0f);
+  const auto c128 = Set(df, 128.0f / 255);
   const auto crcr = Set(df, 1.402f);
   const auto cgcb = Set(df, -0.114f * 1.772f / 0.587f);
   const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
@@ -232,12 +232,13 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
  *  output:
  *   |o1 e1 o2 e2 o3 e3 o4 e4| =: (o, e)
  */
-ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
-  const size_t xsize = src.xsize();
+ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
+  JXL_ASSERT(src.xsize() > 2 * xpadding);
+  const size_t xsize = src.xsize() - 2 * xpadding;
   const size_t ysize = src.ysize();
   JXL_ASSERT(xsize != 0);
   JXL_ASSERT(ysize != 0);
-  ImageF dst(xsize * 2, ysize);
+  ImageF dst(xsize * 2 + 2 * xpadding, ysize);
 
   constexpr size_t kGroupArea = kGroupDim * kGroupDim;
   const size_t lines_per_group = DivCeil(kGroupArea, xsize);
@@ -248,8 +249,8 @@ ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
     for (size_t y = y0; y < y1; ++y) {
-      const float* JXL_RESTRICT current_row = src.ConstRow(y);
-      float* JXL_RESTRICT dst_row = dst.Row(y);
+      const float* JXL_RESTRICT current_row = src.ConstRow(y) + xpadding;
+      float* JXL_RESTRICT dst_row = dst.Row(y) + xpadding;
       // TODO(eustas): roll prev <- current <- next?
       for (size_t x = 1; x < xsize - 1; ++x) {
         const float current34 = current_row[x] * 0.75f;
@@ -286,8 +287,8 @@ ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
     for (size_t y = y0; y < y1; ++y) {
-      const float* JXL_RESTRICT current_row = src.ConstRow(y);
-      float* JXL_RESTRICT dst_row = dst.Row(y);
+      const float* JXL_RESTRICT current_row = src.ConstRow(y) + xpadding;
+      float* JXL_RESTRICT dst_row = dst.Row(y) + xpadding;
       const auto c14 = Set(df, 0.25f);
       const auto c34 = Set(df, 0.75f);
       auto prev = Undefined(df);
@@ -362,8 +363,8 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
 }
 
 HWY_EXPORT(UpsampleH2);
-ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
-  return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, pool);
+ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, xpadding, pool);
 }
 
 void OpsinParams::Init(float intensity_target) {

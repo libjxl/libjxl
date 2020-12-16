@@ -782,6 +782,14 @@ ImageF PadImage(const ImageF& in, size_t xsize, size_t ysize);
 // above and below, mirroring the image.
 Image3F PadImageMirror(const Image3F& in, size_t xborder, size_t yborder);
 
+// `img` is an image with `xpadding` undefined values at the beginning and at
+// the end of each row (of length `xsize`). If `rect` shares a border with the
+// padding, this function updates the `xborder` pixels in the padding in the
+// rows that share a border with the rec by mirroring. Otherwise, this function
+// does nothing.
+void PadRectMirrorInPlace(Image3F* img, const Rect& rect, size_t xsize,
+                          size_t xborder, size_t xpadding);
+
 // First, image is padded horizontally, with the rightmost value.
 // Next, image is padded vertically, by repeating the last line.
 // Prefer PadImageToBlockMultipleInPlace if padding to kBlockDim.

@@ -33,6 +33,7 @@ set(JPEGXL_INTERNAL_FLAGS
   -Wall
   -Wextra
   -Wc++11-compat
+  -Warray-bounds
   -Wformat-security
   -Wimplicit-fallthrough
   -Wno-register  # Needed by public headers in lcms

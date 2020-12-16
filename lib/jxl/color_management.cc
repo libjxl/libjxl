@@ -1225,6 +1225,7 @@ JXL_MUST_USE_RESULT cmsCIEXYZ UnadaptedWhitePoint(const cmsContext context,
 Status IdentifyPrimaries(const Profile& profile, const cmsCIEXYZ& wp_unadapted,
                          ColorEncoding* c) {
   if (!c->HasPrimaries()) return true;
+  if (ColorSpaceFromProfile(profile) == ColorSpace::kUnknown) return true;
 
   // These were adapted to the profile illuminant before storing in the profile.
   const cmsCIEXYZ* adapted_r = static_cast<const cmsCIEXYZ*>(

@@ -22,8 +22,7 @@ MYDIR=$(dirname $(realpath "$0"))
 
 # Git revisions we use for the given submodules. Update these whenever you
 # update a git submdule.
-THIRD_PARTY_HIGHWAY="94a72d0cc18b6d1652c8a3a8df61c9239f98e6c2"
-THIRD_PARTY_BRUNSLI="de6768bc8952dc9afc330add42afd91fa3314a2a"
+THIRD_PARTY_HIGHWAY="311c183c9d96e69b123f61eedc21025dd27be000"
 THIRD_PARTY_LODEPNG="48e5364ef48ec2408f44c727657ac1b6703185f8"
 THIRD_PARTY_SKCMS="64374756e03700d649f897dbd98c95e78c30c7da"
 THIRD_PARTY_SJPEG="868ab558fad70fcbe8863ba4e85179eeb81cc840"
@@ -79,7 +78,6 @@ EOF
   fi
 
   # Sources downloaded from a tarball.
-  download_github third_party/brunsli google/brunsli
   download_github third_party/highway google/highway
   download_github third_party/lodepng lvandeve/lodepng
   download_github third_party/sjpeg webmproject/sjpeg

@@ -12,28 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_BASE_FAST_LOG_H_
-#define LIB_JXL_BASE_FAST_LOG_H_
+#ifndef LIB_JXL_JPEG_BRUNSLI_ENCODE_H_
+#define LIB_JXL_JPEG_BRUNSLI_ENCODE_H_
 
+#include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 
-#include <cmath>
+#include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
+namespace jpeg {
 
-// L1 error ~9.1E-3 (see fast_log_test).
-static inline float FastLog2f(float f) {
-  int32_t f_bits;
-  memcpy(&f_bits, &f, 4);
-  int exp = ((f_bits >> 23) & 0xFF) - 126;
-  uint32_t fr_bits = (f_bits & 0x807fffff) | 0x3f000000;
-  float fr;
-  memcpy(&fr, &fr_bits, 4);
-  // TODO(veluca): improve constants.
-  return exp + (-1.34752046f * fr + 3.98979143f) * fr - 2.64898502f;
-}
+// Returns an upper bound on the size of the buffer needed to encode the given
+// jpg data in brunsli format.
+size_t GetMaximumBrunsliEncodedSize(const JPEGData& jpg);
 
+}  // namespace jpeg
 }  // namespace jxl
 
-#endif  // LIB_JXL_BASE_FAST_LOG_H_
+#endif  // LIB_JXL_JPEG_BRUNSLI_ENCODE_H_

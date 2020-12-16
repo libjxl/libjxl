@@ -58,6 +58,7 @@ struct PassesDecoderState {
   // and right sides and xsize() rounded up to a block size, but it has no
   // vertical padding.
   Image3F decoded;
+  size_t decoded_padding = kMaxFilterPadding;
 
   // Seed for noise, to have different noise per-frame.
   size_t noise_seed = 0;
@@ -114,18 +115,16 @@ struct PassesDecoderState {
       }
     }
 
-    const LoopFilter& lf = shared->frame_header.loop_filter;
-    if (lf.epf_iters > 0 || lf.gab) {
-      // decoded must be padded to a multiple of kBlockDim rows since the last
-      // rows may be used by the filters even if they are outside the frame
-      // dimension.
-      decoded = Image3F(shared->frame_dim.xsize_padded + 2 * kMaxFilterPadding,
-                        shared->frame_dim.ysize_padded);
+    // decoded must be padded to a multiple of kBlockDim rows since the last
+    // rows may be used by the filters even if they are outside the frame
+    // dimension.
+    decoded = Image3F(shared->frame_dim.xsize_padded + 2 * decoded_padding,
+                      shared->frame_dim.ysize_padded);
 #if MEMORY_SANITIZER
-      // Avoid errors due to loading vectors on the outermost padding.
-      ZeroFillImage(&decoded);
+    // Avoid errors due to loading vectors on the outermost padding.
+    ZeroFillImage(&decoded);
 #endif
-    }
+    const LoopFilter& lf = shared->frame_header.loop_filter;
     filter_weights.Init(lf, shared->frame_dim);
     for (auto& fp : filter_pipelines) {
       // De-initialize FilterPipelines.

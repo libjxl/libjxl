@@ -53,17 +53,17 @@ constexpr size_t RowSize(size_t xsize, size_t channels,
 // orientation, the output xsize and ysize are swapped compared to input
 // xsize and ysize.
 Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
-                    bool float_out, bool lossless_float, bool apply_srgb_tf,
-                    size_t num_channels, bool little_endian, size_t stride_out,
+                    bool float_out, bool apply_srgb_tf, size_t num_channels,
+                    bool little_endian, size_t stride_out,
                     jxl::ThreadPool* thread_pool, void* out_image,
                     size_t out_size, jxl::Orientation undo_orientation);
 
 // Does the inverse conversion, from an interleaved pixel buffer to ib.
 Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
                     const ColorEncoding& c_current, bool has_alpha,
-                    bool alpha_is_premultiplied, size_t bits_per_alpha,
-                    size_t bits_per_sample, bool big_endian, bool flipped_y,
-                    ThreadPool* pool, ImageBundle* ib);
+                    bool alpha_is_premultiplied, size_t bits_per_sample,
+                    bool big_endian, bool flipped_y, ThreadPool* pool,
+                    ImageBundle* ib);
 
 }  // namespace jxl
 

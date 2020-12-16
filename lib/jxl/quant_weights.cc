@@ -401,12 +401,12 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
       break;
     }
     case QuantEncoding::kQuantModeRAW: {
-      float den = 1 << encoding.qraw.qtable_den_shift;
       if (!encoding.qraw.qtable || encoding.qraw.qtable->size() != 3 * num) {
         return JXL_FAILURE("Invalid table encoding");
       }
       for (size_t i = 0; i < 3 * num; i++) {
-        weights[i] = 8.0 / (den * (*encoding.qraw.qtable)[i]);
+        weights[i] =
+            1.f / (encoding.qraw.qtable_den * (*encoding.qraw.qtable)[i]);
       }
       break;
     }

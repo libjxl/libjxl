@@ -47,6 +47,15 @@ JXL_EXPORT uint32_t JxlEncoderVersion(void);
 typedef struct JxlEncoderStruct JxlEncoder;
 
 /**
+ * Opaque structure that holds encoding options for a JPEG XL encoder.
+ *
+ * Allocated and initialized with JxlEncoderOptionsCreate().
+ * Cleaned up and deallocated when the encoder is destroyed with
+ * JxlEncoderDestroy().
+ */
+typedef struct JxlEncoderOptionsStruct JxlEncoderOptions;
+
+/**
  * Return value for multiple encoder functions.
  */
 typedef enum {
@@ -132,16 +141,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(
  * - JXL_TYPE_UINT16, input pixels assumed to be nonlinear SRGB encoded
  * - JXL_TYPE_FLOAT, input pixels are assumed to be linear SRGB encoded
  *
- * @param enc encoder object
+ * @param options set of encoder options to use when encoding the frame
  * @param pixel_format format for pixels. Object owned by user and its
  * contents are copied internally.
  * @param buffer buffer type to input the pixel data from
  * @param size size of buffer in bytes
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
-JXL_EXPORT JxlEncoderStatus
-JxlEncoderAddImageFrame(JxlEncoder* enc, const JxlPixelFormat* pixel_format,
-                        void* buffer, size_t size);
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
+    JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
+    void* buffer, size_t size);
 
 /**
  * Declares that this encoder will not encode anything further.
@@ -166,6 +175,38 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc,
                                                     const size_t xsize,
                                                     const size_t ysize);
+
+/**
+ * Sets lossless/lossy mode for the provided options. Default is lossy.
+ *
+ * @param options set of encoder options to update with the new mode
+ * @param lossless whether the options should be lossless
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetLossless(
+    JxlEncoderOptions* options, const JXL_BOOL lossless);
+
+/**
+ * Sets encoder effort/speed level. Valid values are, from faster to slower
+ * speed:
+ * 3:falcon 4:cheetah 5:hare 6:wombat 7:squirrel 8:kitten 9:tortoise
+ * Default: squirrel (7).
+ *
+ * @param options set of encoder options to update with the new mode
+ * @param effort the effort value to set
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, const int effort);
+
+/**
+ * Create a new set of encoder options, with all values initially copied from
+ * the source options, or set to default.
+ *
+ * @param enc encoder object
+ * @param source source options to copy initial values from, or NULL to get
+ * defaults initialized to defaults
+ */
+JXL_EXPORT JxlEncoderOptions* JxlEncoderOptionsCreate(
+    JxlEncoder* enc, const JxlEncoderOptions* source);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

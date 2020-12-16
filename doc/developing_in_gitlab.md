@@ -248,7 +248,6 @@ If you do a rebase you may end up in a harder to solve situation, where
 `git submodule update --init --recursive` itself fails with errors such as:
 
 ```
-Unable to checkout '35ef5c554d888bef217d449346067de05e269b30' in submodule path 'third_party/brunsli/third_party/brotli'
 Unable to checkout '35ef5c554d888bef217d449346067de05e269b30' in submodule path 'third_party/brotli'
 ```
 
