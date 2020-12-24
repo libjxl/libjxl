@@ -490,6 +490,7 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
   Image3F image(1, 1);
   ZeroFillImage(&image);
   CodecInOut io;
+  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
   io.SetFromImage(std::move(image), ColorEncoding::LinearSRGB());
 
   CompressParams cparams;
@@ -1052,7 +1053,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
     }
   }
   return compressed.size();
-};
+}
 
 TEST(JxlTest, RoundtripJpegRecompression444) {
   ThreadPoolInternal pool(8);
@@ -1110,6 +1111,29 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
                                      /*distmap=*/nullptr, &pool));
 }
 
+TEST(JxlTest, RoundtripJpegRecompressionToPixels_asymmetric) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig = ReadTestData(
+      "imagecompression.info/flower_foveon.png.im_q85_asymmetric.jpg");
+  CodecInOut io;
+  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CodecInOut io2;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
+
+  CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kYCbCr;
+
+  DecompressParams dparams;
+
+  CodecInOut io3;
+  Roundtrip(&io, cparams, dparams, &pool, &io3);
+
+  EXPECT_GE(1.5, ButteraugliDistance(io2, io3, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+}
+
 TEST(JxlTest, RoundtripJpegRecompressionGray) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
@@ -1123,7 +1147,7 @@ TEST(JxlTest, RoundtripJpegRecompression420) {
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
   // JPEG size is 226'018 bytes.
-  EXPECT_LE(RoundtripJpeg(orig, &pool), 181000);
+  EXPECT_LE(RoundtripJpeg(orig, &pool), 181050);
 }
 
 TEST(JxlTest, RoundtripJpegRecompression_luma_subsample) {
@@ -1167,6 +1191,13 @@ TEST(JxlTest, RoundtripJpegRecompression_asymmetric) {
       "imagecompression.info/flower_foveon.png.im_q85_asymmetric.jpg");
   // JPEG size is 262'249 bytes.
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
+}
+
+TEST(JxlTest, RoundtripJpegRecompression420Progr) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig = ReadTestData(
+      "imagecompression.info/flower_foveon.png.im_q85_420_progr.jpg");
+  EXPECT_LE(RoundtripJpeg(orig, &pool), 181000);
 }
 
 #endif  // JPEGXL_ENABLE_JPEG

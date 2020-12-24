@@ -71,6 +71,10 @@ struct PassesDecoderState {
   // but are read-only for the filter application.
   FilterWeights filter_weights;
 
+  // Hook to do colorspace transforms to an ImageBundle.
+  std::function<Status(ImageBundle*, const ColorEncoding&, ThreadPool*)>
+      do_colorspace_transform = nullptr;
+
   void EnsureStorage(size_t num_threads) {
     // TODO(deymo): Don't request any memory if there's no need to apply any
     // filter.

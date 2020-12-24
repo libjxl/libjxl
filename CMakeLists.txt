@@ -170,6 +170,10 @@ if(JPEGXL_STATIC)
   endif()  # MINGW
 endif()  # JPEGXL_STATIC
 
+if (MSVC)
+# TODO(janwas): add flags
+else ()
+
 # Global compiler flags for all targets here and in subdirectories.
 add_definitions(
   # Avoid changing the binary based on the current time and date.
@@ -219,6 +223,7 @@ add_compile_options(
 if (JPEGXL_WARNINGS_AS_ERRORS)
 add_compile_options(-Werror)
 endif ()
+endif ()  # !MSVC
 
 include(GNUInstallDirs)
 

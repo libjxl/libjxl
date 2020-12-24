@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
@@ -67,10 +68,14 @@ bool MarkerIsICC(const jpeg_saved_marker_ptr marker) {
 
 Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
                       PaddedBytes* const icc) {
+  constexpr size_t kICCSignatureSize = sizeof kICCSignature;
+  // ICC signature + uint8_t index + uint8_t max_index.
+  constexpr size_t kICCHeadSize = kICCSignatureSize + 2;
   // Markers are 1-indexed, and we keep them that way in this vector to get a
   // convenient 0 at the front for when we compute the offsets later.
   std::vector<size_t> marker_lengths;
   int num_markers = 0;
+  int seen_markers_count = 0;
   bool has_num_markers = false;
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
        marker = marker->next) {
@@ -82,8 +87,8 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
 #endif
     if (!MarkerIsICC(marker)) continue;
 
-    const int current_marker = marker->data[sizeof kICCSignature];
-    const int current_num_markers = marker->data[sizeof kICCSignature + 1];
+    const int current_marker = marker->data[kICCSignatureSize];
+    const int current_num_markers = marker->data[kICCSignatureSize + 1];
     if (current_marker > current_num_markers) {
       return JXL_FAILURE("inconsistent JPEG ICC marker numbering");
     }
@@ -97,16 +102,28 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
       marker_lengths.resize(num_markers + 1);
     }
 
+    size_t marker_length = marker->data_length - kICCHeadSize;
+
+    if (marker_length == 0) {
+      // NB: if we allow empty chunks, then the next check is incorrect.
+      return JXL_FAILURE("Empty ICC chunk");
+    }
+
     if (marker_lengths[current_marker] != 0) {
       return JXL_FAILURE("duplicate JPEG ICC marker number");
     }
-    marker_lengths[current_marker] =
-        marker->data_length - sizeof kICCSignature - 2;
+    marker_lengths[current_marker] = marker_length;
+    seen_markers_count++;
   }
 
   if (marker_lengths.empty()) {
     // Not an error.
     return false;
+  }
+
+  if (seen_markers_count != num_markers) {
+    JXL_DASSERT(has_num_markers);
+    return JXL_FAILURE("Incomplete set of ICC chunks");
   }
 
   std::vector<size_t> offsets = std::move(marker_lengths);
@@ -116,14 +133,11 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
        marker = marker->next) {
     if (!MarkerIsICC(marker)) continue;
-    const uint8_t* first = marker->data + sizeof kICCSignature + 2;
-    size_t count = marker->data_length - sizeof kICCSignature - 2;
-    size_t offset = offsets[marker->data[sizeof kICCSignature] - 1];
-    if (offset + count > icc->size()) {
-      // TODO(lode): catch this issue earlier at the root cause of this.
-      return JXL_FAILURE("ICC out of bounds");
-    }
-    std::copy_n(first, count, icc->data() + offset);
+    const uint8_t* first = marker->data + kICCHeadSize;
+    uint8_t current_marker = marker->data[kICCSignatureSize];
+    size_t offset = offsets[current_marker - 1];
+    size_t marker_length = offsets[current_marker] - offset;
+    std::copy_n(first, marker_length, icc->data() + offset);
   }
 
   return true;
@@ -264,18 +278,21 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
 
   return true;
 }
-void SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
-                                  ColorEncoding* color_encoding) {
+Status SetColorEncodingFromJpegData(const jpeg::JPEGData& jpg,
+                                    ColorEncoding* color_encoding) {
   PaddedBytes icc_profile;
   if (!ParseChunkedMarker(jpg, kApp2, ByteSpan(kIccProfileTag), &icc_profile)) {
     JXL_WARNING("ReJPEG: corrupted ICC profile\n");
     icc_profile.clear();
   }
 
-  if (!color_encoding->SetICC(std::move(icc_profile))) {
+  if (icc_profile.empty()) {
     bool is_gray = (jpg.components.size() == 1);
     *color_encoding = ColorEncoding::SRGB(is_gray);
+    return true;
   }
+
+  return color_encoding->SetICC(std::move(icc_profile));
 }
 
 }  // namespace
@@ -297,7 +314,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
                         jpeg::JpegReadMode::kReadAll, jpeg_data)) {
       return JXL_FAILURE("Error reading JPEG");
     }
-    SetColorEncodingFromJpegData(*jpeg_data, &io->metadata.m.color_encoding);
+    JXL_RETURN_IF_ERROR(SetColorEncodingFromJpegData(
+        *jpeg_data, &io->metadata.m.color_encoding));
     size_t nbcomp = jpeg_data->components.size();
     if (nbcomp != 1 && nbcomp != 3) {
       return JXL_FAILURE(
@@ -311,12 +329,48 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
         vsample[i] = jpeg_data->components[i].v_samp_factor;
       }
       JXL_RETURN_IF_ERROR(cs.Set(hsample, vsample));
+    } else if (nbcomp == 1) {
+      uint8_t hsample[3], vsample[3];
+      for (size_t i = 0; i < 3; i++) {
+        hsample[i] = jpeg_data->components[0].h_samp_factor;
+        vsample[i] = jpeg_data->components[0].v_samp_factor;
+      }
+      JXL_RETURN_IF_ERROR(cs.Set(hsample, vsample));
     }
-    // TODO(veluca): This is just a guess, but it's similar to what libjpeg
-    // does.
-    bool is_rgb = nbcomp == 3 && jpeg_data->components[0].id == 'R' &&
-                  jpeg_data->components[1].id == 'G' &&
-                  jpeg_data->components[2].id == 'B';
+    bool is_rgb = false;
+    {
+      const auto& markers = jpeg_data->marker_order;
+      // If there is a JFIF marker, this is YCbCr. Otherwise...
+      if (std::find(markers.begin(), markers.end(), 0xE0) == markers.end()) {
+        // Try to find an 'Adobe' marker.
+        size_t app_markers = 0;
+        size_t i = 0;
+        for (; i < markers.size(); i++) {
+          // This is an APP marker.
+          if ((markers[i] & 0xF0) == 0xE0) {
+            JXL_CHECK(app_markers < jpeg_data->app_data.size());
+            // APP14 marker
+            if (markers[i] == 0xEE) {
+              const auto& data = jpeg_data->app_data[app_markers];
+              if (data.size() == 15 && data[3] == 'A' && data[4] == 'd' &&
+                  data[5] == 'o' && data[6] == 'b' && data[7] == 'e') {
+                // 'Adobe' marker.
+                is_rgb = data[14] == 0;
+                break;
+              }
+            }
+            app_markers++;
+          }
+        }
+
+        if (i == markers.size()) {
+          // No 'Adobe' marker, guess from component IDs.
+          is_rgb = nbcomp == 3 && jpeg_data->components[0].id == 'R' &&
+                   jpeg_data->components[1].id == 'G' &&
+                   jpeg_data->components[2].id == 'B';
+        }
+      }
+    }
 
     io->Main().chroma_subsampling = cs;
     io->Main().color_transform =
@@ -365,6 +419,11 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
                  bytes.size());
     jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
     jpeg_read_header(&cinfo, TRUE);
+    if (!io->VerifyDimensions(cinfo.image_width, cinfo.image_height)) {
+      jpeg_abort_decompress(&cinfo);
+      jpeg_destroy_decompress(&cinfo);
+      return JXL_FAILURE("image too big");
+    }
     if (ReadICCProfile(&cinfo, &icc)) {
       if (!color_encoding.SetICC(std::move(icc))) {
         jpeg_abort_decompress(&cinfo);
@@ -390,11 +449,6 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
         });
 
     jpeg_start_decompress(&cinfo);
-    if (!io->VerifyDimensions(cinfo.image_width, cinfo.image_height)) {
-      jpeg_abort_decompress(&cinfo);
-      jpeg_destroy_decompress(&cinfo);
-      return JXL_FAILURE("image too big");
-    }
     JXL_ASSERT(cinfo.output_components == nbcomp);
     image = Image3F(cinfo.image_width, cinfo.image_height);
     row.reset(new JSAMPLE[cinfo.output_components * cinfo.image_width]);
@@ -554,14 +608,11 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   }
 
   if (target == DecodeTarget::kQuantizedCoeffs) {
-    auto write = [](void* data, const uint8_t* buf, size_t len) {
-      PaddedBytes* bytes = reinterpret_cast<PaddedBytes*>(data);
+    auto write = [&bytes](const uint8_t* buf, size_t len) {
       bytes->append(buf, buf + len);
       return len;
     };
-    jpeg::JPEGOutput out(static_cast<jpeg::JPEGOutputHook>(write),
-                         reinterpret_cast<void*>(bytes));
-    return jpeg::WriteJpeg(*io->Main().jpeg_data, out);
+    return jpeg::WriteJpeg(*io->Main().jpeg_data, write);
   }
 
   const ImageBundle* ib;

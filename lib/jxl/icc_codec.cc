@@ -692,7 +692,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
            DecodeKeyword(icc, size, pos) == "vcgt") &&
           DecodeUint32(icc, size, pos + 4) == 0) {
         uint32_t num = DecodeUint32(icc, size, pos + 8) * 2;
-        if (num > 16 && num < (1 << 28) && pos + num <= size) {
+        if (num > 16 && num < (1 << 28) && pos + 12 + num <= size) {
           pos += 12;
           last1 = pos;
           commands_add.push_back(kCommandPredict);
@@ -889,10 +889,10 @@ Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc) {
         ans_reader.ReadHybridUint(Context(i, i > 0 ? decompressed[i - 1] : 0,
                                           i > 1 ? decompressed[i - 2] : 0),
                                   reader, context_map);
-  }
-  if (!reader->AllReadsWithinBounds()) {
-    return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                      "Not enough bytes for reading ICC profile");
+    if (!reader->AllReadsWithinBounds()) {
+      return JXL_STATUS(StatusCode::kNotEnoughBytes,
+                        "Not enough bytes for reading ICC profile");
+    }
   }
   if (!ans_reader.CheckANSFinalState()) {
     return JXL_FAILURE("Corrupted ICC profile");

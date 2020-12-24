@@ -71,6 +71,7 @@ struct OutputChunk {
 
   const uint8_t* next;
   size_t len;
+  // TODO(veluca): consider removing the unique_ptr.
   std::unique_ptr<std::vector<uint8_t>> buffer;
 };
 

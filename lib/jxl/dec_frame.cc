@@ -56,6 +56,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/passes_state.h"
@@ -186,8 +187,23 @@ class LossyFrameDecoder {
       return JXL_FAILURE(
           "Quantization table is not a JPEG quantization table.");
     }
-    // TODO(veluca): figure out how to put the JPEG quantization table in
-    // JPEGData.
+    auto jpeg_c_map =
+        JpegOrder(dec_state_->shared->frame_header.color_transform,
+                  decoded->jpeg_data->components.size() == 1);
+    for (size_t c = 0; c < 3; c++) {
+      if (c != 1 && decoded->jpeg_data->components.size() == 1) {
+        continue;
+      }
+      size_t jpeg_channel = jpeg_c_map[c];
+      size_t qpos = decoded->jpeg_data->components[jpeg_channel].quant_idx;
+      JXL_CHECK(qpos != decoded->jpeg_data->quant.size());
+      for (size_t x = 0; x < 8; x++) {
+        for (size_t y = 0; y < 8; y++) {
+          decoded->jpeg_data->quant[qpos].values[x * 8 + y] =
+              (*qe[0].qraw.qtable)[c * 64 + y * 8 + x];
+        }
+      }
+    }
     return true;
   }
 
@@ -201,7 +217,17 @@ class LossyFrameDecoder {
 
     decoded->origin = dec_state_->shared->frame_header.frame_origin;
     // TODO(veluca): should be in dec_reconstruct.
-    JXL_RETURN_IF_ERROR(DoBlending(*dec_state_->shared, decoded));
+    JXL_RETURN_IF_ERROR(DoBlending(dec_state_, decoded));
+    // Convert to original colorspace if the image was XYB encoded and a CMS
+    // hook was provided.
+    if (dec_state_->shared->metadata->m.xyb_encoded &&
+        !dec_state_->shared->frame_header.save_before_color_transform) {
+      if (dec_state_->do_colorspace_transform != nullptr) {
+        const auto& c_desired = dec_state_->shared->metadata->m.color_encoding;
+        JXL_RETURN_IF_ERROR(dec_state_->do_colorspace_transform(
+            decoded, c_desired, /*pool=*/nullptr));
+      }
+    }
     if (dec_state_->shared->frame_header.CanBeReferenced()) {
       size_t id = dec_state_->shared->frame_header.save_as_reference;
       dec_state_->shared_storage.reference_frames[id].storage = decoded->Copy();
@@ -239,6 +265,13 @@ Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
                          FrameHeader* JXL_RESTRICT frame_header) {
   JXL_ASSERT(frame_header->nonserialized_metadata != nullptr);
   JXL_RETURN_IF_ERROR(ReadFrameHeader(reader, frame_header));
+
+  if (frame_header->encoding == FrameEncoding::kModular) {
+    if (frame_header->chroma_subsampling.MaxHShift() != 0 ||
+        frame_header->chroma_subsampling.MaxVShift() != 0) {
+      return JXL_FAILURE("Chroma subsampling in modular mode is not supported");
+    }
+  }
 
   return true;
 }
@@ -290,7 +323,7 @@ static BitReader* GetReaderForSection(
   *store =
       BitReader(Span<const uint8_t>(reader->FirstByte() + group_offset, size));
   return store;
-};
+}
 
 static void ResizeAuxOuts(std::vector<AuxOut>& aux_outs, size_t num_threads,
                           AuxOut* JXL_RESTRICT aux_out) {
@@ -310,7 +343,7 @@ static void ResizeAuxOuts(std::vector<AuxOut>& aux_outs, size_t num_threads,
       aux_outs[i].debug_prefix = aux_out->debug_prefix;
     }
   }
-};
+}
 
 Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
                 ModularFrameDecoder& modular_frame_decoder,
@@ -571,6 +604,34 @@ Status DecodeFrame(const DecompressParams& dparams,
     if (!decoded->IsJPEG()) {
       return JXL_FAILURE("Caller must set jpeg_data");
     }
+    jpeg::JPEGData* jpeg_data = decoded->jpeg_data.get();
+    if (jpeg_data->components.size() != 1 &&
+        jpeg_data->components.size() != 3) {
+      return JXL_FAILURE("Invalid number of components");
+    }
+    decoded->jpeg_data->width = frame_dim.xsize;
+    decoded->jpeg_data->height = frame_dim.ysize;
+    if (jpeg_data->components.size() == 1) {
+      jpeg_data->components[0].width_in_blocks = frame_dim.xsize_blocks;
+      jpeg_data->components[0].height_in_blocks = frame_dim.ysize_blocks;
+    } else {
+      for (size_t c = 0; c < 3; c++) {
+        jpeg_data->components[c < 2 ? c ^ 1 : c].width_in_blocks =
+            frame_dim.xsize_blocks >> frame_header.chroma_subsampling.HShift(c);
+        jpeg_data->components[c < 2 ? c ^ 1 : c].height_in_blocks =
+            frame_dim.ysize_blocks >> frame_header.chroma_subsampling.VShift(c);
+      }
+    }
+    for (size_t c = 0; c < jpeg_data->components.size(); c++) {
+      jpeg_data->components[c].h_samp_factor =
+          1 << frame_header.chroma_subsampling.RawHShift(c < 2 ? c ^ 1 : c);
+      jpeg_data->components[c].v_samp_factor =
+          1 << frame_header.chroma_subsampling.RawVShift(c < 2 ? c ^ 1 : c);
+    }
+    for (auto& v : jpeg_data->components) {
+      v.coeffs.resize(v.width_in_blocks * v.height_in_blocks *
+                      jxl::kDCTBlockSize);
+    }
   }
 
   Status res = true;
@@ -588,8 +649,8 @@ Status DecodeFrame(const DecompressParams& dparams,
             shared.frame_dim.ysize_padded));
       }
       if (shared.frame_header.flags & FrameHeader::kSplines) {
-        JXL_RETURN_IF_ERROR(
-            shared.image_features.splines.Decode(global_reader));
+        JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
+            global_reader, shared.frame_dim.xsize * shared.frame_dim.ysize));
       }
       if (shared.frame_header.flags & FrameHeader::kNoise) {
         JXL_RETURN_IF_ERROR(

@@ -24,7 +24,6 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/jpeg/enc_jpeg_huffman_decode.h"
-#include "lib/jxl/jpeg/jpeg_constants.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 // By default only print debug messages when JXL_DEBUG_ON_ERROR is enabled.
@@ -38,6 +37,8 @@ namespace jxl {
 namespace jpeg {
 
 namespace {
+static const int kBrunsliMaxSampling = 15;
+static const size_t kBrunsliMaxNumBlocks = 1ull << 21;
 
 // Macros for commonly used error conditions.
 
@@ -110,6 +111,8 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
 
   // Read sampling factors and quant table index for each component.
   std::vector<bool> ids_seen(256, false);
+  int max_h_samp_factor = 1;
+  int max_v_samp_factor = 1;
   for (size_t i = 0; i < jpg->components.size(); ++i) {
     const int id = ReadUint8(data, pos);
     if (ids_seen[id]) {  // (cf. section B.2.2, syntax of Ci)
@@ -127,25 +130,25 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
     jpg->components[i].h_samp_factor = h_samp_factor;
     jpg->components[i].v_samp_factor = v_samp_factor;
     jpg->components[i].quant_idx = ReadUint8(data, pos);
-    jpg->max_h_samp_factor = std::max(jpg->max_h_samp_factor, h_samp_factor);
-    jpg->max_v_samp_factor = std::max(jpg->max_v_samp_factor, v_samp_factor);
+    max_h_samp_factor = std::max(max_h_samp_factor, h_samp_factor);
+    max_v_samp_factor = std::max(max_v_samp_factor, v_samp_factor);
   }
 
   // We have checked above that none of the sampling factors are 0, so the max
   // sampling factors can not be 0.
-  jpg->MCU_rows = DivCeil(jpg->height, jpg->max_v_samp_factor * 8);
-  jpg->MCU_cols = DivCeil(jpg->width, jpg->max_h_samp_factor * 8);
+  int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
+  int MCU_cols = DivCeil(jpg->width, max_h_samp_factor * 8);
   // Compute the block dimensions for each component.
   for (size_t i = 0; i < jpg->components.size(); ++i) {
     JPEGComponent* c = &jpg->components[i];
-    if (jpg->max_h_samp_factor % c->h_samp_factor != 0 ||
-        jpg->max_v_samp_factor % c->v_samp_factor != 0) {
+    if (max_h_samp_factor % c->h_samp_factor != 0 ||
+        max_v_samp_factor % c->v_samp_factor != 0) {
       JXL_JPEG_DEBUG("Non-integral subsampling ratios.");
       jpg->error = JPEGReadError::INVALID_SAMPLING_FACTORS;
       return false;
     }
-    c->width_in_blocks = jpg->MCU_cols * c->h_samp_factor;
-    c->height_in_blocks = jpg->MCU_rows * c->v_samp_factor;
+    c->width_in_blocks = MCU_cols * c->h_samp_factor;
+    c->height_in_blocks = MCU_rows * c->v_samp_factor;
     const uint64_t num_blocks =
         static_cast<uint64_t>(c->width_in_blocks) * c->height_in_blocks;
     if (num_blocks > kBrunsliMaxNumBlocks) {
@@ -153,9 +156,8 @@ bool ProcessSOF(const uint8_t* data, const size_t len, JpegReadMode mode,
       jpg->error = JPEGReadError::IMAGE_TOO_LARGE;
       return false;
     }
-    c->num_blocks = static_cast<int>(num_blocks);
     if (mode == JpegReadMode::kReadAll) {
-      c->coeffs.resize(c->num_blocks * kDCTBlockSize);
+      c->coeffs.resize(num_blocks * kDCTBlockSize);
     }
   }
   JXL_JPEG_VERIFY_MARKER_END();
@@ -178,7 +180,7 @@ bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
   JXL_JPEG_VERIFY_LEN(2 * comps_in_scan);
   std::vector<bool> ids_seen(256, false);
   for (size_t i = 0; i < comps_in_scan; ++i) {
-    int id = ReadUint8(data, pos);
+    uint32_t id = ReadUint8(data, pos);
     if (ids_seen[id]) {  // (cf. section B.2.3, regarding CSj)
       JXL_JPEG_DEBUG("Duplicate ID %d in SOS.", id);
       jpg->error = JPEGReadError::DUPLICATE_COMPONENT_ID;
@@ -208,7 +210,7 @@ bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
   JXL_JPEG_VERIFY_LEN(3);
   scan_info.Ss = ReadUint8(data, pos);
   scan_info.Se = ReadUint8(data, pos);
-  JXL_JPEG_VERIFY_INPUT(scan_info.Ss, 0, 63, START_OF_SCAN);
+  JXL_JPEG_VERIFY_INPUT(static_cast<int>(scan_info.Ss), 0, 63, START_OF_SCAN);
   JXL_JPEG_VERIFY_INPUT(scan_info.Se, scan_info.Ss, 63, END_OF_SCAN);
   int c = ReadUint8(data, pos);
   scan_info.Ah = c >> 4;
@@ -225,7 +227,7 @@ bool ProcessSOS(const uint8_t* data, const size_t len, size_t* pos,
     bool found_dc_table = false;
     bool found_ac_table = false;
     for (size_t j = 0; j < jpg->huffman_code.size(); ++j) {
-      int slot_id = jpg->huffman_code[j].slot_id;
+      uint32_t slot_id = jpg->huffman_code[j].slot_id;
       if (slot_id == scan_info.components[i].dc_tbl_idx) {
         found_dc_table = true;
       } else if (slot_id == scan_info.components[i].ac_tbl_idx + 16) {
@@ -823,17 +825,21 @@ bool ProcessScan(const uint8_t* data, const size_t len,
   }
   JPEGScanInfo* scan_info = &jpg->scan_info.back();
   bool is_interleaved = (scan_info->num_components > 1);
-  int MCUs_per_row;
-  int MCU_rows;
-  if (is_interleaved) {
-    MCUs_per_row = jpg->MCU_cols;
-    MCU_rows = jpg->MCU_rows;
-  } else {
+  int max_h_samp_factor = 1;
+  int max_v_samp_factor = 1;
+  for (size_t i = 0; i < jpg->components.size(); ++i) {
+    max_h_samp_factor =
+        std::max(max_h_samp_factor, jpg->components[i].h_samp_factor);
+    max_v_samp_factor =
+        std::max(max_v_samp_factor, jpg->components[i].v_samp_factor);
+  }
+
+  int MCU_rows = DivCeil(jpg->height, max_v_samp_factor * 8);
+  int MCUs_per_row = DivCeil(jpg->width, max_h_samp_factor * 8);
+  if (!is_interleaved) {
     const JPEGComponent& c = jpg->components[scan_info->components[0].comp_idx];
-    MCUs_per_row =
-        DivCeil(jpg->width * c.h_samp_factor, 8 * jpg->max_h_samp_factor);
-    MCU_rows =
-        DivCeil(jpg->height * c.v_samp_factor, 8 * jpg->max_v_samp_factor);
+    MCUs_per_row = DivCeil(jpg->width * c.h_samp_factor, 8 * max_h_samp_factor);
+    MCU_rows = DivCeil(jpg->height * c.v_samp_factor, 8 * max_v_samp_factor);
   }
   coeff_t last_dc_coeff[kMaxComponents] = {0};
   BitReaderState br(data, len, *pos);

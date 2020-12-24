@@ -176,6 +176,11 @@ HWY_EXPORT(DrawFromPoints);
 
 namespace {
 
+// Maximum number of splines per frame is
+//   std::min(kMaxNumSplines, xsize * ysize / 4)
+constexpr size_t kMaxNumSplines = 1u << 20u;
+constexpr size_t kMaxNumSplinesPerPixelRatio = 4;
+
 // X, Y, B, sigma.
 float ColorQuantizationWeight(const int32_t adjustment, const int channel,
                               const int i) {
@@ -465,6 +470,7 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
 }
 
 void Splines::Encode(BitWriter* writer, const size_t layer,
+                     const HistogramParams& histogram_params,
                      AuxOut* aux_out) const {
   JXL_ASSERT(HasAny());
 
@@ -482,19 +488,23 @@ void Splines::Encode(BitWriter* writer, const size_t layer,
 
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(HistogramParams(), kNumSplineContexts, tokens,
+  BuildAndEncodeHistograms(histogram_params, kNumSplineContexts, tokens,
                            &codes, &context_map, writer, layer, aux_out);
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
-Status Splines::Decode(jxl::BitReader* br) {
+Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(
       DecodeHistograms(br, kNumSplineContexts, &code, &context_map));
   ANSSymbolReader decoder(&code, br);
-  const int num_splines =
+  const size_t num_splines =
       1 + decoder.ReadHybridUint(kNumSplinesContext, br, context_map);
+  if (num_splines >
+      std::min(kMaxNumSplines, num_pixels / kMaxNumSplinesPerPixelRatio)) {
+    return JXL_FAILURE("Too many splines: %zu", num_splines);
+  }
   JXL_RETURN_IF_ERROR(DecodeAllStartingPoints(&starting_points_, br, &decoder,
                                               context_map, num_splines));
 
@@ -502,7 +512,7 @@ Status Splines::Decode(jxl::BitReader* br) {
       decoder.ReadHybridUint(kQuantizationAdjustmentContext, br, context_map));
 
   splines_.reserve(num_splines);
-  for (int i = 0; i < num_splines; ++i) {
+  for (size_t i = 0; i < num_splines; ++i) {
     QuantizedSpline spline;
     JXL_RETURN_IF_ERROR(spline.Decode(context_map, &decoder, br));
     splines_.push_back(std::move(spline));

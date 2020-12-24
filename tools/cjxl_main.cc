@@ -61,13 +61,33 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   jxl::PaddedBytes compressed;
 
   jxl::ThreadPoolInternal pool(args.num_threads);
-  if (!CompressJxl(&pool, args, &compressed, !args.quiet)) return 1;
+  jxl::CodecInOut io;
+  double decode_mps = 0;
+  JXL_RETURN_IF_ERROR(LoadAll(args, &pool, &io, &decode_mps));
+  if (!CompressJxl(io, decode_mps, &pool, args, &compressed, !args.quiet)) {
+    return 1;
+  }
 
   if (args.use_container &&
       !IsContainerHeader(compressed.data(), compressed.size())) {
     JpegXlContainer container;
     container.codestream = compressed.data();
     container.codestream_size = compressed.size();
+    if (!io.blobs.exif.empty()) {
+      container.exif = io.blobs.exif.data();
+      container.exif_size = io.blobs.exif.size();
+    }
+    auto append_xml = [&container](const jxl::PaddedBytes& bytes) {
+      if (bytes.empty()) return;
+      container.xml.push_back(std::make_pair(bytes.data(), bytes.size()));
+    };
+    append_xml(io.blobs.iptc);
+    append_xml(io.blobs.xmp);
+    if (!io.blobs.jumbf.empty()) {
+      container.jumb = io.blobs.jumbf.data();
+      container.jumb_size = io.blobs.jumbf.size();
+    }
+
     jxl::PaddedBytes container_file;
     if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
       fprintf(stderr, "Failed to encode container format\n");

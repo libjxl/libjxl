@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_MODULAR_IMAGE_IMAGE_H_
-#define LIB_JXL_MODULAR_IMAGE_IMAGE_H_
+#ifndef LIB_JXL_MODULAR_MODULAR_IMAGE_H_
+#define LIB_JXL_MODULAR_MODULAR_IMAGE_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -162,4 +162,4 @@ class Image {
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_MODULAR_IMAGE_IMAGE_H_
+#endif  // LIB_JXL_MODULAR_MODULAR_IMAGE_H_

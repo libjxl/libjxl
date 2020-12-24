@@ -145,6 +145,7 @@ struct ANSCode {
   CacheAlignedUniquePtr alias_tables;
   std::vector<HuffmanDecodingData> huffman_data;
   std::vector<HybridUintConfig> uint_config;
+  std::vector<int> degenerate_symbols;
   bool use_prefix_code;
   uint8_t log_alpha_size;  // for ANS.
   LZ77Params lz77;
@@ -299,7 +300,8 @@ class ANSSymbolReader {
       copy_pos_ = num_decoded_ - distance;
       if (JXL_UNLIKELY(distance == 0)) {
         // distance 0 -> num_decoded_ == copy_pos_ == 0
-        memset(lz77_window_, 0, std::min<size_t>(num_to_copy_, kWindowSize));
+        size_t to_fill = std::min<size_t>(num_to_copy_, kWindowSize);
+        memset(lz77_window_, 0, to_fill * sizeof(lz77_window_[0]));
       }
       return ReadHybridUintClustered(ctx, br);  // will trigger a copy.
     }
@@ -317,6 +319,7 @@ class ANSSymbolReader {
   bool IsSingleValue(size_t ctx, uint32_t* value, size_t count) {
     // TODO(veluca): No optimization for Huffman mode yet.
     if (use_prefix_code_) return false;
+    // TODO(eustas): propagate "degenerate_symbol" to simplify this method.
     const uint32_t res = state_ & (ANS_TAB_SIZE - 1u);
     const AliasTable::Entry* table = &alias_tables_[ctx << log_alpha_size_];
     AliasTable::Symbol symbol =

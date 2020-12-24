@@ -33,7 +33,7 @@
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/modular/encoding/encoding.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -116,16 +116,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   bool is_gray = metadata.color_encoding.IsGray();
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
-    std::vector<uint8_t> tree_context_map;
-    ANSCode tree_code;
-    JXL_RETURN_IF_ERROR(DecodeHistograms(reader, kNumTreeContexts, &tree_code,
-                                         &tree_context_map));
-    ANSSymbolReader ans_reader(&tree_code, reader);
-    JXL_RETURN_IF_ERROR(
-        DecodeTree(reader, &ans_reader, tree_context_map, &tree));
-    if (!ans_reader.CheckANSFinalState()) {
-      return JXL_FAILURE("ANS decode final state failed");
-    }
+    JXL_RETURN_IF_ERROR(DecodeTree(reader, &tree));
     JXL_RETURN_IF_ERROR(
         DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
   }
@@ -338,7 +329,8 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       JXL_RETURN_IF_ERROR(
           dec_state->shared_storage.ac_strategy.SetNoBoundsCheck(
               r.x0() + x, r.y0() + y, AcStrategy::Type(row_in_1[num])));
-      row_qf[x] = 1 + std::max(0, row_in_2[num]);
+      row_qf[x] =
+          1 + std::max(0, std::min(Quantizer::kQuantMax - 1, row_in_2[num]));
       num++;
     }
   }
@@ -363,6 +355,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
 
   // Undo the global transforms
   gi.undo_transforms(global_header.wp_header, -1, pool);
+  if (gi.error) return JXL_FAILURE("Undoing transforms failed");
 
   auto& decoded = dec_state->decoded;
   size_t decoded_padding = dec_state->decoded_padding;

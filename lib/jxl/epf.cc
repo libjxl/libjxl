@@ -631,8 +631,9 @@ Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& rect,
   }
   // decoded.ysize() is used for mirroring of the input image last rows. This
   // checks that the passed image is not padded beyond that.
-  JXL_DASSERT(dec_state->decoded.ysize() ==
+  JXL_DASSERT(dec_state->decoded.ysize() <=
               dec_state->shared->frame_dim.ysize_padded);
+  JXL_DASSERT(rect.IsInside(dec_state->decoded));
 
   // Lazy initialization of the FilterPipeline.
   FilterPipeline* fp = &(dec_state->filter_pipelines[thread]);

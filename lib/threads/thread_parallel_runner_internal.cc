@@ -36,10 +36,10 @@ bool Abort() {
 
 #ifdef _MSC_VER
   __debugbreak();
+  abort();
 #else
   __builtin_trap();
 #endif
-  abort();
 }
 
 // Does not guarantee running the code, use only for debug mode checks.

@@ -26,7 +26,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/modular/encoding/encoding.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 
 namespace jxl {
 

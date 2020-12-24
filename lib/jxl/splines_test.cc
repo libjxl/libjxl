@@ -113,6 +113,8 @@ MATCHER(SplinesMatch, "") {
   return true;
 }
 
+}  // namespace
+
 TEST(SplinesTest, Serialization) {
   std::vector<Spline> spline_data = {
       {/*control_points=*/{
@@ -194,7 +196,7 @@ TEST(SplinesTest, Serialization) {
               Pointwise(ControlPointsMatch(), spline_data));
 
   BitWriter writer;
-  splines.Encode(&writer, kLayerSplines, nullptr);
+  splines.Encode(&writer, kLayerSplines, HistogramParams(), nullptr);
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
 
@@ -202,7 +204,7 @@ TEST(SplinesTest, Serialization) {
 
   BitReader reader(writer.GetSpan());
   Splines decoded_splines;
-  ASSERT_TRUE(decoded_splines.Decode(&reader));
+  ASSERT_TRUE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
   ASSERT_TRUE(reader.JumpToByteBoundary());
   EXPECT_EQ(reader.TotalBitsConsumed(), bits_written);
   ASSERT_TRUE(reader.Close());
@@ -214,21 +216,52 @@ TEST(SplinesTest, Serialization) {
 }
 
 #ifdef JXL_CRASH_ON_ERROR
+TEST(SplinesTest, DISABLED_TooManySplinesTest) {
+#else
+TEST(SplinesTest, TooManySplinesTest) {
+#endif
+  // This is more than the limit for 1000 pixels.
+  const size_t kNumSplines = 300;
+
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  for (size_t i = 0; i < kNumSplines; i++) {
+    Spline spline = {
+        /*control_points=*/{{1.f + i, 2}, {10.f + i, 25}, {30.f + i, 300}},
+        /*color_dct=*/
+        {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
+        /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}};
+    quantized_splines.emplace_back(spline, kQuantizationAdjustment, kYToX,
+                                   kYToB);
+    starting_points.push_back(spline.control_points.front());
+  }
+
+  Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
+                  std::move(starting_points));
+  BitWriter writer;
+  splines.Encode(&writer, kLayerSplines, HistogramParams(SpeedTier::kFalcon, 1),
+                 nullptr);
+  writer.ZeroPadToByte();
+  // Re-read splines.
+  BitReader reader(writer.GetSpan());
+  Splines decoded_splines;
+  EXPECT_FALSE(decoded_splines.Decode(&reader, /*num_pixels=*/1000));
+  EXPECT_TRUE(reader.Close());
+}
+
+#ifdef JXL_CRASH_ON_ERROR
 TEST(SplinesTest, DISABLED_DuplicatePoints) {
 #else
 TEST(SplinesTest, DuplicatePoints) {
 #endif
-  std::vector<Spline> spline_data = {
-      {/*control_points=*/{{9, 54},
-                           {118, 159},
-                           {97, 3},  // Repeated.
-                           {97, 3},
-                           {10, 40},
-                           {150, 25},
-                           {120, 300}},
-       /*color_dct=*/
-       {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
-       /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}}};
+  std::vector<Spline::Point> control_points{
+      {9, 54}, {118, 159}, {97, 3},  // Repeated.
+      {97, 3}, {10, 40},   {150, 25}, {120, 300}};
+  Spline spline{control_points,
+                /*color_dct=*/
+                {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
+                /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}};
+  std::vector<Spline> spline_data { spline };
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {
@@ -250,12 +283,14 @@ TEST(SplinesTest, Drawing) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_expected,
                            /*pool=*/nullptr));
 
-  std::vector<Spline> spline_data = {
-      {/*control_points=*/{
-           {9, 54}, {118, 159}, {97, 3}, {10, 40}, {150, 25}, {120, 300}},
-       /*color_dct=*/
-       {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
-       /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}}};
+  std::vector<Spline::Point> control_points{{9, 54},  {118, 159}, {97, 3},
+                                            {10, 40}, {150, 25},  {120, 300}};
+  const Spline spline{
+      control_points,
+      /*color_dct=*/
+      {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
+      /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
+  std::vector<Spline> spline_data = { spline };
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {
@@ -282,5 +317,4 @@ TEST(SplinesTest, Drawing) {
                       1e-2f, 1e-1f);
 }
 
-}  // namespace
 }  // namespace jxl

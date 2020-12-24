@@ -30,7 +30,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/ma.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
 

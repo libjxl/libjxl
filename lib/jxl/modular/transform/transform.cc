@@ -15,7 +15,7 @@
 #include "lib/jxl/modular/transform/transform.h"
 
 #include "lib/jxl/fields.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/near-lossless.h"
 #include "lib/jxl/modular/transform/palette.h"
 #include "lib/jxl/modular/transform/squeeze.h"

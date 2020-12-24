@@ -12,22 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_JPEG_BRUNSLI_ENCODE_H_
-#define LIB_JXL_JPEG_BRUNSLI_ENCODE_H_
+#ifndef LIB_JXL_JPEG_JPEG_DEC_JPEG_DATA_H_
+#define LIB_JXL_JPEG_JPEG_DEC_JPEG_DATA_H_
 
-#include <stddef.h>
-#include <stdint.h>
-
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 namespace jpeg {
-
-// Returns an upper bound on the size of the buffer needed to encode the given
-// jpg data in brunsli format.
-size_t GetMaximumBrunsliEncodedSize(const JPEGData& jpg);
-
-}  // namespace jpeg
+Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data);
+}
 }  // namespace jxl
 
-#endif  // LIB_JXL_JPEG_BRUNSLI_ENCODE_H_
+#endif

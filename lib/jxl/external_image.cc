@@ -228,8 +228,8 @@ void JXL_INLINE Store8(uint32_t value, uint8_t* dest) { *dest = value & 0xff; }
 
 Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                     bool float_out, bool apply_srgb_tf, size_t num_channels,
-                    bool little_endian, size_t stride, jxl::ThreadPool* pool,
-                    void* out_image, size_t out_size,
+                    JxlEndianness endianness, size_t stride,
+                    jxl::ThreadPool* pool, void* out_image, size_t out_size,
                     jxl::Orientation undo_orientation) {
   if (bits_per_sample < 1 || bits_per_sample > 32) {
     return JXL_FAILURE("Invalid bits_per_sample value.");
@@ -282,6 +282,10 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
     xsize = color->xsize();
     ysize = color->ysize();
   }
+
+  const bool little_endian =
+      endianness == JXL_LITTLE_ENDIAN ||
+      (endianness == JXL_NATIVE_ENDIAN && IsLittleEndian());
 
   if (float_out) {
     if (bits_per_sample != 32) {
@@ -449,7 +453,7 @@ uint32_t JXL_INLINE Load8(const uint8_t* p) { return *p; }
 Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
                     const ColorEncoding& c_current, bool has_alpha,
                     bool alpha_is_premultiplied, size_t bits_per_sample,
-                    bool big_endian, bool flipped_y, ThreadPool* pool,
+                    JxlEndianness endianness, bool flipped_y, ThreadPool* pool,
                     ImageBundle* ib) {
   if (bits_per_sample < 1 || bits_per_sample > 32) {
     return JXL_FAILURE("Invalid bits_per_sample value.");
@@ -474,7 +478,9 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
     return JXL_FAILURE("Buffer size is too small");
   }
 
-  const bool little_endian = !big_endian;
+  const bool little_endian =
+      endianness == JXL_LITTLE_ENDIAN ||
+      (endianness == JXL_NATIVE_ENDIAN && IsLittleEndian());
 
   const uint8_t* const in = bytes.data();
 

@@ -31,7 +31,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:2add2725e5b9c3fb655bb90cdcb4fd2a48353714a86794f542b289addad6a5d0
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:ecf2acf6855f99ffff3b111fea62edffa0cba2378318cff3ca96113d946673a5
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -128,6 +128,8 @@ build:x86_64:clang:release:
     - schedules
     - tags
   script:
+    # Check that the build files are up to date.
+    - tools/build_cleaner.py
     - SKIP_TEST=1 PACK_TEST=1 STACK_SIZE=1
       ./ci.sh release -DCMAKE_INSTALL_PREFIX=`pwd`/prefix
     # Test that the package can be installed.
@@ -514,7 +516,7 @@ test:fast_benchmark.msan:
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
   <<: *linux_host_template
-  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:f262597eb9c45a1b6ee9c18524abe84f340d6ef64b82285976776883813300bb
+  image: gcr.io/jpegxl/jpegxl-builder-run-aarch64@sha256:27c2bb6319023ab94d66670135a971401869a3275a7e0dda177c9bb247d57e03
   stage: test
   tags:
     - aarch64

@@ -121,6 +121,28 @@ Status DecodeFile(const DecompressParams& dparams,
       JXL_RETURN_IF_ERROR(ReadICC(&reader, &icc));
       JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetICC(std::move(icc)));
     }
+    // Set ICC profile in jpeg_data.
+    if (jpeg_data) {
+      const auto& icc = io->metadata.m.color_encoding.ICC();
+      size_t icc_pos = 0;
+      for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
+        if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
+          continue;
+        }
+        size_t len = jpeg_data->app_data[i].size() - 17;
+        if (icc_pos + len > icc.size()) {
+          return JXL_FAILURE(
+              "ICC length is less than APP markers: requested %zu more bytes, "
+              "%zu available",
+              len, icc.size() - icc_pos);
+        }
+        memcpy(&jpeg_data->app_data[i][17], icc.data() + icc_pos, len);
+        icc_pos += len;
+      }
+      if (icc_pos != icc.size() && icc_pos != 0) {
+        return JXL_FAILURE("ICC length is more than APP markers");
+      }
+    }
 
     JXL_RETURN_IF_ERROR(DecodePreview(dparams, io->metadata, &reader, aux_out,
                                       pool, &io->preview_frame,
@@ -133,6 +155,11 @@ Status DecodeFile(const DecompressParams& dparams,
     }
 
     PassesDecoderState dec_state;
+    // OK to depend on a CMS here, as DecodeFile is never called from the C API.
+    dec_state.do_colorspace_transform =
+        [](ImageBundle* ib, const ColorEncoding& c_desired, ThreadPool* pool) {
+          return ib->TransformTo(c_desired, pool);
+        };
 
     io->frames.clear();
     do {

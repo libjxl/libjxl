@@ -55,10 +55,17 @@ constexpr bool kWantDebug = false;
 FlatTree FilterTree(const Tree &global_tree,
                     std::array<pixel_type, kNumStaticProperties> &static_props,
                     size_t *num_props, bool *use_wp, bool *wp_only) {
-  *use_wp = false;
-  *wp_only = true;
   *num_props = 0;
-  size_t used_properties = 0;
+  bool has_wp = false;
+  bool has_non_wp = false;
+  constexpr size_t kMaxProp = 256;
+  const auto mark_property = [&] (int32_t p) {
+    if (p == kWPProp) {
+      has_wp = true;
+    } else if (p >= kNumStaticProperties) {
+      has_non_wp = true;
+    }
+  };
   FlatTree output;
   std::queue<size_t> nodes;
   nodes.push(0);
@@ -87,11 +94,7 @@ FlatTree FilterTree(const Tree &global_tree,
       flat.predictor = global_tree[cur].predictor;
       flat.predictor_offset = global_tree[cur].predictor_offset;
       flat.multiplier = global_tree[cur].multiplier;
-      if (flat.predictor == Predictor::Weighted) {
-        *use_wp = true;
-      } else {
-        *wp_only = false;
-      }
+      mark_property(flat.predictor == Predictor::Weighted ? kWPProp : kMaxProp);
       output.push_back(flat);
       continue;
     }
@@ -129,14 +132,8 @@ FlatTree FilterTree(const Tree &global_tree,
       }
     }
 
-    for (size_t j = 0; j < 2; j++) {
-      if (flat.properties[j] >= kNumStaticProperties) {
-        used_properties |= 1 << flat.properties[j];
-      }
-    }
-    if (flat.property0 >= kNumStaticProperties) {
-      used_properties |= 1 << flat.property0;
-    }
+    for (size_t j = 0; j < 2; j++) mark_property(flat.properties[j]);
+    mark_property(flat.property0);
     output.push_back(flat);
   }
   if (*num_props > kNumNonrefProperties) {
@@ -147,12 +144,8 @@ FlatTree FilterTree(const Tree &global_tree,
   } else {
     *num_props = kNumNonrefProperties;
   }
-  if (used_properties & (1 << kWPProp)) {
-    *use_wp = true;
-  }
-  if (used_properties != (1 << kWPProp)) {
-    *wp_only = false;
-  }
+  *use_wp = has_wp;
+  *wp_only = has_wp && !has_non_wp;
 
   return output;
 }
@@ -917,16 +910,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   const ANSCode *code = &code_storage;
   const std::vector<uint8_t> *context_map = &context_map_storage;
   if (!header.use_global_tree) {
-    std::vector<uint8_t> tree_context_map;
-    ANSCode tree_code;
-    JXL_RETURN_IF_ERROR(
-        DecodeHistograms(br, kNumTreeContexts, &tree_code, &tree_context_map));
-    ANSSymbolReader reader(&tree_code, br);
-    JXL_RETURN_IF_ERROR(
-        DecodeTree(br, &reader, tree_context_map, &tree_storage));
-    if (!reader.CheckANSFinalState()) {
-      return JXL_FAILURE("ANS decode final state failed");
-    }
+    JXL_RETURN_IF_ERROR(DecodeTree(br, &tree_storage));
     JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
                                          &code_storage, &context_map_storage));
   } else {

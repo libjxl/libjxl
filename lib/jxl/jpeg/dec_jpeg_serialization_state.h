@@ -90,8 +90,8 @@ struct SerializationState {
   int scan_index = 0;
   std::vector<HuffmanCodeTable> dc_huff_table;
   std::vector<HuffmanCodeTable> ac_huff_table;
-  const int* pad_bits = nullptr;
-  const int* pad_bits_end = nullptr;
+  const uint8_t* pad_bits = nullptr;
+  const uint8_t* pad_bits_end = nullptr;
   bool seen_dri_marker = false;
   bool is_progressive = false;
 

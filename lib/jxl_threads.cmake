@@ -17,6 +17,7 @@ find_package(Threads REQUIRED)
 set(JPEGXL_THREADS_SOURCES
   threads/thread_parallel_runner.cc
   threads/thread_parallel_runner_internal.cc
+  threads/thread_parallel_runner_internal.h
 )
 
 ### Define the jxl_threads shared or static target library. The ${target}

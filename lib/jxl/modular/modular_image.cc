@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"

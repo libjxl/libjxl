@@ -40,6 +40,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/field_encodings.h"
 #include "lib/jxl/linalg.h"
 #include "lib/jxl/transfer_functions-inl.h"
@@ -193,7 +194,7 @@ void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
         xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
         &t->skcms_icc_->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
         skcms_AlphaFormat_Opaque, &t->skcms_icc_->profile_dst_, t->xsize_));
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
     JXL_DASSERT(thread < t->transforms_.size());
     cmsHTRANSFORM xform = t->transforms_[thread];
     cmsDoTransform(xform, xform_src, buf_dst,
@@ -449,7 +450,7 @@ Status DecodeProfile(const PaddedBytes& icc, skcms_ICCProfile* const profile) {
   }
   return true;
 }
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
                      Profile* profile) {
   profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
@@ -607,12 +608,16 @@ void WriteICCTag(const char* value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
   memcpy(icc->data() + pos, value, 4);
 }
 
-void WriteICCS15Fixed16(float value, size_t pos,
-                        PaddedBytes* JXL_RESTRICT icc) {
+Status WriteICCS15Fixed16(float value, size_t pos,
+                          PaddedBytes* JXL_RESTRICT icc) {
+  if (value > 32767.99995f || value < -32767.99995f) {
+    return JXL_FAILURE("ICC value overflow");
+  }
   int32_t i = value * 65536.0f + 0.5f;
   // Use two's complement
   uint32_t u = static_cast<uint32_t>(i);
   WriteICCUint32(u, pos, icc);
+  return true;
 }
 
 Status CreateICCHeader(const ColorEncoding& c,
@@ -695,20 +700,22 @@ void CreateICCMlucTag(const std::string& text, PaddedBytes* JXL_RESTRICT tags) {
   }
 }
 
-void CreateICCXYZTag(float xyz[3], PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCXYZTag(float xyz[3], PaddedBytes* JXL_RESTRICT tags) {
   WriteICCTag("XYZ ", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
-  WriteICCS15Fixed16(xyz[0], tags->size(), tags);
-  WriteICCS15Fixed16(xyz[1], tags->size(), tags);
-  WriteICCS15Fixed16(xyz[2], tags->size(), tags);
+  for (size_t i = 0; i < 3; ++i) {
+    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(xyz[i], tags->size(), tags));
+  }
+  return true;
 }
 
-void CreateICCChadTag(float chad[9], PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCChadTag(float chad[9], PaddedBytes* JXL_RESTRICT tags) {
   WriteICCTag("sf32", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   for (size_t i = 0; i < 9; i++) {
-    WriteICCS15Fixed16(chad[i], tags->size(), tags);
+    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(chad[i], tags->size(), tags));
   }
+  return true;
 }
 
 void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
@@ -723,15 +730,16 @@ void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
   }
 }
 
-void CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
-                          PaddedBytes* JXL_RESTRICT tags) {
+Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
+                            PaddedBytes* JXL_RESTRICT tags) {
   WriteICCTag("para", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
   WriteICCUint16(curve_type, tags->size(), tags);
   WriteICCUint16(0, tags->size(), tags);
   for (size_t i = 0; i < params.size(); i++) {
-    WriteICCS15Fixed16(params[i], tags->size(), tags);
+    JXL_RETURN_IF_ERROR(WriteICCS15Fixed16(params[i], tags->size(), tags));
   }
+  return true;
 }
 
 Status MaybeCreateProfile(const ColorEncoding& c,
@@ -775,7 +783,7 @@ Status MaybeCreateProfile(const ColorEncoding& c,
   float d50[3] = {0.964203, 1.0, 0.824905};
   float wtpt[3];
   CIEXYZFromWhiteCIExy(c.GetWhitePoint(), wtpt);
-  CreateICCXYZTag(c.IsGray() ? wtpt : d50, &tags);
+  JXL_RETURN_IF_ERROR(CreateICCXYZTag(c.IsGray() ? wtpt : d50, &tags));
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("wtpt", tag_offset, tag_size, &tagtable, &offsets);
 
@@ -792,26 +800,27 @@ Status MaybeCreateProfile(const ColorEncoding& c,
     float g[3] = {m[1], m[4], m[7]};
     float b[3] = {m[2], m[5], m[8]};
 
-    CreateICCChadTag(chad, &tags);
+    JXL_RETURN_IF_ERROR(CreateICCChadTag(chad, &tags));
     FinalizeICCTag(&tags, &tag_offset, &tag_size);
     AddToICCTagTable("chad", tag_offset, tag_size, &tagtable, &offsets);
 
-    CreateICCXYZTag(r, &tags);
+    JXL_RETURN_IF_ERROR(CreateICCXYZTag(r, &tags));
     FinalizeICCTag(&tags, &tag_offset, &tag_size);
     AddToICCTagTable("rXYZ", tag_offset, tag_size, &tagtable, &offsets);
 
-    CreateICCXYZTag(g, &tags);
+    JXL_RETURN_IF_ERROR(CreateICCXYZTag(g, &tags));
     FinalizeICCTag(&tags, &tag_offset, &tag_size);
     AddToICCTagTable("gXYZ", tag_offset, tag_size, &tagtable, &offsets);
 
-    CreateICCXYZTag(b, &tags);
+    JXL_RETURN_IF_ERROR(CreateICCXYZTag(b, &tags));
     FinalizeICCTag(&tags, &tag_offset, &tag_size);
     AddToICCTagTable("bXYZ", tag_offset, tag_size, &tagtable, &offsets);
   }
 
   if (c.tf.IsGamma()) {
     float gamma = 1.0 / c.tf.GetGamma();
-    CreateICCCurvParaTag({gamma, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
+    JXL_RETURN_IF_ERROR(
+        CreateICCCurvParaTag({gamma, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
   } else {
     switch (c.tf.GetTransferFunction()) {
       case TransferFunction::kHLG:
@@ -823,19 +832,21 @@ Status MaybeCreateProfile(const ColorEncoding& c,
             HWY_DYNAMIC_DISPATCH(CreateTableCurve)(4096, ExtraTF::kPQ), &tags);
         break;
       case TransferFunction::kSRGB:
-        CreateICCCurvParaTag(
-            {2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045}, 3, &tags);
+        JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
+            {2.4, 1.0 / 1.055, 0.055 / 1.055, 1.0 / 12.92, 0.04045}, 3, &tags));
         break;
       case TransferFunction::k709:
-        CreateICCCurvParaTag(
+        JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
             {1.0 / 0.45, 1.0 / 1.099, 0.099 / 1.099, 1.0 / 4.5, 0.081}, 3,
-            &tags);
+            &tags));
         break;
       case TransferFunction::kLinear:
-        CreateICCCurvParaTag({1.0, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
+        JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
+            {1.0, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
         break;
       case TransferFunction::kDCI:
-        CreateICCCurvParaTag({2.6, 1.0, 0.0, 1.0, 0.0}, 3, &tags);
+        JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
+            {2.6, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
         break;
       default:
         JXL_ABORT("Unknown TF %d", c.tf.GetTransferFunction());
@@ -1331,7 +1342,7 @@ Status ColorEncoding::SetFieldsFromICC() {
   DetectTransferFunction(profile, this);
   // ICC and RenderingIntent have the same values (0..3).
   rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
 
   std::lock_guard<std::mutex> guard(lcms_mutex);
   const cmsContext context = GetContext();
@@ -1369,7 +1380,7 @@ Status ColorEncoding::CreateICC() {
 
 #if JPEGXL_ENABLE_SKCMS
   if (!MaybeCreateProfile(*this, &icc_)) {
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   if (!MaybeCreateProfile(context, *this, &icc_)) {
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -1386,7 +1397,7 @@ void ColorEncoding::DecideIfWantICC() {
   if (!DecodeProfile(ICC(), &profile)) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
   equivalent = ProfileEquivalentToICC(profile, icc_new);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile;
   if (!DecodeProfile(context, ICC(), &profile)) return;
@@ -1430,7 +1441,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       DecodeProfile(skcms_icc_->icc_src_, &skcms_icc_->profile_src_));
   JXL_RETURN_IF_ERROR(
       DecodeProfile(skcms_icc_->icc_dst_, &skcms_icc_->profile_dst_));
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
   JXL_RETURN_IF_ERROR(DecodeProfile(context, c_src.ICC(), &profile_src));
@@ -1459,14 +1470,14 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
     PaddedBytes icc_src, icc_dst;
 #if JPEGXL_ENABLE_SKCMS
     skcms_ICCProfile new_src, new_dst;
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
     Profile new_src, new_dst;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.
 #if JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(c_linear_src, &new_src, &icc_src) &&
         MaybeCreateProfile(c_linear_dst, &new_dst, &icc_dst)) {
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(context, c_linear_src, &icc_src) &&
         MaybeCreateProfile(context, c_linear_dst, &icc_dst) &&
         DecodeProfile(context, icc_src, &new_src) &&
@@ -1483,7 +1494,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       skcms_icc_->profile_src_ = new_src;
       skcms_icc_->icc_dst_ = PaddedBytes();
       skcms_icc_->profile_dst_ = new_dst;
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
       profile_src.swap(new_src);
       profile_dst.swap(new_dst);
 #endif  // JPEGXL_ENABLE_SKCMS

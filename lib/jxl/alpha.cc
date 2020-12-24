@@ -34,7 +34,7 @@ void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
   } else {
     for (size_t x = 0; x < num_pixels; ++x) {
       const float new_a = 1.f - (1.f - fg.a[x]) * (1.f - bg.a[x]);
-      const float rnew_a = 1.f / new_a;
+      const float rnew_a = (new_a > 0 ? 1.f / new_a : 0.f);
       out.r[x] =
           (fg.r[x] * fg.a[x] + bg.r[x] * bg.a[x] * (1.f - fg.a[x])) * rnew_a;
       out.g[x] =
@@ -42,6 +42,21 @@ void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
       out.b[x] =
           (fg.b[x] * fg.a[x] + bg.b[x] * bg.a[x] * (1.f - fg.a[x])) * rnew_a;
       out.a[x] = new_a;
+    }
+  }
+}
+void PerformAlphaBlending(float* bg, const float* bga, float* fg,
+                          const float* fga, float* out, size_t num_pixels,
+                          bool alpha_is_premultiplied) {
+  if (alpha_is_premultiplied) {
+    for (size_t x = 0; x < num_pixels; ++x) {
+      out[x] = (fg[x] + bg[x] * (1.f - fga[x]));
+    }
+  } else {
+    for (size_t x = 0; x < num_pixels; ++x) {
+      const float new_a = 1.f - (1.f - fga[x]) * (1.f - bga[x]);
+      const float rnew_a = (new_a > 0 ? 1.f / new_a : 0.f);
+      out[x] = (fg[x] * fga[x] + bg[x] * bga[x] * (1.f - fga[x])) * rnew_a;
     }
   }
 }

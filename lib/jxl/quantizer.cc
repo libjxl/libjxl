@@ -28,6 +28,8 @@ namespace jxl {
 
 static const int kDefaultQuant = 64;
 
+constexpr int Quantizer::kQuantMax;
+
 Quantizer::Quantizer(const DequantMatrices* dequant)
     : Quantizer(dequant, kDefaultQuant, kGlobalScaleDenom / kDefaultQuant) {}
 
@@ -105,33 +107,14 @@ void Quantizer::SetQuant(float quant_dc, float quant_ac,
   FillImage(val, raw_quant_field);
 }
 
-struct QuantizerParams : public Fields {
-  QuantizerParams() { Bundle::Init(this); }
-  const char* Name() const override { return "QuantizerParams"; }
-
-  Status VisitFields(Visitor* JXL_RESTRICT visitor) override {
-    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
-        BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
-        BitsOffset(16, 8193), 1, &global_scale));
-    JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(16), BitsOffset(5, 1),
-                                           BitsOffset(8, 1), BitsOffset(16, 1),
-                                           1, &quant_dc));
-    return true;
-  }
-
-  uint32_t global_scale;
-  uint32_t quant_dc;
-};
-
-void TestQuantizerParams() {
-  for (uint32_t i = 1; i < 10000; ++i) {
-    QuantizerParams p;
-    p.global_scale = i;
-    size_t extension_bits = 0, total_bits = 0;
-    JXL_CHECK(Bundle::CanEncode(p, &extension_bits, &total_bits));
-    JXL_CHECK(extension_bits == 0);
-    JXL_CHECK(total_bits >= 4);
-  }
+Status QuantizerParams::VisitFields(Visitor* JXL_RESTRICT visitor) {
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
+      BitsOffset(11, 1), BitsOffset(11, 2049), BitsOffset(12, 4097),
+      BitsOffset(16, 8193), 1, &global_scale));
+  JXL_QUIET_RETURN_IF_ERROR(visitor->U32(Val(16), BitsOffset(5, 1),
+                                         BitsOffset(8, 1), BitsOffset(16, 1), 1,
+                                         &quant_dc));
+  return true;
 }
 
 Status Quantizer::Encode(BitWriter* writer, size_t layer,

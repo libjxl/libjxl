@@ -31,10 +31,7 @@ set(JPEGXL_EXTRAS_SOURCES
 add_library(jxl_extras-static STATIC "${JPEGXL_EXTRAS_SOURCES}")
 target_compile_options(jxl_extras-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_property(TARGET jxl_extras-static PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_include_directories(jxl_extras-static PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${PROJECT_SOURCE_DIR}"
-)
+target_include_directories(jxl_extras-static PUBLIC "${PROJECT_SOURCE_DIR}")
 target_link_libraries(jxl_extras-static PUBLIC
   jxl-static
   lodepng

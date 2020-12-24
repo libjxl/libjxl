@@ -13,7 +13,7 @@
 # limitations under the License.
 
 set(JPEGXL_MAJOR_VERSION 0)
-set(JPEGXL_MINOR_VERSION 1)
+set(JPEGXL_MINOR_VERSION 2)
 set(JPEGXL_PATCH_VERSION 0)
 set(JPEGXL_LIBRARY_VERSION
     "${JPEGXL_MAJOR_VERSION}.${JPEGXL_MINOR_VERSION}.${JPEGXL_PATCH_VERSION}")
@@ -23,6 +23,11 @@ set(JPEGXL_LIBRARY_SOVERSION "${JPEGXL_MAJOR_VERSION}")
 
 
 # List of warning and feature flags for our library and tests.
+if (MSVC)
+set(JPEGXL_INTERNAL_FLAGS
+  # TODO(janwas): add flags
+)
+else ()
 set(JPEGXL_INTERNAL_FLAGS
   # F_FLAGS
   -fmerge-all-constants
@@ -49,6 +54,8 @@ if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
   list(APPEND JPEGXL_INTERNAL_FLAGS
     -Wc++2a-extensions
     -Wdeprecated-increment-bool
+    # TODO(deymo): Add -Wextra-semi once we update third_party/highway.
+    # -Wextra-semi
     -Wfloat-overflow-conversion
     -Wfloat-zero-conversion
     -Wfor-loop-analysis
@@ -63,6 +70,7 @@ if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
     -Wtautological-overlap-compare
     -Wthread-safety-analysis
     -Wundefined-func-template
+    -Wunreachable-code
     -Wunused-comparison
   )
 endif()  # Clang
@@ -115,6 +123,7 @@ set(JPEGXL_COVERAGE_FLAGS
     -DJXL_ENABLE_ASSERT=0 -DJXL_ENABLE_CHECK=0
 )
 endif()  # JPEGXL_ENABLE_COVERAGE
+endif()  #!MSVC
 
 # The jxl library definition.
 include(jxl.cmake)

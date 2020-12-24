@@ -298,21 +298,6 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       ec_blending_info.nonserialized_has_multiple_extra_channels =
           num_extra_channels > 0;
       JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&ec_blending_info));
-      if (ec_blending_info.mode != blending_info.mode ||
-          blending_info.alpha_channel != ec_blending_info.alpha_channel ||
-          blending_info.clamp != ec_blending_info.clamp) {
-        return JXL_FAILURE(
-            "Only the same blending mode for all extra channel is supported "
-            "for now");
-      }
-    }
-    if ((num_extra_channels > 1 ||
-         (num_extra_channels == 1 && nonserialized_metadata != nullptr &&
-          nonserialized_metadata->m.extra_channel_info[0].type !=
-              ExtraChannel::kAlpha)) &&
-        (is_partial_frame || blending_info.mode != BlendMode::kReplace)) {
-      return JXL_FAILURE(
-          "Non-keyframes are not supported with multiple channels for now");
     }
     if (visitor->Conditional(nonserialized_metadata != nullptr &&
                              nonserialized_metadata->m.have_animation)) {

@@ -385,7 +385,7 @@ struct PatchColorspaceInfo {
       distance += std::fabs(v1[c] - v2[c]) * kChannelWeights[c];
     }
     return distance <= threshold;
-  };
+  }
 };
 
 std::vector<PatchInfo> FindTextLikePatches(

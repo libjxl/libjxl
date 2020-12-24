@@ -194,7 +194,7 @@ class ButteraugliComparator {
   void DiffmapOpsinDynamicsImage(const Image3F &xyb1, ImageF &result) const;
 
   // Same as above, but the frequency decomposition was already applied.
-  void DiffmapPsychoImage(const PsychoImage &ps1, ImageF &diffmap) const;
+  void DiffmapPsychoImage(const PsychoImage &pi1, ImageF &diffmap) const;
 
   void Mask(MaskImage *BUTTERAUGLI_RESTRICT mask,
             MaskImage *BUTTERAUGLI_RESTRICT mask_dc) const;

@@ -113,11 +113,16 @@ TEST(EncodeTest, OptionsTest) {
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc, NULL);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetLossless(options, JXL_TRUE));
+
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetEffort(options, 5));
   // Lower than currently supported values
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 2));
   // Higher than currently supported values
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 10));
+
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetDistance(options, 0.5));
+  // Disallowed negative distance
+  EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetDistance(options, -1));
 
   JxlEncoderDestroy(enc);
 }

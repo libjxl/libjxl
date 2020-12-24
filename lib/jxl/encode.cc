@@ -60,28 +60,6 @@ typedef struct JxlEncoderQueuedFrame {
   std::vector<uint8_t> buffer;
 } JxlEncoderQueuedFrame;
 
-// Returns whether the JxlEndianness value indicates little endian. If not,
-// then big endian is assumed.
-static bool IsLittleEndian(const JxlEndianness& endianness) {
-  switch (endianness) {
-    case JXL_LITTLE_ENDIAN:
-      return true;
-    case JXL_BIG_ENDIAN:
-      return false;
-    case JXL_NATIVE_ENDIAN: {
-      // JXL_BYTE_ORDER_LITTLE from byte_order.h cannot be used because it only
-      // distinguishes between little endian and unknown.
-      uint32_t u = 1;
-      char c[4];
-      memcpy(c, &u, 4);
-      return c[0] == 1;
-    }
-  }
-
-  JXL_ASSERT(false);
-  return false;
-}
-
 }  // namespace
 
 struct JxlEncoderStruct {
@@ -149,10 +127,8 @@ struct JxlEncoderStruct {
                                                input_frame->buffer.size()),
                       metadata.xsize(), metadata.ysize(), c_current, has_alpha,
                       /*alpha_is_premultiplied=*/false, bitdepth,
-                      /*big_endian=*/
-                      !IsLittleEndian(input_frame->pixel_format.endianness),
-                      /*flipped_y=*/false, this->thread_pool.get(),
-                      &io.Main())) {
+                      input_frame->pixel_format.endianness, /*flipped_y=*/false,
+                      this->thread_pool.get(), &io.Main())) {
       return JXL_ENC_ERROR;
     }
     io.SetSize(io.Main().xsize(), io.Main().ysize());
@@ -221,13 +197,13 @@ JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc, const size_t xsize,
 }
 
 JxlEncoderOptions* JxlEncoderOptionsCreate(JxlEncoder* enc,
-                                           const JxlEncoderOptions* src) {
+                                           const JxlEncoderOptions* source) {
   auto opts =
       jxl::MemoryManagerMakeUnique<JxlEncoderOptions>(&enc->memory_manager);
   if (!opts) return nullptr;
   opts->enc = enc;
-  if (src != nullptr) {
-    opts->values = src->values;
+  if (source != nullptr) {
+    opts->values = source->values;
   } else {
     opts->values.lossless = false;
   }
@@ -236,18 +212,27 @@ JxlEncoderOptions* JxlEncoderOptionsCreate(JxlEncoder* enc,
   return ret;
 }
 
-JxlEncoderStatus JxlEncoderOptionsSetLossless(JxlEncoderOptions* opts,
+JxlEncoderStatus JxlEncoderOptionsSetLossless(JxlEncoderOptions* options,
                                               const JXL_BOOL lossless) {
-  opts->values.lossless = lossless;
+  options->values.lossless = lossless;
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderOptionsSetEffort(JxlEncoderOptions* opts,
+JxlEncoderStatus JxlEncoderOptionsSetEffort(JxlEncoderOptions* options,
                                             const int effort) {
   if (effort < 3 || effort > 9) {
     return JXL_ENC_ERROR;
   }
-  opts->values.cparams.speed_tier = static_cast<jxl::SpeedTier>(10 - effort);
+  options->values.cparams.speed_tier = static_cast<jxl::SpeedTier>(10 - effort);
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
+                                              float distance) {
+  if (distance < 0 || distance > 15) {
+    return JXL_ENC_ERROR;
+  }
+  options->values.cparams.butteraugli_distance = distance;
   return JXL_ENC_SUCCESS;
 }
 
@@ -287,22 +272,22 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderAddImageFrame(JxlEncoderOptions* opts,
+JxlEncoderStatus JxlEncoderAddImageFrame(JxlEncoderOptions* options,
                                          const JxlPixelFormat* pixel_format,
                                          void* buffer, size_t size) {
   // TODO(zond): Return error if the input has been closed.
   auto frame = jxl::MemoryManagerMakeUnique<JxlEncoderQueuedFrame>(
-      &opts->enc->memory_manager,
+      &options->enc->memory_manager,
       // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
       // default move constructor there.
       JxlEncoderQueuedFrame{
-          *pixel_format, opts->values,
+          *pixel_format, options->values,
           std::vector<uint8_t>(static_cast<uint8_t*>(buffer),
                                static_cast<uint8_t*>(buffer) + size)});
   if (!frame) {
     return JXL_ENC_ERROR;
   }
-  opts->enc->input_frame_queue.emplace_back(std::move(frame));
+  options->enc->input_frame_queue.emplace_back(std::move(frame));
   return JXL_ENC_SUCCESS;
 }
 

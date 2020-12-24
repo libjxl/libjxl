@@ -14,12 +14,12 @@
 
 #ifndef LIB_JXL_BLENDING_H_
 #define LIB_JXL_BLENDING_H_
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/passes_state.h"
 
 namespace jxl {
 
-Status DoBlending(const PassesSharedState& state, ImageBundle* foreground);
+Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground);
 
 }
 

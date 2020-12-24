@@ -36,7 +36,7 @@
 
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/common.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/transform.h"
 
 #define JXL_MAX_FIRST_PREVIEW_SIZE 8
@@ -88,6 +88,10 @@ void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.w == 0 || chin_residual.h == 0) return;
+  // These must be valid since we ran MetaApply already.
+  JXL_ASSERT(chin.w == DivCeil(chin.w + chin_residual.w, 2));
+  JXL_ASSERT(chin.h == chin_residual.h);
+
   Channel chout(chin.w + chin_residual.w, chin.h, chin.hshift - 1, chin.vshift,
                 chin.hcshift - 1, chin.vcshift);
   JXL_DEBUG_V(4,
@@ -180,6 +184,11 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   if (chin_residual.w == 0 || chin_residual.h == 0) return;
+  // These must be valid since we ran MetaApply already.
+  JXL_ASSERT(chin.h == DivCeil(chin.h + chin_residual.h, 2));
+  JXL_ASSERT(chin.w == chin_residual.w);
+
+  // Note: chin.h >= chin_residual.h and at most 1 different.
   Channel chout(chin.w, chin.h + chin_residual.h, chin.hshift, chin.vshift - 1,
                 chin.hcshift, chin.vcshift - 1);
   JXL_DEBUG_V(
@@ -196,6 +205,8 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
       [&](const int task, const int thread) {
         const size_t x0 = task * kColsPerThread;
         const size_t x1 = std::min((size_t)(task + 1) * kColsPerThread, chin.w);
+        // We only iterate up to std::min(chin_residual.h, chin.h) which is
+        // always chin_residual.h.
         for (size_t y = 0; y < chin_residual.h; y++) {
           const pixel_type *JXL_RESTRICT p_residual = chin_residual.Row(y);
           const pixel_type *JXL_RESTRICT p_avg = chin.Row(y);
@@ -214,6 +225,9 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
                 ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
 
             p_out[x] = ClampToRange<pixel_type>(out);
+            // If the chin_residual.h == chin.h, the output has an even number
+            // of rows so the next line is fine. Otherwise, this loop won't
+            // write to the last output row which is handled separately.
             p_out[x + onerow_out] = ClampToRange<pixel_type>(p_out[x] - diff);
           }
         }

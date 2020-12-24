@@ -387,6 +387,10 @@ class ColorEncodingReaderPNG {
       }
 
       char type_char[5];
+      if (chunk + 8 >= end) {
+        JXL_NOTIFY_ERROR("PNG: malformed chunk");
+        break;
+      }
       lodepng_chunk_type(type_char, chunk);
       std::string type = type_char;
 
@@ -407,6 +411,7 @@ class ColorEncodingReaderPNG {
         }
         if (lodepng_chunk_check_crc(chunk) != 0) {
           JXL_NOTIFY_ERROR("CRC mismatch in unknown PNG chunk");
+          chunk = lodepng_chunk_next_const(chunk, end);
           continue;
         }
 
@@ -722,12 +727,12 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   const size_t num_channels = (is_gray ? 1 : 3) + has_alpha;
   const size_t out_size = w * h * num_channels * bits_per_sample / kBitsPerByte;
 
-  const bool big_endian = true;  // PNG requirement
+  const JxlEndianness endianness = JXL_BIG_ENDIAN;  // PNG requirement
   const Span<const uint8_t> span(out, out_size);
   const bool ok =
       ConvertImage(span, w, h, io->metadata.m.color_encoding, has_alpha,
                    /*alpha_is_premultiplied=*/false,
-                   io->metadata.m.bit_depth.bits_per_sample, big_endian,
+                   io->metadata.m.bit_depth.bits_per_sample, endianness,
                    /*flipped_y=*/false, pool, &io->Main());
   JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
@@ -750,12 +755,11 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
       ib.xsize() * DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
                            kBitsPerByte);
   PaddedBytes raw_bytes(stride * ib.ysize());
-  JXL_RETURN_IF_ERROR(
-      ConvertImage(*transformed, bits_per_sample,
-                   /*float_out=*/false, /*apply_srgb_tf=*/false,
-                   c_desired.Channels() + (ib.HasAlpha() ? 1 : 0),
-                   /*little_endian=*/false, stride, pool, raw_bytes.data(),
-                   raw_bytes.size(), jxl::Orientation::kIdentity));
+  JXL_RETURN_IF_ERROR(ConvertImage(
+      *transformed, bits_per_sample, /*float_out=*/false,
+      /*apply_srgb_tf=*/false, c_desired.Channels() + (ib.HasAlpha() ? 1 : 0),
+      JXL_BIG_ENDIAN, stride, pool, raw_bytes.data(), raw_bytes.size(),
+      jxl::Orientation::kIdentity));
 
   PNGState state;
   // For maximum compatibility, still store 8-bit even if pixels are all zero.

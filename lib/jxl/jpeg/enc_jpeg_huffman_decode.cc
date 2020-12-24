@@ -33,7 +33,7 @@ static inline int NextTableBitSize(const int* count, int len) {
   return len - kJpegHuffmanRootTableBits;
 }
 
-void BuildJpegHuffmanTable(const int* count, const int* symbols,
+void BuildJpegHuffmanTable(const uint32_t* count, const uint32_t* symbols,
                            HuffmanTableEntry* lut) {
   HuffmanTableEntry code;    // current table entry
   HuffmanTableEntry* table;  // next available space in table

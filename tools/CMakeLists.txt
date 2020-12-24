@@ -249,10 +249,12 @@ if(NOT ${SANITIZER} STREQUAL "none")
 endif()  # SANITIZER != "none"
 set_target_properties(libjxl_test PROPERTIES PREFIX "tests/")
 target_link_libraries(libjxl_test jxl)
+if (NOT MSVC)
 target_compile_options(libjxl_test PRIVATE -Wall -Wextra -Werror)
 if(NOT WIN32)
   target_compile_options(libjxl_test PRIVATE -pedantic)
 endif()  # NOT WIN32
+endif()  # NOT MSVC
 
 add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN

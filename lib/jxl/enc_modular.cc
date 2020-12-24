@@ -34,7 +34,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/encoding.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/toc.h"

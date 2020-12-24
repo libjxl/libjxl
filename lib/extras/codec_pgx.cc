@@ -257,11 +257,13 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   const bool has_alpha = false;
   const bool flipped_y = false;
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
-  JXL_RETURN_IF_ERROR(ConvertImage(span, header.xsize, header.ysize,
-                                   io->metadata.m.color_encoding, has_alpha,
-                                   /*alpha_is_premultiplied=*/false,
-                                   io->metadata.m.bit_depth.bits_per_sample,
-                                   header.big_endian, flipped_y, pool, &ib));
+  JXL_RETURN_IF_ERROR(
+      ConvertImage(span, header.xsize, header.ysize,
+                   io->metadata.m.color_encoding, has_alpha,
+                   /*alpha_is_premultiplied=*/false,
+                   io->metadata.m.bit_depth.bits_per_sample,
+                   header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN,
+                   flipped_y, pool, &ib));
   io->frames.push_back(std::move(ib));
   SetIntensityTarget(io);
   return true;
@@ -291,8 +293,8 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   size_t stride = ib.xsize() * (bits_per_sample / kBitsPerByte);
   JXL_RETURN_IF_ERROR(ConvertImage(*transformed, bits_per_sample,
                                    /*float_out=*/false, /*apply_srgb_tf=*/false,
-                                   /*num_channels=*/1, /*little_endian=*/false,
-                                   stride, pool, pixels.data(), pixels.size(),
+                                   /*num_channels=*/1, JXL_BIG_ENDIAN, stride,
+                                   pool, pixels.data(), pixels.size(),
                                    jxl::Orientation::kIdentity));
 
   char header[kMaxHeaderSize];

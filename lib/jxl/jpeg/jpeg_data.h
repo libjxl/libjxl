@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "lib/jxl/common.h"
+#include "lib/jxl/fields.h"
 
 namespace jxl {
 namespace jpeg {
@@ -37,25 +38,7 @@ constexpr int kJpegDCAlphabetSize = 12;
 constexpr int kMaxDHTMarkers = 512;
 constexpr int kMaxDimPixels = 65535;
 
-constexpr uint8_t kDefaultQuantMatrix[2][64] = {
-  { 16,  11,  10,  16,  24,  40,  51,  61,
-    12,  12,  14,  19,  26,  58,  60,  55,
-    14,  13,  16,  24,  40,  57,  69,  56,
-    14,  17,  22,  29,  51,  87,  80,  62,
-    18,  22,  37,  56,  68, 109, 103,  77,
-    24,  35,  55,  64,  81, 104, 113,  92,
-    49,  64,  78,  87, 103, 121, 120, 101,
-    72,  92,  95,  98, 112, 100, 103,  99 },
-  { 17,  18,  24,  47,  99,  99,  99,  99,
-    18,  21,  26,  66,  99,  99,  99,  99,
-    24,  26,  56,  99,  99,  99,  99,  99,
-    47,  66,  99,  99,  99,  99,  99,  99,
-    99,  99,  99,  99,  99,  99,  99,  99,
-    99,  99,  99,  99,  99,  99,  99,  99,
-    99,  99,  99,  99,  99,  99,  99,  99,
-    99,  99,  99,  99,  99,  99,  99,  99 }
-};
-
+/* clang-format off */
 constexpr uint32_t kJPEGNaturalOrder[80] = {
   0,   1,  8, 16,  9,  2,  3, 10,
   17, 24, 32, 25, 18, 11,  4,  5,
@@ -80,6 +63,7 @@ constexpr uint32_t kJPEGZigZagOrder[64] = {
   21, 34, 37, 47, 50, 56, 59, 61,
   35, 36, 48, 49, 57, 58, 62, 63
 };
+/* clang-format on */
 
 enum struct JPEGReadError {
   OK = 0,
@@ -130,11 +114,11 @@ enum struct JPEGReadError {
 // Quantization values for an 8x8 pixel block.
 struct JPEGQuantTable {
   std::array<int32_t, kDCTBlockSize> values;
-  int precision = 0;
+  uint32_t precision = 0;
   // The index of this quantization table as it was parsed from the input JPEG.
   // Each DQT marker segment contains an 'index' field, and we save this index
   // here. Valid values are 0 to 3.
-  int index = 0;
+  uint32_t index = 0;
   // Set to true if this table is the last one within its marker segment.
   bool is_last = true;
 };
@@ -142,9 +126,9 @@ struct JPEGQuantTable {
 // Huffman code and decoding lookup table used for DC and AC coefficients.
 struct JPEGHuffmanCode {
   // Bit length histogram.
-  std::array<int, kJpegHuffmanMaxBitLength + 1> counts = {};
+  std::array<uint32_t, kJpegHuffmanMaxBitLength + 1> counts = {};
   // Symbol values sorted by increasing bit lengths.
-  std::array<int, kJpegHuffmanAlphabetSize + 1> values = {};
+  std::array<uint32_t, kJpegHuffmanAlphabetSize + 1> values = {};
   // The index of the Huffman code in the current set of Huffman codes. For AC
   // component Huffman codes, 0x10 is added to the index.
   int slot_id = 0;
@@ -154,9 +138,9 @@ struct JPEGHuffmanCode {
 
 // Huffman table indexes used for one component of one scan.
 struct JPEGComponentScanInfo {
-  uint8_t comp_idx;
-  int dc_tbl_idx;
-  int ac_tbl_idx;
+  uint32_t comp_idx;
+  uint32_t dc_tbl_idx;
+  uint32_t ac_tbl_idx;
 };
 
 // Contains information that is used in one scan.
@@ -166,25 +150,27 @@ struct JPEGScanInfo {
   //   Se : End of spectral band in zig-zag sequence.
   //   Ah : Successive approximation bit position, high.
   //   Al : Successive approximation bit position, low.
-  int Ss;
-  int Se;
-  int Ah;
-  int Al;
-  size_t num_components = 0;
+  uint32_t Ss;
+  uint32_t Se;
+  uint32_t Ah;
+  uint32_t Al;
+  uint32_t num_components = 0;
   std::array<JPEGComponentScanInfo, 4> components;
+  // Last codestream pass that is needed to write this scan.
+  uint32_t last_needed_pass = 0;
 
   // Extra information required for bit-precise JPEG file reconstruction.
 
   // Set of block indexes where the JPEG encoder has to flush the end-of-block
   // runs and refinement bits.
-  std::vector<int> reset_points;
+  std::vector<uint32_t> reset_points;
   // The number of extra zero runs (Huffman symbol 0xf0) before the end of
   // block (if nonzero), indexed by block index.
   // All of these symbols can be omitted without changing the pixel values, but
   // some jpeg encoders put these at the end of blocks.
   typedef struct {
-    int block_idx;
-    int num_extra_zero_runs;
+    uint32_t block_idx;
+    uint32_t num_extra_zero_runs;
   } ExtraZeroRunInfo;
   std::vector<ExtraZeroRunInfo> extra_zero_runs;
 };
@@ -202,48 +188,46 @@ struct JPEGComponent {
         height_in_blocks(0) {}
 
   // One-byte id of the component.
-  int id;
+  uint32_t id;
   // Horizontal and vertical sampling factors.
   // In interleaved mode, each minimal coded unit (MCU) has
   // h_samp_factor x v_samp_factor DCT blocks from this component.
   int h_samp_factor;
   int v_samp_factor;
   // The index of the quantization table used for this component.
-  uint8_t quant_idx;
+  uint32_t quant_idx;
   // The dimensions of the component measured in 8x8 blocks.
   uint32_t width_in_blocks;
   uint32_t height_in_blocks;
-  uint32_t num_blocks;
   // The DCT coefficients of this component, laid out block-by-block, divided
   // through the quantization matrix values.
   std::vector<coeff_t> coeffs;
 };
 
+enum class AppMarkerType : uint32_t {
+  kUnknown = 0,
+  kICC = 1,
+};
+
 // Represents a parsed jpeg file.
-struct JPEGData {
+struct JPEGData : public Fields {
   JPEGData()
       : width(0),
         height(0),
-        version(2),  // Use new context modelling by default.
-        max_h_samp_factor(1),
-        max_v_samp_factor(1),
-        MCU_rows(0),
-        MCU_cols(0),
         restart_interval(0),
-        original_jpg(nullptr),
-        original_jpg_size(0),
         error(JPEGReadError::OK),
         has_zero_padding_bit(false) {}
 
+  const char* Name() const override { return "JPEGData"; }
+  // Doesn't serialize everything - skips brotli-encoded data and what is
+  // already encoded in the codestream.
+  Status VisitFields(Visitor* visitor) override;
+
   int width;
   int height;
-  int version;
-  int max_h_samp_factor;
-  int max_v_samp_factor;
-  int MCU_rows;
-  int MCU_cols;
-  int restart_interval;
+  uint32_t restart_interval;
   std::vector<std::vector<uint8_t>> app_data;
+  std::vector<AppMarkerType> app_marker_type;
   std::vector<std::vector<uint8_t>> com_data;
   std::vector<JPEGQuantTable> quant;
   std::vector<JPEGHuffmanCode> huffman_code;
@@ -252,47 +236,13 @@ struct JPEGData {
   std::vector<uint8_t> marker_order;
   std::vector<std::vector<uint8_t>> inter_marker_data;
   std::vector<uint8_t> tail_data;
-  const uint8_t* original_jpg;
-  size_t original_jpg_size;
   JPEGReadError error;
 
   // Extra information required for bit-precise JPEG file reconstruction.
 
   bool has_zero_padding_bit;
-  std::vector<int> padding_bits;
+  std::vector<uint8_t> padding_bits;
 };
-
-inline bool JPEGDataIs420(const JPEGData& jpg) {
-  return (jpg.components.size() == 3 &&
-          jpg.max_h_samp_factor == 2 &&
-          jpg.max_v_samp_factor == 2 &&
-          jpg.components[0].h_samp_factor == 2 &&
-          jpg.components[0].v_samp_factor == 2 &&
-          jpg.components[1].h_samp_factor == 1 &&
-          jpg.components[1].v_samp_factor == 1 &&
-          jpg.components[2].h_samp_factor == 1 &&
-          jpg.components[2].v_samp_factor == 1);
-}
-
-inline bool JPEGDataIs444(const JPEGData& jpg) {
-  return (jpg.components.size() == 3 &&
-          jpg.max_h_samp_factor == 1 &&
-          jpg.max_v_samp_factor == 1 &&
-          jpg.components[0].h_samp_factor == 1 &&
-          jpg.components[0].v_samp_factor == 1 &&
-          jpg.components[1].h_samp_factor == 1 &&
-          jpg.components[1].v_samp_factor == 1 &&
-          jpg.components[2].h_samp_factor == 1 &&
-          jpg.components[2].v_samp_factor == 1);
-}
-
-// This limit helps to prevent large allocation.
-inline uint64_t PaddingBitsLimit(const JPEGData& jpg) {
-  // Just rough estimate, with MCU = 16px.
-  const uint64_t num_blocks = ((static_cast<uint64_t>(jpg.width) + 15u) >> 3u) *
-                              ((static_cast<uint64_t>(jpg.height) + 15u) >> 3u);
-  return 7u * num_blocks * jpg.components.size() + 256u;
-}
 
 }  // namespace jpeg
 }  // namespace jxl

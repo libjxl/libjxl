@@ -14,17 +14,17 @@
 
 #include "tools/epf.h"
 
-#include "jxl/dec_cache.h"
-#include "jxl/frame_header.h"
-#include "jxl/headers.h"
-#include "jxl/image_ops.h"
 #include "lib/jxl/ar_control_field.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/epf.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/headers.h"
+#include "lib/jxl/image_ops.h"
 
 using jxl::kSigmaBorder;
 using jxl::kSigmaPadding;

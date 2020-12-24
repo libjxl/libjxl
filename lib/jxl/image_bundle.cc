@@ -145,7 +145,6 @@ Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
   PROFILER_FUNC;
   JXL_RETURN_IF_ERROR(CopyTo(Rect(color_), c_desired, &color_, pool));
   c_current_ = c_desired;
-  VerifySizes();
   return true;
 }
 

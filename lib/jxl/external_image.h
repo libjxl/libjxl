@@ -20,6 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "jxl/types.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
@@ -54,7 +55,7 @@ constexpr size_t RowSize(size_t xsize, size_t channels,
 // xsize and ysize.
 Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                     bool float_out, bool apply_srgb_tf, size_t num_channels,
-                    bool little_endian, size_t stride_out,
+                    JxlEndianness endianness, size_t stride_out,
                     jxl::ThreadPool* thread_pool, void* out_image,
                     size_t out_size, jxl::Orientation undo_orientation);
 
@@ -62,7 +63,7 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
 Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
                     const ColorEncoding& c_current, bool has_alpha,
                     bool alpha_is_premultiplied, size_t bits_per_sample,
-                    bool big_endian, bool flipped_y, ThreadPool* pool,
+                    JxlEndianness endianness, bool flipped_y, ThreadPool* pool,
                     ImageBundle* ib);
 
 }  // namespace jxl

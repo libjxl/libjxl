@@ -46,10 +46,10 @@ bool Abort() {
 
 #if JXL_COMPILER_MSVC
   __debugbreak();
+  abort();
 #else
   __builtin_trap();
 #endif
-  abort();
 }
 
 }  // namespace jxl

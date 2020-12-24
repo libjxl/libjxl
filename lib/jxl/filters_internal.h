@@ -56,7 +56,7 @@ struct RowMapMirror {
 
 // Identity mapping. Maps a row in the range [0, ysize) to the same value.
 struct RowMapId {
-  explicit RowMapId(){};
+  explicit RowMapId() {}
   size_t operator()(ssize_t y) {
     JXL_DASSERT(y >= 0);
     return y;

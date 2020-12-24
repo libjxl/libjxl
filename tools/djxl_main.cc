@@ -132,6 +132,18 @@ int DecompressMain(int argc, const char *argv[]) {
     }
   } else {
     jxl::CodecInOut io;
+    auto assign = [](const uint8_t* bytes, size_t size,
+        jxl::PaddedBytes& target) {
+      target.assign(bytes, bytes + size);
+    };
+    if (container.exif_size) {
+      assign(container.exif, container.exif_size, io.blobs.exif);
+    }
+    for (const auto& span : container.xml) {
+      std::string xml(span.first, span.first + span.second);
+      bool is_xmp = strstr(xml.c_str(), "XML:com.adobe.xmp");
+      assign(span.first, span.second, is_xmp ? io.blobs.xmp : io.blobs.iptc);
+    }
     // Set JPEG quality.
     // TODO(veluca): the decoder should set this value, and the argument should
     // be an override.

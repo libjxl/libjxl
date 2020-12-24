@@ -52,6 +52,10 @@ void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
                           const AlphaBlendingInputLayer& fg,
                           const AlphaBlendingOutput& out, size_t num_pixels,
                           bool alpha_is_premultiplied);
+// Single plane alpha blending
+void PerformAlphaBlending(float* bg, const float* bga, float* fg,
+                          const float* fga, float* out, size_t num_pixels,
+                          bool alpha_is_premultiplied);
 
 void PremultiplyAlpha(float* JXL_RESTRICT r, float* JXL_RESTRICT g,
                       float* JXL_RESTRICT b, const float* JXL_RESTRICT a,

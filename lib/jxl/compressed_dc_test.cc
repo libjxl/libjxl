@@ -80,11 +80,14 @@ class CompressedDCTest : public testing::TestWithParam<CompressedDCTestParams> {
     EXPECT_TRUE(DecodeFile(dparams, compressed, io, &decoding_info, pool));
 
     // Without FMA, 1E-6 is sufficient.
-    const float kErrorThreshold = 7e-6f;
-    VerifyRelativeError(decoding_dc, encoding_dc, kErrorThreshold,
-                        kErrorThreshold);
-    VerifyRelativeError(*io->Main().color(), encoding_dec, kErrorThreshold,
-                        kErrorThreshold);
+    float error_threshold = 7e-6f;
+    VerifyRelativeError(decoding_dc, encoding_dc, error_threshold,
+                        error_threshold);
+    // Higher error threshold because of the double color conversion.
+    error_threshold = 7e-5f;
+    EXPECT_TRUE(io->TransformTo(ColorEncoding::LinearSRGB(), pool));
+    VerifyRelativeError(*io->Main().color(), encoding_dec, error_threshold,
+                        error_threshold);
   }
 };
 

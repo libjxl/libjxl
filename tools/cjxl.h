@@ -95,8 +95,14 @@ struct CompressArgs {
   const char* spot_in = nullptr;
 };
 
-jxl::Status CompressJxl(jxl::ThreadPoolInternal* pool, CompressArgs& args,
+jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
+                    jxl::CodecInOut* io, double* decode_mps);
+
+// The input image must already have been loaded into io using LoadAll.
+jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
+                        jxl::ThreadPoolInternal* pool, CompressArgs& args,
                         jxl::PaddedBytes* compressed, bool print_stats = true);
+
 
 }  // namespace tools
 }  // namespace jpegxl

@@ -28,7 +28,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/modular/encoding/encoding.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 
 namespace jxl {
 
@@ -119,7 +119,7 @@ class ModularFrameDecoder {
                                  ModularFrameDecoder* modular_frame_decoder);
   Status FinalizeDecoding(PassesDecoderState* dec_state, jxl::ThreadPool* pool,
                           ImageBundle* output);
-  bool have_dc() const { return have_something; };
+  bool have_dc() const { return have_something; }
 
  private:
   Image full_image;

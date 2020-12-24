@@ -3,14 +3,13 @@
 This repository contains a reference implementation of JPEG XL (encoder and
 decoder).
 
-**NOTE**
+JPEG XL is in the final stages of standardization and its codestream format is
+frozen.
 
-JPEG XL is in the final stages of standardization and is ready for freezing of
-the codestream format. The current version is a release candidate, and we are
-not expecting any changes beyond what is required by bug fixing.
-
-**WARNING:** until further notice, do not depend on future decoders being able
-to decode the output of a current encoder.
+The libraries API, command line options and tools in this repository are subject
+to change, however files encoded with `cjxl` conform to the JPEG XL format
+specification and can be decoded with current and future `djxl` decoders or
+`libjxl` decoding library.
 
 ## Quick start guide
 

@@ -20,30 +20,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <functional>
+
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 namespace jpeg {
 
-// Function pointer type used to write len bytes into buf. Returns the
-// number of bytes written.
-typedef size_t (*JPEGOutputHook)(void* data, const uint8_t* buf, size_t len);
+// Function type used to write len bytes into buf. Returns the number of bytes
+// written.
+using JPEGOutput = std::function<size_t(const uint8_t* buf, size_t len)>;
 
-// Output callback function with associated data.
-struct JPEGOutput {
-  JPEGOutput(JPEGOutputHook cb, void* data) : cb(cb), data(data) {}
-  bool Write(const uint8_t* buf, size_t len) const {
-    if (len == 0) return true;
-    size_t bytes_written = cb(data, buf, len);
-    return (bytes_written == len);
-  }
-
- private:
-  JPEGOutputHook cb;
-  void* data;
-};
-
-bool WriteJpeg(const JPEGData& jpg, JPEGOutput out);
+Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out);
 
 }  // namespace jpeg
 }  // namespace jxl

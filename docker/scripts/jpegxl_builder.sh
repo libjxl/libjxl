@@ -92,7 +92,7 @@ LIST_WASM_TARGETS=(
 # Setup the apt repositories and supported architectures.
 setup_apt() {
   apt-get update -y
-  apt-get install -y curl gnupg
+  apt-get install -y curl gnupg ca-certificates
 
   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 1E9377A2BA9EF27F
 
@@ -153,6 +153,7 @@ install_pkgs() {
     # For cross-compiling to Windows with mingw.
     mingw-w64
     wine64
+    wine-binfmt
 
     # Native tools.
     bsdmainutils
@@ -237,8 +238,7 @@ install_pkgs() {
 
   # Install all the manual packages via "apt install" for the main arch. These
   # will be installed for other archs via manual download and unpack.
-  DEBIAN_FRONTEND=noninteractive apt install -y \
-    "${packages[@]}" "${UNPACK_PKGS[@]}"
+  apt install -y "${packages[@]}" "${UNPACK_PKGS[@]}"
 }
 
 # binutils <2.32 need a patch.
@@ -471,7 +471,7 @@ main() {
   ln -s "/opt/.jsvu/v8-${V8_VERSION}" "/opt/.jsvu/v8"
 
   # Cleanup.
-  rm -rf /var/lib/apt/lists/*
+  find /var/lib/apt/lists/ -mindepth 1 -delete
 }
 
 main "$@"

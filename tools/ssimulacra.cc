@@ -274,13 +274,13 @@ void Ssimulacra::PrintDetails() const {
   }
 }
 
-Ssimulacra ComputeDiff(const Image3F& img1_arg, const Image3F& img2_arg) {
+Ssimulacra ComputeDiff(const Image3F& orig, const Image3F& distorted) {
   Ssimulacra ssimulacra;
 
-  Image3F img1 = Rgb2Lab(img1_arg);
-  Image3F img2 = Rgb2Lab(img2_arg);
+  Image3F img1 = Rgb2Lab(orig);
+  Image3F img2 = Rgb2Lab(distorted);
 
-  Image3F mul(img1_arg.xsize(), img1_arg.ysize());
+  Image3F mul(orig.xsize(), orig.ysize());
   Blur blur(img1.xsize(), img1.ysize());
 
   for (int scale = 0; scale < kNumScales; scale++) {

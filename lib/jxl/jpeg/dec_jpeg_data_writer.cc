@@ -24,15 +24,19 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/jpeg/dec_jpeg_serialization_state.h"
-#include "lib/jxl/jpeg/dec_jpeg_state.h"
-#include "lib/jxl/jpeg/dec_jpeg_state_internal.h"
-#include "lib/jxl/jpeg/jpeg_constants.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 namespace jpeg {
 
 namespace {
+
+enum struct SerializationStatus {
+  NEEDS_MORE_INPUT,
+  NEEDS_MORE_OUTPUT,
+  ERROR,
+  DONE
+};
 
 const int kJpegPrecision = 8;
 
@@ -135,15 +139,15 @@ void EmitMarker(JpegBitWriter* bw, int marker) {
   bw->data[bw->pos++] = marker;
 }
 
-bool JumpToByteBoundary(JpegBitWriter* bw, const int** pad_bits,
-                        const int* pad_bits_end) {
+bool JumpToByteBoundary(JpegBitWriter* bw, const uint8_t** pad_bits,
+                        const uint8_t* pad_bits_end) {
   size_t n_bits = bw->put_bits & 7u;
   uint8_t pad_pattern;
   if (*pad_bits == nullptr) {
     pad_pattern = (1u << n_bits) - 1;
   } else {
     pad_pattern = 0;
-    const int* src = *pad_bits;
+    const uint8_t* src = *pad_bits;
     // TODO(eustas): bitwise reading looks insanely ineffective...
     while (n_bits--) {
       pad_pattern <<= 1;
@@ -659,7 +663,6 @@ bool EncodeRefinementBits(const coeff_t* coeffs,
 
 template <int kMode>
 SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
-                                              const DecState& parsing_state,
                                               SerializationState* state) {
   const JPEGScanInfo& scan_info = jpg.scan_info[state->scan_index];
   EncodeScanState& ss = state->scan_state;
@@ -715,9 +718,14 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
   // block.
   const int h_group = is_interleaved ? 1 : base_component.h_samp_factor;
   const int v_group = is_interleaved ? 1 : base_component.v_samp_factor;
-  const int MCUs_per_row =
-      DivCeil(jpg.width * h_group, 8 * jpg.max_h_samp_factor);
-  const int MCU_rows = DivCeil(jpg.height * v_group, 8 * jpg.max_v_samp_factor);
+  int max_h_samp_factor = 1;
+  int max_v_samp_factor = 1;
+  for (const auto& c : jpg.components) {
+    max_h_samp_factor = std::max(c.h_samp_factor, max_h_samp_factor);
+    max_v_samp_factor = std::max(c.v_samp_factor, max_v_samp_factor);
+  }
+  const int MCUs_per_row = DivCeil(jpg.width * h_group, 8 * max_h_samp_factor);
+  const int MCU_rows = DivCeil(jpg.height * v_group, 8 * max_v_samp_factor);
   const bool is_progressive = state->is_progressive;
   const int Al = is_progressive ? scan_info.Al : 0;
   const int Ss = is_progressive ? scan_info.Ss : 0;
@@ -725,9 +733,9 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
 
   // DC-only is defined by [0..0] spectral range.
   const bool want_ac = ((Ss != 0) || (Se != 0));
-  const bool complete_ac = (parsing_state.stage == Stage::DONE);
-  const bool has_ac =
-      complete_ac || HasSection(&parsing_state, kBrunsliACDataTag);
+  // TODO: support streaming decoding again.
+  const bool complete_ac = true;
+  const bool has_ac = true;
   if (want_ac && !has_ac) return SerializationStatus::NEEDS_MORE_INPUT;
 
   // |has_ac| implies |complete_dc| but not vice versa; for the sake of
@@ -822,7 +830,6 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
 }
 
 static SerializationStatus JXL_INLINE EncodeScan(const JPEGData& jpg,
-                                                 const DecState& parsing_state,
                                                  SerializationState* state) {
   const JPEGScanInfo& scan_info = jpg.scan_info[state->scan_index];
   const bool is_progressive = state->is_progressive;
@@ -833,17 +840,15 @@ static SerializationStatus JXL_INLINE EncodeScan(const JPEGData& jpg,
   const bool need_sequential =
       !is_progressive || (Ah == 0 && Al == 0 && Ss == 0 && Se == 63);
   if (need_sequential) {
-    return DoEncodeScan<0>(jpg, parsing_state, state);
+    return DoEncodeScan<0>(jpg, state);
   } else if (Ah == 0) {
-    return DoEncodeScan<1>(jpg, parsing_state, state);
+    return DoEncodeScan<1>(jpg, state);
   } else {
-    return DoEncodeScan<2>(jpg, parsing_state, state);
+    return DoEncodeScan<2>(jpg, state);
   }
 }
 
-SerializationStatus SerializeSection(uint8_t marker,
-                                     const DecState& parsing_state,
-                                     SerializationState* state,
+SerializationStatus SerializeSection(uint8_t marker, SerializationState* state,
                                      const JPEGData& jpg) {
   const auto to_status = [](bool result) {
     return result ? SerializationStatus::DONE : SerializationStatus::ERROR;
@@ -874,7 +879,7 @@ SerializationStatus SerializeSection(uint8_t marker,
       return to_status(EncodeEOI(jpg, state));
 
     case 0xDA:
-      return EncodeScan(jpg, parsing_state, state);
+      return EncodeScan(jpg, state);
 
     case 0xDB:
       return to_status(EncodeDQT(jpg, state));
@@ -911,94 +916,34 @@ SerializationStatus SerializeSection(uint8_t marker,
   }
 }
 
-void PushOutput(std::deque<OutputChunk>* in, size_t* available_out,
-                uint8_t** next_out) {
-  while (*available_out > 0) {
-    // No more data.
-    if (in->empty()) return;
-    OutputChunk& chunk = in->front();
-    size_t to_copy = std::min(*available_out, chunk.len);
-    if (to_copy > 0) {
-      memcpy(*next_out, chunk.next, to_copy);
-      *next_out += to_copy;
-      *available_out -= to_copy;
-      chunk.next += to_copy;
-      chunk.len -= to_copy;
-    }
-    if (chunk.len == 0) in->pop_front();
-  }
-}
-
 }  // namespace
 
-// Adaptor for old API users. Will be removed once new API will support proper
-// streaming serialization.
-bool WriteJpeg(const JPEGData& jpg, JPEGOutput out) {
-  DecState state;
-  state.stage = Stage::DONE;
-  std::vector<uint8_t> buffer(16384);
-  while (true) {
-    uint8_t* next_out = buffer.data();
-    size_t available_out = buffer.size();
-    SerializationStatus status =
-        SerializeJpeg(&state, jpg, &available_out, &next_out);
-    if (status != SerializationStatus::DONE &&
-        status != SerializationStatus::NEEDS_MORE_OUTPUT) {
-      return false;
-    }
-    size_t to_write = buffer.size() - available_out;
-    if (!out.Write(buffer.data(), to_write)) return false;
-    if (status == SerializationStatus::DONE) return true;
-  }
-}
+// TODO(veluca): add streaming support again.
+Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
+  SerializationState ss;
 
-SerializationStatus SerializeJpeg(DecState* state, const JPEGData& jpg,
-                                  size_t* available_out, uint8_t** next_out) {
-  SerializationState& ss = state->internal->serialization;
-
-  const auto maybe_push_output = [&]() {
+  size_t written = 0;
+  const auto maybe_push_output = [&]() -> Status {
     if (ss.stage != SerializationState::ERROR) {
-      PushOutput(&ss.output_queue, available_out, next_out);
+      while (!ss.output_queue.empty()) {
+        auto& chunk = ss.output_queue.front();
+        size_t num_written = out(chunk.next, chunk.len);
+        if (num_written == 0 && chunk.len > 0) {
+          return JXL_FAILURE("Failed to write output");
+        }
+        chunk.len -= num_written;
+        written += num_written;
+        if (chunk.len == 0) {
+          ss.output_queue.pop_front();
+        }
+      }
     }
+    return true;
   };
-
-  // Push remaining output from prevoius session.
-  maybe_push_output();
 
   while (true) {
     switch (ss.stage) {
       case SerializationState::INIT: {
-        // If parsing is complete, serialization is possible.
-        bool can_start_serialization = (state->stage == Stage::DONE);
-        // Parsing of AC/DC has started; i.e. quant/huffman/metadata is ready
-        // to be used.
-        if (HasSection(state, kBrunsliDCDataTag) ||
-            HasSection(state, kBrunsliACDataTag)) {
-          can_start_serialization = true;
-        }
-        if (!can_start_serialization) {
-          return SerializationStatus::NEEDS_MORE_INPUT;
-        }
-        // JpegBypass is a very simple / special case.
-        if (jpg.version == 1) {
-          if (jpg.original_jpg == nullptr) {
-            ss.stage = SerializationState::ERROR;
-            break;
-          }
-          // TODO(eustas): investigate if bad things can happen when complete
-          //               file is passed to parser, but it is impossible to
-          //               push complete output.
-          ss.output_queue.emplace_back(jpg.original_jpg, jpg.original_jpg_size);
-          ss.stage = SerializationState::DONE;
-          break;
-        }
-
-        // Invalid mode - fallback + something else.
-        if (jpg.version & 1) {
-          ss.stage = SerializationState::ERROR;
-          break;
-        }
-
         // Valid Brunsli requires, at least, 0xD9 marker.
         // This might happen on corrupted stream, or on unconditioned JPEGData.
         // TODO(eustas): check D9 in the only one and is the last one.
@@ -1015,7 +960,7 @@ SerializationStatus SerializeJpeg(DecState* state, const JPEGData& jpg,
         }
 
         EncodeSOI(&ss);
-        maybe_push_output();
+        JXL_RETURN_IF_ERROR(maybe_push_output());
         ss.stage = SerializationState::SERIALIZE_SECTION;
         break;
       }
@@ -1026,15 +971,15 @@ SerializationStatus SerializeJpeg(DecState* state, const JPEGData& jpg,
           break;
         }
         uint8_t marker = jpg.marker_order[ss.section_index];
-        SerializationStatus status = SerializeSection(marker, *state, &ss, jpg);
+        SerializationStatus status = SerializeSection(marker, &ss, jpg);
         if (status == SerializationStatus::ERROR) {
           JXL_WARNING("Failed to encode marker 0x%.2x", marker);
           ss.stage = SerializationState::ERROR;
           break;
         }
-        maybe_push_output();
+        JXL_RETURN_IF_ERROR(maybe_push_output());
         if (status == SerializationStatus::NEEDS_MORE_INPUT) {
-          return SerializationStatus::NEEDS_MORE_INPUT;
+          return JXL_FAILURE("Incomplete serialization data");
         } else if (status != SerializationStatus::DONE) {
           JXL_DASSERT(false);
           ss.stage = SerializationState::ERROR;
@@ -1044,16 +989,12 @@ SerializationStatus SerializeJpeg(DecState* state, const JPEGData& jpg,
         break;
       }
 
-      case SerializationState::DONE: {
-        if (!ss.output_queue.empty()) {
-          return SerializationStatus::NEEDS_MORE_OUTPUT;
-        } else {
-          return SerializationStatus::DONE;
-        }
-      }
+      case SerializationState::DONE:
+        JXL_ASSERT(ss.output_queue.empty());
+        return true;
 
-      default:
-        return SerializationStatus::ERROR;
+      case SerializationState::ERROR:
+        return JXL_FAILURE("JPEG serialization error");
     }
   }
 }

@@ -114,9 +114,10 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
 /**
  * Encodes JPEG XL file using the available bytes. @p *avail_out indicates how
  * many output bytes are available, and @p *next_out points to the input bytes.
- * *avail_out will be decremented by the amount of bytes that have been processed
- * by the encoder and *next_out will be incremented by the same amount, so
- * *next_out will now point at the amount of *avail_out unprocessed bytes.
+ * *avail_out will be decremented by the amount of bytes that have been
+ * processed by the encoder and *next_out will be incremented by the same
+ * amount, so *next_out will now point at the amount of *avail_out unprocessed
+ * bytes.
  *
  * The returned status indicates whether the encoder needs more output bytes.
  * When the return value is not JXL_ENC_ERROR or JXL_ENC_SUCCESS, the encoding
@@ -129,8 +130,9 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
  * @return JXL_ENC_ERROR when encoding failed, e.g. invalid input.
  * @return JXL_ENC_NEED_MORE_OUTPUT more output buffer is necessary.
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(
-    JxlEncoder* enc, uint8_t** next_out, size_t* avail_out);
+JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
+                                                    uint8_t** next_out,
+                                                    size_t* avail_out);
 
 /**
  * Sets the buffer to read from for the next image to encode.
@@ -173,8 +175,7 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
  * JXL_ENC_ERROR otherwise
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc,
-                                                    const size_t xsize,
-                                                    const size_t ysize);
+                                                    size_t xsize, size_t ysize);
 
 /**
  * Sets lossless/lossy mode for the provided options. Default is lossy.
@@ -182,8 +183,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc,
  * @param options set of encoder options to update with the new mode
  * @param lossless whether the options should be lossless
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetLossless(
-    JxlEncoderOptions* options, const JXL_BOOL lossless);
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderOptionsSetLossless(JxlEncoderOptions* options, JXL_BOOL lossless);
 
 /**
  * Sets encoder effort/speed level. Valid values are, from faster to slower
@@ -195,7 +196,24 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetLossless(
  * @param effort the effort value to set
  */
 JXL_EXPORT JxlEncoderStatus
-JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, const int effort);
+JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
+
+/**
+ * Sets the distance level for lossy compression: target max butteraugli
+ *  distance, lower = higher quality. Range: 0 .. 15.
+ *  0.0 = mathematically lossless (however, use JxlEncoderOptionsSetLossless to
+ *  use true lossless).
+ *  1.0 = visually lossless.
+ *  Recommended range: 0.5 .. 3.0.
+ *  Default value: 1.0.
+ *  If JxlEncoderOptionsSetLossless is used, this value is unused and implied
+ *  to be 0.
+ *
+ * @param options set of encoder options to update with the new mode
+ * @param distance the distance value to set
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
 
 /**
  * Create a new set of encoder options, with all values initially copied from

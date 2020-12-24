@@ -50,7 +50,7 @@ class SplitImageRenderer : public QWidget {
     // key).
     MIDDLE,
   };
-  Q_ENUM(RenderingMode);
+  Q_ENUM(RenderingMode)
 
   explicit SplitImageRenderer(QWidget* parent = nullptr);
   ~SplitImageRenderer() override = default;

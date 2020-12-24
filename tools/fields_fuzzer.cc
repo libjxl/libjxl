@@ -18,14 +18,27 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/jpeg_data.h"
 #include "lib/jxl/loop_filter.h"
+#include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
 
 int TestOneInput(const uint8_t* data, size_t size) {
+  // Global parameters used by some headers.
+  CodecMetadata codec_metadata;
+
   // First byte controls which header to parse.
   if (size == 0) return 0;
   BitReader reader(Span<const uint8_t>(data + 1, size - 1));
+#define FUZZER_CASE_HEADER(number, classname, ...) \
+  case number: {                                   \
+    classname header{__VA_ARGS__};                 \
+    (void)Bundle::Read(&reader, &header);          \
+    break;                                         \
+  }
   switch (data[0]) {
     case 0: {
       SizeHeader size_header;
@@ -39,12 +52,28 @@ int TestOneInput(const uint8_t* data, size_t size) {
       break;
     }
 
-    case 2: {
-      CodecMetadata metadata;
-      FrameHeader frame(&metadata);
-      (void)ReadFrameHeader(&reader, &frame);
-      break;
-    }
+      FUZZER_CASE_HEADER(2, FrameHeader, &codec_metadata)
+      FUZZER_CASE_HEADER(3, jpeg::JPEGData)
+      FUZZER_CASE_HEADER(4, AnimationFrame, &codec_metadata)
+      FUZZER_CASE_HEADER(5, AnimationHeader)
+      FUZZER_CASE_HEADER(6, BitDepth)
+      FUZZER_CASE_HEADER(7, BlendingInfo)
+      FUZZER_CASE_HEADER(8, ColorEncoding)
+      FUZZER_CASE_HEADER(9, CustomTransferFunction)
+      FUZZER_CASE_HEADER(10, Customxy)
+      FUZZER_CASE_HEADER(11, ExtraChannelInfo)
+      FUZZER_CASE_HEADER(12, GroupHeader)
+      FUZZER_CASE_HEADER(13, weighted::Header)
+      FUZZER_CASE_HEADER(14, LoopFilter)
+      FUZZER_CASE_HEADER(15, LZ77Params)
+      FUZZER_CASE_HEADER(16, OpsinInverseMatrix)
+      FUZZER_CASE_HEADER(17, Passes)
+      FUZZER_CASE_HEADER(18, PreviewHeader)
+      FUZZER_CASE_HEADER(19, QuantizerParams)
+      FUZZER_CASE_HEADER(20, SqueezeParams)
+      FUZZER_CASE_HEADER(21, ToneMapping)
+      FUZZER_CASE_HEADER(22, Transform)
+      FUZZER_CASE_HEADER(23, YCbCrChromaSubsampling)
 
     default: {
       CustomTransformData transform_data;

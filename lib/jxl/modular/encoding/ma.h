@@ -18,7 +18,7 @@
 #include <numeric>
 
 #include "lib/jxl/entropy_coder.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 
 namespace jxl {
@@ -50,7 +50,7 @@ struct PropertyDecisionNode {
         rchild(0),
         predictor(Predictor::Zero),
         predictor_offset(0),
-        multiplier(1){};
+        multiplier(1) {}
   static PropertyDecisionNode Leaf(Predictor predictor, int64_t offset = 0,
                                    uint32_t multiplier = 1) {
     return PropertyDecisionNode(-1, 0, 0, 0, predictor, offset, multiplier);
@@ -172,6 +172,7 @@ struct TreeSamples {
   // Number of samples seen.
   size_t num_samples = 0;
   // Table for deduplication.
+  static constexpr uint32_t kDedupEntryUnused{static_cast<uint32_t>(-1)};
   std::vector<uint32_t> dedup_table_;
 
   // Functions for sample deduplication.
@@ -191,8 +192,7 @@ constexpr size_t kNumTreeContexts = 6;
 void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
                   Tree *decoder_tree);
 
-Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                  const std::vector<uint8_t> &context_map, Tree *tree);
+Status DecodeTree(BitReader *br, Tree *tree);
 
 void CollectPixelSamples(const Image &image, const ModularOptions &options,
                          size_t group_id,

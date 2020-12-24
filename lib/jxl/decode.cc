@@ -537,28 +537,6 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
   return JXL_DEC_SUCCESS;
 }
 
-// Returns whether the JxlEndianness value indicates little endian. If not,
-// then big endian is assumed.
-static bool IsLittleEndian(const JxlEndianness& endianness) {
-  switch (endianness) {
-    case JXL_LITTLE_ENDIAN:
-      return true;
-    case JXL_BIG_ENDIAN:
-      return false;
-    case JXL_NATIVE_ENDIAN: {
-      // JXL_BYTE_ORDER_LITTLE from byte_order.h cannot be used because it only
-      // distinguishes between little endian and unknown.
-      uint32_t u = 1;
-      char c[4];
-      memcpy(c, &u, 4);
-      return c[0] == 1;
-    }
-  }
-
-  JXL_ASSERT(false);
-  return false;
-}
-
 static JxlDecoderStatus ConvertImage(const JxlDecoder* dec,
                                      const jxl::ImageBundle& frame,
                                      const JxlPixelFormat& format,
@@ -591,8 +569,8 @@ static JxlDecoderStatus ConvertImage(const JxlDecoder* dec,
   jxl::Status status = jxl::ConvertImage(
       frame, BitsPerChannel(format.data_type),
       format.data_type == JXL_TYPE_FLOAT, apply_srgb_tf, format.num_channels,
-      IsLittleEndian(format.endianness), stride, dec->thread_pool.get(),
-      out_image, out_size, undo_orientation);
+      format.endianness, stride, dec->thread_pool.get(), out_image, out_size,
+      undo_orientation);
 
   return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
 }
@@ -726,7 +704,8 @@ jxl::Status DecodeDC(JxlDecoder* dec, const uint8_t* in, size_t size) {
             shared.frame_dim.ysize_padded));
       }
       if (shared.frame_header.flags & FrameHeader::kSplines) {
-        JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(reader.get()));
+        JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
+            reader.get(), shared.frame_dim.xsize * shared.frame_dim.ysize));
       }
       if (shared.frame_header.flags & FrameHeader::kNoise) {
         JXL_RETURN_IF_ERROR(
@@ -1008,7 +987,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       if (!dec->passes_state) {
         dec->passes_state.reset(new jxl::PassesDecoderState());
       }
-      const jxl::FrameHeader& frame_header = dec->passes_state->shared->frame_header;
+      const jxl::FrameHeader& frame_header =
+          dec->passes_state->shared->frame_header;
 
       bool done = false;
       while (!done) {
@@ -1065,7 +1045,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
     // pixels.
     if (return_full_image && dec->image_out_buffer_set) {
       JxlDecoderStatus status =
-          ConvertImage(dec, *dec->ib.get(), dec->image_out_format,
+          ConvertImage(dec, *dec->ib, dec->image_out_format,
                        dec->image_out_buffer, dec->image_out_size);
       if (status != JXL_DEC_SUCCESS) return status;
       dec->image_out_buffer_set = false;

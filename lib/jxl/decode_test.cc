@@ -95,8 +95,8 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
   io.metadata.m.color_encoding = color_encoding;
   EXPECT_TRUE(ConvertImage(
       pixels, xsize, ysize, color_encoding, /*has_alpha=*/include_alpha,
-      /*alpha_is_premultiplied=*/false, bitdepth,
-      /*big_endian=*/true, /*flipped_y=*/false, &pool, &io.Main()));
+      /*alpha_is_premultiplied=*/false, bitdepth, JXL_BIG_ENDIAN,
+      /*flipped_y=*/false, &pool, &io.Main()));
   if (add_preview) {
     io.preview_frame = io.Main().Copy();
     io.preview_frame.ShrinkTo(xsize / 7, ysize / 7);
@@ -1553,7 +1553,7 @@ TEST(DecodeTest, AnimationTest) {
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        /*big_endian=*/true, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
     io.frames.push_back(std::move(bundle));
   }
@@ -1655,7 +1655,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        /*big_endian=*/true, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
     io.frames.push_back(std::move(bundle));
   }

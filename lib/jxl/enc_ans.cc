@@ -91,7 +91,7 @@ float EstimateDataBits(const ANSHistBin* histogram, const ANSHistBin* counts,
 }
 
 float EstimateDataBitsFlat(const ANSHistBin* histogram, size_t len) {
-  const float flat_bits = FastLog2f(len);
+  const float flat_bits = std::max(FastLog2f(len), 0.0f);
   int total_histogram = 0;
   for (size_t i = 0; i < len; ++i) {
     total_histogram += histogram[i];
@@ -640,7 +640,7 @@ void ChooseUintConfigs(const HistogramParams& params,
           .Encode(token.value, &tok, &nbits, &bits);
       tok += token.is_lz77_length ? codes->lz77.min_symbol : 0;
       (*clustered_histograms)[histo].Add(tok);
-      while (tok >= (1 << *log_alpha_size)) (*log_alpha_size)++;
+      while (tok >= (1u << *log_alpha_size)) (*log_alpha_size)++;
     }
   }
 #if JXL_ENABLE_ASSERT
@@ -1004,7 +1004,7 @@ struct HashChain {
   }
 
   void Update(size_t pos, size_t len) {
-    for (int i = 0; i < len; i++) {
+    for (size_t i = 0; i < len; i++) {
       Update(pos + i);
     }
   }
@@ -1018,13 +1018,13 @@ struct HashChain {
     int prev_dist = 0;
     int end = std::min<int>(pos + max_length_, size_);
     uint32_t chainlength = 0;
-    int best_len = 0;
+    uint32_t best_len = 0;
     for (;;) {
       int dist = (hashpos <= wpos) ? (wpos - hashpos)
                                    : (wpos - hashpos + window_mask_ + 1);
       if (dist < prev_dist) break;
       prev_dist = dist;
-      int len = 0;
+      uint32_t len = 0;
       if (dist > 0) {
         int i = pos;
         int j = pos - dist;
@@ -1055,7 +1055,7 @@ struct HashChain {
       chainlength++;
       if (chainlength >= maxchainlength) break;
 
-      if (numzeros >= 3 && len > static_cast<int>(numzeros)) {
+      if (numzeros >= 3 && len > numzeros) {
         if (hashpos == chainz[hashpos]) break;
         hashpos = chainz[hashpos];
         if (zeros[hashpos] != numzeros) break;

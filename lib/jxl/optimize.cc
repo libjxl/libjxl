@@ -79,7 +79,7 @@ std::vector<double> Average(const std::vector<double>& a,
 //   contain the vector position for the objective function.
 // fun: the function evaluates the value.
 void Eval(std::vector<double>* vec,
-          const std::function<double((const std::vector<double>&))>& fun) {
+          const std::function<double(const std::vector<double>&)>& fun) {
   std::vector<double> args(vec->begin() + 1, vec->end());
   (*vec)[0] = fun(args);
 }
@@ -90,7 +90,7 @@ void Sort(std::vector<std::vector<double>>* simplex) {
 
 // Main iteration step of Nelder-Mead like optimization.
 void Reflect(std::vector<std::vector<double>>* simplex,
-             const std::function<double((const std::vector<double>&))>& fun) {
+             const std::function<double(const std::vector<double>&)>& fun) {
   Sort(simplex);
   const std::vector<double>& last = simplex->back();
   std::vector<double> mid = Midpoint(*simplex);
@@ -119,7 +119,7 @@ void Reflect(std::vector<std::vector<double>>* simplex,
 // Initialize the simplex at origin.
 std::vector<std::vector<double>> InitialSimplex(
     int dim, double amount, const std::vector<double>& init,
-    const std::function<double((const std::vector<double>&))>& fun) {
+    const std::function<double(const std::vector<double>&)>& fun) {
   std::vector<double> best(1 + dim, 0);
   std::copy(init.begin(), init.end(), best.begin() + 1);
   Eval(&best, fun);
@@ -150,7 +150,7 @@ std::vector<std::vector<double>> InitialSimplex(
 
 std::vector<double> RunSimplex(
     int dim, double amount, int max_iterations, const std::vector<double>& init,
-    const std::function<double((const std::vector<double>&))>& fun) {
+    const std::function<double(const std::vector<double>&)>& fun) {
   std::vector<std::vector<double>> simplex =
       InitialSimplex(dim, amount, init, fun);
   for (int i = 0; i < max_iterations; i++) {
@@ -162,7 +162,7 @@ std::vector<double> RunSimplex(
 
 std::vector<double> RunSimplex(
     int dim, double amount, int max_iterations,
-    const std::function<double((const std::vector<double>&))>& fun) {
+    const std::function<double(const std::vector<double>&)>& fun) {
   std::vector<double> init(dim, 0.0);
   return RunSimplex(dim, amount, max_iterations, init, fun);
 }

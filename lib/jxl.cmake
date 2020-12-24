@@ -14,20 +14,6 @@
 
 # TODO(deymo): Split this into encoder and decoder targets
 set(JPEGXL_INTERNAL_SOURCES
-  jxl/modular/encoding/context_predict.h
-  jxl/modular/encoding/encoding.cc
-  jxl/modular/encoding/encoding.h
-  jxl/modular/encoding/ma.cc
-  jxl/modular/encoding/ma.h
-  jxl/modular/image/image.cc
-  jxl/modular/image/image.h
-  jxl/modular/options.h
-  jxl/modular/transform/near-lossless.h
-  jxl/modular/transform/palette.h
-  jxl/modular/transform/squeeze.h
-  jxl/modular/transform/subtractgreen.h
-  jxl/modular/transform/transform.cc
-  jxl/modular/transform/transform.h
   jxl/ac_context.h
   jxl/ac_strategy.cc
   jxl/ac_strategy.h
@@ -39,7 +25,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/ar_control_field.cc
   jxl/ar_control_field.h
   jxl/aux_out.cc
-  jxl/aux_out.h
   jxl/aux_out.h
   jxl/aux_out_fwd.h
   jxl/base/arch_specific.cc
@@ -66,6 +51,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
+  jxl/base/thread_pool_internal.h
   jxl/base/tsc_timer.h
   jxl/blending.cc
   jxl/blending.h
@@ -73,6 +59,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/butteraugli/butteraugli.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
+  jxl/codec_in_out.h
   jxl/coeff_order.cc
   jxl/coeff_order.h
   jxl/coeff_order_fwd.h
@@ -88,13 +75,11 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/convolve.h
   jxl/dct-inl.h
   jxl/dct_block-inl.h
-  jxl/dct_for_test.h
   jxl/dct_scales.cc
   jxl/dct_scales.h
   jxl/dct_util.h
   jxl/dec_ans.cc
   jxl/dec_ans.h
-  jxl/dec_bit_reader.cc
   jxl/dec_bit_reader.h
   jxl/dec_cache.h
   jxl/dec_context_map.cc
@@ -202,28 +187,20 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/image_metadata.cc
   jxl/image_metadata.h
   jxl/image_ops.h
-  jxl/jpeg/brunsli_decode.cc
-  jxl/jpeg/brunsli_encode.cc
-  jxl/jpeg/brunsli_encode.h
-  jxl/jpeg/brunsli_status.h
+  jxl/jpeg/dec_jpeg_data.cc
+  jxl/jpeg/dec_jpeg_data.h
   jxl/jpeg/dec_jpeg_data_writer.cc
   jxl/jpeg/dec_jpeg_data_writer.h
   jxl/jpeg/dec_jpeg_output_chunk.h
   jxl/jpeg/dec_jpeg_serialization_state.h
-  jxl/jpeg/dec_jpeg_state.cc
-  jxl/jpeg/dec_jpeg_state.h
-  jxl/jpeg/dec_jpeg_state_internal.h
+  jxl/jpeg/enc_jpeg_data.cc
+  jxl/jpeg/enc_jpeg_data.h
   jxl/jpeg/enc_jpeg_data_reader.cc
   jxl/jpeg/enc_jpeg_data_reader.h
   jxl/jpeg/enc_jpeg_huffman_decode.cc
   jxl/jpeg/enc_jpeg_huffman_decode.h
-  jxl/jpeg/enc_jpeg_state.h
-  jxl/jpeg/jpeg_constants.h
-  jxl/jpeg/jpeg_constants.cc
+  jxl/jpeg/jpeg_data.cc
   jxl/jpeg/jpeg_data.h
-  jxl/jpeg/jpeg_lehmer_code.h
-  jxl/jpeg/jpeg_quant_matrix.cc
-  jxl/jpeg/jpeg_quant_matrix.h
   jxl/jxl_inspection.h
   jxl/lehmer_code.h
   jxl/linalg.cc
@@ -234,6 +211,20 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/luminance.h
   jxl/memory_manager_internal.cc
   jxl/memory_manager_internal.h
+  jxl/modular/encoding/context_predict.h
+  jxl/modular/encoding/encoding.cc
+  jxl/modular/encoding/encoding.h
+  jxl/modular/encoding/ma.cc
+  jxl/modular/encoding/ma.h
+  jxl/modular/modular_image.cc
+  jxl/modular/modular_image.h
+  jxl/modular/options.h
+  jxl/modular/transform/near-lossless.h
+  jxl/modular/transform/palette.h
+  jxl/modular/transform/squeeze.h
+  jxl/modular/transform/subtractgreen.h
+  jxl/modular/transform/transform.cc
+  jxl/modular/transform/transform.h
   jxl/noise.h
   jxl/noise_distributions.h
   jxl/opsin_params.cc
@@ -260,14 +251,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/transpose-inl.h
   jxl/xorshift128plus-inl.h
 )
-
-# Per source flags.
-set_source_files_properties(
-  jxl/dec_ans.cc
-  jxl/enc_ans.cc
-  jxl/modular/encoding/ma.cc
-  PROPERTIES COMPILE_FLAGS -Wno-sign-compare)
-
 
 set(JPEGXL_INTERNAL_LIBS
   brotlicommon-static

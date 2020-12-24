@@ -41,7 +41,7 @@ struct HuffmanTableEntry {
 // Builds jpeg-style Huffman lookup table from the given symbols.
 // The symbols are in order of increasing bit lengths. The number of symbols
 // with bit length n is given in counts[n] for each n >= 1.
-void BuildJpegHuffmanTable(const int* counts, const int* symbols,
+void BuildJpegHuffmanTable(const uint32_t* counts, const uint32_t* symbols,
                            HuffmanTableEntry* lut);
 
 }  // namespace jpeg

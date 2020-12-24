@@ -17,7 +17,7 @@
 
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 
 namespace jxl {
 

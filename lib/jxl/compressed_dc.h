@@ -29,7 +29,7 @@
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/modular/image/image.h"
+#include "lib/jxl/modular/modular_image.h"
 
 // DC handling functions: encoding and decoding of DC to and from bitstream, and
 // related function to initialize the per-group decoder cache.

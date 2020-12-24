@@ -208,8 +208,7 @@ class CodecInOut {
   // encode absolute luminance levels may use it to decide on encoding values,
   // but not in a way that would affect the range of interpreted luminance.
   //
-  // 0 means that it is up to the codec (or the Map255ToTargetNits function from
-  // luminance.h) to decide on a reasonable value to use.
+  // 0 means that it is up to the codec to decide on a reasonable value to use.
 
   float target_nits = 0;
 

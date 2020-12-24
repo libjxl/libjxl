@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "lib/jxl/ans_params.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/status.h"
@@ -87,8 +88,9 @@ class Splines {
   bool HasAny() const { return !splines_.empty(); }
 
   // Only call if HasAny().
-  void Encode(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
-  Status Decode(BitReader* br);
+  void Encode(BitWriter* writer, size_t layer,
+              const HistogramParams& histogram_params, AuxOut* aux_out) const;
+  Status Decode(BitReader* br, size_t num_pixels);
 
   Status AddTo(Image3F* opsin, const Rect& opsin_rect, const Rect& image_rect,
                const ColorCorrelationMap& cmap) const;

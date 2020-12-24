@@ -202,7 +202,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
           jxl::DecodeTarget::kQuantizedCoeffs)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
-#else   // JPEGXL_ENABLE_JPEG
+#else  // JPEGXL_ENABLE_JPEG
   fprintf(
       stderr,
       "ERROR: Support for decoding to JPEG was not compiled in this tool.\n");

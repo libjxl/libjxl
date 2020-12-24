@@ -593,10 +593,8 @@ class LossyFrameEncoder {
     std::vector<QuantEncoding> qe(DequantMatrices::kNum,
                                   QuantEncoding::Library(0));
 
-    int jpeg_c_map[3] = {1, 0, 2};
-    if (jpeg_data.components.size() != 3) {
-      jpeg_c_map[0] = jpeg_c_map[2] = 0;
-    }
+    auto jpeg_c_map = JpegOrder(frame_header->color_transform,
+                                jpeg_data.components.size() == 1);
 
     std::vector<int> qt(192);
     for (size_t c = 0; c < 3; c++) {
@@ -774,9 +772,10 @@ class LossyFrameEncoder {
             if (DCzero) {
               idc = inputjpeg[base];
             } else {
-              idc = (inputjpeg[base] * qt[c * 64] + 1024.f) / qt[c * 64];
+              idc = inputjpeg[base] + 1024 / qt[c * 64];
             }
-            dc_counts[c][idc + 1024]++;
+            dc_counts[c][std::min(static_cast<uint32_t>(idc + 1024),
+                                  uint32_t(2047))]++;
             total_dc[c]++;
             fdc[bx >> hshift] = idc * dcquantization_r[c];
             if (c == 1 || !enc_state_->cparams.force_cfl_jpeg_recompression ||
@@ -1214,7 +1213,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   if (frame_header.flags & FrameHeader::kSplines) {
     lossy_frame_encoder.State()->shared.image_features.splines.Encode(
-        get_output(0), kLayerSplines, aux_out);
+        get_output(0), kLayerSplines, HistogramParams(), aux_out);
   }
 
   if (frame_header.flags & FrameHeader::kNoise) {

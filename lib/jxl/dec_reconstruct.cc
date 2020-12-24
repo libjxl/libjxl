@@ -208,6 +208,14 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
   // ApplyImageFeatures after.
   if (!frame_header.chroma_subsampling.Is444()) {
     for (size_t c = 0; c < 3; c++) {
+      // This implementation of Upsample assumes that the image dimension in
+      // xsize_padded, ysize_padded is a multiple of 8x8.
+      JXL_DASSERT(frame_dim.xsize_padded %
+                      (1u << frame_header.chroma_subsampling.HShift(c)) ==
+                  0);
+      JXL_DASSERT(frame_dim.ysize_padded %
+                      (1u << frame_header.chroma_subsampling.VShift(c)) ==
+                  0);
       ImageF& plane = const_cast<ImageF&>(dec_state->decoded.Plane(c));
       plane.ShrinkTo(
           (frame_dim.xsize_padded >>
@@ -222,6 +230,7 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
         plane.InitializePaddingForUnalignedAccesses();
         plane = UpsampleV2(plane, pool);
       }
+      JXL_DASSERT(SameSize(plane, dec_state->decoded));
     }
   }
   // ApplyImageFeatures was not yet run.
@@ -230,10 +239,10 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
       dec_state->has_partial_ac_groups) {
     // Pad the image if needed.
     if (lf.PaddingCols() != 0) {
-      PadRectMirrorInPlace(
-          &dec_state->decoded,
-          Rect(0, 0, frame_dim.xsize_padded, frame_dim.ysize_padded),
-          frame_dim.xsize_padded, lf.PaddingCols(), dec_state->decoded_padding);
+      PadRectMirrorInPlace(&dec_state->decoded,
+                           Rect(0, 0, frame_dim.xsize_padded, frame_dim.ysize),
+                           frame_dim.xsize_padded, lf.PaddingCols(),
+                           dec_state->decoded_padding);
     }
     if (lf.epf_iters > 0 && frame_header.encoding == FrameEncoding::kModular) {
       FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,

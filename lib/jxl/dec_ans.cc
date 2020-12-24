@@ -198,6 +198,7 @@ Status ReadHistogram(int precision_bits, std::vector<int>* counts,
 Status DecodeANSCodes(const size_t num_histograms,
                       const size_t max_alphabet_size, BitReader* in,
                       ANSCode* result) {
+  result->degenerate_symbols.resize(num_histograms, -1);
   if (result->use_prefix_code) {
     JXL_ASSERT(max_alphabet_size <= 1 << PREFIX_MAX_BITS);
     result->huffman_data.resize(num_histograms);
@@ -235,6 +236,18 @@ Status DecodeANSCodes(const size_t num_histograms,
       if (counts.size() > max_alphabet_size) {
         return JXL_FAILURE("Alphabet size is too long: %zu", counts.size());
       }
+      while (!counts.empty() && counts.back() == 0) {
+        counts.pop_back();
+      }
+      // InitAliasTable "fixes" empty counts to contain degenerate "0" symbol.
+      int degenerate_symbol = counts.empty() ? 0 : (counts.size() - 1);
+      for (int s = 0; s < degenerate_symbol; ++s) {
+        if (counts[s] != 0) {
+          degenerate_symbol = -1;
+          break;
+        }
+      }
+      result->degenerate_symbols[c] = degenerate_symbol;
       InitAliasTable(counts, ANS_TAB_SIZE, result->log_alpha_size,
                      alias_tables + c * (1 << result->log_alpha_size));
     }

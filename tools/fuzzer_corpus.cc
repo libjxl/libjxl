@@ -189,7 +189,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
-        io.metadata.m.bit_depth.bits_per_sample, false /* big_endian */,
+        io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN,
         false /* flipped_y */, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }
@@ -243,28 +243,41 @@ std::vector<ImageSpec::CjxlParams> CompressParamsList() {
 
 void Usage() {
   fprintf(stderr,
-          "Use: fuzzer_corpus [-r] [output_dir]\n"
+          "Use: fuzzer_corpus [-r] [-j THREADS] [output_dir]\n"
           "\n"
-          "  -r Regenerate files if already exist.\n");
+          "  -r Regenerate files if already exist.\n"
+          "  -j THREADS Number of parallel jobs to run.\n");
 }
 
 }  // namespace
 
 int main(int argc, const char** argv) {
-  const char* dest_dir = "corpus";
+  const char* dest_dir = nullptr;
   bool regenerate = false;
-  int optind = 1;
-  if (optind < argc && !strcmp(argv[optind], "-r")) {
-    regenerate = true;
-    optind++;
+  int num_threads = std::thread::hardware_concurrency();
+  for (int optind = 1; optind < argc;) {
+    if (!strcmp(argv[optind], "-r")) {
+      regenerate = true;
+      optind++;
+    } else if (!strcmp(argv[optind], "-j")) {
+      optind++;
+      if (optind < argc) {
+        num_threads = atoi(argv[optind++]);
+      } else {
+        fprintf(stderr, "-j needs an argument value.\n");
+        Usage();
+        return 1;
+      }
+    } else if (dest_dir == nullptr) {
+      dest_dir = argv[optind++];
+    } else {
+      fprintf(stderr, "Unknown parameter: \"%s\".\n", argv[optind]);
+      Usage();
+      return 1;
+    }
   }
-  if (optind < argc) {
-    dest_dir = argv[optind++];
-  }
-  if (optind < argc) {
-    fprintf(stderr, "Unknown parameter: \"%s\".\n", argv[optind]);
-    Usage();
-    return 1;
+  if (!dest_dir) {
+    dest_dir = "corpus";
   }
 
   struct stat st;
@@ -337,7 +350,7 @@ int main(int argc, const char** argv) {
     }
   }
 
-  jxl::ThreadPoolInternal pool;
+  jxl::ThreadPoolInternal pool{num_threads};
   pool.Run(
       0, specs.size(), jxl::ThreadPool::SkipInit(),
       [&specs, dest_dir, regenerate](const int task, const int /* thread */) {

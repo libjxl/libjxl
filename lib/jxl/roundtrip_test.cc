@@ -22,28 +22,6 @@
 
 namespace {
 
-// Returns whether the JxlEndianness value indicates little endian. If not,
-// then big endian is assumed.
-bool IsLittleEndian(const JxlEndianness& endianness) {
-  switch (endianness) {
-    case JXL_LITTLE_ENDIAN:
-      return true;
-    case JXL_BIG_ENDIAN:
-      return false;
-    case JXL_NATIVE_ENDIAN: {
-      // JXL_BYTE_ORDER_LITTLE from byte_order.h cannot be used because it only
-      // distinguishes between little endian and unknown.
-      uint32_t u = 1;
-      char c[4];
-      memcpy(c, &u, 4);
-      return c[0] == 1;
-    }
-  }
-
-  JXL_ASSERT(false);
-  return false;
-}
-
 // Converts a test image to a CodecInOut.
 jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
                                  const size_t xsize, const size_t ysize,
@@ -85,10 +63,8 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
                 /*is_gray=*/pixel_format.num_channels < 3),
       /*has_alpha=*/pixel_format.num_channels == 2 ||
           pixel_format.num_channels == 4,
-      /*alpha_is_premultiplied=*/false,
-      /*bitdepth=*/bitdepth,
-      /*big_endian=*/!IsLittleEndian(pixel_format.endianness),
-      /*flipped_y=*/false, /*pool=*/nullptr,
+      /*alpha_is_premultiplied=*/false, /*bitdepth=*/bitdepth,
+      pixel_format.endianness, /*flipped_y=*/false, /*pool=*/nullptr,
       /*ib=*/&io.Main()));
   return io;
 }

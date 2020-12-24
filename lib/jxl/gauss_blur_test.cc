@@ -492,8 +492,9 @@ void Benchmark1D() {
 
   const size_t length = 16384;  // (same value used for running IPOL benchmark)
   const double sigma = 7.0;     // (from Butteraugli application)
+  // NOTE: MSVC and clang disagree on the required captures, so use =.
   const double mps_rg1 =
-      Measure(length, 1, 1, [sigma](size_t xsize, size_t ysize) {
+      Measure(length, 1, 1, [=](size_t /*xsize*/, size_t /*ysize*/) {
         ImageF in(length, 1);
         const float expected = length;
         FillImage(expected, &in);

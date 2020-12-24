@@ -42,14 +42,14 @@ namespace jxl {
 // (is_gray ? 1 : 3) + (has_alpha ? 1 : 0)
 Status FromSRGB(const size_t xsize, const size_t ysize, const bool is_gray,
                 const bool has_alpha, const bool alpha_is_premultiplied,
-                const bool is_16bit, const bool big_endian,
+                const bool is_16bit, const JxlEndianness endianness,
                 const uint8_t* pixels, const uint8_t* end, ThreadPool* pool,
                 ImageBundle* ib) {
   const ColorEncoding& c = ColorEncoding::SRGB(is_gray);
   const size_t bits_per_sample = (is_16bit ? 2 : 1) * kBitsPerByte;
   const Span<const uint8_t> span(pixels, end - pixels);
   return ConvertImage(span, xsize, ysize, c, has_alpha, alpha_is_premultiplied,
-                      bits_per_sample, big_endian, /*flipped_y=*/false, pool,
+                      bits_per_sample, endianness, /*flipped_y=*/false, pool,
                       ib);
 }
 
@@ -199,7 +199,7 @@ class WebPCodec : public ImageCodec {
     const Status ok =
         FromSRGB(buf->width, buf->height, is_gray, has_alpha,
                  /*alpha_is_premultiplied=*/false, /*is_16bit=*/false,
-                 /*big_endian=*/false, data_begin, data_end, pool, &io->Main());
+                 JXL_LITTLE_ENDIAN, data_begin, data_end, pool, &io->Main());
     WebPFreeDecBuffer(buf);
     JXL_RETURN_IF_ERROR(ok);
     io->dec_pixels = buf->width * buf->height;

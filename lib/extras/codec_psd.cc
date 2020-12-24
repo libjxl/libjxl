@@ -72,6 +72,8 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
               h, nb_channels);
   if (w <= 0 || h <= 0) return JXL_FAILURE("PSD: empty layer");
   for (int c = 0; c < nb_channels; c++) {
+    // skip nop byte padding
+    while (*pos == 128 && pos < maxpos) pos++;
     JXL_DEBUG_V(PSD_VERBOSITY, "Channel %i (pos %zu)", c, (size_t)pos);
     // Merged image stores all channels together (same compression method)
     // Layers store channel per channel
@@ -111,6 +113,7 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
                version;  // PSB uses 4 bytes per rowsize instead of 2
     }
     int c_id = chans[c];
+    if (c_id < 0) continue;  // skip
     if ((unsigned int)c_id >= 3 + layer.extra_channels().size())
       return JXL_FAILURE("PSD: can't handle channel id %i", c_id);
     ImageF& ch = (c_id < 3 ? layer.color()->Plane(c_id)
@@ -341,7 +344,6 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       have_alpha = true;
     }
 
-    int real_layercount = 0;
     ExtraChannelInfo info;
     info.bit_depth.bits_per_sample = bitdepth;
     info.dim_shift = 0;
@@ -357,7 +359,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
           false;  // true? PSD is not consistent with this, need to check
       io->metadata.m.extra_channel_info.push_back(info);
     }
-    if (merged_has_alpha && spotcolor[0][5] == 1) {
+    if (merged_has_alpha && !spotcolor.empty() && spotcolor[0][5] == 1) {
       // first alpha channel
       spotcolor.erase(spotcolor.begin());
     }
@@ -378,6 +380,8 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       io->metadata.m.extra_channel_info.push_back(info);
     }
     std::vector<std::vector<int>> layer_chan_id;
+    std::vector<size_t> layer_offsets(layercount + 1, 0);
+    std::vector<bool> is_real_layer(layercount, false);
     for (int l = 0; l < layercount; l++) {
       ImageBundle layer(&io->metadata.m);
       layer.duration = 0;
@@ -393,17 +397,17 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       int nb_chs = get_be_int(2, pos, maxpos);
       JXL_DEBUG_V(PSD_VERBOSITY, "  channels: %i", nb_chs);
       std::vector<int> chan_ids;
-      int extra_alpha = 0;
+      layer_offsets[l + 1] = layer_offsets[l];
       for (int lc = 0; lc < nb_chs; lc++) {
         int id = get_be_int(2, pos, maxpos);
         JXL_DEBUG_V(PSD_VERBOSITY, "    id=%i", id);
         if (id == 65535)
           chan_ids.push_back(colormodel);  // alpha
-        else if (id == 65531)
-          chan_ids.push_back(colormodel + (++extra_alpha));  // extra alpha
+        else if (id == 65534)
+          chan_ids.push_back(-1);  // layer mask, ignored
         else
           chan_ids.push_back(id);  // color channel
-        pos += 4 * version;        // length of layer channel data
+        layer_offsets[l + 1] += get_be_int(4 * version, pos, maxpos);
       }
       layer_chan_id.push_back(chan_ids);
       if (safe_strncmp(pos, maxpos, "8BIM", 4))
@@ -434,6 +438,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       size_t extradata = get_be_int(4, pos, maxpos);
       JXL_DEBUG_V(PSD_VERBOSITY, "  extradata: %zu bytes", extradata);
       const uint8_t* after_extra = pos + extradata;
+      // TODO: deal with non-empty layer masks
       pos += get_be_int(4, pos, maxpos);  // skip layer mask data
       pos += get_be_int(4, pos, maxpos);  // skip layer blend range data
       int namelength = get_be_int(1, pos, maxpos);
@@ -447,7 +452,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
                     "  NOT A REAL LAYER");  // probably layer group
         continue;
       }
-      real_layercount++;
+      is_real_layer[l] = true;
       Image3F rgb(width, height);
       layer.SetFromImage(std::move(rgb), io->metadata.m.color_encoding);
       int i = 3;
@@ -473,12 +478,15 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       io->frames.push_back(std::move(layer));
     }
 
-    int l;
     std::vector<bool> invert(real_nb_channels, false);
-    for (l = 0; l < layercount; l++) {
+    int il = 0;
+    const uint8_t* bpos = pos;
+    for (int l = 0; l < layercount; l++) {
+      if (!is_real_layer[l]) continue;
+      pos = bpos + layer_offsets[l];
       JXL_DEBUG_V(PSD_VERBOSITY, "At position %i (%zu)",
                   (int)(pos - bytes.data()), (size_t)pos);
-      ImageBundle& layer = io->frames[l];
+      ImageBundle& layer = io->frames[il++];
       JXL_RETURN_IF_ERROR(decode_layer(pos, maxpos, layer, layer_chan_id[l],
                                        invert, layer.xsize(), layer.ysize(),
                                        version, colormodel, true, bitdepth));

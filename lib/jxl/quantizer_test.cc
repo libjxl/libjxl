@@ -31,7 +31,16 @@ void TestEquivalence(int qxsize, int qysize, const Quantizer& quantizer1,
   ASSERT_NEAR(quantizer1.inv_quant_dc(), quantizer2.inv_quant_dc(), 1e-7);
 }
 
-TEST(QuantizerTest, QuantizerParams) { TestQuantizerParams(); }
+TEST(QuantizerTest, QuantizerParams) {
+  for (uint32_t i = 1; i < 10000; ++i) {
+    QuantizerParams p;
+    p.global_scale = i;
+    size_t extension_bits = 0, total_bits = 0;
+    EXPECT_TRUE(Bundle::CanEncode(p, &extension_bits, &total_bits));
+    EXPECT_EQ(0, extension_bits);
+    EXPECT_GE(total_bits, 4);
+  }
+}
 
 TEST(QuantizerTest, BitStreamRoundtripSameQuant) {
   const int qxsize = 8;

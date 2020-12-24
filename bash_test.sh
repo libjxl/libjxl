@@ -164,6 +164,26 @@ EOF
   done < .gitmodules
 }
 
+# Make sure that all the Fields objects are fuzzed directly.
+test_fuzz_fields() {
+  local ret=0
+  # List all the classes of the form "ClassName : public Fields".
+  # This doesn't catch class names that are too long to fit.
+  local field_classes=$( git ls-files |
+    grep -E '\.(cc|h)' | grep -v 'test\.cc$' |
+    xargs grep -h -o -E '\b[^ ]+ : public Fields' | cut -f 1 -d ' ')
+  local classname
+  for classname in ${field_classes}; do
+    if ! grep -E "\\b${classname}\\b" tools/fields_fuzzer.cc >/dev/null; then
+      cat >&2 <<EOF
+tools/fields_fuzzer.cc: Class ${classname} not found in the fields_fuzzer.
+EOF
+      ret=1
+    fi
+  done
+  return $ret
+}
+
 main() {
   local ret=0
   cd "${MYDIR}"

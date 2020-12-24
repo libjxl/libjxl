@@ -20,6 +20,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "lib/jxl/frame_header.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/dec_group.cc"
 #include <hwy/foreach_target.h>
@@ -143,17 +145,20 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
-  size_t xpadding_blocks =
-      !decoded->IsJPEG() ? dec_state->decoded_padding / kBlockDim : 0;
-
   const size_t idct_stride = dec_state->decoded.PixelsPerRow();
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
+  std::array<int, 3> jpeg_c_map;
+  std::array<int, 3> dcoff = {};
+
+  // TODO(veluca): all of this should be done only once per image.
   if (decoded->IsJPEG()) {
     if (!dec_state->shared->cmap.IsJPEGCompatible()) {
       return JXL_FAILURE("The CfL map is not JPEG-compatible");
     }
+    jpeg_c_map = JpegOrder(dec_state->shared->frame_header.color_transform,
+                           decoded->jpeg_data->components.size() == 1);
     const std::vector<QuantEncoding>& qe =
         dec_state->shared->matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
@@ -162,6 +167,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           "Quantization table is not a JPEG quantization table.");
     }
     for (size_t c = 0; c < 3; c++) {
+      if (dec_state->shared->frame_header.color_transform ==
+          ColorTransform::kNone) {
+        dcoff[c] = 1024 / (*qe[0].qraw.qtable)[64 * c];
+      }
       for (size_t i = 0; i < 64; i++) {
         // Transpose the matrix, as it will be used on the transposed block.
         scaled_qtable[64 * c + (i % 8) * 8 + (i / 8)] =
@@ -171,56 +180,63 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     }
   }
 
-  int jpeg_c_map[3] = {1, 0, 2};
-  if (decoded->IsJPEG() && decoded->jpeg_data->components.size() == 1) {
-    jpeg_c_map[0] = jpeg_c_map[2] = 0;
+  size_t hshift[3] = {cs.HShift(0), cs.HShift(1), cs.HShift(2)};
+  size_t vshift[3] = {cs.VShift(0), cs.VShift(1), cs.VShift(2)};
+  Rect r[3];
+  for (size_t i = 0; i < 3; i++) {
+    r[i] =
+        Rect(block_rect.x0() >> hshift[i], block_rect.y0() >> vshift[i],
+             block_rect.xsize() >> hshift[i], block_rect.ysize() >> vshift[i]);
   }
 
-  if (!cs.Is444()) {
-    size_t hshift[3] = {cs.HShift(0), cs.HShift(1), cs.HShift(2)};
-    size_t vshift[3] = {cs.VShift(0), cs.VShift(1), cs.VShift(2)};
-    Rect r[3];
-    for (size_t i = 0; i < 3; i++) {
-      r[i] = Rect(block_rect.x0() >> hshift[i], block_rect.y0() >> vshift[i],
-                  block_rect.xsize() >> hshift[i],
-                  block_rect.ysize() >> vshift[i]);
+  for (size_t by = 0; by < ysize_blocks; ++by) {
+    get_block->StartRow(by);
+    size_t sby[3] = {by >> vshift[0], by >> vshift[1], by >> vshift[2]};
+
+    const int32_t* JXL_RESTRICT row_quant =
+        block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
+
+    const float* JXL_RESTRICT dc_rows[3] = {
+        r[0].ConstPlaneRow(*dec_state->shared->dc, 0, sby[0]),
+        r[1].ConstPlaneRow(*dec_state->shared->dc, 1, sby[1]),
+        r[2].ConstPlaneRow(*dec_state->shared->dc, 2, sby[2]),
+    };
+
+    const size_t ty = (block_rect.y0() + by) / kColorTileDimInBlocks;
+    AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
+
+    const int8_t* JXL_RESTRICT row_cmap[3] = {
+        dec_state->shared->cmap.ytox_map.ConstRow(ty),
+        nullptr,
+        dec_state->shared->cmap.ytob_map.ConstRow(ty),
+    };
+
+    float* JXL_RESTRICT idct_row[3];
+    int16_t* JXL_RESTRICT jpeg_row[3];
+    for (size_t c = 0; c < 3; c++) {
+      idct_row[c] =
+          dec_state->decoded.PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
+          r[c].x0() * kBlockDim;
+      if (decoded->IsJPEG()) {
+        auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
+        jpeg_row[c] =
+            component.coeffs.data() +
+            (component.width_in_blocks * (r[c].y0() + sby[c]) + r[c].x0()) *
+                kDCTBlockSize;
+      }
     }
 
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      get_block->StartRow(by);
-      size_t sby[3] = {by >> vshift[0], by >> vshift[1], by >> vshift[2]};
-
-      const int32_t* JXL_RESTRICT row_quant =
-          block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
-
-      const float* JXL_RESTRICT dc_rows[3] = {
-          r[0].ConstPlaneRow(*dec_state->shared->dc, 0, sby[0]),
-          r[1].ConstPlaneRow(*dec_state->shared->dc, 1, sby[1]),
-          r[2].ConstPlaneRow(*dec_state->shared->dc, 2, sby[2]),
-      };
-
-      AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
-
-      float* JXL_RESTRICT idct_row[3];
-      int16_t* JXL_RESTRICT jpeg_row[3];
-      for (size_t c = 0; c < 3; c++) {
-        idct_row[c] =
-            dec_state->decoded.PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
-            r[c].x0() * kBlockDim + dec_state->decoded_padding;
-        if (decoded->IsJPEG()) {
-          auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
-          jpeg_row[c] =
-              component.coeffs.data() +
-              (component.width_in_blocks * (r[c].y0() + sby[c]) + r[c].x0()) *
-                  kDCTBlockSize;
-        }
-      }
-
-      auto x_cc_mul = Set(d, 0.0f);
-      auto b_cc_mul = Set(d, 0.0f);
+    for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
+         tx++) {
+      size_t abs_tx = tx + block_rect.x0() / kColorTileDimInBlocks;
+      auto x_cc_mul =
+          Set(d, dec_state->shared->cmap.YtoXRatio(row_cmap[0][abs_tx]));
+      auto b_cc_mul =
+          Set(d, dec_state->shared->cmap.YtoBRatio(row_cmap[2][abs_tx]));
       // Increment bx by llf_x because those iterations would otherwise
       // immediately continue (!IsFirstBlock). Reduces mispredictions.
-      for (size_t bx = 0; bx < xsize_blocks;) {
+      for (size_t bx = tx * kColorTileDimInBlocks;
+           bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
         size_t sbx[3] = {bx >> hshift[0], bx >> hshift[1], bx >> hshift[2]};
         AcStrategy acs = acs_row[bx];
         const size_t llf_x = acs.covered_blocks_x();
@@ -239,9 +255,14 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
         JXL_RETURN_IF_ERROR(
             get_block->GetBlock(bx, by, acs, size, log2_covered_blocks, block));
+
         if (JXL_UNLIKELY(decoded->IsJPEG())) {
-          HWY_ALIGN float* const local_block =
-              group_dec_cache->dec_group_local_block;
+          if (acs.Strategy() != AcStrategy::Type::DCT) {
+            return JXL_FAILURE(
+                "Can only decode to JPEG if only DCT-8 is used.");
+          }
+
+          HWY_ALIGN int transposed_dct_int[64];
           for (size_t c : {1, 0, 2}) {
             if (decoded->jpeg_data->components.size() == 1 && c != 1) {
               continue;
@@ -249,166 +270,50 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
               continue;
             }
-            Transpose<8, 8>::Run(DCTFrom(block + c * size, 8),
-                                 DCTTo(local_block, 8));
-            local_block[0] = dc_rows[c][sbx[c]];
             int16_t* JXL_RESTRICT jpeg_pos =
                 jpeg_row[c] + sbx[c] * kDCTBlockSize;
-            for (size_t i = 0; i < 64; i += Lanes(d)) {
-              const auto inf = Load(d, local_block + i);
-              const auto ini = ConvertTo(di, inf);
-              const auto ini16 = DemoteTo(di16, ini);
-              StoreU(ini16, di16, jpeg_pos + i);
-            }
-          }
-          bx += llf_x;
-          continue;
-        }
-
-        // Dequantize and add predictions.
-        {
-          DequantBlock(
-              acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
-              dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.RawStrategy(),
-              size, dec_state->shared->quantizer, dequant_matrices,
-              acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
-              dc_stride, dec_state->shared->opsin_params.quant_biases, block);
-        }
-
-        for (size_t c : {1, 0, 2}) {
-          if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
-            continue;
-          }
-          float* JXL_RESTRICT idct_pos = idct_row[c] + sbx[c] * kBlockDim;
-          TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
-                            idct_stride, group_dec_cache->scratch_space);
-        }
-
-        bx += llf_x;
-      }
-    }
-  } else {
-    for (size_t by = 0; by < ysize_blocks; ++by) {
-      get_block->StartRow(by);
-
-      const int32_t* JXL_RESTRICT row_quant =
-          block_rect.ConstRow(dec_state->shared->raw_quant_field, by);
-
-      const float* JXL_RESTRICT dc_rows[3] = {
-          block_rect.ConstPlaneRow(*dec_state->shared->dc, 0, by),
-          block_rect.ConstPlaneRow(*dec_state->shared->dc, 1, by),
-          block_rect.ConstPlaneRow(*dec_state->shared->dc, 2, by),
-      };
-
-      const size_t ty = (block_rect.y0() + by) / kColorTileDimInBlocks;
-      AcStrategyRow acs_row = ac_strategy.ConstRow(block_rect, by);
-
-      const int8_t* JXL_RESTRICT row_cmap[3] = {
-          dec_state->shared->cmap.ytox_map.ConstRow(ty),
-          nullptr,
-          dec_state->shared->cmap.ytob_map.ConstRow(ty),
-      };
-
-      float* JXL_RESTRICT idct_row[3];
-      int16_t* JXL_RESTRICT jpeg_row[3];
-      for (size_t c = 0; c < 3; c++) {
-        idct_row[c] =
-            dec_state->decoded.PlaneRow(c, (block_rect.y0() + by) * kBlockDim) +
-            (block_rect.x0()) * kBlockDim;
-        if (decoded->IsJPEG()) {
-          auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
-          jpeg_row[c] = component.coeffs.data() +
-                        (component.width_in_blocks * (block_rect.y0() + by) +
-                         block_rect.x0()) *
-                            kDCTBlockSize;
-        }
-      }
-
-      for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
-           tx++) {
-        size_t abs_tx = tx + block_rect.x0() / kColorTileDimInBlocks;
-        auto x_cc_mul =
-            Set(d, dec_state->shared->cmap.YtoXRatio(row_cmap[0][abs_tx]));
-        auto b_cc_mul =
-            Set(d, dec_state->shared->cmap.YtoBRatio(row_cmap[2][abs_tx]));
-        // Increment bx by llf_x because those iterations would otherwise
-        // immediately continue (!IsFirstBlock). Reduces mispredictions.
-        for (size_t bx = tx * kColorTileDimInBlocks;
-             bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
-          size_t sbx[3] = {bx, bx, bx};
-          AcStrategy acs = acs_row[bx];
-          const size_t llf_x = acs.covered_blocks_x();
-
-          // Can only happen in the second or lower rows of a varblock.
-          if (JXL_UNLIKELY(!acs.IsFirstBlock())) {
-            bx += llf_x;
-            continue;
-          }
-          PROFILER_ZONE("DecodeGroupImpl inner");
-          const size_t log2_covered_blocks = acs.log2_covered_blocks();
-
-          const size_t covered_blocks = 1 << log2_covered_blocks;
-          const size_t size = covered_blocks * kDCTBlockSize;
-
-          HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
-          JXL_RETURN_IF_ERROR(get_block->GetBlock(bx, by, acs, size,
-                                                  log2_covered_blocks, block));
-
-          if (JXL_UNLIKELY(decoded->IsJPEG())) {
-            if (acs.Strategy() != AcStrategy::Type::DCT) {
-              return JXL_FAILURE(
-                  "Can only decode to JPEG if only DCT-8 is used.");
-            }
-
-            HWY_ALIGN int transposed_dct_int[64];
-            for (size_t c : {1, 0, 2}) {
-              if (decoded->jpeg_data->components.size() == 1 && c != 1) {
-                continue;
+            // JPEG XL is transposed, JPEG is not.
+            HWY_ALIGN float transposed_dct[64];
+            Transpose<8, 8>::Run(DCTFrom(block + c * size, 8),
+                                 DCTTo(transposed_dct, 8));
+            // No CfL - no need to store the block converted to integers.
+            if (!cs.Is444() ||
+                (row_cmap[0][abs_tx] == 0 && row_cmap[2][abs_tx] == 0)) {
+              for (size_t i = 0; i < 64; i += Lanes(d)) {
+                const auto inf = Load(d, transposed_dct + i);
+                const auto ini = ConvertTo(di, inf);
+                const auto ini16 = DemoteTo(di16, ini);
+                StoreU(ini16, di16, jpeg_pos + i);
               }
-              int16_t* JXL_RESTRICT jpeg_pos = jpeg_row[c] + bx * kDCTBlockSize;
-              // JPEG XL is transposed, JPEG is not.
-              HWY_ALIGN float transposed_dct[64];
-              Transpose<8, 8>::Run(DCTFrom(block + c * size, 8),
-                                   DCTTo(transposed_dct, 8));
-              // No CfL - no need to store the block converted to integers.
-              if (row_cmap[0][abs_tx] == 0 && row_cmap[2][abs_tx] == 0) {
-                for (size_t i = 0; i < 64; i += Lanes(d)) {
-                  const auto inf = Load(d, transposed_dct + i);
-                  const auto ini = ConvertTo(di, inf);
-                  const auto ini16 = DemoteTo(di16, ini);
-                  StoreU(ini16, di16, jpeg_pos + i);
-                }
-              } else if (c == 1) {
-                for (size_t i = 0; i < 64; i += Lanes(d)) {
-                  const auto inf = Load(d, transposed_dct + i);
-                  const auto ini = ConvertTo(di, inf);
-                  Store(ini, di, transposed_dct_int + i);
-                  const auto ini16 = DemoteTo(di16, ini);
-                  StoreU(ini16, di16, jpeg_pos + i);
-                }
-              } else {
-                // transposed_dct_int contains the y channel block, converted to
-                // ints and transposed.
-                const auto scale = Set(
-                    di, dec_state->shared->cmap.RatioJPEG(row_cmap[c][abs_tx]));
-                const auto round = Set(di, 1 << (kCFLFixedPointPrecision - 1));
-                for (int i = 0; i < 64; i += Lanes(d)) {
-                  auto in = ConvertTo(di, Load(d, transposed_dct + i));
-                  auto in_y = Load(di, transposed_dct_int + i);
-                  auto qt = Load(di, scaled_qtable + c * size + i);
-                  auto coeff_scale =
-                      ShiftRight<kCFLFixedPointPrecision>(qt * scale + round);
-                  auto cfl_factor = ShiftRight<kCFLFixedPointPrecision>(
-                      in_y * coeff_scale + round);
-                  Store(DemoteTo(di16, in + cfl_factor), di16, jpeg_pos + i);
-                }
+            } else if (c == 1) {
+              // Y channel: save for restoring X/B, but nothing else to do.
+              for (size_t i = 0; i < 64; i += Lanes(d)) {
+                const auto inf = Load(d, transposed_dct + i);
+                const auto ini = ConvertTo(di, inf);
+                Store(ini, di, transposed_dct_int + i);
+                const auto ini16 = DemoteTo(di16, ini);
+                StoreU(ini16, di16, jpeg_pos + i);
               }
-              jpeg_pos[0] = dc_rows[c][bx];
+            } else {
+              // transposed_dct_int contains the y channel block, converted to
+              // ints and transposed.
+              const auto scale = Set(
+                  di, dec_state->shared->cmap.RatioJPEG(row_cmap[c][abs_tx]));
+              const auto round = Set(di, 1 << (kCFLFixedPointPrecision - 1));
+              for (int i = 0; i < 64; i += Lanes(d)) {
+                auto in = ConvertTo(di, Load(d, transposed_dct + i));
+                auto in_y = Load(di, transposed_dct_int + i);
+                auto qt = Load(di, scaled_qtable + c * size + i);
+                auto coeff_scale =
+                    ShiftRight<kCFLFixedPointPrecision>(qt * scale + round);
+                auto cfl_factor = ShiftRight<kCFLFixedPointPrecision>(
+                    in_y * coeff_scale + round);
+                StoreU(DemoteTo(di16, in + cfl_factor), di16, jpeg_pos + i);
+              }
             }
-            bx += llf_x;
-            continue;
+            jpeg_pos[0] = dc_rows[c][sbx[c]] - dcoff[c];
           }
-
+        } else {
           // Dequantize and add predictions.
           {
             DequantBlock(acs, inv_global_scale, row_quant[bx],
@@ -421,15 +326,17 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           }
 
           for (size_t c : {1, 0, 2}) {
+            if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
+              continue;
+            }
             // IDCT
             float* JXL_RESTRICT idct_pos =
-                idct_row[c] + (xpadding_blocks + bx) * kBlockDim;
+                idct_row[c] + dec_state->decoded_padding + sbx[c] * kBlockDim;
             TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
                               idct_stride, group_dec_cache->scratch_space);
           }
-
-          bx += llf_x;
         }
+        bx += llf_x;
       }
     }
   }

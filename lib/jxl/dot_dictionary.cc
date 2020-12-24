@@ -69,7 +69,7 @@ GaussianDetectParams GetConstDetectParams() {
 
 const GaussianDetectParams kEllipseDetectParams = GetConstDetectParams();
 
-};  // namespace
+}  // namespace
 
 std::vector<PatchInfo> FindDotDictionary(const CompressParams& cparams,
                                          const Image3F& opsin,

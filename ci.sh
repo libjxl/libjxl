@@ -1056,11 +1056,20 @@ cmd_fuzz() {
 # Runs the linter (clang-format) on the pending CLs.
 cmd_lint() {
   merge_request_commits
-  # { set +x; } 2>/dev/null
+  { set +x; } 2>/dev/null
   local versions=(${1:-6.0 7 8 9})
   local clang_format_bins=("${versions[@]/#/clang-format-}" clang-format)
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
+
+  local ret=0
+  local build_patch="${tmpdir}/build_cleaner.patch"
+  if ! "${MYDIR}/tools/build_cleaner.py" >"${build_patch}"; then
+    ret=1
+    echo "build_cleaner.py findings:" >&2
+    "${COLORDIFF_BIN}" <"${build_patch}"
+    echo "Run \`tools/build_cleaner.py --update\` to apply them" >&2
+  fi
 
   local installed=()
   local clang_patch
@@ -1085,7 +1094,7 @@ cmd_lint() {
       clang_patch="${tmppatch}"
     else
       echo "clang-format check OK" >&2
-      return 0
+      return ${ret}
     fi
   done
 

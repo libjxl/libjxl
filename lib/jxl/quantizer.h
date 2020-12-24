@@ -77,8 +77,9 @@ class Quantizer {
   explicit Quantizer(const DequantMatrices* dequant);
   Quantizer(const DequantMatrices* dequant, int quant_dc, int global_scale);
 
+  static constexpr int kQuantMax = 256;
+
   static JXL_INLINE int ClampVal(float val) {
-    static const int kQuantMax = 256;
     return std::min(static_cast<int>(std::max(1.0f, val)), kQuantMax);
   }
 
@@ -168,7 +169,15 @@ class Quantizer {
   const DequantMatrices* dequant_;
 };
 
-void TestQuantizerParams();
+struct QuantizerParams : public Fields {
+  QuantizerParams() { Bundle::Init(this); }
+  const char* Name() const override { return "QuantizerParams"; }
+
+  Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
+
+  uint32_t global_scale;
+  uint32_t quant_dc;
+};
 
 }  // namespace jxl
 

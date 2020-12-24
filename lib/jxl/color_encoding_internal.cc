@@ -24,6 +24,9 @@
 namespace jxl {
 namespace {
 
+// Highest reasonable value for the gamma of a transfer curve.
+constexpr uint32_t kMaxGamma = 8192;
+
 // These strings are baked into Description - do not change.
 
 std::string ToString(ColorSpace color_space) {
@@ -284,7 +287,7 @@ bool CustomTransferFunction::SetImplicit() {
 }
 
 Status CustomTransferFunction::SetGamma(double gamma) {
-  if (gamma <= 0.0 || gamma > 1.0) {
+  if (gamma < (1.0f / kMaxGamma) || gamma > 1.0) {
     return JXL_FAILURE("Invalid gamma %f", gamma);
   }
 
@@ -546,7 +549,7 @@ Status CustomTransferFunction::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
     if (visitor->Conditional(have_gamma_)) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(24, kGammaMul, &gamma_));
-      if (gamma_ > kGammaMul) {
+      if (gamma_ > kGammaMul || gamma_ * kMaxGamma < kGammaMul) {
         return JXL_FAILURE("Invalid gamma %u", gamma_);
       }
     }

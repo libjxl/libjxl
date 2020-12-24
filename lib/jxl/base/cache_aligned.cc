@@ -27,6 +27,7 @@
 #include <algorithm>  // std::max
 #include <atomic>
 #include <hwy/base.h>  // kMaxVectorSize
+#include <limits>
 
 #include "lib/jxl/base/status.h"
 

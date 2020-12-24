@@ -67,6 +67,7 @@ set(TEST_FILES
   jxl/toc_test.cc
   jxl/xorshift128plus_test.cc
   threads/thread_parallel_runner_test.cc
+  ### Files before this line are handled by build_cleaner.py
   # TODO(deymo): Move this to tools/
   ../tools/box/box_test.cc
 )

@@ -226,7 +226,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
 
     struct SplitInfo {
       size_t prop = 0;
-      int val = 0;
+      uint32_t val = 0;
       size_t pos = 0;
       float lcost = std::numeric_limits<float>::max();
       float rcost = std::numeric_limits<float>::max();
@@ -254,7 +254,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
     max_symbols = Padded(max_symbols);
     std::vector<int32_t> rounded_counts(max_symbols);
     std::vector<int32_t> counts(max_symbols * num_predictors);
-    std::vector<int32_t> tot_extra_bits(num_predictors);
+    std::vector<uint32_t> tot_extra_bits(num_predictors);
     for (size_t pred = 0; pred < num_predictors; pred++) {
       for (size_t i = begin; i < end; i++) {
         counts[pred * max_symbols + tree_samples.Token(pred, i)] +=
@@ -486,7 +486,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
       }
       auto new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
-        JXL_ASSERT(dequant + 1 <= new_sp_range[p][1]);
+        JXL_ASSERT(static_cast<uint32_t>(dequant + 1) <= new_sp_range[p][1]);
         new_sp_range[p][1] = dequant + 1;
         JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
@@ -494,7 +494,7 @@ void FindBestSplit(TreeSamples &tree_samples, float threshold,
                                used_properties, new_sp_range});
       new_sp_range = static_prop_range;
       if (p < kNumStaticProperties) {
-        JXL_ASSERT(new_sp_range[p][0] <= dequant + 1);
+        JXL_ASSERT(new_sp_range[p][0] <= static_cast<uint32_t>(dequant + 1));
         new_sp_range[p][0] = dequant + 1;
         JXL_ASSERT(new_sp_range[p][0] < new_sp_range[p][1]);
       }
@@ -535,6 +535,9 @@ void ComputeBestTree(TreeSamples &tree_samples, float threshold,
   (tree_samples, threshold, mul_info, static_prop_range, fast_decode_multiplier,
    tree);
 }
+
+constexpr int TreeSamples::kPropertyRange;
+constexpr uint32_t TreeSamples::kDedupEntryUnused;
 
 Status TreeSamples::SetPredictor(Predictor predictor,
                                  ModularOptions::WPTreeMode wp_tree_mode) {
@@ -591,7 +594,7 @@ Status TreeSamples::SetProperties(const std::vector<uint32_t> &properties,
 void TreeSamples::InitTable(size_t size) {
   JXL_DASSERT((size & (size - 1)) == 0);
   if (dedup_table_.size() == size) return;
-  dedup_table_.resize(size, -1);
+  dedup_table_.resize(size, kDedupEntryUnused);
   for (size_t i = 0; i < NumDistinctSamples(); i++) {
     if (sample_counts[i] != std::numeric_limits<uint16_t>::max()) {
       AddToTable(i);
@@ -602,23 +605,25 @@ void TreeSamples::InitTable(size_t size) {
 bool TreeSamples::AddToTableAndMerge(size_t a) {
   size_t pos1 = Hash1(a);
   size_t pos2 = Hash2(a);
-  if (dedup_table_[pos1] != -1 && IsSameSample(a, dedup_table_[pos1])) {
+  if (dedup_table_[pos1] != kDedupEntryUnused &&
+      IsSameSample(a, dedup_table_[pos1])) {
     JXL_DASSERT(sample_counts[a] == 1);
     sample_counts[dedup_table_[pos1]]++;
     // Remove from hash table samples that are saturated.
     if (sample_counts[dedup_table_[pos1]] ==
         std::numeric_limits<uint16_t>::max()) {
-      dedup_table_[pos1] = -1;
+      dedup_table_[pos1] = kDedupEntryUnused;
     }
     return true;
   }
-  if (dedup_table_[pos2] != -1 && IsSameSample(a, dedup_table_[pos2])) {
+  if (dedup_table_[pos2] != kDedupEntryUnused &&
+      IsSameSample(a, dedup_table_[pos2])) {
     JXL_DASSERT(sample_counts[a] == 1);
     sample_counts[dedup_table_[pos2]]++;
     // Remove from hash table samples that are saturated.
     if (sample_counts[dedup_table_[pos2]] ==
         std::numeric_limits<uint16_t>::max()) {
-      dedup_table_[pos2] = -1;
+      dedup_table_[pos2] = kDedupEntryUnused;
     }
     return true;
   }
@@ -629,9 +634,9 @@ bool TreeSamples::AddToTableAndMerge(size_t a) {
 void TreeSamples::AddToTable(size_t a) {
   size_t pos1 = Hash1(a);
   size_t pos2 = Hash2(a);
-  if (dedup_table_[pos1] == -1) {
+  if (dedup_table_[pos1] == kDedupEntryUnused) {
     dedup_table_[pos1] = a;
-  } else if (dedup_table_[pos2] == -1) {
+  } else if (dedup_table_[pos2] == kDedupEntryUnused) {
     dedup_table_[pos2] = a;
   }
 }
@@ -745,8 +750,6 @@ void TreeSamples::ThreeShuffle(size_t a, size_t b, size_t c) {
   sample_counts[b] = tmp;
 }
 
-constexpr int TreeSamples::kPropertyRange;
-
 namespace {
 std::vector<int> QuantizeHistogram(const std::vector<uint32_t> &histogram,
                                    size_t num_chunks) {
@@ -772,11 +775,11 @@ std::vector<int> QuantizeSamples(const std::vector<int32_t> &samples,
   if (samples.empty()) return {};
   int min = *std::min_element(samples.begin(), samples.end());
   constexpr int kRange = 512;
-  if (min < -kRange) min = -kRange;
+  min = std::min(std::max(min, -kRange), kRange);
   std::vector<uint32_t> counts(2 * kRange + 1);
   for (int s : samples) {
-    s = std::min(std::max(s, -kRange), kRange) - min;
-    counts[s]++;
+    uint32_t sample_offset = std::min(std::max(s, -kRange), kRange) - min;
+    counts[sample_offset]++;
   }
   std::vector<int> thresholds = QuantizeHistogram(counts, num_chunks);
   for (auto &v : thresholds) v += min;
@@ -921,9 +924,10 @@ void TreeSamples::PreQuantizeProperties(
     }
     property_mapping[i].resize(kPropertyRange * 2 + 1);
     size_t mapped = 0;
-    for (int j = 0; j < property_mapping[i].size(); j++) {
+    for (size_t j = 0; j < property_mapping[i].size(); j++) {
       while (mapped < compact_properties[i].size() &&
-             j - kPropertyRange > compact_properties[i][mapped]) {
+             static_cast<int>(j) - kPropertyRange >
+                 compact_properties[i][mapped]) {
         mapped++;
       }
       // property_mapping[i] of a value V is `mapped` if
@@ -1066,8 +1070,8 @@ Status ValidateTree(
   return ValidateTree(tree, new_bounds, tree[root].rchild);
 }
 
-Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                  const std::vector<uint8_t> &context_map, Tree *tree) {
+static Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
+                         const std::vector<uint8_t> &context_map, Tree *tree) {
   size_t leaf_id = 0;
   size_t to_decode = 1;
   tree->clear();
@@ -1097,7 +1101,7 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
       }
       uint32_t mul_bits =
           reader->ReadHybridUint(kMultiplierBitsContext, br, context_map);
-      if (mul_bits + 1 >= 1 << (31 - mul_log)) {
+      if (mul_bits + 1 >= 1u << (31u - mul_log)) {
         return JXL_FAILURE("Invalid multiplier");
       }
       uint32_t multiplier = (mul_bits + 1U) << mul_log;
@@ -1115,6 +1119,23 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
   prop_bounds.resize(256, {std::numeric_limits<pixel_type>::min(),
                            std::numeric_limits<pixel_type>::max()});
   return ValidateTree(*tree, prop_bounds, 0);
+}
+
+Status DecodeTree(BitReader *br, Tree *tree) {
+  std::vector<uint8_t> tree_context_map;
+  ANSCode tree_code;
+  JXL_RETURN_IF_ERROR(
+      DecodeHistograms(br, kNumTreeContexts, &tree_code, &tree_context_map));
+  // TODO(eustas): investigate more infinite tree cases.
+  if (tree_code.degenerate_symbols[tree_context_map[kPropertyContext]] > 0) {
+    return JXL_FAILURE("Infinite tree");
+  }
+  ANSSymbolReader reader(&tree_code, br);
+  JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, tree));
+  if (!reader.CheckANSFinalState()) {
+    return JXL_FAILURE("ANS decode final state failed");
+  }
+  return true;
 }
 
 }  // namespace jxl

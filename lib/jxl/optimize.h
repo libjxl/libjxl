@@ -107,10 +107,10 @@ T operator*(const Array<T, N>& x, const Array<T, N>& y) {
 // Returns (0.0, 5, 7)
 std::vector<double> RunSimplex(
     int dim, double amount, int max_iterations,
-    const std::function<double((const std::vector<double>&))>& fun);
+    const std::function<double(const std::vector<double>&)>& fun);
 std::vector<double> RunSimplex(
     int dim, double amount, int max_iterations, const std::vector<double>& init,
-    const std::function<double((const std::vector<double>&))>& fun);
+    const std::function<double(const std::vector<double>&)>& fun);
 
 // Implementation of the Scaled Conjugate Gradient method described in the
 // following paper:

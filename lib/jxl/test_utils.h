@@ -101,17 +101,11 @@ size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
   }
 
   EXPECT_THAT(io2->frames, testing::SizeIs(io->frames.size()));
-  if (cparams.color_transform == ColorTransform::kXYB) {
-    // If color transform is XYB, linear sRGB is returned.
-    EXPECT_THAT(current_encodings_2,
-                testing::Each(MatchesPrimariesAndTransferFunction(
-                    ColorEncoding::LinearSRGB())));
-  } else {
-    // Modular returns the original color space.
-    EXPECT_THAT(current_encodings_2,
-                testing::Pointwise(MatchesPrimariesAndTransferFunction(),
-                                   original_current_encodings));
-  }
+  // We always produce the original color encoding if a color transform hook is
+  // set.
+  EXPECT_THAT(current_encodings_2,
+              testing::Pointwise(MatchesPrimariesAndTransferFunction(),
+                                 original_current_encodings));
 
   // Decoder returns the originals passed to the encoder.
   EXPECT_THAT(metadata_encodings_2,
@@ -289,8 +283,8 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels == 1 ||
                                num_channels == 2),
       /*has_alpha=*/num_channels == 2 || num_channels == 4,
-      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-      /*big_endian=*/true, /*flipped_y=*/false, /*pool=*/nullptr,
+      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
+      /*flipped_y=*/false, /*pool=*/nullptr,
       /*ib=*/&io.Main()));
   return io;
 }
