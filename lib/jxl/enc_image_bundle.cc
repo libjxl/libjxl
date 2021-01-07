@@ -27,7 +27,9 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
                const Rect& rect, const ColorEncoding& c_desired,
                ThreadPool* pool, Image3F* out) {
   PROFILER_FUNC;
-  ColorSpaceTransform c_transform;
+  // TODO(sboukortt): allow other CMS implementations to be passed instead of
+  // hardcoding ours.
+  ColorSpaceTransform c_transform(GetJxlCms());
   // Changing IsGray is probably a bug.
   JXL_CHECK(ib->IsGray() == c_desired.IsGray());
 #if JPEGXL_ENABLE_SKCMS
@@ -40,6 +42,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   } else {
     out->ShrinkTo(rect.xsize(), rect.ysize());
   }
+  std::atomic<bool> ok{true};
   RunOnPool(
       pool, 0, rect.ysize(),
       [&](size_t num_threads) {
@@ -67,7 +70,10 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
           }
         }
         float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
-        DoColorSpaceTransform(&c_transform, thread, src_buf, dst_buf);
+        if (!c_transform.Run(thread, src_buf, dst_buf)) {
+          ok.store(false);
+          return;
+        }
         float* JXL_RESTRICT row_out0 = out->PlaneRow(0, y);
         float* JXL_RESTRICT row_out1 = out->PlaneRow(1, y);
         float* JXL_RESTRICT row_out2 = out->PlaneRow(2, y);
@@ -87,7 +93,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
         }
       },
       "Colorspace transform");
-  return true;
+  return ok.load();
 }
 
 }  // namespace

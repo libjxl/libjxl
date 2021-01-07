@@ -15,6 +15,7 @@ libjxl_version_defines = [
 libjxl_public_headers = [
     "include/jxl/butteraugli.h",
     "include/jxl/butteraugli_cxx.h",
+    "include/jxl/cms_interface.h",
     "include/jxl/codestream_header.h",
     "include/jxl/color_encoding.h",
     "include/jxl/decode.h",
