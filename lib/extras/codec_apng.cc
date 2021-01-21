@@ -149,9 +149,11 @@ int processing_start(png_structp& png_ptr, png_infop& info_ptr, void* frame_ptr,
   png_process_data(png_ptr, info_ptr, header, 8);
   png_process_data(png_ptr, info_ptr, chunkIHDR.p, chunkIHDR.size);
 
-  if (hasInfo)
-    for (unsigned int i = 0; i < chunksInfo.size(); i++)
+  if (hasInfo) {
+    for (unsigned int i = 0; i < chunksInfo.size(); i++) {
       png_process_data(png_ptr, info_ptr, chunksInfo[i].p, chunksInfo[i].size);
+    }
+  }
   return 0;
 }
 
@@ -225,7 +227,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   }
   // Not an aPNG => not an error
   unsigned char png_signature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
-  if (fread(sig, 1, 8, f) != 8 || memcmp(sig, png_signature, 8)) {
+  if (fread(sig, 1, 8, f) != 8 || memcmp(sig, png_signature, 8) != 0) {
     fclose(f);
     return false;
   }

@@ -73,22 +73,30 @@ void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
   constexpr float kDistanceMultiplier = 4.605170185988091f;  // -2 * log(0.1)
   // Distance beyond which exp(-d^2 / (2 * sigma^2)) drops below 0.1.
   const float maximum_distance = sigma * sigma * kDistanceMultiplier;
-  const auto xbegin =
-      std::max<size_t>(image_rect.x0(), center.x - maximum_distance + .5f);
-  const auto xend = std::min<size_t>(center.x + maximum_distance + .5f,
-                                     image_rect.x0() + image_rect.xsize() - 1);
-  const auto ybegin =
-      std::max<size_t>(image_rect.y0(), center.y - maximum_distance + .5f);
-  const auto yend = std::min<size_t>(center.y + maximum_distance + .5f,
-                                     image_rect.y0() + image_rect.ysize() - 1);
-  size_t opsin_stride = opsin->PixelsPerRow();
+  const auto xbegin_s =
+      std::max<ssize_t>(image_rect.x0(), center.x - maximum_distance + .5f);
+  const auto xend_s =
+      std::min<ssize_t>(center.x + maximum_distance + .5f,
+                        image_rect.x0() + image_rect.xsize() - 1);
+  const auto ybegin_s =
+      std::max<ssize_t>(image_rect.y0(), center.y - maximum_distance + .5f);
+  const auto yend_s =
+      std::min<ssize_t>(center.y + maximum_distance + .5f,
+                        image_rect.y0() + image_rect.ysize() - 1);
+  if ((xend_s) <= 0 || (xend_s < xbegin_s)) return;
+  const size_t xbegin = xbegin_s;
+  const size_t xend = xend_s;
+  if ((yend_s <= 0) || (yend_s < ybegin_s)) return;
+  const size_t ybegin = ybegin_s;
+  const size_t yend = yend_s;
+  const size_t opsin_stride = opsin->PixelsPerRow();
   float* JXL_RESTRICT rows[3] = {
       opsin_rect.PlaneRow(opsin, 0, ybegin - image_rect.y0()),
       opsin_rect.PlaneRow(opsin, 1, ybegin - image_rect.y0()),
       opsin_rect.PlaneRow(opsin, 2, ybegin - image_rect.y0()),
   };
-  size_t nx = xend + 1 - xbegin;
-  size_t ny = yend + 1 - ybegin;
+  const size_t nx = xend + 1 - xbegin;
+  const size_t ny = yend + 1 - ybegin;
   HWY_FULL(float) df;
   if (xs.size() < nx * ny) {
     size_t sz = DivCeil(nx * ny, Lanes(df)) * Lanes(df);
@@ -225,10 +233,11 @@ Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
                                BitReader* const br, ANSSymbolReader* reader,
                                const std::vector<uint8_t>& context_map,
                                size_t num_splines) {
-  points->resize(num_splines);
+  points->clear();
+  points->reserve(num_splines);
   int64_t last_x = 0;
   int64_t last_y = 0;
-  for (size_t i = 0; i < points->size(); i++) {
+  for (size_t i = 0; i < num_splines; i++) {
     int64_t x =
         reader->ReadHybridUint(kStartingPositionContext, br, context_map);
     int64_t y =
@@ -237,8 +246,7 @@ Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
       x = UnpackSigned(x) + last_x;
       y = UnpackSigned(y) + last_y;
     }
-    (*points)[i].x = x;
-    (*points)[i].y = y;
+    points->emplace_back(static_cast<float>(x), static_cast<float>(y));
     last_x = x;
     last_y = y;
   }
@@ -511,6 +519,7 @@ Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {
   quantization_adjustment_ = UnpackSigned(
       decoder.ReadHybridUint(kQuantizationAdjustmentContext, br, context_map));
 
+  splines_.clear();
   splines_.reserve(num_splines);
   for (size_t i = 0; i < num_splines; ++i) {
     QuantizedSpline spline;

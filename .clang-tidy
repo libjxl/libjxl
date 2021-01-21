@@ -20,6 +20,7 @@
 # - readability-uppercase-literal-suffix: we write 1.0f, not 1.0F.
 
 Checks: >-
+  bugprone-*,
   clang-*,
   -clang-diagnostic-unused-command-line-argument,
   google-*,
@@ -39,12 +40,18 @@ Checks: >-
 
 
 WarningsAsErrors: >-
+  bugprone-argument-comment,
+  bugprone-macro-parentheses,
+  bugprone-suspicious-string-compare,
+  bugprone-use-after-move,
   clang-*,
   clang-analyzer-*,
   -clang-diagnostic-unused-command-line-argument,
   google-build-using-namespace,
   google-explicit-constructor,
+  google-readability-braces-around-statements,
   google-readability-namespace-comments,
+  modernize-use-override,
   readability-inconsistent-declaration-parameter-name
 
 # We are only interested in the headers from this projects, excluding

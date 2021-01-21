@@ -532,10 +532,11 @@ class LossyFrameEncoder {
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
            idx_pass++) {
-        const ac_qcoeff_t* JXL_RESTRICT ac_rows[3] = {
-            enc_state_->coeffs[idx_pass].ConstPlaneRow(0, group_index),
-            enc_state_->coeffs[idx_pass].ConstPlaneRow(1, group_index),
-            enc_state_->coeffs[idx_pass].ConstPlaneRow(2, group_index),
+        JXL_ASSERT(enc_state_->coeffs[idx_pass]->Type() == ACType::k32);
+        const int32_t* JXL_RESTRICT ac_rows[3] = {
+            enc_state_->coeffs[idx_pass]->PlaneRow(0, group_index, 0).ptr32,
+            enc_state_->coeffs[idx_pass]->PlaneRow(1, group_index, 0).ptr32,
+            enc_state_->coeffs[idx_pass]->PlaneRow(2, group_index, 0).ptr32,
         };
         // Ensure group cache is initialized.
         group_caches_[thread].InitOnce();
@@ -585,8 +586,8 @@ class LossyFrameEncoder {
     FillImage(uint8_t(0), &shared.epf_sharpness);
 
     enc_state_->coeffs.clear();
-    enc_state_->coeffs.emplace_back(
-        ACImage3(kGroupDim * kGroupDim, frame_dim.num_groups));
+    enc_state_->coeffs.emplace_back(make_unique<ACImageT<int32_t>>(
+        kGroupDim * kGroupDim, frame_dim.num_groups));
 
     // convert JPEG quantization table to a Quantizer object
     float dcquantization[3];
@@ -730,7 +731,7 @@ class LossyFrameEncoder {
     }
     if (!frame_header->chroma_subsampling.Is444()) {
       ZeroFillImage(&dc);
-      ZeroFillImage(&enc_state_->coeffs[0]);
+      enc_state_->coeffs[0]->ZeroFill();
     }
     // JPEG DC is from -1024 to 1023.
     std::vector<size_t> dc_counts[3] = {};
@@ -740,7 +741,7 @@ class LossyFrameEncoder {
     size_t total_dc[3] = {};
     for (size_t c : {1, 0, 2}) {
       if (jpeg_data.components.size() == 1 && c != 1) {
-        ZeroFillImage(&enc_state_->coeffs[0].Plane(c));
+        enc_state_->coeffs[0]->ZeroFillPlane(c);
         ZeroFillImage(&dc.Plane(c));
         // Ensure no division by 0.
         dc_counts[c][1024] = 1;
@@ -755,7 +756,8 @@ class LossyFrameEncoder {
         const size_t gx = group_index % frame_dim.xsize_groups;
         const size_t gy = group_index / frame_dim.xsize_groups;
         size_t offset = 0;
-        float* JXL_RESTRICT ac = enc_state_->coeffs[0].PlaneRow(c, group_index);
+        int32_t* JXL_RESTRICT ac =
+            enc_state_->coeffs[0]->PlaneRow(c, group_index, 0).ptr32;
         for (size_t by = gy * kGroupDimInBlocks;
              by < ysize_blocks && by < (gy + 1) * kGroupDimInBlocks; ++by) {
           if ((by >> vshift) << vshift != by) continue;
@@ -886,10 +888,11 @@ class LossyFrameEncoder {
       const Rect rect = shared.BlockGroupRect(group_index);
       for (size_t idx_pass = 0; idx_pass < enc_state_->passes.size();
            idx_pass++) {
-        const ac_qcoeff_t* JXL_RESTRICT ac_rows[3] = {
-            enc_state_->coeffs[idx_pass].ConstPlaneRow(0, group_index),
-            enc_state_->coeffs[idx_pass].ConstPlaneRow(1, group_index),
-            enc_state_->coeffs[idx_pass].ConstPlaneRow(2, group_index),
+        JXL_ASSERT(enc_state_->coeffs[idx_pass]->Type() == ACType::k32);
+        const int32_t* JXL_RESTRICT ac_rows[3] = {
+            enc_state_->coeffs[idx_pass]->PlaneRow(0, group_index, 0).ptr32,
+            enc_state_->coeffs[idx_pass]->PlaneRow(1, group_index, 0).ptr32,
+            enc_state_->coeffs[idx_pass]->PlaneRow(2, group_index, 0).ptr32,
         };
         // Ensure group cache is initialized.
         group_caches_[thread].InitOnce();
@@ -988,7 +991,7 @@ class LossyFrameEncoder {
             enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
             Rect(enc_state_->shared.raw_quant_field));
       }
-      ComputeCoeffOrder(enc_state_->cparams.speed_tier, enc_state_->coeffs[i],
+      ComputeCoeffOrder(enc_state_->cparams.speed_tier, *enc_state_->coeffs[i],
                         enc_state_->shared.ac_strategy, frame_dim, used_orders,
                         &enc_state_->shared.coeff_orders[i * kCoeffOrderSize]);
     }
@@ -1154,9 +1157,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
          cparams.quality_pair.first < 100)) {
       // if lossy, simplify invisible pixels
       SimplifyInvisible(&opsin, ib.alpha());
-      if (want_linear)
+      if (want_linear) {
         SimplifyInvisible(const_cast<Image3F*>(&ib_or_linear->color()),
                           ib.alpha());
+      }
     }
     if (cparams.resampling != 1) {
       // TODO(veluca): should we do this in linear sRGB?

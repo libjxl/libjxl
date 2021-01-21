@@ -123,15 +123,16 @@ class AcStrategy {
   JXL_INLINE Type Strategy() const { return strategy_; }
 
   // Inverse check
-  static JXL_INLINE constexpr bool IsRawStrategyValid(uint8_t raw_strategy) {
-    return raw_strategy < kNumValidStrategies;
+  static JXL_INLINE constexpr bool IsRawStrategyValid(int raw_strategy) {
+    return raw_strategy < static_cast<int32_t>(kNumValidStrategies) &&
+           raw_strategy >= 0;
   }
   static JXL_INLINE AcStrategy FromRawStrategy(uint8_t raw_strategy) {
     return FromRawStrategy(static_cast<Type>(raw_strategy));
   }
   static JXL_INLINE AcStrategy FromRawStrategy(Type raw_strategy) {
     JXL_DASSERT(IsRawStrategyValid(static_cast<uint32_t>(raw_strategy)));
-    return AcStrategy(raw_strategy, /*is_first_block=*/true);
+    return AcStrategy(raw_strategy, /*is_first=*/true);
   }
 
   // "Natural order" means the order of increasing of "anisotropic" frequency of
@@ -189,6 +190,10 @@ class AcStrategy {
         kOffset[kNumValidStrategies] * kDCTBlockSize;
     coeff_order_t order[kTotalTableSize];
     coeff_order_t lut[kTotalTableSize];
+
+   private:
+    CoeffOrderAndLut();
+    friend class AcStrategy;
   };
 
  private:

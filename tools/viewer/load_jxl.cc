@@ -92,16 +92,15 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
 
   QElapsedTimer timer;
   timer.start();
-  const uint8_t* next_in = reinterpret_cast<const uint8_t*>(jpegXlData.data());
-  size_t avail_in = jpegXlData.size();
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+  const uint8_t* jxl_data = reinterpret_cast<const uint8_t*>(jpegXlData.data());
+  size_t jxl_size = jpegXlData.size();
+  JxlDecoderSetInput(dec.get(), jxl_data, jxl_size);
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec.get()));
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec.get(), &info));
   size_t pixel_count = info.xsize * info.ysize;
 
-  EXPECT_EQ(JXL_DEC_COLOR_ENCODING,
-            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec.get()));
   static const JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN,
                                         0};
   size_t icc_size;
@@ -115,13 +114,11 @@ QImage loadJxlImage(const QString& filename, const QByteArray& targetIccProfile,
                 icc_profile.data(), icc_profile.size()));
 
   std::vector<float> float_pixels(pixel_count * 4);
-  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER,
-            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec.get()));
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetImageOutBuffer(dec.get(), &format, float_pixels.data(),
                                         pixel_count * 4 * sizeof(float)));
-  EXPECT_EQ(JXL_DEC_FULL_IMAGE,
-            JxlDecoderProcessInput(dec.get(), &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec.get()));
 
   std::vector<uint16_t> uint16_pixels(pixel_count * 4);
   const thread_local cmsContext context = cmsCreateContext(nullptr, nullptr);

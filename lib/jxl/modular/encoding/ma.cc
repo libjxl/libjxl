@@ -1071,13 +1071,14 @@ Status ValidateTree(
 }
 
 static Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                         const std::vector<uint8_t> &context_map, Tree *tree) {
+                         const std::vector<uint8_t> &context_map, Tree *tree,
+                         size_t tree_size_limit) {
   size_t leaf_id = 0;
   size_t to_decode = 1;
   tree->clear();
   while (to_decode > 0) {
     JXL_RETURN_IF_ERROR(br->AllReadsWithinBounds());
-    if (tree->size() > kMaxTreeSize) {
+    if (tree->size() > tree_size_limit) {
       return JXL_FAILURE("Tree is too large");
     }
     to_decode--;
@@ -1121,7 +1122,7 @@ static Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
   return ValidateTree(*tree, prop_bounds, 0);
 }
 
-Status DecodeTree(BitReader *br, Tree *tree) {
+Status DecodeTree(BitReader *br, Tree *tree, size_t tree_size_limit) {
   std::vector<uint8_t> tree_context_map;
   ANSCode tree_code;
   JXL_RETURN_IF_ERROR(
@@ -1131,7 +1132,8 @@ Status DecodeTree(BitReader *br, Tree *tree) {
     return JXL_FAILURE("Infinite tree");
   }
   ANSSymbolReader reader(&tree_code, br);
-  JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, tree));
+  JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, tree,
+                                 std::min(tree_size_limit, kMaxTreeSize)));
   if (!reader.CheckANSFinalState()) {
     return JXL_FAILURE("ANS decode final state failed");
   }

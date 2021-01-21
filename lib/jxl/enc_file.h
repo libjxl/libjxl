@@ -33,9 +33,9 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
                      const CodecMetadata* metadata, ThreadPool* pool,
                      BitWriter* JXL_RESTRICT writer);
 
-// Write headers from `io`.
-Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
-                    CodecMetadata* metadata, BitWriter* writer,
+// Write headers from the CodecMetadata. Also may modify nonserialized_...
+// fields of the metadata.
+Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
                     AuxOut* aux_out);
 
 // Compresses pixels from `io` (given in any ColorEncoding).

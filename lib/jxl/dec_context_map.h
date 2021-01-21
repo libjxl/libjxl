@@ -24,6 +24,9 @@
 
 namespace jxl {
 
+// Context map uses uint8_t.
+constexpr size_t kMaxClusters = 256;
+
 // Reads the context map from the bit stream. On calling this function,
 // context_map->size() must be the number of possible context ids.
 // Sets *num_htrees to the number of different histogram ids in

@@ -21,8 +21,8 @@ set -eu
 MYDIR=$(dirname $(realpath "$0"))
 
 # Git revisions we use for the given submodules. Update these whenever you
-# update a git submdule.
-THIRD_PARTY_HIGHWAY="311c183c9d96e69b123f61eedc21025dd27be000"
+# update a git submodule.
+THIRD_PARTY_HIGHWAY="a72b33809d98bd1a8fa961953f0f63f454c7f593"
 THIRD_PARTY_LODEPNG="48e5364ef48ec2408f44c727657ac1b6703185f8"
 THIRD_PARTY_SKCMS="64374756e03700d649f897dbd98c95e78c30c7da"
 THIRD_PARTY_SJPEG="868ab558fad70fcbe8863ba4e85179eeb81cc840"

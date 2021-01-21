@@ -87,10 +87,16 @@ inline pixel_type_w SmoothTendency(pixel_type_w B, pixel_type_w a,
 void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
-  if (chin_residual.w == 0 || chin_residual.h == 0) return;
   // These must be valid since we ran MetaApply already.
   JXL_ASSERT(chin.w == DivCeil(chin.w + chin_residual.w, 2));
   JXL_ASSERT(chin.h == chin_residual.h);
+
+  if (chin_residual.w == 0 || chin_residual.h == 0) {
+    input.channel[c].resize(chin.w + chin_residual.w, chin.h);
+    input.channel[c].hshift--;
+    input.channel[c].hcshift--;
+    return;
+  }
 
   Channel chout(chin.w + chin_residual.w, chin.h, chin.hshift - 1, chin.vshift,
                 chin.hcshift - 1, chin.vcshift);
@@ -183,10 +189,16 @@ void FwdHSqueeze(Image &input, int c, int rc) {
 void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
-  if (chin_residual.w == 0 || chin_residual.h == 0) return;
   // These must be valid since we ran MetaApply already.
   JXL_ASSERT(chin.h == DivCeil(chin.h + chin_residual.h, 2));
   JXL_ASSERT(chin.w == chin_residual.w);
+
+  if (chin_residual.w == 0 || chin_residual.h == 0) {
+    input.channel[c].resize(chin.w, chin.h + chin_residual.h);
+    input.channel[c].vshift--;
+    input.channel[c].vcshift--;
+    return;
+  }
 
   // Note: chin.h >= chin_residual.h and at most 1 different.
   Channel chout(chin.w, chin.h + chin_residual.h, chin.hshift, chin.vshift - 1,

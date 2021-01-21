@@ -29,6 +29,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/external_image.h"
 #include "lib/jxl/fields.h"  // AllDefault
 #include "lib/jxl/image.h"
@@ -42,18 +43,31 @@ namespace {
 uint64_t get_be_int(int bytes, const uint8_t*& pos, const uint8_t* maxpos) {
   uint64_t r = 0;
   if (pos + bytes <= maxpos) {
-    if (bytes == 1)
+    if (bytes == 1) {
       r = *pos;
-    else if (bytes == 2)
+    } else if (bytes == 2) {
       r = LoadBE16(pos);
-    else if (bytes == 4)
+    } else if (bytes == 4) {
       r = LoadBE32(pos);
-    else if (bytes == 8)
+    } else if (bytes == 8) {
       r = LoadBE64(pos);
+    }
   }
   pos += bytes;
   return r;
 }
+
+// Copies up to n bytes, without reading from maxpos (the STL-style end).
+void safe_copy(const uint8_t* JXL_RESTRICT pos,
+               const uint8_t* JXL_RESTRICT maxpos, char* JXL_RESTRICT out,
+               size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    if (pos + i >= maxpos) return;
+    out[i] = pos[i];
+  }
+}
+
+// maxpos is the STL-style end! The valid range is up to [pos, maxpos).
 int safe_strncmp(const uint8_t* pos, const uint8_t* maxpos, const char* s2,
                  size_t n) {
   if (pos + n > maxpos) return 1;
@@ -80,9 +94,10 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
     if (is_layer || c == 0) {
       compression_method = get_be_int(2, pos, maxpos);
       JXL_DEBUG_V(PSD_VERBOSITY, "compression method: %i", compression_method);
-      if (compression_method > 1 || compression_method < 0)
+      if (compression_method > 1 || compression_method < 0) {
         return JXL_FAILURE("PSD: can't handle compression method %i",
                            compression_method);
+      }
     }
 
     if (!is_layer && c < colormodel) {
@@ -108,13 +123,14 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
     }
     if (is_layer || c == 0) {
       // skip the line-counts, we don't need them
-      if (compression_method == 1)
+      if (compression_method == 1) {
         pos += h * (is_layer ? 1 : nb_channels) * 2 *
                version;  // PSB uses 4 bytes per rowsize instead of 2
+      }
     }
     int c_id = chans[c];
     if (c_id < 0) continue;  // skip
-    if ((unsigned int)c_id >= 3 + layer.extra_channels().size())
+    if (static_cast<unsigned int>(c_id) >= 3 + layer.extra_channels().size())
       return JXL_FAILURE("PSD: can't handle channel id %i", c_id);
     ImageF& ch = (c_id < 3 ? layer.color()->Plane(c_id)
                            : layer.extra_channels()[c_id - 3]);
@@ -197,6 +213,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
   size_t ysize = get_be_int(4, pos, maxpos);
   size_t xsize = get_be_int(4, pos, maxpos);
   JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
+  uint64_t total_pixel_count = static_cast<uint64_t>(xsize) * ysize;
   int bitdepth = get_be_int(2, pos, maxpos);
   if (bitdepth != 8 && bitdepth != 16 && bitdepth != 32) {
     return JXL_FAILURE("PSD: bit depth %i invalid or not supported", bitdepth);
@@ -223,9 +240,11 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
   size_t metalength = get_be_int(4, pos, maxpos);
   const uint8_t* metaoffset = pos;
   while (pos < metaoffset + metalength) {
-    if (safe_strncmp(pos, maxpos, "8BIM", 4))
-      return JXL_FAILURE("PSD: Unexpected image resource header: %4s",
-                         (const char*)(pos));
+    char header[5] = "????";
+    safe_copy(pos, maxpos, header, 4);
+    if (memcmp(header, "8BIM", 4) != 0) {
+      return JXL_FAILURE("PSD: Unexpected image resource header: %s", header);
+    }
     pos += 4;
     int id = get_be_int(2, pos, maxpos);
     int namelength = get_be_int(1, pos, maxpos);
@@ -234,33 +253,42 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
     size_t blocklength = get_be_int(4, pos, maxpos);
     // JXL_DEBUG_V(PSD_VERBOSITY, "block id: %i | block length: %zu",id,
     // blocklength);
+    if (pos > maxpos) return JXL_FAILURE("PSD: Unexpected end of file");
     if (id == 1039) {  // ICC profile
+      size_t delta = maxpos - pos;
+      if (delta < blocklength) {
+        return JXL_FAILURE("PSD: Invalid block length");
+      }
       PaddedBytes icc;
       icc.resize(blocklength);
       memcpy(icc.data(), pos, blocklength);
-      if (!io->metadata.m.color_encoding.SetICC(std::move(icc)))
+      if (!io->metadata.m.color_encoding.SetICC(std::move(icc))) {
         return JXL_FAILURE("PSD: Invalid color profile");
+      }
     } else if (id == 1057) {  // compatibility mode or not?
-      if (get_be_int(4, pos, maxpos) != 1)
+      if (get_be_int(4, pos, maxpos) != 1) {
         return JXL_FAILURE("PSD: expected version=1 in id=1057 resource block");
+      }
       hasmergeddata = get_be_int(1, pos, maxpos);
       pos++;
       blocklength -= 6;       // already skipped these bytes
     } else if (id == 1077) {  // spot colors
       int version = get_be_int(4, pos, maxpos);
-      if (version != 1)
+      if (version != 1) {
         return JXL_FAILURE(
             "PSD: expected DisplayInfo version 1, got version %i", version);
+      }
       int spotcolorcount = nb_channels - colormodel;
       JXL_DEBUG_V(PSD_VERBOSITY, "Reading %i spot colors. %zu", spotcolorcount,
                   blocklength);
       for (int k = 0; k < spotcolorcount; k++) {
         int colorspace = get_be_int(2, pos, maxpos);
         if ((colormodel == 3 && colorspace != 0) ||
-            (colormodel == 4 && colorspace != 2))
+            (colormodel == 4 && colorspace != 2)) {
           return JXL_FAILURE(
               "PSD: cannot handle spot colors in different color spaces than "
               "image itself");
+        }
         if (colorspace == 2) JXL_WARNING("PSD: K ignored in CMYK spot color");
         std::vector<float> color;
         color.push_back(get_be_int(2, pos, maxpos) / 65535.f);  // R or C
@@ -273,14 +301,15 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
         JXL_DEBUG_V(PSD_VERBOSITY, "Kind=%i", kind);
         color.push_back(kind);
         spotcolor.push_back(color);
-        if (kind == 2)
+        if (kind == 2) {
           JXL_DEBUG_V(PSD_VERBOSITY, "Actual spot color");
-        else if (kind == 1)
+        } else if (kind == 1) {
           JXL_DEBUG_V(PSD_VERBOSITY, "Mask (alpha) channel");
-        else if (kind == 0)
+        } else if (kind == 0) {
           JXL_DEBUG_V(PSD_VERBOSITY, "Selection (alpha) channel");
-        else
+        } else {
           return JXL_FAILURE("PSD: Unknown extra channel type");
+        }
       }
       if (blocklength & 1) pos++;
       blocklength = 0;
@@ -294,14 +323,15 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
   if (layerlength) {
     pos += 4 * version;  // don't care about layerinfolength
     JXL_DEBUG_V(PSD_VERBOSITY, "Layer section length: %zu", layerlength);
-    int16_t layercount = get_be_int(2, pos, maxpos);
-    JXL_DEBUG_V(PSD_VERBOSITY, "Layer count: %i", (int)layercount);
+    int layercount = static_cast<int16_t>(get_be_int(2, pos, maxpos));
+    JXL_DEBUG_V(PSD_VERBOSITY, "Layer count: %i", layercount);
     io->frames.clear();
 
     if (layercount == 0) {
-      if (get_be_int(2, pos, maxpos) != 0)
+      if (get_be_int(2, pos, maxpos) != 0) {
         return JXL_FAILURE(
             "PSD: Expected zero padding before additional layer info");
+      }
       while (pos < after_layers_pos) {
         if (safe_strncmp(pos, maxpos, "8BIM", 4) &&
             safe_strncmp(pos, maxpos, "8B64", 4))
@@ -311,11 +341,21 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
         pos += 4;
         size_t blocklength = get_be_int(4 * version, pos, maxpos);
         JXL_DEBUG_V(PSD_VERBOSITY, "Length=%zu", blocklength);
+        if (blocklength > 0) {
+          if (pos >= maxpos) return JXL_FAILURE("PSD: Unexpected end of file");
+          size_t delta = maxpos - pos;
+          if (delta < blocklength) {
+            return JXL_FAILURE("PSD: Invalid block length");
+          }
+        }
         if (!safe_strncmp(tpos, maxpos, "Layr", 4) ||
             !safe_strncmp(tpos, maxpos, "Lr16", 4) ||
             !safe_strncmp(tpos, maxpos, "Lr32", 4)) {
-          layercount = get_be_int(2, pos, maxpos);
-          JXL_DEBUG_V(PSD_VERBOSITY, "Real layer count: %i", (int)layercount);
+          layercount = static_cast<int16_t>(get_be_int(2, pos, maxpos));
+          if (layercount < 0) {
+            return JXL_FAILURE("PSD: Invalid layer count");
+          }
+          JXL_DEBUG_V(PSD_VERBOSITY, "Real layer count: %i", layercount);
           break;
         }
         if (!safe_strncmp(tpos, maxpos, "Mtrn", 4) ||
@@ -401,27 +441,30 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       for (int lc = 0; lc < nb_chs; lc++) {
         int id = get_be_int(2, pos, maxpos);
         JXL_DEBUG_V(PSD_VERBOSITY, "    id=%i", id);
-        if (id == 65535)
+        if (id == 65535) {
           chan_ids.push_back(colormodel);  // alpha
-        else if (id == 65534)
+        } else if (id == 65534) {
           chan_ids.push_back(-1);  // layer mask, ignored
-        else
+        } else {
           chan_ids.push_back(id);  // color channel
+        }
         layer_offsets[l + 1] += get_be_int(4 * version, pos, maxpos);
       }
       layer_chan_id.push_back(chan_ids);
       if (safe_strncmp(pos, maxpos, "8BIM", 4))
         return JXL_FAILURE("PSD: Layer %i: Unexpected signature (not 8BIM)", l);
       pos += 4;
-      if (safe_strncmp(pos, maxpos, "norm", 4))
+      if (safe_strncmp(pos, maxpos, "norm", 4)) {
         return JXL_FAILURE(
             "PSD: Layer %i: Cannot handle non-default blend mode", l);
+      }
       pos += 4;
       int opacity = get_be_int(1, pos, maxpos);
-      if (opacity < 100)
+      if (opacity < 100) {
         JXL_WARNING(
             "PSD: ignoring opacity of semi-transparent layer %i (opacity=%i)",
             l, opacity);
+      }
       pos++;  // clipping
       int flags = get_be_int(1, pos, maxpos);
       pos++;
@@ -453,6 +496,14 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
         continue;
       }
       is_real_layer[l] = true;
+      JXL_RETURN_IF_ERROR(io->VerifyDimensions(width, height));
+      uint64_t pixel_count = static_cast<uint64_t>(width) * height;
+      if (!SafeAdd(total_pixel_count, pixel_count, total_pixel_count)) {
+        return JXL_FAILURE("Image too big");
+      }
+      if (total_pixel_count > io->GetDecMaxPixels()) {
+        return JXL_FAILURE("Image too big");
+      }
       Image3F rgb(width, height);
       layer.SetFromImage(std::move(rgb), io->metadata.m.color_encoding);
       int i = 3;

@@ -44,7 +44,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
                    AuxOut* aux_out);
 
-Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
+Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,

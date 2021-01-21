@@ -36,7 +36,7 @@ namespace tools {
 // Common JPEG XL decompress arguments.
 struct DecompressArgs {
   // Initialize non-static default options.
-  DecompressArgs();
+  DecompressArgs() = default;
 
   // Add all the command line options to the CommandLineParser. Note that the
   // options are tied to the instance that this was called on.
@@ -46,7 +46,7 @@ struct DecompressArgs {
   // compatible. Returns whether the validation was successful.
   jxl::Status ValidateArgs(const CommandLineParser& cmdline);
 
-  // Common djpegxl parameters.
+  // Common djxl parameters.
   const char* file_in = nullptr;
   const char* file_out = nullptr;
   size_t num_threads;

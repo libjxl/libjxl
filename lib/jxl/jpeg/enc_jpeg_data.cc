@@ -20,24 +20,42 @@
 namespace jxl {
 namespace jpeg {
 
-Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
-  jpeg_data.app_marker_type.resize(jpeg_data.app_data.size());
+namespace {
+
+// TODO(eustas): move to jpeg_data, to use from codec_jpg as well.
+// See if there is a canonically chunked ICC profile and mark corresponding
+// app-tags with AppMarkerType::kICC.
+Status DetectIccProfile(JPEGData& jpeg_data) {
+  JXL_DASSERT(jpeg_data.app_data.size() == jpeg_data.app_marker_type.size());
   size_t num_icc = 0;
   size_t num_icc_jpeg = 0;
   for (size_t i = 0; i < jpeg_data.app_data.size(); i++) {
     const auto& app = jpeg_data.app_data[i];
-    bool is_icc = app[0] == 0xE2;
-    constexpr char kICCTag[] = "ICC_PROFILE";
-    for (size_t i = 0; i < sizeof(kICCTag); i++) {
-      is_icc &= app.size() > 3 + i && app[3 + i] == kICCTag[i];
+    size_t pos = 0;
+    if (app[pos++] != 0xE2) continue;
+    // At least APPn + size; otherwise it should be intermarker-data.
+    JXL_DASSERT(app.size() >= 3);
+    size_t tag_length = (app[pos] << 8) + app[pos + 1];
+    pos += 2;
+    JXL_DASSERT(app.size() == tag_length + 1);
+    constexpr char kICCTag[] = "ICC_PROFILE";  // Implicit \0 at the end
+    constexpr size_t kICCTagSize = sizeof(kICCTag);
+    // Empty payload is 2 bytes for tag length itself + signature
+    if (tag_length < 2 + kICCTagSize) continue;
+
+    bool is_icc = true;
+    for (size_t j = 0; j < kICCTagSize; j++) {
+      is_icc &= (app[pos++] == kICCTag[j]);
     }
+
     if (is_icc) {
-      is_icc &= app[15] == num_icc + 1;
-      if (num_icc_jpeg == 0) {
-        num_icc_jpeg = app[16];
-      }
-      is_icc &= num_icc_jpeg == app[16];
+      uint8_t chunk_id = app[pos++];
+      uint8_t num_chunks = app[pos++];
+      is_icc &= (chunk_id == num_icc + 1);
+      if (num_icc_jpeg == 0) num_icc_jpeg = num_chunks;
+      is_icc &= (num_icc_jpeg == num_chunks);
     }
+
     if (is_icc) {
       num_icc++;
       jpeg_data.app_marker_type[i] = AppMarkerType::kICC;
@@ -46,6 +64,15 @@ Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
   if (num_icc != num_icc_jpeg) {
     return JXL_FAILURE("Invalid ICC chunks");
   }
+  return true;
+}
+
+}  // namespace
+
+Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes) {
+  jpeg_data.app_marker_type.resize(jpeg_data.app_data.size(),
+                                   AppMarkerType::kUnknown);
+  JXL_RETURN_IF_ERROR(DetectIccProfile(jpeg_data));
   BitWriter writer;
   JXL_RETURN_IF_ERROR(Bundle::Write(jpeg_data, &writer, 0, nullptr));
   writer.ZeroPadToByte();

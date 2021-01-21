@@ -295,12 +295,14 @@ JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const float XYZ[3]) {
   return xy;
 }
 
-void CIEXYZFromWhiteCIExy(const CIExy& xy, float XYZ[3]) {
+Status CIEXYZFromWhiteCIExy(const CIExy& xy, float XYZ[3]) {
   // Target Y = 1.
+  if (std::abs(xy.y) < 1e-12) return JXL_FAILURE("Y value is too small");
   const float factor = 1 / xy.y;
   XYZ[0] = xy.x * factor;
   XYZ[1] = 1;
   XYZ[2] = (1 - xy.x - xy.y) * factor;
+  return true;
 }
 #else  // JPEGXL_ENABLE_SKCMS
 // (LCMS interface requires xyY but we omit the Y for white points/primaries.)
@@ -610,9 +612,11 @@ void WriteICCTag(const char* value, size_t pos, PaddedBytes* JXL_RESTRICT icc) {
 
 Status WriteICCS15Fixed16(float value, size_t pos,
                           PaddedBytes* JXL_RESTRICT icc) {
-  if (value > 32767.99995f || value < -32767.99995f) {
-    return JXL_FAILURE("ICC value overflow");
-  }
+  // "nextafterf" for 32768.0f towards zero are:
+  // 32767.998046875, 32767.99609375, 32767.994140625
+  // Even the first value works well,...
+  bool ok = (-32767.995f <= value) && (value <= 32767.995f);
+  if (!ok) return JXL_FAILURE("ICC value is out of range / NaN");
   int32_t i = value * 65536.0f + 0.5f;
   // Use two's complement
   uint32_t u = static_cast<uint32_t>(i);
@@ -780,10 +784,15 @@ Status MaybeCreateProfile(const ColorEncoding& c,
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("cprt", tag_offset, tag_size, &tagtable, &offsets);
 
-  float d50[3] = {0.964203, 1.0, 0.824905};
-  float wtpt[3];
-  CIEXYZFromWhiteCIExy(c.GetWhitePoint(), wtpt);
-  JXL_RETURN_IF_ERROR(CreateICCXYZTag(c.IsGray() ? wtpt : d50, &tags));
+  // TODO(eustas): isn't it the other way round: gray image has d50 WhitePoint?
+  if (c.IsGray()) {
+    float wtpt[3];
+    JXL_RETURN_IF_ERROR(CIEXYZFromWhiteCIExy(c.GetWhitePoint(), wtpt));
+    JXL_RETURN_IF_ERROR(CreateICCXYZTag(wtpt, &tags));
+  } else {
+    float d50[3] = {0.964203, 1.0, 0.824905};
+    JXL_RETURN_IF_ERROR(CreateICCXYZTag(d50, &tags));
+  }
   FinalizeICCTag(&tags, &tag_offset, &tag_size);
   AddToICCTagTable("wtpt", tag_offset, tag_size, &tagtable, &offsets);
 
@@ -1072,7 +1081,7 @@ Status IdentifyPrimaries(const skcms_ICCProfile& profile,
          {-0.0085287, 0.0400428, 0.9684867}}};
     static constexpr float kWpD50XYZ[3] = {0.96420288, 1.0, 0.82490540};
     float wp_unadapted_XYZ[3];
-    CIEXYZFromWhiteCIExy(wp_unadapted, wp_unadapted_XYZ);
+    JXL_RETURN_IF_ERROR(CIEXYZFromWhiteCIExy(wp_unadapted, wp_unadapted_XYZ));
     float wp_D50_LMS[3], wp_unadapted_LMS[3];
     MatrixProduct(kLMSFromXYZ, kWpD50XYZ, wp_D50_LMS);
     MatrixProduct(kLMSFromXYZ, wp_unadapted_XYZ, wp_unadapted_LMS);

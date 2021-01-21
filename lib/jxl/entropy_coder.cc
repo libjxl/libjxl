@@ -54,10 +54,9 @@ namespace HWY_NAMESPACE {
 int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
                             const AcStrategy acs, const size_t covered_blocks,
                             const size_t log2_covered_blocks,
-                            const ac_qcoeff_t* JXL_RESTRICT block,
+                            const int32_t* JXL_RESTRICT block,
                             const size_t nzeros_stride,
                             int32_t* JXL_RESTRICT nzeros_pos) {
-  const HWY_CAPPED(float, kBlockDim) df;
   const HWY_CAPPED(int32_t, kBlockDim) di;
 
   const auto zero = Zero(di);
@@ -75,23 +74,23 @@ int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
 
     // Rows with LLF: mask out the LLF
     for (size_t y = 0; y < cy; y++) {
-      for (size_t x = 0; x < cx * kBlockDim; x += Lanes(df)) {
-        const auto llf_mask = BitCast(df, LoadU(di, llf_mask_pos + x));
+      for (size_t x = 0; x < cx * kBlockDim; x += Lanes(di)) {
+        const auto llf_mask = LoadU(di, llf_mask_pos + x);
 
         // LLF counts as zero so we don't include it in nzeros.
         const auto coef =
-            AndNot(llf_mask, Load(df, &block[y * cx * kBlockDim + x]));
+            AndNot(llf_mask, Load(di, &block[y * cx * kBlockDim + x]));
 
-        neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+        neg_sum_zero += VecFromMask(coef == zero);
       }
     }
   }
 
   // Remaining rows: no mask
   for (size_t y = cy; y < cy * kBlockDim; y++) {
-    for (size_t x = 0; x < cx * kBlockDim; x += Lanes(df)) {
-      const auto coef = Load(df, &block[y * cx * kBlockDim + x]);
-      neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+    for (size_t x = 0; x < cx * kBlockDim; x += Lanes(di)) {
+      const auto coef = Load(di, &block[y * cx * kBlockDim + x]);
+      neg_sum_zero += VecFromMask(coef == zero);
     }
   }
 
@@ -113,9 +112,8 @@ int32_t NumNonZeroExceptLLF(const size_t cx, const size_t cy,
 
 // Specialization for 8x8, where only top-left is LLF/DC.
 // About 1% overall speedup vs. NumNonZeroExceptLLF.
-int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
+int32_t NumNonZero8x8ExceptDC(const int32_t* JXL_RESTRICT block,
                               int32_t* JXL_RESTRICT nzeros_pos) {
-  const HWY_CAPPED(float, kBlockDim) df;
   const HWY_CAPPED(int32_t, kBlockDim) di;
 
   const auto zero = Zero(di);
@@ -127,21 +125,21 @@ int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
     const size_t y = 0;
     HWY_ALIGN const int32_t dc_mask_lanes[kBlockDim] = {-1};
 
-    for (size_t x = 0; x < kBlockDim; x += Lanes(df)) {
-      const auto dc_mask = BitCast(df, Load(di, dc_mask_lanes + x));
+    for (size_t x = 0; x < kBlockDim; x += Lanes(di)) {
+      const auto dc_mask = Load(di, dc_mask_lanes + x);
 
       // DC counts as zero so we don't include it in nzeros.
-      const auto coef = AndNot(dc_mask, Load(df, &block[y * kBlockDim + x]));
+      const auto coef = AndNot(dc_mask, Load(di, &block[y * kBlockDim + x]));
 
-      neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+      neg_sum_zero += VecFromMask(coef == zero);
     }
   }
 
   // Remaining rows: no mask
   for (size_t y = 1; y < kBlockDim; y++) {
-    for (size_t x = 0; x < kBlockDim; x += Lanes(df)) {
-      const auto coef = Load(df, &block[y * kBlockDim + x]);
-      neg_sum_zero += VecFromMask(ConvertTo(di, coef) == zero);
+    for (size_t x = 0; x < kBlockDim; x += Lanes(di)) {
+      const auto coef = Load(di, &block[y * kBlockDim + x]);
+      neg_sum_zero += VecFromMask(coef == zero);
     }
   }
 
@@ -162,7 +160,7 @@ int32_t NumNonZero8x8ExceptDC(const ac_qcoeff_t* JXL_RESTRICT block,
 // fixed number of bits (that depends on the size of the strategy).
 void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
-                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+                          const int32_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
                           const AcStrategyImage& ac_strategy,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,
@@ -212,7 +210,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
       for (int c : {1, 0, 2}) {
         if (sbx[c] << cs.HShift(c) != bx) continue;
         if (sby[c] << cs.VShift(c) != by) continue;
-        const ac_qcoeff_t* JXL_RESTRICT block = ac_rows[c] + offset[c];
+        const int32_t* JXL_RESTRICT block = ac_rows[c] + offset[c];
 
         int32_t nzeros =
             (covered_blocks == 1)
@@ -238,7 +236,7 @@ void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
         // Skip LLF.
         size_t prev = (nzeros > static_cast<ssize_t>(size / 16) ? 0 : 1);
         for (size_t k = covered_blocks; k < size && nzeros != 0; ++k) {
-          int32_t coeff = static_cast<int32_t>(block[order[k]]);
+          int32_t coeff = block[order[k]];
           size_t ctx =
               histo_offset + ZeroDensityContext(nzeros, k, covered_blocks,
                                                 log2_covered_blocks, prev);
@@ -264,7 +262,7 @@ namespace jxl {
 HWY_EXPORT(TokenizeCoefficients);
 void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
-                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+                          const int32_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
                           const AcStrategyImage& ac_strategy,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,

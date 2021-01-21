@@ -55,7 +55,7 @@ namespace jxl {
 // See also DecodeACVarBlock.
 void TokenizeCoefficients(const coeff_order_t* JXL_RESTRICT orders,
                           const Rect& rect,
-                          const ac_qcoeff_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
+                          const int32_t* JXL_RESTRICT* JXL_RESTRICT ac_rows,
                           const AcStrategyImage& ac_strategy,
                           YCbCrChromaSubsampling cs,
                           Image3I* JXL_RESTRICT tmp_num_nzeroes,

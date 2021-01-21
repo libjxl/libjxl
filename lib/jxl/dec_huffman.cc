@@ -196,7 +196,6 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
                                             BitReader* br) {
   if (alphabet_size > (1 << PREFIX_MAX_BITS)) return false;
 
-  std::vector<uint8_t> code_lengths(alphabet_size, 0);
   /* simple_code_or_skip is used as follows:
      1 for simple code;
      0 for no skipping, 2 skips 2 code lengths, 3 skips 3 code lengths */
@@ -206,6 +205,7 @@ bool HuffmanDecodingData::ReadFromBitStream(size_t alphabet_size,
     return ReadSimpleCode(alphabet_size, br, table_.data());
   }
 
+  std::vector<uint8_t> code_lengths(alphabet_size, 0);
   uint8_t code_length_code_lengths[kCodeLengthCodes] = {0};
   int space = 32;
   int num_codes = 0;

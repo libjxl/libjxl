@@ -99,7 +99,7 @@ JXL_EXPORT void JxlEncoderDestroy(JxlEncoder* enc);
  * Set the parallel runner for multithreading. May only be set before starting
  * encoding.
  *
- * @param enc encoder object
+ * @param enc encoder object.
  * @param parallel_runner function pointer to runner for multithreading. It may
  *        be NULL to use the default, single-threaded, runner. A multithreaded
  *        runner should be set to reach fast performance.
@@ -123,9 +123,9 @@ JxlEncoderSetParallelRunner(JxlEncoder* enc, JxlParallelRunner parallel_runner,
  * When the return value is not JXL_ENC_ERROR or JXL_ENC_SUCCESS, the encoding
  * requires more JxlEncoderProcessOutput calls to continue.
  *
- * @param enc encoder object
- * @param next_out pointer to next bytes to write to
- * @param avail_out amount of bytes available starting from *next_out
+ * @param enc encoder object.
+ * @param next_out pointer to next bytes to write to.
+ * @param avail_out amount of bytes available starting from *next_out.
  * @return JXL_ENC_SUCCESS when encoding finished and all events handled.
  * @return JXL_ENC_ERROR when encoding failed, e.g. invalid input.
  * @return JXL_ENC_NEED_MORE_OUTPUT more output buffer is necessary.
@@ -135,8 +135,25 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
                                                     size_t* avail_out);
 
 /**
- * Sets the buffer to read from for the next image to encode.
- * The buffer is owned by the caller.
+ * Sets the buffer to read JPEG encoded bytes from for the next image to encode
+ * losslessly.
+ *
+ * Currently only supports adding JPEG frames losslessly if there is only a
+ * single frame in the image.
+ *
+ * @param options set of encoder options to use when encoding the frame.
+ * @param buffer bytes to read JPEG from. Owned by the caller and its contents
+ * are copied internally.
+ * @param size size of buffer in bytes.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(JxlEncoderOptions* options,
+                                                   const uint8_t* buffer,
+                                                   size_t size);
+
+/**
+ * Sets the buffer to read pixels from for the next image to encode. Must call
+ * JxlEncoderSetDimensions before JxlEncoderAddImageFrame.
  *
  * Currently only some pixel formats are supported:
  * - JXL_TYPE_UINT8, input pixels assumed to be nonlinear SRGB encoded
@@ -144,15 +161,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  * - JXL_TYPE_FLOAT, input pixels are assumed to be linear SRGB encoded
  *
  * @param options set of encoder options to use when encoding the frame
- * @param pixel_format format for pixels. Object owned by user and its
+ * @param pixel_format format for pixels. Object owned by the caller and its
  * contents are copied internally.
- * @param buffer buffer type to input the pixel data from
+ * @param buffer buffer type to input the pixel data from. Owned by the caller
+ * and its contents are copied internally.
  * @param size size of buffer in bytes
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
-    void* buffer, size_t size);
+    const void* buffer, size_t size);
 
 /**
  * Declares that this encoder will not encode anything further.
@@ -217,11 +235,18 @@ JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
 
 /**
  * Create a new set of encoder options, with all values initially copied from
- * the source options, or set to default.
+ * the @p source options, or set to default if @p source is NULL.
+ *
+ * The returned pointer is an opaque struct tied to the encoder and it will be
+ * deallocated by the encoder when JxlEncoderDestroy() is called. For functions
+ * taking both a @ref JxlEncoder and a @ref JxlEncoderOptions, only
+ * JxlEncoderOptions created with this function for the same encoder instance
+ * can be used.
  *
  * @param enc encoder object
  * @param source source options to copy initial values from, or NULL to get
  * defaults initialized to defaults
+ * @return the opaque struct pointer identifying a new set of encoder options.
  */
 JXL_EXPORT JxlEncoderOptions* JxlEncoderOptionsCreate(
     JxlEncoder* enc, const JxlEncoderOptions* source);

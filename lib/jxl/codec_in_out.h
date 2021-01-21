@@ -126,7 +126,7 @@ class CodecInOut {
   void SetFromImage(Image3F&& color, const ColorEncoding& c_current) {
     Main().SetFromImage(std::move(color), c_current);
     SetIntensityTarget(this);
-    SetSize(color.xsize(), color.ysize());
+    SetSize(Main().xsize(), Main().ysize());
   }
 
   void SetSize(size_t xsize, size_t ysize) {
@@ -156,17 +156,20 @@ class CodecInOut {
     SetSize(xsize, ysize);
   }
 
-  template <typename T>
+  template <typename T,
+            class = typename std::enable_if<std::is_unsigned<T>::value>::type>
   Status VerifyDimensions(T xs, T ys) const {
     if (xs == 0 || ys == 0) return JXL_FAILURE("Empty image.");
     if (xs > dec_max_xsize) return JXL_FAILURE("Image too wide.");
     if (ys > dec_max_ysize) return JXL_FAILURE("Image too tall.");
 
-    const uint64_t num_pixels = uint64_t(xs) * ys;
+    const uint64_t num_pixels = static_cast<uint64_t>(xs) * ys;
     if (num_pixels > dec_max_pixels) return JXL_FAILURE("Image too big.");
 
     return true;
   }
+
+  uint64_t GetDecMaxPixels() const { return dec_max_pixels; }
 
   // Calls TransformTo for each ImageBundle (preview/frames).
   Status TransformTo(const ColorEncoding& c_desired,

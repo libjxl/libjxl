@@ -250,8 +250,9 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
     }
     for (size_t y = 0; y < idct->ysize(); y += kGroupDim) {
       for (size_t x = 0; x < idct->xsize(); x += kGroupDim) {
-        rects_to_process.emplace_back(x, y, kGroupDim, kGroupDim,
-                                      frame_dim.xsize, frame_dim.ysize);
+        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize, frame_dim.ysize);
+        if (rect.xsize() == 0 || rect.ysize() == 0) continue;
+        rects_to_process.push_back(rect);
       }
     }
   }

@@ -153,6 +153,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/enc_xyb.cc
   jxl/enc_xyb.h
   jxl/encode.cc
+  jxl/encode_internal.h
   jxl/entropy_coder.cc
   jxl/entropy_coder.h
   jxl/epf.cc

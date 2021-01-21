@@ -88,6 +88,9 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
     if (!MarkerIsICC(marker)) continue;
 
     const int current_marker = marker->data[kICCSignatureSize];
+    if (current_marker == 0) {
+      return JXL_FAILURE("inconsistent JPEG ICC marker numbering");
+    }
     const int current_num_markers = marker->data[kICCSignatureSize + 1];
     if (current_marker > current_num_markers) {
       return JXL_FAILURE("inconsistent JPEG ICC marker numbering");
@@ -217,13 +220,15 @@ constexpr uint8_t kApp2 = 0xE2;
 const uint8_t kIccProfileTag[] = {'I', 'C', 'C', '_', 'P', 'R',
                                   'O', 'F', 'I', 'L', 'E', 0x00};
 Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
-                          const ByteSpan& tag, PaddedBytes* output) {
+                          const ByteSpan& tag, PaddedBytes* output,
+                          bool allow_permutations = false) {
   output->clear();
 
   std::vector<ByteSpan> chunks;
   std::vector<bool> presence;
   size_t expected_number_of_parts = 0;
   bool is_first_chunk = true;
+  size_t ordinal = 0;
   for (const auto& marker : src.app_data) {
     if (marker.empty() || marker[0] != marker_type) {
       continue;
@@ -243,6 +248,11 @@ Status ParseChunkedMarker(const jpeg::JPEGData& src, uint8_t marker_type,
     }
     uint8_t index = payload[0];
     uint8_t total = payload[1];
+    ordinal++;
+    if (!allow_permutations) {
+      if (index != ordinal) return JXL_FAILURE("Invalid chunk order.");
+    }
+
     payload.remove_prefix(2);
 
     JXL_RETURN_IF_ERROR(total != 0);
@@ -307,7 +317,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   if (target == DecodeTarget::kQuantizedCoeffs) {
     io->frames.clear();
     io->frames.reserve(1);
-    io->frames.push_back(ImageBundle(&io->metadata.m));
+    io->frames.emplace_back(&io->metadata.m);
     io->Main().jpeg_data = make_unique<jpeg::JPEGData>();
     jpeg::JPEGData* jpeg_data = io->Main().jpeg_data.get();
     if (!jpeg::ReadJpeg(bytes.data(), bytes.size(),
@@ -635,6 +645,6 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   }
 
   return true;
-}  // namespace jxl
+}
 
 }  // namespace jxl

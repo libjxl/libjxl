@@ -149,6 +149,10 @@ struct ANSCode {
   bool use_prefix_code;
   uint8_t log_alpha_size;  // for ANS.
   LZ77Params lz77;
+  // Maximum number of bits necessary to represent the result of a
+  // ReadHybridUint call done with this ANSCode.
+  size_t max_num_bits = 0;
+  void UpdateMaxNumBits(size_t ctx, size_t symbol);
 };
 
 class ANSSymbolReader {
@@ -255,6 +259,10 @@ class ANSSymbolReader {
     // bits. However, for speed no error is propagated here, instead limit the
     // nbits size. If nbits > 29, the code stream is invalid, but no error is
     // returned.
+    // Note that in most cases we will emit an error if the histogram allows
+    // representing numbers that would cause invalid shifts, but we need to
+    // keep this check as when LZ77 is enabled it might make sense to have an
+    // histogram that could in principle cause invalid shifts.
     nbits &= 31u;
     uint32_t low = token & ((1 << lsb_in_token) - 1);
     token >>= lsb_in_token;

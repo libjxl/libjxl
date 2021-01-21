@@ -19,13 +19,12 @@
 namespace jxl {
 
 int TestOneInput(const uint8_t* data, size_t size) {
+  JxlDecoderStatus status;
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
   JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING);
-  const uint8_t* next_in = data;
-  size_t avail_in = size;
-  JxlDecoderStatus status;
+  JxlDecoderSetInput(dec, data, size);
 
-  status = JxlDecoderProcessInput(dec, &next_in, &avail_in);
+  status = JxlDecoderProcessInput(dec);
 
   if (status != JXL_DEC_BASIC_INFO) {
     JxlDecoderDestroy(dec);
@@ -43,7 +42,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
       }
     }
   }
-  status = JxlDecoderProcessInput(dec, &next_in, &avail_in);
+  status = JxlDecoderProcessInput(dec);
 
   if (status != JXL_DEC_COLOR_ENCODING) {
     JxlDecoderDestroy(dec);

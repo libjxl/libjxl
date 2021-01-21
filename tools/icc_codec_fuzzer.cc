@@ -45,10 +45,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
     icc.assign(data, data + size);
     BitWriter writer;
     AuxOut aux;
-    jxl::Status status = WriteICC(icc, &writer, 0, &aux);
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    if (!status) __builtin_trap();
+    JXL_ASSERT(WriteICC(icc, &writer, 0, &aux));
   }
 #else  // JXL_ICC_FUZZER_SLOW_TEST
   if (read) {
@@ -58,10 +57,13 @@ int TestOneInput(const uint8_t* data, size_t size) {
   } else {
     // Writing (predicting) parses the original ICC profile.
     PaddedBytes result;
-    jxl::Status status = PredictICC(data, size, &result);
     // Writing should support any random bytestream so must succeed, make
     // fuzzer fail if not.
-    if (!status) __builtin_trap();
+    JXL_ASSERT(PredictICC(data, size, &result));
+    PaddedBytes reconstructed;
+    JXL_ASSERT(UnpredictICC(result.data(), result.size(), &reconstructed));
+    JXL_ASSERT(reconstructed.size() == size);
+    JXL_ASSERT(memcmp(data, reconstructed.data(), size) == 0);
   }
 #endif  // JXL_ICC_FUZZER_SLOW_TEST
   return 0;

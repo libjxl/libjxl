@@ -171,12 +171,13 @@ void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
     }
     float t =
         (target_size - best_below_size) / (best_above_size - best_below_size);
-    if (best_above > 100.f && ratio < 1.f)
+    if (best_above > 100.f && ratio < 1.f) {
       quality = (quality + 105) / 2;
-    else if (best_above - best_below > 1000 && ratio > 1.f)
+    } else if (best_above - best_below > 1000 && ratio > 1.f) {
       quality -= 1000;
-    else
+    } else {
       quality = best_above * t + best_below * (1.f - t);
+    }
     if (quality >= 100.f) quality = 100.f;
   }
   args->params.quality_pair = std::make_pair(best_quality, best_quality);

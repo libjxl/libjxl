@@ -85,6 +85,22 @@ test_copyright() {
   return ${ret}
 }
 
+# Check that "dec_" code doesn't depend on "enc_" headers.
+test_dec_enc_deps() {
+  local ret=0
+  local f
+  for f in $(git ls-files | grep -E '/dec_'); do
+    if [[ "${f#third_party/}" == "$f" ]]; then
+      # $f is not in third_party/
+      if grep -n -H -E "#include.*/enc_" "$f" >&2; then
+        echo "$f: Don't include \"enc_*\" files from \"dec_*\" files." >&2
+        ret=1
+      fi
+    fi
+  done
+  return ${ret}
+}
+
 # Check for git merge conflict markers.
 test_merge_conflict() {
   local ret=0
@@ -145,7 +161,7 @@ test_deps_version() {
     fi
     line="${line#[submodule \"}"
     line="${line%\"]}"
-    local varname="${line^^}"
+    local varname=$(tr '[:lower:]' '[:upper:]' <<< "${line}")
     varname="${varname/\//_}"
     if ! grep -F "${varname}=" deps.sh >/dev/null; then
       # Ignoring submodule not in deps.sh

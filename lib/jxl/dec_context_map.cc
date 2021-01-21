@@ -20,7 +20,6 @@
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_ans.h"
-#include "lib/jxl/enc_context_map.h"
 #include "lib/jxl/entropy_coder.h"
 
 namespace jxl {

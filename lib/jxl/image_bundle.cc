@@ -244,16 +244,6 @@ void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
   VerifySizes();
 }
 
-void ImageBundle::SetDepth(ImageF&& depth) {
-  JXL_CHECK(depth.xsize() != 0 && depth.ysize() != 0);
-  const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kDepth);
-  JXL_CHECK(eci != nullptr);
-  const size_t ec = eci - metadata_->extra_channel_info.data();
-  JXL_ASSERT(ec < extra_channels_.size());
-  extra_channels_[ec] = std::move(depth);
-  VerifySizes();
-}
-
 void ImageBundle::SetExtraChannels(std::vector<ImageF>&& extra_channels) {
   JXL_CHECK(!extra_channels.empty());
   for (const ImageF& plane : extra_channels) {

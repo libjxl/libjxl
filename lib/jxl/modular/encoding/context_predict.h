@@ -68,8 +68,8 @@ struct Header : public Fields {
 };
 
 struct State {
-  pixel_type_w prediction[kNumPredictors];
-  pixel_type_w pred;  // *before* removing the added bits.
+  pixel_type_w prediction[kNumPredictors] = {};
+  pixel_type_w pred = 0;  // *before* removing the added bits.
   std::vector<uint32_t> pred_errors[kNumPredictors];
   std::vector<int32_t> error;
   Header header;

@@ -71,7 +71,7 @@ Status InvSubtractGreen(Image& input, size_t begin_c, size_t rct_type) {
   size_t h = c0.h;
   if (c0.plane.xsize() < w || c0.plane.ysize() < h || c1.plane.xsize() < w ||
       c1.plane.ysize() < h || c2.plane.xsize() < w || c2.plane.ysize() < h ||
-      c1.w < w || c1.h < h || c2.w < w || c2.h < h) {
+      c1.w != w || c1.h != h || c2.w != w || c2.h != h) {
     return JXL_FAILURE(
         "Invalid channel dimensions to apply inverse subtract_green (maybe "
         "chroma is subsampled?).");

@@ -523,20 +523,21 @@ TEST(JxlTest, RoundtripImageBundleOriginalBits) {
     }
 
     uint32_t exponent_bit_depth;
-    if (bit_depth < 10)
+    if (bit_depth < 10) {
       exponent_bit_depth = 2;
-    else if (bit_depth < 12)
+    } else if (bit_depth < 12) {
       exponent_bit_depth = 3;
-    else if (bit_depth < 16)
+    } else if (bit_depth < 16) {
       exponent_bit_depth = 4;
-    else if (bit_depth < 20)
+    } else if (bit_depth < 20) {
       exponent_bit_depth = 5;
-    else if (bit_depth < 24)
+    } else if (bit_depth < 24) {
       exponent_bit_depth = 6;
-    else if (bit_depth < 28)
+    } else if (bit_depth < 28) {
       exponent_bit_depth = 7;
-    else
+    } else {
       exponent_bit_depth = 8;
+    }
 
     io.metadata.m.bit_depth.bits_per_sample = bit_depth;
     io.metadata.m.bit_depth.floating_point_sample = true;

@@ -21,25 +21,23 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
 
-using namespace jxl;
-
 extern "C" {
 
 /* NOTA BENE: see file history to uncover how to decode HDR JPEGs to pixels. */
 
 /** Result: uint32_t 'size' followed by compressed image (JXL). */
 uint8_t* jxlCompress(const uint8_t* data, size_t size) {
-  PaddedBytes compressed;
-  CodecInOut io;
-  Codec input_codec;
-  if (!SetFromBytes(Span<const uint8_t>(data, size), &io, nullptr,
-                    &input_codec)) {
+  jxl::PaddedBytes compressed;
+  jxl::CodecInOut io;
+  jxl::Codec input_codec;
+  if (!jxl::SetFromBytes(jxl::Span<const uint8_t>(data, size), &io, nullptr,
+                         &input_codec)) {
     return nullptr;
   }
-  CompressParams params;
-  PassesEncoderState passes_encoder_state;
-  if (!EncodeFile(params, &io, &passes_encoder_state, &compressed, nullptr,
-                  nullptr)) {
+  jxl::CompressParams params;
+  jxl::PassesEncoderState passes_encoder_state;
+  if (!jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed, nullptr,
+                       nullptr)) {
     return nullptr;
   }
   size_t compressed_size = compressed.size();
@@ -53,17 +51,17 @@ uint8_t* jxlCompress(const uint8_t* data, size_t size) {
 
 /** Result: uint32_t 'size' followed by decompressed image (JPG). */
 uint8_t* jxlDecompress(const uint8_t* data, size_t size) {
-  PaddedBytes decompressed;
-  CodecInOut io;
-  DecompressParams params;
-  if (!DecodeFile(params, Span<const uint8_t>(data, size), &io, nullptr,
-                  nullptr)) {
+  jxl::PaddedBytes decompressed;
+  jxl::CodecInOut io;
+  jxl::DecompressParams params;
+  if (!jxl::DecodeFile(params, jxl::Span<const uint8_t>(data, size), &io,
+                       nullptr, nullptr)) {
     return nullptr;
   }
   io.use_sjpeg = false;
   io.jpeg_quality = 100;
-  if (!Encode(io, Codec::kJPG, io.Main().c_current(), 8, &decompressed,
-              nullptr)) {
+  if (!jxl::Encode(io, jxl::Codec::kJPG, io.Main().c_current(), 8,
+                   &decompressed, nullptr)) {
     return nullptr;
   }
   size_t decompressed_size = decompressed.size();

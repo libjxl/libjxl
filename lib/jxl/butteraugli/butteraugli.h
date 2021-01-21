@@ -143,7 +143,7 @@ double ButteraugliFuzzyInverse(double seek);
 #endif  // BUTTERAUGLI_HAS_ASSUME_ALIGNED
 
 struct MaskImage {
-  MaskImage() {}
+  MaskImage() = default;
   MaskImage(int xs, int ys) : mask_x(xs, ys), mask_yb(xs, ys) {}
   ImageF mask_x;
   ImageF mask_yb;
@@ -184,7 +184,7 @@ class ButteraugliComparator {
   // we can test the hypothesis that a higher weighing of the X channel would
   // improve results at higher Butteraugli values.
   ButteraugliComparator(const Image3F &rgb0, const ButteraugliParams &params);
-  virtual ~ButteraugliComparator();
+  virtual ~ButteraugliComparator() = default;
 
   // Computes the butteraugli map between the original image given in the
   // constructor and the distorted image give here.

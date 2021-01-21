@@ -22,10 +22,9 @@
 
 int PrintBasicInfo(FILE* file) {
   uint8_t* data = NULL;
-  uint8_t* next_in = NULL;
-  size_t avail_in = 0;
+  size_t data_size = 0;
   // In how large chunks to read from the file and try decoding the basic info.
-  size_t chunk_size = 64;
+  const size_t chunk_size = 64;
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   if (!dec) {
@@ -45,19 +44,29 @@ int PrintBasicInfo(FILE* file) {
   int seen_basic_info = 0;
 
   for (;;) {
-    JxlDecoderStatus status =
-        JxlDecoderProcessInput(dec, (const uint8_t**)&next_in, &avail_in);
+    // The firs time, this will output JXL_DEC_NEED_MORE_INPUT because no
+    // input is set yet, this is ok since the input is set when handling this
+    // event.
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
 
     if (status == JXL_DEC_ERROR) {
       fprintf(stderr, "Decoder error\n");
       break;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
-      size_t pos = next_in - data;  // Position next_in has advanced.
-      data = (uint8_t*)realloc(data, avail_in + chunk_size);
-      if (avail_in != 0) memcpy(data, data + pos, avail_in);
-      size_t readsize = fread(data + avail_in, 1, chunk_size, file);
-      avail_in += readsize;
-      next_in = data;
+      // The firstt time there is nothing to release and it returns 0, but that
+      // is ok.
+      size_t remaining = JxlDecoderReleaseInput(dec);
+      // move any remaining bytes to the front if necessary
+      if (remaining != 0) {
+        memmove(data, data + data_size - remaining, remaining);
+      }
+      // resize the buffer to append one more chunk of data
+      // TODO(lode): avoid unnecessary reallocations
+      data = (uint8_t*)realloc(data, remaining + chunk_size);
+      // append bytes read from the file behind the remaining bytes
+      size_t read_size = fread(data + remaining, 1, chunk_size, file);
+      data_size = remaining + read_size;
+      JxlDecoderSetInput(dec, data, data_size);
     } else if (status == JXL_DEC_SUCCESS) {
       // Finished all processing.
       break;
@@ -203,8 +212,8 @@ int PrintBasicInfo(FILE* file) {
     }
   }
 
-  free(data);
   JxlDecoderDestroy(dec);
+  free(data);
 
   return seen_basic_info;
 }

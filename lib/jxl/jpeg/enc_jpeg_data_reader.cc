@@ -31,14 +31,15 @@
 #define JXL_DEBUG_JPEG_DATA_READER JXL_DEBUG_ON_ERROR
 #endif  // JXL_DEBUG_JPEG_DATA_READER
 
-#define JXL_JPEG_DEBUG(...) JXL_DEBUG(JXL_DEBUG_JPEG_DATA_READER, __VA_ARGS__)
+#define JXL_JPEG_DEBUG(format, ...) \
+  JXL_DEBUG(JXL_DEBUG_JPEG_DATA_READER, format, ##__VA_ARGS__)
 
 namespace jxl {
 namespace jpeg {
 
 namespace {
 static const int kBrunsliMaxSampling = 15;
-static const size_t kBrunsliMaxNumBlocks = 1ull << 21;
+static const size_t kBrunsliMaxNumBlocks = 1ull << 24;
 
 // Macros for commonly used error conditions.
 
@@ -51,7 +52,7 @@ static const size_t kBrunsliMaxNumBlocks = 1ull << 21;
   }
 
 #define JXL_JPEG_VERIFY_INPUT(var, low, high, code)                \
-  if (var < low || var > high) {                                   \
+  if ((var) < (low) || (var) > (high)) {                           \
     JXL_JPEG_DEBUG("Invalid " #var ": %d", static_cast<int>(var)); \
     jpg->error = JPEGReadError::INVALID_##code;                    \
     return false;                                                  \
@@ -405,6 +406,7 @@ bool ProcessAPP(const uint8_t* data, const size_t len, size_t* pos,
   size_t marker_len = ReadUint16(data, pos);
   JXL_JPEG_VERIFY_INPUT(marker_len, 2, 65535, MARKER_LEN);
   JXL_JPEG_VERIFY_LEN(marker_len - 2);
+  JXL_DASSERT(*pos >= 3);
   // Save the marker type together with the app data.
   const uint8_t* app_str_start = data + *pos - 3;
   std::vector<uint8_t> app_str(app_str_start, app_str_start + marker_len + 1);
@@ -1030,8 +1032,7 @@ bool ReadJpeg(const uint8_t* data, const size_t len, JpegReadMode mode,
     if (num_skipped > 0) {
       // Add a fake marker to indicate arbitrary in-between-markers data.
       jpg->marker_order.push_back(0xff);
-      jpg->inter_marker_data.push_back(
-          std::vector<uint8_t>(data + pos, data + pos + num_skipped));
+      jpg->inter_marker_data.emplace_back(data + pos, data + pos + num_skipped);
       pos += num_skipped;
     }
     JXL_JPEG_EXPECT_MARKER();

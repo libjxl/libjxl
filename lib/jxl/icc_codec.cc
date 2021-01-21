@@ -110,26 +110,52 @@ void AppendKeyword(const std::string& keyword, PaddedBytes* data) {
   EncodeKeyword(keyword, data->data(), data->size(), data->size() - 4);
 }
 
-PaddedBytes Transpose(const uint8_t* data, size_t size, size_t width) {
+// Unshuffles or de-interleaves bytes, for example with width 2, turns
+// "AaBbCcDc" into "ABCDabcd", this for example de-interleaves UTF-16 bytes into
+// first all the high order bytes, then all the low order bytes.
+// Transposes a matrix of width columns and ceil(size / width) rows. There are
+// size elements, size may be < width * height, if so the
+// last elements of the bottom row are missing, the missing spots are
+// transposed along with the filled spots, and the result has the missing
+// elements at the bottom of the rightmost column. The input is the input matrix
+// in scanline order, the output is the result matrix in scanline order, with
+// missing elements skipped over (this may occur at multiple positions).
+void Unshuffle(uint8_t* data, size_t size, size_t width) {
+  size_t height = (size + width - 1) / width;  // amount of rows of input
   PaddedBytes result(size);
+  // i = input index, j output index
   size_t s = 0, j = 0;
   for (size_t i = 0; i < size; i++) {
     result[j] = data[i];
-    j += width;
+    j += height;
     if (j >= size) j = ++s;
   }
-  return result;
-}
 
-void Shuffle(uint8_t* data, size_t size, size_t width) {
-  PaddedBytes result = Transpose(data, size, width);
   for (size_t i = 0; i < size; i++) {
     data[i] = result[i];
   }
 }
 
-void Unshuffle(uint8_t* data, size_t size, size_t width) {
-  PaddedBytes result = Transpose(data, size, (size + width - 1) / width);
+// Shuffles or interleaves bytes, for example with width 2, turns "ABCDabcd"
+// into "AaBbCcDc". Transposes a matrix of ceil(size / width) columns and
+// width rows. There are size elements, size may be < width * height, if so the
+// last elements of the rightmost column are missing, the missing spots are
+// transposed along with the filled spots, and the result has the missing
+// elements at the end of the bottom row. The input is the input matrix in
+// scanline order but with missing elements skipped (which may occur in multiple
+// locations), the output is the result matrix in scanline order (with
+// no need to skip missing elements as they are past the end of the data).
+void Shuffle(uint8_t* data, size_t size, size_t width) {
+  size_t height = (size + width - 1) / width;  // amount of rows of output
+  PaddedBytes result(size);
+  // i = output index, j input index
+  size_t s = 0, j = 0;
+  for (size_t i = 0; i < size; i++) {
+    result[i] = data[j];
+    j += height;
+    if (j >= size) j = ++s;
+  }
+
   for (size_t i = 0; i < size; i++) {
     data[i] = result[i];
   }
@@ -530,10 +556,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   // Tag list
   size_t pos = kICCHeaderSize;
   if (pos + 4 <= size) {
-    uint32_t numtags = DecodeUint32(icc, size, pos);
+    uint64_t numtags = DecodeUint32(icc, size, pos);
     pos += 4;
     EncodeVarInt(numtags + 1, &commands);
-    uint32_t prevtagstart = kICCHeaderSize + numtags * 12;
+    uint64_t prevtagstart = kICCHeaderSize + numtags * 12;
     uint32_t prevtagsize = 0;
     for (size_t i = 0; i < numtags; i++) {
       if (pos + 12 > size) break;
@@ -596,7 +622,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       }
 
       uint8_t command = tagcode;
-      size_t predicted_tagstart = prevtagstart + prevtagsize;
+      uint64_t predicted_tagstart = prevtagstart + prevtagsize;
       if (predicted_tagstart != tagstart) command |= kFlagBitOffset;
       size_t predicted_tagsize = prevtagsize;
       if (tag == "rXYZ" || tag == "gXYZ" || tag == "bXYZ" || tag == "kXYZ" ||
@@ -736,7 +762,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     }
 
     if (commands_add.empty() && data_add.empty() && tagtype == "gbd " &&
-        pos == tagstart + 8 && pos + tagsize - 8 <= size && pos >= 16) {
+        pos == tagstart + 8 && pos + tagsize - 8 <= size && pos >= 16 &&
+        tagsize > 8) {
       size_t width = 4, order = 0, stride = width;
       size_t num = tagsize - 8;
       uint8_t flags = (order << 2) | (width - 1) | (stride == width ? 0 : 16);

@@ -20,6 +20,7 @@
 #include <stddef.h>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 #include "lib/jxl/base/compiler_specific.h"
@@ -45,14 +46,16 @@ struct NoiseParams {
 };
 
 static inline std::pair<int, float> IndexAndFrac(float x) {
+  constexpr size_t kScaleNumerator = NoiseParams::kNumNoisePoints - 2;
   // TODO: instead of 1, this should be a proper Y range.
-  constexpr float kScale = (NoiseParams::kNumNoisePoints - 2) / 1;
+  constexpr float kScale = kScaleNumerator / 1;
   float scaled_x = std::max(0.f, x * kScale);
-  size_t floor_x = static_cast<size_t>(scaled_x);
-  if (JXL_UNLIKELY(floor_x > NoiseParams::kNumNoisePoints - 2)) {
-    floor_x = NoiseParams::kNumNoisePoints - 2;
+  float floor_x;
+  float frac_x = std::modf(scaled_x, &floor_x);
+  if (JXL_UNLIKELY(scaled_x > kScaleNumerator)) {
+    floor_x = kScaleNumerator;
   }
-  return std::make_pair(floor_x, scaled_x - floor_x);
+  return std::make_pair(static_cast<size_t>(static_cast<int>(floor_x)), frac_x);
 }
 
 struct NoiseLevel {

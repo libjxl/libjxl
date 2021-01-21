@@ -161,7 +161,7 @@ enum class DecoderStage : uint32_t {
 };
 
 struct JxlDecoderStruct {
-  JxlDecoderStruct() {}
+  JxlDecoderStruct() = default;
 
   JxlMemoryManager memory_manager;
   std::unique_ptr<jxl::ThreadPool> thread_pool;
@@ -290,6 +290,9 @@ struct JxlDecoderStruct {
 
   // Statistics which CodecInOut can keep
   uint64_t dec_pixels;
+
+  const uint8_t* next_in;
+  size_t avail_in;
 };
 
 // TODO(zond): Make this depend on the data loaded into the decoder.
@@ -335,6 +338,8 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->dc_out_size = 0;
   dec->image_out_size = 0;
   dec->dec_pixels = 0;
+  dec->next_in = 0;
+  dec->avail_in = 0;
 
   dec->passes_state.reset(nullptr);
 
@@ -1070,9 +1075,25 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 }  // namespace
 }  // namespace jxl
 
-JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec,
-                                        const uint8_t** next_in,
-                                        size_t* avail_in) {
+JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec, const uint8_t* data,
+                                    size_t size) {
+  if (dec->next_in) return JXL_DEC_ERROR;
+
+  dec->next_in = data;
+  dec->avail_in = size;
+  return JXL_DEC_SUCCESS;
+}
+
+size_t JxlDecoderReleaseInput(JxlDecoder* dec) {
+  size_t result = dec->avail_in;
+  dec->next_in = nullptr;
+  dec->avail_in = 0;
+  return result;
+}
+
+JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
+  const uint8_t** next_in = &dec->next_in;
+  size_t* avail_in = &dec->avail_in;
   if (dec->stage == DecoderStage::kInited) {
     dec->stage = DecoderStage::kStarted;
   }

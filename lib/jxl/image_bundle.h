@@ -162,15 +162,10 @@ class ImageBundle {
   ImageF* alpha();
 
   // -- DEPTH
-  void SetDepth(ImageF&& depth);
   bool HasDepth() const {
     return metadata_->Find(ExtraChannel::kDepth) != nullptr;
   }
   const ImageF& depth() const;
-  // Returns the dimensions of the depth image. Do not call if !HasDepth.
-  size_t DepthSize(size_t size) const {
-    return metadata_->Find(ExtraChannel::kDepth)->Size(size);
-  }
 
   // -- EXTRA CHANNELS
 

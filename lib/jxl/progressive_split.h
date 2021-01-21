@@ -130,10 +130,11 @@ class ProgressiveSplitter {
     }
   }
 
-  void SplitACCoefficients(const ac_qcoeff_t* JXL_RESTRICT block, size_t size,
+  template <typename T>
+  void SplitACCoefficients(const T* JXL_RESTRICT block, size_t size,
                            const AcStrategy& acs, size_t bx, size_t by,
                            size_t offset,
-                           ac_qcoeff_t* JXL_RESTRICT output[kMaxNumPasses][3]);
+                           T* JXL_RESTRICT output[kMaxNumPasses][3]);
 
  private:
   bool SuperblockIsSalient(size_t row_start, size_t col_start, size_t num_rows,
@@ -144,6 +145,14 @@ class ProgressiveSplitter {
   const ImageF* saliency_map_ = nullptr;
   float saliency_threshold_ = 0.0;
 };
+
+extern template void ProgressiveSplitter::SplitACCoefficients<int32_t>(
+    const int32_t* JXL_RESTRICT, size_t, const AcStrategy&, size_t, size_t,
+    size_t, int32_t* JXL_RESTRICT[kMaxNumPasses][3]);
+
+extern template void ProgressiveSplitter::SplitACCoefficients<int16_t>(
+    const int16_t* JXL_RESTRICT, size_t, const AcStrategy&, size_t, size_t,
+    size_t, int16_t* JXL_RESTRICT[kMaxNumPasses][3]);
 
 }  // namespace jxl
 

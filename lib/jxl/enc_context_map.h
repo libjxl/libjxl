@@ -24,8 +24,6 @@
 
 namespace jxl {
 
-// Context map uses uint8_t.
-constexpr size_t kMaxClusters = 256;
 // Max limit is 255 because encoding assumes numbers < 255
 // More clusters can help compression, but makes encode/decode somewhat slower
 static const size_t kClustersLimit = 128;

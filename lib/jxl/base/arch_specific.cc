@@ -130,18 +130,26 @@ class Info {
   bool amd_;
 };
 
-// Detects number of packages/cores/logical processors (hyperthreads).
+// Detects number of packages/cores/logical processors (HT/SMT).
 class X64_Topology {
+  enum ApicType {
+    kCpuid1_8Bit,   // initial APIC ID
+    kCpuidB_32Bit,  // x2APIC ID
+    kCpuid1E_32Bit  // AMD extended APIC ID
+  };
+
  public:
   // Enumerates all APIC IDs and partitions them into fields, or returns false
   // if the topology cannot be detected (e.g. due to missing OS support).
   static Status Detect(ProcessorTopology* topology) {
     const Info info;
+    if (DetectLegacyAMD(info, topology)) return true;
+
+    const ApicType type = DetectApicType(info);
 
     uint32_t core_bits;
     uint32_t logical_bits;
-    const bool cpuid11_usable =
-        DetectFieldWidths(info, &core_bits, &logical_bits);
+    DetectFieldWidths(info, type, &core_bits, &logical_bits);
 
     uint32_t total_bits = 0;
     // Order matters:
@@ -157,7 +165,7 @@ class X64_Topology {
         return false;
       }
 
-      const uint32_t id = ProcessorId(info, cpuid11_usable);
+      const uint32_t id = ProcessorId(type);
       logical.AddValue(id);
       core.AddValue(id);
       package.AddValue(id);
@@ -172,108 +180,176 @@ class X64_Topology {
   }
 
  private:
-  // How many bits in the xAPIC ID identify the core (per package).
-  // #active cores <= (1 << bits).
-  static uint32_t CoreBits(const Info& info) {
+  // Returns true if this is an old AMD CPU.
+  static Status DetectLegacyAMD(const Info& info, ProcessorTopology* topology) {
+    if (!info.AMD()) return false;
+
+    // "hyperthreads" not set, we have a single logical (no HT nor multicore)
     Regs r;
-    if (info.Intel()) {
-      if (info.MaxFunc() < 4) return 0;
+    Cpuid(1, 0, &r);
+    if ((r.d & (1U << 28)) == 0) {
+      topology->logical_per_core = 1;
+      topology->cores_per_package = 1;
+      topology->packages = 1;
+      return true;
+    }
+
+    // cpuid:8_1.c bit 2 is "legacy multicore" but it is still set in
+    // Threadripper 3, so we do not learn anything from it.
+
+    // Use "extended" method like Intel: variable-width fields in APIC ID.
+    return false;
+  }
+
+  static ApicType DetectApicType(const Info& info) {
+    Regs r;
+    Cpuid(1, 0, &r);
+    if (info.MaxFunc() >= 0xB && (r.c & (1u << 21))) {
+      return kCpuidB_32Bit;
+    }
+
+    if (info.AMD() && info.MaxExtFunc() >= 0x8000001E) {
+      Cpuid(0x80000001u, 0, &r);
+      if (r.c & (1u << 22)) {  // topology extensions
+        return kCpuid1E_32Bit;
+      }
+    }
+
+    return kCpuid1_8Bit;
+  }
+
+  // `core_bits`: How many bits in the APIC ID identify the core (per package).
+  // #active cores <= (1 << core_bits).
+  // `logical_bits`: How many bits identify the logical processor (per core).
+  static void DetectFieldWidths_Extended(const Info& info, const ApicType type,
+                                         uint32_t* JXL_RESTRICT core_bits,
+                                         uint32_t* JXL_RESTRICT logical_bits) {
+    *core_bits = 0;
+    *logical_bits = 0;
+
+    Regs r;
+    Cpuid(1, 0, &r);
+    const uint32_t logical_per_package = (r.b >> 16) & 0xFF;
+
+    if (info.Intel() && info.MaxFunc() >= 4) {
+      const bool hyperthreading_support = (r.d & (1U << 28)) != 0;
+
       Cpuid(4, 0, &r);
-      return static_cast<uint32_t>(CeilLog2Nonzero((r.a >> 26) + 1));
+      *core_bits = static_cast<uint32_t>(CeilLog2Nonzero((r.a >> 26) + 1));
+
+      if (hyperthreading_support) {
+        const uint32_t logical_per_core = logical_per_package >> *core_bits;
+        if (logical_per_core != 0) {
+          *logical_bits =
+              static_cast<uint32_t>(CeilLog2Nonzero(logical_per_core));
+        }
+      }
     }
 
     if (info.AMD()) {
-      if (info.MaxExtFunc() < 0x80000008u) return 0;
-      Cpuid(0x80000008u, 0, &r);
-      const uint32_t core_bits = (r.c >> 12) & 0xF;  // ignore if 0
-      const uint32_t num_cores = (r.c & 0xFF) + 1;
-      return core_bits != 0 ? core_bits
-                            : static_cast<uint32_t>(CeilLog2Nonzero(num_cores));
-    }
+      if (info.MaxExtFunc() >= 0x80000008u) {
+        Cpuid(0x80000008u, 0, &r);
+        // AMD 54945 Rev 3.03 documents this as total _threads_ per package;
+        // previously, this was listed as the number of _cores_.
+        uint32_t thread_bits = (r.c >> 12) & 0xF;
+        if (thread_bits == 0) {  // Invalid, ignore
+          const uint32_t num_threads = (r.c & 0xFF) + 1;
+          thread_bits = static_cast<uint32_t>(CeilLog2Nonzero(num_threads));
+        }
 
-    return 0;
+        if (type == kCpuid1E_32Bit) {
+          Cpuid(0x8000001Eu, 0, &r);
+          const uint32_t threads_per_core = ((r.b >> 8) & 0xFF) + 1;
+          *logical_bits =
+              static_cast<uint32_t>(CeilLog2Nonzero(threads_per_core));
+          *core_bits = thread_bits - *logical_bits;
+        } else {
+          // There does not seem to be another way to detect SMT, so
+          // assume it is not available.
+          *core_bits = thread_bits;
+          *logical_bits = 0;
+        }
+      } else {
+        // Old AMD => did not support SMT/HT yet.
+        *core_bits =
+            static_cast<uint32_t>(CeilLog2Nonzero(logical_per_package));
+        *logical_bits = 0;
+      }
+    }
   }
 
-  // How many bits in the xAPIC ID identify the logical processor (per core).
-  static uint32_t LogicalBits(const Info& info, const uint32_t core_bits) {
-    Regs r;
-    Cpuid(1, 0, &r);
+  // Returns whether the CPUID:B method was successful.
+  static bool DetectFieldWidths_B(const Info& info,
+                                  uint32_t* JXL_RESTRICT core_bits,
+                                  uint32_t* JXL_RESTRICT logical_bits) {
+    if (info.MaxFunc() < 0xB) return false;
 
-    if ((r.d & (1U << 28)) == 0) {
-      return 0;  // No hyperthreading
-    }
+    bool got_smt = false;
+    bool got_core = false;
 
-    // On AMD TR3960X this is the actual count, which is less than 2^actual
-    // field width. However, we do not reach this code there because CPUID:11 is
-    // preferred.
-    const uint32_t logical_per_package = (r.b >> 16) & 0xFF;
-    const uint32_t core_and_logical_bits =
-        static_cast<uint32_t>(CeilLog2Nonzero(logical_per_package));
-    JXL_ASSERT(core_and_logical_bits >= core_bits);
-    return core_and_logical_bits - core_bits;
-  }
-
-  // Returns whether the CPUID:11 method was used (if so, x2APIC should be
-  // available).
-  // Assumes the current processor is representative of all others!
-  static bool DetectFieldWidths(const Info& info,
-                                uint32_t* JXL_RESTRICT core_bits,
-                                uint32_t* JXL_RESTRICT logical_bits) {
     // Prevent spurious uninitialized-variable error
     *core_bits = *logical_bits = 0;
 
-    // Newer method is preferred (less CPU-specific) if available.
-    if (info.MaxFunc() >= 11) {
-      bool got_smt = false;
-      bool got_core = false;
+    for (uint32_t level = 0; level < 16; ++level) {
+      Regs r;
+      Cpuid(0xB, level, &r);
 
-      for (uint32_t level = 0; level < 16; ++level) {
-        Regs r;
-        Cpuid(11, level, &r);
+      // We finished all levels if this one has no enabled logical
+      // processors.
+      if ((r.b & 0xFFFF) == 0) break;
 
-        // We finished all levels if this one has no enabled logical processors.
-        if ((r.b & 0xFFFF) == 0) break;
+      JXL_ASSERT(level == (r.c & 0xFF));  // Sanity check: should match input
 
-        JXL_ASSERT(level == (r.c & 0xFF));  // Sanity check: should match input
+      const uint32_t level_type = (r.c >> 8) & 0xFF;
+      const uint32_t level_bits = r.a & 0x1F;
 
-        const uint32_t level_type = (r.c >> 8) & 0xFF;
-        const uint32_t level_bits = r.a & 0x1F;
+      switch (level_type) {
+        case 0:
+          Debug("Invalid CPUID level %u despite enabled>0", level);
+          break;
 
-        switch (level_type) {
-          case 0:
-            Debug("Invalid CPUID level %u despite enabled>0", level);
-            break;
+        case 1:  // SMT
+          *logical_bits = level_bits;
+          got_smt = true;
+          break;
 
-          case 1:  // SMT
-            *logical_bits = level_bits;
-            got_smt = true;
-            break;
+        case 2:  // core
+          *core_bits = level_bits;
+          got_core = true;
+          break;
 
-          case 2:  // core
-            *core_bits = level_bits;
-            got_core = true;
-            break;
-
-          default:
-            Debug("Ignoring CPUID:11 level %u type %u (%u bits)\n", level,
-                  level_type, level_bits);
-            break;
-        }
-      }
-
-      if (got_core && got_smt) {
-        // Core is actually all logical within a package, so subtract now that
-        // we also know logical_bits.
-        JXL_ASSERT(*core_bits >= *logical_bits);
-        *core_bits -= *logical_bits;
-        return true;
+        default:
+          Debug("Ignoring CPUID:B level %u type %u (%u bits)\n", level,
+                level_type, level_bits);
+          break;
       }
     }
 
-    // CPUID:11 not available or failed
-    *core_bits = CoreBits(info);
-    *logical_bits = LogicalBits(info, *core_bits);
+    if (got_core && got_smt) {
+      // Core is actually all logical within a package, so subtract now that
+      // we also know logical_bits.
+      JXL_ASSERT(*core_bits >= *logical_bits);
+      *core_bits -= *logical_bits;
+      return true;
+    }
+
+    // CPUID:B was incomplete
     return false;
+  }
+
+  // Assumes the current processor is representative of all others!
+  static void DetectFieldWidths(const Info& info, const ApicType type,
+                                uint32_t* JXL_RESTRICT core_bits,
+                                uint32_t* JXL_RESTRICT logical_bits) {
+    // Preferred on Intel, not available on AMD as of TR3.
+    if (type == kCpuidB_32Bit) {
+      if (DetectFieldWidths_B(info, core_bits, logical_bits)) {
+        return;
+      }
+    }
+
+    // CPUID:B not available or failed
+    DetectFieldWidths_Extended(info, type, core_bits, logical_bits);
   }
 
   // Variable-length/position field within an xAPIC ID. Counts the total
@@ -295,32 +371,37 @@ class X64_Topology {
     std::set<uint32_t> values_;
   };
 
-  // Returns initial APIC ID or x2APIC ID, which uniquely identifies the current
-  // logical processor. Returns 0 on old CPUs.
-  static uint32_t ProcessorId(const Info& info, const bool cpuid11_usable) {
+  // Returns unique identifier of the current logical processor (0 on old CPUs).
+  static uint32_t ProcessorId(const ApicType type) {
     Regs r;
 
-    // 32-bit x2APIC ID.
-    if (cpuid11_usable) {
-      Cpuid(11, 0, &r);
-      JXL_ASSERT(r.b != 0);  // #enabled != 0 implied by cpuid11_usable.
+    switch (type) {
+      case kCpuidB_32Bit:
+        Cpuid(11, 0, &r);
+        JXL_ASSERT(r.b != 0);
+        // Note: whether or not x2APIC is actually supported and enabled, its
+        // lower 8 bits match the initial APIC ID (CPUID:1.b).
+        return r.d;
 
-      // Note: whether or not x2APIC is actually supported and enabled, its
-      // lower 8 bits match the initial APIC ID (CPUID:1b).
-      return r.d;
+      case kCpuid1_8Bit:
+        Cpuid(1, 0, &r);
+        return r.b >> 24;
+
+      case kCpuid1E_32Bit:
+        Cpuid(0x8000001E, 0, &r);
+        return r.a;
     }
 
-    // No CPUID:11 => just return initial APIC ID (8-bit).
-    Cpuid(1, 0, &r);
-    return r.b >> 24;
+    // Unreachable
+    return 0;
   }
 };
 
 double X64_DetectNominalClockRate() {
   const Info info;
   const std::string& brand_string = info.BrandString();
-  // Brand strings include the maximum configured frequency. These prefixes are
-  // defined by Intel CPUID documentation.
+  // Brand strings include the maximum configured frequency. These prefixes
+  // are defined by Intel CPUID documentation.
   const char* prefixes[3] = {"MHz", "GHz", "THz"};
   const double multipliers[3] = {1E6, 1E9, 1E12};
   for (size_t i = 0; i < 3; ++i) {

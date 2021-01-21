@@ -910,7 +910,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   const ANSCode *code = &code_storage;
   const std::vector<uint8_t> *context_map = &context_map_storage;
   if (!header.use_global_tree) {
-    JXL_RETURN_IF_ERROR(DecodeTree(br, &tree_storage));
+    size_t tree_size_limit = 1024 + image.w * image.h * nb_channels;
+    JXL_RETURN_IF_ERROR(DecodeTree(br, &tree_storage, tree_size_limit));
     JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
                                          &code_storage, &context_map_storage));
   } else {

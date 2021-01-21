@@ -283,6 +283,12 @@ Status JPEGData::VisitFields(Visitor* visitor) {
         return JXL_FAILURE("Invalid block ID: %u, last block was %d", block_idx,
                            last_block_idx);
       }
+      if (block_idx > (1u << 30)) {
+        // At most 8K x 8K x num_channels blocks are expected. That is,
+        // typically, 1.5 * 2^27. 2^30 should be sufficient for any sane
+        // image.
+        return JXL_FAILURE("Invalid block ID: %u", block_idx);
+      }
       last_block_idx = block_idx;
     }
 
@@ -307,6 +313,12 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       if (static_cast<int>(block_idx) < last_block_idx + 1) {
         return JXL_FAILURE("Invalid block ID: %u, last block was %d", block_idx,
                            last_block_idx);
+      }
+      if (block_idx > (1u << 30)) {
+        // At most 8K x 8K x num_channels blocks are expected. That is,
+        // typically, 1.5 * 2^27. 2^30 should be sufficient for any sane
+        // image.
+        return JXL_FAILURE("Invalid block ID: %u", block_idx);
       }
       last_block_idx = block_idx;
     }

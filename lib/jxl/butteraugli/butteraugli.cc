@@ -1801,8 +1801,6 @@ ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
   sub_.reset(new ButteraugliComparator(SubSample2x(rgb0), params));
 }
 
-ButteraugliComparator::~ButteraugliComparator() {}
-
 void ButteraugliComparator::Mask(MaskImage* BUTTERAUGLI_RESTRICT mask,
                                  MaskImage* BUTTERAUGLI_RESTRICT
                                      mask_dc) const {

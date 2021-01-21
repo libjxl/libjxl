@@ -37,9 +37,6 @@
 bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
                          std::vector<float>* pixels, size_t* xsize,
                          size_t* ysize, std::vector<uint8_t>* icc_profile) {
-  const uint8_t* next_in = jxl;
-  size_t avail_in = size;
-
   // Multi-threaded parallel runner.
   auto runner = JxlThreadParallelRunnerMake(
       nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
@@ -61,12 +58,12 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
   }
 
   JxlBasicInfo info;
-
   JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
 
+  JxlDecoderSetInput(dec.get(), jxl, size);
+
   for (;;) {
-    JxlDecoderStatus status =
-        JxlDecoderProcessInput(dec.get(), (const uint8_t**)&next_in, &avail_in);
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
 
     if (status == JXL_DEC_ERROR) {
       fprintf(stderr, "Decoder error\n");
@@ -124,6 +121,8 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       // full frames may be decoded. This example only keeps the last one.
     } else if (status == JXL_DEC_SUCCESS) {
       // All decoding successfully finished.
+      // JxlDecoderReleaseInput(dec.get()) could be used here to check how many
+      // bytes of the input the decoder didn't use, but this is optional.
       return true;
     } else {
       fprintf(stderr, "Unknown decoder status\n");

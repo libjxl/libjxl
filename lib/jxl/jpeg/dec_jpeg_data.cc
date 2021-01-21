@@ -92,6 +92,7 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
       marker[16] = num_icc;
     }
   }
+  // TODO(eustas): actually inject ICC profile and check it fits perfectly.
   for (size_t i = 0; i < jpeg_data->com_data.size(); i++) {
     auto& marker = jpeg_data->com_data[i];
     JXL_RETURN_IF_ERROR(br_read(marker));

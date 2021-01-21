@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "gtest/gtest.h"
 #include "jxl/decode.h"
 #include "jxl/encode.h"
-
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/test_utils.h"
-
-#include "gtest/gtest.h"
 
 namespace {
 
@@ -63,7 +61,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
                 /*is_gray=*/pixel_format.num_channels < 3),
       /*has_alpha=*/pixel_format.num_channels == 2 ||
           pixel_format.num_channels == 4,
-      /*alpha_is_premultiplied=*/false, /*bitdepth=*/bitdepth,
+      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/bitdepth,
       pixel_format.endianness, /*flipped_y=*/false, /*pool=*/nullptr,
       /*ib=*/&io.Main()));
   return io;
@@ -202,8 +200,8 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
                                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  JxlDecoderSetInput(dec, next_in, avail_in);
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderImageOutBufferSize(dec, &pixel_format, &buffer_size));
@@ -216,15 +214,13 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
 
   std::vector<uint8_t> decoded_bytes(buffer_size);
 
-  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(dec, &pixel_format,
                                                          decoded_bytes.data(),
                                                          decoded_bytes.size()));
 
-  EXPECT_EQ(JXL_DEC_FULL_IMAGE,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
 
   JxlDecoderDestroy(dec);
 

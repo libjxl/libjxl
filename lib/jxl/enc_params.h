@@ -204,6 +204,13 @@ struct CompressParams {
   int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
   bool lossy_palette = false;
 
+  // Returns whether these params are lossless as defined by SetLossless();
+  bool IsLossless() const {
+    return modular_mode && quality_pair.first == 100 &&
+           quality_pair.second == 100 &&
+           color_transform == jxl::ColorTransform::kNone;
+  }
+
   // Sets the parameters required to make the codec lossless.
   void SetLossless() {
     modular_mode = true;

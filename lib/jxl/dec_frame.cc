@@ -132,7 +132,7 @@ class LossyFrameDecoder {
     return true;
   }
 
-  Status DecodeGlobalACInfo(BitReader* reader,
+  Status DecodeGlobalACInfo(BitReader* reader, bool decode_to_jpeg,
                             ModularFrameDecoder* modular_frame_decoder) {
     if (aux_out_ && aux_out_->testing_aux.dc) {
       *aux_out_->testing_aux.dc = CopyImage(*dec_state_->shared_storage.dc);
@@ -149,6 +149,7 @@ class LossyFrameDecoder {
     dec_state_->code.resize(kMaxNumPasses);
     dec_state_->context_map.resize(kMaxNumPasses);
     // Read coefficient orders and histograms.
+    size_t max_num_bits_ac = 0;
     for (size_t i = 0;
          i < dec_state_->shared_storage.frame_header.passes.num_passes; i++) {
       uint16_t used_orders = U32Coder::Read(kOrderEnc, reader);
@@ -156,11 +157,30 @@ class LossyFrameDecoder {
           used_orders,
           &dec_state_->shared_storage.coeff_orders[i * kCoeffOrderSize],
           reader));
-      JXL_RETURN_IF_ERROR(DecodeHistograms(
-          reader,
+      size_t num_contexts =
           dec_state_->shared->num_histograms *
-              dec_state_->shared_storage.block_ctx_map.NumACContexts(),
-          &dec_state_->code[i], &dec_state_->context_map[i]));
+          dec_state_->shared_storage.block_ctx_map.NumACContexts();
+      JXL_RETURN_IF_ERROR(DecodeHistograms(reader, num_contexts,
+                                           &dec_state_->code[i],
+                                           &dec_state_->context_map[i]));
+      // Add extra values to enable the cheat in hot loop of DecodeACVarBlock.
+      dec_state_->context_map[i].resize(
+          num_contexts + kZeroDensityContextLimit - kZeroDensityContextCount);
+      max_num_bits_ac =
+          std::max(max_num_bits_ac, dec_state_->code[i].max_num_bits);
+    }
+    max_num_bits_ac += CeilLog2Nonzero(
+        dec_state_->shared_storage.frame_header.passes.num_passes);
+    // 16-bit buffer for decoding to JPEG are not implemented.
+    // TODO(veluca): figure out the exact limit - 16 should still work with
+    // 16-bit buffers, but we are excluding it for safety.
+    bool use_16_bit = max_num_bits_ac < 16 && !decode_to_jpeg;
+    // TODO(veluca): storing AC coefficients between passes is not implemented
+    // yet.
+    if (use_16_bit) {
+      dec_state_->coefficients = make_unique<ACImageT<int16_t>>(0, 0);
+    } else {
+      dec_state_->coefficients = make_unique<ACImageT<int32_t>>(0, 0);
     }
     return true;
   }
@@ -388,15 +408,17 @@ Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
                      kDcGroupDim);
     if (frame_header.encoding == FrameEncoding::kVarDCT &&
         !(frame_header.flags & FrameHeader::kUseDcFrame)) {
-      ok &= modular_frame_decoder.DecodeVarDCTDC(group_index, group_reader,
-                                                 dec_state, my_aux_out);
+      ok = modular_frame_decoder.DecodeVarDCTDC(group_index, group_reader,
+                                                dec_state, my_aux_out);
     }
-    ok &= modular_frame_decoder.DecodeGroup(
-        mrect, group_reader, my_aux_out, 3, 1000,
-        ModularStreamId::ModularDC(group_index));
-    if (frame_header.encoding == FrameEncoding::kVarDCT) {
-      ok &= modular_frame_decoder.DecodeAcMetadata(group_index, group_reader,
-                                                   dec_state, my_aux_out);
+    if (ok) {
+      ok = modular_frame_decoder.DecodeGroup(
+          mrect, group_reader, my_aux_out, 3, 1000,
+          ModularStreamId::ModularDC(group_index));
+    }
+    if (ok && frame_header.encoding == FrameEncoding::kVarDCT) {
+      ok = modular_frame_decoder.DecodeAcMetadata(group_index, group_reader,
+                                                  dec_state, my_aux_out);
     }
     if (!group_store.Close() || !ok) {
       num_errors.fetch_add(1, std::memory_order_relaxed);
@@ -448,6 +470,15 @@ Status DecodeFrame(const DecompressParams& dparams,
   if (frame_dim.xsize == 0 || frame_dim.ysize == 0) {
     return JXL_FAILURE("Empty frame");
   }
+  for (size_t c = 0; c < 3; c++) {
+    size_t subsampled_xsize =
+        frame_dim.xsize_padded >> frame_header.chroma_subsampling.HShift(c);
+    size_t subsampled_ysize =
+        frame_dim.ysize_padded >> frame_header.chroma_subsampling.VShift(c);
+    if (subsampled_xsize == 0 || subsampled_ysize == 0) {
+      return JXL_FAILURE("Empty frame");
+    }
+  }
   if (io) {
     JXL_RETURN_IF_ERROR(io->VerifyDimensions(frame_dim.xsize, frame_dim.ysize));
   }
@@ -458,22 +489,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   // If the previous frame was not a kRegularFrame, `decoded` may have different
   // dimensions; must reset to avoid error when setting alpha.
+  // NB: extraChannels can not be updated until color image is allocated back.
   decoded->RemoveColor();
-
-  // TODO(veluca): this might be done by the loop afterwards.
-  if (metadata.m.Find(ExtraChannel::kDepth)) {
-    decoded->SetDepth(ImageF(decoded->DepthSize(frame_dim.xsize_padded),
-                             decoded->DepthSize(frame_dim.ysize_padded)));
-  }
-  if (metadata.m.num_extra_channels > 0) {
-    std::vector<ImageF> ecv;
-    for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
-      const auto eci = metadata.m.extra_channel_info[i];
-      ecv.push_back(ImageF(eci.Size(frame_dim.xsize_padded),
-                           eci.Size(frame_dim.ysize_padded)));
-    }
-    decoded->SetExtraChannels(std::move(ecv));
-  }
 
   // Handling of progressive decoding.
   size_t downsampling;
@@ -716,6 +733,15 @@ Status DecodeFrame(const DecompressParams& dparams,
         Image3F(frame_dim.xsize_padded, frame_dim.ysize_padded),
         output_encoding);
   }
+  if (metadata.m.num_extra_channels > 0) {
+    std::vector<ImageF> ecv;
+    for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
+      const auto eci = metadata.m.extra_channel_info[i];
+      ecv.emplace_back(eci.Size(frame_dim.xsize_padded),
+                       eci.Size(frame_dim.ysize_padded));
+    }
+    decoded->SetExtraChannels(std::move(ecv));
+  }
 
   if (downsampling < 16 && frame_dim.num_groups > 1) {
     decoded->SetDecodedBytes(group_offsets[frame_dim.num_dc_groups] +
@@ -734,7 +760,7 @@ Status DecodeFrame(const DecompressParams& dparams,
 
       if (frame_header.encoding == FrameEncoding::kVarDCT) {
         JXL_RETURN_IF_ERROR(lossy_frame_decoder.DecodeGlobalACInfo(
-            ac_info_reader, &modular_frame_decoder));
+            ac_info_reader, decoded->IsJPEG(), &modular_frame_decoder));
       }
     }
     // ac_info_store is either never used (in which case Close() is optional
@@ -783,6 +809,18 @@ Status DecodeFrame(const DecompressParams& dparams,
 
     // Read passes.
     BitReader storage[kMaxNumPasses];
+
+    const auto cleanup = [&]() {
+      for (size_t i = 1; i < max_passes_for_group[group_index]; i++) {
+        if (!storage[i - 1].Close()) {
+          num_errors.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+      if (!pass0_reader_store.Close()) {
+        num_errors.fetch_add(1, std::memory_order_relaxed);
+      }
+    };
+
     BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
     readers[0] = pass0_group_reader;
     for (size_t i = 1; i < max_passes_for_group[group_index]; i++) {
@@ -796,6 +834,7 @@ Status DecodeFrame(const DecompressParams& dparams,
               group_index, thread, readers, max_passes_for_group[group_index],
               decoded->color(), decoded, my_aux_out)) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
+        cleanup();
         return;
       }
     }
@@ -814,22 +853,14 @@ Status DecodeFrame(const DecompressParams& dparams,
               mrect, readers[i], my_aux_out, minShift, maxShift,
               ModularStreamId::ModularAC(group_index, i))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);
+        cleanup();
         return;
       }
       maxShift = minShift - 1;
       minShift = 0;
     }
-    for (size_t i = 1; i < max_passes_for_group[group_index]; i++) {
-      if (!storage[i - 1].Close()) {
-        num_errors.fetch_add(1, std::memory_order_relaxed);
-        return;
-      }
-    }
 
-    if (!pass0_reader_store.Close()) {
-      num_errors.fetch_add(1, std::memory_order_relaxed);
-      return;
-    }
+    cleanup();
   };
 
   {

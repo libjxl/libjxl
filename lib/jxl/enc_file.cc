@@ -75,9 +75,12 @@ PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
      /*suitable_for_downsampling_of_at_least=*/0},
 };
 
-Status MakeImageMetadata(const CompressParams& cparams, const CodecInOut* io,
-                         CodecMetadata* metadata) {
+Status PrepareCodecMetadataFromIO(const CompressParams& cparams,
+                                  const CodecInOut* io,
+                                  CodecMetadata* metadata) {
   *metadata = io->metadata;
+
+  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize(), io->ysize()));
 
   // Keep ICC profile in lossless modes because a reconstructed profile may be
   // slightly different (quantization).
@@ -123,8 +126,7 @@ Status EncodePreview(const CompressParams& cparams, const ImageBundle& ib,
   return true;
 }
 
-Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
-                    CodecMetadata* metadata, BitWriter* writer,
+Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
                     AuxOut* aux_out) {
   // Marker/signature
   BitWriter::Allotment allotment(writer, 16);
@@ -132,17 +134,13 @@ Status WriteHeaders(const CompressParams& cparams, const CodecInOut* io,
   writer->Write(8, kCodestreamMarker);
   ReclaimAndCharge(writer, &allotment, kLayerHeader, aux_out);
 
-  JXL_RETURN_IF_ERROR(MakeImageMetadata(cparams, io, metadata));
-
-  JXL_RETURN_IF_ERROR(metadata->size.Set(io->xsize(), io->ysize()));
   JXL_RETURN_IF_ERROR(
       WriteSizeHeader(metadata->size, writer, kLayerHeader, aux_out));
 
   JXL_RETURN_IF_ERROR(
       WriteImageMetadata(metadata->m, writer, kLayerHeader, aux_out));
 
-  metadata->transform_data.nonserialized_xyb_encoded =
-      io->metadata.m.xyb_encoded;
+  metadata->transform_data.nonserialized_xyb_encoded = metadata->m.xyb_encoded;
   JXL_RETURN_IF_ERROR(
       Bundle::Write(metadata->transform_data, writer, kLayerHeader, aux_out));
 
@@ -156,7 +154,8 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
   BitWriter writer;
 
   CodecMetadata metadata;
-  JXL_RETURN_IF_ERROR(WriteHeaders(cparams, io, &metadata, &writer, aux_out));
+  JXL_RETURN_IF_ERROR(PrepareCodecMetadataFromIO(cparams, io, &metadata));
+  JXL_RETURN_IF_ERROR(WriteHeaders(&metadata, &writer, aux_out));
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
   if (metadata.m.color_encoding.WantICC()) {

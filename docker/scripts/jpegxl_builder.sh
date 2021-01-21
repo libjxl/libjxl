@@ -54,6 +54,16 @@ WEBP_RELEASE="1.0.2"
 WEBP_URL="https://codeload.github.com/webmproject/libwebp/tar.gz/v${WEBP_RELEASE}"
 WEBP_SHA256="347cf85ddc3497832b5fa9eee62164a37b249c83adae0ba583093e039bf4881f"
 
+# Google benchmark
+BENCHMARK_RELEASE="1.5.2"
+BENCHMARK_URL="https://github.com/google/benchmark/archive/v${BENCHMARK_RELEASE}.tar.gz"
+BENCHMARK_SHA256="dccbdab796baa1043f04982147e67bb6e118fe610da2c65f88912d73987e700c"
+BENCHMARK_FLAGS="-DGOOGLETEST_PATH=${MYDIR}/../../third_party/googletest"
+# attribute(format(__MINGW_PRINTF_FORMAT, ...)) doesn't work in our
+# environment, so we disable the warning.
+BENCHMARK_FLAGS="-DCMAKE_BUILD_TYPE=Release -DBENCHMARK_ENABLE_TESTING=OFF \
+  -DCMAKE_CXX_FLAGS=-Wno-ignored-attributes"
+
 # V8
 V8_VERSION="8.7.230"
 
@@ -319,6 +329,11 @@ install_from_source() {
       # When compiling with clang, CMake doesn't detect that we are using mingw.
       cmake_args+=(
         -DMINGW=1
+        # Googletest needs this when cross-compiling to windows
+        -DCMAKE_CROSSCOMPILING=1
+        -DHAVE_STD_REGEX=0
+        -DHAVE_POSIX_REGEX=0
+        -DHAVE_GNU_POSIX_REGEX=0
       )
       local windres=$(which ${target}-windres || true)
       if [[ -n "${windres}" ]]; then
@@ -462,6 +477,8 @@ main() {
   install_from_source GIFLIB "${LIST_MINGW_TARGETS[@]}" "${LIST_WASM_TARGETS[@]}"
   # webp in Ubuntu is relatively old so we install it from source for everybody.
   install_from_source WEBP "${LIST_TARGETS[@]}" "${LIST_MINGW_TARGETS[@]}"
+
+  install_from_source BENCHMARK "${LIST_TARGETS[@]}" "${LIST_MINGW_TARGETS[@]}"
 
   # Install v8. v8 has better WASM SIMD support than NodeJS 14.
   # First we need the installer to install v8.

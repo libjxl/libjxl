@@ -95,7 +95,6 @@ if (WIN32)
   )
 else()  # WIN32
   list(APPEND JPEGXL_INTERNAL_FLAGS
-    -fno-signed-char
     -fsized-deallocation
     -fno-exceptions
 

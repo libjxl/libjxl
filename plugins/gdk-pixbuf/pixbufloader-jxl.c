@@ -53,10 +53,10 @@ uint8_t *JxlMemoryToPixels(const uint8_t *next_in, size_t size, size_t *stride,
   JxlBasicInfo info;
   int success = 0;
   JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+  JxlDecoderSetInput(dec, next_in, size);
 
   for (;;) {
-    JxlDecoderStatus status =
-        JxlDecoderProcessInput(dec, (const uint8_t **)&next_in, &size);
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
 
     if (status == JXL_DEC_ERROR) {
       fprintf(stderr, "Decoder error\n");

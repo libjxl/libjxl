@@ -49,32 +49,33 @@ bool ProgressiveSplitter::SuperblockIsSalient(size_t row_start,
   return false;
 }
 
+template <typename T>
 void ProgressiveSplitter::SplitACCoefficients(
-    const ac_qcoeff_t* JXL_RESTRICT block, size_t size, const AcStrategy& acs,
-    size_t bx, size_t by, size_t offset,
-    ac_qcoeff_t* JXL_RESTRICT output[kMaxNumPasses][3]) {
+    const T* JXL_RESTRICT block, size_t size, const AcStrategy& acs, size_t bx,
+    size_t by, size_t offset, T* JXL_RESTRICT output[kMaxNumPasses][3]) {
+  auto shift_right_round0 = [&](T v, int shift) {
+    T one_if_negative = static_cast<uint32_t>(v) >> 31;
+    T add = (one_if_negative << shift) - one_if_negative;
+    return (v + add) >> shift;
+  };
   // Early quit for the simple case of only one pass.
   if (mode_.num_passes == 1) {
     for (size_t c = 0; c < 3; c++) {
-      memcpy(output[0][c] + offset, block + c * size,
-             sizeof(ac_qcoeff_t) * size);
+      memcpy(output[0][c] + offset, block + c * size, sizeof(T) * size);
     }
     return;
   }
   size_t ncoeffs_all_done_from_earlier_passes = 1;
   size_t previous_pass_salient_only = false;
 
-  float previous_pass_quant_step = 1.0f;
-  float previous_pass_inv_quant_step = 1.0f;
-  size_t previous_pass_shift = 0;
+  int previous_pass_shift = 0;
   for (size_t num_pass = 0; num_pass < mode_.num_passes; num_pass++) {  // pass
     // Zero out output block.
     for (size_t c = 0; c < 3; c++) {
-      memset(output[num_pass][c] + offset, 0, size * sizeof(ac_qcoeff_t));
+      memset(output[num_pass][c] + offset, 0, size * sizeof(T));
     }
     const bool current_pass_salient_only = mode_.passes[num_pass].salient_only;
-    const float pass_quant_step = 1 << mode_.passes[num_pass].shift;
-    const float pass_inv_quant_step = 1.0f / pass_quant_step;
+    const int pass_shift = mode_.passes[num_pass].shift;
     size_t frame_ncoeffs = mode_.passes[num_pass].num_coefficients;
     for (size_t c = 0; c < 3; c++) {  // color-channel
       size_t xsize = acs.covered_blocks_x();
@@ -101,16 +102,14 @@ void ProgressiveSplitter::SplitACCoefficients(
             // (= is not about saliency-splitting).
             continue;
           }
-          ac_qcoeff_t v = block[c * size + pos];
+          T v = block[c * size + pos];
           // Previous pass discarded some bits: do not encode them again.
           if (previous_pass_shift != 0) {
-            ac_qcoeff_t previous_v =
-                static_cast<int32_t>(v * previous_pass_inv_quant_step) *
-                previous_pass_quant_step;
+            T previous_v = shift_right_round0(v, previous_pass_shift) *
+                           (1 << previous_pass_shift);
             v -= previous_v;
           }
-          output[num_pass][c][offset + pos] =
-              static_cast<int32_t>(v * pass_inv_quant_step);
+          output[num_pass][c][offset + pos] = shift_right_round0(v, pass_shift);
         }  // superblk-x
       }    // superblk-y
     }      // color-channel
@@ -123,10 +122,16 @@ void ProgressiveSplitter::SplitACCoefficients(
       }
     }
     previous_pass_salient_only = current_pass_salient_only;
-    previous_pass_inv_quant_step = pass_inv_quant_step;
-    previous_pass_quant_step = pass_quant_step;
     previous_pass_shift = mode_.passes[num_pass].shift;
   }  // num_pass
 }
+
+template void ProgressiveSplitter::SplitACCoefficients<int32_t>(
+    const int32_t* JXL_RESTRICT, size_t, const AcStrategy&, size_t, size_t,
+    size_t, int32_t* JXL_RESTRICT[kMaxNumPasses][3]);
+
+template void ProgressiveSplitter::SplitACCoefficients<int16_t>(
+    const int16_t* JXL_RESTRICT, size_t, const AcStrategy&, size_t, size_t,
+    size_t, int16_t* JXL_RESTRICT[kMaxNumPasses][3]);
 
 }  // namespace jxl

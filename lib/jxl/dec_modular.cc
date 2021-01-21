@@ -114,15 +114,17 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   bool decode_color = frame_header.encoding == FrameEncoding::kModular;
   const auto& metadata = frame_header.nonserialized_metadata->m;
   bool is_gray = metadata.color_encoding.IsGray();
-  bool has_tree = reader->ReadBits(1);
-  if (has_tree) {
-    JXL_RETURN_IF_ERROR(DecodeTree(reader, &tree));
-    JXL_RETURN_IF_ERROR(
-        DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
-  }
   size_t nb_chans = 3;
   if (is_gray && frame_header.color_transform == ColorTransform::kNone) {
     nb_chans = 1;
+  }
+  bool has_tree = reader->ReadBits(1);
+  if (has_tree) {
+    size_t tree_size_limit =
+        1024 + frame_dim.xsize * frame_dim.ysize * nb_chans;
+    JXL_RETURN_IF_ERROR(DecodeTree(reader, &tree, tree_size_limit));
+    JXL_RETURN_IF_ERROR(
+        DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
   }
   do_color = decode_color;
   if (!do_color) nb_chans = 0;
@@ -377,6 +379,10 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
       } else if (rgb_from_gray) {
         c_in = 0;
       }
+      // TODO(eustas): could we detect it on earlier stage?
+      if (gi.channel[c_in].w == 0 || gi.channel[c_in].h == 0) {
+        return JXL_FAILURE("Empty image");
+      }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
@@ -471,14 +477,14 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
     for (size_t ec = 0; ec < output->extra_channels().size(); ec++, c++) {
       const jxl::ExtraChannelInfo& eci =
           output->metadata()->extra_channel_info[ec];
-      const pixel_type max_extra = (1u << eci.bit_depth.bits_per_sample) - 1;
+      const float mul = 1.0f / ((1u << eci.bit_depth.bits_per_sample) - 1);
       const size_t ec_xsize = eci.Size(xsize);  // includes shift
       const size_t ec_ysize = eci.Size(ysize);
       for (size_t y = 0; y < ec_ysize; ++y) {
         float* const JXL_RESTRICT row_out = output->extra_channels()[ec].Row(y);
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
         for (size_t x = 0; x < ec_xsize; ++x) {
-          row_out[x] = Clamp1(row_in[x], 0, max_extra) * (1.f / max_extra);
+          row_out[x] = row_in[x] * mul;
         }
       }
     }

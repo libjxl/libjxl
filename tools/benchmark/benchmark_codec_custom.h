@@ -36,7 +36,7 @@
 //
 // An example with JPEG XL itself would be:
 //
-//     custom:jxl:cjpegxl:djpegxl:--distance:3
+//     custom:jxl:cjxl:djxl:--distance:3
 //
 // Optionally, to have encoding and decoding speed reported, the codec may write
 // the number of seconds (as a floating point number) elapsed during actual

@@ -410,19 +410,15 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                        (color_channels * bits_per_sample / jxl::kBitsPerByte);
             const float* JXL_RESTRICT row_in = alpha->Row(y);
             if (bits_per_sample == 8) {
-              for (size_t x = 0; x < xsize; ++x) {
-                out[i] = row_in[x] * 255 + .5f;
-                i += bytes_per_pixel;
-              }
-            } else if (bits_per_sample == 16 && little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                StoreLE16(row_in[x] * 65535 + .5f, out + i);
-                i += bytes_per_pixel;
-              }
-            } else if (bits_per_sample == 16 && !little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                StoreBE16(row_in[x] * 65535 + .5f, out + i);
-                i += bytes_per_pixel;
+              StoreFloatRow<Store8>(row_in, out + i, 255.f, xsize,
+                                    bytes_per_pixel);
+            } else if (bits_per_sample == 16) {
+              if (little_endian) {
+                StoreFloatRow<StoreLE16>(row_in, out + i, 65535.f, xsize,
+                                         bytes_per_pixel);
+              } else {
+                StoreFloatRow<StoreBE16>(row_in, out + i, 65535.f, xsize,
+                                         bytes_per_pixel);
               }
             }
           },
@@ -600,27 +596,40 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
           },
           "ConvertAlphaFloat");
     } else {
+      float mul = 1. / ((1ull << bits_per_sample) - 1);
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * y +
-                       (color_channels * bits_per_sample / jxl::kBitsPerByte);
+            size_t i = row_size * y + color_channels * bytes_per_channel;
             float* JXL_RESTRICT row_out = alpha.Row(y);
-            if (bits_per_sample == 8) {
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = in[i] * (1.f / 255);
-                i += bytes_per_pixel;
+            // TODO(deymo): add bits_per_sample == 1 case here. Also maybe
+            // implement masking if bits_per_sample is not a multiple of 8.
+            if (bits_per_sample <= 8) {
+              LoadFloatRow<Load8>(row_out, in + i, mul, xsize, bytes_per_pixel);
+            } else if (bits_per_sample <= 16) {
+              if (little_endian) {
+                LoadFloatRow<LoadLE16>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
+              } else {
+                LoadFloatRow<LoadBE16>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
               }
-            } else if (bits_per_sample == 16 && little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = LoadLE16(in + i) * (1.f / 65535);
-                i += bytes_per_pixel;
+            } else if (bits_per_sample <= 24) {
+              if (little_endian) {
+                LoadFloatRow<LoadLE24>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
+              } else {
+                LoadFloatRow<LoadBE24>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
               }
-            } else if (bits_per_sample == 16 && !little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                row_out[x] = LoadBE16(in + i) * (1.f / 65535);
-                i += bytes_per_pixel;
+            } else {
+              if (little_endian) {
+                LoadFloatRow<LoadLE32>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
+              } else {
+                LoadFloatRow<LoadBE32>(row_out, in + i, mul, xsize,
+                                       bytes_per_pixel);
               }
             }
           },

@@ -68,7 +68,17 @@ Status WritePNG(const Image3B& image, ThreadPool* pool,
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  io.SetFromImage(StaticCastImage3<float>(image), io.metadata.m.color_encoding);
+  Image3F float_image(image.xsize(), image.ysize());
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < image.ysize(); y++) {
+      const uint8_t* row = image.PlaneRow(c, y);
+      float* row_out = float_image.PlaneRow(c, y);
+      for (size_t x = 0; x < image.xsize(); x++) {
+        row_out[x] = (1.0f / 255.f) * row[x];
+      }
+    }
+  }
+  io.SetFromImage(std::move(float_image), io.metadata.m.color_encoding);
   PaddedBytes compressed;
   JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
   return WriteFile(compressed, filename);

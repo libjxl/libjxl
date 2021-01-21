@@ -48,8 +48,10 @@ static const uint16_t kCoeffNumNonzeroContext[64] = {
     206,   206, 206, 206, 206, 206, 206, 206, 206, 206, 206, 206,
 };
 
-// Supremum of ZeroDensityContext(x, y) + 1.
+// Supremum of ZeroDensityContext(x, y) + 1, when x + y < 64.
 constexpr int kZeroDensityContextCount = 458;
+// Supremum of ZeroDensityContext(x, y) + 1.
+constexpr int kZeroDensityContextLimit = 474;
 
 /* This function is used for entropy-sources pre-clustering.
  *

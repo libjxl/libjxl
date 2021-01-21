@@ -318,14 +318,14 @@ JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
 
 /**
- * Decodes JPEG XL file using the available bytes. @p *avail_in indicates how
- * many input bytes are available, and @p *next_in points to the input bytes.
- * *avail_in will be decremented by the amount of bytes that have been processed
- * by the decoder and *next_in will be incremented by the same amount, so
- * *next_in will now point at the amount of *avail_in unprocessed bytes. For the
- * next call to this function, all unprocessed bytes must be provided again (the
- * address need not match, but the contents must), and more bytes may be
- * concatenated after the unprocessed bytes.
+ * Decodes JPEG XL file using the available bytes. Requires input has been
+ * set with JxlDecoderSetInput. After JxlDecoderProcessInput, input can
+ * optionally be released with JxlDecoderReleaseInput and then set again to
+ * next bytes in the stream. JxlDecoderReleaseInput returns how many bytes are
+ * not yet processed, before a next call to JxlDecoderProcessInput all
+ * unprocessed bytes must be provided again (the address need not match, but the
+ * contents must), and more bytes may be concatenated after the unprocessed
+ * bytes.
  *
  * The returned status indicates whether the decoder needs more input bytes, or
  * more output buffer for a certain type of output data. No matter what the
@@ -335,8 +335,6 @@ JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
  * requires more JxlDecoderProcessInput calls to continue.
  *
  * @param dec decoder object
- * @param next_in pointer to next bytes to read from
- * @param avail_in amount of bytes available starting from *next_in
  * @return JXL_DEC_SUCCESS when decoding finished and all events handled.
  * @return JXL_DEC_ERROR when decoding failed, e.g. invalid codestream.
  * TODO(lode) document the input data mechanism
@@ -354,9 +352,37 @@ JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
  * @return JXL_DEC_FULL_IMAGE when all pixel information at highest detail is
  * available and has been output in the pixel buffer.
  */
-JXL_EXPORT JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec,
-                                                   const uint8_t** next_in,
-                                                   size_t* avail_in);
+JXL_EXPORT JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec);
+
+/**
+ * Sets input data for JxlDecoderProcessInput. The data is owned by the caller
+ * and may be used by the decoder until JxlDecoderReleaseInput is called or
+ * the decoder is destroyed or reset so must be kept alive until then.
+ * @param dec decoder object
+ * @param data pointer to next bytes to read from
+ * @param size amount of bytes available starting from data
+ * @return JXL_DEC_ERROR if input was already set without releasing,
+ * JXL_DEC_SUCCESS otherwise
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec,
+                                               const uint8_t* data,
+                                               size_t size);
+
+/**
+ * Releases input which was provided with JxlDecoderSetInput. Between
+ * JxlDecoderProcessInput and JxlDecoderReleaseInput, the user may not alter
+ * the data in the buffer. Calling JxlDecoderReleaseInput is required whenever
+ * any input is already set and new input needs to be added with
+ * JxlDecoderSetInput, but is not required before JxlDecoderDestroy or
+ * JxlDecoderReset. Calling JxlDecoderReleaseInput when no input is set is
+ * not an error and returns 0.
+ * @param dec decoder object
+ * @return the amount of bytes the decoder has not yet processed that are
+ * still remaining in the data set by JxlDecoderSetInput, or 0 if no input is
+ * set or JxlDecoderReleaseInput was already called. For a next call to
+ * JxlDecoderProcessInput, the buffer must start with these unprocessed bytes.
+ */
+JXL_EXPORT size_t JxlDecoderReleaseInput(JxlDecoder* dec);
 
 /**
  * Outputs the basic image information, such as image dimensions, bit depth and

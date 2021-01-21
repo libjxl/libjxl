@@ -155,9 +155,9 @@ class CommandLineParser {
       return true;
     }
 
-    virtual bool positional() const override { return true; }
+    bool positional() const override { return true; }
 
-    virtual bool required() const override { return required_; }
+    bool required() const override { return required_; }
 
    private:
     const char* name_;
@@ -254,9 +254,9 @@ class CommandLineParser {
       }
     }
 
-    virtual bool positional() const override { return false; }
+    bool positional() const override { return false; }
 
-    virtual bool required() const override {
+    bool required() const override {
       // Only used for help display of positional arguments.
       return false;
     }

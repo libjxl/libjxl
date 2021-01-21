@@ -75,7 +75,7 @@ uint32_t ComputeUsedOrders(const SpeedTier speed,
   return ret;
 }
 
-void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
+void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                        const AcStrategyImage& ac_strategy,
                        const FrameDimensions& frame_dim, uint32_t used_orders,
                        coeff_order_t* JXL_RESTRICT order) {
@@ -115,13 +115,14 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
       const Rect rect(gx * kGroupDimInBlocks, gy * kGroupDimInBlocks,
                       kGroupDimInBlocks, kGroupDimInBlocks,
                       frame_dim.xsize_blocks, frame_dim.ysize_blocks);
-      const ac_qcoeff_t* JXL_RESTRICT rows[3] = {
-          acs.ConstPlaneRow(0, group_index),
-          acs.ConstPlaneRow(1, group_index),
-          acs.ConstPlaneRow(2, group_index),
-      };
+      ConstACPtr rows[3];
+      ACType type = acs.Type();
+      for (size_t c = 0; c < 3; c++) {
+        rows[c] = acs.PlaneRow(c, group_index, 0);
+      }
       size_t ac_offset = 0;
 
+      // TODO(veluca): SIMDfy.
       for (size_t by = 0; by < rect.ysize(); ++by) {
         AcStrategyRow acs_row = ac_strategy.ConstRow(rect, by);
         for (size_t bx = 0; bx < rect.xsize(); ++bx) {
@@ -132,9 +133,16 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage3& acs,
           for (size_t c = 0; c < 3; ++c) {
             const size_t order_offset =
                 CoeffOrderOffset(kStrategyOrder[acs.RawStrategy()], c);
-            for (size_t k = 0; k < size; k++) {
-              bool is_zero = rows[c][ac_offset + k] == 0;
-              num_zeros[order_offset + k] += is_zero ? 1 : 0;
+            if (type == ACType::k16) {
+              for (size_t k = 0; k < size; k++) {
+                bool is_zero = rows[c].ptr16[ac_offset + k] == 0;
+                num_zeros[order_offset + k] += is_zero ? 1 : 0;
+              }
+            } else {
+              for (size_t k = 0; k < size; k++) {
+                bool is_zero = rows[c].ptr32[ac_offset + k] == 0;
+                num_zeros[order_offset + k] += is_zero ? 1 : 0;
+              }
             }
             // Ensure LLFs are first in the order.
             size_t cx = acs.covered_blocks_x();

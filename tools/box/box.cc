@@ -167,7 +167,7 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
     if (box_index == 0) {
       // TODO(lode): leave out magic signature box?
       // Must be magic signature box.
-      if (memcmp("JXL ", box.type, 4)) {
+      if (memcmp("JXL ", box.type, 4) != 0) {
         return JXL_FAILURE("Invalid magic signature");
       }
       if (box.data_size != 4) return JXL_FAILURE("Invalid magic signature");
@@ -176,12 +176,12 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
       }
     } else if (box_index == 1) {
       // Must be ftyp box.
-      if (memcmp("ftyp", box.type, 4)) {
+      if (memcmp("ftyp", box.type, 4) != 0) {
         return JXL_FAILURE("Invalid ftyp");
       }
       if (box.data_size != 12) return JXL_FAILURE("Invalid ftyp");
       const char* expected = "jxl \0\0\0\0jxl ";
-      if (memcmp(expected, in, 12)) return JXL_FAILURE("Invalid ftyp");
+      if (memcmp(expected, in, 12) != 0) return JXL_FAILURE("Invalid ftyp");
     } else if (!memcmp("jxli", box.type, 4)) {
       // TODO(lode): parse JXL frame index box
       if (container->codestream) {

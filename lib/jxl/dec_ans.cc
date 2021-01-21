@@ -220,6 +220,11 @@ Status DecodeANSCodes(const size_t num_histograms,
         // 0-bit codes does not requre extension tables.
         result->huffman_data[c].table_.resize(1u << kHuffmanTableBits);
       }
+      for (const auto& h : result->huffman_data[c].table_) {
+        if (h.bits <= kHuffmanTableBits) {
+          result->UpdateMaxNumBits(c, h.value);
+        }
+      }
     }
   } else {
     JXL_ASSERT(max_alphabet_size <= ANS_MAX_ALPHABET_SIZE);
@@ -238,6 +243,11 @@ Status DecodeANSCodes(const size_t num_histograms,
       }
       while (!counts.empty() && counts.back() == 0) {
         counts.pop_back();
+      }
+      for (size_t s = 0; s < counts.size(); s++) {
+        if (counts[s] != 0) {
+          result->UpdateMaxNumBits(c, s);
+        }
       }
       // InitAliasTable "fixes" empty counts to contain degenerate "0" symbol.
       int degenerate_symbol = counts.empty() ? 0 : (counts.size() - 1);
@@ -300,6 +310,29 @@ Status LZ77Params::VisitFields(Visitor* JXL_RESTRICT visitor) {
   return true;
 }
 
+void ANSCode::UpdateMaxNumBits(size_t ctx, size_t symbol) {
+  HybridUintConfig* cfg = &uint_config[ctx];
+  // LZ77 symbols use a different uint config.
+  if (lz77.enabled && lz77.nonserialized_distance_context != ctx &&
+      symbol >= lz77.min_symbol) {
+    symbol -= lz77.min_symbol;
+    cfg = &lz77.length_uint_config;
+  }
+  size_t split_token = cfg->split_token;
+  size_t msb_in_token = cfg->msb_in_token;
+  size_t lsb_in_token = cfg->lsb_in_token;
+  size_t split_exponent = cfg->split_exponent;
+  if (symbol < split_token) {
+    max_num_bits = std::max(max_num_bits, split_exponent);
+    return;
+  }
+  uint32_t n_extra_bits =
+      split_exponent - (msb_in_token + lsb_in_token) +
+      ((symbol - split_token) >> (msb_in_token + lsb_in_token));
+  size_t total_bits = msb_in_token + lsb_in_token + n_extra_bits + 1;
+  max_num_bits = std::max(max_num_bits, total_bits);
+}
+
 Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
                         std::vector<uint8_t>* context_map, bool disallow_lz77) {
   PROFILER_FUNC;
@@ -330,6 +363,16 @@ Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
   const size_t max_alphabet_size = 1 << code->log_alpha_size;
   if (!DecodeANSCodes(num_histograms, max_alphabet_size, br, code)) {
     return JXL_FAILURE("Histo DecodeANSCodes");
+  }
+  // When using LZ77, flat codes might result in valid codestreams with
+  // histograms that potentially allow very large bit counts.
+  // TODO(veluca): in principle, a valid codestream might contain a histogram
+  // that could allow very large numbers of bits that is never used during ANS
+  // decoding. There's no benefit to doing that, though.
+  if (!code->lz77.enabled && code->max_num_bits > 32) {
+    return JXL_FAILURE(
+        "Histogram can represent numbers that are too large: %zu\n",
+        code->max_num_bits);
   }
   return true;
 }

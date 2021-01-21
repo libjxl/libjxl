@@ -58,15 +58,17 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
   enc_state->b_qm_multiplier =
       std::pow(1.25f, shared.frame_header.b_qm_scale - 2.0f);
 
-  if (enc_state->coeffs.size() != shared.frame_header.passes.num_passes) {
-    enc_state->coeffs.resize(shared.frame_header.passes.num_passes);
-    for (size_t i = 0; i < shared.frame_header.passes.num_passes; i++) {
-      static_assert(std::is_same<float, ac_qcoeff_t>::value,
-                    "float != ac_coeff_t");
+  if (enc_state->coeffs.size() < shared.frame_header.passes.num_passes) {
+    enc_state->coeffs.reserve(shared.frame_header.passes.num_passes);
+    for (size_t i = enc_state->coeffs.size();
+         i < shared.frame_header.passes.num_passes; i++) {
       // Allocate enough coefficients for each group on every row.
-      enc_state->coeffs[i] =
-          ACImage3(kGroupDim * kGroupDim, shared.frame_dim.num_groups);
+      enc_state->coeffs.emplace_back(make_unique<ACImageT<int32_t>>(
+          kGroupDim * kGroupDim, shared.frame_dim.num_groups));
     }
+  }
+  while (enc_state->coeffs.size() > shared.frame_header.passes.num_passes) {
+    enc_state->coeffs.pop_back();
   }
 
   Image3F dc(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);

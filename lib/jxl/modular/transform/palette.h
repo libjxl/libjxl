@@ -125,13 +125,14 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     if (c >= kDeltaPalette[0].size()) {
       return 0;
     }
-    index = -index - 1;
+    // Do not open the brackets, otherwise INT32_MIN negation could overflow.
+    index = -(index + 1);
     index %= 1 + 2 * (kDeltaPalette.size() - 1);
     static constexpr int kMultiplier[] = {-1, 1};
     pixel_type result =
         kDeltaPalette[((index + 1) >> 1)][c] * kMultiplier[index & 1];
     if (bit_depth > 8) {
-      result <<= bit_depth - 8;
+      result *= static_cast<pixel_type>(1) << (bit_depth - 8);
     }
     return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
@@ -234,12 +235,31 @@ static int QuantizeColorToImplicitPaletteIndex(
 
 }  // namespace palette_internal
 
+namespace {
+// Returns the sum of a+b. If ever over- / underflow occurs it is reflected
+// in "flags".
+pixel_type CautiousAdd(pixel_type a, pixel_type b, pixel_type *flags) {
+  // Avoid signed integer overflow.
+  pixel_type sum = static_cast<pixel_type>(static_cast<uint32_t>(a) +
+                                           static_cast<uint32_t>(b));
+  // We care only about the highest bit. If sign is different, addition is safe.
+  // If sign is the same, result sign should be the same as of the addends.
+  *flags &= (a ^ b) | (a ^ ~sum);
+  return sum;
+}
+
+bool IsHealthy(pixel_type flags) {
+  return (flags >> 31);
+}
+}  // namespace
+
 static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                          uint32_t nb_deltas, Predictor predictor,
                          const weighted::Header &wp_header, ThreadPool *pool) {
   if (input.nb_meta_channels < 1) {
     return JXL_FAILURE("Error: Palette transform without palette.");
   }
+  std::atomic<int> num_errors{0};
   int nb = input.channel[0].h;
   uint32_t c0 = begin_c + 1;
   if (c0 >= input.channel.size()) {
@@ -288,11 +308,12 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
               p_out[c] = input.channel[c0 + c].Row(y);
             for (size_t x = 0; x < w; x++) {
               const int index = p_index[x];
-              for (int c = 0; c < nb; c++)
+              for (int c = 0; c < nb; c++) {
                 p_out[c][x] = palette_internal::GetPaletteValue(
                     p_palette, index, /*c=*/c,
                     /*palette_size=*/palette.w,
                     /*onerow=*/onerow, /*bit_depth=*/bit_depth);
+              }
             }
           },
           "UndoPalette");
@@ -337,30 +358,35 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
       RunOnPool(
           pool, 0, nb, ThreadPool::SkipInit(),
           [&](size_t c, size_t _) {
+            pixel_type flags = -1;
             Channel &channel = input.channel[c0 + c];
             for (size_t y = 0; y < channel.h; y++) {
               pixel_type *JXL_RESTRICT p = channel.Row(y);
               const pixel_type *JXL_RESTRICT idx = indices.Row(y);
               for (size_t x = 0; x < channel.w; x++) {
                 int index = idx[x];
-                pixel_type_w val = 0;
+                pixel_type val = 0;
                 const pixel_type palette_entry =
                     palette_internal::GetPaletteValue(
                         p_palette, index, /*c=*/c,
                         /*palette_size=*/palette.w,
                         /*onerow=*/onerow, /*bit_depth=*/bit_depth);
                 if (index < static_cast<int32_t>(nb_deltas)) {
-                  pixel_type_w left =
+                  pixel_type left =
                       x ? p[x - 1] : (y ? *(p + x - onerow_image) : 0);
-                  pixel_type_w top = y ? *(p + x - onerow_image) : left;
-                  pixel_type_w topleft =
+                  pixel_type top = y ? *(p + x - onerow_image) : left;
+                  pixel_type topleft =
                       x && y ? *(p + x - 1 - onerow_image) : left;
-                  val = ClampedGradient(left, top, topleft) + palette_entry;
+                  val = CautiousAdd(ClampedGradient(left, top, topleft),
+                                    palette_entry, &flags);
                 } else {
                   val = palette_entry;
                 }
                 p[x] = val;
               }
+            }
+            if (!IsHealthy(flags)) {
+              num_errors.fetch_add(1, std::memory_order_relaxed);
             }
           },
           "UndoDeltaPaletteGradient");
@@ -397,7 +423,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   input.nb_channels += nb - 1;
   input.nb_meta_channels--;
   input.channel.erase(input.channel.begin(), input.channel.begin() + 1);
-  return true;
+  return num_errors.load(std::memory_order_relaxed) == 0;
 }
 
 static Status CheckPaletteParams(const Image &image, uint32_t begin_c,
@@ -564,11 +590,12 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
           // Exact search.
           for (index = 0; static_cast<uint32_t>(index) < nb_colors; index++) {
             bool found = true;
-            for (size_t c = 0; c < nb; c++)
+            for (size_t c = 0; c < nb; c++) {
               if (color[c] != p_palette[c * onerow + index]) {
                 found = false;
                 break;
               }
+            }
             if (found) break;
           }
           if (index < nb_deltas) {

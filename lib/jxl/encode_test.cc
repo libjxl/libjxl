@@ -17,6 +17,7 @@
 #include "gtest/gtest.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/encode_internal.h"
 #include "lib/jxl/test_utils.h"
 
 TEST(EncodeTest, DefaultAllocTest) {
@@ -58,10 +59,7 @@ TEST(EncodeTest, DefaultParallelRunnerTest) {
   JxlEncoderDestroy(enc);
 }
 
-TEST(EncodeTest, FrameEncodingTest) {
-  JxlEncoder* enc = JxlEncoderCreate(nullptr);
-  EXPECT_NE(nullptr, enc);
-
+void VerifyFrameEncoding(JxlEncoder* enc, JxlEncoderOptions* options) {
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   uint32_t xsize = 63;
   uint32_t ysize = 129;
@@ -71,9 +69,9 @@ TEST(EncodeTest, FrameEncodingTest) {
       jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetDimensions(enc, xsize, ysize));
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderAddImageFrame(
-                                 JxlEncoderOptionsCreate(enc, NULL),
-                                 &pixel_format, pixels.data(), pixels.size()));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
   JxlEncoderCloseInput(enc);
 
   std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
@@ -102,27 +100,48 @@ TEST(EncodeTest, FrameEncodingTest) {
   EXPECT_LE(ButteraugliDistance(input_io, decoded_io, ba,
                                 /*distmap=*/nullptr, nullptr),
             2.0f);
+}
 
+TEST(EncodeTest, FrameEncodingTest) {
+  JxlEncoder* enc = JxlEncoderCreate(nullptr);
+  EXPECT_NE(nullptr, enc);
+  VerifyFrameEncoding(enc, JxlEncoderOptionsCreate(enc, nullptr));
   JxlEncoderDestroy(enc);
 }
 
 TEST(EncodeTest, OptionsTest) {
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
-  EXPECT_NE(nullptr, enc);
-
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc, NULL);
-
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetLossless(options, JXL_TRUE));
-
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetEffort(options, 5));
+  VerifyFrameEncoding(enc, options);
+  EXPECT_EQ(jxl::SpeedTier::kHare, enc->last_used_cparams.speed_tier);
+  JxlEncoderDestroy(enc);
+
+  enc = JxlEncoderCreate(nullptr);
+  options = JxlEncoderOptionsCreate(enc, NULL);
   // Lower than currently supported values
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 2));
   // Higher than currently supported values
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 10));
+  JxlEncoderDestroy(enc);
 
+  enc = JxlEncoderCreate(nullptr);
+  options = JxlEncoderOptionsCreate(enc, NULL);
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetLossless(options, JXL_TRUE));
+  VerifyFrameEncoding(enc, options);
+  EXPECT_EQ(true, enc->last_used_cparams.IsLossless());
+  JxlEncoderDestroy(enc);
+
+  enc = JxlEncoderCreate(nullptr);
+  options = JxlEncoderOptionsCreate(enc, NULL);
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetDistance(options, 0.5));
+  VerifyFrameEncoding(enc, options);
+  EXPECT_EQ(0.5, enc->last_used_cparams.butteraugli_distance);
+  JxlEncoderDestroy(enc);
+
+  enc = JxlEncoderCreate(nullptr);
+  options = JxlEncoderOptionsCreate(enc, NULL);
   // Disallowed negative distance
   EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetDistance(options, -1));
-
   JxlEncoderDestroy(enc);
 }

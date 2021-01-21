@@ -192,7 +192,7 @@ constexpr size_t kNumTreeContexts = 6;
 void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
                   Tree *decoder_tree);
 
-Status DecodeTree(BitReader *br, Tree *tree);
+Status DecodeTree(BitReader *br, Tree *tree, size_t tree_size_limit);
 
 void CollectPixelSamples(const Image &image, const ModularOptions &options,
                          size_t group_id,

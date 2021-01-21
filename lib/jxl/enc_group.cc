@@ -16,6 +16,8 @@
 
 #include <utility>
 
+#include "hwy/aligned_allocator.h"
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/enc_group.cc"
 #include <hwy/foreach_target.h>
@@ -44,7 +46,7 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
                      size_t c, int32_t quant, float qm_multiplier,
                      size_t quant_kind, size_t xsize, size_t ysize,
                      const float* JXL_RESTRICT block_in,
-                     ac_qcoeff_t* JXL_RESTRICT block_out) {
+                     int32_t* JXL_RESTRICT block_out) {
   PROFILER_FUNC;
   const float* JXL_RESTRICT qm = quantizer.InvDequantMatrix(quant_kind, c);
   const float qac = quantizer.Scale() * quant;
@@ -58,6 +60,7 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
 
   if (!error_diffusion) {
     HWY_CAPPED(float, kBlockDim) df;
+    HWY_CAPPED(int32_t, kBlockDim) di;
     HWY_CAPPED(uint32_t, kBlockDim) du;
     const auto quant = Set(df, qac * qm_multiplier);
 
@@ -83,8 +86,8 @@ void QuantizeBlockAC(const Quantizer& quantizer, const bool error_diffusion,
         const auto in = Load(df, block_in + off + x);
         const auto val = q * in;
         const auto nzero_mask = Abs(val) >= thr;
-        const auto v = IfThenElseZero(nzero_mask, Round(val));
-        Store(v, df, block_out + off + x);
+        const auto v = ConvertTo(di, IfThenElseZero(nzero_mask, Round(val)));
+        Store(v, di, block_out + off + x);
       }
     }
     return;
@@ -116,7 +119,7 @@ retry:
       if (v != 0.0f) {
         hfNonZeros[hfix] += std::abs(v);
       }
-      block_out[pos] = static_cast<ac_qcoeff_t>(std::rint(v));
+      block_out[pos] = static_cast<int32_t>(std::rint(v));
     }
   }
   if (c != 1) return;
@@ -153,23 +156,23 @@ void QuantizeRoundtripYBlockAC(const Quantizer& quantizer,
                                const bool error_diffusion, int32_t quant,
                                size_t quant_kind, size_t xsize, size_t ysize,
                                const float* JXL_RESTRICT biases,
-                               const float* JXL_RESTRICT in,
-                               ac_qcoeff_t* JXL_RESTRICT quantized,
-                               float* JXL_RESTRICT out) {
+                               float* JXL_RESTRICT inout,
+                               int32_t* JXL_RESTRICT quantized) {
   QuantizeBlockAC(quantizer, error_diffusion, 1, quant, 1.0f, quant_kind, xsize,
-                  ysize, in, quantized);
+                  ysize, inout, quantized);
 
   PROFILER_ZONE("enc quant adjust bias");
   const float* JXL_RESTRICT dequant_matrix =
       quantizer.DequantMatrix(quant_kind, 1);
 
   HWY_CAPPED(float, kDCTBlockSize) df;
+  HWY_CAPPED(int32_t, kDCTBlockSize) di;
   const auto inv_qac = Set(df, quantizer.inv_quant_ac(quant));
   for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += Lanes(df)) {
-    const auto quant = Load(df, quantized + k);
+    const auto quant = ConvertTo(df, Load(di, quantized + k));
     const auto adj_quant = AdjustQuantBias(df, 1, quant, biases);
     const auto dequantm = Load(df, dequant_matrix + k);
-    Store(adj_quant * dequantm * inv_qac, df, out + k);
+    Store(adj_quant * dequantm * inv_qac, df, inout + k);
   }
 }
 
@@ -193,24 +196,29 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
   const ImageI& full_quant_field = enc_state->shared.raw_quant_field;
   const CompressParams& cparams = enc_state->cparams;
 
-  auto mem = hwy::AllocateAligned<ac_qcoeff_t>(6 * AcStrategy::kMaxCoeffArea);
-  float* JXL_RESTRICT scratch_space = mem.get() + 4 * AcStrategy::kMaxCoeffArea;
+  // TODO(veluca): consider strategies to reduce this memory.
+  auto mem = hwy::AllocateAligned<int32_t>(3 * AcStrategy::kMaxCoeffArea);
+  auto fmem = hwy::AllocateAligned<float>(5 * AcStrategy::kMaxCoeffArea);
+  float* JXL_RESTRICT scratch_space =
+      fmem.get() + 3 * AcStrategy::kMaxCoeffArea;
   {
     // Only use error diffusion in Squirrel mode or slower.
     const bool error_diffusion = cparams.speed_tier <= SpeedTier::kSquirrel;
     constexpr HWY_CAPPED(float, kDCTBlockSize) d;
 
-    ac_qcoeff_t* JXL_RESTRICT coeffs[kMaxNumPasses][3];
+    int32_t* JXL_RESTRICT coeffs[kMaxNumPasses][3] = {};
     size_t num_passes = enc_state->progressive_splitter.GetNumPasses();
     JXL_DASSERT(num_passes > 0);
     for (size_t i = 0; i < num_passes; i++) {
+      // TODO(veluca): 16-bit quantized coeffs are not implemented yet.
+      JXL_ASSERT(enc_state->coeffs[i]->Type() == ACType::k32);
       for (size_t c = 0; c < 3; c++) {
-        coeffs[i][c] = enc_state->coeffs[i].PlaneRow(c, group_idx);
+        coeffs[i][c] = enc_state->coeffs[i]->PlaneRow(c, group_idx, 0).ptr32;
       }
     }
 
-    HWY_ALIGN float* roundtrip_y = mem.get();
-    HWY_ALIGN ac_qcoeff_t* quantized = mem.get() + AcStrategy::kMaxCoeffArea;
+    HWY_ALIGN float* coeffs_in = fmem.get();
+    HWY_ALIGN int32_t* quantized = mem.get();
 
     size_t offset = 0;
 
@@ -246,44 +254,52 @@ void ComputeCoefficients(size_t group_idx, PassesEncoderState* enc_state,
           const AcStrategy acs = ac_strategy_row[bx];
           if (!acs.IsFirstBlock()) continue;
 
-          for (size_t c = 0; c < 3; ++c) {
-            TransformFromPixels(acs.Strategy(), opsin_rows[c] + bx * kBlockDim,
-                                opsin_stride, coeffs[0][c] + offset,
-                                scratch_space);
-            DCFromLowestFrequencies(acs.Strategy(), coeffs[0][c] + offset,
-                                    dc_rows[c] + bx, dc_stride);
-          }
-
           size_t xblocks = acs.covered_blocks_x();
           size_t yblocks = acs.covered_blocks_y();
+
           CoefficientLayout(&yblocks, &xblocks);
+
           size_t size = kDCTBlockSize * xblocks * yblocks;
 
+          // DCT Y channel, roundtrip-quantize it and set DC.
           const int32_t quant_ac = row_quant_ac[bx];
+          TransformFromPixels(acs.Strategy(), opsin_rows[1] + bx * kBlockDim,
+                              opsin_stride, coeffs_in + size, scratch_space);
+          DCFromLowestFrequencies(acs.Strategy(), coeffs_in + size,
+                                  dc_rows[1] + bx, dc_stride);
           QuantizeRoundtripYBlockAC(
               enc_state->shared.quantizer, error_diffusion, quant_ac,
               acs.RawStrategy(), xblocks, yblocks, kDefaultQuantBias,
-              coeffs[0][1] + offset, quantized + size, roundtrip_y);
+              coeffs_in + size, quantized + size);
+
+          // DCT X and B channels
+          for (size_t c : {0, 2}) {
+            TransformFromPixels(acs.Strategy(), opsin_rows[c] + bx * kBlockDim,
+                                opsin_stride, coeffs_in + c * size,
+                                scratch_space);
+          }
 
           // Unapply color correlation
           for (size_t k = 0; k < size; k += Lanes(d)) {
-            const auto in_x = Load(d, coeffs[0][0] + offset + k);
-            const auto in_y = Load(d, roundtrip_y + k);
-            const auto in_b = Load(d, coeffs[0][2] + offset + k);
+            const auto in_x = Load(d, coeffs_in + k);
+            const auto in_y = Load(d, coeffs_in + size + k);
+            const auto in_b = Load(d, coeffs_in + 2 * size + k);
             const auto out_x = in_x - x_factor * in_y;
             const auto out_b = in_b - b_factor * in_y;
-            Store(out_x, d, coeffs[0][0] + offset + k);
-            Store(out_b, d, coeffs[0][2] + offset + k);
+            Store(out_x, d, coeffs_in + k);
+            Store(out_b, d, coeffs_in + 2 * size + k);
           }
 
+          // Quantize X and B channels and set DC.
           for (size_t c : {0, 2}) {
-            // Quantize
             QuantizeBlockAC(enc_state->shared.quantizer, error_diffusion, c,
                             quant_ac,
                             c == 0 ? enc_state->x_qm_multiplier
                                    : enc_state->b_qm_multiplier,
                             acs.RawStrategy(), xblocks, yblocks,
-                            coeffs[0][c] + offset, quantized + c * size);
+                            coeffs_in + c * size, quantized + c * size);
+            DCFromLowestFrequencies(acs.Strategy(), coeffs_in + c * size,
+                                    dc_rows[c] + bx, dc_stride);
           }
           enc_state->progressive_splitter.SplitACCoefficients(
               quantized, size, acs, bx, by, offset, coeffs);

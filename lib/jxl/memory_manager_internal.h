@@ -90,7 +90,7 @@ template <typename T>
 using MemoryManagerUniquePtr = std::unique_ptr<T, MemoryManagerDeleteHelper>;
 
 // Creates a new object T allocating it with the memory allocator into a
-// unique_ptr. The result
+// unique_ptr.
 template <typename T, typename... Args>
 JXL_INLINE MemoryManagerUniquePtr<T> MemoryManagerMakeUnique(
     const JxlMemoryManager* memory_manager, Args&&... args) {

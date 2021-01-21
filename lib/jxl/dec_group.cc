@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 #include "lib/jxl/frame_header.h"
@@ -41,13 +42,29 @@
 #include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/dec_transforms-inl.h"
 #include "lib/jxl/dec_xyb.h"
-#include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/opsin_params.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer-inl.h"
 #include "lib/jxl/quantizer.h"
+
+#ifndef LIB_JXL_DEC_GROUP_CC
+#define LIB_JXL_DEC_GROUP_CC
+namespace jxl {
+
+// Interface for reading groups for DecodeGroupImpl.
+class GetBlock {
+ public:
+  virtual void StartRow(size_t by) = 0;
+  virtual Status LoadBlock(size_t bx, size_t by, const AcStrategy& acs,
+                           size_t size, size_t log2_covered_blocks,
+                           ACPtr block[3], ACType ac_type) = 0;
+  virtual ~GetBlock() {}
+};
+
+}  // namespace jxl
+#endif  // LIB_JXL_DEC_GROUP_CC
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -65,11 +82,22 @@ constexpr D d;
 constexpr DI di;
 constexpr DI16 di16;
 
-template <class V>
-void DequantLane(V scaled_dequant, V x_dm_multiplier, V b_dm_multiplier,
+// TODO(veluca): consider SIMDfying.
+void Transpose8x8InPlace(int32_t* JXL_RESTRICT block) {
+  for (size_t x = 0; x < 8; x++) {
+    for (size_t y = x + 1; y < 8; y++) {
+      std::swap(block[y * 8 + x], block[x * 8 + y]);
+    }
+  }
+}
+
+template <ACType ac_type>
+void DequantLane(Vec<D> scaled_dequant, Vec<D> x_dm_multiplier,
+                 Vec<D> b_dm_multiplier,
                  const float* JXL_RESTRICT dequant_matrices, size_t dq_ofs,
-                 size_t size, size_t k, V x_cc_mul, V b_cc_mul,
-                 const float* JXL_RESTRICT biases, float* JXL_RESTRICT block) {
+                 size_t size, size_t k, Vec<D> x_cc_mul, Vec<D> b_cc_mul,
+                 const float* JXL_RESTRICT biases, ACPtr qblock[3],
+                 float* JXL_RESTRICT block) {
   const auto x_mul =
       Load(d, dequant_matrices + dq_ofs + k) * scaled_dequant * x_dm_multiplier;
   const auto y_mul =
@@ -77,9 +105,23 @@ void DequantLane(V scaled_dequant, V x_dm_multiplier, V b_dm_multiplier,
   const auto b_mul = Load(d, dequant_matrices + dq_ofs + 2 * size + k) *
                      scaled_dequant * b_dm_multiplier;
 
-  const auto quantized_x = Load(d, block + k);
-  const auto quantized_y = Load(d, block + size + k);
-  const auto quantized_b = Load(d, block + 2 * size + k);
+  Vec<DI> quantized_x_int;
+  Vec<DI> quantized_y_int;
+  Vec<DI> quantized_b_int;
+  if (ac_type == ACType::k16) {
+    Rebind<int16_t, DI> di16;
+    quantized_x_int = PromoteTo(di, Load(di16, qblock[0].ptr16 + k));
+    quantized_y_int = PromoteTo(di, Load(di16, qblock[1].ptr16 + k));
+    quantized_b_int = PromoteTo(di, Load(di16, qblock[2].ptr16 + k));
+  } else {
+    quantized_x_int = Load(di, qblock[0].ptr32 + k);
+    quantized_y_int = Load(di, qblock[1].ptr32 + k);
+    quantized_b_int = Load(di, qblock[2].ptr32 + k);
+  }
+
+  const auto quantized_x = ConvertTo(d, quantized_x_int);
+  const auto quantized_y = ConvertTo(d, quantized_y_int);
+  const auto quantized_b = ConvertTo(d, quantized_b_int);
 
   const auto dequant_x_cc = AdjustQuantBias(d, 0, quantized_x, biases) * x_mul;
   const auto dequant_y = AdjustQuantBias(d, 1, quantized_y, biases) * y_mul;
@@ -92,16 +134,16 @@ void DequantLane(V scaled_dequant, V x_dm_multiplier, V b_dm_multiplier,
   Store(dequant_b, d, block + 2 * size + k);
 }
 
-template <class V>
+template <ACType ac_type>
 void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
-                  float x_dm_multiplier, float b_dm_multiplier, V x_cc_mul,
-                  V b_cc_mul, size_t kind, size_t size,
+                  float x_dm_multiplier, float b_dm_multiplier, Vec<D> x_cc_mul,
+                  Vec<D> b_cc_mul, size_t kind, size_t size,
                   const Quantizer& quantizer,
                   const float* JXL_RESTRICT dequant_matrices,
                   size_t covered_blocks, const size_t* sbx,
                   const float* JXL_RESTRICT* JXL_RESTRICT dc_row,
                   size_t dc_stride, const float* JXL_RESTRICT biases,
-                  float* JXL_RESTRICT block) {
+                  ACPtr qblock[3], float* JXL_RESTRICT block) {
   PROFILER_FUNC;
 
   const auto scaled_dequant = Set(d, inv_global_scale / quant);
@@ -111,9 +153,9 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
   const size_t dq_ofs = quantizer.DequantMatrixOffset(kind, 0);
 
   for (size_t k = 0; k < covered_blocks * kDCTBlockSize; k += Lanes(d)) {
-    DequantLane(scaled_dequant, x_dm_multiplier_v, b_dm_multiplier_v,
-                dequant_matrices, dq_ofs, size, k, x_cc_mul, b_cc_mul, biases,
-                block);
+    DequantLane<ac_type>(scaled_dequant, x_dm_multiplier_v, b_dm_multiplier_v,
+                         dequant_matrices, dq_ofs, size, k, x_cc_mul, b_cc_mul,
+                         biases, qblock, block);
   }
   for (size_t c = 0; c < 3; c++) {
     LowestFrequenciesFromDC(acs.Strategy(), dc_row[c] + sbx[c], dc_stride,
@@ -121,15 +163,15 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
   }
 }
 
-template <class GetBlock>
 Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
-                       size_t thread, const Rect& block_rect, AuxOut* aux_out,
+                       size_t thread, size_t group_idx, AuxOut* aux_out,
                        Image3F* JXL_RESTRICT output,
                        const ImageBundle* decoded) {
   PROFILER_FUNC;
 
+  const Rect block_rect = dec_state->shared->BlockGroupRect(group_idx);
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
 
@@ -148,6 +190,15 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const size_t idct_stride = dec_state->decoded.PixelsPerRow();
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
+
+  ACType ac_type = dec_state->coefficients->Type();
+  auto dequant_block = (ac_type == ACType::k16 ? DequantBlock<ACType::k16>
+                                               : DequantBlock<ACType::k32>);
+  // Whether or not coefficients should be stored for future usage, and/or read
+  // from past usage.
+  bool accumulate = !dec_state->coefficients->IsEmpty();
+  // Offset of the current block in the group.
+  size_t offset = 0;
 
   std::array<int, 3> jpeg_c_map;
   std::array<int, 3> dcoff = {};
@@ -252,9 +303,29 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         const size_t covered_blocks = 1 << log2_covered_blocks;
         const size_t size = covered_blocks * kDCTBlockSize;
 
-        HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
-        JXL_RETURN_IF_ERROR(
-            get_block->GetBlock(bx, by, acs, size, log2_covered_blocks, block));
+        ACPtr qblock[3];
+        if (accumulate) {
+          for (size_t c = 0; c < 3; c++) {
+            qblock[c] = dec_state->coefficients->PlaneRow(c, group_idx, offset);
+          }
+        } else {
+          if (ac_type == ACType::k16) {
+            memset(group_dec_cache->dec_group_qblock16, 0,
+                   size * 3 * sizeof(int16_t));
+            for (size_t c = 0; c < 3; c++) {
+              qblock[c].ptr16 = group_dec_cache->dec_group_qblock16 + c * size;
+            }
+          } else {
+            memset(group_dec_cache->dec_group_qblock, 0,
+                   size * 3 * sizeof(int32_t));
+            for (size_t c = 0; c < 3; c++) {
+              qblock[c].ptr32 = group_dec_cache->dec_group_qblock + c * size;
+            }
+          }
+        }
+        JXL_RETURN_IF_ERROR(get_block->LoadBlock(
+            bx, by, acs, size, log2_covered_blocks, qblock, ac_type));
+        offset += size;
 
         if (JXL_UNLIKELY(decoded->IsJPEG())) {
           if (acs.Strategy() != AcStrategy::Type::DCT) {
@@ -262,7 +333,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                 "Can only decode to JPEG if only DCT-8 is used.");
           }
 
-          HWY_ALIGN int transposed_dct_int[64];
+          HWY_ALIGN int32_t transposed_dct_y[64];
           for (size_t c : {1, 0, 2}) {
             if (decoded->jpeg_data->components.size() == 1 && c != 1) {
               continue;
@@ -273,36 +344,32 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             int16_t* JXL_RESTRICT jpeg_pos =
                 jpeg_row[c] + sbx[c] * kDCTBlockSize;
             // JPEG XL is transposed, JPEG is not.
-            HWY_ALIGN float transposed_dct[64];
-            Transpose<8, 8>::Run(DCTFrom(block + c * size, 8),
-                                 DCTTo(transposed_dct, 8));
-            // No CfL - no need to store the block converted to integers.
+            auto transposed_dct = qblock[c].ptr32;
+            Transpose8x8InPlace(transposed_dct);
+            // No CfL - no need to store the y block converted to integers.
             if (!cs.Is444() ||
                 (row_cmap[0][abs_tx] == 0 && row_cmap[2][abs_tx] == 0)) {
               for (size_t i = 0; i < 64; i += Lanes(d)) {
-                const auto inf = Load(d, transposed_dct + i);
-                const auto ini = ConvertTo(di, inf);
+                const auto ini = Load(di, transposed_dct + i);
                 const auto ini16 = DemoteTo(di16, ini);
                 StoreU(ini16, di16, jpeg_pos + i);
               }
             } else if (c == 1) {
               // Y channel: save for restoring X/B, but nothing else to do.
               for (size_t i = 0; i < 64; i += Lanes(d)) {
-                const auto inf = Load(d, transposed_dct + i);
-                const auto ini = ConvertTo(di, inf);
-                Store(ini, di, transposed_dct_int + i);
+                const auto ini = Load(di, transposed_dct + i);
+                Store(ini, di, transposed_dct_y + i);
                 const auto ini16 = DemoteTo(di16, ini);
                 StoreU(ini16, di16, jpeg_pos + i);
               }
             } else {
-              // transposed_dct_int contains the y channel block, converted to
-              // ints and transposed.
+              // transposed_dct_y contains the y channel block, transposed.
               const auto scale = Set(
                   di, dec_state->shared->cmap.RatioJPEG(row_cmap[c][abs_tx]));
               const auto round = Set(di, 1 << (kCFLFixedPointPrecision - 1));
               for (int i = 0; i < 64; i += Lanes(d)) {
-                auto in = ConvertTo(di, Load(d, transposed_dct + i));
-                auto in_y = Load(di, transposed_dct_int + i);
+                auto in = Load(di, transposed_dct + i);
+                auto in_y = Load(di, transposed_dct_y + i);
                 auto qt = Load(di, scaled_qtable + c * size + i);
                 auto coeff_scale =
                     ShiftRight<kCFLFixedPointPrecision>(qt * scale + round);
@@ -314,15 +381,17 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             jpeg_pos[0] = dc_rows[c][sbx[c]] - dcoff[c];
           }
         } else {
+          HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
           // Dequantize and add predictions.
           {
-            DequantBlock(acs, inv_global_scale, row_quant[bx],
-                         dec_state->x_dm_multiplier, dec_state->b_dm_multiplier,
-                         x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
-                         dec_state->shared->quantizer, dequant_matrices,
-                         acs.covered_blocks_y() * acs.covered_blocks_x(), sbx,
-                         dc_rows, dc_stride,
-                         dec_state->shared->opsin_params.quant_biases, block);
+            dequant_block(
+                acs, inv_global_scale, row_quant[bx],
+                dec_state->x_dm_multiplier, dec_state->b_dm_multiplier,
+                x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
+                dec_state->shared->quantizer, dequant_matrices,
+                acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
+                dc_stride, dec_state->shared->opsin_params.quant_biases, qblock,
+                block);
           }
 
           for (size_t c : {1, 0, 2}) {
@@ -387,6 +456,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
 // Decode quantized AC coefficients of DCT blocks.
 // LLF components in the output block will not be modified.
+template <ACType ac_type>
 Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         int32_t* JXL_RESTRICT row_nzeros,
                         const int32_t* JXL_RESTRICT row_nzeros_top,
@@ -397,8 +467,8 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
                         ANSSymbolReader* JXL_RESTRICT decoder,
                         const std::vector<uint8_t>& context_map,
                         const uint8_t* qdc_row, const int32_t* qf_row,
-                        const BlockCtxMap& block_ctx_map,
-                        ac_qcoeff_t* JXL_RESTRICT block, size_t shift = 0) {
+                        const BlockCtxMap& block_ctx_map, ACPtr block,
+                        size_t shift = 0) {
   PROFILER_FUNC;
   // Equal to number of LLF coefficients.
   const size_t covered_blocks = 1 << log2_covered_blocks;
@@ -444,7 +514,11 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
       const size_t neg_sign = (~u_coeff) & 1;
       const intptr_t coeff =
           static_cast<intptr_t>((magnitude ^ (neg_sign - 1)) << shift);
-      block[order[k]] += static_cast<ac_qcoeff_t>(coeff);
+      if (ac_type == ACType::k16) {
+        block.ptr16[order[k]] += coeff;
+      } else {
+        block.ptr32[order[k]] += coeff;
+      }
       prev = static_cast<size_t>(u_coeff != 0);
       nzeros -= prev;
     }
@@ -461,8 +535,8 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
 // pointers in row_nzeros), GetBlockFromEncoder simply reads the coefficient
 // image provided by the encoder.
 
-struct GetBlockFromBitstream {
-  void StartRow(size_t by) {
+struct GetBlockFromBitstream : public GetBlock {
+  void StartRow(size_t by) override {
     qf_row = rect.ConstRow(*qf, by);
     for (size_t c = 0; c < 3; c++) {
       size_t sby = by >> vshift[c];
@@ -477,11 +551,13 @@ struct GetBlockFromBitstream {
     }
   }
 
-  Status GetBlock(size_t bx, size_t by, const AcStrategy& acs, size_t size,
-                  size_t log2_covered_blocks, float* JXL_RESTRICT block) {
-    memset(block, 0, sizeof(float) * size * 3);
+  Status LoadBlock(size_t bx, size_t by, const AcStrategy& acs, size_t size,
+                   size_t log2_covered_blocks, ACPtr block[3],
+                   ACType ac_type) override {
+    auto decode_ac_varblock = ac_type == ACType::k16
+                                  ? DecodeACVarBlock<ACType::k16>
+                                  : DecodeACVarBlock<ACType::k32>;
     for (size_t c : {1, 0, 2}) {
-      float* JXL_RESTRICT block_c = block + c * size;
       size_t sbx = bx >> hshift[c];
       size_t sby = by >> vshift[c];
       if (JXL_UNLIKELY((sbx << hshift[c] != bx) || (sby << vshift[c] != by))) {
@@ -489,12 +565,12 @@ struct GetBlockFromBitstream {
       }
 
       for (size_t pass = 0; JXL_UNLIKELY(pass < num_passes); pass++) {
-        JXL_RETURN_IF_ERROR(DecodeACVarBlock(
+        JXL_RETURN_IF_ERROR(decode_ac_varblock(
             ctx_offset[pass], log2_covered_blocks, row_nzeros[pass][c],
             row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, bx, acs,
             &coeff_orders[pass * kCoeffOrderSize], readers[pass],
             &decoders[pass], context_map[pass], quant_dc_row, qf_row,
-            *block_ctx_map, block_c, shift_for_pass[pass]));
+            *block_ctx_map, block[c], shift_for_pass[pass]));
       }
     }
     return true;
@@ -561,18 +637,19 @@ struct GetBlockFromBitstream {
   size_t hshift[3], vshift[3];
 };
 
-struct GetBlockFromEncoder {
-  void StartRow(size_t by) {}
+struct GetBlockFromEncoder : public GetBlock {
+  void StartRow(size_t by) override {}
 
-  Status GetBlock(size_t bx, size_t by, const AcStrategy& acs, size_t size,
-                  size_t log2_covered_blocks, float* JXL_RESTRICT block) {
-    memset(block, 0, size * 3 * sizeof(float));
+  Status LoadBlock(size_t bx, size_t by, const AcStrategy& acs, size_t size,
+                   size_t log2_covered_blocks, ACPtr block[3],
+                   ACType ac_type) override {
+    JXL_DASSERT(ac_type == ACType::k32);
     for (size_t c = 0; c < 3; c++) {
       // for each pass
       for (size_t i = 0; i < quantized_ac->size(); i++) {
         for (size_t k = 0; k < size; k++) {
           // TODO(veluca): SIMD.
-          block[c * size + k] += rows[i][c][offset + k];
+          block[c].ptr32[k] += rows[i][c][offset + k];
         }
       }
     }
@@ -580,21 +657,24 @@ struct GetBlockFromEncoder {
     return true;
   }
 
-  GetBlockFromEncoder(const std::vector<ACImage3>& ac, size_t group_idx)
+  GetBlockFromEncoder(const std::vector<std::unique_ptr<ACImage>>& ac,
+                      size_t group_idx)
       : quantized_ac(&ac) {
     // TODO(veluca): not supported with chroma subsampling.
     for (size_t i = 0; i < quantized_ac->size(); i++) {
+      JXL_CHECK((*quantized_ac)[i]->Type() == ACType::k32);
       for (size_t c = 0; c < 3; c++) {
-        rows[i][c] = (*quantized_ac)[i].ConstPlaneRow(c, group_idx);
+        rows[i][c] = (*quantized_ac)[i]->PlaneRow(c, group_idx, 0).ptr32;
       }
     }
   }
 
-  const std::vector<ACImage3>* JXL_RESTRICT quantized_ac;
+  const std::vector<std::unique_ptr<ACImage>>* JXL_RESTRICT quantized_ac;
   size_t offset = 0;
-  const float* JXL_RESTRICT rows[kMaxNumPasses][3];
+  const int32_t* JXL_RESTRICT rows[kMaxNumPasses][3];
 };
 
+// TODO(veluca): move out of HWY_NAMESPACE.
 Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
@@ -602,7 +682,6 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    Image3F* output, ImageBundle* JXL_RESTRICT decoded,
                    AuxOut* aux_out) {
   PROFILER_FUNC;
-  const Rect block_group_rect = dec_state->shared->BlockGroupRect(group_idx);
 
   group_dec_cache->InitOnce(num_passes);
 
@@ -610,12 +689,13 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
       CeilLog2Nonzero(dec_state->shared->num_histograms);
 
   GetBlockFromBitstream get_block;
-  JXL_RETURN_IF_ERROR(get_block.Init(readers, num_passes, group_idx,
-                                     histo_selector_bits, block_group_rect,
-                                     group_dec_cache, dec_state));
+  JXL_RETURN_IF_ERROR(
+      get_block.Init(readers, num_passes, group_idx, histo_selector_bits,
+                     dec_state->shared->BlockGroupRect(group_idx),
+                     group_dec_cache, dec_state));
 
   JXL_RETURN_IF_ERROR(DecodeGroupImpl(&get_block, group_dec_cache, dec_state,
-                                      thread, block_group_rect, aux_out, output,
+                                      thread, group_idx, aux_out, output,
                                       decoded));
 
   for (size_t pass = 0; pass < num_passes; pass++) {
@@ -626,7 +706,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
   return true;
 }
 
-Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
+Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
@@ -635,12 +715,10 @@ Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
                                AuxOut* aux_out) {
   PROFILER_FUNC;
 
-  const Rect block_group_rect = dec_state->shared->BlockGroupRect(group_idx);
-
   GetBlockFromEncoder get_block(ac, group_idx);
 
   return DecodeGroupImpl(&get_block, group_dec_cache, dec_state, thread,
-                         block_group_rect, aux_out, output, decoded);
+                         group_idx, aux_out, output, decoded);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -663,7 +741,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
 }
 
 HWY_EXPORT(DecodeGroupForRoundtrip);
-Status DecodeGroupForRoundtrip(const std::vector<ACImage3>& ac,
+Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,

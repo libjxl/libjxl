@@ -33,53 +33,59 @@ namespace HWY_NAMESPACE {
 namespace {
 
 template <size_t ROWS, size_t COLS>
-struct DoIDCT {
+struct DoDCT {
   template <typename From, typename To>
   void operator()(const From& from, const To& to,
                   float* JXL_RESTRICT scratch_space) {
-    ComputeScaledIDCT<ROWS, COLS>()(from, to, scratch_space);
+    ComputeScaledDCT<ROWS, COLS>()(from, to, scratch_space);
   }
 };
 
 template <size_t N>
-struct DoIDCT<N, N> {
+struct DoDCT<N, N> {
   template <typename From, typename To>
   void operator()(const From& from, const To& to,
-                  float* JXL_RESTRICT scratch_space) const {
-    ComputeTransposedScaledIDCT<N>()(from, to, scratch_space);
+                  float* JXL_RESTRICT scratch_space) {
+    ComputeTransposedScaledDCT<N>()(from, to, scratch_space);
   }
 };
 
-// Inverse of ReinterpretingDCT.
+// Computes the lowest-frequency LF_ROWSxLF_COLS-sized square in output, which
+// is a DCT_ROWS*DCT_COLS-sized DCT block, by doing a ROWS*COLS DCT on the
+// input block.
 template <size_t DCT_ROWS, size_t DCT_COLS, size_t LF_ROWS, size_t LF_COLS,
           size_t ROWS, size_t COLS>
-HWY_INLINE void ReinterpretingIDCT(const float* input,
-                                   const size_t input_stride, float* output,
-                                   const size_t output_stride) {
-  HWY_ALIGN float block[ROWS * COLS] = {};
+JXL_INLINE void ReinterpretingDCT(const float* input, const size_t input_stride,
+                                  float* output, const size_t output_stride) {
+  static_assert(LF_ROWS == ROWS,
+                "ReinterpretingDCT should only be called with LF == N");
+  static_assert(LF_COLS == COLS,
+                "ReinterpretingDCT should only be called with LF == N");
+  HWY_ALIGN float block[ROWS * COLS];
+
+  constexpr size_t OUT_COLS = CoefficientColumns(ROWS, COLS);
+
+  // ROWS, COLS <= 8, so we can put scratch space on the stack.
+  HWY_ALIGN float scratch_space[ROWS * COLS * 2];
+  DoDCT<ROWS, COLS>()(DCTFrom(input, input_stride), DCTTo(block, OUT_COLS),
+                      scratch_space);
   if (ROWS < COLS) {
     for (size_t y = 0; y < LF_ROWS; y++) {
       for (size_t x = 0; x < LF_COLS; x++) {
-        block[y * COLS + x] = input[y * input_stride + x] *
-                              DCTTotalResampleScale<DCT_ROWS, ROWS>(y) *
-                              DCTTotalResampleScale<DCT_COLS, COLS>(x);
+        output[y * output_stride + x] =
+            block[y * COLS + x] * DCTTotalResampleScale<ROWS, DCT_ROWS>(y) *
+            DCTTotalResampleScale<COLS, DCT_COLS>(x);
       }
     }
   } else {
     for (size_t y = 0; y < LF_COLS; y++) {
       for (size_t x = 0; x < LF_ROWS; x++) {
-        block[y * ROWS + x] = input[y * input_stride + x] *
-                              DCTTotalResampleScale<DCT_COLS, COLS>(y) *
-                              DCTTotalResampleScale<DCT_ROWS, ROWS>(x);
+        output[y * output_stride + x] =
+            block[y * ROWS + x] * DCTTotalResampleScale<COLS, DCT_COLS>(y) *
+            DCTTotalResampleScale<ROWS, DCT_ROWS>(x);
       }
     }
   }
-
-  constexpr size_t IN_COLS = CoefficientColumns(ROWS, COLS);
-  // ROWS, COLS <= 8, so we can put scratch space on the stack.
-  HWY_ALIGN float scratch_space[ROWS * COLS * 2];
-  DoIDCT<ROWS, COLS>()(DCTFrom(block, IN_COLS), DCTTo(output, output_stride),
-                       scratch_space);
 }
 
 template <size_t S>
@@ -746,117 +752,115 @@ HWY_MAYBE_UNUSED void TransformToPixels(const AcStrategy::Type strategy,
   }
 }
 
-HWY_MAYBE_UNUSED void DCFromLowestFrequencies(const AcStrategy::Type strategy,
-                                              const float* block, float* dc,
-                                              size_t dc_stride) {
+HWY_MAYBE_UNUSED void LowestFrequenciesFromDC(const AcStrategy::Type strategy,
+                                              const float* dc, size_t dc_stride,
+                                              float* llf) {
   using Type = AcStrategy::Type;
   switch (strategy) {
     case Type::DCT16X8: {
-      ReinterpretingIDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/kBlockDim,
-                         /*LF_ROWS=*/2, /*LF_COLS=*/1, /*ROWS=*/2, /*COLS=*/1>(
-          block, 2 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/kBlockDim,
+                        /*LF_ROWS=*/2, /*LF_COLS=*/1, /*ROWS=*/2, /*COLS=*/1>(
+          dc, dc_stride, llf, 2 * kBlockDim);
       break;
     }
     case Type::DCT8X16: {
-      ReinterpretingIDCT</*DCT_ROWS=*/kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
-                         /*LF_ROWS=*/1, /*LF_COLS=*/2, /*ROWS=*/1, /*COLS=*/2>(
-          block, 2 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
+                        /*LF_ROWS=*/1, /*LF_COLS=*/2, /*ROWS=*/1, /*COLS=*/2>(
+          dc, dc_stride, llf, 2 * kBlockDim);
       break;
     }
     case Type::DCT16X16: {
-      ReinterpretingIDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
-                         /*LF_ROWS=*/2, /*LF_COLS=*/2, /*ROWS=*/2, /*COLS=*/2>(
-          block, 2 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
+                        /*LF_ROWS=*/2, /*LF_COLS=*/2, /*ROWS=*/2, /*COLS=*/2>(
+          dc, dc_stride, llf, 2 * kBlockDim);
       break;
     }
     case Type::DCT32X8: {
-      ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/kBlockDim,
-                         /*LF_ROWS=*/4, /*LF_COLS=*/1, /*ROWS=*/4, /*COLS=*/1>(
-          block, 4 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/kBlockDim,
+                        /*LF_ROWS=*/4, /*LF_COLS=*/1, /*ROWS=*/4, /*COLS=*/1>(
+          dc, dc_stride, llf, 4 * kBlockDim);
       break;
     }
     case Type::DCT8X32: {
-      ReinterpretingIDCT</*DCT_ROWS=*/kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
-                         /*LF_ROWS=*/1, /*LF_COLS=*/4, /*ROWS=*/1, /*COLS=*/4>(
-          block, 4 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
+                        /*LF_ROWS=*/1, /*LF_COLS=*/4, /*ROWS=*/1, /*COLS=*/4>(
+          dc, dc_stride, llf, 4 * kBlockDim);
       break;
     }
     case Type::DCT32X16: {
-      ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
-                         /*LF_ROWS=*/4, /*LF_COLS=*/2, /*ROWS=*/4, /*COLS=*/2>(
-          block, 4 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/2 * kBlockDim,
+                        /*LF_ROWS=*/4, /*LF_COLS=*/2, /*ROWS=*/4, /*COLS=*/2>(
+          dc, dc_stride, llf, 4 * kBlockDim);
       break;
     }
     case Type::DCT16X32: {
-      ReinterpretingIDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
-                         /*LF_ROWS=*/2, /*LF_COLS=*/4, /*ROWS=*/2, /*COLS=*/4>(
-          block, 4 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/2 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
+                        /*LF_ROWS=*/2, /*LF_COLS=*/4, /*ROWS=*/2, /*COLS=*/4>(
+          dc, dc_stride, llf, 4 * kBlockDim);
       break;
     }
     case Type::DCT32X32: {
-      ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
-                         /*LF_ROWS=*/4, /*LF_COLS=*/4, /*ROWS=*/4, /*COLS=*/4>(
-          block, 4 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
+                        /*LF_ROWS=*/4, /*LF_COLS=*/4, /*ROWS=*/4, /*COLS=*/4>(
+          dc, dc_stride, llf, 4 * kBlockDim);
       break;
     }
     case Type::DCT64X32: {
-      ReinterpretingIDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
-                         /*LF_ROWS=*/8, /*LF_COLS=*/4, /*ROWS=*/8, /*COLS=*/4>(
-          block, 8 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/4 * kBlockDim,
+                        /*LF_ROWS=*/8, /*LF_COLS=*/4, /*ROWS=*/8, /*COLS=*/4>(
+          dc, dc_stride, llf, 8 * kBlockDim);
       break;
     }
     case Type::DCT32X64: {
-      ReinterpretingIDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
-                         /*LF_ROWS=*/4, /*LF_COLS=*/8, /*ROWS=*/4, /*COLS=*/8>(
-          block, 8 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/4 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
+                        /*LF_ROWS=*/4, /*LF_COLS=*/8, /*ROWS=*/4, /*COLS=*/8>(
+          dc, dc_stride, llf, 8 * kBlockDim);
       break;
     }
     case Type::DCT64X64: {
-      ReinterpretingIDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
-                         /*LF_ROWS=*/8, /*LF_COLS=*/8, /*ROWS=*/8, /*COLS=*/8>(
-          block, 8 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
+                        /*LF_ROWS=*/8, /*LF_COLS=*/8, /*ROWS=*/8, /*COLS=*/8>(
+          dc, dc_stride, llf, 8 * kBlockDim);
       break;
     }
     case Type::DCT128X64: {
-      ReinterpretingIDCT<
-          /*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
-          /*LF_ROWS=*/16, /*LF_COLS=*/8, /*ROWS=*/16, /*COLS=*/8>(
-          block, 16 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/8 * kBlockDim,
+                        /*LF_ROWS=*/16, /*LF_COLS=*/8, /*ROWS=*/16, /*COLS=*/8>(
+          dc, dc_stride, llf, 16 * kBlockDim);
       break;
     }
     case Type::DCT64X128: {
-      ReinterpretingIDCT<
-          /*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
-          /*LF_ROWS=*/8, /*LF_COLS=*/16, /*ROWS=*/8, /*COLS=*/16>(
-          block, 16 * kBlockDim, dc, dc_stride);
+      ReinterpretingDCT</*DCT_ROWS=*/8 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
+                        /*LF_ROWS=*/8, /*LF_COLS=*/16, /*ROWS=*/8, /*COLS=*/16>(
+          dc, dc_stride, llf, 16 * kBlockDim);
       break;
     }
     case Type::DCT128X128: {
-      ReinterpretingIDCT<
+      ReinterpretingDCT<
           /*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
           /*LF_ROWS=*/16, /*LF_COLS=*/16, /*ROWS=*/16, /*COLS=*/16>(
-          block, 16 * kBlockDim, dc, dc_stride);
+          dc, dc_stride, llf, 16 * kBlockDim);
       break;
     }
     case Type::DCT256X128: {
-      ReinterpretingIDCT<
+      ReinterpretingDCT<
           /*DCT_ROWS=*/32 * kBlockDim, /*DCT_COLS=*/16 * kBlockDim,
           /*LF_ROWS=*/32, /*LF_COLS=*/16, /*ROWS=*/32, /*COLS=*/16>(
-          block, 32 * kBlockDim, dc, dc_stride);
+          dc, dc_stride, llf, 32 * kBlockDim);
       break;
     }
     case Type::DCT128X256: {
-      ReinterpretingIDCT<
+      ReinterpretingDCT<
           /*DCT_ROWS=*/16 * kBlockDim, /*DCT_COLS=*/32 * kBlockDim,
           /*LF_ROWS=*/16, /*LF_COLS=*/32, /*ROWS=*/16, /*COLS=*/32>(
-          block, 32 * kBlockDim, dc, dc_stride);
+          dc, dc_stride, llf, 32 * kBlockDim);
       break;
     }
     case Type::DCT256X256: {
-      ReinterpretingIDCT<
+      ReinterpretingDCT<
           /*DCT_ROWS=*/32 * kBlockDim, /*DCT_COLS=*/32 * kBlockDim,
           /*LF_ROWS=*/32, /*LF_COLS=*/32, /*ROWS=*/32, /*COLS=*/32>(
-          block, 32 * kBlockDim, dc, dc_stride);
+          dc, dc_stride, llf, 32 * kBlockDim);
       break;
     }
     case Type::DCT:
@@ -869,11 +873,11 @@ HWY_MAYBE_UNUSED void DCFromLowestFrequencies(const AcStrategy::Type strategy,
     case Type::AFV2:
     case Type::AFV3:
     case Type::IDENTITY:
-      dc[0] = block[0];
+      llf[0] = dc[0];
       break;
     case Type::kNumValidStrategies:
       JXL_ABORT("Invalid strategy");
-  }
+  };
 }
 
 }  // namespace

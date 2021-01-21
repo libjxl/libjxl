@@ -133,7 +133,8 @@ bitrate 0.5 bits per pixel) and `q92` (quality 92, on a scale of 0-100, where
 higher is better). The `jxl` codec supports the following additional parameters:
 
 Speed: `falcon`, `cheetah`, `hare`, `wombat`, `squirrel`, `kitten`, `tortoise`
-control the encoder effort in ascending order.
+control the encoder effort in ascending order. This also affects memory usage:
+using lower effort will typically reduce memory consumption during encoding.
 
 *   `falcon` disables all of the following tools.
 *   `cheetah` enables coefficient reordering, context clustering, and heuristics

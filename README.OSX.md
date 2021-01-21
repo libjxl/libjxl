@@ -7,10 +7,14 @@ This manual outlines OSX specific setup. For general building and testing
 instructions see "[README](README.md)" and
 "[Building and Testing changes](doc/building_and_testing.md)".
 
-## Dependencies
+[Homebrew](https://brew.sh/) is a popular package manager. JPEG XL library and
+binaries could be installed using it:
 
-[Homebrew](https://brew.sh/) is a popular package manager that can be used for
-installing dependencies.
+```bash
+brew install jpeg-xl
+```
+
+## Dependencies
 
 Make sure that `brew doctor` does not report serious problems and up-to-date
 version of XCode is installed.
@@ -22,18 +26,16 @@ brew install llvm
 ```
 
 ```bash
-brew install clang-format coreutils cmake giflib libjpeg ninja parallel
-```
-
-If `git-clang-format` command is not accessible, run
-
-```bash
-brew link --overwrite clang-format
+brew install coreutils cmake giflib jpeg-turbo libpng ninja zlib
 ```
 
 Before building the project check that `which clang` is
 `/usr/local/opt/llvm/bin/clang`, not the one provided by XCode. If not, update
 `PATH` environment variable.
 
-Also, `export CMAKE_PREFIX_PATH=/usr/local/opt/giflib` might be necessary for
-correct include paths resolving.
+Also, setting `CMAKE_PREFIX_PATH` might be necessary for correct include paths
+resolving, e.g.:
+
+```bash
+export CMAKE_PREFIX_PATH=`brew --prefix giflib`:`brew --prefix jpeg-turbo`:`brew --prefix libpng`:`brew --prefix zlib`
+```

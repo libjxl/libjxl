@@ -437,20 +437,22 @@ Status ModularFrameEncoder::ComputeEncodingData(
             if (exp < 0) {  // will become a subnormal number
               // add implicit leading 1 to mantissa
               mantissa |= 0x00800000;
-              if (exp < -mant_bits)
+              if (exp < -mant_bits) {
                 return JXL_FAILURE(
                     "Invalid float number: %g cannot be represented with %i "
                     "exp_bits and %i mant_bits (exp %i)",
                     row_in[x], exp_bits, mant_bits, exp);
+              }
               mantissa >>= 1 - exp;
               exp = 0;
             }
             // exp should be representable in exp_bits, otherwise input was
             // invalid
             if (exp > max_exp) return JXL_FAILURE("Invalid float exponent");
-            if (mantissa & ((1 << mant_shift) - 1))
+            if (mantissa & ((1 << mant_shift) - 1)) {
               return JXL_FAILURE("%g is losing precision (mant: %x)", row_in[x],
                                  mantissa);
+            }
             mantissa >>= mant_shift;
             f = (signbit ? sign : 0);
             f |= (exp << mant_bits);
@@ -610,14 +612,16 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
 
     // convert 'quality' to quantization scaling factor
-    if (quality > 50)
+    if (quality > 50) {
       quality = 200.0 - quality * 2.0;
-    else
+    } else {
       quality = 900.0 - quality * 16.0;
-    if (cquality > 50)
+    }
+    if (cquality > 50) {
       cquality = 200.0 - cquality * 2.0;
-    else
+    } else {
       cquality = 900.0 - cquality * 16.0;
+    }
     quality *= 0.01f * maxval / 255.f;
     cquality *= 0.01f * maxval / 255.f;
 
@@ -942,7 +946,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
             /*total_pixels=*/nullptr,
             /*tree=*/&tree, /*header=*/&stream_headers[stream_id],
             /*tokens=*/&tokens[stream_id],
-            /*width=*/&image_widths[stream_id]));
+            /*widths=*/&image_widths[stream_id]));
       },
       "ComputeTokens");
   return true;

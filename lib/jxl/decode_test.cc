@@ -195,8 +195,8 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
                                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
@@ -204,18 +204,16 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
   std::vector<uint8_t> pixels(buffer_size);
 
-  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
                                  dec, &format, pixels.data(), pixels.size()));
 
-  EXPECT_EQ(JXL_DEC_FULL_IMAGE,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
 
   // After the full image is gotten, JxlDecoderProcessInput should return
   // success to indicate all is done.
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlThreadParallelRunnerDestroy(runner);
   JxlDecoderDestroy(dec);
@@ -671,8 +669,8 @@ TEST(DecodeTest, BasicInfoTest) {
                 JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
       const uint8_t* next_in = data.data();
       size_t avail_in = size;
-      JxlDecoderStatus status =
-          JxlDecoderProcessInput(dec, &next_in, &avail_in);
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec);
 
       JxlBasicInfo info;
       bool have_basic_info = !JxlDecoderGetBasicInfo(dec, &info);
@@ -714,8 +712,7 @@ TEST(DecodeTest, BasicInfoTest) {
           EXPECT_EQ(0, info.num_extra_channels);
         }
 
-        EXPECT_EQ(JXL_DEC_SUCCESS,
-                  JxlDecoderProcessInput(dec, &next_in, &avail_in));
+        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
       } else {
         // If we did not give the full header, the basic info should not be
         // available. Allow a few bytes of slack due to some bits for default
@@ -758,7 +755,8 @@ TEST(DecodeTest, BufferSizeTest) {
             JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO));
   const uint8_t* next_in = header.data();
   size_t avail_in = header.size();
-  JxlDecoderStatus status = JxlDecoderProcessInput(dec, &next_in, &avail_in);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  JxlDecoderStatus status = JxlDecoderProcessInput(dec);
   EXPECT_EQ(JXL_DEC_BASIC_INFO, status);
 
   JxlBasicInfo info;
@@ -807,12 +805,13 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   const uint8_t* next_in = data.data();
   // Do as if we have only as many bytes as indicated by the hint available
   size_t avail_in = std::min(hint0, data.size());
-  status = JxlDecoderProcessInput(dec, &next_in, &avail_in);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  status = JxlDecoderProcessInput(dec);
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, status);
   // Basic info cannot be available yet due to the extra inserted box.
   EXPECT_EQ(false, !JxlDecoderGetBasicInfo(dec, nullptr));
 
-  size_t num_read = next_in - data.data();
+  size_t num_read = avail_in - JxlDecoderReleaseInput(dec);
   EXPECT_LT(num_read, data.size());
 
   size_t hint1 = JxlDecoderSizeHintBasicInfo(dec);
@@ -821,8 +820,10 @@ TEST(DecodeTest, BasicInfoSizeHintTest) {
   // decoder now knows there is a box in between.
   EXPECT_GT(hint1 + num_read, hint0);
   avail_in = std::min<size_t>(hint1, data.size() - num_read);
+  next_in += num_read;
 
-  status = JxlDecoderProcessInput(dec, &next_in, &avail_in);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  status = JxlDecoderProcessInput(dec);
   EXPECT_EQ(JXL_DEC_BASIC_INFO, status);
   JxlBasicInfo info;
   // We should have the basic info now, since we only added one box in-between,
@@ -910,17 +911,16 @@ TEST(DecodeTest, IccProfileTestOriginal) {
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
 
   // Expect the opposite of xyb_encoded for uses_original_profile
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
   EXPECT_EQ(JXL_TRUE, info.uses_original_profile);
 
-  EXPECT_EQ(JXL_DEC_COLOR_ENCODING,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
 
   // the encoded color profile expected to be not available, since the image
   // has an ICC profile instead
@@ -981,16 +981,15 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
 
   // Expect the opposite of xyb_encoded for uses_original_profile
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
   EXPECT_EQ(JXL_FALSE, info.uses_original_profile);
 
-  EXPECT_EQ(JXL_DEC_COLOR_ENCODING,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
 
   // the encoded color profile expected to be not available, since the image
   // has an ICC profile instead
@@ -1243,8 +1242,12 @@ TEST(DecodeTest, PixelPartialTest) {
     size_t total_size = 0;
 
     for (;;) {
-      JxlDecoderStatus status =
-          JxlDecoderProcessInput(dec, &next_in, &avail_in);
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+      size_t remaining = JxlDecoderReleaseInput(dec);
+      EXPECT_LE(remaining, avail_in);
+      next_in += avail_in - remaining;
+      avail_in = remaining;
       if (status == JXL_DEC_NEED_MORE_INPUT) {
         if (total_size >= data.size()) {
           // End of test data reached, it should have successfully decoded the
@@ -1331,9 +1334,9 @@ TEST(DecodeTest, DCTest) {
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
                                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_DC_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderDCOutBufferSize(dec, &format, &buffer_size));
@@ -1345,14 +1348,13 @@ TEST(DecodeTest, DCTest) {
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
 
-  EXPECT_EQ(JXL_DEC_NEED_DC_OUT_BUFFER,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_NEED_DC_OUT_BUFFER, JxlDecoderProcessInput(dec));
 
   std::vector<uint8_t> dc(buffer_size);
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetDCOutBuffer(dec, &format, dc.data(), dc.size()));
 
-  EXPECT_EQ(JXL_DEC_DC_IMAGE, JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_DC_IMAGE, JxlDecoderProcessInput(dec));
 
   jxl::Image3F dc0(xsize_dc, ysize_dc);
   jxl::Image3F dc1(xsize_dc, ysize_dc);
@@ -1433,9 +1435,9 @@ TEST(DecodeTest, PreviewTest) {
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_PREVIEW_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
   size_t buffer_size;
@@ -1450,15 +1452,13 @@ TEST(DecodeTest, PreviewTest) {
   EXPECT_EQ(ysize_preview, info.preview.ysize);
   EXPECT_EQ(xsize_preview * ysize_preview * 3, buffer_size);
 
-  EXPECT_EQ(JXL_DEC_NEED_PREVIEW_OUT_BUFFER,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_NEED_PREVIEW_OUT_BUFFER, JxlDecoderProcessInput(dec));
 
   std::vector<uint8_t> preview(buffer_size);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetPreviewOutBuffer(
                                  dec, &format, preview.data(), preview.size()));
 
-  EXPECT_EQ(JXL_DEC_PREVIEW_IMAGE,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_PREVIEW_IMAGE, JxlDecoderProcessInput(dec));
 
   jxl::Image3F preview0(xsize_preview, ysize_preview);
   jxl::Image3F preview1(xsize_preview, ysize_preview);
@@ -1580,9 +1580,9 @@ TEST(DecodeTest, AnimationTest) {
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
 
-  EXPECT_EQ(JXL_DEC_BASIC_INFO,
-            JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
@@ -1592,7 +1592,7 @@ TEST(DecodeTest, AnimationTest) {
   for (size_t i = 0; i < num_frames; ++i) {
     std::vector<uint8_t> pixels(buffer_size);
 
-    EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec, &next_in, &avail_in));
+    EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
 
     JxlFrameHeader frame_header;
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec, &frame_header));
@@ -1606,21 +1606,19 @@ TEST(DecodeTest, AnimationTest) {
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameName(dec, &name, 1));
     EXPECT_EQ(0, name);
 
-    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER,
-              JxlDecoderProcessInput(dec, &next_in, &avail_in));
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
 
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
                                    dec, &format, pixels.data(), pixels.size()));
 
-    EXPECT_EQ(JXL_DEC_FULL_IMAGE,
-              JxlDecoderProcessInput(dec, &next_in, &avail_in));
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
     EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
                                format, format));
   }
 
   // After all frames gotten, JxlDecoderProcessInput should return
   // success to indicate all is done.
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec, &next_in, &avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlThreadParallelRunnerDestroy(runner);
   JxlDecoderDestroy(dec);
@@ -1703,7 +1701,12 @@ TEST(DecodeTest, AnimationTestStreaming) {
       break;
     }
 
-    auto status = JxlDecoderProcessInput(dec, &next_in, &avail_in);
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+    auto status = JxlDecoderProcessInput(dec);
+    size_t remaining = JxlDecoderReleaseInput(dec);
+    EXPECT_LE(remaining, avail_in);
+    next_in += avail_in - remaining;
+    avail_in = remaining;
 
     if (status == JXL_DEC_SUCCESS) {
       break;

@@ -41,8 +41,6 @@
 namespace jpegxl {
 namespace tools {
 
-DecompressArgs::DecompressArgs() {}
-
 void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
   cmdline->AddPositionalOption("INPUT", /* required = */ true,
@@ -144,7 +142,7 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
       fprintf(stderr,
               "Notice: Decoding to pixels and re-encoding to JPEG file. To "
               "decode a losslessly recompressed JPEG back to JPEG pass --jpeg "
-              "to djpegxl.\n");
+              "to djxl.\n");
     }
   }
 
@@ -202,7 +200,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
           jxl::DecodeTarget::kQuantizedCoeffs)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
-#else  // JPEGXL_ENABLE_JPEG
+#else   // JPEGXL_ENABLE_JPEG
   fprintf(
       stderr,
       "ERROR: Support for decoding to JPEG was not compiled in this tool.\n");
@@ -251,9 +249,10 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
       continue;
     }
     if (eci.type == jxl::ExtraChannel::kSpotColor) {
-      for (size_t fr = 0; fr < io.frames.size(); fr++)
+      for (size_t fr = 0; fr < io.frames.size(); fr++) {
         RenderSpotColor(*io.frames[fr].color(),
                         io.frames[fr].extra_channels()[i], eci.spot_color);
+      }
     }
   }
 

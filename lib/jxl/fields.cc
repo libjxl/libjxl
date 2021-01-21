@@ -205,7 +205,7 @@ struct InitVisitor : public VisitorBase {
     return true;
   }
 
-  virtual const char* VisitorName() override { return "InitVisitor"; }
+  const char* VisitorName() override { return "InitVisitor"; }
 };
 
 // Similar to InitVisitor, but also initializes nested fields.
@@ -248,7 +248,7 @@ struct SetDefaultVisitor : public VisitorBase {
     return false;
   }
 
-  virtual const char* VisitorName() override { return "SetDefaultVisitor"; }
+  const char* VisitorName() override { return "SetDefaultVisitor"; }
 };
 
 class AllDefaultVisitor : public VisitorBase {
@@ -304,7 +304,7 @@ class AllDefaultVisitor : public VisitorBase {
 
   bool AllDefault() const { return all_default_; }
 
-  virtual const char* VisitorName() override { return "AllDefaultVisitor"; }
+  const char* VisitorName() override { return "AllDefaultVisitor"; }
 
  private:
   const bool print_all_default_;
@@ -425,7 +425,7 @@ class ReadVisitor : public VisitorBase {
 
   Status OK() const { return ok_; }
 
-  virtual const char* VisitorName() override { return "ReadVisitor"; }
+  const char* VisitorName() override { return "ReadVisitor"; }
 
  private:
   const bool print_read_;
@@ -487,7 +487,7 @@ class MaxBitsVisitor : public VisitorBase {
 
   size_t MaxBits() const { return max_bits_; }
 
-  virtual const char* VisitorName() override { return "MaxBitsVisitor"; }
+  const char* VisitorName() override { return "MaxBitsVisitor"; }
 
  private:
   size_t max_bits_ = 0;
@@ -583,7 +583,7 @@ class CanEncodeVisitor : public VisitorBase {
     return true;
   }
 
-  virtual const char* VisitorName() override { return "CanEncodeVisitor"; }
+  const char* VisitorName() override { return "CanEncodeVisitor"; }
 
  private:
   const bool print_sizes_;
@@ -646,7 +646,7 @@ class WriteVisitor : public VisitorBase {
 
   Status OK() const { return ok_; }
 
-  virtual const char* VisitorName() override { return "WriteVisitor"; }
+  const char* VisitorName() override { return "WriteVisitor"; }
 
  private:
   const size_t extension_bits_;

@@ -97,8 +97,8 @@ bool Debug(const char* format, ...);
 // JXL_DEBUG version that prints the debug message if the global verbose level
 // defined at compile time by JXL_DEBUG_V_LEVEL is greater or equal than the
 // passed level.
-#define JXL_DEBUG_V(level, ...) \
-  JXL_DEBUG(level <= JXL_DEBUG_V_LEVEL, __VA_ARGS__)
+#define JXL_DEBUG_V(level, format, ...) \
+  JXL_DEBUG(level <= JXL_DEBUG_V_LEVEL, format, ##__VA_ARGS__)
 
 // Warnings (via JXL_WARNING) are enabled by default in debug builds (opt and
 // debug).
@@ -112,7 +112,8 @@ bool Debug(const char* format, ...);
 #define JXL_DEBUG_WARNING 1
 #endif  // NDEBUG
 #endif  // JXL_DEBUG_WARNING
-#define JXL_WARNING(...) JXL_DEBUG(JXL_DEBUG_WARNING, __VA_ARGS__)
+#define JXL_WARNING(format, ...) \
+  JXL_DEBUG(JXL_DEBUG_WARNING, format, ##__VA_ARGS__)
 
 // Exits the program after printing a stack trace when possible.
 JXL_NORETURN bool Abort();
@@ -142,8 +143,9 @@ JXL_NORETURN bool Abort();
 // defined). This is useful for slower asserts that we want to run more rarely
 // than usual. These will run on asan, msan and other debug builds, but not in
 // opt or release.
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) || \
-    defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) ||         \
+    defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || \
+    defined(__clang_analyzer__)
 #define JXL_DASSERT(condition)                        \
   do {                                                \
     if (!(condition)) {                               \

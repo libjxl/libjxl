@@ -34,11 +34,11 @@ void TransformFromPixels(const AcStrategy::Type strategy,
       strategy, pixels, pixels_stride, coefficients, scratch_space);
 }
 
-HWY_EXPORT(LowestFrequenciesFromDC);
-void LowestFrequenciesFromDC(const jxl::AcStrategy::Type strategy,
-                             const float* dc, size_t dc_stride, float* llf) {
-  return HWY_DYNAMIC_DISPATCH(LowestFrequenciesFromDC)(strategy, dc, dc_stride,
-                                                       llf);
+HWY_EXPORT(DCFromLowestFrequencies);
+void DCFromLowestFrequencies(AcStrategy::Type strategy, const float* block,
+                             float* dc, size_t dc_stride) {
+  return HWY_DYNAMIC_DISPATCH(DCFromLowestFrequencies)(strategy, block, dc,
+                                                       dc_stride);
 }
 
 HWY_EXPORT(AFVDCT4x4);

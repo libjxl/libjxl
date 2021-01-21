@@ -548,7 +548,7 @@ std::vector<PatchInfo> FindTextLikePatches(
               is_same(src, next)) {
             if (!is_background_row[next.second * is_background_stride +
                                    next.first])
-              queue.push_back({next, src});
+              queue.emplace_back(next, src);
           }
         }
       }
@@ -596,7 +596,7 @@ std::vector<PatchInfo> FindTextLikePatches(
       if (is_background_row[y * is_background_stride + x]) continue;
       cc.clear();
       stack.clear();
-      stack.push_back({x, y});
+      stack.emplace_back(x, y);
       size_t min_x = x;
       size_t max_x = x;
       size_t min_y = y;
@@ -793,7 +793,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
   // TODO(veluca): this doesn't work if both dots and patches are enabled.
   // For now, since dots and patches are not likely to occur in the same kind of
   // images, disable dots if some patches were found.
-  if (ApplyOverride(
+  if (info.empty() &&
+      ApplyOverride(
           state->cparams.dots,
           state->cparams.speed_tier <= SpeedTier::kSquirrel &&
               state->cparams.butteraugli_distance >= kMinButteraugliForDots)) {
@@ -977,7 +978,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
       // Must initialize the image with data to not affect blending with
       // uninitialized memory.
       // TODO(lode): patches must copy and use the real extra channels instead.
-      ZeroFillImage(&extra_channels.back());
+      FillImage(1.0f, &extra_channels.back());
     }
     ib.SetExtraChannels(std::move(extra_channels));
   }
@@ -995,7 +996,8 @@ void FindBestPatchDictionary(const Image3F& opsin,
     JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
                           *state->shared.metadata));
     JXL_CHECK(br.Close());
-    state->shared.reference_frames[0].storage = std::move(decoded);
+    state->shared.reference_frames[0] =
+        std::move(dec_state.shared_storage.reference_frames[0]);
   } else {
     state->shared.reference_frames[0].storage = std::move(ib);
   }

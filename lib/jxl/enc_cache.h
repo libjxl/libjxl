@@ -50,9 +50,7 @@ struct PassesEncoderState {
   ImageF initial_quant_field;  // Invalid in Falcon mode.
 
   // Per-pass DCT coefficients for the image. One row per group.
-  // Used for both quantized and non-quantized coefficients (only coeffs[0]).
-  // WARNING: assumes ac_qcoeff_t == float!
-  std::vector<ACImage3> coeffs;
+  std::vector<std::unique_ptr<ACImage>> coeffs;
 
   // Raw data for special (reference+DC) frames.
   std::vector<std::unique_ptr<BitWriter>> special_frames;

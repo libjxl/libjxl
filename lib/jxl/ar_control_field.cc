@@ -272,6 +272,7 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
         // smoothing is needed.
         for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
           for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+
             // Five 4x4 blocks for masking estimation, all within the
             // 8x8 area.
             float minval_1 = std::min(sq00(2 * iy + 0, 2 * ix + 0),
@@ -296,26 +297,29 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
             minval2 = std::min(minval2, sq22(2 * iy + 2, 2 * ix + 2));
             float minval3 = std::min(minval, minval2);
             minval *= 0.125f;
-            minval += 0.5f * minval3;
-            minval += 0.25f * sq22(2 * iy + 1, 2 * ix + 2);
+            minval += 0.625f * minval3;
+            minval += 0.125f * std::min(1.5f * minval3, sq22(2 * iy + 1, 2 * ix + 1));
             minval += 0.125f * minval2;
             // Larger kBias, less smoothing for low intensity changes.
-            float kBias = 0.015f * quant_val;
+            float kDeltaLimit = 3.2;
+            float bias = 0.0625f * quant_val;
             float delta =
-                (sqrsum_integral_transform + kBias) / (minval + kBias);
-
+                (sqrsum_integral_transform + (kDeltaLimit + 0.05) * bias) / (minval + bias);
             int out = 4;
-            if (delta > 1.75f) {
+            if (delta > kDeltaLimit) {
               out = 4;  // smooth
             } else {
               out = 0;
             }
-            const float kSmoothLimit = 0.3f;
-            if (minval < kSmoothLimit * kBias) {
-              out = 4;
-            }
-            const float kSmoothLimit2 = 0.28f;
-            if (minval2 < kSmoothLimit2 * kBias) {
+            // 'threshold' is separate from 'bias' for easier tuning of these heuristics.
+            float threshold = 0.0625f * quant_val;
+            const float kSmoothLimit = 0.085f;
+            float smooth = 0.20f * (sq00(2 * iy + 0, 2 * ix + 0) +
+                                    sq00(2 * iy + 0, 2 * ix + 1) +
+                                    sq00(2 * iy + 1, 2 * ix + 0) +
+                                    sq00(2 * iy + 1, 2 * ix + 1) +
+                                    minval);
+            if (smooth < kSmoothLimit * threshold) {
               out = 4;
             }
             out_row[bx + sharpness_stride * iy + ix] = out;
