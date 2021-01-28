@@ -622,8 +622,13 @@ Status ModularFrameEncoder::ComputeEncodingData(
     } else {
       cquality = 900.0 - cquality * 16.0;
     }
-    quality *= 0.01f * maxval / 255.f;
-    cquality *= 0.01f * maxval / 255.f;
+    if (cparams.color_transform != ColorTransform::kXYB) {
+      quality *= 0.01f * maxval / 255.f;
+      cquality *= 0.01f * maxval / 255.f;
+    } else {
+      quality *= 0.01f;
+      cquality *= 0.01f;
+    }
 
     if (cparams.options.nb_repeats == 0) {
       return JXL_FAILURE("nb_repeats = 0 not supported with modular lossy!");

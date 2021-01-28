@@ -212,7 +212,8 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
   int nb_channels = get_be_int(2, pos, maxpos);
   size_t ysize = get_be_int(4, pos, maxpos);
   size_t xsize = get_be_int(4, pos, maxpos);
-  JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
+  const SizeConstraints* constraints = &io->constraints;
+  JXL_RETURN_IF_ERROR(VerifyDimensions(constraints, xsize, ysize));
   uint64_t total_pixel_count = static_cast<uint64_t>(xsize) * ysize;
   int bitdepth = get_be_int(2, pos, maxpos);
   if (bitdepth != 8 && bitdepth != 16 && bitdepth != 32) {
@@ -484,7 +485,9 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       // TODO: deal with non-empty layer masks
       pos += get_be_int(4, pos, maxpos);  // skip layer mask data
       pos += get_be_int(4, pos, maxpos);  // skip layer blend range data
-      int namelength = get_be_int(1, pos, maxpos);
+      size_t namelength = get_be_int(1, pos, maxpos);
+      size_t delta = maxpos - pos;
+      if (delta < namelength) return JXL_FAILURE("PSD: Invalid block length");
       char lname[256] = {};
       memcpy(lname, pos, namelength);
       lname[namelength] = 0;
@@ -496,12 +499,12 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
         continue;
       }
       is_real_layer[l] = true;
-      JXL_RETURN_IF_ERROR(io->VerifyDimensions(width, height));
+      JXL_RETURN_IF_ERROR(VerifyDimensions(constraints, width, height));
       uint64_t pixel_count = static_cast<uint64_t>(width) * height;
       if (!SafeAdd(total_pixel_count, pixel_count, total_pixel_count)) {
         return JXL_FAILURE("Image too big");
       }
-      if (total_pixel_count > io->GetDecMaxPixels()) {
+      if (total_pixel_count > constraints->dec_max_pixels) {
         return JXL_FAILURE("Image too big");
       }
       Image3F rgb(width, height);

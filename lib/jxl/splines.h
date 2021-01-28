@@ -68,7 +68,8 @@ class QuantizedSpline {
   void Tokenize(std::vector<Token>* tokens) const;
 
   Status Decode(const std::vector<uint8_t>& context_map,
-                ANSSymbolReader* decoder, BitReader* br);
+                ANSSymbolReader* decoder, BitReader* br,
+                size_t max_control_points, size_t* total_num_control_points);
 
  private:
   std::vector<std::pair<int64_t, int64_t>>

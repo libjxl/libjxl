@@ -43,6 +43,31 @@ struct CodecInterval {
   float width = 1.0f;
 };
 
+struct SizeConstraints {
+  // Upper limit on pixel dimensions/area, enforced by VerifyDimensions
+  // (called from decoders). Fuzzers set smaller values to limit memory use.
+  uint32_t dec_max_xsize = 0xFFFFFFFFu;
+  uint32_t dec_max_ysize = 0xFFFFFFFFu;
+  uint64_t dec_max_pixels = 0xFFFFFFFFu;  // Might be up to ~0ull
+};
+
+template <typename T,
+          class = typename std::enable_if<std::is_unsigned<T>::value>::type>
+Status VerifyDimensions(const SizeConstraints* constraints, T xs, T ys) {
+  if (!constraints) return true;
+
+  if (xs == 0 || ys == 0) return JXL_FAILURE("Empty image.");
+  if (xs > constraints->dec_max_xsize) return JXL_FAILURE("Image too wide.");
+  if (ys > constraints->dec_max_ysize) return JXL_FAILURE("Image too tall.");
+
+  const uint64_t num_pixels = static_cast<uint64_t>(xs) * ys;
+  if (num_pixels > constraints->dec_max_pixels) {
+    return JXL_FAILURE("Image too big.");
+  }
+
+  return true;
+}
+
 using CodecIntervals = std::array<CodecInterval, 4>;  // RGB[A] or Y[A]
 
 // Allows passing arbitrary metadata to decoders (required for PNM).
@@ -156,21 +181,6 @@ class CodecInOut {
     SetSize(xsize, ysize);
   }
 
-  template <typename T,
-            class = typename std::enable_if<std::is_unsigned<T>::value>::type>
-  Status VerifyDimensions(T xs, T ys) const {
-    if (xs == 0 || ys == 0) return JXL_FAILURE("Empty image.");
-    if (xs > dec_max_xsize) return JXL_FAILURE("Image too wide.");
-    if (ys > dec_max_ysize) return JXL_FAILURE("Image too tall.");
-
-    const uint64_t num_pixels = static_cast<uint64_t>(xs) * ys;
-    if (num_pixels > dec_max_pixels) return JXL_FAILURE("Image too big.");
-
-    return true;
-  }
-
-  uint64_t GetDecMaxPixels() const { return dec_max_pixels; }
-
   // Calls TransformTo for each ImageBundle (preview/frames).
   Status TransformTo(const ColorEncoding& c_desired,
                      ThreadPool* pool = nullptr) {
@@ -185,12 +195,7 @@ class CodecInOut {
 
   // -- DECODER INPUT:
 
-  // Upper limit on pixel dimensions/area, enforced by VerifyDimensions
-  // (called from decoders). Fuzzers set smaller values to limit memory use.
-  uint32_t dec_max_xsize = 0xFFFFFFFFu;
-  uint32_t dec_max_ysize = 0xFFFFFFFFu;
-  uint64_t dec_max_pixels = ~0ull;
-
+  SizeConstraints constraints;
   // Used to set c_current for codecs that lack color space metadata.
   DecoderHints dec_hints;
   // Decode to pixels or keep JPEG as quantized DCT coefficients

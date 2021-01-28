@@ -121,8 +121,8 @@ bool DecodeJpegXlOneShot(const uint8_t* jxl, size_t size,
       // full frames may be decoded. This example only keeps the last one.
     } else if (status == JXL_DEC_SUCCESS) {
       // All decoding successfully finished.
-      // JxlDecoderReleaseInput(dec.get()) could be used here to check how many
-      // bytes of the input the decoder didn't use, but this is optional.
+      // It's not required to call JxlDecoderReleaseInput(dec.get()) here since
+      // the decoder will be destroyed.
       return true;
     } else {
       fprintf(stderr, "Unknown decoder status\n");

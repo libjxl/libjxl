@@ -59,10 +59,9 @@ TEST(EncodeTest, DefaultParallelRunnerTest) {
   JxlEncoderDestroy(enc);
 }
 
-void VerifyFrameEncoding(JxlEncoder* enc, JxlEncoderOptions* options) {
+void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
+                         const JxlEncoderOptions* options) {
   JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  uint32_t xsize = 63;
-  uint32_t ysize = 129;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
 
   jxl::CodecInOut input_io =
@@ -102,10 +101,25 @@ void VerifyFrameEncoding(JxlEncoder* enc, JxlEncoderOptions* options) {
             2.0f);
 }
 
+void VerifyFrameEncoding(JxlEncoder* enc, const JxlEncoderOptions* options) {
+  VerifyFrameEncoding(63, 129, enc, options);
+}
+
 TEST(EncodeTest, FrameEncodingTest) {
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
   EXPECT_NE(nullptr, enc);
   VerifyFrameEncoding(enc, JxlEncoderOptionsCreate(enc, nullptr));
+  JxlEncoderDestroy(enc);
+}
+
+TEST(EncodeTest, EncoderResetTest) {
+  JxlEncoder* enc = JxlEncoderCreate(nullptr);
+  EXPECT_NE(nullptr, enc);
+  VerifyFrameEncoding(50, 200, enc, JxlEncoderOptionsCreate(enc, nullptr));
+  // Encoder should become reusable for a new image from scratch after using
+  // reset.
+  JxlEncoderReset(enc);
+  VerifyFrameEncoding(157, 77, enc, JxlEncoderOptionsCreate(enc, nullptr));
   JxlEncoderDestroy(enc);
 }
 

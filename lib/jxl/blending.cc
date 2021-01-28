@@ -118,8 +118,8 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
     empty.SetFromImage(std::move(color), foreground->c_current());
     if (foreground->HasExtraChannels()) {
       std::vector<ImageF> ec;
-      for (size_t i = 0; i < foreground->extra_channels().size(); i++) {
-        ImageF eci(image_xsize, image_ysize);
+      for (const auto& ec_meta : foreground->metadata()->extra_channel_info) {
+        ImageF eci(ec_meta.Size(image_xsize), ec_meta.Size(image_ysize));
         ZeroFillImage(&eci);
         ec.push_back(std::move(eci));
       }
@@ -137,17 +137,35 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
     return JXL_FAILURE("Trying to use a %zux%zu crop as a background",
                        bg.xsize(), bg.ysize());
   }
-  // TODO(veluca): avoid doing colorspace conversion if we know it is not
-  // needed.
   if (state.metadata->m.xyb_encoded) {
-    if (dec_state->do_colorspace_transform == nullptr) {
-      return JXL_FAILURE(
-          "Blending requested but no color transform hook provided");
+    if (!state.metadata->m.color_encoding.IsSRGB() &&
+        !state.metadata->m.color_encoding.IsLinearSRGB()) {
+      // TODO(lode): match this with all supported color encoding conversions
+      // in dec_frame.cc before it calls DoBlending.
+      return JXL_FAILURE("Blending in unsupported color space");
     }
-    const auto& c_desired = state.metadata->m.color_encoding;
-    JXL_RETURN_IF_ERROR(dec_state->do_colorspace_transform(
-        foreground, c_desired, /*pool=*/nullptr));
   }
+
+  if (!overlap.IsInside(*foreground)) {
+    return JXL_FAILURE("Trying to use a %zux%zu crop as a foreground",
+                       foreground->xsize(), foreground->ysize());
+  }
+
+  if (foreground->HasExtraChannels()) {
+    for (const auto& ec_meta : foreground->metadata()->extra_channel_info) {
+      if (ec_meta.dim_shift != 0) {
+        return JXL_FAILURE(
+            "Blending of downsampled extra channels is not yet implemented");
+      }
+    }
+    for (const auto& ec : foreground->extra_channels()) {
+      if (!overlap.IsInside(ec)) {
+        return JXL_FAILURE("Trying to use a %zux%zu crop as a foreground",
+                           foreground->xsize(), foreground->ysize());
+      }
+    }
+  }
+
   // TODO(veluca): optimize memory copies here if we end up saving on the same
   // frame that we are reading from.
   ImageBundle dest = bg.Copy();

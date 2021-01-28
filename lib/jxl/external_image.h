@@ -38,6 +38,9 @@ constexpr size_t RowSize(size_t xsize, size_t channels,
              : xsize * channels * DivCeil(bits_per_sample, kBitsPerByte);
 }
 
+void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
+                         size_t color_channels);
+
 // Converts ib to interleaved void* pixel buffer with the given format.
 // bits_per_sample: must be 8, 16 or 32, and must be 32 if float_out
 // is true. 1 and 32 int are not yet implemented.

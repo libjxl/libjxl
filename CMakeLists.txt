@@ -66,13 +66,14 @@ if(NOT APPLE AND NOT WIN32 AND NOT HAIKU AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "
   pkg_check_modules(TCMallocMinimalVersionCheck QUIET IMPORTED_TARGET
       libtcmalloc_minimal)
   if(TCMallocMinimalVersionCheck_FOUND AND
-     TCMallocMinimalVersionCheck_VERSION VERSION_LESS 2.8)
-    # Enabled by default except on Windows and Apple builds for tcmalloc < 2.8
+     NOT TCMallocMinimalVersionCheck_VERSION VERSION_EQUAL 2.8.0)
+    # Enabled by default except on Windows and Apple builds for
+    # tcmalloc != 2.8.0. tcmalloc 2.8.1 already has a fix for this issue.
     set(ENABLE_TCMALLOC_DEFAULT true)
   else()
     message(STATUS
         "tcmalloc version ${TCMallocMinimalVersionCheck_VERSION} -- "
-        "default is tcmalloc disabled due to "
+        "tcmalloc 2.8.0 disabled due to "
         "https://github.com/gperftools/gperftools/issues/1204")
   endif()
 endif()

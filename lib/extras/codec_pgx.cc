@@ -240,7 +240,8 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   HeaderPGX header = {};
   const uint8_t* pos;
   if (!parser.ParseHeader(&header, &pos)) return false;
-  JXL_RETURN_IF_ERROR(io->VerifyDimensions(header.xsize, header.ysize));
+  JXL_RETURN_IF_ERROR(
+      VerifyDimensions(&io->constraints, header.xsize, header.ysize));
   if (header.bits_per_sample == 0 || header.bits_per_sample > 32) {
     return JXL_FAILURE("PGX: bits_per_sample invalid");
   }

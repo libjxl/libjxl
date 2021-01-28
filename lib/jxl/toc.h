@@ -28,6 +28,7 @@
 
 namespace jxl {
 
+// TODO(veluca): move these to FrameDimensions.
 static JXL_INLINE size_t AcGroupIndex(size_t pass, size_t group,
                                       size_t num_groups, size_t num_dc_groups,
                                       bool has_ac_global) {

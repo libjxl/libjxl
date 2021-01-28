@@ -47,6 +47,10 @@ SymbolStack = collections.namedtuple('SymbolStack',
 ObjectStats = collections.namedtuple('ObjectStats',
                                      ['name', 'in_partition', 'size_map'])
 
+# An object target file in the build system.
+Target = collections.namedtuple('Target',
+                                ['name', 'deps', 'filename'])
+
 # Sections that end up in the binary file.
 # t - text (code), d - global non-const data, n/r - read-only data,
 # w - weak symbols (likely inline code not inlined),
@@ -89,6 +93,57 @@ def LoadTargetCommand(target, build_dir):
   # target.
   command = stdout.splitlines()[-1]
   return command.decode('utf-8')
+
+
+def LoadTarget(target, build_dir):
+  """Loads a build system target and its dependencies into a Target object"""
+  if target.endswith('.o'):
+    # Speed up this case.
+    return Target(target, [], target)
+
+  link_params = LoadTargetCommand(target, build_dir).split()
+  if 'cmake_symlink_library' in link_params:
+    # The target is a library symlinked, use the target of the symlink
+    # instead.
+    target = link_params[link_params.index('cmake_symlink_library') + 1]
+    link_params = LoadTargetCommand(target, build_dir).split()
+
+  # The target name is not always the same as the filename of the output, for
+  # example, "djxl" target generates "tools/djxl" file.
+  if '-o' in link_params:
+    target_filename = link_params[link_params.index('-o') + 1]
+  elif target.endswith('.a'):
+    # Command is '/path/to/ar', 'qc', 'target.a', ...
+    target_filename = link_params[link_params.index('qc') + 1]
+  else:
+    raise Exception('Unknown "%s" output filename in command: %r' %
+                    (target, link_params))
+
+  tgt_libs = []
+  for entry in link_params:
+    if not entry or not (entry.endswith('.o') or entry.endswith('.a')):
+      continue
+    if entry == target_filename:
+      continue
+    fn = os.path.join(build_dir, entry)
+    if not os.path.exists(fn):
+      continue
+    if entry in tgt_libs:
+      continue
+    tgt_libs.append(entry)
+
+  return Target(target, tgt_libs, target_filename)
+
+
+def TargetTransitiveDeps(all_tgts, target):
+  """Returns the list of all transitive dependencies of target"""
+  ret = all_tgts[target].deps
+  # There can't be loop dependencies in the targets.
+  i = 0
+  while i < len(ret):
+    ret.extend(all_tgts[ret[i]].deps)
+    i += 1
+  return ret
 
 
 def LoadStackSizes(filename, binutils=''):
@@ -203,6 +258,15 @@ def PrintStackStats(tgt_stack_sizes, top_entries=20):
   print()
 
 
+def PrintTopSymbols(tgt_top_symbols):
+  if not tgt_top_symbols:
+    return
+  print(' Size     T Symbol name')
+  for size, typ, name in tgt_top_symbols:
+    print('%9d %s %s' % (size, typ, name))
+  print()
+
+
 def SizeStats(args):
   """Main entry point of the program after parsing parameters.
 
@@ -211,32 +275,34 @@ def SizeStats(args):
   # one entry per passed args.target.
   stats = {}
 
+  # Cache of Target object of a target.
+  tgts = {}
+
+  # Load all the targets.
+  pending = set(args.target)
+  while pending:
+    target = pending.pop()
+    tgt = LoadTarget(target, args.build_dir)
+    tgts[target] = tgt
+    if args.recursive:
+      for dep in tgt.deps:
+        if dep not in tgts:
+          pending.add(dep)
+
+  # Cache of symbols of a target.
   syms = {}
+  # Load the symbols from the all targets and its deps.
+  all_deps = set(tgts.keys()).union(*[set(tgt.deps) for tgt in tgts.values()])
+  for entry in all_deps:
+    fn = os.path.join(args.build_dir,
+                      tgts[entry].filename if entry in tgts else entry)
+    syms[entry] = LoadSymbols(fn)
+
   for target in args.target:
     tgt_stats = []
-    link_params = LoadTargetCommand(target, args.build_dir).split()
-    if 'cmake_symlink_library' in link_params:
-      # The target is a library symlinked, use the target of the symlink
-      # instead.
-      target = link_params[link_params.index('cmake_symlink_library') + 1]
-      link_params = LoadTargetCommand(target, args.build_dir).split()
+    tgt = tgts[target]
 
-    tgt_libs = []
-    for entry in link_params:
-      if not entry or not (entry.endswith('.o') or entry.endswith('.a')):
-        continue
-      fn = os.path.join(args.build_dir, entry)
-      if not os.path.exists(fn):
-        continue
-      if entry in tgt_libs:
-        continue
-      tgt_libs.append(entry)
-      if entry not in syms:
-        syms[entry] = LoadSymbols(fn)
-
-    target_filename = link_params[link_params.index('-o') + 1]
-    target_path = os.path.join(args.build_dir, target_filename)
-    tgt_syms = LoadSymbols(target_path)
+    tgt_syms = syms[target]
     used_syms = set()
     for sym in tgt_syms:
       if sym.typ.lower() in BIN_SIZE + RAM_SIZE:
@@ -246,13 +312,23 @@ def SizeStats(args):
       else:
         print('Unknown: %s %s' % (sym.typ, sym.name))
 
-    sym_stacks = LoadStackSizes(target_path, args.binutils)
+    target_path = os.path.join(args.build_dir, tgt.filename)
+    sym_stacks = []
+    if not target_path.endswith('.a'):
+      sym_stacks = LoadStackSizes(target_path, args.binutils)
     symbols_by_addr = {sym.address: sym for sym in tgt_syms
                           if sym.typ.lower() in 'tw'}
     tgt_stack_sizes = collections.OrderedDict()
     for sym_stack in sorted(sym_stacks, key=lambda s: -s.stack_size):
       tgt_stack_sizes[
           symbols_by_addr[sym_stack.address].name] = sym_stack.stack_size
+
+    tgt_top_symbols = []
+    if args.top_symbols:
+      tgt_top_symbols = [(sym.size, sym.typ, sym.name) for sym in tgt_syms
+                         if sym.name in used_syms and sym.size]
+      tgt_top_symbols.sort(key=lambda t: (-t[0], t[2]))
+      tgt_top_symbols = tgt_top_symbols[:args.top_symbols]
 
     tgt_size = TargetSize(tgt_syms)
     tgt_stats.append(ObjectStats(target, False, tgt_size))
@@ -275,16 +351,30 @@ def SizeStats(args):
         continue
       tgt_stats.append(ObjectStats('\\--> ' + namespace, False, ret))
 
-    for obj in tgt_libs:
+    for obj in tgt.deps:
+      dep_used_syms = used_syms.copy()
       obj_size = TargetSize(syms[obj], used_syms)
       if not obj_size:
         continue
       tgt_stats.append(ObjectStats(os.path.basename(obj), True, obj_size))
+      if args.recursive:
+        # Not really recursive, but it shows all the remaining deps at a second
+        # level.
+        for obj_dep in sorted(TargetTransitiveDeps(tgts, obj),
+                              key=os.path.basename):
+          obj_dep_size = TargetSize(syms[obj_dep], dep_used_syms)
+          if not obj_dep_size:
+            continue
+          tgt_stats.append(ObjectStats(
+              '   '+ os.path.basename(obj_dep), False, obj_dep_size))
+
     PrintStats(tgt_stats)
     PrintStackStats(tgt_stack_sizes)
+    PrintTopSymbols(tgt_top_symbols)
     stats[target] = {
         'build': tgt_stats,
         'stack': tgt_stack_sizes,
+        'top': tgt_top_symbols,
     }
 
   if args.save:
@@ -300,6 +390,10 @@ def main():
                       help='path to the build directory')
   parser.add_argument('--save', default=None,
                       help='path to save the stats as JSON file')
+  parser.add_argument('-r', '--recursive', default=False, action='store_true',
+                      help='Print recursive entries.')
+  parser.add_argument('--top-symbols', default=0, type=int,
+                      help='Number of largest symbols to print')
   parser.add_argument('--binutils', default='',
                       help='prefix path to binutils tools, such as '
                            'aarch64-linux-gnu-')

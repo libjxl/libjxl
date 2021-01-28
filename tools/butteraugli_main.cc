@@ -62,7 +62,8 @@ Status WritePNG(const Image3B& image, const std::string& filename) {
 
 Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& distmap_filename,
-                      const std::string& colorspace_hint, double p) {
+                      const std::string& colorspace_hint, double p,
+                      float intensity_target) {
   CodecInOut io1;
   if (!colorspace_hint.empty()) {
     io1.dec_hints.Add("color_space", colorspace_hint);
@@ -95,6 +96,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   ButteraugliParams ba_params;
   ba_params.hf_asymmetry = 0.8f;
   ba_params.xmul = 1.0f;
+  ba_params.intensity_target = intensity_target;
   const float distance =
       ButteraugliDistance(io1.Main(), io2.Main(), ba_params, &distmap, &pool);
   printf("%.10f\n", distance);
@@ -118,22 +120,27 @@ int main(int argc, char** argv) {
   if (argc < 3) {
     fprintf(stderr,
             "Usage: %s <reference> <distorted> [--distmap <distmap>] "
+            "[--intensity_target <intensity_target>]\n"
             "[--colorspace <colorspace_hint>]\n"
             "NOTE: images get converted to linear sRGB for butteraugli. Images"
             " without attached profiles (such as ppm or pfm) are interpreted"
             " as nonlinear sRGB. The hint format is RGB_D65_SRG_Rel_Lin for"
-            " linear sRGB\n",
-            argv[0]);
+            " linear sRGB. Intensity target is viewing conditions screen nits"
+            ", defaults to %f which is very bright.\n",
+            argv[0], jxl::kDefaultIntensityTarget);
     return 1;
   }
   std::string distmap;
   std::string colorspace;
   double p = 3;
+  float intensity_target = jxl::kDefaultIntensityTarget;
   for (int i = 3; i < argc; i++) {
     if (std::string(argv[i]) == "--distmap" && i + 1 < argc) {
       distmap = argv[++i];
     } else if (std::string(argv[i]) == "--colorspace" && i + 1 < argc) {
       colorspace = argv[++i];
+    } else if (std::string(argv[i]) == "--intensity_target" && i + 1 < argc) {
+      intensity_target = std::stof(std::string(argv[i + 1]));
     } else if (std::string(argv[i]) == "--pnorm" && i + 1 < argc) {
       char* end;
       p = strtod(argv[++i], &end);
@@ -147,5 +154,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  return jxl::RunButteraugli(argv[1], argv[2], distmap, colorspace, p) ? 0 : 1;
+  return jxl::RunButteraugli(argv[1], argv[2], distmap, colorspace, p,
+                             intensity_target)
+             ? 0
+             : 1;
 }

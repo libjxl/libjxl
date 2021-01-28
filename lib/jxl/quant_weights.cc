@@ -41,6 +41,9 @@ namespace jxl {
 // intervals and more bits spent in encoding.
 
 namespace {
+
+static constexpr const float kAlmostZero = 1e-8f;
+
 void GetQuantWeightsDCT2(const QuantEncoding::DCT2Weights& dct2weights,
                          float* weights) {
   for (size_t c = 0; c < 3; c++) {
@@ -116,7 +119,7 @@ Status GetQuantWeights(
         distance_bands[c][0]};
     for (size_t i = 1; i < num_bands; i++) {
       bands[i] = bands[i - 1] * Mult(distance_bands[c][i]);
-      if (bands[i] < 0) return JXL_FAILURE("Invalid distance bands");
+      if (bands[i] < kAlmostZero) return JXL_FAILURE("Invalid distance bands");
     }
     for (size_t y = 0; y < ROWS; y++) {
       for (size_t x = 0; x < COLS; x++) {
@@ -163,6 +166,9 @@ Status DecodeDctParams(BitReader* br, DctQuantWeightParams* params) {
   for (size_t c = 0; c < 3; c++) {
     for (size_t i = 0; i < params->num_distance_bands; i++) {
       JXL_RETURN_IF_ERROR(F16Coder::Read(br, &params->distance_bands[c][i]));
+    }
+    if (params->distance_bands[c][0] < kAlmostZero) {
+      return JXL_FAILURE("Distance band seed is too small");
     }
     params->distance_bands[c][0] *= 64.0f;
   }
@@ -261,6 +267,9 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       for (size_t c = 0; c < 3; c++) {
         for (size_t i = 0; i < 3; i++) {
           JXL_RETURN_IF_ERROR(F16Coder::Read(br, &encoding->idweights[c][i]));
+          if (std::abs(encoding->idweights[c][i]) < kAlmostZero) {
+            return JXL_FAILURE("ID Quantizer is too small");
+          }
           encoding->idweights[c][i] *= 64;
         }
       }
@@ -271,6 +280,9 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       for (size_t c = 0; c < 3; c++) {
         for (size_t i = 0; i < 6; i++) {
           JXL_RETURN_IF_ERROR(F16Coder::Read(br, &encoding->dct2weights[c][i]));
+          if (std::abs(encoding->dct2weights[c][i]) < kAlmostZero) {
+            return JXL_FAILURE("Quantizer is too small");
+          }
           encoding->dct2weights[c][i] *= 64;
         }
       }
@@ -291,6 +303,9 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
         for (size_t i = 0; i < 2; i++) {
           JXL_RETURN_IF_ERROR(
               F16Coder::Read(br, &encoding->dct4multipliers[c][i]));
+          if (std::abs(encoding->dct4multipliers[c][i]) < kAlmostZero) {
+            return JXL_FAILURE("DCT4 multiplier is too small");
+          }
         }
       }
       JXL_RETURN_IF_ERROR(DecodeDctParams(br, &encoding->dct_params));

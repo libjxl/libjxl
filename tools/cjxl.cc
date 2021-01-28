@@ -558,7 +558,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     if (quality < 100) jpeg_transcode = false;
     // Quality settings roughly match libjpeg qualities.
     if (quality < 7 || quality == 100) {
-      params.modular_mode = true;
+      if (jpeg_transcode == false) params.modular_mode = true;
       // Internal modular quality to roughly match VarDCT size.
       params.quality_pair.first = params.quality_pair.second =
           std::min(35 + (quality - 7) * 3.0f, 100.0f);
@@ -591,9 +591,10 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
               butteraugli_max_dist);
       return false;
     }
+    if (params.butteraugli_distance > 0) jpeg_transcode = false;
     if (params.butteraugli_distance == 0) {
       // Use modular for lossless.
-      params.modular_mode = true;
+      if (jpeg_transcode == false) params.modular_mode = true;
     } else if (params.butteraugli_distance < butteraugli_min_dist) {
       params.butteraugli_distance = butteraugli_min_dist;
     }

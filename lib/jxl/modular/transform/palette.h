@@ -437,8 +437,7 @@ static Status CheckPaletteParams(const Image &image, uint32_t begin_c,
   for (size_t c = begin_c + 1; c <= end_c; c++) {
     if (image.channel[c].w != image.channel[begin_c].w ||
         image.channel[c].h != image.channel[begin_c].h) {
-      return JXL_FAILURE("Palette input channels [%" PRIu32 " to %" PRIu32
-                         "] must have the same size", begin_c, end_c);
+      return false;
     }
   }
 
@@ -467,15 +466,11 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                          uint32_t &nb_colors, bool ordered, bool lossy,
                          Predictor &predictor,
                          const weighted::Header &wp_header) {
-  JXL_RETURN_IF_ERROR(CheckPaletteParams(input, begin_c, end_c));
+  JXL_QUIET_RETURN_IF_ERROR(CheckPaletteParams(input, begin_c, end_c));
   uint32_t nb = end_c - begin_c + 1;
 
   size_t w = input.channel[begin_c].w;
   size_t h = input.channel[begin_c].h;
-  for (uint32_t c = begin_c + 1; c <= end_c; c++) {
-    if (input.channel[c].w != w) return false;
-    if (input.channel[c].h != h) return false;
-  }
 
   Image quantized_input;
   if (lossy) {

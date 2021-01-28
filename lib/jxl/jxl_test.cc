@@ -214,6 +214,57 @@ TEST(JxlTest, RoundtripOtherTransforms) {
             6);
 }
 
+TEST(JxlTest, RoundtripResample2) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(io.xsize(), io.ysize());
+  CompressParams cparams;
+  cparams.resampling = 2;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            12);
+}
+
+TEST(JxlTest, RoundtripResample4) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(io.xsize(), io.ysize());
+  CompressParams cparams;
+  cparams.resampling = 4;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 6000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            25);
+}
+
+TEST(JxlTest, RoundtripResample8) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(io.xsize(), io.ysize());
+  CompressParams cparams;
+  cparams.resampling = 8;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            80);
+}
+
 TEST(JxlTest, RoundtripUnalignedD2) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
@@ -431,7 +482,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 40000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            2.23);
+            2.33);
 }
 
 TEST(JxlTest, RoundtripSmallNoGaborish) {
@@ -452,6 +503,38 @@ TEST(JxlTest, RoundtripSmallNoGaborish) {
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.7);
+}
+
+TEST(JxlTest, RoundtripSmallPatchesAlpha) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  io.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
+  Image3F black_with_small_lines(256, 256);
+  ImageF alpha(black_with_small_lines.xsize(), black_with_small_lines.ysize());
+  ZeroFillImage(&black_with_small_lines);
+  // This pattern should be picked up by the patch detection heuristics.
+  for (size_t y = 0; y < black_with_small_lines.ysize(); y++) {
+    float* JXL_RESTRICT row = black_with_small_lines.PlaneRow(1, y);
+    for (size_t x = 0; x < black_with_small_lines.xsize(); x++) {
+      if (x % 4 == 0 && (y / 32) % 4 == 0) row[x] = 127.0f;
+    }
+  }
+  io.metadata.m.SetAlphaBits(8);
+  io.SetFromImage(std::move(black_with_small_lines),
+                  ColorEncoding::LinearSRGB());
+  FillImage(1.0f, &alpha);
+  io.Main().SetAlpha(std::move(alpha), /*alpha_is_premultiplied=*/false);
+
+  CompressParams cparams;
+  cparams.speed_tier = SpeedTier::kSquirrel;
+  cparams.butteraugli_distance = 0.1f;
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            0.5f);
 }
 
 TEST(JxlTest, RoundtripSmallPatches) {

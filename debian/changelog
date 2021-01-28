@@ -1,3 +1,9 @@
+jpeg-xl (0.3) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.3.
+
+ -- Alex Deymo <deymo@google.com>  Wed, 27 Jan 2021 22:36:32 +0100
+
 jpeg-xl (0.2) UNRELEASED; urgency=medium
 
   * Bump JPEG XL version to 0.2.

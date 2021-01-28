@@ -104,21 +104,23 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
                   sizeof(*gif->SavedImages) * gif->ImageCount);
 #endif
 
+  const SizeConstraints* constraints = &io->constraints;
+
   JXL_RETURN_IF_ERROR(
-      io->VerifyDimensions<uint32_t>(gif->SWidth, gif->SHeight));
+      VerifyDimensions<uint32_t>(constraints, gif->SWidth, gif->SHeight));
   uint64_t total_pixel_count =
       static_cast<uint64_t>(gif->SWidth) * gif->SHeight;
   for (int i = 0; i < gif->ImageCount; ++i) {
     const SavedImage& image = gif->SavedImages[i];
     uint32_t w = image.ImageDesc.Width;
     uint32_t h = image.ImageDesc.Height;
-    JXL_RETURN_IF_ERROR(io->VerifyDimensions<uint32_t>(w, h));
+    JXL_RETURN_IF_ERROR(VerifyDimensions<uint32_t>(constraints, w, h));
     uint64_t pixel_count = static_cast<uint64_t>(w) * h;
     if (total_pixel_count + pixel_count < total_pixel_count) {
       return JXL_FAILURE("Image too big");
     }
     total_pixel_count += pixel_count;
-    if (total_pixel_count > io->GetDecMaxPixels()) {
+    if (total_pixel_count > constraints->dec_max_pixels) {
       return JXL_FAILURE("Image too big");
     }
   }

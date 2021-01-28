@@ -29,9 +29,9 @@ int TestOneInput(const uint8_t* data, size_t size) {
   DecompressParams params;
 
   CodecInOut io;
-  io.dec_max_xsize = 1u << 16;
-  io.dec_max_ysize = 1u << 16;
-  io.dec_max_pixels = 1 << 21;
+  io.constraints.dec_max_xsize = 1u << 16;
+  io.constraints.dec_max_ysize = 1u << 16;
+  io.constraints.dec_max_pixels = 1 << 21;
 
   ThreadPoolInternal pool(2);
   AuxOut aux_out;

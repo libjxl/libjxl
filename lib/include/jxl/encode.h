@@ -89,6 +89,15 @@ typedef enum {
 JXL_EXPORT JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager);
 
 /**
+ * Re-initializes a JxlEncoder instance, so it can be re-used for encoding
+ * another image. All state and settings are reset as if the object was
+ * newly created with JxlDecoderCreate, but the memory manager is kept.
+ *
+ * @param enc instance to be re-initialized.
+ */
+JXL_EXPORT void JxlEncoderReset(JxlEncoder* enc);
+
+/**
  * Deinitializes and frees JxlEncoder instance.
  *
  * @param enc instance to be cleaned up and deallocated.
@@ -147,9 +156,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  * @param size size of buffer in bytes.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(JxlEncoderOptions* options,
-                                                   const uint8_t* buffer,
-                                                   size_t size);
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
+    const JxlEncoderOptions* options, const uint8_t* buffer, size_t size);
 
 /**
  * Sets the buffer to read pixels from for the next image to encode. Must call
@@ -169,7 +177,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(JxlEncoderOptions* options,
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
-    JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
+    const JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
     const void* buffer, size_t size);
 
 /**

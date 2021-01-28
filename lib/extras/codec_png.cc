@@ -668,7 +668,7 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   if (lodepng_inspect(&w, &h, &state.s, bytes.data(), bytes.size()) != 0) {
     return false;  // not an error - just wrong format
   }
-  JXL_RETURN_IF_ERROR(io->VerifyDimensions(w, h));
+  JXL_RETURN_IF_ERROR(VerifyDimensions(&io->constraints, w, h));
   io->SetSize(w, h);
   // Palette RGB values
   if (!InspectChunkType(bytes, "PLTE", &state.s)) {

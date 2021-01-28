@@ -429,7 +429,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
                  bytes.size());
     jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
     jpeg_read_header(&cinfo, TRUE);
-    if (!io->VerifyDimensions(cinfo.image_width, cinfo.image_height)) {
+    if (!VerifyDimensions(&io->constraints, cinfo.image_width,
+                          cinfo.image_height)) {
       jpeg_abort_decompress(&cinfo);
       jpeg_destroy_decompress(&cinfo);
       return JXL_FAILURE("image too big");

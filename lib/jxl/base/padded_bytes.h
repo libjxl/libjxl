@@ -164,12 +164,18 @@ class PaddedBytes {
 
   template <typename T>
   void append(const T& other) {
-    size_t old_size = size();
-    resize(size() + other.size());
-    memcpy(data() + old_size, other.data(), other.size());
+    append(reinterpret_cast<const uint8_t*>(other.data()),
+           reinterpret_cast<const uint8_t*>(other.data()) + other.size());
   }
 
+  // Exponential growth to avoid quadratic behaviour.
   void append(const uint8_t* begin, const uint8_t* end) {
+    if (size_ + (end - begin) >= capacity_) {
+      size_t new_capacity = std::max(size_ + (end - begin), 3 * capacity_ / 2);
+      new_capacity = std::max<size_t>(64, new_capacity);
+      IncreaseCapacityTo(new_capacity);
+      if (data() == nullptr) return;
+    }
     size_t old_size = size();
     resize(size() + (end - begin));
     memcpy(data() + old_size, begin, end - begin);

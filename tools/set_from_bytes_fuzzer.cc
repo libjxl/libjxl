@@ -25,9 +25,9 @@ namespace jxl {
 
 int TestOneInput(const uint8_t* data, size_t size) {
   CodecInOut io;
-  io.dec_max_xsize = 1u << 16;
-  io.dec_max_ysize = 1u << 16;
-  io.dec_max_pixels = 1u << 22;
+  io.constraints.dec_max_xsize = 1u << 16;
+  io.constraints.dec_max_ysize = 1u << 16;
+  io.constraints.dec_max_pixels = 1u << 22;
   ThreadPoolInternal pool(0);
 
   (void)SetFromBytes(Span<const uint8_t>(data, size), &io, &pool);

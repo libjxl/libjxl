@@ -82,6 +82,9 @@ Status LoopFilter::VisitFields(Visitor* JXL_RESTRICT visitor) {
     }
     if (visitor->Conditional(nonserialized_is_modular)) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(1.0f, &epf_sigma_for_modular));
+      if (epf_sigma_for_modular < 1e-8) {
+        return JXL_FAILURE("EPF: sigma for modular is too small");
+      }
     }
   }
 

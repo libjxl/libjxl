@@ -26,7 +26,6 @@
 #include <hwy/highway.h>
 
 #include "lib/jxl/alpha.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -109,7 +108,6 @@ HWY_EXPORT(SingleFromSingle);  // Local function
 
 Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
-                                             const FrameDimensions& frame_dim,
                                              bool allow_truncated_group) {
   bool decode_color = frame_header.encoding == FrameEncoding::kModular;
   const auto& metadata = frame_header.nonserialized_metadata->m;
@@ -159,14 +157,16 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 
   ModularOptions options;
   options.max_chan_size = frame_dim.group_dim;
-  if (!ModularGenericDecompress(reader, gi, &global_header,
-                                ModularStreamId::Global().ID(frame_dim),
-                                &options,
-                                /*undo_transforms=*/-2, &tree, &code,
-                                &context_map, allow_truncated_group)) {
+  Status dec_status = ModularGenericDecompress(
+      reader, gi, &global_header, ModularStreamId::Global().ID(frame_dim),
+      &options,
+      /*undo_transforms=*/-2, &tree, &code, &context_map,
+      allow_truncated_group);
+  if (dec_status.IsFatalError()) {
     return JXL_FAILURE("Failed to decode global modular info");
   }
 
+  // TODO(eustas): are we sure this can be done after partial decode?
   // ensure all the channel buffers are allocated
   have_something = false;
   for (size_t c = 0; c < gi.channel.size(); c++) {
@@ -177,12 +177,11 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     gic.resize();
   }
   full_image = std::move(gi);
-  return true;
+  return dec_status;
 }
 
 Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
-                                        AuxOut* aux_out, size_t minShift,
-                                        size_t maxShift,
+                                        size_t minShift, size_t maxShift,
                                         const ModularStreamId& stream) {
   JXL_DASSERT(stream.kind == ModularStreamId::kModularDC ||
               stream.kind == ModularStreamId::kModularAC);
@@ -238,8 +237,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   return true;
 }
 Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
-                                           PassesDecoderState* dec_state,
-                                           AuxOut* aux_out) {
+                                           PassesDecoderState* dec_state) {
   const Rect r = dec_state->shared->DCGroupRect(group_id);
   Image image(r.xsize(), r.ysize(), 255, 3);
   size_t stream_id = ModularStreamId::VarDCTDC(group_id).ID(frame_dim);
@@ -268,8 +266,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
 }
 
 Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
-                                             PassesDecoderState* dec_state,
-                                             AuxOut* aux_out) {
+                                             PassesDecoderState* dec_state) {
   const Rect r = dec_state->shared->DCGroupRect(group_id);
   size_t upper_bound = r.xsize() * r.ysize();
   reader->Refill();
@@ -322,10 +319,13 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
         return JXL_FAILURE(
             "AC strategy not compatible with chroma subsampling");
       }
-      if (x + acs.covered_blocks_x() > r.xsize()) {
+      // Ensure that blocks do not overflow *AC* groups.
+      size_t xlim = (x / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+      size_t ylim = (y / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+      if (x + acs.covered_blocks_x() > xlim) {
         return JXL_FAILURE("Invalid AC strategy, x overflow");
       }
-      if (y + acs.covered_blocks_y() > r.ysize()) {
+      if (y + acs.covered_blocks_y() > ylim) {
         return JXL_FAILURE("Invalid AC strategy, y overflow");
       }
       JXL_RETURN_IF_ERROR(
@@ -434,6 +434,10 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
             // broke up the arbitrary float into its parts, now reassemble into
             // binary32
             exp += 127;
+            if (exp < 0) {
+              // After changing the exponent bias the float is still subnormal.
+              return JXL_FAILURE("Subnormal float");
+            }
             f = (signbit ? 0x80000000 : 0);
             f |= (exp << 23);
             f |= mantissa;

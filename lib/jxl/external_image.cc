@@ -226,6 +226,11 @@ void JXL_INLINE Store8(uint32_t value, uint8_t* dest) { *dest = value & 0xff; }
 
 }  // namespace
 
+void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
+                         size_t color_channels) {
+  return HWY_DYNAMIC_DISPATCH(LinearToSRGBInPlace)(pool, image, color_channels);
+}
+
 Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
                     bool float_out, bool apply_srgb_tf, size_t num_channels,
                     JxlEndianness endianness, size_t stride,
@@ -261,8 +266,7 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
   ImageF temp_alpha;
   if (apply_srgb_tf) {
     temp_color = CopyImage(*color);
-    HWY_DYNAMIC_DISPATCH(LinearToSRGBInPlace)
-    (pool, &temp_color, color_channels);
+    LinearToSRGBInPlace(pool, &temp_color, color_channels);
     color = &temp_color;
   }
 

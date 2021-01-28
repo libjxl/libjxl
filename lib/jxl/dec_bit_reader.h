@@ -332,6 +332,7 @@ class BitReaderScopedCloser {
     Status close_ret = reader_->Close();
     if (!close_ret) *status_ = close_ret;
   }
+  BitReaderScopedCloser(const BitReaderScopedCloser&) = delete;
 
  private:
   BitReader* reader_;

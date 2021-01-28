@@ -20,8 +20,17 @@
 
 namespace jxl {
 
-void Upsample(Image3F* src, size_t upsampling, const CustomTransformData& data);
+struct Upsampler {
+  void Init(size_t upsampling, const CustomTransformData& data);
 
-}
+  void UpsampleRect(const Image3F& src, const Rect& src_rect, Image3F* dst,
+                    const Rect& dst_rect) const;
+
+ private:
+  size_t upsampling_ = 1;
+  float kernel_[4][4][5][5];
+};
+
+}  // namespace jxl
 
 #endif

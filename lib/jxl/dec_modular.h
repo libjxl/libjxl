@@ -17,7 +17,6 @@
 
 #include <stddef.h>
 
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
@@ -96,20 +95,17 @@ struct ModularStreamId {
 
 class ModularFrameDecoder {
  public:
-  explicit ModularFrameDecoder(const FrameDimensions& frame_dim)
-      : frame_dim(frame_dim) {}
+  void Init(const FrameDimensions& frame_dim) { this->frame_dim = frame_dim; }
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
-                          const FrameDimensions& frame_dim,
                           bool allow_truncated_group = false);
-  Status DecodeGroup(const Rect& rect, BitReader* reader, AuxOut* aux_out,
-                     size_t minShift, size_t maxShift,
-                     const ModularStreamId& stream);
+  Status DecodeGroup(const Rect& rect, BitReader* reader, size_t minShift,
+                     size_t maxShift, const ModularStreamId& stream);
   // Decodes a VarDCT DC group (`group_id`) from the given `reader`.
   Status DecodeVarDCTDC(size_t group_id, BitReader* reader,
-                        PassesDecoderState* dec_state, AuxOut* aux_out);
+                        PassesDecoderState* dec_state);
   // Decodes a VarDCT AC Metadata group (`group_id`) from the given `reader`.
   Status DecodeAcMetadata(size_t group_id, BitReader* reader,
-                          PassesDecoderState* dec_state, AuxOut* aux_out);
+                          PassesDecoderState* dec_state);
   // Decodes a RAW quant table from `br` into the given `encoding`, of size
   // `required_size_x x required_size_y`. If `modular_frame_decoder` is passed,
   // its global tree is used, otherwise no global tree is used.

@@ -105,6 +105,30 @@ TEST(ModularTest, RoundtripLossy) {
             3.0);
 }
 
+TEST(ModularTest, RoundtripLossy16) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("raw.pixls/DJI-FC6310-16bit_709_v4_krita.png");
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.quality_pair = {80.0f, 80.0f};
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  JXL_CHECK(io.TransformTo(ColorEncoding::SRGB(), pool));
+  io.metadata.m.color_encoding = ColorEncoding::SRGB();
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 400);
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            1.5);
+}
+
 TEST(ModularTest, RoundtripExtraProperties) {
   constexpr size_t kSize = 250;
   Image image(kSize, kSize, /*maxval=*/255, 3);

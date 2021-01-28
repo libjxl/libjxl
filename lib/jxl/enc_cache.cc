@@ -147,7 +147,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     ImageBundle decoded(&shared.metadata->m);
     PassesDecoderState dec_state;
     JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
-                          *shared.metadata));
+                          *shared.metadata, /*constraints=*/nullptr));
     // TODO(lode): shared.frame_header.dc_level should be equal to
     // dec_state.shared->frame_header.dc_level - 1 here, since above we set
     // dc_frame_info.dc_level = shared.frame_header.dc_level + 1, and

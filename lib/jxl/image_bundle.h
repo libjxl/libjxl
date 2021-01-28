@@ -134,6 +134,12 @@ class ImageBundle {
   Status TransformTo(const ColorEncoding& c_desired,
                      ThreadPool* pool = nullptr);
 
+  // Set the c_current profile without doing any transformation, e.g. if the
+  // transformation was already applied.
+  void OverrideProfile(const ColorEncoding& new_c_current) {
+    c_current_ = new_c_current;
+  }
+
   // Copies this:rect, converts to c_desired, and allocates+fills out.
   Status CopyTo(const Rect& rect, const ColorEncoding& c_desired, Image3B* out,
                 ThreadPool* pool = nullptr) const;
@@ -171,15 +177,10 @@ class ImageBundle {
 
   // Extra channels of unknown interpretation (e.g. spot colors).
   void SetExtraChannels(std::vector<ImageF>&& extra_channels);
+  void ClearExtraChannels() { extra_channels_.clear(); }
   bool HasExtraChannels() const { return !extra_channels_.empty(); }
-  const std::vector<ImageF>& extra_channels() const {
-    JXL_ASSERT(HasExtraChannels());
-    return extra_channels_;
-  }
-  std::vector<ImageF>& extra_channels() {
-    JXL_ASSERT(HasExtraChannels());
-    return extra_channels_;
-  }
+  const std::vector<ImageF>& extra_channels() const { return extra_channels_; }
+  std::vector<ImageF>& extra_channels() { return extra_channels_; }
 
   const ImageMetadata* metadata() const { return metadata_; }
 

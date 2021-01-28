@@ -162,6 +162,7 @@ detect_clang_version() {
     return 0
   fi
   local clang_version=$("${CC:-clang}" --version | head -n1)
+  clang_version=${clang_version#"Debian "}
   local llvm_tag
   case "${clang_version}" in
     "clang version 6."*)

@@ -325,7 +325,16 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
     const float* JXL_RESTRICT row_in_next =
         dy == 7 ? row_in : xyb.Row(y + dy + 1) + x;
 
+    // In SCALAR, there is no guarantee of having extra row padding.
+    // Hence, we need to ensure we don't access pixels outside the row itself.
+    // In SIMD modes, however, rows are padded, so it's safe to access one
+    // garbage value after the row. The vector then gets masked with kMaskRight
+    // to remove the influence of that value.
+#if HWY_TARGET != HWY_SCALAR
     for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
+#else
+    for (size_t dx = 0; dx < 7; dx += Lanes(d)) {
+#endif
       const auto p = Load(d, row_in + dx);
       const auto pr = LoadU(d, row_in + dx + 1);
       const auto mask = BitCast(d, Load(du, kMaskRight + dx));
@@ -795,10 +804,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   const float initial_quant_dc = InitialQuantDC(butteraugli_target);
   AdjustQuantField(enc_state->shared.ac_strategy, &quant_field);
   ImageF tile_distmap;
-  ImageF tile_distmap_localopt;
   ImageF initial_quant_field = CopyImage(quant_field);
-  ImageF last_quant_field = CopyImage(initial_quant_field);
-  ImageF last_tile_distmap_localopt;
 
   float initial_qf_min, initial_qf_max;
   ImageMinMax(initial_quant_field, &initial_qf_min, &initial_qf_max);
@@ -812,9 +818,14 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   JXL_ASSERT(qf_higher / qf_lower < 253);
 
   constexpr int kOriginalComparisonRound = 1;
-  constexpr float kMaximumDistanceIncreaseFactor = 1.015;
-
-  for (int i = 0; i < cparams.max_butteraugli_iters + 1; ++i) {
+  int iters = cparams.max_butteraugli_iters;
+  if (iters > 7) {
+    iters = 7;
+  }
+  if (cparams.speed_tier != SpeedTier::kTortoise) {
+    iters = 2;
+  }
+  for (int i = 0; i < iters + 1; ++i) {
     if (FLAGS_dump_quant_state) {
       printf("\nQuantization field:\n");
       for (size_t y = 0; y < quant_field.ysize(); ++y) {
@@ -824,7 +835,6 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
         printf("\n");
       }
     }
-
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
     ImageMetadata metadata;
     metadata.SetFloat32Samples();
@@ -841,11 +851,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       score = -score;
       diffmap = ScaleImage(-1.0f, diffmap);
     }
-    static constexpr int kMargins[100] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
     tile_distmap =
-        TileDistMap(diffmap, 8, kMargins[i], enc_state->shared.ac_strategy);
-    tile_distmap_localopt =
-        TileDistMap(diffmap, 8, 2, enc_state->shared.ac_strategy);
+        TileDistMap(diffmap, 8, 0, enc_state->shared.ac_strategy);
     if (WantDebugOutput(aux_out)) {
       DumpHeatmaps(aux_out, butteraugli_target, quant_field, tile_distmap);
     }
@@ -862,26 +869,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       }
     }
 
-    if (i > kOriginalComparisonRound) {
-      // Undo last round if it made things worse (i.e. increased the quant value
-      // AND the distance in nearby pixels by at least some percentage).
-      for (size_t y = 0; y < quant_field.ysize(); ++y) {
-        float* const JXL_RESTRICT row_q = quant_field.Row(y);
-        const float* const JXL_RESTRICT row_dist = tile_distmap_localopt.Row(y);
-        const float* const JXL_RESTRICT row_last_dist =
-            last_tile_distmap_localopt.Row(y);
-        const float* const JXL_RESTRICT row_last_q = last_quant_field.Row(y);
-        for (size_t x = 0; x < quant_field.xsize(); ++x) {
-          if (row_q[x] > row_last_q[x] &&
-              row_dist[x] > kMaximumDistanceIncreaseFactor * row_last_dist[x]) {
-            row_q[x] = row_last_q[x];
-          }
-        }
-      }
-    }
-    last_quant_field = CopyImage(quant_field);
-    last_tile_distmap_localopt = CopyImage(tile_distmap_localopt);
-    if (i == cparams.max_butteraugli_iters) break;
+    if (i == iters) break;
 
     double kPow[8] = {
         0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -916,7 +904,6 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
         cur_pow = 0;
       }
     }
-    // pow(x, 0) == 1, so skip pow.
     if (cur_pow == 0.0) {
       for (size_t y = 0; y < quant_field.ysize(); ++y) {
         const float* const JXL_RESTRICT row_dist = tile_distmap.Row(y);
@@ -1032,154 +1019,6 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
   quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
 }
 
-void FindBestQuantizationHQ(const ImageBundle& linear, const Image3F& opsin,
-                            PassesEncoderState* enc_state, ThreadPool* pool,
-                            AuxOut* aux_out) {
-  const CompressParams& cparams = enc_state->cparams;
-  Quantizer& quantizer = enc_state->shared.quantizer;
-  ImageI& raw_quant_field = enc_state->shared.raw_quant_field;
-  ImageF& quant_field = enc_state->initial_quant_field;
-  const AcStrategyImage& ac_strategy = enc_state->shared.ac_strategy;
-
-  ButteraugliParams params = cparams.ba_params;
-  params.intensity_target = linear.metadata()->IntensityTarget();
-  JxlButteraugliComparator comparator(params);
-  ImageMetadata metadata;
-  JXL_CHECK(comparator.SetReferenceImage(linear));
-  AdjustQuantField(ac_strategy, &quant_field);
-  ImageF best_quant_field = CopyImage(quant_field);
-  bool lower_is_better =
-      (comparator.GoodQualityScore() < comparator.BadQualityScore());
-  float best_score = 1000000.0f;
-  ImageF tile_distmap;
-  constexpr int kMaxOuterIters = 2;
-  int outer_iter = 0;
-  int butteraugli_iter = 0;
-  int search_radius = 0;
-  float quant_ceil = 5.0f;
-  float quant_dc = 1.2f;
-  float best_quant_dc = quant_dc;
-  int num_stalling_iters = 0;
-  int max_iters = cparams.max_butteraugli_iters_guetzli_mode;
-  const float butteraugli_target = cparams.butteraugli_distance;
-
-  for (;;) {
-    if (FLAGS_dump_quant_state) {
-      printf("\nQuantization field:\n");
-      for (size_t y = 0; y < quant_field.ysize(); ++y) {
-        for (size_t x = 0; x < quant_field.xsize(); ++x) {
-          printf(" %.5f", quant_field.Row(y)[x]);
-        }
-        printf("\n");
-      }
-    }
-    float qmin, qmax;
-    ImageMinMax(quant_field, &qmin, &qmax);
-    ++butteraugli_iter;
-    float score = 0.0;
-    ImageF diffmap;
-    quantizer.SetQuantField(quant_dc, quant_field, &raw_quant_field);
-    ImageMetadata metadata;
-    metadata.SetFloat32Samples();
-    metadata.color_encoding = ColorEncoding::LinearSRGB();
-    metadata.SetIntensityTarget(linear.metadata()->IntensityTarget());
-    ImageBundle linear(&metadata);
-    linear.SetFromImage(RoundtripImage(opsin, enc_state, pool),
-                        metadata.color_encoding);
-    JXL_CHECK(comparator.CompareWith(linear, &diffmap, &score));
-
-    if (!lower_is_better) {
-      score = -score;
-      ScaleImage(-1.0f, &diffmap);
-    }
-    bool best_quant_updated = false;
-    if (score <= best_score) {
-      best_quant_field = CopyImage(quant_field);
-      best_score = std::max<float>(score, butteraugli_target);
-      best_quant_updated = true;
-      best_quant_dc = quant_dc;
-      num_stalling_iters = 0;
-    } else if (outer_iter == 0) {
-      ++num_stalling_iters;
-    }
-    tile_distmap = TileDistMap(diffmap, 8, 0, ac_strategy);
-    if (WantDebugOutput(aux_out)) {
-      DumpHeatmaps(aux_out, butteraugli_target, quant_field, tile_distmap);
-    }
-    if (aux_out) {
-      ++aux_out->num_butteraugli_iters;
-    }
-    if (FLAGS_log_search_state) {
-      float minval, maxval;
-      ImageMinMax(quant_field, &minval, &maxval);
-      printf("\nButteraugli iter: %d/%d%s\n", butteraugli_iter, max_iters,
-             best_quant_updated ? " (*)" : "");
-      printf("Butteraugli distance: %f\n", score);
-      printf(
-          "quant range: %f ... %f  DC quant: "
-          "%f\n",
-          minval, maxval, quant_dc);
-      printf("search radius: %d\n", search_radius);
-      if (FLAGS_dump_quant_state) {
-        quantizer.DumpQuantizationMap(raw_quant_field);
-      }
-    }
-    if (butteraugli_iter >= max_iters) {
-      break;
-    }
-    bool changed = false;
-    while (!changed && score > butteraugli_target) {
-      for (int radius = 0; radius <= search_radius && !changed; ++radius) {
-        ImageF dist_to_peak_map =
-            DistToPeakMap(tile_distmap, butteraugli_target, radius, 0.0);
-        for (size_t y = 0; y < quant_field.ysize(); ++y) {
-          float* const JXL_RESTRICT row_q = quant_field.Row(y);
-          const float* const JXL_RESTRICT row_dist = dist_to_peak_map.Row(y);
-          for (size_t x = 0; x < quant_field.xsize(); ++x) {
-            if (row_dist[x] >= 0.0f) {
-              static constexpr float kAdjSpeed[kMaxOuterIters] = {0.1f, 0.04f};
-              const float factor =
-                  kAdjSpeed[outer_iter] * tile_distmap.Row(y)[x];
-              if (AdjustQuantVal(&row_q[x], row_dist[x], factor, quant_ceil)) {
-                changed = true;
-              }
-            }
-          }
-        }
-      }
-      if (!changed || num_stalling_iters >= 3) {
-        // Try to extend the search parameters.
-        if ((search_radius < 4) &&
-            (qmax < 0.99f * quant_ceil || quant_ceil >= 3.0f + search_radius)) {
-          ++search_radius;
-          continue;
-        }
-        if (quant_dc < 0.4f * quant_ceil - 0.8f) {
-          quant_dc += 0.2f;
-          changed = true;
-          continue;
-        }
-        if (quant_ceil < 8.0f) {
-          quant_ceil += 0.5f;
-          continue;
-        }
-        break;
-      }
-    }
-    if (!changed) {
-      if (++outer_iter == kMaxOuterIters) break;
-      constexpr float kQuantScale = 0.75f;
-      for (size_t y = 0; y < quant_field.ysize(); ++y) {
-        for (size_t x = 0; x < quant_field.xsize(); ++x) {
-          quant_field.Row(y)[x] *= kQuantScale;
-        }
-      }
-      num_stalling_iters = 0;
-    }
-  }
-  quantizer.SetQuantField(best_quant_dc, best_quant_field, &raw_quant_field);
-}
-
 }  // namespace
 
 float InitialQuantDC(float butteraugli_target) {
@@ -1233,11 +1072,7 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
   } else {
     // Normal encoding to a butteraugli score.
     PROFILER_ZONE("enc find best2");
-    if (cparams.speed_tier == SpeedTier::kTortoise) {
-      FindBestQuantizationHQ(*linear, opsin, enc_state, pool, aux_out);
-    } else {
-      FindBestQuantization(*linear, opsin, enc_state, pool, aux_out);
-    }
+    FindBestQuantization(*linear, opsin, enc_state, pool, aux_out);
   }
 }
 
@@ -1283,7 +1118,7 @@ Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
   // Fine to do a JXL_ASSERT instead of error handling, since this only happens
   // on the encoder side where we can't be fed with invalid data.
-  JXL_CHECK(FinalizeFrameDecoding(&idct, &dec_state, pool, nullptr));
+  JXL_CHECK(FinalizeFrameDecoding(&idct, &dec_state, pool));
   return idct;
 }
 

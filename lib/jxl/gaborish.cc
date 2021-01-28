@@ -61,13 +61,17 @@ void GaborishInverse(Image3F* in_out, float mul, ThreadPool* pool) {
 
   // Reduce memory footprint by only allocating a single plane and swapping it
   // into the output Image3F. Better still would be tiling.
-  ImageF out(in_out->xsize(), in_out->ysize());
-  Symmetric5(in_out->Plane(0), Rect(*in_out), weights, pool, &out);
-  in_out->Plane(0).Swap(out);
-  Symmetric5(in_out->Plane(1), Rect(*in_out), weights, pool, &out);
-  in_out->Plane(1).Swap(out);
-  Symmetric5(in_out->Plane(2), Rect(*in_out), weights, pool, &out);
-  in_out->Plane(2).Swap(out);
+  // Note that we cannot *allocate* a plane, as doing so might cause Image3F to
+  // have planes of different stride. Instead, we copy one plane in a temporary
+  // image and reuse the existing planes of the in/out image.
+  ImageF temp = CopyImage(in_out->Plane(2));
+  Symmetric5(in_out->Plane(0), Rect(*in_out), weights, pool, &in_out->Plane(2));
+  Symmetric5(in_out->Plane(1), Rect(*in_out), weights, pool, &in_out->Plane(0));
+  Symmetric5(temp, Rect(*in_out), weights, pool, &in_out->Plane(1));
+  // Now planes are 1, 2, 0.
+  in_out->Plane(0).Swap(in_out->Plane(1));
+  // 2 1 0
+  in_out->Plane(0).Swap(in_out->Plane(2));
 }
 
 }  // namespace jxl

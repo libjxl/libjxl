@@ -456,6 +456,26 @@ main() {
   # which is not available in the llvm repos so it might have a different
   # version than the ubuntu ones.
 
+  # Remove the win32 libgcc version. The gcc-mingw-w64-x86-64 (and i686)
+  # packages install two libgcc versions:
+  #   /usr/lib/gcc/x86_64-w64-mingw32/7.3-posix
+  #   /usr/lib/gcc/x86_64-w64-mingw32/7.3-win32
+  # (exact libgcc version number depends on the package version).
+  #
+  # Clang will pick the best libgcc, sorting by version, but it doesn't
+  # seem to be a way to specify one or the other one, except by passing
+  # -nostdlib and setting all the include paths from the command line.
+  # To check which one is being used you can run:
+  #   clang++-7 --target=x86_64-w64-mingw32 -v -print-libgcc-file-name
+  # We need to use the "posix" versions for thread support, so here we
+  # just remove the other one.
+  local target
+  for target in "${LIST_MINGW_TARGETS[@]}"; do
+    update-alternatives --set "${target}-gcc" $(which "${target}-gcc-posix")
+    local gcc_win32_path=$("${target}-cpp-win32" -print-libgcc-file-name)
+    rm -rf $(dirname "${gcc_win32_path}")
+  done
+
   # TODO: Add msan for the target when cross-compiling. This only installs it
   # for amd64.
   ./msan_install.sh

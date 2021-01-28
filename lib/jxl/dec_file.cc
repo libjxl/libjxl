@@ -53,7 +53,7 @@ Status DecodePreview(const DecompressParams& dparams,
                      const CodecMetadata& metadata,
                      BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
                      ThreadPool* pool, ImageBundle* JXL_RESTRICT preview,
-                     uint64_t* dec_pixels) {
+                     uint64_t* dec_pixels, const SizeConstraints* constraints) {
   // No preview present in file.
   if (!metadata.m.have_preview) {
     if (dparams.preview == Override::kOn) {
@@ -73,7 +73,7 @@ Status DecodePreview(const DecompressParams& dparams,
   // Else: default or kOn => decode preview.
   PassesDecoderState dec_state;
   JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, aux_out,
-                                  preview, metadata, nullptr,
+                                  preview, metadata, constraints,
                                   /*is_preview=*/true));
   if (dec_pixels) {
     *dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
@@ -113,7 +113,7 @@ Status DecodeFile(const DecompressParams& dparams,
       JXL_RETURN_IF_ERROR(DecodeHeaders(&reader, io));
       size_t xsize = io->metadata.xsize();
       size_t ysize = io->metadata.ysize();
-      JXL_RETURN_IF_ERROR(io->VerifyDimensions(xsize, ysize));
+      JXL_RETURN_IF_ERROR(VerifyDimensions(&io->constraints, xsize, ysize));
     }
 
     if (io->metadata.m.color_encoding.WantICC()) {
@@ -145,8 +145,8 @@ Status DecodeFile(const DecompressParams& dparams,
     }
 
     JXL_RETURN_IF_ERROR(DecodePreview(dparams, io->metadata, &reader, aux_out,
-                                      pool, &io->preview_frame,
-                                      &io->dec_pixels));
+                                      pool, &io->preview_frame, &io->dec_pixels,
+                                      &io->constraints));
 
     // Only necessary if no ICC and no preview.
     JXL_RETURN_IF_ERROR(reader.JumpToByteBoundary());
@@ -155,11 +155,6 @@ Status DecodeFile(const DecompressParams& dparams,
     }
 
     PassesDecoderState dec_state;
-    // OK to depend on a CMS here, as DecodeFile is never called from the C API.
-    dec_state.do_colorspace_transform =
-        [](ImageBundle* ib, const ColorEncoding& c_desired, ThreadPool* pool) {
-          return ib->TransformTo(c_desired, pool);
-        };
 
     io->frames.clear();
     do {
@@ -171,7 +166,7 @@ Status DecodeFile(const DecompressParams& dparams,
       do {
         JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, &reader,
                                         aux_out, &io->frames.back(),
-                                        io->metadata, io));
+                                        io->metadata, &io->constraints));
       } while (dec_state.shared->frame_header.frame_type !=
                    FrameType::kRegularFrame &&
                dec_state.shared->frame_header.frame_type !=

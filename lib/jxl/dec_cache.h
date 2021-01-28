@@ -25,6 +25,7 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dec_noise.h"
+#include "lib/jxl/dec_upsample.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/passes_state.h"
@@ -42,6 +43,9 @@ struct PassesDecoderState {
   // Whether some AC groups are only partially present. This implies that we
   // need to run ApplyImageFeatures at the end, and not per-group.
   bool has_partial_ac_groups = false;
+
+  // Upsampler for the current frame.
+  Upsampler upsampler;
 
   // Storage for RNG output for noise synthesis.
   Image3F noise;
@@ -74,10 +78,6 @@ struct PassesDecoderState {
   // Input weights used by the filters. These are shared from multiple threads
   // but are read-only for the filter application.
   FilterWeights filter_weights;
-
-  // Hook to do colorspace transforms to an ImageBundle.
-  std::function<Status(ImageBundle*, const ColorEncoding&, ThreadPool*)>
-      do_colorspace_transform = nullptr;
 
   void EnsureStorage(size_t num_threads) {
     // TODO(deymo): Don't request any memory if there's no need to apply any

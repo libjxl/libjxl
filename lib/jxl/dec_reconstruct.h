@@ -40,14 +40,12 @@ namespace jxl {
 // Writes pixels in the appropriate colorspace to `idct`, shrinking it if
 // necessary.
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
-                             PassesDecoderState* dec_state, ThreadPool* pool,
-                             AuxOut* aux_out);
+                             PassesDecoderState* dec_state, ThreadPool* pool);
 
 // Applies image features on the given `idct_rect` of `idct`, interpreted as the
 // `image_rect` region of the full image.
 Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                         PassesDecoderState* dec_state, size_t thread,
-                         AuxOut* aux_out);
+                         PassesDecoderState* dec_state, size_t thread);
 
 }  // namespace jxl
 

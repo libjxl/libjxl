@@ -166,7 +166,7 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
 Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
-                       size_t thread, size_t group_idx, AuxOut* aux_out,
+                       size_t thread, size_t group_idx,
                        Image3F* JXL_RESTRICT output,
                        const ImageBundle* decoded) {
   PROFILER_FUNC;
@@ -449,7 +449,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   }
 
   if (JXL_LIKELY(run_apply_image_features)) {
-    return FinalizeImageRect(output, aif_rect, dec_state, thread, aux_out);
+    return FinalizeImageRect(output, aif_rect, dec_state, thread);
   }
   return true;
 }
@@ -579,7 +579,7 @@ struct GetBlockFromBitstream : public GetBlock {
   Status Init(BitReader* JXL_RESTRICT* JXL_RESTRICT readers, size_t num_passes,
               size_t group_idx, size_t histo_selector_bits, const Rect& rect,
               GroupDecCache* JXL_RESTRICT group_dec_cache,
-              PassesDecoderState* dec_state) {
+              PassesDecoderState* dec_state, size_t first_pass) {
     for (size_t i = 0; i < 3; i++) {
       hshift[i] = dec_state->shared->frame_header.chroma_subsampling.HShift(i);
       vshift[i] = dec_state->shared->frame_header.chroma_subsampling.VShift(i);
@@ -588,7 +588,8 @@ struct GetBlockFromBitstream : public GetBlock {
     this->context_map = dec_state->context_map.data();
     this->readers = readers;
     this->num_passes = num_passes;
-    this->shift_for_pass = dec_state->shared->frame_header.passes.shift;
+    this->shift_for_pass =
+        dec_state->shared->frame_header.passes.shift + first_pass;
     this->group_dec_cache = group_dec_cache;
     this->rect = rect;
     block_ctx_map = &dec_state->shared->block_ctx_map;
@@ -606,7 +607,8 @@ struct GetBlockFromBitstream : public GetBlock {
       }
       ctx_offset[pass] = cur_histogram * block_ctx_map->NumACContexts();
 
-      decoders[pass] = ANSSymbolReader(&dec_state->code[pass], readers[pass]);
+      decoders[pass] =
+          ANSSymbolReader(&dec_state->code[pass + first_pass], readers[pass]);
     }
     nzeros_stride = group_dec_cache->num_nzeroes[0].PixelsPerRow();
     for (size_t i = 0; i < num_passes; i++) {
@@ -680,7 +682,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
                    Image3F* output, ImageBundle* JXL_RESTRICT decoded,
-                   AuxOut* aux_out) {
+                   size_t first_pass) {
   PROFILER_FUNC;
 
   group_dec_cache->InitOnce(num_passes);
@@ -692,11 +694,10 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
   JXL_RETURN_IF_ERROR(
       get_block.Init(readers, num_passes, group_idx, histo_selector_bits,
                      dec_state->shared->BlockGroupRect(group_idx),
-                     group_dec_cache, dec_state));
+                     group_dec_cache, dec_state, first_pass));
 
   JXL_RETURN_IF_ERROR(DecodeGroupImpl(&get_block, group_dec_cache, dec_state,
-                                      thread, group_idx, aux_out, output,
-                                      decoded));
+                                      thread, group_idx, output, decoded));
 
   for (size_t pass = 0; pass < num_passes; pass++) {
     if (!get_block.decoders[pass].CheckANSFinalState()) {
@@ -718,7 +719,7 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
   GetBlockFromEncoder get_block(ac, group_idx);
 
   return DecodeGroupImpl(&get_block, group_dec_cache, dec_state, thread,
-                         group_idx, aux_out, output, decoded);
+                         group_idx, output, decoded);
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -734,10 +735,10 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
                    Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
-                   AuxOut* aux_out) {
+                   size_t first_pass) {
   return HWY_DYNAMIC_DISPATCH(DecodeGroup)(readers, num_passes, group_idx,
                                            dec_state, group_dec_cache, thread,
-                                           opsin, decoded, aux_out);
+                                           opsin, decoded, first_pass);
 }
 
 HWY_EXPORT(DecodeGroupForRoundtrip);

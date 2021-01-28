@@ -994,7 +994,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
     ImageBundle decoded(&state->shared.metadata->m);
     PassesDecoderState dec_state;
     JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
-                          *state->shared.metadata));
+                          *state->shared.metadata, /*constraints=*/nullptr));
     JXL_CHECK(br.Close());
     state->shared.reference_frames[0] =
         std::move(dec_state.shared_storage.reference_frames[0]);

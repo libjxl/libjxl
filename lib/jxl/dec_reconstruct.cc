@@ -44,7 +44,7 @@ namespace HWY_NAMESPACE {
 
 Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& rect,
                              PassesDecoderState* dec_state, ssize_t y,
-                             size_t thread, AuxOut* /*aux_out*/) {
+                             size_t thread) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
@@ -120,15 +120,14 @@ Status ApplyImageFeaturesRow(Image3F* JXL_RESTRICT idct, const Rect& rect,
 }
 
 Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                         PassesDecoderState* dec_state, size_t thread,
-                         AuxOut* aux_out) {
+                         PassesDecoderState* dec_state, size_t thread) {
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   JXL_DASSERT(dec_state->decoded_padding >= kMaxFilterBorder);
 
   for (ssize_t y = -lf.PaddingRows();
        y < static_cast<ssize_t>(lf.PaddingRows() + rect.ysize()); y++) {
     JXL_RETURN_IF_ERROR(
-        ApplyImageFeaturesRow(idct, rect, dec_state, y, thread, aux_out));
+        ApplyImageFeaturesRow(idct, rect, dec_state, y, thread));
   }
   return true;
 }
@@ -143,15 +142,12 @@ namespace jxl {
 
 HWY_EXPORT(FinalizeImageRect);
 Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
-                         PassesDecoderState* dec_state, size_t thread,
-                         AuxOut* aux_out) {
-  return HWY_DYNAMIC_DISPATCH(FinalizeImageRect)(idct, rect, dec_state, thread,
-                                                 aux_out);
+                         PassesDecoderState* dec_state, size_t thread) {
+  return HWY_DYNAMIC_DISPATCH(FinalizeImageRect)(idct, rect, dec_state, thread);
 }
 
 Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
-                             PassesDecoderState* dec_state, ThreadPool* pool,
-                             AuxOut* aux_out) {
+                             PassesDecoderState* dec_state, ThreadPool* pool) {
   std::vector<Rect> rects_to_process;
 
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
@@ -263,8 +259,8 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
   std::atomic<bool> apply_features_ok{true};
   auto run_apply_features = [&](size_t rect_id, size_t thread) {
-    if (!FinalizeImageRect(idct, rects_to_process[rect_id], dec_state, thread,
-                           aux_out)) {
+    if (!FinalizeImageRect(idct, rects_to_process[rect_id], dec_state,
+                           thread)) {
       apply_features_ok = false;
     }
   };
@@ -286,8 +282,12 @@ Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
 
   idct->ShrinkTo(frame_dim.xsize, frame_dim.ysize);
   // TODO(veluca): consider making upsampling happen per-line.
-  Upsample(idct, frame_header.upsampling,
-           frame_header.nonserialized_metadata->transform_data);
+  if (frame_header.upsampling != 1) {
+    Image3F temp(idct->xsize() * frame_header.upsampling,
+                 idct->ysize() * frame_header.upsampling);
+    dec_state->upsampler.UpsampleRect(*idct, Rect(*idct), &temp, Rect(temp));
+    *idct = std::move(temp);
+  }
   // Do color transform now if upsampling was done.
   if (frame_header.color_transform == ColorTransform::kXYB &&
       frame_header.upsampling != 1 &&

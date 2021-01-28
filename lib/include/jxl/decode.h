@@ -381,6 +381,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec,
  * still remaining in the data set by JxlDecoderSetInput, or 0 if no input is
  * set or JxlDecoderReleaseInput was already called. For a next call to
  * JxlDecoderProcessInput, the buffer must start with these unprocessed bytes.
+ * This value doesn't provide information about how many bytes the decoder
+ * truly processed internally or how large the original JPEG XL codestream or
+ * file are.
  */
 JXL_EXPORT size_t JxlDecoderReleaseInput(JxlDecoder* dec);
 

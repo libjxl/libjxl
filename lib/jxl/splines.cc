@@ -184,10 +184,10 @@ HWY_EXPORT(DrawFromPoints);
 
 namespace {
 
-// Maximum number of splines per frame is
-//   std::min(kMaxNumSplines, xsize * ysize / 4)
-constexpr size_t kMaxNumSplines = 1u << 20u;
-constexpr size_t kMaxNumSplinesPerPixelRatio = 4;
+// Maximum number of spline control points per frame is
+//   std::min(kMaxNumControlPoints, xsize * ysize / 2)
+constexpr size_t kMaxNumControlPoints = 1u << 20u;
+constexpr size_t kMaxNumControlPointsPerPixelRatio = 2;
 
 // X, Y, B, sigma.
 float ColorQuantizationWeight(const int32_t adjustment, const int channel,
@@ -452,9 +452,15 @@ void QuantizedSpline::Tokenize(std::vector<Token>* const tokens) const {
 
 Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
                                ANSSymbolReader* const decoder,
-                               BitReader* const br) {
+                               BitReader* const br, size_t max_control_points,
+                               size_t* total_num_control_points) {
   const size_t num_control_points =
       decoder->ReadHybridUint(kNumControlPointsContext, br, context_map);
+  *total_num_control_points += num_control_points;
+  if (*total_num_control_points > max_control_points) {
+    return JXL_FAILURE("Too many control points: %zu",
+                       *total_num_control_points);
+  }
   control_points_.resize(num_control_points);
   for (std::pair<int64_t, int64_t>& control_point : control_points_) {
     control_point.first = UnpackSigned(
@@ -496,8 +502,8 @@ void Splines::Encode(BitWriter* writer, const size_t layer,
 
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(histogram_params, kNumSplineContexts, tokens,
-                           &codes, &context_map, writer, layer, aux_out);
+  BuildAndEncodeHistograms(histogram_params, kNumSplineContexts, tokens, &codes,
+                           &context_map, writer, layer, aux_out);
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
@@ -509,8 +515,9 @@ Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {
   ANSSymbolReader decoder(&code, br);
   const size_t num_splines =
       1 + decoder.ReadHybridUint(kNumSplinesContext, br, context_map);
-  if (num_splines >
-      std::min(kMaxNumSplines, num_pixels / kMaxNumSplinesPerPixelRatio)) {
+  size_t max_control_points = std::min(
+      kMaxNumControlPoints, num_pixels / kMaxNumControlPointsPerPixelRatio);
+  if (num_splines > max_control_points) {
     return JXL_FAILURE("Too many splines: %zu", num_splines);
   }
   JXL_RETURN_IF_ERROR(DecodeAllStartingPoints(&starting_points_, br, &decoder,
@@ -521,9 +528,11 @@ Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {
 
   splines_.clear();
   splines_.reserve(num_splines);
+  size_t num_control_points = num_splines;
   for (size_t i = 0; i < num_splines; ++i) {
     QuantizedSpline spline;
-    JXL_RETURN_IF_ERROR(spline.Decode(context_map, &decoder, br));
+    JXL_RETURN_IF_ERROR(spline.Decode(context_map, &decoder, br,
+                                      max_control_points, &num_control_points));
     splines_.push_back(std::move(spline));
   }
 

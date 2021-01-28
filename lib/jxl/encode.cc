@@ -153,6 +153,16 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   return enc;
 }
 
+void JxlEncoderReset(JxlEncoder* enc) {
+  enc->thread_pool.reset();
+  enc->input_frame_queue.clear();
+  enc->encoder_options.clear();
+  enc->output_byte_queue.clear();
+  enc->wrote_headers = false;
+  enc->metadata = jxl::CodecMetadata();
+  enc->last_used_cparams = jxl::CompressParams();
+}
+
 void JxlEncoderDestroy(JxlEncoder* enc) {
   if (enc) {
     // Call destructor directly since custom free function is used.
@@ -173,12 +183,12 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderAddJPEGFrame(JxlEncoderOptions* options,
+JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
                                         const uint8_t* buffer, size_t size) {
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderAddImageFrame(JxlEncoderOptions* options,
+JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
                                          const JxlPixelFormat* pixel_format,
                                          const void* buffer,
                                          const size_t size) {
