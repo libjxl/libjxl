@@ -116,11 +116,6 @@ static inline const char* LayerName(size_t layer) {
   }
 }
 
-struct TestingAux {
-  Image3F* dc = nullptr;
-  Image3F* decoded = nullptr;
-};
-
 // Statistics gathered during compression or decompression.
 struct AuxOut {
  private:
@@ -196,8 +191,7 @@ struct AuxOut {
     // Always save to 16-bit png.
     io.metadata.m.SetUintSamples(16);
     io.metadata.m.color_encoding = ColorEncoding::SRGB();
-    io.SetFromImage(StaticCastImage3<float>(image),
-                    io.metadata.m.color_encoding);
+    io.SetFromImage(ConvertToFloat(image), io.metadata.m.color_encoding);
     (void)dump_image(io, pathname.str());
   }
   template <typename T>
@@ -322,10 +316,6 @@ struct AuxOut {
 
   std::function<Status(const CodecInOut&, const std::string&)> dump_image =
       nullptr;
-
-  // WARNING: this is actually an INPUT to some code, and must be
-  // copy-initialized from aux_out to aux_outs.
-  TestingAux testing_aux;
 };
 
 // Used to skip image creation if they won't be written to debug directory.

@@ -48,8 +48,11 @@ class ColorSpaceTransform {
   ColorSpaceTransform& operator=(const ColorSpaceTransform&) = delete;
 
   // "Constructor"; allocates for up to `num_threads`, or returns false.
+  // `intensity_target` is used for conversion to and from PQ, which is absolute
+  // (1 always represents 10000 cd/m²) and thus needs scaling in linear space if
+  // 1 is to represent another luminance level instead.
   Status Init(const ColorEncoding& c_src, const ColorEncoding& c_dst,
-              size_t xsize, size_t num_threads);
+              float intensity_target, size_t xsize, size_t num_threads);
 
   float* BufSrc(const size_t thread) { return buf_src_.Row(thread); }
 
@@ -65,6 +68,7 @@ class ColorSpaceTransform {
 
   ImageF buf_src_;
   ImageF buf_dst_;
+  float intensity_target_;
   size_t xsize_;
   bool skip_lcms_ = false;
   ExtraTF preprocess_ = ExtraTF::kNone;

@@ -21,11 +21,11 @@ set(TEST_FILES
   jxl/ans_test.cc
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
+  jxl/butteraugli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc
   jxl/color_encoding_internal_test.cc
   jxl/color_management_test.cc
-  jxl/compressed_dc_test.cc
   jxl/compressed_image_test.cc
   jxl/convolve_test.cc
   jxl/data_parallel_test.cc

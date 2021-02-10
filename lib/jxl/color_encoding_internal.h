@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "jxl/color_encoding.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
@@ -416,6 +417,9 @@ static inline std::ostream& operator<<(std::ostream& os,
                                        const ColorEncoding& c) {
   return os << Description(c);
 }
+
+void ConvertInternalToExternalColorEncoding(const jxl::ColorEncoding& internal,
+                                            JxlColorEncoding* external);
 
 }  // namespace jxl
 

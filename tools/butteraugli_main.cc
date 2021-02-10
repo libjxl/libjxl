@@ -30,31 +30,20 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
-#include "tools/butteraugli_pnorm.h"
 
 namespace jxl {
 namespace {
 
-Status WritePNG(const Image3B& image, const std::string& filename) {
+Status WritePNG(Image3F&& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
-  std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  Image3F float_image(image.xsize(), image.ysize());
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < image.ysize(); y++) {
-      const uint8_t* row = image.PlaneRow(c, y);
-      float* row_out = float_image.PlaneRow(c, y);
-      for (size_t x = 0; x < image.xsize(); x++) {
-        row_out[x] = (1.0f / 255.f) * row[x];
-      }
-    }
-  }
-  io.SetFromImage(std::move(float_image), io.metadata.m.color_encoding);
+  io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
   PaddedBytes compressed;
   JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, &pool, &compressed));
   return WriteFile(compressed, filename);
@@ -107,8 +96,8 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   if (!distmap_filename.empty()) {
     float good = ButteraugliFuzzyInverse(1.5);
     float bad = ButteraugliFuzzyInverse(0.5);
-    Image3B heatmap = CreateHeatMapImage(distmap, good, bad);
-    JXL_CHECK(WritePNG(heatmap, distmap_filename));
+    JXL_CHECK(
+        WritePNG(CreateHeatMapImage(distmap, good, bad), distmap_filename));
   }
   return true;
 }
@@ -126,14 +115,14 @@ int main(int argc, char** argv) {
             " without attached profiles (such as ppm or pfm) are interpreted"
             " as nonlinear sRGB. The hint format is RGB_D65_SRG_Rel_Lin for"
             " linear sRGB. Intensity target is viewing conditions screen nits"
-            ", defaults to %f which is very bright.\n",
-            argv[0], jxl::kDefaultIntensityTarget);
+            ", defaults to 80.\n",
+            argv[0]);
     return 1;
   }
   std::string distmap;
   std::string colorspace;
   double p = 3;
-  float intensity_target = jxl::kDefaultIntensityTarget;
+  float intensity_target = 80.0;  // sRGB intensity target.
   for (int i = 3; i < argc; i++) {
     if (std::string(argv[i]) == "--distmap" && i + 1 < argc) {
       distmap = argv[++i];

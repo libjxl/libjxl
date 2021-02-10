@@ -181,12 +181,9 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
 }
 
 // Decodes one-shot with the API for non-streaming decoding tests.
-std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
+std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
+                                   Span<const uint8_t> compressed,
                                    const JxlPixelFormat& format) {
-  JxlDecoder* dec = JxlDecoderCreate(NULL);
-  const uint8_t* next_in = compressed.data();
-  size_t avail_in = compressed.size();
-
   void* runner = JxlThreadParallelRunnerCreate(
       NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -195,7 +192,8 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
                                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
 
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
@@ -216,8 +214,16 @@ std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlThreadParallelRunnerDestroy(runner);
-  JxlDecoderDestroy(dec);
 
+  return pixels;
+}
+
+// Decodes one-shot with the API for non-streaming decoding tests.
+std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
+                                   const JxlPixelFormat& format) {
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  std::vector<uint8_t> pixels = DecodeWithAPI(dec, compressed, format);
+  JxlDecoderDestroy(dec);
   return pixels;
 }
 
@@ -694,6 +700,8 @@ TEST(DecodeTest, BasicInfoTest) {
         // already applies the transformation internally by default.
         EXPECT_EQ(1, info.orientation);
 
+        EXPECT_EQ(3, info.num_color_channels);
+
         if (alpha_bits[i] != 0) {
           // Expect an extra channel
           EXPECT_EQ(1, info.num_extra_channels);
@@ -1067,6 +1075,8 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
 }
 
 TEST(DecodeTest, PixelTest) {
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+
   for (size_t box = 0; box < kCSBF_NUM_ENTRIES; ++box) {
     CodeStreamBoxFormat add_container = (CodeStreamBoxFormat)box;
     size_t xsize = 123, ysize = 77;
@@ -1095,8 +1105,10 @@ TEST(DecodeTest, PixelTest) {
           JxlPixelFormat format = {channels, JXL_TYPE_UINT8, endianness, 0};
 
           std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+              dec,
               jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
               format);
+          JxlDecoderReset(dec);
           EXPECT_EQ(num_pixels * channels, pixels2.size());
           EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
                                      ysize, format_orig, format));
@@ -1106,9 +1118,11 @@ TEST(DecodeTest, PixelTest) {
 
           // Test with the container for one of the pixel formats.
           std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+              dec,
               jxl::Span<const uint8_t>(compressed_with_preview.data(),
                                        compressed_with_preview.size()),
               format);
+          JxlDecoderReset(dec);
           EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
           EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
                                      ysize, format_orig, format));
@@ -1118,9 +1132,10 @@ TEST(DecodeTest, PixelTest) {
       {
         JxlPixelFormat format = {channels, JXL_TYPE_UINT32, endianness, 0};
 
-        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(dec,
             jxl::Span<const uint8_t>(compressed.data(),
                 compressed.size()), format);
+        JxlDecoderReset(dec);
         EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
         EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
                                   format_orig, format));
@@ -1131,8 +1146,9 @@ TEST(DecodeTest, PixelTest) {
         JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, endianness, 0};
 
         std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-            jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+            dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
             format);
+        JxlDecoderReset(dec);
         EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
         EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
                                    format_orig, format));
@@ -1140,6 +1156,8 @@ TEST(DecodeTest, PixelTest) {
       }
     }
   }
+
+  JxlDecoderDestroy(dec);
 }
 
 TEST(DecodeTest, GrayscaleTest) {
@@ -1328,13 +1346,57 @@ TEST(DecodeTest, DCTest) {
 
   JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
+  // Binary search for the DC size, the first byte where trying to get the DC
+  // returns JXL_DEC_NEED_DC_OUT_BUFFER rather than JXL_DEC_NEED_MORE_INPUT.
+  // This search is a test on its own, verifying the decoder succeeds after
+  // this point and needs more input before it, without errors. It also allows
+  // the main test below to work on a partial file with only DC.
+  size_t start = 0;
+  size_t end = compressed.size();
+  size_t dc_size;
+  for (;;) {
+    dc_size = (start + end) / 2;
+    JxlDecoderStatus status;
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                   dec, JXL_DEC_BASIC_INFO | JXL_DEC_DC_IMAGE));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, compressed.data(), dc_size));
+    status = JxlDecoderProcessInput(dec);
+    EXPECT_TRUE(status == JXL_DEC_BASIC_INFO ||
+                status == JXL_DEC_NEED_MORE_INPUT);
+    if (status != JXL_DEC_NEED_MORE_INPUT) {
+      status = JxlDecoderProcessInput(dec);
+      EXPECT_TRUE(status == JXL_DEC_NEED_DC_OUT_BUFFER ||
+                  status == JXL_DEC_NEED_MORE_INPUT);
+    }
+    JxlDecoderDestroy(dec);
+    if (status == JXL_DEC_NEED_MORE_INPUT) {
+      start = dc_size;
+      if (start == end || start + 1 == end) {
+        dc_size++;
+        break;
+      }
+    } else {
+      end = dc_size;
+      if (start == end || start + 1 == end) {
+        break;
+      }
+    }
+  }
+
+  // Test that the dc_size is within expected limits: it should be larger than
+  // 0, and smaller than the entire file, taking 90% here, 50% is too
+  // optimistic.
+  EXPECT_LE(dc_size, compressed.size() * 9 / 10);
+  EXPECT_GT(dc_size, 0);
+
   JxlDecoder* dec = JxlDecoderCreate(NULL);
-  const uint8_t* next_in = compressed.data();
-  size_t avail_in = compressed.size();
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
                                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_DC_IMAGE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), dc_size));
 
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;

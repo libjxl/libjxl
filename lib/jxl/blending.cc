@@ -101,6 +101,11 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
     CopyImageTo(crop, *foreground->color(), &croppedcolor);
     dest.SetFromImage(std::move(croppedcolor), foreground->c_current());
     for (size_t i = 0; i < num_ec; i++) {
+      const auto& ec_meta = foreground->metadata()->extra_channel_info[i];
+      if (ec_meta.dim_shift != 0) {
+        return JXL_FAILURE(
+            "Blending of downsampled extra channels is not yet implemented");
+      }
       ImageF cropped_ec(image_xsize, image_ysize);
       CopyImageTo(crop, foreground->extra_channels()[i], &cropped_ec);
       ec->push_back(std::move(cropped_ec));
@@ -231,8 +236,9 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
     } else if (ec_info[i].mode == BlendMode::kReplace) {
       CopyImageTo(overlap, foreground->extra_channels()[i], cropbox,
                   &dest.extra_channels()[i]);
-    } else
+    } else {
       return JXL_FAILURE("Blend mode not implemented for extra channel %zu", i);
+    }
   }
   *foreground = std::move(dest);
   return true;

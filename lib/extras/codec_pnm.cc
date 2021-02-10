@@ -410,8 +410,10 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
 
   char header[kMaxHeaderSize];
   int header_size = 0;
-  JXL_RETURN_IF_ERROR(EncodeHeader(*transformed, bits_per_sample, endianness,
-                                   header, &header_size));
+  bool is_little_endian = endianness == JXL_LITTLE_ENDIAN ||
+                          (endianness == JXL_NATIVE_ENDIAN && IsLittleEndian());
+  JXL_RETURN_IF_ERROR(EncodeHeader(*transformed, bits_per_sample,
+                                   is_little_endian, header, &header_size));
 
   bytes->resize(static_cast<size_t>(header_size) + pixels.size());
   memcpy(bytes->data(), header, static_cast<size_t>(header_size));

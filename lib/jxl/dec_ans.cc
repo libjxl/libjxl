@@ -370,9 +370,9 @@ Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
   // that could allow very large numbers of bits that is never used during ANS
   // decoding. There's no benefit to doing that, though.
   if (!code->lz77.enabled && code->max_num_bits > 32) {
-    return JXL_FAILURE(
-        "Histogram can represent numbers that are too large: %zu\n",
-        code->max_num_bits);
+    // Just emit a warning as there are many opportunities for false positives.
+    JXL_WARNING("Histogram can represent numbers that are too large: %zu\n",
+                code->max_num_bits);
   }
   return true;
 }

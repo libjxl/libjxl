@@ -47,6 +47,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -55,39 +56,27 @@
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/benchmark/benchmark_utils.h"
-#include "tools/butteraugli_pnorm.h"
 #include "tools/codec_config.h"
 #include "tools/speed_stats.h"
 
 namespace jxl {
 namespace {
 
-Status WritePNG(const Image3B& image, ThreadPool* pool,
+Status WritePNG(Image3F&& image, ThreadPool* pool,
                 const std::string& filename) {
-  std::vector<uint8_t> rgb(image.xsize() * image.ysize() * 3);
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
-  Image3F float_image(image.xsize(), image.ysize());
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < image.ysize(); y++) {
-      const uint8_t* row = image.PlaneRow(c, y);
-      float* row_out = float_image.PlaneRow(c, y);
-      for (size_t x = 0; x < image.xsize(); x++) {
-        row_out[x] = (1.0f / 255.f) * row[x];
-      }
-    }
-  }
-  io.SetFromImage(std::move(float_image), io.metadata.m.color_encoding);
+  io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
   PaddedBytes compressed;
   JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
   return WriteFile(compressed, filename);
 }
 
-Status ReadPNG(const std::string& filename, Image3B* image) {
+Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
   JXL_CHECK(SetFromFile(filename, &io));
-  *image = StaticCastImage3<uint8_t>(*io.Main().color());
+  *image = CopyImage(*io.Main().color());
   return true;
 }
 
@@ -226,6 +215,12 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                   "targets");
         }
         params.intensity_target = ib1.metadata()->IntensityTarget();
+        // Hack the default intensity target value to be 80.0, the intensity
+        // target of sRGB images and a more reasonable viewing default than
+        // JPEG XL file format's default.
+        if (fabs(params.intensity_target - 255.0f) < 1e-3) {
+          params.intensity_target = 80.0;
+        }
         distance = ButteraugliDistance(ib1, ib2, params, &distmap, inner_pool);
         // Ensure pixels in range 0-1
         s->distance_2 += ComputeDistance2(ib1, ib2);
@@ -309,8 +304,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
                                                  : ButteraugliFuzzyInverse(1.5);
         float bad = Args()->heatmap_bad > 0.0f ? Args()->heatmap_bad
                                                : ButteraugliFuzzyInverse(0.5);
-        Image3B heatmap = CreateHeatMapImage(distmap, good, bad);
-        JXL_CHECK(WritePNG(heatmap, inner_pool, heatmap_fn));
+        JXL_CHECK(WritePNG(CreateHeatMapImage(distmap, good, bad), inner_pool,
+                           heatmap_fn));
       }
     }
   }
@@ -912,11 +907,11 @@ class Benchmark {
     JXL_CHECK(!sample_tmp_dir.empty());
     fprintf(stderr, "Creating samples of %zux%zu tiles...\n", size, size);
     StringVec fnames_out;
-    std::vector<Image3B> images;
+    std::vector<Image3F> images;
     std::vector<size_t> offsets;
     size_t total_num_tiles = 0;
     for (const auto& fname : fnames) {
-      Image3B img;
+      Image3F img;
       JXL_CHECK(ReadPNG(fname, &img));
       JXL_CHECK(img.xsize() >= size);
       JXL_CHECK(img.ysize() >= size);
@@ -931,14 +926,14 @@ class Benchmark {
       size_t idx = (std::lower_bound(offsets.begin(), offsets.end(), val) -
                     offsets.begin());
       JXL_CHECK(idx < images.size());
-      const Image3B& img = images[idx];
+      const Image3F& img = images[idx];
       int x0 = std::uniform_int_distribution<>(0, img.xsize() - size)(rng);
       int y0 = std::uniform_int_distribution<>(0, img.ysize() - size)(rng);
-      Image3B sample(size, size);
+      Image3F sample(size, size);
       for (size_t c = 0; c < 3; ++c) {
         for (size_t y = 0; y < size; ++y) {
-          const uint8_t* JXL_RESTRICT row_in = img.PlaneRow(c, y0 + y);
-          uint8_t* JXL_RESTRICT row_out = sample.PlaneRow(c, y);
+          const float* JXL_RESTRICT row_in = img.PlaneRow(c, y0 + y);
+          float* JXL_RESTRICT row_out = sample.PlaneRow(c, y);
           memcpy(row_out, &row_in[x0], size * sizeof(row_out[0]));
         }
       }
@@ -946,7 +941,7 @@ class Benchmark {
           StringPrintf("%s/%s.crop_%dx%d+%d+%d.png", sample_tmp_dir.c_str(),
                        FileBaseName(fnames[idx]).c_str(), size, size, x0, y0);
       ThreadPool* null_pool = nullptr;
-      JXL_CHECK(WritePNG(sample, null_pool, fn_output));
+      JXL_CHECK(WritePNG(std::move(sample), null_pool, fn_output));
       fnames_out.push_back(fn_output);
     }
     fprintf(stderr, "Created %d sample tiles\n", num_samples);
@@ -1089,21 +1084,29 @@ class Benchmark {
   }
 };
 
-int BenchmarkMain(int argc, char** argv) {
+int BenchmarkMain(int argc, const char** argv) {
   fprintf(stderr, "benchmark_xl [%s]\n",
           jpegxl::tools::CodecConfigString(JxlDecoderVersion()).c_str());
 
   JXL_CHECK(Args()->AddCommandLineOptions());
-  if (!Args()->Parse(argc, const_cast<const char**>(argv)) ||
-      !Args()->ValidateArgs()) {
-    Args()->PrintHelp();
+
+  if (!Args()->Parse(argc, argv)) {
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
     return 1;
   }
 
+  if (Args()->cmdline.HelpFlagPassed()) {
+    Args()->PrintHelp();
+    return 0;
+  }
+  if (!Args()->ValidateArgs()) {
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
+    return 1;
+  }
   return Benchmark::Run();
 }
 
 }  // namespace
 }  // namespace jxl
 
-int main(int argc, char** argv) { return jxl::BenchmarkMain(argc, argv); }
+int main(int argc, const char** argv) { return jxl::BenchmarkMain(argc, argv); }

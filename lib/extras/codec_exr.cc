@@ -137,7 +137,18 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
   OpenEXR::setGlobalThreadCount(GetNumThreads());
 
   InMemoryIStream is(bytes);
+
+#ifdef __EXCEPTIONS
+  std::unique_ptr<OpenEXR::RgbaInputFile> input_ptr;
+  try {
+    input_ptr.reset(new OpenEXR::RgbaInputFile(is));
+  } catch (...) {
+    return JXL_FAILURE("OpenEXR failed to parse input");
+  }
+  OpenEXR::RgbaInputFile& input = *input_ptr;
+#else
   OpenEXR::RgbaInputFile input(is);
+#endif
 
   if ((input.channels() & OpenEXR::RgbaChannels::WRITE_RGB) !=
       OpenEXR::RgbaChannels::WRITE_RGB) {

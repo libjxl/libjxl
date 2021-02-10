@@ -203,11 +203,11 @@ else()
 endif()
 
 # CPU flags - remove once we have NEON dynamic dispatch
+# TODO(janwas): this also matches M1, but only ARMv7 is intended/needed.
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
-# Older Clang requires at least armv7-a and GCC requires the latter two,
-# otherwise __ARM_NEON is undefined. Keep -mcpu for now, might help with speed.
+# GCC requires these flags, otherwise __ARM_NEON is undefined.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-    -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard")
+    -mfpu=neon-vfpv4 -mfloat-abi=hard")
 endif()
 
 # Force build with optimizations in release mode.

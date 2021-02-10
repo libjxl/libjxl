@@ -54,7 +54,8 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
   RunOnPool(
       pool, 0, rect.ysize(),
       [&](size_t num_threads) {
-        return c_transform.Init(ib->c_current(), c_desired, rect.xsize(),
+        return c_transform.Init(ib->c_current(), c_desired,
+                                metadata->IntensityTarget(), rect.xsize(),
                                 num_threads);
       },
       [&](const int y, const int thread) {
@@ -124,9 +125,10 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 
 }  // namespace
 void ImageBundle::ShrinkTo(size_t xsize, size_t ysize) {
-  color_.ShrinkTo(xsize, ysize);
-  for (ImageF& plane : extra_channels_) {
-    plane.ShrinkTo(xsize, ysize);
+  if (HasColor()) color_.ShrinkTo(xsize, ysize);
+  for (size_t i = 0; i < extra_channels_.size(); ++i) {
+    const auto& eci = metadata_->extra_channel_info[i];
+    extra_channels_[i].ShrinkTo(eci.Size(xsize), eci.Size(ysize));
   }
 }
 

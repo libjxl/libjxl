@@ -45,8 +45,8 @@ namespace jxl {
 // Computes the decoded image for a given set of compression parameters. Mainly
 // used in the FindBestQuantization loops and in some tests.
 // TODO(veluca): this doesn't seem the best possible file for this function.
-Image3F RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                       ThreadPool* pool);
+ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
+                           ThreadPool* pool);
 
 // Returns an image subsampled by kBlockDim in each direction. If the value
 // at pixel (x,y) in the returned image is greater than 1.0, it means that

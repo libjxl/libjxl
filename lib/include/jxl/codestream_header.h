@@ -193,11 +193,21 @@ typedef struct JxlBasicInfo {
    */
   JxlOrientation orientation;
 
-  /** Number of additional image channels. Information of all the individual
-   * extra channels is not included in the basic info struct, except for the
-   * first alpha channel in the fields below. Information for other extra
-   * channels can be queried from the decoder at this point, however.
-   * TODO(lode): implement that feature
+  /** Number of color channels encoded in the image, this is either 1 for
+   * grayscale data, or 3 for colored data. This count does not include
+   * the alpha channel or other extra channels. To check presence of an alpha
+   * channel, such as in the case of RGBA color, check alpha_bits != 0.
+   * If and only if this is 1, the JxlColorSpace in the JxlColorEncoding is
+   * JXL_COLOR_SPACE_GRAY.
+   */
+  uint32_t num_color_channels;
+
+  /** Number of additional image channels. This includes the main alpha channel,
+   * but can also include additional channels such as depth, additional alpha
+   * channels, spot colors, and so on. Information about the extra channels
+   * can be queried with JxlDecoderGetExtraChannelInfo. The main alpha channel,
+   * if it exists, also has its information available in the alpha_bits,
+   * alpha_exponent_bits and alpha_premultiplied fields in this JxlBasicInfo.
    */
   uint32_t num_extra_channels;
 

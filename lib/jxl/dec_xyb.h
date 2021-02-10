@@ -51,7 +51,7 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 // a bias to make the values unsigned).
 void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
                 const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
-                ImageF* b_plane, ThreadPool* pool);
+                ImageF* b_plane, const Rect& rect, ThreadPool* pool);
 
 ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
 

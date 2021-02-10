@@ -41,15 +41,14 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
-                   Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
-                   size_t first_pass = 0);
+                   ImageBundle* JXL_RESTRICT decoded, size_t first_pass,
+                   bool force_draw);
 
 Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
-                               size_t thread, Image3F* JXL_RESTRICT opsin,
-                               ImageBundle* JXL_RESTRICT decoded,
+                               size_t thread, ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out);
 
 }  // namespace jxl

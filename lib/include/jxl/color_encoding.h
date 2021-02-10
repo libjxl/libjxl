@@ -33,7 +33,9 @@ extern "C" {
 typedef enum {
   /** Tristimulus RGB */
   JXL_COLOR_SPACE_RGB,
-  /** Luminance based, the primaries in JxlColorEncoding must be ignored. */
+  /** Luminance based, the primaries in JxlColorEncoding must be ignored. This
+   * value implies that num_color_channels in JxlBasicInfo is 1, any other value
+   * implies num_color_channels is 3. */
   JXL_COLOR_SPACE_GRAY,
   /** XYB (opsin) color space */
   JXL_COLOR_SPACE_XYB,

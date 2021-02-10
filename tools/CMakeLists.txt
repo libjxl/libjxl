@@ -65,7 +65,6 @@ set(TOOL_BINARIES
 )
 
 add_library(jxl_tool STATIC
-  butteraugli_pnorm.cc
   cmdline.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")

@@ -106,6 +106,55 @@ HWY_EXPORT(MultiplySum);       // Local function
 HWY_EXPORT(RgbFromSingle);     // Local function
 HWY_EXPORT(SingleFromSingle);  // Local function
 
+// convert custom [bits]-bit float (with [exp_bits] exponent bits) stored as int
+// back to binary32 float
+void int_to_float(const pixel_type* const JXL_RESTRICT row_in,
+                  float* const JXL_RESTRICT row_out, const size_t xsize,
+                  const int bits, const int exp_bits) {
+  if (bits == 32) {
+    JXL_ASSERT(sizeof(pixel_type) == sizeof(float));
+    JXL_ASSERT(exp_bits == 8);
+    memcpy(row_out, row_in, xsize * sizeof(float));
+    return;
+  }
+  int exp_bias = (1 << (exp_bits - 1)) - 1;
+  int sign_shift = bits - 1;
+  int mant_bits = bits - exp_bits - 1;
+  int mant_shift = 23 - mant_bits;
+  for (size_t x = 0; x < xsize; ++x) {
+    uint32_t f;
+    memcpy(&f, &row_in[x], 4);
+    int signbit = (f >> sign_shift);
+    f &= (1 << sign_shift) - 1;
+    if (f == 0) {
+      row_out[x] = (signbit ? -0.f : 0.f);
+      continue;
+    }
+    int exp = (f >> mant_bits);
+    int mantissa = (f & ((1 << mant_bits) - 1));
+    mantissa <<= mant_shift;
+    if (exp == 0) {
+      // subnormal number
+      while ((mantissa & 0x800000) == 0) {
+        mantissa <<= 1;
+        exp--;
+      }
+      exp++;
+      // remove leading 1 because it is implicit now
+      mantissa &= 0x7fffff;
+    }
+    exp -= exp_bias;
+    // broke up the arbitrary float into its parts, now reassemble into
+    // binary32
+    exp += 127;
+    JXL_ASSERT(exp >= 0);
+    f = (signbit ? 0x80000000 : 0);
+    f |= (exp << 23);
+    f |= mantissa;
+    memcpy(&row_out[x], &f, 4);
+  }
+}
+
 Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                                              const FrameHeader& frame_header,
                                              bool allow_truncated_group) {
@@ -182,7 +231,8 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 
 Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
                                         size_t minShift, size_t maxShift,
-                                        const ModularStreamId& stream) {
+                                        const ModularStreamId& stream,
+                                        bool zerofill) {
   JXL_DASSERT(stream.kind == ModularStreamId::kModularDC ||
               stream.kind == ModularStreamId::kModularAC);
   const size_t xsize = rect.xsize();
@@ -211,6 +261,24 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   }
   gi.nb_channels = gi.channel.size();
   gi.real_nb_channels = gi.nb_channels;
+  if (zerofill) {
+    int gic = 0;
+    for (c = beginc; c < full_image.channel.size(); c++) {
+      Channel& fc = full_image.channel[c];
+      size_t shift = std::min(fc.hshift, fc.vshift);
+      if (shift > maxShift) continue;
+      if (shift < minShift) continue;
+      Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
+             rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
+      if (r.xsize() == 0 || r.ysize() == 0) continue;
+      for (size_t y = 0; y < r.ysize(); ++y) {
+        pixel_type* const JXL_RESTRICT row_out = r.Row(&fc.plane, y);
+        memset(row_out, 0, r.xsize() * sizeof(*row_out));
+      }
+      gic++;
+    }
+    return true;
+  }
   ModularOptions options;
   if (!ModularGenericDecompress(
           reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
@@ -270,7 +338,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   const Rect r = dec_state->shared->DCGroupRect(group_id);
   size_t upper_bound = r.xsize() * r.ysize();
   reader->Refill();
-  size_t width = reader->ReadBits(CeilLog2Nonzero(upper_bound)) + 1;
+  size_t count = reader->ReadBits(CeilLog2Nonzero(upper_bound)) + 1;
   size_t stream_id = ModularStreamId::ACMetadata(group_id).ID(frame_dim);
   // YToX, YToB, ACS + QF, EPF
   Image image(r.xsize(), r.ysize(), 255, 4);
@@ -278,7 +346,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3, (r.ysize() + 7) >> 3);
   image.channel[0] = Channel(cr.xsize(), cr.ysize(), 3, 3);
   image.channel[1] = Channel(cr.xsize(), cr.ysize(), 3, 3);
-  image.channel[2] = Channel(width, 2, 0, 0);
+  image.channel[2] = Channel(count, 2, 0, 0);
   ModularOptions options;
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,
@@ -291,24 +359,28 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
                        &dec_state->shared_storage.cmap.ytob_map);
   size_t num = 0;
   bool is444 = dec_state->shared->frame_header.chroma_subsampling.Is444();
-  for (size_t y = 0; y < r.ysize(); y++) {
-    int* row_qf = r.Row(&dec_state->shared_storage.raw_quant_field, y);
-    uint8_t* row_epf = r.Row(&dec_state->shared_storage.epf_sharpness, y);
+  auto& ac_strategy = dec_state->shared_storage.ac_strategy;
+  size_t xlim = std::min(ac_strategy.xsize(), r.x0() + r.xsize());
+  size_t ylim = std::min(ac_strategy.ysize(), r.y0() + r.ysize());
+  for (size_t iy = 0; iy < r.ysize(); iy++) {
+    size_t y = r.y0() + iy;
+    int* row_qf = r.Row(&dec_state->shared_storage.raw_quant_field, iy);
+    uint8_t* row_epf = r.Row(&dec_state->shared_storage.epf_sharpness, iy);
     int* row_in_1 = image.channel[2].plane.Row(0);
     int* row_in_2 = image.channel[2].plane.Row(1);
-    int* row_in_3 = image.channel[3].plane.Row(y);
-    for (size_t x = 0; x < r.xsize(); x++) {
-      int sharpness = row_in_3[x];
+    int* row_in_3 = image.channel[3].plane.Row(iy);
+    for (size_t ix = 0; ix < r.xsize(); ix++) {
+      size_t x = r.x0() + ix;
+      int sharpness = row_in_3[ix];
       if (sharpness < 0 || sharpness >= LoopFilter::kEpfSharpEntries) {
         return JXL_FAILURE("Corrupted sharpness field");
       }
-      row_epf[x] = sharpness;
-      if (dec_state->shared_storage.ac_strategy.IsValid(r.x0() + x,
-                                                        r.y0() + y)) {
+      row_epf[ix] = sharpness;
+      if (ac_strategy.IsValid(x, y)) {
         continue;
       }
 
-      if (num >= width) return JXL_FAILURE("Corrupted stream");
+      if (num >= count) return JXL_FAILURE("Corrupted stream");
 
       if (!AcStrategy::IsRawStrategyValid(row_in_1[num])) {
         return JXL_FAILURE("Invalid AC strategy");
@@ -320,24 +392,25 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
             "AC strategy not compatible with chroma subsampling");
       }
       // Ensure that blocks do not overflow *AC* groups.
-      size_t xlim = (x / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
-      size_t ylim = (y / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
-      if (x + acs.covered_blocks_x() > xlim) {
+      size_t next_x_ac_block = (x / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+      size_t next_y_ac_block = (y / kGroupDimInBlocks + 1) * kGroupDimInBlocks;
+      size_t next_x_dct_block = x + acs.covered_blocks_x();
+      size_t next_y_dct_block = y + acs.covered_blocks_y();
+      if (next_x_dct_block > next_x_ac_block || next_x_dct_block > xlim) {
         return JXL_FAILURE("Invalid AC strategy, x overflow");
       }
-      if (y + acs.covered_blocks_y() > ylim) {
+      if (next_y_dct_block > next_y_ac_block || next_y_dct_block > ylim) {
         return JXL_FAILURE("Invalid AC strategy, y overflow");
       }
       JXL_RETURN_IF_ERROR(
-          dec_state->shared_storage.ac_strategy.SetNoBoundsCheck(
-              r.x0() + x, r.y0() + y, AcStrategy::Type(row_in_1[num])));
-      row_qf[x] =
+          ac_strategy.SetNoBoundsCheck(x, y, AcStrategy::Type(row_in_1[num])));
+      row_qf[ix] =
           1 + std::max(0, std::min(Quantizer::kQuantMax - 1, row_in_2[num]));
       num++;
     }
   }
   if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
-    ComputeSigma(dec_state->shared->DCGroupRect(group_id), dec_state);
+    ComputeSigma(r, dec_state);
   }
   return true;
 }
@@ -384,6 +457,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
         return JXL_FAILURE("Empty image");
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
+        JXL_ASSERT(!fp);
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
             [&](const int task, const int thread) {
@@ -398,60 +472,20 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
               (xsize, row_in, row_in_Y, factor, row_out);
             },
             "ModularIntToFloat");
-      } else if (fp && metadata->m.bit_depth.bits_per_sample < 32) {
-        int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
-        int exp_bias = (1 << (exp_bits - 1)) - 1;
-        int sign_shift = (metadata->m.bit_depth.bits_per_sample - 1);
-        int mant_bits = metadata->m.bit_depth.bits_per_sample - exp_bits - 1;
-        int mant_shift = 23 - mant_bits;
-        for (size_t y = 0; y < ysize; ++y) {
-          float* const JXL_RESTRICT row_out =
-              dec_state->decoded.PlaneRow(c, y) + dec_state->decoded_padding;
-          const pixel_type* const JXL_RESTRICT row_in = gi.channel[c_in].Row(y);
-          for (size_t x = 0; x < xsize; ++x) {
-            uint32_t f;
-            memcpy(&f, &row_in[x], 4);
-            int signbit = (f >> sign_shift);
-            f &= (1 << sign_shift) - 1;
-            if (f == 0) {
-              row_out[x] = (signbit ? -0.f : 0.f);
-              continue;
-            }
-            int exp = (f >> mant_bits);
-            int mantissa = (f & ((1 << mant_bits) - 1));
-            mantissa <<= mant_shift;
-            if (exp == 0) {
-              // subnormal number
-              while ((mantissa & 0x800000) == 0) {
-                mantissa <<= 1;
-                exp--;
-              }
-              exp++;
-              // remove leading 1 because it is implicit now
-              mantissa &= 0x7fffff;
-            }
-            exp -= exp_bias;
-            // broke up the arbitrary float into its parts, now reassemble into
-            // binary32
-            exp += 127;
-            if (exp < 0) {
-              // After changing the exponent bias the float is still subnormal.
-              return JXL_FAILURE("Subnormal float");
-            }
-            f = (signbit ? 0x80000000 : 0);
-            f |= (exp << 23);
-            f |= mantissa;
-            memcpy(&row_out[x], &f, 4);
-          }
-        }
       } else if (fp) {
-        JXL_ASSERT(sizeof(pixel_type) == sizeof(float));
-        const auto& plane = gi.channel[c_in].plane;
-        // Convert Plane<int> to Plane<float> using memcpy() for lossless mode.
-        for (size_t y = 0; y < plane.ysize(); y++) {
-          memcpy(decoded.PlaneRow(c, y) + decoded_padding, plane.ConstRow(y),
-                 plane.xsize() * sizeof(float));
-        }
+        int bits = metadata->m.bit_depth.bits_per_sample;
+        int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
+        RunOnPool(
+            pool, 0, ysize, jxl::ThreadPool::SkipInit(),
+            [&](const int task, const int thread) {
+              const size_t y = task;
+              const pixel_type* const JXL_RESTRICT row_in =
+                  gi.channel[c_in].Row(y);
+              float* const JXL_RESTRICT row_out =
+                  decoded.PlaneRow(c, y) + decoded_padding;
+              int_to_float(row_in, row_out, xsize, bits, exp_bits);
+            },
+            "ModularIntToFloat_losslessfloat");
       } else {
         RunOnPool(
             pool, 0, ysize, jxl::ThreadPool::SkipInit(),
@@ -481,14 +515,22 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
     for (size_t ec = 0; ec < output->extra_channels().size(); ec++, c++) {
       const jxl::ExtraChannelInfo& eci =
           output->metadata()->extra_channel_info[ec];
-      const float mul = 1.0f / ((1u << eci.bit_depth.bits_per_sample) - 1);
+      int bits = eci.bit_depth.bits_per_sample;
+      int exp_bits = eci.bit_depth.exponent_bits_per_sample;
+      bool fp = eci.bit_depth.floating_point_sample;
+      JXL_ASSERT(fp || bits < 32);
+      const float mul = fp ? 0 : (1.0f / ((1u << bits) - 1));
       const size_t ec_xsize = eci.Size(xsize);  // includes shift
       const size_t ec_ysize = eci.Size(ysize);
       for (size_t y = 0; y < ec_ysize; ++y) {
         float* const JXL_RESTRICT row_out = output->extra_channels()[ec].Row(y);
         const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
-        for (size_t x = 0; x < ec_xsize; ++x) {
-          row_out[x] = row_in[x] * mul;
+        if (fp) {
+          int_to_float(row_in, row_out, ec_xsize, bits, exp_bits);
+        } else {
+          for (size_t x = 0; x < ec_xsize; ++x) {
+            row_out[x] = row_in[x] * mul;
+          }
         }
       }
     }

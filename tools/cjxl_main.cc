@@ -64,6 +64,12 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   jxl::CodecInOut io;
   double decode_mps = 0;
   JXL_RETURN_IF_ERROR(LoadAll(args, &pool, &io, &decode_mps));
+
+  // need to validate again because now we know if input was JPEG or not
+  if (!args.ValidateArgsAfterLoad(cmdline, io)) {
+    fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
+    return 1;
+  }
   if (!CompressJxl(io, decode_mps, &pool, args, &compressed, !args.quiet)) {
     return 1;
   }

@@ -39,7 +39,7 @@ struct NoiseParams {
   }
   bool HasAny() const {
     for (float i : lut) {
-      if (i != 0.0f) return true;
+      if (std::abs(i) > 1e-3f) return true;
     }
     return false;
   }

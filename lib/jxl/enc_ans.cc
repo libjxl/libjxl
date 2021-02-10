@@ -41,6 +41,8 @@ namespace jxl {
 
 namespace {
 
+constexpr bool kFuzzerFriendly = false;
+
 static const int kMaxNumSymbolsForSmallCode = 4;
 
 void ANSBuildInfoTable(const ANSHistBin* counts, const AliasTable::Entry* table,
@@ -671,11 +673,26 @@ class HistogramBuilder {
     std::vector<Histogram> clustered_histograms(histograms_);
     context_map->resize(histograms_.size());
     if (histograms_.size() > 1) {
-      std::vector<uint32_t> histogram_symbols;
-      ClusterHistograms(params, histograms_, histograms_.size(), kClustersLimit,
-                        &clustered_histograms, &histogram_symbols);
-      for (size_t c = 0; c < histograms_.size(); ++c) {
-        (*context_map)[c] = static_cast<uint8_t>(histogram_symbols[c]);
+      if (!kFuzzerFriendly) {
+        std::vector<uint32_t> histogram_symbols;
+        ClusterHistograms(params, histograms_, histograms_.size(),
+                          kClustersLimit, &clustered_histograms,
+                          &histogram_symbols);
+        for (size_t c = 0; c < histograms_.size(); ++c) {
+          (*context_map)[c] = static_cast<uint8_t>(histogram_symbols[c]);
+        }
+      } else {
+        fill(context_map->begin(), context_map->end(), 0);
+        size_t max_symbol = 0;
+        for (const Histogram& h : histograms_) {
+          max_symbol = std::max(h.data_.size(), max_symbol);
+        }
+        size_t num_symbols = 1 << CeilLog2Nonzero(max_symbol + 1);
+        clustered_histograms.resize(1);
+        clustered_histograms[0].Clear();
+        for (size_t i = 0; i < num_symbols; i++) {
+          clustered_histograms[0].Add(i);
+        }
       }
       if (writer != nullptr) {
         EncodeContextMap(*context_map, clustered_histograms.size(), allotment,
@@ -690,8 +707,13 @@ class HistogramBuilder {
     }
     codes->use_prefix_code = use_prefix_code;
     size_t log_alpha_size = codes->lz77.enabled ? 8 : 7;  // Sane default.
-    ChooseUintConfigs(params, tokens, *context_map, &clustered_histograms,
-                      codes, &log_alpha_size);
+    if (kFuzzerFriendly) {
+      codes->uint_config.clear();
+      codes->uint_config.resize(1, HybridUintConfig(7, 0, 0));
+    } else {
+      ChooseUintConfigs(params, tokens, *context_map, &clustered_histograms,
+                        codes, &log_alpha_size);
+    }
     if (log_alpha_size < 5) log_alpha_size = 5;
     SizeWriter size_writer;  // Used if writer == nullptr to estimate costs.
     cost += 1;
@@ -1427,6 +1449,10 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   codes->lz77.nonserialized_distance_context = num_contexts;
   std::vector<std::vector<Token>> tokens_lz77;
   ApplyLZ77(params, num_contexts, tokens, codes->lz77, tokens_lz77);
+  if (kFuzzerFriendly) {
+    codes->lz77.length_uint_config = HybridUintConfig(10, 0, 0);
+    codes->lz77.min_symbol = 2048;
+  }
 
   const size_t max_contexts = std::min(num_contexts, kClustersLimit);
   BitWriter::Allotment allotment(writer, 8192 * (max_contexts + 4));
@@ -1460,6 +1486,9 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   if (params.uint_method == HistogramParams::HybridUintMethod::kContextMap) {
     uint_config = HybridUintConfig(2, 0, 1);
   }
+  if (kFuzzerFriendly) {
+    uint_config = HybridUintConfig(10, 0, 0);
+  }
   for (size_t i = 0; i < tokens.size(); ++i) {
     for (size_t j = 0; j < tokens[i].size(); ++j) {
       const Token token = tokens[i][j];
@@ -1475,7 +1504,8 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   // TODO(veluca): better heuristics.
   bool use_prefix_code =
       params.force_huffman || total_tokens < 100 ||
-      params.clustering == HistogramParams::ClusteringType::kFastest;
+      params.clustering == HistogramParams::ClusteringType::kFastest ||
+      kFuzzerFriendly;
 
   // Encode histograms.
   total_bits += builder.BuildAndStoreEntropyCodes(

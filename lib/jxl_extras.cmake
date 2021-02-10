@@ -103,5 +103,13 @@ if (OpenEXR_FOUND)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libopenexr-dev/copyright"
                    ${PROJECT_BINARY_DIR}/LICENSE.libopenexr COPYONLY)
   endif()  # JPEGXL_DEP_LICENSE_DIR
+  # OpenEXR generates exceptions, so we need exception support to catch them.
+  # Actully those flags counteract the ones set in JPEGXL_INTERNAL_FLAGS.
+  if (NOT WIN32)
+    set_source_files_properties(extras/codec_exr.cc PROPERTIES COMPILE_FLAGS -fexceptions)
+    if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+      set_source_files_properties(extras/codec_exr.cc PROPERTIES COMPILE_FLAGS -fcxx-exceptions)
+    endif()
+  endif()
 endif() # OpenEXR_FOUND
 endif() # JPEGXL_ENABLE_OPENEXR

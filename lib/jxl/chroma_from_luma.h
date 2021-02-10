@@ -104,7 +104,13 @@ struct ColorCorrelationMap {
     }
     SetColorFactor(U32Coder::Read(kColorFactorDist, br));
     JXL_RETURN_IF_ERROR(F16Coder::Read(br, &base_correlation_x_));
+    if (std::abs(base_correlation_x_) > 4.0f) {
+      return JXL_FAILURE("Base X correlation is out of range");
+    }
     JXL_RETURN_IF_ERROR(F16Coder::Read(br, &base_correlation_b_));
+    if (std::abs(base_correlation_b_) > 4.0f) {
+      return JXL_FAILURE("Base B correlation is out of range");
+    }
     ytox_dc_ = static_cast<int>(br->ReadFixedBits<kBitsPerByte>()) +
                std::numeric_limits<int8_t>::min();
     ytob_dc_ = static_cast<int>(br->ReadFixedBits<kBitsPerByte>()) +

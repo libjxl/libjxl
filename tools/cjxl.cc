@@ -86,32 +86,6 @@ jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
   return true;
 }
 
-jxl::Status LoadSpotColors(const CompressArgs& args, jxl::CodecInOut* io) {
-  jxl::CodecInOut spot_io;
-  spot_io.target_nits = args.intensity_target;
-  spot_io.dec_hints = args.dec_hints;
-  if (!SetFromFile(args.spot_in, &spot_io)) {
-    fprintf(stderr, "Failed to read spot image %s.\n", args.spot_in);
-    return false;
-  }
-  jxl::ExtraChannelInfo example;
-  example.type = jxl::ExtraChannel::kSpotColor;
-  example.bit_depth.bits_per_sample = 8;
-  example.dim_shift = 0;
-  example.name = "spot";
-  example.spot_color[0] = io->metadata.m.IntensityTarget();  // R
-  example.spot_color[1] = 0.0f;                              // G
-  example.spot_color[2] = 0.0f;                              // B
-  example.spot_color[3] = 1.0f;                              // A
-  io->metadata.m.extra_channel_info.push_back(example);
-  jxl::ImageF sc(spot_io.xsize(), spot_io.ysize());
-  jxl::CopyImageTo(spot_io.Main().color()->Plane(1), &sc);
-  std::vector<jxl::ImageF> scv;
-  scv.push_back(std::move(sc));
-  io->Main().SetExtraChannels(std::move(scv));
-  return true;
-}
-
 // Search algorithm for modular mode instead of Butteraugli distance.
 void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
                                  const size_t pixels, const double target_size,
@@ -142,8 +116,8 @@ void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
   for (int i = 0; i < 10; ++i) {
     s.params.quality_pair = std::make_pair(quality, quality);
     jxl::PaddedBytes candidate;
-    bool ok = CompressJxl(io, decode_mps, pool, s,
-                          &candidate, /*print_stats=*/false);
+    bool ok =
+        CompressJxl(io, decode_mps, pool, s, &candidate, /*print_stats=*/false);
     if (!ok) {
       printf(
           "Compression error occurred during the search for best size."
@@ -206,7 +180,6 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
   double best_dist = 1.0;
   double best_loss = 1e99;
 
-
   jxl::CodecInOut io;
   double decode_mps = 0;
   if (!LoadAll(*args, pool, &io, &decode_mps)) {
@@ -218,8 +191,8 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
   for (int i = 0; i < 7; ++i) {
     s.params.butteraugli_distance = static_cast<float>(dist);
     jxl::PaddedBytes candidate;
-    bool ok = CompressJxl(io, decode_mps, pool, s,
-                          &candidate, /*print_stats=*/false);
+    bool ok =
+        CompressJxl(io, decode_mps, pool, s, &candidate, /*print_stats=*/false);
     if (!ok) {
       printf(
           "Compression error occurred during the search for best size. "
@@ -326,10 +299,6 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "print_profile", "0|1",
                           "print timing information before exiting",
                           &print_profile, &ParseOverride, 1);
-
-  cmdline->AddPositionalOption("SPOT", /* required = */ false,
-                               "spot color channel (optional, for testing)",
-                               &spot_in, 2);
 
   // Target distance/size/bpp
   opt_distance_id = cmdline->AddOptionValue(
@@ -477,10 +446,11 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
        "2-37=RCT (default: try several, depending on speed)"),
       &params.colorspace, &ParseSigned, 1);
 
-  cmdline->AddOptionValue('g', "group-size", "K",
-                          ("[modular encoding] set group size to 128 << K "
-                           "(default: 1)"),
-                          &params.modular_group_size_shift, &ParseUnsigned, 1);
+  m_group_size_id = cmdline->AddOptionValue(
+      'g', "group-size", "K",
+      ("[modular encoding] set group size to 128 << K "
+       "(default: 1 or 2)"),
+      &params.modular_group_size_shift, &ParseUnsigned, 1);
 
   cmdline->AddOptionValue(
       'P', "predictor", "K",
@@ -669,6 +639,21 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   return true;
 }
 
+jxl::Status CompressArgs::ValidateArgsAfterLoad(
+    const CommandLineParser& cmdline, const jxl::CodecInOut& io) {
+  if (!ValidateArgs(cmdline)) return false;
+  bool got_m_group_size = cmdline.GetOption(m_group_size_id)->matched();
+  if (params.modular_mode && !got_m_group_size) {
+    // Default modular group size: set to 512 if 256 would be silly
+    const size_t kThinImageThr = 256 + 64;
+    const size_t kSmallImageThr = 256 + 128;
+    if (io.xsize() < kThinImageThr || io.ysize() < kThinImageThr ||
+        (io.xsize() < kSmallImageThr && io.ysize() < kSmallImageThr)) {
+      params.modular_group_size_shift = 2;
+    }
+  }
+  return true;
+}
 
 jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
                     jxl::CodecInOut* io, double* decode_mps) {
@@ -716,13 +701,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
       return false;
     }
     args.params.saliency_map = &saliency_map;
-  }
-
-  if (args.spot_in != nullptr) {
-    if (!LoadSpotColors(args, io)) {
-      fprintf(stderr, "Failed to read spot colors %s.\n", args.spot_in);
-      return false;
-    }
   }
 
   const double t1 = jxl::Now();

@@ -72,6 +72,10 @@ namespace jxl {
 namespace {
 
 void ClusterGroups(PassesEncoderState* enc_state) {
+  if (enc_state->shared.frame_header.passes.num_passes > 1) {
+    // TODO(veluca): implement this for progressive modes.
+    return;
+  }
   // This only considers pass 0 for now.
   std::vector<uint8_t> context_map;
   EntropyEncodingData codes;
@@ -552,14 +556,6 @@ class LossyFrameEncoder {
     RunOnPool(pool_, 0, shared.frame_dim.num_groups, tokenize_group_init,
               tokenize_group, "TokenizeGroup");
 
-    if (aux_out_ && aux_out_->testing_aux.dc) {
-      *aux_out_->testing_aux.dc = CopyImage(shared.dc_storage);
-    }
-    if (aux_out_ && aux_out_->testing_aux.decoded) {
-      *aux_out_->testing_aux.decoded =
-          RoundtripImage(*opsin, enc_state_, pool_);
-    }
-
     *frame_header = shared.frame_header;
     return true;
   }
@@ -1033,7 +1029,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   if (cparams.butteraugli_distance != 0 &&
       cparams.butteraugli_distance < kMinButteraugliDistance) {
-    return JXL_FAILURE("Butteraugli distance is too low");
+    return JXL_FAILURE("Butteraugli distance is too low (%f)",
+                       cparams.butteraugli_distance);
   }
   if (cparams.butteraugli_distance > 0.9f && cparams.modular_mode == false &&
       cparams.quality_pair.first == 100) {
@@ -1109,7 +1106,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       // because it may contain stats which would be Assimilated multiple
       // times below.
       for (size_t i = old_size; i < aux_outs.size(); i++) {
-        aux_outs[i].testing_aux = aux_out->testing_aux;
         aux_outs[i].dump_image = aux_out->dump_image;
         aux_outs[i].debug_prefix = aux_out->debug_prefix;
       }
@@ -1154,7 +1150,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
         (frame_header.encoding == FrameEncoding::kVarDCT ||
-         cparams.quality_pair.first < 100)) {
+         cparams.quality_pair.first < 100) &&
+        !cparams.keep_invisible) {
       // if lossy, simplify invisible pixels
       SimplifyInvisible(&opsin, ib.alpha());
       if (want_linear) {

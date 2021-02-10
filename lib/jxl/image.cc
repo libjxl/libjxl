@@ -82,9 +82,14 @@ size_t BytesPerRow(const size_t xsize, const size_t sizeof_t) {
 PlaneBase::PlaneBase(const size_t xsize, const size_t ysize,
                      const size_t sizeof_t)
     : xsize_(static_cast<uint32_t>(xsize)),
-      ysize_(static_cast<uint32_t>(ysize)) {
+      ysize_(static_cast<uint32_t>(ysize)),
+      orig_xsize_(static_cast<uint32_t>(xsize)),
+      orig_ysize_(static_cast<uint32_t>(ysize)) {
   // (Can't profile CacheAligned itself because it is used by profiler.h)
   PROFILER_FUNC;
+
+  JXL_CHECK(xsize == xsize_);
+  JXL_CHECK(ysize == ysize_);
 
   JXL_ASSERT(sizeof_t == 1 || sizeof_t == 2 || sizeof_t == 4 || sizeof_t == 8);
 
@@ -129,6 +134,8 @@ void PlaneBase::InitializePadding(const size_t sizeof_t, Padding padding) {
 void PlaneBase::Swap(PlaneBase& other) {
   std::swap(xsize_, other.xsize_);
   std::swap(ysize_, other.ysize_);
+  std::swap(orig_xsize_, other.orig_xsize_);
+  std::swap(orig_ysize_, other.orig_ysize_);
   std::swap(bytes_per_row_, other.bytes_per_row_);
   std::swap(bytes_, other.bytes_);
 }

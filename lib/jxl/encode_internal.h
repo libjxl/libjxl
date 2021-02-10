@@ -40,6 +40,16 @@ typedef struct JxlEncoderQueuedFrame {
   jxl::ImageBundle frame;
 } JxlEncoderQueuedFrame;
 
+Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
+                                              jxl::ColorEncoding* internal);
+
+JxlEncoderStatus BufferToImageBundle(const JxlPixelFormat& pixel_format,
+                                     uint32_t xsize, uint32_t ysize,
+                                     const void* buffer, size_t size,
+                                     jxl::ThreadPool* pool,
+                                     const jxl::ColorEncoding& c_current,
+                                     jxl::ImageBundle* ib);
+
 }  // namespace jxl
 
 struct JxlEncoderStruct {

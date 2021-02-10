@@ -118,13 +118,15 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 // Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
 void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
                 const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
-                ImageF* b_plane, ThreadPool* pool) {
+                ImageF* b_plane, const Rect& rect, ThreadPool* pool) {
   const HWY_FULL(float) df;
   const size_t S = Lanes(df);  // Step.
 
-  const size_t xsize = y_plane.xsize();
-  const size_t ysize = y_plane.ysize();
+  const size_t xsize = rect.xsize();
+  const size_t ysize = rect.ysize();
   if ((xsize == 0) || (ysize == 0)) return;
+
+  // TODO(veluca): remove the pool.
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
@@ -141,12 +143,12 @@ void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
     for (size_t y = y0; y < y1; ++y) {
-      const float* y_row = y_plane.ConstRow(y);
-      const float* cb_row = cb_plane.ConstRow(y);
-      const float* cr_row = cr_plane.ConstRow(y);
-      float* r_row = r_plane->Row(y);
-      float* g_row = g_plane->Row(y);
-      float* b_row = b_plane->Row(y);
+      const float* y_row = rect.ConstRow(y_plane, y);
+      const float* cb_row = rect.ConstRow(cb_plane, y);
+      const float* cr_row = rect.ConstRow(cr_plane, y);
+      float* r_row = rect.Row(r_plane, y);
+      float* g_row = rect.Row(g_plane, y);
+      float* b_row = rect.Row(b_plane, y);
       for (size_t x = 0; x < xsize; x += S) {
         const auto y_vec = Load(df, y_row + x) + c128;
         const auto cb_vec = Load(df, cb_row + x);
@@ -244,72 +246,30 @@ ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
   const size_t lines_per_group = DivCeil(kGroupArea, xsize);
   const size_t num_stripes = DivCeil(ysize, lines_per_group);
 
+  HWY_CAPPED(float, 4) d;  // necessary for interleaving.
+
+  const auto upsample = [&](int idx, int /* thread*/) {
+    const size_t y0 = idx * lines_per_group;
+    const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
+    for (size_t y = y0; y < y1; ++y) {
+      const float* JXL_RESTRICT current_row = src.ConstRow(y) + xpadding;
+      float* JXL_RESTRICT dst_row = dst.Row(y) + xpadding;
+      const auto c34 = Set(d, 0.75f);
+      const auto c14 = Set(d, 0.25f);
+      for (size_t x = 1; x < xsize - 1; x += Lanes(d)) {
+        auto current = LoadU(d, current_row + x) * c34;
+        auto prev = LoadU(d, current_row + x - 1);
+        auto next = LoadU(d, current_row + x + 1);
+        auto left = MulAdd(c14, prev, current);
+        auto right = MulAdd(c14, next, current);
 #if HWY_TARGET == HWY_SCALAR
-  const auto upsample = [&](int idx, int /* thread*/) {
-    const size_t y0 = idx * lines_per_group;
-    const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
-    for (size_t y = y0; y < y1; ++y) {
-      const float* JXL_RESTRICT current_row = src.ConstRow(y) + xpadding;
-      float* JXL_RESTRICT dst_row = dst.Row(y) + xpadding;
-      // TODO(eustas): roll prev <- current <- next?
-      for (size_t x = 1; x < xsize - 1; ++x) {
-        const float current34 = current_row[x] * 0.75f;
-        const float prev = current_row[x - 1];
-        const float next = current_row[x + 1];
-        dst_row[x * 2] = current34 + prev * 0.25f;
-        dst_row[x * 2 + 1] = current34 + next * 0.25f;
-      }
-      if (xsize == 1) {
-        dst_row[0] = dst_row[1] = current_row[0];
-      } else {
-        const float leftmost = current_row[0] * 0.75f + current_row[1] * 0.25f;
-        dst_row[0] = dst_row[1] = leftmost;
-        const float rightmost =
-            current_row[xsize - 1] * 0.75f + current_row[xsize - 2] * 0.25f;
-        dst_row[xsize * 2 - 2] = dst_row[xsize * 2 - 1] = rightmost;
-      }
-    }
-  };
+        StoreU(left, d, dst_row + x * 2);
+        StoreU(right, d, dst_row + x * 2 + 1);
 #else
-  // TODO(eustas): Neighbors::(L|R)1 from convolve.h allows full-vector shift
-  //               even for AVX2; make those helpers more independent and use
-  //               both in convolve.h and here.
-  constexpr size_t S = 4;  // Half of AVX2, until TODO is resolved.
-  const HWY_CAPPED(float, S) df;
-  const HWY_CAPPED(uint32_t, S) du;
-
-  HWY_ALIGN static const uint32_t k1000[S] = {0u, 0u, 0u, ~0u};
-  HWY_ALIGN static const uint32_t k0001[S] = {~0u, 0u, 0u, 0u};
-  const auto c1000 = MaskFromVec(BitCast(df, Load(du, k1000)));
-  const auto c0001 = MaskFromVec(BitCast(df, Load(du, k0001)));
-
-  const auto upsample = [&](int idx, int /* thread*/) {
-    const size_t y0 = idx * lines_per_group;
-    const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
-    for (size_t y = y0; y < y1; ++y) {
-      const float* JXL_RESTRICT current_row = src.ConstRow(y) + xpadding;
-      float* JXL_RESTRICT dst_row = dst.Row(y) + xpadding;
-      const auto c14 = Set(df, 0.25f);
-      const auto c34 = Set(df, 0.75f);
-      auto prev = Undefined(df);
-      auto current = Load(df, current_row);
-      for (size_t x = 0; x < xsize; x += S) {
-        // Image provides 2x vector size of extra space after the row.
-        // So, it is valid to read one extra vector after the end.
-        const auto next = Load(df, current_row + x + S);
-        const auto current34 = current * c34;
-        const auto l =
-            IfThenElse(c0001, Broadcast<3>(prev), Shuffle2103(current));
-        const auto r =
-            IfThenElse(c1000, Broadcast<0>(next), Shuffle0321(current));
-        const auto o = MulAdd(l, c14, current34);
-        const auto e = MulAdd(r, c14, current34);
-        Store(InterleaveLower(o, e), df, dst_row + x * 2);
-        Store(InterleaveUpper(o, e), df, dst_row + x * 2 + S);
-        prev = current;
-        current = next;
+        StoreU(InterleaveLower(left, right), d, dst_row + x * 2);
+        StoreU(InterleaveUpper(left, right), d, dst_row + x * 2 + Lanes(d));
+#endif
       }
-      // Fix border values.
       if (xsize == 1) {
         dst_row[0] = dst_row[1] = current_row[0];
       } else {
@@ -321,7 +281,6 @@ ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
       }
     }
   };
-#endif
   RunOnPool(pool, 0, static_cast<int>(num_stripes), ThreadPool::SkipInit(),
             upsample, "UpsampleH2");
   return dst;
@@ -352,9 +311,9 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 HWY_EXPORT(YcbcrToRgb);
 void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
                 const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
-                ImageF* b_plane, ThreadPool* pool) {
+                ImageF* b_plane, const Rect& rect, ThreadPool* pool) {
   return HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(y_plane, cb_plane, cr_plane, r_plane,
-                                          g_plane, b_plane, pool);
+                                          g_plane, b_plane, rect, pool);
 }
 
 HWY_EXPORT(UpsampleV2);

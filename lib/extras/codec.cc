@@ -212,8 +212,16 @@ Status EncodeToFile(const CodecInOut& io, const ColorEncoding& c_desired,
       JXL_WARNING(
           "For grayscale images, the filename should not end with .ppm.\n");
     }
+    if (bits_per_sample > 16) {
+      JXL_WARNING("PPM only supports up to 16 bits per sample");
+      bits_per_sample = 16;
+    }
   } else if (codec == Codec::kPGX && !io.Main().IsGray()) {
     JXL_WARNING("Storing color image to PGX - use .ppm extension instead.\n");
+  }
+  if (bits_per_sample > 16 && codec == Codec::kPNG) {
+    JXL_WARNING("PNG only supports up to 16 bits per sample");
+    bits_per_sample = 16;
   }
 
   PaddedBytes encoded;

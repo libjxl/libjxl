@@ -53,33 +53,33 @@ const uint8_t* TypeColor(const uint8_t& raw_strategy) {
   JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
   static_assert(AcStrategy::kNumValidStrategies == 27, "Change colors");
   static constexpr uint8_t kColors[][3] = {
-      {0x00, 0xBB, 0xBB},  // DCT8
-      {0x00, 0xFF, 0xFF},  // IDENTITY
-      {0x00, 0xF8, 0xF8},  // DCT2x2
-      {0x00, 0xF0, 0xF0},  // DCT4x4
-      {0x00, 0x77, 0x77},  // DCT16x16
-      {0x00, 0x33, 0x33},  // DCT32x32
-      {0x00, 0x99, 0x99},  // DCT16x8
-      {0x00, 0x99, 0x99},  // DCT8x16
-      {0x00, 0x55, 0x55},  // DCT32x8
-      {0x00, 0x55, 0x55},  // DCT8x32
-      {0x00, 0x44, 0x44},  // DCT32x16
-      {0x00, 0x44, 0x44},  // DCT16x32
-      {0x00, 0xE8, 0xE8},  // DCT4x8
-      {0x00, 0xE8, 0xE8},  // DCT8x4
-      {0x00, 0xFF, 0xFF},  // AFV0
-      {0x00, 0xFF, 0xFF},  // AFV1
-      {0x00, 0xFF, 0xFF},  // AFV2
-      {0x00, 0xFF, 0xFF},  // AFV3
-      {0x00, 0x00, 0x00},  // DCT64x64
-      {0x00, 0x19, 0x19},  // DCT64x32
-      {0x00, 0x19, 0x19},  // DCT32x64
-      {0x00, 0x00, 0x00},  // DCT128x128
-      {0x00, 0x19, 0x19},  // DCT128x64
-      {0x00, 0x19, 0x19},  // DCT64x128
-      {0x00, 0x00, 0x00},  // DCT256x256
-      {0x00, 0x19, 0x19},  // DCT256x128
-      {0x00, 0x19, 0x19},  // DCT128x256
+      {0xFF, 0xFF, 0x00},  // DCT8
+      {0xFF, 0x80, 0x80},  // HORNUSS
+      {0xFF, 0x80, 0x80},  // DCT2x2
+      {0xFF, 0x80, 0x80},  // DCT4x4
+      {0x80, 0xFF, 0x00},  // DCT16x16
+      {0x00, 0xC0, 0x00},  // DCT32x32
+      {0xC0, 0xFF, 0x00},  // DCT16x8
+      {0xC0, 0xFF, 0x00},  // DCT8x16
+      {0x00, 0xFF, 0x00},  // DCT32x8
+      {0x00, 0xFF, 0x00},  // DCT8x32
+      {0x00, 0xFF, 0x00},  // DCT32x16
+      {0x00, 0xFF, 0x00},  // DCT16x32
+      {0xFF, 0x80, 0x00},  // DCT4x8
+      {0xFF, 0x80, 0x00},  // DCT8x4
+      {0xFF, 0xFF, 0x80},  // AFV0
+      {0xFF, 0xFF, 0x80},  // AFV1
+      {0xFF, 0xFF, 0x80},  // AFV2
+      {0xFF, 0xFF, 0x80},  // AFV3
+      {0x00, 0xC0, 0xFF},  // DCT64x64
+      {0x00, 0xFF, 0xFF},  // DCT64x32
+      {0x00, 0xFF, 0xFF},  // DCT32x64
+      {0x00, 0x40, 0xFF},  // DCT128x128
+      {0x00, 0x80, 0xFF},  // DCT128x64
+      {0x00, 0x80, 0xFF},  // DCT64x128
+      {0x00, 0x00, 0xC0},  // DCT256x256
+      {0x00, 0x00, 0xFF},  // DCT256x128
+      {0x00, 0x00, 0xFF},  // DCT128x256
   };
   return kColors[raw_strategy];
 }
@@ -87,162 +87,91 @@ const uint8_t* TypeColor(const uint8_t& raw_strategy) {
 const uint8_t* TypeMask(const uint8_t& raw_strategy) {
   JXL_ASSERT(AcStrategy::IsRawStrategyValid(raw_strategy));
   static_assert(AcStrategy::kNumValidStrategies == 27, "Add masks");
+  // implicitly, first row and column is made dark
   static constexpr uint8_t kMask[][64] = {
       {
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
+          0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
       },                           // DCT8
       {
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 1, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 1, 0, 0, 0,  //
-          0, 0, 0, 0, 1, 0, 0, 0,  //
-          0, 0, 0, 0, 1, 0, 0, 0,  //
-          0, 0, 0, 0, 1, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // IDENTITY
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
           0, 0, 1, 0, 0, 1, 0, 0,  //
-          0, 0, 0, 0, 0, 1, 0, 0,  //
-          0, 0, 0, 0, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 0, 0, 0, 0,  //
+          0, 0, 1, 0, 0, 1, 0, 0,  //
           0, 0, 1, 1, 1, 1, 0, 0,  //
+          0, 0, 1, 0, 0, 1, 0, 0,  //
+          0, 0, 1, 0, 0, 1, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
+      },                           // HORNUSS
+      {
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 0, 1, 0, 1, 0, 1, 0,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 0, 1, 0, 1, 0, 1, 0,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 0, 1, 0, 1, 0, 1, 0,  //
+          1, 1, 1, 1, 1, 1, 1, 1,  //
+          1, 0, 1, 0, 1, 0, 1, 0,  //
       },                           // 2x2
       {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
           1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
       },                           // 4x4
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 1, 1, 1, 1, 0, 0,  //
-          0, 0, 1, 1, 1, 1, 0, 0,  //
-          0, 0, 1, 1, 1, 1, 0, 0,  //
-          0, 0, 1, 1, 1, 1, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT16x16
-      {
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-      },                           // DCT32x32
-      {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-      },                           // DCT16x8
+      {},                          // DCT16x16 (unused)
+      {},                          // DCT32x32 (unused)
+      {},                          // DCT16x8 (unused)
+      {},                          // DCT8x16 (unused)
+      {},                          // DCT32x8 (unused)
+      {},                          // DCT8x32 (unused)
+      {},                          // DCT32x16 (unused)
+      {},                          // DCT16x32 (unused)
       {
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT8x16
-      {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-      },                           // DCT32x8
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT8x32
-      {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-      },                           // DCT32x16
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT16x32
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
           1, 1, 1, 1, 1, 1, 1, 1,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
       },                           // DCT4x8
       {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
+          0, 0, 0, 0, 1, 0, 0, 0,  //
       },                           // DCT8x4
       {
+          1, 1, 1, 1, 1, 0, 0, 0,  //
+          1, 1, 1, 1, 0, 0, 0, 0,  //
+          1, 1, 1, 0, 0, 0, 0, 0,  //
           1, 1, 0, 0, 0, 0, 0, 0,  //
           1, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
       },                           // AFV0
       {
+          0, 0, 0, 0, 1, 1, 1, 1,  //
+          0, 0, 0, 0, 0, 1, 1, 1,  //
           0, 0, 0, 0, 0, 0, 1, 1,  //
           0, 0, 0, 0, 0, 0, 0, 1,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
@@ -253,10 +182,10 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
           1, 0, 0, 0, 0, 0, 0, 0,  //
           1, 1, 0, 0, 0, 0, 0, 0,  //
+          1, 1, 1, 0, 0, 0, 0, 0,  //
+          1, 1, 1, 1, 0, 0, 0, 0,  //
       },                           // AFV2
       {
           0, 0, 0, 0, 0, 0, 0, 0,  //
@@ -264,100 +193,10 @@ const uint8_t* TypeMask(const uint8_t& raw_strategy) {
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
           0, 0, 0, 0, 0, 0, 0, 1,  //
           0, 0, 0, 0, 0, 0, 1, 1,  //
+          0, 0, 0, 0, 0, 1, 1, 1,  //
       },                           // AFV3
-      {
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-      },                           // DCT64x64
-      {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-      },                           // DCT64x32
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT32x64
-      {
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-      },                           // DCT128x128
-      {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-      },                           // DCT128x64
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT64x128
-      {
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-      },                           // DCT256x256
-      {
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-          0, 0, 0, 1, 1, 0, 0, 0,  //
-      },                           // DCT256x128
-      {
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          1, 1, 1, 1, 1, 1, 1, 1,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-          0, 0, 0, 0, 0, 0, 0, 0,  //
-      },                           // DCT128x256
   };
   return kMask[raw_strategy];
 }
@@ -376,12 +215,11 @@ void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
       AcStrategy acs = acs_row[x / kBlockDim];
       const uint8_t* JXL_RESTRICT color = TypeColor(acs.RawStrategy());
       for (size_t c = 0; c < 3; c++) {
-        rows[c][x] = color[c];
+        rows[c][x] = color[c] / 255.f;
       }
     }
   }
   size_t stride = color_acs.PixelsPerRow();
-  const uint8_t highlight_color[3] = {0xFF, 0xFF, 0x00};
   for (size_t c = 0; c < 3; c++) {
     for (size_t by = 0; by < DivCeil(ysize, kBlockDim); by++) {
       float* JXL_RESTRICT row = color_acs.PlaneRow(c, by * kBlockDim);
@@ -389,18 +227,29 @@ void DumpAcStrategy(const AcStrategyImage& ac_strategy, size_t xsize,
       for (size_t bx = 0; bx < DivCeil(xsize, kBlockDim); bx++) {
         AcStrategy acs = acs_row[bx];
         if (!acs.IsFirstBlock()) continue;
+        const uint8_t* JXL_RESTRICT color = TypeColor(acs.RawStrategy());
         const uint8_t* JXL_RESTRICT mask = TypeMask(acs.RawStrategy());
-        size_t xstart = (acs.covered_blocks_x() - 1) * kBlockDim / 2;
-        size_t ystart = (acs.covered_blocks_y() - 1) * kBlockDim / 2;
-        for (size_t iy = 0;
-             iy < kBlockDim && by * kBlockDim + iy + ystart < ysize; iy++) {
-          for (size_t ix = 0;
-               ix < kBlockDim && bx * kBlockDim + ix + xstart < xsize; ix++) {
-            if (mask[iy * kBlockDim + ix]) {
-              row[(iy + ystart) * stride + bx * kBlockDim + ix + xstart] =
-                  highlight_color[c];
+        if (acs.covered_blocks_x() == 1 && acs.covered_blocks_y() == 1) {
+          for (size_t iy = 0; iy < kBlockDim && by * kBlockDim + iy < ysize;
+               iy++) {
+            for (size_t ix = 0; ix < kBlockDim && bx * kBlockDim + ix < xsize;
+                 ix++) {
+              if (mask[iy * kBlockDim + ix]) {
+                row[iy * stride + bx * kBlockDim + ix] = color[c] / 800.f;
+              }
             }
           }
+        }
+        // draw block edges
+        for (size_t ix = 0; ix < kBlockDim * acs.covered_blocks_x() &&
+                            bx * kBlockDim + ix < xsize;
+             ix++) {
+          row[0 * stride + bx * kBlockDim + ix] = color[c] / 350.f;
+        }
+        for (size_t iy = 0; iy < kBlockDim * acs.covered_blocks_y() &&
+                            by * kBlockDim + iy < ysize;
+             iy++) {
+          row[iy * stride + bx * kBlockDim + 0] = color[c] / 350.f;
         }
       }
     }
@@ -417,12 +266,14 @@ struct ACSConfig {
   size_t quant_field_stride;
   const float* JXL_RESTRICT src_rows[3];
   size_t src_stride;
-  // We are assuming that DCT coefficients have a laplacian distribution here.
-  // Cost is given by base_cost + cost_delta * |coeff| for any nonzero
-  // coefficient.
-  float base_cost;
+  // Cost for 1 (-1), 2 (-2) explicitly, cost for others computed with cost1 +
+  // cost2 + sqrt(q) * cost_delta.
+  float cost1;
+  float cost2;
   float cost_delta;
   float base_entropy;
+  float block_entropy;
+  float zeros_mul;
   const float& Pixel(size_t c, size_t x, size_t y) const {
     return src_rows[c][y * src_stride + x];
   }
@@ -556,13 +407,18 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   float entropy = config.base_entropy;
   auto info_loss = Zero(df);
 
+  const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
+  entropy += num_blocks * config.block_entropy;
   for (size_t c = 0; c < 3; c++) {
-    const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
+    auto info_loss_c = Zero(df);
     const float* inv_matrix = config.dequant->InvMatrix(acs.RawStrategy(), c);
     const auto cmap_factor = Set(df, cmap_factors[c]);
 
     auto entropy_v = Zero(df);
     auto nzeros_v = Zero(di);
+    auto cost1 = Set(df, config.cost1);
+    auto cost2 = Set(df, config.cost2);
+    auto cost_delta = Set(df, config.cost_delta);
     for (size_t i = 0; i < num_blocks * kDCTBlockSize; i += Lanes(df)) {
       const auto in = Load(df, block + c * size + i);
       const auto in_y = Load(df, block + size + i) * cmap_factor;
@@ -572,12 +428,20 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
       info_loss += AbsDiff(val, rval);
       const auto q = Abs(rval);
       const auto q_is_zero = q == Zero(df);
-      entropy_v += IfThenZeroElse(
-          q_is_zero,
-          MulAdd(q, Set(df, config.cost_delta), Set(df, config.base_cost)));
+      entropy_v += IfThenElseZero(q >= Set(df, 0.5f), cost1);
+      entropy_v += IfThenElseZero(q >= Set(df, 1.5f), cost2);
+      // We used to have q * C here, but that cost model seems to
+      // be punishing large values more than necessary. Sqrt tries
+      // to avoid large values less aggressively. Having high accuracy
+      // around zero is most important at low qualities, and there
+      // we have directly specified costs for 0, 1, and 2.
+      entropy_v += Sqrt(q) * cost_delta;
       nzeros_v +=
           BitCast(di, IfThenZeroElse(q_is_zero, BitCast(df, Set(di, 1))));
     }
+    float kMul[3] = {1.0f, 2.0f, 1.0f};
+    auto m = Set(df, kMul[c]);
+    info_loss += m * info_loss_c;
     entropy += GetLane(SumOfLanes(entropy_v));
     size_t num_nzeros = GetLane(SumOfLanes(nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
@@ -585,7 +449,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     size_t nbits = CeilLog2Nonzero(num_nzeros + 1) + 1;
     // Also add #bit of #bit of num_nonzeros, to estimate the ANS cost, with a
     // bias.
-    entropy += CeilLog2Nonzero(nbits + 17) + nbits;
+    entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
   }
   float ret =
       entropy + config.info_loss_multiplier * GetLane(SumOfLanes(info_loss));
@@ -599,9 +463,9 @@ void InitEntropyAdjustTable(float* entropy_adjust) {
     entropy_adjust[2 * raw_strategy + 0] = add * mul;
     entropy_adjust[2 * raw_strategy + 1] = mul;
   };
-  set(AcStrategy::Type::DCT, 0.0f, 0.96f);
-  set(AcStrategy::Type::DCT4X4, 40.0f, 0.88f);
-  set(AcStrategy::Type::DCT2X2, 40.0f, 1.028f);
+  set(AcStrategy::Type::DCT, 0.0f, 0.85f);
+  set(AcStrategy::Type::DCT4X4, 40.0f, 0.84f);
+  set(AcStrategy::Type::DCT2X2, 40.0f, 1.0f);
   set(AcStrategy::Type::DCT16X16, 0.0f, 0.99f);
   set(AcStrategy::Type::DCT64X64, 0.0f, 1.0f);  // no change
   set(AcStrategy::Type::DCT64X32, 0.0f, 0.73f);
@@ -609,17 +473,17 @@ void InitEntropyAdjustTable(float* entropy_adjust) {
   set(AcStrategy::Type::DCT32X32, 0.0f, 0.8f);
   set(AcStrategy::Type::DCT16X32, 0.0f, 0.992f);
   set(AcStrategy::Type::DCT32X16, 0.0f, 0.992f);
-  set(AcStrategy::Type::DCT32X8, 0.0f, 0.96f);
-  set(AcStrategy::Type::DCT8X32, 0.0f, 0.96f);
-  set(AcStrategy::Type::DCT16X8, 0.0f, 0.95f);
-  set(AcStrategy::Type::DCT8X16, 0.0f, 0.95f);
-  set(AcStrategy::Type::DCT4X8, 30.0f, 1.045f);
-  set(AcStrategy::Type::DCT8X4, 30.0f, 1.045f);
+  set(AcStrategy::Type::DCT32X8, 0.0f, 0.98f);
+  set(AcStrategy::Type::DCT8X32, 0.0f, 0.98f);
+  set(AcStrategy::Type::DCT16X8, 0.0f, 0.90f);
+  set(AcStrategy::Type::DCT8X16, 0.0f, 0.90f);
+  set(AcStrategy::Type::DCT4X8, 30.0f, 1.015f);
+  set(AcStrategy::Type::DCT8X4, 30.0f, 1.015f);
   set(AcStrategy::Type::IDENTITY, 80.0f, 1.33f);
-  set(AcStrategy::Type::AFV0, 30.0f, 0.995f);
-  set(AcStrategy::Type::AFV1, 30.0f, 0.995f);
-  set(AcStrategy::Type::AFV2, 30.0f, 0.995f);
-  set(AcStrategy::Type::AFV3, 30.0f, 0.995f);
+  set(AcStrategy::Type::AFV0, 30.0f, 0.97f);
+  set(AcStrategy::Type::AFV1, 30.0f, 0.97f);
+  set(AcStrategy::Type::AFV2, 30.0f, 0.97f);
+  set(AcStrategy::Type::AFV3, 30.0f, 0.97f);
   set(AcStrategy::Type::DCT128X128, 0.0f, 1.0f);
   set(AcStrategy::Type::DCT128X64, 0.0f, 0.73f);
   set(AcStrategy::Type::DCT64X128, 0.0f, 0.73f);
@@ -811,13 +675,31 @@ void FindBestAcStrategy(const Image3F& src,
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
   // TODO(jyrki): better choice of constants/parameterization.
-  config.info_loss_multiplier = 77.0f;
-  // entropy = base_entropy + (base_cost + cost_delta * |coeff| for every
-  // nonzero coefficient) + log2(num_nonzeros)
-  config.base_cost = std::max(7.0f - 0.2f * cparams.butteraugli_distance, 1.0f);
-  config.cost_delta = 7.0f + 0.7f * cparams.butteraugli_distance;
-  config.base_entropy = 7.0f;
-
+  config.info_loss_multiplier = 121.64065116104153f;
+  config.base_entropy = 171.7122472433324f;
+  config.block_entropy = 7.9339677366349539f;
+  config.zeros_mul = 4.8855992212861681f;
+  if (butteraugli_target < 2) {
+    config.cost1 = 21.467536133280064f;
+    config.cost2 = 45.233239814548617f;
+    config.cost_delta = 27.192877948074784f;
+  } else if (butteraugli_target < 4) {
+    config.cost1 = 33.478899662356103f;
+    config.cost2 = 32.493410394508086f;
+    config.cost_delta = 29.192251887428096f;
+  } else if (butteraugli_target < 8) {
+    config.cost1 = 39.758237938237959f;
+    config.cost2 = 12.423859153559777f;
+    config.cost_delta = 31.181324266623122f;
+  } else if (butteraugli_target < 16) {
+    config.cost1 = 25;
+    config.cost2 = 22.630019747782897f;
+    config.cost_delta = 38.409539247825222f;
+  } else {
+    config.cost1 = 15;
+    config.cost2 = 26.952503610099059f;
+    config.cost_delta = 43.16274170126156f;
+  }
   size_t xsize64 = DivCeil(xsize_blocks, 8);
   size_t ysize64 = DivCeil(ysize_blocks, 8);
   const auto compute_initial_acs_guess = [&](int block64, int _) {

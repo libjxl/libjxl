@@ -57,6 +57,7 @@ void TestLosslessGroups(size_t group_size_shift) {
   CompressParams cparams;
   cparams.modular_mode = true;
   cparams.modular_group_size_shift = group_size_shift;
+  cparams.color_transform = jxl::ColorTransform::kNone;
   DecompressParams dparams;
 
   CodecInOut io_out;
@@ -70,7 +71,7 @@ void TestLosslessGroups(size_t group_size_shift) {
   EXPECT_LE(compressed_size, 280000);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            0.2);
+            0.0);
 }
 
 TEST(ModularTest, RoundtripLosslessGroups128) { TestLosslessGroups(0); }
@@ -100,6 +101,7 @@ TEST(ModularTest, RoundtripLossy) {
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 40000);
+  cparams.ba_params.intensity_target = 80.0f;
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             3.0);
@@ -124,6 +126,7 @@ TEST(ModularTest, RoundtripLossy16) {
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 400);
+  cparams.ba_params.intensity_target = 80.0f;
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             1.5);

@@ -35,28 +35,12 @@
 
 namespace jxl {
 
-// TODO(veluca): remove DecodeDC, DecodeGlobalDCInfo and DecodeFrameHeader once
-// the API migrates to FrameDecoder.
+// TODO(veluca): remove DecodeFrameHeader once the API migrates to FrameDecoder.
 
 // `frame_header` must have nonserialized_metadata and
 // nonserialized_is_preview set.
 Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
                          FrameHeader* JXL_RESTRICT frame_header);
-
-// Decodes the global DC info from a frame section, exposed for use by API.
-Status DecodeGlobalDCInfo(BitReader* reader, bool is_jpeg,
-                          PassesDecoderState* state, ThreadPool* pool);
-
-// Decodes the DC image, exposed for use by API.
-// aux_outs may be nullptr if aux_out is nullptr.
-Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
-                ModularFrameDecoder& modular_frame_decoder,
-                size_t group_codes_begin,
-                const std::vector<uint64_t>& group_offsets,
-                const std::vector<uint32_t>& group_sizes,
-                ThreadPool* JXL_RESTRICT pool, BitReader* JXL_RESTRICT reader,
-                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out,
-                std::vector<bool>* has_dc_group = nullptr);
 
 // Decodes a frame. Groups may be processed in parallel by `pool`.
 // See DecodeFile for explanation of c_decoded.
@@ -80,11 +64,8 @@ class FrameDecoder {
  public:
   // All parameters must outlive the FrameDecoder.
   FrameDecoder(PassesDecoderState* dec_state, const CodecMetadata& metadata,
-               ThreadPool* pool, AuxOut* aux_out)
-      : dec_state_(dec_state),
-        pool_(pool),
-        aux_out_(aux_out),
-        frame_header_(&metadata) {}
+               ThreadPool* pool)
+      : dec_state_(dec_state), pool_(pool), frame_header_(&metadata) {}
 
   // `constraints` must outlive the FrameDecoder if not null, or stay alive
   // until the next call to SetFrameSizeLimits.
@@ -122,9 +103,11 @@ class FrameDecoder {
   // `section_status` should point to `num` elements, and will be filled with
   // information about whether each section was processed or not.
   // A section is a part of the encoded file that is indexed by the TOC.
-  // TODO(veluca): multiple calls to ProcessSections are not (yet) supported.
   Status ProcessSections(const SectionInfo* sections, size_t num,
                          SectionStatus* section_status);
+
+  // Flushes all the data decoded so far to pixels.
+  Status Flush();
 
   // Runs final operations once a frame data is decoded.
   // Must be called exactly once per frame, after all calls to ProcessSections.
@@ -146,7 +129,7 @@ class FrameDecoder {
   void FinalizeDC();
   Status ProcessACGlobal(BitReader* br);
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
-                        size_t num_passes, size_t thread);
+                        size_t num_passes, size_t thread, bool force_draw);
 
   // Sets the number of threads that will be used. The value of the "thread"
   // parameter passed to DecodeDCGroup and DecodeACGroup must be smaller than
@@ -162,7 +145,6 @@ class FrameDecoder {
 
   PassesDecoderState* dec_state_;
   ThreadPool* pool_;
-  AuxOut* aux_out_;
   std::vector<uint64_t> section_offsets_;
   std::vector<uint32_t> section_sizes_;
   size_t max_passes_;
@@ -181,6 +163,7 @@ class FrameDecoder {
   bool decoded_ac_global_;
   bool finalized_dc_ = true;
   bool is_finalized_ = true;
+  size_t num_renders_ = 0;
 
   // Number of allocated GroupDecCache entries in the group_dec_caches_ smart
   // pointer. This is only needed to tell whether we need to reallocate the

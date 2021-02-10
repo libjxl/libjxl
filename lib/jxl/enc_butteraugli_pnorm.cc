@@ -12,21 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "tools/butteraugli_pnorm.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #include <atomic>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "tools/butteraugli_pnorm.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/enc_butteraugli_pnorm.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/profiler.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -117,7 +117,7 @@ double ComputeDistanceP(const ImageF& distmap, const ButteraugliParams& params,
   } else {
     static std::atomic<int> once{0};
     if (once.fetch_add(1, std::memory_order_relaxed) == 0) {
-      fprintf(stderr, "WARNING: using slow ComputeDistanceP\n");
+      JXL_WARNING("WARNING: using slow ComputeDistanceP");
     }
     double sum1[3] = {0.0};
     for (size_t y = border; y < distmap.ysize() - border; ++y) {

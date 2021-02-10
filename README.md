@@ -1,7 +1,9 @@
 # JPEG XL reference implementation
 
+<img src="doc/jxl.svg" width="100" align="right" alt="JXL logo">
+
 This repository contains a reference implementation of JPEG XL (encoder and
-decoder).
+decoder), called `libjxl`.
 
 JPEG XL is in the final stages of standardization and its codestream format is
 frozen.
@@ -66,6 +68,12 @@ cmake --build . -- -j
 ```
 
 The encoder/decoder tools will be available in the `build/tools` directory.
+
+### <a name="installing"></a> Installing
+
+```bash
+sudo cmake --install .
+```
 
 ### Basic encoder/decoder
 
@@ -197,6 +205,7 @@ This software is available under Apache 2.0 license which can be found in the
 *   [XL Overview](doc/xl_overview.md) - a brief introduction to the source code modules
 *   [JPEG XL white paper](http://ds.jpeg.org/whitepapers/jpeg-xl-whitepaper.pdf)
 *   [JPEG XL website](https://jpeg.org/jpegxl/)
+*   [Jon's JXL info page](https://sneyers.info/jxl/)
 
 ### Development process
 *   [Docker setup - **start here**](doc/developing_in_docker.md)
@@ -205,3 +214,11 @@ This software is available under Apache 2.0 license which can be found in the
 *   [More information on testing/build options](doc/building_and_testing.md)
 *   [Git guide for JPEG XL](doc/developing_in_gitlab.md) - for developers only
 *   [Building Web Assembly artifacts](doc/building_wasm.md)
+
+### Contact
+
+If you encounter a bug or other issue with the software, please open an Issue here.
+
+There is a [subreddit about JPEG XL](https://www.reddit.com/r/jpegxl/), and
+informal chatting with developers and early adopters of `libjxl` can be done on the
+[JPEG XL Discord server](https://discord.gg/DqkQgDRTFu).

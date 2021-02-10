@@ -214,6 +214,73 @@ void QuantizeChannel(Channel& ch, const int q) {
     }
   }
 }
+
+// convert binary32 float that corresponds to custom [bits]-bit float (with
+// [exp_bits] exponent bits) to a [bits]-bit integer representation that should
+// fit in pixel_type
+Status float_to_int(const float* const row_in, pixel_type* const row_out,
+                    size_t xsize, unsigned int bits, unsigned int exp_bits,
+                    bool fp, float factor) {
+  JXL_ASSERT(sizeof(pixel_type) * 8 >= bits);
+  if (!fp) {
+    for (size_t x = 0; x < xsize; ++x) {
+      row_out[x] = row_in[x] * factor + 0.5f;
+    }
+    return true;
+  }
+  if (bits == 32 && fp) {
+    JXL_ASSERT(exp_bits == 8);
+    memcpy((void*)row_out, (const void*)row_in, 4 * xsize);
+    return true;
+  }
+
+  int exp_bias = (1 << (exp_bits - 1)) - 1;
+  int max_exp = (1 << exp_bits) - 1;
+  uint32_t sign = (1u << (bits - 1));
+  int mant_bits = bits - exp_bits - 1;
+  int mant_shift = 23 - mant_bits;
+  for (size_t x = 0; x < xsize; ++x) {
+    uint32_t f;
+    memcpy(&f, &row_in[x], 4);
+    int signbit = (f >> 31);
+    f &= 0x7fffffff;
+    if (f == 0) {
+      row_out[x] = (signbit ? sign : 0);
+      continue;
+    }
+    int exp = (f >> 23) - 127;
+    if (exp == 128) return JXL_FAILURE("Inf/NaN not allowed");
+    int mantissa = (f & 0x007fffff);
+    // broke up the binary32 into its parts, now reassemble into
+    // arbitrary float
+    exp += exp_bias;
+    if (exp < 0) {  // will become a subnormal number
+      // add implicit leading 1 to mantissa
+      mantissa |= 0x00800000;
+      if (exp < -mant_bits) {
+        return JXL_FAILURE(
+            "Invalid float number: %g cannot be represented with %i "
+            "exp_bits and %i mant_bits (exp %i)",
+            row_in[x], exp_bits, mant_bits, exp);
+      }
+      mantissa >>= 1 - exp;
+      exp = 0;
+    }
+    // exp should be representable in exp_bits, otherwise input was
+    // invalid
+    if (exp > max_exp) return JXL_FAILURE("Invalid float exponent");
+    if (mantissa & ((1 << mant_shift) - 1)) {
+      return JXL_FAILURE("%g is losing precision (mant: %x)", row_in[x],
+                         mantissa);
+    }
+    mantissa >>= mant_shift;
+    f = (signbit ? sign : 0);
+    f |= (exp << mant_bits);
+    f |= mantissa;
+    row_out[x] = (pixel_type)f;
+  }
+  return true;
+}
 }  // namespace
 
 ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
@@ -366,8 +433,6 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (ib.metadata()->bit_depth.bits_per_sample >= 32 && do_color &&
       cparams.color_transform != ColorTransform::kXYB) {
     if (ib.metadata()->bit_depth.bits_per_sample == 32 && fp == false) {
-      // TODO(lode): does modular support uint32_t? maxval is signed int so
-      // cannot represent 32 bits.
       return JXL_FAILURE("uint32_t not supported in enc_modular");
     } else if (ib.metadata()->bit_depth.bits_per_sample > 32) {
       return JXL_FAILURE("bits_per_sample > 32 not supported");
@@ -400,6 +465,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (cparams.color_transform == ColorTransform::kXYB)
         factor = enc_state->shared.matrices.InvDCQuant(c);
       if (c == 2 && cparams.color_transform == ColorTransform::kXYB) {
+        JXL_ASSERT(!fp);
         for (size_t y = 0; y < ysize; ++y) {
           const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
@@ -409,91 +475,34 @@ Status ModularFrameEncoder::ComputeEncodingData(
             row_out[x] -= row_Y[x];
           }
         }
-      } else if (fp && ib.metadata()->bit_depth.bits_per_sample < 32) {
-        int exp_bits = ib.metadata()->bit_depth.exponent_bits_per_sample;
-        int exp_bias = (1 << (exp_bits - 1)) - 1;
-        int max_exp = (1 << exp_bits) - 1;
-        uint32_t sign = (1u << (ib.metadata()->bit_depth.bits_per_sample - 1));
-        int mant_bits = ib.metadata()->bit_depth.bits_per_sample - exp_bits - 1;
-        int mant_shift = 23 - mant_bits;
-        for (size_t y = 0; y < ysize; ++y) {
-          const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
-          pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
-          for (size_t x = 0; x < xsize; ++x) {
-            uint32_t f;
-            memcpy(&f, &row_in[x], 4);
-            int signbit = (f >> 31);
-            f &= 0x7fffffff;
-            if (f == 0) {
-              row_out[x] = (signbit ? sign : 0);
-              continue;
-            }
-            int exp = (f >> 23) - 127;
-            if (exp == 128) return JXL_FAILURE("Inf/NaN not allowed");
-            int mantissa = (f & 0x007fffff);
-            // broke up the binary32 into its parts, now reassemble into
-            // arbitrary float
-            exp += exp_bias;
-            if (exp < 0) {  // will become a subnormal number
-              // add implicit leading 1 to mantissa
-              mantissa |= 0x00800000;
-              if (exp < -mant_bits) {
-                return JXL_FAILURE(
-                    "Invalid float number: %g cannot be represented with %i "
-                    "exp_bits and %i mant_bits (exp %i)",
-                    row_in[x], exp_bits, mant_bits, exp);
-              }
-              mantissa >>= 1 - exp;
-              exp = 0;
-            }
-            // exp should be representable in exp_bits, otherwise input was
-            // invalid
-            if (exp > max_exp) return JXL_FAILURE("Invalid float exponent");
-            if (mantissa & ((1 << mant_shift) - 1)) {
-              return JXL_FAILURE("%g is losing precision (mant: %x)", row_in[x],
-                                 mantissa);
-            }
-            mantissa >>= mant_shift;
-            f = (signbit ? sign : 0);
-            f |= (exp << mant_bits);
-            f |= mantissa;
-            row_out[x] = (pixel_type)f;
-          }
-        }
-      } else if (fp) {
-        JXL_ASSERT(sizeof(pixel_type) == sizeof(float));
-        JXL_ASSERT(ib.metadata()->bit_depth.exponent_bits_per_sample == 8);
-        for (size_t y = 0; y < ysize; ++y) {
-          memcpy((void*)gi.channel[c_out].Row(y),
-                 (const void*)color->PlaneRow(c, y), 4 * xsize);
-        }
       } else {
+        int bits = ib.metadata()->bit_depth.bits_per_sample;
+        int exp_bits = ib.metadata()->bit_depth.exponent_bits_per_sample;
         for (size_t y = 0; y < ysize; ++y) {
           const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
-          for (size_t x = 0; x < xsize; ++x) {
-            row_out[x] = row_in[x] * factor + 0.5f;
-          }
+          JXL_RETURN_IF_ERROR(
+              float_to_int(row_in, row_out, xsize, bits, exp_bits, fp, factor));
         }
       }
     }
     if (ib.IsGray() && cparams.color_transform == ColorTransform::kNone) c = 1;
   }
-  // TODO: make extra channels 32-bit too, add fp support, and drop the
-  // IsDisplayed
   if (ib.HasExtraChannels()) {
     for (size_t ec = 0; ec < ib.extra_channels().size(); ec++, c++) {
       const ExtraChannelInfo& eci = ib.metadata()->extra_channel_info[ec];
       gi.channel[c].resize(eci.Size(ib.xsize()), eci.Size(ib.ysize()));
       gi.channel[c].hshift = gi.channel[c].vshift = eci.dim_shift;
 
+      int bits = eci.bit_depth.bits_per_sample;
+      int exp_bits = eci.bit_depth.exponent_bits_per_sample;
+      bool fp = eci.bit_depth.floating_point_sample;
+      float factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
       for (size_t y = 0; y < ysize; ++y) {
         const float* const JXL_RESTRICT row_in = ib.extra_channels()[ec].Row(y);
         pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
-        for (size_t x = 0; x < xsize; ++x) {
-          row_out[x] =
-              row_in[x] * ((1u << eci.bit_depth.bits_per_sample) - 1) + .5f;
-        }
+        JXL_RETURN_IF_ERROR(
+            float_to_int(row_in, row_out, xsize, bits, exp_bits, fp, factor));
       }
     }
   }
@@ -512,6 +521,28 @@ Status ModularFrameEncoder::ComputeEncodingData(
     cparams.palette_colors = 0;
   }
 
+  // if few colors, do all-channel palette before trying channel palette
+  // Logic is as follows:
+  // - if you can make a palette with few colors (arbitrary threshold: 200),
+  //   then you can also make channel palettes, but they will just be extra
+  //   signaling cost for almost no benefit
+  // - if the palette needs more colors, then channel palette might help to
+  //   reduce palette signaling cost
+  if (cparams.palette_colors != 0 && cparams.speed_tier < SpeedTier::kFalcon) {
+    // all-channel palette (e.g. RGBA)
+    if (gi.nb_channels > 1) {
+      Transform maybe_palette(TransformId::kPalette);
+      maybe_palette.begin_c = gi.nb_meta_channels;
+      maybe_palette.num_c = gi.nb_channels;
+      maybe_palette.nb_colors =
+          std::min(std::min(200, (int)(xsize * ysize / 8)),
+                   std::abs(cparams.palette_colors) / 16);
+      maybe_palette.ordered_palette = cparams.palette_colors >= 0;
+      maybe_palette.lossy_palette = false;
+      gi.do_transform(maybe_palette, weighted::Header());
+    }
+  }
+
   // Global channel palette
   if (cparams.channel_colors_pre_transform_percent > 0 &&
       !cparams.lossy_palette) {
@@ -526,10 +557,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette_1.num_c = 1;
       // simple heuristic: if less than X percent of the values in the range
       // actually occur, it is probably worth it to do a compaction
-      // (but only if the channel palette is less than 80% the size of the
+      // (but only if the channel palette is less than 6% the size of the
       // image itself)
       maybe_palette_1.nb_colors = std::min(
-          (int)(xsize * ysize * 0.8),
+          (int)(xsize * ysize / 16),
           (int)(cparams.channel_colors_pre_transform_percent / 100. * colors));
       if (gi.do_transform(maybe_palette_1, weighted::Header())) {
         // effective bit depth is lower, adjust quantization accordingly
@@ -547,9 +578,11 @@ Status ModularFrameEncoder::ComputeEncodingData(
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
       maybe_palette.num_c = gi.nb_channels;
-      maybe_palette.nb_colors = std::abs(cparams.palette_colors);
+      maybe_palette.nb_colors =
+          std::min((int)(xsize * ysize / 8), std::abs(cparams.palette_colors));
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
-      maybe_palette.lossy_palette = cparams.lossy_palette;
+      maybe_palette.lossy_palette =
+          (cparams.lossy_palette && gi.nb_channels == 3);
       if (maybe_palette.lossy_palette) {
         maybe_palette.predictor = Predictor::Average4;
       }
@@ -563,11 +596,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
       maybe_palette_3.num_c = gi.nb_channels - 1;
-      maybe_palette_3.nb_colors = std::abs(cparams.palette_colors);
+      maybe_palette_3.nb_colors =
+          std::min((int)(xsize * ysize / 8), std::abs(cparams.palette_colors));
       maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
       maybe_palette_3.lossy_palette = cparams.lossy_palette;
       if (maybe_palette_3.lossy_palette) {
-        maybe_palette_3.predictor = Predictor::Weighted;
+        maybe_palette_3.predictor = Predictor::Average4;
       }
       gi.do_transform(maybe_palette_3, weighted::Header());
     }
@@ -939,7 +973,6 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
       [&](size_t stream_id, size_t _) {
         AuxOut my_aux_out;
         if (aux_out) {
-          my_aux_out.testing_aux = aux_out->testing_aux;
           my_aux_out.dump_image = aux_out->dump_image;
           my_aux_out.debug_prefix = aux_out->debug_prefix;
         }

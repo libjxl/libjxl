@@ -457,6 +457,13 @@ struct FrameHeader : public Fields {
     return frame_dim;
   }
 
+  // True if a color transform should be applied to this frame.
+  bool needs_color_transform() const {
+    return !save_before_color_transform ||
+           frame_type == FrameType::kRegularFrame ||
+           frame_type == FrameType::kSkipProgressive;
+  }
+
   uint64_t extensions;
 };
 

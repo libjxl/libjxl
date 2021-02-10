@@ -24,12 +24,12 @@ namespace {
 
 void TestProfile(const PaddedBytes& icc) {
   BitWriter writer;
-  EXPECT_TRUE(WriteICC(icc, &writer, 0, nullptr));
+  ASSERT_TRUE(WriteICC(icc, &writer, 0, nullptr));
   writer.ZeroPadToByte();
   PaddedBytes dec;
   BitReader reader(writer.GetSpan());
-  EXPECT_TRUE(ReadICC(&reader, &dec));
-  EXPECT_TRUE(reader.Close());
+  ASSERT_TRUE(ReadICC(&reader, &dec));
+  ASSERT_TRUE(reader.Close());
   EXPECT_EQ(icc.size(), dec.size());
   if (icc.size() == dec.size()) {
     for (size_t i = 0; i < icc.size(); i++) {

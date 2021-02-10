@@ -33,11 +33,9 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/blending.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
-#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/compressed_dc.h"
@@ -70,6 +68,7 @@
 
 namespace jxl {
 
+namespace {
 Status DecodeGlobalDCInfo(BitReader* reader, bool is_jpeg,
                           PassesDecoderState* state, ThreadPool* pool) {
   PROFILER_FUNC;
@@ -89,6 +88,7 @@ Status DecodeGlobalDCInfo(BitReader* reader, bool is_jpeg,
   state->Init(pool);
   return true;
 }
+}  // namespace
 
 Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
                          FrameHeader* JXL_RESTRICT frame_header) {
@@ -154,78 +154,6 @@ static BitReader* GetReaderForSection(
   return store;
 }
 
-Status DecodeDC(const FrameHeader& frame_header, PassesDecoderState* dec_state,
-                ModularFrameDecoder& modular_frame_decoder,
-                size_t group_codes_begin,
-                const std::vector<uint64_t>& group_offsets,
-                const std::vector<uint32_t>& group_sizes,
-                ThreadPool* JXL_RESTRICT pool, BitReader* JXL_RESTRICT reader,
-                std::vector<AuxOut>* aux_outs, AuxOut* JXL_RESTRICT aux_out,
-                std::vector<bool>* has_dc_group) {
-  std::atomic<int> num_errors{0};
-  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
-  FrameDimensions frame_dim = frame_header.ToFrameDimensions();
-  size_t num_groups = frame_dim.num_groups;
-  size_t num_passes = frame_header.passes.num_passes;
-
-  auto get_reader = [num_groups, num_passes, group_codes_begin, &group_offsets,
-                     &group_sizes,
-                     &reader](BitReader* JXL_RESTRICT store, size_t index) {
-    return GetReaderForSection(num_groups, num_passes, group_codes_begin,
-                               group_offsets, group_sizes, reader, store,
-                               index);
-  };
-  const auto process_dc_group_init = [&](size_t num_threads) {
-    dec_state->EnsureStorage(num_threads);
-    return true;
-  };
-  const auto process_dc_group = [&](const int group_index, const int thread) {
-    PROFILER_ZONE("DC group");
-    if (has_dc_group != nullptr && (*has_dc_group)[group_index] == false) {
-      FillImage(0.0f, &dec_state->shared_storage.dc_storage,
-                dec_state->shared->DCGroupRect(group_index));
-      return;
-    }
-    BitReader group_store;
-    BitReader* group_reader = get_reader(&group_store, group_index + 1);
-    const size_t gx = group_index % frame_dim.xsize_dc_groups;
-    const size_t gy = group_index / frame_dim.xsize_dc_groups;
-    bool ok = true;
-    if (frame_header.encoding == FrameEncoding::kVarDCT &&
-        !(frame_header.flags & FrameHeader::kUseDcFrame)) {
-      ok = modular_frame_decoder.DecodeVarDCTDC(group_index, group_reader,
-                                                dec_state);
-    }
-    if (ok) {
-      const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
-                       kDcGroupDim);
-      ok = modular_frame_decoder.DecodeGroup(
-          mrect, group_reader, 3, 1000,
-          ModularStreamId::ModularDC(group_index));
-    }
-    if (ok && frame_header.encoding == FrameEncoding::kVarDCT) {
-      ok = modular_frame_decoder.DecodeAcMetadata(group_index, group_reader,
-                                                  dec_state);
-    }
-    if (!group_store.Close() || !ok) {
-      num_errors.fetch_add(1, std::memory_order_relaxed);
-    }
-  };
-  RunOnPool(pool, 0, frame_dim.num_dc_groups, process_dc_group_init,
-            process_dc_group, "DecodeDCGroup");
-
-  // Do Adaptive DC smoothing if enabled.
-  if (frame_header.encoding == FrameEncoding::kVarDCT &&
-      !(frame_header.flags & FrameHeader::kSkipAdaptiveDCSmoothing) &&
-      !(frame_header.flags & FrameHeader::kUseDcFrame)) {
-    AdaptiveDCSmoothing(dec_state->shared->quantizer.MulDC(),
-                        &dec_state->shared_storage.dc_storage, pool);
-  }
-
-  JXL_RETURN_IF_ERROR(num_errors.load(std::memory_order_relaxed) == 0);
-  return true;
-}
-
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
                    BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
@@ -233,7 +161,7 @@ Status DecodeFrame(const DecompressParams& dparams,
                    const SizeConstraints* constraints, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
-  FrameDecoder frame_decoder(dec_state, metadata, pool, aux_out);
+  FrameDecoder frame_decoder(dec_state, metadata, pool);
 
   frame_decoder.SetFrameSizeLimits(constraints);
 
@@ -274,6 +202,8 @@ Status DecodeFrame(const DecompressParams& dparams,
     frame_decoder.SetMaxPasses(max_passes);
   }
 
+  size_t processed_bytes = reader->TotalBitsConsumed() / kBitsPerByte;
+
   Status close_ok = true;
   std::vector<std::unique_ptr<BitReader>> section_readers;
   {
@@ -310,7 +240,10 @@ Status DecodeFrame(const DecompressParams& dparams,
 
     for (size_t i = 0; i < section_status.size(); i++) {
       auto s = section_status[i];
-      if (s == FrameDecoder::kDone) continue;
+      if (s == FrameDecoder::kDone) {
+        processed_bytes += frame_decoder.SectionSizes()[i];
+        continue;
+      }
       if (dparams.allow_more_progressive_steps && s == FrameDecoder::kPartial) {
         continue;
       }
@@ -327,6 +260,7 @@ Status DecodeFrame(const DecompressParams& dparams,
   JXL_RETURN_IF_ERROR(frame_decoder.FinalizeFrame());
   // for the single-group case.
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
+  decoded->SetDecodedBytes(processed_bytes);
   return true;
 }
 
@@ -441,6 +375,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   processed_section_.clear();
   processed_section_.resize(section_offsets_.size());
   max_passes_ = frame_header_.passes.num_passes;
+  num_renders_ = 0;
 
   return true;
 }
@@ -488,7 +423,8 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   const Rect mrect(gx * kDcGroupDim, gy * kDcGroupDim, kDcGroupDim,
                    kDcGroupDim);
   JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
-      mrect, br, 3, 1000, ModularStreamId::ModularDC(dc_group_id)));
+      mrect, br, 3, 1000, ModularStreamId::ModularDC(dc_group_id),
+      /*zerofill=*/false));
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         modular_frame_decoder_.DecodeAcMetadata(dc_group_id, br, dec_state_));
@@ -506,16 +442,18 @@ void FrameDecoder::FinalizeDC() {
     AdaptiveDCSmoothing(dec_state_->shared->quantizer.MulDC(),
                         &dec_state_->shared_storage.dc_storage, pool_);
   }
+
+  finalized_dc_ = true;
+}
+
+Status FrameDecoder::ProcessACGlobal(BitReader* br) {
+  JXL_CHECK(finalized_dc_);
+
   // Allocate output image.
-  const auto output_encoding =
-      frame_header_.color_transform == ColorTransform::kXYB
-          ? ColorEncoding::LinearSRGB(
-                decoded_->metadata()->color_encoding.IsGray())
-          : decoded_->metadata()->color_encoding;
+  const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   decoded_->SetFromImage(
       Image3F(frame_dim_.xsize_padded, frame_dim_.ysize_padded),
-      output_encoding);
-  const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
+      dec_state_->output_encoding);
   if (metadata.m.num_extra_channels > 0) {
     std::vector<ImageF> ecv;
     for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
@@ -525,17 +463,10 @@ void FrameDecoder::FinalizeDC() {
     }
     decoded_->SetExtraChannels(std::move(ecv));
   }
-  finalized_dc_ = true;
-}
+  decoded_->origin = dec_state_->shared->frame_header.frame_origin;
 
-Status FrameDecoder::ProcessACGlobal(BitReader* br) {
-  JXL_CHECK(finalized_dc_);
   // Decode AC group.
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
-    if (aux_out_ && aux_out_->testing_aux.dc) {
-      *aux_out_->testing_aux.dc = CopyImage(*dec_state_->shared_storage.dc);
-    }
-
     JXL_RETURN_IF_ERROR(dec_state_->shared_storage.matrices.Decode(
         br, &modular_frame_decoder_));
 
@@ -571,12 +502,16 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
     // TODO(veluca): figure out the exact limit - 16 should still work with
     // 16-bit buffers, but we are excluding it for safety.
     bool use_16_bit = max_num_bits_ac < 16 && !decoded_->IsJPEG();
-    // TODO(veluca): storing AC coefficients between passes is not implemented
-    // yet.
+    bool store = frame_header_.passes.num_passes > 1;
+    size_t xs = store ? kGroupDim * kGroupDim : 0;
+    size_t ys = store ? frame_dim_.num_groups : 0;
     if (use_16_bit) {
-      dec_state_->coefficients = make_unique<ACImageT<int16_t>>(0, 0);
+      dec_state_->coefficients = make_unique<ACImageT<int16_t>>(xs, ys);
     } else {
-      dec_state_->coefficients = make_unique<ACImageT<int32_t>>(0, 0);
+      dec_state_->coefficients = make_unique<ACImageT<int32_t>>(xs, ys);
+    }
+    if (store) {
+      dec_state_->coefficients->ZeroFill();
     }
   }
 
@@ -608,31 +543,43 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
       }
     }
   }
+  // Set memory buffer for pre-color-transform frame, if needed.
+  if (frame_header_.needs_color_transform() &&
+      frame_header_.save_before_color_transform) {
+    dec_state_->pre_color_transform_frame =
+        Image3F(frame_dim_.xsize_padded, frame_dim_.ysize_padded);
+  } else {
+    // clear pre_color_transform_frame to ensure that previously moved-from
+    // images are not used.
+    dec_state_->pre_color_transform_frame = Image3F();
+  }
   decoded_ac_global_ = true;
   return true;
 }
 
 Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
                                     BitReader* JXL_RESTRICT* br,
-                                    size_t num_passes, size_t thread) {
+                                    size_t num_passes, size_t thread,
+                                    bool force_draw) {
   PROFILER_ZONE("process_group");
   const size_t gx = ac_group_id % frame_dim_.xsize_groups;
   const size_t gy = ac_group_id / frame_dim_.xsize_groups;
   const size_t x = gx * frame_dim_.group_dim;
   const size_t y = gy * frame_dim_.group_dim;
 
+  if (frame_header_.encoding == FrameEncoding::kVarDCT) {
+    group_dec_caches_[thread].InitOnce(frame_header_.passes.num_passes);
+    JXL_RETURN_IF_ERROR(
+        DecodeGroup(br, num_passes, ac_group_id, dec_state_,
+                    &group_dec_caches_[thread], thread, decoded_,
+                    decoded_passes_per_ac_group_[ac_group_id], force_draw));
+  }
+
   // don't limit to image dimensions here (is done in DecodeGroup)
   const Rect mrect(x, y, frame_dim_.group_dim, frame_dim_.group_dim);
-  if (frame_header_.encoding == FrameEncoding::kVarDCT) {
-    JXL_RETURN_IF_ERROR(DecodeGroup(br, num_passes, ac_group_id, dec_state_,
-                                    &group_dec_caches_[thread], thread,
-                                    decoded_->color(), decoded_,
-                                    decoded_passes_per_ac_group_[ac_group_id]));
-  }
   int minShift = 0;
   int maxShift = 2;
-  for (size_t i = 0; i < decoded_passes_per_ac_group_[ac_group_id] + num_passes;
-       i++) {
+  for (size_t i = 0; i < frame_header_.passes.num_passes; i++) {
     for (uint32_t j = 0; j < frame_header_.passes.num_downsample; ++j) {
       if (i <= frame_header_.passes.last_pass[j]) {
         if (frame_header_.passes.downsample[j] == 8) minShift = 3;
@@ -641,10 +588,17 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
         if (frame_header_.passes.downsample[j] == 1) minShift = 0;
       }
     }
-    if (i >= decoded_passes_per_ac_group_[ac_group_id]) {
+    if (i >= decoded_passes_per_ac_group_[ac_group_id] &&
+        i < decoded_passes_per_ac_group_[ac_group_id] + num_passes) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
-          maxShift, ModularStreamId::ModularAC(ac_group_id, i)));
+          maxShift, ModularStreamId::ModularAC(ac_group_id, i),
+          /*zerofill=*/false));
+    } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
+               force_draw) {
+      JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
+          mrect, nullptr, minShift, maxShift,
+          ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true));
     }
     maxShift = minShift - 1;
     minShift = 0;
@@ -659,7 +613,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   std::fill(section_status, section_status + num, SectionStatus::kSkipped);
   size_t dc_global_sec = num;
   size_t ac_global_sec = num;
-  std::vector<size_t> dc_group_sec(frame_dim_.num_dc_groups);
+  std::vector<size_t> dc_group_sec(frame_dim_.num_dc_groups, num);
   std::vector<std::vector<size_t>> ac_group_sec(
       frame_dim_.num_groups,
       std::vector<size_t>(frame_header_.passes.num_passes, num));
@@ -699,7 +653,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
         if (acp >= max_passes_) {
           continue;
         }
-        ac_group_sec[acg][acp] = sections[i].id;
+        ac_group_sec[acg][acp] = i;
       }
       processed_section_[sections[i].id] = true;
     }
@@ -750,32 +704,13 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
           true &&
       !finalized_dc_) {
     FinalizeDC();
-    // We don't have one full pass of AC yet: fill missing areas with upsampled
-    // DC.
-    // TODO(veluca): this is only correct if we assume a single call to
-    // ProcessSections.
-    if ((allow_partial_frames_ || max_passes_ == 0) &&
-        *std::min_element(num_ac_passes.begin(), num_ac_passes.end()) == 0) {
-      // Upsample DC. TODO(veluca): do this per-rect.
-      Image3F opsin = CopyImage(*dec_state_->shared->dc);
-      dec_state_->decoded = Image3F(opsin.xsize() * 8, opsin.ysize() * 8);
-      Upsampler upsampler;
-      upsampler.Init(8, frame_header_.nonserialized_metadata->transform_data);
-      upsampler.UpsampleRect(opsin, Rect(opsin), &dec_state_->decoded,
-                             Rect(dec_state_->decoded));
-      dec_state_->decoded =
-          PadImageMirror(dec_state_->decoded, kMaxFilterPadding, 0);
-      dec_state_->has_partial_ac_groups = true;
-    }
   }
 
-  if (finalized_dc_ && ac_global_sec != num) {
+  if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
 
-  // TODO(veluca): this is only correct if we have all the passes for a group at
-  // the same time.
   if (decoded_ac_global_) {
     RunOnPool(
         pool_, 0, ac_group_sec.size(),
@@ -795,10 +730,8 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
             JXL_ASSERT(ac_group_sec[g][first_pass + i] != num);
             readers[i] = sections[ac_group_sec[g][first_pass + i]].br;
           }
-          // TODO(veluca): this check is not needed if we support multiple calls
-          // to ProcessSections.
-          JXL_ASSERT(first_pass == 0);
-          if (!ProcessACGroup(g, readers, num_ac_passes[g], thread)) {
+          if (!ProcessACGroup(g, readers, num_ac_passes[g], thread,
+                              /*force_draw=*/false)) {
             has_error = true;
           } else {
             for (size_t i = 0; i < num_ac_passes[g]; i++) {
@@ -817,6 +750,61 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
       processed_section_[sections[i].id] = false;
     }
   }
+  return true;
+}
+
+Status FrameDecoder::Flush() {
+  if (decoded_->IsJPEG()) {
+    // Nothing to do.
+    return true;
+  }
+  if (!frame_header_.chroma_subsampling.Is444() && num_renders_ > 0) {
+    return JXL_FAILURE(
+        "Multiple renders with non-444 chroma subsampling are not yet "
+        "supported");
+  }
+  if (*std::min_element(decoded_passes_per_ac_group_.begin(),
+                        decoded_passes_per_ac_group_.end()) <
+      frame_header_.passes.num_passes) {
+    // We don't have all AC yet: force a draw of all the missing areas.
+    dec_state_->dc_upsampler.Init(
+        /*upsampling=*/8, frame_header_.nonserialized_metadata->transform_data);
+    std::atomic<bool> has_error{false};
+    RunOnPool(
+        pool_, 0, decoded_passes_per_ac_group_.size(),
+        [this](size_t num_threads) {
+          SetNumThreads(num_threads);
+          return true;
+        },
+        [this, &has_error](size_t g, size_t thread) {
+          if (decoded_passes_per_ac_group_[g] ==
+              frame_header_.passes.num_passes) {
+            // This group was drawn already, nothing to do.
+            return;
+          }
+          BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
+          if (!ProcessACGroup(g, readers, /*num_passes=*/0, thread,
+                              /*force_draw=*/true)) {
+            has_error = true;
+          }
+        },
+        "ForceDrawGroup");
+    if (has_error) {
+      return JXL_FAILURE("Drawing groups failed");
+    }
+  }
+  // TODO(veluca): the rest of this function should be removed once we have full
+  // support for per-group decoding.
+
+  // undo global modular transforms and copy int pixel buffers to float ones
+  JXL_RETURN_IF_ERROR(
+      modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_, decoded_));
+
+  JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
+                                            /*rerender=*/num_renders_ != 0,
+                                            /*skip_blending=*/false));
+
+  num_renders_++;
   return true;
 }
 
@@ -844,33 +832,28 @@ Status FrameDecoder::FinalizeFrame() {
         "FinalizeFrame called before the frame was fully decoded");
   }
 
-  // undo global modular transforms and copy int pixel buffers to float ones
-  JXL_RETURN_IF_ERROR(
-      modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_, decoded_));
-
-  // TODO(veluca): this too should be a noop once we move to per-group
-  // decoding.
-  JXL_RETURN_IF_ERROR(
-      FinalizeFrameDecoding(decoded_->color(), dec_state_, pool_));
-
-  decoded_->origin = dec_state_->shared->frame_header.frame_origin;
-  const auto& m = dec_state_->shared->metadata->m;
-  // Convert to original colorspace if supported without CMS.
-  // TODO(lode): support more of the ColorEncoding enum values as CMS-less
-  // conversions.
-  if (m.xyb_encoded &&
-      !dec_state_->shared->frame_header.save_before_color_transform) {
-    if (m.color_encoding.IsSRGB()) {
-      LinearToSRGBInPlace(pool_, decoded_->color(), 3);
-      decoded_->OverrideProfile(ColorEncoding::SRGB(decoded_->IsGray()));
-    }
-  }
-  // TODO(veluca): should be in dec_reconstruct.
-  JXL_RETURN_IF_ERROR(DoBlending(dec_state_, decoded_));
+  JXL_RETURN_IF_ERROR(Flush());
 
   if (dec_state_->shared->frame_header.CanBeReferenced()) {
     size_t id = dec_state_->shared->frame_header.save_as_reference;
-    dec_state_->shared_storage.reference_frames[id].storage = decoded_->Copy();
+    if (dec_state_->pre_color_transform_frame.xsize() == 0) {
+      dec_state_->shared_storage.reference_frames[id].storage =
+          decoded_->Copy();
+    } else {
+      dec_state_->shared_storage.reference_frames[id].storage =
+          ImageBundle(decoded_->metadata());
+      dec_state_->shared_storage.reference_frames[id].storage.SetFromImage(
+          std::move(dec_state_->pre_color_transform_frame),
+          decoded_->c_current());
+      if (decoded_->HasExtraChannels()) {
+        std::vector<ImageF> extra_channels;
+        for (const auto& ec : decoded_->extra_channels()) {
+          extra_channels.push_back(CopyImage(ec));
+        }
+        dec_state_->shared_storage.reference_frames[id]
+            .storage.SetExtraChannels(std::move(extra_channels));
+      }
+    }
     dec_state_->shared_storage.reference_frames[id].frame =
         &dec_state_->shared_storage.reference_frames[id].storage;
     dec_state_->shared_storage.reference_frames[id].ib_is_in_xyb =

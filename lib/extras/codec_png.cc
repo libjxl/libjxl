@@ -745,7 +745,7 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes) {
   ImageBundle ib = io->Main().Copy();
-  const size_t alpha_bits = ib.HasAlpha() ? io->metadata.m.GetAlphaBits() : 0;
+  const size_t alpha_bits = ib.HasAlpha() ? bits_per_sample : 0;
   ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
@@ -780,7 +780,7 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
   // Automatically call free(out) on return.
   std::unique_ptr<unsigned char, void (*)(void*)> out_ptr{out, free};
   if (err != 0) {
-    return JXL_FAILURE("Failed to encode PNG");
+    return JXL_FAILURE("Failed to encode PNG: %s", lodepng_error_text(err));
   }
   bytes->resize(out_size);
   memcpy(bytes->data(), out, out_size);

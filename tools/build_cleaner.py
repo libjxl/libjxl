@@ -36,18 +36,33 @@ def RepoFiles(src_dir):
   ret.sort()
   return ret
 
-
-def SplitLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui'),
-                  testonly=('_test.cc',)):
-  """Split the files that start with the prefix into sources and test files."""
+def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
+  """Gets the library files that start with the prefix and end with source
+  code suffix."""
   prefix_files = [
       fn for fn in repo_files
       if fn.startswith(prefix) and any(fn.endswith(suf) for suf in suffixes)]
-  main_srcs = [fn for fn in prefix_files
-               if not any(patt in fn for patt in testonly)]
-  test_srcs = [fn for fn in prefix_files
+  return prefix_files
+
+def SplitLibFiles(repo_files):
+  """Splits the library files into decoder sources, encoder sources, tests and threads sources."""
+  testonly=('testdata.h', 'test_utils.h', '_test.h', '_test.cc')
+  main_srcs = GetPrefixLibFiles(repo_files, 'lib/jxl/')
+  test_srcs = [fn for fn in main_srcs
                if any(patt in fn for patt in testonly)]
-  return main_srcs, test_srcs
+  lib_srcs = [fn for fn in main_srcs
+               if not any(patt in fn for patt in testonly)]
+  # TODO(lode): a list of more files, not all starting with enc, needs to be
+  # added to the enc sources as well
+  prefix_enc = 'lib/jxl/enc'
+  dec_srcs = [fn for fn in lib_srcs
+              if not fn.startswith(prefix_enc)]
+  enc_srcs = [fn for fn in lib_srcs
+              if fn.startswith(prefix_enc)]
+  thread_srcs = GetPrefixLibFiles(repo_files, 'lib/threads/')
+  thread_srcs = [fn for fn in thread_srcs
+               if not any(patt in fn for patt in testonly)]
+  return dec_srcs, enc_srcs, test_srcs, thread_srcs
 
 
 def CleanFile(args, filename, pattern_data_list):
@@ -108,6 +123,7 @@ def BuildCleaner(args):
   ok = True
 
   gni_patterns = []
+  jxl_cmake_patterns = []
 
   # jxl version
   with open(os.path.join(args.src_dir, 'lib/CMakeLists.txt'), 'r') as f:
@@ -120,27 +136,29 @@ def BuildCleaner(args):
     version_value = match.group(1)
     gni_patterns.append((r'"' + varname + r'=([0-9]+)"', version_value))
 
-  # libjxl
-  jxl_src, jxl_tests = SplitLibFiles(
-      repo_files, 'lib/jxl/',
-      testonly=('testdata.h', 'test_utils.h', '_test.h', '_test.cc'))
+  jxl_src_dec, jxl_src_enc, jxl_tests, threads_src = SplitLibFiles(repo_files)
 
+  # libjxl
+  jxl_cmake_patterns.append((r'set\(JPEGXL_INTERNAL_SOURCES_DEC\n([^\)]+)\)',
+        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src_dec)))
+  jxl_cmake_patterns.append((r'set\(JPEGXL_INTERNAL_SOURCES_ENC\n([^\)]+)\)',
+        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src_enc)))
   ok = CleanFile(
       args, 'lib/jxl.cmake',
-      [(r'set\(JPEGXL_INTERNAL_SOURCES\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src))]) and ok
+      jxl_cmake_patterns) and ok
 
   gni_patterns.append((
-      r'libjxl_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src)))
+      r'libjxl_dec_sources = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src_dec)))
+  gni_patterns.append((
+      r'libjxl_enc_sources = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src_enc)))
   gni_patterns.append((
       r'libjxl_tests_sources = \[\n([^\]]+)\]',
       ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_tests
               if fn.endswith('_test.cc'))))
 
   # libjxl_threads
-  threads_src, _ = SplitLibFiles(
-      repo_files, 'lib/threads/')
   ok = CleanFile(
       args, 'lib/jxl_threads.cmake',
       [(r'set\(JPEGXL_THREADS_SOURCES\n([^\)]+)\)',

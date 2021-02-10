@@ -39,12 +39,15 @@ namespace jxl {
 //
 // Writes pixels in the appropriate colorspace to `idct`, shrinking it if
 // necessary.
-Status FinalizeFrameDecoding(Image3F* JXL_RESTRICT idct,
-                             PassesDecoderState* dec_state, ThreadPool* pool);
+// `skip_blending` is necessary because the encoder butteraugli loop does not
+// (yet) handle blending.
+Status FinalizeFrameDecoding(ImageBundle* JXL_RESTRICT decoded,
+                             PassesDecoderState* dec_state, ThreadPool* pool,
+                             bool rerender, bool skip_blending);
 
-// Applies image features on the given `idct_rect` of `idct`, interpreted as the
-// `image_rect` region of the full image.
-Status FinalizeImageRect(Image3F* JXL_RESTRICT idct, const Rect& rect,
+// Render the `rect` portion of `decoded`, taking data from `dec_state`.
+// Takes an ImageBundle to have access to extra channels.
+Status FinalizeImageRect(ImageBundle* JXL_RESTRICT decoded, const Rect& rect,
                          PassesDecoderState* dec_state, size_t thread);
 
 }  // namespace jxl

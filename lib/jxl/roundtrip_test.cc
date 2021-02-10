@@ -35,7 +35,19 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
           : jxl::ColorSpace::kRGB);
   if (pixel_format.num_channels == 2 || pixel_format.num_channels == 4) {
     // Note: alpha > 16 not yet supported by the C++ codec
-    io.metadata.m.SetAlphaBits(16);
+    switch (pixel_format.data_type) {
+      case JXL_TYPE_UINT8:
+        io.metadata.m.SetAlphaBits(8);
+        break;
+      case JXL_TYPE_UINT16:
+      case JXL_TYPE_UINT32:
+      case JXL_TYPE_FLOAT:
+        io.metadata.m.SetAlphaBits(16);
+        break;
+      default:
+        EXPECT_TRUE(false) << "Roundtrip tests for data type "
+                           << pixel_format.data_type << " not yet implemented.";
+    }
   }
   size_t bitdepth = 0;
   switch (pixel_format.data_type) {
@@ -152,11 +164,10 @@ std::vector<uint8_t> GetTestImage(const size_t xsize, const size_t ysize,
             ConvertTestPixel<T>(val);
       }
     }
-    std::vector<uint8_t> bytes(pixels.size() * sizeof(T));
-    memcpy(bytes.data(), pixels.data(), sizeof(T) * pixels.size());
-    return bytes;
   }
-  return {};
+  std::vector<uint8_t> bytes(pixels.size() * sizeof(T));
+  memcpy(bytes.data(), pixels.data(), sizeof(T) * pixels.size());
+  return bytes;
 }
 
 // Generates some pixels using using some dimensions and pixel_format,
@@ -175,7 +186,22 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
   EXPECT_NE(nullptr, enc);
 
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetDimensions(enc, xsize, ysize));
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &input_pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.uses_original_profile = lossless;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
+  JxlColorEncoding color_encoding;
+  if (input_pixel_format.data_type == JXL_TYPE_FLOAT) {
+    JxlColorEncodingSetToLinearSRGB(
+        &color_encoding,
+        /*is_gray=*/input_pixel_format.num_channels < 3);
+  } else {
+    JxlColorEncodingSetToSRGB(&color_encoding,
+                              /*is_gray=*/input_pixel_format.num_channels < 3);
+  }
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
   JxlEncoderOptions* opts = JxlEncoderOptionsCreate(enc, nullptr);
   JxlEncoderOptionsSetLossless(opts, lossless);
   EXPECT_EQ(JXL_ENC_SUCCESS,
@@ -268,12 +294,17 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
 }  // namespace
 
 TEST(RoundtripTest, FloatFrameRoundtripTest) {
-  // TODO(zond): Add a lossless test here as well.
-  for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
-    JxlPixelFormat pixel_format =
-        JxlPixelFormat{num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
-    VerifyRoundtripCompression<float>(63, 129, pixel_format, pixel_format,
-                                      false);
+  for (int lossless = 0; lossless < 2; lossless++) {
+    for (uint32_t num_channels = 1; num_channels < 5; num_channels++) {
+      // There's no support (yet) for lossless extra float channels, so we don't
+      // test it.
+      if (num_channels % 2 != 0 || !lossless) {
+        JxlPixelFormat pixel_format =
+            JxlPixelFormat{num_channels, JXL_TYPE_FLOAT, JXL_NATIVE_ENDIAN, 0};
+        VerifyRoundtripCompression<float>(63, 129, pixel_format, pixel_format,
+                                          (bool)lossless);
+      }
+    }
   }
 }
 

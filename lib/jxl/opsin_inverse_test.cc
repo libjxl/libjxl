@@ -56,7 +56,7 @@ TEST(OpsinInverseTest, YcbCrInverts) {
 
   Image3F rgb2(rgb.xsize(), rgb.ysize());
   YcbcrToRgb(ycbcr.Plane(0), ycbcr.Plane(1), ycbcr.Plane(2), &rgb2.Plane(0),
-             &rgb2.Plane(1), &rgb2.Plane(2), null_pool);
+             &rgb2.Plane(1), &rgb2.Plane(2), Rect(rgb), null_pool);
 
   VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7);
 }

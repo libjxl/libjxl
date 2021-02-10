@@ -336,12 +336,6 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->Bool(true, &save_before_color_transform));
     }
-    if (frame_type != FrameType::kReferenceOnly &&
-        save_before_color_transform) {
-      return JXL_FAILURE(
-          "Saving the frame before color transform is not implemented if the "
-          "frame is not a reference-only frame");
-    }
   } else {
     save_before_color_transform = true;
   }

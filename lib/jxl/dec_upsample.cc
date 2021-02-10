@@ -61,13 +61,14 @@ void Upsample(const Image3F& src, const Rect& src_rect, Image3F* dst,
         src_rows[iy + 2] =
             src.PlaneRow(c, Mirror(static_cast<int>(y) / N +
                                        static_cast<int>(src_rect.y0()) + iy,
-                                   src.ysize())) +
-            src_rect.x0();
+                                   src.ysize()));
       }
       for (size_t x = 0; x < dst_rect.xsize(); x++) {
         int src_x[5];
         for (int ix = -2; ix <= 2; ix++) {
-          src_x[ix + 2] = Mirror(static_cast<int>(x) / N + ix, src.xsize());
+          src_x[ix + 2] = Mirror(
+              static_cast<int>(x) / N + ix + static_cast<int>(src_rect.x0()),
+              src.xsize());
         }
         float result = 0;
         float min = src_rows[0][src_x[0]];
@@ -105,6 +106,8 @@ void Upsampler::Init(size_t upsampling, const CustomTransformData& data) {
 void Upsampler::UpsampleRect(const Image3F& src, const Rect& src_rect,
                              Image3F* dst, const Rect& dst_rect) const {
   if (upsampling_ == 1) return;
+  JXL_ASSERT(dst_rect.xsize() == src_rect.xsize() * upsampling_);
+  JXL_ASSERT(dst_rect.ysize() == src_rect.ysize() * upsampling_);
   if (upsampling_ == 2) {
     Upsample<2>(src, src_rect, dst, dst_rect, kernel_);
   } else if (upsampling_ == 4) {

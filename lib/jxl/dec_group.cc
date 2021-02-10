@@ -63,6 +63,17 @@ class GetBlock {
   virtual ~GetBlock() {}
 };
 
+// Controls whether DecodeGroupImpl renders to pixels or not.
+enum DrawMode {
+  // Render to pixels.
+  kDraw = 0,
+  // Don't render to pixels.
+  kDontDraw = 1,
+  // Don't do IDCT or dequantization, but just postprocessing. Used for
+  // progressive DC.
+  kOnlyImageFeatures = 2,
+};
+
 }  // namespace jxl
 #endif  // LIB_JXL_DEC_GROUP_CC
 
@@ -166,9 +177,8 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
 Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        GroupDecCache* JXL_RESTRICT group_dec_cache,
                        PassesDecoderState* JXL_RESTRICT dec_state,
-                       size_t thread, size_t group_idx,
-                       Image3F* JXL_RESTRICT output,
-                       const ImageBundle* decoded) {
+                       size_t thread, size_t group_idx, ImageBundle* decoded,
+                       DrawMode draw) {
   PROFILER_FUNC;
 
   const Rect block_rect = dec_state->shared->BlockGroupRect(group_idx);
@@ -241,6 +251,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   }
 
   for (size_t by = 0; by < ysize_blocks; ++by) {
+    if (draw == kOnlyImageFeatures) break;
     get_block->StartRow(by);
     size_t sby[3] = {by >> vshift[0], by >> vshift[1], by >> vshift[2]};
 
@@ -309,6 +320,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
             qblock[c] = dec_state->coefficients->PlaneRow(c, group_idx, offset);
           }
         } else {
+          // No point in reading from bitstream without accumulating and not
+          // drawing.
+          JXL_ASSERT(draw == kDraw);
           if (ac_type == ACType::k16) {
             memset(group_dec_cache->dec_group_qblock16, 0,
                    size * 3 * sizeof(int16_t));
@@ -326,6 +340,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         JXL_RETURN_IF_ERROR(get_block->LoadBlock(
             bx, by, acs, size, log2_covered_blocks, qblock, ac_type));
         offset += size;
+        if (draw == kDontDraw) {
+          bx += llf_x;
+          continue;
+        }
 
         if (JXL_UNLIKELY(decoded->IsJPEG())) {
           if (acs.Strategy() != AcStrategy::Type::DCT) {
@@ -383,16 +401,13 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         } else {
           HWY_ALIGN float* const block = group_dec_cache->dec_group_block;
           // Dequantize and add predictions.
-          {
-            dequant_block(
-                acs, inv_global_scale, row_quant[bx],
-                dec_state->x_dm_multiplier, dec_state->b_dm_multiplier,
-                x_cc_mul, b_cc_mul, acs.RawStrategy(), size,
-                dec_state->shared->quantizer, dequant_matrices,
-                acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
-                dc_stride, dec_state->shared->opsin_params.quant_biases, qblock,
-                block);
-          }
+          dequant_block(
+              acs, inv_global_scale, row_quant[bx], dec_state->x_dm_multiplier,
+              dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.RawStrategy(),
+              size, dec_state->shared->quantizer, dequant_matrices,
+              acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
+              dc_stride, dec_state->shared->opsin_params.quant_biases, qblock,
+              block);
 
           for (size_t c : {1, 0, 2}) {
             if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
@@ -408,6 +423,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
         bx += llf_x;
       }
     }
+  }
+  if (draw == kDontDraw) {
+    return true;
   }
   // Apply image features to
   // - the whole AC group, if no loop filtering is enabled, or
@@ -427,12 +445,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
   // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
   // be done after decoding the whole image (this allows it to work on the
-  // chroma channels too), or if there is not at least one pass per AC group.
-  // TODO(veluca): if there are no passes for this AC group, upsample DC here
-  // instead, then call FinalizeImageRect.
-  bool run_apply_image_features = xstart < xend && ystart < yend &&
-                                  !decoded->IsJPEG() && cs.Is444() &&
-                                  !dec_state->has_partial_ac_groups;
+  // chroma channels too).
+  bool run_apply_image_features =
+      xstart < xend && ystart < yend && !decoded->IsJPEG() && cs.Is444();
 
   static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
                 "Groups are too large");
@@ -449,11 +464,19 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   }
 
   if (JXL_LIKELY(run_apply_image_features)) {
-    return FinalizeImageRect(output, aif_rect, dec_state, thread);
+    return FinalizeImageRect(decoded, aif_rect, dec_state, thread);
   }
   return true;
 }
 
+// NOLINTNEXTLINE(google-readability-namespace-comments)
+}  // namespace HWY_NAMESPACE
+}  // namespace jxl
+HWY_AFTER_NAMESPACE();
+
+#if HWY_ONCE
+namespace jxl {
+namespace {
 // Decode quantized AC coefficients of DCT blocks.
 // LLF components in the output block will not be modified.
 template <ACType ac_type>
@@ -584,8 +607,9 @@ struct GetBlockFromBitstream : public GetBlock {
       hshift[i] = dec_state->shared->frame_header.chroma_subsampling.HShift(i);
       vshift[i] = dec_state->shared->frame_header.chroma_subsampling.VShift(i);
     }
-    this->coeff_orders = dec_state->shared->coeff_orders.data();
-    this->context_map = dec_state->context_map.data();
+    this->coeff_orders =
+        dec_state->shared->coeff_orders.data() + first_pass * kCoeffOrderSize;
+    this->context_map = dec_state->context_map.data() + first_pass;
     this->readers = readers;
     this->num_passes = num_passes;
     this->shift_for_pass =
@@ -676,19 +700,36 @@ struct GetBlockFromEncoder : public GetBlock {
   const int32_t* JXL_RESTRICT rows[kMaxNumPasses][3];
 };
 
-// TODO(veluca): move out of HWY_NAMESPACE.
+HWY_EXPORT(DecodeGroupImpl);
+
+}  // namespace
+
 Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    size_t num_passes, size_t group_idx,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
-                   Image3F* output, ImageBundle* JXL_RESTRICT decoded,
-                   size_t first_pass) {
+                   ImageBundle* JXL_RESTRICT decoded, size_t first_pass,
+                   bool force_draw) {
   PROFILER_FUNC;
-
-  group_dec_cache->InitOnce(num_passes);
 
   size_t histo_selector_bits =
       CeilLog2Nonzero(dec_state->shared->num_histograms);
+
+  DrawMode draw = (num_passes + first_pass ==
+                   dec_state->shared->frame_header.passes.num_passes) ||
+                          force_draw
+                      ? kDraw
+                      : kDontDraw;
+
+  if (draw == kDraw && num_passes == 0 && first_pass == 0) {
+    Rect src_rect = dec_state->shared->BlockGroupRect(group_idx);
+    Rect dst_rect(src_rect.x0() * 8 + dec_state->decoded_padding,
+                  src_rect.y0() * 8, src_rect.xsize() * 8,
+                  src_rect.ysize() * 8);
+    dec_state->dc_upsampler.UpsampleRect(*dec_state->shared->dc, src_rect,
+                                         &dec_state->decoded, dst_rect);
+    draw = kOnlyImageFeatures;
+  }
 
   GetBlockFromBitstream get_block;
   JXL_RETURN_IF_ERROR(
@@ -696,8 +737,9 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                      dec_state->shared->BlockGroupRect(group_idx),
                      group_dec_cache, dec_state, first_pass));
 
-  JXL_RETURN_IF_ERROR(DecodeGroupImpl(&get_block, group_dec_cache, dec_state,
-                                      thread, group_idx, output, decoded));
+  JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(
+      &get_block, group_dec_cache, dec_state, thread, group_idx, decoded,
+      draw));
 
   for (size_t pass = 0; pass < num_passes; pass++) {
     if (!get_block.decoders[pass].CheckANSFinalState()) {
@@ -711,47 +753,15 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                size_t group_idx,
                                PassesDecoderState* JXL_RESTRICT dec_state,
                                GroupDecCache* JXL_RESTRICT group_dec_cache,
-                               size_t thread, Image3F* JXL_RESTRICT output,
-                               ImageBundle* JXL_RESTRICT decoded,
+                               size_t thread, ImageBundle* JXL_RESTRICT decoded,
                                AuxOut* aux_out) {
   PROFILER_FUNC;
 
   GetBlockFromEncoder get_block(ac, group_idx);
 
-  return DecodeGroupImpl(&get_block, group_dec_cache, dec_state, thread,
-                         group_idx, output, decoded);
-}
-
-// NOLINTNEXTLINE(google-readability-namespace-comments)
-}  // namespace HWY_NAMESPACE
-}  // namespace jxl
-HWY_AFTER_NAMESPACE();
-
-#if HWY_ONCE
-namespace jxl {
-HWY_EXPORT(DecodeGroup);
-Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
-                   size_t num_passes, size_t group_idx,
-                   PassesDecoderState* JXL_RESTRICT dec_state,
-                   GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
-                   Image3F* opsin, ImageBundle* JXL_RESTRICT decoded,
-                   size_t first_pass) {
-  return HWY_DYNAMIC_DISPATCH(DecodeGroup)(readers, num_passes, group_idx,
-                                           dec_state, group_dec_cache, thread,
-                                           opsin, decoded, first_pass);
-}
-
-HWY_EXPORT(DecodeGroupForRoundtrip);
-Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
-                               size_t group_idx,
-                               PassesDecoderState* JXL_RESTRICT dec_state,
-                               GroupDecCache* JXL_RESTRICT group_dec_cache,
-                               size_t thread, Image3F* JXL_RESTRICT opsin,
-                               ImageBundle* JXL_RESTRICT decoded,
-                               AuxOut* aux_out) {
-  return HWY_DYNAMIC_DISPATCH(DecodeGroupForRoundtrip)(ac, group_idx, dec_state,
-                                                       group_dec_cache, thread,
-                                                       opsin, decoded, aux_out);
+  return HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(&get_block, group_dec_cache,
+                                               dec_state, thread, group_idx,
+                                               decoded, kDraw);
 }
 
 }  // namespace jxl

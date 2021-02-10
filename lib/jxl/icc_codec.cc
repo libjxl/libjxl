@@ -86,28 +86,22 @@ void AppendUint32(uint32_t value, PaddedBytes* data) {
   EncodeUint32(data->size() - 4, value, data);
 }
 
-std::string DecodeKeyword(const uint8_t* data, size_t size, size_t pos) {
-  if (pos + 4 > size) return "    ";
-  std::string result;
-  result += data[pos + 0];
-  result += data[pos + 1];
-  result += data[pos + 2];
-  result += data[pos + 3];
-  return result;
+typedef std::array<uint8_t, 4> Tag;
+
+Tag DecodeKeyword(const uint8_t* data, size_t size, size_t pos) {
+  if (pos + 4 > size) return {' ', ' ', ' ', ' '};
+  return {data[pos], data[pos + 1], data[pos + 2], data[pos + 3]};
 }
 
-void EncodeKeyword(const std::string& keyword, uint8_t* data, size_t size,
+void EncodeKeyword(const Tag& keyword, uint8_t* data, size_t size,
                    size_t pos) {
   if (keyword.size() != 4 || pos + 3 >= size) return;
-  data[pos + 0] = keyword[0];
-  data[pos + 1] = keyword[1];
-  data[pos + 2] = keyword[2];
-  data[pos + 3] = keyword[3];
+  for (size_t i = 0; i < 4; ++i) data[pos + i] = keyword[i];
 }
 
-void AppendKeyword(const std::string& keyword, PaddedBytes* data) {
-  data->resize(data->size() + 4);
-  EncodeKeyword(keyword, data->data(), data->size(), data->size() - 4);
+void AppendKeyword(const Tag& keyword, PaddedBytes* data) {
+  JXL_ASSERT(keyword.size() == 4);
+  data->append(keyword);
 }
 
 // Unshuffles or de-interleaves bytes, for example with width 2, turns
@@ -163,22 +157,54 @@ void Shuffle(uint8_t* data, size_t size, size_t width) {
 
 static constexpr size_t kICCHeaderSize = 128;
 
+static const Tag kAcspTag = {'a', 'c', 's', 'p'};
+static const Tag kBkptTag = {'b', 'k', 'p', 't'};
+static const Tag kBtrcTag = {'b', 'T', 'R', 'C'};
+static const Tag kBxyzTag = {'b', 'X', 'Y', 'Z'};
+static const Tag kChadTag = {'c', 'h', 'a', 'd'};
+static const Tag kChrmTag = {'c', 'h', 'r', 'm'};
+static const Tag kCprtTag = {'c', 'p', 'r', 't'};
+static const Tag kCurvTag = {'c', 'u', 'r', 'v'};
+static const Tag kDescTag = {'d', 'e', 's', 'c'};
+static const Tag kDmddTag = {'d', 'm', 'd', 'd'};
+static const Tag kDmndTag = {'d', 'm', 'n', 'd'};
+static const Tag kGbd_Tag = {'g', 'b', 'd', ' '};
+static const Tag kGtrcTag = {'g', 'T', 'R', 'C'};
+static const Tag kGxyzTag = {'g', 'X', 'Y', 'Z'};
+static const Tag kKtrcTag = {'k', 'T', 'R', 'C'};
+static const Tag kKxyzTag = {'k', 'X', 'Y', 'Z'};
+static const Tag kLumiTag = {'l', 'u', 'm', 'i'};
+static const Tag kMab_Tag = {'m', 'A', 'B', ' '};
+static const Tag kMba_Tag = {'m', 'B', 'A', ' '};
+static const Tag kMlucTag = {'m', 'l', 'u', 'c'};
+static const Tag kMntrTag = {'m', 'n', 't', 'r'};
+static const Tag kParaTag = {'p', 'a', 'r', 'a'};
+static const Tag kRgb_Tag = {'R', 'G', 'B', ' '};
+static const Tag kRtrcTag = {'r', 'T', 'R', 'C'};
+static const Tag kRxyzTag = {'r', 'X', 'Y', 'Z'};
+static const Tag kSf32Tag = {'s', 'f', '3', '2'};
+static const Tag kTextTag = {'t', 'e', 'x', 't'};
+static const Tag kVcgtTag = {'v', 'c', 'g', 't'};
+static const Tag kWtptTag = {'w', 't', 'p', 't'};
+static const Tag kXyz_Tag = {'X', 'Y', 'X', ' '};
+
 // Tag names focused on RGB and GRAY monitor profiles
-static const char* kTagStrings[] = {
-    "cprt", "wtpt", "bkpt", "rXYZ", "gXYZ", "bXYZ", "kXYZ", "rTRC", "gTRC",
-    "bTRC", "kTRC", "chad", "desc", "chrm", "dmnd", "dmdd", "lumi",
-};
+constexpr const size_t kNumTagStrings = 17;
+static const Tag* kTagStrings[kNumTagStrings] = {
+    &kCprtTag, &kWtptTag, &kBkptTag, &kRxyzTag, &kGxyzTag, &kBxyzTag,
+    &kKxyzTag, &kRtrcTag, &kGtrcTag, &kBtrcTag, &kKtrcTag, &kChadTag,
+    &kDescTag, &kChrmTag, &kDmndTag, &kDmddTag, &kLumiTag};
 
 static constexpr size_t kCommandTagUnknown = 1;
 static constexpr size_t kCommandTagTRC = 2;
 static constexpr size_t kCommandTagXYZ = 3;
 static constexpr size_t kCommandTagStringFirst = 4;
-const size_t kNumTagStrings = sizeof(kTagStrings) / sizeof(*kTagStrings);
 
 // Tag types focused on RGB and GRAY monitor profiles
-static const char* kTypeStrings[] = {
-    "XYZ ", "desc", "text", "mluc", "para", "curv", "sf32", "gbd ",
-};
+constexpr const size_t kNumTypeStrings = 8;
+static const Tag* kTypeStrings[kNumTypeStrings] = {
+    &kXyz_Tag, &kDescTag, &kTextTag, &kMlucTag,
+    &kParaTag, &kCurvTag, &kSf32Tag, &kGbd_Tag};
 
 static constexpr size_t kCommandInsert = 1;
 static constexpr size_t kCommandShuffle2 = 2;
@@ -190,19 +216,16 @@ static constexpr size_t kCommandTypeStartFirst = 16;
 static constexpr size_t kFlagBitOffset = 64;
 static constexpr size_t kFlagBitSize = 128;
 
-static constexpr size_t kNumTypeStrings =
-    sizeof(kTypeStrings) / sizeof(*kTypeStrings);
-
 PaddedBytes InitHeaderPred() {
   PaddedBytes result(kICCHeaderSize);
   for (size_t i = 0; i < kICCHeaderSize; i++) {
     result[i] = 0;
   }
   result[8] = 4;
-  EncodeKeyword("mntr", result.data(), result.size(), 12);
-  EncodeKeyword("RGB ", result.data(), result.size(), 16);
-  EncodeKeyword("XYZ ", result.data(), result.size(), 20);
-  EncodeKeyword("acsp", result.data(), result.size(), 36);
+  EncodeKeyword(kMntrTag, result.data(), result.size(), 12);
+  EncodeKeyword(kRgb_Tag, result.data(), result.size(), 16);
+  EncodeKeyword(kXyz_Tag, result.data(), result.size(), 20);
+  EncodeKeyword(kAcspTag, result.data(), result.size(), 36);
   result[68] = 0;
   result[69] = 0;
   result[70] = 246;
@@ -290,11 +313,17 @@ uint8_t PredictValue(const uint8_t* data, size_t start, size_t i, size_t stride,
 }
 
 // Checks if a + b > size, taking possible integer overflow into account.
-bool OutOfBounds(size_t a, size_t b, size_t size) {
+Status CheckOutOfBounds(size_t a, size_t b, size_t size) {
   size_t pos = a + b;
-  if (pos > size) return true;
-  if (pos < a) return true;  // overflow happened
-  return false;
+  if (pos > size) return JXL_FAILURE("Out of bounds");
+  if (pos < a) return JXL_FAILURE("Out of bounds");  // overflow happened
+  return true;
+}
+
+Status CheckIs32Bit(uint64_t v) {
+  static constexpr const uint64_t kUpper32 = ~static_cast<uint64_t>(0xFFFFFFFF);
+  if ((v & kUpper32) != 0) return  JXL_FAILURE("32-bit value expected");
+  return true;
 }
 
 // This is performed by the encoder, the encoder must be able to encode any
@@ -303,7 +332,7 @@ bool OutOfBounds(size_t a, size_t b, size_t size) {
 Status PredictAndShuffle(size_t stride, size_t width, int order, size_t num,
                          const uint8_t* data, size_t size, size_t* pos,
                          PaddedBytes* result) {
-  if (OutOfBounds(*pos, num, size)) return JXL_FAILURE("Out of bounds");
+  JXL_RETURN_IF_ERROR(CheckOutOfBounds(*pos, num, size));
   if (*pos < stride * 4) return JXL_FAILURE("Too large stride");
   size_t start = result->size();
   for (size_t i = 0; i < num; i++) {
@@ -327,11 +356,14 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   // DecodeVarInt with out of bounds values, it silently returns, but the
   // specification requires an error. Idem for all DecodeVarInt below.
   if (pos >= size) return JXL_FAILURE("Out of bounds");
-  size_t osize = DecodeVarInt(enc, size, &pos);  // Output size
+  uint64_t osize = DecodeVarInt(enc, size, &pos);  // Output size
+  JXL_RETURN_IF_ERROR(CheckIs32Bit(osize));
   if (pos >= size) return JXL_FAILURE("Out of bounds");
-  size_t csize = DecodeVarInt(enc, size, &pos);  // Commands size
-  if (OutOfBounds(pos, csize, size)) return JXL_FAILURE("Out of bounds");
+  uint64_t csize = DecodeVarInt(enc, size, &pos);  // Commands size
+  // Every command is translated to at least on byte.
+  JXL_RETURN_IF_ERROR(CheckIs32Bit(csize));
   size_t cpos = pos;  // pos in commands stream
+  JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, csize, size));
   size_t commands_end = cpos + csize;
   pos = commands_end;  // pos in data stream
 
@@ -349,44 +381,49 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
     if (pos >= size) return JXL_FAILURE("Out of bounds");
     result->push_back(enc[pos++] + header[i]);
   }
+  if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
 
   // Tag list
-  if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
   uint64_t numtags = DecodeVarInt(enc, size, &cpos);
+  JXL_RETURN_IF_ERROR(CheckIs32Bit(numtags));
 
   if (numtags != 0) {
     numtags--;
     AppendUint32(numtags, result);
-    size_t prevtagstart = kICCHeaderSize + numtags * 12;
-    size_t prevtagsize = 0;
+    uint64_t prevtagstart = kICCHeaderSize + numtags * 12;
+    JXL_RETURN_IF_ERROR(CheckIs32Bit(prevtagstart));
+    uint64_t prevtagsize = 0;
     for (;;) {
+      if (result->size() > osize) return JXL_FAILURE("Invalid result size");
       if (cpos > commands_end) return JXL_FAILURE("Out of bounds");
       if (cpos == commands_end) break;  // Valid end
       uint8_t command = enc[cpos++];
       uint8_t tagcode = command & 63;
-      std::string tag;
+      Tag tag;
       if (tagcode == 0) {
         break;
       } else if (tagcode == kCommandTagUnknown) {
-        if (OutOfBounds(pos, 4, size)) return JXL_FAILURE("Out of bounds");
+        JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, 4, size));
         tag = DecodeKeyword(enc, size, pos);
         pos += 4;
       } else if (tagcode == kCommandTagTRC) {
-        tag = "rTRC";
+        tag = kRtrcTag;
       } else if (tagcode == kCommandTagXYZ) {
-        tag = "rXYZ";
+        tag = kRxyzTag;
       } else {
         if (tagcode - kCommandTagStringFirst >= kNumTagStrings) {
           return JXL_FAILURE("Unknown tagcode");
         }
-        tag = kTagStrings[tagcode - kCommandTagStringFirst];
+        tag = *kTagStrings[tagcode - kCommandTagStringFirst];
       }
       AppendKeyword(tag, result);
 
-      size_t tagstart = prevtagstart + prevtagsize;
-      size_t tagsize = prevtagsize;
-      if (tag == "rXYZ" || tag == "gXYZ" || tag == "bXYZ" || tag == "kXYZ" ||
-          tag == "wtpt" || tag == "bkpt" || tag == "lumi") {
+      // Safe to add, since the addends are 32-bit.
+      uint64_t tagstart = prevtagstart + prevtagsize;
+      uint64_t tagsize = prevtagsize;
+      if (tag == kRxyzTag || tag == kGxyzTag || tag == kBxyzTag ||
+          tag == kKxyzTag || tag == kWtptTag || tag == kBkptTag ||
+          tag == kLumiTag) {
         tagsize = 20;
       }
 
@@ -394,29 +431,32 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
         tagstart = DecodeVarInt(enc, size, &cpos);
       }
+      JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart));
       AppendUint32(tagstart, result);
       if (command & kFlagBitSize) {
         if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
         tagsize = DecodeVarInt(enc, size, &cpos);
       }
+      JXL_RETURN_IF_ERROR(CheckIs32Bit(tagsize));
       AppendUint32(tagsize, result);
       prevtagstart = tagstart;
       prevtagsize = tagsize;
 
       if (tagcode == kCommandTagTRC) {
-        AppendKeyword("gTRC", result);
+        AppendKeyword(kGtrcTag, result);
         AppendUint32(tagstart, result);
         AppendUint32(tagsize, result);
-        AppendKeyword("bTRC", result);
+        AppendKeyword(kBtrcTag, result);
         AppendUint32(tagstart, result);
         AppendUint32(tagsize, result);
       }
 
       if (tagcode == kCommandTagXYZ) {
-        AppendKeyword("gXYZ", result);
+        JXL_RETURN_IF_ERROR(CheckIs32Bit(tagstart + tagsize * 2));
+        AppendKeyword(kGxyzTag, result);
         AppendUint32(tagstart + tagsize, result);
         AppendUint32(tagsize, result);
-        AppendKeyword("bXYZ", result);
+        AppendKeyword(kBxyzTag, result);
         AppendUint32(tagstart + tagsize * 2, result);
         AppendUint32(tagsize, result);
       }
@@ -425,20 +465,21 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
 
   // Main Content
   for (;;) {
+    if (result->size() > osize) return JXL_FAILURE("Invalid result size");
     if (cpos > commands_end) return JXL_FAILURE("Out of bounds");
     if (cpos == commands_end) break;  // Valid end
     uint8_t command = enc[cpos++];
     if (command == kCommandInsert) {
       if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
       uint64_t num = DecodeVarInt(enc, size, &cpos);
-      if (OutOfBounds(pos, num, size)) return JXL_FAILURE("Out of bounds");
+      JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
       for (size_t i = 0; i < num; i++) {
         result->push_back(enc[pos++]);
       }
     } else if (command == kCommandShuffle2 || command == kCommandShuffle4) {
       if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
       uint64_t num = DecodeVarInt(enc, size, &cpos);
-      if (OutOfBounds(pos, num, size)) return JXL_FAILURE("Out of bounds");
+      JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
       PaddedBytes shuffled(num);
       for (size_t i = 0; i < num; i++) {
         shuffled[i] = enc[pos + i];
@@ -453,9 +494,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
         pos++;
       }
     } else if (command == kCommandPredict) {
-      if (OutOfBounds(cpos, 2, commands_end)) {
-        return JXL_FAILURE("Out of bounds");
-      }
+      JXL_RETURN_IF_ERROR(CheckOutOfBounds(cpos, 2, commands_end));
       uint8_t flags = enc[cpos++];
 
       size_t width = (flags & 3) + 1;
@@ -464,7 +503,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       int order = (flags & 12) >> 2;
       if (order == 3) return JXL_FAILURE("Invalid order");
 
-      size_t stride = width;
+      uint64_t stride = width;
       if (flags & 16) {
         if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
         stride = DecodeVarInt(enc, size, &cpos);
@@ -484,7 +523,7 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
 
       if (cpos >= commands_end) return JXL_FAILURE("Out of bounds");
       uint64_t num = DecodeVarInt(enc, size, &cpos);  // in bytes
-      if (OutOfBounds(pos, num, size)) return JXL_FAILURE("Out of bounds");
+      JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, num, size));
 
       PaddedBytes shuffled(num);
       for (size_t i = 0; i < num; i++) {
@@ -500,15 +539,15 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
       }
       pos += num;
     } else if (command == kCommandXYZ) {
-      AppendKeyword("XYZ ", result);
+      AppendKeyword(kXyz_Tag, result);
       for (int i = 0; i < 4; i++) result->push_back(0);
-      if (OutOfBounds(pos, 12, size)) return JXL_FAILURE("Out of bounds");
+      JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, 12, size));
       for (size_t i = 0; i < 12; i++) {
         result->push_back(enc[pos++]);
       }
     } else if (command >= kCommandTypeStartFirst &&
                command < kCommandTypeStartFirst + kNumTypeStrings) {
-      AppendKeyword(kTypeStrings[command - kCommandTypeStartFirst], result);
+      AppendKeyword(*kTypeStrings[command - kCommandTypeStartFirst], result);
       for (size_t i = 0; i < 4; i++) {
         result->push_back(0);
       }
@@ -548,7 +587,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     return true;
   }
 
-  std::vector<std::string> tags;
+  std::vector<Tag> tags;
   std::vector<size_t> tagstarts;
   std::vector<size_t> tagsizes;
   std::map<size_t, size_t> tagmap;
@@ -564,7 +603,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     for (size_t i = 0; i < numtags; i++) {
       if (pos + 12 > size) break;
 
-      std::string tag = DecodeKeyword(icc, size, pos + 0);
+      Tag tag = DecodeKeyword(icc, size, pos + 0);
       uint32_t tagstart = DecodeUint32(icc, size, pos + 4);
       uint32_t tagsize = DecodeUint32(icc, size, pos + 8);
       pos += 12;
@@ -576,16 +615,16 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
 
       uint8_t tagcode = kCommandTagUnknown;
       for (size_t j = 0; j < kNumTagStrings; j++) {
-        if (tag == kTagStrings[j]) {
+        if (tag == *kTagStrings[j]) {
           tagcode = j + kCommandTagStringFirst;
           break;
         }
       }
 
-      if (tag == "rTRC" && pos + 24 < size) {
+      if (tag == kRtrcTag && pos + 24 < size) {
         bool ok = true;
-        ok &= DecodeKeyword(icc, size, pos + 0) == "gTRC";
-        ok &= DecodeKeyword(icc, size, pos + 12) == "bTRC";
+        ok &= DecodeKeyword(icc, size, pos + 0) == kGtrcTag;
+        ok &= DecodeKeyword(icc, size, pos + 12) == kBtrcTag;
         if (ok) {
           for (size_t i = 0; i < 8; i++) {
             if (icc[pos - 8 + i] != icc[pos + 4 + i]) ok = false;
@@ -599,10 +638,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         }
       }
 
-      if (tag == "rXYZ" && pos + 24 < size) {
+      if (tag == kRxyzTag && pos + 24 < size) {
         bool ok = true;
-        ok &= DecodeKeyword(icc, size, pos + 0) == "gXYZ";
-        ok &= DecodeKeyword(icc, size, pos + 12) == "bXYZ";
+        ok &= DecodeKeyword(icc, size, pos + 0) == kGxyzTag;
+        ok &= DecodeKeyword(icc, size, pos + 12) == kBxyzTag;
         uint32_t offsetr = tagstart;
         uint32_t offsetg = DecodeUint32(icc, size, pos + 4);
         uint32_t offsetb = DecodeUint32(icc, size, pos + 16);
@@ -625,8 +664,9 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       uint64_t predicted_tagstart = prevtagstart + prevtagsize;
       if (predicted_tagstart != tagstart) command |= kFlagBitOffset;
       size_t predicted_tagsize = prevtagsize;
-      if (tag == "rXYZ" || tag == "gXYZ" || tag == "bXYZ" || tag == "kXYZ" ||
-          tag == "wtpt" || tag == "bkpt" || tag == "lumi") {
+      if (tag == kRxyzTag || tag == kGxyzTag || tag == kBxyzTag ||
+          tag == kKxyzTag || tag == kWtptTag || tag == kBkptTag ||
+          tag == kLumiTag) {
         predicted_tagsize = 20;
       }
       if (predicted_tagsize != tagsize) command |= kFlagBitSize;
@@ -650,7 +690,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
   // pointing to the start and indicating the size of each tagged element. It is
   // allowed for tagged elements to overlap, e.g. the curve for R, G and B could
   // all point to the same one.
-  std::string tagtype;
+  Tag tag;
   size_t tagstart = 0, tagsize = 0, clutstart = 0;
 
   size_t last0 = pos;
@@ -666,20 +706,19 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     PaddedBytes commands_add;
     PaddedBytes data_add;
 
-    // This means the loop brought the position beyond the
-    if (pos > tagstart + tagsize && !tagtype.empty()) {
-      tagtype = "";
+    // This means the loop brought the position beyond the tag end.
+    if (pos > tagstart + tagsize) {
+      tag = {0, 0, 0, 0};  // nonsensical value
     }
 
     if (commands_add.empty() && data_add.empty() && tagmap.count(pos) &&
         pos + 4 <= size) {
       size_t index = tagmap[pos];
-      tagtype = "";
-      for (size_t i = 0; i < 4; i++) tagtype += icc[pos + i];
+      tag = DecodeKeyword(icc, size, pos);
       tagstart = tagstarts[index];
       tagsize = tagsizes[index];
 
-      if (tagtype == "mluc" && pos + tagsize <= size && tagsize > 8 &&
+      if (tag == kMlucTag && pos + tagsize <= size && tagsize > 8 &&
           icc[pos + 4] == 0 && icc[pos + 5] == 0 && icc[pos + 6] == 0 &&
           icc[pos + 7] == 0) {
         size_t num = tagsize - 8;
@@ -695,7 +734,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         Unshuffle(data_add.data() + start, num, 2);
       }
 
-      if (tagtype == "curv" && pos + tagsize <= size && tagsize > 8 &&
+      if (tag == kCurvTag && pos + tagsize <= size && tagsize > 8 &&
           icc[pos + 4] == 0 && icc[pos + 5] == 0 && icc[pos + 6] == 0 &&
           icc[pos + 7] == 0) {
         size_t num = tagsize - 8;
@@ -712,10 +751,10 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       }
     }
 
-    if (tagtype == "mAB " || tagtype == "mBA ") {
+    if (tag == kMab_Tag || tag == kMba_Tag) {
+      Tag subTag = DecodeKeyword(icc, size, pos);
       if (pos + 12 < size &&
-          (DecodeKeyword(icc, size, pos) == "curv" ||
-           DecodeKeyword(icc, size, pos) == "vcgt") &&
+          (subTag == kCurvTag || subTag == kVcgtTag) &&
           DecodeUint32(icc, size, pos + 4) == 0) {
         uint32_t num = DecodeUint32(icc, size, pos + 8) * 2;
         if (num > 16 && num < (1 << 28) && pos + 12 + num <= size) {
@@ -761,7 +800,7 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
       }
     }
 
-    if (commands_add.empty() && data_add.empty() && tagtype == "gbd " &&
+    if (commands_add.empty() && data_add.empty() && tag == kGbd_Tag &&
         pos == tagstart + 8 && pos + tagsize - 8 <= size && pos >= 16 &&
         tagsize > 8) {
       size_t width = 4, order = 0, stride = width;
@@ -776,8 +815,8 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     }
 
     if (commands_add.empty() && data_add.empty() && pos + 20 <= size) {
-      if (DecodeKeyword(icc, size, pos) == "XYZ " &&
-          DecodeUint32(icc, size, pos + 4) == 0) {
+      Tag subTag = DecodeKeyword(icc, size, pos);
+      if (subTag == kXyz_Tag && DecodeUint32(icc, size, pos + 4) == 0) {
         commands_add.push_back(kCommandXYZ);
         pos += 8;
         for (size_t j = 0; j < 12; j++) data_add.push_back(icc[pos++]);
@@ -785,22 +824,14 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
     }
 
     if (commands_add.empty() && data_add.empty() && pos + 8 <= size) {
-      for (size_t i = 0; i < kNumTypeStrings; i++) {
-        bool eq = true;
-        for (size_t j = 0; j < 8; j++) {
-          if (j < 4 && icc[pos + j] != kTypeStrings[i][j]) {
-            eq = false;
+      if (DecodeUint32(icc, size, pos + 4) == 0) {
+        Tag subTag = DecodeKeyword(icc, size, pos);
+        for (size_t i = 0; i < kNumTypeStrings; i++) {
+          if (subTag == *kTypeStrings[i]) {
+            commands_add.push_back(kCommandTypeStartFirst + i);
+            pos += 8;
             break;
           }
-          if (j >= 4 && icc[pos + j] != 0) {
-            eq = false;
-            break;
-          }
-        }
-        if (eq) {
-          commands_add.push_back(kCommandTypeStartFirst + i);
-          pos += 8;
-          break;
         }
       }
     }

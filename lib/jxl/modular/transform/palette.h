@@ -27,13 +27,18 @@ namespace jxl {
 
 namespace palette_internal {
 
+static constexpr int kMaxPaletteLookupTableSize = 1 << 16;
+
 static constexpr bool kEncodeToHighQualityImplicitPalette = true;
+
+static constexpr int kCubePow = 3;
 
 // 5x5x5 color cube for the larger cube.
 static constexpr int kLargeCube = 5;
 
 // Smaller interleaved color cube to fill the holes of the larger cube.
 static constexpr int kSmallCube = kLargeCube - 1;
+// kSmallCube ** kCubePow
 static constexpr int kLargeCubeOffset = kSmallCube * kSmallCube * kSmallCube;
 
 // Inclusive.
@@ -136,6 +141,7 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     }
     return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
+    if (c >= kCubePow) return 0;
     index -= palette_size;
     if (c > 0) {
       int divisor = kSmallCube;
@@ -148,7 +154,10 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     return (index * ((1 << bit_depth) - 1)) / kSmallCube +
         (1 << (std::max(0, bit_depth - 3)));
   } else if (palette_size + kLargeCubeOffset <= index) {
+    if (c >= kCubePow) return 0;
     index -= palette_size + kLargeCubeOffset;
+    // TODO(eustas): should we take care of ambiguity created by
+    //               index >= kLargeCube ** 3 ?
     if (c > 0) {
       int divisor = kLargeCube;
       for (size_t i = 1; i < c; ++i) {
@@ -525,8 +534,12 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   std::vector<pixel_type> lookup;
   int minval, maxval;
   input.channel[begin_c].compute_minmax(&minval, &maxval);
+  int lookup_table_size = maxval - minval + 1;
+  if (lookup_table_size > palette_internal::kMaxPaletteLookupTableSize) {
+	  return false;  // too large lookup table
+  }
   if (nb == 1) {
-    lookup.resize(maxval - minval + 1);
+    lookup.resize(lookup_table_size);
   }
   if (ordered) {
     JXL_DEBUG_V(7, "Palette of %i colors, using lexicographic order",

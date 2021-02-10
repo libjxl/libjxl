@@ -40,15 +40,18 @@ struct PassesDecoderState {
   // Allows avoiding copies for encoder loop.
   const PassesSharedState* JXL_RESTRICT shared = &shared_storage;
 
-  // Whether some AC groups are only partially present. This implies that we
-  // need to run ApplyImageFeatures at the end, and not per-group.
-  bool has_partial_ac_groups = false;
-
   // Upsampler for the current frame.
   Upsampler upsampler;
 
+  // DC upsampler
+  Upsampler dc_upsampler;
+
   // Storage for RNG output for noise synthesis.
   Image3F noise;
+
+  // Storage for pre-color-transform output for displayed
+  // save_before_color_transform frames.
+  Image3F pre_color_transform_frame;
 
   // For ANS decoding.
   std::vector<ANSCode> code;
@@ -68,7 +71,6 @@ struct PassesDecoderState {
   size_t noise_seed = 0;
 
   // Storage for coefficients if in "accumulate" mode.
-  // TODO(veluca): not yet implemented - just used to memorize 16-vs-32 bits.
   std::unique_ptr<ACImage> coefficients = make_unique<ACImageT<int32_t>>(0, 0);
 
   // Filter application pipeline used by ApplyImageFeatures. One entry is needed
@@ -89,12 +91,27 @@ struct PassesDecoderState {
     }
   }
 
+  // Color encoding that will be used for output.
+  ColorEncoding output_encoding;
+
   // Initializes decoder-specific structures using information from *shared.
   void Init(ThreadPool* pool) {
     x_dm_multiplier =
         std::pow(1 / (1.25f), shared->frame_header.x_qm_scale - 2.0f);
     b_dm_multiplier =
         std::pow(1 / (1.25f), shared->frame_header.b_qm_scale - 2.0f);
+
+    output_encoding =
+        shared->frame_header.color_transform == ColorTransform::kXYB
+            ? ColorEncoding::LinearSRGB(
+                  shared->metadata->m.color_encoding.IsGray())
+            : shared->metadata->m.color_encoding;
+    // TODO(veluca): keep in sync with dec_reconstruct.cc.
+    if (shared->metadata->m.xyb_encoded &&
+        shared->frame_header.needs_color_transform() &&
+        shared->metadata->m.color_encoding.IsSRGB()) {
+      output_encoding = ColorEncoding::SRGB(output_encoding.IsGray());
+    }
 
     if (shared->frame_header.flags & FrameHeader::kNoise) {
       noise = Image3F(shared->frame_dim.xsize_padded,

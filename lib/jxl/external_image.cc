@@ -257,7 +257,9 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
   if (stride < bytes_per_pixel * xsize) {
-    return JXL_FAILURE("stride is smaller than scanline width in bytes");
+    return JXL_FAILURE(
+        "stride is smaller than scanline width in bytes: %zu vs %zu", stride,
+        bytes_per_pixel * xsize);
   }
 
   const Image3F* color = &ib.color();
@@ -507,7 +509,8 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * y + (c * bits_per_sample / jxl::kBitsPerByte);
+            size_t i =
+                row_size * task + (c * bits_per_sample / jxl::kBitsPerByte);
             float* JXL_RESTRICT row_out = color.PlaneRow(c, y);
             if (little_endian) {
               for (size_t x = 0; x < xsize; ++x) {
@@ -531,7 +534,7 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * y + c * bytes_per_channel;
+            size_t i = row_size * task + c * bytes_per_channel;
             float* JXL_RESTRICT row_out = color.PlaneRow(c, y);
             // TODO(deymo): add bits_per_sample == 1 case here. Also maybe
             // implement masking if bits_per_sample is not a multiple of 8.
@@ -583,7 +586,7 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * y +
+            size_t i = row_size * task +
                        (color_channels * bits_per_sample / jxl::kBitsPerByte);
             float* JXL_RESTRICT row_out = alpha.Row(y);
             if (little_endian) {
@@ -605,7 +608,7 @@ Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
           [&](const int task, int /*thread*/) {
             const size_t y = get_y(task);
-            size_t i = row_size * y + color_channels * bytes_per_channel;
+            size_t i = row_size * task + color_channels * bytes_per_channel;
             float* JXL_RESTRICT row_out = alpha.Row(y);
             // TODO(deymo): add bits_per_sample == 1 case here. Also maybe
             // implement masking if bits_per_sample is not a multiple of 8.

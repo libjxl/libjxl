@@ -37,6 +37,79 @@
    JXL_ENC_ERROR)
 #endif  // JXL_CRASH_ON_ERROR
 
+namespace jxl {
+
+JxlEncoderStatus BufferToImageBundle(const JxlPixelFormat& pixel_format,
+                                     uint32_t xsize, uint32_t ysize,
+                                     const void* buffer, size_t size,
+                                     jxl::ThreadPool* pool,
+                                     const jxl::ColorEncoding& c_current,
+                                     jxl::ImageBundle* ib) {
+  size_t bitdepth;
+
+  // TODO(zond): Make this accept more than float and uint8/16.
+  if (pixel_format.data_type == JXL_TYPE_FLOAT) {
+    bitdepth = 32;
+  } else if (pixel_format.data_type == JXL_TYPE_UINT8) {
+    bitdepth = 8;
+  } else if (pixel_format.data_type == JXL_TYPE_UINT16) {
+    bitdepth = 16;
+  } else {
+    return JXL_ENC_NOT_SUPPORTED;
+  }
+
+  if (!ConvertImage(jxl::Span<const uint8_t>(
+                        static_cast<uint8_t*>(const_cast<void*>(buffer)), size),
+                    xsize, ysize, c_current,
+                    /*has_alpha=*/pixel_format.num_channels == 2 ||
+                        pixel_format.num_channels == 4,
+                    /*alpha_is_premultiplied=*/false, bitdepth,
+                    pixel_format.endianness, /*flipped_y=*/false, pool, ib)) {
+    return JXL_ENC_ERROR;
+  }
+  ib->VerifyMetadata();
+
+  return JXL_ENC_SUCCESS;
+}
+
+Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
+                                              ColorEncoding* internal) {
+  internal->SetColorSpace(static_cast<ColorSpace>(external.color_space));
+
+  CIExy wp;
+  wp.x = external.white_point_xy[0];
+  wp.y = external.white_point_xy[1];
+  JXL_RETURN_IF_ERROR(internal->SetWhitePoint(wp));
+
+  if (external.color_space == JXL_COLOR_SPACE_RGB ||
+      external.color_space == JXL_COLOR_SPACE_UNKNOWN) {
+    internal->primaries = static_cast<Primaries>(external.primaries);
+    PrimariesCIExy primaries;
+    primaries.r.x = external.primaries_red_xy[0];
+    primaries.r.y = external.primaries_red_xy[1];
+    primaries.g.x = external.primaries_green_xy[0];
+    primaries.g.y = external.primaries_green_xy[1];
+    primaries.b.x = external.primaries_blue_xy[0];
+    primaries.b.y = external.primaries_blue_xy[1];
+    JXL_RETURN_IF_ERROR(internal->SetPrimaries(primaries));
+  }
+  CustomTransferFunction tf;
+  if (external.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
+    JXL_RETURN_IF_ERROR(tf.SetGamma(external.gamma));
+  } else {
+    tf.SetTransferFunction(
+        static_cast<TransferFunction>(external.transfer_function));
+  }
+  internal->tf = tf;
+
+  internal->rendering_intent =
+      static_cast<RenderingIntent>(external.rendering_intent);
+
+  return true;
+}
+
+}  // namespace jxl
+
 uint32_t JxlEncoderVersion(void) {
   return JPEGXL_MAJOR_VERSION * 1000000 + JPEGXL_MINOR_VERSION * 1000 +
          JPEGXL_PATCH_VERSION;
@@ -74,6 +147,15 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   //             JxlEncoderCloseInput has been called (to see if it's the
   //             last animation frame).
 
+  if (metadata.m.xyb_encoded) {
+    input_frame->option_values.cparams.color_transform =
+        jxl::ColorTransform::kXYB;
+  } else {
+    // TODO(zond): Figure out when to use kYCbCr instead.
+    input_frame->option_values.cparams.color_transform =
+        jxl::ColorTransform::kNone;
+  }
+
   jxl::PassesEncoderState enc_state;
   if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{}, &metadata,
                         input_frame->frame, &enc_state, this->thread_pool.get(),
@@ -89,12 +171,58 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc, const size_t xsize,
-                                         const size_t ysize) {
-  if (enc->metadata.size.Set(xsize, ysize)) {
-    return JXL_ENC_SUCCESS;
+JxlEncoderStatus JxlEncoderSetColorEncoding(JxlEncoder* enc,
+                                            const JxlColorEncoding* color) {
+  if (!jxl::ConvertExternalToInternalColorEncoding(
+          *color, &enc->metadata.m.color_encoding)) {
+    return JXL_ENC_ERROR;
   }
-  return JXL_ENC_ERROR;
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
+                                        const JxlBasicInfo* info) {
+  if (!enc->metadata.size.Set(info->xsize, info->ysize)) {
+    return JXL_ENC_ERROR;
+  }
+  if (info->exponent_bits_per_sample) {
+    if (info->exponent_bits_per_sample != 8) return JXL_ENC_NOT_SUPPORTED;
+    if (info->bits_per_sample == 32) {
+      enc->metadata.m.SetFloat32Samples();
+    } else {
+      return JXL_ENC_NOT_SUPPORTED;
+    }
+  } else {
+    switch (info->bits_per_sample) {
+      case 32:
+      case 16:
+      case 8:
+        enc->metadata.m.SetUintSamples(info->bits_per_sample);
+        break;
+      default:
+        return JXL_ENC_ERROR;
+        break;
+    }
+  }
+  if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
+    return JXL_ENC_NOT_SUPPORTED;
+  }
+  switch (info->alpha_bits) {
+    case 0:
+      break;
+    case 32:
+    case 16:
+      enc->metadata.m.SetAlphaBits(16);
+      break;
+    case 8:
+      enc->metadata.m.SetAlphaBits(info->alpha_bits);
+      break;
+    default:
+      return JXL_ENC_ERROR;
+      break;
+  }
+  enc->metadata.m.xyb_encoded = !info->uses_original_profile;
+  return JXL_ENC_SUCCESS;
 }
 
 JxlEncoderOptions* JxlEncoderOptionsCreate(JxlEncoder* enc,
@@ -190,8 +318,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
 
 JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
                                          const JxlPixelFormat* pixel_format,
-                                         const void* buffer,
-                                         const size_t size) {
+                                         const void* buffer, size_t size) {
   // TODO(zond): Return error if the input has been closed.
   auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
       &options->enc->memory_manager,
@@ -204,73 +331,28 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
   }
 
   jxl::ColorEncoding c_current;
-  bool has_alpha;
-  bool is_gray;
-  size_t bitdepth;
-
-  // TODO(zond): Make this accept more than float and uint8/16.
-  if (pixel_format->data_type == JXL_TYPE_FLOAT) {
-    bitdepth = 32;
-    if (!options->enc->wrote_headers)
-      options->enc->metadata.m.SetFloat32Samples();
-  } else if (pixel_format->data_type == JXL_TYPE_UINT8) {
-    bitdepth = 8;
-    if (!options->enc->wrote_headers)
-      options->enc->metadata.m.SetUintSamples(bitdepth);
-  } else if (pixel_format->data_type == JXL_TYPE_UINT16) {
-    bitdepth = 16;
-    if (!options->enc->wrote_headers)
-      options->enc->metadata.m.SetUintSamples(bitdepth);
+  if (options->enc->metadata.m.xyb_encoded) {
+    if (pixel_format->data_type == JXL_TYPE_FLOAT) {
+      c_current =
+          jxl::ColorEncoding::LinearSRGB(pixel_format->num_channels < 3);
+    } else {
+      c_current = jxl::ColorEncoding::SRGB(pixel_format->num_channels < 3);
+    }
   } else {
-    return JXL_ENC_ERROR;
+    c_current = options->enc->metadata.m.color_encoding;
   }
 
-  if (pixel_format->num_channels == 1) {
-    has_alpha = false;
-    is_gray = true;
-  } else if (pixel_format->num_channels == 2) {
-    is_gray = true;
-    has_alpha = true;
-    if (!options->enc->wrote_headers)
-      options->enc->metadata.m.SetAlphaBits(bitdepth == 32 ? 16 : bitdepth);
-  } else if (pixel_format->num_channels == 3) {
-    is_gray = false;
-    has_alpha = false;
-  } else if (pixel_format->num_channels == 4) {
-    is_gray = false;
-    has_alpha = true;
-    if (!options->enc->wrote_headers)
-      options->enc->metadata.m.SetAlphaBits(bitdepth == 32 ? 16 : bitdepth);
-  } else {
+  if (JXL_ENC_SUCCESS !=
+      jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
+                               options->enc->metadata.ysize(), buffer, size,
+                               options->enc->thread_pool.get(), c_current,
+                               &(queued_frame->frame))) {
     return JXL_ENC_ERROR;
-  }
-
-  if (pixel_format->data_type == JXL_TYPE_FLOAT) {
-    c_current = jxl::ColorEncoding::LinearSRGB(is_gray);
-  } else {
-    c_current = jxl::ColorEncoding::SRGB(is_gray);
   }
 
   if (options->values.lossless) {
     queued_frame->option_values.cparams.SetLossless();
   }
-
-  if (!options->enc->wrote_headers) {
-    options->enc->metadata.m.color_encoding = c_current;
-    options->enc->metadata.m.xyb_encoded =
-        queued_frame->option_values.cparams.color_transform == jxl::ColorTransform::kXYB;
-  }
-
-  if (!ConvertImage(jxl::Span<const uint8_t>(
-                        static_cast<uint8_t*>(const_cast<void*>(buffer)), size),
-                    options->enc->metadata.xsize(),
-                    options->enc->metadata.ysize(), c_current, has_alpha,
-                    /*alpha_is_premultiplied=*/false, bitdepth,
-                    pixel_format->endianness, /*flipped_y=*/false,
-                    options->enc->thread_pool.get(), &(queued_frame->frame))) {
-    return JXL_ENC_ERROR;
-  }
-  queued_frame->frame.VerifyMetadata();
 
   options->enc->input_frame_queue.emplace_back(std::move(queued_frame));
   return JXL_ENC_SUCCESS;
@@ -282,9 +364,9 @@ void JxlEncoderCloseInput(JxlEncoder* enc) {
 
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
-  while (*avail_out > 0 && (enc->output_byte_queue.size() > 0 ||
-                            enc->input_frame_queue.size() > 0)) {
-    if (enc->output_byte_queue.size() > 0) {
+  while (*avail_out > 0 &&
+         (!enc->output_byte_queue.empty() || !enc->input_frame_queue.empty())) {
+    if (!enc->output_byte_queue.empty()) {
       size_t to_copy = std::min(*avail_out, enc->output_byte_queue.size());
       memcpy(static_cast<void*>(*next_out), enc->output_byte_queue.data(),
              to_copy);
@@ -292,15 +374,27 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
       *avail_out -= to_copy;
       enc->output_byte_queue.erase(enc->output_byte_queue.begin(),
                                    enc->output_byte_queue.begin() + to_copy);
-    } else if (enc->input_frame_queue.size() > 0) {
+    } else if (!enc->input_frame_queue.empty()) {
       if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
         return JXL_ENC_ERROR;
       }
     }
   }
 
-  if (enc->output_byte_queue.size() > 0 || enc->input_frame_queue.size() > 0) {
+  if (!enc->output_byte_queue.empty() || !enc->input_frame_queue.empty()) {
     return JXL_ENC_NEED_MORE_OUTPUT;
   }
   return JXL_ENC_SUCCESS;
+}
+
+JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
+                                          JXL_BOOL is_gray) {
+  ConvertInternalToExternalColorEncoding(jxl::ColorEncoding::SRGB(is_gray),
+                                         color_encoding);
+}
+
+JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
+    JxlColorEncoding* color_encoding, JXL_BOOL is_gray) {
+  ConvertInternalToExternalColorEncoding(
+      jxl::ColorEncoding::LinearSRGB(is_gray), color_encoding);
 }

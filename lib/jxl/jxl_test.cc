@@ -225,10 +225,10 @@ TEST(JxlTest, RoundtripResample2) {
   cparams.resampling = 2;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15100);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            12);
+            13.5);
 }
 
 TEST(JxlTest, RoundtripResample4) {
@@ -245,7 +245,7 @@ TEST(JxlTest, RoundtripResample4) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 6000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            25);
+            28);
 }
 
 TEST(JxlTest, RoundtripResample8) {
@@ -482,7 +482,7 @@ TEST(JxlTest, RoundtripNoGaborishNoAR) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 40000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            2.33);
+            2.5);
 }
 
 TEST(JxlTest, RoundtripSmallNoGaborish) {

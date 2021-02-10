@@ -154,6 +154,9 @@ struct CompressParams {
 
   size_t progressive_dc = 0;
 
+  // Ensure invisible pixels are not set to 0.
+  bool keep_invisible = false;
+
   // Progressive-mode saliency.
   //
   // How many progressive saliency-encoding steps to perform.

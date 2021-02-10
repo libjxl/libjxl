@@ -19,6 +19,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "jxl/codestream_header.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/codec_in_out.h"
@@ -51,6 +52,43 @@
 
 namespace jxl {
 namespace test {
+
+void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
+                                    const JxlPixelFormat* pixel_format) {
+  switch (pixel_format->data_type) {
+    case JXL_TYPE_FLOAT:
+      basic_info->bits_per_sample = 32;
+      basic_info->exponent_bits_per_sample = 8;
+      break;
+    case JXL_TYPE_UINT8:
+      basic_info->bits_per_sample = 8;
+      basic_info->exponent_bits_per_sample = 0;
+      break;
+    case JXL_TYPE_UINT16:
+      basic_info->bits_per_sample = 16;
+      basic_info->exponent_bits_per_sample = 0;
+      break;
+    case JXL_TYPE_UINT32:
+      basic_info->bits_per_sample = 32;
+      basic_info->exponent_bits_per_sample = 0;
+      break;
+    case JXL_TYPE_BOOLEAN:
+      basic_info->bits_per_sample = 1;
+      basic_info->exponent_bits_per_sample = 0;
+      break;
+  }
+  if (pixel_format->num_channels == 2 || pixel_format->num_channels == 4) {
+    basic_info->alpha_exponent_bits = 0;
+    if (basic_info->bits_per_sample == 32) {
+      basic_info->alpha_bits = 16;
+    } else {
+      basic_info->alpha_bits = basic_info->bits_per_sample;
+    }
+  } else {
+    basic_info->alpha_exponent_bits = 0;
+    basic_info->alpha_bits = 0;
+  }
+}
 
 MATCHER_P(MatchesPrimariesAndTransferFunction, color_encoding, "") {
   return arg.primaries == color_encoding.primaries &&

@@ -624,4 +624,39 @@ Status ColorEncoding::VisitFields(Visitor* JXL_RESTRICT visitor) {
   return true;
 }
 
+void ConvertInternalToExternalColorEncoding(const ColorEncoding& internal,
+                                            JxlColorEncoding* external) {
+  external->color_space = static_cast<JxlColorSpace>(internal.GetColorSpace());
+
+  external->white_point = static_cast<JxlWhitePoint>(internal.white_point);
+
+  jxl::CIExy whitepoint = internal.GetWhitePoint();
+  external->white_point_xy[0] = whitepoint.x;
+  external->white_point_xy[1] = whitepoint.y;
+
+  if (external->color_space == JXL_COLOR_SPACE_RGB ||
+      external->color_space == JXL_COLOR_SPACE_UNKNOWN) {
+    external->primaries = static_cast<JxlPrimaries>(internal.primaries);
+    jxl::PrimariesCIExy primaries = internal.GetPrimaries();
+    external->primaries_red_xy[0] = primaries.r.x;
+    external->primaries_red_xy[1] = primaries.r.y;
+    external->primaries_green_xy[0] = primaries.g.x;
+    external->primaries_green_xy[1] = primaries.g.y;
+    external->primaries_blue_xy[0] = primaries.b.x;
+    external->primaries_blue_xy[1] = primaries.b.y;
+  }
+
+  if (internal.tf.IsGamma()) {
+    external->transfer_function = JXL_TRANSFER_FUNCTION_GAMMA;
+    external->gamma = internal.tf.GetGamma();
+  } else {
+    external->transfer_function =
+        static_cast<JxlTransferFunction>(internal.tf.GetTransferFunction());
+    external->gamma = 0;
+  }
+
+  external->rendering_intent =
+      static_cast<JxlRenderingIntent>(internal.rendering_intent);
+}
+
 }  // namespace jxl

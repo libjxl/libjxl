@@ -432,7 +432,7 @@ Image3F OpsinDynamicsImage(const Image3B& srgb8) {
   metadata.SetUintSamples(8);
   metadata.color_encoding = ColorEncoding::SRGB();
   ImageBundle ib(&metadata);
-  ib.SetFromImage(StaticCastImage3<float>(srgb8), metadata.color_encoding);
+  ib.SetFromImage(ConvertToFloat(srgb8), metadata.color_encoding);
   JXL_CHECK(ib.TransformTo(ColorEncoding::LinearSRGB(ib.IsGray())));
   ThreadPool* null_pool = nullptr;
   Image3F xyb(srgb8.xsize(), srgb8.ysize());

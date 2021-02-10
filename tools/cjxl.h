@@ -47,6 +47,11 @@ struct CompressArgs {
   // successful.
   jxl::Status ValidateArgs(const CommandLineParser& cmdline);
 
+  // Validates the arguments again, having loaded the input so sensible defaults
+  // can be chosen based on e.g. dimensions.
+  jxl::Status ValidateArgsAfterLoad(const CommandLineParser& cmdline,
+                                    const jxl::CodecInOut& io);
+
   // Common flags.
   bool version = false;
   bool use_container = false;
@@ -88,11 +93,8 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_quality_id = -1;
   CommandLineParser::OptionId opt_near_lossless_id = -1;
   CommandLineParser::OptionId opt_intensity_target_id = -1;
-
   CommandLineParser::OptionId opt_color_id = -1;
-
-  // just for testing: add one extra channel which is a spot color (red)
-  const char* spot_in = nullptr;
+  CommandLineParser::OptionId m_group_size_id = -1;
 };
 
 jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
@@ -102,7 +104,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
 jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
                         jxl::ThreadPoolInternal* pool, CompressArgs& args,
                         jxl::PaddedBytes* compressed, bool print_stats = true);
-
 
 }  // namespace tools
 }  // namespace jpegxl

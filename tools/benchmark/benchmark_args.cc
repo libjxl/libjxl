@@ -226,6 +226,10 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 
 Status BenchmarkArgs::ValidateArgs() {
   size_t bits_per_sample = 0;  // unused
+  if (input.empty()) {
+    fprintf(stderr, "Missing --input filename(s).\n");
+    return false;
+  }
   if (CodecFromExtension(output_extension, &bits_per_sample) ==
       Codec::kUnknown) {
     JXL_WARNING("Unrecognized output_extension %s, try .png",

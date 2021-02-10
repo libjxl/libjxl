@@ -42,6 +42,12 @@ Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
                         std::vector<uint64_t>* JXL_RESTRICT offsets,
                         std::vector<uint32_t>* JXL_RESTRICT sizes,
                         uint64_t* total_size) {
+  if (toc_entries > 65536) {
+    // Prevent out of memory if invalid JXL codestream causes a bogus amount
+    // of toc_entries such as 2720436919446 to be computed.
+    // TODO(lode): verify whether 65536 is a reasonable upper bound
+    return JXL_FAILURE("too many toc entries");
+  }
   JXL_DASSERT(offsets != nullptr && sizes != nullptr);
   std::vector<coeff_order_t> permutation;
   if (reader->ReadFixedBits<1>() == 1 && toc_entries > 0) {

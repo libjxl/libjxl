@@ -32,6 +32,7 @@ template <typename T>
 void CopyImageTo(const Plane<T>& from, Plane<T>* JXL_RESTRICT to) {
   PROFILER_ZONE("CopyImage1");
   JXL_ASSERT(SameSize(from, *to));
+  if (from.ysize() == 0 || from.xsize() == 0) return;
   for (size_t y = 0; y < from.ysize(); ++y) {
     const T* JXL_RESTRICT row_from = from.ConstRow(y);
     T* JXL_RESTRICT row_to = to->Row(y);
@@ -436,15 +437,18 @@ void ImageConvert(const Plane<FromType>& from, const float to_range,
   }
 }
 
-// FromType and ToType are the pixel types.
-template <typename FromType, typename ToType>
-Plane<ToType> StaticCastImage(const Plane<FromType>& from) {
-  Plane<ToType> to(from.xsize(), from.ysize());
+template <typename From>
+Plane<float> ConvertToFloat(const Plane<From>& from) {
+  float factor = 1.0f / std::numeric_limits<From>::max();
+  if (std::is_same<From, double>::value || std::is_same<From, float>::value) {
+    factor = 1.0f;
+  }
+  Plane<float> to(from.xsize(), from.ysize());
   for (size_t y = 0; y < from.ysize(); ++y) {
-    const FromType* const JXL_RESTRICT row_from = from.Row(y);
-    ToType* const JXL_RESTRICT row_to = to.Row(y);
+    const From* const JXL_RESTRICT row_from = from.Row(y);
+    float* const JXL_RESTRICT row_to = to.Row(y);
     for (size_t x = 0; x < from.xsize(); ++x) {
-      row_to[x] = static_cast<ToType>(row_from[x]);
+      row_to[x] = row_from[x] * factor;
     }
   }
   return to;
@@ -599,20 +603,10 @@ void Image3Convert(const Image3<FromType>& from, const float to_range,
   }
 }
 
-// FromType and ToType are the pixel types.
-template <typename ToType, typename FromType>
-Image3<ToType> StaticCastImage3(const Image3<FromType>& from) {
-  Image3<ToType> to(from.xsize(), from.ysize());
-  for (size_t c = 0; c < 3; ++c) {
-    for (size_t y = 0; y < from.ysize(); ++y) {
-      const FromType* JXL_RESTRICT row_from = from.ConstPlaneRow(c, y);
-      ToType* JXL_RESTRICT row_to = to.PlaneRow(c, y);
-      for (size_t x = 0; x < from.xsize(); ++x) {
-        row_to[x] = static_cast<ToType>(row_from[x]);
-      }
-    }
-  }
-  return to;
+template <typename From>
+Image3F ConvertToFloat(const Image3<From>& from) {
+  return Image3F(ConvertToFloat(from.Plane(0)), ConvertToFloat(from.Plane(1)),
+                 ConvertToFloat(from.Plane(2)));
 }
 
 template <typename Tin, typename Tout>

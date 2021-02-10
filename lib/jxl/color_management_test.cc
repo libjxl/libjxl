@@ -142,8 +142,10 @@ class ColorManagementTest
     const ColorEncoding& c_native = c.IsGray() ? g->c_gray : g->c_native;
     ColorSpaceTransform xform_fwd;
     ColorSpaceTransform xform_rev;
-    ASSERT_TRUE(xform_fwd.Init(c_native, c, kWidth, g->pool.NumThreads()));
-    ASSERT_TRUE(xform_rev.Init(c, c_native, kWidth, g->pool.NumThreads()));
+    ASSERT_TRUE(xform_fwd.Init(c_native, c, kDefaultIntensityTarget, kWidth,
+                               g->pool.NumThreads()));
+    ASSERT_TRUE(xform_rev.Init(c, c_native, kDefaultIntensityTarget, kWidth,
+                               g->pool.NumThreads()));
 
     const size_t thread = 0;
     const ImageF& in = c.IsGray() ? g->in_gray : g->in_color;
@@ -229,7 +231,8 @@ TEST_F(ColorManagementTest, D2700ToSRGB) {
   ASSERT_TRUE(sRGB_D2700.SetICC(std::move(icc)));
 
   ColorSpaceTransform transform;
-  ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncoding::SRGB(), 1, 1));
+  ASSERT_TRUE(transform.Init(sRGB_D2700, ColorEncoding::SRGB(),
+                             kDefaultIntensityTarget, 1, 1));
   const float sRGB_D2700_values[3] = {0.863, 0.737, 0.490};
   float sRGB_values[3];
   DoColorSpaceTransform(&transform, 0, sRGB_D2700_values, sRGB_values);

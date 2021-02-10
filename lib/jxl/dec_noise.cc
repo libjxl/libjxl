@@ -240,9 +240,6 @@ Status DecodeNoise(BitReader* br, NoiseParams* noise_params) {
   for (float& i : noise_params->lut) {
     DecodeFloatParam(kNoisePrecision, &i, br);
   }
-  if (!noise_params->HasAny()) {
-    return JXL_FAILURE("DecodedNoise got no noise");
-  }
   return true;
 }
 

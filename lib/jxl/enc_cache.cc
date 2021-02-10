@@ -95,6 +95,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       cparams.max_error[c] = shared.quantizer.MulDC()[c];
     }
     cparams.progressive_dc--;
+    // The DC frame will have alpha=0. Don't erase its contents.
+    cparams.keep_invisible = true;
     // No EPF or Gaborish in DC frames.
     cparams.epf = 0;
     cparams.gaborish = Override::kOff;
@@ -118,7 +120,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       std::vector<ImageF> extra_channels;
       extra_channels.reserve(ib.metadata()->extra_channel_info.size());
       for (size_t i = 0; i < ib.metadata()->extra_channel_info.size(); i++) {
-        extra_channels.emplace_back(ib.xsize(), ib.ysize());
+        const auto& eci = ib.metadata()->extra_channel_info[i];
+        extra_channels.emplace_back(eci.Size(ib.xsize()), eci.Size(ib.ysize()));
         // Must initialize the image with data to not affect blending with
         // uninitialized memory.
         // TODO(lode): dc_level must copy and use the real extra channels
@@ -156,6 +159,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     shared.dc_storage =
         CopyImage(dec_state.shared->dc_frames[shared.frame_header.dc_level]);
     ZeroFillImage(&shared.quant_dc);
+    shared.dc = &shared.dc_storage;
     JXL_CHECK(br.Close());
   } else {
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {

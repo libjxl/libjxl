@@ -31,7 +31,13 @@ namespace jxl {
 // Type-independent parts of Plane<> - reduces code duplication and facilitates
 // moving member function implementations to cc file.
 struct PlaneBase {
-  PlaneBase() : xsize_(0), ysize_(0), bytes_per_row_(0), bytes_(nullptr) {}
+  PlaneBase()
+      : xsize_(0),
+        ysize_(0),
+        orig_xsize_(0),
+        orig_ysize_(0),
+        bytes_per_row_(0),
+        bytes_(nullptr) {}
   PlaneBase(size_t xsize, size_t ysize, size_t sizeof_t);
 
   // Copy construction/assignment is forbidden to avoid inadvertent copies,
@@ -51,6 +57,8 @@ struct PlaneBase {
   // and later reporting the actual valid dimensions. Caller is responsible
   // for ensuring xsize/ysize are <= the original dimensions.
   void ShrinkTo(const size_t xsize, const size_t ysize) {
+    JXL_CHECK(xsize <= orig_xsize_);
+    JXL_CHECK(ysize <= orig_ysize_);
     xsize_ = static_cast<uint32_t>(xsize);
     ysize_ = static_cast<uint32_t>(ysize);
     // NOTE: we can't recompute bytes_per_row for more compact storage and
@@ -107,6 +115,8 @@ struct PlaneBase {
   // (Members are non-const to enable assignment during move-assignment.)
   uint32_t xsize_;  // In valid pixels, not including any padding.
   uint32_t ysize_;
+  uint32_t orig_xsize_;
+  uint32_t orig_ysize_;
   size_t bytes_per_row_;  // Includes padding.
   CacheAlignedUniquePtr bytes_;
 };

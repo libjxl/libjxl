@@ -1227,11 +1227,13 @@ void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg, ImageF* out) {
   }
 }
 
-static const float kInternalGoodQualityThreshold = 17.777;
+// std::log(80.0) / std::log(255.0);
+constexpr float kIntensityTargetNormalizationHack = 0.79079917404;
+static const float kInternalGoodQualityThreshold =
+    17.0 * kIntensityTargetNormalizationHack;
 static const float kGlobalScale = 1.0 / kInternalGoodQualityThreshold;
 
-
-void StoreMin3(const float v, float &min0, float &min1, float &min2) {
+void StoreMin3(const float v, float& min0, float& min1, float& min2) {
   if (v < min2) {
     if (v < min0) {
       min2 = min1;
@@ -1296,8 +1298,7 @@ void FuzzyErosion(const ImageF& from, ImageF* to) {
 // Compute values of local frequency and dc masking based on the activity
 // in the two images. img_diff_ac may be null.
 void Mask(const ImageF& mask0, const ImageF& mask1,
-          const ButteraugliParams &params,
-          BlurTemp *blur_temp,
+          const ButteraugliParams& params, BlurTemp* blur_temp,
           ImageF* BUTTERAUGLI_RESTRICT mask,
           ImageF* BUTTERAUGLI_RESTRICT diff_ac) {
   // Only X and Y components are involved in masking. B's influence
@@ -1341,9 +1342,9 @@ void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
   ImageF mask0(xsize, ysize);
   ImageF mask1(xsize, ysize);
   static const float muls[3] = {
-    8.75000241361f,
-    0.620978104816f,
-    0.307585098253f,
+      8.75000241361f,
+      0.620978104816f,
+      0.307585098253f,
   };
   // Silly and unoptimized approach here. TODO(jyrki): rework this.
   for (size_t y = 0; y < ysize; ++y) {
@@ -1394,8 +1395,7 @@ inline float MaskColor(const float color[3], const float mask) {
 }
 
 // Diffmap := sqrt of sum{diff images by multplied by X and Y/B masks}
-void CombineChannelsToDiffmap(const ImageF& mask,
-                              const Image3F& block_diff_dc,
+void CombineChannelsToDiffmap(const ImageF& mask, const Image3F& block_diff_dc,
                               const Image3F& block_diff_ac, float xmul,
                               ImageF* result) {
   PROFILER_FUNC;
@@ -1416,7 +1416,8 @@ void CombineChannelsToDiffmap(const ImageF& mask,
       }
       diff_ac[0] *= xmul;
       diff_dc[0] *= xmul;
-      row_out[x] = sqrt(MaskColor(diff_dc, dc_maskval) + MaskColor(diff_ac, maskval));
+      row_out[x] =
+          sqrt(MaskColor(diff_dc, dc_maskval) + MaskColor(diff_ac, maskval));
     }
   }
 }
@@ -1793,8 +1794,7 @@ ButteraugliComparator::ButteraugliComparator(const Image3F& rgb0,
 
 void ButteraugliComparator::Mask(ImageF* BUTTERAUGLI_RESTRICT mask) const {
   HWY_DYNAMIC_DISPATCH(MaskPsychoImage)
-  (pi0_, pi0_, xsize_, ysize_, params_, Temp(), &blur_temp_, mask,
-   nullptr);
+  (pi0_, pi0_, xsize_, ysize_, params_, Temp(), &blur_temp_, mask, nullptr);
   ReleaseTemp();
 }
 
@@ -1883,19 +1883,20 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   static const double wUhfMaltaX = 606.229316218;
   static const double norm1UhfX = 0.358743053213;
   MaltaDiffMap(pi0_.uhf[0], pi1.uhf[0], wUhfMaltaX * hf_asymmetry_,
-               wUhfMaltaX / hf_asymmetry_, norm1UhfX, &diffs, &block_diff_ac, 0);
+               wUhfMaltaX / hf_asymmetry_, norm1UhfX, &diffs, &block_diff_ac,
+               0);
 
   static const double wHfMalta = 18.7237414387;
   static const double norm1Hf = 4498534.45232;
   MaltaDiffMapLF(pi0_.hf[1], pi1.hf[1], wHfMalta * std::sqrt(hf_asymmetry_),
-                 wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf, &diffs, &block_diff_ac,
-                 1);
+                 wHfMalta / std::sqrt(hf_asymmetry_), norm1Hf, &diffs,
+                 &block_diff_ac, 1);
 
   static const double wHfMaltaX = 6923.99476109;
   static const double norm1HfX = 8051.15833247;
   MaltaDiffMapLF(pi0_.hf[0], pi1.hf[0], wHfMaltaX * std::sqrt(hf_asymmetry_),
-                 wHfMaltaX / std::sqrt(hf_asymmetry_), norm1HfX, &diffs, &block_diff_ac,
-                 0);
+                 wHfMaltaX / std::sqrt(hf_asymmetry_), norm1HfX, &diffs,
+                 &block_diff_ac, 0);
 
   static const double wMfMalta = 37.0819870399;
   static const double norm1Mf = 130262059.556;
@@ -1908,15 +1909,15 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
                  norm1MfX, &diffs, &block_diff_ac, 0);
 
   static const double wmul[9] = {
-    15,
-    1.50815703118,
-    0,
-    2090.9337651,
-    10.6195433239,
-    16.2176043152,
-    29.2353797994,
-    0.844626970982,
-    0.703646627719,
+      15,
+      1.50815703118,
+      0,
+      2090.9337651,
+      10.6195433239,
+      16.2176043152,
+      29.2353797994,
+      0.844626970982,
+      0.703646627719,
   };
   Image3F block_diff_dc(xsize_, ysize_);
   for (size_t c = 0; c < 3; ++c) {
@@ -2095,7 +2096,7 @@ static double print_out_normalization = ButteraugliFuzzyInverse(1.0);
 namespace {
 
 void ScoreToRgb(double score, double good_threshold, double bad_threshold,
-                uint8_t rgb[3]) {
+                float rgb[3]) {
   double heatmap[12][3] = {
       {0, 0, 0},       {0, 0, 1},
       {0, 1, 1},       {0, 1, 0},  // Good level
@@ -2121,23 +2122,23 @@ void ScoreToRgb(double score, double good_threshold, double bad_threshold,
   double mix = score - ix;
   for (int i = 0; i < 3; ++i) {
     double v = mix * heatmap[ix + 1][i] + (1 - mix) * heatmap[ix][i];
-    rgb[i] = static_cast<uint8_t>(255 * pow(v, 0.5) + 0.5);
+    rgb[i] = pow(v, 0.5);
   }
 }
 
 }  // namespace
 
-Image3B CreateHeatMapImage(const ImageF& distmap, double good_threshold,
+Image3F CreateHeatMapImage(const ImageF& distmap, double good_threshold,
                            double bad_threshold) {
-  Image3B heatmap(distmap.xsize(), distmap.ysize());
+  Image3F heatmap(distmap.xsize(), distmap.ysize());
   for (size_t y = 0; y < distmap.ysize(); ++y) {
     const float* BUTTERAUGLI_RESTRICT row_distmap = distmap.ConstRow(y);
-    uint8_t* BUTTERAUGLI_RESTRICT row_h0 = heatmap.PlaneRow(0, y);
-    uint8_t* BUTTERAUGLI_RESTRICT row_h1 = heatmap.PlaneRow(1, y);
-    uint8_t* BUTTERAUGLI_RESTRICT row_h2 = heatmap.PlaneRow(2, y);
+    float* BUTTERAUGLI_RESTRICT row_h0 = heatmap.PlaneRow(0, y);
+    float* BUTTERAUGLI_RESTRICT row_h1 = heatmap.PlaneRow(1, y);
+    float* BUTTERAUGLI_RESTRICT row_h2 = heatmap.PlaneRow(2, y);
     for (size_t x = 0; x < distmap.xsize(); ++x) {
       const float d = row_distmap[x];
-      uint8_t rgb[3];
+      float rgb[3];
       ScoreToRgb(d, good_threshold, bad_threshold, rgb);
       row_h0[x] = rgb[0];
       row_h1[x] = rgb[1];

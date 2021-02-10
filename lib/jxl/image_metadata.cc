@@ -254,9 +254,14 @@ Status ImageMetadata::VisitFields(Visitor* JXL_RESTRICT visitor) {
     return true;
   }
 
-  bool extra_fields =
-      (orientation != 1 || have_preview || have_animation ||
-       have_intrinsic_size || !Bundle::AllDefault(tone_mapping));
+  // Bundle::AllDefault does not allow usage when reading (it may abort the
+  // program when a codestream has invalid values), but when reading we
+  // overwrite the extra_fields value, so do not need to call AllDefault.
+  bool tone_mapping_default =
+      visitor->IsReading() ? false : Bundle::AllDefault(tone_mapping);
+
+  bool extra_fields = (orientation != 1 || have_preview || have_animation ||
+                       have_intrinsic_size || !tone_mapping_default);
   JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &extra_fields));
   if (visitor->Conditional(extra_fields)) {
     orientation--;

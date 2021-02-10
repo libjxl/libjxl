@@ -90,12 +90,9 @@ void RunRGBRoundTrip(float distance, bool fast) {
   enc_state.shared.ac_strategy.FillDCT8();
   enc_state.cparams = cparams;
   ZeroFillImage(&enc_state.shared.epf_sharpness);
-  Image3F recon = RoundtripImage(opsin, &enc_state, &pool);
-
   CodecInOut io1;
-  io1.metadata.m.bit_depth = io.metadata.m.bit_depth;
-  io1.metadata.m.color_encoding = ColorEncoding::LinearSRGB();
-  io1.SetFromImage(std::move(recon), io1.metadata.m.color_encoding);
+  io1.Main() = RoundtripImage(opsin, &enc_state, &pool);
+  io1.metadata.m.color_encoding = io1.Main().c_current();
 
   EXPECT_LE(ButteraugliDistance(io, io1, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),

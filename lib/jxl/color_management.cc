@@ -87,9 +87,22 @@ void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
       break;
 
     case ExtraTF::kPQ:
-      for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
-        xform_src[i] = static_cast<float>(
-            TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+      // By default, PQ content has an intensity target of 10000, stored
+      // exactly.
+      if (t->intensity_target_ == 10000.f) {
+        for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
+          xform_src[i] = static_cast<float>(
+              TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+        }
+      } else {
+        // After the transform, 1 represents 10000 cd/m², but we want
+        // `intensity_target` cd/m² to be 1 instead.
+        const double multiplier = 10000. / t->intensity_target_;
+        for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
+          xform_src[i] = static_cast<float>(
+              multiplier *
+              TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
+        }
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("pre in %.4f %.4f %.4f undoPQ %.4f %.4f %.4f\n", buf_src[3 * kX],
@@ -133,9 +146,19 @@ void AfterTransform(ColorSpaceTransform* t, float* JXL_RESTRICT buf_dst) {
       JXL_DASSERT(false);  // unreachable
       break;
     case ExtraTF::kPQ:
-      for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
-        buf_dst[i] = static_cast<float>(
-            TF_PQ().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
+      if (t->intensity_target_ == 10000.f) {
+        for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
+          buf_dst[i] = static_cast<float>(
+              TF_PQ().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
+        }
+      } else {
+        // Our PQ transform expects 1 to represent 10000 cd/m², but at this
+        // point, it represents `intensity_target` cd/m² instead.
+        const double multiplier = t->intensity_target_ / 10000.;
+        for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
+          buf_dst[i] = static_cast<float>(TF_PQ().EncodedFromDisplay(
+              static_cast<double>(multiplier * buf_dst[i])));
+        }
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("after PQ enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
@@ -1436,7 +1459,8 @@ ColorSpaceTransform::ColorSpaceTransform()
 }
 
 Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
-                                 const ColorEncoding& c_dst, size_t xsize,
+                                 const ColorEncoding& c_dst,
+                                 float intensity_target, size_t xsize,
                                  const size_t num_threads) {
   std::lock_guard<std::mutex> guard(lcms_mutex);
 #if JXL_CMS_VERBOSE
@@ -1470,6 +1494,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
   const bool dst_linear = c_dst.tf.IsLinear();
   if (((c_src.tf.IsPQ() || c_src.tf.IsHLG()) && dst_linear) ||
       ((c_dst.tf.IsPQ() || c_dst.tf.IsHLG()) && src_linear) ||
+      ((c_src.tf.IsPQ() != c_dst.tf.IsPQ()) && intensity_target_ != 10000) ||
       (c_src.tf.IsSRGB() && dst_linear) || (c_dst.tf.IsSRGB() && src_linear)) {
     // Construct new profiles as if the data were already/still linear.
     ColorEncoding c_linear_src = c_src;
@@ -1507,12 +1532,12 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       profile_src.swap(new_src);
       profile_dst.swap(new_dst);
 #endif  // JPEGXL_ENABLE_SKCMS
-      if (c_dst.tf.IsLinear()) {
+      if (!c_src.tf.IsLinear()) {
         preprocess_ = c_src.tf.IsSRGB()
                           ? ExtraTF::kSRGB
                           : (c_src.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
-      } else {
-        JXL_ASSERT(c_src.tf.IsLinear());
+      }
+      if (!c_dst.tf.IsLinear()) {
         postprocess_ = c_dst.tf.IsSRGB()
                            ? ExtraTF::kSRGB
                            : (c_dst.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
@@ -1575,6 +1600,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
   buf_src_ = ImageF(xsize * channels_src, num_threads);
   buf_dst_ = ImageF(xsize * channels_dst, num_threads);
 #endif
+  intensity_target_ = intensity_target;
   xsize_ = xsize;
   return true;
 }

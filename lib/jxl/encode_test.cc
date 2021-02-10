@@ -67,7 +67,20 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   jxl::CodecInOut input_io =
       jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
 
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetDimensions(enc, xsize, ysize));
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  if (options->values.lossless) {
+    basic_info.uses_original_profile = true;
+  } else {
+    basic_info.uses_original_profile = false;
+  }
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding,
+                            /*is_gray=*/pixel_format.num_channels < 3);
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
                                     pixels.size()));
@@ -98,7 +111,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   jxl::ButteraugliParams ba;
   EXPECT_LE(ButteraugliDistance(input_io, decoded_io, ba,
                                 /*distmap=*/nullptr, nullptr),
-            2.0f);
+            2.2f);
 }
 
 void VerifyFrameEncoding(JxlEncoder* enc, const JxlEncoderOptions* options) {

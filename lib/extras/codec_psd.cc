@@ -87,7 +87,7 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
   if (w <= 0 || h <= 0) return JXL_FAILURE("PSD: empty layer");
   for (int c = 0; c < nb_channels; c++) {
     // skip nop byte padding
-    while (*pos == 128 && pos < maxpos) pos++;
+    while (pos < maxpos && *pos == 128) pos++;
     JXL_DEBUG_V(PSD_VERBOSITY, "Channel %i (pos %zu)", c, (size_t)pos);
     // Merged image stores all channels together (same compression method)
     // Layers store channel per channel
@@ -509,17 +509,10 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       }
       Image3F rgb(width, height);
       layer.SetFromImage(std::move(rgb), io->metadata.m.color_encoding);
-      int i = 3;
       std::vector<ImageF> ec;
-      for (; i < nb_chs; i++) {
-        // add extra channels
+      for (const auto& ec_meta : layer.metadata()->extra_channel_info) {
         ImageF extra(width, height);
-        ec.push_back(std::move(extra));
-      }
-      for (; i < real_nb_channels; i++) {
-        // add empty extra channels
-        ImageF extra(width, height);
-        if (have_alpha && i == colormodel) {
+        if (ec_meta.type == ExtraChannel::kAlpha) {
           FillPlane(1.0f, &extra, Rect(extra));  // opaque
         } else {
           ZeroFillPlane(&extra, Rect(extra));  // zeroes

@@ -48,7 +48,7 @@ struct ButteraugliParams {
   float xmul = 1.0f;
 
   // Number of nits that correspond to 1.0f input values.
-  float intensity_target = kDefaultIntensityTarget;
+  float intensity_target = 80.0f;
 
   bool approximate_border = false;
 };
@@ -220,7 +220,7 @@ double ButteraugliScoreFromDiffmap(const ImageF &diffmap,
                                    const ButteraugliParams *params = nullptr);
 
 // Generate rgb-representation of the distance between two images.
-Image3B CreateHeatMapImage(const ImageF &distmap, double good_threshold,
+Image3F CreateHeatMapImage(const ImageF &distmap, double good_threshold,
                            double bad_threshold);
 
 }  // namespace jxl

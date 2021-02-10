@@ -72,6 +72,10 @@ typedef enum {
    */
   JXL_ENC_NEED_MORE_OUTPUT = 2,
 
+  /** The encoder doesn't (yet) support this.
+   */
+  JXL_ENC_NOT_SUPPORTED = 3,
+
 } JxlEncoderStatus;
 
 /**
@@ -192,16 +196,28 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
 JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
 
 /**
- * Sets the dimensions of the image encoded by this encoder.
+ * Sets the global color encoding of the image encoded by this encoder.
  *
  * @param enc encoder object
- * @param xsize width of image
- * @param ysize height of image
- * @return JXL_ENC_SUCCESS if the dimensions are within jxl spec limitations,
- * JXL_ENC_ERROR otherwise
+ * @param color color encoding. Object owned by the caller and its contents are
+ * copied internally.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR or
+ * JXL_ENC_NOT_SUPPORTED otherwise
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderSetDimensions(JxlEncoder* enc,
-                                                    size_t xsize, size_t ysize);
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
+
+/**
+ * Sets the global metadata of the image encoded by this encoder.
+ *
+ * @param enc encoder object
+ * @param info global image metadata. Object owned by the caller and its
+ * contents are copied internally.
+ * @return JXL_ENC_SUCCESS if the operation was successful,
+ * JXL_ENC_ERROR or JXL_ENC_NOT_SUPPORTED otherwise
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
+                                                   const JxlBasicInfo* info);
 
 /**
  * Sets lossless/lossy mode for the provided options. Default is lossy.
@@ -258,6 +274,24 @@ JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
  */
 JXL_EXPORT JxlEncoderOptions* JxlEncoderOptionsCreate(
     JxlEncoder* enc, const JxlEncoderOptions* source);
+
+/**
+ * Sets a color encoding to be sRGB.
+ *
+ * @param color_encoding color encoding instance
+ * @param is_gray whether the color encoding should be gray scale or color
+ */
+JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
+                                          JXL_BOOL is_gray);
+
+/**
+ * Sets a color encoding to be linear sRGB.
+ *
+ * @param color_encoding color encoding instance
+ * @param is_gray whether the color encoding should be gray scale or color
+ */
+JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
+    JxlColorEncoding* color_encoding, JXL_BOOL is_gray);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

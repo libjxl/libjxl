@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TOOLS_BUTTERAUGLI_PNORM_H_
-#define TOOLS_BUTTERAUGLI_PNORM_H_
+#ifndef LIB_JXL_BUTTERAUGLI_PNORM_H_
+#define LIB_JXL_BUTTERAUGLI_PNORM_H_
 
 #include <stdint.h>
 
@@ -30,4 +30,4 @@ double ComputeDistance2(const ImageBundle& ib1, const ImageBundle& ib2);
 
 }  // namespace jxl
 
-#endif  // TOOLS_BUTTERAUGLI_PNORM_H_
+#endif  // LIB_JXL_BUTTERAUGLI_PNORM_H_

@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO(deymo): Split this into encoder and decoder targets
-set(JPEGXL_INTERNAL_SOURCES
+# Lists all source files for the JPEG XL decoder library. These are also used
+# by the encoder: the encoder uses both dec and enc ourse files, while the
+# decoder uses only dec source files.
+# TODO(lode): further prune these files and move to JPEGXL_INTERNAL_SOURCES_ENC:
+#             only those files that the decoder absolutely needs, and or not
+#             only for encoding, should be listed here.
+set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/ac_context.h
   jxl/ac_strategy.cc
   jxl/ac_strategy.h
@@ -57,6 +62,7 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/blending.h
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
+  jxl/butteraugli_wrapper.cc
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
   jxl/codec_in_out.h
@@ -112,48 +118,6 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/detect_dots.h
   jxl/dot_dictionary.cc
   jxl/dot_dictionary.h
-  jxl/enc_ac_strategy.cc
-  jxl/enc_ac_strategy.h
-  jxl/enc_adaptive_quantization.cc
-  jxl/enc_adaptive_quantization.h
-  jxl/enc_ans.cc
-  jxl/enc_ans.h
-  jxl/enc_bit_writer.cc
-  jxl/enc_bit_writer.h
-  jxl/enc_butteraugli_comparator.cc
-  jxl/enc_butteraugli_comparator.h
-  jxl/enc_cache.cc
-  jxl/enc_cache.h
-  jxl/enc_cluster.cc
-  jxl/enc_cluster.h
-  jxl/enc_comparator.cc
-  jxl/enc_comparator.h
-  jxl/enc_context_map.cc
-  jxl/enc_context_map.h
-  jxl/enc_fast_heuristics.cc
-  jxl/enc_file.cc
-  jxl/enc_file.h
-  jxl/enc_frame.cc
-  jxl/enc_frame.h
-  jxl/enc_gamma_correct.h
-  jxl/enc_group.cc
-  jxl/enc_group.h
-  jxl/enc_heuristics.cc
-  jxl/enc_heuristics.h
-  jxl/enc_huffman.cc
-  jxl/enc_huffman.h
-  jxl/enc_modular.cc
-  jxl/enc_modular.h
-  jxl/enc_noise.cc
-  jxl/enc_noise.h
-  jxl/enc_params.h
-  jxl/enc_transforms-inl.h
-  jxl/enc_transforms.cc
-  jxl/enc_transforms.h
-  jxl/enc_xyb.cc
-  jxl/enc_xyb.h
-  jxl/encode.cc
-  jxl/encode_internal.h
   jxl/entropy_coder.cc
   jxl/entropy_coder.h
   jxl/epf.cc
@@ -253,6 +217,54 @@ set(JPEGXL_INTERNAL_SOURCES
   jxl/xorshift128plus-inl.h
 )
 
+# List of source files only needed by the encoder, not the decoder.
+set(JPEGXL_INTERNAL_SOURCES_ENC
+  jxl/enc_ac_strategy.cc
+  jxl/enc_ac_strategy.h
+  jxl/enc_adaptive_quantization.cc
+  jxl/enc_adaptive_quantization.h
+  jxl/enc_ans.cc
+  jxl/enc_ans.h
+  jxl/enc_bit_writer.cc
+  jxl/enc_bit_writer.h
+  jxl/enc_butteraugli_comparator.cc
+  jxl/enc_butteraugli_comparator.h
+  jxl/enc_butteraugli_pnorm.cc
+  jxl/enc_butteraugli_pnorm.h
+  jxl/enc_cache.cc
+  jxl/enc_cache.h
+  jxl/enc_cluster.cc
+  jxl/enc_cluster.h
+  jxl/enc_comparator.cc
+  jxl/enc_comparator.h
+  jxl/enc_context_map.cc
+  jxl/enc_context_map.h
+  jxl/enc_fast_heuristics.cc
+  jxl/enc_file.cc
+  jxl/enc_file.h
+  jxl/enc_frame.cc
+  jxl/enc_frame.h
+  jxl/enc_gamma_correct.h
+  jxl/enc_group.cc
+  jxl/enc_group.h
+  jxl/enc_heuristics.cc
+  jxl/enc_heuristics.h
+  jxl/enc_huffman.cc
+  jxl/enc_huffman.h
+  jxl/enc_modular.cc
+  jxl/enc_modular.h
+  jxl/enc_noise.cc
+  jxl/enc_noise.h
+  jxl/enc_params.h
+  jxl/enc_transforms-inl.h
+  jxl/enc_transforms.cc
+  jxl/enc_transforms.h
+  jxl/enc_xyb.cc
+  jxl/enc_xyb.h
+  jxl/encode.cc
+  jxl/encode_internal.h
+)
+
 set(JPEGXL_INTERNAL_LIBS
   brotlicommon-static
   brotlienc-static
@@ -269,18 +281,7 @@ else ()
   list(APPEND JPEGXL_INTERNAL_LIBS lcms2)
 endif ()
 
-# Object library. This is used to hold the set of objects and properties.
-add_library(jxl-obj OBJECT ${JPEGXL_INTERNAL_SOURCES})
-target_compile_options(jxl-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
-target_compile_options(jxl-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
-set_property(TARGET jxl-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_include_directories(jxl-obj PUBLIC
-  ${PROJECT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
-  $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
-)
-target_compile_definitions(jxl-obj PUBLIC
+set(OBJ_COMPILE_DEFINITIONS
   JPEGXL_MAJOR_VERSION=${JPEGXL_MAJOR_VERSION}
   JPEGXL_MINOR_VERSION=${JPEGXL_MINOR_VERSION}
   JPEGXL_PATCH_VERSION=${JPEGXL_PATCH_VERSION}
@@ -290,12 +291,49 @@ target_compile_definitions(jxl-obj PUBLIC
   JXL_INTERNAL_LIBRARY_BUILD
 )
 
+# Decoder-only object library
+add_library(jxl_dec-obj OBJECT ${JPEGXL_INTERNAL_SOURCES_DEC})
+target_compile_options(jxl_dec-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
+target_compile_options(jxl_dec-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
+set_property(TARGET jxl_dec-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_include_directories(jxl_dec-obj PUBLIC
+  ${PROJECT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(jxl_dec-obj PUBLIC
+  ${OBJ_COMPILE_DEFINITIONS}
+)
+
+# Object library. This is used to hold the set of objects and properties.
+add_library(jxl_enc-obj OBJECT ${JPEGXL_INTERNAL_SOURCES_ENC})
+target_compile_options(jxl_enc-obj PRIVATE ${JPEGXL_INTERNAL_FLAGS})
+target_compile_options(jxl_enc-obj PUBLIC ${JPEGXL_COVERAGE_FLAGS})
+set_property(TARGET jxl_enc-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_include_directories(jxl_enc-obj PUBLIC
+  ${PROJECT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  $<TARGET_PROPERTY:hwy,INTERFACE_INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:brotlicommon-static,INTERFACE_INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(jxl_enc-obj PUBLIC
+  ${OBJ_COMPILE_DEFINITIONS}
+)
+
+#TODO(lode): don't depend on CMS for the core library
 if (JPEGXL_ENABLE_SKCMS)
-  target_include_directories(jxl-obj PRIVATE
+  target_include_directories(jxl_enc-obj PRIVATE
+    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  )
+  target_include_directories(jxl_dec-obj PRIVATE
     $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
   )
 else ()
-  target_include_directories(jxl-obj PRIVATE
+  target_include_directories(jxl_enc-obj PRIVATE
+    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
+  )
+  target_include_directories(jxl_dec-obj PRIVATE
     $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
   )
 endif ()
@@ -303,21 +341,47 @@ endif ()
 # Headers for exporting/importing public headers
 include(GenerateExportHeader)
 # TODO(deymo): Add these visibility properties to the static dependencies of
-# jxl-obj since those are currently compiled with the default visibility.
-set_target_properties(jxl-obj PROPERTIES
+# jxl_{dec,enc}-obj since those are currently compiled with the default
+# visibility.
+set_target_properties(jxl_dec-obj PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
   DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
 )
-generate_export_header(jxl-obj
+target_include_directories(jxl_dec-obj PUBLIC
+    ${CMAKE_CURRENT_BINARY_DIR}/include)
+
+set_target_properties(jxl_enc-obj PROPERTIES
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN 1
+  DEFINE_SYMBOL JXL_INTERNAL_LIBRARY_BUILD
+)
+generate_export_header(jxl_enc-obj
   BASE_NAME JXL
   EXPORT_FILE_NAME include/jxl/jxl_export.h)
-target_include_directories(jxl-obj PUBLIC
+target_include_directories(jxl_enc-obj PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}/include)
 
 # Private static library. This exposes all the internal functions and is used
 # for tests.
-add_library(jxl-static STATIC $<TARGET_OBJECTS:jxl-obj>)
+# TODO(lode): this library is missing symbols, more encoder-only code needs to
+# be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
+add_library(jxl_dec-static STATIC $<TARGET_OBJECTS:jxl_dec-obj>)
+target_link_libraries(jxl_dec-static
+  PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} hwy)
+target_include_directories(jxl_dec-static PUBLIC
+  "${PROJECT_SOURCE_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/include"
+  "${CMAKE_CURRENT_BINARY_DIR}/include")
+
+# Private static library. This exposes all the internal functions and is used
+# for tests.
+# TODO(lode): once the source files are correctly split so that it is possible
+# to do, remove $<TARGET_OBJECTS:jxl_dec-obj> here and depend on jxl_dec-static
+add_library(jxl-static STATIC
+  $<TARGET_OBJECTS:jxl_enc-obj>
+  $<TARGET_OBJECTS:jxl_dec-obj>
+)
 target_link_libraries(jxl-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} hwy)
 target_include_directories(jxl-static PUBLIC
@@ -364,7 +428,9 @@ if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
      TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC)
 
 # Public shared library.
-add_library(jxl SHARED $<TARGET_OBJECTS:jxl-obj>)
+add_library(jxl SHARED
+  $<TARGET_OBJECTS:jxl_dec-obj>
+  $<TARGET_OBJECTS:jxl_enc-obj>)
 target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_LIBS})
 # Shared library include path contains only the "include/" paths.
@@ -376,6 +442,24 @@ set_target_properties(jxl PROPERTIES
   SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+# Public shared library.
+# TODO(lode): this library is missing symbols, more encoder-only code needs to
+# be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
+# Commented out: building libjxl_dec.dll out of this on Windows causes linker
+# errors due to this reason
+# add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_dec-obj>)
+# target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS})
+# target_link_libraries(jxl_dec PRIVATE ${JPEGXL_INTERNAL_LIBS})
+# # Shared library include path contains only the "include/" paths.
+# target_include_directories(jxl_dec PUBLIC
+#   "${CMAKE_CURRENT_SOURCE_DIR}/include"
+#   "${CMAKE_CURRENT_BINARY_DIR}/include")
+# set_target_properties(jxl_dec PROPERTIES
+#   VERSION ${JPEGXL_LIBRARY_VERSION}
+#   SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+#   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+#   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # Add a jxl.version file as a version script to tag symbols with the
 # appropriate version number. This script is also used to limit what's exposed
