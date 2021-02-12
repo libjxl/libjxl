@@ -186,7 +186,7 @@ static const Tag kSf32Tag = {'s', 'f', '3', '2'};
 static const Tag kTextTag = {'t', 'e', 'x', 't'};
 static const Tag kVcgtTag = {'v', 'c', 'g', 't'};
 static const Tag kWtptTag = {'w', 't', 'p', 't'};
-static const Tag kXyz_Tag = {'X', 'Y', 'X', ' '};
+static const Tag kXyz_Tag = {'X', 'Y', 'Z', ' '};
 
 // Tag names focused on RGB and GRAY monitor profiles
 constexpr const size_t kNumTagStrings = 17;
