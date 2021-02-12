@@ -18,7 +18,7 @@
 libjxl_version_defines = [
     "JPEGXL_MAJOR_VERSION=0",
     "JPEGXL_MINOR_VERSION=3",
-    "JPEGXL_PATCH_VERSION=1",
+    "JPEGXL_PATCH_VERSION=2",
 ]
 
 libjxl_dec_sources = [
