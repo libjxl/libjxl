@@ -212,6 +212,10 @@ Status DecodeANSCodes(const size_t num_histograms,
     for (size_t c = 0; c < num_histograms; c++) {
       if (alphabet_sizes[c] > 1) {
         if (!result->huffman_data[c].ReadFromBitStream(alphabet_sizes[c], in)) {
+          if (!in->AllReadsWithinBounds()) {
+            return JXL_STATUS(StatusCode::kNotEnoughBytes,
+                              "Not enough bytes for huffman code");
+          }
           return JXL_FAILURE(
               "Invalid huffman tree number %zu, alphabet size %u", c,
               alphabet_sizes[c]);
@@ -361,9 +365,8 @@ Status DecodeHistograms(BitReader* br, size_t num_contexts, ANSCode* code,
   JXL_RETURN_IF_ERROR(
       DecodeUintConfigs(code->log_alpha_size, &code->uint_config, br));
   const size_t max_alphabet_size = 1 << code->log_alpha_size;
-  if (!DecodeANSCodes(num_histograms, max_alphabet_size, br, code)) {
-    return JXL_FAILURE("Histo DecodeANSCodes");
-  }
+  JXL_RETURN_IF_ERROR(
+      DecodeANSCodes(num_histograms, max_alphabet_size, br, code));
   // When using LZ77, flat codes might result in valid codestreams with
   // histograms that potentially allow very large bit counts.
   // TODO(veluca): in principle, a valid codestream might contain a histogram

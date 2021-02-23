@@ -560,6 +560,17 @@ cmd_test() {
    ctest -j $(nproc --all || echo 1) --output-on-failure "$@")
 }
 
+cmd_gbench() {
+  export_env
+  (cd "${BUILD_DIR}"
+   export UBSAN_OPTIONS=print_stacktrace=1
+   lib/jxl_gbench \
+     --benchmark_counters_tabular=true \
+     --benchmark_out_format=json \
+     --benchmark_out=gbench.json "$@"
+  )
+}
+
 cmd_asan() {
   SANITIZER="asan"
   CMAKE_C_FLAGS+=" -DJXL_ENABLE_ASSERT=1 -g -DADDRESS_SANITIZER \
@@ -1247,6 +1258,7 @@ Where cmd is one of:
  tsan      Build and test a TSan (ThreadSanitizer) build.
  test      Run the tests build by opt, debug, release, asan or msan. Useful when
            building with SKIP_TEST=1.
+ gbench    Run the Google benchmark tests.
  fuzz      Generate the fuzzer corpus and run the fuzzer on it. Useful after
            building with asan or msan.
  benchmark Run the benchmark over the default corpus.

@@ -14,6 +14,8 @@
 
 #include "lib/jxl/gaborish.h"
 
+#include <hwy/base.h>
+
 #include "gtest/gtest.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/image_ops.h"

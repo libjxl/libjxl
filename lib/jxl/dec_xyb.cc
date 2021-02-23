@@ -116,17 +116,13 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 
 // Transform YCbCr to RGB.
 // Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
-void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
-                const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
-                ImageF* b_plane, const Rect& rect, ThreadPool* pool) {
+void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
   const HWY_FULL(float) df;
   const size_t S = Lanes(df);  // Step.
 
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
   if ((xsize == 0) || (ysize == 0)) return;
-
-  // TODO(veluca): remove the pool.
 
   // Full-range BT.601 as defined by JFIF Clause 7:
   // https://www.itu.int/rec/T-REC-T.871-201105-I/en
@@ -136,34 +132,25 @@ void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
   const auto cgcr = Set(df, -0.299f * 1.402f / 0.587f);
   const auto cbcb = Set(df, 1.772f);
 
-  constexpr size_t kGroupArea = kGroupDim * kGroupDim;
-  const size_t lines_per_group = DivCeil(kGroupArea, xsize);
-  const size_t num_stripes = DivCeil(ysize, lines_per_group);
-  const auto transform = [&](int idx, int /* thread*/) {
-    const size_t y0 = idx * lines_per_group;
-    const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
-    for (size_t y = y0; y < y1; ++y) {
-      const float* y_row = rect.ConstRow(y_plane, y);
-      const float* cb_row = rect.ConstRow(cb_plane, y);
-      const float* cr_row = rect.ConstRow(cr_plane, y);
-      float* r_row = rect.Row(r_plane, y);
-      float* g_row = rect.Row(g_plane, y);
-      float* b_row = rect.Row(b_plane, y);
-      for (size_t x = 0; x < xsize; x += S) {
-        const auto y_vec = Load(df, y_row + x) + c128;
-        const auto cb_vec = Load(df, cb_row + x);
-        const auto cr_vec = Load(df, cr_row + x);
-        const auto r_vec = crcr * cr_vec + y_vec;
-        const auto g_vec = cgcr * cr_vec + cgcb * cb_vec + y_vec;
-        const auto b_vec = cbcb * cb_vec + y_vec;
-        Store(r_vec, df, r_row + x);
-        Store(g_vec, df, g_row + x);
-        Store(b_vec, df, b_row + x);
-      }
+  for (size_t y = 0; y < ysize; y++) {
+    const float* y_row = rect.ConstPlaneRow(ycbcr, 1, y);
+    const float* cb_row = rect.ConstPlaneRow(ycbcr, 0, y);
+    const float* cr_row = rect.ConstPlaneRow(ycbcr, 2, y);
+    float* r_row = rect.PlaneRow(rgb, 0, y);
+    float* g_row = rect.PlaneRow(rgb, 1, y);
+    float* b_row = rect.PlaneRow(rgb, 2, y);
+    for (size_t x = 0; x < xsize; x += S) {
+      const auto y_vec = Load(df, y_row + x) + c128;
+      const auto cb_vec = Load(df, cb_row + x);
+      const auto cr_vec = Load(df, cr_row + x);
+      const auto r_vec = crcr * cr_vec + y_vec;
+      const auto g_vec = cgcr * cr_vec + cgcb * cb_vec + y_vec;
+      const auto b_vec = cbcb * cb_vec + y_vec;
+      Store(r_vec, df, r_row + x);
+      Store(g_vec, df, g_row + x);
+      Store(b_vec, df, b_row + x);
     }
-  };
-  RunOnPool(pool, 0, static_cast<int>(num_stripes), ThreadPool::SkipInit(),
-            transform, "YcbcrToRgb");
+  }
 }
 
 /* Vertical upsampling:
@@ -234,13 +221,12 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
  *  output:
  *   |o1 e1 o2 e2 o3 e3 o4 e4| =: (o, e)
  */
-ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
-  JXL_ASSERT(src.xsize() > 2 * xpadding);
-  const size_t xsize = src.xsize() - 2 * xpadding;
+ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
+  const size_t xsize = src.xsize();
   const size_t ysize = src.ysize();
   JXL_ASSERT(xsize != 0);
   JXL_ASSERT(ysize != 0);
-  ImageF dst(xsize * 2 + 2 * xpadding, ysize);
+  ImageF dst(xsize * 2, ysize);
 
   constexpr size_t kGroupArea = kGroupDim * kGroupDim;
   const size_t lines_per_group = DivCeil(kGroupArea, xsize);
@@ -252,8 +238,8 @@ ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
     const size_t y0 = idx * lines_per_group;
     const size_t y1 = std::min<size_t>(y0 + lines_per_group, ysize);
     for (size_t y = y0; y < y1; ++y) {
-      const float* JXL_RESTRICT current_row = src.ConstRow(y) + xpadding;
-      float* JXL_RESTRICT dst_row = dst.Row(y) + xpadding;
+      const float* JXL_RESTRICT current_row = src.ConstRow(y);
+      float* JXL_RESTRICT dst_row = dst.Row(y);
       const auto c34 = Set(d, 0.75f);
       const auto c14 = Set(d, 0.25f);
       for (size_t x = 1; x < xsize - 1; x += Lanes(d)) {
@@ -309,11 +295,8 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 }
 
 HWY_EXPORT(YcbcrToRgb);
-void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
-                const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
-                ImageF* b_plane, const Rect& rect, ThreadPool* pool) {
-  return HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(y_plane, cb_plane, cr_plane, r_plane,
-                                          g_plane, b_plane, rect, pool);
+void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
+  return HWY_DYNAMIC_DISPATCH(YcbcrToRgb)(ycbcr, rgb, rect);
 }
 
 HWY_EXPORT(UpsampleV2);
@@ -322,8 +305,8 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
 }
 
 HWY_EXPORT(UpsampleH2);
-ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool) {
-  return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, xpadding, pool);
+ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
+  return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, pool);
 }
 
 void OpsinParams::Init(float intensity_target) {

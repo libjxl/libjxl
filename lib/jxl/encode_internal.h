@@ -13,8 +13,8 @@
  * limitations under the License.
  */
 
-#ifndef JXL_ENCODE_INTERNAL_H_
-#define JXL_ENCODE_INTERNAL_H_
+#ifndef LIB_JXL_ENCODE_INTERNAL_H_
+#define LIB_JXL_ENCODE_INTERNAL_H_
 
 #include <vector>
 
@@ -56,12 +56,18 @@ struct JxlEncoderStruct {
   JxlMemoryManager memory_manager;
   jxl::MemoryManagerUniquePtr<jxl::ThreadPool> thread_pool{
       nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)};
+  std::vector<jxl::MemoryManagerUniquePtr<JxlEncoderOptions>> encoder_options;
+
   std::vector<jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame>>
       input_frame_queue;
-  std::vector<jxl::MemoryManagerUniquePtr<JxlEncoderOptions>> encoder_options;
   std::vector<uint8_t> output_byte_queue;
-  bool wrote_headers;
+
+  bool use_container = false;
+  bool store_jpeg_metadata = false;
   jxl::CodecMetadata metadata;
+  std::vector<uint8_t> jpeg_metadata;
+
+  bool wrote_headers = false;
   jxl::CompressParams last_used_cparams;
 
   JxlEncoderStatus RefillOutputByteQueue();
@@ -72,4 +78,4 @@ struct JxlEncoderOptionsStruct {
   jxl::JxlEncoderOptionsValues values;
 };
 
-#endif /* JXL_ENCODE_INTERNAL_H_ */
+#endif  // LIB_JXL_ENCODE_INTERNAL_H_

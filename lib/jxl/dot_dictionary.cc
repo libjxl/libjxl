@@ -49,43 +49,32 @@ const std::array<double, 3> kEllipseMaxIntensity{0.05, 1.0, 0.4};
 const std::array<size_t, 3> kEllipseIntensityQ{10, 36, 10};
 }  // namespace
 
-namespace {
-
-GaussianDetectParams GetConstDetectParams() {
-  GaussianDetectParams ans;
-  ans.t_high = 0.04;
-  ans.t_low = 0.02;
-  ans.maxWinSize = 5;
-  ans.maxL2Loss = 0.005;
-  ans.maxCustomLoss = 300;
-  ans.minIntensity = 0.12;
-  ans.maxDistMeanMode = 1.0;
-  ans.maxNegPixels = 0;
-  ans.minScore = 12.0;
-  ans.maxCC = 100;
-  ans.percCC = 100;
-  return ans;
-}
-
-const GaussianDetectParams kEllipseDetectParams = GetConstDetectParams();
-
-}  // namespace
-
 std::vector<PatchInfo> FindDotDictionary(const CompressParams& cparams,
                                          const Image3F& opsin,
                                          const ColorCorrelationMap& cmap,
                                          ThreadPool* pool) {
   if (ApplyOverride(cparams.dots,
                     cparams.butteraugli_distance >= kMinButteraugliForDots)) {
+    GaussianDetectParams ellipse_params;
+    ellipse_params.t_high = 0.04;
+    ellipse_params.t_low = 0.02;
+    ellipse_params.maxWinSize = 5;
+    ellipse_params.maxL2Loss = 0.005;
+    ellipse_params.maxCustomLoss = 300;
+    ellipse_params.minIntensity = 0.12;
+    ellipse_params.maxDistMeanMode = 1.0;
+    ellipse_params.maxNegPixels = 0;
+    ellipse_params.minScore = 12.0;
+    ellipse_params.maxCC = 100;
+    ellipse_params.percCC = 100;
     EllipseQuantParams qParams{
         opsin.xsize(),      opsin.ysize(),        kEllipsePosQ,
         kEllipseMinSigma,   kEllipseMaxSigma,     kEllipseSigmaQ,
         kEllipseAngleQ,     kEllipseMinIntensity, kEllipseMaxIntensity,
         kEllipseIntensityQ, kEllipsePosQ <= 5,    cmap.YtoXRatio(0),
         cmap.YtoBRatio(0)};
-    GaussianDetectParams eDetectParams = kEllipseDetectParams;
 
-    return DetectGaussianEllipses(opsin, eDetectParams, qParams, pool);
+    return DetectGaussianEllipses(opsin, ellipse_params, qParams, pool);
   }
   return {};
 }

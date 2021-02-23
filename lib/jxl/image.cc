@@ -223,63 +223,6 @@ Image3F PadImageMirror(const Image3F& in, const size_t xborder,
   return out;
 }
 
-void PadRectMirrorInPlace(Image3F* img, const Rect& rect, size_t xsize,
-                          size_t xborder, size_t xpadding) {
-  JXL_ASSERT(2 * xpadding + xsize <= img->xsize());
-  if (xborder > xsize) {
-    if (rect.x0() == 0) {
-      for (size_t c = 0; c < 3; c++) {
-        // Left padding with mirroring.
-        for (size_t iy = 0; iy < rect.ysize(); iy++) {
-          float* row = rect.PlaneRow(img, c, iy);
-          for (size_t ix = 0; ix < xborder; ix++) {
-            row[xpadding - ix - 1] = row[xpadding + Mirror(-ix - 1, xsize)];
-          }
-        }
-      }
-    }
-
-    // Right padding with mirroring.
-    if (rect.x0() + rect.xsize() == xsize) {
-      for (size_t c = 0; c < 3; c++) {
-        // Right padding with mirroring.
-        for (size_t iy = 0; iy < rect.ysize(); iy++) {
-          float* row = img->PlaneRow(c, rect.y0() + iy);
-          for (size_t ix = 0; ix < xborder; ix++) {
-            row[xpadding + xsize + ix] =
-                row[xpadding + Mirror(xsize + ix, xsize)];
-          }
-        }
-      }
-    }
-    return;
-  }
-  if (rect.x0() == 0) {
-    for (size_t c = 0; c < 3; c++) {
-      // Left padding with mirroring.
-      for (size_t iy = 0; iy < rect.ysize(); iy++) {
-        float* row = rect.PlaneRow(img, c, iy);
-        for (size_t ix = 0; ix < xborder; ix++) {
-          row[xpadding - ix - 1] = row[xpadding + ix];
-        }
-      }
-    }
-  }
-
-  // Right padding with mirroring.
-  if (rect.x0() + rect.xsize() == xsize) {
-    for (size_t c = 0; c < 3; c++) {
-      // Right padding with mirroring.
-      for (size_t iy = 0; iy < rect.ysize(); iy++) {
-        float* row = img->PlaneRow(c, rect.y0() + iy);
-        for (size_t ix = 0; ix < xborder; ix++) {
-          row[xpadding + xsize + ix] = row[xpadding + xsize - ix - 1];
-        }
-      }
-    }
-  }
-}
-
 Image3F PadImageToMultiple(const Image3F& in, const size_t N) {
   PROFILER_FUNC;
   const size_t xsize_blocks = DivCeil(in.xsize(), N);
@@ -325,6 +268,36 @@ float DotProduct(const ImageF& a, const ImageF& b) {
     }
   }
   return sum;
+}
+
+void DownsampleImage(Image3F* opsin, size_t factor) {
+  JXL_ASSERT(factor != 1);
+  // Allocate extra space to avoid a reallocation when padding.
+  Image3F downsampled(DivCeil(opsin->xsize(), factor) + kBlockDim,
+                      DivCeil(opsin->ysize(), factor) + kBlockDim);
+  downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
+                       downsampled.ysize() - kBlockDim);
+  size_t in_stride = opsin->PixelsPerRow();
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < downsampled.ysize(); y++) {
+      float* row_out = downsampled.PlaneRow(c, y);
+      const float* row_in = opsin->PlaneRow(c, factor * y);
+      for (size_t x = 0; x < downsampled.xsize(); x++) {
+        size_t cnt = 0;
+        float sum = 0;
+        for (size_t iy = 0; iy < factor && iy + factor * y < opsin->ysize();
+             iy++) {
+          for (size_t ix = 0; ix < factor && ix + factor * x < opsin->xsize();
+               ix++) {
+            sum += row_in[iy * in_stride + x * factor + ix];
+            cnt++;
+          }
+        }
+        row_out[x] = sum / cnt;
+      }
+    }
+  }
+  *opsin = std::move(downsampled);
 }
 
 }  // namespace jxl

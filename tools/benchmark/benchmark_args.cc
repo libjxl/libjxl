@@ -33,6 +33,10 @@
 #include "tools/benchmark/benchmark_codec_webp.h"
 #endif  // BENCHMARK_WEBP
 
+#ifdef BENCHMARK_AVIF
+#include "tools/benchmark/benchmark_codec_avif.h"
+#endif  // BENCHMARK_AVIF
+
 namespace jxl {
 
 std::vector<std::string> SplitString(const std::string& s, char c) {
@@ -220,6 +224,9 @@ Status BenchmarkArgs::AddCommandLineOptions() {
 #ifdef BENCHMARK_WEBP
   if (!AddCommandLineOptionsWebPCodec(this)) return false;
 #endif  // BENCHMARK_WEBP
+#ifdef BENCHMARK_AVIF
+  if (!AddCommandLineOptionsAvifCodec(this)) return false;
+#endif  // BENCHMARK_AVIF
 
   return true;
 }

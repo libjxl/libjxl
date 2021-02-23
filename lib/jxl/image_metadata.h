@@ -351,7 +351,6 @@ struct ImageMetadata : public Fields {
   // but decoders are advised to resample or display per `intrinsic_size`.
   SizeHeader intrinsic_size;  // only if have_intrinsic_size
 
-
   ToneMapping tone_mapping;
 
   // When reading: deserialized. When writing: automatically set from vector.

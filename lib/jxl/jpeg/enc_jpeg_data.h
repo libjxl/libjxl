@@ -12,16 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_JPEG_JPEG_ENC_JPEG_DATA_H_
-#define LIB_JXL_JPEG_JPEG_ENC_JPEG_DATA_H_
+#ifndef LIB_JXL_JPEG_ENC_JPEG_DATA_H_
+#define LIB_JXL_JPEG_ENC_JPEG_DATA_H_
 
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jxl {
 namespace jpeg {
 Status EncodeJPEGData(JPEGData& jpeg_data, PaddedBytes* bytes);
+
+/**
+ * Decodes bytes containing JPEG codestream into a CodecInOut as coefficients
+ * only, for lossless JPEG transcoding.
+ */
+Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io);
 }  // namespace jpeg
 }  // namespace jxl
 
-#endif
+#endif  // LIB_JXL_JPEG_ENC_JPEG_DATA_H_

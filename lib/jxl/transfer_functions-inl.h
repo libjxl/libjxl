@@ -125,9 +125,9 @@ class TF_PQ {
     const double xp = std::pow(e, 1.0 / kM2);
     const double num = std::max(xp - kC1, 0.0);
     const double den = kC2 - kC3 * xp;
-    JXL_ASSERT(den != 0.0);
+    JXL_DASSERT(den != 0.0);
     const double d = std::pow(num / den, 1.0 / kM1);
-    JXL_ASSERT(d >= 0.0);  // Equal for e ~= 1E-9
+    JXL_DASSERT(d >= 0.0);  // Equal for e ~= 1E-9
     return std::copysign(d, original_sign);
   }
 
@@ -141,7 +141,7 @@ class TF_PQ {
     const double num = kC1 + xp * kC2;
     const double den = 1.0 + xp * kC3;
     const double e = std::pow(num / den, kM2);
-    JXL_ASSERT(e > 0.0);
+    JXL_DASSERT(e > 0.0);
     return std::copysign(e, original_sign);
   }
 
@@ -189,10 +189,9 @@ class TF_SRGB {
     return Or(AndNot(kSign, magnitude), original_sign);
   }
 
-  template <class V>
-  JXL_INLINE V EncodedFromDisplay(V x) const {
-    const HWY_FULL(float) d;
-    const HWY_FULL(uint32_t) du;
+  template <class D, class V>
+  JXL_INLINE V EncodedFromDisplay(D d, V x) const {
+    const hwy::HWY_NAMESPACE::Rebind<uint32_t, D> du;
     const V kSign = BitCast(d, Set(du, 0x80000000u));
     const V original_sign = And(x, kSign);
     x = AndNot(kSign, x);  // abs

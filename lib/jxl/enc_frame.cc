@@ -381,36 +381,6 @@ Status MakeFrameHeader(const CompressParams& cparams,
   return true;
 }
 
-void DownsampleImage(Image3F* opsin, size_t factor) {
-  JXL_ASSERT(factor != 1);
-  // Allocate extra space to avoid a reallocation when padding.
-  Image3F downsampled(DivCeil(opsin->xsize(), factor) + kBlockDim,
-                      DivCeil(opsin->ysize(), factor) + kBlockDim);
-  downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
-                       downsampled.ysize() - kBlockDim);
-  size_t in_stride = opsin->PixelsPerRow();
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < downsampled.ysize(); y++) {
-      float* row_out = downsampled.PlaneRow(c, y);
-      const float* row_in = opsin->PlaneRow(c, factor * y);
-      for (size_t x = 0; x < downsampled.xsize(); x++) {
-        size_t cnt = 0;
-        float sum = 0;
-        for (size_t iy = 0; iy < factor && iy + factor * y < opsin->ysize();
-             iy++) {
-          for (size_t ix = 0; ix < factor && ix + factor * x < opsin->xsize();
-               ix++) {
-            sum += row_in[iy * in_stride + x * factor + ix];
-            cnt++;
-          }
-        }
-        row_out[x] = sum / cnt;
-      }
-    }
-  }
-  *opsin = std::move(downsampled);
-}
-
 // Invisible (alpha = 0) pixels tend to be a mess in optimized PNGs.
 // Since they have no visual impact whatsoever, we can replace them with
 // something that compresses better and reduces artifacts near the edges. This
@@ -545,8 +515,8 @@ class LossyFrameEncoder {
         // Ensure group cache is initialized.
         group_caches_[thread].InitOnce();
         TokenizeCoefficients(
-            &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
-            shared.ac_strategy, frame_header->chroma_subsampling,
+            &shared.coeff_orders[idx_pass * shared.coeff_order_size], rect,
+            ac_rows, shared.ac_strategy, frame_header->chroma_subsampling,
             &group_caches_[thread].num_nzeroes,
             &enc_state_->passes[idx_pass].ac_tokens[group_index],
             enc_state_->shared.quant_dc, enc_state_->shared.raw_quant_field,
@@ -893,8 +863,8 @@ class LossyFrameEncoder {
         // Ensure group cache is initialized.
         group_caches_[thread].InitOnce();
         TokenizeCoefficients(
-            &shared.coeff_orders[idx_pass * kCoeffOrderSize], rect, ac_rows,
-            shared.ac_strategy, frame_header->chroma_subsampling,
+            &shared.coeff_orders[idx_pass * shared.coeff_order_size], rect,
+            ac_rows, shared.ac_strategy, frame_header->chroma_subsampling,
             &group_caches_[thread].num_nzeroes,
             &enc_state_->passes[idx_pass].ac_tokens[group_index],
             enc_state_->shared.quant_dc, enc_state_->shared.raw_quant_field,
@@ -935,18 +905,17 @@ class LossyFrameEncoder {
     for (size_t i = 0; i < enc_state_->progressive_splitter.GetNumPasses();
          i++) {
       // Encode coefficient orders.
-      uint32_t used_orders = ComputeUsedOrders(
-          enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
-          Rect(enc_state_->shared.raw_quant_field));
       size_t order_bits = 0;
-      JXL_RETURN_IF_ERROR(
-          U32Coder::CanEncode(kOrderEnc, used_orders, &order_bits));
+      JXL_RETURN_IF_ERROR(U32Coder::CanEncode(
+          kOrderEnc, enc_state_->used_orders[i], &order_bits));
       BitWriter::Allotment allotment(writer, order_bits);
-      JXL_CHECK(U32Coder::Write(kOrderEnc, used_orders, writer));
+      JXL_CHECK(U32Coder::Write(kOrderEnc, enc_state_->used_orders[i], writer));
       ReclaimAndCharge(writer, &allotment, kLayerOrder, aux_out_);
-      EncodeCoeffOrders(used_orders,
-                        &enc_state_->shared.coeff_orders[i * kCoeffOrderSize],
-                        writer, kLayerOrder, aux_out_);
+      EncodeCoeffOrders(
+          enc_state_->used_orders[i],
+          &enc_state_->shared
+               .coeff_orders[i * enc_state_->shared.coeff_order_size],
+          writer, kLayerOrder, aux_out_);
 
       // Encode histograms.
       HistogramParams hist_params(
@@ -978,18 +947,21 @@ class LossyFrameEncoder {
  private:
   void ComputeAllCoeffOrders(const FrameDimensions& frame_dim) {
     PROFILER_FUNC;
+    enc_state_->used_orders.resize(
+        enc_state_->progressive_splitter.GetNumPasses());
     for (size_t i = 0; i < enc_state_->progressive_splitter.GetNumPasses();
          i++) {
-      uint32_t used_orders = 0;
       // No coefficient reordering in Falcon mode.
       if (enc_state_->cparams.speed_tier != SpeedTier::kFalcon) {
-        used_orders = ComputeUsedOrders(
+        enc_state_->used_orders[i] = ComputeUsedOrders(
             enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
             Rect(enc_state_->shared.raw_quant_field));
       }
-      ComputeCoeffOrder(enc_state_->cparams.speed_tier, *enc_state_->coeffs[i],
-                        enc_state_->shared.ac_strategy, frame_dim, used_orders,
-                        &enc_state_->shared.coeff_orders[i * kCoeffOrderSize]);
+      ComputeCoeffOrder(
+          enc_state_->cparams.speed_tier, *enc_state_->coeffs[i],
+          enc_state_->shared.ac_strategy, frame_dim, enc_state_->used_orders[i],
+          &enc_state_->shared
+               .coeff_orders[i * enc_state_->shared.coeff_order_size]);
     }
   }
 
@@ -1159,10 +1131,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                           ib.alpha());
       }
     }
-    if (cparams.resampling != 1) {
-      // TODO(veluca): should we do this in linear sRGB?
-      DownsampleImage(&opsin, cparams.resampling);
-    }
     if (aux_out != nullptr) {
       JXL_RETURN_IF_ERROR(
           aux_out->InspectImage3F("enc_frame:OpsinDynamicsImage", opsin));
@@ -1172,6 +1140,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
           ib_or_linear, &opsin, pool, &modular_frame_encoder, writer,
           &frame_header));
+    } else if (cparams.resampling != 1) {
+      // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
+      // after noise, if necessary.
+      DownsampleImage(&opsin, cparams.resampling);
     }
   }
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.

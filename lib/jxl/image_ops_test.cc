@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/image.h"
+#include "lib/jxl/image_ops.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -22,7 +22,7 @@
 #include <utility>
 
 #include "gtest/gtest.h"
-#include "lib/jxl/image_ops.h"
+#include "lib/jxl/image.h"
 #include "lib/jxl/image_test_utils.h"
 
 namespace jxl {

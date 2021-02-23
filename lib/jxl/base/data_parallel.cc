@@ -16,6 +16,12 @@
 
 #define DATA_PARALLEL_TRACE 0
 
+#if DATA_PARALLEL_TRACE
+#include <stdlib.h>
+
+#include "lib/jxl/base/time.h"
+#endif  // DATA_PARALLEL_TRACE
+
 namespace jxl {
 
 // static

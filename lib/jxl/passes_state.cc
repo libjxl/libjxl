@@ -42,11 +42,15 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
       shared->metadata->transform_data.opsin_inverse_matrix.ToOpsinParams(
           shared->metadata->m.IntensityTarget());
 
-  if (shared->coeff_orders.size() <
-          frame_header.passes.num_passes * kCoeffOrderSize &&
+  // In the decoder, we allocate coeff orders afterwards, when we know how many
+  // we will actually need.
+  shared->coeff_order_size = kCoeffOrderMaxSize;
+  if (encoder &&
+      shared->coeff_orders.size() <
+          frame_header.passes.num_passes * kCoeffOrderMaxSize &&
       frame_header.encoding == FrameEncoding::kVarDCT) {
     shared->coeff_orders.resize(frame_header.passes.num_passes *
-                                kCoeffOrderSize);
+                                kCoeffOrderMaxSize);
   }
 
   shared->quant_dc = ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);

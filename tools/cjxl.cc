@@ -29,15 +29,14 @@
 #endif
 
 #include "lib/jxl/aux_out.h"
-#include "lib/jxl/base/arch_specific.h"
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_cache.h"
@@ -49,6 +48,7 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
+#include "tools/cpu/cpu.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -625,8 +625,8 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   // might fail, so only do so when necessary. Don't just check num_threads != 0
   // because the user may have set it to that.
   if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    jxl::ProcessorTopology topology;
-    if (!jxl::DetectProcessorTopology(&topology)) {
+    cpu::ProcessorTopology topology;
+    if (!cpu::DetectProcessorTopology(&topology)) {
       // We have seen sporadic failures caused by setaffinity_np.
       fprintf(stderr,
               "Failed to choose default num_threads; you can avoid this "

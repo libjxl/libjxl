@@ -43,9 +43,8 @@ namespace HWY_NAMESPACE {
 template <size_t N>
 void ComputeDCT(float block[N * N]) {
   HWY_ALIGN float tmp_block[N * N];
-  HWY_ALIGN float scratch_space[N * N * 2];
-  ComputeTransposedScaledDCT<N>()(DCTFrom(block, N), DCTTo(tmp_block, N),
-                                  scratch_space);
+  HWY_ALIGN float scratch_space[N * N];
+  ComputeTransposedScaledDCT<N>()(DCTFrom(block, N), tmp_block, scratch_space);
 
   // Untranspose.
   Transpose<N, N>::Run(DCTFrom(tmp_block, N), DCTTo(block, N));
@@ -56,12 +55,11 @@ void ComputeDCT(float block[N * N]) {
 template <int N>
 void ComputeIDCT(float block[N * N]) {
   HWY_ALIGN float tmp_block[N * N];
-  HWY_ALIGN float scratch_space[N * N * 2];
+  HWY_ALIGN float scratch_space[N * N];
   // Untranspose.
   Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(tmp_block, N));
 
-  ComputeTransposedScaledIDCT<N>()(DCTFrom(tmp_block, N), DCTTo(block, N),
-                                   scratch_space);
+  ComputeTransposedScaledIDCT<N>()(tmp_block, DCTTo(block, N), scratch_space);
 }
 
 template <size_t N>
@@ -243,12 +241,8 @@ void TestRectInverseT(float accuracy) {
     HWY_ALIGN float coeffs[kBlockSize] = {0.0f};
     HWY_ALIGN float scratch_space[kBlockSize * 2];
 
-    constexpr size_t OUT_COLS = ROWS < COLS ? COLS : ROWS;
-
-    ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x, COLS), DCTTo(coeffs, OUT_COLS),
-                                   scratch_space);
-    ComputeScaledIDCT<ROWS, COLS>()(DCTFrom(coeffs, OUT_COLS), DCTTo(out, COLS),
-                                    scratch_space);
+    ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x, COLS), coeffs, scratch_space);
+    ComputeScaledIDCT<ROWS, COLS>()(coeffs, DCTTo(out, COLS), scratch_space);
 
     for (size_t k = 0; k < kBlockSize; ++k) {
       EXPECT_NEAR(out[k], (k == i) ? 1.0f : 0.0f, accuracy)
@@ -291,10 +285,8 @@ void TestRectTransposeT(float accuracy) {
       constexpr size_t OUT_ROWS = ROWS < COLS ? ROWS : COLS;
       constexpr size_t OUT_COLS = ROWS < COLS ? COLS : ROWS;
 
-      ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x1, COLS),
-                                     DCTTo(coeffs1, OUT_COLS), scratch_space);
-      ComputeScaledDCT<COLS, ROWS>()(DCTFrom(x2, ROWS),
-                                     DCTTo(coeffs2, OUT_COLS), scratch_space);
+      ComputeScaledDCT<ROWS, COLS>()(DCTFrom(x1, COLS), coeffs1, scratch_space);
+      ComputeScaledDCT<COLS, ROWS>()(DCTFrom(x2, ROWS), coeffs2, scratch_space);
 
       for (size_t x = 0; x < OUT_COLS; ++x) {
         for (size_t y = 0; y < OUT_ROWS; ++y) {

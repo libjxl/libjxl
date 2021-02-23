@@ -17,13 +17,13 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/tone_mapping.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/aux_out.h"
-#include "lib/jxl/base/arch_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/time.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_file.h"
@@ -33,6 +33,7 @@
 #include "lib/jxl/image_ops.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
+#include "tools/cpu/cpu.h"
 
 #if JPEGXL_ENABLE_JPEG
 #include "lib/extras/codec_jpg.h"
@@ -40,6 +41,29 @@
 
 namespace jpegxl {
 namespace tools {
+
+static inline bool ParseLuminanceRange(const char* arg,
+                                       std::pair<float, float>* out) {
+  char* end;
+  out->first = static_cast<float>(strtod(arg, &end));
+  if (*end == '\0') {
+    // That was actually the upper bound.
+    out->second = out->first;
+    out->first = 0;
+    return true;
+  }
+  if (*end != '-') {
+    fprintf(stderr, "Unable to interpret as luminance range: %s.\n", arg);
+    return JXL_FAILURE("Args");
+  }
+  const char* second = end + 1;
+  out->second = static_cast<float>(strtod(second, &end));
+  if (*end != '\0') {
+    fprintf(stderr, "Unable to interpret as luminance range: %s.\n", arg);
+    return JXL_FAILURE("Args");
+  }
+  return true;
+}
 
 void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
@@ -80,6 +104,17 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "bits_per_sample", "N",
                           "defaults to original (input) bit depth",
                           &bits_per_sample, &ParseUnsigned);
+
+  cmdline->AddOptionFlag(
+      '\0', "tone_map",
+      "tone map the image to the luminance range indicated by --display_nits "
+      "instead of performing a naive 0-1 -> 0-1 conversion",
+      &tone_map, &SetBooleanTrue);
+
+  cmdline->AddOptionValue('\0', "display_nits", "0.3-250",
+                          "luminance range of the display to which to "
+                          "tone-map; the lower bound can be omitted",
+                          &display_nits, &ParseLuminanceRange);
 
   cmdline->AddOptionValue('\0', "color_space", "RGB_D65_SRG_Rel_Lin",
                           "defaults to original (input) color space",
@@ -123,8 +158,8 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   // might fail, so only do so when necessary. Don't just check num_threads != 0
   // because the user may have set it to that.
   if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    jxl::ProcessorTopology topology;
-    if (!jxl::DetectProcessorTopology(&topology)) {
+    cpu::ProcessorTopology topology;
+    if (!cpu::DetectProcessorTopology(&topology)) {
       // We have seen sporadic failures caused by setaffinity_np.
       fprintf(stderr,
               "Failed to choose default num_threads; you can avoid this "
@@ -230,7 +265,7 @@ void RenderSpotColor(jxl::Image3F& img, const jxl::ImageF& sc,
 }
 
 jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
-                           jxl::CodecInOut& io) {
+                           jxl::CodecInOut& io, jxl::ThreadPool* pool) {
   // Can only write if we decoded and have an output filename.
   // (Writing large PNGs is slow, so allow skipping it for benchmarks.)
   if (file_out == nullptr) return true;
@@ -259,8 +294,18 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   // Override original color space with arg if specified.
   jxl::ColorEncoding c_out = io.metadata.m.color_encoding;
   if (!args.color_space.empty()) {
-    if (!jxl::ParseDescription(args.color_space, &c_out) ||
-        !c_out.CreateICC()) {
+    bool color_space_applied = false;
+    if (jxl::ParseDescription(args.color_space, &c_out) && c_out.CreateICC()) {
+      color_space_applied = true;
+    } else {
+      jxl::PaddedBytes icc;
+      if (jxl::ReadFile(args.color_space, &icc) &&
+          c_out.SetICC(std::move(icc))) {
+        color_space_applied = true;
+      }
+    }
+
+    if (!color_space_applied) {
       fprintf(stderr, "Failed to apply color_space.\n");
       return false;
     }
@@ -270,8 +315,19 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   size_t bits_per_sample = io.metadata.m.bit_depth.bits_per_sample;
   if (args.bits_per_sample != 0) bits_per_sample = args.bits_per_sample;
 
+  if (args.tone_map) {
+    JXL_RETURN_IF_ERROR(jxl::ToneMapTo(args.display_nits, &io, pool));
+    if (c_out.tf.IsPQ() && args.color_space.empty()) {
+      // Prevent writing the tone-mapped image to PQ output unless explicitly
+      // requested. The result would look even dimmer than it would have without
+      // tone mapping.
+      c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
+      JXL_RETURN_IF_ERROR(c_out.CreateICC());
+    }
+  }
+
   if (!io.metadata.m.have_animation) {
-    if (!EncodeToFile(io, c_out, bits_per_sample, file_out)) {
+    if (!EncodeToFile(io, c_out, bits_per_sample, file_out, pool)) {
       fprintf(stderr, "Failed to write decoded image.\n");
       return false;
     }
@@ -299,7 +355,7 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
       snprintf(output_filename.data(), output_filename.size(), "%s-%0*zu%s",
                base.c_str(), digits, i, extension);
       if (!EncodeToFile(frame_io, c_out, bits_per_sample,
-                        output_filename.data())) {
+                        output_filename.data(), pool)) {
         fprintf(stderr, "Failed to write decoded image for frame %zu/%zu.\n",
                 i + 1, io.frames.size());
       }

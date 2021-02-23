@@ -84,9 +84,7 @@ struct FilterRows {
 
   template <typename RowMap>
   void SetInput(const Image3F& in, size_t y_offset, ssize_t y0, ssize_t x0) {
-    // Input rows are mirrored in the image padded up to kBlockDim, so we use
-    // directly in.ysize() here which is used by the RowMapMirror case.
-    RowMap row_map(in.ysize());
+    RowMap row_map;
     for (size_t c = 0; c < 3; c++) {
       rows_in_[c] = in.ConstPlaneRow(c, 0);
     }
@@ -181,22 +179,19 @@ class FilterPipeline {
   // Apply the filter chain to a given row. To apply the filter chain to a whole
   // image this must be called for `rect.ysize() + 2 * total_border`
   // values of `y`, in increasing order, starting from `y = -total_border`.
-  bool ApplyFiltersRow(const LoopFilter& lf,
+  void ApplyFiltersRow(const LoopFilter& lf,
                        const FilterWeights& filter_weights, const Rect& rect,
-                       ssize_t y, size_t* JXL_RESTRICT output_row);
+                       ssize_t y);
 
   struct FilterStep {
-    // Sets the input of the filter step as an image region with a fixed
-    // "x" offset. The rect.x0() value will be relative to this fixed offset.
-    // This is used to set the input source image which has a 2 block padding
-    // on x.
-    template <typename RowMap, ssize_t x_offset>
-    void SetInputFixedOffset(const Image3F* im_input) {
+    // Sets the input of the filter step as an image region.
+    void SetInput(const Image3F* im_input, const Rect& input_rect) {
       input = im_input;
-      set_input_rows = [](const FilterStep& self, FilterRows* rows, size_t y0,
-                          size_t /* rect_x0 */) {
-        rows->SetInput<RowMap>(*(self.input), 0, y0,
-                               x_offset - kMaxFilterPadding);
+      this->input_rect = input_rect;
+      set_input_rows = [](const FilterStep& self, FilterRows* rows,
+                          ssize_t y0) {
+        rows->SetInput<RowMapId>(*(self.input), 0, self.input_rect.y0() + y0,
+                                 self.input_rect.x0() - kMaxFilterPadding);
       };
     }
 
@@ -207,10 +202,10 @@ class FilterPipeline {
     void SetInputCyclicStorage(const Image3F* storage, size_t offset_rows) {
       input = storage;
       input_y_offset = offset_rows;
-      set_input_rows = [](const FilterStep& self, FilterRows* rows, size_t y0,
-                          size_t rect_x0) {
+      set_input_rows = [](const FilterStep& self, FilterRows* rows,
+                          ssize_t y0) {
         rows->SetInput<RowMapMod<num_rows>>(*(self.input), self.input_y_offset,
-                                            y0, -static_cast<ssize_t>(rect_x0));
+                                            y0, 0);
       };
     }
 
@@ -221,22 +216,23 @@ class FilterPipeline {
     void SetOutputCyclicStorage(Image3F* storage, size_t offset_rows) {
       output = storage;
       output_y_offset = offset_rows;
-      set_output_rows = [](const FilterStep& self, FilterRows* rows, size_t y0,
-                           size_t rect_x0) {
+      set_output_rows = [](const FilterStep& self, FilterRows* rows,
+                           ssize_t y0) {
         rows->SetOutput<RowMapMod<num_rows>>(self.output, self.output_y_offset,
-                                             y0,
-                                             -static_cast<ssize_t>(rect_x0));
+                                             y0, 0);
       };
     }
 
     // Set the output of the filter step as the output image. The value
     // rect.x0() will be mapped to the same value in the output image.
-    void SetOutput(Image3F* im_output) {
+    void SetOutput(Image3F* im_output, const Rect& output_rect) {
       output = im_output;
-      set_output_rows = [](const FilterStep& self, FilterRows* rows, size_t y0,
-                           size_t /* rect_x0 */) {
-        rows->SetOutput<RowMapId>(self.output, 0, y0,
-                                  -static_cast<ssize_t>(kMaxFilterPadding));
+      this->output_rect = output_rect;
+      set_output_rows = [](const FilterStep& self, FilterRows* rows,
+                           ssize_t y0) {
+        rows->SetOutput<RowMapId>(
+            self.output, 0, self.output_rect.y0() + y0,
+            static_cast<ssize_t>(self.output_rect.x0()) - kMaxFilterPadding);
       };
     }
 
@@ -248,12 +244,14 @@ class FilterPipeline {
     Image3F* output;
     size_t output_y_offset = 0;
 
+    // Input/output rect for the first/last steps of the filter.
+    Rect input_rect;
+    Rect output_rect;
+
     // Functions that compute the list of rows needed to process a region for
     // the given row and starting column.
-    void (*set_input_rows)(const FilterStep&, FilterRows* rows, size_t y0,
-                           size_t rect_x0);
-    void (*set_output_rows)(const FilterStep&, FilterRows* rows, size_t y0,
-                            size_t rect_x0);
+    void (*set_input_rows)(const FilterStep&, FilterRows* rows, ssize_t y0);
+    void (*set_output_rows)(const FilterStep&, FilterRows* rows, ssize_t y0);
 
     // Actual filter descriptor.
     FilterDefinition filter_def;

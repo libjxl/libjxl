@@ -80,9 +80,22 @@ static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsAboveMS1Bit_Nonzero(SizeTag<8> /* tag */, const uint64_t x) {
   JXL_DASSERT(x != 0);
 #ifdef _MSC_VER
+#ifdef HWY_ARCH_X86_64
   unsigned long index;
   _BitScanReverse64(&index, x);
   return 63 - index;
+#else  // HWY_ARCH_X86_64
+  uint32_t msb = static_cast<uint32_t>(x >> 32u);
+  unsigned long index;
+  if (msb == 0) {
+    uint32_t lsb = static_cast<uint32_t>(x & 0xFFFFFFFF);
+    _BitScanReverse(&index, lsb);
+    return 63 - index;
+  } else {
+    _BitScanReverse(&index, msb);
+    return 31 - index;
+  }
+#endif  // HWY_ARCH_X86_64
 #else
   return static_cast<size_t>(__builtin_clzll(x));
 #endif

@@ -53,29 +53,25 @@ float Kernel(size_t x, size_t y, size_t ix, size_t iy,
 template <int N>
 void Upsample(const Image3F& src, const Rect& src_rect, Image3F* dst,
               const Rect& dst_rect, const float kernel[4][4][5][5]) {
+  JXL_DASSERT(src_rect.x0() >= 2);
+  JXL_DASSERT(src_rect.x0() + src_rect.xsize() + 2 <= src.xsize());
+  JXL_DASSERT(src_rect.y0() >= 2);
+  JXL_DASSERT(src_rect.y0() + src_rect.ysize() + 2 <= src.ysize());
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < dst_rect.ysize(); y++) {
       float* dst_row = dst_rect.PlaneRow(dst, c, y);
       const float* src_rows[5];
       for (int iy = -2; iy <= 2; iy++) {
-        src_rows[iy + 2] =
-            src.PlaneRow(c, Mirror(static_cast<int>(y) / N +
-                                       static_cast<int>(src_rect.y0()) + iy,
-                                   src.ysize()));
+        src_rows[iy + 2] = src.PlaneRow(c, y / N + src_rect.y0() + iy);
       }
       for (size_t x = 0; x < dst_rect.xsize(); x++) {
-        int src_x[5];
-        for (int ix = -2; ix <= 2; ix++) {
-          src_x[ix + 2] = Mirror(
-              static_cast<int>(x) / N + ix + static_cast<int>(src_rect.x0()),
-              src.xsize());
-        }
+        size_t xbase = x / N + src_rect.x0() - 2;
         float result = 0;
-        float min = src_rows[0][src_x[0]];
-        float max = src_rows[0][src_x[0]];
+        float min = src_rows[0][xbase];
+        float max = src_rows[0][xbase];
         for (size_t iy = 0; iy < 5; iy++) {
           for (size_t ix = 0; ix < 5; ix++) {
-            float v = src_rows[iy][src_x[ix]];
+            float v = src_rows[iy][xbase + ix];
             result += Kernel<N>(x, y, ix, iy, kernel) * v;
             min = std::min(v, min);
             max = std::max(v, max);

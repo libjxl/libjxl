@@ -41,19 +41,6 @@ struct RowMapMod {
   }
 };
 
-// Maps a row in the range [-16, \inf) to the range [0, ysize) mirroring it when
-// outside the [0, ysize) range.
-struct RowMapMirror {
-  explicit RowMapMirror(size_t ysize) : ysize_(ysize) {}
-  size_t operator()(ssize_t y) {
-    JXL_DASSERT(y >= -16);
-    size_t ret = static_cast<size_t>(y + 16 * ysize_) % (2 * ysize_);
-    return (ret >= ysize_) ? 2 * ysize_ - 1 - ret : ret;
-  }
-
-  size_t ysize_;
-};
-
 // Identity mapping. Maps a row in the range [0, ysize) to the same value.
 struct RowMapId {
   explicit RowMapId() = default;

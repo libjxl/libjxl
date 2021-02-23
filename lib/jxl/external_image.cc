@@ -42,7 +42,7 @@ namespace HWY_NAMESPACE {
 // Input/output uses the codec.h scaling: nominally 0-1 if in-gamut.
 template <class V>
 V LinearToSRGB(V encoded) {
-  return TF_SRGB().EncodedFromDisplay(encoded);
+  return TF_SRGB().EncodedFromDisplay(HWY_FULL(float)(), encoded);
 }
 
 void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
@@ -62,6 +62,40 @@ void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
           }
         },
         "LinearToSRGB");
+  }
+}
+
+void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
+                size_t bits_per_sample) {
+  const HWY_FULL(float) d;
+  const hwy::HWY_NAMESPACE::Rebind<uint32_t, HWY_FULL(float)> du;
+  size_t vec_num = num;
+  if (bits_per_sample == 32) {
+    // Conversion to real 32-bit *unsigned* integers requires more intermediate
+    // precision that what is given by the usual f32 -> i32 conversion
+    // instructions, so we run the non-SIMD path for those.
+    vec_num = 0;
+  } else if (JXL_IS_DEBUG_BUILD) {
+    // Avoid accessing partially-uninitialized vectors with memory sanitizer.
+    vec_num &= ~(Lanes(d) - 1);
+  }
+  const auto one = Set(d, 1.0f);
+  const auto scale = Set(d, mul);
+  for (size_t x = 0; x < vec_num; x += Lanes(d)) {
+    auto v = Load(d, in + x);
+    // Check for NaNs.
+    JXL_DASSERT(AllTrue(v == v));
+    // Clamp turns NaN to 'min'.
+    v = Clamp(v, Zero(d), one);
+    auto i = NearestInt(v * scale);
+    Store(BitCast(du, i), du, out + x);
+  }
+  for (size_t x = vec_num; x < num; x++) {
+    float v = in[x];
+    JXL_DASSERT(!std::isnan(v));
+    // Inverted condition grants that NaN is mapped to 0.0f.
+    v = (v >= 0.0f) ? (v > 1.0f ? mul : (v * mul)) : 0.0f;
+    out[x] = static_cast<uint32_t>(v + 0.5f);
   }
 }
 
@@ -205,20 +239,30 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
 }  // namespace
 
 HWY_EXPORT(LinearToSRGBInPlace);
+HWY_EXPORT(FloatToU32);
 
 namespace {
 
-typedef void(StoreFuncType)(uint32_t value, uint8_t* dest);
+using StoreFuncType = void(uint32_t value, uint8_t* dest);
 template <StoreFuncType StoreFunc>
-void JXL_INLINE StoreFloatRow(const float* JXL_RESTRICT row_in, uint8_t* out,
-                              float mul, size_t xsize, size_t bytes_per_pixel) {
-  size_t i = 0;
+void StoreUintRow(uint32_t* JXL_RESTRICT* rows_u32, size_t num_channels,
+                  size_t xsize, size_t bytes_per_sample,
+                  uint8_t* JXL_RESTRICT out) {
   for (size_t x = 0; x < xsize; ++x) {
-    float v = row_in[x];
-    v = (v < 0) ? 0 : (v > 1 ? mul : (v * mul));
-    uint32_t value = static_cast<uint32_t>(v + 0.5);
-    StoreFunc(value, out + i);
-    i += bytes_per_pixel;
+    for (size_t c = 0; c < num_channels; c++) {
+      StoreFunc(rows_u32[c][x],
+                out + (num_channels * x + c) * bytes_per_sample);
+    }
+  }
+}
+
+template <void(StoreFunc)(float, uint8_t*)>
+void StoreFloatRow(const float* JXL_RESTRICT* rows_in, size_t num_channels,
+                   size_t xsize, uint8_t* JXL_RESTRICT out) {
+  for (size_t x = 0; x < xsize; ++x) {
+    for (size_t c = 0; c < num_channels; c++) {
+      StoreFunc(rows_in[c][x], out + (num_channels * x + c) * sizeof(float));
+    }
   }
 }
 
@@ -251,8 +295,7 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
   bool want_alpha = num_channels == 2 || num_channels == 4;
   size_t color_channels = num_channels <= 2 ? 1 : 3;
 
-  // bytes_per_channel and bytes_per_pixel are only valid for
-  // bits_per_sample > 1.
+  // bytes_per_channel and is only valid for bits_per_sample > 1.
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
@@ -293,143 +336,90 @@ Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
       endianness == JXL_LITTLE_ENDIAN ||
       (endianness == JXL_NATIVE_ENDIAN && IsLittleEndian());
 
+  ImageF ones;
+  if (want_alpha && !ib.HasAlpha()) {
+    ones = ImageF(xsize, 1);
+    FillImage(1.0f, &ones);
+  }
+
   if (float_out) {
     if (bits_per_sample != 32) {
       return JXL_FAILURE("non-32-bit float not supported");
     }
-    for (size_t c = 0; c < color_channels; ++c) {
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
-            const int64_t y = task;
-            size_t i = stride * y + (c * bits_per_sample / jxl::kBitsPerByte);
-            const float* JXL_RESTRICT row_in = color->PlaneRow(c, y);
-            if (little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                StoreLEFloat(row_in[x], out + i);
-                i += bytes_per_pixel;
-              }
-            } else {
-              for (size_t x = 0; x < xsize; ++x) {
-                StoreBEFloat(row_in[x], out + i);
-                i += bytes_per_pixel;
-              }
-            }
-          },
-          "ConvertRGBFloat");
-    }
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
+        [&](const int task, int /*thread*/) {
+          const int64_t y = task;
+          size_t i = stride * y;
+          const float* JXL_RESTRICT row_in[4];
+          size_t c = 0;
+          for (; c < color_channels; c++) {
+            row_in[c] = color->PlaneRow(c, y);
+          }
+          if (want_alpha) {
+            row_in[c++] = ib.HasAlpha() ? alpha->Row(y) : ones.Row(0);
+          }
+          JXL_ASSERT(c == num_channels);
+          if (little_endian) {
+            StoreFloatRow<StoreLEFloat>(row_in, c, xsize, out + i);
+          } else {
+            StoreFloatRow<StoreBEFloat>(row_in, c, xsize, out + i);
+          }
+        },
+        "ConvertFloat");
   } else {
     // Multiplier to convert from floating point 0-1 range to the integer
     // range.
     float mul = (1ull << bits_per_sample) - 1;
-    // TODO(deymo): Move the for(c) inside the StoreFloatRow() function so it is
-    // more write-cache friendly.
-    for (size_t c = 0; c < color_channels; ++c) {
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
-            const int64_t y = task;
-            size_t i = stride * y + (c * bits_per_sample / jxl::kBitsPerByte);
-            const float* JXL_RESTRICT row_in = color->PlaneRow(c, y);
-            // TODO(deymo): add bits_per_sample == 1 case here.
-            if (bits_per_sample <= 8) {
-              StoreFloatRow<Store8>(row_in, out + i, mul, xsize,
-                                    bytes_per_pixel);
-            } else if (bits_per_sample <= 16) {
-              if (little_endian) {
-                StoreFloatRow<StoreLE16>(row_in, out + i, mul, xsize,
-                                         bytes_per_pixel);
-              } else {
-                StoreFloatRow<StoreBE16>(row_in, out + i, mul, xsize,
-                                         bytes_per_pixel);
-              }
-            } else if (bits_per_sample <= 24) {
-              if (little_endian) {
-                StoreFloatRow<StoreLE24>(row_in, out + i, mul, xsize,
-                                         bytes_per_pixel);
-              } else {
-                StoreFloatRow<StoreBE24>(row_in, out + i, mul, xsize,
-                                         bytes_per_pixel);
-              }
-            } else {
-              if (little_endian) {
-                StoreFloatRow<StoreLE32>(row_in, out + i, mul, xsize,
-                                         bytes_per_pixel);
-              } else {
-                StoreFloatRow<StoreBE32>(row_in, out + i, mul, xsize,
-                                         bytes_per_pixel);
-              }
-            }
-          },
-          "ConvertRGBUint");
-    }
-  }
-
-  if (want_alpha) {
-    jxl::ImageF alpha_temp;
-    if (ib.HasAlpha()) {
-      if (ib.metadata()->GetAlphaBits() == 0) {
-        return JXL_FAILURE("invalid alpha bit depth");
-      }
-    } else {
-      // TODO(sboukortt): have a different path altogether below instead of
-      // filling an image with ones just to read from it immediately afterwards.
-      alpha_temp = jxl::ImageF(xsize, ysize);
-      FillImage(1.f, &alpha_temp);
-      alpha = &alpha_temp;
-    }
-
-    if (float_out) {
-      if (bits_per_sample != 32) {
-        return JXL_FAILURE("non-32-bit float not supported");
-      }
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
-            const int64_t y = task;
-            size_t i = stride * y +
-                       (color_channels * bits_per_sample / jxl::kBitsPerByte);
-            const float* JXL_RESTRICT row_in = alpha->Row(y);
+    Plane<uint32_t> u32_cache;
+    RunOnPool(
+        pool, 0, static_cast<uint32_t>(ysize),
+        [&](size_t num_threads) {
+          u32_cache = Plane<uint32_t>(xsize, num_channels * num_threads);
+          return true;
+        },
+        [&](const int task, int thread) {
+          const int64_t y = task;
+          size_t i = stride * y;
+          const float* JXL_RESTRICT row_in[4];
+          size_t c = 0;
+          for (; c < color_channels; c++) {
+            row_in[c] = color->PlaneRow(c, y);
+          }
+          if (want_alpha) {
+            row_in[c++] = ib.HasAlpha() ? alpha->Row(y) : ones.Row(0);
+          }
+          JXL_ASSERT(c == num_channels);
+          uint32_t* JXL_RESTRICT row_u32[4];
+          for (size_t r = 0; r < c; r++) {
+            row_u32[r] = u32_cache.Row(r + thread * num_channels);
+            HWY_DYNAMIC_DISPATCH(FloatToU32)
+            (row_in[r], row_u32[r], xsize, mul, bits_per_sample);
+          }
+          // TODO(deymo): add bits_per_sample == 1 case here.
+          if (bits_per_sample <= 8) {
+            StoreUintRow<Store8>(row_u32, c, xsize, 1, out + i);
+          } else if (bits_per_sample <= 16) {
             if (little_endian) {
-              for (size_t x = 0; x < xsize; ++x) {
-                StoreLEFloat(row_in[x], out + i);
-                i += bytes_per_pixel;
-              }
+              StoreUintRow<StoreLE16>(row_u32, c, xsize, 2, out + i);
             } else {
-              for (size_t x = 0; x < xsize; ++x) {
-                StoreBEFloat(row_in[x], out + i);
-                i += bytes_per_pixel;
-              }
+              StoreUintRow<StoreBE16>(row_u32, c, xsize, 2, out + i);
             }
-          },
-          "ConvertAlphaFloat");
-    } else {
-      if (bits_per_sample != 8 && bits_per_sample != 16) {
-        return JXL_FAILURE("32-bit and 1-bit not yet implemented");
-      }
-
-      RunOnPool(
-          pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-          [&](const int task, int /*thread*/) {
-            const int64_t y = task;
-            size_t i = stride * y +
-                       (color_channels * bits_per_sample / jxl::kBitsPerByte);
-            const float* JXL_RESTRICT row_in = alpha->Row(y);
-            if (bits_per_sample == 8) {
-              StoreFloatRow<Store8>(row_in, out + i, 255.f, xsize,
-                                    bytes_per_pixel);
-            } else if (bits_per_sample == 16) {
-              if (little_endian) {
-                StoreFloatRow<StoreLE16>(row_in, out + i, 65535.f, xsize,
-                                         bytes_per_pixel);
-              } else {
-                StoreFloatRow<StoreBE16>(row_in, out + i, 65535.f, xsize,
-                                         bytes_per_pixel);
-              }
+          } else if (bits_per_sample <= 24) {
+            if (little_endian) {
+              StoreUintRow<StoreLE24>(row_u32, c, xsize, 3, out + i);
+            } else {
+              StoreUintRow<StoreBE24>(row_u32, c, xsize, 3, out + i);
             }
-          },
-          "ConvertAlphaUint");
-    }
+          } else {
+            if (little_endian) {
+              StoreUintRow<StoreLE32>(row_u32, c, xsize, 4, out + i);
+            } else {
+              StoreUintRow<StoreBE32>(row_u32, c, xsize, 4, out + i);
+            }
+          }
+        },
+        "ConvertUint");
   }
 
   return true;

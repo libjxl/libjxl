@@ -149,14 +149,15 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   }
 
   JPEGComponentType component_type =
-      components.size() == 1 && components[0].id == 1 ? JPEGComponentType::kGray
-      : components.size() == 3 && components[0].id == 1 &&
-              components[1].id == 2 && components[2].id == 3
-          ? JPEGComponentType::kYCbCr
-      : components.size() == 3 && components[0].id == 'R' &&
-              components[1].id == 'G' && components[2].id == 'B'
-          ? JPEGComponentType::kRGB
-          : JPEGComponentType::kCustom;
+      components.size() == 1 && components[0].id == 1
+          ? JPEGComponentType::kGray
+          : components.size() == 3 && components[0].id == 1 &&
+                    components[1].id == 2 && components[2].id == 3
+                ? JPEGComponentType::kYCbCr
+                : components.size() == 3 && components[0].id == 'R' &&
+                          components[1].id == 'G' && components[2].id == 'B'
+                      ? JPEGComponentType::kRGB
+                      : JPEGComponentType::kCustom;
   JXL_RETURN_IF_ERROR(
       visitor->Bits(2, JPEGComponentType::kYCbCr,
                     reinterpret_cast<uint32_t*>(&component_type)));

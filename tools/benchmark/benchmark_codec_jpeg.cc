@@ -25,9 +25,9 @@
 
 #include "lib/extras/codec_jpg.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "tools/cmdline.h"
 
@@ -99,7 +99,6 @@ class JPEGCodec : public ImageCodec {
   Status Compress(const std::string& filename, const CodecInOut* io,
                   ThreadPool* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
-    chroma_subsampling_ = jpegargs->chroma_subsampling;
     const double start = Now();
     JXL_RETURN_IF_ERROR(EncodeImageJPG(io, encoder_,
                                        static_cast<int>(std::round(q_target_)),

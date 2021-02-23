@@ -56,17 +56,14 @@ void MultiplySum(const size_t xsize,
 
 void RgbFromSingle(const size_t xsize,
                    const pixel_type* const JXL_RESTRICT row_in,
-                   const float factor, Image3F* decoded, size_t decoded_padding,
-                   size_t /*c*/, size_t y) {
+                   const float factor, Image3F* decoded, size_t /*c*/,
+                   size_t y) {
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
-  float* const JXL_RESTRICT row_out_r =
-      decoded->PlaneRow(0, y) + decoded_padding;
-  float* const JXL_RESTRICT row_out_g =
-      decoded->PlaneRow(1, y) + decoded_padding;
-  float* const JXL_RESTRICT row_out_b =
-      decoded->PlaneRow(2, y) + decoded_padding;
+  float* const JXL_RESTRICT row_out_r = decoded->PlaneRow(0, y);
+  float* const JXL_RESTRICT row_out_g = decoded->PlaneRow(1, y);
+  float* const JXL_RESTRICT row_out_b = decoded->PlaneRow(2, y);
 
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
@@ -81,12 +78,12 @@ void RgbFromSingle(const size_t xsize,
 // Same signature as RgbFromSingle so we can assign to the same pointer.
 void SingleFromSingle(const size_t xsize,
                       const pixel_type* const JXL_RESTRICT row_in,
-                      const float factor, Image3F* decoded,
-                      size_t decoded_padding, size_t c, size_t y) {
+                      const float factor, Image3F* decoded, size_t c,
+                      size_t y) {
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
-  float* const JXL_RESTRICT row_out = decoded->PlaneRow(c, y) + decoded_padding;
+  float* const JXL_RESTRICT row_out = decoded->PlaneRow(c, y);
 
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
@@ -211,6 +208,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
       &options,
       /*undo_transforms=*/-2, &tree, &code, &context_map,
       allow_truncated_group);
+  if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) {
     return JXL_FAILURE("Failed to decode global modular info");
   }
@@ -307,7 +305,9 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
 Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
                                            PassesDecoderState* dec_state) {
   const Rect r = dec_state->shared->DCGroupRect(group_id);
-  Image image(r.xsize(), r.ysize(), 255, 3);
+  constexpr const int kRawDcLimit = 1048576;
+  Image image(r.xsize(), r.ysize(), kRawDcLimit, 3);
+  image.minval = -kRawDcLimit;
   size_t stream_id = ModularStreamId::VarDCTDC(group_id).ID(frame_dim);
   reader->Refill();
   size_t extra_precision = reader->ReadFixedBits<2>();
@@ -321,7 +321,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   }
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,
-          /*undo_transforms=*/-1, &tree, &code, &context_map)) {
+          /*undo_transforms=*/0, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode modular DC group");
   }
   DequantDC(r, &dec_state->shared_storage.dc_storage,
@@ -362,6 +362,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   auto& ac_strategy = dec_state->shared_storage.ac_strategy;
   size_t xlim = std::min(ac_strategy.xsize(), r.x0() + r.xsize());
   size_t ylim = std::min(ac_strategy.ysize(), r.y0() + r.ysize());
+  uint32_t local_used_acs = 0;
   for (size_t iy = 0; iy < r.ysize(); iy++) {
     size_t y = r.y0() + iy;
     int* row_qf = r.Row(&dec_state->shared_storage.raw_quant_field, iy);
@@ -385,6 +386,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       if (!AcStrategy::IsRawStrategyValid(row_in_1[num])) {
         return JXL_FAILURE("Invalid AC strategy");
       }
+      local_used_acs |= 1u << row_in_1[num];
       AcStrategy acs = AcStrategy::FromRawStrategy(row_in_1[num]);
       if ((acs.covered_blocks_x() > 1 || acs.covered_blocks_y() > 1) &&
           !is444) {
@@ -409,6 +411,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
       num++;
     }
   }
+  dec_state->used_acs |= local_used_acs;
   if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
     ComputeSigma(r, dec_state);
   }
@@ -433,7 +436,6 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
   if (gi.error) return JXL_FAILURE("Undoing transforms failed");
 
   auto& decoded = dec_state->decoded;
-  size_t decoded_padding = dec_state->decoded_padding;
 
   int c = 0;
   if (do_color) {
@@ -466,8 +468,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
                   gi.channel[c_in].Row(y);
               const pixel_type* const JXL_RESTRICT row_in_Y =
                   gi.channel[0].Row(y);
-              float* const JXL_RESTRICT row_out =
-                  decoded.PlaneRow(c, y) + decoded_padding;
+              float* const JXL_RESTRICT row_out = decoded.PlaneRow(c, y);
               HWY_DYNAMIC_DISPATCH(MultiplySum)
               (xsize, row_in, row_in_Y, factor, row_out);
             },
@@ -481,8 +482,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
               const size_t y = task;
               const pixel_type* const JXL_RESTRICT row_in =
                   gi.channel[c_in].Row(y);
-              float* const JXL_RESTRICT row_out =
-                  decoded.PlaneRow(c, y) + decoded_padding;
+              float* const JXL_RESTRICT row_out = decoded.PlaneRow(c, y);
               int_to_float(row_in, row_out, xsize, bits, exp_bits);
             },
             "ModularIntToFloat_losslessfloat");
@@ -495,10 +495,10 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
                   gi.channel[c_in].Row(y);
               if (rgb_from_gray) {
                 HWY_DYNAMIC_DISPATCH(RgbFromSingle)
-                (xsize, row_in, factor, &decoded, decoded_padding, c, y);
+                (xsize, row_in, factor, &decoded, c, y);
               } else {
                 HWY_DYNAMIC_DISPATCH(SingleFromSingle)
-                (xsize, row_in, factor, &decoded, decoded_padding, c, y);
+                (xsize, row_in, factor, &decoded, c, y);
               }
             },
             "ModularIntToFloat");

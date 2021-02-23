@@ -164,32 +164,9 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     const ImageBundle* linear, Image3F* opsin, ThreadPool* pool,
     AuxOut* aux_out) {
   PROFILER_ZONE("JxlLossyFrameHeuristics uninstrumented");
+
   CompressParams& cparams = enc_state->cparams;
   PassesSharedState& shared = enc_state->shared;
-  const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
-  size_t target_size = TargetSize(cparams, frame_dim);
-  size_t opsin_target_size = target_size;
-  if (cparams.target_size > 0 || cparams.target_bitrate > 0.0) {
-    cparams.target_size = opsin_target_size;
-  } else if (cparams.butteraugli_distance < 0) {
-    return JXL_FAILURE("Expected non-negative distance");
-  }
-
-  // Compute an initial estimate of the quantization field.
-  if (cparams.speed_tier != SpeedTier::kFalcon) {
-    // Call InitialQuantField only in Hare mode or slower. Otherwise, rely
-    // on simple heuristics in FindBestAcStrategy.
-    if (cparams.speed_tier > SpeedTier::kHare) {
-      enc_state->initial_quant_field =
-          ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
-    } else {
-      // Call this here, as it relies on pre-gaborish values.
-      // TODO(veluca): adjust to post-gaborish values.
-      // TODO(veluca): call after image features.
-      enc_state->initial_quant_field = InitialQuantField(
-          cparams.butteraugli_distance, *opsin, shared.frame_dim, pool, 1.0f);
-    }
-  }
 
   // Compute parameters for noise synthesis.
   if (shared.frame_header.flags & FrameHeader::kNoise) {
@@ -218,6 +195,38 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     if (!GetNoiseParameter(*opsin, &shared.image_features.noise_params,
                            quality_coef)) {
       shared.frame_header.flags &= ~FrameHeader::kNoise;
+    }
+  }
+  if (cparams.resampling != 1) {
+    // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
+    // after noise, if necessary.
+    DownsampleImage(opsin, cparams.resampling);
+    PadImageToBlockMultipleInPlace(opsin);
+  }
+
+  const FrameDimensions& frame_dim = enc_state->shared.frame_dim;
+  size_t target_size = TargetSize(cparams, frame_dim);
+  size_t opsin_target_size = target_size;
+  if (cparams.target_size > 0 || cparams.target_bitrate > 0.0) {
+    cparams.target_size = opsin_target_size;
+  } else if (cparams.butteraugli_distance < 0) {
+    return JXL_FAILURE("Expected non-negative distance");
+  }
+
+  // Compute an initial estimate of the quantization field.
+  if (cparams.speed_tier != SpeedTier::kFalcon) {
+    // Call InitialQuantField only in Hare mode or slower. Otherwise, rely
+    // on simple heuristics in FindBestAcStrategy.
+    if (cparams.speed_tier > SpeedTier::kHare) {
+      enc_state->initial_quant_field =
+          ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
+    } else {
+      // Call this here, as it relies on pre-gaborish values.
+      // TODO(veluca): adjust to post-gaborish values.
+      // TODO(veluca): call after image features.
+      enc_state->initial_quant_field = InitialQuantField(
+          cparams.butteraugli_distance, *opsin, shared.frame_dim, pool, 1.0f,
+          &enc_state->initial_quant_masking);
     }
   }
 

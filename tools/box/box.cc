@@ -119,7 +119,7 @@ jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out) {
 
   if (use_extended) {
     out->resize(out->size() + 16);
-    memcpy(&out->back() - 16 + 1, box.type, 16);
+    memcpy(&out->back() - 16 + 1, box.extended_type, 16);
   }
 
   return true;

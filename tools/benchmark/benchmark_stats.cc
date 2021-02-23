@@ -184,9 +184,10 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
       ComputeSpeed(total_input_pixels, total_time_decode);
   // Already weighted, no need to divide by #channels.
   const double rmse = std::sqrt(distance_2 / total_input_pixels);
-  const double psnr = total_compressed_size == 0 ? 0.0
-                      : (distance_2 == 0)        ? 99.99
-                                                 : (20 * std::log10(1 / rmse));
+  const double psnr =
+      total_compressed_size == 0
+          ? 0.0
+          : (distance_2 == 0) ? 99.99 : (20 * std::log10(1 / rmse));
   const double p_norm = distance_p_norm / total_input_pixels;
   const double bpp_p_norm = p_norm * comp_bpp;
 

@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/base/arch_specific.h"
+#include "tools/cpu/cpu.h"
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+
+#include "lib/jxl/base/arch_macros.h"  // for JXL_ARCH_*
 
 #if JXL_ARCH_X64
 #include <xmmintrin.h>
@@ -41,10 +43,15 @@
 
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/status.h"
+#include "tools/cpu/os_specific.h"
 
-namespace jxl {
+using jxl::CeilLog2Nonzero;
+using jxl::Debug;
+
+namespace jpegxl {
+namespace tools {
+namespace cpu {
 namespace {
 
 #if JXL_ARCH_X64
@@ -141,7 +148,7 @@ class X64_Topology {
  public:
   // Enumerates all APIC IDs and partitions them into fields, or returns false
   // if the topology cannot be detected (e.g. due to missing OS support).
-  static Status Detect(ProcessorTopology* topology) {
+  static jxl::Status Detect(ProcessorTopology* topology) {
     const Info info;
     if (DetectLegacyAMD(info, topology)) return true;
 
@@ -181,7 +188,8 @@ class X64_Topology {
 
  private:
   // Returns true if this is an old AMD CPU.
-  static Status DetectLegacyAMD(const Info& info, ProcessorTopology* topology) {
+  static jxl::Status DetectLegacyAMD(const Info& info,
+                                     ProcessorTopology* topology) {
     if (!info.AMD()) return false;
 
     // "hyperthreads" not set, we have a single logical (no HT nor multicore)
@@ -397,65 +405,11 @@ class X64_Topology {
   }
 };
 
-double X64_DetectNominalClockRate() {
-  const Info info;
-  const std::string& brand_string = info.BrandString();
-  // Brand strings include the maximum configured frequency. These prefixes
-  // are defined by Intel CPUID documentation.
-  const char* prefixes[3] = {"MHz", "GHz", "THz"};
-  const double multipliers[3] = {1E6, 1E9, 1E12};
-  for (size_t i = 0; i < 3; ++i) {
-    const size_t pos_prefix = brand_string.find(prefixes[i]);
-    if (pos_prefix != std::string::npos) {
-      const size_t pos_space = brand_string.rfind(' ', pos_prefix - 1);
-      if (pos_space != std::string::npos) {
-        const std::string digits =
-            brand_string.substr(pos_space + 1, pos_prefix - pos_space - 1);
-        return std::stod(digits) * multipliers[i];
-      }
-    }
-  }
-
-  return 0.0;
-}
-
-#elif JXL_ARCH_PPC
-
-double PPC_DetectNominalClockRate() {
-  double freq = -1;
-  char line[200];
-  char* s;
-  char* value;
-
-  FILE* f = fopen("/proc/cpuinfo", "r");
-  if (f != nullptr) {
-    while (fgets(line, sizeof(line), f) != nullptr) {
-      // NOTE: the ':' is the only character we can rely on
-      if (!(value = strchr(line, ':'))) continue;
-      // terminate the valuename
-      *value++ = '\0';
-      // skip any leading spaces
-      while (*value == ' ') value++;
-      if ((s = strchr(value, '\n'))) *s = '\0';
-
-      if (!strncasecmp(line, "clock", strlen("clock")) &&
-          sscanf(value, "%lf", &freq) == 1) {
-        freq *= 1E6;
-        break;
-      }
-    }
-    fclose(f);
-    return freq;
-  }
-
-  return 0.0;
-}
-
 #endif  // JXL_ARCH_*
 
 }  // namespace
 
-Status DetectProcessorTopology(ProcessorTopology* pt) {
+jxl::Status DetectProcessorTopology(ProcessorTopology* pt) {
   if (GetProcessorTopologyFromOS(pt)) return true;
 #if JXL_ARCH_X64
   if (X64_Topology::Detect(pt)) return true;
@@ -470,28 +424,6 @@ Status DetectProcessorTopology(ProcessorTopology* pt) {
   return JXL_FAILURE("Unable to detect processor topology");
 }
 
-double NominalClockRate() {
-// Thread-safe caching - this is called several times.
-#if JXL_ARCH_X64
-  static const double cycles_per_second = X64_DetectNominalClockRate();
-  return cycles_per_second;
-#elif JXL_ARCH_PPC
-  static const double cycles_per_second = PPC_DetectNominalClockRate();
-  return cycles_per_second;
-#else
-  return 0.0;
-#endif
-}
-
-double InvariantTicksPerSecond() {
-#if JXL_ARCH_PPC
-  static const double cycles_per_second = __ppc_get_timebase_freq();
-  return cycles_per_second;
-#elif JXL_ARCH_X64
-  return NominalClockRate();
-#else
-  return 1E9;  // nanoseconds - matches tsc_timer.h CLOCK_MONOTONIC fallback.
-#endif
-}
-
-}  // namespace jxl
+}  // namespace cpu
+}  // namespace tools
+}  // namespace jpegxl

@@ -31,7 +31,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:a514f2eb013a40be731e32786435a746e66f7ed5c686b86cf19d9c09b3f737e6
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:e8192a8b641f6b85ff423c3fdc4cb69ffa8ad04e05f9c4c92021ebe4c633deef
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -64,6 +64,7 @@ variables:
   - build/libjxl.dll
   # Binary tools like cjxl are "cjxl.exe" in windows builds. These
   # matches will match against either one.
+  - build/lib/jxl_gbench*
   - build/tools/cjxl*
   - build/tools/djxl*
   - build/tools/benchmark_xl*
@@ -149,6 +150,8 @@ test:x86_64:clang:release:
     - build:x86_64:clang:release
   script:
     - ./ci.sh test
+    # Quick run to make sure it doesn't crash. Not useful for actual benchmarks.
+    - ./ci.sh gbench --benchmark_min_time=0
 
 # linux x86_64 with gcc in Debug mode.
 build:x86_64:gcc7:debug:
@@ -397,6 +400,8 @@ test:x86_64:clang:asan:
     - build:x86_64:clang:asan
   script:
     - ./ci.sh test
+    # Quick run to make sure it doesn't crash. Not useful for actual benchmarks.
+    - ./ci.sh gbench --benchmark_min_time=0
 
 # aarch64 asan build and test.
 build:aarch64:clang:asan:
@@ -525,6 +530,7 @@ test:fast_benchmark.msan:
     expire_in: 1 year
     paths:
       - build/benchmark_results/
+      - build/gbench.*
 
 test:aarch64:fast_benchmark:release:
   <<: *benchmark_aarch64_template
@@ -534,6 +540,8 @@ test:aarch64:fast_benchmark:release:
     # Bind to the big CPUs only.
     - ./ci.sh cpuset "${RUNNER_CPU_BIG}"
     - STORE_IMAGES=0 ./ci.sh fast_benchmark
+    # Running the gbench in the big CPUs only.
+    - ./ci.sh gbench
 
 # Benchmark test that runs separately on the big and little CPUs of the runner.
 test:aarch64:arm_benchmark:release:

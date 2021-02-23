@@ -51,12 +51,11 @@ TEST(OpsinInverseTest, YcbCrInverts) {
 
   ThreadPool* null_pool = nullptr;
   Image3F ycbcr(rgb.xsize(), rgb.ysize());
-  RgbToYcbcr(rgb.Plane(0), rgb.Plane(1), rgb.Plane(2), &ycbcr.Plane(0),
-             &ycbcr.Plane(1), &ycbcr.Plane(2), null_pool);
+  RgbToYcbcr(rgb.Plane(0), rgb.Plane(1), rgb.Plane(2), &ycbcr.Plane(1),
+             &ycbcr.Plane(0), &ycbcr.Plane(2), null_pool);
 
   Image3F rgb2(rgb.xsize(), rgb.ysize());
-  YcbcrToRgb(ycbcr.Plane(0), ycbcr.Plane(1), ycbcr.Plane(2), &rgb2.Plane(0),
-             &rgb2.Plane(1), &rgb2.Plane(2), Rect(rgb), null_pool);
+  YcbcrToRgb(ycbcr, &rgb2, Rect(rgb));
 
   VerifyRelativeError(rgb, rgb2, 4E-5, 4E-7);
 }

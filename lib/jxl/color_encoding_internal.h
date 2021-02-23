@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_COLOR_ENCODING_H_
-#define LIB_JXL_COLOR_ENCODING_H_
+#ifndef LIB_JXL_COLOR_ENCODING_INTERNAL_H_
+#define LIB_JXL_COLOR_ENCODING_INTERNAL_H_
 
 // Metadata for color space conversions.
 
@@ -423,4 +423,4 @@ void ConvertInternalToExternalColorEncoding(const jxl::ColorEncoding& internal,
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_COLOR_ENCODING_H_
+#endif  // LIB_JXL_COLOR_ENCODING_INTERNAL_H_

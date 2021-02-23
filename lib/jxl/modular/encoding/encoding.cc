@@ -953,7 +953,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                                                   *tree, header.wp_header, i,
                                                   group_id, &image));
     // Truncated group.
-    if (allow_truncated_group && !br->AllReadsWithinBounds()) {
+    if (!br->AllReadsWithinBounds()) {
+      if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
       ZeroFillImage(&channel.plane);
       return Status(StatusCode::kNotEnoughBytes);
     }
@@ -1007,6 +1008,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
   if (header == nullptr) header = &local_header;
   auto dec_status = ModularDecode(br, image, *header, group_id, options, tree,
                                   code, ctx_map, allow_truncated_group);
+  if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
   image.undo_transforms(header->wp_header, undo_transforms);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");

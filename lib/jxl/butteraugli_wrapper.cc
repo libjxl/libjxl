@@ -188,8 +188,8 @@ float JxlButteraugliResultGetDistance(const JxlButteraugliResult* result,
 void JxlButteraugliResultGetDistmap(const JxlButteraugliResult* result,
                                     const float** buffer,
                                     uint32_t* row_stride) {
-  *buffer = const_cast<float*>(result->distmap.Row(0));
-  *row_stride = sizeof(float) / result->distmap.bytes_per_row();
+  *buffer = result->distmap.Row(0);
+  *row_stride = result->distmap.PixelsPerRow();
 }
 
 float JxlButteraugliResultGetMaxDistance(const JxlButteraugliResult* result) {

@@ -30,6 +30,7 @@
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_gamma_correct.h"
+#include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/external_image.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
@@ -912,14 +913,11 @@ TEST(DecodeTest, IccProfileTestOriginal) {
   std::vector<uint8_t> data = GetIccTestHeader(icc_profile, xyb_encoded);
   JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
 
-  const uint8_t* next_in = data.data();
-  size_t avail_in = data.size();
-
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), data.size()));
 
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
 
@@ -981,15 +979,12 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   JxlPixelFormat format = {4, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
   JxlPixelFormat format_int = {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
 
-  const uint8_t* next_in = data.data();
-  size_t avail_in = data.size();
-
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING));
 
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), data.size()));
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
 
   // Expect the opposite of xyb_encoded for uses_original_profile
@@ -1074,6 +1069,82 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   JxlDecoderDestroy(dec);
 }
 
+// Test decoding ICC from partial files byte for byte.
+// This test must pass also if JXL_CRASH_ON_ERROR is enabled, that is, the
+// decoding of the ANS histogram and stream of the encoded ICC profile must also
+// handle the case of not enough input bytes with StatusCode::kNotEnoughBytes
+// rather than fatal error status codes.
+TEST(DecodeTest, ICCPartialTest) {
+  std::vector<uint8_t> icc_profile = GetIccTestProfile();
+  std::vector<uint8_t> data = GetIccTestHeader(icc_profile, false);
+  JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+  const uint8_t* next_in = data.data();
+  size_t avail_in = 0;
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING));
+
+  bool seen_basic_info = false;
+  bool seen_color_encoding = false;
+  size_t total_size = 0;
+
+  for (;;) {
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+    size_t remaining = JxlDecoderReleaseInput(dec);
+    EXPECT_LE(remaining, avail_in);
+    next_in += avail_in - remaining;
+    avail_in = remaining;
+    if (status == JXL_DEC_NEED_MORE_INPUT) {
+      if (total_size >= data.size()) {
+        // End of partial codestream with codestrema headers and ICC profile
+        // reached, it should not require more input since full image is not
+        // requested
+        FAIL();
+        break;
+      }
+      size_t increment = 1;
+      if (total_size + increment > data.size()) {
+        increment = data.size() - total_size;
+      }
+      total_size += increment;
+      avail_in += increment;
+    } else if (status == JXL_DEC_BASIC_INFO) {
+      EXPECT_FALSE(seen_basic_info);
+      seen_basic_info = true;
+    } else if (status == JXL_DEC_COLOR_ENCODING) {
+      EXPECT_TRUE(seen_basic_info);
+      EXPECT_FALSE(seen_color_encoding);
+      seen_color_encoding = true;
+
+      // Sanity check that the ICC profile was decoded correctly
+      size_t dec_profile_size;
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderGetICCProfileSize(dec, &format,
+                                            JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                            &dec_profile_size));
+      EXPECT_EQ(icc_profile.size(), dec_profile_size);
+
+    } else if (status == JXL_DEC_SUCCESS) {
+      EXPECT_TRUE(seen_color_encoding);
+      break;
+    } else {
+      // We do not expect any other events or errors
+      FAIL();
+      break;
+    }
+  }
+
+  EXPECT_TRUE(seen_basic_info);
+  EXPECT_TRUE(seen_color_encoding);
+
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, PixelTest) {
   JxlDecoder* dec = JxlDecoderCreate(NULL);
 
@@ -1142,17 +1213,18 @@ TEST(DecodeTest, PixelTest) {
       }
 #endif
 
-      {
-        JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, endianness, 0};
+        {
+          JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, endianness, 0};
 
-        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-            dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-            format);
-        JxlDecoderReset(dec);
-        EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
-        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                                   format_orig, format));
-      }
+          std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+              dec,
+              jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+              format);
+          JxlDecoderReset(dec);
+          EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+          EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
+                                     ysize, format_orig, format));
+        }
       }
     }
   }
@@ -1479,6 +1551,34 @@ TEST(DecodeTest, DCTest) {
   JxlDecoderDestroy(dec);
 }
 
+TEST(DecodeTest, DCNotGettableTest) {
+  // 1x1 pixel JXL image
+  std::string compressed(
+      "\377\n\0\20\260\23\0H\200("
+      "\0\334\0U\17\0\0\250P\31e\334\340\345\\\317\227\37:,"
+      "\246m\\gh\253m\vK\22E\306\261I\252C&pH\22\353 "
+      "\363\6\22\bp\0\200\237\34\231W2d\255$\1",
+      68);
+
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_DC_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(
+                dec, reinterpret_cast<const uint8_t*>(compressed.data()),
+                compressed.size()));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+
+  // Since the image is only 1x1 pixel, there is only 1 group, the decoder is
+  // unable to get DC size from this, and will not return the DC at all. Since
+  // no full image is requested either, it is expected to return success.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+  JxlDecoderDestroy(dec);
+}
+
 TEST(DecodeTest, PreviewTest) {
   size_t xsize = 77, ysize = 120;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
@@ -1558,7 +1658,7 @@ TEST(DecodeTest, PreviewTest) {
   // ButteraugliComparator::Diffmap in butteraugli.cc.
   EXPECT_LE(ButteraugliDistance(io0, io1, ba,
                                 /*distmap=*/nullptr, nullptr),
-            0.7f);
+            0.9f);
 
   JxlDecoderDestroy(dec);
 }

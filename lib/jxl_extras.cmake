@@ -23,6 +23,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/codec_pnm.h
   extras/codec_psd.cc
   extras/codec_psd.h
+  extras/tone_mapping.cc
+  extras/tone_mapping.h
 )
 
 # We only define a static library for jxl_extras since it uses internal parts

@@ -50,20 +50,17 @@ void FilterWeights::GaborishWeights(const LoopFilter& lf) {
   }
 }
 
-bool FilterPipeline::ApplyFiltersRow(const LoopFilter& lf,
+void FilterPipeline::ApplyFiltersRow(const LoopFilter& lf,
                                      const FilterWeights& filter_weights,
-                                     const Rect& rect, ssize_t y,
-                                     size_t* JXL_RESTRICT output_row) {
+                                     const Rect& rect, ssize_t y) {
   PROFILER_ZONE("Gaborish+EPF");
   JXL_DASSERT(num_filters != 0);  // Must be initialized.
 
-  if (y >= static_cast<ssize_t>(rect.ysize() + lf.PaddingRows())) {
-    return false;
-  }
+  JXL_ASSERT(y < static_cast<ssize_t>(rect.ysize() + lf.Padding()));
 
   // The minimum value of the center row "y" needed to process the current
   // filter.
-  ssize_t rows_needed = -static_cast<ssize_t>(lf.PaddingRows());
+  ssize_t rows_needed = -static_cast<ssize_t>(lf.Padding());
 
   for (size_t i = 0; i < num_filters; i++) {
     const FilterStep& filter = filters[i];
@@ -72,34 +69,31 @@ bool FilterPipeline::ApplyFiltersRow(const LoopFilter& lf,
 
     // After this "y" points to the rect row for the center of the filter.
     y -= filter.filter_def.border;
-    if (y < rows_needed) return false;
+    if (y < rows_needed) return;
 
     // Compute the region where we need to apply this filter. Depending on the
     // step we might need to compute a larger portion than the original rect.
-    const size_t filter_x0 =
-        kMaxFilterPadding + rect.x0() - filter.output_col_border;
+    const size_t filter_x0 = kMaxFilterPadding - filter.output_col_border;
     const size_t filter_x1 =
         filter_x0 + rect.xsize() + 2 * filter.output_col_border;
 
     // Apply filter to the given region.
     FilterRows rows(filter.filter_def.border);
-    filter.set_input_rows(filter, &rows, rect.y0() + y, rect.x0());
-    filter.set_output_rows(filter, &rows, rect.y0() + y, rect.x0());
+    filter.set_input_rows(filter, &rows, y);
+    filter.set_output_rows(filter, &rows, y);
 
     // The "y" coordinate used for the sigma image in EPF1. Sigma is padded
     // with kMaxFilterPadding (or kMaxFilterPadding/kBlockDim rows in sigma)
-    // above and below unlike the input.
+    // above and below.
     const size_t sigma_y = kMaxFilterPadding + rect.y0() + y;
     if (compute_sigma) {
-      rows.SetSigma(filter_weights.sigma, sigma_y, 0);
+      rows.SetSigma(filter_weights.sigma, sigma_y, rect.x0());
     }
 
     filter.filter_def.apply(rows, lf, sigma_y % kBlockDim, filter_weights,
                             filter_x0, filter_x1);
   }
-  *output_row = y;
   JXL_DASSERT(rows_needed == 0);
-  return true;
 }
 
 }  // namespace jxl

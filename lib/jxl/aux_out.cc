@@ -23,12 +23,6 @@
 
 namespace jxl {
 
-namespace {
-
-static const char* kBlockTypes[uint8_t(BlockType::kNumBlockTypes)] = {
-    "add", "black", "white"};
-}  // namespace
-
 void AuxOut::Print(size_t num_inputs) const {
   if (num_inputs == 0) return;
 
@@ -65,25 +59,8 @@ void AuxOut::Print(size_t num_inputs) const {
 
   size_t total_blocks = 0;
   size_t total_positions = 0;
-  for (uint8_t block_type = 0; block_type < uint8_t(BlockType::kNumBlockTypes);
-       block_type++) {
-    total_blocks += num_block_types[block_type];
-    total_positions += num_position_types[block_type];
-  }
   if (total_blocks != 0 && total_positions != 0) {
     printf("\n\t\t  Blocks\t\tPositions\t\t\tBlocks/Position\n");
-    for (uint8_t block_type = 0;
-         block_type < uint8_t(BlockType::kNumBlockTypes); block_type++) {
-      printf(" %-5s:", kBlockTypes[block_type]);
-
-      printf(
-          "\t%10f%% %7zu\t %10f%% %7zu\t\t\t%10f%%\n",
-          100.0 * num_block_types[block_type] / total_blocks,
-          num_block_types[block_type],
-          100.0 * num_position_types[block_type] / total_positions,
-          num_position_types[block_type],
-          100.0 * num_block_types[block_type] / num_position_types[block_type]);
-    }
     printf(" Total:\t\t    %7zu\t\t     %7zu \t\t\t%10f%%\n\n", total_blocks,
            total_positions, 100.0 * total_blocks / total_positions);
   }

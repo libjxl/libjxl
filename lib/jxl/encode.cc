@@ -18,11 +18,13 @@
 
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/box.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_file.h"
+#include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/external_image.h"
-#include "lib/jxl/icc_codec.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 
 // Debug-printing failure macro similar to JXL_FAILURE, but for the status code
 // JXL_ENC_ERROR
@@ -117,12 +119,28 @@ uint32_t JxlEncoderVersion(void) {
 
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
-      std::move(this->input_frame_queue[0]);
-  this->input_frame_queue.erase(this->input_frame_queue.begin());
+      std::move(input_frame_queue[0]);
+  input_frame_queue.erase(input_frame_queue.begin());
 
   jxl::BitWriter writer;
 
   if (!wrote_headers) {
+    if (use_container) {
+      jxl::JxlContainer container = {};
+      if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
+        jxl::JxlBox reconstruction_box = {};
+        memcpy(reconstruction_box.type, "jbrd", 4);
+        reconstruction_box.data = jxl::Span<const uint8_t>(
+            jpeg_metadata.data(), jpeg_metadata.size());
+        reconstruction_box.data_size_given = true;
+        container.boxes.push_back(reconstruction_box);
+      }
+      jxl::JxlBox codestream_box = {};
+      memcpy(codestream_box.type, "jxlc", 4);
+      codestream_box.data_size_given = false;
+      container.boxes.push_back(codestream_box);
+      container.Encode(&output_byte_queue);
+    }
     if (!WriteHeaders(&metadata, &writer, nullptr)) {
       return JXL_ENC_ERROR;
     }
@@ -157,16 +175,16 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   }
 
   jxl::PassesEncoderState enc_state;
-  if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{}, &metadata,
-                        input_frame->frame, &enc_state, this->thread_pool.get(),
-                        &writer,
+  if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
+                        &metadata, input_frame->frame, &enc_state,
+                        thread_pool.get(), &writer,
                         /*aux_out=*/nullptr)) {
     return JXL_ENC_ERROR;
   }
 
   jxl::PaddedBytes bytes = std::move(writer).TakeBytes();
-  this->output_byte_queue =
-      std::vector<uint8_t>(bytes.data(), bytes.data() + bytes.size());
+  output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
+                           bytes.data() + bytes.size());
   last_used_cparams = input_frame->option_values.cparams;
   return JXL_ENC_SUCCESS;
 }
@@ -299,6 +317,18 @@ void JxlEncoderDestroy(JxlEncoder* enc) {
   }
 }
 
+JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
+                                        JXL_BOOL use_container) {
+  enc->use_container = static_cast<bool>(use_container);
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderStoreJPEGMetadata(JxlEncoder* enc,
+                                             JXL_BOOL store_jpeg_metadata) {
+  enc->store_jpeg_metadata = static_cast<bool>(store_jpeg_metadata);
+  return JXL_ENC_SUCCESS;
+}
+
 JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
                                              JxlParallelRunner parallel_runner,
                                              void* parallel_runner_opaque) {
@@ -313,12 +343,56 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
 
 JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
                                         const uint8_t* buffer, size_t size) {
+  // TODO(zond): Return error if basic info or color encoding isn't set.
+  // TODO(zond): Return error if the input has been closed.
+
+  if (options->enc->metadata.m.xyb_encoded) {
+    // Can't XYB encode a lossless JPEG.
+    return JXL_ENC_ERROR;
+  }
+
+  jxl::CodecInOut io;
+  if (!jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(buffer, size), &io)) {
+    return JXL_ENC_ERROR;
+  }
+
+  if (options->enc->store_jpeg_metadata) {
+    jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
+    jxl::PaddedBytes jpeg_data;
+    if (!EncodeJPEGData(data_in, &jpeg_data)) {
+      return JXL_ENC_ERROR;
+    }
+    options->enc->jpeg_metadata = std::vector<uint8_t>(
+        jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
+  }
+
+  auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
+      &options->enc->memory_manager,
+      // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
+      // default move constructor there.
+      jxl::JxlEncoderQueuedFrame{options->values,
+                                 jxl::ImageBundle(&options->enc->metadata.m)});
+  if (!queued_frame) {
+    return JXL_ENC_ERROR;
+  }
+  queued_frame->frame.SetFromImage(std::move(*io.Main().color()),
+                                   io.Main().c_current());
+  queued_frame->frame.jpeg_data = std::move(io.Main().jpeg_data);
+  queued_frame->frame.color_transform = io.Main().color_transform;
+  queued_frame->frame.chroma_subsampling = io.Main().chroma_subsampling;
+
+  if (options->values.lossless) {
+    queued_frame->option_values.cparams.SetLossless();
+  }
+
+  options->enc->input_frame_queue.emplace_back(std::move(queued_frame));
   return JXL_ENC_SUCCESS;
 }
 
 JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
                                          const JxlPixelFormat* pixel_format,
                                          const void* buffer, size_t size) {
+  // TODO(zond): Return error if basic info or color encoding isn't set.
   // TODO(zond): Return error if the input has been closed.
   auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
       &options->enc->memory_manager,

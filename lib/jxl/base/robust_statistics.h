@@ -28,7 +28,6 @@
 #include <utility>
 #include <vector>
 
-#include "lib/jxl/base/arch_specific.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 

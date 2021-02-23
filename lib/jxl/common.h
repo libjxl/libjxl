@@ -26,12 +26,6 @@
 
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
-enum class BlockType : uint8_t {
-  kAdd = 0,
-  kTowardsBlack = 1,
-  kTowardsWhite = 2,
-  kNumBlockTypes,
-};
 
 constexpr size_t kBitsPerByte = 8;  // more clear than CHAR_BIT
 
@@ -122,6 +116,8 @@ struct FrameDimensions {
       xsize_padded = xsize;
       ysize_padded = ysize;
     }
+    xsize_upsampled_padded = xsize_padded * upsampling;
+    ysize_upsampled_padded = ysize_padded * upsampling;
     xsize_groups = DivCeil(this->xsize, group_dim);
     ysize_groups = DivCeil(this->ysize, group_dim);
     xsize_dc_groups = DivCeil(xsize_blocks, group_dim);
@@ -130,20 +126,31 @@ struct FrameDimensions {
     num_dc_groups = xsize_dc_groups * ysize_dc_groups;
   }
 
+  // Image size without any upsampling, i.e. original_size / upsampling.
   size_t xsize;
   size_t ysize;
+  // Original image size.
   size_t xsize_upsampled;
   size_t ysize_upsampled;
+  // Image size after upsampling the padded image.
+  size_t xsize_upsampled_padded;
+  size_t ysize_upsampled_padded;
+  // Image size after padding to a multiple of kBlockDim (if VarDCT mode).
   size_t xsize_padded;
   size_t ysize_padded;
+  // Image size in kBlockDim blocks.
   size_t xsize_blocks;
   size_t ysize_blocks;
+  // Image size in number of groups.
   size_t xsize_groups;
   size_t ysize_groups;
+  // Image size in number of DC groups.
   size_t xsize_dc_groups;
   size_t ysize_dc_groups;
+  // Number of AC or DC groups.
   size_t num_groups;
   size_t num_dc_groups;
+  // Size of a group.
   size_t group_dim;
 };
 

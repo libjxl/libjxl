@@ -48,7 +48,6 @@ namespace jxl {
 
 const char kPathSeparator = '/';
 
-
 // RAII, ensures dir is closed even when returning early.
 class DirWrapper {
  public:

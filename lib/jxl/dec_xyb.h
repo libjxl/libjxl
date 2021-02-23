@@ -49,15 +49,13 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 // Bt.601 to match JPEG/JFIF. Inputs are _signed_ YCbCr values suitable for DCT,
 // see F.1.1.3 of T.81 (because our data type is float, there is no need to add
 // a bias to make the values unsigned).
-void YcbcrToRgb(const ImageF& y_plane, const ImageF& cb_plane,
-                const ImageF& cr_plane, ImageF* r_plane, ImageF* g_plane,
-                ImageF* b_plane, const Rect& rect, ThreadPool* pool);
+void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect);
 
 ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
 
 // WARNING: this uses unaligned accesses, so the caller must first call
 // src.InitializePaddingForUnalignedAccesses() to avoid msan crashes.
-ImageF UpsampleH2(const ImageF& src, size_t xpadding, ThreadPool* pool);
+ImageF UpsampleH2(const ImageF& src, ThreadPool* pool);
 
 }  // namespace jxl
 

@@ -1,0 +1,344 @@
+// Copyright (c) the JPEG XL Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+#include "tools/benchmark/benchmark_codec_avif.h"
+
+#include <avif/avif.h>
+
+#include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/span.h"
+#include "lib/jxl/base/time.h"
+#include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/external_image.h"
+#include "tools/cmdline.h"
+
+#define JXL_RETURN_IF_AVIF_ERROR(result)                                       \
+  do {                                                                         \
+    avifResult jxl_return_if_avif_error_result = (result);                     \
+    if (jxl_return_if_avif_error_result != AVIF_RESULT_OK) {                   \
+      return JXL_FAILURE("libavif error: %s",                                  \
+                         avifResultToString(jxl_return_if_avif_error_result)); \
+    }                                                                          \
+  } while (false)
+
+namespace jxl {
+
+namespace {
+
+struct AvifArgs {
+  avifPixelFormat chroma_subsampling = AVIF_PIXEL_FORMAT_YUV444;
+};
+
+AvifArgs* const avifargs = new AvifArgs;
+
+bool ParseChromaSubsampling(const char* arg, avifPixelFormat* subsampling) {
+  if (strcmp(arg, "444") == 0) {
+    *subsampling = AVIF_PIXEL_FORMAT_YUV444;
+    return true;
+  }
+  if (strcmp(arg, "422") == 0) {
+    *subsampling = AVIF_PIXEL_FORMAT_YUV422;
+    return true;
+  }
+  if (strcmp(arg, "420") == 0) {
+    *subsampling = AVIF_PIXEL_FORMAT_YUV420;
+    return true;
+  }
+  if (strcmp(arg, "400") == 0) {
+    *subsampling = AVIF_PIXEL_FORMAT_YUV400;
+    return true;
+  }
+  return false;
+}
+
+void SetUpAvifColor(const ColorEncoding& color, avifImage* const image) {
+  bool need_icc = color.white_point != WhitePoint::kD65;
+
+  image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+  if (!color.HasPrimaries()) {
+    need_icc = true;
+  } else {
+    switch (color.primaries) {
+      case Primaries::kSRGB:
+        image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
+        break;
+      case Primaries::k2100:
+        image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT2020;
+        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT2020_NCL;
+        break;
+      default:
+        need_icc = true;
+        image->colorPrimaries = AVIF_COLOR_PRIMARIES_UNKNOWN;
+        break;
+    }
+  }
+
+  switch (color.tf.GetTransferFunction()) {
+    case TransferFunction::kSRGB:
+      image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
+      break;
+    case TransferFunction::kLinear:
+      image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_LINEAR;
+      break;
+    case TransferFunction::kPQ:
+      image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084;
+      break;
+    case TransferFunction::kHLG:
+      image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_HLG;
+      break;
+    default:
+      need_icc = true;
+      image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_UNKNOWN;
+      break;
+  }
+
+  if (need_icc) {
+    avifImageSetProfileICC(image, color.ICC().data(), color.ICC().size());
+  }
+}
+
+Status ReadAvifColor(const avifImage* const image, ColorEncoding* const color) {
+  if (image->icc.size != 0) {
+    PaddedBytes icc;
+    icc.assign(image->icc.data, image->icc.data + image->icc.size);
+    return color->SetICC(std::move(icc));
+  }
+
+  color->white_point = WhitePoint::kD65;
+  switch (image->colorPrimaries) {
+    case AVIF_COLOR_PRIMARIES_BT709:
+      color->primaries = Primaries::kSRGB;
+      break;
+    case AVIF_COLOR_PRIMARIES_BT2020:
+      color->primaries = Primaries::k2100;
+      break;
+    default:
+      return JXL_FAILURE("unsupported avif primaries");
+  }
+  switch (image->transferCharacteristics) {
+    case AVIF_TRANSFER_CHARACTERISTICS_BT470M:
+      JXL_RETURN_IF_ERROR(color->tf.SetGamma(2.2));
+      break;
+    case AVIF_TRANSFER_CHARACTERISTICS_BT470BG:
+      JXL_RETURN_IF_ERROR(color->tf.SetGamma(2.8));
+      break;
+    case AVIF_TRANSFER_CHARACTERISTICS_LINEAR:
+      color->tf.SetTransferFunction(TransferFunction::kLinear);
+      break;
+    case AVIF_TRANSFER_CHARACTERISTICS_SRGB:
+      color->tf.SetTransferFunction(TransferFunction::kSRGB);
+      break;
+    case AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084:
+      color->tf.SetTransferFunction(TransferFunction::kPQ);
+      break;
+    case AVIF_TRANSFER_CHARACTERISTICS_HLG:
+      color->tf.SetTransferFunction(TransferFunction::kHLG);
+      break;
+    default:
+      return JXL_FAILURE("unsupported avif TRC");
+  }
+  return color->CreateICC();
+}
+
+}  // namespace
+
+Status AddCommandLineOptionsAvifCodec(BenchmarkArgs* args) {
+  args->cmdline.AddOptionValue(
+      '\0', "avif_chroma_subsampling", "444/422/420/400",
+      "default AVIF chroma subsampling (default: 444).",
+      &avifargs->chroma_subsampling, &ParseChromaSubsampling);
+  return true;
+}
+
+class AvifCodec : public ImageCodec {
+ public:
+  explicit AvifCodec(const BenchmarkArgs& args) : ImageCodec(args) {
+    chroma_subsampling_ = avifargs->chroma_subsampling;
+  }
+
+  Status ParseParam(const std::string& param) override {
+    if (param.compare(0, 3, "yuv") == 0) {
+      if (param.size() != 6) return false;
+      return ParseChromaSubsampling(param.c_str() + 3, &chroma_subsampling_);
+    }
+    if (param.compare(0, 12, "num_threads=") == 0) {
+      num_threads_ = strtol(param.c_str() + 12, nullptr, 10);
+      return true;
+    }
+    if (param.compare(0, 10, "log2_cols=") == 0) {
+      log2_cols = strtol(param.c_str() + 10, nullptr, 10);
+      return true;
+    }
+    if (param.compare(0, 10, "log2_rows=") == 0) {
+      log2_rows = strtol(param.c_str() + 10, nullptr, 10);
+      return true;
+    }
+    if (param[0] == 's') {
+      speed_ = strtol(param.c_str() + 1, nullptr, 10);
+      return true;
+    }
+    if (param == "aomenc") {
+      encoder_ = AVIF_CODEC_CHOICE_AOM;
+      return true;
+    }
+    if (param == "aomdec") {
+      decoder_ = AVIF_CODEC_CHOICE_AOM;
+      return true;
+    }
+    if (param == "aom") {
+      encoder_ = AVIF_CODEC_CHOICE_AOM;
+      decoder_ = AVIF_CODEC_CHOICE_AOM;
+      return true;
+    }
+    if (param == "rav1e") {
+      encoder_ = AVIF_CODEC_CHOICE_RAV1E;
+      return true;
+    }
+    if (param == "dav1d") {
+      decoder_ = AVIF_CODEC_CHOICE_DAV1D;
+      return true;
+    }
+    return ImageCodec::ParseParam(param);
+  }
+
+  Status Compress(const std::string& filename, const CodecInOut* io,
+                  ThreadPool* pool, PaddedBytes* compressed,
+                  jpegxl::tools::SpeedStats* speed_stats) override {
+    const double start = Now();
+    {
+      const auto depth =
+          std::min<int>(16, io->metadata.m.bit_depth.bits_per_sample);
+      std::unique_ptr<avifEncoder, void (*)(avifEncoder*)> encoder(
+          avifEncoderCreate(), &avifEncoderDestroy);
+      encoder->codecChoice = encoder_;
+      // TODO(sboukortt): configure this separately.
+      encoder->minQuantizer = encoder->maxQuantizer =
+          AVIF_QUANTIZER_BEST_QUALITY +
+          (AVIF_QUANTIZER_WORST_QUALITY - AVIF_QUANTIZER_BEST_QUALITY) *
+              (1 - 0.01 * q_target_);
+      encoder->tileColsLog2 = log2_cols;
+      encoder->tileRowsLog2 = log2_rows;
+      encoder->speed = speed_;
+      encoder->maxThreads = num_threads_;
+      avifAddImageFlags add_image_flags = AVIF_ADD_IMAGE_FLAG_SINGLE;
+      if (io->metadata.m.have_animation) {
+        encoder->timescale = std::lround(
+            static_cast<float>(io->metadata.m.animation.tps_numerator) /
+            io->metadata.m.animation.tps_denominator);
+        add_image_flags = AVIF_ADD_IMAGE_FLAG_NONE;
+      }
+      for (const ImageBundle& ib : io->frames) {
+        std::unique_ptr<avifImage, void (*)(avifImage*)> image(
+            avifImageCreate(ib.xsize(), ib.ysize(), depth, chroma_subsampling_),
+            &avifImageDestroy);
+        image->width = ib.xsize();
+        image->height = ib.ysize();
+        image->depth = depth;
+        SetUpAvifColor(ib.c_current(), image.get());
+        std::unique_ptr<avifRWData, void (*)(avifRWData*)> icc_freer(
+            &image->icc, &avifRWDataFree);
+        avifRGBImage rgb_image;
+        avifRGBImageSetDefaults(&rgb_image, image.get());
+        rgb_image.format =
+            ib.HasAlpha() ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
+        avifRGBImageAllocatePixels(&rgb_image);
+        std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
+            &rgb_image, &avifRGBImageFreePixels);
+        JXL_RETURN_IF_ERROR(ConvertImage(
+            ib, depth, /*float_out=*/false, /*apply_srgb_tf=*/false,
+            /*num_channels=*/ib.HasAlpha() ? 4 : 3, JXL_NATIVE_ENDIAN,
+            /*stride=*/rgb_image.rowBytes, pool, rgb_image.pixels,
+            rgb_image.rowBytes * rgb_image.height,
+            jxl::Orientation::kIdentity));
+        JXL_RETURN_IF_AVIF_ERROR(avifImageRGBToYUV(image.get(), &rgb_image));
+        JXL_RETURN_IF_AVIF_ERROR(avifEncoderAddImage(
+            encoder.get(), image.get(), ib.duration, add_image_flags));
+      }
+      avifRWData buffer = AVIF_DATA_EMPTY;
+      JXL_RETURN_IF_AVIF_ERROR(avifEncoderFinish(encoder.get(), &buffer));
+      compressed->assign(buffer.data, buffer.data + buffer.size);
+      avifRWDataFree(&buffer);
+    }
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
+  }
+
+  Status Decompress(const std::string& filename,
+                    const Span<const uint8_t> compressed, ThreadPool* pool,
+                    CodecInOut* io,
+                    jpegxl::tools::SpeedStats* speed_stats) override {
+    io->frames.clear();
+    io->dec_pixels = 0;
+    const double start = Now();
+    {
+      std::unique_ptr<avifDecoder, void (*)(avifDecoder*)> decoder(
+          avifDecoderCreate(), &avifDecoderDestroy);
+      decoder->codecChoice = decoder_;
+      decoder->maxThreads = num_threads_;
+      JXL_RETURN_IF_AVIF_ERROR(avifDecoderSetIOMemory(
+          decoder.get(), compressed.data(), compressed.size()));
+      JXL_RETURN_IF_AVIF_ERROR(avifDecoderParse(decoder.get()));
+      const bool has_alpha = decoder->alphaPresent;
+      io->metadata.m.have_animation = decoder->imageCount > 1;
+      io->metadata.m.animation.tps_numerator = decoder->timescale;
+      io->metadata.m.animation.tps_denominator = 1;
+      io->metadata.m.SetUintSamples(decoder->image->depth);
+      io->SetSize(decoder->image->width, decoder->image->height);
+      avifResult next_image;
+      while ((next_image = avifDecoderNextImage(decoder.get())) ==
+             AVIF_RESULT_OK) {
+        ColorEncoding color;
+        JXL_RETURN_IF_ERROR(ReadAvifColor(decoder->image, &color));
+        avifRGBImage rgb_image;
+        avifRGBImageSetDefaults(&rgb_image, decoder->image);
+        rgb_image.format =
+            has_alpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
+        avifRGBImageAllocatePixels(&rgb_image);
+        std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
+            &rgb_image, &avifRGBImageFreePixels);
+        JXL_RETURN_IF_AVIF_ERROR(avifImageYUVToRGB(decoder->image, &rgb_image));
+        ImageBundle ib(&io->metadata.m);
+        JXL_RETURN_IF_ERROR(ConvertImage(
+            Span<const uint8_t>(rgb_image.pixels,
+                                rgb_image.height * rgb_image.rowBytes),
+            rgb_image.width, rgb_image.height, color, has_alpha,
+            /*alpha_is_premultiplied=*/false, rgb_image.depth,
+            JXL_NATIVE_ENDIAN, /*flipped_y=*/false, pool, &ib));
+        io->frames.push_back(std::move(ib));
+        io->dec_pixels += rgb_image.width * rgb_image.height;
+      }
+      if (next_image != AVIF_RESULT_NO_IMAGES_REMAINING) {
+        JXL_RETURN_IF_AVIF_ERROR(next_image);
+      }
+    }
+    const double end = Now();
+    speed_stats->NotifyElapsed(end - start);
+    return true;
+  }
+
+ protected:
+  avifPixelFormat chroma_subsampling_;
+  avifCodecChoice encoder_ = AVIF_CODEC_CHOICE_AUTO;
+  avifCodecChoice decoder_ = AVIF_CODEC_CHOICE_AUTO;
+  int speed_ = AVIF_SPEED_DEFAULT;
+  int num_threads_ = 0;
+  int log2_cols = 0;
+  int log2_rows = 0;
+};
+
+ImageCodec* CreateNewAvifCodec(const BenchmarkArgs& args) {
+  return new AvifCodec(args);
+}
+
+}  // namespace jxl

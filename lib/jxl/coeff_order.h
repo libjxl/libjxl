@@ -46,7 +46,7 @@ static constexpr size_t CoeffOrderOffset(size_t order, size_t c) {
   return kCoeffOrderOffset[3 * order + c] * kDCTBlockSize;
 }
 
-static constexpr size_t kCoeffOrderSize =
+static constexpr size_t kCoeffOrderMaxSize =
     kCoeffOrderOffset[3 * kNumOrders] * kDCTBlockSize;
 
 // Mapping from AC strategy to order bucket. Strategies with different natural
@@ -69,7 +69,7 @@ uint32_t ComputeUsedOrders(SpeedTier speed, const AcStrategyImage& ac_strategy,
 // permutation will be cheaper to encode.
 void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                        const AcStrategyImage& ac_strategy,
-                       const FrameDimensions& frame_dim, uint32_t used_orders,
+                       const FrameDimensions& frame_dim, uint32_t& used_orders,
                        coeff_order_t* JXL_RESTRICT order);
 
 void EncodeCoeffOrders(uint16_t used_orders,
@@ -77,8 +77,8 @@ void EncodeCoeffOrders(uint16_t used_orders,
                        BitWriter* writer, size_t layer,
                        AuxOut* JXL_RESTRICT aux_out);
 
-Status DecodeCoeffOrders(uint16_t used_orders, coeff_order_t* order,
-                         BitReader* br);
+Status DecodeCoeffOrders(uint16_t used_orders, uint32_t used_acs,
+                         coeff_order_t* order, BitReader* br);
 
 // Encoding/decoding of a single permutation. `size`: number of elements in the
 // permutation. `skip`: number of elements to skip from the *beginning* of the

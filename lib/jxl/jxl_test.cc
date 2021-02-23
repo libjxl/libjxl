@@ -46,7 +46,6 @@
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 #include "tools/box/box.h"
-#include "tools/djxl.h"
 
 namespace jxl {
 namespace {
@@ -225,7 +224,7 @@ TEST(JxlTest, RoundtripResample2) {
   cparams.resampling = 2;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15100);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15777);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             13.5);
@@ -259,7 +258,7 @@ TEST(JxlTest, RoundtripResample8) {
   cparams.resampling = 8;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 2100);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             80);
@@ -1103,6 +1102,37 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
 
 #if JPEGXL_ENABLE_JPEG
 
+namespace {
+
+jxl::Status DecompressJxlToJPEGForTest(
+    const jpegxl::tools::JpegXlContainer& container, jxl::ThreadPool* pool,
+    jxl::PaddedBytes* output) {
+  output->clear();
+  jxl::Span<const uint8_t> compressed(container.codestream,
+                                      container.codestream_size);
+
+  JXL_RETURN_IF_ERROR(compressed.size() >= 2);
+
+  // JXL case
+  // Decode to DCT when possible and generate a JPG file.
+  jxl::CodecInOut io;
+  jxl::DecompressParams params;
+  params.keep_dct = true;
+  if (!jpegxl::tools::DecodeJpegXlToJpeg(params, container, &io,
+                                         /*aux_out=*/nullptr, pool)) {
+    return JXL_FAILURE("Failed to decode JXL to JPEG");
+  }
+  io.jpeg_quality = 95;
+  if (!EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, io.jpeg_quality,
+                      jxl::YCbCrChromaSubsampling(), pool, output,
+                      jxl::DecodeTarget::kQuantizedCoeffs)) {
+    return JXL_FAILURE("Failed to generate JPEG");
+  }
+  return true;
+}
+
+}  // namespace
+
 size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   CodecInOut io;
   io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
@@ -1116,15 +1146,11 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
                                                 &compressed,
                                                 /*aux_out=*/nullptr, pool));
 
-  jpegxl::tools::DecompressArgs args;
-  jpegxl::tools::SpeedStats stats;
-  args.params.keep_dct = true;
   jpegxl::tools::JpegXlContainer container;
   EXPECT_TRUE(DecodeJpegXlContainerOneShot(compressed.data(), compressed.size(),
                                            &container));
   PaddedBytes out;
-  EXPECT_TRUE(DecompressJxlToJPEG(container, args, pool, &out,
-                                  /*aux_out=*/nullptr, &stats));
+  EXPECT_TRUE(DecompressJxlToJPEGForTest(container, pool, &out));
   EXPECT_EQ(out.size(), jpeg_in.size());
   size_t failures = 0;
   for (size_t i = 0; i < std::min(out.size(), jpeg_in.size()); i++) {

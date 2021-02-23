@@ -16,6 +16,7 @@
 
 #include <numeric>  // iota
 #include <vector>
+
 #include "gtest/gtest.h"
 
 namespace jxl {

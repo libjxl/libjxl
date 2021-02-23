@@ -35,16 +35,9 @@ struct LoopFilter : public Fields {
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
-  size_t PaddingRows() const {
+  size_t Padding() const {
     static const size_t padding_per_epf_iter[4] = {0, 2, 3, 6};
     return padding_per_epf_iter[epf_iters] + (gab ? 1 : 0);
-  }
-  size_t PaddingCols() const {
-    // Having less than one full block here breaks handling of sigma in EPF.
-    // If no loop filter is used, no padding is necessary - indeed, adding
-    // padding breaks the output as the padding area will not be processed
-    // separately.
-    return RoundUpTo(PaddingRows(), kBlockDim);
   }
 
   mutable bool all_default;

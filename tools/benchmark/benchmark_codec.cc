@@ -23,11 +23,11 @@
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
@@ -46,6 +46,10 @@
 #ifdef BENCHMARK_WEBP
 #include "tools/benchmark/benchmark_codec_webp.h"
 #endif  // BENCHMARK_WEBP
+
+#ifdef BENCHMARK_AVIF
+#include "tools/benchmark/benchmark_codec_avif.h"
+#endif  // BENCHMARK_AVIF
 
 namespace jxl {
 
@@ -182,6 +186,10 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "webp") {
     result.reset(CreateNewWebPCodec(*Args()));
 #endif  // BENCHMARK_WEBP
+#ifdef BENCHMARK_AVIF
+  } else if (name == "avif") {
+    result.reset(CreateNewAvifCodec(*Args()));
+#endif  // BENCHMARK_AVIF
   } else {
     JXL_ABORT("Unknown image codec: %s", name.c_str());
   }

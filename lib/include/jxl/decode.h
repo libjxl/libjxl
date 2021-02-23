@@ -571,7 +571,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size);
 
 /**
- * Outputs the information from the frame, such as duration when have_animagion.
+ * Outputs the information from the frame, such as duration when have_animation.
  * This function can be called when JXL_DEC_FRAME occurred for the current
  * frame, even when have_animation in the JxlBasicInfo is JXL_FALSE.
  *

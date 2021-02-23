@@ -28,9 +28,9 @@
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_frame.h"
+#include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/headers.h"
-#include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {

@@ -58,15 +58,17 @@ float GetIntensityTarget(const CodecInOut& io,
   return kDefaultIntensityTarget;
 }
 
-size_t GetNumThreads() {
-  static const auto num_threads = []() -> size_t {
-    ProcessorTopology topology;
-    if (!DetectProcessorTopology(&topology)) {
-      return 1;
-    }
-    return std::min<size_t>(8, topology.cores_per_package * topology.packages);
-  }();
-  return num_threads;
+size_t GetNumThreads(ThreadPool* pool) {
+  size_t exr_num_threads = 1;
+  RunOnPool(
+      pool, 0, 1,
+      [&](size_t num_threads) {
+        exr_num_threads = num_threads;
+        return true;
+      },
+      [&](const int /* task */, const int /*thread*/) {},
+      "DecodeImageEXRThreads");
+  return exr_num_threads;
 }
 
 class InMemoryIStream : public OpenEXR::IStream {
@@ -130,11 +132,12 @@ class InMemoryOStream : public OpenEXR::OStream {
 
 Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
                       CodecInOut* io) {
+  // Get the number of threads we should be using for OpenEXR.
   // OpenEXR creates its own set of threads, independent from ours. `pool` is
   // only used for converting from a buffer of OpenEXR::Rgba to Image3F.
   // TODO(sboukortt): look into changing that with OpenEXR 2.3 which allows
   // custom thread pools according to its changelog.
-  OpenEXR::setGlobalThreadCount(GetNumThreads());
+  OpenEXR::setGlobalThreadCount(GetNumThreads(pool));
 
   InMemoryIStream is(bytes);
 
@@ -261,7 +264,7 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
                       ThreadPool* pool, PaddedBytes* bytes) {
   // As in `DecodeImageEXR`, `pool` is only used for pixel conversion, not for
   // actual OpenEXR I/O.
-  OpenEXR::setGlobalThreadCount(GetNumThreads());
+  OpenEXR::setGlobalThreadCount(GetNumThreads(pool));
 
   ColorEncoding c_linear = c_desired;
   c_linear.tf.SetTransferFunction(TransferFunction::kLinear);

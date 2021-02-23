@@ -344,8 +344,10 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
   return true;
 }
 
-Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
-                         size_t* offsets, size_t table_num,
+// TODO(veluca): SIMD-fy. With 256x256, this is actually slow.
+Status ComputeQuantTable(const QuantEncoding& encoding,
+                         float* JXL_RESTRICT table,
+                         float* JXL_RESTRICT inv_table, size_t table_num,
                          DequantMatrices::QuantTable kind, size_t* pos) {
   std::vector<float> weights(3 * kMaxQuantTableSize);
 
@@ -506,14 +508,30 @@ Status ComputeQuantTable(const QuantEncoding& encoding, float* table,
       break;
     }
   }
+  size_t prev_pos = *pos;
   for (size_t c = 0; c < 3; c++) {
-    offsets[table_num * 3 + c] = *pos;
     for (size_t i = 0; i < num; i++) {
       float val = 1.0f / weights[c * num + i];
       if (val > std::numeric_limits<float>::max() || val < 0) {
         return JXL_FAILURE("Invalid quantization table");
       }
-      table[(*pos)++] = val;
+      table[*pos] = val;
+      inv_table[*pos] = 1.0f / val;
+      (*pos)++;
+    }
+  }
+  // Ensure that the lowest frequencies have a 0 inverse table.
+  // This does not affect en/decoding, but allows AC strategy selection to be
+  // slightly simpler.
+  size_t xs = DequantMatrices::required_size_x[kind];
+  size_t ys = DequantMatrices::required_size_y[kind];
+  CoefficientLayout(&ys, &xs);
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ys; y++) {
+      for (size_t x = 0; x < xs; x++) {
+        inv_table[prev_pos + c * ys * xs * kDCTBlockSize + y * kBlockDim * xs +
+                  x] = 0;
+      }
     }
   }
   return true;
@@ -1229,12 +1247,9 @@ const DequantMatrices::DequantLibraryInternal DequantMatrices::LibraryInit() {
   };
 }
 
-namespace {
-const DequantMatrices::DequantLibraryInternal kDequantLibrary =
-    DequantMatrices::LibraryInit();
-}  // namespace
-
 const QuantEncoding* DequantMatrices::Library() {
+  static const DequantMatrices::DequantLibraryInternal kDequantLibrary =
+      DequantMatrices::LibraryInit();
   // Downcast the result to a const QuantEncoding* from QuantEncodingInternal*
   // since the subclass (QuantEncoding) doesn't add any new members and users
   // will need to upcast to QuantEncodingInternal to access the members of that
@@ -1250,66 +1265,53 @@ Status DequantMatrices::Compute() {
   struct DefaultMatrices {
     DefaultMatrices() {
       const QuantEncoding* library = Library();
-      std::vector<size_t> offsets(kNum * 3);
       size_t pos = 0;
       for (size_t i = 0; i < kNum; i++) {
-        JXL_CHECK(ComputeQuantTable(library[i], table, offsets.data(), i,
+        JXL_CHECK(ComputeQuantTable(library[i], table, inv_table, i,
                                     QuantTable(i), &pos));
       }
       JXL_CHECK(pos == kTotalTableSize);
     }
-    float table[kTotalTableSize];
+    HWY_ALIGN_MAX float table[kTotalTableSize];
+    HWY_ALIGN_MAX float inv_table[kTotalTableSize];
   };
 
   static const DefaultMatrices default_matrices;
 
-  // Avoid changing encodings_.
-  auto encodings = encodings_;
+  JXL_ASSERT(encodings_.size() == kNum);
 
-  std::vector<size_t> offsets(kNum * 3);
-
-  for (size_t table = 0; table < encodings.size(); table++) {
-    size_t prev_pos = pos;
-    if (encodings[table].mode == QuantEncoding::kQuantModeLibrary) {
-      size_t num = required_size_[table] * kDCTBlockSize;
-      for (size_t i = 0; i < 3; i++) {
-        offsets[3 * table + i] = pos + i * num;
-      }
-      memcpy(table_.get() + prev_pos, default_matrices.table + prev_pos,
-             num * sizeof(float) * 3);
-      pos += num * 3;
-    } else {
-      JXL_RETURN_IF_ERROR(ComputeQuantTable(encodings[table], table_.get(),
-                                            offsets.data(), table,
-                                            QuantTable(table % kNum), &pos));
-    }
-    // TODO(veluca): SIMD-fy. With 256x256, this is actually slow.
-    for (size_t i = prev_pos; i < pos; i++) {
-      InvTable()[i] = 1.0f / table_[i];
-    }
-    // Ensure that the lowest frequencies have a 0 inverse table.
-    // This does not affect en/decoding, but allows AC strategy selection to be
-    // slightly simpler.
-    size_t xs = required_size_x[QuantTable(table % kNum)];
-    size_t ys = required_size_y[QuantTable(table % kNum)];
-    CoefficientLayout(&ys, &xs);
-    for (size_t c = 0; c < 3; c++) {
-      for (size_t y = 0; y < ys; y++) {
-        for (size_t x = 0; x < xs; x++) {
-          InvTable()[prev_pos + c * ys * xs * kDCTBlockSize +
-                     y * kBlockDim * xs + x] = 0;
-        }
-      }
+  bool has_nondefault_matrix = false;
+  for (const auto& enc : encodings_) {
+    if (enc.mode != QuantEncoding::kQuantModeLibrary) {
+      has_nondefault_matrix = true;
     }
   }
-
-  JXL_ASSERT(pos == kTotalTableSize);
-
-  for (size_t i = 0; i < AcStrategy::kNumValidStrategies; i++) {
-    for (size_t c = 0; c < 3; c++) {
-      table_offsets_[i * 3 + c] = offsets[kQuantTable[i] * 3 + c];
+  if (has_nondefault_matrix) {
+    table_storage_ = hwy::AllocateAligned<float>(2 * kTotalTableSize);
+    table_ = table_storage_.get();
+    inv_table_ = table_storage_.get() + kTotalTableSize;
+    for (size_t table = 0; table < kNum; table++) {
+      size_t prev_pos = pos;
+      if (encodings_[table].mode == QuantEncoding::kQuantModeLibrary) {
+        size_t num = required_size_[table] * kDCTBlockSize;
+        memcpy(table_storage_.get() + prev_pos,
+               default_matrices.table + prev_pos, num * sizeof(float) * 3);
+        memcpy(table_storage_.get() + kTotalTableSize + prev_pos,
+               default_matrices.inv_table + prev_pos, num * sizeof(float) * 3);
+        pos += num * 3;
+      } else {
+        JXL_RETURN_IF_ERROR(
+            ComputeQuantTable(encodings_[table], table_storage_.get(),
+                              table_storage_.get() + kTotalTableSize, table,
+                              QuantTable(table), &pos));
+      }
     }
+    JXL_ASSERT(pos == kTotalTableSize);
+  } else {
+    table_ = default_matrices.table;
+    inv_table_ = default_matrices.inv_table;
   }
+
   return true;
 }
 
@@ -1325,7 +1327,8 @@ void DequantMatrices::SetCustom(const std::vector<QuantEncoding>& encodings) {
     }
   }
   // Roundtrip encode/decode the matrices to ensure same values as decoder.
-  // Do not pass modular en/decoder, as they only change entropy and not values.
+  // Do not pass modular en/decoder, as they only change entropy and not
+  // values.
   BitWriter writer;
   JXL_CHECK(Encode(&writer, 0, nullptr));
   writer.ZeroPadToByte();

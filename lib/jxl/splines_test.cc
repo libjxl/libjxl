@@ -261,7 +261,7 @@ TEST(SplinesTest, DuplicatePoints) {
                 /*color_dct=*/
                 {{1.f, 0.2f, 0.1f}, {35.7f, 10.3f}, {35.7f, 7.8f}},
                 /*sigma_dct=*/{10.f, 0.f, 0.f, 2.f}};
-  std::vector<Spline> spline_data { spline };
+  std::vector<Spline> spline_data{spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {
@@ -290,7 +290,7 @@ TEST(SplinesTest, Drawing) {
       /*color_dct=*/
       {{0.03125f, 0.00625f, 0.003125f}, {1.f, 0.321875f}, {1.f, 0.24375f}},
       /*sigma_dct=*/{0.3125f, 0.f, 0.f, 0.0625f}};
-  std::vector<Spline> spline_data = { spline };
+  std::vector<Spline> spline_data = {spline};
   std::vector<QuantizedSpline> quantized_splines;
   std::vector<Spline::Point> starting_points;
   for (const Spline& spline : spline_data) {

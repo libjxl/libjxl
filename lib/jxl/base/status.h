@@ -139,13 +139,21 @@ JXL_NORETURN bool Abort();
   } while (0)
 #endif
 
+// Define JXL_IS_DEBUG_BUILD that denotes asan, msan and other debug builds,
+// but not opt or release.
+#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) ||         \
+    defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || \
+    defined(__clang_analyzer__)
+#define JXL_IS_DEBUG_BUILD 1
+#else
+#define JXL_IS_DEBUG_BUILD 0
+#endif
+
 // Same as above, but only runs in debug builds (builds where NDEBUG is not
 // defined). This is useful for slower asserts that we want to run more rarely
 // than usual. These will run on asan, msan and other debug builds, but not in
 // opt or release.
-#if !defined(NDEBUG) || defined(ADDRESS_SANITIZER) ||         \
-    defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER) || \
-    defined(__clang_analyzer__)
+#if JXL_IS_DEBUG_BUILD
 #define JXL_DASSERT(condition)                        \
   do {                                                \
     if (!(condition)) {                               \

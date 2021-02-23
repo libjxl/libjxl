@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/base/os_specific.h"
+#include "tools/cpu/os_specific.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -23,34 +23,29 @@
 #include <numeric>
 #include <random>
 
-#include "lib/jxl/base/arch_specific.h"  // ProcessorTopology
+#include "lib/jxl/base/os_macros.h"  // for JXL_OS_*
+#include "tools/cpu/cpu.h"           // ProcessorTopology
 
-#if defined(_WIN32) || defined(_WIN64)
-#define OS_WIN 1
+#if JXL_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif  // NOMINMAX
 #include <windows.h>
-#else
-#define OS_WIN 0
-#endif
+#endif  // JXL_OS_WIN
 
-#ifdef __linux__
-#define OS_LINUX 1
+#if JXL_OS_LINUX
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
-#endif
+#endif  // _GNU_SOURCE
 #include <pthread.h>
+#include <sched.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#else
-#define OS_LINUX 0
-#endif
+#endif  // JXL_OS_LINUX
 
-#ifdef __MACH__
-#define OS_MAC 1
+#if JXL_OS_MAC
 #include <mach/mach.h>
 #include <mach/mach_time.h>
 #include <mach/thread_act.h>
@@ -59,61 +54,31 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#else
-#define OS_MAC 0
-#endif
+#endif  // JXL_OS_MAC
 
-#ifdef __FreeBSD__
-#define OS_FREEBSD 1
+#if JXL_OS_FREEBSD
 #include <sys/cpuset.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#else
-#define OS_FREEBSD 0
-#endif
+#endif  // JXL_OS_FREEBSD
 
-#ifdef __HAIKU__
-#define OS_HAIKU 1
+#if JXL_OS_HAIKU
 #include <OS.h>
-#else
-#define OS_HAIKU 0
-#endif
+#endif  // JXL_OS_HAIKU
 
-namespace jxl {
+using jxl::Status;
 
-double Now() {
-#if OS_WIN
-  LARGE_INTEGER counter;
-  (void)QueryPerformanceCounter(&counter);
-  LARGE_INTEGER freq;
-  (void)QueryPerformanceFrequency(&freq);
-  return double(counter.QuadPart) / freq.QuadPart;
-#elif OS_MAC
-  const auto t = mach_absolute_time();
-  // On OSX/iOS platform the elapsed time is cpu time unit
-  // We have to query the time base information to convert it back
-  // See https://developer.apple.com/library/mac/qa/qa1398/_index.html
-  static mach_timebase_info_data_t timebase;
-  if (timebase.denom == 0) {
-    (void)mach_timebase_info(&timebase);
-  }
-  return double(t) * timebase.numer / timebase.denom * 1E-9;
-#elif OS_HAIKU
-  return double(system_time_nsecs()) * 1E-9;
-#else
-  timespec t;
-  clock_gettime(CLOCK_MONOTONIC, &t);
-  return t.tv_sec + t.tv_nsec * 1E-9;
-#endif
-}
+namespace jpegxl {
+namespace tools {
+namespace cpu {
 
 // Emulate Linux type (cpu_set_t) + interface on other platforms
 
-#if OS_FREEBSD
+#if JXL_OS_FREEBSD
 using cpu_set_t = cpuset_t;
-#elif OS_WIN || OS_MAC || OS_HAIKU
+#elif JXL_OS_WIN || JXL_OS_MAC || JXL_OS_HAIKU
 using cpu_set_t = uint64_t;
 
 static inline void CPU_ZERO(cpu_set_t* set) { *set = 0; }
@@ -129,7 +94,7 @@ struct ThreadAffinity {
   cpu_set_t set;
 };
 
-#if OS_MAC
+#if JXL_OS_MAC
 namespace {
 Status GetSystemValue(const char* name, size_t* value) {
   int64_t value_i64 = 0;
@@ -157,7 +122,7 @@ cpu_set_t SetOfAllLogicalProcessors() {
 }
 }  // namespace
 
-#elif OS_HAIKU
+#elif JXL_OS_HAIKU
 
 namespace {
 cpu_set_t SetOfAllLogicalProcessors() {
@@ -177,7 +142,7 @@ cpu_set_t SetOfAllLogicalProcessors() {
 #endif
 
 Status GetProcessorTopologyFromOS(ProcessorTopology* pt) {
-#if OS_MAC
+#if JXL_OS_MAC
   size_t packages, cores, logical;  // totals, not per package/core!
   JXL_RETURN_IF_ERROR(GetSystemValue("hw.packages", &packages));
   JXL_RETURN_IF_ERROR(GetSystemValue("machdep.cpu.core_count", &cores));
@@ -189,7 +154,7 @@ Status GetProcessorTopologyFromOS(ProcessorTopology* pt) {
   pt->logical_per_core = logical / cores;
 
   return true;
-#elif OS_HAIKU
+#elif JXL_OS_HAIKU
   system_info info;
   get_system_info(&info);
   pt->packages = 1;
@@ -208,23 +173,22 @@ Status GetProcessorTopologyFromOS(ProcessorTopology* pt) {
 ThreadAffinity* GetThreadAffinity() {
   ThreadAffinity* affinity =
       static_cast<ThreadAffinity*>(malloc(sizeof(ThreadAffinity)));
-#if OS_WIN
+#if JXL_OS_WIN
   DWORD_PTR process_affinity, system_affinity;
   const BOOL ok = GetProcessAffinityMask(GetCurrentProcess(), &process_affinity,
                                          &system_affinity);
   JXL_CHECK(ok);
   affinity->set = process_affinity;
-#elif OS_LINUX
+#elif JXL_OS_LINUX
   CPU_ZERO(&affinity->set);
-  const int err =
-      pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinity->set);
+  const int err = sched_getaffinity(0, sizeof(cpu_set_t), &affinity->set);
   JXL_CHECK(err == 0);
-#elif OS_FREEBSD
+#elif JXL_OS_FREEBSD
   const pid_t pid = getpid();  // current thread
   const int err = cpuset_getaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, pid,
                                      sizeof(cpuset_t), &affinity->set);
   JXL_CHECK(err == 0);
-#elif OS_MAC || OS_HAIKU
+#elif JXL_OS_MAC || JXL_OS_HAIKU
   static cpu_set_t all = SetOfAllLogicalProcessors();
   affinity->set = all;
 #endif
@@ -245,28 +209,27 @@ Status SetThreadAffinity(ThreadAffinity* affinity) {
   const ThreadAffinity* const original = OriginalThreadAffinity();
   JXL_CHECK(original != nullptr);
 
-#if OS_WIN
+#if JXL_OS_WIN
   const HANDLE hThread = GetCurrentThread();
   const DWORD_PTR prev = SetThreadAffinityMask(hThread, affinity->set);
   if (prev == 0) return JXL_FAILURE("SetThreadAffinityMask failed");
   return true;
-#elif OS_LINUX
-  const int err =
-      pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &affinity->set);
-  if (err != 0) return JXL_FAILURE("pthread_setaffinity_np failed");
+#elif JXL_OS_LINUX
+  const int err = sched_setaffinity(0, sizeof(cpu_set_t), &affinity->set);
+  if (err != 0) return JXL_FAILURE("sched_setaffinity failed");
   return true;
-#elif OS_FREEBSD
+#elif JXL_OS_FREEBSD
   const pid_t pid = getpid();  // current thread
   const int err = cpuset_setaffinity(CPU_LEVEL_WHICH, CPU_WHICH_PID, pid,
                                      sizeof(cpuset_t), &affinity->set);
   if (err != 0) return JXL_FAILURE("cpuset_setaffinity failed");
   return true;
-#elif OS_MAC
+#elif JXL_OS_MAC
   // As of 2019-03 we are unaware of a way to reliably restrict a thread to
   // core(s); THREAD_AFFINITY_POLICY is only a hint.
   (void)affinity;
   return false;
-#elif OS_HAIKU
+#elif JXL_OS_HAIKU
   // As of 2020-06 Haiku does not support pinning threads to cores.
   (void)affinity;
   return false;
@@ -279,7 +242,7 @@ Status SetThreadAffinity(ThreadAffinity* affinity) {
 std::vector<int> AvailableCPUs() {
   std::vector<int> cpus;
   cpus.reserve(128);
-#if OS_WIN || OS_LINUX || OS_FREEBSD || OS_MAC || OS_HAIKU
+#if JXL_OS_WIN || JXL_OS_LINUX || JXL_OS_FREEBSD || JXL_OS_MAC || JXL_OS_HAIKU
   const ThreadAffinity* const affinity = OriginalThreadAffinity();
   for (int cpu = 0; cpu < static_cast<int>(sizeof(cpu_set_t)) * 8; ++cpu) {
     if (CPU_ISSET(cpu, &affinity->set)) {
@@ -293,7 +256,7 @@ std::vector<int> AvailableCPUs() {
 }
 
 Status PinThreadToCPU(const int cpu) {
-#if OS_WIN || OS_LINUX || OS_FREEBSD || OS_MAC
+#if JXL_OS_WIN || JXL_OS_LINUX || JXL_OS_FREEBSD || JXL_OS_MAC
   ThreadAffinity affinity;
   CPU_ZERO(&affinity.set);
   CPU_SET(cpu, &affinity.set);
@@ -322,7 +285,7 @@ Status PinThreadToRandomCPU() {
 namespace {
 
 size_t DetectTotalMemoryMiB() {
-#if OS_LINUX || OS_FREEBSD || OS_MAC
+#if JXL_OS_LINUX || JXL_OS_FREEBSD || JXL_OS_MAC
   const long page_size = sysconf(_SC_PAGESIZE);
   const long num_pages = sysconf(_SC_PHYS_PAGES);
   if (page_size == -1 || num_pages == -1) {
@@ -334,7 +297,7 @@ size_t DetectTotalMemoryMiB() {
   const uint64_t bytes =
       static_cast<uint64_t>(num_pages) * static_cast<uint64_t>(page_size);
   return bytes >> 20;
-#elif OS_WIN
+#elif JXL_OS_WIN
   MEMORYSTATUSEX ms;
   ms.dwLength = sizeof(ms);
   if (!GlobalMemoryStatusEx(&ms)) {
@@ -345,7 +308,7 @@ size_t DetectTotalMemoryMiB() {
   // `bytes` excludes nonpaged pool reserved during boot; round up to whole MiB
   // to improve the estimate.
   return (bytes + (1U << 20) - 1) >> 20;
-#elif OS_HAIKU
+#elif JXL_OS_HAIKU
   system_info info;
   get_system_info(&info);
   return (info.max_pages * B_PAGE_SIZE) >> 20;
@@ -389,7 +352,7 @@ Status RunCommand(const std::vector<std::string>& args) {
            const_cast<char* const*>(c_args.data()));
     JXL_ABORT("Failed to run command.\n");
   }
-#elif OS_WIN
+#elif JXL_OS_WIN
   // Synthesize a string for system(). And warn about it.
   // TODO(user): Fix this - research the safe way to run a command on Windows.
   // Likely, the solution is along these lines:
@@ -410,4 +373,6 @@ Status RunCommand(const std::vector<std::string>& args) {
 }
 */
 
-}  // namespace jxl
+}  // namespace cpu
+}  // namespace tools
+}  // namespace jpegxl

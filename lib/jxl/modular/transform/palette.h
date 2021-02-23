@@ -54,78 +54,24 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
   if (index < 0) {
     static constexpr std::array<std::array<pixel_type, 3>, 72> kDeltaPalette = {
         {
-            {0, 0, 0},
-            {4, 4, 4},
-            {11, 0, 0},
-            {0, 0, -13},
-            {0, -12, 0},
-            {-10, -10, -10},
-            {-18, -18, -18},
-            {-27, -27, -27},
-            {-18, -18, 0},
-            {0, 0, -32},
-            {-32, 0, 0},
-            {-37, -37, -37},
-            {0, -32, -32},
-            {24, 24, 45},
-            {50, 50, 50},
-            {-45, -24, -24},
-            {-24, -45, -45},
-            {0, -24, -24},
-            {-34, -34, 0},
-            {-24, 0, -24},
-            {-45, -45, -24},
-            {64, 64, 64},
-            {-32, 0, -32},
-            {0, -32, 0},
-            {-32, 0, 32},
-            {-24, -45, -24},
-            {45, 24, 45},
-            {24, -24, -45},
-            {-45, -24, 24},
-            {80, 80, 80},
-            {64, 0, 0},
-            {0, 0, -64},
-            {0, -64, -64},
-            {-24, -24, 45},
-            {96, 96, 96},
-            {64, 64, 0},
-            {45, -24, -24},
-            {34, -34, 0},
-            {112, 112, 112},
-            {24, -45, -45},
-            {45, 45, -24},
-            {0, -32, 32},
-            {24, -24, 45},
-            {0, 96, 96},
-            {45, -24, 24},
-            {24, -45, -24},
-            {-24, -45, 24},
-            {0, -64, 0},
-            {96, 0, 0},
-            {128, 128, 128},
-            {64, 0, 64},
-            {144, 144, 144},
-            {96, 96, 0},
-            {-36, -36, 36},
-            {45, -24, -45},
-            {45, -45, -24},
-            {0, 0, -96},
-            {0, 128, 128},
-            {0, 96, 0},
-            {45, 24, -45},
-            {-128, 0, 0},
-            {24, -45, 24},
-            {-45, 24, -45},
-            {64, 0, -64},
-            {64, -64, -64},
-            {96, 0, 96},
-            {45, -45, 24},
-            {24, 45, -45},
-            {64, 64, -64},
-            {128, 128, 0},
-            {0, 0, -128},
-            {-24, 45, -45},
+            {0, 0, 0},       {4, 4, 4},       {11, 0, 0},      {0, 0, -13},
+            {0, -12, 0},     {-10, -10, -10}, {-18, -18, -18}, {-27, -27, -27},
+            {-18, -18, 0},   {0, 0, -32},     {-32, 0, 0},     {-37, -37, -37},
+            {0, -32, -32},   {24, 24, 45},    {50, 50, 50},    {-45, -24, -24},
+            {-24, -45, -45}, {0, -24, -24},   {-34, -34, 0},   {-24, 0, -24},
+            {-45, -45, -24}, {64, 64, 64},    {-32, 0, -32},   {0, -32, 0},
+            {-32, 0, 32},    {-24, -45, -24}, {45, 24, 45},    {24, -24, -45},
+            {-45, -24, 24},  {80, 80, 80},    {64, 0, 0},      {0, 0, -64},
+            {0, -64, -64},   {-24, -24, 45},  {96, 96, 96},    {64, 64, 0},
+            {45, -24, -24},  {34, -34, 0},    {112, 112, 112}, {24, -45, -45},
+            {45, 45, -24},   {0, -32, 32},    {24, -24, 45},   {0, 96, 96},
+            {45, -24, 24},   {24, -45, -24},  {-24, -45, 24},  {0, -64, 0},
+            {96, 0, 0},      {128, 128, 128}, {64, 0, 64},     {144, 144, 144},
+            {96, 96, 0},     {-36, -36, 36},  {45, -24, -45},  {45, -45, -24},
+            {0, 0, -96},     {0, 128, 128},   {0, 96, 0},      {45, 24, -45},
+            {-128, 0, 0},    {24, -45, 24},   {-45, 24, -45},  {64, 0, -64},
+            {64, -64, -64},  {96, 0, 96},     {45, -45, 24},   {24, 45, -45},
+            {64, 64, -64},   {128, 128, 0},   {0, 0, -128},    {-24, 45, -45},
         }};
     if (c >= kDeltaPalette[0].size()) {
       return 0;
@@ -152,7 +98,7 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     }
     index %= kSmallCube;
     return (index * ((1 << bit_depth) - 1)) / kSmallCube +
-        (1 << (std::max(0, bit_depth - 3)));
+           (1 << (std::max(0, bit_depth - 3)));
   } else if (palette_size + kLargeCubeOffset <= index) {
     if (c >= kCubePow) return 0;
     index -= palette_size + kLargeCubeOffset;
@@ -189,9 +135,9 @@ float ColorDistance(const T &JXL_RESTRICT a, const U &JXL_RESTRICT b) {
     float weight = c == 0 ? 3 : c == 1 ? 5 : 2;
     if (c < 3 && (a[c] + b[c] >= ave3)) {
       const float add_w[3] = {
-        1.15,
-        1.15,
-        1.12,
+          1.15,
+          1.15,
+          1.12,
       };
       weight += add_w[c];
       if (c == 2 && ((a[2] + b[2]) < 1.22 * ave3)) {
@@ -257,9 +203,7 @@ pixel_type CautiousAdd(pixel_type a, pixel_type b, pixel_type *flags) {
   return sum;
 }
 
-bool IsHealthy(pixel_type flags) {
-  return (flags >> 31);
-}
+bool IsHealthy(pixel_type flags) { return (flags >> 31); }
 }  // namespace
 
 static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
@@ -290,7 +234,10 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   const int bit_depth =
       CeilLog2Nonzero(static_cast<unsigned>(input.maxval - input.minval + 1));
 
-  if (nb_deltas == 0 && predictor == Predictor::Zero) {
+  if (w == 0) {
+    // Nothing to do.
+    // Avoid touching "empty" channels with non-zero height.
+  } else if (nb_deltas == 0 && predictor == Predictor::Zero) {
     if (nb == 1) {
       RunOnPool(
           pool, 0, h, ThreadPool::SkipInit(),
@@ -298,7 +245,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
             const size_t y = task;
             pixel_type *p = input.channel[c0].Row(y);
             for (size_t x = 0; x < w; x++) {
-              const int index = Clamp1(p[x], 0, (pixel_type) palette.w-1);
+              const int index = Clamp1(p[x], 0, (pixel_type)palette.w - 1);
               p[x] = palette_internal::GetPaletteValue(
                   p_palette, index, /*c=*/0,
                   /*palette_size=*/palette.w,
@@ -536,7 +483,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   input.channel[begin_c].compute_minmax(&minval, &maxval);
   int lookup_table_size = maxval - minval + 1;
   if (lookup_table_size > palette_internal::kMaxPaletteLookupTableSize) {
-	  return false;  // too large lookup table
+    return false;  // too large lookup table
   }
   if (nb == 1) {
     lookup.resize(lookup_table_size);
@@ -697,9 +644,9 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
             // If the neighboring pixels have some error in the opposite
             // direction of total_error, cancel some or all of it out before
             // spreading among them.
-            constexpr int offsets[12][2] = { {1, 2}, {0, 3}, {0, 4}, {1, 1},
-                                             {1, 3}, {2, 2}, {1, 0}, {1, 4},
-                                             {2, 1}, {2, 3}, {2, 0}, {2, 4} };
+            constexpr int offsets[12][2] = {{1, 2}, {0, 3}, {0, 4}, {1, 1},
+                                            {1, 3}, {2, 2}, {1, 0}, {1, 4},
+                                            {2, 1}, {2, 3}, {2, 0}, {2, 4}};
             float total_available = 0;
             int n = 0;
             for (int i = 0; i < 11; ++i) {
@@ -711,7 +658,8 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                 n++;
               }
             }
-            float weight = std::abs(total_error) / (std::abs(total_available) + 1e-3);
+            float weight =
+                std::abs(total_error) / (std::abs(total_available) + 1e-3);
             weight = std::min(weight, 1.0f);
             for (int i = 0; i < 11; ++i) {
               const int row = offsets[i][0];

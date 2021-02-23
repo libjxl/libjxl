@@ -26,7 +26,7 @@
 namespace jxl {
 
 void TransformToPixels(AcStrategy::Type strategy,
-                       const float* JXL_RESTRICT coefficients,
+                       float* JXL_RESTRICT coefficients,
                        float* JXL_RESTRICT pixels, size_t pixels_stride,
                        float* JXL_RESTRICT scratch_space);
 

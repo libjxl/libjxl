@@ -146,4 +146,11 @@ include(GoogleTest)
 
 # Tests for the jxl library.
 include(jxl_tests.cmake)
+
+# Google benchmark for the jxl library
+include(jxl_benchmark.cmake)
+
+# Profiler for libjxl
+include(jxl_profiler.cmake)
+
 endif()  # BUILD_TESTING

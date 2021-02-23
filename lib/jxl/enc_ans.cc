@@ -41,7 +41,7 @@ namespace jxl {
 
 namespace {
 
-constexpr bool kFuzzerFriendly = false;
+bool ans_fuzzer_friendly_ = false;
 
 static const int kMaxNumSymbolsForSmallCode = 4;
 
@@ -673,7 +673,7 @@ class HistogramBuilder {
     std::vector<Histogram> clustered_histograms(histograms_);
     context_map->resize(histograms_.size());
     if (histograms_.size() > 1) {
-      if (!kFuzzerFriendly) {
+      if (!ans_fuzzer_friendly_) {
         std::vector<uint32_t> histogram_symbols;
         ClusterHistograms(params, histograms_, histograms_.size(),
                           kClustersLimit, &clustered_histograms,
@@ -707,7 +707,7 @@ class HistogramBuilder {
     }
     codes->use_prefix_code = use_prefix_code;
     size_t log_alpha_size = codes->lz77.enabled ? 8 : 7;  // Sane default.
-    if (kFuzzerFriendly) {
+    if (ans_fuzzer_friendly_) {
       codes->uint_config.clear();
       codes->uint_config.resize(1, HybridUintConfig(7, 0, 0));
     } else {
@@ -1449,7 +1449,7 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   codes->lz77.nonserialized_distance_context = num_contexts;
   std::vector<std::vector<Token>> tokens_lz77;
   ApplyLZ77(params, num_contexts, tokens, codes->lz77, tokens_lz77);
-  if (kFuzzerFriendly) {
+  if (ans_fuzzer_friendly_) {
     codes->lz77.length_uint_config = HybridUintConfig(10, 0, 0);
     codes->lz77.min_symbol = 2048;
   }
@@ -1486,7 +1486,7 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   if (params.uint_method == HistogramParams::HybridUintMethod::kContextMap) {
     uint_config = HybridUintConfig(2, 0, 1);
   }
-  if (kFuzzerFriendly) {
+  if (ans_fuzzer_friendly_) {
     uint_config = HybridUintConfig(10, 0, 0);
   }
   for (size_t i = 0; i < tokens.size(); ++i) {
@@ -1505,7 +1505,7 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   bool use_prefix_code =
       params.force_huffman || total_tokens < 100 ||
       params.clustering == HistogramParams::ClusteringType::kFastest ||
-      kFuzzerFriendly;
+      ans_fuzzer_friendly_;
 
   // Encode histograms.
   total_bits += builder.BuildAndStoreEntropyCodes(
@@ -1604,4 +1604,7 @@ void WriteTokens(const std::vector<Token>& tokens,
   }
 }
 
+void SetANSFuzzerFriendly(bool ans_fuzzer_friendly) {
+  ans_fuzzer_friendly_ = ans_fuzzer_friendly;
+}
 }  // namespace jxl

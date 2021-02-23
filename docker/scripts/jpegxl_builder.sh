@@ -62,7 +62,8 @@ BENCHMARK_FLAGS="-DGOOGLETEST_PATH=${MYDIR}/../../third_party/googletest"
 # attribute(format(__MINGW_PRINTF_FORMAT, ...)) doesn't work in our
 # environment, so we disable the warning.
 BENCHMARK_FLAGS="-DCMAKE_BUILD_TYPE=Release -DBENCHMARK_ENABLE_TESTING=OFF \
-  -DCMAKE_CXX_FLAGS=-Wno-ignored-attributes"
+  -DCMAKE_CXX_FLAGS=-Wno-ignored-attributes \
+  -DCMAKE_POSITION_INDEPENDENT_CODE=ON"
 
 # V8
 V8_VERSION="8.7.230"

@@ -22,7 +22,6 @@
 
 #include <memory>
 
-#include "lib/jxl/base/arch_specific.h"
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {

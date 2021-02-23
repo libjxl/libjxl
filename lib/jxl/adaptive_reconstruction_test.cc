@@ -23,6 +23,7 @@
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -128,32 +129,43 @@ void EnsureUnchanged(const float background, const float foreground,
   GenerateHorzEdges(background, foreground, &images);
   GenerateVertEdges(background, foreground, &images);
 
-  DequantMatrices dequant;
-  LoopFilter lf;
+  CodecMetadata metadata;
+  JXL_CHECK(metadata.size.Set(xsize, ysize));
+  metadata.m.xyb_encoded = false;
+  FrameHeader frame_header(&metadata);
+  // Ensure no CT is applied
+  frame_header.color_transform = ColorTransform::kNone;
+  LoopFilter& lf = frame_header.loop_filter;
   lf.gab = false;
   lf.epf_iters = epf_iters;
+  FrameDimensions frame_dim = frame_header.ToFrameDimensions();
 
-  FrameDimensions frame_dim;
-  frame_dim.Set(xsize, ysize, /*group_size_shift=*/1,
-                /*max_hshift=*/0, /*max_vshift=*/0, /*modular_mode=*/false,
-                /*upsampling=*/1);
-  FilterWeights filter_weights;
-  filter_weights.Init(lf, frame_dim);
-  FillImage(-0.5f, &filter_weights.sigma);
+  jxl::PassesDecoderState state;
+  JXL_CHECK(
+      jxl::InitializePassesSharedState(frame_header, &state.shared_storage));
+  state.Init(/*pool=*/nullptr);
+
+  state.filter_weights.Init(lf, frame_dim);
+  FillImage(-0.5f, &state.filter_weights.sigma);
 
   for (size_t idx_image = 0; idx_image < images.size(); ++idx_image) {
     const Image3F& in = images[idx_image];
+    state.decoded = CopyImage(in);
 
-    Image3F out = CopyImage(in);  // = in_out
-    FillImage(-99.f, &out);       // Initialized with garbage.
+    ImageBundle out(&metadata.m);
+    out.SetFromImage(CopyImage(in), ColorEncoding::LinearSRGB());
+    FillImage(-99.f, out.color());  // Initialized with garbage.
     Image3F padded = PadImageMirror(in, 2 * kBlockDim, 0);
-    EdgePreservingFilter(lf, filter_weights, Rect(0, 0, xsize, ysize), padded,
-                         &out);
+    // Call with `rerender` set to true to force to apply filters to all of the
+    // input image.
+    JXL_CHECK(FinalizeFrameDecoding(&out, &state, /*pool=*/nullptr,
+                                    /*rerender=*/true,
+                                    /*skip_blending=*/true));
 
-    VerifyRelativeError(in, out, 1E-3, 1E-4);
+    VerifyRelativeError(in, *out.color(), 1E-3, 1E-4);
     if (testing::Test::HasFatalFailure()) {
       DumpTestImage("in", in);
-      DumpTestImage("out", out);
+      DumpTestImage("out", *out.color());
     }
   }
 }

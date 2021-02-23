@@ -93,6 +93,7 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
     if (foreground->HasExtraChannels()) {
       num_ec = foreground->extra_channels().size();
       ec = &dest.extra_channels();
+      ec->swap(dec_state->pre_color_transform_ec);
       ec->clear();
     }
     Image3F croppedcolor(image_xsize, image_ysize);

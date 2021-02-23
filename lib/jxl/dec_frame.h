@@ -113,6 +113,8 @@ class FrameDecoder {
   // Must be called exactly once per frame, after all calls to ProcessSections.
   Status FinalizeFrame();
 
+  // Returns offset of this section after the end of the TOC. The end of the TOC
+  // is the byte position of the bit reader after InitFrame was called.
   const std::vector<uint64_t>& SectionOffsets() const {
     return section_offsets_;
   }
@@ -123,6 +125,12 @@ class FrameDecoder {
   void SetMaxPasses(size_t max_passes) { max_passes_ = max_passes; }
   const FrameHeader& GetFrameHeader() const { return frame_header_; }
 
+  // Returns whether a DC image has been decoded, accessible at low resolution
+  // at passes.shared_storage.dc_storage
+  bool HasDecodedDC() const {
+    return frame_header_.encoding == FrameEncoding::kVarDCT && finalized_dc_;
+  }
+
  private:
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
@@ -131,16 +139,23 @@ class FrameDecoder {
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
                         size_t num_passes, size_t thread, bool force_draw);
 
-  // Sets the number of threads that will be used. The value of the "thread"
-  // parameter passed to DecodeDCGroup and DecodeACGroup must be smaller than
-  // the "num_threads" passed here.
-  void SetNumThreads(size_t num_threads) {
-    if (num_threads > group_dec_caches_size_) {
-      group_dec_caches_size_ = num_threads;
-      group_dec_caches_ =
-          hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
+  // Allocates storage for parallel decoding using up to `num_threads` threads
+  // of up to `num_tasks` tasks. The value of `thread` passed to
+  // `GetStorageLocation` must be smaller than the `num_threads` value passed
+  // here. The value of `task` passed to `GetStorageLocation` must be smaller
+  // than the value of `num_tasks` passed here.
+  void PrepareStorage(size_t num_threads, size_t num_tasks) {
+    size_t storage_size = std::min(num_threads, num_tasks);
+    if (storage_size > group_dec_caches_.size()) {
+      group_dec_caches_.resize(storage_size);
     }
-    dec_state_->EnsureStorage(num_threads);
+    dec_state_->EnsureStorage(storage_size);
+    use_task_id_ = num_threads > num_tasks;
+  }
+
+  size_t GetStorageLocation(size_t thread, size_t task) {
+    if (use_task_id_) return task;
+    return thread;
   }
 
   PassesDecoderState* dec_state_;
@@ -165,14 +180,14 @@ class FrameDecoder {
   bool is_finalized_ = true;
   size_t num_renders_ = 0;
 
-  // Number of allocated GroupDecCache entries in the group_dec_caches_ smart
-  // pointer. This is only needed to tell whether we need to reallocate the
-  // cache.
-  size_t group_dec_caches_size_ = 0;
-  hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches_;
+  std::vector<GroupDecCache> group_dec_caches_;
 
   // Frame size limits.
   const SizeConstraints* constraints_ = nullptr;
+
+  // Whether or not the task id should be used for storage indexing, instead of
+  // the thread id.
+  bool use_task_id_ = false;
 };
 
 }  // namespace jxl

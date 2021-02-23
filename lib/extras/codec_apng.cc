@@ -116,11 +116,13 @@ inline unsigned int read_chunk(FILE* f, CHUNK* pChunk) {
   pChunk->size = 0;
   pChunk->p = 0;
   if (fread(&len, 4, 1, f) == 1) {
-    pChunk->size = png_get_uint_32(len) + 12;
-    if (pChunk->size > kMaxPNGChunkSize) {
+    const auto size = png_get_uint_32(len);
+    // Check first, to avoid overflow.
+    if (size > kMaxPNGChunkSize) {
       JXL_WARNING("APNG chunk size is too big");
       return 0;
     }
+    pChunk->size = size + 12;
     pChunk->p = new unsigned char[pChunk->size];
     memcpy(pChunk->p, len, 4);
     if (fread(pChunk->p + 4, pChunk->size - 4, 1, f) == 1)
@@ -245,6 +247,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
         return true;
       });
 
+  bool errorstate = true;
   if (id == id_IHDR && chunkIHDR.size == 25) {
     w0 = w = png_get_uint_32(chunkIHDR.p + 8);
     h0 = h = png_get_uint_32(chunkIHDR.p + 12);
@@ -342,7 +345,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
             }
           }
 
-          if (id == id_IEND) break;
+          if (id == id_IEND) { errorstate = false; break; }
           // At this point the old frame is done. Let's start a new one.
           w0 = png_get_uint_32(chunk.p + 12);
           h0 = png_get_uint_32(chunk.p + 16);
@@ -412,6 +415,8 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   delete[] chunkIHDR.p;
 
   fclose(f);
+
+  if (errorstate) return false;
   SetIntensityTarget(io);
   return true;
 }

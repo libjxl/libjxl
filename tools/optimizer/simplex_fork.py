@@ -70,9 +70,9 @@ def EvalCacheForget():
 def RandomizedJxlCodecs():
   retval = []
   minval = 0.6
-  maxval = 9.5
+  maxval = 12.5
   rangeval = maxval/minval
-  steps = 35
+  steps = 9
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -111,7 +111,7 @@ def Eval(vec, binary_name, cached=True):
       (binary_name,
        '--input',
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
-       '--error_pnorm=12',
+       '--error_pnorm=1.5',
        '--more_columns',
        '--codec', g_codecs),
       stdout=subprocess.PIPE,
@@ -142,7 +142,7 @@ def Eval(vec, binary_name, cached=True):
       dct16x32str = line.split()[17]
       dct32str = line.split()[18]
       vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
-      vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.2
+      #vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.2
       dct2 += float(dct2str)
       dct4 += float(dct4str)
       dct16 += float(dct16str)
@@ -150,8 +150,8 @@ def Eval(vec, binary_name, cached=True):
       n += 1
       found_score = True
       distance = float(line.split()[0].split('d')[-1])
-      faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
-      vec[0] *= faultybpp
+      #faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
+      #vec[0] *= faultybpp
 
   """
   # favor small changes

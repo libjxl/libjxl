@@ -52,10 +52,11 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 // at pixel (x,y) in the returned image is greater than 1.0, it means that
 // more fine-grained quantization should be used in the corresponding block
 // of the input image, while a value less than 1.0 indicates that less
-// fine-grained quantization should be enough.
+// fine-grained quantization should be enough. Returns a mask, too, which
+// can later be used to make better decisions about ac strategy.
 ImageF InitialQuantField(float butteraugli_target, const Image3F& opsin,
                          const FrameDimensions& frame_dim, ThreadPool* pool,
-                         float rescale);
+                         float rescale, ImageF *initial_quant_mask);
 
 float InitialQuantDC(float butteraugli_target);
 

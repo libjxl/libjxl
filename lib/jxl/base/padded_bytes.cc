@@ -19,8 +19,11 @@ namespace jxl {
 void PaddedBytes::IncreaseCapacityTo(size_t capacity) {
   JXL_ASSERT(capacity > capacity_);
 
+  size_t new_capacity = std::max(capacity, 3 * capacity_ / 2);
+  new_capacity = std::max<size_t>(64, new_capacity);
+
   // BitWriter writes up to 7 bytes past the end.
-  CacheAlignedUniquePtr new_data = AllocateArray(capacity + 8);
+  CacheAlignedUniquePtr new_data = AllocateArray(new_capacity + 8);
   if (new_data == nullptr) {
     // Allocation failed, discard all data to ensure this is noticed.
     size_ = capacity_ = 0;
@@ -38,7 +41,7 @@ void PaddedBytes::IncreaseCapacityTo(size_t capacity) {
     new_data[size_] = 0;
   }
 
-  capacity_ = capacity;
+  capacity_ = new_capacity;
   std::swap(new_data, data_);
 }
 

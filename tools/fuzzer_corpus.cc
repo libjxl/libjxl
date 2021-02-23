@@ -37,6 +37,7 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
@@ -77,7 +78,8 @@ struct ImageSpec {
       << ") x frames=" << spec.num_frames << " seed=" << spec.seed
       << ", speed=" << static_cast<int>(spec.params.speed_tier)
       << ", butteraugli=" << spec.params.butteraugli_distance
-      << ", modular_mode=" << spec.params.modular_mode << ">";
+      << ", modular_mode=" << spec.params.modular_mode
+      << ", fuzzer_friendly=" << spec.fuzzer_friendly << ">";
     return o;
   }
 
@@ -98,6 +100,9 @@ struct ImageSpec {
   // Bit depth for the alpha channel. A value of 0 means no alpha channel.
   size_t alpha_bit_depth;
   int alpha_is_premultiplied = false;
+
+  // Whether the ANS fuzzer friendly setting is currently enabled.
+  uint32_t fuzzer_friendly = false;
 
   // Number of frames, all the frames will have the same size.
   size_t num_frames;
@@ -210,6 +215,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
                             &aux_out, nullptr);
   if (!ok) return false;
 
+  // Append one byte with the flags used by djxl_fuzzer to select the decoding
+  // output.
+  std::uniform_int_distribution<> dis256(0, 255);
+  compressed.push_back(dis256(mt));
+
   if (!jxl::WriteFile(compressed, output_fn)) return 1;
   {
     std::unique_lock<std::mutex> lock(stderr_mutex);
@@ -289,9 +299,6 @@ int main(int argc, const char** argv) {
 
   // Create the corpus directory if doesn't already exist.
   std::mt19937 mt(77777);
-  // std::uniform_int_distribution<> dis(1, 6);
-  // auto gen = [&mt, &dis]() { return dis(mt); };
-  // std::vector<
 
   std::vector<std::pair<uint32_t, uint32_t>> image_sizes = {
       {8, 8},
@@ -308,55 +315,61 @@ int main(int argc, const char** argv) {
   };
   const std::vector<ImageSpec::CjxlParams> params_list = CompressParamsList();
 
-  std::vector<ImageSpec> specs;
-
   ImageSpec spec;
-  for (auto img_size : image_sizes) {
-    spec.width = img_size.first;
-    spec.height = img_size.second;
-    for (uint32_t bit_depth : {1, 2, 8, 16}) {
-      spec.bit_depth = bit_depth;
-      for (uint32_t num_channels : {1, 3}) {
-        spec.num_channels = num_channels;
-        for (uint32_t alpha_bit_depth : {0, 8, 16}) {
-          spec.alpha_bit_depth = alpha_bit_depth;
-          if (bit_depth == 16 && alpha_bit_depth == 8) {
-            // This mode is not supported in CopyTo().
-            continue;
-          }
-          for (uint32_t num_frames : {1, 3}) {
-            spec.num_frames = num_frames;
+  // The ans_fuzzer_friendly setting is not thread safe and therefore done in
+  // an outer loop. This determines whether to use fuzzer-friendly ANS encoding.
+  for (uint32_t fuzzer_friendly = 0; fuzzer_friendly < 2; ++fuzzer_friendly) {
+    jxl::SetANSFuzzerFriendly(fuzzer_friendly);
+    spec.fuzzer_friendly = fuzzer_friendly;
 
-            for (const auto& params : params_list) {
-              spec.params = params;
+    std::vector<ImageSpec> specs;
+    for (auto img_size : image_sizes) {
+      spec.width = img_size.first;
+      spec.height = img_size.second;
+      for (uint32_t bit_depth : {1, 2, 8, 16}) {
+        spec.bit_depth = bit_depth;
+        for (uint32_t num_channels : {1, 3}) {
+          spec.num_channels = num_channels;
+          for (uint32_t alpha_bit_depth : {0, 8, 16}) {
+            spec.alpha_bit_depth = alpha_bit_depth;
+            if (bit_depth == 16 && alpha_bit_depth == 8) {
+              // This mode is not supported in CopyTo().
+              continue;
+            }
+            for (uint32_t num_frames : {1, 3}) {
+              spec.num_frames = num_frames;
 
-              if (alpha_bit_depth) {
-                spec.alpha_is_premultiplied = mt() % 2;
-              }
-              if (spec.width * spec.height > 1000) {
-                // Increase the encoder speed for larger images.
-                spec.params.speed_tier = jxl::SpeedTier::kWombat;
-              }
-              spec.seed = mt() % 777777;
-              if (!spec.Validate()) {
-                std::cerr << "Skipping " << spec << std::endl;
-              } else {
-                specs.push_back(spec);
+              for (const auto& params : params_list) {
+                spec.params = params;
+
+                if (alpha_bit_depth) {
+                  spec.alpha_is_premultiplied = mt() % 2;
+                }
+                if (spec.width * spec.height > 1000) {
+                  // Increase the encoder speed for larger images.
+                  spec.params.speed_tier = jxl::SpeedTier::kWombat;
+                }
+                spec.seed = mt() % 777777;
+                if (!spec.Validate()) {
+                  std::cerr << "Skipping " << spec << std::endl;
+                } else {
+                  specs.push_back(spec);
+                }
               }
             }
           }
         }
       }
     }
+
+    jxl::ThreadPoolInternal pool{num_threads};
+    pool.Run(
+        0, specs.size(), jxl::ThreadPool::SkipInit(),
+        [&specs, dest_dir, regenerate](const int task, const int /* thread */) {
+          const ImageSpec& spec = specs[task];
+          GenerateFile(dest_dir, spec, regenerate);
+        });
   }
-
-  jxl::ThreadPoolInternal pool{num_threads};
-  pool.Run(
-      0, specs.size(), jxl::ThreadPool::SkipInit(),
-      [&specs, dest_dir, regenerate](const int task, const int /* thread */) {
-        const ImageSpec& spec = specs[task];
-        GenerateFile(dest_dir, spec, regenerate);
-      });
-
+  std::cerr << "Finished generating fuzzer corpus" << std::endl;
   return 0;
 }

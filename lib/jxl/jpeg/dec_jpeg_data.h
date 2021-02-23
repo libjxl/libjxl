@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_JPEG_JPEG_DEC_JPEG_DATA_H_
-#define LIB_JXL_JPEG_JPEG_DEC_JPEG_DATA_H_
+#ifndef LIB_JXL_JPEG_DEC_JPEG_DATA_H_
+#define LIB_JXL_JPEG_DEC_JPEG_DATA_H_
 
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -25,4 +25,4 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data);
 }
 }  // namespace jxl
 
-#endif
+#endif  // LIB_JXL_JPEG_DEC_JPEG_DATA_H_

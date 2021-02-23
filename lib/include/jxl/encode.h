@@ -47,7 +47,8 @@ JXL_EXPORT uint32_t JxlEncoderVersion(void);
 typedef struct JxlEncoderStruct JxlEncoder;
 
 /**
- * Opaque structure that holds encoding options for a JPEG XL encoder.
+ * Opaque structure that holds frame specific encoding options for a JPEG XL
+ * encoder.
  *
  * Allocated and initialized with JxlEncoderOptionsCreate().
  * Cleaned up and deallocated when the encoder is destroyed with
@@ -95,7 +96,7 @@ JXL_EXPORT JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager);
 /**
  * Re-initializes a JxlEncoder instance, so it can be re-used for encoding
  * another image. All state and settings are reset as if the object was
- * newly created with JxlDecoderCreate, but the memory manager is kept.
+ * newly created with JxlEncoderCreate, but the memory manager is kept.
  *
  * @param enc instance to be re-initialized.
  */
@@ -148,11 +149,11 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
                                                     size_t* avail_out);
 
 /**
- * Sets the buffer to read JPEG encoded bytes from for the next image to encode
- * losslessly.
+ * Sets the buffer to read JPEG encoded bytes from for the next frame to encode.
  *
- * Currently only supports adding JPEG frames losslessly if there is only a
- * single frame in the image.
+ * If the encoder is set to store JPEG reconstruction metadata using @ref
+ * JxlEncoderStoreJPEGMetadata and a single JPEG frame is added, it will be
+ * possible to losslessly reconstruct the JPEG codestream.
  *
  * @param options set of encoder options to use when encoding the frame.
  * @param buffer bytes to read JPEG from. Owned by the caller and its contents
@@ -172,12 +173,12 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * - JXL_TYPE_UINT16, input pixels assumed to be nonlinear SRGB encoded
  * - JXL_TYPE_FLOAT, input pixels are assumed to be linear SRGB encoded
  *
- * @param options set of encoder options to use when encoding the frame
+ * @param options set of encoder options to use when encoding the frame.
  * @param pixel_format format for pixels. Object owned by the caller and its
  * contents are copied internally.
  * @param buffer buffer type to input the pixel data from. Owned by the caller
  * and its contents are copied internally.
- * @param size size of buffer in bytes
+ * @param size size of buffer in bytes.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
@@ -191,14 +192,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  * call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput won't output the
  * last frame correctly.
  *
- * @param enc encoder object
+ * @param enc encoder object.
  */
 JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
 
 /**
  * Sets the global color encoding of the image encoded by this encoder.
  *
- * @param enc encoder object
+ * @param enc encoder object.
  * @param color color encoding. Object owned by the caller and its contents are
  * copied internally.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR or
@@ -210,7 +211,7 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
 /**
  * Sets the global metadata of the image encoded by this encoder.
  *
- * @param enc encoder object
+ * @param enc encoder object.
  * @param info global image metadata. Object owned by the caller and its
  * contents are copied internally.
  * @return JXL_ENC_SUCCESS if the operation was successful,
@@ -218,6 +219,41 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                                    const JxlBasicInfo* info);
+
+/**
+ * Configure the encoder to store JPEG reconstruction metadata in the JPEG XL
+ * container.
+ *
+ * The encoder must be configured to use the JPEG XL container format using @ref
+ * JxlEncoderUseContainer for this to have any effect.
+ *
+ * If this is set to true and a single JPEG frame is added, it will be
+ * possible to losslessly reconstruct the JPEG codestream.
+ *
+ * @param enc encoder object.
+ * @param store_jpeg_metadata true if the encoder should store JPEG metadata.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
+
+/**
+ * Configure the encoder to use the JPEG XL container format.
+ *
+ * Using the JPEG XL container format allows to store metadata such as JPEG
+ * reconstruction (@ref JxlEncoderStoreJPEGMetadata) or other metadata like
+ * EXIF; but it adds a few bytes to the encoded file for container headers even
+ * if there is no extra metadata.
+ *
+ * @param enc encoder object.
+ * @param use_container true if the encoder should output the JPEG XL container
+ * format.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
+                                                   JXL_BOOL use_container);
 
 /**
  * Sets lossless/lossy mode for the provided options. Default is lossy.
@@ -234,8 +270,8 @@ JxlEncoderOptionsSetLossless(JxlEncoderOptions* options, JXL_BOOL lossless);
  * 3:falcon 4:cheetah 5:hare 6:wombat 7:squirrel 8:kitten 9:tortoise
  * Default: squirrel (7).
  *
- * @param options set of encoder options to update with the new mode
- * @param effort the effort value to set
+ * @param options set of encoder options to update with the new mode.
+ * @param effort the effort value to set.
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
@@ -251,8 +287,8 @@ JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
  *  If JxlEncoderOptionsSetLossless is used, this value is unused and implied
  *  to be 0.
  *
- * @param options set of encoder options to update with the new mode
- * @param distance the distance value to set
+ * @param options set of encoder options to update with the new mode.
+ * @param distance the distance value to set.
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
@@ -267,9 +303,9 @@ JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
  * JxlEncoderOptions created with this function for the same encoder instance
  * can be used.
  *
- * @param enc encoder object
+ * @param enc encoder object.
  * @param source source options to copy initial values from, or NULL to get
- * defaults initialized to defaults
+ * defaults initialized to defaults.
  * @return the opaque struct pointer identifying a new set of encoder options.
  */
 JXL_EXPORT JxlEncoderOptions* JxlEncoderOptionsCreate(
@@ -278,8 +314,8 @@ JXL_EXPORT JxlEncoderOptions* JxlEncoderOptionsCreate(
 /**
  * Sets a color encoding to be sRGB.
  *
- * @param color_encoding color encoding instance
- * @param is_gray whether the color encoding should be gray scale or color
+ * @param color_encoding color encoding instance.
+ * @param is_gray whether the color encoding should be gray scale or color.
  */
 JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
                                           JXL_BOOL is_gray);
@@ -287,8 +323,8 @@ JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
 /**
  * Sets a color encoding to be linear sRGB.
  *
- * @param color_encoding color encoding instance
- * @param is_gray whether the color encoding should be gray scale or color
+ * @param color_encoding color encoding instance.
+ * @param is_gray whether the color encoding should be gray scale or color.
  */
 JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
     JxlColorEncoding* color_encoding, JXL_BOOL is_gray);

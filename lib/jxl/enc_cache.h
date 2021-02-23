@@ -47,7 +47,8 @@ namespace jxl {
 struct PassesEncoderState {
   PassesSharedState shared;
 
-  ImageF initial_quant_field;  // Invalid in Falcon mode.
+  ImageF initial_quant_field;    // Invalid in Falcon mode.
+  ImageF initial_quant_masking;  // Invalid in Falcon mode.
 
   // Per-pass DCT coefficients for the image. One row per group.
   std::vector<std::unique_ptr<ACImage>> coeffs;
@@ -68,6 +69,9 @@ struct PassesEncoderState {
 
   std::vector<PassData> passes;
   std::vector<uint8_t> histogram_idx;
+
+  // Coefficient orders that are non-default.
+  std::vector<uint32_t> used_orders;
 
   // Multiplier to be applied to the quant matrices of the x channel.
   float x_qm_multiplier = 1.0f;

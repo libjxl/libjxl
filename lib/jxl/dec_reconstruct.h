@@ -45,10 +45,27 @@ Status FinalizeFrameDecoding(ImageBundle* JXL_RESTRICT decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
                              bool rerender, bool skip_blending);
 
-// Render the `rect` portion of `decoded`, taking data from `dec_state`.
-// Takes an ImageBundle to have access to extra channels.
-Status FinalizeImageRect(ImageBundle* JXL_RESTRICT decoded, const Rect& rect,
-                         PassesDecoderState* dec_state, size_t thread);
+// Renders the `output_rect` portion of the final image to `output_image`
+// (unless the frame is upsampled - in which case, `output_rect` is scaled
+// accordingly). `input_rect` should have the same shape. Color data is taken
+// from `image_data:input_rect`; some X *and* Y padding is needed, so if
+// `input_rect` is on a border of `input_image` padding will be added by
+// mirroring. `input_rect` always refers to the non-padded pixels.
+// `output_rect.x0()` is guaranteed to be a multiple of kBlockDim.
+// `output_rect.xsize()` is either a multiple of kBlockDim, or is such that
+// `output_rect.x0() + output_rect.xsize() == frame_dim.xsize`.
+Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
+                         PassesDecoderState* dec_state, size_t thread,
+                         ImageBundle* JXL_RESTRICT output_image,
+                         const Rect& output_rect);
+
+// Ensures that there is a border of `xpadding x ypadding` valid pixels
+// accessible around `src:src_rect`, and of `xborder` not-necessarily-valid
+// pixels along the x axis by copying the area to `storage` if necessary and
+// setting `output` and `output_rect` appropriately.
+void EnsurePadding(const Image3F& src, const Rect& src_rect, Image3F* storage,
+                   const Image3F** output, Rect* output_rect, size_t xpadding,
+                   size_t ypadding, size_t xborder);
 
 }  // namespace jxl
 

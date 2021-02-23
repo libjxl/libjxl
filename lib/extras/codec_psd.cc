@@ -159,6 +159,7 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
         if (depth != 8)
           return JXL_FAILURE("PSD: did not expect RLE with depth>1");
         for (int x = 0; x < w;) {
+          if (pos >= maxpos) return JXL_FAILURE("PSD: out of bounds");
           int8_t rle = *pos++;
           if (rle <= 0) {
             if (rle == -128) continue;  // nop

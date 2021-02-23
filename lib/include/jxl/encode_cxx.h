@@ -53,7 +53,8 @@ typedef std::unique_ptr<JxlEncoder, JxlEncoderDestroyStruct> JxlEncoderPtr;
 /// @return a @c NULL JxlEncoderPtr if the instance can not be allocated or
 ///         initialized
 /// @return initialized JxlEncoderPtr instance otherwise.
-JxlEncoderPtr JxlEncoderMake(const JxlMemoryManager* memory_manager) {
+static inline JxlEncoderPtr JxlEncoderMake(
+    const JxlMemoryManager* memory_manager) {
   return JxlEncoderPtr(JxlEncoderCreate(memory_manager));
 }
 

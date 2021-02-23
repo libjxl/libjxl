@@ -32,8 +32,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/aux_out.cc
   jxl/aux_out.h
   jxl/aux_out_fwd.h
-  jxl/base/arch_specific.cc
-  jxl/base/arch_specific.h
+  jxl/base/arch_macros.h
   jxl/base/bits.h
   jxl/base/byte_order.h
   jxl/base/cache_aligned.cc
@@ -45,21 +44,22 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/descriptive_statistics.h
   jxl/base/file_io.h
   jxl/base/iaca.h
-  jxl/base/os_specific.cc
-  jxl/base/os_specific.h
+  jxl/base/os_macros.h
   jxl/base/override.h
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
-  jxl/base/profiler.cc
   jxl/base/profiler.h
   jxl/base/robust_statistics.h
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/thread_pool_internal.h
-  jxl/base/tsc_timer.h
+  jxl/base/time.cc
+  jxl/base/time.h
   jxl/blending.cc
   jxl/blending.h
+  jxl/box.cc
+  jxl/box.h
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
   jxl/butteraugli_wrapper.cc
@@ -145,6 +145,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/huffman_tree.h
   jxl/icc_codec.cc
   jxl/icc_codec.h
+  jxl/icc_codec_common.cc
+  jxl/icc_codec_common.h
   jxl/image.cc
   jxl/image.h
   jxl/image_bundle.cc
@@ -158,12 +160,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/jpeg/dec_jpeg_data_writer.h
   jxl/jpeg/dec_jpeg_output_chunk.h
   jxl/jpeg/dec_jpeg_serialization_state.h
-  jxl/jpeg/enc_jpeg_data.cc
-  jxl/jpeg/enc_jpeg_data.h
-  jxl/jpeg/enc_jpeg_data_reader.cc
-  jxl/jpeg/enc_jpeg_data_reader.h
-  jxl/jpeg/enc_jpeg_huffman_decode.cc
-  jxl/jpeg/enc_jpeg_huffman_decode.h
   jxl/jpeg/jpeg_data.cc
   jxl/jpeg/jpeg_data.h
   jxl/jxl_inspection.h
@@ -251,6 +247,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_heuristics.h
   jxl/enc_huffman.cc
   jxl/enc_huffman.h
+  jxl/enc_icc_codec.cc
+  jxl/enc_icc_codec.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
   jxl/enc_noise.cc
@@ -263,6 +261,12 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_xyb.h
   jxl/encode.cc
   jxl/encode_internal.h
+  jxl/jpeg/enc_jpeg_data.cc
+  jxl/jpeg/enc_jpeg_data.h
+  jxl/jpeg/enc_jpeg_data_reader.cc
+  jxl/jpeg/enc_jpeg_data_reader.h
+  jxl/jpeg/enc_jpeg_huffman_decode.cc
+  jxl/jpeg/enc_jpeg_huffman_decode.h
 )
 
 set(JPEGXL_INTERNAL_LIBS
@@ -443,11 +447,11 @@ set_target_properties(jxl PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
-# Public shared library.
-# TODO(lode): this library is missing symbols, more encoder-only code needs to
-# be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
-# Commented out: building libjxl_dec.dll out of this on Windows causes linker
-# errors due to this reason
+# # Public shared library.
+# # TODO(lode): this library is missing symbols, more encoder-only code needs to
+# # be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
+# # Commented out: building libjxl_dec.dll out of this on Windows causes linker
+# # errors due to this reason
 # add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_dec-obj>)
 # target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 # target_link_libraries(jxl_dec PRIVATE ${JPEGXL_INTERNAL_LIBS})

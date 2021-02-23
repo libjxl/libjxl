@@ -210,29 +210,25 @@ Status DecodeFrame(const DecompressParams& dparams,
     std::vector<std::unique_ptr<BitReaderScopedCloser>> section_closers;
     std::vector<FrameDecoder::SectionInfo> section_info;
     std::vector<FrameDecoder::SectionStatus> section_status;
-    if (frame_decoder.NumSections() == 1) {
-      section_info.emplace_back(FrameDecoder::SectionInfo{reader, 0});
-    } else {
-      size_t bytes_to_skip = 0;
-      for (size_t i = 0; i < frame_decoder.NumSections(); i++) {
-        size_t b = frame_decoder.SectionOffsets()[i];
-        size_t e = b + frame_decoder.SectionSizes()[i];
-        bytes_to_skip += e - b;
-        size_t pos = reader->TotalBitsConsumed() / kBitsPerByte;
-        if (pos + e <= reader->TotalBytes()) {
-          auto br = make_unique<BitReader>(
-              Span<const uint8_t>(reader->FirstByte() + b + pos, e - b));
-          section_info.emplace_back(FrameDecoder::SectionInfo{br.get(), i});
-          section_closers.emplace_back(
-              make_unique<BitReaderScopedCloser>(br.get(), &close_ok));
-          section_readers.emplace_back(std::move(br));
-        } else if (!dparams.allow_partial_files) {
-          return JXL_FAILURE("Premature end of stream.");
-        }
+    size_t bytes_to_skip = 0;
+    for (size_t i = 0; i < frame_decoder.NumSections(); i++) {
+      size_t b = frame_decoder.SectionOffsets()[i];
+      size_t e = b + frame_decoder.SectionSizes()[i];
+      bytes_to_skip += e - b;
+      size_t pos = reader->TotalBitsConsumed() / kBitsPerByte;
+      if (pos + e <= reader->TotalBytes()) {
+        auto br = make_unique<BitReader>(
+            Span<const uint8_t>(reader->FirstByte() + b + pos, e - b));
+        section_info.emplace_back(FrameDecoder::SectionInfo{br.get(), i});
+        section_closers.emplace_back(
+            make_unique<BitReaderScopedCloser>(br.get(), &close_ok));
+        section_readers.emplace_back(std::move(br));
+      } else if (!dparams.allow_partial_files) {
+        return JXL_FAILURE("Premature end of stream.");
       }
-      // Skip over the to-be-decoded sections.
-      reader->SkipBits(kBitsPerByte * bytes_to_skip);
     }
+    // Skip over the to-be-decoded sections.
+    reader->SkipBits(kBitsPerByte * bytes_to_skip);
     section_status.resize(section_info.size());
 
     JXL_RETURN_IF_ERROR(frame_decoder.ProcessSections(
@@ -258,8 +254,6 @@ Status DecodeFrame(const DecompressParams& dparams,
   JXL_RETURN_IF_ERROR(close_ok);
 
   JXL_RETURN_IF_ERROR(frame_decoder.FinalizeFrame());
-  // for the single-group case.
-  JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   decoded->SetDecodedBytes(processed_bytes);
   return true;
 }
@@ -448,18 +442,19 @@ void FrameDecoder::FinalizeDC() {
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
   JXL_CHECK(finalized_dc_);
+  dec_state_->InitForAC();
 
   // Allocate output image.
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
-  decoded_->SetFromImage(
-      Image3F(frame_dim_.xsize_padded, frame_dim_.ysize_padded),
-      dec_state_->output_encoding);
+  decoded_->SetFromImage(Image3F(frame_dim_.xsize_upsampled_padded,
+                                 frame_dim_.ysize_upsampled_padded),
+                         dec_state_->output_encoding);
   if (metadata.m.num_extra_channels > 0) {
     std::vector<ImageF> ecv;
     for (size_t i = 0; i < metadata.m.num_extra_channels; i++) {
       const auto eci = metadata.m.extra_channel_info[i];
-      ecv.emplace_back(eci.Size(frame_dim_.xsize_padded),
-                       eci.Size(frame_dim_.ysize_padded));
+      ecv.emplace_back(eci.Size(decoded_->xsize()),
+                       eci.Size(decoded_->ysize()));
     }
     decoded_->SetExtraChannels(std::move(ecv));
   }
@@ -483,8 +478,10 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
          i < dec_state_->shared_storage.frame_header.passes.num_passes; i++) {
       uint16_t used_orders = U32Coder::Read(kOrderEnc, br);
       JXL_RETURN_IF_ERROR(DecodeCoeffOrders(
-          used_orders,
-          &dec_state_->shared_storage.coeff_orders[i * kCoeffOrderSize], br));
+          used_orders, dec_state_->used_acs,
+          &dec_state_->shared_storage
+               .coeff_orders[i * dec_state_->shared_storage.coeff_order_size],
+          br));
       size_t num_contexts =
           dec_state_->shared->num_histograms *
           dec_state_->shared_storage.block_ctx_map.NumACContexts();
@@ -568,7 +565,8 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   const size_t y = gy * frame_dim_.group_dim;
 
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
-    group_dec_caches_[thread].InitOnce(frame_header_.passes.num_passes);
+    group_dec_caches_[thread].InitOnce(frame_header_.passes.num_passes,
+                                       dec_state_->used_acs);
     JXL_RETURN_IF_ERROR(
         DecodeGroup(br, num_passes, ac_group_id, dec_state_,
                     &group_dec_caches_[thread], thread, decoded_,
@@ -609,7 +607,7 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 
 Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
                                      SectionStatus* section_status) {
-  JXL_ASSERT(num > 0);
+  if (num == 0) return true;  // Nothing to process
   std::fill(section_status, section_status + num, SectionStatus::kSkipped);
   size_t dc_global_sec = num;
   size_t ac_global_sec = num;
@@ -681,11 +679,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   std::atomic<bool> has_error{false};
   if (decoded_dc_global_) {
     RunOnPool(
-        pool_, 0, dc_group_sec.size(),
-        [this](size_t num_threads) {
-          SetNumThreads(num_threads);
-          return true;
-        },
+        pool_, 0, dc_group_sec.size(), ThreadPool::SkipInit(),
         [this, &dc_group_sec, &num, &sections, &section_status, &has_error](
             size_t i, size_t thread) {
           if (dc_group_sec[i] != num) {
@@ -715,7 +709,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     RunOnPool(
         pool_, 0, ac_group_sec.size(),
         [this](size_t num_threads) {
-          SetNumThreads(num_threads);
+          PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
           return true;
         },
         [this, &ac_group_sec, &num_ac_passes, &num, &sections, &section_status,
@@ -730,7 +724,8 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
             JXL_ASSERT(ac_group_sec[g][first_pass + i] != num);
             readers[i] = sections[ac_group_sec[g][first_pass + i]].br;
           }
-          if (!ProcessACGroup(g, readers, num_ac_passes[g], thread,
+          if (!ProcessACGroup(g, readers, num_ac_passes[g],
+                              GetStorageLocation(thread, g),
                               /*force_draw=*/false)) {
             has_error = true;
           } else {
@@ -773,7 +768,7 @@ Status FrameDecoder::Flush() {
     RunOnPool(
         pool_, 0, decoded_passes_per_ac_group_.size(),
         [this](size_t num_threads) {
-          SetNumThreads(num_threads);
+          PrepareStorage(num_threads, decoded_passes_per_ac_group_.size());
           return true;
         },
         [this, &has_error](size_t g, size_t thread) {
@@ -783,7 +778,8 @@ Status FrameDecoder::Flush() {
             return;
           }
           BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
-          if (!ProcessACGroup(g, readers, /*num_passes=*/0, thread,
+          if (!ProcessACGroup(g, readers, /*num_passes=*/0,
+                              GetStorageLocation(thread, g),
                               /*force_draw=*/true)) {
             has_error = true;
           }
@@ -846,8 +842,10 @@ Status FrameDecoder::FinalizeFrame() {
           std::move(dec_state_->pre_color_transform_frame),
           decoded_->c_current());
       if (decoded_->HasExtraChannels()) {
+        const std::vector<ImageF>* ecs = &dec_state_->pre_color_transform_ec;
+        if (ecs->empty()) ecs = &decoded_->extra_channels();
         std::vector<ImageF> extra_channels;
-        for (const auto& ec : decoded_->extra_channels()) {
+        for (const auto& ec : *ecs) {
           extra_channels.push_back(CopyImage(ec));
         }
         dec_state_->shared_storage.reference_frames[id]

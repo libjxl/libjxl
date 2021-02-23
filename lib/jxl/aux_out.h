@@ -172,11 +172,6 @@ struct AuxOut {
       dc_pred_usage[i] += victim.dc_pred_usage[i];
       dc_pred_usage_xb[i] += victim.dc_pred_usage_xb[i];
     }
-    for (uint8_t block_type = 0;
-         block_type < uint8_t(BlockType::kNumBlockTypes); block_type++) {
-      num_block_types[block_type] += victim.num_block_types[block_type];
-      num_position_types[block_type] += victim.num_position_types[block_type];
-    }
   }
 
   void Print(size_t num_inputs) const;
@@ -307,10 +302,6 @@ struct AuxOut {
   // By how much the decoded image was downsampled relative to the encoded
   // image.
   size_t downsampling = 1;
-
-  // Number of various types of blocks
-  size_t num_block_types[uint8_t(BlockType::kNumBlockTypes)] = {0};
-  size_t num_position_types[uint8_t(BlockType::kNumBlockTypes)] = {0};
 
   jxl::InspectorImage3F inspector_image3f_;
 

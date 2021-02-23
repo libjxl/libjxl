@@ -47,9 +47,11 @@
 #define HWY_TARGET_INCLUDE "lib/jxl/butteraugli/butteraugli.cc"
 #include <hwy/foreach_target.h>
 
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
+#if PROFILER_ENABLED
+#include "lib/jxl/base/time.h"
+#endif  // PROFILER_ENABLED
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/gauss_blur.h"

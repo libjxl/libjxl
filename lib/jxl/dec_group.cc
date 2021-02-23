@@ -182,7 +182,6 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   PROFILER_FUNC;
 
   const Rect block_rect = dec_state->shared->BlockGroupRect(group_idx);
-  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
 
   const size_t xsize_blocks = block_rect.xsize();
@@ -414,8 +413,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
               continue;
             }
             // IDCT
-            float* JXL_RESTRICT idct_pos =
-                idct_row[c] + dec_state->decoded_padding + sbx[c] * kBlockDim;
+            float* JXL_RESTRICT idct_pos = idct_row[c] + sbx[c] * kBlockDim;
             TransformToPixels(acs.Strategy(), block + c * size, idct_pos,
                               idct_stride, group_dec_cache->scratch_space);
           }
@@ -434,14 +432,16 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   // process the corresponding border too.
   size_t xsize = xsize_blocks * kBlockDim;
   size_t ysize = ysize_blocks * kBlockDim;
-  size_t xstart = block_rect.x0() != 0 ? lf.PaddingCols() : 0;
-  size_t ystart = block_rect.y0() != 0 ? lf.PaddingRows() : 0;
+  size_t padx = RoundUpToBlockDim(dec_state->FinalizeRectPadding());
+  size_t pady = dec_state->FinalizeRectPadding();
+  size_t xstart = block_rect.x0() != 0 ? padx : 0;
+  size_t ystart = block_rect.y0() != 0 ? pady : 0;
   bool is_last_group_x = dec_state->shared->frame_dim.xsize_blocks ==
                          block_rect.x0() + block_rect.xsize();
   bool is_last_group_y = dec_state->shared->frame_dim.ysize_blocks ==
                          block_rect.y0() + block_rect.ysize();
-  size_t xend = is_last_group_x ? xsize : xsize - lf.PaddingCols();
-  size_t yend = is_last_group_y ? ysize : ysize - lf.PaddingRows();
+  size_t xend = is_last_group_x ? xsize : xsize - padx;
+  size_t yend = is_last_group_y ? ysize : ysize - pady;
 
   // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
   // be done after decoding the whole image (this allows it to work on the
@@ -454,17 +454,10 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const Rect aif_rect(block_rect.x0() * kBlockDim + xstart,
                       block_rect.y0() * kBlockDim + ystart, xend - xstart,
                       yend - ystart);
-  if (lf.PaddingCols() != 0) {
-    PadRectMirrorInPlace(
-        &dec_state->decoded,
-        Rect(block_rect.x0() * kBlockDim, block_rect.y0() * kBlockDim,
-             block_rect.xsize() * kBlockDim, block_rect.ysize() * kBlockDim),
-        dec_state->shared->frame_dim.xsize_padded, lf.PaddingCols(),
-        dec_state->decoded_padding);
-  }
 
   if (JXL_LIKELY(run_apply_image_features)) {
-    return FinalizeImageRect(decoded, aif_rect, dec_state, thread);
+    return FinalizeImageRect(dec_state->decoded, aif_rect, dec_state, thread,
+                             decoded, aif_rect);
   }
   return true;
 }
@@ -591,7 +584,7 @@ struct GetBlockFromBitstream : public GetBlock {
         JXL_RETURN_IF_ERROR(decode_ac_varblock(
             ctx_offset[pass], log2_covered_blocks, row_nzeros[pass][c],
             row_nzeros_top[pass][c], nzeros_stride, c, sbx, sby, bx, acs,
-            &coeff_orders[pass * kCoeffOrderSize], readers[pass],
+            &coeff_orders[pass * coeff_order_size], readers[pass],
             &decoders[pass], context_map[pass], quant_dc_row, qf_row,
             *block_ctx_map, block[c], shift_for_pass[pass]));
       }
@@ -607,8 +600,9 @@ struct GetBlockFromBitstream : public GetBlock {
       hshift[i] = dec_state->shared->frame_header.chroma_subsampling.HShift(i);
       vshift[i] = dec_state->shared->frame_header.chroma_subsampling.VShift(i);
     }
+    this->coeff_order_size = dec_state->shared->coeff_order_size;
     this->coeff_orders =
-        dec_state->shared->coeff_orders.data() + first_pass * kCoeffOrderSize;
+        dec_state->shared->coeff_orders.data() + first_pass * coeff_order_size;
     this->context_map = dec_state->context_map.data() + first_pass;
     this->readers = readers;
     this->num_passes = num_passes;
@@ -645,6 +639,7 @@ struct GetBlockFromBitstream : public GetBlock {
 
   const uint32_t* shift_for_pass = nullptr;  // not owned
   const coeff_order_t* JXL_RESTRICT coeff_orders;
+  size_t coeff_order_size;
   const std::vector<uint8_t>* JXL_RESTRICT context_map;
   ANSSymbolReader decoders[kMaxNumPasses];
   BitReader* JXL_RESTRICT* JXL_RESTRICT readers;
@@ -722,11 +717,18 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                       : kDontDraw;
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
-    Rect src_rect = dec_state->shared->BlockGroupRect(group_idx);
-    Rect dst_rect(src_rect.x0() * 8 + dec_state->decoded_padding,
-                  src_rect.y0() * 8, src_rect.xsize() * 8,
+    const Image3F* upsampling_input;
+    Rect upsampling_input_rect;
+    size_t xborder = kBlockDim;
+    const Rect src_rect = dec_state->shared->BlockGroupRect(group_idx);
+    // We reuse filter_input_storage here as it is not currently in use.
+    EnsurePadding(*dec_state->shared->dc, src_rect,
+                  &dec_state->filter_input_storage[thread], &upsampling_input,
+                  &upsampling_input_rect, 2, 2, xborder);
+    Rect dst_rect(src_rect.x0() * 8, src_rect.y0() * 8, src_rect.xsize() * 8,
                   src_rect.ysize() * 8);
-    dec_state->dc_upsampler.UpsampleRect(*dec_state->shared->dc, src_rect,
+    dec_state->dc_upsampler.UpsampleRect(*upsampling_input,
+                                         upsampling_input_rect,
                                          &dec_state->decoded, dst_rect);
     draw = kOnlyImageFeatures;
   }
@@ -758,6 +760,9 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
   PROFILER_FUNC;
 
   GetBlockFromEncoder get_block(ac, group_idx);
+  group_dec_cache->InitOnce(
+      /*num_passes=*/0,
+      /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1);
 
   return HWY_DYNAMIC_DISPATCH(DecodeGroupImpl)(&get_block, group_dec_cache,
                                                dec_state, thread, group_idx,

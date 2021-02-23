@@ -62,7 +62,9 @@ struct DecompressArgs {
   // Format parameters:
 
   size_t bits_per_sample = 0;
-  std::string color_space;  // description
+  bool tone_map = false;
+  std::pair<float, float> display_nits = {0.f, jxl::kDefaultIntensityTarget};
+  std::string color_space;  // description or path to ICC profile
 
   jxl::DecompressParams params;
 
@@ -88,7 +90,8 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 SpeedStats* JXL_RESTRICT stats);
 
 jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
-                           jxl::CodecInOut& io);
+                           jxl::CodecInOut& io,
+                           jxl::ThreadPool* pool = nullptr);
 
 }  // namespace tools
 }  // namespace jpegxl

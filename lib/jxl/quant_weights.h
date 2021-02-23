@@ -374,12 +374,22 @@ class DequantMatrices {
                     sizeof(kQuantTable) / sizeof *kQuantTable,
                 "Update this array when adding or removing AC strategies.");
 
-  DequantMatrices()
-      // TODO(janwas): integrate JxlMemoryManager pointers
-      : table_(hwy::AllocateAligned<float>(2 * kTotalTableSize)) {
+  DequantMatrices() {
     encodings_.resize(size_t(QuantTable::kNum), QuantEncoding::Library(0));
+    size_t pos = 0;
+    size_t offsets[kNum * 3];
     for (size_t i = 0; i < size_t(QuantTable::kNum); i++) {
       encodings_[i] = QuantEncoding::Library(0);
+      size_t num = required_size_[i] * kDCTBlockSize;
+      for (size_t c = 0; c < 3; c++) {
+        offsets[3 * i + c] = pos + c * num;
+      }
+      pos += 3 * num;
+    }
+    for (size_t i = 0; i < AcStrategy::kNumValidStrategies; i++) {
+      for (size_t c = 0; c < 3; c++) {
+        table_offsets_[i * 3 + c] = offsets[kQuantTable[i] * 3 + c];
+      }
     }
     // Default quantization tables need to be valid.
     JXL_CHECK(Compute());
@@ -412,7 +422,7 @@ class DequantMatrices {
 
   JXL_INLINE const float* InvMatrix(size_t quant_kind, size_t c) const {
     JXL_DASSERT(quant_kind < AcStrategy::kNumValidStrategies);
-    return &InvTable()[MatrixOffset(quant_kind, c)];
+    return &inv_table_[MatrixOffset(quant_kind, c)];
   }
 
   // DC quants are used in modular mode for XYB multipliers.
@@ -461,8 +471,6 @@ class DequantMatrices {
                 "Update this array when adding or removing quant tables.");
 
  private:
-  float* InvTable() const { return table_.get() + kTotalTableSize; }
-
   Status Compute();
 
   static constexpr size_t required_size_[] = {
@@ -473,7 +481,9 @@ class DequantMatrices {
       ArraySum(required_size_) * kDCTBlockSize * 3;
 
   // kTotalTableSize entries followed by kTotalTableSize for inv_table
-  hwy::AlignedFreeUniquePtr<float[]> table_;
+  hwy::AlignedFreeUniquePtr<float[]> table_storage_;
+  const float* table_;
+  const float* inv_table_;
   float dc_quant_[3] = {kDCQuant[0], kDCQuant[1], kDCQuant[2]};
   float inv_dc_quant_[3] = {kInvDCQuant[0], kInvDCQuant[1], kInvDCQuant[2]};
   size_t table_offsets_[AcStrategy::kNumValidStrategies * 3];

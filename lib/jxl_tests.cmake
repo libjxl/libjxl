@@ -46,6 +46,7 @@ set(TEST_FILES
   jxl/icc_codec_test.cc
   jxl/image_bundle_test.cc
   jxl/image_ops_test.cc
+  jxl/internal_box_test.cc
   jxl/jxl_test.cc
   jxl/lehmer_code_test.cc
   jxl/linalg_test.cc
@@ -100,7 +101,6 @@ foreach (TESTFILE IN LISTS TEST_FILES)
   )
   target_link_libraries(${TESTNAME}
     box
-    djxltool
     jxl-static
     jxl_threads-static
     jxl_extras-static
@@ -114,8 +114,8 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     set_target_properties(${TESTNAME} PROPERTIES COMPILE_FLAGS "-Wno-error")
   endif ()
   if(${CMAKE_VERSION} VERSION_LESS "3.10.3")
-    gtest_discover_tests(${TESTNAME} TIMEOUT 60)
+    gtest_discover_tests(${TESTNAME} TIMEOUT 240)
   else ()
-    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 60)
+    gtest_discover_tests(${TESTNAME} DISCOVERY_TIMEOUT 240)
   endif ()
 endforeach ()

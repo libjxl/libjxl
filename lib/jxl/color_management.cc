@@ -179,7 +179,8 @@ void AfterTransform(ColorSpaceTransform* t, float* JXL_RESTRICT buf_dst) {
       HWY_FULL(float) df;
       for (size_t i = 0; i < t->buf_dst_.xsize(); i += Lanes(df)) {
         const auto val = Load(df, buf_dst + i);
-        const auto result = TF_SRGB().EncodedFromDisplay(val);
+        const auto result =
+            TF_SRGB().EncodedFromDisplay(HWY_FULL(float)(), val);
         Store(result, df, buf_dst + i);
       }
 #if JXL_CMS_VERBOSE >= 2
@@ -217,7 +218,7 @@ void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
         xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
         &t->skcms_icc_->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
         skcms_AlphaFormat_Opaque, &t->skcms_icc_->profile_dst_, t->xsize_));
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     JXL_DASSERT(thread < t->transforms_.size());
     cmsHTRANSFORM xform = t->transforms_[thread];
     cmsDoTransform(xform, xform_src, buf_dst,
@@ -307,7 +308,10 @@ namespace {
 // cms functions (even *THR) are not thread-safe, except cmsDoTransform.
 // To ensure all functions are covered without frequent lock-taking nor risk of
 // recursive lock, we lock in the top-level APIs.
-std::mutex lcms_mutex;
+static std::mutex& LcmsMutex() {
+  static std::mutex m;
+  return m;
+}
 
 #if JPEGXL_ENABLE_SKCMS
 JXL_MUST_USE_RESULT CIExy CIExyFromXYZ(const float XYZ[3]) {
@@ -521,7 +525,7 @@ void ICCComputeMD5(const PaddedBytes& data, uint8_t sum[16]) {
   size_t extra = ((64 - ((data64.size() + 8) & 63)) & 63);
   data64.resize(data64.size() + extra, 0);
   for (uint64_t i = 0; i < 64; i += 8) {
-    data64.push_back((data.size() << 3u) >> i);
+    data64.push_back(static_cast<uint64_t>(data.size() << 3u) >> i);
   }
 
   static const uint32_t sineparts[64] = {
@@ -873,12 +877,12 @@ Status MaybeCreateProfile(const ColorEncoding& c,
             &tags));
         break;
       case TransferFunction::kLinear:
-        JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
-            {1.0, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
+        JXL_RETURN_IF_ERROR(
+            CreateICCCurvParaTag({1.0, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
         break;
       case TransferFunction::kDCI:
-        JXL_RETURN_IF_ERROR(CreateICCCurvParaTag(
-            {2.6, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
+        JXL_RETURN_IF_ERROR(
+            CreateICCCurvParaTag({2.6, 1.0, 0.0, 1.0, 0.0}, 3, &tags));
         break;
       default:
         JXL_ABORT("Unknown TF %d", c.tf.GetTransferFunction());
@@ -1336,7 +1340,7 @@ cmsContext GetContext() {
 }  // namespace
 
 // All functions that call lcms directly (except ColorSpaceTransform::Run) must
-// lock lcms_mutex.
+// lock LcmsMutex().
 
 Status ColorEncoding::SetFieldsFromICC() {
   // In case parsing fails, mark the ColorEncoding as invalid.
@@ -1374,9 +1378,9 @@ Status ColorEncoding::SetFieldsFromICC() {
   DetectTransferFunction(profile, this);
   // ICC and RenderingIntent have the same values (0..3).
   rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
 
-  std::lock_guard<std::mutex> guard(lcms_mutex);
+  std::lock_guard<std::mutex> guard(LcmsMutex());
   const cmsContext context = GetContext();
 
   Profile profile;
@@ -1407,12 +1411,12 @@ Status ColorEncoding::SetFieldsFromICC() {
 }
 
 Status ColorEncoding::CreateICC() {
-  std::lock_guard<std::mutex> guard(lcms_mutex);
+  std::lock_guard<std::mutex> guard(LcmsMutex());
   InternalRemoveICC();
 
 #if JPEGXL_ENABLE_SKCMS
   if (!MaybeCreateProfile(*this, &icc_)) {
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   if (!MaybeCreateProfile(context, *this, &icc_)) {
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -1429,7 +1433,7 @@ void ColorEncoding::DecideIfWantICC() {
   if (!DecodeProfile(ICC(), &profile)) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
   equivalent = ProfileEquivalentToICC(profile, icc_new);
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile;
   if (!DecodeProfile(context, ICC(), &profile)) return;
@@ -1444,7 +1448,7 @@ void ColorEncoding::DecideIfWantICC() {
 
 ColorSpaceTransform::~ColorSpaceTransform() {
 #if !JPEGXL_ENABLE_SKCMS
-  std::lock_guard<std::mutex> guard(lcms_mutex);
+  std::lock_guard<std::mutex> guard(LcmsMutex());
   for (void* p : transforms_) {
     TransformDeleter()(p);
   }
@@ -1462,7 +1466,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
                                  const ColorEncoding& c_dst,
                                  float intensity_target, size_t xsize,
                                  const size_t num_threads) {
-  std::lock_guard<std::mutex> guard(lcms_mutex);
+  std::lock_guard<std::mutex> guard(LcmsMutex());
 #if JXL_CMS_VERBOSE
   printf("%s -> %s\n", Description(c_src).c_str(), Description(c_dst).c_str());
 #endif
@@ -1474,7 +1478,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       DecodeProfile(skcms_icc_->icc_src_, &skcms_icc_->profile_src_));
   JXL_RETURN_IF_ERROR(
       DecodeProfile(skcms_icc_->icc_dst_, &skcms_icc_->profile_dst_));
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
   const cmsContext context = GetContext();
   Profile profile_src, profile_dst;
   JXL_RETURN_IF_ERROR(DecodeProfile(context, c_src.ICC(), &profile_src));
@@ -1511,7 +1515,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
 #if JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(c_linear_src, &new_src, &icc_src) &&
         MaybeCreateProfile(c_linear_dst, &new_dst, &icc_dst)) {
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     if (MaybeCreateProfile(context, c_linear_src, &icc_src) &&
         MaybeCreateProfile(context, c_linear_dst, &icc_dst) &&
         DecodeProfile(context, icc_src, &new_src) &&
@@ -1528,7 +1532,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
       skcms_icc_->profile_src_ = new_src;
       skcms_icc_->icc_dst_ = PaddedBytes();
       skcms_icc_->profile_dst_ = new_dst;
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
       profile_src.swap(new_src);
       profile_dst.swap(new_dst);
 #endif  // JPEGXL_ENABLE_SKCMS

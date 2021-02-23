@@ -31,18 +31,17 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_png.h"
 #include "lib/jxl/alpha.h"
-#include "lib/jxl/base/arch_specific.h"
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/robust_statistics.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
@@ -57,6 +56,8 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
+#include "tools/cpu/cpu.h"
+#include "tools/cpu/os_specific.h"
 #include "tools/speed_stats.h"
 
 namespace jxl {
@@ -606,10 +607,10 @@ struct StatPrinter {
 
     const double rmse =
         std::sqrt(t.stats.distance_2 / t.stats.total_input_pixels);
-    const double psnr = t.stats.total_compressed_size == 0 ? 0.0
-                        : (t.stats.distance_2 == 0)
-                            ? 99.99
-                            : (20 * std::log10(1 / rmse));
+    const double psnr =
+        t.stats.total_compressed_size == 0
+            ? 0.0
+            : (t.stats.distance_2 == 0) ? 99.99 : (20 * std::log10(1 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =
@@ -772,7 +773,7 @@ class Benchmark {
 
  private:
   static int NumCores() {
-    ProcessorTopology topology;
+    jpegxl::tools::cpu::ProcessorTopology topology;
     JXL_CHECK(DetectProcessorTopology(&topology));
     const int num_cores =
         static_cast<int>(topology.packages * topology.cores_per_package);
@@ -826,7 +827,7 @@ class Benchmark {
       if (index < cpus.size()) {
         // printf("pin pool %p thread %3d to index %3zu = cpu %3d\n",
         //        static_cast<void*>(pool), thread, index, cpus[index]);
-        if (!PinThreadToCPU(cpus[index])) {
+        if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[index])) {
           fprintf(stderr, "WARNING: failed to pin thread %d, next %zu.\n",
                   thread, *next_index);
         }
@@ -853,7 +854,7 @@ class Benchmark {
     }
 
     // Pin all actual worker threads to available CPUs.
-    const std::vector<int> cpus = AvailableCPUs();
+    const std::vector<int> cpus = jpegxl::tools::cpu::AvailableCPUs();
     size_t next_index = 0;
     PinThreads(pool->get(), cpus, &next_index);
     for (std::unique_ptr<ThreadPoolInternal>& inner : *inner_pools) {

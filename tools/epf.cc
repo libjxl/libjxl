@@ -14,12 +14,10 @@
 
 #include "tools/epf.h"
 
-#include "lib/jxl/ar_control_field.h"
-#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_cache.h"
+#include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
-#include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/frame_header.h"
@@ -69,18 +67,10 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   state.filter_weights.Init(lf, frame_dim);
   ComputeSigma(jxl::Rect(state.shared_storage.epf_sharpness), &state);
 
-  const jxl::Image3F padded = PadImageMirror(opsin, jxl::kMaxFilterPadding, 0);
-
-  jxl::Rect image_rect(0, 0, frame_dim.xsize_padded, frame_dim.ysize_padded);
-
-  EdgePreservingFilter(lf, state.filter_weights, image_rect, padded, &opsin);
-
-  opsin.ShrinkTo(frame_dim.xsize, frame_dim.xsize);
-  jxl::OpsinParams opsin_params;
-  opsin_params.Init(jxl::kDefaultIntensityTarget);
-  jxl::OpsinToLinearInplace(&opsin, pool, opsin_params);
-  io->Main().SetFromImage(std::move(opsin),
-                          jxl::ColorEncoding::LinearSRGB(io->Main().IsGray()));
+  // Call with `rerender` set to true to force to apply filters to all of the
+  // input image.
+  JXL_CHECK(FinalizeFrameDecoding(&io->Main(), &state, pool, /*rerender=*/true,
+                                  /*skip_blending=*/true));
   JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));
   return true;
 }

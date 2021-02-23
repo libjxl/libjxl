@@ -52,6 +52,8 @@ struct PassesDecoderState {
   // Storage for pre-color-transform output for displayed
   // save_before_color_transform frames.
   Image3F pre_color_transform_frame;
+  // Non-empty (contains originals) if extra-channels were cropped.
+  std::vector<ImageF> pre_color_transform_ec;
 
   // For ANS decoding.
   std::vector<ANSCode> code;
@@ -61,14 +63,14 @@ struct PassesDecoderState {
   float x_dm_multiplier;
   float b_dm_multiplier;
 
-  // Padded decoded image. This image has two blocks of padding on each left and
-  // and right sides and xsize() rounded up to a block size, but it has no
-  // vertical padding.
+  // Decoded image.
   Image3F decoded;
-  size_t decoded_padding = kMaxFilterPadding;
 
   // Seed for noise, to have different noise per-frame.
   size_t noise_seed = 0;
+
+  // Keep track of the transform types used.
+  std::atomic<uint32_t> used_acs{0};
 
   // Storage for coefficients if in "accumulate" mode.
   std::unique_ptr<ACImage> coefficients = make_unique<ACImageT<int32_t>>(0, 0);
@@ -81,13 +83,52 @@ struct PassesDecoderState {
   // but are read-only for the filter application.
   FilterWeights filter_weights;
 
-  void EnsureStorage(size_t num_threads) {
-    // TODO(deymo): Don't request any memory if there's no need to apply any
-    // filter.
+  static constexpr size_t kMaxFinalizeRectPadding = 9;
 
+  // Amount of padding that will be accessed, in all directions, outside a rect
+  // during a call to FinalizeImageRect().
+  size_t FinalizeRectPadding() const {
+    size_t padding = shared->frame_header.loop_filter.Padding();
+    padding += shared->frame_header.upsampling == 1 ? 0 : 2;
+    // TODO(veluca): YCbCr upsampling is not currently done in
+    // FinalizeImageRect.
+    // We could make a distinction between rows and columns, but it is simpler
+    // not to.
+    //
+    // padding += shared->frame_header.chroma_subsampling.Is444() ? 0 : 1;
+    JXL_DASSERT(padding <= kMaxFinalizeRectPadding);
+    return padding;
+  }
+
+  // Storage for intermediate data during FinalizeRect steps.
+  std::vector<Image3F> filter_input_storage;
+  std::vector<Image3F> upsampling_input_storage;
+
+  void EnsureStorage(size_t num_threads) {
     // We need one filter_storage per thread, ensure we have at least that many.
-    if (filter_pipelines.size() < num_threads) {
-      filter_pipelines.resize(num_threads);
+    if (shared->frame_header.loop_filter.epf_iters != 0 ||
+        shared->frame_header.loop_filter.gab) {
+      if (filter_pipelines.size() < num_threads) {
+        filter_pipelines.resize(num_threads);
+      }
+    }
+    // We allocate filter_input_storage unconditionally to ensure that the image
+    // is allocated if we need it for DC upsampling.
+    for (size_t _ = filter_input_storage.size(); _ < num_threads; _++) {
+      // Extra padding along the x dimension to ensure memory accesses don't
+      // load out-of-bounds pixels.
+      filter_input_storage.emplace_back(
+          kGroupDim +
+              2 * DivCeil(kMaxFinalizeRectPadding, kBlockDim) * kBlockDim,
+          kGroupDim + 2 * kMaxFinalizeRectPadding);
+    }
+    if (shared->frame_header.upsampling != 1) {
+      for (size_t _ = upsampling_input_storage.size(); _ < num_threads; _++) {
+        // At this point, we only need up to 2 pixels of border per side for
+        // upsampling, but we add an extra border for aligned access.
+        upsampling_input_storage.emplace_back(kGroupDim + 2 * kBlockDim,
+                                              kGroupDim + 4);
+      }
     }
   }
 
@@ -112,16 +153,22 @@ struct PassesDecoderState {
         shared->metadata->m.color_encoding.IsSRGB()) {
       output_encoding = ColorEncoding::SRGB(output_encoding.IsGray());
     }
+    used_acs = 0;
 
     if (shared->frame_header.flags & FrameHeader::kNoise) {
-      noise = Image3F(shared->frame_dim.xsize_padded,
-                      shared->frame_dim.ysize_padded);
+      noise = Image3F(shared->frame_dim.xsize_upsampled_padded,
+                      shared->frame_dim.ysize_upsampled_padded);
+      size_t num_x_groups = DivCeil(noise.xsize(), kGroupDim);
+      size_t num_y_groups = DivCeil(noise.ysize(), kGroupDim);
       PROFILER_ZONE("GenerateNoise");
       auto generate_noise = [&](int group_index, int _) {
-        RandomImage3(noise_seed + group_index,
-                     shared->PaddedGroupRect(group_index), &noise);
+        size_t gx = group_index % num_x_groups;
+        size_t gy = group_index / num_x_groups;
+        Rect rect(gx * kGroupDim, gy * kGroupDim, kGroupDim, kGroupDim,
+                  noise.xsize(), noise.ysize());
+        RandomImage3(noise_seed + group_index, rect, &noise);
       };
-      RunOnPool(pool, 0, shared->frame_dim.num_groups, ThreadPool::SkipInit(),
+      RunOnPool(pool, 0, num_x_groups * num_y_groups, ThreadPool::SkipInit(),
                 generate_noise, "Generate noise");
       {
         PROFILER_ZONE("High pass noise");
@@ -143,8 +190,8 @@ struct PassesDecoderState {
     // decoded must be padded to a multiple of kBlockDim rows since the last
     // rows may be used by the filters even if they are outside the frame
     // dimension.
-    decoded = Image3F(shared->frame_dim.xsize_padded + 2 * decoded_padding,
-                      shared->frame_dim.ysize_padded);
+    decoded =
+        Image3F(shared->frame_dim.xsize_padded, shared->frame_dim.ysize_padded);
 #if MEMORY_SANITIZER
     // Avoid errors due to loading vectors on the outermost padding.
     ZeroFillImage(&decoded);
@@ -156,12 +203,29 @@ struct PassesDecoderState {
       fp.num_filters = 0;
     }
   }
+
+  // Initialize the decoder state after all of DC is decoded.
+  void InitForAC() {
+    shared_storage.coeff_order_size = 0;
+    for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
+      if (((1 << o) & used_acs) == 0) continue;
+      uint8_t ord = kStrategyOrder[o];
+      shared_storage.coeff_order_size =
+          std::max(kCoeffOrderOffset[3 * (ord + 1)] * kDCTBlockSize,
+                   shared_storage.coeff_order_size);
+    }
+    size_t sz = shared_storage.frame_header.passes.num_passes *
+                shared_storage.coeff_order_size;
+    if (sz > shared_storage.coeff_orders.size()) {
+      shared_storage.coeff_orders.resize(sz);
+    }
+  }
 };
 
 // Temp images required for decoding a single group. Reduces memory allocations
 // for large images because we only initialize min(#threads, #groups) instances.
 struct GroupDecCache {
-  void InitOnce(size_t num_passes) {
+  void InitOnce(size_t num_passes, size_t used_acs) {
     PROFILER_FUNC;
 
     for (size_t i = 0; i < num_passes; i++) {
@@ -173,24 +237,52 @@ struct GroupDecCache {
         num_nzeroes[i] = Image3I(kGroupDimInBlocks, kGroupDimInBlocks);
       }
     }
+    size_t max_block_area = 0;
+
+    for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
+      AcStrategy acs = AcStrategy::FromRawStrategy(o);
+      if ((used_acs & (1 << o)) == 0) continue;
+      size_t area =
+          acs.covered_blocks_x() * acs.covered_blocks_y() * kDCTBlockSize;
+      max_block_area = std::max(area, max_block_area);
+    }
+
+    if (max_block_area > max_block_area_) {
+      max_block_area_ = max_block_area;
+      // We need 3x float blocks for dequantized coefficients and 1x for scratch
+      // space for transforms.
+      float_memory_ = hwy::AllocateAligned<float>(max_block_area_ * 4);
+      // We need 3x int32 or int16 blocks for quantized coefficients.
+      int32_memory_ = hwy::AllocateAligned<int32_t>(max_block_area_ * 3);
+      int16_memory_ = hwy::AllocateAligned<int16_t>(max_block_area_ * 3);
+    }
+
+    dec_group_block = float_memory_.get();
+    scratch_space = dec_group_block + max_block_area_ * 3;
+    dec_group_qblock = int32_memory_.get();
+    dec_group_qblock16 = int16_memory_.get();
   }
 
   // Scratch space used by DecGroupImpl().
-  // TODO(veluca): figure out if we can use unions here.
-  HWY_ALIGN_MAX float dec_group_block[3 * AcStrategy::kMaxCoeffArea];
-  union {
-    HWY_ALIGN_MAX int32_t dec_group_qblock[3 * AcStrategy::kMaxCoeffArea];
-    HWY_ALIGN_MAX int16_t dec_group_qblock16[3 * AcStrategy::kMaxCoeffArea];
-  };
+  float* dec_group_block;
+  int32_t* dec_group_qblock;
+  int16_t* dec_group_qblock16;
+
   // For TransformToPixels.
-  HWY_ALIGN_MAX float scratch_space[2 * AcStrategy::kMaxCoeffArea];
+  float* scratch_space;
+  // Note that scratch_space is never used at the same time as dec_group_qblock.
+  // Moreover, only one of dec_group_qblock16 is ever used.
+  // TODO(veluca): figure out if we can save allocations.
 
   // AC decoding
   Image3I num_nzeroes[kMaxNumPasses];
-};
 
-static_assert(sizeof(GroupDecCache) % hwy::kMaxVectorSize == 0,
-              "GroupDecCache must be aligned to vector size.");
+ private:
+  hwy::AlignedFreeUniquePtr<float[]> float_memory_;
+  hwy::AlignedFreeUniquePtr<int32_t[]> int32_memory_;
+  hwy::AlignedFreeUniquePtr<int16_t[]> int16_memory_;
+  size_t max_block_area_ = 0;
+};
 
 }  // namespace jxl
 

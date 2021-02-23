@@ -30,45 +30,22 @@ namespace jxl {
 // 4 * (sqrt(0.5)-1), so that Weight(sigma) = 0.5.
 static constexpr float kInvSigmaNum = -1.1715728752538099024f;
 
-// Mirror n floats starting at *p and store them before p.
-JXL_INLINE void LeftMirror(float* p, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    *(p - 1 - i) = p[i];
-  }
-}
-
-// Mirror n floats starting at *(p - n) and store them at *p.
-JXL_INLINE void RightMirror(float* p, size_t n) {
-  for (size_t i = 0; i < n; i++) {
-    p[i] = *(p - 1 - i);
-  }
-}
-
 // Fills the `state->filter_weights.sigma` image with the precomputed sigma
 // values in the area inside `block_rect`. Accesses the AC strategy, quant field
 // and epf_sharpness fields in the corresponding positions.
 void ComputeSigma(const Rect& block_rect, PassesDecoderState* state);
 
-// Applies gaborish + EPF to the given `rect` part of the input image `in`,
-// storing the result in the same `rect` rect of the output image and reading
-// sigma values from the corresponding `rect` portion (downsized by kBlockDim)
-// of `filter_weights.sigma`. `in` must be padded with kMaxFilterPadding worth
-// of mirrored data to the left and right, but no extra rows below or above.
-// `filter_weights.sigma` must be padded with kMaxFilterPadding/kBlockDim pixels
-// worth of data on each side. The `rect` should ignore this padding.
-void EdgePreservingFilter(const LoopFilter& lf,
-                          const FilterWeights& filter_weights, const Rect& rect,
-                          const Image3F& in, Image3F* JXL_RESTRICT out);
-
-// Same as EdgePreservingFilter, but only processes row `y` of
-// dec_state->decoded. If an output row was produced, it is returned in
-// `output_row`. `y` should be relative to `rect` (`output_row` will be too).
-// The first row in `rect` corresponds to a value of `y` of 0.
-// This function should be called for `rect.ysize() + 2 * lf.PaddingRows()`
-// values of `y`, in increasing order, starting from `y = -lf.PaddingRows()`.
-Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& rect,
-                           ssize_t y, size_t thread, Image3F* JXL_RESTRICT out,
-                           size_t* JXL_RESTRICT output_row);
+// Applies Gaborish + EPF to the given `image_rect` part of the image (used to
+// select the sigma values). Input pixels are taken from `input:input_rect`, and
+// the filtering result is written to `out:output_rect`. `dec_state->sigma` must
+// be padded with `kMaxFilterPadding/kBlockDim` values along the x axis.
+// All rects must be aligned to a multiple of `kBlockDim` pixels.
+// `input_rect`, `output_rect` and `image_rect` must all have the same size.
+// At least `lf.Padding()` pixels must be accessible (and contain valid values)
+// outside of `image_rect` in `input`.
+void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
+                  const Image3F& input, const Rect& input_rect, size_t thread,
+                  Image3F* JXL_RESTRICT out, const Rect& output_rect);
 
 }  // namespace jxl
 

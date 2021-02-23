@@ -53,7 +53,8 @@ typedef std::unique_ptr<JxlDecoder, JxlDecoderDestroyStruct> JxlDecoderPtr;
 /// @return a @c NULL JxlDecoderPtr if the instance can not be allocated or
 ///         initialized
 /// @return initialized JxlDecoderPtr instance otherwise.
-JxlDecoderPtr JxlDecoderMake(const JxlMemoryManager* memory_manager) {
+static inline JxlDecoderPtr JxlDecoderMake(
+    const JxlMemoryManager* memory_manager) {
   return JxlDecoderPtr(JxlDecoderCreate(memory_manager));
 }
 

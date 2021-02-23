@@ -203,21 +203,25 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   if (visitor->Conditional((flags & kUseDcFrame) == 0)) {
     JXL_QUIET_RETURN_IF_ERROR(
         visitor->U32(Val(1), Val(2), Val(4), Val(8), 1, &upsampling));
-    if (upsampling != 1 && (flags & Flags::kNoise)) {
-      return JXL_FAILURE(
-          "Upsampling and noise are not supported at the same time for now.");
-    }
-
     if (nonserialized_metadata != nullptr &&
         visitor->Conditional(num_extra_channels != 0)) {
       const std::vector<ExtraChannelInfo>& extra_channels =
           nonserialized_metadata->m.extra_channel_info;
       extra_channel_upsampling.resize(extra_channels.size(), 1);
-      for (uint32_t& ec_upsampling : extra_channel_upsampling) {
+      bool foundAlpha = false;
+      for (size_t i = 0; i < extra_channels.size(); ++i) {
+        uint32_t& ec_upsampling = extra_channel_upsampling[i];
         JXL_QUIET_RETURN_IF_ERROR(
             visitor->U32(Val(1), Val(2), Val(4), Val(8), 1, &ec_upsampling));
         if (ec_upsampling != 1) {
-          JXL_FAILURE("Upsampling for extra channels not yet implemented");
+          return JXL_FAILURE(
+              "Upsampling for extra channels not yet implemented");
+        }
+        if (!foundAlpha && extra_channels[i].type == ExtraChannel::kAlpha) {
+          foundAlpha = true;
+          if (ec_upsampling != upsampling) {
+            return JXL_FAILURE("Alpha upsampling != color upsampling");
+          }
         }
       }
     } else {

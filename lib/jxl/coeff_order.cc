@@ -77,9 +77,9 @@ uint32_t ComputeUsedOrders(const SpeedTier speed,
 
 void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                        const AcStrategyImage& ac_strategy,
-                       const FrameDimensions& frame_dim, uint32_t used_orders,
+                       const FrameDimensions& frame_dim, uint32_t& used_orders,
                        coeff_order_t* JXL_RESTRICT order) {
-  std::vector<int32_t> num_zeros(kCoeffOrderSize);
+  std::vector<int32_t> num_zeros(kCoeffOrderMaxSize);
   // If compressing at high speed and only using 8x8 DCTs, only consider a
   // subset of blocks.
   double block_fraction = 1.0f;
@@ -184,17 +184,19 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
     }
     const coeff_order_t* natural_coeff_order = acs.NaturalCoeffOrder();
 
+    bool is_nondefault = false;
     for (uint8_t c = 0; c < 3; c++) {
       // Apply zig-zag order.
       PosAndCount* pos_and_val = mem.get();
       size_t offset = CoeffOrderOffset(ord, c);
       JXL_DASSERT(CoeffOrderOffset(ord, c + 1) - offset == sz);
+      float inv_sqrt_sz = 1.0f / std::sqrt(sz);
       for (size_t i = 0; i < sz; ++i) {
         size_t pos = natural_coeff_order[i];
         pos_and_val[i].pos = pos;
         // We don't care for the exact number -> quantize number of zeros,
         // to get less permuted order.
-        pos_and_val[i].count = num_zeros[offset + pos] / std::sqrt(sz) + 0.1;
+        pos_and_val[i].count = num_zeros[offset + pos] * inv_sqrt_sz + 0.1f;
       }
 
       // Stable-sort -> elements with same number of zeros will preserve their
@@ -207,7 +209,11 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
       // Grab indices.
       for (size_t i = 0; i < sz; ++i) {
         order[offset + i] = pos_and_val[i].pos;
+        is_nondefault |= natural_coeff_order[i] != pos_and_val[i].pos;
       }
+    }
+    if (!is_nondefault) {
+      used_orders &= ~(1 << ord);
     }
   }
 }
@@ -348,8 +354,8 @@ Status DecodeCoeffOrder(AcStrategy acs, coeff_order_t* order, BitReader* br,
 
 }  // namespace
 
-Status DecodeCoeffOrders(uint16_t used_orders, coeff_order_t* order,
-                         BitReader* br) {
+Status DecodeCoeffOrders(uint16_t used_orders, uint32_t used_acs,
+                         coeff_order_t* order, BitReader* br) {
   uint16_t computed = 0;
   std::vector<uint8_t> context_map;
   ANSCode code;
@@ -360,14 +366,22 @@ Status DecodeCoeffOrders(uint16_t used_orders, coeff_order_t* order,
         DecodeHistograms(br, kPermutationContexts, &code, &context_map));
     reader = make_unique<ANSSymbolReader>(&code, br);
   }
+  uint32_t acs_mask = 0;
+  for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
+    if ((used_acs & (1 << o)) == 0) continue;
+    acs_mask |= 1 << kStrategyOrder[o];
+  }
   for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
     uint8_t ord = kStrategyOrder[o];
     if (computed & (1 << ord)) continue;
     computed |= 1 << ord;
     AcStrategy acs = AcStrategy::FromRawStrategy(o);
     if ((used_orders & (1 << ord)) == 0) {
-      for (size_t c = 0; c < 3; c++) {
-        SetDefaultOrder(acs, &order[CoeffOrderOffset(ord, c)]);
+      // No need to set the default order if no ACS uses this order.
+      if ((acs_mask & (1 << ord)) != 0) {
+        for (size_t c = 0; c < 3; c++) {
+          SetDefaultOrder(acs, &order[CoeffOrderOffset(ord, c)]);
+        }
       }
     } else {
       for (size_t c = 0; c < 3; c++) {

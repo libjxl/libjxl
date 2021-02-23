@@ -16,6 +16,7 @@
 #define LIB_JXL_JXL_INSPECTION_H_
 
 #include <functional>
+
 #include "lib/jxl/image.h"
 
 namespace jxl {

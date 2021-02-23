@@ -70,6 +70,10 @@ struct PassesSharedState {
   ImageFeatures image_features;
 
   // Memory area for storing coefficient orders.
+  // `coeff_order_size` is the size used by *one* set of coefficient orders (at
+  // most kMaxCoeffOrderSize). A set of coefficient orders is present for each
+  // pass.
+  size_t coeff_order_size = 0;
   std::vector<coeff_order_t> coeff_orders;
 
   // Decoder-side DC and quantized DC.

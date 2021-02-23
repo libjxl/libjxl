@@ -20,6 +20,7 @@ This tool keeps certain parts of the build files up to date.
 """
 
 import argparse
+import collections
 import locale
 import os
 import re
@@ -44,25 +45,51 @@ def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
       if fn.startswith(prefix) and any(fn.endswith(suf) for suf in suffixes)]
   return prefix_files
 
+# Type holding the different types of sources in libjxl:
+#   * decoder and common sources,
+#   * encoder-only sources,
+#   * tests-only sources,
+#   * google benchmark sources and
+#   * threads library sources.
+JxlSources = collections.namedtuple(
+    'JxlSources', ['dec', 'enc', 'test', 'gbench', 'threads'])
+
 def SplitLibFiles(repo_files):
-  """Splits the library files into decoder sources, encoder sources, tests and threads sources."""
-  testonly=('testdata.h', 'test_utils.h', '_test.h', '_test.cc')
+  """Splits the library files into the different groups.
+
+  """
+  testonly = ('testdata.h', 'test_utils.h', '_test.h', '_test.cc')
   main_srcs = GetPrefixLibFiles(repo_files, 'lib/jxl/')
   test_srcs = [fn for fn in main_srcs
                if any(patt in fn for patt in testonly)]
   lib_srcs = [fn for fn in main_srcs
-               if not any(patt in fn for patt in testonly)]
-  # TODO(lode): a list of more files, not all starting with enc, needs to be
-  # added to the enc sources as well
-  prefix_enc = 'lib/jxl/enc'
-  dec_srcs = [fn for fn in lib_srcs
-              if not fn.startswith(prefix_enc)]
+              if not any(patt in fn for patt in testonly)]
+
+  # Google benchmark sources.
+  gbench_srcs = [fn for fn in lib_srcs
+                 if fn.endswith('_gbench.cc')]
+  lib_srcs = [fn for fn in lib_srcs if fn not in gbench_srcs]
+
+  # TODO(lode): a list of more files, not all starting with enc_, needs to be
+  # added to the enc sources as well.
   enc_srcs = [fn for fn in lib_srcs
-              if fn.startswith(prefix_enc)]
+              if os.path.basename(fn).startswith('enc_')]
+  enc_srcs.extend([
+      "lib/jxl/encode.cc",
+      "lib/jxl/encode_internal.h",
+  ])
+  enc_srcs.sort()
+
+  enc_srcs_set = set(enc_srcs)
+  lib_srcs = [fn for fn in lib_srcs if fn not in enc_srcs_set]
+
+  # The remaining of the files are in the dec_library.
+  dec_srcs = lib_srcs
+
   thread_srcs = GetPrefixLibFiles(repo_files, 'lib/threads/')
   thread_srcs = [fn for fn in thread_srcs
-               if not any(patt in fn for patt in testonly)]
-  return dec_srcs, enc_srcs, test_srcs, thread_srcs
+                 if not any(patt in fn for patt in testonly)]
+  return JxlSources(dec_srcs, enc_srcs, test_srcs, gbench_srcs, thread_srcs)
 
 
 def CleanFile(args, filename, pattern_data_list):
@@ -122,13 +149,11 @@ def BuildCleaner(args):
   repo_files = RepoFiles(args.src_dir)
   ok = True
 
-  gni_patterns = []
-  jxl_cmake_patterns = []
-
   # jxl version
   with open(os.path.join(args.src_dir, 'lib/CMakeLists.txt'), 'r') as f:
     cmake_text = f.read()
 
+  gni_patterns = []
   for varname in ('JPEGXL_MAJOR_VERSION', 'JPEGXL_MINOR_VERSION',
                   'JPEGXL_PATCH_VERSION'):
     # Defined in CMakeLists.txt as "set(varname 1234)"
@@ -136,37 +161,60 @@ def BuildCleaner(args):
     version_value = match.group(1)
     gni_patterns.append((r'"' + varname + r'=([0-9]+)"', version_value))
 
-  jxl_src_dec, jxl_src_enc, jxl_tests, threads_src = SplitLibFiles(repo_files)
+  jxl_src = SplitLibFiles(repo_files)
 
   # libjxl
-  jxl_cmake_patterns.append((r'set\(JPEGXL_INTERNAL_SOURCES_DEC\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src_dec)))
-  jxl_cmake_patterns.append((r'set\(JPEGXL_INTERNAL_SOURCES_ENC\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src_enc)))
+  jxl_cmake_patterns = []
+  jxl_cmake_patterns.append(
+      (r'set\(JPEGXL_INTERNAL_SOURCES_DEC\n([^\)]+)\)',
+       ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.dec)))
+  jxl_cmake_patterns.append(
+      (r'set\(JPEGXL_INTERNAL_SOURCES_ENC\n([^\)]+)\)',
+       ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.enc)))
   ok = CleanFile(
       args, 'lib/jxl.cmake',
       jxl_cmake_patterns) and ok
 
+  ok = CleanFile(
+      args, 'lib/jxl_benchmark.cmake',
+      [(r'set\(JPEGXL_INTERNAL_SOURCES_GBENCH\n([^\)]+)\)',
+        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.gbench))]) and ok
+
   gni_patterns.append((
       r'libjxl_dec_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src_dec)))
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.dec)))
   gni_patterns.append((
       r'libjxl_enc_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src_enc)))
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.enc)))
+  gni_patterns.append((
+      r'libjxl_gbench_sources = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.gbench)))
   gni_patterns.append((
       r'libjxl_tests_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_tests
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.test
               if fn.endswith('_test.cc'))))
 
   # libjxl_threads
   ok = CleanFile(
       args, 'lib/jxl_threads.cmake',
       [(r'set\(JPEGXL_THREADS_SOURCES\n([^\)]+)\)',
-        ''.join('  %s\n' % fn[len('lib/'):] for fn in threads_src))]) and ok
+        ''.join('  %s\n' % fn[len('lib/'):] for fn in jxl_src.threads))]) and ok
 
   gni_patterns.append((
       r'libjxl_threads_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in threads_src)))
+      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.threads)))
+
+  # libjxl_profiler
+  profiler_srcs = [fn[len('lib/'):] for fn in repo_files
+                   if fn.startswith('lib/profiler')]
+  ok = CleanFile(
+      args, 'lib/jxl_profiler.cmake',
+      [(r'set\(JPEGXL_PROFILER_SOURCES\n([^\)]+)\)',
+        ''.join('  %s\n' % fn for fn in profiler_srcs))]) and ok
+
+  gni_patterns.append((
+      r'libjxl_profiler_sources = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn for fn in profiler_srcs)))
 
   # Update the list of tests.
   tests = [fn[len('lib/'):] for fn in repo_files

@@ -66,6 +66,8 @@ set(TOOL_BINARIES
 
 add_library(jxl_tool STATIC
   cmdline.cc
+  cpu/cpu.cc
+  cpu/os_specific.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_link_libraries(jxl_tool jxl-static)
@@ -202,6 +204,16 @@ if(${JPEGXL_ENABLE_BENCHMARK})
           PRIVATE ${WebP_STATIC_INCLUDE_DIRS})
       target_compile_options(benchmark_xl PRIVATE ${WebP_STATIC_CFLAGS_OTHER})
     endif()
+  endif()
+
+  pkg_check_modules(AVIF IMPORTED_TARGET libavif)
+  if(AVIF_FOUND)
+    target_sources(benchmark_xl PRIVATE
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_avif.cc"
+      "${CMAKE_CURRENT_LIST_DIR}/benchmark/benchmark_codec_avif.h"
+    )
+    target_compile_definitions(benchmark_xl PRIVATE -DBENCHMARK_AVIF)
+    target_link_libraries(benchmark_xl PkgConfig::AVIF)
   endif()
 endif()  # JPEGXL_ENABLE_BENCHMARK
 

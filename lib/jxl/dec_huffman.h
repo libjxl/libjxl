@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_HUFFMAN_DECODE_H_
-#define LIB_JXL_HUFFMAN_DECODE_H_
+#ifndef LIB_JXL_DEC_HUFFMAN_H_
+#define LIB_JXL_DEC_HUFFMAN_H_
 
 #include <memory>
 #include <vector>
@@ -38,4 +38,4 @@ struct HuffmanDecodingData {
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_HUFFMAN_DECODE_H_
+#endif  // LIB_JXL_DEC_HUFFMAN_H_

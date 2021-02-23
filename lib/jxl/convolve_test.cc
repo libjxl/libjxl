@@ -210,8 +210,8 @@ void BenchmarkConv(const char* caption, const Conv& conv,
     fprintf(stderr, "MeasureClosure failed.\n");
   }
   for (size_t i = 0; i < num_results; ++i) {
-    const double seconds =
-        static_cast<double>(results[i].ticks) / jxl::InvariantTicksPerSecond();
+    const double seconds = static_cast<double>(results[i].ticks) /
+                           hwy::platform::InvariantTicksPerSecond();
     printf("%12s: %7.2f MP/s (MAD=%4.2f%%)\n", caption,
            kDim * kDim * 1E-6 / seconds,
            static_cast<double>(results[i].variability) * 100.0);

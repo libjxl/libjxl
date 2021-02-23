@@ -113,7 +113,7 @@ class PaddedBytes {
   // Amortized constant complexity due to exponential growth.
   void push_back(uint8_t x) {
     if (size_ == capacity_) {
-      IncreaseCapacityTo(std::max<size_t>(3 * capacity_ / 2, 64));
+      IncreaseCapacityTo(capacity_ + 1);
       if (data() == nullptr) return;
     }
 
@@ -168,12 +168,9 @@ class PaddedBytes {
            reinterpret_cast<const uint8_t*>(other.data()) + other.size());
   }
 
-  // Exponential growth to avoid quadratic behaviour.
   void append(const uint8_t* begin, const uint8_t* end) {
-    if (size_ + (end - begin) >= capacity_) {
-      size_t new_capacity = std::max(size_ + (end - begin), 3 * capacity_ / 2);
-      new_capacity = std::max<size_t>(64, new_capacity);
-      IncreaseCapacityTo(new_capacity);
+    if (size_ + (end - begin) > capacity_) {
+      IncreaseCapacityTo(size_ + (end - begin));
       if (data() == nullptr) return;
     }
     size_t old_size = size();
@@ -189,6 +186,8 @@ class PaddedBytes {
 
   // Copies existing data to newly allocated "data_". If allocation fails,
   // data() == nullptr and size_ = capacity_ = 0.
+  // The new capacity will be at least 1.5 times the old capacity. This ensures
+  // that we avoid quadratic behaviour.
   void IncreaseCapacityTo(size_t capacity);
 
   size_t size_;

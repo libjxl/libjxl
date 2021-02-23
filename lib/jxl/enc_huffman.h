@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_HUFFMAN_ENCODE_H_
-#define LIB_JXL_HUFFMAN_ENCODE_H_
+#ifndef LIB_JXL_ENC_HUFFMAN_H_
+#define LIB_JXL_ENC_HUFFMAN_H_
 
 #include "lib/jxl/enc_bit_writer.h"
 
@@ -28,4 +28,4 @@ void BuildAndStoreHuffmanTree(const uint32_t* histogram, size_t length,
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_HUFFMAN_ENCODE_H_
+#endif  // LIB_JXL_ENC_HUFFMAN_H_

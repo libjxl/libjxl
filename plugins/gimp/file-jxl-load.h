@@ -25,4 +25,4 @@ Status LoadJpegXlImage(const gchar* filename, gint32* image_id);
 
 }
 
-#endif
+#endif  // PLUGINS_GIMP_FILE_JXL_LOAD_H_

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_UPSAMPLE_H_
-#define LIB_JXL_UPSAMPLE_H_
+#ifndef LIB_JXL_DEC_UPSAMPLE_H_
+#define LIB_JXL_DEC_UPSAMPLE_H_
 
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_metadata.h"
@@ -23,6 +23,8 @@ namespace jxl {
 struct Upsampler {
   void Init(size_t upsampling, const CustomTransformData& data);
 
+  // The caller must guarantee that `src:src_rect` has two pixels of padding
+  // available around all dimensions.
   void UpsampleRect(const Image3F& src, const Rect& src_rect, Image3F* dst,
                     const Rect& dst_rect) const;
 
@@ -33,4 +35,4 @@ struct Upsampler {
 
 }  // namespace jxl
 
-#endif
+#endif  // LIB_JXL_DEC_UPSAMPLE_H_

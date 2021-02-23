@@ -457,15 +457,16 @@ constexpr FilterDefinition kEpf1Filter{&Epf1Row, 2};
 constexpr FilterDefinition kEpf2Filter{&Epf2Row, 1};
 
 void FilterPipelineInit(FilterPipeline* fp, const LoopFilter& lf,
-                        const Image3F& in, Image3F* out) {
+                        const Image3F& in, const Rect& in_rect, Image3F* out,
+                        const Rect& out_rect) {
   JXL_DASSERT(lf.gab || lf.epf_iters > 0);
   // All EPF filters use sigma so we need to compute it.
   fp->compute_sigma = lf.epf_iters > 0;
 
   fp->num_filters = 0;
   fp->storage_rows_used = 0;
-  // First filter always uses the input image with a row_mod of 0.
-  fp->filters[0].SetInputFixedOffset<RowMapMirror, kMaxFilterPadding>(&in);
+  // First filter always uses the input image.
+  fp->filters[0].SetInput(&in, in_rect);
 
   if (lf.gab) {
     fp->AddStep<kGaborishFilter.border>(kGaborishFilter);
@@ -486,7 +487,7 @@ void FilterPipelineInit(FilterPipeline* fp, const LoopFilter& lf,
   JXL_DASSERT(fp->num_filters > 0);
 
   // Set the output of the last filter as the output image.
-  fp->filters[fp->num_filters - 1].SetOutput(out);
+  fp->filters[fp->num_filters - 1].SetOutput(out, out_rect);
 
   // Walk the list of filters backwards to compute how many rows are needed.
   size_t col_border = 0;
@@ -502,7 +503,7 @@ void FilterPipelineInit(FilterPipeline* fp, const LoopFilter& lf,
     col_border += fp->filters[i].filter_def.border;
   }
   fp->total_border = col_border;
-  JXL_ASSERT(fp->total_border == lf.PaddingRows());
+  JXL_ASSERT(fp->total_border == lf.Padding());
   JXL_ASSERT(fp->total_border <= kMaxFilterBorder);
 }
 
@@ -515,6 +516,20 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(FilterPipelineInit);  // Local function
+
+// Mirror n floats starting at *p and store them before p.
+JXL_INLINE void LeftMirror(float* p, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    *(p - 1 - i) = p[i];
+  }
+}
+
+// Mirror n floats starting at *(p - n) and store them at *p.
+JXL_INLINE void RightMirror(float* p, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    p[i] = *(p - 1 - i);
+  }
+}
 
 void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
   const LoopFilter& lf = state->shared->frame_header.loop_filter;
@@ -612,55 +627,22 @@ void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
   }
 }
 
-Status ApplyLoopFiltersRow(PassesDecoderState* dec_state, const Rect& rect,
-                           ssize_t y, size_t thread, Image3F* JXL_RESTRICT out,
-                           size_t* JXL_RESTRICT output_row) {
-  JXL_DASSERT(rect.x0() % kBlockDim == 0);
-  JXL_ASSERT(dec_state->decoded_padding == kMaxFilterPadding);
+void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
+                  const Image3F& input, const Rect& input_rect, size_t thread,
+                  Image3F* JXL_RESTRICT out, const Rect& output_rect) {
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
-  if (!lf.gab && lf.epf_iters == 0) {
-    if (y < 0 || y >= static_cast<ssize_t>(rect.ysize())) return false;
-    *output_row = y;
-    for (size_t c = 0; c < 3; c++) {
-      memcpy(rect.PlaneRow(out, c, y),
-             rect.ConstPlaneRow(dec_state->decoded, c, y) +
-                 dec_state->decoded_padding,
-             rect.xsize() * sizeof(float));
-    }
-    return *output_row < dec_state->shared->frame_dim.ysize;
-  }
-  // decoded.ysize() is used for mirroring of the input image last rows. This
-  // checks that the passed image is not padded beyond that.
-  JXL_DASSERT(dec_state->decoded.ysize() <=
-              dec_state->shared->frame_dim.ysize_padded);
-  JXL_DASSERT(rect.IsInside(dec_state->decoded));
-
-  // Lazy initialization of the FilterPipeline.
+  JXL_ASSERT(image_rect.x0() % kBlockDim == 0);
+  JXL_ASSERT(input_rect.x0() % kBlockDim == 0);
+  JXL_ASSERT(output_rect.x0() % kBlockDim == 0);
+  JXL_ASSERT(input_rect.x0() >= lf.Padding());
+  JXL_ASSERT(image_rect.xsize() == input_rect.xsize());
+  JXL_ASSERT(image_rect.xsize() == output_rect.xsize());
   FilterPipeline* fp = &(dec_state->filter_pipelines[thread]);
-  if (fp->num_filters == 0) {
-    HWY_DYNAMIC_DISPATCH(FilterPipelineInit)(fp, lf, dec_state->decoded, out);
-  }
-
-  bool ret =
-      fp->ApplyFiltersRow(lf, dec_state->filter_weights, rect, y, output_row);
-  JXL_DASSERT(!ret || *output_row < rect.ysize());
-  return ret;
-}
-
-void EdgePreservingFilter(const LoopFilter& lf,
-                          const FilterWeights& filter_weights, const Rect& rect,
-                          const Image3F& in, Image3F* JXL_RESTRICT out) {
-  FilterPipeline filter_pipeline(RoundUpTo(rect.xsize(), kBlockDim));
-  HWY_DYNAMIC_DISPATCH(FilterPipelineInit)(&filter_pipeline, lf, in, out);
-
-  const size_t ysize = rect.ysize();
-  for (ssize_t y = -static_cast<ssize_t>(lf.PaddingRows());
-       y < static_cast<ssize_t>(ysize + lf.PaddingRows()); y++) {
-    size_t output_row;
-    bool ret = filter_pipeline.ApplyFiltersRow(lf, filter_weights, rect, y,
-                                               &output_row);
-    (void)ret;  // Unused in coverage builds.
-    JXL_ASSERT(ret == (y >= static_cast<ssize_t>(lf.PaddingRows())));
+  HWY_DYNAMIC_DISPATCH(FilterPipelineInit)
+  (fp, lf, input, input_rect, out, output_rect);
+  for (ssize_t y = -lf.Padding();
+       y < static_cast<ssize_t>(lf.Padding() + image_rect.ysize()); y++) {
+    fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_rect, y);
   }
 }
 

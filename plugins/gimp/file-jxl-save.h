@@ -26,4 +26,4 @@ Status SaveJpegXlImage(gint32 image_id, gint32 drawable_id,
 
 }
 
-#endif
+#endif  // PLUGINS_GIMP_FILE_JXL_SAVE_H_

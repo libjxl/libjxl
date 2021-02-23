@@ -298,6 +298,7 @@ void FillImage(const T value, Plane<T>* image) {
 
 template <typename T>
 void ZeroFillImage(Plane<T>* image) {
+  if (image->xsize() == 0) return;
   for (size_t y = 0; y < image->ysize(); ++y) {
     T* const JXL_RESTRICT row = image->Row(y);
     memset(row, 0, image->xsize() * sizeof(T));
@@ -776,14 +777,6 @@ ImageF PadImage(const ImageF& in, size_t xsize, size_t ysize);
 // above and below, mirroring the image.
 Image3F PadImageMirror(const Image3F& in, size_t xborder, size_t yborder);
 
-// `img` is an image with `xpadding` undefined values at the beginning and at
-// the end of each row (of length `xsize`). If `rect` shares a border with the
-// padding, this function updates the `xborder` pixels in the padding in the
-// rows that share a border with the rec by mirroring. Otherwise, this function
-// does nothing.
-void PadRectMirrorInPlace(Image3F* img, const Rect& rect, size_t xsize,
-                          size_t xborder, size_t xpadding);
-
 // First, image is padded horizontally, with the rightmost value.
 // Next, image is padded vertically, by repeating the last line.
 // Prefer PadImageToBlockMultipleInPlace if padding to kBlockDim.
@@ -792,6 +785,9 @@ Image3F PadImageToMultiple(const Image3F& in, size_t N);
 // Same as above, but operates in-place. Assumes that the `in` image was
 // allocated large enough.
 void PadImageToBlockMultipleInPlace(Image3F* JXL_RESTRICT in);
+
+// Downsamples an image by a given factor.
+void DownsampleImage(Image3F* opsin, size_t factor);
 
 }  // namespace jxl
 

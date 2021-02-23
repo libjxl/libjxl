@@ -23,7 +23,6 @@
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
-#include "lib/jxl/base/os_specific.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/profiler.h"
@@ -34,6 +33,8 @@
 #include "tools/box/box.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
+#include "tools/cpu/cpu.h"
+#include "tools/cpu/os_specific.h"
 #include "tools/djxl.h"
 #include "tools/speed_stats.h"
 
@@ -41,7 +42,7 @@ namespace jpegxl {
 namespace tools {
 namespace {
 
-int DecompressMain(int argc, const char *argv[]) {
+int DecompressMain(int argc, const char* argv[]) {
   DecompressArgs args;
   CommandLineParser cmdline;
   args.AddCommandLineOptions(&cmdline);
@@ -100,11 +101,11 @@ int DecompressMain(int argc, const char *argv[]) {
     return 1;
   }
 
-  const std::vector<int> cpus = jxl::AvailableCPUs();
+  const std::vector<int> cpus = jpegxl::tools::cpu::AvailableCPUs();
   pool.RunOnEachThread([&cpus](const int task, const size_t thread) {
     // 1.1-1.2x speedup (36 cores) from pinning.
     if (thread < cpus.size()) {
-      if (!jxl::PinThreadToCPU(cpus[thread])) {
+      if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[thread])) {
         fprintf(stderr, "WARNING: failed to pin thread %zu.\n", thread);
       }
     }
@@ -133,7 +134,7 @@ int DecompressMain(int argc, const char *argv[]) {
   } else {
     jxl::CodecInOut io;
     auto assign = [](const uint8_t* bytes, size_t size,
-        jxl::PaddedBytes& target) {
+                     jxl::PaddedBytes& target) {
       target.assign(bytes, bytes + size);
     };
     if (container.exif_size) {
@@ -162,7 +163,7 @@ int DecompressMain(int argc, const char *argv[]) {
       }
     }
 
-    if (!WriteJxlOutput(args, args.file_out, io)) return 1;
+    if (!WriteJxlOutput(args, args.file_out, io, &pool)) return 1;
 
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
@@ -186,6 +187,6 @@ int DecompressMain(int argc, const char *argv[]) {
 }  // namespace tools
 }  // namespace jpegxl
 
-int main(int argc, const char *argv[]) {
+int main(int argc, const char* argv[]) {
   return jpegxl::tools::DecompressMain(argc, argv);
 }

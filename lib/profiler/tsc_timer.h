@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_BASE_TSC_TIMER_H_
-#define LIB_JXL_BASE_TSC_TIMER_H_
+#ifndef LIB_PROFILER_TSC_TIMER_H_
+#define LIB_PROFILER_TSC_TIMER_H_
 
 // High-resolution (~10 ns) timestamps, using fences to prevent reordering and
 // ensure exactly the desired regions are measured.
@@ -23,7 +23,7 @@
 #include <ctime>
 #include <hwy/cache_control.h>  // LoadFence
 
-#include "lib/jxl/base/arch_specific.h"
+#include "lib/jxl/base/arch_macros.h"  // for JXL_ARCH_*
 #include "lib/jxl/base/compiler_specific.h"
 
 namespace jxl {
@@ -139,4 +139,4 @@ static inline uint64_t TicksAfter() {
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_BASE_TSC_TIMER_H_
+#endif  // LIB_PROFILER_TSC_TIMER_H_

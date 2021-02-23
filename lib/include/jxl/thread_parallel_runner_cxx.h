@@ -59,10 +59,10 @@ typedef std::unique_ptr<void, JxlThreadParallelRunnerDestroyStruct>
 /// @return a @c NULL JxlThreadParallelRunnerPtr if the instance can not be
 /// allocated or initialized
 /// @return initialized JxlThreadParallelRunnerPtr instance otherwise.
-JxlThreadParallelRunnerPtr JxlThreadParallelRunnerMake(
+static inline JxlThreadParallelRunnerPtr JxlThreadParallelRunnerMake(
     const JxlMemoryManager* memory_manager, size_t num_worker_threads) {
   return JxlThreadParallelRunnerPtr(
       JxlThreadParallelRunnerCreate(memory_manager, num_worker_threads));
 }
 
-#endif /* JXL_THREAD_PARALLEL_RUNNER_H_ */
+#endif  // JXL_THREAD_PARALLEL_RUNNER_CXX_H_

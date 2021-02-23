@@ -25,6 +25,8 @@
 #include <cinttypes>  // PRIu64
 #include <new>
 
+#include <hwy/highway.h>
+
 #include "lib/jxl/base/robust_statistics.h"
 
 // Non-portable aspects:
@@ -43,12 +45,12 @@
 
 #define PROFILER_PRINT_OVERHEAD 0
 
-#include <hwy/highway.h>
+#if PROFILER_BUFFER
+
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-#if PROFILER_BUFFER
 // Overwrites `to` without loading it into cache (read-for-ownership).
 // Copies kCacheLineSize bytes from/to naturally aligned addresses.
 void StreamCacheLine(const Packet* JXL_RESTRICT from, Packet* JXL_RESTRICT to) {
@@ -71,12 +73,13 @@ void StreamCacheLine(const Packet* JXL_RESTRICT from, Packet* JXL_RESTRICT to) {
   Stream(v3, d, to64 + 3 * kLanes);
   JXL_COMPILER_FENCE;
 }
-#endif  // PROFILER_BUFFER
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
 HWY_AFTER_NAMESPACE();
+
+#endif  // PROFILER_BUFFER
 
 namespace jxl {
 namespace {
@@ -264,7 +267,7 @@ class Results {
 
  private:
 #if JXL_ARCH_X64
-  static bool SameOffset(const __m128i zone, const uintptr_t biased_offset) {
+  static bool SameOffset(const __m128i zone, const uint64_t biased_offset) {
     const uint64_t num_calls = _mm_cvtsi128_si64(zone);
     return (num_calls >> Accumulator::kNumCallBits) == biased_offset;
   }
@@ -275,7 +278,7 @@ class Results {
   // Uses a self-organizing list data structure, which avoids dynamic memory
   // allocations and is far faster than unordered_map. Loads, updates and
   // stores the entire Accumulator with vector instructions.
-  void UpdateOrAdd(const uintptr_t biased_offset, const uint64_t num_calls,
+  void UpdateOrAdd(const uint64_t biased_offset, const uint64_t num_calls,
                    const uint64_t duration) {
     JXL_ASSERT(biased_offset < (1ULL << Packet::kOffsetBits));
 
@@ -360,7 +363,7 @@ class Results {
   void MergeDuplicates() {
     const uintptr_t string_origin = StringOrigin();
     for (size_t i = 0; i < num_zones_; ++i) {
-      const uintptr_t biased_offset = zones_[i].BiasedOffset();
+      const uint64_t biased_offset = zones_[i].BiasedOffset();
       const char* name =
           reinterpret_cast<const char*>(string_origin + biased_offset);
       // Separate num_calls from biased_offset so we can add them together.
@@ -413,7 +416,7 @@ ThreadSpecific::ThreadSpecific(const char* zone_name)
   // overrun zones_[]. We also JXL_ASSERT(), but users often do not run debug
   // builds. Checking here on the cold path (only reached once per thread)
   // is cheap, but it only covers one zone.
-  const uintptr_t biased_offset =
+  const uint64_t biased_offset =
       reinterpret_cast<uintptr_t>(zone_name) - string_origin_;
   JXL_CHECK(biased_offset <= (1ULL << Packet::kOffsetBits));
 }

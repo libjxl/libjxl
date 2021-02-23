@@ -930,6 +930,7 @@ Status F16Coder::Read(BitReader* JXL_RESTRICT reader,
   // Subnormal or zero
   if (JXL_UNLIKELY(biased_exp == 0)) {
     *value = (1.0f / 16384) * (mantissa * (1.0f / 1024));
+    if (sign) *value = -*value;
     return true;
   }
 

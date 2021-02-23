@@ -25,6 +25,7 @@
 
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 
@@ -222,10 +223,10 @@ class Rect {
   Rect(const Rect&) = default;
   Rect& operator=(const Rect&) = default;
 
-  Rect Subrect(size_t xbegin, size_t ybegin, size_t xsize_max,
-               size_t ysize_max) {
-    return Rect(x0_ + xbegin, y0_ + ybegin, xsize_max, ysize_max, x0_ + xsize_,
-                y0_ + ysize_);
+  // Construct a subrect that resides in an image/plane/ImageBundle etc.
+  template <typename Image>
+  Rect Crop(const Image& image) const {
+    return Rect(x0_, y0_, xsize_, ysize_, image.xsize(), image.ysize());
   }
 
   template <typename T>

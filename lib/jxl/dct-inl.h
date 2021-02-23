@@ -285,19 +285,14 @@ struct IDCT1D<N, M, typename std::enable_if<(M > MaxLanes(FV<0>()))>::type> {
 // See also DCTSlow, ComputeDCT
 template <size_t N>
 struct ComputeTransposedScaledDCT {
-  // scratch_space must be aligned, and should have space for 2*N*N floats.
-  template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+  // scratch_space must be aligned, and should have space for N*N floats.
+  template <class From>
+  HWY_MAYBE_UNUSED void operator()(const From& from, float* JXL_RESTRICT to,
                                    float* JXL_RESTRICT scratch_space) {
-    // TODO(user): it is possible to avoid using temporary array,
-    // after generalizing "To" to be bi-directional; all sub-transforms could
-    // be performed "in-place".
     float* JXL_RESTRICT block = scratch_space;
-    // Vector size is capped to N, so this is aligned for all values of N.
-    float* JXL_RESTRICT transposed_block = scratch_space + N * N;
-    DCT1D<N, N>()(from, DCTTo(block, N));
-    Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(transposed_block, N));
-    DCT1D<N, N>()(DCTFrom(transposed_block, N), to);
+    DCT1D<N, N>()(from, DCTTo(to, N));
+    Transpose<N, N>::Run(DCTFrom(to, N), DCTTo(block, N));
+    DCT1D<N, N>()(DCTFrom(block, N), DCTTo(to, N));
   }
 };
 
@@ -308,43 +303,35 @@ struct ComputeTransposedScaledDCT {
 
 template <size_t N>
 struct ComputeTransposedScaledIDCT {
-  // scratch_space must be aligned, and should have space for 2*N*N floats.
-  template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+  // scratch_space must be aligned, and should have space for N*N floats.
+  template <class To>
+  HWY_MAYBE_UNUSED void operator()(float* JXL_RESTRICT from, const To& to,
                                    float* JXL_RESTRICT scratch_space) {
-    // TODO(user): it is possible to avoid using temporary array,
-    // after generalizing "To" to be bi-directional; all sub-transforms could
-    // be performed "in-place".
     float* JXL_RESTRICT block = scratch_space;
-    // Vector size is capped to N, so this is aligned for all values of N.
-    float* JXL_RESTRICT transposed_block = scratch_space + N * N;
-    IDCT1D<N, N>()(from, DCTTo(block, N));
-    Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(transposed_block, N));
-    IDCT1D<N, N>()(DCTFrom(transposed_block, N), to);
+    IDCT1D<N, N>()(DCTFrom(from, N), DCTTo(block, N));
+    Transpose<N, N>::Run(DCTFrom(block, N), DCTTo(from, N));
+    IDCT1D<N, N>()(DCTFrom(from, N), to);
   }
 };
 // Computes the non-transposed, scaled DCT of a block, that needs to be
 // HWY_ALIGN'ed. Used for rectangular blocks.
 template <size_t ROWS, size_t COLS>
 struct ComputeScaledDCT {
-  // scratch_space must be aligned, and should have space for 2*ROWS*COLS
+  // scratch_space must be aligned, and should have space for ROWS*COLS
   // floats.
-  template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+  template <class From>
+  HWY_MAYBE_UNUSED void operator()(const From& from, float* to,
                                    float* JXL_RESTRICT scratch_space) {
     float* JXL_RESTRICT block = scratch_space;
-    // Vector size is capped to ROWS or COLS, so this is aligned for all values
-    // of ROWS and COLS.
-    float* JXL_RESTRICT transposed_block = scratch_space + ROWS * COLS;
-    DCT1D<ROWS, COLS>()(from, DCTTo(block, COLS));
-    Transpose<ROWS, COLS>::Run(DCTFrom(block, COLS),
-                               DCTTo(transposed_block, ROWS));
-    // Reusing block to reduce stack usage.
     if (ROWS < COLS) {
-      DCT1D<COLS, ROWS>()(DCTFrom(transposed_block, ROWS), DCTTo(block, ROWS));
-      Transpose<COLS, ROWS>::Run(DCTFrom(block, ROWS), to);
+      DCT1D<ROWS, COLS>()(from, DCTTo(block, COLS));
+      Transpose<ROWS, COLS>::Run(DCTFrom(block, COLS), DCTTo(to, ROWS));
+      DCT1D<COLS, ROWS>()(DCTFrom(to, ROWS), DCTTo(block, ROWS));
+      Transpose<COLS, ROWS>::Run(DCTFrom(block, ROWS), DCTTo(to, COLS));
     } else {
-      DCT1D<COLS, ROWS>()(DCTFrom(transposed_block, ROWS), to);
+      DCT1D<ROWS, COLS>()(from, DCTTo(to, COLS));
+      Transpose<ROWS, COLS>::Run(DCTFrom(to, COLS), DCTTo(block, ROWS));
+      DCT1D<COLS, ROWS>()(DCTFrom(block, ROWS), DCTTo(to, ROWS));
     }
   }
 };
@@ -352,25 +339,23 @@ struct ComputeScaledDCT {
 // HWY_ALIGN'ed. Used for rectangular blocks.
 template <size_t ROWS, size_t COLS>
 struct ComputeScaledIDCT {
-  // scratch_space must be aligned, and should have space for 2*ROWS*COLS
+  // scratch_space must be aligned, and should have space for ROWS*COLS
   // floats.
-  template <class From, class To>
-  HWY_MAYBE_UNUSED void operator()(const From& from, const To& to,
+  template <class To>
+  HWY_MAYBE_UNUSED void operator()(float* JXL_RESTRICT from, const To& to,
                                    float* JXL_RESTRICT scratch_space) {
     float* JXL_RESTRICT block = scratch_space;
-    // Vector size is capped to ROWS or COLS, so this is aligned for all values
-    // of ROWS and COLS.
-    float* JXL_RESTRICT transposed_block = scratch_space + ROWS * COLS;
     // Reverse the steps done in ComputeScaledDCT.
     if (ROWS < COLS) {
-      Transpose<ROWS, COLS>::Run(from, DCTTo(block, ROWS));
-      IDCT1D<COLS, ROWS>()(DCTFrom(block, ROWS), DCTTo(transposed_block, ROWS));
+      Transpose<ROWS, COLS>::Run(DCTFrom(from, COLS), DCTTo(block, ROWS));
+      IDCT1D<COLS, ROWS>()(DCTFrom(block, ROWS), DCTTo(from, ROWS));
+      Transpose<COLS, ROWS>::Run(DCTFrom(from, ROWS), DCTTo(block, COLS));
+      IDCT1D<ROWS, COLS>()(DCTFrom(block, COLS), to);
     } else {
-      IDCT1D<COLS, ROWS>()(from, DCTTo(transposed_block, ROWS));
+      IDCT1D<COLS, ROWS>()(DCTFrom(from, ROWS), DCTTo(block, ROWS));
+      Transpose<COLS, ROWS>::Run(DCTFrom(block, ROWS), DCTTo(from, COLS));
+      IDCT1D<ROWS, COLS>()(DCTFrom(from, COLS), to);
     }
-    Transpose<COLS, ROWS>::Run(DCTFrom(transposed_block, ROWS),
-                               DCTTo(block, COLS));
-    IDCT1D<ROWS, COLS>()(DCTFrom(block, COLS), to);
   }
 };
 
