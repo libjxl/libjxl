@@ -367,10 +367,10 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
 
   Rect upsampled_output_rect = output_rect;
   EnsurePaddingRowByRow ensure_padding_upsampling;
-  const Image3F* upsampling_input;
+  const Image3F* upsampling_input = nullptr;
   Rect upsampling_input_rect;
-  ssize_t ensure_padding_upsampling_y0;
-  ssize_t ensure_padding_upsampling_y1;
+  ssize_t ensure_padding_upsampling_y0 = 0;
+  ssize_t ensure_padding_upsampling_y1 = 0;
   if (frame_header.upsampling != 1) {
     size_t xborder = kBlockDim;
     ensure_padding_upsampling.Init(
