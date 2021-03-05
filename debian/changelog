@@ -1,3 +1,16 @@
+jpeg-xl (0.3.3) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.3.3.
+  * Performance improvements for small images.
+  * Add a (flag-protected) non-high-precision mode with better speed.
+  * Significantly speed up the PQ EOTF.
+  * Allow optional HDR tone mapping in djxl (--tone_map, --display_nits).
+  * Change the behavior of djxl -j to make it consistent with cjxl (#153).
+  * Improve image quality.
+  * Improve EXIF handling.
+
+ -- Sami Boukortt <sboukortt@google.com>  Fri, 5 Mar 2021 19:15:26 +0100
+
 jpeg-xl (0.3.2) UNRELEASED; urgency=medium
 
   * Bump JPEG XL version to 0.3.2.
