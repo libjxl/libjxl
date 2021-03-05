@@ -36,6 +36,8 @@
 
 namespace jxl {
 
+constexpr int32_t kWPPropRange = 512;
+
 struct GroupHeader : public Fields {
   GroupHeader();
 
@@ -61,22 +63,11 @@ struct GroupHeader : public Fields {
   std::vector<Transform> transforms;
 };
 
-void PrintTree(const Tree &tree, const std::string &path);
-Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
-               const ModularOptions &options,
-               const std::vector<ModularMultiplierInfo> &multiplier_info = {},
-               StaticPropRange static_prop_range = {});
+FlatTree FilterTree(const Tree &global_tree,
+                    std::array<pixel_type, kNumStaticProperties> &static_props,
+                    size_t *num_props, bool *use_wp, bool *wp_only);
 
 // TODO(veluca): make cleaner interfaces.
-
-Status ModularGenericCompress(
-    Image &image, const ModularOptions &opts, BitWriter *writer,
-    AuxOut *aux_out = nullptr, size_t layer = 0, size_t group_id = 0,
-    // For gathering data for producing a global tree.
-    TreeSamples *tree_samples = nullptr, size_t *total_pixels = nullptr,
-    // For encoding with global tree.
-    const Tree *tree = nullptr, GroupHeader *header = nullptr,
-    std::vector<Token> *tokens = nullptr, size_t *widths = nullptr);
 
 // undo_transforms == N > 0: undo all transforms except the first N
 //                           (e.g. to represent YCbCr420 losslessly)

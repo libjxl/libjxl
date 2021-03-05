@@ -36,4 +36,24 @@ TEST(FiltersInternalTest, RowMapModTest) {
   EXPECT_EQ(2, m(-8));
 }
 
+// Test the implementation for mirroring of rows.
+TEST(FiltersInternalTest, RowMapMirrorTest) {
+  RowMapMirror m(10);  // Image size of 10 rows.
+
+  EXPECT_EQ(2, m(-3));
+  EXPECT_EQ(1, m(-2));
+  EXPECT_EQ(0, m(-1));
+
+  EXPECT_EQ(0, m(0));
+  EXPECT_EQ(9, m(9));
+
+  EXPECT_EQ(9, m(10));
+  EXPECT_EQ(8, m(11));
+  EXPECT_EQ(7, m(12));
+
+  // It mirrors the rows to infinity.
+  EXPECT_EQ(1, m(21));
+  EXPECT_EQ(1, m(41));
+}
+
 }  // namespace jxl

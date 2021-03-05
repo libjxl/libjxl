@@ -55,8 +55,9 @@ struct PlaneBase {
   void Swap(PlaneBase& other);
 
   // Useful for pre-allocating image with some padding for alignment purposes
-  // and later reporting the actual valid dimensions. Caller is responsible
-  // for ensuring xsize/ysize are <= the original dimensions.
+  // and later reporting the actual valid dimensions. May also be used to
+  // un-shrink the image. Caller is responsible for ensuring xsize/ysize are <=
+  // the original dimensions.
   void ShrinkTo(const size_t xsize, const size_t ysize) {
     JXL_CHECK(xsize <= orig_xsize_);
     JXL_CHECK(ysize <= orig_ysize_);
@@ -229,6 +230,14 @@ class Rect {
     return Rect(x0_, y0_, xsize_, ysize_, image.xsize(), image.ysize());
   }
 
+  // Returns a rect that only contains `num` lines with offset `y` from `y0()`.
+  Rect Lines(size_t y, size_t num) const {
+    JXL_DASSERT(y + num <= ysize_);
+    return Rect(x0_, y0_ + y, xsize_, num);
+  }
+
+  Rect Line(size_t y) const { return Lines(y, 1); }
+
   template <typename T>
   T* Row(Plane<T>* image, size_t y) const {
     return image->Row(y + y0_) + x0_;
@@ -372,6 +381,10 @@ class Image3 {
     }
   }
 
+  // Useful for pre-allocating image with some padding for alignment purposes
+  // and later reporting the actual valid dimensions. May also be used to
+  // un-shrink the image. Caller is responsible for ensuring xsize/ysize are <=
+  // the original dimensions.
   void ShrinkTo(const size_t xsize, const size_t ysize) {
     for (PlaneT& plane : planes_) {
       plane.ShrinkTo(xsize, ysize);

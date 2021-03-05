@@ -38,6 +38,7 @@
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_transforms-inl.h"
 #include "lib/jxl/entropy_coder.h"
+#include "lib/jxl/fast_math-inl.h"
 
 // This must come before the begin/end_target, but HWY_ONCE is only true
 // after that, so use an "include guard".
@@ -280,7 +281,7 @@ struct ACSConfig {
   }
   float Masking(size_t bx, size_t by) const {
     JXL_DASSERT(masking_field_row[by * masking_field_stride + bx] > 0);
-    return masking_field_row[by * quant_field_stride + bx];
+    return masking_field_row[by * masking_field_stride + bx];
   }
   float Quant(size_t bx, size_t by) const {
     JXL_DASSERT(quant_field_row[by * quant_field_stride + bx] > 0);
@@ -332,11 +333,13 @@ size_t ACSPossibleReplacements(AcStrategy::Type current,
   }
   if (current == AcStrategy::Type::DCT64X32 ||
       current == AcStrategy::Type::DCT32X64) {
-    return ACSCandidates({AcStrategy::Type::DCT32X32}, out);
+    return ACSCandidates({AcStrategy::Type::DCT32X32,  AcStrategy::Type::DCT16X16,
+         AcStrategy::Type::DCT}, out);
   }
   if (current == AcStrategy::Type::DCT32X32) {
     return ACSCandidates(
         {AcStrategy::Type::DCT32X16, AcStrategy::Type::DCT16X32, AcStrategy::Type::DCT16X16,
+         AcStrategy::Type::DCT16X8, AcStrategy::Type::DCT8X16,
          AcStrategy::Type::DCT}, out);
   }
   if (current == AcStrategy::Type::DCT32X16) {
@@ -405,33 +408,33 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
   float quant = 0;
+  float quant_norm8 = 0;
   float masking = 0;
   {
-    float masking_max = 0;
-    float masking_min = 0;
-    float masking_average = 0;
     float masking_norm2 = 0;
+    float masking_max = 0;
     // Load QF value, calculate empirical heuristic on masking field
     // for weighting the information loss. Information loss manifests
     // itself as ringing, and masking could hide it.
     for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
       for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
-        quant = std::max(quant, config.Quant(x / 8 + ix, y / 8 + iy));
+        float qval = config.Quant(x / 8 + ix, y / 8 + iy);
+        quant = std::max(quant, qval);
+        qval *= qval;
+        qval *= qval;
+        quant_norm8 += qval * qval;
         float maskval = config.Masking(x / 8 + ix, y / 8 + iy);
-        masking_max = std::max(masking_max, maskval);
-        masking_min = std::min(masking_min, maskval);
-        masking_average += maskval;
+        masking_max = std::max<float>(masking_max, maskval);
         masking_norm2 += maskval * maskval;
       }
     }
-    masking_average /= num_blocks;
+    quant_norm8 /= num_blocks;
+    quant_norm8 = FastPowf(quant_norm8, 1.0f / 8.0f);
     masking_norm2 = sqrt(masking_norm2 / num_blocks);
-    // This is a highly empirical formula. Using the min seemed important
-    // practically, but it is not clear why. Perhaps it is a complex proxy for how
-    // much ringing there will be.
-    masking = (masking_norm2 + 6 * masking_max - masking_average - 5 * masking_min);
+    // This is a highly empirical formula.
+    masking = (masking_norm2 + masking_max);
   }
-  const auto q = Set(df, quant);
+  const auto q = Set(df, quant_norm8);
 
   // Compute entropy.
   float entropy = config.base_entropy;
@@ -487,27 +490,27 @@ void InitEntropyAdjustTable(float* entropy_adjust) {
     entropy_adjust[2 * raw_strategy + 0] = add * mul;
     entropy_adjust[2 * raw_strategy + 1] = mul;
   };
-  set(AcStrategy::Type::DCT, 0.0f, 0.85f);
-  set(AcStrategy::Type::DCT4X4, 40.0f, 0.79f);
-  set(AcStrategy::Type::DCT2X2, 40.0f, 1.1f);
-  set(AcStrategy::Type::DCT16X16, 0.0f, 0.92);
-  set(AcStrategy::Type::DCT64X64, 0.0f, 1.0f);  // no change
-  set(AcStrategy::Type::DCT64X32, 0.0f, 0.95f);
-  set(AcStrategy::Type::DCT32X64, 0.0f, 0.95f);
-  set(AcStrategy::Type::DCT32X32, 0.0f, 0.89f);
-  set(AcStrategy::Type::DCT16X32, 0.0f, 0.945f);
-  set(AcStrategy::Type::DCT32X16, 0.0f, 0.945f);
+  set(AcStrategy::Type::DCT, 0.0f, 0.80f);
+  set(AcStrategy::Type::DCT4X4, 4.0f, 0.79f);
+  set(AcStrategy::Type::DCT2X2, 4.0f, 1.1f);
+  set(AcStrategy::Type::DCT16X16, 0.0f, 0.83f);
+  set(AcStrategy::Type::DCT64X64, 0.0f, 1.3f);
+  set(AcStrategy::Type::DCT64X32, 0.0f, 1.15f);
+  set(AcStrategy::Type::DCT32X64, 0.0f, 1.15f);
+  set(AcStrategy::Type::DCT32X32, 0.0f, 0.97f);
+  set(AcStrategy::Type::DCT16X32, 0.0f, 0.94f);
+  set(AcStrategy::Type::DCT32X16, 0.0f, 0.94f);
   set(AcStrategy::Type::DCT32X8, 0.0f, 2.261390410971102f);
   set(AcStrategy::Type::DCT8X32, 0.0f, 2.261390410971102f);
-  set(AcStrategy::Type::DCT16X8, 0.0f, 0.94f);
-  set(AcStrategy::Type::DCT8X16, 0.0f, 0.94f);
-  set(AcStrategy::Type::DCT4X8, 30.0f, 0.95f);
-  set(AcStrategy::Type::DCT8X4, 30.0f, 0.95f);
-  set(AcStrategy::Type::IDENTITY, 80.0f, 1.33f);
-  set(AcStrategy::Type::AFV0, 30.0f, 0.9);
-  set(AcStrategy::Type::AFV1, 30.0f, 0.9);
-  set(AcStrategy::Type::AFV2, 30.0f, 0.9);
-  set(AcStrategy::Type::AFV3, 30.0f, 0.9);
+  set(AcStrategy::Type::DCT16X8, 0.0f, 0.86f);
+  set(AcStrategy::Type::DCT8X16, 0.0f, 0.86f);
+  set(AcStrategy::Type::DCT4X8, 3.0f, 0.81f);
+  set(AcStrategy::Type::DCT8X4, 3.0f, 0.81f);
+  set(AcStrategy::Type::IDENTITY, 8.0f, 1.2f);
+  set(AcStrategy::Type::AFV0, 3.0f, 0.77f);
+  set(AcStrategy::Type::AFV1, 3.0f, 0.77f);
+  set(AcStrategy::Type::AFV2, 3.0f, 0.77f);
+  set(AcStrategy::Type::AFV3, 3.0f, 0.77f);
   set(AcStrategy::Type::DCT128X128, 0.0f, 1.0f);
   set(AcStrategy::Type::DCT128X64, 0.0f, 0.73f);
   set(AcStrategy::Type::DCT64X128, 0.0f, 0.73f);
@@ -535,9 +538,6 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
   constexpr size_t kFit64X64DctInBlocks = 64 * 64 / (8 * 8);
   float ee_val[AcStrategy::kNumValidStrategies][kFit64X64DctInBlocks];
   AcStrategy current_acs = AcStrategy::FromRawStrategy(current);
-  if (current == AcStrategy::Type::DCT64X64) {
-    best_ee *= 1.0;
-  }
   for (size_t cand = 0; cand < num_candidates; cand++) {
     AcStrategy acs = AcStrategy::FromRawStrategy(candidates[cand]);
     size_t idx = 0;
@@ -657,29 +657,29 @@ void FindBestAcStrategy(const Image3F& src,
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
   // TODO(jyrki): better choice of constants/parameterization.
-  config.info_loss_multiplier = 28.0;
-  config.base_entropy = 300.0;
-  config.zeros_mul = 0.1;  // Possibly a bigger value would work better.
+  config.info_loss_multiplier = 39.2;
+  config.base_entropy = 30.0;
+  config.zeros_mul = 0.3;  // Possibly a bigger value would work better.
   if (butteraugli_target < 2) {
-    config.cost1 = 21.467536133280064f;
-    config.cost2 = 45.233239814548617f;
-    config.cost_delta = 27.192877948074784f;
+    config.cost1 = 2.1467536133280064f;
+    config.cost2 = 4.5233239814548617f;
+    config.cost_delta = 2.7192877948074784f;
   } else if (butteraugli_target < 4) {
-    config.cost1 = 33.478899662356103f;
-    config.cost2 = 32.493410394508086f;
-    config.cost_delta = 29.192251887428096f;
+    config.cost1 = 3.3478899662356103f;
+    config.cost2 = 3.2493410394508086f;
+    config.cost_delta = 2.9192251887428096f;
   } else if (butteraugli_target < 8) {
-    config.cost1 = 39.758237938237959f;
-    config.cost2 = 12.423859153559777f;
-    config.cost_delta = 31.181324266623122f;
+    config.cost1 = 3.9758237938237959f;
+    config.cost2 = 1.2423859153559777f;
+    config.cost_delta = 3.1181324266623122f;
   } else if (butteraugli_target < 16) {
-    config.cost1 = 25;
-    config.cost2 = 22.630019747782897f;
-    config.cost_delta = 38.409539247825222f;
+    config.cost1 = 2.5;
+    config.cost2 = 2.2630019747782897f;
+    config.cost_delta = 3.8409539247825222f;
   } else {
-    config.cost1 = 15;
-    config.cost2 = 26.952503610099059f;
-    config.cost_delta = 43.16274170126156f;
+    config.cost1 = 1.5;
+    config.cost2 = 2.6952503610099059f;
+    config.cost_delta = 4.316274170126156f;
   }
   size_t xsize64 = DivCeil(xsize_blocks, 8);
   size_t ysize64 = DivCeil(ysize_blocks, 8);
@@ -842,6 +842,7 @@ void FindBestAcStrategy(const Image3F& src,
             entropy =
                 EstimateEntropy(acs, bx * 64 + ix * 8, by * 64 + iy * 8, config,
                                 cmap_factors, block, scratch_space, quantized);
+            entropy *= entropy_adjust[i * 2 + 1];
           }
           // In modes faster than Hare mode, we don't use InitialQuantField -
           // hence, we need to come up with quant field values.

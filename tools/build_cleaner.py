@@ -60,20 +60,22 @@ def SplitLibFiles(repo_files):
   """
   testonly = ('testdata.h', 'test_utils.h', '_test.h', '_test.cc')
   main_srcs = GetPrefixLibFiles(repo_files, 'lib/jxl/')
+  extras_srcs = GetPrefixLibFiles(repo_files, 'lib/extras/')
   test_srcs = [fn for fn in main_srcs
                if any(patt in fn for patt in testonly)]
   lib_srcs = [fn for fn in main_srcs
               if not any(patt in fn for patt in testonly)]
 
   # Google benchmark sources.
-  gbench_srcs = [fn for fn in lib_srcs
-                 if fn.endswith('_gbench.cc')]
+  gbench_srcs = sorted(fn for fn in lib_srcs + extras_srcs
+                       if fn.endswith('_gbench.cc'))
   lib_srcs = [fn for fn in lib_srcs if fn not in gbench_srcs]
 
   # TODO(lode): a list of more files, not all starting with enc_, needs to be
   # added to the enc sources as well.
   enc_srcs = [fn for fn in lib_srcs
-              if os.path.basename(fn).startswith('enc_')]
+              if os.path.basename(fn).startswith('enc_') or
+                 os.path.basename(fn).startswith('butteraugli')]
   enc_srcs.extend([
       "lib/jxl/encode.cc",
       "lib/jxl/encode_internal.h",

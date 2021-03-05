@@ -28,7 +28,8 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/external_image.h"
+#include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/fields.h"  // AllDefault
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -258,13 +259,13 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
   const bool has_alpha = false;
   const bool flipped_y = false;
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
-  JXL_RETURN_IF_ERROR(
-      ConvertImage(span, header.xsize, header.ysize,
-                   io->metadata.m.color_encoding, has_alpha,
-                   /*alpha_is_premultiplied=*/false,
-                   io->metadata.m.bit_depth.bits_per_sample,
-                   header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN,
-                   flipped_y, pool, &ib));
+  JXL_RETURN_IF_ERROR(ConvertFromExternal(
+      span, header.xsize, header.ysize, io->metadata.m.color_encoding,
+      has_alpha,
+      /*alpha_is_premultiplied=*/false,
+      io->metadata.m.bit_depth.bits_per_sample,
+      header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN, flipped_y, pool,
+      &ib));
   io->frames.push_back(std::move(ib));
   SetIntensityTarget(io);
   return true;
@@ -292,11 +293,11 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   PaddedBytes pixels(ib.xsize() * ib.ysize() *
                      (bits_per_sample / kBitsPerByte));
   size_t stride = ib.xsize() * (bits_per_sample / kBitsPerByte);
-  JXL_RETURN_IF_ERROR(ConvertImage(*transformed, bits_per_sample,
-                                   /*float_out=*/false, /*apply_srgb_tf=*/false,
-                                   /*num_channels=*/1, JXL_BIG_ENDIAN, stride,
-                                   pool, pixels.data(), pixels.size(),
-                                   jxl::Orientation::kIdentity));
+  JXL_RETURN_IF_ERROR(ConvertToExternal(
+      *transformed, bits_per_sample,
+      /*float_out=*/false, /*apply_srgb_tf=*/false,
+      /*num_channels=*/1, JXL_BIG_ENDIAN, stride, pool, pixels.data(),
+      pixels.size(), metadata.GetOrientation()));
 
   char header[kMaxHeaderSize];
   int header_size = 0;

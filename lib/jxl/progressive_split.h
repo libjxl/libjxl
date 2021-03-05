@@ -33,7 +33,6 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/splines.h"
 
 // Functions to split DCT coefficients in multiple passes. All the passes of a

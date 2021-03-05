@@ -57,6 +57,10 @@ constexpr unsigned char kICCSignature[12] = {
 constexpr int kICCMarker = JPEG_APP0 + 2;
 constexpr size_t kMaxBytesInMarker = 65533;
 
+constexpr unsigned char kExifSignature[6] = {0x45, 0x78, 0x69,
+                                             0x66, 0x00, 0x00};
+constexpr int kExifMarker = JPEG_APP0 + 1;
+
 constexpr float kJPEGSampleMin = 0;
 constexpr float kJPEGSampleMax = MAXJSAMPLE;
 
@@ -64,6 +68,12 @@ bool MarkerIsICC(const jpeg_saved_marker_ptr marker) {
   return marker->marker == kICCMarker &&
          marker->data_length >= sizeof kICCSignature + 2 &&
          std::equal(std::begin(kICCSignature), std::end(kICCSignature),
+                    marker->data);
+}
+bool MarkerIsExif(const jpeg_saved_marker_ptr marker) {
+  return marker->marker == kExifMarker &&
+         marker->data_length >= sizeof kExifSignature + 2 &&
+         std::equal(std::begin(kExifSignature), std::end(kExifSignature),
                     marker->data);
 }
 
@@ -147,6 +157,74 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
   return true;
 }
 
+Status ReadExif(jpeg_decompress_struct* const cinfo, PaddedBytes* const exif) {
+  constexpr size_t kExifSignatureSize = sizeof kExifSignature;
+  for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
+       marker = marker->next) {
+#ifdef MEMORY_SANITIZER
+    // marker is initialized by libjpeg, which we are not instrumenting with
+    // msan.
+    __msan_unpoison(marker, sizeof(*marker));
+    __msan_unpoison(marker->data, marker->data_length);
+#endif
+    if (!MarkerIsExif(marker)) continue;
+    size_t marker_length = marker->data_length - kExifSignatureSize;
+    exif->resize(marker_length + 4);
+    // spec requires Exif box to start with uint32 tiff header offset, which is
+    // 0
+    memset(exif->data(), 0, 4);
+    std::copy_n(marker->data + kExifSignatureSize, marker_length,
+                exif->data() + 4);
+    return true;
+  }
+  return false;
+}
+
+// TODO (jon): take orientation into account when writing jpeg output
+// TODO (jon): write Exif blob also in sjpeg encoding
+// TODO (jon): overwrite orientation in Exif blob to avoid double orientation
+
+// Parses the Exif data just enough to extract the Orientation tag.
+// If the Exif data is invalid or could not be parsed, then orientation 1
+// (Identity) is returned.
+uint32_t GetExifOrientation(const PaddedBytes& exif) {
+  if (exif.size() < 12) return 1;  // not enough bytes for a valid exif blob
+  const uint8_t* t = exif.data();
+  if (LoadLE32(t) != 0) {
+    return 1;  // tiff offset should be zero
+  }
+  t += 4;
+  bool bigendian = false;
+  if (LoadLE32(t) == 0x2A004D4D) {
+    bigendian = true;
+  } else if (LoadLE32(t) != 0x002A4949) {
+    return 1;  // not a valid tiff header
+  }
+  t += 4;
+  uint32_t offset = (bigendian ? LoadBE32(t) : LoadLE32(t));
+  if (exif.size() < 12 + offset + 2 || offset < 8) return 1;
+  t += offset - 4;
+  uint32_t nb_tags = (bigendian ? LoadBE16(t) : LoadLE16(t));
+  t += 2;
+  while (nb_tags > 0) {
+    if (t + 12 >= exif.data() + exif.size()) return 1;
+    uint32_t tag = (bigendian ? LoadBE16(t) : LoadLE16(t));
+    t += 2;
+    uint32_t type = (bigendian ? LoadBE16(t) : LoadLE16(t));
+    t += 2;
+    uint32_t count = (bigendian ? LoadBE32(t) : LoadLE32(t));
+    t += 4;
+    uint32_t value = (bigendian ? LoadBE16(t) : LoadLE16(t));
+    t += 4;
+    if (tag == 274) {
+      // that's the orientation tag
+      if (type == 3 && count == 1) return value;
+    }
+    nb_tags--;
+  }
+  return 1;
+}
+
 void WriteICCProfile(jpeg_compress_struct* const cinfo,
                      const PaddedBytes& icc) {
   constexpr size_t kMaxIccBytesInMarker =
@@ -168,6 +246,18 @@ void WriteICCProfile(jpeg_compress_struct* const cinfo,
       jpeg_write_m_byte(cinfo, icc[begin]);
       ++begin;
     }
+  }
+}
+void WriteExif(jpeg_compress_struct* const cinfo, const PaddedBytes& exif) {
+  if (exif.size() < 4) return;
+  jpeg_write_m_header(
+      cinfo, kExifMarker,
+      static_cast<unsigned int>(exif.size() - 4 + sizeof kExifSignature));
+  for (const unsigned char c : kExifSignature) {
+    jpeg_write_m_byte(cinfo, c);
+  }
+  for (size_t i = 4; i < exif.size(); ++i) {
+    jpeg_write_m_byte(cinfo, exif[i]);
   }
 }
 
@@ -245,6 +335,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     jpeg_mem_src(&cinfo, reinterpret_cast<const unsigned char*>(bytes.data()),
                  bytes.size());
     jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
+    jpeg_save_markers(&cinfo, kExifMarker, 0xFFFF);
     jpeg_read_header(&cinfo, TRUE);
     if (!VerifyDimensions(&io->constraints, cinfo.image_width,
                           cinfo.image_height)) {
@@ -260,6 +351,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
       }
     } else {
       color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
+    }
+    if (ReadExif(&cinfo, &io->blobs.exif)) {
+      io->metadata.m.orientation = GetExifOrientation(io->blobs.exif);
     }
     io->metadata.m.SetUintSamples(BITS_IN_JSAMPLE);
     io->metadata.m.color_encoding = color_encoding;
@@ -313,7 +407,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   return try_catch_block();
 }
 
-Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
+Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
+                         size_t quality,
                          YCbCrChromaSubsampling chroma_subsampling,
                          PaddedBytes* bytes) {
   jpeg_compress_struct cinfo;
@@ -347,6 +442,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, size_t quality,
   if (!ib->IsSRGB()) {
     WriteICCProfile(&cinfo, ib->c_current().ICC());
   }
+  WriteExif(&cinfo, io->blobs.exif);
   if (cinfo.input_components > 3 || cinfo.input_components < 0)
     return JXL_FAILURE("invalid numbers of components");
 
@@ -452,7 +548,7 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   switch (encoder) {
     case JpegEncoder::kLibJpeg:
       JXL_RETURN_IF_ERROR(
-          EncodeWithLibJpeg(ib, quality, chroma_subsampling, bytes));
+          EncodeWithLibJpeg(ib, io, quality, chroma_subsampling, bytes));
       break;
     case JpegEncoder::kSJpeg:
       JXL_RETURN_IF_ERROR(

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_EXTERNAL_IMAGE_H_
-#define LIB_JXL_EXTERNAL_IMAGE_H_
+#ifndef LIB_JXL_DEC_EXTERNAL_IMAGE_H_
+#define LIB_JXL_DEC_EXTERNAL_IMAGE_H_
 
 // Interleaved image for color transforms and Codec.
 
@@ -21,25 +21,12 @@
 #include <stdint.h>
 
 #include "jxl/types.h"
-#include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 
 namespace jxl {
-
-constexpr size_t RowSize(size_t xsize, size_t channels,
-                         size_t bits_per_sample) {
-  return bits_per_sample == 1
-             ? DivCeil(xsize, kBitsPerByte)
-             : xsize * channels * DivCeil(bits_per_sample, kBitsPerByte);
-}
-
-void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
-                         size_t color_channels);
 
 // Converts ib to interleaved void* pixel buffer with the given format.
 // bits_per_sample: must be 8, 16 or 32, and must be 32 if float_out
@@ -56,19 +43,13 @@ void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
 // undo_orientation is an EXIF orientation to undo. Depending on the
 // orientation, the output xsize and ysize are swapped compared to input
 // xsize and ysize.
-Status ConvertImage(const jxl::ImageBundle& ib, size_t bits_per_sample,
-                    bool float_out, bool apply_srgb_tf, size_t num_channels,
-                    JxlEndianness endianness, size_t stride_out,
-                    jxl::ThreadPool* thread_pool, void* out_image,
-                    size_t out_size, jxl::Orientation undo_orientation);
-
-// Does the inverse conversion, from an interleaved pixel buffer to ib.
-Status ConvertImage(Span<const uint8_t> bytes, size_t xsize, size_t ysize,
-                    const ColorEncoding& c_current, bool has_alpha,
-                    bool alpha_is_premultiplied, size_t bits_per_sample,
-                    JxlEndianness endianness, bool flipped_y, ThreadPool* pool,
-                    ImageBundle* ib);
+Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
+                         bool float_out, bool apply_srgb_tf,
+                         size_t num_channels, JxlEndianness endianness,
+                         size_t stride_out, jxl::ThreadPool* thread_pool,
+                         void* out_image, size_t out_size,
+                         jxl::Orientation undo_orientation);
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_EXTERNAL_IMAGE_H_
+#endif  // LIB_JXL_DEC_EXTERNAL_IMAGE_H_

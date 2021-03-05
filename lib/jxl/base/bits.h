@@ -20,7 +20,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 
-#ifdef _MSC_VER
+#if HWY_COMPILER_MSVC
 #include <intrin.h>
 #endif
 
@@ -68,7 +68,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED size_t PopCount(T x) {
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsAboveMS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
   JXL_DASSERT(x != 0);
-#ifdef _MSC_VER
+#if HWY_COMPILER_MSVC
   unsigned long index;
   _BitScanReverse(&index, x);
   return 31 - index;
@@ -79,12 +79,13 @@ Num0BitsAboveMS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsAboveMS1Bit_Nonzero(SizeTag<8> /* tag */, const uint64_t x) {
   JXL_DASSERT(x != 0);
-#ifdef _MSC_VER
-#ifdef HWY_ARCH_X86_64
+#if HWY_COMPILER_MSVC
+#if HWY_ARCH_X86_64
   unsigned long index;
   _BitScanReverse64(&index, x);
   return 63 - index;
 #else  // HWY_ARCH_X86_64
+  // _BitScanReverse64 not available
   uint32_t msb = static_cast<uint32_t>(x >> 32u);
   unsigned long index;
   if (msb == 0) {
@@ -111,7 +112,7 @@ Num0BitsAboveMS1Bit_Nonzero(const T x) {
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsBelowLS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
   JXL_DASSERT(x != 0);
-#ifdef _MSC_VER
+#if HWY_COMPILER_MSVC
   unsigned long index;
   _BitScanForward(&index, x);
   return index;
@@ -122,10 +123,24 @@ Num0BitsBelowLS1Bit_Nonzero(SizeTag<4> /* tag */, const uint32_t x) {
 static JXL_INLINE JXL_MAYBE_UNUSED size_t
 Num0BitsBelowLS1Bit_Nonzero(SizeTag<8> /* tag */, const uint64_t x) {
   JXL_DASSERT(x != 0);
-#ifdef _MSC_VER
+#if HWY_COMPILER_MSVC
+#if HWY_ARCH_X86_64
   unsigned long index;
   _BitScanForward64(&index, x);
   return index;
+#else  // HWY_ARCH_X86_64
+  // _BitScanForward64 not available
+  uint32_t lsb = static_cast<uint32_t>(x & 0xFFFFFFFF);
+  unsigned long index;
+  if (lsb == 0) {
+    uint32_t msb = static_cast<uint32_t>(x >> 32u);
+    _BitScanForward(&index, msb);
+    return 32 + index;
+  } else {
+    _BitScanForward(&index, lsb);
+    return index;
+  }
+#endif  // HWY_ARCH_X86_64
 #else
   return static_cast<size_t>(__builtin_ctzll(x));
 #endif

@@ -131,6 +131,30 @@ class TF_PQ {
     return std::copysign(d, original_sign);
   }
 
+  // Maximum error 3e-6
+  template <class D, class V>
+  JXL_INLINE V DisplayFromEncoded(D d, V x) const {
+    const hwy::HWY_NAMESPACE::Rebind<uint32_t, D> du;
+    const V kSign = BitCast(d, Set(du, 0x80000000u));
+    const V original_sign = And(x, kSign);
+    x = AndNot(kSign, x);  // abs
+    // 4-over-4-degree rational polynomial approximation on x+x*x. This improves
+    // the maximum error by about 5x over a rational polynomial for x.
+    auto xpxx = MulAdd(x, x, x);
+    HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
+        HWY_REP4(2.62975656e-04f), HWY_REP4(-6.23553089e-03f),
+        HWY_REP4(7.38602301e-01f), HWY_REP4(2.64553172e+00f),
+        HWY_REP4(5.50034862e-01f),
+    };
+    HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
+        HWY_REP4(4.21350107e+02f), HWY_REP4(-4.28736818e+02f),
+        HWY_REP4(1.74364667e+02f), HWY_REP4(-3.39078883e+01f),
+        HWY_REP4(2.67718770e+00f),
+    };
+    auto magnitude = EvalRationalPolynomial(d, xpxx, p, q);
+    return Or(AndNot(kSign, magnitude), original_sign);
+  }
+
   // Inverse EOTF. d = display.
   JXL_INLINE double EncodedFromDisplay(double d) const {
     if (d == 0.0) return 0.0;
@@ -143,6 +167,44 @@ class TF_PQ {
     const double e = std::pow(num / den, kM2);
     JXL_DASSERT(e > 0.0);
     return std::copysign(e, original_sign);
+  }
+
+  // Maximum error 7e-7.
+  template <class D, class V>
+  JXL_INLINE V EncodedFromDisplay(D d, V x) const {
+    const hwy::HWY_NAMESPACE::Rebind<uint32_t, D> du;
+    const V kSign = BitCast(d, Set(du, 0x80000000u));
+    const V original_sign = And(x, kSign);
+    x = AndNot(kSign, x);  // abs
+    // 4-over-4-degree rational polynomial approximation on x**0.25, with two
+    // different polynomials above and below 1e-4.
+    auto xto025 = Sqrt(Sqrt(x));
+    HWY_ALIGN constexpr float p[(4 + 1) * 4] = {
+        HWY_REP4(1.351392e-02f), HWY_REP4(-1.095778e+00f),
+        HWY_REP4(5.522776e+01f), HWY_REP4(1.492516e+02f),
+        HWY_REP4(4.838434e+01f),
+    };
+    HWY_ALIGN constexpr float q[(4 + 1) * 4] = {
+        HWY_REP4(1.012416e+00f), HWY_REP4(2.016708e+01f),
+        HWY_REP4(9.263710e+01f), HWY_REP4(1.120607e+02f),
+        HWY_REP4(2.590418e+01f),
+    };
+
+    HWY_ALIGN constexpr float plo[(4 + 1) * 4] = {
+        HWY_REP4(9.863406e-06f),  HWY_REP4(3.881234e-01f),
+        HWY_REP4(1.352821e+02f),  HWY_REP4(6.889862e+04f),
+        HWY_REP4(-2.864824e+05f),
+    };
+    HWY_ALIGN constexpr float qlo[(4 + 1) * 4] = {
+        HWY_REP4(3.371868e+01f),  HWY_REP4(1.477719e+03f),
+        HWY_REP4(1.608477e+04f),  HWY_REP4(-4.389884e+04f),
+        HWY_REP4(-2.072546e+05f),
+    };
+
+    auto magnitude = IfThenElse(x < Set(d, 1e-4f),
+                                EvalRationalPolynomial(d, xto025, plo, qlo),
+                                EvalRationalPolynomial(d, xto025, p, q));
+    return Or(AndNot(kSign, magnitude), original_sign);
   }
 
  private:
@@ -189,6 +251,7 @@ class TF_SRGB {
     return Or(AndNot(kSign, magnitude), original_sign);
   }
 
+  // Error ~5e-07
   template <class D, class V>
   JXL_INLINE V EncodedFromDisplay(D d, V x) const {
     const hwy::HWY_NAMESPACE::Rebind<uint32_t, D> du;
@@ -226,6 +289,72 @@ class TF_SRGB {
   static constexpr float kLowDiv = 12.92f;
   static constexpr float kLowDivInv = 1.0f / kLowDiv;
 };
+
+// Linear to sRGB conversion with error of at most 1.2e-4.
+template <typename D, typename V>
+V FastLinearToSRGB(D d, V v) {
+  const hwy::HWY_NAMESPACE::Rebind<uint32_t, D> du;
+  const hwy::HWY_NAMESPACE::Rebind<int32_t, D> di;
+  // Convert to 0.25 - 0.5 range.
+  auto v025_05 =
+      BitCast(d, (BitCast(du, v) | Set(du, 0x3e800000)) & Set(du, 0x3effffff));
+  // third degree polynomial approximation between 0.25 and 0.5
+  // of 1.055/2^(7/2.4) * x^(1/2.4) * 0.5. A degree 4 polynomial only improves
+  // accuracy by about 3x.
+  auto d1 = MulAdd(v025_05, Set(d, 0.059914046f), Set(d, -0.108894556f));
+  auto d2 = MulAdd(d1, v025_05, Set(d, 0.107963754f));
+  auto pow = MulAdd(d2, v025_05, Set(d, 0.018092343f));
+  // Compute extra multiplier depending on exponent. Valid exponent range for
+  // [0.0031308f, 1.0) is 0...8 after subtracting 118.
+  // The next three constants contain a representation of the powers of
+  // 2**(1/2.4) = 2**(5/12) times two; in particular, bits from 26 to 31 are
+  // always the same and in k2to512powers_basebits, and the two arrays contain
+  // the next groups of 8 bits. This ends up being a 22-bit representation (with
+  // a mantissa of 13 bits). The choice of polynomial to approximate is such
+  // that the multiplication factor has the highest 5 bits constant, and that
+  // the factor for the lowest possible exponent is a power of two (thus making
+  // the additional bits 0, which is used to correctly merge back together the
+  // floats).
+  constexpr uint32_t k2to512powers_basebits = 0x40000000;
+  HWY_ALIGN constexpr uint8_t k2to512powers_25to18bits[16] = {
+      0x0,  0xa,  0x19, 0x26, 0x32, 0x41, 0x4d, 0x5c,
+      0x68, 0x75, 0x83, 0x8f, 0xa0, 0xaa, 0xb9, 0xc6,
+  };
+  HWY_ALIGN constexpr uint8_t k2to512powers_17to10bits[16] = {
+      0x0,  0xb7, 0x4,  0xd,  0xcb, 0xe7, 0x41, 0x68,
+      0x51, 0xd1, 0xeb, 0xf2, 0x0,  0xb7, 0x4,  0xd,
+  };
+  // Note that vld1q_s8_x2 on ARM seems to actually be slower.
+#if HWY_TARGET != HWY_SCALAR
+  using hwy::HWY_NAMESPACE::ShiftLeft;
+  using hwy::HWY_NAMESPACE::ShiftRight;
+  // Every lane of exp is now (if cast to byte) {0, 0, 0, <index for lookup>}.
+  auto exp = ShiftRight<23>(BitCast(di, v)) - Set(di, 118);
+  auto pow25to18bits = TableLookupBytes(
+      LoadDup128(di,
+                 reinterpret_cast<const int32_t*>(k2to512powers_25to18bits)),
+      exp);
+  auto pow17to10bits = TableLookupBytes(
+      LoadDup128(di,
+                 reinterpret_cast<const int32_t*>(k2to512powers_17to10bits)),
+      exp);
+  // Now, pow* contain {0, 0, 0, <part of float repr of multiplier>}. Here
+  // we take advantage of the fact that each table has its position 0 equal to
+  // 0.
+  // We can now just reassemble the float.
+  auto mul =
+      BitCast(d, ShiftLeft<18>(pow25to18bits) | ShiftLeft<10>(pow17to10bits) |
+                     Set(di, k2to512powers_basebits));
+#else
+  // Fallback for scalar.
+  uint32_t exp = ((BitCast(di, v).raw >> 23) - 118) & 0xf;
+  auto mul = BitCast(d, Set(di, (k2to512powers_25to18bits[exp] << 18) |
+                                    (k2to512powers_17to10bits[exp] << 10) |
+                                    k2to512powers_basebits));
+#endif
+  return IfThenElse(v < Set(d, 0.0031308f), v * Set(d, 12.92f),
+                    MulAdd(pow, mul, Set(d, -0.055)));
+}
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE

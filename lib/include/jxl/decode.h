@@ -164,6 +164,14 @@ typedef enum {
    */
   JXL_DEC_NEED_IMAGE_OUT_BUFFER = 5,
 
+  /** Informative event by JxlDecoderProcessInput: JPEG reconstruction buffer is
+   * too small for reconstructed JPEG codestream to fit.
+   * JxlDecoderSetJPEGOutBuffer must be called again to make room for remaining
+   * bytes. This event may occur multiple times after
+   * JXL_DEC_JPEG_RECONSTRUCTION
+   */
+  JXL_DEC_JPEG_NEED_MORE_OUTPUT = 6,
+
   /** Informative event by JxlDecoderProcessInput: basic information such as
    * image dimensions and extra channels. This event occurs max once per image.
    */
@@ -222,6 +230,16 @@ typedef enum {
    * max once per frame and always later than JXL_DEC_DC_IMAGE.
    */
   JXL_DEC_FULL_IMAGE = 0x1000,
+
+  /** Informative event by JxlDecoderProcessInput: JPEG reconstruction data
+   * decoded. JxlDecoderSetJPEGOutBuffer may be used to set a JPEG
+   * reconstruction buffer after getting the JPEG reconstruction data. If a JPEG
+   * reconstruction buffer is set a byte stream identical to the JPEG codestream
+   * used to encode the image will be written to the JPEG reconstruction buffer
+   * instead of pixels to the image out buffer. This event occurs max once per
+   * image and always before JXL_DEC_FULL_IMAGE.
+   */
+  JXL_DEC_JPEG_RECONSTRUCTION = 0x2000,
 } JxlDecoderStatus;
 
 /**
@@ -648,6 +666,40 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size);
 
 /**
+ * Sets output buffer for reconstructed JPEG codestream.
+ *
+ * The data is owned by the caller
+ * and may be used by the decoder until JxlDecoderReleaseJPEGBuffer is called or
+ * the decoder is destroyed or reset so must be kept alive until then.
+ *
+ * @param dec decoder object
+ * @param data pointer to next bytes to write to
+ * @param size amount of bytes available starting from data
+ * @return JXL_DEC_ERROR if input was already set without releasing,
+ * JXL_DEC_SUCCESS otherwise
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
+                                                    uint8_t* data, size_t size);
+
+/**
+ * Releases buffer which was provided with JxlDecoderSetJPEGBuffer.
+ *
+ * Calling JxlDecoderReleaseJPEGBuffer is required whenever
+ * a buffer is already set and a new buffer needs to be added with
+ * JxlDecoderSetJPEGBuffer, but is not required before JxlDecoderDestroy or
+ * JxlDecoderReset.
+ *
+ * Calling JxlDecoderReleaseJPEGBuffer when no input is set is
+ * not an error and returns 0.
+ *
+ * @param dec decoder object
+ * @return the amount of bytes the decoder has not yet written to of the data
+ * set by JxlDecoderSetJPEGBuffer, or 0 if no buffer is set or
+ * JxlDecoderReleaseJPEGBuffer was already called.
+ */
+JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
+
+/**
  * Sets the buffer to write the full resolution image to. The size of the
  * buffer must be at least as large as given by JxlDecoderImageOutBufferSize.
  * The buffer follows the format described by JxlPixelFormat. The buffer is
@@ -665,6 +717,24 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetImageOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size);
 
 /* TODO(lode): add way to output extra channels */
+
+/**
+ * Outputs progressive step towards the decoded image so far when only partial
+ * input was received. If the flush was successful, the buffer set with
+ * JxlDecoderSetImageOutBuffer will contain partial image data.
+ *
+ * Can be called when JxlDecoderProcessInput returns JXL_DEC_NEED_MORE_INPUT,
+ * after the JXL_DEC_FRAME event already occured and before the
+ * JXL_DEC_FULL_IMAGE event occured for a frame.
+ *
+ * @param dec decoder object
+ * @return JXL_DEC_SUCCESS if image data was flushed to the output buffer, or
+ * JXL_DEC_ERROR when no flush was done, e.g. if not enough image data was
+ * available yet even for flush, or no output buffer was set yet. An error is
+ * not fatal, it only indicates no flushed image is available now, regular,
+ *  decoding can still be performed.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }

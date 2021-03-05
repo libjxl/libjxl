@@ -28,7 +28,8 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/color_management.h"
-#include "lib/jxl/external_image.h"
+#include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/fields.h"  // AllDefault
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -352,7 +353,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
   const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
-  JXL_RETURN_IF_ERROR(ConvertImage(
+  JXL_RETURN_IF_ERROR(ConvertFromExternal(
       span, header.xsize, header.ysize, io->metadata.m.color_encoding,
       /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
       io->metadata.m.bit_depth.bits_per_sample,
@@ -403,10 +404,10 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   size_t stride =
       ib.xsize() * (c_desired.Channels() * bits_per_sample) / kBitsPerByte;
   PaddedBytes pixels(stride * ib.ysize());
-  JXL_RETURN_IF_ERROR(ConvertImage(
+  JXL_RETURN_IF_ERROR(ConvertToExternal(
       *transformed, bits_per_sample, floating_point,
       /*apply_srgb_tf=*/false, c_desired.Channels(), endianness, stride, pool,
-      pixels.data(), pixels.size(), jxl::Orientation::kIdentity));
+      pixels.data(), pixels.size(), metadata.GetOrientation()));
 
   char header[kMaxHeaderSize];
   int header_size = 0;

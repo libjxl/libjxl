@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/patch_dictionary.h"
+#include "lib/jxl/enc_patch_dictionary.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -32,9 +32,8 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
-#include "lib/jxl/dec_ans.h"
+#include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_frame.h"
-#include "lib/jxl/detect_dots.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_frame.h"
@@ -43,75 +42,65 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/patch_dictionary_internal.h"
 
 namespace jxl {
 
-constexpr int kMaxPatches = 1 << 24;
-
-// Context numbers as specified in Section C.4.5, Listing C.2:
-enum Contexts {
-  kNumRefPatchContext = 0,
-  kReferenceFrameContext = 1,
-  kPatchSizeContext = 2,
-  kPatchReferencePositionContext = 3,
-  kPatchPositionContext = 4,
-  kPatchBlendModeContext = 5,
-  kPatchOffsetContext = 6,
-  kPatchCountContext = 7,
-  kPatchAlphaChannelContext = 8,
-  kPatchClampContext = 9,
-  kNumPatchDictionaryContexts
-};
-
-void PatchDictionary::Encode(BitWriter* writer, size_t layer,
-                             AuxOut* aux_out) const {
-  JXL_ASSERT(HasAny());
+// static
+void PatchDictionaryEncoder::Encode(const PatchDictionary& pdic,
+                                    BitWriter* writer, size_t layer,
+                                    AuxOut* aux_out) {
+  JXL_ASSERT(pdic.HasAny());
   std::vector<std::vector<Token>> tokens(1);
 
   auto add_num = [&](int context, size_t num) {
     tokens[0].emplace_back(context, num);
   };
   size_t num_ref_patch = 0;
-  for (size_t i = 0; i < positions_.size();) {
+  for (size_t i = 0; i < pdic.positions_.size();) {
     size_t i_start = i;
-    while (i < positions_.size() &&
-           positions_[i].ref_pos == positions_[i_start].ref_pos) {
+    while (i < pdic.positions_.size() &&
+           pdic.positions_[i].ref_pos == pdic.positions_[i_start].ref_pos) {
       i++;
     }
     num_ref_patch++;
   }
   add_num(kNumRefPatchContext, num_ref_patch);
-  for (size_t i = 0; i < positions_.size();) {
+  for (size_t i = 0; i < pdic.positions_.size();) {
     size_t i_start = i;
-    while (i < positions_.size() &&
-           positions_[i].ref_pos == positions_[i_start].ref_pos) {
+    while (i < pdic.positions_.size() &&
+           pdic.positions_[i].ref_pos == pdic.positions_[i_start].ref_pos) {
       i++;
     }
     size_t num = i - i_start;
     JXL_ASSERT(num > 0);
-    add_num(kReferenceFrameContext, positions_[i_start].ref_pos.ref);
-    add_num(kPatchReferencePositionContext, positions_[i_start].ref_pos.x0);
-    add_num(kPatchReferencePositionContext, positions_[i_start].ref_pos.y0);
-    add_num(kPatchSizeContext, positions_[i_start].ref_pos.xsize - 1);
-    add_num(kPatchSizeContext, positions_[i_start].ref_pos.ysize - 1);
+    add_num(kReferenceFrameContext, pdic.positions_[i_start].ref_pos.ref);
+    add_num(kPatchReferencePositionContext,
+            pdic.positions_[i_start].ref_pos.x0);
+    add_num(kPatchReferencePositionContext,
+            pdic.positions_[i_start].ref_pos.y0);
+    add_num(kPatchSizeContext, pdic.positions_[i_start].ref_pos.xsize - 1);
+    add_num(kPatchSizeContext, pdic.positions_[i_start].ref_pos.ysize - 1);
     add_num(kPatchCountContext, num - 1);
     for (size_t j = i_start; j < i; j++) {
-      const PatchPosition& pos = positions_[j];
+      const PatchPosition& pos = pdic.positions_[j];
       if (j == i_start) {
         add_num(kPatchPositionContext, pos.x);
         add_num(kPatchPositionContext, pos.y);
       } else {
-        add_num(kPatchOffsetContext, PackSigned(pos.x - positions_[j - 1].x));
-        add_num(kPatchOffsetContext, PackSigned(pos.y - positions_[j - 1].y));
+        add_num(kPatchOffsetContext,
+                PackSigned(pos.x - pdic.positions_[j - 1].x));
+        add_num(kPatchOffsetContext,
+                PackSigned(pos.y - pdic.positions_[j - 1].y));
       }
-      JXL_ASSERT(shared_->metadata->m.extra_channel_info.size() + 1 ==
+      JXL_ASSERT(pdic.shared_->metadata->m.extra_channel_info.size() + 1 ==
                  pos.blending.size());
-      for (size_t i = 0; i < shared_->metadata->m.extra_channel_info.size() + 1;
-           i++) {
+      for (size_t i = 0;
+           i < pdic.shared_->metadata->m.extra_channel_info.size() + 1; i++) {
         const PatchBlending& info = pos.blending[i];
         add_num(kPatchBlendModeContext, static_cast<uint32_t>(info.mode));
         if (UsesAlpha(info.mode) &&
-            shared_->metadata->m.extra_channel_info.size() > 1) {
+            pdic.shared_->metadata->m.extra_channel_info.size() > 1) {
           add_num(kPatchAlphaChannelContext, info.alpha_channel);
         }
         if (UsesClamp(info.mode)) {
@@ -129,222 +118,10 @@ void PatchDictionary::Encode(BitWriter* writer, size_t layer,
   WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
-Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize) {
-  std::vector<uint8_t> context_map;
-  ANSCode code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, kNumPatchDictionaryContexts, &code, &context_map));
-  ANSSymbolReader decoder(&code, br);
-
-  auto read_num = [&](size_t context) {
-    size_t r = decoder.ReadHybridUint(context, br, context_map);
-    return r;
-  };
-
-  size_t num_ref_patch = read_num(kNumRefPatchContext);
-  // TODO(veluca): does this make sense?
-  if (num_ref_patch > kMaxPatches) {
-    return JXL_FAILURE("Too many patches in dictionary");
-  }
-
-  for (size_t id = 0; id < num_ref_patch; id++) {
-    PatchReferencePosition ref_pos;
-    ref_pos.ref = read_num(kReferenceFrameContext);
-    if (ref_pos.ref >= kMaxNumReferenceFrames ||
-        shared_->reference_frames[ref_pos.ref].frame->xsize() == 0) {
-      return JXL_FAILURE("Invalid reference frame ID");
-    }
-    const ImageBundle& ib = *shared_->reference_frames[ref_pos.ref].frame;
-    ref_pos.x0 = read_num(kPatchReferencePositionContext);
-    ref_pos.y0 = read_num(kPatchReferencePositionContext);
-    ref_pos.xsize = read_num(kPatchSizeContext) + 1;
-    ref_pos.ysize = read_num(kPatchSizeContext) + 1;
-    if (ref_pos.x0 + ref_pos.xsize > ib.xsize()) {
-      return JXL_FAILURE("Invalid position specified in reference frame");
-    }
-    if (ref_pos.y0 + ref_pos.ysize > ib.ysize()) {
-      return JXL_FAILURE("Invalid position specified in reference frame");
-    }
-    size_t id_count = read_num(kPatchCountContext) + 1;
-    if (id_count > kMaxPatches) {
-      return JXL_FAILURE("Too many patches in dictionary");
-    }
-    positions_.reserve(positions_.size() + id_count);
-    for (size_t i = 0; i < id_count; i++) {
-      PatchPosition pos;
-      pos.ref_pos = ref_pos;
-      if (i == 0) {
-        pos.x = read_num(kPatchPositionContext);
-        pos.y = read_num(kPatchPositionContext);
-      } else {
-        pos.x =
-            positions_.back().x + UnpackSigned(read_num(kPatchOffsetContext));
-        pos.y =
-            positions_.back().y + UnpackSigned(read_num(kPatchOffsetContext));
-      }
-      if (pos.x + ref_pos.xsize > xsize) {
-        return JXL_FAILURE("Invalid patch x: at %zu + %zu > %zu", pos.x,
-                           ref_pos.xsize, xsize);
-      }
-      if (pos.y + ref_pos.ysize > ysize) {
-        return JXL_FAILURE("Invalid patch y: at %zu + %zu > %zu", pos.y,
-                           ref_pos.ysize, ysize);
-      }
-      for (size_t i = 0; i < shared_->metadata->m.extra_channel_info.size() + 1;
-           i++) {
-        uint32_t blend_mode = read_num(kPatchBlendModeContext);
-        if (blend_mode >= uint32_t(PatchBlendMode::kNumBlendModes)) {
-          return JXL_FAILURE("Invalid patch blend mode: %u", blend_mode);
-        }
-        PatchBlending info;
-        info.mode = static_cast<PatchBlendMode>(blend_mode);
-        if (i != 0 && info.mode != PatchBlendMode::kNone) {
-          return JXL_FAILURE(
-              "Blending of extra channels with patches is not supported yet");
-        }
-        if (info.mode != PatchBlendMode::kAdd &&
-            info.mode != PatchBlendMode::kNone &&
-            info.mode != PatchBlendMode::kReplace) {
-          return JXL_FAILURE("Blending mode not supported yet: %u", blend_mode);
-        }
-        if (UsesAlpha(info.mode) &&
-            shared_->metadata->m.extra_channel_info.size() > 1) {
-          info.alpha_channel = read_num(kPatchAlphaChannelContext);
-          if (info.alpha_channel >=
-              shared_->metadata->m.extra_channel_info.size()) {
-            return JXL_FAILURE(
-                "Invalid alpha channel for blending: %u out of %u\n",
-                info.alpha_channel,
-                (uint32_t)shared_->metadata->m.extra_channel_info.size());
-          }
-        }
-        if (UsesClamp(info.mode)) {
-          info.clamp = read_num(kPatchClampContext);
-        }
-        pos.blending.push_back(info);
-      }
-      positions_.push_back(std::move(pos));
-    }
-  }
-
-  if (!decoder.CheckANSFinalState()) {
-    return JXL_FAILURE("ANS checksum failure.");
-  }
-  if (!HasAny()) {
-    return JXL_FAILURE("Decoded patch dictionary but got none");
-  }
-
-  ComputePatchCache();
-  return true;
-}
-
-void PatchDictionary::ComputePatchCache() {
-  if (positions_.empty()) return;
-  std::vector<std::pair<size_t, size_t>> sorted_patches_y;
-  for (size_t i = 0; i < positions_.size(); i++) {
-    const PatchPosition& pos = positions_[i];
-    for (size_t y = pos.y; y < pos.y + pos.ref_pos.ysize; y++) {
-      sorted_patches_y.emplace_back(y, i);
-    }
-  }
-  // The relative order of patches that affect the same pixels is preserved.
-  // This is important for patches that have a blend mode different from kAdd.
-  std::sort(sorted_patches_y.begin(), sorted_patches_y.end());
-  patch_starts_.resize(sorted_patches_y.back().first + 2,
-                       sorted_patches_y.size());
-  sorted_patches_.resize(sorted_patches_y.size());
-  for (size_t i = 0; i < sorted_patches_y.size(); i++) {
-    sorted_patches_[i] = sorted_patches_y[i].second;
-    patch_starts_[sorted_patches_y[i].first] =
-        std::min(patch_starts_[sorted_patches_y[i].first], i);
-  }
-  for (size_t i = patch_starts_.size() - 1; i > 0; i--) {
-    patch_starts_[i - 1] = std::min(patch_starts_[i], patch_starts_[i - 1]);
-  }
-}
-
-template <bool add>
-void PatchDictionary::Apply(Image3F* opsin, const Rect& opsin_rect,
-                            const Rect& image_rect) const {
-  JXL_CHECK(SameSize(opsin_rect, image_rect));
-  size_t num = 0;
-  for (size_t y = image_rect.y0(); y < image_rect.y0() + image_rect.ysize();
-       y++) {
-    if (y + 1 >= patch_starts_.size()) continue;
-    float* JXL_RESTRICT rows[3] = {
-        opsin_rect.PlaneRow(opsin, 0, y - image_rect.y0()),
-        opsin_rect.PlaneRow(opsin, 1, y - image_rect.y0()),
-        opsin_rect.PlaneRow(opsin, 2, y - image_rect.y0()),
-    };
-    for (size_t id = patch_starts_[y]; id < patch_starts_[y + 1]; id++) {
-      num++;
-      const PatchPosition& pos = positions_[sorted_patches_[id]];
-      size_t by = pos.y;
-      size_t bx = pos.x;
-      size_t xsize = pos.ref_pos.xsize;
-      JXL_DASSERT(y >= by);
-      JXL_DASSERT(y < by + pos.ref_pos.ysize);
-      size_t iy = y - by;
-      size_t ref = pos.ref_pos.ref;
-      if (bx >= image_rect.x0() + image_rect.xsize()) continue;
-      if (bx + xsize < image_rect.x0()) continue;
-      // TODO(veluca): check that the reference frame is in XYB.
-      const float* JXL_RESTRICT ref_rows[3] = {
-          shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
-              0, pos.ref_pos.y0 + iy) +
-              pos.ref_pos.x0,
-          shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
-              1, pos.ref_pos.y0 + iy) +
-              pos.ref_pos.x0,
-          shared_->reference_frames[ref].frame->color()->ConstPlaneRow(
-              2, pos.ref_pos.y0 + iy) +
-              pos.ref_pos.x0,
-      };
-      // TODO(veluca): use the same code as in dec_reconstruct.cc.
-      for (size_t ix = 0; ix < xsize; ix++) {
-        // TODO(veluca): hoist branches and checks.
-        // TODO(veluca): implement for extra channels.
-        if (bx + ix < image_rect.x0()) continue;
-        if (bx + ix >= image_rect.x0() + image_rect.xsize()) continue;
-        for (size_t c = 0; c < 3; c++) {
-          if (add) {
-            if (pos.blending[0].mode == PatchBlendMode::kAdd) {
-              rows[c][bx + ix - image_rect.x0()] += ref_rows[c][ix];
-            } else if (pos.blending[0].mode == PatchBlendMode::kReplace) {
-              rows[c][bx + ix - image_rect.x0()] = ref_rows[c][ix];
-            } else if (pos.blending[0].mode == PatchBlendMode::kNone) {
-              // Nothing to do.
-            } else {
-              // Checked in decoding code.
-              JXL_ABORT("Blending mode %u not yet implemented",
-                        (uint32_t)pos.blending[0].mode);
-            }
-          } else {
-            if (pos.blending[0].mode == PatchBlendMode::kAdd) {
-              rows[c][bx + ix - image_rect.x0()] -= ref_rows[c][ix];
-            } else if (pos.blending[0].mode == PatchBlendMode::kReplace) {
-              rows[c][bx + ix - image_rect.x0()] = 0;
-            } else if (pos.blending[0].mode == PatchBlendMode::kNone) {
-              // Nothing to do.
-            } else {
-              // Checked in decoding code.
-              JXL_ABORT("Blending mode %u not yet implemented",
-                        (uint32_t)pos.blending[0].mode);
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-void PatchDictionary::AddTo(Image3F* opsin, const Rect& opsin_rect,
-                            const Rect& image_rect) const {
-  Apply</*add=*/true>(opsin, opsin_rect, image_rect);
-}
-
-void PatchDictionary::SubtractFrom(Image3F* opsin) const {
-  Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin));
+// static
+void PatchDictionaryEncoder::SubtractFrom(const PatchDictionary& pdic,
+                                          Image3F* opsin) {
+  pdic.Apply</*add=*/false>(opsin, Rect(*opsin), Rect(*opsin));
 }
 
 namespace {
@@ -941,7 +718,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
   cparams.noise = Override::kOff;
   cparams.modular_mode = true;
   cparams.responsive = 0;
-  cparams.progressive_dc = false;
+  cparams.progressive_dc = 0;
   cparams.progressive_mode = false;
   cparams.qprogressive_mode = false;
   // Use gradient predictor and not Predictor::Best.
@@ -1007,6 +784,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
   // not true for all blending modes. This code only produces kAdd patches, so
   // this works out.
   std::sort(positions.begin(), positions.end());
-  state->shared.image_features.patches.SetPositions(std::move(positions));
+  PatchDictionaryEncoder::SetPositions(&state->shared.image_features.patches,
+                                       std::move(positions));
 }
 }  // namespace jxl

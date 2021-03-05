@@ -19,11 +19,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <array>
 #include <vector>
 
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/patch_dictionary.h"
 
 namespace jxl {
 

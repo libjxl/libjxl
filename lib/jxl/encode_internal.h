@@ -43,12 +43,14 @@ typedef struct JxlEncoderQueuedFrame {
 Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
                                               jxl::ColorEncoding* internal);
 
-JxlEncoderStatus BufferToImageBundle(const JxlPixelFormat& pixel_format,
-                                     uint32_t xsize, uint32_t ysize,
-                                     const void* buffer, size_t size,
-                                     jxl::ThreadPool* pool,
-                                     const jxl::ColorEncoding& c_current,
-                                     jxl::ImageBundle* ib);
+typedef std::array<uint8_t, 4> BoxType;
+
+// Utility function that makes a BoxType from a null terminated string literal.
+constexpr BoxType MakeBoxType(const char (&type)[5]) {
+  return BoxType({static_cast<uint8_t>(type[0]), static_cast<uint8_t>(type[1]),
+                  static_cast<uint8_t>(type[2]),
+                  static_cast<uint8_t>(type[3])});
+}
 
 }  // namespace jxl
 
@@ -70,7 +72,14 @@ struct JxlEncoderStruct {
   bool wrote_headers = false;
   jxl::CompressParams last_used_cparams;
 
+  // Takes the first frame in the input_frame_queue, encodes it, and appends the
+  // bytes to the output_byte_queue.
   JxlEncoderStatus RefillOutputByteQueue();
+
+  // Appends the bytes of a JXL box header with the provided type and size to
+  // the end of the output_byte_queue. If unbounded is true, the size won't be
+  // added to the header and the box will be assumed to continue until EOF.
+  void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded);
 };
 
 struct JxlEncoderOptionsStruct {

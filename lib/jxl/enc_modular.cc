@@ -31,8 +31,11 @@
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/enc_patch_dictionary.h"
+#include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
@@ -410,7 +413,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (do_color && cparams.speed_tier < SpeedTier::kCheetah) {
     FindBestPatchDictionary(*color, enc_state, nullptr, nullptr,
                             cparams.color_transform == ColorTransform::kXYB);
-    enc_state->shared.image_features.patches.SubtractFrom(color);
+    PatchDictionaryEncoder::SubtractFrom(
+        enc_state->shared.image_features.patches, color);
   }
 
   // Convert ImageBundle to modular Image object
@@ -450,7 +454,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if (cparams.color_transform == ColorTransform::kXYB &&
       cparams.modular_mode == true) {
     static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
-    enc_state->shared.matrices.SetCustomDC(enc_factors);
+    DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
   }
   if (do_color) {
     for (; c < 3; c++) {
@@ -726,22 +730,12 @@ Status ModularFrameEncoder::ComputeEncodingData(
     const size_t gy = group_id / frame_dim.xsize_groups;
     const Rect mrect(gx * frame_dim.group_dim, gy * frame_dim.group_dim,
                      frame_dim.group_dim, frame_dim.group_dim);
-    int maxShift = 2;
-    int minShift = 0;
     for (size_t i = 0; i < enc_state->progressive_splitter.GetNumPasses();
          i++) {
-      for (uint32_t j = 0; j < frame_header.passes.num_downsample; ++j) {
-        if (i <= frame_header.passes.last_pass[j]) {
-          if (frame_header.passes.downsample[j] == 8) minShift = 3;
-          if (frame_header.passes.downsample[j] == 4) minShift = 2;
-          if (frame_header.passes.downsample[j] == 2) minShift = 1;
-          if (frame_header.passes.downsample[j] == 1) minShift = 0;
-        }
-      }
+      int maxShift, minShift;
+      frame_header.passes.GetDownsamplingBracket(i, minShift, maxShift);
       stream_params.push_back(GroupParams{
           mrect, minShift, maxShift, ModularStreamId::ModularAC(group_id, i)});
-      maxShift = minShift - 1;
-      minShift = 0;
     }
   }
   gi_channel.resize(stream_images.size());

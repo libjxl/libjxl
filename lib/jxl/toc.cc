@@ -20,23 +20,14 @@
 #include "lib/jxl/coeff_order.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
-#include "lib/jxl/field_encodings.h"
 #include "lib/jxl/fields.h"
 
 namespace jxl {
-namespace {
-// (2+bits) = 2,3,4 bytes so encoders can patch TOC after encoding.
-// 30 is sufficient for 4K channels of uncompressed 16-bit samples.
-constexpr U32Enc kDist(Bits(10), BitsOffset(14, 1024), BitsOffset(22, 17408),
-                       BitsOffset(30, 4211712));
-
-static size_t MaxBits(const size_t num_sizes) {
-  const size_t entry_bits = U32Coder::MaxEncodedBits(kDist) * num_sizes;
+size_t MaxBits(const size_t num_sizes) {
+  const size_t entry_bits = U32Coder::MaxEncodedBits(kTocDist) * num_sizes;
   // permutation bit (not its tokens!), padding, entries, padding.
   return 1 + kBitsPerByte + entry_bits + kBitsPerByte;
 }
-
-}  // namespace
 
 Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
                         std::vector<uint64_t>* JXL_RESTRICT offsets,
@@ -48,22 +39,39 @@ Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
     // TODO(lode): verify whether 65536 is a reasonable upper bound
     return JXL_FAILURE("too many toc entries");
   }
+
+  const auto check_bit_budget = [&](size_t num_entries) -> Status {
+    // U32Coder reads 2 bits to recognize variant and kTocDist cheapest variant
+    // is Bits(10), this way at least 12 bits are required per toc-entry.
+    size_t minimal_bit_cost = num_entries * (2 + 10);
+    size_t bit_budget = reader->TotalBytes() * 8;
+    size_t expenses = reader->TotalBitsConsumed();
+    if ((expenses <= bit_budget) &&
+        (minimal_bit_cost <= bit_budget - expenses)) {
+      return true;
+    }
+    return JXL_STATUS(StatusCode::kNotEnoughBytes, "Not enough bytes for TOC");
+  };
+
   JXL_DASSERT(offsets != nullptr && sizes != nullptr);
   std::vector<coeff_order_t> permutation;
   if (reader->ReadFixedBits<1>() == 1 && toc_entries > 0) {
     // Skip permutation description if the toc_entries is 0.
+    JXL_RETURN_IF_ERROR(check_bit_budget(toc_entries));
     permutation.resize(toc_entries);
     JXL_RETURN_IF_ERROR(
         DecodePermutation(/*skip=*/0, toc_entries, permutation.data(), reader));
   }
 
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
+  JXL_RETURN_IF_ERROR(check_bit_budget(toc_entries));
   sizes->clear();
   sizes->reserve(toc_entries);
   for (size_t i = 0; i < toc_entries; ++i) {
-    sizes->push_back(U32Coder::Read(kDist, reader));
+    sizes->push_back(U32Coder::Read(kTocDist, reader));
   }
   JXL_RETURN_IF_ERROR(reader->JumpToByteBoundary());
+  JXL_RETURN_IF_ERROR(check_bit_budget(0));
 
   // Prefix sum starting with 0 and ending with the offset of the last group
   offsets->clear();
@@ -95,31 +103,4 @@ Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
 
   return true;
 }
-
-Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
-                         const std::vector<coeff_order_t>* permutation,
-                         BitWriter* JXL_RESTRICT writer, AuxOut* aux_out) {
-  BitWriter::Allotment allotment(writer, MaxBits(group_codes.size()));
-  if (permutation && !group_codes.empty()) {
-    // Don't write a permutation at all for an empty group_codes.
-    writer->Write(1, 1);  // permutation
-    JXL_DASSERT(permutation->size() == group_codes.size());
-    EncodePermutation(permutation->data(), /*skip=*/0, permutation->size(),
-                      writer, /* layer= */ 0, aux_out);
-
-  } else {
-    writer->Write(1, 0);  // no permutation
-  }
-  writer->ZeroPadToByte();  // before TOC entries
-
-  for (size_t i = 0; i < group_codes.size(); i++) {
-    JXL_ASSERT(group_codes[i].BitsWritten() % kBitsPerByte == 0);
-    const size_t group_size = group_codes[i].BitsWritten() / kBitsPerByte;
-    JXL_RETURN_IF_ERROR(U32Coder::Write(kDist, group_size, writer));
-  }
-  writer->ZeroPadToByte();  // before first group
-  ReclaimAndCharge(writer, &allotment, kLayerTOC, aux_out);
-  return true;
-}
-
 }  // namespace jxl

@@ -26,6 +26,7 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/enc_coeff_order.h"
 
 namespace jxl {
 namespace {

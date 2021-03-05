@@ -84,7 +84,7 @@ struct FilterRows {
 
   template <typename RowMap>
   void SetInput(const Image3F& in, size_t y_offset, ssize_t y0, ssize_t x0) {
-    RowMap row_map;
+    RowMap row_map(in.ysize());
     for (size_t c = 0; c < 3; c++) {
       rows_in_[c] = in.ConstPlaneRow(c, 0);
     }
@@ -190,8 +190,9 @@ class FilterPipeline {
       this->input_rect = input_rect;
       set_input_rows = [](const FilterStep& self, FilterRows* rows,
                           ssize_t y0) {
-        rows->SetInput<RowMapId>(*(self.input), 0, self.input_rect.y0() + y0,
-                                 self.input_rect.x0() - kMaxFilterPadding);
+        rows->SetInput<RowMapMirror>(*(self.input), 0,
+                                     self.input_rect.y0() + y0,
+                                     self.input_rect.x0() - kMaxFilterPadding);
       };
     }
 

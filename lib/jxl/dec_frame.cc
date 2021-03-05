@@ -45,11 +45,11 @@
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/dec_params.h"
+#include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/dec_upsample.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/dot_dictionary.h"
-#include "lib/jxl/external_image.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
@@ -60,7 +60,6 @@
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/luminance.h"
 #include "lib/jxl/passes_state.h"
-#include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
@@ -575,17 +574,9 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
 
   // don't limit to image dimensions here (is done in DecodeGroup)
   const Rect mrect(x, y, frame_dim_.group_dim, frame_dim_.group_dim);
-  int minShift = 0;
-  int maxShift = 2;
   for (size_t i = 0; i < frame_header_.passes.num_passes; i++) {
-    for (uint32_t j = 0; j < frame_header_.passes.num_downsample; ++j) {
-      if (i <= frame_header_.passes.last_pass[j]) {
-        if (frame_header_.passes.downsample[j] == 8) minShift = 3;
-        if (frame_header_.passes.downsample[j] == 4) minShift = 2;
-        if (frame_header_.passes.downsample[j] == 2) minShift = 1;
-        if (frame_header_.passes.downsample[j] == 1) minShift = 0;
-      }
-    }
+    int minShift, maxShift;
+    frame_header_.passes.GetDownsamplingBracket(i, minShift, maxShift);
     if (i >= decoded_passes_per_ac_group_[ac_group_id] &&
         i < decoded_passes_per_ac_group_[ac_group_id] + num_passes) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
@@ -598,8 +589,6 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
           mrect, nullptr, minShift, maxShift,
           ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true));
     }
-    maxShift = minShift - 1;
-    minShift = 0;
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
   return true;
@@ -706,6 +695,15 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
 
   if (decoded_ac_global_) {
+    // The decoded image requires padding for filtering. ProcessACGlobal added
+    // the padding, however when Flush is used, the image is shrunk to the
+    // output size. Add the padding back here. This is a cheap opeartion
+    // since the image has the original allocated size. The memory and original
+    // size are already there, but for safety we require the indicated xsize and
+    // ysize dimensions match the working area, see PlaneRowBoundsCheck.
+    decoded_->ShrinkTo(frame_dim_.xsize_upsampled_padded,
+                       frame_dim_.ysize_upsampled_padded);
+
     RunOnPool(
         pool_, 0, ac_group_sec.size(),
         [this](size_t num_threads) {
@@ -752,11 +750,6 @@ Status FrameDecoder::Flush() {
   if (decoded_->IsJPEG()) {
     // Nothing to do.
     return true;
-  }
-  if (!frame_header_.chroma_subsampling.Is444() && num_renders_ > 0) {
-    return JXL_FAILURE(
-        "Multiple renders with non-444 chroma subsampling are not yet "
-        "supported");
   }
   if (*std::min_element(decoded_passes_per_ac_group_.begin(),
                         decoded_passes_per_ac_group_.end()) <

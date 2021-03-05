@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_PATCH_DICTIONARY_H_
-#define LIB_JXL_PATCH_DICTIONARY_H_
+#ifndef LIB_JXL_DEC_PATCH_DICTIONARY_H_
+#define LIB_JXL_DEC_PATCH_DICTIONARY_H_
 
 // Chooses reference patches, and avoids encoding them once per occurrence.
 
@@ -24,14 +24,9 @@
 #include <tuple>
 #include <vector>
 
-#include "lib/jxl/aux_out_fwd.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/opsin_params.h"
 
@@ -158,6 +153,9 @@ struct PatchPosition {
 
 struct PassesSharedState;
 
+// Encoder-side helper class to encode the PatchesDictionary.
+class PatchDictionaryEncoder;
+
 class PatchDictionary {
  public:
   PatchDictionary() = default;
@@ -165,14 +163,8 @@ class PatchDictionary {
   void SetPassesSharedState(const PassesSharedState* shared) {
     shared_ = shared;
   }
-  void SetPositions(std::vector<PatchPosition> positions) {
-    positions_ = std::move(positions);
-    ComputePatchCache();
-  }
 
   bool HasAny() const { return !positions_.empty(); }
-  // Only call if HasAny().
-  void Encode(BitWriter* writer, size_t layer, AuxOut* aux_out) const;
 
   Status Decode(BitReader* br, size_t xsize, size_t ysize);
 
@@ -181,9 +173,9 @@ class PatchDictionary {
   void AddTo(Image3F* opsin, const Rect& opsin_rect,
              const Rect& image_rect) const;
 
-  void SubtractFrom(Image3F* opsin) const;
-
  private:
+  friend class PatchDictionaryEncoder;
+
   const PassesSharedState* shared_;
   std::vector<PatchPosition> positions_;
 
@@ -201,19 +193,12 @@ class PatchDictionary {
   // Compute patches_by_y_ after updating positions_.
   void ComputePatchCache();
 
-  template <bool>
+  // Implemented in patch_dictionary_internal.h
+  template <bool /*add*/>
   void Apply(Image3F* opsin, const Rect& opsin_rect,
              const Rect& image_rect) const;
 };
 
-// Avoid cyclic header inclusion.
-struct PassesEncoderState;
-
-void FindBestPatchDictionary(const Image3F& opsin,
-                             PassesEncoderState* JXL_RESTRICT state,
-                             ThreadPool* pool, AuxOut* aux_out,
-                             bool is_xyb = true);
-
 }  // namespace jxl
 
-#endif  // LIB_JXL_PATCH_DICTIONARY_H_
+#endif  // LIB_JXL_DEC_PATCH_DICTIONARY_H_

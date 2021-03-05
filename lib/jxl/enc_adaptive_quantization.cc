@@ -40,7 +40,6 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/dct_scales.h"
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_group.h"
 #include "lib/jxl/dec_reconstruct.h"
@@ -72,14 +71,14 @@ using hwy::HWY_NAMESPACE::Rebind;
 // Hack for mask estimation. Eventually replace this code with butteraugli's
 // masking.
 float ComputeMaskForAcStrategyUse(const float out_val) {
-  const float kMul = 70.0f;
-  const float kOffset = 53.0f;
+  const float kMul = 1.0f;
+  const float kOffset = 0.4f;
   return kMul / (out_val + kOffset);
 }
 
 template <class D, class V>
 V ComputeMask(const D d, const V out_val) {
-  const auto kBase = Set(d, -0.795f);
+  const auto kBase = Set(d, -0.74174993f);
   const auto kMul4 = Set(d, 3.2353257320940401f);
   const auto kMul2 = Set(d, 12.906028311180409f);
   const auto kOffset2 = Set(d, 305.04035728311436f);
@@ -102,23 +101,6 @@ V ComputeMask(const D d, const V out_val) {
   return kBase + MulAdd(kMul4, v4, MulAdd(kMul2, v2, kMul3 * v3));
 }
 
-const float* Quant64() {
-  static constexpr double kQuant64[64] = {
-      0.00, 4.10, 3.30, 3.30, 1.10, 1.15, 0.70, 0.70, 4.10, 3.30, 3.30,
-      1.10, 1.15, 1.30, 0.70, 0.50, 3.00, 3.30, 2.90, 2.10, 1.30, 0.70,
-      0.50, 0.50, 0.87, 2.90, 2.10, 1.40, 0.70, 0.50, 0.50, 0.50, 0.87,
-      1.40, 1.40, 1.60, 0.50, 0.50, 0.50, 0.50, 1.40, 0.90, 1.60, 0.50,
-      0.50, 0.50, 0.50, 0.50, 0.90, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
-      0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50, 0.50,
-  };
-  const double kPow = 2.0887549489102436;
-  HWY_ALIGN static float quant[64];
-  for (size_t i = 0; i < 64; i++) {
-    quant[i] = static_cast<float>(std::pow(kQuant64[i], kPow));
-  }
-  return quant;
-}
-
 // For converting full vectors to a subset. Assumes `vfull` lanes are identical.
 template <class D, class VFull>
 Vec<D> CapTo(const D d, VFull vfull) {
@@ -127,47 +109,6 @@ Vec<D> CapTo(const D d, VFull vfull) {
   HWY_ALIGN T lanes[MaxLanes(dfull)];
   Store(vfull, dfull, lanes);
   return Load(d, lanes);
-}
-
-// Increase precision in 8x8 blocks that are complicated in DCT space.
-template <class D, class V>
-V DctModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
-                const V out_val) {
-  HWY_ALIGN float dct[kDCTBlockSize];
-  HWY_ALIGN float scratch_space[kDCTBlockSize * 2];
-  ComputeTransposedScaledDCT<8>()(
-      DCTFrom(xyb.ConstRow(y) + x, xyb.PixelsPerRow()), dct, scratch_space);
-
-  // Dealing with all 64 coefficients, don't need to limit to 8 here.
-  const HWY_FULL(float) dfull;
-  auto entropyQL2v = Zero(dfull);
-  auto entropyQL4v = Zero(dfull);
-  auto entropyQL8v = Zero(dfull);
-  static const float* quant = Quant64();
-  for (size_t i = 0; i < kDCTBlockSize; i += Lanes(dfull)) {
-    auto v = Load(dfull, dct + i);
-    v *= v;
-    const auto q = Load(dfull, quant + i);
-    entropyQL2v = MulAdd(q, v, entropyQL2v);
-    v *= v;
-    entropyQL4v = MulAdd(q, v, entropyQL4v);
-    v *= v;
-    entropyQL8v = MulAdd(q, v, entropyQL8v);
-  }
-  // Narrow to `d` so we can return the result.
-  auto entropyQL2 = CapTo(d, SumOfLanes(entropyQL2v));
-  auto entropyQL4 = CapTo(d, SumOfLanes(entropyQL4v));
-  auto entropyQL8 = CapTo(d, SumOfLanes(entropyQL8v));
-  entropyQL2 = Sqrt(entropyQL2);
-  entropyQL4 = Sqrt(Sqrt(entropyQL4));
-  entropyQL8 = Sqrt(Sqrt(Sqrt(entropyQL8)));
-  const auto mulQL2 = Set(d, 0.0094515917246073208f);
-  const auto mulQL4 = Set(d, -0.45071294877535906f);
-  const auto mulQL8 = Set(d, 0.47301295405017962f);
-  const auto v = MulAdd(mulQL2, entropyQL2,
-                        MulAdd(mulQL4, entropyQL4, mulQL8 * entropyQL8));
-  const auto kMul = Set(d, 6.3983908561264125f);
-  return MulAdd(kMul, v, out_val);
 }
 
 // mul and mul2 represent a scaling difference between jxl and butteraugli.
@@ -264,48 +205,6 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
 }
 
-// Increase precision in 8x8 blocks that have high dynamic range.
-template <class D, class V>
-V RangeModulation(const D d, const size_t x, const size_t y,
-                  const ImageF& xyb_x, const ImageF& xyb_y, const V out_val) {
-  auto minval_x = Set(d, 1e30f);
-  auto minval_y = Set(d, 1e30f);
-  auto maxval_x = Set(d, -1e30f);
-  auto maxval_y = Set(d, -1e30f);
-  for (size_t dy = 0; dy < 8; ++dy) {
-    const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
-    const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
-    for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
-      const auto vx = Load(d, row_in_x + x + dx);
-      const auto vy = Load(d, row_in_y + x + dx);
-      minval_x = Min(minval_x, vx);
-      maxval_x = Max(maxval_x, vx);
-      minval_y = Min(minval_y, vy);
-      maxval_y = Max(maxval_y, vy);
-    }
-  }
-
-  const auto min_x = MinOfLanes(minval_x);
-  const auto max_x = MaxOfLanes(maxval_x);
-  const auto min_y = MinOfLanes(minval_y);
-  const auto max_y = MaxOfLanes(maxval_y);
-
-  // TODO(jyrki): should be about 3.0 ?!
-  const auto xmul = Set(d, 1.75f);
-  const auto range_x = xmul * (max_x - min_x);
-  const auto range_y = max_y - min_y;
-  // This is not really a sound approach but it seems to yield better results
-  // than the previous approach of just using range_y.
-  const auto rangeL = Sqrt(range_x * range_x + range_y * range_y);
-  const auto mulL = Set(d, 0.044491717557348452);
-
-  const auto range = Sqrt(rangeL + Set(d, 1.0f)) - Set(d, 1.0f);
-  const auto mul = Set(d, 0.52709327155868646);
-  // Clamp to [-7, 7] for precaution. Values very far from 0 appear to occur in
-  // some pathological cases and cause problems downstream.
-  return MulAdd(mulL, rangeL, MulAdd(mul, range, out_val));
-}
-
 // Change precision in 8x8 blocks that have high frequency content.
 template <class D, class V>
 V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
@@ -377,11 +276,8 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
         for (size_t x = 0; x < xyb_x.xsize(); x += 8) {
           auto out_val = Set(df, row_out[x / 8]);
           out_val = ComputeMask(df, out_val);
-          out_val = DctModulation(df, x, y, xyb_y, out_val);
-          out_val = RangeModulation(df, x, y, xyb_x, xyb_y, out_val);
           out_val = HfModulation(df, x, y, xyb_y, out_val);
           out_val = GammaModulation(df, x, y, xyb_x, xyb_y, out_val);
-
           // We want multiplicative quantization field, so everything
           // until this point has been modulating the exponent.
           row_out[x / 8] = std::exp(GetLane(out_val)) * mul + add;
@@ -429,7 +325,7 @@ void FuzzyErosion(const ImageF& from, ImageF* to) {
   for (size_t y = 0; y < ysize; ++y) {
     for (size_t x = 0; x < xsize; ++x) {
       float min0 = from.Row(y)[x];
-      float min1 = 2 * min0;
+      float min1 = min0;
       float min2 = min1;
       if (x >= step) {
         float v = from.Row(y)[x - step];
@@ -463,7 +359,12 @@ void FuzzyErosion(const ImageF& from, ImageF* to) {
         float v = from.Row(y + step)[x];
         StoreMin3(v, min0, min1, min2);
       }
-      to->Row(y)[x] = (0.45f * min0 + 0.3f * min1 + 0.25f * min2);
+      static const float kMulC = 0.029598804634393225;
+      static const float kMul0 = 0.561331076516815;
+      static const float kMul1 = 0.16504828561110252;
+      static const float kMul2 = 0.2440218332376892;
+      to->Row(y)[x] = kMulC * from.Row(y)[x] +
+                      kMul0 * min0 + kMul1 * min1 + kMul2 * min2;
     }
   }
 }

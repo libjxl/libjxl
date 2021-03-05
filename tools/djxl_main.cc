@@ -73,8 +73,10 @@ int DecompressMain(int argc, const char* argv[]) {
 
   jxl::PaddedBytes compressed;
   if (!jxl::ReadFile(args.file_in, &compressed)) return 1;
-  fprintf(stderr, "Read %zu compressed bytes [%s]\n", compressed.size(),
-          CodecConfigString(JxlDecoderVersion()).c_str());
+  if (!args.quiet) {
+    fprintf(stderr, "Read %zu compressed bytes [%s]\n", compressed.size(),
+            CodecConfigString(JxlDecoderVersion()).c_str());
+  }
 
   // If the file uses the box format container, unpack the boxes into
   // `container`. Otherwise, fill `container.codestream` accordingly.
@@ -113,25 +115,34 @@ int DecompressMain(int argc, const char* argv[]) {
 
   jxl::AuxOut aux_out;
 
-  if (args.decode_to_jpeg) {
-    // --jpeg flag passed, decode to JPEG.
+  if (!args.decode_to_pixels) {
     args.params.keep_dct = true;
 
     jxl::PaddedBytes jpg_output;
+    bool success = true;
     for (size_t i = 0; i < args.num_reps; ++i) {
-      if (!DecompressJxlToJPEG(container, args, &pool, &jpg_output, &aux_out,
-                               &stats)) {
-        return 1;
-      }
+      success = success && DecompressJxlToJPEG(container, args, &pool,
+                                               &jpg_output, &aux_out, &stats);
     }
+    if (!args.quiet && success) fprintf(stderr, "Reconstructed to JPEG.\n");
 
-    if (args.file_out != nullptr) {
+    if (success && args.file_out != nullptr) {
       if (!jxl::WriteFile(jpg_output, args.file_out)) {
         fprintf(stderr, "Failed to write to \"%s\"\n", args.file_out);
         return 1;
       }
     }
-  } else {
+    if (!success) {
+      if (!args.quiet) {
+        fprintf(stderr,
+                "Warning: could not decode losslessly to JPEG. Retrying with "
+                "--pixels_to_jpeg...\n");
+      }
+      args.decode_to_pixels = true;
+    }
+  }
+  if (args.decode_to_pixels) {
+    args.params.keep_dct = false;
     jxl::CodecInOut io;
     auto assign = [](const uint8_t* bytes, size_t size,
                      jxl::PaddedBytes& target) {
@@ -162,7 +173,7 @@ int DecompressMain(int argc, const char* argv[]) {
         return 1;
       }
     }
-
+    if (!args.quiet) fprintf(stderr, "Decoded to pixels.\n");
     if (!WriteJxlOutput(args, args.file_out, io, &pool)) return 1;
 
     if (args.print_read_bytes) {
@@ -174,12 +185,12 @@ int DecompressMain(int argc, const char* argv[]) {
     aux_out.Print(args.num_reps);
   }
 
-  JXL_CHECK(stats.Print(pool.NumWorkerThreads()));
+  if (!args.quiet) JXL_CHECK(stats.Print(pool.NumWorkerThreads()));
 
   if (args.print_profile == jxl::Override::kOn) {
     PROFILER_PRINT_RESULTS();
   }
-  jxl::CacheAligned::PrintStats();
+  if (!args.quiet) jxl::CacheAligned::PrintStats();
   return 0;
 }
 

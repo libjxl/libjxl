@@ -60,6 +60,18 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
   size_t image_xsize = state.frame_header.nonserialized_metadata->xsize();
   size_t image_ysize = state.frame_header.nonserialized_metadata->ysize();
 
+  if ((dec_state->pre_color_transform_frame.xsize() != 0) &&
+      ((image_xsize != foreground->xsize()) ||
+       (image_ysize != foreground->ysize()))) {
+    // Extra channels are going to be resized. Make a copy.
+    if (foreground->HasExtraChannels()) {
+      dec_state->pre_color_transform_ec.clear();
+      for (const auto& ec : foreground->extra_channels()) {
+        dec_state->pre_color_transform_ec.emplace_back(CopyImage(ec));
+      }
+    }
+  }
+
   // the rect in the canvas that needs to be updated
   Rect cropbox(0, 0, image_xsize, image_ysize);
   // the rect of this frame that overlaps with the canvas
@@ -93,7 +105,6 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
     if (foreground->HasExtraChannels()) {
       num_ec = foreground->extra_channels().size();
       ec = &dest.extra_channels();
-      ec->swap(dec_state->pre_color_transform_ec);
       ec->clear();
     }
     Image3F croppedcolor(image_xsize, image_ysize);

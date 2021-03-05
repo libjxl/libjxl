@@ -17,7 +17,6 @@
 #include "gtest/gtest.h"
 #include "jxl/encode_cxx.h"
 #include "lib/extras/codec.h"
-#include "lib/jxl/box.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/encode_internal.h"
@@ -188,6 +187,136 @@ TEST(EncodeTest, OptionsTest) {
   }
 }
 
+namespace {
+// Returns a copy of buf from offset to offset+size, or a new zeroed vector if
+// the result would have been out of bounds taking integer overflow into
+// account.
+const std::vector<uint8_t> SliceSpan(const jxl::Span<const uint8_t>& buf,
+                                     size_t offset, size_t size) {
+  if (offset + size >= buf.size()) {
+    return std::vector<uint8_t>(size, 0);
+  }
+  if (offset + size < offset) {
+    return std::vector<uint8_t>(size, 0);
+  }
+  return std::vector<uint8_t>(buf.data() + offset, buf.data() + offset + size);
+}
+
+struct Box {
+  // The type of the box.
+  // If "uuid", use extended_type instead
+  char type[4] = {0, 0, 0, 0};
+
+  // The extended_type is only used when type == "uuid".
+  // Extended types are not used in JXL. However, the box format itself
+  // supports this so they are handled correctly.
+  char extended_type[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+  // Box data.
+  jxl::Span<const uint8_t> data = jxl::Span<const uint8_t>(nullptr, 0);
+
+  // If the size is not given, the datasize extends to the end of the file.
+  // If this field is false, the size field is not encoded when the box is
+  // serialized.
+  bool data_size_given = true;
+
+  // If successfull, returns true and sets `in` to be the rest data (if any).
+  // If `in` contains a box with a size larger than `in.size()`, will not
+  // modify `in`, and will return true but the data `Span<uint8_t>` will
+  // remain set to nullptr.
+  // If unsuccessful, returns error and doesn't modify `in`.
+  jxl::Status Decode(jxl::Span<const uint8_t>* in) {
+    // Total box_size including this header itself.
+    uint64_t box_size = LoadBE32(SliceSpan(*in, 0, 4).data());
+    size_t pos = 4;
+
+    memcpy(type, SliceSpan(*in, pos, 4).data(), 4);
+    pos += 4;
+
+    if (box_size == 1) {
+      // If the size is 1, it indicates extended size read from 64-bit integer.
+      box_size = LoadBE64(SliceSpan(*in, pos, 8).data());
+      pos += 8;
+    }
+
+    if (!memcmp("uuid", type, 4)) {
+      memcpy(extended_type, SliceSpan(*in, pos, 16).data(), 16);
+      pos += 16;
+    }
+
+    // This is the end of the box header, the box data begins here. Handle
+    // the data size now.
+    const size_t header_size = pos;
+
+    if (box_size != 0) {
+      if (box_size < header_size) {
+        return JXL_FAILURE("Invalid box size");
+      }
+      if (box_size > in->size()) {
+        // The box is fine, but the input is too short.
+        return true;
+      }
+      data_size_given = true;
+      data = jxl::Span<const uint8_t>(in->data() + header_size,
+                                      box_size - header_size);
+    } else {
+      data_size_given = false;
+      data = jxl::Span<const uint8_t>(in->data() + header_size,
+                                      in->size() - header_size);
+    }
+
+    *in = jxl::Span<const uint8_t>(in->data() + header_size + data.size(),
+                                   in->size() - header_size - data.size());
+    return true;
+  }
+};
+
+struct Container {
+  std::vector<Box> boxes;
+
+  // If successful, returns true and sets `in` to be the rest data (if any).
+  // If unsuccessful, returns error and doesn't modify `in`.
+  jxl::Status Decode(jxl::Span<const uint8_t>* in) {
+    boxes.clear();
+
+    Box signature_box;
+    JXL_RETURN_IF_ERROR(signature_box.Decode(in));
+    if (memcmp("JXL ", signature_box.type, 4) != 0) {
+      return JXL_FAILURE("Invalid magic signature");
+    }
+    if (signature_box.data.size() != 4)
+      return JXL_FAILURE("Invalid magic signature");
+    if (signature_box.data[0] != 0xd || signature_box.data[1] != 0xa ||
+        signature_box.data[2] != 0x87 || signature_box.data[3] != 0xa) {
+      return JXL_FAILURE("Invalid magic signature");
+    }
+
+    Box ftyp_box;
+    JXL_RETURN_IF_ERROR(ftyp_box.Decode(in));
+    if (memcmp("ftyp", ftyp_box.type, 4) != 0) {
+      return JXL_FAILURE("Invalid ftyp");
+    }
+    if (ftyp_box.data.size() != 12) return JXL_FAILURE("Invalid ftyp");
+    const char* expected = "jxl \0\0\0\0jxl ";
+    if (memcmp(expected, ftyp_box.data.data(), 12) != 0)
+      return JXL_FAILURE("Invalid ftyp");
+
+    while (in->size() > 0) {
+      Box box = {};
+      JXL_RETURN_IF_ERROR(box.Decode(in));
+      if (box.data.data() == nullptr) {
+        // The decoding encountered a box, but not enough data yet.
+        return true;
+      }
+      boxes.emplace_back(box);
+    }
+
+    return true;
+  }
+};
+
+}  // namespace
+
 TEST(EncodeTest, JPEGReconstructionTest) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
@@ -234,9 +363,9 @@ TEST(EncodeTest, JPEGReconstructionTest) {
   compressed.resize(next_out - compressed.data());
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 
-  jxl::JxlContainer container = {};
-  jxl::Span<uint8_t> encoded_span =
-      jxl::Span<uint8_t>(compressed.data(), compressed.size());
+  Container container = {};
+  jxl::Span<const uint8_t> encoded_span =
+      jxl::Span<const uint8_t>(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
   EXPECT_EQ(0, encoded_span.size());
   EXPECT_EQ(0, memcmp("jbrd", container.boxes[0].type, 4));

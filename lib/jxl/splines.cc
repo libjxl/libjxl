@@ -200,35 +200,6 @@ float ColorQuantizationWeight(const int32_t adjustment, const int channel,
   return multiplier / kChannelWeight[channel];
 }
 
-enum SplineEntropyContexts : size_t {
-  kQuantizationAdjustmentContext = 0,
-  kStartingPositionContext,
-  kNumSplinesContext,
-  kNumControlPointsContext,
-  kControlPointsContext,
-  kDCTContext,
-  kNumSplineContexts
-};
-
-void EncodeAllStartingPoints(const std::vector<Spline::Point>& points,
-                             std::vector<Token>* tokens) {
-  int64_t last_x = 0;
-  int64_t last_y = 0;
-  for (size_t i = 0; i < points.size(); i++) {
-    const int64_t x = std::lround(points[i].x);
-    const int64_t y = std::lround(points[i].y);
-    if (i == 0) {
-      tokens->emplace_back(kStartingPositionContext, x);
-      tokens->emplace_back(kStartingPositionContext, y);
-    } else {
-      tokens->emplace_back(kStartingPositionContext, PackSigned(x - last_x));
-      tokens->emplace_back(kStartingPositionContext, PackSigned(y - last_y));
-    }
-    last_x = x;
-    last_y = y;
-  }
-}
-
 Status DecodeAllStartingPoints(std::vector<Spline::Point>* const points,
                                BitReader* const br, ANSSymbolReader* reader,
                                const std::vector<uint8_t>& context_map,
@@ -481,30 +452,6 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
   }
   JXL_RETURN_IF_ERROR(decode_dct(sigma_dct_));
   return true;
-}
-
-void Splines::Encode(BitWriter* writer, const size_t layer,
-                     const HistogramParams& histogram_params,
-                     AuxOut* aux_out) const {
-  JXL_ASSERT(HasAny());
-
-  std::vector<QuantizedSpline> splines = splines_;
-  std::vector<std::vector<Token>> tokens(1);
-  tokens[0].emplace_back(kNumSplinesContext, splines.size() - 1);
-  EncodeAllStartingPoints(starting_points_, &tokens[0]);
-
-  tokens[0].emplace_back(kQuantizationAdjustmentContext,
-                         PackSigned(quantization_adjustment_));
-
-  for (const QuantizedSpline& spline : splines) {
-    spline.Tokenize(&tokens[0]);
-  }
-
-  EntropyEncodingData codes;
-  std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(histogram_params, kNumSplineContexts, tokens, &codes,
-                           &context_map, writer, layer, aux_out);
-  WriteTokens(tokens[0], codes, context_map, writer, layer, aux_out);
 }
 
 Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {

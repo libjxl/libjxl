@@ -270,6 +270,25 @@ struct Passes : public Fields {
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
+  void GetDownsamplingBracket(size_t pass, int& minShift, int& maxShift) const {
+    maxShift = 2;
+    minShift = 0;
+    for (size_t i = 0;; i++) {
+      for (uint32_t j = 0; j < num_downsample; ++j) {
+        if (i <= last_pass[j]) {
+          if (downsample[j] == 8) minShift = 3;
+          if (downsample[j] == 4) minShift = 2;
+          if (downsample[j] == 2) minShift = 1;
+          if (downsample[j] == 1) minShift = 0;
+        }
+      }
+      if (i == num_passes - 1) minShift = 0;
+      if (i == pass) return;
+      maxShift = minShift - 1;
+      minShift = 0;
+    }
+  }
+
   uint32_t num_passes;      // <= kMaxNumPasses
   uint32_t num_downsample;  // <= num_passes
 

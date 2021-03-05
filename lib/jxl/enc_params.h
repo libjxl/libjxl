@@ -152,7 +152,7 @@ struct CompressParams {
   // Put center groups first in the bitstream.
   bool middleout = false;
 
-  size_t progressive_dc = 0;
+  int progressive_dc = -1;
 
   // Ensure invisible pixels are not set to 0.
   bool keep_invisible = false;
@@ -231,6 +231,7 @@ struct CompressParams {
 static constexpr float kMinButteraugliForDynamicAR = 0.5f;
 static constexpr float kMinButteraugliForDots = 3.0f;
 static constexpr float kMinButteraugliToSubtractOriginalPatches = 3.0f;
+static constexpr float kMinButteraugliDistanceForProgressiveDc = 4.5f;
 
 // Always off
 static constexpr float kMinButteraugliForNoise = 99.0f;

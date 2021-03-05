@@ -25,6 +25,7 @@
 #include "lib/jxl/dct_for_test.h"
 #include "lib/jxl/dec_transforms.h"
 #include "lib/jxl/enc_modular.h"
+#include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_transforms.h"
 
 namespace jxl {
@@ -46,7 +47,7 @@ void CheckSimilar(float a, float b) {
 TEST(QuantWeightsTest, DC) {
   DequantMatrices mat;
   float dc_quant[3] = {1e+5, 1e+3, 1e+1};
-  mat.SetCustomDC(dc_quant);
+  DequantMatricesSetCustomDC(&mat, dc_quant);
   for (size_t c = 0; c < 3; c++) {
     CheckSimilar(mat.InvDCQuant(c), dc_quant[c]);
   }
@@ -58,8 +59,7 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
   ModularFrameEncoder encoder(frame_header, CompressParams{});
-  mat.SetModularFrameEncoder(&encoder);
-  mat.SetCustom(encodings);
+  DequantMatricesSetCustom(&mat, encodings, &encoder);
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
     const QuantEncoding& e = encodings[i];
@@ -182,12 +182,11 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
   ModularFrameEncoder encoder(frame_header, CompressParams{});
-  dequant_matrices.SetModularFrameEncoder(&encoder);
-  dequant_matrices.SetCustom(encodings);
+  DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder);
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};
-  dequant_matrices.SetCustomDC(dc_quant);
+  DequantMatricesSetCustomDC(&dequant_matrices, dc_quant);
 
   HWY_ALIGN_MAX float scratch_space[16 * 16 * 2];
 

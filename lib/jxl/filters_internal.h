@@ -18,8 +18,17 @@
 #include <stddef.h>
 
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/image_ops.h"
 
 namespace jxl {
+
+// Maps a row to the range [0, ysize) mirroring it when outside the [0, ysize)
+// range.
+struct RowMapMirror {
+  explicit RowMapMirror(size_t ysize) : ysize_(ysize) {}
+  size_t operator()(ssize_t y) { return Mirror(y, ysize_); }
+  size_t ysize_;
+};
 
 // Maps a row in the range [-16, \inf) to a row number in the range [0, m) using
 // the modulo operation.

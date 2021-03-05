@@ -36,7 +36,6 @@
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/epf.h"
-#include "lib/jxl/external_image.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/gaborish.h"
 #include "lib/jxl/loop_filter.h"
@@ -86,9 +85,15 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
         XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params, &linear_r,
                  &linear_g, &linear_b);
 
+#if JXL_HIGH_PRECISION
         Store(TF_SRGB().EncodedFromDisplay(d, linear_r), d, row0 + x);
         Store(TF_SRGB().EncodedFromDisplay(d, linear_g), d, row1 + x);
         Store(TF_SRGB().EncodedFromDisplay(d, linear_b), d, row2 + x);
+#else
+        Store(FastLinearToSRGB(d, linear_r), d, row0 + x);
+        Store(FastLinearToSRGB(d, linear_g), d, row1 + x);
+        Store(FastLinearToSRGB(d, linear_b), d, row2 + x);
+#endif
       }
     } else {
       return JXL_FAILURE("Invalid target encoding");
@@ -107,69 +112,125 @@ namespace jxl {
 
 HWY_EXPORT(UndoXYBInPlace);
 
+namespace {
+// Implements EnsurePadding, but processes the image one row at a time.
+// TODO(veluca): the image could be padded in-place if we could ensure enough
+// x border is present. This would allow removing up to two temporary images,
+// and reduce overall ops / memory usage.
+class EnsurePaddingRowByRow {
+ public:
+  void Init(const Image3F& src, const Rect& src_rect, Image3F* storage,
+            const Image3F** output, Rect* output_rect, size_t xpadding,
+            size_t ypadding, size_t xborder, ssize_t* y0, ssize_t* y1) {
+    JXL_DASSERT(xborder >= xpadding);
+    // coordinates relative to src/output_rect.
+    *y0 = src_rect.y0() >= ypadding ? -ypadding : 0;
+    *y1 = src_rect.y0() + src_rect.ysize() + ypadding <= src.ysize()
+              ? src_rect.ysize() + ypadding
+              : src.ysize() - src_rect.y0();
+    if (src_rect.x0() >= xborder &&
+        src_rect.x0() + src_rect.xsize() + xborder <= src.xsize() &&
+        src_rect.y0() >= ypadding &&
+        src_rect.y0() + src_rect.ysize() + ypadding <= src.ysize()) {
+      // There is already enough border around `src:src_rect`, nothing to do.
+      *output = &src;
+      *output_rect = src_rect;
+      // Calm down GCC compiler.
+      src_x_start_ = src_x_end_ = storage_x_start_ = 0;
+      strategy_ = kSkip;
+    } else {
+      *output = storage;
+      *output_rect = Rect(xborder, -*y0, src_rect.xsize(), src_rect.ysize());
+      storage->ShrinkTo(storage->xsize(), *y1 - *y0);
+      src_x_start_ = src_rect.x0() - xpadding;
+      src_x_end_ = src_rect.x0() + src_rect.xsize() + xpadding;
+      storage_x_start_ = output_rect->x0() - xpadding;
+      if (src_x_start_ + static_cast<ssize_t>(src.xsize()) >= 0 &&
+          static_cast<size_t>(src_x_end_) <= 2 * src.xsize()) {
+        strategy_ = kFast;
+      } else {
+        strategy_ = kSlow;
+      }
+    }
+    xpadding_ = xpadding;
+    ypadding_ = ypadding;
+    xborder_ = xborder;
+    src_rect_ = src_rect;
+    src_ = &src;
+    dst_ = storage;
+    dst_rect_ = *output_rect;
+  }
+  // To be called when row `y` of the input is available, for all the values in
+  // [*y0, *y1).
+  void Process(ssize_t y) {
+    switch (strategy_) {
+      case kSkip:
+        break;
+      case kFast:
+        // Image is wide enough that a single Mirror() step is sufficient.
+        for (size_t c = 0; c < 3; c++) {
+          float* JXL_RESTRICT row_out = dst_->PlaneRow(c, y + dst_rect_.y0());
+          const float* JXL_RESTRICT row_in =
+              src_->ConstPlaneRow(c, y + src_rect_.y0());
+          // For x in [src_x_start, 0), we access the beginning of the row,
+          // flipped.
+          ssize_t x = src_x_start_;
+          for (; x < 0; x++) {
+            row_out[x - src_x_start_ + storage_x_start_] = row_in[-x - 1];
+          }
+          // From 0 to src_x_end or src.xsize(), we just copy directly.
+          size_t num_direct = std::min<ssize_t>(src_x_end_, src_->xsize()) - x;
+          memcpy(row_out + x - src_x_start_ + storage_x_start_, row_in + x,
+                 num_direct * sizeof(float));
+          x += num_direct;
+          // From src.xsize() to src_x_end, we access the end of the row,
+          // flipped.
+          for (; x < src_x_end_; x++) {
+            row_out[x - src_x_start_ + storage_x_start_] =
+                row_in[2 * src_->xsize() - x - 1];
+          }
+        }
+        break;
+
+      case kSlow:
+        // Slow case for small images.
+        for (size_t c = 0; c < 3; c++) {
+          float* JXL_RESTRICT row_out = dst_->PlaneRow(c, y + dst_rect_.y0());
+          const float* JXL_RESTRICT row_in =
+              src_->ConstPlaneRow(c, y + src_rect_.y0());
+          for (ssize_t x = src_x_start_; x < src_x_end_; x++) {
+            row_out[x - src_x_start_ + storage_x_start_] =
+                row_in[Mirror(x, src_->xsize())];
+          }
+        }
+    }
+  }
+
+ private:
+  size_t xpadding_;
+  size_t ypadding_;
+  size_t xborder_;
+  ssize_t src_x_start_;
+  ssize_t src_x_end_;
+  ssize_t storage_x_start_;
+  const Image3F* src_;
+  Rect src_rect_;
+  Image3F* dst_;
+  Rect dst_rect_;
+  enum Strategy { kFast, kSlow, kSkip };
+  Strategy strategy_;
+};
+}  // namespace
+
 void EnsurePadding(const Image3F& src, const Rect& src_rect, Image3F* storage,
                    const Image3F** output, Rect* output_rect, size_t xpadding,
                    size_t ypadding, size_t xborder) {
-  JXL_CHECK(xborder >= xpadding);
-  if (src_rect.x0() >= xborder &&
-      src_rect.x0() + src_rect.xsize() + xborder <= src.xsize() &&
-      src_rect.y0() >= ypadding &&
-      src_rect.y0() + src_rect.ysize() + ypadding <= src.ysize()) {
-    // There is already enough border around `src:src_rect`, nothing to do.
-    *output = &src;
-    *output_rect = src_rect;
-    return;
-  }
-  *output = storage;
-  *output_rect = Rect(xborder, ypadding, src_rect.xsize(), src_rect.ysize());
-  ssize_t src_x_start = src_rect.x0() - xpadding;
-  ssize_t src_x_end = src_rect.x0() + src_rect.xsize() + xpadding;
-  ssize_t storage_x_start = output_rect->x0() - xpadding;
-  if (src_x_start + static_cast<ssize_t>(src.xsize()) >= 0 &&
-      static_cast<size_t>(src_x_end) <= 2 * src.xsize()) {
-    // Image is wide enough that a single Mirror() step is sufficient.
-    for (size_t c = 0; c < 3; c++) {
-      ssize_t y0 = src_rect.y0() - ypadding;
-      ssize_t y1 = src_rect.y0() + src_rect.ysize() + ypadding;
-      for (ssize_t y = y0; y < y1; y++) {
-        float* JXL_RESTRICT row_out =
-            storage->PlaneRow(c, y + output_rect->y0() - src_rect.y0());
-        const float* JXL_RESTRICT row_in =
-            src.ConstPlaneRow(c, Mirror(y, src.ysize()));
-        // For x in [src_x_start, 0), we access the beginning of the row,
-        // flipped.
-        ssize_t x = src_x_start;
-        for (; x < 0; x++) {
-          row_out[x - src_x_start + storage_x_start] = row_in[-x - 1];
-        }
-        // From 0 to src_x_end or src.xsize(), we just copy directly.
-        size_t num_direct = std::min<ssize_t>(src_x_end, src.xsize()) - x;
-        memcpy(row_out + x - src_x_start + storage_x_start, row_in + x,
-               num_direct * sizeof(float));
-        x += num_direct;
-        // From src.xsize() to src_x_end, we access the end of the row, flipped.
-        for (; x < src_x_end; x++) {
-          row_out[x - src_x_start + storage_x_start] =
-              row_in[2 * src.xsize() - x - 1];
-        }
-      }
-    }
-  } else {
-    // Slow case for small images.
-    for (size_t c = 0; c < 3; c++) {
-      ssize_t y0 = src_rect.y0() - ypadding;
-      ssize_t y1 = src_rect.y0() + src_rect.ysize() + ypadding;
-      for (ssize_t y = y0; y < y1; y++) {
-        float* JXL_RESTRICT row_out =
-            storage->PlaneRow(c, y + output_rect->y0() - src_rect.y0());
-        const float* JXL_RESTRICT row_in =
-            src.ConstPlaneRow(c, Mirror(y, src.ysize()));
-        for (ssize_t x = src_x_start; x < src_x_end; x++) {
-          row_out[x - src_x_start + storage_x_start] =
-              row_in[Mirror(x, src.xsize())];
-        }
-      }
-    }
+  ssize_t y0, y1;
+  EnsurePaddingRowByRow impl;
+  impl.Init(src, src_rect, storage, output, output_rect, xpadding, ypadding,
+            xborder, &y0, &y1);
+  for (ssize_t y = y0; y < y1; y++) {
+    impl.Process(y);
   }
 }
 
@@ -179,6 +240,7 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
                          const Rect& output_rect) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
+  const LoopFilter& lf = frame_header.loop_filter;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
   JXL_DASSERT(output_rect.xsize() <= kGroupDim);
   JXL_DASSERT(output_rect.ysize() <= kGroupDim);
@@ -189,13 +251,12 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
               output_rect.xsize() + output_rect.x0() ==
                   dec_state->shared->frame_dim.xsize);
 
-  // This function operates in multiple steps:
-  // - Apply EPF and/or Gaborish. This requires padding, and thus consumes a
-  //   larger rect than it produces.
-  // - Apply patches and splines (IF). This operates in-place.
-  // - Apply upsampling. This does *not* operate in-place and requires 2 pixels
-  //   of padding.
-  // - Apply noise and color transforms. This operates in-place.
+  // +----------------------------- STEP 1 ------------------------------+
+  // | Compute the rects on which patches and splines will be applied.   |
+  // | As we cannot modify the input, if no filters are applied this     |
+  // | requires an extra image copy. In case we are applying upsampling, |
+  // | we need to apply patches on a slightly larger image.              |
+  // +-------------------------------------------------------------------+
 
   // If we are applying upsampling, we need 2 more pixels around the actual rect
   // for border. Thus, we also need to apply patches and splines to those
@@ -215,30 +276,32 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
   Rect rect_for_if_storage = output_rect;
   Rect rect_for_upsampling = output_rect;
   Rect rect_for_if_input = input_rect;
+  size_t extra_rows_t = 0;
+  size_t extra_rows_b = 0;
   if (frame_header.upsampling != 1) {
     size_t ifbx0 = 0;
     size_t ifbx1 = 0;
     size_t ifby0 = 0;
     size_t ifby1 = 0;
     if (output_rect.x0() >= 2) {
-      JXL_ASSERT(input_rect.x0() >= 2);
+      JXL_DASSERT(input_rect.x0() >= 2);
       ifbx0 = 2;
     }
     if (output_rect.y0() >= 2) {
-      JXL_ASSERT(input_rect.y0() >= 2);
-      ifby0 = 2;
+      JXL_DASSERT(input_rect.y0() >= 2);
+      extra_rows_t = ifby0 = 2;
     }
     if (output_rect.x0() + output_rect.xsize() + 2 <=
         dec_state->shared->frame_dim.xsize_padded) {
-      JXL_ASSERT(input_rect.x0() + input_rect.xsize() + 2 <=
-                 input_image.xsize());
+      JXL_DASSERT(input_rect.x0() + input_rect.xsize() + 2 <=
+                  input_image.xsize());
       ifbx1 = 2;
     }
     if (output_rect.y0() + output_rect.ysize() + 2 <=
         dec_state->shared->frame_dim.ysize_padded) {
-      JXL_ASSERT(input_rect.y0() + input_rect.ysize() + 2 <=
-                 input_image.ysize());
-      ifby1 = 2;
+      JXL_DASSERT(input_rect.y0() + input_rect.ysize() + 2 <=
+                  input_image.ysize());
+      extra_rows_b = ifby1 = 2;
     }
     rect_for_if = Rect(output_rect.x0() - ifbx0, output_rect.y0() - ifby0,
                        output_rect.xsize() + ifbx0 + ifbx1,
@@ -260,100 +323,188 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
         rect_for_if_storage.ysize() + rect_for_if_storage.y0());
   }
 
-  if (frame_header.loop_filter.epf_iters == 0 &&
-      !frame_header.loop_filter.gab) {
-    CopyImageTo(rect_for_if_input, input_image, rect_for_if_storage,
-                storage_for_if);
-  } else {
-    const Image3F* filter_input;
-    Rect filter_input_rect;
-    size_t lf_padding = dec_state->shared->frame_header.loop_filter.Padding();
-    // If `rect_for_if_input` does not start at a multiple of kBlockDim, we
-    // extend the rect we run EPF on by one full block to ensure sigma is
-    // handled correctly. We also extend the output and image rects accordingly.
-    // To do this, we need 2 full blocks of border.
+  // +----------------------------- STEP 2 ------------------------------+
+  // | Set up the filter pipeline. This requires possibly padding the    |
+  // | input image, taking into account the possibly larger rect for     |
+  // | patches and splines.                                              |
+  // +-------------------------------------------------------------------+
+
+  const Image3F* filter_input;
+  Rect filter_input_rect;
+  // If `rect_for_if_input` does not start at a multiple of kBlockDim, we
+  // extend the rect we run EPF on by one full block to ensure sigma is
+  // handled correctly. We also extend the output and image rects accordingly.
+  // To do this, we need 2 full blocks of border.
+  EnsurePaddingRowByRow ensure_padding_filter;
+  FilterPipeline* fp = nullptr;
+  ssize_t ensure_padding_filter_y0 = 0;
+  ssize_t ensure_padding_filter_y1 = 0;
+  Rect filter_input_padded_rect, image_padded_rect, filter_output_padded_rect;
+  if (lf.epf_iters != 0 || lf.gab) {
     size_t xborder = kBlockDim + (rect_for_if.x0() % kBlockDim);
-    EnsurePadding(input_image, rect_for_if_input,
-                  &dec_state->filter_input_storage[thread], &filter_input,
-                  &filter_input_rect, lf_padding, lf_padding, xborder);
+    ensure_padding_filter.Init(input_image, rect_for_if_input,
+                               &dec_state->filter_input_storage[thread],
+                               &filter_input, &filter_input_rect, lf.Padding(),
+                               lf.Padding(), xborder, &ensure_padding_filter_y0,
+                               &ensure_padding_filter_y1);
     size_t xextra = filter_input_rect.x0() % kBlockDim;
-    Rect filter_input_padded_rect(
-        filter_input_rect.x0() - xextra, filter_input_rect.y0(),
-        filter_input_rect.xsize() + xextra, filter_input_rect.ysize());
-    Rect image_padded_rect(rect_for_if.x0() - xextra, rect_for_if.y0(),
-                           rect_for_if.xsize() + xextra, rect_for_if.ysize());
-    Rect filter_output_padded_rect(
-        rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
-        rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
-    ApplyFilters(dec_state, image_padded_rect, *filter_input,
-                 filter_input_padded_rect, thread, storage_for_if,
-                 filter_output_padded_rect);
+    filter_input_padded_rect =
+        Rect(filter_input_rect.x0() - xextra, filter_input_rect.y0(),
+             filter_input_rect.xsize() + xextra, filter_input_rect.ysize());
+    image_padded_rect = Rect(rect_for_if.x0() - xextra, rect_for_if.y0(),
+                             rect_for_if.xsize() + xextra, rect_for_if.ysize());
+    filter_output_padded_rect =
+        Rect(rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
+             rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
+    fp = PrepareFilterPipeline(dec_state, image_padded_rect, *filter_input,
+                               filter_input_padded_rect, thread, storage_for_if,
+                               filter_output_padded_rect);
   }
 
-  image_features.patches.AddTo(storage_for_if, rect_for_if_storage,
-                               rect_for_if);
-  JXL_RETURN_IF_ERROR(
-      image_features.splines.AddTo(storage_for_if, rect_for_if_storage,
-                                   rect_for_if, dec_state->shared->cmap));
+  // +----------------------------- STEP 3 ------------------------------+
+  // | Set up padding for upsampling.                                    |
+  // +-------------------------------------------------------------------+
 
   Rect upsampled_output_rect = output_rect;
+  EnsurePaddingRowByRow ensure_padding_upsampling;
+  const Image3F* upsampling_input;
+  Rect upsampling_input_rect;
+  ssize_t ensure_padding_upsampling_y0;
+  ssize_t ensure_padding_upsampling_y1;
   if (frame_header.upsampling != 1) {
-    const Image3F* upsampling_input;
-    Rect upsampling_input_rect;
     size_t xborder = kBlockDim;
-    // We reuse filter_input_storage here as it is not currently in use.
-    JXL_ASSERT(storage_for_if != &dec_state->filter_input_storage[thread]);
-    EnsurePadding(*storage_for_if, rect_for_upsampling,
-                  &dec_state->filter_input_storage[thread], &upsampling_input,
-                  &upsampling_input_rect, 2, 2, xborder);
+    ensure_padding_upsampling.Init(
+        *storage_for_if, rect_for_upsampling,
+        &dec_state->padded_upsampling_input_storage[thread], &upsampling_input,
+        &upsampling_input_rect, 2, 2, xborder, &ensure_padding_upsampling_y0,
+        &ensure_padding_upsampling_y1);
     upsampled_output_rect = Rect(output_rect.x0() * frame_header.upsampling,
                                  output_rect.y0() * frame_header.upsampling,
                                  output_rect.xsize() * frame_header.upsampling,
                                  output_rect.ysize() * frame_header.upsampling);
-    dec_state->upsampler.UpsampleRect(*upsampling_input, upsampling_input_rect,
-                                      output_image->color(),
-                                      upsampled_output_rect);
-  }
-  // The image data is now unconditionally in
-  // `output_image:upsampled_output_rect`.
-
-  if (frame_header.flags & FrameHeader::kNoise) {
-    PROFILER_ZONE("AddNoise");
-    AddNoise(image_features.noise_params, upsampled_output_rect,
-             dec_state->noise, upsampled_output_rect,
-             dec_state->shared_storage.cmap, output_image->color());
   }
 
-  if (dec_state->pre_color_transform_frame.xsize() != 0) {
-    const Rect pre_color_output_rect =
-        upsampled_output_rect.Crop(dec_state->pre_color_transform_frame);
-    for (size_t c = 0; c < 3; c++) {
-      for (size_t y = 0; y < pre_color_output_rect.ysize(); y++) {
-        float* JXL_RESTRICT row_out = pre_color_output_rect.PlaneRow(
-            &dec_state->pre_color_transform_frame, c, y);
-        const float* JXL_RESTRICT row_in =
-            pre_color_output_rect.ConstPlaneRow(*output_image->color(), c, y);
-        memcpy(row_out, row_in,
-               pre_color_output_rect.xsize() * sizeof(*row_in));
+  // Also prepare rect for memorizing the pre-color-transform frame.
+  const Rect pre_color_output_rect =
+      upsampled_output_rect.Crop(dec_state->pre_color_transform_frame);
+
+  // +----------------------------- STEP 4 ------------------------------+
+  // | Run the prepared pipeline of operations.                          |
+  // +-------------------------------------------------------------------+
+
+  // y values are relative to rect_for_if.
+  // Automatic mirroring in fp->ApplyFiltersRow() implies that we should ensure
+  // that padding for the first lines of the image is already present before
+  // calling ApplyFiltersRow() with "virtual" rows.
+  // Here we rely on the fact that virtual rows at the beginning of the image
+  // are only present if input_rect.y0() == 0.
+  ssize_t first_ensure_padding_y = ensure_padding_filter_y0;
+  if (input_rect.y0() == 0) {
+    JXL_DASSERT(ensure_padding_filter_y0 == 0);
+    first_ensure_padding_y =
+        std::min<ssize_t>(lf.Padding(), ensure_padding_filter_y1);
+    for (ssize_t y = 0; y < first_ensure_padding_y; y++) {
+      ensure_padding_filter.Process(y);
+    }
+  }
+
+  for (ssize_t y = -lf.Padding();
+       y < static_cast<ssize_t>(lf.Padding() + rect_for_if.ysize()); y++) {
+    if (fp) {
+      if (y >= first_ensure_padding_y && y < ensure_padding_filter_y1) {
+        ensure_padding_filter.Process(y);
+      }
+      fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_padded_rect, y);
+    } else {
+      for (size_t c = 0; c < 3; c++) {
+        memcpy(rect_for_if_storage.PlaneRow(storage_for_if, c, y),
+               rect_for_if_input.ConstPlaneRow(input_image, c, y),
+               rect_for_if_input.xsize() * sizeof(float));
       }
     }
-  }
-
-  // We skip the color transform entirely if save_before_color_transform and
-  // the frame is not supposed to be displayed.
-
-  if (frame_header.needs_color_transform()) {
-    if (frame_header.color_transform == ColorTransform::kXYB) {
-      JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(
-          output_image->color(), opsin_params, upsampled_output_rect,
-          dec_state->output_encoding));
-    } else if (frame_header.color_transform == ColorTransform::kYCbCr) {
-      YcbcrToRgb(*output_image->color(), output_image->color(),
-                 upsampled_output_rect);
+    if (y < static_cast<ssize_t>(lf.Padding())) continue;
+    // At this point, row `y - lf.Padding()` of `rect_for_if` has been produced
+    // by the filters.
+    ssize_t available_y = y - lf.Padding();
+    image_features.patches.AddTo(storage_for_if,
+                                 rect_for_if_storage.Line(available_y),
+                                 rect_for_if.Line(available_y));
+    JXL_RETURN_IF_ERROR(image_features.splines.AddTo(
+        storage_for_if, rect_for_if_storage.Line(available_y),
+        rect_for_if.Line(available_y), dec_state->shared->cmap));
+    size_t num_ys = 1;
+    if (frame_header.upsampling != 1) {
+      // Upsampling `y` values are relative to `rect_for_upsampling`, not to
+      // `rect_for_if`.
+      ssize_t shifted_y = available_y - extra_rows_t;
+      if (shifted_y >= ensure_padding_upsampling_y0 &&
+          shifted_y < ensure_padding_upsampling_y1) {
+        ensure_padding_upsampling.Process(shifted_y);
+      }
+      // Upsampling will access two rows of border, so the first upsampling
+      // output will be available after shifted_y is at least 2.
+      if (shifted_y < 2) continue;
+      // Value relative to upsampled_output_rect.
+      size_t input_y = shifted_y - 2;
+      size_t upsampled_available_y = frame_header.upsampling * input_y;
+      size_t num_input_rows = 1;
+      // If we are going to mirror the last output rows, then we already have 3
+      // input lines ready. This happens iff we did not extend rect_for_if on
+      // the bottom.
+      if (extra_rows_b != 2) {
+        num_input_rows = 3;
+      }
+      num_ys = num_input_rows * frame_header.upsampling;
+      dec_state->upsampler.UpsampleRect(
+          *upsampling_input,
+          upsampling_input_rect.Lines(input_y, num_input_rows),
+          output_image->color(),
+          upsampled_output_rect.Lines(upsampled_available_y, num_ys));
+      available_y = upsampled_available_y;
     }
-  }
 
-  // TODO(veluca): all blending should happen here.
+    // The image data is now unconditionally in
+    // `output_image:upsampled_output_rect`.
+    if (frame_header.flags & FrameHeader::kNoise) {
+      PROFILER_ZONE("AddNoise");
+      AddNoise(image_features.noise_params,
+               upsampled_output_rect.Lines(available_y, num_ys),
+               dec_state->noise,
+               upsampled_output_rect.Lines(available_y, num_ys),
+               dec_state->shared_storage.cmap, output_image->color());
+    }
+
+    if (dec_state->pre_color_transform_frame.xsize() != 0) {
+      for (size_t c = 0; c < 3; c++) {
+        for (size_t y = available_y;
+             y < num_ys && y < pre_color_output_rect.ysize(); y++) {
+          float* JXL_RESTRICT row_out = pre_color_output_rect.PlaneRow(
+              &dec_state->pre_color_transform_frame, c, y);
+          const float* JXL_RESTRICT row_in =
+              pre_color_output_rect.ConstPlaneRow(*output_image->color(), c, y);
+          memcpy(row_out, row_in,
+                 pre_color_output_rect.xsize() * sizeof(*row_in));
+        }
+      }
+    }
+
+    // We skip the color transform entirely if save_before_color_transform and
+    // the frame is not supposed to be displayed.
+
+    if (frame_header.needs_color_transform()) {
+      if (frame_header.color_transform == ColorTransform::kXYB) {
+        JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(
+            output_image->color(), opsin_params,
+            upsampled_output_rect.Lines(available_y, num_ys),
+            dec_state->output_encoding));
+      } else if (frame_header.color_transform == ColorTransform::kYCbCr) {
+        YcbcrToRgb(*output_image->color(), output_image->color(),
+                   upsampled_output_rect.Lines(available_y, num_ys));
+      }
+    }
+
+    // TODO(veluca): all blending should happen here.
+  }
 
   return true;
 }
@@ -413,21 +564,18 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       }
     }
   }
+  Image3F* finalize_image_rect_input = &dec_state->decoded;
+  Image3F chroma_upsampled_image;
   // If we used chroma subsampling, we upsample chroma now and run
   // ApplyImageFeatures after.
+  // TODO(veluca): this should part of the FinalizeImageRect() pipeline.
   if (!frame_header.chroma_subsampling.Is444()) {
+    chroma_upsampled_image = CopyImage(dec_state->decoded);
+    finalize_image_rect_input = &chroma_upsampled_image;
     for (size_t c = 0; c < 3; c++) {
-      // This implementation of Upsample assumes that the image dimension in
-      // xsize_padded, ysize_padded is a multiple of 8x8.
-      JXL_DASSERT(frame_dim.xsize_padded %
-                      (1u << frame_header.chroma_subsampling.HShift(c)) ==
-                  0);
-      JXL_DASSERT(frame_dim.ysize_padded %
-                      (1u << frame_header.chroma_subsampling.VShift(c)) ==
-                  0);
-      ImageF& plane = const_cast<ImageF&>(dec_state->decoded.Plane(c));
+      ImageF& plane = const_cast<ImageF&>(chroma_upsampled_image.Plane(c));
       plane.ShrinkTo(
-          (frame_dim.xsize_padded >> frame_header.chroma_subsampling.HShift(c)),
+          frame_dim.xsize_padded >> frame_header.chroma_subsampling.HShift(c),
           frame_dim.ysize_padded >> frame_header.chroma_subsampling.VShift(c));
       for (size_t i = 0; i < frame_header.chroma_subsampling.HShift(c); i++) {
         plane.InitializePaddingForUnalignedAccesses();
@@ -437,7 +585,7 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
         plane.InitializePaddingForUnalignedAccesses();
         plane = UpsampleV2(plane, pool);
       }
-      JXL_DASSERT(SameSize(plane, dec_state->decoded));
+      JXL_DASSERT(SameSize(plane, chroma_upsampled_image));
     }
   }
   // ApplyImageFeatures was not yet run.
@@ -462,9 +610,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
 
   std::atomic<bool> apply_features_ok{true};
   auto run_apply_features = [&](size_t rect_id, size_t thread) {
-    if (!FinalizeImageRect(dec_state->decoded, rects_to_process[rect_id],
-                           dec_state, thread, decoded,
-                           rects_to_process[rect_id])) {
+    if (!FinalizeImageRect(*finalize_image_rect_input,
+                           rects_to_process[rect_id], dec_state, thread,
+                           decoded, rects_to_process[rect_id])) {
       apply_features_ok = false;
     }
   };

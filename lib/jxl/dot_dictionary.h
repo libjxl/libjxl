@@ -24,14 +24,13 @@
 
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/aux_out_fwd.h"
-#include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/dec_patch_dictionary.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image.h"
-#include "lib/jxl/patch_dictionary.h"
 
 namespace jxl {
 

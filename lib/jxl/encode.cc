@@ -15,15 +15,15 @@
 #include "jxl/encode.h"
 
 #include <algorithm>
+#include <cstring>
 
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/span.h"
-#include "lib/jxl/box.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
-#include "lib/jxl/external_image.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 
 // Debug-printing failure macro similar to JXL_FAILURE, but for the status code
@@ -40,39 +40,6 @@
 #endif  // JXL_CRASH_ON_ERROR
 
 namespace jxl {
-
-JxlEncoderStatus BufferToImageBundle(const JxlPixelFormat& pixel_format,
-                                     uint32_t xsize, uint32_t ysize,
-                                     const void* buffer, size_t size,
-                                     jxl::ThreadPool* pool,
-                                     const jxl::ColorEncoding& c_current,
-                                     jxl::ImageBundle* ib) {
-  size_t bitdepth;
-
-  // TODO(zond): Make this accept more than float and uint8/16.
-  if (pixel_format.data_type == JXL_TYPE_FLOAT) {
-    bitdepth = 32;
-  } else if (pixel_format.data_type == JXL_TYPE_UINT8) {
-    bitdepth = 8;
-  } else if (pixel_format.data_type == JXL_TYPE_UINT16) {
-    bitdepth = 16;
-  } else {
-    return JXL_ENC_NOT_SUPPORTED;
-  }
-
-  if (!ConvertImage(jxl::Span<const uint8_t>(
-                        static_cast<uint8_t*>(const_cast<void*>(buffer)), size),
-                    xsize, ysize, c_current,
-                    /*has_alpha=*/pixel_format.num_channels == 2 ||
-                        pixel_format.num_channels == 4,
-                    /*alpha_is_premultiplied=*/false, bitdepth,
-                    pixel_format.endianness, /*flipped_y=*/false, pool, ib)) {
-    return JXL_ENC_ERROR;
-  }
-  ib->VerifyMetadata();
-
-  return JXL_ENC_SUCCESS;
-}
 
 Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
                                               ColorEncoding* internal) {
@@ -117,6 +84,41 @@ uint32_t JxlEncoderVersion(void) {
          JPEGXL_PATCH_VERSION;
 }
 
+constexpr unsigned char container_header[] = {
+    0,   0,   0, 0xc, 'J',  'X', 'L', ' ', 0xd, 0xa, 0x87,
+    0xa, 0,   0, 0,   0x14, 'f', 't', 'y', 'p', 'j', 'x',
+    'l', ' ', 0, 0,   0,    0,   'j', 'x', 'l', ' '};
+
+namespace {
+// Extends vec with size, and returns a pointer to the beginning of the
+// extension.
+uint8_t* ExtendVector(std::vector<uint8_t>* vec, size_t size) {
+  vec->resize(vec->size() + size, 0);
+  return vec->data() + vec->size() - size;
+}
+}  // namespace
+
+void JxlEncoderStruct::AppendBoxHeader(const jxl::BoxType& type, size_t size,
+                                       bool unbounded) {
+  uint64_t box_size = 0;
+  bool large_size = false;
+  if (!unbounded) {
+    box_size = size + 8;
+    if (box_size >= 0x100000000ull) {
+      large_size = true;
+    }
+  }
+
+  StoreBE32(large_size ? 1 : box_size, ExtendVector(&output_byte_queue, 4));
+
+  output_byte_queue.insert(output_byte_queue.end(), type.data(),
+                           type.data() + 4);
+
+  if (large_size) {
+    StoreBE64(box_size, ExtendVector(&output_byte_queue, 8));
+  }
+}
+
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
       std::move(input_frame_queue[0]);
@@ -126,20 +128,14 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
   if (!wrote_headers) {
     if (use_container) {
-      jxl::JxlContainer container = {};
+      output_byte_queue.insert(output_byte_queue.end(), container_header,
+                               container_header + sizeof(container_header));
       if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
-        jxl::JxlBox reconstruction_box = {};
-        memcpy(reconstruction_box.type, "jbrd", 4);
-        reconstruction_box.data = jxl::Span<const uint8_t>(
-            jpeg_metadata.data(), jpeg_metadata.size());
-        reconstruction_box.data_size_given = true;
-        container.boxes.push_back(reconstruction_box);
+        AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(), false);
+        output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
+                                 jpeg_metadata.end());
       }
-      jxl::JxlBox codestream_box = {};
-      memcpy(codestream_box.type, "jxlc", 4);
-      codestream_box.data_size_given = false;
-      container.boxes.push_back(codestream_box);
-      container.Encode(&output_byte_queue);
+      AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true);
     }
     if (!WriteHeaders(&metadata, &writer, nullptr)) {
       return JXL_ENC_ERROR;
@@ -416,11 +412,10 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     c_current = options->enc->metadata.m.color_encoding;
   }
 
-  if (JXL_ENC_SUCCESS !=
-      jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
-                               options->enc->metadata.ysize(), buffer, size,
-                               options->enc->thread_pool.get(), c_current,
-                               &(queued_frame->frame))) {
+  if (!jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
+                                options->enc->metadata.ysize(), buffer, size,
+                                options->enc->thread_pool.get(), c_current,
+                                &(queued_frame->frame))) {
     return JXL_ENC_ERROR;
   }
 

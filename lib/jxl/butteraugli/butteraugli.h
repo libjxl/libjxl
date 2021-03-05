@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <atomic>
 #include <cmath>
 #include <memory>
 #include <vector>

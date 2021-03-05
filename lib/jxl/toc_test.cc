@@ -20,6 +20,7 @@
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/enc_toc.h"
 
 namespace jxl {
 namespace {

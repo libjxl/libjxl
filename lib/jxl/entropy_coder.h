@@ -82,9 +82,6 @@ static constexpr U32Enc kDCThresholdDist(Bits(4), BitsOffset(8, 16),
 static constexpr U32Enc kQFThresholdDist(Bits(2), BitsOffset(3, 4),
                                          BitsOffset(5, 12), BitsOffset(8, 44));
 
-void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
-                       AuxOut* aux_out);
-
 Status DecodeBlockCtxMap(BitReader* br, BlockCtxMap* block_ctx_map);
 }  // namespace jxl
 

@@ -55,14 +55,13 @@ void Upsample(const Image3F& src, const Rect& src_rect, Image3F* dst,
               const Rect& dst_rect, const float kernel[4][4][5][5]) {
   JXL_DASSERT(src_rect.x0() >= 2);
   JXL_DASSERT(src_rect.x0() + src_rect.xsize() + 2 <= src.xsize());
-  JXL_DASSERT(src_rect.y0() >= 2);
-  JXL_DASSERT(src_rect.y0() + src_rect.ysize() + 2 <= src.ysize());
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < dst_rect.ysize(); y++) {
       float* dst_row = dst_rect.PlaneRow(dst, c, y);
       const float* src_rows[5];
       for (int iy = -2; iy <= 2; iy++) {
-        src_rows[iy + 2] = src.PlaneRow(c, y / N + src_rect.y0() + iy);
+        src_rows[iy + 2] =
+            src.PlaneRow(c, Mirror(y / N + src_rect.y0() + iy, src.ysize()));
       }
       for (size_t x = 0; x < dst_rect.xsize(); x++) {
         size_t xbase = x / N + src_rect.x0() - 2;

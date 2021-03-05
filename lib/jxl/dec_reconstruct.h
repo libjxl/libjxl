@@ -27,7 +27,6 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
 

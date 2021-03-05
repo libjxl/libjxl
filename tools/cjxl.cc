@@ -354,7 +354,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          &params.qprogressive_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionValue('\0', "progressive_dc", "num_dc_frames",
                           "Use progressive mode for DC.",
-                          &params.progressive_dc, &ParseUnsigned, 1);
+                          &params.progressive_dc, &ParseSigned, 1);
   cmdline->AddOptionFlag('m', "modular",
                          "Use the modular mode (lossy / lossless).",
                          &params.modular_mode, &SetBooleanTrue, 1);
@@ -549,8 +549,15 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     jpeg_transcode = false;
     default_settings = false;
   }
-  if (got_target_size || got_target_bpp || got_intensity_target)
+  if (got_target_size || got_target_bpp || got_intensity_target) {
     default_settings = false;
+  }
+
+  if (params.progressive_dc < -1 || params.progressive_dc > 2) {
+    fprintf(stderr, "Invalid/out of range progressive_dc (%d), try -1 to 2.\n",
+            params.progressive_dc);
+    return false;
+  }
 
   if (got_distance) {
     constexpr float butteraugli_min_dist = 0.1f;

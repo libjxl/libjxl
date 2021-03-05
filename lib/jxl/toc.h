@@ -20,13 +20,19 @@
 
 #include <vector>
 
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/field_encodings.h"
 
 namespace jxl {
+
+// (2+bits) = 2,3,4 bytes so encoders can patch TOC after encoding.
+// 30 is sufficient for 4K channels of uncompressed 16-bit samples.
+constexpr U32Enc kTocDist(Bits(10), BitsOffset(14, 1024), BitsOffset(22, 17408),
+                          BitsOffset(30, 4211712));
+
+size_t MaxBits(const size_t num_sizes);
 
 // TODO(veluca): move these to FrameDimensions.
 static JXL_INLINE size_t AcGroupIndex(size_t pass, size_t group,
@@ -47,12 +53,6 @@ Status ReadGroupOffsets(size_t toc_entries, BitReader* JXL_RESTRICT reader,
                         std::vector<uint64_t>* JXL_RESTRICT offsets,
                         std::vector<uint32_t>* JXL_RESTRICT sizes,
                         uint64_t* total_size);
-
-// Writes the group offsets. If the permutation vector is nullptr, the identity
-// permutation will be used.
-Status WriteGroupOffsets(const std::vector<BitWriter>& group_codes,
-                         const std::vector<coeff_order_t>* permutation,
-                         BitWriter* JXL_RESTRICT writer, AuxOut* aux_out);
 
 }  // namespace jxl
 

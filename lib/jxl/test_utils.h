@@ -26,9 +26,9 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
-#include "lib/jxl/external_image.h"
 
 #ifdef JXL_DISABLE_SLOW_TESTS
 #define JXL_SLOW_TEST(X) DISABLED_##X
@@ -316,7 +316,7 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
   io.metadata.m.SetAlphaBits(16);
   io.metadata.m.color_encoding = jxl::ColorEncoding::SRGB(
       /*is_gray=*/num_channels == 1 || num_channels == 2);
-  EXPECT_TRUE(ConvertImage(
+  EXPECT_TRUE(ConvertFromExternal(
       jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
       jxl::ColorEncoding::SRGB(/*is_gray=*/num_channels == 1 ||
                                num_channels == 2),

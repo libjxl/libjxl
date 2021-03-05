@@ -71,6 +71,27 @@ void Shuffle(uint8_t* data, size_t size, size_t width) {
 
 }  // namespace
 
+// Mimics the beginning of UnpredictICC for quick validity check.
+Status CheckPreamble(const PaddedBytes& data, size_t enc_size,
+                     size_t output_limit) {
+  const uint8_t* enc = data.data();
+  size_t size = data.size();
+  size_t pos = 0;
+  JXL_DASSERT(size >= 20);
+  uint64_t osize = DecodeVarInt(enc, size, &pos);
+  JXL_RETURN_IF_ERROR(CheckIs32Bit(osize));
+  if (pos >= size) return JXL_FAILURE("Out of bounds");
+  uint64_t csize = DecodeVarInt(enc, size, &pos);
+  JXL_RETURN_IF_ERROR(CheckIs32Bit(csize));
+  JXL_RETURN_IF_ERROR(CheckOutOfBounds(pos, csize, size));
+  // We expect that UnpredictICC inflates input, not the other way round.
+  if (osize + 65536 < enc_size) return JXL_FAILURE("Malformed ICC");
+  if (output_limit && osize > output_limit) {
+    return JXL_FAILURE("Decoded ICC is too large");
+  }
+  return true;
+}
+
 // Decodes the result of PredictICC back to a valid ICC profile.
 Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   if (!result->empty()) return JXL_FAILURE("result must be empty initially");
@@ -287,12 +308,15 @@ Status UnpredictICC(const uint8_t* enc, size_t size, PaddedBytes* result) {
   return true;
 }
 
-Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc) {
+Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc,
+               size_t output_limit) {
   icc->clear();
-  if (!reader->AllReadsWithinBounds()) {
+  const auto checkEndOfInput = [&]() -> Status {
+    if (reader->AllReadsWithinBounds()) return true;
     return JXL_STATUS(StatusCode::kNotEnoughBytes,
                       "Not enough bytes for reading ICC profile");
-  }
+  };
+  JXL_RETURN_IF_ERROR(checkEndOfInput());
   uint64_t enc_size = U64Coder::Read(reader);
   if (enc_size > 268435456) {
     // Avoid too large memory allocation for invalid file.
@@ -300,34 +324,43 @@ Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc) {
     // if we can have it available here.
     return JXL_FAILURE("Too large encoded profile");
   }
-  PaddedBytes decompressed(enc_size);
+  PaddedBytes decompressed;
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(
       DecodeHistograms(reader, kNumICCContexts, &code, &context_map));
   ANSSymbolReader ans_reader(&code, reader);
   size_t used_bits_base = reader->TotalBitsConsumed();
-  for (size_t i = 0; i < decompressed.size(); i++) {
+  size_t i = 0;
+  constexpr const size_t kPreambleSize = 20;  // enough for 2 VarInt
+  size_t preamble_size = std::min<size_t>(20, enc_size);
+  decompressed.resize(std::min<size_t>(i + 0x400, enc_size));
+  for (; i < preamble_size; i++) {
     decompressed[i] = ans_reader.ReadHybridUint(
         ICCANSContext(i, i > 0 ? decompressed[i - 1] : 0,
                       i > 1 ? decompressed[i - 2] : 0),
         reader, context_map);
-    if ((i & 0x4000) == 0) {
-      if (!reader->AllReadsWithinBounds()) {
-        return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                          "Not enough bytes for reading ICC profile");
-      }
-      if (i >= 0x100000) {
+  }
+  JXL_RETURN_IF_ERROR(checkEndOfInput());
+  if (enc_size > kPreambleSize) {
+    JXL_RETURN_IF_ERROR(CheckPreamble(decompressed, enc_size, output_limit));
+  }
+  for (; i < enc_size; i++) {
+    if ((i & 0x3FF) == 0) {
+      JXL_RETURN_IF_ERROR(checkEndOfInput());
+      if ((i > 0) && (((i & 0xFFFF) == 0))) {
         float used_bytes =
             (reader->TotalBitsConsumed() - used_bits_base) / 8.0f;
         if (i > used_bytes * 256) return JXL_FAILURE("Corrupted stream");
       }
+      decompressed.resize(std::min<size_t>(i + 0x400, enc_size));
     }
+    JXL_DASSERT(i >= 2);
+    decompressed[i] = ans_reader.ReadHybridUint(
+        ICCANSContext(i, decompressed[i - 1], decompressed[i - 2]), reader,
+        context_map);
   }
-  if (!reader->AllReadsWithinBounds()) {
-    return JXL_STATUS(StatusCode::kNotEnoughBytes,
-                      "Not enough bytes for reading ICC profile");
-  }
+  JXL_RETURN_IF_ERROR(checkEndOfInput());
   if (!ans_reader.CheckANSFinalState()) {
     return JXL_FAILURE("Corrupted ICC profile");
   }

@@ -268,7 +268,11 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
                                        inv_sigma, lf, &X, &Y, &B, &w);
     }
 
+#if JXL_HIGH_PRECISION
     auto inv_w = Set(df, 1.0f) / w;
+#else
+    auto inv_w = ApproximateReciprocal(w);
+#endif
     Store(X * inv_w, df, rows.GetOutputRow(0) + x);
     Store(Y * inv_w, df, rows.GetOutputRow(1) + x);
     Store(B * inv_w, df, rows.GetOutputRow(2) + x);
@@ -386,7 +390,11 @@ void Epf1Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
     // Bottom
     AddPixelStep1</*aligned=*/true>(/*row=*/1, rows, x, sad3, sm, inv_sigma, lf,
                                     &X, &Y, &B, &w);
+#if JXL_HIGH_PRECISION
     auto inv_w = Set(df, 1.0f) / w;
+#else
+    auto inv_w = ApproximateReciprocal(w);
+#endif
     Store(X * inv_w, df, rows.GetOutputRow(0) + x);
     Store(Y * inv_w, df, rows.GetOutputRow(1) + x);
     Store(B * inv_w, df, rows.GetOutputRow(2) + x);
@@ -444,7 +452,11 @@ void Epf2Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
     AddPixelStep2</*aligned=*/true>(/*row=*/1, rows, x, x_cc, y_cc, b_cc, sm,
                                     inv_sigma, lf, &X, &Y, &B, &w);
 
+#if JXL_HIGH_PRECISION
     auto inv_w = Set(df, 1.0f) / w;
+#else
+    auto inv_w = ApproximateReciprocal(w);
+#endif
     Store(X * inv_w, df, rows.GetOutputRow(0) + x);
     Store(Y * inv_w, df, rows.GetOutputRow(1) + x);
     Store(B * inv_w, df, rows.GetOutputRow(2) + x);
@@ -627,19 +639,31 @@ void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
   }
 }
 
-void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
-                  const Image3F& input, const Rect& input_rect, size_t thread,
-                  Image3F* JXL_RESTRICT out, const Rect& output_rect) {
+FilterPipeline* PrepareFilterPipeline(PassesDecoderState* dec_state,
+                                      const Rect& image_rect,
+                                      const Image3F& input,
+                                      const Rect& input_rect, size_t thread,
+                                      Image3F* JXL_RESTRICT out,
+                                      const Rect& output_rect) {
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
-  JXL_ASSERT(image_rect.x0() % kBlockDim == 0);
-  JXL_ASSERT(input_rect.x0() % kBlockDim == 0);
-  JXL_ASSERT(output_rect.x0() % kBlockDim == 0);
-  JXL_ASSERT(input_rect.x0() >= lf.Padding());
-  JXL_ASSERT(image_rect.xsize() == input_rect.xsize());
-  JXL_ASSERT(image_rect.xsize() == output_rect.xsize());
+  JXL_DASSERT(image_rect.x0() % kBlockDim == 0);
+  JXL_DASSERT(input_rect.x0() % kBlockDim == 0);
+  JXL_DASSERT(output_rect.x0() % kBlockDim == 0);
+  JXL_DASSERT(input_rect.x0() >= lf.Padding());
+  JXL_DASSERT(image_rect.xsize() == input_rect.xsize());
+  JXL_DASSERT(image_rect.xsize() == output_rect.xsize());
   FilterPipeline* fp = &(dec_state->filter_pipelines[thread]);
   HWY_DYNAMIC_DISPATCH(FilterPipelineInit)
   (fp, lf, input, input_rect, out, output_rect);
+  return fp;
+}
+
+void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
+                  const Image3F& input, const Rect& input_rect, size_t thread,
+                  Image3F* JXL_RESTRICT out, const Rect& output_rect) {
+  auto fp = PrepareFilterPipeline(dec_state, image_rect, input, input_rect,
+                                  thread, out, output_rect);
+  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   for (ssize_t y = -lf.Padding();
        y < static_cast<ssize_t>(lf.Padding() + image_rect.ysize()); y++) {
     fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_rect, y);

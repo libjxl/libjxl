@@ -72,7 +72,7 @@ def RandomizedJxlCodecs():
   minval = 0.6
   maxval = 12.5
   rangeval = maxval/minval
-  steps = 9
+  steps = 19
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
@@ -111,7 +111,7 @@ def Eval(vec, binary_name, cached=True):
       (binary_name,
        '--input',
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
-       '--error_pnorm=1.5',
+       '--error_pnorm=1.9',
        '--more_columns',
        '--codec', g_codecs),
       stdout=subprocess.PIPE,

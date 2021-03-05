@@ -94,6 +94,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     for (size_t c = 0; c < 3; c++) {
       cparams.max_error[c] = shared.quantizer.MulDC()[c];
     }
+    JXL_ASSERT(cparams.progressive_dc > 0);
     cparams.progressive_dc--;
     // The DC frame will have alpha=0. Don't erase its contents.
     cparams.keep_invisible = true;

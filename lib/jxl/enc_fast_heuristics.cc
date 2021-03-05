@@ -19,11 +19,11 @@
 #include <numeric>
 #include <string>
 
-#include "lib/jxl/ar_control_field.h"
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
+#include "lib/jxl/enc_ar_control_field.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/enc_noise.h"

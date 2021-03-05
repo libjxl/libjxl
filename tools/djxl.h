@@ -52,7 +52,7 @@ struct DecompressArgs {
   size_t num_threads;
   bool use_sjpeg = false;
   size_t jpeg_quality = 95;
-  bool decode_to_jpeg = false;
+  bool decode_to_pixels = false;
   bool version = false;
   jxl::Override print_profile = jxl::Override::kDefault;
   jxl::Override print_info = jxl::Override::kDefault;
@@ -70,9 +70,11 @@ struct DecompressArgs {
 
   // If true, print the effective amount of bytes read from the bitstream.
   bool print_read_bytes = false;
+  bool quiet = false;
 
   // References (ids) of specific options to check if they were matched.
   CommandLineParser::OptionId opt_num_threads_id = -1;
+  CommandLineParser::OptionId opt_jpeg_quality_id = -1;
 };
 
 // Decompresses and notifies SpeedStats of elapsed time.

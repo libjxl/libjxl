@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <random>
 #include <vector>
 
@@ -26,10 +27,15 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 
+// Unpublised API.
+void SetDecoderMemoryLimitBase_(size_t memory_limit_base);
+
 namespace {
 
 // Externally visible value to ensure pixels are used in the fuzzer.
 int external_code = 0;
+
+constexpr const size_t kStreamingTargetNumberOfChunks = 128;
 
 // Options for the fuzzing
 struct FuzzSpec {
@@ -46,6 +52,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
                   size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
+  SetDecoderMemoryLimitBase_(0x100000);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreded.
   size_t num_threads =
@@ -53,16 +60,15 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);
 
   std::mt19937 mt(spec.streaming_seed);
-  std::uniform_int_distribution<> dis(1, 128);
+  std::exponential_distribution<> dis(kStreamingTargetNumberOfChunks);
 
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
-      JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
-                                               JXL_DEC_COLOR_ENCODING |
-                                               JXL_DEC_FULL_IMAGE)) {
+      JxlDecoderSubscribeEvents(dec.get(),
+                                JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                                    JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE)) {
     return false;
   }
-
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
                                                      JxlThreadParallelRunner,
                                                      runner.get())) {
@@ -87,10 +93,14 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool seen_need_image_out = false;
   bool seen_full_image = false;
   bool seen_success = false;
+  bool seen_frame = false;
+  // If streaming and seen around half the input, test flushing
+  bool tested_flush = false;
 
   // Size made available for the streaming input, emulating a subset of the
   // full input size.
   size_t streaming_size = 0;
+  size_t leftover = size;
 
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
@@ -103,16 +113,24 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         // move any remaining bytes to the front if necessary
         size_t used = streaming_size - remaining;
         jxl += used;
-        size -= used;
+        leftover -= used;
         streaming_size -= used;
-        size_t chunk_size = dis(mt);
-        size_t add_size = std::min<size_t>(chunk_size, size - streaming_size);
+        size_t chunk_size =
+            std::max<size_t>(1, size * std::min<double>(1.0, dis(mt)));
+        size_t add_size =
+            std::min<size_t>(chunk_size, leftover - streaming_size);
         if (add_size == 0) {
           // End of the streaming data reached
           return false;
         }
         streaming_size += add_size;
         JxlDecoderSetInput(dec.get(), jxl, streaming_size);
+
+        if (!tested_flush && seen_frame) {
+          // Test flush max once to avoid too slow fuzzer run
+          tested_flush = true;
+          JxlDecoderFlushImage(dec.get());
+        }
       } else {
         return false;
       }
@@ -149,10 +167,25 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                                  icc_profile->data(), icc_profile->size())) {
         return false;
       }
-    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+    } else if (status == JXL_DEC_FRAME ||
+               status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       if (!seen_color_encoding) abort();  // expected color encoding first
-      if (seen_need_image_out) abort();   // already seen need image out
-      seen_need_image_out = true;
+      if (status == JXL_DEC_FRAME) {
+        if (seen_frame) abort();  // already seen JXL_DEC_FRAME
+        seen_frame = true;
+        // When not testing streaming, test that JXL_DEC_NEED_IMAGE_OUT_BUFFER
+        // occurs instead, so do not set buffer now.
+        if (!spec.use_streaming) continue;
+      }
+      if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+        // expected JXL_DEC_FRAME instead
+        if (!seen_frame) abort();
+        // already should have set buffer if streaming
+        if (spec.use_streaming) abort();
+        // already seen need image out
+        if (seen_need_image_out) abort();
+        seen_need_image_out = true;
+      }
 
       size_t buffer_size;
       if (JXL_DEC_SUCCESS !=
@@ -171,9 +204,15 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         return false;
       }
     } else if (status == JXL_DEC_FULL_IMAGE) {
-      if (!seen_need_image_out) abort();  // expected need image out first
-      if (seen_full_image) abort();       // already seen full image
-      seen_full_image = true;
+      // expected need image out or frame first
+      if (!seen_need_image_out && !seen_frame) abort();
+
+      seen_full_image = true;  // there may be multiple if animated
+
+      // There may be a next animation frame so expect those again:
+      seen_need_image_out = false;
+      seen_frame = false;
+
       // "Use" all the pixels
       for (size_t i = 0; i < pixels->size(); i++) {
         external_code ^= (*pixels)[i];
@@ -208,7 +247,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.use_streaming = !!(flags & 8);
   // Allos some different possible variations in the chunk sizes of the
   // streaming case
-  spec.streaming_seed = flags;
+  spec.streaming_seed = flags ^ size;
 
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> icc;

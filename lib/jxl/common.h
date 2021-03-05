@@ -24,6 +24,10 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 
+#ifndef JXL_HIGH_PRECISION
+#define JXL_HIGH_PRECISION 1
+#endif
+
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
 

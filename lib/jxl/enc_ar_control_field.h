@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_AR_CONTROL_FIELD_H_
-#define LIB_JXL_AR_CONTROL_FIELD_H_
+#ifndef LIB_JXL_ENC_AR_CONTROL_FIELD_H_
+#define LIB_JXL_ENC_AR_CONTROL_FIELD_H_
 
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -31,4 +31,4 @@ void FindBestArControlField(const Image3F& opsin, PassesEncoderState* enc_state,
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_AR_CONTROL_FIELD_H_
+#endif  // LIB_JXL_AR_ENC_CONTROL_FIELD_H_

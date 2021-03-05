@@ -116,4 +116,35 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
   }
 }
 
+void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
+                       AuxOut* aux_out) {
+  auto& dct = block_ctx_map.dc_thresholds;
+  auto& qft = block_ctx_map.qf_thresholds;
+  auto& ctx_map = block_ctx_map.ctx_map;
+  BitWriter::Allotment allotment(
+      writer,
+      (dct[0].size() + dct[1].size() + dct[2].size() + qft.size()) * 34 + 1 +
+          4 + 4 + ctx_map.size() * 10 + 1024);
+  if (dct[0].empty() && dct[1].empty() && dct[2].empty() && qft.empty() &&
+      ctx_map.size() == 21 &&
+      std::equal(ctx_map.begin(), ctx_map.end(), BlockCtxMap::kDefaultCtxMap)) {
+    writer->Write(1, 1);  // default
+    ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
+    return;
+  }
+  writer->Write(1, 0);
+  for (int j : {0, 1, 2}) {
+    writer->Write(4, dct[j].size());
+    for (int i : dct[j]) {
+      JXL_CHECK(U32Coder::Write(kDCThresholdDist, PackSigned(i), writer));
+    }
+  }
+  writer->Write(4, qft.size());
+  for (uint32_t i : qft) {
+    JXL_CHECK(U32Coder::Write(kQFThresholdDist, i - 1, writer));
+  }
+  EncodeContextMap(ctx_map, block_ctx_map.num_ctxs, allotment, writer);
+  ReclaimAndCharge(writer, &allotment, kLayerAC, aux_out);
+}
+
 }  // namespace jxl

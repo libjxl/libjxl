@@ -245,8 +245,8 @@ class ANSSymbolReader {
   bool CheckANSFinalState() { return state_ == (ANS_SIGNATURE << 16u); }
 
   template <typename BitReader>
-  static JXL_INLINE size_t ReadHybridUintConfig(const HybridUintConfig& config,
-                                                size_t token, BitReader* br) {
+  static JXL_INLINE uint32_t ReadHybridUintConfig(
+      const HybridUintConfig& config, size_t token, BitReader* br) {
     size_t split_token = config.split_token;
     size_t msb_in_token = config.msb_in_token;
     size_t lsb_in_token = config.lsb_in_token;
@@ -273,6 +273,8 @@ class ANSSymbolReader {
                    bits)
                   << lsb_in_token) |
                  low;
+    // TODO(eustas): mark BitReader as unhealthy if nbits > 29 or ret does not
+    //               fit uint32_t
     return ret;
   }
 

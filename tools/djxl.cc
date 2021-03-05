@@ -80,15 +80,6 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "num_reps", "N", nullptr, &num_reps,
                           &ParseUnsigned);
 
-#if JPEGXL_ENABLE_SJPEG
-  cmdline->AddOptionFlag('\0', "use_sjpeg",
-                         "use sjpeg instead of libjpeg for JPEG output",
-                         &use_sjpeg, &SetBooleanTrue);
-#endif
-
-  cmdline->AddOptionValue('\0', "jpeg_quality", "N", "JPEG output quality",
-                          &jpeg_quality, &ParseUnsigned);
-
   opt_num_threads_id = cmdline->AddOptionValue('\0', "num_threads", "N",
                                                "The number of threads to use",
                                                &num_threads, &ParseUnsigned);
@@ -134,18 +125,35 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "files. No effect without --allow_partial_files",
                          &params.allow_more_progressive_steps, &SetBooleanTrue);
 
+#if JPEGXL_ENABLE_JPEG
   cmdline->AddOptionFlag(
-      'j', "jpeg",
-      "decode directly to JPEG when possible. Depending on the JPEG XL mode "
-      "used when encoding this will produce an exact original JPEG file, a "
-      "lossless pixel image data in a JPEG file or just a similar JPEG than "
-      "the original image. The output file if provided must be a .jpg or .jpeg "
-      "file.",
-      &decode_to_jpeg, &SetBooleanTrue);
+      'j', "pixels_to_jpeg",
+      "By default, if the input JPEG XL contains a recompressed JPEG file, "
+      "djxl "
+      "reconstructs the exact original JPEG file. This flag causes the decoder "
+      "to instead decode the image to pixels and encode a new (lossy) JPEG. "
+      "The output file if provided must be a .jpg or .jpeg file.",
+      &decode_to_pixels, &SetBooleanTrue);
+
+  opt_jpeg_quality_id =
+      cmdline->AddOptionValue('q', "jpeg_quality", "N",
+                              "JPEG output quality. Setting an output quality "
+                              "implies --pixels_to_jpeg.",
+                              &jpeg_quality, &ParseUnsigned);
+#endif
+
+#if JPEGXL_ENABLE_SJPEG
+  cmdline->AddOptionFlag('\0', "use_sjpeg",
+                         "use sjpeg instead of libjpeg for JPEG output",
+                         &use_sjpeg, &SetBooleanTrue);
+#endif
 
   cmdline->AddOptionFlag('\0', "print_read_bytes",
                          "print total number of decoded bytes",
                          &print_read_bytes, &SetBooleanTrue);
+
+  cmdline->AddOptionFlag('\0', "quiet", "silence output (except for errors)",
+                         &quiet, &SetBooleanTrue);
 }
 
 jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
@@ -169,18 +177,22 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     num_threads = topology.packages * topology.cores_per_package;
   }
 
-  if (!decode_to_jpeg && file_out) {
+#if JPEGXL_ENABLE_JPEG
+  if (cmdline.GetOption(opt_jpeg_quality_id)->matched()) {
+    decode_to_pixels = true;
+  }
+#endif
+  if (file_out) {
     const std::string extension = jxl::Extension(file_out);
     const jxl::Codec codec =
         jxl::CodecFromExtension(extension, &bits_per_sample);
-    if (codec == jxl::Codec::kJPG) {
-      fprintf(stderr,
-              "Notice: Decoding to pixels and re-encoding to JPEG file. To "
-              "decode a losslessly recompressed JPEG back to JPEG pass --jpeg "
-              "to djxl.\n");
+    if (codec != jxl::Codec::kJPG) {
+      // when decoding to anything-but-JPEG, we'll need pixels
+      decode_to_pixels = true;
     }
+  } else {
+    decode_to_pixels = true;
   }
-
   return true;
 }
 
@@ -361,7 +373,7 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
       }
     }
   }
-  fprintf(stderr, "Done.\n");
+  if (!args.quiet) fprintf(stderr, "Done.\n");
   return true;
 }
 

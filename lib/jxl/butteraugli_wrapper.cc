@@ -26,8 +26,9 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_butteraugli_pnorm.h"
-#include "lib/jxl/encode_internal.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 namespace {
 
@@ -140,10 +141,9 @@ JxlButteraugliResult* JxlButteraugliCompute(
   } else {
     c_current = jxl::ColorEncoding::SRGB(pixel_format_orig->num_channels < 3);
   }
-  if (JXL_ENC_SUCCESS != jxl::BufferToImageBundle(*pixel_format_orig, xsize,
-                                                  ysize, buffer_orig, size_orig,
-                                                  api->thread_pool.get(),
-                                                  c_current, &orig_ib)) {
+  if (!jxl::BufferToImageBundle(*pixel_format_orig, xsize, ysize, buffer_orig,
+                                size_orig, api->thread_pool.get(), c_current,
+                                &orig_ib)) {
     return nullptr;
   }
 
@@ -156,10 +156,9 @@ JxlButteraugliResult* JxlButteraugliCompute(
   } else {
     c_current = jxl::ColorEncoding::SRGB(pixel_format_dist->num_channels < 3);
   }
-  if (JXL_ENC_SUCCESS != jxl::BufferToImageBundle(*pixel_format_dist, xsize,
-                                                  ysize, buffer_dist, size_dist,
-                                                  api->thread_pool.get(),
-                                                  c_current, &dist_ib)) {
+  if (!jxl::BufferToImageBundle(*pixel_format_dist, xsize, ysize, buffer_dist,
+                                size_dist, api->thread_pool.get(), c_current,
+                                &dist_ib)) {
     return nullptr;
   }
 

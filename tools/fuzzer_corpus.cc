@@ -39,9 +39,9 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
-#include "lib/jxl/external_image.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 
 namespace {
@@ -190,7 +190,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     }
 
     const jxl::Span<const uint8_t> span(img_data.data(), img_data.size());
-    JXL_RETURN_IF_ERROR(ConvertImage(
+    JXL_RETURN_IF_ERROR(ConvertFromExternal(
         span, spec.width, spec.height, io.metadata.m.color_encoding,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,

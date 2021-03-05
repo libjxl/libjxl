@@ -37,6 +37,16 @@ namespace jxl {
 
 static constexpr float kDesiredRenderingDistance = 1.f;
 
+enum SplineEntropyContexts : size_t {
+  kQuantizationAdjustmentContext = 0,
+  kStartingPositionContext,
+  kNumSplinesContext,
+  kNumControlPointsContext,
+  kControlPointsContext,
+  kDCTContext,
+  kNumSplineContexts
+};
+
 struct Spline {
   struct Point {
     Point() : x(0.0f), y(0.0f) {}
@@ -90,21 +100,20 @@ class Splines {
 
   bool HasAny() const { return !splines_.empty(); }
 
-  // Only call if HasAny().
-  void Encode(BitWriter* writer, size_t layer,
-              const HistogramParams& histogram_params, AuxOut* aux_out) const;
   Status Decode(BitReader* br, size_t num_pixels);
 
   Status AddTo(Image3F* opsin, const Rect& opsin_rect, const Rect& image_rect,
                const ColorCorrelationMap& cmap) const;
   Status SubtractFrom(Image3F* opsin, const ColorCorrelationMap& cmap) const;
 
-  const std::vector<QuantizedSpline>& TestOnlyQuantizedSplines() const {
+  const std::vector<QuantizedSpline>& QuantizedSplines() const {
     return splines_;
   }
-  const std::vector<Spline::Point>& TestOnlyStartingPoints() const {
+  const std::vector<Spline::Point>& StartingPoints() const {
     return starting_points_;
   }
+
+  int32_t GetQuantizationAdjustment() const { return quantization_adjustment_; }
 
  private:
   template <bool>

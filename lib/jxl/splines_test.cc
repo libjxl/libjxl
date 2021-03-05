@@ -18,6 +18,7 @@
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_splines.h"
 #include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/testdata.h"
 
@@ -47,8 +48,8 @@ const float kYToB = cmap->YtoBRatio(0);
 constexpr float kTolerance = 0.003125;
 
 std::vector<Spline> DequantizeSplines(const Splines& splines) {
-  const auto& quantized_splines = splines.TestOnlyQuantizedSplines();
-  const auto& starting_points = splines.TestOnlyStartingPoints();
+  const auto& quantized_splines = splines.QuantizedSplines();
+  const auto& starting_points = splines.StartingPoints();
   JXL_ASSERT(quantized_splines.size() == starting_points.size());
 
   std::vector<Spline> dequantized;
@@ -196,7 +197,7 @@ TEST(SplinesTest, Serialization) {
               Pointwise(ControlPointsMatch(), spline_data));
 
   BitWriter writer;
-  splines.Encode(&writer, kLayerSplines, HistogramParams(), nullptr);
+  EncodeSplines(splines, &writer, kLayerSplines, HistogramParams(), nullptr);
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
 
@@ -239,8 +240,8 @@ TEST(SplinesTest, TooManySplinesTest) {
   Splines splines(kQuantizationAdjustment, std::move(quantized_splines),
                   std::move(starting_points));
   BitWriter writer;
-  splines.Encode(&writer, kLayerSplines, HistogramParams(SpeedTier::kFalcon, 1),
-                 nullptr);
+  EncodeSplines(splines, &writer, kLayerSplines,
+                HistogramParams(SpeedTier::kFalcon, 1), nullptr);
   writer.ZeroPadToByte();
   // Re-read splines.
   BitReader reader(writer.GetSpan());

@@ -190,10 +190,10 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
     } else if (!memcmp("jxlc", box.type, 4)) {
       container->codestream = in;
       container->codestream_size = data_size;
-    } else if (!memcmp("exif", box.type, 4)) {
+    } else if (!memcmp("Exif", box.type, 4)) {
       container->exif = in;
       container->exif_size = data_size;
-    } else if (!memcmp("exfc", box.type, 4)) {
+    } else if (!memcmp("Exfc", box.type, 4)) {
       container->exfc = in;
       container->exfc_size = data_size;
     } else if (!memcmp("xml ", box.type, 4)) {
@@ -241,12 +241,12 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
 
   if (container.exif) {
     JXL_RETURN_IF_ERROR(
-        AppendBoxAndData("exif", container.exif, container.exif_size, out));
+        AppendBoxAndData("Exif", container.exif, container.exif_size, out));
   }
 
   if (container.exfc) {
     JXL_RETURN_IF_ERROR(
-        AppendBoxAndData("exfc", container.exfc, container.exfc_size, out));
+        AppendBoxAndData("Exfc", container.exfc, container.exfc_size, out));
   }
 
   for (size_t i = 0; i < container.xml.size(); i++) {

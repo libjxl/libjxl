@@ -15,6 +15,7 @@
 #include "gtest/gtest.h"
 #include "jxl/decode.h"
 #include "jxl/encode.h"
+#include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/test_utils.h"
 
@@ -78,7 +79,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
     color_encoding = jxl::ColorEncoding::SRGB(
         /*is_gray=*/pixel_format.num_channels < 3);
   }
-  EXPECT_TRUE(ConvertImage(
+  EXPECT_TRUE(ConvertFromExternal(
       jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
       /*c_current=*/color_encoding,
       /*has_alpha=*/pixel_format.num_channels == 2 ||

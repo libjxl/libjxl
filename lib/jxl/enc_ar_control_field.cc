@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/ar_control_field.h"
+#include "lib/jxl/enc_ar_control_field.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -20,7 +20,7 @@
 #include <algorithm>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/ar_control_field.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/enc_ar_control_field.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

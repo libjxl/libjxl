@@ -30,7 +30,6 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
-#include "lib/jxl/external_image.h"
 #include "lib/jxl/fields.h"  // AllDefault
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -322,6 +321,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   size_t layerlength = get_be_int(4 * version, pos, maxpos);
   const uint8_t* after_layers_pos = pos + layerlength;
+  if (after_layers_pos < pos) return JXL_FAILURE("PSD: invalid layer length");
   if (layerlength) {
     pos += 4 * version;  // don't care about layerinfolength
     JXL_DEBUG_V(PSD_VERBOSITY, "Layer section length: %zu", layerlength);
@@ -532,6 +532,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
     for (int l = 0; l < layercount; l++) {
       if (!is_real_layer[l]) continue;
       pos = bpos + layer_offsets[l];
+      if (pos < bpos) return JXL_FAILURE("PSD: invalid layer offset");
       JXL_DEBUG_V(PSD_VERBOSITY, "At position %i (%zu)",
                   (int)(pos - bytes.data()), (size_t)pos);
       ImageBundle& layer = io->frames[il++];

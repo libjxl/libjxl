@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/external_image.h"
+#include "lib/jxl/enc_external_image.h"
 
 #include <array>
 #include <new>
@@ -35,21 +35,22 @@ TEST(ExternalImageTest, InvalidSize) {
   ImageBundle ib(&im);
 
   const uint8_t buf[10 * 100 * 8] = {};
-  EXPECT_FALSE(
-      ConvertImage(Span<const uint8_t>(buf, 10), /*xsize=*/10, /*ysize=*/100,
-                   /*c_current=*/ColorEncoding::SRGB(), /*has_alpha=*/true,
-                   /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-                   JXL_BIG_ENDIAN, /*flipped_y=*/false, nullptr, &ib));
-  EXPECT_FALSE(ConvertImage(
+  EXPECT_FALSE(ConvertFromExternal(
+      Span<const uint8_t>(buf, 10), /*xsize=*/10, /*ysize=*/100,
+      /*c_current=*/ColorEncoding::SRGB(), /*has_alpha=*/true,
+      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
+      /*flipped_y=*/false, nullptr, &ib));
+  EXPECT_FALSE(ConvertFromExternal(
       Span<const uint8_t>(buf, sizeof(buf) - 1), /*xsize=*/10, /*ysize=*/100,
       /*c_current=*/ColorEncoding::SRGB(), /*has_alpha=*/true,
       /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
       /*flipped_y=*/false, nullptr, &ib));
-  EXPECT_TRUE(ConvertImage(Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10,
-                           /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
-                           /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
-                           /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
-                           /*flipped_y=*/false, nullptr, &ib));
+  EXPECT_TRUE(
+      ConvertFromExternal(Span<const uint8_t>(buf, sizeof(buf)), /*xsize=*/10,
+                          /*ysize=*/100, /*c_current=*/ColorEncoding::SRGB(),
+                          /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
+                          /*bits_per_sample=*/16, JXL_BIG_ENDIAN,
+                          /*flipped_y=*/false, nullptr, &ib));
 }
 #endif
 

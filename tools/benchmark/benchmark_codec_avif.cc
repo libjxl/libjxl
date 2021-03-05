@@ -19,7 +19,8 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
-#include "lib/jxl/external_image.h"
+#include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_external_image.h"
 #include "tools/cmdline.h"
 
 #define JXL_RETURN_IF_AVIF_ERROR(result)                                       \
@@ -254,7 +255,7 @@ class AvifCodec : public ImageCodec {
         avifRGBImageAllocatePixels(&rgb_image);
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
-        JXL_RETURN_IF_ERROR(ConvertImage(
+        JXL_RETURN_IF_ERROR(ConvertToExternal(
             ib, depth, /*float_out=*/false, /*apply_srgb_tf=*/false,
             /*num_channels=*/ib.HasAlpha() ? 4 : 3, JXL_NATIVE_ENDIAN,
             /*stride=*/rgb_image.rowBytes, pool, rgb_image.pixels,
@@ -309,7 +310,7 @@ class AvifCodec : public ImageCodec {
             &rgb_image, &avifRGBImageFreePixels);
         JXL_RETURN_IF_AVIF_ERROR(avifImageYUVToRGB(decoder->image, &rgb_image));
         ImageBundle ib(&io->metadata.m);
-        JXL_RETURN_IF_ERROR(ConvertImage(
+        JXL_RETURN_IF_ERROR(ConvertFromExternal(
             Span<const uint8_t>(rgb_image.pixels,
                                 rgb_image.height * rgb_image.rowBytes),
             rgb_image.width, rgb_image.height, color, has_alpha,

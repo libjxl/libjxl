@@ -88,20 +88,16 @@ struct PassesDecoderState {
   // Amount of padding that will be accessed, in all directions, outside a rect
   // during a call to FinalizeImageRect().
   size_t FinalizeRectPadding() const {
+    // TODO(veluca): add YCbCr upsampling here too.
     size_t padding = shared->frame_header.loop_filter.Padding();
     padding += shared->frame_header.upsampling == 1 ? 0 : 2;
-    // TODO(veluca): YCbCr upsampling is not currently done in
-    // FinalizeImageRect.
-    // We could make a distinction between rows and columns, but it is simpler
-    // not to.
-    //
-    // padding += shared->frame_header.chroma_subsampling.Is444() ? 0 : 1;
     JXL_DASSERT(padding <= kMaxFinalizeRectPadding);
     return padding;
   }
 
   // Storage for intermediate data during FinalizeRect steps.
   std::vector<Image3F> filter_input_storage;
+  std::vector<Image3F> padded_upsampling_input_storage;
   std::vector<Image3F> upsampling_input_storage;
 
   void EnsureStorage(size_t num_threads) {
@@ -128,6 +124,8 @@ struct PassesDecoderState {
         // upsampling, but we add an extra border for aligned access.
         upsampling_input_storage.emplace_back(kGroupDim + 2 * kBlockDim,
                                               kGroupDim + 4);
+        padded_upsampling_input_storage.emplace_back(kGroupDim + 2 * kBlockDim,
+                                                     kGroupDim + 4);
       }
     }
   }

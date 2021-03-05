@@ -177,7 +177,7 @@ void ImageBundle::VerifyMetadata() const {
               metadata_->GetAlphaBits(), alpha().xsize(), alpha().ysize());
   }
   const uint32_t alpha_bits = metadata_->GetAlphaBits();
-  JXL_CHECK(alpha_bits <= 16);
+  JXL_CHECK(alpha_bits <= 32);
 
   // metadata_->num_extra_channels may temporarily differ from
   // extra_channels_.size(), e.g. after SetAlpha. They are synced by the next

@@ -1605,6 +1605,8 @@ void WriteTokens(const std::vector<Token>& tokens,
 }
 
 void SetANSFuzzerFriendly(bool ans_fuzzer_friendly) {
+#if JXL_IS_DEBUG_BUILD  // Guard against accidential / malicious changes.
   ans_fuzzer_friendly_ = ans_fuzzer_friendly;
+#endif
 }
 }  // namespace jxl

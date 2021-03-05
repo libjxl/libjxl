@@ -58,6 +58,29 @@ V FastLog2f(const DF df, V x) {
   return EvalRationalPolynomial(df, mantissa - Set(df, 1.0f), p, q) + exp_val;
 }
 
+// max relative error ~3e-7
+template <class DF, class V>
+V FastPow2f(const DF df, V x) {
+  const Rebind<int32_t, DF> di;
+  auto floorx = Floor(x);
+  auto exp = BitCast(df, ShiftLeft<23>(ConvertTo(di, floorx) + Set(di, 127)));
+  auto frac = x - floorx;
+  auto num = frac + Set(df, 1.01749063e+01);
+  num = MulAdd(num, frac, Set(df, 4.88687798e+01));
+  num = MulAdd(num, frac, Set(df, 9.85506591e+01));
+  num = num * exp;
+  auto den = MulAdd(frac, Set(df, 2.10242958e-01), Set(df, -2.22328856e-02));
+  den = MulAdd(den, frac, Set(df, -1.94414990e+01));
+  den = MulAdd(den, frac, Set(df, 9.85506633e+01));
+  return num / den;
+}
+
+// max relative error ~3e-5
+template <class DF, class V>
+V FastPowf(const DF df, V base, V exponent) {
+  return FastPow2f(df, FastLog2f(df, base) * exponent);
+}
+
 // Computes cosine like std::cos.
 // L1 error 7e-5.
 template <class DF, class V>
@@ -119,6 +142,16 @@ inline float FastLog2f(float f) {
   return GetLane(FastLog2f(D, Set(D, f)));
 }
 
+inline float FastPow2f(float f) {
+  HWY_CAPPED(float, 1) D;
+  return GetLane(FastPow2f(D, Set(D, f)));
+}
+
+inline float FastPowf(float b, float e) {
+  HWY_CAPPED(float, 1) D;
+  return GetLane(FastPowf(D, Set(D, b), Set(D, e)));
+}
+
 inline float FastCosf(float f) {
   HWY_CAPPED(float, 1) D;
   return GetLane(FastCosf(D, Set(D, f)));
@@ -140,6 +173,10 @@ HWY_AFTER_NAMESPACE();
 
 namespace jxl {
 inline float FastLog2f(float f) { return HWY_STATIC_DISPATCH(FastLog2f)(f); }
+inline float FastPow2f(float f) { return HWY_STATIC_DISPATCH(FastPow2f)(f); }
+inline float FastPowf(float b, float e) {
+  return HWY_STATIC_DISPATCH(FastPowf)(b, e);
+}
 inline float FastCosf(float f) { return HWY_STATIC_DISPATCH(FastCosf)(f); }
 inline float FastErff(float f) { return HWY_STATIC_DISPATCH(FastErff)(f); }
 }  // namespace jxl

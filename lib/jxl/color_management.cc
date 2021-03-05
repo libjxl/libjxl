@@ -86,23 +86,17 @@ void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
       JXL_DASSERT(false);  // unreachable
       break;
 
-    case ExtraTF::kPQ:
+    case ExtraTF::kPQ: {
       // By default, PQ content has an intensity target of 10000, stored
       // exactly.
-      if (t->intensity_target_ == 10000.f) {
-        for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
-          xform_src[i] = static_cast<float>(
-              TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
-        }
-      } else {
-        // After the transform, 1 represents 10000 cd/m², but we want
-        // `intensity_target` cd/m² to be 1 instead.
-        const double multiplier = 10000. / t->intensity_target_;
-        for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
-          xform_src[i] = static_cast<float>(
-              multiplier *
-              TF_PQ().DisplayFromEncoded(static_cast<double>(buf_src[i])));
-        }
+      HWY_FULL(float) df;
+      const auto multiplier = Set(df, t->intensity_target_ == 10000.f
+                                          ? 1.0f
+                                          : 10000.f / t->intensity_target_);
+      for (size_t i = 0; i < t->buf_src_.xsize(); i += Lanes(df)) {
+        const auto val = Load(df, buf_src + i);
+        const auto result = multiplier * TF_PQ().DisplayFromEncoded(df, val);
+        Store(result, df, xform_src + i);
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("pre in %.4f %.4f %.4f undoPQ %.4f %.4f %.4f\n", buf_src[3 * kX],
@@ -110,6 +104,7 @@ void BeforeTransform(ColorSpaceTransform* t, const float* buf_src,
              xform_src[3 * kX + 1], xform_src[3 * kX + 2]);
 #endif
       break;
+    }
 
     case ExtraTF::kHLG:
       for (size_t i = 0; i < t->buf_src_.xsize(); ++i) {
@@ -145,26 +140,22 @@ void AfterTransform(ColorSpaceTransform* t, float* JXL_RESTRICT buf_dst) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
       break;
-    case ExtraTF::kPQ:
-      if (t->intensity_target_ == 10000.f) {
-        for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
-          buf_dst[i] = static_cast<float>(
-              TF_PQ().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
-        }
-      } else {
-        // Our PQ transform expects 1 to represent 10000 cd/m², but at this
-        // point, it represents `intensity_target` cd/m² instead.
-        const double multiplier = t->intensity_target_ / 10000.;
-        for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
-          buf_dst[i] = static_cast<float>(TF_PQ().EncodedFromDisplay(
-              static_cast<double>(multiplier * buf_dst[i])));
-        }
+    case ExtraTF::kPQ: {
+      HWY_FULL(float) df;
+      const auto multiplier = Set(df, t->intensity_target_ == 10000.f
+                                          ? 1.0f
+                                          : t->intensity_target_ * 1e-4f);
+      for (size_t i = 0; i < t->buf_dst_.xsize(); i += Lanes(df)) {
+        const auto val = Load(df, buf_dst + i);
+        const auto result = TF_PQ().EncodedFromDisplay(df, multiplier * val);
+        Store(result, df, buf_dst + i);
       }
 #if JXL_CMS_VERBOSE >= 2
       printf("after PQ enc %.4f %.4f %.4f\n", buf_dst[3 * kX],
              buf_dst[3 * kX + 1], buf_dst[3 * kX + 2]);
 #endif
       break;
+    }
     case ExtraTF::kHLG:
       for (size_t i = 0; i < t->buf_dst_.xsize(); ++i) {
         buf_dst[i] = static_cast<float>(

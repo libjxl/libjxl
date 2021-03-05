@@ -29,9 +29,9 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_gamma_correct.h"
 #include "lib/jxl/enc_icc_codec.h"
-#include "lib/jxl/external_image.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
@@ -94,7 +94,7 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
   // Make the grayscale-ness of the io metadata color_encoding and the packed
   // image match.
   io.metadata.m.color_encoding = color_encoding;
-  EXPECT_TRUE(ConvertImage(
+  EXPECT_TRUE(ConvertFromExternal(
       pixels, xsize, ysize, color_encoding, /*has_alpha=*/include_alpha,
       /*alpha_is_premultiplied=*/false, bitdepth, JXL_BIG_ENDIAN,
       /*flipped_y=*/false, &pool, &io.Main()));
@@ -1711,7 +1711,7 @@ TEST(DecodeTest, AnimationTest) {
   for (size_t i = 0; i < num_frames; ++i) {
     jxl::ImageBundle bundle(&io.metadata.m);
 
-    EXPECT_TRUE(ConvertImage(
+    EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
@@ -1811,7 +1811,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
   for (size_t i = 0; i < num_frames; ++i) {
     jxl::ImageBundle bundle(&io.metadata.m);
 
-    EXPECT_TRUE(ConvertImage(
+    EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
@@ -1917,5 +1917,74 @@ TEST(DecodeTest, AnimationTestStreaming) {
   }
 
   JxlThreadParallelRunnerDestroy(runner);
+  JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, FlushTest) {
+  // Size large enough for multiple groups, required to have progressive
+  // stages
+  size_t xsize = 333, ysize = 300;
+  uint32_t num_channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  jxl::CompressParams cparams;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      num_channels, cparams, kCSBF_None, true);
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  std::vector<uint8_t> pixels2;
+  pixels2.resize(pixels.size());
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+
+  // Ensure that the first part contains at least the full DC of the image,
+  // otherwise flush does not work. The DC takes up more than 50% of the
+  // image generated here.
+  size_t first_part = data.size() * 3 / 4;
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), first_part));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(info.xsize, xsize);
+  EXPECT_EQ(info.ysize, ysize);
+
+  EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+
+  // Must process input further until we get JXL_DEC_NEED_MORE_INPUT, even if
+  // data was already input before, since the processing of the frame only
+  // happens at the JxlDecoderProcessInput call after JXL_DEC_FRAME.
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+  // Output buffer not yet set
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderFlushImage(dec));
+
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  EXPECT_EQ(pixels2.size(), buffer_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                 dec, &format, pixels2.data(), pixels2.size()));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+
+  // Note: actual pixel data not tested here, it should look similar to the
+  // input image, but with less fine detail. Instead the expected events are
+  // tested here.
+
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+  size_t consumed = first_part - JxlDecoderReleaseInput(dec);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data() + consumed,
+                                                data.size() - consumed));
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+
   JxlDecoderDestroy(dec);
 }

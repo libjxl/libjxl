@@ -21,13 +21,15 @@
 #include <numeric>
 #include <string>
 
-#include "lib/jxl/ar_control_field.h"
 #include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
+#include "lib/jxl/enc_ar_control_field.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
+#include "lib/jxl/enc_patch_dictionary.h"
+#include "lib/jxl/enc_quant_weights.h"
 
 namespace jxl {
 namespace {
@@ -157,6 +159,29 @@ size_t TargetSize(const CompressParams& cparams,
   }
   return 0;
 }
+
+void FindBestDequantMatrices(const CompressParams& cparams,
+                             const Image3F& opsin,
+                             ModularFrameEncoder* modular_frame_encoder,
+                             DequantMatrices* dequant_matrices) {
+  // TODO(veluca): heuristics for in-bitstream quant tables.
+  *dequant_matrices = DequantMatrices();
+  if (cparams.max_error_mode) {
+    // Set numerators of all quantization matrices to constant values.
+    float weights[3][1] = {{1.0f / cparams.max_error[0]},
+                           {1.0f / cparams.max_error[1]},
+                           {1.0f / cparams.max_error[2]}};
+    DctQuantWeightParams dct_params(weights);
+    std::vector<QuantEncoding> encodings(DequantMatrices::kNum,
+                                         QuantEncoding::DCT(dct_params));
+    DequantMatricesSetCustom(dequant_matrices, encodings,
+                             modular_frame_encoder);
+    float dc_weights[3] = {1.0f / cparams.max_error[0],
+                           1.0f / cparams.max_error[1],
+                           1.0f / cparams.max_error[2]};
+    DequantMatricesSetCustomDC(dequant_matrices, dc_weights);
+  }
+}
 }  // namespace
 
 Status DefaultEncoderHeuristics::LossyFrameHeuristics(
@@ -243,7 +268,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   if (ApplyOverride(cparams.patches,
                     cparams.speed_tier <= SpeedTier::kSquirrel)) {
     FindBestPatchDictionary(*opsin, enc_state, pool, aux_out);
-    shared.image_features.patches.SubtractFrom(opsin);
+    PatchDictionaryEncoder::SubtractFrom(shared.image_features.patches, opsin);
   }
 
   // Apply inverse-gaborish.

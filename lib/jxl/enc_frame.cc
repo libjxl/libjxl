@@ -49,10 +49,15 @@
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/enc_patch_dictionary.h"
+#include "lib/jxl/enc_quant_weights.h"
+#include "lib/jxl/enc_splines.h"
+#include "lib/jxl/enc_toc.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"
@@ -62,7 +67,6 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/loop_filter.h"
-#include "lib/jxl/patch_dictionary.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
 #include "lib/jxl/splines.h"
@@ -222,7 +226,7 @@ uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
     flags |= FrameHeader::kNoise;
   }
 
-  if (cparams.progressive_dc && cparams.modular_mode == false) {
+  if (cparams.progressive_dc > 0 && cparams.modular_mode == false) {
     flags |= FrameHeader::kUseDcFrame;
   }
 
@@ -316,7 +320,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
     // work, see enc_cache.cc.
     return JXL_FAILURE("progressive_dc > 2 is not yet supported");
   }
-  if (cparams.progressive_dc && cparams.resampling != 1) {
+  if (cparams.progressive_dc > 0 && cparams.resampling != 1) {
     return JXL_FAILURE("Resampling not supported with DC frames");
   }
   if (cparams.resampling != 1 && cparams.resampling != 2 &&
@@ -577,13 +581,14 @@ class LossyFrameEncoder {
         }
       }
     }
-    shared.matrices.SetCustomDC(dcquantization);
+    DequantMatricesSetCustomDC(&shared.matrices, dcquantization);
     float dcquantization_r[3] = {1.0f / dcquantization[0],
                                  1.0f / dcquantization[1],
                                  1.0f / dcquantization[2]};
 
     qe[AcStrategy::Type::DCT] = QuantEncoding::RAW(qt);
-    shared.matrices.SetCustom(qe);
+    DequantMatricesSetCustom(&shared.matrices, qe, modular_frame_encoder);
+
     // Ensure that InvGlobalScale() is 1.
     shared.quantizer = Quantizer(&shared.matrices, 1, kGlobalScaleDenom);
     // Recompute MulDC() and InvMulDC().
@@ -889,8 +894,9 @@ class LossyFrameEncoder {
 
   Status EncodeGlobalACInfo(BitWriter* writer,
                             ModularFrameEncoder* modular_frame_encoder) {
-    JXL_RETURN_IF_ERROR(enc_state_->shared.matrices.Encode(
-        writer, kLayerDequantTables, aux_out_, modular_frame_encoder));
+    JXL_RETURN_IF_ERROR(DequantMatricesEncode(&enc_state_->shared.matrices,
+                                              writer, kLayerDequantTables,
+                                              aux_out_, modular_frame_encoder));
     if (enc_state_->cparams.speed_tier <= SpeedTier::kTortoise) {
       ClusterGroups(enc_state_);
     }
@@ -994,7 +1000,21 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    const ImageBundle& ib, PassesEncoderState* passes_enc_state,
                    ThreadPool* pool, BitWriter* writer, AuxOut* aux_out) {
   ib.VerifyMetadata();
+
   CompressParams cparams = cparams_orig;
+  if (cparams.progressive_dc < 0) {
+    if (cparams.progressive_dc != -1) {
+      return JXL_FAILURE("Invalid progressive DC setting value (%d)",
+                         cparams.progressive_dc);
+    }
+    cparams.progressive_dc = 0;
+    // Enable progressive_dc for lower qualities.
+    if (cparams.butteraugli_distance >=
+        kMinButteraugliDistanceForProgressiveDc) {
+      cparams.progressive_dc = 1;
+    }
+  }
+
   if (frame_info.dc_level + cparams.progressive_dc > 4) {
     return JXL_FAILURE("Too many levels of progressive DC");
   }
@@ -1089,10 +1109,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                                         pool, aux_out);
   ModularFrameEncoder modular_frame_encoder(frame_header, cparams);
 
-  // Used by SetCustom.
-  passes_enc_state->shared.matrices.SetModularFrameEncoder(
-      &modular_frame_encoder);
-
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
         *ib.jpeg_data, &modular_frame_encoder, &frame_header));
@@ -1180,13 +1196,14 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   };
 
   if (frame_header.flags & FrameHeader::kPatches) {
-    lossy_frame_encoder.State()->shared.image_features.patches.Encode(
+    PatchDictionaryEncoder::Encode(
+        lossy_frame_encoder.State()->shared.image_features.patches,
         get_output(0), kLayerDictionary, aux_out);
   }
 
   if (frame_header.flags & FrameHeader::kSplines) {
-    lossy_frame_encoder.State()->shared.image_features.splines.Encode(
-        get_output(0), kLayerSplines, HistogramParams(), aux_out);
+    EncodeSplines(lossy_frame_encoder.State()->shared.image_features.splines,
+                  get_output(0), kLayerSplines, HistogramParams(), aux_out);
   }
 
   if (frame_header.flags & FrameHeader::kNoise) {
@@ -1194,8 +1211,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                 get_output(0), kLayerNoise, aux_out);
   }
 
-  JXL_RETURN_IF_ERROR(lossy_frame_encoder.State()->shared.matrices.EncodeDC(
-      get_output(0), kLayerDequantTables, aux_out));
+  JXL_RETURN_IF_ERROR(
+      DequantMatricesEncodeDC(&lossy_frame_encoder.State()->shared.matrices,
+                              get_output(0), kLayerDequantTables, aux_out));
   if (frame_header.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         lossy_frame_encoder.EncodeGlobalDCInfo(frame_header, get_output(0)));

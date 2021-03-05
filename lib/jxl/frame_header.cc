@@ -193,6 +193,10 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
                            ((flags & kUseDcFrame) == 0))) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&chroma_subsampling));
   }
+  if (is_modular && !chroma_subsampling.Is444()) {
+    return JXL_FAILURE(
+        "Chroma subsampling is not supported yet in modular mode");
+  }
 
   size_t num_extra_channels =
       nonserialized_metadata != nullptr

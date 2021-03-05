@@ -20,6 +20,8 @@
 
 #include <vector>
 
+#include "lib/jxl/ac_context.h"
+#include "lib/jxl/aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
 
 namespace jxl {
@@ -34,6 +36,8 @@ void EncodeContextMap(const std::vector<uint8_t>& context_map,
                       size_t num_histograms,
                       const BitWriter::Allotment& allotment, BitWriter* writer);
 
+void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
+                       AuxOut* aux_out);
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_CONTEXT_MAP_H_

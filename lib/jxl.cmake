@@ -27,8 +27,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/ans_common.cc
   jxl/ans_common.h
   jxl/ans_params.h
-  jxl/ar_control_field.cc
-  jxl/ar_control_field.h
   jxl/aux_out.cc
   jxl/aux_out.h
   jxl/aux_out_fwd.h
@@ -58,11 +56,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/time.h
   jxl/blending.cc
   jxl/blending.h
-  jxl/box.cc
-  jxl/box.h
-  jxl/butteraugli/butteraugli.cc
-  jxl/butteraugli/butteraugli.h
-  jxl/butteraugli_wrapper.cc
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
   jxl/codec_in_out.h
@@ -90,6 +83,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_cache.h
   jxl/dec_context_map.cc
   jxl/dec_context_map.h
+  jxl/dec_external_image.cc
+  jxl/dec_external_image.h
   jxl/dec_file.cc
   jxl/dec_file.h
   jxl/dec_frame.cc
@@ -103,6 +98,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_noise.cc
   jxl/dec_noise.h
   jxl/dec_params.h
+  jxl/dec_patch_dictionary.cc
+  jxl/dec_patch_dictionary.h
   jxl/dec_reconstruct.cc
   jxl/dec_reconstruct.h
   jxl/dec_transforms-inl.h
@@ -122,8 +119,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/entropy_coder.h
   jxl/epf.cc
   jxl/epf.h
-  jxl/external_image.cc
-  jxl/external_image.h
   jxl/fast_math-inl.h
   jxl/field_encodings.h
   jxl/fields.cc
@@ -194,8 +189,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/optimize.h
   jxl/passes_state.cc
   jxl/passes_state.h
-  jxl/patch_dictionary.cc
-  jxl/patch_dictionary.h
+  jxl/patch_dictionary_internal.h
   jxl/progressive_split.cc
   jxl/progressive_split.h
   jxl/quant_weights.cc
@@ -215,12 +209,17 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
 
 # List of source files only needed by the encoder, not the decoder.
 set(JPEGXL_INTERNAL_SOURCES_ENC
+  jxl/butteraugli/butteraugli.cc
+  jxl/butteraugli/butteraugli.h
+  jxl/butteraugli_wrapper.cc
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc
   jxl/enc_adaptive_quantization.h
   jxl/enc_ans.cc
   jxl/enc_ans.h
+  jxl/enc_ar_control_field.cc
+  jxl/enc_ar_control_field.h
   jxl/enc_bit_writer.cc
   jxl/enc_bit_writer.h
   jxl/enc_butteraugli_comparator.cc
@@ -231,10 +230,14 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_cache.h
   jxl/enc_cluster.cc
   jxl/enc_cluster.h
+  jxl/enc_coeff_order.cc
+  jxl/enc_coeff_order.h
   jxl/enc_comparator.cc
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
+  jxl/enc_external_image.cc
+  jxl/enc_external_image.h
   jxl/enc_fast_heuristics.cc
   jxl/enc_file.cc
   jxl/enc_file.h
@@ -254,6 +257,14 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_noise.cc
   jxl/enc_noise.h
   jxl/enc_params.h
+  jxl/enc_patch_dictionary.cc
+  jxl/enc_patch_dictionary.h
+  jxl/enc_quant_weights.cc
+  jxl/enc_quant_weights.h
+  jxl/enc_splines.cc
+  jxl/enc_splines.h
+  jxl/enc_toc.cc
+  jxl/enc_toc.h
   jxl/enc_transforms-inl.h
   jxl/enc_transforms.cc
   jxl/enc_transforms.h
@@ -267,6 +278,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/jpeg/enc_jpeg_data_reader.h
   jxl/jpeg/enc_jpeg_huffman_decode.cc
   jxl/jpeg/enc_jpeg_huffman_decode.h
+  jxl/modular/encoding/enc_encoding.cc
+  jxl/modular/encoding/enc_encoding.h
 )
 
 set(JPEGXL_INTERNAL_LIBS

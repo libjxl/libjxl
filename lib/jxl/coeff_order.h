@@ -60,32 +60,14 @@ static_assert(AcStrategy::kNumValidStrategies ==
                   sizeof(kStrategyOrder) / sizeof(*kStrategyOrder),
               "Update this array when adding or removing AC strategies.");
 
-// Orders that are actually used in part of image. `rect` is in block units.
-uint32_t ComputeUsedOrders(SpeedTier speed, const AcStrategyImage& ac_strategy,
-                           const Rect& rect);
+constexpr uint32_t kPermutationContexts = 8;
 
-// Modify zig-zag order, so that DCT bands with more zeros go later.
-// Order of DCT bands with same number of zeros is untouched, so
-// permutation will be cheaper to encode.
-void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
-                       const AcStrategyImage& ac_strategy,
-                       const FrameDimensions& frame_dim, uint32_t& used_orders,
-                       coeff_order_t* JXL_RESTRICT order);
+uint32_t CoeffOrderContext(uint32_t val);
 
-void EncodeCoeffOrders(uint16_t used_orders,
-                       const coeff_order_t* JXL_RESTRICT order,
-                       BitWriter* writer, size_t layer,
-                       AuxOut* JXL_RESTRICT aux_out);
+void SetDefaultOrder(AcStrategy acs, coeff_order_t* JXL_RESTRICT order);
 
 Status DecodeCoeffOrders(uint16_t used_orders, uint32_t used_acs,
                          coeff_order_t* order, BitReader* br);
-
-// Encoding/decoding of a single permutation. `size`: number of elements in the
-// permutation. `skip`: number of elements to skip from the *beginning* of the
-// permutation.
-void EncodePermutation(const coeff_order_t* JXL_RESTRICT order, size_t skip,
-                       size_t size, BitWriter* writer, int layer,
-                       AuxOut* aux_out);
 
 Status DecodePermutation(size_t skip, size_t size, coeff_order_t* order,
                          BitReader* br);

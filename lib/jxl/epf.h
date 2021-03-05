@@ -47,6 +47,16 @@ void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
                   const Image3F& input, const Rect& input_rect, size_t thread,
                   Image3F* JXL_RESTRICT out, const Rect& output_rect);
 
+// Same as ApplyFilters, but only prepares the pipeline (which is returned and
+// must be run by the caller on -lf.Padding() to image_rect.ysize() +
+// lf.Padding()).
+FilterPipeline* PrepareFilterPipeline(PassesDecoderState* dec_state,
+                                      const Rect& image_rect,
+                                      const Image3F& input,
+                                      const Rect& input_rect, size_t thread,
+                                      Image3F* JXL_RESTRICT out,
+                                      const Rect& output_rect);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_EPF_H_

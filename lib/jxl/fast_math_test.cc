@@ -21,6 +21,7 @@
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/fast_math-inl.h"
+#include "lib/jxl/transfer_functions-inl.h"
 
 // Test utils
 #include <hwy/highway.h>
@@ -45,6 +46,44 @@ HWY_NOINLINE void TestFastLog2() {
     max_abs_err = std::max(max_abs_err, abs_err);
   }
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
+}
+
+HWY_NOINLINE void TestFastPow2() {
+  constexpr size_t kNumTrials = 1 << 23;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<float> dist(-100, 100);
+  float max_rel_err = 0;
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < kNumTrials; i++) {
+    const float f = dist(rng);
+    const auto actual_v = FastPow2f(d, Set(d, f));
+    const float actual = GetLane(actual_v);
+    const float expected = std::pow(2, f);
+    const float rel_err = std::abs(expected - actual) / expected;
+    EXPECT_LT(rel_err, 3E-7) << "f = " << f;
+    max_rel_err = std::max(max_rel_err, rel_err);
+  }
+  printf("max rel err %e\n", static_cast<double>(max_rel_err));
+}
+
+HWY_NOINLINE void TestFastPow() {
+  constexpr size_t kNumTrials = 1 << 23;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<float> distb(1e-3f, 1e3f);
+  std::uniform_real_distribution<float> diste(-10, 10);
+  float max_rel_err = 0;
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < kNumTrials; i++) {
+    const float b = distb(rng);
+    const float e = diste(rng);
+    const auto actual_v = FastPowf(d, Set(d, b), Set(d, e));
+    const float actual = GetLane(actual_v);
+    const float expected = std::pow(b, e);
+    const float rel_err = std::abs(expected - actual) / expected;
+    EXPECT_LT(rel_err, 3E-5) << "b = " << b << " e = " << e;
+    max_rel_err = std::max(max_rel_err, rel_err);
+  }
+  printf("max rel err %e\n", static_cast<double>(max_rel_err));
 }
 
 HWY_NOINLINE void TestFastCos() {
@@ -81,6 +120,58 @@ HWY_NOINLINE void TestFastErf() {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
+HWY_NOINLINE void TestFastSRGB() {
+  constexpr size_t kNumTrials = 1 << 23;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float max_abs_err = 0;
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < kNumTrials; i++) {
+    const float f = dist(rng);
+    const auto actual_v = FastLinearToSRGB(d, Set(d, f));
+    const float actual = GetLane(actual_v);
+    const float expected = GetLane(TF_SRGB().EncodedFromDisplay(d, Set(d, f)));
+    const float abs_err = std::abs(expected - actual);
+    EXPECT_LT(abs_err, 1.2E-4) << "f = " << f;
+    max_abs_err = std::max(max_abs_err, abs_err);
+  }
+  printf("max abs err %e\n", static_cast<double>(max_abs_err));
+}
+
+HWY_NOINLINE void TestFastPQEFD() {
+  constexpr size_t kNumTrials = 1 << 23;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float max_abs_err = 0;
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < kNumTrials; i++) {
+    const float f = dist(rng);
+    const float actual = GetLane(TF_PQ().EncodedFromDisplay(d, Set(d, f)));
+    const float expected = TF_PQ().EncodedFromDisplay(f);
+    const float abs_err = std::abs(expected - actual);
+    EXPECT_LT(abs_err, 7e-7) << "f = " << f;
+    max_abs_err = std::max(max_abs_err, abs_err);
+  }
+  printf("max abs err %e\n", static_cast<double>(max_abs_err));
+}
+
+HWY_NOINLINE void TestFastPQDFE() {
+  constexpr size_t kNumTrials = 1 << 23;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<float> dist(0.0f, 1.0f);
+  float max_abs_err = 0;
+  HWY_FULL(float) d;
+  for (size_t i = 0; i < kNumTrials; i++) {
+    const float f = dist(rng);
+    const float actual = GetLane(TF_PQ().DisplayFromEncoded(d, Set(d, f)));
+    const float expected = TF_PQ().DisplayFromEncoded(f);
+    const float abs_err = std::abs(expected - actual);
+    EXPECT_LT(abs_err, 3E-6) << "f = " << f;
+    max_abs_err = std::max(max_abs_err, abs_err);
+  }
+  printf("max abs err %e\n", static_cast<double>(max_abs_err));
+}
+
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
@@ -94,8 +185,13 @@ class FastMathTargetTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(FastMathTargetTest);
 
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastLog2);
+HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastPow2);
+HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastPow);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastCos);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastErf);
+HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastSRGB);
+HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastPQDFE);
+HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastPQEFD);
 
 }  // namespace jxl
 #endif  // HWY_ONCE
