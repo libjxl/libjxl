@@ -252,8 +252,10 @@ void EncodeCoeffOrder(const coeff_order_t* JXL_RESTRICT order, AcStrategy acs,
 }
 }  // namespace
 
-void EncodeCoeffOrders(uint16_t used_orders, const coeff_order_t* order,
-                       BitWriter* writer, size_t layer, AuxOut* aux_out) {
+void EncodeCoeffOrders(uint16_t used_orders,
+                       const coeff_order_t* JXL_RESTRICT order,
+                       BitWriter* writer, size_t layer,
+                       AuxOut* JXL_RESTRICT aux_out) {
   auto mem = hwy::AllocateAligned<coeff_order_t>(AcStrategy::kMaxCoeffArea);
   uint16_t computed = 0;
   std::vector<std::vector<Token>> tokens(1);
