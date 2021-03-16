@@ -111,7 +111,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
   jxl::CodecInOut decoded_io;
   EXPECT_TRUE(jxl::DecodeFile(
       dparams, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      &decoded_io, /*aux_out=*/nullptr, /*pool=*/nullptr));
+      &decoded_io, /*pool=*/nullptr));
 
   jxl::ButteraugliParams ba;
   EXPECT_LE(ButteraugliDistance(input_io, decoded_io, ba,
@@ -378,8 +378,8 @@ TEST(EncodeTest, JPEGReconstructionTest) {
 
   jxl::DecompressParams dparams;
   dparams.keep_dct = true;
-  EXPECT_TRUE(jxl::DecodeFile(dparams, container.boxes[1].data, &decoded_io,
-                              nullptr, nullptr));
+  EXPECT_TRUE(
+      jxl::DecodeFile(dparams, container.boxes[1].data, &decoded_io, nullptr));
 
   std::vector<uint8_t> decoded_jpeg_bytes;
   auto write = [&decoded_jpeg_bytes](const uint8_t* buf, size_t len) {
@@ -440,7 +440,7 @@ TEST(EncodeTest, JPEGFrameTest) {
   jxl::CodecInOut decoded_io;
   EXPECT_TRUE(jxl::DecodeFile(
       dparams, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      &decoded_io, /*aux_out=*/nullptr, /*pool=*/nullptr));
+      &decoded_io, /*pool=*/nullptr));
 
   jxl::ButteraugliParams ba;
   EXPECT_LE(ButteraugliDistance(orig_io, decoded_io, ba,

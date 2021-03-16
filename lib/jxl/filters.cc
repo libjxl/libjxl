@@ -90,8 +90,8 @@ void FilterPipeline::ApplyFiltersRow(const LoopFilter& lf,
       rows.SetSigma(filter_weights.sigma, sigma_y, rect.x0());
     }
 
-    filter.filter_def.apply(rows, lf, sigma_y % kBlockDim, filter_weights,
-                            filter_x0, filter_x1);
+    filter.filter_def.apply(rows, lf, filter_weights, filter_x0, filter_x1,
+                            rect.x0() % kBlockDim, sigma_y % kBlockDim);
   }
   JXL_DASSERT(rows_needed == 0);
 }

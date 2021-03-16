@@ -29,7 +29,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
-#include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_ops.h"

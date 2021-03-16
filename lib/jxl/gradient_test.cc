@@ -174,7 +174,7 @@ void TestGradient(ThreadPool* pool, uint32_t color0, uint32_t color1,
   AuxOut* aux_out = nullptr;
   PassesEncoderState enc_state;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
-  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
   EXPECT_TRUE(io2.Main().TransformTo(io2.metadata.m.color_encoding, pool));
 
   if (use_gradient) {

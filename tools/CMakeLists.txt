@@ -224,17 +224,18 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
+set(FUZZER_BINARIES
+  color_encoding_fuzzer
+  decode_basic_info_fuzzer
+  djxl_fuzzer
+  icc_codec_fuzzer
+  fields_fuzzer
+  rans_fuzzer
+  set_from_bytes_fuzzer
+)
+
 # Fuzzers.
 if(${JPEGXL_ENABLE_FUZZERS})
-  set(FUZZER_BINARIES
-    color_encoding_fuzzer
-    decode_basic_info_fuzzer
-    djxl_fuzzer
-    icc_codec_fuzzer
-    fields_fuzzer
-    rans_fuzzer
-    set_from_bytes_fuzzer
-  )
   foreach(BINARY IN LISTS FUZZER_BINARIES)
     add_executable("${BINARY}" "${BINARY}.cc")
     target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
@@ -243,6 +244,16 @@ if(${JPEGXL_ENABLE_FUZZERS})
     target_link_libraries("${BINARY}" -fsanitize=fuzzer)
   endforeach()
 endif()  # JPEGXL_ENABLE_FUZZERS
+
+# For coverage we want a lightweight alternative for regular fuzzers.
+if(${JPEGXL_ENABLE_COVERAGE})
+  foreach(FUZZER IN LISTS FUZZER_BINARIES)
+    set(BINARY "${FUZZER}_runner")
+    add_executable("${BINARY}" "fuzzer_stub.cc" "${FUZZER}.cc")
+    target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
+    target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+  endforeach()
+endif()  # JPEGXL_ENABLE_COVERAGE
 
 # EMSCRIPTEN doesn't support dynamic libraries so testing for linkage there
 # doesn't make much sense.
@@ -293,11 +304,11 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
   -s MODULARIZE=1 \
   -s FILESYSTEM=0 \
   -s EXPORT_NAME=\"JxlCodecModule\"\
-  -s EXPORTED_FUNCTIONS='[\
-    \"_jxlCompress\",\
-    \"_jxlDecompress\",\
-    \"_free\",\
-    \"_malloc\"\
-  ]'\
+  -s \"EXPORTED_FUNCTIONS=[\
+    _jxlCompress,\
+    _jxlDecompress,\
+    _free,\
+    _malloc\
+  ]\"\
 ")
 endif ()  # JPEGXL_EMSCRIPTEN

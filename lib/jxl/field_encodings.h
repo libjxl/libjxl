@@ -22,6 +22,7 @@
 
 #include <vector>
 
+#include "hwy/base.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/status.h"
 
@@ -100,7 +101,7 @@ std::vector<Enum> Values() {
   uint64_t bits = EnumBits(Enum());
 
   std::vector<Enum> values;
-  values.reserve(PopCount(bits));
+  values.reserve(hwy::PopCount(bits));
 
   // For each 1-bit in bits: add its index as value
   while (bits != 0) {

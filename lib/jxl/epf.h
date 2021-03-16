@@ -43,6 +43,8 @@ void ComputeSigma(const Rect& block_rect, PassesDecoderState* state);
 // `input_rect`, `output_rect` and `image_rect` must all have the same size.
 // At least `lf.Padding()` pixels must be accessible (and contain valid values)
 // outside of `image_rect` in `input`.
+// This function should only ever be called on full images. To do partial
+// processing, use PrepareFilterPipeline directly.
 void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
                   const Image3F& input, const Rect& input_rect, size_t thread,
                   Image3F* JXL_RESTRICT out, const Rect& output_rect);
@@ -50,12 +52,10 @@ void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
 // Same as ApplyFilters, but only prepares the pipeline (which is returned and
 // must be run by the caller on -lf.Padding() to image_rect.ysize() +
 // lf.Padding()).
-FilterPipeline* PrepareFilterPipeline(PassesDecoderState* dec_state,
-                                      const Rect& image_rect,
-                                      const Image3F& input,
-                                      const Rect& input_rect, size_t thread,
-                                      Image3F* JXL_RESTRICT out,
-                                      const Rect& output_rect);
+FilterPipeline* PrepareFilterPipeline(
+    PassesDecoderState* dec_state, const Rect& image_rect, const Image3F& input,
+    const Rect& input_rect, size_t image_ysize, size_t thread,
+    Image3F* JXL_RESTRICT out, const Rect& output_rect);
 
 }  // namespace jxl
 

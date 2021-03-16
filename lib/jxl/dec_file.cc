@@ -31,6 +31,7 @@
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 
 namespace jxl {
 namespace {
@@ -51,9 +52,9 @@ Status DecodeHeaders(BitReader* reader, CodecInOut* io) {
 
 Status DecodePreview(const DecompressParams& dparams,
                      const CodecMetadata& metadata,
-                     BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
-                     ThreadPool* pool, ImageBundle* JXL_RESTRICT preview,
-                     uint64_t* dec_pixels, const SizeConstraints* constraints) {
+                     BitReader* JXL_RESTRICT reader, ThreadPool* pool,
+                     ImageBundle* JXL_RESTRICT preview, uint64_t* dec_pixels,
+                     const SizeConstraints* constraints) {
   // No preview present in file.
   if (!metadata.m.have_preview) {
     if (dparams.preview == Override::kOn) {
@@ -72,8 +73,8 @@ Status DecodePreview(const DecompressParams& dparams,
 
   // Else: default or kOn => decode preview.
   PassesDecoderState dec_state;
-  JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, aux_out,
-                                  preview, metadata, constraints,
+  JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, reader, preview,
+                                  metadata, constraints,
                                   /*is_preview=*/true));
   if (dec_pixels) {
     *dec_pixels += dec_state.shared->frame_dim.xsize_upsampled *
@@ -86,7 +87,7 @@ Status DecodePreview(const DecompressParams& dparams,
 // is loaded (or for large images/sequences: mapped into) memory.
 Status DecodeFile(const DecompressParams& dparams,
                   const Span<const uint8_t> file, CodecInOut* JXL_RESTRICT io,
-                  AuxOut* aux_out, ThreadPool* pool) {
+                  ThreadPool* pool) {
   PROFILER_ZONE("DecodeFile uninstrumented");
 
   // Marker
@@ -123,29 +124,15 @@ Status DecodeFile(const DecompressParams& dparams,
     }
     // Set ICC profile in jpeg_data.
     if (jpeg_data) {
-      const auto& icc = io->metadata.m.color_encoding.ICC();
-      size_t icc_pos = 0;
-      for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
-        if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
-          continue;
-        }
-        size_t len = jpeg_data->app_data[i].size() - 17;
-        if (icc_pos + len > icc.size()) {
-          return JXL_FAILURE(
-              "ICC length is less than APP markers: requested %zu more bytes, "
-              "%zu available",
-              len, icc.size() - icc_pos);
-        }
-        memcpy(&jpeg_data->app_data[i][17], icc.data() + icc_pos, len);
-        icc_pos += len;
-      }
-      if (icc_pos != icc.size() && icc_pos != 0) {
-        return JXL_FAILURE("ICC length is more than APP markers");
+      Status res = jpeg::SetJPEGDataFromICC(io->metadata.m.color_encoding.ICC(),
+                                            jpeg_data.get());
+      if (!res) {
+        return res;
       }
     }
 
-    JXL_RETURN_IF_ERROR(DecodePreview(dparams, io->metadata, &reader, aux_out,
-                                      pool, &io->preview_frame, &io->dec_pixels,
+    JXL_RETURN_IF_ERROR(DecodePreview(dparams, io->metadata, &reader, pool,
+                                      &io->preview_frame, &io->dec_pixels,
                                       &io->constraints));
 
     // Only necessary if no ICC and no preview.
@@ -157,6 +144,7 @@ Status DecodeFile(const DecompressParams& dparams,
     PassesDecoderState dec_state;
 
     io->frames.clear();
+    Status dec_ok(false);
     do {
       io->frames.emplace_back(&io->metadata.m);
       if (jpeg_data) {
@@ -164,15 +152,23 @@ Status DecodeFile(const DecompressParams& dparams,
       }
       // Skip frames that are not displayed.
       do {
-        JXL_RETURN_IF_ERROR(DecodeFrame(dparams, &dec_state, pool, &reader,
-                                        aux_out, &io->frames.back(),
-                                        io->metadata, &io->constraints));
+        dec_ok =
+            DecodeFrame(dparams, &dec_state, pool, &reader, &io->frames.back(),
+                        io->metadata, &io->constraints);
+        if (!dparams.allow_partial_files) {
+          JXL_RETURN_IF_ERROR(dec_ok);
+        } else if (!dec_ok) {
+          io->frames.pop_back();
+          break;
+        }
       } while (dec_state.shared->frame_header.frame_type !=
                    FrameType::kRegularFrame &&
                dec_state.shared->frame_header.frame_type !=
                    FrameType::kSkipProgressive);
       io->dec_pixels += io->frames.back().xsize() * io->frames.back().ysize();
-    } while (!dec_state.shared->frame_header.is_last);
+    } while (!dec_state.shared->frame_header.is_last && dec_ok);
+
+    if (io->frames.empty()) return JXL_FAILURE("Not enough data.");
 
     if (dparams.check_decompressed_size && !dparams.allow_partial_files &&
         dparams.max_downsampling == 1) {

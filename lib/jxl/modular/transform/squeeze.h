@@ -430,7 +430,7 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
       dummy.hshift = image.channel[c].hshift;
       dummy.vshift = image.channel[c].vshift;
 
-      image.channel.insert(image.channel.begin() + offset + c - beginc,
+      image.channel.insert(image.channel.begin() + offset + (c - beginc),
                            std::move(dummy));
     }
   }

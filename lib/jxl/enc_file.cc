@@ -75,6 +75,49 @@ PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
      /*suitable_for_downsampling_of_at_least=*/0},
 };
 
+constexpr uint16_t kExifOrientationTag = 274;
+
+// Parses the Exif data just enough to extract any render-impacting info.
+// If the Exif data is invalid or could not be parsed, then it is treated
+// as a no-op.
+// TODO (jon): tag 1 can be used to represent Adobe RGB 1998 if it has value
+// "R03"
+// TODO (jon): set intrinsic dimensions according to
+// https://discourse.wicg.io/t/proposal-exif-image-resolution-auto-and-from-image/4326/24
+void InterpretExif(const PaddedBytes& exif, CodecMetadata* metadata) {
+  if (exif.size() < 12) return;  // not enough bytes for a valid exif blob
+  const uint8_t* t = exif.data();
+  bool bigendian = false;
+  if (LoadLE32(t) == 0x2A004D4D) {
+    bigendian = true;
+  } else if (LoadLE32(t) != 0x002A4949) {
+    return;  // not a valid tiff header
+  }
+  t += 4;
+  uint32_t offset = (bigendian ? LoadBE32(t) : LoadLE32(t));
+  if (exif.size() < 12 + offset + 2 || offset < 8) return;
+  t += offset - 4;
+  uint16_t nb_tags = (bigendian ? LoadBE16(t) : LoadLE16(t));
+  t += 2;
+  while (nb_tags > 0) {
+    if (t + 12 >= exif.data() + exif.size()) return;
+    uint16_t tag = (bigendian ? LoadBE16(t) : LoadLE16(t));
+    t += 2;
+    uint16_t type = (bigendian ? LoadBE16(t) : LoadLE16(t));
+    t += 2;
+    uint32_t count = (bigendian ? LoadBE32(t) : LoadLE32(t));
+    t += 4;
+    uint16_t value = (bigendian ? LoadBE16(t) : LoadLE16(t));
+    t += 4;
+    if (tag == kExifOrientationTag) {
+      if (type == 3 && count == 1) {
+        metadata->m.orientation = value;
+      }
+    }
+    nb_tags--;
+  }
+}
+
 Status PrepareCodecMetadataFromIO(const CompressParams& cparams,
                                   const CodecInOut* io,
                                   CodecMetadata* metadata) {
@@ -93,6 +136,8 @@ Status PrepareCodecMetadataFromIO(const CompressParams& cparams,
 
   metadata->m.xyb_encoded =
       cparams.color_transform == ColorTransform::kXYB ? true : false;
+
+  InterpretExif(io->blobs.exif, metadata);
 
   return true;
 }
@@ -153,19 +198,19 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
   io->CheckMetadata();
   BitWriter writer;
 
-  CodecMetadata metadata;
-  JXL_RETURN_IF_ERROR(PrepareCodecMetadataFromIO(cparams, io, &metadata));
-  JXL_RETURN_IF_ERROR(WriteHeaders(&metadata, &writer, aux_out));
+  std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
+  JXL_RETURN_IF_ERROR(PrepareCodecMetadataFromIO(cparams, io, metadata.get()));
+  JXL_RETURN_IF_ERROR(WriteHeaders(metadata.get(), &writer, aux_out));
 
   // Only send ICC (at least several hundred bytes) if fields aren't enough.
-  if (metadata.m.color_encoding.WantICC()) {
-    JXL_RETURN_IF_ERROR(WriteICC(metadata.m.color_encoding.ICC(), &writer,
+  if (metadata->m.color_encoding.WantICC()) {
+    JXL_RETURN_IF_ERROR(WriteICC(metadata->m.color_encoding.ICC(), &writer,
                                  kLayerHeader, aux_out));
   }
 
-  if (metadata.m.have_preview) {
-    JXL_RETURN_IF_ERROR(
-        EncodePreview(cparams, io->preview_frame, &metadata, pool, &writer));
+  if (metadata->m.have_preview) {
+    JXL_RETURN_IF_ERROR(EncodePreview(cparams, io->preview_frame,
+                                      metadata.get(), pool, &writer));
   }
 
   // Each frame should start on byte boundaries.
@@ -218,8 +263,9 @@ Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
     if (io->frames[i].use_for_next_frame) {
       info.save_as_reference = 1;
     }
-    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, &metadata, io->frames[i],
-                                    passes_enc_state, pool, &writer, aux_out));
+    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(),
+                                    io->frames[i], passes_enc_state, pool,
+                                    &writer, aux_out));
   }
 
   // Clean up passes_enc_state in case it gets reused.

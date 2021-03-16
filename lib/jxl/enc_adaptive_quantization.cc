@@ -363,8 +363,8 @@ void FuzzyErosion(const ImageF& from, ImageF* to) {
       static const float kMul0 = 0.561331076516815;
       static const float kMul1 = 0.16504828561110252;
       static const float kMul2 = 0.2440218332376892;
-      to->Row(y)[x] = kMulC * from.Row(y)[x] +
-                      kMul0 * min0 + kMul1 * min1 + kMul2 * min2;
+      to->Row(y)[x] =
+          kMulC * from.Row(y)[x] + kMul0 * min0 + kMul1 * min1 + kMul2 * min2;
     }
   }
 }
@@ -634,7 +634,6 @@ ImageF DiffPrecompute(const Image3F& xyb, const FrameDimensions& frame_dim,
 
 }  // namespace
 
-
 ImageF AdaptiveQuantizationMap(const float butteraugli_target,
                                const Image3F& opsin,
                                const ImageF& intensity_ac_x,
@@ -867,7 +866,6 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
     params.intensity_target = 80.0f;
   }
   JxlButteraugliComparator comparator(params);
-  ImageMetadata metadata;
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
@@ -906,10 +904,6 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       }
     }
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
-    ImageMetadata metadata;
-    metadata.SetFloat32Samples();
-    metadata.color_encoding = ColorEncoding::LinearSRGB();
-    metadata.SetIntensityTarget(linear.metadata()->IntensityTarget());
     ImageBundle linear = RoundtripImage(opsin, enc_state, pool);
     PROFILER_ZONE("enc Butteraugli");
     float score;
@@ -1077,9 +1071,9 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
         // compensate. If the error is below the target, decrease the qf.
         // However, to avoid an excessive increase of the qf, only do so if the
         // error is less than half the maximum allowed error.
-        const float qf_mul = (max_error < 0.5f)
-                                 ? max_error * 2.0f
-                                 : (max_error > 1.0f) ? max_error : 1.0f;
+        const float qf_mul = (max_error < 0.5f)   ? max_error * 2.0f
+                             : (max_error > 1.0f) ? max_error
+                                                  : 1.0f;
         for (size_t qy = by; qy < by + acs.covered_blocks_y(); qy++) {
           float* JXL_RESTRICT quant_field_row = quant_field.Row(qy);
           for (size_t qx = bx; qx < bx + acs.covered_blocks_x(); qx++) {
@@ -1152,8 +1146,9 @@ void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
 ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
                            ThreadPool* pool) {
   PROFILER_ZONE("enc roundtrip");
-  PassesDecoderState dec_state;
-  dec_state.shared = &enc_state->shared;
+  std::unique_ptr<PassesDecoderState> dec_state =
+      jxl::make_unique<PassesDecoderState>();
+  dec_state->shared = &enc_state->shared;
   JXL_ASSERT(opsin.ysize() % kBlockDim == 0);
 
   const size_t xsize_groups = DivCeil(opsin.xsize(), kGroupDim);
@@ -1162,37 +1157,39 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 
   size_t num_special_frames = enc_state->special_frames.size();
 
-  ModularFrameEncoder modular_frame_encoder(enc_state->shared.frame_header,
+  std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
+      jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
                                             enc_state->cparams);
-  InitializePassesEncoder(opsin, pool, enc_state, &modular_frame_encoder,
+  InitializePassesEncoder(opsin, pool, enc_state, modular_frame_encoder.get(),
                           nullptr);
-  dec_state.Init(pool);
+  dec_state->Init(pool);
 
   ImageBundle decoded(&enc_state->shared.metadata->m);
   decoded.origin = enc_state->shared.frame_header.frame_origin;
   decoded.SetFromImage(Image3F(opsin.xsize(), opsin.ysize()),
-                       dec_state.output_encoding);
+                       dec_state->output_encoding);
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](size_t num_threads) {
-    dec_state.EnsureStorage(num_threads);
+    dec_state->EnsureStorage(num_threads);
     group_dec_caches = hwy::MakeUniqueAlignedArray<GroupDecCache>(num_threads);
     return true;
   };
   const auto process_group = [&](const int group_index, const int thread) {
-    if (dec_state.shared->frame_header.loop_filter.epf_iters > 0) {
-      ComputeSigma(dec_state.shared->BlockGroupRect(group_index), &dec_state);
+    if (dec_state->shared->frame_header.loop_filter.epf_iters > 0) {
+      ComputeSigma(dec_state->shared->BlockGroupRect(group_index),
+                   dec_state.get());
     }
-    JXL_CHECK(DecodeGroupForRoundtrip(enc_state->coeffs, group_index,
-                                      &dec_state, &group_dec_caches[thread],
-                                      thread, &decoded, nullptr));
+    JXL_CHECK(DecodeGroupForRoundtrip(
+        enc_state->coeffs, group_index, dec_state.get(),
+        &group_dec_caches[thread], thread, &decoded, nullptr));
   };
   RunOnPool(pool, 0, num_groups, allocate_storage, process_group, "AQ loop");
 
   // Fine to do a JXL_ASSERT instead of error handling, since this only happens
   // on the encoder side where we can't be fed with invalid data.
-  JXL_CHECK(FinalizeFrameDecoding(&decoded, &dec_state, pool,
-                                  /*rerender=*/false, /*skip_blending=*/true));
+  JXL_CHECK(FinalizeFrameDecoding(&decoded, dec_state.get(), pool,
+                                  /*force_fir=*/false, /*skip_blending=*/true));
   // Ensure we don't create any new special frames.
   enc_state->special_frames.resize(num_special_frames);
 

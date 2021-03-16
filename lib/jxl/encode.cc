@@ -77,18 +77,6 @@ Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
   return true;
 }
 
-}  // namespace jxl
-
-uint32_t JxlEncoderVersion(void) {
-  return JPEGXL_MAJOR_VERSION * 1000000 + JPEGXL_MINOR_VERSION * 1000 +
-         JPEGXL_PATCH_VERSION;
-}
-
-constexpr unsigned char container_header[] = {
-    0,   0,   0, 0xc, 'J',  'X', 'L', ' ', 0xd, 0xa, 0x87,
-    0xa, 0,   0, 0,   0x14, 'f', 't', 'y', 'p', 'j', 'x',
-    'l', ' ', 0, 0,   0,    0,   'j', 'x', 'l', ' '};
-
 namespace {
 // Extends vec with size, and returns a pointer to the beginning of the
 // extension.
@@ -98,8 +86,8 @@ uint8_t* ExtendVector(std::vector<uint8_t>* vec, size_t size) {
 }
 }  // namespace
 
-void JxlEncoderStruct::AppendBoxHeader(const jxl::BoxType& type, size_t size,
-                                       bool unbounded) {
+void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
+                     std::vector<uint8_t>* output) {
   uint64_t box_size = 0;
   bool large_size = false;
   if (!unbounded) {
@@ -109,14 +97,20 @@ void JxlEncoderStruct::AppendBoxHeader(const jxl::BoxType& type, size_t size,
     }
   }
 
-  StoreBE32(large_size ? 1 : box_size, ExtendVector(&output_byte_queue, 4));
+  StoreBE32(large_size ? 1 : box_size, ExtendVector(output, 4));
 
-  output_byte_queue.insert(output_byte_queue.end(), type.data(),
-                           type.data() + 4);
+  output->insert(output->end(), type.data(), type.data() + 4);
 
   if (large_size) {
-    StoreBE64(box_size, ExtendVector(&output_byte_queue, 8));
+    StoreBE64(box_size, ExtendVector(output, 8));
   }
+}
+
+}  // namespace jxl
+
+uint32_t JxlEncoderVersion(void) {
+  return JPEGXL_MAJOR_VERSION * 1000000 + JPEGXL_MINOR_VERSION * 1000 +
+         JPEGXL_PATCH_VERSION;
 }
 
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
@@ -128,14 +122,17 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
   if (!wrote_headers) {
     if (use_container) {
-      output_byte_queue.insert(output_byte_queue.end(), container_header,
-                               container_header + sizeof(container_header));
+      output_byte_queue.insert(
+          output_byte_queue.end(), jxl::kContainerHeader,
+          jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
       if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
-        AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(), false);
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(),
+                             false, &output_byte_queue);
         output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
                                  jpeg_metadata.end());
       }
-      AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true);
+      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true,
+                           &output_byte_queue);
     }
     if (!WriteHeaders(&metadata, &writer, nullptr)) {
       return JXL_ENC_ERROR;

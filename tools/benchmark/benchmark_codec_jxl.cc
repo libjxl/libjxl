@@ -272,7 +272,7 @@ class JxlCodec : public ImageCodec {
       JXL_RETURN_IF_ERROR(MakeDir(dinfo_.debug_prefix));
     }
     const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, &dinfo_, pool));
+    JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, pool));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

@@ -85,10 +85,10 @@ static inline uint64_t TicksBefore() {
 #if JXL_ARCH_PPC
   asm volatile("mfspr %0, %1" : "=r"(t) : "i"(268));
 #elif JXL_ARCH_X64 && JXL_COMPILER_MSVC
-  LoadFence();
+  hwy::LoadFence();
   JXL_COMPILER_FENCE;
   t = __rdtsc();
-  LoadFence();
+  hwy::LoadFence();
   JXL_COMPILER_FENCE;
 #elif JXL_ARCH_X64 && (JXL_COMPILER_CLANG || JXL_COMPILER_GCC)
   asm volatile(
@@ -117,7 +117,7 @@ static inline uint64_t TicksAfter() {
   JXL_COMPILER_FENCE;
   unsigned aux;
   t = __rdtscp(&aux);
-  LoadFence();
+  hwy::LoadFence();
   JXL_COMPILER_FENCE;
 #elif JXL_ARCH_X64 && (JXL_COMPILER_CLANG || JXL_COMPILER_GCC)
   // Use inline asm because __rdtscp generates code to store TSC_AUX (ecx).

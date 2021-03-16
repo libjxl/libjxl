@@ -55,7 +55,7 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
     float* JXL_RESTRICT row1 = rect.PlaneRow(idct, 1, y);
     float* JXL_RESTRICT row2 = rect.PlaneRow(idct, 2, y);
 
-    const HWY_CAPPED(float, kBlockDim) d;
+    const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d;
 
     if (target_encoding.IsLinearSRGB()) {
       for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
@@ -113,52 +113,40 @@ namespace jxl {
 HWY_EXPORT(UndoXYBInPlace);
 
 namespace {
-// Implements EnsurePadding, but processes the image one row at a time.
-// TODO(veluca): the image could be padded in-place if we could ensure enough
-// x border is present. This would allow removing up to two temporary images,
-// and reduce overall ops / memory usage.
-class EnsurePaddingRowByRow {
+// Implements EnsurePaddingInPlace, but allows processing data one row at a
+// time.
+class EnsurePaddingInPlaceRowByRow {
  public:
-  void Init(const Image3F& src, const Rect& src_rect, Image3F* storage,
-            const Image3F** output, Rect* output_rect, size_t xpadding,
-            size_t ypadding, size_t xborder, ssize_t* y0, ssize_t* y1) {
-    JXL_DASSERT(xborder >= xpadding);
-    // coordinates relative to src/output_rect.
-    *y0 = src_rect.y0() >= ypadding ? -ypadding : 0;
-    *y1 = src_rect.y0() + src_rect.ysize() + ypadding <= src.ysize()
-              ? src_rect.ysize() + ypadding
-              : src.ysize() - src_rect.y0();
-    if (src_rect.x0() >= xborder &&
-        src_rect.x0() + src_rect.xsize() + xborder <= src.xsize() &&
-        src_rect.y0() >= ypadding &&
-        src_rect.y0() + src_rect.ysize() + ypadding <= src.ysize()) {
-      // There is already enough border around `src:src_rect`, nothing to do.
-      *output = &src;
-      *output_rect = src_rect;
-      // Calm down GCC compiler.
-      src_x_start_ = src_x_end_ = storage_x_start_ = 0;
+  void Init(Image3F* img, const Rect& rect, const Rect& image_rect,
+            size_t image_xsize, size_t image_ysize, size_t xpadding,
+            size_t ypadding, ssize_t* y0, ssize_t* y1) {
+    // coordinates relative to rect.
+    JXL_DASSERT(SameSize(rect, image_rect));
+    *y0 = -std::min(image_rect.y0(), ypadding);
+    *y1 = rect.ysize() + std::min(ypadding, image_ysize - image_rect.ysize() -
+                                                image_rect.y0());
+    if (image_rect.x0() >= xpadding &&
+        image_rect.x0() + image_rect.xsize() + xpadding <= image_xsize) {
+      // Nothing to do.
       strategy_ = kSkip;
+    } else if (image_xsize >= 2 * xpadding) {
+      strategy_ = kFast;
     } else {
-      *output = storage;
-      *output_rect = Rect(xborder, -*y0, src_rect.xsize(), src_rect.ysize());
-      storage->ShrinkTo(storage->xsize(), *y1 - *y0);
-      src_x_start_ = src_rect.x0() - xpadding;
-      src_x_end_ = src_rect.x0() + src_rect.xsize() + xpadding;
-      storage_x_start_ = output_rect->x0() - xpadding;
-      if (src_x_start_ + static_cast<ssize_t>(src.xsize()) >= 0 &&
-          static_cast<size_t>(src_x_end_) <= 2 * src.xsize()) {
-        strategy_ = kFast;
-      } else {
-        strategy_ = kSlow;
-      }
+      strategy_ = kSlow;
     }
-    xpadding_ = xpadding;
-    ypadding_ = ypadding;
-    xborder_ = xborder;
-    src_rect_ = src_rect;
-    src_ = &src;
-    dst_ = storage;
-    dst_rect_ = *output_rect;
+    img_ = img;
+    y0_ = rect.y0();
+    JXL_DASSERT(rect.x0() >= xpadding);
+    x0_ = rect.x0() - xpadding;
+    x1_ = image_rect.x0() >= xpadding ? rect.x0() - xpadding
+                                      : rect.x0() - image_rect.x0();
+    x2_ = image_rect.x0() + image_rect.xsize() + xpadding <= image_xsize
+              ? rect.x0() + image_rect.xsize() + xpadding
+              : rect.x0() + image_xsize - image_rect.x0();
+    x3_ = rect.x0() + rect.xsize() + xpadding;
+    JXL_DASSERT(x3_ <= img->xsize());
+    JXL_DASSERT(image_xsize == (x2_ - x1_) ||
+                (x1_ - x0_ <= x2_ - x1_ && x3_ - x2_ <= x2_ - x1_));
   }
   // To be called when row `y` of the input is available, for all the values in
   // [*y0, *y1).
@@ -169,87 +157,78 @@ class EnsurePaddingRowByRow {
       case kFast:
         // Image is wide enough that a single Mirror() step is sufficient.
         for (size_t c = 0; c < 3; c++) {
-          float* JXL_RESTRICT row_out = dst_->PlaneRow(c, y + dst_rect_.y0());
-          const float* JXL_RESTRICT row_in =
-              src_->ConstPlaneRow(c, y + src_rect_.y0());
-          // For x in [src_x_start, 0), we access the beginning of the row,
-          // flipped.
-          ssize_t x = src_x_start_;
-          for (; x < 0; x++) {
-            row_out[x - src_x_start_ + storage_x_start_] = row_in[-x - 1];
+          float* JXL_RESTRICT row = img_->PlaneRow(c, y + y0_);
+          for (size_t x = x0_; x < x1_; x++) {
+            row[x] = row[2 * x1_ - x - 1];
           }
-          // From 0 to src_x_end or src.xsize(), we just copy directly.
-          size_t num_direct = std::min<ssize_t>(src_x_end_, src_->xsize()) - x;
-          memcpy(row_out + x - src_x_start_ + storage_x_start_, row_in + x,
-                 num_direct * sizeof(float));
-          x += num_direct;
-          // From src.xsize() to src_x_end, we access the end of the row,
-          // flipped.
-          for (; x < src_x_end_; x++) {
-            row_out[x - src_x_start_ + storage_x_start_] =
-                row_in[2 * src_->xsize() - x - 1];
+          for (size_t x = x2_; x < x3_; x++) {
+            row[x] = row[2 * x2_ - x - 1];
           }
         }
         break;
-
       case kSlow:
         // Slow case for small images.
         for (size_t c = 0; c < 3; c++) {
-          float* JXL_RESTRICT row_out = dst_->PlaneRow(c, y + dst_rect_.y0());
-          const float* JXL_RESTRICT row_in =
-              src_->ConstPlaneRow(c, y + src_rect_.y0());
-          for (ssize_t x = src_x_start_; x < src_x_end_; x++) {
-            row_out[x - src_x_start_ + storage_x_start_] =
-                row_in[Mirror(x, src_->xsize())];
+          float* JXL_RESTRICT row = img_->PlaneRow(c, y + y0_) + x1_;
+          for (ssize_t x = x0_ - x1_; x < 0; x++) {
+            *(row + x) = row[Mirror(x, x2_ - x1_)];
+          }
+          for (size_t x = x2_ - x1_; x < x3_ - x1_; x++) {
+            *(row + x) = row[Mirror(x, x2_ - x1_)];
           }
         }
+        break;
     }
   }
 
  private:
-  size_t xpadding_;
-  size_t ypadding_;
-  size_t xborder_;
-  ssize_t src_x_start_;
-  ssize_t src_x_end_;
-  ssize_t storage_x_start_;
-  const Image3F* src_;
-  Rect src_rect_;
-  Image3F* dst_;
-  Rect dst_rect_;
+  // Initialized to silence spurious compiler warnings.
+  Image3F* img_ = nullptr;
+  // Will fill [x0_, x1_) and [x2_, x3_) on every row.
+  // The [x1_, x2_) range contains valid image pixels. We guarantee that either
+  // x1_ - x0_ <= x2_ - x1_, (and similarly for x2_, x3_), or that the [x1_,
+  // x2_) contains a full horizontal line of the original image.
+  size_t x0_ = 0, x1_ = 0, x2_ = 0, x3_ = 0;
+  size_t y0_ = 0;
+  // kSlow: use calls to Mirror(), for the case where the border might be larger
+  // than the image.
+  // kFast: directly use the result of Mirror() when it can be computed in a
+  // single iteration.
+  // kSkip: do nothing.
   enum Strategy { kFast, kSlow, kSkip };
-  Strategy strategy_;
+  Strategy strategy_ = kSkip;
 };
 }  // namespace
 
-void EnsurePadding(const Image3F& src, const Rect& src_rect, Image3F* storage,
-                   const Image3F** output, Rect* output_rect, size_t xpadding,
-                   size_t ypadding, size_t xborder) {
+void EnsurePaddingInPlace(Image3F* img, const Rect& rect,
+                          const Rect& image_rect, size_t image_xsize,
+                          size_t image_ysize, size_t xpadding,
+                          size_t ypadding) {
   ssize_t y0, y1;
-  EnsurePaddingRowByRow impl;
-  impl.Init(src, src_rect, storage, output, output_rect, xpadding, ypadding,
-            xborder, &y0, &y1);
+  EnsurePaddingInPlaceRowByRow impl;
+  impl.Init(img, rect, image_rect, image_xsize, image_ysize, xpadding, ypadding,
+            &y0, &y1);
   for (ssize_t y = y0; y < y1; y++) {
     impl.Process(y);
   }
 }
 
-Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
+Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
                          PassesDecoderState* dec_state, size_t thread,
                          ImageBundle* JXL_RESTRICT output_image,
                          const Rect& output_rect) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const LoopFilter& lf = frame_header.loop_filter;
+  const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
   const OpsinParams& opsin_params = dec_state->shared->opsin_params;
-  JXL_DASSERT(output_rect.xsize() <= kGroupDim);
-  JXL_DASSERT(output_rect.ysize() <= kGroupDim);
+  JXL_DASSERT(output_rect.xsize() <= kApplyImageFeaturesTileDim);
+  JXL_DASSERT(output_rect.ysize() <= kApplyImageFeaturesTileDim);
   JXL_DASSERT(input_rect.xsize() == output_rect.xsize());
   JXL_DASSERT(input_rect.ysize() == output_rect.ysize());
   JXL_DASSERT(output_rect.x0() % kBlockDim == 0);
   JXL_DASSERT(output_rect.xsize() % kBlockDim == 0 ||
-              output_rect.xsize() + output_rect.x0() ==
-                  dec_state->shared->frame_dim.xsize);
+              output_rect.xsize() + output_rect.x0() == frame_dim.xsize);
 
   // +----------------------------- STEP 1 ------------------------------+
   // | Compute the rects on which patches and splines will be applied.   |
@@ -294,13 +273,13 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
     if (output_rect.x0() + output_rect.xsize() + 2 <=
         dec_state->shared->frame_dim.xsize_padded) {
       JXL_DASSERT(input_rect.x0() + input_rect.xsize() + 2 <=
-                  input_image.xsize());
+                  input_image->xsize());
       ifbx1 = 2;
     }
     if (output_rect.y0() + output_rect.ysize() + 2 <=
         dec_state->shared->frame_dim.ysize_padded) {
       JXL_DASSERT(input_rect.y0() + input_rect.ysize() + 2 <=
-                  input_image.ysize());
+                  input_image->ysize());
       extra_rows_b = ifby1 = 2;
     }
     rect_for_if = Rect(output_rect.x0() - ifbx0, output_rect.y0() - ifby0,
@@ -308,19 +287,18 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
                        output_rect.ysize() + ifby0 + ifby1);
     // Storage for pixel data does not necessarily start at (0, 0) as we need to
     // have the left border of upsampling_rect aligned to a multiple of
-    // kBlockDim.
-    rect_for_if_storage = Rect(RoundUpTo(ifbx0, kBlockDim) - ifbx0, 0,
-                               rect_for_if.xsize(), rect_for_if.ysize());
-    rect_for_upsampling = Rect(RoundUpTo(ifbx0, kBlockDim), ifby0,
-                               output_rect.xsize(), output_rect.ysize());
+    // GroupBorderAssigner::kPaddingXRound.
+    rect_for_if_storage =
+        Rect(kBlockDim + RoundUpTo(ifbx0, GroupBorderAssigner::kPaddingXRound) -
+                 ifbx0,
+             kBlockDim, rect_for_if.xsize(), rect_for_if.ysize());
+    rect_for_upsampling =
+        Rect(kBlockDim + RoundUpTo(ifbx0, GroupBorderAssigner::kPaddingXRound),
+             kBlockDim + ifby0, output_rect.xsize(), output_rect.ysize());
     rect_for_if_input =
         Rect(input_rect.x0() - ifbx0, input_rect.y0() - ifby0,
              rect_for_if_storage.xsize(), rect_for_if_storage.ysize());
     storage_for_if = &dec_state->upsampling_input_storage[thread];
-    // Ensures that image will be mirror-padded if needed.
-    dec_state->upsampling_input_storage[thread].ShrinkTo(
-        rect_for_if_storage.xsize() + rect_for_if_storage.x0(),
-        rect_for_if_storage.ysize() + rect_for_if_storage.y0());
   }
 
   // +----------------------------- STEP 2 ------------------------------+
@@ -329,35 +307,34 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
   // | patches and splines.                                              |
   // +-------------------------------------------------------------------+
 
-  const Image3F* filter_input;
-  Rect filter_input_rect;
-  // If `rect_for_if_input` does not start at a multiple of kBlockDim, we
-  // extend the rect we run EPF on by one full block to ensure sigma is
-  // handled correctly. We also extend the output and image rects accordingly.
-  // To do this, we need 2 full blocks of border.
-  EnsurePaddingRowByRow ensure_padding_filter;
+  // If `rect_for_if_input` does not start at a multiple of
+  // GroupBorderAssigner::kPaddingXRound, we extend the rect we run EPF on by
+  // one full padding length to ensure sigma is handled correctly. We also
+  // extend the output and image rects accordingly. To do this, we need 2x the
+  // border.
+  EnsurePaddingInPlaceRowByRow ensure_padding_filter;
   FilterPipeline* fp = nullptr;
   ssize_t ensure_padding_filter_y0 = 0;
   ssize_t ensure_padding_filter_y1 = 0;
   Rect filter_input_padded_rect, image_padded_rect, filter_output_padded_rect;
   if (lf.epf_iters != 0 || lf.gab) {
-    size_t xborder = kBlockDim + (rect_for_if.x0() % kBlockDim);
-    ensure_padding_filter.Init(input_image, rect_for_if_input,
-                               &dec_state->filter_input_storage[thread],
-                               &filter_input, &filter_input_rect, lf.Padding(),
-                               lf.Padding(), xborder, &ensure_padding_filter_y0,
-                               &ensure_padding_filter_y1);
-    size_t xextra = filter_input_rect.x0() % kBlockDim;
+    ensure_padding_filter.Init(
+        input_image, rect_for_if_input, rect_for_if, frame_dim.xsize_padded,
+        frame_dim.ysize_padded, lf.Padding(), lf.Padding(),
+        &ensure_padding_filter_y0, &ensure_padding_filter_y1);
+    size_t xextra =
+        rect_for_if_input.x0() % GroupBorderAssigner::kPaddingXRound;
     filter_input_padded_rect =
-        Rect(filter_input_rect.x0() - xextra, filter_input_rect.y0(),
-             filter_input_rect.xsize() + xextra, filter_input_rect.ysize());
+        Rect(rect_for_if_input.x0() - xextra, rect_for_if_input.y0(),
+             rect_for_if_input.xsize() + xextra, rect_for_if_input.ysize());
     image_padded_rect = Rect(rect_for_if.x0() - xextra, rect_for_if.y0(),
                              rect_for_if.xsize() + xextra, rect_for_if.ysize());
     filter_output_padded_rect =
         Rect(rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
              rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
-    fp = PrepareFilterPipeline(dec_state, image_padded_rect, *filter_input,
-                               filter_input_padded_rect, thread, storage_for_if,
+    fp = PrepareFilterPipeline(dec_state, image_padded_rect, *input_image,
+                               filter_input_padded_rect, frame_dim.ysize_padded,
+                               thread, storage_for_if,
                                filter_output_padded_rect);
   }
 
@@ -366,18 +343,14 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
   // +-------------------------------------------------------------------+
 
   Rect upsampled_output_rect = output_rect;
-  EnsurePaddingRowByRow ensure_padding_upsampling;
-  const Image3F* upsampling_input = nullptr;
-  Rect upsampling_input_rect;
+  EnsurePaddingInPlaceRowByRow ensure_padding_upsampling;
   ssize_t ensure_padding_upsampling_y0 = 0;
   ssize_t ensure_padding_upsampling_y1 = 0;
   if (frame_header.upsampling != 1) {
-    size_t xborder = kBlockDim;
     ensure_padding_upsampling.Init(
-        *storage_for_if, rect_for_upsampling,
-        &dec_state->padded_upsampling_input_storage[thread], &upsampling_input,
-        &upsampling_input_rect, 2, 2, xborder, &ensure_padding_upsampling_y0,
-        &ensure_padding_upsampling_y1);
+        storage_for_if, rect_for_upsampling, output_rect,
+        frame_dim.xsize_padded, frame_dim.ysize_padded, 2, 2,
+        &ensure_padding_upsampling_y0, &ensure_padding_upsampling_y1);
     upsampled_output_rect = Rect(output_rect.x0() * frame_header.upsampling,
                                  output_rect.y0() * frame_header.upsampling,
                                  output_rect.xsize() * frame_header.upsampling,
@@ -399,7 +372,7 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
   // Here we rely on the fact that virtual rows at the beginning of the image
   // are only present if input_rect.y0() == 0.
   ssize_t first_ensure_padding_y = ensure_padding_filter_y0;
-  if (input_rect.y0() == 0) {
+  if (output_rect.y0() == 0) {
     JXL_DASSERT(ensure_padding_filter_y0 == 0);
     first_ensure_padding_y =
         std::min<ssize_t>(lf.Padding(), ensure_padding_filter_y1);
@@ -416,9 +389,11 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
       }
       fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_padded_rect, y);
     } else {
+      // TODO(veluca): when writing directly to the user-provided buffer, this
+      // copy will be unnecessary.
       for (size_t c = 0; c < 3; c++) {
         memcpy(rect_for_if_storage.PlaneRow(storage_for_if, c, y),
-               rect_for_if_input.ConstPlaneRow(input_image, c, y),
+               rect_for_if_input.ConstPlaneRow(*input_image, c, y),
                rect_for_if_input.xsize() * sizeof(float));
       }
     }
@@ -450,16 +425,20 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
       size_t num_input_rows = 1;
       // If we are going to mirror the last output rows, then we already have 3
       // input lines ready. This happens iff we did not extend rect_for_if on
-      // the bottom.
-      if (extra_rows_b != 2) {
+      // the bottom *and* we are at the last `y` value.
+      if (extra_rows_b != 2 &&
+          static_cast<size_t>(y) + 1 == lf.Padding() + rect_for_if.ysize()) {
         num_input_rows = 3;
       }
       num_ys = num_input_rows * frame_header.upsampling;
+      Rect upsample_input_rect =
+          rect_for_upsampling.Lines(input_y, num_input_rows);
       dec_state->upsampler.UpsampleRect(
-          *upsampling_input,
-          upsampling_input_rect.Lines(input_y, num_input_rows),
-          output_image->color(),
-          upsampled_output_rect.Lines(upsampled_available_y, num_ys));
+          *storage_for_if, upsample_input_rect, output_image->color(),
+          upsampled_output_rect.Lines(upsampled_available_y, num_ys),
+          static_cast<ssize_t>(output_rect.y0()) -
+              static_cast<ssize_t>(rect_for_upsampling.y0()),
+          frame_dim.ysize_padded);
       available_y = upsampled_available_y;
     }
 
@@ -511,60 +490,12 @@ Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
 
 Status FinalizeFrameDecoding(ImageBundle* decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             bool rerender, bool skip_blending) {
-  std::vector<Rect> rects_to_process;
-
+                             bool force_fir, bool skip_blending) {
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
-  if (dec_state->FinalizeRectPadding() != 0 &&
-      frame_header.chroma_subsampling.Is444() &&
-      frame_header.encoding != FrameEncoding::kModular && !rerender) {
-    size_t xsize = frame_dim.xsize_padded;
-    size_t ysize = frame_dim.ysize_padded;
-    size_t xsize_groups = frame_dim.xsize_groups;
-    size_t ysize_groups = frame_dim.ysize_groups;
-    size_t padx = RoundUpToBlockDim(dec_state->FinalizeRectPadding());
-    size_t pady = dec_state->FinalizeRectPadding();
-    // For every gap between groups, vertically, enqueue bottom gap with next
-    // group ...
-    for (size_t ygroup = 0; ygroup < ysize_groups - 1; ygroup++) {
-      size_t gystart = ygroup * kGroupDim;
-      size_t gyend = std::min(ysize, kGroupDim * (ygroup + 1));
-      // Group is processed together with another group.
-      if (gyend <= gystart + kBlockDim) continue;
-      for (size_t xstart = 0; xstart < xsize;
-           xstart += kApplyImageFeaturesTileDim) {
-        rects_to_process.emplace_back(xstart, gyend - pady,
-                                      kApplyImageFeaturesTileDim, 2 * pady,
-                                      xsize, ysize);
-      }
-    }
-    // For every gap between groups, horizontally, enqueue right gap with next
-    // group, carefully avoiding overlaps with the horizontal gaps enqueued
-    // before...
-    for (size_t xgroup = 0; xgroup < xsize_groups - 1; xgroup++) {
-      size_t gxstart = xgroup == 0 ? kBlockDim : xgroup * kGroupDim;
-      size_t gxend = std::min(xsize, kGroupDim * (xgroup + 1));
-      // Group is processed together with another group.
-      if (gxend <= gxstart + kBlockDim) continue;
-      for (size_t ygroup = 0; ygroup < ysize_groups; ygroup++) {
-        size_t gystart = ygroup == 0 ? 0 : ygroup * kGroupDim + pady;
-        size_t gyend = ygroup == ysize_groups - 1
-                           ? ysize
-                           : kGroupDim * (ygroup + 1) - pady;
-        if (gyend <= gystart) continue;
-        for (size_t ystart = gystart; ystart < gyend;
-             ystart += kApplyImageFeaturesTileDim) {
-          rects_to_process.emplace_back(gxend - padx, ystart, 2 * padx,
-                                        kApplyImageFeaturesTileDim, xsize,
-                                        gyend);
-        }
-      }
-    }
-  }
-  Image3F* finalize_image_rect_input = &dec_state->decoded;
+  const Image3F* finalize_image_rect_input = &dec_state->decoded;
   Image3F chroma_upsampled_image;
   // If we used chroma subsampling, we upsample chroma now and run
   // ApplyImageFeatures after.
@@ -588,13 +519,13 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       JXL_DASSERT(SameSize(plane, chroma_upsampled_image));
     }
   }
-  // ApplyImageFeatures was not yet run.
-  if (frame_header.encoding == FrameEncoding::kModular ||
-      !frame_header.chroma_subsampling.Is444() || rerender) {
+  // FinalizeImageRect was not yet run, or we are forcing a run.
+  if (!dec_state->EagerFinalizeImageRect() || force_fir) {
     if (lf.epf_iters > 0 && frame_header.encoding == FrameEncoding::kModular) {
       FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
                 &dec_state->filter_weights.sigma);
     }
+    std::vector<Rect> rects_to_process;
     for (size_t y = 0; y < decoded->ysize(); y += kGroupDim) {
       for (size_t x = 0; x < decoded->xsize(); x += kGroupDim) {
         Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize, frame_dim.ysize);
@@ -602,26 +533,35 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
         rects_to_process.push_back(rect);
       }
     }
-  }
-  const auto allocate_storage = [&](size_t num_threads) {
-    dec_state->EnsureStorage(num_threads);
-    return true;
-  };
+    const auto allocate_storage = [&](size_t num_threads) {
+      dec_state->EnsureStorage(num_threads);
+      return true;
+    };
 
-  std::atomic<bool> apply_features_ok{true};
-  auto run_apply_features = [&](size_t rect_id, size_t thread) {
-    if (!FinalizeImageRect(*finalize_image_rect_input,
-                           rects_to_process[rect_id], dec_state, thread,
-                           decoded, rects_to_process[rect_id])) {
-      apply_features_ok = false;
+    std::atomic<bool> apply_features_ok{true};
+    auto run_apply_features = [&](size_t rect_id, size_t thread) {
+      size_t xstart = kBlockDim + dec_state->group_border_assigner.PaddingX(
+                                      dec_state->FinalizeRectPadding());
+      size_t ystart = dec_state->FinalizeRectPadding();
+      Rect group_data_rect(xstart, ystart, rects_to_process[rect_id].xsize(),
+                           rects_to_process[rect_id].ysize());
+      CopyImageToWithPadding(rects_to_process[rect_id],
+                             *finalize_image_rect_input,
+                             dec_state->FinalizeRectPadding(), group_data_rect,
+                             &dec_state->group_data[thread]);
+      if (!FinalizeImageRect(&dec_state->group_data[thread], group_data_rect,
+                             dec_state, thread, decoded,
+                             rects_to_process[rect_id])) {
+        apply_features_ok = false;
+      }
+    };
+
+    RunOnPool(pool, 0, rects_to_process.size(), allocate_storage,
+              run_apply_features, "ApplyFeatures");
+
+    if (!apply_features_ok) {
+      return JXL_FAILURE("FinalizeImageRect failed");
     }
-  };
-
-  RunOnPool(pool, 0, rects_to_process.size(), allocate_storage,
-            run_apply_features, "ApplyFeatures");
-
-  if (!apply_features_ok) {
-    return JXL_FAILURE("FinalizeImageRect failed");
   }
 
   const size_t xsize = frame_dim.xsize_upsampled;

@@ -518,6 +518,9 @@ test:fast_benchmark.msan:
   script:
     - STORE_IMAGES=0 ./ci.sh fast_benchmark
 
+# The aarch64 benchmarks are temporarily disabled until we can run them again.
+# TODO(sboukortt): Have them run again.
+
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
   <<: *linux_host_template
@@ -534,6 +537,8 @@ test:fast_benchmark.msan:
 
 test:aarch64:fast_benchmark:release:
   <<: *benchmark_aarch64_template
+  only: # TODO(sboukortt): Remove this.
+    - web
   dependencies:
     - build:aarch64:clang:release
   script:
@@ -548,7 +553,8 @@ test:aarch64:arm_benchmark:release:
   <<: *benchmark_aarch64_template
   only:
     - web
-    - master
+    # TODO(sboukortt): Uncommment this.
+    # - master
   dependencies:
     - build:aarch64:clang:release
   script:

@@ -113,6 +113,12 @@ int DecompressMain(int argc, const char* argv[]) {
     }
   });
 
+  if (!args.file_out && !args.quiet) {
+    fprintf(stderr,
+            "No output file specified.\n"
+            "Decoding will be performed, but the result will be discarded.\n");
+  }
+
   jxl::AuxOut aux_out;
 
   if (!args.decode_to_pixels) {
@@ -122,7 +128,7 @@ int DecompressMain(int argc, const char* argv[]) {
     bool success = true;
     for (size_t i = 0; i < args.num_reps; ++i) {
       success = success && DecompressJxlToJPEG(container, args, &pool,
-                                               &jpg_output, &aux_out, &stats);
+                                               &jpg_output, &stats);
     }
     if (!args.quiet && success) fprintf(stderr, "Reconstructed to JPEG.\n");
 
@@ -151,10 +157,13 @@ int DecompressMain(int argc, const char* argv[]) {
     if (container.exif_size) {
       assign(container.exif, container.exif_size, io.blobs.exif);
     }
-    for (const auto& span : container.xml) {
-      std::string xml(span.first, span.first + span.second);
-      bool is_xmp = strstr(xml.c_str(), "XML:com.adobe.xmp");
-      assign(span.first, span.second, is_xmp ? io.blobs.xmp : io.blobs.iptc);
+    if (!container.xml.empty()) {
+      assign(container.xml[0].first, container.xml[0].second, io.blobs.xmp);
+    }
+    if (container.xml.size() > 1) {
+      fprintf(stderr,
+              "Warning: more than one XML box found, assuming first one is XMP "
+              "and ignoring others\n");
     }
     // Set JPEG quality.
     // TODO(veluca): the decoder should set this value, and the argument should
@@ -169,7 +178,7 @@ int DecompressMain(int argc, const char* argv[]) {
       if (!DecompressJxlToPixels(
               jxl::Span<const uint8_t>(container.codestream,
                                        container.codestream_size),
-              args.params, &pool, &io, &aux_out, &stats)) {
+              args.params, &pool, &io, &stats)) {
         return 1;
       }
     }
@@ -179,10 +188,6 @@ int DecompressMain(int argc, const char* argv[]) {
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
     }
-  }
-
-  if (args.print_info == jxl::Override::kOn) {
-    aux_out.Print(args.num_reps);
   }
 
   if (!args.quiet) JXL_CHECK(stats.Print(pool.NumWorkerThreads()));

@@ -71,15 +71,25 @@ def SplitLibFiles(repo_files):
                        if fn.endswith('_gbench.cc'))
   lib_srcs = [fn for fn in lib_srcs if fn not in gbench_srcs]
 
-  # TODO(lode): a list of more files, not all starting with enc_, needs to be
-  # added to the enc sources as well.
   enc_srcs = [fn for fn in lib_srcs
               if os.path.basename(fn).startswith('enc_') or
                  os.path.basename(fn).startswith('butteraugli')]
   enc_srcs.extend([
       "lib/jxl/encode.cc",
       "lib/jxl/encode_internal.h",
+      # dec_file is not intended to be part of the decoder library, so move it
+      # to the encoder source set
+      "lib/jxl/dec_file.cc",
+      "lib/jxl/dec_file.h",
   ])
+  # Temporarily remove enc_bit_writer from the encoder sources: a lot of
+  # decoder source code still needs to be split up into encoder and decoder.
+  # Including the enc_bit_writer in the decoder allows to build a working
+  # libjxl_dec library.
+  # TODO(lode): remove the dependencies of the decoder on enc_bit_writer and
+  # remove enc_bit_writer from the dec_srcs again.
+  enc_srcs.remove("lib/jxl/enc_bit_writer.cc")
+  enc_srcs.remove("lib/jxl/enc_bit_writer.h")
   enc_srcs.sort()
 
   enc_srcs_set = set(enc_srcs)

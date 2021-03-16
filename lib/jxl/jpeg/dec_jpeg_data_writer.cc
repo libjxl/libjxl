@@ -929,7 +929,8 @@ Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
         auto& chunk = ss.output_queue.front();
         size_t num_written = out(chunk.next, chunk.len);
         if (num_written == 0 && chunk.len > 0) {
-          return JXL_FAILURE("Failed to write output");
+          return StatusMessage(Status(StatusCode::kNotEnoughBytes),
+                               "Failed to write output");
         }
         chunk.len -= num_written;
         written += num_written;
@@ -960,7 +961,7 @@ Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
         }
 
         EncodeSOI(&ss);
-        JXL_RETURN_IF_ERROR(maybe_push_output());
+        JXL_QUIET_RETURN_IF_ERROR(maybe_push_output());
         ss.stage = SerializationState::SERIALIZE_SECTION;
         break;
       }
@@ -977,7 +978,7 @@ Status WriteJpeg(const JPEGData& jpg, const JPEGOutput& out) {
           ss.stage = SerializationState::ERROR;
           break;
         }
-        JXL_RETURN_IF_ERROR(maybe_push_output());
+        JXL_QUIET_RETURN_IF_ERROR(maybe_push_output());
         if (status == SerializationStatus::NEEDS_MORE_INPUT) {
           return JXL_FAILURE("Incomplete serialization data");
         } else if (status != SerializationStatus::DONE) {

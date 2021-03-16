@@ -131,7 +131,8 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       }
       ib.SetExtraChannels(std::move(extra_channels));
     }
-    PassesEncoderState state;
+    std::unique_ptr<PassesEncoderState> state =
+        jxl::make_unique<PassesEncoderState>();
 
     auto special_frame = std::unique_ptr<BitWriter>(new BitWriter());
     FrameInfo dc_frame_info;
@@ -142,15 +143,16 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     // TODO(lode): the EncodeFrame / DecodeFrame pair here is likely broken in
     // case of dc_level >= 3, since EncodeFrame may output multiple frames
     // to the bitwriter, while DecodeFrame reads only one.
-    JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib, &state,
-                          pool, special_frame.get(), nullptr));
+    JXL_CHECK(EncodeFrame(cparams, dc_frame_info, shared.metadata, ib,
+                          state.get(), pool, special_frame.get(), nullptr));
     const Span<const uint8_t> encoded = special_frame->GetSpan();
     enc_state->special_frames.emplace_back(std::move(special_frame));
 
     BitReader br(encoded);
     ImageBundle decoded(&shared.metadata->m);
-    PassesDecoderState dec_state;
-    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
+    std::unique_ptr<PassesDecoderState> dec_state =
+        jxl::make_unique<PassesDecoderState>();
+    JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, &br, &decoded,
                           *shared.metadata, /*constraints=*/nullptr));
     // TODO(lode): shared.frame_header.dc_level should be equal to
     // dec_state.shared->frame_header.dc_level - 1 here, since above we set
@@ -158,7 +160,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     // dc_frame_info.dc_level is used by EncodeFrame. However, if EncodeFrame
     // outputs multiple frames, this assumption could be wrong.
     shared.dc_storage =
-        CopyImage(dec_state.shared->dc_frames[shared.frame_header.dc_level]);
+        CopyImage(dec_state->shared->dc_frames[shared.frame_header.dc_level]);
     ZeroFillImage(&shared.quant_dc);
     shared.dc = &shared.dc_storage;
     JXL_CHECK(br.Close());

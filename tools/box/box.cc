@@ -16,7 +16,6 @@
 
 #include "lib/jxl/base/byte_order.h"  // for GetMaximumBrunsliEncodedSize
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
-#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/jpeg_data.h"
 
 namespace jpegxl {
@@ -191,8 +190,12 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
       container->codestream = in;
       container->codestream_size = data_size;
     } else if (!memcmp("Exif", box.type, 4)) {
-      container->exif = in;
-      container->exif_size = data_size;
+      if (data_size < 4) return JXL_FAILURE("Invalid Exif");
+      uint32_t tiff_header_offset = LoadBE32(in);
+      if (tiff_header_offset > data_size - 4)
+        return JXL_FAILURE("Invalid Exif tiff header offset");
+      container->exif = in + 4 + tiff_header_offset;
+      container->exif_size = data_size - 4 - tiff_header_offset;
     } else if (!memcmp("Exfc", box.type, 4)) {
       container->exfc = in;
       container->exfc_size = data_size;
@@ -220,12 +223,16 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
 }
 
 static jxl::Status AppendBoxAndData(const char type[4], const uint8_t* data,
-                                    size_t data_size, jxl::PaddedBytes* out) {
+                                    size_t data_size, jxl::PaddedBytes* out,
+                                    bool exif = false) {
   Box box;
   memcpy(box.type, type, 4);
-  box.data_size = data_size;
+  box.data_size = data_size + (exif ? 4 : 0);
   box.data_size_given = true;
   JXL_RETURN_IF_ERROR(AppendBoxHeader(box, out));
+  // for Exif: always use tiff header offset 0
+  if (exif)
+    for (int i = 0; i < 4; i++) out->push_back(0);
   out->append(data, data + data_size);
   return true;
 }
@@ -240,8 +247,8 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
   out->append(header, header + header_size);
 
   if (container.exif) {
-    JXL_RETURN_IF_ERROR(
-        AppendBoxAndData("Exif", container.exif, container.exif_size, out));
+    JXL_RETURN_IF_ERROR(AppendBoxAndData("Exif", container.exif,
+                                         container.exif_size, out, true));
   }
 
   if (container.exfc) {
@@ -284,8 +291,7 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
 // that.
 jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
                                const JpegXlContainer& container,
-                               jxl::CodecInOut* io, jxl::AuxOut* aux_out,
-                               jxl::ThreadPool* pool) {
+                               jxl::CodecInOut* io, jxl::ThreadPool* pool) {
   params.keep_dct = true;
   if (container.jpeg_reconstruction == nullptr) {
     return JXL_FAILURE(
@@ -299,33 +305,38 @@ jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
                                container.jpeg_reconstruction_size),
       io->Main().jpeg_data.get()));
 
+  auto& jpeg_data = io->Main().jpeg_data;
+  bool have_exif = false, have_xmp = false;
+  for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
+    if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kExif) {
+      if (have_exif)
+        return JXL_FAILURE("Unexpected: more than one Exif box required?");
+      if (jpeg_data->app_data[i].size() != container.exif_size + 9) {
+        return JXL_FAILURE(
+            "Exif box size does not match JPEG reconstruction data");
+      }
+      have_exif = true;
+      memcpy(&jpeg_data->app_data[i][3 + 6], container.exif,
+             container.exif_size);
+    }
+    if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
+      if (have_xmp)
+        return JXL_FAILURE("Unexpected: more than one XMP box required?");
+      if (jpeg_data->app_data[i].size() != container.xml[0].second + 32) {
+        return JXL_FAILURE(
+            "XMP box size does not match JPEG reconstruction data");
+      }
+      have_xmp = true;
+      memcpy(&jpeg_data->app_data[i][3 + 29], container.xml[0].first,
+             container.xml[0].second);
+    }
+  }
+
   JXL_RETURN_IF_ERROR(DecodeFile(
       params,
       jxl::Span<const uint8_t>(container.codestream, container.codestream_size),
-      io, aux_out, pool));
+      io, pool));
   return true;
-}
-jxl::Status EncodeJpegToJpegXL(const jxl::CompressParams& params,
-                               const jxl::CodecInOut* io,
-                               jxl::PassesEncoderState* passes_enc_state,
-                               jxl::PaddedBytes* compressed,
-                               jxl::AuxOut* aux_out, jxl::ThreadPool* pool) {
-  if (io->frames.size() != 1 || !io->Main().IsJPEG()) {
-    return JXL_FAILURE("Cannot transcode a non-JPEG file");
-  }
-  compressed->clear();
-  JpegXlContainer container;
-  jxl::PaddedBytes cs;
-  JXL_RETURN_IF_ERROR(
-      EncodeFile(params, io, passes_enc_state, &cs, aux_out, pool));
-  container.codestream = cs.data();
-  container.codestream_size = cs.size();
-  jxl::jpeg::JPEGData data_in = *io->Main().jpeg_data;
-  jxl::PaddedBytes jpeg_data;
-  JXL_RETURN_IF_ERROR(EncodeJPEGData(data_in, &jpeg_data));
-  container.jpeg_reconstruction = jpeg_data.data();
-  container.jpeg_reconstruction_size = jpeg_data.size();
-  return EncodeJpegXlContainerOneShot(container, compressed);
 }
 
 }  // namespace tools

@@ -109,7 +109,9 @@ Status JPEGData::VisitFields(Visitor* visitor) {
         visitor->U32(Val(0), Val(1), BitsOffset(1, 2), BitsOffset(2, 4), 0,
                      reinterpret_cast<uint32_t*>(&app_marker_type[i])));
     if (app_marker_type[i] != AppMarkerType::kUnknown &&
-        app_marker_type[i] != AppMarkerType::kICC) {
+        app_marker_type[i] != AppMarkerType::kICC &&
+        app_marker_type[i] != AppMarkerType::kExif &&
+        app_marker_type[i] != AppMarkerType::kXMP) {
       return JXL_FAILURE("Unknown app marker type %u",
                          static_cast<uint32_t>(app_marker_type[i]));
     }
@@ -152,12 +154,12 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       components.size() == 1 && components[0].id == 1
           ? JPEGComponentType::kGray
           : components.size() == 3 && components[0].id == 1 &&
-                    components[1].id == 2 && components[2].id == 3
-                ? JPEGComponentType::kYCbCr
-                : components.size() == 3 && components[0].id == 'R' &&
-                          components[1].id == 'G' && components[2].id == 'B'
-                      ? JPEGComponentType::kRGB
-                      : JPEGComponentType::kCustom;
+                  components[1].id == 2 && components[2].id == 3
+              ? JPEGComponentType::kYCbCr
+              : components.size() == 3 && components[0].id == 'R' &&
+                      components[1].id == 'G' && components[2].id == 'B'
+                    ? JPEGComponentType::kRGB
+                    : JPEGComponentType::kCustom;
   JXL_RETURN_IF_ERROR(
       visitor->Bits(2, JPEGComponentType::kYCbCr,
                     reinterpret_cast<uint32_t*>(&component_type)));
@@ -353,5 +355,28 @@ Status JPEGData::VisitFields(Visitor* visitor) {
 
   return true;
 }
+
+Status SetJPEGDataFromICC(const PaddedBytes& icc, jpeg::JPEGData* jpeg_data) {
+  size_t icc_pos = 0;
+  for (size_t i = 0; i < jpeg_data->app_data.size(); i++) {
+    if (jpeg_data->app_marker_type[i] != jpeg::AppMarkerType::kICC) {
+      continue;
+    }
+    size_t len = jpeg_data->app_data[i].size() - 17;
+    if (icc_pos + len > icc.size()) {
+      return JXL_FAILURE(
+          "ICC length is less than APP markers: requested %zu more bytes, "
+          "%zu available",
+          len, icc.size() - icc_pos);
+    }
+    memcpy(&jpeg_data->app_data[i][17], icc.data() + icc_pos, len);
+    icc_pos += len;
+  }
+  if (icc_pos != icc.size() && icc_pos != 0) {
+    return JXL_FAILURE("ICC length is more than APP markers");
+  }
+  return true;
+}
+
 }  // namespace jpeg
 }  // namespace jxl

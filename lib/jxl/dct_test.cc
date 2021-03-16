@@ -246,7 +246,8 @@ void TestRectInverseT(float accuracy) {
 
     for (size_t k = 0; k < kBlockSize; ++k) {
       EXPECT_NEAR(out[k], (k == i) ? 1.0f : 0.0f, accuracy)
-          << "i = " << i << ", k = " << k;
+          << "i = " << i << ", k = " << k << " ROWS = " << ROWS
+          << " COLS = " << COLS;
     }
   }
 }

@@ -49,6 +49,7 @@
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_chroma_from_luma.h"
 #include "lib/jxl/enc_coeff_order.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
@@ -888,7 +889,8 @@ class LossyFrameEncoder {
     JXL_RETURN_IF_ERROR(
         enc_state_->shared.quantizer.Encode(writer, kLayerQuant, aux_out_));
     EncodeBlockCtxMap(enc_state_->shared.block_ctx_map, writer, aux_out_);
-    enc_state_->shared.cmap.EncodeDC(writer, kLayerDC, aux_out_);
+    ColorCorrelationMapEncodeDC(&enc_state_->shared.cmap, writer, kLayerDC,
+                                aux_out_);
     return true;
   }
 
@@ -1034,6 +1036,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   if (ib.IsJPEG()) {
     cparams.gaborish = Override::kOff;
     cparams.epf = 0;
+    cparams.modular_mode = false;
   }
 
   const size_t xsize = ib.xsize();
@@ -1044,10 +1047,11 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // this should have been done by enc_file.cc
   JXL_ASSERT(metadata->m.xyb_encoded ==
              (cparams.color_transform == ColorTransform::kXYB));
-  FrameHeader frame_header(metadata);
+  std::unique_ptr<FrameHeader> frame_header =
+      jxl::make_unique<FrameHeader>(metadata);
   JXL_RETURN_IF_ERROR(MakeFrameHeader(cparams,
                                       passes_enc_state->progressive_splitter,
-                                      frame_info, ib, &frame_header));
+                                      frame_info, ib, frame_header.get()));
   // Check that if the codestream header says xyb_encoded, the color_transform
   // matches the requirement. This is checked from the cparams here, even though
   // optimally we'd be able to check this against what has actually been written
@@ -1055,30 +1059,31 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   // written to the main codestream header is (in modified form) in ib, the
   // encoder cannot indicate this fact in the ib's metadata.
   if (cparams_orig.color_transform == ColorTransform::kXYB) {
-    if (frame_header.color_transform != ColorTransform::kXYB) {
+    if (frame_header->color_transform != ColorTransform::kXYB) {
       return JXL_FAILURE(
           "The color transform of frames must be xyb if the codestream is xyb "
           "encoded");
     }
   } else {
-    if (frame_header.color_transform == ColorTransform::kXYB) {
+    if (frame_header->color_transform == ColorTransform::kXYB) {
       return JXL_FAILURE(
           "The color transform of frames cannot be xyb if the codestream is "
           "not xyb encoded");
     }
   }
 
-  FrameDimensions frame_dim = frame_header.ToFrameDimensions();
+  FrameDimensions frame_dim = frame_header->ToFrameDimensions();
 
   const size_t num_groups = frame_dim.num_groups;
 
   Image3F opsin;
   const ColorEncoding& c_linear = ColorEncoding::LinearSRGB(ib.IsGray());
-  ImageMetadata metadata_linear;
-  metadata_linear.xyb_encoded =
+  std::unique_ptr<ImageMetadata> metadata_linear =
+      jxl::make_unique<ImageMetadata>();
+  metadata_linear->xyb_encoded =
       (cparams.color_transform == ColorTransform::kXYB);
-  metadata_linear.color_encoding = c_linear;
-  ImageBundle linear_storage(&metadata_linear);
+  metadata_linear->color_encoding = c_linear;
+  ImageBundle linear_storage(metadata_linear.get());
 
   std::vector<AuxOut> aux_outs;
   // LossyFrameEncoder stores a reference to a std::function<Status(size_t)>
@@ -1105,24 +1110,25 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     return true;
   };
 
-  LossyFrameEncoder lossy_frame_encoder(cparams, frame_header, passes_enc_state,
-                                        pool, aux_out);
-  ModularFrameEncoder modular_frame_encoder(frame_header, cparams);
+  LossyFrameEncoder lossy_frame_encoder(cparams, *frame_header,
+                                        passes_enc_state, pool, aux_out);
+  std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
+      jxl::make_unique<ModularFrameEncoder>(*frame_header, cparams);
 
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
-        *ib.jpeg_data, &modular_frame_encoder, &frame_header));
+        *ib.jpeg_data, modular_frame_encoder.get(), frame_header.get()));
   } else {
     // Allocating a large enough image avoids a copy when padding.
     opsin =
         Image3F(RoundUpToBlockDim(ib.xsize()), RoundUpToBlockDim(ib.ysize()));
     opsin.ShrinkTo(ib.xsize(), ib.ysize());
 
-    const bool want_linear = frame_header.encoding == FrameEncoding::kVarDCT &&
+    const bool want_linear = frame_header->encoding == FrameEncoding::kVarDCT &&
                              cparams.speed_tier <= SpeedTier::kKitten;
     const ImageBundle* JXL_RESTRICT ib_or_linear = &ib;
 
-    if (frame_header.color_transform == ColorTransform::kXYB &&
+    if (frame_header->color_transform == ColorTransform::kXYB &&
         frame_info.ib_needs_color_transform) {
       // linear_storage would only be used by the Butteraugli loop (passing
       // linear sRGB avoids a color conversion there). Otherwise, don't
@@ -1137,7 +1143,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       CopyImageTo(ib.color(), &opsin);
     }
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
-        (frame_header.encoding == FrameEncoding::kVarDCT ||
+        (frame_header->encoding == FrameEncoding::kVarDCT ||
          cparams.quality_pair.first < 100) &&
         !cparams.keep_invisible) {
       // if lossy, simplify invisible pixels
@@ -1151,11 +1157,11 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       JXL_RETURN_IF_ERROR(
           aux_out->InspectImage3F("enc_frame:OpsinDynamicsImage", opsin));
     }
-    if (frame_header.encoding == FrameEncoding::kVarDCT) {
+    if (frame_header->encoding == FrameEncoding::kVarDCT) {
       PadImageToBlockMultipleInPlace(&opsin);
       JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
-          ib_or_linear, &opsin, pool, &modular_frame_encoder, writer,
-          &frame_header));
+          ib_or_linear, &opsin, pool, modular_frame_encoder.get(), writer,
+          frame_header.get()));
     } else if (cparams.resampling != 1) {
       // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
       // after noise, if necessary.
@@ -1163,18 +1169,18 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     }
   }
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.
-  JXL_RETURN_IF_ERROR(modular_frame_encoder.ComputeEncodingData(
-      frame_header, ib, &opsin, lossy_frame_encoder.State(), pool, aux_out,
-      /* do_color=*/frame_header.encoding == FrameEncoding::kModular));
+  JXL_RETURN_IF_ERROR(modular_frame_encoder->ComputeEncodingData(
+      *frame_header, ib, &opsin, lossy_frame_encoder.State(), pool, aux_out,
+      /* do_color=*/frame_header->encoding == FrameEncoding::kModular));
 
   writer->AppendByteAligned(lossy_frame_encoder.State()->special_frames);
-  frame_header.UpdateFlag(
+  frame_header->UpdateFlag(
       lossy_frame_encoder.State()->shared.image_features.patches.HasAny(),
       FrameHeader::kPatches);
-  frame_header.UpdateFlag(
+  frame_header->UpdateFlag(
       lossy_frame_encoder.State()->shared.image_features.splines.HasAny(),
       FrameHeader::kSplines);
-  JXL_RETURN_IF_ERROR(WriteFrameHeader(frame_header, writer, aux_out));
+  JXL_RETURN_IF_ERROR(WriteFrameHeader(*frame_header, writer, aux_out));
 
   const size_t num_passes =
       passes_enc_state->progressive_splitter.GetNumPasses();
@@ -1195,18 +1201,18 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                                    frame_dim.num_dc_groups, has_ac_global));
   };
 
-  if (frame_header.flags & FrameHeader::kPatches) {
+  if (frame_header->flags & FrameHeader::kPatches) {
     PatchDictionaryEncoder::Encode(
         lossy_frame_encoder.State()->shared.image_features.patches,
         get_output(0), kLayerDictionary, aux_out);
   }
 
-  if (frame_header.flags & FrameHeader::kSplines) {
+  if (frame_header->flags & FrameHeader::kSplines) {
     EncodeSplines(lossy_frame_encoder.State()->shared.image_features.splines,
                   get_output(0), kLayerSplines, HistogramParams(), aux_out);
   }
 
-  if (frame_header.flags & FrameHeader::kNoise) {
+  if (frame_header->flags & FrameHeader::kNoise) {
     EncodeNoise(lossy_frame_encoder.State()->shared.image_features.noise_params,
                 get_output(0), kLayerNoise, aux_out);
   }
@@ -1214,41 +1220,41 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   JXL_RETURN_IF_ERROR(
       DequantMatricesEncodeDC(&lossy_frame_encoder.State()->shared.matrices,
                               get_output(0), kLayerDequantTables, aux_out));
-  if (frame_header.encoding == FrameEncoding::kVarDCT) {
+  if (frame_header->encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
-        lossy_frame_encoder.EncodeGlobalDCInfo(frame_header, get_output(0)));
+        lossy_frame_encoder.EncodeGlobalDCInfo(*frame_header, get_output(0)));
   }
   JXL_RETURN_IF_ERROR(
-      modular_frame_encoder.EncodeGlobalInfo(get_output(0), aux_out));
-  JXL_RETURN_IF_ERROR(modular_frame_encoder.EncodeStream(
+      modular_frame_encoder->EncodeGlobalInfo(get_output(0), aux_out));
+  JXL_RETURN_IF_ERROR(modular_frame_encoder->EncodeStream(
       get_output(0), aux_out, kLayerModularGlobal, ModularStreamId::Global()));
 
   const auto process_dc_group = [&](const int group_index, const int thread) {
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
     BitWriter* output = get_output(group_index + 1);
-    if (frame_header.encoding == FrameEncoding::kVarDCT &&
-        !(frame_header.flags & FrameHeader::kUseDcFrame)) {
+    if (frame_header->encoding == FrameEncoding::kVarDCT &&
+        !(frame_header->flags & FrameHeader::kUseDcFrame)) {
       BitWriter::Allotment allotment(output, 2);
-      output->Write(2, modular_frame_encoder.extra_dc_precision[group_index]);
+      output->Write(2, modular_frame_encoder->extra_dc_precision[group_index]);
       ReclaimAndCharge(output, &allotment, kLayerDC, my_aux_out);
-      JXL_CHECK(modular_frame_encoder.EncodeStream(
+      JXL_CHECK(modular_frame_encoder->EncodeStream(
           output, my_aux_out, kLayerDC,
           ModularStreamId::VarDCTDC(group_index)));
     }
-    JXL_CHECK(modular_frame_encoder.EncodeStream(
+    JXL_CHECK(modular_frame_encoder->EncodeStream(
         output, my_aux_out, kLayerModularDcGroup,
         ModularStreamId::ModularDC(group_index)));
-    if (frame_header.encoding == FrameEncoding::kVarDCT) {
+    if (frame_header->encoding == FrameEncoding::kVarDCT) {
       const Rect& rect =
           lossy_frame_encoder.State()->shared.DCGroupRect(group_index);
       size_t nb_bits = CeilLog2Nonzero(rect.xsize() * rect.ysize());
       if (nb_bits != 0) {
         BitWriter::Allotment allotment(output, nb_bits);
         output->Write(nb_bits,
-                      modular_frame_encoder.ac_metadata_size[group_index] - 1);
+                      modular_frame_encoder->ac_metadata_size[group_index] - 1);
         ReclaimAndCharge(output, &allotment, kLayerControlFields, my_aux_out);
       }
-      JXL_CHECK(modular_frame_encoder.EncodeStream(
+      JXL_CHECK(modular_frame_encoder->EncodeStream(
           output, my_aux_out, kLayerControlFields,
           ModularStreamId::ACMetadata(group_index)));
     }
@@ -1256,9 +1262,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   RunOnPool(pool, 0, frame_dim.num_dc_groups, resize_aux_outs, process_dc_group,
             "EncodeDCGroup");
 
-  if (frame_header.encoding == FrameEncoding::kVarDCT) {
+  if (frame_header->encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.EncodeGlobalACInfo(
-        get_output(global_ac_index), &modular_frame_encoder));
+        get_output(global_ac_index), modular_frame_encoder.get()));
   }
 
   std::atomic<int> num_errors{0};
@@ -1266,7 +1272,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     AuxOut* my_aux_out = aux_out ? &aux_outs[thread] : nullptr;
 
     for (size_t i = 0; i < num_passes; i++) {
-      if (frame_header.encoding == FrameEncoding::kVarDCT) {
+      if (frame_header->encoding == FrameEncoding::kVarDCT) {
         if (!lossy_frame_encoder.EncodeACGroup(
                 i, group_index, ac_group_code(i, group_index), my_aux_out)) {
           num_errors.fetch_add(1, std::memory_order_relaxed);
@@ -1274,7 +1280,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
         }
       }
       // Write all modular encoded data (color?, alpha, depth, extra channels)
-      if (!modular_frame_encoder.EncodeStream(
+      if (!modular_frame_encoder->EncodeStream(
               ac_group_code(i, group_index), my_aux_out, kLayerModularAcGroup,
               ModularStreamId::ModularAC(group_index, i))) {
         num_errors.fetch_add(1, std::memory_order_relaxed);

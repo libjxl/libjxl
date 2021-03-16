@@ -38,7 +38,7 @@ TEST(FiltersInternalTest, RowMapModTest) {
 
 // Test the implementation for mirroring of rows.
 TEST(FiltersInternalTest, RowMapMirrorTest) {
-  RowMapMirror m(10);  // Image size of 10 rows.
+  RowMapMirror m(0, 10);  // Image size of 10 rows.
 
   EXPECT_EQ(2, m(-3));
   EXPECT_EQ(1, m(-2));

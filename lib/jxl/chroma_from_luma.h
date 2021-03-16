@@ -79,24 +79,6 @@ struct ColorCorrelationMap {
     return base_correlation_b_ + b_factor * color_scale_;
   }
 
-  void EncodeDC(BitWriter* writer, size_t layer, AuxOut* aux_out) const {
-    BitWriter::Allotment allotment(writer, 1 + 2 * kBitsPerByte + 12 + 32);
-    if (ytox_dc_ == 0 && ytob_dc_ == 0 &&
-        color_factor_ == kDefaultColorFactor && base_correlation_x_ == 0.0f &&
-        base_correlation_b_ == kYToBRatio) {
-      writer->Write(1, 1);
-      ReclaimAndCharge(writer, &allotment, layer, aux_out);
-      return;
-    }
-    writer->Write(1, 0);
-    JXL_CHECK(U32Coder::Write(kColorFactorDist, color_factor_, writer));
-    JXL_CHECK(F16Coder::Write(base_correlation_x_, writer));
-    JXL_CHECK(F16Coder::Write(base_correlation_b_, writer));
-    writer->Write(kBitsPerByte, ytox_dc_ - std::numeric_limits<int8_t>::min());
-    writer->Write(kBitsPerByte, ytob_dc_ - std::numeric_limits<int8_t>::min());
-    ReclaimAndCharge(writer, &allotment, layer, aux_out);
-  }
-
   Status DecodeDC(BitReader* br) {
     if (br->ReadFixedBits<1>() == 1) {
       // All default.
@@ -147,6 +129,12 @@ struct ColorCorrelationMap {
     RecomputeDCFactors();
   }
 
+  int32_t GetYToXDC() const { return ytox_dc_; }
+  int32_t GetYToBDC() const { return ytob_dc_; }
+  float GetColorFactor() const { return color_factor_; }
+  float GetBaseCorrelationX() const { return base_correlation_x_; }
+  float GetBaseCorrelationB() const { return base_correlation_b_; }
+
   const float* DCFactors() const { return dc_factors_; }
 
   void RecomputeDCFactors() {
@@ -167,13 +155,6 @@ struct ColorCorrelationMap {
   int32_t ytox_dc_ = 0;
   int32_t ytob_dc_ = 0;
 };
-
-void FindBestColorCorrelationMap(const Image3F& opsin,
-                                 const DequantMatrices& dequant,
-                                 const AcStrategyImage* ac_strategy,
-                                 const ImageI* raw_quant_field,
-                                 const Quantizer* quantizer, ThreadPool* pool,
-                                 ColorCorrelationMap* cmap, bool fast);
 
 }  // namespace jxl
 

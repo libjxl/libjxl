@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include "lib/jxl/common.h"
+#include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/filters_internal.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/loop_filter.h"
@@ -40,9 +41,14 @@ struct FilterWeights {
   void GaborishWeights(const LoopFilter& lf);
 };
 
+static constexpr size_t kMaxFinalizeRectPadding = 9;
+
 // Line-based EPF only needs to keep in cache 21 lines of the image, so 256 is
-// sufficient for everything to fit in the L2 cache.
-constexpr size_t kApplyImageFeaturesTileDim = 256;
+// sufficient for everything to fit in the L2 cache. We add
+// 2*RoundUpTo(kMaxFinalizeRectPadding, kBlockDim) pixels as we might have up to
+// two extra borders on each side.
+constexpr size_t kApplyImageFeaturesTileDim =
+    256 + 2 * RoundUpToBlockDim(kMaxFinalizeRectPadding);
 
 // The maximum row storage needed by the filtering pipeline. This is the sum of
 // the number of input rows needed by each step.
@@ -83,8 +89,9 @@ struct FilterRows {
   }
 
   template <typename RowMap>
-  void SetInput(const Image3F& in, size_t y_offset, ssize_t y0, ssize_t x0) {
-    RowMap row_map(in.ysize());
+  void SetInput(const Image3F& in, size_t y_offset, ssize_t y0, ssize_t x0,
+                ssize_t full_image_y_offset = 0, ssize_t image_ysize = 0) {
+    RowMap row_map(full_image_y_offset, image_ysize);
     for (size_t c = 0; c < 3; c++) {
       rows_in_[c] = in.ConstPlaneRow(c, 0);
     }
@@ -108,7 +115,7 @@ struct FilterRows {
   // blocks (pixels in sigma) on each one of the four sides. The (x0, y0) values
   // should include this padding.
   void SetSigma(const ImageF& sigma, size_t y0, size_t x0) {
-    JXL_DASSERT(x0 % kBlockDim == 0);
+    JXL_DASSERT(x0 % GroupBorderAssigner::kPaddingXRound == 0);
     row_sigma_ = sigma.ConstRow(y0 / kBlockDim) + x0 / kBlockDim;
   }
 
@@ -133,9 +140,14 @@ struct FilterRows {
 // filter and its row and column padding requirements.
 struct FilterDefinition {
   // Function to apply the filter to a given row. The filter constant parameters
-  // are passed in LoopFilter lf and filter_weights.
-  void (*apply)(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
-                const FilterWeights& filter_weights, size_t x0, size_t x1);
+  // are passed in LoopFilter lf and filter_weights. `xoff` is needed to offset
+  // the `x0` value so that it will cause correct accesses to
+  // rows.GetSigmaRow(): there is just one sigma value per 8 pixels, and if the
+  // image rectangle is not aligned to multiples of 8 pixels, we need to
+  // compensate for the difference between x0 and the image position modulo 8.
+  void (*apply)(const FilterRows& rows, const LoopFilter& lf,
+                const FilterWeights& filter_weights, size_t x0, size_t x1,
+                size_t image_y_mod_8, size_t image_x_mod_8);
 
   // Number of source image rows and cols before and after an input pixel needed
   // to compute the output of the filter. For a 3x3 convolution this border will
@@ -185,14 +197,22 @@ class FilterPipeline {
 
   struct FilterStep {
     // Sets the input of the filter step as an image region.
-    void SetInput(const Image3F* im_input, const Rect& input_rect) {
+    void SetInput(const Image3F* im_input, const Rect& input_rect,
+                  const Rect& image_rect, size_t image_ysize) {
       input = im_input;
       this->input_rect = input_rect;
+      this->image_rect = image_rect;
+      this->image_ysize = image_ysize;
+      JXL_DASSERT(SameSize(input_rect, image_rect));
       set_input_rows = [](const FilterStep& self, FilterRows* rows,
                           ssize_t y0) {
+        ssize_t full_image_y_offset =
+            static_cast<ssize_t>(self.image_rect.y0()) -
+            static_cast<ssize_t>(self.input_rect.y0());
         rows->SetInput<RowMapMirror>(*(self.input), 0,
                                      self.input_rect.y0() + y0,
-                                     self.input_rect.x0() - kMaxFilterPadding);
+                                     self.input_rect.x0() - kMaxFilterPadding,
+                                     full_image_y_offset, self.image_ysize);
       };
     }
 
@@ -248,6 +268,10 @@ class FilterPipeline {
     // Input/output rect for the first/last steps of the filter.
     Rect input_rect;
     Rect output_rect;
+
+    // Information to properly do RowMapMirror().
+    Rect image_rect;
+    size_t image_ysize;
 
     // Functions that compute the list of rows needed to process a region for
     // the given row and starting column.

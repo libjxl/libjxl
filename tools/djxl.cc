@@ -19,7 +19,6 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/alpha.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
@@ -87,10 +86,6 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "print_profile", "0|1",
                           "print timing information before exiting",
                           &print_profile, &ParseOverride);
-
-  cmdline->AddOptionValue('\0', "print_info", "0|1",
-                          "print AuxOut before exiting", &print_info,
-                          &ParseOverride);
 
   cmdline->AddOptionValue('\0', "bits_per_sample", "N",
                           "defaults to original (input) bit depth",
@@ -200,10 +195,9 @@ jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
                                   const jxl::DecompressParams& params,
                                   jxl::ThreadPool* pool,
                                   jxl::CodecInOut* JXL_RESTRICT io,
-                                  jxl::AuxOut* aux_out,
                                   SpeedStats* JXL_RESTRICT stats) {
   const double t0 = jxl::Now();
-  if (!jxl::DecodeFile(params, compressed, io, aux_out, pool)) {
+  if (!jxl::DecodeFile(params, compressed, io, pool)) {
     fprintf(stderr, "Failed to decompress to pixels.\n");
     return false;
   }
@@ -216,7 +210,6 @@ jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
 jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 const DecompressArgs& args,
                                 jxl::ThreadPool* pool, jxl::PaddedBytes* output,
-                                jxl::AuxOut* aux_out,
                                 SpeedStats* JXL_RESTRICT stats) {
   output->clear();
   const double t0 = jxl::Now();
@@ -236,7 +229,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   io.use_sjpeg = args.use_sjpeg;
   io.jpeg_quality = args.jpeg_quality;
 
-  if (!DecodeJpegXlToJpeg(args.params, container, &io, aux_out, pool)) {
+  if (!DecodeJpegXlToJpeg(args.params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
 #if JPEGXL_ENABLE_JPEG

@@ -180,6 +180,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        size_t thread, size_t group_idx, ImageBundle* decoded,
                        DrawMode draw) {
   PROFILER_FUNC;
+  constexpr size_t kGroupDataXBorder = PassesDecoderState::kGroupDataXBorder;
+  constexpr size_t kGroupDataYBorder = PassesDecoderState::kGroupDataYBorder;
 
   const Rect block_rect = dec_state->shared->BlockGroupRect(group_idx);
   const AcStrategyImage& ac_strategy = dec_state->shared->ac_strategy;
@@ -196,7 +198,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   const YCbCrChromaSubsampling& cs =
       dec_state->shared->frame_header.chroma_subsampling;
 
-  const size_t idct_stride = dec_state->decoded.PixelsPerRow();
+  const size_t idct_stride = dec_state->EagerFinalizeImageRect()
+                                 ? dec_state->group_data[thread].PixelsPerRow()
+                                 : dec_state->decoded.PixelsPerRow();
 
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
@@ -275,9 +279,15 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     float* JXL_RESTRICT idct_row[3];
     int16_t* JXL_RESTRICT jpeg_row[3];
     for (size_t c = 0; c < 3; c++) {
-      idct_row[c] =
-          dec_state->decoded.PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
-          r[c].x0() * kBlockDim;
+      if (dec_state->EagerFinalizeImageRect()) {
+        idct_row[c] = dec_state->group_data[thread].PlaneRow(
+                          c, sby[c] * kBlockDim + kGroupDataYBorder) +
+                      kGroupDataXBorder;
+      } else {
+        idct_row[c] =
+            dec_state->decoded.PlaneRow(c, (r[c].y0() + sby[c]) * kBlockDim) +
+            r[c].x0() * kBlockDim;
+      }
       if (decoded->IsJPEG()) {
         auto& component = decoded->jpeg_data->components[jpeg_c_map[c]];
         jpeg_row[c] =
@@ -287,6 +297,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       }
     }
 
+    size_t bx = 0;
     for (size_t tx = 0; tx < DivCeil(xsize_blocks, kColorTileDimInBlocks);
          tx++) {
       size_t abs_tx = tx + block_rect.x0() / kColorTileDimInBlocks;
@@ -296,8 +307,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
           Set(d, dec_state->shared->cmap.YtoBRatio(row_cmap[2][abs_tx]));
       // Increment bx by llf_x because those iterations would otherwise
       // immediately continue (!IsFirstBlock). Reduces mispredictions.
-      for (size_t bx = tx * kColorTileDimInBlocks;
-           bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
+      for (; bx < xsize_blocks && bx < (tx + 1) * kColorTileDimInBlocks;) {
         size_t sbx[3] = {bx >> hshift[0], bx >> hshift[1], bx >> hshift[2]};
         AcStrategy acs = acs_row[bx];
         const size_t llf_x = acs.covered_blocks_x();
@@ -425,39 +435,103 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   if (draw == kDontDraw) {
     return true;
   }
-  // Apply image features to
-  // - the whole AC group, if no loop filtering is enabled, or
-  // - only the interior part of the group, skipping the border
-  // ... unless this is the first or the last group in a row, in which case we
-  // process the corresponding border too.
-  size_t xsize = xsize_blocks * kBlockDim;
-  size_t ysize = ysize_blocks * kBlockDim;
-  size_t padx = RoundUpToBlockDim(dec_state->FinalizeRectPadding());
-  size_t pady = dec_state->FinalizeRectPadding();
-  size_t xstart = block_rect.x0() != 0 ? padx : 0;
-  size_t ystart = block_rect.y0() != 0 ? pady : 0;
-  bool is_last_group_x = dec_state->shared->frame_dim.xsize_blocks ==
-                         block_rect.x0() + block_rect.xsize();
-  bool is_last_group_y = dec_state->shared->frame_dim.ysize_blocks ==
-                         block_rect.y0() + block_rect.ysize();
-  size_t xend = is_last_group_x ? xsize : xsize - padx;
-  size_t yend = is_last_group_y ? ysize : ysize - pady;
-
   // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
   // be done after decoding the whole image (this allows it to work on the
   // chroma channels too).
-  bool run_apply_image_features =
-      xstart < xend && ystart < yend && !decoded->IsJPEG() && cs.Is444();
-
-  static_assert(kApplyImageFeaturesTileDim >= kGroupDim,
-                "Groups are too large");
-  const Rect aif_rect(block_rect.x0() * kBlockDim + xstart,
-                      block_rect.y0() * kBlockDim + ystart, xend - xstart,
-                      yend - ystart);
-
-  if (JXL_LIKELY(run_apply_image_features)) {
-    return FinalizeImageRect(dec_state->decoded, aif_rect, dec_state, thread,
-                             decoded, aif_rect);
+  if (dec_state->EagerFinalizeImageRect() && !decoded->IsJPEG()) {
+    // Copy the group borders to the border storage.
+    size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;
+    size_t xsize_padded = dec_state->shared->frame_dim.xsize_padded;
+    size_t ysize_padded = dec_state->shared->frame_dim.ysize_padded;
+    size_t gx = group_idx % xsize_groups;
+    size_t gy = group_idx / xsize_groups;
+    Image3F* group_data = &dec_state->group_data[thread];
+    size_t x0 = block_rect.x0() * kBlockDim;
+    size_t x1 = (block_rect.x0() + block_rect.xsize()) * kBlockDim;
+    size_t y0 = block_rect.y0() * kBlockDim;
+    size_t y1 = (block_rect.y0() + block_rect.ysize()) * kBlockDim;
+    size_t padding = dec_state->FinalizeRectPadding();
+    size_t borderx = dec_state->group_border_assigner.PaddingX(padding);
+    size_t bordery = padding;
+    size_t borderx_write = padding + borderx;
+    size_t bordery_write = padding + bordery;
+    CopyImageTo(
+        Rect(kGroupDataXBorder, kGroupDataYBorder, x1 - x0, bordery_write),
+        *group_data, Rect(x0, (gy * 2) * bordery_write, x1 - x0, bordery_write),
+        &dec_state->borders_horizontal);
+    CopyImageTo(
+        Rect(kGroupDataXBorder, kGroupDataYBorder + y1 - y0 - bordery_write,
+             x1 - x0, bordery_write),
+        *group_data,
+        Rect(x0, (gy * 2 + 1) * bordery_write, x1 - x0, bordery_write),
+        &dec_state->borders_horizontal);
+    CopyImageTo(
+        Rect(kGroupDataXBorder, kGroupDataYBorder, borderx_write, y1 - y0),
+        *group_data, Rect((gx * 2) * borderx_write, y0, borderx_write, y1 - y0),
+        &dec_state->borders_vertical);
+    CopyImageTo(Rect(kGroupDataXBorder + x1 - x0 - borderx_write,
+                     kGroupDataYBorder, borderx_write, y1 - y0),
+                *group_data,
+                Rect((gx * 2 + 1) * borderx_write, y0, borderx_write, y1 - y0),
+                &dec_state->borders_vertical);
+    Rect fir_rects[GroupBorderAssigner::kMaxToFinalize];
+    size_t num_fir_rects = 0;
+    dec_state->group_border_assigner.GroupDone(
+        group_idx, dec_state->FinalizeRectPadding(), fir_rects, &num_fir_rects);
+    for (size_t i = 0; i < num_fir_rects; i++) {
+      const Rect& r = fir_rects[i];
+      // Limits of the area to copy from, in image coordinates.
+      JXL_DASSERT(r.x0() == 0 || r.x0() >= borderx);
+      size_t x0src = r.x0() == 0 ? r.x0() : r.x0() - borderx;
+      size_t x1src = r.x0() + r.xsize() +
+                     (r.x0() + r.xsize() == xsize_padded ? 0 : borderx);
+      JXL_DASSERT(r.y0() == 0 || r.y0() >= bordery);
+      size_t y0src = r.y0() == 0 ? r.y0() : r.y0() - bordery;
+      size_t y1src = r.y0() + r.ysize() +
+                     (r.y0() + r.ysize() == ysize_padded ? 0 : bordery);
+      // Copy other groups' borders from the border storage.
+      if (y0src < y0) {
+        CopyImageTo(Rect(x0src, (gy * 2 - 1) * bordery_write, x1src - x0src,
+                         bordery_write),
+                    dec_state->borders_horizontal,
+                    Rect(kGroupDataXBorder + x0src - x0,
+                         kGroupDataYBorder - bordery_write, x1src - x0src,
+                         bordery_write),
+                    group_data);
+      }
+      if (y1src > y1) {
+        CopyImageTo(
+            Rect(x0src, (gy * 2 + 2) * bordery_write, x1src - x0src,
+                 bordery_write),
+            dec_state->borders_horizontal,
+            Rect(kGroupDataXBorder + x0src - x0, kGroupDataYBorder + y1 - y0,
+                 x1src - x0src, bordery_write),
+            group_data);
+      }
+      if (x0src < x0) {
+        CopyImageTo(
+            Rect((gx * 2 - 1) * borderx_write, y0src, borderx_write,
+                 y1src - y0src),
+            dec_state->borders_vertical,
+            Rect(kGroupDataXBorder - borderx_write,
+                 kGroupDataYBorder + y0src - y0, borderx_write, y1src - y0src),
+            group_data);
+      }
+      if (x1src > x1) {
+        CopyImageTo(
+            Rect((gx * 2 + 2) * borderx_write, y0src, borderx_write,
+                 y1src - y0src),
+            dec_state->borders_vertical,
+            Rect(kGroupDataXBorder + x1 - x0, kGroupDataYBorder + y0src - y0,
+                 borderx_write, y1src - y0src),
+            group_data);
+      }
+      Rect group_data_rect(kGroupDataXBorder + r.x0() - x0,
+                           kGroupDataYBorder + r.y0() - y0, r.xsize(),
+                           r.ysize());
+      JXL_RETURN_IF_ERROR(FinalizeImageRect(group_data, group_data_rect,
+                                            dec_state, thread, decoded, r));
+    }
   }
   return true;
 }
@@ -704,11 +778,8 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                    PassesDecoderState* JXL_RESTRICT dec_state,
                    GroupDecCache* JXL_RESTRICT group_dec_cache, size_t thread,
                    ImageBundle* JXL_RESTRICT decoded, size_t first_pass,
-                   bool force_draw) {
+                   bool force_draw, bool dc_only) {
   PROFILER_FUNC;
-
-  size_t histo_selector_bits =
-      CeilLog2Nonzero(dec_state->shared->num_histograms);
 
   DrawMode draw = (num_passes + first_pass ==
                    dec_state->shared->frame_header.passes.num_passes) ||
@@ -717,20 +788,38 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                       : kDontDraw;
 
   if (draw == kDraw && num_passes == 0 && first_pass == 0) {
-    const Image3F* upsampling_input;
-    Rect upsampling_input_rect;
-    size_t xborder = kBlockDim;
-    const Rect src_rect = dec_state->shared->BlockGroupRect(group_idx);
     // We reuse filter_input_storage here as it is not currently in use.
-    EnsurePadding(*dec_state->shared->dc, src_rect,
-                  &dec_state->filter_input_storage[thread], &upsampling_input,
-                  &upsampling_input_rect, 2, 2, xborder);
+    const Rect src_rect = dec_state->shared->BlockGroupRect(group_idx);
+    const Rect copy_rect(kBlockDim, 2, src_rect.xsize(), src_rect.ysize());
+    CopyImageToWithPadding(src_rect, *dec_state->shared->dc, 2, copy_rect,
+                           &dec_state->filter_input_storage[thread]);
+    EnsurePaddingInPlace(&dec_state->filter_input_storage[thread], copy_rect,
+                         src_rect, dec_state->shared->frame_dim.xsize_blocks,
+                         dec_state->shared->frame_dim.ysize_blocks, 2, 2);
+    Image3F* upsampling_dst = &dec_state->decoded;
     Rect dst_rect(src_rect.x0() * 8, src_rect.y0() * 8, src_rect.xsize() * 8,
                   src_rect.ysize() * 8);
-    dec_state->dc_upsampler.UpsampleRect(*upsampling_input,
-                                         upsampling_input_rect,
-                                         &dec_state->decoded, dst_rect);
+    if (dec_state->EagerFinalizeImageRect()) {
+      upsampling_dst = &dec_state->group_data[thread];
+      dst_rect = Rect(PassesDecoderState::kGroupDataXBorder,
+                      PassesDecoderState::kGroupDataYBorder, dst_rect.xsize(),
+                      dst_rect.ysize());
+    }
+    dec_state->dc_upsampler.UpsampleRect(
+        dec_state->filter_input_storage[thread], copy_rect, upsampling_dst,
+        dst_rect,
+        static_cast<ssize_t>(src_rect.y0()) -
+            static_cast<ssize_t>(copy_rect.y0()),
+        dec_state->shared->frame_dim.ysize_blocks);
     draw = kOnlyImageFeatures;
+  }
+
+  size_t histo_selector_bits = 0;
+  if (dc_only) {
+    JXL_ASSERT(num_passes == 0);
+  } else {
+    JXL_ASSERT(dec_state->shared->num_histograms > 0);
+    histo_selector_bits = CeilLog2Nonzero(dec_state->shared->num_histograms);
   }
 
   GetBlockFromBitstream get_block;

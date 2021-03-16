@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "hwy/base.h"
 #include "lib/jxl/base/bits.h"
 
 namespace jxl {
@@ -574,7 +575,7 @@ class CanEncodeVisitor : public VisitorBase {
       // TODO(janwas): support encoding individual extension sizes. We
       // currently ascribe all bits to the first and send zeros for the
       // others.
-      for (size_t i = 1; i < PopCount(extensions_); ++i) {
+      for (size_t i = 1; i < hwy::PopCount(extensions_); ++i) {
         encoded_bits = 0;
         ok_ &= U64Coder::CanEncode(0, &encoded_bits);
         *total_bits += encoded_bits;

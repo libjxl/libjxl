@@ -55,7 +55,6 @@ struct DecompressArgs {
   bool decode_to_pixels = false;
   bool version = false;
   jxl::Override print_profile = jxl::Override::kDefault;
-  jxl::Override print_info = jxl::Override::kDefault;
 
   size_t num_reps = 1;
 
@@ -82,13 +81,11 @@ jxl::Status DecompressJxlToPixels(const jxl::Span<const uint8_t> compressed,
                                   const jxl::DecompressParams& params,
                                   jxl::ThreadPool* pool,
                                   jxl::CodecInOut* JXL_RESTRICT io,
-                                  jxl::AuxOut* aux_out,
                                   SpeedStats* JXL_RESTRICT stats);
 
 jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
                                 const DecompressArgs& args,
                                 jxl::ThreadPool* pool, jxl::PaddedBytes* output,
-                                jxl::AuxOut* aux_out,
                                 SpeedStats* JXL_RESTRICT stats);
 
 jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,

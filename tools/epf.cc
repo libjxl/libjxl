@@ -67,9 +67,9 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   state.filter_weights.Init(lf, frame_dim);
   ComputeSigma(jxl::Rect(state.shared_storage.epf_sharpness), &state);
 
-  // Call with `rerender` set to true to force to apply filters to all of the
+  // Call with `force_fir` set to true to force to apply filters to all of the
   // input image.
-  JXL_CHECK(FinalizeFrameDecoding(&io->Main(), &state, pool, /*rerender=*/true,
+  JXL_CHECK(FinalizeFrameDecoding(&io->Main(), &state, pool, /*force_fir=*/true,
                                   /*skip_blending=*/true));
   JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));
   return true;

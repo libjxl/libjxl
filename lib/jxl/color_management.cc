@@ -470,7 +470,7 @@ Status DecodeProfile(const PaddedBytes& icc, skcms_ICCProfile* const profile) {
   }
   return true;
 }
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
 Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
                      Profile* profile) {
   profile->reset(cmsOpenProfileFromMemTHR(context, icc.data(), icc.size()));
@@ -589,22 +589,92 @@ void ICCComputeMD5(const PaddedBytes& data, uint8_t sum[16]) {
   sum[15] = d0 >> 24u;
 }
 
+/* Chromatic adaptation matrices*/
+static float kBradford[9] = {
+    0.8951f, 0.2664f, -0.1614f, -0.7502f, 1.7135f,
+    0.0367f, 0.0389f, -0.0685f, 1.0296f,
+};
+
+static float kBradfordInv[9] = {
+    0.9869929f, -0.1470543f, 0.1599627f, 0.4323053f, 0.5183603f,
+    0.0492912f, -0.0085287f, 0.0400428f, 0.9684867f,
+};
+
+// Adapts whitepoint x, y to D50
+static Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
+  if (wx < 0 || wx > 1 || wy < 0 || wy > 1) {
+    return JXL_FAILURE("xy color out of range");
+  }
+
+  float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  float w50[3] = {0.96422f, 1.0f, 0.82521f};
+
+  float lms[3];
+  float lms50[3];
+
+  MatMul(kBradford, w, 3, 3, 1, lms);
+  MatMul(kBradford, w50, 3, 3, 1, lms50);
+
+  float a[9] = {
+      lms50[0] / lms[0], 0, 0, 0, lms50[1] / lms[1], 0, 0, 0, lms50[2] / lms[2],
+  };
+
+  float b[9];
+  MatMul(a, kBradford, 3, 3, 3, b);
+  MatMul(kBradfordInv, b, 3, 3, 3, matrix);
+
+  return true;
+}
+
+static Status PrimariesToXYZD50(float rx, float ry, float gx, float gy,
+                                float bx, float by, float wx, float wy,
+                                float matrix[9]) {
+  if (rx < 0 || rx > 1 || ry < 0 || ry > 1 || gx < 0 || gx > 1 || gy < 0 ||
+      gy > 1 || bx < 0 || bx > 1 || by < 0 || by > 1 || wx < 0 || wx > 1 ||
+      wy < 0 || wy > 1) {
+    return JXL_FAILURE("xy color out of range");
+  }
+
+  float primaries[9] = {
+      rx, gx, bx, ry, gy, by, 1.0f - rx - ry, 1.0f - gx - gy, 1.0f - bx - by};
+  float primaries_inv[9];
+  memcpy(primaries_inv, primaries, sizeof(float) * 9);
+  Inv3x3Matrix(primaries_inv);
+
+  float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  float xyz[3];
+  MatMul(primaries_inv, w, 3, 3, 1, xyz);
+
+  float a[9] = {
+      xyz[0], 0, 0, 0, xyz[1], 0, 0, 0, xyz[2],
+  };
+
+  float toXYZ[9];
+  MatMul(primaries, a, 3, 3, 3, toXYZ);
+
+  float d50[9];
+  JXL_RETURN_IF_ERROR(AdaptToXYZD50(wx, wy, d50));
+
+  MatMul(d50, toXYZ, 3, 3, 3, matrix);
+  return true;
+}
+
 Status CreateICCChadMatrix(CIExy w, float result[9]) {
-  skcms_Matrix3x3 m;
+  float m[9];
   if (w.y == 0) {  // WhitePoint can not be pitch-black.
     return JXL_FAILURE("Invalid WhitePoint");
   }
-  JXL_RETURN_IF_ERROR(skcms_AdaptToXYZD50(w.x, w.y, &m));
-  memcpy(result, m.vals, sizeof(float) * 9);
+  JXL_RETURN_IF_ERROR(AdaptToXYZD50(w.x, w.y, m));
+  memcpy(result, m, sizeof(float) * 9);
   return true;
 }
 
 // Creates RGB to XYZ matrix given RGB primaries and whitepoint in xy.
 Status CreateICCRGBMatrix(CIExy r, CIExy g, CIExy b, CIExy w, float result[9]) {
-  skcms_Matrix3x3 m;
+  float m[9];
   JXL_RETURN_IF_ERROR(
-      skcms_PrimariesToXYZD50(r.x, r.y, g.x, g.y, b.x, b.y, w.x, w.y, &m));
-  memcpy(result, m.vals, sizeof(float) * 9);
+      PrimariesToXYZD50(r.x, r.y, g.x, g.y, b.x, b.y, w.x, w.y, m));
+  memcpy(result, m, sizeof(float) * 9);
   return true;
 }
 
@@ -1008,10 +1078,12 @@ Status MaybeCreateProfile(const cmsContext context, const ColorEncoding& c,
       JXL_NOTIFY_ERROR("XYB ICC not yet implemented");
       break;
     default:
-      return JXL_FAILURE("Unknown CS %u", c.GetColorSpace());
+      return JXL_FAILURE("Unknown CS %u",
+                         static_cast<unsigned int>(c.GetColorSpace()));
   }
   if (profile.get() == nullptr) {
-    return JXL_FAILURE("Failed to create profile (cs = %u)", c.GetColorSpace());
+    return JXL_FAILURE("Failed to create profile (cs = %u)",
+                       static_cast<unsigned int>(c.GetColorSpace()));
   }
 
   // ICC uses the same values.
@@ -1499,7 +1571,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
     PaddedBytes icc_src, icc_dst;
 #if JPEGXL_ENABLE_SKCMS
     skcms_ICCProfile new_src, new_dst;
-#else  // JPEGXL_ENABLE_SKCMS
+#else   // JPEGXL_ENABLE_SKCMS
     Profile new_src, new_dst;
 #endif  // JPEGXL_ENABLE_SKCMS
         // Only enable ExtraTF if profile creation succeeded.

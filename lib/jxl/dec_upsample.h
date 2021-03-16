@@ -24,9 +24,13 @@ struct Upsampler {
   void Init(size_t upsampling, const CustomTransformData& data);
 
   // The caller must guarantee that `src:src_rect` has two pixels of padding
-  // available on each side of the x dimension.
+  // available on each side of the x dimension. `image_ysize` is the total
+  // height of the frame that the source area belongs to (not the buffer);
+  // `image_y_offset` is the difference between `src.y0()` and the corresponding
+  // y value in the full frame.
   void UpsampleRect(const Image3F& src, const Rect& src_rect, Image3F* dst,
-                    const Rect& dst_rect) const;
+                    const Rect& dst_rect, ssize_t image_y_offset,
+                    size_t image_ysize) const;
 
  private:
   size_t upsampling_ = 1;

@@ -12,12 +12,13 @@ dependencies that need to be installed in your system first.
 Please [install vcpkg](https://vcpkg.readthedocs.io/en/latest/examples/installing-and-using-packages/),
 and use it to install the following libraries:
 
-```bash
+```
 vcpkg install gtest:x64-windows
 vcpkg install giflib:x64-windows
 vcpkg install libjpeg-turbo:x64-windows
 vcpkg install libpng:x64-windows
-vcpkg install zlib:x64-windows```
+vcpkg install zlib:x64-windows
+```
 
 ## Building
 
@@ -77,7 +78,8 @@ vcpkg above.
       ]
     }
   ]
-}```
+}
+```
 
 The project is now ready for use. To build, simply press F7 (or choose
 Build All from the Build menu). This writes binaries to

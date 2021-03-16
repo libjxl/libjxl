@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_DOT_DICTIONARY_H_
-#define LIB_JXL_DOT_DICTIONARY_H_
+#ifndef LIB_JXL_ENC_DOT_DICTIONARY_H_
+#define LIB_JXL_ENC_DOT_DICTIONARY_H_
 
 // Dots are stored in a dictionary to avoid storing similar dots multiple
 // times.
@@ -41,4 +41,4 @@ std::vector<PatchInfo> FindDotDictionary(const CompressParams& cparams,
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_DOT_DICTIONARY_H_
+#endif  // LIB_JXL_ENC_DOT_DICTIONARY_H_

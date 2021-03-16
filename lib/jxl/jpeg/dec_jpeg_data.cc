@@ -76,7 +76,7 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
           return JXL_FAILURE("ICC markers must be at least 17 bytes");
         }
         marker[0] = 0xE2;
-        memcpy(&marker[3], "ICC_PROFILE", 12);
+        memcpy(&marker[3], kIccProfileTag, sizeof kIccProfileTag);
         marker[15] = ++num_icc;
       }
     } else {
@@ -90,6 +90,20 @@ Status DecodeJPEGData(Span<const uint8_t> encoded, JPEGData* jpeg_data) {
     auto& marker = jpeg_data->app_data[i];
     if (jpeg_data->app_marker_type[i] == AppMarkerType::kICC) {
       marker[16] = num_icc;
+    }
+    if (jpeg_data->app_marker_type[i] == AppMarkerType::kExif) {
+      marker[0] = 0xE1;
+      if (marker.size() < 3 + sizeof kExifTag) {
+        return JXL_FAILURE("Incorrect Exif marker size");
+      }
+      memcpy(&marker[3], kExifTag, sizeof kExifTag);
+    }
+    if (jpeg_data->app_marker_type[i] == AppMarkerType::kXMP) {
+      marker[0] = 0xE1;
+      if (marker.size() < 3 + sizeof kXMPTag) {
+        return JXL_FAILURE("Incorrect XMP marker size");
+      }
+      memcpy(&marker[3], kXMPTag, sizeof kXMPTag);
     }
   }
   // TODO(eustas): actually inject ICC profile and check it fits perfectly.

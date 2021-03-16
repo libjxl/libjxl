@@ -85,12 +85,12 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_context_map.h
   jxl/dec_external_image.cc
   jxl/dec_external_image.h
-  jxl/dec_file.cc
-  jxl/dec_file.h
   jxl/dec_frame.cc
   jxl/dec_frame.h
   jxl/dec_group.cc
   jxl/dec_group.h
+  jxl/dec_group_border.cc
+  jxl/dec_group_border.h
   jxl/dec_huffman.cc
   jxl/dec_huffman.h
   jxl/dec_modular.cc
@@ -111,10 +111,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
   jxl/decode.cc
-  jxl/detect_dots.cc
-  jxl/detect_dots.h
-  jxl/dot_dictionary.cc
-  jxl/dot_dictionary.h
+  jxl/enc_bit_writer.cc
+  jxl/enc_bit_writer.h
   jxl/entropy_coder.cc
   jxl/entropy_coder.h
   jxl/epf.cc
@@ -207,11 +205,14 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/xorshift128plus-inl.h
 )
 
-# List of source files only needed by the encoder, not the decoder.
+# List of source files only needed by the encoder or by tools (including
+# decoding tools), but not by the decoder library.
 set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/butteraugli/butteraugli.cc
   jxl/butteraugli/butteraugli.h
   jxl/butteraugli_wrapper.cc
+  jxl/dec_file.cc
+  jxl/dec_file.h
   jxl/enc_ac_strategy.cc
   jxl/enc_ac_strategy.h
   jxl/enc_adaptive_quantization.cc
@@ -220,14 +221,14 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_ans.h
   jxl/enc_ar_control_field.cc
   jxl/enc_ar_control_field.h
-  jxl/enc_bit_writer.cc
-  jxl/enc_bit_writer.h
   jxl/enc_butteraugli_comparator.cc
   jxl/enc_butteraugli_comparator.h
   jxl/enc_butteraugli_pnorm.cc
   jxl/enc_butteraugli_pnorm.h
   jxl/enc_cache.cc
   jxl/enc_cache.h
+  jxl/enc_chroma_from_luma.cc
+  jxl/enc_chroma_from_luma.h
   jxl/enc_cluster.cc
   jxl/enc_cluster.h
   jxl/enc_coeff_order.cc
@@ -236,6 +237,10 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_comparator.h
   jxl/enc_context_map.cc
   jxl/enc_context_map.h
+  jxl/enc_detect_dots.cc
+  jxl/enc_detect_dots.h
+  jxl/enc_dot_dictionary.cc
+  jxl/enc_dot_dictionary.h
   jxl/enc_external_image.cc
   jxl/enc_external_image.h
   jxl/enc_fast_heuristics.cc
@@ -383,7 +388,9 @@ target_include_directories(jxl_enc-obj PUBLIC
 # for tests.
 # TODO(lode): this library is missing symbols, more encoder-only code needs to
 # be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
-add_library(jxl_dec-static STATIC $<TARGET_OBJECTS:jxl_dec-obj>)
+add_library(jxl_dec-static STATIC
+  $<TARGET_OBJECTS:jxl_dec-obj>
+)
 target_link_libraries(jxl_dec-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} hwy)
 target_include_directories(jxl_dec-static PUBLIC
@@ -413,6 +420,7 @@ target_include_directories(jxl-static PUBLIC
 # against the static library. This define JXL_EXPORT= here forces it to not
 # use dllimport in tests and other tools that require the static library.
 target_compile_definitions(jxl-static INTERFACE -DJXL_EXPORT=)
+target_compile_definitions(jxl_dec-static INTERFACE -DJXL_EXPORT=)
 
 # TODO(deymo): Move TCMalloc linkage to the tools/ directory since the library
 # shouldn't do any allocs anyway.
@@ -438,8 +446,10 @@ endif()  # JPEGXL_ENABLE_TCMALLOC
 # in Windows.
 if (NOT WIN32)
   set_target_properties(jxl-static PROPERTIES OUTPUT_NAME "jxl")
+  set_target_properties(jxl_dec-static PROPERTIES OUTPUT_NAME "jxl_dec")
 endif()
 install(TARGETS jxl-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(TARGETS jxl_dec-static DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
      TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC)
@@ -460,23 +470,19 @@ set_target_properties(jxl PROPERTIES
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
-# # Public shared library.
-# # TODO(lode): this library is missing symbols, more encoder-only code needs to
-# # be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
-# # Commented out: building libjxl_dec.dll out of this on Windows causes linker
-# # errors due to this reason
-# add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_dec-obj>)
-# target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS})
-# target_link_libraries(jxl_dec PRIVATE ${JPEGXL_INTERNAL_LIBS})
-# # Shared library include path contains only the "include/" paths.
-# target_include_directories(jxl_dec PUBLIC
-#   "${CMAKE_CURRENT_SOURCE_DIR}/include"
-#   "${CMAKE_CURRENT_BINARY_DIR}/include")
-# set_target_properties(jxl_dec PROPERTIES
-#   VERSION ${JPEGXL_LIBRARY_VERSION}
-#   SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
-#   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
-#   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+# Public shared decoder library.
+ add_library(jxl_dec SHARED $<TARGET_OBJECTS:jxl_dec-obj>)
+ target_link_libraries(jxl_dec PUBLIC ${JPEGXL_COVERAGE_FLAGS})
+ target_link_libraries(jxl_dec PRIVATE ${JPEGXL_INTERNAL_LIBS})
+ # Shared library include path contains only the "include/" paths.
+ target_include_directories(jxl_dec PUBLIC
+   "${CMAKE_CURRENT_SOURCE_DIR}/include"
+   "${CMAKE_CURRENT_BINARY_DIR}/include")
+ set_target_properties(jxl_dec PROPERTIES
+   VERSION ${JPEGXL_LIBRARY_VERSION}
+   SOVERSION ${JPEGXL_LIBRARY_SOVERSION}
+   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # Add a jxl.version file as a version script to tag symbols with the
 # appropriate version number. This script is also used to limit what's exposed
@@ -505,4 +511,5 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
 
 else()
 add_library(jxl ALIAS jxl-static)
+add_library(jxl_dec ALIAS jxl_dec-static)
 endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC

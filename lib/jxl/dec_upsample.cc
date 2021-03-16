@@ -52,7 +52,8 @@ float Kernel(size_t x, size_t y, size_t ix, size_t iy,
 
 template <int N>
 void Upsample(const Image3F& src, const Rect& src_rect, Image3F* dst,
-              const Rect& dst_rect, const float kernel[4][4][5][5]) {
+              const Rect& dst_rect, const float kernel[4][4][5][5],
+              ssize_t image_y_offset, size_t image_ysize) {
   JXL_DASSERT(src_rect.x0() >= 2);
   JXL_DASSERT(src_rect.x0() + src_rect.xsize() + 2 <= src.xsize());
   for (size_t c = 0; c < 3; c++) {
@@ -60,8 +61,10 @@ void Upsample(const Image3F& src, const Rect& src_rect, Image3F* dst,
       float* dst_row = dst_rect.PlaneRow(dst, c, y);
       const float* src_rows[5];
       for (int iy = -2; iy <= 2; iy++) {
+        ssize_t image_y =
+            static_cast<ssize_t>(y / N + src_rect.y0() + iy) + image_y_offset;
         src_rows[iy + 2] =
-            src.PlaneRow(c, Mirror(y / N + src_rect.y0() + iy, src.ysize()));
+            src.PlaneRow(c, Mirror(image_y, image_ysize) - image_y_offset);
       }
       for (size_t x = 0; x < dst_rect.xsize(); x++) {
         size_t xbase = x / N + src_rect.x0() - 2;
@@ -99,16 +102,20 @@ void Upsampler::Init(size_t upsampling, const CustomTransformData& data) {
 }
 
 void Upsampler::UpsampleRect(const Image3F& src, const Rect& src_rect,
-                             Image3F* dst, const Rect& dst_rect) const {
+                             Image3F* dst, const Rect& dst_rect,
+                             ssize_t image_y_offset, size_t image_ysize) const {
   if (upsampling_ == 1) return;
   JXL_ASSERT(dst_rect.xsize() == src_rect.xsize() * upsampling_);
   JXL_ASSERT(dst_rect.ysize() == src_rect.ysize() * upsampling_);
   if (upsampling_ == 2) {
-    Upsample<2>(src, src_rect, dst, dst_rect, kernel_);
+    Upsample<2>(src, src_rect, dst, dst_rect, kernel_, image_y_offset,
+                image_ysize);
   } else if (upsampling_ == 4) {
-    Upsample<4>(src, src_rect, dst, dst_rect, kernel_);
+    Upsample<4>(src, src_rect, dst, dst_rect, kernel_, image_y_offset,
+                image_ysize);
   } else if (upsampling_ == 8) {
-    Upsample<8>(src, src_rect, dst, dst_rect, kernel_);
+    Upsample<8>(src, src_rect, dst, dst_rect, kernel_, image_y_offset,
+                image_ysize);
   } else {
     JXL_ABORT("Not implemented");
   }

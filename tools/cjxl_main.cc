@@ -16,6 +16,7 @@
 
 #include "jxl/encode.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "tools/box/box.h"
 #include "tools/cjxl.h"
 #include "tools/codec_config.h"
@@ -65,17 +66,21 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   double decode_mps = 0;
   JXL_RETURN_IF_ERROR(LoadAll(args, &pool, &io, &decode_mps));
 
-  // need to validate again because now we know if input was JPEG or not
+  // need to validate again because now we know the input
   if (!args.ValidateArgsAfterLoad(cmdline, io)) {
     fprintf(stderr, "Use '%s -h' for more information\n", argv[0]);
     return 1;
+  }
+  if (!args.file_out && !args.quiet) {
+    fprintf(stderr,
+            "No output file specified.\n"
+            "Encoding will be performed, but the result will be discarded.\n");
   }
   if (!CompressJxl(io, decode_mps, &pool, args, &compressed, !args.quiet)) {
     return 1;
   }
 
-  if (args.use_container &&
-      !IsContainerHeader(compressed.data(), compressed.size())) {
+  if (args.use_container) {
     JpegXlContainer container;
     container.codestream = compressed.data();
     container.codestream_size = compressed.size();
@@ -87,13 +92,18 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
       if (bytes.empty()) return;
       container.xml.emplace_back(bytes.data(), bytes.size());
     };
-    append_xml(io.blobs.iptc);
     append_xml(io.blobs.xmp);
     if (!io.blobs.jumbf.empty()) {
       container.jumb = io.blobs.jumbf.data();
       container.jumb_size = io.blobs.jumbf.size();
     }
-
+    jxl::PaddedBytes jpeg_data;
+    if (io.Main().IsJPEG()) {
+      jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
+      JXL_RETURN_IF_ERROR(EncodeJPEGData(data_in, &jpeg_data));
+      container.jpeg_reconstruction = jpeg_data.data();
+      container.jpeg_reconstruction_size = jpeg_data.size();
+    }
     jxl::PaddedBytes container_file;
     if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
       fprintf(stderr, "Failed to encode container format\n");
@@ -101,7 +111,6 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
     }
     compressed.swap(container_file);
   }
-
   if (args.file_out) {
     if (!jxl::WriteFile(compressed, args.file_out)) {
       fprintf(stderr, "Failed to write to \"%s\"\n", args.file_out);

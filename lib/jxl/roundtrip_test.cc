@@ -14,10 +14,14 @@
 
 #include "gtest/gtest.h"
 #include "jxl/decode.h"
+#include "jxl/decode_cxx.h"
 #include "jxl/encode.h"
+#include "jxl/encode_cxx.h"
+#include "lib/extras/codec.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/test_utils.h"
+#include "lib/jxl/testdata.h"
 
 namespace {
 
@@ -30,11 +34,15 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
                                  const jxl::PaddedBytes& icc_profile) {
   jxl::CodecInOut io;
   io.SetSize(xsize, ysize);
-  io.metadata.m.color_encoding.SetColorSpace(
-      pixel_format.num_channels == 1 || pixel_format.num_channels == 2
-          ? jxl::ColorSpace::kGray
-          : jxl::ColorSpace::kRGB);
-  if (pixel_format.num_channels == 2 || pixel_format.num_channels == 4) {
+
+  bool is_gray =
+      pixel_format.num_channels == 1 || pixel_format.num_channels == 2;
+  bool has_alpha =
+      pixel_format.num_channels == 2 || pixel_format.num_channels == 4;
+
+  io.metadata.m.color_encoding.SetColorSpace(is_gray ? jxl::ColorSpace::kGray
+                                                     : jxl::ColorSpace::kRGB);
+  if (has_alpha) {
     // Note: alpha > 16 not yet supported by the C++ codec
     switch (pixel_format.data_type) {
       case JXL_TYPE_UINT8:
@@ -69,24 +77,20 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
                          << pixel_format.data_type << " not yet implemented.";
   }
   jxl::ColorEncoding color_encoding;
-  jxl::PaddedBytes icc_profile_copy(icc_profile);
   if (!icc_profile.empty()) {
+    jxl::PaddedBytes icc_profile_copy(icc_profile);
     EXPECT_TRUE(color_encoding.SetICC(std::move(icc_profile_copy)));
   } else if (pixel_format.data_type == JXL_TYPE_FLOAT) {
-    color_encoding = jxl::ColorEncoding::LinearSRGB(
-        /*is_gray=*/pixel_format.num_channels < 3);
+    color_encoding = jxl::ColorEncoding::LinearSRGB(is_gray);
   } else {
-    color_encoding = jxl::ColorEncoding::SRGB(
-        /*is_gray=*/pixel_format.num_channels < 3);
+    color_encoding = jxl::ColorEncoding::SRGB(is_gray);
   }
-  EXPECT_TRUE(ConvertFromExternal(
-      jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
-      /*c_current=*/color_encoding,
-      /*has_alpha=*/pixel_format.num_channels == 2 ||
-          pixel_format.num_channels == 4,
-      /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/bitdepth,
-      pixel_format.endianness, /*flipped_y=*/false, /*pool=*/nullptr,
-      /*ib=*/&io.Main()));
+  EXPECT_TRUE(
+      ConvertFromExternal(jxl::Span<const uint8_t>(buf.data(), buf.size()),
+                          xsize, ysize, color_encoding, has_alpha,
+                          /*alpha_is_premultiplied=*/false,
+                          /*bits_per_sample=*/bitdepth, pixel_format.endianness,
+                          /*flipped_y=*/false, /*pool=*/nullptr, &io.Main()));
   return io;
 }
 
@@ -211,7 +215,7 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
                                     original_bytes.size()));
   JxlEncoderCloseInput(enc);
 
-  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  std::vector<uint8_t> compressed(64);
   uint8_t* next_out = compressed.data();
   size_t avail_out = compressed.size() - (next_out - compressed.data());
   JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
@@ -341,4 +345,78 @@ TEST(RoundtripTest, TestNonlinearSrgbAsXybEncoded) {
                                         pixel_format_out,
                                         /*lossless=*/false);
   }
+}
+
+TEST(RoundtripTest, TestJPEGReconstruction) {
+  const std::string jpeg_path =
+      "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  jxl::CodecInOut orig_io;
+  ASSERT_TRUE(
+      SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io, /*pool=*/nullptr));
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+
+  JxlBasicInfo basic_info;
+  basic_info.exponent_bits_per_sample = 0;
+  basic_info.bits_per_sample = 8;
+  basic_info.alpha_bits = 0;
+  basic_info.alpha_exponent_bits = 0;
+  basic_info.xsize = orig_io.xsize();
+  basic_info.ysize = orig_io.ysize();
+  basic_info.uses_original_profile = true;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddJPEGFrame(options, orig.data(), orig.size()));
+  JxlEncoderCloseInput(enc.get());
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  JxlEncoderStatus enc_process_result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (enc_process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+    enc_process_result =
+        JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+    if (enc_process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed.data();
+      compressed.resize(compressed.size() * 2);
+      next_out = compressed.data() + offset;
+      avail_out = compressed.size() - offset;
+    }
+  }
+  compressed.resize(next_out - compressed.data());
+  EXPECT_EQ(JXL_ENC_SUCCESS, enc_process_result);
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec.get(), JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE));
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  EXPECT_EQ(JXL_DEC_JPEG_RECONSTRUCTION, JxlDecoderProcessInput(dec.get()));
+  std::vector<uint8_t> reconstructed_buffer(128);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetJPEGBuffer(dec.get(), reconstructed_buffer.data(),
+                                    reconstructed_buffer.size()));
+  size_t used = 0;
+  JxlDecoderStatus dec_process_result = JXL_DEC_JPEG_NEED_MORE_OUTPUT;
+  while (dec_process_result == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+    used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+    reconstructed_buffer.resize(reconstructed_buffer.size() * 2);
+    EXPECT_EQ(
+        JXL_DEC_SUCCESS,
+        JxlDecoderSetJPEGBuffer(dec.get(), reconstructed_buffer.data() + used,
+                                reconstructed_buffer.size() - used));
+    dec_process_result = JxlDecoderProcessInput(dec.get());
+  }
+  ASSERT_EQ(JXL_DEC_FULL_IMAGE, dec_process_result);
+  used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+  ASSERT_EQ(used, orig.size());
+  EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), orig.data(), used));
 }

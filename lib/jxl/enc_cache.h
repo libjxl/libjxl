@@ -28,7 +28,6 @@
 #include "lib/jxl/coeff_order_fwd.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
-#include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/enc_params.h"

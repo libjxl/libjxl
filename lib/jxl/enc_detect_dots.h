@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // We attempt to remove dots, or speckle from images using Gaussian blur.
-#ifndef LIB_JXL_DETECT_DOTS_H_
-#define LIB_JXL_DETECT_DOTS_H_
+#ifndef LIB_JXL_ENC_DETECT_DOTS_H_
+#define LIB_JXL_ENC_DETECT_DOTS_H_
 
 #include <stddef.h>
 #include <stdint.h>
@@ -72,4 +72,4 @@ std::vector<PatchInfo> DetectGaussianEllipses(
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_DETECT_DOTS_H_
+#endif  // LIB_JXL_ENC_DETECT_DOTS_H_

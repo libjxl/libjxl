@@ -37,6 +37,11 @@ constexpr int kJpegHuffmanAlphabetSize = 256;
 constexpr int kJpegDCAlphabetSize = 12;
 constexpr int kMaxDHTMarkers = 512;
 constexpr int kMaxDimPixels = 65535;
+constexpr uint8_t kApp1 = 0xE1;
+constexpr uint8_t kApp2 = 0xE2;
+const uint8_t kIccProfileTag[12] = "ICC_PROFILE";
+const uint8_t kExifTag[6] = "Exif\0";
+const uint8_t kXMPTag[29] = "http://ns.adobe.com/xap/1.0/";
 
 /* clang-format off */
 constexpr uint32_t kJPEGNaturalOrder[80] = {
@@ -207,6 +212,8 @@ struct JPEGComponent {
 enum class AppMarkerType : uint32_t {
   kUnknown = 0,
   kICC = 1,
+  kExif = 2,
+  kXMP = 3,
 };
 
 // Represents a parsed jpeg file.
@@ -243,6 +250,9 @@ struct JPEGData : public Fields {
   bool has_zero_padding_bit;
   std::vector<uint8_t> padding_bits;
 };
+
+// Set ICC profile in jpeg_data.
+Status SetJPEGDataFromICC(const PaddedBytes& icc, jpeg::JPEGData* jpeg_data);
 
 }  // namespace jpeg
 }  // namespace jxl

@@ -183,6 +183,12 @@ add_definitions(
   -D__TIME__="redacted"
 )
 
+if("${JPEGXL_ENABLE_FUZZERS}" OR "${JPEGXL_ENABLE_COVERAGE}")
+  add_definitions(
+    -DJXL_ENABLE_FUZZERS
+  )
+endif()  # JPEGXL_ENABLE_FUZZERS
+
 # In CMake before 3.12 it is problematic to pass repeated flags like -Xclang.
 # For this reason we place them in CMAKE_CXX_FLAGS instead.
 # See https://gitlab.kitware.com/cmake/cmake/issues/15826

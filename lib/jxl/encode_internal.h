@@ -52,6 +52,16 @@ constexpr BoxType MakeBoxType(const char (&type)[5]) {
                   static_cast<uint8_t>(type[3])});
 }
 
+constexpr unsigned char kContainerHeader[] = {
+    0,   0,   0, 0xc, 'J',  'X', 'L', ' ', 0xd, 0xa, 0x87,
+    0xa, 0,   0, 0,   0x14, 'f', 't', 'y', 'p', 'j', 'x',
+    'l', ' ', 0, 0,   0,    0,   'j', 'x', 'l', ' '};
+
+// Appends a JXL container box header with given type, size, and unbounded
+// properties to output.
+void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
+                     std::vector<uint8_t>* output);
+
 }  // namespace jxl
 
 struct JxlEncoderStruct {

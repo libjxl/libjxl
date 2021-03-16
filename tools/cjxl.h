@@ -55,6 +55,7 @@ struct CompressArgs {
   // Common flags.
   bool version = false;
   bool use_container = false;
+  bool no_container = false;
   bool quiet = false;
 
   const char* file_in = nullptr;

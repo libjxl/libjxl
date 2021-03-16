@@ -53,7 +53,9 @@ template <typename T>
 void CopyImageTo(const Rect& rect_from, const Plane<T>& from,
                  const Rect& rect_to, Plane<T>* JXL_RESTRICT to) {
   PROFILER_ZONE("CopyImageR");
-  JXL_ASSERT(SameSize(rect_from, rect_to));
+  JXL_DASSERT(SameSize(rect_from, rect_to));
+  JXL_DASSERT(rect_from.IsInside(from));
+  JXL_DASSERT(rect_to.IsInside(*to));
   for (size_t y = 0; y < rect_from.ysize(); ++y) {
     const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
     T* JXL_RESTRICT row_to = rect_to.Row(to, y);
@@ -113,6 +115,31 @@ void CopyImageTo(const Rect& rect_from, const T& from, T* JXL_RESTRICT to) {
 template <typename T>
 void CopyImageTo(const T& from, const Rect& rect_to, T* JXL_RESTRICT to) {
   return CopyImageTo(Rect(from), from, rect_to, to);
+}
+
+// Copies `from:rect_from` to `to:rect_to`; also copies `padding` pixels of
+// border around `from:rect_from`, in all directions, whenever they are inside
+// the first image.
+template <typename T>
+void CopyImageToWithPadding(const Rect& from_rect, const T& from,
+                            size_t padding, const Rect& to_rect, T* to) {
+  size_t xextra0 = std::min(padding, from_rect.x0());
+  size_t xextra1 =
+      std::min(padding, from.xsize() - from_rect.x0() - from_rect.xsize());
+  size_t yextra0 = std::min(padding, from_rect.y0());
+  size_t yextra1 =
+      std::min(padding, from.ysize() - from_rect.y0() - from_rect.ysize());
+  JXL_DASSERT(to_rect.x0() >= xextra0);
+  JXL_DASSERT(to_rect.y0() >= yextra0);
+
+  return CopyImageTo(Rect(from_rect.x0() - xextra0, from_rect.y0() - yextra0,
+                          from_rect.xsize() + xextra0 + xextra1,
+                          from_rect.ysize() + yextra0 + yextra1),
+                     from,
+                     Rect(to_rect.x0() - xextra0, to_rect.y0() - yextra0,
+                          to_rect.xsize() + xextra0 + xextra1,
+                          to_rect.ysize() + yextra0 + yextra1),
+                     to);
 }
 
 // DEPRECATED - prefer to preallocate result.

@@ -17,8 +17,6 @@
 
 #include <stdint.h>
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
@@ -50,8 +48,8 @@ Status DecodeFrameHeader(BitReader* JXL_RESTRICT reader,
 // `decoded->metadata` must already be set and must match metadata.m.
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
-                   BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, const CodecMetadata& metadata,
+                   BitReader* JXL_RESTRICT reader, ImageBundle* decoded,
+                   const CodecMetadata& metadata,
                    const SizeConstraints* constraints, bool is_preview = false);
 
 // Leaves reader in the same state as DecodeFrame would. Used to skip preview.
@@ -135,9 +133,11 @@ class FrameDecoder {
   Status ProcessDCGlobal(BitReader* br);
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   void FinalizeDC();
+  void AllocateOutput();
   Status ProcessACGlobal(BitReader* br);
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
-                        size_t num_passes, size_t thread, bool force_draw);
+                        size_t num_passes, size_t thread, bool force_draw,
+                        bool dc_only);
 
   // Allocates storage for parallel decoding using up to `num_threads` threads
   // of up to `num_tasks` tasks. The value of `thread` passed to

@@ -169,10 +169,6 @@ class PaddedBytes {
   }
 
   void append(const uint8_t* begin, const uint8_t* end) {
-    if (size_ + (end - begin) > capacity_) {
-      IncreaseCapacityTo(size_ + (end - begin));
-      if (data() == nullptr) return;
-    }
     size_t old_size = size();
     resize(size() + (end - begin));
     memcpy(data() + old_size, begin, end - begin);

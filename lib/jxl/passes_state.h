@@ -20,7 +20,6 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_patch_dictionary.h"
-#include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"

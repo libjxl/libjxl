@@ -42,6 +42,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
@@ -120,7 +121,7 @@ TEST(JxlTest, RoundtripMarker) {
         EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
     compressed[i] ^= 0xFF;
     CodecInOut io2;
-    EXPECT_FALSE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+    EXPECT_FALSE(DecodeFile(dparams, compressed, &io2, pool));
   }
 }
 #endif
@@ -187,8 +188,8 @@ TEST(JxlTest, RoundtripOtherTransforms) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
       ReadTestData("wesaturate/64px/a2d1un_nkitzmiller_srgb8.png");
-  CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  std::unique_ptr<CodecInOut> io = jxl::make_unique<CodecInOut>();
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), io.get(), pool));
 
   CompressParams cparams;
   // Slow modes access linear image for adaptive quant search
@@ -197,18 +198,20 @@ TEST(JxlTest, RoundtripOtherTransforms) {
   cparams.butteraugli_distance = 5.0f;
   DecompressParams dparams;
 
-  CodecInOut io2;
-  const size_t compressed_size = Roundtrip(&io, cparams, dparams, pool, &io2);
+  std::unique_ptr<CodecInOut> io2 = jxl::make_unique<CodecInOut>();
+  const size_t compressed_size =
+      Roundtrip(io.get(), cparams, dparams, pool, io2.get());
   EXPECT_LE(compressed_size, 23000);
-  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+  EXPECT_LE(ButteraugliDistance(*io, *io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             6);
 
   // Check the consistency when performing another roundtrip.
-  CodecInOut io3;
-  const size_t compressed_size2 = Roundtrip(&io, cparams, dparams, pool, &io3);
+  std::unique_ptr<CodecInOut> io3 = jxl::make_unique<CodecInOut>();
+  const size_t compressed_size2 =
+      Roundtrip(io.get(), cparams, dparams, pool, io3.get());
   EXPECT_LE(compressed_size2, 23000);
-  EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
+  EXPECT_LE(ButteraugliDistance(*io, *io3, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             6);
 }
@@ -662,7 +665,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_TRUE(
         EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
     CodecInOut io2;
-    EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+    EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 7000);
@@ -682,7 +685,7 @@ TEST(JxlTest, RoundtripGrayscale) {
     EXPECT_TRUE(
         EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
     CodecInOut io2;
-    EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+    EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
     EXPECT_TRUE(io2.Main().IsGray());
 
     EXPECT_LE(compressed.size(), 1300);
@@ -717,7 +720,7 @@ TEST(JxlTest, RoundtripAlpha) {
   PaddedBytes compressed;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
   CodecInOut io2;
-  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
   EXPECT_LE(compressed.size(), 5500);
 
@@ -755,7 +758,7 @@ TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
   PaddedBytes compressed;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
   CodecInOut io2;
-  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
   EXPECT_LE(compressed.size(), 200);
 
@@ -812,7 +815,7 @@ TEST(JxlTest, RoundtripAlpha16) {
   EXPECT_TRUE(
       EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, &pool));
   CodecInOut io2;
-  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, &pool));
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, &pool));
 
   EXPECT_TRUE(SamePixels(*io.Main().alpha(), *io2.Main().alpha()));
 }
@@ -1025,7 +1028,7 @@ TEST(JxlTest, RoundtripDots) {
   PaddedBytes compressed;
   EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
   CodecInOut io2;
-  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, aux_out, pool));
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
   EXPECT_LE(compressed.size(), 400000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
@@ -1118,8 +1121,7 @@ jxl::Status DecompressJxlToJPEGForTest(
   jxl::CodecInOut io;
   jxl::DecompressParams params;
   params.keep_dct = true;
-  if (!jpegxl::tools::DecodeJpegXlToJpeg(params, container, &io,
-                                         /*aux_out=*/nullptr, pool)) {
+  if (!jpegxl::tools::DecodeJpegXlToJpeg(params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
   io.jpeg_quality = 95;
@@ -1141,10 +1143,19 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   cparams.color_transform = jxl::ColorTransform::kYCbCr;
 
   PassesEncoderState passes_enc_state;
-  PaddedBytes compressed;
-  EXPECT_TRUE(jpegxl::tools::EncodeJpegToJpegXL(cparams, &io, &passes_enc_state,
-                                                &compressed,
-                                                /*aux_out=*/nullptr, pool));
+  PaddedBytes compressed, codestream;
+
+  EXPECT_TRUE(EncodeFile(cparams, &io, &passes_enc_state, &codestream,
+                         /*aux_out=*/nullptr, pool));
+  jpegxl::tools::JpegXlContainer enc_container;
+  enc_container.codestream = codestream.data();
+  enc_container.codestream_size = codestream.size();
+  jpeg::JPEGData data_in = *io.Main().jpeg_data;
+  jxl::PaddedBytes jpeg_data;
+  EXPECT_TRUE(EncodeJPEGData(data_in, &jpeg_data));
+  enc_container.jpeg_reconstruction = jpeg_data.data();
+  enc_container.jpeg_reconstruction_size = jpeg_data.size();
+  EXPECT_TRUE(EncodeJpegXlContainerOneShot(enc_container, &compressed));
 
   jpegxl::tools::JpegXlContainer container;
   EXPECT_TRUE(DecodeJpegXlContainerOneShot(compressed.data(), compressed.size(),

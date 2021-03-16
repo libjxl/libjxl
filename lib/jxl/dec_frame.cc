@@ -27,7 +27,6 @@
 #include "lib/jxl/ac_context.h"
 #include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/ans_params.h"
-#include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -49,7 +48,6 @@
 #include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/dec_upsample.h"
 #include "lib/jxl/dec_xyb.h"
-#include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
@@ -155,8 +153,8 @@ static BitReader* GetReaderForSection(
 
 Status DecodeFrame(const DecompressParams& dparams,
                    PassesDecoderState* dec_state, ThreadPool* JXL_RESTRICT pool,
-                   BitReader* JXL_RESTRICT reader, AuxOut* JXL_RESTRICT aux_out,
-                   ImageBundle* decoded, const CodecMetadata& metadata,
+                   BitReader* JXL_RESTRICT reader, ImageBundle* decoded,
+                   const CodecMetadata& metadata,
                    const SizeConstraints* constraints, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
@@ -171,31 +169,23 @@ Status DecodeFrame(const DecompressParams& dparams,
   // Handling of progressive decoding.
   {
     const FrameHeader& frame_header = frame_decoder.GetFrameHeader();
-    size_t downsampling;
     size_t max_passes = dparams.max_passes;
     size_t max_downsampling = std::max(
         dparams.max_downsampling >> (frame_header.dc_level * 3), size_t(1));
     // TODO(veluca): deal with downsamplings >= 8.
     if (max_downsampling >= 8) {
-      downsampling = 8;
       max_passes = 0;
     } else {
-      downsampling = 1;
       for (uint32_t i = 0; i < frame_header.passes.num_downsample; ++i) {
         if (max_downsampling >= frame_header.passes.downsample[i] &&
             max_passes > frame_header.passes.last_pass[i]) {
-          downsampling = frame_header.passes.downsample[i];
           max_passes = frame_header.passes.last_pass[i] + 1;
         }
       }
     }
     // Do not use downsampling for kReferenceOnly frames.
     if (frame_header.frame_type == FrameType::kReferenceOnly) {
-      downsampling = 1;
       max_passes = frame_header.passes.num_passes;
-    }
-    if (aux_out != nullptr) {
-      aux_out->downsampling = downsampling;
     }
     max_passes = std::min<size_t>(max_passes, frame_header.passes.num_passes);
     frame_decoder.SetMaxPasses(max_passes);
@@ -439,11 +429,7 @@ void FrameDecoder::FinalizeDC() {
   finalized_dc_ = true;
 }
 
-Status FrameDecoder::ProcessACGlobal(BitReader* br) {
-  JXL_CHECK(finalized_dc_);
-  dec_state_->InitForAC();
-
-  // Allocate output image.
+void FrameDecoder::AllocateOutput() {
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   decoded_->SetFromImage(Image3F(frame_dim_.xsize_upsampled_padded,
                                  frame_dim_.ysize_upsampled_padded),
@@ -458,6 +444,12 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
     decoded_->SetExtraChannels(std::move(ecv));
   }
   decoded_->origin = dec_state_->shared->frame_header.frame_origin;
+}
+
+Status FrameDecoder::ProcessACGlobal(BitReader* br) {
+  JXL_CHECK(finalized_dc_);
+  JXL_CHECK(decoded_->HasColor());
+  dec_state_->InitForAC();
 
   // Decode AC group.
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
@@ -556,7 +548,7 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
 Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
                                     BitReader* JXL_RESTRICT* br,
                                     size_t num_passes, size_t thread,
-                                    bool force_draw) {
+                                    bool force_draw, bool dc_only) {
   PROFILER_ZONE("process_group");
   const size_t gx = ac_group_id % frame_dim_.xsize_groups;
   const size_t gy = ac_group_id / frame_dim_.xsize_groups;
@@ -566,10 +558,10 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     group_dec_caches_[thread].InitOnce(frame_header_.passes.num_passes,
                                        dec_state_->used_acs);
-    JXL_RETURN_IF_ERROR(
-        DecodeGroup(br, num_passes, ac_group_id, dec_state_,
-                    &group_dec_caches_[thread], thread, decoded_,
-                    decoded_passes_per_ac_group_[ac_group_id], force_draw));
+    JXL_RETURN_IF_ERROR(DecodeGroup(
+        br, num_passes, ac_group_id, dec_state_, &group_dec_caches_[thread],
+        thread, decoded_, decoded_passes_per_ac_group_[ac_group_id], force_draw,
+        dc_only));
   }
 
   // don't limit to image dimensions here (is done in DecodeGroup)
@@ -687,6 +679,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
           true &&
       !finalized_dc_) {
     FinalizeDC();
+    AllocateOutput();
   }
 
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
@@ -703,6 +696,12 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     // ysize dimensions match the working area, see PlaneRowBoundsCheck.
     decoded_->ShrinkTo(frame_dim_.xsize_upsampled_padded,
                        frame_dim_.ysize_upsampled_padded);
+
+    // Mark all the AC groups that we received as not complete yet.
+    for (size_t i = 0; i < ac_group_sec.size(); i++) {
+      if (num_ac_passes[i] == 0) continue;
+      dec_state_->group_border_assigner.ClearDone(i);
+    }
 
     RunOnPool(
         pool_, 0, ac_group_sec.size(),
@@ -724,7 +723,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
           }
           if (!ProcessACGroup(g, readers, num_ac_passes[g],
                               GetStorageLocation(thread, g),
-                              /*force_draw=*/false)) {
+                              /*force_draw=*/false, /*dc_only=*/false)) {
             has_error = true;
           } else {
             for (size_t i = 0; i < num_ac_passes[g]; i++) {
@@ -751,12 +750,18 @@ Status FrameDecoder::Flush() {
     // Nothing to do.
     return true;
   }
-  if (*std::min_element(decoded_passes_per_ac_group_.begin(),
-                        decoded_passes_per_ac_group_.end()) <
-      frame_header_.passes.num_passes) {
+  uint32_t completely_decoded_ac_pass = *std::min_element(
+      decoded_passes_per_ac_group_.begin(), decoded_passes_per_ac_group_.end());
+  if (completely_decoded_ac_pass < frame_header_.passes.num_passes) {
     // We don't have all AC yet: force a draw of all the missing areas.
     dec_state_->dc_upsampler.Init(
         /*upsampling=*/8, frame_header_.nonserialized_metadata->transform_data);
+    // Mark all sections as not complete.
+    for (size_t i = 0; i < decoded_passes_per_ac_group_.size(); i++) {
+      if (decoded_passes_per_ac_group_[i] == frame_header_.passes.num_passes)
+        continue;
+      dec_state_->group_border_assigner.ClearDone(i);
+    }
     std::atomic<bool> has_error{false};
     RunOnPool(
         pool_, 0, decoded_passes_per_ac_group_.size(),
@@ -771,11 +776,10 @@ Status FrameDecoder::Flush() {
             return;
           }
           BitReader* JXL_RESTRICT readers[kMaxNumPasses] = {};
-          if (!ProcessACGroup(g, readers, /*num_passes=*/0,
-                              GetStorageLocation(thread, g),
-                              /*force_draw=*/true)) {
-            has_error = true;
-          }
+          bool ok = ProcessACGroup(
+              g, readers, /*num_passes=*/0, GetStorageLocation(thread, g),
+              /*force_draw=*/true, /*dc_only=*/!decoded_ac_global_);
+          if (!ok) has_error = true;
         },
         "ForceDrawGroup");
     if (has_error) {
@@ -790,7 +794,7 @@ Status FrameDecoder::Flush() {
       modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_, decoded_));
 
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
-                                            /*rerender=*/num_renders_ != 0,
+                                            /*force_fir=*/false,
                                             /*skip_blending=*/false));
 
   num_renders_++;

@@ -196,11 +196,8 @@ TEST(PassesTest, AllDownsampleFeasible) {
     const size_t downsampling = downsamplings[task];
     DecompressParams dparams;
     dparams.max_downsampling = downsampling;
-    AuxOut aux_downsampled = aux;
     CodecInOut output;
-    ASSERT_TRUE(
-        DecodeFile(dparams, compressed, &output, &aux_downsampled, nullptr));
-    EXPECT_EQ(aux_downsampled.downsampling, downsampling);
+    ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
     EXPECT_LE(ButteraugliDistance(io, output, cparams.ba_params,
@@ -245,10 +242,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
     DecompressParams dparams;
     dparams.max_downsampling = downsampling;
     CodecInOut output;
-    AuxOut aux_downsampled = aux;
-    ASSERT_TRUE(
-        DecodeFile(dparams, compressed, &output, &aux_downsampled, nullptr));
-    EXPECT_EQ(aux_downsampled.downsampling, downsampling);
+    ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr));
     EXPECT_EQ(output.xsize(), io.xsize()) << "downsampling = " << downsampling;
     EXPECT_EQ(output.ysize(), io.ysize()) << "downsampling = " << downsampling;
     EXPECT_LE(ButteraugliDistance(io, output, cparams.ba_params,
@@ -291,14 +285,11 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   DecompressParams dparams;
   dparams.max_downsampling = 1;
   CodecInOut output;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr, nullptr));
+  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr));
 
   dparams.max_downsampling = 2;
   CodecInOut output_d2;
-  AuxOut aux_downsampled;
-  ASSERT_TRUE(
-      DecodeFile(dparams, compressed, &output_d2, &aux_downsampled, nullptr));
-  EXPECT_EQ(aux_downsampled.downsampling, 2);
+  ASSERT_TRUE(DecodeFile(dparams, compressed, &output_d2, nullptr));
 
   // 0 if reading all the passes, ~15 if skipping the 8x pass.
   float butteraugli_distance_down2_full =
@@ -340,14 +331,11 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   DecompressParams dparams;
   dparams.max_downsampling = 1;
   CodecInOut output;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr, nullptr));
+  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, nullptr));
 
   dparams.max_downsampling = 2;
   CodecInOut output_d2;
-  AuxOut aux_downsampled;
-  ASSERT_TRUE(
-      DecodeFile(dparams, compressed, &output_d2, &aux_downsampled, nullptr));
-  EXPECT_EQ(aux_downsampled.downsampling, 2);
+  ASSERT_TRUE(DecodeFile(dparams, compressed, &output_d2, nullptr));
 
   // 0 if reading all the passes, ~15 if skipping the 8x pass.
   float butteraugli_distance_down2_full =
@@ -380,9 +368,7 @@ TEST(PassesTest, NonProgressiveDCImage) {
   DecompressParams dparams;
   dparams.max_downsampling = 100;
   CodecInOut output;
-  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, &aux, &pool));
-  constexpr decltype(output.xsize()) expected_downscale = 8;
-  EXPECT_EQ(aux.downsampling, expected_downscale);
+  ASSERT_TRUE(DecodeFile(dparams, compressed, &output, &pool));
   EXPECT_EQ(output.xsize(), io.xsize());
   EXPECT_EQ(output.ysize(), io.ysize());
 }

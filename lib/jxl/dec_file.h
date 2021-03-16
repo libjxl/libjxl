@@ -19,8 +19,6 @@
 
 #include <stdint.h>
 
-#include "lib/jxl/aux_out.h"
-#include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -35,9 +33,9 @@ namespace jxl {
 // frame present according to the metadata.
 Status DecodePreview(const DecompressParams& dparams,
                      const CodecMetadata& metadata,
-                     BitReader* JXL_RESTRICT reader, AuxOut* aux_out,
-                     ThreadPool* pool, ImageBundle* JXL_RESTRICT preview,
-                     uint64_t* dec_pixels, const SizeConstraints* constraints);
+                     BitReader* JXL_RESTRICT reader, ThreadPool* pool,
+                     ImageBundle* JXL_RESTRICT preview, uint64_t* dec_pixels,
+                     const SizeConstraints* constraints);
 
 // Implementation detail: currently decodes to linear sRGB. The contract is:
 // `io` appears 'identical' (modulo compression artifacts) to the encoder input
@@ -46,13 +44,12 @@ Status DecodePreview(const DecompressParams& dparams,
 // that same encoding must call `io->TransformTo` afterwards.
 Status DecodeFile(const DecompressParams& params,
                   const Span<const uint8_t> file, CodecInOut* io,
-                  AuxOut* aux_out = nullptr, ThreadPool* pool = nullptr);
+                  ThreadPool* pool = nullptr);
 
 static inline Status DecodeFile(const DecompressParams& params,
                                 const PaddedBytes& file, CodecInOut* io,
-                                AuxOut* aux_out = nullptr,
                                 ThreadPool* pool = nullptr) {
-  return DecodeFile(params, Span<const uint8_t>(file), io, aux_out, pool);
+  return DecodeFile(params, Span<const uint8_t>(file), io, pool);
 }
 
 }  // namespace jxl

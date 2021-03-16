@@ -13,7 +13,7 @@
 # limitations under the License.
 
 add_executable(decode_oneshot decode_oneshot.cc)
-target_link_libraries(decode_oneshot jxl jxl_threads)
+target_link_libraries(decode_oneshot jxl_dec jxl_threads)
 add_executable(encode_oneshot encode_oneshot.cc)
 target_link_libraries(encode_oneshot jxl jxl_threads)
 

@@ -255,9 +255,20 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
   const std::string quality = QualityFromArgs(args);
   fprintf(stderr,
           "Read %zux%zu image, %.1f MP/s\n"
-          "Encoding [%s, %s, %s], %zu threads.\n",
-          io.xsize(), io.ysize(), decode_mps, mode, quality.c_str(), speed,
-          pool->NumWorkerThreads());
+          "Encoding [%s%s, %s, %s",
+          io.xsize(), io.ysize(), decode_mps,
+          (args.use_container ? "Container | " : ""), mode, quality.c_str(),
+          speed);
+  if (args.use_container) {
+    if (args.jpeg_transcode) fprintf(stderr, " | JPEG reconstruction data");
+    if (!io.blobs.exif.empty())
+      fprintf(stderr, " | %zu-byte Exif", io.blobs.exif.size());
+    if (!io.blobs.xmp.empty())
+      fprintf(stderr, " | %zu-byte XMP", io.blobs.xmp.size());
+    if (!io.blobs.jumbf.empty())
+      fprintf(stderr, " | %zu-byte JUMBF", io.blobs.jumbf.size());
+  }
+  fprintf(stderr, "], %zu threads.\n", pool->NumWorkerThreads());
 }
 
 }  // namespace
@@ -280,25 +291,24 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 #endif
                                ", PPM, PFM, or PGX",
                                &file_in);
-  cmdline->AddPositionalOption("OUTPUT", /* required = */ true,
-                               "the compressed output file (optional)",
-                               &file_out);
+  cmdline->AddPositionalOption(
+      "OUTPUT", /* required = */ true,
+      "the compressed JXL output file (can be omitted for benchmarking)",
+      &file_out);
 
   // Flags.
-  cmdline->AddOptionFlag('V', "version", "print version number and exit",
-                         &version, &SetBooleanTrue);
-  cmdline->AddOptionFlag('\0', "quiet", "be more silent", &quiet,
-                         &SetBooleanTrue, 1);
-
   // TODO(lode): also add options to add exif/xmp/other metadata in the
   // container.
   // TODO(lode): decide on good name for this flag: box, container, bmff, ...
-  cmdline->AddOptionFlag('\0', "container", "encode using container format",
-                         &use_container, &SetBooleanTrue);
+  cmdline->AddOptionFlag(
+      '\0', "container",
+      "Always encode using container format (default: only if needed)",
+      &use_container, &SetBooleanTrue, 1);
 
-  cmdline->AddOptionValue('\0', "print_profile", "0|1",
-                          "print timing information before exiting",
-                          &print_profile, &ParseOverride, 1);
+  cmdline->AddOptionFlag('\0', "strip",
+                         "Do not encode using container format (strips "
+                         "Exif/XMP/JPEG bitstream reconstruction data)",
+                         &no_container, &SetBooleanTrue, 2);
 
   // Target distance/size/bpp
   opt_distance_id = cmdline->AddOptionValue(
@@ -324,13 +334,13 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // High-level options
   opt_quality_id = cmdline->AddOptionValue(
       'q', "quality", "QUALITY",
-      "Quality setting. Range: -inf .. 100.\n"
+      "Quality setting (is remapped to --distance). Range: -inf .. 100.\n"
       "    100 = mathematically lossless. Default for already-lossy input "
-      "(JPEG/GIF). Positive quality values roughly match libjpeg quality.\n",
+      "(JPEG/GIF).\n    Positive quality values roughly match libjpeg quality.",
       &quality, &ParseFloat);
 
   cmdline->AddOptionValue(
-      's', "speed", "SPEED",
+      's', "speed", "EFFORT",
       "Encoder effort/speed setting. Valid values are:\n"
       "    3|falcon| 4|cheetah| 5|hare| 6|wombat| 7|squirrel| 8|kitten| "
       "9|tortoise\n"
@@ -343,7 +353,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 
   cmdline->AddOptionFlag('\0', "middleout",
                          "Put center groups first in the compressed file.",
-                         &params.middleout, &SetBooleanTrue);
+                         &params.middleout, &SetBooleanTrue, 1);
 
   // Flags.
   cmdline->AddOptionFlag('\0', "progressive_ac",
@@ -360,7 +370,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          &params.modular_mode, &SetBooleanTrue, 1);
   cmdline->AddOptionFlag('\0', "use_new_heuristics",
                          "use new and not yet ready encoder heuristics",
-                         &params.use_new_heuristics, &SetBooleanTrue);
+                         &params.use_new_heuristics, &SetBooleanTrue, 2);
 
   // JPEG modes: parallel Brunsli, pixels to JPEG, or JPEG to Brunsli
   cmdline->AddOptionFlag('j', "jpeg_transcode",
@@ -502,9 +512,18 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "1=true (default: true if lossy, false if lossless)",
                           &params.responsive, &ParseSigned, 1);
 
-  cmdline->AddOptionFlag('v', "verbose",
-                         "Verbose output (also applies to help).",
-                         &params.verbose, &SetBooleanTrue);
+  cmdline->AddOptionFlag('V', "version", "Print version number and exit",
+                         &version, &SetBooleanTrue, 1);
+  cmdline->AddOptionFlag('\0', "quiet", "Be more silent", &quiet,
+                         &SetBooleanTrue, 1);
+  cmdline->AddOptionValue('\0', "print_profile", "0|1",
+                          "Print timing information before exiting",
+                          &print_profile, &ParseOverride, 1);
+
+  cmdline->AddOptionFlag(
+      'v', "verbose",
+      "Verbose output; can be repeated, also applies to help (!).",
+      &params.verbose, &SetBooleanTrue);
 }
 
 jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
@@ -527,11 +546,16 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     default_settings = false;
     if (quality < 100) jpeg_transcode = false;
     // Quality settings roughly match libjpeg qualities.
-    if (quality < 7 || quality == 100) {
+    if (quality < 7 || quality == 100 || params.modular_mode) {
       if (jpeg_transcode == false) params.modular_mode = true;
       // Internal modular quality to roughly match VarDCT size.
-      params.quality_pair.first = params.quality_pair.second =
-          std::min(35 + (quality - 7) * 3.0f, 100.0f);
+      if (quality < 7) {
+        params.quality_pair.first = params.quality_pair.second =
+            std::min(35 + (quality - 7) * 3.0f, 100.0f);
+      } else {
+        params.quality_pair.first = params.quality_pair.second =
+            std::min(35 + (quality - 7) * 65.f / 93.f, 100.0f);
+      }
     } else {
       if (quality >= 30) {
         params.butteraugli_distance = 0.1 + (100 - quality) * 0.09;
@@ -546,7 +570,6 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     params.qprogressive_mode = true;
     params.progressive_dc = 1;
     params.responsive = 1;
-    jpeg_transcode = false;
     default_settings = false;
   }
   if (got_target_size || got_target_bpp || got_intensity_target) {
@@ -659,6 +682,25 @@ jxl::Status CompressArgs::ValidateArgsAfterLoad(
       params.modular_group_size_shift = 2;
     }
   }
+  if (!io.blobs.exif.empty() || !io.blobs.xmp.empty() ||
+      !io.blobs.jumbf.empty() || !io.blobs.iptc.empty() || jpeg_transcode) {
+    use_container = true;
+  }
+  if (no_container) use_container = false;
+  if (jpeg_transcode && params.modular_mode) {
+    fprintf(stderr,
+            "Error: cannot do lossless JPEG transcode in modular mode.\n");
+    return false;
+  }
+  if (jpeg_transcode) {
+    if (params.progressive_mode || params.qprogressive_mode ||
+        params.progressive_dc > 0) {
+      fprintf(stderr,
+              "Error: progressive lossless JPEG transcode is not yet "
+              "implemented.\n");
+      return false;
+    }
+  }
   return true;
 }
 
@@ -751,12 +793,9 @@ jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
       // that in the xyb_encoded header flag, and persistently keep that state
       // to check if every frame uses an allowed color transform.
       args.params.color_transform = io.Main().color_transform;
-      ok = EncodeJpegToJpegXL(args.params, &io, &passes_encoder_state,
-                              compressed, &aux_out, pool);
-    } else {
-      ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
-                      &aux_out, pool);
     }
+    ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
+                    &aux_out, pool);
     if (!ok) {
       fprintf(stderr, "Failed to compress to %s.\n", ModeFromArgs(args));
       return false;

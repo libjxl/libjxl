@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/dot_dictionary.h"
+#include "lib/jxl/enc_dot_dictionary.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -26,8 +26,8 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/dec_xyb.h"
-#include "lib/jxl/detect_dots.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/enc_detect_dots.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/image.h"

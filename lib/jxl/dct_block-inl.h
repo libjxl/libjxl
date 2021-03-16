@@ -71,6 +71,8 @@ class DCTFrom {
     return data_ + row * stride_ + i;
   }
 
+  size_t Stride() const { return stride_; }
+
  private:
   size_t stride_;
   const float* JXL_RESTRICT data_;
@@ -98,6 +100,8 @@ class DCTTo {
   constexpr HWY_INLINE float* Address(const size_t row, const size_t i) const {
     return data_ + row * stride_ + i;
   }
+
+  size_t Stride() const { return stride_; }
 
  private:
   size_t stride_;

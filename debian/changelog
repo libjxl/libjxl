@@ -1,3 +1,12 @@
+jpeg-xl (0.3.4) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.3.4.
+  * Improved box parsing.
+  * Improved metadata handling.
+  * Performance and memory usage improvements.
+
+ -- Sami Boukortt <sboukortt@google.com>  Tue, 16 Mar 2021 12:13:59 +0100
+
 jpeg-xl (0.3.3) UNRELEASED; urgency=medium
 
   * Bump JPEG XL version to 0.3.3.

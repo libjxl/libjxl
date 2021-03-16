@@ -101,8 +101,7 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
   ThreadPoolInternal pool;
   DecompressParams dparams;
   CodecInOut io;
-  JXL_RETURN_IF_ERROR(
-      DecodeFile(dparams, compressed, &io, /*aux_out=*/nullptr, &pool));
+  JXL_RETURN_IF_ERROR(DecodeFile(dparams, compressed, &io, &pool));
 
   JXL_RETURN_IF_ERROR(io.TransformTo(io.metadata.m.color_encoding, &pool));
 

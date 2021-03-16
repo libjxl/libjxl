@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/detect_dots.h"
+#include "lib/jxl/enc_detect_dots.h"
 
 #include <stdint.h>
 
@@ -24,7 +24,7 @@
 #include <vector>
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/detect_dots.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/enc_detect_dots.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

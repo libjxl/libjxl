@@ -64,7 +64,7 @@ cd jpeg-xl
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF ..
-cmake --build . -- -j
+cmake --build . -- -j$(nproc)
 ```
 
 The encoder/decoder tools will be available in the `build/tools` directory.

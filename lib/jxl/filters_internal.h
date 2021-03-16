@@ -22,25 +22,26 @@
 
 namespace jxl {
 
-// Maps a row to the range [0, ysize) mirroring it when outside the [0, ysize)
-// range.
+// Maps a row to the range [0, image_ysize) mirroring it when outside the [0,
+// image_ysize) range. The input row is offset by `full_image_y_offset`, i.e.
+// row `y` corresponds to row `y + full_image_y_offset` in the full frame.
 struct RowMapMirror {
-  explicit RowMapMirror(size_t ysize) : ysize_(ysize) {}
-  size_t operator()(ssize_t y) { return Mirror(y, ysize_); }
-  size_t ysize_;
+  RowMapMirror(ssize_t full_image_y_offset, size_t image_ysize)
+      : full_image_y_offset_(full_image_y_offset), image_ysize_(image_ysize) {}
+  size_t operator()(ssize_t y) {
+    return Mirror(y + full_image_y_offset_, image_ysize_) -
+           full_image_y_offset_;
+  }
+  ssize_t full_image_y_offset_;
+  size_t image_ysize_;
 };
 
 // Maps a row in the range [-16, \inf) to a row number in the range [0, m) using
 // the modulo operation.
 template <size_t m>
 struct RowMapMod {
-  explicit RowMapMod() = default;
-  explicit RowMapMod(size_t ysize) {
-    (void)ysize;
-    // Make sure this is only used with images larger than the modulo, otherwise
-    // we would be mapping to non-existent rows.
-    JXL_DASSERT(ysize >= m);
-  }
+  RowMapMod() = default;
+  RowMapMod(ssize_t /*full_image_y_offset*/, size_t /*image_ysize*/) {}
   size_t operator()(ssize_t y) {
     JXL_DASSERT(y >= -16);
     // The `m > 16 ? m : 16 * m` is evaluated at compile time and is a multiple
@@ -52,7 +53,6 @@ struct RowMapMod {
 
 // Identity mapping. Maps a row in the range [0, ysize) to the same value.
 struct RowMapId {
-  explicit RowMapId() = default;
   size_t operator()(ssize_t y) {
     JXL_DASSERT(y >= 0);
     return y;

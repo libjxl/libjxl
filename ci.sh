@@ -514,6 +514,9 @@ cmd_opt() {
 }
 
 cmd_coverage() {
+  # -O0 prohibits stack space reuse -> causes stack-overflow on dozens of tests.
+  TEST_STACK_LIMIT="none"
+
   cmd_release -DJPEGXL_ENABLE_COVERAGE=ON "$@"
 
   if [[ "${SKIP_TEST}" -ne "1" ]]; then

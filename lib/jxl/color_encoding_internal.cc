@@ -350,6 +350,7 @@ const ColorEncoding& ColorEncoding::LinearSRGB(bool is_gray) {
 }
 
 CIExy ColorEncoding::GetWhitePoint() const {
+  JXL_DASSERT(have_fields_);
   CIExy xy;
   switch (white_point) {
     case WhitePoint::kCustom:
@@ -374,6 +375,7 @@ CIExy ColorEncoding::GetWhitePoint() const {
 }
 
 Status ColorEncoding::SetWhitePoint(const CIExy& xy) {
+  JXL_DASSERT(have_fields_);
   if (xy.x == 0.0 || xy.y == 0.0) {
     return JXL_FAILURE("Invalid white point %f %f", xy.x, xy.y);
   }
@@ -394,6 +396,7 @@ Status ColorEncoding::SetWhitePoint(const CIExy& xy) {
 }
 
 PrimariesCIExy ColorEncoding::GetPrimaries() const {
+  JXL_DASSERT(have_fields_);
   JXL_ASSERT(HasPrimaries());
   PrimariesCIExy xy;
   switch (primaries) {
@@ -434,6 +437,7 @@ PrimariesCIExy ColorEncoding::GetPrimaries() const {
 }
 
 Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
+  JXL_DASSERT(have_fields_);
   JXL_ASSERT(HasPrimaries());
   if (xy.r.x == 0.0 || xy.r.y == 0.0 || xy.g.x == 0.0 || xy.g.y == 0.0 ||
       xy.b.x == 0.0 || xy.b.y == 0.0) {

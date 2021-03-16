@@ -36,6 +36,7 @@
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/enc_ans.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_dot_dictionary.h"
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/frame_header.h"
@@ -770,7 +771,7 @@ void FindBestPatchDictionary(const Image3F& opsin,
     BitReader br(encoded);
     ImageBundle decoded(&state->shared.metadata->m);
     PassesDecoderState dec_state;
-    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, nullptr, &decoded,
+    JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, &decoded,
                           *state->shared.metadata, /*constraints=*/nullptr));
     JXL_CHECK(br.Close());
     state->shared.reference_frames[0] =

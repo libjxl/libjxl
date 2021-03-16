@@ -55,7 +55,7 @@ uint8_t* jxlDecompress(const uint8_t* data, size_t size) {
   jxl::CodecInOut io;
   jxl::DecompressParams params;
   if (!jxl::DecodeFile(params, jxl::Span<const uint8_t>(data, size), &io,
-                       nullptr, nullptr)) {
+                       nullptr)) {
     return nullptr;
   }
   io.use_sjpeg = false;

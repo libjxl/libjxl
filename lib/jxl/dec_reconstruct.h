@@ -23,7 +23,6 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_cache.h"
-#include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/loop_filter.h"
@@ -40,31 +39,34 @@ namespace jxl {
 // necessary.
 // `skip_blending` is necessary because the encoder butteraugli loop does not
 // (yet) handle blending.
+// TODO(veluca): remove the "force_fir" parameter, and call EPF directly in
+// those use cases where this is needed.
 Status FinalizeFrameDecoding(ImageBundle* JXL_RESTRICT decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             bool rerender, bool skip_blending);
+                             bool force_fir, bool skip_blending);
 
 // Renders the `output_rect` portion of the final image to `output_image`
 // (unless the frame is upsampled - in which case, `output_rect` is scaled
-// accordingly). `input_rect` should have the same shape. Color data is taken
-// from `image_data:input_rect`; some X *and* Y padding is needed, so if
-// `input_rect` is on a border of `input_image` padding will be added by
-// mirroring. `input_rect` always refers to the non-padded pixels.
-// `output_rect.x0()` is guaranteed to be a multiple of kBlockDim.
-// `output_rect.xsize()` is either a multiple of kBlockDim, or is such that
-// `output_rect.x0() + output_rect.xsize() == frame_dim.xsize`.
-Status FinalizeImageRect(const Image3F& input_image, const Rect& input_rect,
+// accordingly). `input_rect` should have the same shape. `input_rect` always
+// refers to the non-padded pixels. `output_rect.x0()` is guaranteed to be a
+// multiple of GroupBorderAssigner::kPaddingRoundX. `output_rect.xsize()` is
+// either a multiple of GroupBorderAssigner::kPaddingRoundX, or is such that
+// `output_rect.x0() + output_rect.xsize() == frame_dim.xsize`. `input_image`
+// may be mutated by adding padding. If `output_rect` is on an image border, the
+// input will be padded. Otherwise, appropriate padding must already be present.
+Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
                          PassesDecoderState* dec_state, size_t thread,
                          ImageBundle* JXL_RESTRICT output_image,
                          const Rect& output_rect);
 
-// Ensures that there is a border of `xpadding x ypadding` valid pixels
-// accessible around `src:src_rect`, and of `xborder` not-necessarily-valid
-// pixels along the x axis by copying the area to `storage` if necessary and
-// setting `output` and `output_rect` appropriately.
-void EnsurePadding(const Image3F& src, const Rect& src_rect, Image3F* storage,
-                   const Image3F** output, Rect* output_rect, size_t xpadding,
-                   size_t ypadding, size_t xborder);
+// Fills padding around `img:rect` in the x direction by mirroring. Padding is
+// applied so that a full border of xpadding and ypadding is available, except
+// if `image_rect` points to an area of the full image that touches the top or
+// the bottom. It is expected that padding is already in place for inputs such
+// that the corresponding image_rect is not at an image border.
+void EnsurePaddingInPlace(Image3F* img, const Rect& rect,
+                          const Rect& image_rect, size_t image_xsize,
+                          size_t image_ysize, size_t xpadding, size_t ypadding);
 
 }  // namespace jxl
 

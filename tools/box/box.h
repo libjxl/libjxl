@@ -68,9 +68,8 @@ struct JpegXlContainer {
   // Exif metadata, or null if not present in the container.
   // The exif data has the format of 'Exif block' as defined in
   // ISO/IEC23008-12:2017 Clause A.2.1
-  // TODO(lode): That means it first has 4 bytes exif_tiff_header_offset,
-  // followed by the payload (EXIF and TIFF) in the next bytes. Offer the offset
-  // adn payload as separate fields in the API here instead?
+  // Here we assume the tiff header offset is 0 and store only the
+  // actual Exif data (starting with the tiff header MM or II)
   // TODO(lode): support the theoretical case of multiple exif boxes
   const uint8_t* exif = nullptr;  // Not owned
   size_t exif_size = 0;
@@ -124,13 +123,6 @@ jxl::Status EncodeJpegXlContainerOneShot(const JpegXlContainer& container,
 jxl::Status DecodeJpegXlToJpeg(jxl::DecompressParams params,
                                const JpegXlContainer& container,
                                jxl::CodecInOut* io,
-                               jxl::AuxOut* aux_out = nullptr,
-                               jxl::ThreadPool* pool = nullptr);
-jxl::Status EncodeJpegToJpegXL(const jxl::CompressParams& params,
-                               const jxl::CodecInOut* io,
-                               jxl::PassesEncoderState* passes_enc_state,
-                               jxl::PaddedBytes* compressed,
-                               jxl::AuxOut* aux_out = nullptr,
                                jxl::ThreadPool* pool = nullptr);
 
 }  // namespace tools

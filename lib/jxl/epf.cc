@@ -58,8 +58,8 @@ using hwy::HWY_NAMESPACE::Vec;
 // The EPF logic treats 8x8 blocks as one unit, each with their own sigma.
 // It should be possible to do two blocks at a time in AVX3 vectors, at some
 // increase in complexity (broadcasting sigma0/1 to lanes 0..7 and 8..15).
-using DF = HWY_CAPPED(float, 8);
-using DU = HWY_CAPPED(uint32_t, 8);
+using DF = HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound);
+using DU = HWY_CAPPED(uint32_t, GroupBorderAssigner::kPaddingXRound);
 
 // kInvSigmaNum / 0.3
 constexpr float kMinSigma = -3.90524291751269967465540850526868f;
@@ -74,7 +74,7 @@ JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
 
 template <bool aligned>
 JXL_INLINE void AddPixelStep1(int row, const FilterRows& rows, size_t x,
-                              Vec<DF> sad, Vec<DF> sad_mul, Vec<DF> inv_sigma,
+                              Vec<DF> sad, Vec<DF> inv_sigma,
                               const LoopFilter& lf, Vec<DF>* JXL_RESTRICT X,
                               Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
                               Vec<DF>* JXL_RESTRICT w) {
@@ -85,8 +85,7 @@ JXL_INLINE void AddPixelStep1(int row, const FilterRows& rows, size_t x,
   auto cb = aligned ? Load(DF(), rows.GetInputRow(row, 2) + x)
                     : LoadU(DF(), rows.GetInputRow(row, 2) + x);
 
-  auto weight =
-      Weight(sad * sad_mul, inv_sigma, Set(df, lf.epf_pass1_zeroflush));
+  auto weight = Weight(sad, inv_sigma, Set(df, lf.epf_pass1_zeroflush));
   *w += weight;
   *X = MulAdd(weight, cx, *X);
   *Y = MulAdd(weight, cy, *Y);
@@ -96,9 +95,9 @@ JXL_INLINE void AddPixelStep1(int row, const FilterRows& rows, size_t x,
 template <bool aligned>
 JXL_INLINE void AddPixelStep2(int row, const FilterRows& rows, size_t x,
                               Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
-                              Vec<DF> sad_mul, Vec<DF> inv_sigma,
-                              const LoopFilter& lf, Vec<DF>* JXL_RESTRICT X,
-                              Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
+                              Vec<DF> inv_sigma, const LoopFilter& lf,
+                              Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
+                              Vec<DF>* JXL_RESTRICT B,
                               Vec<DF>* JXL_RESTRICT w) {
   auto cx = aligned ? Load(DF(), rows.GetInputRow(row, 0) + x)
                     : LoadU(DF(), rows.GetInputRow(row, 0) + x);
@@ -111,8 +110,7 @@ JXL_INLINE void AddPixelStep2(int row, const FilterRows& rows, size_t x,
   sad = MulAdd(AbsDiff(cy, ry), Set(df, lf.epf_channel_scale[1]), sad);
   sad = MulAdd(AbsDiff(cb, rb), Set(df, lf.epf_channel_scale[2]), sad);
 
-  auto weight =
-      Weight(sad * sad_mul, inv_sigma, Set(df, lf.epf_pass2_zeroflush));
+  auto weight = Weight(sad, inv_sigma, Set(df, lf.epf_pass2_zeroflush));
 
   *w += weight;
   *X = MulAdd(weight, cx, *X);
@@ -151,8 +149,8 @@ void GaborishVector(const D df, const float* JXL_RESTRICT row_t,
 }
 
 void GaborishRow(const FilterRows& rows, const LoopFilter& /* lf */,
-                 size_t /* sigma_y */, const FilterWeights& filter_weights,
-                 size_t x0, size_t x1) {
+                 const FilterWeights& filter_weights, size_t x0, size_t x1,
+                 size_t /*image_x_mod_8*/, size_t /* image_y_mod_8 */) {
   JXL_DASSERT(x0 % Lanes(df) == 0);
 
   const float* JXL_RESTRICT gab_weights = filter_weights.gab_weights;
@@ -201,19 +199,26 @@ void GaborishRow(const FilterRows& rows, const LoopFilter& /* lf */,
 
 // Step 0: 5x5 plus-shaped kernel with 5 SADs per pixel (3x3
 // plus-shaped). So this makes this filter a 7x7 filter.
-void Epf0Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
-             const FilterWeights& filter_weights, size_t x0, size_t x1) {
+void Epf0Row(const FilterRows& rows, const LoopFilter& lf,
+             const FilterWeights& filter_weights, size_t x0, size_t x1,
+             size_t image_x_mod_8, size_t image_y_mod_8) {
   JXL_DASSERT(x0 % Lanes(df) == 0);
   const float* JXL_RESTRICT row_sigma = rows.GetSigmaRow();
-  const size_t iy = sigma_y % kBlockDim;
 
-  HWY_ALIGN float sad_mul[kBlockDim] = {
-      lf.epf_border_sad_mul, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-      lf.epf_border_sad_mul};
+  float sm = lf.epf_pass0_sigma_scale;
+  float bsm = sm * lf.epf_border_sad_mul;
+
+  HWY_ALIGN float sad_mul[kBlockDim] = {bsm, sm, sm, sm, sm, sm, sm, bsm};
+
+  if (image_y_mod_8 == 0 || image_y_mod_8 == kBlockDim - 1) {
+    for (size_t i = 0; i < kBlockDim; i += Lanes(df)) {
+      Store(Set(df, bsm), df, sad_mul + i);
+    }
+  }
 
   for (size_t x = x0; x < x1; x += Lanes(df)) {
-    size_t bx = x / kBlockDim;
-    size_t ix = x - kBlockDim * bx;
+    size_t bx = (x + image_x_mod_8) / kBlockDim;
+    size_t ix = (x + image_x_mod_8) % kBlockDim;
     if (row_sigma[bx] < kMinSigma) {
       for (size_t c = 0; c < 3; c++) {
         auto px = Load(df, rows.GetInputRow(0, c) + x);
@@ -221,11 +226,9 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
       }
       continue;
     }
-    const auto inv_sigma = Set(DF(), lf.epf_pass0_sigma_scale * row_sigma[bx]);
 
-    const auto sm = iy == 0 || iy == kBlockDim - 1
-                        ? Set(df, lf.epf_border_sad_mul)
-                        : Load(df, sad_mul + ix);
+    const auto sm = Load(df, sad_mul + ix);
+    const auto inv_sigma = Set(DF(), row_sigma[bx]) * sm;
 
     decltype(Zero(df)) sads[12];
     for (size_t i = 0; i < 12; i++) sads[i] = Zero(df);
@@ -264,8 +267,8 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
 
     for (size_t i = 0; i < 12; i++) {
       AddPixelStep1</*aligned=*/false>(/*row=*/sads_off[i][0], rows,
-                                       x + sads_off[i][1], sads[i], sm,
-                                       inv_sigma, lf, &X, &Y, &B, &w);
+                                       x + sads_off[i][1], sads[i], inv_sigma,
+                                       lf, &X, &Y, &B, &w);
     }
 
 #if JXL_HIGH_PRECISION
@@ -281,19 +284,26 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
 
 // Step 1: 3x3 plus-shaped kernel with 5 SADs per pixel (also 3x3
 // plus-shaped). So this makes this filter a 5x5 filter.
-void Epf1Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
-             const FilterWeights& filter_weights, size_t x0, size_t x1) {
+void Epf1Row(const FilterRows& rows, const LoopFilter& lf,
+             const FilterWeights& filter_weights, size_t x0, size_t x1,
+             size_t image_x_mod_8, size_t image_y_mod_8) {
   JXL_DASSERT(x0 % Lanes(df) == 0);
   const float* JXL_RESTRICT row_sigma = rows.GetSigmaRow();
-  const size_t iy = sigma_y % kBlockDim;
 
-  HWY_ALIGN float sad_mul[kBlockDim] = {
-      lf.epf_border_sad_mul, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-      lf.epf_border_sad_mul};
+  float sm = 1.0f;
+  float bsm = sm * lf.epf_border_sad_mul;
+
+  HWY_ALIGN float sad_mul[kBlockDim] = {bsm, sm, sm, sm, sm, sm, sm, bsm};
+
+  if (image_y_mod_8 == 0 || image_y_mod_8 == kBlockDim - 1) {
+    for (size_t i = 0; i < kBlockDim; i += Lanes(df)) {
+      Store(Set(df, bsm), df, sad_mul + i);
+    }
+  }
 
   for (size_t x = x0; x < x1; x += Lanes(df)) {
-    size_t bx = x / kBlockDim;
-    size_t ix = x - kBlockDim * bx;
+    size_t bx = (x + image_x_mod_8) / kBlockDim;
+    size_t ix = (x + image_x_mod_8) % kBlockDim;
     if (row_sigma[bx] < kMinSigma) {
       for (size_t c = 0; c < 3; c++) {
         auto px = Load(df, rows.GetInputRow(0, c) + x);
@@ -301,11 +311,9 @@ void Epf1Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
       }
       continue;
     }
-    const auto inv_sigma = Set(DF(), row_sigma[bx]);
 
-    const auto sm = iy == 0 || iy == kBlockDim - 1
-                        ? Set(df, lf.epf_border_sad_mul)
-                        : Load(df, sad_mul + ix);
+    const auto sm = Load(df, sad_mul + ix);
+    const auto inv_sigma = Set(DF(), row_sigma[bx]) * sm;
     auto sad0 = Zero(df);
     auto sad1 = Zero(df);
     auto sad2 = Zero(df);
@@ -380,16 +388,16 @@ void Epf1Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
     auto B = b_cc;
 
     // Top row
-    AddPixelStep1</*aligned=*/true>(/*row=*/-1, rows, x, sad0, sm, inv_sigma,
-                                    lf, &X, &Y, &B, &w);
-    // Center
-    AddPixelStep1</*aligned=*/false>(/*row=*/0, rows, x - 1, sad1, sm,
-                                     inv_sigma, lf, &X, &Y, &B, &w);
-    AddPixelStep1</*aligned=*/false>(/*row=*/0, rows, x + 1, sad2, sm,
-                                     inv_sigma, lf, &X, &Y, &B, &w);
-    // Bottom
-    AddPixelStep1</*aligned=*/true>(/*row=*/1, rows, x, sad3, sm, inv_sigma, lf,
+    AddPixelStep1</*aligned=*/true>(/*row=*/-1, rows, x, sad0, inv_sigma, lf,
                                     &X, &Y, &B, &w);
+    // Center
+    AddPixelStep1</*aligned=*/false>(/*row=*/0, rows, x - 1, sad1, inv_sigma,
+                                     lf, &X, &Y, &B, &w);
+    AddPixelStep1</*aligned=*/false>(/*row=*/0, rows, x + 1, sad2, inv_sigma,
+                                     lf, &X, &Y, &B, &w);
+    // Bottom
+    AddPixelStep1</*aligned=*/true>(/*row=*/1, rows, x, sad3, inv_sigma, lf, &X,
+                                    &Y, &B, &w);
 #if JXL_HIGH_PRECISION
     auto inv_w = Set(df, 1.0f) / w;
 #else
@@ -403,19 +411,26 @@ void Epf1Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
 
 // Step 2: 3x3 plus-shaped kernel with a single reference pixel, ran on
 // the output of the previous step.
-void Epf2Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
-             const FilterWeights& filter_weights, size_t x0, size_t x1) {
+void Epf2Row(const FilterRows& rows, const LoopFilter& lf,
+             const FilterWeights& filter_weights, size_t x0, size_t x1,
+             size_t image_x_mod_8, size_t image_y_mod_8) {
   JXL_DASSERT(x0 % Lanes(df) == 0);
   const float* JXL_RESTRICT row_sigma = rows.GetSigmaRow();
-  const size_t iy = sigma_y % kBlockDim;
 
-  HWY_ALIGN float sad_mul[kBlockDim] = {
-      lf.epf_border_sad_mul, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-      lf.epf_border_sad_mul};
+  float sm = lf.epf_pass2_sigma_scale;
+  float bsm = sm * lf.epf_border_sad_mul;
+
+  HWY_ALIGN float sad_mul[kBlockDim] = {bsm, sm, sm, sm, sm, sm, sm, bsm};
+
+  if (image_y_mod_8 == 0 || image_y_mod_8 == kBlockDim - 1) {
+    for (size_t i = 0; i < kBlockDim; i += Lanes(df)) {
+      Store(Set(df, bsm), df, sad_mul + i);
+    }
+  }
 
   for (size_t x = x0; x < x1; x += Lanes(df)) {
-    size_t bx = x / kBlockDim;
-    size_t ix = x % kBlockDim;
+    size_t bx = (x + image_x_mod_8) / kBlockDim;
+    size_t ix = (x + image_x_mod_8) % kBlockDim;
 
     if (row_sigma[bx] < kMinSigma) {
       for (size_t c = 0; c < 3; c++) {
@@ -425,11 +440,8 @@ void Epf2Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
       continue;
     }
 
-    const auto inv_sigma = Set(DF(), lf.epf_pass2_sigma_scale * row_sigma[bx]);
-
-    const auto sm = iy == 0 || iy == kBlockDim - 1
-                        ? Set(df, lf.epf_border_sad_mul)
-                        : Load(df, sad_mul + ix);
+    const auto sm = Load(df, sad_mul + ix);
+    const auto inv_sigma = Set(DF(), row_sigma[bx]) * sm;
 
     const auto x_cc = Load(df, rows.GetInputRow(0, 0) + x);
     const auto y_cc = Load(df, rows.GetInputRow(0, 1) + x);
@@ -441,15 +453,15 @@ void Epf2Row(const FilterRows& rows, const LoopFilter& lf, size_t sigma_y,
     auto B = b_cc;
 
     // Top row
-    AddPixelStep2</*aligned=*/true>(/*row=*/-1, rows, x, x_cc, y_cc, b_cc, sm,
+    AddPixelStep2</*aligned=*/true>(/*row=*/-1, rows, x, x_cc, y_cc, b_cc,
                                     inv_sigma, lf, &X, &Y, &B, &w);
     // Center
     AddPixelStep2</*aligned=*/false>(/*row=*/0, rows, x - 1, x_cc, y_cc, b_cc,
-                                     sm, inv_sigma, lf, &X, &Y, &B, &w);
+                                     inv_sigma, lf, &X, &Y, &B, &w);
     AddPixelStep2</*aligned=*/false>(/*row=*/0, rows, x + 1, x_cc, y_cc, b_cc,
-                                     sm, inv_sigma, lf, &X, &Y, &B, &w);
+                                     inv_sigma, lf, &X, &Y, &B, &w);
     // Bottom
-    AddPixelStep2</*aligned=*/true>(/*row=*/1, rows, x, x_cc, y_cc, b_cc, sm,
+    AddPixelStep2</*aligned=*/true>(/*row=*/1, rows, x, x_cc, y_cc, b_cc,
                                     inv_sigma, lf, &X, &Y, &B, &w);
 
 #if JXL_HIGH_PRECISION
@@ -469,8 +481,9 @@ constexpr FilterDefinition kEpf1Filter{&Epf1Row, 2};
 constexpr FilterDefinition kEpf2Filter{&Epf2Row, 1};
 
 void FilterPipelineInit(FilterPipeline* fp, const LoopFilter& lf,
-                        const Image3F& in, const Rect& in_rect, Image3F* out,
-                        const Rect& out_rect) {
+                        const Image3F& in, const Rect& in_rect,
+                        const Rect& image_rect, size_t image_ysize,
+                        Image3F* out, const Rect& out_rect) {
   JXL_DASSERT(lf.gab || lf.epf_iters > 0);
   // All EPF filters use sigma so we need to compute it.
   fp->compute_sigma = lf.epf_iters > 0;
@@ -478,7 +491,7 @@ void FilterPipelineInit(FilterPipeline* fp, const LoopFilter& lf,
   fp->num_filters = 0;
   fp->storage_rows_used = 0;
   // First filter always uses the input image.
-  fp->filters[0].SetInput(&in, in_rect);
+  fp->filters[0].SetInput(&in, in_rect, image_rect, image_ysize);
 
   if (lf.gab) {
     fp->AddStep<kGaborishFilter.border>(kGaborishFilter);
@@ -639,22 +652,20 @@ void ComputeSigma(const Rect& block_rect, PassesDecoderState* state) {
   }
 }
 
-FilterPipeline* PrepareFilterPipeline(PassesDecoderState* dec_state,
-                                      const Rect& image_rect,
-                                      const Image3F& input,
-                                      const Rect& input_rect, size_t thread,
-                                      Image3F* JXL_RESTRICT out,
-                                      const Rect& output_rect) {
+FilterPipeline* PrepareFilterPipeline(
+    PassesDecoderState* dec_state, const Rect& image_rect, const Image3F& input,
+    const Rect& input_rect, size_t image_ysize, size_t thread,
+    Image3F* JXL_RESTRICT out, const Rect& output_rect) {
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
-  JXL_DASSERT(image_rect.x0() % kBlockDim == 0);
-  JXL_DASSERT(input_rect.x0() % kBlockDim == 0);
-  JXL_DASSERT(output_rect.x0() % kBlockDim == 0);
+  JXL_DASSERT(image_rect.x0() % GroupBorderAssigner::kPaddingXRound == 0);
+  JXL_DASSERT(input_rect.x0() % GroupBorderAssigner::kPaddingXRound == 0);
+  JXL_DASSERT(output_rect.x0() % GroupBorderAssigner::kPaddingXRound == 0);
   JXL_DASSERT(input_rect.x0() >= lf.Padding());
   JXL_DASSERT(image_rect.xsize() == input_rect.xsize());
   JXL_DASSERT(image_rect.xsize() == output_rect.xsize());
   FilterPipeline* fp = &(dec_state->filter_pipelines[thread]);
   HWY_DYNAMIC_DISPATCH(FilterPipelineInit)
-  (fp, lf, input, input_rect, out, output_rect);
+  (fp, lf, input, input_rect, image_rect, image_ysize, out, output_rect);
   return fp;
 }
 
@@ -662,7 +673,7 @@ void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
                   const Image3F& input, const Rect& input_rect, size_t thread,
                   Image3F* JXL_RESTRICT out, const Rect& output_rect) {
   auto fp = PrepareFilterPipeline(dec_state, image_rect, input, input_rect,
-                                  thread, out, output_rect);
+                                  input_rect.ysize(), thread, out, output_rect);
   const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   for (ssize_t y = -lf.Padding();
        y < static_cast<ssize_t>(lf.Padding() + image_rect.ysize()); y++) {

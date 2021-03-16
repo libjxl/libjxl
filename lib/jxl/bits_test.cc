@@ -19,23 +19,6 @@
 namespace jxl {
 namespace {
 
-TEST(BitsTest, TestPopCount) {
-  EXPECT_EQ(0, PopCount(0u));
-  EXPECT_EQ(1, PopCount(1u));
-  EXPECT_EQ(1, PopCount(2u));
-  EXPECT_EQ(2, PopCount(3u));
-  EXPECT_EQ(1, PopCount(0x80000000u));
-  EXPECT_EQ(31, PopCount(0x7FFFFFFFu));
-  EXPECT_EQ(32, PopCount(0xFFFFFFFFu));
-
-  EXPECT_EQ(1, PopCount(0x80000000ull));
-  EXPECT_EQ(31, PopCount(0x7FFFFFFFull));
-  EXPECT_EQ(32, PopCount(0xFFFFFFFFull));
-  EXPECT_EQ(33, PopCount(0x10FFFFFFFFull));
-  EXPECT_EQ(63, PopCount(0xFFFEFFFFFFFFFFFFull));
-  EXPECT_EQ(64, PopCount(0xFFFFFFFFFFFFFFFFull));
-}
-
 TEST(BitsTest, TestNumZeroBits) {
   // Zero input is well-defined.
   EXPECT_EQ(32, Num0BitsAboveMS1Bit(0u));

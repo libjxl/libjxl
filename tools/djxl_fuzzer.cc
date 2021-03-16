@@ -22,6 +22,7 @@
 #include <random>
 #include <vector>
 
+#include "hwy/targets.h"
 #include "jxl/decode.h"
 #include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
@@ -52,7 +53,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
                   size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
-  SetDecoderMemoryLimitBase_(0x100000);
+  SetDecoderMemoryLimitBase_(max_pixels);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreded.
   size_t num_threads =
@@ -254,7 +255,10 @@ int TestOneInput(const uint8_t* data, size_t size) {
   size_t xsize, ysize;
   size_t max_pixels = 1 << 21;
 
+  const auto targets = hwy::SupportedAndGeneratedTargets();
+  hwy::SetSupportedTargetsForTest(spec.streaming_seed % targets.size());
   DecodeJpegXl(data, size, max_pixels, spec, &pixels, &xsize, &ysize, &icc);
+  hwy::SetSupportedTargetsForTest(0);
 
   return 0;
 }

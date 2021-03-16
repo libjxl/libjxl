@@ -20,7 +20,6 @@
 #include <string>
 
 #include "lib/jxl/convolve.h"
-#include "lib/jxl/dot_dictionary.h"
 #include "lib/jxl/enc_ac_strategy.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "lib/jxl/enc_ar_control_field.h"
