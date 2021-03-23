@@ -1077,7 +1077,7 @@ class Benchmark {
 };
 
 int BenchmarkMain(int argc, const char** argv) {
-  fprintf(stderr, "benchmark_xl [%s]\n",
+  fprintf(stderr, "benchmark_xl %s\n",
           jpegxl::tools::CodecConfigString(JxlDecoderVersion()).c_str());
 
   JXL_CHECK(Args()->AddCommandLineOptions());

@@ -312,7 +312,6 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
       }
     }
   }
-  if (!args.quiet) fprintf(stderr, "Done.\n");
   return true;
 }
 
