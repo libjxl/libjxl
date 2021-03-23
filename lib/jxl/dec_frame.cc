@@ -82,7 +82,6 @@ Status DecodeGlobalDCInfo(BitReader* reader, bool is_jpeg,
   }
 
   state->shared_storage.ac_strategy.FillInvalid();
-  state->Init(pool);
   return true;
 }
 }  // namespace
@@ -304,6 +303,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   }
   JXL_RETURN_IF_ERROR(
       InitializePassesSharedState(frame_header_, &dec_state_->shared_storage));
+  dec_state_->Init();
   modular_frame_decoder_.Init(frame_dim_);
 
   if (decoded->IsJPEG()) {
@@ -382,8 +382,6 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         jxl::DecodeGlobalDCInfo(br, decoded_->IsJPEG(), dec_state_, pool_));
-  } else if (frame_header_.encoding == FrameEncoding::kModular) {
-    dec_state_->Init(pool_);
   }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
       br, frame_header_, allow_partial_dc_global_);
@@ -431,6 +429,7 @@ void FrameDecoder::FinalizeDC() {
 
 void FrameDecoder::AllocateOutput() {
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
+  if (dec_state_->rgb_output != nullptr) return;
   decoded_->SetFromImage(Image3F(frame_dim_.xsize_upsampled_padded,
                                  frame_dim_.ysize_upsampled_padded),
                          dec_state_->output_encoding);
@@ -448,8 +447,7 @@ void FrameDecoder::AllocateOutput() {
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
   JXL_CHECK(finalized_dc_);
-  JXL_CHECK(decoded_->HasColor());
-  dec_state_->InitForAC();
+  JXL_CHECK(decoded_->HasColor() || dec_state_->rgb_output != nullptr);
 
   // Decode AC group.
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
@@ -683,6 +681,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   }
 
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
+    dec_state_->InitForAC(pool_);
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
@@ -746,6 +745,16 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
 }
 
 Status FrameDecoder::Flush() {
+  bool has_blending = frame_header_.blending_info.mode != BlendMode::kReplace ||
+                      frame_header_.custom_size_or_origin;
+  for (const auto& blending_info_ec :
+       frame_header_.extra_channel_blending_info) {
+    if (blending_info_ec.mode != BlendMode::kReplace) has_blending = true;
+  }
+  // No early Flush() if blending is enabled.
+  if (has_blending && !is_finalized_) {
+    return false;
+  }
   if (decoded_->IsJPEG()) {
     // Nothing to do.
     return true;

@@ -40,14 +40,16 @@ static inline bool IsJPG(const Span<const uint8_t> bytes) {
 }
 
 // Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
-                      CodecInOut* io);
+// `elapsed_deinterleave`, if non-null, will be set to the time (in seconds)
+// that it took to deinterleave the raw JSAMPLEs to planar floats.
+Status DecodeImageJPG(Span<const uint8_t> bytes, ThreadPool* pool,
+                      CodecInOut* io, double* elapsed_deinterleave = nullptr);
 
 // Encodes into `bytes`.
 Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
                       YCbCrChromaSubsampling chroma_subsampling,
                       ThreadPool* pool, PaddedBytes* bytes,
-                      const DecodeTarget target = DecodeTarget::kPixels);
+                      DecodeTarget target = DecodeTarget::kPixels);
 
 }  // namespace jxl
 

@@ -338,6 +338,7 @@ static constexpr size_t kNumNonrefProperties =
     kNumStaticProperties + 13 + weighted::kNumProperties;
 
 constexpr size_t kWPProp = kNumNonrefProperties - weighted::kNumProperties;
+constexpr size_t kGradientProp = 9;
 
 // Clamps gradient to the min/max of n, w (and l, implicitly).
 static JXL_INLINE int32_t ClampedGradient(const int32_t n, const int32_t w,
@@ -427,9 +428,9 @@ inline std::string PropertyName(size_t i) {
     case 7:
       return "W";
     case 8:
-      return "W+N-NW";
-    case 9:
       return "W-WW-NW+NWW";
+    case 9:
+      return "W+N-NW";
     case 10:
       return "W-NW";
     case 11:

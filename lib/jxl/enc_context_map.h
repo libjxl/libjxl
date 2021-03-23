@@ -33,8 +33,7 @@ static const size_t kClustersLimit = 128;
 // Encodes the given context map to the bit stream. The number of different
 // histogram ids is given by num_histograms.
 void EncodeContextMap(const std::vector<uint8_t>& context_map,
-                      size_t num_histograms,
-                      const BitWriter::Allotment& allotment, BitWriter* writer);
+                      size_t num_histograms, BitWriter* writer);
 
 void EncodeBlockCtxMap(const BlockCtxMap& block_ctx_map, BitWriter* writer,
                        AuxOut* aux_out);

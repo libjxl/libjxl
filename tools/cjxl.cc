@@ -347,6 +347,11 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "    Default: squirrel (7). Values are in order from faster to slower.",
       &params.speed_tier, &ParseSpeedTier);
 
+  cmdline->AddOptionValue('\0', "faster_decoding", "AMOUNT",
+                          "Favour higher decoding speed. 0 = default, higher "
+                          "values give higher speed at the expense of quality",
+                          &params.decoding_speed_tier, &ParseUnsigned, 2);
+
   cmdline->AddOptionFlag('p', "progressive",
                          "Enable progressive/responsive decoding.",
                          &progressive, &SetBooleanTrue);

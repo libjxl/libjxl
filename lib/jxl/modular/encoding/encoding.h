@@ -36,7 +36,8 @@
 
 namespace jxl {
 
-constexpr int32_t kWPPropRange = 512;
+// Valid range of properties for using lookup tables instead of trees.
+constexpr int32_t kPropRangeFast = 512;
 
 struct GroupHeader : public Fields {
   GroupHeader();
@@ -65,8 +66,72 @@ struct GroupHeader : public Fields {
 
 FlatTree FilterTree(const Tree &global_tree,
                     std::array<pixel_type, kNumStaticProperties> &static_props,
-                    size_t *num_props, bool *use_wp, bool *wp_only);
+                    size_t *num_props, bool *use_wp, bool *wp_only,
+                    bool *gradient_only);
 
+template <typename T>
+bool TreeToLookupTable(const FlatTree &tree,
+                       T context_lookup[2 * kPropRangeFast],
+                       int8_t offsets[2 * kPropRangeFast],
+                       int8_t multipliers[2 * kPropRangeFast] = nullptr) {
+  struct TreeRange {
+    // Begin *excluded*, end *included*. This works best with > vs <= decision
+    // nodes.
+    int begin, end;
+    size_t pos;
+  };
+  std::vector<TreeRange> ranges;
+  ranges.push_back(TreeRange{-kPropRangeFast - 1, kPropRangeFast - 1, 0});
+  while (!ranges.empty()) {
+    TreeRange cur = ranges.back();
+    ranges.pop_back();
+    if (cur.begin < -kPropRangeFast - 1 || cur.begin >= kPropRangeFast - 1 ||
+        cur.end > kPropRangeFast - 1) {
+      // Tree is outside the allowed range, exit.
+      return false;
+    }
+    auto &node = tree[cur.pos];
+    // Leaf.
+    if (node.property0 == -1) {
+      if (node.predictor_offset < std::numeric_limits<int8_t>::min() ||
+          node.predictor_offset > std::numeric_limits<int8_t>::max()) {
+        return false;
+      }
+      if (node.multiplier < std::numeric_limits<int8_t>::min() ||
+          node.multiplier > std::numeric_limits<int8_t>::max()) {
+        return false;
+      }
+      if (multipliers == nullptr && node.multiplier != 1) {
+        return false;
+      }
+      for (int i = cur.begin + 1; i < cur.end + 1; i++) {
+        context_lookup[i + kPropRangeFast] = node.childID;
+        if (multipliers) multipliers[i + kPropRangeFast] = node.multiplier;
+        offsets[i + kPropRangeFast] = node.predictor_offset;
+      }
+      continue;
+    }
+    // > side of top node.
+    if (node.properties[0] >= kNumStaticProperties) {
+      ranges.push_back(TreeRange({node.splitvals[0], cur.end, node.childID}));
+      ranges.push_back(
+          TreeRange({node.splitval0, node.splitvals[0], node.childID + 1}));
+    } else {
+      ranges.push_back(TreeRange({node.splitval0, cur.end, node.childID}));
+    }
+    // <= side
+    if (node.properties[1] >= kNumStaticProperties) {
+      ranges.push_back(
+          TreeRange({node.splitvals[1], node.splitval0, node.childID + 2}));
+      ranges.push_back(
+          TreeRange({cur.begin, node.splitvals[1], node.childID + 3}));
+    } else {
+      ranges.push_back(
+          TreeRange({cur.begin, node.splitval0, node.childID + 2}));
+    }
+  }
+  return true;
+}
 // TODO(veluca): make cleaner interfaces.
 
 // undo_transforms == N > 0: undo all transforms except the first N

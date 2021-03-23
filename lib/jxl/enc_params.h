@@ -119,6 +119,12 @@ struct CompressParams {
 
   SpeedTier speed_tier = SpeedTier::kSquirrel;
 
+  // 0 = default.
+  // 1 = slightly worse quality.
+  // 4 = fastest speed, lowest quality
+  // TODO(veluca): hook this up to the C API.
+  size_t decoding_speed_tier = 0;
+
   int max_butteraugli_iters = 4;
 
   int max_butteraugli_iters_guetzli_mode = 100;

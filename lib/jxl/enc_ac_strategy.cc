@@ -333,23 +333,26 @@ size_t ACSPossibleReplacements(AcStrategy::Type current,
   }
   if (current == AcStrategy::Type::DCT64X32 ||
       current == AcStrategy::Type::DCT32X64) {
-    return ACSCandidates({AcStrategy::Type::DCT32X32,  AcStrategy::Type::DCT16X16,
-         AcStrategy::Type::DCT}, out);
+    return ACSCandidates({AcStrategy::Type::DCT32X32,
+                          AcStrategy::Type::DCT16X16, AcStrategy::Type::DCT},
+                         out);
   }
   if (current == AcStrategy::Type::DCT32X32) {
     return ACSCandidates(
-        {AcStrategy::Type::DCT32X16, AcStrategy::Type::DCT16X32, AcStrategy::Type::DCT16X16,
-         AcStrategy::Type::DCT16X8, AcStrategy::Type::DCT8X16,
-         AcStrategy::Type::DCT}, out);
+        {AcStrategy::Type::DCT32X16, AcStrategy::Type::DCT16X32,
+         AcStrategy::Type::DCT16X16, AcStrategy::Type::DCT16X8,
+         AcStrategy::Type::DCT8X16, AcStrategy::Type::DCT},
+        out);
   }
   if (current == AcStrategy::Type::DCT32X16) {
-    return ACSCandidates(
-        {AcStrategy::Type::DCT32X8, AcStrategy::Type::DCT16X16,
-         AcStrategy::Type::DCT}, out);
+    return ACSCandidates({AcStrategy::Type::DCT32X8, AcStrategy::Type::DCT16X16,
+                          AcStrategy::Type::DCT},
+                         out);
   }
   if (current == AcStrategy::Type::DCT16X32) {
-    return ACSCandidates(
-        {AcStrategy::Type::DCT8X32, AcStrategy::Type::DCT16X16, AcStrategy::Type::DCT}, out);
+    return ACSCandidates({AcStrategy::Type::DCT8X32, AcStrategy::Type::DCT16X16,
+                          AcStrategy::Type::DCT},
+                         out);
   }
   if (current == AcStrategy::Type::DCT32X8) {
     return ACSCandidates({AcStrategy::Type::DCT16X8, AcStrategy::Type::DCT},
@@ -478,8 +481,8 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     // bias.
     entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
   }
-  float ret =
-      entropy + masking * config.info_loss_multiplier * GetLane(SumOfLanes(info_loss));
+  float ret = entropy + masking * config.info_loss_multiplier *
+                            GetLane(SumOfLanes(info_loss));
   return ret;
 }
 
@@ -629,8 +632,10 @@ void FindBestAcStrategy(const Image3F& src,
   }
 
   // Maximum delta that every strategy type is allowed to have in the area
-  // it covers. Ignored for 8x8 transforms. This heuristic is now mostly disabled.
-  const float kMaxDelta = 0.5f * std::sqrt(butteraugli_target + 0.5);  // OPTIMIZE
+  // it covers. Ignored for 8x8 transforms. This heuristic is now mostly
+  // disabled.
+  const float kMaxDelta =
+      0.5f * std::sqrt(butteraugli_target + 0.5);  // OPTIMIZE
 
   ACSConfig config;
   config.dequant = &enc_state->shared.matrices;
@@ -772,6 +777,13 @@ void FindBestAcStrategy(const Image3F& src,
           AcStrategy acs = AcStrategy::FromRawStrategy(i);
           size_t cx = acs.covered_blocks_x();
           size_t cy = acs.covered_blocks_y();
+          // Only blocks up to a certain size if targeting faster decoding.
+          if (cparams.decoding_speed_tier >= 1) {
+            if (cx * cy > 16) continue;
+          }
+          if (cparams.decoding_speed_tier >= 2) {
+            if (cx * cy > 8) continue;
+          }
           float max_delta_v[3] = {max_delta[0][iy * 8 + ix],
                                   max_delta[1][iy * 8 + ix],
                                   max_delta[2][iy * 8 + ix]};

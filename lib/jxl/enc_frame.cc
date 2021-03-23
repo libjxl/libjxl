@@ -241,7 +241,8 @@ Status LoopFilterFromParams(const CompressParams& cparams,
   // Gaborish defaults to enabled in Hare or slower.
   loop_filter->gab = ApplyOverride(
       cparams.gaborish, cparams.speed_tier <= SpeedTier::kHare &&
-                            frame_header->encoding == FrameEncoding::kVarDCT);
+                            frame_header->encoding == FrameEncoding::kVarDCT &&
+                            cparams.decoding_speed_tier < 4);
 
   if (cparams.epf != -1) {
     loop_filter->epf_iters = cparams.epf;
@@ -251,9 +252,11 @@ Status LoopFilterFromParams(const CompressParams& cparams,
     } else {
       constexpr float kThresholds[3] = {0.7, 1.5, 4.0};
       loop_filter->epf_iters = 0;
-      for (size_t i = 0; i < 3; i++) {
-        if (cparams.butteraugli_distance >= kThresholds[i]) {
-          loop_filter->epf_iters++;
+      if (cparams.decoding_speed_tier < 3) {
+        for (size_t i = cparams.decoding_speed_tier == 2 ? 1 : 0; i < 3; i++) {
+          if (cparams.butteraugli_distance >= kThresholds[i]) {
+            loop_filter->epf_iters++;
+          }
         }
       }
     }
@@ -931,6 +934,9 @@ class LossyFrameEncoder {
           enc_state_->shared.block_ctx_map.NumACContexts());
       if (enc_state_->cparams.speed_tier > SpeedTier::kTortoise) {
         hist_params.lz77_method = HistogramParams::LZ77Method::kNone;
+      }
+      if (enc_state_->cparams.decoding_speed_tier >= 1) {
+        hist_params.max_histograms = 6;
       }
       BuildAndEncodeHistograms(
           hist_params,

@@ -21,6 +21,8 @@
 #include <utility>
 #include <vector>
 
+#include "jxl/decode_cxx.h"
+#include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -32,6 +34,7 @@
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_bundle.h"
@@ -113,8 +116,15 @@ class JxlCodec : public ImageCodec {
       parser >> cparams_.resampling;
     } else if (ImageCodec::ParseParam(param)) {
       // Nothing to do.
+    } else if (param == "uint8") {
+      uint8_ = true;
     } else if (param[0] == 'u') {
-      cparams_.uniform_quant = strtof(param.substr(1).c_str(), nullptr);
+      char* end;
+      cparams_.uniform_quant = strtof(param.c_str() + 1, &end);
+      if (end == param.c_str() + 1 || *end != '\0') {
+        return JXL_FAILURE("failed to parse uniform quant parameter %s",
+                           param.c_str());
+      }
       ba_params_.hf_asymmetry = args_.ba_params.hf_asymmetry;
     } else if (param.substr(0, kMaxPassesPrefix.size()) == kMaxPassesPrefix) {
       std::istringstream parser(param.substr(kMaxPassesPrefix.size()));
@@ -192,6 +202,9 @@ class JxlCodec : public ImageCodec {
       if (cparams_.epf > 3) {
         return JXL_FAILURE("Invalid epf value");
       }
+    } else if (param.substr(0, 16) == "faster_decoding=") {
+      cparams_.decoding_speed_tier =
+          strtol(param.substr(16).c_str(), nullptr, 10);
     } else {
       return JXL_FAILURE("Unrecognized param");
     }
@@ -211,7 +224,7 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     if (!jxlargs->debug_image_dir.empty()) {
       cinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
@@ -259,22 +272,113 @@ class JxlCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    const Span<const uint8_t> compressed,
+                    ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
-    if (!jxlargs->debug_image_dir.empty()) {
-      dinfo_.dump_image = [](const CodecInOut& io, const std::string& path) {
-        return EncodeToFile(io, path);
-      };
-      dinfo_.debug_prefix =
-          JoinPath(jxlargs->debug_image_dir, FileBaseName(filename)) +
-          ".jxl:" + params_ + ".dbg/";
-      JXL_RETURN_IF_ERROR(MakeDir(dinfo_.debug_prefix));
+    io->frames.clear();
+    if (dparams_ != DecompressParams{}) {
+      // Must use the C++ API to honor non-default dparams.
+      if (uint8_) {
+        return JXL_FAILURE(
+            "trying to use decompress params that are not all available in "
+            "either decoding API");
+      }
+      const double start = Now();
+      JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, pool));
+      const double end = Now();
+      speed_stats->NotifyElapsed(end - start);
+      return true;
     }
+
+    double elapsed_convert_image = 0;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeFile(dparams_, compressed, io, pool));
+    {
+      std::vector<uint8_t> pixel_data;
+      PaddedBytes icc_profile;
+      auto runner = JxlThreadParallelRunnerMake(nullptr, pool->NumThreads());
+      auto dec = JxlDecoderMake(nullptr);
+      JXL_RETURN_IF_ERROR(
+          JXL_DEC_SUCCESS ==
+          JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
+                                                   JXL_DEC_COLOR_ENCODING |
+                                                   JXL_DEC_FULL_IMAGE));
+      JxlBasicInfo info{};
+      JxlPixelFormat format = {.num_channels = 3,
+                               .data_type = JXL_TYPE_FLOAT,
+                               .endianness = JXL_NATIVE_ENDIAN,
+                               .align = 0};
+      if (uint8_) {
+        format.data_type = JXL_TYPE_UINT8;
+      }
+      JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+      JxlDecoderStatus status;
+      while ((status = JxlDecoderProcessInput(dec.get())) != JXL_DEC_SUCCESS) {
+        switch (status) {
+          case JXL_DEC_ERROR:
+            return JXL_FAILURE("decoder error");
+          case JXL_DEC_NEED_MORE_INPUT:
+            return JXL_FAILURE("decoder requests more input");
+          case JXL_DEC_BASIC_INFO:
+            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
+                                JxlDecoderGetBasicInfo(dec.get(), &info));
+            if (info.alpha_bits != 0) {
+              ++format.num_channels;
+            }
+            break;
+          case JXL_DEC_COLOR_ENCODING: {
+            size_t icc_size;
+            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
+                                JxlDecoderGetICCProfileSize(
+                                    dec.get(), &format,
+                                    JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
+            icc_profile.resize(icc_size);
+            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
+                                JxlDecoderGetColorAsICCProfile(
+                                    dec.get(), &format,
+                                    JXL_COLOR_PROFILE_TARGET_DATA,
+                                    icc_profile.data(), icc_profile.size()));
+            break;
+          }
+          case JXL_DEC_NEED_IMAGE_OUT_BUFFER: {
+            size_t buffer_size;
+            JXL_RETURN_IF_ERROR(
+                JXL_DEC_SUCCESS ==
+                JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size));
+            JXL_RETURN_IF_ERROR(buffer_size ==
+                                info.xsize * info.ysize * format.num_channels *
+                                    (uint8_ ? sizeof(uint8_t) : sizeof(float)));
+            pixel_data.resize(buffer_size);
+            JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
+                                JxlDecoderSetImageOutBuffer(dec.get(), &format,
+                                                            pixel_data.data(),
+                                                            buffer_size));
+            break;
+          }
+          case JXL_DEC_FULL_IMAGE: {
+            const double start_convert_image = Now();
+            {
+              ColorEncoding color_encoding;
+              JXL_RETURN_IF_ERROR(
+                  color_encoding.SetICC(PaddedBytes(icc_profile)));
+              ImageBundle frame(&io->metadata.m);
+              JXL_RETURN_IF_ERROR(BufferToImageBundle(
+                  format, info.xsize, info.ysize, pixel_data.data(),
+                  pixel_data.size(), pool, color_encoding, &frame));
+              io->frames.push_back(std::move(frame));
+              io->dec_pixels += info.xsize * info.ysize;
+            }
+            const double end_convert_image = Now();
+            elapsed_convert_image += end_convert_image - start_convert_image;
+            break;
+          }
+          default:
+            return JXL_FAILURE("unrecognized status %d",
+                               static_cast<int>(status));
+        }
+      }
+    }
     const double end = Now();
-    speed_stats->NotifyElapsed(end - start);
+    speed_stats->NotifyElapsed(end - start - elapsed_convert_image);
     return true;
   }
 
@@ -287,10 +391,10 @@ class JxlCodec : public ImageCodec {
 
  protected:
   AuxOut cinfo_;
-  AuxOut dinfo_;
   CompressParams cparams_;
   bool has_ctransform_ = false;
   DecompressParams dparams_;
+  bool uint8_ = false;
 };
 
 ImageCodec* CreateNewJxlCodec(const BenchmarkArgs& args) {

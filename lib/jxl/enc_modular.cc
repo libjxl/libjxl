@@ -170,6 +170,14 @@ Tree PredefinedTree(ModularOptions::TreeKind tree_kind, size_t total_pixels) {
     return MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
                          cutoffs, Predictor::Weighted, total_pixels);
   }
+  if (tree_kind == ModularOptions::TreeKind::kGradientFixedDC) {
+    std::vector<int32_t> cutoffs = {
+        -500, -392, -255, -191, -127, -95, -63, -47, -31, -23, -15,
+        -11,  -7,   -4,   -3,   -1,   0,   1,   3,   5,   7,   11,
+        15,   23,   31,   47,   63,   95,  127, 191, 255, 392, 500};
+    return MakeFixedTree(kGradientProp, cutoffs, Predictor::Gradient,
+                         total_pixels);
+  }
   JXL_ABORT("Unreachable");
   return {};
 }
@@ -1016,6 +1024,9 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   } else {
     params.lz77_method = HistogramParams::LZ77Method::kLZ77;
   }
+  if (cparams.decoding_speed_tier >= 1) {
+    params.max_histograms = 12;
+  }
   BuildAndEncodeHistograms(params, kNumTreeContexts, tree_tokens, &code,
                            &context_map, writer, kLayerModularTree, aux_out);
   WriteTokens(tree_tokens[0], code, context_map, writer, kLayerModularTree,
@@ -1355,12 +1366,23 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   return true;
 }
 
-int Quantize(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
-             size_t w, weighted::State* wp_state, float value,
-             float inv_factor) {
+int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
+               size_t w, weighted::State* wp_state, float value,
+               float inv_factor) {
   float svalue = value * inv_factor;
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
+  svalue -= pred.guess;
+  int residual = std::round(svalue);
+  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5) * 2;
+  return residual + pred.guess;
+}
+
+int QuantizeGradient(const int32_t* qrow, size_t onerow, size_t c, size_t x,
+                     size_t y, size_t w, float value, float inv_factor) {
+  float svalue = value * inv_factor;
+  PredictionResult pred =
+      PredictNoTreeNoWP(w, qrow + x, onerow, x, y, Predictor::Gradient);
   svalue -= pred.guess;
   int residual = std::round(svalue);
   if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5) * 2;
@@ -1381,9 +1403,43 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   if (cparams.speed_tier >= SpeedTier::kSquirrel) {
     stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
   }
+  if (cparams.decoding_speed_tier >= 1) {
+    stream_options[stream_id].tree_kind =
+        ModularOptions::TreeKind::kGradientFixedDC;
+  }
 
   stream_images[stream_id] = Image(r.xsize(), r.ysize(), 255, 3);
-  if (nl_dc) {
+  if (nl_dc && stream_options[stream_id].tree_kind ==
+                   ModularOptions::TreeKind::kGradientFixedDC) {
+    JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling.Is444());
+    for (size_t c : {1, 0, 2}) {
+      float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
+      float y_factor = enc_state->shared.quantizer.GetDcStep(1) / mul;
+      float cfl_factor = enc_state->shared.cmap.DCFactors()[c];
+      for (size_t y = 0; y < r.ysize(); y++) {
+        int32_t* quant_row =
+            stream_images[stream_id].channel[c < 2 ? c ^ 1 : c].plane.Row(y);
+        size_t stride = stream_images[stream_id]
+                            .channel[c < 2 ? c ^ 1 : c]
+                            .plane.PixelsPerRow();
+        const float* row = r.ConstPlaneRow(dc, c, y);
+        if (c == 1) {
+          for (size_t x = 0; x < r.xsize(); x++) {
+            quant_row[x] = QuantizeGradient(quant_row, stride, c, x, y,
+                                            r.xsize(), row[x], inv_factor);
+          }
+        } else {
+          int32_t* quant_row_y =
+              stream_images[stream_id].channel[0].plane.Row(y);
+          for (size_t x = 0; x < r.xsize(); x++) {
+            quant_row[x] = QuantizeGradient(
+                quant_row, stride, c, x, y, r.xsize(),
+                row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
+          }
+        }
+      }
+    }
+  } else if (nl_dc) {
     JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling.Is444());
     for (size_t c : {1, 0, 2}) {
       float inv_factor = enc_state->shared.quantizer.GetInvDcStep(c) * mul;
@@ -1400,15 +1456,15 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = Quantize(quant_row, stride, c, x, y, r.xsize(),
-                                    &wp_state, row[x], inv_factor);
+            quant_row[x] = QuantizeWP(quant_row, stride, c, x, y, r.xsize(),
+                                      &wp_state, row[x], inv_factor);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());
           }
         } else {
           int32_t* quant_row_y =
               stream_images[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = Quantize(
+            quant_row[x] = QuantizeWP(
                 quant_row, stride, c, x, y, r.xsize(), &wp_state,
                 row[x] - quant_row_y[x] * (y_factor * cfl_factor), inv_factor);
             wp_state.UpdateErrors(quant_row[x], x, y, r.xsize());

@@ -260,18 +260,34 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
  *
  * @param options set of encoder options to update with the new mode
  * @param lossless whether the options should be lossless
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetLossless(JxlEncoderOptions* options, JXL_BOOL lossless);
 
 /**
- * Sets encoder effort/speed level. Valid values are, from faster to slower
- * speed:
- * 3:falcon 4:cheetah 5:hare 6:wombat 7:squirrel 8:kitten 9:tortoise
- * Default: squirrel (7).
+ * Set the decoding speed tier for the provided options. Minimum is 0 (highest
+ * quality), and maximum is 4 (lowest quality). Default is 0.
+ *
+ * @param options set of encoder options to update with the new decoding speed
+ * tier.
+ * @param tier the decoding speed tier to set.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
+ */
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options, int tier);
+
+/**
+ * Sets encoder effort/speed level without affecting decoding speed. Valid
+ * values are, from faster to slower speed: 3:falcon 4:cheetah 5:hare 6:wombat
+ * 7:squirrel 8:kitten 9:tortoise Default: squirrel (7).
  *
  * @param options set of encoder options to update with the new mode.
  * @param effort the effort value to set.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
@@ -289,6 +305,8 @@ JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
  *
  * @param options set of encoder options to update with the new mode.
  * @param distance the distance value to set.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);

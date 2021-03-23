@@ -103,18 +103,17 @@ void Transpose8x8InPlace(int32_t* JXL_RESTRICT block) {
 }
 
 template <ACType ac_type>
-void DequantLane(Vec<D> scaled_dequant, Vec<D> x_dm_multiplier,
-                 Vec<D> b_dm_multiplier,
+void DequantLane(Vec<D> scaled_dequant_x, Vec<D> scaled_dequant_y,
+                 Vec<D> scaled_dequant_b,
                  const float* JXL_RESTRICT dequant_matrices, size_t dq_ofs,
                  size_t size, size_t k, Vec<D> x_cc_mul, Vec<D> b_cc_mul,
                  const float* JXL_RESTRICT biases, ACPtr qblock[3],
                  float* JXL_RESTRICT block) {
-  const auto x_mul =
-      Load(d, dequant_matrices + dq_ofs + k) * scaled_dequant * x_dm_multiplier;
+  const auto x_mul = Load(d, dequant_matrices + dq_ofs + k) * scaled_dequant_x;
   const auto y_mul =
-      Load(d, dequant_matrices + dq_ofs + size + k) * scaled_dequant;
-  const auto b_mul = Load(d, dequant_matrices + dq_ofs + 2 * size + k) *
-                     scaled_dequant * b_dm_multiplier;
+      Load(d, dequant_matrices + dq_ofs + size + k) * scaled_dequant_y;
+  const auto b_mul =
+      Load(d, dequant_matrices + dq_ofs + 2 * size + k) * scaled_dequant_b;
 
   Vec<DI> quantized_x_int;
   Vec<DI> quantized_y_int;
@@ -130,13 +129,12 @@ void DequantLane(Vec<D> scaled_dequant, Vec<D> x_dm_multiplier,
     quantized_b_int = Load(di, qblock[2].ptr32 + k);
   }
 
-  const auto quantized_x = ConvertTo(d, quantized_x_int);
-  const auto quantized_y = ConvertTo(d, quantized_y_int);
-  const auto quantized_b = ConvertTo(d, quantized_b_int);
-
-  const auto dequant_x_cc = AdjustQuantBias(d, 0, quantized_x, biases) * x_mul;
-  const auto dequant_y = AdjustQuantBias(d, 1, quantized_y, biases) * y_mul;
-  const auto dequant_b_cc = AdjustQuantBias(d, 2, quantized_b, biases) * b_mul;
+  const auto dequant_x_cc =
+      AdjustQuantBias(di, 0, quantized_x_int, biases) * x_mul;
+  const auto dequant_y =
+      AdjustQuantBias(di, 1, quantized_y_int, biases) * y_mul;
+  const auto dequant_b_cc =
+      AdjustQuantBias(di, 2, quantized_b_int, biases) * b_mul;
 
   const auto dequant_x = MulAdd(x_cc_mul, dequant_y, dequant_x_cc);
   const auto dequant_b = MulAdd(b_cc_mul, dequant_y, dequant_b_cc);
@@ -157,14 +155,16 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
                   ACPtr qblock[3], float* JXL_RESTRICT block) {
   PROFILER_FUNC;
 
-  const auto scaled_dequant = Set(d, inv_global_scale / quant);
-  const auto x_dm_multiplier_v = Set(d, x_dm_multiplier);
-  const auto b_dm_multiplier_v = Set(d, b_dm_multiplier);
+  const auto scaled_dequant_s = inv_global_scale / quant;
+
+  const auto scaled_dequant_x = Set(d, scaled_dequant_s * x_dm_multiplier);
+  const auto scaled_dequant_y = Set(d, scaled_dequant_s);
+  const auto scaled_dequant_b = Set(d, scaled_dequant_s * b_dm_multiplier);
 
   const size_t dq_ofs = quantizer.DequantMatrixOffset(kind, 0);
 
   for (size_t k = 0; k < covered_blocks * kDCTBlockSize; k += Lanes(d)) {
-    DequantLane<ac_type>(scaled_dequant, x_dm_multiplier_v, b_dm_multiplier_v,
+    DequantLane<ac_type>(scaled_dequant_x, scaled_dequant_y, scaled_dequant_b,
                          dequant_matrices, dq_ofs, size, k, x_cc_mul, b_cc_mul,
                          biases, qblock, block);
   }
@@ -179,6 +179,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                        PassesDecoderState* JXL_RESTRICT dec_state,
                        size_t thread, size_t group_idx, ImageBundle* decoded,
                        DrawMode draw) {
+  // TODO(veluca): investigate cache usage in this function.
   PROFILER_FUNC;
   constexpr size_t kGroupDataXBorder = PassesDecoderState::kGroupDataXBorder;
   constexpr size_t kGroupDataYBorder = PassesDecoderState::kGroupDataYBorder;

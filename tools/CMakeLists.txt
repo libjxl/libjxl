@@ -126,6 +126,7 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
     epf_main
     ssimulacra_main
     xyb_range
+    jxl_from_tree
   )
 
   add_executable(fuzzer_corpus fuzzer_corpus.cc)
@@ -136,6 +137,7 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(epf_main epf_main.cc epf.cc epf.h)
   add_executable(xyb_range xyb_range.cc)
+  add_executable(jxl_from_tree jxl_from_tree.cc)
 endif()  # JPEGXL_ENABLE_DEVTOOLS
 
 # Benchmark tools.

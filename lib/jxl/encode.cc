@@ -77,35 +77,6 @@ Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
   return true;
 }
 
-namespace {
-// Extends vec with size, and returns a pointer to the beginning of the
-// extension.
-uint8_t* ExtendVector(std::vector<uint8_t>* vec, size_t size) {
-  vec->resize(vec->size() + size, 0);
-  return vec->data() + vec->size() - size;
-}
-}  // namespace
-
-void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
-                     std::vector<uint8_t>* output) {
-  uint64_t box_size = 0;
-  bool large_size = false;
-  if (!unbounded) {
-    box_size = size + 8;
-    if (box_size >= 0x100000000ull) {
-      large_size = true;
-    }
-  }
-
-  StoreBE32(large_size ? 1 : box_size, ExtendVector(output, 4));
-
-  output->insert(output->end(), type.data(), type.data() + 4);
-
-  if (large_size) {
-    StoreBE64(box_size, ExtendVector(output, 8));
-  }
-}
-
 }  // namespace jxl
 
 uint32_t JxlEncoderVersion(void) {
@@ -453,14 +424,23 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
   return JXL_ENC_SUCCESS;
 }
 
-JXL_EXPORT void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
-                                          JXL_BOOL is_gray) {
+JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options,
+                                                   int tier) {
+  if (tier < 0 || tier > 4) {
+    return JXL_ENC_ERROR;
+  }
+  options->values.cparams.decoding_speed_tier = tier;
+  return JXL_ENC_SUCCESS;
+}
+
+void JxlColorEncodingSetToSRGB(JxlColorEncoding* color_encoding,
+                               JXL_BOOL is_gray) {
   ConvertInternalToExternalColorEncoding(jxl::ColorEncoding::SRGB(is_gray),
                                          color_encoding);
 }
 
-JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
-    JxlColorEncoding* color_encoding, JXL_BOOL is_gray) {
+void JxlColorEncodingSetToLinearSRGB(JxlColorEncoding* color_encoding,
+                                     JXL_BOOL is_gray) {
   ConvertInternalToExternalColorEncoding(
       jxl::ColorEncoding::LinearSRGB(is_gray), color_encoding);
 }

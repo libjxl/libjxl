@@ -17,6 +17,7 @@
 
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
@@ -172,10 +173,6 @@ class AvifCodec : public ImageCodec {
       if (param.size() != 6) return false;
       return ParseChromaSubsampling(param.c_str() + 3, &chroma_subsampling_);
     }
-    if (param.compare(0, 12, "num_threads=") == 0) {
-      num_threads_ = strtol(param.c_str() + 12, nullptr, 10);
-      return true;
-    }
     if (param.compare(0, 10, "log2_cols=") == 0) {
       log2_cols = strtol(param.c_str() + 10, nullptr, 10);
       return true;
@@ -213,8 +210,9 @@ class AvifCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
+    double elapsed_convert_image = 0;
     const double start = Now();
     {
       const auto depth =
@@ -230,7 +228,7 @@ class AvifCodec : public ImageCodec {
       encoder->tileColsLog2 = log2_cols;
       encoder->tileRowsLog2 = log2_rows;
       encoder->speed = speed_;
-      encoder->maxThreads = num_threads_;
+      encoder->maxThreads = pool->NumThreads();
       avifAddImageFlags add_image_flags = AVIF_ADD_IMAGE_FLAG_SINGLE;
       if (io->metadata.m.have_animation) {
         encoder->timescale = std::lround(
@@ -255,12 +253,15 @@ class AvifCodec : public ImageCodec {
         avifRGBImageAllocatePixels(&rgb_image);
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
+        const double start_convert_image = Now();
         JXL_RETURN_IF_ERROR(ConvertToExternal(
             ib, depth, /*float_out=*/false, /*apply_srgb_tf=*/false,
             /*num_channels=*/ib.HasAlpha() ? 4 : 3, JXL_NATIVE_ENDIAN,
             /*stride=*/rgb_image.rowBytes, pool, rgb_image.pixels,
             rgb_image.rowBytes * rgb_image.height,
             jxl::Orientation::kIdentity));
+        const double end_convert_image = Now();
+        elapsed_convert_image += end_convert_image - start_convert_image;
         JXL_RETURN_IF_AVIF_ERROR(avifImageRGBToYUV(image.get(), &rgb_image));
         JXL_RETURN_IF_AVIF_ERROR(avifEncoderAddImage(
             encoder.get(), image.get(), ib.duration, add_image_flags));
@@ -271,22 +272,23 @@ class AvifCodec : public ImageCodec {
       avifRWDataFree(&buffer);
     }
     const double end = Now();
-    speed_stats->NotifyElapsed(end - start);
+    speed_stats->NotifyElapsed(end - start - elapsed_convert_image);
     return true;
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    const Span<const uint8_t> compressed,
+                    ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     io->frames.clear();
     io->dec_pixels = 0;
+    double elapsed_convert_image = 0;
     const double start = Now();
     {
       std::unique_ptr<avifDecoder, void (*)(avifDecoder*)> decoder(
           avifDecoderCreate(), &avifDecoderDestroy);
       decoder->codecChoice = decoder_;
-      decoder->maxThreads = num_threads_;
+      decoder->maxThreads = pool->NumThreads();
       JXL_RETURN_IF_AVIF_ERROR(avifDecoderSetIOMemory(
           decoder.get(), compressed.data(), compressed.size()));
       JXL_RETURN_IF_AVIF_ERROR(avifDecoderParse(decoder.get()));
@@ -309,22 +311,27 @@ class AvifCodec : public ImageCodec {
         std::unique_ptr<avifRGBImage, void (*)(avifRGBImage*)> pixels_freer(
             &rgb_image, &avifRGBImageFreePixels);
         JXL_RETURN_IF_AVIF_ERROR(avifImageYUVToRGB(decoder->image, &rgb_image));
-        ImageBundle ib(&io->metadata.m);
-        JXL_RETURN_IF_ERROR(ConvertFromExternal(
-            Span<const uint8_t>(rgb_image.pixels,
-                                rgb_image.height * rgb_image.rowBytes),
-            rgb_image.width, rgb_image.height, color, has_alpha,
-            /*alpha_is_premultiplied=*/false, rgb_image.depth,
-            JXL_NATIVE_ENDIAN, /*flipped_y=*/false, pool, &ib));
-        io->frames.push_back(std::move(ib));
-        io->dec_pixels += rgb_image.width * rgb_image.height;
+        const double start_convert_image = Now();
+        {
+          ImageBundle ib(&io->metadata.m);
+          JXL_RETURN_IF_ERROR(ConvertFromExternal(
+              Span<const uint8_t>(rgb_image.pixels,
+                                  rgb_image.height * rgb_image.rowBytes),
+              rgb_image.width, rgb_image.height, color, has_alpha,
+              /*alpha_is_premultiplied=*/false, rgb_image.depth,
+              JXL_NATIVE_ENDIAN, /*flipped_y=*/false, pool, &ib));
+          io->frames.push_back(std::move(ib));
+          io->dec_pixels += rgb_image.width * rgb_image.height;
+        }
+        const double end_convert_image = Now();
+        elapsed_convert_image += end_convert_image - start_convert_image;
       }
       if (next_image != AVIF_RESULT_NO_IMAGES_REMAINING) {
         JXL_RETURN_IF_AVIF_ERROR(next_image);
       }
     }
     const double end = Now();
-    speed_stats->NotifyElapsed(end - start);
+    speed_stats->NotifyElapsed(end - start - elapsed_convert_image);
     return true;
   }
 
@@ -333,7 +340,6 @@ class AvifCodec : public ImageCodec {
   avifCodecChoice encoder_ = AVIF_CODEC_CHOICE_AUTO;
   avifCodecChoice decoder_ = AVIF_CODEC_CHOICE_AUTO;
   int speed_ = AVIF_SPEED_DEFAULT;
-  int num_threads_ = 0;
   int log2_cols = 0;
   int log2_rows = 0;
 };

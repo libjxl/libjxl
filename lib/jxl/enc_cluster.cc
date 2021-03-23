@@ -181,6 +181,7 @@ void ClusterHistograms(const HistogramParams params,
                        std::vector<uint32_t>* histogram_symbols) {
   constexpr float kMinDistanceForDistinctFast = 64.0f;
   constexpr float kMinDistanceForDistinctBest = 16.0f;
+  max_histograms = std::min(max_histograms, params.max_histograms);
   if (params.clustering == HistogramParams::ClusteringType::kFastest) {
     HWY_DYNAMIC_DISPATCH(FastClusterHistograms)
     (in, num_contexts, 4, kMinDistanceForDistinctFast, out, histogram_symbols);

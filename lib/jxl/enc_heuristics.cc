@@ -34,6 +34,23 @@
 namespace jxl {
 namespace {
 void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
+  if (enc_state.cparams.decoding_speed_tier >= 1) {
+    static constexpr uint8_t kSimpleCtxMap[] = {
+        // Cluster all blocks together
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  //
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  //
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,  //
+    };
+    static_assert(
+        3 * kNumOrders == sizeof(kSimpleCtxMap) / sizeof *kSimpleCtxMap,
+        "Update simple context map");
+
+    auto bcm = enc_state.shared.block_ctx_map;
+    bcm.ctx_map.assign(std::begin(kSimpleCtxMap), std::end(kSimpleCtxMap));
+    bcm.num_ctxs = 2;
+    bcm.num_dc_ctxs = 1;
+    return;
+  }
   if (enc_state.cparams.speed_tier == SpeedTier::kFalcon) {
     return;
   }
@@ -146,6 +163,7 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   enc_state.shared.block_ctx_map.num_ctxs =
       *std::max_element(ctx_map.begin(), ctx_map.end()) + 1;
 }
+
 // Returns the target size based on whether bitrate or direct targetsize is
 // given.
 size_t TargetSize(const CompressParams& cparams,
@@ -164,6 +182,7 @@ void FindBestDequantMatrices(const CompressParams& cparams,
                              const Image3F& opsin,
                              ModularFrameEncoder* modular_frame_encoder,
                              DequantMatrices* dequant_matrices) {
+  // TODO(veluca): quant matrices for no-gaborish.
   // TODO(veluca): heuristics for in-bitstream quant tables.
   *dequant_matrices = DequantMatrices();
   if (cparams.max_error_mode) {
@@ -249,8 +268,12 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
       // Call this here, as it relies on pre-gaborish values.
       // TODO(veluca): adjust to post-gaborish values.
       // TODO(veluca): call after image features.
+      float butteraugli_distance_for_iqf = cparams.butteraugli_distance;
+      if (!shared.frame_header.loop_filter.gab) {
+        butteraugli_distance_for_iqf *= 0.73f;
+      }
       enc_state->initial_quant_field = InitialQuantField(
-          cparams.butteraugli_distance, *opsin, shared.frame_dim, pool, 1.0f,
+          butteraugli_distance_for_iqf, *opsin, shared.frame_dim, pool, 1.0f,
           &enc_state->initial_quant_masking);
     }
   }

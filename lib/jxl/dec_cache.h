@@ -75,6 +75,17 @@ struct PassesDecoderState {
   Image3F borders_horizontal;
   Image3F borders_vertical;
 
+  // RGB8 output buffer. If not nullptr, image data will be written to this
+  // buffer instead of being written to the output ImageBundle. The image data
+  // is assumed to be contiguous, hence row `i` starts at position `image_xsize
+  // * i * 3`.
+  uint8_t* rgb_output;
+  // Whether to use int16 float-XYB-to-uint8-srgb conversion.
+  bool fast_xyb_srgb8_conversion;
+
+  // If true, rgb_output is RGBA using 4 instead of 3 bytes per pixel.
+  bool rgb_output_is_rgba;
+
   // Seed for noise, to have different noise per-frame.
   size_t noise_seed = 0;
 
@@ -115,6 +126,9 @@ struct PassesDecoderState {
   std::vector<Image3F> filter_input_storage;
   std::vector<Image3F> padded_upsampling_input_storage;
   std::vector<Image3F> upsampling_input_storage;
+  // We keep four arrays, one per upsampling level, to reduce memory usage in
+  // the common case of no upsampling.
+  std::vector<Image3F> output_pixel_data_storage[4] = {};
 
   // Buffer for decoded pixel data for a group.
   std::vector<Image3F> group_data;
@@ -154,6 +168,19 @@ struct PassesDecoderState {
     for (size_t _ = group_data.size(); _ < num_threads; _++) {
       group_data.emplace_back(kGroupDim + 2 * kGroupDataXBorder,
                               kGroupDim + 2 * kGroupDataYBorder);
+#if MEMORY_SANITIZER
+      // Avoid errors due to loading vectors on the outermost padding.
+      ZeroFillImage(&group_data.back());
+#endif
+    }
+    if (rgb_output) {
+      size_t log2_upsampling = CeilLog2Nonzero(shared->frame_header.upsampling);
+      for (size_t _ = output_pixel_data_storage[log2_upsampling].size();
+           _ < num_threads; _++) {
+        output_pixel_data_storage[log2_upsampling].emplace_back(
+            kApplyImageFeaturesTileDim << log2_upsampling,
+            kApplyImageFeaturesTileDim << log2_upsampling);
+      }
     }
   }
 
@@ -161,7 +188,7 @@ struct PassesDecoderState {
   ColorEncoding output_encoding;
 
   // Initializes decoder-specific structures using information from *shared.
-  void Init(ThreadPool* pool) {
+  void Init() {
     x_dm_multiplier =
         std::pow(1 / (1.25f), shared->frame_header.x_qm_scale - 2.0f);
     b_dm_multiplier =
@@ -172,6 +199,9 @@ struct PassesDecoderState {
             ? ColorEncoding::LinearSRGB(
                   shared->metadata->m.color_encoding.IsGray())
             : shared->metadata->m.color_encoding;
+    rgb_output = nullptr;
+    rgb_output_is_rgba = false;
+    fast_xyb_srgb8_conversion = false;
     // TODO(veluca): keep in sync with dec_reconstruct.cc.
     if (shared->metadata->m.xyb_encoded &&
         shared->frame_header.needs_color_transform() &&
@@ -181,7 +211,29 @@ struct PassesDecoderState {
     used_acs = 0;
 
     group_border_assigner.Init(shared->frame_dim);
+    const LoopFilter& lf = shared->frame_header.loop_filter;
+    filter_weights.Init(lf, shared->frame_dim);
+    for (auto& fp : filter_pipelines) {
+      // De-initialize FilterPipelines.
+      fp.num_filters = 0;
+    }
+  }
 
+  // Initialize the decoder state after all of DC is decoded.
+  void InitForAC(ThreadPool* pool) {
+    shared_storage.coeff_order_size = 0;
+    for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
+      if (((1 << o) & used_acs) == 0) continue;
+      uint8_t ord = kStrategyOrder[o];
+      shared_storage.coeff_order_size =
+          std::max(kCoeffOrderOffset[3 * (ord + 1)] * kDCTBlockSize,
+                   shared_storage.coeff_order_size);
+    }
+    size_t sz = shared_storage.frame_header.passes.num_passes *
+                shared_storage.coeff_order_size;
+    if (sz > shared_storage.coeff_orders.size()) {
+      shared_storage.coeff_orders.resize(sz);
+    }
     if (shared->frame_header.flags & FrameHeader::kNoise) {
       noise = Image3F(shared->frame_dim.xsize_upsampled_padded,
                       shared->frame_dim.ysize_upsampled_padded);
@@ -213,7 +265,6 @@ struct PassesDecoderState {
         noise_seed += shared->frame_dim.num_groups;
       }
     }
-
     if (EagerFinalizeImageRect()) {
       size_t padding = FinalizeRectPadding();
       size_t bordery = 2 * padding;
@@ -234,29 +285,6 @@ struct PassesDecoderState {
     // Avoid errors due to loading vectors on the outermost padding.
     ZeroFillImage(&decoded);
 #endif
-    const LoopFilter& lf = shared->frame_header.loop_filter;
-    filter_weights.Init(lf, shared->frame_dim);
-    for (auto& fp : filter_pipelines) {
-      // De-initialize FilterPipelines.
-      fp.num_filters = 0;
-    }
-  }
-
-  // Initialize the decoder state after all of DC is decoded.
-  void InitForAC() {
-    shared_storage.coeff_order_size = 0;
-    for (uint8_t o = 0; o < AcStrategy::kNumValidStrategies; ++o) {
-      if (((1 << o) & used_acs) == 0) continue;
-      uint8_t ord = kStrategyOrder[o];
-      shared_storage.coeff_order_size =
-          std::max(kCoeffOrderOffset[3 * (ord + 1)] * kDCTBlockSize,
-                   shared_storage.coeff_order_size);
-    }
-    size_t sz = shared_storage.frame_header.passes.num_passes *
-                shared_storage.coeff_order_size;
-    if (sz > shared_storage.coeff_orders.size()) {
-      shared_storage.coeff_orders.resize(sz);
-    }
   }
 };
 

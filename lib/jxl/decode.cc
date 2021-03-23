@@ -312,10 +312,9 @@ struct JxlDecoderStruct {
 
   // For current frame
   // Got these steps of the current frame. Reset once started on a next frame.
-  bool got_toc;
   bool got_dc_image;
   bool got_full_image;
-  // Processed the last frame, so got_toc, got_dc_image, and so on false no
+  // Processed the last frame, so got_dc_image, and so on false no
   // longer mean there is more work to do.
   bool last_frame_reached;
 
@@ -447,7 +446,6 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->last_codestream_seen = false;
   dec->got_basic_info = false;
   dec->got_all_headers = false;
-  dec->got_toc = false;
   dec->got_preview_image = false;
   dec->got_dc_image = false;
   dec->got_full_image = false;
@@ -701,8 +699,10 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
   // color/grayscale format
   const auto& metadata = dec->metadata.m;
 
-  size_t stride = frame.xsize() * (BitsPerChannel(format.data_type) *
-                                   format.num_channels / jxl::kBitsPerByte);
+  size_t stride =
+      (dec->keep_orientation ? frame.xsize() : frame.oriented_xsize()) *
+      (BitsPerChannel(format.data_type) * format.num_channels /
+       jxl::kBitsPerByte);
   if (format.align > 1) {
     stride = jxl::DivCeil(stride, format.align) * format.align;
   }
@@ -998,6 +998,13 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           reader.get(), dec->ib.get(), /*is_preview=*/false,
           /*allow_partial_frames=*/false, /*allow_partial_dc_global=*/false);
       if (!status) JXL_API_RETURN_IF_ERROR(status);
+
+      if (dec->image_out_format.data_type == JXL_TYPE_UINT8 &&
+          dec->image_out_format.num_channels >= 3) {
+        bool is_rgba = dec->image_out_format.num_channels == 4;
+        dec->frame_dec->MaybeSetRGB8OutputBuffer(
+            reinterpret_cast<uint8_t*>(dec->image_out_buffer), is_rgba);
+      }
       size_t sections_begin =
           DivCeil(reader->TotalBitsConsumed(), kBitsPerByte);
 
@@ -1019,6 +1026,14 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
     if (dec->frame_stage == FrameStage::kFull ||
         dec->frame_stage == FrameStage::kDC) {
+      if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
+        if (!dec->image_out_buffer_set &&
+            (dec->next_jpeg_reconstruction_out == nullptr ||
+             dec->ib->jpeg_data == nullptr) &&
+            dec->is_last_of_still) {
+          return JXL_DEC_NEED_IMAGE_OUT_BUFFER;
+        }
+      }
       size_t pos = dec->frame_start - dec->codestream_pos;
 
       bool get_dc = dec->is_last_of_still &&
@@ -1102,17 +1117,11 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
     if (dec->frame_stage == FrameStage::kFullOutput) {
       if (dec->is_last_of_still) {
         if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
-          if (!dec->image_out_buffer_set &&
-              (dec->next_jpeg_reconstruction_out == nullptr ||
-               dec->ib->jpeg_data == nullptr)) {
-            return JXL_DEC_NEED_IMAGE_OUT_BUFFER;
-          }
           dec->events_wanted &= ~JXL_DEC_FULL_IMAGE;
           return_full_image = true;
         }
 
         if (!dec->last_frame_reached) {
-          dec->got_toc = false;
           dec->got_dc_image = false;
           dec->got_full_image = false;
 
@@ -1147,11 +1156,13 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           dec->next_jpeg_reconstruction_out = tmp_next_out;
           dec->avail_jpeg_reconstruction_size = tmp_avail_size;
         } else if (return_full_image && dec->image_out_buffer_set) {
-          // Copy pixels if desired.
-          JxlDecoderStatus status =
-              ConvertImageInternal(dec, *dec->ib, dec->image_out_format,
-                                   dec->image_out_buffer, dec->image_out_size);
-          if (status != JXL_DEC_SUCCESS) return status;
+          if (!dec->frame_dec->HasRGBBuffer()) {
+            // Copy pixels if desired.
+            JxlDecoderStatus status = ConvertImageInternal(
+                dec, *dec->ib, dec->image_out_format, dec->image_out_buffer,
+                dec->image_out_size);
+            if (status != JXL_DEC_SUCCESS) return status;
+          }
           dec->image_out_buffer_set = false;
         }
       }
@@ -1272,6 +1283,13 @@ JxlDecoderStatus JxlDecoderProcessJPEGReconstruction(JxlDecoder* dec,
     } else {
       // Unsuccessful decoding of correct amount of data, assume error.
       return JXL_DEC_ERROR;
+    }
+  } else {
+    // Not enough data, copy the data if we haven't already.
+    if (!old_data_exists) {
+      dec->jpeg_reconstruction_buffer.insert(
+          dec->jpeg_reconstruction_buffer.end(), to_decode.data(),
+          to_decode.data() + to_decode.size());
     }
   }
   return JXL_DEC_NEED_MORE_INPUT;
@@ -1992,6 +2010,13 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
+
+  if (format->data_type == JXL_TYPE_UINT8 && format->num_channels >= 3 &&
+      dec->frame_dec_in_progress) {
+    bool is_rgba = format->num_channels == 4;
+    dec->frame_dec->MaybeSetRGB8OutputBuffer(reinterpret_cast<uint8_t*>(buffer),
+                                             is_rgba);
+  }
 
   return JXL_DEC_SUCCESS;
 }

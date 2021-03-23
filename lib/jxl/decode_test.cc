@@ -25,6 +25,7 @@
 #include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_jpg.h"
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/span.h"
@@ -146,21 +147,24 @@ namespace {
 // for grayscale or RGB images. If true, encodes the image using the ICC profile
 // returned by GetIccTestProfile, without the JXL fields, this requires the
 // image is RGB, not grayscale.
+// Providing jpeg_codestream will populate the jpeg_codestream with compressed
+// JPEG bytes, and make it possible to reconstruct those exact JPEG bytes using
+// the return value _if_ add_container indicates a box format.
 PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
                                     size_t ysize, size_t num_channels,
                                     const CompressParams& cparams,
                                     CodeStreamBoxFormat add_container,
                                     bool add_preview,
-                                    bool add_icc_profile = false) {
+                                    bool add_icc_profile = false,
+                                    PaddedBytes* jpeg_codestream = nullptr) {
   // Compress the pixels with JPEG XL.
   bool grayscale = (num_channels <= 2);
-  bool include_alpha = !(num_channels & 1);
-  size_t bitdepth = 16;
+  bool include_alpha = !(num_channels & 1) && jpeg_codestream == nullptr;
+  size_t bitdepth = jpeg_codestream == nullptr ? 16 : 8;
   CodecInOut io;
   io.SetSize(xsize, ysize);
-  ColorEncoding color_encoding = jxl::test::ColorEncodingFromDescriptor(
-      {grayscale ? ColorSpace::kGray : ColorSpace::kRGB, WhitePoint::kD65,
-       Primaries::kSRGB, TransferFunction::kSRGB, RenderingIntent::kRelative});
+  ColorEncoding color_encoding =
+      jxl::ColorEncoding::SRGB(/*is_gray=*/grayscale);
   if (add_icc_profile) {
     // the hardcoded ICC profile we attach requires RGB.
     EXPECT_EQ(false, grayscale);
@@ -178,6 +182,24 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
       pixels, xsize, ysize, color_encoding, /*has_alpha=*/include_alpha,
       /*alpha_is_premultiplied=*/false, bitdepth, JXL_BIG_ENDIAN,
       /*flipped_y=*/false, &pool, &io.Main()));
+  jxl::PaddedBytes jpeg_data;
+  if (jpeg_codestream != nullptr) {
+#if JPEGXL_ENABLE_JPEG
+    jxl::PaddedBytes jpeg_bytes;
+    EXPECT_TRUE(EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, /*quality=*/70,
+                               jxl::YCbCrChromaSubsampling(), &pool,
+                               &jpeg_bytes, jxl::DecodeTarget::kPixels));
+    jpeg_codestream->append(jpeg_bytes.data(),
+                            jpeg_bytes.data() + jpeg_bytes.size());
+    EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(
+        jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
+    EXPECT_TRUE(EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data));
+    io.metadata.m.xyb_encoded = false;
+#else   // JPEGXL_ENABLE_JPEG
+    JXL_ABORT(
+        "unable to create reconstructible JPEG without JPEG support enabled");
+#endif  // JPEGXL_ENABLE_JPEG
+  }
   if (add_preview) {
     io.preview_frame = io.Main().Copy();
     io.preview_frame.ShrinkTo(xsize / 7, ysize / 7);
@@ -224,6 +246,11 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
 
       PaddedBytes c;
       c.append(header, header + sizeof(header));
+      if (jpeg_codestream != nullptr) {
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
+                             &c);
+        c.append(jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
+      }
       if (add_container == kCSBF_Multi_First_Empty) {
         // Dummy (empty) codestream part
         AppendU32BE(8, &c);
@@ -273,6 +300,11 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
     } else {
       PaddedBytes c;
       c.append(header, header + sizeof(header));
+      if (jpeg_codestream != nullptr) {
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
+                             &c);
+        c.append(jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
+      }
       AppendU32BE(add_container == kCSBF_Single ? (compressed.size() + 8) : 0,
                   &c);
       c.push_back('j');
@@ -1357,8 +1389,6 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
   JxlPixelFormat format_orig = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::CompressParams cparams;
-  // For variation: some have container and no preview, others have preview
-  // and no container.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
       cparams, kCSBF_None, /*add_preview=*/false, /*add_icc_profile=*/true);
@@ -1401,6 +1431,68 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
             2.0f);
 
   JxlDecoderDestroy(dec);
+}
+
+// Tests the case of lossy sRGB image without alpha channel, decoded to RGB8
+// and to RGBA8
+TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
+  for (unsigned channels = 3; channels <= 4; channels++) {
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+
+    size_t xsize = 123, ysize = 77;
+    size_t num_pixels = xsize * ysize;
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+    JxlPixelFormat format_orig = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+    jxl::CompressParams cparams;
+    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, kCSBF_None, /*add_preview=*/false, /*add_icc_profile=*/false);
+
+    JxlPixelFormat format = {channels, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+        format);
+    JxlDecoderReset(dec);
+    EXPECT_EQ(num_pixels * channels, pixels2.size());
+
+    // The input pixels use the profile matching GetIccTestProfile, since we set
+    // add_icc_profile for CreateTestJXLCodestream to true.
+    jxl::ColorEncoding color_encoding0 = jxl::ColorEncoding::SRGB(false);
+    jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
+    jxl::CodecInOut io0;
+    io0.SetSize(xsize, ysize);
+    EXPECT_TRUE(ConvertFromExternal(
+        span0, xsize, ysize, color_encoding0,
+        /*has_alpha=*/false, false, 16, format_orig.endianness,
+        /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
+
+    jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
+    jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
+    jxl::CodecInOut io1;
+    if (channels == 4) {
+      io1.metadata.m.SetAlphaBits(8);
+      io1.SetSize(xsize, ysize);
+      EXPECT_TRUE(ConvertFromExternal(
+          span1, xsize, ysize, color_encoding1,
+          /*has_alpha=*/true, false, 8, format.endianness,
+          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      io1.metadata.m.SetAlphaBits(0);
+      io1.Main().ClearExtraChannels();
+    } else {
+      EXPECT_TRUE(ConvertFromExternal(
+          span1, xsize, ysize, color_encoding1,
+          /*has_alpha=*/false, false, 8, format.endianness,
+          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+    }
+
+    jxl::ButteraugliParams ba;
+    EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+              2.0f);
+
+    JxlDecoderDestroy(dec);
+  }
 }
 
 TEST(DecodeTest, GrayscaleTest) {
@@ -1469,25 +1561,39 @@ TEST(DecodeTest, GrayscaleTest) {
   }
 }
 
-// Tests the return status when trying to decode pixels on incomplete file: it
-// should return JXL_DEC_NEED_MORE_INPUT, not error.
-TEST(DecodeTest, PixelPartialTest) {
+void TestPartialStream(bool reconstructible_jpeg) {
   size_t xsize = 123, ysize = 77;
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
-  JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  uint32_t channels = 4;
+  if (reconstructible_jpeg) {
+    channels = 3;
+  }
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, channels, 0);
+  JxlPixelFormat format_orig = {channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::CompressParams cparams;
-  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  if (reconstructible_jpeg) {
+    cparams.color_transform = jxl::ColorTransform::kNone;
+  } else {
+    cparams
+        .SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  }
 
   std::vector<uint8_t> pixels2;
   pixels2.resize(pixels.size());
 
+  jxl::PaddedBytes jpeg_output(64);
+  size_t used_jpeg_output = 0;
+
   std::vector<jxl::PaddedBytes> codestreams(kCSBF_NUM_ENTRIES);
+  std::vector<jxl::PaddedBytes> jpeg_codestreams(kCSBF_NUM_ENTRIES);
   for (size_t i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
     CodeStreamBoxFormat add_container = (CodeStreamBoxFormat)i;
 
     codestreams[i] = jxl::CreateTestJXLCodestream(
-        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-        cparams, add_container, true);
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+        channels, cparams, add_container, /*add_preview=*/true,
+        /*add_icc_profile=*/false,
+        reconstructible_jpeg ? &jpeg_codestreams[i] : nullptr);
   }
 
   // Test multiple step sizes, to test different combinations of the streaming
@@ -1496,6 +1602,10 @@ TEST(DecodeTest, PixelPartialTest) {
 
   for (size_t index = 0; index < increments.size(); index++) {
     for (size_t i = 0; i < kCSBF_NUM_ENTRIES; ++i) {
+      if (reconstructible_jpeg &&
+          (CodeStreamBoxFormat)i == CodeStreamBoxFormat::kCSBF_None) {
+        continue;
+      }
       const jxl::PaddedBytes& data = codestreams[i];
       const uint8_t* next_in = data.data();
       size_t avail_in = 0;
@@ -1504,10 +1614,12 @@ TEST(DecodeTest, PixelPartialTest) {
 
       EXPECT_EQ(JXL_DEC_SUCCESS,
                 JxlDecoderSubscribeEvents(
-                    dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+                    dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE |
+                             JXL_DEC_JPEG_RECONSTRUCTION));
 
       bool seen_basic_info = false;
       bool seen_full_image = false;
+      bool seen_jpeg_recon = false;
 
       size_t total_size = 0;
 
@@ -1542,6 +1654,22 @@ TEST(DecodeTest, PixelPartialTest) {
           EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
           EXPECT_EQ(info.xsize, xsize);
           EXPECT_EQ(info.ysize, ysize);
+        } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
+          EXPECT_FALSE(seen_basic_info);
+          EXPECT_FALSE(seen_full_image);
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetJPEGBuffer(dec, jpeg_output.data(),
+                                            jpeg_output.size()));
+          seen_jpeg_recon = true;
+        } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+          EXPECT_TRUE(seen_jpeg_recon);
+          used_jpeg_output =
+              jpeg_output.size() - JxlDecoderReleaseJPEGBuffer(dec);
+          jpeg_output.resize(jpeg_output.size() * 2);
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetJPEGBuffer(
+                        dec, jpeg_output.data() + used_jpeg_output,
+                        jpeg_output.size() - used_jpeg_output));
         } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
           EXPECT_EQ(JXL_DEC_SUCCESS,
                     JxlDecoderSetImageOutBuffer(
@@ -1553,7 +1681,15 @@ TEST(DecodeTest, PixelPartialTest) {
           // This event should happen after basic info
           EXPECT_TRUE(seen_basic_info);
           seen_full_image = true;
-          EXPECT_EQ(pixels, pixels2);
+          if (reconstructible_jpeg) {
+            used_jpeg_output =
+                jpeg_output.size() - JxlDecoderReleaseJPEGBuffer(dec);
+            EXPECT_EQ(used_jpeg_output, jpeg_codestreams[i].size());
+            EXPECT_EQ(0, memcmp(jpeg_output.data(), jpeg_codestreams[i].data(),
+                                used_jpeg_output));
+          } else {
+            EXPECT_EQ(pixels, pixels2);
+          }
         } else if (status == JXL_DEC_SUCCESS) {
           EXPECT_TRUE(seen_full_image);
           break;
@@ -1572,6 +1708,15 @@ TEST(DecodeTest, PixelPartialTest) {
     }
   }
 }
+
+// Tests the return status when trying to decode pixels on incomplete file: it
+// should return JXL_DEC_NEED_MORE_INPUT, not error.
+TEST(DecodeTest, PixelPartialTest) { TestPartialStream(false); }
+
+#if JPEGXL_ENABLE_JPEG
+// Tests the return status when trying to decode JPEG bytes on incomplete file.
+TEST(DecodeTest, JPEGPartialTest) { TestPartialStream(true); }
+#endif  // JPEGXL_ENABLE_JPEG
 
 TEST(DecodeTest, DCTest) {
   using jxl::kBlockDim;
@@ -2133,11 +2278,6 @@ TEST(DecodeTest, FlushTest) {
 
   EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
 
-  // Must process input further until we get JXL_DEC_NEED_MORE_INPUT, even if
-  // data was already input before, since the processing of the frame only
-  // happens at the JxlDecoderProcessInput call after JXL_DEC_FRAME.
-  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
-
   // Output buffer not yet set
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderFlushImage(dec));
 
@@ -2147,6 +2287,11 @@ TEST(DecodeTest, FlushTest) {
   EXPECT_EQ(pixels2.size(), buffer_size);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
                                  dec, &format, pixels2.data(), pixels2.size()));
+
+  // Must process input further until we get JXL_DEC_NEED_MORE_INPUT, even if
+  // data was already input before, since the processing of the frame only
+  // happens at the JxlDecoderProcessInput call after JXL_DEC_FRAME.
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
 
@@ -2165,39 +2310,8 @@ TEST(DecodeTest, FlushTest) {
   JxlDecoderDestroy(dec);
 }
 
-TEST(DecodeTest, JPEGReconstructionTest) {
-  const std::string jpeg_path =
-      "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
-  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
-  jxl::CodecInOut orig_io;
-  ASSERT_TRUE(
-      jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(orig), &orig_io));
-  orig_io.metadata.m.xyb_encoded = false;
-  jxl::BitWriter writer;
-  ASSERT_TRUE(WriteHeaders(&orig_io.metadata, &writer, nullptr));
-  writer.ZeroPadToByte();
-  jxl::PassesEncoderState enc_state;
-  jxl::CompressParams cparams;
-  cparams.color_transform = jxl::ColorTransform::kNone;
-  ASSERT_TRUE(jxl::EncodeFrame(cparams, jxl::FrameInfo{}, &orig_io.metadata,
-                               orig_io.Main(), &enc_state,
-                               /*pool=*/nullptr, &writer,
-                               /*aux_out=*/nullptr));
-
-  jxl::PaddedBytes jpeg_data;
-  ASSERT_TRUE(EncodeJPEGData(*orig_io.Main().jpeg_data.get(), &jpeg_data));
-  std::vector<uint8_t> container;
-  container.insert(container.end(), jxl::kContainerHeader,
-                   jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
-  jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
-                       &container);
-  container.insert(container.end(), jpeg_data.data(),
-                   jpeg_data.data() + jpeg_data.size());
-  jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &container);
-  jxl::PaddedBytes codestream = std::move(writer).TakeBytes();
-  container.insert(container.end(), codestream.data(),
-                   codestream.data() + codestream.size());
-
+void VerifyJPEGReconstruction(const jxl::PaddedBytes& container,
+                              const jxl::PaddedBytes& jpeg_bytes) {
   JxlDecoderPtr dec = JxlDecoderMake(nullptr);
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(
@@ -2221,6 +2335,57 @@ TEST(DecodeTest, JPEGReconstructionTest) {
   }
   ASSERT_EQ(JXL_DEC_FULL_IMAGE, process_result);
   used = reconstructed_buffer.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
-  ASSERT_EQ(used, orig.size());
-  EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), orig.data(), used));
+  ASSERT_EQ(used, jpeg_bytes.size());
+  EXPECT_EQ(0, memcmp(reconstructed_buffer.data(), jpeg_bytes.data(), used));
+}
+
+#if JPEGXL_ENABLE_JPEG
+TEST(DecodeTest, JPEGReconstructTestCodestream) {
+  size_t xsize = 123;
+  size_t ysize = 77;
+  size_t channels = 3;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, channels, /*seed=*/0);
+  jxl::CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  jxl::PaddedBytes jpeg_codestream;
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      channels, cparams, kCSBF_Single, /*add_preview=*/true,
+      /*add_icc_profile=*/false, &jpeg_codestream);
+  VerifyJPEGReconstruction(compressed, jpeg_codestream);
+}
+#endif  // JPEGXL_ENABLE_JPEG
+
+TEST(DecodeTest, JPEGReconstructionTest) {
+  const std::string jpeg_path =
+      "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  jxl::CodecInOut orig_io;
+  ASSERT_TRUE(
+      jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(orig), &orig_io));
+  orig_io.metadata.m.xyb_encoded = false;
+  jxl::BitWriter writer;
+  ASSERT_TRUE(WriteHeaders(&orig_io.metadata, &writer, nullptr));
+  writer.ZeroPadToByte();
+  jxl::PassesEncoderState enc_state;
+  jxl::CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  ASSERT_TRUE(jxl::EncodeFrame(cparams, jxl::FrameInfo{}, &orig_io.metadata,
+                               orig_io.Main(), &enc_state,
+                               /*pool=*/nullptr, &writer,
+                               /*aux_out=*/nullptr));
+
+  jxl::PaddedBytes jpeg_data;
+  ASSERT_TRUE(EncodeJPEGData(*orig_io.Main().jpeg_data.get(), &jpeg_data));
+  jxl::PaddedBytes container;
+  container.append(jxl::kContainerHeader,
+                   jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
+  jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
+                       &container);
+  container.append(jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
+  jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &container);
+  jxl::PaddedBytes codestream = std::move(writer).TakeBytes();
+  container.append(codestream.data(), codestream.data() + codestream.size());
+  VerifyJPEGReconstruction(container, orig);
 }

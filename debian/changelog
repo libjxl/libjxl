@@ -1,3 +1,16 @@
+jpeg-xl (0.3.5) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.3.5.
+  * Memory usage improvements.
+  * New encode-time options for faster decoding at the cost of quality.
+  * Faster decoding to 8-bit output with the C API.
+  * GIMP plugin: avoid the sRGB conversion dialog for sRGB images, do not show
+    a console window on Windows.
+  * Various bug fixes.
+  * Man pages for cjxl and djxl.
+
+ -- Sami Boukortt <sboukortt@google.com>  Tue, 23 Mar 2021 15:20:44 +0100
+
 jpeg-xl (0.3.4) UNRELEASED; urgency=medium
 
   * Bump JPEG XL version to 0.3.4.

@@ -168,6 +168,13 @@ Status DoBlending(PassesDecoderState* dec_state, ImageBundle* foreground) {
                        foreground->xsize(), foreground->ysize());
   }
 
+  if (!cropbox.IsInside(bg)) {
+    return JXL_FAILURE(
+        "Trying blend %zux%zu to (%zu,%zu), but background is %zux%zu",
+        cropbox.xsize(), cropbox.ysize(), cropbox.x0(), cropbox.y0(),
+        bg.xsize(), bg.ysize());
+  }
+
   if (foreground->HasExtraChannels()) {
     for (const auto& ec_meta : foreground->metadata()->extra_channel_info) {
       if (ec_meta.dim_shift != 0) {

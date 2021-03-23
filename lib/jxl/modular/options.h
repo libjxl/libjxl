@@ -173,6 +173,7 @@ struct ModularOptions {
     kFalconACMeta,
     kACMeta,
     kWPFixedDC,
+    kGradientFixedDC,
   };
   TreeKind tree_kind = TreeKind::kLearn;
 };

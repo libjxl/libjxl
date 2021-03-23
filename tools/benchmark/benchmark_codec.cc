@@ -120,7 +120,7 @@ class NoneCodec : public ImageCodec {
   Status ParseParam(const std::string& param) override { return true; }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     PROFILER_ZONE("NoneCompress");
     const double start = Now();
@@ -137,8 +137,8 @@ class NoneCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    const Span<const uint8_t> compressed,
+                    ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     PROFILER_ZONE("NoneDecompress");
     const double start = Now();

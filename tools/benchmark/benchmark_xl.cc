@@ -83,7 +83,7 @@ Status ReadPNG(const std::string& filename, Image3F* image) {
 
 void DoCompress(const std::string& filename, const CodecInOut& io,
                 const std::vector<std::string>& extra_metrics_commands,
-                ImageCodec* codec, ThreadPool* inner_pool,
+                ImageCodec* codec, ThreadPoolInternal* inner_pool,
                 PaddedBytes* compressed, BenchmarkStats* s) {
   PROFILER_FUNC;
   ++s->total_input_files;

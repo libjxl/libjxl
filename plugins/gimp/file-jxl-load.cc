@@ -103,16 +103,23 @@ Status LoadJpegXlImage(const gchar* const filename, gint32* const image_id) {
   CodecInOut io;
   JXL_RETURN_IF_ERROR(DecodeFile(dparams, compressed, &io, &pool));
 
-  JXL_RETURN_IF_ERROR(io.TransformTo(io.metadata.m.color_encoding, &pool));
+  const ColorEncoding& color_encoding = io.metadata.m.color_encoding;
+  JXL_RETURN_IF_ERROR(io.TransformTo(color_encoding, &pool));
 
-  const PaddedBytes& icc = io.metadata.m.color_encoding.ICC();
-  GimpColorProfile* profile =
-      gimp_color_profile_new_from_icc_profile(icc.data(), icc.size(),
-                                              /*error=*/nullptr);
+  GimpColorProfile* profile = nullptr;
+  if (color_encoding.IsSRGB()) {
+    profile = gimp_color_profile_new_rgb_srgb();
+  } else if (color_encoding.IsLinearSRGB()) {
+    profile = gimp_color_profile_new_rgb_srgb_linear();
+  } else {
+    profile = gimp_color_profile_new_from_icc_profile(
+        color_encoding.ICC().data(), color_encoding.ICC().size(),
+        /*error=*/nullptr);
+  }
   if (profile == nullptr) {
     return JXL_FAILURE(
         "Failed to create GIMP color profile from %zu bytes of ICC data",
-        icc.size());
+        color_encoding.ICC().size());
   }
 
   GimpImageBaseType image_type;

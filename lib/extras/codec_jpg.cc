@@ -29,6 +29,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/base/time.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
@@ -246,7 +247,8 @@ void MyOutputMessage(j_common_ptr cinfo) {
 }  // namespace
 
 Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
-                      CodecInOut* io) {
+                      CodecInOut* io, double* const elapsed_deinterleave) {
+  if (elapsed_deinterleave != nullptr) *elapsed_deinterleave = 0;
   // Don't do anything for non-JPEG files (no need to report an error)
   if (!IsJPG(bytes)) return false;
   const DecodeTarget target = io->dec_target;
@@ -333,6 +335,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
       __msan_unpoison(row.get(), sizeof(JSAMPLE) * cinfo.output_components *
                                      cinfo.image_width);
 #endif
+      auto start = Now();
       float* const JXL_RESTRICT output_row[] = {
           image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
       if (cinfo.output_components == 1) {
@@ -346,6 +349,10 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
             output_row[c][x] = row[3 * x + c] * (1.f / kJPEGSampleMultiplier);
           }
         }
+      }
+      auto end = Now();
+      if (elapsed_deinterleave != nullptr) {
+        *elapsed_deinterleave += end - start;
       }
     }
     io->SetFromImage(std::move(image), color_encoding);

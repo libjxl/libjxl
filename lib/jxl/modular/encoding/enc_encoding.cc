@@ -185,9 +185,10 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   std::array<pixel_type, kNumStaticProperties> static_props = {chan,
                                                                (int)group_id};
   bool use_wp, is_wp_only;
+  bool is_gradient_only;
   size_t num_props;
-  FlatTree tree =
-      FilterTree(global_tree, static_props, &num_props, &use_wp, &is_wp_only);
+  FlatTree tree = FilterTree(global_tree, static_props, &num_props, &use_wp,
+                             &is_wp_only, &is_gradient_only);
   Properties properties(num_props);
   MATreeLookup tree_lookup(tree);
   JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
@@ -195,59 +196,10 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   // Check if this tree is a WP-only tree with a small enough property value
   // range.
   // Initialized to avoid clang-tidy complaining.
-  uint16_t context_lookup[2 * kWPPropRange] = {};
-  // TODO(veluca): de-duplicate code in Decode.
+  uint16_t context_lookup[2 * kPropRangeFast] = {};
+  int8_t offsets[2 * kPropRangeFast] = {};
   if (is_wp_only) {
-    struct TreeRange {
-      // Begin *excluded*, end *included*. This works best with > vs <= decision
-      // nodes.
-      int begin, end;
-      size_t pos;
-    };
-    std::vector<TreeRange> ranges;
-    ranges.push_back(TreeRange{-kWPPropRange - 1, kWPPropRange - 1, 0});
-    while (!ranges.empty()) {
-      TreeRange cur = ranges.back();
-      ranges.pop_back();
-      if (cur.begin < -kWPPropRange - 1 || cur.begin >= kWPPropRange - 1 ||
-          cur.end > kWPPropRange - 1) {
-        // Tree is outside the allowed range, exit.
-        is_wp_only = false;
-        break;
-      }
-      auto &node = tree[cur.pos];
-      // Leaf.
-      if (node.property0 == -1) {
-        if (node.predictor_offset < std::numeric_limits<int8_t>::min() ||
-            node.predictor_offset > std::numeric_limits<int8_t>::max() ||
-            node.multiplier != 1 || node.predictor_offset != 0) {
-          is_wp_only = false;
-          break;
-        }
-        for (int i = cur.begin + 1; i < cur.end + 1; i++) {
-          context_lookup[i + kWPPropRange] = node.childID;
-        }
-        continue;
-      }
-      // > side of top node.
-      if (node.properties[0] >= kNumStaticProperties) {
-        ranges.push_back(TreeRange({node.splitvals[0], cur.end, node.childID}));
-        ranges.push_back(
-            TreeRange({node.splitval0, node.splitvals[0], node.childID + 1}));
-      } else {
-        ranges.push_back(TreeRange({node.splitval0, cur.end, node.childID}));
-      }
-      // <= side
-      if (node.properties[1] >= kNumStaticProperties) {
-        ranges.push_back(
-            TreeRange({node.splitvals[1], node.splitval0, node.childID + 2}));
-        ranges.push_back(
-            TreeRange({cur.begin, node.splitvals[1], node.childID + 3}));
-      } else {
-        ranges.push_back(
-            TreeRange({cur.begin, node.splitval0, node.childID + 2}));
-      }
-    }
+    is_wp_only = TreeToLookupTable(tree, context_lookup, offsets);
   }
 
   tokens->reserve(tokens->size() + channel.w * channel.h);
@@ -273,10 +225,10 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
             x, y, channel.w, top, left, topright, topleft, toptop, &properties,
             offset);
         uint32_t pos =
-            kWPPropRange +
-            std::min(std::max(-kWPPropRange, properties[0]), kWPPropRange - 1);
+            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
+                                      kPropRangeFast - 1);
         uint32_t ctx_id = context_lookup[pos];
-        int32_t residual = r[x] - guess;
+        int32_t residual = r[x] - guess - offsets[pos];
         tokens->emplace_back(ctx_id, PackSigned(residual));
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }

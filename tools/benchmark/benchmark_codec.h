@@ -26,6 +26,7 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image.h"
@@ -67,12 +68,12 @@ class ImageCodec {
   virtual bool IsJpegTranscoder() const { return false; }
 
   virtual Status Compress(const std::string& filename, const CodecInOut* io,
-                          ThreadPool* pool, PaddedBytes* compressed,
+                          ThreadPoolInternal* pool, PaddedBytes* compressed,
                           jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual Status Decompress(const std::string& filename,
                             const Span<const uint8_t> compressed,
-                            ThreadPool* pool, CodecInOut* io,
+                            ThreadPoolInternal* pool, CodecInOut* io,
                             jpegxl::tools::SpeedStats* speed_stats) = 0;
 
   virtual void GetMoreStats(BenchmarkStats* stats) {}

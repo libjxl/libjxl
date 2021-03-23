@@ -31,11 +31,14 @@ namespace {
 using hwy::HWY_NAMESPACE::Rebind;
 using hwy::HWY_NAMESPACE::Vec;
 
-template <class DF>
-HWY_INLINE HWY_MAYBE_UNUSED Vec<DF> AdjustQuantBias(
-    DF df, const size_t c, const Vec<DF> quant,
+template <class DI>
+HWY_INLINE HWY_MAYBE_UNUSED Vec<Rebind<float, DI>> AdjustQuantBias(
+    DI di, const size_t c, const Vec<DI> quant_i,
     const float* HWY_RESTRICT biases) {
-  const Rebind<int32_t, DF> di;
+  const Rebind<float, DI> df;
+
+#if JXL_HIGH_PRECISION
+  const auto quant = ConvertTo(df, quant_i);
 
   // Compare |quant|, keep sign bit for negating result.
   const auto kSign = BitCast(df, Set(di, INT32_MIN));
@@ -54,7 +57,7 @@ HWY_INLINE HWY_MAYBE_UNUSED Vec<DF> AdjustQuantBias(
   const auto is_01 = abs_quant < Set(df, 1.125f);
   const auto not_0 = abs_quant > Zero(df);
 
-  // Bitwise logic is faster than quant * biases[3].
+  // Bitwise logic is faster than quant * biases[c].
   const auto one_bias = IfThenElseZero(not_0, Xor(Set(df, biases[c]), sign));
 
   // About 2E-5 worse than ReciprocalNR or division.
@@ -62,6 +65,12 @@ HWY_INLINE HWY_MAYBE_UNUSED Vec<DF> AdjustQuantBias(
       NegMulAdd(Set(df, biases[3]), ApproximateReciprocal(quant), quant);
 
   return IfThenElse(is_01, one_bias, bias);
+#else
+  auto sign = IfThenElseZero(quant_i < Zero(di), Set(di, INT32_MIN));
+  return BitCast(df, IfThenElse(Abs(quant_i) == Set(di, 1),
+                                sign | BitCast(di, Set(df, biases[c])),
+                                BitCast(di, ConvertTo(df, quant_i))));
+#endif
 }
 
 }  // namespace

@@ -14,7 +14,8 @@
 
 if(NOT WIN32)
   add_subdirectory(gdk-pixbuf)
-  add_subdirectory(gimp)
 endif()
+
+add_subdirectory(gimp)
 
 add_subdirectory(mime)

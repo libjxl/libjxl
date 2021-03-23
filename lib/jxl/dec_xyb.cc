@@ -24,6 +24,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/dec_group_border.h"
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image.h"
@@ -117,7 +118,7 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 // Transform YCbCr to RGB.
 // Could be performed in-place (i.e. Y, Cb and Cr could alias R, B and B).
 void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect) {
-  const HWY_FULL(float) df;
+  const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) df;
   const size_t S = Lanes(df);  // Step.
 
   const size_t xsize = rect.xsize();
@@ -307,6 +308,17 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool) {
 HWY_EXPORT(UpsampleH2);
 ImageF UpsampleH2(const ImageF& src, ThreadPool* pool) {
   return HWY_DYNAMIC_DISPATCH(UpsampleH2)(src, pool);
+}
+
+HWY_EXPORT(HasFastXYBTosRGB8);
+bool HasFastXYBTosRGB8() { return HWY_DYNAMIC_DISPATCH(HasFastXYBTosRGB8)(); }
+
+HWY_EXPORT(FastXYBTosRGB8);
+void FastXYBTosRGB8(const Image3F& input, const Rect& input_rect,
+                    const Rect& output_buf_rect,
+                    uint8_t* JXL_RESTRICT output_buf, size_t xsize) {
+  return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(
+      input, input_rect, output_buf_rect, output_buf, xsize);
 }
 
 void OpsinParams::Init(float intensity_target) {

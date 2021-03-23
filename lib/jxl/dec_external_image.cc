@@ -283,12 +283,6 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
-  if (stride < bytes_per_pixel * xsize) {
-    return JXL_FAILURE(
-        "stride is smaller than scanline width in bytes: %zu vs %zu", stride,
-        bytes_per_pixel * xsize);
-  }
-
   const Image3F* color = &ib.color();
   Image3F temp_color;
   const ImageF* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
@@ -314,6 +308,12 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
 
     xsize = color->xsize();
     ysize = color->ysize();
+  }
+
+  if (stride < bytes_per_pixel * xsize) {
+    return JXL_FAILURE(
+        "stride is smaller than scanline width in bytes: %zu vs %zu", stride,
+        bytes_per_pixel * xsize);
   }
 
   const bool little_endian =

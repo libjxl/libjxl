@@ -27,6 +27,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
+#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "tools/cmdline.h"
@@ -97,7 +98,7 @@ class JPEGCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = Now();
     JXL_RETURN_IF_ERROR(EncodeImageJPG(io, encoder_,
@@ -109,13 +110,15 @@ class JPEGCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    const Span<const uint8_t> compressed,
+                    ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
+    double elapsed_deinterleave;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, pool, io));
+    JXL_RETURN_IF_ERROR(
+        DecodeImageJPG(compressed, pool, io, &elapsed_deinterleave));
     const double end = Now();
-    speed_stats->NotifyElapsed(end - start);
+    speed_stats->NotifyElapsed(end - start - elapsed_deinterleave);
     return true;
   }
 

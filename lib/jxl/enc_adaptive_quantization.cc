@@ -1162,7 +1162,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
                                             enc_state->cparams);
   InitializePassesEncoder(opsin, pool, enc_state, modular_frame_encoder.get(),
                           nullptr);
-  dec_state->Init(pool);
+  dec_state->Init();
+  dec_state->InitForAC(pool);
 
   ImageBundle decoded(&enc_state->shared.metadata->m);
   decoded.origin = enc_state->shared.frame_header.frame_origin;

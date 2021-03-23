@@ -57,10 +57,38 @@ constexpr unsigned char kContainerHeader[] = {
     0xa, 0,   0, 0,   0x14, 'f', 't', 'y', 'p', 'j', 'x',
     'l', ' ', 0, 0,   0,    0,   'j', 'x', 'l', ' '};
 
+namespace {
+template <typename T>
+uint8_t* Extend(T* vec, size_t size) {
+  vec->resize(vec->size() + size, 0);
+  return vec->data() + vec->size() - size;
+}
+}  // namespace
+
 // Appends a JXL container box header with given type, size, and unbounded
 // properties to output.
+template <typename T>
 void AppendBoxHeader(const jxl::BoxType& type, size_t size, bool unbounded,
-                     std::vector<uint8_t>* output);
+                     T* output) {
+  uint64_t box_size = 0;
+  bool large_size = false;
+  if (!unbounded) {
+    box_size = size + 8;
+    if (box_size >= 0x100000000ull) {
+      large_size = true;
+    }
+  }
+
+  StoreBE32(large_size ? 1 : box_size, Extend(output, 4));
+
+  for (size_t i = 0; i < 4; i++) {
+    output->push_back(*(type.data() + i));
+  }
+
+  if (large_size) {
+    StoreBE64(box_size, Extend(output, 8));
+  }
+}
 
 }  // namespace jxl
 

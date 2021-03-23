@@ -102,6 +102,153 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
   return true;
 }
 
+template <typename D, typename V>
+void StoreRGB(D d, V r, V g, V b, size_t n, size_t extra, uint8_t* buf) {
+#if HWY_TARGET == HWY_SCALAR
+  buf[0] = r.raw;
+  buf[1] = g.raw;
+  buf[2] = b.raw;
+#elif HWY_TARGET == HWY_NEON
+  uint8x8x3_t data = {r.raw, g.raw, b.raw};
+  if (extra >= 8) {
+    vst3_u8(buf, data);
+  } else {
+    uint8_t tmp[8 * 3];
+    vst3_u8(tmp, data);
+    memcpy(buf, tmp, n * 3);
+  }
+#else
+  // TODO(veluca): implement this for x86.
+  HWY_ALIGN uint8_t bytes[16];
+  Store(r, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[3 * i] = bytes[i];
+  }
+  Store(g, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[3 * i + 1] = bytes[i];
+  }
+  Store(b, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[3 * i + 2] = bytes[i];
+  }
+#endif
+}
+
+template <typename D, typename V>
+void StoreRGBA(D d, V r, V g, V b, V a, size_t n, size_t extra, uint8_t* buf) {
+#if HWY_TARGET == HWY_SCALAR
+  buf[0] = r.raw;
+  buf[1] = g.raw;
+  buf[2] = b.raw;
+  buf[3] = a.raw;
+#elif HWY_TARGET == HWY_NEON
+  uint8x8x4_t data = {r.raw, g.raw, b.raw, a.raw};
+  if (extra >= 8) {
+    vst4_u8(buf, data);
+  } else {
+    uint8_t tmp[8 * 8];
+    vst4_u8(tmp, data);
+    memcpy(buf, tmp, n * 4);
+  }
+#else
+  // TODO(veluca): implement this for x86.
+  HWY_ALIGN uint8_t bytes[16];
+  Store(r, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[4 * i] = bytes[i];
+  }
+  Store(g, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[4 * i + 1] = bytes[i];
+  }
+  Store(b, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[4 * i + 2] = bytes[i];
+  }
+  Store(a, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[4 * i + 3] = bytes[i];
+  }
+#endif
+}
+
+void FloatToRGB8(const Image3F& input, const Rect& input_rect,
+                 const Rect& output_buf_rect, uint8_t* JXL_RESTRICT output_buf,
+                 size_t xsize) {
+  for (size_t y = 0; y < output_buf_rect.ysize(); y++) {
+    const float* JXL_RESTRICT row_in_r = input_rect.ConstPlaneRow(input, 0, y);
+    const float* JXL_RESTRICT row_in_g = input_rect.ConstPlaneRow(input, 1, y);
+    const float* JXL_RESTRICT row_in_b = input_rect.ConstPlaneRow(input, 2, y);
+    size_t base_ptr =
+        3 * (y + output_buf_rect.y0()) * xsize + 3 * output_buf_rect.x0();
+    using D = HWY_CAPPED(float, 4);
+    const D d;
+    D::Rebind<int32_t> di;
+    D::Rebind<uint32_t> du;
+    auto zero = Zero(d);
+    auto one = Set(d, 1.0f);
+    auto mul = Set(d, 255.0f);
+    for (size_t x = 0; x < output_buf_rect.xsize(); x += Lanes(d)) {
+      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
+      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
+      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
+      auto r8 = U8FromU32(BitCast(du, ConvertTo(di, rf)));
+      auto g8 = U8FromU32(BitCast(du, ConvertTo(di, gf)));
+      auto b8 = U8FromU32(BitCast(du, ConvertTo(di, bf)));
+      size_t n = output_buf_rect.xsize() - x;
+      if (JXL_LIKELY(n >= Lanes(d))) {
+        StoreRGB(D::Rebind<uint8_t>(), r8, g8, b8, Lanes(d), n,
+                 output_buf + base_ptr + 3 * x);
+      } else {
+        StoreRGB(D::Rebind<uint8_t>(), r8, g8, b8, n, n,
+                 output_buf + base_ptr + 3 * x);
+      }
+    }
+  }
+}
+
+// Outputs floating point image to RGBA 8-bit buffer. Does not support alpha
+// channel in the input, but outputs opaque alpha channel for the case where the
+// output buffer to write to is in the 4-byte per pixel RGBA format.
+// TODO(lode): add support for the alpha extra channel input as well.
+void FloatToRGBA8(const Image3F& input, const Rect& input_rect,
+                  const Rect& output_buf_rect, uint8_t* JXL_RESTRICT output_buf,
+                  size_t xsize) {
+  HWY_CAPPED(uint8_t, 4) du8;
+  auto a8 = Set(du8, 255);
+  for (size_t y = 0; y < output_buf_rect.ysize(); y++) {
+    const float* JXL_RESTRICT row_in_r = input_rect.ConstPlaneRow(input, 0, y);
+    const float* JXL_RESTRICT row_in_g = input_rect.ConstPlaneRow(input, 1, y);
+    const float* JXL_RESTRICT row_in_b = input_rect.ConstPlaneRow(input, 2, y);
+    size_t base_ptr =
+        4 * (y + output_buf_rect.y0()) * xsize + 4 * output_buf_rect.x0();
+    using D = HWY_CAPPED(float, 4);
+    const D d;
+    D::Rebind<int32_t> di;
+    D::Rebind<uint32_t> du;
+    auto zero = Zero(d);
+    auto one = Set(d, 1.0f);
+    auto mul = Set(d, 255.0f);
+    for (size_t x = 0; x < output_buf_rect.xsize(); x += Lanes(d)) {
+      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
+      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
+      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
+      auto r8 = U8FromU32(BitCast(du, ConvertTo(di, rf)));
+      auto g8 = U8FromU32(BitCast(du, ConvertTo(di, gf)));
+      auto b8 = U8FromU32(BitCast(du, ConvertTo(di, bf)));
+      size_t n = output_buf_rect.xsize() - x;
+      if (JXL_LIKELY(n >= Lanes(d))) {
+        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, Lanes(d), n,
+                  output_buf + base_ptr + 4 * x);
+      } else {
+        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, n, n,
+                  output_buf + base_ptr + 4 * x);
+      }
+    }
+  }
+}
+
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
@@ -111,6 +258,8 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(UndoXYBInPlace);
+HWY_EXPORT(FloatToRGB8);
+HWY_EXPORT(FloatToRGBA8);
 
 namespace {
 // Implements EnsurePaddingInPlace, but allows processing data one row at a
@@ -232,9 +381,8 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
 
   // +----------------------------- STEP 1 ------------------------------+
   // | Compute the rects on which patches and splines will be applied.   |
-  // | As we cannot modify the input, if no filters are applied this     |
-  // | requires an extra image copy. In case we are applying upsampling, |
-  // | we need to apply patches on a slightly larger image.              |
+  // | In case we are applying upsampling, we need to apply patches on a |
+  // | slightly larger image.                                            |
   // +-------------------------------------------------------------------+
 
   // If we are applying upsampling, we need 2 more pixels around the actual rect
@@ -250,7 +398,10 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
   //   if `output_rect` is not on an image border, `input_image:input_rect` has
   //   enough border available. (rect_for_if_input)
 
-  Image3F* storage_for_if = output_image->color();
+  Image3F* output_color =
+      dec_state->rgb_output == nullptr ? output_image->color() : nullptr;
+
+  Image3F* storage_for_if = output_color;
   Rect rect_for_if = output_rect;
   Rect rect_for_if_storage = output_rect;
   Rect rect_for_upsampling = output_rect;
@@ -301,67 +452,100 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
     storage_for_if = &dec_state->upsampling_input_storage[thread];
   }
 
-  // +----------------------------- STEP 2 ------------------------------+
-  // | Set up the filter pipeline. This requires possibly padding the    |
-  // | input image, taking into account the possibly larger rect for     |
-  // | patches and splines.                                              |
-  // +-------------------------------------------------------------------+
+  // Variables for upsampling and filtering.
+  Rect upsampled_output_rect(output_rect.x0() * frame_header.upsampling,
+                             output_rect.y0() * frame_header.upsampling,
+                             output_rect.xsize() * frame_header.upsampling,
+                             output_rect.ysize() * frame_header.upsampling);
+  EnsurePaddingInPlaceRowByRow ensure_padding_upsampling;
+  ssize_t ensure_padding_upsampling_y0 = 0;
+  ssize_t ensure_padding_upsampling_y1 = 0;
 
-  // If `rect_for_if_input` does not start at a multiple of
-  // GroupBorderAssigner::kPaddingXRound, we extend the rect we run EPF on by
-  // one full padding length to ensure sigma is handled correctly. We also
-  // extend the output and image rects accordingly. To do this, we need 2x the
-  // border.
   EnsurePaddingInPlaceRowByRow ensure_padding_filter;
   FilterPipeline* fp = nullptr;
   ssize_t ensure_padding_filter_y0 = 0;
   ssize_t ensure_padding_filter_y1 = 0;
-  Rect filter_input_padded_rect, image_padded_rect, filter_output_padded_rect;
+  Rect image_padded_rect;
   if (lf.epf_iters != 0 || lf.gab) {
+    fp = &dec_state->filter_pipelines[thread];
+    size_t xextra =
+        rect_for_if_input.x0() % GroupBorderAssigner::kPaddingXRound;
+    image_padded_rect = Rect(rect_for_if.x0() - xextra, rect_for_if.y0(),
+                             rect_for_if.xsize() + xextra, rect_for_if.ysize());
+  }
+
+  // Also prepare rect for memorizing the pre-color-transform frame.
+  const Rect pre_color_output_rect =
+      upsampled_output_rect.Crop(dec_state->pre_color_transform_frame);
+  Rect pre_color_output_rect_storage = pre_color_output_rect;
+
+  // +----------------------------- STEP 2 ------------------------------+
+  // | Change rects and buffer to not use `output_image` if direct       |
+  // | output to rgb8 is requested.                                      |
+  // +-------------------------------------------------------------------+
+  Image3F* output_pixel_data_storage = output_color;
+  Rect upsampled_output_rect_for_storage = upsampled_output_rect;
+  if (dec_state->rgb_output) {
+    size_t log2_upsampling = CeilLog2Nonzero(frame_header.upsampling);
+    if (storage_for_if == output_color) {
+      storage_for_if =
+          &dec_state->output_pixel_data_storage[log2_upsampling][thread];
+      rect_for_if_storage =
+          Rect(0, 0, rect_for_if_storage.xsize(), rect_for_if_storage.ysize());
+    }
+    output_pixel_data_storage =
+        &dec_state->output_pixel_data_storage[log2_upsampling][thread];
+    upsampled_output_rect_for_storage = Rect(
+        0, 0, upsampled_output_rect.xsize(), upsampled_output_rect.ysize());
+    if (frame_header.upsampling == 1 && fp == nullptr) {
+      upsampled_output_rect_for_storage = rect_for_if_storage =
+          rect_for_if_input;
+      output_pixel_data_storage = storage_for_if = input_image;
+    }
+    pre_color_output_rect_storage =
+        Rect(upsampled_output_rect_for_storage.x0(),
+             upsampled_output_rect_for_storage.y0(),
+             pre_color_output_rect.xsize(), pre_color_output_rect.ysize());
+  }
+
+  // +----------------------------- STEP 3 ------------------------------+
+  // | Set up upsampling.                                                |
+  // +-------------------------------------------------------------------+
+  if (frame_header.upsampling != 1) {
+    ensure_padding_upsampling.Init(
+        storage_for_if, rect_for_upsampling, output_rect,
+        frame_dim.xsize_padded, frame_dim.ysize_padded, 2, 2,
+        &ensure_padding_upsampling_y0, &ensure_padding_upsampling_y1);
+  }
+
+  // +----------------------------- STEP 4 ------------------------------+
+  // | Set up the filter pipeline.                                       |
+  // +-------------------------------------------------------------------+
+  if (fp) {
+    // If `rect_for_if_input` does not start at a multiple of
+    // GroupBorderAssigner::kPaddingXRound, we extend the rect we run EPF on by
+    // one full padding length to ensure sigma is handled correctly. We also
+    // extend the output and image rects accordingly. To do this, we need 2x the
+    // border.
+    size_t xextra =
+        rect_for_if_input.x0() % GroupBorderAssigner::kPaddingXRound;
+    Rect filter_input_padded_rect(
+        rect_for_if_input.x0() - xextra, rect_for_if_input.y0(),
+        rect_for_if_input.xsize() + xextra, rect_for_if_input.ysize());
     ensure_padding_filter.Init(
         input_image, rect_for_if_input, rect_for_if, frame_dim.xsize_padded,
         frame_dim.ysize_padded, lf.Padding(), lf.Padding(),
         &ensure_padding_filter_y0, &ensure_padding_filter_y1);
-    size_t xextra =
-        rect_for_if_input.x0() % GroupBorderAssigner::kPaddingXRound;
-    filter_input_padded_rect =
-        Rect(rect_for_if_input.x0() - xextra, rect_for_if_input.y0(),
-             rect_for_if_input.xsize() + xextra, rect_for_if_input.ysize());
-    image_padded_rect = Rect(rect_for_if.x0() - xextra, rect_for_if.y0(),
-                             rect_for_if.xsize() + xextra, rect_for_if.ysize());
-    filter_output_padded_rect =
-        Rect(rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
-             rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
+    Rect filter_output_padded_rect(
+        rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
+        rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
     fp = PrepareFilterPipeline(dec_state, image_padded_rect, *input_image,
                                filter_input_padded_rect, frame_dim.ysize_padded,
                                thread, storage_for_if,
                                filter_output_padded_rect);
   }
 
-  // +----------------------------- STEP 3 ------------------------------+
-  // | Set up padding for upsampling.                                    |
-  // +-------------------------------------------------------------------+
-
-  Rect upsampled_output_rect = output_rect;
-  EnsurePaddingInPlaceRowByRow ensure_padding_upsampling;
-  ssize_t ensure_padding_upsampling_y0 = 0;
-  ssize_t ensure_padding_upsampling_y1 = 0;
-  if (frame_header.upsampling != 1) {
-    ensure_padding_upsampling.Init(
-        storage_for_if, rect_for_upsampling, output_rect,
-        frame_dim.xsize_padded, frame_dim.ysize_padded, 2, 2,
-        &ensure_padding_upsampling_y0, &ensure_padding_upsampling_y1);
-    upsampled_output_rect = Rect(output_rect.x0() * frame_header.upsampling,
-                                 output_rect.y0() * frame_header.upsampling,
-                                 output_rect.xsize() * frame_header.upsampling,
-                                 output_rect.ysize() * frame_header.upsampling);
-  }
-
-  // Also prepare rect for memorizing the pre-color-transform frame.
-  const Rect pre_color_output_rect =
-      upsampled_output_rect.Crop(dec_state->pre_color_transform_frame);
-
-  // +----------------------------- STEP 4 ------------------------------+
+  // +----------------------------- STEP 5 ------------------------------+
   // | Run the prepared pipeline of operations.                          |
   // +-------------------------------------------------------------------+
 
@@ -388,9 +572,7 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
         ensure_padding_filter.Process(y);
       }
       fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_padded_rect, y);
-    } else {
-      // TODO(veluca): when writing directly to the user-provided buffer, this
-      // copy will be unnecessary.
+    } else if (output_pixel_data_storage != input_image) {
       for (size_t c = 0; c < 3; c++) {
         memcpy(rect_for_if_storage.PlaneRow(storage_for_if, c, y),
                rect_for_if_input.ConstPlaneRow(*input_image, c, y),
@@ -434,8 +616,9 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
       Rect upsample_input_rect =
           rect_for_upsampling.Lines(input_y, num_input_rows);
       dec_state->upsampler.UpsampleRect(
-          *storage_for_if, upsample_input_rect, output_image->color(),
-          upsampled_output_rect.Lines(upsampled_available_y, num_ys),
+          *storage_for_if, upsample_input_rect, output_pixel_data_storage,
+          upsampled_output_rect_for_storage.Lines(upsampled_available_y,
+                                                  num_ys),
           static_cast<ssize_t>(output_rect.y0()) -
               static_cast<ssize_t>(rect_for_upsampling.y0()),
           frame_dim.ysize_padded);
@@ -443,14 +626,14 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
     }
 
     // The image data is now unconditionally in
-    // `output_image:upsampled_output_rect`.
+    // `output_image_storage:upsampled_output_rect_for_storage`.
     if (frame_header.flags & FrameHeader::kNoise) {
       PROFILER_ZONE("AddNoise");
       AddNoise(image_features.noise_params,
-               upsampled_output_rect.Lines(available_y, num_ys),
+               upsampled_output_rect_for_storage.Lines(available_y, num_ys),
                dec_state->noise,
                upsampled_output_rect.Lines(available_y, num_ys),
-               dec_state->shared_storage.cmap, output_image->color());
+               dec_state->shared_storage.cmap, output_pixel_data_storage);
     }
 
     if (dec_state->pre_color_transform_frame.xsize() != 0) {
@@ -460,7 +643,8 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
           float* JXL_RESTRICT row_out = pre_color_output_rect.PlaneRow(
               &dec_state->pre_color_transform_frame, c, y);
           const float* JXL_RESTRICT row_in =
-              pre_color_output_rect.ConstPlaneRow(*output_image->color(), c, y);
+              pre_color_output_rect_storage.ConstPlaneRow(
+                  *output_pixel_data_storage, c, y);
           memcpy(row_out, row_in,
                  pre_color_output_rect.xsize() * sizeof(*row_in));
         }
@@ -470,19 +654,47 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
     // We skip the color transform entirely if save_before_color_transform and
     // the frame is not supposed to be displayed.
 
-    if (frame_header.needs_color_transform()) {
-      if (frame_header.color_transform == ColorTransform::kXYB) {
-        JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(
-            output_image->color(), opsin_params,
-            upsampled_output_rect.Lines(available_y, num_ys),
-            dec_state->output_encoding));
-      } else if (frame_header.color_transform == ColorTransform::kYCbCr) {
-        YcbcrToRgb(*output_image->color(), output_image->color(),
-                   upsampled_output_rect.Lines(available_y, num_ys));
+    if (dec_state->fast_xyb_srgb8_conversion) {
+      FastXYBTosRGB8(
+          *output_pixel_data_storage,
+          upsampled_output_rect_for_storage.Lines(available_y, num_ys),
+          upsampled_output_rect.Lines(available_y, num_ys)
+              .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+          dec_state->rgb_output, frame_dim.xsize);
+    } else {
+      if (frame_header.needs_color_transform()) {
+        if (frame_header.color_transform == ColorTransform::kXYB) {
+          JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(
+              output_pixel_data_storage, opsin_params,
+              upsampled_output_rect_for_storage.Lines(available_y, num_ys),
+              dec_state->output_encoding));
+        } else if (frame_header.color_transform == ColorTransform::kYCbCr) {
+          YcbcrToRgb(
+              *output_pixel_data_storage, output_pixel_data_storage,
+              upsampled_output_rect_for_storage.Lines(available_y, num_ys));
+        }
+      }
+
+      // TODO(veluca): all blending should happen here.
+
+      if (dec_state->rgb_output != nullptr) {
+        if (dec_state->rgb_output_is_rgba) {
+          HWY_DYNAMIC_DISPATCH(FloatToRGBA8)
+          (*output_pixel_data_storage,
+           upsampled_output_rect_for_storage.Lines(available_y, num_ys),
+           upsampled_output_rect.Lines(available_y, num_ys)
+               .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+           dec_state->rgb_output, frame_dim.xsize);
+        } else {
+          HWY_DYNAMIC_DISPATCH(FloatToRGB8)
+          (*output_pixel_data_storage,
+           upsampled_output_rect_for_storage.Lines(available_y, num_ys),
+           upsampled_output_rect.Lines(available_y, num_ys)
+               .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+           dec_state->rgb_output, frame_dim.xsize);
+        }
       }
     }
-
-    // TODO(veluca): all blending should happen here.
   }
 
   return true;
@@ -526,9 +738,10 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
                 &dec_state->filter_weights.sigma);
     }
     std::vector<Rect> rects_to_process;
-    for (size_t y = 0; y < decoded->ysize(); y += kGroupDim) {
-      for (size_t x = 0; x < decoded->xsize(); x += kGroupDim) {
-        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize, frame_dim.ysize);
+    for (size_t y = 0; y < frame_dim.ysize_padded; y += kGroupDim) {
+      for (size_t x = 0; x < frame_dim.xsize_padded; x += kGroupDim) {
+        Rect rect(x, y, kGroupDim, kGroupDim, frame_dim.xsize_padded,
+                  frame_dim.ysize_padded);
         if (rect.xsize() == 0 || rect.ysize() == 0) continue;
         rects_to_process.push_back(rect);
       }

@@ -133,8 +133,7 @@ void WriteTokens(const std::vector<Token>& tokens,
 // Same as above, but assumes allotment created by caller.
 size_t WriteTokens(const std::vector<Token>& tokens,
                    const EntropyEncodingData& codes,
-                   const std::vector<uint8_t>& context_map,
-                   const BitWriter::Allotment& allotment, BitWriter* writer);
+                   const std::vector<uint8_t>& context_map, BitWriter* writer);
 
 // Exposed for tests; to be used with Writer=BitWriter only.
 template <typename Writer>

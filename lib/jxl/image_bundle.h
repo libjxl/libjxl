@@ -85,6 +85,22 @@ class ImageBundle {
   }
   void ShrinkTo(size_t xsize, size_t ysize);
 
+  // sizes taking orientation into account
+  size_t oriented_xsize() const {
+    if (static_cast<uint32_t>(metadata_->GetOrientation()) > 4) {
+      return ysize();
+    } else {
+      return xsize();
+    }
+  }
+  size_t oriented_ysize() const {
+    if (static_cast<uint32_t>(metadata_->GetOrientation()) > 4) {
+      return xsize();
+    } else {
+      return ysize();
+    }
+  }
+
   // -- COLOR
 
   // Whether color() is valid/usable. Returns true in most cases. Even images

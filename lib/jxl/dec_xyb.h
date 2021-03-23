@@ -57,6 +57,11 @@ ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
 // src.InitializePaddingForUnalignedAccesses() to avoid msan crashes.
 ImageF UpsampleH2(const ImageF& src, ThreadPool* pool);
 
+bool HasFastXYBTosRGB8();
+void FastXYBTosRGB8(const Image3F& input, const Rect& input_rect,
+                    const Rect& output_buf_rect,
+                    uint8_t* JXL_RESTRICT output_buf, size_t xsize);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_DEC_XYB_H_

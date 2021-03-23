@@ -174,11 +174,11 @@ class ANSSymbolReader {
     } else {
       state_ = (ANS_SIGNATURE << 16u);
     }
+    if (!code->lz77.enabled) return;
     // a std::vector incurs unacceptable decoding speed loss because of
     // initialization.
     lz77_window_storage_ = AllocateArray(kWindowSize * sizeof(uint32_t));
     lz77_window_ = reinterpret_cast<uint32_t*>(lz77_window_storage_.get());
-    if (!code->lz77.enabled) return;
     lz77_ctx_ = code->lz77.nonserialized_distance_context;
     lz77_length_uint_ = code->lz77.length_uint_config;
     lz77_threshold_ = code->lz77.min_symbol;
@@ -309,6 +309,7 @@ class ANSSymbolReader {
       }
       copy_pos_ = num_decoded_ - distance;
       if (JXL_UNLIKELY(distance == 0)) {
+        JXL_DASSERT(lz77_window_ != nullptr);
         // distance 0 -> num_decoded_ == copy_pos_ == 0
         size_t to_fill = std::min<size_t>(num_to_copy_, kWindowSize);
         memset(lz77_window_, 0, to_fill * sizeof(lz77_window_[0]));
@@ -316,7 +317,7 @@ class ANSSymbolReader {
       return ReadHybridUintClustered(ctx, br);  // will trigger a copy.
     }
     size_t ret = ReadHybridUintConfig(configs[ctx], token, br);
-    lz77_window_[(num_decoded_++) & kWindowMask] = ret;
+    if (lz77_window_) lz77_window_[(num_decoded_++) & kWindowMask] = ret;
     return ret;
   }
 
@@ -326,7 +327,9 @@ class ANSSymbolReader {
   }
 
   // ctx is a *clustered* context!
-  bool IsSingleValue(size_t ctx, uint32_t* value, size_t count) {
+  // This function will modify the ANS state as if `count` symbols have been
+  // decoded.
+  bool IsSingleValueAndAdvance(size_t ctx, uint32_t* value, size_t count) {
     // TODO(veluca): No optimization for Huffman mode yet.
     if (use_prefix_code_) return false;
     // TODO(eustas): propagate "degenerate_symbol" to simplify this method.
@@ -338,8 +341,10 @@ class ANSSymbolReader {
     if (configs[ctx].split_token <= symbol.value) return false;
     if (symbol.value >= lz77_threshold_) return false;
     *value = symbol.value;
-    for (size_t i = 0; i < count; i++) {
-      lz77_window_[(num_decoded_++) & kWindowMask] = symbol.value;
+    if (lz77_window_) {
+      for (size_t i = 0; i < count; i++) {
+        lz77_window_[(num_decoded_++) & kWindowMask] = symbol.value;
+      }
     }
     return true;
   }
@@ -357,7 +362,7 @@ class ANSSymbolReader {
   // LZ77 structures and constants.
   static constexpr size_t kWindowMask = kWindowSize - 1;
   CacheAlignedUniquePtr lz77_window_storage_;
-  uint32_t* lz77_window_;
+  uint32_t* lz77_window_ = nullptr;
   uint32_t num_decoded_ = 0;
   uint32_t num_to_copy_ = 0;
   uint32_t copy_pos_ = 0;

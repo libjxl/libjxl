@@ -22,7 +22,7 @@ endif ()
 
 option(JPEGXL_ENABLE_GIMP_SAVING "Enable saving to JPEG XL from GIMP" OFF)
 
-add_executable(file-jxl
+add_executable(file-jxl WIN32
   common.h
   file-jxl-load.cc
   file-jxl-load.h

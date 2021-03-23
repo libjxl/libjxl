@@ -1,0 +1,38 @@
+if c > 0
+  if y > 0
+    if N > 0
+      if NW-N > -1
+        if N-NE > 0
+          - Set 0
+          - Set 255
+        if N-NE > 0
+          - Set 255
+          - Set 0
+      if NW-N > 0
+        if N-NE > -1
+          - Set 255
+          - Set 0
+        if N-NE > -1
+          - Set 0
+          - Set 255
+   if x > 511
+     if x > 512
+       - Set 0
+       - Set 255
+     - Set 0
+  if N > 200
+    - Set 0
+    if W > 200
+      - Set 0
+      - AvgW+NW + 1
+
+Everything after the end of the tree is ignored.
+
+The tree above represents a light blue cellular automaton on a geometric red
+background.
+
+
+List of properties: c, g, y, x, |N|, |W|, N, W, W-WW-NW+NWW, W+N-NW, W-NW, NW-N, N-NE, N-NN, W-WW, WGH
+
+List of predictors: Set, W, N, AvgW+N, Select, Gradient, Weighted, NE, NW, WW, AvgW+NW, AvgN+NW, AvgN+NE, AvgAll
+

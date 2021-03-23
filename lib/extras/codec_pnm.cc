@@ -249,20 +249,20 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
   if (bits_per_sample == 32) {  // PFM
     const char type = ib.IsGray() ? 'f' : 'F';
     const double scale = little_endian ? -1.0 : 1.0;
-    snprintf(header, kMaxHeaderSize, "P%c\n%zu %zu\n%.1f\n%n", type, ib.xsize(),
-             ib.ysize(), scale, chars_written);
+    snprintf(header, kMaxHeaderSize, "P%c\n%zu %zu\n%.1f\n%n", type,
+             ib.oriented_xsize(), ib.oriented_ysize(), scale, chars_written);
   } else if (bits_per_sample == 1) {  // PBM
     if (!ib.IsGray()) {
       return JXL_FAILURE("Cannot encode color as PBM");
     }
-    snprintf(header, kMaxHeaderSize, "P4\n%zu %zu\n%n", ib.xsize(), ib.ysize(),
-             chars_written);
+    snprintf(header, kMaxHeaderSize, "P4\n%zu %zu\n%n", ib.oriented_xsize(),
+             ib.oriented_ysize(), chars_written);
   } else {  // PGM/PPM
     const uint32_t max_val = (1U << bits_per_sample) - 1;
     if (max_val >= 65536) return JXL_FAILURE("PNM cannot have > 16 bits");
     const char type = ib.IsGray() ? '5' : '6';
-    snprintf(header, kMaxHeaderSize, "P%c\n%zu %zu\n%u\n%n", type, ib.xsize(),
-             ib.ysize(), max_val, chars_written);
+    snprintf(header, kMaxHeaderSize, "P%c\n%zu %zu\n%u\n%n", type,
+             ib.oriented_xsize(), ib.oriented_ysize(), max_val, chars_written);
   }
   return true;
 }
@@ -401,9 +401,9 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
   const ImageBundle* transformed;
   JXL_RETURN_IF_ERROR(TransformIfNeeded(*to_color_transform, c_desired, pool,
                                         &store, &transformed));
-  size_t stride =
-      ib.xsize() * (c_desired.Channels() * bits_per_sample) / kBitsPerByte;
-  PaddedBytes pixels(stride * ib.ysize());
+  size_t stride = ib.oriented_xsize() *
+                  (c_desired.Channels() * bits_per_sample) / kBitsPerByte;
+  PaddedBytes pixels(stride * ib.oriented_ysize());
   JXL_RETURN_IF_ERROR(ConvertToExternal(
       *transformed, bits_per_sample, floating_point,
       /*apply_srgb_tf=*/false, c_desired.Channels(), endianness, stride, pool,

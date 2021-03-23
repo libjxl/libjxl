@@ -185,6 +185,15 @@ TEST(EncodeTest, OptionsTest) {
     // Disallowed negative distance
     EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetDistance(options, -1));
   }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetDecodingSpeed(options, 2));
+    VerifyFrameEncoding(enc.get(), options);
+    EXPECT_EQ(2, enc->last_used_cparams.decoding_speed_tier);
+  }
 }
 
 namespace {

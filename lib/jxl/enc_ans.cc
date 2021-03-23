@@ -226,6 +226,7 @@ struct SizeWriter {
 
 template <typename Writer>
 void StoreVarLenUint8(size_t n, Writer* writer) {
+  JXL_DASSERT(n <= 255);
   if (n == 0) {
     writer->Write(1, 0);
   } else {
@@ -238,6 +239,7 @@ void StoreVarLenUint8(size_t n, Writer* writer) {
 
 template <typename Writer>
 void StoreVarLenUint16(size_t n, Writer* writer) {
+  JXL_DASSERT(n <= 65535);
   if (n == 0) {
     writer->Write(1, 0);
   } else {
@@ -249,9 +251,10 @@ void StoreVarLenUint16(size_t n, Writer* writer) {
 }
 
 template <typename Writer>
-void EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
+bool EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
                   const int omit_pos, const int num_symbols, uint32_t shift,
                   const int* symbols, Writer* writer) {
+  bool ok = true;
   if (num_symbols <= 2) {
     // Small tree marker to encode 1-2 symbols.
     writer->Write(1, 1);
@@ -322,7 +325,13 @@ void EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
 
     // Since num_symbols >= 3, we know that length >= 3, therefore we encode
     // length - 3.
-    StoreVarLenUint8(length - 3, writer);
+    if (length - 3 > 255) {
+      // Pretend that everything is OK, but complain about correctness later.
+      StoreVarLenUint8(255, writer);
+      ok = false;
+    } else {
+      StoreVarLenUint8(length - 3, writer);
+    }
 
     // The logcount values are encoded with a static Huffman code.
     static const size_t kMinReps = 4;
@@ -352,6 +361,7 @@ void EncodeCounts(const ANSHistBin* counts, const int alphabet_size,
       }
     }
   }
+  return ok;
 }
 
 void EncodeFlatHistogram(const int alphabet_size, BitWriter* writer) {
@@ -379,8 +389,9 @@ float ComputeHistoAndDataCost(const ANSHistBin* histogram, size_t alphabet_size,
   JXL_CHECK(NormalizeCounts(counts.data(), &omit_pos, alphabet_size,
                             ANS_LOG_TAB_SIZE, shift, &num_symbols, symbols));
   SizeWriter writer;
-  EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
-               symbols, &writer);
+  // Ignore the correctness, no real encoding happens at this stage.
+  (void)EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
+                     symbols, &writer);
   return writer.size +
          EstimateDataBits(histogram, counts.data(), alphabet_size);
 }
@@ -493,8 +504,10 @@ size_t BuildAndStoreANSEncodingData(
   InitAliasTable(counts, ANS_TAB_SIZE, log_alpha_size, a);
   ANSBuildInfoTable(counts.data(), a, alphabet_size, log_alpha_size, info);
   if (writer != nullptr) {
-    EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols, shift,
-                 symbols, writer);
+    bool ok = EncodeCounts(counts.data(), alphabet_size, omit_pos, num_symbols,
+                           shift, symbols, writer);
+    (void)ok;
+    JXL_DASSERT(ok);
   }
   return cost;
 }
@@ -663,11 +676,10 @@ class HistogramBuilder {
 
   // NOTE: `layer` is only for clustered_entropy; caller does ReclaimAndCharge.
   size_t BuildAndStoreEntropyCodes(
-      const HistogramParams params,
+      const HistogramParams& params,
       const std::vector<std::vector<Token>>& tokens, EntropyEncodingData* codes,
       std::vector<uint8_t>* context_map, bool use_prefix_code,
-      const BitWriter::Allotment& allotment, BitWriter* writer, size_t layer,
-      AuxOut* aux_out) const {
+      BitWriter* writer, size_t layer, AuxOut* aux_out) const {
     size_t cost = 0;
     codes->encoding_info.clear();
     std::vector<Histogram> clustered_histograms(histograms_);
@@ -695,8 +707,7 @@ class HistogramBuilder {
         }
       }
       if (writer != nullptr) {
-        EncodeContextMap(*context_map, clustered_histograms.size(), allotment,
-                         writer);
+        EncodeContextMap(*context_map, clustered_histograms.size(), writer);
       }
     }
     if (aux_out != nullptr) {
@@ -752,10 +763,13 @@ class HistogramBuilder {
       codes->encoding_info.emplace_back();
       codes->encoding_info.back().resize(std::max<size_t>(1, num_symbol));
 
+      BitWriter::Allotment allotment(writer, 256 + num_symbol * 24);
       cost += BuildAndStoreANSEncodingData(
           params.ans_histogram_strategy, clustered_histograms[c].data_.data(),
           num_symbol, log_alpha_size, use_prefix_code,
           codes->encoding_info.back().data(), writer);
+      allotment.FinishedHistogram(writer);
+      ReclaimAndCharge(writer, &allotment, layer, aux_out);
     }
     return cost;
   }
@@ -1455,7 +1469,8 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
   }
 
   const size_t max_contexts = std::min(num_contexts, kClustersLimit);
-  BitWriter::Allotment allotment(writer, 8192 * (max_contexts + 4));
+  BitWriter::Allotment allotment(writer,
+                                 128 + num_contexts * 40 + max_contexts * 96);
   if (writer) {
     JXL_CHECK(Bundle::Write(codes->lz77, writer, layer, aux_out));
   } else {
@@ -1508,9 +1523,9 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
       ans_fuzzer_friendly_;
 
   // Encode histograms.
-  total_bits += builder.BuildAndStoreEntropyCodes(
-      params, tokens, codes, context_map, use_prefix_code, allotment, writer,
-      layer, aux_out);
+  total_bits += builder.BuildAndStoreEntropyCodes(params, tokens, codes,
+                                                  context_map, use_prefix_code,
+                                                  writer, layer, aux_out);
   allotment.FinishedHistogram(writer);
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
 
@@ -1523,8 +1538,7 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
 
 size_t WriteTokens(const std::vector<Token>& tokens,
                    const EntropyEncodingData& codes,
-                   const std::vector<uint8_t>& context_map,
-                   const BitWriter::Allotment& allotment, BitWriter* writer) {
+                   const std::vector<uint8_t>& context_map, BitWriter* writer) {
   size_t num_extra_bits = 0;
   if (codes.use_prefix_code) {
     for (size_t i = 0; i < tokens.size(); i++) {
@@ -1596,8 +1610,7 @@ void WriteTokens(const std::vector<Token>& tokens,
                  const std::vector<uint8_t>& context_map, BitWriter* writer,
                  size_t layer, AuxOut* aux_out) {
   BitWriter::Allotment allotment(writer, 32 * tokens.size() + 32 * 1024 * 4);
-  size_t num_extra_bits =
-      WriteTokens(tokens, codes, context_map, allotment, writer);
+  size_t num_extra_bits = WriteTokens(tokens, codes, context_map, writer);
   ReclaimAndCharge(writer, &allotment, layer, aux_out);
   if (aux_out != nullptr) {
     aux_out->layers[layer].extra_bits += num_extra_bits;

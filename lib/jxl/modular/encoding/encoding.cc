@@ -49,16 +49,20 @@ namespace jxl {
 // using the weighted predictor.
 FlatTree FilterTree(const Tree &global_tree,
                     std::array<pixel_type, kNumStaticProperties> &static_props,
-                    size_t *num_props, bool *use_wp, bool *wp_only) {
+                    size_t *num_props, bool *use_wp, bool *wp_only,
+                    bool *gradient_only) {
   *num_props = 0;
   bool has_wp = false;
   bool has_non_wp = false;
-  constexpr size_t kMaxProp = 256;
+  *gradient_only = true;
   const auto mark_property = [&](int32_t p) {
     if (p == kWPProp) {
       has_wp = true;
     } else if (p >= kNumStaticProperties) {
       has_non_wp = true;
+    }
+    if (p >= kNumStaticProperties && p != kGradientProp) {
+      *gradient_only = false;
     }
   };
   FlatTree output;
@@ -89,7 +93,9 @@ FlatTree FilterTree(const Tree &global_tree,
       flat.predictor = global_tree[cur].predictor;
       flat.predictor_offset = global_tree[cur].predictor_offset;
       flat.multiplier = global_tree[cur].multiplier;
-      mark_property(flat.predictor == Predictor::Weighted ? kWPProp : kMaxProp);
+      *gradient_only &= flat.predictor == Predictor::Gradient;
+      has_wp |= flat.predictor == Predictor::Weighted;
+      has_non_wp &= flat.predictor != Predictor::Weighted;
       output.push_back(flat);
       continue;
     }
@@ -163,9 +169,11 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   channel.resize(channel.w, channel.h);
   bool tree_has_wp_prop_or_pred = false;
   bool is_wp_only = false;
+  bool is_gradient_only = false;
   size_t num_props;
-  FlatTree tree = FilterTree(global_tree, static_props, &num_props,
-                             &tree_has_wp_prop_or_pred, &is_wp_only);
+  FlatTree tree =
+      FilterTree(global_tree, static_props, &num_props,
+                 &tree_has_wp_prop_or_pred, &is_wp_only, &is_gradient_only);
 
   // From here on, tree lookup returns a *clustered* context ID.
   // This avoids an extra memory lookup after tree traversal.
@@ -184,61 +192,15 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   // Those contexts are *clustered* context ids. This reduces stack usages and
   // avoids an extra memory lookup.
   // Initialized to avoid clang-tidy complaining.
-  uint8_t context_lookup[2 * kWPPropRange] = {};
-  int32_t multipliers[2 * kWPPropRange] = {};
-  int8_t offsets[2 * kWPPropRange] = {};
+  uint8_t context_lookup[2 * kPropRangeFast] = {};
+  int8_t multipliers[2 * kPropRangeFast] = {};
+  int8_t offsets[2 * kPropRangeFast] = {};
   if (is_wp_only) {
-    struct TreeRange {
-      // Begin *excluded*, end *included*. This works best with > vs <= decision
-      // nodes.
-      int begin, end;
-      size_t pos;
-    };
-    std::vector<TreeRange> ranges;
-    ranges.push_back(TreeRange{-kWPPropRange - 1, kWPPropRange - 1, 0});
-    while (!ranges.empty()) {
-      TreeRange cur = ranges.back();
-      ranges.pop_back();
-      if (cur.begin < -kWPPropRange - 1 || cur.begin >= kWPPropRange - 1 ||
-          cur.end > kWPPropRange - 1) {
-        // Tree is outside the allowed range, exit.
-        is_wp_only = false;
-        break;
-      }
-      auto &node = tree[cur.pos];
-      // Leaf.
-      if (node.property0 == -1) {
-        if (node.predictor_offset < std::numeric_limits<int8_t>::min() ||
-            node.predictor_offset > std::numeric_limits<int8_t>::max()) {
-          is_wp_only = false;
-          break;
-        }
-        for (int i = cur.begin + 1; i < cur.end + 1; i++) {
-          context_lookup[i + kWPPropRange] = node.childID;
-          multipliers[i + kWPPropRange] = node.multiplier;
-          offsets[i + kWPPropRange] = node.predictor_offset;
-        }
-        continue;
-      }
-      // > side of top node.
-      if (node.properties[0] >= kNumStaticProperties) {
-        ranges.push_back(TreeRange({node.splitvals[0], cur.end, node.childID}));
-        ranges.push_back(
-            TreeRange({node.splitval0, node.splitvals[0], node.childID + 1}));
-      } else {
-        ranges.push_back(TreeRange({node.splitval0, cur.end, node.childID}));
-      }
-      // <= side
-      if (node.properties[1] >= kNumStaticProperties) {
-        ranges.push_back(
-            TreeRange({node.splitvals[1], node.splitval0, node.childID + 2}));
-        ranges.push_back(
-            TreeRange({cur.begin, node.splitvals[1], node.childID + 3}));
-      } else {
-        ranges.push_back(
-            TreeRange({cur.begin, node.splitval0, node.childID + 2}));
-      }
-    }
+    is_wp_only = TreeToLookupTable(tree, context_lookup, offsets, multipliers);
+  }
+  if (is_gradient_only) {
+    is_gradient_only =
+        TreeToLookupTable(tree, context_lookup, offsets, multipliers);
   }
 
   const auto make_pixel = [](uint64_t v, pixel_type multiplier,
@@ -248,7 +210,28 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     return SaturatingAdd<pixel_type>(val * multiplier, offset);
   };
 
-  if (is_wp_only) {
+  if (is_gradient_only) {
+    JXL_DEBUG_V(8, "Gradient fast track.");
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    for (size_t y = 0; y < channel.h; y++) {
+      pixel_type *JXL_RESTRICT r = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        int32_t guess = ClampedGradient(top, left, topleft);
+        uint32_t pos =
+            kPropRangeFast +
+            std::min<pixel_type_w>(
+                std::max<pixel_type_w>(-kPropRangeFast, top + left - topleft),
+                kPropRangeFast - 1);
+        uint32_t ctx_id = context_lookup[pos];
+        uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
+        r[x] = make_pixel(v, multipliers[pos],
+                          static_cast<pixel_type_w>(offsets[pos]) + guess);
+      }
+    }
+  } else if (is_wp_only) {
     JXL_DEBUG_V(8, "WP fast track.");
     const intptr_t onerow = channel.plane.PixelsPerRow();
     weighted::State wp_state(wp_header, channel.w, channel.h);
@@ -267,8 +250,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
             x, y, channel.w, top, left, topright, topleft, toptop, &properties,
             offset);
         uint32_t pos =
-            kWPPropRange +
-            std::min(std::max(-kWPPropRange, properties[0]), kWPPropRange - 1);
+            kPropRangeFast + std::min(std::max(-kPropRangeFast, properties[0]),
+                                      kPropRangeFast - 1);
         uint32_t ctx_id = context_lookup[pos];
         uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
         r[x] = make_pixel(v, multipliers[pos],
@@ -285,7 +268,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     size_t ctx_id = tree[0].childID;
     if (predictor == Predictor::Zero) {
       uint32_t value;
-      if (reader->IsSingleValue(ctx_id, &value, channel.w * channel.h)) {
+      if (reader->IsSingleValueAndAdvance(ctx_id, &value,
+                                          channel.w * channel.h)) {
         // Special-case: histogram has a single symbol, with no extra bits, and
         // we use ANS mode.
         JXL_DEBUG_V(8, "Fastest track.");
@@ -383,7 +367,6 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   }
   return true;
 }
-
 
 GroupHeader::GroupHeader() { Bundle::Init(this); }
 

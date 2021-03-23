@@ -169,8 +169,8 @@ void QuantizeRoundtripYBlockAC(const Quantizer& quantizer,
   HWY_CAPPED(int32_t, kDCTBlockSize) di;
   const auto inv_qac = Set(df, quantizer.inv_quant_ac(quant));
   for (size_t k = 0; k < kDCTBlockSize * xsize * ysize; k += Lanes(df)) {
-    const auto quant = ConvertTo(df, Load(di, quantized + k));
-    const auto adj_quant = AdjustQuantBias(df, 1, quant, biases);
+    const auto quant = Load(di, quantized + k);
+    const auto adj_quant = AdjustQuantBias(di, 1, quant, biases);
     const auto dequantm = Load(df, dequant_matrix + k);
     Store(adj_quant * dequantm * inv_qac, df, inout + k);
   }

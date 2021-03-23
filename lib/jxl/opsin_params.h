@@ -25,11 +25,6 @@
 
 namespace jxl {
 
-static const float kScaleR = 1.0f;
-static const float kScaleG = 1.0f;
-static const float kInvScaleR = 1.0f;
-static const float kInvScaleG = 1.0f;
-
 // Parameters for opsin absorbance.
 static const float kM02 = 0.078;
 static const float kM00 = 0.30;

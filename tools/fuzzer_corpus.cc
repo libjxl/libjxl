@@ -31,6 +31,7 @@
 #include <random>
 #include <vector>
 
+#include "lib/extras/codec_jpg.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
@@ -42,6 +43,8 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/encode_internal.h"
+#include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 
 namespace {
@@ -66,6 +69,11 @@ struct ImageSpec {
     }
     if (bit_depth > kMaxBitDepth || bit_depth == 0) return false;
     if (num_frames == 0) return false;
+    // JPEG doesn't support all formats, so reconstructible JPEG isn't always
+    // valid.
+    if (is_reconstructible_jpeg &&
+        (bit_depth != 8 || num_channels != 3 || alpha_bit_depth != 0 || num_frames != 1))
+      return false;
     return true;
   }
 
@@ -79,7 +87,8 @@ struct ImageSpec {
       << ", speed=" << static_cast<int>(spec.params.speed_tier)
       << ", butteraugli=" << spec.params.butteraugli_distance
       << ", modular_mode=" << spec.params.modular_mode
-      << ", fuzzer_friendly=" << spec.fuzzer_friendly << ">";
+      << ", fuzzer_friendly=" << spec.fuzzer_friendly
+      << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg << ">";
     return o;
   }
 
@@ -120,6 +129,8 @@ struct ImageSpec {
     bool modular_mode = false;
     uint8_t padding_[3] = {};
   } params;
+
+  uint32_t is_reconstructible_jpeg = false;
 };
 #pragma pack(pop)
 static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
@@ -199,6 +210,32 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     io.frames.push_back(std::move(ib));
   }
 
+  // Compress the image.
+  jxl::PaddedBytes compressed;
+
+  if (spec.is_reconstructible_jpeg) {
+    // If this image is supposed to be a reconstructible JPEG, collect the JPEG
+    // metadata and encode it in the beginning of the compressed bytes.
+    jxl::PaddedBytes jpeg_bytes;
+    JXL_RETURN_IF_ERROR(
+        EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, /*quality=*/70,
+                       jxl::YCbCrChromaSubsampling(), /*pool=*/nullptr,
+                       &jpeg_bytes, jxl::DecodeTarget::kPixels));
+    JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
+        jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
+    jxl::PaddedBytes jpeg_data;
+    JXL_RETURN_IF_ERROR(EncodeJPEGData(*io.Main().jpeg_data, &jpeg_data));
+    std::vector<uint8_t> header;
+    header.insert(header.end(), jxl::kContainerHeader,
+                  jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
+    jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_data.size(), false,
+                         &header);
+    header.insert(header.end(), jpeg_data.data(),
+                  jpeg_data.data() + jpeg_data.size());
+    jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true, &header);
+    compressed.append(header);
+  }
+
   jxl::CompressParams params;
   params.speed_tier = spec.params.speed_tier;
   params.modular_mode = spec.params.modular_mode;
@@ -207,8 +244,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   params.options.predictor = {spec.params.modular_predictor};
   params.quality_pair = {100., 100.};
 
-  // Compress the image.
-  jxl::PaddedBytes compressed;
   jxl::AuxOut aux_out;
   jxl::PassesEncoderState passes_encoder_state;
   bool ok = jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed,
@@ -339,23 +374,32 @@ int main(int argc, const char** argv) {
             for (uint32_t num_frames : {1, 3}) {
               spec.num_frames = num_frames;
 
-              for (const auto& params : params_list) {
-                spec.params = params;
+#if JPEGXL_ENABLE_JPEG
+              for (bool reconstructible_jpeg : {false, true}) {
+                spec.is_reconstructible_jpeg = reconstructible_jpeg;
+#else   // JPEGXL_ENABLE_JPEG
+              spec.is_reconstructible_jpeg = false;
+#endif  // JPEGXL_ENABLE_JPEG
+                for (const auto& params : params_list) {
+                  spec.params = params;
 
-                if (alpha_bit_depth) {
-                  spec.alpha_is_premultiplied = mt() % 2;
+                  if (alpha_bit_depth) {
+                    spec.alpha_is_premultiplied = mt() % 2;
+                  }
+                  if (spec.width * spec.height > 1000) {
+                    // Increase the encoder speed for larger images.
+                    spec.params.speed_tier = jxl::SpeedTier::kWombat;
+                  }
+                  spec.seed = mt() % 777777;
+                  if (!spec.Validate()) {
+                    std::cerr << "Skipping " << spec << std::endl;
+                  } else {
+                    specs.push_back(spec);
+                  }
                 }
-                if (spec.width * spec.height > 1000) {
-                  // Increase the encoder speed for larger images.
-                  spec.params.speed_tier = jxl::SpeedTier::kWombat;
-                }
-                spec.seed = mt() % 777777;
-                if (!spec.Validate()) {
-                  std::cerr << "Skipping " << spec << std::endl;
-                } else {
-                  specs.push_back(spec);
-                }
+#if JPEGXL_ENABLE_JPEG
               }
+#endif  // JPEGXL_ENABLE_JPEG
             }
           }
         }

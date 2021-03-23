@@ -20,6 +20,8 @@
 #define HWY_TARGET_INCLUDE "lib/jxl/fast_math_test.cc"
 #include <hwy/foreach_target.h>
 
+#include "lib/jxl/dec_xyb-inl.h"
+#include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/transfer_functions-inl.h"
 
@@ -172,6 +174,58 @@ HWY_NOINLINE void TestFastPQDFE() {
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
 }
 
+HWY_NOINLINE void TestFastXYB() {
+  if (!HasFastXYBTosRGB8()) return;
+  ImageMetadata metadata;
+  ImageBundle ib(&metadata);
+  int scaling = 1;
+  int n = 256 * scaling;
+  float inv_scaling = 1.0f / scaling;
+  int kChunk = 32;
+  // The image is divided in chunks to reduce total memory usage.
+  for (int cr = 0; cr < n; cr += kChunk) {
+    for (int cg = 0; cg < n; cg += kChunk) {
+      for (int cb = 0; cb < n; cb += kChunk) {
+        Image3F chunk(kChunk * kChunk, kChunk);
+        for (int ir = 0; ir < kChunk; ir++) {
+          for (int ig = 0; ig < kChunk; ig++) {
+            for (int ib = 0; ib < kChunk; ib++) {
+              float r = (cr + ir) * inv_scaling;
+              float g = (cg + ig) * inv_scaling;
+              float b = (cb + ib) * inv_scaling;
+              chunk.PlaneRow(0, ir)[ig * kChunk + ib] = r * (1.0f / 255);
+              chunk.PlaneRow(1, ir)[ig * kChunk + ib] = g * (1.0f / 255);
+              chunk.PlaneRow(2, ir)[ig * kChunk + ib] = b * (1.0f / 255);
+            }
+          }
+        }
+        ib.SetFromImage(std::move(chunk), ColorEncoding::SRGB());
+        Image3F xyb(kChunk * kChunk, kChunk);
+        std::vector<uint8_t> roundtrip(kChunk * kChunk * kChunk * 3);
+        ToXYB(ib, nullptr, &xyb);
+        jxl::HWY_NAMESPACE::FastXYBTosRGB8(xyb, Rect(xyb), Rect(xyb),
+                                           roundtrip.data(), xyb.xsize());
+        for (int ir = 0; ir < kChunk; ir++) {
+          for (int ig = 0; ig < kChunk; ig++) {
+            for (int ib = 0; ib < kChunk; ib++) {
+              float r = (cr + ir) * inv_scaling;
+              float g = (cg + ig) * inv_scaling;
+              float b = (cb + ib) * inv_scaling;
+              size_t idx = ir * kChunk * kChunk + ig * kChunk + ib;
+              int rr = roundtrip[3 * idx];
+              int rg = roundtrip[3 * idx + 1];
+              int rb = roundtrip[3 * idx + 2];
+              EXPECT_LT(abs(r - rr), 2) << "expected " << r << " got " << rr;
+              EXPECT_LT(abs(g - rg), 2) << "expected " << g << " got " << rg;
+              EXPECT_LT(abs(b - rb), 2) << "expected " << b << " got " << rb;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 }  // namespace
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
@@ -192,6 +246,7 @@ HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastErf);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastSRGB);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastPQDFE);
 HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastPQEFD);
+HWY_EXPORT_AND_TEST_P(FastMathTargetTest, TestFastXYB);
 
 }  // namespace jxl
 #endif  // HWY_ONCE

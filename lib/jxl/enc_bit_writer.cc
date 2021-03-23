@@ -65,8 +65,10 @@ void BitWriter::Allotment::PrivateReclaim(BitWriter* JXL_RESTRICT writer,
   writer->storage_.resize(writer->storage_.size() - unused_bytes);
   writer->current_allotment_ = parent_;
   // Ensure we don't also charge the parent for these bits.
-  if (parent_ != nullptr) {
-    parent_->prev_bits_written_ += *used_bits;
+  auto parent = parent_;
+  while (parent != nullptr) {
+    parent->prev_bits_written_ += *used_bits;
+    parent = parent->parent_;
   }
 }
 

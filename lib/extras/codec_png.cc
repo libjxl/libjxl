@@ -762,10 +762,10 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
   const ImageBundle* transformed;
   JXL_RETURN_IF_ERROR(
       TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
-  size_t stride =
-      ib.xsize() * DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
-                           kBitsPerByte);
-  PaddedBytes raw_bytes(stride * ib.ysize());
+  size_t stride = ib.oriented_xsize() *
+                  DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
+                          kBitsPerByte);
+  PaddedBytes raw_bytes(stride * ib.oriented_ysize());
   JXL_RETURN_IF_ERROR(ConvertToExternal(
       *transformed, bits_per_sample, /*float_out=*/false,
       /*apply_srgb_tf=*/false, c_desired.Channels() + (ib.HasAlpha() ? 1 : 0),
@@ -786,8 +786,9 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
 
   unsigned char* out = nullptr;
   size_t out_size = 0;
-  const unsigned err = lodepng_encode(&out, &out_size, raw_bytes.data(),
-                                      ib.xsize(), ib.ysize(), &state.s);
+  const unsigned err =
+      lodepng_encode(&out, &out_size, raw_bytes.data(), ib.oriented_xsize(),
+                     ib.oriented_ysize(), &state.s);
   // Automatically call free(out) on return.
   std::unique_ptr<unsigned char, void (*)(void*)> out_ptr{out, free};
   if (err != 0) {

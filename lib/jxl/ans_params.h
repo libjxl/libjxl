@@ -93,6 +93,7 @@ struct HistogramParams {
   LZ77Method lz77_method = LZ77Method::kRLE;
   ANSHistogramStrategy ans_histogram_strategy = ANSHistogramStrategy::kPrecise;
   std::vector<size_t> image_widths;
+  size_t max_histograms = ~0;
   bool force_huffman = false;
 };
 

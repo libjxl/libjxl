@@ -24,6 +24,7 @@
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_png.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
@@ -94,7 +95,7 @@ class CustomCodec : public ImageCodec {
   }
 
   Status Compress(const std::string& filename, const CodecInOut* io,
-                  ThreadPool* pool, PaddedBytes* compressed,
+                  ThreadPoolInternal* pool, PaddedBytes* compressed,
                   jpegxl::tools::SpeedStats* speed_stats) override {
     JXL_RETURN_IF_ERROR(param_index_ > 2);
 
@@ -120,8 +121,8 @@ class CustomCodec : public ImageCodec {
   }
 
   Status Decompress(const std::string& filename,
-                    const Span<const uint8_t> compressed, ThreadPool* pool,
-                    CodecInOut* io,
+                    const Span<const uint8_t> compressed,
+                    ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     const std::string basename = GetBaseName(filename);
     TemporaryFile encoded_file(basename, extension_), png_file(basename, "png");

@@ -143,7 +143,8 @@ void EnsureUnchanged(const float background, const float foreground,
   jxl::PassesDecoderState state;
   JXL_CHECK(
       jxl::InitializePassesSharedState(frame_header, &state.shared_storage));
-  state.Init(/*pool=*/nullptr);
+  state.Init();
+  state.InitForAC(/*pool=*/nullptr);
 
   state.filter_weights.Init(lf, frame_dim);
   FillImage(-0.5f, &state.filter_weights.sigma);
