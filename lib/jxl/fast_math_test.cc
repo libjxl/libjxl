@@ -62,7 +62,7 @@ HWY_NOINLINE void TestFastPow2() {
     const float actual = GetLane(actual_v);
     const float expected = std::pow(2, f);
     const float rel_err = std::abs(expected - actual) / expected;
-    EXPECT_LT(rel_err, 3E-7) << "f = " << f;
+    EXPECT_LT(rel_err, 3.1E-7) << "f = " << f;
     max_rel_err = std::max(max_rel_err, rel_err);
   }
   printf("max rel err %e\n", static_cast<double>(max_rel_err));

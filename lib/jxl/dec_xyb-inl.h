@@ -158,10 +158,18 @@ void FastXYBTosRGB8(const Image3F& input, const Rect& input_rect,
         0x00, 0xad, 0x41, 0x06, 0x65, 0xe7, 0x41, 0x68,
         0xa2, 0xa2, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
     };
-    uint8x16_t pow_low = vqtbl1q_u8(vld1q_u8(k2to512powersm1div32_low),
-                                    vreinterpretq_s16_u8(exp16));
-    uint8x16_t pow_high = vqtbl1q_u8(vld1q_u8(k2to512powersm1div32_high),
-                                     vreinterpretq_s16_u8(exp16));
+    // Using the highway implementation here since vqtbl1q is aarch64-only.
+    using hwy::HWY_NAMESPACE::Vec128;
+    uint8x16_t pow_low =
+        TableLookupBytes(
+            Vec128<uint8_t, 16>(vld1q_u8(k2to512powersm1div32_low)),
+            Vec128<uint8_t, 16>(vreinterpretq_s16_u8(exp16)))
+            .raw;
+    uint8x16_t pow_high =
+        TableLookupBytes(
+            Vec128<uint8_t, 16>(vld1q_u8(k2to512powersm1div32_high)),
+            Vec128<uint8_t, 16>(vreinterpretq_s16_u8(exp16)))
+            .raw;
     int16x8_t pow16 = vreinterpretq_u16_s16(vsliq_n_u16(
         vreinterpretq_u8_s16(pow_low), vreinterpretq_u8_s16(pow_high), 8));
 

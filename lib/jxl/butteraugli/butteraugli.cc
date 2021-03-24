@@ -39,7 +39,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <mutex>
 #include <new>
 #include <vector>
 

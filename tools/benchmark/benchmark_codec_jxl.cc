@@ -303,10 +303,10 @@ class JxlCodec : public ImageCodec {
                                                    JXL_DEC_COLOR_ENCODING |
                                                    JXL_DEC_FULL_IMAGE));
       JxlBasicInfo info{};
-      JxlPixelFormat format = {.num_channels = 3,
-                               .data_type = JXL_TYPE_FLOAT,
-                               .endianness = JXL_NATIVE_ENDIAN,
-                               .align = 0};
+      JxlPixelFormat format = {/*num_channels=*/3,
+                               /*data_type=*/JXL_TYPE_FLOAT,
+                               /*endianness=*/JXL_NATIVE_ENDIAN,
+                               /*align=*/0};
       if (uint8_) {
         format.data_type = JXL_TYPE_UINT8;
       }

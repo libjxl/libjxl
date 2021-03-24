@@ -90,8 +90,8 @@ class InMemoryIStream : public OpenEXR::IStream {
     return pos_ < bytes_.size();
   }
 
-  uint64_t tellg() override { return pos_; }
-  void seekg(const uint64_t pos) override {
+  OpenEXR::Int64 tellg() override { return pos_; }
+  void seekg(const OpenEXR::Int64 pos) override {
     JXL_ASSERT(pos + 1 <= bytes_.size());
     pos_ = pos;
   }
@@ -115,8 +115,8 @@ class InMemoryOStream : public OpenEXR::OStream {
     pos_ += n;
   }
 
-  uint64_t tellp() override { return pos_; }
-  void seekp(const uint64_t pos) override {
+  OpenEXR::Int64 tellp() override { return pos_; }
+  void seekp(const OpenEXR::Int64 pos) override {
     if (bytes_.size() + 1 < pos) {
       bytes_.resize(pos - 1);
     }

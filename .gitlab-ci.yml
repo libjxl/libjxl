@@ -351,7 +351,7 @@ build:armhf:clang:release:
     - web
   script:
     - BUILD_TARGET=arm-linux-gnueabihf
-        CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
+        CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS -march=armv7a -Wno-unused-command-line-argument" SKIP_TEST=1 PACK_TEST=1
         STACK_SIZE=1
         ./ci.sh release
     - tools/build_stats.py --save build/stats.json
