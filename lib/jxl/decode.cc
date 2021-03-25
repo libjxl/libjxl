@@ -728,6 +728,7 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
   jxl::Orientation undo_orientation = dec->keep_orientation
                                           ? jxl::Orientation::kIdentity
                                           : metadata.GetOrientation();
+  JXL_DASSERT(!dec->frame_dec || !dec->frame_dec->HasRGBBuffer());
   jxl::Status status = jxl::ConvertToExternal(
       frame, BitsPerChannel(format.data_type),
       format.data_type == JXL_TYPE_FLOAT, apply_srgb_tf, format.num_channels,
@@ -1883,6 +1884,10 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
 
   if (!dec->frame_dec->Flush()) {
     return JXL_DEC_ERROR;
+  }
+
+  if (dec->frame_dec->HasRGBBuffer()) {
+    return JXL_DEC_SUCCESS;
   }
 
   JxlDecoderStatus status =

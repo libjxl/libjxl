@@ -680,6 +680,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
     AllocateOutput();
   }
 
+  if (finalized_dc_) dec_state_->EnsureBordersStorage();
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
     dec_state_->InitForAC(pool_);
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));

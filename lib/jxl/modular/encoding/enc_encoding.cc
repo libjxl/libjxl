@@ -168,7 +168,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                                  const weighted::Header &wp_header,
                                  const Tree &global_tree,
                                  std::vector<Token> *tokens, AuxOut *aux_out,
-                                 size_t group_id) {
+                                 size_t group_id, bool skip_encoder_fast_path) {
   const Channel &channel = image.channel[chan];
 
   JXL_ASSERT(channel.w != 0 && channel.h != 0);
@@ -203,7 +203,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   }
 
   tokens->reserve(tokens->size() + channel.w * channel.h);
-  if (is_wp_only) {
+  if (is_wp_only && !skip_encoder_fast_path) {
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(Predictor::Weighted)[c]),
                 &predictor_img.Plane(c));
@@ -234,7 +234,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       }
     }
   } else if (tree.size() == 1 && tree[0].predictor == Predictor::Zero &&
-             tree[0].multiplier == 1 && tree[0].predictor_offset == 0) {
+             tree[0].multiplier == 1 && tree[0].predictor_offset == 0 &&
+             !skip_encoder_fast_path) {
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(Predictor::Zero)[c]),
                 &predictor_img.Plane(c));
@@ -247,7 +248,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
     }
   } else if (tree.size() == 1 && tree[0].predictor != Predictor::Weighted &&
              (tree[0].multiplier & (tree[0].multiplier - 1)) == 0 &&
-             tree[0].predictor_offset == 0) {
+             tree[0].predictor_offset == 0 && !skip_encoder_fast_path) {
     // multiplier is a power of 2.
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(tree[0].predictor)[c]),
@@ -267,7 +268,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
       }
     }
 
-  } else if (!use_wp) {
+  } else if (!use_wp && !skip_encoder_fast_path) {
     const intptr_t onerow = channel.plane.PixelsPerRow();
     Channel references(properties.size() - kNumNonrefProperties, channel.w);
     for (size_t y = 0; y < channel.h; y++) {
@@ -454,7 +455,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     }
     if (image.channel[i].w > image_width) image_width = image.channel[i].w;
     JXL_RETURN_IF_ERROR(EncodeModularChannelMAANS(
-        image, i, header->wp_header, *tree, tokens, aux_out, group_id));
+        image, i, header->wp_header, *tree, tokens, aux_out, group_id,
+        options.skip_encoder_fast_path));
   }
 
   // Write data if not using a global tree/ANS stream.

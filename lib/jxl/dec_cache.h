@@ -265,16 +265,8 @@ struct PassesDecoderState {
         noise_seed += shared->frame_dim.num_groups;
       }
     }
-    if (EagerFinalizeImageRect()) {
-      size_t padding = FinalizeRectPadding();
-      size_t bordery = 2 * padding;
-      size_t borderx = padding + group_border_assigner.PaddingX(padding);
-      borders_horizontal =
-          Image3F(shared->frame_dim.xsize_padded,
-                  bordery * shared->frame_dim.ysize_groups * 2);
-      borders_vertical = Image3F(borderx * shared->frame_dim.xsize_groups * 2,
-                                 shared->frame_dim.ysize_padded);
-    } else {
+    EnsureBordersStorage();
+    if (!EagerFinalizeImageRect()) {
       // decoded must be padded to a multiple of kBlockDim rows since the last
       // rows may be used by the filters even if they are outside the frame
       // dimension.
@@ -285,6 +277,23 @@ struct PassesDecoderState {
     // Avoid errors due to loading vectors on the outermost padding.
     ZeroFillImage(&decoded);
 #endif
+  }
+
+  void EnsureBordersStorage() {
+    if (!EagerFinalizeImageRect()) return;
+    size_t padding = FinalizeRectPadding();
+    size_t bordery = 2 * padding;
+    size_t borderx = padding + group_border_assigner.PaddingX(padding);
+    Rect horizontal = Rect(0, 0, shared->frame_dim.xsize_padded,
+                           bordery * shared->frame_dim.ysize_groups * 2);
+    if (!SameSize(horizontal, borders_horizontal)) {
+      borders_horizontal = Image3F(horizontal.xsize(), horizontal.ysize());
+    }
+    Rect vertical = Rect(0, 0, borderx * shared->frame_dim.xsize_groups * 2,
+                         shared->frame_dim.ysize_padded);
+    if (!SameSize(vertical, borders_vertical)) {
+      borders_vertical = Image3F(vertical.xsize(), vertical.ysize());
+    }
   }
 };
 

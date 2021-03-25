@@ -95,7 +95,7 @@ FlatTree FilterTree(const Tree &global_tree,
       flat.multiplier = global_tree[cur].multiplier;
       *gradient_only &= flat.predictor == Predictor::Gradient;
       has_wp |= flat.predictor == Predictor::Weighted;
-      has_non_wp &= flat.predictor != Predictor::Weighted;
+      has_non_wp |= flat.predictor != Predictor::Weighted;
       output.push_back(flat);
       continue;
     }

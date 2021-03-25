@@ -1,3 +1,11 @@
+jpeg-xl (0.3.6) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.3.6.
+  * Fix a bug that could result in the generation of invalid codestreams as
+    well as failure to decode valid streams.
+
+ -- Sami Boukortt <sboukortt@google.com>  Thu, 25 Mar 2021 17:40:58 +0100
+
 jpeg-xl (0.3.5) UNRELEASED; urgency=medium
 
   * Bump JPEG XL version to 0.3.5.

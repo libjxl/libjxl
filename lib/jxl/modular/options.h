@@ -164,6 +164,9 @@ struct ModularOptions {
   enum class WPTreeMode { kWPOnly, kNoWP, kDefault };
   WPTreeMode wp_tree_mode = WPTreeMode::kDefault;
 
+  // Skip fast paths in the encoder.
+  bool skip_encoder_fast_path = false;
+
   // Kind of tree to use.
   // TODO(veluca): add tree kinds for JPEG recompression with CfL enabled,
   // general AC metadata, different DC qualities, and others.
