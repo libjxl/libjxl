@@ -310,8 +310,10 @@ struct ColorEncoding : public Fields {
     return false;
   }
 
+  // Returns whether the color space is known to be sRGB. If a raw unparsed ICC
+  // profile is set without the fields being set, this returns false, even if
+  // the content of the ICC profile would match sRGB.
   bool IsSRGB() const {
-    JXL_DASSERT(have_fields_);
     if (!have_fields_) return false;
     if (!IsGray() && color_space_ != ColorSpace::kRGB) return false;
     if (white_point != WhitePoint::kD65) return false;
@@ -320,8 +322,10 @@ struct ColorEncoding : public Fields {
     return true;
   }
 
+  // Returns whether the color space is known to be linear sRGB. If a raw
+  // unparsed ICC profile is set without the fields being set, this returns
+  // false, even if the content of the ICC profile would match linear sRGB.
   bool IsLinearSRGB() const {
-    JXL_DASSERT(have_fields_);
     if (!have_fields_) return false;
     if (!IsGray() && color_space_ != ColorSpace::kRGB) return false;
     if (white_point != WhitePoint::kD65) return false;

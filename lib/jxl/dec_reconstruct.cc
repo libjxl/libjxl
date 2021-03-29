@@ -184,7 +184,6 @@ void FloatToRGB8(const Image3F& input, const Rect& input_rect,
         3 * (y + output_buf_rect.y0()) * xsize + 3 * output_buf_rect.x0();
     using D = HWY_CAPPED(float, 4);
     const D d;
-    D::Rebind<int32_t> di;
     D::Rebind<uint32_t> du;
     auto zero = Zero(d);
     auto one = Set(d, 1.0f);
@@ -193,9 +192,9 @@ void FloatToRGB8(const Image3F& input, const Rect& input_rect,
       auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
       auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
       auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
-      auto r8 = U8FromU32(BitCast(du, ConvertTo(di, rf)));
-      auto g8 = U8FromU32(BitCast(du, ConvertTo(di, gf)));
-      auto b8 = U8FromU32(BitCast(du, ConvertTo(di, bf)));
+      auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
+      auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
+      auto b8 = U8FromU32(BitCast(du, NearestInt(bf)));
       size_t n = output_buf_rect.xsize() - x;
       if (JXL_LIKELY(n >= Lanes(d))) {
         StoreRGB(D::Rebind<uint8_t>(), r8, g8, b8, Lanes(d), n,
@@ -225,7 +224,6 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect,
         4 * (y + output_buf_rect.y0()) * xsize + 4 * output_buf_rect.x0();
     using D = HWY_CAPPED(float, 4);
     const D d;
-    D::Rebind<int32_t> di;
     D::Rebind<uint32_t> du;
     auto zero = Zero(d);
     auto one = Set(d, 1.0f);
@@ -234,9 +232,9 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect,
       auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
       auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
       auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
-      auto r8 = U8FromU32(BitCast(du, ConvertTo(di, rf)));
-      auto g8 = U8FromU32(BitCast(du, ConvertTo(di, gf)));
-      auto b8 = U8FromU32(BitCast(du, ConvertTo(di, bf)));
+      auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
+      auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
+      auto b8 = U8FromU32(BitCast(du, NearestInt(bf)));
       size_t n = output_buf_rect.xsize() - x;
       if (JXL_LIKELY(n >= Lanes(d))) {
         StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, Lanes(d), n,

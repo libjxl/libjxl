@@ -1240,82 +1240,86 @@ TEST(DecodeTest, ICCPartialTest) {
 TEST(DecodeTest, PixelTest) {
   JxlDecoder* dec = JxlDecoderCreate(NULL);
 
-  for (size_t box = 0; box < kCSBF_NUM_ENTRIES; ++box) {
-    CodeStreamBoxFormat add_container = (CodeStreamBoxFormat)box;
-    size_t xsize = 123, ysize = 77;
-    size_t num_pixels = xsize * ysize;
-    std::vector<uint8_t> pixels =
-        jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
-    JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-    jxl::CompressParams cparams;
-    // Lossless to verify pixels exactly after roundtrip.
-    cparams.SetLossless();
-    // For variation: some have container and no preview, others have preview
-    // and no container.
-    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
-        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-        cparams, add_container, false);
-    jxl::PaddedBytes compressed_with_preview = jxl::CreateTestJXLCodestream(
-        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
-        cparams, add_container, true);
+  for (int include_alpha = 0; include_alpha <= 1; include_alpha++) {
+    uint32_t orig_channels = include_alpha ? 4 : 3;
+    for (size_t box = 0; box < kCSBF_NUM_ENTRIES; ++box) {
+      CodeStreamBoxFormat add_container = (CodeStreamBoxFormat)box;
+      size_t xsize = 123, ysize = 77;
+      size_t num_pixels = xsize * ysize;
+      std::vector<uint8_t> pixels =
+          jxl::test::GetSomeTestImage(xsize, ysize, orig_channels, 0);
+      JxlPixelFormat format_orig = {orig_channels, JXL_TYPE_UINT16,
+                                    JXL_BIG_ENDIAN, 0};
+      jxl::CompressParams cparams;
+      // Lossless to verify pixels exactly after roundtrip.
+      cparams.SetLossless();
+      // For variation: some have container and no preview, others have preview
+      // and no container.
+      jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+          jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+          orig_channels, cparams, add_container, false);
+      jxl::PaddedBytes compressed_with_preview = jxl::CreateTestJXLCodestream(
+          jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+          orig_channels, cparams, add_container, true);
 
-    for (int big_endian = 0; big_endian <= 1; ++big_endian) {
-      JxlEndianness endianness =
-          big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN;
+      for (int big_endian = 0; big_endian <= 1; ++big_endian) {
+        JxlEndianness endianness =
+            big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN;
 
-      for (uint32_t channels = 3; channels <= 4; ++channels) {
-        {
-          JxlPixelFormat format = {channels, JXL_TYPE_UINT8, endianness, 0};
+        for (uint32_t channels = 3; channels <= orig_channels; ++channels) {
+          {
+            JxlPixelFormat format = {channels, JXL_TYPE_UINT8, endianness, 0};
 
-          std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-              dec,
-              jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-              format);
-          JxlDecoderReset(dec);
-          EXPECT_EQ(num_pixels * channels, pixels2.size());
-          EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
-                                     ysize, format_orig, format));
-        }
-        {
-          JxlPixelFormat format = {channels, JXL_TYPE_UINT16, endianness, 0};
+            std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+                dec,
+                jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+                format);
+            JxlDecoderReset(dec);
+            EXPECT_EQ(num_pixels * channels, pixels2.size());
+            EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
+                                       ysize, format_orig, format));
+          }
+          {
+            JxlPixelFormat format = {channels, JXL_TYPE_UINT16, endianness, 0};
 
-          // Test with the container for one of the pixel formats.
-          std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-              dec,
-              jxl::Span<const uint8_t>(compressed_with_preview.data(),
-                                       compressed_with_preview.size()),
-              format);
-          JxlDecoderReset(dec);
-          EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
-          EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
-                                     ysize, format_orig, format));
-        }
+            // Test with the container for one of the pixel formats.
+            std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+                dec,
+                jxl::Span<const uint8_t>(compressed_with_preview.data(),
+                                         compressed_with_preview.size()),
+                format);
+            JxlDecoderReset(dec);
+            EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
+            EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
+                                       ysize, format_orig, format));
+          }
 
 #if 0  // Disabled since external_image doesn't currently support uint32_t
-      {
-        JxlPixelFormat format = {channels, JXL_TYPE_UINT32, endianness, 0};
-
-        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(dec,
-            jxl::Span<const uint8_t>(compressed.data(),
-                compressed.size()), format);
-        JxlDecoderReset(dec);
-        EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
-        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                                  format_orig, format));
-      }
-#endif
-
         {
-          JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, endianness, 0};
+          JxlPixelFormat format = {channels, JXL_TYPE_UINT32, endianness, 0};
 
-          std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
-              dec,
-              jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-              format);
+          std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(dec,
+              jxl::Span<const uint8_t>(compressed.data(),
+                  compressed.size()), format);
           JxlDecoderReset(dec);
           EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
-          EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
-                                     ysize, format_orig, format));
+          EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(),
+              xsize, ysize, format_orig, format));
+        }
+#endif
+
+          {
+            JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, endianness, 0};
+
+            std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+                dec,
+                jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+                format);
+            JxlDecoderReset(dec);
+            EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+            EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
+                                       ysize, format_orig, format));
+          }
         }
       }
     }

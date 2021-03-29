@@ -35,6 +35,7 @@
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/override.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
@@ -87,8 +88,11 @@ struct ImageSpec {
       << ", speed=" << static_cast<int>(spec.params.speed_tier)
       << ", butteraugli=" << spec.params.butteraugli_distance
       << ", modular_mode=" << spec.params.modular_mode
+      << ", lossy_palette=" << spec.params.lossy_palette
+      << ", noise=" << spec.params.noise
       << ", fuzzer_friendly=" << spec.fuzzer_friendly
-      << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg << ">";
+      << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg
+      << ">";
     return o;
   }
 
@@ -102,19 +106,20 @@ struct ImageSpec {
     }
   }
 
-  size_t width, height;
+  uint64_t width = 256;
+  uint64_t height = 256;
   // Number of channels *not* including alpha.
-  size_t num_channels;
-  size_t bit_depth;
+  uint64_t num_channels = 3;
+  uint64_t bit_depth = 8;
   // Bit depth for the alpha channel. A value of 0 means no alpha channel.
-  size_t alpha_bit_depth;
-  int alpha_is_premultiplied = false;
+  uint64_t alpha_bit_depth = 8;
+  int32_t alpha_is_premultiplied = false;
 
   // Whether the ANS fuzzer friendly setting is currently enabled.
   uint32_t fuzzer_friendly = false;
 
   // Number of frames, all the frames will have the same size.
-  size_t num_frames;
+  uint64_t num_frames = 1;
 
   // The seed for the PRNG.
   uint32_t seed = 7777;
@@ -127,10 +132,15 @@ struct ImageSpec {
     jxl::ColorTransform color_transform = jxl::ColorTransform::kXYB;
     jxl::SpeedTier speed_tier = jxl::SpeedTier::kTortoise;
     bool modular_mode = false;
-    uint8_t padding_[3] = {};
+    bool lossy_palette = false;
+    bool noise = false;
+    uint8_t padding_[1] = {};
   } params;
 
   uint32_t is_reconstructible_jpeg = false;
+  // Use 0xFF if any random spec is good; otherwise set the desired value.
+  uint8_t override_decoder_spec = 0xFF;
+  uint8_t padding_[3] = {};
 };
 #pragma pack(pop)
 static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
@@ -242,6 +252,8 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   params.color_transform = spec.params.color_transform;
   params.butteraugli_distance = spec.params.butteraugli_distance;
   params.options.predictor = {spec.params.modular_predictor};
+  params.lossy_palette = spec.params.lossy_palette;
+  if (spec.params.noise) params.noise = jxl::Override::kOn;
   params.quality_pair = {100., 100.};
 
   jxl::AuxOut aux_out;
@@ -253,7 +265,11 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   // Append one byte with the flags used by djxl_fuzzer to select the decoding
   // output.
   std::uniform_int_distribution<> dis256(0, 255);
-  compressed.push_back(dis256(mt));
+  if (spec.override_decoder_spec == 0xFF) {
+    compressed.push_back(dis256(mt));
+  } else {
+    compressed.push_back(spec.override_decoder_spec);
+  }
 
   if (!jxl::WriteFile(compressed, output_fn)) return 1;
   {
@@ -405,6 +421,14 @@ int main(int argc, const char** argv) {
         }
       }
     }
+
+    specs.emplace_back(ImageSpec());
+    specs.back().params.lossy_palette = true;
+    specs.back().override_decoder_spec = 0;
+
+    specs.emplace_back(ImageSpec());
+    specs.back().params.noise = true;
+    specs.back().override_decoder_spec = 0;
 
     jxl::ThreadPoolInternal pool{num_threads};
     pool.Run(

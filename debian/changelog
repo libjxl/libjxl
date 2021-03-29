@@ -1,3 +1,10 @@
+jpeg-xl (0.3.7) UNRELEASED; urgency=medium
+
+  * Bump JPEG XL version to 0.3.7.
+  * Fix a rounding issue in 8-bit decoding.
+
+ -- Sami Boukortt <sboukortt@google.com>  Mon, 29 Mar 2021 12:14:20 +0200
+
 jpeg-xl (0.3.6) UNRELEASED; urgency=medium
 
   * Bump JPEG XL version to 0.3.6.

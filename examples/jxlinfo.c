@@ -32,6 +32,8 @@ int PrintBasicInfo(FILE* file) {
     return 0;
   }
 
+  JxlDecoderSetKeepOrientation(dec, 1);
+
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(dec,
                                 JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING)) {
