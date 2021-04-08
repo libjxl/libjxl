@@ -1143,7 +1143,8 @@ Status DequantMatrices::Compute() {
     HWY_ALIGN_MAX float inv_table[kTotalTableSize];
   };
 
-  static const DefaultMatrices default_matrices;
+  static const DefaultMatrices* default_matrices_ptr = new DefaultMatrices();
+  const DefaultMatrices& default_matrices = *default_matrices_ptr;
 
   JXL_ASSERT(encodings_.size() == kNum);
 

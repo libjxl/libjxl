@@ -88,8 +88,9 @@ AcStrategy::CoeffOrderAndLut::CoeffOrderAndLut() {
 }
 
 const AcStrategy::CoeffOrderAndLut* AcStrategy::CoeffOrder() {
-  static AcStrategy::CoeffOrderAndLut order;
-  return &order;
+  static AcStrategy::CoeffOrderAndLut* order =
+      new AcStrategy::CoeffOrderAndLut();
+  return order;
 }
 
 // These definitions are needed before C++17.
