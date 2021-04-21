@@ -28,8 +28,6 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/image.h"
 
@@ -64,6 +62,8 @@ struct Spline {
   float sigma_dct[32];
 };
 
+class QuantizedSplineEncoder;
+
 class QuantizedSpline {
  public:
   QuantizedSpline() = default;
@@ -75,13 +75,13 @@ class QuantizedSpline {
                     int32_t quantization_adjustment, float ytox,
                     float ytob) const;
 
-  void Tokenize(std::vector<Token>* tokens) const;
-
   Status Decode(const std::vector<uint8_t>& context_map,
                 ANSSymbolReader* decoder, BitReader* br,
                 size_t max_control_points, size_t* total_num_control_points);
 
  private:
+  friend class QuantizedSplineEncoder;
+
   std::vector<std::pair<int64_t, int64_t>>
       control_points_;  // Double delta-encoded.
   int color_dct_[3][32] = {};
@@ -127,8 +127,6 @@ class Splines {
   std::vector<QuantizedSpline> splines_;
   std::vector<Spline::Point> starting_points_;
 };
-
-Splines FindSplines(const Image3F& opsin);
 
 }  // namespace jxl
 

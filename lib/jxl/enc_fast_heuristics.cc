@@ -106,7 +106,7 @@ Status Heuristics(PassesEncoderState* enc_state,
               -GetLane(SumOfLanes(cb)) / (GetLane(SumOfLanes(ca)) + 1e-9f);
           int8_t& res = (c == 0 ? shared.cmap.ytox_map : shared.cmap.ytob_map)
                             .Row(ty)[tx];
-          res = std::max(-128.0f, std::min(127.0f, std::roundf(best)));
+          res = std::max(-128.0f, std::min(127.0f, roundf(best)));
         }
       },
       "CfL");

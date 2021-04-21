@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <algorithm>
 #include <utility>  // std::move
 
 #include "lib/jxl/base/cache_aligned.h"
@@ -237,6 +238,12 @@ class Rect {
   }
 
   Rect Line(size_t y) const { return Lines(y, 1); }
+
+  JXL_MUST_USE_RESULT Rect Intersection(const Rect& other) const {
+    return Rect(std::max(x0_, other.x0_), std::max(y0_, other.y0_), xsize_,
+                ysize_, std::min(x0_ + xsize_, other.x0_ + other.xsize_),
+                std::min(y0_ + ysize_, other.y0_ + other.ysize_));
+  }
 
   template <typename T>
   T* Row(Plane<T>* image, size_t y) const {

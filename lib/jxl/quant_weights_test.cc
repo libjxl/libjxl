@@ -23,7 +23,7 @@
 #include <random>
 
 #include "lib/jxl/dct_for_test.h"
-#include "lib/jxl/dec_transforms.h"
+#include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_transforms.h"
@@ -203,9 +203,8 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
 
     for (size_t i = 0; i < 64; i++) {
       // DCTSlow doesn't multiply/divide by 1/N, so we do it manually.
-      slow_coeffs[i] =
-          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
-      coeffs[i] = std::round(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
+      slow_coeffs[i] = roundf(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
+      coeffs[i] = roundf(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
                   dequant_matrices.Matrix(dct, 0)[i];
     }
     IDCTSlow<8>(slow_coeffs);
@@ -227,9 +226,8 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
     DCTSlow<16>(slow_coeffs);
 
     for (size_t i = 0; i < 64 * 4; i++) {
-      slow_coeffs[i] =
-          std::round(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
-      coeffs[i] = std::round(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
+      slow_coeffs[i] = roundf(slow_coeffs[i] / kUniformQuant) * kUniformQuant;
+      coeffs[i] = roundf(coeffs[i] / dequant_matrices.Matrix(dct, 0)[i]) *
                   dequant_matrices.Matrix(dct, 0)[i];
     }
 

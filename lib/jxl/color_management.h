@@ -37,49 +37,10 @@ enum class ExtraTF {
   kSRGB,
 };
 
-// Run is thread-safe.
-class ColorSpaceTransform {
- public:
-  ColorSpaceTransform();
-  ~ColorSpaceTransform();
+Status MaybeCreateProfile(const ColorEncoding& c,
+                          PaddedBytes* JXL_RESTRICT icc);
 
-  // Cannot copy (transforms_ holds pointers).
-  ColorSpaceTransform(const ColorSpaceTransform&) = delete;
-  ColorSpaceTransform& operator=(const ColorSpaceTransform&) = delete;
-
-  // "Constructor"; allocates for up to `num_threads`, or returns false.
-  // `intensity_target` is used for conversion to and from PQ, which is absolute
-  // (1 always represents 10000 cd/m²) and thus needs scaling in linear space if
-  // 1 is to represent another luminance level instead.
-  Status Init(const ColorEncoding& c_src, const ColorEncoding& c_dst,
-              float intensity_target, size_t xsize, size_t num_threads);
-
-  float* BufSrc(const size_t thread) { return buf_src_.Row(thread); }
-
-  float* BufDst(const size_t thread) { return buf_dst_.Row(thread); }
-
-#if JPEGXL_ENABLE_SKCMS
-  struct SkcmsICC;
-  std::unique_ptr<SkcmsICC> skcms_icc_;
-#else
-  // One per thread - cannot share because of caching.
-  std::vector<void*> transforms_;
-#endif
-
-  ImageF buf_src_;
-  ImageF buf_dst_;
-  float intensity_target_;
-  size_t xsize_;
-  bool skip_lcms_ = false;
-  ExtraTF preprocess_ = ExtraTF::kNone;
-  ExtraTF postprocess_ = ExtraTF::kNone;
-};
-
-// buf_X can either be from BufX() or caller-allocated, interleaved storage.
-// `thread` must be less than the `num_threads` passed to Init.
-// `t` is non-const because buf_* may be modified.
-void DoColorSpaceTransform(ColorSpaceTransform* t, size_t thread,
-                           const float* buf_src, float* buf_dst);
+Status CIEXYZFromWhiteCIExy(const CIExy& xy, float XYZ[3]);
 
 }  // namespace jxl
 

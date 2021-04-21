@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/modular/encoding/ma.h"
+#include "lib/jxl/modular/encoding/enc_ma.h"
 
 #include <algorithm>
 #include <limits>
@@ -22,8 +22,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "lib/jxl/modular/encoding/ma_common.h"
+
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/modular/encoding/ma.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/modular/encoding/enc_ma.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 
@@ -1004,17 +1006,6 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
   }
 }
 
-namespace {
-constexpr size_t kSplitValContext = 0;
-constexpr size_t kPropertyContext = 1;
-constexpr size_t kPredictorContext = 2;
-constexpr size_t kOffsetContext = 3;
-constexpr size_t kMultiplierLogContext = 4;
-constexpr size_t kMultiplierBitsContext = 5;
-}  // namespace
-
-static constexpr size_t kMaxTreeSize = 1 << 26;
-
 // TODO(veluca): very simple encoding scheme. This should be improved.
 void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
                   Tree *decoder_tree) {
@@ -1051,93 +1042,6 @@ void TokenizeTree(const Tree &tree, std::vector<Token> *tokens,
     q.push(tree[cur].rchild);
     tokens->emplace_back(kSplitValContext, PackSigned(tree[cur].splitval));
   }
-}
-
-Status ValidateTree(
-    const Tree &tree,
-    const std::vector<std::pair<pixel_type, pixel_type>> &prop_bounds,
-    size_t root) {
-  if (tree[root].property == -1) return true;
-  size_t p = tree[root].property;
-  int val = tree[root].splitval;
-  if (prop_bounds[p].first > val) return JXL_FAILURE("Invalid tree");
-  if (prop_bounds[p].second < val) return JXL_FAILURE("Invalid tree");
-  auto new_bounds = prop_bounds;
-  new_bounds[p].first = val + 1;
-  JXL_RETURN_IF_ERROR(ValidateTree(tree, new_bounds, tree[root].lchild));
-  new_bounds[p] = prop_bounds[p];
-  new_bounds[p].second = val;
-  return ValidateTree(tree, new_bounds, tree[root].rchild);
-}
-
-static Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
-                         const std::vector<uint8_t> &context_map, Tree *tree,
-                         size_t tree_size_limit) {
-  size_t leaf_id = 0;
-  size_t to_decode = 1;
-  tree->clear();
-  while (to_decode > 0) {
-    JXL_RETURN_IF_ERROR(br->AllReadsWithinBounds());
-    if (tree->size() > tree_size_limit) {
-      return JXL_FAILURE("Tree is too large");
-    }
-    to_decode--;
-    int property =
-        reader->ReadHybridUint(kPropertyContext, br, context_map) - 1;
-    if (property < -1 || property >= 256) {
-      return JXL_FAILURE("Invalid tree property value");
-    }
-    if (property == -1) {
-      size_t predictor =
-          reader->ReadHybridUint(kPredictorContext, br, context_map);
-      if (predictor >= kNumModularPredictors) {
-        return JXL_FAILURE("Invalid predictor");
-      }
-      int64_t predictor_offset =
-          UnpackSigned(reader->ReadHybridUint(kOffsetContext, br, context_map));
-      uint32_t mul_log =
-          reader->ReadHybridUint(kMultiplierLogContext, br, context_map);
-      if (mul_log >= 31) {
-        return JXL_FAILURE("Invalid multiplier logarithm");
-      }
-      uint32_t mul_bits =
-          reader->ReadHybridUint(kMultiplierBitsContext, br, context_map);
-      if (mul_bits + 1 >= 1u << (31u - mul_log)) {
-        return JXL_FAILURE("Invalid multiplier");
-      }
-      uint32_t multiplier = (mul_bits + 1U) << mul_log;
-      tree->emplace_back(-1, 0, leaf_id++, 0, static_cast<Predictor>(predictor),
-                         predictor_offset, multiplier);
-      continue;
-    }
-    int splitval =
-        UnpackSigned(reader->ReadHybridUint(kSplitValContext, br, context_map));
-    tree->emplace_back(property, splitval, tree->size() + to_decode + 1,
-                       tree->size() + to_decode + 2, Predictor::Zero, 0, 1);
-    to_decode += 2;
-  }
-  std::vector<std::pair<pixel_type, pixel_type>> prop_bounds;
-  prop_bounds.resize(256, {std::numeric_limits<pixel_type>::min(),
-                           std::numeric_limits<pixel_type>::max()});
-  return ValidateTree(*tree, prop_bounds, 0);
-}
-
-Status DecodeTree(BitReader *br, Tree *tree, size_t tree_size_limit) {
-  std::vector<uint8_t> tree_context_map;
-  ANSCode tree_code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, kNumTreeContexts, &tree_code, &tree_context_map));
-  // TODO(eustas): investigate more infinite tree cases.
-  if (tree_code.degenerate_symbols[tree_context_map[kPropertyContext]] > 0) {
-    return JXL_FAILURE("Infinite tree");
-  }
-  ANSSymbolReader reader(&tree_code, br);
-  JXL_RETURN_IF_ERROR(DecodeTree(br, &reader, tree_context_map, tree,
-                                 std::min(tree_size_limit, kMaxTreeSize)));
-  if (!reader.CheckANSFinalState()) {
-    return JXL_FAILURE("ANS decode final state failed");
-  }
-  return true;
 }
 
 }  // namespace jxl

@@ -95,13 +95,11 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     app_marker_type.resize(info.num_app_markers);
     com_data.resize(info.num_com_markers);
     scan_info.resize(info.num_scans);
-    inter_marker_data.resize(info.num_intermarker);
   }
   JXL_ASSERT(app_data.size() == info.num_app_markers);
   JXL_ASSERT(app_marker_type.size() == info.num_app_markers);
   JXL_ASSERT(com_data.size() == info.num_com_markers);
   JXL_ASSERT(scan_info.size() == info.num_scans);
-  JXL_ASSERT(inter_marker_data.size() == info.num_intermarker);
   for (size_t i = 0; i < app_data.size(); i++) {
     auto& app = app_data[i];
     // Encodes up to 8 different values.
@@ -154,12 +152,12 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       components.size() == 1 && components[0].id == 1
           ? JPEGComponentType::kGray
           : components.size() == 3 && components[0].id == 1 &&
-                  components[1].id == 2 && components[2].id == 3
-              ? JPEGComponentType::kYCbCr
-              : components.size() == 3 && components[0].id == 'R' &&
-                      components[1].id == 'G' && components[2].id == 'B'
-                    ? JPEGComponentType::kRGB
-                    : JPEGComponentType::kCustom;
+                    components[1].id == 2 && components[2].id == 3
+                ? JPEGComponentType::kYCbCr
+                : components.size() == 3 && components[0].id == 'R' &&
+                          components[1].id == 'G' && components[2].id == 'B'
+                      ? JPEGComponentType::kRGB
+                      : JPEGComponentType::kCustom;
   JXL_RETURN_IF_ERROR(
       visitor->Bits(2, JPEGComponentType::kYCbCr,
                     reinterpret_cast<uint32_t*>(&component_type)));
@@ -228,14 +226,36 @@ Status JPEGData::VisitFields(Visitor* visitor) {
                                        Bits(8), 0, &hc.counts[i]));
       num_symbols += hc.counts[i];
     }
+    if (num_symbols < 1) {
+      // Actually, at least 2 symbols are required, since one of them is EOI.
+      return JXL_FAILURE("Empty Huffman table");
+    }
     if (num_symbols > hc.values.size()) {
       return JXL_FAILURE("Huffman code too large (%zu)", num_symbols);
     }
+    // Presence flags for 4 * 64 + 1 values.
+    uint64_t value_slots[5] = {};
     for (size_t i = 0; i < num_symbols; i++) {
       // Goes up to 256, included. Might have the same symbol appear twice...
       JXL_RETURN_IF_ERROR(visitor->U32(Bits(2), BitsOffset(2, 4),
                                        BitsOffset(4, 8), BitsOffset(8, 1), 0,
                                        &hc.values[i]));
+      value_slots[hc.values[i] >> 6] |= (uint64_t)1 << (hc.values[i] & 0x3F);
+    }
+    if (hc.values[num_symbols - 1] != kJpegHuffmanAlphabetSize) {
+      return JXL_FAILURE("Missing EOI symbol");
+    }
+    // Last element, denoting EOI, have to be 1 after the loop.
+    JXL_ASSERT(value_slots[4] == 1);
+    size_t num_values = 1;
+    for (size_t i = 0; i < 4; ++i) num_values += hwy::PopCount(value_slots[i]);
+    if (num_values != num_symbols) {
+      return JXL_FAILURE("Duplicate Huffman symbols");
+    }
+    if (!is_ac) {
+      bool only_dc = ((value_slots[0] >> kJpegDCAlphabetSize) | value_slots[1] |
+                      value_slots[2] | value_slots[3]) == 0;
+      if (!only_dc) return JXL_FAILURE("Huffman symbols out of DC range");
     }
   }
 
@@ -268,6 +288,9 @@ Status JPEGData::VisitFields(Visitor* visitor) {
   if (info.has_dri) {
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &restart_interval));
   }
+
+  uint64_t padding_spot_limit = scan_info.size();
+
   for (auto& scan : scan_info) {
     uint32_t num_reset_points = scan.reset_points.size();
     JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(2, 1), BitsOffset(4, 4),
@@ -286,6 +309,8 @@ Status JPEGData::VisitFields(Visitor* visitor) {
         return JXL_FAILURE("Invalid block ID: %u, last block was %d", block_idx,
                            last_block_idx);
       }
+      // TODO(eustas): better upper boundary could be given at this point; also
+      //               it could be applied during reset_points reading.
       if (block_idx > (1u << 30)) {
         // At most 8K x 8K x num_channels blocks are expected. That is,
         // typically, 1.5 * 2^27. 2^30 should be sufficient for any sane
@@ -325,27 +350,38 @@ Status JPEGData::VisitFields(Visitor* visitor) {
       }
       last_block_idx = block_idx;
     }
+
+    if (restart_interval > 0) {
+      int MCUs_per_row = 0;
+      int MCU_rows = 0;
+      CalculateMcuSize(scan, &MCUs_per_row, &MCU_rows);
+      padding_spot_limit += DivCeil(MCU_rows * MCUs_per_row, restart_interval);
+    }
   }
-  for (auto& inter_marker : inter_marker_data) {
-    uint32_t len = inter_marker.size();
+  std::vector<uint32_t> inter_marker_data_sizes;
+  inter_marker_data_sizes.reserve(info.num_intermarker);
+  for (size_t i = 0; i < info.num_intermarker; ++i) {
+    uint32_t len = visitor->IsReading() ? 0 : inter_marker_data[i].size();
     JXL_RETURN_IF_ERROR(visitor->Bits(16, 0, &len));
-    if (visitor->IsReading()) inter_marker.resize(len);
+    if (visitor->IsReading()) inter_marker_data_sizes.emplace_back(len);
   }
   uint32_t tail_data_len = tail_data.size();
   JXL_RETURN_IF_ERROR(visitor->U32(Val(0), BitsOffset(8, 1),
                                    BitsOffset(16, 257), BitsOffset(22, 65793),
                                    0, &tail_data_len));
-  if (visitor->IsReading()) {
-    tail_data.resize(tail_data_len);
-  }
 
   JXL_RETURN_IF_ERROR(visitor->Bool(false, &has_zero_padding_bit));
   if (has_zero_padding_bit) {
     uint32_t nbit = padding_bits.size();
     JXL_RETURN_IF_ERROR(visitor->Bits(24, 0, &nbit));
+    if (nbit > 7 * padding_spot_limit) {
+      return JXL_FAILURE("Number of padding bits does not correspond to image");
+    }
+    // TODO(eustas): check that that much bits of input are available.
     if (visitor->IsReading()) {
       padding_bits.resize(nbit);
     }
+    // TODO(eustas): read in (8-64?) bit groups to reduce overhead.
     for (uint8_t& bit : padding_bits) {
       bool bbit = bit;
       JXL_RETURN_IF_ERROR(visitor->Bool(false, &bbit));
@@ -353,7 +389,38 @@ Status JPEGData::VisitFields(Visitor* visitor) {
     }
   }
 
+  // Apply postponed actions.
+  if (visitor->IsReading()) {
+    tail_data.resize(tail_data_len);
+    JXL_ASSERT(inter_marker_data_sizes.size() == info.num_intermarker);
+    inter_marker_data.reserve(info.num_intermarker);
+    for (size_t i = 0; i < info.num_intermarker; ++i) {
+      inter_marker_data.emplace_back(inter_marker_data_sizes[i]);
+    }
+  }
+
   return true;
+}
+
+void JPEGData::CalculateMcuSize(const JPEGScanInfo& scan, int* MCUs_per_row,
+                                int* MCU_rows) const {
+  const bool is_interleaved = (scan.num_components > 1);
+  const JPEGComponent& base_component = components[scan.components[0].comp_idx];
+  // h_group / v_group act as numerators for converting number of blocks to
+  // number of MCU. In interleaved mode it is 1, so MCU is represented with
+  // max_*_samp_factor blocks. In non-interleaved mode we choose numerator to
+  // be the samping factor, consequently MCU is always represented with single
+  // block.
+  const int h_group = is_interleaved ? 1 : base_component.h_samp_factor;
+  const int v_group = is_interleaved ? 1 : base_component.v_samp_factor;
+  int max_h_samp_factor = 1;
+  int max_v_samp_factor = 1;
+  for (const auto& c : components) {
+    max_h_samp_factor = std::max(c.h_samp_factor, max_h_samp_factor);
+    max_v_samp_factor = std::max(c.v_samp_factor, max_v_samp_factor);
+  }
+  *MCUs_per_row = DivCeil(width * h_group, 8 * max_h_samp_factor);
+  *MCU_rows = DivCeil(height * v_group, 8 * max_v_samp_factor);
 }
 
 Status SetJPEGDataFromICC(const PaddedBytes& icc, jpeg::JPEGData* jpeg_data) {

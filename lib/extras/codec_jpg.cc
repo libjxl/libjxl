@@ -368,7 +368,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
 
 Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
                          size_t quality,
-                         YCbCrChromaSubsampling chroma_subsampling,
+                         const YCbCrChromaSubsampling& chroma_subsampling,
                          PaddedBytes* bytes) {
   jpeg_compress_struct cinfo;
 #ifdef MEMORY_SANITIZER
@@ -437,7 +437,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
 }
 
 Status EncodeWithSJpeg(const ImageBundle* ib, size_t quality,
-                       YCbCrChromaSubsampling chroma_subsampling,
+                       const YCbCrChromaSubsampling& chroma_subsampling,
                        PaddedBytes* bytes) {
 #if !JPEGXL_ENABLE_SJPEG
   return JXL_FAILURE("JPEG XL was built without sjpeg support");
@@ -465,7 +465,7 @@ Status EncodeWithSJpeg(const ImageBundle* ib, size_t quality,
     for (size_t x = 0; x < ib->xsize(); ++x) {
       for (const float* const row : rows) {
         rgb.push_back(static_cast<uint8_t>(
-            std::max(0.f, std::min(255.f, std::round(255.f * row[x])))));
+            std::max(0.f, std::min(255.f, roundf(255.f * row[x])))));
       }
     }
   }

@@ -166,7 +166,7 @@ class F16Coder {
 //   instead add another if (v->Conditional(!your_condition)).
 //
 // - repeated fields: for dynamic sizes, use e.g. std::vector and in
-//   VisitFields, if (v->IfReading()) field.resize(size) before accessing field.
+//   VisitFields, if (v->IsReading()) field.resize(size) before accessing field.
 //   For static or bounded sizes, use an array or std::array. In all cases,
 //   simply visit each array element as if it were a normal field.
 //

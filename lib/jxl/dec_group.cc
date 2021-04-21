@@ -238,9 +238,13 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       }
       for (size_t i = 0; i < 64; i++) {
         // Transpose the matrix, as it will be used on the transposed block.
+        int n = qe[0].qraw.qtable->at(64 + i);
+        int d = qe[0].qraw.qtable->at(64 * c + i);
+        if (n <= 0 || d <= 0 || n >= 65536 || d >= 65536) {
+          return JXL_FAILURE("Invalid JPEG quantization table");
+        }
         scaled_qtable[64 * c + (i % 8) * 8 + (i / 8)] =
-            (1 << kCFLFixedPointPrecision) * (*qe[0].qraw.qtable)[64 + i] /
-            (*qe[0].qraw.qtable)[64 * c + i];
+            (1 << kCFLFixedPointPrecision) * n / d;
       }
     }
   }
@@ -406,7 +410,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
                 StoreU(DemoteTo(di16, in + cfl_factor), di16, jpeg_pos + i);
               }
             }
-            jpeg_pos[0] = dc_rows[c][sbx[c]] - dcoff[c];
+            jpeg_pos[0] =
+                Clamp1<float>(dc_rows[c][sbx[c]] - dcoff[c], -2047, 2047);
           }
         } else {
           HWY_ALIGN float* const block = group_dec_cache->dec_group_block;

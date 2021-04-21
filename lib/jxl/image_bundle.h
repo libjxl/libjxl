@@ -145,21 +145,22 @@ class ImageBundle {
            c_current_.primaries == Primaries::kSRGB && c_current_.tf.IsLinear();
   }
 
-  // Transforms color to c_desired and sets c_current to c_desired. Alpha and
-  // metadata remains unchanged.
-  Status TransformTo(const ColorEncoding& c_desired,
-                     ThreadPool* pool = nullptr);
-
   // Set the c_current profile without doing any transformation, e.g. if the
   // transformation was already applied.
   void OverrideProfile(const ColorEncoding& new_c_current) {
     c_current_ = new_c_current;
   }
 
+  // TODO(lode): TransformTo and CopyTo are implemented in enc_image_bundle.cc,
+  // move these functions out of this header file and class, to
+  // enc_image_bundle.h.
+
+  // Transforms color to c_desired and sets c_current to c_desired. Alpha and
+  // metadata remains unchanged.
+  Status TransformTo(const ColorEncoding& c_desired,
+                     ThreadPool* pool = nullptr);
   // Copies this:rect, converts to c_desired, and allocates+fills out.
   Status CopyTo(const Rect& rect, const ColorEncoding& c_desired, Image3B* out,
-                ThreadPool* pool = nullptr) const;
-  Status CopyTo(const Rect& rect, const ColorEncoding& c_desired, Image3U* out,
                 ThreadPool* pool = nullptr) const;
   Status CopyTo(const Rect& rect, const ColorEncoding& c_desired, Image3F* out,
                 ThreadPool* pool = nullptr) const;

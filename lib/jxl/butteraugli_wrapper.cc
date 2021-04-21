@@ -40,6 +40,10 @@ void SetMetadataFromPixelFormat(const JxlPixelFormat* pixel_format,
       metadata->SetFloat32Samples();
       potential_alpha_bits = 16;
       break;
+    case JXL_TYPE_FLOAT16:
+      metadata->SetFloat16Samples();
+      potential_alpha_bits = 16;
+      break;
     case JXL_TYPE_UINT32:
       metadata->SetUintSamples(32);
       potential_alpha_bits = 16;

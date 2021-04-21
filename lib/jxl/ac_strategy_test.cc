@@ -24,7 +24,7 @@
 
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_scales.h"
-#include "lib/jxl/dec_transforms.h"
+#include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_transforms.h"
 
 namespace jxl {

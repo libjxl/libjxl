@@ -1516,11 +1516,21 @@ size_t BuildAndEncodeHistograms(const HistogramParams& params,
     }
   }
 
-  // TODO(veluca): better heuristics.
   bool use_prefix_code =
       params.force_huffman || total_tokens < 100 ||
       params.clustering == HistogramParams::ClusteringType::kFastest ||
       ans_fuzzer_friendly_;
+  if (!use_prefix_code) {
+    bool all_singleton = true;
+    for (size_t i = 0; i < num_contexts; i++) {
+      if (builder.Histo(i).ShannonEntropy() >= 1e-5) {
+        all_singleton = false;
+      }
+    }
+    if (all_singleton) {
+      use_prefix_code = true;
+    }
+  }
 
   // Encode histograms.
   total_bits += builder.BuildAndStoreEntropyCodes(params, tokens, codes,

@@ -233,7 +233,7 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
 /**
  * Writes bytes to file.
  */
-bool WriteFile(const std::vector<uint8_t> bytes, const char* filename) {
+bool WriteFile(const std::vector<uint8_t>& bytes, const char* filename) {
   FILE* file = fopen(filename, "wb");
   if (!file) {
     fprintf(stderr, "Could not open %s for writing\n", filename);

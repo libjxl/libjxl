@@ -15,6 +15,7 @@
 #include "lib/jxl/passes_state.h"
 
 #include "lib/jxl/chroma_from_luma.h"
+#include "lib/jxl/coeff_order.h"
 #include "lib/jxl/common.h"
 
 namespace jxl {

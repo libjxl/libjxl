@@ -169,9 +169,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * JxlEncoderSetDimensions before JxlEncoderAddImageFrame.
  *
  * Currently only some pixel formats are supported:
- * - JXL_TYPE_UINT8, input pixels assumed to be nonlinear SRGB encoded
- * - JXL_TYPE_UINT16, input pixels assumed to be nonlinear SRGB encoded
- * - JXL_TYPE_FLOAT, input pixels are assumed to be linear SRGB encoded
+ * - JXL_TYPE_UINT8
+ * - JXL_TYPE_UINT16
+ * - JXL_TYPE_FLOAT, with nominal range 0..1
+ *
+ * The color profile of the pixels depends on the value of uses_original_profile
+ * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
+ * original profile that is set with JxlEncoderSetColorEncoding or
+ * JxlEncoderSetICCProfile. If false, the pixels are assumed to be nonlinear
+ * sRGB for integer data types (JXL_TYPE_UINT8 and JXL_TYPE_UINT16), and linear
+ * sRGB for floating point data types (JXL_TYPE_FLOAT).
  *
  * @param options set of encoder options to use when encoding the frame.
  * @param pixel_format format for pixels. Object owned by the caller and its
@@ -188,16 +195,19 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
 /**
  * Declares that this encoder will not encode anything further.
  *
- * Must be called between JxlEncoderAddImageFrame of the last frame and the next
- * call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput won't output the
- * last frame correctly.
+ * Must be called between JxlEncoderAddImageFrame/JPEGFrame of the last frame
+ * and the next call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput
+ * won't output the last frame correctly.
  *
  * @param enc encoder object.
  */
 JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
 
 /**
- * Sets the global color encoding of the image encoded by this encoder.
+ * Sets the original color encoding of the image encoded by this encoder. This
+ * is an alternative to JxlEncoderSetICCProfile and only one of these two must
+ * be used. This one sets the color encoding as a @ref JxlColorEncoding, while
+ * the other sets it as ICC binary data.
  *
  * @param enc encoder object.
  * @param color color encoding. Object owned by the caller and its contents are
@@ -207,6 +217,22 @@ JXL_EXPORT void JxlEncoderCloseInput(JxlEncoder* enc);
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
+
+/**
+ * Sets the original color encoding of the image encoded by this encoder as an
+ * ICC color profile. This is an alternative to JxlEncoderSetColorEncoding and
+ * only one of these two must be used. This one sets the color encoding as ICC
+ * binary data, while the other defines it as a @ref JxlColorEncoding.
+ *
+ * @param enc encoder object.
+ * @param icc_profile bytes of the original ICC profile
+ * @param size size of the icc_profile buffer in bytes
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR or
+ * JXL_ENC_NOT_SUPPORTED otherwise
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
+                                                    const uint8_t* icc_profile,
+                                                    size_t size);
 
 /**
  * Sets the global metadata of the image encoded by this encoder.

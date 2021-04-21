@@ -51,6 +51,8 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_chroma_from_luma.h"
 #include "lib/jxl/enc_coeff_order.h"
+#include "lib/jxl/enc_context_map.h"
+#include "lib/jxl/enc_entropy_coder.h"
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
@@ -60,7 +62,6 @@
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/enc_toc.h"
 #include "lib/jxl/enc_xyb.h"
-#include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/gaborish.h"
@@ -1124,7 +1125,9 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
         *ib.jpeg_data, modular_frame_encoder.get(), frame_header.get()));
-  } else {
+  } else if (!lossy_frame_encoder.State()->heuristics->HandlesColorConversion(
+                 cparams, ib) ||
+             frame_header->encoding != FrameEncoding::kVarDCT) {
     // Allocating a large enough image avoids a copy when padding.
     opsin =
         Image3F(RoundUpToBlockDim(ib.xsize()), RoundUpToBlockDim(ib.ysize()));
@@ -1173,6 +1176,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       // after noise, if necessary.
       DownsampleImage(&opsin, cparams.resampling);
     }
+  } else {
+    JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeEncodingData(
+        &ib, &opsin, pool, modular_frame_encoder.get(), writer,
+        frame_header.get()));
   }
   // needs to happen *AFTER* VarDCT-ComputeEncodingData.
   JXL_RETURN_IF_ERROR(modular_frame_encoder->ComputeEncodingData(

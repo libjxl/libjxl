@@ -154,7 +154,7 @@ struct PatchColorspaceInfo {
   }
 
   int Quantize(float val, size_t c) {
-    return std::trunc(ScaleForQuantization(val, c));
+    return truncf(ScaleForQuantization(val, c));
   }
 
   bool is_similar_v(const float v1[3], const float v2[3], float threshold) {

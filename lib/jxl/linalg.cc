@@ -56,7 +56,7 @@ void GivensRotation(const double x, const double y, double* c, double* s) {
     *c = x < 0.0 ? -1.0 : 1.0;
     *s = 0.0;
   } else {
-    const double h = std::hypot(x, y);
+    const double h = hypot(x, y);
     const double d = 1.0 / h;
     *c = x * d;
     *s = -y * d;
@@ -127,7 +127,7 @@ double WilkinsonShift(const double a0, const double a1, const double b) {
     return a1 - std::abs(b);
   }
   const double sign_d = d > 0.0 ? 1.0 : -1.0;
-  return a1 - b * b / (d + sign_d * std::hypot(d, b));
+  return a1 - b * b / (d + sign_d * hypotf(d, b));
 }
 
 void ImplicitQRStep(ImageD* const JXL_RESTRICT U, double* const JXL_RESTRICT a,

@@ -533,7 +533,7 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
   if (frame_header_.needs_color_transform() &&
       frame_header_.save_before_color_transform) {
     dec_state_->pre_color_transform_frame =
-        Image3F(frame_dim_.xsize_padded, frame_dim_.ysize_padded);
+        Image3F(frame_dim_.xsize_upsampled_padded, frame_dim_.ysize_upsampled_padded);
   } else {
     // clear pre_color_transform_frame to ensure that previously moved-from
     // images are not used.

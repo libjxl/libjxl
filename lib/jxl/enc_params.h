@@ -245,6 +245,11 @@ static constexpr float kMinButteraugliForNoise = 99.0f;
 // Minimum butteraugli distance the encoder accepts.
 static constexpr float kMinButteraugliDistance = 0.01f;
 
+// Tile size for encoder-side processing. Must be equal to color tile dim in the
+// current implementation.
+static constexpr size_t kEncTileDim = 64;
+static constexpr size_t kEncTileDimInBlocks = kEncTileDim / kBlockDim;
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_PARAMS_H_

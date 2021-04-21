@@ -30,6 +30,7 @@
 #include "lib/jxl/compressed_dc.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/enc_cluster.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
 #include "lib/jxl/enc_quant_weights.h"
@@ -37,6 +38,7 @@
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_encoding.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 #include "lib/jxl/modular/transform/transform.h"
@@ -1373,8 +1375,8 @@ int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
   PredictionResult pred =
       PredictNoTreeWP(w, qrow + x, onerow, x, y, Predictor::Weighted, wp_state);
   svalue -= pred.guess;
-  int residual = std::round(svalue);
-  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5) * 2;
+  int residual = roundf(svalue);
+  if (residual > 2 || residual < -2) residual = roundf(svalue * 0.5) * 2;
   return residual + pred.guess;
 }
 
@@ -1384,8 +1386,8 @@ int QuantizeGradient(const int32_t* qrow, size_t onerow, size_t c, size_t x,
   PredictionResult pred =
       PredictNoTreeNoWP(w, qrow + x, onerow, x, y, Predictor::Gradient);
   svalue -= pred.guess;
-  int residual = std::round(svalue);
-  if (residual > 2 || residual < -2) residual = std::round(svalue * 0.5) * 2;
+  int residual = roundf(svalue);
+  if (residual > 2 || residual < -2) residual = roundf(svalue * 0.5) * 2;
   return residual + pred.guess;
 }
 
@@ -1483,15 +1485,15 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         const float* row = r.ConstPlaneRow(dc, c, y);
         if (c == 1) {
           for (size_t x = 0; x < r.xsize(); x++) {
-            quant_row[x] = std::round(row[x] * inv_factor);
+            quant_row[x] = roundf(row[x] * inv_factor);
           }
         } else {
           int32_t* quant_row_y =
               stream_images[stream_id].channel[0].plane.Row(y);
           for (size_t x = 0; x < r.xsize(); x++) {
             quant_row[x] =
-                std::round((row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
-                           inv_factor);
+                roundf((row[x] - quant_row_y[x] * (y_factor * cfl_factor)) *
+                       inv_factor);
           }
         }
       }
@@ -1516,7 +1518,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         int32_t* quant_row = ch.plane.Row(y);
         const float* row = rect.ConstPlaneRow(dc, c, y);
         for (size_t x = 0; x < xs; x++) {
-          quant_row[x] = std::round(row[x] * inv_factor);
+          quant_row[x] = roundf(row[x] * inv_factor);
         }
       }
     }

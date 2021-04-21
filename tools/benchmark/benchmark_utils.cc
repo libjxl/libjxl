@@ -17,7 +17,9 @@
 #include "tools/benchmark/benchmark_utils.h"
 
 // Not supported on Windows due to Linux-specific functions.
-#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+// Not supported in Android NDK before API 28.
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__) && \
+    (!defined(__ANDROID_API__) || __ANDROID_API__ >= 28)
 
 #include <libgen.h>
 #include <spawn.h>
@@ -85,12 +87,12 @@ TemporaryFile::TemporaryFile(std::string basename, std::string extension) {}
 TemporaryFile::~TemporaryFile() {}
 Status TemporaryFile::GetFileName(std::string* const output) const {
   (void)ok_;
-  return JXL_FAILURE("Not supported on Windows");
+  return JXL_FAILURE("Not supported on this build");
 }
 
 Status RunCommand(const std::string& command,
                   const std::vector<std::string>& arguments) {
-  return JXL_FAILURE("Not supported on Windows");
+  return JXL_FAILURE("Not supported on this build");
 }
 
 }  // namespace jxl

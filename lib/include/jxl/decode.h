@@ -166,7 +166,7 @@ typedef enum {
 
   /** Informative event by JxlDecoderProcessInput: JPEG reconstruction buffer is
    * too small for reconstructed JPEG codestream to fit.
-   * JxlDecoderSetJPEGOutBuffer must be called again to make room for remaining
+   * JxlDecoderSetJPEGBuffer must be called again to make room for remaining
    * bytes. This event may occur multiple times after
    * JXL_DEC_JPEG_RECONSTRUCTION
    */
@@ -232,7 +232,7 @@ typedef enum {
   JXL_DEC_FULL_IMAGE = 0x1000,
 
   /** Informative event by JxlDecoderProcessInput: JPEG reconstruction data
-   * decoded. JxlDecoderSetJPEGOutBuffer may be used to set a JPEG
+   * decoded. JxlDecoderSetJPEGBuffer may be used to set a JPEG
    * reconstruction buffer after getting the JPEG reconstruction data. If a JPEG
    * reconstruction buffer is set a byte stream identical to the JPEG codestream
    * used to encode the image will be written to the JPEG reconstruction buffer

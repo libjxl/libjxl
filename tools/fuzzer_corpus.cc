@@ -258,9 +258,12 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
 
   jxl::AuxOut aux_out;
   jxl::PassesEncoderState passes_encoder_state;
-  bool ok = jxl::EncodeFile(params, &io, &passes_encoder_state, &compressed,
-                            &aux_out, nullptr);
+  // EncodeFile replaces output; pass a temporary storage for it.
+  jxl::PaddedBytes compressed_image;
+  bool ok = jxl::EncodeFile(params, &io, &passes_encoder_state,
+                            &compressed_image, &aux_out, nullptr);
   if (!ok) return false;
+  compressed.append(compressed_image);
 
   // Append one byte with the flags used by djxl_fuzzer to select the decoding
   // output.

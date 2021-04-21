@@ -101,6 +101,9 @@ class Quantizer {
   // Reciprocal of Scale().
   JXL_INLINE float InvGlobalScale() const { return inv_global_scale_; }
 
+  void SetQuantFieldRect(const ImageF& qf, const Rect& rect,
+                         ImageI* JXL_RESTRICT raw_quant_field);
+
   void SetQuantField(float quant_dc, const ImageF& qf,
                      ImageI* JXL_RESTRICT raw_quant_field);
 
@@ -149,10 +152,10 @@ class Quantizer {
     std::fill(inv_mul_dc_, inv_mul_dc_ + 4, 1);
   }
 
- private:
   void ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
                                   float quant_median_absd);
 
+ private:
   float mul_dc_[4];
   float inv_mul_dc_[4];
 

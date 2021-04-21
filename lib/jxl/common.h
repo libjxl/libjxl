@@ -17,10 +17,13 @@
 
 // Shared constants and helper functions.
 
+#include <inttypes.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #include <limits>  // numeric_limits
 #include <memory>  // unique_ptr
+#include <string>
 
 #include "lib/jxl/base/compiler_specific.h"
 
@@ -117,8 +120,8 @@ struct FrameDimensions {
     ysize_padded = ysize_blocks * kBlockDim;
     if (modular_mode) {
       // Modular mode doesn't have any padding.
-      xsize_padded = xsize;
-      ysize_padded = ysize;
+      xsize_padded = this->xsize;
+      ysize_padded = this->ysize;
     }
     xsize_upsampled_padded = xsize_padded * upsampling;
     ysize_upsampled_padded = ysize_padded * upsampling;
@@ -200,6 +203,22 @@ constexpr intptr_t UnpackSigned(size_t value) {
   return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 
+// conversion from integer to string.
+template <typename T>
+std::string ToString(T n) {
+  char data[32] = {};
+  if (T(0.1) != T(0)) {
+    // float
+    snprintf(data, sizeof(data), "%g", static_cast<double>(n));
+  } else if (T(-1) > T(0)) {
+    // unsigned
+    snprintf(data, sizeof(data), "%llu", static_cast<unsigned long long>(n));
+  } else {
+    // signed
+    snprintf(data, sizeof(data), "%lld", static_cast<long long>(n));
+  }
+  return data;
+}
 }  // namespace jxl
 
 #endif  // LIB_JXL_COMMON_H_

@@ -78,16 +78,14 @@ if(NOT APPLE AND NOT WIN32 AND NOT HAIKU AND ${CMAKE_SYSTEM_PROCESSOR} MATCHES "
   endif()
 endif()
 
-if(WIN32)
-  set(WARNINGS_AS_ERRORS_DEFAULT false)
-else()
-  set(WARNINGS_AS_ERRORS_DEFAULT true)
-endif()
+set(WARNINGS_AS_ERRORS_DEFAULT false)
 
 set(JPEGXL_ENABLE_FUZZERS ${ENABLE_FUZZERS_DEFAULT} CACHE BOOL
     "Build JPEGXL fuzzer targets.")
 set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
     "Build JPEGXL developer tools.")
+set(JPEGXL_ENABLE_MANPAGES true CACHE BOOL
+    "Build and install man pages for the command-line tools.")
 set(JPEGXL_ENABLE_BENCHMARK true CACHE BOOL
     "Build JPEGXL benchmark tools.")
 set(JPEGXL_ENABLE_EXAMPLES true CACHE BOOL
@@ -112,6 +110,9 @@ set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL
     "Treat warnings as errors during compilation.")
 set(JPEGXL_DEP_LICENSE_DIR "" CACHE STRING
     "Directory where to search for system dependencies \"copyright\" files.")
+set(JPEGXL_FORCE_NEON false CACHE BOOL
+    "Set flags to enable NEON in arm if not enabled by your toolchain.")
+
 
 # Force system dependencies.
 set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL
@@ -128,7 +129,10 @@ if (NOT ${CMAKE_C_COMPILER_ID} STREQUAL ${CMAKE_CXX_COMPILER_ID})
           "${CMAKE_C_COMPILER_ID} vs ${CMAKE_CXX_COMPILER_ID}")
 endif()
 if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
-  if (${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6)
+  # Android NDK's toolchain.cmake fakes the clang version in
+  # CMAKE_CXX_COMPILER_VERSION with an incorrect number, so ignore this.
+  if (NOT ${CMAKE_ANDROID_NDK_TOOLCHAIN_VERSION} MATCHES "clang"
+      AND ${CMAKE_CXX_COMPILER_VERSION} VERSION_LESS 6)
     message(FATAL_ERROR
       "Minimum Clang version required is Clang 6, please update.")
   endif()
@@ -209,11 +213,14 @@ else()
 endif()
 
 # CPU flags - remove once we have NEON dynamic dispatch
+
 # TODO(janwas): this also matches M1, but only ARMv7 is intended/needed.
 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
+if(JPEGXL_FORCE_NEON)
 # GCC requires these flags, otherwise __ARM_NEON is undefined.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} \
-    -mfpu=neon-vfpv4 -mfloat-abi=hard")
+   -mfpu=neon-vfpv4 -mfloat-abi=hard")
+endif()
 endif()
 
 # Force build with optimizations in release mode.
@@ -284,6 +291,7 @@ add_custom_target(doc false
   COMMENT "Error: Can't generate doc since Doxygen not installed.")
 endif() # DOXYGEN_FOUND
 
+if(JPEGXL_ENABLE_MANPAGES)
 find_package(Python COMPONENTS Interpreter)
 if(Python_Interpreter_FOUND)
   find_program(ASCIIDOC a2x)
@@ -291,26 +299,25 @@ endif()
 if(NOT Python_Interpreter_FOUND OR "${ASCIIDOC}" STREQUAL "ASCIIDOC-NOTFOUND")
   message(WARNING "asciidoc was not found, the man pages will not be installed.")
 else()
-  # Invoking the Python interpreter ourselves instead of running the a2x binary
-  # directly is necessary on MSYS2, otherwise it is run through cmd.exe which
-  # does not recognize it.
-  add_custom_command(
-    OUTPUT cjxl.1
-    COMMAND Python::Interpreter
-    ARGS "${ASCIIDOC}"
-      --format manpage --destination-dir="${CMAKE_CURRENT_BINARY_DIR}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/cjxl.txt"
-    MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/cjxl.txt")
-  add_custom_command(
-    OUTPUT djxl.1
-    COMMAND Python::Interpreter
-    ARGS "${ASCIIDOC}"
-      --format manpage --destination-dir="${CMAKE_CURRENT_BINARY_DIR}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/djxl.txt"
-    MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/djxl.txt")
-  add_custom_target(manpages ALL DEPENDS cjxl.1 djxl.1)
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/cjxl.1" DESTINATION share/man/man1)
-  install(FILES "${CMAKE_CURRENT_BINARY_DIR}/djxl.1" DESTINATION share/man/man1)
+  set(MANPAGE_FILES "")
+  set(MANPAGES "")
+  foreach(PAGE IN ITEMS cjxl djxl)
+    # Invoking the Python interpreter ourselves instead of running the a2x binary
+    # directly is necessary on MSYS2, otherwise it is run through cmd.exe which
+    # does not recognize it.
+    add_custom_command(
+      OUTPUT "${PAGE}.1"
+      COMMAND Python::Interpreter
+      ARGS "${ASCIIDOC}"
+        --format manpage --destination-dir="${CMAKE_CURRENT_BINARY_DIR}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/${PAGE}.txt"
+      MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/${PAGE}.txt")
+    list(APPEND MANPAGE_FILES "${CMAKE_CURRENT_BINARY_DIR}/${PAGE}.1")
+    list(APPEND MANPAGES "${PAGE}.1")
+  endforeach()
+  add_custom_target(manpages ALL DEPENDS ${MANPAGES})
+  install(FILES ${MANPAGE_FILES} DESTINATION share/man/man1)
+endif()
 endif()
 
 # Example usage code.

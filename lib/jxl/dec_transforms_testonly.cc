@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/dec_transforms.h"
+#include "lib/jxl/dec_transforms_testonly.h"
 
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE "lib/jxl/dec_transforms.cc"
+#define HWY_TARGET_INCLUDE "lib/jxl/dec_transforms_testonly.cc"
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

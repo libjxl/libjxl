@@ -230,10 +230,11 @@ class AcStrategyImage {
   AcStrategyImage(AcStrategyImage&&) = default;
   AcStrategyImage& operator=(AcStrategyImage&&) = default;
 
-  void FillDCT8() {
-    FillImage<uint8_t>((static_cast<uint8_t>(AcStrategy::Type::DCT) << 1) | 1,
-                       &layers_);
+  void FillDCT8(const Rect& rect) {
+    FillPlane<uint8_t>((static_cast<uint8_t>(AcStrategy::Type::DCT) << 1) | 1,
+                       &layers_, rect);
   }
+  void FillDCT8() { FillDCT8(Rect(layers_)); }
 
   void FillInvalid() { FillImage(INVALID, &layers_); }
 

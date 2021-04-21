@@ -14,6 +14,8 @@
 
 #include "lib/jxl/color_encoding_internal.h"
 
+#include <errno.h>
+
 #include <array>
 #include <cmath>
 
@@ -255,7 +257,7 @@ static Status F64ToCustomxyI32(const double f, int32_t* JXL_RESTRICT i) {
   if (!(-4 <= f && f <= 4)) {
     return JXL_FAILURE("F64 out of bounds for CustomxyI32");
   }
-  *i = static_cast<int32_t>(std::round(f * 1E6));
+  *i = static_cast<int32_t>(roundf(f * 1E6));
   return true;
 }
 
@@ -304,7 +306,7 @@ Status CustomTransferFunction::SetGamma(double gamma) {
   // values because those curves also have a linear part.
 
   have_gamma_ = true;
-  gamma_ = std::round(gamma * kGammaMul);
+  gamma_ = roundf(gamma * kGammaMul);
   transfer_function_ = TransferFunction::kUnknown;
   return true;
 }
@@ -472,6 +474,14 @@ Status ColorEncoding::SetPrimaries(const PrimariesCIExy& xy) {
   return true;
 }
 
+Status ColorEncoding::CreateICC() {
+  InternalRemoveICC();
+  if (!MaybeCreateProfile(*this, &icc_)) {
+    return JXL_FAILURE("Failed to create profile from fields");
+  }
+  return true;
+}
+
 std::string Description(const ColorEncoding& c_in) {
   // Copy required for Implicit*
   ColorEncoding c = c_in;
@@ -482,8 +492,8 @@ std::string Description(const ColorEncoding& c_in) {
     d += '_';
     if (c.white_point == WhitePoint::kCustom) {
       const CIExy wp = c.GetWhitePoint();
-      d += std::to_string(wp.x) + ';';
-      d += std::to_string(wp.y);
+      d += ToString(wp.x) + ';';
+      d += ToString(wp.y);
     } else {
       d += ToString(c.white_point);
     }
@@ -493,12 +503,12 @@ std::string Description(const ColorEncoding& c_in) {
     d += '_';
     if (c.primaries == Primaries::kCustom) {
       const PrimariesCIExy pr = c.GetPrimaries();
-      d += std::to_string(pr.r.x) + ';';
-      d += std::to_string(pr.r.y) + ';';
-      d += std::to_string(pr.g.x) + ';';
-      d += std::to_string(pr.g.y) + ';';
-      d += std::to_string(pr.b.x) + ';';
-      d += std::to_string(pr.b.y);
+      d += ToString(pr.r.x) + ';';
+      d += ToString(pr.r.y) + ';';
+      d += ToString(pr.g.x) + ';';
+      d += ToString(pr.g.y) + ';';
+      d += ToString(pr.b.x) + ';';
+      d += ToString(pr.b.y);
     } else {
       d += ToString(c.primaries);
     }
@@ -511,7 +521,7 @@ std::string Description(const ColorEncoding& c_in) {
     d += '_';
     if (c.tf.IsGamma()) {
       d += 'g';
-      d += std::to_string(c.tf.GetGamma());
+      d += ToString(c.tf.GetGamma());
     } else {
       d += ToString(c.tf.GetTransferFunction());
     }

@@ -68,11 +68,11 @@ class TF_HLG {
     const double original_sign = s;
     s = std::abs(s);
 
-    if (s <= kDiv12) return std::copysign(std::sqrt(3.0 * s), original_sign);
+    if (s <= kDiv12) return copysignf(std::sqrt(3.0 * s), original_sign);
 
     const double e = kA * std::log(12 * s - kB) + kC;
     JXL_ASSERT(e > 0.0);
-    return std::copysign(e, original_sign);
+    return copysignf(e, original_sign);
   }
 
   // e = encoded, returns scene.
@@ -81,11 +81,11 @@ class TF_HLG {
     const double original_sign = e;
     e = std::abs(e);
 
-    if (e <= 0.5) return std::copysign(e * e * (1.0 / 3), original_sign);
+    if (e <= 0.5) return copysignf(e * e * (1.0 / 3), original_sign);
 
     const double s = (std::exp((e - kC) * kRA) + kB) * kDiv12;
     JXL_ASSERT(s >= 0);
-    return std::copysign(s, original_sign);
+    return copysignf(s, original_sign);
   }
 
   // s = scene, returns display.
@@ -128,7 +128,7 @@ class TF_PQ {
     JXL_DASSERT(den != 0.0);
     const double d = std::pow(num / den, 1.0 / kM1);
     JXL_DASSERT(d >= 0.0);  // Equal for e ~= 1E-9
-    return std::copysign(d, original_sign);
+    return copysignf(d, original_sign);
   }
 
   // Maximum error 3e-6
@@ -166,7 +166,7 @@ class TF_PQ {
     const double den = 1.0 + xp * kC3;
     const double e = std::pow(num / den, kM2);
     JXL_DASSERT(e > 0.0);
-    return std::copysign(e, original_sign);
+    return copysignf(e, original_sign);
   }
 
   // Maximum error 7e-7.

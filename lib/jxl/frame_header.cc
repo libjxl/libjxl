@@ -165,6 +165,10 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
 
   JXL_QUIET_RETURN_IF_ERROR(
       VisitFrameType(visitor, FrameType::kRegularFrame, &frame_type));
+  if (visitor->IsReading() && nonserialized_is_preview &&
+      frame_type != kRegularFrame) {
+    return JXL_FAILURE("Only regular frame could be a preview");
+  }
 
   // FrameEncoding.
   bool is_modular = (encoding == FrameEncoding::kModular);
@@ -299,6 +303,7 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
         num_extra_channels > 0;
     blending_info.nonserialized_is_partial_frame = is_partial_frame;
     JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&blending_info));
+    bool replace_all = (blending_info.mode == BlendMode::kReplace);
     extra_channel_blending_info.resize(num_extra_channels);
     for (size_t i = 0; i < num_extra_channels; i++) {
       auto& ec_blending_info = extra_channel_blending_info[i];
@@ -306,6 +311,12 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
       ec_blending_info.nonserialized_has_multiple_extra_channels =
           num_extra_channels > 0;
       JXL_QUIET_RETURN_IF_ERROR(visitor->VisitNested(&ec_blending_info));
+      replace_all &= (ec_blending_info.mode == BlendMode::kReplace);
+    }
+    if (visitor->IsReading() && nonserialized_is_preview) {
+      if (!replace_all || custom_size_or_origin) {
+        return JXL_FAILURE("Preview is not compatible with blending");
+      }
     }
     if (visitor->Conditional(nonserialized_metadata != nullptr &&
                              nonserialized_metadata->m.have_animation)) {

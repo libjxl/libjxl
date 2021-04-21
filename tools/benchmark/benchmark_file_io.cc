@@ -28,7 +28,10 @@
 #ifndef HAS_GLOB
 #define HAS_GLOB 0
 #if defined __has_include
-#if __has_include(<glob.h>)
+// <glob.h> is included in previous APIs but glob() function is not defined
+// until API 28.
+#if __has_include(<glob.h>) && \
+    (!defined(__ANDROID_API__) || __ANDROID_API__ >= 28)
 #undef HAS_GLOB
 #define HAS_GLOB 1
 #endif  // __has_include(<glob.h>)

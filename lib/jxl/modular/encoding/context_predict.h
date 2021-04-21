@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "lib/jxl/fields.h"
-#include "lib/jxl/modular/encoding/ma.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
 
@@ -444,7 +443,7 @@ inline std::string PropertyName(size_t i) {
     case 15:
       return "WGH";
     default:
-      return "ch[" + std::to_string(15 - (int)i) + "]";
+      return "ch[" + ToString(15 - (int)i) + "]";
   }
 }
 

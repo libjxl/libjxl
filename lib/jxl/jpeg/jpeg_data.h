@@ -230,6 +230,9 @@ struct JPEGData : public Fields {
   // already encoded in the codestream.
   Status VisitFields(Visitor* visitor) override;
 
+  void CalculateMcuSize(const JPEGScanInfo& scan, int* MCUs_per_row,
+                        int* MCU_rows) const;
+
   int width;
   int height;
   uint32_t restart_interval;

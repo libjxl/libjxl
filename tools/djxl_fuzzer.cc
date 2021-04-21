@@ -44,6 +44,7 @@ struct FuzzSpec {
   bool get_alpha;
   bool get_grayscale;
   bool use_streaming;
+  bool jpeg_to_pixels;  // decode to pixels even if it is JPEG-reconstructible
   uint32_t streaming_seed;
 };
 
@@ -51,7 +52,7 @@ struct FuzzSpec {
 // it in one shot.
 bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
-                  size_t* xsize, size_t* ysize,
+                  std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
   SetDecoderMemoryLimitBase_(max_pixels);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
@@ -65,9 +66,10 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
 
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
-      JxlDecoderSubscribeEvents(dec.get(),
-                                JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
-                                    JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE)) {
+      JxlDecoderSubscribeEvents(
+          dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                         JXL_DEC_FRAME | JXL_DEC_JPEG_RECONSTRUCTION |
+                         JXL_DEC_FULL_IMAGE)) {
     return false;
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
@@ -95,6 +97,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool seen_full_image = false;
   bool seen_success = false;
   bool seen_frame = false;
+  bool seen_jpeg_reconstruction = false;
+  bool seen_jpeg_need_more_output = false;
   // If streaming and seen around half the input, test flushing
   bool tested_flush = false;
 
@@ -105,7 +109,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
 
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
-
     if (status == JXL_DEC_ERROR) {
       return false;
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
@@ -133,6 +136,20 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           JxlDecoderFlushImage(dec.get());
         }
       } else {
+        return false;
+      }
+    } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+      if (spec.jpeg_to_pixels) abort();
+      if (!seen_jpeg_reconstruction) abort();
+      seen_jpeg_need_more_output = true;
+      size_t used_jpeg_output =
+          jpeg->size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+      jpeg->resize(std::max<size_t>(4096, jpeg->size() * 2));
+      uint8_t* jpeg_buffer = jpeg->data() + used_jpeg_output;
+      size_t jpeg_buffer_size = jpeg->size() - used_jpeg_output;
+
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderSetJPEGBuffer(dec.get(), jpeg_buffer, jpeg_buffer_size)) {
         return false;
       }
     } else if (status == JXL_DEC_BASIC_INFO) {
@@ -198,15 +215,34 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       }
       pixels->resize(*xsize * *ysize * bytes_per_pixel);
       void* pixels_buffer = (void*)pixels->data();
-      size_t pixels_buffer_size = pixels->size() * sizeof(float);
+      size_t pixels_buffer_size = pixels->size();
       if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
                                                          pixels_buffer,
                                                          pixels_buffer_size)) {
         return false;
       }
+    } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
+      if (seen_jpeg_reconstruction) abort();
+      seen_jpeg_reconstruction = true;
+      if (!spec.jpeg_to_pixels) {
+        // Make sure buffer is allocated, but current size is too small to
+        // contain valid JPEG.
+        jpeg->resize(1);
+        uint8_t* jpeg_buffer = jpeg->data();
+        size_t jpeg_buffer_size = jpeg->size();
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetJPEGBuffer(dec.get(), jpeg_buffer, jpeg_buffer_size)) {
+          return false;
+        }
+      }
     } else if (status == JXL_DEC_FULL_IMAGE) {
-      // expected need image out or frame first
-      if (!seen_need_image_out && !seen_frame) abort();
+      if (!spec.jpeg_to_pixels && seen_jpeg_reconstruction) {
+        if (!seen_jpeg_need_more_output) abort();
+        jpeg->resize(jpeg->size() - JxlDecoderReleaseJPEGBuffer(dec.get()));
+      } else {
+        // expected need image out or frame first
+        if (!seen_need_image_out && !seen_frame) abort();
+      }
 
       seen_full_image = true;  // there may be multiple if animated
 
@@ -214,10 +250,17 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       seen_need_image_out = false;
       seen_frame = false;
 
-      // "Use" all the pixels
-      for (size_t i = 0; i < pixels->size(); i++) {
-        external_code ^= (*pixels)[i];
-      }
+      const auto consume = [&](uint8_t b) {
+        if (b == 0) {
+          external_code ^= ~0;
+        } else {
+          external_code ^= b;
+        }
+      };
+
+      // "Use" all the pixels; MSAN needs a conditional to count as usage.
+      for (size_t i = 0; i < pixels->size(); i++) consume(pixels->at(i));
+      for (size_t i = 0; i < jpeg->size(); i++) consume(jpeg->at(i));
 
       // Nothing to do. Do not yet return. If the image is an animation, more
       // full frames may be decoded. This example only keeps the last one.
@@ -246,18 +289,21 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.get_alpha = !!(flags & 2);
   spec.get_grayscale = !!(flags & 4);
   spec.use_streaming = !!(flags & 8);
-  // Allos some different possible variations in the chunk sizes of the
+  spec.jpeg_to_pixels = !!(flags & 16);
+  // Allows some different possible variations in the chunk sizes of the
   // streaming case
   spec.streaming_seed = flags ^ size;
 
   std::vector<uint8_t> pixels;
+  std::vector<uint8_t> jpeg;
   std::vector<uint8_t> icc;
   size_t xsize, ysize;
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();
   hwy::SetSupportedTargetsForTest(spec.streaming_seed % targets.size());
-  DecodeJpegXl(data, size, max_pixels, spec, &pixels, &xsize, &ysize, &icc);
+  DecodeJpegXl(data, size, max_pixels, spec, &pixels, &jpeg, &xsize, &ysize,
+               &icc);
   hwy::SetSupportedTargetsForTest(0);
 
   return 0;

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef LIB_JXL_DEC_TRANSFORMS_H_
-#define LIB_JXL_DEC_TRANSFORMS_H_
+#ifndef LIB_JXL_DEC_TRANSFORMS_TESTONLY_H_
+#define LIB_JXL_DEC_TRANSFORMS_TESTONLY_H_
 
 // Facade for (non-inlined) inverse integral transforms.
 
@@ -38,4 +38,4 @@ void AFVIDCT4x4(const float* JXL_RESTRICT coeffs, float* JXL_RESTRICT pixels);
 
 }  // namespace jxl
 
-#endif  // LIB_JXL_DEC_TRANSFORMS_H_
+#endif  // LIB_JXL_DEC_TRANSFORMS_TESTONLY_H_

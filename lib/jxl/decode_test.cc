@@ -126,18 +126,6 @@ jxl::PaddedBytes GetIccTestProfile() {
 }  // namespace
 
 namespace jxl {
-
-static bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
-  if (a.size() != b.size()) return false;
-  if (memcmp(a.data(), b.data(), a.size()) != 0) return false;
-  return true;
-}
-
-// Allow using EXPECT_EQ on jxl::PaddedBytes
-static bool operator!=(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
-  return !(a == b);
-}
-
 namespace {
 
 // Input pixels always given as 16-bit RGBA, 8 bytes per pixel.
@@ -376,7 +364,6 @@ bool Near(double expected, double value, double max_dist) {
 }
 
 // Loads a Big-Endian float
-// TODO(lode): support little endian here and in the API
 float LoadBEFloat(const uint8_t* p) {
   uint32_t u = LoadBE32(p);
   float result;
@@ -392,6 +379,38 @@ float LoadLEFloat(const uint8_t* p) {
   return result;
 }
 
+// Based on highway scalar implementation, for testing
+float LoadFloat16(uint16_t bits16) {
+  const uint32_t sign = bits16 >> 15;
+  const uint32_t biased_exp = (bits16 >> 10) & 0x1F;
+  const uint32_t mantissa = bits16 & 0x3FF;
+
+  // Subnormal or zero
+  if (biased_exp == 0) {
+    const float subnormal = (1.0f / 16384) * (mantissa * (1.0f / 1024));
+    return sign ? -subnormal : subnormal;
+  }
+
+  // Normalized: convert the representation directly (faster than ldexp/tables).
+  const uint32_t biased_exp32 = biased_exp + (127 - 15);
+  const uint32_t mantissa32 = mantissa << (23 - 10);
+  const uint32_t bits32 = (sign << 31) | (biased_exp32 << 23) | mantissa32;
+
+  float result;
+  memcpy(&result, &bits32, 4);
+  return result;
+}
+
+float LoadLEFloat16(const uint8_t* p) {
+  uint16_t bits16 = LoadLE16(p);
+  return LoadFloat16(bits16);
+}
+
+float LoadBEFloat16(const uint8_t* p) {
+  uint16_t bits16 = LoadBE16(p);
+  return LoadFloat16(bits16);
+}
+
 size_t GetPrecision(JxlDataType data_type) {
   switch (data_type) {
     case JXL_TYPE_BOOLEAN:
@@ -405,6 +424,8 @@ size_t GetPrecision(JxlDataType data_type) {
     case JXL_TYPE_FLOAT:
       // Floating point mantissa precision
       return 24;
+    case JXL_TYPE_FLOAT16:
+      return 11;
   }
   JXL_ASSERT(false);  // unknown type
 }
@@ -421,6 +442,8 @@ size_t GetDataBits(JxlDataType data_type) {
       return 32;
     case JXL_TYPE_FLOAT:
       return 32;
+    case JXL_TYPE_FLOAT16:
+      return 16;
   }
   JXL_ASSERT(false);  // unknown type
 }
@@ -550,6 +573,29 @@ std::vector<double> ConvertToRGBA32(const uint8_t* pixels, size_t xsize,
         result[j + 3] = a;
       }
     }
+  } else if (format.data_type == JXL_TYPE_FLOAT16) {
+    for (size_t y = 0; y < ysize; ++y) {
+      for (size_t x = 0; x < xsize; ++x) {
+        size_t j = (y * xsize + x) * 4;
+        size_t i = y * stride + x * num_channels * 2;
+        double r, g, b, a;
+        if (format.endianness == JXL_BIG_ENDIAN) {
+          r = LoadBEFloat16(pixels + i);
+          g = gray ? r : LoadBEFloat16(pixels + i + 2);
+          b = gray ? r : LoadBEFloat16(pixels + i + 4);
+          a = alpha ? LoadBEFloat16(pixels + i + num_channels * 2 - 2) : 1.0;
+        } else {
+          r = LoadLEFloat16(pixels + i);
+          g = gray ? r : LoadLEFloat16(pixels + i + 2);
+          b = gray ? r : LoadLEFloat16(pixels + i + 4);
+          a = alpha ? LoadLEFloat16(pixels + i + num_channels * 2 - 2) : 1.0;
+        }
+        result[j + 0] = r;
+        result[j + 1] = g;
+        result[j + 2] = b;
+        result[j + 3] = a;
+      }
+    }
   } else {
     JXL_ASSERT(false);  // Unsupported type
   }
@@ -578,6 +624,14 @@ size_t ComparePixels(const uint8_t* a, const uint8_t* b, size_t xsize,
   // E.g. in case of 1-bit this is 0.5 since 0.499 must map to 0 and 0.501 must
   // map to 1.
   double precision = 0.5 / ((1ull << bits) - 1ull);
+  if (format_a.data_type == JXL_TYPE_FLOAT16 ||
+      format_b.data_type == JXL_TYPE_FLOAT16) {
+    // Lower the precision for float16, because it currently looks like the
+    // scalar and wasm implementations of hwy have 1 less bit of precision
+    // than the x86 implementations.
+    // TODO(lode): Set the required precision back to 11 bits when possible.
+    precision = 0.5 / ((1ull << (bits - 1)) - 1ull);
+  }
   size_t numdiff = 0;
   for (size_t y = 0; y < ysize; y++) {
     for (size_t x = 0; x < xsize; x++) {
@@ -1295,17 +1349,17 @@ TEST(DecodeTest, PixelTest) {
           }
 
 #if 0  // Disabled since external_image doesn't currently support uint32_t
-        {
-          JxlPixelFormat format = {channels, JXL_TYPE_UINT32, endianness, 0};
+          {
+            JxlPixelFormat format = {channels, JXL_TYPE_UINT32, endianness, 0};
 
-          std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(dec,
-              jxl::Span<const uint8_t>(compressed.data(),
-                  compressed.size()), format);
-          JxlDecoderReset(dec);
-          EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
-          EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(),
-              xsize, ysize, format_orig, format));
-        }
+            std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(dec,
+                jxl::Span<const uint8_t>(compressed.data(),
+                    compressed.size()), format);
+            JxlDecoderReset(dec);
+            EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+            EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(),
+                xsize, ysize, format_orig, format));
+          }
 #endif
 
           {
@@ -1317,6 +1371,19 @@ TEST(DecodeTest, PixelTest) {
                 format);
             JxlDecoderReset(dec);
             EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+            EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
+                                       ysize, format_orig, format));
+          }
+
+          {
+            JxlPixelFormat format = {channels, JXL_TYPE_FLOAT16, endianness, 0};
+
+            std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+                dec,
+                jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+                format);
+            JxlDecoderReset(dec);
+            EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
             EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize,
                                        ysize, format_orig, format));
           }
@@ -1499,6 +1566,68 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
   }
 }
 
+// Opaque image with noise enabled, decoded to RGB8 and RGBA8.
+TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
+  for (unsigned channels = 3; channels <= 4; channels++) {
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+
+    size_t xsize = 512, ysize = 300;
+    size_t num_pixels = xsize * ysize;
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+    JxlPixelFormat format_orig = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+    jxl::CompressParams cparams;
+    cparams.noise = jxl::Override::kOn;
+    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, kCSBF_None, /*add_preview=*/false, /*add_icc_profile=*/false);
+
+    JxlPixelFormat format = {channels, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+        format);
+    JxlDecoderReset(dec);
+    EXPECT_EQ(num_pixels * channels, pixels2.size());
+
+    // The input pixels use the profile matching GetIccTestProfile, since we set
+    // add_icc_profile for CreateTestJXLCodestream to true.
+    jxl::ColorEncoding color_encoding0 = jxl::ColorEncoding::SRGB(false);
+    jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
+    jxl::CodecInOut io0;
+    io0.SetSize(xsize, ysize);
+    EXPECT_TRUE(ConvertFromExternal(
+        span0, xsize, ysize, color_encoding0,
+        /*has_alpha=*/false, false, 16, format_orig.endianness,
+        /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
+
+    jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
+    jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
+    jxl::CodecInOut io1;
+    if (channels == 4) {
+      io1.metadata.m.SetAlphaBits(8);
+      io1.SetSize(xsize, ysize);
+      EXPECT_TRUE(ConvertFromExternal(
+          span1, xsize, ysize, color_encoding1,
+          /*has_alpha=*/true, false, 8, format.endianness,
+          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      io1.metadata.m.SetAlphaBits(0);
+      io1.Main().ClearExtraChannels();
+    } else {
+      EXPECT_TRUE(ConvertFromExternal(
+          span1, xsize, ysize, color_encoding1,
+          /*has_alpha=*/false, false, 8, format.endianness,
+          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+    }
+
+    jxl::ButteraugliParams ba;
+    EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+              2.0f);
+
+    JxlDecoderDestroy(dec);
+  }
+}
+
 TEST(DecodeTest, GrayscaleTest) {
   size_t xsize = 123, ysize = 77;
   size_t num_pixels = xsize * ysize;
@@ -1558,6 +1687,17 @@ TEST(DecodeTest, GrayscaleTest) {
             jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
             format);
         EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
+        EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                   format_orig, format));
+      }
+
+      {
+        JxlPixelFormat format = {channels, JXL_TYPE_FLOAT16, endianness, 0};
+
+        std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+            jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+            format);
+        EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
         EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
                                    format_orig, format));
       }

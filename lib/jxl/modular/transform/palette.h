@@ -559,10 +559,9 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
         } else {
           for (size_t c = 0; c < nb; c++) {
             color_with_error[c] = p_in[c][x] + error_row[0][c][x + 2];
-            color[c] =
-                std::min(input.maxval,
-                         std::max<pixel_type>(
-                             input.minval, std::lround(color_with_error[c])));
+            color[c] = std::min(
+                input.maxval, std::max<pixel_type>(
+                                  input.minval, lroundf(color_with_error[c])));
           }
           float best_distance = std::numeric_limits<float>::infinity();
           int best_index = 0;

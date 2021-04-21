@@ -41,6 +41,8 @@ void EncodeSplines(const Splines& splines, BitWriter* writer,
                    const size_t layer, const HistogramParams& histogram_params,
                    AuxOut* aux_out);
 
+Splines FindSplines(const Image3F& opsin);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_ENC_SPLINES_H_

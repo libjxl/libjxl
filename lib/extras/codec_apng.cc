@@ -345,7 +345,10 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
             }
           }
 
-          if (id == id_IEND) { errorstate = false; break; }
+          if (id == id_IEND) {
+            errorstate = false;
+            break;
+          }
           // At this point the old frame is done. Let's start a new one.
           w0 = png_get_uint_32(chunk.p + 12);
           h0 = png_get_uint_32(chunk.p + 16);

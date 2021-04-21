@@ -107,8 +107,12 @@ struct JxlEncoderStruct {
   jxl::CodecMetadata metadata;
   std::vector<uint8_t> jpeg_metadata;
 
-  bool wrote_headers = false;
+  bool wrote_bytes = false;
   jxl::CompressParams last_used_cparams;
+
+  bool input_closed = false;
+  bool basic_info_set = false;
+  bool color_encoding_set = false;
 
   // Takes the first frame in the input_frame_queue, encodes it, and appends the
   // bytes to the output_byte_queue.

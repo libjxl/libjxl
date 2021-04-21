@@ -305,7 +305,7 @@ export_env() {
     # We also need our own libraries in the wine path.
     local real_build_dir=$(realpath "${BUILD_DIR}")
     # Some library .dll dependencies are installed in /bin:
-    export WINEPATH="${WINEPATH};${real_build_dir};/usr/${BUILD_TARGET}/bin"
+    export WINEPATH="${WINEPATH};${real_build_dir};${real_build_dir}/third_party/brotli;/usr/${BUILD_TARGET}/bin"
 
     local prefix="${BUILD_DIR}/wineprefix"
     mkdir -p "${prefix}"
@@ -348,6 +348,11 @@ cmake_configure() {
     -DJPEGXL_ENABLE_PLUGINS=ON
     -DJPEGXL_ENABLE_DEVTOOLS=ON
   )
+  if [[ "${BUILD_TARGET}" != *mingw32 ]]; then
+    args+=(
+      -DJPEGXL_WARNINGS_AS_ERRORS=ON
+    )
+  fi
   if [[ -n "${BUILD_TARGET}" ]]; then
     local system_name="Linux"
     if [[ "${BUILD_TARGET}" == *mingw32 ]]; then

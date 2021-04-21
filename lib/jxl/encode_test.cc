@@ -25,6 +25,116 @@
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
 
+TEST(EncodeTest, AddFrameAfterCloseInputTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  JxlEncoderCloseInput(enc.get());
+
+  size_t xsize = 64;
+  size_t ysize = 64;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+
+  jxl::CodecInOut input_io =
+      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
+
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.uses_original_profile = false;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding,
+                            /*is_gray=*/pixel_format.num_channels < 3);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
+}
+
+TEST(EncodeTest, AddJPEGAfterCloseTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  JxlEncoderCloseInput(enc.get());
+
+  const std::string jpeg_path =
+      "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+  const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
+  jxl::CodecInOut orig_io;
+  ASSERT_TRUE(
+      SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io, /*pool=*/nullptr));
+
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+
+  JxlBasicInfo basic_info;
+  basic_info.exponent_bits_per_sample = 0;
+  basic_info.bits_per_sample = 8;
+  basic_info.alpha_bits = 0;
+  basic_info.alpha_exponent_bits = 0;
+  basic_info.xsize = orig_io.xsize();
+  basic_info.ysize = orig_io.ysize();
+  basic_info.uses_original_profile = true;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddJPEGFrame(options, orig.data(), orig.size()));
+}
+
+TEST(EncodeTest, AddFrameBeforeColorEncodingTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  size_t xsize = 64;
+  size_t ysize = 64;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+
+  jxl::CodecInOut input_io =
+      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
+
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.uses_original_profile = false;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
+}
+
+TEST(EncodeTest, AddFrameBeforeBasicInfoTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  size_t xsize = 64;
+  size_t ysize = 64;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+
+  jxl::CodecInOut input_io =
+      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
+
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding,
+                            /*is_gray=*/pixel_format.num_channels < 3);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
+}
+
 TEST(EncodeTest, DefaultAllocTest) {
   JxlEncoder* enc = JxlEncoderCreate(nullptr);
   EXPECT_NE(nullptr, enc);

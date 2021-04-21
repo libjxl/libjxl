@@ -51,6 +51,7 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
       case JXL_TYPE_UINT16:
       case JXL_TYPE_UINT32:
       case JXL_TYPE_FLOAT:
+      case JXL_TYPE_FLOAT16:
         io.metadata.m.SetAlphaBits(16);
         break;
       default:
@@ -63,6 +64,10 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
     case JXL_TYPE_FLOAT:
       bitdepth = 32;
       io.metadata.m.SetFloat32Samples();
+      break;
+    case JXL_TYPE_FLOAT16:
+      bitdepth = 16;
+      io.metadata.m.SetFloat16Samples();
       break;
     case JXL_TYPE_UINT8:
       bitdepth = 8;
@@ -175,6 +180,24 @@ std::vector<uint8_t> GetTestImage(const size_t xsize, const size_t ysize,
   return bytes;
 }
 
+void EncodeWithEncoder(JxlEncoder* enc, std::vector<uint8_t>* compressed) {
+  compressed->resize(64);
+  uint8_t* next_out = compressed->data();
+  size_t avail_out = compressed->size() - (next_out - compressed->data());
+  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+    process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
+    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed->data();
+      compressed->resize(compressed->size() * 2);
+      next_out = compressed->data() + offset;
+      avail_out = compressed->size() - offset;
+    }
+  }
+  compressed->resize(next_out - compressed->data());
+  EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
+}
+
 // Generates some pixels using using some dimensions and pixel_format,
 // compresses them, and verifies that the decoded version is similar to the
 // original pixels.
@@ -215,22 +238,8 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
                                     original_bytes.size()));
   JxlEncoderCloseInput(enc);
 
-  std::vector<uint8_t> compressed(64);
-  uint8_t* next_out = compressed.data();
-  size_t avail_out = compressed.size() - (next_out - compressed.data());
-  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
-  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-    process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
-    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      size_t offset = next_out - compressed.data();
-      compressed.resize(compressed.size() * 2);
-      next_out = compressed.data() + offset;
-      avail_out = compressed.size() - offset;
-    }
-  }
-  compressed.resize(next_out - compressed.data());
-  EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
-
+  std::vector<uint8_t> compressed;
+  EncodeWithEncoder(enc, &compressed);
   JxlEncoderDestroy(enc);
 
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
@@ -347,6 +356,97 @@ TEST(RoundtripTest, TestNonlinearSrgbAsXybEncoded) {
   }
 }
 
+TEST(RoundtripTest, TestICCProfile) {
+  // This ICC profile is not a valid ICC profile, however neither the encoder
+  // nor the decoder parse this profile, and the bytes should be passed on
+  // correctly through the roundtrip.
+  jxl::PaddedBytes icc;
+  for (size_t i = 0; i < 200; i++) {
+    icc.push_back(i ^ 55);
+  }
+
+  JxlPixelFormat format =
+      JxlPixelFormat{3, JXL_TYPE_UINT8, JXL_NATIVE_ENDIAN, 0};
+
+  size_t xsize = 25;
+  size_t ysize = 37;
+  const std::vector<uint8_t> original_bytes =
+      GetTestImage<uint8_t>(xsize, ysize, format);
+
+  JxlEncoder* enc = JxlEncoderCreate(nullptr);
+  EXPECT_NE(nullptr, enc);
+
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.uses_original_profile = JXL_FALSE;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc, &basic_info));
+
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetICCProfile(enc, icc.data(), icc.size()));
+  JxlEncoderOptions* opts = JxlEncoderOptionsCreate(enc, nullptr);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(opts, &format, (void*)original_bytes.data(),
+                                    original_bytes.size()));
+  JxlEncoderCloseInput(enc);
+
+  std::vector<uint8_t> compressed;
+  EncodeWithEncoder(enc, &compressed);
+  JxlEncoderDestroy(enc);
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+  EXPECT_NE(nullptr, dec);
+
+  const uint8_t* next_in = compressed.data();
+  size_t avail_in = compressed.size();
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO |
+                                               JXL_DEC_COLOR_ENCODING |
+                                               JXL_DEC_FULL_IMAGE));
+
+  JxlDecoderSetInput(dec, next_in, avail_in);
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  EXPECT_EQ(buffer_size, original_bytes.size());
+
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(xsize, info.xsize);
+  EXPECT_EQ(ysize, info.ysize);
+
+  EXPECT_EQ(JXL_DEC_COLOR_ENCODING, JxlDecoderProcessInput(dec));
+
+  size_t dec_icc_size;
+  EXPECT_EQ(
+      JXL_DEC_SUCCESS,
+      JxlDecoderGetICCProfileSize(
+          dec, &format, JXL_COLOR_PROFILE_TARGET_ORIGINAL, &dec_icc_size));
+  EXPECT_EQ(icc.size(), dec_icc_size);
+  jxl::PaddedBytes dec_icc(dec_icc_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetColorAsICCProfile(dec, &format,
+                                           JXL_COLOR_PROFILE_TARGET_ORIGINAL,
+                                           dec_icc.data(), dec_icc.size()));
+
+  std::vector<uint8_t> decoded_bytes(buffer_size);
+
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetImageOutBuffer(dec, &format, decoded_bytes.data(),
+                                        decoded_bytes.size()));
+
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+
+  EXPECT_EQ(icc, dec_icc);
+
+  JxlDecoderDestroy(dec);
+}
+
 TEST(RoundtripTest, TestJPEGReconstruction) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
@@ -377,22 +477,8 @@ TEST(RoundtripTest, TestJPEGReconstruction) {
             JxlEncoderAddJPEGFrame(options, orig.data(), orig.size()));
   JxlEncoderCloseInput(enc.get());
 
-  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
-  uint8_t* next_out = compressed.data();
-  size_t avail_out = compressed.size() - (next_out - compressed.data());
-  JxlEncoderStatus enc_process_result = JXL_ENC_NEED_MORE_OUTPUT;
-  while (enc_process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-    enc_process_result =
-        JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
-    if (enc_process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      size_t offset = next_out - compressed.data();
-      compressed.resize(compressed.size() * 2);
-      next_out = compressed.data() + offset;
-      avail_out = compressed.size() - offset;
-    }
-  }
-  compressed.resize(next_out - compressed.data());
-  EXPECT_EQ(JXL_ENC_SUCCESS, enc_process_result);
+  std::vector<uint8_t> compressed;
+  EncodeWithEncoder(enc.get(), &compressed);
 
   JxlDecoderPtr dec = JxlDecoderMake(nullptr);
   EXPECT_EQ(JXL_DEC_SUCCESS,

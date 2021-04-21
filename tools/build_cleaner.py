@@ -58,7 +58,11 @@ def SplitLibFiles(repo_files):
   """Splits the library files into the different groups.
 
   """
-  testonly = ('testdata.h', 'test_utils.h', '_test.h', '_test.cc')
+  testonly = (
+      'testdata.h', 'test_utils.h', '_test.h', '_test.cc',
+      # _testonly.* files are library code used in tests only.
+      '_testonly.h', '_testonly.cc'
+  )
   main_srcs = GetPrefixLibFiles(repo_files, 'lib/jxl/')
   extras_srcs = GetPrefixLibFiles(repo_files, 'lib/extras/')
   test_srcs = [fn for fn in main_srcs
@@ -77,6 +81,19 @@ def SplitLibFiles(repo_files):
   enc_srcs.extend([
       "lib/jxl/encode.cc",
       "lib/jxl/encode_internal.h",
+      "lib/jxl/gaborish.cc",
+      "lib/jxl/gaborish.h",
+      "lib/jxl/huffman_tree.cc",
+      "lib/jxl/huffman_tree.h",
+      # Only the inlines in linalg.h header are used in the decoder.
+      # TODO(deymo): split out encoder only linalg.h functions.
+      "lib/jxl/linalg.cc",
+      "lib/jxl/optimize.cc",
+      "lib/jxl/optimize.h",
+      "lib/jxl/progressive_split.cc",
+      "lib/jxl/progressive_split.h",
+      # TODO(deymo): Add luminance.cc and luminance.h here too. Currently used
+      # by aux_out.h.
       # dec_file is not intended to be part of the decoder library, so move it
       # to the encoder source set
       "lib/jxl/dec_file.cc",
@@ -201,10 +218,17 @@ def BuildCleaner(args):
   gni_patterns.append((
       r'libjxl_gbench_sources = \[\n([^\]]+)\]',
       ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.gbench)))
+
+
+  tests = [fn[len('lib/'):] for fn in jxl_src.test if fn.endswith('_test.cc')]
+  testlib = [fn[len('lib/'):] for fn in jxl_src.test
+             if not fn.endswith('_test.cc')]
   gni_patterns.append((
       r'libjxl_tests_sources = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn[len('lib/'):] for fn in jxl_src.test
-              if fn.endswith('_test.cc'))))
+      ''.join('    "%s",\n' % fn for fn in tests)))
+  gni_patterns.append((
+      r'libjxl_testlib_sources = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn for fn in testlib)))
 
   # libjxl_threads
   ok = CleanFile(
@@ -228,13 +252,18 @@ def BuildCleaner(args):
       r'libjxl_profiler_sources = \[\n([^\]]+)\]',
       ''.join('    "%s",\n' % fn for fn in profiler_srcs)))
 
-  # Update the list of tests.
+  # Update the list of tests. CMake version include test files in other libs,
+  # not just in libjxl.
   tests = [fn[len('lib/'):] for fn in repo_files
            if fn.endswith('_test.cc') and fn.startswith('lib/')]
   ok = CleanFile(
       args, 'lib/jxl_tests.cmake',
       [(r'set\(TEST_FILES\n([^\)]+)  ### Files before this line',
         ''.join('  %s\n' % fn for fn in tests))]) and ok
+  ok = CleanFile(
+      args, 'lib/jxl_tests.cmake',
+      [(r'set\(TESTLIB_FILES\n([^\)]+)\)',
+        ''.join('  %s\n' % fn for fn in testlib))]) and ok
 
   # Update lib.gni
   ok = CleanFile(args, 'lib/lib.gni', gni_patterns) and ok

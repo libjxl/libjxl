@@ -72,6 +72,9 @@ variables:
   - build/tools/comparison_viewer/compare_codecs*
   - build/tools/comparison_viewer/compare_images*
   - build/tools/viewer/viewer*
+  # Brotli shared dependencies if built
+  - build/third_party/brotli/libbrotli*so*
+  - build/third_party/brotli/libbrotli*.dll
   # All the test binaries in the build/ directory and .cmake files used by
   # ctest, compressed into this file together to save space when uploading.
   - build/tests.tar.xz
@@ -353,7 +356,7 @@ build:armhf:clang:release:
     - BUILD_TARGET=arm-linux-gnueabihf
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS -march=armv7a -Wno-unused-command-line-argument" SKIP_TEST=1 PACK_TEST=1
         STACK_SIZE=1
-        ./ci.sh release
+        ./ci.sh release -DJPEGXL_FORCE_NEON=ON
     - tools/build_stats.py --save build/stats.json
         --binutils=arm-linux-gnueabihf-
         cjxl djxl libjxl.so
@@ -373,6 +376,7 @@ build:armhf:clang:debug:
   only:
     - merge_requests
   script:
+    # Debug build without NEON enabled.
     - BUILD_TARGET=arm-linux-gnueabihf SKIP_TEST=1 ./ci.sh debug
 
 # "debug" build enabled for merge_requests. This is here to check that
@@ -518,9 +522,6 @@ test:fast_benchmark.msan:
   script:
     - STORE_IMAGES=0 ./ci.sh fast_benchmark
 
-# The aarch64 benchmarks are temporarily disabled until we can run them again.
-# TODO(sboukortt): Have them run again.
-
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
   <<: *linux_host_template
@@ -537,8 +538,6 @@ test:fast_benchmark.msan:
 
 test:aarch64:fast_benchmark:release:
   <<: *benchmark_aarch64_template
-  only: # TODO(sboukortt): Remove this.
-    - web
   dependencies:
     - build:aarch64:clang:release
   script:
@@ -553,8 +552,7 @@ test:aarch64:arm_benchmark:release:
   <<: *benchmark_aarch64_template
   only:
     - web
-    # TODO(sboukortt): Uncommment this.
-    # - master
+    - master
   dependencies:
     - build:aarch64:clang:release
   script:

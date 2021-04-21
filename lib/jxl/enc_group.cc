@@ -109,7 +109,7 @@ retry:
       const size_t hfix = (static_cast<size_t>(y >= ysize * kBlockDim / 2) * 2 +
                            static_cast<size_t>(x >= xsize * kBlockDim / 2));
       const float val = block_in[pos] * (qm[pos] * qac * qm_multiplier);
-      float v = (std::abs(val) < thres[hfix]) ? 0 : std::rint(val);
+      float v = (std::abs(val) < thres[hfix]) ? 0 : rintf(val);
       const float error = std::abs(val) - std::abs(v);
       hfError[hfix] += error;
       if (hfMaxError[hfix] < error) {
@@ -119,7 +119,7 @@ retry:
       if (v != 0.0f) {
         hfNonZeros[hfix] += std::abs(v);
       }
-      block_out[pos] = static_cast<int32_t>(std::rint(v));
+      block_out[pos] = static_cast<int32_t>(rintf(v));
     }
   }
   if (c != 1) return;

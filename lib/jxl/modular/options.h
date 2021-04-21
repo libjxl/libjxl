@@ -118,28 +118,17 @@ struct ModularMultiplierInfo {
 };
 
 struct ModularOptions {
-  // Decoding options:
-
-  // When true, only decode header, not the image data.
-  bool identify = false;
-
   /// Used in both encode and decode:
-
-  // If full_header==false, need to specify how many channels to expect.
-  int nb_channels = 1;
-
-  // The first <skipchannels> channels will not be encoded/decoded.
-  int skipchannels = 0;
 
   // Stop encoding/decoding when reaching a (non-meta) channel that has a
   // dimension bigger than max_chan_size.
   size_t max_chan_size = 0xFFFFFF;
 
-  // MA options:
-  // Number of iterations to do to learn a MA tree (does not have to be an
-  // integer; if zero there is no MA context model).
-  float nb_repeats =
-      .5f;  // learn MA tree by looking at 50% of the rows, in random order
+  /// Encode options:
+  // Fraction of pixels to look at to learn a MA tree
+  // Number of iterations to do to learn a MA tree
+  // (if zero there is no MA context model)
+  float nb_repeats = .5f;
 
   // Maximum number of (previous channel) properties to use in the MA trees
   int max_properties = 0;  // no previous channels
@@ -179,6 +168,9 @@ struct ModularOptions {
     kGradientFixedDC,
   };
   TreeKind tree_kind = TreeKind::kLearn;
+
+  // Ignore the image and just pretend all tokens are zeroes
+  bool zero_tokens = false;
 };
 
 }  // namespace jxl

@@ -166,6 +166,8 @@ size_t BitsPerChannel(JxlDataType data_type) {
       return 32;
     case JXL_TYPE_FLOAT:
       return 32;
+    case JXL_TYPE_FLOAT16:
+      return 16;
       // No default, give compiler error if new type not handled.
   }
   return 0;  // Indicate invalid data type.
@@ -707,6 +709,9 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
     stride = jxl::DivCeil(stride, format.align) * format.align;
   }
 
+  bool float_format = format.data_type == JXL_TYPE_FLOAT ||
+                      format.data_type == JXL_TYPE_FLOAT16;
+
   bool apply_srgb_tf = false;
   if (metadata.xyb_encoded) {
     if (!frame.c_current().IsLinearSRGB() && !frame.c_current().IsSRGB()) {
@@ -719,8 +724,7 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
     // changing this, ensure that when the enum value is unknown (jxl file only
     // has ICC profile attached),  decoding of frame returns linear unless user
     // requests integer output, in which case nonlinear data should be returned.
-    if (format.data_type != JXL_TYPE_FLOAT &&
-        frame.c_current().IsLinearSRGB()) {
+    if (!float_format && frame.c_current().IsLinearSRGB()) {
       // Convert to nonlinear sRGB for integer pixels.
       apply_srgb_tf = true;
     }
@@ -730,10 +734,9 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
                                           : metadata.GetOrientation();
   JXL_DASSERT(!dec->frame_dec || !dec->frame_dec->HasRGBBuffer());
   jxl::Status status = jxl::ConvertToExternal(
-      frame, BitsPerChannel(format.data_type),
-      format.data_type == JXL_TYPE_FLOAT, apply_srgb_tf, format.num_channels,
-      format.endianness, stride, dec->thread_pool.get(), out_image, out_size,
-      undo_orientation);
+      frame, BitsPerChannel(format.data_type), float_format, apply_srgb_tf,
+      format.num_channels, format.endianness, stride, dec->thread_pool.get(),
+      out_image, out_size, undo_orientation);
 
   return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
 }
@@ -1266,8 +1269,10 @@ JxlDecoderStatus JxlDecoderProcessJPEGReconstruction(JxlDecoder* dec,
       to_decode.size() == dec->jpeg_reconstruction_size) {
     // If undefined size, or the right size, try to decode.
     dec->jpeg_reconstruction_data = jxl::make_unique<jxl::jpeg::JPEGData>();
-    if (jxl::jpeg::DecodeJPEGData(to_decode,
-                                  dec->jpeg_reconstruction_data.get())) {
+    const auto status = jxl::jpeg::DecodeJPEGData(
+        to_decode, dec->jpeg_reconstruction_data.get());
+    if (status.IsFatalError()) return JXL_DEC_ERROR;
+    if (status) {
       // Successful decoding, emit event after updating state to track that we
       // are no longer parsing JPEG reconstruction data.
       dec->inside_jpeg_reconstruction_box = false;
@@ -1455,6 +1460,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             }
             size_t begin = dec->codestream_begin - dec->file_pos;
             size_t end = dec->codestream_end - dec->file_pos;
+            JXL_ASSERT(end <= *avail_in);
             dec->codestream.insert(dec->codestream.end(), *next_in + begin,
                                    *next_in + end);
           }
@@ -1507,6 +1513,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           } else {
             dec->jpeg_reconstruction_size = contents_size;
           }
+          dec->file_pos += pos;
           *next_in += pos;
           *avail_in -= pos;
           JxlDecoderStatus recon_result =
@@ -1562,6 +1569,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   // (streaming)
   bool detected_streaming = !dec->codestream.empty();
   JxlDecoderStatus result;
+  JXL_DASSERT(csize <= *avail_in);
 
   if (detected_streaming) {
     dec->codestream.insert(dec->codestream.end(), *next_in, *next_in + csize);
@@ -1573,7 +1581,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   } else {
     // No data copied to codestream buffer yet, the user input may contain the
     // full codestream.
-    result = jxl::JxlDecoderProcessInternal(dec, *next_in, *avail_in);
+    result = jxl::JxlDecoderProcessInternal(dec, *next_in, csize);
     // Copy the user's input bytes to the codestream once we are able to and
     // it is needed. Before we got the basic info, we're still parsing the box
     // format instead. If the result is not JXL_DEC_NEED_MORE_INPUT, then
@@ -1729,9 +1737,12 @@ JxlDecoderStatus GetColorEncodingForTarget(
     if (!format) {
       return JXL_API_ERROR("Must provide pixel format for data color profile");
     }
+
+    bool float_format = format->data_type == JXL_TYPE_FLOAT ||
+                        format->data_type == JXL_TYPE_FLOAT16;
     bool is_srgb = dec->metadata.m.color_encoding.HaveFields() &&
                    dec->metadata.m.color_encoding.IsSRGB();
-    if (format->data_type == JXL_TYPE_FLOAT && !is_srgb) {
+    if (float_format && !is_srgb) {
       *encoding = &jxl::ColorEncoding::LinearSRGB(grayscale);
     } else {
       *encoding = &jxl::ColorEncoding::SRGB(grayscale);

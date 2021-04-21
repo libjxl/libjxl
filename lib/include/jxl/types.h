@@ -42,9 +42,10 @@ extern "C" {
 /** Data type for the sample values per channel per pixel.
  */
 typedef enum {
-  /** use type float, with range 0.0-1.0 (within gamut, may go outside this
-   * range for wide color gamut). This is the recommended data type to handle
-   * HDR and wide color gamut images. */
+  /** Use 32-bit single-precision floating point values, with range 0.0-1.0
+   * (within gamut, may go outside this range for wide color gamut). Floating
+   * point output, either JXL_TYPE_FLOAT or JXL_TYPE_FLOAT16, is recommended
+   * for HDR and wide gamut images when color profile conversion is required. */
   JXL_TYPE_FLOAT = 0,
 
   /** Use 1-bit packed in uint8_t, first pixel in LSB, padded to uint8_t per
@@ -64,6 +65,9 @@ typedef enum {
   /** Use type uint32_t. May clip wide color gamut data.
    */
   JXL_TYPE_UINT32,
+
+  /** Use 16-bit IEEE 754 half-precision floating point values */
+  JXL_TYPE_FLOAT16,
 } JxlDataType;
 
 /** Ordering of multi-byte data.

@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/entropy_coder.h"
+// TODO(deymo): Move these tests to dec_ans.h and common.h
 
 #include <stdint.h>
 
 #include <random>
 
 #include "gtest/gtest.h"
+#include "lib/jxl/common.h"
+#include "lib/jxl/dec_ans.h"
 
 namespace jxl {
 namespace {

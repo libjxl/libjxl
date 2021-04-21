@@ -1053,6 +1053,37 @@ TEST(JxlTest, RoundtripDots) {
             2.2);
 }
 
+TEST(JxlTest, RoundtripNoise) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/cvo9xd_keong_macan_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+
+  ASSERT_NE(io.xsize(), 0);
+
+  CompressParams cparams;
+  cparams.noise = Override::kOn;
+  cparams.speed_tier = SpeedTier::kSquirrel;
+  DecompressParams dparams;
+
+  EXPECT_EQ(8, io.metadata.m.bit_depth.bits_per_sample);
+  EXPECT_EQ(0, io.metadata.m.bit_depth.exponent_bits_per_sample);
+  EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
+  EXPECT_TRUE(io.metadata.m.color_encoding.tf.IsSRGB());
+  PassesEncoderState enc_state;
+  AuxOut* aux_out = nullptr;
+  PaddedBytes compressed;
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
+  CodecInOut io2;
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
+
+  EXPECT_LE(compressed.size(), 40000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            2.2);
+}
+
 TEST(JxlTest, RoundtripLossless8Gray) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =

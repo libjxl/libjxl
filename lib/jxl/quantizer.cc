@@ -77,6 +77,18 @@ void Quantizer::ComputeGlobalScaleAndQuant(float quant_dc, float quant_median,
   RecomputeFromGlobalScale();
 }
 
+void Quantizer::SetQuantFieldRect(const ImageF& qf, const Rect& rect,
+                                  ImageI* JXL_RESTRICT raw_quant_field) {
+  for (size_t y = 0; y < rect.ysize(); ++y) {
+    const float* JXL_RESTRICT row_qf = rect.ConstRow(qf, y);
+    int32_t* JXL_RESTRICT row_qi = rect.Row(raw_quant_field, y);
+    for (size_t x = 0; x < rect.xsize(); ++x) {
+      int val = ClampVal(row_qf[x] * inv_global_scale_ + 0.5f);
+      row_qi[x] = val;
+    }
+  }
+}
+
 void Quantizer::SetQuantField(const float quant_dc, const ImageF& qf,
                               ImageI* JXL_RESTRICT raw_quant_field) {
   JXL_CHECK(SameSize(*raw_quant_field, qf));
@@ -91,14 +103,7 @@ void Quantizer::SetQuantField(const float quant_dc, const ImageF& qf,
   const float quant_median = Median(&data);
   const float quant_median_absd = MedianAbsoluteDeviation(data, quant_median);
   ComputeGlobalScaleAndQuant(quant_dc, quant_median, quant_median_absd);
-  for (size_t y = 0; y < qf.ysize(); ++y) {
-    const float* JXL_RESTRICT row_qf = qf.Row(y);
-    int32_t* JXL_RESTRICT row_qi = raw_quant_field->Row(y);
-    for (size_t x = 0; x < qf.xsize(); ++x) {
-      int val = ClampVal(row_qf[x] * inv_global_scale_ + 0.5f);
-      row_qi[x] = val;
-    }
-  }
+  SetQuantFieldRect(qf, Rect(qf), raw_quant_field);
 }
 
 void Quantizer::SetQuant(float quant_dc, float quant_ac,

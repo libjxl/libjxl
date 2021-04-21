@@ -21,6 +21,7 @@ set(TEST_FILES
   jxl/ans_test.cc
   jxl/bit_reader_test.cc
   jxl/bits_test.cc
+  jxl/blending_test.cc
   jxl/butteraugli_test.cc
   jxl/byte_order_test.cc
   jxl/coeff_order_test.cc
@@ -72,17 +73,37 @@ set(TEST_FILES
   ../tools/box/box_test.cc
 )
 
+# Test-only library code.
+set(TESTLIB_FILES
+  jxl/dct_for_test.h
+  jxl/dec_transforms_testonly.cc
+  jxl/dec_transforms_testonly.h
+  jxl/image_test_utils.h
+  jxl/test_utils.h
+  jxl/testdata.h
+)
+
 find_package(GTest)
+
+# Library with test-only code shared between all tests.
+add_library(jxl_testlib-static STATIC ${TESTLIB_FILES})
+  target_compile_options(jxl_testlib-static PRIVATE
+    ${JPEGXL_INTERNAL_FLAGS}
+    ${JPEGXL_COVERAGE_FLAGS}
+  )
+target_compile_definitions(jxl_testlib-static PUBLIC
+  -DTEST_DATA_PATH="${PROJECT_SOURCE_DIR}/third_party/testdata")
+target_include_directories(jxl_testlib-static PUBLIC
+  "${PROJECT_SOURCE_DIR}"
+)
+target_link_libraries(jxl_testlib-static hwy)
+
+# Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
 foreach (TESTFILE IN LISTS TEST_FILES)
   # The TESTNAME is the name without the extension or directory.
   get_filename_component(TESTNAME ${TESTFILE} NAME_WE)
   add_executable(${TESTNAME} ${TESTFILE})
-  target_compile_definitions(${TESTNAME} PRIVATE
-    -DTEST_DATA_PATH="${PROJECT_SOURCE_DIR}/third_party/testdata")
-  target_include_directories(${TESTNAME} PUBLIC
-    "${PROJECT_SOURCE_DIR}"
-  )
   if(JPEGXL_EMSCRIPTEN)
     # The emscripten linking step takes too much memory and crashes during the
     # wasm-opt step when using -O2 optimization level
@@ -103,6 +124,7 @@ foreach (TESTFILE IN LISTS TEST_FILES)
     jxl-static
     jxl_threads-static
     jxl_extras-static
+    jxl_testlib-static
     gmock
     GTest::GTest
     GTest::Main

@@ -60,6 +60,10 @@ void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
       basic_info->bits_per_sample = 32;
       basic_info->exponent_bits_per_sample = 8;
       break;
+    case JXL_TYPE_FLOAT16:
+      basic_info->bits_per_sample = 16;
+      basic_info->exponent_bits_per_sample = 5;
+      break;
     case JXL_TYPE_UINT8:
       basic_info->bits_per_sample = 8;
       basic_info->exponent_bits_per_sample = 0;
@@ -330,6 +334,17 @@ jxl::CodecInOut SomeTestImageToCodecInOut(const std::vector<uint8_t>& buf,
 }
 
 }  // namespace test
+
+bool operator==(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
+  if (a.size() != b.size()) return false;
+  if (memcmp(a.data(), b.data(), a.size()) != 0) return false;
+  return true;
+}
+
+// Allow using EXPECT_EQ on jxl::PaddedBytes
+bool operator!=(const jxl::PaddedBytes& a, const jxl::PaddedBytes& b) {
+  return !(a == b);
+}
 }  // namespace jxl
 
 #endif  // LIB_JXL_TEST_UTILS_H_

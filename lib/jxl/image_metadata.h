@@ -145,8 +145,7 @@ struct OpsinInverseMatrix : public Fields {
     std::copy(std::begin(opsin_biases), std::end(opsin_biases),
               opsin_params.opsin_biases);
     for (int i = 0; i < 3; ++i) {
-      opsin_params.opsin_biases_cbrt[i] =
-          std::cbrt(opsin_params.opsin_biases[i]);
+      opsin_params.opsin_biases_cbrt[i] = cbrtf(opsin_params.opsin_biases[i]);
     }
     opsin_params.opsin_biases_cbrt[3] = opsin_params.opsin_biases[3] = 1;
     std::copy(std::begin(quant_biases), std::end(quant_biases),
@@ -256,6 +255,12 @@ struct ImageMetadata : public Fields {
   void SetFloat32Samples() {
     bit_depth.bits_per_sample = 32;
     bit_depth.exponent_bits_per_sample = 8;
+    bit_depth.floating_point_sample = true;
+  }
+
+  void SetFloat16Samples() {
+    bit_depth.bits_per_sample = 16;
+    bit_depth.exponent_bits_per_sample = 5;
     bit_depth.floating_point_sample = true;
   }
 

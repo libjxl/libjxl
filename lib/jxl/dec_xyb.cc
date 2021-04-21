@@ -328,7 +328,7 @@ void OpsinParams::Init(float intensity_target) {
          sizeof(kNegOpsinAbsorbanceBiasRGB));
   memcpy(quant_biases, kDefaultQuantBias, sizeof(kDefaultQuantBias));
   for (size_t c = 0; c < 4; c++) {
-    opsin_biases_cbrt[c] = std::cbrt(opsin_biases[c]);
+    opsin_biases_cbrt[c] = cbrtf(opsin_biases[c]);
   }
 }
 

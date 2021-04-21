@@ -130,7 +130,8 @@ void int_to_float(const pixel_type* const JXL_RESTRICT row_in,
     int exp = (f >> mant_bits);
     int mantissa = (f & ((1 << mant_bits) - 1));
     mantissa <<= mant_shift;
-    if (exp == 0) {
+    // Try to normalize only if there is space for maneuver.
+    if (exp == 0 && exp_bits < 8) {
       // subnormal number
       while ((mantissa & 0x800000) == 0) {
         mantissa <<= 1;
@@ -228,7 +229,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 }
 
 Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
-                                        size_t minShift, size_t maxShift,
+                                        int minShift, int maxShift,
                                         const ModularStreamId& stream,
                                         bool zerofill) {
   JXL_DASSERT(stream.kind == ModularStreamId::kModularDC ||
@@ -246,7 +247,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   size_t beginc = c;
   for (; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
-    size_t shift = std::min(fc.hshift, fc.vshift);
+    int shift = std::min(fc.hshift, fc.vshift);
     if (shift > maxShift) continue;
     if (shift < minShift) continue;
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
@@ -263,7 +264,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
     int gic = 0;
     for (c = beginc; c < full_image.channel.size(); c++) {
       Channel& fc = full_image.channel[c];
-      size_t shift = std::min(fc.hshift, fc.vshift);
+      int shift = std::min(fc.hshift, fc.vshift);
       if (shift > maxShift) continue;
       if (shift < minShift) continue;
       Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
@@ -285,7 +286,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   int gic = 0;
   for (c = beginc; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
-    size_t shift = std::min(fc.hshift, fc.vshift);
+    int shift = std::min(fc.hshift, fc.vshift);
     if (shift > maxShift) continue;
     if (shift < minShift) continue;
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
@@ -305,7 +306,13 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
 Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
                                            PassesDecoderState* dec_state) {
   const Rect r = dec_state->shared->DCGroupRect(group_id);
-  constexpr const int kRawDcLimit = 1048576;
+  // TODO(eustas): investigate if we could reduce the impact of
+  //               EvalRationalPolynomial; generally speaking, the limit is
+  //               2**(128/(3*magic)), where 128 comes from IEEE 754 exponent,
+  //               3 comes from XybToRgb that cubes the values, and "magic" is
+  //               the sum of all other contributions. 2**18 is known to lead
+  //               to NaN on input found by fuzzing (see commit message).
+  constexpr const int kRawDcLimit = 1 << 17;
   Image image(r.xsize(), r.ysize(), kRawDcLimit, 3);
   image.minval = -kRawDcLimit;
   size_t stream_id = ModularStreamId::VarDCTDC(group_id).ID(frame_dim);
@@ -538,11 +545,18 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
   return true;
 }
 
+static constexpr const float kAlmostZero = 1e-8f;
+
 Status ModularFrameDecoder::DecodeQuantTable(
     size_t required_size_x, size_t required_size_y, BitReader* br,
     QuantEncoding* encoding, size_t idx,
     ModularFrameDecoder* modular_frame_decoder) {
   JXL_RETURN_IF_ERROR(F16Coder::Read(br, &encoding->qraw.qtable_den));
+  if (encoding->qraw.qtable_den < kAlmostZero) {
+    // qtable[] values are already checked for <= 0 so the denominator may not
+    // be negative.
+    return JXL_FAILURE("Invalid qtable_den: value too small");
+  }
   Image image(required_size_x, required_size_y, 255, 3);
   ModularOptions options;
   if (modular_frame_decoder) {

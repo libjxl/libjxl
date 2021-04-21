@@ -183,6 +183,12 @@ else()
   add_subdirectory(brotli EXCLUDE_FROM_ALL)
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/brotli/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.brotli COPYONLY)
+  if(BROTLI_EMSCRIPTEN)
+    # Brotli only defines the -static targets when using emscripten.
+    foreach(brlib IN ITEMS brotlienc brotlidec brotlicommon)
+      add_library(${brlib} ALIAS ${brlib}-static)
+    endforeach()
+  endif()  # BROTLI_EMSCRIPTEN
 endif()
 
 # *cms

@@ -30,6 +30,7 @@
 
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/file_io.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_external_image.h"
@@ -300,6 +301,12 @@ class ColorEncodingReaderPNG {
     return c_original->SetSRGB(color_space);
   }
 
+  // Whether the image has any color profile information (ICC chunk, sRGB
+  // chunk, cHRM chunk, and so on), or has no color information chunks at all.
+  bool HaveColorProfile() const {
+    return have_pq_ || have_srgb_ || have_gama_ || have_chrm_ || have_icc_;
+  }
+
  private:
   Status DecodeICC(const unsigned char* const payload,
                    const size_t payload_size) {
@@ -338,6 +345,7 @@ class ColorEncodingReaderPNG {
       memcpy(icc_.data(), icc_buf, icc_size);
     }
     free(icc_buf);
+    have_icc_ = true;
     return true;
   }
 
@@ -450,6 +458,7 @@ class ColorEncodingReaderPNG {
   bool have_srgb_ = false;
   bool have_gama_ = false;
   bool have_chrm_ = false;
+  bool have_icc_ = false;
 
   // Only valid if have_srgb_:
   RenderingIntent rendering_intent_;
@@ -461,6 +470,45 @@ class ColorEncodingReaderPNG {
   CIExy white_point_;
   PrimariesCIExy primaries_;
 };
+
+Status ApplyHints(const bool is_gray, CodecInOut* io) {
+  bool got_color_space = false;
+
+  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
+      [is_gray, io, &got_color_space](const std::string& key,
+                                      const std::string& value) -> Status {
+        ColorEncoding* c_original = &io->metadata.m.color_encoding;
+        if (key == "color_space") {
+          if (!ParseDescription(value, c_original) ||
+              !c_original->CreateICC()) {
+            return JXL_FAILURE("PNG: Failed to apply color_space");
+          }
+
+          if (is_gray != io->metadata.m.color_encoding.IsGray()) {
+            return JXL_FAILURE(
+                "PNG: mismatch between file and color_space hint");
+          }
+
+          got_color_space = true;
+        } else if (key == "icc_pathname") {
+          PaddedBytes icc;
+          JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
+          JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
+          got_color_space = true;
+        } else {
+          JXL_WARNING("PNG decoder ignoring %s hint", key.c_str());
+        }
+        return true;
+      }));
+
+  if (!got_color_space) {
+    JXL_WARNING("PNG: no color_space/icc_pathname given, assuming sRGB");
+    JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetSRGB(
+        is_gray ? ColorSpace::kGray : ColorSpace::kRGB));
+  }
+
+  return true;
+}
 
 // Stores ColorEncoding into PNG chunks.
 class ColorEncodingWriterPNG {
@@ -524,7 +572,7 @@ class ColorEncodingWriterPNG {
 
   // Returns PNG encoding of floating-point value (times 10^5).
   static uint32_t U32FromF64(const double x) {
-    return static_cast<int32_t>(std::round(x * 1E5));
+    return static_cast<int32_t>(roundf(x * 1E5));
   }
 
   static Status MaybeAddGAMA(const ColorEncoding& c,
@@ -708,12 +756,6 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   io->metadata.m.SetAlphaBits(
       has_alpha ? io->metadata.m.bit_depth.bits_per_sample : 0);
 
-  (void)io->dec_hints.Foreach(
-      [](const std::string& key, const std::string& /*value*/) {
-        JXL_WARNING("PNG decoder ignoring %s hint", key.c_str());
-        return true;
-      });
-
   // Always decode to 8/16-bit RGB/RGBA, not LCT_PALETTE.
   state.s.info_raw.bitdepth = static_cast<unsigned>(bits_per_sample);
   state.s.info_raw.colortype = MakeType(is_gray, has_alpha);
@@ -749,12 +791,27 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   io->dec_pixels = w * h;
   io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
   SetIntensityTarget(io);
+  if (!reader.HaveColorProfile()) {
+    JXL_RETURN_IF_ERROR(ApplyHints(is_gray, io));
+  } else {
+    (void)io->dec_hints.Foreach(
+        [](const std::string& key, const std::string& /*value*/) {
+          JXL_WARNING("PNG decoder ignoring %s hint", key.c_str());
+          return true;
+        });
+  }
   return true;
 }
 
 Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes) {
+  if (bits_per_sample > 8) {
+    bits_per_sample = 16;
+  } else if (bits_per_sample < 8) {
+    // PNG can also do 4, 2, and 1 bits per sample, but it isn't implemented
+    bits_per_sample = 8;
+  }
   ImageBundle ib = io->Main().Copy();
   const size_t alpha_bits = ib.HasAlpha() ? bits_per_sample : 0;
   ImageMetadata metadata = io->metadata.m;

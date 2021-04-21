@@ -263,7 +263,7 @@ std::vector<Spline::Point> DrawCentripetalCatmullRomSpline(
     result.push_back(p[1]);
     float t[4] = {0};
     for (int k = 1; k < 4; ++k) {
-      t[k] = std::sqrt(std::hypot(p[k].x - p[k - 1].x, p[k].y - p[k - 1].y)) +
+      t[k] = std::sqrt(hypotf(p[k].x - p[k - 1].x, p[k].y - p[k - 1].y)) +
              t[k - 1];
     }
     for (int i = 1; i < kNumPoints; ++i) {
@@ -328,13 +328,13 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
   JXL_ASSERT(!original.control_points.empty());
   control_points_.reserve(original.control_points.size() - 1);
   const Spline::Point& starting_point = original.control_points.front();
-  int previous_x = static_cast<int>(std::round(starting_point.x)),
-      previous_y = static_cast<int>(std::round(starting_point.y));
+  int previous_x = static_cast<int>(roundf(starting_point.x)),
+      previous_y = static_cast<int>(roundf(starting_point.y));
   int previous_delta_x = 0, previous_delta_y = 0;
   for (auto it = original.control_points.begin() + 1;
        it != original.control_points.end(); ++it) {
-    const int new_x = static_cast<int>(std::round(it->x));
-    const int new_y = static_cast<int>(std::round(it->y));
+    const int new_x = static_cast<int>(roundf(it->x));
+    const int new_y = static_cast<int>(roundf(it->y));
     const int new_delta_x = new_x - previous_x;
     const int new_delta_y = new_y - previous_y;
     control_points_.emplace_back(new_delta_x - previous_delta_x,
@@ -353,14 +353,14 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
           factor * color_dct_[1][i] /
               ColorQuantizationWeight(quantization_adjustment, 1, i);
       color_dct_[c][i] = static_cast<int>(
-          std::round(coefficient *
-                     ColorQuantizationWeight(quantization_adjustment, c, i)));
+          roundf(coefficient *
+                 ColorQuantizationWeight(quantization_adjustment, c, i)));
     }
   }
   for (int i = 0; i < 32; ++i) {
     sigma_dct_[i] = static_cast<int>(
-        std::round(original.sigma_dct[i] *
-                   ColorQuantizationWeight(quantization_adjustment, 3, i)));
+        roundf(original.sigma_dct[i] *
+               ColorQuantizationWeight(quantization_adjustment, 3, i)));
   }
 }
 
@@ -370,8 +370,8 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   Spline result;
 
   result.control_points.reserve(control_points_.size() + 1);
-  int current_x = static_cast<int>(std::round(starting_point.x)),
-      current_y = static_cast<int>(std::round(starting_point.y));
+  int current_x = static_cast<int>(roundf(starting_point.x)),
+      current_y = static_cast<int>(roundf(starting_point.y));
   result.control_points.push_back(Spline::Point{static_cast<float>(current_x),
                                                 static_cast<float>(current_y)});
   int current_delta_x = 0, current_delta_y = 0;
@@ -402,23 +402,6 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
   }
 
   return result;
-}
-
-void QuantizedSpline::Tokenize(std::vector<Token>* const tokens) const {
-  tokens->emplace_back(kNumControlPointsContext, control_points_.size());
-  for (const auto& point : control_points_) {
-    tokens->emplace_back(kControlPointsContext, PackSigned(point.first));
-    tokens->emplace_back(kControlPointsContext, PackSigned(point.second));
-  }
-  const auto encode_dct = [tokens](const int dct[32]) {
-    for (int i = 0; i < 32; ++i) {
-      tokens->emplace_back(kDCTContext, PackSigned(dct[i]));
-    }
-  };
-  for (int c = 0; c < 3; ++c) {
-    encode_dct(color_dct_[c]);
-  }
-  encode_dct(sigma_dct_);
 }
 
 Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
@@ -534,11 +517,6 @@ Status Splines::Apply(Image3F* const opsin, const Rect& opsin_rect,
     (opsin, opsin_rect, image_rect, spline, add, points_to_draw, arc_length);
   }
   return true;
-}
-
-Splines FindSplines(const Image3F& opsin) {
-  // TODO: implement spline detection.
-  return {};
 }
 
 }  // namespace jxl

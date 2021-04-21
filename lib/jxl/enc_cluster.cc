@@ -36,10 +36,11 @@ namespace jxl {
 namespace HWY_NAMESPACE {
 
 template <class V>
-V Entropy(V count, V inv_total) {
+V Entropy(V count, V inv_total, V total) {
   const HWY_CAPPED(float, Histogram::kRounding) d;
   const auto zero = Set(d, 0.0f);
-  return zero - count * FastLog2f(d, inv_total * count);
+  return IfThenZeroElse(count == total,
+                        zero - count * FastLog2f(d, inv_total * count));
 }
 
 void HistogramEntropy(const Histogram& a) {
@@ -51,10 +52,11 @@ void HistogramEntropy(const Histogram& a) {
 
   const auto inv_tot = Set(df, 1.0f / a.total_count_);
   auto entropy_lanes = Zero(df);
+  auto total = Set(df, a.total_count_);
 
   for (size_t i = 0; i < a.data_.size(); i += Lanes(di)) {
     const auto counts = LoadU(di, &a.data_[i]);
-    entropy_lanes += Entropy(ConvertTo(df, counts), inv_tot);
+    entropy_lanes += Entropy(ConvertTo(df, counts), inv_tot, total);
   }
   a.entropy_ += GetLane(SumOfLanes(entropy_lanes));
 }
@@ -67,6 +69,7 @@ float HistogramDistance(const Histogram& a, const Histogram& b) {
 
   const auto inv_tot = Set(df, 1.0f / (a.total_count_ + b.total_count_));
   auto distance_lanes = Zero(df);
+  auto total = Set(df, a.total_count_ + b.total_count_);
 
   for (size_t i = 0; i < std::max(a.data_.size(), b.data_.size());
        i += Lanes(di)) {
@@ -75,7 +78,7 @@ float HistogramDistance(const Histogram& a, const Histogram& b) {
     const auto b_counts =
         b.data_.size() > i ? LoadU(di, &b.data_[i]) : Zero(di);
     const auto counts = ConvertTo(df, a_counts + b_counts);
-    distance_lanes += Entropy(counts, inv_tot);
+    distance_lanes += Entropy(counts, inv_tot, total);
   }
   const float total_distance = GetLane(SumOfLanes(distance_lanes));
   return total_distance - a.entropy_ - b.entropy_;

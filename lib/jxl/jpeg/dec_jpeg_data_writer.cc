@@ -490,6 +490,7 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs,
   }
   int dc_nbits = (temp == 0) ? 0 : (FloorLog2Nonzero<uint32_t>(temp) + 1);
   WriteBits(bw, dc_huff.depth[dc_nbits], dc_huff.code[dc_nbits]);
+  if (dc_nbits >= 12) return false;
   if (dc_nbits > 0) {
     WriteBits(bw, dc_nbits, temp2 & ((1u << dc_nbits) - 1));
   }
@@ -510,6 +511,7 @@ bool EncodeDCTBlockSequential(const coeff_t* coeffs,
       r -= 16;
     }
     int ac_nbits = FloorLog2Nonzero<uint32_t>(temp) + 1;
+    if (ac_nbits >= 16) return false;
     int symbol = (r << 4u) + ac_nbits;
     WriteBits(bw, ac_huff.depth[symbol], ac_huff.code[symbol]);
     WriteBits(bw, ac_nbits, temp2 & ((1 << ac_nbits) - 1));
@@ -709,23 +711,9 @@ SerializationStatus JXL_NOINLINE DoEncodeScan(const JPEGData& jpg,
   // "Non-interleaved" means color data comes in separate scans, in other words
   // each scan can contain only one color component.
   const bool is_interleaved = (scan_info.num_components > 1);
-  const JPEGComponent& base_component =
-      jpg.components[scan_info.components[0].comp_idx];
-  // h_group / v_group act as numerators for converting number of blocks to
-  // number of MCU. In interleaved mode it is 1, so MCU is represented with
-  // max_*_samp_factor blocks. In non-interleaved mode we choose numerator to
-  // be the samping factor, consequently MCU is always represented with single
-  // block.
-  const int h_group = is_interleaved ? 1 : base_component.h_samp_factor;
-  const int v_group = is_interleaved ? 1 : base_component.v_samp_factor;
-  int max_h_samp_factor = 1;
-  int max_v_samp_factor = 1;
-  for (const auto& c : jpg.components) {
-    max_h_samp_factor = std::max(c.h_samp_factor, max_h_samp_factor);
-    max_v_samp_factor = std::max(c.v_samp_factor, max_v_samp_factor);
-  }
-  const int MCUs_per_row = DivCeil(jpg.width * h_group, 8 * max_h_samp_factor);
-  const int MCU_rows = DivCeil(jpg.height * v_group, 8 * max_v_samp_factor);
+  int MCUs_per_row = 0;
+  int MCU_rows = 0;
+  jpg.CalculateMcuSize(scan_info, &MCUs_per_row, &MCU_rows);
   const bool is_progressive = state->is_progressive;
   const int Al = is_progressive ? scan_info.Al : 0;
   const int Ss = is_progressive ? scan_info.Ss : 0;

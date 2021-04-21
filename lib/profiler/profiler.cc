@@ -23,9 +23,8 @@
 #include <algorithm>  // sort
 #include <atomic>
 #include <cinttypes>  // PRIu64
-#include <new>
-
 #include <hwy/highway.h>
+#include <new>
 
 #include "lib/jxl/base/robust_statistics.h"
 
