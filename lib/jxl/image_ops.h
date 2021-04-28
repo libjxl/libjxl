@@ -56,6 +56,7 @@ void CopyImageTo(const Rect& rect_from, const Plane<T>& from,
   JXL_DASSERT(SameSize(rect_from, rect_to));
   JXL_DASSERT(rect_from.IsInside(from));
   JXL_DASSERT(rect_to.IsInside(*to));
+  if (rect_from.xsize() == 0) return;
   for (size_t y = 0; y < rect_from.ysize(); ++y) {
     const T* JXL_RESTRICT row_from = rect_from.ConstRow(from, y);
     T* JXL_RESTRICT row_to = rect_to.Row(to, y);

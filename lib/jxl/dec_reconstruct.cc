@@ -373,9 +373,10 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
   JXL_DASSERT(output_rect.ysize() <= kApplyImageFeaturesTileDim);
   JXL_DASSERT(input_rect.xsize() == output_rect.xsize());
   JXL_DASSERT(input_rect.ysize() == output_rect.ysize());
-  JXL_DASSERT(output_rect.x0() % kBlockDim == 0);
-  JXL_DASSERT(output_rect.xsize() % kBlockDim == 0 ||
-              output_rect.xsize() + output_rect.x0() == frame_dim.xsize);
+  JXL_DASSERT(output_rect.x0() % GroupBorderAssigner::kPaddingXRound == 0);
+  JXL_DASSERT(output_rect.xsize() % GroupBorderAssigner::kPaddingXRound == 0 ||
+              output_rect.xsize() + output_rect.x0() == frame_dim.xsize ||
+              output_rect.xsize() + output_rect.x0() == frame_dim.xsize_padded);
 
   // +----------------------------- STEP 1 ------------------------------+
   // | Compute the rects on which patches and splines will be applied.   |
@@ -597,10 +598,14 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
         ensure_padding_upsampling.Process(shifted_y);
       }
       // Upsampling will access two rows of border, so the first upsampling
-      // output will be available after shifted_y is at least 2.
-      if (shifted_y < 2) continue;
+      // output will be available after shifted_y is at least 2, *unless* image
+      // height is <= 2.
+      if (shifted_y < 2 &&
+          shifted_y + 1 != static_cast<ssize_t>(frame_dim.ysize_padded)) {
+        continue;
+      }
       // Value relative to upsampled_output_rect.
-      size_t input_y = shifted_y - 2;
+      size_t input_y = std::max<ssize_t>(shifted_y - 2, 0);
       size_t upsampled_available_y = frame_header.upsampling * input_y;
       size_t num_input_rows = 1;
       // If we are going to mirror the last output rows, then we already have 3
@@ -610,6 +615,7 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
           static_cast<size_t>(y) + 1 == lf.Padding() + rect_for_if.ysize()) {
         num_input_rows = 3;
       }
+      num_input_rows = std::min(num_input_rows, frame_dim.ysize_padded);
       num_ys = num_input_rows * frame_header.upsampling;
       Rect upsample_input_rect =
           rect_for_upsampling.Lines(input_y, num_input_rows);
@@ -628,9 +634,9 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
     if (frame_header.flags & FrameHeader::kNoise) {
       PROFILER_ZONE("AddNoise");
       AddNoise(image_features.noise_params,
-               upsampled_output_rect_for_storage.Lines(available_y, num_ys),
-               dec_state->noise,
                upsampled_output_rect.Lines(available_y, num_ys),
+               dec_state->noise,
+               upsampled_output_rect_for_storage.Lines(available_y, num_ys),
                dec_state->shared_storage.cmap, output_pixel_data_storage);
     }
 

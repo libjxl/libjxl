@@ -40,6 +40,8 @@ class GroupBorderAssigner {
 
   static constexpr size_t kMaxToFinalize = 3;
 
+  // Vectors on ARM NEON are never wider than 4 floats, so rounding to multiples
+  // of 4 is enough.
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
   static constexpr size_t kPaddingXRound = 4;
 #else

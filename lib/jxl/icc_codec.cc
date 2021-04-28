@@ -69,15 +69,21 @@ void Shuffle(uint8_t* data, size_t size, size_t width) {
   }
 }
 
+// TODO(eustas): should be 20, or even 18, once DecodeVarInt is improved;
+//               currently DecodeVarInt does not signal the errors, and marks
+//               11 bytes as used even if only 10 are used (and 9 is enough for
+//               63-bit values).
+constexpr const size_t kPreambleSize = 22;  // enough for reading 2 VarInts
+
 }  // namespace
 
 // Mimics the beginning of UnpredictICC for quick validity check.
+// At least kPreambleSize bytes of data should be valid at invocation time.
 Status CheckPreamble(const PaddedBytes& data, size_t enc_size,
                      size_t output_limit) {
   const uint8_t* enc = data.data();
   size_t size = data.size();
   size_t pos = 0;
-  JXL_DASSERT(size >= 20);
   uint64_t osize = DecodeVarInt(enc, size, &pos);
   JXL_RETURN_IF_ERROR(CheckIs32Bit(osize));
   if (pos >= size) return JXL_FAILURE("Out of bounds");
@@ -332,17 +338,21 @@ Status ReadICC(BitReader* JXL_RESTRICT reader, PaddedBytes* JXL_RESTRICT icc,
   ANSSymbolReader ans_reader(&code, reader);
   size_t used_bits_base = reader->TotalBitsConsumed();
   size_t i = 0;
-  constexpr const size_t kPreambleSize = 20;  // enough for 2 VarInt
-  size_t preamble_size = std::min<size_t>(20, enc_size);
   decompressed.resize(std::min<size_t>(i + 0x400, enc_size));
-  for (; i < preamble_size; i++) {
+
+  for (; i < std::min<size_t>(2, enc_size); i++) {
     decompressed[i] = ans_reader.ReadHybridUint(
         ICCANSContext(i, i > 0 ? decompressed[i - 1] : 0,
                       i > 1 ? decompressed[i - 2] : 0),
         reader, context_map);
   }
-  JXL_RETURN_IF_ERROR(checkEndOfInput());
   if (enc_size > kPreambleSize) {
+    for (; i < kPreambleSize; i++) {
+      decompressed[i] = ans_reader.ReadHybridUint(
+          ICCANSContext(i, decompressed[i - 1], decompressed[i - 2]), reader,
+          context_map);
+    }
+    JXL_RETURN_IF_ERROR(checkEndOfInput());
     JXL_RETURN_IF_ERROR(CheckPreamble(decompressed, enc_size, output_limit));
   }
   for (; i < enc_size; i++) {

@@ -1455,6 +1455,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             }
             size_t begin = dec->codestream_begin - dec->file_pos;
             size_t end = dec->codestream_end - dec->file_pos;
+            JXL_ASSERT(end <= *avail_in);
             dec->codestream.insert(dec->codestream.end(), *next_in + begin,
                                    *next_in + end);
           }
@@ -1507,6 +1508,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           } else {
             dec->jpeg_reconstruction_size = contents_size;
           }
+          dec->file_pos += pos;
           *next_in += pos;
           *avail_in -= pos;
           JxlDecoderStatus recon_result =

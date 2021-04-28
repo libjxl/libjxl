@@ -204,6 +204,9 @@ Status Decode(BitReader* br, QuantEncoding* encoding, size_t required_size_x,
       for (size_t c = 0; c < 3; c++) {
         JXL_RETURN_IF_ERROR(
             F16Coder::Read(br, &encoding->dct4x8multipliers[c]));
+        if (std::abs(encoding->dct4x8multipliers[c]) < kAlmostZero) {
+          return JXL_FAILURE("DCT4X8 multiplier is too small");
+        }
       }
       JXL_RETURN_IF_ERROR(DecodeDctParams(br, &encoding->dct_params));
       break;
@@ -476,8 +479,10 @@ Status DequantMatrices::DecodeDC(BitReader* br) {
     for (size_t c = 0; c < 3; c++) {
       JXL_RETURN_IF_ERROR(F16Coder::Read(br, &dc_quant_[c]));
       dc_quant_[c] *= 1.0f / 128.0f;
-      if (dc_quant_[c] == 0.)
-        return JXL_FAILURE("Invalid dc_quant coefficient 0.");
+      // Negative values and nearly zero are invalid values.
+      if (dc_quant_[c] < kAlmostZero) {
+        return JXL_FAILURE("Invalid dc_quant: coefficient is too small.");
+      }
       inv_dc_quant_[c] = 1.0f / dc_quant_[c];
     }
   }

@@ -1499,6 +1499,68 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
   }
 }
 
+// Opaque image with noise enabled, decoded to RGB8 and RGBA8.
+TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
+  for (unsigned channels = 3; channels <= 4; channels++) {
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+
+    size_t xsize = 512, ysize = 300;
+    size_t num_pixels = xsize * ysize;
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
+    JxlPixelFormat format_orig = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+    jxl::CompressParams cparams;
+    cparams.noise = jxl::Override::kOn;
+    jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+        jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 3,
+        cparams, kCSBF_None, /*add_preview=*/false, /*add_icc_profile=*/false);
+
+    JxlPixelFormat format = {channels, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+    std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
+        dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
+        format);
+    JxlDecoderReset(dec);
+    EXPECT_EQ(num_pixels * channels, pixels2.size());
+
+    // The input pixels use the profile matching GetIccTestProfile, since we set
+    // add_icc_profile for CreateTestJXLCodestream to true.
+    jxl::ColorEncoding color_encoding0 = jxl::ColorEncoding::SRGB(false);
+    jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
+    jxl::CodecInOut io0;
+    io0.SetSize(xsize, ysize);
+    EXPECT_TRUE(ConvertFromExternal(
+        span0, xsize, ysize, color_encoding0,
+        /*has_alpha=*/false, false, 16, format_orig.endianness,
+        /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
+
+    jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
+    jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
+    jxl::CodecInOut io1;
+    if (channels == 4) {
+      io1.metadata.m.SetAlphaBits(8);
+      io1.SetSize(xsize, ysize);
+      EXPECT_TRUE(ConvertFromExternal(
+          span1, xsize, ysize, color_encoding1,
+          /*has_alpha=*/true, false, 8, format.endianness,
+          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      io1.metadata.m.SetAlphaBits(0);
+      io1.Main().ClearExtraChannels();
+    } else {
+      EXPECT_TRUE(ConvertFromExternal(
+          span1, xsize, ysize, color_encoding1,
+          /*has_alpha=*/false, false, 8, format.endianness,
+          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+    }
+
+    jxl::ButteraugliParams ba;
+    EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+              2.0f);
+
+    JxlDecoderDestroy(dec);
+  }
+}
+
 TEST(DecodeTest, GrayscaleTest) {
   size_t xsize = 123, ysize = 77;
   size_t num_pixels = xsize * ysize;

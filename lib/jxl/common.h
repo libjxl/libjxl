@@ -117,8 +117,8 @@ struct FrameDimensions {
     ysize_padded = ysize_blocks * kBlockDim;
     if (modular_mode) {
       // Modular mode doesn't have any padding.
-      xsize_padded = xsize;
-      ysize_padded = ysize;
+      xsize_padded = this->xsize;
+      ysize_padded = this->ysize;
     }
     xsize_upsampled_padded = xsize_padded * upsampling;
     ysize_upsampled_padded = ysize_padded * upsampling;

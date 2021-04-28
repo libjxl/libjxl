@@ -98,8 +98,8 @@ class ModularFrameDecoder {
   void Init(const FrameDimensions& frame_dim) { this->frame_dim = frame_dim; }
   Status DecodeGlobalInfo(BitReader* reader, const FrameHeader& frame_header,
                           bool allow_truncated_group = false);
-  Status DecodeGroup(const Rect& rect, BitReader* reader, size_t minShift,
-                     size_t maxShift, const ModularStreamId& stream,
+  Status DecodeGroup(const Rect& rect, BitReader* reader, int minShift,
+                     int maxShift, const ModularStreamId& stream,
                      bool zerofill);
   // Decodes a VarDCT DC group (`group_id`) from the given `reader`.
   Status DecodeVarDCTDC(size_t group_id, BitReader* reader,
