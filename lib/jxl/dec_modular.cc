@@ -518,26 +518,23 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
       c = 1;
     }
   }
-  if (output->HasExtraChannels()) {
-    for (size_t ec = 0; ec < output->extra_channels().size(); ec++, c++) {
-      const jxl::ExtraChannelInfo& eci =
-          output->metadata()->extra_channel_info[ec];
-      int bits = eci.bit_depth.bits_per_sample;
-      int exp_bits = eci.bit_depth.exponent_bits_per_sample;
-      bool fp = eci.bit_depth.floating_point_sample;
-      JXL_ASSERT(fp || bits < 32);
-      const float mul = fp ? 0 : (1.0f / ((1u << bits) - 1));
-      const size_t ec_xsize = eci.Size(xsize);  // includes shift
-      const size_t ec_ysize = eci.Size(ysize);
-      for (size_t y = 0; y < ec_ysize; ++y) {
-        float* const JXL_RESTRICT row_out = output->extra_channels()[ec].Row(y);
-        const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
-        if (fp) {
-          int_to_float(row_in, row_out, ec_xsize, bits, exp_bits);
-        } else {
-          for (size_t x = 0; x < ec_xsize; ++x) {
-            row_out[x] = row_in[x] * mul;
-          }
+  for (size_t ec = 0; ec < dec_state->extra_channels.size(); ec++, c++) {
+    const ExtraChannelInfo& eci = output->metadata()->extra_channel_info[ec];
+    int bits = eci.bit_depth.bits_per_sample;
+    int exp_bits = eci.bit_depth.exponent_bits_per_sample;
+    bool fp = eci.bit_depth.floating_point_sample;
+    JXL_ASSERT(fp || bits < 32);
+    const float mul = fp ? 0 : (1.0f / ((1u << bits) - 1));
+    const size_t ec_xsize = eci.Size(xsize);  // includes shift
+    const size_t ec_ysize = eci.Size(ysize);
+    for (size_t y = 0; y < ec_ysize; ++y) {
+      float* const JXL_RESTRICT row_out = dec_state->extra_channels[ec].Row(y);
+      const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
+      if (fp) {
+        int_to_float(row_in, row_out, ec_xsize, bits, exp_bits);
+      } else {
+        for (size_t x = 0; x < ec_xsize; ++x) {
+          row_out[x] = row_in[x] * mul;
         }
       }
     }

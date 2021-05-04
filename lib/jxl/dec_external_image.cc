@@ -39,32 +39,6 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-// Input/output uses the codec.h scaling: nominally 0-1 if in-gamut.
-template <class V>
-V LinearToSRGB(V encoded) {
-  return TF_SRGB().EncodedFromDisplay(HWY_FULL(float)(), encoded);
-}
-
-void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
-                         size_t color_channels) {
-  size_t xsize = image->xsize();
-  size_t ysize = image->ysize();
-  const HWY_FULL(float) d;
-  for (size_t c = 0; c < color_channels; ++c) {
-    RunOnPool(
-        pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
-        [&](const int task, int /*thread*/) {
-          const int64_t y = task;
-          float* JXL_RESTRICT row = image->PlaneRow(c, y);
-          for (size_t x = 0; x < xsize; x += Lanes(d)) {
-            const auto v = LinearToSRGB(Load(d, row + x));
-            Store(v, d, row + x);
-          }
-        },
-        "LinearToSRGB");
-  }
-}
-
 void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
                 size_t bits_per_sample) {
   const HWY_FULL(float) d;
@@ -248,7 +222,6 @@ void UndoOrientation(jxl::Orientation undo_orientation, const Plane<T>& image,
 }
 }  // namespace
 
-HWY_EXPORT(LinearToSRGBInPlace);
 HWY_EXPORT(FloatToU32);
 HWY_EXPORT(FloatToF16);
 
@@ -281,15 +254,10 @@ void JXL_INLINE Store8(uint32_t value, uint8_t* dest) { *dest = value & 0xff; }
 
 }  // namespace
 
-void LinearToSRGBInPlace(jxl::ThreadPool* pool, Image3F* image,
-                         size_t color_channels) {
-  return HWY_DYNAMIC_DISPATCH(LinearToSRGBInPlace)(pool, image, color_channels);
-}
-
 Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
-                         bool float_out, bool apply_srgb_tf,
-                         size_t num_channels, JxlEndianness endianness,
-                         size_t stride, jxl::ThreadPool* pool, void* out_image,
+                         bool float_out, size_t num_channels,
+                         JxlEndianness endianness, size_t stride,
+                         jxl::ThreadPool* pool, void* out_image,
                          size_t out_size, jxl::Orientation undo_orientation) {
   if (bits_per_sample < 1 || bits_per_sample > 32) {
     return JXL_FAILURE("Invalid bits_per_sample value.");
@@ -314,11 +282,6 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
   Image3F temp_color;
   const ImageF* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
   ImageF temp_alpha;
-  if (apply_srgb_tf) {
-    temp_color = CopyImage(*color);
-    LinearToSRGBInPlace(pool, &temp_color, color_channels);
-    color = &temp_color;
-  }
 
   if (undo_orientation != Orientation::kIdentity) {
     Image3F transformed;
@@ -355,8 +318,7 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
 
   if (float_out) {
     if (bits_per_sample == 16) {
-      bool swap_endianness =
-          (endianness == JXL_LITTLE_ENDIAN) != (IsLittleEndian());
+      bool swap_endianness = little_endian != IsLittleEndian();
       Plane<hwy::float16_t> f16_cache;
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize),

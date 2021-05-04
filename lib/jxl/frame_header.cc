@@ -58,10 +58,6 @@ BlendingInfo::BlendingInfo() { Bundle::Init(this); }
 Status BlendingInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   JXL_QUIET_RETURN_IF_ERROR(
       VisitBlendMode(visitor, BlendMode::kReplace, &mode));
-  if (mode == BlendMode::kAlphaWeightedAdd || mode == BlendMode::kMul) {
-    return JXL_FAILURE(
-        "Blend mode kAlphaWeightedAdd and kMul not supported yet");
-  }
   if (visitor->Conditional(nonserialized_has_multiple_extra_channels &&
                            (mode == BlendMode::kBlend ||
                             mode == BlendMode::kAlphaWeightedAdd))) {
@@ -182,7 +178,14 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   bool xyb_encoded = nonserialized_metadata == nullptr ||
                      nonserialized_metadata->m.xyb_encoded;
 
+  bool fp = nonserialized_metadata != nullptr &&
+            nonserialized_metadata->m.bit_depth.floating_point_sample;
+
   if (xyb_encoded) {
+    if (is_modular && fp) {
+      return JXL_FAILURE(
+          "Floating point samples is not supported with XYB color encoding");
+    }
     color_transform = ColorTransform::kXYB;
   } else {
     // Alternate if kYCbCr.

@@ -160,10 +160,7 @@ Status ImageBlender::PrepareBlending(PassesDecoderState* dec_state,
                        bg.xsize(), bg.ysize());
   }
   if (state.metadata->m.xyb_encoded) {
-    if (!state.metadata->m.color_encoding.IsSRGB() &&
-        !state.metadata->m.color_encoding.IsLinearSRGB()) {
-      // TODO(lode): match this with all supported color encoding conversions
-      // in dec_frame.cc before it calls DoBlending.
+    if (!dec_state->output_encoding_info.color_encoding_is_original) {
       return JXL_FAILURE("Blending in unsupported color space");
     }
   }
@@ -246,6 +243,14 @@ ImageBlender::RectBlender ImageBlender::PrepareRect(
     }
     blender.foreground_.SetExtraChannels(std::move(ec));
   }
+
+  // Turn current_overlap_ from being relative to the full foreground to being
+  // relative to the rect.
+  blender.current_overlap_ =
+      Rect(blender.current_overlap_.x0() - rect.x0(),
+           blender.current_overlap_.y0() - rect.y0(),
+           blender.current_overlap_.xsize(), blender.current_overlap_.ysize());
+
   return blender;
 }
 
@@ -256,7 +261,46 @@ Status ImageBlender::RectBlender::DoBlending(size_t y) const {
   }
   y -= current_overlap_.y0();
   Rect cropbox_row = current_cropbox_.Line(y);
-  Rect overlap_row = current_overlap_.Line(y);
+  Rect overlap_row = Rect(0, y, current_overlap_.xsize(), 1);
+
+  // Blend extra channels first so that we use the pre-blending alpha.
+  for (size_t i = 0; i < ec_info_->size(); i++) {
+    if (i == first_alpha_) continue;
+    if ((*ec_info_)[i].mode == BlendMode::kAdd) {
+      AddTo(overlap_row, foreground_.extra_channels()[i], cropbox_row,
+            &dest_->extra_channels()[i]);
+    } else if ((*ec_info_)[i].mode == BlendMode::kBlend) {
+      if ((*ec_info_)[i].alpha_channel != first_alpha_)
+        return JXL_FAILURE("Not implemented: blending using non-first alpha");
+      bool is_premultiplied = foreground_.AlphaIsPremultiplied();
+      const float* JXL_RESTRICT a1 =
+          overlap_row.ConstRow(foreground_.alpha(), 0);
+      float* JXL_RESTRICT p1 = overlap_row.Row(&dest_->extra_channels()[i], 0);
+      const float* JXL_RESTRICT a = cropbox_row.ConstRow(*dest_->alpha(), 0);
+      float* JXL_RESTRICT p = cropbox_row.Row(&dest_->extra_channels()[i], 0);
+      PerformAlphaBlending(p, a, p1, a1, p, cropbox_row.xsize(),
+                           is_premultiplied);
+    } else if ((*ec_info_)[i].mode == BlendMode::kAlphaWeightedAdd) {
+      if ((*ec_info_)[i].alpha_channel != first_alpha_)
+        return JXL_FAILURE("Not implemented: blending using non-first alpha");
+      const float* JXL_RESTRICT a1 =
+          overlap_row.ConstRow(foreground_.alpha(), 0);
+      float* JXL_RESTRICT p1 = overlap_row.Row(&dest_->extra_channels()[i], 0);
+      float* JXL_RESTRICT p = cropbox_row.Row(&dest_->extra_channels()[i], 0);
+      PerformAlphaWeightedAdd(p, p1, a1, p, cropbox_row.xsize());
+    } else if ((*ec_info_)[i].mode == BlendMode::kMul) {
+      if ((*ec_info_)[i].alpha_channel != first_alpha_)
+        return JXL_FAILURE("Not implemented: blending using non-first alpha");
+      float* JXL_RESTRICT p1 = overlap_row.Row(&dest_->extra_channels()[i], 0);
+      float* JXL_RESTRICT p = cropbox_row.Row(&dest_->extra_channels()[i], 0);
+      PerformMulBlending(p, p1, p, cropbox_row.xsize());
+    } else if ((*ec_info_)[i].mode == BlendMode::kReplace) {
+      CopyImageTo(overlap_row, foreground_.extra_channels()[i], cropbox_row,
+                  &dest_->extra_channels()[i]);
+    } else {
+      return JXL_FAILURE("Blend mode not implemented for extra channel %zu", i);
+    }
+  }
 
   if (info_.mode == BlendMode::kAdd) {
     for (int p = 0; p < 3; p++) {
@@ -287,37 +331,42 @@ Status ImageBlender::RectBlender::DoBlending(size_t y) const {
                          /*out=*/{r, g, b, a}, cropbox_row.xsize(),
                          is_premultiplied);
   } else if (info_.mode == BlendMode::kAlphaWeightedAdd) {
-    return JXL_FAILURE("BlendMode::kAlphaWeightedAdd not yet implemented");
+    // Foreground.
+    const float* JXL_RESTRICT a1 = overlap_row.ConstRow(foreground_.alpha(), 0);
+    const float* JXL_RESTRICT r1 =
+        overlap_row.ConstRow(foreground_.color().Plane(0), 0);
+    const float* JXL_RESTRICT g1 =
+        overlap_row.ConstRow(foreground_.color().Plane(1), 0);
+    const float* JXL_RESTRICT b1 =
+        overlap_row.ConstRow(foreground_.color().Plane(2), 0);
+    // Background & destination.
+    float* JXL_RESTRICT a = cropbox_row.Row(dest_->alpha(), 0);
+    float* JXL_RESTRICT r = cropbox_row.Row(&dest_->color()->Plane(0), 0);
+    float* JXL_RESTRICT g = cropbox_row.Row(&dest_->color()->Plane(1), 0);
+    float* JXL_RESTRICT b = cropbox_row.Row(&dest_->color()->Plane(2), 0);
+    PerformAlphaWeightedAdd(/*bg=*/{r, g, b, a}, /*fg=*/{r1, g1, b1, a1},
+                            /*out=*/{r, g, b, a}, cropbox_row.xsize());
   } else if (info_.mode == BlendMode::kMul) {
-    return JXL_FAILURE("BlendMode::kMul not yet implemented");
+    // Foreground.
+    const float* JXL_RESTRICT a1 = overlap_row.ConstRow(foreground_.alpha(), 0);
+    const float* JXL_RESTRICT r1 =
+        overlap_row.ConstRow(foreground_.color().Plane(0), 0);
+    const float* JXL_RESTRICT g1 =
+        overlap_row.ConstRow(foreground_.color().Plane(1), 0);
+    const float* JXL_RESTRICT b1 =
+        overlap_row.ConstRow(foreground_.color().Plane(2), 0);
+    // Background & destination.
+    float* JXL_RESTRICT a = cropbox_row.Row(dest_->alpha(), 0);
+    float* JXL_RESTRICT r = cropbox_row.Row(&dest_->color()->Plane(0), 0);
+    float* JXL_RESTRICT g = cropbox_row.Row(&dest_->color()->Plane(1), 0);
+    float* JXL_RESTRICT b = cropbox_row.Row(&dest_->color()->Plane(2), 0);
+    PerformMulBlending(/*bg=*/{r, g, b, a}, /*fg=*/{r1, g1, b1, a1},
+                       /*out=*/{r, g, b, a}, cropbox_row.xsize());
   } else {  // kReplace
     CopyImageTo(overlap_row, foreground_.color(), cropbox_row, dest_->color());
     if (foreground_.HasAlpha()) {
       CopyImageTo(overlap_row, foreground_.alpha(), cropbox_row,
                   dest_->alpha());
-    }
-  }
-  for (size_t i = 0; i < ec_info_->size(); i++) {
-    if (i == first_alpha_) continue;
-    if ((*ec_info_)[i].mode == BlendMode::kAdd) {
-      AddTo(overlap_row, foreground_.extra_channels()[i], cropbox_row,
-            &dest_->extra_channels()[i]);
-    } else if ((*ec_info_)[i].mode == BlendMode::kBlend) {
-      if ((*ec_info_)[i].alpha_channel != first_alpha_)
-        return JXL_FAILURE("Not implemented: blending using non-first alpha");
-      bool is_premultiplied = foreground_.AlphaIsPremultiplied();
-      const float* JXL_RESTRICT a1 =
-          overlap_row.ConstRow(foreground_.alpha(), 0);
-      float* JXL_RESTRICT p1 = overlap_row.Row(&dest_->extra_channels()[i], 0);
-      const float* JXL_RESTRICT a = cropbox_row.ConstRow(*dest_->alpha(), 0);
-      float* JXL_RESTRICT p = cropbox_row.Row(&dest_->extra_channels()[i], 0);
-      PerformAlphaBlending(p, a, p1, a1, p, cropbox_row.xsize(),
-                           is_premultiplied);
-    } else if ((*ec_info_)[i].mode == BlendMode::kReplace) {
-      CopyImageTo(overlap_row, foreground_.extra_channels()[i], cropbox_row,
-                  &dest_->extra_channels()[i]);
-    } else {
-      return JXL_FAILURE("Blend mode not implemented for extra channel %zu", i);
     }
   }
   return true;

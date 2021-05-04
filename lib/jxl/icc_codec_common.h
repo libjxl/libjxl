@@ -17,9 +17,13 @@
 
 // Compressed representation of ICC profiles.
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <array>
 
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/status.h"
 
 namespace jxl {
 

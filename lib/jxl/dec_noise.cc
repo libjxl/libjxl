@@ -31,7 +31,6 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/opsin_params.h"
-#include "lib/jxl/optimize.h"
 #include "lib/jxl/xorshift128plus-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

@@ -23,7 +23,9 @@
 #include <vector>
 
 #include "jxl/encode.h"
+#include "jxl/encode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
+#include "jxl/thread_parallel_runner_cxx.h"
 
 /**
  * Reads from .pfm file (Portable FloatMap)
@@ -156,15 +158,14 @@ bool ReadPFM(const char* filename, std::vector<float>* pixels, uint32_t* xsize,
  */
 bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
                       const uint32_t ysize, std::vector<uint8_t>* compressed) {
-  JxlEncoder* enc = JxlEncoderCreate(nullptr);
-
-  void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
-  if (JXL_ENC_SUCCESS !=
-      JxlEncoderSetParallelRunner(enc, JxlThreadParallelRunner, runner)) {
+  auto enc = JxlEncoderMake(/*memory_manager=*/nullptr);
+  auto runner = JxlThreadParallelRunnerMake(
+      /*memory_manager=*/nullptr,
+      JxlThreadParallelRunnerDefaultNumWorkerThreads());
+  if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc.get(),
+                                                     JxlThreadParallelRunner,
+                                                     runner.get())) {
     fprintf(stderr, "JxlEncoderSetParallelRunner failed\n");
-    JxlThreadParallelRunnerDestroy(runner);
-    JxlEncoderDestroy(enc);
     return false;
   }
 
@@ -178,30 +179,25 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
   basic_info.alpha_exponent_bits = 0;
   basic_info.alpha_bits = 0;
   basic_info.uses_original_profile = JXL_FALSE;
-  if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(enc, &basic_info)) {
+  if (JXL_ENC_SUCCESS != JxlEncoderSetBasicInfo(enc.get(), &basic_info)) {
     fprintf(stderr, "JxlEncoderSetBasicInfo failed\n");
-    JxlThreadParallelRunnerDestroy(runner);
-    JxlEncoderDestroy(enc);
     return false;
   }
 
   JxlColorEncoding color_encoding = {};
   JxlColorEncodingSetToSRGB(&color_encoding,
                             /*is_gray=*/pixel_format.num_channels < 3);
-  if (JXL_ENC_SUCCESS != JxlEncoderSetColorEncoding(enc, &color_encoding)) {
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderSetColorEncoding(enc.get(), &color_encoding)) {
     fprintf(stderr, "JxlEncoderSetColorEncoding failed\n");
-    JxlThreadParallelRunnerDestroy(runner);
-    JxlEncoderDestroy(enc);
     return false;
   }
 
   if (JXL_ENC_SUCCESS !=
-      JxlEncoderAddImageFrame(JxlEncoderOptionsCreate(enc, nullptr),
+      JxlEncoderAddImageFrame(JxlEncoderOptionsCreate(enc.get(), nullptr),
                               &pixel_format, (void*)pixels.data(),
                               sizeof(float) * pixels.size())) {
     fprintf(stderr, "JxlEncoderAddImageFrame failed\n");
-    JxlThreadParallelRunnerDestroy(runner);
-    JxlEncoderDestroy(enc);
     return false;
   }
 
@@ -210,7 +206,7 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
   size_t avail_out = compressed->size() - (next_out - compressed->data());
   JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
   while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-    process_result = JxlEncoderProcessOutput(enc, &next_out, &avail_out);
+    process_result = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
     if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
       size_t offset = next_out - compressed->data();
       compressed->resize(compressed->size() * 2);
@@ -221,12 +217,9 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
   compressed->resize(next_out - compressed->data());
   if (JXL_ENC_SUCCESS != process_result) {
     fprintf(stderr, "JxlEncoderProcessOutput failed\n");
-    JxlThreadParallelRunnerDestroy(runner);
-    JxlEncoderDestroy(enc);
     return false;
   }
 
-  JxlEncoderDestroy(enc);
   return true;
 }
 

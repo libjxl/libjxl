@@ -24,9 +24,7 @@
 #if JPEGXL_ENABLE_GIF
 #include "lib/extras/codec_gif.h"
 #endif
-#if JPEGXL_ENABLE_JPEG
 #include "lib/extras/codec_jpg.h"
-#endif
 #include "lib/extras/codec_pgx.h"
 #include "lib/extras/codec_png.h"
 #include "lib/extras/codec_pnm.h"
@@ -120,11 +118,9 @@ Status SetFromBytes(const Span<const uint8_t> bytes, CodecInOut* io,
     codec = Codec::kGIF;
   }
 #endif
-#if JPEGXL_ENABLE_JPEG
   else if (DecodeImageJPG(bytes, pool, io)) {
     codec = Codec::kJPG;
   }
-#endif
   else if (DecodeImagePSD(bytes, pool, io)) {
     codec = Codec::kPSD;
   }

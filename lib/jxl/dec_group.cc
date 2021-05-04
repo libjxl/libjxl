@@ -421,7 +421,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
               dec_state->b_dm_multiplier, x_cc_mul, b_cc_mul, acs.RawStrategy(),
               size, dec_state->shared->quantizer, dequant_matrices,
               acs.covered_blocks_y() * acs.covered_blocks_x(), sbx, dc_rows,
-              dc_stride, dec_state->shared->opsin_params.quant_biases, qblock,
+              dc_stride,
+              dec_state->output_encoding_info.opsin_params.quant_biases, qblock,
               block);
 
           for (size_t c : {1, 0, 2}) {
@@ -535,7 +536,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
       Rect group_data_rect(kGroupDataXBorder + r.x0() - x0,
                            kGroupDataYBorder + r.y0() - y0, r.xsize(),
                            r.ysize());
-      JXL_RETURN_IF_ERROR(FinalizeImageRect(group_data, group_data_rect,
+      JXL_RETURN_IF_ERROR(FinalizeImageRect(group_data, group_data_rect, {},
                                             dec_state, thread, decoded, r));
     }
   }

@@ -12,19 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "lib/jxl/chroma_from_luma.h"
+#include "tools/icc_detect/icc_detect.h"
 
 namespace jxl {
 
-ColorCorrelationMap::ColorCorrelationMap(size_t xsize, size_t ysize, bool XYB)
-    : ytox_map(DivCeil(xsize, kColorTileDim), DivCeil(ysize, kColorTileDim)),
-      ytob_map(DivCeil(xsize, kColorTileDim), DivCeil(ysize, kColorTileDim)) {
-  ZeroFillImage(&ytox_map);
-  ZeroFillImage(&ytob_map);
-  if (!XYB) {
-    base_correlation_b_ = 0;
-  }
-  RecomputeDCFactors();
+QByteArray GetMonitorIccProfile(const QWidget* const /*widget*/) {
+  return QByteArray();
 }
 
 }  // namespace jxl

@@ -163,7 +163,11 @@ void EnsureUnchanged(const float background, const float foreground,
                                     /*force_fir=*/true,
                                     /*skip_blending=*/true));
 
+#if JXL_HIGH_PRECISION
     VerifyRelativeError(in, *out.color(), 1E-3, 1E-4);
+#else
+    VerifyRelativeError(in, *out.color(), 1E-2, 1E-2);
+#endif
     if (testing::Test::HasFatalFailure()) {
       DumpTestImage("in", in);
       DumpTestImage("out", *out.color());

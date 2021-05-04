@@ -129,43 +129,29 @@ class FrameDecoder {
     return frame_header_.encoding == FrameEncoding::kVarDCT && finalized_dc_;
   }
 
-  // If the image has default exif orientation, no extra channels and no
-  // blending, the target output encoding is not linear sRGB, and the current
-  // frame cannot be referenced by future frames, sets the buffer to which uint8
-  // sRGB pixels will be decoded to.
+  // If the image has default exif orientation and no
+  // blending, the current frame cannot be referenced by future frames, sets the
+  // buffer to which uint8 sRGB pixels will be decoded to.
   // TODO(veluca): reduce this set of restrictions.
-  void MaybeSetRGB8OutputBuffer(uint8_t* rgb_output, bool is_rgba) const {
+  void MaybeSetRGB8OutputBuffer(uint8_t* rgb_output, size_t stride,
+                                bool is_rgba) const {
     if (decoded_->metadata()->GetOrientation() != Orientation::kIdentity) {
-      return;
-    }
-    if (decoded_->metadata()->num_extra_channels != 0) {
       return;
     }
     if (frame_header_.blending_info.mode != BlendMode::kReplace ||
         frame_header_.custom_size_or_origin) {
       return;
     }
-    // If output_encoding is linear sRGB converted from XYB, it would require an
-    // extra conversion to sRGB, which is not implemented yet. However, since we
-    // are not doing any blending, we can just convert to sRGB anyway instead of
-    // linear.
-    if (dec_state_->output_encoding.IsLinearSRGB() &&
-        decoded_->metadata()->xyb_encoded) {
-      dec_state_->output_encoding =
-          ColorEncoding::SRGB(dec_state_->output_encoding.IsGray());
-    }
     if (frame_header_.CanBeReferenced()) {
       return;
     }
     dec_state_->rgb_output = rgb_output;
     dec_state_->rgb_output_is_rgba = is_rgba;
+    dec_state_->rgb_stride = stride;
 #if !JXL_HIGH_PRECISION
     if (!is_rgba && decoded_->metadata()->xyb_encoded &&
-        dec_state_->output_encoding.IsSRGB() &&
-        frame_header_.nonserialized_metadata->transform_data
-            .opsin_inverse_matrix.all_default &&
-        std::abs(frame_header_.nonserialized_metadata->m.IntensityTarget() -
-                 255.0f) < 1.0f &&
+        dec_state_->output_encoding_info.color_encoding.IsSRGB() &&
+        dec_state_->output_encoding_info.all_default_opsin &&
         HasFastXYBTosRGB8() && frame_header_.needs_color_transform()) {
       dec_state_->fast_xyb_srgb8_conversion = true;
     }

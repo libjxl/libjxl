@@ -39,10 +39,6 @@ Status InitializePassesSharedState(const FrameHeader& frame_header,
       ImageB(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   shared->cmap = ColorCorrelationMap(frame_dim.xsize, frame_dim.ysize);
 
-  shared->opsin_params =
-      shared->metadata->transform_data.opsin_inverse_matrix.ToOpsinParams(
-          shared->metadata->m.IntensityTarget());
-
   // In the decoder, we allocate coeff orders afterwards, when we know how many
   // we will actually need.
   shared->coeff_order_size = kCoeffOrderMaxSize;

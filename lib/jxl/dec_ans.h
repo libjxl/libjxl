@@ -294,8 +294,6 @@ class ANSSymbolReader {
       num_to_copy_ =
           ReadHybridUintConfig(lz77_length_uint_, token - lz77_threshold_, br) +
           lz77_min_length_;
-      // TODO(eustas): overflow; mark BitReader as unhealthy
-      if (num_to_copy_ < lz77_min_length_) return 0;
       br->Refill();  // covers ReadSymbolWithoutRefill + PeekBits
       // Distance code.
       size_t token = ReadSymbolWithoutRefill(lz77_ctx_, br);
@@ -318,6 +316,8 @@ class ANSSymbolReader {
         size_t to_fill = std::min<size_t>(num_to_copy_, kWindowSize);
         memset(lz77_window_, 0, to_fill * sizeof(lz77_window_[0]));
       }
+      // TODO(eustas): overflow; mark BitReader as unhealthy
+      if (num_to_copy_ < lz77_min_length_) return 0;
       return ReadHybridUintClustered(ctx, br);  // will trigger a copy.
     }
     size_t ret = ReadHybridUintConfig(configs[ctx], token, br);

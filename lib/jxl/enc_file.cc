@@ -111,7 +111,9 @@ void InterpretExif(const PaddedBytes& exif, CodecMetadata* metadata) {
     t += 4;
     if (tag == kExifOrientationTag) {
       if (type == 3 && count == 1) {
-        metadata->m.orientation = value;
+        if (value >= 1 && value <= 8) {
+          metadata->m.orientation = value;
+        }
       }
     }
     nb_tags--;

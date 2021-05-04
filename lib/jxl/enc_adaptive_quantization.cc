@@ -1015,6 +1015,7 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   PROFILER_ZONE("enc roundtrip");
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
+  JXL_CHECK(dec_state->output_encoding_info.Set(enc_state->shared.metadata->m));
   dec_state->shared = &enc_state->shared;
   JXL_ASSERT(opsin.ysize() % kBlockDim == 0);
 
@@ -1035,7 +1036,28 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   ImageBundle decoded(&enc_state->shared.metadata->m);
   decoded.origin = enc_state->shared.frame_header.frame_origin;
   decoded.SetFromImage(Image3F(opsin.xsize(), opsin.ysize()),
-                       dec_state->output_encoding);
+                       dec_state->output_encoding_info.color_encoding);
+
+  // Same as dec_state->shared->frame_header.nonserialized_metadata->m
+  const ImageMetadata& metadata = *decoded.metadata();
+  if (!metadata.extra_channel_info.empty()) {
+    // Add dummy extra channels to the dec_state: FinalizeFrameDecoding moves
+    // these extra channels to the ImageBundle, and is required that the amount
+    // of extra chanels matches its metadata()->extra_channel_info.size().
+    // Normally we'd place these extra channels in the ImageBundle, but in this
+    // case FinalizeFrameDecoding is the one that does this.
+    std::vector<ImageF> extra_channels;
+    extra_channels.reserve(metadata.extra_channel_info.size());
+    for (size_t i = 0; i < metadata.extra_channel_info.size(); i++) {
+      const auto& eci = metadata.extra_channel_info[i];
+      extra_channels.emplace_back(eci.Size(decoded.xsize()),
+                                  eci.Size(decoded.ysize()));
+      // Must initialize the image with data to not affect blending with
+      // uninitialized memory.
+      ZeroFillImage(&extra_channels.back());
+    }
+    dec_state->extra_channels = std::move(extra_channels);
+  }
 
   hwy::AlignedUniquePtr<GroupDecCache[]> group_dec_caches;
   const auto allocate_storage = [&](size_t num_threads) {

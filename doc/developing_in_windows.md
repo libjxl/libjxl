@@ -1,16 +1,16 @@
 # Developing on 64-bit Windows
 
-These instructions assume an up-to-date Windows with Microsoft Visual Studio
-2019 installed. If unavailable, please instead use the
-[Docker container](doc/developing_in_docker.md).
+These instructions assume an up-to-date Windows 10 (e.g. build 19041.928) with
+Microsoft Visual Studio 2019 (e.g. Version 16.9.0 Preview 4.0) installed. If
+unavailable, please use the [Docker container](doc/developing_in_docker.md).
 
 ## Minimum build dependencies
 
 Apart from the dependencies in third_party, some of the tools use external
 dependencies that need to be installed in your system first.
 
-Please [install vcpkg](https://vcpkg.readthedocs.io/en/latest/examples/installing-and-using-packages/),
-and use it to install the following libraries:
+Please [install vcpkg](https://vcpkg.readthedocs.io/en/latest/examples/installing-and-using-packages/)
+(tested with version 2019.07.18), and use it to install the following libraries:
 
 ```
 vcpkg install gtest:x64-windows

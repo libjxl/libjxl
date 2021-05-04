@@ -30,6 +30,18 @@ if(WIN32)
                      ${PROJECT_BINARY_DIR}/LICENSE.libqt5widgets5 COPYONLY)
     endif()  # JPEGXL_DEP_LICENSE_DIR
   endif()
+elseif(APPLE)
+  find_package(Qt5 QUIET COMPONENTS Widgets)
+  if (Qt5_FOUND)
+    add_library(icc_detect STATIC
+      icc_detect/icc_detect_empty.cc
+      icc_detect/icc_detect.h
+    )
+    target_include_directories(icc_detect PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_link_libraries(icc_detect PUBLIC Qt5::Widgets)
+  else()
+    message(WARNING "APPLE: Qt5 was not found.")
+  endif()
 else()
   find_package(Qt5 QUIET COMPONENTS Widgets X11Extras)
   find_package(ECM QUIET NO_MODULE)
@@ -295,6 +307,7 @@ add_subdirectory(flicker_test)
 endif()
 
 add_subdirectory(box)
+add_subdirectory(conformance)
 
 if ("${JPEGXL_EMSCRIPTEN}")
 # WASM API facade.
@@ -336,7 +349,7 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
- 
+
   add_jar(jxl_jni_wrapper_test
     SOURCES jni/org/jpeg/jpegxl/wrapper/DecoderTest.java
     INCLUDE_JARS jxl_jni_wrapper

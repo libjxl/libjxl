@@ -21,6 +21,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
+#include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
@@ -31,7 +32,7 @@ namespace jxl {
 namespace {
 template <typename F>
 bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
-               size_t& H, CodecInOut& io) {
+               size_t& H, CodecInOut& io, int& have_next, int& x0, int& y0) {
   static const std::unordered_map<std::string, int> property_map = {
       {"c", 0},
       {"g", 1},
@@ -97,7 +98,8 @@ bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
     }
     size_t pos = tree.size();
     tree.emplace_back(PropertyDecisionNode::Split(p, split, pos + 1));
-    JXL_RETURN_IF_ERROR(ParseNode(tok, tree, cparams, W, H, io));
+    JXL_RETURN_IF_ERROR(
+        ParseNode(tok, tree, cparams, W, H, io, have_next, x0, y0));
     tree[pos].rchild = tree.size();
   } else if (t == "-") {
     // Leaf
@@ -195,11 +197,28 @@ bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
       fprintf(stderr, "Invalid FloatExpBits: %s\n", t.c_str());
       return false;
     }
+  } else if (t == "FramePos") {
+    t = tok();
+    size_t num = 0;
+    x0 = std::stoi(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid FramePos x0: %s\n", t.c_str());
+      return false;
+    }
+    t = tok();
+    y0 = std::stoi(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid FramePos y0: %s\n", t.c_str());
+      return false;
+    }
+  } else if (t == "NotLast") {
+    have_next = 1;
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
   }
-  JXL_RETURN_IF_ERROR(ParseNode(tok, tree, cparams, W, H, io));
+  JXL_RETURN_IF_ERROR(
+      ParseNode(tok, tree, cparams, W, H, io, have_next, x0, y0));
   return true;
 }
 
@@ -245,35 +264,75 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   Tree tree;
   CompressParams cparams;
   size_t width = 1024, height = 1024;
+  int x0 = 0, y0 = 0;
   cparams.color_transform = ColorTransform::kNone;
   cparams.modular_group_size_shift = 3;
   CodecInOut io;
-  {
-    std::ifstream f(in);
-    auto tok = [&f]() {
-      std::string out;
-      f >> out;
-      return out;
-    };
-    if (!ParseNode(tok, tree, cparams, width, height, io)) {
-      return 1;
-    }
+  int have_next = 0;
+
+  std::ifstream f(in);
+  auto tok = [&f]() {
+    std::string out;
+    f >> out;
+    return out;
+  };
+  if (!ParseNode(tok, tree, cparams, width, height, io, have_next, x0, y0)) {
+    return 1;
   }
+
   if (tree_out) {
     PrintTree(tree, tree_out);
   }
   Image3F image(width, height);
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
+  io.SetSize(width + x0, height + y0);
   io.metadata.m.color_encoding.DecideIfWantICC();
-  PassesEncoderState enc_state;
-  enc_state.heuristics = make_unique<Heuristics>(tree);
   cparams.options.zero_tokens = true;
   cparams.modular_mode = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
   cparams.channel_colors_percent = 0;
   PaddedBytes compressed;
-  JXL_CHECK(EncodeFile(cparams, &io, &enc_state, &compressed));
+
+  io.CheckMetadata();
+  BitWriter writer;
+
+  std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
+  *metadata = io.metadata;
+  JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
+  metadata->m.xyb_encoded =
+      cparams.color_transform == ColorTransform::kXYB ? true : false;
+
+  JXL_RETURN_IF_ERROR(WriteHeaders(metadata.get(), &writer, nullptr));
+  writer.ZeroPadToByte();
+
+  while (true) {
+    PassesEncoderState enc_state;
+    enc_state.heuristics = make_unique<Heuristics>(tree);
+
+    FrameInfo info;
+    info.is_last = !have_next;
+    if (!info.is_last) info.save_as_reference = 1;
+
+    io.frames[0].origin.x0 = x0;
+    io.frames[0].origin.y0 = y0;
+
+    JXL_RETURN_IF_ERROR(EncodeFrame(cparams, info, metadata.get(), io.frames[0],
+                                    &enc_state, nullptr, &writer, nullptr));
+    if (!have_next) break;
+    tree.clear();
+    have_next = 0;
+    if (!ParseNode(tok, tree, cparams, width, height, io, have_next, x0, y0)) {
+      return 1;
+    }
+    Image3F image(width, height);
+    io.SetFromImage(std::move(image), ColorEncoding::SRGB());
+    io.frames[0].blend = true;
+    JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
+  }
+
+  compressed = std::move(writer).TakeBytes();
+
   if (!WriteFile(compressed, out)) {
     fprintf(stderr, "Failed to write to \"%s\"\n", out);
     return 1;

@@ -16,8 +16,6 @@
 
 #include <algorithm>
 
-#include "lib/jxl/base/status.h"
-
 namespace jxl {
 
 void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
@@ -45,7 +43,7 @@ void PerformAlphaBlending(const AlphaBlendingInputLayer& bg,
     }
   }
 }
-void PerformAlphaBlending(float* bg, const float* bga, float* fg,
+void PerformAlphaBlending(const float* bg, const float* bga, const float* fg,
                           const float* fga, float* out, size_t num_pixels,
                           bool alpha_is_premultiplied) {
   if (alpha_is_premultiplied) {
@@ -58,6 +56,41 @@ void PerformAlphaBlending(float* bg, const float* bga, float* fg,
       const float rnew_a = (new_a > 0 ? 1.f / new_a : 0.f);
       out[x] = (fg[x] * fga[x] + bg[x] * bga[x] * (1.f - fga[x])) * rnew_a;
     }
+  }
+}
+
+void PerformAlphaWeightedAdd(const AlphaBlendingInputLayer& bg,
+                             const AlphaBlendingInputLayer& fg,
+                             const AlphaBlendingOutput& out,
+                             size_t num_pixels) {
+  for (size_t x = 0; x < num_pixels; ++x) {
+    out.r[x] = bg.r[x] + fg.r[x] * fg.a[x];
+    out.g[x] = bg.g[x] + fg.g[x] * fg.a[x];
+    out.b[x] = bg.b[x] + fg.b[x] * fg.a[x];
+    out.a[x] = bg.a[x];
+  }
+}
+void PerformAlphaWeightedAdd(const float* bg, const float* fg, const float* fga,
+                             float* out, size_t num_pixels) {
+  for (size_t x = 0; x < num_pixels; ++x) {
+    out[x] = bg[x] + fg[x] * fga[x];
+  }
+}
+
+void PerformMulBlending(const AlphaBlendingInputLayer& bg,
+                        const AlphaBlendingInputLayer& fg,
+                        const AlphaBlendingOutput& out, size_t num_pixels) {
+  for (size_t x = 0; x < num_pixels; ++x) {
+    out.r[x] = bg.r[x] * fg.r[x];
+    out.g[x] = bg.g[x] * fg.g[x];
+    out.b[x] = bg.b[x] * fg.b[x];
+    out.a[x] = bg.a[x] * fg.a[x];
+  }
+}
+void PerformMulBlending(const float* bg, const float* fg, float* out,
+                        size_t num_pixels) {
+  for (size_t x = 0; x < num_pixels; ++x) {
+    out[x] = bg[x] * fg[x];
   }
 }
 

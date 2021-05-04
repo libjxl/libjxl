@@ -1127,7 +1127,11 @@ TEST(JxlTest, RoundtripAnimation) {
   test::CoalesceGIFAnimationWithAlpha(&io);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
+#if JXL_HIGH_PRECISION
             1.55);
+#else
+            1.75);
+#endif
 }
 
 TEST(JxlTest, RoundtripLosslessAnimation) {

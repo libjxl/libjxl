@@ -26,8 +26,6 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/dct_util.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_params.h"
 
 namespace jxl {
 

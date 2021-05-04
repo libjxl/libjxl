@@ -561,7 +561,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
       }
     }
     Blur(ps.mf.Plane(i), kSigmaHf, params, blur_temp, &ps.mf.Plane(i));
-    static const double kRemoveMfRange = 0.3;
+    static const double kRemoveMfRange = 0.29;
     static const double kAddMfRange = 0.1;
     if (i == 0) {
       for (size_t y = 0; y < ysize; ++y) {
@@ -596,7 +596,7 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
   ps.uhf[1] = ImageF(xsize, ysize);
 
   // Suppress red-green by intensity change in the high freq channels.
-  static const double suppress = 57.3408675836;
+  static const double suppress = 46.0;
   SuppressXByY(ps.hf[0], ps.hf[1], suppress, &ps.uhf[0]);
   // hf is the SuppressXByY output, uhf will be written below.
   ps.hf[0].Swap(ps.uhf[0]);
@@ -611,13 +611,13 @@ static void SeparateFrequencies(size_t xsize, size_t ysize,
       }
     }
     Blur(ps.hf[i], kSigmaUhf, params, blur_temp, &ps.hf[i]);
-    static const double kRemoveHfRange = 1.20207927775;
-    static const double kAddHfRange = 0.0952289842356;
-    static const double kRemoveUhfRange = 0.0446383842706;
+    static const double kRemoveHfRange = 1.5;
+    static const double kAddHfRange = 0.132;
+    static const double kRemoveUhfRange = 0.04;
     static const double kMaxclampHf = 28.4691806922;
     static const double kMaxclampUhf = 5.19175294647;
-    static double kMulYHf = 2.12418867662;
-    static double kMulYUhf = 2.59313763794;
+    static double kMulYHf = 2.155;
+    static double kMulYUhf = 2.69313763794;
     if (i == 0) {
       for (size_t y = 0; y < ysize; ++y) {
         float* BUTTERAUGLI_RESTRICT row_uhf = ps.uhf[0].Row(y);
@@ -1229,9 +1229,9 @@ void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg, ImageF* out) {
 }
 
 // std::log(80.0) / std::log(255.0);
-constexpr float kIntensityTargetNormalizationHack = 0.79079917404;
+constexpr float kIntensityTargetNormalizationHack = 0.79079917404f;
 static const float kInternalGoodQualityThreshold =
-    17.0 * kIntensityTargetNormalizationHack;
+    17.1984479671f * kIntensityTargetNormalizationHack;
 static const float kGlobalScale = 1.0 / kInternalGoodQualityThreshold;
 
 void StoreMin3(const float v, float& min0, float& min1, float& min2) {
@@ -1881,8 +1881,8 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
   MaltaDiffMap(pi0_.uhf[1], pi1.uhf[1], wUhfMalta * hf_asymmetry_,
                wUhfMalta / hf_asymmetry_, norm1Uhf, &diffs, &block_diff_ac, 1);
 
-  static const double wUhfMaltaX = 606.229316218;
-  static const double norm1UhfX = 0.358743053213;
+  static const double wUhfMaltaX = 173.5;
+  static const double norm1UhfX = 5.0;
   MaltaDiffMap(pi0_.uhf[0], pi1.uhf[0], wUhfMaltaX * hf_asymmetry_,
                wUhfMaltaX / hf_asymmetry_, norm1UhfX, &diffs, &block_diff_ac,
                0);
@@ -1910,10 +1910,10 @@ void ButteraugliComparator::DiffmapPsychoImage(const PsychoImage& pi1,
                  norm1MfX, &diffs, &block_diff_ac, 0);
 
   static const double wmul[9] = {
-      15,
+      400.0,
       1.50815703118,
       0,
-      2090.9337651,
+      2150.0,
       10.6195433239,
       16.2176043152,
       29.2353797994,

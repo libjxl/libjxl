@@ -14,6 +14,8 @@
 
 #include "lib/threads/thread_parallel_runner_internal.h"
 
+#include <algorithm>
+
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
 #include "sanitizer/common_interface_defs.h"  // __sanitizer_print_stack_trace

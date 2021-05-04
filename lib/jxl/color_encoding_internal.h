@@ -453,6 +453,10 @@ static inline std::ostream& operator<<(std::ostream& os,
 void ConvertInternalToExternalColorEncoding(const jxl::ColorEncoding& internal,
                                             JxlColorEncoding* external);
 
+Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
+                         float by, float wx, float wy, float matrix[9]);
+Status AdaptToXYZD50(float wx, float wy, float matrix[9]);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_COLOR_ENCODING_INTERNAL_H_

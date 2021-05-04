@@ -149,10 +149,10 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
   if (use_container && !wrote_bytes) {
     if (input_closed && input_frame_queue.empty()) {
-      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), bytes.size(), true,
-                           &output_byte_queue);
+      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), bytes.size(),
+                           /*unbounded=*/false, &output_byte_queue);
     } else {
-      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, true,
+      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, /*unbounded=*/true,
                            &output_byte_queue);
     }
   }

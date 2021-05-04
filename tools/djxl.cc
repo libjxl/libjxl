@@ -17,6 +17,7 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/codec_jpg.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -34,9 +35,6 @@
 #include "tools/box/box.h"
 #include "tools/cpu/cpu.h"
 
-#if JPEGXL_ENABLE_JPEG
-#include "lib/extras/codec_jpg.h"
-#endif
 
 namespace jpegxl {
 namespace tools {
@@ -232,7 +230,6 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   if (!DecodeJpegXlToJpeg(args.params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
-#if JPEGXL_ENABLE_JPEG
   if (!EncodeImageJPG(
           &io,
           io.use_sjpeg ? jxl::JpegEncoder::kSJpeg : jxl::JpegEncoder::kLibJpeg,
@@ -240,12 +237,6 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
           jxl::DecodeTarget::kQuantizedCoeffs)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
-#else   // JPEGXL_ENABLE_JPEG
-  fprintf(
-      stderr,
-      "ERROR: Support for decoding to JPEG was not compiled in this tool.\n");
-  return false;
-#endif  // JPEGXL_ENABLE_JPEG
   stats->SetImageSize(io.xsize(), io.ysize());
 
   const double t1 = jxl::Now();

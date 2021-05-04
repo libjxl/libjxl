@@ -20,8 +20,10 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/image.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/opsin_params.h"
 
 namespace jxl {
@@ -33,6 +35,17 @@ struct OpsinParams {
   float opsin_biases_cbrt[4];
   float quant_biases[4];
   void Init(float intensity_target);
+};
+
+struct OutputEncodingInfo {
+  ColorEncoding color_encoding;
+  float inverse_gamma;
+  // Contains an opsin matrix that converts to the primaries of the output
+  // encoding.
+  OpsinParams opsin_params;
+  Status Set(const ImageMetadata& metadata);
+  bool all_default_opsin = true;
+  bool color_encoding_is_original = false;
 };
 
 // Converts `inout` (not padded) from opsin to linear sRGB in-place. Called from

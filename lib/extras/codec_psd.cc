@@ -547,6 +547,8 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("PSD: extra channel data declared but not found");
   }
 
+  if (io->frames.empty()) return JXL_FAILURE("PSD: no layers");
+
   if (!spotcolor.empty()) {
     // PSD only has spot colors / extra alpha/mask data in the merged image
     // We don't redundantly store the merged image, so we put it in the first

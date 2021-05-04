@@ -30,7 +30,9 @@ Status ValidateTree(
   size_t p = tree[root].property;
   int val = tree[root].splitval;
   if (prop_bounds[p].first > val) return JXL_FAILURE("Invalid tree");
-  if (prop_bounds[p].second < val) return JXL_FAILURE("Invalid tree");
+  // Splitting at max value makes no sense: left range will be exactly same
+  // as parent, right range will be invalid (min > max).
+  if (prop_bounds[p].second <= val) return JXL_FAILURE("Invalid tree");
   auto new_bounds = prop_bounds;
   new_bounds[p].first = val + 1;
   JXL_RETURN_IF_ERROR(ValidateTree(tree, new_bounds, tree[root].lchild));

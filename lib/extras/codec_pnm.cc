@@ -405,9 +405,9 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
                   (c_desired.Channels() * bits_per_sample) / kBitsPerByte;
   PaddedBytes pixels(stride * ib.oriented_ysize());
   JXL_RETURN_IF_ERROR(ConvertToExternal(
-      *transformed, bits_per_sample, floating_point,
-      /*apply_srgb_tf=*/false, c_desired.Channels(), endianness, stride, pool,
-      pixels.data(), pixels.size(), metadata.GetOrientation()));
+      *transformed, bits_per_sample, floating_point, c_desired.Channels(),
+      endianness, stride, pool, pixels.data(), pixels.size(),
+      metadata.GetOrientation()));
 
   char header[kMaxHeaderSize];
   int header_size = 0;

@@ -342,6 +342,33 @@ test:aarch64:clang:release:
     # LeakSanitizer doesn't work when running under qemu-arm.
     - ASAN_OPTIONS=detect_leaks=0 ./ci.sh test
 
+build:aarch64:clang:release-nhp:
+  <<: *linux_host_build_template
+  stage: build
+  only:
+    - master
+    - merge_requests
+    - schedules
+    - tags
+    - web
+  script:
+    - BUILD_TARGET=aarch64-linux-gnu
+        CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS -DJXL_HIGH_PRECISION=0"
+        SKIP_TEST=1 PACK_TEST=1 STACK_SIZE=1
+        ./ci.sh release
+    - tools/build_stats.py --save build/stats.json
+        --binutils=aarch64-linux-gnu-
+        cjxl djxl libjxl.so
+
+test:aarch64:clang:release-nhp:
+  <<: *linux_host_template
+  stage: test
+  dependencies:
+    - build:aarch64:clang:release-nhp
+  script:
+    # LeakSanitizer doesn't work when running under qemu-arm.
+    - ASAN_OPTIONS=detect_leaks=0 ./ci.sh test
+
 # arm release
 build:armhf:clang:release:
   <<: *linux_host_build_template

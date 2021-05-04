@@ -3,7 +3,8 @@
 Docker allows to run software in a packaged container, isolated from your host
 system. This is useful to run the code in a standard environment instead of
 dealing with problems caused by different building environments during
-development.
+development, as well as to simplify external dependencies by including them
+in the automated setup of this standard environment.
 
 ## Set up the container
 

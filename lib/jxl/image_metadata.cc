@@ -227,6 +227,9 @@ Status ExtraChannelInfo::VisitFields(Visitor* JXL_RESTRICT visitor) {
   if ((1U << dim_shift) > kGroupDim) {
     return JXL_FAILURE("dim_shift %u too large", dim_shift);
   }
+  if (dim_shift != 0) {
+    return JXL_FAILURE("Non-zero dim_shift not yet implemented");
+  }
 
   JXL_QUIET_RETURN_IF_ERROR(VisitNameString(visitor, &name));
 

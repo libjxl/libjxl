@@ -125,7 +125,6 @@ void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
 }
 
 void ImageBundle::SetExtraChannels(std::vector<ImageF>&& extra_channels) {
-  JXL_CHECK(!extra_channels.empty());
   for (const ImageF& plane : extra_channels) {
     JXL_CHECK(plane.xsize() != 0 && plane.ysize() != 0);
   }

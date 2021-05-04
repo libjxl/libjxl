@@ -63,6 +63,8 @@ enum CodeStreamBoxFormat {
   kCSBF_Single,
   // Have a single codestream box, with box size 0 (final box running to end)
   kCSBF_Single_Zero_Terminated,
+  // Single codestream box, with another unknown box behind it
+  kCSBF_Single_other,
   // Have multiple partial codestream boxes
   kCSBF_Multi,
   // Have multiple partial codestream boxes, with final box size 0 (running
@@ -239,44 +241,50 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
                              &c);
         c.append(jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
       }
+      uint32_t jxlp_index = 0;
       if (add_container == kCSBF_Multi_First_Empty) {
         // Dummy (empty) codestream part
-        AppendU32BE(8, &c);
+        AppendU32BE(12, &c);
         c.push_back('j');
         c.push_back('x');
         c.push_back('l');
         c.push_back('p');
+        AppendU32BE(jxlp_index++, &c);
       }
       // First codestream part
-      AppendU32BE(compressed0.size() + 8, &c);
+      AppendU32BE(compressed0.size() + 12, &c);
       c.push_back('j');
       c.push_back('x');
       c.push_back('l');
       c.push_back('p');
+      AppendU32BE(jxlp_index++, &c);
       c.append(compressed0.data(), compressed0.data() + compressed0.size());
       // A few non-codestream boxes in between
       c.append(unknown, unknown + sizeof(unknown));
       c.append(unknown, unknown + sizeof(unknown));
       // Dummy (empty) codestream part
-      AppendU32BE(8, &c);
+      AppendU32BE(12, &c);
       c.push_back('j');
       c.push_back('x');
       c.push_back('l');
       c.push_back('p');
+      AppendU32BE(jxlp_index++, &c);
       // Second codestream part
-      AppendU32BE(compressed1.size() + 8, &c);
+      AppendU32BE(compressed1.size() + 12, &c);
       c.push_back('j');
       c.push_back('x');
       c.push_back('l');
       c.push_back('p');
+      AppendU32BE(jxlp_index++, &c);
       c.append(compressed1.data(), compressed1.data() + compressed1.size());
       // Third codestream part
-      AppendU32BE(add_container == kCSBF_Multi ? (compressed2.size() + 8) : 0,
+      AppendU32BE(add_container == kCSBF_Multi ? (compressed2.size() + 12) : 0,
                   &c);
       c.push_back('j');
       c.push_back('x');
       c.push_back('l');
       c.push_back('p');
+      AppendU32BE(jxlp_index++ | 0x80000000, &c);
       c.append(compressed2.data(), compressed2.data() + compressed2.size());
       if (add_container == kCSBF_Multi_Other_Terminated) {
         c.append(unknown, unknown + sizeof(unknown));
@@ -293,13 +301,18 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
                              &c);
         c.append(jpeg_data.data(), jpeg_data.data() + jpeg_data.size());
       }
-      AppendU32BE(add_container == kCSBF_Single ? (compressed.size() + 8) : 0,
+      AppendU32BE(add_container == kCSBF_Single_Zero_Terminated
+                      ? 0
+                      : (compressed.size() + 8),
                   &c);
       c.push_back('j');
       c.push_back('x');
       c.push_back('l');
       c.push_back('c');
       c.append(compressed.data(), compressed.data() + compressed.size());
+      if (add_container == kCSBF_Single_other) {
+        c.append(unknown, unknown + sizeof(unknown));
+      }
       compressed.swap(c);
     }
   }
@@ -1179,18 +1192,17 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
             JxlDecoderGetColorAsEncodedProfile(
                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_PRIMARIES_SRGB, pixel_encoding.primaries);
-  // This is JXL_TRANSFER_FUNCTION_LINEAR because the format is float, for
-  // uint8 and uint16 this must be JXL_TRANSFER_FUNCTION_SRGB instead.
+  // The API returns LINEAR because the colorspace cannot be represented by enum
+  // values.
   EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
 
-  // Test the same but with integer format, which gives different transfer
-  // function.
+  // Test the same but with integer format.
   EXPECT_EQ(
       JXL_DEC_SUCCESS,
       JxlDecoderGetColorAsEncodedProfile(
           dec, &format_int, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
   EXPECT_EQ(JXL_PRIMARIES_SRGB, pixel_encoding.primaries);
-  EXPECT_EQ(JXL_TRANSFER_FUNCTION_SRGB, pixel_encoding.transfer_function);
+  EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
 
   // The decoder can also output this as a generated ICC profile anyway, and
   // we're certain that it will differ from the above defined profile since
@@ -1316,10 +1328,9 @@ TEST(DecodeTest, PixelTest) {
           jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
           orig_channels, cparams, add_container, true);
 
-      for (int big_endian = 0; big_endian <= 1; ++big_endian) {
-        JxlEndianness endianness =
-            big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN;
-
+      const JxlEndianness endiannesses[] = {JXL_NATIVE_ENDIAN,
+                                            JXL_LITTLE_ENDIAN, JXL_BIG_ENDIAN};
+      for (JxlEndianness endianness : endiannesses) {
         for (uint32_t channels = 3; channels <= orig_channels; ++channels) {
           {
             JxlPixelFormat format = {channels, JXL_TYPE_UINT8, endianness, 0};
@@ -1485,10 +1496,9 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
       /*has_alpha=*/false, false, 16, format_orig.endianness,
       /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
 
-  // The output pixels are expected to be linear sRGB, since the API returns
-  // linear sRGB for xyb_encoded floating point color that is not known to
-  // have original non-linear sRGB data.
-  jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::LinearSRGB(false);
+  // The output pixels are expected to be in the same colorspace as the input
+  // profile, as the profile can be represented by enum values.
+  jxl::ColorEncoding color_encoding1 = color_encoding0;
   jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
   jxl::CodecInOut io1;
   io1.SetSize(xsize, ysize);
@@ -1640,8 +1650,9 @@ TEST(DecodeTest, GrayscaleTest) {
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 2,
       cparams, kCSBF_None, true);
 
-  for (int big_endian = 0; big_endian <= 1; ++big_endian) {
-    JxlEndianness endianness = big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN;
+  const JxlEndianness endiannesses[] = {JXL_NATIVE_ENDIAN, JXL_LITTLE_ENDIAN,
+                                        JXL_BIG_ENDIAN};
+  for (JxlEndianness endianness : endiannesses) {
     // The compressed image is grayscale, but the output can be tested with
     // up to 4 channels (RGBA)
     for (uint32_t channels = 1; channels <= 4; ++channels) {

@@ -20,9 +20,11 @@
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/dec_modular.h"
+#include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
+#include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/loop_filter.h"
@@ -57,15 +59,19 @@ bool OutOfBounds(size_t a, size_t b, size_t size) {
 
 // Checks if a + b + c > size, taking possible integer overflow into account.
 bool OutOfBounds(size_t a, size_t b, size_t c, size_t size) {
-  size_t pos = a + b + c;
+  size_t pos = a + b;
+  if (pos < b) return true;  // overflow happened
+  pos += c;
+  if (pos < c) return true;  // overflow happened
   if (pos > size) return true;
-  if (pos < a || pos < b) return true;  // overflow happened
   return false;
 }
 
-bool SumOverflows(size_t a, size_t b) {
+bool SumOverflows(size_t a, size_t b, size_t c) {
   size_t sum = a + b;
-  if (sum < a) return true;
+  if (sum < b) return true;
+  sum += c;
+  if (sum < c) return true;
   return false;
 }
 
@@ -312,10 +318,6 @@ struct JxlDecoderStruct {
   // cannot get it or there is none.
   bool got_preview_image;
 
-  // For current frame
-  // Got these steps of the current frame. Reset once started on a next frame.
-  bool got_dc_image;
-  bool got_full_image;
   // Processed the last frame, so got_dc_image, and so on false no
   // longer mean there is more work to do.
   bool last_frame_reached;
@@ -449,8 +451,6 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->got_basic_info = false;
   dec->got_all_headers = false;
   dec->got_preview_image = false;
-  dec->got_dc_image = false;
-  dec->got_full_image = false;
   dec->last_frame_reached = false;
   dec->file_pos = 0;
   dec->codestream_pos = 0;
@@ -690,7 +690,30 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
 
   dec->frame_start = pos + reader->TotalBitsConsumed() / jxl::kBitsPerByte;
 
+  if (!dec->passes_state) {
+    dec->passes_state.reset(new jxl::PassesDecoderState());
+  }
+  JXL_API_RETURN_IF_ERROR(
+      dec->passes_state->output_encoding_info.Set(dec->metadata.m));
+
   return JXL_DEC_SUCCESS;
+}
+
+static size_t GetStride(const JxlDecoder* dec, const JxlPixelFormat& format,
+                        const jxl::ImageBundle* frame = nullptr) {
+  size_t xsize = dec->metadata.xsize();
+  if (!dec->keep_orientation && dec->metadata.m.orientation > 4) {
+    xsize = dec->metadata.ysize();
+  }
+  if (frame) {
+    xsize = dec->keep_orientation ? frame->xsize() : frame->oriented_xsize();
+  }
+  size_t stride = xsize * (BitsPerChannel(format.data_type) *
+                           format.num_channels / jxl::kBitsPerByte);
+  if (format.align > 1) {
+    stride = jxl::DivCeil(stride, format.align) * format.align;
+  }
+  return stride;
 }
 
 static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
@@ -701,40 +724,17 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
   // color/grayscale format
   const auto& metadata = dec->metadata.m;
 
-  size_t stride =
-      (dec->keep_orientation ? frame.xsize() : frame.oriented_xsize()) *
-      (BitsPerChannel(format.data_type) * format.num_channels /
-       jxl::kBitsPerByte);
-  if (format.align > 1) {
-    stride = jxl::DivCeil(stride, format.align) * format.align;
-  }
+  const size_t stride = GetStride(dec, format, &frame);
 
   bool float_format = format.data_type == JXL_TYPE_FLOAT ||
                       format.data_type == JXL_TYPE_FLOAT16;
 
-  bool apply_srgb_tf = false;
-  if (metadata.xyb_encoded) {
-    if (!frame.c_current().IsLinearSRGB() && !frame.c_current().IsSRGB()) {
-      return JXL_API_ERROR(
-          "Error, the implementation expects that ImageBundle is in linear "
-          "or nonlinear sRGB when the image was xyb_encoded");
-    }
-    // TODO(lode): apply_srgb_tf should not happen here, decoding of the frame
-    // already does this as well when the enum value indicates sRGB. When
-    // changing this, ensure that when the enum value is unknown (jxl file only
-    // has ICC profile attached),  decoding of frame returns linear unless user
-    // requests integer output, in which case nonlinear data should be returned.
-    if (!float_format && frame.c_current().IsLinearSRGB()) {
-      // Convert to nonlinear sRGB for integer pixels.
-      apply_srgb_tf = true;
-    }
-  }
   jxl::Orientation undo_orientation = dec->keep_orientation
                                           ? jxl::Orientation::kIdentity
                                           : metadata.GetOrientation();
   JXL_DASSERT(!dec->frame_dec || !dec->frame_dec->HasRGBBuffer());
   jxl::Status status = jxl::ConvertToExternal(
-      frame, BitsPerChannel(format.data_type), float_format, apply_srgb_tf,
+      frame, BitsPerChannel(format.data_type), float_format,
       format.num_channels, format.endianness, stride, dec->thread_pool.get(),
       out_image, out_size, undo_orientation);
 
@@ -911,6 +911,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       dparams.preview = want_preview ? jxl::Override::kOn : jxl::Override::kOff;
       jxl::ImageBundle ib(&dec->metadata.m);
       PassesDecoderState preview_dec_state;
+      JXL_API_RETURN_IF_ERROR(
+          preview_dec_state.output_encoding_info.Set(dec->metadata.m));
       if (!DecodeFrame(dparams, &preview_dec_state, dec->thread_pool.get(),
                        reader.get(), &ib, dec->metadata,
                        /*constraints=*/nullptr,
@@ -1007,7 +1009,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           dec->image_out_format.num_channels >= 3) {
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetRGB8OutputBuffer(
-            reinterpret_cast<uint8_t*>(dec->image_out_buffer), is_rgba);
+            reinterpret_cast<uint8_t*>(dec->image_out_buffer),
+            GetStride(dec, dec->image_out_format), is_rgba);
       }
       size_t sections_begin =
           DivCeil(reader->TotalBitsConsumed(), kBitsPerByte);
@@ -1065,6 +1068,13 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           // DC not available, e.g. if the frame was not encoded as VarDCT.
           get_dc = false;
         }
+        if (dec->frame_header->custom_size_or_origin ||
+            dec->frame_header->dc_level != 0 ||
+            dec->frame_header->upsampling != 1) {
+          // We don't support JXL_DEC_DC_IMAGE if the frame size doesn't match
+          // the image size.
+          get_dc = false;
+        }
         if (get_dc) {
           dec->frame_stage = FrameStage::kDCOutput;
         } else {
@@ -1097,10 +1107,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       PassesDecoderState& passes = *dec->passes_state.get();
       PassesSharedState& shared = passes.shared_storage;
       Image3F dc(shared.dc_storage.xsize(), shared.dc_storage.ysize());
-      OpsinToLinear(
-          shared.dc_storage, Rect(dc), dec->thread_pool.get(), &dc,
-          dec->metadata.transform_data.opsin_inverse_matrix.ToOpsinParams(
-              dec->metadata.m.IntensityTarget()));
+      UndoXYB(shared.dc_storage, &dc, dec->passes_state->output_encoding_info,
+              dec->thread_pool.get());
       // TODO(lode): use the real metadata instead, this requires matching
       // all the extra channels. Support DC with alpha too.
       jxl::ImageMetadata dummy;
@@ -1109,11 +1117,10 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       // space to set here.
       dc_bundle.SetFromImage(
           std::move(dc),
-          ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray()));
+          dec->passes_state->output_encoding_info.color_encoding);
       JXL_API_RETURN_IF_ERROR(
           ConvertImageInternal(dec, dc_bundle, dec->dc_out_format,
                                dec->dc_out_buffer, dec->dc_out_size));
-      dec->got_dc_image = true;
       dec->frame_stage = FrameStage::kFull;
       return JXL_DEC_DC_IMAGE;
     }
@@ -1126,9 +1133,6 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         }
 
         if (!dec->last_frame_reached) {
-          dec->got_dc_image = false;
-          dec->got_full_image = false;
-
           dec->events_wanted =
               dec->orig_events_wanted &
               (JXL_DEC_FULL_IMAGE | JXL_DEC_DC_IMAGE | JXL_DEC_FRAME);
@@ -1399,7 +1403,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       for (;;) {
         const uint8_t* in = *next_in;
         size_t size = *avail_in;
-        if (size == 0) {
+        if (size == pos) {
           // If the remaining size is 0, we are exactly after a full box. We
           // can't know for sure if this is the last box or not since more bytes
           // can follow, but do not return NEED_MORE_INPUT, instead break and
@@ -1425,27 +1429,38 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         if (box_size > 0 && box_size < header_size) {
           return JXL_API_ERROR("invalid box size");
         }
-        size_t avail_contents_size =
-            (box_size == 0)
-                ? (size - pos)
-                : std::min<size_t>(size - pos, box_size - pos + box_start);
+        if (SumOverflows(dec->file_pos, pos, box_size)) {
+          return JXL_API_ERROR("Box size overflow");
+        }
         size_t contents_size =
             (box_size == 0) ? 0 : (box_size - pos + box_start);
-        // TODO(lode): support the case where the header is split across
-        // multiple codestream boxes
         if (strcmp(type, "jxlc") == 0 || strcmp(type, "jxlp") == 0) {
-          // A JXL container file either has exactly one "jxlc" box with the
-          // full codestream, or has one or more "jxlp" boxes with parts of the
-          // codestream, but never both. So we only know for sure that it's the
-          // last codestream box if either it was the only one (jxlc), or it
-          // was one with unlimited size (box_size == 0), which can only happen
-          // to the last box in the entire container file. However, it is
-          // possible that the last jxlp box is not the last box of the
-          // container or does not use box_size == 0, in that case it can happen
-          // that last_codestream is false even though it is the last
-          // codestream. This does not cause issues, it may affect decisions for
-          // copying or not copying user input however.
-          bool last_codestream = (strcmp(type, "jxlc") == 0) || (box_size == 0);
+          size_t codestream_size = contents_size;
+          // Whether this is the last codestream box, either when it is a jxlc
+          // box, or when it is a jxlp box that has the final bit set.
+          // The codestream is either contained within a single jxlc box, or
+          // within one or more jxlp boxes. The final jxlp box is marked as last
+          // by setting the high bit of its 4-byte box-index value.
+          bool last_codestream = false;
+          if (strcmp(type, "jxlp") == 0) {
+            if (OutOfBounds(pos, 4, size)) return JXL_DEC_NEED_MORE_INPUT;
+            if (box_size != 0 && contents_size < 4) {
+              return JXL_API_ERROR("jxlp box too small to contain index");
+            }
+            codestream_size -= 4;
+            size_t jxlp_index = LoadBE32(in + pos);
+            pos += 4;
+            // The high bit of jxlp_index indicates whether this is the last
+            // jxlp box.
+            if (jxlp_index & 0x80000000) last_codestream = true;
+          } else if (strcmp(type, "jxlc") == 0) {
+            last_codestream = true;
+          }
+          if (!last_codestream && box_size == 0) {
+            return JXL_API_ERROR(
+                "final box has unbounded size, but is a non-final codestream "
+                "box");
+          }
           dec->first_codestream_seen = true;
           if (last_codestream) dec->last_codestream_seen = true;
           if (dec->codestream_begin != 0 && dec->codestream.empty()) {
@@ -1466,12 +1481,16 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           }
           dec->codestream_begin = dec->file_pos + pos;
           dec->codestream_end =
-              (box_size == 0) ? 0 : (dec->codestream_begin + contents_size);
+              (box_size == 0) ? 0 : (dec->codestream_begin + codestream_size);
+          size_t avail_codestream_size =
+              (box_size == 0)
+                  ? (size - pos)
+                  : std::min<size_t>(size - pos, box_size - pos + box_start);
           // If already appending codestream, append what we have here too
           if (!dec->codestream.empty()) {
             size_t begin = pos;
             size_t end =
-                std::min<size_t>(*avail_in, begin + avail_contents_size);
+                std::min<size_t>(*avail_in, begin + avail_codestream_size);
             dec->codestream.insert(dec->codestream.end(), *next_in + begin,
                                    *next_in + end);
             pos += (end - begin);
@@ -1498,10 +1517,10 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             *avail_in -= pos;
             pos = 0;
             // Update pos to be after the box contents with codestream
-            if (avail_contents_size == *avail_in) {
+            if (avail_codestream_size == *avail_in) {
               break;  // the rest is codestream, this loop is done
             }
-            pos += avail_contents_size;
+            pos += avail_codestream_size;
           }
         } else if (strcmp(type, "jbrd") == 0) {
           // This is a JPEG reconstruction metadata box.
@@ -1547,7 +1566,8 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           }
           pos += contents_size;
           if (!(dec->codestream.empty() && dec->first_codestream_seen)) {
-            // Last box no longer needed, remove from input.
+            // Last box no longer needed since we have copied the codestream
+            // buffer, remove from input so user can release memory.
             dec->file_pos += pos;
             *next_in += pos;
             *avail_in -= pos;
@@ -1726,27 +1746,7 @@ JxlDecoderStatus GetColorEncodingForTarget(
 
   *encoding = nullptr;
   if (target == JXL_COLOR_PROFILE_TARGET_DATA && dec->metadata.m.xyb_encoded) {
-    // The profile of the pixels matches dec->ib->c_current(). However,
-    // c_current in the ImageBundle is not yet filled in correctly at this point
-    // since the pixels have not been decoded yet.
-    // Instead, output the profile that the API specifies it uses for this case:
-    // linear sRGB for floating point output (except if the original image
-    // was known nonlinear sRGB), and nonlinear sRGB for integer output,
-    // grayscale or color depending on the image header.
-    bool grayscale = dec->metadata.m.color_encoding.IsGray();
-    if (!format) {
-      return JXL_API_ERROR("Must provide pixel format for data color profile");
-    }
-
-    bool float_format = format->data_type == JXL_TYPE_FLOAT ||
-                        format->data_type == JXL_TYPE_FLOAT16;
-    bool is_srgb = dec->metadata.m.color_encoding.HaveFields() &&
-                   dec->metadata.m.color_encoding.IsSRGB();
-    if (float_format && !is_srgb) {
-      *encoding = &jxl::ColorEncoding::LinearSRGB(grayscale);
-    } else {
-      *encoding = &jxl::ColorEncoding::SRGB(grayscale);
-    }
+    *encoding = &dec->passes_state->output_encoding_info.color_encoding;
   } else {
     *encoding = &dec->metadata.m.color_encoding;
   }
@@ -2031,6 +2031,7 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
       dec->frame_dec_in_progress) {
     bool is_rgba = format->num_channels == 4;
     dec->frame_dec->MaybeSetRGB8OutputBuffer(reinterpret_cast<uint8_t*>(buffer),
+                                             jxl::GetStride(dec, *format),
                                              is_rgba);
   }
 

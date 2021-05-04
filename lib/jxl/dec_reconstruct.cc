@@ -36,8 +36,8 @@
 #include "lib/jxl/dec_xyb-inl.h"
 #include "lib/jxl/dec_xyb.h"
 #include "lib/jxl/epf.h"
+#include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/frame_header.h"
-#include "lib/jxl/gaborish.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/transfer_functions-inl.h"
@@ -45,9 +45,10 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
-                      const Rect& rect, const ColorEncoding& target_encoding) {
+Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
+                      const OutputEncodingInfo& output_encoding_info) {
   PROFILER_ZONE("UndoXYB");
+
   // The size of `rect` might not be a multiple of Lanes(d), but is guaranteed
   // to be a multiple of kBlockDim or at the margin of the image.
   for (size_t y = 0; y < rect.ysize(); y++) {
@@ -57,7 +58,7 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
 
     const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d;
 
-    if (target_encoding.IsLinearSRGB()) {
+    if (output_encoding_info.color_encoding.tf.IsLinear()) {
       for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
         const auto in_opsin_x = Load(d, row0 + x);
         const auto in_opsin_y = Load(d, row1 + x);
@@ -66,14 +67,15 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
         auto linear_r = Undefined(d);
         auto linear_g = Undefined(d);
         auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params, &linear_r,
-                 &linear_g, &linear_b);
+        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
+                 output_encoding_info.opsin_params, &linear_r, &linear_g,
+                 &linear_b);
 
         Store(linear_r, d, row0 + x);
         Store(linear_g, d, row1 + x);
         Store(linear_b, d, row2 + x);
       }
-    } else if (target_encoding.IsSRGB()) {
+    } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
       for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
         const auto in_opsin_x = Load(d, row0 + x);
         const auto in_opsin_y = Load(d, row1 + x);
@@ -82,8 +84,9 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
         auto linear_r = Undefined(d);
         auto linear_g = Undefined(d);
         auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params, &linear_r,
-                 &linear_g, &linear_b);
+        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
+                 output_encoding_info.opsin_params, &linear_r, &linear_g,
+                 &linear_b);
 
 #if JXL_HIGH_PRECISION
         Store(TF_SRGB().EncodedFromDisplay(d, linear_r), d, row0 + x);
@@ -95,6 +98,43 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
         Store(FastLinearToSRGB(d, linear_b), d, row2 + x);
 #endif
       }
+    } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
+      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
+        const auto in_opsin_x = Load(d, row0 + x);
+        const auto in_opsin_y = Load(d, row1 + x);
+        const auto in_opsin_b = Load(d, row2 + x);
+        JXL_COMPILER_FENCE;
+        auto linear_r = Undefined(d);
+        auto linear_g = Undefined(d);
+        auto linear_b = Undefined(d);
+        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
+                 output_encoding_info.opsin_params, &linear_r, &linear_g,
+                 &linear_b);
+        Store(TF_PQ().EncodedFromDisplay(d, linear_r), d, row0 + x);
+        Store(TF_PQ().EncodedFromDisplay(d, linear_g), d, row1 + x);
+        Store(TF_PQ().EncodedFromDisplay(d, linear_b), d, row2 + x);
+      }
+    } else if (output_encoding_info.color_encoding.tf.IsGamma()) {
+      auto gamma_tf = [&](hwy::HWY_NAMESPACE::Vec<decltype(d)> v) {
+        return IfThenZeroElse(
+            v <= Set(d, 1e-5f),
+            FastPowf(d, v, Set(d, output_encoding_info.inverse_gamma)));
+      };
+      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
+        const auto in_opsin_x = Load(d, row0 + x);
+        const auto in_opsin_y = Load(d, row1 + x);
+        const auto in_opsin_b = Load(d, row2 + x);
+        JXL_COMPILER_FENCE;
+        auto linear_r = Undefined(d);
+        auto linear_g = Undefined(d);
+        auto linear_b = Undefined(d);
+        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
+                 output_encoding_info.opsin_params, &linear_r, &linear_g,
+                 &linear_b);
+        Store(gamma_tf(linear_r), d, row0 + x);
+        Store(gamma_tf(linear_g), d, row1 + x);
+        Store(gamma_tf(linear_b), d, row2 + x);
+      }
     } else {
       return JXL_FAILURE("Invalid target encoding");
     }
@@ -103,125 +143,76 @@ Status UndoXYBInPlace(Image3F* idct, const OpsinParams& opsin_params,
 }
 
 template <typename D, typename V>
-void StoreRGB(D d, V r, V g, V b, size_t n, size_t extra, uint8_t* buf) {
+void StoreRGBA(D d, V r, V g, V b, V a, bool alpha, size_t n, size_t extra,
+               uint8_t* buf) {
 #if HWY_TARGET == HWY_SCALAR
   buf[0] = r.raw;
   buf[1] = g.raw;
   buf[2] = b.raw;
+  if (alpha) {
+    buf[3] = a.raw;
+  }
 #elif HWY_TARGET == HWY_NEON
-  uint8x8x3_t data = {r.raw, g.raw, b.raw};
-  if (extra >= 8) {
-    vst3_u8(buf, data);
+  if (alpha) {
+    uint8x8x4_t data = {r.raw, g.raw, b.raw, a.raw};
+    if (extra >= 8) {
+      vst4_u8(buf, data);
+    } else {
+      uint8_t tmp[8 * 4];
+      vst4_u8(tmp, data);
+      memcpy(buf, tmp, n * 4);
+    }
   } else {
-    uint8_t tmp[8 * 3];
-    vst3_u8(tmp, data);
-    memcpy(buf, tmp, n * 3);
-  }
-#else
-  // TODO(veluca): implement this for x86.
-  HWY_ALIGN uint8_t bytes[16];
-  Store(r, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[3 * i] = bytes[i];
-  }
-  Store(g, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[3 * i + 1] = bytes[i];
-  }
-  Store(b, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[3 * i + 2] = bytes[i];
-  }
-#endif
-}
-
-template <typename D, typename V>
-void StoreRGBA(D d, V r, V g, V b, V a, size_t n, size_t extra, uint8_t* buf) {
-#if HWY_TARGET == HWY_SCALAR
-  buf[0] = r.raw;
-  buf[1] = g.raw;
-  buf[2] = b.raw;
-  buf[3] = a.raw;
-#elif HWY_TARGET == HWY_NEON
-  uint8x8x4_t data = {r.raw, g.raw, b.raw, a.raw};
-  if (extra >= 8) {
-    vst4_u8(buf, data);
-  } else {
-    uint8_t tmp[8 * 8];
-    vst4_u8(tmp, data);
-    memcpy(buf, tmp, n * 4);
-  }
-#else
-  // TODO(veluca): implement this for x86.
-  HWY_ALIGN uint8_t bytes[16];
-  Store(r, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[4 * i] = bytes[i];
-  }
-  Store(g, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[4 * i + 1] = bytes[i];
-  }
-  Store(b, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[4 * i + 2] = bytes[i];
-  }
-  Store(a, d, bytes);
-  for (size_t i = 0; i < n; i++) {
-    buf[4 * i + 3] = bytes[i];
-  }
-#endif
-}
-
-void FloatToRGB8(const Image3F& input, const Rect& input_rect,
-                 const Rect& output_buf_rect, uint8_t* JXL_RESTRICT output_buf,
-                 size_t xsize) {
-  for (size_t y = 0; y < output_buf_rect.ysize(); y++) {
-    const float* JXL_RESTRICT row_in_r = input_rect.ConstPlaneRow(input, 0, y);
-    const float* JXL_RESTRICT row_in_g = input_rect.ConstPlaneRow(input, 1, y);
-    const float* JXL_RESTRICT row_in_b = input_rect.ConstPlaneRow(input, 2, y);
-    size_t base_ptr =
-        3 * (y + output_buf_rect.y0()) * xsize + 3 * output_buf_rect.x0();
-    using D = HWY_CAPPED(float, 4);
-    const D d;
-    D::Rebind<uint32_t> du;
-    auto zero = Zero(d);
-    auto one = Set(d, 1.0f);
-    auto mul = Set(d, 255.0f);
-    for (size_t x = 0; x < output_buf_rect.xsize(); x += Lanes(d)) {
-      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
-      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
-      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
-      auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
-      auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
-      auto b8 = U8FromU32(BitCast(du, NearestInt(bf)));
-      size_t n = output_buf_rect.xsize() - x;
-      if (JXL_LIKELY(n >= Lanes(d))) {
-        StoreRGB(D::Rebind<uint8_t>(), r8, g8, b8, Lanes(d), n,
-                 output_buf + base_ptr + 3 * x);
-      } else {
-        StoreRGB(D::Rebind<uint8_t>(), r8, g8, b8, n, n,
-                 output_buf + base_ptr + 3 * x);
-      }
+    uint8x8x3_t data = {r.raw, g.raw, b.raw};
+    if (extra >= 8) {
+      vst3_u8(buf, data);
+    } else {
+      uint8_t tmp[8 * 3];
+      vst3_u8(tmp, data);
+      memcpy(buf, tmp, n * 3);
     }
   }
+#else
+  // TODO(veluca): implement this for x86.
+  size_t mul = alpha ? 4 : 3;
+  HWY_ALIGN uint8_t bytes[16];
+  Store(r, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[mul * i] = bytes[i];
+  }
+  Store(g, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[mul * i + 1] = bytes[i];
+  }
+  Store(b, d, bytes);
+  for (size_t i = 0; i < n; i++) {
+    buf[mul * i + 2] = bytes[i];
+  }
+  if (alpha) {
+    Store(a, d, bytes);
+    for (size_t i = 0; i < n; i++) {
+      buf[4 * i + 3] = bytes[i];
+    }
+  }
+#endif
 }
 
 // Outputs floating point image to RGBA 8-bit buffer. Does not support alpha
 // channel in the input, but outputs opaque alpha channel for the case where the
 // output buffer to write to is in the 4-byte per pixel RGBA format.
-// TODO(lode): add support for the alpha extra channel input as well.
-void FloatToRGBA8(const Image3F& input, const Rect& input_rect,
+void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
+                  const ImageF* alpha_in, const Rect& alpha_rect,
                   const Rect& output_buf_rect, uint8_t* JXL_RESTRICT output_buf,
-                  size_t xsize) {
-  HWY_CAPPED(uint8_t, 4) du8;
-  auto a8 = Set(du8, 255);
+                  size_t stride) {
+  size_t bytes = is_rgba ? 4 : 3;
   for (size_t y = 0; y < output_buf_rect.ysize(); y++) {
     const float* JXL_RESTRICT row_in_r = input_rect.ConstPlaneRow(input, 0, y);
     const float* JXL_RESTRICT row_in_g = input_rect.ConstPlaneRow(input, 1, y);
     const float* JXL_RESTRICT row_in_b = input_rect.ConstPlaneRow(input, 2, y);
+    const float* JXL_RESTRICT row_in_a =
+        alpha_in ? alpha_rect.ConstRow(*alpha_in, y) : nullptr;
     size_t base_ptr =
-        4 * (y + output_buf_rect.y0()) * xsize + 4 * output_buf_rect.x0();
+        (y + output_buf_rect.y0()) * stride + bytes * output_buf_rect.x0();
     using D = HWY_CAPPED(float, 4);
     const D d;
     D::Rebind<uint32_t> du;
@@ -232,16 +223,19 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect,
       auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
       auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
       auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
+      auto af = row_in_a ? Clamp(zero, Load(d, row_in_a + x), one) * mul
+                         : Set(d, 255.0f);
       auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
       auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
       auto b8 = U8FromU32(BitCast(du, NearestInt(bf)));
+      auto a8 = U8FromU32(BitCast(du, NearestInt(af)));
       size_t n = output_buf_rect.xsize() - x;
       if (JXL_LIKELY(n >= Lanes(d))) {
-        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, Lanes(d), n,
-                  output_buf + base_ptr + 4 * x);
+        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, is_rgba, Lanes(d), n,
+                  output_buf + base_ptr + bytes * x);
       } else {
-        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, n, n,
-                  output_buf + base_ptr + 4 * x);
+        StoreRGBA(D::Rebind<uint8_t>(), r8, g8, b8, a8, is_rgba, n, n,
+                  output_buf + base_ptr + bytes * x);
       }
     }
   }
@@ -256,8 +250,16 @@ HWY_AFTER_NAMESPACE();
 namespace jxl {
 
 HWY_EXPORT(UndoXYBInPlace);
-HWY_EXPORT(FloatToRGB8);
 HWY_EXPORT(FloatToRGBA8);
+
+void UndoXYB(const Image3F& src, Image3F* dst,
+             const OutputEncodingInfo& output_info, ThreadPool* pool) {
+  CopyImageTo(src, dst);
+  pool->Run(0, src.ysize(), ThreadPool::SkipInit(), [&](int y, int /*thread*/) {
+    JXL_CHECK(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(dst, Rect(*dst).Line(y),
+                                                   output_info));
+  });
+}
 
 namespace {
 // Implements EnsurePaddingInPlace, but allows processing data one row at a
@@ -284,13 +286,14 @@ class EnsurePaddingInPlaceRowByRow {
     img_ = img;
     y0_ = rect.y0();
     JXL_DASSERT(rect.x0() >= xpadding);
-    x0_ = rect.x0() - xpadding;
-    x1_ = image_rect.x0() >= xpadding ? rect.x0() - xpadding
-                                      : rect.x0() - image_rect.x0();
-    x2_ = image_rect.x0() + image_rect.xsize() + xpadding <= image_xsize
-              ? rect.x0() + image_rect.xsize() + xpadding
-              : rect.x0() + image_xsize - image_rect.x0();
-    x3_ = rect.x0() + rect.xsize() + xpadding;
+    x0_ = x1_ = rect.x0() - xpadding;
+    // If close to the left border - do mirroring.
+    if (image_rect.x0() < xpadding) x1_ = rect.x0() - image_rect.x0();
+    x2_ = x3_ = rect.x0() + rect.xsize() + xpadding;
+    // If close to the right border - do mirroring.
+    if (image_rect.x0() + image_rect.xsize() + xpadding > image_xsize) {
+      x2_ = rect.x0() + image_xsize - image_rect.x0();
+    }
     JXL_DASSERT(x3_ <= img->xsize());
     JXL_DASSERT(image_xsize == (x2_ - x1_) ||
                 (x1_ - x0_ <= x2_ - x1_ && x3_ - x2_ <= x2_ - x1_));
@@ -360,15 +363,16 @@ void EnsurePaddingInPlace(Image3F* img, const Rect& rect,
   }
 }
 
-Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
-                         PassesDecoderState* dec_state, size_t thread,
-                         ImageBundle* JXL_RESTRICT output_image,
-                         const Rect& output_rect) {
+Status FinalizeImageRect(
+    Image3F* input_image, const Rect& input_rect,
+    const std::vector<std::pair<const ImageF*, Rect>>& extra_channels,
+    PassesDecoderState* dec_state, size_t thread,
+    ImageBundle* JXL_RESTRICT output_image, const Rect& output_rect) {
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
+  const ImageMetadata& metadata = frame_header.nonserialized_metadata->m;
   const LoopFilter& lf = frame_header.loop_filter;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
-  const OpsinParams& opsin_params = dec_state->shared->opsin_params;
   JXL_DASSERT(output_rect.xsize() <= kApplyImageFeaturesTileDim);
   JXL_DASSERT(output_rect.ysize() <= kApplyImageFeaturesTileDim);
   JXL_DASSERT(input_rect.xsize() == output_rect.xsize());
@@ -420,17 +424,19 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
       JXL_DASSERT(input_rect.y0() >= 2);
       extra_rows_t = ifby0 = 2;
     }
-    if (output_rect.x0() + output_rect.xsize() + 2 <=
-        dec_state->shared->frame_dim.xsize_padded) {
-      JXL_DASSERT(input_rect.x0() + input_rect.xsize() + 2 <=
-                  input_image->xsize());
-      ifbx1 = 2;
-    }
-    if (output_rect.y0() + output_rect.ysize() + 2 <=
-        dec_state->shared->frame_dim.ysize_padded) {
-      JXL_DASSERT(input_rect.y0() + input_rect.ysize() + 2 <=
-                  input_image->ysize());
-      extra_rows_b = ifby1 = 2;
+    for (size_t extra : {1, 2}) {
+      if (output_rect.x0() + output_rect.xsize() + extra <=
+          dec_state->shared->frame_dim.xsize_padded) {
+        JXL_DASSERT(input_rect.x0() + input_rect.xsize() + extra <=
+                    input_image->xsize());
+        ifbx1 = extra;
+      }
+      if (output_rect.y0() + output_rect.ysize() + extra <=
+          dec_state->shared->frame_dim.ysize_padded) {
+        JXL_DASSERT(input_rect.y0() + input_rect.ysize() + extra <=
+                    input_image->ysize());
+        extra_rows_b = ifby1 = extra;
+      }
     }
     rect_for_if = Rect(output_rect.x0() - ifbx0, output_rect.y0() - ifby0,
                        output_rect.xsize() + ifbx0 + ifbx1,
@@ -505,6 +511,21 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
         Rect(upsampled_output_rect_for_storage.x0(),
              upsampled_output_rect_for_storage.y0(),
              pre_color_output_rect.xsize(), pre_color_output_rect.ysize());
+  }
+  // Set up alpha channel.
+  const size_t ec =
+      metadata.Find(ExtraChannel::kAlpha) - metadata.extra_channel_info.data();
+  const ImageF* alpha = nullptr;
+  Rect alpha_rect = upsampled_output_rect;
+  if (ec < metadata.extra_channel_info.size()) {
+    JXL_ASSERT(ec < extra_channels.size());
+    alpha = extra_channels[ec].first;
+    JXL_ASSERT(upsampled_output_rect.x0() >= extra_channels[ec].second.x0());
+    JXL_ASSERT(upsampled_output_rect.y0() >= extra_channels[ec].second.y0());
+    alpha_rect =
+        Rect(upsampled_output_rect.x0() - extra_channels[ec].second.x0(),
+             upsampled_output_rect.y0() - extra_channels[ec].second.y0(),
+             upsampled_output_rect.xsize(), upsampled_output_rect.ysize());
   }
 
   // +----------------------------- STEP 3 ------------------------------+
@@ -669,9 +690,9 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
       if (frame_header.needs_color_transform()) {
         if (frame_header.color_transform == ColorTransform::kXYB) {
           JXL_RETURN_IF_ERROR(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(
-              output_pixel_data_storage, opsin_params,
+              output_pixel_data_storage,
               upsampled_output_rect_for_storage.Lines(available_y, num_ys),
-              dec_state->output_encoding));
+              dec_state->output_encoding_info));
         } else if (frame_header.color_transform == ColorTransform::kYCbCr) {
           YcbcrToRgb(
               *output_pixel_data_storage, output_pixel_data_storage,
@@ -682,21 +703,14 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
       // TODO(veluca): all blending should happen here.
 
       if (dec_state->rgb_output != nullptr) {
-        if (dec_state->rgb_output_is_rgba) {
-          HWY_DYNAMIC_DISPATCH(FloatToRGBA8)
-          (*output_pixel_data_storage,
-           upsampled_output_rect_for_storage.Lines(available_y, num_ys),
-           upsampled_output_rect.Lines(available_y, num_ys)
-               .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
-           dec_state->rgb_output, frame_dim.xsize);
-        } else {
-          HWY_DYNAMIC_DISPATCH(FloatToRGB8)
-          (*output_pixel_data_storage,
-           upsampled_output_rect_for_storage.Lines(available_y, num_ys),
-           upsampled_output_rect.Lines(available_y, num_ys)
-               .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
-           dec_state->rgb_output, frame_dim.xsize);
-        }
+        HWY_DYNAMIC_DISPATCH(FloatToRGBA8)
+        (*output_pixel_data_storage,
+         upsampled_output_rect_for_storage.Lines(available_y, num_ys),
+         dec_state->rgb_output_is_rgba, alpha,
+         alpha_rect.Lines(available_y, num_ys),
+         upsampled_output_rect.Lines(available_y, num_ys)
+             .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+         dec_state->rgb_output, dec_state->rgb_stride);
       }
     }
   }
@@ -755,6 +769,8 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       return true;
     };
 
+    decoded->SetExtraChannels(std::move(dec_state->extra_channels));
+
     std::atomic<bool> apply_features_ok{true};
     auto run_apply_features = [&](size_t rect_id, size_t thread) {
       size_t xstart = kBlockDim + dec_state->group_border_assigner.PaddingX(
@@ -766,8 +782,17 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
                              *finalize_image_rect_input,
                              dec_state->FinalizeRectPadding(), group_data_rect,
                              &dec_state->group_data[thread]);
+      std::vector<std::pair<const ImageF*, Rect>> ec_rects;
+      ec_rects.reserve(decoded->extra_channels().size());
+      Rect r(rects_to_process[rect_id].x0() * frame_header.upsampling,
+             rects_to_process[rect_id].y0() * frame_header.upsampling,
+             rects_to_process[rect_id].xsize() * frame_header.upsampling,
+             rects_to_process[rect_id].ysize() * frame_header.upsampling);
+      for (size_t i = 0; i < decoded->extra_channels().size(); i++) {
+        ec_rects.emplace_back(&decoded->extra_channels()[i], r);
+      }
       if (!FinalizeImageRect(&dec_state->group_data[thread], group_data_rect,
-                             dec_state, thread, decoded,
+                             ec_rects, dec_state, thread, decoded,
                              rects_to_process[rect_id])) {
         apply_features_ok = false;
       }

@@ -18,16 +18,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "lib/jxl/aux_out_fwd.h"
-#include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/ac_context.h"
 #include "lib/jxl/base/data_parallel.h"
-#include "lib/jxl/base/span.h"
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/dec_cache.h"
-#include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_bit_writer.h"
-#include "lib/jxl/enc_cache.h"
+#include "lib/jxl/frame_header.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/modular/modular_image.h"
 

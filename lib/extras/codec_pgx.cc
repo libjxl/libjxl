@@ -295,7 +295,7 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   size_t stride = ib.xsize() * (bits_per_sample / kBitsPerByte);
   JXL_RETURN_IF_ERROR(ConvertToExternal(
       *transformed, bits_per_sample,
-      /*float_out=*/false, /*apply_srgb_tf=*/false,
+      /*float_out=*/false,
       /*num_channels=*/1, JXL_BIG_ENDIAN, stride, pool, pixels.data(),
       pixels.size(), metadata.GetOrientation()));
 

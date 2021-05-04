@@ -64,8 +64,6 @@ struct PassesSharedState {
 
   ColorCorrelationMap cmap;
 
-  OpsinParams opsin_params;
-
   ImageFeatures image_features;
 
   // Memory area for storing coefficient orders.

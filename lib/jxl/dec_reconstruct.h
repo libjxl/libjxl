@@ -54,10 +54,11 @@ Status FinalizeFrameDecoding(ImageBundle* JXL_RESTRICT decoded,
 // `output_rect.x0() + output_rect.xsize() == frame_dim.xsize`. `input_image`
 // may be mutated by adding padding. If `output_rect` is on an image border, the
 // input will be padded. Otherwise, appropriate padding must already be present.
-Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
-                         PassesDecoderState* dec_state, size_t thread,
-                         ImageBundle* JXL_RESTRICT output_image,
-                         const Rect& output_rect);
+Status FinalizeImageRect(
+    Image3F* input_image, const Rect& input_rect,
+    const std::vector<std::pair<const ImageF*, Rect>>& extra_channels,
+    PassesDecoderState* dec_state, size_t thread,
+    ImageBundle* JXL_RESTRICT output_image, const Rect& output_rect);
 
 // Fills padding around `img:rect` in the x direction by mirroring. Padding is
 // applied so that a full border of xpadding and ypadding is available, except
@@ -67,6 +68,10 @@ Status FinalizeImageRect(Image3F* input_image, const Rect& input_rect,
 void EnsurePaddingInPlace(Image3F* img, const Rect& rect,
                           const Rect& image_rect, size_t image_xsize,
                           size_t image_ysize, size_t xpadding, size_t ypadding);
+
+// For DC in the API.
+void UndoXYB(const Image3F& src, Image3F* dst,
+             const OutputEncodingInfo& output_info, ThreadPool* pool);
 
 }  // namespace jxl
 

@@ -32,6 +32,7 @@
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/enc_xyb.h"
+#include "lib/jxl/gaborish.h"
 
 namespace jxl {
 namespace {

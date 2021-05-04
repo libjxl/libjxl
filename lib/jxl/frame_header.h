@@ -33,7 +33,6 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/fields.h"
-#include "lib/jxl/gaborish.h"
 #include "lib/jxl/image_metadata.h"
 #include "lib/jxl/loop_filter.h"
 

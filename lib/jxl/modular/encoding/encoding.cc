@@ -30,8 +30,6 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
 #include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/enc_ans.h"
-#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_ops.h"

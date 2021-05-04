@@ -26,6 +26,7 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/enc_noise.h"
+#include "lib/jxl/gaborish.h"
 #include "lib/jxl/gauss_blur.h"
 
 #undef HWY_TARGET_INCLUDE
