@@ -38,6 +38,7 @@
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/image_bundle.h"
+#include "lib/jxl/image_metadata.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/benchmark/benchmark_file_io.h"
 #include "tools/benchmark/benchmark_stats.h"
@@ -323,6 +324,9 @@ class JxlCodec : public ImageCodec {
                                 JxlDecoderGetBasicInfo(dec.get(), &info));
             if (info.alpha_bits != 0) {
               ++format.num_channels;
+              io->metadata.m.extra_channel_info.emplace_back();
+              io->metadata.m.extra_channel_info[0].type =
+                  jxl::ExtraChannel::kAlpha;
             }
             break;
           case JXL_DEC_COLOR_ENCODING: {
