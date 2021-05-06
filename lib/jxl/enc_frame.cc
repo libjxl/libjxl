@@ -286,20 +286,20 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->group_size_shift = cparams.modular_group_size_shift;
   }
 
+  frame_header->chroma_subsampling = ib.chroma_subsampling;
   if (ib.IsJPEG()) {
     // we are transcoding a JPEG, so we don't get to choose
     frame_header->encoding = FrameEncoding::kVarDCT;
     frame_header->color_transform = ib.color_transform;
-    frame_header->chroma_subsampling = ib.chroma_subsampling;
   } else {
     frame_header->color_transform = cparams.color_transform;
-    if (cparams.chroma_subsampling.MaxHShift() != 0 ||
-        cparams.chroma_subsampling.MaxVShift() != 0) {
-      // TODO(veluca): properly pad the input image to support this.
+    if (!cparams.modular_mode &&
+        (frame_header->chroma_subsampling.MaxHShift() != 0 ||
+         frame_header->chroma_subsampling.MaxVShift() != 0)) {
       return JXL_FAILURE(
-          "Chroma subsampling is not supported when not recompressing JPEGs");
+          "Chroma subsampling is not supported in VarDCT mode when not "
+          "recompressing JPEGs");
     }
-    frame_header->chroma_subsampling = cparams.chroma_subsampling;
   }
 
   frame_header->flags = FrameFlagsFromParams(cparams);
@@ -1012,6 +1012,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   passes_enc_state->special_frames.clear();
 
   CompressParams cparams = cparams_orig;
+  if (ib.color_transform != ColorTransform::kNone) {
+    cparams.color_transform = ib.color_transform;
+  }
+
   if (cparams.progressive_dc < 0) {
     if (cparams.progressive_dc != -1) {
       return JXL_FAILURE("Invalid progressive DC setting value (%d)",
