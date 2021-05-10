@@ -810,7 +810,8 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
         dst_rect,
         static_cast<ssize_t>(src_rect.y0()) -
             static_cast<ssize_t>(copy_rect.y0()),
-        dec_state->shared->frame_dim.ysize_blocks);
+        dec_state->shared->frame_dim.ysize_blocks,
+        dec_state->upsampler_storage[thread].get());
     draw = kOnlyImageFeatures;
   }
 

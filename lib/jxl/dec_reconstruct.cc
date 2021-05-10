@@ -661,7 +661,7 @@ Status FinalizeImageRect(
           &output_image->extra_channels()[ec], upsampled_frame_rect,
           static_cast<ssize_t>(ec_image_rect.y0()) -
               static_cast<ssize_t>(extra_channels[ec].second.y0()),
-          ecys);
+          ecys, dec_state->upsampler_storage[thread].get());
       extra_channels_for_patches.emplace_back(
           &output_image->extra_channels()[ec], upsampled_frame_rect);
     }
@@ -824,7 +824,7 @@ Status FinalizeImageRect(
           upsampled_frame_rect_for_storage.Lines(upsampled_available_y, num_ys),
           static_cast<ssize_t>(frame_rect.y0()) -
               static_cast<ssize_t>(rect_for_upsampling.y0()),
-          frame_dim.ysize_padded);
+          frame_dim.ysize_padded, dec_state->upsampler_storage[thread].get());
       if (late_ec_upsample) {
         for (size_t ec = 0; ec < extra_channels.size(); ec++) {
           color_upsampler->UpsampleRect(
@@ -834,7 +834,7 @@ Status FinalizeImageRect(
               upsampled_frame_rect.Lines(upsampled_available_y, num_ys),
               static_cast<ssize_t>(frame_rect.y0()) -
                   static_cast<ssize_t>(extra_channels[ec].second.y0()),
-              frame_dim.ysize);
+              frame_dim.ysize, dec_state->upsampler_storage[thread].get());
         }
       }
       available_y = upsampled_available_y;
