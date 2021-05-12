@@ -399,8 +399,13 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "force enable/disable patches generation.",
                           &params.patches, &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "resampling", "1|2|4|8",
-                          "Subsample all color channels by this factor",
+                          "Subsample all color channels by this factor.",
                           &params.resampling, &ParseUnsigned, 1);
+  cmdline->AddOptionValue(
+      '\0', "ec_resampling", "1|2|4|8",
+      "Subsample all extra channels by this factor. If this value is smaller "
+      "than the resampling of color channels, it will be increased to match.",
+      &params.ec_resampling, &ParseUnsigned, 2);
 
   cmdline->AddOptionValue(
       '\0', "epf", "-1..3",

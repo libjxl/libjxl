@@ -111,10 +111,15 @@ class JxlCodec : public ImageCodec {
     const std::string kMaxPassesPrefix = "max_passes=";
     const std::string kDownsamplingPrefix = "downsampling=";
     const std::string kResamplingPrefix = "resampling=";
+    const std::string kEcResamplingPrefix = "ec_resampling=";
 
     if (param.substr(0, kResamplingPrefix.size()) == kResamplingPrefix) {
       std::istringstream parser(param.substr(kResamplingPrefix.size()));
       parser >> cparams_.resampling;
+    } else if (param.substr(0, kEcResamplingPrefix.size()) ==
+               kEcResamplingPrefix) {
+      std::istringstream parser(param.substr(kEcResamplingPrefix.size()));
+      parser >> cparams_.ec_resampling;
     } else if (ImageCodec::ParseParam(param)) {
       // Nothing to do.
     } else if (param == "uint8") {
@@ -324,7 +329,7 @@ class JxlCodec : public ImageCodec {
                                 JxlDecoderGetBasicInfo(dec.get(), &info));
             if (info.alpha_bits != 0) {
               ++format.num_channels;
-              io->metadata.m.extra_channel_info.emplace_back();
+              io->metadata.m.extra_channel_info.resize(1);
               io->metadata.m.extra_channel_info[0].type =
                   jxl::ExtraChannel::kAlpha;
             }

@@ -16,6 +16,7 @@
 
 #include "jxl/encode.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/profiler.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "tools/box/box.h"
 #include "tools/cjxl.h"

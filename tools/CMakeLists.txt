@@ -104,6 +104,7 @@ target_link_libraries(cjxltool
     jxl_threads-static
 )
 
+
 add_executable(cjxl cjxl_main.cc)
 target_link_libraries(cjxl cjxltool)
 

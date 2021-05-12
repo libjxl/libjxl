@@ -92,6 +92,7 @@ struct ImageSpec {
       << ", noise=" << spec.params.noise
       << ", fuzzer_friendly=" << spec.fuzzer_friendly
       << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg
+      << ", orientation=" << spec.orientation
       << ">";
     return o;
   }
@@ -140,7 +141,9 @@ struct ImageSpec {
   uint32_t is_reconstructible_jpeg = false;
   // Use 0xFF if any random spec is good; otherwise set the desired value.
   uint8_t override_decoder_spec = 0xFF;
-  uint8_t padding_[3] = {};
+  // Orientation.
+  uint8_t orientation = 0;
+  uint8_t padding_[2] = {};
 };
 #pragma pack(pop)
 static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
@@ -178,6 +181,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     io.metadata.m.SetUintSamples(spec.bit_depth);
   }
   io.metadata.m.SetAlphaBits(spec.alpha_bit_depth, spec.alpha_is_premultiplied);
+  io.metadata.m.orientation = spec.orientation;
   io.dec_pixels = spec.width * spec.height;
   io.frames.clear();
   io.frames.reserve(spec.num_frames);
@@ -364,8 +368,8 @@ int main(int argc, const char** argv) {
       {1, 10000},
       {2, 10000},
       // Large case.
-      {777, 256},
-      {333, 1025},
+      {555, 256},
+      {257, 513},
   };
   const std::vector<ImageSpec::CjxlParams> params_list = CompressParamsList();
 
@@ -410,6 +414,9 @@ int main(int argc, const char** argv) {
                     spec.params.speed_tier = jxl::SpeedTier::kWombat;
                   }
                   spec.seed = mt() % 777777;
+                  // Pick the orientation at random. It is orthogonal to all
+                  // other features. Valid values are 1 to 8.
+                  spec.orientation = 1 + (mt() % 8);
                   if (!spec.Validate()) {
                     std::cerr << "Skipping " << spec << std::endl;
                   } else {

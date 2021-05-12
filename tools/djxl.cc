@@ -245,47 +245,11 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   return true;
 }
 
-void RenderSpotColor(jxl::Image3F& img, const jxl::ImageF& sc,
-                     const float color[4]) {
-  float scale = color[3];
-  for (size_t c = 0; c < 3; c++) {
-    for (size_t y = 0; y < img.ysize(); y++) {
-      float* JXL_RESTRICT p = img.Plane(c).Row(y);
-      const float* JXL_RESTRICT s = sc.ConstRow(y);
-      for (size_t x = 0; x < img.xsize(); x++) {
-        float mix = scale * s[x];
-        p[x] = mix * color[c] + (1.0 - mix) * p[x];
-      }
-    }
-  }
-}
-
 jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
                            jxl::CodecInOut& io, jxl::ThreadPool* pool) {
   // Can only write if we decoded and have an output filename.
   // (Writing large PNGs is slow, so allow skipping it for benchmarks.)
   if (file_out == nullptr) return true;
-
-  for (size_t i = 0; i < io.metadata.m.num_extra_channels; i++) {
-    // Don't use Find() because there may be multiple spot color channels.
-    const jxl::ExtraChannelInfo& eci = io.metadata.m.extra_channel_info[i];
-    if (eci.type == jxl::ExtraChannel::kOptional) {
-      continue;
-    }
-    if (eci.type == jxl::ExtraChannel::kUnknown ||
-        (int(jxl::ExtraChannel::kReserved0) <= int(eci.type) &&
-         int(eci.type) <= int(jxl::ExtraChannel::kReserved7))) {
-      fprintf(stderr, "Unknown extra channel (bits %u, shift %u, name '%s')\n",
-              eci.bit_depth.bits_per_sample, eci.dim_shift, eci.name.c_str());
-      continue;
-    }
-    if (eci.type == jxl::ExtraChannel::kSpotColor) {
-      for (size_t fr = 0; fr < io.frames.size(); fr++) {
-        RenderSpotColor(*io.frames[fr].color(),
-                        io.frames[fr].extra_channels()[i], eci.spot_color);
-      }
-    }
-  }
 
   // Override original color space with arg if specified.
   jxl::ColorEncoding c_out = io.metadata.m.color_encoding;

@@ -58,7 +58,7 @@ def GenerateConformanceCorpus(args):
 
     test_dir = os.path.join(args.output, test_id)
     os.makedirs(test_dir, 0o755, exist_ok=True)
-    print('Generating %s' % (test_id))
+    print('Generating %s' % (test_id, ))
     input_file = os.path.join(test_dir, 'input.jxl')
     shutil.copy(jxl, input_file)
 

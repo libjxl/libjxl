@@ -19,6 +19,8 @@
 #include <string.h>
 
 #include <algorithm>
+#include <map>
+#include <mutex>
 #include <random>
 #include <vector>
 
@@ -45,6 +47,8 @@ struct FuzzSpec {
   bool get_grayscale;
   bool use_streaming;
   bool jpeg_to_pixels;  // decode to pixels even if it is JPEG-reconstructible
+  // Whether to use the callback mechanism for the output image or not.
+  bool use_callback;
   uint32_t streaming_seed;
 };
 
@@ -97,6 +101,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool seen_full_image = false;
   bool seen_success = false;
   bool seen_frame = false;
+  uint32_t num_frames = 0;
   bool seen_jpeg_reconstruction = false;
   bool seen_jpeg_need_more_output = false;
   // If streaming and seen around half the input, test flushing
@@ -106,6 +111,35 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   // full input size.
   size_t streaming_size = 0;
   size_t leftover = size;
+
+  // Callback function used when decoding with use_callback.
+  struct DecodeCallbackData {
+    JxlBasicInfo info;
+    std::mutex called_rows_mutex;
+    // For each row stores the segments of the row being called. For each row
+    // the sum of all the int values in the map up to [i] (inclusive) tell how
+    // many times a callback included the pixel i of that row.
+    std::vector<std::map<uint32_t, int>> called_rows;
+
+    // Use the pixel values.
+    uint32_t value = 0;
+  };
+  DecodeCallbackData decode_callback_data;
+  auto decode_callback = +[](void* opaque, size_t x, size_t y,
+                             size_t num_pixels, const void* pixels) {
+    DecodeCallbackData* data = static_cast<DecodeCallbackData*>(opaque);
+    if (num_pixels > data->info.xsize) abort();
+    if (x + num_pixels > data->info.xsize) abort();
+    if (y >= data->info.ysize) abort();
+    if (num_pixels && !pixels) abort();
+    // Keep track of the segments being called by the callback.
+    {
+      const std::lock_guard<std::mutex> lock(data->called_rows_mutex);
+      data->called_rows[y][x]++;
+      data->called_rows[y][x + num_pixels]--;
+      data->value += *static_cast<const uint8_t*>(pixels);
+    }
+  };
 
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
@@ -161,6 +195,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       }
       *xsize = info.xsize;
       *ysize = info.ysize;
+      decode_callback_data.info = info;
+      decode_callback_data.called_rows.resize(info.ysize);
       size_t num_pixels = *xsize * *ysize;
       // num_pixels overflow
       if (*xsize != 0 && num_pixels / *xsize != *ysize) return false;
@@ -205,21 +241,30 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         seen_need_image_out = true;
       }
 
-      size_t buffer_size;
-      if (JXL_DEC_SUCCESS !=
-          JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size)) {
-        return false;
-      }
-      if (buffer_size != *xsize * *ysize * bytes_per_pixel) {
-        return false;
-      }
-      pixels->resize(*xsize * *ysize * bytes_per_pixel);
-      void* pixels_buffer = (void*)pixels->data();
-      size_t pixels_buffer_size = pixels->size();
-      if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
-                                                         pixels_buffer,
-                                                         pixels_buffer_size)) {
-        return false;
+      if (spec.use_callback) {
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetImageOutCallback(dec.get(), &format, decode_callback,
+                                          &decode_callback_data)) {
+          return false;
+        }
+      } else {
+        // Use the pixels output buffer.
+        size_t buffer_size;
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size)) {
+          return false;
+        }
+        if (buffer_size != *xsize * *ysize * bytes_per_pixel) {
+          return false;
+        }
+        pixels->resize(*xsize * *ysize * bytes_per_pixel);
+        void* pixels_buffer = (void*)pixels->data();
+        size_t pixels_buffer_size = pixels->size();
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetImageOutBuffer(dec.get(), &format, pixels_buffer,
+                                        pixels_buffer_size)) {
+          return false;
+        }
       }
     } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
       if (seen_jpeg_reconstruction) abort();
@@ -249,6 +294,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       // There may be a next animation frame so expect those again:
       seen_need_image_out = false;
       seen_frame = false;
+      num_frames++;
 
       const auto consume = [&](uint8_t b) {
         if (b == 0) {
@@ -268,6 +314,25 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       if (!seen_full_image) abort();  // expected full image before finishing
       if (seen_success) abort();      // already seen success
       seen_success = true;
+
+      // When decoding we may not get seen_need_image_out unless we were
+      // decoding the image to pixels.
+      if (seen_need_image_out && spec.use_callback) {
+        // Check that the callback sent all the pixels
+        for (uint32_t y = 0; y < info.ysize; y++) {
+          // Check that each row was at least called once.
+          if (decode_callback_data.called_rows[y].empty()) abort();
+          uint32_t last_idx = 0;
+          int calls = 0;
+          for (auto it : decode_callback_data.called_rows[y]) {
+            if (it.first > last_idx) {
+              if (static_cast<uint32_t>(calls) != num_frames) abort();
+            }
+            calls += it.second;
+            last_idx = it.first;
+          }
+        }
+      }
 
       // All decoding successfully finished.
       // It's not required to call JxlDecoderReleaseInput(dec.get()) here since
@@ -290,6 +355,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.get_grayscale = !!(flags & 4);
   spec.use_streaming = !!(flags & 8);
   spec.jpeg_to_pixels = !!(flags & 16);
+  spec.use_callback = !!(flags & 32);
   // Allows some different possible variations in the chunk sizes of the
   // streaming case
   spec.streaming_seed = flags ^ size;
