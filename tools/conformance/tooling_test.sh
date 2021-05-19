@@ -34,8 +34,8 @@ main() {
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
 
-  if ! python3 -c 'import yaml'; then
-    echo "Missing yaml, skipping test." >&2
+  if ! python3 -c 'import numpy'; then
+    echo "Missing numpy, skipping test." >&2
     exit 254  # Signals ctest that we should mark this test as skipped.
   fi
 
