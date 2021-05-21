@@ -1186,9 +1186,23 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
     }
     ImageBlender blender;
     ImageBundle foreground = std::move(*decoded);
+    decoded->SetFromImage(Image3F(frame_header.nonserialized_metadata->xsize(),
+                                  frame_header.nonserialized_metadata->ysize()),
+                          foreground.c_current());
+    std::vector<std::pair<ImageF*, Rect>> extra_channels;
+    extra_channels.reserve(foreground.extra_channels().size());
+    for (size_t i = 0; i < foreground.extra_channels().size(); ++i) {
+      decoded->extra_channels().emplace_back(
+          frame_header.nonserialized_metadata->xsize(),
+          frame_header.nonserialized_metadata->ysize());
+      extra_channels.emplace_back(&decoded->extra_channels().back(),
+                                  Rect(decoded->extra_channels().back()));
+    }
     JXL_RETURN_IF_ERROR(blender.PrepareBlending(
         dec_state, foreground.origin, foreground.xsize(), foreground.ysize(),
-        foreground.c_current(), /*output=*/decoded));
+        &frame_header.nonserialized_metadata->m.extra_channel_info,
+        foreground.c_current(), Rect(*decoded->color()),
+        /*output=*/decoded->color(), Rect(*decoded->color()), extra_channels));
 
     std::vector<Rect> rects_to_process;
     for (size_t y = 0; y < frame_dim.ysize; y += kGroupDim) {
