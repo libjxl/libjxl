@@ -1,0 +1,66 @@
+# Workflow to run on pull-requests
+
+name: PR
+on:
+  pull_request:
+    types: [opened, reopened, labeled, unlabeled, synchronize]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+jobs:
+  build:
+    runs-on: [ubuntu-latest]
+    strategy:
+      matrix:
+        mode: [release, debug]
+    steps:
+    - name: Install build deps
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          clang-7 \
+          cmake \
+          doxygen \
+          libbrotli-dev \
+          libgif-dev \
+          libgtest-dev \
+          libjpeg-dev \
+          libopenexr-dev \
+          libpng-dev \
+          libwebp-dev \
+          ninja-build \
+          pkg-config \
+        #
+        echo "CC=clang-7" >> $GITHUB_ENV
+        echo "CXX=clang++-7" >> $GITHUB_ENV
+    - name: Checkout the source
+      uses: actions/checkout@v2
+      with:
+        submodules: true
+    - name: Build ${{ matrix.mode }}
+      run:
+        ./ci.sh ${{ matrix.mode }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
+      env:
+        SKIP_TEST: 1
+    # Run the tests only on release mode.
+    - name: Test ${{ matrix.mode }}
+      run:
+        '[[ ${{ matrix.mode }} != "release" ]] || ./ci.sh test'
+
+  format:
+    runs-on: [ubuntu-latest]
+    steps:
+    - name: Install build deps
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          clang-format \
+          clang-format-7 \
+          clang-format-8 \
+          clang-format-9 \
+        #
+    - name: Checkout the source
+      uses: actions/checkout@v2
+    - name: clang-format
+      run:
+        ./ci.sh lint >&2

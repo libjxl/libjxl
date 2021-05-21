@@ -340,12 +340,17 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       &quality, &ParseFloat);
 
   cmdline->AddOptionValue(
-      's', "speed", "EFFORT",
-      "Encoder effort/speed setting. Valid values are:\n"
-      "    3|falcon| 4|cheetah| 5|hare| 6|wombat| 7|squirrel| 8|kitten| "
-      "9|tortoise\n"
-      "    Default: squirrel (7). Values are in order from faster to slower.",
+      'e', "effort", "EFFORT",
+      "Encoder effort setting. Range: 3 .. 9.\n"
+      "    Default: 7. Higher number is more effort (slower).",
       &params.speed_tier, &ParseSpeedTier);
+
+  cmdline->AddOptionValue(
+      's', "speed", "ANIMAL",
+      "Deprecated synonym for --effort. Valid values are:\n"
+      "    falcon (3), cheetah, hare, wombat, squirrel, kitten, tortoise (9)\n"
+      "    Default: squirrel. Values are in order from faster to slower.\n",
+      &params.speed_tier, &ParseSpeedTier, 2);
 
   cmdline->AddOptionValue('\0', "faster_decoding", "AMOUNT",
                           "Favour higher decoding speed. 0 = default, higher "
@@ -406,6 +411,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "Subsample all extra channels by this factor. If this value is smaller "
       "than the resampling of color channels, it will be increased to match.",
       &params.ec_resampling, &ParseUnsigned, 2);
+  cmdline->AddOptionFlag('\0', "already_downsampled",
+                         "Do not downsample the given input before encoding, "
+                         "but still signal that the decoder should upsample.",
+                         &params.already_downsampled, &SetBooleanTrue, 2);
 
   cmdline->AddOptionValue(
       '\0', "epf", "-1..3",

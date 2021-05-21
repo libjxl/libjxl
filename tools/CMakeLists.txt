@@ -357,14 +357,16 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   )
   get_target_property(JXL_JNI_WRAPPER_TEST_JAR jxl_jni_wrapper_test JAR_FILE)
 
-  # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either "which java"
-  #     or JAVA_HOME environment variable point to the path like
-  #     "/usr/lib/jvm/java-xx-openjdk-yyy" on Debian Linux).
-  add_test(
-    NAME test_jxl_jni_wrapper
-    COMMAND ${Java_JAVA_EXECUTABLE}
-            -cp "${JXL_JNI_WRAPPER_JAR}:${JXL_JNI_WRAPPER_TEST_JAR}"
-            -Dorg.jpeg.jpegxl.wrapper.lib=$<TARGET_FILE:jxl_jni>
-            org.jpeg.jpegxl.wrapper.DecoderTest
-  )
+  if(NOT "${SANITIZER}" MATCHES ".san")
+    # NB: Vanilla OpenJDK 8 / 11 are known to work well (i.e. either
+    #     "which java" or JAVA_HOME environment variable point to the path like
+    #     "/usr/lib/jvm/java-xx-openjdk-yyy" on Debian Linux).
+    add_test(
+      NAME test_jxl_jni_wrapper
+      COMMAND ${Java_JAVA_EXECUTABLE}
+              -cp "${JXL_JNI_WRAPPER_JAR}:${JXL_JNI_WRAPPER_TEST_JAR}"
+              -Dorg.jpeg.jpegxl.wrapper.lib=$<TARGET_FILE:jxl_jni>
+              org.jpeg.jpegxl.wrapper.DecoderTest
+    )
+  endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND

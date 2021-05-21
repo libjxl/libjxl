@@ -213,6 +213,26 @@ bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
     }
   } else if (t == "NotLast") {
     have_next = 1;
+  } else if (t == "Upsample") {
+    t = tok();
+    size_t num = 0;
+    cparams.resampling = std::stoul(t, &num);
+    if (num != t.size() ||
+        (cparams.resampling != 1 && cparams.resampling != 2 &&
+         cparams.resampling != 4 && cparams.resampling != 8)) {
+      fprintf(stderr, "Invalid Upsample: %s\n", t.c_str());
+      return false;
+    }
+  } else if (t == "Upsample_EC") {
+    t = tok();
+    size_t num = 0;
+    cparams.ec_resampling = std::stoul(t, &num);
+    if (num != t.size() ||
+        (cparams.ec_resampling != 1 && cparams.ec_resampling != 2 &&
+         cparams.ec_resampling != 4 && cparams.ec_resampling != 8)) {
+      fprintf(stderr, "Invalid Upsample_EC: %s\n", t.c_str());
+      return false;
+    }
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
@@ -285,13 +305,16 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   }
   Image3F image(width, height);
   io.SetFromImage(std::move(image), ColorEncoding::SRGB());
-  io.SetSize(width + x0, height + y0);
+  io.SetSize((width + x0) * cparams.resampling,
+             (height + y0) * cparams.resampling);
   io.metadata.m.color_encoding.DecideIfWantICC();
   cparams.options.zero_tokens = true;
   cparams.modular_mode = true;
   cparams.palette_colors = 0;
   cparams.channel_colors_pre_transform_percent = 0;
   cparams.channel_colors_percent = 0;
+  cparams.patches = jxl::Override::kOff;
+  cparams.already_downsampled = true;
   PaddedBytes compressed;
 
   io.CheckMetadata();
@@ -300,6 +323,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   *metadata = io.metadata;
   JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
+
   metadata->m.xyb_encoded =
       cparams.color_transform == ColorTransform::kXYB ? true : false;
 
@@ -328,7 +352,6 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     Image3F image(width, height);
     io.SetFromImage(std::move(image), ColorEncoding::SRGB());
     io.frames[0].blend = true;
-    JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
   }
 
   compressed = std::move(writer).TakeBytes();

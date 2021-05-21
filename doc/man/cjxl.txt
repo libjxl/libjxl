@@ -59,14 +59,14 @@ Options
     parameter, but positive values should approximately match the quality
     setting of libjpeg.
 
--s 'speed'::
---speed='speed'::
+-e 'effort'::
+--effort='effort'::
     Controls the amount of effort that goes into producing an ``optimal'' file
     in terms of quality/size. That is to say, all other parameters being equal,
     a higher effort should yield a file that is at least as dense and possibly
     denser, and with at least as high and possibly higher quality.
 +
-Recognized speed settings, from fastest to slowest, are:
+Recognized effort settings, from fastest to slowest, are:
 +
 - 3 or ``falcon''
 - 4 or ``cheetah''
