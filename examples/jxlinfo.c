@@ -67,6 +67,10 @@ int PrintBasicInfo(FILE* file) {
       data = (uint8_t*)realloc(data, remaining + chunk_size);
       // append bytes read from the file behind the remaining bytes
       size_t read_size = fread(data + remaining, 1, chunk_size, file);
+      if (read_size == 0 && feof(file)) {
+        fprintf(stderr, "Unexpected EOF\n");
+        break;
+      }
       data_size = remaining + read_size;
       JxlDecoderSetInput(dec, data, data_size);
     } else if (status == JXL_DEC_SUCCESS) {

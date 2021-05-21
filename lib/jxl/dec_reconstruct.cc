@@ -973,7 +973,10 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
                              1 << frame_header.chroma_subsampling.VShift(c)));
       for (size_t i = 0; i < frame_header.chroma_subsampling.HShift(c); i++) {
         plane.InitializePaddingForUnalignedAccesses();
-        plane = UpsampleH2(plane, pool);
+        const size_t output_xsize =
+            DivCeil(frame_dim.xsize_padded,
+                    1 << (frame_header.chroma_subsampling.HShift(c) - i - 1));
+        plane = UpsampleH2(plane, output_xsize, pool);
       }
       for (size_t i = 0; i < frame_header.chroma_subsampling.VShift(c); i++) {
         plane.InitializePaddingForUnalignedAccesses();

@@ -174,9 +174,11 @@ ImageBlender::RectBlender ImageBlender::PrepareRect(
                              actual_input_rect.ysize());
   CopyImageTo(actual_input_rect, foreground, &cropped_foreground);
   blender.foreground_ = ImageBundle(dest_->metadata());
+  bool is_gray = blender.foreground_.metadata()->color_encoding.IsGray();
   blender.foreground_.SetFromImage(
       std::move(cropped_foreground),
-      ColorEncoding::LinearSRGB() /* likely incorrect but unused anyway */);
+      ColorEncoding::LinearSRGB(
+          is_gray) /* likely incorrect but unused anyway */);
   if (!extra_channels.empty()) {
     std::vector<ImageF> ec;
     for (const auto& extra_channel : extra_channels) {
