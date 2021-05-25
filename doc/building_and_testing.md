@@ -89,8 +89,8 @@ export BUILD_TARGET=x86_64-w64-mingw32 BUILD_DIR=build-foobar
 ```
 
 Linter checks will verify that the format of your patch conforms to the project
-style (see [guidelines](guidelines.md)). For this, we run clang-format only on
-the lines that were changed by your commits.
+style. For this, we run clang-format only on the lines that were changed by
+your commits.
 
 If your local git branch is tracking `origin/master` and you landed a few
 commits in your branch, running this lint command will check all the changes

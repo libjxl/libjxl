@@ -210,7 +210,7 @@ have to deal with. A shortcut to do both fetch and rebase is to run `git pull
 of the remote ones.
 
 Before uploading a patch, make sure your patch conforms to the
-[project guidelines](guidelines.md) and it
+[contributing guidelines](../CONTRIBUTING.md) and it
 [builds and passes tests](building_and_testing.md).
 
 Once you are ready to send your branch for review, upload it to *your* fork:
