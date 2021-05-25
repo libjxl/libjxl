@@ -1974,10 +1974,16 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
     return JXL_DEC_SUCCESS;
   }
 
+  // Temporarily shrink `dec->ib` to the actual size of the full image to call
+  // ConvertImageInternal.
+  size_t xsize = dec->ib->xsize();
+  size_t ysize = dec->ib->ysize();
+  dec->ib->ShrinkTo(dec->metadata.size.xsize(), dec->metadata.size.ysize());
   JxlDecoderStatus status = jxl::ConvertImageInternal(
       dec, *dec->ib, dec->image_out_format, dec->image_out_buffer,
       dec->image_out_size,
       /*out_callback=*/nullptr, /*out_opaque=*/nullptr);
+  dec->ib->ShrinkTo(xsize, ysize);
   if (status != JXL_DEC_SUCCESS) return status;
   return JXL_DEC_SUCCESS;
 }

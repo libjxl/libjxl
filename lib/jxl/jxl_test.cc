@@ -1458,5 +1458,26 @@ TEST(JxlTest, RoundtripProgressive) {
             4.0f);
 }
 
+TEST(JxlTest, RoundtripAnimationPatches) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig = ReadTestData("jxl/animation_patches.gif");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_EQ(2, io.frames.size());
+
+  CompressParams cparams;
+  cparams.patches = Override::kOn;
+  DecompressParams dparams;
+  CodecInOut io2;
+  // 40k with no patches, 27k with patch frames encoded multiple times.
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 24000);
+
+  EXPECT_EQ(io2.frames.size(), io.frames.size());
+  // >10 with broken patches
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            2.0);
+}
+
 }  // namespace
 }  // namespace jxl

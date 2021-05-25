@@ -371,6 +371,8 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
         }
       }
     }
+  } else {
+    shared.image_features.patches.Clear();
   }
   if (shared.frame_header.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(

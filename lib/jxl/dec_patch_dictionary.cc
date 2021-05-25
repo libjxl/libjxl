@@ -48,6 +48,7 @@ constexpr int kMaxPatches = 1 << 24;
 
 Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
                                bool* uses_extra_channels) {
+  positions_.clear();
   std::vector<uint8_t> context_map;
   ANSCode code;
   JXL_RETURN_IF_ERROR(
@@ -162,6 +163,8 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
 }
 
 void PatchDictionary::ComputePatchCache() {
+  patch_starts_.clear();
+  sorted_patches_.clear();
   if (positions_.empty()) return;
   std::vector<std::pair<size_t, size_t>> sorted_patches_y;
   for (size_t i = 0; i < positions_.size(); i++) {
