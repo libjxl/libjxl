@@ -1,16 +1,7 @@
-// Copyright (c) the JPEG XL Project
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 #include <stdio.h>
 
@@ -233,6 +224,33 @@ bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
       fprintf(stderr, "Invalid Upsample_EC: %s\n", t.c_str());
       return false;
     }
+  } else if (t == "Animation") {
+    io.metadata.m.have_animation = true;
+    io.metadata.m.animation.tps_numerator = 1000;
+    io.frames[0].duration = 100;
+  } else if (t == "Duration") {
+    t = tok();
+    size_t num = 0;
+    io.frames[0].duration = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid Duration: %s\n", t.c_str());
+      return false;
+    }
+  } else if (t == "BlendMode") {
+    t = tok();
+    if (t == "kAdd") {
+      io.frames[0].blendmode = BlendMode::kAdd;
+    } else if (t == "kBlend") {
+      io.frames[0].blendmode = BlendMode::kBlend;
+    } else if (t == "kAlphaWeightedAdd") {
+      io.frames[0].blendmode = BlendMode::kAlphaWeightedAdd;
+    } else if (t == "kMul") {
+      io.frames[0].blendmode = BlendMode::kMul;
+    } else {
+      fprintf(stderr, "Invalid BlendMode: %s\n", t.c_str());
+      return false;
+    }
+
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;

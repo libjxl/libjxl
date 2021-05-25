@@ -1,82 +1,116 @@
-# Developing in GitLab
+# Developing in GitHub
 
 This document describes the development steps related to handling the git
 repository.
 
+If you are new to GitHub, there's a nice [quickstart
+guide](https://docs.github.com/en/github/getting-started-with-github/quickstart)
+on GitHub explaining the basics.
+
 ## Initial setup
 
-You need to perform these steps at least once. After that, the "Life of a Merge"
-section describes the common everyday workflows.
+You need to perform this set up at least once if you haven't use GitHub before.
+Read through the quickstart guide [Set up
+Git](https://docs.github.com/en/github/getting-started-with-github/set-up-git)
+page to get your git up and running. You will need to Fork a repository next.
+After that "Life of a Pull Request" describes the common everyday workflows.
 
 ### Configure your SSH access
 
-The easiest way to configure access to a private GitLab repo is to use SSH keys.
-For that you need an SSH private and public key, ideally a strong one. You can
-use different keys for different sites if you want. In this example, we will
-create one for using in GitLab only.
+The easiest way to configure access to your Github repository is to use SSH
+keys. For that you need an SSH private and public key, ideally a strong one. You
+can use different keys for different sites if you want. In this example, we will
+create one for using in GitHub only.
 
-Create the `~/.ssh/id_rsa_gitlab` file executing the following. (Here and
+Create the `~/.ssh/id_rsa_github` file executing the following. (Here and
 elsewhere, {{X}} are placeholders for your email/username)
 
 ```bash
-ssh-keygen -t rsa -b 4096 -C "{{EMAIL}}" -f ~/.ssh/id_rsa_gitlab
+ssh-keygen -t rsa -b 4096 -C "{{EMAIL}}" -f ~/.ssh/id_rsa_github
 ```
 
-Go to your [SSH settings in GitLab](https://gitlab.com/profile/keys) and paste
-the contents of your *public key* (the one ending in `.pub`), that would be the
-output of this command:
+Go to your [SSH and GPG keys](https://github.com/settings/keys) settings and
+paste the contents of your *public key* (the one ending in `.pub`), that would
+be the output of this command:
 
 ```bash
-cat ~/.ssh/id_rsa_gitlab.pub
+cat ~/.ssh/id_rsa_github.pub
 ```
 
-To use a specific key when SSHing to the gitlab.com domain, you can add this
+To use a specific key when SSHing to the github.com domain, you can add this
 snippet of config to your .ssh/config file executing the following.
 
 ```bash
 cat >> ~/.ssh/config <<EOF
 
-Host gitlab.com
-  Hostname gitlab.com
-  IdentityFile ~/.ssh/id_rsa_gitlab
+Host github.com
+  Hostname github.com
+  IdentityFile ~/.ssh/id_rsa_github
   IdentitiesOnly yes
 EOF
 ```
 
 The `IdentitiesOnly yes` part forces to only use the provided IdentityFile when
-talking to GitLab.
-
-### Checkout the JPEG XL code from GitLab
-
-The JPEG XL code is located in
-[this repo](https://gitlab.com/wg1/jpeg-xl). Clone it using the SSH
-version of the URL.
-
-```bash
-git clone git@gitlab.com:wg1/jpeg-xl.git --recursive ~/jpeg-xl
-```
+talking to GitHub.
 
 ### Fork your private copy
 
-The normal developer workflow in GitLab involves creating your own fork of a
+The JPEG XL code is located in [this repo](https://github.com/libjxl/libjxl).
+
+The normal developer workflow in GitHub involves creating your own fork of a
 repository and uploading your own changes there. From your own copy you can
 request merges *to* the upstream repository directly, there's no need to create
 a branch in the upstream repository.
 
-Navigate to the [JPEG XL GitLab repo](https://gitlab.com/wg1/jpeg-xl) and
-click "Fork" on the top right corner. After creating the Fork you will have an
-exact copy of the repository which should remain private. Then add this new copy
-to your existing checkout run:
+[Fork the
+repository](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo)
+in GitHub to create your own copy of the repository in GitHub. You can then
+propose to include changes in the main repository via a Pull Request.
+
+Once you are done you should have your repository at
+
+ https://github.com/{{USERNAME}}/libjxl
+
+where {{USERNAME}} denotes your GitHub username.
+
+### Checkout the JPEG XL code from GitHub
+
+To get the source code on your computer you need to "clone" it.
+
+The [Fork a
+repo](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo)
+goes in great detail, the short version is:
 
 ```bash
-cd ~/jpeg-xl
-git remote set-url --push origin git@gitlab.com:{{USERNAME}}/jpeg-xl.git
+git clone git@github.com:{{USERNAME}}/libjxl.git --recursive
+cd libjxl
+git remote add upstream https://github.com/libjxl/libjxl
+git remote -vv
 ```
 
-{{USERNAME}} denotes your GitLab username. This will make the "git push origin"
-command push to your fork, which then allows you to create merge requests.
+This will create two git "remotes", one called "origin" (the default name used
+in the `git clone` command) pointing to your own fork, and one called "upstream"
+pointing to the main libjxl repository. Read the guide for differences between
+using the HTTPS and the SSH clone URLs.
 
-## Life of a Merge
+You can select other names if you prefer, for example clone libjxl/libjxl first
+as "origin" and then add your fork as another remote name, or as the push-url of
+origin so you push to your fork but always get new commits from upstream, for
+example:
+
+```bash
+cd ~/libjxl
+git remote set-url --push origin git@github.com:{{USERNAME}}/libjxl.git
+```
+
+{{USERNAME}} denotes your GitHub username. This will make the "git push origin"
+command push to your fork, which then allows you to create Pull Requests.
+
+# Life of a Pull Request
+
+The general [GitHub flow
+guide](https://docs.github.com/en/github/getting-started-with-github/github-flow)
+applies to sending Pull Requests to this project.
 
 All the commands here assume you are in a git checkout as setup here.
 
@@ -86,7 +120,7 @@ All the commands here assume you are in a git checkout as setup here.
 git fetch origin
 ```
 
-The last upstream version is now on `origin/master` and none of your local
+The last upstream version is now on `origin/main` and none of your local
 branches have been modified by this command.
 
 ### Start a new branch
@@ -97,10 +131,10 @@ request. So in general one branch is one code review, but each branch can have
 multiple individual commits in it.
 
 ```bash
-git checkout origin/master -b mybranch
+git checkout origin/main -b mybranch
 ```
 
-This will create a new branch `mybranch` tracking `origin/master`. A branch can
+This will create a new branch `mybranch` tracking `origin/main`. A branch can
 track any remove or local branch, which is used by some tools. Running `git
 branch -vv` will show all the branches you have have, what are they tracking and
 how many commits are ahead or behind. If you create a branch without tracking
@@ -124,6 +158,15 @@ The first line should identify your commit, since that's what most tools will
 show to the user. First lines like "Some fixes" are not useful. Explain what the
 commit contains and why.
 
+We follow the [Google C++ Coding
+Style](https://google.github.io/styleguide/cppguide.html). A
+[clang-format](https://clang.llvm.org/docs/ClangFormat.html) configuration
+file is available to automatically format your code, you can invoke it with
+the `./ci.sh lint` helper tool.
+
+Read the [CONTRIBUTING.md](../CONTRIBUTING.md) file for more information about
+contributing to libjxl.
+
 ### Upload your changes for review
 
 The first step is a local review of your changes to see what will you be sending
@@ -136,11 +179,11 @@ git branch -vv
 ```
 
 To show the current status of your local branches. In particular, since your
-branch is tracking origin/master (as seen in the output) git will tell you that
+branch is tracking origin/main (as seen in the output) git will tell you that
 you are one commit ahead of the tracking branch.
 
 ```
-* mybranch       e74ae1a [origin/master: ahead 1] Improved decoding speed by 40%
+* mybranch       e74ae1a [origin/main: ahead 1] Improved decoding speed by 40%
 ```
 
 It is a good idea before uploading to sync again with upstream (`git fetch
@@ -148,7 +191,7 @@ origin`) and then run `git branch -vv` to check whether there are new changes
 upstream. If that is the case, you will see a "behind" flag in the output:
 
 ```
-* mybranch       e74ae1a [origin/master: ahead 1, behind 2] Improved decoding speed by 40%
+* mybranch       e74ae1a [origin/main: ahead 1, behind 2] Improved decoding speed by 40%
 ```
 
 To sync your changes on top of the latest changes in upstream you need to
@@ -160,7 +203,7 @@ git rebase
 
 This will by default rebase your current branch changes on top of the tracking
 branch. In this case, this will try to apply the current commit on top of the
-latest origin/master (which has 2 more commits than the ones we have in our
+latest origin/main (which has 2 more commits than the ones we have in our
 branch) and your branch will now include that. There could be conflicts that you
 have to deal with. A shortcut to do both fetch and rebase is to run `git pull
 -r`, where the `-r` stands for "rebase" and will rebase the local commits on top
@@ -187,12 +230,11 @@ Delta compression using up to 56 threads
 Compressing objects: 100% (388/388), done.
 Writing objects: 100% (389/389), 10.71 MiB | 8.34 MiB/s, done.
 Total 389 (delta 236), reused 0 (delta 0)
-remote: Resolving deltas: 100% (236/236), completed with 225 local objects.
+emote:
+remote: Create a pull request for 'mybranch' on GitHub by visiting:
+remote:      https://github.com/{{USERNAME}}/libjxl/pull/new/mybranch
 remote:
-remote: To create a merge request for mybranch, visit:
-remote:   https://gitlab.com/{{USERNAME}}/jpeg-xl/merge_requests/new?merge_request%5Bsource_branch%5D=mybranch
-remote:
-To gitlab.com:{{USERNAME}}/jpeg-xl.git
+To github.com:{{USERNAME}}/libjxl.git
  * [new branch]      mybranch -> mybranch
 ```
 
@@ -279,7 +321,7 @@ The merge request should now be updated with the new changes.
 
 We use "rebase" as a merge policy, which means that there a no "merge" commits
 (commits with more than one parent) but instead only a linear history of
-changes. If other commits landed in the master branch since you last synced you
+changes. If other commits landed in the main branch since you last synced you
 need to `git fetch`, `git rebase` and push again your changes which need to go
 through the pipeline again to verify that all the tests pass again after
 including the latests changes. Instead of doing this manually, you can _Assign_

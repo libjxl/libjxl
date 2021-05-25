@@ -1,16 +1,7 @@
-// Copyright (c) the JPEG XL Project
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 #include <stdint.h>
 #include <stdio.h>
@@ -72,8 +63,8 @@ struct ImageSpec {
     if (num_frames == 0) return false;
     // JPEG doesn't support all formats, so reconstructible JPEG isn't always
     // valid.
-    if (is_reconstructible_jpeg &&
-        (bit_depth != 8 || num_channels != 3 || alpha_bit_depth != 0 || num_frames != 1))
+    if (is_reconstructible_jpeg && (bit_depth != 8 || num_channels != 3 ||
+                                    alpha_bit_depth != 0 || num_frames != 1))
       return false;
     return true;
   }
@@ -92,19 +83,15 @@ struct ImageSpec {
       << ", noise=" << spec.params.noise
       << ", fuzzer_friendly=" << spec.fuzzer_friendly
       << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg
-      << ", orientation=" << spec.orientation
-      << ">";
+      << ", orientation=" << spec.orientation << ">";
     return o;
   }
 
   void SpecHash(uint8_t hash[16]) const {
-    memset(hash, 0, 16);
-    const uint8_t* buf = reinterpret_cast<const uint8_t*>(this);
-    uint64_t state = 0;
-    for (size_t i = 0; i < sizeof(*this); ++i) {
-      state = state * 113 + buf[i];
-      hash[i % 16] ^= state;
-    }
+    const uint8_t* from = reinterpret_cast<const uint8_t*>(this);
+    std::seed_seq hasher(from, from + sizeof(*this));
+    uint32_t* to = reinterpret_cast<uint32_t*>(hash);
+    hasher.generate(to, to + 4);
   }
 
   uint64_t width = 256;
@@ -193,7 +180,13 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     c = jxl::ColorEncoding::SRGB();
   }
 
+  uint8_t hash[16];
+  spec.SpecHash(hash);
   std::mt19937 mt(spec.seed);
+
+  // Compress the image.
+  jxl::PaddedBytes compressed;
+
   std::uniform_int_distribution<> dis(1, 6);
   PixelGenerator gen = [&]() -> uint8_t { return dis(mt); };
 
@@ -223,9 +216,6 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         false /* flipped_y */, nullptr, &ib));
     io.frames.push_back(std::move(ib));
   }
-
-  // Compress the image.
-  jxl::PaddedBytes compressed;
 
   if (spec.is_reconstructible_jpeg) {
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
