@@ -162,7 +162,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
       modular_frame_encoder->AddVarDCTDC(
           dc, group_index,
           enc_state->cparams.butteraugli_distance >= 2.0f &&
-              enc_state->cparams.speed_tier != SpeedTier::kFalcon,
+              enc_state->cparams.speed_tier < SpeedTier::kFalcon,
           enc_state);
     };
     RunOnPool(pool, 0, shared.frame_dim.num_dc_groups, ThreadPool::SkipInit(),

@@ -912,7 +912,7 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPath)) {
+TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathWP)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
@@ -920,6 +920,7 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPath)) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kFalcon;
   cparams.options.skip_encoder_fast_path = true;
   DecompressParams dparams;
 
@@ -928,6 +929,26 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPath)) {
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
                                      /*distmap=*/nullptr, &pool));
 }
+
+TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathGradient)) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.options.skip_encoder_fast_path = true;
+  cparams.options.predictor = {Predictor::Gradient};
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 3500000);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+}
+
 
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
   ThreadPoolInternal pool(8);

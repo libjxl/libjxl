@@ -848,7 +848,7 @@ void AcStrategyHeuristics::ProcessRect(const Rect& rect) {
   PROFILER_FUNC;
   const CompressParams& cparams = enc_state->cparams;
   // In Falcon mode, use DCT8 everywhere and uniform quantization.
-  if (cparams.speed_tier == SpeedTier::kFalcon) {
+  if (cparams.speed_tier >= SpeedTier::kFalcon) {
     enc_state->shared.ac_strategy.FillDCT8(rect);
     return;
   }

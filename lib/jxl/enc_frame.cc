@@ -965,8 +965,8 @@ class LossyFrameEncoder {
         enc_state_->progressive_splitter.GetNumPasses());
     for (size_t i = 0; i < enc_state_->progressive_splitter.GetNumPasses();
          i++) {
-      // No coefficient reordering in Falcon mode.
-      if (enc_state_->cparams.speed_tier != SpeedTier::kFalcon) {
+      // No coefficient reordering in Falcon or faster.
+      if (enc_state_->cparams.speed_tier < SpeedTier::kFalcon) {
         enc_state_->used_orders[i] = ComputeUsedOrders(
             enc_state_->cparams.speed_tier, enc_state_->shared.ac_strategy,
             Rect(enc_state_->shared.raw_quant_field));

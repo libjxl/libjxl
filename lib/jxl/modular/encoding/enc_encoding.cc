@@ -202,6 +202,9 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   if (is_wp_only) {
     is_wp_only = TreeToLookupTable(tree, context_lookup, offsets);
   }
+  if (is_gradient_only) {
+    is_gradient_only = TreeToLookupTable(tree, context_lookup, offsets);
+  }
 
   tokens->reserve(tokens->size() + channel.w * channel.h);
   if (is_wp_only && !skip_encoder_fast_path) {
@@ -232,6 +235,29 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
         int32_t residual = r[x] - guess - offsets[pos];
         tokens->emplace_back(ctx_id, PackSigned(residual));
         wp_state.UpdateErrors(r[x], x, y, channel.w);
+      }
+    }
+  } else if (is_gradient_only && !skip_encoder_fast_path) {
+    for (size_t c = 0; c < 3; c++) {
+      FillImage(static_cast<float>(PredictorColor(Predictor::Gradient)[c]),
+                &predictor_img.Plane(c));
+    }
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT r = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        int32_t guess = ClampedGradient(top, left, topleft);
+        uint32_t pos =
+            kPropRangeFast +
+            std::min<pixel_type_w>(
+                std::max<pixel_type_w>(-kPropRangeFast, top + left - topleft),
+                kPropRangeFast - 1);
+        uint32_t ctx_id = context_lookup[pos];
+        int32_t residual = r[x] - guess - offsets[pos];
+        tokens->emplace_back(ctx_id, PackSigned(residual));
       }
     }
   } else if (tree.size() == 1 && tree[0].predictor == Predictor::Zero &&

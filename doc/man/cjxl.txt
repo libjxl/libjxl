@@ -68,6 +68,8 @@ Options
 +
 Recognized effort settings, from fastest to slowest, are:
 +
+- 1 or ``lightning''
+- 2 or ``thunder''
 - 3 or ``falcon''
 - 4 or ``cheetah''
 - 5 or ``hare''
