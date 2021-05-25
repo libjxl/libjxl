@@ -48,6 +48,9 @@ jobs:
         '[[ ${{ matrix.mode }} != "release" ]] || ./ci.sh test'
 
   format:
+    # TODO(deymo): Currently disabled because the git structure where the PR
+    # runs is different.
+    if: false
     runs-on: [ubuntu-latest]
     steps:
     - name: Install build deps
