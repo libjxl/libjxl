@@ -820,8 +820,7 @@ Status FinalizeImageRect(
         num_ys = upsampled_frame_rect.ysize() - upsampled_available_y;
       }
 
-      Rect upsample_input_rect =
-          rect_for_upsampling.Lines(input_y, num_input_rows);
+      Rect upsample_input_rect = rect_for_upsampling.Lines(input_y, 1);
       color_upsampler->UpsampleRect(
           *storage_for_if, upsample_input_rect, output_pixel_data_storage,
           upsampled_frame_rect_for_storage.Lines(upsampled_available_y, num_ys),

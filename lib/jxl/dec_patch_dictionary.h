@@ -169,6 +169,11 @@ class PatchDictionary {
   Status Decode(BitReader* br, size_t xsize, size_t ysize,
                 bool* uses_extra_channels);
 
+  void Clear() {
+    positions_.clear();
+    ComputePatchCache();
+  }
+
   // Only adds patches that belong to the `image_rect` area of the decoded
   // image, writing them to the `opsin_rect` area of `opsin`.
   Status AddTo(Image3F* opsin, const Rect& opsin_rect,

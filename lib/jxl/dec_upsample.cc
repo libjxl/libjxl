@@ -103,7 +103,7 @@ void Upsampler::UpsampleRect(const ImageF& src, const Rect& src_rect,
                              ssize_t image_y_offset, size_t image_ysize) const {
   if (upsampling_ == 1) return;
   JXL_ASSERT(DivCeil(dst_rect.xsize(), upsampling_) <= src_rect.xsize());
-  JXL_ASSERT(DivCeil(dst_rect.ysize(), upsampling_) <= src_rect.ysize());
+  // TODO(eustas): add proper (src|dst) ysize check that accounts for mirroring.
   if (upsampling_ == 2) {
     Upsample<2>(src, src_rect, dst, dst_rect, kernel_, image_y_offset,
                 image_ysize);

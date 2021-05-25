@@ -1016,6 +1016,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                    ThreadPool* pool, BitWriter* writer, AuxOut* aux_out) {
   ib.VerifyMetadata();
 
+  passes_enc_state->special_frames.clear();
+
   CompressParams cparams = cparams_orig;
   if (cparams.progressive_dc < 0) {
     if (cparams.progressive_dc != -1) {
