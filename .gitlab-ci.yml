@@ -37,7 +37,9 @@ variables:
   # By default all the workflows run on master and on request. This can be
   # override by users of this template.
   only:
+    - main
     - master
+    - /^v[0-9]+\.[0-9]+\.x$/
     - tags
     - schedules
   # Retry on system failures. This can be typically caused by the runner or VM
@@ -126,11 +128,6 @@ build:x86_64:clang:tarball:
 build:x86_64:clang:release:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     # Check that the build files are up to date.
     - tools/build_cleaner.py
@@ -144,11 +141,6 @@ build:x86_64:clang:release:
 test:x86_64:clang:release:
   <<: *linux_host_template
   stage: test
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   dependencies:
     - build:x86_64:clang:release
   script:
@@ -160,11 +152,6 @@ test:x86_64:clang:release:
 build:x86_64:gcc7:debug:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - CC=gcc-7 CXX=g++-7 SKIP_TEST=1 PACK_TEST=1 ./ci.sh debug
     - tools/build_stats.py --save build/stats.json
@@ -175,11 +162,6 @@ test:x86_64:gcc7:debug:
   stage: test
   dependencies:
     - build:x86_64:gcc7:debug
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - TEST_STACK_LIMIT=1024 ./ci.sh test
 
@@ -187,11 +169,6 @@ test:x86_64:gcc7:debug:
 build:x86_64:clang:coverage:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - SKIP_TEST=1 PACK_TEST=1 ./ci.sh coverage
     - tar -zcf build/htmldoc.tar.gz -C build/html .
@@ -199,10 +176,6 @@ build:x86_64:clang:coverage:
 test:x86_64:clang:coverage:
   <<: *linux_host_template
   stage: test
-  only:
-    - master
-    - schedules
-    - tags
   dependencies:
     - build:x86_64:clang:coverage
   script:
@@ -230,7 +203,7 @@ pages:
   <<: *linux_host_template
   stage: deploy
   only:
-    - master
+    - main
   dependencies:
     - test:x86_64:clang:coverage
   script:
@@ -251,11 +224,6 @@ pages:
 build:x86_64:clang:scalar:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_COMPILE_ONLY_SCALAR" ./ci.sh release
 
@@ -271,11 +239,6 @@ test:x86_64:clang:scalar:
 build:i686:clang:release:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - BUILD_TARGET=i686-linux-gnu SKIP_TEST=1 PACK_TEST=1 STACK_SIZE=1
         ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
@@ -295,11 +258,6 @@ test:i686:clang:release:
 build:win64:clang:release:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - BUILD_TARGET=x86_64-w64-mingw32
         SKIP_TEST=1 PACK_TEST=1
@@ -318,12 +276,6 @@ test:win64:clang:release:
 build:aarch64:clang:release:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
-    - web
   script:
     - BUILD_TARGET=aarch64-linux-gnu
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS" SKIP_TEST=1 PACK_TEST=1
@@ -345,12 +297,6 @@ test:aarch64:clang:release:
 build:aarch64:clang:release-nhp:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
-    - web
   script:
     - BUILD_TARGET=aarch64-linux-gnu
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS -DJXL_HIGH_PRECISION=0"
@@ -373,12 +319,6 @@ test:aarch64:clang:release-nhp:
 build:armhf:clang:release:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
-    - web
   script:
     - BUILD_TARGET=arm-linux-gnueabihf
         CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS -march=armv7a -Wno-unused-command-line-argument" SKIP_TEST=1 PACK_TEST=1
@@ -395,26 +335,6 @@ test:armhf:clang:release:
     - build:armhf:clang:release
   script:
     - ./ci.sh test
-
-# arm debug
-build:armhf:clang:debug:
-  <<: *linux_host_build_template
-  stage: build
-  only:
-    - merge_requests
-  script:
-    # Debug build without NEON enabled.
-    - BUILD_TARGET=arm-linux-gnueabihf SKIP_TEST=1 ./ci.sh debug
-
-# "debug" build enabled for merge_requests. This is here to check that
-# debug-only statements still compile.
-build:x86_64:clang:debug:
-  <<: *linux_host_build_template
-  stage: build
-  only:
-    - merge_requests
-  script:
-    - SKIP_TEST=1 ./ci.sh debug
 
 # "asan", "tsan" and "msan" builds only run on master, tags and when requested
 # from the web. Only supported in x86_64 for now.
@@ -525,11 +445,6 @@ build:tidy:
 
 test:fast_benchmark:release:
   <<: *benchmark_x86_64_template
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   dependencies:
     - build:x86_64:clang:release
   script:
@@ -577,9 +492,6 @@ test:aarch64:fast_benchmark:release:
 # Benchmark test that runs separately on the big and little CPUs of the runner.
 test:aarch64:arm_benchmark:release:
   <<: *benchmark_aarch64_template
-  only:
-    - web
-    - master
   dependencies:
     - build:aarch64:clang:release
   script:
@@ -606,8 +518,6 @@ test:benchmark:release:
 build:tidy:all:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
   script:
     - CMAKE_BUILD_TYPE="Release" ./ci.sh tidy all
   allow_failure: true
@@ -641,11 +551,6 @@ test:ems:all:
 build:ems_simd:all:
   <<: *linux_host_build_template
   stage: build
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   script:
     - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
@@ -654,11 +559,6 @@ build:ems_simd:all:
 test:ems_simd:all:
   <<: *linux_host_template
   stage: test
-  only:
-    - master
-    - merge_requests
-    - schedules
-    - tags
   dependencies:
     - build:ems_simd:all
   script:
@@ -678,9 +578,6 @@ test:ems_simd:all:
     DEBIAN_FRONTEND: noninteractive
     TARGET_DIR: jpegxl-$CI_COMMIT_REF_NAME-$CI_BUILD_NAME
   stage: release
-  only:
-    - master
-    - tags
   script:
     - apt update
     - apt install -y devscripts build-essential
@@ -730,9 +627,6 @@ ubuntu20.04:
 x86_64:static:
   <<: *linux_host_build_template
   stage: release
-  only:
-    - master
-    - tags
   script:
     # OpenEXR doesn't install the static libraries in the docker image.
     - SKIP_TEST=1 ./ci.sh release
@@ -746,9 +640,6 @@ x86_64:static:
 win64:static:
   <<: *linux_host_build_template
   stage: release
-  only:
-    - master
-    - tags
   script:
     # OpenEXR doesn't install the static libraries in the docker image.
     - BUILD_TARGET=x86_64-w64-mingw32 SKIP_TEST=1 ./ci.sh release
