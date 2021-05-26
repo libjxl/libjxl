@@ -536,19 +536,6 @@ TEST(RoundtripTest, TestJPEGReconstruction) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
 
-  JxlBasicInfo basic_info;
-  basic_info.exponent_bits_per_sample = 0;
-  basic_info.bits_per_sample = 8;
-  basic_info.alpha_bits = 0;
-  basic_info.alpha_exponent_bits = 0;
-  basic_info.xsize = orig_io.xsize();
-  basic_info.ysize = orig_io.ysize();
-  basic_info.uses_original_profile = true;
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
-  JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
-  EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS,
