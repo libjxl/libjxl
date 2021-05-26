@@ -4,8 +4,6 @@ name: PR
 on:
   pull_request:
     types: [opened, reopened, labeled, unlabeled, synchronize]
-  pull_request_review:
-    types: [submitted, dismissed]
 
 jobs:
   build:
@@ -47,10 +45,17 @@ jobs:
       run:
         '[[ ${{ matrix.mode }} != "release" ]] || ./ci.sh test'
 
+  # Checks that the AUTHORS files is updated with new contributors.
+  authors:
+    runs-on: [ubuntu-latest]
+    steps:
+    - name: Checkout the source
+      uses: actions/checkout@v2
+    - name: Check AUTHORS file
+      run:
+        ./ci.sh authors
+
   format:
-    # TODO(deymo): Currently disabled because the git structure where the PR
-    # runs is different.
-    if: false
     runs-on: [ubuntu-latest]
     steps:
     - name: Install build deps
