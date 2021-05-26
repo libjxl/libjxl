@@ -305,7 +305,8 @@ struct JxlDecoderStruct {
   bool last_codestream_seen;
   bool got_basic_info;
   size_t header_except_icc_bits = 0;  // To skip everything before ICC.
-  bool got_all_headers;               // Codestream metadata headers
+  bool got_all_headers;               // Codestream metadata headers.
+  bool post_headers;                  // Already decoding pixels.
   jxl::ICCReader icc_reader;
 
   // This means either we actually got the preview image, or determined we
@@ -368,6 +369,8 @@ struct JxlDecoderStruct {
 
   jxl::CodecMetadata metadata;
   std::unique_ptr<jxl::ImageBundle> ib;
+  // ColorEncoding to use for xyb encoded image with ICC profile.
+  jxl::ColorEncoding default_enc;
 
   std::unique_ptr<jxl::PassesDecoderState> passes_state;
   std::unique_ptr<jxl::FrameDecoder> frame_dec;
@@ -447,6 +450,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->got_basic_info = false;
   dec->header_except_icc_bits = 0;
   dec->got_all_headers = false;
+  dec->post_headers = false;
   dec->icc_reader.Reset();
   dec->got_preview_image = false;
   dec->last_frame_reached = false;
@@ -709,8 +713,12 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
   if (!dec->passes_state) {
     dec->passes_state.reset(new jxl::PassesDecoderState());
   }
-  JXL_API_RETURN_IF_ERROR(
-      dec->passes_state->output_encoding_info.Set(dec->metadata.m));
+
+  dec->default_enc =
+      ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray());
+
+  JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
+      dec->metadata.m, dec->default_enc));
 
   return JXL_DEC_SUCCESS;
 }
@@ -894,6 +902,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
     return JXL_DEC_COLOR_ENCODING;
   }
 
+  dec->post_headers = true;
+
   // Decode to pixels, only if required for the events the user wants.
   if (!dec->got_preview_image) {
     // Parse the preview, or at least its TOC to be able to skip the frame, if
@@ -933,8 +943,9 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       dparams.preview = want_preview ? jxl::Override::kOn : jxl::Override::kOff;
       jxl::ImageBundle ib(&dec->metadata.m);
       PassesDecoderState preview_dec_state;
-      JXL_API_RETURN_IF_ERROR(
-          preview_dec_state.output_encoding_info.Set(dec->metadata.m));
+      JXL_API_RETURN_IF_ERROR(preview_dec_state.output_encoding_info.Set(
+          dec->metadata.m,
+          ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray())));
       if (!DecodeFrame(dparams, &preview_dec_state, dec->thread_pool.get(),
                        reader.get(), &ib, dec->metadata,
                        /*constraints=*/nullptr,
@@ -1807,7 +1818,6 @@ JxlDecoderStatus GetColorEncodingForTarget(
     const JxlDecoder* dec, const JxlPixelFormat* format,
     JxlColorProfileTarget target, const jxl::ColorEncoding** encoding) {
   if (!dec->got_all_headers) return JXL_DEC_NEED_MORE_INPUT;
-
   *encoding = nullptr;
   if (target == JXL_COLOR_PROFILE_TARGET_DATA && dec->metadata.m.xyb_encoded) {
     *encoding = &dec->passes_state->output_encoding_info.color_encoding;
@@ -2151,6 +2161,30 @@ JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec, char* name,
   memcpy(name, dec->frame_header->name.c_str(),
          dec->frame_header->name.size() + 1);
 
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
+    JxlDecoder* dec, const JxlColorEncoding* color_encoding) {
+  if (!dec->got_all_headers) {
+    return JXL_API_ERROR("color info not yet available");
+  }
+  if (dec->post_headers) {
+    return JXL_API_ERROR("too late to set the color encoding");
+  }
+  if (dec->metadata.m.color_encoding.IsGray() !=
+      (color_encoding->color_space == JXL_COLOR_SPACE_GRAY)) {
+    return JXL_API_ERROR("grayscale mismatch");
+  }
+  if (color_encoding->color_space == JXL_COLOR_SPACE_UNKNOWN ||
+      color_encoding->color_space == JXL_COLOR_SPACE_XYB) {
+    return JXL_API_ERROR("only RGB or grayscale output supported");
+  }
+
+  JXL_API_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
+      *color_encoding, &dec->default_enc));
+  JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
+      dec->metadata.m, dec->default_enc));
   return JXL_DEC_SUCCESS;
 }
 

@@ -964,7 +964,10 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   PROFILER_ZONE("enc roundtrip");
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
-  JXL_CHECK(dec_state->output_encoding_info.Set(enc_state->shared.metadata->m));
+  JXL_CHECK(dec_state->output_encoding_info.Set(
+      enc_state->shared.metadata->m,
+      ColorEncoding::LinearSRGB(
+          enc_state->shared.metadata->m.color_encoding.IsGray())));
   dec_state->shared = &enc_state->shared;
   JXL_ASSERT(opsin.ysize() % kBlockDim == 0);
 

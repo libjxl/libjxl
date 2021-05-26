@@ -32,42 +32,6 @@
 
 namespace jxl {
 
-Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
-                                              ColorEncoding* internal) {
-  internal->SetColorSpace(static_cast<ColorSpace>(external.color_space));
-
-  CIExy wp;
-  wp.x = external.white_point_xy[0];
-  wp.y = external.white_point_xy[1];
-  JXL_RETURN_IF_ERROR(internal->SetWhitePoint(wp));
-
-  if (external.color_space == JXL_COLOR_SPACE_RGB ||
-      external.color_space == JXL_COLOR_SPACE_UNKNOWN) {
-    internal->primaries = static_cast<Primaries>(external.primaries);
-    PrimariesCIExy primaries;
-    primaries.r.x = external.primaries_red_xy[0];
-    primaries.r.y = external.primaries_red_xy[1];
-    primaries.g.x = external.primaries_green_xy[0];
-    primaries.g.y = external.primaries_green_xy[1];
-    primaries.b.x = external.primaries_blue_xy[0];
-    primaries.b.y = external.primaries_blue_xy[1];
-    JXL_RETURN_IF_ERROR(internal->SetPrimaries(primaries));
-  }
-  CustomTransferFunction tf;
-  if (external.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
-    JXL_RETURN_IF_ERROR(tf.SetGamma(external.gamma));
-  } else {
-    tf.SetTransferFunction(
-        static_cast<TransferFunction>(external.transfer_function));
-  }
-  internal->tf = tf;
-
-  internal->rendering_intent =
-      static_cast<RenderingIntent>(external.rendering_intent);
-
-  return true;
-}
-
 }  // namespace jxl
 
 uint32_t JxlEncoderVersion(void) {

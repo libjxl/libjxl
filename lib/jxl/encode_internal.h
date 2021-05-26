@@ -31,9 +31,6 @@ typedef struct JxlEncoderQueuedFrame {
   jxl::ImageBundle frame;
 } JxlEncoderQueuedFrame;
 
-Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
-                                              jxl::ColorEncoding* internal);
-
 typedef std::array<uint8_t, 4> BoxType;
 
 // Utility function that makes a BoxType from a null terminated string literal.

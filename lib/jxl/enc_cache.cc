@@ -144,7 +144,9 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     ImageBundle decoded(&shared.metadata->m);
     std::unique_ptr<PassesDecoderState> dec_state =
         jxl::make_unique<PassesDecoderState>();
-    JXL_CHECK(dec_state->output_encoding_info.Set(shared.metadata->m));
+    JXL_CHECK(dec_state->output_encoding_info.Set(
+        shared.metadata->m,
+        ColorEncoding::LinearSRGB(shared.metadata->m.color_encoding.IsGray())));
     JXL_CHECK(DecodeFrame({}, dec_state.get(), pool, &br, &decoded,
                           *shared.metadata, /*constraints=*/nullptr));
     // TODO(lode): shared.frame_header.dc_level should be equal to

@@ -812,7 +812,10 @@ void FindBestPatchDictionary(const Image3F& opsin,
     BitReader br(encoded);
     ImageBundle decoded(&state->shared.metadata->m);
     PassesDecoderState dec_state;
-    JXL_CHECK(dec_state.output_encoding_info.Set(state->shared.metadata->m));
+    JXL_CHECK(dec_state.output_encoding_info.Set(
+        state->shared.metadata->m,
+        ColorEncoding::LinearSRGB(
+            state->shared.metadata->m.color_encoding.IsGray())));
     JXL_CHECK(DecodeFrame({}, &dec_state, pool, &br, &decoded,
                           *state->shared.metadata, /*constraints=*/nullptr));
     JXL_CHECK(br.Close());
