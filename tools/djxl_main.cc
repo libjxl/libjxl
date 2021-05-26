@@ -45,10 +45,14 @@ int DecompressMain(int argc, const char* argv[]) {
   }
 
   if (args.version) {
-    fprintf(stdout, "djxl [%s]\n",
+    fprintf(stdout, "djxl %s\n",
             CodecConfigString(JxlDecoderVersion()).c_str());
     fprintf(stdout, "Copyright (c) the JPEG XL Project\n");
     return 0;
+  }
+  if (!args.quiet) {
+    fprintf(stderr, "JPEG XL decoder %s\n",
+            CodecConfigString(JxlDecoderVersion()).c_str());
   }
 
   if (cmdline.HelpFlagPassed()) {
@@ -65,8 +69,7 @@ int DecompressMain(int argc, const char* argv[]) {
   jxl::PaddedBytes compressed;
   if (!jxl::ReadFile(args.file_in, &compressed)) return 1;
   if (!args.quiet) {
-    fprintf(stderr, "Read %zu compressed bytes [%s]\n", compressed.size(),
-            CodecConfigString(JxlDecoderVersion()).c_str());
+    fprintf(stderr, "Read %zu compressed bytes.\n", compressed.size());
   }
 
   // If the file uses the box format container, unpack the boxes into

@@ -28,15 +28,14 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   }
 
   if (args.version) {
-    fprintf(stdout, "cjxl [%s]\n",
+    fprintf(stdout, "cjxl %s\n",
             CodecConfigString(JxlEncoderVersion()).c_str());
     fprintf(stdout, "Copyright (c) the JPEG XL Project\n");
     return 0;
   }
 
   if (!args.quiet) {
-    fprintf(stderr, "  J P E G   \\/ |\n");
-    fprintf(stderr, "            /\\ |_   e n c o d e r    [%s]\n\n",
+    fprintf(stderr, "JPEG XL encoder %s\n",
             CodecConfigString(JxlEncoderVersion()).c_str());
   }
 

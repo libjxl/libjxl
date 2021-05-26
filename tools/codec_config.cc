@@ -38,7 +38,7 @@ std::string CodecConfigString(uint32_t lib_version) {
 #endif
 
   bool saw_target = false;
-  config += "| SIMD supported: ";
+  config += "[";
   for (const uint32_t target : hwy::SupportedAndGeneratedTargets()) {
     config += hwy::TargetName(target);
     config += ',';
@@ -47,6 +47,7 @@ std::string CodecConfigString(uint32_t lib_version) {
   JXL_ASSERT(saw_target);
   (void)saw_target;
   config.resize(config.size() - 1);  // remove trailing comma
+  config += "]";
 
   return config;
 }
