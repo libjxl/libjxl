@@ -550,6 +550,47 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
     const JxlDecoder* dec, const JxlPixelFormat* format,
     JxlColorProfileTarget target, uint8_t* icc_profile, size_t size);
 
+/** Sets the color profile to use for JXL_COLOR_PROFILE_TARGET_DATA for the
+ * special case when the decoder has a choice. This only has effect for a JXL
+ * image where uses_original_profile is false, and the original color profile is
+ * encoded as an ICC color profile rather than a JxlColorEncoding with known
+ * enum values. In most other cases (uses uses_original_profile is true, or the
+ * color profile is already given as a JxlColorEncoding), this setting is
+ * ignored and the decoder uses a profile related to the image.
+ * No matter what, the JXL_COLOR_PROFILE_TARGET_DATA must still be queried to
+ * know the actual data format of the decoded pixels after decoding.
+ *
+ * The intended use case of this function is for cases where you are using
+ * a color management system to parse the original ICC color profile
+ * (JXL_COLOR_PROFILE_TARGET_ORIGINAL), from this you know that the ICC
+ * profile represents one of the color profiles supported by JxlColorEncoding
+ * (such as sRGB, PQ or HLG): in that case it is beneficial (but not necessary)
+ * to use JxlDecoderSetPreferredColorProfile to match the parsed profile. The
+ * JXL decoder has no color management system built in, but can convert XYB
+ * color to any of the ones supported by JxlColorEncoding.
+ *
+ * Can only be set after the JXL_DEC_COLOR_ENCODING event occured and before
+ * any other event occured, and can affect the result of
+ * JXL_COLOR_PROFILE_TARGET_DATA (but not of JXL_COLOR_PROFILE_TARGET_ORIGINAL),
+ * so should be used after getting JXL_COLOR_PROFILE_TARGET_ORIGINAL but before
+ * getting JXL_COLOR_PROFILE_TARGET_DATA. The color_encoding must be grayscale
+ * if num_color_channels from the basic info is 1, RGB if num_color_channels
+ * from the basic info is 3.
+ *
+ * If JxlDecoderSetPreferredColorProfile is not used, then for images for which
+ * uses_original_profile is false and with ICC color profile, the decoder will
+ * choose linear sRGB for color images, linear grayscale for grayscale images.
+ * This function only sets a preference, since for other images the decoder has
+ * no choice what color profile to use, it is determined by the image.
+ *
+ * @param dec decoder object
+ * @param color_encoding the default color encoding to set
+ * @return JXL_DEC_SUCCESS if the preference was set successfully, JXL_DEC_ERROR
+ *    otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
+    JxlDecoder* dec, const JxlColorEncoding* color_encoding);
+
 /**
  * Returns the minimum size in bytes of the preview image output pixel buffer
  * for the given format. This is the buffer for JxlDecoderSetPreviewOutBuffer.

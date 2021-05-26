@@ -331,14 +331,15 @@ void OpsinParams::Init(float intensity_target) {
   }
 }
 
-Status OutputEncodingInfo::Set(const ImageMetadata& metadata) {
+Status OutputEncodingInfo::Set(const ImageMetadata& metadata,
+                               const ColorEncoding& default_enc) {
   const auto& im = metadata.transform_data.opsin_inverse_matrix;
   float inverse_matrix[9];
   memcpy(inverse_matrix, im.inverse_matrix, sizeof(inverse_matrix));
   float intensity_target = metadata.IntensityTarget();
   if (metadata.xyb_encoded) {
     const auto& orig_color_encoding = metadata.color_encoding;
-    color_encoding = ColorEncoding::LinearSRGB(orig_color_encoding.IsGray());
+    color_encoding = default_enc;
     // Figure out if we can output to this color encoding.
     do {
       if (!orig_color_encoding.HaveFields()) break;
