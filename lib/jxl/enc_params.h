@@ -36,12 +36,25 @@ enum class SpeedTier {
   // Turns on simple heuristics for AC strategy, quant field, and clustering;
   // also enables coefficient reordering.
   kCheetah = 6,
-  // Turns off most encoder features, for the fastest possible encoding time.
+  // Turns off most encoder features. Does context clustering.
+  // Modular: uses fixed tree with Weighted predictor.
   kFalcon = 7,
+  // Currently fastest possible setting for VarDCT.
+  // Modular: uses fixed tree with Gradient predictor.
+  kThunder = 8,
+  // VarDCT: same as kThunder.
+  // Modular: same as kThunder but with kFastest context clustering.
+  kLightning = 9
 };
 
 inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
-  if (s == "falcon") {
+  if (s == "lightning") {
+    *out = SpeedTier::kLightning;
+    return true;
+  } else if (s == "thunder") {
+    *out = SpeedTier::kThunder;
+    return true;
+  } else if (s == "falcon") {
     *out = SpeedTier::kFalcon;
     return true;
   } else if (s == "cheetah") {
@@ -64,7 +77,7 @@ inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
     return true;
   }
   size_t st = 10 - static_cast<size_t>(strtoull(s.c_str(), nullptr, 0));
-  if (st <= static_cast<size_t>(SpeedTier::kFalcon) &&
+  if (st <= static_cast<size_t>(SpeedTier::kLightning) &&
       st >= static_cast<size_t>(SpeedTier::kTortoise)) {
     *out = SpeedTier(st);
     return true;
@@ -74,6 +87,10 @@ inline bool ParseSpeedTier(const std::string& s, SpeedTier* out) {
 
 inline const char* SpeedTierName(SpeedTier speed_tier) {
   switch (speed_tier) {
+    case SpeedTier::kLightning:
+      return "lightning";
+    case SpeedTier::kThunder:
+      return "thunder";
     case SpeedTier::kFalcon:
       return "falcon";
     case SpeedTier::kCheetah:

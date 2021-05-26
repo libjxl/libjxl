@@ -45,7 +45,7 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
     bcm.num_dc_ctxs = 1;
     return;
   }
-  if (enc_state.cparams.speed_tier == SpeedTier::kFalcon) {
+  if (enc_state.cparams.speed_tier >= SpeedTier::kFalcon) {
     return;
   }
   const ImageI& rqf = enc_state.shared.raw_quant_field;
@@ -320,7 +320,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   if (cparams.speed_tier > SpeedTier::kHare || cparams.uniform_quant > 0) {
     enc_state->initial_quant_field =
         ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
-    if (cparams.speed_tier == SpeedTier::kFalcon || cparams.uniform_quant > 0) {
+    if (cparams.speed_tier >= SpeedTier::kFalcon || cparams.uniform_quant > 0) {
       float q = cparams.uniform_quant > 0
                     ? cparams.uniform_quant
                     : kAcQuant / cparams.butteraugli_distance;
@@ -419,7 +419,7 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   FindBestQuantizer(original_pixels, *opsin, enc_state, pool, aux_out);
 
   // Choose a context model that depends on the amount of quantization for AC.
-  if (cparams.speed_tier != SpeedTier::kFalcon) {
+  if (cparams.speed_tier < SpeedTier::kFalcon) {
     FindBestBlockEntropyModel(*enc_state);
   }
   return true;

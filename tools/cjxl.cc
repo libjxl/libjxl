@@ -332,14 +332,14 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
 
   cmdline->AddOptionValue(
       'e', "effort", "EFFORT",
-      "Encoder effort setting. Range: 3 .. 9.\n"
+      "Encoder effort setting. Range: 1 .. 9.\n"
       "    Default: 7. Higher number is more effort (slower).",
       &params.speed_tier, &ParseSpeedTier);
 
   cmdline->AddOptionValue(
       's', "speed", "ANIMAL",
       "Deprecated synonym for --effort. Valid values are:\n"
-      "    falcon (3), cheetah, hare, wombat, squirrel, kitten, tortoise (9)\n"
+      "    lightning (1), thunder, falcon, cheetah, hare, wombat, squirrel, kitten, tortoise (9)\n"
       "    Default: squirrel. Values are in order from faster to slower.\n",
       &params.speed_tier, &ParseSpeedTier, 2);
 

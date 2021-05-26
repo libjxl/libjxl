@@ -404,9 +404,12 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     } else if (cparams.speed_tier < SpeedTier::kFalcon) {
       // try median and weighted predictor for anything else
       cparams.options.predictor = Predictor::Best;
-    } else {
-      // just weighted predictor in fastest mode
+    } else if (cparams.speed_tier == SpeedTier::kFalcon) {
+      // just weighted predictor in falcon mode
       cparams.options.predictor = Predictor::Weighted;
+    } else if (cparams.speed_tier > SpeedTier::kFalcon) {
+      // just gradient predictor in thunder mode
+      cparams.options.predictor = Predictor::Gradient;
     }
   }
   tree_splits.push_back(0);
@@ -876,7 +879,7 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
 
   if (heuristics->CustomFixedTreeLossless(frame_dim, &tree)) {
     // Using a fixed tree.
-  } else if (cparams.speed_tier != SpeedTier::kFalcon || quality != 100 ||
+  } else if (cparams.speed_tier < SpeedTier::kFalcon || quality != 100 ||
              !cparams.modular_mode) {
     // Avoid creating a tree with leaves that don't correspond to any pixels.
     std::vector<size_t> useful_splits;
@@ -981,8 +984,13 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
         total_pixels += ch.w * ch.h;
       }
     }
-    tree = MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
-                         cutoffs, Predictor::Weighted, total_pixels);
+    if (cparams.speed_tier <= SpeedTier::kFalcon) {
+      tree = MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
+                           cutoffs, Predictor::Weighted, total_pixels);
+    } else {
+      tree = MakeFixedTree(kGradientProp, cutoffs, Predictor::Gradient,
+                           total_pixels);
+    }
   }
   // TODO(veluca): do this somewhere else.
   if (cparams.near_lossless) {
@@ -1039,11 +1047,13 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   // Write tree
   HistogramParams params;
   if (cparams.speed_tier > SpeedTier::kKitten) {
-    params.clustering = HistogramParams::ClusteringType::kFast;
+    params.clustering = cparams.speed_tier > SpeedTier::kThunder
+                            ? HistogramParams::ClusteringType::kFastest
+                            : HistogramParams::ClusteringType::kFast;
     params.ans_histogram_strategy =
         HistogramParams::ANSHistogramStrategy::kApproximate;
     params.lz77_method = cparams.decoding_speed_tier >= 3
-                             ? (cparams.speed_tier == SpeedTier::kFalcon
+                             ? (cparams.speed_tier >= SpeedTier::kFalcon
                                     ? HistogramParams::LZ77Method::kRLE
                                     : HistogramParams::LZ77Method::kLZ77)
                              : HistogramParams::LZ77Method::kNone;
@@ -1307,9 +1317,9 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
 
     size_t nb_rcts_to_try = 0;
     switch (cparams.speed_tier) {
+      case SpeedTier::kLightning:
+      case SpeedTier::kThunder:
       case SpeedTier::kFalcon:
-        nb_rcts_to_try = 0;  // Just do global YCoCg
-        break;
       case SpeedTier::kCheetah:
         nb_rcts_to_try = 0;  // Just do global YCoCg
         break;
@@ -1361,29 +1371,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   } else {
     // No need to try anything, just use the default options.
   }
-  size_t nb_wp_modes = 0;
-  switch (cparams.speed_tier) {
-    case SpeedTier::kFalcon:
-      nb_wp_modes = 1;
-      break;
-    case SpeedTier::kCheetah:
-      nb_wp_modes = 1;
-      break;
-    case SpeedTier::kHare:
-      nb_wp_modes = 1;
-      break;
-    case SpeedTier::kWombat:
-      nb_wp_modes = 1;
-      break;
-    case SpeedTier::kSquirrel:
-      nb_wp_modes = 1;
-      break;
-    case SpeedTier::kKitten:
-      nb_wp_modes = 2;
-      break;
-    case SpeedTier::kTortoise:
-      nb_wp_modes = 5;
-      break;
+  size_t nb_wp_modes = 1;
+  if (cparams.speed_tier <= SpeedTier::kTortoise) {
+    nb_wp_modes = 5;
+  } else if (cparams.speed_tier <= SpeedTier::kKitten) {
+    nb_wp_modes = 2;
   }
   if (nb_wp_modes > 1 &&
       (stream_options[stream_id].predictor == Predictor::Weighted ||
@@ -1574,7 +1566,7 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
   if (jpeg_transcode) {
     stream_options[stream_id].tree_kind =
         ModularOptions::TreeKind::kJpegTranscodeACMeta;
-  } else if (cparams.speed_tier == SpeedTier::kFalcon) {
+  } else if (cparams.speed_tier >= SpeedTier::kFalcon) {
     stream_options[stream_id].tree_kind =
         ModularOptions::TreeKind::kFalconACMeta;
   } else if (cparams.speed_tier > SpeedTier::kKitten) {
