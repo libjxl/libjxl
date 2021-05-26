@@ -529,6 +529,10 @@ endforeach()
 # both.
 install(TARGETS jxl
   DESTINATION ${CMAKE_INSTALL_LIBDIR})
+else()
+add_library(jxl ALIAS jxl-static)
+add_library(jxl_dec ALIAS jxl_dec-static)
+endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC
 
 # Add a pkg-config file for libjxl.
 set(JPEGXL_LIBRARY_REQUIRES
@@ -537,8 +541,3 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
-
-else()
-add_library(jxl ALIAS jxl-static)
-add_library(jxl_dec ALIAS jxl_dec-static)
-endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC
