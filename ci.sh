@@ -226,8 +226,13 @@ merge_request_commits() {
   { set +x; } 2>/dev/null
   # GITHUB_SHA is the current reference being build in GitHub Actions.
   if [[ -n "${GITHUB_SHA:-}" ]]; then
-    git -C "${MYDIR}" fetch -q origin "${GITHUB_SHA}"
-    MR_HEAD_SHA="${GITHUB_SHA}"
+    # GitHub normally does a checkout of a merge commit on a shallow repository
+    # by default. We want to get a bit more of the history to be able to diff
+    # changes on the Pull Request if needed. This fetches 10 more commits which
+    # should be enough given that PR normally should have 1 commit.
+    git -C "${MYDIR}" fetch -q origin "${GITHUB_SHA}" --depth 10
+    MR_HEAD_SHA="$(git rev-parse "FETCH_HEAD^2" 2>/dev/null ||
+                   echo "${GITHUB_SHA}")"
   else
     # CI_BUILD_REF is the reference currently being build in the CI workflow.
     MR_HEAD_SHA=$(git -C "${MYDIR}" rev-parse -q "${CI_BUILD_REF:-HEAD}")
@@ -1258,6 +1263,16 @@ cmd_debian_build() {
   esac
 }
 
+# Check that the AUTHORS file contains the email of the committer.
+cmd_authors() {
+  merge_request_commits
+  # TODO(deymo): Handle multiple commits and check that they are all the same
+  # author.
+  local email=$(git log --format='%ae' "${MR_HEAD_SHA}^!")
+  local name=$(git log --format='%an' "${MR_HEAD_SHA}^!")
+  "${MYDIR}"/tools/check_author.py "${email}" "${name}"
+}
+
 main() {
   local cmd="${1:-}"
   if [[ -z "${cmd}" ]]; then
@@ -1287,6 +1302,7 @@ Where cmd is one of:
 
  lint      Run the linter checks on the current commit or merge request.
  tidy      Run clang-tidy on the current commit or merge request.
+ authors   Check that the last commit's author is listed in the AUTHORS file.
 
  msan_install Install the libc++ libraries required to build in msan mode. This
               needs to be done once.
