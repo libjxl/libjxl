@@ -335,21 +335,38 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
 
 JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
                                         const uint8_t* buffer, size_t size) {
-  if (!options->enc->basic_info_set || !options->enc->color_encoding_set) {
-    return JXL_ENC_ERROR;
-  }
-
   if (options->enc->input_closed) {
-    return JXL_ENC_ERROR;
-  }
-
-  if (options->enc->metadata.m.xyb_encoded) {
-    // Can't XYB encode a lossless JPEG.
     return JXL_ENC_ERROR;
   }
 
   jxl::CodecInOut io;
   if (!jxl::jpeg::DecodeImageJPG(jxl::Span<const uint8_t>(buffer, size), &io)) {
+    return JXL_ENC_ERROR;
+  }
+
+  if (!options->enc->color_encoding_set) {
+    if (!SetColorEncodingFromJpegData(
+            *io.Main().jpeg_data, &options->enc->metadata.m.color_encoding)) {
+      return JXL_ENC_ERROR;
+    }
+  }
+
+  if (!options->enc->basic_info_set) {
+    JxlBasicInfo basic_info;
+    basic_info.exponent_bits_per_sample = 0;
+    basic_info.bits_per_sample = 8;
+    basic_info.alpha_bits = 0;
+    basic_info.alpha_exponent_bits = 0;
+    basic_info.xsize = io.Main().jpeg_data->width;
+    basic_info.ysize = io.Main().jpeg_data->height;
+    basic_info.uses_original_profile = true;
+    if (JxlEncoderSetBasicInfo(options->enc, &basic_info) != JXL_ENC_SUCCESS) {
+      return JXL_ENC_ERROR;
+    }
+  }
+
+  if (options->enc->metadata.m.xyb_encoded) {
+    // Can't XYB encode a lossless JPEG.
     return JXL_ENC_ERROR;
   }
 

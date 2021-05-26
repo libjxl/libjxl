@@ -142,6 +142,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
 /**
  * Sets the buffer to read JPEG encoded bytes from for the next frame to encode.
  *
+ * If JxlEncoderSetBasicInfo has not yet been called, calling
+ * JxlEncoderAddJPEGFrame will implicitly call it with the parameters of the
+ * added JPEG frame.
+ *
+ * If JxlEncoderSetColorEncoding or JxlEncoderSetICCProfile has not yet been
+ * called, calling JxlEncoderAddJPEGFrame will implicitly call it with the
+ * parameters of the added JPEG frame.
+ *
  * If the encoder is set to store JPEG reconstruction metadata using @ref
  * JxlEncoderStoreJPEGMetadata and a single JPEG frame is added, it will be
  * possible to losslessly reconstruct the JPEG codestream.
@@ -157,7 +165,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
 
 /**
  * Sets the buffer to read pixels from for the next image to encode. Must call
- * JxlEncoderSetDimensions before JxlEncoderAddImageFrame.
+ * JxlEncoderSetBasicInfo before JxlEncoderAddImageFrame.
  *
  * Currently only some pixel formats are supported:
  * - JXL_TYPE_UINT8
