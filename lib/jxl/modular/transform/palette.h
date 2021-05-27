@@ -227,7 +227,9 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   // JXL_DASSERT(input.channel[c0].maxval == palette.w-1);
   if (nb < 1) return JXL_FAILURE("Corrupted transforms");
   for (int i = 1; i < nb; i++) {
-    input.channel.insert(input.channel.begin() + c0 + 1, Channel(w, h));
+    input.channel.insert(
+        input.channel.begin() + c0 + 1,
+        Channel(w, h, input.channel[c0].hshift, input.channel[c0].vshift));
   }
   const Channel &palette = input.channel[0];
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
