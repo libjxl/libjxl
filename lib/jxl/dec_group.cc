@@ -742,7 +742,8 @@ struct GetBlockFromEncoder : public GetBlock {
       for (size_t i = 0; i < quantized_ac->size(); i++) {
         for (size_t k = 0; k < size; k++) {
           // TODO(veluca): SIMD.
-          block[c].ptr32[k] += rows[i][c][offset + k];
+          block[c].ptr32[k] +=
+              rows[i][c][offset + k] * (1 << shift_for_pass[i]);
         }
       }
     }
@@ -751,8 +752,8 @@ struct GetBlockFromEncoder : public GetBlock {
   }
 
   GetBlockFromEncoder(const std::vector<std::unique_ptr<ACImage>>& ac,
-                      size_t group_idx)
-      : quantized_ac(&ac) {
+                      size_t group_idx, const uint32_t* shift_for_pass)
+      : quantized_ac(&ac), shift_for_pass(shift_for_pass) {
     // TODO(veluca): not supported with chroma subsampling.
     for (size_t i = 0; i < quantized_ac->size(); i++) {
       JXL_CHECK((*quantized_ac)[i]->Type() == ACType::k32);
@@ -765,6 +766,7 @@ struct GetBlockFromEncoder : public GetBlock {
   const std::vector<std::unique_ptr<ACImage>>* JXL_RESTRICT quantized_ac;
   size_t offset = 0;
   const int32_t* JXL_RESTRICT rows[kMaxNumPasses][3];
+  const uint32_t* shift_for_pass = nullptr;  // not owned
 };
 
 HWY_EXPORT(DecodeGroupImpl);
@@ -846,7 +848,8 @@ Status DecodeGroupForRoundtrip(const std::vector<std::unique_ptr<ACImage>>& ac,
                                AuxOut* aux_out) {
   PROFILER_FUNC;
 
-  GetBlockFromEncoder get_block(ac, group_idx);
+  GetBlockFromEncoder get_block(ac, group_idx,
+                                dec_state->shared->frame_header.passes.shift);
   group_dec_cache->InitOnce(
       /*num_passes=*/0,
       /*used_acs=*/(1u << AcStrategy::kNumValidStrategies) - 1);
