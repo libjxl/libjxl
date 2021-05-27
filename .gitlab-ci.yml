@@ -225,7 +225,7 @@ build:x86_64:clang:scalar:
   <<: *linux_host_build_template
   stage: build
   script:
-    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_COMPILE_ONLY_SCALAR" ./ci.sh release
+    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=~HWY_SCALAR" ./ci.sh release
 
 test:x86_64:clang:scalar:
   <<: *linux_host_template
