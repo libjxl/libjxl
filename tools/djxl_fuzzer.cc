@@ -40,6 +40,7 @@ struct FuzzSpec {
   bool jpeg_to_pixels;  // decode to pixels even if it is JPEG-reconstructible
   // Whether to use the callback mechanism for the output image or not.
   bool use_callback;
+  bool keep_orientation;
   uint32_t streaming_seed;
 };
 
@@ -90,7 +91,10 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                                                      runner.get())) {
     return false;
   }
-
+  if (JXL_DEC_SUCCESS !=
+      JxlDecoderSetKeepOrientation(dec.get(), spec.keep_orientation)) {
+    abort();
+  }
   JxlBasicInfo info;
   uint32_t channels = (spec.get_grayscale ? 1 : 3) + (spec.get_alpha ? 1 : 0);
   JxlPixelFormat format = {channels,
@@ -455,6 +459,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.use_streaming = !!(flags & 8);
   spec.jpeg_to_pixels = !!(flags & 16);
   spec.use_callback = !!(flags & 32);
+  spec.keep_orientation = !!(flags & 64);
   // Allows some different possible variations in the chunk sizes of the
   // streaming case
   spec.streaming_seed = flags ^ size;
