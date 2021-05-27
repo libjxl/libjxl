@@ -80,7 +80,7 @@ struct ImageSpec {
       << ", butteraugli=" << spec.params.butteraugli_distance
       << ", modular_mode=" << spec.params.modular_mode
       << ", lossy_palette=" << spec.params.lossy_palette
-      << ", noise=" << spec.params.noise
+      << ", noise=" << spec.params.noise << ", preview=" << spec.params.preview
       << ", fuzzer_friendly=" << spec.fuzzer_friendly
       << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg
       << ", orientation=" << spec.orientation << ">";
@@ -122,7 +122,10 @@ struct ImageSpec {
     bool modular_mode = false;
     bool lossy_palette = false;
     bool noise = false;
-    uint8_t padding_[1] = {};
+    bool preview = false;
+    // CjxlParams is packed; re[add padding when sum of sizes of members is not
+    // multiple of 4.
+    // uint8_t padding_[0] = {};
   } params;
 
   uint32_t is_reconstructible_jpeg = false;
@@ -247,6 +250,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   params.butteraugli_distance = spec.params.butteraugli_distance;
   params.options.predictor = {spec.params.modular_predictor};
   params.lossy_palette = spec.params.lossy_palette;
+  if (spec.params.preview) params.preview = jxl::Override::kOn;
   if (spec.params.noise) params.noise = jxl::Override::kOn;
   params.quality_pair = {100., 100.};
 
@@ -386,36 +390,38 @@ int main(int argc, const char** argv) {
             }
             for (uint32_t num_frames : {1, 3}) {
               spec.num_frames = num_frames;
-
+              for (uint32_t preview : {0, 1}) {
 #if JPEGXL_ENABLE_JPEG
-              for (bool reconstructible_jpeg : {false, true}) {
-                spec.is_reconstructible_jpeg = reconstructible_jpeg;
+                for (bool reconstructible_jpeg : {false, true}) {
+                  spec.is_reconstructible_jpeg = reconstructible_jpeg;
 #else   // JPEGXL_ENABLE_JPEG
-              spec.is_reconstructible_jpeg = false;
+                spec.is_reconstructible_jpeg = false;
 #endif  // JPEGXL_ENABLE_JPEG
-                for (const auto& params : params_list) {
-                  spec.params = params;
+                  for (const auto& params : params_list) {
+                    spec.params = params;
 
-                  if (alpha_bit_depth) {
-                    spec.alpha_is_premultiplied = mt() % 2;
+                    spec.params.preview = preview;
+                    if (alpha_bit_depth) {
+                      spec.alpha_is_premultiplied = mt() % 2;
+                    }
+                    if (spec.width * spec.height > 1000) {
+                      // Increase the encoder speed for larger images.
+                      spec.params.speed_tier = jxl::SpeedTier::kWombat;
+                    }
+                    spec.seed = mt() % 777777;
+                    // Pick the orientation at random. It is orthogonal to all
+                    // other features. Valid values are 1 to 8.
+                    spec.orientation = 1 + (mt() % 8);
+                    if (!spec.Validate()) {
+                      std::cerr << "Skipping " << spec << std::endl;
+                    } else {
+                      specs.push_back(spec);
+                    }
                   }
-                  if (spec.width * spec.height > 1000) {
-                    // Increase the encoder speed for larger images.
-                    spec.params.speed_tier = jxl::SpeedTier::kWombat;
-                  }
-                  spec.seed = mt() % 777777;
-                  // Pick the orientation at random. It is orthogonal to all
-                  // other features. Valid values are 1 to 8.
-                  spec.orientation = 1 + (mt() % 8);
-                  if (!spec.Validate()) {
-                    std::cerr << "Skipping " << spec << std::endl;
-                  } else {
-                    specs.push_back(spec);
-                  }
-                }
 #if JPEGXL_ENABLE_JPEG
-              }
+                }
 #endif  // JPEGXL_ENABLE_JPEG
+              }
             }
           }
         }
