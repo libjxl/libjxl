@@ -1,50 +1,16 @@
-# Workflow to run on pull-requests
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
+#
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
+
+# Workflow to run pull-requests specific checks.
 
 name: PR
 on:
   pull_request:
-    types: [opened, reopened, labeled, unlabeled, synchronize]
+    types: [opened, reopened, synchronize]
 
 jobs:
-  build:
-    runs-on: [ubuntu-latest]
-    strategy:
-      matrix:
-        mode: [release, debug]
-    steps:
-    - name: Install build deps
-      run: |
-        sudo apt update
-        sudo apt install -y \
-          clang-7 \
-          cmake \
-          doxygen \
-          libbrotli-dev \
-          libgif-dev \
-          libgtest-dev \
-          libjpeg-dev \
-          libopenexr-dev \
-          libpng-dev \
-          libwebp-dev \
-          ninja-build \
-          pkg-config \
-        #
-        echo "CC=clang-7" >> $GITHUB_ENV
-        echo "CXX=clang++-7" >> $GITHUB_ENV
-    - name: Checkout the source
-      uses: actions/checkout@v2
-      with:
-        submodules: true
-    - name: Build ${{ matrix.mode }}
-      run:
-        ./ci.sh ${{ matrix.mode }} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON
-      env:
-        SKIP_TEST: 1
-    # Run the tests only on release mode.
-    - name: Test ${{ matrix.mode }}
-      run:
-        '[[ ${{ matrix.mode }} != "release" ]] || ./ci.sh test'
-
   # Checks that the AUTHORS files is updated with new contributors.
   authors:
     runs-on: [ubuntu-latest]
