@@ -288,6 +288,114 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
   }
 }
 
+void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
+                       const Rect& frame_rect, const FrameDimensions& frame_dim,
+                       ImageF* plane_out, const LoopFilter& lf, ImageF* temp) {
+  // The pixel in (xoff, yoff) is the origin of the downsampling coordinate
+  // system.
+  size_t xoff = PassesDecoderState::kGroupDataXBorder;
+  size_t yoff = PassesDecoderState::kGroupDataYBorder;
+  // This may over-copy, but it should always be safe to do so.
+  size_t y0 = rect.y0() - lf.Padding();
+  size_t y1 = rect.y0() + rect.ysize() + lf.Padding();
+  size_t x0 = rect.x0() - lf.Padding();
+  size_t x1 = rect.x0() + rect.xsize() + lf.Padding();
+  if (hs == 0 && vs == 0) {
+    Rect r(x0, y0, x1 - x0, y1 - y0);
+    CopyImageTo(r, *plane_in, r, plane_out);
+    return;
+  }
+  // Prepare padding if we are on a border.
+  if (frame_rect.x0() == 0) {
+    for (size_t y = y0; y < y1; y++) {
+      plane_in->Row(y)[rect.x0() - 1] = plane_in->Row(y)[rect.x0()];
+    }
+  }
+  if (frame_rect.x0() + frame_rect.xsize() >= frame_dim.xsize_padded) {
+    for (size_t y = y0; y < y1; y++) {
+      plane_in->Row(y)[rect.x0() + rect.xsize()] =
+          plane_in->Row(y)[rect.x0() + rect.xsize() - 1];
+    }
+  }
+  if (frame_rect.y0() == 0) {
+    for (size_t x = x0 - 1; x < x1 + 1; x++) {
+      plane_in->Row(rect.y0() - 1)[x] = plane_in->Row(rect.y0())[x];
+    }
+  }
+  if (frame_rect.y0() + frame_rect.ysize() >= frame_dim.ysize_padded) {
+    for (size_t x = x0 - 1; x < x1 + 1; x++) {
+      plane_in->Row(rect.y0() + rect.ysize())[x] =
+          plane_in->Row(rect.y0() + rect.ysize() - 1)[x];
+    }
+  }
+  if (hs == 1) {
+    // Limited to 4 for Interleave*.
+    HWY_CAPPED(float, 4) d;
+    auto threefour = Set(d, 0.75f);
+    auto onefour = Set(d, 0.25f);
+    size_t orig_y0 = y0;
+    size_t orig_y1 = y1;
+    if (vs != 0) {
+      orig_y0 = (y0 >> 1) + (yoff >> 1) - 1;
+      orig_y1 = (y1 >> 1) + (yoff >> 1) + 1;
+    }
+    for (size_t y = orig_y0; y < orig_y1; y++) {
+      const float* in = plane_in->Row(y);
+      float* out = temp->Row(y);
+      for (size_t x = x0 / (2 * Lanes(d)) * 2 * Lanes(d);
+           x < RoundUpTo(x1, 2 * Lanes(d)); x += 2 * Lanes(d)) {
+        size_t ox = (x >> 1) + (xoff >> 1);
+        auto current = Load(d, in + ox) * threefour;
+        auto prev = LoadU(d, in + ox - 1);
+        auto next = LoadU(d, in + ox + 1);
+        auto left = MulAdd(onefour, prev, current);
+        auto right = MulAdd(onefour, next, current);
+#if HWY_TARGET == HWY_SCALAR
+        Store(left, d, out + x);
+        Store(right, d, out + x + 1);
+#else
+        Store(InterleaveLower(left, right), d, out + x);
+        Store(InterleaveUpper(left, right), d, out + x + Lanes(d));
+#endif
+      }
+    }
+  } else {
+    CopyImageTo(*plane_in, temp);
+  }
+  if (vs == 1) {
+    HWY_FULL(float) d;
+    auto threefour = Set(d, 0.75f);
+    auto onefour = Set(d, 0.25f);
+    for (size_t y = y0; y < y1; y++) {
+      size_t oy1 = (y >> 1) + (yoff >> 1);
+      if ((y & 1) == 1) oy1++;
+      size_t oy0 = oy1 - 1;
+      const float* in0 = temp->Row(oy0);
+      const float* in1 = temp->Row(oy1);
+      float* out = plane_out->Row(y);
+      if ((y & 1) == 1) {
+        for (size_t x = x0 / Lanes(d) * Lanes(d); x < RoundUpTo(x1, Lanes(d));
+             x += Lanes(d)) {
+          auto i0 = Load(d, in0 + x);
+          auto i1 = Load(d, in1 + x);
+          auto o = MulAdd(i0, threefour, i1 * onefour);
+          Store(o, d, out + x);
+        }
+      } else {
+        for (size_t x = x0 / Lanes(d) * Lanes(d); x < RoundUpTo(x1, Lanes(d));
+             x += Lanes(d)) {
+          auto i0 = Load(d, in0 + x);
+          auto i1 = Load(d, in1 + x);
+          auto o = MulAdd(i0, onefour, i1 * threefour);
+          Store(o, d, out + x);
+        }
+      }
+    }
+  } else {
+    CopyImageTo(*temp, plane_out);
+  }
+}
+
 // NOLINTNEXTLINE(google-readability-namespace-comments)
 }  // namespace HWY_NAMESPACE
 }  // namespace jxl
@@ -298,6 +406,7 @@ namespace jxl {
 
 HWY_EXPORT(UndoXYBInPlace);
 HWY_EXPORT(FloatToRGBA8);
+HWY_EXPORT(DoYCbCrUpsampling);
 
 void UndoXYB(const Image3F& src, Image3F* dst,
              const OutputEncodingInfo& output_info, ThreadPool* pool) {
@@ -536,6 +645,23 @@ Status FinalizeImageRect(
     storage_for_if = &dec_state->upsampling_input_storage[thread];
   }
 
+  // +--------------------------- STEP 1.5 ------------------------------+
+  // | Perform YCbCr upsampling if needed.                               |
+  // +-------------------------------------------------------------------+
+
+  Image3F* input = input_image;
+  if (!frame_header.chroma_subsampling.Is444()) {
+    for (size_t c = 0; c < 3; c++) {
+      size_t vs = frame_header.chroma_subsampling.VShift(c);
+      size_t hs = frame_header.chroma_subsampling.HShift(c);
+      HWY_DYNAMIC_DISPATCH(DoYCbCrUpsampling)
+      (hs, vs, &input_image->Plane(c), rect_for_if_input, frame_rect, frame_dim,
+       &dec_state->ycbcr_out_images[thread].Plane(c), lf,
+       &dec_state->ycbcr_temp_images[thread]);
+    }
+    input = &dec_state->ycbcr_out_images[thread];
+  }
+
   // Variables for upsampling and filtering.
   Rect upsampled_frame_rect(frame_rect.x0() * frame_header.upsampling,
                             frame_rect.y0() * frame_header.upsampling,
@@ -582,7 +708,7 @@ Status FinalizeImageRect(
     if (frame_header.upsampling == 1 && fp == nullptr) {
       upsampled_frame_rect_for_storage = rect_for_if_storage =
           rect_for_if_input;
-      output_pixel_data_storage = storage_for_if = input_image;
+      output_pixel_data_storage = storage_for_if = input;
     }
   }
   // Set up alpha channel.
@@ -695,7 +821,7 @@ Status FinalizeImageRect(
   // Initialized to a valid non-null ptr to avoid UB if arithmetic is done with
   // the pointer value (which would then not be used).
   std::vector<float*> ec_ptrs_for_patches(extra_channels.size(),
-                                          input_image->PlaneRow(0, 0));
+                                          input->PlaneRow(0, 0));
 
   // +----------------------------- STEP 4 ------------------------------+
   // | Set up the filter pipeline.                                       |
@@ -712,13 +838,13 @@ Status FinalizeImageRect(
         rect_for_if_input.x0() - xextra, rect_for_if_input.y0(),
         rect_for_if_input.xsize() + xextra, rect_for_if_input.ysize());
     ensure_padding_filter.Init(
-        input_image, rect_for_if_input, rect_for_if, frame_dim.xsize_padded,
+        input, rect_for_if_input, rect_for_if, frame_dim.xsize_padded,
         frame_dim.ysize_padded, lf.Padding(), lf.Padding(),
         &ensure_padding_filter_y0, &ensure_padding_filter_y1);
     Rect filter_output_padded_rect(
         rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
         rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
-    fp = PrepareFilterPipeline(dec_state, image_padded_rect, *input_image,
+    fp = PrepareFilterPipeline(dec_state, image_padded_rect, *input,
                                filter_input_padded_rect, frame_dim.ysize_padded,
                                thread, storage_for_if,
                                filter_output_padded_rect);
@@ -751,10 +877,10 @@ Status FinalizeImageRect(
         ensure_padding_filter.Process3(y);
       }
       fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_padded_rect, y);
-    } else if (output_pixel_data_storage != input_image) {
+    } else if (output_pixel_data_storage != input) {
       for (size_t c = 0; c < 3; c++) {
         memcpy(rect_for_if_storage.PlaneRow(storage_for_if, c, y),
-               rect_for_if_input.ConstPlaneRow(*input_image, c, y),
+               rect_for_if_input.ConstPlaneRow(*input, c, y),
                rect_for_if_input.xsize() * sizeof(float));
       }
     }
@@ -955,35 +1081,6 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
-  const Image3F* finalize_image_rect_input = &dec_state->decoded;
-  Image3F chroma_upsampled_image;
-  // If we used chroma subsampling, we upsample chroma now and run
-  // ApplyImageFeatures after.
-  // TODO(veluca): this should part of the FinalizeImageRect() pipeline.
-  if (!frame_header.chroma_subsampling.Is444()) {
-    chroma_upsampled_image = CopyImage(dec_state->decoded);
-    finalize_image_rect_input = &chroma_upsampled_image;
-    for (size_t c = 0; c < 3; c++) {
-      ImageF& plane = const_cast<ImageF&>(chroma_upsampled_image.Plane(c));
-      plane.ShrinkTo(DivCeil(frame_dim.xsize_padded,
-                             1 << frame_header.chroma_subsampling.HShift(c)),
-                     DivCeil(frame_dim.ysize_padded,
-                             1 << frame_header.chroma_subsampling.VShift(c)));
-      for (size_t i = 0; i < frame_header.chroma_subsampling.HShift(c); i++) {
-        plane.InitializePaddingForUnalignedAccesses();
-        const size_t output_xsize =
-            DivCeil(frame_dim.xsize_padded,
-                    1 << (frame_header.chroma_subsampling.HShift(c) - i - 1));
-        plane = UpsampleH2(plane, output_xsize, pool);
-      }
-      for (size_t i = 0; i < frame_header.chroma_subsampling.VShift(c); i++) {
-        plane.InitializePaddingForUnalignedAccesses();
-        plane = UpsampleV2(plane, pool);
-      }
-      plane.ShrinkTo(frame_dim.xsize_padded, frame_dim.ysize_padded);
-      JXL_DASSERT(plane.PixelsPerRow() == dec_state->decoded.PixelsPerRow());
-    }
-  }
   // FinalizeImageRect was not yet run, or we are forcing a run.
   if (!dec_state->EagerFinalizeImageRect() || force_fir) {
     if (lf.epf_iters > 0 && frame_header.encoding == FrameEncoding::kModular) {
@@ -1023,12 +1120,22 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       size_t xstart = kBlockDim + dec_state->group_border_assigner.PaddingX(
                                       dec_state->FinalizeRectPadding());
       size_t ystart = dec_state->FinalizeRectPadding();
+      for (size_t c = 0; c < 3; c++) {
+        Rect rh(rects_to_process[rect_id].x0() >>
+                    frame_header.chroma_subsampling.HShift(c),
+                rects_to_process[rect_id].y0() >>
+                    frame_header.chroma_subsampling.VShift(c),
+                rects_to_process[rect_id].xsize() >>
+                    frame_header.chroma_subsampling.HShift(c),
+                rects_to_process[rect_id].ysize() >>
+                    frame_header.chroma_subsampling.VShift(c));
+        Rect group_data_rect(xstart, ystart, rh.xsize(), rh.ysize());
+        CopyImageToWithPadding(
+            rh, dec_state->decoded.Plane(c), dec_state->FinalizeRectPadding(),
+            group_data_rect, &dec_state->group_data[thread].Plane(c));
+      }
       Rect group_data_rect(xstart, ystart, rects_to_process[rect_id].xsize(),
                            rects_to_process[rect_id].ysize());
-      CopyImageToWithPadding(rects_to_process[rect_id],
-                             *finalize_image_rect_input,
-                             dec_state->FinalizeRectPadding(), group_data_rect,
-                             &dec_state->group_data[thread]);
       std::vector<std::pair<ImageF*, Rect>> ec_rects;
       ec_rects.reserve(decoded->extra_channels().size());
       for (size_t i = 0; i < decoded->extra_channels().size(); i++) {

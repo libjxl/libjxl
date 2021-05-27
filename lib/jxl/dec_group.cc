@@ -197,8 +197,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   HWY_ALIGN int32_t scaled_qtable[64 * 3];
 
   ACType ac_type = dec_state->coefficients->Type();
-  auto dequant_block = (ac_type == ACType::k16 ? DequantBlock<ACType::k16>
-                                               : DequantBlock<ACType::k32>);
+  auto dequant_block = ac_type == ACType::k16 ? DequantBlock<ACType::k16>
+                                              : DequantBlock<ACType::k32>;
   // Whether or not coefficients should be stored for future usage, and/or read
   // from past usage.
   bool accumulate = !dec_state->coefficients->IsEmpty();
@@ -433,10 +433,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   if (draw == kDontDraw) {
     return true;
   }
-  // No ApplyImageFeatures in JPEG mode, or if using chroma subsampling. It will
-  // be done after decoding the whole image (this allows it to work on the
-  // chroma channels too).
-  if (dec_state->EagerFinalizeImageRect() && !decoded->IsJPEG()) {
+  // No ApplyImageFeatures in JPEG mode or when we need to delay it.
+  if (!decoded->IsJPEG() && dec_state->EagerFinalizeImageRect()) {
     // Copy the group borders to the border storage.
     size_t xsize_groups = dec_state->shared->frame_dim.xsize_groups;
     size_t xsize_padded = dec_state->shared->frame_dim.xsize_padded;
@@ -444,89 +442,117 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     size_t gx = group_idx % xsize_groups;
     size_t gy = group_idx / xsize_groups;
     Image3F* group_data = &dec_state->group_data[thread];
-    size_t x0 = block_rect.x0() * kBlockDim;
-    size_t x1 = (block_rect.x0() + block_rect.xsize()) * kBlockDim;
-    size_t y0 = block_rect.y0() * kBlockDim;
-    size_t y1 = (block_rect.y0() + block_rect.ysize()) * kBlockDim;
     size_t padding = dec_state->FinalizeRectPadding();
-    size_t borderx = dec_state->group_border_assigner.PaddingX(padding);
-    size_t bordery = padding;
-    size_t borderx_write = padding + borderx;
-    size_t bordery_write = padding + bordery;
-    CopyImageTo(
-        Rect(kGroupDataXBorder, kGroupDataYBorder, x1 - x0, bordery_write),
-        *group_data, Rect(x0, (gy * 2) * bordery_write, x1 - x0, bordery_write),
-        &dec_state->borders_horizontal);
-    CopyImageTo(
-        Rect(kGroupDataXBorder, kGroupDataYBorder + y1 - y0 - bordery_write,
-             x1 - x0, bordery_write),
-        *group_data,
-        Rect(x0, (gy * 2 + 1) * bordery_write, x1 - x0, bordery_write),
-        &dec_state->borders_horizontal);
-    CopyImageTo(
-        Rect(kGroupDataXBorder, kGroupDataYBorder, borderx_write, y1 - y0),
-        *group_data, Rect((gx * 2) * borderx_write, y0, borderx_write, y1 - y0),
-        &dec_state->borders_vertical);
-    CopyImageTo(Rect(kGroupDataXBorder + x1 - x0 - borderx_write,
-                     kGroupDataYBorder, borderx_write, y1 - y0),
-                *group_data,
-                Rect((gx * 2 + 1) * borderx_write, y0, borderx_write, y1 - y0),
-                &dec_state->borders_vertical);
+    for (size_t c = 0; c < 3; c++) {
+      size_t x0 = DivCeil(block_rect.x0() * kBlockDim, 1 << hshift[c]);
+      size_t x1 = DivCeil((block_rect.x0() + block_rect.xsize()) * kBlockDim,
+                          1 << hshift[c]);
+      size_t y0 = DivCeil(block_rect.y0() * kBlockDim, 1 << vshift[c]);
+      size_t y1 = DivCeil((block_rect.y0() + block_rect.ysize()) * kBlockDim,
+                          1 << vshift[c]);
+      // TODO(veluca): this is too much with chroma upsampling. It's just
+      // inefficient though.
+      size_t borderx = dec_state->group_border_assigner.PaddingX(padding);
+      size_t bordery = padding;
+      size_t borderx_write = padding + borderx;
+      size_t bordery_write = padding + bordery;
+      CopyImageTo(
+          Rect(kGroupDataXBorder, kGroupDataYBorder, x1 - x0, bordery_write),
+          group_data->Plane(c),
+          Rect(x0, (gy * 2) * bordery_write, x1 - x0, bordery_write),
+          &dec_state->borders_horizontal.Plane(c));
+      CopyImageTo(
+          Rect(kGroupDataXBorder, kGroupDataYBorder + y1 - y0 - bordery_write,
+               x1 - x0, bordery_write),
+          group_data->Plane(c),
+          Rect(x0, (gy * 2 + 1) * bordery_write, x1 - x0, bordery_write),
+          &dec_state->borders_horizontal.Plane(c));
+      CopyImageTo(
+          Rect(kGroupDataXBorder, kGroupDataYBorder, borderx_write, y1 - y0),
+          group_data->Plane(c),
+          Rect((gx * 2) * borderx_write, y0, borderx_write, y1 - y0),
+          &dec_state->borders_vertical.Plane(c));
+      CopyImageTo(
+          Rect(kGroupDataXBorder + x1 - x0 - borderx_write, kGroupDataYBorder,
+               borderx_write, y1 - y0),
+          group_data->Plane(c),
+          Rect((gx * 2 + 1) * borderx_write, y0, borderx_write, y1 - y0),
+          &dec_state->borders_vertical.Plane(c));
+    }
     Rect fir_rects[GroupBorderAssigner::kMaxToFinalize];
     size_t num_fir_rects = 0;
     dec_state->group_border_assigner.GroupDone(
         group_idx, dec_state->FinalizeRectPadding(), fir_rects, &num_fir_rects);
     for (size_t i = 0; i < num_fir_rects; i++) {
       const Rect& r = fir_rects[i];
-      // Limits of the area to copy from, in image coordinates.
-      JXL_DASSERT(r.x0() == 0 || r.x0() >= borderx);
-      size_t x0src = r.x0() == 0 ? r.x0() : r.x0() - borderx;
-      size_t x1src = r.x0() + r.xsize() +
-                     (r.x0() + r.xsize() == xsize_padded ? 0 : borderx);
-      JXL_DASSERT(r.y0() == 0 || r.y0() >= bordery);
-      size_t y0src = r.y0() == 0 ? r.y0() : r.y0() - bordery;
-      size_t y1src = r.y0() + r.ysize() +
-                     (r.y0() + r.ysize() == ysize_padded ? 0 : bordery);
-      // Copy other groups' borders from the border storage.
-      if (y0src < y0) {
-        CopyImageTo(Rect(x0src, (gy * 2 - 1) * bordery_write, x1src - x0src,
-                         bordery_write),
-                    dec_state->borders_horizontal,
-                    Rect(kGroupDataXBorder + x0src - x0,
-                         kGroupDataYBorder - bordery_write, x1src - x0src,
-                         bordery_write),
-                    group_data);
+      for (size_t c = 0; c < 3; c++) {
+        size_t x0 = DivCeil(block_rect.x0() * kBlockDim, 1 << hshift[c]);
+        size_t x1 = DivCeil((block_rect.x0() + block_rect.xsize()) * kBlockDim,
+                            1 << hshift[c]);
+        size_t y0 = DivCeil(block_rect.y0() * kBlockDim, 1 << vshift[c]);
+        size_t y1 = DivCeil((block_rect.y0() + block_rect.ysize()) * kBlockDim,
+                            1 << vshift[c]);
+        size_t borderx = dec_state->group_border_assigner.PaddingX(padding);
+        size_t bordery = padding;
+        size_t borderx_write = padding + borderx;
+        size_t bordery_write = padding + bordery;
+        // Limits of the area to copy from, in image coordinates.
+        JXL_DASSERT(r.x0() == 0 || r.x0() >= borderx);
+        size_t x0src =
+            DivCeil(r.x0() == 0 ? r.x0() : r.x0() - borderx, 1 << hshift[c]);
+        size_t x1src =
+            DivCeil(r.x0() + r.xsize() +
+                        (r.x0() + r.xsize() == xsize_padded ? 0 : borderx),
+                    1 << hshift[c]);
+        JXL_DASSERT(r.y0() == 0 || r.y0() >= bordery);
+        size_t y0src =
+            DivCeil(r.y0() == 0 ? r.y0() : r.y0() - bordery, 1 << vshift[c]);
+        size_t y1src =
+            DivCeil(r.y0() + r.ysize() +
+                        (r.y0() + r.ysize() == ysize_padded ? 0 : bordery),
+                    1 << vshift[c]);
+        // Copy other groups' borders from the border storage.
+        if (y0src < y0) {
+          CopyImageTo(Rect(x0src, (gy * 2 - 1) * bordery_write, x1src - x0src,
+                           bordery_write),
+                      dec_state->borders_horizontal.Plane(c),
+                      Rect(kGroupDataXBorder + x0src - x0,
+                           kGroupDataYBorder - bordery_write, x1src - x0src,
+                           bordery_write),
+                      &group_data->Plane(c));
+        }
+        if (y1src > y1) {
+          CopyImageTo(
+              Rect(x0src, (gy * 2 + 2) * bordery_write, x1src - x0src,
+                   bordery_write),
+              dec_state->borders_horizontal.Plane(c),
+              Rect(kGroupDataXBorder + x0src - x0, kGroupDataYBorder + y1 - y0,
+                   x1src - x0src, bordery_write),
+              &group_data->Plane(c));
+        }
+        if (x0src < x0) {
+          CopyImageTo(Rect((gx * 2 - 1) * borderx_write, y0src, borderx_write,
+                           y1src - y0src),
+                      dec_state->borders_vertical.Plane(c),
+                      Rect(kGroupDataXBorder - borderx_write,
+                           kGroupDataYBorder + y0src - y0, borderx_write,
+                           y1src - y0src),
+                      &group_data->Plane(c));
+        }
+        if (x1src > x1) {
+          CopyImageTo(
+              Rect((gx * 2 + 2) * borderx_write, y0src, borderx_write,
+                   y1src - y0src),
+              dec_state->borders_vertical.Plane(c),
+              Rect(kGroupDataXBorder + x1 - x0, kGroupDataYBorder + y0src - y0,
+                   borderx_write, y1src - y0src),
+              &group_data->Plane(c));
+        }
       }
-      if (y1src > y1) {
-        CopyImageTo(
-            Rect(x0src, (gy * 2 + 2) * bordery_write, x1src - x0src,
-                 bordery_write),
-            dec_state->borders_horizontal,
-            Rect(kGroupDataXBorder + x0src - x0, kGroupDataYBorder + y1 - y0,
-                 x1src - x0src, bordery_write),
-            group_data);
-      }
-      if (x0src < x0) {
-        CopyImageTo(
-            Rect((gx * 2 - 1) * borderx_write, y0src, borderx_write,
-                 y1src - y0src),
-            dec_state->borders_vertical,
-            Rect(kGroupDataXBorder - borderx_write,
-                 kGroupDataYBorder + y0src - y0, borderx_write, y1src - y0src),
-            group_data);
-      }
-      if (x1src > x1) {
-        CopyImageTo(
-            Rect((gx * 2 + 2) * borderx_write, y0src, borderx_write,
-                 y1src - y0src),
-            dec_state->borders_vertical,
-            Rect(kGroupDataXBorder + x1 - x0, kGroupDataYBorder + y0src - y0,
-                 borderx_write, y1src - y0src),
-            group_data);
-      }
-      Rect group_data_rect(kGroupDataXBorder + r.x0() - x0,
-                           kGroupDataYBorder + r.y0() - y0, r.xsize(),
-                           r.ysize());
+      Rect group_data_rect(
+          kGroupDataXBorder + r.x0() - block_rect.x0() * kBlockDim,
+          kGroupDataYBorder + r.y0() - block_rect.y0() * kBlockDim, r.xsize(),
+          r.ysize());
       JXL_RETURN_IF_ERROR(FinalizeImageRect(group_data, group_data_rect, {},
                                             dec_state, thread, decoded, r));
     }

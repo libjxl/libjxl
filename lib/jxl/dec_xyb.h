@@ -59,12 +59,6 @@ void OpsinToLinear(const Image3F& opsin, const Rect& rect, ThreadPool* pool,
 // a bias to make the values unsigned).
 void YcbcrToRgb(const Image3F& ycbcr, Image3F* rgb, const Rect& rect);
 
-ImageF UpsampleV2(const ImageF& src, ThreadPool* pool);
-
-// WARNING: this uses unaligned accesses, so the caller must first call
-// src.InitializePaddingForUnalignedAccesses() to avoid msan crashes.
-ImageF UpsampleH2(const ImageF& src, size_t output_xsize, ThreadPool* pool);
-
 bool HasFastXYBTosRGB8();
 void FastXYBTosRGB8(const Image3F& input, const Rect& input_rect,
                     const Rect& output_buf_rect, const ImageF* alpha,
