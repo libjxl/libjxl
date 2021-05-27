@@ -168,11 +168,6 @@ install_pkgs() {
     parallel
     pkg-config
 
-    # For compiling / testing JNI wrapper. JDK8 is almost 2x smaller than JDK11
-    # openjdk-8-jdk-headless would be 50MB smaller, unfortunately, CMake
-    # does mistakenly thinks it does not contain JNI feature.
-    openjdk-8-jdk
-
     # These are used by the ./ci.sh lint in the native builder.
     clang-format-7
     clang-format-8
@@ -435,9 +430,6 @@ main() {
   install_pkgs
   install_binutils
   apt clean
-
-  # Remove prebuilt Java classes cache.
-  rm /usr/lib/jvm/java-8-openjdk-amd64/jre/lib/amd64/server/classes.jsa
 
   # Manually extract packages for the target arch that can't install it directly
   # at the same time as the native ones.
