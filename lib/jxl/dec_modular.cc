@@ -207,6 +207,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 
   ModularOptions options;
   options.max_chan_size = frame_dim.group_dim;
+  options.group_dim = frame_dim.group_dim;
   Status dec_status = ModularGenericDecompress(
       reader, gi, &global_header, ModularStreamId::Global().ID(frame_dim),
       &options,

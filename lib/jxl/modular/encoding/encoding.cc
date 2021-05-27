@@ -358,6 +358,30 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
 
 GroupHeader::GroupHeader() { Bundle::Init(this); }
 
+Status ValidateChannelDimensions(const Image &image,
+                                 const ModularOptions &options) {
+  size_t nb_channels = image.channel.size();
+  for (bool is_dc : {true, false}) {
+    size_t group_dim = options.group_dim * (is_dc ? kBlockDim : 1);
+    size_t c = image.nb_meta_channels;
+    for (; c < nb_channels; c++) {
+      const Channel &ch = image.channel[c];
+      if (ch.w > options.group_dim || ch.h > options.group_dim) break;
+    }
+    for (; c < nb_channels; c++) {
+      const Channel &ch = image.channel[c];
+      if (ch.w == 0 || ch.h == 0) continue;  // skip empty
+      bool is_dc_channel = std::min(ch.hshift, ch.vshift) >= 3;
+      if (is_dc_channel != is_dc) continue;
+      size_t tile_dim = group_dim >> std::max(ch.hshift, ch.vshift);
+      if (tile_dim == 0) {
+        return JXL_FAILURE("Inconsistent transforms");
+      }
+    }
+  }
+  return true;
+}
+
 Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                      size_t group_id, ModularOptions *options,
                      const Tree *global_tree, const ANSCode *global_code,
@@ -377,6 +401,10 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   }
   if (image.error) {
     return JXL_FAILURE("Corrupt file. Aborting.");
+  }
+  if (br->AllReadsWithinBounds()) {
+    // Only check if the transforms list is complete.
+    JXL_RETURN_IF_ERROR(ValidateChannelDimensions(image, *options));
   }
 
   size_t nb_channels = image.channel.size();

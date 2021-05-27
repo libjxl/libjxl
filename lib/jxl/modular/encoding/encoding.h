@@ -123,6 +123,9 @@ bool TreeToLookupTable(const FlatTree &tree,
 }
 // TODO(veluca): make cleaner interfaces.
 
+Status ValidateChannelDimensions(const Image &image,
+                                 const ModularOptions &options);
+
 // undo_transforms == N > 0: undo all transforms except the first N
 //                           (e.g. to represent YCbCr420 losslessly)
 // undo_transforms == 0: undo all transforms

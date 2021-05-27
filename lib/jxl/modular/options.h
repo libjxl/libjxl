@@ -115,6 +115,9 @@ struct ModularOptions {
   // dimension bigger than max_chan_size.
   size_t max_chan_size = 0xFFFFFF;
 
+  // Used during decoding for validation of transforms (sqeeezing) scheme.
+  size_t group_dim = 0x1FFFFFFF;
+
   /// Encode options:
   // Fraction of pixels to look at to learn a MA tree
   // Number of iterations to do to learn a MA tree
