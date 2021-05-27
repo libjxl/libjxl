@@ -536,9 +536,11 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       JXL_DEBUG_V(PSD_VERBOSITY, "At position %i (%zu)",
                   (int)(pos - bytes.data()), (size_t)pos);
       ImageBundle& layer = io->frames[il++];
-      JXL_RETURN_IF_ERROR(decode_layer(pos, maxpos, layer, layer_chan_id[l],
-                                       invert, layer.xsize(), layer.ysize(),
-                                       version, colormodel, true, bitdepth));
+      std::vector<int>& chan_id = layer_chan_id[l];
+      if (chan_id.size() > invert.size()) invert.resize(chan_id.size(), false);
+      JXL_RETURN_IF_ERROR(decode_layer(pos, maxpos, layer, chan_id, invert,
+                                       layer.xsize(), layer.ysize(), version,
+                                       colormodel, true, bitdepth));
     }
   } else
     return JXL_FAILURE("PSD: no layer data found");
