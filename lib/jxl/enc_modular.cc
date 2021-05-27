@@ -425,6 +425,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
   }
   tree_splits.push_back(num_streams);
   cparams.options.max_chan_size = frame_dim.group_dim;
+  cparams.options.group_dim = frame_dim.group_dim;
 
   // TODO(veluca): figure out how to use different predictor sets per channel.
   stream_options.resize(num_streams, cparams.options);
@@ -862,6 +863,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     multiplier_info.resize(new_num);
   }
+
+  JXL_RETURN_IF_ERROR(ValidateChannelDimensions(gi, stream_options[0]));
 
   return PrepareEncoding(pool, enc_state->shared.frame_dim,
                          enc_state->heuristics.get(), aux_out);
