@@ -20,7 +20,7 @@ For more details and other workflows see the "Advanced guide" below.
 ### Checking out the code
 
 ```bash
-git clone https://gitlab.com/wg1/jpeg-xl.git --recursive
+git clone https://github.com/libjxl/libjxl.git --recursive
 ```
 
 This repository uses git submodules to handle some third party dependencies
