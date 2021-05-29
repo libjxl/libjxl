@@ -60,7 +60,7 @@ export CC=clang-7 CXX=clang++-7
 ### Building
 
 ```bash
-cd jpeg-xl
+cd libjxl
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF ..
