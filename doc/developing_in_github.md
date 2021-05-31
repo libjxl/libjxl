@@ -331,12 +331,12 @@ Developer.
 
 ### Trying locally a pending merge request.
 
-If you want to review in your computer a pending merge request proposed by
+If you want to review in your computer a pending pull request proposed by
 another user you can fetch the merge request commit with the following command,
-replacing `NNNN` with the merge request number:
+replacing `NNNN` with the pull request number:
 
 ```bash
-git fetch origin refs/merge-requests/NNNN/head
+git fetch origin refs/pull/NNNN/head
 git checkout FETCH_HEAD
 ```
 
