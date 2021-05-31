@@ -308,7 +308,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
       if (seen_preview) abort();
       if (!want_preview) abort();
-      if (seen_color_encoding) abort();
+      if (!seen_color_encoding) abort();
       want_preview = false;
       seen_preview = true;
       Consume(preview_pixels.cbegin(), preview_pixels.cend());
