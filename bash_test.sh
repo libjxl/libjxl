@@ -65,7 +65,7 @@ test_copyright() {
   local f
   for f in $(
       git ls-files | grep -E \
-      '(Dockerfile.*|\.c|\.cc|\.cpp|\.gni|\.h|\.java|\.sh|\.m|\.py|\.ui)$'); do
+      '(Dockerfile.*|\.c|\.cc|\.cpp|\.gni|\.h|\.java|\.sh|\.m|\.py|\.ui|\.yml)$'); do
     if [[ "${f#third_party/}" == "$f" ]]; then
       # $f is not in third_party/
       if ! head -n 10 "$f" |
