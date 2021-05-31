@@ -1125,7 +1125,11 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         if (OutOfBounds(pos, dec->dc_size, size)) {
           return JXL_DEC_NEED_MORE_INPUT;
         }
-
+        if (dec->image_out_callback != nullptr) {
+          // Support to output DC to smaller pixel buffer is not implemented
+          // when pixel callback is set.
+          get_dc = false;
+        }
         if (!dec->frame_dec->HasDecodedDC()) {
           // DC not available, e.g. if the frame was not encoded as VarDCT.
           get_dc = false;
