@@ -250,7 +250,7 @@ Status PinThreadToCPU(const int cpu) {
 #ifdef JXL_DISABLE_PINNING
   return false;
 #else
-#if JXL_OS_WIN || JXL_OS_LINUX || JXL_OS_FREEBSD || JXL_OS_MAC
+#if JXL_OS_WIN || JXL_OS_LINUX || JXL_OS_FREEBSD || JXL_OS_MAC || JXL_OS_HAIKU
   ThreadAffinity affinity;
   CPU_ZERO(&affinity.set);
   CPU_SET(cpu, &affinity.set);
