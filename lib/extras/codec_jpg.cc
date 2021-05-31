@@ -290,17 +290,22 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     jpeg_save_markers(&cinfo, kICCMarker, 0xFFFF);
     jpeg_save_markers(&cinfo, kExifMarker, 0xFFFF);
     jpeg_read_header(&cinfo, TRUE);
-    if (!VerifyDimensions(&io->constraints, cinfo.image_width,
-                          cinfo.image_height)) {
+    const auto failure = [&cinfo](const char* str) -> Status {
       jpeg_abort_decompress(&cinfo);
       jpeg_destroy_decompress(&cinfo);
-      return JXL_FAILURE("image too big");
+      return JXL_FAILURE("%s", str);
+    };
+    if (!VerifyDimensions(&io->constraints, cinfo.image_width,
+                          cinfo.image_height)) {
+      return failure("image too big");
+    }
+    // Might cause CPU-zip bomb.
+    if (cinfo.arith_code) {
+      return failure("arithmetic code JPEGs are not supported");
     }
     if (ReadICCProfile(&cinfo, &icc)) {
       if (!color_encoding.SetICC(std::move(icc))) {
-        jpeg_abort_decompress(&cinfo);
-        jpeg_destroy_decompress(&cinfo);
-        return JXL_FAILURE("read an invalid ICC profile");
+        return failure("read an invalid ICC profile");
       }
     } else {
       color_encoding = ColorEncoding::SRGB(cinfo.output_components == 1);
@@ -310,10 +315,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     io->metadata.m.color_encoding = color_encoding;
     int nbcomp = cinfo.num_components;
     if (nbcomp != 1 && nbcomp != 3) {
-      jpeg_abort_decompress(&cinfo);
-      jpeg_destroy_decompress(&cinfo);
-      return JXL_FAILURE("unsupported number of components (%d) in JPEG",
-                         cinfo.output_components);
+      return failure("unsupported number of components in JPEG");
     }
     (void)io->dec_hints.Foreach(
         [](const std::string& key, const std::string& /*value*/) {
