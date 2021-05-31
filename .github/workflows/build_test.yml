@@ -83,6 +83,8 @@ jobs:
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
         if [[ "${{ matrix.name }}" == "debug" ]]; then
-          export TEST_STACK_LIMIT=1024
+          # Runs on AVX3 CPUs require more stack than others. Make sure to test
+          # on AVX3-enabled CPUs when changing this value.
+          export TEST_STACK_LIMIT=2048
         fi
         ./ci.sh test
