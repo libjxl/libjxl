@@ -43,7 +43,7 @@ enum class SpeedTier {
   // Modular: uses fixed tree with Gradient predictor.
   kThunder = 8,
   // VarDCT: same as kThunder.
-  // Modular: same as kThunder but with kFastest context clustering.
+  // Modular: no tree, Gradient predictor, fast histograms
   kLightning = 9
 };
 

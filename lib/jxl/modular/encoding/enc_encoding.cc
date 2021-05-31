@@ -237,6 +237,25 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
         wp_state.UpdateErrors(r[x], x, y, channel.w);
       }
     }
+  } else if (tree.size() == 1 && tree[0].predictor == Predictor::Gradient &&
+             tree[0].multiplier == 1 && tree[0].predictor_offset == 0 &&
+             !skip_encoder_fast_path) {
+    for (size_t c = 0; c < 3; c++) {
+      FillImage(static_cast<float>(PredictorColor(Predictor::Gradient)[c]),
+                &predictor_img.Plane(c));
+    }
+    const intptr_t onerow = channel.plane.PixelsPerRow();
+    for (size_t y = 0; y < channel.h; y++) {
+      const pixel_type *JXL_RESTRICT r = channel.Row(y);
+      for (size_t x = 0; x < channel.w; x++) {
+        pixel_type_w left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+        pixel_type_w top = (y ? *(r + x - onerow) : left);
+        pixel_type_w topleft = (x && y ? *(r + x - 1 - onerow) : left);
+        int32_t guess = ClampedGradient(top, left, topleft);
+        int32_t residual = r[x] - guess;
+        tokens->emplace_back(tree[0].childID, PackSigned(residual));
+      }
+    }
   } else if (is_gradient_only && !skip_encoder_fast_path) {
     for (size_t c = 0; c < 3; c++) {
       FillImage(static_cast<float>(PredictorColor(Predictor::Gradient)[c]),
