@@ -552,6 +552,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   bool got_intensity_target =
       cmdline.GetOption(opt_intensity_target_id)->matched();
 
+  if (jpeg_transcode) params.butteraugli_distance = 0;
   if (got_quality) {
     default_settings = false;
     if (quality < 100) jpeg_transcode = false;
@@ -731,11 +732,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
 
   if (input_codec == jxl::Codec::kGIF && args.default_settings) {
     args.params.modular_mode = true;
-    args.params.options.predictor = jxl::Predictor::Select;
-    args.params.responsive = 0;
-    args.params.colorspace = 0;
-    args.params.channel_colors_pre_transform_percent = 0;
-    args.params.channel_colors_percent = 0;
     args.params.quality_pair.first = args.params.quality_pair.second = 100;
   }
   if (args.params.modular_mode && args.params.quality_pair.first < 100) {
