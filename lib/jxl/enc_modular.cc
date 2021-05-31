@@ -594,7 +594,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // Global channel palette
   if (cparams.channel_colors_pre_transform_percent > 0 &&
-      !cparams.lossy_palette) {
+      !cparams.lossy_palette &&
+      (cparams.speed_tier <= SpeedTier::kThunder ||
+       (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     // single channel palette (like FLIF's ChannelCompact)
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;
@@ -974,11 +976,6 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
     MergeTrees(trees, useful_splits, 0, useful_splits.size() - 1, &tree);
   } else {
     // Fixed tree.
-    // TODO(veluca): determine cutoffs?
-    std::vector<int32_t> cutoffs = {-255, -191, -127, -95, -63, -47, -31, -23,
-                                    -15,  -11,  -7,   -5,  -3,  -1,  0,   1,
-                                    3,    5,    7,    11,  15,  23,  31,  47,
-                                    63,   95,   127,  191, 255};
     size_t total_pixels = 0;
     for (const Image& img : stream_images) {
       for (const Channel& ch : img.channel) {
@@ -986,11 +983,12 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
       }
     }
     if (cparams.speed_tier <= SpeedTier::kFalcon) {
-      tree = MakeFixedTree(kNumNonrefProperties - weighted::kNumProperties,
-                           cutoffs, Predictor::Weighted, total_pixels);
+      tree = PredefinedTree(ModularOptions::TreeKind::kWPFixedDC, total_pixels);
+    } else if (cparams.speed_tier <= SpeedTier::kThunder) {
+      tree = PredefinedTree(ModularOptions::TreeKind::kGradientFixedDC,
+                            total_pixels);
     } else {
-      tree = MakeFixedTree(kGradientProp, cutoffs, Predictor::Gradient,
-                           total_pixels);
+      tree = {PropertyDecisionNode::Leaf(Predictor::Gradient)};
     }
   }
   // TODO(veluca): do this somewhere else.
@@ -1048,11 +1046,11 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
   // Write tree
   HistogramParams params;
   if (cparams.speed_tier > SpeedTier::kKitten) {
-    params.clustering = cparams.speed_tier > SpeedTier::kThunder
-                            ? HistogramParams::ClusteringType::kFastest
-                            : HistogramParams::ClusteringType::kFast;
+    params.clustering = HistogramParams::ClusteringType::kFast;
     params.ans_histogram_strategy =
-        HistogramParams::ANSHistogramStrategy::kApproximate;
+        cparams.speed_tier > SpeedTier::kThunder
+            ? HistogramParams::ANSHistogramStrategy::kFast
+            : HistogramParams::ANSHistogramStrategy::kApproximate;
     params.lz77_method =
         cparams.decoding_speed_tier >= 3 && cparams.modular_mode
             ? (cparams.speed_tier >= SpeedTier::kFalcon

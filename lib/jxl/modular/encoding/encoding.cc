@@ -174,11 +174,97 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   JXL_DEBUG_V(3, "Decoded MA tree with %zu nodes", tree.size());
 
   // MAANS decode
+  const auto make_pixel = [](uint64_t v, pixel_type multiplier,
+                             pixel_type_w offset) -> pixel_type {
+    JXL_DASSERT((v & 0xFFFFFFFF) == v);
+    pixel_type_w val = UnpackSigned(v);
+    // if it overflows, it overflows, and we have a problem anyway
+    return val * multiplier + offset;
+  };
+
+  if (tree.size() == 1) {
+    // special optimized case: no meta-adaptation, so no need
+    // to compute properties.
+    Predictor predictor = tree[0].predictor;
+    int64_t offset = tree[0].predictor_offset;
+    int32_t multiplier = tree[0].multiplier;
+    size_t ctx_id = tree[0].childID;
+    if (predictor == Predictor::Zero) {
+      uint32_t value;
+      if (reader->IsSingleValueAndAdvance(ctx_id, &value,
+                                          channel.w * channel.h)) {
+        // Special-case: histogram has a single symbol, with no extra bits, and
+        // we use ANS mode.
+        JXL_DEBUG_V(8, "Fastest track.");
+        pixel_type v = make_pixel(value, multiplier, offset);
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT r = channel.Row(y);
+          std::fill(r, r + channel.w, v);
+        }
+
+      } else {
+        JXL_DEBUG_V(8, "Fast track.");
+        for (size_t y = 0; y < channel.h; y++) {
+          pixel_type *JXL_RESTRICT r = channel.Row(y);
+          for (size_t x = 0; x < channel.w; x++) {
+            uint32_t v = reader->ReadHybridUintClustered(ctx_id, br);
+            r[x] = make_pixel(v, multiplier, offset);
+          }
+        }
+      }
+    } else if (predictor == Predictor::Gradient && offset == 0 &&
+               multiplier == 1) {
+      JXL_DEBUG_V(8, "Gradient very fast track.");
+      const intptr_t onerow = channel.plane.PixelsPerRow();
+      for (size_t y = 0; y < channel.h; y++) {
+        pixel_type *JXL_RESTRICT r = channel.Row(y);
+        for (size_t x = 0; x < channel.w; x++) {
+          pixel_type left = (x ? r[x - 1] : y ? *(r + x - onerow) : 0);
+          pixel_type top = (y ? *(r + x - onerow) : left);
+          pixel_type topleft = (x && y ? *(r + x - 1 - onerow) : left);
+          pixel_type guess = ClampedGradient(top, left, topleft);
+          pixel_type v =
+              UnpackSigned(reader->ReadHybridUintClustered(ctx_id, br));
+          r[x] = guess + v;
+        }
+      }
+    } else if (predictor != Predictor::Weighted) {
+      // special optimized case: no wp
+      JXL_DEBUG_V(8, "Quite fast track.");
+      const intptr_t onerow = channel.plane.PixelsPerRow();
+      for (size_t y = 0; y < channel.h; y++) {
+        pixel_type *JXL_RESTRICT r = channel.Row(y);
+        for (size_t x = 0; x < channel.w; x++) {
+          PredictionResult pred =
+              PredictNoTreeNoWP(channel.w, r + x, onerow, x, y, predictor);
+          pixel_type_w g = pred.guess + offset;
+          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
+          // NOTE: pred.multiplier is unset.
+          r[x] = make_pixel(v, multiplier, g);
+        }
+      }
+    } else {
+      JXL_DEBUG_V(8, "Somewhat fast track.");
+      const intptr_t onerow = channel.plane.PixelsPerRow();
+      weighted::State wp_state(wp_header, channel.w, channel.h);
+      for (size_t y = 0; y < channel.h; y++) {
+        pixel_type *JXL_RESTRICT r = channel.Row(y);
+        for (size_t x = 0; x < channel.w; x++) {
+          pixel_type_w g = PredictNoTreeWP(channel.w, r + x, onerow, x, y,
+                                           predictor, &wp_state)
+                               .guess +
+                           offset;
+          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
+          r[x] = make_pixel(v, multiplier, g);
+          wp_state.UpdateErrors(r[x], x, y, channel.w);
+        }
+      }
+    }
+    return true;
+  }
 
   // Check if this tree is a WP-only tree with a small enough property value
   // range.
-  // Those contexts are *clustered* context ids. This reduces stack usages and
-  // avoids an extra memory lookup.
   // Initialized to avoid clang-tidy complaining.
   uint8_t context_lookup[2 * kPropRangeFast] = {};
   int8_t multipliers[2 * kPropRangeFast] = {};
@@ -190,13 +276,6 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     is_gradient_only =
         TreeToLookupTable(tree, context_lookup, offsets, multipliers);
   }
-
-  const auto make_pixel = [](uint64_t v, pixel_type multiplier,
-                             pixel_type_w offset) -> pixel_type {
-    JXL_DASSERT((v & 0xFFFFFFFF) == v);
-    pixel_type_w val = UnpackSigned(v);
-    return SaturatingAdd<pixel_type>(val * multiplier, offset);
-  };
 
   if (is_gradient_only) {
     JXL_DEBUG_V(8, "Gradient fast track.");
@@ -245,71 +324,6 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
         r[x] = make_pixel(v, multipliers[pos],
                           static_cast<pixel_type_w>(offsets[pos]) + guess);
         wp_state.UpdateErrors(r[x], x, y, channel.w);
-      }
-    }
-  } else if (tree.size() == 1) {
-    // special optimized case: no meta-adaptation, so no need
-    // to compute properties.
-    Predictor predictor = tree[0].predictor;
-    int64_t offset = tree[0].predictor_offset;
-    int32_t multiplier = tree[0].multiplier;
-    size_t ctx_id = tree[0].childID;
-    if (predictor == Predictor::Zero) {
-      uint32_t value;
-      if (reader->IsSingleValueAndAdvance(ctx_id, &value,
-                                          channel.w * channel.h)) {
-        // Special-case: histogram has a single symbol, with no extra bits, and
-        // we use ANS mode.
-        JXL_DEBUG_V(8, "Fastest track.");
-        pixel_type v = make_pixel(value, multiplier, offset);
-        for (size_t y = 0; y < channel.h; y++) {
-          pixel_type *JXL_RESTRICT r = channel.Row(y);
-          std::fill(r, r + channel.w, v);
-        }
-
-      } else {
-        JXL_DEBUG_V(8, "Fast track.");
-        for (size_t y = 0; y < channel.h; y++) {
-          pixel_type *JXL_RESTRICT r = channel.Row(y);
-          for (size_t x = 0; x < channel.w; x++) {
-            uint32_t v = reader->ReadHybridUintClustered(ctx_id, br);
-            r[x] = make_pixel(v, multiplier, offset);
-          }
-        }
-      }
-    } else if (predictor != Predictor::Weighted) {
-      // special optimized case: no meta-adaptation, no wp, so no need to
-      // compute properties
-      JXL_DEBUG_V(8, "Quite fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        for (size_t x = 0; x < channel.w; x++) {
-          PredictionResult pred =
-              PredictNoTreeNoWP(channel.w, r + x, onerow, x, y, predictor);
-          pixel_type_w g = pred.guess + offset;
-          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
-          // NOTE: pred.multiplier is unset.
-          r[x] = make_pixel(v, multiplier, g);
-        }
-      }
-    } else {
-      // special optimized case: no meta-adaptation, so no need to
-      // compute properties
-      JXL_DEBUG_V(8, "Somewhat fast track.");
-      const intptr_t onerow = channel.plane.PixelsPerRow();
-      weighted::State wp_state(wp_header, channel.w, channel.h);
-      for (size_t y = 0; y < channel.h; y++) {
-        pixel_type *JXL_RESTRICT r = channel.Row(y);
-        for (size_t x = 0; x < channel.w; x++) {
-          pixel_type_w g = PredictNoTreeWP(channel.w, r + x, onerow, x, y,
-                                           predictor, &wp_state)
-                               .guess +
-                           offset;
-          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
-          r[x] = make_pixel(v, multiplier, g);
-          wp_state.UpdateErrors(r[x], x, y, channel.w);
-        }
       }
     }
   } else if (!tree_has_wp_prop_or_pred) {
