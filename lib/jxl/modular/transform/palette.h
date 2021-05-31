@@ -36,7 +36,7 @@ static constexpr int kLargeCubeOffset = kSmallCube * kSmallCube * kSmallCube;
 static constexpr int kMinImplicitPaletteIndex = -(2 * 72 - 1);
 
 static constexpr pixel_type Scale(int value, int bit_depth, int denom) {
-  return (static_cast<pixel_type_w>(value) * ((1 << bit_depth) - 1)) / denom;
+  return (value * ((static_cast<pixel_type_w>(1) << bit_depth) - 1)) / denom;
 }
 
 // The purpose of this function is solely to extend the interpretation of
