@@ -18,6 +18,7 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/file_io.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
@@ -184,78 +185,110 @@ class Parser {
     return true;
   }
 
+  Status ExpectString(const char* str, size_t len) {
+    // Unlikely to happen.
+    if (pos_ + len < pos_) return JXL_FAILURE("Y4M: overflow");
+
+    if (pos_ + len > end_ || strncmp(str, (const char*)pos_, len) != 0) {
+      return JXL_FAILURE("Y4M: expected %s", str);
+    }
+    pos_ += len;
+    return true;
+  }
+
+  Status ReadChar(char* out) {
+    // Unlikely to happen.
+    if (pos_ + 1 < pos_) return JXL_FAILURE("Y4M: overflow");
+
+    if (pos_ >= end_) {
+      return JXL_FAILURE("Y4M: unexpected end of input");
+    }
+    *out = *pos_;
+    pos_++;
+    return true;
+  }
+
   // TODO(jon): support multi-frame y4m
   Status ParseHeaderY4M(HeaderPNM* header, const uint8_t** pos) {
-    if (strncmp("YUV4MPEG2", (const char*)pos_, 9) != 0) return false;
-    pos_ += 9;
+    JXL_RETURN_IF_ERROR(ExpectString("YUV4MPEG2", 9));
     header->is_gray = false;
     header->is_yuv = 3;
     // TODO(jon): check if 4:2:0 is indeed the default
     header->bits_per_sample = 8;
     // TODO(jon): check if there's a y4m convention for higher bit depths
     while (pos_ < end_) {
-      if (pos_[0] == 0x0A) {
-        pos_++;
-        break;
-      }
-      if (pos_[0] == ' ') {
-        uint8_t field = pos_[1];
-        pos_ += 2;
-        switch (field) {
-          case 'W':
-            JXL_RETURN_IF_ERROR(ParseUnsigned(&header->xsize));
-            break;
-          case 'H':
-            JXL_RETURN_IF_ERROR(ParseUnsigned(&header->ysize));
-            break;
-          case 'I':
-            if (pos_[0] != 'p') {
-              return JXL_FAILURE(
-                  "Y4M: only progressive (no frame interlacing) allowed");
-            }
-            pos_++;
-            break;
-          case 'C':
-            if (pos_[0] != '4') return JXL_FAILURE("Y4M: invalid C param");
-            if (pos_[1] == '4') {
-              header->is_yuv = 1;  // 444
-            } else if (pos_[1] == '2') {
-              if (pos_[2] == '2') {
-                header->is_yuv = 2;  // 422
-              } else if (pos_[2] == '0') {
-                header->is_yuv = 3;  // 420
-              } else {
-                return JXL_FAILURE("Y4M: invalid C param");
-              }
+      char next = 0;
+      JXL_RETURN_IF_ERROR(ReadChar(&next));
+      if (next == 0x0A) break;
+      if (next != ' ') continue;
+      char field = 0;
+      JXL_RETURN_IF_ERROR(ReadChar(&field));
+      switch (field) {
+        case 'W':
+          JXL_RETURN_IF_ERROR(ParseUnsigned(&header->xsize));
+          break;
+        case 'H':
+          JXL_RETURN_IF_ERROR(ParseUnsigned(&header->ysize));
+          break;
+        case 'I':
+          JXL_RETURN_IF_ERROR(ReadChar(&next));
+          if (next != 'p') {
+            return JXL_FAILURE(
+                "Y4M: only progressive (no frame interlacing) allowed");
+          }
+          break;
+        case 'C': {
+          char c1 = 0;
+          JXL_RETURN_IF_ERROR(ReadChar(&c1));
+          char c2 = 0;
+          JXL_RETURN_IF_ERROR(ReadChar(&c2));
+          char c3 = 0;
+          JXL_RETURN_IF_ERROR(ReadChar(&c3));
+          if (c1 != '4') return JXL_FAILURE("Y4M: invalid C param");
+          if (c2 == '4') {
+            if (c3 != '4') return JXL_FAILURE("Y4M: invalid C param");
+            header->is_yuv = 1;  // 444
+          } else if (c2 == '2') {
+            if (c3 == '2') {
+              header->is_yuv = 2;  // 422
+            } else if (c3 == '0') {
+              header->is_yuv = 3;  // 420
             } else {
               return JXL_FAILURE("Y4M: invalid C param");
             }
-            [[fallthrough]];
-            // no break: fallthrough because this field can have values like
-            // "C420jpeg" (we are ignoring the chroma sample location and treat
-            // everything like C420jpeg)
-          case 'F':  // Framerate in fps as numerator:denominator
-                     // TODO(jon): actually read this and set corresponding jxl
-                     // metadata
-          case 'A':  // Pixel aspect ratio (ignoring it, could perhaps adjust
-                     // intrinsic dimensions based on this?)
-          case 'X':  // Comment, ignore
-            // ignore the field value and go to next one
-            while (pos_[0] != ' ' && pos_[0] != 0x0A) pos_++;
-            break;
-          default:
-            return JXL_FAILURE("Y4M: parse error");
+          } else {
+            return JXL_FAILURE("Y4M: invalid C param");
+          }
         }
+          [[fallthrough]];
+          // no break: fallthrough because this field can have values like
+          // "C420jpeg" (we are ignoring the chroma sample location and treat
+          // everything like C420jpeg)
+        case 'F':  // Framerate in fps as numerator:denominator
+                   // TODO(jon): actually read this and set corresponding jxl
+                   // metadata
+        case 'A':  // Pixel aspect ratio (ignoring it, could perhaps adjust
+                   // intrinsic dimensions based on this?)
+        case 'X':  // Comment, ignore
+          // ignore the field value and go to next one
+          while (pos_ < end_) {
+            if (pos_[0] == ' ' || pos_[0] == 0x0A) break;
+            pos_++;
+          }
+          break;
+        default:
+          return JXL_FAILURE("Y4M: parse error");
       }
     }
-    if (strncmp("FRAME", (const char*)pos_, 5) != 0)
-      return JXL_FAILURE("Y4M: expected FRAME");
-    pos_ += 5;
-    while (pos_[0] != 0x0A && pos_ < end_) pos_++;
-    if (pos_[0] != 0x0A) return JXL_FAILURE("Y4M: parse error");
-    pos_++;
-    *pos = pos_;
-    return true;
+    JXL_RETURN_IF_ERROR(ExpectString("FRAME", 5));
+    while (true) {
+      char next = 0;
+      JXL_RETURN_IF_ERROR(ReadChar(&next));
+      if (next == 0x0A) {
+        *pos = pos_;
+        return true;
+      }
+    }
   }
 
   Status ParseHeaderPNM(HeaderPNM* header, const uint8_t** pos) {
