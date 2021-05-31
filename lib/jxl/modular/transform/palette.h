@@ -385,9 +385,11 @@ static Status CheckPaletteParams(const Image &image, uint32_t begin_c,
   if (c1 > image.channel.size() || c2 >= image.channel.size() || c2 < c1) {
     return JXL_FAILURE("Invalid channel range");
   }
+  const auto &ch1 = image.channel[begin_c];
   for (size_t c = begin_c + 1; c <= end_c; c++) {
-    if (image.channel[c].w != image.channel[begin_c].w ||
-        image.channel[c].h != image.channel[begin_c].h) {
+    const auto &ch2 = image.channel[c];
+    if (ch1.w != ch2.w || ch1.h != ch2.h || ch1.hshift != ch2.hshift ||
+        ch1.vshift != ch2.vshift) {
       return false;
     }
   }
