@@ -218,6 +218,12 @@ struct ImageMetadata : public Fields {
     bit_depth.bits_per_sample = bits;
     bit_depth.exponent_bits_per_sample = 0;
     bit_depth.floating_point_sample = false;
+    // RCT / Squeeze may add one bit each, and this is about int16_t,
+    // so uint13 should still be OK but limiting it to 12 seems safer.
+    // TODO(jon): figure out a better way to set this header field.
+    // (in particular, if modular mode is not used it doesn't matter,
+    // and if transforms are restricted, up to 15-bit could be done)
+    if (bits > 12) modular_16_bit_buffer_sufficient = false;
   }
   // Sets the original bit depth fields to indicate single precision floating
   // point.
@@ -226,12 +232,14 @@ struct ImageMetadata : public Fields {
     bit_depth.bits_per_sample = 32;
     bit_depth.exponent_bits_per_sample = 8;
     bit_depth.floating_point_sample = true;
+    modular_16_bit_buffer_sufficient = false;
   }
 
   void SetFloat16Samples() {
     bit_depth.bits_per_sample = 16;
     bit_depth.exponent_bits_per_sample = 5;
     bit_depth.floating_point_sample = true;
+    modular_16_bit_buffer_sufficient = false;
   }
 
   void SetIntensityTarget(float intensity_target) {
