@@ -317,16 +317,16 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
           plane_in->Row(y)[rect.x0() + rect.xsize() - 1];
     }
   }
+  // Copy the whole row here: it is likely similarly fast and ensures that we
+  // don't forget some parts of padding.
   if (frame_rect.y0() == 0) {
-    for (size_t x = x0 - 1; x < x1 + 1; x++) {
-      plane_in->Row(rect.y0() - 1)[x] = plane_in->Row(rect.y0())[x];
-    }
+    memcpy(plane_in->Row(rect.y0() - 1), plane_in->Row(rect.y0()),
+           plane_in->xsize() * sizeof(float));
   }
   if (frame_rect.y0() + frame_rect.ysize() >= frame_dim.ysize_padded) {
-    for (size_t x = x0 - 1; x < x1 + 1; x++) {
-      plane_in->Row(rect.y0() + rect.ysize())[x] =
-          plane_in->Row(rect.y0() + rect.ysize() - 1)[x];
-    }
+    memcpy(plane_in->Row(rect.y0() + rect.ysize()),
+           plane_in->Row(rect.y0() + rect.ysize() - 1),
+           plane_in->xsize() * sizeof(float));
   }
   if (hs == 1) {
     // Limited to 4 for Interleave*.
