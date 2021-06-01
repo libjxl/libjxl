@@ -147,9 +147,10 @@ Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
       for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
 #if MEMORY_SANITIZER
         const auto mask = Iota(d, x) < Set(d, rect.xsize());
-        const auto in_opsin_x = IfThenElseZero(mask, Load(d, row0 + x));
-        const auto in_opsin_y = IfThenElseZero(mask, Load(d, row1 + x));
-        const auto in_opsin_b = IfThenElseZero(mask, Load(d, row2 + x));
+        const auto sentinel = Set(d, kSanitizerSentinel);
+        const auto in_opsin_x = IfThenElse(mask, Load(d, row0 + x), sentinel);
+        const auto in_opsin_y = IfThenElse(mask, Load(d, row1 + x), sentinel);
+        const auto in_opsin_b = IfThenElse(mask, Load(d, row2 + x), sentinel);
 #else
         const auto in_opsin_x = Load(d, row0 + x);
         const auto in_opsin_y = Load(d, row1 + x);
