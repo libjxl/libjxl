@@ -186,7 +186,7 @@ struct PassesDecoderState {
                               kGroupDim + 2 * kGroupDataYBorder);
 #if MEMORY_SANITIZER
       // Avoid errors due to loading vectors on the outermost padding.
-      ZeroFillImage(&group_data.back());
+      FillImage(kSanitizerSentinel, &group_data.back());
 #endif
     }
     if (rgb_output || pixel_callback) {
@@ -317,7 +317,7 @@ struct PassesDecoderState {
     }
 #if MEMORY_SANITIZER
     // Avoid errors due to loading vectors on the outermost padding.
-    ZeroFillImage(&decoded);
+    FillImage(kSanitizerSentinel, &decoded);
 #endif
   }
 
