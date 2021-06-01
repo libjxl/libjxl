@@ -569,10 +569,10 @@ Status TreeSamples::SetProperties(const std::vector<uint32_t> &properties,
                                   ModularOptions::TreeMode wp_tree_mode) {
   props_to_use = properties;
   if (wp_tree_mode == ModularOptions::TreeMode::kWPOnly) {
-    props_to_use = {kWPProp};
+    props_to_use = {static_cast<uint32_t>(kWPProp)};
   }
   if (wp_tree_mode == ModularOptions::TreeMode::kGradientOnly) {
-    props_to_use = {kGradientProp};
+    props_to_use = {static_cast<uint32_t>(kGradientProp)};
   }
   if (wp_tree_mode == ModularOptions::TreeMode::kNoWP) {
     auto it = std::find(props_to_use.begin(), props_to_use.end(), kWPProp);
