@@ -567,6 +567,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     cparams.channel_colors_percent = 0;
     cparams.palette_colors = 0;
+    cparams.lossy_palette = false;
   }
 
   // if few colors, do all-channel palette before trying channel palette
