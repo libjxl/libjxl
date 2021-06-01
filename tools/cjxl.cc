@@ -339,7 +339,8 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue(
       's', "speed", "ANIMAL",
       "Deprecated synonym for --effort. Valid values are:\n"
-      "    lightning (1), thunder, falcon, cheetah, hare, wombat, squirrel, kitten, tortoise (9)\n"
+      "    lightning (1), thunder, falcon, cheetah, hare, wombat, squirrel, "
+      "kitten, tortoise (9)\n"
       "    Default: squirrel. Values are in order from faster to slower.\n",
       &params.speed_tier, &ParseSpeedTier, 2);
 
@@ -578,7 +579,6 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
 
   if (progressive) {
     params.qprogressive_mode = true;
-    params.progressive_dc = 1;
     params.responsive = 1;
     default_settings = false;
   }

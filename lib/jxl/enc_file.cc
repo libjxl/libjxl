@@ -58,8 +58,6 @@ PassDefinition progressive_passes_dc_lf_salient_ac_other_ac[] = {
      /*suitable_for_downsampling_of_at_least=*/0}};
 
 PassDefinition progressive_passes_dc_quant_ac_full_ac[] = {
-    {/*num_coefficients=*/8, /*shift=*/2, /*salient_only=*/false,
-     /*suitable_for_downsampling_of_at_least=*/4},
     {/*num_coefficients=*/8, /*shift=*/1, /*salient_only=*/false,
      /*suitable_for_downsampling_of_at_least=*/2},
     {/*num_coefficients=*/8, /*shift=*/0, /*salient_only=*/false,
