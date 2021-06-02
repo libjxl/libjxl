@@ -387,13 +387,13 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           &num_reps, &ParseUnsigned, 1);
 
   cmdline->AddOptionValue('\0', "noise", "0|1",
-                          "force enable/disable noise generation.",
+                          "force disable/enable noise generation.",
                           &params.noise, &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "dots", "0|1",
-                          "force enable/disable dots generation.", &params.dots,
+                          "force disable/enable dots generation.", &params.dots,
                           &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "patches", "0|1",
-                          "force enable/disable patches generation.",
+                          "force disable/enable patches generation.",
                           &params.patches, &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "resampling", "1|2|4|8",
                           "Subsample all color channels by this factor.",
@@ -413,8 +413,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "Edge preserving filter level (-1 = choose based on quality, default)",
       &params.epf, &ParseSigned, 1);
 
-  cmdline->AddOptionValue('\0', "gaborish", "0|1", "force disable gaborish.",
-                          &params.gaborish, &ParseOverride, 1);
+  cmdline->AddOptionValue('\0', "gaborish", "0|1",
+                          "force disable/enable gaborish.", &params.gaborish,
+                          &ParseOverride, 1);
 
   opt_intensity_target_id = cmdline->AddOptionValue(
       '\0', "intensity_target", "N",
