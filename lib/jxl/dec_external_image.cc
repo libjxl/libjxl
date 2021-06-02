@@ -270,7 +270,7 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
   const size_t bytes_per_pixel = num_channels * bytes_per_channel;
 
   const Image3F* color = &ib.color();
-  Image3F temp_color;
+  Image3F temp_color, unpremul;
   const ImageF* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
   ImageF temp_alpha;
 
@@ -284,6 +284,16 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
     }
   };
 
+  if (ib.AlphaIsPremultiplied()) {
+    unpremul = Image3F(color->xsize(), color->ysize());
+    CopyImageTo(*color, &unpremul);
+    for (size_t y = 0; y < unpremul.ysize(); y++) {
+      UnpremultiplyAlpha(unpremul.PlaneRow(0, y), unpremul.PlaneRow(1, y),
+                         unpremul.PlaneRow(2, y), alpha->Row(y),
+                         unpremul.xsize());
+    }
+    color = &unpremul;
+  }
   if (undo_orientation != Orientation::kIdentity) {
     Image3F transformed;
     for (size_t c = 0; c < color_channels; ++c) {
