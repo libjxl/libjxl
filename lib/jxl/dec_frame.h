@@ -191,9 +191,10 @@ class FrameDecoder {
   }
 
   // If the image has default exif orientation and no blending,
-  // the current frame cannot be referenced by future frames, and
-  // there are no spot colors to be rendered, then low memory options
-  // (uint8 output buffer or float pixel callback) can be used.
+  // the current frame cannot be referenced by future frames,
+  // there are no spot colors to be rendered, and alpha is not
+  // premultiplied, then low memory options can be used
+  // (uint8 output buffer or float pixel callback).
   // TODO(veluca): reduce this set of restrictions.
   bool CanDoLowMemoryPath() const {
     if (decoded_->metadata()->GetOrientation() != Orientation::kIdentity) {
@@ -205,6 +206,7 @@ class FrameDecoder {
         decoded_->metadata()->Find(ExtraChannel::kSpotColor)) {
       return false;
     }
+    if (decoded_->AlphaIsPremultiplied()) return false;
     return true;
   }
 
