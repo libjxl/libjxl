@@ -353,6 +353,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "Enable progressive/responsive decoding.",
                          &progressive, &SetBooleanTrue);
 
+  cmdline->AddOptionFlag('\0', "premultiply",
+                         "Force premultiplied (associated) alpha.",
+                         &force_premultiplied, &SetBooleanTrue, 1);
+
   cmdline->AddOptionFlag('\0', "middleout",
                          "Put center groups first in the compressed file.",
                          &params.middleout, &SetBooleanTrue, 1);
@@ -749,6 +753,9 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
     } else {
       io->metadata.m.SetUintSamples(args.override_bitdepth);
     }
+  }
+  if (args.force_premultiplied) {
+    io->PremultiplyAlpha();
   }
 
   jxl::ImageF saliency_map;
