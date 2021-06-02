@@ -138,25 +138,6 @@ typedef struct {
   JxlRenderingIntent rendering_intent;
 } JxlColorEncoding;
 
-/** Color transform used for the XYB encoding. This affects how the internal
- * XYB color format is converted, and is not needed unless XYB color is used.
- */
-typedef struct {
-  /** Inverse opsin matrix.
-   */
-  float opsin_inv_matrix[3][3];
-
-  /** Opsin bias for opsin matrix. This affects how the internal XYB color
-   * format is converted, and is not needed unless XYB color is used.
-   */
-  float opsin_biases[3];
-
-  /** Quantization bias for opsin matrix. This affects how the internal XYB
-   * color format is converted, and is not needed unless XYB color is used.
-   */
-  float quant_biases[3];
-} JxlInverseOpsinMatrix;
-
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
