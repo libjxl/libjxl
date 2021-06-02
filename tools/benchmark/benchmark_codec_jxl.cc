@@ -294,6 +294,12 @@ class JxlCodec : public ImageCodec {
       PaddedBytes icc_profile;
       auto runner = JxlThreadParallelRunnerMake(nullptr, pool->NumThreads());
       auto dec = JxlDecoderMake(nullptr);
+      // By default, the decoder will undo exif orientation, giving an image
+      // with identity exif rotation as result. However, the benchmark does
+      // not undo exif orientation of the originals, and compares against the
+      // originals, so we must set the option to keep the original orientation
+      // instead.
+      JxlDecoderSetKeepOrientation(dec.get(), JXL_TRUE);
       JXL_RETURN_IF_ERROR(
           JXL_DEC_SUCCESS ==
           JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO |
