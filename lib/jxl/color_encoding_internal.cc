@@ -675,12 +675,12 @@ void ConvertInternalToExternalColorEncoding(const ColorEncoding& internal,
 }
 
 /* Chromatic adaptation matrices*/
-static float kBradford[9] = {
+static const float kBradford[9] = {
     0.8951f, 0.2664f, -0.1614f, -0.7502f, 1.7135f,
     0.0367f, 0.0389f, -0.0685f, 1.0296f,
 };
 
-static float kBradfordInv[9] = {
+static const float kBradfordInv[9] = {
     0.9869929f, -0.1470543f, 0.1599627f, 0.4323053f, 0.5183603f,
     0.0492912f, -0.0085287f, 0.0400428f, 0.9684867f,
 };
