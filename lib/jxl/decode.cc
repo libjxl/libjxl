@@ -1887,21 +1887,6 @@ JxlDecoderStatus JxlDecoderGetColorAsICCProfile(const JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
-JxlDecoderStatus JxlDecoderGetInverseOpsinMatrix(
-    const JxlDecoder* dec, JxlInverseOpsinMatrix* matrix) {
-  memcpy(matrix->opsin_inv_matrix,
-         dec->metadata.transform_data.opsin_inverse_matrix.inverse_matrix,
-         sizeof(matrix->opsin_inv_matrix));
-  memcpy(matrix->opsin_biases,
-         dec->metadata.transform_data.opsin_inverse_matrix.opsin_biases,
-         sizeof(matrix->opsin_biases));
-  memcpy(matrix->quant_biases,
-         dec->metadata.transform_data.opsin_inverse_matrix.quant_biases,
-         sizeof(matrix->quant_biases));
-
-  return JXL_DEC_SUCCESS;
-}
-
 namespace {
 // Returns the amount of bits needed for getting memory buffer size, and does
 // all error checking required for size checking and format validity.
