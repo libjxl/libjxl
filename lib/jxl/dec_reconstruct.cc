@@ -306,19 +306,19 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
     return;
   }
   // Prepare padding if we are on a border.
+  // Copy the whole row/column here: it is likely similarly fast and ensures
+  // that we don't forget some parts of padding.
   if (frame_rect.x0() == 0) {
-    for (size_t y = y0; y < y1; y++) {
+    for (size_t y = 0; y < plane_in->ysize(); y++) {
       plane_in->Row(y)[rect.x0() - 1] = plane_in->Row(y)[rect.x0()];
     }
   }
   if (frame_rect.x0() + frame_rect.xsize() >= frame_dim.xsize_padded) {
-    for (size_t y = y0; y < y1; y++) {
+    for (size_t y = 0; y < plane_in->ysize(); y++) {
       plane_in->Row(y)[rect.x0() + rect.xsize()] =
           plane_in->Row(y)[rect.x0() + rect.xsize() - 1];
     }
   }
-  // Copy the whole row here: it is likely similarly fast and ensures that we
-  // don't forget some parts of padding.
   if (frame_rect.y0() == 0) {
     memcpy(plane_in->Row(rect.y0() - 1), plane_in->Row(rect.y0()),
            plane_in->xsize() * sizeof(float));
