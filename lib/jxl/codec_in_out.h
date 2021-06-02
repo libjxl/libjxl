@@ -183,6 +183,19 @@ class CodecInOut {
     }
     return true;
   }
+  // Calls PremultiplyAlpha for each ImageBundle (preview/frames).
+  void PremultiplyAlpha() {
+    ExtraChannelInfo* eci = metadata.m.Find(ExtraChannel::kAlpha);
+    if (eci == nullptr || eci->alpha_associated) return;  // nothing to do
+    if (metadata.m.have_preview) {
+      preview_frame.PremultiplyAlpha();
+    }
+    for (ImageBundle& ib : frames) {
+      ib.PremultiplyAlpha();
+    }
+    eci->alpha_associated = true;
+    return;
+  }
 
   // -- DECODER INPUT:
 

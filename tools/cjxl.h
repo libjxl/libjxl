@@ -73,6 +73,7 @@ struct CompressArgs {
                             // or to VarDCT otherwise.
   bool progressive = false;
   bool default_settings = true;
+  bool force_premultiplied = false;
 
   // Will get passed on to AuxOut.
   jxl::InspectorImage3F inspector_image3f;

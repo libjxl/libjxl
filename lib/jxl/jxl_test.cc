@@ -696,7 +696,7 @@ TEST(JxlTest, RoundtripAlpha) {
   ASSERT_NE(io.xsize(), 0);
   ASSERT_TRUE(io.metadata.m.HasAlpha());
   ASSERT_TRUE(io.Main().HasAlpha());
-  io.ShrinkTo(128, 128);
+  io.ShrinkTo(300, 300);
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
@@ -713,15 +713,49 @@ TEST(JxlTest, RoundtripAlpha) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 5500);
+  EXPECT_LE(compressed.size(), 10000);
 
-  // TODO(robryk): Fix the following line in presence of different alpha_bits in
-  // the two contexts.
-  // EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
-  // TODO(robryk): Fix the distance estimate used in the encoder.
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            6.3);
+            1.4);
+}
+
+TEST(JxlTest, RoundtripAlphaPremultiplied) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  CodecInOut io, io_nopremul;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_nopremul, pool));
+
+  ASSERT_NE(io.xsize(), 0);
+  ASSERT_TRUE(io.metadata.m.HasAlpha());
+  ASSERT_TRUE(io.Main().HasAlpha());
+  io.ShrinkTo(300, 300);
+  io_nopremul.ShrinkTo(300, 300);
+
+  CompressParams cparams;
+  cparams.butteraugli_distance = 1.0;
+  DecompressParams dparams;
+
+  io.PremultiplyAlpha();
+  EXPECT_TRUE(io.Main().AlphaIsPremultiplied());
+  PassesEncoderState enc_state;
+  AuxOut* aux_out = nullptr;
+  PaddedBytes compressed;
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
+  CodecInOut io2;
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
+
+  EXPECT_LE(compressed.size(), 10000);
+
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            1.4);
+  io2.Main().UnpremultiplyAlpha();
+  EXPECT_LE(ButteraugliDistance(io_nopremul, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            1.8);
 }
 
 TEST(JxlTest, RoundtripAlphaResampling) {
