@@ -1599,7 +1599,8 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             }
             pos += avail_codestream_size;
           }
-        } else if (strcmp(type, "jbrd") == 0) {
+        } else if ((dec->orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) &&
+                   strcmp(type, "jbrd") == 0) {
           // This is a JPEG reconstruction metadata box.
           // A new box implies that we clear the buffer.
           dec->jpeg_reconstruction_buffer.clear();
