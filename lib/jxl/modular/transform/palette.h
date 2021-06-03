@@ -6,6 +6,7 @@
 #ifndef LIB_JXL_MODULAR_TRANSFORM_PALETTE_H_
 #define LIB_JXL_MODULAR_TRANSFORM_PALETTE_H_
 
+#include <map>
 #include <set>
 
 #include "lib/jxl/base/data_parallel.h"
@@ -445,6 +446,43 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   std::vector<pixel_type> color(nb);
   std::vector<float> color_with_error(nb);
   std::vector<const pixel_type *> p_in(nb);
+
+  if (lossy) {
+    // Count color frequency for colors that make a cross.
+    std::map<std::vector<pixel_type>, size_t> color_freq_map;
+    for (size_t y = 1; y + 1 < h; y++) {
+      for (uint32_t c = 0; c < nb; c++) {
+        p_in[c] = input.channel[begin_c + c].Row(y);
+      }
+      for (size_t x = 1; x + 1 < w; x++) {
+        for (uint32_t c = 0; c < nb; c++) {
+          color[c] = p_in[c][x];
+        }
+        int offsets[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        bool makes_cross = true;
+        for (int i = 0; i < 4 && makes_cross; ++i) {
+          int dx = offsets[i][0];
+          int dy = offsets[i][1];
+          for (uint32_t c = 0; c < nb && makes_cross; c++) {
+            if (input.channel[begin_c + c].Row(y + dy)[x + dx] != color[c]) {
+              makes_cross = false;
+            }
+          }
+        }
+        if (makes_cross) color_freq_map[color] += 1;
+      }
+    }
+    // Add colors satisfying frequency condition to the palette.
+    constexpr float kImageFraction = 0.01f;
+    size_t color_frequency_lower_bound = 5 + input.h * input.w * kImageFraction;
+    for (const auto &color_freq : color_freq_map) {
+      if (color_freq.second > color_frequency_lower_bound) {
+        candidate_palette.insert(color_freq.first);
+        candidate_palette_imageorder.push_back(color_freq.first);
+      }
+    }
+  }
+
   for (size_t y = 0; y < h; y++) {
     for (uint32_t c = 0; c < nb; c++) {
       p_in[c] = input.channel[begin_c + c].Row(y);
@@ -463,6 +501,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
       }
     }
   }
+
   nb_colors = candidate_palette.size();
   JXL_DEBUG_V(6, "Channels %i-%i can be represented using a %i-color palette.",
               begin_c, end_c, nb_colors);
@@ -485,6 +524,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   if (nb == 1) {
     lookup.resize(lookup_table_size);
   }
+
   if (ordered) {
     JXL_DEBUG_V(7, "Palette of %i colors, using lexicographic order",
                 nb_colors);
