@@ -577,6 +577,8 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
       }
     }
   }
+  if (params.resampling > 1 && !params.already_downsampled)
+    jpeg_transcode = false;
 
   if (progressive) {
     params.qprogressive_mode = true;
