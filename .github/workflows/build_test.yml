@@ -37,11 +37,15 @@ jobs:
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
 
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
     steps:
     - name: Install build deps
       run: |
         sudo apt update
         sudo apt install -y \
+          ccache \
           clang-7 \
           cmake \
           doxygen \
@@ -61,14 +65,38 @@ jobs:
       uses: actions/checkout@v2
       with:
         submodules: true
+        fetch-depth: 2
+    - name: Git environment
+      id: git-env
+      run: |
+        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+      shell: bash
+    - name: ccache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        # When the cache hits the key it is not updated, so if this is a rebuild
+        # of the same Pull Request it will reuse the cache if still around. For
+        # either Pull Requests or new pushes to main, this will use the parent
+        # hash as the starting point from the restore-keys entry.
+        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
     - name: Build
       run: |
+        mkdir -p ${CCACHE_DIR}
+        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
         mode="${{ matrix.mode }}"
         [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
-        ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON ${{ matrix.cmake_args }}
+        ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          ${{ matrix.cmake_args }}
       env:
         SKIP_TEST: 1
         CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
+    - name: ccache stats
+      run: ccache --show-stats
     - name: Build stats ${{ matrix.name }}
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
