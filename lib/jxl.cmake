@@ -100,6 +100,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
   jxl/decode.cc
+  jxl/decode_to_jpeg.cc
+  jxl/decode_to_jpeg.h
   jxl/enc_bit_writer.cc
   jxl/enc_bit_writer.h
   jxl/entropy_coder.cc
