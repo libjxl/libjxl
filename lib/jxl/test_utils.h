@@ -17,6 +17,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_external_image.h"
@@ -28,6 +29,12 @@
 #else
 #define JXL_SLOW_TEST(X) X
 #endif  // JXL_DISABLE_SLOW_TESTS
+
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
+#define JXL_TRANSCODE_JPEG_TEST(X) X
+#else
+#define JXL_TRANSCODE_JPEG_TEST(X) DISABLED_##X
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
 #ifdef THREAD_SANITIZER
 #define JXL_TSAN_SLOW_TEST(X) DISABLED_##X
