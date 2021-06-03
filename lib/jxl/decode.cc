@@ -21,12 +21,11 @@
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/dec_reconstruct.h"
+#include "lib/jxl/decode_to_jpeg.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
 #include "lib/jxl/image_bundle.h"
-#include "lib/jxl/jpeg/dec_jpeg_data.h"
-#include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/memory_manager_internal.h"
 #include "lib/jxl/toc.h"
@@ -159,6 +158,8 @@ JxlSignature JxlSignatureCheck(const uint8_t* buf, size_t len) {
   size_t pos = 0;
   return ReadSignature(buf, len, &pos);
 }
+
+namespace {
 
 size_t BitsPerChannel(JxlDataType data_type) {
   switch (data_type) {
@@ -295,6 +296,8 @@ struct Sections {
   std::vector<char> section_received;
 };
 
+}  // namespace
+
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 struct JxlDecoderStruct {
   JxlDecoderStruct() = default;
@@ -410,23 +413,7 @@ struct JxlDecoderStruct {
   // strategy to prevent some memory usage.
   std::vector<uint8_t> codestream;
 
-  // Content of the most recently parsed JPEG reconstruction box is stored here.
-  std::vector<uint8_t> jpeg_reconstruction_buffer;
-  // Decoded content of the most recently parsed JPEG reconstruction box is
-  // stored here.
-  std::unique_ptr<jxl::jpeg::JPEGData> jpeg_reconstruction_data;
-  // True if the decoder is currently reading bytes inside a JPEG reconstruction
-  // box.
-  bool inside_jpeg_reconstruction_box = false;
-  // True if the JPEG reconstruction box had undefined size (all remaining
-  // bytes).
-  bool jpeg_reconstruction_box_until_eof = false;
-  // Size of most recently parsed JPEG reconstruction box contents.
-  size_t jpeg_reconstruction_size = 0;
-  // Next bytes to write JPEG reconstruction to.
-  uint8_t* next_jpeg_reconstruction_out = nullptr;
-  // Available bytes to write JPEG reconstruction to.
-  size_t avail_jpeg_reconstruction_size = 0;
+  jxl::JxlToJpegDecoder jpeg_decoder;
 
   // Position in the actual codestream, which codestream.begin() points to.
   // Non-zero once earlier parts of the codestream vector have been erased.
@@ -1023,17 +1010,10 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       dec->frame_dec.reset(new FrameDecoder(
           dec->passes_state.get(), dec->metadata, dec->thread_pool.get()));
 
-      if (dec->next_jpeg_reconstruction_out != nullptr &&
-          dec->jpeg_reconstruction_data != nullptr) {
-        // If JPEG reconstruction is wanted and possible, set the jpeg_data of
-        // the ImageBundle.
-        if (!jxl::jpeg::SetJPEGDataFromICC(
-                dec->ib->metadata()->color_encoding.ICC(),
-                dec->jpeg_reconstruction_data.get())) {
-          return JXL_DEC_ERROR;
-        }
-        dec->ib->jpeg_data = std::move(dec->jpeg_reconstruction_data);
-      }
+      // If JPEG reconstruction is wanted and possible, set the jpeg_data of
+      // the ImageBundle.
+      if (!dec->jpeg_decoder.SetImageBundleJpegData(dec->ib.get()))
+        return JXL_DEC_ERROR;
 
       jxl::Status status = dec->frame_dec->InitFrame(
           reader.get(), dec->ib.get(), /*is_preview=*/false,
@@ -1069,7 +1049,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         dec->frame_stage == FrameStage::kDC) {
       if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
         if (!dec->image_out_buffer_set &&
-            (dec->next_jpeg_reconstruction_out == nullptr ||
+            (!dec->jpeg_decoder.IsOutputSet() ||
              dec->ib->jpeg_data == nullptr) &&
             dec->is_last_of_still) {
           // TODO(lode): remove the dec->is_last_of_still condition if the
@@ -1216,29 +1196,10 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
         // If no output buffer was set, we merely return the JXL_DEC_FULL_IMAGE
         // status without outputting pixels.
-        if (dec->next_jpeg_reconstruction_out != nullptr &&
-            dec->ib->jpeg_data != nullptr) {
-          // Copy JPEG bytestream if desired.
-          uint8_t* tmp_next_out = dec->next_jpeg_reconstruction_out;
-          size_t tmp_avail_size = dec->avail_jpeg_reconstruction_size;
-          auto write = [&tmp_next_out, &tmp_avail_size](const uint8_t* buf,
-                                                        size_t len) {
-            size_t to_write = std::min<size_t>(tmp_avail_size, len);
-            memcpy(tmp_next_out, buf, to_write);
-            tmp_next_out += to_write;
-            tmp_avail_size -= to_write;
-            return to_write;
-          };
-          Status write_result =
-              jxl::jpeg::WriteJpeg(*(dec->ib->jpeg_data.get()), write);
-          if (!write_result) {
-            if (tmp_avail_size == 0) {
-              return JXL_DEC_JPEG_NEED_MORE_OUTPUT;
-            }
-            return JXL_DEC_ERROR;
-          }
-          dec->next_jpeg_reconstruction_out = tmp_next_out;
-          dec->avail_jpeg_reconstruction_size = tmp_avail_size;
+        if (dec->jpeg_decoder.IsOutputSet() && dec->ib->jpeg_data != nullptr) {
+          JxlDecoderStatus status =
+              dec->jpeg_decoder.WriteOutput(*dec->ib->jpeg_data);
+          if (status != JXL_DEC_SUCCESS) return status;
         } else if (return_full_image && dec->image_out_buffer_set) {
           if (!dec->frame_dec->HasRGBBuffer()) {
             // Copy pixels if desired.
@@ -1289,97 +1250,11 @@ size_t JxlDecoderReleaseInput(JxlDecoder* dec) {
 
 JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec, uint8_t* data,
                                          size_t size) {
-  if (dec->next_jpeg_reconstruction_out) return JXL_DEC_ERROR;
-
-  dec->next_jpeg_reconstruction_out = data;
-  dec->avail_jpeg_reconstruction_size = size;
-  return JXL_DEC_SUCCESS;
+  return dec->jpeg_decoder.SetOutputBuffer(data, size);
 }
 
 size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec) {
-  size_t result = dec->avail_jpeg_reconstruction_size;
-  dec->next_jpeg_reconstruction_out = nullptr;
-  dec->avail_jpeg_reconstruction_size = 0;
-  return result;
-}
-
-// Consumes data from next_in/avail_in to reconstruct JPEG data.
-// Uses dec->jpeg_reconstruction_size, dec->inside_jpeg_reconstruction_box, and
-// dec->jpeg_reconstruction_box_until_eof to calculate how much to consume.
-// Potentially stores unparsed data in dec->jpeg_reconstruction_buffer.
-// Potentially populates dec->jpeg_reconstruction_data.
-// Potentially updates dec->inside_reconstruction_box.
-JxlDecoderStatus JxlDecoderProcessJPEGReconstruction(JxlDecoder* dec,
-                                                     const uint8_t** next_in,
-                                                     size_t* avail_in) {
-  if (!dec->inside_jpeg_reconstruction_box) {
-    JXL_ABORT(
-        "processing of JPEG reconstruction data outside JPEG reconstruction "
-        "box");
-  }
-  jxl::Span<const uint8_t> to_decode;
-  if (dec->jpeg_reconstruction_box_until_eof) {
-    // Until EOF means consume all data.
-    to_decode = jxl::Span<const uint8_t>(*next_in, *avail_in);
-    *next_in += *avail_in;
-    *avail_in = 0;
-  } else {
-    // Defined size means consume min(available, needed).
-    size_t avail_recon_in =
-        std::min<size_t>(*avail_in, dec->jpeg_reconstruction_size -
-                                        dec->jpeg_reconstruction_buffer.size());
-    to_decode = jxl::Span<const uint8_t>(*next_in, avail_recon_in);
-    *next_in += avail_recon_in;
-    *avail_in -= avail_recon_in;
-  }
-  bool old_data_exists = !dec->jpeg_reconstruction_buffer.empty();
-  if (old_data_exists) {
-    // Append incoming data to buffer if we already had data in the buffer.
-    dec->jpeg_reconstruction_buffer.insert(
-        dec->jpeg_reconstruction_buffer.end(), to_decode.data(),
-        to_decode.data() + to_decode.size());
-    to_decode =
-        jxl::Span<const uint8_t>(dec->jpeg_reconstruction_buffer.data(),
-                                 dec->jpeg_reconstruction_buffer.size());
-  }
-  if (!dec->jpeg_reconstruction_box_until_eof &&
-      to_decode.size() > dec->jpeg_reconstruction_size) {
-    JXL_ABORT("JPEG reconstruction data to decode larger than expected");
-  }
-  if (dec->jpeg_reconstruction_box_until_eof ||
-      to_decode.size() == dec->jpeg_reconstruction_size) {
-    // If undefined size, or the right size, try to decode.
-    dec->jpeg_reconstruction_data = jxl::make_unique<jxl::jpeg::JPEGData>();
-    const auto status = jxl::jpeg::DecodeJPEGData(
-        to_decode, dec->jpeg_reconstruction_data.get());
-    if (status.IsFatalError()) return JXL_DEC_ERROR;
-    if (status) {
-      // Successful decoding, emit event after updating state to track that we
-      // are no longer parsing JPEG reconstruction data.
-      dec->inside_jpeg_reconstruction_box = false;
-      return JXL_DEC_JPEG_RECONSTRUCTION;
-    }
-    if (dec->jpeg_reconstruction_box_until_eof) {
-      // Unsuccessful decoding and undefined size, assume incomplete data. Copy
-      // the data if we haven't already.
-      if (!old_data_exists) {
-        dec->jpeg_reconstruction_buffer.insert(
-            dec->jpeg_reconstruction_buffer.end(), to_decode.data(),
-            to_decode.data() + to_decode.size());
-      }
-    } else {
-      // Unsuccessful decoding of correct amount of data, assume error.
-      return JXL_DEC_ERROR;
-    }
-  } else {
-    // Not enough data, copy the data if we haven't already.
-    if (!old_data_exists) {
-      dec->jpeg_reconstruction_buffer.insert(
-          dec->jpeg_reconstruction_buffer.end(), to_decode.data(),
-          to_decode.data() + to_decode.size());
-    }
-  }
-  return JXL_DEC_NEED_MORE_INPUT;
+  return dec->jpeg_decoder.ReleaseOutputBuffer();
 }
 
 JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
@@ -1454,10 +1329,10 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       *avail_in -= csize;
     }
 
-    if (dec->inside_jpeg_reconstruction_box) {
+    if (dec->jpeg_decoder.IsParsingBox()) {
       // We are inside a JPEG reconstruction box.
       JxlDecoderStatus recon_result =
-          JxlDecoderProcessJPEGReconstruction(dec, next_in, avail_in);
+          dec->jpeg_decoder.Process(next_in, avail_in);
       if (recon_result == JXL_DEC_JPEG_RECONSTRUCTION) {
         // If successful JPEG reconstruction, return the success if the user
         // cares about it, otherwise continue.
@@ -1601,21 +1476,14 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           }
         } else if ((dec->orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) &&
                    strcmp(type, "jbrd") == 0) {
-          // This is a JPEG reconstruction metadata box.
-          // A new box implies that we clear the buffer.
-          dec->jpeg_reconstruction_buffer.clear();
-          dec->inside_jpeg_reconstruction_box = true;
-          if (box_size == 0) {
-            dec->jpeg_reconstruction_box_until_eof = true;
-          } else {
-            dec->jpeg_reconstruction_size = contents_size;
-          }
+          // This is a new JPEG reconstruction metadata box.
+          dec->jpeg_decoder.StartBox(box_size, contents_size);
           dec->file_pos += pos;
           *next_in += pos;
           *avail_in -= pos;
-          JxlDecoderStatus recon_result =
-              JxlDecoderProcessJPEGReconstruction(dec, next_in, avail_in);
           pos = 0;
+          JxlDecoderStatus recon_result =
+              dec->jpeg_decoder.Process(next_in, avail_in);
           if (recon_result == JXL_DEC_JPEG_RECONSTRUCTION) {
             // If successful JPEG reconstruction, return the success if the user
             // cares about it, otherwise continue.
@@ -1917,6 +1785,7 @@ JxlDecoderStatus JxlDecoderGetInverseOpsinMatrix(
 }
 
 namespace {
+
 // Returns the amount of bits needed for getting memory buffer size, and does
 // all error checking required for size checking and format validity.
 JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
