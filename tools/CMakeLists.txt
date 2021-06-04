@@ -245,9 +245,13 @@ if(${JPEGXL_ENABLE_FUZZERS})
   foreach(BINARY IN LISTS FUZZER_BINARIES)
     add_executable("${BINARY}" "${BINARY}.cc")
     target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-    target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
-    target_compile_options("${BINARY}" PRIVATE "-fsanitize=fuzzer-no-link")
-    target_link_libraries("${BINARY}" -fsanitize=fuzzer)
+    target_link_libraries("${BINARY}"
+        jxl-static
+        jxl_extras-static
+        jxl_threads-static
+        jxl_tool
+        ${JPEGXL_FUZZER_LINK_FLAGS}
+    )
   endforeach()
 endif()  # JPEGXL_ENABLE_FUZZERS
 
