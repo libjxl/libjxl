@@ -360,6 +360,8 @@ cmake_configure() {
     -DJPEGXL_ENABLE_VIEWERS=ON
     -DJPEGXL_ENABLE_PLUGINS=ON
     -DJPEGXL_ENABLE_DEVTOOLS=ON
+    # We always use libfuzzer in the ci.sh wrapper.
+    -DJPEGXL_FUZZER_LINK_FLAGS="-fsanitize=fuzzer"
   )
   if [[ "${BUILD_TARGET}" != *mingw32 ]]; then
     args+=(
@@ -590,6 +592,27 @@ cmd_gbench() {
      --benchmark_out_format=json \
      --benchmark_out=gbench.json "$@"
   )
+}
+
+cmd_asanfuzz() {
+  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link"
+  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link"
+  cmd_asan -DJPEGXL_ENABLE_FUZZERS=ON "$@"
+}
+
+cmd_msanfuzz() {
+  # Install msan if needed before changing the flags.
+  detect_clang_version
+  local msan_prefix="${HOME}/.msan/${CLANG_VERSION}"
+  if [[ ! -d "${msan_prefix}" || -e "${msan_prefix}/lib/libc++abi.a" ]]; then
+    # Install msan libraries for this version if needed or if an older version
+    # with libc++abi was installed.
+    cmd_msan_install
+  fi
+
+  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link"
+  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link"
+  cmd_msan -DJPEGXL_ENABLE_FUZZERS=ON "$@"
 }
 
 cmd_asan() {
@@ -1287,6 +1310,8 @@ Where cmd is one of:
  msan      Build and test an MSan (MemorySanitizer) build. Needs to have msan
            c++ libs installed with msan_install first.
  tsan      Build and test a TSan (ThreadSanitizer) build.
+ asanfuzz  Build and test an ASan (AddressSanitizer) build for fuzzing.
+ msanfuzz  Build and test an MSan (MemorySanitizer) build for fuzzing.
  test      Run the tests build by opt, debug, release, asan or msan. Useful when
            building with SKIP_TEST=1.
  gbench    Run the Google benchmark tests.
