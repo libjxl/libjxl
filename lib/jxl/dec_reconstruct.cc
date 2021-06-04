@@ -314,9 +314,9 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
     }
   }
   if (frame_rect.x0() + frame_rect.xsize() >= frame_dim.xsize_padded) {
+    size_t borderx = ((rect.x0() + rect.xsize() - xoff) >> hs) + xoff;
     for (size_t y = 0; y < plane_in->ysize(); y++) {
-      plane_in->Row(y)[rect.x0() + rect.xsize()] =
-          plane_in->Row(y)[rect.x0() + rect.xsize() - 1];
+      plane_in->Row(y)[borderx] = plane_in->Row(y)[borderx - 1];
     }
   }
   if (frame_rect.y0() == 0) {
@@ -324,8 +324,8 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
            plane_in->xsize() * sizeof(float));
   }
   if (frame_rect.y0() + frame_rect.ysize() >= frame_dim.ysize_padded) {
-    memcpy(plane_in->Row(rect.y0() + rect.ysize()),
-           plane_in->Row(rect.y0() + rect.ysize() - 1),
+    size_t bordery = ((rect.y0() + rect.ysize() - yoff) >> vs) + yoff;
+    memcpy(plane_in->Row(bordery), plane_in->Row(bordery - 1),
            plane_in->xsize() * sizeof(float));
   }
   if (hs == 1) {
