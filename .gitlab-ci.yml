@@ -77,6 +77,11 @@ variables:
   - build/htmldoc.tar.gz
   - build/stats.json
   - build/LICENSE*
+  # The JNI library + wrapper + test.
+  - build/tools/libjxl_jni*so*
+  - build/tools/libjxl_jni*.dll
+  - build/tools/jxl_jni_wrapper.jar
+  - build/tools/jxl_jni_wrapper_test.jar
 
 # Helper template to add the default artifacts paths to all build stages. If
 # files in the "paths:" section are not present only a warning is generated.
