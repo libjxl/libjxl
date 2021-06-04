@@ -15,7 +15,8 @@
 
 #include "gtest/gtest.h"
 #include "jxl/decode_cxx.h"
-#include "jxl/thread_parallel_runner.h"
+#include "jxl/resizable_parallel_runner_cxx.h"
+#include "jxl/thread_parallel_runner_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_jpg.h"
 #include "lib/jxl/base/byte_order.h"
@@ -407,9 +408,20 @@ PaddedBytes CreateTestJXLCodestream(Span<const uint8_t> pixels, size_t xsize,
 std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                                    Span<const uint8_t> compressed,
                                    const JxlPixelFormat& format,
-                                   bool use_callback, bool set_buffer_early) {
-  void* runner = JxlThreadParallelRunnerCreate(
-      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+                                   bool use_callback, bool set_buffer_early,
+                                   bool use_resizable_runner) {
+  JxlThreadParallelRunnerPtr runner_fixed;
+  JxlResizableParallelRunnerPtr runner_resizable;
+  void* runner;
+
+  if (use_resizable_runner) {
+    runner_resizable = JxlResizableParallelRunnerMake(nullptr);
+    runner = runner_resizable.get();
+  } else {
+    runner_fixed = JxlThreadParallelRunnerMake(
+        nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+    runner = runner_fixed.get();
+  }
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
 
@@ -427,8 +439,13 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
             JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
-  std::vector<uint8_t> pixels(buffer_size);
+  if (use_resizable_runner) {
+    JxlResizableParallelRunnerSetThreads(
+        runner,
+        JxlResizableParallelRunnerSuggestThreads(info.xsize, info.ysize));
+  }
 
+  std::vector<uint8_t> pixels(buffer_size);
   size_t bytes_per_pixel =
       format.num_channels * GetDataBits(format.data_type) / jxl::kBitsPerByte;
   size_t stride = bytes_per_pixel * info.xsize;
@@ -484,18 +501,18 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
   // success to indicate all is done.
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
-  JxlThreadParallelRunnerDestroy(runner);
-
   return pixels;
 }
 
 // Decodes one-shot with the API for non-streaming decoding tests.
 std::vector<uint8_t> DecodeWithAPI(Span<const uint8_t> compressed,
                                    const JxlPixelFormat& format,
-                                   bool use_callback, bool set_buffer_early) {
+                                   bool use_callback, bool set_buffer_early,
+                                   bool use_resizable_runner) {
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   std::vector<uint8_t> pixels =
-      DecodeWithAPI(dec, compressed, format, use_callback, set_buffer_early);
+      DecodeWithAPI(dec, compressed, format, use_callback, set_buffer_early,
+                    use_resizable_runner);
   JxlDecoderDestroy(dec);
   return pixels;
 }
@@ -1375,6 +1392,7 @@ struct PixelTestConfig {
   // Decoding mode.
   bool use_callback;
   bool set_buffer_early;
+  bool use_resizable_runner;
 };
 
 class DecodeTestParam : public ::testing::TestWithParam<PixelTestConfig> {};
@@ -1403,7 +1421,8 @@ TEST_P(DecodeTestParam, PixelTest) {
 
   std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
       dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      format, config.use_callback, config.set_buffer_early);
+      format, config.use_callback, config.set_buffer_early,
+      config.use_resizable_runner);
   JxlDecoderReset(dec);
   EXPECT_EQ(num_pixels * config.output_channels *
                 GetDataBits(config.data_type) / jxl::kBitsPerByte,
@@ -1446,7 +1465,8 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
 
   auto make_test = [&](ChannelInfo ch, size_t xsize, size_t ysize, bool preview,
                        CodeStreamBoxFormat box, OutputFormat format,
-                       bool use_callback, bool set_buffer_early) {
+                       bool use_callback, bool set_buffer_early,
+                       bool resizable_runner) {
     PixelTestConfig c;
     c.grayscale = ch.grayscale;
     c.include_alpha = ch.include_alpha;
@@ -1459,6 +1479,7 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
     c.endianness = format.endianness;
     c.use_callback = use_callback;
     c.set_buffer_early = set_buffer_early;
+    c.use_resizable_runner = resizable_runner;
     all_tests.push_back(c);
   };
 
@@ -1468,7 +1489,7 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
       for (OutputFormat fmt : out_formats) {
         make_test(ch, 301, 33, /*add_preview=*/false,
                   CodeStreamBoxFormat::kCSBF_None, fmt, use_callback,
-                  /*set_buffer_early=*/false);
+                  /*set_buffer_early=*/false, /*resizable_runner=*/false);
       }
     }
   }
@@ -1476,18 +1497,28 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
   for (size_t box = 1; box < kCSBF_NUM_ENTRIES; ++box) {
     make_test(ch_info[0], 77, 33, /*add_preview=*/false,
               (CodeStreamBoxFormat)box, out_formats[0], /*use_callback=*/false,
-              /*set_buffer_early=*/false);
+              /*set_buffer_early=*/false, /*resizable_runner=*/false);
   }
   // Test previews.
   for (int add_preview = 0; add_preview <= 1; add_preview++) {
     make_test(ch_info[0], 77, 33, add_preview, CodeStreamBoxFormat::kCSBF_None,
               out_formats[0],
-              /*use_callback=*/false, /*set_buffer_early=*/false);
+              /*use_callback=*/false, /*set_buffer_early=*/false,
+              /*resizable_runner=*/false);
   }
   // Test setting buffers early.
   make_test(ch_info[0], 300, 33, /*add_preview=*/false,
             CodeStreamBoxFormat::kCSBF_None, out_formats[0],
-            /*use_callback=*/false, /*set_buffer_early=*/true);
+            /*use_callback=*/false, /*set_buffer_early=*/true,
+            /*resizable_runner=*/false);
+
+  // Test using the resizable runner
+  for (size_t i = 0; i < 4; i++) {
+    make_test(ch_info[0], 300 << i, 33 << i, /*add_preview=*/false,
+              CodeStreamBoxFormat::kCSBF_None, out_formats[0],
+              /*use_callback=*/false, /*set_buffer_early=*/false,
+              /*resizable_runner=*/true);
+  }
   return all_tests;
 }
 
@@ -1533,6 +1564,7 @@ std::ostream& operator<<(std::ostream& os, const PixelTestConfig& c) {
   if (c.add_preview) os << "Preview";
   if (c.use_callback) os << "Callback";
   if (c.set_buffer_early) os << "EarlyBuffer";
+  if (c.use_resizable_runner) os << "ResizableRunner";
   return os;
 }
 
@@ -1569,7 +1601,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
 
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-          format, /*use_callback=*/false, /*set_buffer_early=*/false);
+          format, /*use_callback=*/false, /*set_buffer_early=*/false,
+          /*use_resizable_runner=*/false);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels, pixels2.size());
       EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
@@ -1581,7 +1614,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
       // Test with the container for one of the pixel formats.
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-          format, /*use_callback=*/true, /*set_buffer_early=*/true);
+          format, /*use_callback=*/true, /*set_buffer_early=*/true,
+          /*use_resizable_runner=*/false);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
       EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
@@ -1593,7 +1627,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
 
       std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
           dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-          format, /*use_callback=*/false, /*set_buffer_early=*/false);
+          format, /*use_callback=*/false, /*set_buffer_early=*/false,
+          /*use_resizable_runner=*/false);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
       EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
@@ -1621,7 +1656,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
 
   std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
       dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-      format, /*use_callback=*/false, /*set_buffer_early=*/true);
+      format, /*use_callback=*/false, /*set_buffer_early=*/true,
+      /*use_resizable_runner=*/false);
   JxlDecoderReset(dec);
   EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
 
@@ -1675,7 +1711,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
 
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-        format, /*use_callback=*/true, /*set_buffer_early=*/false);
+        format, /*use_callback=*/true, /*set_buffer_early=*/false,
+        /*use_resizable_runner=*/false);
     JxlDecoderReset(dec);
     EXPECT_EQ(num_pixels * channels, pixels2.size());
 
@@ -1737,7 +1774,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
 
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
-        format, /*use_callback=*/false, /*set_buffer_early=*/true);
+        format, /*use_callback=*/false, /*set_buffer_early=*/true,
+        /*use_resizable_runner=*/false);
     JxlDecoderReset(dec);
     EXPECT_EQ(num_pixels * channels, pixels2.size());
 
@@ -2223,7 +2261,8 @@ TEST(DecodeTest, AlignTest) {
   for (int use_callback = 0; use_callback <= 1; ++use_callback) {
     std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
         jxl::Span<const uint8_t>(compressed.data(), compressed.size()), format,
-        use_callback, /*set_buffer_early=*/false);
+        use_callback, /*set_buffer_early=*/false,
+        /*use_resizable_runner=*/false);
     EXPECT_EQ(expected_line_bytes * ysize, pixels2.size());
     EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
                                format_orig, format));

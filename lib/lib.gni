@@ -364,6 +364,7 @@ libjxl_testlib_sources = [
 ]
 
 libjxl_threads_sources = [
+    "threads/resizable_parallel_runner.cc",
     "threads/thread_parallel_runner.cc",
     "threads/thread_parallel_runner_internal.cc",
     "threads/thread_parallel_runner_internal.h",

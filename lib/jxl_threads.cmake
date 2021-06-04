@@ -6,6 +6,7 @@
 find_package(Threads REQUIRED)
 
 set(JPEGXL_THREADS_SOURCES
+  threads/resizable_parallel_runner.cc
   threads/thread_parallel_runner.cc
   threads/thread_parallel_runner_internal.cc
   threads/thread_parallel_runner_internal.h
