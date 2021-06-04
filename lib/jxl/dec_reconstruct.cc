@@ -945,6 +945,7 @@ Status FinalizeImageRect(
         num_ys = upsampled_frame_rect.ysize() - upsampled_available_y;
       }
 
+      // Upsampler takes care of mirroring, and checks "physical" boundaries.
       Rect upsample_input_rect = rect_for_upsampling.Lines(input_y, 1);
       color_upsampler->UpsampleRect(
           *storage_for_if, upsample_input_rect, output_pixel_data_storage,
@@ -954,9 +955,12 @@ Status FinalizeImageRect(
           frame_dim.ysize_padded, dec_state->upsampler_storage[thread].get());
       if (late_ec_upsample) {
         for (size_t ec = 0; ec < extra_channels.size(); ec++) {
+          // Upsampler takes care of mirroring, and checks "physical"
+          // boundaries.
+          Rect upsample_ec_input_rect =
+              extra_channels[ec].second.Lines(input_y, 1);
           color_upsampler->UpsampleRect(
-              *extra_channels[ec].first,
-              extra_channels[ec].second.Lines(input_y, num_input_rows),
+              *extra_channels[ec].first, upsample_ec_input_rect,
               &output_image->extra_channels()[ec],
               upsampled_frame_rect.Lines(upsampled_available_y, num_ys),
               static_cast<ssize_t>(frame_rect.y0()) -
