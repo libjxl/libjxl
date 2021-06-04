@@ -949,7 +949,6 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathGradient)) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-
 TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8Falcon)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
@@ -1338,6 +1337,29 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
+  CodecInOut io;
+  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CodecInOut io2;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
+
+  CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kYCbCr;
+
+  DecompressParams dparams;
+
+  CodecInOut io3;
+  Roundtrip(&io, cparams, dparams, &pool, &io3);
+
+  EXPECT_GE(1.5, ButteraugliDistance(io2, io3, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+}
+
+TEST(JxlTest, RoundtripJpegRecompressionToPixels420Mul16) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon_cropped.jpg");
   CodecInOut io;
   io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
