@@ -60,4 +60,20 @@ target_compile_definitions(lcms2
 target_compile_definitions(lcms2
   PUBLIC "-DCMS_NO_REGISTER_KEYWORD=1")
 
+# Ensure that a thread safe alternative of gmtime is used in LCMS
+include(CheckFunctionExists)
+if (WIN32)
+  check_function_exists(_gmtime64_s HAVE__GMTIME64_S)
+else()
+  check_function_exists(gmtime_r HAVE_GMTIME_R)
+endif()
+if (HAVE__GMTIME64_S)
+  target_compile_definitions(lcms2
+    PUBLIC "-DHAVE__GMTIME64_S=1")
+endif()
+if (HAVE_GMTIME_R)
+  target_compile_definitions(lcms2
+    PUBLIC "-DHAVE_GMTIME_R=1")
+endif()
+
 set_property(TARGET lcms2 PROPERTY POSITION_INDEPENDENT_CODE ON)
