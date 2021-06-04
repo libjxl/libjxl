@@ -107,7 +107,7 @@ information on using pull requests.
 
   * Your change must pass the build and test workflows. There's a `ci.sh` script
   to help building and testing these configurations. See [building and
-  testing](doc/building_and_testing.md)) for more details.
+  testing](doc/building_and_testing.md) for more details.
 
 ### Contributing checklist.
 
