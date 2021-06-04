@@ -1,0 +1,136 @@
+# Copyright (c) the JPEG XL Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Workflow for building and running tests.
+
+name: Build/Test
+on:
+  push:
+    branches:
+      - main
+      - v*.*.x
+  pull_request:
+    types: [opened, reopened, labeled, synchronize]
+
+jobs:
+  ubuntu_build:
+    name: Ubuntu Build ${{ matrix.name }}
+    runs-on: [ubuntu-latest]
+    strategy:
+      matrix:
+        # We have one job per "name" in the matrix. Attributes are set on the
+        # specific job names.
+        name: [release, debug, asan, msan, scalar]
+        include:
+          - name: release
+            test_in_pr: true
+          - name: debug
+          # Build scalar-only hwy instructions.
+          - name: scalar
+            mode: release
+            cxxflags: -DHWY_DISABLED_TARGETS=~HWY_SCALAR
+          # Disabling optional features to speed up msan build a little bit.
+          - name: msan
+            cmake_args: >-
+              -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
+          # Build with support for decoding to JPEG bytes disabled. Produces a
+          # smaller build if only decoding to pixels is needed.
+          - name: release-nojpeg
+            mode: release
+            cxxflags: -DJXL_DEBUG_ON_ABORT=0
+            cmake_args: >-
+              -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
+
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+
+    steps:
+    - name: Install build deps
+      run: |
+        sudo apt update
+        sudo apt install -y \
+          ccache \
+          clang-7 \
+          cmake \
+          doxygen \
+          libbrotli-dev \
+          libgif-dev \
+          libgtest-dev \
+          libjpeg-dev \
+          libopenexr-dev \
+          libpng-dev \
+          libwebp-dev \
+          ninja-build \
+          pkg-config \
+        #
+        echo "CC=clang-7" >> $GITHUB_ENV
+        echo "CXX=clang++-7" >> $GITHUB_ENV
+    - name: Checkout the source
+      uses: actions/checkout@v2
+      with:
+        submodules: true
+        fetch-depth: 2
+    - name: Git environment
+      id: git-env
+      run: |
+        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+      shell: bash
+    - name: ccache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        # When the cache hits the key it is not updated, so if this is a rebuild
+        # of the same Pull Request it will reuse the cache if still around. For
+        # either Pull Requests or new pushes to main, this will use the parent
+        # hash as the starting point from the restore-keys entry.
+        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.name }}
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.name }}
+    - name: Build
+      run: |
+        mkdir -p ${CCACHE_DIR}
+        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
+        mode="${{ matrix.mode }}"
+        [[ -n "${mode}" ]] || mode="${{ matrix.name }}"
+        ./ci.sh ${mode} -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          ${{ matrix.cmake_args }}
+      env:
+        SKIP_TEST: 1
+        CMAKE_CXX_FLAGS: ${{ matrix.cxxflags }}
+    - name: ccache stats
+      run: ccache --show-stats
+    - name: Build stats ${{ matrix.name }}
+      if: matrix.mode == 'release' || matrix.name == 'release'
+      run: |
+        tools/build_stats.py --save build/stats.json \
+          cjxl djxl libjxl.so libjxl_dec.so
+    # Run the tests on push and when requested in pull_request.
+    - name: Test ${{ matrix.mode }}
+      if: |
+        github.event_name == 'push' ||
+        (github.event_name == 'pull_request' && (
+         matrix.test_in_pr ||
+         contains(github.event.pull_request.labels.*.names, 'CI:full')))
+      run: |
+        if [[ "${{ matrix.name }}" == "debug" ]]; then
+          # Runs on AVX3 CPUs require more stack than others. Make sure to test
+          # on AVX3-enabled CPUs when changing this value.
+          export TEST_STACK_LIMIT=2048
+        fi
+        ./ci.sh test

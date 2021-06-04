@@ -1930,7 +1930,9 @@ TEST(DecodeTest, PixelPartialTest) { TestPartialStream(false); }
 
 #if JPEGXL_ENABLE_JPEG
 // Tests the return status when trying to decode JPEG bytes on incomplete file.
-TEST(DecodeTest, JPEGPartialTest) { TestPartialStream(true); }
+TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGPartialTest)) {
+  TestPartialStream(true);
+}
 #endif  // JPEGXL_ENABLE_JPEG
 
 TEST(DecodeTest, DCTest) {
@@ -2560,7 +2562,7 @@ void VerifyJPEGReconstruction(const jxl::PaddedBytes& container,
 }
 
 #if JPEGXL_ENABLE_JPEG
-TEST(DecodeTest, JPEGReconstructTestCodestream) {
+TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructTestCodestream)) {
   size_t xsize = 123;
   size_t ysize = 77;
   size_t channels = 3;
@@ -2577,7 +2579,7 @@ TEST(DecodeTest, JPEGReconstructTestCodestream) {
 }
 #endif  // JPEGXL_ENABLE_JPEG
 
-TEST(DecodeTest, JPEGReconstructionTest) {
+TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);

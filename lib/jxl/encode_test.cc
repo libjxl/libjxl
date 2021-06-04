@@ -488,7 +488,7 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   EXPECT_EQ(true, container.boxes[0].data_size_given);
 }
 
-TEST(EncodeTest, JPEGReconstructionTest) {
+TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
@@ -563,7 +563,7 @@ TEST(EncodeTest, JPEGReconstructionTest) {
   EXPECT_EQ(0, memcmp(decoded_jpeg_bytes.data(), orig.data(), orig.size()));
 }
 
-TEST(EncodeTest, JPEGFrameTest) {
+TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);

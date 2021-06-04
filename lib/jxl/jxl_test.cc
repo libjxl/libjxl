@@ -1289,7 +1289,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   return compressed.size();
 }
 
-TEST(JxlTest, RoundtripJpegRecompression444) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
@@ -1297,7 +1297,7 @@ TEST(JxlTest, RoundtripJpegRecompression444) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 256000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
@@ -1322,7 +1322,7 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
@@ -1345,7 +1345,8 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionToPixels_asymmetric) {
+TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels_asymmetric)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_asymmetric.jpg");
@@ -1368,7 +1369,7 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels_asymmetric) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionGray) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_gray.jpg");
@@ -1376,7 +1377,7 @@ TEST(JxlTest, RoundtripJpegRecompressionGray) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 140000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression420) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
@@ -1384,7 +1385,8 @@ TEST(JxlTest, RoundtripJpegRecompression420) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 181050);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression_luma_subsample) {
+TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_luma_subsample)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_luma_subsample.jpg");
@@ -1392,7 +1394,7 @@ TEST(JxlTest, RoundtripJpegRecompression_luma_subsample) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 181000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression444_12) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
   // 444 JPEG that has an interesting sampling-factor (1x2, 1x2, 1x2).
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
@@ -1401,7 +1403,7 @@ TEST(JxlTest, RoundtripJpegRecompression444_12) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 256000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression422) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression422)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_422.jpg");
@@ -1409,7 +1411,7 @@ TEST(JxlTest, RoundtripJpegRecompression422) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression440) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression440)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_440.jpg");
@@ -1417,7 +1419,7 @@ TEST(JxlTest, RoundtripJpegRecompression440) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression_asymmetric) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
   // 2x vertical downsample of one chroma channel, 2x horizontal downsample of
   // the other.
   ThreadPoolInternal pool(8);
@@ -1427,7 +1429,7 @@ TEST(JxlTest, RoundtripJpegRecompression_asymmetric) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression420Progr) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_420_progr.jpg");
