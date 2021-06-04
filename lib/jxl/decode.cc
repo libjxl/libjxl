@@ -1474,7 +1474,8 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             }
             pos += avail_codestream_size;
           }
-        } else if ((dec->orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) &&
+        } else if ((JPEGXL_ENABLE_TRANSCODE_JPEG) &&
+                   (dec->orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) &&
                    strcmp(type, "jbrd") == 0) {
           // This is a new JPEG reconstruction metadata box.
           dec->jpeg_decoder.StartBox(box_size, contents_size);
