@@ -36,6 +36,15 @@ jobs:
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+          # Build with support for decoding to JPEG bytes disabled. Produces a
+          # smaller build if only decoding to pixels is needed.
+          - name: release-nojpeg
+            mode: release
+            cxxflags: -DJXL_DEBUG_ON_ABORT=0
+            cmake_args: >-
+              -DJPEGXL_ENABLE_TRANSCODE_JPEG=OFF
+              -DJPEGXL_ENABLE_PLUGINS=OFF
+              -DJPEGXL_ENABLE_VIEWERS=OFF
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache

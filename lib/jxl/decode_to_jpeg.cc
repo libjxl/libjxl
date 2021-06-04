@@ -7,6 +7,8 @@
 
 namespace jxl {
 
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
+
 JxlDecoderStatus JxlToJpegDecoder::Process(const uint8_t** next_in,
                                            size_t* avail_in) {
   if (!inside_box_) {
@@ -69,5 +71,7 @@ JxlDecoderStatus JxlToJpegDecoder::Process(const uint8_t** next_in,
   }
   return JXL_DEC_NEED_MORE_INPUT;
 }
+
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
 }  // namespace jxl

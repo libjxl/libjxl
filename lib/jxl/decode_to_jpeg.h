@@ -18,11 +18,16 @@
 
 #include "jxl/decode.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
 namespace jxl {
+
+#if JPEGXL_ENABLE_TRANSCODE_JPEG
 
 class JxlToJpegDecoder {
  public:
@@ -131,6 +136,37 @@ class JxlToJpegDecoder {
   // Available bytes to write JPEG reconstruction to.
   size_t avail_size_ = 0;
 };
+
+#else
+
+// Fake class that disables support for decoding JPEG XL to JPEG.
+class JxlToJpegDecoder {
+ public:
+  bool IsOutputSet() const { return false; }
+  bool IsParsingBox() const { return false; }
+
+  const jpeg::JPEGData* JpegData() const { return nullptr; }
+  jpeg::JPEGData* ReleaseJpegData() { return nullptr; }
+
+  JxlDecoderStatus SetOutputBuffer(uint8_t* /* data */, size_t /* size */) {
+    return JXL_DEC_ERROR;
+  }
+  size_t ReleaseOutputBuffer() { return 0; }
+
+  void StartBox(uint64_t /* box_size */, size_t /* contents_size */) {}
+
+  JxlDecoderStatus Process(const uint8_t** next_in, size_t* avail_in) {
+    return JXL_DEC_ERROR;
+  }
+
+  Status SetImageBundleJpegData(ImageBundle* /* ib */) { return true; }
+
+  JxlDecoderStatus WriteOutput(const jpeg::JPEGData& /* jpeg_data */) {
+    return JXL_DEC_SUCCESS;
+  }
+};
+
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
 
 }  // namespace jxl
 

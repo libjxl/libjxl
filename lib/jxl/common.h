@@ -22,6 +22,11 @@
 #define JXL_HIGH_PRECISION 1
 #endif
 
+// Macro that defines whether support for decoding JXL files to JPEG is enabled.
+#ifndef JPEGXL_ENABLE_TRANSCODE_JPEG
+#define JPEGXL_ENABLE_TRANSCODE_JPEG 1
+#endif  // JPEGXL_ENABLE_TRANSCODE_JPEG
+
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
 
