@@ -137,6 +137,7 @@ struct PassesDecoderState {
   std::vector<Image3F> filter_input_storage;
   std::vector<Image3F> padded_upsampling_input_storage;
   std::vector<Image3F> upsampling_input_storage;
+  size_t upsampler_arena_size = 0;
   std::vector<hwy::AlignedFreeUniquePtr<float[]>> upsampler_storage;
   // We keep four arrays, one per upsampling level, to reduce memory usage in
   // the common case of no upsampling.
@@ -180,12 +181,13 @@ struct PassesDecoderState {
             kApplyImageFeaturesTileDim + 4);
       }
     }
-    const size_t dst_xsize_limit =
-        kApplyImageFeaturesTileDim * shared->frame_header.upsampling;
+    const size_t arena_size = Upsampler::GetArenaSize(
+        kApplyImageFeaturesTileDim * shared->frame_header.upsampling);
+    if (arena_size > upsampler_arena_size) upsampler_storage.clear();
     for (size_t _ = upsampler_storage.size(); _ < num_threads; _++) {
-      upsampler_storage.emplace_back(hwy::AllocateAligned<float>(
-          Upsampler::GetArenaSize(dst_xsize_limit)));
+      upsampler_storage.emplace_back(hwy::AllocateAligned<float>(arena_size));
     }
+    upsampler_arena_size = arena_size;
     for (size_t _ = group_data.size(); _ < num_threads; _++) {
       group_data.emplace_back(kGroupDim + 2 * kGroupDataXBorder,
                               kGroupDim + 2 * kGroupDataYBorder);
