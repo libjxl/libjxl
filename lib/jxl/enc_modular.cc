@@ -1053,11 +1053,12 @@ Status ModularFrameEncoder::EncodeGlobalInfo(BitWriter* writer,
                             : HistogramParams::ClusteringType::kFast;
     params.ans_histogram_strategy =
         HistogramParams::ANSHistogramStrategy::kApproximate;
-    params.lz77_method = cparams.decoding_speed_tier >= 3
-                             ? (cparams.speed_tier >= SpeedTier::kFalcon
-                                    ? HistogramParams::LZ77Method::kRLE
-                                    : HistogramParams::LZ77Method::kLZ77)
-                             : HistogramParams::LZ77Method::kNone;
+    params.lz77_method =
+        cparams.decoding_speed_tier >= 3 && cparams.modular_mode
+            ? (cparams.speed_tier >= SpeedTier::kFalcon
+                   ? HistogramParams::LZ77Method::kRLE
+                   : HistogramParams::LZ77Method::kLZ77)
+            : HistogramParams::LZ77Method::kNone;
     // Near-lossless DC, as well as modular mode, require choosing hybrid uint
     // more carefully.
     if ((!extra_dc_precision.empty() && extra_dc_precision[0] != 0) ||
