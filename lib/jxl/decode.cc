@@ -323,6 +323,9 @@ struct JxlDecoderStruct {
   // Position of next_in in the original file including box format if present
   // (as opposed to position in the codestream)
   size_t file_pos;
+  size_t box_begin;
+  size_t box_end;
+  bool skip_box;
   // Begin and end of the content of the current codestream box. This could be
   // a partial codestream box.
   // codestream_begin 0 is used to indicate the begin is not yet known.
@@ -442,6 +445,9 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->got_preview_image = false;
   dec->last_frame_reached = false;
   dec->file_pos = 0;
+  dec->box_begin = 0;
+  dec->box_end = 0;
+  dec->skip_box = false;
   dec->codestream_pos = 0;
   dec->codestream_begin = 0;
   dec->codestream_end = 0;
@@ -1309,6 +1315,24 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
     data at once.
     */
 
+    if (dec->skip_box) {
+      // Amount of remaining bytes in the box that is being skipped.
+      size_t remaining = dec->box_end - dec->file_pos;
+      if (*avail_in < remaining) {
+        // Don't have the full box yet, skip all we have so far
+        dec->file_pos += *avail_in;
+        *next_in += *avail_in;
+        *avail_in -= *avail_in;
+        return JXL_DEC_NEED_MORE_INPUT;
+      } else {
+        // Full box available, skip all its remaining bytes
+        dec->file_pos += remaining;
+        *next_in += remaining;
+        *avail_in -= remaining;
+        dec->skip_box = false;
+      }
+    }
+
     if (dec->first_codestream_seen && !dec->last_codestream_seen &&
         dec->codestream_end != 0 && dec->file_pos < dec->codestream_end &&
         dec->file_pos + *avail_in >= dec->codestream_end &&
@@ -1370,6 +1394,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           return JXL_DEC_NEED_MORE_INPUT;
         }
         size_t box_start = pos;
+        // Box size, including this header itself.
         uint64_t box_size = LoadBE32(in + pos);
         char type[5] = {0};
         memcpy(type, in + pos + 4, 4);
@@ -1388,6 +1413,9 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         }
         size_t contents_size =
             (box_size == 0) ? 0 : (box_size - pos + box_start);
+
+        dec->box_begin = box_start;
+        dec->box_end = dec->file_pos + box_start + box_size;
         if (strcmp(type, "jxlc") == 0 || strcmp(type, "jxlp") == 0) {
           size_t codestream_size = contents_size;
           // Whether this is the last codestream box, either when it is a jxlc
@@ -1508,6 +1536,10 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             break;
           }
           if (OutOfBounds(pos, contents_size, size)) {
+            dec->skip_box = true;
+            dec->file_pos += pos;
+            *next_in += pos;
+            *avail_in -= pos;
             // Indicate how many more bytes needed starting from *next_in.
             dec->basic_info_size_hint = InitialBasicInfoSizeHint() + pos +
                                         contents_size - dec->file_pos;
