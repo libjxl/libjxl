@@ -1339,8 +1339,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     std::iota(permutation.begin(), permutation.end(), 0);
     std::vector<coeff_order_t> ac_group_order(num_groups);
     std::iota(ac_group_order.begin(), ac_group_order.end(), 0);
-    int64_t cx = ib.xsize() / 2;
-    int64_t cy = ib.ysize() / 2;
+    size_t group_dim = frame_dim.group_dim;
+    // Get the center of the group containing the center of the image.
+    int64_t cx = ((ib.xsize() / 2) / group_dim) * group_dim + group_dim / 2;
+    int64_t cy = ((ib.ysize() / 2) / group_dim) * group_dim + group_dim / 2;
     auto get_distance_from_center = [&](size_t gid) {
       Rect r = passes_enc_state->shared.GroupRect(gid);
       int64_t gcx = r.x0() + r.xsize() / 2;
@@ -1349,7 +1351,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       int64_t dy = gcy - cy;
       // Concentric squares in counterclockwise order.
       return std::make_pair(std::max(std::abs(dx), std::abs(dy)),
-                            std::atan2(dy, dx));
+                            -std::atan2(dy, dx));
     };
     std::sort(ac_group_order.begin(), ac_group_order.end(),
               [&](coeff_order_t a, coeff_order_t b) {
