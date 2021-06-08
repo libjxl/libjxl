@@ -155,6 +155,8 @@ typedef enum {
    * requested and it is possible to decode a DC image from the codestream and
    * the DC out buffer was not yet set. This event re-occurs for new frames
    * if there are multiple animation frames.
+   * DEPRECATED: the DC feature in this form will be removed. You can use
+   * JxlDecoderFlushImage for progressive rendering.
    */
   JXL_DEC_NEED_DC_OUT_BUFFER = 4,
 
@@ -221,6 +223,8 @@ typedef enum {
    * status only indicates we're past this point in the codestream. This event
    * occurs max once per frame and always later than JXL_DEC_FRAME_HEADER
    * and other header events and earlier than full resolution pixel data.
+   * DEPRECATED: the DC feature in this form will be removed. You can use
+   * JxlDecoderFlushImage for progressive rendering.
    */
   JXL_DEC_DC_IMAGE = 0x800,
 
@@ -630,8 +634,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameName(const JxlDecoder* dec,
  * @param size output value, buffer size in bytes
  * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as
  *    information not available yet.
+ *
+ * DEPRECATED: the DC feature in this form will be removed. You can use
+ * JxlDecoderFlushImage for progressive rendering.
  */
-JXL_EXPORT JxlDecoderStatus JxlDecoderDCOutBufferSize(
+JXL_EXPORT JXL_DEPRECATED JxlDecoderStatus JxlDecoderDCOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size);
 
 /**
@@ -648,8 +655,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderDCOutBufferSize(
  * @param size size of buffer in bytes
  * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as
  * size too small.
+ *
+ * DEPRECATED: the DC feature in this form will be removed. You can use
+ * JxlDecoderFlushImage for progressive rendering.
  */
-JXL_EXPORT JxlDecoderStatus JxlDecoderSetDCOutBuffer(
+JXL_EXPORT JXL_DEPRECATED JxlDecoderStatus JxlDecoderSetDCOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size);
 
 /**
