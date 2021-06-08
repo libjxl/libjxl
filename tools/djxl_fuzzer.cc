@@ -82,7 +82,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       JxlDecoderSubscribeEvents(
           dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_EXTENSIONS |
                          JXL_DEC_COLOR_ENCODING | JXL_DEC_PREVIEW_IMAGE |
-                         JXL_DEC_FRAME | JXL_DEC_DC_IMAGE | JXL_DEC_FULL_IMAGE |
+                         JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
                          JXL_DEC_JPEG_RECONSTRUCTION)) {
     return false;
   }
@@ -113,7 +113,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool seen_need_image_out = false;
   bool seen_full_image = false;
   bool seen_success = false;
-  bool seen_dc_image = false;
   bool seen_frame = false;
   uint32_t num_frames = 0;
   bool seen_jpeg_reconstruction = false;
@@ -129,7 +128,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   size_t preview_ysize = 0;
   bool want_preview = false;
   std::vector<uint8_t> preview_pixels;
-  std::vector<uint8_t> dc_pixels;
 
   // Callback function used when decoding with use_callback.
   struct DecodeCallbackData {
@@ -293,18 +291,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           abort();
         }
       }
-
-      size_t dc_size;
-      if (JXL_DEC_SUCCESS !=
-          JxlDecoderDCOutBufferSize(dec.get(), &format, &dc_size)) {
-        return false;
-      }
-      dc_pixels.resize(dc_size);
-      if (JXL_DEC_SUCCESS != JxlDecoderSetDCOutBuffer(dec.get(), &format,
-                                                      dc_pixels.data(),
-                                                      dc_pixels.size())) {
-        abort();
-      }
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
       if (seen_preview) abort();
       if (!want_preview) abort();
@@ -312,7 +298,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       want_preview = false;
       seen_preview = true;
       Consume(preview_pixels.cbegin(), preview_pixels.cend());
-    } else if (status == JXL_DEC_FRAME || status == JXL_DEC_DC_IMAGE ||
+    } else if (status == JXL_DEC_FRAME ||
                status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       if (want_preview) abort();          // expected preview before frame
       if (!seen_color_encoding) abort();  // expected color encoding first
@@ -336,11 +322,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         // When not testing streaming, test that JXL_DEC_NEED_IMAGE_OUT_BUFFER
         // occurs instead, so do not set buffer now.
         if (!spec.use_streaming) continue;
-      }
-      if (status == JXL_DEC_DC_IMAGE) {
-        if (seen_dc_image) abort();  // already seen JXL_DEC_DC_IMAGE
-        seen_dc_image = true;
-        Consume(dc_pixels.cbegin(), dc_pixels.cend());
       }
       if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
         // expected JXL_DEC_FRAME instead
@@ -405,7 +386,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       seen_need_image_out = false;
       seen_frame = false;
       num_frames++;
-      seen_dc_image = false;
 
       // "Use" all the pixels; MSAN needs a conditional to count as usage.
       Consume(pixels->cbegin(), pixels->cend());

@@ -74,11 +74,6 @@ set(TESTLIB_FILES
   jxl/testdata.h
 )
 
-# Still tests the deprecated DC functions.
-set_source_files_properties(jxl/decode_test.cc PROPERTIES
-    COMPILE_FLAGS -Wno-deprecated
-)
-
 find_package(GTest)
 
 # Library with test-only code shared between all tests.
