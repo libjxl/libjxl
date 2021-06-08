@@ -301,6 +301,10 @@ set(JPEGXL_DEC_INTERNAL_LIBS
   hwy
 )
 
+set_source_files_properties(jxl/decode.cc PROPERTIES
+  COMPILE_FLAGS -Wno-deprecated-declarations
+)
+
 if(JPEGXL_ENABLE_PROFILER)
 list(APPEND JPEGXL_DEC_INTERNAL_LIBS jxl_profiler)
 endif()
