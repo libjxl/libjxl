@@ -1340,18 +1340,31 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     std::vector<coeff_order_t> ac_group_order(num_groups);
     std::iota(ac_group_order.begin(), ac_group_order.end(), 0);
     size_t group_dim = frame_dim.group_dim;
-    // Get the center of the group containing the center of the image.
-    int64_t cx = ((ib.xsize() / 2) / group_dim) * group_dim + group_dim / 2;
-    int64_t cy = ((ib.ysize() / 2) / group_dim) * group_dim + group_dim / 2;
+    // The center of the image.
+    int64_t imag_cx = ib.xsize() / 2;
+    int64_t imag_cy = ib.ysize() / 2;
+    // The center of the group containing the center of the image.
+    int64_t cx = (imag_cx / group_dim) * group_dim + group_dim / 2;
+    int64_t cy = (imag_cy / group_dim) * group_dim + group_dim / 2;
+    // This identifies in what area of the central group the center of the image
+    // lies in.
+    double direction = std::atan2(imag_cy - cy, imag_cx - cx);
+    // This identifies the side of the central group the center of the image
+    // lies closet to. This can take values 0, 1, 2, 3 corresponding to right,
+    // top, left, bottom.
+    int64_t side = std::fmod((direction + 5 * kPi / 4), 2 * kPi) * 2 / kPi;
     auto get_distance_from_center = [&](size_t gid) {
       Rect r = passes_enc_state->shared.GroupRect(gid);
-      int64_t gcx = r.x0() + r.xsize() / 2;
-      int64_t gcy = r.y0() + r.ysize() / 2;
+      int64_t gcx = r.x0() + group_dim / 2;
+      int64_t gcy = r.y0() + group_dim / 2;
       int64_t dx = gcx - cx;
       int64_t dy = gcy - cy;
+      // The angle is determined by taking atan2 and adding an appropriate
+      // starting point depending on the side we want to start on.
+      double angle = std::remainder(
+          -std::atan2(dy, dx) + kPi / 4 + side * (kPi / 2), 2 * kPi);
       // Concentric squares in counterclockwise order.
-      return std::make_pair(std::max(std::abs(dx), std::abs(dy)),
-                            -std::atan2(dy, dx));
+      return std::make_pair(std::max(std::abs(dx), std::abs(dy)), angle);
     };
     std::sort(ac_group_order.begin(), ac_group_order.end(),
               [&](coeff_order_t a, coeff_order_t b) {
