@@ -85,7 +85,7 @@ set(TESTLIB_FILES
 
 # Still tests the deprecated DC functions.
 set_source_files_properties(jxl/decode_test.cc PROPERTIES
-    COMPILE_FLAGS -Wno-deprecated
+  COMPILE_FLAGS "-Wno-deprecated -Wno-deprecated-declarations"
 )
 
 find_package(GTest)

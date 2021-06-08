@@ -262,7 +262,7 @@ endif()  # JPEGXL_ENABLE_FUZZERS
 
 # Still tests the deprecated DC functions.
 set_source_files_properties(djxl_fuzzer.cc PROPERTIES
-    COMPILE_FLAGS -Wno-deprecated
+    COMPILE_FLAGS "-Wno-deprecated -Wno-deprecated-declarations"
 )
 
 # For coverage we want a lightweight alternative for regular fuzzers.
