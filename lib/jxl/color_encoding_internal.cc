@@ -714,11 +714,8 @@ static const float kBradfordInv[9] = {
 
 // Adapts whitepoint x, y to D50
 Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
-  if (wx < 0 || wx > 1 || wy < 0 || wy > 1) {
-    return JXL_FAILURE("xy color out of range");
-  }
-
   float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
   float w50[3] = {0.96422f, 1.0f, 0.82521f};
 
   float lms[3];
@@ -740,12 +737,6 @@ Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
 
 Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
                          float by, float wx, float wy, float matrix[9]) {
-  if (rx < 0 || rx > 1 || ry < 0 || ry > 1 || gx < 0 || gx > 1 || gy < 0 ||
-      gy > 1 || bx < 0 || bx > 1 || by < 0 || by > 1 || wx < 0 || wx > 1 ||
-      wy < 0 || wy > 1) {
-    return JXL_FAILURE("xy color out of range");
-  }
-
   float primaries[9] = {
       rx, gx, bx, ry, gy, by, 1.0f - rx - ry, 1.0f - gx - gy, 1.0f - bx - by};
   float primaries_inv[9];
@@ -753,6 +744,7 @@ Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
   JXL_RETURN_IF_ERROR(Inv3x3Matrix(primaries_inv));
 
   float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
   float xyz[3];
   MatMul(primaries_inv, w, 3, 3, 1, xyz);
 
