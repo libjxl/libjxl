@@ -255,6 +255,11 @@ if(${JPEGXL_ENABLE_FUZZERS})
   endforeach()
 endif()  # JPEGXL_ENABLE_FUZZERS
 
+# Still tests the deprecated DC functions.
+set_source_files_properties(djxl_fuzzer.cc PROPERTIES
+    COMPILE_FLAGS -Wno-deprecated
+)
+
 # For coverage we want a lightweight alternative for regular fuzzers.
 if(${JPEGXL_ENABLE_COVERAGE})
   foreach(FUZZER IN LISTS FUZZER_BINARIES)
