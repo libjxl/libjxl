@@ -390,6 +390,12 @@ struct JxlDecoderStruct {
   bool is_last_of_still;
   // The currently processed frame is the last of the codestream
   bool is_last_total;
+  // How many frames to skip.
+  size_t skip_frames;
+  // Skipping the current frame. May be false if skip_frames was just set to
+  // a positive value while already processing a current frame, then
+  // skipping_frame will be enabled only for the next frame.
+  bool skipping_frame;
 
   // Codestream input data is stored here, when the decoder takes in and stores
   // the user input bytes. If the decoder does not do that (e.g. in one-shot
@@ -472,6 +478,8 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->frame_size = 0;
   dec->is_last_of_still = false;
   dec->is_last_total = false;
+  dec->skip_frames = 0;
+  dec->skipping_frame = false;
 }
 
 JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
@@ -497,6 +505,19 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
     dec->~JxlDecoder();
     jxl::MemoryManagerFree(&dec->memory_manager, dec);
   }
+}
+
+void JxlDecoderRewind(JxlDecoder* dec) {
+  int events_wanted = dec->orig_events_wanted;
+  // TODO(lode): for performace, rewind should keep state about frames to make
+  // SkipFrames more efficient. This is a first non-optimized implementation.
+  JxlDecoderReset(dec);
+  dec->events_wanted = events_wanted;
+  dec->orig_events_wanted = events_wanted;
+}
+
+void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
+  dec->skip_frames = amount;
 }
 
 JXL_EXPORT JxlDecoderStatus
@@ -946,11 +967,20 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
       dec->frame_stage = FrameStage::kTOC;
 
+      if (dec->skip_frames) {
+        dec->skipping_frame = true;
+        dec->skip_frames--;
+      } else {
+        dec->skipping_frame = false;
+      }
+
       if ((dec->events_wanted & JXL_DEC_FRAME) && dec->is_last_of_still) {
         // Only return this for the last of a series of stills: patches frames
         // etc... before this one do not contain the correct information such
         // as animation timing, ...
-        return JXL_DEC_FRAME;
+        if (!dec->skipping_frame) {
+          return JXL_DEC_FRAME;
+        }
       }
     }
 
@@ -1010,7 +1040,9 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           // TODO(lode): remove the dec->is_last_of_still condition if the
           // frame decoder needs the image buffer as working space for decoding
           // non-visible or blending frames too
-          return JXL_DEC_NEED_IMAGE_OUT_BUFFER;
+          if (!dec->skipping_frame) {
+            return JXL_DEC_NEED_IMAGE_OUT_BUFFER;
+          }
         }
       }
 
@@ -1111,7 +1143,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
     dec->ib.reset();
     dec->frame_stage = FrameStage::kHeader;
     dec->frame_start += dec->frame_size;
-    if (return_full_image) {
+    if (return_full_image && !dec->skipping_frame) {
       return JXL_DEC_FULL_IMAGE;
     }
   }
