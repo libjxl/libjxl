@@ -182,8 +182,6 @@ enum class FrameStage : uint32_t {
   kHeader,      // Must parse frame header. dec->frame_start must be set up
                 // correctly already.
   kTOC,         // Must parse TOC
-  kDC,          // Must parse DC pixels
-  kDCOutput,    // Must output DC pixels
   kFull,        // Must parse full pixels
   kFullOutput,  // Must output full pixels
 };
@@ -316,10 +314,6 @@ struct JxlDecoderStruct {
   // cannot get it or there is none.
   bool got_preview_image;
 
-  // Processed the last frame, so got_dc_image, and so on false no
-  // longer mean there is more work to do.
-  bool last_frame_reached;
-
   // Position of next_in in the original file including box format if present
   // (as opposed to position in the codestream)
   size_t file_pos;
@@ -349,28 +343,24 @@ struct JxlDecoderStruct {
   size_t basic_info_size_hint;
   bool have_container;
 
-  // Whether the DC out buffer was set. It is possible for dc_out_buffer to
-  // be nullptr and dc_out_buffer_set be true, indicating it was deliberately
+  // Whether the preview out buffer was set. It is possible for the buffer to
+  // be nullptr and buffer_set to be true, indicating it was deliberately
   // set to nullptr.
   bool preview_out_buffer_set;
-  bool dc_out_buffer_set;
   // Idem for the image buffer.
   bool image_out_buffer_set;
 
   // Owned by the caller, buffers for DC image and full resolution images
   void* preview_out_buffer;
-  void* dc_out_buffer;
   void* image_out_buffer;
   JxlImageOutCallback image_out_callback;
   void* image_out_opaque;
 
   size_t preview_out_size;
-  size_t dc_out_size;
   size_t image_out_size;
 
   // TODO(lode): merge these?
   JxlPixelFormat preview_out_format;
-  JxlPixelFormat dc_out_format;
   JxlPixelFormat image_out_format;
 
   jxl::CodecMetadata metadata;
@@ -394,7 +384,6 @@ struct JxlDecoderStruct {
   // the codestream.
   size_t frame_start;
   size_t frame_size;
-  size_t dc_size;
   FrameStage frame_stage;
   // The currently processed frame is the last of the current composite still,
   // and so must be returned as pixels
@@ -443,7 +432,6 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->post_headers = false;
   dec->icc_reader.Reset();
   dec->got_preview_image = false;
-  dec->last_frame_reached = false;
   dec->file_pos = 0;
   dec->box_begin = 0;
   dec->box_end = 0;
@@ -457,15 +445,12 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
   dec->have_container = 0;
   dec->preview_out_buffer_set = false;
-  dec->dc_out_buffer_set = false;
   dec->image_out_buffer_set = false;
   dec->preview_out_buffer = nullptr;
-  dec->dc_out_buffer = nullptr;
   dec->image_out_buffer = nullptr;
   dec->image_out_callback = nullptr;
   dec->image_out_opaque = nullptr;
   dec->preview_out_size = 0;
-  dec->dc_out_size = 0;
   dec->image_out_size = 0;
   dec->dec_pixels = 0;
   dec->next_in = 0;
@@ -485,7 +470,6 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->frame_stage = FrameStage::kHeader;
   dec->frame_start = 0;
   dec->frame_size = 0;
-  dec->dc_size = 0;
   dec->is_last_of_still = false;
   dec->is_last_total = false;
 }
@@ -766,16 +750,13 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
 // Outputs optional variables, unless set to nullptr:
 // frame_size: total frame size
 // header_size: size of the frame header and TOC within the frame
-// dc_size: size of DC groups within the frame, or 0 if there's no DC or we're
-// unable to compute its size.
 // Can finish successfully if reader has headers and TOC available, does not
 // read groups themselves.
 // TODO(lode): merge this with FrameDecoder
 JxlDecoderStatus ParseFrameHeader(JxlDecoder* dec,
                                   jxl::FrameHeader* frame_header,
                                   const uint8_t* in, size_t size, size_t pos,
-                                  bool is_preview, size_t* frame_size,
-                                  size_t* dc_size) {
+                                  bool is_preview, size_t* frame_size) {
   if (pos >= size) {
     return JXL_DEC_NEED_MORE_INPUT;
   }
@@ -822,31 +803,6 @@ JxlDecoderStatus ParseFrameHeader(JxlDecoder* dec,
     return JXL_DEC_NEED_MORE_INPUT;
   } else if (!status) {
     return JXL_API_ERROR("invalid toc entries");
-  }
-
-  if (dc_size) {
-    bool can_get_dc = true;
-    if (frame_header->passes.num_passes == 1 &&
-        dec->frame_dim.num_groups == 1) {
-      // If there is one pass and one group, the TOC only has one entry and
-      // doesn't allow to distinguish the DC size, so it's not easy to tell
-      // whether we got all DC bytes or not. This will happen for very small
-      // images only.
-      can_get_dc = false;
-    }
-
-    *dc_size = 0;
-    if (can_get_dc) {
-      // one DcGlobal entry, N dc group entries.
-      size_t num_dc_toc_entries = 1 + dec->frame_dim.num_dc_groups;
-      if (group_sizes.size() < num_dc_toc_entries) {
-        JXL_ABORT("too small TOC");
-      }
-      for (size_t i = 0; i < num_dc_toc_entries; i++) {
-        *dc_size =
-            std::max<size_t>(*dc_size, group_sizes[i] + group_offsets[i]);
-      }
-    }
   }
 
   JXL_DASSERT((reader->TotalBitsConsumed() % kBitsPerByte) == 0);
@@ -902,8 +858,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
     // Parse the preview, or at least its TOC to be able to skip the frame, if
     // any frame or image decoding is desired.
     bool parse_preview =
-        (dec->events_wanted & (JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FRAME |
-                               JXL_DEC_DC_IMAGE | JXL_DEC_FULL_IMAGE));
+        (dec->events_wanted &
+         (JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
 
     if (!dec->metadata.m.have_preview) {
       // There is no preview, mark this as done and go to next step
@@ -917,9 +873,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       size_t frame_size;
       size_t pos = dec->frame_start;
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
-      JxlDecoderStatus status =
-          ParseFrameHeader(dec, dec->frame_header.get(), in, size, pos, true,
-                           &frame_size, /*dc_size=*/nullptr);
+      JxlDecoderStatus status = ParseFrameHeader(
+          dec, dec->frame_header.get(), in, size, pos, true, &frame_size);
       if (status != JXL_DEC_SUCCESS) return status;
       if (OutOfBounds(pos, frame_size, size)) {
         return JXL_DEC_NEED_MORE_INPUT;
@@ -965,8 +920,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
   // Handle frames
   for (;;) {
-    if (!(dec->events_wanted &
-          (JXL_DEC_FULL_IMAGE | JXL_DEC_DC_IMAGE | JXL_DEC_FRAME))) {
+    if (!(dec->events_wanted & (JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME))) {
       break;
     }
     if (dec->frame_stage == FrameStage::kHeader && dec->is_last_total) {
@@ -979,9 +933,9 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         return JXL_DEC_NEED_MORE_INPUT;
       }
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
-      JxlDecoderStatus status = ParseFrameHeader(
-          dec, dec->frame_header.get(), in, size, pos,
-          /*is_preview=*/false, &dec->frame_size, &dec->dc_size);
+      JxlDecoderStatus status =
+          ParseFrameHeader(dec, dec->frame_header.get(), in, size, pos,
+                           /*is_preview=*/false, &dec->frame_size);
       if (status != JXL_DEC_SUCCESS) return status;
 
       // is last in entire codestream
@@ -1036,25 +990,18 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       JXL_API_RETURN_IF_ERROR(dec->sections->Init());
 
       // If we don't need pixels, we can skip actually decoding the frames
-      // (kFull / kDC / kFullOut / kDCOut). By not updating frame_stage, none of
+      // (kFull / kFullOut). By not updating frame_stage, none of
       // these stages will execute, and the loop will continue from the next
       // frame.
-      if (dec->events_wanted & (JXL_DEC_DC_IMAGE | JXL_DEC_FULL_IMAGE)) {
+      if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
         dec->frame_dec_in_progress = true;
-        dec->frame_stage = FrameStage::kDC;
-      }
-    }
-
-    if (dec->frame_stage == FrameStage::kDC) {
-      if (!(dec->events_wanted & JXL_DEC_DC_IMAGE)) {
         dec->frame_stage = FrameStage::kFull;
       }
     }
 
     bool return_full_image = false;
 
-    if (dec->frame_stage == FrameStage::kFull ||
-        dec->frame_stage == FrameStage::kDC) {
+    if (dec->frame_stage == FrameStage::kFull) {
       if (dec->events_wanted & JXL_DEC_FULL_IMAGE) {
         if (!dec->image_out_buffer_set &&
             (!dec->jpeg_decoder.IsOutputSet() ||
@@ -1101,9 +1048,6 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       if (pos >= size) {
         return JXL_DEC_NEED_MORE_INPUT;
       }
-
-      bool get_dc = dec->is_last_of_still &&
-                    (dec->frame_stage == FrameStage::kDC) && dec->dc_size != 0;
       dec->sections->SetInput(in + pos, size - pos);
       jxl::Status status =
           dec->frame_dec->ProcessSections(dec->sections->section_info.data(),
@@ -1117,76 +1061,17 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       // TODO(lode): allow next_in to move forward if sections from the
       // beginning of the stream have been processed
 
-      if (get_dc) {
-        // Not all DC sections have been processed yet
-        if (OutOfBounds(pos, dec->dc_size, size)) {
-          return JXL_DEC_NEED_MORE_INPUT;
-        }
-        if (dec->image_out_callback != nullptr) {
-          // Support to output DC to smaller pixel buffer is not implemented
-          // when pixel callback is set.
-          get_dc = false;
-        }
-        if (!dec->frame_dec->HasDecodedDC()) {
-          // DC not available, e.g. if the frame was not encoded as VarDCT.
-          get_dc = false;
-        }
-        if (dec->frame_header->custom_size_or_origin ||
-            dec->frame_header->dc_level != 0 ||
-            dec->frame_header->upsampling != 1) {
-          // We don't support JXL_DEC_DC_IMAGE if the frame size doesn't match
-          // the image size.
-          get_dc = false;
-        }
-        if (get_dc) {
-          dec->frame_stage = FrameStage::kDCOutput;
-        } else {
-          dec->frame_stage = FrameStage::kFull;
-        }
+      if (status.code() == StatusCode::kNotEnoughBytes ||
+          dec->sections->section_info.size() < dec->frame_dec->NumSections()) {
+        // Not all sections have been processed yet
+        return JXL_DEC_NEED_MORE_INPUT;
       }
 
-      if (!get_dc) {
-        if (status.code() == StatusCode::kNotEnoughBytes ||
-            dec->sections->section_info.size() <
-                dec->frame_dec->NumSections()) {
-          // Not all sections have been processed yet
-          return JXL_DEC_NEED_MORE_INPUT;
-        }
-
-        if (!dec->frame_dec->FinalizeFrame()) {
-          return JXL_API_ERROR("decoding frame failed");
-        }
-        dec->frame_dec_in_progress = false;
-
-        dec->frame_stage = FrameStage::kFullOutput;
+      if (!dec->frame_dec->FinalizeFrame()) {
+        return JXL_API_ERROR("decoding frame failed");
       }
-    }
-
-    if (dec->frame_stage == FrameStage::kDCOutput) {
-      if (!dec->dc_out_buffer_set) {
-        return JXL_DEC_NEED_DC_OUT_BUFFER;
-      }
-
-      PassesDecoderState& passes = *dec->passes_state.get();
-      PassesSharedState& shared = passes.shared_storage;
-      Image3F dc(shared.dc_storage.xsize(), shared.dc_storage.ysize());
-      UndoXYB(shared.dc_storage, &dc, dec->passes_state->output_encoding_info,
-              dec->thread_pool.get());
-      // TODO(lode): use the real metadata instead, this requires matching
-      // all the extra channels. Support DC with alpha too.
-      jxl::ImageMetadata dummy;
-      ImageBundle dc_bundle(&dummy);
-      // TODO(lode): check whether LinearSRGB is always the correct color
-      // space to set here.
-      dc_bundle.SetFromImage(
-          std::move(dc),
-          dec->passes_state->output_encoding_info.color_encoding);
-      JXL_API_RETURN_IF_ERROR(ConvertImageInternal(
-          dec, dc_bundle, dec->dc_out_format, dec->dc_out_buffer,
-          dec->dc_out_size,
-          /*out_callback=*/nullptr, /*out_opaque=*/nullptr));
-      dec->frame_stage = FrameStage::kFull;
-      return JXL_DEC_DC_IMAGE;
+      dec->frame_dec_in_progress = false;
+      dec->frame_stage = FrameStage::kFullOutput;
     }
 
     if (dec->frame_stage == FrameStage::kFullOutput) {
@@ -1196,11 +1081,10 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           return_full_image = true;
         }
 
-        if (!dec->last_frame_reached) {
-          dec->events_wanted =
-              dec->orig_events_wanted &
-              (JXL_DEC_FULL_IMAGE | JXL_DEC_DC_IMAGE | JXL_DEC_FRAME);
-        }
+        // Frame finished, restore the events_wanted with the per-frame events
+        // from orig_events_wanted, in case there is a next frame.
+        dec->events_wanted |=
+            (dec->orig_events_wanted & (JXL_DEC_FULL_IMAGE | JXL_DEC_FRAME));
 
         // If no output buffer was set, we merely return the JXL_DEC_FULL_IMAGE
         // status without outputting pixels.
@@ -1944,22 +1828,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderDCOutBufferSize(
 
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetDCOutBuffer(
     JxlDecoder* dec, const JxlPixelFormat* format, void* buffer, size_t size) {
-  if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_DC_IMAGE)) {
-    return JXL_API_ERROR("No dc out buffer needed at this time");
-  }
-  size_t min_size;
-  // This also checks whether the format is valid and supported and basic info
-  // is available.
-  JxlDecoderStatus status = JxlDecoderDCOutBufferSize(dec, format, &min_size);
-  if (status != JXL_DEC_SUCCESS) return status;
-
-  if (size < min_size) return JXL_DEC_ERROR;
-
-  dec->dc_out_buffer_set = true;
-  dec->dc_out_buffer = buffer;
-  dec->dc_out_size = size;
-  dec->dc_out_format = *format;
-
+  // No buffer set: this feature is deprecated
   return JXL_DEC_SUCCESS;
 }
 
