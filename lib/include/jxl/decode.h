@@ -242,7 +242,7 @@ typedef enum {
 
 /** Rewinds decoder to the beginning. The same input must be given again from
  * the beginning of the file and the decoder will emit events from the beginning
- * again. When rewinding (as opposed to JxlDecoderReset), the decoder keeps
+ * again. When rewinding (as opposed to JxlDecoderReset), the decoder can keep
  * state about the image, which it can use to skip to a requested frame more
  * efficiently with JxlDecoderSkipFrames. After rewind,
  * JxlDecoderSubscribeEvents can be used again, and it is feasible to leave out
@@ -251,7 +251,7 @@ typedef enum {
  * before.
  * @param dec decoder object
  */
-JXL_EXPORT void JxlDecoderRewind(const JxlDecoder* dec);
+JXL_EXPORT void JxlDecoderRewind(JxlDecoder* dec);
 
 /** Makes the decoder skip the next `amount` frames. If this is used after
  * JxlDecoderRewind to skip frames that were already decoded before, the decoder
@@ -267,7 +267,7 @@ JXL_EXPORT void JxlDecoderRewind(const JxlDecoder* dec);
  * @param dec decoder object
  * @param amount the amount of frames to skip
  */
-JXL_EXPORT void JxlDecoderSkipFrames(const JxlDecoder* dec, size_t amount);
+JXL_EXPORT void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount);
 
 /**
  * Get the default pixel format for this decoder.
