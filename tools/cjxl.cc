@@ -356,6 +356,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionFlag('\0', "premultiply",
                          "Force premultiplied (associated) alpha.",
                          &force_premultiplied, &SetBooleanTrue, 1);
+  cmdline->AddOptionValue('\0', "keep_invisible", "0|1",
+                          "force disable/enable preserving color of invisible "
+                          "pixels (default: 1 if lossless, 0 if lossy).",
+                          &params.keep_invisible, &ParseOverride, 1);
 
   cmdline->AddOptionFlag('\0', "middleout",
                          "Put center groups first in the compressed file.",
@@ -472,7 +476,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
        "2-37=RCT (default: try several, depending on speed)"),
       &params.colorspace, &ParseSigned, 1);
 
-  m_group_size_id = cmdline->AddOptionValue(
+  opt_m_group_size_id = cmdline->AddOptionValue(
       'g', "group-size", "K",
       ("[modular encoding] set group size to 128 << K "
        "(default: 1 or 2)"),
@@ -689,7 +693,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
 jxl::Status CompressArgs::ValidateArgsAfterLoad(
     const CommandLineParser& cmdline, const jxl::CodecInOut& io) {
   if (!ValidateArgs(cmdline)) return false;
-  bool got_m_group_size = cmdline.GetOption(m_group_size_id)->matched();
+  bool got_m_group_size = cmdline.GetOption(opt_m_group_size_id)->matched();
   if (params.modular_mode && !got_m_group_size) {
     // Default modular group size: set to 512 if 256 would be silly
     const size_t kThinImageThr = 256 + 64;

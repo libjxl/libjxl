@@ -168,8 +168,9 @@ struct CompressParams {
 
   int progressive_dc = -1;
 
-  // Ensure invisible pixels are not set to 0.
-  bool keep_invisible = false;
+  // If on: preserve color of invisible pixels (if off: don't care)
+  // Default: on for lossless, off for lossy
+  Override keep_invisible = Override::kDefault;
 
   // Progressive-mode saliency.
   //

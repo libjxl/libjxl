@@ -87,7 +87,7 @@ struct CompressArgs {
   CommandLineParser::OptionId opt_near_lossless_id = -1;
   CommandLineParser::OptionId opt_intensity_target_id = -1;
   CommandLineParser::OptionId opt_color_id = -1;
-  CommandLineParser::OptionId m_group_size_id = -1;
+  CommandLineParser::OptionId opt_m_group_size_id = -1;
 };
 
 jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,

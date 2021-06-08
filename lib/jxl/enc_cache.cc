@@ -90,7 +90,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     JXL_ASSERT(cparams.progressive_dc > 0);
     cparams.progressive_dc--;
     // The DC frame will have alpha=0. Don't erase its contents.
-    cparams.keep_invisible = true;
+    cparams.keep_invisible = Override::kOn;
     // No EPF or Gaborish in DC frames.
     cparams.epf = 0;
     cparams.gaborish = Override::kOff;

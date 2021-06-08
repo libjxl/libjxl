@@ -399,7 +399,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
 // edge duplication but not more. It would probably be better to smear in all
 // directions. That requires an alpha-weighed convolution with a large enough
 // kernel though, which might be overkill...
-void SimplifyInvisible(Image3F* image, const ImageF& alpha) {
+void SimplifyInvisible(Image3F* image, const ImageF& alpha, bool lossless) {
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < image->ysize(); ++y) {
       float* JXL_RESTRICT row = image->PlaneRow(c, y);
@@ -413,6 +413,10 @@ void SimplifyInvisible(Image3F* image, const ImageF& alpha) {
           (y + 1 < image->ysize() ? alpha.Row(y + 1) : nullptr);
       for (size_t x = 0; x < image->xsize(); ++x) {
         if (a[x] == 0) {
+          if (lossless) {
+            row[x] = 0;
+            continue;
+          }
           float d = 0.f;
           row[x] = 0;
           if (x > 0) {
@@ -1160,16 +1164,16 @@ Status EncodeFrame(const CompressParams& cparams_orig,
               // input is already in XYB.
       CopyImageTo(ib.color(), &opsin);
     }
+    bool lossless = (frame_header->encoding == FrameEncoding::kModular &&
+                     cparams.quality_pair.first == 100);
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
-        (frame_header->encoding == FrameEncoding::kVarDCT ||
-         cparams.quality_pair.first < 100) &&
-        !cparams.keep_invisible &&
+        !ApplyOverride(cparams.keep_invisible, lossless) &&
         cparams.ec_resampling == cparams.resampling) {
-      // if lossy, simplify invisible pixels
-      SimplifyInvisible(&opsin, ib.alpha());
+      // simplify invisible pixels
+      SimplifyInvisible(&opsin, ib.alpha(), lossless);
       if (want_linear) {
         SimplifyInvisible(const_cast<Image3F*>(&ib_or_linear->color()),
-                          ib.alpha());
+                          ib.alpha(), lossless);
       }
     }
     if (aux_out != nullptr) {
