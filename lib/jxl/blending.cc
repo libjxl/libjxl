@@ -5,6 +5,8 @@
 
 #include "lib/jxl/blending.h"
 
+#include <cinttypes>
+
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/image_ops.h"
 
@@ -88,7 +90,7 @@ Status ImageBlender::PrepareBlending(PassesDecoderState* dec_state,
         info_.source);
   }
 
-  if (bg.xsize() != image_xsize || bg.ysize() != image_ysize ||
+  if (bg.xsize() < image_xsize || bg.ysize() < image_ysize ||
       bg.origin.x0 != 0 || bg.origin.y0 != 0) {
     return JXL_FAILURE("Trying to use a %zux%zu crop as a background",
                        bg.xsize(), bg.ysize());
@@ -127,7 +129,19 @@ Status ImageBlender::PrepareBlending(PassesDecoderState* dec_state,
       if (src.xsize() == 0 && src.ysize() == 0) {
         ZeroFillImage(&dest_->extra_channels()[i]);
       } else {
-        CopyImageTo(src.extra_channels()[i], &dest_->extra_channels()[i]);
+        if (src.extra_channels()[i].xsize() < image_xsize ||
+            src.extra_channels()[i].ysize() < image_ysize ||
+            src.origin.x0 != 0 || src.origin.y0 != 0) {
+          return JXL_FAILURE(
+              "Invalid size %zux%zu or origin +%" PRIi32 "+%" PRIi32
+              " for extra channel %zu of reference frame %" PRIu32
+              ", expected at least %zux%zu+0+0",
+              src.extra_channels()[i].xsize(), src.extra_channels()[i].ysize(),
+              src.origin.x0, src.origin.y0, i, eci.source, image_xsize,
+              image_ysize);
+        }
+        CopyImageTo(Rect(dest_->extra_channels()[i]), src.extra_channels()[i],
+                    &dest_->extra_channels()[i]);
       }
     }
   }
