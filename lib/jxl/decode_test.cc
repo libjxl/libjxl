@@ -2348,8 +2348,8 @@ TEST(DecodeTest, AnimationTestStreaming) {
 
 TEST(DecodeTest, SkipFrameTest) {
   size_t xsize = 90, ysize = 120;
-  static const size_t num_frames = 10;
-  std::vector<uint8_t> frames[10];
+  constexpr size_t num_frames = 16;
+  std::vector<uint8_t> frames[num_frames];
   for (size_t i = 0; i < num_frames; i++) {
     frames[i] = jxl::test::GetSomeTestImage(xsize, ysize, 3, 0);
   }
@@ -2371,6 +2371,10 @@ TEST(DecodeTest, SkipFrameTest) {
 
   for (size_t i = 0; i < num_frames; ++i) {
     jxl::ImageBundle bundle(&io.metadata.m);
+    if (i & 1) {
+      // Mark some frames as referenceable, others not.
+      bundle.use_for_next_frame = true;
+    }
 
     EXPECT_TRUE(ConvertFromExternal(
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
@@ -2414,8 +2418,8 @@ TEST(DecodeTest, SkipFrameTest) {
 
   for (size_t i = 0; i < num_frames; ++i) {
     if (i == 3) {
-      JxlDecoderSkipFrames(dec, 3);
-      i += 3;
+      JxlDecoderSkipFrames(dec, 5);
+      i += 5;
     }
     std::vector<uint8_t> pixels(buffer_size);
 
@@ -2444,14 +2448,12 @@ TEST(DecodeTest, SkipFrameTest) {
   // Test rewinding the decoder and skipping different frames
 
   JxlDecoderRewind(dec);
-
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSubscribeEvents(dec, JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
 
   for (size_t i = 0; i < num_frames; ++i) {
-    bool test_skipping = (i == 6) ? 2 : 0;
-
+    int test_skipping = (i == 9) ? 3 : 0;
     std::vector<uint8_t> pixels(buffer_size);
 
     EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
