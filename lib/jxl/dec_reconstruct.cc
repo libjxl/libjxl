@@ -324,7 +324,9 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
            plane_in->xsize() * sizeof(float));
   }
   if (frame_rect.y0() + frame_rect.ysize() >= frame_dim.ysize_padded) {
-    size_t bordery = ((rect.y0() + rect.ysize() - yoff) >> vs) + yoff;
+    ssize_t bordery =
+        static_cast<ssize_t>(rect.y0() + rect.ysize() - yoff) / (1 << vs) +
+        yoff;
     memcpy(plane_in->Row(bordery), plane_in->Row(bordery - 1),
            plane_in->xsize() * sizeof(float));
   }
