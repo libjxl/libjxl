@@ -1083,16 +1083,11 @@ Status FinalizeImageRect(
 Status FinalizeFrameDecoding(ImageBundle* decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
                              bool force_fir, bool skip_blending) {
-  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
   // FinalizeImageRect was not yet run, or we are forcing a run.
   if (!dec_state->EagerFinalizeImageRect() || force_fir) {
-    if (lf.epf_iters > 0 && frame_header.encoding == FrameEncoding::kModular) {
-      FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
-                &dec_state->filter_weights.sigma);
-    }
     std::vector<Rect> rects_to_process;
     for (size_t y = 0; y < frame_dim.ysize_padded; y += kGroupDim) {
       for (size_t x = 0; x < frame_dim.xsize_padded; x += kGroupDim) {
