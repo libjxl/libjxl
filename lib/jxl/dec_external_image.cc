@@ -284,7 +284,7 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
     }
   };
 
-  if (ib.AlphaIsPremultiplied()) {
+  if (ib.AlphaIsPremultiplied() && ib.HasAlpha()) {
     unpremul = Image3F(color->xsize(), color->ysize());
     CopyImageTo(*color, &unpremul);
     for (size_t y = 0; y < unpremul.ysize(); y++) {
