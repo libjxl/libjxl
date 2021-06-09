@@ -68,7 +68,8 @@ void Upsample(const ImageF& src, const Rect& src_rect, ImageF* dst,
   constexpr const size_t M = 2 * Upsampler::filter_radius() + 1;
   constexpr const size_t M2 = M / 2;
   JXL_DASSERT(src_rect.x0() >= M2);
-  JXL_DASSERT(src_rect.x0() + src_rect.xsize() + M2 <= src.xsize());
+  const size_t src_x_limit = src_rect.x0() + src_rect.xsize() + M2;
+  JXL_DASSERT(src_x_limit <= src.xsize());
   JXL_ASSERT(DivCeil(dst_rect.xsize(), N) <= src_rect.xsize());
   // TODO(eustas): add proper (src|dst) ysize check that accounts for mirroring.
 
@@ -187,6 +188,17 @@ void Upsample(const ImageF& src, const Rect& src_rect, ImageF* dst,
       // Copy input pixels for "linearization".
       for (size_t iy = 0; iy < M; iy++) {
         memcpy(in + MX * iy, src_rows[iy] + xbase, MX * sizeof(float));
+      }
+      if (x_repeat > 1) {
+        // Even if filter coeffs contain 0 at "undefined" values, the result
+        // might be undefined, because NaN will poison the sum.
+        if (JXL_UNLIKELY(xbase + MX > src_x_limit)) {
+          for (size_t iy = 0; iy < M; iy++) {
+            for (size_t ix = src_x_limit - xbase; ix < MX; ++ix) {
+              in[MX * iy + ix] = 0.0f;
+            }
+          }
+        }
       }
       constexpr size_t U = 4;  // Unroll factor.
       constexpr size_t tail = num_coeffs & ~(U - 1);
