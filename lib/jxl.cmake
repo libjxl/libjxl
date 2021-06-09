@@ -71,6 +71,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_ans.cc
   jxl/dec_ans.h
   jxl/dec_bit_reader.h
+  jxl/dec_cache.cc
   jxl/dec_cache.h
   jxl/dec_context_map.cc
   jxl/dec_context_map.h

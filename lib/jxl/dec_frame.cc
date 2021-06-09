@@ -39,6 +39,7 @@
 #include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/dec_upsample.h"
 #include "lib/jxl/dec_xyb.h"
+#include "lib/jxl/epf.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/frame_header.h"
@@ -391,6 +392,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   PROFILER_FUNC;
   const size_t gx = dc_group_id % frame_dim_.xsize_dc_groups;
   const size_t gy = dc_group_id / frame_dim_.xsize_dc_groups;
+  const LoopFilter& lf = dec_state_->shared->frame_header.loop_filter;
   if (frame_header_.encoding == FrameEncoding::kVarDCT &&
       !(frame_header_.flags & FrameHeader::kUseDcFrame)) {
     JXL_RETURN_IF_ERROR(
@@ -404,6 +406,9 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         modular_frame_decoder_.DecodeAcMetadata(dc_group_id, br, dec_state_));
+  } else if (lf.epf_iters > 0) {
+    FillImage(kInvSigmaNum / lf.epf_sigma_for_modular,
+              &dec_state_->filter_weights.sigma);
   }
   decoded_dc_groups_[dc_group_id] = true;
   return true;

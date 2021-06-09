@@ -336,22 +336,10 @@ struct PassesDecoderState {
 #endif
   }
 
-  void EnsureBordersStorage() {
-    if (!EagerFinalizeImageRect()) return;
-    size_t padding = FinalizeRectPadding();
-    size_t bordery = 2 * padding;
-    size_t borderx = padding + group_border_assigner.PaddingX(padding);
-    Rect horizontal = Rect(0, 0, shared->frame_dim.xsize_padded,
-                           bordery * shared->frame_dim.ysize_groups * 2);
-    if (!SameSize(horizontal, borders_horizontal)) {
-      borders_horizontal = Image3F(horizontal.xsize(), horizontal.ysize());
-    }
-    Rect vertical = Rect(0, 0, borderx * shared->frame_dim.xsize_groups * 2,
-                         shared->frame_dim.ysize_padded);
-    if (!SameSize(vertical, borders_vertical)) {
-      borders_vertical = Image3F(vertical.xsize(), vertical.ysize());
-    }
-  }
+  void EnsureBordersStorage();
+
+  Status FinalizeGroup(size_t group_idx, size_t thread, Image3F* pixel_data,
+                       ImageBundle* output);
 };
 
 // Temp images required for decoding a single group. Reduces memory allocations
