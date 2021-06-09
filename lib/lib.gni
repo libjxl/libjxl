@@ -12,6 +12,20 @@ libjxl_version_defines = [
     "JPEGXL_PATCH_VERSION=7",
 ]
 
+libjxl_public_headers = [
+    "lib/include/jxl/butteraugli.h",
+    "lib/include/jxl/butteraugli_cxx.h",
+    "lib/include/jxl/codestream_header.h",
+    "lib/include/jxl/color_encoding.h",
+    "lib/include/jxl/decode.h",
+    "lib/include/jxl/decode_cxx.h",
+    "lib/include/jxl/encode.h",
+    "lib/include/jxl/encode_cxx.h",
+    "lib/include/jxl/memory_manager.h",
+    "lib/include/jxl/parallel_runner.h",
+    "lib/include/jxl/types.h",
+],
+
 libjxl_dec_sources = [
     "jxl/ac_context.h",
     "jxl/ac_strategy.cc",
@@ -369,6 +383,13 @@ libjxl_threads_sources = [
     "threads/thread_parallel_runner_internal.cc",
     "threads/thread_parallel_runner_internal.h",
 ]
+
+libjxl_threads_public_headers = [
+    "lib/include/jxl/resizable_parallel_runner.h",
+    "lib/include/jxl/resizable_parallel_runner_cxx.h",
+    "lib/include/jxl/thread_parallel_runner.h",
+    "lib/include/jxl/thread_parallel_runner_cxx.h",
+],
 
 libjxl_profiler_sources = [
     "profiler/profiler.cc",

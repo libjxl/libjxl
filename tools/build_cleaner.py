@@ -40,10 +40,13 @@ def GetPrefixLibFiles(repo_files, prefix, suffixes=('.h', '.cc', '.ui')):
 #   * decoder and common sources,
 #   * encoder-only sources,
 #   * tests-only sources,
-#   * google benchmark sources and
-#   * threads library sources.
+#   * google benchmark sources,
+#   * threads library sources,
+#   * libjxl (encoder+decoder) public include/ headers and
+#   * threads public include/ headers.
 JxlSources = collections.namedtuple(
-    'JxlSources', ['dec', 'enc', 'test', 'gbench', 'threads'])
+    'JxlSources', ['dec', 'enc', 'test', 'gbench', 'threads',
+                   'jxl_public_hdrs', 'threads_public_hdrs'])
 
 def SplitLibFiles(repo_files):
   """Splits the library files into the different groups.
@@ -109,7 +112,12 @@ def SplitLibFiles(repo_files):
   thread_srcs = GetPrefixLibFiles(repo_files, 'lib/threads/')
   thread_srcs = [fn for fn in thread_srcs
                  if not any(patt in fn for patt in testonly)]
-  return JxlSources(dec_srcs, enc_srcs, test_srcs, gbench_srcs, thread_srcs)
+  public_hdrs = GetPrefixLibFiles(repo_files, 'lib/include/jxl/')
+
+  threads_public_hdrs = [fn for fn in public_hdrs if '_parallel_runner' in fn]
+  jxl_public_hdrs = list(sorted(set(public_hdrs) - set(threads_public_hdrs)))
+  return JxlSources(dec_srcs, enc_srcs, test_srcs, gbench_srcs, thread_srcs,
+                    jxl_public_hdrs, threads_public_hdrs)
 
 
 def CleanFile(args, filename, pattern_data_list):
@@ -242,6 +250,15 @@ def BuildCleaner(args):
   gni_patterns.append((
       r'libjxl_profiler_sources = \[\n([^\]]+)\]',
       ''.join('    "%s",\n' % fn for fn in profiler_srcs)))
+
+  # Public headers.
+  gni_patterns.append((
+      r'libjxl_public_headers = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn for fn in jxl_src.jxl_public_hdrs)))
+  gni_patterns.append((
+      r'libjxl_threads_public_headers = \[\n([^\]]+)\]',
+      ''.join('    "%s",\n' % fn for fn in jxl_src.threads_public_hdrs)))
+
 
   # Update the list of tests. CMake version include test files in other libs,
   # not just in libjxl.
