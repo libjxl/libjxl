@@ -378,7 +378,6 @@ struct JxlDecoderStruct {
   // always the frame header of the last frame of the current still series,
   // that is, the displayed frame.
   std::unique_ptr<jxl::FrameHeader> frame_header;
-  jxl::FrameDimensions frame_dim;
 
   // Start of the current frame being processed, as offset from the beginning of
   // the codestream.
@@ -470,7 +469,6 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->ib.reset();
   dec->metadata = jxl::CodecMetadata();
   dec->frame_header.reset(new jxl::FrameHeader(&dec->metadata));
-  dec->frame_dim = jxl::FrameDimensions();
   dec->codestream.clear();
 
   dec->frame_stage = FrameStage::kHeader;
@@ -766,16 +764,10 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
   return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
 }
 
-// Reads all frame headers and computes the total size in bytes of the frame.
-// Stores information in dec->frame_header and dec->frame_dim.
-// Outputs optional variables, unless set to nullptr:
-// frame_size: total frame size
-// header_size: size of the frame header and TOC within the frame
-// Can finish successfully if reader has headers and TOC available, does not
-// read groups themselves.
+// Parses the FrameHeader and the total frame_size, given the initial bytes
+// of the frame up to and including the TOC.
 // TODO(lode): merge this with FrameDecoder
-JxlDecoderStatus ParseFrameHeader(JxlDecoder* dec,
-                                  jxl::FrameHeader* frame_header,
+JxlDecoderStatus ParseFrameHeader(jxl::FrameHeader* frame_header,
                                   const uint8_t* in, size_t size, size_t pos,
                                   bool is_preview, size_t* frame_size) {
   if (pos >= size) {
@@ -786,9 +778,9 @@ JxlDecoderStatus ParseFrameHeader(JxlDecoder* dec,
 
   frame_header->nonserialized_is_preview = is_preview;
   jxl::Status status = DecodeFrameHeader(reader.get(), frame_header);
-  dec->frame_dim = frame_header->ToFrameDimensions();
-  if (!CheckSizeLimit(dec->frame_dim.xsize_upsampled_padded,
-                      dec->frame_dim.ysize_upsampled_padded)) {
+  jxl::FrameDimensions frame_dim = frame_header->ToFrameDimensions();
+  if (!CheckSizeLimit(frame_dim.xsize_upsampled_padded,
+                      frame_dim.ysize_upsampled_padded)) {
     return JXL_API_ERROR("frame is too large");
   }
 
@@ -808,7 +800,7 @@ JxlDecoderStatus ParseFrameHeader(JxlDecoder* dec,
   uint64_t groups_total_size;
   const bool has_ac_global = true;
   const size_t toc_entries =
-      NumTocEntries(dec->frame_dim.num_groups, dec->frame_dim.num_dc_groups,
+      NumTocEntries(frame_dim.num_groups, frame_dim.num_dc_groups,
                     frame_header->passes.num_passes, has_ac_global);
 
   std::vector<uint64_t> group_offsets;
@@ -894,8 +886,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       size_t frame_size;
       size_t pos = dec->frame_start;
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
-      JxlDecoderStatus status = ParseFrameHeader(
-          dec, dec->frame_header.get(), in, size, pos, true, &frame_size);
+      JxlDecoderStatus status = ParseFrameHeader(dec->frame_header.get(), in,
+                                                 size, pos, true, &frame_size);
       if (status != JXL_DEC_SUCCESS) return status;
       if (OutOfBounds(pos, frame_size, size)) {
         return JXL_DEC_NEED_MORE_INPUT;
@@ -955,7 +947,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       }
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
       JxlDecoderStatus status =
-          ParseFrameHeader(dec, dec->frame_header.get(), in, size, pos,
+          ParseFrameHeader(dec->frame_header.get(), in, size, pos,
                            /*is_preview=*/false, &dec->frame_size);
       if (status != JXL_DEC_SUCCESS) return status;
 
@@ -972,6 +964,24 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         dec->skip_frames--;
       } else {
         dec->skipping_frame = false;
+      }
+
+      if (dec->skipping_frame) {
+        // Whether this frame could be referenced by any future frame: either
+        // because it's a frame saved for blending or patches, or because it's
+        // a DC frame.
+        bool referenceable =
+            dec->frame_header->CanBeReferenced() ||
+            dec->frame_header->frame_type == FrameType::kDCFrame;
+        // TODO(lode): skip frames in more cases: frames that can be referenced
+        // only by other frames that are skipped can also be skipped.
+        if (!referenceable) {
+          // Skip all decoding for this frame, since the user is skipping this
+          // frame and no future frames can reference it.
+          dec->frame_stage = FrameStage::kHeader;
+          dec->frame_start += dec->frame_size;
+          continue;
+        }
       }
 
       if ((dec->events_wanted & JXL_DEC_FRAME) && dec->is_last_of_still) {
