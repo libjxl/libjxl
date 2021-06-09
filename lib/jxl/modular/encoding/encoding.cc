@@ -223,9 +223,8 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
           pixel_type top = (y ? *(r + x - onerow) : left);
           pixel_type topleft = (x && y ? *(r + x - 1 - onerow) : left);
           pixel_type guess = ClampedGradient(top, left, topleft);
-          pixel_type v =
-              UnpackSigned(reader->ReadHybridUintClustered(ctx_id, br));
-          r[x] = guess + v;
+          uint64_t v = reader->ReadHybridUintClustered(ctx_id, br);
+          r[x] = make_pixel(v, 1, guess);
         }
       }
     } else if (predictor != Predictor::Weighted) {
