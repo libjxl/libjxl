@@ -5,6 +5,8 @@
 
 #include "lib/jxl/frame_header.h"
 
+#include <cinttypes>
+
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/fields.h"
@@ -347,6 +349,16 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
     } else if (visitor->Conditional(frame_type == FrameType::kReferenceOnly)) {
       JXL_QUIET_RETURN_IF_ERROR(
           visitor->Bool(true, &save_before_color_transform));
+      if (!save_before_color_transform &&
+          (frame_size.xsize < nonserialized_metadata->xsize() ||
+           frame_size.ysize < nonserialized_metadata->ysize() ||
+           frame_origin.x0 != 0 || frame_origin.y0 != 0)) {
+        return JXL_FAILURE(
+            "non-patch reference frame with invalid crop: %" PRIu32 "x%" PRIu32
+            "+%" PRIi32 "+%" PRIi32,
+            frame_size.xsize, frame_size.ysize, frame_origin.x0,
+            frame_origin.y0);
+      }
     }
   } else {
     save_before_color_transform = true;

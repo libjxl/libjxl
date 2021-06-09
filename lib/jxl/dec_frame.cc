@@ -855,13 +855,12 @@ Status FrameDecoder::FinalizeFrame() {
 
   if (dec_state_->shared->frame_header.CanBeReferenced()) {
     size_t id = dec_state_->shared->frame_header.save_as_reference;
+    auto& reference_frame = dec_state_->shared_storage.reference_frames[id];
     if (dec_state_->pre_color_transform_frame.xsize() == 0) {
-      dec_state_->shared_storage.reference_frames[id].storage =
-          decoded_->Copy();
+      reference_frame.storage = decoded_->Copy();
     } else {
-      dec_state_->shared_storage.reference_frames[id].storage =
-          ImageBundle(decoded_->metadata());
-      dec_state_->shared_storage.reference_frames[id].storage.SetFromImage(
+      reference_frame.storage = ImageBundle(decoded_->metadata());
+      reference_frame.storage.SetFromImage(
           std::move(dec_state_->pre_color_transform_frame),
           decoded_->c_current());
       if (decoded_->HasExtraChannels()) {
@@ -871,14 +870,25 @@ Status FrameDecoder::FinalizeFrame() {
         for (const auto& ec : *ecs) {
           extra_channels.push_back(CopyImage(ec));
         }
-        dec_state_->shared_storage.reference_frames[id]
-            .storage.SetExtraChannels(std::move(extra_channels));
+        reference_frame.storage.SetExtraChannels(std::move(extra_channels));
       }
     }
-    dec_state_->shared_storage.reference_frames[id].frame =
-        &dec_state_->shared_storage.reference_frames[id].storage;
-    dec_state_->shared_storage.reference_frames[id].ib_is_in_xyb =
+    reference_frame.frame = &reference_frame.storage;
+    reference_frame.ib_is_in_xyb =
         dec_state_->shared->frame_header.save_before_color_transform;
+    if (!dec_state_->shared->frame_header.save_before_color_transform) {
+      const CodecMetadata* metadata =
+          dec_state_->shared->frame_header.nonserialized_metadata;
+      if (reference_frame.frame->xsize() < metadata->xsize() ||
+          reference_frame.frame->ysize() < metadata->ysize()) {
+        return JXL_FAILURE(
+            "trying to save a reference frame that is too small: %zux%zu "
+            "instead of %zux%zu",
+            reference_frame.frame->xsize(), reference_frame.frame->ysize(),
+            metadata->xsize(), metadata->ysize());
+      }
+      reference_frame.storage.ShrinkTo(metadata->xsize(), metadata->ysize());
+    }
   }
   if (dec_state_->shared->frame_header.dc_level != 0) {
     dec_state_->shared_storage
