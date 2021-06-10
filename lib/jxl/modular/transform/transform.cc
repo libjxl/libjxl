@@ -8,8 +8,8 @@
 #include "lib/jxl/fields.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/transform/palette.h"
+#include "lib/jxl/modular/transform/rct.h"
 #include "lib/jxl/modular/transform/squeeze.h"
-#include "lib/jxl/modular/transform/subtractgreen.h"
 
 namespace jxl {
 
@@ -23,7 +23,7 @@ Status Transform::Forward(Image &input, const weighted::Header &wp_header,
                           ThreadPool *pool) {
   switch (id) {
     case TransformId::kRCT:
-      return FwdSubtractGreen(input, begin_c, rct_type);
+      return FwdRCT(input, begin_c, rct_type);
     case TransformId::kSqueeze:
       return FwdSqueeze(input, squeezes, pool);
     case TransformId::kPalette:
@@ -39,7 +39,7 @@ Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
                           ThreadPool *pool) {
   switch (id) {
     case TransformId::kRCT:
-      return InvSubtractGreen(input, begin_c, rct_type);
+      return InvRCT(input, begin_c, rct_type);
     case TransformId::kSqueeze:
       return InvSqueeze(input, squeezes, pool);
     case TransformId::kPalette:

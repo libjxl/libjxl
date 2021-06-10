@@ -140,6 +140,11 @@ class Transform : public Fields {
 
 Status CheckEqualChannels(const Image &image, uint32_t c1, uint32_t c2);
 
+static inline pixel_type PixelAdd(pixel_type a, pixel_type b) {
+  return static_cast<pixel_type>(static_cast<uint32_t>(a) +
+                                 static_cast<uint32_t>(b));
+}
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_
