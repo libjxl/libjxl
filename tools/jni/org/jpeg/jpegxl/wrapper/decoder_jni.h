@@ -15,7 +15,8 @@ extern "C" {
 /**
  * Get basic image information (size, etc.)
  *
- * @param ctx {out_status, out_width, out_height, pixels_size, icc_size} tuple
+ * @param ctx {in_pixel_format_out_status, out_width, out_height, pixels_size,
+ *             icc_size} tuple
  * @param data [in] Buffer with encoded JXL stream
  */
 JNIEXPORT void JNICALL
@@ -27,7 +28,7 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(JNIEnv* env,
 /**
  * Get image pixel data.
  *
- * @param ctx {out_status} tuple
+ * @param ctx {in_pixel_format_out_status} tuple
  * @param data [in] Buffer with encoded JXL stream
  * @param pixels [out] Buffer to place pixels to
  */

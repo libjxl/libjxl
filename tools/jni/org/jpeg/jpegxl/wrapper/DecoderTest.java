@@ -24,19 +24,45 @@ public class DecoderTest {
     }
   }
 
-  // Simple executable to avoid extra dependencies.
-  public static void main(String[] args) {
+  static ByteBuffer makeSimpleImage() {
     byte[] jxl = Base64.getDecoder().decode("/wr6H0GRCAYBAGAASzgkunkeVbaSBu95EXDn0e7ABz2ShAMA");
     ByteBuffer jxlData = ByteBuffer.allocateDirect(jxl.length);
     jxlData.put(jxl);
-    ImageData imageData = Decoder.decode(jxlData);
-    if (imageData.width != 1024)
+    return jxlData;
+  }
+
+  static void checkSimpleImageData(ImageData imageData) {
+    if (imageData.width != 1024) {
       throw new IllegalStateException("invalid width");
-    if (imageData.height != 1024)
+    }
+    if (imageData.height != 1024) {
       throw new IllegalStateException("invalid height");
+    }
     int iccSize = imageData.icc.capacity();
     // Do not expect ICC profile to be some exact size; currently it is 732
-    if (iccSize < 300 || iccSize > 1000)
+    if (iccSize < 300 || iccSize > 1000) {
       throw new IllegalStateException("unexpected ICC profile size");
+    }
+  }
+
+  static void testRgba() {
+    ImageData imageData = Decoder.decode(makeSimpleImage());
+    checkSimpleImageData(imageData);
+    if (imageData.pixels.limit() != 1024 * 1024 * 4) {
+      throw new IllegalStateException("Expected 4 bytes per pixels (RGBA_8888)");
+    }
+  }
+
+  static void testRgbaF16() {
+    ImageData imageData = Decoder.decode(makeSimpleImage(), PixelFormat.RGBA_F16);
+    checkSimpleImageData(imageData);
+    if (imageData.pixels.limit() != 1024 * 1024 * 8) {
+      throw new IllegalStateException("Expected 8 bytes per pixels (RGBA_F16)");
+    }
+  }
+  // Simple executable to avoid extra dependencies.
+  public static void main(String[] args) {
+    testRgba();
+    testRgbaF16();
   }
 }
