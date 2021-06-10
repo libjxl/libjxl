@@ -1016,9 +1016,6 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   passes_enc_state->special_frames.clear();
 
   CompressParams cparams = cparams_orig;
-  if (ib.color_transform != ColorTransform::kNone) {
-    cparams.color_transform = ib.color_transform;
-  }
 
   if (cparams.progressive_dc < 0) {
     if (cparams.progressive_dc != -1) {

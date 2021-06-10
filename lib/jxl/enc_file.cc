@@ -185,11 +185,17 @@ Status WriteHeaders(CodecMetadata* metadata, BitWriter* writer,
   return true;
 }
 
-Status EncodeFile(const CompressParams& cparams, const CodecInOut* io,
+Status EncodeFile(const CompressParams& cparams_orig, const CodecInOut* io,
                   PassesEncoderState* passes_enc_state, PaddedBytes* compressed,
                   AuxOut* aux_out, ThreadPool* pool) {
   io->CheckMetadata();
   BitWriter writer;
+
+  CompressParams cparams = cparams_orig;
+  if (io->Main().color_transform != ColorTransform::kNone) {
+    // Set the color transform to YCbCr or XYB if the original image is such.
+    cparams.color_transform = io->Main().color_transform;
+  }
 
   std::unique_ptr<CodecMetadata> metadata = jxl::make_unique<CodecMetadata>();
   JXL_RETURN_IF_ERROR(PrepareCodecMetadataFromIO(cparams, io, metadata.get()));
