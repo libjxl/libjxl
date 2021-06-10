@@ -123,17 +123,17 @@ struct ImageSpec {
     bool lossy_palette = false;
     bool noise = false;
     bool preview = false;
-    // CjxlParams is packed; re[add padding when sum of sizes of members is not
+    // CjxlParams is packed; re-add padding when sum of sizes of members is not
     // multiple of 4.
     // uint8_t padding_[0] = {};
   } params;
 
   uint32_t is_reconstructible_jpeg = false;
-  // Use 0xFF if any random spec is good; otherwise set the desired value.
-  uint8_t override_decoder_spec = 0xFF;
+  // Use 0xFFFFFFFF if any random spec is good; otherwise set the desired value.
+  uint32_t override_decoder_spec = 0xFFFFFFFF;
   // Orientation.
   uint8_t orientation = 0;
-  uint8_t padding_[2] = {};
+  uint8_t padding_[3] = {};
 };
 #pragma pack(pop)
 static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
@@ -263,13 +263,15 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   if (!ok) return false;
   compressed.append(compressed_image);
 
-  // Append one byte with the flags used by djxl_fuzzer to select the decoding
+  // Append 4 bytes with the flags used by djxl_fuzzer to select the decoding
   // output.
   std::uniform_int_distribution<> dis256(0, 255);
-  if (spec.override_decoder_spec == 0xFF) {
-    compressed.push_back(dis256(mt));
+  if (spec.override_decoder_spec == 0xFFFFFFFF) {
+    for (size_t i = 0; i < 4; ++i) compressed.push_back(dis256(mt));
   } else {
-    compressed.push_back(spec.override_decoder_spec);
+    for (size_t i = 0; i < 4; ++i) {
+      compressed.push_back(spec.override_decoder_spec >> (8 * i));
+    }
   }
 
   if (!jxl::WriteFile(compressed, output_fn)) return 1;
