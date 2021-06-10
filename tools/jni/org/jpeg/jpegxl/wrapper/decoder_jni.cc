@@ -32,9 +32,21 @@ bool BufferToSpan(JNIEnv* env, jobject buffer, uint8_t** data, size_t* size) {
   return StaticCast(env->GetDirectBufferCapacity(buffer), size);
 }
 
+JxlPixelFormat ToPixelFormat(size_t pixel_format) {
+  if (pixel_format == 0) {
+    // RGBA, 4 x byte per pixel, no scanline padding.
+    return {/*num_channels=*/4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, /*align=*/0};
+  } else {  // == 1
+    // RGBA, 4 x float16 per pixel, no scanline padding.
+    return {/*num_channels=*/4, JXL_TYPE_FLOAT16, JXL_LITTLE_ENDIAN,
+            /*align=*/0};
+  }
+}
+
 jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
                      size_t* info_icc_size, JxlBasicInfo* info,
-                     jobject pixels_buffer, jobject icc_buffer) {
+                     size_t pixel_format, jobject pixels_buffer,
+                     jobject icc_buffer) {
   if (data_buffer == nullptr) return JXL_FAILURE("No data buffer");
 
   uint8_t* data = nullptr;
@@ -87,8 +99,7 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
   if (status != JXL_DEC_BASIC_INFO) {
     return JXL_FAILURE("Unexpected notification (want: basic info)");
   }
-  // RGBA (4-bytes per pixel), no scanline padding.
-  JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+  JxlPixelFormat format = ToPixelFormat(pixel_format);
   if (info_pixels_size) {
     status = JxlDecoderImageOutBufferSize(dec, &format, info_pixels_size);
     if (status != JXL_DEC_SUCCESS) {
@@ -141,6 +152,8 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
 
 #undef FAILURE
 
+constexpr const size_t kLastPixelFormat = 1;
+
 }  // namespace
 
 #ifdef __cplusplus
@@ -151,16 +164,24 @@ JNIEXPORT void JNICALL
 Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
     JNIEnv* env, jobject /*jobj*/, jintArray ctx, jobject data_buffer) {
   jint context[5] = {0};
+  env->GetIntArrayRegion(ctx, 0, 1, context);
 
   JxlBasicInfo info;
   size_t pixels_size = 0;
   size_t icc_size = 0;
+  size_t pixel_format = 0;
 
   bool ok = true;
 
   if (ok) {
-    ok = DoDecode(env, data_buffer, &pixels_size, &icc_size, &info,
-                  /* pixels_buffer= */ nullptr, /* icc_buffer= */ nullptr);
+    pixel_format = context[0];
+    ok = (pixel_format <= kLastPixelFormat);
+  }
+
+  if (ok) {
+    ok =
+        DoDecode(env, data_buffer, &pixels_size, &icc_size, &info, pixel_format,
+                 /* pixels_buffer= */ nullptr, /* icc_buffer= */ nullptr);
   }
 
   if (ok) {
@@ -170,7 +191,7 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
     ok &= StaticCast(icc_size, context + 4);
   }
 
-  if (!ok) context[0] = -1;
+  context[0] = ok ? 0 : -1;
 
   env->SetIntArrayRegion(ctx, 0, 5, context);
 }
@@ -186,16 +207,24 @@ JNIEXPORT void JNICALL Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetPixels(
     JNIEnv* env, jobject /*jobj*/, jintArray ctx, jobject data_buffer,
     jobject pixels_buffer, jobject icc_buffer) {
   jint context[1] = {0};
+  env->GetIntArrayRegion(ctx, 0, 1, context);
+
+  size_t pixel_format = 0;
 
   bool ok = true;
 
   if (ok) {
-    ok = DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
-                  /* info_icc_size= */ nullptr, /* info= */ nullptr,
-                  pixels_buffer, icc_buffer);
+    pixel_format = context[0];
+    ok = (pixel_format <= kLastPixelFormat);
   }
 
-  if (!ok) context[0] = -1;
+  if (ok) {
+    ok = DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
+                  /* info_icc_size= */ nullptr, /* info= */ nullptr,
+                  pixel_format, pixels_buffer, icc_buffer);
+  }
+
+  context[0] = ok ? 0 : -1;
 
   env->SetIntArrayRegion(ctx, 0, 1, context);
 }

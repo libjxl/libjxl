@@ -39,17 +39,18 @@ class DecoderJni {
   }
 
   /** One-shot decoding. */
-  static BasicInfo getBasicInfo(Buffer data) {
+  static BasicInfo getBasicInfo(Buffer data, PixelFormat pixelFormat) {
     if (!data.isDirect()) {
       throw new IllegalArgumentException("data must be direct buffer");
     }
     int[] context = new int[5];
+    context[0] = pixelFormat.ordinal();
     nativeGetBasicInfo(context, data);
     return new BasicInfo(context);
   }
 
   /** One-shot decoding. */
-  static void getPixels(Buffer data, Buffer pixels, Buffer icc) {
+  static void getPixels(Buffer data, Buffer pixels, Buffer icc, PixelFormat pixelFormat) {
     if (!data.isDirect()) {
       throw new IllegalArgumentException("data must be direct buffer");
     }
@@ -60,6 +61,7 @@ class DecoderJni {
       throw new IllegalArgumentException("icc must be direct buffer");
     }
     int[] context = new int[1];
+    context[0] = pixelFormat.ordinal();
     nativeGetPixels(context, data, pixels, icc);
     checkStatusCode(context[0]);
   }

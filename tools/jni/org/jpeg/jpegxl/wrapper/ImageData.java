@@ -13,11 +13,17 @@ public class ImageData {
   final int height;
   final Buffer pixels;
   final Buffer icc;
+  final PixelFormat pixelFormat;
 
-  ImageData(int width, int height, Buffer pixels, Buffer icc) {
+  ImageData(int width, int height, Buffer pixels, Buffer icc, PixelFormat pixelFormat) {
     this.width = width;
     this.height = height;
     this.pixels = pixels;
     this.icc = icc;
+    this.pixelFormat = pixelFormat;
+  }
+
+  ImageData(int width, int height, Buffer pixels, Buffer icc) {
+    this(width, height, pixels, icc, PixelFormat.RGBA_F16);
   }
 }

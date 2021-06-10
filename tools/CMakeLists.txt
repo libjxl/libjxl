@@ -343,6 +343,7 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
+    jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
 
