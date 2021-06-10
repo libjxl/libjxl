@@ -130,11 +130,6 @@ class JxlCodec : public ImageCodec {
                kDownsamplingPrefix) {
       std::istringstream parser(param.substr(kDownsamplingPrefix.size()));
       parser >> dparams_.max_downsampling;
-    } else if (param[0] == 'n' && param[1] == 'l') {
-      cparams_.color_transform = jxl::ColorTransform::kNone;
-      cparams_.near_lossless = strtol(param.substr(2).c_str(), nullptr, 10);
-      if (cparams_.near_lossless == 0) cparams_.near_lossless = 2;
-      cparams_.responsive = 0;
     } else if (ParseSpeedTier(param, &cparams_.speed_tier)) {
       // Nothing to do.
     } else if (param[0] == 'X') {
@@ -147,8 +142,6 @@ class JxlCodec : public ImageCodec {
       cparams_.palette_colors = strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param == "lp") {
       cparams_.lossy_palette = true;
-    } else if (param[0] == 'N') {
-      cparams_.near_lossless = strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param[0] == 'C') {
       cparams_.colorspace = strtol(param.substr(1).c_str(), nullptr, 10);
     } else if (param[0] == 'c') {

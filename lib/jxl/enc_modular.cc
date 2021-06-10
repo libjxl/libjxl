@@ -387,14 +387,10 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     // no explicit predictor(s) given, set a good default
     if ((cparams.speed_tier <= SpeedTier::kTortoise ||
          cparams.modular_mode == false) &&
-        quality == 100 && cparams.near_lossless == false &&
-        cparams.responsive == false) {
+        quality == 100 && cparams.responsive == false) {
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams.options.predictor = Predictor::Variable;
-    } else if (cparams.near_lossless) {
-      // weighted predictor for near_lossless
-      cparams.options.predictor = Predictor::Weighted;
     } else if (cparams.responsive) {
       // zero predictor for Squeeze residues
       cparams.options.predictor = Predictor::Zero;
@@ -559,7 +555,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   // Set options and apply transformations
 
-  if (quality < 100 || cparams.near_lossless) {
+  if (quality < 100) {
     if (cparams.palette_colors != 0) {
       JXL_DEBUG_V(3, "Lossy encode, not doing palette transforms");
     }
@@ -661,8 +657,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   if (cparams.color_transform == ColorTransform::kNone && do_color && !fp) {
     if (cparams.colorspace == 1 ||
-        (cparams.colorspace < 0 && (quality < 100 || cparams.near_lossless ||
-                                    cparams.speed_tier > SpeedTier::kHare))) {
+        (cparams.colorspace < 0 &&
+         (quality < 100 || cparams.speed_tier > SpeedTier::kHare))) {
       Transform ycocg{TransformId::kRCT};
       ycocg.rct_type = 6;
       ycocg.begin_c = gi.nb_meta_channels;
@@ -721,8 +717,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     for (uint32_t i = gi.nb_meta_channels; i < gi.channel.size(); i++) {
       Channel& ch = gi.channel[i];
-      int shift = ch.hcshift + ch.vcshift;  // number of pixel halvings
-      if (shift > 15) shift = 15;
+      int shift = ch.hshift + ch.vshift;  // number of pixel halvings
+      if (shift > 16) shift = 16;
+      if (shift > 0) shift--;
       int q;
       // assuming default Squeeze here
       int component = ((i - gi.nb_meta_channels) % gi.real_nb_channels);
@@ -992,12 +989,6 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
                             total_pixels);
     } else {
       tree = {PropertyDecisionNode::Leaf(Predictor::Gradient)};
-    }
-  }
-  // TODO(veluca): do this somewhere else.
-  if (cparams.near_lossless) {
-    for (size_t i = 0; i < tree.size(); i++) {
-      tree[i].predictor_offset = 0;
     }
   }
   tree_tokens.resize(1);
@@ -1288,31 +1279,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       gi.do_transform(maybe_palette_1, weighted::Header());
     }
   }
-  if (cparams.near_lossless > 0 && gi.nb_channels != 0) {
-    Transform nl(TransformId::kNearLossless);
-    nl.predictor = cparams.options.predictor;
-    JXL_RETURN_IF_ERROR(nl.predictor != Predictor::Best);
-    JXL_RETURN_IF_ERROR(nl.predictor != Predictor::Variable);
-    nl.begin_c = gi.nb_meta_channels;
-    if (cparams.colorspace == 0) {
-      nl.num_c = gi.nb_channels;
-      nl.max_delta_error = cparams.near_lossless;
-      gi.do_transform(nl, weighted::Header());
-    } else {
-      nl.num_c = 1;
-      nl.max_delta_error = cparams.near_lossless;
-      gi.do_transform(nl, weighted::Header());
-      nl.begin_c += 1;
-      nl.num_c = gi.nb_channels - 1;
-      nl.max_delta_error++;  // more loss for chroma
-      gi.do_transform(nl, weighted::Header());
-    }
-  }
 
   // lossless and no specific color transform specified: try Nothing, YCoCg,
   // and 17 RCTs
   if (cparams.color_transform == ColorTransform::kNone && quality == 100 &&
-      cparams.colorspace < 0 && gi.nb_channels > 2 && !cparams.near_lossless &&
+      cparams.colorspace < 0 && gi.nb_channels > 2 &&
       cparams.responsive == false && do_color &&
       cparams.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);

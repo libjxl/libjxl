@@ -812,11 +812,11 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 26000);
+  EXPECT_LE(compressed.size(), 31000);
 
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            3.0);
+            1.5);
 }
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {

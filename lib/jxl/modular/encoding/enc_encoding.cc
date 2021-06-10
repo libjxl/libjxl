@@ -179,9 +179,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
 
   JXL_DEBUG_V(6,
               "Encoding %zux%zu channel %d, "
-              "(shift=%i,%i, cshift=%i,%i)",
-              channel.w, channel.h, chan, channel.hshift, channel.vshift,
-              channel.hcshift, channel.vcshift);
+              "(shift=%i,%i)",
+              channel.w, channel.h, chan, channel.hshift, channel.vshift);
 
   std::array<pixel_type, kNumStaticProperties> static_props = {chan,
                                                                (int)group_id};
