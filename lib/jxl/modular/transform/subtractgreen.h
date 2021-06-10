@@ -59,23 +59,11 @@ void InvSubtractGreenRow(const pixel_type* in0, const pixel_type* in1,
 }
 
 Status InvSubtractGreen(Image& input, size_t begin_c, size_t rct_type) {
+  JXL_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, begin_c + 2));
   size_t m = begin_c;
-  if (input.nb_channels + input.nb_meta_channels < begin_c + 3) {
-    return JXL_FAILURE(
-        "Invalid number of channels to apply inverse subtract_green.");
-  }
   Channel& c0 = input.channel[m + 0];
-  Channel& c1 = input.channel[m + 1];
-  Channel& c2 = input.channel[m + 2];
   size_t w = c0.w;
   size_t h = c0.h;
-  if (c0.plane.xsize() < w || c0.plane.ysize() < h || c1.plane.xsize() < w ||
-      c1.plane.ysize() < h || c2.plane.xsize() < w || c2.plane.ysize() < h ||
-      c1.w != w || c1.h != h || c2.w != w || c2.h != h) {
-    return JXL_FAILURE(
-        "Invalid channel dimensions to apply inverse subtract_green (maybe "
-        "chroma is subsampled?).");
-  }
   if (rct_type == 0) {  // noop
     return true;
   }
@@ -120,9 +108,7 @@ Status InvSubtractGreen(Image& input, size_t begin_c, size_t rct_type) {
 }
 
 Status FwdSubtractGreen(Image& input, size_t begin_c, size_t rct_type) {
-  if (input.nb_channels + input.nb_meta_channels < begin_c + 3) {
-    return false;
-  }
+  JXL_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, begin_c + 2));
   if (rct_type == 0) {  // noop
     return false;
   }
