@@ -105,9 +105,14 @@ class ModularFrameDecoder {
                                  BitReader* br, QuantEncoding* encoding,
                                  size_t idx,
                                  ModularFrameDecoder* modular_frame_decoder);
-  Status FinalizeDecoding(PassesDecoderState* dec_state, jxl::ThreadPool* pool,
-                          ImageBundle* output);
+  Status FinalizeDecoding(jxl::ThreadPool* pool);
   bool have_dc() const { return have_something; }
+  void GetECRect(const FrameHeader& frame_header, size_t ec,
+                 const Rect& image_rect, const Rect& output_rect,
+                 ImageF* output);
+  void GetColorRect(const FrameHeader& frame_header, const float* xyb_quants,
+                    const Rect& image_rect, const Rect& output_rect,
+                    Image3F* output);
 
  private:
   Image full_image;
