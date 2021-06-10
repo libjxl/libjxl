@@ -33,7 +33,9 @@ constexpr const size_t kStreamingTargetNumberOfChunks = 128;
 
 // Options for the fuzzing
 struct FuzzSpec {
-  bool use_float;
+  JxlDataType output_type;
+  JxlEndianness output_endianness;
+  size_t output_align;
   bool get_alpha;
   bool get_grayscale;
   bool use_streaming;
@@ -97,9 +99,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   }
   JxlBasicInfo info;
   uint32_t channels = (spec.get_grayscale ? 1 : 3) + (spec.get_alpha ? 1 : 0);
-  JxlPixelFormat format = {channels,
-                           spec.use_float ? JXL_TYPE_FLOAT : JXL_TYPE_UINT8,
-                           JXL_NATIVE_ENDIAN, 0};
+  JxlPixelFormat format = {channels, spec.output_type, spec.output_endianness,
+                           spec.output_align};
 
   if (!spec.use_streaming) {
     // Set all input at once
@@ -428,21 +429,37 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
 }
 
 int TestOneInput(const uint8_t* data, size_t size) {
-  if (size == 0) return 0;
-  uint8_t flags = data[size - 1];
-  size--;
+  if (size < 4) return 0;
+  uint32_t flags = 0;
+  size_t used_flag_bits = 0;
+  memcpy(&flags, data + size - 4, 4);
+  size -= 4;
+
+  const auto getFlag = [&flags, &used_flag_bits](size_t max_value) {
+    size_t limit = 1;
+    while (limit <= max_value) {
+      limit <<= 1;
+      used_flag_bits++;
+      if (used_flag_bits > 32) abort();
+    }
+    uint32_t result = flags % limit;
+    flags /= limit;
+    return result % (max_value + 1);
+  };
 
   FuzzSpec spec;
-  spec.use_float = !!(flags & 1);
-  spec.get_alpha = !!(flags & 2);
-  spec.get_grayscale = !!(flags & 4);
-  spec.use_streaming = !!(flags & 8);
-  spec.jpeg_to_pixels = !!(flags & 16);
-  spec.use_callback = !!(flags & 32);
-  spec.keep_orientation = !!(flags & 64);
   // Allows some different possible variations in the chunk sizes of the
   // streaming case
   spec.streaming_seed = flags ^ size;
+  spec.get_alpha = !!getFlag(1);
+  spec.get_grayscale = !!getFlag(1);
+  spec.use_streaming = !!getFlag(1);
+  spec.jpeg_to_pixels = !!getFlag(1);
+  spec.use_callback = !!getFlag(1);
+  spec.keep_orientation = !!getFlag(1);
+  spec.output_type = static_cast<JxlDataType>(getFlag(JXL_TYPE_FLOAT16));
+  spec.output_endianness = static_cast<JxlEndianness>(getFlag(JXL_BIG_ENDIAN));
+  spec.output_align = getFlag(16);
 
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> jpeg;
@@ -451,7 +468,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();
-  hwy::SetSupportedTargetsForTest(spec.streaming_seed % targets.size());
+  hwy::SetSupportedTargetsForTest(getFlag(targets.size() - 1));
   DecodeJpegXl(data, size, max_pixels, spec, &pixels, &jpeg, &xsize, &ysize,
                &icc);
   hwy::SetSupportedTargetsForTest(0);
