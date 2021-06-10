@@ -384,29 +384,9 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   return num_errors.load(std::memory_order_relaxed) == 0;
 }
 
-static Status CheckPaletteParams(const Image &image, uint32_t begin_c,
-                                 uint32_t end_c) {
-  uint32_t c1 = begin_c;
-  uint32_t c2 = end_c;
-  // The range is including c1 and c2, so c2 may not be num_channels.
-  if (c1 > image.channel.size() || c2 >= image.channel.size() || c2 < c1) {
-    return JXL_FAILURE("Invalid channel range");
-  }
-  const auto &ch1 = image.channel[begin_c];
-  for (size_t c = begin_c + 1; c <= end_c; c++) {
-    const auto &ch2 = image.channel[c];
-    if (ch1.w != ch2.w || ch1.h != ch2.h || ch1.hshift != ch2.hshift ||
-        ch1.vshift != ch2.vshift) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                           uint32_t nb_colors, uint32_t nb_deltas, bool lossy) {
-  JXL_RETURN_IF_ERROR(CheckPaletteParams(input, begin_c, end_c));
+  JXL_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, end_c));
 
   size_t nb = end_c - begin_c + 1;
   input.nb_meta_channels++;
@@ -426,7 +406,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                          uint32_t &nb_colors, bool ordered, bool lossy,
                          Predictor &predictor,
                          const weighted::Header &wp_header) {
-  JXL_QUIET_RETURN_IF_ERROR(CheckPaletteParams(input, begin_c, end_c));
+  JXL_QUIET_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, end_c));
   uint32_t nb = end_c - begin_c + 1;
 
   size_t w = input.channel[begin_c].w;
