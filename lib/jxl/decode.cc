@@ -515,7 +515,14 @@ void JxlDecoderRewind(JxlDecoder* dec) {
 }
 
 void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
-  dec->skip_frames = amount;
+  // Increment amount, rather than set it: making the amount smaller is
+  // impossible because the decoder may already have skipped frames required to
+  // decode earlier frames, and making the amount larger compared to an existing
+  // amount is impossible because if JxlDecoderSkipFrames is called in the
+  // middle of already skipping frames, the user cannot know how many frames
+  // have already been skipped internally so far so an absolute value cannot
+  // be defined.
+  dec->skip_frames += amount;
 }
 
 JXL_EXPORT JxlDecoderStatus
