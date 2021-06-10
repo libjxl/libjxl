@@ -148,6 +148,8 @@ class Transform : public Fields {
   Status MetaApply(Image &input);
 };
 
+Status CheckEqualChannels(const Image &image, uint32_t c1, uint32_t c2);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_TRANSFORM_TRANSFORM_H_
