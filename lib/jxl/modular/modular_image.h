@@ -36,20 +36,9 @@ class Channel {
   jxl::Plane<pixel_type> plane;
   size_t w, h;
   int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
-  int hcshift,
-      vcshift;  // cumulative, i.e. when decoding up to this point, we have data
-                // available with these shifts (for this component)
-  Channel(size_t iw, size_t ih, int hsh = 0, int vsh = 0, int hcsh = 0,
-          int vcsh = 0)
-      : plane(iw, ih),
-        w(iw),
-        h(ih),
-        hshift(hsh),
-        vshift(vsh),
-        hcshift(hcsh),
-        vcshift(vcsh) {}
-  Channel()
-      : plane(0, 0), w(0), h(0), hshift(0), vshift(0), hcshift(0), vcshift(0) {}
+  Channel(size_t iw, size_t ih, int hsh = 0, int vsh = 0)
+      : plane(iw, ih), w(iw), h(ih), hshift(hsh), vshift(vsh) {}
+  Channel() : plane(0, 0), w(0), h(0), hshift(0), vshift(0) {}
 
   Channel(const Channel& other) = delete;
   Channel& operator=(const Channel& other) = delete;
@@ -60,8 +49,6 @@ class Channel {
     h = other.h;
     hshift = other.hshift;
     vshift = other.vshift;
-    hcshift = other.hcshift;
-    vcshift = other.vcshift;
     plane = std::move(other.plane);
     return *this;
   }

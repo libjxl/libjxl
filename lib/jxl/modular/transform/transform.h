@@ -29,13 +29,6 @@ enum class TransformId : uint32_t {
 
   // Invalid for now.
   kInvalid = 3,
-
-  // this is lossy preprocessing, doesn't have an inverse transform and doesn't
-  // exist from the decoder point of view
-  kNearLossless = 4,
-
-  // The total number of transforms. Update this if adding more transformations.
-  kNumTransforms = 5,
 };
 
 struct SqueezeParams : public Fields {
@@ -81,7 +74,7 @@ class Transform : public Fields {
 
   explicit Transform(TransformId id);
   // default constructor for bundles.
-  Transform() : Transform(TransformId::kNumTransforms) {}
+  Transform() : Transform(TransformId::kInvalid) {}
 
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     JXL_QUIET_RETURN_IF_ERROR(visitor->U32(
@@ -137,9 +130,6 @@ class Transform : public Fields {
   }
 
   const char *Name() const override { return "Transform"; }
-
-  // Returns the name of the transform.
-  const char *TransformName() const;
 
   Status Forward(Image &input, const weighted::Header &wp_header,
                  ThreadPool *pool = nullptr);

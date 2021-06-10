@@ -497,11 +497,6 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "[modular encoding] number of extra MA tree properties to use",
       &params.options.max_properties, &ParseSigned, 2);
 
-  cmdline->AddOptionValue('N', "near-lossless", "max_d",
-                          "[modular encoding] apply near-lossless "
-                          "preprocessing with maximum delta = max_d",
-                          &params.near_lossless, &ParseSigned, 1);
-
   cmdline->AddOptionValue('\0', "palette", "K",
                           "[modular encoding] use a palette if image has at "
                           "most K colors (default: 1024)",
@@ -655,11 +650,6 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
         params.color_transform = jxl::ColorTransform::kNone;
       }
     }
-  }
-
-  if (params.near_lossless) {
-    // Near-lossless assumes -R 0
-    params.responsive = 0;
   }
 
   if (override_bitdepth > 32) {

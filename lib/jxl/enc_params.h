@@ -218,7 +218,6 @@ struct CompressParams {
   float channel_colors_pre_transform_percent = 95.f;
   // Use Local channel palette if #colors < this percentage of range
   float channel_colors_percent = 80.f;
-  int near_lossless = 0;
   int palette_colors = 1 << 10;  // up to 10-bit palette is probably worthwhile
   bool lossy_palette = false;
 

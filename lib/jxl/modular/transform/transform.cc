@@ -7,26 +7,16 @@
 
 #include "lib/jxl/fields.h"
 #include "lib/jxl/modular/modular_image.h"
-#include "lib/jxl/modular/transform/near-lossless.h"
 #include "lib/jxl/modular/transform/palette.h"
 #include "lib/jxl/modular/transform/squeeze.h"
 #include "lib/jxl/modular/transform/subtractgreen.h"
 
 namespace jxl {
 
-namespace {
-const char *transform_name[static_cast<uint32_t>(TransformId::kNumTransforms)] =
-    {"RCT", "Palette", "Squeeze", "Invalid", "Near-Lossless"};
-}  // namespace
-
 SqueezeParams::SqueezeParams() { Bundle::Init(this); }
 Transform::Transform(TransformId id) {
   Bundle::Init(this);
   this->id = id;
-}
-
-const char *Transform::TransformName() const {
-  return transform_name[static_cast<uint32_t>(id)];
 }
 
 Status Transform::Forward(Image &input, const weighted::Header &wp_header,
@@ -39,9 +29,6 @@ Status Transform::Forward(Image &input, const weighted::Header &wp_header,
     case TransformId::kPalette:
       return FwdPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
                         ordered_palette, lossy_palette, predictor, wp_header);
-    case TransformId::kNearLossless:
-      return FwdNearLossless(input, begin_c, begin_c + num_c - 1,
-                             max_delta_error, predictor);
     default:
       return JXL_FAILURE("Unknown transformation (ID=%u)",
                          static_cast<unsigned int>(id));
