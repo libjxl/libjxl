@@ -12,6 +12,10 @@
 
 namespace jxl {
 
+pixel_type PixelAdd(pixel_type a, pixel_type b) {
+  return static_cast<pixel_type>(static_cast<uint32_t>(a) +
+                                 static_cast<uint32_t>(b));
+}
 template <int transform_type>
 void InvSubtractGreenRow(const pixel_type* in0, const pixel_type* in1,
                          const pixel_type* in2, pixel_type* out0,
@@ -22,29 +26,29 @@ void InvSubtractGreenRow(const pixel_type* in0, const pixel_type* in1,
   int third = transform_type & 1;
   for (size_t x = 0; x < w; x++) {
     if (transform_type == 6) {
-      pixel_type_w Y = in0[x];
-      pixel_type_w Co = in1[x];
-      pixel_type_w Cg = in2[x];
-      pixel_type_w tmp = Y - (Cg >> 1);
-      pixel_type_w G = Cg + tmp;
-      pixel_type_w B = tmp - (Co >> 1);
-      pixel_type_w R = B + Co;
-      out0[x] = ClampToRange<pixel_type>(R);
-      out1[x] = ClampToRange<pixel_type>(G);
-      out2[x] = ClampToRange<pixel_type>(B);
+      pixel_type Y = in0[x];
+      pixel_type Co = in1[x];
+      pixel_type Cg = in2[x];
+      pixel_type tmp = PixelAdd(Y, -(Cg >> 1));
+      pixel_type G = PixelAdd(Cg, tmp);
+      pixel_type B = PixelAdd(tmp, -(Co >> 1));
+      pixel_type R = PixelAdd(B, Co);
+      out0[x] = R;
+      out1[x] = G;
+      out2[x] = B;
     } else {
-      pixel_type_w First = in0[x];
-      pixel_type_w Second = in1[x];
-      pixel_type_w Third = in2[x];
-      if (third) Third = Third + First;
+      pixel_type First = in0[x];
+      pixel_type Second = in1[x];
+      pixel_type Third = in2[x];
+      if (third) Third = PixelAdd(Third, First);
       if (second == 1) {
-        Second = Second + First;
+        Second = PixelAdd(Second, First);
       } else if (second == 2) {
-        Second = Second + ((First + Third) >> 1);
+        Second = PixelAdd(Second, (PixelAdd(First, Third) >> 1));
       }
-      out0[x] = ClampToRange<pixel_type>(First);
-      out1[x] = ClampToRange<pixel_type>(Second);
-      out2[x] = ClampToRange<pixel_type>(Third);
+      out0[x] = First;
+      out1[x] = Second;
+      out2[x] = Third;
     }
   }
 }
