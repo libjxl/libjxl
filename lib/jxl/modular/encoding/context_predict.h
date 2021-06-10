@@ -182,7 +182,7 @@ struct State {
     size_t cur_row = y & 1 ? 0 : (xsize + 2);
     size_t prev_row = y & 1 ? (xsize + 2) : 0;
     val = AddBits(val);
-    error[cur_row + x] = ClampToRange<pixel_type>(pred - val);
+    error[cur_row + x] = pred - val;
     for (size_t i = 0; i < kNumPredictors; i++) {
       pixel_type_w err =
           (std::abs(prediction[i] - val) + kPredictionRound) >> kPredExtraBits;

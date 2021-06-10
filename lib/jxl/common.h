@@ -167,22 +167,6 @@ JXL_INLINE T Clamp1(T val, T low, T hi) {
   return val < low ? low : val > hi ? hi : val;
 }
 
-template <typename T>
-JXL_INLINE T ClampToRange(int64_t val) {
-  return Clamp1<int64_t>(val, std::numeric_limits<T>::min(),
-                         std::numeric_limits<T>::max());
-}
-
-template <typename T>
-JXL_INLINE T SaturatingMul(int64_t a, int64_t b) {
-  return ClampToRange<T>(a * b);
-}
-
-template <typename T>
-JXL_INLINE T SaturatingAdd(int64_t a, int64_t b) {
-  return ClampToRange<T>(a + b);
-}
-
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
 constexpr uint32_t PackSigned(int32_t value) {
   return (static_cast<uint32_t>(value) << 1) ^

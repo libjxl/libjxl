@@ -111,8 +111,8 @@ void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
         pixel_type_w A =
             ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
         pixel_type_w B = A - diff;
-        p_out[0] = ClampToRange<pixel_type>(A);
-        p_out[1] = ClampToRange<pixel_type>(B);
+        p_out[0] = A;
+        p_out[1] = B;
 
         for (size_t x = 1; x < chin_residual.w; x++) {
           pixel_type_w diff_minus_tendency = p_residual[x];
@@ -123,9 +123,9 @@ void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
           pixel_type_w diff = diff_minus_tendency + tendency;
           pixel_type_w A =
               ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
-          p_out[x << 1] = ClampToRange<pixel_type>(A);
+          p_out[x << 1] = A;
           pixel_type_w B = A - diff;
-          p_out[(x << 1) + 1] = ClampToRange<pixel_type>(B);
+          p_out[(x << 1) + 1] = B;
         }
         if (chout.w & 1) p_out[chout.w - 1] = p_avg[chin.w - 1];
       },
@@ -227,11 +227,11 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
             pixel_type_w out =
                 ((avg * 2) + diff + (diff > 0 ? -(diff & 1) : (diff & 1))) >> 1;
 
-            p_out[x] = ClampToRange<pixel_type>(out);
+            p_out[x] = out;
             // If the chin_residual.h == chin.h, the output has an even number
             // of rows so the next line is fine. Otherwise, this loop won't
             // write to the last output row which is handled separately.
-            p_out[x + onerow_out] = ClampToRange<pixel_type>(p_out[x] - diff);
+            p_out[x + onerow_out] = p_out[x] - diff;
           }
         }
       },
