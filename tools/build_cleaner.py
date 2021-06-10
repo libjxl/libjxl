@@ -254,10 +254,12 @@ def BuildCleaner(args):
   # Public headers.
   gni_patterns.append((
       r'libjxl_public_headers = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn for fn in jxl_src.jxl_public_hdrs)))
+      ''.join('    "%s",\n' % fn[len('lib/'):]
+              for fn in jxl_src.jxl_public_hdrs)))
   gni_patterns.append((
       r'libjxl_threads_public_headers = \[\n([^\]]+)\]',
-      ''.join('    "%s",\n' % fn for fn in jxl_src.threads_public_hdrs)))
+      ''.join('    "%s",\n' % fn[len('lib/'):]
+              for fn in jxl_src.threads_public_hdrs)))
 
 
   # Update the list of tests. CMake version include test files in other libs,
