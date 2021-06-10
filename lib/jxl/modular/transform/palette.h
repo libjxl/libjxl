@@ -113,10 +113,8 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
   return palette[c * onerow + static_cast<size_t>(index)];
 }
 
-// Template so that it can take vectors of pixel_type or pixel_type_w
-// indifferently.
-template <typename T, typename U>
-float ColorDistance(const T &JXL_RESTRICT a, const U &JXL_RESTRICT b) {
+float ColorDistance(const std::vector<float> &JXL_RESTRICT a,
+                    const std::vector<pixel_type> &JXL_RESTRICT b) {
   JXL_ASSERT(a.size() == b.size());
   float distance = 0;
   float ave3 = 0;
@@ -184,22 +182,6 @@ static int QuantizeColorToImplicitPaletteIndex(
 }
 
 }  // namespace palette_internal
-
-namespace {
-// Returns the sum of a+b. If ever over- / underflow occurs it is reflected
-// in "flags".
-pixel_type CautiousAdd(pixel_type a, pixel_type b, pixel_type *flags) {
-  // Avoid signed integer overflow.
-  pixel_type sum = static_cast<pixel_type>(static_cast<uint32_t>(a) +
-                                           static_cast<uint32_t>(b));
-  // We care only about the highest bit. If sign is different, addition is safe.
-  // If sign is the same, result sign should be the same as of the addends.
-  *flags &= (a ^ b) | (a ^ ~sum);
-  return sum;
-}
-
-bool IsHealthy(pixel_type flags) { return (flags >> 31); }
-}  // namespace
 
 static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                          uint32_t nb_deltas, Predictor predictor,
@@ -311,7 +293,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
       RunOnPool(
           pool, 0, nb, ThreadPool::SkipInit(),
           [&](size_t c, size_t _) {
-            pixel_type flags = -1;
             Channel &channel = input.channel[c0 + c];
             for (size_t y = 0; y < channel.h; y++) {
               pixel_type *JXL_RESTRICT p = channel.Row(y);
@@ -330,16 +311,13 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
                   pixel_type top = y ? *(p + x - onerow_image) : left;
                   pixel_type topleft =
                       x && y ? *(p + x - 1 - onerow_image) : left;
-                  val = CautiousAdd(ClampedGradient(left, top, topleft),
-                                    palette_entry, &flags);
+                  val = PixelAdd(ClampedGradient(left, top, topleft),
+                                 palette_entry);
                 } else {
                   val = palette_entry;
                 }
                 p[x] = val;
               }
-            }
-            if (!IsHealthy(flags)) {
-              num_errors.fetch_add(1, std::memory_order_relaxed);
             }
           },
           "UndoDeltaPaletteGradient");
@@ -618,7 +596,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
         bool best_is_delta = false;
         std::vector<pixel_type> best_val(nb, 0);
         std::vector<pixel_type> quantized_val(nb);
-        std::vector<pixel_type_w> predictions(nb);
+        std::vector<pixel_type> predictions(nb);
         for (size_t c = 0; c < nb; ++c) {
           predictions[c] = PredictNoTreeWP(w, p_quant[c] + x, onerow_image, x,
                                            y, predictor, &wp_states[c])
