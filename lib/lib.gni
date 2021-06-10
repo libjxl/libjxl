@@ -24,7 +24,7 @@ libjxl_public_headers = [
     "lib/include/jxl/memory_manager.h",
     "lib/include/jxl/parallel_runner.h",
     "lib/include/jxl/types.h",
-],
+]
 
 libjxl_dec_sources = [
     "jxl/ac_context.h",
@@ -389,7 +389,7 @@ libjxl_threads_public_headers = [
     "lib/include/jxl/resizable_parallel_runner_cxx.h",
     "lib/include/jxl/thread_parallel_runner.h",
     "lib/include/jxl/thread_parallel_runner_cxx.h",
-],
+]
 
 libjxl_profiler_sources = [
     "profiler/profiler.cc",
