@@ -9,6 +9,7 @@
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
 
 namespace jxl {
 
