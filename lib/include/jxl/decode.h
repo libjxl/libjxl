@@ -253,17 +253,19 @@ typedef enum {
  */
 JXL_EXPORT void JxlDecoderRewind(JxlDecoder* dec);
 
-/** Makes the decoder skip the next `amount` frames. If this is used after
- * JxlDecoderRewind to skip frames that were already decoded before, the decoder
- * is able to skip more efficiently, as it can skip decoding earlier frames that
- * it knows later frames don't depend on. A frame here is defined as a frame
- * that without skipping emits events such as JXL_DEC_FRAME and JXL_FULL_IMAGE,
- * frames that are internal to the file format but are not rendered as part of
- * an animation, or are not the final still frame of a still image, are not
- * counted. If the decoder is already processing a frame (could have emitted
- * JXL_DEC_FRAME but not yet JXL_DEC_FULL_IMAGE), it starts skipping from the
- * next frame. If the amount is larger than the amount of frames remaining in
- * the image, all remaining frames are skipped.
+/** Makes the decoder skip the next `amount` frames. It still needs to process
+ * the input, but will not output the frame events. It can be more efficient
+ * when skipping frames, and even more so when using this after
+ * JxlDecoderRewind. If the decoder is already processing a frame (could
+ * have emitted JXL_DEC_FRAME but not yet JXL_DEC_FULL_IMAGE), it starts
+ * skipping from the next frame. If the amount is larger than the amount of
+ * frames remaining in the image, all remaining frames are skipped. Calling this
+ * function multiple times adds the amount to skip to the already existing
+ * amount.
+ * A frame here is defined as a frame that without skipping emits events such as
+ * JXL_DEC_FRAME and JXL_FULL_IMAGE, frames that are internal to the file format
+ * but are not rendered as part of an animation, or are not the final still
+ * frame of a still image, are not counted.
  * @param dec decoder object
  * @param amount the amount of frames to skip
  */
