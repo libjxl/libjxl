@@ -83,7 +83,7 @@ struct ImageSpec {
       << ", noise=" << spec.params.noise << ", preview=" << spec.params.preview
       << ", fuzzer_friendly=" << spec.fuzzer_friendly
       << ", is_reconstructible_jpeg=" << spec.is_reconstructible_jpeg
-      << ", orientation=" << spec.orientation << ">";
+      << ", orientation=" << static_cast<int>(spec.orientation) << ">";
     return o;
   }
 
@@ -139,7 +139,7 @@ struct ImageSpec {
 static_assert(sizeof(ImageSpec) % 4 == 0, "Add padding to ImageSpec.");
 
 bool GenerateFile(const char* output_dir, const ImageSpec& spec,
-                  bool regenerate) {
+                  bool regenerate, bool quiet) {
   // Compute a checksum of the ImageSpec to name the file. This is just to keep
   // the output of this program repeatable.
   uint8_t checksum[16];
@@ -159,7 +159,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     return true;
   }
 
-  {
+  if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
     std::cerr << "Generating " << spec << " as " << hash_str << std::endl;
   }
@@ -273,7 +273,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
   }
 
   if (!jxl::WriteFile(compressed, output_fn)) return 1;
-  {
+  if (!quiet) {
     std::unique_lock<std::mutex> lock(stderr_mutex);
     std::cerr << "Stored " << output_fn << " size: " << compressed.size()
               << std::endl;
@@ -305,9 +305,10 @@ std::vector<ImageSpec::CjxlParams> CompressParamsList() {
 
 void Usage() {
   fprintf(stderr,
-          "Use: fuzzer_corpus [-r] [-j THREADS] [output_dir]\n"
+          "Use: fuzzer_corpus [-r] [-q] [-j THREADS] [output_dir]\n"
           "\n"
           "  -r Regenerate files if already exist.\n"
+          "  -q Be quiet.\n"
           "  -j THREADS Number of parallel jobs to run.\n");
 }
 
@@ -316,10 +317,14 @@ void Usage() {
 int main(int argc, const char** argv) {
   const char* dest_dir = nullptr;
   bool regenerate = false;
+  bool quiet = false;
   int num_threads = std::thread::hardware_concurrency();
   for (int optind = 1; optind < argc;) {
     if (!strcmp(argv[optind], "-r")) {
       regenerate = true;
+      optind++;
+    } else if (!strcmp(argv[optind], "-q")) {
+      quiet = true;
       optind++;
     } else if (!strcmp(argv[optind], "-j")) {
       optind++;
@@ -413,7 +418,9 @@ int main(int argc, const char** argv) {
                     // other features. Valid values are 1 to 8.
                     spec.orientation = 1 + (mt() % 8);
                     if (!spec.Validate()) {
-                      std::cerr << "Skipping " << spec << std::endl;
+                      if (!quiet) {
+                        std::cerr << "Skipping " << spec << std::endl;
+                      }
                     } else {
                       specs.push_back(spec);
                     }
@@ -437,12 +444,12 @@ int main(int argc, const char** argv) {
     specs.back().override_decoder_spec = 0;
 
     jxl::ThreadPoolInternal pool{num_threads};
-    pool.Run(
-        0, specs.size(), jxl::ThreadPool::SkipInit(),
-        [&specs, dest_dir, regenerate](const int task, const int /* thread */) {
-          const ImageSpec& spec = specs[task];
-          GenerateFile(dest_dir, spec, regenerate);
-        });
+    pool.Run(0, specs.size(), jxl::ThreadPool::SkipInit(),
+             [&specs, dest_dir, regenerate, quiet](const int task,
+                                                   const int /* thread */) {
+               const ImageSpec& spec = specs[task];
+               GenerateFile(dest_dir, spec, regenerate, quiet);
+             });
   }
   std::cerr << "Finished generating fuzzer corpus" << std::endl;
   return 0;
