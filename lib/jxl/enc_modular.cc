@@ -479,7 +479,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
     DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
   }
-  pixel_type maxval = (1u << gi.bitdepth) - 1;
+  pixel_type maxval = gi.bitdepth < 32 ? (1u << gi.bitdepth) - 1 : 0;
   if (do_color) {
     for (; c < 3; c++) {
       if (metadata.color_encoding.IsGray() &&
