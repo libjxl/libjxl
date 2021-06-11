@@ -1123,9 +1123,8 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
 
     std::atomic<bool> apply_features_ok{true};
     auto run_apply_features = [&](size_t rect_id, size_t thread) {
-      size_t xstart = kBlockDim + dec_state->group_border_assigner.PaddingX(
-                                      dec_state->FinalizeRectPadding());
-      size_t ystart = dec_state->FinalizeRectPadding();
+      size_t xstart = PassesDecoderState::kGroupDataXBorder;
+      size_t ystart = PassesDecoderState::kGroupDataYBorder;
       for (size_t c = 0; c < 3; c++) {
         Rect rh(rects_to_process[rect_id].x0() >>
                     frame_header.chroma_subsampling.HShift(c),
