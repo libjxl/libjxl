@@ -1150,6 +1150,37 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   EXPECT_TRUE(SamePixels(*io.Main().alpha(), *io2.Main().alpha()));
 }
 
+TEST(JxlTest, RoundtripYCbCr420) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  const PaddedBytes yuv420 =
+      ReadTestData("imagecompression.info/flower_foveon.png.ffmpeg.y4m");
+  CodecInOut io2;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(yuv420), &io2, pool));
+
+  CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kThunder;
+  DecompressParams dparams;
+
+  PassesEncoderState enc_state;
+  AuxOut* aux_out = nullptr;
+  PaddedBytes compressed;
+  EXPECT_TRUE(
+      EncodeFile(cparams, &io2, &enc_state, &compressed, aux_out, pool));
+  CodecInOut io3;
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io3, pool));
+
+  EXPECT_LE(compressed.size(), 1320000);
+
+  // we're comparing an original PNG with a YCbCr 4:2:0 version
+  EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            2.5);
+}
+
 TEST(JxlTest, RoundtripDots) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
