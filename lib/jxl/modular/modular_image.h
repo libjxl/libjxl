@@ -108,9 +108,7 @@ class Image {
 
   size_t w, h;  // actual dimensions of the image (channels may have different
                 // dimensions due to transforms like chroma subsampling and DCT)
-  int minval, maxval;  // actual (largest) range of the channels (actual ranges
-                       // might be different due to transforms; after undoing
-                       // transforms, might still be different due to lossy)
+  int bitdepth;
   size_t nb_channels;  // actual number of distinct channels (after undoing all
                        // transforms except Palette; can be different from
                        // channel.size())
@@ -121,7 +119,7 @@ class Image {
                             // image data
   bool error;               // true if a fatal error occurred, false otherwise
 
-  Image(size_t iw, size_t ih, int maxval, int nb_chans);
+  Image(size_t iw, size_t ih, int bitdepth, int nb_chans);
 
   Image();
   ~Image();

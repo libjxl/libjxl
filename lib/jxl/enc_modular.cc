@@ -471,19 +471,15 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
-  int maxval =
-      (fp ? 1
-          : (1u << static_cast<uint32_t>(metadata.bit_depth.bits_per_sample)) -
-                1);
-
   Image& gi = stream_images[0];
-  gi = Image(xsize, ysize, maxval, nb_chans);
+  gi = Image(xsize, ysize, metadata.bit_depth.bits_per_sample, nb_chans);
   int c = 0;
   if (cparams.color_transform == ColorTransform::kXYB &&
       cparams.modular_mode == true) {
     static const float enc_factors[3] = {32768.0f, 2048.0f, 2048.0f};
     DequantMatricesSetCustomDC(&enc_state->shared.matrices, enc_factors);
   }
+  pixel_type maxval = (1u << gi.bitdepth) - 1;
   if (do_color) {
     for (; c < 3; c++) {
       if (metadata.color_encoding.IsGray() &&
@@ -1191,9 +1187,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   Image& full_image = stream_images[0];
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
-  int maxval = full_image.maxval;
   Image& gi = stream_images[stream_id];
-  gi = Image(xsize, ysize, maxval, 0);
+  gi = Image(xsize, ysize, full_image.bitdepth, 0);
   // start at the first bigger-than-frame_dim.group_dim non-metachannel
   size_t c = full_image.nb_meta_channels;
   for (; c < full_image.channel.size(); c++) {
@@ -1410,7 +1405,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
         ModularOptions::TreeKind::kGradientFixedDC;
   }
 
-  stream_images[stream_id] = Image(r.xsize(), r.ysize(), 255, 3);
+  stream_images[stream_id] = Image(r.xsize(), r.ysize(), 8, 3);
   if (nl_dc && stream_options[stream_id].tree_kind ==
                    ModularOptions::TreeKind::kGradientFixedDC) {
     JXL_ASSERT(enc_state->shared.frame_header.chroma_subsampling.Is444());
@@ -1554,7 +1549,7 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
   }
   // YToX, YToB, ACS + QF, EPF
   Image& image = stream_images[stream_id];
-  image = Image(r.xsize(), r.ysize(), 255, 4);
+  image = Image(r.xsize(), r.ysize(), 8, 4);
   static_assert(kColorTileDimInBlocks == 8, "Color tile size changed");
   Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3, (r.ysize() + 7) >> 3);
   image.channel[0] = Channel(cr.xsize(), cr.ysize(), 3, 3);
@@ -1597,7 +1592,7 @@ void ModularFrameEncoder::EncodeQuantTable(
         writer, nullptr, 0, ModularStreamId::QuantTable(idx)));
     return;
   }
-  Image image(size_x, size_y, 255, 3);
+  Image image(size_x, size_y, 8, 3);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
       int* JXL_RESTRICT row = image.channel[c].Row(y);
@@ -1617,7 +1612,7 @@ void ModularFrameEncoder::AddQuantTable(size_t size_x, size_t size_y,
   JXL_ASSERT(encoding.qraw.qtable != nullptr);
   JXL_ASSERT(size_x * size_y * 3 == encoding.qraw.qtable->size());
   Image& image = stream_images[stream_id];
-  image = Image(size_x, size_y, 255, 3);
+  image = Image(size_x, size_y, 8, 3);
   for (size_t c = 0; c < 3; c++) {
     for (size_t y = 0; y < size_y; y++) {
       int* JXL_RESTRICT row = image.channel[c].Row(y);

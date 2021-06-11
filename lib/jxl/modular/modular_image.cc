@@ -41,13 +41,15 @@ void Image::undo_transforms(const weighted::Header &wp_header, int keep,
     JXL_DEBUG_V(8, "Undoing transform %s: done", t.Name());
     transform.pop_back();
   }
-  if (!keep) {  // clamp the values to the valid range (lossy
-                // compression can produce values outside the range)
+  if (!keep && bitdepth < 32) {
+    // clamp the values to the valid range (lossy compression can produce values
+    // outside the range)
+    pixel_type maxval = (1u << bitdepth) - 1;
     for (size_t i = 0; i < channel.size(); i++) {
       for (size_t y = 0; y < channel[i].h; y++) {
         pixel_type *JXL_RESTRICT p = channel[i].plane.Row(y);
         for (size_t x = 0; x < channel[i].w; x++, p++) {
-          *p = Clamp1(*p, minval, maxval);
+          *p = Clamp1(*p, 0, maxval);
         }
       }
     }
@@ -62,11 +64,10 @@ bool Image::do_transform(const Transform &tr,
   return did_it;
 }
 
-Image::Image(size_t iw, size_t ih, int maxval, int nb_chans)
+Image::Image(size_t iw, size_t ih, int bd, int nb_chans)
     : w(iw),
       h(ih),
-      minval(0),
-      maxval(maxval),
+      bitdepth(bd),
       nb_channels(nb_chans),
       real_nb_channels(nb_chans),
       nb_meta_channels(0),
@@ -76,8 +77,7 @@ Image::Image(size_t iw, size_t ih, int maxval, int nb_chans)
 Image::Image()
     : w(0),
       h(0),
-      minval(0),
-      maxval(255),
+      bitdepth(8),
       nb_channels(0),
       real_nb_channels(0),
       nb_meta_channels(0),
@@ -88,8 +88,7 @@ Image::~Image() = default;
 Image &Image::operator=(Image &&other) noexcept {
   w = other.w;
   h = other.h;
-  minval = other.minval;
-  maxval = other.maxval;
+  bitdepth = other.bitdepth;
   nb_channels = other.nb_channels;
   real_nb_channels = other.real_nb_channels;
   nb_meta_channels = other.nb_meta_channels;
