@@ -19,22 +19,6 @@ Transform::Transform(TransformId id) {
   this->id = id;
 }
 
-Status Transform::Forward(Image &input, const weighted::Header &wp_header,
-                          ThreadPool *pool) {
-  switch (id) {
-    case TransformId::kRCT:
-      return FwdRCT(input, begin_c, rct_type);
-    case TransformId::kSqueeze:
-      return FwdSqueeze(input, squeezes, pool);
-    case TransformId::kPalette:
-      return FwdPalette(input, begin_c, begin_c + num_c - 1, nb_colors,
-                        ordered_palette, lossy_palette, predictor, wp_header);
-    default:
-      return JXL_FAILURE("Unknown transformation (ID=%u)",
-                         static_cast<unsigned int>(id));
-  }
-}
-
 Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
                           ThreadPool *pool) {
   switch (id) {

@@ -33,7 +33,7 @@
 #include "lib/jxl/modular/encoding/ma_common.h"
 #include "lib/jxl/modular/modular_image.h"
 #include "lib/jxl/modular/options.h"
-#include "lib/jxl/modular/transform/transform.h"
+#include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/toc.h"
 
 namespace jxl {
@@ -427,6 +427,15 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
   stream_options.resize(num_streams, cparams.options);
 }
 
+bool do_transform(Image& image, const Transform& tr,
+                  const weighted::Header& wp_header,
+                  jxl::ThreadPool* pool = nullptr) {
+  Transform t = tr;
+  bool did_it = TransformForward(t, image, wp_header, pool);
+  if (did_it) image.transform.push_back(t);
+  return did_it;
+}
+
 Status ModularFrameEncoder::ComputeEncodingData(
     const FrameHeader& frame_header, const ImageMetadata& metadata,
     Image3F* JXL_RESTRICT color, const std::vector<ImageF>& extra_channels,
@@ -581,7 +590,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
                    std::abs(cparams.palette_colors) / 16);
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
       maybe_palette.lossy_palette = false;
-      gi.do_transform(maybe_palette, weighted::Header());
+      do_transform(gi, maybe_palette, weighted::Header(), pool);
     }
   }
 
@@ -606,7 +615,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette_1.nb_colors = std::min(
           (int)(xsize * ysize / 16),
           (int)(cparams.channel_colors_pre_transform_percent / 100. * colors));
-      if (gi.do_transform(maybe_palette_1, weighted::Header())) {
+      if (do_transform(gi, maybe_palette_1, weighted::Header(), pool)) {
         // effective bit depth is lower, adjust quantization accordingly
         gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
         if (max < maxval) maxval = max;
@@ -632,7 +641,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       }
       // TODO(veluca): use a custom weighted header if using the weighted
       // predictor.
-      gi.do_transform(maybe_palette, weighted::Header());
+      do_transform(gi, maybe_palette, weighted::Header(), pool);
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
@@ -647,7 +656,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (maybe_palette_3.lossy_palette) {
         maybe_palette_3.predictor = Predictor::Average4;
       }
-      gi.do_transform(maybe_palette_3, weighted::Header());
+      do_transform(gi, maybe_palette_3, weighted::Header(), pool);
     }
   }
 
@@ -658,18 +667,18 @@ Status ModularFrameEncoder::ComputeEncodingData(
       Transform ycocg{TransformId::kRCT};
       ycocg.rct_type = 6;
       ycocg.begin_c = gi.nb_meta_channels;
-      gi.do_transform(ycocg, weighted::Header());
+      do_transform(gi, ycocg, weighted::Header(), pool);
     } else if (cparams.colorspace >= 2) {
       Transform sg(TransformId::kRCT);
       sg.begin_c = gi.nb_meta_channels;
       sg.rct_type = cparams.colorspace - 2;
-      gi.do_transform(sg, weighted::Header());
+      do_transform(gi, sg, weighted::Header(), pool);
     }
   }
 
   if (cparams.responsive && gi.nb_channels != 0) {
-    gi.do_transform(Transform(TransformId::kSqueeze),
-                    weighted::Header());  // use default squeezing
+    do_transform(gi, Transform(TransformId::kSqueeze), weighted::Header(),
+                 pool);  // use default squeezing
   }
 
   std::vector<uint32_t> quants;
@@ -1234,7 +1243,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       maybe_palette.num_c = gi.nb_channels;
       maybe_palette.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
-      gi.do_transform(maybe_palette, weighted::Header());
+      do_transform(gi, maybe_palette, weighted::Header());
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
@@ -1248,7 +1257,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       if (maybe_palette_3.lossy_palette) {
         maybe_palette_3.predictor = Predictor::Weighted;
       }
-      gi.do_transform(maybe_palette_3, weighted::Header());
+      do_transform(gi, maybe_palette_3, weighted::Header());
     }
   }
 
@@ -1271,7 +1280,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       maybe_palette_1.nb_colors =
           std::min((int)(xsize * ysize * 0.8),
                    (int)(cparams.channel_colors_percent / 100. * colors));
-      gi.do_transform(maybe_palette_1, weighted::Header());
+      do_transform(gi, maybe_palette_1, weighted::Header());
     }
   }
 
@@ -1321,7 +1330,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       if (nb_rcts_to_try == 0) break;
       int num_transforms_to_keep = gi.transform.size();
       sg.rct_type = i;
-      gi.do_transform(sg, weighted::Header());
+      do_transform(gi, sg, weighted::Header());
       float cost = EstimateCost(gi);
       if (cost < best_cost) {
         best_rct = i;
@@ -1336,7 +1345,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     }
     // Apply the best RCT to the image for future encoding.
     sg.rct_type = best_rct;
-    gi.do_transform(sg, weighted::Header());
+    do_transform(gi, sg, weighted::Header());
   } else {
     // No need to try anything, just use the default options.
   }

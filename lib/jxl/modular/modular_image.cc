@@ -56,14 +56,6 @@ void Image::undo_transforms(const weighted::Header &wp_header, int keep,
   }
 }
 
-bool Image::do_transform(const Transform &tr,
-                         const weighted::Header &wp_header) {
-  Transform t = tr;
-  bool did_it = t.Forward(*this, wp_header);
-  if (did_it) transform.push_back(t);
-  return did_it;
-}
-
 Image::Image(size_t iw, size_t ih, int bd, int nb_chans)
     : w(iw),
       h(ih),
