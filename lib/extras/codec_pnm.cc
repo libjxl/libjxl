@@ -470,7 +470,7 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
           return JXL_FAILURE("Not enough image data");
         for (size_t x = 0; x < header.xsize >> hshift[header.is_yuv - 1][c];
              ++x) {
-          row[x] = (1.f / 255.f) * ((*pos++) - 127.f);
+          row[x] = (1.f / 255.f) * ((*pos++) - 128.f);
         }
       }
     }
