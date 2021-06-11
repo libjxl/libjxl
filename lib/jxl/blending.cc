@@ -5,8 +5,6 @@
 
 #include "lib/jxl/blending.h"
 
-#include <cinttypes>
-
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/image_ops.h"
 
@@ -133,12 +131,11 @@ Status ImageBlender::PrepareBlending(PassesDecoderState* dec_state,
             src.extra_channels()[i].ysize() < image_ysize ||
             src.origin.x0 != 0 || src.origin.y0 != 0) {
           return JXL_FAILURE(
-              "Invalid size %zux%zu or origin +%" PRIi32 "+%" PRIi32
-              " for extra channel %zu of reference frame %" PRIu32
-              ", expected at least %zux%zu+0+0",
+              "Invalid size %zux%zu or origin %+d%+d for extra channel %zu of "
+              "reference frame %zu, expected at least %zux%zu+0+0",
               src.extra_channels()[i].xsize(), src.extra_channels()[i].ysize(),
-              src.origin.x0, src.origin.y0, i, eci.source, image_xsize,
-              image_ysize);
+              static_cast<int>(src.origin.x0), static_cast<int>(src.origin.y0),
+              i, static_cast<size_t>(eci.source), image_xsize, image_ysize);
         }
         CopyImageTo(Rect(dest_->extra_channels()[i]), src.extra_channels()[i],
                     &dest_->extra_channels()[i]);
