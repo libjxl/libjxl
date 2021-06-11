@@ -131,8 +131,6 @@ class Transform : public Fields {
 
   const char *Name() const override { return "Transform"; }
 
-  Status Forward(Image &input, const weighted::Header &wp_header,
-                 ThreadPool *pool = nullptr);
   Status Inverse(Image &input, const weighted::Header &wp_header,
                  ThreadPool *pool = nullptr);
   Status MetaApply(Image &input);

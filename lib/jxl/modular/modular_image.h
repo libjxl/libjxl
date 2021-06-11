@@ -130,7 +130,6 @@ class Image {
   Image& operator=(Image&& other) noexcept;
   Image(Image&& other) noexcept = default;
 
-  bool do_transform(const Transform& t, const weighted::Header& wp_header);
   // undo all except the first 'keep' transforms
   void undo_transforms(const weighted::Header& wp_header, int keep = 0,
                        jxl::ThreadPool* pool = nullptr);
