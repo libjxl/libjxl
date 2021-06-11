@@ -197,9 +197,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   }
   size_t w = input.channel[c0].w;
   size_t h = input.channel[c0].h;
-  // might be false in case of lossy
-  // JXL_DASSERT(input.channel[c0].minval == 0);
-  // JXL_DASSERT(input.channel[c0].maxval == palette.w-1);
   if (nb < 1) return JXL_FAILURE("Corrupted transforms");
   for (int i = 1; i < nb; i++) {
     input.channel.insert(
@@ -210,8 +207,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   const pixel_type *JXL_RESTRICT p_palette = input.channel[0].Row(0);
   intptr_t onerow = input.channel[0].plane.PixelsPerRow();
   intptr_t onerow_image = input.channel[c0].plane.PixelsPerRow();
-  const int bit_depth =
-      CeilLog2Nonzero(static_cast<unsigned>(input.maxval) - input.minval + 1);
+  const int bit_depth = input.bitdepth;
 
   if (w == 0) {
     // Nothing to do.
@@ -435,7 +431,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
 
   Image quantized_input;
   if (lossy) {
-    quantized_input = Image(w, h, input.maxval, nb);
+    quantized_input = Image(w, h, input.bitdepth, nb);
     for (size_t c = 0; c < nb; c++) {
       CopyImageTo(input.channel[begin_c + c].plane,
                   &quantized_input.channel[c].plane);
@@ -519,8 +515,7 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
   intptr_t onerow = pch.plane.PixelsPerRow();
   intptr_t onerow_image = input.channel[begin_c].plane.PixelsPerRow();
-  const int bit_depth =
-      CeilLog2Nonzero(static_cast<unsigned>(input.maxval - input.minval + 1));
+  const int bit_depth = input.bitdepth;
   if (ordered) {
     JXL_DEBUG_V(7, "Palette of %i colors, using lexicographic order",
                 nb_colors);
@@ -587,9 +582,8 @@ static Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
       } else {
         for (size_t c = 0; c < nb; c++) {
           color_with_error[c] = p_in[c][x] + error_row[0][c][x + 2];
-          color[c] = std::min(
-              input.maxval,
-              std::max<pixel_type>(input.minval, lroundf(color_with_error[c])));
+          color[c] = Clamp1(lroundf(color_with_error[c]), 0l,
+                            (1l << input.bitdepth) - 1);
         }
         float best_distance = std::numeric_limits<float>::infinity();
         int best_index = 0;

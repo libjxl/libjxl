@@ -172,27 +172,23 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   if (metadata.bit_depth.bits_per_sample >= 32 && do_color &&
       frame_header.color_transform != ColorTransform::kXYB) {
     if (metadata.bit_depth.bits_per_sample == 32 && fp == false) {
-      // TODO(lode): does modular support uint32_t? maxval is signed int so
-      // cannot represent 32 bits.
       return JXL_FAILURE("uint32_t not supported in dec_modular");
     } else if (metadata.bit_depth.bits_per_sample > 32) {
       return JXL_FAILURE("bits_per_sample > 32 not supported");
     }
   }
-  // TODO(lode): must handle metadata.floating_point_channel?
-  int maxval =
-      (fp ? 1
-          : (1u << static_cast<uint32_t>(metadata.bit_depth.bits_per_sample)) -
-                1);
 
-  Image gi(frame_dim.xsize, frame_dim.ysize, maxval, nb_chans + nb_extra);
+  Image gi(frame_dim.xsize, frame_dim.ysize, metadata.bit_depth.bits_per_sample,
+           nb_chans + nb_extra);
 
   if (frame_header.color_transform == ColorTransform::kYCbCr) {
     for (size_t c = 0; c < nb_chans; c++) {
       gi.channel[c].hshift = frame_header.chroma_subsampling.HShift(c);
       gi.channel[c].vshift = frame_header.chroma_subsampling.VShift(c);
-      size_t xsize_shifted = DivCeil(frame_dim.xsize, 1 << gi.channel[c].hshift);
-      size_t ysize_shifted = DivCeil(frame_dim.ysize, 1 << gi.channel[c].vshift);
+      size_t xsize_shifted =
+          DivCeil(frame_dim.xsize, 1 << gi.channel[c].hshift);
+      size_t ysize_shifted =
+          DivCeil(frame_dim.ysize, 1 << gi.channel[c].vshift);
       gi.channel[c].resize(xsize_shifted, ysize_shifted);
     }
   }
@@ -240,8 +236,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
               stream.kind == ModularStreamId::kModularAC);
   const size_t xsize = rect.xsize();
   const size_t ysize = rect.ysize();
-  int maxval = full_image.maxval;
-  Image gi(xsize, ysize, maxval, 0);
+  Image gi(xsize, ysize, full_image.bitdepth, 0);
   // start at the first bigger-than-groupsize non-metachannel
   size_t c = full_image.nb_meta_channels;
   for (; c < full_image.channel.size(); c++) {
@@ -316,9 +311,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   //               3 comes from XybToRgb that cubes the values, and "magic" is
   //               the sum of all other contributions. 2**18 is known to lead
   //               to NaN on input found by fuzzing (see commit message).
-  constexpr const int kRawDcLimit = 1 << 17;
-  Image image(r.xsize(), r.ysize(), kRawDcLimit, 3);
-  image.minval = -kRawDcLimit;
+  Image image(r.xsize(), r.ysize(), full_image.bitdepth, 3);
   size_t stream_id = ModularStreamId::VarDCTDC(group_id).ID(frame_dim);
   reader->Refill();
   size_t extra_precision = reader->ReadFixedBits<2>();
@@ -332,7 +325,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   }
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,
-          /*undo_transforms=*/0, &tree, &code, &context_map)) {
+          /*undo_transforms=*/-1, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode modular DC group");
   }
   DequantDC(r, &dec_state->shared_storage.dc_storage,
@@ -352,7 +345,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   size_t count = reader->ReadBits(CeilLog2Nonzero(upper_bound)) + 1;
   size_t stream_id = ModularStreamId::ACMetadata(group_id).ID(frame_dim);
   // YToX, YToB, ACS + QF, EPF
-  Image image(r.xsize(), r.ysize(), 255, 4);
+  Image image(r.xsize(), r.ysize(), full_image.bitdepth, 4);
   static_assert(kColorTileDimInBlocks == 8, "Color tile size changed");
   Rect cr(r.x0() >> 3, r.y0() >> 3, (r.xsize() + 7) >> 3, (r.ysize() + 7) >> 3);
   image.channel[0] = Channel(cr.xsize(), cr.ysize(), 3, 3);
@@ -456,7 +449,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
     const bool fp = metadata->m.bit_depth.floating_point_sample;
 
     for (; c < 3; c++) {
-      float factor = 1.f / (float)full_image.maxval;
+      float factor = 1.f / ((1u << full_image.bitdepth) - 1);
       int c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
         factor = dec_state->shared->matrices.DCQuants()[c];
@@ -471,8 +464,9 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
       }
       size_t xsize_shifted = DivCeil(xsize, 1 << gi.channel[c_in].hshift);
       size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_in].vshift);
-      if (ysize_shifted != gi.channel[c_in].h || xsize_shifted != gi.channel[c_in].w) {
-            return JXL_FAILURE("Dimension mismatch");
+      if (ysize_shifted != gi.channel[c_in].h ||
+          xsize_shifted != gi.channel[c_in].w) {
+        return JXL_FAILURE("Dimension mismatch");
       }
       if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
         JXL_ASSERT(!fp);
@@ -564,7 +558,7 @@ Status ModularFrameDecoder::DecodeQuantTable(
     // be negative.
     return JXL_FAILURE("Invalid qtable_den: value too small");
   }
-  Image image(required_size_x, required_size_y, 255, 3);
+  Image image(required_size_x, required_size_y, 8, 3);
   ModularOptions options;
   if (modular_frame_decoder) {
     JXL_RETURN_IF_ERROR(ModularGenericDecompress(

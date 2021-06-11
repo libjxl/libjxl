@@ -388,13 +388,8 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                      size_t *width) {
   if (image.error) return JXL_FAILURE("Invalid image");
   size_t nb_channels = image.channel.size();
-  int bit_depth = 1, maxval = 1;
-  while (maxval < image.maxval) {
-    bit_depth++;
-    maxval = maxval * 2 + 1;
-  }
   JXL_DEBUG_V(2, "Encoding %zu-channel, %i-bit, %zux%zu image.", nb_channels,
-              bit_depth, image.w, image.h);
+              image.bitdepth, image.w, image.h);
 
   if (nb_channels < 1) {
     return true;  // is there any use for a zero-channel image?
@@ -543,8 +538,9 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
   bits = writer ? writer->BitsWritten() - bits : 0;
   if (writer) {
     JXL_DEBUG_V(
-        4, "Modular-encoded a %zux%zu maxval=%i nbchans=%zu image in %zu bytes",
-        image.w, image.h, image.maxval, image.real_nb_channels, bits / 8);
+        4,
+        "Modular-encoded a %zux%zu bitdepth=%i nbchans=%zu image in %zu bytes",
+        image.w, image.h, image.bitdepth, image.real_nb_channels, bits / 8);
   }
   (void)bits;
   return true;
