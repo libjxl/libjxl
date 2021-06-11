@@ -8,26 +8,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include <cinttypes>
-#include <limits>
-#include <numeric>
 #include <queue>
-#include <random>
-#include <set>
-#include <unordered_map>
-#include <unordered_set>
 
-#include "lib/jxl/base/status.h"
-#include "lib/jxl/common.h"
-#include "lib/jxl/dec_ans.h"
-#include "lib/jxl/dec_bit_reader.h"
-#include "lib/jxl/entropy_coder.h"
-#include "lib/jxl/fields.h"
-#include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
-#include "lib/jxl/modular/transform/transform.h"
-#include "lib/jxl/toc.h"
 
 namespace jxl {
 
@@ -404,8 +388,6 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
   // decode transforms
   JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
-  JXL_DEBUG_V(4, "Global option: up to %i back-referencing MA properties.",
-              options->max_properties);
   JXL_DEBUG_V(3, "Image data underwent %zu transformations: ",
               header.transforms.size());
   image.transform = header.transforms;
@@ -423,14 +405,18 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
   size_t nb_channels = image.channel.size();
 
   size_t num_chans = 0;
+  size_t distance_multiplier = 0;
   for (size_t i = 0; i < nb_channels; i++) {
-    if (!image.channel[i].w || !image.channel[i].h) {
+    Channel &channel = image.channel[i];
+    if (!channel.w || !channel.h) {
       continue;  // skip empty channels
     }
-    if (i >= image.nb_meta_channels &&
-        (image.channel[i].w > options->max_chan_size ||
-         image.channel[i].h > options->max_chan_size)) {
+    if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
+                                        channel.h > options->max_chan_size)) {
       break;
+    }
+    if (channel.w > distance_multiplier) {
+      distance_multiplier = channel.w;
     }
     num_chans++;
   }
@@ -458,20 +444,6 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     context_map = global_ctx_map;
   }
 
-  size_t distance_multiplier = 0;
-  for (size_t i = 0; i < nb_channels; i++) {
-    Channel &channel = image.channel[i];
-    if (!channel.w || !channel.h) {
-      continue;  // skip empty channels
-    }
-    if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
-                                        channel.h > options->max_chan_size)) {
-      break;
-    }
-    if (channel.w > distance_multiplier) {
-      distance_multiplier = channel.w;
-    }
-  }
   // Read channels
   ANSSymbolReader reader(code, br, distance_multiplier);
   for (size_t i = 0; i < nb_channels; i++) {
