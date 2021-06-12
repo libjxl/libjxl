@@ -47,14 +47,14 @@ void MultiplySum(const size_t xsize,
 
 void RgbFromSingle(const size_t xsize,
                    const pixel_type* const JXL_RESTRICT row_in,
-                   const float factor, Image3F* decoded, size_t /*c*/,
+                   const float factor, const Rect& output_rect, Image3F* output,
                    size_t y) {
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
-  float* const JXL_RESTRICT row_out_r = decoded->PlaneRow(0, y);
-  float* const JXL_RESTRICT row_out_g = decoded->PlaneRow(1, y);
-  float* const JXL_RESTRICT row_out_b = decoded->PlaneRow(2, y);
+  float* const JXL_RESTRICT row_out_r = output_rect.PlaneRow(output, 0, y);
+  float* const JXL_RESTRICT row_out_g = output_rect.PlaneRow(output, 1, y);
+  float* const JXL_RESTRICT row_out_b = output_rect.PlaneRow(output, 2, y);
 
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
@@ -66,15 +66,11 @@ void RgbFromSingle(const size_t xsize,
   }
 }
 
-// Same signature as RgbFromSingle so we can assign to the same pointer.
 void SingleFromSingle(const size_t xsize,
                       const pixel_type* const JXL_RESTRICT row_in,
-                      const float factor, Image3F* decoded, size_t c,
-                      size_t y) {
+                      const float factor, float* JXL_RESTRICT row_out) {
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
-
-  float* const JXL_RESTRICT row_out = decoded->PlaneRow(c, y);
 
   const auto factor_v = Set(df, factor);
   for (size_t x = 0; x < xsize; x += Lanes(di)) {
@@ -422,128 +418,123 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   return true;
 }
 
-Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
-                                             jxl::ThreadPool* pool,
-                                             ImageBundle* output) {
-  Image& gi = full_image;
-  size_t xsize = gi.w;
-  size_t ysize = gi.h;
-
-  const auto& frame_header = dec_state->shared->frame_header;
-  const auto* metadata = frame_header.nonserialized_metadata;
+Status ModularFrameDecoder::FinalizeDecoding(jxl::ThreadPool* pool) {
+  size_t xsize = full_image.w;
+  size_t ysize = full_image.h;
 
   // Don't use threads if total image size is smaller than a group
   if (xsize * ysize < frame_dim.group_dim * frame_dim.group_dim) pool = nullptr;
 
   // Undo the global transforms
-  gi.undo_transforms(global_header.wp_header, -1, pool);
-  if (gi.error) return JXL_FAILURE("Undoing transforms failed");
+  full_image.undo_transforms(global_header.wp_header, -1, pool);
+  if (full_image.error) return JXL_FAILURE("Undoing transforms failed");
+  return true;
+}
 
-  auto& decoded = dec_state->decoded;
+void ModularFrameDecoder::GetColorRect(const FrameHeader& frame_header,
+                                       const float* xyb_quants,
+                                       const Rect& image_rect,
+                                       const Rect& output_rect,
+                                       Image3F* output) {
+  JXL_ASSERT(do_color);
+
+  const auto* metadata = frame_header.nonserialized_metadata;
 
   int c = 0;
-  if (do_color) {
-    const bool rgb_from_gray =
-        metadata->m.color_encoding.IsGray() &&
-        frame_header.color_transform == ColorTransform::kNone;
-    const bool fp = metadata->m.bit_depth.floating_point_sample;
+  const bool rgb_from_gray =
+      metadata->m.color_encoding.IsGray() &&
+      frame_header.color_transform == ColorTransform::kNone;
+  const bool fp = metadata->m.bit_depth.floating_point_sample;
 
-    for (; c < 3; c++) {
-      float factor = 1.f / ((1u << full_image.bitdepth) - 1);
-      int c_in = c;
-      if (frame_header.color_transform == ColorTransform::kXYB) {
-        factor = dec_state->shared->matrices.DCQuants()[c];
-        // XYB is encoded as YX(B-Y)
-        if (c < 2) c_in = 1 - c;
-      } else if (rgb_from_gray) {
-        c_in = 0;
-      }
-      // TODO(eustas): could we detect it on earlier stage?
-      if (gi.channel[c_in].w == 0 || gi.channel[c_in].h == 0) {
-        return JXL_FAILURE("Empty image");
-      }
-      size_t xsize_shifted = DivCeil(xsize, 1 << gi.channel[c_in].hshift);
-      size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_in].vshift);
-      if (ysize_shifted != gi.channel[c_in].h ||
-          xsize_shifted != gi.channel[c_in].w) {
-        return JXL_FAILURE("Dimension mismatch");
-      }
-      if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
-        JXL_ASSERT(!fp);
-        RunOnPool(
-            pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
-              const size_t y = task;
-              const pixel_type* const JXL_RESTRICT row_in =
-                  gi.channel[c_in].Row(y);
-              const pixel_type* const JXL_RESTRICT row_in_Y =
-                  gi.channel[0].Row(y);
-              float* const JXL_RESTRICT row_out = decoded.PlaneRow(c, y);
-              HWY_DYNAMIC_DISPATCH(MultiplySum)
-              (xsize_shifted, row_in, row_in_Y, factor, row_out);
-            },
-            "ModularIntToFloat");
-      } else if (fp) {
-        int bits = metadata->m.bit_depth.bits_per_sample;
-        int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
-        RunOnPool(
-            pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
-              const size_t y = task;
-              const pixel_type* const JXL_RESTRICT row_in =
-                  gi.channel[c_in].Row(y);
-              float* const JXL_RESTRICT row_out = decoded.PlaneRow(c, y);
-              int_to_float(row_in, row_out, xsize_shifted, bits, exp_bits);
-            },
-            "ModularIntToFloat_losslessfloat");
-      } else {
-        RunOnPool(
-            pool, 0, ysize_shifted, jxl::ThreadPool::SkipInit(),
-            [&](const int task, const int thread) {
-              const size_t y = task;
-              const pixel_type* const JXL_RESTRICT row_in =
-                  gi.channel[c_in].Row(y);
-              if (rgb_from_gray) {
-                HWY_DYNAMIC_DISPATCH(RgbFromSingle)
-                (xsize_shifted, row_in, factor, &decoded, c, y);
-              } else {
-                HWY_DYNAMIC_DISPATCH(SingleFromSingle)
-                (xsize_shifted, row_in, factor, &decoded, c, y);
-              }
-            },
-            "ModularIntToFloat");
-      }
-      if (rgb_from_gray) {
-        break;
-      }
+  for (; c < 3; c++) {
+    float factor = 1.f / ((1u << full_image.bitdepth) - 1);
+    int c_in = c;
+    if (frame_header.color_transform == ColorTransform::kXYB) {
+      factor = xyb_quants[c];
+      // XYB is encoded as YX(B-Y)
+      if (c < 2) c_in = 1 - c;
+    } else if (rgb_from_gray) {
+      c_in = 0;
     }
-    if (rgb_from_gray) {
-      c = 1;
-    }
-  }
-  for (size_t ec = 0; ec < dec_state->extra_channels.size(); ec++, c++) {
-    const ExtraChannelInfo& eci = output->metadata()->extra_channel_info[ec];
-    int bits = eci.bit_depth.bits_per_sample;
-    int exp_bits = eci.bit_depth.exponent_bits_per_sample;
-    bool fp = eci.bit_depth.floating_point_sample;
-    JXL_ASSERT(fp || bits < 32);
-    const float mul = fp ? 0 : (1.0f / ((1u << bits) - 1));
-    size_t ecups = frame_header.extra_channel_upsampling[ec];
-    const size_t ec_xsize = DivCeil(frame_dim.xsize_upsampled, ecups);
-    const size_t ec_ysize = DivCeil(frame_dim.ysize_upsampled, ecups);
-    for (size_t y = 0; y < ec_ysize; ++y) {
-      float* const JXL_RESTRICT row_out = dec_state->extra_channels[ec].Row(y);
-      const pixel_type* const JXL_RESTRICT row_in = gi.channel[c].Row(y);
-      if (fp) {
-        int_to_float(row_in, row_out, ec_xsize, bits, exp_bits);
-      } else {
-        for (size_t x = 0; x < ec_xsize; ++x) {
-          row_out[x] = row_in[x] * mul;
+    size_t x0 = image_rect.x0() >> full_image.channel[c_in].hshift;
+    size_t y0 = image_rect.y0() >> full_image.channel[c_in].vshift;
+    size_t xsize =
+        DivCeil(image_rect.xsize(), 1 << full_image.channel[c_in].hshift);
+    size_t ysize =
+        DivCeil(image_rect.ysize(), 1 << full_image.channel[c_in].vshift);
+    JXL_ASSERT(x0 + xsize <= full_image.channel[c_in].w &&
+               y0 + ysize <= full_image.channel[c_in].h);
+    if (frame_header.color_transform == ColorTransform::kXYB && c == 2) {
+      JXL_ASSERT(!fp);
+      for (size_t y = 0; y < ysize; y++) {
+        const pixel_type* const JXL_RESTRICT row_in =
+            full_image.channel[c_in].Row(y + y0) + x0;
+        const pixel_type* const JXL_RESTRICT row_in_Y =
+            full_image.channel[0].Row(y + y0) + x0;
+        float* const JXL_RESTRICT row_out = output_rect.PlaneRow(output, c, y);
+        HWY_DYNAMIC_DISPATCH(MultiplySum)
+        (xsize, row_in, row_in_Y, factor, row_out);
+      }
+    } else if (fp) {
+      int bits = metadata->m.bit_depth.bits_per_sample;
+      int exp_bits = metadata->m.bit_depth.exponent_bits_per_sample;
+      for (size_t y = 0; y < ysize; y++) {
+        const pixel_type* const JXL_RESTRICT row_in =
+            full_image.channel[c_in].Row(y + y0) + x0;
+        float* const JXL_RESTRICT row_out = output_rect.PlaneRow(output, c, y);
+        int_to_float(row_in, row_out, xsize, bits, exp_bits);
+      }
+    } else {
+      for (size_t y = 0; y < ysize; y++) {
+        const pixel_type* const JXL_RESTRICT row_in =
+            full_image.channel[c_in].Row(y + y0) + x0;
+        if (rgb_from_gray) {
+          HWY_DYNAMIC_DISPATCH(RgbFromSingle)
+          (xsize, row_in, factor, output_rect, output, y);
+        } else {
+          HWY_DYNAMIC_DISPATCH(SingleFromSingle)
+          (xsize, row_in, factor, output_rect.PlaneRow(output, c, y));
         }
       }
     }
+    if (rgb_from_gray) {
+      break;
+    }
   }
-  return true;
+}
+
+void ModularFrameDecoder::GetECRect(const FrameHeader& frame_header, size_t ec,
+                                    const Rect& image_rect,
+                                    const Rect& output_rect, ImageF* output) {
+  const auto* metadata = frame_header.nonserialized_metadata;
+  const bool rgb_from_gray =
+      metadata->m.color_encoding.IsGray() &&
+      frame_header.color_transform == ColorTransform::kNone;
+  size_t c = !do_color ? ec : (rgb_from_gray ? 1 + ec : 3 + ec);
+  const ExtraChannelInfo& eci = metadata->m.extra_channel_info[ec];
+  int bits = eci.bit_depth.bits_per_sample;
+  int exp_bits = eci.bit_depth.exponent_bits_per_sample;
+  bool fp = eci.bit_depth.floating_point_sample;
+  JXL_ASSERT(fp || bits < 32);
+  const float mul = fp ? 0 : (1.0f / ((1u << bits) - 1));
+  size_t ecups =
+      frame_header.extra_channel_upsampling[ec] / frame_header.upsampling;
+  const size_t x0 = DivCeil(image_rect.x0(), ecups);
+  const size_t y0 = DivCeil(image_rect.y0(), ecups);
+  const size_t xsize = DivCeil(image_rect.xsize(), ecups);
+  const size_t ysize = DivCeil(image_rect.ysize(), ecups);
+  for (size_t y = 0; y < ysize; ++y) {
+    float* const JXL_RESTRICT row_out = output_rect.Row(output, y);
+    const pixel_type* const JXL_RESTRICT row_in =
+        full_image.channel[c].Row(y + y0) + x0;
+    if (fp) {
+      int_to_float(row_in, row_out, xsize, bits, exp_bits);
+    } else {
+      for (size_t x = 0; x < xsize; ++x) {
+        row_out[x] = row_in[x] * mul;
+      }
+    }
+  }
 }
 
 static constexpr const float kAlmostZero = 1e-8f;

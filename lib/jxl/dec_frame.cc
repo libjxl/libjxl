@@ -815,9 +815,25 @@ Status FrameDecoder::Flush() {
   // TODO(veluca): the rest of this function should be removed once we have full
   // support for per-group decoding.
 
-  // undo global modular transforms and copy int pixel buffers to float ones
-  JXL_RETURN_IF_ERROR(
-      modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_, decoded_));
+  // undo global modular transforms
+  JXL_RETURN_IF_ERROR(modular_frame_decoder_.FinalizeDecoding(pool_));
+
+  // Copy int pixel buffers to float ones.
+
+  if (frame_header_.encoding == FrameEncoding::kModular) {
+    modular_frame_decoder_.GetColorRect(
+        frame_header_, dec_state_->shared->matrices.DCQuants(),
+        Rect(dec_state_->decoded), Rect(dec_state_->decoded),
+        &dec_state_->decoded);
+  }
+
+  for (size_t ec = 0;
+       ec < frame_header_.nonserialized_metadata->m.extra_channel_info.size();
+       ec++) {
+    modular_frame_decoder_.GetECRect(
+        frame_header_, ec, Rect(0, 0, frame_dim_.xsize, frame_dim_.ysize),
+        Rect(dec_state_->extra_channels[ec]), &dec_state_->extra_channels[ec]);
+  }
 
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
                                             /*force_fir=*/false,
