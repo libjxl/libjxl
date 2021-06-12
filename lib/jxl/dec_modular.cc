@@ -449,7 +449,9 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
     const bool fp = metadata->m.bit_depth.floating_point_sample;
 
     for (; c < 3; c++) {
-      float factor = 1.f / ((1u << full_image.bitdepth) - 1);
+      float factor = full_image.bitdepth < 32
+                         ? 1.f / ((1u << full_image.bitdepth) - 1)
+                         : 0;
       int c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
         factor = dec_state->shared->matrices.DCQuants()[c];
