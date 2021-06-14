@@ -101,6 +101,14 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
       return 1;
     }
     compressed.swap(container_file);
+    if (!args.quiet) {
+      const size_t pixels = io.xsize() * io.ysize();
+      const double bpp =
+          static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
+      fprintf(stderr, "Including container: %zu bytes (%.3f bpp%s).\n",
+              compressed.size(), bpp / io.frames.size(),
+              io.frames.size() == 1 ? "" : "/frame");
+    }
   }
   if (args.file_out) {
     if (!jxl::WriteFile(compressed, args.file_out)) {
