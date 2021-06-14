@@ -510,7 +510,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %zu bytes",
-              image.w, image.h, image.real_nb_channels,
+              image.w, image.h, image.nb_channels,
               (br->TotalBitsConsumed() - bit_pos) / 8);
   (void)bit_pos;
 #ifdef JXL_ENABLE_ASSERT

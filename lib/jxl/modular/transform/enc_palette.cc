@@ -13,8 +13,8 @@
 #include "lib/jxl/common.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/transform/enc_transform.h"
 #include "lib/jxl/modular/transform/palette.h"
-#include "lib/jxl/modular/transform/transform.h"  // CheckEqualChannels
 
 namespace jxl {
 
@@ -112,7 +112,7 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     if (nb_colors == 0) return false;
     std::vector<pixel_type> lookup;
     int minval, maxval;
-    input.channel[begin_c].compute_minmax(&minval, &maxval);
+    compute_minmax(input.channel[begin_c], &minval, &maxval);
     int lookup_table_size = maxval - minval + 1;
     if (lookup_table_size > palette_internal::kMaxPaletteLookupTableSize) {
       return false;  // too large lookup table

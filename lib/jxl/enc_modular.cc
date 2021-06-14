@@ -602,7 +602,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     // single channel palette (like FLIF's ChannelCompact)
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;
-      gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
+      compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
       int64_t colors = max - min + 1;
       JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
@@ -617,7 +617,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
           (int)(cparams.channel_colors_pre_transform_percent / 100. * colors));
       if (do_transform(gi, maybe_palette_1, weighted::Header(), pool)) {
         // effective bit depth is lower, adjust quantization accordingly
-        gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
+        compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
         if (max < maxval) maxval = max;
       }
     }
@@ -727,9 +727,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       if (shift > 0) shift--;
       int q;
       // assuming default Squeeze here
-      int component = ((i - gi.nb_meta_channels) % gi.real_nb_channels);
+      int component = ((i - gi.nb_meta_channels) % nb_chans);
       // last 4 channels are final chroma residuals
-      if (gi.real_nb_channels > 2 && i >= gi.channel.size() - 4) {
+      if (nb_chans > 2 && i >= gi.channel.size() - 4) {
         component = 1;
       }
 
@@ -1087,7 +1087,7 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
                                          size_t layer,
                                          const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim);
-  if (stream_images[stream_id].real_nb_channels < 1) {
+  if (stream_images[stream_id].nb_channels < 1) {
     return true;  // Image with no channels, header never gets decoded.
   }
   JXL_RETURN_IF_ERROR(
@@ -1226,7 +1226,6 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     gi.channel.emplace_back(std::move(gc));
   }
   gi.nb_channels = gi.channel.size();
-  gi.real_nb_channels = gi.nb_channels;
 
   // Do some per-group transforms
 
@@ -1267,7 +1266,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     // single channel palette (like FLIF's ChannelCompact)
     for (size_t i = 0; i < gi.nb_channels; i++) {
       int min, max;
-      gi.channel[gi.nb_meta_channels + i].compute_minmax(&min, &max);
+      compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
       int colors = max - min + 1;
       JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);

@@ -540,7 +540,7 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
     JXL_DEBUG_V(
         4,
         "Modular-encoded a %zux%zu bitdepth=%i nbchans=%zu image in %zu bytes",
-        image.w, image.h, image.bitdepth, image.real_nb_channels, bits / 8);
+        image.w, image.h, image.bitdepth, image.nb_channels, bits / 8);
   }
   (void)bits;
   return true;
