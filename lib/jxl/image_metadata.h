@@ -377,6 +377,34 @@ struct CodecMetadata {
 
   size_t xsize() const { return size.xsize(); }
   size_t ysize() const { return size.ysize(); }
+  size_t oriented_xsize(bool keep_orientation) const {
+    if (static_cast<uint32_t>(m.GetOrientation()) > 4 && !keep_orientation) {
+      return ysize();
+    } else {
+      return xsize();
+    }
+  }
+  size_t oriented_preview_xsize(bool keep_orientation) const {
+    if (static_cast<uint32_t>(m.GetOrientation()) > 4 && !keep_orientation) {
+      return m.preview_size.ysize();
+    } else {
+      return m.preview_size.xsize();
+    }
+  }
+  size_t oriented_ysize(bool keep_orientation) const {
+    if (static_cast<uint32_t>(m.GetOrientation()) > 4 && !keep_orientation) {
+      return xsize();
+    } else {
+      return ysize();
+    }
+  }
+  size_t oriented_preview_ysize(bool keep_orientation) const {
+    if (static_cast<uint32_t>(m.GetOrientation()) > 4 && !keep_orientation) {
+      return m.preview_size.xsize();
+    } else {
+      return m.preview_size.ysize();
+    }
+  }
 };
 
 }  // namespace jxl

@@ -1820,9 +1820,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
 
-  const auto& metadata = dec->metadata.m;
-  size_t xsize = metadata.preview_size.xsize();
-  size_t ysize = metadata.preview_size.ysize();
+  size_t xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
+  size_t ysize = dec->metadata.oriented_preview_ysize(dec->keep_orientation);
 
   size_t row_size =
       jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
@@ -1863,8 +1862,10 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderDCOutBufferSize(
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
 
-  size_t xsize = jxl::DivCeil(dec->metadata.size.xsize(), jxl::kBlockDim);
-  size_t ysize = jxl::DivCeil(dec->metadata.size.ysize(), jxl::kBlockDim);
+  size_t xsize = jxl::DivCeil(
+      dec->metadata.oriented_xsize(dec->keep_orientation), jxl::kBlockDim);
+  size_t ysize = jxl::DivCeil(
+      dec->metadata.oriented_ysize(dec->keep_orientation), jxl::kBlockDim);
 
   size_t row_size =
       jxl::DivCeil(xsize * format->num_channels * bits, jxl::kBitsPerByte);
@@ -1888,12 +1889,13 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
   if (status != JXL_DEC_SUCCESS) return status;
 
   size_t row_size =
-      jxl::DivCeil(dec->metadata.size.xsize() * format->num_channels * bits,
+      jxl::DivCeil(dec->metadata.oriented_xsize(dec->keep_orientation) *
+                       format->num_channels * bits,
                    jxl::kBitsPerByte);
   if (format->align > 1) {
     row_size = jxl::DivCeil(row_size, format->align) * format->align;
   }
-  *size = row_size * dec->metadata.size.ysize();
+  *size = row_size * dec->metadata.oriented_ysize(dec->keep_orientation);
 
   return JXL_DEC_SUCCESS;
 }
