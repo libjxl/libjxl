@@ -28,4 +28,19 @@ Status TransformForward(Transform &t, Image &input,
   }
 }
 
+void compute_minmax(const Channel &ch, pixel_type *min, pixel_type *max) {
+  pixel_type realmin = std::numeric_limits<pixel_type>::max();
+  pixel_type realmax = std::numeric_limits<pixel_type>::min();
+  for (size_t y = 0; y < ch.h; y++) {
+    const pixel_type *JXL_RESTRICT p = ch.Row(y);
+    for (size_t x = 0; x < ch.w; x++) {
+      if (p[x] < realmin) realmin = p[x];
+      if (p[x] > realmax) realmax = p[x];
+    }
+  }
+
+  if (min) *min = realmin;
+  if (max) *max = realmax;
+}
+
 }  // namespace jxl

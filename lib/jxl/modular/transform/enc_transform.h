@@ -15,6 +15,8 @@ namespace jxl {
 Status TransformForward(Transform &t, Image &input,
                         const weighted::Header &wp_header, ThreadPool *pool);
 
+void compute_minmax(const Channel &ch, pixel_type *min, pixel_type *max);
+
 }  // namespace jxl
 
 #endif  // LIB_JXL_MODULAR_TRANSFORM_ENC_TRANSFORM_H_

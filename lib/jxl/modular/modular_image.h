@@ -92,7 +92,6 @@ class Channel {
   JXL_INLINE const pixel_type* Row(const size_t y) const {
     return plane.Row(y);
   }
-  void compute_minmax(pixel_type* min, pixel_type* max) const;
 };
 
 class Transform;
@@ -112,8 +111,6 @@ class Image {
   size_t nb_channels;  // actual number of distinct channels (after undoing all
                        // transforms except Palette; can be different from
                        // channel.size())
-  size_t real_nb_channels;  // real number of channels (after undoing all
-                            // transforms)
   size_t nb_meta_channels;  // first few channels might contain things like
                             // palettes or compaction data that are not yet real
                             // image data
@@ -122,7 +119,6 @@ class Image {
   Image(size_t iw, size_t ih, int bitdepth, int nb_chans);
 
   Image();
-  ~Image();
 
   Image(const Image& other) = delete;
   Image& operator=(const Image& other) = delete;
