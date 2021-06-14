@@ -344,6 +344,8 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java
     jni/org/jpeg/jpegxl/wrapper/PixelFormat.java
+    jni/org/jpeg/jpegxl/wrapper/Status.java
+    jni/org/jpeg/jpegxl/wrapper/StreamInfo.java
   )
   get_target_property(JXL_JNI_WRAPPER_JAR jxl_jni_wrapper JAR_FILE)
 

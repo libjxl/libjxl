@@ -5,9 +5,13 @@
 
 package org.jpeg.jpegxl.wrapper;
 
-public enum PixelFormat {
-  RGBA_8888, // 0
-  RGBA_F16, // 1
-  RGB_888, // 2
-  RGB_F16 // 3
+public enum Status {
+  /** Operation was successful. */
+  OK,
+
+  /** So far stream was valid, but incomplete. */
+  NOT_ENOUGH_INPUT,
+
+  /** Stream is corrupted. */
+  INVALID_STREAM
 }
