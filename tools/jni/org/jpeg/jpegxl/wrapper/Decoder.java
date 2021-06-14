@@ -15,18 +15,25 @@ public class Decoder {
 
   /** One-shot decoding. */
   public static ImageData decode(Buffer data, PixelFormat pixelFormat) {
-    DecoderJni.BasicInfo basicInfo = DecoderJni.getBasicInfo(data, pixelFormat);
+    StreamInfo basicInfo = DecoderJni.getBasicInfo(data, pixelFormat);
+    if (basicInfo.status != Status.OK) {
+      throw new IllegalStateException("Decoding failed");
+    }
     if (basicInfo.width < 0 || basicInfo.height < 0 || basicInfo.pixelsSize < 0
         || basicInfo.iccSize < 0) {
       throw new IllegalStateException("JNI has returned negative size");
     }
     Buffer pixels = ByteBuffer.allocateDirect(basicInfo.pixelsSize);
     Buffer icc = ByteBuffer.allocateDirect(basicInfo.iccSize);
-    DecoderJni.getPixels(data, pixels, icc, pixelFormat);
-    return new ImageData(basicInfo.width, basicInfo.height, pixels, icc);
+    Status status = DecoderJni.getPixels(data, pixels, icc, pixelFormat);
+    if (status != Status.OK) {
+      throw new IllegalStateException("Decoding failed");
+    }
+    return new ImageData(basicInfo.width, basicInfo.height, pixels, icc, pixelFormat);
   }
 
-  public static ImageData decode(Buffer data) {
-    return decode(data, PixelFormat.RGBA_8888);
+  // TODO(eustas): accept byte-array as input.
+  public static StreamInfo decodeInfo(Buffer data) {
+    return DecoderJni.getBasicInfo(data, null);
   }
 }

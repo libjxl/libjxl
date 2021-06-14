@@ -22,8 +22,4 @@ public class ImageData {
     this.icc = icc;
     this.pixelFormat = pixelFormat;
   }
-
-  ImageData(int width, int height, Buffer pixels, Buffer icc) {
-    this(width, height, pixels, icc, PixelFormat.RGBA_F16);
-  }
 }

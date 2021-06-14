@@ -16,41 +16,43 @@ class DecoderJni {
   private static native void nativeGetBasicInfo(int[] context, Buffer data);
   private static native void nativeGetPixels(int[] context, Buffer data, Buffer pixels, Buffer icc);
 
-  /** POJO that wraps some fields of JxlBasicInfo */
-  static class BasicInfo {
-    int width;
-    int height;
-    int pixelsSize;
-    int iccSize;
-    BasicInfo(int[] context) {
-      checkStatusCode(context[0]);
-      this.width = context[1];
-      this.height = context[2];
-      this.pixelsSize = context[3];
-      this.iccSize = context[4];
+  static Status makeStatus(int statusCode) {
+    switch (statusCode) {
+      case 0:
+        return Status.OK;
+      case -1:
+        return Status.INVALID_STREAM;
+      case 1:
+        return Status.NOT_ENOUGH_INPUT;
+      default:
+        throw new IllegalStateException("Unknown status code");
     }
   }
 
-  private static void checkStatusCode(int statusCode) {
-    if (statusCode != 0) {
-      // TODO(eustas): extend status code reporting
-      throw new IllegalArgumentException("Corrupted JXL input");
-    }
+  static StreamInfo makeStreamInfo(int[] context) {
+    StreamInfo result = new StreamInfo();
+    result.status = makeStatus(context[0]);
+    result.width = context[1];
+    result.height = context[2];
+    result.pixelsSize = context[3];
+    result.iccSize = context[4];
+    result.alphaBits = context[5];
+    return result;
   }
 
-  /** One-shot decoding. */
-  static BasicInfo getBasicInfo(Buffer data, PixelFormat pixelFormat) {
+  /** Decode stream information. */
+  static StreamInfo getBasicInfo(Buffer data, PixelFormat pixelFormat) {
     if (!data.isDirect()) {
       throw new IllegalArgumentException("data must be direct buffer");
     }
-    int[] context = new int[5];
-    context[0] = pixelFormat.ordinal();
+    int[] context = new int[6];
+    context[0] = (pixelFormat == null) ? -1 : pixelFormat.ordinal();
     nativeGetBasicInfo(context, data);
-    return new BasicInfo(context);
+    return makeStreamInfo(context);
   }
 
   /** One-shot decoding. */
-  static void getPixels(Buffer data, Buffer pixels, Buffer icc, PixelFormat pixelFormat) {
+  static Status getPixels(Buffer data, Buffer pixels, Buffer icc, PixelFormat pixelFormat) {
     if (!data.isDirect()) {
       throw new IllegalArgumentException("data must be direct buffer");
     }
@@ -63,7 +65,7 @@ class DecoderJni {
     int[] context = new int[1];
     context[0] = pixelFormat.ordinal();
     nativeGetPixels(context, data, pixels, icc);
-    checkStatusCode(context[0]);
+    return makeStatus(context[0]);
   }
 
   /** Utility library, disable object construction. */
