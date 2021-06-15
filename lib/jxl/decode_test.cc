@@ -34,6 +34,7 @@
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
 #include "lib/jxl/icc_codec.h"
+#include "lib/jxl/image_test_utils.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testdata.h"
@@ -2204,7 +2205,84 @@ TEST(DecodeTest, AnimationTest) {
                                format, format));
   }
 
-  // After all frames gotten, JxlDecoderProcessInput should return
+  // After all frames were decoded, JxlDecoderProcessInput should return
+  // success to indicate all is done.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+  JxlThreadParallelRunnerDestroy(runner);
+  JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, AnimationWithPatchesTest) {
+  // A jxl image with 4 animation frames and patches
+  const jxl::PaddedBytes compressed =
+      jxl::ReadTestData("jxl/blending/cropped_traffic_light.jxl");
+
+  JxlPixelFormat format = {4, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+  const uint8_t* next_in = compressed.data();
+  size_t avail_in = compressed.size();
+
+  void* runner = JxlThreadParallelRunnerCreate(
+      NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+
+  const size_t num_frames = 4;
+  const size_t xsize = 50;
+  const size_t ysize = 80;
+
+  for (size_t i = 0; i < num_frames; ++i) {
+    std::vector<uint8_t> pixels(buffer_size);
+
+    EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+
+    JxlFrameHeader frame_header;
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec, &frame_header));
+
+    EXPECT_EQ(i + 1 == num_frames, frame_header.is_last);
+
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                   dec, &format, pixels.data(), pixels.size()));
+
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+
+    jxl::Span<const uint8_t> span(pixels.data(), pixels.size());
+    jxl::CodecInOut io;
+    io.SetSize(xsize, ysize);
+    // Required for ConvertFromExternal with alpha
+    io.metadata.m.SetAlphaBits(8);
+    jxl::ColorEncoding color_encoding = jxl::ColorEncoding::SRGB(false);
+    EXPECT_TRUE(
+        ConvertFromExternal(span, xsize, ysize, color_encoding,
+                            /*has_alpha=*/true, false, 8, format.endianness,
+                            /*flipped_y=*/false, /*pool=*/nullptr, &io.Main()));
+
+    std::ostringstream filename;
+    filename << "jxl/blending/cropped_traffic_light_frame-" << i << ".png";
+    const jxl::PaddedBytes compressed_frame = jxl::ReadTestData(filename.str());
+    jxl::CodecInOut frame;
+    ASSERT_TRUE(
+        SetFromBytes(jxl::Span<const uint8_t>(compressed_frame), &frame));
+    EXPECT_TRUE(jxl::SamePixels(*io.Main().color(), *frame.Main().color()));
+  }
+
+  // After all frames were decoded, JxlDecoderProcessInput should return
   // success to indicate all is done.
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
@@ -2441,7 +2519,7 @@ TEST(DecodeTest, SkipFrameTest) {
                                format, format));
   }
 
-  // After all frames gotten, JxlDecoderProcessInput should return
+  // After all frames were decoded, JxlDecoderProcessInput should return
   // success to indicate all is done.
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 

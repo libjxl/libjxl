@@ -827,6 +827,67 @@ Status FrameDecoder::Flush() {
   return true;
 }
 
+int FrameDecoder::SavedAs() const {
+  if (is_finalized_) {
+    // header not parsed
+    return 0;
+  }
+  if (frame_header_.frame_type == FrameType::kDCFrame) {
+    // bits 16, 32, 64, 128 for DC level
+    return 16 << (frame_header_.dc_level - 1);
+  } else if (frame_header_.CanBeReferenced()) {
+    // bits 1, 2, 4 and 8 for the references
+    return 1 << frame_header_.save_as_reference;
+  }
+
+  return 0;
+}
+
+int FrameDecoder::References() const {
+  if (is_finalized_) {
+    return 0;
+  }
+  if ((!decoded_dc_global_ || !decoded_ac_global_ ||
+       *std::min_element(decoded_dc_groups_.begin(),
+                         decoded_dc_groups_.end()) != 1 ||
+       *std::min_element(decoded_passes_per_ac_group_.begin(),
+                         decoded_passes_per_ac_group_.end()) < max_passes_)) {
+    return 0;
+  }
+
+  int result = 0;
+
+  // Blending
+  if (frame_header_.frame_type == FrameType::kRegularFrame ||
+      frame_header_.frame_type == FrameType::kSkipProgressive) {
+    bool cropped = frame_header_.custom_size_or_origin;
+    if (cropped || frame_header_.blending_info.mode != BlendMode::kReplace) {
+      result |= (1 << frame_header_.blending_info.source);
+    }
+    const auto& extra = frame_header_.extra_channel_blending_info;
+    for (size_t i = 0; i < extra.size(); ++i) {
+      if (cropped || extra[i].mode != BlendMode::kReplace) {
+        result |= (1 << extra[i].source);
+      }
+    }
+  }
+
+  // Patches
+  if (frame_header_.flags & FrameHeader::kPatches) {
+    result |= dec_state_->shared->image_features.patches.GetReferences();
+  }
+
+  // DC Level
+  if (frame_header_.flags & FrameHeader::kUseDcFrame) {
+    // Reads from the next dc level
+    int dc_level = frame_header_.dc_level + 1;
+    // bits 16, 32, 64, 128 for DC level
+    result |= (16 << (dc_level - 1));
+  }
+
+  return result;
+}
+
 Status FrameDecoder::FinalizeFrame() {
   if (is_finalized_) {
     return JXL_FAILURE("FinalizeFrame called multiple times");

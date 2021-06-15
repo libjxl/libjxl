@@ -153,6 +153,14 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
   return true;
 }
 
+int PatchDictionary::GetReferences() const {
+  int result = 0;
+  for (size_t i = 0; i < positions_.size(); ++i) {
+    result |= (1 << static_cast<int>(positions_[i].ref_pos.ref));
+  }
+  return result;
+}
+
 void PatchDictionary::ComputePatchCache() {
   patch_starts_.clear();
   sorted_patches_.clear();
