@@ -22,7 +22,6 @@ void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   JXL_ASSERT(chin.h == chin_residual.h);
 
   if (chin_residual.w == 0 || chin_residual.h == 0) {
-    input.channel[c].resize(chin.w + chin_residual.w, chin.h);
     input.channel[c].hshift--;
     return;
   }
@@ -78,7 +77,6 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   JXL_ASSERT(chin.w == chin_residual.w);
 
   if (chin_residual.w == 0 || chin_residual.h == 0) {
-    input.channel[c].resize(chin.w, chin.h + chin_residual.h);
     input.channel[c].vshift--;
     return;
   }
@@ -238,23 +236,22 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
       offset = image.channel.size();
     }
     for (uint32_t c = beginc; c <= endc; c++) {
-      Channel dummy;
       if (image.channel[c].hshift > 30 || image.channel[c].vshift > 30) {
         return JXL_FAILURE("Too many squeezes: shift > 30");
       }
+      size_t w = image.channel[c].w;
+      size_t h = image.channel[c].h;
       if (horizontal) {
-        size_t w = image.channel[c].w;
         image.channel[c].w = (w + 1) / 2;
         image.channel[c].hshift++;
-        dummy.w = w - (w + 1) / 2;
-        dummy.h = image.channel[c].h;
+        w = w - (w + 1) / 2;
       } else {
-        size_t h = image.channel[c].h;
         image.channel[c].h = (h + 1) / 2;
         image.channel[c].vshift++;
-        dummy.h = h - (h + 1) / 2;
-        dummy.w = image.channel[c].w;
+        h = h - (h + 1) / 2;
       }
+      image.channel[c].shrink();
+      Channel dummy(w, h);
       dummy.hshift = image.channel[c].hshift;
       dummy.vshift = image.channel[c].vshift;
 
@@ -288,9 +285,6 @@ Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
       if ((input.channel[c].w < input.channel[rc].w) ||
           (input.channel[c].h < input.channel[rc].h)) {
         return JXL_FAILURE("Corrupted squeeze transform");
-      }
-      if (input.channel[rc].is_empty()) {
-        input.channel[rc].resize();  // assume all zeroes
       }
       if (horizontal) {
         InvHSqueeze(input, c, rc, pool);
