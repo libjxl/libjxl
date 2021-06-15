@@ -890,12 +890,6 @@ Status FrameDecoder::FinalizeFrame() {
       reference_frame.storage.ShrinkTo(metadata->xsize(), metadata->ysize());
     }
   }
-  if (dec_state_->shared->frame_header.dc_level != 0) {
-    dec_state_->shared_storage
-        .dc_frames[dec_state_->shared->frame_header.dc_level - 1] =
-        std::move(*decoded_->color());
-    decoded_->RemoveColor();
-  }
   if (frame_header_.nonserialized_is_preview) {
     // Fix possible larger image size (multiple of kBlockDim)
     // TODO(lode): verify if and when that happens.
@@ -947,6 +941,12 @@ Status FrameDecoder::FinalizeFrame() {
         }
       }
     }
+  }
+  if (dec_state_->shared->frame_header.dc_level != 0) {
+    dec_state_->shared_storage
+        .dc_frames[dec_state_->shared->frame_header.dc_level - 1] =
+        std::move(*decoded_->color());
+    decoded_->RemoveColor();
   }
   return true;
 }
