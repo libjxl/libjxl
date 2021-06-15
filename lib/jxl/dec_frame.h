@@ -104,6 +104,18 @@ class FrameDecoder {
   // Must be called exactly once per frame, after all calls to ProcessSections.
   Status FinalizeFrame();
 
+  // Returns dependencies of this frame on reference ids as a bit mask: bits 0-3
+  // indicate reference frame 0-3 for patches and blending, bits 4-7 indicate DC
+  // frames this frame depends on. Only returns a valid result after all calls
+  // to ProcessSections are finished and before FinalizeFrame.
+  int References() const;
+
+  // Returns reference id of storage location where this frame is stored as a
+  // bit flag, or 0 if not stored.
+  // Matches the bit mask used for GetReferences: bits 0-3 indicate it is stored
+  // for patching or blending, bits 4-7 indicate DC frame.
+  int SavedAs() const;
+
   // Returns offset of this section after the end of the TOC. The end of the TOC
   // is the byte position of the bit reader after InitFrame was called.
   const std::vector<uint64_t>& SectionOffsets() const {

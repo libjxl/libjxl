@@ -170,6 +170,10 @@ class PatchDictionary {
   Status AddTo(Image3F* opsin, const Rect& opsin_rect,
                float* const* extra_channels, const Rect& image_rect) const;
 
+  // Returns dependencies of this patch dictionary on reference frame ids as a
+  // bit mask: bits 0-3 indicate reference frame 0-3.
+  int GetReferences() const;
+
  private:
   friend class PatchDictionaryEncoder;
 
