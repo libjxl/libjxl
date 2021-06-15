@@ -189,13 +189,13 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
           DivCeil(frame_dim.xsize, 1 << gi.channel[c].hshift);
       size_t ysize_shifted =
           DivCeil(frame_dim.ysize, 1 << gi.channel[c].vshift);
-      gi.channel[c].resize(xsize_shifted, ysize_shifted);
+      gi.channel[c].shrink(xsize_shifted, ysize_shifted);
     }
   }
 
   for (size_t ec = 0, c = nb_chans; ec < nb_extra; ec++, c++) {
     size_t ecups = frame_header.extra_channel_upsampling[ec];
-    gi.channel[c].resize(DivCeil(frame_dim.xsize_upsampled, ecups),
+    gi.channel[c].shrink(DivCeil(frame_dim.xsize_upsampled, ecups),
                          DivCeil(frame_dim.ysize_upsampled, ecups));
     gi.channel[c].hshift = gi.channel[c].vshift =
         CeilLog2Nonzero(ecups) - CeilLog2Nonzero(frame_header.upsampling);
@@ -215,14 +215,12 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   }
 
   // TODO(eustas): are we sure this can be done after partial decode?
-  // ensure all the channel buffers are allocated
   have_something = false;
   for (size_t c = 0; c < gi.channel.size(); c++) {
     Channel& gic = gi.channel[c];
     if (c >= gi.nb_meta_channels && gic.w < frame_dim.group_dim &&
         gic.h < frame_dim.group_dim)
       have_something = true;
-    gic.resize();
   }
   full_image = std::move(gi);
   return dec_status;
@@ -320,7 +318,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
     Channel& ch = image.channel[c < 2 ? c ^ 1 : c];
     ch.w >>= dec_state->shared->frame_header.chroma_subsampling.HShift(c);
     ch.h >>= dec_state->shared->frame_header.chroma_subsampling.VShift(c);
-    ch.resize();
+    ch.shrink();
   }
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,

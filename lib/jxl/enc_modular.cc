@@ -522,7 +522,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
             enc_state->shared.frame_header.chroma_subsampling.VShift(c);
         size_t xsize_shifted = DivCeil(xsize, 1 << gi.channel[c_out].hshift);
         size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_out].vshift);
-        gi.channel[c_out].resize(xsize_shifted, ysize_shifted);
+        gi.channel[c_out].shrink(xsize_shifted, ysize_shifted);
         for (size_t y = 0; y < ysize_shifted; ++y) {
           const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
           pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
@@ -539,7 +539,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
   for (size_t ec = 0; ec < extra_channels.size(); ec++, c++) {
     const ExtraChannelInfo& eci = metadata.extra_channel_info[ec];
     size_t ecups = frame_header.extra_channel_upsampling[ec];
-    gi.channel[c].resize(DivCeil(frame_dim.xsize_upsampled, ecups),
+    gi.channel[c].shrink(DivCeil(frame_dim.xsize_upsampled, ecups),
                          DivCeil(frame_dim.ysize_upsampled, ecups));
     gi.channel[c].hshift = gi.channel[c].vshift =
         CeilLog2Nonzero(ecups) - CeilLog2Nonzero(frame_header.upsampling);
@@ -1516,7 +1516,7 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
       Channel& ch = stream_images[stream_id].channel[c < 2 ? c ^ 1 : c];
       ch.w = xs;
       ch.h = ys;
-      ch.resize();
+      ch.shrink();
       for (size_t y = 0; y < ys; y++) {
         int32_t* quant_row = ch.plane.Row(y);
         const float* row = rect.ConstPlaneRow(dc, c, y);
@@ -1584,7 +1584,6 @@ void ModularFrameEncoder::AddACMetadata(size_t group_index, bool jpeg_transcode,
     }
   }
   image.channel[2].w = num;
-  image.channel[2].resize();
   ac_metadata_size[group_index] = num;
 }
 

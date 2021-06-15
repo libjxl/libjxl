@@ -38,7 +38,6 @@ class Channel {
   int hshift, vshift;  // w ~= image.w >> hshift;  h ~= image.h >> vshift
   Channel(size_t iw, size_t ih, int hsh = 0, int vsh = 0)
       : plane(iw, ih), w(iw), h(ih), hshift(hsh), vshift(vsh) {}
-  Channel() : plane(0, 0), w(0), h(0), hshift(0), vshift(0) {}
 
   Channel(const Channel& other) = delete;
   Channel& operator=(const Channel& other) = delete;
@@ -56,37 +55,16 @@ class Channel {
   // Move constructor
   Channel(Channel&& other) noexcept = default;
 
-  void resize(pixel_type value = 0) {
+  void shrink() {
     if (plane.xsize() == w && plane.ysize() == h) return;
     jxl::Plane<pixel_type> resizedplane(w, h);
-    if (plane.xsize() || plane.ysize()) {
-      // copy pixels over from old plane to new plane
-      size_t y = 0;
-      for (; y < plane.ysize() && y < h; y++) {
-        const pixel_type* JXL_RESTRICT p = plane.Row(y);
-        pixel_type* JXL_RESTRICT rp = resizedplane.Row(y);
-        size_t x = 0;
-        for (; x < plane.xsize() && x < w; x++) rp[x] = p[x];
-        for (; x < w; x++) rp[x] = value;
-      }
-      for (; y < h; y++) {
-        pixel_type* JXL_RESTRICT p = resizedplane.Row(y);
-        for (size_t x = 0; x < w; x++) p[x] = value;
-      }
-    } else if (w && h && value == 0) {
-      size_t ppr = resizedplane.bytes_per_row();
-      memset(resizedplane.bytes(), 0, ppr * h);
-    } else if (w && h) {
-      FillImage(value, &resizedplane);
-    }
     plane = std::move(resizedplane);
   }
-  void resize(int nw, int nh) {
+  void shrink(int nw, int nh) {
     w = nw;
     h = nh;
-    resize();
+    shrink();
   }
-  bool is_empty() const { return (plane.ysize() == 0); }
 
   JXL_INLINE pixel_type* Row(const size_t y) { return plane.Row(y); }
   JXL_INLINE const pixel_type* Row(const size_t y) const {

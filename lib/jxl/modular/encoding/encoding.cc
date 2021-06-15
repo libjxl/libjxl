@@ -138,7 +138,6 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
   // zero pixel channel? could happen
   if (channel.w == 0 || channel.h == 0) return true;
 
-  channel.resize(channel.w, channel.h);
   bool tree_has_wp_prop_or_pred = false;
   bool is_wp_only = false;
   bool is_gradient_only = false;
@@ -479,6 +478,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     if (!br->AllReadsWithinBounds()) {
       if (!allow_truncated_group) return JXL_FAILURE("Truncated input");
       ZeroFillImage(&channel.plane);
+      while (++i < nb_channels) ZeroFillImage(&image.channel[i].plane);
       return Status(StatusCode::kNotEnoughBytes);
     }
   }
