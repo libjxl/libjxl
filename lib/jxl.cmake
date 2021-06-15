@@ -94,6 +94,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_patch_dictionary.h
   jxl/dec_reconstruct.cc
   jxl/dec_reconstruct.h
+  jxl/dec_render_pipeline.h
   jxl/dec_transforms-inl.h
   jxl/dec_upsample.cc
   jxl/dec_upsample.h
