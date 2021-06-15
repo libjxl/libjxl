@@ -750,6 +750,66 @@ cmd_msan_install() {
   done
 }
 
+# Internal build step shared between all cmd_ossfuzz_* commands.
+_cmd_ossfuzz() {
+  local sanitizer="$1"
+  shift
+  mkdir -p "${BUILD_DIR}"
+  local real_build_dir=$(realpath "${BUILD_DIR}")
+
+  # oss-fuzz defines three directories:
+  # * /work, with the working directory to do re-builds
+  # * /src, with the source code to build
+  # * /out, with the output directory where to copy over the built files.
+  # We use $BUILD_DIR as the /work and the script directory as the /src. The
+  # /out directory is ignored as developers are used to look for the fuzzers in
+  # $BUILD_DIR/tools/ directly.
+
+  if [[ "${sanitizer}" = "memory" ]]; then
+    sudo docker run --rm -i \
+      --user $(id -u):$(id -g) \
+      -v "${real_build_dir}":/work \
+      gcr.io/oss-fuzz-base/msan-libs-builder \
+      bash -c "cp -r /msan /work"
+  fi
+
+  sudo docker run --rm -i \
+    -e JPEGXL_UID=$(id -u) \
+    -e JPEGXL_GID=$(id -g) \
+    -e FUZZING_ENGINE="${FUZZING_ENGINE:-libfuzzer}" \
+    -e SANITIZER="${sanitizer}" \
+    -e ARCHITECTURE=x86_64 \
+    -e FUZZING_LANGUAGE=c++ \
+    -e MSAN_LIBS_PATH="/work/msan" \
+    -v "${MYDIR}":/src/libjxl \
+    -v "${MYDIR}/tools/ossfuzz-build.sh":/src/build.sh \
+    -v "${real_build_dir}":/work \
+    "$@" \
+    gcr.io/oss-fuzz/libjxl
+}
+
+cmd_ossfuzz_asan() {
+  _cmd_ossfuzz address "$@"
+}
+cmd_ossfuzz_msan() {
+  _cmd_ossfuzz memory "$@"
+}
+cmd_ossfuzz_ubsan() {
+  _cmd_ossfuzz undefined "$@"
+}
+
+cmd_ossfuzz_ninja() {
+  [[ -e "${BUILD_DIR}/build.ninja" ]]
+  local real_build_dir=$(realpath "${BUILD_DIR}")
+
+  sudo docker run --rm -i \
+    --user $(id -u):$(id -g) \
+    -v "${MYDIR}":/src/libjxl \
+    -v "${real_build_dir}":/work \
+    gcr.io/oss-fuzz/libjxl \
+    ninja -C /work "$@"
+}
+
 cmd_fast_benchmark() {
   local small_corpus_tar="${BENCHMARK_CORPORA}/jyrki-full.tar"
   mkdir -p "${BENCHMARK_CORPORA}"
@@ -1333,6 +1393,15 @@ Where cmd is one of:
 
  debian_build <srcpkg> Build the given source package.
  debian_stats  Print stats about the built packages.
+
+oss-fuzz commands:
+ ossfuzz_asan   Build the local source inside oss-fuzz docker with asan.
+ ossfuzz_msan   Build the local source inside oss-fuzz docker with msan.
+ ossfuzz_ubsan  Build the local source inside oss-fuzz docker with ubsan.
+ ossfuzz_ninja  Run ninja on the BUILD_DIR inside the oss-fuzz docker. Extra
+                parameters are passed to ninja, for example "djxl_fuzzer" will
+                only build that ninja target. Use for faster build iteration
+                after one of the ossfuzz_*san commands.
 
 You can pass some optional environment variables as well:
  - BUILD_DIR: The output build directory (by default "$$repo/build")
