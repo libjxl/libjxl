@@ -35,6 +35,8 @@ void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
   const HWY_FULL(float) d;
   const hwy::HWY_NAMESPACE::Rebind<uint32_t, decltype(d)> du;
   size_t vec_num = num;
+  const uint32_t cap = (1ull << bits_per_sample) - 1;
+  // TODO(eustas): investigate 24..31 bpp cases.
   if (bits_per_sample == 32) {
     // Conversion to real 32-bit *unsigned* integers requires more intermediate
     // precision that what is given by the usual f32 -> i32 conversion
@@ -57,9 +59,13 @@ void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
   }
   for (size_t x = vec_num; x < num; x++) {
     float v = in[x];
-    // Inverted condition grants that NaN is mapped to 0.0f.
-    v = (v >= 0.0f) ? (v > 1.0f ? mul : (v * mul)) : 0.0f;
-    out[x] = static_cast<uint32_t>(v + 0.5f);
+    if (v >= 1.0f) {
+      out[x] = cap;
+    } else if (v >= 0.0f) {  // Inverted condition => NaN -> 0.
+      out[x] = static_cast<uint32_t>(v * mul + 0.5f);
+    } else {
+      out[x] = 0;
+    }
   }
 }
 
