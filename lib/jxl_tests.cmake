@@ -22,6 +22,7 @@ set(TEST_FILES
   jxl/convolve_test.cc
   jxl/data_parallel_test.cc
   jxl/dct_test.cc
+  jxl/dec_render_pipeline_test.cc
   jxl/decode_test.cc
   jxl/descriptive_statistics_test.cc
   jxl/enc_external_image_test.cc
