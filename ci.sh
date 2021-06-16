@@ -921,7 +921,7 @@ $(cat "${output_dir}/results.txt")
 # Helper function to wait for the CPU temperature to cool down on ARM.
 wait_for_temp() {
   { set +x; } 2>/dev/null
-  local temp_limit=${1:-37000}
+  local temp_limit=${1:-38000}
   if [[ -z "${THERMAL_FILE:-}" ]]; then
     echo "Must define the THERMAL_FILE with the thermal_zoneX/temp file" \
       "to read the temperature from. This is normally set in the runner." >&2
@@ -932,9 +932,15 @@ wait_for_temp() {
     echo -n "Waiting for temp to get down from ${org_temp}... "
   fi
   local temp="${org_temp}"
+  local secs=0
   while [[ "${temp}" -ge "${temp_limit}" ]]; do
     sleep 1
     temp=$(cat "${THERMAL_FILE}")
+    echo -n "${temp} "
+    secs=$((secs + 1))
+    if [[ ${secs} -ge 5 ]]; then
+      break
+    fi
   done
   if [[ "${org_temp}" -ge "${temp_limit}" ]]; then
     echo "Done, temp=${temp}"
