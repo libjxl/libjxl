@@ -271,7 +271,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
           "UndoDeltaPaletteNoWP");
     }
   }
-  input.nb_channels += nb - 1;
   input.nb_meta_channels--;
   input.channel.erase(input.channel.begin(), input.channel.begin() + 1);
   return num_errors.load(std::memory_order_relaxed) == 0;
@@ -283,10 +282,6 @@ static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
 
   size_t nb = end_c - begin_c + 1;
   input.nb_meta_channels++;
-  if (nb < 1 || input.nb_channels < nb) {
-    return JXL_FAILURE("Corrupted transforms");
-  }
-  input.nb_channels -= nb - 1;
   input.channel.erase(input.channel.begin() + begin_c + 1,
                       input.channel.begin() + end_c + 1);
   Channel pch(nb_colors + nb_deltas, nb);

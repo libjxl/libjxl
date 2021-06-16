@@ -255,7 +255,6 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
     gc.vshift = fc.vshift;
     gi.channel.emplace_back(std::move(gc));
   }
-  gi.nb_channels = gi.channel.size();
   if (zerofill) {
     int gic = 0;
     for (c = beginc; c < full_image.channel.size(); c++) {

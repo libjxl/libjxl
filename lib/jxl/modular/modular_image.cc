@@ -42,28 +42,16 @@ void Image::undo_transforms(const weighted::Header &wp_header, int keep,
 }
 
 Image::Image(size_t iw, size_t ih, int bd, int nb_chans)
-    : w(iw),
-      h(ih),
-      bitdepth(bd),
-      nb_channels(nb_chans),
-      nb_meta_channels(0),
-      error(false) {
+    : w(iw), h(ih), bitdepth(bd), nb_meta_channels(0), error(false) {
   for (int i = 0; i < nb_chans; i++) channel.emplace_back(Channel(iw, ih));
 }
 
-Image::Image()
-    : w(0),
-      h(0),
-      bitdepth(8),
-      nb_channels(0),
-      nb_meta_channels(0),
-      error(true) {}
+Image::Image() : w(0), h(0), bitdepth(8), nb_meta_channels(0), error(true) {}
 
 Image &Image::operator=(Image &&other) noexcept {
   w = other.w;
   h = other.h;
   bitdepth = other.bitdepth;
-  nb_channels = other.nb_channels;
   nb_meta_channels = other.nb_meta_channels;
   error = other.error;
   channel = std::move(other.channel);
