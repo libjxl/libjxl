@@ -228,14 +228,25 @@ void Upsample(const ImageF& src, const Rect& src_rect, ImageF* dst,
       const size_t oy_max = std::min<size_t>(dst_rect.ysize(), y + N);
       const size_t ox_max = std::min<size_t>(dst_rect.xsize(), x + NX);
       const size_t copy_len = ox_max - x;
-      float* pixels = out;
-      // TODO(eustas): add graceful tail processing.
-      for (size_t oy = sy * N; oy < oy_max; ++oy, pixels += NX) {
+      const size_t copy_last = RoundUpTo(copy_len, V);
+      if (JXL_LIKELY(x + copy_last <= dst_rect.xsize())) {
         for (size_t dx = 0; dx < copy_len; dx += V) {
-          auto result = LoadU(df, pixels + dx);
           auto min = LoadU(df, min_row + x + dx);
           auto max = LoadU(df, max_row + x + dx);
-          StoreU(Clamp(result, min, max), df, dst_rect.Row(dst, oy) + x + dx);
+          float* pixels = out;
+          for (size_t oy = sy * N; oy < oy_max; ++oy, pixels += NX) {
+            StoreU(Clamp(LoadU(df, pixels + dx), min, max), df,
+                   dst_rect.Row(dst, oy) + x + dx);
+          }
+        }
+      } else {
+        for (size_t dx = 0; dx < copy_len; dx++) {
+          auto min = min_row[x + dx];
+          auto max = max_row[x + dx];
+          float* pixels = out;
+          for (size_t oy = sy * N; oy < oy_max; ++oy, pixels += NX) {
+            dst_rect.Row(dst, oy)[x + dx] = Clamp1(pixels[dx], min, max);
+          }
         }
       }
     }
@@ -293,10 +304,9 @@ void Init(size_t upsampling, CacheAlignedUniquePtr* kernel_storage,
 
   // No-op upsampling.
   if (upsampling == 1) return;
-  const float* weights = (upsampling == 2)
-                             ? data.upsampling2_weights
-                             : (upsampling == 4) ? data.upsampling4_weights
-                                                 : data.upsampling8_weights;
+  const float* weights = (upsampling == 2)   ? data.upsampling2_weights
+                         : (upsampling == 4) ? data.upsampling4_weights
+                                             : data.upsampling8_weights;
   InitKernel(weights, kernel_storage, upsampling, x_repeat);
 }
 
