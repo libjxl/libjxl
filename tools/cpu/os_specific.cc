@@ -48,9 +48,8 @@
 #endif  // JXL_OS_MAC
 
 #if JXL_OS_FREEBSD
-#include <sys/cpuset.h>
 #include <sys/param.h>
-#include <sys/types.h>
+#include <sys/cpuset.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif  // JXL_OS_FREEBSD
