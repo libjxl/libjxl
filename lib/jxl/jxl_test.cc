@@ -221,7 +221,23 @@ TEST(JxlTest, RoundtripResample2) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15777);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            13.5);
+            12.5);
+}
+TEST(JxlTest, RoundtripResample2MT) {
+  ThreadPoolInternal pool(4);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  // image has to be large enough to have multiple groups after downsampling
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  CompressParams cparams;
+  cparams.resampling = 2;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 55000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, &pool),
+            4.5);
 }
 
 TEST(JxlTest, RoundtripResample4) {
