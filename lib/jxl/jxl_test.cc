@@ -237,7 +237,11 @@ TEST(JxlTest, RoundtripResample2MT) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 55000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
+#if JXL_HIGH_PRECISION
             4.5);
+#else
+            10);
+#endif
 }
 
 TEST(JxlTest, RoundtripResample4) {
