@@ -966,9 +966,11 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
       dec->frame_stage = FrameStage::kTOC;
 
-      if (dec->skip_frames) {
+      if (dec->skip_frames > 0) {
         dec->skipping_frame = true;
-        dec->skip_frames--;
+        if (dec->is_last_of_still) {
+          dec->skip_frames--;
+        }
       } else {
         dec->skipping_frame = false;
       }
