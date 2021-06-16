@@ -921,7 +921,7 @@ Status FinalizeImageRect(
       // output will be available after shifted_y is at least 2, *unless* image
       // height is <= 2.
       if (shifted_y < 2 &&
-          shifted_y + 1 != static_cast<ssize_t>(frame_dim.ysize_padded)) {
+          shifted_y + 1 != static_cast<ssize_t>(frame_rect.ysize())) {
         continue;
       }
       // Value relative to upsampled_frame_rect.
