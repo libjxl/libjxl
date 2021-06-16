@@ -725,18 +725,6 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
                               cmap_factors, block, scratch_space, quantized);
           entropy *= entropy_adjust[i * 2 + 1];
         }
-        // In modes faster than Hare mode, we don't use InitialQuantField -
-        // hence, we need to come up with quant field values.
-        if (cparams.speed_tier > SpeedTier::kHare &&
-            cparams.uniform_quant <= 0) {
-          // OPTIMIZE
-          float quant = 1.1f / (1.0f + max_delta_acs) / butteraugli_target;
-          for (size_t y = 0; y < cy; y++) {
-            for (size_t x = 0; x < cx; x++) {
-              config.SetQuant(bx + ix + x, by + iy + y, quant);
-            }
-          }
-        }
         // Mark blocks as chosen and write to acs image.
         ac_strategy->Set(bx + ix, by + iy, i);
         for (size_t y = 0; y < cy; y++) {

@@ -320,12 +320,10 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   if (cparams.speed_tier > SpeedTier::kHare || cparams.uniform_quant > 0) {
     enc_state->initial_quant_field =
         ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
-    if (cparams.speed_tier >= SpeedTier::kFalcon || cparams.uniform_quant > 0) {
-      float q = cparams.uniform_quant > 0
-                    ? cparams.uniform_quant
-                    : kAcQuant / cparams.butteraugli_distance;
-      FillImage(q, &enc_state->initial_quant_field);
-    }
+    float q = cparams.uniform_quant > 0
+        ? cparams.uniform_quant
+        : kAcQuant / cparams.butteraugli_distance;
+    FillImage(q, &enc_state->initial_quant_field);
   } else {
     // Call this here, as it relies on pre-gaborish values.
     float butteraugli_distance_for_iqf = cparams.butteraugli_distance;
