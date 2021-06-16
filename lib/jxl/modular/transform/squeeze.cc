@@ -146,9 +146,8 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
   size_t h = image.channel[image.nb_meta_channels].h;
   JXL_DEBUG_V(7, "Default squeeze parameters for %zux%zu image: ", w, h);
 
-  bool wide =
-      (w >
-       h);  // do horizontal first on wide images; vertical first on tall images
+  // do horizontal first on wide images; vertical first on tall images
+  bool wide = (w > h);
 
   if (nb_channels > 2 && image.channel[image.nb_meta_channels + 1].w == w &&
       image.channel[image.nb_meta_channels + 1].h == h) {

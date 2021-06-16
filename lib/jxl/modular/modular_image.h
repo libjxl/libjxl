@@ -76,26 +76,19 @@ class Transform;
 
 class Image {
  public:
-  std::vector<Channel>
-      channel;  // image data, transforms can dramatically change the number of
-                // channels and their semantics
-  std::vector<Transform>
-      transform;  // keeps track of the transforms that have been applied (and
-                  // that have to be undone when rendering the image)
+  // image data, transforms can dramatically change the number of channels and
+  // their semantics
+  std::vector<Channel> channel;
+  // transforms that have been applied (and that have to be undone)
+  std::vector<Transform> transform;
 
-  size_t w, h;  // actual dimensions of the image (channels may have different
-                // dimensions due to transforms like chroma subsampling and DCT)
+  // image dimensions (channels may have different dimensions due to transforms)
+  size_t w, h;
   int bitdepth;
-  size_t nb_channels;  // actual number of distinct channels (after undoing all
-                       // transforms except Palette; can be different from
-                       // channel.size())
-  size_t nb_meta_channels;  // first few channels might contain things like
-                            // palettes or compaction data that are not yet real
-                            // image data
+  size_t nb_meta_channels;  // first few channels might contain palette(s)
   bool error;               // true if a fatal error occurred, false otherwise
 
   Image(size_t iw, size_t ih, int bitdepth, int nb_chans);
-
   Image();
 
   Image(const Image& other) = delete;

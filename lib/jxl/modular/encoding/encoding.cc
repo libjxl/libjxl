@@ -383,7 +383,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
                      const Tree *global_tree, const ANSCode *global_code,
                      const std::vector<uint8_t> *global_ctx_map,
                      bool allow_truncated_group) {
-  if (image.nb_channels < 1) return true;
+  if (image.channel.empty()) return true;
 
   // decode transforms
   JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
@@ -510,7 +510,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %zu bytes",
-              image.w, image.h, image.nb_channels,
+              image.w, image.h, image.channel.size(),
               (br->TotalBitsConsumed() - bit_pos) / 8);
   (void)bit_pos;
 #ifdef JXL_ENABLE_ASSERT

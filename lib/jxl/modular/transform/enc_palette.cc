@@ -100,9 +100,6 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                   Predictor &predictor, const weighted::Header &wp_header) {
   JXL_QUIET_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, end_c));
   uint32_t nb = end_c - begin_c + 1;
-  if (nb < 1 || input.nb_channels < nb) {
-    return JXL_FAILURE("Corrupted transforms");
-  }
 
   size_t w = input.channel[begin_c].w;
   size_t h = input.channel[begin_c].h;
@@ -439,7 +436,6 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     predictor = Predictor::Zero;
   }
   input.nb_meta_channels++;
-  input.nb_channels -= nb - 1;
   input.channel.erase(input.channel.begin() + begin_c + 1,
                       input.channel.begin() + end_c + 1);
   input.channel.insert(input.channel.begin(), std::move(pch));

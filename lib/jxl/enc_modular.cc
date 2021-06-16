@@ -581,10 +581,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
   //   reduce palette signaling cost
   if (cparams.palette_colors != 0 && cparams.speed_tier < SpeedTier::kFalcon) {
     // all-channel palette (e.g. RGBA)
-    if (gi.nb_channels > 1) {
+    if (gi.channel.size() > 1) {
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
-      maybe_palette.num_c = gi.nb_channels;
+      maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
       maybe_palette.nb_colors =
           std::min(std::min(200, (int)(xsize * ysize / 8)),
                    std::abs(cparams.palette_colors) / 16);
@@ -600,7 +600,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
       (cparams.speed_tier <= SpeedTier::kThunder ||
        (do_color && metadata.bit_depth.bits_per_sample > 8))) {
     // single channel palette (like FLIF's ChannelCompact)
-    for (size_t i = 0; i < gi.nb_channels; i++) {
+    size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
+    for (size_t i = 0; i < nb_channels; i++) {
       int min, max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
       int64_t colors = max - min + 1;
@@ -627,15 +628,15 @@ Status ModularFrameEncoder::ComputeEncodingData(
   if ((cparams.palette_colors != 0 || cparams.lossy_palette) &&
       cparams.speed_tier < SpeedTier::kFalcon) {
     // all-channel palette (e.g. RGBA)
-    if (gi.nb_channels > 1) {
+    if (gi.channel.size() - gi.nb_meta_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
-      maybe_palette.num_c = gi.nb_channels;
+      maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
       maybe_palette.nb_colors =
           std::min((int)(xsize * ysize / 8), std::abs(cparams.palette_colors));
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
       maybe_palette.lossy_palette =
-          (cparams.lossy_palette && gi.nb_channels == 3);
+          (cparams.lossy_palette && maybe_palette.num_c == 3);
       if (maybe_palette.lossy_palette) {
         maybe_palette.predictor = Predictor::Average4;
       }
@@ -645,10 +646,10 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
-    if (gi.nb_channels > 3) {
+    if (gi.channel.size() - gi.nb_meta_channels > 3) {
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
-      maybe_palette_3.num_c = gi.nb_channels - 1;
+      maybe_palette_3.num_c = gi.channel.size() - gi.nb_meta_channels - 1;
       maybe_palette_3.nb_colors =
           std::min((int)(xsize * ysize / 8), std::abs(cparams.palette_colors));
       maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
@@ -660,7 +661,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
-  if (cparams.color_transform == ColorTransform::kNone && do_color && !fp) {
+  if (cparams.color_transform == ColorTransform::kNone && do_color && !fp &&
+      gi.channel.size() - gi.nb_meta_channels >= 3) {
     if (cparams.colorspace == 1 ||
         (cparams.colorspace < 0 &&
          (quality < 100 || cparams.speed_tier > SpeedTier::kHare))) {
@@ -676,7 +678,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
     }
   }
 
-  if (cparams.responsive && gi.nb_channels != 0) {
+  if (cparams.responsive && !gi.channel.empty()) {
     do_transform(gi, Transform(TransformId::kSqueeze), weighted::Header(),
                  pool);  // use default squeezing
   }
@@ -1087,7 +1089,7 @@ Status ModularFrameEncoder::EncodeStream(BitWriter* writer, AuxOut* aux_out,
                                          size_t layer,
                                          const ModularStreamId& stream) {
   size_t stream_id = stream.ID(frame_dim);
-  if (stream_images[stream_id].nb_channels < 1) {
+  if (stream_images[stream_id].channel.empty()) {
     return true;  // Image with no channels, header never gets decoded.
   }
   JXL_RETURN_IF_ERROR(
@@ -1225,7 +1227,6 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
     }
     gi.channel.emplace_back(std::move(gc));
   }
-  gi.nb_channels = gi.channel.size();
 
   // Do some per-group transforms
 
@@ -1236,20 +1237,20 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   if (quality == 100 && cparams.palette_colors != 0 &&
       cparams.speed_tier < SpeedTier::kCheetah) {
     // all-channel palette (e.g. RGBA)
-    if (gi.nb_channels > 1) {
+    if (gi.channel.size() - gi.nb_meta_channels > 1) {
       Transform maybe_palette(TransformId::kPalette);
       maybe_palette.begin_c = gi.nb_meta_channels;
-      maybe_palette.num_c = gi.nb_channels;
+      maybe_palette.num_c = gi.channel.size() - gi.nb_meta_channels;
       maybe_palette.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette.ordered_palette = cparams.palette_colors >= 0;
       do_transform(gi, maybe_palette, weighted::Header());
     }
     // all-minus-one-channel palette (RGB with separate alpha, or CMY with
     // separate K)
-    if (gi.nb_channels > 3) {
+    if (gi.channel.size() - gi.nb_meta_channels > 3) {
       Transform maybe_palette_3(TransformId::kPalette);
       maybe_palette_3.begin_c = gi.nb_meta_channels;
-      maybe_palette_3.num_c = gi.nb_channels - 1;
+      maybe_palette_3.num_c = gi.channel.size() - gi.nb_meta_channels - 1;
       maybe_palette_3.nb_colors = std::abs(cparams.palette_colors);
       maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
       maybe_palette_3.lossy_palette = cparams.lossy_palette;
@@ -1264,7 +1265,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   if (cparams.channel_colors_percent > 0 && quality == 100 &&
       !cparams.lossy_palette && cparams.speed_tier < SpeedTier::kCheetah) {
     // single channel palette (like FLIF's ChannelCompact)
-    for (size_t i = 0; i < gi.nb_channels; i++) {
+    size_t nb_channels = gi.channel.size() - gi.nb_meta_channels;
+    for (size_t i = 0; i < nb_channels; i++) {
       int min, max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
       int colors = max - min + 1;
@@ -1286,12 +1288,11 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   // lossless and no specific color transform specified: try Nothing, YCoCg,
   // and 17 RCTs
   if (cparams.color_transform == ColorTransform::kNone && quality == 100 &&
-      cparams.colorspace < 0 && gi.nb_channels > 2 &&
+      cparams.colorspace < 0 && gi.channel.size() - gi.nb_meta_channels >= 3 &&
       cparams.responsive == false && do_color &&
       cparams.speed_tier <= SpeedTier::kHare) {
     Transform sg(TransformId::kRCT);
     sg.begin_c = gi.nb_meta_channels;
-
     size_t nb_rcts_to_try = 0;
     switch (cparams.speed_tier) {
       case SpeedTier::kLightning:
