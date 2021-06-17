@@ -105,9 +105,9 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
       const size_t pixels = io.xsize() * io.ysize();
       const double bpp =
           static_cast<double>(compressed.size() * jxl::kBitsPerByte) / pixels;
-      fprintf(stderr, "Including container: %zu bytes (%.3f bpp%s).\n",
-              compressed.size(), bpp / io.frames.size(),
-              io.frames.size() == 1 ? "" : "/frame");
+      fprintf(stderr, "Including container: %llu bytes (%.3f bpp%s).\n",
+              static_cast<long long unsigned>(compressed.size()),
+              bpp / io.frames.size(), io.frames.size() == 1 ? "" : "/frame");
     }
   }
   if (args.file_out) {
