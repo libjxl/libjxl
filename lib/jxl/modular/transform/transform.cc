@@ -21,9 +21,11 @@ Transform::Transform(TransformId id) {
 
 Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
                           ThreadPool *pool) {
+  JXL_DEBUG_V(6, "Input channels (%zu, %zu meta): ", input.channel.size(),
+              input.nb_meta_channels);
   switch (id) {
     case TransformId::kRCT:
-      return InvRCT(input, begin_c, rct_type);
+      return InvRCT(input, begin_c, rct_type, pool);
     case TransformId::kSqueeze:
       return InvSqueeze(input, squeezes, pool);
     case TransformId::kPalette:
@@ -36,6 +38,8 @@ Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
 }
 
 Status Transform::MetaApply(Image &input) {
+  JXL_DEBUG_V(6, "Input channels (%zu, %zu meta): ", input.channel.size(),
+              input.nb_meta_channels);
   switch (id) {
     case TransformId::kRCT:
       JXL_DEBUG_V(2, "Transform: kRCT, rct_type=%" PRIu32, rct_type);
@@ -67,7 +71,9 @@ Status Transform::MetaApply(Image &input) {
 
 Status CheckEqualChannels(const Image &image, uint32_t c1, uint32_t c2) {
   if (c1 > image.channel.size() || c2 >= image.channel.size() || c2 < c1) {
-    return JXL_FAILURE("Invalid channel range");
+    return JXL_FAILURE(
+        "Invalid channel range: %u..%u (there are only %zu channels)", c1, c2,
+        image.channel.size());
   }
   const auto &ch1 = image.channel[c1];
   for (size_t c = c1 + 1; c <= c2; c++) {
