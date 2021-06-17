@@ -36,7 +36,8 @@ Status ImageBlender::PrepareBlending(
     const std::vector<ExtraChannelInfo>* extra_channel_info,
     const ColorEncoding& frame_color_encoding, const Rect& frame_rect,
     Image3F* output, const Rect& output_rect,
-    std::vector<std::pair<ImageF*, Rect>> output_extra_channels) {
+    std::vector<ImageF>* output_extra_channels,
+    std::vector<Rect> output_extra_channels_rects) {
   const PassesSharedState& state = *dec_state->shared;
   info_ = state.frame_header.blending_info;
 
@@ -45,7 +46,8 @@ Status ImageBlender::PrepareBlending(
   extra_channel_info_ = extra_channel_info;
   output_ = output;
   output_rect_ = output_rect;
-  output_extra_channels_ = std::move(output_extra_channels);
+  output_extra_channels_ = output_extra_channels;
+  output_extra_channels_rects_ = std::move(output_extra_channels_rects);
 
   size_t image_xsize = state.frame_header.nonserialized_metadata->xsize();
   size_t image_ysize = state.frame_header.nonserialized_metadata->ysize();
@@ -78,9 +80,9 @@ Status ImageBlender::PrepareBlending(
     Image3F color(image_xsize, image_ysize);
     ZeroFillImage(&color);
     empty.SetFromImage(std::move(color), frame_color_encoding);
-    if (!output_extra_channels_.empty()) {
+    if (!output_extra_channels_->empty()) {
       std::vector<ImageF> ec;
-      for (size_t i = 0; i < output_extra_channels_.size(); ++i) {
+      for (size_t i = 0; i < output_extra_channels_->size(); ++i) {
         ImageF eci(image_xsize, image_ysize);
         ZeroFillImage(&eci);
         ec.push_back(std::move(eci));
@@ -122,8 +124,8 @@ Status ImageBlender::PrepareBlending(
     const auto& eci = (*ec_info_)[i];
     const auto& src = *state.reference_frames[eci.source].frame;
     if (src.xsize() == 0 && src.ysize() == 0) {
-      ZeroFillPlane(output_extra_channels_[i].first,
-                    output_extra_channels_[i].second);
+      ZeroFillPlane(&(*output_extra_channels_)[i],
+                    output_extra_channels_rects_[i]);
     } else {
       if (src.extra_channels()[i].xsize() < image_xsize ||
           src.extra_channels()[i].ysize() < image_ysize || src.origin.x0 != 0 ||
@@ -136,8 +138,8 @@ Status ImageBlender::PrepareBlending(
             static_cast<size_t>(eci.source), image_xsize, image_ysize);
       }
       CopyImageTo(frame_rect, src.extra_channels()[i],
-                  output_extra_channels_[i].second,
-                  output_extra_channels_[i].first);
+                  output_extra_channels_rects_[i],
+                  &(*output_extra_channels_)[i]);
     }
   }
 
@@ -234,11 +236,10 @@ ImageBlender::RectBlender ImageBlender::PrepareRect(
     blender.fg_strides_.push_back(extra_channels[c].PixelsPerRow());
     blender.bg_ptrs_.push_back(
         cropbox_row
-            .Translate(output_extra_channels_[c].second.x0(),
-                       output_extra_channels_[c].second.y0())
-            .Row(output_extra_channels_[c].first, 0));
-    blender.bg_strides_.push_back(
-        output_extra_channels_[c].first->PixelsPerRow());
+            .Translate(output_extra_channels_rects_[c].x0(),
+                       output_extra_channels_rects_[c].y0())
+            .Row(&(*output_extra_channels_)[c], 0));
+    blender.bg_strides_.push_back((*output_extra_channels_)[c].PixelsPerRow());
   }
 
   return blender;

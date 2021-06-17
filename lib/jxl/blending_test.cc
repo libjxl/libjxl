@@ -68,7 +68,7 @@ TEST(BlendingTest, Offset) {
       &dec_state, foreground_origin, foreground.xsize(), foreground.ysize(),
       &nonserialized_metadata.m.extra_channel_info,
       background.Main().c_current(), Rect(background), output.color(),
-      Rect(*output.color()), {}));
+      Rect(*output.color()), {}, {}));
 
   static constexpr int kStep = 20;
   for (size_t x0 = 0; x0 < foreground.xsize(); x0 += kStep) {
