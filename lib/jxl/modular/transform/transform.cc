@@ -23,7 +23,7 @@ Status Transform::Inverse(Image &input, const weighted::Header &wp_header,
                           ThreadPool *pool) {
   switch (id) {
     case TransformId::kRCT:
-      return InvRCT(input, begin_c, rct_type);
+      return InvRCT(input, begin_c, rct_type, pool);
     case TransformId::kSqueeze:
       return InvSqueeze(input, squeezes, pool);
     case TransformId::kPalette:

@@ -111,6 +111,7 @@ class ModularFrameDecoder {
 
  private:
   Image full_image;
+  std::vector<Transform> global_transform;
   FrameDimensions frame_dim;
   bool do_color;
   bool have_something;
