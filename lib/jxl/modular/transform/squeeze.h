@@ -82,8 +82,7 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool);
 void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
                               const Image &image);
 
-Status CheckMetaSqueezeParams(const std::vector<SqueezeParams> &parameters,
-                              int num_channels);
+Status CheckMetaSqueezeParams(const SqueezeParams &parameter, int num_channels);
 
 Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters);
 
