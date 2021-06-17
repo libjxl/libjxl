@@ -154,11 +154,6 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
     // assume channels 1 and 2 are chroma, and can be squeezed first for 4:2:0
     // previews
     JXL_DEBUG_V(7, "(4:2:0 chroma), %zux%zu image", w, h);
-    //        if (!wide) {
-    //        parameters.push_back(0+2); // vertical chroma squeeze
-    //        parameters.push_back(image.nb_meta_channels+1);
-    //        parameters.push_back(image.nb_meta_channels+2);
-    //        }
     SqueezeParams params;
     // horizontal chroma squeeze
     params.horizontal = true;
@@ -200,15 +195,12 @@ void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
   JXL_DEBUG_V(7, "that's it");
 }
 
-Status CheckMetaSqueezeParams(const std::vector<SqueezeParams> &parameters,
+Status CheckMetaSqueezeParams(const SqueezeParams &parameter,
                               int num_channels) {
-  for (size_t i = 0; i < parameters.size(); i++) {
-    int c1 = parameters[i].begin_c;
-    int c2 = parameters[i].begin_c + parameters[i].num_c - 1;
-    if (c1 < 0 || c1 > num_channels || c2 < 0 || c2 >= num_channels ||
-        c2 < c1) {
-      return JXL_FAILURE("Invalid channel range");
-    }
+  int c1 = parameter.begin_c;
+  int c2 = parameter.begin_c + parameter.num_c - 1;
+  if (c1 < 0 || c1 >= num_channels || c2 < 0 || c2 >= num_channels || c2 < c1) {
+    return JXL_FAILURE("Invalid channel range");
   }
   return true;
 }
@@ -217,10 +209,10 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
   if (parameters->empty()) {
     DefaultSqueezeParameters(parameters, image);
   }
-  JXL_RETURN_IF_ERROR(
-      CheckMetaSqueezeParams(*parameters, image.channel.size()));
 
   for (size_t i = 0; i < parameters->size(); i++) {
+    JXL_RETURN_IF_ERROR(
+        CheckMetaSqueezeParams((*parameters)[i], image.channel.size()));
     bool horizontal = (*parameters)[i].horizontal;
     bool in_place = (*parameters)[i].in_place;
     uint32_t beginc = (*parameters)[i].begin_c;
@@ -264,9 +256,10 @@ Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
   if (parameters.empty()) {
     DefaultSqueezeParameters(&parameters, input);
   }
-  JXL_RETURN_IF_ERROR(CheckMetaSqueezeParams(parameters, input.channel.size()));
 
   for (int i = parameters.size() - 1; i >= 0; i--) {
+    JXL_RETURN_IF_ERROR(
+        CheckMetaSqueezeParams(parameters[i], input.channel.size()));
     bool horizontal = parameters[i].horizontal;
     bool in_place = parameters[i].in_place;
     uint32_t beginc = parameters[i].begin_c;

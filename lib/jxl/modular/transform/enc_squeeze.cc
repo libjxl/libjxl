@@ -112,9 +112,10 @@ Status FwdSqueeze(Image &input, std::vector<SqueezeParams> parameters,
   if (parameters.empty()) {
     DefaultSqueezeParameters(&parameters, input);
   }
-  JXL_RETURN_IF_ERROR(CheckMetaSqueezeParams(parameters, input.channel.size()));
 
   for (size_t i = 0; i < parameters.size(); i++) {
+    JXL_RETURN_IF_ERROR(
+        CheckMetaSqueezeParams(parameters[i], input.channel.size()));
     bool horizontal = parameters[i].horizontal;
     bool in_place = parameters[i].in_place;
     uint32_t beginc = parameters[i].begin_c;
