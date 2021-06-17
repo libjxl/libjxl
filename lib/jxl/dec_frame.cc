@@ -827,17 +827,13 @@ Status FrameDecoder::Flush() {
   return true;
 }
 
-int FrameDecoder::SavedAs() const {
-  if (is_finalized_) {
-    // header not parsed
-    return 0;
-  }
-  if (frame_header_.frame_type == FrameType::kDCFrame) {
+int FrameDecoder::SavedAs(const FrameHeader& header) {
+  if (header.frame_type == FrameType::kDCFrame) {
     // bits 16, 32, 64, 128 for DC level
-    return 16 << (frame_header_.dc_level - 1);
-  } else if (frame_header_.CanBeReferenced()) {
+    return 16 << (header.dc_level - 1);
+  } else if (header.CanBeReferenced()) {
     // bits 1, 2, 4 and 8 for the references
-    return 1 << frame_header_.save_as_reference;
+    return 1 << header.save_as_reference;
   }
 
   return 0;
