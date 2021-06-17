@@ -2490,12 +2490,6 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   size_t xsize = 90, ysize = 120;
   constexpr size_t num_frames = 16;
   std::vector<uint8_t> frames[num_frames];
-  std::vector<uint8_t> frames_internal[num_frames];
-  for (size_t i = 0; i < num_frames; i++) {
-    frames[i] = jxl::test::GetSomeTestImage(xsize, ysize, 3, i * 2);
-    frames_internal[i] =
-        jxl::test::GetSomeTestImage(xsize, ysize, 3, i * 2 + 1);
-  }
   JxlPixelFormat format = {3, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
 
   jxl::CodecInOut io;
@@ -2510,29 +2504,47 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   std::vector<uint32_t> frame_durations(num_frames);
 
   for (size_t i = 0; i < num_frames; ++i) {
-    // An internal frame with 0 duration, and use_for_next_frame, this is a
-    // frame that is not rendered and not output by the API, but on which the
-    // rendered frames depend
-    jxl::ImageBundle bundle_internal(&io.metadata.m);
-    EXPECT_TRUE(ConvertFromExternal(
-        jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
-        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
-        /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr,
-        &bundle_internal));
-    bundle_internal.duration = 0;
-    bundle_internal.use_for_next_frame = true;
-    io.frames.push_back(std::move(bundle_internal));
+    if (i < 5) {
+      std::vector<uint8_t> frame_internal =
+          jxl::test::GetSomeTestImage(xsize, ysize, 3, i * 2 + 1);
+      // An internal frame with 0 duration, and use_for_next_frame, this is a
+      // frame that is not rendered and not output by the API, but on which the
+      // rendered frames depend
+      jxl::ImageBundle bundle_internal(&io.metadata.m);
+      EXPECT_TRUE(ConvertFromExternal(
+          jxl::Span<const uint8_t>(frame_internal.data(),
+                                   frame_internal.size()),
+          xsize, ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false),
+          /*has_alpha=*/false,
+          /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
+          JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr,
+          &bundle_internal));
+      bundle_internal.duration = 0;
+      bundle_internal.use_for_next_frame = true;
+      io.frames.push_back(std::move(bundle_internal));
+    }
 
+    std::vector<uint8_t> frame =
+        jxl::test::GetSomeTestImage(xsize, ysize, 3, i * 2);
     // Actual rendered frame
     frame_durations[i] = 5 + i;
     jxl::ImageBundle bundle(&io.metadata.m);
     EXPECT_TRUE(ConvertFromExternal(
-        jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
-        ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
+        jxl::Span<const uint8_t>(frame.data(), frame.size()), xsize, ysize,
+        jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
         JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
     bundle.duration = frame_durations[i];
+    // Create some variation in which frames depend on which.
+    if (i != 3 && i != 9 && i != 10) {
+      bundle.use_for_next_frame = true;
+    }
+    if (i != 12) {
+      bundle.blend = true;
+      // Choose a blend mode that depends on the pixels of the saved frame and
+      // doesn't use alpha
+      bundle.blendmode = jxl::BlendMode::kMul;
+    }
     io.frames.push_back(std::move(bundle));
   }
 
@@ -2544,7 +2556,35 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out,
                               nullptr));
 
-  // Decode and test the animation frames
+  // Independently decode all frames without any skipping, to create the
+  // expected blended frames, for the actual tests below to compare with.
+  {
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+    const uint8_t* next_in = compressed.data();
+    size_t avail_in = compressed.size();
+
+    void* runner = JxlThreadParallelRunnerCreate(
+        NULL, JxlThreadParallelRunnerDefaultNumWorkerThreads());
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetParallelRunner(
+                                   dec, JxlThreadParallelRunner, runner));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(dec, JXL_DEC_FULL_IMAGE));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
+    for (size_t i = 0; i < num_frames; ++i) {
+      EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+      frames[i].resize(xsize * ysize * 6);
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetImageOutBuffer(dec, &format, frames[i].data(),
+                                            frames[i].size()));
+      EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+    }
+
+    // After all frames were decoded, JxlDecoderProcessInput should return
+    // success to indicate all is done.
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+    JxlThreadParallelRunnerDestroy(runner);
+    JxlDecoderDestroy(dec);
+  }
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
   const uint8_t* next_in = compressed.data();
@@ -2559,13 +2599,43 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
             JxlDecoderSubscribeEvents(
                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
-
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   size_t buffer_size;
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+
+  for (size_t i = 0; i < num_frames; ++i) {
+    std::vector<uint8_t> pixels(buffer_size);
+
+    EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+
+    JxlFrameHeader frame_header;
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec, &frame_header));
+    EXPECT_EQ(frame_durations[i], frame_header.duration);
+
+    EXPECT_EQ(i + 1 == num_frames, frame_header.is_last);
+
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                   dec, &format, pixels.data(), pixels.size()));
+
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                               format, format));
+
+    // Test rewinding mid-way, not decoding all frames.
+    if (i == 8) {
+      break;
+    }
+  }
+
+  JxlDecoderRewind(dec);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, next_in, avail_in));
 
   for (size_t i = 0; i < num_frames; ++i) {
     if (i == 3) {

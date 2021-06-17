@@ -285,6 +285,83 @@ struct Sections {
   std::vector<char> section_received;
 };
 
+/*
+Given list of frame references to storage slots, and storage slots in which this
+frame is saved, computes which frames are required to decode the frame at the
+given index and any frames after it. The frames on which this depends are
+returned as a vector of their indices, in no particular order. The given index
+must be smaller than saved_as.size(), and references.size() must equal
+saved_as.size(). Any frames beyond saved_as and references are considered
+unknown future frames and must be treated as if something depends on them.
+*/
+std::vector<size_t> GetFrameDependencies(size_t index,
+                                         const std::vector<int>& saved_as,
+                                         const std::vector<int>& references) {
+  JXL_ASSERT(references.size() == saved_as.size());
+  JXL_ASSERT(index < references.size());
+
+  std::vector<size_t> result;
+
+  constexpr size_t kNumStorage = 8;
+
+  // value which indicates nothing is stored in this storage slot
+  const size_t invalid = references.size();
+  // for each of the 8 storage slots, a vector that translates frame index to
+  // frame stored in this storage slot at this point, that is, the last
+  // frame that was stored in this slot before or at this index.
+  std::array<std::vector<size_t>, kNumStorage> storage;
+  for (size_t s = 0; s < kNumStorage; ++s) {
+    storage[s].resize(saved_as.size());
+    int mask = 1 << s;
+    size_t id = invalid;
+    for (size_t i = 0; i < saved_as.size(); ++i) {
+      if (saved_as[i] & mask) {
+        id = i;
+      }
+      storage[s][i] = id;
+    }
+  }
+
+  std::vector<char> seen(index + 1, 0);
+  std::vector<size_t> stack;
+  stack.push_back(index);
+  seen[index] = 1;
+
+  // For frames after index, assume they can depend on any of the 8 storage
+  // slots, so push the frame for each stored reference to the stack and result.
+  // All frames after index are treated as having unknown references and with
+  // the possibility that there are more frames after the last known.
+  // TODO(lode): take values of saved_as and references after index, and a
+  // input flag indicating if they are all frames of the image, to further
+  // optimize this.
+  for (size_t s = 0; s < kNumStorage; ++s) {
+    size_t frame_ref = storage[s][index];
+    if (frame_ref == invalid) continue;
+    if (seen[frame_ref]) continue;
+    stack.push_back(frame_ref);
+    seen[frame_ref] = 1;
+    result.push_back(frame_ref);
+  }
+
+  while (!stack.empty()) {
+    size_t frame_index = stack.back();
+    stack.pop_back();
+    if (frame_index == 0) continue;  // first frame cannot have references
+    for (size_t s = 0; s < kNumStorage; ++s) {
+      int mask = 1 << s;
+      if (!(references[frame_index] & mask)) continue;
+      size_t frame_ref = storage[s][frame_index - 1];
+      if (frame_ref == invalid) continue;
+      if (seen[frame_ref]) continue;
+      stack.push_back(frame_ref);
+      seen[frame_ref] = 1;
+      result.push_back(frame_ref);
+    }
+  }
+
+  return result;
+}
+
 }  // namespace
 
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
@@ -396,6 +473,29 @@ struct JxlDecoderStruct {
   // skipping_frame will be enabled only for the next frame.
   bool skipping_frame;
 
+  // Amount of internal frames and external frames started. External frames are
+  // user-visible frames, internal frames includes all external frames and
+  // also invisible frames such as patches, blending-only and dc_level frames.
+  size_t internal_frames;
+  size_t external_frames;
+
+  // For each internal frame, which storage locations it references, and which
+  // storage locations it is stored in, using the bit mask as defined in
+  // FrameDecoder::References and FrameDecoder::SaveAs.
+  std::vector<int> frame_references;
+  std::vector<int> frame_saved_as;
+
+  // Translates external frame index to internal frame index. The external
+  // index is the index of user-visible frames. The internal index can be larger
+  // since non-visible frames (such as frames with patches, ...) are included.
+  std::vector<size_t> frame_external_to_internal;
+
+  // Whether the frame with internal index is required to decode the frame
+  // being skipped to or any frames after that. If no skipping is active,
+  // this vector is ignored. If the current internal frame index is beyond this
+  // vector, it must be treated as a required frame.
+  std::vector<char> frame_required;
+
   // Codestream input data is stored here, when the decoder takes in and stores
   // the user input bytes. If the decoder does not do that (e.g. in one-shot
   // case), this field is unused.
@@ -478,6 +578,12 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->is_last_total = false;
   dec->skip_frames = 0;
   dec->skipping_frame = false;
+  dec->internal_frames = 0;
+  dec->external_frames = 0;
+  dec->frame_references.clear();
+  dec->frame_saved_as.clear();
+  dec->frame_external_to_internal.clear();
+  dec->frame_required.clear();
 }
 
 JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
@@ -507,11 +613,22 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
 
 void JxlDecoderRewind(JxlDecoder* dec) {
   int events_wanted = dec->orig_events_wanted;
-  // TODO(lode): for performace, rewind should keep state about frames to make
-  // SkipFrames more efficient. This is a first non-optimized implementation.
+  std::vector<int> frame_references;
+  std::vector<int> frame_saved_as;
+  std::vector<size_t> frame_external_to_internal;
+  std::vector<char> frame_required;
+  frame_references.swap(dec->frame_references);
+  frame_saved_as.swap(dec->frame_saved_as);
+  frame_external_to_internal.swap(dec->frame_external_to_internal);
+  frame_required.swap(dec->frame_required);
+
   JxlDecoderReset(dec);
   dec->events_wanted = events_wanted;
   dec->orig_events_wanted = events_wanted;
+  frame_references.swap(dec->frame_references);
+  frame_saved_as.swap(dec->frame_saved_as);
+  frame_external_to_internal.swap(dec->frame_external_to_internal);
+  frame_required.swap(dec->frame_required);
 }
 
 void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
@@ -523,6 +640,24 @@ void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
   // have already been skipped internally so far so an absolute value cannot
   // be defined.
   dec->skip_frames += amount;
+
+  dec->frame_required.clear();
+  size_t next_frame = dec->external_frames + dec->skip_frames;
+
+  // A frame that has been seen before a rewind
+  if (next_frame < dec->frame_external_to_internal.size()) {
+    size_t internal_index = dec->frame_external_to_internal[next_frame];
+    if (internal_index < dec->frame_saved_as.size()) {
+      std::vector<size_t> deps = GetFrameDependencies(
+          internal_index, dec->frame_saved_as, dec->frame_references);
+
+      dec->frame_required.resize(internal_index + 1, 0);
+      for (size_t i = 0; i < deps.size(); i++) {
+        JXL_ASSERT(deps[i] < dec->frame_required.size());
+        dec->frame_required[deps[i]] = 1;
+      }
+    }
+  }
 }
 
 JXL_EXPORT JxlDecoderStatus
@@ -776,7 +911,8 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
 // TODO(lode): merge this with FrameDecoder
 JxlDecoderStatus ParseFrameHeader(jxl::FrameHeader* frame_header,
                                   const uint8_t* in, size_t size, size_t pos,
-                                  bool is_preview, size_t* frame_size) {
+                                  bool is_preview, size_t* frame_size,
+                                  int* saved_as) {
   if (pos >= size) {
     return JXL_DEC_NEED_MORE_INPUT;
   }
@@ -829,6 +965,10 @@ JxlDecoderStatus ParseFrameHeader(jxl::FrameHeader* frame_header,
   JXL_API_RETURN_IF_ERROR(reader->JumpToByteBoundary());
   size_t header_size = (reader->TotalBitsConsumed() >> 3);
   *frame_size = header_size + groups_total_size;
+
+  if (saved_as != nullptr) {
+    *saved_as = FrameDecoder::SavedAs(*frame_header);
+  }
 
   return JXL_DEC_SUCCESS;
 }
@@ -894,7 +1034,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       size_t pos = dec->frame_start;
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
       JxlDecoderStatus status = ParseFrameHeader(dec->frame_header.get(), in,
-                                                 size, pos, true, &frame_size);
+                                                 size, pos, true, &frame_size,
+                                                 /*saved_as=*/nullptr);
       if (status != JXL_DEC_SUCCESS) return status;
       if (OutOfBounds(pos, frame_size, size)) {
         return JXL_DEC_NEED_MORE_INPUT;
@@ -953,9 +1094,10 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         return JXL_DEC_NEED_MORE_INPUT;
       }
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
+      int saved_as = 0;
       JxlDecoderStatus status =
           ParseFrameHeader(dec->frame_header.get(), in, size, pos,
-                           /*is_preview=*/false, &dec->frame_size);
+                           /*is_preview=*/false, &dec->frame_size, &saved_as);
       if (status != JXL_DEC_SUCCESS) return status;
 
       // is last in entire codestream
@@ -963,6 +1105,11 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       // is last of current still
       dec->is_last_of_still =
           dec->is_last_total || dec->frame_header->animation_frame.duration > 0;
+
+      const size_t internal_frame_index = dec->internal_frames;
+      const size_t external_frame_index = dec->external_frames;
+      if (dec->is_last_of_still) dec->external_frames++;
+      dec->internal_frames++;
 
       dec->frame_stage = FrameStage::kTOC;
 
@@ -975,6 +1122,24 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         dec->skipping_frame = false;
       }
 
+      if (external_frame_index >= dec->frame_external_to_internal.size()) {
+        dec->frame_external_to_internal.push_back(internal_frame_index);
+        JXL_ASSERT(dec->frame_external_to_internal.size() ==
+                   external_frame_index + 1);
+      }
+
+      if (internal_frame_index >= dec->frame_saved_as.size()) {
+        dec->frame_saved_as.push_back(saved_as);
+        JXL_ASSERT(dec->frame_saved_as.size() == internal_frame_index + 1);
+
+        // add the value 0xff (which means all references) to new slots: we only
+        // know the references of the frame at FinalizeFrame, and fill in the
+        // correct values there. As long as this information is not known, the
+        // worst case where the frame depends on all storage slots is assumed.
+        dec->frame_references.push_back(0xff);
+        JXL_ASSERT(dec->frame_references.size() == internal_frame_index + 1);
+      }
+
       if (dec->skipping_frame) {
         // Whether this frame could be referenced by any future frame: either
         // because it's a frame saved for blending or patches, or because it's
@@ -982,8 +1147,10 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         bool referenceable =
             dec->frame_header->CanBeReferenced() ||
             dec->frame_header->frame_type == FrameType::kDCFrame;
-        // TODO(lode): skip frames in more cases: frames that can be referenced
-        // only by other frames that are skipped can also be skipped.
+        if (internal_frame_index < dec->frame_required.size() &&
+            !dec->frame_required[internal_frame_index]) {
+          referenceable = false;
+        }
         if (!referenceable) {
           // Skip all decoding for this frame, since the user is skipping this
           // frame and no future frames can reference it.
@@ -1118,6 +1285,12 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         return JXL_DEC_NEED_MORE_INPUT;
       }
 
+      size_t internal_index = dec->internal_frames - 1;
+      JXL_ASSERT(dec->frame_references.size() > internal_index);
+      // Always fill this in, even if it was already written, it could be that
+      // this frame was skipped before and set to 255, while only now we know
+      // the true value.
+      dec->frame_references[internal_index] = dec->frame_dec->References();
       if (!dec->frame_dec->FinalizeFrame()) {
         return JXL_API_ERROR("decoding frame failed");
       }

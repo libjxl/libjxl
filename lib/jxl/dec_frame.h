@@ -114,7 +114,9 @@ class FrameDecoder {
   // bit flag, or 0 if not stored.
   // Matches the bit mask used for GetReferences: bits 0-3 indicate it is stored
   // for patching or blending, bits 4-7 indicate DC frame.
-  int SavedAs() const;
+  // Unlike References, can be ran at any time as
+  // soon as the frame header is known.
+  static int SavedAs(const FrameHeader& header);
 
   // Returns offset of this section after the end of the TOC. The end of the TOC
   // is the byte position of the bit reader after InitFrame was called.
