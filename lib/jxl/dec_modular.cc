@@ -24,6 +24,8 @@
 #include "lib/jxl/epf.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/modular_image.h"
+#include "lib/jxl/modular/transform/transform.h"
+
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
@@ -218,9 +220,19 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   have_something = false;
   for (size_t c = 0; c < gi.channel.size(); c++) {
     Channel& gic = gi.channel[c];
-    if (c >= gi.nb_meta_channels && gic.w < frame_dim.group_dim &&
-        gic.h < frame_dim.group_dim)
+    if (c >= gi.nb_meta_channels && gic.w <= frame_dim.group_dim &&
+        gic.h <= frame_dim.group_dim)
       have_something = true;
+  }
+  // move global transforms to groups if possible
+  if (!have_something) {
+    while (!gi.transform.empty()) {
+      Transform t = gi.transform.back();
+      // TODO(jon): also move no-delta-palette out (trickier though)
+      if (t.id != TransformId::kRCT) break;
+      global_transform.push_back(t);
+      gi.transform.pop_back();
+    }
   }
   full_image = std::move(gi);
   return dec_status;
@@ -278,6 +290,12 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
           reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
           /*undo_transforms=*/-1, &tree, &code, &context_map))
     return JXL_FAILURE("Failed to decode modular group");
+  if (minShift == 0) {
+    // Undo global transforms that have been pushed to the group level
+    for (auto t : global_transform) {
+      JXL_RETURN_IF_ERROR(t.Inverse(gi, global_header.wp_header));
+    }
+  }
   int gic = 0;
   for (c = beginc; c < full_image.channel.size(); c++) {
     Channel& fc = full_image.channel[c];
