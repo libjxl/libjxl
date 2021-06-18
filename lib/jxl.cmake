@@ -181,6 +181,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/quantizer.cc
   jxl/quantizer.h
   jxl/rational_polynomial-inl.h
+  jxl/sanitizers.h
   jxl/splines.cc
   jxl/splines.h
   jxl/toc.cc

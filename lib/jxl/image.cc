@@ -15,6 +15,7 @@
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

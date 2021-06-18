@@ -30,12 +30,6 @@
 namespace jxl {
 // Some enums and typedefs used by more than one header file.
 
-#ifdef MEMORY_SANITIZER
-// Chosen so that kSanitizerSentinel is four copies of kSanitizerSentinelByte.
-constexpr uint8_t kSanitizerSentinelByte = 0x48;
-constexpr float kSanitizerSentinel = 205089.125f;
-#endif
-
 constexpr size_t kBitsPerByte = 8;  // more clear than CHAR_BIT
 
 constexpr inline size_t RoundUpBitsToByteMultiple(size_t bits) {
