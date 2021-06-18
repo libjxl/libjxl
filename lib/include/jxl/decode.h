@@ -354,6 +354,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * By default, this option is disabled, and the decoder automatically corrects
  * the orientation.
  *
+ * This function must be called at the beginning, before decoding is performed.
+ *
  * @see JxlBasicInfo for the orientation field, and @see JxlOrientation for the
  * possible values.
  *

@@ -612,6 +612,7 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
 }
 
 void JxlDecoderRewind(JxlDecoder* dec) {
+  int keep_orientation = dec->keep_orientation;
   int events_wanted = dec->orig_events_wanted;
   std::vector<int> frame_references;
   std::vector<int> frame_saved_as;
@@ -623,6 +624,7 @@ void JxlDecoderRewind(JxlDecoder* dec) {
   frame_required.swap(dec->frame_required);
 
   JxlDecoderReset(dec);
+  dec->keep_orientation = keep_orientation;
   dec->events_wanted = events_wanted;
   dec->orig_events_wanted = events_wanted;
   frame_references.swap(dec->frame_references);
@@ -1238,7 +1240,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetRGB8OutputBuffer(
             reinterpret_cast<uint8_t*>(dec->image_out_buffer),
-            GetStride(dec, dec->image_out_format), is_rgba);
+            GetStride(dec, dec->image_out_format), is_rgba,
+            !dec->keep_orientation);
       }
 
       const bool little_endian =
@@ -1259,7 +1262,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
               dec->image_out_callback(dec->image_out_opaque, x, y, num_pixels,
                                       pixels);
             },
-            is_rgba);
+            is_rgba, !dec->keep_orientation);
       }
 
       size_t pos = dec->frame_start - dec->codestream_pos;
