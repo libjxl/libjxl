@@ -31,6 +31,7 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/passes_state.h"
+#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/transfer_functions-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {

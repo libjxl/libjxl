@@ -34,12 +34,9 @@
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
 #include "lib/jxl/jpeg/enc_jpeg_data_reader.h"
 #include "lib/jxl/luminance.h"
+#include "lib/jxl/sanitizers.h"
 #if JPEGXL_ENABLE_SJPEG
 #include "sjpeg.h"
-#endif
-
-#ifdef MEMORY_SANITIZER
-#include "sanitizer/msan_interface.h"
 #endif
 
 namespace jxl {
@@ -86,12 +83,10 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
   bool has_num_markers = false;
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
        marker = marker->next) {
-#ifdef MEMORY_SANITIZER
     // marker is initialized by libjpeg, which we are not instrumenting with
     // msan.
-    __msan_unpoison(marker, sizeof(*marker));
-    __msan_unpoison(marker->data, marker->data_length);
-#endif
+    UnpoisonMemory(marker, sizeof(*marker));
+    UnpoisonMemory(marker->data, marker->data_length);
     if (!MarkerIsICC(marker)) continue;
 
     const int current_marker = marker->data[kICCSignatureSize];
@@ -157,12 +152,10 @@ void ReadExif(jpeg_decompress_struct* const cinfo, PaddedBytes* const exif) {
   constexpr size_t kExifSignatureSize = sizeof kExifSignature;
   for (jpeg_saved_marker_ptr marker = cinfo->marker_list; marker != nullptr;
        marker = marker->next) {
-#ifdef MEMORY_SANITIZER
     // marker is initialized by libjpeg, which we are not instrumenting with
     // msan.
-    __msan_unpoison(marker, sizeof(*marker));
-    __msan_unpoison(marker->data, marker->data_length);
-#endif
+    UnpoisonMemory(marker, sizeof(*marker));
+    UnpoisonMemory(marker->data, marker->data_length);
     if (!MarkerIsExif(marker)) continue;
     size_t marker_length = marker->data_length - kExifSignatureSize;
     exif->resize(marker_length);
@@ -330,10 +323,8 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     for (size_t y = 0; y < image.ysize(); ++y) {
       JSAMPROW rows[] = {row.get()};
       jpeg_read_scanlines(&cinfo, rows, 1);
-#ifdef MEMORY_SANITIZER
-      __msan_unpoison(row.get(), sizeof(JSAMPLE) * cinfo.output_components *
-                                     cinfo.image_width);
-#endif
+      UnpoisonMemory(row.get(), sizeof(JSAMPLE) * cinfo.output_components *
+                                    cinfo.image_width);
       auto start = Now();
       float* const JXL_RESTRICT output_row[] = {
           image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
@@ -363,7 +354,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
   };
 
   return try_catch_block();
-#else  // JPEGXL_ENABLE_JPEG
+#else   // JPEGXL_ENABLE_JPEG
   return JXL_FAILURE("JPEG decoding not enabled at build time.");
 #endif  // JPEGXL_ENABLE_JPEG
 }
@@ -374,11 +365,9 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
                          const YCbCrChromaSubsampling& chroma_subsampling,
                          PaddedBytes* bytes) {
   jpeg_compress_struct cinfo;
-#ifdef MEMORY_SANITIZER
   // cinfo is initialized by libjpeg, which we are not instrumenting with
   // msan.
-  __msan_unpoison(&cinfo, sizeof(cinfo));
-#endif
+  UnpoisonMemory(&cinfo, sizeof(cinfo));
   jpeg_error_mgr jerr;
   cinfo.err = jpeg_std_error(&jerr);
   jpeg_create_compress(&cinfo);
@@ -429,11 +418,9 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
   jpeg_finish_compress(&cinfo);
   jpeg_destroy_compress(&cinfo);
   bytes->resize(size);
-#ifdef MEMORY_SANITIZER
   // Compressed image data is initialized by libjpeg, which we are not
   // instrumenting with msan.
-  __msan_unpoison(buffer, size);
-#endif
+  UnpoisonMemory(buffer, size);
   std::copy_n(buffer, size, bytes->data());
   std::free(buffer);
   return true;
@@ -523,7 +510,7 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   }
 
   return true;
-#else  // JPEGXL_ENABLE_JPEG
+#else   // JPEGXL_ENABLE_JPEG
   return JXL_FAILURE("JPEG pixel encoding not enabled at build time");
 #endif  // JPEGXL_ENABLE_JPEG
 }
