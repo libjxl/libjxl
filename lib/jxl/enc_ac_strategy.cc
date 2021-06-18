@@ -481,6 +481,85 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   return ret;
 }
 
+uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
+                             const float* JXL_RESTRICT cmap_factors,
+                             AcStrategyImage* JXL_RESTRICT ac_strategy,
+                             const float* JXL_RESTRICT entropy_adjust,
+                             float* block, float* scratch_space,
+                             uint32_t* quantized, float* entropy_out) {
+  struct TransformTry8x8 {
+    AcStrategy::Type type;
+    float entropy_add;
+    float entropy_mul;
+  };
+  const TransformTry8x8 kTransforms8x8[] = {
+      {
+          AcStrategy::Type::DCT,
+          0.0f,
+          0.80f,
+      },
+      {
+          AcStrategy::Type::DCT4X4,
+          4.0f,
+          0.79f,
+      },
+      {
+          AcStrategy::Type::DCT2X2,
+          4.0f,
+          1.1f,
+      },
+      {
+          AcStrategy::Type::DCT4X8,
+          3.0f,
+          0.81f,
+      },
+      {
+          AcStrategy::Type::DCT8X4,
+          3.0f,
+          0.81f,
+      },
+      {
+          AcStrategy::Type::IDENTITY,
+          8.0f,
+          1.2f,
+      },
+      {
+          AcStrategy::Type::AFV0,
+          3.0f,
+          0.77f,
+      },
+      {
+          AcStrategy::Type::AFV1,
+          3.0f,
+          0.77f,
+      },
+      {
+          AcStrategy::Type::AFV2,
+          3.0f,
+          0.77f,
+      },
+      {
+          AcStrategy::Type::AFV3,
+          3.0f,
+          0.77f,
+      },
+  };
+  double best = 1e30;
+  uint8_t best_tx = kTransforms8x8[0].type;
+  for (auto tx : kTransforms8x8) {
+    AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
+    float entropy = EstimateEntropy(acs, x, y, config, cmap_factors, block,
+                                    scratch_space, quantized);
+    entropy = tx.entropy_add + tx.entropy_mul * entropy;
+    if (entropy < best) {
+      best_tx = tx.type;
+      best = entropy;
+    }
+  }
+  *entropy_out = best;
+  return best_tx;
+}
+
 void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
                      const float* JXL_RESTRICT cmap_factors,
                      AcStrategyImage* JXL_RESTRICT ac_strategy,
@@ -545,9 +624,53 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
   }
 }
 
-void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
-                    const ACSConfig& config, float* entropy_adjust,
-                    const Rect& rect) {
+// bx, by addresses the 64x64 block at 8x8 subresolution
+// cx, cy addresses the left, upper 8x8 block position of the candidate
+// transform.
+void TryMergeToACSCandidate(AcStrategy::Type acs_raw, size_t bx, size_t by,
+                            size_t cx, size_t cy, const ACSConfig& config,
+                            const float* JXL_RESTRICT cmap_factors,
+                            AcStrategyImage* JXL_RESTRICT ac_strategy,
+                            const float entropy_mul,
+                            const uint8_t candidate_priority, uint8_t* priority,
+                            float* JXL_RESTRICT entropy_estimate, float* block,
+                            float* scratch_space, uint32_t* quantized) {
+  AcStrategy acs = AcStrategy::FromRawStrategy(acs_raw);
+  float entropy_current = 0;
+  for (size_t iy = 0; iy < acs.covered_blocks_y(); ++iy) {
+    for (size_t ix = 0; ix < acs.covered_blocks_x(); ++ix) {
+      if (priority[(cy + iy) * 8 + (cx + ix)] >= candidate_priority) {
+        return;
+      }
+      entropy_current += entropy_estimate[(cy + iy) * 8 + (cx + ix)];
+    }
+  }
+  float entropy_candidate =
+      entropy_mul * EstimateEntropy(acs, (bx + cx) * 8, (by + cy) * 8, config,
+                                    cmap_factors, block, scratch_space,
+                                    quantized);
+
+  if (entropy_candidate >= entropy_current) return;
+
+  // Accept the candidate.
+  for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
+    for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
+      entropy_estimate[(cy + iy) * 8 + cx + ix] = 0;
+      priority[(cy + iy) * 8 + cx + ix] = candidate_priority;
+      ac_strategy->Set(bx + cx + ix, by + cy + iy,
+                       static_cast<AcStrategy::Type>(0));
+    }
+  }
+  ac_strategy->Set(bx + cx, by + cy, acs_raw);
+  entropy_estimate[cy * 8 + cx] = entropy_candidate;
+}
+
+// Legacy system traversing the integral transform selectiondecision
+// tree from large transforms to smaller.
+// TODO(jyrki): remove this.
+void ProcessRectACSOld(PassesEncoderState* JXL_RESTRICT enc_state,
+                       const ACSConfig& config, float* entropy_adjust,
+                       const Rect& rect) {
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
   AcStrategyImage* ac_strategy = &enc_state->shared.ac_strategy;
@@ -725,6 +848,18 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
                               cmap_factors, block, scratch_space, quantized);
           entropy *= entropy_adjust[i * 2 + 1];
         }
+        // In modes faster than Hare mode, we don't use InitialQuantField -
+        // hence, we need to come up with quant field values.
+        if (cparams.speed_tier > SpeedTier::kHare &&
+            cparams.uniform_quant <= 0) {
+          // OPTIMIZE
+          float quant = 1.1f / (1.0f + max_delta_acs) / butteraugli_target;
+          for (size_t y = 0; y < cy; y++) {
+            for (size_t x = 0; x < cx; x++) {
+              config.SetQuant(bx + ix + x, by + iy + y, quant);
+            }
+          }
+        }
         // Mark blocks as chosen and write to acs image.
         ac_strategy->Set(bx + ix, by + iy, i);
         for (size_t y = 0; y < cy; y++) {
@@ -760,6 +895,109 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
         }
       }
     }
+  }
+}
+
+void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
+                       const ACSConfig& config, float* entropy_adjust,
+                       const Rect& rect) {
+  const CompressParams& cparams = enc_state->cparams;
+  AcStrategyImage* ac_strategy = &enc_state->shared.ac_strategy;
+  // TODO(veluca): reuse allocations
+  auto mem = hwy::AllocateAligned<float>(5 * AcStrategy::kMaxCoeffArea);
+  auto qmem = hwy::AllocateAligned<uint32_t>(AcStrategy::kMaxCoeffArea);
+  uint32_t* JXL_RESTRICT quantized = qmem.get();
+  float* JXL_RESTRICT block = mem.get();
+  float* JXL_RESTRICT scratch_space = mem.get() + 3 * AcStrategy::kMaxCoeffArea;
+  size_t bx = rect.x0();
+  size_t by = rect.y0();
+  JXL_ASSERT(rect.xsize() <= 8);
+  JXL_ASSERT(rect.ysize() <= 8);
+  size_t tx = bx / kColorTileDimInBlocks;
+  size_t ty = by / kColorTileDimInBlocks;
+  const float cmap_factors[3] = {
+      enc_state->shared.cmap.YtoXRatio(
+          enc_state->shared.cmap.ytox_map.ConstRow(ty)[tx]),
+      0.0f,
+      enc_state->shared.cmap.YtoBRatio(
+          enc_state->shared.cmap.ytob_map.ConstRow(ty)[tx]),
+  };
+  // Do not try to replace ACS in modes faster than wombat mode.
+  if (cparams.speed_tier > SpeedTier::kWombat) return;
+  // First compute the best 8x8 transform for each square. Later, we do not
+  // experiment with different combinations, but only use the best of the 8x8s
+  // when DCT8X8 is specified in the tree search.
+  // 8x8 transforms have 10 variants, but every larger transform is just a DCT.
+  float entropy_estimate[64] = {};
+  for (size_t iy = 0; iy < rect.ysize(); iy++) {
+    for (size_t ix = 0; ix < rect.xsize(); ix++) {
+      float entropy = 0.0;
+      const uint8_t best_of_8x8s = FindBest8x8Transform(
+          8 * (bx + ix), 8 * (by + iy), config, cmap_factors, ac_strategy,
+          entropy_adjust, block, scratch_space, quantized, &entropy);
+      ac_strategy->Set(bx + ix, by + iy,
+                       static_cast<AcStrategy::Type>(best_of_8x8s));
+      entropy_estimate[iy * 8 + ix] = entropy;
+    }
+  }
+  // Merge when a larger transform is better than the previously
+  // searched best combination of 8x8 transforms.
+  struct MergeTry {
+    AcStrategy::Type type;
+    uint8_t priority;
+    float entropy_mul;
+  };
+  const MergeTry kTransformsForMerge[9] = {
+      {AcStrategy::Type::DCT16X8, 2, 0.86f},
+      {AcStrategy::Type::DCT8X16, 2, 0.86f},
+      {AcStrategy::Type::DCT16X16, 3, 0.83f},
+      {AcStrategy::Type::DCT16X32, 4, 0.94f},
+      {AcStrategy::Type::DCT32X16, 4, 0.94f},
+      {AcStrategy::Type::DCT32X32, 5, 0.97f},
+      {AcStrategy::Type::DCT64X32, 6, 1.15f},
+      {AcStrategy::Type::DCT32X64, 6, 1.15f},
+      {AcStrategy::Type::DCT64X64, 8, 1.3f},
+  };
+  /*
+  These sizes not yet included in merge heuristic:
+  set(AcStrategy::Type::DCT32X8, 0.0f, 2.261390410971102f);
+  set(AcStrategy::Type::DCT8X32, 0.0f, 2.261390410971102f);
+  set(AcStrategy::Type::DCT128X128, 0.0f, 1.0f);
+  set(AcStrategy::Type::DCT128X64, 0.0f, 0.73f);
+  set(AcStrategy::Type::DCT64X128, 0.0f, 0.73f);
+  set(AcStrategy::Type::DCT256X256, 0.0f, 1.0f);
+  set(AcStrategy::Type::DCT256X128, 0.0f, 0.73f);
+  set(AcStrategy::Type::DCT128X256, 0.0f, 0.73f);
+  */
+
+  // Priority is a tricky kludge to avoid collisions so that transforms
+  // don't overlap.
+  uint8_t priority[64] = {0};
+  for (auto tx : kTransformsForMerge) {
+    AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
+    for (size_t cy = 0; cy + acs.covered_blocks_y() - 1 < rect.ysize();
+         cy += acs.covered_blocks_y()) {
+      for (size_t cx = 0; cx + acs.covered_blocks_x() - 1 < rect.xsize();
+           cx += acs.covered_blocks_x()) {
+        TryMergeToACSCandidate(tx.type, bx, by, cx, cy, config, cmap_factors,
+                               ac_strategy, tx.entropy_mul, tx.priority,
+                               &priority[0], entropy_estimate, block,
+                               scratch_space, quantized);
+      }
+    }
+  }
+}
+
+void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
+                    const ACSConfig& config, float* entropy_adjust,
+                    const Rect& rect) {
+  const CompressParams& cparams = enc_state->cparams;
+  if (cparams.speed_tier > SpeedTier::kWombat ||
+      cparams.decoding_speed_tier >= 1) {
+    // TODO(Jyrki): Get rid of the old when we have a viable alternative.
+    ProcessRectACSOld(enc_state, config, entropy_adjust, rect);
+  } else {
+    ProcessRectACSNew(enc_state, config, entropy_adjust, rect);
   }
 }
 
