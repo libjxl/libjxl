@@ -405,10 +405,13 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   HWY_FULL(int) di;
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
-  float quant = 0;
   float quant_norm8 = 0;
   float masking = 0;
-  {
+  if (num_blocks == 1) {
+    // When it is only one 8x8, we don't need aggregation of values.
+    quant_norm8 = config.Quant(x / 8, y / 8);
+    masking = 2.0f * config.Masking(x / 8, y / 8);
+  } else {
     float masking_norm2 = 0;
     float masking_max = 0;
     // Load QF value, calculate empirical heuristic on masking field
@@ -417,7 +420,6 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
       for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
         float qval = config.Quant(x / 8 + ix, y / 8 + iy);
-        quant = std::max(quant, qval);
         qval *= qval;
         qval *= qval;
         quant_norm8 += qval * qval;
