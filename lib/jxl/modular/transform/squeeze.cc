@@ -140,6 +140,9 @@ void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
 void DefaultSqueezeParameters(std::vector<SqueezeParams> *parameters,
                               const Image &image) {
   int nb_channels = image.channel.size() - image.nb_meta_channels;
+  if (nb_channels <= 0) {
+    return;
+  }
 
   parameters->clear();
   size_t w = image.channel[image.nb_meta_channels].w;
