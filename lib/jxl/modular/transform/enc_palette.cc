@@ -99,6 +99,7 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                   uint32_t &nb_colors, bool ordered, bool lossy,
                   Predictor &predictor, const weighted::Header &wp_header) {
   JXL_QUIET_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, end_c));
+  JXL_ASSERT(begin_c >= input.nb_meta_channels);
   uint32_t nb = end_c - begin_c + 1;
 
   size_t w = input.channel[begin_c].w;

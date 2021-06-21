@@ -281,7 +281,14 @@ static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   JXL_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, end_c));
 
   size_t nb = end_c - begin_c + 1;
-  input.nb_meta_channels++;
+  if (begin_c >= input.nb_meta_channels) {
+    input.nb_meta_channels++;
+  } else if (end_c < input.nb_meta_channels) {
+    // we remove nb-1 metachannels and add one
+    input.nb_meta_channels += 2 - nb;
+  } else {
+    return JXL_FAILURE("Error: Palette operating on mixed meta/nonmeta");
+  }
   input.channel.erase(input.channel.begin() + begin_c + 1,
                       input.channel.begin() + end_c + 1);
   Channel pch(nb_colors + nb_deltas, nb);

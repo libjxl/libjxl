@@ -39,7 +39,7 @@ Status Transform::MetaApply(Image &input) {
   switch (id) {
     case TransformId::kRCT:
       JXL_DEBUG_V(2, "Transform: kRCT, rct_type=%" PRIu32, rct_type);
-      return true;
+      return CheckEqualChannels(input, begin_c, begin_c + 2);
     case TransformId::kSqueeze:
       JXL_DEBUG_V(2, "Transform: kSqueeze:");
 #if JXL_DEBUG_V_LEVEL >= 2
