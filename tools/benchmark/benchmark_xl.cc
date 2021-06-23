@@ -598,10 +598,10 @@ struct StatPrinter {
 
     const double rmse =
         std::sqrt(t.stats.distance_2 / t.stats.total_input_pixels);
-    const double psnr =
-        t.stats.total_compressed_size == 0
-            ? 0.0
-            : (t.stats.distance_2 == 0) ? 99.99 : (20 * std::log10(1 / rmse));
+    const double psnr = t.stats.total_compressed_size == 0 ? 0.0
+                        : (t.stats.distance_2 == 0)
+                            ? 99.99
+                            : (20 * std::log10(1 / rmse));
     size_t pixels = t.stats.total_input_pixels;
 
     const double enc_mps =
@@ -663,7 +663,7 @@ struct StatPrinter {
     std::string out;
 
     method_stats.PrintMoreStats();  // not concurrent
-    out += method_stats.PrintLine(method, fnames_->size(), /*num_threads=*/1);
+    out += method_stats.PrintLine(method, fnames_->size());
 
     if (Args()->write_html_report) {
       WriteHtmlReport(method, *fnames_, tasks, images,
@@ -671,7 +671,7 @@ struct StatPrinter {
     }
 
     stats_aggregate_.push_back(
-        method_stats.ComputeColumns(method, fnames_->size(), 1));
+        method_stats.ComputeColumns(method, fnames_->size()));
 
     printf("%s", out.c_str());
     fflush(stdout);
