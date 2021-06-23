@@ -60,19 +60,19 @@ def EvalCacheForget():
 
 def RandomizedJxlCodecs():
   retval = []
-  minval = 0.6
-  maxval = 12.5
+  minval = 0.5
+  maxval = 11.5
   rangeval = maxval/minval
-  steps = 19
+  steps = 7
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
-    retval.append("jxl:d%.3f" % mul)
-  steps = 0
+    retval.append("jxl:epf2:d%.3f" % mul)
+  steps = 7
   for i in range(steps):
-    mul = minval * rangeval**(float(i)/(steps - 1))
+    mul = minval * rangeval**(float(i+0.5)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
-    retval.append("jxl:d%.3f" % mul)
+    retval.append("jxl:epf0:d%.3f" % mul)
   return ",".join(retval)
 
 g_codecs = RandomizedJxlCodecs()
@@ -102,7 +102,7 @@ def Eval(vec, binary_name, cached=True):
       (binary_name,
        '--input',
        '/usr/local/google/home/jyrki/newcorpus/split/*.png',
-       '--error_pnorm=1.9',
+       '--error_pnorm=5',
        '--more_columns',
        '--codec', g_codecs),
       stdout=subprocess.PIPE,
@@ -120,7 +120,7 @@ def Eval(vec, binary_name, cached=True):
   for line in process.communicate(input=None)[0].splitlines():
     print("BE", line)
     sys.stdout.flush()
-    if line[0:3] == "jxl":
+    if line[0:3] == b'jxl':
       bpp = line.split()[3]
       dist_max = line.split()[7]
       dist_pnorm = line.split()[8]
@@ -140,7 +140,7 @@ def Eval(vec, binary_name, cached=True):
       dct32 += float(dct32str)
       n += 1
       found_score = True
-      distance = float(line.split()[0].split('d')[-1])
+      distance = float(line.split()[0].split(b'd')[-1])
       #faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
       #vec[0] *= faultybpp
 

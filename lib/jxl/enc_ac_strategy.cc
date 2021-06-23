@@ -31,6 +31,19 @@
 #include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/fast_math-inl.h"
 
+// Some of the floating point constants in this file and in other
+// files in the libjxl project have been obtained using the
+// tools/optimizer/simplex_fork.py tool. It is a variation of
+// Nelder-Mead optimization, and we generally try to minimize
+// BPP * pnorm aggregate as reported by the benchmark_xl tool,
+// but occasionally the values are optimized by using additional
+// constraints such as maintaining a certain density, or ratio of
+// popularity of integral transforms. Jyrki visually reviews all
+// such changes and often makes manual changes to maintain good
+// visual quality to changes where butteraugli was not sufficiently
+// sensitive to some kind of degradation. Unfortunately image quality
+// is still more of an art than science.
+
 // This must come before the begin/end_target, but HWY_ONCE is only true
 // after that, so use an "include guard".
 #ifndef LIB_JXL_ENC_AC_STRATEGY_
@@ -492,56 +505,56 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
     float entropy_add;
     float entropy_mul;
   };
-  const TransformTry8x8 kTransforms8x8[] = {
+  static const TransformTry8x8 kTransforms8x8[] = {
       {
           AcStrategy::Type::DCT,
-          0.0f,
-          0.80f,
+          3.0f,
+          0.8425438883708443f,
       },
       {
           AcStrategy::Type::DCT4X4,
           4.0f,
-          0.79f,
+          1.0179946967008328f,
       },
       {
           AcStrategy::Type::DCT2X2,
           4.0f,
-          1.1f,
+          0.74180119707580942f,
       },
       {
           AcStrategy::Type::DCT4X8,
-          3.0f,
-          0.81f,
+          0.0f,
+          0.7828481258599432f,
       },
       {
           AcStrategy::Type::DCT8X4,
-          3.0f,
-          0.81f,
+          0.0f,
+          0.7828481258599432f,
       },
       {
           AcStrategy::Type::IDENTITY,
           8.0f,
-          1.2f,
+          0.81217614513585534f,
       },
       {
           AcStrategy::Type::AFV0,
           3.0f,
-          0.77f,
+          0.80286131125719429f,
       },
       {
           AcStrategy::Type::AFV1,
           3.0f,
-          0.77f,
+          0.80286131125719429f,
       },
       {
           AcStrategy::Type::AFV2,
           3.0f,
-          0.77f,
+          0.80286131125719429f,
       },
       {
           AcStrategy::Type::AFV3,
           3.0f,
-          0.77f,
+          0.80286131125719429f,
       },
   };
   double best = 1e30;
@@ -902,6 +915,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
                        const ACSConfig& config, float* entropy_adjust,
                        const Rect& rect) {
   const CompressParams& cparams = enc_state->cparams;
+  const float butteraugli_target = cparams.butteraugli_distance;
   AcStrategyImage* ac_strategy = &enc_state->shared.ac_strategy;
   // TODO(veluca): reuse allocations
   auto mem = hwy::AllocateAligned<float>(5 * AcStrategy::kMaxCoeffArea);
@@ -929,6 +943,12 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // when DCT8X8 is specified in the tree search.
   // 8x8 transforms have 10 variants, but every larger transform is just a DCT.
   float entropy_estimate[64] = {};
+  // Favor all 8x8 transforms (against 16x8 and larger transforms)) at
+  // low butteraugli_target distances.
+  static const float k8x8mul1 = -0.38173536034815592f;
+  static const float k8x8mul2 = 1.0305692427138704f;
+  static const float k8x8base = 1.5349788369698298f;
+  const float mul8x8 = k8x8mul2 + k8x8mul1 / (butteraugli_target + k8x8base);
   for (size_t iy = 0; iy < rect.ysize(); iy++) {
     for (size_t ix = 0; ix < rect.xsize(); ix++) {
       float entropy = 0.0;
@@ -937,7 +957,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
           entropy_adjust, block, scratch_space, quantized, &entropy);
       ac_strategy->Set(bx + ix, by + iy,
                        static_cast<AcStrategy::Type>(best_of_8x8s));
-      entropy_estimate[iy * 8 + ix] = entropy;
+      entropy_estimate[iy * 8 + ix] = entropy * mul8x8;
     }
   }
   // Merge when a larger transform is better than the previously
@@ -947,16 +967,38 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
     uint8_t priority;
     float entropy_mul;
   };
+  static const float k8x16mul1 = -0.49793408372209957;
+  static const float k8x16mul2 = 1.0265154587144558f;
+  static const float k8x16base = 2.1458510646431797f;
+  const float mul8x16 =
+      k8x16mul2 + k8x16mul1 / (butteraugli_target + k8x16base);
+
+  static const float k16x16mul1 = -0.068006033511844949;
+  static const float k16x16mul2 = 1.0113327118184485;
+  static const float k16x16base = 2.6559390179313955f;
+  const float mul16x16 =
+      k16x16mul2 + k16x16mul1 / (butteraugli_target + k16x16base);
+
+  // TODO(jyrki): Consider this feedback in further changes:
+  // Also effectively when the multipliers for smaller blocks are
+  // below 1, this raises the bar for the bigger blocks even higher
+  // in that sense these constants are not independent (e.g. changing
+  // the constant for DCT16x32 by -5% (making it more likely) also
+  // means that DCT32x32 becomes harder to do when starting from
+  // two DCT16x32s). It might be better to make them more independent,
+  // e.g. by not applying the multiplier when storing the new entropy
+  // estimates in TryMergeToACSCandidate().
   const MergeTry kTransformsForMerge[9] = {
-      {AcStrategy::Type::DCT16X8, 2, 0.86f},
-      {AcStrategy::Type::DCT8X16, 2, 0.86f},
-      {AcStrategy::Type::DCT16X16, 3, 0.83f},
-      {AcStrategy::Type::DCT16X32, 4, 0.94f},
-      {AcStrategy::Type::DCT32X16, 4, 0.94f},
-      {AcStrategy::Type::DCT32X32, 5, 0.97f},
-      {AcStrategy::Type::DCT64X32, 6, 1.15f},
-      {AcStrategy::Type::DCT32X64, 6, 1.15f},
-      {AcStrategy::Type::DCT64X64, 8, 1.3f},
+      {AcStrategy::Type::DCT16X8, 2, mul8x16 * 0.91195782912371126f},
+      {AcStrategy::Type::DCT8X16, 2, mul8x16 * 0.91195782912371126f},
+      {AcStrategy::Type::DCT16X16, 3, mul16x16 * 0.83183417727960129f},
+      {AcStrategy::Type::DCT16X32, 4, 0.88854513227338527f},
+      {AcStrategy::Type::DCT32X16, 4, 0.88854513227338527f},
+      {AcStrategy::Type::DCT32X32, 5, 1.0092994906548809f},
+      // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
+      {AcStrategy::Type::DCT64X32, 6, 2.0858810264509633f},
+      {AcStrategy::Type::DCT32X64, 6, 2.0858810264509633f},
+      {AcStrategy::Type::DCT64X64, 8, 2.0846542128012948f},
   };
   /*
   These sizes not yet included in merge heuristic:
@@ -994,6 +1036,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
   const CompressParams& cparams = enc_state->cparams;
   if (cparams.speed_tier > SpeedTier::kWombat ||
       cparams.decoding_speed_tier >= 1) {
+    // This heuristic is matched in AcStrategyHeuristic::Init.
     // TODO(Jyrki): Get rid of the old when we have a viable alternative.
     ProcessRectACSOld(enc_state, config, entropy_adjust, rect);
   } else {
@@ -1038,30 +1081,59 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  // TODO(jyrki): better choice of constants/parameterization.
-  config.info_loss_multiplier = 39.2;
-  config.base_entropy = 30.0;
-  config.zeros_mul = 0.3;  // Possibly a bigger value would work better.
-  if (butteraugli_target < 2) {
-    config.cost1 = 2.1467536133280064f;
-    config.cost2 = 4.5233239814548617f;
-    config.cost_delta = 2.7192877948074784f;
-  } else if (butteraugli_target < 4) {
-    config.cost1 = 3.3478899662356103f;
-    config.cost2 = 3.2493410394508086f;
-    config.cost_delta = 2.9192251887428096f;
-  } else if (butteraugli_target < 8) {
-    config.cost1 = 3.9758237938237959f;
-    config.cost2 = 1.2423859153559777f;
-    config.cost_delta = 3.1181324266623122f;
-  } else if (butteraugli_target < 16) {
-    config.cost1 = 2.5;
-    config.cost2 = 2.2630019747782897f;
-    config.cost_delta = 3.8409539247825222f;
+  // TODO(jyrki): Get rid of the 'Old config' supporting faster
+  // decoding speed tiers.
+  if (cparams.speed_tier > SpeedTier::kWombat ||
+      cparams.decoding_speed_tier >= 1) {
+    config.info_loss_multiplier = 39.2;
+    config.base_entropy = 30.0;
+    config.zeros_mul = 0.3;  // Possibly a bigger value would work better.
+    if (butteraugli_target < 2) {
+      config.cost1 = 2.1467536133280064f;
+      config.cost2 = 4.5233239814548617f;
+      config.cost_delta = 2.7192877948074784f;
+    } else if (butteraugli_target < 4) {
+      config.cost1 = 3.3478899662356103f;
+      config.cost2 = 3.2493410394508086f;
+      config.cost_delta = 2.9192251887428096f;
+    } else if (butteraugli_target < 8) {
+      config.cost1 = 3.9758237938237959f;
+      config.cost2 = 1.2423859153559777f;
+      config.cost_delta = 3.1181324266623122f;
+    } else if (butteraugli_target < 16) {
+      config.cost1 = 2.5;
+      config.cost2 = 2.2630019747782897f;
+      config.cost_delta = 3.8409539247825222f;
+    } else {
+      config.cost1 = 1.5;
+      config.cost2 = 2.6952503610099059f;
+      config.cost_delta = 4.316274170126156f;
+    }
   } else {
-    config.cost1 = 1.5;
-    config.cost2 = 2.6952503610099059f;
-    config.cost_delta = 4.316274170126156f;
+    config.info_loss_multiplier = 45.591693484165646f;
+    config.base_entropy = 50.312647243619388f;
+    config.zeros_mul = 0.89601263377598228f;
+    if (butteraugli_target < 2) {
+      config.cost1 = 0.80671326713285485f;
+      config.cost2 = 4.0513999246170691f;
+      config.cost_delta = 8.1520684010822624f;
+    } else if (butteraugli_target < 4) {
+      config.cost1 = 4.2043248061477723f;
+      config.cost2 = 3.7952481443835868f;
+      config.cost_delta = 5.9978822565620655f;
+    } else if (butteraugli_target < 8) {
+      config.cost1 = 3.7977273976614927f;
+      config.cost2 = 1.8690438447689841f;
+      config.cost_delta = 5.9877902390328739f;
+    } else if (butteraugli_target < 16) {
+      config.cost1 = 2.4149181929658265;
+      config.cost2 = 2.5815102821961826f;
+      config.cost_delta = 3.6386463449187714f;
+    } else {
+      config.cost1 = 1.5;
+      config.cost2 = 2.6952503610099059f;
+      config.cost_delta = 4.316274170126156f;
+    }
   }
 
   JXL_ASSERT(enc_state->shared.ac_strategy.xsize() ==
