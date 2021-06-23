@@ -289,17 +289,23 @@ float MaskingSqrt(const float v) {
   return GetLane(MaskingSqrt(DScalar(), vscalar));
 }
 
-void StoreMin3(const float v, float& min0, float& min1, float& min2) {
-  if (v < min2) {
+void StoreMin4(const float v, float& min0, float& min1, float& min2,
+               float& min3) {
+  if (v < min3) {
     if (v < min0) {
+      min3 = min2;
       min2 = min1;
       min1 = min0;
       min0 = v;
     } else if (v < min1) {
+      min3 = min2;
       min2 = min1;
       min1 = v;
-    } else {
+    } else if (v < min2) {
+      min3 = min2;
       min2 = v;
+    } else {
+      min3 = v;
     }
   }
 }
@@ -329,20 +335,23 @@ void FuzzyErosion(const Rect& from_rect, const ImageF& from,
       size_t xp1 = x + kStep < xsize ? x + kStep : x;
       float min0 = row[x];
       float min1 = min0;
-      float min2 = min1;
-      StoreMin3(row[xm1], min0, min1, min2);
-      StoreMin3(row[xp1], min0, min1, min2);
-      StoreMin3(rowt[xm1], min0, min1, min2);
-      StoreMin3(rowt[x], min0, min1, min2);
-      StoreMin3(rowt[xp1], min0, min1, min2);
-      StoreMin3(rowb[xm1], min0, min1, min2);
-      StoreMin3(rowb[x], min0, min1, min2);
-      StoreMin3(rowb[xp1], min0, min1, min2);
-      static const float kMulC = 0.029598804634393225 * 0.25f;
-      static const float kMul0 = 0.561331076516815 * 0.25f;
-      static const float kMul1 = 0.16504828561110252 * 0.25f;
-      static const float kMul2 = 0.2440218332376892 * 0.25f;
-      float v = kMulC * row[x] + kMul0 * min0 + kMul1 * min1 + kMul2 * min2;
+      float min2 = min0;
+      float min3 = min0;
+      StoreMin4(row[xm1], min0, min1, min2, min3);
+      StoreMin4(row[xp1], min0, min1, min2, min3);
+      StoreMin4(rowt[xm1], min0, min1, min2, min3);
+      StoreMin4(rowt[x], min0, min1, min2, min3);
+      StoreMin4(rowt[xp1], min0, min1, min2, min3);
+      StoreMin4(rowb[xm1], min0, min1, min2, min3);
+      StoreMin4(rowb[x], min0, min1, min2, min3);
+      StoreMin4(rowb[xp1], min0, min1, min2, min3);
+      static const float kMulC = 0.05f;
+      static const float kMul0 = 0.05f;
+      static const float kMul1 = 0.05f;
+      static const float kMul2 = 0.05f;
+      static const float kMul3 = 0.05f;
+      float v = kMulC * row[x] + kMul0 * min0 + kMul1 * min1 + kMul2 * min2 +
+                kMul3 * min3;
       if (fx % 2 == 0 && fy % 2 == 0) {
         row_out[fx / 2] = v;
       } else {
@@ -382,7 +391,7 @@ struct AdaptiveQuantizationImpl {
     const float match_gamma_offset = 0.019;
 
     const HWY_FULL(float) df;
-    const float kXMul = 30.49302140275616f;
+    const float kXMul = 23.426802998210313f;
     const auto kXMulv = Set(df, kXMul);
 
     size_t y_start = rect.y0() * 8;
@@ -651,7 +660,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 constexpr float kDcQuantPow = 0.57f;
 static const float kDcQuant = 1.12f;
-static const float kAcQuant = 0.79f;
+static const float kAcQuant = 0.81f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state, ThreadPool* pool,

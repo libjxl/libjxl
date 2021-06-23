@@ -1245,41 +1245,42 @@ void StoreMin3(const float v, float& min0, float& min1, float& min2) {
 void FuzzyErosion(const ImageF& from, ImageF* to) {
   const size_t xsize = from.xsize();
   const size_t ysize = from.ysize();
+  static const int kStep = 3;
   for (size_t y = 0; y < ysize; ++y) {
     for (size_t x = 0; x < xsize; ++x) {
       float min0 = from.Row(y)[x];
       float min1 = 2 * min0;
       float min2 = min1;
-      if (x >= 3) {
-        float v = from.Row(y)[x - 3];
+      if (x >= kStep) {
+        float v = from.Row(y)[x - kStep];
         StoreMin3(v, min0, min1, min2);
-        if (y >= 3) {
-          float v = from.Row(y - 3)[x - 3];
+        if (y >= kStep) {
+          float v = from.Row(y - kStep)[x - kStep];
           StoreMin3(v, min0, min1, min2);
         }
-        if (y < ysize - 3) {
-          float v = from.Row(y + 3)[x - 3];
+        if (y < ysize - kStep) {
+          float v = from.Row(y + kStep)[x - kStep];
           StoreMin3(v, min0, min1, min2);
         }
       }
-      if (x < xsize - 3) {
-        float v = from.Row(y)[x + 3];
+      if (x < xsize - kStep) {
+        float v = from.Row(y)[x + kStep];
         StoreMin3(v, min0, min1, min2);
-        if (y >= 3) {
-          float v = from.Row(y - 3)[x + 3];
+        if (y >= kStep) {
+          float v = from.Row(y - kStep)[x + kStep];
           StoreMin3(v, min0, min1, min2);
         }
-        if (y < ysize - 3) {
-          float v = from.Row(y + 3)[x + 3];
+        if (y < ysize - kStep) {
+          float v = from.Row(y + kStep)[x + kStep];
           StoreMin3(v, min0, min1, min2);
         }
       }
-      if (y >= 3) {
-        float v = from.Row(y - 3)[x];
+      if (y >= kStep) {
+        float v = from.Row(y - kStep)[x];
         StoreMin3(v, min0, min1, min2);
       }
-      if (y < ysize - 3) {
-        float v = from.Row(y + 3)[x];
+      if (y < ysize - kStep) {
+        float v = from.Row(y + kStep)[x];
         StoreMin3(v, min0, min1, min2);
       }
       to->Row(y)[x] = (0.45f * min0 + 0.3f * min1 + 0.25f * min2);
