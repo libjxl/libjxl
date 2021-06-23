@@ -45,11 +45,10 @@ struct BenchmarkStats {
   void Assimilate(const BenchmarkStats& victim);
 
   std::vector<ColumnValue> ComputeColumns(const std::string& codec_desc,
-                                          size_t corpus_size,
-                                          size_t num_threads) const;
+                                          size_t corpus_size) const;
 
-  std::string PrintLine(const std::string& codec_desc, size_t corpus_size,
-                        size_t num_threads) const;
+  std::string PrintLine(const std::string& codec_desc,
+                        size_t corpus_size) const;
 
   void PrintMoreStats() const;
 

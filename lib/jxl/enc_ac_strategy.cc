@@ -977,6 +977,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   uint8_t priority[64] = {0};
   for (auto tx : kTransformsForMerge) {
     AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
+
     for (size_t cy = 0; cy + acs.covered_blocks_y() - 1 < rect.ysize();
          cy += acs.covered_blocks_y()) {
       for (size_t cx = 0; cx + acs.covered_blocks_x() - 1 < rect.xsize();
@@ -1088,11 +1089,10 @@ void AcStrategyHeuristics::Finalize(AuxOut* aux_out) {
   const auto& ac_strategy = enc_state->shared.ac_strategy;
   // Accounting and debug output.
   if (aux_out != nullptr) {
-    aux_out->num_dct2_blocks =
-        32 * (ac_strategy.CountBlocks(AcStrategy::Type::DCT32X64) +
-              ac_strategy.CountBlocks(AcStrategy::Type::DCT64X32));
-    aux_out->num_dct4_blocks =
-        64 * ac_strategy.CountBlocks(AcStrategy::Type::DCT64X64);
+    aux_out->num_small_blocks =
+        ac_strategy.CountBlocks(AcStrategy::Type::IDENTITY) +
+        ac_strategy.CountBlocks(AcStrategy::Type::DCT2X2) +
+        ac_strategy.CountBlocks(AcStrategy::Type::DCT4X4);
     aux_out->num_dct4x8_blocks =
         ac_strategy.CountBlocks(AcStrategy::Type::DCT4X8) +
         ac_strategy.CountBlocks(AcStrategy::Type::DCT8X4);
@@ -1114,6 +1114,11 @@ void AcStrategyHeuristics::Finalize(AuxOut* aux_out) {
         ac_strategy.CountBlocks(AcStrategy::Type::DCT32X16);
     aux_out->num_dct32_blocks =
         ac_strategy.CountBlocks(AcStrategy::Type::DCT32X32);
+    aux_out->num_dct32x64_blocks =
+        ac_strategy.CountBlocks(AcStrategy::Type::DCT32X64) +
+        ac_strategy.CountBlocks(AcStrategy::Type::DCT64X32);
+    aux_out->num_dct64_blocks =
+        ac_strategy.CountBlocks(AcStrategy::Type::DCT64X64);
   }
 
   if (WantDebugOutput(aux_out)) {
