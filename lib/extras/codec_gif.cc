@@ -21,10 +21,7 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/luminance.h"
-
-#ifdef MEMORY_SANITIZER
-#include "sanitizer/msan_interface.h"
-#endif
+#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 
@@ -84,16 +81,13 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("Failed to read GIF: %s", GifErrorString(gif->Error));
   }
 
-#ifdef MEMORY_SANITIZER
-  __msan_unpoison(gif.get(), sizeof(*gif));
+  UnpoisonMemory(gif.get(), sizeof(*gif));
   if (gif->SColorMap) {
-    __msan_unpoison(gif->SColorMap, sizeof(*gif->SColorMap));
-    __msan_unpoison(gif->SColorMap->Colors, sizeof(*gif->SColorMap->Colors) *
-                                                gif->SColorMap->ColorCount);
+    UnpoisonMemory(gif->SColorMap, sizeof(*gif->SColorMap));
+    UnpoisonMemory(gif->SColorMap->Colors, sizeof(*gif->SColorMap->Colors) *
+                                               gif->SColorMap->ColorCount);
   }
-  __msan_unpoison(gif->SavedImages,
-                  sizeof(*gif->SavedImages) * gif->ImageCount);
-#endif
+  UnpoisonMemory(gif->SavedImages, sizeof(*gif->SavedImages) * gif->ImageCount);
 
   const SizeConstraints* constraints = &io->constraints;
 
@@ -167,11 +161,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   bool last_base_was_none = true;
   for (int i = 0; i < gif->ImageCount; ++i) {
     const SavedImage& image = gif->SavedImages[i];
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(image.RasterBits, sizeof(*image.RasterBits) *
-                                          image.ImageDesc.Width *
-                                          image.ImageDesc.Height);
-#endif
+    UnpoisonMemory(image.RasterBits, sizeof(*image.RasterBits) *
+                                         image.ImageDesc.Width *
+                                         image.ImageDesc.Height);
     const Rect image_rect(image.ImageDesc.Left, image.ImageDesc.Top,
                           image.ImageDesc.Width, image.ImageDesc.Height);
     io->dec_pixels += image_rect.xsize() * image_rect.ysize();
@@ -203,16 +195,12 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     const ColorMapObject* const color_map =
         image.ImageDesc.ColorMap ? image.ImageDesc.ColorMap : gif->SColorMap;
     JXL_CHECK(color_map);
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(color_map, sizeof(*color_map));
-    __msan_unpoison(color_map->Colors,
-                    sizeof(*color_map->Colors) * color_map->ColorCount);
-#endif
+    UnpoisonMemory(color_map, sizeof(*color_map));
+    UnpoisonMemory(color_map->Colors,
+                   sizeof(*color_map->Colors) * color_map->ColorCount);
     GraphicsControlBlock gcb;
     DGifSavedExtensionToGCB(gif.get(), i, &gcb);
-#ifdef MEMORY_SANITIZER
-    __msan_unpoison(&gcb, sizeof(gcb));
-#endif
+    UnpoisonMemory(&gcb, sizeof(gcb));
 
     ImageBundle bundle(&io->metadata.m);
     if (io->metadata.m.have_animation) {

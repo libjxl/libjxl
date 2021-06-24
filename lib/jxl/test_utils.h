@@ -273,8 +273,37 @@ std::vector<ColorEncodingDescriptor> AllEncodings() {
 std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
                                       size_t num_channels, uint16_t seed) {
   // Cause more significant image difference for successive seeds.
-  std::mt19937 rng(seed);
-  std::uniform_int_distribution<uint16_t> dark(0, 32767);
+  std::mt19937 std_rng(seed);
+  std::uniform_int_distribution<uint16_t> std_distr(0, 65535);
+
+  // Returns random integer in interval (0, max_value - 1)
+  auto rng = [&std_rng, &std_distr](size_t max_value) -> size_t {
+    return static_cast<size_t>(std_distr(std_rng) / 65536.0f * max_value);
+  };
+
+  // Dark background gradient color
+  uint16_t r0 = rng(32768);
+  uint16_t g0 = rng(32768);
+  uint16_t b0 = rng(32768);
+  uint16_t a0 = rng(32768);
+  uint16_t r1 = rng(32768);
+  uint16_t g1 = rng(32768);
+  uint16_t b1 = rng(32768);
+  uint16_t a1 = rng(32768);
+
+  // Circle with different color
+  size_t circle_x = rng(xsize);
+  size_t circle_y = rng(ysize);
+  size_t circle_r = rng(std::min(xsize, ysize));
+
+  // Rectangle with random noise
+  size_t rect_x0 = rng(xsize);
+  size_t rect_y0 = rng(ysize);
+  size_t rect_x1 = rng(xsize);
+  size_t rect_y1 = rng(ysize);
+  if (rect_x1 < rect_x0) std::swap(rect_x0, rect_y1);
+  if (rect_y1 < rect_y0) std::swap(rect_y0, rect_y1);
+
   size_t num_pixels = xsize * ysize;
   // 16 bits per channel, big endian, 4 channels
   std::vector<uint8_t> pixels(num_pixels * num_channels * 2);
@@ -282,16 +311,22 @@ std::vector<uint8_t> GetSomeTestImage(size_t xsize, size_t ysize,
   // can be compared after roundtrip.
   for (size_t y = 0; y < ysize; y++) {
     for (size_t x = 0; x < xsize; x++) {
-      uint16_t r = dark(rng);
-      uint16_t g = dark(rng);
-      uint16_t b = dark(rng);
-      uint16_t a = dark(rng);
+      uint16_t r = r0 * (ysize - y - 1) / ysize + r1 * y / ysize;
+      uint16_t g = g0 * (ysize - y - 1) / ysize + g1 * y / ysize;
+      uint16_t b = b0 * (ysize - y - 1) / ysize + b1 * y / ysize;
+      uint16_t a = a0 * (ysize - y - 1) / ysize + a1 * y / ysize;
       // put some shape in there for visual debugging
-      if (x * x + y * y < 1000) {
+      if ((x - circle_x) * (x - circle_x) + (y - circle_y) * (y - circle_y) <
+          circle_r * circle_r) {
         r = (65535 - x * y) ^ seed;
         g = (x << 8) + y + seed;
         b = (y << 8) + x * seed;
         a = 32768 + x * 256 - y;
+      } else if (x > rect_x0 && x < rect_x1 && y > rect_y0 && y < rect_y1) {
+        r = rng(65536);
+        g = rng(65536);
+        b = rng(65536);
+        a = rng(65536);
       }
       size_t i = (y * xsize + x) * 2 * num_channels;
       pixels[i + 0] = (r >> 8);

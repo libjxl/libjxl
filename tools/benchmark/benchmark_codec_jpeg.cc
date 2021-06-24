@@ -23,10 +23,6 @@
 #include "lib/jxl/codec_in_out.h"
 #include "tools/cmdline.h"
 
-#ifdef MEMORY_SANITIZER
-#include "sanitizer/msan_interface.h"
-#endif
-
 namespace jxl {
 
 namespace {

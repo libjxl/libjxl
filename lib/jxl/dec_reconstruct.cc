@@ -31,146 +31,120 @@
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/passes_state.h"
+#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/transfer_functions-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
+template <typename Op>
+void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
                       const OutputEncodingInfo& output_encoding_info) {
-  PROFILER_ZONE("UndoXYB");
-
+  // TODO(eustas): should it still be capped?
+  const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d;
+  const size_t xsize = rect.xsize();
+  const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
   // The size of `rect` might not be a multiple of Lanes(d), but is guaranteed
   // to be a multiple of kBlockDim or at the margin of the image.
   for (size_t y = 0; y < rect.ysize(); y++) {
     float* JXL_RESTRICT row0 = rect.PlaneRow(idct, 0, y);
     float* JXL_RESTRICT row1 = rect.PlaneRow(idct, 1, y);
     float* JXL_RESTRICT row2 = rect.PlaneRow(idct, 2, y);
-
-    const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d;
-
-    if (output_encoding_info.color_encoding.tf.IsLinear()) {
-      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
-        const auto in_opsin_x = Load(d, row0 + x);
-        const auto in_opsin_y = Load(d, row1 + x);
-        const auto in_opsin_b = Load(d, row2 + x);
-        JXL_COMPILER_FENCE;
-        auto linear_r = Undefined(d);
-        auto linear_g = Undefined(d);
-        auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-                 output_encoding_info.opsin_params, &linear_r, &linear_g,
-                 &linear_b);
-
-        Store(linear_r, d, row0 + x);
-        Store(linear_g, d, row1 + x);
-        Store(linear_b, d, row2 + x);
-      }
-    } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
-      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
-        const auto in_opsin_x = Load(d, row0 + x);
-        const auto in_opsin_y = Load(d, row1 + x);
-        const auto in_opsin_b = Load(d, row2 + x);
-        JXL_COMPILER_FENCE;
-        auto linear_r = Undefined(d);
-        auto linear_g = Undefined(d);
-        auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-                 output_encoding_info.opsin_params, &linear_r, &linear_g,
-                 &linear_b);
-
-#if JXL_HIGH_PRECISION
-        Store(TF_SRGB().EncodedFromDisplay(d, linear_r), d, row0 + x);
-        Store(TF_SRGB().EncodedFromDisplay(d, linear_g), d, row1 + x);
-        Store(TF_SRGB().EncodedFromDisplay(d, linear_b), d, row2 + x);
-#else
-        Store(FastLinearToSRGB(d, linear_r), d, row0 + x);
-        Store(FastLinearToSRGB(d, linear_g), d, row1 + x);
-        Store(FastLinearToSRGB(d, linear_b), d, row2 + x);
-#endif
-      }
-    } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
-      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
-        const auto in_opsin_x = Load(d, row0 + x);
-        const auto in_opsin_y = Load(d, row1 + x);
-        const auto in_opsin_b = Load(d, row2 + x);
-        JXL_COMPILER_FENCE;
-        auto linear_r = Undefined(d);
-        auto linear_g = Undefined(d);
-        auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-                 output_encoding_info.opsin_params, &linear_r, &linear_g,
-                 &linear_b);
-        Store(TF_PQ().EncodedFromDisplay(d, linear_r), d, row0 + x);
-        Store(TF_PQ().EncodedFromDisplay(d, linear_g), d, row1 + x);
-        Store(TF_PQ().EncodedFromDisplay(d, linear_b), d, row2 + x);
-      }
-    } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
-      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
-        const auto in_opsin_x = Load(d, row0 + x);
-        const auto in_opsin_y = Load(d, row1 + x);
-        const auto in_opsin_b = Load(d, row2 + x);
-        JXL_COMPILER_FENCE;
-        auto linear_r = Undefined(d);
-        auto linear_g = Undefined(d);
-        auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-                 output_encoding_info.opsin_params, &linear_r, &linear_g,
-                 &linear_b);
-        Store(TF_HLG().EncodedFromDisplay(d, linear_r), d, row0 + x);
-        Store(TF_HLG().EncodedFromDisplay(d, linear_g), d, row1 + x);
-        Store(TF_HLG().EncodedFromDisplay(d, linear_b), d, row2 + x);
-      }
-    } else if (output_encoding_info.color_encoding.tf.Is709()) {
-      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
-        const auto in_opsin_x = Load(d, row0 + x);
-        const auto in_opsin_y = Load(d, row1 + x);
-        const auto in_opsin_b = Load(d, row2 + x);
-        JXL_COMPILER_FENCE;
-        auto linear_r = Undefined(d);
-        auto linear_g = Undefined(d);
-        auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-                 output_encoding_info.opsin_params, &linear_r, &linear_g,
-                 &linear_b);
-        Store(TF_709().EncodedFromDisplay(d, linear_r), d, row0 + x);
-        Store(TF_709().EncodedFromDisplay(d, linear_g), d, row1 + x);
-        Store(TF_709().EncodedFromDisplay(d, linear_b), d, row2 + x);
-      }
-    } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
-               output_encoding_info.color_encoding.tf.IsDCI()) {
-      auto gamma_tf = [&](hwy::HWY_NAMESPACE::Vec<decltype(d)> v) {
-        return IfThenZeroElse(
-            v <= Set(d, 1e-5f),
-            FastPowf(d, v, Set(d, output_encoding_info.inverse_gamma)));
-      };
-      for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
-#if MEMORY_SANITIZER
-        const auto mask = Iota(d, x) < Set(d, rect.xsize());
-        const auto sentinel = Set(d, kSanitizerSentinel);
-        const auto in_opsin_x = IfThenElse(mask, Load(d, row0 + x), sentinel);
-        const auto in_opsin_y = IfThenElse(mask, Load(d, row1 + x), sentinel);
-        const auto in_opsin_b = IfThenElse(mask, Load(d, row2 + x), sentinel);
-#else
-        const auto in_opsin_x = Load(d, row0 + x);
-        const auto in_opsin_y = Load(d, row1 + x);
-        const auto in_opsin_b = Load(d, row2 + x);
-#endif
-        JXL_COMPILER_FENCE;
-        auto linear_r = Undefined(d);
-        auto linear_g = Undefined(d);
-        auto linear_b = Undefined(d);
-        XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-                 output_encoding_info.opsin_params, &linear_r, &linear_g,
-                 &linear_b);
-        Store(gamma_tf(linear_r), d, row0 + x);
-        Store(gamma_tf(linear_g), d, row1 + x);
-        Store(gamma_tf(linear_b), d, row2 + x);
-      }
-    } else {
-      // This is a programming error.
-      JXL_ABORT("Invalid target encoding");
+    // All calculations are lane-wise, still some might require value-dependent
+    // behaviour (e.g. NearestInt). Temporary unposion last vector tail.
+    UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
+      const auto in_opsin_x = Load(d, row0 + x);
+      const auto in_opsin_y = Load(d, row1 + x);
+      const auto in_opsin_b = Load(d, row2 + x);
+      JXL_COMPILER_FENCE;
+      auto linear_r = Undefined(d);
+      auto linear_g = Undefined(d);
+      auto linear_b = Undefined(d);
+      XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
+               output_encoding_info.opsin_params, &linear_r, &linear_g,
+               &linear_b);
+      Store(op.Transform(d, linear_r), d, row0 + x);
+      Store(op.Transform(d, linear_g), d, row1 + x);
+      Store(op.Transform(d, linear_b), d, row2 + x);
     }
+    PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+  }
+}
+
+struct OpLinear {
+  template <typename D, typename T>
+  T Transform(D d, const T& linear) {
+    return linear;
+  }
+};
+
+struct OpRgb {
+  template <typename D, typename T>
+  T Transform(D d, const T& linear) {
+#if JXL_HIGH_PRECISION
+    return TF_SRGB().EncodedFromDisplay(d, linear);
+#else
+    return FastLinearToSRGB(d, linear);
+#endif
+  }
+};
+
+struct OpPq {
+  template <typename D, typename T>
+  T Transform(D d, const T& linear) {
+    return TF_PQ().EncodedFromDisplay(d, linear);
+  }
+};
+
+struct OpHlg {
+  template <typename D, typename T>
+  T Transform(D d, const T& linear) {
+    return TF_HLG().EncodedFromDisplay(d, linear);
+  }
+};
+
+struct Op709 {
+  template <typename D, typename T>
+  T Transform(D d, const T& linear) {
+    return TF_709().EncodedFromDisplay(d, linear);
+  }
+};
+
+struct OpGamma {
+  const float inverse_gamma;
+  template <typename D, typename T>
+  T Transform(D d, const T& linear) {
+    return IfThenZeroElse(linear <= Set(d, 1e-5f),
+                          FastPowf(d, linear, Set(d, inverse_gamma)));
+  }
+};
+
+Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
+                      const OutputEncodingInfo& output_encoding_info) {
+  PROFILER_ZONE("UndoXYB");
+
+  if (output_encoding_info.color_encoding.tf.IsLinear()) {
+    DoUndoXYBInPlace(idct, rect, OpLinear(), output_encoding_info);
+  } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
+    DoUndoXYBInPlace(idct, rect, OpRgb(), output_encoding_info);
+  } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
+    DoUndoXYBInPlace(idct, rect, OpPq(), output_encoding_info);
+  } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
+    DoUndoXYBInPlace(idct, rect, OpHlg(), output_encoding_info);
+  } else if (output_encoding_info.color_encoding.tf.Is709()) {
+    DoUndoXYBInPlace(idct, rect, Op709(), output_encoding_info);
+  } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
+             output_encoding_info.color_encoding.tf.IsDCI()) {
+    OpGamma op = {output_encoding_info.inverse_gamma};
+    DoUndoXYBInPlace(idct, rect, op, output_encoding_info);
+  } else {
+    // This is a programming error.
+    JXL_ABORT("Invalid target encoding");
   }
   return true;
 }
@@ -252,25 +226,20 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
     auto zero = Zero(d);
     auto one = Set(d, 1.0f);
     auto mul = Set(d, 255.0f);
-#if MEMORY_SANITIZER
-    // Avoid use-of-uninitialized-value for loads past the end of the image's
-    // initialized data.
-    auto safe_load = [&](const float* ptr, size_t x) {
-      uint32_t kMask[8] = {~0u, ~0u, ~0u, ~0u, 0, 0, 0, 0};
-      size_t n = std::min<size_t>(Lanes(d), output_buf_rect.xsize() - x);
-      auto mask = BitCast(d, LoadU(du, kMask + Lanes(d) - n));
-      return Load(d, ptr + x) & mask;
-    };
-#else
-    auto safe_load = [](const float* ptr, size_t x) {
-      return Load(D(), ptr + x);
-    };
-#endif
-    for (size_t x = 0; x < output_buf_rect.xsize(); x += Lanes(d)) {
-      auto rf = Clamp(zero, safe_load(row_in_r, x), one) * mul;
-      auto gf = Clamp(zero, safe_load(row_in_g, x), one) * mul;
-      auto bf = Clamp(zero, safe_load(row_in_b, x), one) * mul;
-      auto af = row_in_a ? Clamp(zero, safe_load(row_in_a, x), one) * mul
+
+    // All calculations are lane-wise, still some might require value-dependent
+    // behaviour (e.g. NearestInt). Temporary unposion last vector tail.
+    size_t xsize = output_buf_rect.xsize();
+    size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+    UnpoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
+    for (size_t x = 0; x < xsize; x += Lanes(d)) {
+      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
+      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
+      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
+      auto af = row_in_a ? Clamp(zero, Load(d, row_in_a + x), one) * mul
                          : Set(d, 255.0f);
       auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
       auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
@@ -285,6 +254,10 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
                   output_buf + base_ptr + bytes * x);
       }
     }
+    PoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
   }
 }
 
@@ -1189,20 +1162,21 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
     decoded->SetFromImage(Image3F(frame_header.nonserialized_metadata->xsize(),
                                   frame_header.nonserialized_metadata->ysize()),
                           foreground.c_current());
-    std::vector<std::pair<ImageF*, Rect>> extra_channels;
-    extra_channels.reserve(foreground.extra_channels().size());
+    std::vector<Rect> extra_channels_rects;
+    decoded->extra_channels().reserve(foreground.extra_channels().size());
+    extra_channels_rects.reserve(foreground.extra_channels().size());
     for (size_t i = 0; i < foreground.extra_channels().size(); ++i) {
       decoded->extra_channels().emplace_back(
           frame_header.nonserialized_metadata->xsize(),
           frame_header.nonserialized_metadata->ysize());
-      extra_channels.emplace_back(&decoded->extra_channels().back(),
-                                  Rect(decoded->extra_channels().back()));
+      extra_channels_rects.emplace_back(decoded->extra_channels().back());
     }
     JXL_RETURN_IF_ERROR(blender.PrepareBlending(
         dec_state, foreground.origin, foreground.xsize(), foreground.ysize(),
         &frame_header.nonserialized_metadata->m.extra_channel_info,
         foreground.c_current(), Rect(*decoded->color()),
-        /*output=*/decoded->color(), Rect(*decoded->color()), extra_channels));
+        /*output=*/decoded->color(), Rect(*decoded->color()),
+        &decoded->extra_channels(), std::move(extra_channels_rects)));
 
     std::vector<Rect> rects_to_process;
     for (size_t y = 0; y < frame_dim.ysize; y += kGroupDim) {

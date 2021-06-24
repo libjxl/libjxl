@@ -54,7 +54,8 @@ class ImageBlender {
       const std::vector<ExtraChannelInfo>* extra_channel_info,
       const ColorEncoding& frame_color_encoding, const Rect& frame_rect,
       Image3F* output, const Rect& output_rect,
-      std::vector<std::pair<ImageF*, Rect>> output_extra_channels);
+      std::vector<ImageF>* output_extra_channels,
+      std::vector<Rect> output_extra_channels_rects);
   // rect is relative to the full decoded foreground.
   // But foreground here can be a subset of the full foreground, and input_rect
   // indicates where that rect is in that subset. For example, if rect =
@@ -76,7 +77,8 @@ class ImageBlender {
   // Destination, as well as background before DoBlending is called.
   Image3F* output_;
   Rect output_rect_;
-  std::vector<std::pair<ImageF*, Rect>> output_extra_channels_;
+  std::vector<ImageF>* output_extra_channels_;
+  std::vector<Rect> output_extra_channels_rects_;
   Rect cropbox_;
   Rect overlap_;
   bool done_ = false;

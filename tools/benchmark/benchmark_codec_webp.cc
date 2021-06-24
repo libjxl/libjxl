@@ -22,10 +22,7 @@
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
-
-#ifdef MEMORY_SANITIZER
-#include "sanitizer/msan_interface.h"
-#endif
+#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 
@@ -174,11 +171,9 @@ class WebPCodec : public ImageCodec {
     const bool has_alpha = true;
     const uint8_t* data_begin = &buf->u.RGBA.rgba[0];
     const uint8_t* data_end = data_begin + buf->width * buf->height * 4;
-#ifdef MEMORY_SANITIZER
     // The image data is initialized by libwebp, which we are not instrumenting
     // with msan.
-    __msan_unpoison(data_begin, data_end - data_begin);
-#endif
+    UnpoisonMemory(data_begin, data_end - data_begin);
     if (io->metadata.m.color_encoding.IsGray() != is_gray) {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
@@ -285,11 +280,9 @@ class WebPCodec : public ImageCodec {
     // pixels high or wide.
     bool ok = WebPEncode(&config, &pic);
     WebPPictureFree(&pic);
-#ifdef MEMORY_SANITIZER
     // Compressed image data is initialized by libwebp, which we are not
     // instrumenting with msan.
-    __msan_unpoison(compressed->data(), compressed->size());
-#endif
+    UnpoisonMemory(compressed->data(), compressed->size());
     return ok;
   }
 
