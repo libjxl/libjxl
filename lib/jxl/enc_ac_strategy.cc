@@ -640,19 +640,21 @@ void MaybeReplaceACS(size_t bx, size_t by, const ACSConfig& config,
 // bx, by addresses the 64x64 block at 8x8 subresolution
 // cx, cy addresses the left, upper 8x8 block position of the candidate
 // transform.
-void TryMergeToACSCandidate(AcStrategy::Type acs_raw, size_t bx, size_t by,
-                            size_t cx, size_t cy, const ACSConfig& config,
-                            const float* JXL_RESTRICT cmap_factors,
-                            AcStrategyImage* JXL_RESTRICT ac_strategy,
-                            const float entropy_mul,
-                            const uint8_t candidate_priority, uint8_t* priority,
-                            float* JXL_RESTRICT entropy_estimate, float* block,
-                            float* scratch_space, uint32_t* quantized) {
+void TryMergeAcs(AcStrategy::Type acs_raw, size_t bx, size_t by, size_t cx,
+                 size_t cy, const ACSConfig& config,
+                 const float* JXL_RESTRICT cmap_factors,
+                 AcStrategyImage* JXL_RESTRICT ac_strategy,
+                 const float entropy_mul, const uint8_t candidate_priority,
+                 uint8_t* priority, float* JXL_RESTRICT entropy_estimate,
+                 float* block, float* scratch_space, uint32_t* quantized) {
   AcStrategy acs = AcStrategy::FromRawStrategy(acs_raw);
   float entropy_current = 0;
   for (size_t iy = 0; iy < acs.covered_blocks_y(); ++iy) {
     for (size_t ix = 0; ix < acs.covered_blocks_x(); ++ix) {
       if (priority[(cy + iy) * 8 + (cx + ix)] >= candidate_priority) {
+        // Transform would reuse already allocated blocks and
+        // lead to invalid overlaps, for example DCT64X32 vs.
+        // DCT32X64.
         return;
       }
       entropy_current += entropy_estimate[(cy + iy) * 8 + (cx + ix)];
@@ -662,20 +664,81 @@ void TryMergeToACSCandidate(AcStrategy::Type acs_raw, size_t bx, size_t by,
       entropy_mul * EstimateEntropy(acs, (bx + cx) * 8, (by + cy) * 8, config,
                                     cmap_factors, block, scratch_space,
                                     quantized);
-
   if (entropy_candidate >= entropy_current) return;
-
   // Accept the candidate.
   for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
     for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
       entropy_estimate[(cy + iy) * 8 + cx + ix] = 0;
       priority[(cy + iy) * 8 + cx + ix] = candidate_priority;
-      ac_strategy->Set(bx + cx + ix, by + cy + iy,
-                       static_cast<AcStrategy::Type>(0));
     }
   }
   ac_strategy->Set(bx + cx, by + cy, acs_raw);
   entropy_estimate[cy * 8 + cx] = entropy_candidate;
+}
+
+void Try16X8And8X16(size_t bx, size_t by, size_t cx, size_t cy,
+                    const ACSConfig& config,
+                    const float* JXL_RESTRICT cmap_factors,
+                    AcStrategyImage* JXL_RESTRICT ac_strategy,
+                    const float entropy_mul,
+                    float* JXL_RESTRICT entropy_estimate, float* block,
+                    float* scratch_space, uint32_t* quantized) {
+  constexpr AcStrategy::Type acs_raw16X8 =
+      AcStrategy::Type::DCT16X8;  // y=16, x=8
+  constexpr AcStrategy::Type acs_raw8X16 =
+      AcStrategy::Type::DCT8X16;  // y=8, x=16
+  const AcStrategy acs16X8 = AcStrategy::FromRawStrategy(acs_raw16X8);
+  const AcStrategy acs8X16 = AcStrategy::FromRawStrategy(acs_raw8X16);
+  // Current entropies from the best 8x8 transforms in this 2x2 area:
+  const float entropy00 = entropy_estimate[(cy + 0) * 8 + (cx + 0)];
+  const float entropy01 = entropy_estimate[(cy + 0) * 8 + (cx + 1)];
+  const float entropy10 = entropy_estimate[(cy + 1) * 8 + (cx + 0)];
+  const float entropy11 = entropy_estimate[(cy + 1) * 8 + (cx + 1)];
+  const float try16X8_0 =
+      entropy_mul * EstimateEntropy(acs16X8, (bx + cx + 0) * 8,
+                                    (by + cy + 0) * 8, config, cmap_factors,
+                                    block, scratch_space, quantized);
+  const float try16X8_1 =
+      entropy_mul * EstimateEntropy(acs16X8, (bx + cx + 1) * 8,
+                                    (by + cy + 0) * 8, config, cmap_factors,
+                                    block, scratch_space, quantized);
+  const float try8X16_0 =
+      entropy_mul * EstimateEntropy(acs8X16, (bx + cx + 0) * 8,
+                                    (by + cy + 0) * 8, config, cmap_factors,
+                                    block, scratch_space, quantized);
+  const float try8X16_1 =
+      entropy_mul * EstimateEntropy(acs8X16, (bx + cx + 0) * 8,
+                                    (by + cy + 1) * 8, config, cmap_factors,
+                                    block, scratch_space, quantized);
+  // Test if this block should have 16X8 or 8X16 transforms,
+  // because it can have only one or the other.
+  float cost16x8 = std::min(try16X8_0, entropy00 + entropy10) +
+                   std::min(try16X8_1, entropy01 + entropy11);
+  float cost8x16 = std::min(try8X16_0, entropy00 + entropy01) +
+                   std::min(try8X16_1, entropy10 + entropy11);
+  if (cost16x8 < cost8x16) {
+    if (try16X8_0 < entropy00 + entropy10) {
+      ac_strategy->Set(bx + cx, by + cy, acs_raw16X8);
+      entropy_estimate[(cy + 0) * 8 + cx + 0] = try16X8_0;
+      entropy_estimate[(cy + 1) * 8 + cx + 0] = 0;
+    }
+    if (try16X8_1 < entropy01 + entropy11) {
+      ac_strategy->Set(bx + cx + 1, by + cy, acs_raw16X8);
+      entropy_estimate[(cy + 0) * 8 + cx + 1] = try16X8_1;
+      entropy_estimate[(cy + 1) * 8 + cx + 1] = 0;
+    }
+  } else {
+    if (try8X16_0 < entropy00 + entropy01) {
+      ac_strategy->Set(bx + cx, by + cy, acs_raw8X16);
+      entropy_estimate[(cy + 0) * 8 + cx + 0] = try8X16_0;
+      entropy_estimate[(cy + 0) * 8 + cx + 1] = 0;
+    }
+    if (try8X16_1 < entropy10 + entropy11) {
+      ac_strategy->Set(bx + cx, by + cy + 1, acs_raw8X16);
+      entropy_estimate[(cy + 1) * 8 + cx + 0] = try8X16_1;
+      entropy_estimate[(cy + 1) * 8 + cx + 1] = 0;
+    }
+  }
 }
 
 // Legacy system traversing the integral transform selectiondecision
@@ -914,6 +977,16 @@ void ProcessRectACSOld(PassesEncoderState* JXL_RESTRICT enc_state,
 void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
                        const ACSConfig& config, float* entropy_adjust,
                        const Rect& rect) {
+  // Main philosophy here:
+  // 1. First find best 8x8 transform for each area.
+  // 2. Merging them into larger transforms where possibly, but
+  // starting from the smallest transforms (16x8 and 8x16).
+  // Additional complication: 16x8 and 8x16 are considered
+  // simultanouesly and fairly against each other.
+  // We are looking at 64x64 squares since the YtoX and YtoB
+  // maps happen to be at that resolution, and having
+  // integral transforms cross these boundaries leads to
+  // additional complications.
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
   AcStrategyImage* ac_strategy = &enc_state->shared.ac_strategy;
@@ -1014,20 +1087,50 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
 
   // Priority is a tricky kludge to avoid collisions so that transforms
   // don't overlap.
-  uint8_t priority[64] = {0};
+  uint8_t priority[64] = {};
   for (auto tx : kTransformsForMerge) {
     AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
     for (size_t cy = 0; cy + acs.covered_blocks_y() - 1 < rect.ysize();
          cy += acs.covered_blocks_y()) {
       for (size_t cx = 0; cx + acs.covered_blocks_x() - 1 < rect.xsize();
            cx += acs.covered_blocks_x()) {
-        TryMergeToACSCandidate(tx.type, bx, by, cx, cy, config, cmap_factors,
-                               ac_strategy, tx.entropy_mul, tx.priority,
-                               &priority[0], entropy_estimate, block,
-                               scratch_space, quantized);
+        if (cy + 1 < rect.ysize() && cx + 1 < rect.xsize()) {
+          if (tx.type == AcStrategy::Type::DCT8X16) {
+            // We handle both DCT8X16 and DCT16X8 at the same time.
+            if ((cy | cx) % 2 == 0) {
+              Try16X8And8X16(bx, by, cx, cy, config, cmap_factors, ac_strategy,
+                             tx.entropy_mul, entropy_estimate, block,
+                             scratch_space, quantized);
+            }
+            continue;
+          } else if (tx.type == AcStrategy::Type::DCT16X8) {
+            // We handled both DCT8X16 and DCT16X8 at the same time,
+            // and that is above.
+            continue;
+          }
+        }
+        if ((tx.type == AcStrategy::Type::DCT8X16 && cy % 2 == 1) ||
+            (tx.type == AcStrategy::Type::DCT16X8 && cx % 2 == 1)) {
+          // already covered by the 2x2 approach above.
+          continue;
+        }
+        // All other merge sizes are handled here.
+        // Some of the DCT16X8s and DCT8X16s will still leak through here
+        // when there is an odd number of 8x8 blocks, then the last row
+        // and column will get their DCT16X8s and DCT8X16s through the
+        // normal integral transform merging process.
+        TryMergeAcs(tx.type, bx, by, cx, cy, config, cmap_factors, ac_strategy,
+                    tx.entropy_mul, tx.priority, &priority[0], entropy_estimate,
+                    block, scratch_space, quantized);
       }
     }
   }
+  // TODO(jyrki):
+  // Here we could still try to do some non-aligned matching, like
+  // find a few more 16x8, 8x16 and 16x16s between the non-2-aligned
+  // blocks. This would naturally only work when the source blocks
+  // are compatible with the new merges. In practice I plan to do
+  // this additional merging for 8x8 blocks only.
 }
 
 void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
