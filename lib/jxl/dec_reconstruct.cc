@@ -226,25 +226,20 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
     auto zero = Zero(d);
     auto one = Set(d, 1.0f);
     auto mul = Set(d, 255.0f);
-#if MEMORY_SANITIZER
-    // Avoid use-of-uninitialized-value for loads past the end of the image's
-    // initialized data.
-    auto safe_load = [&](const float* ptr, size_t x) {
-      uint32_t kMask[8] = {~0u, ~0u, ~0u, ~0u, 0, 0, 0, 0};
-      size_t n = std::min<size_t>(Lanes(d), output_buf_rect.xsize() - x);
-      auto mask = BitCast(d, LoadU(du, kMask + Lanes(d) - n));
-      return Load(d, ptr + x) & mask;
-    };
-#else
-    auto safe_load = [](const float* ptr, size_t x) {
-      return Load(D(), ptr + x);
-    };
-#endif
-    for (size_t x = 0; x < output_buf_rect.xsize(); x += Lanes(d)) {
-      auto rf = Clamp(zero, safe_load(row_in_r, x), one) * mul;
-      auto gf = Clamp(zero, safe_load(row_in_g, x), one) * mul;
-      auto bf = Clamp(zero, safe_load(row_in_b, x), one) * mul;
-      auto af = row_in_a ? Clamp(zero, safe_load(row_in_a, x), one) * mul
+
+    // All calculations are lane-wise, still some might require value-dependent
+    // behaviour (e.g. NearestInt). Temporary unposion last vector tail.
+    size_t xsize = output_buf_rect.xsize();
+    size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+    UnpoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
+    UnpoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
+    for (size_t x = 0; x < xsize; x += Lanes(d)) {
+      auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
+      auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
+      auto bf = Clamp(zero, Load(d, row_in_b + x), one) * mul;
+      auto af = row_in_a ? Clamp(zero, Load(d, row_in_a + x), one) * mul
                          : Set(d, 255.0f);
       auto r8 = U8FromU32(BitCast(du, NearestInt(rf)));
       auto g8 = U8FromU32(BitCast(du, NearestInt(gf)));
@@ -259,6 +254,10 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
                   output_buf + base_ptr + bytes * x);
       }
     }
+    PoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
+    PoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
   }
 }
 
