@@ -37,8 +37,23 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-template <typename Op>
-void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
+namespace {
+
+struct TransformOp {
+  static constexpr HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d{};
+  typedef decltype(d) D;
+  typedef decltype(Undefined(d)) T;
+
+  virtual T operator()(D d, const T& linear) const = 0;
+  virtual ~TransformOp() = default;
+};
+
+// static
+constexpr HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) TransformOp::d;
+
+}  // namespace
+
+void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, const TransformOp& op,
                       const OutputEncodingInfo& output_encoding_info) {
   // TODO(eustas): should it still be capped?
   const HWY_CAPPED(float, GroupBorderAssigner::kPaddingXRound) d;
@@ -66,9 +81,9 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
       XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
                output_encoding_info.opsin_params, &linear_r, &linear_g,
                &linear_b);
-      Store(op.Transform(d, linear_r), d, row0 + x);
-      Store(op.Transform(d, linear_g), d, row1 + x);
-      Store(op.Transform(d, linear_b), d, row2 + x);
+      Store(op(d, linear_r), d, row0 + x);
+      Store(op(d, linear_g), d, row1 + x);
+      Store(op(d, linear_b), d, row2 + x);
     }
     PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
@@ -76,16 +91,12 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
   }
 }
 
-struct OpLinear {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
-    return linear;
-  }
+struct OpLinear : public TransformOp {
+  T operator()(D d, const T& linear) const override { return linear; }
 };
 
-struct OpRgb {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
+struct OpRgb : public TransformOp {
+  T operator()(D d, const T& linear) const override {
 #if JXL_HIGH_PRECISION
     return TF_SRGB().EncodedFromDisplay(d, linear);
 #else
@@ -94,33 +105,30 @@ struct OpRgb {
   }
 };
 
-struct OpPq {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
+struct OpPq : public TransformOp {
+  T operator()(D d, const T& linear) const override {
     return TF_PQ().EncodedFromDisplay(d, linear);
   }
 };
 
-struct OpHlg {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
+struct OpHlg : public TransformOp {
+  T operator()(D d, const T& linear) const override {
     return TF_HLG().EncodedFromDisplay(d, linear);
   }
 };
 
-struct Op709 {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
+struct Op709 : public TransformOp {
+  T operator()(D d, const T& linear) const override {
     return TF_709().EncodedFromDisplay(d, linear);
   }
 };
 
-struct OpGamma {
-  const float inverse_gamma;
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
+struct OpGamma : public TransformOp {
+  explicit OpGamma(float inverse_gamma) : inverse_gamma_(inverse_gamma) {}
+  const float inverse_gamma_;
+  T operator()(D d, const T& linear) const override {
     return IfThenZeroElse(linear <= Set(d, 1e-5f),
-                          FastPowf(d, linear, Set(d, inverse_gamma)));
+                          FastPowf(d, linear, Set(d, inverse_gamma_)));
   }
 };
 
@@ -140,7 +148,7 @@ Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
     DoUndoXYBInPlace(idct, rect, Op709(), output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
              output_encoding_info.color_encoding.tf.IsDCI()) {
-    OpGamma op = {output_encoding_info.inverse_gamma};
+    OpGamma op{output_encoding_info.inverse_gamma};
     DoUndoXYBInPlace(idct, rect, op, output_encoding_info);
   } else {
     // This is a programming error.
