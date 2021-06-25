@@ -124,8 +124,9 @@ void FindBestBlockEntropyModel(PassesEncoderState& enc_state) {
   std::vector<uint8_t> remap((qft.size() + 1) * kNumOrders);
   std::iota(remap.begin(), remap.end(), 0);
   std::vector<uint8_t> clusters(remap);
+  size_t nb_clusters = Clamp1((int)(tot / size_for_ctx_model / 2), 4, 8);
   // This is O(n^2 log n), but n <= 14.
-  while (clusters.size() > 5) {
+  while (clusters.size() > nb_clusters) {
     std::sort(clusters.begin(), clusters.end(),
               [&](int a, int b) { return counts[a] > counts[b]; });
     counts[clusters[clusters.size() - 2]] += counts[clusters.back()];
