@@ -348,6 +348,7 @@ class ColorEncodingReaderPNG {
   Status DecodeSRGB(const unsigned char* payload, const size_t payload_size) {
     if (payload_size != 1) return JXL_FAILURE("Wrong sRGB size");
     // (PNG uses the same values as ICC.)
+    if (payload[0] >= 4) return JXL_FAILURE("Invalid Rendering Intent");
     rendering_intent_ = static_cast<RenderingIntent>(payload[0]);
     have_srgb_ = true;
     return true;
