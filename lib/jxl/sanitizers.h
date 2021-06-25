@@ -8,6 +8,8 @@
 
 #include <stddef.h>
 
+#include "lib/jxl/base/compiler_specific.h"
+
 #ifdef MEMORY_SANITIZER
 #define JXL_MEMORY_SANITIZER 1
 #elif defined(__has_feature)
