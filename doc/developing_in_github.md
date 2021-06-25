@@ -75,36 +75,46 @@ where {{USERNAME}} denotes your GitHub username.
 
 ### Checkout the JPEG XL code from GitHub
 
-To get the source code on your computer you need to "clone" it.
+To get the source code on your computer you need to "clone" it. There are two
+repositories at play here, the upstream repository (`libjxl/lbjxl`) and your
+fork (`{{USERNAME}}/libjxl`). You will be normally fetching new changes from
+the upstream repository and push changes to your fork. Getting your changes from
+your fork to the upstream repository is done through the Web interface, via Pull
+Requests.
 
 The [Fork a
 repo](https://docs.github.com/en/github/getting-started-with-github/fork-a-repo)
-goes in great detail, the short version is:
+goes in great detail, but uses the git remote names `upstream` for the shared
+upstream repository and `origin` for your work. This guide proposes an
+alternative naming scheme, used in the examples below.
+
+In this guide `origin` is the upstream shared repository and `myfork` is your
+fork. You can use any other name for your fork if you want. Use the following
+commands to set things up, replacing `{{USERNAME}}` with your GitHub username:
 
 ```bash
-git clone git@github.com:{{USERNAME}}/libjxl.git --recursive
+git clone git https://github.com/libjxl/libjxl --recursive
 cd libjxl
-git remote add upstream https://github.com/libjxl/libjxl
+git remote set-url --push origin git@github.com:{{USERNAME}}/libjxl.git
+git remote add myfork git@github.com:{{USERNAME}}/libjxl.git
 git remote -vv
 ```
 
-This will create two git "remotes", one called "origin" (the default name used
-in the `git clone` command) pointing to your own fork, and one called "upstream"
-pointing to the main libjxl repository. Read the guide for differences between
-using the HTTPS and the SSH clone URLs.
+These commands did three things:
 
-You can select other names if you prefer, for example clone libjxl/libjxl first
-as "origin" and then add your fork as another remote name, or as the push-url of
-origin so you push to your fork but always get new commits from upstream, for
-example:
+ * Created the repository with `origin` as the upstream remote,
+ * Changed the "push" URL to point to your fork, and
+ * Create a new remote pointing to your fork.
 
-```bash
-cd ~/libjxl
-git remote set-url --push origin git@github.com:{{USERNAME}}/libjxl.git
-```
+The last step is optional. Since the "fetch" URL of `origin` points to the
+shared repository and the "push" URL points to your fork, fetching from `origin`
+always gets the latest changes from the upstream repository regardless of the
+contents of your fork.
 
-{{USERNAME}} denotes your GitHub username. This will make the "git push origin"
-command push to your fork, which then allows you to create Pull Requests.
+Having a second origin called `myfork` is only useful if you need to download
+pending changes from your fork from a different computer. For example, if you
+work on multiple computers, each one with this setup, you can push to your
+fork from one, and then fetch from `myfork` from another computer to get those.
 
 # Life of a Pull Request
 
@@ -321,15 +331,15 @@ The merge request should now be updated with the new changes.
 
 We use "rebase" as a merge policy, which means that there a no "merge" commits
 (commits with more than one parent) but instead only a linear history of
-changes. If other commits landed in the main branch since you last synced you
-need to `git fetch`, `git rebase` and push again your changes which need to go
-through the pipeline again to verify that all the tests pass again after
-including the latests changes. Instead of doing this manually, you can _Assign_
-the patch to the user @jpegxl-bot which will do this for you. In order for the
-bot to manage your Merge Request, you need to add it to your fork as a
-Developer.
+changes.
 
-### Trying locally a pending merge request.
+It is possible that other changes where added to the main branch since the last
+time you rebased your changes. These changes could create a conflict with your
+Pull Request, if so you need to `git fetch`, `git rebase` and push again your
+changes which need to go through the continuous integration workflow again to
+verify that all the tests pass again after including the latest changes.
+
+### Trying locally a pending Pull Request
 
 If you want to review in your computer a pending pull request proposed by
 another user you can fetch the merge request commit with the following command,
@@ -341,7 +351,7 @@ git checkout FETCH_HEAD
 ```
 
 The first command will add to your local git repository the remote commit for
-the pending merge request and store a temporary reference called `FETCH_HEAD`.
+the pending pull request and store a temporary reference called `FETCH_HEAD`.
 The second command then checks out that reference. From this point you can
 review the files in your computer, create a local branch for this FETCH_HEAD or
 build on top of it.
