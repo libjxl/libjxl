@@ -117,7 +117,7 @@ All the commands here assume you are in a git checkout as setup here.
 ### Sync to the latest version
 
 ```bash
-git fetch origin
+git fetch upstream
 ```
 
 The last upstream version is now on `origin/main` and none of your local
@@ -131,10 +131,10 @@ request. So in general one branch is one code review, but each branch can have
 multiple individual commits in it.
 
 ```bash
-git checkout origin/main -b mybranch
+git checkout upstream/main -b mybranch
 ```
 
-This will create a new branch `mybranch` tracking `origin/main`. A branch can
+This will create a new branch `mybranch` tracking `upstream/main`. A branch can
 track any remove or local branch, which is used by some tools. Running `git
 branch -vv` will show all the branches you have have, what are they tracking and
 how many commits are ahead or behind. If you create a branch without tracking
