@@ -87,7 +87,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
   params.ans_histogram_strategy =
       HistogramParams::ANSHistogramStrategy::kApproximate;
   size_t max = 0;
-  float total_cost = 0;
   auto token_cost = [&](std::vector<std::vector<Token>>& tokens, size_t num_ctx,
                         bool estimate = true) {
     // TODO(veluca): not estimating is very expensive.
@@ -108,7 +107,6 @@ void ClusterGroups(PassesEncoderState* enc_state) {
     if (costs[i] > costs[max]) {
       max = i;
     }
-    total_cost += costs[i];
   }
   auto dist = [&](int i, int j) {
     std::vector<std::vector<Token>> tokens{ac[i], ac[j]};
