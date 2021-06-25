@@ -26,20 +26,6 @@ static constexpr float kInvSigmaNum = -1.1715728752538099024f;
 // and epf_sharpness fields in the corresponding positions.
 void ComputeSigma(const Rect& block_rect, PassesDecoderState* state);
 
-// Applies Gaborish + EPF to the given `image_rect` part of the image (used to
-// select the sigma values). Input pixels are taken from `input:input_rect`, and
-// the filtering result is written to `out:output_rect`. `dec_state->sigma` must
-// be padded with `kMaxFilterPadding/kBlockDim` values along the x axis.
-// All rects must be aligned to a multiple of `kBlockDim` pixels.
-// `input_rect`, `output_rect` and `image_rect` must all have the same size.
-// At least `lf.Padding()` pixels must be accessible (and contain valid values)
-// outside of `image_rect` in `input`.
-// This function should only ever be called on full images. To do partial
-// processing, use PrepareFilterPipeline directly.
-void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
-                  const Image3F& input, const Rect& input_rect, size_t thread,
-                  Image3F* JXL_RESTRICT out, const Rect& output_rect);
-
 // Same as ApplyFilters, but only prepares the pipeline (which is returned and
 // must be run by the caller on -lf.Padding() to image_rect.ysize() +
 // lf.Padding()).

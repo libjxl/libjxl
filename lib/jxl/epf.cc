@@ -660,17 +660,5 @@ FilterPipeline* PrepareFilterPipeline(
   return fp;
 }
 
-void ApplyFilters(PassesDecoderState* dec_state, const Rect& image_rect,
-                  const Image3F& input, const Rect& input_rect, size_t thread,
-                  Image3F* JXL_RESTRICT out, const Rect& output_rect) {
-  auto fp = PrepareFilterPipeline(dec_state, image_rect, input, input_rect,
-                                  input_rect.ysize(), thread, out, output_rect);
-  const LoopFilter& lf = dec_state->shared->frame_header.loop_filter;
-  for (ssize_t y = -lf.Padding();
-       y < static_cast<ssize_t>(lf.Padding() + image_rect.ysize()); y++) {
-    fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_rect, y);
-  }
-}
-
 }  // namespace jxl
 #endif  // HWY_ONCE
