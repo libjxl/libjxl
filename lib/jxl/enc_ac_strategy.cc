@@ -684,47 +684,116 @@ void TryMergeAcs(AcStrategy::Type acs_raw, size_t bx, size_t by, size_t cx,
 //
 // TODO(jyrki):
 // This idea could be generalized to larger transforms.
-void Try16X8And8X16(size_t bx, size_t by, size_t cx, size_t cy,
-                    const ACSConfig& config,
-                    const float* JXL_RESTRICT cmap_factors,
-                    AcStrategyImage* JXL_RESTRICT ac_strategy,
-                    const float entropy_mul,
-                    float* JXL_RESTRICT entropy_estimate, float* block,
-                    float* scratch_space, uint32_t* quantized) {
+void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
+                   const ACSConfig& config,
+                   const float* JXL_RESTRICT cmap_factors,
+                   AcStrategyImage* JXL_RESTRICT ac_strategy,
+                   const float entropy_mul, const float entropy_mul_16X16,
+                   float* JXL_RESTRICT entropy_estimate, float* block,
+                   float* scratch_space, uint32_t* quantized) {
   constexpr AcStrategy::Type acs_raw16X8 =
       AcStrategy::Type::DCT16X8;  // y=16, x=8
   constexpr AcStrategy::Type acs_raw8X16 =
       AcStrategy::Type::DCT8X16;  // y=8, x=16
+  constexpr AcStrategy::Type acs_raw16X16 = AcStrategy::Type::DCT16X16;
   const AcStrategy acs16X8 = AcStrategy::FromRawStrategy(acs_raw16X8);
   const AcStrategy acs8X16 = AcStrategy::FromRawStrategy(acs_raw8X16);
+  const AcStrategy acs16X16 = AcStrategy::FromRawStrategy(acs_raw16X16);
+  AcStrategyRow row0 = ac_strategy->ConstRow(by + cy + 0);
+  AcStrategyRow row1 = ac_strategy->ConstRow(by + cy + 1);
+  bool isSingle[2][2] = {
+      {ac_strategy->IsValid(bx + cx + 0, by + cy + 0) &&
+           !row0[bx + cx + 0].IsMultiblock(),
+       ac_strategy->IsValid(bx + cx + 1, by + cy + 0) &&
+           !row0[bx + cx + 1].IsMultiblock()},
+      {ac_strategy->IsValid(bx + cx + 0, by + cy + 1) &&
+           !row1[bx + cx + 0].IsMultiblock(),
+       ac_strategy->IsValid(bx + cx + 1, by + cy + 1) &&
+           !row1[bx + cx + 1].IsMultiblock()},
+  };
+  bool has16X8 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
+                 row0[bx + cx + 1].RawStrategy() == acs_raw16X8;
+  bool has8X16 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
+                 row1[bx + cx + 0].RawStrategy() == acs_raw8X16;
+  if (has16X8) {
+    bool ok0 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
+               (isSingle[0][0] && isSingle[1][0]);
+    bool ok1 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
+               (isSingle[0][1] && isSingle[1][1]);
+    if (!ok0 || !ok1) {
+      // return;
+    }
+  } else {
+    bool ok0 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
+               (isSingle[0][0] && isSingle[0][1]);
+    bool ok1 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
+               (isSingle[1][0] && isSingle[1][1]);
+    if (!ok0 || !ok1) {
+      // return;
+    }
+  }
+  {
+    bool has16X16 = row0[bx + cx + 0].RawStrategy() == acs_raw16X16;
+    JXL_ASSERT(!has16X16);
+  }
   // Current entropies from the best 8x8 transforms in this 2x2 area:
   const float entropy00 = entropy_estimate[(cy + 0) * 8 + (cx + 0)];
   const float entropy01 = entropy_estimate[(cy + 0) * 8 + (cx + 1)];
   const float entropy10 = entropy_estimate[(cy + 1) * 8 + (cx + 0)];
   const float entropy11 = entropy_estimate[(cy + 1) * 8 + (cx + 1)];
-  const float try16X8_0 =
-      entropy_mul * EstimateEntropy(acs16X8, (bx + cx + 0) * 8,
-                                    (by + cy + 0) * 8, config, cmap_factors,
-                                    block, scratch_space, quantized);
-  const float try16X8_1 =
-      entropy_mul * EstimateEntropy(acs16X8, (bx + cx + 1) * 8,
-                                    (by + cy + 0) * 8, config, cmap_factors,
-                                    block, scratch_space, quantized);
-  const float try8X16_0 =
-      entropy_mul * EstimateEntropy(acs8X16, (bx + cx + 0) * 8,
-                                    (by + cy + 0) * 8, config, cmap_factors,
-                                    block, scratch_space, quantized);
-  const float try8X16_1 =
-      entropy_mul * EstimateEntropy(acs8X16, (bx + cx + 0) * 8,
-                                    (by + cy + 1) * 8, config, cmap_factors,
-                                    block, scratch_space, quantized);
+  float try16X8_0 = std::numeric_limits<float>::max();
+  float try16X8_1 = std::numeric_limits<float>::max();
+  float try8X16_0 = std::numeric_limits<float>::max();
+  float try8X16_1 = std::numeric_limits<float>::max();
+  float try16X16 = std::numeric_limits<float>::max();
+  const bool allow_16X8 = !has8X16;
+  const bool allow_8X16 = !has16X8;
+  if (allow_16X8) {
+    if (row0[bx + cx + 0].RawStrategy() != acs_raw16X8) {
+      try16X8_0 =
+          entropy_mul * EstimateEntropy(acs16X8, (bx + cx + 0) * 8,
+                                        (by + cy + 0) * 8, config, cmap_factors,
+                                        block, scratch_space, quantized);
+    }
+    if (row0[bx + cx + 1].RawStrategy() != acs_raw16X8) {
+      try16X8_1 =
+          entropy_mul * EstimateEntropy(acs16X8, (bx + cx + 1) * 8,
+                                        (by + cy + 0) * 8, config, cmap_factors,
+                                        block, scratch_space, quantized);
+    }
+  }
+  if (allow_8X16) {
+    if (row0[bx + cx].RawStrategy() != acs_raw8X16) {
+      try8X16_0 =
+          entropy_mul * EstimateEntropy(acs8X16, (bx + cx + 0) * 8,
+                                        (by + cy + 0) * 8, config, cmap_factors,
+                                        block, scratch_space, quantized);
+    }
+    if (row1[bx + cx].RawStrategy() != acs_raw8X16) {
+      try8X16_1 =
+          entropy_mul * EstimateEntropy(acs8X16, (bx + cx + 0) * 8,
+                                        (by + cy + 1) * 8, config, cmap_factors,
+                                        block, scratch_space, quantized);
+    }
+  }
+  try16X16 = entropy_mul_16X16 * EstimateEntropy(acs16X16, (bx + cx + 0) * 8,
+                                                 (by + cy + 0) * 8, config,
+                                                 cmap_factors, block,
+                                                 scratch_space, quantized);
+
   // Test if this block should have 16X8 or 8X16 transforms,
   // because it can have only one or the other.
   float cost16x8 = std::min(try16X8_0, entropy00 + entropy10) +
                    std::min(try16X8_1, entropy01 + entropy11);
   float cost8x16 = std::min(try8X16_0, entropy00 + entropy01) +
                    std::min(try8X16_1, entropy10 + entropy11);
-  if (cost16x8 < cost8x16) {
+  if (try16X16 < cost16x8 && try16X16 < cost8x16) {
+    ac_strategy->Set(bx + cx, by + cy, acs_raw16X16);
+    entropy_estimate[(cy + 0) * 8 + cx + 0] = try16X16;
+    entropy_estimate[(cy + 0) * 8 + cx + 1] = 0;
+    entropy_estimate[(cy + 1) * 8 + cx + 0] = 0;
+    entropy_estimate[(cy + 1) * 8 + cx + 1] = 0;
+  } else if (cost16x8 < cost8x16) {
     if (try16X8_0 < entropy00 + entropy10) {
       ac_strategy->Set(bx + cx, by + cy, acs_raw16X8);
       entropy_estimate[(cy + 0) * 8 + cx + 0] = try16X8_0;
@@ -1059,6 +1128,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   static const float k16x16base = 2.6559390179313955f;
   const float mul16x16 =
       k16x16mul2 + k16x16mul1 / (butteraugli_target + k16x16base);
+  const float entropy_mul16x16 = mul16x16 * 0.83183417727960129f;
 
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
@@ -1072,7 +1142,8 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   const MergeTry kTransformsForMerge[9] = {
       {AcStrategy::Type::DCT16X8, 2, mul8x16 * 0.91195782912371126f},
       {AcStrategy::Type::DCT8X16, 2, mul8x16 * 0.91195782912371126f},
-      {AcStrategy::Type::DCT16X16, 3, mul16x16 * 0.83183417727960129f},
+      // FindBest16X16 looks for DCT16X16 and its subdivisions.
+      // {AcStrategy::Type::DCT16X16, 3, mul16x16 * 0.83183417727960129f},
       {AcStrategy::Type::DCT16X32, 4, 0.88854513227338527f},
       {AcStrategy::Type::DCT32X16, 4, 0.88854513227338527f},
       {AcStrategy::Type::DCT32X32, 5, 1.0092994906548809f},
@@ -1106,9 +1177,9 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
           if (tx.type == AcStrategy::Type::DCT8X16) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 2 == 0) {
-              Try16X8And8X16(bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                             tx.entropy_mul, entropy_estimate, block,
-                             scratch_space, quantized);
+              FindBest16X16(bx, by, cx, cy, config, cmap_factors, ac_strategy,
+                            tx.entropy_mul, entropy_mul16x16, entropy_estimate,
+                            block, scratch_space, quantized);
             }
             continue;
           } else if (tx.type == AcStrategy::Type::DCT16X8) {
