@@ -511,27 +511,27 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
       {
           AcStrategy::Type::DCT,
           3.0f,
-          0.8425438883708443f,
+          0.745f,
       },
       {
           AcStrategy::Type::DCT4X4,
           4.0f,
-          1.0179946967008328f,
+          1.0179946967008329f,
       },
       {
           AcStrategy::Type::DCT2X2,
           4.0f,
-          0.74180119707580942f,
+          0.76721119707580943f,
       },
       {
           AcStrategy::Type::DCT4X8,
           0.0f,
-          0.7828481258599432f,
+          0.710754622182473063f,
       },
       {
           AcStrategy::Type::DCT8X4,
           0.0f,
-          0.7828481258599432f,
+          0.710754622182473063f,
       },
       {
           AcStrategy::Type::IDENTITY,
@@ -541,22 +541,22 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
       {
           AcStrategy::Type::AFV0,
           3.0f,
-          0.80286131125719429f,
+          0.70086131125719425f,
       },
       {
           AcStrategy::Type::AFV1,
           3.0f,
-          0.80286131125719429f,
+          0.70086131125719425f,
       },
       {
           AcStrategy::Type::AFV2,
           3.0f,
-          0.80286131125719429f,
+          0.70086131125719425f,
       },
       {
           AcStrategy::Type::AFV3,
           3.0f,
-          0.80286131125719429f,
+          0.70086131125719425f,
       },
   };
   double best = 1e30;
@@ -701,7 +701,7 @@ void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
   const AcStrategy acs16X16 = AcStrategy::FromRawStrategy(acs_raw16X16);
   AcStrategyRow row0 = ac_strategy->ConstRow(by + cy + 0);
   AcStrategyRow row1 = ac_strategy->ConstRow(by + cy + 1);
-  bool isSingle[2][2] = {
+  const bool is8X8[2][2] = {
       {ac_strategy->IsValid(bx + cx + 0, by + cy + 0) &&
            !row0[bx + cx + 0].IsMultiblock(),
        ac_strategy->IsValid(bx + cx + 1, by + cy + 0) &&
@@ -716,25 +716,31 @@ void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
   bool has8X16 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
                  row1[bx + cx + 0].RawStrategy() == acs_raw8X16;
   if (has16X8) {
-    bool ok0 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
-               (isSingle[0][0] && isSingle[1][0]);
-    bool ok1 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
-               (isSingle[0][1] && isSingle[1][1]);
+    bool ok0 = (row0[bx + cx + 0].IsFirstBlock() &&
+                row0[bx + cx + 0].RawStrategy() == acs_raw16X8) ||
+               (is8X8[0][0] && is8X8[1][0]);
+    bool ok1 = (row0[bx + cx + 1].IsFirstBlock() &&
+                row0[bx + cx + 1].RawStrategy() == acs_raw16X8) ||
+               (is8X8[0][1] && is8X8[1][1]);
     if (!ok0 || !ok1) {
-      // return;
+      return;
     }
   } else {
-    bool ok0 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
-               (isSingle[0][0] && isSingle[0][1]);
-    bool ok1 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
-               (isSingle[1][0] && isSingle[1][1]);
+    bool ok0 = (row0[bx + cx + 0].IsFirstBlock() &&
+                row0[bx + cx + 0].RawStrategy() == acs_raw8X16) ||
+               (is8X8[0][0] && is8X8[0][1]);
+    bool ok1 = (row1[bx + cx + 0].IsFirstBlock() &&
+                row1[bx + cx + 0].RawStrategy() == acs_raw8X16) ||
+               (is8X8[1][0] && is8X8[1][1]);
     if (!ok0 || !ok1) {
-      // return;
+      return;
     }
   }
   {
     bool has16X16 = row0[bx + cx + 0].RawStrategy() == acs_raw16X16;
-    JXL_ASSERT(!has16X16);
+    if (has16X16) {
+      return;
+    }
   }
   // Current entropies from the best 8x8 transforms in this 2x2 area:
   const float entropy00 = entropy_estimate[(cy + 0) * 8 + (cx + 0)];
@@ -745,7 +751,6 @@ void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
   float try16X8_1 = std::numeric_limits<float>::max();
   float try8X16_0 = std::numeric_limits<float>::max();
   float try8X16_1 = std::numeric_limits<float>::max();
-  float try16X16 = std::numeric_limits<float>::max();
   const bool allow_16X8 = !has8X16;
   const bool allow_8X16 = !has16X8;
   if (allow_16X8) {
@@ -776,10 +781,10 @@ void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
                                         block, scratch_space, quantized);
     }
   }
-  try16X16 = entropy_mul_16X16 * EstimateEntropy(acs16X16, (bx + cx + 0) * 8,
-                                                 (by + cy + 0) * 8, config,
-                                                 cmap_factors, block,
-                                                 scratch_space, quantized);
+  float try16X16 =
+      entropy_mul_16X16 *
+      EstimateEntropy(acs16X16, (bx + cx + 0) * 8, (by + cy + 0) * 8, config,
+                      cmap_factors, block, scratch_space, quantized);
 
   // Test if this block should have 16X8 or 8X16 transforms,
   // because it can have only one or the other.
@@ -1097,7 +1102,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // low butteraugli_target distances.
   static const float k8x8mul1 = -0.38173536034815592f;
   static const float k8x8mul2 = 1.0305692427138704f;
-  static const float k8x8base = 1.5349788369698298f;
+  static const float k8x8base = 1.5789348369698299f;
   const float mul8x8 = k8x8mul2 + k8x8mul1 / (butteraugli_target + k8x8base);
   for (size_t iy = 0; iy < rect.ysize(); iy++) {
     for (size_t ix = 0; ix < rect.xsize(); ix++) {
@@ -1117,18 +1122,19 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
     uint8_t priority;
     float entropy_mul;
   };
-  static const float k8x16mul1 = -0.49793408372209957;
-  static const float k8x16mul2 = 1.0265154587144558f;
-  static const float k8x16base = 2.1458510646431797f;
-  const float mul8x16 =
-      k8x16mul2 + k8x16mul1 / (butteraugli_target + k8x16base);
+  static const float k8X16mul1 = -0.51923137374961237;
+  static const float k8X16mul2 = 0.92332415151304614;
+  static const float k8X16base = 1.6637730066379945f;
+  const float entropy_mul16X8 =
+      k8X16mul2 + k8X16mul1 / (butteraugli_target + k8X16base);
+  //  const float entropy_mul16X8 = mul8X16 * 0.91195782912371126f;
 
-  static const float k16x16mul1 = -0.068006033511844949;
-  static const float k16x16mul2 = 1.0113327118184485;
-  static const float k16x16base = 2.6559390179313955f;
-  const float mul16x16 =
-      k16x16mul2 + k16x16mul1 / (butteraugli_target + k16x16base);
-  const float entropy_mul16x16 = mul16x16 * 0.83183417727960129f;
+  static const float k16X16mul1 = -0.3255063063403677;
+  static const float k16X16mul2 = 0.85362630789904748;
+  static const float k16X16base = 2.19008132121404f;
+  const float entropy_mul16X16 =
+      k16X16mul2 + k16X16mul1 / (butteraugli_target + k16X16base);
+  //  const float entropy_mul16X16 = mul16X16 * 0.83183417727960129f;
 
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
@@ -1140,10 +1146,10 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // e.g. by not applying the multiplier when storing the new entropy
   // estimates in TryMergeToACSCandidate().
   const MergeTry kTransformsForMerge[9] = {
-      {AcStrategy::Type::DCT16X8, 2, mul8x16 * 0.91195782912371126f},
-      {AcStrategy::Type::DCT8X16, 2, mul8x16 * 0.91195782912371126f},
+      {AcStrategy::Type::DCT16X8, 2, entropy_mul16X8},
+      {AcStrategy::Type::DCT8X16, 2, entropy_mul16X8},
       // FindBest16X16 looks for DCT16X16 and its subdivisions.
-      // {AcStrategy::Type::DCT16X16, 3, mul16x16 * 0.83183417727960129f},
+      // {AcStrategy::Type::DCT16X16, 3, entropy_mul16X16},
       {AcStrategy::Type::DCT16X32, 4, 0.88854513227338527f},
       {AcStrategy::Type::DCT32X16, 4, 0.88854513227338527f},
       {AcStrategy::Type::DCT32X32, 5, 1.0092994906548809f},
@@ -1178,7 +1184,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 2 == 0) {
               FindBest16X16(bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                            tx.entropy_mul, entropy_mul16x16, entropy_estimate,
+                            tx.entropy_mul, entropy_mul16X16, entropy_estimate,
                             block, scratch_space, quantized);
             }
             continue;
@@ -1206,12 +1212,17 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
       }
     }
   }
-  // TODO(jyrki):
-  // Here we could still try to do some non-aligned matching, like
-  // find a few more 16x8, 8x16 and 16x16s between the non-2-aligned
-  // blocks. This would naturally only work when the source blocks
-  // are compatible with the new merges. In practice I plan to do
-  // this additional merging for 8x8 blocks only.
+  // Here we still try to do some non-aligned matching, find a few more
+  // 16X8, 8X16 and 16X16s between the non-2-aligned blocks.
+  for (int ii = 0; ii < 3; ++ii) {
+    for (size_t cy = 1 - (ii == 1); cy + 1 < rect.ysize(); cy += 2) {
+      for (size_t cx = 1 - (ii == 2); cx + 1 < rect.xsize(); cx += 2) {
+        FindBest16X16(bx, by, cx, cy, config, cmap_factors, ac_strategy,
+                      entropy_mul16X8, entropy_mul16X16, entropy_estimate,
+                      block, scratch_space, quantized);
+      }
+    }
+  }
 }
 
 void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
@@ -1294,29 +1305,29 @@ void AcStrategyHeuristics::Init(const Image3F& src,
       config.cost_delta = 4.316274170126156f;
     }
   } else {
-    config.info_loss_multiplier = 45.591693484165646f;
-    config.base_entropy = 50.312647243619388f;
-    config.zeros_mul = 0.89601263377598228f;
+    config.info_loss_multiplier = 136.37708787126093f;
+    config.base_entropy = 56.030596115736621f;
+    config.zeros_mul = 7.444405659772416f;
     if (butteraugli_target < 2) {
-      config.cost1 = 0.80671326713285485f;
-      config.cost2 = 4.0513999246170691f;
-      config.cost_delta = 8.1520684010822624f;
+      config.cost1 = 0.59328673286714528f;
+      config.cost2 = 5.4213999246170692f;
+      config.cost_delta = 8.9520684010822631f;
     } else if (butteraugli_target < 4) {
-      config.cost1 = 4.2043248061477723f;
-      config.cost2 = 3.7952481443835868f;
-      config.cost_delta = 5.9978822565620655f;
+      config.cost1 = 9.8703248061477744f;
+      config.cost2 = 4.4417860847109791f;
+      config.cost_delta = 6.1101822565620658f;
     } else if (butteraugli_target < 8) {
-      config.cost1 = 3.7977273976614927f;
-      config.cost2 = 1.8690438447689841f;
-      config.cost_delta = 5.9877902390328739f;
+      config.cost1 = 3.9977973976614929f;
+      config.cost2 = 2.6251281566076332f;
+      config.cost_delta = 7.3217902390328744f;
     } else if (butteraugli_target < 16) {
-      config.cost1 = 2.4149181929658265;
-      config.cost2 = 2.5815102821961826f;
-      config.cost_delta = 3.6386463449187714f;
+      config.cost1 = 6.724814631080311;
+      config.cost2 = 2.8803802821961826f;
+      config.cost_delta = 3.7386463449187715f;
     } else {
-      config.cost1 = 1.5;
-      config.cost2 = 2.6952503610099059f;
-      config.cost_delta = 4.316274170126156f;
+      config.cost1 = 1.2529999999999999;
+      config.cost2 = 3.5572082050905816f;
+      config.cost_delta = 4.5385741701261555f;
     }
   }
 
