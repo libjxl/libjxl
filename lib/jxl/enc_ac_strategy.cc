@@ -1120,6 +1120,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   struct MergeTry {
     AcStrategy::Type type;
     uint8_t priority;
+    uint8_t decoding_speed_tier_max_limit;
     float entropy_mul;
   };
   static const float k8X16mul1 = -0.51923137374961237;
@@ -1146,17 +1147,17 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // e.g. by not applying the multiplier when storing the new entropy
   // estimates in TryMergeToACSCandidate().
   const MergeTry kTransformsForMerge[9] = {
-      {AcStrategy::Type::DCT16X8, 2, entropy_mul16X8},
-      {AcStrategy::Type::DCT8X16, 2, entropy_mul16X8},
+      {AcStrategy::Type::DCT16X8, 2, 4, entropy_mul16X8},
+      {AcStrategy::Type::DCT8X16, 2, 4, entropy_mul16X8},
       // FindBest16X16 looks for DCT16X16 and its subdivisions.
       // {AcStrategy::Type::DCT16X16, 3, entropy_mul16X16},
-      {AcStrategy::Type::DCT16X32, 4, 0.88854513227338527f},
-      {AcStrategy::Type::DCT32X16, 4, 0.88854513227338527f},
-      {AcStrategy::Type::DCT32X32, 5, 1.0092994906548809f},
+      {AcStrategy::Type::DCT16X32, 4, 4, 0.88854513227338527f},
+      {AcStrategy::Type::DCT32X16, 4, 4, 0.88854513227338527f},
+      {AcStrategy::Type::DCT32X32, 5, 1, 1.0092994906548809f},
       // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
-      {AcStrategy::Type::DCT64X32, 6, 2.0858810264509633f},
-      {AcStrategy::Type::DCT32X64, 6, 2.0858810264509633f},
-      {AcStrategy::Type::DCT64X64, 8, 2.0846542128012948f},
+      {AcStrategy::Type::DCT64X32, 6, 0, 2.0858810264509633f},
+      {AcStrategy::Type::DCT32X64, 6, 0, 2.0858810264509633f},
+      {AcStrategy::Type::DCT64X64, 8, 0, 2.0846542128012948f},
   };
   /*
   These sizes not yet included in merge heuristic:
@@ -1174,6 +1175,9 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // don't overlap.
   uint8_t priority[64] = {};
   for (auto tx : kTransformsForMerge) {
+    if (cparams.decoding_speed_tier > tx.decoding_speed_tier_max_limit) {
+      continue;
+    }
     AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
     for (size_t cy = 0; cy + acs.covered_blocks_y() - 1 < rect.ysize();
          cy += acs.covered_blocks_y()) {
@@ -1229,8 +1233,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
                     const ACSConfig& config, float* entropy_adjust,
                     const Rect& rect) {
   const CompressParams& cparams = enc_state->cparams;
-  if (cparams.speed_tier > SpeedTier::kWombat ||
-      cparams.decoding_speed_tier >= 1) {
+  if (cparams.speed_tier > SpeedTier::kWombat) {
     // This heuristic is matched in AcStrategyHeuristic::Init.
     // TODO(Jyrki): Get rid of the old when we have a viable alternative.
     ProcessRectACSOld(enc_state, config, entropy_adjust, rect);
@@ -1278,8 +1281,7 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   // The following constant controls the relative weights of these components.
   // TODO(jyrki): Get rid of the 'Old config' supporting faster
   // decoding speed tiers.
-  if (cparams.speed_tier > SpeedTier::kWombat ||
-      cparams.decoding_speed_tier >= 1) {
+  if (cparams.speed_tier > SpeedTier::kWombat) {
     config.info_loss_multiplier = 39.2;
     config.base_entropy = 30.0;
     config.zeros_mul = 0.3;  // Possibly a bigger value would work better.
