@@ -496,7 +496,8 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   return ret;
 }
 
-uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
+uint8_t FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
+                             const ACSConfig& config,
                              const float* JXL_RESTRICT cmap_factors,
                              AcStrategyImage* JXL_RESTRICT ac_strategy,
                              const float* JXL_RESTRICT entropy_adjust,
@@ -504,57 +505,68 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
                              uint32_t* quantized, float* entropy_out) {
   struct TransformTry8x8 {
     AcStrategy::Type type;
+    int encoding_speed_tier_max_limit;
     float entropy_add;
     float entropy_mul;
   };
   static const TransformTry8x8 kTransforms8x8[] = {
       {
           AcStrategy::Type::DCT,
+          9,
           3.0f,
           0.745f,
       },
       {
           AcStrategy::Type::DCT4X4,
+          5,
           4.0f,
           1.0179946967008329f,
       },
       {
           AcStrategy::Type::DCT2X2,
+          4,
           4.0f,
           0.76721119707580943f,
       },
       {
           AcStrategy::Type::DCT4X8,
+          5,
           0.0f,
           0.710754622182473063f,
       },
       {
           AcStrategy::Type::DCT8X4,
+          5,
           0.0f,
           0.710754622182473063f,
       },
       {
           AcStrategy::Type::IDENTITY,
+          5,
           8.0f,
           0.81217614513585534f,
       },
       {
           AcStrategy::Type::AFV0,
+          4,
           3.0f,
           0.70086131125719425f,
       },
       {
           AcStrategy::Type::AFV1,
+          4,
           3.0f,
           0.70086131125719425f,
       },
       {
           AcStrategy::Type::AFV2,
+          4,
           3.0f,
           0.70086131125719425f,
       },
       {
           AcStrategy::Type::AFV3,
+          4,
           3.0f,
           0.70086131125719425f,
       },
@@ -562,6 +574,9 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, const ACSConfig& config,
   double best = 1e30;
   uint8_t best_tx = kTransforms8x8[0].type;
   for (auto tx : kTransforms8x8) {
+    if (tx.encoding_speed_tier_max_limit < encoding_speed_tier) {
+      continue;
+    }
     AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
     float entropy = EstimateEntropy(acs, x, y, config, cmap_factors, block,
                                     scratch_space, quantized);
@@ -1091,8 +1106,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
       enc_state->shared.cmap.YtoBRatio(
           enc_state->shared.cmap.ytob_map.ConstRow(ty)[tx]),
   };
-  // Do not try to replace ACS in modes faster than wombat mode.
-  if (cparams.speed_tier > SpeedTier::kWombat) return;
+  if (cparams.speed_tier > SpeedTier::kHare) return;
   // First compute the best 8x8 transform for each square. Later, we do not
   // experiment with different combinations, but only use the best of the 8x8s
   // when DCT8X8 is specified in the tree search.
@@ -1108,8 +1122,9 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
     for (size_t ix = 0; ix < rect.xsize(); ix++) {
       float entropy = 0.0;
       const uint8_t best_of_8x8s = FindBest8x8Transform(
-          8 * (bx + ix), 8 * (by + iy), config, cmap_factors, ac_strategy,
-          entropy_adjust, block, scratch_space, quantized, &entropy);
+          8 * (bx + ix), 8 * (by + iy), static_cast<int>(cparams.speed_tier),
+          config, cmap_factors, ac_strategy, entropy_adjust, block,
+          scratch_space, quantized, &entropy);
       ac_strategy->Set(bx + ix, by + iy,
                        static_cast<AcStrategy::Type>(best_of_8x8s));
       entropy_estimate[iy * 8 + ix] = entropy * mul8x8;
@@ -1121,6 +1136,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
     AcStrategy::Type type;
     uint8_t priority;
     uint8_t decoding_speed_tier_max_limit;
+    uint8_t encoding_speed_tier_max_limit;
     float entropy_mul;
   };
   static const float k8X16mul1 = -0.51923137374961237;
@@ -1147,17 +1163,17 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // e.g. by not applying the multiplier when storing the new entropy
   // estimates in TryMergeToACSCandidate().
   const MergeTry kTransformsForMerge[9] = {
-      {AcStrategy::Type::DCT16X8, 2, 4, entropy_mul16X8},
-      {AcStrategy::Type::DCT8X16, 2, 4, entropy_mul16X8},
+      {AcStrategy::Type::DCT16X8, 2, 4, 5, entropy_mul16X8},
+      {AcStrategy::Type::DCT8X16, 2, 4, 5, entropy_mul16X8},
       // FindBest16X16 looks for DCT16X16 and its subdivisions.
       // {AcStrategy::Type::DCT16X16, 3, entropy_mul16X16},
-      {AcStrategy::Type::DCT16X32, 4, 4, 0.88854513227338527f},
-      {AcStrategy::Type::DCT32X16, 4, 4, 0.88854513227338527f},
-      {AcStrategy::Type::DCT32X32, 5, 1, 1.0092994906548809f},
+      {AcStrategy::Type::DCT16X32, 4, 4, 4, 0.88854513227338527f},
+      {AcStrategy::Type::DCT32X16, 4, 4, 4, 0.88854513227338527f},
+      {AcStrategy::Type::DCT32X32, 5, 1, 5, 1.0092994906548809f},
       // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
-      {AcStrategy::Type::DCT64X32, 6, 0, 2.0858810264509633f},
-      {AcStrategy::Type::DCT32X64, 6, 0, 2.0858810264509633f},
-      {AcStrategy::Type::DCT64X64, 8, 0, 2.0846542128012948f},
+      {AcStrategy::Type::DCT64X32, 6, 0, 3, 2.0858810264509633f},
+      {AcStrategy::Type::DCT32X64, 6, 0, 3, 2.0858810264509633f},
+      {AcStrategy::Type::DCT64X64, 8, 0, 3, 2.0846542128012948f},
   };
   /*
   These sizes not yet included in merge heuristic:
@@ -1175,7 +1191,7 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   // don't overlap.
   uint8_t priority[64] = {};
   for (auto tx : kTransformsForMerge) {
-    if (cparams.decoding_speed_tier > tx.decoding_speed_tier_max_limit) {
+    if (tx.decoding_speed_tier_max_limit < cparams.decoding_speed_tier) {
       continue;
     }
     AcStrategy acs = AcStrategy::FromRawStrategy(tx.type);
@@ -1218,6 +1234,9 @@ void ProcessRectACSNew(PassesEncoderState* JXL_RESTRICT enc_state,
   }
   // Here we still try to do some non-aligned matching, find a few more
   // 16X8, 8X16 and 16X16s between the non-2-aligned blocks.
+  if (cparams.speed_tier >= SpeedTier::kHare) {
+    return;
+  }
   for (int ii = 0; ii < 3; ++ii) {
     for (size_t cy = 1 - (ii == 1); cy + 1 < rect.ysize(); cy += 2) {
       for (size_t cx = 1 - (ii == 2); cx + 1 < rect.xsize(); cx += 2) {
@@ -1233,7 +1252,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
                     const ACSConfig& config, float* entropy_adjust,
                     const Rect& rect) {
   const CompressParams& cparams = enc_state->cparams;
-  if (cparams.speed_tier > SpeedTier::kWombat) {
+  if (cparams.speed_tier > SpeedTier::kHare) {
     // This heuristic is matched in AcStrategyHeuristic::Init.
     // TODO(Jyrki): Get rid of the old when we have a viable alternative.
     ProcessRectACSOld(enc_state, config, entropy_adjust, rect);
@@ -1281,7 +1300,7 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   // The following constant controls the relative weights of these components.
   // TODO(jyrki): Get rid of the 'Old config' supporting faster
   // decoding speed tiers.
-  if (cparams.speed_tier > SpeedTier::kWombat) {
+  if (cparams.speed_tier > SpeedTier::kFalcon) {
     config.info_loss_multiplier = 39.2;
     config.base_entropy = 30.0;
     config.zeros_mul = 0.3;  // Possibly a bigger value would work better.
