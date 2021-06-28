@@ -1339,9 +1339,27 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     std::vector<coeff_order_t> ac_group_order(num_groups);
     std::iota(ac_group_order.begin(), ac_group_order.end(), 0);
     size_t group_dim = frame_dim.group_dim;
-    // The center of the image.
-    int64_t imag_cx = ib.xsize() / 2;
-    int64_t imag_cy = ib.ysize() / 2;
+
+    // The center of the image is either given by parameters or chosen
+    // to be the middle of the image by default if center_x, center_y resp.
+    // are not provided.
+
+    int64_t imag_cx;
+    if (cparams.center_x != static_cast<size_t>(-1)) {
+      JXL_RETURN_IF_ERROR(cparams.center_x < ib.xsize());
+      imag_cx = cparams.center_x;
+    } else {
+      imag_cx = ib.xsize() / 2;
+    }
+
+    int64_t imag_cy;
+    if (cparams.center_y != static_cast<size_t>(-1)) {
+      JXL_RETURN_IF_ERROR(cparams.center_y < ib.ysize());
+      imag_cy = cparams.center_y;
+    } else {
+      imag_cy = ib.ysize() / 2;
+    }
+
     // The center of the group containing the center of the image.
     int64_t cx = (imag_cx / group_dim) * group_dim + group_dim / 2;
     int64_t cy = (imag_cy / group_dim) * group_dim + group_dim / 2;

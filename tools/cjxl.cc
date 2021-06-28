@@ -365,6 +365,13 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "Put center groups first in the compressed file.",
                          &params.middleout, &SetBooleanTrue, 1);
 
+  cmdline->AddOptionValue('\0', "center_x", "0..XSIZE",
+                          "Put center groups first in the compressed file.",
+                          &params.center_x, &ParseUnsigned, 1);
+  cmdline->AddOptionValue('\0', "center_y", "0..YSIZE",
+                          "Put center groups first in the compressed file.",
+                          &params.center_y, &ParseUnsigned, 1);
+
   // Flags.
   cmdline->AddOptionFlag('\0', "progressive_ac",
                          "Use the progressive mode for AC.",
