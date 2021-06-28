@@ -49,7 +49,7 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
       [&](size_t num_threads) {
         return c_transform.Init(ib->c_current(), c_desired,
                                 metadata->IntensityTarget(), rect.xsize(),
-                                num_threads);
+                                num_threads, ib->HasBlack());
       },
       [&](const int y, const int thread) {
         float* mutable_src_buf = c_transform.BufSrc(thread);
@@ -57,6 +57,29 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
         // Interleave input.
         if (is_gray) {
           src_buf = rect.ConstPlaneRow(ib->color(), 0, y);
+        } else if (ib->HasBlack()) {
+          const float* JXL_RESTRICT row_in0 =
+              rect.ConstPlaneRow(ib->color(), 0, y);
+          const float* JXL_RESTRICT row_in1 =
+              rect.ConstPlaneRow(ib->color(), 1, y);
+          const float* JXL_RESTRICT row_in2 =
+              rect.ConstPlaneRow(ib->color(), 2, y);
+          const float* JXL_RESTRICT row_in3 = rect.ConstRow(ib->black(), y);
+          for (size_t x = 0; x < rect.xsize(); x++) {
+#if JPEGXL_ENABLE_SKCMS
+            // SKCMS does CMYK like JXL: 0 = max ink, 1 = white
+            mutable_src_buf[4 * x + 0] = row_in0[x];
+            mutable_src_buf[4 * x + 1] = row_in1[x];
+            mutable_src_buf[4 * x + 2] = row_in2[x];
+            mutable_src_buf[4 * x + 3] = row_in3[x];
+#else
+            // LCMS does CMYK in a weird way: 0 = white, 100 = max ink
+            mutable_src_buf[4 * x + 0] = 100.f - 100.f * row_in0[x];
+            mutable_src_buf[4 * x + 1] = 100.f - 100.f * row_in1[x];
+            mutable_src_buf[4 * x + 2] = 100.f - 100.f * row_in2[x];
+            mutable_src_buf[4 * x + 3] = 100.f - 100.f * row_in3[x];
+#endif
+          }
         } else {
           const float* JXL_RESTRICT row_in0 =
               rect.ConstPlaneRow(ib->color(), 0, y);
@@ -71,7 +94,8 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
           }
         }
         float* JXL_RESTRICT dst_buf = c_transform.BufDst(thread);
-        DoColorSpaceTransform(&c_transform, thread, src_buf, dst_buf);
+        DoColorSpaceTransform(&c_transform, thread, src_buf, dst_buf,
+                              ib->HasBlack());
         T* JXL_RESTRICT row_out0 = out->PlaneRow(0, y);
         T* JXL_RESTRICT row_out1 = out->PlaneRow(1, y);
         T* JXL_RESTRICT row_out2 = out->PlaneRow(2, y);
@@ -143,7 +167,7 @@ Status ImageBundle::CopyToSRGB(const Rect& rect, Image3B* out,
 Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
                          ThreadPool* pool, ImageBundle* store,
                          const ImageBundle** out) {
-  if (in.c_current().SameColorEncoding(c_desired)) {
+  if (in.c_current().SameColorEncoding(c_desired) && !in.HasBlack()) {
     *out = &in;
     return true;
   }
@@ -159,7 +183,6 @@ Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
     }
     store->SetExtraChannels(std::move(extra_channels));
   }
-
   if (!store->TransformTo(c_desired, pool)) {
     return false;
   }

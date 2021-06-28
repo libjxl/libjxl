@@ -37,7 +37,8 @@ class ColorSpaceTransform {
   // (1 always represents 10000 cd/m²) and thus needs scaling in linear space if
   // 1 is to represent another luminance level instead.
   Status Init(const ColorEncoding& c_src, const ColorEncoding& c_dst,
-              float intensity_target, size_t xsize, size_t num_threads);
+              float intensity_target, size_t xsize, size_t num_threads,
+              bool cmyk);
 
   float* BufSrc(const size_t thread) { return buf_src_.Row(thread); }
 
@@ -63,7 +64,7 @@ class ColorSpaceTransform {
 // `thread` must be less than the `num_threads` passed to Init.
 // `t` is non-const because buf_* may be modified.
 void DoColorSpaceTransform(ColorSpaceTransform* t, size_t thread,
-                           const float* buf_src, float* buf_dst);
+                           const float* buf_src, float* buf_dst, bool cmyk);
 
 }  // namespace jxl
 

@@ -174,7 +174,7 @@ void AfterTransform(ColorSpaceTransform* t, float* JXL_RESTRICT buf_dst) {
 }
 
 void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
-                           const float* buf_src, float* buf_dst) {
+                           const float* buf_src, float* buf_dst, bool cmyk) {
   // No lock needed.
 
   float* xform_src = const_cast<float*>(buf_src);  // Read-only.
@@ -197,9 +197,11 @@ void DoColorSpaceTransform(ColorSpaceTransform* t, const size_t thread,
   } else {
 #if JPEGXL_ENABLE_SKCMS
     JXL_CHECK(skcms_Transform(
-        xform_src, skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
-        &t->skcms_icc_->profile_src_, buf_dst, skcms_PixelFormat_RGB_fff,
-        skcms_AlphaFormat_Opaque, &t->skcms_icc_->profile_dst_, t->xsize_));
+        xform_src,
+        (!cmyk ? skcms_PixelFormat_RGB_fff : skcms_PixelFormat_RGBA_ffff),
+        skcms_AlphaFormat_Opaque, &t->skcms_icc_->profile_src_, buf_dst,
+        skcms_PixelFormat_RGB_fff, skcms_AlphaFormat_Opaque,
+        &t->skcms_icc_->profile_dst_, t->xsize_));
 #else   // JPEGXL_ENABLE_SKCMS
     cmsDoTransform(t->lcms_transform_, xform_src, buf_dst,
                    static_cast<cmsUInt32Number>(t->xsize_));
@@ -226,9 +228,9 @@ namespace jxl {
 
 HWY_EXPORT(DoColorSpaceTransform);
 void DoColorSpaceTransform(ColorSpaceTransform* t, size_t thread,
-                           const float* buf_src, float* buf_dst) {
+                           const float* buf_src, float* buf_dst, bool cmyk) {
   return HWY_DYNAMIC_DISPATCH(DoColorSpaceTransform)(t, thread, buf_src,
-                                                     buf_dst);
+                                                     buf_dst, cmyk);
 }
 
 namespace {
@@ -336,6 +338,9 @@ Status DecodeProfile(const cmsContext context, const PaddedBytes& icc,
 ColorSpace ColorSpaceFromProfile(const skcms_ICCProfile& profile) {
   switch (profile.data_color_space) {
     case skcms_Signature_RGB:
+    case skcms_Signature_CMYK:
+      // spec says CMYK is encoded as RGB (the kBlack extra channel signals that
+      // it is actually CMYK)
       return ColorSpace::kRGB;
     case skcms_Signature_Gray:
       return ColorSpace::kGray;
@@ -457,7 +462,8 @@ void DetectTransferFunction(const skcms_ICCProfile& profile,
 
 #else  // JPEGXL_ENABLE_SKCMS
 
-uint32_t Type32(const ColorEncoding& c) {
+uint32_t Type32(const ColorEncoding& c, bool cmyk) {
+  if (cmyk) return TYPE_CMYK_FLT;
   if (c.IsGray()) return TYPE_GRAY_FLT;
   return TYPE_RGB_FLT;
 }
@@ -470,6 +476,7 @@ uint32_t Type64(const ColorEncoding& c) {
 ColorSpace ColorSpaceFromProfile(const Profile& profile) {
   switch (cmsGetColorSpace(profile.get())) {
     case cmsSigRgbData:
+    case cmsSigCmykData:
       return ColorSpace::kRGB;
     case cmsSigGrayData:
       return ColorSpace::kGray;
@@ -677,7 +684,7 @@ Status ColorEncoding::SetFieldsFromICC() {
   DetectTransferFunction(profile, this);
   // ICC and RenderingIntent have the same values (0..3).
   rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
-#else   // JPEGXL_ENABLE_SKCMS
+#else  // JPEGXL_ENABLE_SKCMS
 
   std::lock_guard<std::mutex> guard(LcmsMutex());
   const cmsContext context = GetContext();
@@ -690,8 +697,11 @@ Status ColorEncoding::SetFieldsFromICC() {
   if (rendering_intent32 > 3) {
     return JXL_FAILURE("Invalid rendering intent %u\n", rendering_intent32);
   }
+  // ICC and RenderingIntent have the same values (0..3).
+  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 
   SetColorSpace(ColorSpaceFromProfile(profile));
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) return true;
 
   const cmsCIEXYZ wp_unadapted = UnadaptedWhitePoint(context, profile, *this);
   JXL_RETURN_IF_ERROR(SetWhitePoint(CIExyFromXYZ(wp_unadapted)));
@@ -702,8 +712,6 @@ Status ColorEncoding::SetFieldsFromICC() {
   // Relies on color_space/white point/primaries being set already.
   DetectTransferFunction(context, profile, this);
 
-  // ICC and RenderingIntent have the same values (0..3).
-  rendering_intent = static_cast<RenderingIntent>(rendering_intent32);
 #endif  // JPEGXL_ENABLE_SKCMS
 
   return true;
@@ -721,6 +729,7 @@ void ColorEncoding::DecideIfWantICC() {
   const cmsContext context = GetContext();
   Profile profile;
   if (!DecodeProfile(context, ICC(), &profile)) return;
+  if (cmsGetColorSpace(profile.get()) == cmsSigCmykData) return;
   if (!MaybeCreateProfile(*this, &icc_new)) return;
   equivalent = ProfileEquivalentToICC(context, profile, icc_new, *this);
 #endif  // JPEGXL_ENABLE_SKCMS
@@ -747,7 +756,7 @@ ColorSpaceTransform::ColorSpaceTransform()
 Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
                                  const ColorEncoding& c_dst,
                                  float intensity_target, size_t xsize,
-                                 const size_t num_threads) {
+                                 const size_t num_threads, bool cmyk) {
   std::lock_guard<std::mutex> guard(LcmsMutex());
 #if JXL_CMS_VERBOSE
   printf("%s -> %s\n", Description(c_src).c_str(), Description(c_dst).c_str());
@@ -841,17 +850,18 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
 #endif  // JPEGXL_ENABLE_SKCMS
 
   // Not including alpha channel (copied separately).
-  const size_t channels_src = c_src.Channels();
+  const size_t channels_src = (cmyk ? 4 : c_src.Channels());
   const size_t channels_dst = c_dst.Channels();
-  JXL_CHECK(channels_src == channels_dst);
+  JXL_CHECK(channels_src == channels_dst ||
+            (channels_src == 4 && channels_dst == 3));
 #if JXL_CMS_VERBOSE
   printf("Channels: %zu; Threads: %zu\n", channels_src, num_threads);
 #endif
 
 #if !JPEGXL_ENABLE_SKCMS
   // Type includes color space (XYZ vs RGB), so can be different.
-  const uint32_t type_src = Type32(c_src);
-  const uint32_t type_dst = Type32(c_dst);
+  const uint32_t type_src = Type32(c_src, cmyk);
+  const uint32_t type_dst = Type32(c_dst, false);
   const uint32_t intent = static_cast<uint32_t>(c_dst.rendering_intent);
   // Use cmsFLAGS_NOCACHE to disable the 1-pixel cache and make calling
   // cmsDoTransform() thread-safe.
@@ -876,7 +886,7 @@ Status ColorSpaceTransform::Init(const ColorEncoding& c_src,
 #if JPEGXL_ENABLE_SKCMS
   // SkiaCMS doesn't support grayscale float buffers, so we create space for RGB
   // float buffers anyway.
-  buf_src_ = ImageF(xsize * 3, num_threads);
+  buf_src_ = ImageF(xsize * (channels_src == 4 ? 4 : 3), num_threads);
   buf_dst_ = ImageF(xsize * 3, num_threads);
 #else
   buf_src_ = ImageF(xsize * channels_src, num_threads);
