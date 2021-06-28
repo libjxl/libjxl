@@ -166,6 +166,10 @@ struct CompressParams {
   // Put center groups first in the bitstream.
   bool middleout = false;
 
+  // Pixel coordinates of the center. First group will contain that center.
+  size_t center_x = static_cast<size_t>(-1);
+  size_t center_y = static_cast<size_t>(-1);
+
   int progressive_dc = -1;
 
   // If on: preserve color of invisible pixels (if off: don't care)
