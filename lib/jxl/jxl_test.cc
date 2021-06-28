@@ -240,7 +240,7 @@ TEST(JxlTest, RoundtripResample2MT) {
 #if JXL_HIGH_PRECISION
             4.5);
 #else
-            10);
+            12.5);
 #endif
 }
 
