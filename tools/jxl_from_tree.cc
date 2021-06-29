@@ -17,13 +17,36 @@
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
+#include "lib/jxl/splines.h"
 
 namespace jxl {
 
 namespace {
+struct SplineData {
+  int32_t quantization_adjustment;
+  std::vector<Spline> splines;
+};
+
+Splines SplinesFromSplineData(const SplineData& spline_data,
+                              const ColorCorrelationMap& cmap) {
+  std::vector<QuantizedSpline> quantized_splines;
+  std::vector<Spline::Point> starting_points;
+  quantized_splines.reserve(spline_data.splines.size());
+  starting_points.reserve(spline_data.splines.size());
+  for (const Spline& spline : spline_data.splines) {
+    JXL_CHECK(!spline.control_points.empty());
+    quantized_splines.emplace_back(spline, spline_data.quantization_adjustment,
+                                   cmap.YtoXRatio(0), cmap.YtoBRatio(0));
+    starting_points.push_back(spline.control_points.front());
+  }
+  return Splines(spline_data.quantization_adjustment, quantized_splines,
+                 starting_points);
+}
+
 template <typename F>
-bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
-               size_t& H, CodecInOut& io, int& have_next, int& x0, int& y0) {
+bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
+               CompressParams& cparams, size_t& W, size_t& H, CodecInOut& io,
+               int& have_next, int& x0, int& y0) {
   static const std::unordered_map<std::string, int> property_map = {
       {"c", 0},
       {"g", 1},
@@ -89,8 +112,8 @@ bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
     }
     size_t pos = tree.size();
     tree.emplace_back(PropertyDecisionNode::Split(p, split, pos + 1));
-    JXL_RETURN_IF_ERROR(
-        ParseNode(tok, tree, cparams, W, H, io, have_next, x0, y0));
+    JXL_RETURN_IF_ERROR(ParseNode(tok, tree, spline_data, cparams, W, H, io,
+                                  have_next, x0, y0));
     tree[pos].rchild = tree.size();
   } else if (t == "-") {
     // Leaf
@@ -250,13 +273,64 @@ bool ParseNode(F& tok, Tree& tree, CompressParams& cparams, size_t& W,
       fprintf(stderr, "Invalid BlendMode: %s\n", t.c_str());
       return false;
     }
+  } else if (t == "SplineQuantizationAdjustment") {
+    t = tok();
+    size_t num = 0;
+    spline_data.quantization_adjustment = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid SplineQuantizationAdjustment: %s\n", t.c_str());
+      return false;
+    }
+  } else if (t == "Spline") {
+    Spline spline;
+    const auto ParseFloat = [&t, &tok](float& output) {
+      t = tok();
+      size_t num = 0;
+      output = std::stof(t, &num);
+      if (num != t.size()) {
+        fprintf(stderr, "Invalid spline data: %s\n", t.c_str());
+        return false;
+      }
+      return true;
+    };
+    for (auto& dct : spline.color_dct) {
+      for (float& coefficient : dct) {
+        JXL_RETURN_IF_ERROR(ParseFloat(coefficient));
+      }
+    }
+    for (float& coefficient : spline.sigma_dct) {
+      JXL_RETURN_IF_ERROR(ParseFloat(coefficient));
+    }
 
+    while (true) {
+      t = tok();
+      if (t == "EndSpline") break;
+      size_t num = 0;
+      Spline::Point point;
+      point.x = std::stof(t, &num);
+      bool ok_x = num == t.size();
+      auto t_y = tok();
+      point.y = std::stof(t_y, &num);
+      if (!ok_x || num != t_y.size()) {
+        fprintf(stderr, "Invalid spline control point: %s %s\n", t.c_str(),
+                t_y.c_str());
+        return false;
+      }
+      spline.control_points.push_back(point);
+    }
+
+    if (spline.control_points.empty()) {
+      fprintf(stderr, "Spline with no control point\n");
+      return false;
+    }
+
+    spline_data.splines.push_back(std::move(spline));
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
   }
   JXL_RETURN_IF_ERROR(
-      ParseNode(tok, tree, cparams, W, H, io, have_next, x0, y0));
+      ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0));
   return true;
 }
 
@@ -300,6 +374,7 @@ class Heuristics : public DefaultEncoderHeuristics {
 
 int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   Tree tree;
+  SplineData spline_data;
   CompressParams cparams;
   size_t width = 1024, height = 1024;
   int x0 = 0, y0 = 0;
@@ -314,7 +389,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
     f >> out;
     return out;
   };
-  if (!ParseNode(tok, tree, cparams, width, height, io, have_next, x0, y0)) {
+  if (!ParseNode(tok, tree, spline_data, cparams, width, height, io, have_next,
+                 x0, y0)) {
     return 1;
   }
 
@@ -351,6 +427,8 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   while (true) {
     PassesEncoderState enc_state;
     enc_state.heuristics = make_unique<Heuristics>(tree);
+    enc_state.shared.image_features.splines =
+        SplinesFromSplineData(spline_data, enc_state.shared.cmap);
 
     FrameInfo info;
     info.is_last = !have_next;
@@ -363,8 +441,10 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
                                     &enc_state, nullptr, &writer, nullptr));
     if (!have_next) break;
     tree.clear();
+    spline_data.splines.clear();
     have_next = 0;
-    if (!ParseNode(tok, tree, cparams, width, height, io, have_next, x0, y0)) {
+    if (!ParseNode(tok, tree, spline_data, cparams, width, height, io,
+                   have_next, x0, y0)) {
       return 1;
     }
     Image3F image(width, height);
