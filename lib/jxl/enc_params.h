@@ -164,7 +164,7 @@ struct CompressParams {
   bool qprogressive_mode = false;
 
   // Put center groups first in the bitstream.
-  bool middleout = false;
+  bool centerfirst = false;
 
   // Pixel coordinates of the center. First group will contain that center.
   size_t center_x = static_cast<size_t>(-1);

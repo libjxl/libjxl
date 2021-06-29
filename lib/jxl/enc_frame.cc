@@ -1331,7 +1331,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   std::vector<coeff_order_t>* permutation_ptr = nullptr;
   std::vector<coeff_order_t> permutation;
-  if (cparams.middleout && !(num_passes == 1 && num_groups == 1)) {
+  if (cparams.centerfirst && !(num_passes == 1 && num_groups == 1)) {
     permutation_ptr = &permutation;
     // Don't permute global DC/AC or DC.
     permutation.resize(global_ac_index + 1);
