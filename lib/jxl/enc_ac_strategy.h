@@ -67,7 +67,6 @@ struct AcStrategyHeuristics {
   void Finalize(AuxOut* aux_out);
   ACSConfig config;
   PassesEncoderState* enc_state;
-  float entropy_adjust[2 * AcStrategy::kNumValidStrategies];
 };
 
 // Debug.
