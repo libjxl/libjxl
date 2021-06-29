@@ -43,12 +43,18 @@ Status Transform::MetaApply(Image &input) {
     case TransformId::kSqueeze:
       JXL_DEBUG_V(2, "Transform: kSqueeze:");
 #if JXL_DEBUG_V_LEVEL >= 2
-      for (const auto &params : squeezes) {
-        JXL_DEBUG_V(
-            2,
-            "  squeeze params: horizontal=%d, in_place=%d, begin_c=%" PRIu32
-            ", num_c=%" PRIu32,
-            params.horizontal, params.in_place, params.begin_c, params.num_c);
+      {
+        auto squeezes_copy = squeezes;
+        if (squeezes_copy.empty()) {
+          DefaultSqueezeParameters(&squeezes_copy, input);
+        }
+        for (const auto &params : squeezes_copy) {
+          JXL_DEBUG_V(
+              2,
+              "  squeeze params: horizontal=%d, in_place=%d, begin_c=%" PRIu32
+              ", num_c=%" PRIu32,
+              params.horizontal, params.in_place, params.begin_c, params.num_c);
+        }
       }
 #endif
       return MetaSqueeze(input, &squeezes);
