@@ -33,15 +33,16 @@
 #include <new>
 #include <vector>
 
+#if PROFILER_ENABLED
+#include <chrono>
+#endif  // PROFILER_ENABLED
+
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "lib/jxl/butteraugli/butteraugli.cc"
 #include <hwy/foreach_target.h>
 
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
-#if PROFILER_ENABLED
-#include "lib/jxl/base/time.h"
-#endif  // PROFILER_ENABLED
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/fast_math-inl.h"
 #include "lib/jxl/gauss_blur.h"
@@ -2019,15 +2020,16 @@ bool ButteraugliInterface(const Image3F& rgb0, const Image3F& rgb1,
                           const ButteraugliParams& params, ImageF& diffmap,
                           double& diffvalue) {
 #if PROFILER_ENABLED
-  double t0 = Now();
+  auto trace_start = std::chrono::steady_clock::now();
 #endif
   if (!ButteraugliDiffmap(rgb0, rgb1, params, diffmap)) {
     return false;
   }
 #if PROFILER_ENABLED
-  double t1 = Now();
+  auto trace_end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> elapsed = trace_end - trace_start;
   const size_t mp = rgb0.xsize() * rgb0.ysize();
-  printf("diff MP/s %f\n", mp / (t1 - t0) * 1E-6);
+  printf("diff MP/s %f\n", mp / elapsed.count() * 1E-6);
 #endif
   diffvalue = ButteraugliScoreFromDiffmap(diffmap, &params);
   return true;

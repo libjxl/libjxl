@@ -43,8 +43,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/status.cc
   jxl/base/status.h
   jxl/base/thread_pool_internal.h
-  jxl/base/time.cc
-  jxl/base/time.h
   jxl/blending.cc
   jxl/blending.h
   jxl/chroma_from_luma.cc

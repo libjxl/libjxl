@@ -14,9 +14,9 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_png.h"
+#include "lib/extras/time.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/image_bundle.h"
 #include "tools/benchmark/benchmark_utils.h"

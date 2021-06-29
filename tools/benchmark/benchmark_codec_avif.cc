@@ -6,10 +6,10 @@
 
 #include <avif/avif.h>
 
+#include "lib/extras/time.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
-#include "lib/jxl/base/time.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
