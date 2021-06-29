@@ -295,6 +295,18 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     // When it is only one 8x8, we don't need aggregation of values.
     quant_norm8 = config.Quant(x / 8, y / 8);
     masking = 2.0f * config.Masking(x / 8, y / 8);
+  } else if (num_blocks == 2) {
+    if (acs.covered_blocks_y() == 2) {
+      quant_norm8 =
+          std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8, y / 8 + 1));
+      masking = 2.0f * std::max(config.Masking(x / 8, y / 8),
+                                config.Masking(x / 8, y / 8 + 1));
+    } else {
+      quant_norm8 =
+          std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8 + 1, y / 8));
+      masking = 2.0f * std::max(config.Masking(x / 8, y / 8),
+                                config.Masking(x / 8 + 1, y / 8));
+    }
   } else {
     float masking_norm2 = 0;
     float masking_max = 0;
@@ -712,7 +724,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     float entropy_mul;
   };
   static const float k8X16mul1 = -0.51923137374961237;
-  static const float k8X16mul2 = 0.92332415151304614;
+  static const float k8X16mul2 = 0.9135;
   static const float k8X16base = 1.6637730066379945f;
   const float entropy_mul16X8 =
       k8X16mul2 + k8X16mul1 / (butteraugli_target + k8X16base);
