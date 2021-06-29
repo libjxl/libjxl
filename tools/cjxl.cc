@@ -361,9 +361,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "pixels (default: 1 if lossless, 0 if lossy).",
                           &params.keep_invisible, &ParseOverride, 1);
 
-  cmdline->AddOptionFlag('\0', "middleout",
+  cmdline->AddOptionFlag('\0', "centerfirst",
                          "Put center groups first in the compressed file.",
-                         &params.middleout, &SetBooleanTrue, 1);
+                         &params.centerfirst, &SetBooleanTrue, 1);
 
   cmdline->AddOptionValue('\0', "center_x", "0..XSIZE",
                           "Put center groups first in the compressed file.",
