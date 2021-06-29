@@ -2183,8 +2183,6 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   return JXL_DEC_SUCCESS;
 }
 
-#if JXL_IS_DEBUG_BUILD || defined(JXL_ENABLE_FUZZERS)
 void SetDecoderMemoryLimitBase_(size_t memory_limit_base) {
   memory_limit_base_ = memory_limit_base;
 }
-#endif
