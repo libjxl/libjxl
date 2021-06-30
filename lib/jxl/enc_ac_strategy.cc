@@ -286,7 +286,6 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   }
 
   HWY_FULL(float) df;
-  HWY_FULL(int) di;
 
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
   float quant_norm8 = 0;
@@ -341,7 +340,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     const auto cmap_factor = Set(df, cmap_factors[c]);
 
     auto entropy_v = Zero(df);
-    auto nzeros_v = Zero(di);
+    auto nzeros_v = Zero(df);
     auto cost1 = Set(df, config.cost1);
     auto cost2 = Set(df, config.cost2);
     auto cost_delta = Set(df, config.cost_delta);
@@ -354,7 +353,6 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
       info_loss += AbsDiff(val, rval);
       const auto q = Abs(rval);
       const auto q_is_zero = q == Zero(df);
-      entropy_v += IfThenElseZero(q >= Set(df, 0.5f), cost1);
       entropy_v += IfThenElseZero(q >= Set(df, 1.5f), cost2);
       // We used to have q * C here, but that cost model seems to
       // be punishing large values more than necessary. Sqrt tries
@@ -362,9 +360,10 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
       // around zero is most important at low qualities, and there
       // we have directly specified costs for 0, 1, and 2.
       entropy_v += Sqrt(q) * cost_delta;
-      nzeros_v +=
-          BitCast(di, IfThenZeroElse(q_is_zero, BitCast(df, Set(di, 1))));
+      nzeros_v += IfThenZeroElse(q_is_zero, Set(df, 1.0f));
     }
+    entropy_v += nzeros_v * cost1;
+
     entropy += GetLane(SumOfLanes(entropy_v));
     size_t num_nzeros = GetLane(SumOfLanes(nzeros_v));
     // Add #bit of num_nonzeros, as an estimate of the cost for encoding the
