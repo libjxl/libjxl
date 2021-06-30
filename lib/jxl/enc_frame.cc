@@ -1365,10 +1365,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     int64_t cy = (imag_cy / group_dim) * group_dim + group_dim / 2;
     // This identifies in what area of the central group the center of the image
     // lies in.
-    double direction = std::atan2(imag_cy - cy, imag_cx - cx);
+    double direction = -std::atan2(imag_cy - cy, imag_cx - cx);
     // This identifies the side of the central group the center of the image
-    // lies closet to. This can take values 0, 1, 2, 3 corresponding to right,
-    // top, left, bottom.
+    // lies closet to. This can take values 0, 1, 2, 3 corresponding to left,
+    // bottom, right, top.
     int64_t side = std::fmod((direction + 5 * kPi / 4), 2 * kPi) * 2 / kPi;
     auto get_distance_from_center = [&](size_t gid) {
       Rect r = passes_enc_state->shared.GroupRect(gid);
@@ -1379,8 +1379,8 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       // The angle is determined by taking atan2 and adding an appropriate
       // starting point depending on the side we want to start on.
       double angle = std::remainder(
-          -std::atan2(dy, dx) + kPi / 4 + side * (kPi / 2), 2 * kPi);
-      // Concentric squares in counterclockwise order.
+          std::atan2(dy, dx) + kPi / 4 + side * (kPi / 2), 2 * kPi);
+      // Concentric squares in clockwise order.
       return std::make_pair(std::max(std::abs(dx), std::abs(dy)), angle);
     };
     std::sort(ac_group_order.begin(), ac_group_order.end(),
