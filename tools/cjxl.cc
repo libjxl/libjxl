@@ -60,6 +60,9 @@ static inline bool ParseColorTransform(const char* arg,
 static inline bool ParseIntensityTarget(const char* arg, float* out) {
   return ParseFloat(arg, out) && *out > 0;
 }
+static inline bool ParsePhotonNoiseParameter(const char* arg, float* out) {
+  return strncmp(arg, "ISO", 3) == 0 && ParseFloat(arg + 3, out) && *out > 0;
+}
 
 // Proposes a distance to try for a given bpp target. This could depend
 // on the entropy in the image, too, but let's start with something.
@@ -404,6 +407,13 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "noise", "0|1",
                           "force disable/enable noise generation.",
                           &params.noise, &ParseOverride, 1);
+  cmdline->AddOptionValue(
+      '\0', "photon_noise", "ISO3200",
+      "Set the noise to approximately what it would be at a given nominal "
+      "exposure on a 35mm camera. For formats other than 35mm, or when the "
+      "whole sensor was not used, you can multiply the ISO value by the "
+      "equivalence ratio squared, for example by 2.25 for an APS-C camera.",
+      &params.photon_noise_iso, &ParsePhotonNoiseParameter, 0);
   cmdline->AddOptionValue('\0', "dots", "0|1",
                           "force disable/enable dots generation.", &params.dots,
                           &ParseOverride, 1);

@@ -25,6 +25,7 @@ set(TEST_FILES
   jxl/decode_test.cc
   jxl/descriptive_statistics_test.cc
   jxl/enc_external_image_test.cc
+  jxl/enc_photon_noise_test.cc
   jxl/encode_test.cc
   jxl/entropy_coder_test.cc
   jxl/fast_math_test.cc
