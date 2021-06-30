@@ -59,32 +59,10 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
                        const FrameDimensions& frame_dim, uint32_t& used_orders,
                        coeff_order_t* JXL_RESTRICT order) {
   std::vector<int32_t> num_zeros(kCoeffOrderMaxSize);
-  // If compressing at high speed and only using 8x8 DCTs, only consider a
-  // subset of blocks.
-  double block_fraction = 1.0f;
-  // TODO(veluca): figure out why sampling blocks if non-8x8s are used makes
-  // encoding significantly less dense.
-  if (speed >= SpeedTier::kSquirrel && used_orders == 1) {
-    block_fraction = 0.5f;
-  }
+
   // No need to compute number of zero coefficients if all orders are the
   // default.
   if (used_orders != 0) {
-    uint64_t threshold =
-        (std::numeric_limits<uint64_t>::max() >> 32) * block_fraction;
-    uint64_t s[2] = {0x94D049BB133111EBull, 0xBF58476D1CE4E5B9ull};
-    // Xorshift128+ adapted from xorshift128+-inl.h
-    auto use_sample = [&]() {
-      auto s1 = s[0];
-      const auto s0 = s[1];
-      const auto bits = s1 + s0;  // b, c
-      s[0] = s0;
-      s1 ^= s1 << 23;
-      s1 ^= s0 ^ (s1 >> 18) ^ (s0 >> 5);
-      s[1] = s1;
-      return (bits >> 32) <= threshold;
-    };
-
     // Count number of zero coefficients, separately for each DCT band.
     // TODO(veluca): precompute when doing DCT.
     for (size_t group_index = 0; group_index < frame_dim.num_groups;
@@ -107,7 +85,6 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
         for (size_t bx = 0; bx < rect.xsize(); ++bx) {
           AcStrategy acs = acs_row[bx];
           if (!acs.IsFirstBlock()) continue;
-          if (!use_sample()) continue;
           size_t size = kDCTBlockSize << acs.log2_covered_blocks();
           for (size_t c = 0; c < 3; ++c) {
             const size_t order_offset =
@@ -115,12 +92,16 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
             if (type == ACType::k16) {
               for (size_t k = 0; k < size; k++) {
                 bool is_zero = rows[c].ptr16[ac_offset + k] == 0;
-                num_zeros[order_offset + k] += is_zero ? 1 : 0;
+                bool is_small = rows[c].ptr16[ac_offset + k] < 6 &&
+                                rows[c].ptr16[ac_offset + k] > -6;
+                num_zeros[order_offset + k] += is_zero ? 2 : is_small ? 1 : 0;
               }
             } else {
               for (size_t k = 0; k < size; k++) {
                 bool is_zero = rows[c].ptr32[ac_offset + k] == 0;
-                num_zeros[order_offset + k] += is_zero ? 1 : 0;
+                bool is_small = rows[c].ptr32[ac_offset + k] < 6 &&
+                                rows[c].ptr32[ac_offset + k] > -6;
+                num_zeros[order_offset + k] += is_zero ? 2 : is_small ? 1 : 0;
               }
             }
             // Ensure LLFs are first in the order.
@@ -169,7 +150,7 @@ void ComputeCoeffOrder(SpeedTier speed, const ACImage& acs,
       PosAndCount* pos_and_val = mem.get();
       size_t offset = CoeffOrderOffset(ord, c);
       JXL_DASSERT(CoeffOrderOffset(ord, c + 1) - offset == sz);
-      float inv_sqrt_sz = 1.0f / std::sqrt(sz);
+      float inv_sqrt_sz = 0.31f / std::sqrt(sz);
       for (size_t i = 0; i < sz; ++i) {
         size_t pos = natural_coeff_order[i];
         pos_and_val[i].pos = pos;
