@@ -213,7 +213,8 @@ uint64_t FrameFlagsFromParams(const CompressParams& cparams) {
   // We don't add noise at low butteraugli distances because the original
   // noise is stored within the compressed image and adding noise makes things
   // worse.
-  if (ApplyOverride(cparams.noise, dist >= kMinButteraugliForNoise)) {
+  if (ApplyOverride(cparams.noise, dist >= kMinButteraugliForNoise) ||
+      cparams.photon_noise_iso > 0) {
     flags |= FrameHeader::kNoise;
   }
 

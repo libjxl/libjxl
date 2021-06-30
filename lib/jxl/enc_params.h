@@ -208,6 +208,10 @@ struct CompressParams {
   // allowing reconstruction of the original JPEG.
   bool force_cfl_jpeg_recompression = true;
 
+  // Set the noise to what it would approximately be if shooting at the nominal
+  // exposure for a given ISO setting on a 35mm camera.
+  float photon_noise_iso = 0;
+
   // modular mode options below
   ModularOptions options;
   int responsive = -1;

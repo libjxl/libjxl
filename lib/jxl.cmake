@@ -255,6 +255,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_params.h
   jxl/enc_patch_dictionary.cc
   jxl/enc_patch_dictionary.h
+  jxl/enc_photon_noise.cc
+  jxl/enc_photon_noise.h
   jxl/enc_quant_weights.cc
   jxl/enc_quant_weights.h
   jxl/enc_splines.cc
