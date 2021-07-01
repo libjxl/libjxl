@@ -909,6 +909,12 @@ Status FrameDecoder::FinalizeFrame() {
         "FinalizeFrame called before the frame was fully decoded");
   }
 
+  if (!finalized_dc_) {
+    JXL_DASSERT(allow_partial_frames_);
+    AllocateOutput();
+    dec_state_->InitForAC(nullptr);
+  }
+
   JXL_RETURN_IF_ERROR(Flush());
 
   if (dec_state_->shared->frame_header.CanBeReferenced()) {
