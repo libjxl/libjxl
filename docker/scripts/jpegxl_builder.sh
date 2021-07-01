@@ -363,7 +363,7 @@ install_from_source() {
     fi
 
     if [[ -e "${srcdir}/CMakeLists.txt" ]]; then
-      # Most pacakges use cmake for building which is easier to configure for
+      # Most packages use cmake for building which is easier to configure for
       # cross-compiling.
       if [[ "${package}" == "JPEG_TURBO" && "${target}" == wasm* ]]; then
         # JT erroneously detects WASM CPU as i386 and tries to use asm.

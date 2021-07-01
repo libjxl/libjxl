@@ -114,7 +114,7 @@ struct QuantizedPatch {
   }
 };
 
-// Pair (patch, vector of occurences).
+// Pair (patch, vector of occurrences).
 using PatchInfo =
     std::pair<QuantizedPatch, std::vector<std::pair<uint32_t, uint32_t>>>;
 
@@ -180,7 +180,7 @@ class PatchDictionary {
   const PassesSharedState* shared_;
   std::vector<PatchPosition> positions_;
 
-  // Patch occurences sorted by y.
+  // Patch occurrences sorted by y.
   std::vector<size_t> sorted_patches_;
   // Index of the first patch for each y value.
   std::vector<size_t> patch_starts_;

@@ -1367,7 +1367,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     // lies in.
     double direction = -std::atan2(imag_cy - cy, imag_cx - cx);
     // This identifies the side of the central group the center of the image
-    // lies closet to. This can take values 0, 1, 2, 3 corresponding to left,
+    // lies closest to. This can take values 0, 1, 2, 3 corresponding to left,
     // bottom, right, top.
     int64_t side = std::fmod((direction + 5 * kPi / 4), 2 * kPi) * 2 / kPi;
     auto get_distance_from_center = [&](size_t gid) {

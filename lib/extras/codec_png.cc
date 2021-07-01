@@ -630,7 +630,7 @@ Status CheckGray(const LodePNGColorMode& mode, bool has_icc, bool* is_gray) {
     case LCT_PALETTE: {
       if (has_icc) {
         // If an ICC profile is present, the PNG specification requires
-        // palette to be intepreted as RGB colored, not grayscale, so we must
+        // palette to be interpreted as RGB colored, not grayscale, so we must
         // output color in that case and unfortunately can't optimize it to
         // gray if the palette only has gray entries.
         *is_gray = false;

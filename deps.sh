@@ -59,7 +59,7 @@ download_github() {
 main() {
   if git -C "${MYDIR}" rev-parse; then
     cat >&2 <<EOF
-Currenty directory is a git repository, downloading dependencies via git:
+Current directory is a git repository, downloading dependencies via git:
 
   git submodule update --init --recursive
 

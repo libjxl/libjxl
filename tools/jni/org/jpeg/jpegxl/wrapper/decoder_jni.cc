@@ -90,7 +90,7 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
 
-  constexpr size_t kNumThreads = 0;  // Do everyting in this thread.
+  constexpr size_t kNumThreads = 0;  // Do everything in this thread.
   void* runner = JxlThreadParallelRunnerCreate(NULL, kNumThreads);
 
   struct Defer {

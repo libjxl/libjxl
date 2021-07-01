@@ -703,7 +703,7 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (decoded_ac_global_) {
     // The decoded image requires padding for filtering. ProcessACGlobal added
     // the padding, however when Flush is used, the image is shrunk to the
-    // output size. Add the padding back here. This is a cheap opeartion
+    // output size. Add the padding back here. This is a cheap operation
     // since the image has the original allocated size. The memory and original
     // size are already there, but for safety we require the indicated xsize and
     // ysize dimensions match the working area, see PlaneRowBoundsCheck.

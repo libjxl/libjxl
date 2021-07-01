@@ -49,7 +49,7 @@ def CheckAuthor(args):
   ret = IsAuthorInFile(
       args.email, args.name, os.path.join(args.source_dir, 'AUTHORS'))
   if not ret:
-    print("User %s <%s> not found, please add youself to the AUTHORS file" % (
+    print("User %s <%s> not found, please add yourself to the AUTHORS file" % (
               args.name, args.email),
           file=sys.stderr)
     if not args.dry_run:

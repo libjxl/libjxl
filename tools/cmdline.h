@@ -282,7 +282,7 @@ class CommandLineParser {
 
     // The text to display when referring to the value passed to this flag, for
     // example "N" in the flag '--value N'. If null, this flag accepts no value
-    // and therefor no value must be passed.
+    // and therefore no value must be passed.
     const char* metavar_;
 
     // The help string for this flag.
