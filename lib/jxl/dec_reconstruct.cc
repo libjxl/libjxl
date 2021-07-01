@@ -234,7 +234,8 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
     UnpoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
     UnpoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
     UnpoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
-    if (row_in_a) UnpoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
+    if (row_in_a)
+      UnpoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
     for (size_t x = 0; x < xsize; x += Lanes(d)) {
       auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
       auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
@@ -257,7 +258,8 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
     PoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
     PoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
     PoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
-    if (row_in_a) PoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
+    if (row_in_a)
+      PoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
   }
 }
 
