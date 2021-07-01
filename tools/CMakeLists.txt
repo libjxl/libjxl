@@ -241,33 +241,33 @@ set(FUZZER_BINARIES
 )
 
 # Fuzzers.
-if(${JPEGXL_ENABLE_FUZZERS})
-  foreach(BINARY IN LISTS FUZZER_BINARIES)
+foreach(FUZZER IN LISTS FUZZER_BINARIES)
+  if(${JPEGXL_ENABLE_FUZZERS})
+    set(BINARY "${FUZZER}")
     add_executable("${BINARY}" "${BINARY}.cc")
+    target_link_libraries("${BINARY}" ${JPEGXL_FUZZER_LINK_FLAGS})
+  else()
+    # When not enabled we want a lightweight alternative for regular fuzzers
+    # that just run the target.
+    set(BINARY "${FUZZER}_runner")
+    add_executable("${BINARY}" EXCLUDE_FROM_ALL
+        "fuzzer_stub.cc" "${FUZZER}.cc")
+  endif()  # JPEGXL_ENABLE_FUZZERS
     target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-    target_link_libraries("${BINARY}"
+    if(${FUZZER} STREQUAL djxl_fuzzer)
+      target_link_libraries("${BINARY}"
+        jxl_dec-static
+        jxl_threads-static
+      )
+    else()
+      target_link_libraries("${BINARY}"
         jxl-static
         jxl_extras-static
         jxl_threads-static
         jxl_tool
-        ${JPEGXL_FUZZER_LINK_FLAGS}
-    )
-  endforeach()
-endif()  # JPEGXL_ENABLE_FUZZERS
-
-# For coverage we want a lightweight alternative for regular fuzzers.
-if(${JPEGXL_ENABLE_COVERAGE})
-  foreach(FUZZER IN LISTS FUZZER_BINARIES)
-    set(BINARY "${FUZZER}_runner")
-    add_executable("${BINARY}" "fuzzer_stub.cc" "${FUZZER}.cc")
-    target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-    if(${FUZZER} STREQUAL djxl_fuzzer)
-      target_link_libraries("${BINARY}" jxl_dec-static jxl_threads-static)
-    else()
-      target_link_libraries("${BINARY}" jxl-static jxl_extras-static jxl_threads-static jxl_tool)
+      )
     endif()
-  endforeach()
-endif()  # JPEGXL_ENABLE_COVERAGE
+endforeach()
 
 # EMSCRIPTEN doesn't support dynamic libraries so testing for linkage there
 # doesn't make much sense.
