@@ -54,7 +54,7 @@ Status ImageBlender::PrepareBlending(
 
   // the rect in the canvas that needs to be updated
   cropbox_ = frame_rect;
-  // the rect of this frame that overlaps with the canvas
+  // the rect of the foreground that overlaps with the canvas
   overlap_ = cropbox_;
   o_ = foreground_origin;
   o_.x0 -= frame_rect.x0();
