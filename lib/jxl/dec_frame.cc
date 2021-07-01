@@ -910,7 +910,7 @@ Status FrameDecoder::FinalizeFrame() {
   }
 
   if (!finalized_dc_) {
-    JXL_DASSERT(allow_partial_frames_);
+    JXL_ASSERT(allow_partial_frames_);
     AllocateOutput();
     dec_state_->InitForAC(nullptr);
   }
