@@ -175,7 +175,7 @@ Status DecodeFile(const DecompressParams& dparams,
     }
     // Suppress errors when decoding partial files with DC frames.
     if (!reader.AllReadsWithinBounds() && dparams.allow_partial_files) {
-      (void)reader.Close();
+      reader_closer.CloseAndSuppressError();
     }
 
     io->CheckMetadata();
