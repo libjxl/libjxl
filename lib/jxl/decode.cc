@@ -175,7 +175,7 @@ enum class DecoderStage : uint32_t {
   kInited,    // Decoder created, no JxlDecoderProcessInput called yet
   kStarted,   // Running JxlDecoderProcessInput calls
   kFinished,  // Everything done, nothing left to process
-  kError,     // Error occured, decoder object no longer useable
+  kError,     // Error occurred, decoder object no longer usable
 };
 
 enum class FrameStage : uint32_t {
@@ -411,7 +411,7 @@ struct JxlDecoderStruct {
 
   // Bitfield, for which informative events (JXL_DEC_BASIC_INFO, etc...) the
   // decoder returns a status. By default, do not return for any of the events,
-  // only return when the decoder cannot continue becasue it needs mor input or
+  // only return when the decoder cannot continue because it needs more input or
   // output data.
   int events_wanted;
   int orig_events_wanted;
@@ -1698,7 +1698,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
     // it is needed. Before we got the basic info, we're still parsing the box
     // format instead. If the result is not JXL_DEC_NEED_MORE_INPUT, then
     // there is no reason yet to copy since the user may have a full buffer
-    // allowing one-shot. Once JXL_DEC_NEED_MORE_INPUT occured at least once,
+    // allowing one-shot. Once JXL_DEC_NEED_MORE_INPUT occurred at least once,
     // start copying over the codestream bytes and allow user to free them
     // instead. Next call, detected_streaming will be true.
     if (dec->got_basic_info && result == JXL_DEC_NEED_MORE_INPUT) {
@@ -1961,11 +1961,11 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
     return JXL_DEC_ERROR;
   }
   if (dec->frame_header->encoding != jxl::FrameEncoding::kVarDCT) {
-    // Flushing does not yet work corretly if the frame uses modular encoding.
+    // Flushing does not yet work correctly if the frame uses modular encoding.
     return JXL_DEC_ERROR;
   }
   if (dec->metadata.m.num_extra_channels > 0) {
-    // Flushing does not yet work corretly if there are extra channels, which
+    // Flushing does not yet work correctly if there are extra channels, which
     // use modular
     return JXL_DEC_ERROR;
   }

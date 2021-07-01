@@ -317,7 +317,7 @@ struct Box {
   // serialized.
   bool data_size_given = true;
 
-  // If successfull, returns true and sets `in` to be the rest data (if any).
+  // If successful, returns true and sets `in` to be the rest data (if any).
   // If `in` contains a box with a size larger than `in.size()`, will not
   // modify `in`, and will return true but the data `Span<uint8_t>` will
   // remain set to nullptr.

@@ -178,7 +178,7 @@ class WebPCodec : public ImageCodec {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
       // io->metadata.m.color_encoding = ColorEncoding::SRGB(is_gray);
-      // Return a standard failure becuase SetFromSRGB triggers a fatal assert
+      // Return a standard failure because SetFromSRGB triggers a fatal assert
       // for this instead.
       return JXL_FAILURE("Color profile is-gray mismatch");
     }

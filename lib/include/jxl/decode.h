@@ -121,7 +121,7 @@ typedef enum {
    */
   JXL_DEC_SUCCESS = 0,
 
-  /** An error occured, for example invalid input file or out of memory.
+  /** An error occurred, for example invalid input file or out of memory.
    * TODO(lode): add function to get error information from decoder.
    */
   JXL_DEC_ERROR = 1,
@@ -606,8 +606,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsICCProfile(
  * JXL decoder has no color management system built in, but can convert XYB
  * color to any of the ones supported by JxlColorEncoding.
  *
- * Can only be set after the JXL_DEC_COLOR_ENCODING event occured and before
- * any other event occured, and can affect the result of
+ * Can only be set after the JXL_DEC_COLOR_ENCODING event occurred and before
+ * any other event occurred, and can affect the result of
  * JXL_COLOR_PROFILE_TARGET_DATA (but not of JXL_COLOR_PROFILE_TARGET_ORIGINAL),
  * so should be used after getting JXL_COLOR_PROFILE_TARGET_ORIGINAL but before
  * getting JXL_COLOR_PROFILE_TARGET_DATA. The color_encoding must be grayscale
@@ -682,7 +682,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
  *
  * @param dec decoder object
  * @param name buffer to copy the name into
- * @param size size of the name buffer in bytes, includig zero termination
+ * @param size size of the name buffer in bytes, including zero termination
  *    character, so this must be at least JxlFrameHeader.name_length + 1.
  * @return JXL_DEC_SUCCESS if the value is available,
  *    JXL_DEC_NEED_MORE_INPUT if not yet available, JXL_DEC_ERROR in case
@@ -869,8 +869,8 @@ JxlDecoderSetImageOutCallback(JxlDecoder* dec, const JxlPixelFormat* format,
  * JxlDecoderSetImageOutBuffer will contain partial image data.
  *
  * Can be called when JxlDecoderProcessInput returns JXL_DEC_NEED_MORE_INPUT,
- * after the JXL_DEC_FRAME event already occured and before the
- * JXL_DEC_FULL_IMAGE event occured for a frame.
+ * after the JXL_DEC_FRAME event already occurred and before the
+ * JXL_DEC_FULL_IMAGE event occurred for a frame.
  *
  * @param dec decoder object
  * @return JXL_DEC_SUCCESS if image data was flushed to the output buffer, or

@@ -47,7 +47,7 @@ class RenderPipelineStage {
   virtual size_t GetPaddingX(size_t c) const = 0;
   virtual size_t GetPaddingY(size_t c) const = 0;
 
-  // Log2 of the number of columsn/rows of output that this stage will produce
+  // Log2 of the number of columns/rows of output that this stage will produce
   // for the given channel.
   virtual size_t ShiftX(size_t c) const = 0;
   virtual size_t ShiftY(size_t c) const = 0;

@@ -134,7 +134,7 @@ def generate_demo_image(config, input_filename, output_filename):
               data_sizes[-1]) for size in data_sizes]
     time_delays = [t_next - t_prev
                    for t_next, t_prev in zip(time_offsets[1:], time_offsets)]
-    # Add a fake white initial image. As long as no useable image data is
+    # Add a fake white initial image. As long as no usable image data is
     # available, the user will see a white background.
     subprocess.call(['convert',
                      output_filename + '._step1.png',

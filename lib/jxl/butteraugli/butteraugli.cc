@@ -1388,7 +1388,7 @@ inline float MaskColor(const float color[3], const float mask) {
   return color[0] * mask + color[1] * mask + color[2] * mask;
 }
 
-// Diffmap := sqrt of sum{diff images by multplied by X and Y/B masks}
+// Diffmap := sqrt of sum{diff images by multiplied by X and Y/B masks}
 void CombineChannelsToDiffmap(const ImageF& mask, const Image3F& block_diff_dc,
                               const Image3F& block_diff_ac, float xmul,
                               ImageF* result) {

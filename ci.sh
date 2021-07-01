@@ -1201,7 +1201,7 @@ cmd_lint() {
     fi
     installed+=("${clang_format}")
     local tmppatch="${tmpdir}/${clang_format}.patch"
-    # We include in this linter all the changes including the uncommited changes
+    # We include in this linter all the changes including the uncommitted changes
     # to avoid printing changes already applied.
     set -x
     git -C "${MYDIR}" "${clang_format}" --binary "${clang_format}" \

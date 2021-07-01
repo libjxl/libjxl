@@ -201,7 +201,7 @@ jxl::Status DecodeJpegXlContainerOneShot(const uint8_t* data, size_t size,
       container->jpeg_reconstruction = in;
       container->jpeg_reconstruction_size = data_size;
     } else {
-      // Do nothing: box not recognized here but may be recognizeable by
+      // Do nothing: box not recognized here but may be recognizable by
       // other software.
     }
 

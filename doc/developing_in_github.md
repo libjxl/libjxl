@@ -273,7 +273,7 @@ This mismatch can cause at least two problems:
 mismatch if e.g. API changed or a submodule was added/removed.
 
 *) when using `commit -a` your commit, which may be a technical change
-unrelated to submodule changes, will unintentially contain a change to the
+unrelated to submodule changes, will unintentionally contain a change to the
 submodules hash code, which is undesired unless you actually want to change
 the version of third_party libraries.
 

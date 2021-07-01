@@ -71,7 +71,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   std::vector<uint8_t>* icc_profile) {
   SetDecoderMemoryLimitBase_(max_pixels);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
-  // itself is already multithreded.
+  // itself is already multithreaded.
   size_t num_threads =
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);

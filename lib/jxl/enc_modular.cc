@@ -340,7 +340,7 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
     // Set properties.
     std::vector<uint32_t> prop_order;
     if (cparams.responsive) {
-      // Properties in order of their likelyhood of being useful for Squeeze
+      // Properties in order of their likelihood of being useful for Squeeze
       // residuals.
       prop_order = {0, 1, 4, 5, 6, 7, 8, 15, 9, 10, 11, 12, 13, 14, 2, 3};
     } else {
