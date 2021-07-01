@@ -843,10 +843,9 @@ HWY_EXPORT(ProcessRectACS);
 void AcStrategyHeuristics::Init(const Image3F& src,
                                 PassesEncoderState* enc_state) {
   this->enc_state = enc_state;
+  config.dequant = &enc_state->shared.matrices;
   const CompressParams& cparams = enc_state->cparams;
   const float butteraugli_target = cparams.butteraugli_distance;
-
-  config.dequant = &enc_state->shared.matrices;
 
   // Image row pointers and strides.
   config.quant_field_row = enc_state->initial_quant_field.Row(0);
@@ -869,27 +868,13 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   config.info_loss_multiplier = 136.37708787126093f;
   config.base_entropy = 56.030596115736621f;
   config.zeros_mul = 7.444405659772416f;
-  if (butteraugli_target < 2) {
-    config.cost1 = 0.59328673286714528f;
-    config.cost2 = 5.4213999246170692f;
-    config.cost_delta = 8.9520684010822631f;
-  } else if (butteraugli_target < 4) {
-    config.cost1 = 9.8703248061477744f;
-    config.cost2 = 4.4417860847109791f;
-    config.cost_delta = 6.1101822565620658f;
-  } else if (butteraugli_target < 8) {
-    config.cost1 = 3.9977973976614929f;
-    config.cost2 = 2.6251281566076332f;
-    config.cost_delta = 7.3217902390328744f;
-  } else if (butteraugli_target < 16) {
-    config.cost1 = 6.724814631080311;
-    config.cost2 = 2.8803802821961826f;
-    config.cost_delta = 3.7386463449187715f;
-  } else {
-    config.cost1 = 1.2529999999999999;
-    config.cost2 = 3.5572082050905816f;
-    config.cost_delta = 4.5385741701261555f;
-  }
+  // Lots of +1 and -1 coefficients at high quality, it is
+  // beneficial to favor them. At low qualities zeros matter more
+  // and +1 / -1 coefficients are already quite harmful.
+  float slope = std::min<float>(1.0f, butteraugli_target * (1.0f / 3));
+  config.cost1 = 1 + slope * 8.8703248061477744f;
+  config.cost2 = 4.4417860847109791f;
+  config.cost_delta = 6.1101822565620658f;
   JXL_ASSERT(enc_state->shared.ac_strategy.xsize() ==
              enc_state->shared.frame_dim.xsize_blocks);
   JXL_ASSERT(enc_state->shared.ac_strategy.ysize() ==
