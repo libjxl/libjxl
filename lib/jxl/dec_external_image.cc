@@ -24,6 +24,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/transfer_functions-inl.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -32,65 +33,66 @@ namespace HWY_NAMESPACE {
 
 void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
                 size_t bits_per_sample) {
-  const HWY_FULL(float) d;
-  const hwy::HWY_NAMESPACE::Rebind<uint32_t, decltype(d)> du;
-  size_t vec_num = num;
-  const uint32_t cap = (1ull << bits_per_sample) - 1;
   // TODO(eustas): investigate 24..31 bpp cases.
   if (bits_per_sample == 32) {
     // Conversion to real 32-bit *unsigned* integers requires more intermediate
     // precision that what is given by the usual f32 -> i32 conversion
     // instructions, so we run the non-SIMD path for those.
-    vec_num = 0;
+    const uint32_t cap = (1ull << bits_per_sample) - 1;
+    for (size_t x = 0; x < num; x++) {
+      float v = in[x];
+      if (v >= 1.0f) {
+        out[x] = cap;
+      } else if (v >= 0.0f) {  // Inverted condition => NaN -> 0.
+        out[x] = static_cast<uint32_t>(v * mul + 0.5f);
+      } else {
+        out[x] = 0;
+      }
+    }
+    return;
   }
-#if JXL_IS_DEBUG_BUILD
-  // Avoid accessing partially-uninitialized vectors with memory sanitizer.
-  vec_num &= ~(Lanes(d) - 1);
-#endif  // JXL_IS_DEBUG_BUILD
+
+  // General SIMD case for less than 32 bits output.
+  const HWY_FULL(float) d;
+  const hwy::HWY_NAMESPACE::Rebind<uint32_t, decltype(d)> du;
+
+  // Unpoison accessing partially-uninitialized vectors with memory sanitizer.
+  // This is because we run NearestInt() on the vector, which triggers msan even
+  // it it safe to do so since the values are not mixed between lanes.
+  const size_t num_round_up = RoundUpTo(num, Lanes(d));
+  UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
 
   const auto one = Set(d, 1.0f);
   const auto scale = Set(d, mul);
-  for (size_t x = 0; x < vec_num; x += Lanes(d)) {
+  for (size_t x = 0; x < num; x += Lanes(d)) {
     auto v = Load(d, in + x);
     // Clamp turns NaN to 'min'.
     v = Clamp(v, Zero(d), one);
     auto i = NearestInt(v * scale);
     Store(BitCast(du, i), du, out + x);
   }
-  for (size_t x = vec_num; x < num; x++) {
-    float v = in[x];
-    if (v >= 1.0f) {
-      out[x] = cap;
-    } else if (v >= 0.0f) {  // Inverted condition => NaN -> 0.
-      out[x] = static_cast<uint32_t>(v * mul + 0.5f);
-    } else {
-      out[x] = 0;
-    }
-  }
+
+  // Poison back the output.
+  PoisonMemory(out + num, sizeof(out[0]) * (num_round_up - num));
 }
 
 void FloatToF16(const float* in, hwy::float16_t* out, size_t num) {
   const HWY_FULL(float) d;
   const hwy::HWY_NAMESPACE::Rebind<hwy::float16_t, decltype(d)> du;
-  size_t vec_num = num;
-#if JXL_IS_DEBUG_BUILD
-  // Avoid accessing partially-uninitialized vectors with memory sanitizer.
-  vec_num &= ~(Lanes(d) - 1);
-#endif  // JXL_IS_DEBUG_BUILD
-  for (size_t x = 0; x < vec_num; x += Lanes(d)) {
+
+  // Unpoison accessing partially-uninitialized vectors with memory sanitizer.
+  // This is because we run DemoteTo() on the vector which triggers msan.
+  const size_t num_round_up = RoundUpTo(num, Lanes(d));
+  UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
+
+  for (size_t x = 0; x < num; x += Lanes(d)) {
     auto v = Load(d, in + x);
     auto v16 = DemoteTo(du, v);
     Store(v16, du, out + x);
   }
-  if (num != vec_num) {
-    const HWY_CAPPED(float, 1) d1;
-    const hwy::HWY_NAMESPACE::Rebind<hwy::float16_t, HWY_CAPPED(float, 1)> du1;
-    for (size_t x = vec_num; x < num; x++) {
-      auto v = Load(d1, in + x);
-      auto v16 = DemoteTo(du1, v);
-      Store(v16, du1, out + x);
-    }
-  }
+
+  // Poison back the output.
+  PoisonMemory(out + num, sizeof(out[0]) * (num_round_up - num));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
