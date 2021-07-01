@@ -108,9 +108,10 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     // Channel palette special case
     if (nb_colors == 0) return false;
     std::vector<pixel_type> lookup;
-    int minval, maxval;
+    pixel_type minval, maxval;
     compute_minmax(input.channel[begin_c], &minval, &maxval);
-    int lookup_table_size = maxval - minval + 1;
+    size_t lookup_table_size =
+        static_cast<int64_t>(maxval) - static_cast<int64_t>(minval) + 1;
     if (lookup_table_size > palette_internal::kMaxPaletteLookupTableSize) {
       return false;  // too large lookup table
     }
@@ -132,7 +133,7 @@ Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
     nb_colors = idx;
     idx = 0;
     pixel_type *JXL_RESTRICT p_palette = pch.Row(0);
-    for (int i = 0; i < lookup_table_size; i++) {
+    for (size_t i = 0; i < lookup_table_size; i++) {
       if (lookup[i]) {
         p_palette[idx] = i + minval;
         lookup[i] = idx;
