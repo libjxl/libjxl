@@ -332,8 +332,15 @@ class BitReaderScopedCloser {
     JXL_DASSERT(status_ != nullptr);
   }
   ~BitReaderScopedCloser() {
-    Status close_ret = reader_->Close();
-    if (!close_ret) *status_ = close_ret;
+    if (reader_ != nullptr) {
+      Status close_ret = reader_->Close();
+      if (!close_ret) *status_ = close_ret;
+    }
+  }
+  void CloseAndSuppressError() {
+    JXL_ASSERT(reader_ != nullptr);
+    (void)reader_->Close();
+    reader_ = nullptr;
   }
   BitReaderScopedCloser(const BitReaderScopedCloser&) = delete;
 
