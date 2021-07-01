@@ -334,12 +334,17 @@ void FuzzyErosion(const Rect& from_rect, const ImageF& from,
       size_t xm1 = x >= kStep ? x - kStep : x;
       size_t xp1 = x + kStep < xsize ? x + kStep : x;
       float min0 = row[x];
-      float min1 = min0;
-      float min2 = min0;
-      float min3 = min0;
-      StoreMin4(row[xm1], min0, min1, min2, min3);
-      StoreMin4(row[xp1], min0, min1, min2, min3);
-      StoreMin4(rowt[xm1], min0, min1, min2, min3);
+      float min1 = row[xm1];
+      float min2 = row[xp1];
+      float min3 = rowt[xm1];
+      // Sort the first four values.
+      if (min0 > min1) std::swap(min0, min1);
+      if (min0 > min2) std::swap(min0, min2);
+      if (min0 > min3) std::swap(min0, min3);
+      if (min1 > min2) std::swap(min1, min2);
+      if (min1 > min3) std::swap(min1, min3);
+      if (min2 > min3) std::swap(min2, min3);
+      // The remaining five values of a 3x3 neighbourhood.
       StoreMin4(rowt[x], min0, min1, min2, min3);
       StoreMin4(rowt[xp1], min0, min1, min2, min3);
       StoreMin4(rowb[xm1], min0, min1, min2, min3);
