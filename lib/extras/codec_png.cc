@@ -510,7 +510,9 @@ class ColorEncodingWriterPNG {
     if (c.IsSRGB()) {
       JXL_RETURN_IF_ERROR(AddSRGB(c, info));
       // PNG recommends not including both sRGB and iCCP, so skip the latter.
-    } else {
+    } else if (!c.HaveFields() || !c.tf.IsGamma()) {
+      // Having a gamma value means that the source was a PNG with gAMA and
+      // without iCCP.
       JXL_ASSERT(!c.ICC().empty());
       JXL_RETURN_IF_ERROR(AddICC(c.ICC(), info));
     }
