@@ -67,7 +67,10 @@ int DecompressMain(int argc, const char* argv[]) {
   }
 
   jxl::PaddedBytes compressed;
-  if (!jxl::ReadFile(args.file_in, &compressed)) return 1;
+  if (!jxl::ReadFile(args.file_in, &compressed)) {
+    fprintf(stderr, "Failed to read file: %s.\n", args.file_in);
+    return 1;
+  }
   if (!args.quiet) {
     fprintf(stderr, "Read %zu compressed bytes.\n", compressed.size());
   }
@@ -173,11 +176,15 @@ int DecompressMain(int argc, const char* argv[]) {
               jxl::Span<const uint8_t>(container.codestream,
                                        container.codestream_size),
               args.params, &pool, &io, &stats)) {
+        // Error is already reported by DecompressJxlToPixels.
         return 1;
       }
     }
     if (!args.quiet) fprintf(stderr, "Decoded to pixels.\n");
-    if (!WriteJxlOutput(args, args.file_out, io, &pool)) return 1;
+    if (!WriteJxlOutput(args, args.file_out, io, &pool)) {
+      // Error is already reported by WriteJxlOutput.
+      return 1;
+    }
 
     if (args.print_read_bytes) {
       fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
