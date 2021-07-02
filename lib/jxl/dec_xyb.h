@@ -38,7 +38,7 @@ struct OutputEncodingInfo {
   // default_enc is used for xyb encoded image with ICC profile, in other
   // cases it has no effect. Use linear sRGB or grayscale if ICC profile is
   // not matched (not parsed or no matching ColorEncoding exists)
-  Status Set(const ImageMetadata& metadata, const ColorEncoding& default_enc);
+  Status Set(const CodecMetadata& metadata, const ColorEncoding& default_enc);
   bool all_default_opsin = true;
   bool color_encoding_is_original = false;
 };

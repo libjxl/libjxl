@@ -197,14 +197,14 @@ void OpsinParams::Init(float intensity_target) {
   }
 }
 
-Status OutputEncodingInfo::Set(const ImageMetadata& metadata,
+Status OutputEncodingInfo::Set(const CodecMetadata& metadata,
                                const ColorEncoding& default_enc) {
   const auto& im = metadata.transform_data.opsin_inverse_matrix;
   float inverse_matrix[9];
   memcpy(inverse_matrix, im.inverse_matrix, sizeof(inverse_matrix));
-  float intensity_target = metadata.IntensityTarget();
-  if (metadata.xyb_encoded) {
-    const auto& orig_color_encoding = metadata.color_encoding;
+  float intensity_target = metadata.m.IntensityTarget();
+  if (metadata.m.xyb_encoded) {
+    const auto& orig_color_encoding = metadata.m.color_encoding;
     color_encoding = default_enc;
     // Figure out if we can output to this color encoding.
     do {
@@ -262,7 +262,7 @@ Status OutputEncodingInfo::Set(const ImageMetadata& metadata,
       }
     } while (false);
   } else {
-    color_encoding = metadata.color_encoding;
+    color_encoding = metadata.m.color_encoding;
   }
   if (std::abs(intensity_target - 255.0) > 0.1f || !im.all_default) {
     all_default_opsin = false;
