@@ -127,7 +127,7 @@ typedef struct {
   /** Numerical blue primary values in CIE xy space. */
   double primaries_blue_xy[2];
 
-  /** Transfer function is have_gamma is 0 */
+  /** Transfer function if have_gamma is 0 */
   JxlTransferFunction transfer_function;
 
   /** Gamma value used when transfer_function is JXL_TRANSFER_FUNCTION_GAMMA
