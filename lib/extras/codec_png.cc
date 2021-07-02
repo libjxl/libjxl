@@ -569,8 +569,16 @@ class ColorEncodingWriterPNG {
 
   static Status MaybeAddGAMA(const ColorEncoding& c,
                              LodePNGInfo* JXL_RESTRICT info) {
-    if (!c.tf.IsGamma()) return true;
-    const double gamma = c.tf.GetGamma();
+    double gamma;
+    if (c.tf.IsGamma()) {
+      gamma = c.tf.GetGamma();
+    } else if (c.tf.IsLinear()) {
+      gamma = 1;
+    } else if (c.tf.IsSRGB()) {
+      gamma = 0.45455;
+    } else {
+      return true;
+    }
 
     PaddedBytes payload(4);
     StoreBE32(U32FromF64(gamma), payload.data());
@@ -579,20 +587,30 @@ class ColorEncodingWriterPNG {
 
   static Status MaybeAddCHRM(const ColorEncoding& c,
                              LodePNGInfo* JXL_RESTRICT info) {
-    // TODO(lode): remove this, PNG can also have cHRM for P3, sRGB, ...
-    if (c.white_point != WhitePoint::kCustom &&
-        c.primaries != Primaries::kCustom) {
-      return true;
-    }
-
-    const CIExy white_point = c.GetWhitePoint();
+    CIExy white_point = c.GetWhitePoint();
     // A PNG image stores both whitepoint and primaries in the cHRM chunk, but
     // for grayscale images we don't have primaries. It does not matter what
     // values are stored in the PNG though (all colors are a multiple of the
     // whitepoint), so choose default ones. See
     // http://www.libpng.org/pub/png/spec/1.2/PNG-Chunks.html section 4.2.2.1.
-    const PrimariesCIExy primaries =
+    PrimariesCIExy primaries =
         c.IsGray() ? ColorEncoding().GetPrimaries() : c.GetPrimaries();
+
+    if (c.primaries == Primaries::kSRGB && c.white_point == WhitePoint::kD65) {
+      // For sRGB, the cHRM chunk is supposed to have very specific values which
+      // don't quite match the pre-quantized ones we have (red is off by
+      // 0.00010). Technically, this is only required for full sRGB, but for
+      // consistency, we might as well use them whenever the primaries and white
+      // point are sRGB's.
+      white_point.x = 0.31270;
+      white_point.y = 0.32900;
+      primaries.r.x = 0.64000;
+      primaries.r.y = 0.33000;
+      primaries.g.x = 0.30000;
+      primaries.g.y = 0.60000;
+      primaries.b.x = 0.15000;
+      primaries.b.y = 0.06000;
+    }
 
     PaddedBytes payload(32);
     StoreBE32(U32FromF64(white_point.x), &payload[0]);
