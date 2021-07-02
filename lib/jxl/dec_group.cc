@@ -206,6 +206,7 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
   size_t offset = 0;
 
   std::array<int, 3> jpeg_c_map;
+  bool jpeg_is_gray = false;
   std::array<int, 3> dcoff = {};
 
   // TODO(veluca): all of this should be done only once per image.
@@ -213,8 +214,9 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
     if (!dec_state->shared->cmap.IsJPEGCompatible()) {
       return JXL_FAILURE("The CfL map is not JPEG-compatible");
     }
+    jpeg_is_gray = (decoded->jpeg_data->components.size() == 1);
     jpeg_c_map = JpegOrder(dec_state->shared->frame_header.color_transform,
-                           decoded->jpeg_data->components.size() == 1);
+                           jpeg_is_gray);
     const std::vector<QuantEncoding>& qe =
         dec_state->shared->matrices.encodings();
     if (qe.empty() || qe[0].mode != QuantEncoding::Mode::kQuantModeRAW ||
@@ -358,7 +360,8 @@ Status DecodeGroupImpl(GetBlock* JXL_RESTRICT get_block,
 
           HWY_ALIGN int32_t transposed_dct_y[64];
           for (size_t c : {1, 0, 2}) {
-            if (decoded->jpeg_data->components.size() == 1 && c != 1) {
+            // Propagate only Y for grayscale.
+            if (jpeg_is_gray && c != 1) {
               continue;
             }
             if ((sbx[c] << hshift[c] != bx) || (sby[c] << vshift[c] != by)) {
