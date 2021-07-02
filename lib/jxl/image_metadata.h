@@ -340,8 +340,6 @@ struct ImageMetadata : public Fields {
   uint32_t num_extra_channels;
   std::vector<ExtraChannelInfo> extra_channel_info;
 
-  CustomTransformData transform_data;  // often default
-
   // Only present if m.have_preview.
   PreviewHeader preview_size;
   // Only present if m.have_animation.

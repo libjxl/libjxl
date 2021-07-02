@@ -979,7 +979,7 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
   JXL_CHECK(dec_state->output_encoding_info.Set(
-      enc_state->shared.metadata->m,
+      *enc_state->shared.metadata,
       ColorEncoding::LinearSRGB(
           enc_state->shared.metadata->m.color_encoding.IsGray())));
   dec_state->shared = &enc_state->shared;

@@ -858,7 +858,7 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
       ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray());
 
   JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
-      dec->metadata.m, dec->default_enc));
+      dec->metadata, dec->default_enc));
 
   return JXL_DEC_SUCCESS;
 }
@@ -1055,7 +1055,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       jxl::ImageBundle ib(&dec->metadata.m);
       PassesDecoderState preview_dec_state;
       JXL_API_RETURN_IF_ERROR(preview_dec_state.output_encoding_info.Set(
-          dec->metadata.m,
+          dec->metadata,
           ColorEncoding::LinearSRGB(dec->metadata.m.color_encoding.IsGray())));
       if (!DecodeFrame(dparams, &preview_dec_state, dec->thread_pool.get(),
                        reader.get(), &ib, dec->metadata,
@@ -2179,7 +2179,7 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   JXL_API_RETURN_IF_ERROR(ConvertExternalToInternalColorEncoding(
       *color_encoding, &dec->default_enc));
   JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
-      dec->metadata.m, dec->default_enc));
+      dec->metadata, dec->default_enc));
   return JXL_DEC_SUCCESS;
 }
 
