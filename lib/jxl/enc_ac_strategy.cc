@@ -543,44 +543,38 @@ void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
   const AcStrategy acs16X16 = AcStrategy::FromRawStrategy(acs_raw16X16);
   AcStrategyRow row0 = ac_strategy->ConstRow(by + cy + 0);
   AcStrategyRow row1 = ac_strategy->ConstRow(by + cy + 1);
-  const bool is8X8[2][2] = {
-      {ac_strategy->IsValid(bx + cx + 0, by + cy + 0) &&
-           !row0[bx + cx + 0].IsMultiblock(),
-       ac_strategy->IsValid(bx + cx + 1, by + cy + 0) &&
-           !row0[bx + cx + 1].IsMultiblock()},
-      {ac_strategy->IsValid(bx + cx + 0, by + cy + 1) &&
-           !row1[bx + cx + 0].IsMultiblock(),
-       ac_strategy->IsValid(bx + cx + 1, by + cy + 1) &&
-           !row1[bx + cx + 1].IsMultiblock()},
-  };
-  bool has16X8 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
-                 row0[bx + cx + 1].RawStrategy() == acs_raw16X8;
-  bool has8X16 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
-                 row1[bx + cx + 0].RawStrategy() == acs_raw8X16;
-  if (has16X8) {
-    bool ok0 = (row0[bx + cx + 0].IsFirstBlock() &&
-                row0[bx + cx + 0].RawStrategy() == acs_raw16X8) ||
-               (is8X8[0][0] && is8X8[1][0]);
-    bool ok1 = (row0[bx + cx + 1].IsFirstBlock() &&
-                row0[bx + cx + 1].RawStrategy() == acs_raw16X8) ||
-               (is8X8[0][1] && is8X8[1][1]);
-    if (!ok0 || !ok1) {
-      return;
-    }
-  } else {
-    bool ok0 = (row0[bx + cx + 0].IsFirstBlock() &&
-                row0[bx + cx + 0].RawStrategy() == acs_raw8X16) ||
-               (is8X8[0][0] && is8X8[0][1]);
-    bool ok1 = (row1[bx + cx + 0].IsFirstBlock() &&
-                row1[bx + cx + 0].RawStrategy() == acs_raw8X16) ||
-               (is8X8[1][0] && is8X8[1][1]);
-    if (!ok0 || !ok1) {
-      return;
-    }
-  }
   {
     bool has16X16 = row0[bx + cx + 0].RawStrategy() == acs_raw16X16;
     if (has16X16) {
+      return;
+    }
+  }
+  const bool is8X8[2][2] = {
+      {!row0[bx + cx + 0].IsMultiblock(), !row0[bx + cx + 1].IsMultiblock()},
+      {!row1[bx + cx + 0].IsMultiblock(), !row1[bx + cx + 1].IsMultiblock()},
+  };
+  const bool has16X8 = row0[bx + cx + 0].RawStrategy() == acs_raw16X8 ||
+                       row0[bx + cx + 1].RawStrategy() == acs_raw16X8;
+  const bool has8X16 = row0[bx + cx + 0].RawStrategy() == acs_raw8X16 ||
+                       row1[bx + cx + 0].RawStrategy() == acs_raw8X16;
+  if (has16X8) {
+    bool col0_ok = (row0[bx + cx + 0].IsFirstBlock() &&
+                    row0[bx + cx + 0].RawStrategy() == acs_raw16X8) ||
+                   (is8X8[0][0] && is8X8[1][0]);
+    bool col1_ok = (row0[bx + cx + 1].IsFirstBlock() &&
+                    row0[bx + cx + 1].RawStrategy() == acs_raw16X8) ||
+                   (is8X8[0][1] && is8X8[1][1]);
+    if (!col0_ok || !col1_ok) {
+      return;
+    }
+  } else {
+    bool row0_ok = (row0[bx + cx + 0].IsFirstBlock() &&
+                    row0[bx + cx + 0].RawStrategy() == acs_raw8X16) ||
+                   (is8X8[0][0] && is8X8[0][1]);
+    bool row1_ok = (row1[bx + cx + 0].IsFirstBlock() &&
+                    row1[bx + cx + 0].RawStrategy() == acs_raw8X16) ||
+                   (is8X8[1][0] && is8X8[1][1]);
+    if (!row0_ok || !row1_ok) {
       return;
     }
   }
