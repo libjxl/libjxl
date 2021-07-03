@@ -378,6 +378,11 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     return JXL_ENC_ERROR;
   }
 
+  if (options->values.lossless) {
+    // XYB does not make sense for lossless encoding, ensure it is disabled.
+    options->enc->metadata.m.xyb_encoded = false;
+  }
+
   auto queued_frame = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedFrame>(
       &options->enc->memory_manager,
       // JxlEncoderQueuedFrame is a struct with no constructors, so we use the
