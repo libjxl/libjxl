@@ -295,6 +295,9 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     quant_norm8 = config.Quant(x / 8, y / 8);
     masking = 2.0f * config.Masking(x / 8, y / 8);
   } else if (num_blocks == 2) {
+    // Taking max instead of 8th norm seems to work
+    // better for smallest blocks up to 16x8. Jyrki couldn't get
+    // improvements in trying the same for 16x16 blocks.
     if (acs.covered_blocks_y() == 2) {
       quant_norm8 =
           std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8, y / 8 + 1));
@@ -334,6 +337,7 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   // Compute entropy.
   float entropy = config.base_entropy;
   auto info_loss = Zero(df);
+  auto info_loss2 = Zero(df);
 
   for (size_t c = 0; c < 3; c++) {
     const float* inv_matrix = config.dequant->InvMatrix(acs.RawStrategy(), c);
@@ -350,7 +354,9 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
       const auto im = Load(df, inv_matrix + i);
       const auto val = (in - in_y) * im * q;
       const auto rval = Round(val);
-      info_loss += AbsDiff(val, rval);
+      const auto diff = AbsDiff(val, rval);
+      info_loss += diff;
+      info_loss2 += diff * diff;
       const auto q = Abs(rval);
       const auto q_is_zero = q == Zero(df);
       entropy_v += IfThenElseZero(q >= Set(df, 1.5f), cost2);
@@ -373,8 +379,12 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     // bias.
     entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
   }
-  float ret = entropy + masking * config.info_loss_multiplier *
-                            GetLane(SumOfLanes(info_loss));
+  float ret =
+      entropy +
+      masking *
+          ((config.info_loss_multiplier * GetLane(SumOfLanes(info_loss))) +
+           (config.info_loss_multiplier2 *
+            sqrt(num_blocks * GetLane(SumOfLanes(info_loss2)))));
   return ret;
 }
 
@@ -413,13 +423,13 @@ uint8_t FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
           AcStrategy::Type::DCT4X8,
           5,
           0.0f,
-          0.710754622182473063f,
+          0.700754622182473063f,
       },
       {
           AcStrategy::Type::DCT8X4,
           5,
           0.0f,
-          0.710754622182473063f,
+          0.700754622182473063f,
       },
       {
           AcStrategy::Type::IDENTITY,
@@ -698,7 +708,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
   // Favor all 8x8 transforms (against 16x8 and larger transforms)) at
   // low butteraugli_target distances.
   static const float k8x8mul1 = -0.38173536034815592f;
-  static const float k8x8mul2 = 1.0305692427138704f;
+  static const float k8x8mul2 = 1.0205692427138704f;
   static const float k8x8base = 1.5789348369698299f;
   const float mul8x8 = k8x8mul2 + k8x8mul1 / (butteraugli_target + k8x8base);
   for (size_t iy = 0; iy < rect.ysize(); iy++) {
@@ -723,14 +733,14 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     float entropy_mul;
   };
   static const float k8X16mul1 = -0.51923137374961237;
-  static const float k8X16mul2 = 0.9135;
+  static const float k8X16mul2 = 0.9145;
   static const float k8X16base = 1.6637730066379945f;
   const float entropy_mul16X8 =
       k8X16mul2 + k8X16mul1 / (butteraugli_target + k8X16base);
   //  const float entropy_mul16X8 = mul8X16 * 0.91195782912371126f;
 
   static const float k16X16mul1 = -0.3255063063403677;
-  static const float k16X16mul2 = 0.85362630789904748;
+  static const float k16X16mul2 = 0.8424362630789904748;
   static const float k16X16base = 2.19008132121404f;
   const float entropy_mul16X16 =
       k16X16mul2 + k16X16mul1 / (butteraugli_target + k16X16base);
@@ -750,9 +760,9 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
       {AcStrategy::Type::DCT8X16, 2, 4, 5, entropy_mul16X8},
       // FindBest16X16 looks for DCT16X16 and its subdivisions.
       // {AcStrategy::Type::DCT16X16, 3, entropy_mul16X16},
-      {AcStrategy::Type::DCT16X32, 4, 4, 4, 0.88854513227338527f},
-      {AcStrategy::Type::DCT32X16, 4, 4, 4, 0.88854513227338527f},
-      {AcStrategy::Type::DCT32X32, 5, 1, 5, 1.0092994906548809f},
+      {AcStrategy::Type::DCT16X32, 4, 4, 4, 0.90254513227338527f},
+      {AcStrategy::Type::DCT32X16, 4, 4, 4, 0.90254513227338527f},
+      {AcStrategy::Type::DCT32X32, 5, 1, 5, 0.9822994906548809f},
       // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
       {AcStrategy::Type::DCT64X32, 6, 0, 3, 2.0858810264509633f},
       {AcStrategy::Type::DCT32X64, 6, 0, 3, 2.0858810264509633f},
@@ -865,7 +875,8 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   //  - estimate of the number of bits that will be used by the block
   //  - information loss due to quantization
   // The following constant controls the relative weights of these components.
-  config.info_loss_multiplier = 136.37708787126093f;
+  config.info_loss_multiplier = 138.0f;
+  config.info_loss_multiplier2 = 50.46839691767866;
   config.base_entropy = 56.030596115736621f;
   config.zeros_mul = 7.444405659772416f;
   // Lots of +1 and -1 coefficients at high quality, it is
