@@ -706,6 +706,7 @@ void FindBest16X16(size_t bx, size_t by, size_t cx, size_t cy,
   }
 }
 
+<<<<<<< HEAD
 static void SetEntropyForTransform(size_t cx, size_t cy,
                                    const AcStrategy::Type acs_raw,
                                    float entropy,
@@ -719,6 +720,8 @@ static void SetEntropyForTransform(size_t cx, size_t cy,
   entropy_estimate[cy * 8 + cx] = entropy;
 }
 
+=======
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
 // The following function tries to merge 8x8 transforms into
 // 32X16 and 16X32 DCTs fairly, by trying them and their combinations
 // with best 16x16 (including the best 16X16 subdivision because of
@@ -726,7 +729,10 @@ static void SetEntropyForTransform(size_t cx, size_t cy,
 //
 // TODO(jyrki):
 // This idea could be generalized to larger transforms.
+<<<<<<< HEAD
 // Reduce code duplication within the generalized function,
+=======
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
 void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
                    const ACSConfig& config,
                    const float* JXL_RESTRICT cmap_factors,
@@ -744,11 +750,20 @@ void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
   const AcStrategy acs32X32 = AcStrategy::FromRawStrategy(acs_raw32X32);
   AcStrategyRow row0 = ac_strategy->ConstRow(by + cy + 0);
   AcStrategyRow row1 = ac_strategy->ConstRow(by + cy + 2);
+<<<<<<< HEAD
   // Let's check if we can consider a 32X32 block here at all.
   // This is not necessary in the basic use of hierarchically merging
   // blocks in the simplest possible way, but is needed when we try other
   // 'floating' options of merging, possibly after a simple hierarchical
   // merge has been explored.
+=======
+  {
+    bool has32X32 = row0[bx + cx + 0].RawStrategy() == acs_raw32X32;
+    if (has32X32) {
+      return;
+    }
+  }
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
   if (MultiBlockTransformCrossesHorizontalBoundary(*ac_strategy, bx + cx,
                                                    by + cy, bx + cx + 4) ||
       MultiBlockTransformCrossesHorizontalBoundary(*ac_strategy, bx + cx,
@@ -759,9 +774,12 @@ void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
                                                  by + cy, by + cy + 4)) {
     return;  // not suitable for 32x32 analysis, some transforms leak out.
   }
+<<<<<<< HEAD
   // For floating transforms there may be
   // already blocks selected that make either or both 32X16 and
   // 16X32 not feasible for this location.
+=======
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
   const bool allow_32X16 = !MultiBlockTransformCrossesVerticalBoundary(
       *ac_strategy, bx + cx + 2, by + cy, by + cy + 4);
   const bool allow_16X32 = !MultiBlockTransformCrossesHorizontalBoundary(
@@ -773,6 +791,7 @@ void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
       entropy[dy >> 1][dx >> 1] += entropy_estimate[(cy + dy) * 8 + (cx + dx)];
     }
   }
+<<<<<<< HEAD
   float entropy_estimate_32X16_left = std::numeric_limits<float>::max();
   float entropy_estimate_32X16_right = std::numeric_limits<float>::max();
   float entropy_estimate_16X32_top = std::numeric_limits<float>::max();
@@ -780,12 +799,25 @@ void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
   if (allow_32X16) {
     if (row0[bx + cx + 0].RawStrategy() != acs_raw32X16) {
       entropy_estimate_32X16_left =
+=======
+  float try32X16_0 = std::numeric_limits<float>::max();
+  float try32X16_1 = std::numeric_limits<float>::max();
+  float try16X32_0 = std::numeric_limits<float>::max();
+  float try16X32_1 = std::numeric_limits<float>::max();
+  if (allow_32X16) {
+    if (row0[bx + cx + 0].RawStrategy() != acs_raw32X16) {
+      try32X16_0 =
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
           entropy_mul * EstimateEntropy(acs32X16, (bx + cx + 0) * 8,
                                         (by + cy + 0) * 8, config, cmap_factors,
                                         block, scratch_space, quantized);
     }
     if (row0[bx + cx + 2].RawStrategy() != acs_raw32X16) {
+<<<<<<< HEAD
       entropy_estimate_32X16_right =
+=======
+      try32X16_1 =
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
           entropy_mul * EstimateEntropy(acs32X16, (bx + cx + 2) * 8,
                                         (by + cy + 0) * 8, config, cmap_factors,
                                         block, scratch_space, quantized);
@@ -793,25 +825,38 @@ void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
   }
   if (allow_16X32) {
     if (row0[bx + cx].RawStrategy() != acs_raw16X32) {
+<<<<<<< HEAD
       entropy_estimate_16X32_top =
+=======
+      try16X32_0 =
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
           entropy_mul * EstimateEntropy(acs16X32, (bx + cx + 0) * 8,
                                         (by + cy + 0) * 8, config, cmap_factors,
                                         block, scratch_space, quantized);
     }
     if (row1[bx + cx].RawStrategy() != acs_raw16X32) {
+<<<<<<< HEAD
       entropy_estimate_16X32_bottom =
+=======
+      try16X32_1 =
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
           entropy_mul * EstimateEntropy(acs16X32, (bx + cx + 0) * 8,
                                         (by + cy + 2) * 8, config, cmap_factors,
                                         block, scratch_space, quantized);
     }
   }
+<<<<<<< HEAD
   float entropy_estimate_32X32 =
+=======
+  float try32X32 =
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
       entropy_mul_32X32 *
       EstimateEntropy(acs32X32, (bx + cx + 0) * 8, (by + cy + 0) * 8, config,
                       cmap_factors, block, scratch_space, quantized);
 
   // Test if this block should have 32X16 or 16X32 transforms,
   // because it can have only one or the other.
+<<<<<<< HEAD
   float cost32x16 =
       std::min(entropy_estimate_32X16_left, entropy[0][0] + entropy[1][0]) +
       std::min(entropy_estimate_32X16_right, entropy[0][1] + entropy[1][1]);
@@ -844,6 +889,57 @@ void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
       ac_strategy->Set(bx + cx, by + cy + 2, acs_raw16X32);
       SetEntropyForTransform(cx, cy + 2, acs_raw16X32,
                              entropy_estimate_16X32_bottom, entropy_estimate);
+=======
+  float cost32x16 = std::min(try32X16_0, entropy[0][0] + entropy[1][0]) +
+                    std::min(try32X16_1, entropy[0][1] + entropy[1][1]);
+  float cost16x32 = std::min(try16X32_0, entropy[0][0] + entropy[0][1]) +
+                    std::min(try16X32_1, entropy[1][0] + entropy[1][1]);
+  if (try32X32 < cost32x16 && try32X32 < cost16x32) {
+    for (size_t dy = 0; dy < 4; ++dy) {
+      for (size_t dx = 0; dx < 4; ++dx) {
+        entropy_estimate[(cy + dy) * 8 + cx + dx] = 0;
+      }
+    }
+    ac_strategy->Set(bx + cx, by + cy, acs_raw32X32);
+    entropy_estimate[(cy + 0) * 8 + cx + 0] = try32X32;
+  } else if (cost32x16 < cost16x32) {
+    if (try32X16_0 < entropy[0][0] + entropy[1][0]) {
+      for (size_t dy = 0; dy < 4; ++dy) {
+        for (size_t dx = 0; dx < 2; ++dx) {
+          entropy_estimate[(cy + dy) * 8 + cx + dx] = 0;
+        }
+      }
+      ac_strategy->Set(bx + cx, by + cy, acs_raw32X16);
+      entropy_estimate[(cy + 0) * 8 + cx + 0] = try32X16_0;
+    }
+    if (try32X16_1 < entropy[0][1] + entropy[1][1]) {
+      for (size_t dy = 0; dy < 4; ++dy) {
+        for (size_t dx = 2; dx < 4; ++dx) {
+          entropy_estimate[(cy + dy) * 8 + cx + dx] = 0;
+        }
+      }
+      ac_strategy->Set(bx + cx + 2, by + cy, acs_raw32X16);
+      entropy_estimate[(cy + 0) * 8 + cx + 2] = try32X16_1;
+    }
+  } else {
+    if (try16X32_0 < entropy[0][0] + entropy[0][1]) {
+      for (size_t dy = 0; dy < 2; ++dy) {
+        for (size_t dx = 0; dx < 4; ++dx) {
+          entropy_estimate[(cy + dy) * 8 + cx + dx] = 0;
+        }
+      }
+      ac_strategy->Set(bx + cx, by + cy, acs_raw16X32);
+      entropy_estimate[(cy + 0) * 8 + cx + 0] = try16X32_0;
+    }
+    if (try16X32_1 < entropy[1][0] + entropy[1][1]) {
+      for (size_t dy = 2; dy < 4; ++dy) {
+        for (size_t dx = 0; dx < 4; ++dx) {
+          entropy_estimate[(cy + dy) * 8 + cx + dx] = 0;
+        }
+      }
+      ac_strategy->Set(bx + cx, by + cy + 2, acs_raw16X32);
+      entropy_estimate[(cy + 2) * 8 + cx + 0] = try16X32_1;
+>>>>>>> 9d88f3a (more balanced 16x32, 32x16 and 32x32 decisions)
     }
   }
 }
