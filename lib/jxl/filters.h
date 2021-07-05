@@ -169,9 +169,9 @@ class FilterPipeline {
     for (size_t c = 0; c < 3; c++) {
       for (size_t y = 0; y < storage.ysize(); y++) {
         float* row = storage.PlaneRow(c, y);
-        std::fill(row, row + kMaxFilterPadding, kSanitizerSentinel);
+        std::fill(row, row + kMaxFilterPadding, msan::kSanitizerSentinel);
         std::fill(row + storage.xsize() - kMaxFilterPadding,
-                  row + storage.xsize(), kSanitizerSentinel);
+                  row + storage.xsize(), msan::kSanitizerSentinel);
       }
     }
 #endif  // MEMORY_SANITIZER

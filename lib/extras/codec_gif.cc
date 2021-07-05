@@ -81,13 +81,15 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("Failed to read GIF: %s", GifErrorString(gif->Error));
   }
 
-  UnpoisonMemory(gif.get(), sizeof(*gif));
+  msan::UnpoisonMemory(gif.get(), sizeof(*gif));
   if (gif->SColorMap) {
-    UnpoisonMemory(gif->SColorMap, sizeof(*gif->SColorMap));
-    UnpoisonMemory(gif->SColorMap->Colors, sizeof(*gif->SColorMap->Colors) *
-                                               gif->SColorMap->ColorCount);
+    msan::UnpoisonMemory(gif->SColorMap, sizeof(*gif->SColorMap));
+    msan::UnpoisonMemory(
+        gif->SColorMap->Colors,
+        sizeof(*gif->SColorMap->Colors) * gif->SColorMap->ColorCount);
   }
-  UnpoisonMemory(gif->SavedImages, sizeof(*gif->SavedImages) * gif->ImageCount);
+  msan::UnpoisonMemory(gif->SavedImages,
+                       sizeof(*gif->SavedImages) * gif->ImageCount);
 
   const SizeConstraints* constraints = &io->constraints;
 
@@ -161,9 +163,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   bool last_base_was_none = true;
   for (int i = 0; i < gif->ImageCount; ++i) {
     const SavedImage& image = gif->SavedImages[i];
-    UnpoisonMemory(image.RasterBits, sizeof(*image.RasterBits) *
-                                         image.ImageDesc.Width *
-                                         image.ImageDesc.Height);
+    msan::UnpoisonMemory(image.RasterBits, sizeof(*image.RasterBits) *
+                                               image.ImageDesc.Width *
+                                               image.ImageDesc.Height);
     const Rect image_rect(image.ImageDesc.Left, image.ImageDesc.Top,
                           image.ImageDesc.Width, image.ImageDesc.Height);
     io->dec_pixels += image_rect.xsize() * image_rect.ysize();
@@ -195,12 +197,12 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
     const ColorMapObject* const color_map =
         image.ImageDesc.ColorMap ? image.ImageDesc.ColorMap : gif->SColorMap;
     JXL_CHECK(color_map);
-    UnpoisonMemory(color_map, sizeof(*color_map));
-    UnpoisonMemory(color_map->Colors,
-                   sizeof(*color_map->Colors) * color_map->ColorCount);
+    msan::UnpoisonMemory(color_map, sizeof(*color_map));
+    msan::UnpoisonMemory(color_map->Colors,
+                         sizeof(*color_map->Colors) * color_map->ColorCount);
     GraphicsControlBlock gcb;
     DGifSavedExtensionToGCB(gif.get(), i, &gcb);
-    UnpoisonMemory(&gcb, sizeof(gcb));
+    msan::UnpoisonMemory(&gcb, sizeof(gcb));
 
     ImageBundle bundle(&io->metadata.m);
     if (io->metadata.m.have_animation) {

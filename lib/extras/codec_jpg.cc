@@ -85,8 +85,8 @@ Status ReadICCProfile(jpeg_decompress_struct* const cinfo,
        marker = marker->next) {
     // marker is initialized by libjpeg, which we are not instrumenting with
     // msan.
-    UnpoisonMemory(marker, sizeof(*marker));
-    UnpoisonMemory(marker->data, marker->data_length);
+    msan::UnpoisonMemory(marker, sizeof(*marker));
+    msan::UnpoisonMemory(marker->data, marker->data_length);
     if (!MarkerIsICC(marker)) continue;
 
     const int current_marker = marker->data[kICCSignatureSize];
@@ -154,8 +154,8 @@ void ReadExif(jpeg_decompress_struct* const cinfo, PaddedBytes* const exif) {
        marker = marker->next) {
     // marker is initialized by libjpeg, which we are not instrumenting with
     // msan.
-    UnpoisonMemory(marker, sizeof(*marker));
-    UnpoisonMemory(marker->data, marker->data_length);
+    msan::UnpoisonMemory(marker, sizeof(*marker));
+    msan::UnpoisonMemory(marker->data, marker->data_length);
     if (!MarkerIsExif(marker)) continue;
     size_t marker_length = marker->data_length - kExifSignatureSize;
     exif->resize(marker_length);
@@ -323,8 +323,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
     for (size_t y = 0; y < image.ysize(); ++y) {
       JSAMPROW rows[] = {row.get()};
       jpeg_read_scanlines(&cinfo, rows, 1);
-      UnpoisonMemory(row.get(), sizeof(JSAMPLE) * cinfo.output_components *
-                                    cinfo.image_width);
+      msan::UnpoisonMemory(
+          row.get(),
+          sizeof(JSAMPLE) * cinfo.output_components * cinfo.image_width);
       auto start = Now();
       float* const JXL_RESTRICT output_row[] = {
           image.PlaneRow(0, y), image.PlaneRow(1, y), image.PlaneRow(2, y)};
@@ -367,7 +368,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
   jpeg_compress_struct cinfo;
   // cinfo is initialized by libjpeg, which we are not instrumenting with
   // msan.
-  UnpoisonMemory(&cinfo, sizeof(cinfo));
+  msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
   jpeg_error_mgr jerr;
   cinfo.err = jpeg_std_error(&jerr);
   jpeg_create_compress(&cinfo);
@@ -420,7 +421,7 @@ Status EncodeWithLibJpeg(const ImageBundle* ib, const CodecInOut* io,
   bytes->resize(size);
   // Compressed image data is initialized by libjpeg, which we are not
   // instrumenting with msan.
-  UnpoisonMemory(buffer, size);
+  msan::UnpoisonMemory(buffer, size);
   std::copy_n(buffer, size, bytes->data());
   std::free(buffer);
   return true;

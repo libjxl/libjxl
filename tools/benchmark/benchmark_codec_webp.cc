@@ -173,7 +173,7 @@ class WebPCodec : public ImageCodec {
     const uint8_t* data_end = data_begin + buf->width * buf->height * 4;
     // The image data is initialized by libwebp, which we are not instrumenting
     // with msan.
-    UnpoisonMemory(data_begin, data_end - data_begin);
+    msan::UnpoisonMemory(data_begin, data_end - data_begin);
     if (io->metadata.m.color_encoding.IsGray() != is_gray) {
       // TODO(lode): either ensure is_gray matches what the color profile says,
       // or set a correct color profile, e.g.
@@ -282,7 +282,7 @@ class WebPCodec : public ImageCodec {
     WebPPictureFree(&pic);
     // Compressed image data is initialized by libwebp, which we are not
     // instrumenting with msan.
-    UnpoisonMemory(compressed->data(), compressed->size());
+    msan::UnpoisonMemory(compressed->data(), compressed->size());
     return ok;
   }
 
