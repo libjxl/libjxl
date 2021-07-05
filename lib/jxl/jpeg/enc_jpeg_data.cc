@@ -355,7 +355,7 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, CodecInOut* io) {
 
   io->Main().chroma_subsampling = cs;
   io->Main().color_transform =
-      !is_rgb ? ColorTransform::kYCbCr : ColorTransform::kNone;
+      (!is_rgb || nbcomp == 1) ? ColorTransform::kYCbCr : ColorTransform::kNone;
 
   io->metadata.m.SetIntensityTarget(
       io->target_nits != 0 ? io->target_nits : kDefaultIntensityTarget);
