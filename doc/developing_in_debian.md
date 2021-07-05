@@ -1,7 +1,7 @@
 # Developing in Debian
 
 These instructions assume an up-to-date Debian/Ubuntu system.
-For other platforms, please instead use the [Docker container](doc/developing_in_docker.md).
+For other platforms, please instead use the [Docker container](developing_in_docker.md).
 
 ## Minimum build dependencies
 
@@ -51,4 +51,4 @@ invocation. To build and test the project, run
 ```
 
 This writes binaries to `build/tools` and runs unit tests. More information
-on [build modes and testing](doc/building_and_testing.md) is available.
+on [build modes and testing](building_and_testing.md) is available.

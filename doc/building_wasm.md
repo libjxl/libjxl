@@ -5,7 +5,7 @@ This file describes the building and testing of JPEG XL
 
 These instructions assume an up-to-date Debian/Ubuntu system.
 For other platforms, or if you encounter any difficulties,
-please instead use the [Docker container](doc/developing_in_docker.md).
+please instead use the [Docker container](developing_in_docker.md).
 
 For the sake of simplicity, it is considered, that the following environment
 variables are set:
@@ -17,7 +17,7 @@ variables are set:
 ## Requirements
 
 [CMake](https://cmake.org/) is used as a build system. To install it, follow
-[Debian build instructions](doc/building_in_debian.md).
+[Debian build instructions](building_in_debian.md).
 
 [Emscripten SDK](https://emscripten.org/) is required for building
 WebAssembly artifacts. To install it, follow the
@@ -59,7 +59,7 @@ HOME=$OPT jsvu --os=linux64 "v8@${v8_version}"
 ln -s "$OPT/.jsvu/v8-${v8_version}" "$OPT/.jsvu/v8"
 ```
 
-In [Docker container](doc/developing_in_docker.md)
+In [Docker container](developing_in_docker.md)
 CMake, Emscripten SDK and V8 are pre-installed.
 
 ## Building and testing the project

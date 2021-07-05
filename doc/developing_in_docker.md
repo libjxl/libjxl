@@ -62,7 +62,7 @@ CC=clang-7 CXX=clang++-7 ./ci.sh opt
 ```
 
 This writes binaries to `/jpeg-xl/build/tools` and runs unit tests.
-More information on [build modes and testing](doc/building_and_testing.md) is
+More information on [build modes and testing](building_and_testing.md) is
 available.
 
 If there already was a build directory on the host this can give conflicts,
