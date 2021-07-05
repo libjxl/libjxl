@@ -2,7 +2,7 @@
 
 These instructions assume an up-to-date Windows 10 (e.g. build 19041.928) with
 Microsoft Visual Studio 2019 (e.g. Version 16.9.0 Preview 4.0) installed. If
-unavailable, please use the [Docker container](doc/developing_in_docker.md).
+unavailable, please use the [Docker container](developing_in_docker.md).
 
 ## Minimum build dependencies
 
