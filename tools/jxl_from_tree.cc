@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file.
 
 #include <stdio.h>
+#include <string.h>
 
 #include <fstream>
 #include <iostream>
@@ -464,7 +465,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
 }  // namespace jxl
 
 int main(int argc, char** argv) {
-  if (argc != 3 && argc != 4) {
+  if ((argc != 3 && argc != 4) || !strcmp(argv[1], argv[2])) {
     fprintf(stderr, "Usage: %s tree_in.txt out.jxl [tree_drawing]\n", argv[0]);
     return 1;
   }
