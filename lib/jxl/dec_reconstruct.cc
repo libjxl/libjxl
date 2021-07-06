@@ -270,11 +270,22 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
   // system.
   size_t xoff = PassesDecoderState::kGroupDataXBorder;
   size_t yoff = PassesDecoderState::kGroupDataYBorder;
-  // This may over-copy, but it should always be safe to do so.
+
+  // This X,Y range may include more pixels in the output than what we need.
+  // Those pixels that fall outside the image boundary are undefined, but it is
+  // safe to compute them with MulAdd().
   size_t y0 = rect.y0() - lf.Padding();
-  size_t y1 = rect.y0() + rect.ysize() + lf.Padding();
+  size_t y1 = rect.y0() +
+              std::min(frame_rect.y0() + rect.ysize() + lf.Padding(),
+                       frame_dim.ysize_padded) -
+              frame_rect.y0();
+
   size_t x0 = rect.x0() - lf.Padding();
-  size_t x1 = rect.x0() + rect.xsize() + lf.Padding();
+  size_t x1 = rect.x0() +
+              std::min(frame_rect.x0() + rect.xsize() + lf.Padding(),
+                       frame_dim.xsize_padded) -
+              frame_rect.x0();
+
   if (hs == 0 && vs == 0) {
     Rect r(x0, y0, x1 - x0, y1 - y0);
     CopyImageTo(r, *plane_in, r, plane_out);
@@ -288,8 +299,8 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
       plane_in->Row(y)[rect.x0() - 1] = plane_in->Row(y)[rect.x0()];
     }
   }
-  if (frame_rect.x0() + frame_rect.xsize() >= frame_dim.xsize_padded) {
-    size_t borderx = ((rect.x0() + rect.xsize() - xoff) >> hs) + xoff;
+  if (frame_rect.x0() + x1 - rect.x0() >= frame_dim.xsize_padded) {
+    ssize_t borderx = static_cast<ssize_t>(x1 - xoff + hs) / (1 << hs) + xoff;
     for (size_t y = 0; y < plane_in->ysize(); y++) {
       plane_in->Row(y)[borderx] = plane_in->Row(y)[borderx - 1];
     }
@@ -298,10 +309,8 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
     memcpy(plane_in->Row(rect.y0() - 1), plane_in->Row(rect.y0()),
            plane_in->xsize() * sizeof(float));
   }
-  if (frame_rect.y0() + frame_rect.ysize() >= frame_dim.ysize_padded) {
-    ssize_t bordery =
-        static_cast<ssize_t>(rect.y0() + rect.ysize() - yoff) / (1 << vs) +
-        yoff;
+  if (frame_rect.y0() + y1 - rect.y0() >= frame_dim.ysize_padded) {
+    ssize_t bordery = static_cast<ssize_t>(y1 - yoff + vs) / (1 << vs) + yoff;
     memcpy(plane_in->Row(bordery), plane_in->Row(bordery - 1),
            plane_in->xsize() * sizeof(float));
   }
