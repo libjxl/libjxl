@@ -726,6 +726,7 @@ static void SetEntropyForTransform(size_t cx, size_t cy,
 //
 // TODO(jyrki):
 // This idea could be generalized to larger transforms.
+// Reduce code duplication.
 void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
                    const ACSConfig& config,
                    const float* JXL_RESTRICT cmap_factors,
