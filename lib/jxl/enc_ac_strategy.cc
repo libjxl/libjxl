@@ -726,7 +726,6 @@ static void SetEntropyForTransform(size_t cx, size_t cy,
 //
 // TODO(jyrki):
 // This idea could be generalized to larger transforms.
-// Reduce code duplication within the generalized function,
 void FindBest32X32(size_t bx, size_t by, size_t cx, size_t cy,
                    const ACSConfig& config,
                    const float* JXL_RESTRICT cmap_factors,
@@ -890,9 +889,9 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
   float entropy_estimate[64] = {};
   // Favor all 8x8 transforms (against 16x8 and larger transforms)) at
   // low butteraugli_target distances.
-  static const float k8x8mul1 = -0.38173536034815592f;
-  static const float k8x8mul2 = 1.0205692427138704f;
-  static const float k8x8base = 1.5789348369698299f;
+  static const float k8x8mul1 = -0.55;
+  static const float k8x8mul2 = 1.0735757687292623f;
+  static const float k8x8base = 1.4;
   const float mul8x8 = k8x8mul2 + k8x8mul1 / (butteraugli_target + k8x8base);
   for (size_t iy = 0; iy < rect.ysize(); iy++) {
     for (size_t ix = 0; ix < rect.xsize(); ix++) {
@@ -915,21 +914,27 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     uint8_t encoding_speed_tier_max_limit;
     float entropy_mul;
   };
-  static const float k8X16mul1 = -0.51923137374961237;
-  static const float k8X16mul2 = 0.9145;
-  static const float k8X16base = 1.6637730066379945f;
+  static const float k8X16mul1 = -0.55;
+  static const float k8X16mul2 = 0.9019587899705066;
+  static const float k8X16base = 1.6;
   const float entropy_mul16X8 =
       k8X16mul2 + k8X16mul1 / (butteraugli_target + k8X16base);
   //  const float entropy_mul16X8 = mul8X16 * 0.91195782912371126f;
 
-  static const float k16X16mul1 = -0.3255063063403677;
-  static const float k16X16mul2 = 0.8424362630789904748;
-  static const float k16X16base = 2.19008132121404f;
+  static const float k16X16mul1 = -0.35;
+  static const float k16X16mul2 = 0.82098067020252011;
+  static const float k16X16base = 2.0;
   const float entropy_mul16X16 =
       k16X16mul2 + k16X16mul1 / (butteraugli_target + k16X16base);
   //  const float entropy_mul16X16 = mul16X16 * 0.83183417727960129f;
 
-  const float entropy_mul32X32 = 0.9822994906548809f;
+  static const float k32X16mul1 = -0.1;
+  static const float k32X16mul2 = 0.86098067020252011;
+  static const float k32X16base = 2.5;
+  const float entropy_mul16X32 =
+      k32X16mul2 + k32X16mul1 / (butteraugli_target + k32X16base);
+
+  const float entropy_mul32X32 = 0.9188333021616017f;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -944,8 +949,8 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
       {AcStrategy::Type::DCT8X16, 2, 4, 5, entropy_mul16X8},
       // FindBest16X16 looks for DCT16X16 and its subdivisions.
       // {AcStrategy::Type::DCT16X16, 3, entropy_mul16X16},
-      {AcStrategy::Type::DCT16X32, 4, 4, 4, 0.90254513227338527f},
-      {AcStrategy::Type::DCT32X16, 4, 4, 4, 0.90254513227338527f},
+      {AcStrategy::Type::DCT16X32, 4, 4, 4, entropy_mul16X32},
+      {AcStrategy::Type::DCT32X16, 4, 4, 4, entropy_mul16X32},
       // FIndBest32X32 looks for DCT32X32 and its subdivisions.
       // {AcStrategy::Type::DCT32X32, 5, 1, 5, 0.9822994906548809f},
       // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
@@ -1084,15 +1089,18 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   // The following constant controls the relative weights of these components.
   config.info_loss_multiplier = 138.0f;
   config.info_loss_multiplier2 = 50.46839691767866;
-  config.base_entropy = 56.030596115736621f;
-  config.zeros_mul = 7.444405659772416f;
+  // TODO(jyrki): explore base_entropy setting more.
+  // A small value (0?) works better at high distance, while a larger value
+  // may be more effective at low distance/high bpp.
+  config.base_entropy = 0.0;
+  config.zeros_mul = 7.565053364251793f;
   // Lots of +1 and -1 coefficients at high quality, it is
   // beneficial to favor them. At low qualities zeros matter more
   // and +1 / -1 coefficients are already quite harmful.
   float slope = std::min<float>(1.0f, butteraugli_target * (1.0f / 3));
   config.cost1 = 1 + slope * 8.8703248061477744f;
-  config.cost2 = 4.4417860847109791f;
-  config.cost_delta = 6.1101822565620658f;
+  config.cost2 = 4.4628149885273363f;
+  config.cost_delta = 5.3359184934516337f;
   JXL_ASSERT(enc_state->shared.ac_strategy.xsize() ==
              enc_state->shared.frame_dim.xsize_blocks);
   JXL_ASSERT(enc_state->shared.ac_strategy.ysize() ==
