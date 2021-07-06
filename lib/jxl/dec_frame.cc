@@ -439,7 +439,8 @@ void FrameDecoder::AllocateOutput() {
            y++) {
         for (size_t x = DivCeil(frame_dim_.xsize_upsampled, ecups);
              x < DivCeil(frame_dim_.xsize_upsampled_padded, ecups); x++) {
-          dec_state_->extra_channels.back().Row(y)[x] = kSanitizerSentinel;
+          dec_state_->extra_channels.back().Row(y)[x] =
+              msan::kSanitizerSentinel;
         }
       }
 #endif

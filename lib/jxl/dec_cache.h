@@ -194,7 +194,7 @@ struct PassesDecoderState {
                               kGroupDim + 2 * kGroupDataYBorder);
 #if MEMORY_SANITIZER
       // Avoid errors due to loading vectors on the outermost padding.
-      FillImage(kSanitizerSentinel, &group_data.back());
+      FillImage(msan::kSanitizerSentinel, &group_data.back());
 #endif
     }
     if (!shared->frame_header.chroma_subsampling.Is444()) {
@@ -333,7 +333,7 @@ struct PassesDecoderState {
     }
 #if MEMORY_SANITIZER
     // Avoid errors due to loading vectors on the outermost padding.
-    FillImage(kSanitizerSentinel, &decoded);
+    FillImage(msan::kSanitizerSentinel, &decoded);
 #endif
   }
 

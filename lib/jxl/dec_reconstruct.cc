@@ -52,9 +52,9 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
     float* JXL_RESTRICT row2 = rect.PlaneRow(idct, 2, y);
     // All calculations are lane-wise, still some might require value-dependent
     // behaviour (e.g. NearestInt). Temporary unposion last vector tail.
-    UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
-    UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
-    UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
     for (size_t x = 0; x < rect.xsize(); x += Lanes(d)) {
       const auto in_opsin_x = Load(d, row0 + x);
       const auto in_opsin_y = Load(d, row1 + x);
@@ -70,9 +70,9 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
       Store(op.Transform(d, linear_g), d, row1 + x);
       Store(op.Transform(d, linear_b), d, row2 + x);
     }
-    PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
-    PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
-    PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
   }
 }
 
@@ -231,11 +231,11 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
     // behaviour (e.g. NearestInt). Temporary unposion last vector tail.
     size_t xsize = output_buf_rect.xsize();
     size_t xsize_v = RoundUpTo(xsize, Lanes(d));
-    UnpoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
-    UnpoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
-    UnpoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::UnpoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
     if (row_in_a)
-      UnpoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
+      msan::UnpoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
     for (size_t x = 0; x < xsize; x += Lanes(d)) {
       auto rf = Clamp(zero, Load(d, row_in_r + x), one) * mul;
       auto gf = Clamp(zero, Load(d, row_in_g + x), one) * mul;
@@ -255,11 +255,11 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
                   output_buf + base_ptr + bytes * x);
       }
     }
-    PoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
-    PoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
-    PoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row_in_r + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row_in_g + xsize, sizeof(float) * (xsize_v - xsize));
+    msan::PoisonMemory(row_in_b + xsize, sizeof(float) * (xsize_v - xsize));
     if (row_in_a)
-      PoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
+      msan::PoisonMemory(row_in_a + xsize, sizeof(float) * (xsize_v - xsize));
   }
 }
 
@@ -276,6 +276,7 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
   size_t x0 = rect.x0() - lf.Padding();
   size_t x1 = rect.x0() + rect.xsize() + lf.Padding();
   if (hs == 0 && vs == 0) {
+    JXL_CHECK_IMAGE_INITIALIZED(*plane_in, rect);
     Rect r(x0, y0, x1 - x0, y1 - y0);
     CopyImageTo(r, *plane_in, r, plane_out);
     return;
@@ -631,6 +632,10 @@ Status FinalizeImageRect(
     for (size_t c = 0; c < 3; c++) {
       size_t vs = frame_header.chroma_subsampling.VShift(c);
       size_t hs = frame_header.chroma_subsampling.HShift(c);
+      // The per-thread output is used for the first time here. Poison the temp
+      // image on this thread to prevent leaking initialized data from a
+      // previous run in this thread in msan builds.
+      msan::PoisonImage(dec_state->ycbcr_out_images[thread].Plane(c));
       HWY_DYNAMIC_DISPATCH(DoYCbCrUpsampling)
       (hs, vs, &input_image->Plane(c), rect_for_if_input, frame_rect, frame_dim,
        &dec_state->ycbcr_out_images[thread].Plane(c), lf,
@@ -1105,6 +1110,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
                 rects_to_process[rect_id].ysize() >>
                     frame_header.chroma_subsampling.VShift(c));
         Rect group_data_rect(xstart, ystart, rh.xsize(), rh.ysize());
+        // Poison the image in this thread to prevent leaking initialized data
+        // from a previous run in this thread in msan builds.
+        msan::PoisonImage(dec_state->group_data[thread].Plane(c));
         CopyImageToWithPadding(
             rh, dec_state->decoded.Plane(c), dec_state->FinalizeRectPadding(),
             group_data_rect, &dec_state->group_data[thread].Plane(c));
@@ -1121,6 +1129,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
               &dec_state
                    ->ec_temp_images[thread * decoded->extra_channels().size() +
                                     i];
+          // Poison the temp image on this thread to prevent leaking initialized
+          // data from a previous run in this thread in msan builds.
+          msan::PoisonImage(*eti);
           CopyImageToWithPadding(r, dec_state->extra_channels[i],
                                  /*padding=*/2, ec_input_rect, eti);
           ec_rects.emplace_back(eti, ec_input_rect);

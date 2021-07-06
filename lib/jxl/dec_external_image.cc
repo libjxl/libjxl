@@ -60,7 +60,7 @@ void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
   // This is because we run NearestInt() on the vector, which triggers msan even
   // it it safe to do so since the values are not mixed between lanes.
   const size_t num_round_up = RoundUpTo(num, Lanes(d));
-  UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
+  msan::UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
 
   const auto one = Set(d, 1.0f);
   const auto scale = Set(d, mul);
@@ -73,7 +73,7 @@ void FloatToU32(const float* in, uint32_t* out, size_t num, float mul,
   }
 
   // Poison back the output.
-  PoisonMemory(out + num, sizeof(out[0]) * (num_round_up - num));
+  msan::PoisonMemory(out + num, sizeof(out[0]) * (num_round_up - num));
 }
 
 void FloatToF16(const float* in, hwy::float16_t* out, size_t num) {
@@ -83,7 +83,7 @@ void FloatToF16(const float* in, hwy::float16_t* out, size_t num) {
   // Unpoison accessing partially-uninitialized vectors with memory sanitizer.
   // This is because we run DemoteTo() on the vector which triggers msan.
   const size_t num_round_up = RoundUpTo(num, Lanes(d));
-  UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
+  msan::UnpoisonMemory(in + num, sizeof(in[0]) * (num_round_up - num));
 
   for (size_t x = 0; x < num; x += Lanes(d)) {
     auto v = Load(d, in + x);
@@ -92,7 +92,7 @@ void FloatToF16(const float* in, hwy::float16_t* out, size_t num) {
   }
 
   // Poison back the output.
-  PoisonMemory(out + num, sizeof(out[0]) * (num_round_up - num));
+  msan::PoisonMemory(out + num, sizeof(out[0]) * (num_round_up - num));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -452,6 +452,9 @@ Status ConvertToExternal(const jxl::ImageBundle& ib, size_t bits_per_sample,
           uint32_t* JXL_RESTRICT row_u32[4];
           for (size_t r = 0; r < c; r++) {
             row_u32[r] = u32_cache.Row(r + thread * num_channels);
+            // row_u32[] is a per-thread temporary row storage, this isn't
+            // intended to be initialized on a previous run.
+            msan::PoisonMemory(row_u32[r], xsize * sizeof(row_u32[r][0]));
             HWY_DYNAMIC_DISPATCH(FloatToU32)
             (row_in[r], row_u32[r], xsize, mul, bits_per_sample);
           }

@@ -115,9 +115,9 @@ void PlaneBase::InitializePadding(const size_t sizeof_t, Padding padding) {
     // There's a bug in msan in clang-6 when handling AVX2 operations. This
     // workaround allows tests to pass on msan, although it is slower and
     // prevents msan warnings from uninitialized images.
-    std::fill(row, kSanitizerSentinelByte, initialize_size);
+    std::fill(row, msan::kSanitizerSentinelByte, initialize_size);
 #else
-    memset(row + valid_size, kSanitizerSentinelByte,
+    memset(row + valid_size, msan::kSanitizerSentinelByte,
            initialize_size - valid_size);
 #endif  // clang6
   }
