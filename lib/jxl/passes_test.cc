@@ -287,7 +287,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
       ButteraugliDistance(output, output_d2, cparams.ba_params,
                           /*distmap=*/nullptr, nullptr);
 
-  EXPECT_LE(butteraugli_distance_down2_full, 3.0f);
+  EXPECT_LE(butteraugli_distance_down2_full, 3.2f);
   EXPECT_GE(butteraugli_distance_down2_full, 1.0f);
 }
 
