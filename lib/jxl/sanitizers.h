@@ -24,6 +24,11 @@
 #endif
 
 #if JXL_MEMORY_SANITIZER
+#include <stdio.h>
+
+#include <algorithm>
+#include <vector>
+
 #include "lib/jxl/base/status.h"
 #include "sanitizer/msan_interface.h"
 #endif
@@ -59,6 +64,101 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const Image3<T>& im) {
   PoisonImage(im.Plane(2));
 }
 
+// Print the uninitialized regions of an image.
+template <typename T>
+static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
+    const Plane<T>& im) {
+  fprintf(stderr, "Uninitialized regions for image of size %zux%zu:\n",
+          im.xsize(), im.ysize());
+
+  // A segment of uninitialized pixels in a row, in the format [first, second).
+  typedef std::pair<size_t, size_t> PixelSegment;
+
+  // Helper class to merge and print a list of rows of PixelSegment that may be
+  // the same over big ranges of rows. This compacts the output to ranges of
+  // rows like "[y0, y1): [x0, x1) [x2, x3)".
+  class RowsMerger {
+   public:
+    // Add a new row the list of rows. If the row is the same as the previous
+    // one it will be merged showing a range of rows [y0, y1), but if the new
+    // row is different the current range of rows (if any) will be printed and a
+    // new one will be started.
+    void AddRow(size_t y, std::vector<PixelSegment>&& new_row) {
+      if (start_y_ != -1 && new_row != segments_) {
+        PrintRow(y);
+      }
+      if (new_row.empty()) {
+        // Skip ranges with no uninitialized pixels.
+        start_y_ = -1;
+        segments_.clear();
+        return;
+      }
+      if (start_y_ == -1) {
+        start_y_ = y;
+        segments_ = std::move(new_row);
+      }
+    }
+
+    // Print the contents of the range of rows [start_y_, end_y) if any.
+    void PrintRow(size_t end_y) {
+      if (start_y_ == -1) return;
+      if (segments_.empty()) {
+        start_y_ = -1;
+        return;
+      }
+      if (end_y - start_y_ > 1) {
+        fprintf(stderr, " y=[%zd, %zu):", start_y_, end_y);
+      } else {
+        fprintf(stderr, " y=[%zd]:", start_y_);
+      }
+      for (const auto& seg : segments_) {
+        if (seg.first + 1 == seg.second) {
+          fprintf(stderr, " [%zd]", seg.first);
+        } else {
+          fprintf(stderr, " [%zd, %zu)", seg.first, seg.second);
+        }
+      }
+      fprintf(stderr, "\n");
+      start_y_ = -1;
+    }
+
+   private:
+    std::vector<PixelSegment> segments_;
+    // Row number of the first row in the range of rows that have |segments| as
+    // the undefined segments.
+    ssize_t start_y_ = -1;
+  } rows_merger;
+
+  class SegmentsMerger {
+   public:
+    void AddValue(size_t x) {
+      if (row.empty() || row.back().second != x) {
+        row.emplace_back(x, x + 1);
+      } else {
+        row.back().second = x + 1;
+      }
+    }
+
+    std::vector<PixelSegment> row;
+  };
+
+  for (size_t y = 0; y < im.ysize(); y++) {
+    auto* row = im.Row(y);
+    SegmentsMerger seg_merger;
+    size_t x = 0;
+    while (x < im.xsize()) {
+      intptr_t ret =
+          __msan_test_shadow(row + x, (im.xsize() - x) * sizeof(row[0]));
+      if (ret < 0) break;
+      size_t next_x = x + ret / sizeof(row[0]);
+      seg_merger.AddValue(next_x);
+      x = next_x + 1;
+    }
+    rows_merger.AddRow(y, std::move(seg_merger.row));
+  }
+  rows_merger.PrintRow(im.ysize());
+}
+
 // Check that all the pixels in the provided rect of the image are initialized
 // (not poisoned). If any of the values is poisoned it will abort.
 template <typename T>
@@ -79,6 +179,7 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
       size_t x = ret / sizeof(*row);
       JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s", x, y,
                 message ? message : "");
+      PrintImageUninitialized(im);
     }
     // This will report an error if memory is not initialized.
     __msan_check_mem_is_initialized(row + r.x0(), sizeof(*row) * r.xsize());
