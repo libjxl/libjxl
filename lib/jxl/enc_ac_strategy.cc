@@ -598,24 +598,30 @@ static void SetEntropyForTransform(size_t cx, size_t cy,
 AcStrategy::Type AcsSquare(size_t blocks) {
   if (blocks == 2) {
     return AcStrategy::Type::DCT16X16;
-  } else {
+  } else if (blocks == 4) {
     return AcStrategy::Type::DCT32X32;
+  } else {
+    return AcStrategy::Type::DCT64X64;
   }
 }
 
 AcStrategy::Type AcsVerticalSplit(size_t blocks) {
   if (blocks == 2) {
     return AcStrategy::Type::DCT16X8;
-  } else {
+  } else if (blocks == 4) {
     return AcStrategy::Type::DCT32X16;
+  } else {
+    return AcStrategy::Type::DCT64X32;
   }
 }
 
 AcStrategy::Type AcsHorizontalSplit(size_t blocks) {
   if (blocks == 2) {
     return AcStrategy::Type::DCT8X16;
-  } else {
+  } else if (blocks == 4) {
     return AcStrategy::Type::DCT16X32;
+  } else {
+    return AcStrategy::Type::DCT32X64;
   }
 }
 
@@ -626,8 +632,8 @@ AcStrategy::Type AcsHorizontalSplit(size_t blocks) {
 // This is now generalized to concern about squares
 // of blocks X blocks size, where a block is 8x8 pixels.
 void FindBestFirstLevelDivisionForSquare(
-    size_t blocks, size_t bx, size_t by, size_t cx, size_t cy,
-    const ACSConfig& config, const float* JXL_RESTRICT cmap_factors,
+    size_t blocks, bool allow_square_transform, size_t bx, size_t by, size_t cx,
+    size_t cy, const ACSConfig& config, const float* JXL_RESTRICT cmap_factors,
     AcStrategyImage* JXL_RESTRICT ac_strategy, const float entropy_mul_JXK,
     const float entropy_mul_JXJ, float* JXL_RESTRICT entropy_estimate,
     float* block, float* scratch_space, uint32_t* quantized) {
@@ -676,6 +682,7 @@ void FindBestFirstLevelDivisionForSquare(
   float entropy_JXK_right = std::numeric_limits<float>::max();
   float entropy_KXJ_top = std::numeric_limits<float>::max();
   float entropy_KXJ_bottom = std::numeric_limits<float>::max();
+  float entropy_JXJ = std::numeric_limits<float>::max();
   if (allow_JXK) {
     if (row0[bx + cx + 0].RawStrategy() != acs_rawJXK) {
       entropy_JXK_left =
@@ -706,10 +713,15 @@ void FindBestFirstLevelDivisionForSquare(
                                             quantized);
     }
   }
-  float entropy_JXJ =
-      entropy_mul_JXJ * EstimateEntropy(acsJXJ, (bx + cx + 0) * 8,
-                                        (by + cy + 0) * 8, config, cmap_factors,
-                                        block, scratch_space, quantized);
+  if (allow_square_transform) {
+    // We control the exploration of the square transform separately so that
+    // we can turn it off at high decoding speeds for 32x32, but still allow
+    // exploring 16x32 and 32x16.
+    entropy_JXJ = entropy_mul_JXJ * EstimateEntropy(acsJXJ, (bx + cx + 0) * 8,
+                                                    (by + cy + 0) * 8, config,
+                                                    cmap_factors, block,
+                                                    scratch_space, quantized);
+  }
 
   // Test if this block should have JXK or KXJ transforms,
   // because it can have only one or the other.
@@ -833,6 +845,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
       k32X16mul2 + k32X16mul1 / (butteraugli_target + k32X16base);
 
   const float entropy_mul32X32 = 0.9188333021616017f;
+  const float entropy_mul64X64 = 1.50f;
   // TODO(jyrki): Consider this feedback in further changes:
   // Also effectively when the multipliers for smaller blocks are
   // below 1, this raises the bar for the bigger blocks even higher
@@ -853,9 +866,9 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
       // subdivisions. {AcStrategy::Type::DCT32X32, 5, 1, 5,
       // 0.9822994906548809f},
       // TODO(jyrki): re-enable 64x32 and 64x64 if/when possible.
-      {AcStrategy::Type::DCT64X32, 6, 0, 3, 2.0858810264509633f},
-      {AcStrategy::Type::DCT32X64, 6, 0, 3, 2.0858810264509633f},
-      {AcStrategy::Type::DCT64X64, 8, 0, 3, 2.0846542128012948f},
+      {AcStrategy::Type::DCT64X32, 6, 1, 3, 1.27f},
+      {AcStrategy::Type::DCT32X64, 6, 1, 3, 1.27f},
+      // {AcStrategy::Type::DCT64X64, 8, 1, 3, 2.0846542128012948f},
   };
   /*
   These sizes not yet included in merge heuristic:
@@ -881,14 +894,40 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
          cy += acs.covered_blocks_y()) {
       for (size_t cx = 0; cx + acs.covered_blocks_x() - 1 < rect.xsize();
            cx += acs.covered_blocks_x()) {
+        if (cy + 7 < rect.ysize() && cx + 7 < rect.xsize()) {
+          if (cparams.decoding_speed_tier < 4 &&
+              tx.type == AcStrategy::Type::DCT32X64) {
+            // We handle both DCT8X16 and DCT16X8 at the same time.
+            if ((cy | cx) % 8 == 0) {
+              FindBestFirstLevelDivisionForSquare(
+                  8, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
+                  tx.entropy_mul, entropy_mul64X64, entropy_estimate, block,
+                  scratch_space, quantized);
+            }
+            continue;
+          } else if (tx.type == AcStrategy::Type::DCT32X16) {
+            // We handled both DCT8X16 and DCT16X8 at the same time,
+            // and that is above. The last column and last row,
+            // when the last column or last row is odd numbered,
+            // are still handled by TryMergeAcs.
+            continue;
+          }
+        }
+        if ((tx.type == AcStrategy::Type::DCT16X32 && cy % 4 != 0) ||
+            (tx.type == AcStrategy::Type::DCT32X16 && cx % 4 != 0)) {
+          // already covered by FindBest32X32
+          continue;
+        }
+
         if (cy + 3 < rect.ysize() && cx + 3 < rect.xsize()) {
           if (tx.type == AcStrategy::Type::DCT16X32) {
             // We handle both DCT8X16 and DCT16X8 at the same time.
+            bool enable_32x32 = cparams.decoding_speed_tier < 4;
             if ((cy | cx) % 4 == 0) {
               FindBestFirstLevelDivisionForSquare(
-                  4, bx, by, cx, cy, config, cmap_factors, ac_strategy,
-                  tx.entropy_mul, entropy_mul32X32, entropy_estimate, block,
-                  scratch_space, quantized);
+                  4, enable_32x32, bx, by, cx, cy, config, cmap_factors,
+                  ac_strategy, tx.entropy_mul, entropy_mul32X32,
+                  entropy_estimate, block, scratch_space, quantized);
             }
             continue;
           } else if (tx.type == AcStrategy::Type::DCT32X16) {
@@ -909,7 +948,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
             // We handle both DCT8X16 and DCT16X8 at the same time.
             if ((cy | cx) % 2 == 0) {
               FindBestFirstLevelDivisionForSquare(
-                  2, bx, by, cx, cy, config, cmap_factors, ac_strategy,
+                  2, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
                   tx.entropy_mul, entropy_mul16X16, entropy_estimate, block,
                   scratch_space, quantized);
             }
@@ -947,7 +986,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     for (size_t cy = 1 - (ii == 1); cy + 1 < rect.ysize(); cy += 2) {
       for (size_t cx = 1 - (ii == 2); cx + 1 < rect.xsize(); cx += 2) {
         FindBestFirstLevelDivisionForSquare(
-            2, bx, by, cx, cy, config, cmap_factors, ac_strategy,
+            2, true, bx, by, cx, cy, config, cmap_factors, ac_strategy,
             entropy_mul16X8, entropy_mul16X16, entropy_estimate, block,
             scratch_space, quantized);
       }
