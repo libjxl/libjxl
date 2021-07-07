@@ -27,6 +27,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "lib/jxl/base/status.h"
