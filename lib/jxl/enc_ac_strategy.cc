@@ -683,7 +683,7 @@ void FindBestFirstLevelDivisionForSquare(
           EstimateEntropy(acsJXK, (bx + cx + 0) * 8, (by + cy + 0) * 8, config,
                           cmap_factors, block, scratch_space, quantized);
     }
-    if (row0[bx + cx + 2].RawStrategy() != acs_rawJXK) {
+    if (row0[bx + cx + blocks_half].RawStrategy() != acs_rawJXK) {
       entropy_JXK_right =
           entropy_mul_JXK * EstimateEntropy(acsJXK, (bx + cx + blocks_half) * 8,
                                             (by + cy + 0) * 8, config,
