@@ -153,10 +153,6 @@ struct CompressParams {
   Override gaborish = Override::kDefault;
   int epf = -1;
 
-  // TODO(deymo): Remove "gradient" once all clients stop setting this value.
-  // This flag is already deprecated and is unused in the encoder.
-  Override gradient = Override::kOff;
-
   // Progressive mode.
   bool progressive_mode = false;
 
