@@ -39,7 +39,7 @@ int main(int argc, const char* argv[]) {
           const char** proc_argv = static_cast<const char**>(opaque);
           ProcessInput(proc_argv[value]);
         },
-        /* start_rage= */ 1, /* end_range= */ argc);
+        /* start_range= */ 1, /* end_range= */ argc);
   }
   return 0;
 }

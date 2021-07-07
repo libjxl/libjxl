@@ -215,8 +215,8 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
           /* pixels_buffer= */ nullptr, /* icc_buffer= */ nullptr);
     } else {
       status =
-          DoDecode(env, data_buffer, /* pixels_size= */ nullptr,
-                   /* icc_size= */ nullptr, &info, pixel_format,
+          DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
+                   /* info_icc_size= */ nullptr, &info, pixel_format,
                    /* pixels_buffer= */ nullptr, /* icc_buffer= */ nullptr);
     }
   }
