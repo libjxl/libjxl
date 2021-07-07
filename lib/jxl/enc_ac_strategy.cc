@@ -269,9 +269,6 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
-using hwy::HWY_NAMESPACE::ShiftLeft;
-using hwy::HWY_NAMESPACE::ShiftRight;
-
 bool MultiBlockTransformCrossesHorizontalBoundary(
     const AcStrategyImage& ac_strategy, size_t start_x, size_t y,
     size_t end_x) {
