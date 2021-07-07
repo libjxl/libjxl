@@ -67,10 +67,12 @@ FlickerTestWindow::FlickerTestWindow(FlickerTestParameters parameters,
   auto originalImages = QSet<QString>::fromList(originalFolder_.entryList());
   auto alteredImages = QSet<QString>::fromList(alteredFolder_.entryList());
 #else
-  auto originalImages = QSet<QString>(originalFolder_.entryList().begin(),
-                                      originalFolder_.entryList().end());
-  auto alteredImages = QSet<QString>(alteredFolder_.entryList().begin(),
-                                     alteredFolder_.entryList().end());
+  const QStringList originalFolderEntries = originalFolder_.entryList();
+  QSet<QString> originalImages(originalFolderEntries.begin(),
+                               originalFolderEntries.end());
+  const QStringList alteredFolderEntries = alteredFolder_.entryList();
+  QSet<QString> alteredImages(alteredFolderEntries.begin(),
+                              alteredFolderEntries.end());
 #endif
 
   auto onlyOriginal = originalImages - alteredImages,
