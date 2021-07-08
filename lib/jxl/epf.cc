@@ -55,19 +55,26 @@ using DU = HWY_CAPPED(uint32_t, GroupBorderAssigner::kPaddingXRound);
 // kInvSigmaNum / 0.3
 constexpr float kMinSigma = -3.90524291751269967465540850526868f;
 
+namespace {
+constexpr float kSlope = 64.0f;
+}
+
 DF df;
 
-JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
+JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres,
+                          Vec<DF> mul, Vec<DF> add) {
   auto v = MulAdd(sad, inv_sigma, Set(DF(), 1.0f));
   auto v2 = v * v;
-  return IfThenZeroElse(v <= thres, v2);
+  auto sloped = Max(Zero(DF()), MulAdd(mul, v, add));
+  return IfThenElse(v > thres, v2, sloped);
 }
 
 template <bool aligned>
 JXL_INLINE void AddPixelStep1(int row, const FilterRows& rows, size_t x,
-                              Vec<DF> sad, Vec<DF> inv_sigma,
-                              const LoopFilter& lf, Vec<DF>* JXL_RESTRICT X,
-                              Vec<DF>* JXL_RESTRICT Y, Vec<DF>* JXL_RESTRICT B,
+                              Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres,
+                              Vec<DF> mul, Vec<DF> add, const LoopFilter& lf,
+                              Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
+                              Vec<DF>* JXL_RESTRICT B,
                               Vec<DF>* JXL_RESTRICT w) {
   auto cx = aligned ? Load(DF(), rows.GetInputRow(row, 0) + x)
                     : LoadU(DF(), rows.GetInputRow(row, 0) + x);
@@ -76,7 +83,7 @@ JXL_INLINE void AddPixelStep1(int row, const FilterRows& rows, size_t x,
   auto cb = aligned ? Load(DF(), rows.GetInputRow(row, 2) + x)
                     : LoadU(DF(), rows.GetInputRow(row, 2) + x);
 
-  auto weight = Weight(sad, inv_sigma, Set(df, lf.epf_pass1_zeroflush));
+  auto weight = Weight(sad, inv_sigma, thres, mul, add);
   *w += weight;
   *X = MulAdd(weight, cx, *X);
   *Y = MulAdd(weight, cy, *Y);
@@ -86,7 +93,8 @@ JXL_INLINE void AddPixelStep1(int row, const FilterRows& rows, size_t x,
 template <bool aligned>
 JXL_INLINE void AddPixelStep2(int row, const FilterRows& rows, size_t x,
                               Vec<DF> rx, Vec<DF> ry, Vec<DF> rb,
-                              Vec<DF> inv_sigma, const LoopFilter& lf,
+                              Vec<DF> inv_sigma, Vec<DF> thres, Vec<DF> mul,
+                              Vec<DF> add, const LoopFilter& lf,
                               Vec<DF>* JXL_RESTRICT X, Vec<DF>* JXL_RESTRICT Y,
                               Vec<DF>* JXL_RESTRICT B,
                               Vec<DF>* JXL_RESTRICT w) {
@@ -101,7 +109,7 @@ JXL_INLINE void AddPixelStep2(int row, const FilterRows& rows, size_t x,
   sad = MulAdd(AbsDiff(cy, ry), Set(df, lf.epf_channel_scale[1]), sad);
   sad = MulAdd(AbsDiff(cb, rb), Set(df, lf.epf_channel_scale[2]), sad);
 
-  auto weight = Weight(sad, inv_sigma, Set(df, lf.epf_pass2_zeroflush));
+  auto weight = Weight(sad, inv_sigma, thres, mul, add);
 
   *w += weight;
   *X = MulAdd(weight, cx, *X);
@@ -207,6 +215,10 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf,
     }
   }
 
+  auto thres = Set(df, lf.epf_pass1_zeroflush);
+  auto mul = Set(DF(), kSlope);
+  auto add = thres * thres - thres * Set(DF(), kSlope);
+
   for (size_t x = x0; x < x1; x += Lanes(df)) {
     size_t bx = (x + image_x_mod_8) / kBlockDim;
     size_t ix = (x + image_x_mod_8) % kBlockDim;
@@ -259,7 +271,7 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf,
     for (size_t i = 0; i < 12; i++) {
       AddPixelStep1</*aligned=*/false>(/*row=*/sads_off[i][0], rows,
                                        x + sads_off[i][1], sads[i], inv_sigma,
-                                       lf, &X, &Y, &B, &w);
+                                       thres, mul, add, lf, &X, &Y, &B, &w);
     }
 
 #if JXL_HIGH_PRECISION
@@ -291,6 +303,9 @@ void Epf1Row(const FilterRows& rows, const LoopFilter& lf,
       Store(Set(df, bsm), df, sad_mul + i);
     }
   }
+  auto thres = Set(df, lf.epf_pass1_zeroflush);
+  auto mul = Set(DF(), kSlope);
+  auto add = thres * thres - thres * Set(DF(), kSlope);
 
   for (size_t x = x0; x < x1; x += Lanes(df)) {
     size_t bx = (x + image_x_mod_8) / kBlockDim;
@@ -379,16 +394,16 @@ void Epf1Row(const FilterRows& rows, const LoopFilter& lf,
     auto B = b_cc;
 
     // Top row
-    AddPixelStep1</*aligned=*/true>(/*row=*/-1, rows, x, sad0, inv_sigma, lf,
-                                    &X, &Y, &B, &w);
+    AddPixelStep1</*aligned=*/true>(/*row=*/-1, rows, x, sad0, inv_sigma, thres,
+                                    mul, add, lf, &X, &Y, &B, &w);
     // Center
     AddPixelStep1</*aligned=*/false>(/*row=*/0, rows, x - 1, sad1, inv_sigma,
-                                     lf, &X, &Y, &B, &w);
+                                     thres, mul, add, lf, &X, &Y, &B, &w);
     AddPixelStep1</*aligned=*/false>(/*row=*/0, rows, x + 1, sad2, inv_sigma,
-                                     lf, &X, &Y, &B, &w);
+                                     thres, mul, add, lf, &X, &Y, &B, &w);
     // Bottom
-    AddPixelStep1</*aligned=*/true>(/*row=*/1, rows, x, sad3, inv_sigma, lf, &X,
-                                    &Y, &B, &w);
+    AddPixelStep1</*aligned=*/true>(/*row=*/1, rows, x, sad3, inv_sigma, thres,
+                                    mul, add, lf, &X, &Y, &B, &w);
 #if JXL_HIGH_PRECISION
     auto inv_w = Set(df, 1.0f) / w;
 #else
@@ -418,6 +433,9 @@ void Epf2Row(const FilterRows& rows, const LoopFilter& lf,
       Store(Set(df, bsm), df, sad_mul + i);
     }
   }
+  auto thres = Set(df, lf.epf_pass2_zeroflush);
+  auto mul = Set(DF(), kSlope);
+  auto add = thres * thres - thres * Set(DF(), kSlope);
 
   for (size_t x = x0; x < x1; x += Lanes(df)) {
     size_t bx = (x + image_x_mod_8) / kBlockDim;
@@ -445,15 +463,19 @@ void Epf2Row(const FilterRows& rows, const LoopFilter& lf,
 
     // Top row
     AddPixelStep2</*aligned=*/true>(/*row=*/-1, rows, x, x_cc, y_cc, b_cc,
-                                    inv_sigma, lf, &X, &Y, &B, &w);
+                                    inv_sigma, thres, mul, add, lf, &X, &Y, &B,
+                                    &w);
     // Center
     AddPixelStep2</*aligned=*/false>(/*row=*/0, rows, x - 1, x_cc, y_cc, b_cc,
-                                     inv_sigma, lf, &X, &Y, &B, &w);
+                                     inv_sigma, thres, mul, add, lf, &X, &Y, &B,
+                                     &w);
     AddPixelStep2</*aligned=*/false>(/*row=*/0, rows, x + 1, x_cc, y_cc, b_cc,
-                                     inv_sigma, lf, &X, &Y, &B, &w);
+                                     inv_sigma, thres, mul, add, lf, &X, &Y, &B,
+                                     &w);
     // Bottom
     AddPixelStep2</*aligned=*/true>(/*row=*/1, rows, x, x_cc, y_cc, b_cc,
-                                    inv_sigma, lf, &X, &Y, &B, &w);
+                                    inv_sigma, thres, mul, add, lf, &X, &Y, &B,
+                                    &w);
 
 #if JXL_HIGH_PRECISION
     auto inv_w = Set(df, 1.0f) / w;
