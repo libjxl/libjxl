@@ -2199,8 +2199,14 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   return JXL_DEC_SUCCESS;
 }
 
+// This function is "package-private". It is only used by fuzzer to avoid
+// running cases that are too memory / CPU hungry. Limitations are applied
+// at mid-level API. In the future high-level API would also include the
+// means of limiting / throttling memory / CPU usage.
 void SetDecoderMemoryLimitBase_(size_t memory_limit_base) {
   memory_limit_base_ = memory_limit_base;
-  // Allow 5 x max_image_size processing units.
+  // Allow 5 x max_image_size processing units; every frame is accounted
+  // as W x H CPU processing units, so there could be numerous small frames
+  // or few larger ones.
   cpu_limit_base_ = 5 * memory_limit_base;
 }
