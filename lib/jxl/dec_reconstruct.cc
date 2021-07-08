@@ -689,13 +689,8 @@ Status FinalizeImageRect(
   FilterPipeline* fp = nullptr;
   ssize_t ensure_padding_filter_y0 = 0;
   ssize_t ensure_padding_filter_y1 = 0;
-  Rect image_padded_rect;
   if (lf.epf_iters != 0 || lf.gab) {
     fp = &dec_state->filter_pipelines[thread];
-    size_t xextra =
-        rect_for_if_input.x0() % GroupBorderAssigner::kPaddingXRound;
-    image_padded_rect = Rect(rect_for_if.x0() - xextra, rect_for_if.y0(),
-                             rect_for_if.xsize() + xextra, rect_for_if.ysize());
   }
 
   // +----------------------------- STEP 2 ------------------------------+
@@ -838,27 +833,14 @@ Status FinalizeImageRect(
   // | Set up the filter pipeline.                                       |
   // +-------------------------------------------------------------------+
   if (fp) {
-    // If `rect_for_if_input` does not start at a multiple of
-    // GroupBorderAssigner::kPaddingXRound, we extend the rect we run EPF on by
-    // one full padding length to ensure sigma is handled correctly. We also
-    // extend the output and image rects accordingly. To do this, we need 2x the
-    // border.
-    size_t xextra =
-        rect_for_if_input.x0() % GroupBorderAssigner::kPaddingXRound;
-    Rect filter_input_padded_rect(
-        rect_for_if_input.x0() - xextra, rect_for_if_input.y0(),
-        rect_for_if_input.xsize() + xextra, rect_for_if_input.ysize());
     ensure_padding_filter.Init(
         input, rect_for_if_input, rect_for_if, frame_dim.xsize_padded,
         frame_dim.ysize_padded, lf.Padding(), lf.Padding(),
         &ensure_padding_filter_y0, &ensure_padding_filter_y1);
-    Rect filter_output_padded_rect(
-        rect_for_if_storage.x0() - xextra, rect_for_if_storage.y0(),
-        rect_for_if_storage.xsize() + xextra, rect_for_if_storage.ysize());
-    fp = PrepareFilterPipeline(dec_state, image_padded_rect, *input,
-                               filter_input_padded_rect, frame_dim.ysize_padded,
-                               thread, storage_for_if,
-                               filter_output_padded_rect);
+
+    fp = PrepareFilterPipeline(dec_state, rect_for_if, *input,
+                               rect_for_if_input, frame_dim.ysize_padded,
+                               thread, storage_for_if, rect_for_if_storage);
   }
 
   // +----------------------------- STEP 5 ------------------------------+
@@ -887,7 +869,7 @@ Status FinalizeImageRect(
       if (y >= first_ensure_padding_y && y < ensure_padding_filter_y1) {
         ensure_padding_filter.Process3(y);
       }
-      fp->ApplyFiltersRow(lf, dec_state->filter_weights, image_padded_rect, y);
+      fp->ApplyFiltersRow(lf, dec_state->filter_weights, y);
     } else if (output_pixel_data_storage != input) {
       for (size_t c = 0; c < 3; c++) {
         memcpy(rect_for_if_storage.PlaneRow(storage_for_if, c, y),
