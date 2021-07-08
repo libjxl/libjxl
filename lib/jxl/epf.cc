@@ -58,9 +58,10 @@ constexpr float kMinSigma = -3.90524291751269967465540850526868f;
 DF df;
 
 JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
+  sad = sad * Set(DF(), 1.65f);
   auto v = MulAdd(sad, inv_sigma, Set(DF(), 1.0f));
-  auto v2 = v * v;
-  return IfThenZeroElse(v <= thres, v2);
+  auto zero = Set(DF(), 0.0f);
+  return IfThenZeroElse(v <= zero, v);
 }
 
 template <bool aligned>
