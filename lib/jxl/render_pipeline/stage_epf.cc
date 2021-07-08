@@ -25,8 +25,7 @@ using hwy::HWY_NAMESPACE::Vec;
 
 JXL_INLINE Vec<DF> Weight(Vec<DF> sad, Vec<DF> inv_sigma, Vec<DF> thres) {
   auto v = MulAdd(sad, inv_sigma, Set(DF(), 1.0f));
-  auto v2 = v * v;
-  return IfThenZeroElse(v <= thres, v2);
+  return ZeroIfNegative(v);
 }
 
 // 5x5 plus-shaped kernel with 5 SADs per pixel (3x3 plus-shaped). So this makes
@@ -67,7 +66,7 @@ class EPF0Stage : public RenderPipelineStage {
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
-    float sm = lf_.epf_pass0_sigma_scale;
+    float sm = lf_.epf_pass0_sigma_scale * 1.65;
     float bsm = sm * lf_.epf_border_sad_mul;
 
     HWY_ALIGN float sad_mul_center[kBlockDim] = {bsm, sm, sm, sm,
@@ -203,7 +202,7 @@ class EPF1Stage : public RenderPipelineStage {
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
-    float sm = 1.0f;
+    float sm = 1.65f;
     float bsm = sm * lf_.epf_border_sad_mul;
 
     HWY_ALIGN float sad_mul_center[kBlockDim] = {bsm, sm, sm, sm,
@@ -388,7 +387,7 @@ class EPF2Stage : public RenderPipelineStage {
     const float* JXL_RESTRICT row_sigma =
         sigma_->Row(ypos / kBlockDim + kSigmaPadding);
 
-    float sm = lf_.epf_pass2_sigma_scale;
+    float sm = lf_.epf_pass2_sigma_scale * 1.65;
     float bsm = sm * lf_.epf_border_sad_mul;
 
     HWY_ALIGN float sad_mul_center[kBlockDim] = {bsm, sm, sm, sm,
