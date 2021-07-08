@@ -40,8 +40,8 @@ Splines SplinesFromSplineData(const SplineData& spline_data,
                                    cmap.YtoXRatio(0), cmap.YtoBRatio(0));
     starting_points.push_back(spline.control_points.front());
   }
-  return Splines(spline_data.quantization_adjustment, quantized_splines,
-                 starting_points);
+  return Splines(spline_data.quantization_adjustment,
+                 std::move(quantized_splines), std::move(starting_points));
 }
 
 template <typename F>
