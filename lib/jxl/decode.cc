@@ -29,6 +29,8 @@ namespace {
 // TODO(eustas): this is a poor-mans replacement for memory-manager approach;
 //               remove, once memory-manager actually works.
 size_t memory_limit_base_ = 0;
+size_t cpu_limit_base_ = 0;
+size_t used_cpu_base_ = 0;
 
 bool CheckSizeLimit(size_t xsize, size_t ysize) {
   if (!memory_limit_base_) return true;
@@ -1270,6 +1272,20 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
         return JXL_DEC_NEED_MORE_INPUT;
       }
       dec->sections->SetInput(in + pos, size - pos);
+
+      if (cpu_limit_base_ != 0) {
+        FrameDimensions frame_dim = dec->frame_header->ToFrameDimensions();
+        // No overflow, checked in ParseHeader.
+        size_t num_pixels = frame_dim.xsize * frame_dim.ysize;
+        if (used_cpu_base_ + num_pixels < used_cpu_base_) {
+          return JXL_API_ERROR("used too much CPU");
+        }
+        used_cpu_base_ += num_pixels;
+        if (used_cpu_base_ > cpu_limit_base_) {
+          return JXL_API_ERROR("used too much CPU");
+        }
+      }
+
       jxl::Status status =
           dec->frame_dec->ProcessSections(dec->sections->section_info.data(),
                                           dec->sections->section_info.size(),
@@ -2185,4 +2201,6 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
 
 void SetDecoderMemoryLimitBase_(size_t memory_limit_base) {
   memory_limit_base_ = memory_limit_base;
+  // Allow 5 x max_image_size processing units.
+  cpu_limit_base_ = 5 * memory_limit_base;
 }
