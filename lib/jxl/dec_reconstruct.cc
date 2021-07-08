@@ -263,32 +263,48 @@ void FloatToRGBA8(const Image3F& input, const Rect& input_rect, bool is_rgba,
   }
 }
 
+// Upsample in horizonal (if hs=1) and vertical (if vs=1) the plane_in image
+// to the output plane_out image.
+// The output region "rect" in plane_out and a border around it of lf.Padding()
+// will be generated, as long as those pixels fall inside the image frame.
+// Otherwise the border pixels that fall outside the image frame in plane_out
+// are undefined.
+// "rect" is an area inside the plane_out image which corresponds to the
+// "frame_rect" area in the frame. plane_in and plane_out both are expected to
+// have a padding of kGroupDataXBorder and kGroupDataYBorder on either side of
+// X and Y coordinates. This means that when upsampling vertically the plane_out
+// row `kGroupDataXBorder + N` will be generated from the plane_in row
+// `kGroupDataXBorder + N / 2` (and a previous or next row).
 void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
                        const Rect& frame_rect, const FrameDimensions& frame_dim,
                        ImageF* plane_out, const LoopFilter& lf, ImageF* temp) {
+  JXL_DASSERT(SameSize(rect, frame_rect));
+  JXL_DASSERT(hs <= 1 && vs <= 1);
   // The pixel in (xoff, yoff) is the origin of the downsampling coordinate
   // system.
   size_t xoff = PassesDecoderState::kGroupDataXBorder;
   size_t yoff = PassesDecoderState::kGroupDataYBorder;
 
-  // This X,Y range may include more pixels in the output than what we need.
-  // Those pixels that fall outside the image boundary are undefined, but it is
-  // safe to compute them with MulAdd().
-  size_t y0 = rect.y0() - lf.Padding();
-  size_t y1 = rect.y0() +
-              std::min(frame_rect.y0() + rect.ysize() + lf.Padding(),
-                       frame_dim.ysize_padded) -
-              frame_rect.y0();
+  // This X,Y range is the intersection between the requested "rect" expanded
+  // with a lf.Padding() all around and the image frame translated to the
+  // coordinate system used by plane_out.
+  // All the pixels in the [x0, x1) x [y0, y1) range must be defined in the
+  // plane_out output at the end.
+  const size_t y0 = rect.y0() - std::min<size_t>(lf.Padding(), frame_rect.y0());
+  const size_t y1 = rect.y0() +
+                    std::min(frame_rect.y0() + rect.ysize() + lf.Padding(),
+                             frame_dim.ysize_padded) -
+                    frame_rect.y0();
 
-  size_t x0 = rect.x0() - lf.Padding();
-  size_t x1 = rect.x0() +
-              std::min(frame_rect.x0() + rect.xsize() + lf.Padding(),
-                       frame_dim.xsize_padded) -
-              frame_rect.x0();
+  const size_t x0 = rect.x0() - std::min<size_t>(lf.Padding(), frame_rect.x0());
+  const size_t x1 = rect.x0() +
+                    std::min(frame_rect.x0() + rect.xsize() + lf.Padding(),
+                             frame_dim.xsize_padded) -
+                    frame_rect.x0();
 
   if (hs == 0 && vs == 0) {
-    JXL_CHECK_IMAGE_INITIALIZED(*plane_in, rect);
     Rect r(x0, y0, x1 - x0, y1 - y0);
+    JXL_CHECK_IMAGE_INITIALIZED(*plane_in, r);
     CopyImageTo(r, *plane_in, r, plane_out);
     return;
   }
@@ -381,6 +397,10 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
   } else {
     CopyImageTo(*temp, plane_out);
   }
+
+  // The output must be initialized including the lf.Padding() around the image
+  // for all the pixels that fall inside the image frame.
+  JXL_CHECK_IMAGE_INITIALIZED(*plane_out, Rect(x0, y0, x1 - x0, y1 - y0));
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
