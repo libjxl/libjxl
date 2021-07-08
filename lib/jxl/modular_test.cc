@@ -126,7 +126,7 @@ TEST(ModularTest, RoundtripLossy16) {
 
 TEST(ModularTest, RoundtripExtraProperties) {
   constexpr size_t kSize = 250;
-  Image image(kSize, kSize, /*maxval=*/255, 3);
+  Image image(kSize, kSize, /*bitdepth=*/8, 3);
   ModularOptions options;
   options.max_properties = 4;
   options.predictor = Predictor::Zero;
@@ -142,7 +142,7 @@ TEST(ModularTest, RoundtripExtraProperties) {
   BitWriter writer;
   ASSERT_TRUE(ModularGenericCompress(image, options, &writer));
   writer.ZeroPadToByte();
-  Image decoded(kSize, kSize, /*maxval=*/255, image.channel.size());
+  Image decoded(kSize, kSize, /*bitdepth=*/8, image.channel.size());
   for (size_t i = 0; i < image.channel.size(); i++) {
     const Channel& ch = image.channel[i];
     decoded.channel[i] = Channel(ch.w, ch.h, ch.hshift, ch.vshift);
