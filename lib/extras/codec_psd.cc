@@ -349,6 +349,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
             return JXL_FAILURE("PSD: Invalid layer count");
           }
           JXL_DEBUG_V(PSD_VERBOSITY, "Real layer count: %i", layercount);
+          if (layercount > 1) have_alpha = true;
           break;
         }
         if (!safe_strncmp(tpos, maxpos, "Mtrn", 4) ||
@@ -356,7 +357,6 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
             !safe_strncmp(tpos, maxpos, "Mt32", 4)) {
           JXL_DEBUG_V(PSD_VERBOSITY, "Merged layer has transparency channel");
           if (nb_channels > real_nb_channels) {
-            real_nb_channels++;
             have_alpha = true;
             merged_has_alpha = true;
           }
@@ -366,14 +366,12 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
     } else if (layercount < 0) {
       // negative layer count indicates merged has alpha and it is to be shown
       if (nb_channels > real_nb_channels) {
-        real_nb_channels++;
         have_alpha = true;
         merged_has_alpha = true;
       }
       layercount = -layercount;
     } else {
       // multiple layers implies there is alpha
-      real_nb_channels++;
       have_alpha = true;
     }
 
@@ -387,6 +385,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
     }
     if (have_alpha) {
       JXL_DEBUG_V(PSD_VERBOSITY, "Have alpha");
+      real_nb_channels++;
       info.type = ExtraChannel::kAlpha;
       info.alpha_associated =
           false;  // true? PSD is not consistent with this, need to check
@@ -575,7 +574,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       return JXL_FAILURE("Inconsistent layer configuration");
     }
     if (!merged_has_alpha) {
-      if (colormodel <= real_nb_channels) {
+      if (colormodel >= real_nb_channels) {
         return JXL_FAILURE("Inconsistent layer configuration");
       }
       chan_id.erase(chan_id.begin() + colormodel);
