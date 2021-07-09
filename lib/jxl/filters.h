@@ -107,7 +107,7 @@ struct FilterRows {
   // blocks (pixels in sigma) on each one of the four sides. The (x0, y0) values
   // should include this padding.
   void SetSigma(const ImageF& sigma, size_t y0, size_t x0) {
-    JXL_DASSERT(x0 % GroupBorderAssigner::kPaddingXRound == 0);
+    JXL_DASSERT(x0 % kBlockDim == 0);
     row_sigma_ = sigma.ConstRow(y0 / kBlockDim) + x0 / kBlockDim;
   }
 
@@ -132,14 +132,14 @@ struct FilterRows {
 // filter and its row and column padding requirements.
 struct FilterDefinition {
   // Function to apply the filter to a given row. The filter constant parameters
-  // are passed in LoopFilter lf and filter_weights. `xoff` is needed to offset
-  // the `x0` value so that it will cause correct accesses to
+  // are passed in LoopFilter lf and filter_weights. `sigma_x_offset` is needed
+  // to offset the `x0` value so that it will cause correct accesses to
   // rows.GetSigmaRow(): there is just one sigma value per 8 pixels, and if the
   // image rectangle is not aligned to multiples of 8 pixels, we need to
   // compensate for the difference between x0 and the image position modulo 8.
   void (*apply)(const FilterRows& rows, const LoopFilter& lf,
                 const FilterWeights& filter_weights, size_t x0, size_t x1,
-                size_t image_y_mod_8, size_t image_x_mod_8);
+                size_t sigma_x_offset, size_t image_y_mod_8);
 
   // Number of source image rows and cols before and after an input pixel needed
   // to compute the output of the filter. For a 3x3 convolution this border will
@@ -153,7 +153,9 @@ class FilterPipeline {
  public:
   FilterPipeline() : FilterPipeline(kApplyImageFeaturesTileDim) {}
   explicit FilterPipeline(size_t max_rect_xsize)
-      : storage{max_rect_xsize + 2 * kMaxFilterPadding, kTotalStorageRows} {
+      : storage{max_rect_xsize + 2 * kMaxFilterPadding +
+                    GroupBorderAssigner::kPaddingXRound,
+                kTotalStorageRows} {
 #if MEMORY_SANITIZER
     // The padding of the storage may be used uninitialized since we process
     // multiple SIMD lanes at a time, aligned to a multiple of lanes.
@@ -181,13 +183,21 @@ class FilterPipeline {
   FilterPipeline(FilterPipeline&&) = default;
 
   // Apply the filter chain to a given row. To apply the filter chain to a whole
-  // image this must be called for `rect.ysize() + 2 * total_border`
+  // image this must be called for `image_rect.ysize() + 2 * total_border`
   // values of `y`, in increasing order, starting from `y = -total_border`.
+  // `image_rect` is the value passed to FilterPipelineInit().
   void ApplyFiltersRow(const LoopFilter& lf,
-                       const FilterWeights& filter_weights, const Rect& rect,
-                       ssize_t y);
+                       const FilterWeights& filter_weights, ssize_t y);
 
   struct FilterStep {
+    // We don't map self.input_rect.x0() directly to kMaxFilterPadding in
+    // input/output row since they might have a different alignment, instead we
+    // keep the alignment modulo kPaddingXRound.
+    static size_t MaxLeftPadding(size_t image_rect_x0) {
+      return kMaxFilterPadding +
+             image_rect_x0 % GroupBorderAssigner::kPaddingXRound;
+    }
+
     // Sets the input of the filter step as an image region.
     void SetInput(const Image3F* im_input, const Rect& input_rect,
                   const Rect& image_rect, size_t image_ysize) {
@@ -205,12 +215,17 @@ class FilterPipeline {
                                      self.input_rect.y0() + y0,
                                      self.input_rect.x0() - kMaxFilterPadding,
                                      full_image_y_offset, self.image_ysize);
+        rows->SetInput<RowMapMirror>(
+            *(self.input), 0, self.input_rect.y0() + y0,
+            self.input_rect.x0() - MaxLeftPadding(self.input_rect.x0()),
+            full_image_y_offset, self.image_ysize);
       };
     }
 
     // Sets the input of the filter step as the temporary cyclic storage with
-    // num_rows rows. The value rect.x0() during application will be mapped to
-    // kMaxFilterPadding regardless of the rect being processed.
+    // num_rows rows. The value image_rect.x0() during application will be
+    // mapped to "kMaxFilterPadding + alignment" regardless of the rect being
+    // processed.
     template <size_t num_rows>
     void SetInputCyclicStorage(const Image3F* storage, size_t offset_rows) {
       input = storage;
@@ -223,8 +238,9 @@ class FilterPipeline {
     }
 
     // Sets the output of the filter step as the temporary cyclic storage with
-    // num_rows rows. The value rect.x0() during application will be mapped to
-    // kMaxFilterPadding regardless of the rect being processed.
+    // num_rows rows. The value image_rect.x0() during application will be
+    // mapped to "kMaxFilterPadding + alignment" regardless of the rect being
+    // processed.
     template <size_t num_rows>
     void SetOutputCyclicStorage(Image3F* storage, size_t offset_rows) {
       output = storage;
@@ -243,9 +259,9 @@ class FilterPipeline {
       this->output_rect = output_rect;
       set_output_rows = [](const FilterStep& self, FilterRows* rows,
                            ssize_t y0) {
-        rows->SetOutput<RowMapId>(
-            self.output, 0, self.output_rect.y0() + y0,
-            static_cast<ssize_t>(self.output_rect.x0()) - kMaxFilterPadding);
+        rows->SetOutput<RowMapId>(self.output, 0, self.output_rect.y0() + y0,
+                                  static_cast<ssize_t>(self.output_rect.x0()) -
+                                      MaxLeftPadding(self.output_rect.x0()));
       };
     }
 
@@ -272,6 +288,12 @@ class FilterPipeline {
 
     // Actual filter descriptor.
     FilterDefinition filter_def;
+
+    // Range of output pixels of the step. The filter [x0, x1) range is always
+    // a multiple of Lanes(df) and is large enough to contain the input and
+    // border needed by the next stages, but values outside that range may be
+    // undefined values. Coordinates are relative to the FilterRows pointers.
+    size_t filter_x0, filter_x1;
 
     // Number of extra horizontal pixels needed on each side of the output of
     // this filter to produce the requested rect at the end of the chain. This
@@ -311,6 +333,10 @@ class FilterPipeline {
 
   // Whether we need to compute the sigma_row_ during application.
   bool compute_sigma = false;
+
+  // Rect to be processed in the image coordinates. This doesn't include any
+  // padding needed to produce the output.
+  Rect image_rect;
 
   // The total border needed to process this pipeline.
   size_t total_border = 0;
