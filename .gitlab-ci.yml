@@ -18,6 +18,9 @@ variables:
   # By default we don't fetch any third_party dependencies. Building requires to
   # fetch all the dependencies but many other workflows don't.
   GIT_SUBMODULE_STRATEGY: none
+  # Set the default checkout directory to a fixed one so it is the same across
+  # multiple jobs. cmake requires that build directory's realpath to not change.
+  GIT_CLONE_PATH: $CI_BUILDS_DIR/libjxl
 
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
