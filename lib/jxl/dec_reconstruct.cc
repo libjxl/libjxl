@@ -604,6 +604,8 @@ Status FinalizeImageRect(
   Rect rect_for_if_storage = frame_rect;
   Rect rect_for_upsampling = frame_rect;
   Rect rect_for_if_input = input_rect;
+  // The same as rect_for_if_input but in the frame coordinates.
+  Rect frame_rect_for_ycbcr_upsampling = frame_rect;
   size_t extra_rows_t = 0;
   size_t extra_rows_b = 0;
   if (frame_header.upsampling != 1) {
@@ -649,6 +651,9 @@ Status FinalizeImageRect(
     rect_for_if_input =
         Rect(input_rect.x0() - ifbx0, input_rect.y0() - ifby0,
              rect_for_if_storage.xsize(), rect_for_if_storage.ysize());
+    frame_rect_for_ycbcr_upsampling =
+        Rect(frame_rect.x0() - ifbx0, frame_rect.y0() - ifby0,
+             rect_for_if_input.xsize(), rect_for_if_input.ysize());
     storage_for_if = &dec_state->upsampling_input_storage[thread];
   }
 
@@ -666,7 +671,8 @@ Status FinalizeImageRect(
       // previous run in this thread in msan builds.
       msan::PoisonImage(dec_state->ycbcr_out_images[thread].Plane(c));
       HWY_DYNAMIC_DISPATCH(DoYCbCrUpsampling)
-      (hs, vs, &input_image->Plane(c), rect_for_if_input, frame_rect, frame_dim,
+      (hs, vs, &input_image->Plane(c), rect_for_if_input,
+       frame_rect_for_ycbcr_upsampling, frame_dim,
        &dec_state->ycbcr_out_images[thread].Plane(c), lf,
        &dec_state->ycbcr_temp_images[thread]);
     }
