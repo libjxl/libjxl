@@ -1031,6 +1031,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
   if (cparams.ec_resampling < cparams.resampling) {
     cparams.ec_resampling = cparams.resampling;
   }
+  if (cparams.resampling > 1) cparams.progressive_dc = 0;
 
   if (frame_info.dc_level + cparams.progressive_dc > 4) {
     return JXL_FAILURE("Too many levels of progressive DC");
