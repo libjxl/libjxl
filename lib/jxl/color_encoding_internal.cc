@@ -554,8 +554,12 @@ Status CustomTransferFunction::VisitFields(Visitor* JXL_RESTRICT visitor) {
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &have_gamma_));
 
     if (visitor->Conditional(have_gamma_)) {
+      // Gamma is represented as a 24-bit int, the exponent used is
+      // gamma_ / 1e7. Valid values are (0, 1]. On the low end side, we also
+      // limit it to kMaxGamma/1e7.
       JXL_QUIET_RETURN_IF_ERROR(visitor->Bits(24, kGammaMul, &gamma_));
-      if (gamma_ > kGammaMul || gamma_ * kMaxGamma < kGammaMul) {
+      if (gamma_ > kGammaMul ||
+          static_cast<uint64_t>(gamma_) * kMaxGamma < kGammaMul) {
         return JXL_FAILURE("Invalid gamma %u", gamma_);
       }
     }

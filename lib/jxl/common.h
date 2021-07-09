@@ -162,7 +162,8 @@ JXL_INLINE T Clamp1(T val, T low, T hi) {
 }
 
 // Encodes non-negative (X) into (2 * X), negative (-X) into (2 * X - 1)
-constexpr uint32_t PackSigned(int32_t value) {
+constexpr uint32_t PackSigned(int32_t value)
+    JXL_NO_SANITIZE("unsigned-integer-overflow") {
   return (static_cast<uint32_t>(value) << 1) ^
          ((static_cast<uint32_t>(~value) >> 31) - 1);
 }
