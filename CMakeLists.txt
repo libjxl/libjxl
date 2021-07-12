@@ -109,7 +109,8 @@ set(JPEGXL_DEP_LICENSE_DIR "" CACHE STRING
     "Directory where to search for system dependencies \"copyright\" files.")
 set(JPEGXL_FORCE_NEON false CACHE BOOL
     "Set flags to enable NEON in arm if not enabled by your toolchain.")
-
+set(JPEGXL_VERSION "" CACHE STRING
+    "Build JPEGXL with additional version information.")
 
 # Force system dependencies.
 set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL
