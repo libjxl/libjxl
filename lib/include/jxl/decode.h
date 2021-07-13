@@ -744,40 +744,6 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
     const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size);
 
 /**
- * Sets output buffer for reconstructed JPEG codestream.
- *
- * The data is owned by the caller
- * and may be used by the decoder until JxlDecoderReleaseJPEGBuffer is called or
- * the decoder is destroyed or reset so must be kept alive until then.
- *
- * @param dec decoder object
- * @param data pointer to next bytes to write to
- * @param size amount of bytes available starting from data
- * @return JXL_DEC_ERROR if input was already set without releasing,
- * JXL_DEC_SUCCESS otherwise
- */
-JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
-                                                    uint8_t* data, size_t size);
-
-/**
- * Releases buffer which was provided with JxlDecoderSetJPEGBuffer.
- *
- * Calling JxlDecoderReleaseJPEGBuffer is required whenever
- * a buffer is already set and a new buffer needs to be added with
- * JxlDecoderSetJPEGBuffer, but is not required before JxlDecoderDestroy or
- * JxlDecoderReset.
- *
- * Calling JxlDecoderReleaseJPEGBuffer when no input is set is
- * not an error and returns 0.
- *
- * @param dec decoder object
- * @return the amount of bytes the decoder has not yet written to of the data
- * set by JxlDecoderSetJPEGBuffer, or 0 if no buffer is set or
- * JxlDecoderReleaseJPEGBuffer was already called.
- */
-JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
-
-/**
  * Sets the buffer to write the full resolution image to. This can be set when
  * the JXL_DEC_FRAME event occurs, must be set when the
  * JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies only for the current
@@ -860,6 +826,40 @@ typedef void (*JxlImageOutCallback)(void* opaque, size_t x, size_t y,
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetImageOutCallback(JxlDecoder* dec, const JxlPixelFormat* format,
                               JxlImageOutCallback callback, void* opaque);
+
+/**
+ * Sets output buffer for reconstructed JPEG codestream.
+ *
+ * The data is owned by the caller
+ * and may be used by the decoder until JxlDecoderReleaseJPEGBuffer is called or
+ * the decoder is destroyed or reset so must be kept alive until then.
+ *
+ * @param dec decoder object
+ * @param data pointer to next bytes to write to
+ * @param size amount of bytes available starting from data
+ * @return JXL_DEC_ERROR if input was already set without releasing,
+ * JXL_DEC_SUCCESS otherwise
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
+                                                    uint8_t* data, size_t size);
+
+/**
+ * Releases buffer which was provided with JxlDecoderSetJPEGBuffer.
+ *
+ * Calling JxlDecoderReleaseJPEGBuffer is required whenever
+ * a buffer is already set and a new buffer needs to be added with
+ * JxlDecoderSetJPEGBuffer, but is not required before JxlDecoderDestroy or
+ * JxlDecoderReset.
+ *
+ * Calling JxlDecoderReleaseJPEGBuffer when no input is set is
+ * not an error and returns 0.
+ *
+ * @param dec decoder object
+ * @return the amount of bytes the decoder has not yet written to of the data
+ * set by JxlDecoderSetJPEGBuffer, or 0 if no buffer is set or
+ * JxlDecoderReleaseJPEGBuffer was already called.
+ */
+JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
 
 /* TODO(lode): add way to output extra channels */
 
