@@ -84,7 +84,7 @@ typedef enum {
  */
 typedef struct {
   /** Amount of channels available in a pixel buffer.
-   * 1: single-channel data, e.g. grayscale
+   * 1: single-channel data, e.g. grayscale or a single extra channel
    * 2: single-channel + alpha
    * 3: trichromatic, e.g. RGB
    * 4: trichromatic + alpha

@@ -43,7 +43,8 @@ struct FuzzSpec {
   // Whether to use the callback mechanism for the output image or not.
   bool use_callback;
   bool keep_orientation;
-  uint32_t streaming_seed;
+  // Used for random variation of chunk sizes, extra channels, ... to get
+  uint32_t random_seed;
 };
 
 template <typename It>
@@ -76,8 +77,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);
 
-  std::mt19937 mt(spec.streaming_seed);
-  std::exponential_distribution<> dis(kStreamingTargetNumberOfChunks);
+  std::mt19937 mt(spec.random_seed);
+  std::exponential_distribution<> dis_streaming(kStreamingTargetNumberOfChunks);
 
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
@@ -130,6 +131,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   bool want_preview = false;
   std::vector<uint8_t> preview_pixels;
 
+  std::vector<uint8_t> extra_channel_pixels;
+
   // Callback function used when decoding with use_callback.
   struct DecodeCallbackData {
     JxlBasicInfo info;
@@ -159,6 +162,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
     }
   };
 
+  JxlExtraChannelInfo extra_channel_info;
+
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
     if (status == JXL_DEC_ERROR) {
@@ -171,8 +176,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         jxl += used;
         leftover -= used;
         streaming_size -= used;
-        size_t chunk_size =
-            std::max<size_t>(1, size * std::min<double>(1.0, dis(mt)));
+        size_t chunk_size = std::max<size_t>(
+            1, size * std::min<double>(1.0, dis_streaming(mt)));
         size_t add_size =
             std::min<size_t>(chunk_size, leftover - streaming_size);
         if (add_size == 0) {
@@ -239,14 +244,13 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       }
 
       for (size_t ec = 0; ec < info.num_extra_channels; ++ec) {
-        JxlExtraChannelInfo ec_info;
-        memset(&ec_info, 0, sizeof(ec_info));
+        memset(&extra_channel_info, 0, sizeof(extra_channel_info));
         if (JXL_DEC_SUCCESS !=
-            JxlDecoderGetExtraChannelInfo(dec.get(), ec, &ec_info)) {
+            JxlDecoderGetExtraChannelInfo(dec.get(), ec, &extra_channel_info)) {
           abort();
         }
-        Consume(ec_info);
-        std::vector<char> ec_name(ec_info.name_length + 1);
+        Consume(extra_channel_info);
+        std::vector<char> ec_name(extra_channel_info.name_length + 1);
         if (JXL_DEC_SUCCESS != JxlDecoderGetExtraChannelName(dec.get(), ec,
                                                              ec_name.data(),
                                                              ec_name.size())) {
@@ -332,6 +336,27 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         // already seen need image out
         if (seen_need_image_out) abort();
         seen_need_image_out = true;
+      }
+
+      if (info.num_extra_channels > 0) {
+        std::uniform_int_distribution<> dis(0, info.num_extra_channels);
+        size_t ec_index = dis(mt);
+        // There is also a probability no extra channel is chosen
+        if (ec_index < info.num_extra_channels) {
+          size_t ec_index = info.num_extra_channels - 1;
+          size_t ec_size;
+          if (JXL_DEC_SUCCESS != JxlDecoderExtraChannelBufferSize(
+                                     dec.get(), &format, &ec_size, ec_index)) {
+            return false;
+          }
+          extra_channel_pixels.resize(ec_size);
+          if (JXL_DEC_SUCCESS !=
+              JxlDecoderSetExtraChannelBuffer(dec.get(), &format,
+                                              extra_channel_pixels.data(),
+                                              ec_size, ec_index)) {
+            return false;
+          }
+        }
       }
 
       if (spec.use_callback) {
@@ -450,7 +475,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   FuzzSpec spec;
   // Allows some different possible variations in the chunk sizes of the
   // streaming case
-  spec.streaming_seed = flags ^ size;
+  spec.random_seed = flags ^ size;
   spec.get_alpha = !!getFlag(1);
   spec.get_grayscale = !!getFlag(1);
   spec.use_streaming = !!getFlag(1);

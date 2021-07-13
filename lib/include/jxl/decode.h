@@ -828,6 +828,58 @@ JxlDecoderSetImageOutCallback(JxlDecoder* dec, const JxlPixelFormat* format,
                               JxlImageOutCallback callback, void* opaque);
 
 /**
+ * Returns the minimum size in bytes of an extra channel pixel buffer for the
+ * given format. This is the buffer for JxlDecoderSetExtraChannelBuffer.
+ * Requires the basic image information is available in the decoder.
+ *
+ * @param dec decoder object
+ * @param format format of the pixels. The num_channels value is ignored and is
+ * always treated to be 1.
+ * @param size output value, buffer size in bytes
+ * @param index which extra channel to get, matching the index used in @see
+ * JxlDecoderGetExtraChannelInfo. Must be smaller than num_extra_channels in the
+ * associated JxlBasicInfo.
+ * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as
+ *    information not available yet or invalid index.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderExtraChannelBufferSize(
+    const JxlDecoder* dec, const JxlPixelFormat* format, size_t* size,
+    uint32_t index);
+
+/**
+ * Sets the buffer to write an extra channel to. This can be set when
+ * the JXL_DEC_FRAME or JXL_DEC_NEED_IMAGE_OUT_BUFFER event occurs, and applies
+ * only for the current frame. The size of the buffer must be at least as large
+ * as given by JxlDecoderExtraChannelBufferSize. The buffer follows the format
+ * described by JxlPixelFormat, but where num_channels is 1. The buffer is owned
+ * by the caller. The amount of extra channels is given by the
+ * num_extra_channels field in the associated JxlBasicInfo, and the information
+ * of individual extra channels can be queried with @see
+ * JxlDecoderGetExtraChannelInfo. To get multiple extra channels, this function
+ * must be called multiple times, once for each wanted index. Not all images
+ * have extra channels. The alpha channel is an extra channel and can be gotten
+ * as part of the color channels when using an RGBA pixel buffer with
+ * JxlDecoderSetImageOutBuffer, but additionally also can be gotten separately
+ * as extra channel. The color channels themselves cannot be gotten this way.
+ *
+ *
+ * @param dec decoder object
+ * @param format format of the pixels. Object owned by user and its contents
+ * are copied internally. The num_channels value is ignored and is always
+ * treated to be 1.
+ * @param buffer buffer type to output the pixel data to
+ * @param size size of buffer in bytes
+ * @param index which extra channel to get, matching the index used in @see
+ * JxlDecoderGetExtraChannelInfo. Must be smaller than num_extra_channels in the
+ * associated JxlBasicInfo.
+ * @return JXL_DEC_SUCCESS on success, JXL_DEC_ERROR on error, such as
+ * size too small or invalid index.
+ */
+JXL_EXPORT JxlDecoderStatus
+JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec, const JxlPixelFormat* format,
+                                void* buffer, size_t size, uint32_t index);
+
+/**
  * Sets output buffer for reconstructed JPEG codestream.
  *
  * The data is owned by the caller
@@ -860,8 +912,6 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
  * JxlDecoderReleaseJPEGBuffer was already called.
  */
 JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
-
-/* TODO(lode): add way to output extra channels */
 
 /**
  * Outputs progressive step towards the decoded image so far when only partial
