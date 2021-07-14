@@ -22,6 +22,7 @@
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/opsin_params.h"
+#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/xorshift128plus-inl.h"
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -215,6 +216,8 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
   float ytox = cmap.YtoXRatio(0);
   float ytob = cmap.YtoBRatio(0);
 
+  const size_t xsize_v = RoundUpTo(xsize, Lanes(d));
+
   for (size_t y = 0; y < ysize; ++y) {
     float* JXL_RESTRICT row_x = opsin_rect.PlaneRow(opsin, 0, y);
     float* JXL_RESTRICT row_y = opsin_rect.PlaneRow(opsin, 1, y);
@@ -222,6 +225,10 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
     const float* JXL_RESTRICT row_rnd_r = noise_rect.ConstPlaneRow(noise, 0, y);
     const float* JXL_RESTRICT row_rnd_g = noise_rect.ConstPlaneRow(noise, 1, y);
     const float* JXL_RESTRICT row_rnd_c = noise_rect.ConstPlaneRow(noise, 2, y);
+    // Needed by the calls to Floor() in StrengthEvalLut. Only arithmetic and
+    // shuffles are otherwise done on the data, so this is safe.
+    msan::UnpoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
+    msan::UnpoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
     for (size_t x = 0; x < xsize; x += Lanes(d)) {
       const auto vx = Load(d, row_x + x);
       const auto vy = Load(d, row_y + x);
@@ -238,6 +245,9 @@ void AddNoise(const NoiseParams& noise_params, const Rect& noise_rect,
                     noise_strength_r, ytox, ytob, row_x + x, row_y + x,
                     row_b + x);
     }
+    msan::PoisonMemory(row_x + xsize, (xsize_v - xsize) * sizeof(float));
+    msan::PoisonMemory(row_y + xsize, (xsize_v - xsize) * sizeof(float));
+    msan::PoisonMemory(row_b + xsize, (xsize_v - xsize) * sizeof(float));
   }
 }
 
