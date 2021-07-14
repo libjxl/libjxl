@@ -45,6 +45,14 @@ main() {
     icc_codec_fuzzer
     rans_fuzzer
   )
+  if [[ -n "${JPEGXL_EXTRA_ARGS:-}" ]]; then
+    # Extra arguments passed to ci.sh ossfuzz commands are treated as ninja
+    # targets. The environment variable is split into individual targets here,
+    # which might break if passing paths with spaces, which is an unlikely use
+    # case.
+    fuzzers=(${JPEGXL_EXTRA_ARGS})
+    echo "Building with targets: ${JPEGXL_EXTRA_ARGS}"
+  fi
   ninja "${fuzzers[@]}"
 }
 
