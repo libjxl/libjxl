@@ -63,7 +63,7 @@ using hwy::HWY_NAMESPACE::Rebind;
 // masking.
 float ComputeMaskForAcStrategyUse(const float out_val) {
   const float kMul = 1.0f;
-  const float kOffset = 0.4f;
+  const float kOffset = 0.001f;
   return kMul / (out_val + kOffset);
 }
 
@@ -665,7 +665,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 constexpr float kDcQuantPow = 0.57f;
 static const float kDcQuant = 1.12f;
-static const float kAcQuant = 0.787f;
+static const float kAcQuant = 0.7886f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state, ThreadPool* pool,
