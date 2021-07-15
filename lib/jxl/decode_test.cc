@@ -974,7 +974,7 @@ TEST(DecodeTest, BasicInfoTest) {
           EXPECT_EQ(0, JxlDecoderGetExtraChannelInfo(dec, 0, &extra));
           EXPECT_EQ(alpha_bits[i], extra.bits_per_sample);
           EXPECT_EQ(JXL_CHANNEL_ALPHA, extra.type);
-          EXPECT_EQ(0, extra.alpha_associated);
+          EXPECT_EQ(0, extra.alpha_premultiplied);
           // Verify the name "alpha_test" given to the alpha channel
           EXPECT_EQ(10, extra.name_length);
           char name[11];

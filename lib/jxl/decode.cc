@@ -1812,7 +1812,7 @@ JxlDecoderStatus JxlDecoderGetExtraChannelInfo(const JxlDecoder* dec,
           : 0;
   info->dim_shift = channel.dim_shift;
   info->name_length = channel.name.size();
-  info->alpha_associated = channel.alpha_associated;
+  info->alpha_premultiplied = channel.alpha_associated;
   info->spot_color[0] = channel.spot_color[0];
   info->spot_color[1] = channel.spot_color[1];
   info->spot_color[2] = channel.spot_color[2];

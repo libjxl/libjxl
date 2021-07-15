@@ -127,7 +127,7 @@ int PrintBasicInfo(FILE* file) {
           free(name);
           printf("  name: %s\n", name);
         }
-        printf("  alpha_associated: %d\n", extra.alpha_associated);
+        printf("  alpha_premultiplied: %d\n", extra.alpha_premultiplied);
         printf("  spot_color: %f %f %f %f\n", extra.spot_color[0],
                extra.spot_color[1], extra.spot_color[2], extra.spot_color[3]);
         printf("  cfa_channel: %u\n", extra.cfa_channel);
