@@ -342,6 +342,8 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
           dop = chunk.p[32];
           bop = chunk.p[33];
 
+          if (!delay_den) delay_den = 100;
+
           if (w0 > cMaxPNGSize || h0 > cMaxPNGSize || x0 > cMaxPNGSize ||
               y0 > cMaxPNGSize || x0 + w0 > w || y0 + h0 > h || dop > 2 ||
               bop > 1) {
