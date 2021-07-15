@@ -765,13 +765,17 @@ _cmd_ossfuzz() {
   # /out directory is ignored as developers are used to look for the fuzzers in
   # $BUILD_DIR/tools/ directly.
 
-  if [[ "${sanitizer}" = "memory" ]]; then
+  if [[ "${sanitizer}" = "memory" && ! -d "${BUILD_DIR}/msan" ]]; then
     sudo docker run --rm -i \
       --user $(id -u):$(id -g) \
       -v "${real_build_dir}":/work \
       gcr.io/oss-fuzz-base/msan-libs-builder \
       bash -c "cp -r /msan /work"
   fi
+
+  # Args passed to ninja. These will be evaluated as a string separated by
+  # spaces.
+  local jpegxl_extra_args="$@"
 
   sudo docker run --rm -i \
     -e JPEGXL_UID=$(id -u) \
@@ -781,10 +785,10 @@ _cmd_ossfuzz() {
     -e ARCHITECTURE=x86_64 \
     -e FUZZING_LANGUAGE=c++ \
     -e MSAN_LIBS_PATH="/work/msan" \
+    -e JPEGXL_EXTRA_ARGS="${jpegxl_extra_args}" \
     -v "${MYDIR}":/src/libjxl \
     -v "${MYDIR}/tools/ossfuzz-build.sh":/src/build.sh \
     -v "${real_build_dir}":/work \
-    "$@" \
     gcr.io/oss-fuzz/libjxl
 }
 
