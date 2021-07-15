@@ -467,7 +467,7 @@ bool DecodeJXL(const DecodeOptions& opts) {
       METADATA_CHANNEL(exponent_bits_per_sample);
       METADATA_CHANNEL(dim_shift);
       channel_i->Add("name", JSONValue(extra_channel_names[i]));
-      METADATA_CHANNEL(alpha_associated);
+      METADATA_CHANNEL(alpha_premultiplied);
       METADATA_CHANNEL(cfa_channel);
       // TODO(deymo): Spot color.
     }
