@@ -12,6 +12,7 @@
 
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/sanitizers.h"
 
 namespace jxl {
 
@@ -469,6 +470,8 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
     }
     if (i >= image.nb_meta_channels && (channel.w > options->max_chan_size ||
                                         channel.h > options->max_chan_size)) {
+      ZeroFillImage(&channel.plane);
+      while (++i < nb_channels) ZeroFillImage(&image.channel[i].plane);
       break;
     }
     JXL_RETURN_IF_ERROR(DecodeModularChannelMAANS(br, &reader, *context_map,
@@ -506,6 +509,14 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                   code, ctx_map, allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
+#if JXL_MEMORY_SANITIZER
+  // Check that all the channels are initialized after ModularDecode. In the
+  // partial decode case the remaining channels must be zero-initialized.
+  for (const auto &channel : image.channel) {
+    JXL_CHECK_IMAGE_INITIALIZED(channel.plane, Rect(channel.plane));
+  }
+#endif  // JXL_MEMORY_SANITIZER
+
   image.undo_transforms(header->wp_header, undo_transforms);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();
