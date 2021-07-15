@@ -20,7 +20,7 @@ if(POLICY CMP0083)
   cmake_policy(SET CMP0083 NEW)
 endif()
 
-project(JPEGXL LANGUAGES C CXX)
+project(LIBJXL LANGUAGES C CXX)
 
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles(
