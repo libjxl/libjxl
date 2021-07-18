@@ -235,6 +235,15 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
     uint32_t endc = (*parameters)[i].begin_c + (*parameters)[i].num_c - 1;
 
     uint32_t offset;
+    if (beginc < image.nb_meta_channels) {
+      if (endc >= image.nb_meta_channels) {
+        return JXL_FAILURE("Invalid squeeze: mix of meta and nonmeta channels");
+      }
+      if (!in_place)
+        return JXL_FAILURE(
+            "Invalid squeeze: meta channels require in-place residuals");
+      image.nb_meta_channels += (*parameters)[i].num_c;
+    }
     if (in_place) {
       offset = endc + 1;
     } else {
