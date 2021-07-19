@@ -65,14 +65,17 @@ jobs:
           cmake \
           doxygen \
           libbrotli-dev \
+          libgdk-pixbuf2.0-dev \
           libgif-dev \
           libgtest-dev \
+          libgtk2.0-dev  \
           libjpeg-dev \
           libopenexr-dev \
           libpng-dev \
           libwebp-dev \
           ninja-build \
           pkg-config \
+          xvfb \
           ${{ matrix.apt_pkgs }} \
         #
         echo "CC=clang-7" >> $GITHUB_ENV
