@@ -631,10 +631,12 @@ x86_64:static:
     - SKIP_TEST=1 ./ci.sh release
         -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc
         -DJPEGXL_STATIC=ON
-        -DBUILD_TESTING=OFF
         -DJPEGXL_ENABLE_VIEWERS=OFF
         -DJPEGXL_ENABLE_PLUGINS=OFF
         -DJPEGXL_ENABLE_OPENEXR=OFF
+    # Spot check built binaries
+    - build/tools/cjxl
+        third_party/testdata/wesaturate/64px/cvo9xd_keong_macan_srgb8.png
 
 win64:static:
   <<: *linux_host_build_template
