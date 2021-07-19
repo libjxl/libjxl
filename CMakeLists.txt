@@ -152,6 +152,13 @@ if(JPEGXL_STATIC)
   set(BUILD_SHARED_LIBS 0)
   set(CMAKE_EXE_LINKER_FLAGS
       "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+endif()  # JPEGXL_STATIC
+
+# Threads
+set(THREADS_PREFER_PTHREAD_FLAG YES)
+find_package(Threads REQUIRED)
+
+if(JPEGXL_STATIC)
   if (MINGW)
     # In MINGW libstdc++ uses pthreads directly. When building statically a
     # program (regardless of whether the source code uses pthread or not) the
@@ -167,9 +174,19 @@ if(JPEGXL_STATIC)
     # will be discarded anyway.
     # This adds these flags as dependencies for *all* targets. Adding this to
     # CMAKE_EXE_LINKER_FLAGS instead would cause them to be included before any
-    # object files and therefore discarded.
+    # object files and therefore discarded. This should be set in the
+    # INTERFACE_LINK_LIBRARIES of Threads::Threads but some third_part targets
+    # don't depend on it.
     link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
-  endif()  # MINGW
+  elseif(CMAKE_USE_PTHREADS_INIT)
+    # Set pthreads as a whole-archive, otherwise weak symbols in the static
+    # libraries will discard pthreads symbols leading to segmentation fault at
+    # runtime.
+    message(STATUS "Using -lpthread as --whole-archive")
+    set_target_properties(Threads::Threads PROPERTIES
+      INTERFACE_LINK_LIBRARIES
+          "-Wl,--whole-archive;-lpthread;-Wl,--no-whole-archive")
+  endif()
 endif()  # JPEGXL_STATIC
 
 if (MSVC)
@@ -248,9 +265,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED YES)
 
 add_subdirectory(third_party)
-
-set(THREADS_PREFER_PTHREAD_FLAG YES)
-find_package(Threads REQUIRED)
 
 # Copy the JXL license file to the output build directory.
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
