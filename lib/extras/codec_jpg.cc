@@ -260,11 +260,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   const auto try_catch_block = [&]() -> bool {
     jpeg_decompress_struct cinfo;
-#ifdef MEMORY_SANITIZER
     // cinfo is initialized by libjpeg, which we are not instrumenting with
     // msan, therefore we need to initialize cinfo here.
-    memset(&cinfo, 0, sizeof(cinfo));
-#endif
+    msan::UnpoisonMemory(&cinfo, sizeof(cinfo));
     // Setup error handling in jpeg library so we can deal with broken jpegs in
     // the fuzzer.
     jpeg_error_mgr jerr;
