@@ -1198,7 +1198,7 @@ TEST(JxlTest, RoundtripYCbCr420) {
   // we're comparing an original PNG with a YCbCr 4:2:0 version
   EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            2.5);
+            2.8);
 }
 
 TEST(JxlTest, RoundtripDots) {
