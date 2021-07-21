@@ -116,3 +116,7 @@ container is:
 *    arm-linux-gnueabihf
 *    i686-linux-gnu
 *    x86_64-w64-mingw32 (for Windows builds)
+
+Notice, for Windows builds to be tested outside docker container,
+please follow the Minimum build dependencies section in [Developing on 64-bit Windows](https://github.com/libjxl/libjxl/blob/main/doc/developing_in_windows.md),
+and install external dependencies.
