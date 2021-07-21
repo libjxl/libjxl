@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    efficiently to earlier animation frames.
  - API: `JxlDecoderSetPreferredColorProfile` function to choose color profile in
    certain circumstances.
+ - encoder: Adding `center_x` and `center_y` flags for more control of the tile order. 
 
 ### Changed
  - Full JPEG XL part 1 specification support: Implemented all the spec required
