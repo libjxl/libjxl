@@ -135,3 +135,49 @@ jobs:
           export TEST_STACK_LIMIT=2048
         fi
         ./ci.sh test
+
+  osx_build:
+    name: OSX Build
+    runs-on: macos-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+    steps:
+    - name: Install build deps
+      run: |
+        brew install coreutils ninja
+    - name: Checkout the source
+      uses: actions/checkout@v2
+      with:
+        submodules: true
+        fetch-depth: 2
+    - name: Git environment
+      id: git-env
+      run: |
+        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+      shell: bash
+    - name: ccache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        # When the cache hits the key it is not updated, so if this is a rebuild
+        # of the same Pull Request it will reuse the cache if still around. For
+        # either Pull Requests or new pushes to main, this will use the parent
+        # hash as the starting point from the restore-keys entry.
+        key: ${{ runner.os }}-${{ github.sha }}-osx
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-osx
+    - name: Build
+      run: |
+        mkdir -p ${CCACHE_DIR}
+        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
+        ./ci.sh release -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+      env:
+        SKIP_TEST: 1
+    - name: ccache stats
+      run: ccache --show-stats
+    # Run the tests on push and when requested in pull_request.
+    - name: Test release
+      run: |
+        ./ci.sh test
