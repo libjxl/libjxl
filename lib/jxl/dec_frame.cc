@@ -394,7 +394,7 @@ Status FrameDecoder::ProcessDCGroup(size_t dc_group_id, BitReader* br) {
                    frame_dim_.dc_group_dim, frame_dim_.dc_group_dim);
   JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
       mrect, br, 3, 1000, ModularStreamId::ModularDC(dc_group_id),
-      /*zerofill=*/false));
+      /*zerofill=*/false, nullptr, nullptr));
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         modular_frame_decoder_.DecodeAcMetadata(dc_group_id, br, dec_state_));
@@ -422,6 +422,7 @@ void FrameDecoder::FinalizeDC() {
 void FrameDecoder::AllocateOutput() {
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback) {
+    modular_frame_decoder_.MaybeDropFullImage();
     decoded_->SetFromImage(Image3F(frame_dim_.xsize_upsampled_padded,
                                    frame_dim_.ysize_upsampled_padded),
                            dec_state_->output_encoding_info.color_encoding);
@@ -577,12 +578,13 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, br[i - decoded_passes_per_ac_group_[ac_group_id]], minShift,
           maxShift, ModularStreamId::ModularAC(ac_group_id, i),
-          /*zerofill=*/false));
+          /*zerofill=*/false, dec_state_, decoded_));
     } else if (i >= decoded_passes_per_ac_group_[ac_group_id] + num_passes &&
                force_draw) {
       JXL_RETURN_IF_ERROR(modular_frame_decoder_.DecodeGroup(
           mrect, nullptr, minShift, maxShift,
-          ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true));
+          ModularStreamId::ModularAC(ac_group_id, i), /*zerofill=*/true,
+          dec_state_, decoded_));
     }
   }
   decoded_passes_per_ac_group_[ac_group_id] += num_passes;
