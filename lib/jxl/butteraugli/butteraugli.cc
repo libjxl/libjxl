@@ -1223,7 +1223,7 @@ void DiffPrecompute(const ImageF& xyb, float mul, float bias_arg, ImageF* out) {
 // std::log(80.0) / std::log(255.0);
 constexpr float kIntensityTargetNormalizationHack = 0.79079917404f;
 static const float kInternalGoodQualityThreshold =
-    17.1984479671f * kIntensityTargetNormalizationHack;
+    17.8f * kIntensityTargetNormalizationHack;
 static const float kGlobalScale = 1.0 / kInternalGoodQualityThreshold;
 
 void StoreMin3(const float v, float& min0, float& min1, float& min2) {
@@ -1336,9 +1336,9 @@ void MaskPsychoImage(const PsychoImage& pi0, const PsychoImage& pi1,
   ImageF mask0(xsize, ysize);
   ImageF mask1(xsize, ysize);
   static const float muls[3] = {
-      8.75000241361f,
-      0.620978104816f,
-      0.307585098253f,
+      2.5f,
+      0.4f,
+      0.4f,
   };
   // Silly and unoptimized approach here. TODO(jyrki): rework this.
   for (size_t y = 0; y < ysize; ++y) {
