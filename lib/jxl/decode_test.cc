@@ -413,18 +413,21 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                                    bool use_resizable_runner) {
   JxlThreadParallelRunnerPtr runner_fixed;
   JxlResizableParallelRunnerPtr runner_resizable;
+  JxlParallelRunner runner_fn;
   void* runner;
 
   if (use_resizable_runner) {
     runner_resizable = JxlResizableParallelRunnerMake(nullptr);
     runner = runner_resizable.get();
+    runner_fn = JxlResizableParallelRunner;
   } else {
     runner_fixed = JxlThreadParallelRunnerMake(
         nullptr, JxlThreadParallelRunnerDefaultNumWorkerThreads());
     runner = runner_fixed.get();
+    runner_fn = JxlThreadParallelRunner;
   }
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderSetParallelRunner(dec, JxlThreadParallelRunner, runner));
+            JxlDecoderSetParallelRunner(dec, runner_fn, runner));
 
   EXPECT_EQ(
       JXL_DEC_SUCCESS,
@@ -498,7 +501,7 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
 
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
 
-  // After the full image is gotten, JxlDecoderProcessInput should return
+  // After the full image was output, JxlDecoderProcessInput should return
   // success to indicate all is done.
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
@@ -2413,6 +2416,87 @@ TEST(DecodeTest, AnimationTestStreaming) {
 
   JxlThreadParallelRunnerDestroy(runner);
   JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, ExtraChannelTest) {
+  size_t xsize = 55, ysize = 257;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  jxl::CompressParams cparams;
+  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false);
+
+  size_t align = 17;
+  JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, align};
+
+  JxlDecoder* dec = JxlDecoderCreate(NULL);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                 dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(1, info.num_extra_channels);
+  EXPECT_EQ(JXL_FALSE, info.alpha_premultiplied);
+
+  JxlExtraChannelInfo extra_info;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetExtraChannelInfo(dec, 0, &extra_info));
+  EXPECT_EQ(0, extra_info.type);
+
+  EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  size_t extra_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderExtraChannelBufferSize(dec, &format, &extra_size, 0));
+
+  std::vector<uint8_t> image(buffer_size);
+  std::vector<uint8_t> extra(extra_size);
+  size_t bytes_per_pixel =
+      format.num_channels * GetDataBits(format.data_type) / jxl::kBitsPerByte;
+  size_t stride = bytes_per_pixel * info.xsize;
+  if (format.align > 1) {
+    stride = jxl::DivCeil(stride, format.align) * format.align;
+  }
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                 dec, &format, image.data(), image.size()));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetExtraChannelBuffer(
+                                 dec, &format, extra.data(), extra.size(), 0));
+
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+
+  // After the full image was output, JxlDecoderProcessInput should return
+  // success to indicate all is done.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+  JxlDecoderDestroy(dec);
+
+  EXPECT_EQ(0, ComparePixels(pixels.data(), image.data(), xsize, ysize,
+                             format_orig, format));
+
+  // Compare the extracted extra channel with the original alpha channel
+
+  std::vector<uint8_t> alpha(pixels.size() / 4);
+  for (size_t i = 0; i < pixels.size(); i += 8) {
+    size_t index_alpha = i / 4;
+    alpha[index_alpha + 0] = pixels[i + 6];
+    alpha[index_alpha + 1] = pixels[i + 7];
+  }
+  JxlPixelFormat format_alpha = format;
+  format_alpha.num_channels = 1;
+  JxlPixelFormat format_orig_alpha = format_orig;
+  format_orig_alpha.num_channels = 1;
+
+  EXPECT_EQ(0, ComparePixels(alpha.data(), extra.data(), xsize, ysize,
+                             format_orig_alpha, format_alpha));
 }
 
 TEST(DecodeTest, SkipFrameTest) {

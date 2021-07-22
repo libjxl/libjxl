@@ -364,6 +364,13 @@ std::vector<size_t> GetFrameDependencies(size_t index,
   return result;
 }
 
+// Parameters for user-requested extra channel output.
+struct ExtraChannelOutput {
+  JxlPixelFormat format;
+  void* buffer;
+  size_t buffer_size;
+};
+
 }  // namespace
 
 // NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
@@ -438,9 +445,12 @@ struct JxlDecoderStruct {
   size_t preview_out_size;
   size_t image_out_size;
 
-  // TODO(lode): merge these?
   JxlPixelFormat preview_out_format;
   JxlPixelFormat image_out_format;
+
+  // For extra channels. Empty if no extra channels are requested, and they are
+  // reset each frame
+  std::vector<ExtraChannelOutput> extra_channel_output;
 
   jxl::CodecMetadata metadata;
   std::unique_ptr<jxl::ImageBundle> ib;
@@ -559,6 +569,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->image_out_opaque = nullptr;
   dec->preview_out_size = 0;
   dec->image_out_size = 0;
+  dec->extra_channel_output.clear();
   dec->dec_pixels = 0;
   dec->next_in = 0;
   dec->avail_in = 0;
@@ -882,16 +893,19 @@ static size_t GetStride(const JxlDecoder* dec, const JxlPixelFormat& format,
   return stride;
 }
 
-static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
-                                             const jxl::ImageBundle& frame,
-                                             const JxlPixelFormat& format,
-                                             void* out_image, size_t out_size,
-                                             JxlImageOutCallback out_callback,
-                                             void* out_opaque) {
+// Internal wrapper around jxl::ConvertToExternal which converts the stride,
+// format and orientation and allows to choose whether to get all RGB(A)
+// channels or alternatively get a single extra channel.
+// If want_extra_channel, a valid index to a single extra channel must be
+// given, the output must be single-channel, and format.num_channels is ignored
+// and treated as if it is 1.
+static JxlDecoderStatus ConvertImageInternal(
+    const JxlDecoder* dec, const jxl::ImageBundle& frame,
+    const JxlPixelFormat& format, bool want_extra_channel,
+    size_t extra_channel_index, void* out_image, size_t out_size,
+    JxlImageOutCallback out_callback, void* out_opaque) {
   // TODO(lode): handle mismatch of RGB/grayscale color profiles and pixel data
   // color/grayscale format
-  const auto& metadata = dec->metadata.m;
-
   const size_t stride = GetStride(dec, format, &frame);
 
   bool float_format = format.data_type == JXL_TYPE_FLOAT ||
@@ -899,13 +913,25 @@ static JxlDecoderStatus ConvertImageInternal(const JxlDecoder* dec,
 
   jxl::Orientation undo_orientation = dec->keep_orientation
                                           ? jxl::Orientation::kIdentity
-                                          : metadata.GetOrientation();
+                                          : dec->metadata.m.GetOrientation();
   JXL_DASSERT(!dec->frame_dec || !dec->frame_dec->HasRGBBuffer());
-  jxl::Status status = jxl::ConvertToExternal(
-      frame, BitsPerChannel(format.data_type), float_format,
-      format.num_channels, format.endianness, stride, dec->thread_pool.get(),
-      out_image, out_size, /*out_callback=*/out_callback,
-      /*out_opaque=*/out_opaque, undo_orientation);
+
+  jxl::Status status(true);
+  if (want_extra_channel) {
+    status = jxl::ConvertToExternal(
+        frame.extra_channels()[extra_channel_index],
+        BitsPerChannel(format.data_type), float_format, format.endianness,
+        stride, dec->thread_pool.get(), out_image, out_size,
+        /*out_callback=*/out_callback,
+        /*out_opaque=*/out_opaque, undo_orientation);
+  } else {
+    status = jxl::ConvertToExternal(
+        frame, BitsPerChannel(format.data_type), float_format,
+        format.num_channels, format.endianness, stride, dec->thread_pool.get(),
+        out_image, out_size,
+        /*out_callback=*/out_callback,
+        /*out_opaque=*/out_opaque, undo_orientation);
+  }
 
   return status ? JXL_DEC_SUCCESS : JXL_DEC_ERROR;
 }
@@ -1073,7 +1099,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
       if (want_preview) {
         if (dec->preview_out_buffer) {
           JxlDecoderStatus status = ConvertImageInternal(
-              dec, ib, dec->preview_out_format, dec->preview_out_buffer,
+              dec, ib, dec->preview_out_format, /*want_extra_channel=*/false,
+              /*extra_channel_index=*/0, dec->preview_out_buffer,
               dec->preview_out_size, /*out_callback=*/nullptr,
               /*out_opaque=*/nullptr);
           if (status != JXL_DEC_SUCCESS) return status;
@@ -1238,7 +1265,8 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
       if (dec->image_out_buffer_set && !!dec->image_out_buffer &&
           dec->image_out_format.data_type == JXL_TYPE_UINT8 &&
-          dec->image_out_format.num_channels >= 3) {
+          dec->image_out_format.num_channels >= 3 &&
+          dec->extra_channel_output.empty()) {
         bool is_rgba = dec->image_out_format.num_channels == 4;
         dec->frame_dec->MaybeSetRGB8OutputBuffer(
             reinterpret_cast<uint8_t*>(dec->image_out_buffer),
@@ -1339,12 +1367,28 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
           if (!dec->frame_dec->HasRGBBuffer()) {
             // Copy pixels if desired.
             JxlDecoderStatus status = ConvertImageInternal(
-                dec, *dec->ib, dec->image_out_format, dec->image_out_buffer,
+                dec, *dec->ib, dec->image_out_format,
+                /*want_extra_channel=*/false,
+                /*extra_channel_index=*/0, dec->image_out_buffer,
                 dec->image_out_size, dec->image_out_callback,
                 dec->image_out_opaque);
             if (status != JXL_DEC_SUCCESS) return status;
           }
           dec->image_out_buffer_set = false;
+
+          for (size_t i = 0; i < dec->extra_channel_output.size(); ++i) {
+            void* buffer = dec->extra_channel_output[i].buffer;
+            // buffer nullptr indicates this extra channel is not requested
+            if (!buffer) continue;
+            const JxlPixelFormat* format = &dec->extra_channel_output[i].format;
+            JxlDecoderStatus status = ConvertImageInternal(
+                dec, *dec->ib, *format,
+                /*want_extra_channel=*/true, i, buffer,
+                dec->extra_channel_output[i].buffer_size, nullptr, nullptr);
+            if (status != JXL_DEC_SUCCESS) return status;
+          }
+
+          dec->extra_channel_output.clear();
         }
       }
     }
@@ -1943,9 +1987,6 @@ JxlDecoderStatus PrepareSizeCheck(const JxlDecoder* dec,
   if (format->num_channels > 4) {
     return JXL_API_ERROR("More than 4 channels not supported");
   }
-  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
-    return JXL_API_ERROR("Grayscale output not possible for color image");
-  }
   if (format->data_type == JXL_TYPE_BOOLEAN) {
     return JXL_API_ERROR("Boolean data type not yet supported");
   }
@@ -2000,8 +2041,8 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   size_t ysize = dec->ib->ysize();
   dec->ib->ShrinkTo(dec->metadata.size.xsize(), dec->metadata.size.ysize());
   JxlDecoderStatus status = jxl::ConvertImageInternal(
-      dec, *dec->ib, dec->image_out_format, dec->image_out_buffer,
-      dec->image_out_size,
+      dec, *dec->ib, dec->image_out_format, /*want_extra_channel=*/false,
+      /*extra_channel_index=*/0, dec->image_out_buffer, dec->image_out_size,
       /*out_callback=*/nullptr, /*out_opaque=*/nullptr);
   dec->ib->ShrinkTo(xsize, ysize);
   if (status != JXL_DEC_SUCCESS) return status;
@@ -2013,6 +2054,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderPreviewOutBufferSize(
   size_t bits;
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
+  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Grayscale output not possible for color image");
+  }
 
   size_t xsize = dec->metadata.oriented_preview_xsize(dec->keep_orientation);
   size_t ysize = dec->metadata.oriented_preview_ysize(dec->keep_orientation);
@@ -2031,6 +2075,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetPreviewOutBuffer(
   if (!dec->got_basic_info || !dec->metadata.m.have_preview ||
       !(dec->orig_events_wanted & JXL_DEC_PREVIEW_IMAGE)) {
     return JXL_API_ERROR("No preview out buffer needed at this time");
+  }
+  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Grayscale output not possible for color image");
   }
 
   size_t min_size;
@@ -2081,6 +2128,9 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderImageOutBufferSize(
   size_t bits;
   JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
   if (status != JXL_DEC_SUCCESS) return status;
+  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Grayscale output not possible for color image");
+  }
 
   size_t row_size =
       jxl::DivCeil(dec->metadata.oriented_xsize(dec->keep_orientation) *
@@ -2104,6 +2154,9 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
     return JXL_API_ERROR(
         "Cannot change from image out callback to image out buffer");
   }
+  if (format->num_channels < 3 && !dec->metadata.m.color_encoding.IsGray()) {
+    return JXL_API_ERROR("Grayscale output not possible for color image");
+  }
   size_t min_size;
   // This also checks whether the format is valid and supported and basic info
   // is available.
@@ -2117,6 +2170,63 @@ JxlDecoderStatus JxlDecoderSetImageOutBuffer(JxlDecoder* dec,
   dec->image_out_buffer = buffer;
   dec->image_out_size = size;
   dec->image_out_format = *format;
+
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderExtraChannelBufferSize(const JxlDecoder* dec,
+                                                  const JxlPixelFormat* format,
+                                                  size_t* size,
+                                                  uint32_t index) {
+  if (!dec->got_basic_info || !(dec->orig_events_wanted & JXL_DEC_FULL_IMAGE)) {
+    return JXL_API_ERROR("No extra channel buffer needed at this time");
+  }
+
+  if (index >= dec->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR("Invalid extra channel index");
+  }
+
+  size_t num_channels = 1;  // Do not use format's num_channels
+
+  size_t bits;
+  JxlDecoderStatus status = PrepareSizeCheck(dec, format, &bits);
+  if (status != JXL_DEC_SUCCESS) return status;
+
+  size_t row_size = jxl::DivCeil(
+      dec->metadata.oriented_xsize(dec->keep_orientation) * num_channels * bits,
+      jxl::kBitsPerByte);
+  if (format->align > 1) {
+    row_size = jxl::DivCeil(row_size, format->align) * format->align;
+  }
+  *size = row_size * dec->metadata.oriented_ysize(dec->keep_orientation);
+
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec,
+                                                 const JxlPixelFormat* format,
+                                                 void* buffer, size_t size,
+                                                 uint32_t index) {
+  size_t min_size;
+  // This also checks whether the format and index are valid and supported and
+  // basic info is available.
+  JxlDecoderStatus status =
+      JxlDecoderExtraChannelBufferSize(dec, format, &min_size, index);
+  if (status != JXL_DEC_SUCCESS) return status;
+
+  if (size < min_size) return JXL_DEC_ERROR;
+
+  if (dec->extra_channel_output.size() <= index) {
+    dec->extra_channel_output.resize(dec->metadata.m.num_extra_channels,
+                                     {{}, nullptr, 0});
+  }
+  // Guaranteed correct thanks to check in JxlDecoderExtraChannelBufferSize.
+  JXL_ASSERT(index < dec->extra_channel_output.size());
+
+  dec->extra_channel_output[index].format = *format;
+  dec->extra_channel_output[index].format.num_channels = 1;
+  dec->extra_channel_output[index].buffer = buffer;
+  dec->extra_channel_output[index].buffer_size = size;
 
   return JXL_DEC_SUCCESS;
 }
