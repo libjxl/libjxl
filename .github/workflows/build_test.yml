@@ -26,6 +26,9 @@ jobs:
         include:
           - name: release
             test_in_pr: true
+            # Track static stack size on build and check it doesn't exceed 3 kB.
+            env_stack_size: 1
+            max_stack: 3000
           - name: debug
           # Build scalar-only hwy instructions.
           - name: scalar
@@ -54,6 +57,8 @@ jobs:
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
+      # Whether we track the stack size.
+      STACK_SIZE: ${{ matrix.env_stack_size }}
 
     steps:
     - name: Install build deps
@@ -120,6 +125,7 @@ jobs:
       if: matrix.mode == 'release' || matrix.name == 'release'
       run: |
         tools/build_stats.py --save build/stats.json \
+          --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
     # Run the tests on push and when requested in pull_request.
     - name: Test ${{ matrix.mode }}

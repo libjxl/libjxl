@@ -23,6 +23,7 @@ import os
 import re
 import struct
 import subprocess
+import sys
 import tempfile
 
 # Ignore functions with stack size smaller than this value.
@@ -372,6 +373,17 @@ def SizeStats(args):
     with open(args.save, 'w') as f:
       json.dump(stats, f)
 
+  # Check the maximum stack size.
+  exit_code = 0
+  if args.max_stack:
+    for name, size in tgt_stack_sizes.items():
+      if size > args.max_stack:
+        print('Error: %s exceeds stack limit: %d vs %d' % (
+                  name, size, args.max_stack),
+              file=sys.stderr)
+        exit_code = 1
+
+  return exit_code
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
@@ -388,8 +400,12 @@ def main():
   parser.add_argument('--binutils', default='',
                       help='prefix path to binutils tools, such as '
                            'aarch64-linux-gnu-')
+  parser.add_argument('--max-stack', default=None, type=int,
+                      help=('Maximum static stack size of a function. If a '
+                            'static stack is larger it will exit with an error '
+                            'code.'))
   args = parser.parse_args()
-  SizeStats(args)
+  sys.exit(SizeStats(args))
 
 
 if __name__ == '__main__':
