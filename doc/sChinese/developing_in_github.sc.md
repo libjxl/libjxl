@@ -113,7 +113,7 @@ commit信息是必要的。一个commit信息应该遵守50/72规则：
 
 我们遵守[Google C++ CodingStyle](https://google.github.io/styleguide/cppguide.html)。我们准备了一个[clang-format](https://clang.llvm.org/docs/ClangFormat.html) 配置文件，以供自动对代码进行排版，你可以通过`./ci.sh lint`帮助工具来调用它。
 
-阅读[CONTRIBUTING.md](../CONTRIBUTING.md)来获取为libjxl做贡献的更多信息。
+阅读[CONTRIBUTING.md](../../CONTRIBUTING.md)来获取为libjxl做贡献的更多信息。
 
 ### 上传你的改动以供审查
 
@@ -143,7 +143,7 @@ git rebase
 
 这一命令默认会将你当前分支的改动rebase到跟随分支之上。这种情况下，该命令会尝试将当前commit应用于最新的origin/main（该分支比我们自己的多两个commit），你的分支现在也会包含其内容。注意，你可能需要处理一些冲突。一个同时进行fetch和rebase的快捷方式是运行`git pull-r`，这里`-r`代表“rebase”并会将本地commit在远程commit之上进行rebase。
 
-在上传补丁之前，确保你的补丁符合[贡献指南](/CONTRIBUTING.md) 并能[构建且通过测试](building_and_testing.sc.md).
+在上传补丁之前，确保你的补丁符合[贡献指南](../../CONTRIBUTING.md) 并能[构建且通过测试](building_and_testing.sc.md).
 
 当你准备好发送你的分支以供审查时，将其上传到*你的*fork分支：
 
