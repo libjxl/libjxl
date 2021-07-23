@@ -149,6 +149,7 @@ format: Cloudinary and Google.
 *   [Building on Windows](doc/developing_in_windows.md) - for experts only
 *   [More information on testing/build options](doc/building_and_testing.md)
 *   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers only
+*   [Fuzzing](doc/fuzzing.md) - for developers only
 *   [Building Web Assembly artifacts](doc/building_wasm.md)
 
 ### Contact
