@@ -130,24 +130,27 @@ TEST(ImageTest, TestFill) {
 }
 
 TEST(ImageTest, CopyImageToWithPaddingTest) {
-  Plane<uint32_t> src(100, 200);
+  Plane<uint32_t> src(100, 61);
   for (size_t y = 0; y < src.ysize(); y++) {
     for (size_t x = 0; x < src.xsize(); x++) {
       src.Row(y)[x] = x * 1000 + y;
     }
   }
   Rect src_rect(10, 20, 30, 40);
+  EXPECT_TRUE(src_rect.IsInside(src));
 
-  Plane<uint32_t> dst(50, 41);
+  Plane<uint32_t> dst(60, 50);
   FillImage(0u, &dst);
   Rect dst_rect(20, 5, 30, 40);
+  EXPECT_TRUE(dst_rect.IsInside(dst));
 
   CopyImageToWithPadding(src_rect, src, /*padding=*/2, dst_rect, &dst);
 
-  // ysize is + 3 instead of + 4 because we are at the y image boundary.
+  // ysize is + 3 instead of + 4 because we are at the y image boundary on the
+  // source image.
   Rect padded_dst_rect(20 - 2, 5 - 2, 30 + 4, 40 + 3);
-  for (size_t y = 0; y < dst.ysize() + 2 * 2; y++) {
-    for (size_t x = 0; x < dst.xsize() + 2 * 2; x++) {
+  for (size_t y = 0; y < dst.ysize(); y++) {
+    for (size_t x = 0; x < dst.xsize(); x++) {
       if (Rect(x, y, 1, 1).IsInside(padded_dst_rect)) {
         EXPECT_EQ((x - dst_rect.x0() + src_rect.x0()) * 1000 +
                       (y - dst_rect.y0() + src_rect.y0()),
