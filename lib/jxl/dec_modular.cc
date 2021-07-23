@@ -563,9 +563,15 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     const size_t ec_xsize = DivCeil(frame_dim.xsize_upsampled, ecups);
     const size_t ec_ysize = DivCeil(frame_dim.ysize_upsampled, ecups);
     Channel& ch_in = gi.channel[c];
+    // For x0, y0 there's no need to do a DivCeil().
+    JXL_DASSERT(rect.x0() % (1ul << ch_in.hshift) == 0);
+    JXL_DASSERT(rect.y0() % (1ul << ch_in.vshift) == 0);
     Rect r(rect.x0() >> ch_in.hshift, rect.y0() >> ch_in.vshift,
-           rect.xsize() >> ch_in.hshift, rect.ysize() >> ch_in.vshift, ec_xsize,
-           ec_ysize);
+           DivCeil(rect.xsize(), 1lu << ch_in.hshift),
+           DivCeil(rect.ysize(), 1lu << ch_in.vshift), ec_xsize, ec_ysize);
+
+    JXL_DASSERT(r.IsInside(dec_state->extra_channels[ec]));
+    JXL_DASSERT(r.IsInside(ch_in.plane));
     for (size_t y = 0; y < r.ysize(); ++y) {
       float* const JXL_RESTRICT row_out =
           r.Row(&dec_state->extra_channels[ec], y);
@@ -578,6 +584,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
         }
       }
     }
+    JXL_CHECK_IMAGE_INITIALIZED(dec_state->extra_channels[ec], r);
   }
   return true;
 }
