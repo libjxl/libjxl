@@ -51,6 +51,7 @@ void RgbFromSingle(const size_t xsize,
                    const pixel_type* const JXL_RESTRICT row_in,
                    const float factor, Image3F* decoded, size_t /*c*/, size_t y,
                    Rect& rect) {
+  JXL_DASSERT(xsize <= rect.xsize());
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
@@ -73,6 +74,7 @@ void SingleFromSingle(const size_t xsize,
                       const pixel_type* const JXL_RESTRICT row_in,
                       const float factor, Image3F* decoded, size_t c, size_t y,
                       Rect& rect) {
+  JXL_DASSERT(xsize <= rect.xsize());
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
@@ -307,7 +309,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
     }
     if (!use_full_image) {
       JXL_RETURN_IF_ERROR(ModularImageToDecodedRect(
-          gi, dec_state, nullptr, output, rect.Crop(*output)));
+          gi, dec_state, nullptr, output, rect.Crop(dec_state->decoded)));
       return true;
     }
   }
@@ -459,6 +461,10 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
   const auto* metadata = frame_header.nonserialized_metadata;
   size_t xsize = rect.xsize();
   size_t ysize = rect.ysize();
+  if (!xsize || !ysize) {
+    return true;
+  }
+  JXL_DASSERT(rect.IsInside(decoded));
 
   int c = 0;
   if (do_color) {
