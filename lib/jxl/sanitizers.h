@@ -178,8 +178,8 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
                 "xsize=%zu, ysize=%zu",
                 im.xsize(), im.ysize(), r.x0(), r.y0(), r.xsize(), r.ysize());
       size_t x = ret / sizeof(*row);
-      JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s", x, y,
-                message ? message : "");
+      JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s",
+                r.x0() + x, y, message ? message : "");
       PrintImageUninitialized(im);
     }
     // This will report an error if memory is not initialized.
