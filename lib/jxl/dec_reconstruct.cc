@@ -430,6 +430,7 @@ Rect ScaleRectForEC(Rect in, const FrameHeader& frame_header, size_t ec) {
     return DivCeil(x * frame_header.upsampling,
                    frame_header.extra_channel_upsampling[ec]);
   };
+  // For x0 and y0 the DivCeil is actually an exact division.
   return Rect(s(in.x0()), s(in.y0()), s(in.xsize()), s(in.ysize()));
 }
 
@@ -1149,10 +1150,12 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
           // Poison the temp image on this thread to prevent leaking initialized
           // data from a previous run in this thread in msan builds.
           msan::PoisonImage(*eti);
+          JXL_CHECK_IMAGE_INITIALIZED(dec_state->extra_channels[i], r);
           CopyImageToWithPadding(r, dec_state->extra_channels[i],
                                  /*padding=*/2, ec_input_rect, eti);
           ec_rects.emplace_back(eti, ec_input_rect);
         } else {
+          JXL_CHECK_IMAGE_INITIALIZED(decoded->extra_channels()[i], r);
           ec_rects.emplace_back(&decoded->extra_channels()[i], r);
         }
       }
