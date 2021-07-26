@@ -197,6 +197,67 @@ V GammaModulation(const D d, const size_t x, const size_t y,
   return MulAdd(kGam, FastLog2f(d, overall_ratio), out_val);
 }
 
+template <class D, class V>
+V ColorModulation(const D d, const size_t x, const size_t y,
+                  const ImageF& xyb_x, const ImageF& xyb_y, const ImageF& xyb_b,
+                  const double butteraugli_target, V out_val) {
+  static const float kStrengthMul = 2.177823400325309;
+  static const float kRedRampStart = 0.0073200141118951231;
+  static const float kRedRampLength = 0.019421555948474039;
+  static const float kBlueRampLength = 0.086890611400405895;
+  static const float kBlueRampStart = 0.26973418507870539;
+  const float strength = kStrengthMul * (1.0f - 0.25f * butteraugli_target);
+  if (strength < 0) {
+    return out_val;
+  }
+  // x values are smaller than y and b values, need to take the difference into
+  // account.
+  const float red_strength = strength * 5.992297772961519f;
+  const float blue_strength = strength;
+  {
+    // Reduce some bits from areas not blue or red.
+    const float offset = strength * -0.009174542291185913f;
+    out_val += Set(d, offset);
+  }
+  // Calculate how much of the 8x8 block is covered with blue or red.
+  auto blue_coverage = Zero(d);
+  auto red_coverage = Zero(d);
+  for (size_t dy = 0; dy < 8; ++dy) {
+    const float* const JXL_RESTRICT row_in_x = xyb_x.Row(y + dy);
+    const float* const JXL_RESTRICT row_in_y = xyb_y.Row(y + dy);
+    const float* const JXL_RESTRICT row_in_b = xyb_b.Row(y + dy);
+    for (size_t dx = 0; dx < 8; dx += Lanes(d)) {
+      const auto pixel_x =
+          Max(Set(d, 0.0f), Load(d, row_in_x + x + dx) - Set(d, kRedRampStart));
+      const auto pixel_y = Load(d, row_in_y + x + dx);
+      const auto pixel_b =
+          Max(Set(d, 0.0f),
+              Load(d, row_in_b + x + dx) - pixel_y - Set(d, kBlueRampStart));
+      const auto blue_slope = Min(pixel_b, Set(d, kBlueRampLength));
+      const auto red_slope = Min(pixel_x, Set(d, kRedRampLength));
+      red_coverage += red_slope;
+      blue_coverage += blue_slope;
+    }
+  }
+
+  // Saturate when the high red or high blue coverage is above a level.
+  // The idea here is that if a certain fraction of the block is red or
+  // blue we consider as if it was fully red or blue.
+  static const float ratio = 30.610615782142737f;  // out of 64 pixels.
+
+  auto overall_red_coverage = SumOfLanes(red_coverage);
+  overall_red_coverage =
+      Min(overall_red_coverage, Set(d, ratio * kRedRampLength));
+  overall_red_coverage *= Set(d, red_strength / ratio);
+
+  auto overall_blue_coverage = SumOfLanes(blue_coverage);
+  overall_blue_coverage =
+      Min(overall_blue_coverage, Set(d, ratio * kBlueRampLength));
+  overall_blue_coverage *= Set(d, blue_strength / ratio);
+
+  return overall_red_coverage + overall_blue_coverage + out_val;
+}
+
 // Change precision in 8x8 blocks that have high frequency content.
 template <class D, class V>
 V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
@@ -238,8 +299,8 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
 }
 
 void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
-                         const ImageF& xyb_y, const float scale,
-                         const Rect& rect, ImageF* out) {
+                         const ImageF& xyb_y, const ImageF& xyb_b,
+                         const float scale, const Rect& rect, ImageF* out) {
   JXL_ASSERT(SameSize(xyb_x, xyb_y));
   JXL_ASSERT(DivCeil(xyb_x.xsize(), kBlockDim) == out->xsize());
   JXL_ASSERT(DivCeil(xyb_x.ysize(), kBlockDim) == out->ysize());
@@ -266,6 +327,8 @@ void PerBlockModulations(const float butteraugli_target, const ImageF& xyb_x,
       auto out_val = Set(df, row_out[ix]);
       out_val = ComputeMask(df, out_val);
       out_val = HfModulation(df, x, y, xyb_y, out_val);
+      out_val = ColorModulation(df, x, y, xyb_x, xyb_y, xyb_b,
+                                butteraugli_target, out_val);
       out_val = GammaModulation(df, x, y, xyb_x, xyb_y, out_val);
       // We want multiplicative quantization field, so everything
       // until this point has been modulating the exponent.
@@ -506,8 +569,8 @@ struct AdaptiveQuantizationImpl {
         mask_row[x] = ComputeMaskForAcStrategyUse(aq_map_row[x]);
       }
     }
-    PerBlockModulations(butteraugli_target, xyb.Plane(0), xyb.Plane(1), scale,
-                        rect, &aq_map);
+    PerBlockModulations(butteraugli_target, xyb.Plane(0), xyb.Plane(1),
+                        xyb.Plane(2), scale, rect, &aq_map);
   }
   std::vector<ImageF> pre_erosion;
   ImageF aq_map;
