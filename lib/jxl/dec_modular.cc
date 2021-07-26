@@ -571,7 +571,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
            DivCeil(rect.ysize(), 1lu << ch_in.vshift), ec_xsize, ec_ysize);
 
     JXL_DASSERT(r.IsInside(dec_state->extra_channels[ec]));
-    JXL_DASSERT(r.IsInside(ch_in.plane));
+    JXL_DASSERT(Rect(0, 0, r.xsize(), r.ysize()).IsInside(ch_in.plane));
     for (size_t y = 0; y < r.ysize(); ++y) {
       float* const JXL_RESTRICT row_out =
           r.Row(&dec_state->extra_channels[ec], y);
