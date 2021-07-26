@@ -150,8 +150,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 if(JPEGXL_STATIC)
   set(CMAKE_FIND_LIBRARY_SUFFIXES .a)
   set(BUILD_SHARED_LIBS 0)
-  set(CMAKE_EXE_LINKER_FLAGS
-      "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+  # Clang developers say that in case to use "static" we have to build stdlib
+  # ourselves; for real use case we don't care about stdlib, as it is "granted",
+  # so just linking all other libraries is fine.
+  if (NOT APPLE)
+    set(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+  endif()
 endif()  # JPEGXL_STATIC
 
 # Threads
@@ -179,13 +184,16 @@ if(JPEGXL_STATIC)
     # don't depend on it.
     link_libraries(-Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic)
   elseif(CMAKE_USE_PTHREADS_INIT)
-    # Set pthreads as a whole-archive, otherwise weak symbols in the static
-    # libraries will discard pthreads symbols leading to segmentation fault at
-    # runtime.
-    message(STATUS "Using -lpthread as --whole-archive")
-    set_target_properties(Threads::Threads PROPERTIES
-      INTERFACE_LINK_LIBRARIES
-          "-Wl,--whole-archive;-lpthread;-Wl,--no-whole-archive")
+    # "whole-archive" is not supported on OSX.
+    if (NOT APPLE)
+      # Set pthreads as a whole-archive, otherwise weak symbols in the static
+      # libraries will discard pthreads symbols leading to segmentation fault at
+      # runtime.
+      message(STATUS "Using -lpthread as --whole-archive")
+      set_target_properties(Threads::Threads PROPERTIES
+        INTERFACE_LINK_LIBRARIES
+            "-Wl,--whole-archive;-lpthread;-Wl,--no-whole-archive")
+    endif()
   endif()
 endif()  # JPEGXL_STATIC
 
