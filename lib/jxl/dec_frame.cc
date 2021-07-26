@@ -434,11 +434,16 @@ void FrameDecoder::AllocateOutput() {
       dec_state_->extra_channels.emplace_back(
           DivCeil(frame_dim_.xsize_upsampled_padded, ecups),
           DivCeil(frame_dim_.ysize_upsampled_padded, ecups));
-#if MEMORY_SANITIZER
+#if JXL_MEMORY_SANITIZER
       // Avoid errors due to loading vectors on the outermost padding.
+      // Upsample of extra channels requires this padding to be initialized.
+      // TODO(deymo): Remove this and use rects up to {x,y}size_upsampled
+      // instead of the padded one.
       for (size_t y = 0; y < DivCeil(frame_dim_.ysize_upsampled_padded, ecups);
            y++) {
-        for (size_t x = DivCeil(frame_dim_.xsize_upsampled, ecups);
+        for (size_t x = (y < DivCeil(frame_dim_.ysize_upsampled, ecups)
+                             ? DivCeil(frame_dim_.xsize_upsampled, ecups)
+                             : 0);
              x < DivCeil(frame_dim_.xsize_upsampled_padded, ecups); x++) {
           dec_state_->extra_channels.back().Row(y)[x] =
               msan::kSanitizerSentinel;
