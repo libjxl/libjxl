@@ -61,15 +61,15 @@ def EvalCacheForget():
 def RandomizedJxlCodecs():
   retval = []
   minval = 0.5
-  maxval = 24.0
+  maxval = 3.3
   rangeval = maxval/minval
-  steps = 6
+  steps = 7
   for i in range(steps):
     mul = minval * rangeval**(float(i)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
     retval.append("jxl:epf2:d%.3f" % mul)
-  steps = 6
-  for i in range(steps):
+  steps = 7
+  for i in range(steps - 1):
     mul = minval * rangeval**(float(i+0.5)/(steps - 1))
     mul *= 0.99 + 0.05 * random.random()
     retval.append("jxl:epf0:d%.3f" % mul)
@@ -101,7 +101,7 @@ def Eval(vec, binary_name, cached=True):
   process = subprocess.Popen(
       (binary_name,
        '--input',
-       '/usr/local/google/home/jyrki/newcorpus/split/*.png',
+       '/usr/local/google/home/jyrki/mix_corpus/*.png',
        '--error_pnorm=3',
        '--more_columns',
        '--codec', g_codecs),
@@ -122,64 +122,15 @@ def Eval(vec, binary_name, cached=True):
     sys.stdout.flush()
     if line[0:3] == b'jxl':
       bpp = line.split()[3]
-      dist_max = line.split()[7]
-      dist_pnorm = line.split()[8]
-      dct2str = line.split()[11]
-      dct4str = line.split()[12]
-      dct4x8str = line.split()[13]
-      dct8str = line.split()[14]
-      dct8x16str = line.split()[15]
-      dct16str = line.split()[16]
-      dct16x32str = line.split()[17]
-      dct32str = line.split()[18]
+      dist_pnorm = line.split()[7]
       vec[0] *= float(dist_pnorm) * float(bpp) / 16.0
       #vec[0] *= (float(dist_max) * float(bpp) / 16.0) ** 0.2
-      dct2 += float(dct2str)
-      dct4 += float(dct4str)
-      dct16 += float(dct16str)
-      dct32 += float(dct32str)
       n += 1
       found_score = True
       distance = float(line.split()[0].split(b'd')[-1])
       #faultybpp = 1.0 + 0.43 * ((float(bpp) * distance ** 0.74) - 1.57) ** 2
       #vec[0] *= faultybpp
 
-  """
-  # favor small changes
-  for k in vec[1:]:
-    vec[0] *= 1 + 1e-9 * k * k
-
-  dct2 = dct2 / (n + 1e-9)
-  dct4 = dct4 / (n + 1e-9)
-  dct16 = dct16 / (n + 1e-9)
-  dct32 = dct32 / (n + 1e-9)
-  dct16 += 0.1 * dct32
-  dct4 += 0.1 * dct2
-  print "dct2/4/16/32", dct2, dct4, dct16, dct32, vec[0]
-
-  dct2limit = 0.02
-  if dct2 < dct2limit:
-     print "low dct2", dct2, vec[0]
-     vec[0] *= (1.0 + 50.0 * (dct2limit - dct2) ** 2)**n
-     print "corrected dct2", dct2, vec[0]
-
-  dct4limit = 0.025
-  if dct4 < dct4limit:
-     print "low dct4", dct4, vec[0]
-     vec[0] *= (1.0 + 15.0 * (dct4limit - dct4) ** 2)**n
-     print "corrected dct4", dct4, vec[0]
-
-  dct16limit = 0.02
-  if dct16 < dct16limit:
-     print "low dct16", dct16, vec[0]
-     vec[0] *= (1.0 + 5.0 * (dct16limit - dct16) ** 2)**n
-     print "corrected dct16", dct16, vec[0]
-  dct32limit = 0.02
-  if dct32 < dct32limit:
-     print "low dct32", dct32, vec[0]
-     vec[0] *= (1.0 + 5.0 * (dct32limit - dct32) ** 2)**n
-     print "corrected dct32", dct32, vec[0]
-  """
   print("eval: ", vec)
   if (vec[0] <= 0.0):
     vec[0] = 1e30
