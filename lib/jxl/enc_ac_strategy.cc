@@ -349,31 +349,53 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
   const size_t num_blocks = acs.covered_blocks_x() * acs.covered_blocks_y();
   float quant_norm8 = 0;
   float masking = 0;
+  float activity_min = 1e30f;
+  float activity_average = 0;
   if (num_blocks == 1) {
     // When it is only one 8x8, we don't need aggregation of values.
     quant_norm8 = config.Quant(x / 8, y / 8);
     masking = 2.0f * config.Masking(x / 8, y / 8);
+    activity_min = 1;
+    activity_average = 1;
   } else if (num_blocks == 2) {
     // Taking max instead of 8th norm seems to work
     // better for smallest blocks up to 16x8. Jyrki couldn't get
     // improvements in trying the same for 16x16 blocks.
+    const float va = config.VisualActivity(x / 8, y / 8);
     if (acs.covered_blocks_y() == 2) {
       quant_norm8 =
           std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8, y / 8 + 1));
       masking = 2.0f * std::max(config.Masking(x / 8, y / 8),
                                 config.Masking(x / 8, y / 8 + 1));
+      const float vb = config.VisualActivity(x / 8, y / 8 + 1);
+      if (va < vb) {
+        activity_min = va;
+        activity_average = vb;
+      } else {
+        activity_min = vb;
+        activity_average = va;
+      }
     } else {
       quant_norm8 =
           std::max(config.Quant(x / 8, y / 8), config.Quant(x / 8 + 1, y / 8));
       masking = 2.0f * std::max(config.Masking(x / 8, y / 8),
                                 config.Masking(x / 8 + 1, y / 8));
+      float vb = config.VisualActivity(x / 8 + 1, y / 8);
+      if (va < vb) {
+        activity_min = va;
+        activity_average = vb;
+      } else {
+        activity_min = vb;
+        activity_average = va;
+      }
     }
   } else {
     float masking_norm2 = 0;
     float masking_max = 0;
-    // Load QF value, calculate empirical heuristic on masking field
-    // for weighting the information loss. Information loss manifests
-    // itself as ringing, and masking could hide it.
+    activity_average = 0;
+    //  Load QF value, calculate empirical heuristic on masking field
+    //  for weighting the information loss. Information loss manifests
+    //  itself as ringing, and masking could hide it.
     for (size_t iy = 0; iy < acs.covered_blocks_y(); iy++) {
       for (size_t ix = 0; ix < acs.covered_blocks_x(); ix++) {
         float qval = config.Quant(x / 8 + ix, y / 8 + iy);
@@ -383,8 +405,13 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
         float maskval = config.Masking(x / 8 + ix, y / 8 + iy);
         masking_max = std::max<float>(masking_max, maskval);
         masking_norm2 += maskval * maskval;
+        const float activity_val =
+            config.VisualActivity(x / 8 + ix, y / 8 + iy);
+        activity_average += activity_val;
+        activity_min = std::min(activity_min, activity_val);
       }
     }
+    activity_average /= num_blocks;
     quant_norm8 /= num_blocks;
     quant_norm8 = FastPowf(quant_norm8, 1.0f / 8.0f);
     masking_norm2 = sqrt(masking_norm2 / num_blocks);
@@ -438,13 +465,29 @@ float EstimateEntropy(const AcStrategy& acs, size_t x, size_t y,
     // bias.
     entropy += config.zeros_mul * (CeilLog2Nonzero(nbits + 17) + nbits);
   }
-  float ret =
-      entropy +
-      masking *
-          ((config.info_loss_multiplier * GetLane(SumOfLanes(info_loss))) +
-           (config.info_loss_multiplier2 *
-            sqrt(num_blocks * GetLane(SumOfLanes(info_loss2)))));
-  return ret;
+  // visual_activity_mul avoids packing a large range of different local
+  // visual activity into the same large block.
+  //
+  // This tries to achieve something similar in ringing reduction to
+  // what was achievable by doing a idct back to pixel space and comparing
+  // quantization-induced diffs there.
+  //
+  // More ringing reduction leads to less geometry interpolation, so this
+  // is a double-edged sword. Also, butteraugli does not indicate the
+  // annoying character of the ringing artefacts, so this needs to be
+  // tuned manually.
+  //
+  // config.activity_offset is chosen such that it is big for small
+  // butteraugli targets -- this way activity difference has less
+  // impact at lower butteraugli targets, but can be effective against
+  // ringing at higher butteraugli targets.
+  float visual_activity_mul = (activity_average + config.activity_offset) /
+                              (activity_min + config.activity_offset);
+  return entropy +
+      visual_activity_mul * sqrt(masking) *
+             ((config.info_loss_multiplier * GetLane(SumOfLanes(info_loss))) +
+              (config.info_loss_multiplier2 *
+               sqrt(num_blocks * GetLane(SumOfLanes(info_loss2)))));
 }
 
 uint8_t FindBest8x8Transform(size_t x, size_t y, int encoding_speed_tier,
@@ -821,6 +864,7 @@ void ProcessRectACS(PassesEncoderState* JXL_RESTRICT enc_state,
     uint8_t encoding_speed_tier_max_limit;
     float entropy_mul;
   };
+
   static const float k8X16mul1 = -0.55;
   static const float k8X16mul2 = 0.9019587899705066;
   static const float k8X16base = 1.6;
@@ -1011,10 +1055,19 @@ void AcStrategyHeuristics::Init(const Image3F& src,
   // Image row pointers and strides.
   config.quant_field_row = enc_state->initial_quant_field.Row(0);
   config.quant_field_stride = enc_state->initial_quant_field.PixelsPerRow();
-  auto& mask = enc_state->initial_quant_masking;
-  if (mask.xsize() > 0 && mask.ysize() > 0) {
-    config.masking_field_row = mask.Row(0);
-    config.masking_field_stride = mask.PixelsPerRow();
+  {
+    auto& mask = enc_state->initial_quant_masking;
+    if (mask.xsize() > 0 && mask.ysize() > 0) {
+      config.masking_field_row = mask.Row(0);
+      config.masking_field_stride = mask.PixelsPerRow();
+    }
+  }
+  {
+    auto& visual_activity = enc_state->initial_quant_visual_activity;
+    if (visual_activity.xsize() > 0 && visual_activity.ysize() > 0) {
+      config.visual_activity_field_row = visual_activity.Row(0);
+      config.visual_activity_field_stride = visual_activity.PixelsPerRow();
+    }
   }
 
   config.src_rows[0] = src.ConstPlaneRow(0, 0);
@@ -1044,6 +1097,8 @@ void AcStrategyHeuristics::Init(const Image3F& src,
              enc_state->shared.frame_dim.xsize_blocks);
   JXL_ASSERT(enc_state->shared.ac_strategy.ysize() ==
              enc_state->shared.frame_dim.ysize_blocks);
+
+  config.activity_offset = 0.25 + 15000.0 * pow(butteraugli_target, -4.0);
 }
 
 void AcStrategyHeuristics::ProcessRect(const Rect& rect) {

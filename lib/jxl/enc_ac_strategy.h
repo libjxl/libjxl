@@ -36,6 +36,8 @@ struct ACSConfig {
   size_t quant_field_stride;
   float* JXL_RESTRICT masking_field_row;
   size_t masking_field_stride;
+  float* JXL_RESTRICT visual_activity_field_row;
+  size_t visual_activity_field_stride;
   const float* JXL_RESTRICT src_rows[3];
   size_t src_stride;
   // Cost for 1 (-1), 2 (-2) explicitly, cost for others computed with cost1 +
@@ -45,12 +47,18 @@ struct ACSConfig {
   float cost_delta;
   float base_entropy;
   float zeros_mul;
+  float activity_offset;
   const float& Pixel(size_t c, size_t x, size_t y) const {
     return src_rows[c][y * src_stride + x];
   }
   float Masking(size_t bx, size_t by) const {
     JXL_DASSERT(masking_field_row[by * masking_field_stride + bx] > 0);
     return masking_field_row[by * masking_field_stride + bx];
+  }
+  float VisualActivity(size_t bx, size_t by) const {
+    JXL_DASSERT(
+        visual_activity_field_row[by * visual_activity_field_stride + bx] > 0);
+    return visual_activity_field_row[by * visual_activity_field_stride + bx];
   }
   float Quant(size_t bx, size_t by) const {
     JXL_DASSERT(quant_field_row[by * quant_field_stride + bx] > 0);

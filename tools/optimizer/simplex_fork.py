@@ -61,7 +61,7 @@ def EvalCacheForget():
 def RandomizedJxlCodecs():
   retval = []
   minval = 0.5
-  maxval = 3.3
+  maxval = 15.3
   rangeval = maxval/minval
   steps = 7
   for i in range(steps):

@@ -374,6 +374,28 @@ void StoreMin4(const float v, float& min0, float& min1, float& min2,
   }
 }
 
+// Calculate a visual activity estimate to be used later in
+// AC strategy and possibly smoothing.
+void VisualActivityField(const Rect& from_rect, const ImageF& from,
+                         const Rect& to_rect, ImageF* to) {
+  JXL_ASSERT(to_rect.xsize() * 2 == from_rect.xsize());
+  JXL_ASSERT(to_rect.ysize() * 2 == from_rect.ysize());
+  for (size_t fy = 0; fy < from_rect.ysize(); ++fy) {
+    size_t y = fy + from_rect.y0();
+    const float* row = from.Row(y);
+    float* row_out = to_rect.Row(to, fy / 2);
+    for (size_t fx = 0; fx < from_rect.xsize(); ++fx) {
+      size_t x = fx + from_rect.x0();
+      float v = row[x];
+      if (fx % 2 == 0 && fy % 2 == 0) {
+        row_out[fx / 2] = v;
+      } else {
+        row_out[fx / 2] += v;
+      }
+    }
+  }
+}
+
 // Look for smooth areas near the area of degradation.
 // If the areas are generally smooth, don't do masking.
 // Output is downsampled 2x.
@@ -447,7 +469,8 @@ struct AdaptiveQuantizationImpl {
   }
 
   void ComputeTile(float butteraugli_target, float scale, const Image3F& xyb,
-                   const Rect& rect, const int thread, ImageF* mask) {
+                   const Rect& rect, const int thread, ImageF* mask,
+                   ImageF* visual_activity) {
     PROFILER_ZONE("aq DiffPrecompute");
     const size_t xsize = xyb.xsize();
     const size_t ysize = xyb.ysize();
@@ -562,6 +585,7 @@ struct AdaptiveQuantizationImpl {
     }
     Rect from_rect(x0 % 8 == 0 ? 0 : 1, y_start % 8 == 0 ? 0 : 1,
                    rect.xsize() * 2, rect.ysize() * 2);
+    VisualActivityField(from_rect, pre_erosion[thread], rect, visual_activity);
     FuzzyErosion(from_rect, pre_erosion[thread], rect, &aq_map);
     for (size_t y = 0; y < rect.ysize(); ++y) {
       const float* aq_map_row = rect.ConstRow(aq_map, y);
@@ -581,12 +605,14 @@ struct AdaptiveQuantizationImpl {
 ImageF AdaptiveQuantizationMap(const float butteraugli_target,
                                const Image3F& xyb,
                                const FrameDimensions& frame_dim, float scale,
-                               ThreadPool* pool, ImageF* mask) {
+                               ThreadPool* pool, ImageF* mask,
+                               ImageF* visual_activity) {
   PROFILER_ZONE("aq AdaptiveQuantMap");
 
   AdaptiveQuantizationImpl impl;
   impl.Init(xyb);
   *mask = ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
+  *visual_activity = ImageF(frame_dim.xsize_blocks, frame_dim.ysize_blocks);
   RunOnPool(
       pool, 0,
       DivCeil(frame_dim.xsize_blocks, kEncTileDimInBlocks) *
@@ -607,7 +633,8 @@ ImageF AdaptiveQuantizationMap(const float butteraugli_target,
         size_t bx1 =
             std::min((tx + 1) * kEncTileDimInBlocks, frame_dim.xsize_blocks);
         Rect r(bx0, by0, bx1 - bx0, by1 - by0);
-        impl.ComputeTile(butteraugli_target, scale, xyb, r, thread, mask);
+        impl.ComputeTile(butteraugli_target, scale, xyb, r, thread, mask,
+                         visual_activity);
       },
       "AQ DiffPrecompute");
 
@@ -1016,11 +1043,12 @@ float InitialQuantDC(float butteraugli_target) {
 
 ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
                          const FrameDimensions& frame_dim, ThreadPool* pool,
-                         float rescale, ImageF* mask) {
+                         float rescale, ImageF* mask, ImageF* visual_activity) {
   PROFILER_FUNC;
   const float quant_ac = kAcQuant / butteraugli_target;
   return HWY_DYNAMIC_DISPATCH(AdaptiveQuantizationMap)(
-      butteraugli_target, opsin, frame_dim, quant_ac * rescale, pool, mask);
+      butteraugli_target, opsin, frame_dim, quant_ac * rescale, pool, mask,
+      visual_activity);
 }
 
 void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
