@@ -718,7 +718,13 @@ static const float kBradfordInv[9] = {
 
 // Adapts whitepoint x, y to D50
 Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
+  if (wx < 0 || wx > 1 || wy <= 0 || wy > 1) {
+    // Out of range values can cause division through zero
+    // further down with the bradford adaptation too.
+    return JXL_FAILURE("Invalid white point");
+  }
   float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  // 1 / tiny float can still overflow
   JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
   float w50[3] = {0.96422f, 1.0f, 0.82521f};
 
@@ -741,6 +747,12 @@ Status AdaptToXYZD50(float wx, float wy, float matrix[9]) {
 
 Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
                          float by, float wx, float wy, float matrix[9]) {
+  if (wx < 0 || wx > 1 || wy <= 0 || wy > 1) {
+    return JXL_FAILURE("Invalid white point");
+  }
+  // TODO(lode): also require rx, ry, gx, gy, bx, to be in range 0-1? ICC
+  // profiles in theory forbid negative XYZ values, but in practice the ACES P0
+  // color space uses a negative y for the blue primary.
   float primaries[9] = {
       rx, gx, bx, ry, gy, by, 1.0f - rx - ry, 1.0f - gx - gy, 1.0f - bx - by};
   float primaries_inv[9];
@@ -748,6 +760,7 @@ Status PrimariesToXYZD50(float rx, float ry, float gx, float gy, float bx,
   JXL_RETURN_IF_ERROR(Inv3x3Matrix(primaries_inv));
 
   float w[3] = {wx / wy, 1.0f, (1.0f - wx - wy) / wy};
+  // 1 / tiny float can still overflow
   JXL_RETURN_IF_ERROR(std::isfinite(w[0]) && std::isfinite(w[2]));
   float xyz[3];
   MatMul(primaries_inv, w, 3, 3, 1, xyz);
