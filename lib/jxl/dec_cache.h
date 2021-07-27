@@ -253,7 +253,7 @@ struct PassesDecoderState {
   OutputEncodingInfo output_encoding_info;
 
   // Initializes decoder-specific structures using information from *shared.
-  void Init() {
+  Status Init() {
     x_dm_multiplier =
         std::pow(1 / (1.25f), shared->frame_header.x_qm_scale - 2.0f);
     b_dm_multiplier =
@@ -267,7 +267,7 @@ struct PassesDecoderState {
 
     group_border_assigner.Init(shared->frame_dim);
     const LoopFilter& lf = shared->frame_header.loop_filter;
-    filter_weights.Init(lf, shared->frame_dim);
+    JXL_RETURN_IF_ERROR(filter_weights.Init(lf, shared->frame_dim));
     for (auto& fp : filter_pipelines) {
       // De-initialize FilterPipelines.
       fp.num_filters = 0;
@@ -275,6 +275,7 @@ struct PassesDecoderState {
     for (size_t i = 0; i < 3; i++) {
       upsamplers[i].Init(2 << i, shared->metadata->transform_data);
     }
+    return true;
   }
 
   // Initialize the decoder state after all of DC is decoded.

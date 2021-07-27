@@ -19,7 +19,8 @@ namespace jxl {
 
 struct FilterWeights {
   // Initialize the FilterWeights for the passed LoopFilter and FrameDimensions.
-  void Init(const LoopFilter& lf, const FrameDimensions& frame_dim);
+  // Returns an error if the weights are invalid.
+  Status Init(const LoopFilter& lf, const FrameDimensions& frame_dim);
 
   // Normalized weights for gaborish, in XYB order, each weight for Manhattan
   // distance of 0, 1 and 2 respectively.
@@ -30,7 +31,7 @@ struct FilterWeights {
   ImageF sigma;
 
  private:
-  void GaborishWeights(const LoopFilter& lf);
+  Status GaborishWeights(const LoopFilter& lf);
 };
 
 static constexpr size_t kMaxFinalizeRectPadding = 9;
