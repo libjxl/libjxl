@@ -171,8 +171,10 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
   }
 
   // Use ML (Big Endian), LM may not be well supported by all decoders.
-  snprintf(header, kMaxHeaderSize, "PG ML + %zu %zu %zu\n%n", bits_per_sample,
-           ib.xsize(), ib.ysize(), chars_written);
+  *chars_written = snprintf(header, kMaxHeaderSize, "PG ML + %zu %zu %zu\n",
+                            bits_per_sample, ib.xsize(), ib.ysize());
+  JXL_RETURN_IF_ERROR(static_cast<unsigned int>(*chars_written) <
+                      kMaxHeaderSize);
   return true;
 }
 

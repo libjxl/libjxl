@@ -123,17 +123,40 @@ class BlobsReaderPNG {
     if (type->length() > kMaxTypeLen) return false;  // Type too long
 
     // Header: freeform string and number of bytes
+    // Expected format is:
+    // \n
+    // profile name/description\n
+    //       40\n               (the number of bytes after hex-decoding)
+    // 01234566789abcdef....\n  (72 bytes per line max).
+    // 012345667\n              (last line)
+    const char* pos = encoded;
+
+    if (*(pos++) != '\n') return false;
+    while (pos < encoded_end && *pos != '\n') {
+      pos++;
+    }
+    if (pos == encoded_end) return false;
+    // We parsed so far a \n, some number of non \n characters and are now
+    // pointing at a \n.
+    if (*(pos++) != '\n') return false;
     unsigned long bytes_to_decode;
-    int header_len;
-    std::vector<char> description((encoded_end - encoded) + 1);
-    const int fields = sscanf(encoded, "\n%[^\n]\n%8lu%n", description.data(),
-                              &bytes_to_decode, &header_len);
-    if (fields != 2) return false;  // Failed to decode metadata header
+    const int fields = sscanf(pos, "%8lu", &bytes_to_decode);
+    if (fields != 1) return false;  // Failed to decode metadata header
+    JXL_ASSERT(pos + 8 <= encoded_end);
+    pos += 8;  // read %8lu
+
+    // We need 2*bytes for the hex values plus 1 byte every 36 values.
+    const unsigned long needed_bytes =
+        bytes_to_decode * 2 + 1 + DivCeil(bytes_to_decode, 36);
+    if (needed_bytes != static_cast<size_t>(encoded_end - pos)) {
+      return JXL_FAILURE("Not enough bytes to parse %lu bytes in hex",
+                         bytes_to_decode);
+    }
     JXL_ASSERT(bytes->empty());
     bytes->reserve(bytes_to_decode);
 
     // Encoding: base16 with newline after 72 chars.
-    const char* pos = encoded + header_len;
+    // pos points to the \n before the first line of hex values.
     for (size_t i = 0; i < bytes_to_decode; ++i) {
       if (i % 36 == 0) {
         if (pos + 1 >= encoded_end) return false;  // Truncated base16 1
