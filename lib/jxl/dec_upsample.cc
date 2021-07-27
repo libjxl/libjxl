@@ -56,7 +56,8 @@ void InitKernel(const float* weights, CacheAlignedUniquePtr* kernel_storage,
       size_t y = std::min(i, j);
       size_t x = std::max(i, j);
       // Take the weight from "triangle" coordinates.
-      float weight = weights[M * N2 * y - y * (y - 1) / 2 + x - y];
+      float weight =
+          weights[M * N2 * y - y * (static_cast<ssize_t>(y) - 1) / 2 + x - y];
       kernels[offset * stride + kernel] = weight;
     }
   }

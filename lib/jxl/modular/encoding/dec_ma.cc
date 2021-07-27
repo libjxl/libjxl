@@ -44,8 +44,9 @@ Status DecodeTree(BitReader *br, ANSSymbolReader *reader,
       return JXL_FAILURE("Tree is too large");
     }
     to_decode--;
-    int property =
-        reader->ReadHybridUint(kPropertyContext, br, context_map) - 1;
+    int property = static_cast<int>(reader->ReadHybridUint(kPropertyContext, br,
+                                                           context_map)) -
+                   1;
     if (property < -1 || property >= 256) {
       return JXL_FAILURE("Invalid tree property value");
     }
