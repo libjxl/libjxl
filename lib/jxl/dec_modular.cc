@@ -462,7 +462,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
   }
   JXL_DASSERT(rect.IsInside(decoded));
 
-  int c = 0;
+  size_t c = 0;
   if (do_color) {
     const bool rgb_from_gray =
         metadata->m.color_encoding.IsGray() &&
@@ -473,13 +473,18 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       float factor = full_image.bitdepth < 32
                          ? 1.f / ((1u << full_image.bitdepth) - 1)
                          : 0;
-      int c_in = c;
+      size_t c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
         factor = dec_state->shared->matrices.DCQuants()[c];
         // XYB is encoded as YX(B-Y)
         if (c < 2) c_in = 1 - c;
       } else if (rgb_from_gray) {
         c_in = 0;
+      }
+      if (c_in >= gi.channel.size()) {
+        return JXL_FAILURE(
+            "Channel %zu is out of bounds in image with %zu channels", c_in,
+            gi.channel.size());
       }
       Channel& ch_in = gi.channel[c_in];
       // TODO(eustas): could we detect it on earlier stage?
@@ -558,6 +563,11 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     size_t ecups = frame_header.extra_channel_upsampling[ec];
     const size_t ec_xsize = DivCeil(frame_dim.xsize_upsampled, ecups);
     const size_t ec_ysize = DivCeil(frame_dim.ysize_upsampled, ecups);
+    if (c >= gi.channel.size()) {
+      return JXL_FAILURE(
+          "Channel %zu is out of bounds in image with %zu channels", c,
+          gi.channel.size());
+    }
     Channel& ch_in = gi.channel[c];
     // For x0, y0 there's no need to do a DivCeil().
     JXL_DASSERT(rect.x0() % (1ul << ch_in.hshift) == 0);
