@@ -317,6 +317,7 @@ class JxlCodec : public ImageCodec {
           case JXL_DEC_BASIC_INFO:
             JXL_RETURN_IF_ERROR(JXL_DEC_SUCCESS ==
                                 JxlDecoderGetBasicInfo(dec.get(), &info));
+            format.num_channels = info.num_color_channels;
             if (info.alpha_bits != 0) {
               ++format.num_channels;
               io->metadata.m.extra_channel_info.resize(1);

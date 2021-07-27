@@ -268,8 +268,7 @@ Status BufferToImageBundle(const JxlPixelFormat& pixel_format, uint32_t xsize,
   }
 
   JXL_RETURN_IF_ERROR(ConvertFromExternal(
-      jxl::Span<const uint8_t>(static_cast<uint8_t*>(const_cast<void*>(buffer)),
-                               size),
+      jxl::Span<const uint8_t>(static_cast<const uint8_t*>(buffer), size),
       xsize, ysize, c_current,
       /*has_alpha=*/pixel_format.num_channels == 2 ||
           pixel_format.num_channels == 4,
