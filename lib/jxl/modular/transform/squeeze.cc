@@ -295,6 +295,12 @@ Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
     } else {
       offset = input.channel.size() + beginc - endc - 1;
     }
+    if (beginc < input.nb_meta_channels) {
+      // This is checked in MetaSqueeze.
+      JXL_ASSERT(input.nb_meta_channels > parameters[i].num_c);
+      input.nb_meta_channels -= parameters[i].num_c;
+    }
+
     for (uint32_t c = beginc; c <= endc; c++) {
       uint32_t rc = offset + c - beginc;
       if ((input.channel[c].w < input.channel[rc].w) ||
