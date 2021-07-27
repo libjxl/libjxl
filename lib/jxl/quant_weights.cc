@@ -103,6 +103,7 @@ Status GetQuantWeights(
     }
     float bands[DctQuantWeightParams::kMaxDistanceBands] = {
         distance_bands[c][0]};
+    if (bands[0] < kAlmostZero) return JXL_FAILURE("Invalid distance bands");
     for (size_t i = 1; i < num_bands; i++) {
       bands[i] = bands[i - 1] * Mult(distance_bands[c][i]);
       if (bands[i] < kAlmostZero) return JXL_FAILURE("Invalid distance bands");
@@ -365,10 +366,10 @@ Status ComputeQuantTable(const QuantEncoding& encoding,
       for (size_t c = 0; c < 3; c++) {
         float bands[4];
         bands[0] = encoding.afv_weights[c][5];
-        if (bands[0] < 0) return JXL_FAILURE("Invalid AFV bands");
+        if (bands[0] < kAlmostZero) return JXL_FAILURE("Invalid AFV bands");
         for (size_t i = 1; i < 4; i++) {
           bands[i] = bands[i - 1] * Mult(encoding.afv_weights[c][i + 5]);
-          if (bands[i] < 0) return JXL_FAILURE("Invalid AFV bands");
+          if (bands[i] < kAlmostZero) return JXL_FAILURE("Invalid AFV bands");
         }
         size_t start = c * 64;
         auto set_weight = [&start, &weights](size_t x, size_t y, float val) {
