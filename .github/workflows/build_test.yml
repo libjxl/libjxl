@@ -17,7 +17,7 @@ on:
 jobs:
   ubuntu_build:
     name: Ubuntu Build ${{ matrix.name }}
-    runs-on: [ubuntu-latest]
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     strategy:
       matrix:
         # We have one job per "name" in the matrix. Attributes are set on the
@@ -65,6 +65,16 @@ jobs:
             apt_pkgs: gcc-8 g++-8
             cmake_args: >-
               -DCMAKE_C_COMPILER=gcc-8 -DCMAKE_CXX_COMPILER=g++-8
+          # Builds with clang-5 in release mode
+          - name: release:clang-5
+            os: ubuntu-18.04
+            mode: release
+            # TODO(eustas): investigate, why static brotli library is not found.
+            skip_install: true
+            apt_pkgs: clang-5.0
+            cmake_args: >-
+              -DCMAKE_C_COMPILER=clang-5.0 -DCMAKE_CXX_COMPILER=clang++-5.0
+              -DJPEGXL_ENABLE_PLUGINS=OFF
 
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -148,7 +158,9 @@ jobs:
           cjxl djxl libjxl.so libjxl_dec.so
     # Check that we can build the example project against the installed libs.
     - name: Install and build examples
-      if: matrix.mode == 'release' || matrix.name == 'release'
+      if: |
+        (matrix.mode == 'release' || matrix.name == 'release') &&
+        !matrix.skip_install
       run: |
         set -x
         sudo cmake --build build -- install
