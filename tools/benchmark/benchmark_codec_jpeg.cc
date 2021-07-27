@@ -38,10 +38,10 @@ bool ParseChromaSubsampling(const char* param,
                             YCbCrChromaSubsampling* subsampling) {
   std::vector<std::pair<
       std::string, std::pair<std::array<uint8_t, 3>, std::array<uint8_t, 3>>>>
-      options = {{"444", {{1, 1, 1}, {1, 1, 1}}},
-                 {"420", {{2, 1, 1}, {2, 1, 1}}},
-                 {"422", {{2, 1, 1}, {1, 1, 1}}},
-                 {"440", {{1, 1, 1}, {2, 1, 1}}}};
+      options = {{"444", {{{1, 1, 1}}, {{1, 1, 1}}}},
+                 {"420", {{{2, 1, 1}}, {{2, 1, 1}}}},
+                 {"422", {{{2, 1, 1}}, {{1, 1, 1}}}},
+                 {"440", {{{1, 1, 1}}, {{2, 1, 1}}}}};
   for (const auto& option : options) {
     if (param == option.first) {
       JXL_CHECK(subsampling->Set(option.second.first.data(),

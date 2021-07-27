@@ -224,8 +224,8 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf,
     decltype(Zero(df)) sads[12];
     for (size_t i = 0; i < 12; i++) sads[i] = Zero(df);
     constexpr std::array<int, 2> sads_off[12] = {
-        {-2, 0}, {-1, -1}, {-1, 0}, {-1, 1}, {0, -2}, {0, -1},
-        {0, 1},  {0, 2},   {1, -1}, {1, 0},  {1, 1},  {2, 0},
+        {{-2, 0}}, {{-1, -1}}, {{-1, 0}}, {{-1, 1}}, {{0, -2}}, {{0, -1}},
+        {{0, 1}},  {{0, 2}},   {{1, -1}}, {{1, 0}},  {{1, 1}},  {{2, 0}},
     };
 
     // compute sads
@@ -235,7 +235,7 @@ void Epf0Row(const FilterRows& rows, const LoopFilter& lf,
       for (size_t i = 0; i < 12; i++) {
         auto sad = Zero(df);
         constexpr std::array<int, 2> plus_off[] = {
-            {0, 0}, {-1, 0}, {0, -1}, {1, 0}, {0, 1}};
+            {{0, 0}}, {{-1, 0}}, {{0, -1}}, {{1, 0}}, {{0, 1}}};
         for (size_t j = 0; j < 5; j++) {
           const auto r11 = LoadU(
               df, rows.GetInputRow(plus_off[j][0], c) + x + plus_off[j][1]);
