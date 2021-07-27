@@ -14,7 +14,9 @@
 
 namespace jxl {
 
-void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
+void InvHSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
+  JXL_ASSERT(c < input.channel.size());
+  JXL_ASSERT(rc < input.channel.size());
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
@@ -78,7 +80,9 @@ void InvHSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
   input.channel[c] = std::move(chout);
 }
 
-void InvVSqueeze(Image &input, int c, int rc, ThreadPool *pool) {
+void InvVSqueeze(Image &input, uint32_t c, uint32_t rc, ThreadPool *pool) {
+  JXL_ASSERT(c < input.channel.size());
+  JXL_ASSERT(rc < input.channel.size());
   const Channel &chin = input.channel[c];
   const Channel &chin_residual = input.channel[rc];
   // These must be valid since we ran MetaApply already.
@@ -303,6 +307,9 @@ Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
 
     for (uint32_t c = beginc; c <= endc; c++) {
       uint32_t rc = offset + c - beginc;
+      // MetaApply should imply that `rc` is within range, otherwise there's a
+      // programming bug.
+      JXL_ASSERT(rc < input.channel.size());
       if ((input.channel[c].w < input.channel[rc].w) ||
           (input.channel[c].h < input.channel[rc].h)) {
         return JXL_FAILURE("Corrupted squeeze transform");
