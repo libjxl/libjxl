@@ -208,6 +208,21 @@ EOF
   return $ret
 }
 
+# Test that we don't use %n in C++ code to avoid using it in printf and scanf.
+# This test is not very precise but in cases where "module n" is needed we would
+# normally have "% n" instead of "%n". Using %n is not allowed in Android 10+.
+test_percent_n() {
+  local ret=0
+  local f
+  for f in $(git ls-files | grep -E '(\.cc|\.cpp|\.h)$'); do
+    if grep -i -H -n -E '%h*n' "$f" >&2; then
+      echo "Don't use \"%n\"." >&2
+      ret=1
+    fi
+  done
+  return ${ret}
+}
+
 main() {
   local ret=0
   cd "${MYDIR}"
