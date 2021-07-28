@@ -413,7 +413,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "exposure on a 35mm camera. For formats other than 35mm, or when the "
       "whole sensor was not used, you can multiply the ISO value by the "
       "equivalence ratio squared, for example by 2.25 for an APS-C camera.",
-      &params.photon_noise_iso, &ParsePhotonNoiseParameter, 0);
+      &params.photon_noise_iso, &ParsePhotonNoiseParameter, 1);
   cmdline->AddOptionValue('\0', "dots", "0|1",
                           "force disable/enable dots generation.", &params.dots,
                           &ParseOverride, 1);
