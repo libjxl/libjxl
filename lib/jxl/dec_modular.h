@@ -121,6 +121,7 @@ class ModularFrameDecoder {
   bool do_color;
   bool have_something;
   bool use_full_image = true;
+  bool all_same_shift;
   Tree tree;
   ANSCode code;
   std::vector<uint8_t> context_map;

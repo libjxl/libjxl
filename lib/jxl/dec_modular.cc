@@ -185,6 +185,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   Image gi(frame_dim.xsize, frame_dim.ysize, metadata.bit_depth.bits_per_sample,
            nb_chans + nb_extra);
 
+  all_same_shift = true;
   if (frame_header.color_transform == ColorTransform::kYCbCr) {
     for (size_t c = 0; c < nb_chans; c++) {
       gi.channel[c].hshift = frame_header.chroma_subsampling.HShift(c);
@@ -194,6 +195,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
       size_t ysize_shifted =
           DivCeil(frame_dim.ysize, 1 << gi.channel[c].vshift);
       gi.channel[c].shrink(xsize_shifted, ysize_shifted);
+      if (gi.channel[c].hshift != gi.channel[0].hshift ||
+          gi.channel[c].vshift != gi.channel[0].vshift)
+        all_same_shift = false;
     }
   }
 
@@ -203,6 +207,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                          DivCeil(frame_dim.ysize_upsampled, ecups));
     gi.channel[c].hshift = gi.channel[c].vshift =
         CeilLog2Nonzero(ecups) - CeilLog2Nonzero(frame_header.upsampling);
+    if (gi.channel[c].hshift != gi.channel[0].hshift ||
+        gi.channel[c].vshift != gi.channel[0].vshift)
+      all_same_shift = false;
   }
 
   ModularOptions options;
@@ -227,7 +234,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
       have_something = true;
   }
   // move global transforms to groups if possible
-  if (!have_something) {
+  if (!have_something && all_same_shift) {
     if (gi.transform.size() == 1 && gi.transform[0].id == TransformId::kRCT) {
       global_transform = gi.transform;
       gi.transform.clear();
@@ -239,7 +246,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 }
 
 void ModularFrameDecoder::MaybeDropFullImage() {
-  if (full_image.transform.empty() && !have_something) {
+  if (full_image.transform.empty() && !have_something && all_same_shift) {
     use_full_image = false;
     for (auto& ch : full_image.channel) {
       // keep metadata on channels around, but dealloc their planes
@@ -288,6 +295,9 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
     }
   }
   if (zerofill && use_full_image) return true;
+  // Return early if there's nothing to decode. Otherwise there might be
+  // problems later (in ModularImageToDecodedRect).
+  if (gi.channel.empty()) return true;
   ModularOptions options;
   if (!zerofill) {
     if (!ModularGenericDecompress(
@@ -455,7 +465,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
   }
   JXL_DASSERT(rect.IsInside(decoded));
 
-  int c = 0;
+  size_t c = 0;
   if (do_color) {
     const bool rgb_from_gray =
         metadata->m.color_encoding.IsGray() &&
@@ -466,7 +476,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       float factor = full_image.bitdepth < 32
                          ? 1.f / ((1u << full_image.bitdepth) - 1)
                          : 0;
-      int c_in = c;
+      size_t c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
         factor = dec_state->shared->matrices.DCQuants()[c];
         // XYB is encoded as YX(B-Y)
@@ -474,6 +484,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       } else if (rgb_from_gray) {
         c_in = 0;
       }
+      JXL_ASSERT(c_in < gi.channel.size());
       Channel& ch_in = gi.channel[c_in];
       // TODO(eustas): could we detect it on earlier stage?
       if (ch_in.w == 0 || ch_in.h == 0) {
@@ -551,6 +562,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     size_t ecups = frame_header.extra_channel_upsampling[ec];
     const size_t ec_xsize = DivCeil(frame_dim.xsize_upsampled, ecups);
     const size_t ec_ysize = DivCeil(frame_dim.ysize_upsampled, ecups);
+    JXL_ASSERT(c < gi.channel.size());
     Channel& ch_in = gi.channel[c];
     // For x0, y0 there's no need to do a DivCeil().
     JXL_DASSERT(rect.x0() % (1ul << ch_in.hshift) == 0);
