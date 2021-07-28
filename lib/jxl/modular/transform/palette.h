@@ -122,6 +122,7 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
   size_t w = input.channel[c0].w;
   size_t h = input.channel[c0].h;
   if (nb < 1) return JXL_FAILURE("Corrupted transforms");
+  input.nb_meta_channels += nb - 1;
   for (int i = 1; i < nb; i++) {
     input.channel.insert(
         input.channel.begin() + c0 + 1,
@@ -281,11 +282,12 @@ static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
   JXL_RETURN_IF_ERROR(CheckEqualChannels(input, begin_c, end_c));
 
   size_t nb = end_c - begin_c + 1;
+  if (nb < 1) return JXL_FAILURE("Corrupted transforms");
   if (begin_c >= input.nb_meta_channels) {
-    input.nb_meta_channels++;
+    JXL_DASSERT(nb == 1);
   } else if (end_c < input.nb_meta_channels) {
     // we remove nb-1 metachannels and add one
-    input.nb_meta_channels += 2 - nb;
+    input.nb_meta_channels -= nb - 1;
   } else {
     return JXL_FAILURE("Error: Palette operating on mixed meta/nonmeta");
   }
@@ -293,6 +295,7 @@ static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
                       input.channel.begin() + end_c + 1);
   Channel pch(nb_colors + nb_deltas, nb);
   pch.hshift = -1;
+  input.nb_meta_channels++;
   input.channel.insert(input.channel.begin(), std::move(pch));
   return true;
 }
