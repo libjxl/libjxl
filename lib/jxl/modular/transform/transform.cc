@@ -75,6 +75,9 @@ Status CheckEqualChannels(const Image &image, uint32_t c1, uint32_t c2) {
   if (c1 > image.channel.size() || c2 >= image.channel.size() || c2 < c1) {
     return JXL_FAILURE("Invalid channel range");
   }
+  if (c1 < image.nb_meta_channels && c2 >= image.nb_meta_channels) {
+    return JXL_FAILURE("Invalid: transforming mix of meta and nonmeta");
+  }
   const auto &ch1 = image.channel[c1];
   for (size_t c = c1 + 1; c <= c2; c++) {
     const auto &ch2 = image.channel[c];
