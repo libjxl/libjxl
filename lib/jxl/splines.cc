@@ -6,6 +6,7 @@
 #include "lib/jxl/splines.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/status.h"
@@ -61,6 +62,11 @@ void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
                   const float sigma, std::vector<int32_t>& xs,
                   std::vector<int32_t>& ys,
                   std::vector<float>& local_intensity_storage) {
+  // Sanity check sigma, inverse sigma and intensity
+  if (!(std::isfinite(sigma) && std::isfinite(1.0f / sigma) &&
+      std::isfinite(intensity))) {
+    return;
+  }
   constexpr float kDistanceMultiplier = 4.605170185988091f;  // -2 * log(0.1)
   // Distance beyond which exp(-d^2 / (2 * sigma^2)) drops below 0.1.
   const float maximum_distance = sigma * sigma * kDistanceMultiplier;
