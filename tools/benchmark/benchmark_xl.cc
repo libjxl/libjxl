@@ -487,7 +487,11 @@ void WriteHtmlReport(const std::string& codec_desc,
     std::string html_height = StringPrintf("%zupx", ysize);
     double bpp = tasks[i]->stats.total_compressed_size * 8.0 /
                  tasks[i]->stats.total_input_pixels;
-    std::string compressed_title = StringPrintf("compressed: %f bpp", bpp);
+    double pnorm =
+        tasks[i]->stats.distance_p_norm / tasks[i]->stats.total_input_pixels;
+    double max_dist = tasks[i]->stats.max_distance;
+    std::string compressed_title = StringPrintf(
+        "compressed. bpp: %f, pnorm: %f, max dist: %f", bpp, pnorm, max_dist);
     out_html += "<div onclick=\"toggle3(" + number +
                 ");\" style=\"display:inline-block;width:" + html_width +
                 ";height:" + html_height +
