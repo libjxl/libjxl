@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Reduce the size of the jxl_dec library by removing dependencies.
  - A few encoding speedups.
  - Clarify the security policy.
+ - Significant encoding improvements (~5 %) and less ringing.
+ - Butteraugli metric to have some less masking.
 
 ### Removed
 - API for returning a downsampled DC was deprecated
