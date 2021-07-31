@@ -16,15 +16,6 @@
 [submodule "third_party/skcms"]
 	path = third_party/skcms
 	url = https://skia.googlesource.com/skcms
-[submodule "third_party/IQA-optimization"]
-	path = third_party/IQA-optimization
-	url = https://github.com/veluca93/IQA-optimization.git
-[submodule "third_party/vmaf"]
-	path = third_party/vmaf
-	url = https://github.com/Netflix/vmaf.git
-[submodule "third_party/difftest_ng"]
-	path = third_party/difftest_ng
-	url = https://github.com/thorfdbg/difftest_ng.git
 [submodule "third_party/highway"]
 	path = third_party/highway
 	url = https://github.com/google/highway
