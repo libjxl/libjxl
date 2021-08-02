@@ -64,7 +64,7 @@ void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
                   std::vector<float>& local_intensity_storage) {
   // Sanity check sigma, inverse sigma and intensity
   if (!(std::isfinite(sigma) && std::isfinite(1.0f / sigma) &&
-      std::isfinite(intensity))) {
+        std::isfinite(intensity))) {
     return;
   }
   constexpr float kDistanceMultiplier = 4.605170185988091f;  // -2 * log(0.1)
