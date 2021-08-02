@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - API: New functions to decode extra channels:
    `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
 
-## [Unreleased - to be released in 0.5.0]
+## [0.5] - 2021-08-02
 ### Added
  - API: New function to decode the image using a callback outputting a part of a
    row per call.
