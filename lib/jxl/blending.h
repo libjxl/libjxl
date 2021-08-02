@@ -39,10 +39,13 @@ class ImageBlender {
     const std::vector<ExtraChannelInfo>* extra_channel_info_;
     std::vector<const float*> fg_ptrs_;
     std::vector<size_t> fg_strides_;
-    std::vector<float*> bg_ptrs_;
+    std::vector<const float*> bg_ptrs_;
     std::vector<size_t> bg_strides_;
+    std::vector<float*> out_ptrs_;
+    std::vector<size_t> out_strides_;
     std::vector<const float*> fg_row_ptrs_;
-    std::vector<float*> bg_row_ptrs_;
+    std::vector<const float*> bg_row_ptrs_;
+    std::vector<float*> out_row_ptrs_;
     std::vector<PatchBlending> blending_info_;
   };
 
@@ -74,8 +77,10 @@ class ImageBlender {
  private:
   BlendingInfo info_;
   const std::vector<ExtraChannelInfo>* extra_channel_info_;
+  Rect frame_rect_;
   // Destination, as well as background before DoBlending is called.
   Image3F* output_;
+  ImageBundle* bg_;
   Rect output_rect_;
   std::vector<ImageF>* output_extra_channels_;
   std::vector<Rect> output_extra_channels_rects_;
