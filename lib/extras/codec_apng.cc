@@ -212,7 +212,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   r = {bytes.data(), bytes.data() + bytes.size()};
   // Not an aPNG => not an error
   unsigned char png_signature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
-  if (r.Read(sig, 8) || memcmp(sig, png_signature, 8) != 0) {
+  if (!r.Read(sig, 8) || memcmp(sig, png_signature, 8) != 0) {
     return false;
   }
   id = read_chunk(&r, &chunkIHDR);
