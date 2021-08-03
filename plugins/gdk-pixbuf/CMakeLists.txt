@@ -13,7 +13,9 @@ if (NOT Gdk-Pixbuf_FOUND)
 endif ()
 
 add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c)
-target_link_libraries(pixbufloader-jxl jxl_dec jxl_threads PkgConfig::Gdk-Pixbuf)
+# Note: This only needs the decoder library, but we don't install the decoder
+# shared library.
+target_link_libraries(pixbufloader-jxl jxl jxl_threads PkgConfig::Gdk-Pixbuf)
 
 pkg_get_variable(GDK_PIXBUF_MODULEDIR gdk-pixbuf-2.0 gdk_pixbuf_moduledir)
 install(TARGETS pixbufloader-jxl LIBRARY DESTINATION "${GDK_PIXBUF_MODULEDIR}")
