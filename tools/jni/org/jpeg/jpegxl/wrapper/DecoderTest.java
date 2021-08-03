@@ -6,7 +6,6 @@
 package org.jpeg.jpegxl.wrapper;
 
 import java.nio.ByteBuffer;
-import java.util.Base64;
 
 public class DecoderTest {
   static {
@@ -25,12 +24,15 @@ public class DecoderTest {
   }
 
   private static final int SIMPLE_IMAGE_DIM = 1024;
-  private static final byte[] SIMPLE_IMAGE_BYTES =
-      Base64.getDecoder().decode("/wr6H0GRCAYBAGAASzgkunkeVbaSBu95EXDn0e7ABz2ShAMA");
+  // Base64: "/wr6H0GRCAYBAGAASzgkunkeVbaSBu95EXDn0e7ABz2ShAMA"
+  private static final byte[] SIMPLE_IMAGE_BYTES = {-1, 10, -6, 31, 65, -111, 8, 6, 1, 0, 96, 0, 75,
+      56, 36, -70, 121, 30, 85, -74, -110, 6, -17, 121, 17, 112, -25, -47, -18, -64, 7, 61, -110,
+      -124, 3, 0};
 
   private static final int PIXEL_IMAGE_DIM = 1;
-  private static final byte[] PIXEL_IMAGE_BYTES =
-      Base64.getDecoder().decode("/woAELASCBAQABwASxLFgoUkDA==");
+  // Base64: "/woAELASCBAQABwASxLFgoUkDA=="
+  private static final byte[] PIXEL_IMAGE_BYTES = {
+      -1, 10, 0, 16, -80, 18, 8, 16, 16, 0, 28, 0, 75, 18, -59, -126, -123, 36, 12};
 
   static ByteBuffer makeByteBuffer(byte[] src, int length) {
     ByteBuffer buffer = ByteBuffer.allocateDirect(length);
