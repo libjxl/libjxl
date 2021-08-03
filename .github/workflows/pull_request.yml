@@ -32,6 +32,8 @@ jobs:
           clang-format-7 \
           clang-format-8 \
           clang-format-9 \
+          clang-format-10 \
+          clang-format-11 \
         #
     - name: Checkout the source
       uses: actions/checkout@v2
