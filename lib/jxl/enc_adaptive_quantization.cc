@@ -118,14 +118,15 @@ V RatioOfDerivativesOfCubicRootToSimpleGamma(const D d, V v) {
   // SimpleGamma(v * v * v) is the psychovisual space in butteraugli.
   // This ratio allows quantization to move from jxl's opsin space to
   // butteraugli's log-gamma space.
+  float kEpsilon = 1e-2;
   v = ZeroIfNegative(v);
   const auto kNumMul = Set(d, kSGRetMul * 3 * kSGmul);
-  const auto kVOffset = Set(d, kSGVOffset * kLog2);
+  const auto kVOffset = Set(d, kSGVOffset * kLog2 + kEpsilon);
   const auto kDenMul = Set(d, kLog2 * kSGmul);
 
   const auto v2 = v * v;
 
-  const auto num = kNumMul * v2;
+  const auto num = MulAdd(kNumMul, v2, Set(d, kEpsilon));
   const auto den = MulAdd(kDenMul * v, v2, kVOffset);
   return invert ? num / den : den / num;
 }
