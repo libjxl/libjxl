@@ -66,21 +66,17 @@ jobs:
           -DJPEGXL_ENABLE_PLUGINS=OFF \
           -DJPEGXL_ENABLE_OPENEXR=OFF \
 
+    - name: Package release tarball
+      run: |
+        cd build
+        tar -zcvf ${{ runner.workspace }}/release_file.tar.gz \
+          LICENSE* tools/{cjxl,djxl,benchmark_xl}
+
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: linux-x86_64-static
-        path: |
-          build/LICENSE*
-          build/tools/cjxl
-          build/tools/djxl
-          build/tools/benchmark_xl
-
-    - name: Package release tarball
-      if: github.event_name == 'release'
-      run: |
-        tar -zcvf ${{ runner.workspace }}/release_file.tar.gz -C build/tools \
-          cjxl djxl benchmark_xl
+        name: jxl-linux-x86_64-static
+        path: ${{ runner.workspace }}/release_file.tar.gz
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
@@ -147,7 +143,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: debs-amd64-${{ matrix.os }}
+        name: jxl-debs-amd64-${{ matrix.os }}
         path: |
           build/debs/*jxl*.*
 
