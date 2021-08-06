@@ -89,7 +89,7 @@ if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
 fi
 
 # Version inferred from the CI variables.
-CI_COMMIT_SHA=${CI_COMMIT_SHA:-}
+CI_COMMIT_SHA=${CI_COMMIT_SHA:-${GITHUB_SHA:-}}
 JPEGXL_VERSION=${JPEGXL_VERSION:-${CI_COMMIT_SHA:0:8}}
 
 # Benchmark parameters

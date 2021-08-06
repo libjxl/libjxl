@@ -8,6 +8,7 @@
 #include <hwy/targets.h>
 
 #include "lib/jxl/base/status.h"
+#include "tools/tool_version.h"
 
 namespace jpegxl {
 namespace tools {
@@ -23,7 +24,7 @@ std::string CodecConfigString(uint32_t lib_version) {
     config += version_str;
   }
 
-  std::string version = JPEGXL_VERSION;
+  std::string version = kJpegxlVersion;
   if (version != "(unknown)") {
     config += version + ' ';
   }
