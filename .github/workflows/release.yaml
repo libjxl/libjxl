@@ -163,3 +163,116 @@ jobs:
         asset_name: jxl-debs-${{ matrix.os }}-${{ github.event.release.tag_name }}.tar.gz
         tag: ${{ github.ref }}
         overwrite: true
+
+  windows_build:
+    name: Windows Build (vcpkg / ${{ matrix.triplet }})
+    runs-on: [windows-latest]
+    strategy:
+      matrix:
+        include:
+          - triplet: x86-windows-static
+            arch: '-A Win32'
+          - triplet: x64-windows-static
+            arch: '-A x64'
+
+    env:
+      VCPKG_VERSION: '2021.05.12'
+      VCPKG_ROOT: vcpkg
+      VCPKG_DISABLE_METRICS: 1
+
+    steps:
+    - name: Checkout the source
+      uses: actions/checkout@v2
+      with:
+        submodules: true
+        fetch-depth: 2
+
+    - uses: actions/cache@v2
+      id: cache-vcpkg
+      with:
+        path: vcpkg
+        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_VERSION }}-${{ matrix.triplet }}
+
+    - name: Download vcpkg
+      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      # wget doesn't seem to work under bash.
+      shell: 'powershell'
+      run: |
+        C:\msys64\usr\bin\wget.exe -nv `
+           https://github.com/microsoft/vcpkg/archive/refs/tags/${{ env.VCPKG_VERSION }}.zip `
+          -O vcpkg.zip
+    - name: Bootstrap vcpkg
+      if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+      shell: 'bash'
+      run: |
+        set -x
+        unzip -q vcpkg.zip
+        rm -rf ${VCPKG_ROOT}
+        mv vcpkg-${VCPKG_VERSION} ${VCPKG_ROOT}
+        ${VCPKG_ROOT}/bootstrap-vcpkg.sh
+
+    - name: Install libraries with vcpkg
+      shell: 'bash'
+      run: |
+        set -x
+        ${VCPKG_ROOT}/vcpkg --triplet ${{ matrix.triplet }} install \
+          giflib \
+          libjpeg-turbo \
+          libpng \
+          libwebp \
+        #
+
+    - name: Configure
+      shell: 'bash'
+      run: |
+        set -x
+        mkdir build
+        cmake -Bbuild -H. ${{ matrix.arch }} \
+          -DBUILD_TESTING=OFF \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_INSTALL_PREFIX=`pwd`/prefix \
+          -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake \
+          -DJPEGXL_ENABLE_OPENEXR=OFF \
+          -DJPEGXL_ENABLE_PLUGINS=OFF \
+          -DJPEGXL_ENABLE_TCMALLOC=OFF \
+          -DJPEGXL_ENABLE_VIEWERS=OFF \
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} \
+        #
+    - name: Build
+      shell: 'bash'
+      run: |
+        set -x
+        cmake --build build --config Release
+    - name: Install
+      shell: 'bash'
+      run: |
+        set -x
+        cmake --build build --config Release --target install
+        for pkg in giflib libjpeg-turbo libpng libwebp zlib; do
+          cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
+            prefix/bin/LICENSE.${pkg}
+        done
+        cp LICENSE prefix/bin/LICENSE.jxl
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: jxl-${{matrix.triplet}}
+        path: |
+          prefix/bin/*
+
+    - name: Package release zip
+      if: github.event_name == 'release'
+      shell: 'powershell'
+      run: |
+        Compress-Archive -Path prefix\bin\* `
+          -DestinationPath ${{ runner.workspace }}\release_file.zip
+
+    - name: Upload binaries to release
+      if: github.event_name == 'release'
+      uses: svenstaro/upload-release-action@v1-release
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ${{ runner.workspace }}/release_file.zip
+        asset_name: jxl-${{matrix.triplet}}.zip
+        tag: ${{ github.ref }}
+        overwrite: true
