@@ -106,9 +106,8 @@ if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
   add_dependencies(jxl_tool tool_version_git)
 
   set_source_files_properties(tool_version.cc PROPERTIES
-    COMPILE_DEFINITIONS JPEGXL_VERSION_FROM_GIT=1
-    INCLUDE_DIRECTORIES "${CMAKE_CURRENT_BINARY_DIR}"
-  )
+    COMPILE_DEFINITIONS JPEGXL_VERSION_FROM_GIT=1)
+  target_include_directories(jxl_tool PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
   # Note: Ninja looks for dependencies on the jxl_tool target before running
   # the tool_version_git targets, so when updating the tool_version_git.h the
   # jxl_tool target is not rebuilt. This forces to generate it at configure time
