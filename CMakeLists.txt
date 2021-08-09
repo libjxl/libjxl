@@ -75,12 +75,16 @@ set(JPEGXL_ENABLE_FUZZERS ${ENABLE_FUZZERS_DEFAULT} CACHE BOOL
     "Build JPEGXL fuzzer targets.")
 set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
     "Build JPEGXL developer tools.")
+set(JPEGXL_ENABLE_TOOLS true CACHE BOOL
+    "Build JPEGXL user tools: cjxl and djxl.")
 set(JPEGXL_ENABLE_MANPAGES true CACHE BOOL
     "Build and install man pages for the command-line tools.")
 set(JPEGXL_ENABLE_BENCHMARK true CACHE BOOL
     "Build JPEGXL benchmark tools.")
 set(JPEGXL_ENABLE_EXAMPLES true CACHE BOOL
     "Build JPEGXL library usage examples.")
+set(JPEGXL_ENABLE_JNI true CACHE BOOL
+    "Build JPEGXL JNI Java wrapper, if Java dependencies are installed.")
 set(JPEGXL_ENABLE_SJPEG true CACHE BOOL
     "Build JPEGXL with support for encoding with sjpeg.")
 set(JPEGXL_ENABLE_OPENEXR true CACHE BOOL

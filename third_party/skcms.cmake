@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library(skcms STATIC skcms/skcms.cc)
+add_library(skcms STATIC EXCLUDE_FROM_ALL skcms/skcms.cc)
 target_include_directories(skcms PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
 
 include(CheckCXXCompilerFlag)
