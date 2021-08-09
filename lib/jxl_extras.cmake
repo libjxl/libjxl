@@ -37,7 +37,7 @@ target_link_libraries(jxl_extras-static PUBLIC
   lodepng
 )
 
-find_package(GIF 5)
+find_package(GIF 5.1)
 if(GIF_FOUND)
   target_sources(jxl_extras-static PRIVATE
     extras/codec_gif.cc
