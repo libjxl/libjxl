@@ -124,6 +124,7 @@ if(JPEGXL_ENABLE_TOOLS)
   list(APPEND TOOL_BINARIES
     cjxl
     djxl
+    hbd_cjpeg
   )
 
   # Main compressor.
@@ -139,6 +140,15 @@ if(JPEGXL_ENABLE_TOOLS)
       jxl_threads-static
   )
 
+add_executable(hbd_cjpeg
+  hbd_cjpeg.cc
+)
+target_link_libraries(hbd_cjpeg
+    box
+    jxl-static
+    jxl_extras-static
+    jxl_threads-static
+)
 
   # Main decompressor.
   add_library(djxltool STATIC
