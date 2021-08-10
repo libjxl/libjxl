@@ -554,6 +554,9 @@ endif()  # TARGET_SUPPORTS_SHARED_LIBS AND NOT JPEGXL_STATIC
 # Add a pkg-config file for libjxl.
 set(JPEGXL_LIBRARY_REQUIRES
     "libhwy libbrotlicommon libbrotlienc libbrotlidec")
+if(NOT JPEGXL_ENABLE_SKCMS)
+  set(JPEGXL_LIBRARY_REQUIRES "${JPEGXL_LIBRARY_REQUIRES} lcms2")
+endif()
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/jxl/libjxl.pc.in"
                "libjxl.pc" @ONLY)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/libjxl.pc"
