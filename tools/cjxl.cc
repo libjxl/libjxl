@@ -398,6 +398,10 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "Do lossy transcode of input JPEG file (decode to "
                          "pixels instead of doing lossless transcode).",
                          &jpeg_transcode, &SetBooleanFalse, 1);
+  cmdline->AddOptionFlag('\0', "jpeg_transcode_disable_cfl",
+                         "Disable CFL for lossless JPEG recompression",
+                         &params.force_cfl_jpeg_recompression, &SetBooleanFalse,
+                         2);
 
   opt_num_threads_id = cmdline->AddOptionValue(
       '\0', "num_threads", "N", "number of worker threads (zero = none).",
