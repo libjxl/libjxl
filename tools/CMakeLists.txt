@@ -10,7 +10,7 @@ if(WIN32)
   if (NOT Qt5_FOUND)
     message(WARNING "Qt5 was not found.")
   else()
-    add_library(icc_detect STATIC
+    add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_win32.cc
       icc_detect/icc_detect.h
     )
@@ -24,7 +24,7 @@ if(WIN32)
 elseif(APPLE)
   find_package(Qt5 QUIET COMPONENTS Widgets)
   if (Qt5_FOUND)
-    add_library(icc_detect STATIC
+    add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_empty.cc
       icc_detect/icc_detect.h
     )
@@ -46,7 +46,7 @@ else()
     set(CMAKE_MODULE_PATH ${ECM_FIND_MODULE_DIR})
     find_package(XCB COMPONENTS XCB)
     if (XCB_FOUND)
-      add_library(icc_detect STATIC
+      add_library(icc_detect STATIC EXCLUDE_FROM_ALL
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h
       )
@@ -56,13 +56,10 @@ else()
 endif()
 endif()  # JPEGXL_ENABLE_VIEWERS
 
-set(TOOL_BINARIES
-  cjxl
-  djxl
-  # Other tools are added conditionally below.
-)
+# Tools are added conditionally below.
+set(TOOL_BINARIES)
 
-add_library(jxl_tool STATIC
+add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
   cpu/cpu.cc
@@ -123,36 +120,43 @@ else()
     COMPILE_DEFINITIONS JPEGXL_VERSION=\"${JPEGXL_VERSION}\")
 endif()
 
-# Main compressor.
-add_executable(cjxl
-  cjxl.cc
-  speed_stats.cc
-  cjxl_main.cc
-)
-target_link_libraries(cjxl
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-)
+if(JPEGXL_ENABLE_TOOLS)
+  list(APPEND TOOL_BINARIES
+    cjxl
+    djxl
+  )
+
+  # Main compressor.
+  add_executable(cjxl
+    cjxl.cc
+    speed_stats.cc
+    cjxl_main.cc
+  )
+  target_link_libraries(cjxl
+      box
+      jxl-static
+      jxl_extras-static
+      jxl_threads-static
+  )
 
 
-# Main decompressor.
-add_library(djxltool STATIC
-  djxl.cc
-  speed_stats.cc
-)
-target_link_libraries(djxltool
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-)
+  # Main decompressor.
+  add_library(djxltool STATIC
+    djxl.cc
+    speed_stats.cc
+  )
+  target_link_libraries(djxltool
+      box
+      jxl-static
+      jxl_extras-static
+      jxl_threads-static
+  )
 
-add_executable(djxl
-    djxl_main.cc
-)
+  add_executable(djxl
+      djxl_main.cc
+  )
 target_link_libraries(djxl djxltool)
+endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
 if(${JPEGXL_ENABLE_DEVTOOLS})
@@ -257,6 +261,7 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
   target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+message(STATUS "Building tools: ${TOOL_BINARIES}")
 
 set(FUZZER_BINARIES
   color_encoding_fuzzer
@@ -356,6 +361,7 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
 ")
 endif ()  # JPEGXL_EMSCRIPTEN
 
+if(JPEGXL_ENABLE_JNI)
 find_package(JNI QUIET)
 find_package(Java QUIET)
 
@@ -396,3 +402,4 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
     )
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
+endif()  # JPEGXL_ENABLE_JNI

@@ -28,7 +28,8 @@ set(JPEGXL_EXTRAS_SOURCES
 # We only define a static library for jxl_extras since it uses internal parts
 # of jxl library which are not accessible from outside the library in the
 # shared library case.
-add_library(jxl_extras-static STATIC "${JPEGXL_EXTRAS_SOURCES}")
+add_library(jxl_extras-static STATIC EXCLUDE_FROM_ALL
+  "${JPEGXL_EXTRAS_SOURCES}")
 target_compile_options(jxl_extras-static PRIVATE "${JPEGXL_INTERNAL_FLAGS}")
 set_property(TARGET jxl_extras-static PROPERTY POSITION_INDEPENDENT_CODE ON)
 target_include_directories(jxl_extras-static PUBLIC "${PROJECT_SOURCE_DIR}")
