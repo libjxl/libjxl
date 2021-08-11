@@ -914,7 +914,6 @@ static JxlDecoderStatus ConvertImageInternal(
   jxl::Orientation undo_orientation = dec->keep_orientation
                                           ? jxl::Orientation::kIdentity
                                           : dec->metadata.m.GetOrientation();
-  JXL_DASSERT(!dec->frame_dec || !dec->frame_dec->HasRGBBuffer());
 
   jxl::Status status(true);
   if (want_extra_channel) {
