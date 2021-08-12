@@ -13,6 +13,7 @@
 #include <random>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -302,6 +303,44 @@ std::vector<PatchInfo> FindTextLikePatches(
     return {};
   }
 
+  // Assumes bitdepths of at most 16 bits.
+  auto color_id = [](float r, float g, float b) {
+    uint64_t rh = std::rint(r * (1 << 16));
+    uint64_t gh = std::rint(g * (1 << 16));
+    uint64_t bh = std::rint(b * (1 << 16));
+    return (rh << 40) | (gh << 20) | bh;
+  };
+  float num_colors_log = 0;
+  float pos_log = 0;
+  // How good a patch has to be to be considered at all.
+  constexpr float kPosFactor = 1.0f;
+  // How good a patch has to be, considering its total number of occurrences, to
+  // be used.
+  constexpr float kPosFactorOccurrences = 64.0f;
+  // How good a patch has to be to override the minimum count of occurrences.
+  // TODO(veluca): think if enabling this is a good idea.
+  float kPosFactorOccurrencesOverride = 1e10f;
+  {
+    // Above this limit, we assume that all patches are useful.
+    constexpr size_t kColorsLimit = 1 << 12;
+    std::unordered_set<uint64_t> colors;
+    for (size_t y = 0; y < opsin.ysize(); y++) {
+      const float* row0 = opsin.PlaneRow(0, y);
+      const float* row1 = opsin.PlaneRow(1, y);
+      const float* row2 = opsin.PlaneRow(2, y);
+      for (size_t x = 0; x < opsin.xsize(); x++) {
+        colors.insert(color_id(row0[x], row1[x], row2[x]));
+      }
+      if (colors.size() > kColorsLimit) break;
+    }
+    pos_log = std::log2(opsin.xsize()) + std::log2(opsin.ysize());
+    // We assume that representing the after-patch data takes about 1 bit/pixel
+    // in lossless mode. Doing so in particular disables patches on bitmap
+    // images.
+    num_colors_log = std::log2(std::min(colors.size(), kColorsLimit)) -
+                     (state->cparams.modular_mode ? 1 : 0);
+  }
+
   // Search for "similar enough" pixels near the screenshot-like areas.
   ImageB is_background(opsin.xsize(), opsin.ysize());
   ZeroFillImage(&is_background);
@@ -463,6 +502,12 @@ std::vector<PatchInfo> FindTextLikePatches(
           max_y - min_y >= kMaxPatchSize) {
         continue;
       }
+      // Representing the offset of this patch would be more expensive than
+      // representing the patch itself. Don't use a patch here.
+      if ((max_x - min_x + 1) * (max_y - min_y + 1) * num_colors_log <=
+          kPosFactor * pos_log) {
+        continue;
+      }
       size_t bpos = background_stride * reference.second + reference.first;
       float ref[3] = {background_rows[0][bpos], background_rows[1][bpos],
                       background_rows[2][bpos]};
@@ -526,18 +571,25 @@ std::vector<PatchInfo> FindTextLikePatches(
   constexpr size_t kMinPatchOccurences = 2;
   std::sort(info.begin(), info.end());
   size_t unique = 0;
+  auto is_good = [&]() {
+    float pixel_score = info[unique].first.xsize * info[unique].first.ysize *
+                        num_colors_log * info[unique].second.size();
+    return (info[unique].second.size() >= kMinPatchOccurences &&
+            pixel_score >= kPosFactorOccurrences * pos_log) ||
+           (pixel_score >= kPosFactorOccurrencesOverride * pos_log);
+  };
   for (size_t i = 1; i < info.size(); i++) {
     if (info[i].first == info[unique].first) {
       info[unique].second.insert(info[unique].second.end(),
                                  info[i].second.begin(), info[i].second.end());
     } else {
-      if (info[unique].second.size() >= kMinPatchOccurences) {
+      if (is_good()) {
         unique++;
       }
       info[unique] = info[i];
     }
   }
-  if (info[unique].second.size() >= kMinPatchOccurences) {
+  if (is_good()) {
     unique++;
   }
   info.resize(unique);

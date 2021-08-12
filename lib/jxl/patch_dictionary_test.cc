@@ -31,7 +31,7 @@ TEST(PatchDictionaryTest, GrayscaleModular) {
 
   CodecInOut io2;
   // Without patches: ~25k
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 8000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 9000);
   VerifyRelativeError(*io.Main().color(), *io2.Main().color(), 1e-7f, 0);
 }
 
