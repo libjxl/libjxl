@@ -88,22 +88,60 @@ jobs:
         tag: ${{ github.ref }}
         overwrite: true
 
-  # Build a .deb package for the ubuntu-latest
+
+  # Build .deb packages Ubuntu/Debian
   release_ubuntu_pkg:
-    name: Ubuntu release package / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: .deb packages / ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-18.04]
+        os:
+        - ubuntu:20.04
+        - ubuntu:18.04
+        - debian:buster
+        - debian:bullseye
+
+    container:
+      image: ${{ matrix.os }}
 
     steps:
+    - name: Set env
+      shell: 'bash'
+      id: 'env'
+      run: |
+        artifact_name="jxl-debs-amd64-${matrix_os/:/-}"
+        echo ${artifact_name}
+        echo "::set-output name=artifact_name::${artifact_name}"
+      env:
+        matrix_os: ${{ matrix.os }}
+
     - name: Install build deps
       run: |
-        sudo apt update
-        sudo apt install -y \
-          devscripts \
+        apt update
+        DEBIAN_FRONTEND=noninteractive apt install -y \
           build-essential \
+          devscripts \
         #
+
+    - name: Install git (only 18.04)
+      if: matrix.os == 'ubuntu:18.04'
+        # Ubuntu 18.04 ships with git 2.17 but we need 2.18 or newer for
+        # actions/checkout@v2 to work
+      shell: 'bash'
+      run: |
+        apt install -y \
+          libcurl4-openssl-dev \
+          libexpat1-dev \
+          libssl-dev \
+          wget \
+          zlib1g-dev \
+        #
+        git_version="2.32.0"
+        wget -nv \
+          "https://github.com/git/git/archive/refs/tags/v${git_version}.tar.gz"
+        tar -zxf "v${git_version}.tar.gz"
+        cd "git-${git_version}"
+        make prefix=/usr -j4 install
 
     - name: Checkout the source
       uses: actions/checkout@v2
@@ -112,28 +150,28 @@ jobs:
         fetch-depth: 1
 
     - name: Install gtest (only 18.04)
-      if: matrix.os == 'ubuntu-18.04'
+      if: matrix.os == 'ubuntu:18.04'
         # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev
         # installs the source files only.
       run: |
-        sudo apt install -y libgtest-dev cmake
+        apt install -y libgtest-dev cmake
         for prj in googletest googlemock; do
           (cd /usr/src/googletest/${prj}/ &&
-           sudo cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
-           sudo make all install)
+           cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
+           make all install)
         done
         # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
         sed '/libgmock-dev,/d' -i debian/control
 
     - name: Build hwy
       run: |
-        sudo apt build-dep -y ./third_party/highway
+        apt build-dep -y ./third_party/highway
         ./ci.sh debian_build highway
-        sudo dpkg -i build/debs/libhwy-dev_*_amd64.deb
+        dpkg -i build/debs/libhwy-dev_*_amd64.deb
 
     - name: Build libjxl
       run: |
-        sudo apt build-dep -y .
+        apt build-dep -y .
         ./ci.sh debian_build jpeg-xl
 
     - name: Stats
@@ -143,7 +181,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
-        name: jxl-debs-amd64-${{ matrix.os }}
+        name: ${{ steps.env.outputs.artifact_name }}
         path: |
           build/debs/*jxl*.*
 
@@ -151,18 +189,18 @@ jobs:
       if: github.event_name == 'release'
       run: |
         (cd build/debs/; find -maxdepth 1 -name '*jxl*.*') | \
-        tar -zcvf ${{ runner.workspace }}/release_file.tar.gz \
-          -C build/debs/ -T -
+        tar -zcvf release_file.tar.gz -C build/debs/ -T -
 
     - name: Upload binaries to release
       if: github.event_name == 'release'
       uses: svenstaro/upload-release-action@v1-release
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{ runner.workspace }}/release_file.tar.gz
-        asset_name: jxl-debs-${{ matrix.os }}-${{ github.event.release.tag_name }}.tar.gz
+        file: release_file.tar.gz
+        asset_name: ${{ steps.env.outputs.artifact_name }}-${{ github.event.release.tag_name }}.tar.gz
         tag: ${{ github.ref }}
         overwrite: true
+
 
   windows_build:
     name: Windows Build (vcpkg / ${{ matrix.triplet }})
