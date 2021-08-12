@@ -37,7 +37,7 @@ ffmpeg "${srgb[@]}" -i "$exr_decoded" -pix_fmt yuv444p10le "${srgb[@]}" -y "$yuv
   yuv444p10le \
   "$(identify -format '%w' "$original")" "$(identify -format '%h' "$original")" \
   "$yuv_original" "$yuv_decoded" \
-  ../../../third_party/vmaf/model/vmaf_v0.6.1.pkl \
+  "$(dirname "$0")/../../../third_party/vmaf/model/vmaf_v0.6.1.pkl" \
   --log-fmt csv --log "$vmaf_csv" &>/dev/null
 
 read_csv="$(cat <<'END'

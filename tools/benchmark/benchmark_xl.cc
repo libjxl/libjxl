@@ -690,12 +690,14 @@ struct StatPrinter {
       printf("```\n");
     }
     if (fnames_->size() == 1) printf("%s\n", (*fnames_)[0].c_str());
-    printf("%s", PrintHeader().c_str());
+    printf("%s", PrintHeader(*extra_metrics_names_).c_str());
     fflush(stdout);
   }
 
   void PrintStatsFooter() {
-    printf("%s", PrintAggregate(stats_aggregate_).c_str());
+    printf(
+        "%s",
+        PrintAggregate(extra_metrics_names_->size(), stats_aggregate_).c_str());
     if (Args()->markdown) printf("```\n");
     printf("\n");
     fflush(stdout);

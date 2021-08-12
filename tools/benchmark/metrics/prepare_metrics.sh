@@ -14,11 +14,11 @@ main() {
   local zipurl
   local repourl
   for repourl in \
-    'https://github.com/veluca93/IQA-optimization.git'
-    'https://github.com/Netflix/vmaf.git'
+    'https://github.com/veluca93/IQA-optimization.git' \
+    'https://github.com/Netflix/vmaf.git' \
     'https://github.com/thorfdbg/difftest_ng.git'
   do
-    local reponame=$(basename "${repourl}")
+    local reponame=$(basename "${repourl%.git}")
     local dirname=$(basename "${reponame}")
     if [[ ! -e "${dirname}" ]]; then
       git clone "${repourl}"

@@ -60,14 +60,19 @@ struct ColumnDescriptor {
   bool more;  // Whether to print only if more_columns is enabled
 };
 
+static const ColumnDescriptor ExtraMetricDescriptor() {
+  ColumnDescriptor d{{"DO NOT USE"}, 12, 4, TYPE_POSITIVE_FLOAT, false};
+  return d;
+}
+
 // To add or change a column to the benchmark ASCII table output, add/change
 // an entry here with table header line 1, table header line 2, width of the
 // column, precision after the point in case of floating point, and the
 // data type. Then add/change the corresponding formula or formatting in
 // the function ComputeColumns.
-const std::vector<ColumnDescriptor>& GetColumnDescriptors() {
+std::vector<ColumnDescriptor> GetColumnDescriptors(size_t num_extra_metrics) {
   // clang-format off
-  static const std::vector<ColumnDescriptor> result = {
+  std::vector<ColumnDescriptor> result = {
       {{"Encoding"}, ComputeLargestCodecName() + 1, 0, TYPE_STRING, false},
       {{"kPixels"},        10,  0, TYPE_SIZE, false},
       {{"Bytes"},           9,  0, TYPE_SIZE, false},
@@ -93,6 +98,10 @@ const std::vector<ColumnDescriptor>& GetColumnDescriptors() {
       {{"Bugs"},            7,  5, TYPE_COUNT, false},
   };
   // clang-format on
+
+  for (size_t i = 0; i < num_extra_metrics; i++) {
+    result.push_back(ExtraMetricDescriptor());
+  }
 
   return result;
 }
@@ -145,6 +154,12 @@ void BenchmarkStats::Assimilate(const BenchmarkStats& victim) {
                    victim.distances.end());
   total_errors += victim.total_errors;
   jxl_stats.Assimilate(victim.jxl_stats);
+  if (extra_metrics.size() < victim.extra_metrics.size()) {
+    extra_metrics.resize(victim.extra_metrics.size());
+  }
+  for (size_t i = 0; i < victim.extra_metrics.size(); i++) {
+    extra_metrics[i] += victim.extra_metrics[i];
+  }
 }
 
 void BenchmarkStats::PrintMoreStats() const {
@@ -180,7 +195,8 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
   const double p_norm = distance_p_norm / total_input_pixels;
   const double bpp_p_norm = p_norm * comp_bpp;
 
-  std::vector<ColumnValue> values(GetColumnDescriptors().size());
+  std::vector<ColumnValue> values(
+      GetColumnDescriptors(extra_metrics.size()).size());
 
   values[0].s = codec_desc;
   values[1].i = total_input_pixels / 1000;
@@ -220,12 +236,15 @@ std::vector<ColumnValue> BenchmarkStats::ComputeColumns(
                  total_input_pixels;
   values[21].f = bpp_p_norm;
   values[22].i = total_errors;
+  for (size_t i = 0; i < extra_metrics.size(); i++) {
+    values[23 + i].f = extra_metrics[i] / total_input_files;
+  }
   return values;
 }
 
 static std::string PrintFormattedEntries(
-    const std::vector<ColumnValue>& values) {
-  const auto& descriptors = GetColumnDescriptors();
+    size_t num_extra_metrics, const std::vector<ColumnValue>& values) {
+  const auto& descriptors = GetColumnDescriptors(num_extra_metrics);
 
   std::string out;
   for (size_t i = 0; i < descriptors.size(); i++) {
@@ -258,12 +277,13 @@ static std::string PrintFormattedEntries(
 std::string BenchmarkStats::PrintLine(const std::string& codec_desc,
                                       size_t corpus_size) const {
   std::vector<ColumnValue> values = ComputeColumns(codec_desc, corpus_size);
-  return PrintFormattedEntries(values);
+  return PrintFormattedEntries(extra_metrics.size(), values);
 }
 
-std::string PrintHeader() {
+std::string PrintHeader(const std::vector<std::string>& extra_metrics_names) {
   std::string out;
-  const auto& descriptors = GetColumnDescriptors();
+  // Extra metrics are handled separately.
+  const auto& descriptors = GetColumnDescriptors(0);
   for (size_t i = 0; i < descriptors.size(); i++) {
     if (!Args()->more_columns && descriptors[i].more) continue;
     const std::string& label = descriptors[i].label;
@@ -273,17 +293,26 @@ std::string PrintHeader() {
     out += std::string(numspaces, ' ');
     if (i != 0) out += label.c_str();
   }
+  for (const std::string& em : extra_metrics_names) {
+    int numspaces = ExtraMetricDescriptor().width - em.size();
+    JXL_CHECK(numspaces >= 1);
+    out += std::string(numspaces, ' ');
+    out += em;
+  }
   out += '\n';
   for (const auto& descriptor : descriptors) {
     if (!Args()->more_columns && descriptor.more) continue;
     out += std::string(descriptor.width, '-');
   }
+  out += std::string(ExtraMetricDescriptor().width * extra_metrics_names.size(),
+                     '-');
   return out + "\n";
 }
 
 std::string PrintAggregate(
+    size_t num_extra_metrics,
     const std::vector<std::vector<ColumnValue>>& aggregate) {
-  const auto& descriptors = GetColumnDescriptors();
+  const auto& descriptors = GetColumnDescriptors(num_extra_metrics);
 
   for (size_t i = 0; i < aggregate.size(); i++) {
     // Check when statistics has wrong amount of column entries
@@ -333,7 +362,7 @@ std::string PrintAggregate(
     }
   }
 
-  return PrintFormattedEntries(result);
+  return PrintFormattedEntries(num_extra_metrics, result);
 }
 
 }  // namespace jxl
