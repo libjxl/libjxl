@@ -149,6 +149,27 @@ jobs:
         submodules: true
         fetch-depth: 1
 
+    - name: Stamp non-release versions
+      # Stamps the built package with the commit date as part of the version
+      # after the version number so newer release candidates can override older
+      # ones.
+      if: github.event_name != 'release'
+      shell: 'bash'
+      env:
+        DEBFULLNAME: libjxl-bot
+        DEBEMAIL: jpegxl@google.com
+      run: |
+        # Committer timestamp.
+        set -x
+        commit_timestamp=$(git show -s --format=%ct)
+        commit_datetime=$(date --utc "--date=@${commit_timestamp}" '+%Y%m%d%H%M%S')
+        commit_ref=$(git rev-parse --short HEAD)
+        sem_version=$(dpkg-parsechangelog --show-field Version)
+        sem_version="${sem_version%%-*}"
+        deb_version="${sem_version}~alpha${commit_datetime}-0+git${commit_ref}"
+        dch --distribution unstable -b --newversion "${deb_version}" \
+          "Stamping build with version ${deb_version}"
+
     - name: Install gtest (only 18.04)
       if: matrix.os == 'ubuntu:18.04'
         # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev
