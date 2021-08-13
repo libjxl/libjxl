@@ -207,6 +207,125 @@ bool DefaultEncoderHeuristics::HandlesColorConversion(
          !cparams.modular_mode && !ib.HasAlpha();
 }
 
+// Downsamples the image by a factor of 2 with a kernel that's sharper than
+// the standard 2x2 box kernel used by DownsampleImage.
+// The kernel is optimized against the result of the 2x2 upsampling kernel used
+// by the decoder. Ringing is slightly reduced by clamping the values of the
+// resulting pixels within certain bounds of a small region in the original
+// image.
+static void DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
+  const int64_t kernelx = 12;
+  const int64_t kernely = 12;
+
+  static const float kernel[144] = {
+      0.017242556564832,   0.0019813989090779,  0.0024550503214722,
+      -0.0047187050820992, -0.0042216781245469, 0.0073616744679974,
+      0.0073616744679974,  -0.0042216781245469, -0.0047187050820992,
+      0.0024550503214722,  0.0019813989090779,  0.017242556564832,
+      0.0019813989090779,  0.017461064645154,   -0.0040179839838831,
+      -0.039563875032655,  -0.0012016220643441, 0.083265651677212,
+      0.083265651677212,   -0.0012016220643441, -0.039563875032655,
+      -0.0040179839838831, 0.017461064645154,   0.0019813989090779,
+      0.0024550503214722,  -0.0040179839838831, -0.0089432318159899,
+      0.010727545221453,   0.01473598935701,    -0.0051874044212185,
+      -0.0051874044212185, 0.01473598935701,    0.010727545221453,
+      -0.0089432318159899, -0.0040179839838831, 0.0024550503214722,
+      -0.0047187050820992, -0.039563875032655,  0.010727545221453,
+      0.11040774078162,    0.024831698004347,   -0.19568935972668,
+      -0.19568935972668,   0.024831698004347,   0.11040774078162,
+      0.010727545221453,   -0.039563875032655,  -0.0047187050820992,
+      -0.0042216781245469, -0.0012016220643441, 0.01473598935701,
+      0.024831698004347,   0.0047301162858671,  -0.031030197792468,
+      -0.031030197792468,  0.0047301162858671,  0.024831698004347,
+      0.01473598935701,    -0.0012016220643441, -0.0042216781245469,
+      0.0073616744679974,  0.083265651677212,   -0.0051874044212185,
+      -0.19568935972668,   -0.031030197792468,  0.38964539007717,
+      0.38964539007717,    -0.031030197792468,  -0.19568935972668,
+      -0.0051874044212185, 0.083265651677212,   0.0073616744679974,
+      0.0073616744679974,  0.083265651677212,   -0.0051874044212185,
+      -0.19568935972668,   -0.031030197792468,  0.38964539007717,
+      0.38964539007717,    -0.031030197792468,  -0.19568935972668,
+      -0.0051874044212185, 0.083265651677212,   0.0073616744679974,
+      -0.0042216781245469, -0.0012016220643441, 0.01473598935701,
+      0.024831698004347,   0.0047301162858671,  -0.031030197792468,
+      -0.031030197792468,  0.0047301162858671,  0.024831698004347,
+      0.01473598935701,    -0.0012016220643441, -0.0042216781245469,
+      -0.0047187050820992, -0.039563875032655,  0.010727545221453,
+      0.11040774078162,    0.024831698004347,   -0.19568935972668,
+      -0.19568935972668,   0.024831698004347,   0.11040774078162,
+      0.010727545221453,   -0.039563875032655,  -0.0047187050820992,
+      0.0024550503214722,  -0.0040179839838831, -0.0089432318159899,
+      0.010727545221453,   0.01473598935701,    -0.0051874044212185,
+      -0.0051874044212185, 0.01473598935701,    0.010727545221453,
+      -0.0089432318159899, -0.0040179839838831, 0.0024550503214722,
+      0.0019813989090779,  0.017461064645154,   -0.0040179839838831,
+      -0.039563875032655,  -0.0012016220643441, 0.083265651677212,
+      0.083265651677212,   -0.0012016220643441, -0.039563875032655,
+      -0.0040179839838831, 0.017461064645154,   0.0019813989090779,
+      0.017242556564832,   0.0019813989090779,  0.0024550503214722,
+      -0.0047187050820992, -0.0042216781245469, 0.0073616744679974,
+      0.0073616744679974,  -0.0042216781245469, -0.0047187050820992,
+      0.0024550503214722,  0.0019813989090779,  0.017242556564832};
+
+  int64_t xsize = input.xsize();
+  int64_t ysize = input.ysize();
+
+  for (size_t y = 0; y < output->ysize(); y++) {
+    float* row_out = output->Row(y);
+    const float* row_in[kernely];
+    // get the rows in the support
+    for (size_t ky = 0; ky < kernely; ky++) {
+      int64_t iy = y * 2 + ky - (kernely - 1) / 2;
+      if (iy < 0) iy = 0;
+      if (iy >= ysize) iy = ysize - 1;
+      row_in[ky] = input.Row(iy);
+    }
+
+    for (size_t x = 0; x < output->xsize(); x++) {
+      // get min and max values of the original image in the support
+      float min = std::numeric_limits<float>::max();
+      float max = std::numeric_limits<float>::min();
+      // kernelx - R and kernely - R are the radius of a square region in which
+      // the values of a pixel are bounded to reduce ringing.
+      static constexpr int64_t R = 5;
+      for (int64_t ky = R; ky + R < kernely; ky++) {
+        for (int64_t kx = R; kx + R < kernelx; kx++) {
+          int64_t ix = x * 2 + kx - (kernelx - 1) / 2;
+          if (ix < 0) ix = 0;
+          if (ix >= xsize) ix = xsize - 1;
+          min = std::min<float>(min, row_in[ky][ix]);
+          max = std::max<float>(max, row_in[ky][ix]);
+        }
+      }
+
+      float sum = 0;
+      for (int64_t ky = 0; ky < kernely; ky++) {
+        for (int64_t kx = 0; kx < kernelx; kx++) {
+          int64_t ix = x * 2 + kx - (kernelx - 1) / 2;
+          if (ix < 0) ix = 0;
+          if (ix >= xsize) ix = xsize - 1;
+          sum += row_in[ky][ix] * kernel[ky * kernelx + kx];
+        }
+      }
+      row_out[x] = sum;
+      if (row_out[x] < min) row_out[x] = min;
+      if (row_out[x] > max) row_out[x] = max;
+    }
+  }
+}
+
+void DownsampleImage2_Sharper(Image3F* opsin) {
+  // Allocate extra space to avoid a reallocation when padding.
+  Image3F downsampled(DivCeil(opsin->xsize(), 2) + kBlockDim,
+                      DivCeil(opsin->ysize(), 2) + kBlockDim);
+  downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
+                       downsampled.ysize() - kBlockDim);
+  for (size_t c = 0; c < 3; c++) {
+    DownsampleImage2_Sharper(opsin->Plane(c), &downsampled.Plane(c));
+  }
+  *opsin = std::move(downsampled);
+}
+
 Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     PassesEncoderState* enc_state, ModularFrameEncoder* modular_frame_encoder,
     const ImageBundle* original_pixels, Image3F* opsin, ThreadPool* pool,
@@ -253,7 +372,11 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   if (enc_state->shared.frame_header.upsampling != 1 && !cparams.already_downsampled) {
     // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
     // after noise, if necessary.
-    DownsampleImage(opsin, cparams.resampling);
+    if (cparams.resampling == 2) {
+      DownsampleImage2_Sharper(opsin);
+    } else {
+      DownsampleImage(opsin, cparams.resampling);
+    }
     PadImageToBlockMultipleInPlace(opsin);
   }
 
