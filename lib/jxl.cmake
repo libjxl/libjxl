@@ -248,6 +248,7 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_icc_codec.h
   jxl/enc_image_bundle.cc
   jxl/enc_image_bundle.h
+  jxl/enc_jxl_skcms.h
   jxl/enc_modular.cc
   jxl/enc_modular.h
   jxl/enc_noise.cc
@@ -326,7 +327,12 @@ endfunction()
 
 if (JPEGXL_ENABLE_SKCMS)
   list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_ENABLE_SKCMS=1)
-  list(APPEND JPEGXL_INTERNAL_LIBS skcms)
+  if (JPEGXL_BUNDLE_SKCMS)
+    list(APPEND JPEGXL_INTERNAL_FLAGS -DJPEGXL_BUNDLE_SKCMS=1)
+    # skcms objects are later added to JPEGXL_INTERNAL_OBJECTS
+  else ()
+    list(APPEND JPEGXL_INTERNAL_LIBS skcms)
+  endif ()
 else ()
   list(APPEND JPEGXL_INTERNAL_LIBS lcms2)
 endif ()
@@ -436,14 +442,20 @@ target_include_directories(jxl_dec-static PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
   "${CMAKE_CURRENT_BINARY_DIR}/include")
 
+# The list of objects in the static and shared libraries.
+set(JPEGXL_INTERNAL_OBJECTS
+  $<TARGET_OBJECTS:jxl_enc-obj>
+  $<TARGET_OBJECTS:jxl_dec-obj>
+)
+if (JPEGXL_ENABLE_SKCMS AND JPEGXL_BUNDLE_SKCMS)
+  list(APPEND JPEGXL_INTERNAL_OBJECTS $<TARGET_OBJECTS:skcms>)
+endif()
+
 # Private static library. This exposes all the internal functions and is used
 # for tests.
 # TODO(lode): once the source files are correctly split so that it is possible
 # to do, remove $<TARGET_OBJECTS:jxl_dec-obj> here and depend on jxl_dec-static
-add_library(jxl-static STATIC
-  $<TARGET_OBJECTS:jxl_enc-obj>
-  $<TARGET_OBJECTS:jxl_dec-obj>
-)
+add_library(jxl-static STATIC ${JPEGXL_INTERNAL_OBJECTS})
 target_link_libraries(jxl-static
   PUBLIC ${JPEGXL_COVERAGE_FLAGS} ${JPEGXL_INTERNAL_LIBS} hwy)
 target_include_directories(jxl-static PUBLIC
@@ -493,9 +505,7 @@ if (((NOT DEFINED "${TARGET_SUPPORTS_SHARED_LIBS}") OR
      TARGET_SUPPORTS_SHARED_LIBS) AND NOT JPEGXL_STATIC)
 
 # Public shared library.
-add_library(jxl SHARED
-  $<TARGET_OBJECTS:jxl_dec-obj>
-  $<TARGET_OBJECTS:jxl_enc-obj>)
+add_library(jxl SHARED ${JPEGXL_INTERNAL_OBJECTS})
 strip_static(JPEGXL_INTERNAL_SHARED_LIBS JPEGXL_INTERNAL_LIBS)
 target_link_libraries(jxl PUBLIC ${JPEGXL_COVERAGE_FLAGS})
 target_link_libraries(jxl PRIVATE ${JPEGXL_INTERNAL_SHARED_LIBS})

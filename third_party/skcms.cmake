@@ -21,4 +21,11 @@ if(CXX_WPSABI_SUPPORTED)
   target_compile_options(skcms PRIVATE -Wno-psabi)
 endif()
 
+if(JPEGXL_BUNDLE_SKCMS)
+  target_compile_options(skcms
+    PRIVATE
+      -DJPEGXL_BUNDLE_SKCMS=1
+      -include${CMAKE_SOURCE_DIR}/lib/jxl/enc_jxl_skcms.h)
+endif()
+
 set_property(TARGET skcms PROPERTY POSITION_INDEPENDENT_CODE ON)

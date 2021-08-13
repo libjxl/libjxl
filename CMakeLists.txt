@@ -91,6 +91,8 @@ set(JPEGXL_ENABLE_OPENEXR true CACHE BOOL
     "Build JPEGXL with support for OpenEXR if available.")
 set(JPEGXL_ENABLE_SKCMS true CACHE BOOL
     "Build with skcms instead of lcms2.")
+set(JPEGXL_BUNDLE_SKCMS true CACHE BOOL
+    "When building with skcms, bundle it into libjxl.a.")
 set(JPEGXL_ENABLE_VIEWERS false CACHE BOOL
     "Build JPEGXL viewer tools for evaluation.")
 set(JPEGXL_ENABLE_TCMALLOC ${ENABLE_TCMALLOC_DEFAULT} CACHE BOOL
