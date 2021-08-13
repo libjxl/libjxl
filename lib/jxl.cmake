@@ -448,7 +448,7 @@ set(JPEGXL_INTERNAL_OBJECTS
   $<TARGET_OBJECTS:jxl_dec-obj>
 )
 if (JPEGXL_ENABLE_SKCMS AND JPEGXL_BUNDLE_SKCMS)
-  list(APPEND JPEGXL_INTERNAL_OBJECTS $<TARGET_OBJECTS:skcms>)
+  list(APPEND JPEGXL_INTERNAL_OBJECTS $<TARGET_OBJECTS:skcms-obj>)
 endif()
 
 # Private static library. This exposes all the internal functions and is used
