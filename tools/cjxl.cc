@@ -634,6 +634,10 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     default_settings = false;
   }
 
+  if (got_target_bpp || got_target_size) {
+    jpeg_transcode = false;
+  }
+
   if (got_target_bpp + got_target_size + got_distance + got_quality > 1) {
     fprintf(stderr,
             "You can specify only one of '--distance', '-q', "
