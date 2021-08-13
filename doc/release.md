@@ -111,12 +111,18 @@ label doesn't automatically merge it to the release branch.
 The version number (as returned by `JxlDecoderVersion`) in the source code in
 `main` must match the semantic versioning of a release. After the release
 branch is created the code in `main` will only be included in the next major
-or minor release. To save on future cherry-picks update the version numbers
-in `main` to the next release. For example, after the `v0.5.x` branch is created
-from main, you can update the version on `main` to `0.6`. This also helps
-identify code compiled from `main` instead of a release.
+or minor release. Right after a release branch update the version targeting the
+next release. Artifacts from `main` should include the new (unreleased) version,
+so it is important to update it. For example, after the `v0.5.x` branch is
+created from main, you should update the version on `main` to `0.6`.
 
-To update the version number you need to update the files:
+To help update it, run this helper command (in a Debian-based system):
+
+```bash
+./ci.sh bump_version 0.6
+```
+
+This will update the version in the following files:
 
  * `lib/CMakeLists.txt`
  * `lib/lib.gni`, automatically updated with `tools/build_cleaner.py --update`.

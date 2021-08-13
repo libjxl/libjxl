@@ -155,9 +155,6 @@ jobs:
       # ones.
       if: github.event_name != 'release'
       shell: 'bash'
-      env:
-        DEBFULLNAME: libjxl-bot
-        DEBEMAIL: jpegxl@google.com
       run: |
         # Committer timestamp.
         set -x
@@ -167,8 +164,17 @@ jobs:
         sem_version=$(dpkg-parsechangelog --show-field Version)
         sem_version="${sem_version%%-*}"
         deb_version="${sem_version}~alpha${commit_datetime}-0+git${commit_ref}"
-        dch --distribution unstable -b --newversion "${deb_version}" \
+        dch -M --distribution unstable -b --newversion "${deb_version}" \
           "Stamping build with version ${deb_version}"
+
+    - name: Stamp release versions
+      # Mark the version as released
+      if: github.event_name == 'release'
+      shell: 'bash'
+      run: |
+        if head -n1 debian/changelog | grep UNRELEASED; then
+          dch -M --distribution unstable --release ''
+        fi
 
     - name: Install gtest (only 18.04)
       if: matrix.os == 'ubuntu:18.04'
