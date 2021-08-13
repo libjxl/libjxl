@@ -127,6 +127,24 @@ jobs:
         tools/build_stats.py --save build/stats.json \
           --max-stack ${{ matrix.max_stack || '0' }} \
           cjxl djxl libjxl.so libjxl_dec.so
+    # Check that we can build the example project against the installed libs.
+    - name: Install and build examples
+      if: matrix.mode == 'release' || matrix.name == 'release'
+      run: |
+        set -x
+        sudo cmake --build build -- install
+        cmake -Bbuild-example -Hexamples -G Ninja
+        cmake --build build-example
+        if ldd build-example/decode_oneshot_static | grep libjxl; then
+          echo "decode_oneshot_static is not using the static lib" >&2
+          exit 1
+        fi
+        # Test that the built binaries run.
+        echo -e -n "PF\n1 1\n-1.0\nrrrrggggbbbb" > test.pfm
+        build-example/encode_oneshot test.pfm test.jxl
+        build-example/encode_oneshot_static test.pfm test-static.jxl
+        build-example/decode_oneshot test.jxl dec.pfm dec.icc
+        build-example/decode_oneshot_static test.jxl dec-static.pfm dec-static.icc
     # Run the tests on push and when requested in pull_request.
     - name: Test ${{ matrix.mode }}
       if: |

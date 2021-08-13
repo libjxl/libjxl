@@ -352,7 +352,7 @@ endif()
 
 # Example usage code.
 if (${JPEGXL_ENABLE_EXAMPLES})
-add_subdirectory(examples)
+include(examples/examples.cmake)
 endif ()
 
 # Plugins for third-party software
