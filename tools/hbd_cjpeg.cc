@@ -43,6 +43,7 @@ namespace jpegxl {
 namespace tools {
 namespace HWY_NAMESPACE {
 void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
+                  const jxl::ImageF& quant_field,
                   const jxl::FrameDimensions& frame_dim,
                   jxl::jpeg::JPEGData* out) {
   // JFIF
@@ -72,12 +73,37 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
 
   // DQT
   out->marker_order.emplace_back(0xdb);
-  out->quant.resize(1);
-  out->quant[0].is_last = true;
+  out->quant.resize(2);
+  out->quant[0].is_last = false;
+  out->quant[0].index = 0;
+  out->quant[1].is_last = true;
+  out->quant[1].index = 1;
   jxl::DequantMatrices dequant;
-  for (size_t c = 0; c < 3; c++) {
-    std::fill(out->quant[c].values.begin(), out->quant[c].values.end(), 1);
-  }
+
+  // mozjpeg q99
+  int qluma[64] = {
+      1, 1, 1, 1, 1, 1, 1, 2,  //
+      1, 1, 1, 1, 1, 1, 1, 2,  //
+      1, 1, 1, 1, 1, 1, 2, 3,  //
+      1, 1, 1, 1, 1, 1, 2, 3,  //
+      1, 1, 1, 1, 1, 2, 3, 4,  //
+      1, 1, 1, 1, 2, 2, 3, 5,  //
+      1, 1, 2, 2, 3, 3, 5, 6,  //
+      2, 2, 3, 3, 4, 5, 6, 8,  //
+  };
+  // mozjpeg q95
+  int qchroma[64] = {
+      2, 2, 2,  2,  3,  4,  6,  9,   //
+      2, 2, 2,  3,  3,  4,  5,  8,   //
+      2, 2, 2,  3,  4,  6,  9,  14,  //
+      2, 3, 3,  4,  5,  7,  11, 16,  //
+      3, 3, 4,  5,  7,  9,  13, 19,  //
+      4, 4, 6,  7,  9,  12, 17, 24,  //
+      6, 5, 9,  11, 13, 17, 23, 31,  //
+      9, 8, 14, 16, 19, 24, 31, 42,  //
+  };
+  memcpy(out->quant[0].values.data(), qluma, sizeof(qluma));
+  memcpy(out->quant[1].values.data(), qchroma, sizeof(qchroma));
 
   // SOF
   out->marker_order.emplace_back(0xc2);
@@ -94,8 +120,8 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
   out->components[0].width_in_blocks = out->components[1].width_in_blocks =
       out->components[2].width_in_blocks = frame_dim.xsize_blocks;
   out->components[0].quant_idx = 0;
-  out->components[1].quant_idx = 0;
-  out->components[2].quant_idx = 0;
+  out->components[1].quant_idx = 1;
+  out->components[2].quant_idx = 1;
   out->components[0].coeffs.resize(frame_dim.xsize_blocks *
                                    frame_dim.ysize_blocks * 64);
   out->components[1].coeffs.resize(frame_dim.xsize_blocks *
@@ -106,8 +132,20 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
   HWY_ALIGN float scratch_space[2 * 64];
 
   for (size_t c = 0; c < 3; c++) {
+    int* qt = c == 0 ? qluma : qchroma;
     for (size_t by = 0; by < frame_dim.ysize_blocks; by++) {
       for (size_t bx = 0; bx < frame_dim.xsize_blocks; bx++) {
+        float deadzone = 0.5f / quant_field.Row(by)[bx];
+        auto q = [&](float coeff, size_t x, size_t y) -> int {
+          size_t pos = x * 8 + y;
+          float scoeff = coeff / qt[pos];
+          if (pos == 0) {
+            return std::round(scoeff);
+          }
+          if (std::abs(scoeff) < deadzone) return 0;
+          if (std::abs(scoeff) < 2 * deadzone && x + y >= 7) return 0;
+          return std::round(scoeff);
+        };
         HWY_ALIGN float dct[64];
         TransformFromPixels(jxl::AcStrategy::Type::DCT,
                             ycbcr.PlaneRow(c, 8 * by) + 8 * bx,
@@ -117,7 +155,7 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
             float coeff = dct[iy * 8 + ix] * 2040;  // not a typo
             out->components[c]
                 .coeffs[(frame_dim.xsize_blocks * by + bx) * 64 + ix * 8 + iy] =
-                std::round(coeff);
+                q(coeff, ix, iy);
           }
         }
       }
@@ -246,10 +284,20 @@ int HBDJPEGMain(int argc, const char* argv[]) {
   }
   fprintf(stderr, "%g\n", max_err);
   PadImageToBlockMultipleInPlace(&ycbcr);
+
+  jxl::Image3F opsin(jxl::RoundUpToBlockDim(io.xsize()),
+                     jxl::RoundUpToBlockDim(io.ysize()));
+  opsin.ShrinkTo(io.xsize(), io.ysize());
+  jxl::ToXYB(io.Main(), nullptr, &opsin);
+  PadImageToBlockMultipleInPlace(&opsin);
+  jxl::ImageF mask;
+  jxl::ImageF qf =
+      InitialQuantField(1.0, opsin, frame_dim, nullptr, 1.0, &mask);
+
   jxl::CodecInOut out;
   out.Main().jpeg_data = jxl::make_unique<jxl::jpeg::JPEGData>();
   HWY_DYNAMIC_DISPATCH(FillJPEGData)
-  (ycbcr, io.metadata.m.color_encoding.ICC(), frame_dim,
+  (ycbcr, io.metadata.m.color_encoding.ICC(), qf, frame_dim,
    out.Main().jpeg_data.get());
   jxl::PaddedBytes output;
   if (!EncodeImageJPG(&out, jxl::JpegEncoder::kLibJpeg, 100,
