@@ -69,7 +69,7 @@ propose to include changes in the main repository via a Pull Request.
 
 Once you are done you should have your repository at
 
- https://github.com/{{USERNAME}}/libjxl
+ https://<!-- not a link -->github.com<!-- not a link -->/*{{USERNAME}}*/libjxl
 
 where {{USERNAME}} denotes your GitHub username.
 

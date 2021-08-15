@@ -17,7 +17,7 @@ variables are set:
 ## Requirements
 
 [CMake](https://cmake.org/) is used as a build system. To install it, follow
-[Debian build instructions](building_in_debian.md).
+[Debian build instructions](developing_in_debian.md).
 
 [Emscripten SDK](https://emscripten.org/) is required for building
 WebAssembly artifacts. To install it, follow the
