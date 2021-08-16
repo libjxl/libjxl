@@ -3,20 +3,23 @@ Maintainer: JPEG XL Maintainers <jpegxl@google.com>
 Section: misc
 Priority: optional
 Standards-Version: 3.9.8
-Build-Depends: cmake,
-               debhelper (>= 9),
-               libbrotli-dev,
-               libgif-dev,
-               libgmock-dev,
-               libgoogle-perftools-dev,
-               libgtest-dev,
-               libhwy-dev,
-               libjpeg-dev,
-               libopenexr-dev,
-               libpng-dev,
-               libwebp-dev,
-               pkg-config,
-Homepage: https://gitlab.com/wg1/jpeg-xl
+Build-Depends:
+ asciidoc,
+ cmake,
+ debhelper (>= 9),
+ libbrotli-dev,
+ libgif-dev,
+ libgmock-dev,
+ libgoogle-perftools-dev,
+ libgtest-dev,
+ libhwy-dev,
+ libjpeg-dev,
+ libopenexr-dev,
+ libpng-dev,
+ libwebp-dev,
+ pkg-config,
+ xmlto,
+Homepage: https://github.com/libjxl/libjxl
 Rules-Requires-Root: no
 
 Package: jxl
@@ -36,6 +39,7 @@ Package: libjxl-dev
 Architecture: any
 Section: libdevel
 Depends: libjxl (= ${binary:Version}), ${misc:Depends}
+ libhwy-dev,
 Description: JPEG XL Image Coding System - "JXL" (development files)
  The JPEG XL Image Coding System (ISO/IEC 18181) is a lossy and
  lossless image compression format. It has a rich feature set and is
