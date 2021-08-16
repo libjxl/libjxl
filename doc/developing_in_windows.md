@@ -83,5 +83,5 @@ vcpkg above.
 
 The project is now ready for use. To build, simply press F7 (or choose
 Build All from the Build menu). This writes binaries to
-`out/build/x64-Clang-Release/tools`. The main [README.md](README.md) explains
+`out/build/x64-Clang-Release/tools`. The main [README.md](../README.md) explains
 how to use the encoder/decoder and benchmark binaries.
