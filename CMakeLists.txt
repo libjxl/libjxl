@@ -322,13 +322,24 @@ add_custom_target(doc false
 endif() # DOXYGEN_FOUND
 
 if(JPEGXL_ENABLE_MANPAGES)
-find_package(Python COMPONENTS Interpreter)
-if(Python_Interpreter_FOUND)
-  find_program(ASCIIDOC a2x)
-endif()
-if(NOT Python_Interpreter_FOUND OR "${ASCIIDOC}" STREQUAL "ASCIIDOC-NOTFOUND")
-  message(WARNING "asciidoc was not found, the man pages will not be installed.")
+find_program(ASCIIDOC a2x)
+if(NOT "${ASCIIDOC}" STREQUAL "ASCIIDOC-NOTFOUND")
+file(STRINGS "${ASCIIDOC}" ASCIIDOC_SHEBANG LIMIT_COUNT 1)
+if(ASCIIDOC_SHEBANG MATCHES "python2")
+  find_package(Python2 COMPONENTS Interpreter)
+  set(ASCIIDOC_PY_FOUND "${Python2_Interpreter_FOUND}")
+  set(ASCIIDOC_PY Python2::Interpreter)
+elseif(ASCIIDOC_SHEBANG MATCHES "python3")
+  find_package(Python3 COMPONENTS Interpreter)
+  set(ASCIIDOC_PY_FOUND "${Python3_Interpreter_FOUND}")
+  set(ASCIIDOC_PY Python3::Interpreter)
 else()
+  find_package(Python COMPONENTS Interpreter)
+  set(ASCIIDOC_PY_FOUND "${Python_Interpreter_FOUND}")
+  set(ASCIIDOC_PY Python::Interpreter)
+endif()
+
+if (ASCIIDOC_PY_FOUND)
   set(MANPAGE_FILES "")
   set(MANPAGES "")
   foreach(PAGE IN ITEMS cjxl djxl)
@@ -337,7 +348,7 @@ else()
     # does not recognize it.
     add_custom_command(
       OUTPUT "${PAGE}.1"
-      COMMAND Python::Interpreter
+      COMMAND "${ASCIIDOC_PY}"
       ARGS "${ASCIIDOC}"
         --format manpage --destination-dir="${CMAKE_CURRENT_BINARY_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/doc/man/${PAGE}.txt"
@@ -347,8 +358,11 @@ else()
   endforeach()
   add_custom_target(manpages ALL DEPENDS ${MANPAGES})
   install(FILES ${MANPAGE_FILES} DESTINATION share/man/man1)
-endif()
-endif()
+endif()  # ASCIIDOC_PY_FOUND
+else()
+  message(WARNING "asciidoc was not found, the man pages will not be installed.")
+endif()  # ASCIIDOC != "ASCIIDOC-NOTFOUND"
+endif()  # JPEGXL_ENABLE_MANPAGES
 
 # Example usage code.
 if (${JPEGXL_ENABLE_EXAMPLES})
