@@ -392,14 +392,8 @@ if (JPEGXL_ENABLE_SKCMS)
   target_include_directories(jxl_enc-obj PRIVATE
     $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
   )
-  target_include_directories(jxl_dec-obj PRIVATE
-    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
-  )
 else ()
   target_include_directories(jxl_enc-obj PRIVATE
-    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
-  )
-  target_include_directories(jxl_dec-obj PRIVATE
     $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
   )
 endif ()
