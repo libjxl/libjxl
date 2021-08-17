@@ -213,7 +213,8 @@ bool DefaultEncoderHeuristics::HandlesColorConversion(
 // by the decoder. Ringing is slightly reduced by clamping the values of the
 // resulting pixels within certain bounds of a small region in the original
 // image.
-static void DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
+static void DownsampleImage2_Sharper(const ImageF& input, const ImageF& mask,
+                                     ImageF* output) {
   const int64_t kernelx = 12;
   const int64_t kernely = 12;
 
@@ -273,6 +274,7 @@ static void DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
   for (size_t y = 0; y < output->ysize(); y++) {
     float* row_out = output->Row(y);
     const float* row_in[kernely];
+    const float* row_mask = mask.Row(y);
     // get the rows in the support
     for (size_t ky = 0; ky < kernely; ky++) {
       int64_t iy = y * 2 + ky - (kernely - 1) / 2;
@@ -307,9 +309,62 @@ static void DownsampleImage2_Sharper(const ImageF& input, ImageF* output) {
           sum += row_in[ky][ix] * kernel[ky * kernelx + kx];
         }
       }
+
       row_out[x] = sum;
-      if (row_out[x] < min) row_out[x] = min;
-      if (row_out[x] > max) row_out[x] = max;
+
+      // Clamp the pixel within the value  of a small area to prevent ringning.
+      // The mask determines how much to clamp, clamp more to reduce more
+      // ringing in smooth areas, clamp less in noisy areas to get more
+      // sharpness. Higher mask_multiplier gives less clamping, so less
+      // ringing reduction.
+      const constexpr float mask_multiplier = 7;
+      float a = row_mask[x] * mask_multiplier;
+      float clip_min = min - a;
+      float clip_max = max + a;
+      if (row_out[x] < clip_min) row_out[x] = clip_min;
+      if (row_out[x] > clip_max) row_out[x] = clip_max;
+    }
+  }
+}
+
+static void GetMin2(const float v, float& min1, float& min2) {
+  if (v < min2) {
+    if (v < min1) {
+      min2 = min1;
+      min1 = v;
+    } else {
+      min2 = v;
+    }
+  }
+}
+
+void CreateMask(const Image3F& image, Image3F& mask) {
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < image.ysize(); y++) {
+      auto* row_n = y > 0 ? image.PlaneRow(c, y - 1) : image.PlaneRow(c, y);
+      auto* row_in = image.PlaneRow(c, y);
+      auto* row_s = y + 1 < image.ysize() ? image.PlaneRow(c, y + 1)
+                                          : image.PlaneRow(c, y);
+      auto* row_out = mask.PlaneRow(c, y);
+      for (size_t x = 0; x < image.xsize(); x++) {
+        // Center, west, east, north, south values and their absolute difference
+        float c = row_in[x];
+        float w = x > 0 ? row_in[x - 1] : row_in[x];
+        float e = x + 1 < image.xsize() ? row_in[x + 1] : row_in[x];
+        float n = row_n[x];
+        float s = row_s[x];
+        float dw = std::abs(c - w);
+        float de = std::abs(c - e);
+        float dn = std::abs(c - n);
+        float ds = std::abs(c - s);
+        float min = std::numeric_limits<float>::max();
+        float min2 = std::numeric_limits<float>::max();
+        GetMin2(dw, min, min2);
+        GetMin2(de, min, min2);
+        GetMin2(dn, min, min2);
+        GetMin2(ds, min, min2);
+        row_out[x] = min2;
+      }
     }
   }
 }
@@ -320,8 +375,16 @@ void DownsampleImage2_Sharper(Image3F* opsin) {
                       DivCeil(opsin->ysize(), 2) + kBlockDim);
   downsampled.ShrinkTo(downsampled.xsize() - kBlockDim,
                        downsampled.ysize() - kBlockDim);
+
+  Image3F box_downsample = CopyImage(*opsin);
+  DownsampleImage(&box_downsample, 2);
+
+  Image3F mask(box_downsample.xsize(), box_downsample.ysize());
+  CreateMask(box_downsample, mask);
+
   for (size_t c = 0; c < 3; c++) {
-    DownsampleImage2_Sharper(opsin->Plane(c), &downsampled.Plane(c));
+    DownsampleImage2_Sharper(opsin->Plane(c), mask.Plane(c),
+                             &downsampled.Plane(c));
   }
   *opsin = std::move(downsampled);
 }
