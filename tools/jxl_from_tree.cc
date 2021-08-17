@@ -24,7 +24,7 @@ namespace jxl {
 
 namespace {
 struct SplineData {
-  int32_t quantization_adjustment;
+  int32_t quantization_adjustment = 1;
   std::vector<Spline> splines;
 };
 
