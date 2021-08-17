@@ -317,7 +317,11 @@ jobs:
           cp vcpkg/installed/${{matrix.triplet}}/share/${pkg}/copyright \
             prefix/bin/LICENSE.${pkg}
         done
-        cp LICENSE prefix/bin/LICENSE.jxl
+        cp third_party/sjpeg/COPYING prefix/bin/LICENSE.sjpeg
+        cp third_party/skcms/LICENSE prefix/bin/LICENSE.skcms
+        cp third_party/highway/LICENSE prefix/bin/LICENSE.highway
+        cp third_party/brotli/LICENSE prefix/bin/LICENSE.brotli
+        cp LICENSE prefix/bin/LICENSE.libjxl
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
