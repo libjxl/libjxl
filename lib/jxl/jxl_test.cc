@@ -218,10 +218,10 @@ TEST(JxlTest, RoundtripResample2) {
   cparams.resampling = 2;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 16000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 16900);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            12.5);
+            12);
 }
 TEST(JxlTest, RoundtripResample2MT) {
   ThreadPoolInternal pool(4);
@@ -236,11 +236,11 @@ TEST(JxlTest, RoundtripResample2MT) {
   CodecInOut io2;
   // TODO(veluca): Figure out why msan and release produce different
   // file size.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 60000);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 64500);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, &pool),
 #if JXL_HIGH_PRECISION
-            6);
+            5.5);
 #else
             13.5);
 #endif
