@@ -317,7 +317,7 @@ static void DownsampleImage2_Sharper(const ImageF& input, const ImageF& mask,
       // ringing in smooth areas, clamp less in noisy areas to get more
       // sharpness. Higher mask_multiplier gives less clamping, so less
       // ringing reduction.
-      const constexpr float mask_multiplier = 7;
+      const constexpr float mask_multiplier = 2;
       float a = row_mask[x] * mask_multiplier;
       float clip_min = min - a;
       float clip_max = max + a;
