@@ -80,6 +80,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     cparams.noise = Override::kOff;
     cparams.patches = Override::kOff;
     cparams.gaborish = Override::kOff;
+    cparams.separate = Override::kOff;
     cparams.epf = 0;
     cparams.max_error_mode = true;
     cparams.resampling = 1;

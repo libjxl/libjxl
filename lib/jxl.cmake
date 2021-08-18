@@ -253,6 +253,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/enc_modular.h
   jxl/enc_noise.cc
   jxl/enc_noise.h
+  jxl/enc_nonphoto_separation.cc
+  jxl/enc_nonphoto_separation.h
   jxl/enc_params.h
   jxl/enc_patch_dictionary.cc
   jxl/enc_patch_dictionary.h

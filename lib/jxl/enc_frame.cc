@@ -47,6 +47,7 @@
 #include "lib/jxl/enc_group.h"
 #include "lib/jxl/enc_modular.h"
 #include "lib/jxl/enc_noise.h"
+#include "lib/jxl/enc_nonphoto_separation.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
 #include "lib/jxl/enc_quant_weights.h"
@@ -1053,6 +1054,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     cparams.gaborish = Override::kOff;
     cparams.epf = 0;
     cparams.modular_mode = false;
+    cparams.separate = Override::kOff;
   }
 
   if (ib.xsize() == 0 || ib.ysize() == 0) return JXL_FAILURE("Empty image");
@@ -1131,6 +1133,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   const std::vector<ImageF>* extra_channels = &ib.extra_channels();
   std::vector<ImageF> extra_channels_storage;
+  // Clear patches
+  passes_enc_state->shared.image_features.patches = PatchDictionary();
+  passes_enc_state->shared.image_features.patches.SetPassesSharedState(
+      &passes_enc_state->shared);
 
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
@@ -1164,6 +1170,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     bool lossless = (frame_header->encoding == FrameEncoding::kModular &&
                      cparams.quality_pair.first == 100);
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
+        frame_header->frame_type == FrameType::kRegularFrame &&
         !ApplyOverride(cparams.keep_invisible, lossless) &&
         cparams.ec_resampling == cparams.resampling) {
       // simplify invisible pixels
@@ -1171,6 +1178,24 @@ Status EncodeFrame(const CompressParams& cparams_orig,
       if (want_linear) {
         SimplifyInvisible(const_cast<Image3F*>(&ib_or_linear->color()),
                           ib.alpha(), lossless);
+      }
+    }
+    if (ApplyOverride(cparams.separate,
+                      cparams.speed_tier <= SpeedTier::kWombat &&
+                          cparams.resampling == 1 &&
+                          frame_header->encoding == FrameEncoding::kVarDCT)) {
+      JXL_ASSERT(cparams.resampling == 1);
+      ImageU separation;
+      float nonphoto = FindSeparation(opsin, &separation, cparams, pool);
+      if (WantDebugOutput(aux_out)) {
+        aux_out->DumpImage("separation", separation);
+      }
+      // TODO(jon): if nonphoto > 0.9, also try lossless
+      if (nonphoto > 0.2f) {
+        EncodeAndSubtract(&opsin, separation, cparams, passes_enc_state, pool,
+                          aux_out);
+        // TODO(jon): figure out why patches are broken
+        passes_enc_state->cparams.patches = Override::kOff;
       }
     }
     if (aux_out != nullptr) {

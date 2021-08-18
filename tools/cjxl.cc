@@ -404,6 +404,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
                           &num_reps, &ParseUnsigned, 1);
 
+  cmdline->AddOptionValue('\0', "separate", "0|1",
+                          "force disable/enable photo/nonphoto separation.",
+                          &params.separate, &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "noise", "0|1",
                           "force disable/enable noise generation.",
                           &params.noise, &ParseOverride, 1);

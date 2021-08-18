@@ -195,6 +195,8 @@ class JxlCodec : public ImageCodec {
     } else if (param.substr(0, 16) == "faster_decoding=") {
       cparams_.decoding_speed_tier =
           strtol(param.substr(16).c_str(), nullptr, 10);
+    } else if (param == "separate") {
+      cparams_.separate = Override::kDefault;
     } else {
       return JXL_FAILURE("Unrecognized param");
     }
