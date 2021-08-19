@@ -63,7 +63,7 @@ void DrawGaussian(Image3F* const opsin, const Rect& opsin_rect,
                   std::vector<int32_t>& ys,
                   std::vector<float>& local_intensity_storage) {
   // Sanity check sigma, inverse sigma and intensity
-  if (!(std::isfinite(sigma) && std::isfinite(1.0f / sigma) &&
+  if (!(std::isfinite(sigma) && sigma != 0.0f && std::isfinite(1.0f / sigma) &&
         std::isfinite(intensity))) {
     return;
   }
