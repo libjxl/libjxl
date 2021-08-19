@@ -218,7 +218,7 @@ TEST(JxlTest, RoundtripResample2) {
   cparams.resampling = 2;
   DecompressParams dparams;
   CodecInOut io2;
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15877);
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 16000);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             12.5);
