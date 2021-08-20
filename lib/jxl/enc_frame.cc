@@ -1131,6 +1131,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
 
   const std::vector<ImageF>* extra_channels = &ib.extra_channels();
   std::vector<ImageF> extra_channels_storage;
+  // Clear patches
+  passes_enc_state->shared.image_features.patches = PatchDictionary();
+  passes_enc_state->shared.image_features.patches.SetPassesSharedState(
+      &passes_enc_state->shared);
 
   if (ib.IsJPEG()) {
     JXL_RETURN_IF_ERROR(lossy_frame_encoder.ComputeJPEGTranscodingData(
@@ -1164,6 +1168,7 @@ Status EncodeFrame(const CompressParams& cparams_orig,
     bool lossless = (frame_header->encoding == FrameEncoding::kModular &&
                      cparams.quality_pair.first == 100);
     if (ib.HasAlpha() && !ib.AlphaIsPremultiplied() &&
+        frame_header->frame_type == FrameType::kRegularFrame &&
         !ApplyOverride(cparams.keep_invisible, lossless) &&
         cparams.ec_resampling == cparams.resampling) {
       // simplify invisible pixels
