@@ -731,10 +731,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       // assuming default Squeeze here
       int component = ((i - gi.nb_meta_channels) % nb_chans);
       // last 4 channels are final chroma residuals
-      if (nb_chans > 2 && i >= gi.channel.size() - 4) {
+      if (nb_chans > 2 && i >= gi.channel.size() - 4 && cparams.responsive) {
         component = 1;
       }
-
       if (cparams.color_transform == ColorTransform::kXYB && component < 3) {
         q = (component == 0 ? quality : cquality) * squeeze_quality_factor_xyb *
             squeeze_xyb_qtable[component][shift];

@@ -151,6 +151,7 @@ struct CompressParams {
   Override dots = Override::kDefault;
   Override patches = Override::kDefault;
   Override gaborish = Override::kDefault;
+  Override separate = Override::kOff;  // off for now, still experimental
   int epf = -1;
 
   // Progressive mode.
