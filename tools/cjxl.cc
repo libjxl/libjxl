@@ -616,8 +616,8 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   }
 
   if (got_distance) {
-    constexpr float butteraugli_min_dist = 0.1f;
-    constexpr float butteraugli_max_dist = 15.0f;
+    constexpr float butteraugli_min_dist = 0.01f;
+    constexpr float butteraugli_max_dist = 45.0f;
     if (!(0 <= params.butteraugli_distance &&
           params.butteraugli_distance <= butteraugli_max_dist)) {
       fprintf(stderr, "Invalid/out of range distance, try 0 to %g.\n",
