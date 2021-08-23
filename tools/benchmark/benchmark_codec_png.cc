@@ -52,7 +52,7 @@ class PNGCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeImagePNG(compressed, pool, io));
+    JXL_RETURN_IF_ERROR(DecodeImagePNG(compressed, ColorHints(), pool, io));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

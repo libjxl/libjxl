@@ -21,6 +21,7 @@
 #include "jxl/decode.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_png.h"
+#include "lib/extras/color_hints.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/cache_aligned.h"
@@ -67,7 +68,7 @@ Status WritePNG(Image3F&& image, ThreadPool* pool,
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
-  JXL_CHECK(SetFromFile(filename, &io));
+  JXL_CHECK(SetFromFile(filename, ColorHints(), &io));
   *image = CopyImage(*io.Main().color());
   return true;
 }
@@ -977,12 +978,11 @@ class Benchmark {
           Status ok = true;
 
           loaded_images[i].target_nits = Args()->intensity_target;
-          loaded_images[i].dec_hints = Args()->dec_hints;
           loaded_images[i].dec_target = jpeg_transcoding_requested
                                             ? DecodeTarget::kQuantizedCoeffs
                                             : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
-            ok = SetFromFile(fnames[i], &loaded_images[i]);
+            ok = SetFromFile(fnames[i], Args()->color_hints, &loaded_images[i]);
           }
           if (!ok) {
             if (!Args()->silent_errors) {

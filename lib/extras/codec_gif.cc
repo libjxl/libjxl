@@ -52,8 +52,8 @@ bool AllOpaque(const ImageF& alpha) {
 
 }  // namespace
 
-Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
-                      CodecInOut* io) {
+Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                      ThreadPool* pool, CodecInOut* io) {
   int error = GIF_OK;
   ReadState state = {bytes};
   const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const bytes,
@@ -131,13 +131,9 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   io->dec_pixels = 0;
 
   io->metadata.m.SetUintSamples(8);
-  io->metadata.m.color_encoding = ColorEncoding::SRGB();
   io->metadata.m.SetAlphaBits(0);
-  (void)io->dec_hints.Foreach(
-      [](const std::string& key, const std::string& /*value*/) {
-        JXL_WARNING("GIF decoder ignoring %s hint", key.c_str());
-        return true;
-      });
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
+                                      /*is_gray=*/false, io));
 
   Image3F canvas(gif->SWidth, gif->SHeight);
   io->SetSize(gif->SWidth, gif->SHeight);

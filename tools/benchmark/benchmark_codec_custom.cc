@@ -130,7 +130,7 @@ class CustomCodec : public ImageCodec {
         },
         png_filename, speed_stats));
     io->target_nits = saved_intensity_target_;
-    return SetFromFile(png_filename, io, pool);
+    return SetFromFile(png_filename, ColorHints(), io, pool);
   }
 
  private:

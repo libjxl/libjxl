@@ -14,6 +14,7 @@
 // TODO(janwas): workaround for incorrect Win64 codegen (cause unknown)
 #include <hwy/highway.h>
 
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -23,8 +24,9 @@
 
 namespace jxl {
 
-// Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
+// Decodes `bytes` into `io`.
+Status DecodeImagePNG(const Span<const uint8_t> bytes,
+                      const ColorHints& color_hints, ThreadPool* pool,
                       CodecInOut* io);
 
 // Transforms from io->c_current to `c_desired` and encodes into `bytes`.

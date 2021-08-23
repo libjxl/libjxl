@@ -102,8 +102,8 @@ class JPEGCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     double elapsed_deinterleave;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(
-        DecodeImageJPG(compressed, pool, io, &elapsed_deinterleave));
+    JXL_RETURN_IF_ERROR(DecodeImageJPG(compressed, ColorHints(), pool, io,
+                                       &elapsed_deinterleave));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start - elapsed_deinterleave);
     return true;

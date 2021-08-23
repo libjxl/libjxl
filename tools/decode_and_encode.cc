@@ -28,9 +28,10 @@ int Convert(int argc, char** argv) {
   const std::string& pathname_out = argv[3];
 
   CodecInOut io;
+  ColorHints color_hints;
   ThreadPoolInternal pool(4);
-  io.dec_hints.Add("color_space", desc);
-  if (!SetFromFile(pathname_in, &io, &pool)) {
+  color_hints.Add("color_space", desc);
+  if (!SetFromFile(pathname_in, color_hints, &io, &pool)) {
     fprintf(stderr, "Failed to read %s\n", pathname_in.c_str());
     return 1;
   }

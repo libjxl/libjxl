@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -30,11 +31,12 @@ static inline bool IsJPG(const Span<const uint8_t> bytes) {
   return true;
 }
 
-// Decodes `bytes` into `io`. io->dec_hints are ignored.
+// Decodes `bytes` into `io`. color_hints are ignored.
 // `elapsed_deinterleave`, if non-null, will be set to the time (in seconds)
 // that it took to deinterleave the raw JSAMPLEs to planar floats.
-Status DecodeImageJPG(Span<const uint8_t> bytes, ThreadPool* pool,
-                      CodecInOut* io, double* elapsed_deinterleave = nullptr);
+Status DecodeImageJPG(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                      ThreadPool* pool, CodecInOut* io,
+                      double* elapsed_deinterleave = nullptr);
 
 // Encodes into `bytes`.
 Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,

@@ -486,45 +486,6 @@ class ColorEncodingReaderPNG {
   PrimariesCIExy primaries_;
 };
 
-Status ApplyHints(const bool is_gray, CodecInOut* io) {
-  bool got_color_space = false;
-
-  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
-      [is_gray, io, &got_color_space](const std::string& key,
-                                      const std::string& value) -> Status {
-        ColorEncoding* c_original = &io->metadata.m.color_encoding;
-        if (key == "color_space") {
-          if (!ParseDescription(value, c_original) ||
-              !c_original->CreateICC()) {
-            return JXL_FAILURE("PNG: Failed to apply color_space");
-          }
-
-          if (is_gray != io->metadata.m.color_encoding.IsGray()) {
-            return JXL_FAILURE(
-                "PNG: mismatch between file and color_space hint");
-          }
-
-          got_color_space = true;
-        } else if (key == "icc_pathname") {
-          PaddedBytes icc;
-          JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
-          JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
-          got_color_space = true;
-        } else {
-          JXL_WARNING("PNG decoder ignoring %s hint", key.c_str());
-        }
-        return true;
-      }));
-
-  if (!got_color_space) {
-    JXL_WARNING("PNG: no color_space/icc_pathname given, assuming sRGB");
-    JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetSRGB(
-        is_gray ? ColorSpace::kGray : ColorSpace::kRGB));
-  }
-
-  return true;
-}
-
 // Stores ColorEncoding into PNG chunks.
 class ColorEncodingWriterPNG {
  public:
@@ -755,7 +716,8 @@ Status InspectChunkType(const Span<const uint8_t> bytes,
 
 }  // namespace
 
-Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
+Status DecodeImagePNG(const Span<const uint8_t> bytes,
+                      const ColorHints& color_hints, ThreadPool* pool,
                       CodecInOut* io) {
   unsigned w, h;
   PNGState state;
@@ -827,15 +789,8 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
   io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();
   io->metadata.m.xyb_encoded = false;
   SetIntensityTarget(io);
-  if (!reader.HaveColorProfile()) {
-    JXL_RETURN_IF_ERROR(ApplyHints(is_gray, io));
-  } else {
-    (void)io->dec_hints.Foreach(
-        [](const std::string& key, const std::string& /*value*/) {
-          JXL_WARNING("PNG decoder ignoring %s hint", key.c_str());
-          return true;
-        });
-  }
+  JXL_RETURN_IF_ERROR(
+      ApplyColorHints(color_hints, reader.HaveColorProfile(), is_gray, io));
   return true;
 }
 
