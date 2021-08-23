@@ -178,44 +178,6 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
   return true;
 }
 
-Status ApplyHints(CodecInOut* io) {
-  bool got_color_space = false;
-
-  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
-      [io, &got_color_space](const std::string& key,
-                             const std::string& value) -> Status {
-        ColorEncoding* c_original = &io->metadata.m.color_encoding;
-        if (key == "color_space") {
-          if (!ParseDescription(value, c_original) ||
-              !c_original->CreateICC()) {
-            return JXL_FAILURE("PGX: Failed to apply color_space");
-          }
-
-          if (!io->metadata.m.color_encoding.IsGray()) {
-            return JXL_FAILURE("PGX: color_space hint must be grayscale");
-          }
-
-          got_color_space = true;
-        } else if (key == "icc_pathname") {
-          PaddedBytes icc;
-          JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
-          JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
-          got_color_space = true;
-        } else {
-          JXL_WARNING("PGX decoder ignoring %s hint", key.c_str());
-        }
-        return true;
-      }));
-
-  if (!got_color_space) {
-    JXL_WARNING("PGX: no color_space/icc_pathname given, assuming sRGB");
-    JXL_RETURN_IF_ERROR(
-        io->metadata.m.color_encoding.SetSRGB(ColorSpace::kGray));
-  }
-
-  return true;
-}
-
 template <typename T>
 void ExpectNear(T a, T b, T precision) {
   JXL_CHECK(std::abs(a - b) <= precision);
@@ -228,7 +190,8 @@ Span<const uint8_t> MakeSpan(const char* str) {
 
 }  // namespace
 
-Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
+Status DecodeImagePGX(const Span<const uint8_t> bytes,
+                      const ColorHints& color_hints, ThreadPool* pool,
                       CodecInOut* io) {
   Parser parser(bytes);
   HeaderPGX header = {};
@@ -240,7 +203,8 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("PGX: bits_per_sample invalid");
   }
 
-  JXL_RETURN_IF_ERROR(ApplyHints(io));
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
+                                      /*is_gray=*/true, io));
   io->metadata.m.SetUintSamples(header.bits_per_sample);
   io->metadata.m.SetAlphaBits(0);
   io->dec_pixels = header.xsize * header.ysize;
@@ -311,7 +275,7 @@ void TestCodecPGX() {
     CodecInOut io;
     ThreadPool* pool = nullptr;
 
-    Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
+    Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), pool, &io);
     JXL_CHECK(ok == true);
 
     ScaleImage(255.f, io.Main().color());
@@ -336,7 +300,7 @@ void TestCodecPGX() {
     CodecInOut io;
     ThreadPool* pool = nullptr;
 
-    Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), pool, &io);
+    Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), pool, &io);
     JXL_CHECK(ok == true);
 
     ScaleImage(255.f, io.Main().color());

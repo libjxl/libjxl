@@ -11,6 +11,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_png.h"
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -44,21 +45,20 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
                       const std::string& distmap_filename,
                       const std::string& colorspace_hint, double p,
                       float intensity_target) {
-  CodecInOut io1;
+  ColorHints color_hints;
   if (!colorspace_hint.empty()) {
-    io1.dec_hints.Add("color_space", colorspace_hint);
+    color_hints.Add("color_space", colorspace_hint);
   }
+
+  CodecInOut io1;
   ThreadPoolInternal pool(4);
-  if (!SetFromFile(pathname1, &io1, &pool)) {
+  if (!SetFromFile(pathname1, color_hints, &io1, &pool)) {
     fprintf(stderr, "Failed to read image from %s\n", pathname1);
     return false;
   }
 
   CodecInOut io2;
-  if (!colorspace_hint.empty()) {
-    io2.dec_hints.Add("color_space", colorspace_hint);
-  }
-  if (!SetFromFile(pathname2, &io2, &pool)) {
+  if (!SetFromFile(pathname2, color_hints, &io2, &pool)) {
     fprintf(stderr, "Failed to read image from %s\n", pathname2);
     return false;
   }

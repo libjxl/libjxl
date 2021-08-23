@@ -73,7 +73,7 @@ static double ApproximateDistanceForBPP(double bpp) {
 jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
                             jxl::ThreadPool* pool, jxl::ImageF* out_map) {
   jxl::CodecInOut io_heatmap;
-  if (!SetFromFile(filename_heatmap, &io_heatmap, pool)) {
+  if (!SetFromFile(filename_heatmap, jxl::ColorHints(), &io_heatmap, pool)) {
     return JXL_FAILURE("Could not load heatmap.");
   }
   *out_map = std::move(io_heatmap.Main().color()->Plane(0));
@@ -462,7 +462,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       'x', "dec-hints", "key=value",
       "color_space indicates the ColorEncoding, see Description();\n"
       "icc_pathname refers to a binary file containing an ICC profile.",
-      &dec_hints, &ParseAndAppendKeyValue, 1);
+      &color_hints, &ParseAndAppendKeyValue, 1);
 
   cmdline->AddOptionValue(
       '\0', "override_bitdepth", "0=use from image, 1-32=override",
@@ -741,11 +741,11 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   const double t0 = jxl::Now();
 
   io->target_nits = args.intensity_target;
-  io->dec_hints = args.dec_hints;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
   jxl::Codec input_codec;
-  if (!SetFromFile(args.params.file_in, io, nullptr, &input_codec)) {
+  if (!SetFromFile(args.params.file_in, args.color_hints, io, nullptr,
+                   &input_codec)) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
     return false;
   }

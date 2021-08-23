@@ -11,6 +11,7 @@
 #include <string>
 #include <utility>
 
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -53,8 +54,10 @@ struct CompressArgs {
   const char* file_out = nullptr;
   jxl::Override print_profile = jxl::Override::kDefault;
 
+  // Decoding source image flags
+  jxl::ColorHints color_hints;
+
   // JXL flags
-  jxl::DecoderHints dec_hints;
   size_t override_bitdepth = 0;
   jxl::CompressParams params;
   size_t num_threads;

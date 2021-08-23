@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/span.h"
@@ -18,8 +19,9 @@
 
 namespace jxl {
 
-// Decodes `bytes` into `io`. io->dec_hints are ignored.
-Status DecodeImageAPNG(const Span<const uint8_t> bytes, ThreadPool* pool,
+// Decodes `bytes` into `io`. color_space_hint is ignored.
+Status DecodeImageAPNG(const Span<const uint8_t> bytes,
+                       const ColorHints& color_hints, ThreadPool* pool,
                        CodecInOut* io);
 
 }  // namespace jxl

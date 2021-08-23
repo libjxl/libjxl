@@ -127,8 +127,8 @@ class InMemoryOStream : public OpenEXR::OStream {
 
 }  // namespace
 
-Status DecodeImageEXR(Span<const uint8_t> bytes, ThreadPool* pool,
-                      CodecInOut* io) {
+Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                      ThreadPool* pool, CodecInOut* io) {
   // Get the number of threads we should be using for OpenEXR.
   // OpenEXR creates its own set of threads, independent from ours. `pool` is
   // only used for converting from a buffer of OpenEXR::Rgba to Image3F.

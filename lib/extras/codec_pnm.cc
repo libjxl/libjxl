@@ -378,45 +378,6 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
   return true;
 }
 
-Status ApplyHints(const bool is_gray, CodecInOut* io) {
-  bool got_color_space = false;
-
-  JXL_RETURN_IF_ERROR(io->dec_hints.Foreach(
-      [is_gray, io, &got_color_space](const std::string& key,
-                                      const std::string& value) -> Status {
-        ColorEncoding* c_original = &io->metadata.m.color_encoding;
-        if (key == "color_space") {
-          if (!ParseDescription(value, c_original) ||
-              !c_original->CreateICC()) {
-            return JXL_FAILURE("PNM: Failed to apply color_space");
-          }
-
-          if (is_gray != io->metadata.m.color_encoding.IsGray()) {
-            return JXL_FAILURE(
-                "PNM: mismatch between file and color_space hint");
-          }
-
-          got_color_space = true;
-        } else if (key == "icc_pathname") {
-          PaddedBytes icc;
-          JXL_RETURN_IF_ERROR(ReadFile(value, &icc));
-          JXL_RETURN_IF_ERROR(c_original->SetICC(std::move(icc)));
-          got_color_space = true;
-        } else {
-          JXL_WARNING("PNM decoder ignoring %s hint", key.c_str());
-        }
-        return true;
-      }));
-
-  if (!got_color_space) {
-    JXL_WARNING("PNM: no color_space/icc_pathname given, assuming sRGB");
-    JXL_RETURN_IF_ERROR(io->metadata.m.color_encoding.SetSRGB(
-        is_gray ? ColorSpace::kGray : ColorSpace::kRGB));
-  }
-
-  return true;
-}
-
 Span<const uint8_t> MakeSpan(const char* str) {
   return Span<const uint8_t>(reinterpret_cast<const uint8_t*>(str),
                              strlen(str));
@@ -440,7 +401,8 @@ void VerticallyFlipImage(Image3F* const image) {
 
 }  // namespace
 
-Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
+Status DecodeImagePNM(const Span<const uint8_t> bytes,
+                      const ColorHints& color_hints, ThreadPool* pool,
                       CodecInOut* io) {
   Parser parser(bytes);
   HeaderPNM header = {};
@@ -453,7 +415,9 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
     return JXL_FAILURE("PNM: bits_per_sample invalid");
   }
 
-  JXL_RETURN_IF_ERROR(ApplyHints(header.is_gray, io));
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
+                                      header.is_gray, io));
+
   if (header.floating_point) {
     io->metadata.m.SetFloat32Samples();
   } else {
