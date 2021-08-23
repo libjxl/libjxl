@@ -47,6 +47,8 @@ void CommandLineParser::PrintHelp() const {
 bool CommandLineParser::Parse(int argc, const char* argv[]) {
   if (argc) program_name_ = argv[0];
   int i = 1;  // argv[0] is the program name.
+  // if false, stop matching options and take only positional arguments
+  bool parse_options = true;
   while (i < argc) {
     if (!strcmp("-h", argv[i]) || !strcmp("--help", argv[i])) {
       help_ = true;
@@ -56,9 +58,15 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
     if (!strcmp("-v", argv[i]) || !strcmp("--verbose", argv[i])) {
       verbosity++;
     }
+    // after "--", filenames starting with "-" can be used
+    if (!strcmp("--", argv[i])) {
+      parse_options = false;
+      i++;
+      continue;
+    }
     bool found = false;
     for (const auto& option : options_) {
-      if (option->Match(argv[i])) {
+      if (option->Match(argv[i], parse_options)) {
         // Parsing advances the value i on success.
         const char* arg = argv[i];
         if (!option->Parse(argc, argv, &i)) {
