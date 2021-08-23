@@ -244,7 +244,9 @@ Status DecodeImageJPG(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   // Use brunsli JPEG decoder to read quantized coefficients.
   if (target == DecodeTarget::kQuantizedCoeffs) {
-    return jxl::jpeg::DecodeImageJPG(bytes, io);
+    Status could_decode = jxl::jpeg::DecodeImageJPG(bytes, io);
+    if (!could_decode) fprintf(stderr, "Corrupt or CMYK JPEG.\n");
+    return could_decode;
   }
 
 #if JPEGXL_ENABLE_JPEG
