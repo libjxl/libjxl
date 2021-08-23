@@ -11,18 +11,14 @@ if (NOT Gimp_FOUND)
   return ()
 endif ()
 
-option(JPEGXL_ENABLE_GIMP_SAVING "Enable saving to JPEG XL from GIMP" OFF)
-
 add_executable(file-jxl WIN32
   common.h
+  common.cc
   file-jxl-load.cc
   file-jxl-load.h
   file-jxl-save.cc
   file-jxl-save.h
   file-jxl.cc)
-if (JPEGXL_ENABLE_GIMP_SAVING)
-  target_compile_definitions(file-jxl PRIVATE -DJPEGXL_ENABLE_GIMP_SAVING=1)
-endif ()
 target_link_libraries(file-jxl jxl-static jxl_threads-static PkgConfig::Gimp)
 
 pkg_get_variable(GIMP_LIB_DIR gimp-2.0 gimplibdir)
