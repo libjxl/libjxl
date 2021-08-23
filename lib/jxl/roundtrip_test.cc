@@ -52,21 +52,26 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
     }
   }
   size_t bitdepth = 0;
+  bool float_in = false;
   switch (pixel_format.data_type) {
     case JXL_TYPE_FLOAT:
       bitdepth = 32;
+      float_in = true;
       io.metadata.m.SetFloat32Samples();
       break;
     case JXL_TYPE_FLOAT16:
       bitdepth = 16;
+      float_in = true;
       io.metadata.m.SetFloat16Samples();
       break;
     case JXL_TYPE_UINT8:
       bitdepth = 8;
+      float_in = false;
       io.metadata.m.SetUintSamples(8);
       break;
     case JXL_TYPE_UINT16:
       bitdepth = 16;
+      float_in = false;
       io.metadata.m.SetUintSamples(16);
       break;
     default:
@@ -82,12 +87,12 @@ jxl::CodecInOut ConvertTestImage(const std::vector<uint8_t>& buf,
   } else {
     color_encoding = jxl::ColorEncoding::SRGB(is_gray);
   }
-  EXPECT_TRUE(
-      ConvertFromExternal(jxl::Span<const uint8_t>(buf.data(), buf.size()),
-                          xsize, ysize, color_encoding, has_alpha,
-                          /*alpha_is_premultiplied=*/false,
-                          /*bits_per_sample=*/bitdepth, pixel_format.endianness,
-                          /*flipped_y=*/false, /*pool=*/nullptr, &io.Main()));
+  EXPECT_TRUE(ConvertFromExternal(
+      jxl::Span<const uint8_t>(buf.data(), buf.size()), xsize, ysize,
+      color_encoding, has_alpha,
+      /*alpha_is_premultiplied=*/false,
+      /*bits_per_sample=*/bitdepth, pixel_format.endianness,
+      /*flipped_y=*/false, /*pool=*/nullptr, &io.Main(), float_in));
   return io;
 }
 

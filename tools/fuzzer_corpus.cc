@@ -216,7 +216,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
         io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN,
-        false /* flipped_y */, nullptr, &ib));
+        false /* flipped_y */, nullptr, &ib, /*float_in=*/false));
     io.frames.push_back(std::move(ib));
   }
 

@@ -255,7 +255,7 @@ PaddedBytes CreateTestJXLCodestream(
   EXPECT_TRUE(ConvertFromExternal(
       pixels, xsize, ysize, color_encoding, /*has_alpha=*/include_alpha,
       /*alpha_is_premultiplied=*/false, bitdepth, JXL_BIG_ENDIAN,
-      /*flipped_y=*/false, &pool, &io.Main()));
+      /*flipped_y=*/false, &pool, &io.Main(), /*float_in=*/false));
   jxl::PaddedBytes jpeg_data;
   if (jpeg_codestream != nullptr) {
 #if JPEGXL_ENABLE_JPEG
@@ -1452,7 +1452,7 @@ TEST_P(DecodeTestParam, PixelTest) {
     EXPECT_TRUE(ConvertFromExternal(
         bytes, config.xsize, config.ysize, color_encoding, config.include_alpha,
         /*alpha_is_premultiplied=*/false, 16, JXL_BIG_ENDIAN,
-        /*flipped_y=*/false, nullptr, &io.Main()));
+        /*flipped_y=*/false, nullptr, &io.Main(), /*float_in=*/false));
 
     for (size_t i = 0; i < pixels.size(); i++) pixels[i] = 0;
     EXPECT_TRUE(ConvertToExternal(
@@ -1734,7 +1734,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   EXPECT_TRUE(ConvertFromExternal(
       span0, xsize, ysize, color_encoding0,
       /*has_alpha=*/false, false, 16, format_orig.endianness,
-      /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
+      /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main(), /*float_in=*/false));
 
   // The output pixels are expected to be in the same colorspace as the input
   // profile, as the profile can be represented by enum values.
@@ -1742,10 +1742,10 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
   jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
   jxl::CodecInOut io1;
   io1.SetSize(xsize, ysize);
-  EXPECT_TRUE(
-      ConvertFromExternal(span1, xsize, ysize, color_encoding1,
-                          /*has_alpha=*/false, false, 32, format.endianness,
-                          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+  EXPECT_TRUE(ConvertFromExternal(
+      span1, xsize, ysize, color_encoding1,
+      /*has_alpha=*/false, false, 32, format.endianness,
+      /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main(), /*float_in=*/true));
 
   jxl::ButteraugliParams ba;
   EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
@@ -1786,10 +1786,11 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
     jxl::CodecInOut io0;
     io0.SetSize(xsize, ysize);
-    EXPECT_TRUE(ConvertFromExternal(
-        span0, xsize, ysize, color_encoding0,
-        /*has_alpha=*/false, false, 16, format_orig.endianness,
-        /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
+    EXPECT_TRUE(ConvertFromExternal(span0, xsize, ysize, color_encoding0,
+                                    /*has_alpha=*/false, false, 16,
+                                    format_orig.endianness,
+                                    /*flipped_y=*/false, /*pool=*/nullptr,
+                                    &io0.Main(), /*float_in=*/false));
 
     jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
     jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
@@ -1797,17 +1798,19 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     if (channels == 4) {
       io1.metadata.m.SetAlphaBits(8);
       io1.SetSize(xsize, ysize);
-      EXPECT_TRUE(ConvertFromExternal(
-          span1, xsize, ysize, color_encoding1,
-          /*has_alpha=*/true, false, 8, format.endianness,
-          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      EXPECT_TRUE(ConvertFromExternal(span1, xsize, ysize, color_encoding1,
+                                      /*has_alpha=*/true, false, 8,
+                                      format.endianness,
+                                      /*flipped_y=*/false, /*pool=*/nullptr,
+                                      &io1.Main(), /*float_in=*/false));
       io1.metadata.m.SetAlphaBits(0);
       io1.Main().ClearExtraChannels();
     } else {
-      EXPECT_TRUE(ConvertFromExternal(
-          span1, xsize, ysize, color_encoding1,
-          /*has_alpha=*/false, false, 8, format.endianness,
-          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      EXPECT_TRUE(ConvertFromExternal(span1, xsize, ysize, color_encoding1,
+                                      /*has_alpha=*/false, false, 8,
+                                      format.endianness,
+                                      /*flipped_y=*/false, /*pool=*/nullptr,
+                                      &io1.Main(), /*float_in=*/false));
     }
 
     jxl::ButteraugliParams ba;
@@ -1850,10 +1853,11 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     jxl::Span<const uint8_t> span0(pixels.data(), pixels.size());
     jxl::CodecInOut io0;
     io0.SetSize(xsize, ysize);
-    EXPECT_TRUE(ConvertFromExternal(
-        span0, xsize, ysize, color_encoding0,
-        /*has_alpha=*/false, false, 16, format_orig.endianness,
-        /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main()));
+    EXPECT_TRUE(ConvertFromExternal(span0, xsize, ysize, color_encoding0,
+                                    /*has_alpha=*/false, false, 16,
+                                    format_orig.endianness,
+                                    /*flipped_y=*/false, /*pool=*/nullptr,
+                                    &io0.Main(), /*float_in=*/false));
 
     jxl::ColorEncoding color_encoding1 = jxl::ColorEncoding::SRGB(false);
     jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
@@ -1861,17 +1865,19 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     if (channels == 4) {
       io1.metadata.m.SetAlphaBits(8);
       io1.SetSize(xsize, ysize);
-      EXPECT_TRUE(ConvertFromExternal(
-          span1, xsize, ysize, color_encoding1,
-          /*has_alpha=*/true, false, 8, format.endianness,
-          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      EXPECT_TRUE(ConvertFromExternal(span1, xsize, ysize, color_encoding1,
+                                      /*has_alpha=*/true, false, 8,
+                                      format.endianness,
+                                      /*flipped_y=*/false, /*pool=*/nullptr,
+                                      &io1.Main(), /*float_in=*/false));
       io1.metadata.m.SetAlphaBits(0);
       io1.Main().ClearExtraChannels();
     } else {
-      EXPECT_TRUE(ConvertFromExternal(
-          span1, xsize, ysize, color_encoding1,
-          /*has_alpha=*/false, false, 8, format.endianness,
-          /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main()));
+      EXPECT_TRUE(ConvertFromExternal(span1, xsize, ysize, color_encoding1,
+                                      /*has_alpha=*/false, false, 8,
+                                      format.endianness,
+                                      /*flipped_y=*/false, /*pool=*/nullptr,
+                                      &io1.Main(), /*float_in=*/false));
     }
 
     jxl::ButteraugliParams ba;
@@ -2211,7 +2217,8 @@ TEST(DecodeTest, AnimationTest) {
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle,
+        /*float_in=*/false));
     bundle.duration = frame_durations[i];
     io.frames.push_back(std::move(bundle));
   }
@@ -2313,7 +2320,8 @@ TEST(DecodeTest, AnimationTestStreaming) {
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle,
+        /*float_in=*/false));
     bundle.duration = frame_durations[i];
     io.frames.push_back(std::move(bundle));
   }
@@ -2533,7 +2541,8 @@ TEST(DecodeTest, SkipFrameTest) {
         jxl::Span<const uint8_t>(frames[i].data(), frames[i].size()), xsize,
         ysize, jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle,
+        /*float_in=*/false));
     bundle.duration = frame_durations[i];
     io.frames.push_back(std::move(bundle));
   }
@@ -2669,7 +2678,7 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
           /*has_alpha=*/false,
           /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
           JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr,
-          &bundle_internal));
+          &bundle_internal, /*float_in=*/false));
       bundle_internal.duration = 0;
       bundle_internal.use_for_next_frame = true;
       io.frames.push_back(std::move(bundle_internal));
@@ -2684,7 +2693,8 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
         jxl::Span<const uint8_t>(frame.data(), frame.size()), xsize, ysize,
         jxl::ColorEncoding::SRGB(/*is_gray=*/false), /*has_alpha=*/false,
         /*alpha_is_premultiplied=*/false, /*bits_per_sample=*/16,
-        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle));
+        JXL_BIG_ENDIAN, /*flipped_y=*/false, /*pool=*/nullptr, &bundle,
+        /*float_in=*/false));
     bundle.duration = frame_durations[i];
     // Create some variation in which frames depend on which.
     if (i != 3 && i != 9 && i != 10) {

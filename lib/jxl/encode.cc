@@ -30,9 +30,7 @@
    JXL_ENC_ERROR)
 #endif  // JXL_CRASH_ON_ERROR
 
-namespace jxl {
-
-}  // namespace jxl
+namespace jxl {}  // namespace jxl
 
 uint32_t JxlEncoderVersion(void) {
   return JPEGXL_MAJOR_VERSION * 1000000 + JPEGXL_MINOR_VERSION * 1000 +
@@ -74,8 +72,8 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
     // TODO(lode): preview should be added here if a preview image is added
 
-	// Each frame should start on byte boundaries.
-	writer.ZeroPadToByte();
+    // Each frame should start on byte boundaries.
+    writer.ZeroPadToByte();
   }
 
   // TODO(zond): Handle progressive mode like EncodeFile does it.
@@ -156,14 +154,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   if (!enc->metadata.size.Set(info->xsize, info->ysize)) {
     return JXL_ENC_ERROR;
   }
-  if (info->exponent_bits_per_sample) {
-    if (info->exponent_bits_per_sample != 8) return JXL_ENC_NOT_SUPPORTED;
-    if (info->bits_per_sample == 32) {
-      enc->metadata.m.SetFloat32Samples();
-    } else {
-      return JXL_ENC_NOT_SUPPORTED;
-    }
-  } else {
+  if (!info->exponent_bits_per_sample) {
     switch (info->bits_per_sample) {
       case 32:
       case 16:
@@ -174,6 +165,14 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
         return JXL_ENC_ERROR;
         break;
     }
+  } else if (info->bits_per_sample == 32 &&
+             info->exponent_bits_per_sample == 8) {
+    enc->metadata.m.SetFloat32Samples();
+  } else if (info->bits_per_sample == 16 &&
+             info->exponent_bits_per_sample == 5) {
+    enc->metadata.m.SetFloat16Samples();
+  } else {
+    return JXL_ENC_NOT_SUPPORTED;
   }
   if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
     return JXL_ENC_NOT_SUPPORTED;
@@ -384,18 +383,15 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
       // default move constructor there.
       jxl::JxlEncoderQueuedFrame{options->values,
                                  jxl::ImageBundle(&options->enc->metadata.m)});
-  if (!queued_frame) {
-    return JXL_ENC_ERROR;
-  }
 
-  if (pixel_format->data_type == JXL_TYPE_FLOAT16) {
-    // float16 is currently only supported in the decoder
+  if (!queued_frame) {
     return JXL_ENC_ERROR;
   }
 
   jxl::ColorEncoding c_current;
   if (options->enc->metadata.m.xyb_encoded) {
-    if (pixel_format->data_type == JXL_TYPE_FLOAT) {
+    if ((pixel_format->data_type == JXL_TYPE_FLOAT) ||
+        (pixel_format->data_type == JXL_TYPE_FLOAT16)) {
       c_current =
           jxl::ColorEncoding::LinearSRGB(pixel_format->num_channels < 3);
     } else {

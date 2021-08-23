@@ -311,7 +311,8 @@ class AvifCodec : public ImageCodec {
                                   rgb_image.height * rgb_image.rowBytes),
               rgb_image.width, rgb_image.height, color, has_alpha,
               /*alpha_is_premultiplied=*/false, rgb_image.depth,
-              JXL_NATIVE_ENDIAN, /*flipped_y=*/false, pool, &ib));
+              JXL_NATIVE_ENDIAN, /*flipped_y=*/false, pool, &ib,
+              /*float_in=*/false));
           io->frames.push_back(std::move(ib));
           io->dec_pixels += rgb_image.width * rgb_image.height;
         }

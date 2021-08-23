@@ -170,14 +170,15 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * Currently only some pixel formats are supported:
  * - JXL_TYPE_UINT8
  * - JXL_TYPE_UINT16
+ * - JXL_TYPE_FLOAT16, with nominal range 0..1
  * - JXL_TYPE_FLOAT, with nominal range 0..1
  *
  * The color profile of the pixels depends on the value of uses_original_profile
  * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
  * original profile that is set with JxlEncoderSetColorEncoding or
  * JxlEncoderSetICCProfile. If false, the pixels are assumed to be nonlinear
- * sRGB for integer data types (JXL_TYPE_UINT8 and JXL_TYPE_UINT16), and linear
- * sRGB for floating point data types (JXL_TYPE_FLOAT).
+ * sRGB for integer data types (JXL_TYPE_UINT8, JXL_TYPE_UINT16), and linear
+ * sRGB for floating point data types (JXL_TYPE_FLOAT16, JXL_TYPE_FLOAT).
  *
  * @param options set of encoder options to use when encoding the frame.
  * @param pixel_format format for pixels. Object owned by the caller and its
