@@ -3,12 +3,12 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
+# codec_jpg is included always for loading of lossless reconstruction but
+# decoding to pixels is only supported if libjpeg is found and
+# JPEGXL_ENABLE_JPEG=1.
 set(JPEGXL_EXTRAS_SOURCES
   extras/codec.cc
   extras/codec.h
-  # codec_jpg is included always for loading of lossless reconstruction but
-  # decoding to pixels is only supported if libjpeg is found and
-  # JPEGXL_ENABLE_JPEG=1.
   extras/codec_jpg.cc
   extras/codec_jpg.h
   extras/codec_pgx.cc

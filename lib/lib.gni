@@ -390,6 +390,27 @@ libjxl_testlib_sources = [
     "jxl/testdata.h",
 ]
 
+libjxl_extras_sources = [
+    "extras/codec.cc",
+    "extras/codec.h",
+    "extras/codec_jpg.cc",
+    "extras/codec_jpg.h",
+    "extras/codec_pgx.cc",
+    "extras/codec_pgx.h",
+    "extras/codec_png.cc",
+    "extras/codec_png.h",
+    "extras/codec_pnm.cc",
+    "extras/codec_pnm.h",
+    "extras/codec_psd.cc",
+    "extras/codec_psd.h",
+    "extras/color_hints.cc",
+    "extras/color_hints.h",
+    "extras/time.cc",
+    "extras/time.h",
+    "extras/tone_mapping.cc",
+    "extras/tone_mapping.h",
+]
+
 libjxl_threads_sources = [
     "threads/resizable_parallel_runner.cc",
     "threads/thread_parallel_runner.cc",
