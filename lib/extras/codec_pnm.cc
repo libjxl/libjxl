@@ -500,13 +500,14 @@ Status DecodeImagePNM(const Span<const uint8_t> bytes, ThreadPool* pool,
     io->Main() = std::move(bundle);
   } else {
     const bool flipped_y = header.bits_per_sample == 32;  // PFMs are flipped
+    const bool float_in = header.bits_per_sample == 32;
     const Span<const uint8_t> span(pos, bytes.data() + bytes.size() - pos);
     JXL_RETURN_IF_ERROR(ConvertFromExternal(
         span, header.xsize, header.ysize, io->metadata.m.color_encoding,
         /*has_alpha=*/false, /*alpha_is_premultiplied=*/false,
         io->metadata.m.bit_depth.bits_per_sample,
         header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN, flipped_y, pool,
-        &io->Main()));
+        &io->Main(), float_in));
   }
   if (!header.floating_point) {
     io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();

@@ -817,11 +817,11 @@ Status DecodeImagePNG(const Span<const uint8_t> bytes, ThreadPool* pool,
 
   const JxlEndianness endianness = JXL_BIG_ENDIAN;  // PNG requirement
   const Span<const uint8_t> span(out, out_size);
-  const bool ok =
-      ConvertFromExternal(span, w, h, io->metadata.m.color_encoding, has_alpha,
-                          /*alpha_is_premultiplied=*/false,
-                          io->metadata.m.bit_depth.bits_per_sample, endianness,
-                          /*flipped_y=*/false, pool, &io->Main());
+  const bool ok = ConvertFromExternal(
+      span, w, h, io->metadata.m.color_encoding, has_alpha,
+      /*alpha_is_premultiplied=*/false,
+      io->metadata.m.bit_depth.bits_per_sample, endianness,
+      /*flipped_y=*/false, pool, &io->Main(), /*float_in=*/false);
   JXL_RETURN_IF_ERROR(ok);
   io->dec_pixels = w * h;
   io->metadata.m.bit_depth.bits_per_sample = io->Main().DetectRealBitdepth();

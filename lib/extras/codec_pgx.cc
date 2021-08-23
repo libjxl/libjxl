@@ -258,7 +258,7 @@ Status DecodeImagePGX(const Span<const uint8_t> bytes, ThreadPool* pool,
       /*alpha_is_premultiplied=*/false,
       io->metadata.m.bit_depth.bits_per_sample,
       header.big_endian ? JXL_BIG_ENDIAN : JXL_LITTLE_ENDIAN, flipped_y, pool,
-      &ib));
+      &ib, /*float_in=*/false));
   io->frames.push_back(std::move(ib));
   SetIntensityTarget(io);
   return true;
