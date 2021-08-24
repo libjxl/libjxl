@@ -53,9 +53,30 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
       i++;
       continue;
     }
+    if (!strcmp("-hv", argv[i]) || !strcmp("-vh", argv[i])) {
+      help_ = true;
+      verbosity++;
+      i++;
+      continue;
+    }
+    if (!strcmp("-hvv", argv[i]) || !strcmp("-vvh", argv[i]) ||
+        !strcmp("-vhv", argv[i])) {
+      help_ = true;
+      verbosity++;
+      verbosity++;
+      i++;
+      continue;
+    }
+    if (!strcmp("-vv", argv[i])) {
+      verbosity++;
+      verbosity++;
+      i++;
+      continue;
+    }
     if (!strcmp("-v", argv[i]) || !strcmp("--verbose", argv[i])) {
       verbosity++;
     }
+
     bool found = false;
     for (const auto& option : options_) {
       if (option->Match(argv[i])) {
