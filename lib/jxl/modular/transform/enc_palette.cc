@@ -116,8 +116,8 @@ struct PaletteIterationData {
     // Store frequency weighted by delta distance from quantized value.
     for (size_t i = 0; i < deltas[0].size(); ++i) {
       pixel_type_3d delta = {
-          RoundInt(deltas[0][i], 3), RoundInt(deltas[1][i], 3),
-          RoundInt(deltas[2][i], 3)};  // a basic form of clustering
+          {RoundInt(deltas[0][i], 3), RoundInt(deltas[1][i], 3),
+           RoundInt(deltas[2][i], 3)}};  // a basic form of clustering
       if (delta[0] == 0 && delta[1] == 0 && delta[2] == 0) continue;
       delta_frequency_map[delta] += sqrt(sqrt(delta_distances[i]));
     }

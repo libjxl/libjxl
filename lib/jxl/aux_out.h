@@ -283,8 +283,8 @@ struct AuxOut {
   size_t num_dct32x64_blocks = 0;
   size_t num_dct64_blocks = 0;
 
-  std::array<uint32_t, 8> dc_pred_usage = {0};
-  std::array<uint32_t, 8> dc_pred_usage_xb = {0};
+  std::array<uint32_t, 8> dc_pred_usage = {{0}};
+  std::array<uint32_t, 8> dc_pred_usage_xb = {{0}};
 
   int num_butteraugli_iters = 0;
 

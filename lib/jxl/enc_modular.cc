@@ -837,8 +837,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
             multiplier_info.back().range[1][0] != stream_id ||
             multiplier_info.back().multiplier != q) {
           StaticPropRange range;
-          range[0] = {i, i + 1};
-          range[1] = {stream_id, stream_id + 1};
+          range[0] = {{i, i + 1}};
+          range[1] = {{stream_id, stream_id + 1}};
           multiplier_info.push_back({range, (uint32_t)q});
         } else {
           // Previous channel in the same group had the same quantization
@@ -955,8 +955,8 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
                                 pixel_samples, diff_samples);
           }
           StaticPropRange range;
-          range[0] = {0, max_c};
-          range[1] = {start, stop};
+          range[0] = {{0, max_c}};
+          range[1] = {{start, stop}};
           auto local_multiplier_info = multiplier_info;
 
           tree_samples.PreQuantizeProperties(

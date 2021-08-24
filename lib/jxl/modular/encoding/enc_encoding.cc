@@ -54,8 +54,8 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
 
   JXL_DEBUG_V(7, "Learning %zux%zu channel %d", channel.w, channel.h, chan);
 
-  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
-                                                               (int)group_id};
+  std::array<pixel_type, kNumStaticProperties> static_props = {
+      {chan, (int)group_id}};
   Properties properties(kNumNonrefProperties +
                         kExtraPropsPerChannel * options.max_properties);
   double pixel_fraction = std::min(1.0f, options.nb_repeats);
@@ -182,8 +182,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
               "(shift=%i,%i)",
               channel.w, channel.h, chan, channel.hshift, channel.vshift);
 
-  std::array<pixel_type, kNumStaticProperties> static_props = {chan,
-                                                               (int)group_id};
+  std::array<pixel_type, kNumStaticProperties> static_props = {
+      {chan, (int)group_id}};
   bool use_wp, is_wp_only;
   bool is_gradient_only;
   size_t num_props;
