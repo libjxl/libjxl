@@ -2265,6 +2265,8 @@ JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
     }
   }
   header->name_length = dec->frame_header->name.size();
+  header->color_transform =
+      static_cast<JxlColorTransform>(dec->frame_header->color_transform);
   header->is_last = dec->frame_header->is_last;
 
   return JXL_DEC_SUCCESS;
