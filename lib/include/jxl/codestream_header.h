@@ -282,6 +282,18 @@ typedef struct {
   uint64_t extensions;
 } JxlHeaderExtensions;
 
+/** Color transform of a frame.
+    XYB: likely indicates that the frame is lossy.
+    RGB: no transform was used; possibly the frame was encoded in a lossless
+   way. YCBCR: JPEG's YCbCr transform was used, e.g. because it is a
+   recompressed JPEG.
+ */
+typedef enum {
+  JXL_XYB = 0,
+  JXL_RGB = 1,
+  JXL_YCBCR = 2,
+} JxlColorTransform;
+
 /** The header of one displayed frame. */
 typedef struct {
   /** How long to wait after rendering in ticks. The duration in seconds of a
@@ -303,6 +315,10 @@ typedef struct {
    * Excludes null termination character.
    */
   uint32_t name_length;
+
+  /** Color transform the frame uses.
+   */
+  JxlColorTransform color_transform;
 
   /** Indicates this is the last animation frame.
    */
