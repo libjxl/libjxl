@@ -1,0 +1,38 @@
+image: Visual Studio 2019
+configuration: Release
+clone_depth: 1
+
+environment:
+  VCPKG: C:/Tools/vcpkg
+  matrix:
+  - arch: x64
+  - arch: ARM64
+
+matrix:
+  allow_failures:
+    - arch: ARM64
+
+cache:
+- c:\tools\vcpkg\installed\
+- c:\Users\appveyor\AppData\Local\vcpkg\
+
+install:
+  - git submodule update --init --recursive
+  - vcpkg install gtest:%arch%-windows
+  - vcpkg install giflib:%arch%-windows
+  - vcpkg install libjpeg-turbo:%arch%-windows
+  - vcpkg install libpng:%arch%-windows
+  - vcpkg install zlib:%arch%-windows
+
+
+before_build:
+  - mkdir build
+  - cd build
+  - cmake .. -A %arch% -DBUILD_TESTING=OFF -DJPEGXL_STATIC=ON
+
+build:
+  project: build/JPEGXL.sln
+  verbosity: minimal
+
+artifacts:
+  - path: build\*\Release\*.exe
