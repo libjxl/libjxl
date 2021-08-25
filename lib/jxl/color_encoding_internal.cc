@@ -253,6 +253,93 @@ static Status F64ToCustomxyI32(const double f, int32_t* JXL_RESTRICT i) {
   return true;
 }
 
+Status ConvertExternalToInternalWhitePoint(const JxlWhitePoint external,
+                                           WhitePoint* internal) {
+  switch (external) {
+    case JXL_WHITE_POINT_D65:
+      *internal = WhitePoint::kD65;
+      return true;
+    case JXL_WHITE_POINT_CUSTOM:
+      *internal = WhitePoint::kCustom;
+      return true;
+    case JXL_WHITE_POINT_E:
+      *internal = WhitePoint::kE;
+      return true;
+    case JXL_WHITE_POINT_DCI:
+      *internal = WhitePoint::kDCI;
+      return true;
+  }
+  return JXL_FAILURE("Invalid WhitePoint enum value");
+}
+
+Status ConvertExternalToInternalPrimaries(const JxlPrimaries external,
+                                          Primaries* internal) {
+  switch (external) {
+    case JXL_PRIMARIES_SRGB:
+      *internal = Primaries::kSRGB;
+      return true;
+    case JXL_PRIMARIES_CUSTOM:
+      *internal = Primaries::kCustom;
+      return true;
+    case JXL_PRIMARIES_2100:
+      *internal = Primaries::k2100;
+      return true;
+    case JXL_PRIMARIES_P3:
+      *internal = Primaries::kP3;
+      return true;
+  }
+  return JXL_FAILURE("Invalid Primaries enum value");
+}
+
+Status ConvertExternalToInternalTransferFunction(
+    const JxlTransferFunction external, TransferFunction* internal) {
+  switch (external) {
+    case JXL_TRANSFER_FUNCTION_709:
+      *internal = TransferFunction::k709;
+      return true;
+    case JXL_TRANSFER_FUNCTION_UNKNOWN:
+      *internal = TransferFunction::kUnknown;
+      return true;
+    case JXL_TRANSFER_FUNCTION_LINEAR:
+      *internal = TransferFunction::kLinear;
+      return true;
+    case JXL_TRANSFER_FUNCTION_SRGB:
+      *internal = TransferFunction::kSRGB;
+      return true;
+    case JXL_TRANSFER_FUNCTION_PQ:
+      *internal = TransferFunction::kPQ;
+      return true;
+    case JXL_TRANSFER_FUNCTION_DCI:
+      *internal = TransferFunction::kDCI;
+      return true;
+    case JXL_TRANSFER_FUNCTION_HLG:
+      *internal = TransferFunction::kHLG;
+      return true;
+    case JXL_TRANSFER_FUNCTION_GAMMA:
+      return JXL_FAILURE("Gamma should be handled separately");
+  }
+  return JXL_FAILURE("Invalid TransferFunction enum value");
+}
+
+Status ConvertExternalToInternalRenderingIntent(
+    const JxlRenderingIntent external, RenderingIntent* internal) {
+  switch (external) {
+    case JXL_RENDERING_INTENT_PERCEPTUAL:
+      *internal = RenderingIntent::kPerceptual;
+      return true;
+    case JXL_RENDERING_INTENT_RELATIVE:
+      *internal = RenderingIntent::kRelative;
+      return true;
+    case JXL_RENDERING_INTENT_SATURATION:
+      *internal = RenderingIntent::kSaturation;
+      return true;
+    case JXL_RENDERING_INTENT_ABSOLUTE:
+      *internal = RenderingIntent::kAbsolute;
+      return true;
+  }
+  return JXL_FAILURE("Invalid RenderingIntent enum value");
+}
+
 }  // namespace
 
 CIExy Customxy::Get() const {
@@ -673,34 +760,45 @@ Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
                                               ColorEncoding* internal) {
   internal->SetColorSpace(static_cast<ColorSpace>(external.color_space));
 
-  CIExy wp;
-  wp.x = external.white_point_xy[0];
-  wp.y = external.white_point_xy[1];
-  JXL_RETURN_IF_ERROR(internal->SetWhitePoint(wp));
+  JXL_RETURN_IF_ERROR(ConvertExternalToInternalWhitePoint(
+      external.white_point, &internal->white_point));
+  if (external.white_point == JXL_WHITE_POINT_CUSTOM) {
+    CIExy wp;
+    wp.x = external.white_point_xy[0];
+    wp.y = external.white_point_xy[1];
+    JXL_RETURN_IF_ERROR(internal->SetWhitePoint(wp));
+  }
 
   if (external.color_space == JXL_COLOR_SPACE_RGB ||
       external.color_space == JXL_COLOR_SPACE_UNKNOWN) {
-    internal->primaries = static_cast<Primaries>(external.primaries);
-    PrimariesCIExy primaries;
-    primaries.r.x = external.primaries_red_xy[0];
-    primaries.r.y = external.primaries_red_xy[1];
-    primaries.g.x = external.primaries_green_xy[0];
-    primaries.g.y = external.primaries_green_xy[1];
-    primaries.b.x = external.primaries_blue_xy[0];
-    primaries.b.y = external.primaries_blue_xy[1];
-    JXL_RETURN_IF_ERROR(internal->SetPrimaries(primaries));
+    JXL_RETURN_IF_ERROR(ConvertExternalToInternalPrimaries(
+        external.primaries, &internal->primaries));
+    if (external.primaries == JXL_PRIMARIES_CUSTOM) {
+      PrimariesCIExy primaries;
+      primaries.r.x = external.primaries_red_xy[0];
+      primaries.r.y = external.primaries_red_xy[1];
+      primaries.g.x = external.primaries_green_xy[0];
+      primaries.g.y = external.primaries_green_xy[1];
+      primaries.b.x = external.primaries_blue_xy[0];
+      primaries.b.y = external.primaries_blue_xy[1];
+      JXL_RETURN_IF_ERROR(internal->SetPrimaries(primaries));
+    }
   }
   CustomTransferFunction tf;
   if (external.transfer_function == JXL_TRANSFER_FUNCTION_GAMMA) {
     JXL_RETURN_IF_ERROR(tf.SetGamma(external.gamma));
   } else {
-    tf.SetTransferFunction(
-        static_cast<TransferFunction>(external.transfer_function));
+    TransferFunction tf_enum;
+    // JXL_TRANSFER_FUNCTION_GAMMA is not handled by this function since there's
+    // no internal enum value for it.
+    JXL_RETURN_IF_ERROR(ConvertExternalToInternalTransferFunction(
+        external.transfer_function, &tf_enum));
+    tf.SetTransferFunction(tf_enum);
   }
   internal->tf = tf;
 
-  internal->rendering_intent =
-      static_cast<RenderingIntent>(external.rendering_intent);
+  JXL_RETURN_IF_ERROR(ConvertExternalToInternalRenderingIntent(
+      external.rendering_intent, &internal->rendering_intent));
 
   return true;
 }
