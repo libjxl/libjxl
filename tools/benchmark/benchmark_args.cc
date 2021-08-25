@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/color_description.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
@@ -239,11 +240,14 @@ Status BenchmarkArgs::ValidateArgs() {
   // output_description is not empty.
   if (!output_description.empty()) {
     // Validate, but also create the profile (only needs to happen once).
-    if (!ParseDescription(output_description, &output_encoding)) {
+    JxlColorEncoding output_encoding_external;
+    if (!ParseDescription(output_description, &output_encoding_external)) {
       JXL_WARNING("Unrecognized output_description %s, try RGB_D65_SRG_Rel_Lin",
                   output_description.c_str());
       return false;  // already warned
     }
+    JXL_RETURN_IF_ERROR(jxl::ConvertExternalToInternalColorEncoding(
+        output_encoding_external, &output_encoding));
     JXL_RETURN_IF_ERROR(output_encoding.CreateICC());
   }
 

@@ -19,6 +19,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/codec_pnm.h
   extras/codec_psd.cc
   extras/codec_psd.h
+  extras/color_description.cc
+  extras/color_description.h
   extras/color_hints.cc
   extras/color_hints.h
   extras/time.cc
