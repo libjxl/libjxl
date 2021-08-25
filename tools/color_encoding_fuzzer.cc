@@ -5,13 +5,13 @@
 
 #include <string>
 
-#include "lib/jxl/color_encoding_internal.h"
+#include "lib/extras/color_description.h"
 
 namespace jxl {
 
 int TestOneInput(const uint8_t* data, size_t size) {
   std::string description(reinterpret_cast<const char*>(data), size);
-  ColorEncoding c;
+  JxlColorEncoding c;
   (void)ParseDescription(description, &c);
 
   return 0;

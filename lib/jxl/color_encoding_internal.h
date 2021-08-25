@@ -439,9 +439,6 @@ static inline bool ApproxEq(const double a, const double b,
 // Returns a representation of the ColorEncoding fields (not icc).
 // Example description: "RGB_D65_SRG_Rel_Lin"
 std::string Description(const ColorEncoding& c);
-Status ParseDescription(const std::string& description,
-                        ColorEncoding* JXL_RESTRICT c);
-
 static inline std::ostream& operator<<(std::ostream& os,
                                        const ColorEncoding& c) {
   return os << Description(c);

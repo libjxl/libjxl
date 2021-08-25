@@ -5,6 +5,7 @@
 
 #include "lib/extras/color_hints.h"
 
+#include "lib/extras/color_description.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/color_encoding_internal.h"
 
@@ -28,7 +29,10 @@ Status ApplyColorHints(const ColorHints& color_hints,
                                       const std::string& value) -> Status {
         ColorEncoding* c_original = &io->metadata.m.color_encoding;
         if (key == "color_space") {
-          if (!ParseDescription(value, c_original) ||
+          JxlColorEncoding c_original_external;
+          if (!ParseDescription(value, &c_original_external) ||
+              !ConvertExternalToInternalColorEncoding(c_original_external,
+                                                      c_original) ||
               !c_original->CreateICC()) {
             return JXL_FAILURE("Failed to apply color_space");
           }
