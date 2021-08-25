@@ -762,7 +762,7 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   }
 
   // try to use ICC profile
-  if (icc.size() > 0 && !gimp_color_profile_is_gray) {
+  if (icc.size() > 0 && !gimp_color_profile_is_gray(profile)) {
     if (JXL_ENC_SUCCESS !=
         JxlEncoderSetICCProfile(enc.get(), icc.data(), icc.size())) {
       g_printerr("JXL Warning: JxlEncoderSetICCProfile failed.\n");
