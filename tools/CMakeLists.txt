@@ -271,6 +271,7 @@ set(FUZZER_BINARIES
   fields_fuzzer
   rans_fuzzer
   set_from_bytes_fuzzer
+  transforms_fuzzer
 )
 
 # Fuzzers.
@@ -286,20 +287,20 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     add_executable("${BINARY}" EXCLUDE_FROM_ALL
         "fuzzer_stub.cc" "${FUZZER}.cc")
   endif()  # JPEGXL_ENABLE_FUZZERS
-    target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-    if(${FUZZER} STREQUAL djxl_fuzzer)
-      target_link_libraries("${BINARY}"
-        jxl_dec-static
-        jxl_threads-static
-      )
-    else()
-      target_link_libraries("${BINARY}"
-        jxl-static
-        jxl_extras-static
-        jxl_threads-static
-        jxl_tool
-      )
-    endif()
+  target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
+  if(${FUZZER} STREQUAL djxl_fuzzer)
+    target_link_libraries("${BINARY}"
+      jxl_dec-static
+      jxl_threads-static
+    )
+  else()
+    target_link_libraries("${BINARY}"
+      jxl-static
+      jxl_extras-static
+      jxl_threads-static
+      jxl_tool
+    )
+  endif()
 endforeach()
 
 # EMSCRIPTEN doesn't support dynamic libraries so testing for linkage there

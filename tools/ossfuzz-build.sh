@@ -44,6 +44,7 @@ main() {
     fields_fuzzer
     icc_codec_fuzzer
     rans_fuzzer
+    transforms_fuzzer
   )
   if [[ -n "${JPEGXL_EXTRA_ARGS:-}" ]]; then
     # Extra arguments passed to ci.sh ossfuzz commands are treated as ninja
