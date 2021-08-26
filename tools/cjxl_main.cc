@@ -88,18 +88,16 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
     JpegXlContainer container;
     container.codestream = compressed.data();
     container.codestream_size = compressed.size();
+    jxl::PaddedBytes exif(4, 0);  // implicit tiff header offset zero
     if (!io.blobs.exif.empty()) {
-      container.exif = io.blobs.exif.data();
-      container.exif_size = io.blobs.exif.size();
+      exif.append(io.blobs.exif);
+      container.addBlob("Exif", exif.data(), exif.size());
     }
-    auto append_xml = [&container](const jxl::PaddedBytes& bytes) {
-      if (bytes.empty()) return;
-      container.xml.emplace_back(bytes.data(), bytes.size());
-    };
-    append_xml(io.blobs.xmp);
+    if (!io.blobs.xmp.empty()) {
+      container.addBlob("xml ", io.blobs.xmp.data(), io.blobs.xmp.size());
+    }
     if (!io.blobs.jumbf.empty()) {
-      container.jumb = io.blobs.jumbf.data();
-      container.jumb_size = io.blobs.jumbf.size();
+      container.addBlob("jumb", io.blobs.jumbf.data(), io.blobs.jumbf.size());
     }
     jxl::PaddedBytes jpeg_data;
     if (io.Main().IsJPEG()) {

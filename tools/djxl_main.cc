@@ -151,16 +151,13 @@ int DecompressMain(int argc, const char* argv[]) {
                      jxl::PaddedBytes& target) {
       target.assign(bytes, bytes + size);
     };
-    if (container.exif_size) {
-      assign(container.exif, container.exif_size, io.blobs.exif);
+    const BrobBlob* exif = container.getBlob("Exif");
+    if (exif != nullptr) {
+      assign(exif->udata, exif->udata_size, io.blobs.exif);
     }
-    if (!container.xml.empty()) {
-      assign(container.xml[0].first, container.xml[0].second, io.blobs.xmp);
-    }
-    if (container.xml.size() > 1) {
-      fprintf(stderr,
-              "Warning: more than one XML box found, assuming first one is XMP "
-              "and ignoring others\n");
+    const BrobBlob* xmp = container.getBlob("xml ");
+    if (xmp != nullptr) {
+      assign(xmp->udata, xmp->udata_size, io.blobs.xmp);
     }
     // Set JPEG quality.
     // TODO(veluca): the decoder should set this value, and the argument should

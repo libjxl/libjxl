@@ -8,6 +8,9 @@
 #ifndef TOOLS_BOX_BOX_H_
 #define TOOLS_BOX_BOX_H_
 
+#include <brotli/decode.h>
+#include <brotli/encode.h>
+
 #include <string>
 #include <vector>
 
@@ -53,38 +56,122 @@ jxl::Status ParseBoxHeader(const uint8_t** next_in, size_t* available_in,
 // TODO(lode): streaming C API
 jxl::Status AppendBoxHeader(const Box& box, jxl::PaddedBytes* out);
 
+/* Known/defined types:
+  "Exif"
+     The exif data has the format of 'Exif block' as defined in
+     ISO/IEC23008-12:2017 Clause A.2.1
+     Note: it starts with a tiff header offset of 4 bytes (usually zeroes),
+     and the actual Exif data (starting with the tiff header MM or II) is
+     located at that offset.
+     // TODO(lode): support the theoretical case of multiple exif boxes
+  "xml "
+     Contains XML data, typically used for XMP.
+  "jumb"
+     JUMBF superbox data.
+     The parsing of the nested boxes inside is not handled here.
+
+  Any of these boxes (and possibly others) can be stored in a compressed way
+  in a "brob" box, which starts with 4 uncompressed bytes specifying the
+  actual box type, followed by a Brotli stream.
+
+  To facilitate transparent handling of boxes, the BrobBlob struct is used.
+  It has pointers to both the uncompressed data and the compressed data.
+  When decoding:
+    - when reading, either udata* or cdata* will be set
+    - in the uncompressed case, only udata* is used.
+    - in the compressed case, cdata* points into the input stream, and
+      when accessing the box with getBlob(), pbytes will store the
+      decompressed data, and udata* will point to it.
+  When encoding:
+    - in the uncompressed case, only udata* is used.
+    - in the compressed case, udata* points to the uncompressed input, and
+      when adding the box with addBlob(), pbytes will store the compressed
+      data, and cdata* will point to it.
+    - when writing, a "brob" box will be written if cdata* is nonzero,
+      otherwise an uncompressed box will be written.
+*/
+struct BrobBlob {
+  uint8_t type[4];
+  // uncompressed data (mutable: decompressed data can be added or removed)
+  mutable const uint8_t* udata = nullptr;  // Not owned
+  mutable size_t udata_size = 0;
+  // compressed data
+  const uint8_t* cdata = nullptr;  // Not owned
+  size_t cdata_size = 0;
+  // a buffer to store the (de)compressed data
+  mutable jxl::PaddedBytes pbytes;  // Owned
+};
+
 // NOTE: after DecodeJpegXlContainerOneShot, the exif etc. pointers point to
 // regions within the input data passed to that function.
 struct JpegXlContainer {
-  // Exif metadata, or null if not present in the container.
-  // The exif data has the format of 'Exif block' as defined in
-  // ISO/IEC23008-12:2017 Clause A.2.1
-  // Here we assume the tiff header offset is 0 and store only the
-  // actual Exif data (starting with the tiff header MM or II)
-  // TODO(lode): support the theoretical case of multiple exif boxes
-  const uint8_t* exif = nullptr;  // Not owned
-  size_t exif_size = 0;
+  std::vector<BrobBlob> blobs;
 
-  // Brotli-compressed exif metadata, if present. The data points to the brotli
-  // compressed stream, it is not decompressed here.
-  const uint8_t* exfc = nullptr;  // Not owned
-  size_t exfc_size = 0;
+  // Returns a pointer to a BrobBlob with uncompressed data (or nullptr if not
+  // found). In case there are multiple of that type, return the index-th one.
+  const BrobBlob* getBlob(const char* type, size_t index = 0) const {
+    for (auto& b : blobs) {
+      if (!memcmp(type, b.type, 4)) {
+        if (index > 0) {
+          index--;
+          continue;
+        }
+        if (b.udata_size == 0) {
+          BrotliDecoderState* brotli_dec =
+              BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
+          struct BrotliDecDeleter {
+            BrotliDecoderState* brotli_dec;
+            ~BrotliDecDeleter() { BrotliDecoderDestroyInstance(brotli_dec); }
+          } brotli_dec_deleter{brotli_dec};
+          size_t available_in = b.cdata_size;
+          b.pbytes.resize(available_in);
+          size_t available_out = b.pbytes.size();
+          const uint8_t* in = b.cdata;
+          uint8_t* out = b.pbytes.data();
+          size_t tot_dec = 0;
+          while (available_in > 0 || !BrotliDecoderIsFinished(brotli_dec)) {
+            BrotliDecoderResult result = BrotliDecoderDecompressStream(
+                brotli_dec, &available_in, &in, &available_out, &out, &tot_dec);
+            if (result ==
+                BrotliDecoderResult::BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+              b.pbytes.resize(b.pbytes.size() + 10240);
+              out = b.pbytes.data() + tot_dec;
+              available_out = b.pbytes.size() - tot_dec;
+            } else if (result !=
+                       BrotliDecoderResult::BROTLI_DECODER_RESULT_SUCCESS) {
+              JXL_WARNING("Brotli decoding error: %s\n",
+                          BrotliDecoderErrorString(
+                              BrotliDecoderGetErrorCode(brotli_dec)));
+              return nullptr;
+            }
+          }
+          b.udata = b.pbytes.data();
+          b.udata_size = tot_dec;
+        }
+        return &b;
+      }
+    }
+    return nullptr;
+  }
 
-  // XML boxes for XMP. There may be multiple XML boxes.
-  // Each entry points to XML location and provides size.
-  // The memory is not owned.
-  // TODO(lode): for C API, cannot use std::vector.
-  std::vector<std::pair<const uint8_t*, size_t>> xml;
-
-  // Brotli-compressed xml boxes. The bytes are given in brotli-compressed form
-  // and are not decompressed here.
-  std::vector<std::pair<const uint8_t*, size_t>> xmlc;
-
-  // JUMBF superbox data, or null if not present in the container.
-  // The parsing of the nested boxes inside is not handled here.
-  const uint8_t* jumb = nullptr;  // Not owned
-  size_t jumb_size = 0;
-
+  void addBlob(const char* type, const uint8_t* data, size_t data_size,
+               bool compress = true) {
+    BrobBlob b;
+    memcpy(b.type, type, 4);
+    b.udata = data;
+    b.udata_size = data_size;
+    if (compress) {
+      b.pbytes.resize(b.udata_size);
+      b.cdata_size = b.udata_size;
+      if (!BrotliEncoderCompress(BROTLI_DEFAULT_QUALITY, BROTLI_DEFAULT_WINDOW,
+                                 BROTLI_DEFAULT_MODE, b.udata_size, b.udata,
+                                 &b.cdata_size, b.pbytes.data())) {
+        JXL_WARNING("Could not brotli compress brob box");
+      }
+      b.cdata = b.pbytes.data();
+    }
+    blobs.emplace_back(std::move(b));
+  }
   // TODO(lode): add frame index data
 
   // JPEG reconstruction data, or null if not present in the container.
