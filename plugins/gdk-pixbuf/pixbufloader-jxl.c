@@ -97,7 +97,7 @@ uint8_t *JxlMemoryToPixels(const uint8_t *next_in, size_t size, size_t *stride,
     }
   }
   JxlDecoderDestroy(dec);
-  if (success){
+  if (success) {
     return pixels;
   } else {
     free(pixels);
@@ -259,13 +259,16 @@ void fill_vtable(GdkPixbufModule *module) {
 
 void fill_info(GdkPixbufFormat *info) {
   static GdkPixbufModulePattern signature[] = {
-      {"\xd7\x4c\x4d\x0a", "    ", 100}, {NULL, NULL, 0}};
+      {"\xFF\x0A", "  ", 100},
+      {"\x00\x00\x00\x0CJXL \x0D\x0A\x87\x0A", "            ", 100},
+      {NULL, NULL, 0},
+  };
 
   static gchar *mime_types[] = {"image/jxl", NULL};
 
   static gchar *extensions[] = {"jxl", NULL};
 
-  info->name = "JPEG XL";
+  info->name = "jxl";
   info->signature = signature;
   info->description = "JPEG XL image";
   info->mime_types = mime_types;
