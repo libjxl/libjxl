@@ -145,11 +145,12 @@ format: Cloudinary and Google.
 
 ### Development process
 *   [Docker setup - **start here**](doc/developing_in_docker.md)
-*   [Building on Debian](doc/developing_in_debian.md) - for experts only
-*   [Building on Windows](doc/developing_in_windows.md) - for experts only
+*   [Building on Debian](doc/developing_in_debian.md) - for experts
+*   [Building on Windows](doc/developing_in_windows.md) - for experts
+*   [Cross Compiling for Windows with Crossroad](doc/developing_with_crossroad.md) - for experts
 *   [More information on testing/build options](doc/building_and_testing.md)
-*   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers only
-*   [Fuzzing](doc/fuzzing.md) - for developers only
+*   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers
+*   [Fuzzing](doc/fuzzing.md) - for developers
 *   [Building Web Assembly artifacts](doc/building_wasm.md)
 
 ### Contact
