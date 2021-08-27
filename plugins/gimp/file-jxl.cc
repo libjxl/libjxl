@@ -46,9 +46,10 @@ void Query() {
         /*n_return_vals=*/G_N_ELEMENTS(load_return_vals), /*params=*/load_args,
         /*return_vals=*/load_return_vals);
     gimp_register_file_handler_mime(kLoadProc, "image/jxl");
-    gimp_register_magic_load_handler(kLoadProc, "jxl", "",
-                                     "0,string,\x0A\x04\x42\xD2\xD5\x4E\x12,0,"
-                                     "string,\xFF\x0A,0,string,\xFF\x58");
+    gimp_register_magic_load_handler(
+        kLoadProc, "jxl", "",
+        "0,string,\xFF\x0A,"
+        "0,string,\x00\x00\x00\x0CJXL \x0D\x0A\x87\x0A");
   }
 
   {
