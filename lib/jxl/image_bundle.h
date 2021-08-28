@@ -179,6 +179,11 @@ class ImageBundle {
   const ImageF& alpha() const;
   ImageF* alpha();
 
+  bool HasBlack() const {
+    return metadata_->Find(ExtraChannel::kBlack) != nullptr;
+  }
+  const ImageF& black() const;
+
   // -- DEPTH
   bool HasDepth() const {
     return metadata_->Find(ExtraChannel::kDepth) != nullptr;
