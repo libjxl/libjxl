@@ -49,7 +49,7 @@ void Query() {
     gimp_register_magic_load_handler(
         kLoadProc, "jxl", "",
         "0,string,\xFF\x0A,"
-        "0,string,\x00\x00\x00\x0CJXL \x0D\x0A\x87\x0A");
+        "0,string,\\000\\000\\000\x0CJXL\\040\\015\\012\x87\\012");
   }
 
   {
