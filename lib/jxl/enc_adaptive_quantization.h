@@ -45,7 +45,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
 // can later be used to make better decisions about ac strategy.
 ImageF InitialQuantField(float butteraugli_target, const Image3F& opsin,
                          const FrameDimensions& frame_dim, ThreadPool* pool,
-                         float rescale, ImageF* initial_quant_mask);
+                         float rescale, ImageF* initial_quant_mask,
+                         ImageF* visual_activity);
 
 float InitialQuantDC(float butteraugli_target);
 
