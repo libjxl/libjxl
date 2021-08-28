@@ -142,7 +142,7 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   }
   jxl::PaddedBytes icc;
   icc.assign(icc_profile, icc_profile + size);
-  if (!enc->metadata.m.color_encoding.SetICCRaw(std::move(icc))) {
+  if (!enc->metadata.m.color_encoding.SetICC(std::move(icc))) {
     return JXL_ENC_ERROR;
   }
   enc->color_encoding_set = true;
