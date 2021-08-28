@@ -260,7 +260,7 @@ void fill_vtable(GdkPixbufModule *module) {
 void fill_info(GdkPixbufFormat *info) {
   static GdkPixbufModulePattern signature[] = {
       {"\xFF\x0A", "  ", 100},
-      {"\x00\x00\x00\x0CJXL \x0D\x0A\x87\x0A", "            ", 100},
+      {"...\x0CJXL \x0D\x0A\x87\x0A", "zzz         ", 100},
       {NULL, NULL, 0},
   };
 
