@@ -34,13 +34,10 @@ TEST(BoxTest, BoxTest) {
   }
 
   jpegxl::tools::JpegXlContainer container;
-  container.exif = exif.data();
-  container.exif_size = exif.size();
-  container.xml.emplace_back(xml0.data(), xml0.size());
-  container.xml.emplace_back(xml1.data(), xml1.size());
-  container.xmlc.emplace_back(xml1.data(), xml1.size());
-  container.jumb = jumb.data();
-  container.jumb_size = jumb.size();
+  container.addBlob("Exif", exif.data(), exif.size(), true);
+  container.addBlob("xml ", xml0.data(), xml0.size(), true);
+  container.addBlob("xml ", xml1.data(), xml1.size(), false);
+  container.addBlob("jumb", jumb.data(), jumb.size(), false);
   container.codestream = codestream.data();
   container.codestream_size = codestream.size();
 
@@ -52,25 +49,24 @@ TEST(BoxTest, BoxTest) {
   EXPECT_EQ(true, jpegxl::tools::DecodeJpegXlContainerOneShot(
                       file.data(), file.size(), &container2));
 
-  EXPECT_EQ(exif.size(), container2.exif_size);
-  EXPECT_EQ(0, memcmp(exif.data(), container2.exif, container2.exif_size));
-  EXPECT_EQ(2, container2.xml.size());
-  if (container2.xml.size() == 2) {
-    EXPECT_EQ(xml0.size(), container2.xml[0].second);
-    EXPECT_EQ(0, memcmp(xml0.data(), container2.xml[0].first,
-                        container2.xml[0].second));
-    EXPECT_EQ(xml1.size(), container2.xml[1].second);
-    EXPECT_EQ(0, memcmp(xml1.data(), container2.xml[1].first,
-                        container2.xml[1].second));
-  }
-  EXPECT_EQ(1, container2.xmlc.size());
-  if (container2.xmlc.size() == 1) {
-    EXPECT_EQ(xml1.size(), container2.xmlc[0].second);
-    EXPECT_EQ(0, memcmp(xml1.data(), container2.xmlc[0].first,
-                        container2.xmlc[0].second));
-  }
-  EXPECT_EQ(jumb.size(), container2.jumb_size);
-  EXPECT_EQ(0, memcmp(jumb.data(), container2.jumb, container2.jumb_size));
+  const jpegxl::tools::BrobBlob* b = container2.getBlob("Exif");
+  EXPECT_EQ(true, b != nullptr);
+  EXPECT_EQ(exif.size(), b->udata_size);
+  EXPECT_EQ(0, memcmp(exif.data(), b->udata, b->udata_size));
+  b = container2.getBlob("xml ");
+  EXPECT_EQ(true, b != nullptr);
+  EXPECT_EQ(xml0.size(), b->udata_size);
+  EXPECT_EQ(0, memcmp(xml0.data(), b->udata, b->udata_size));
+  b = container2.getBlob("xml ", 1);
+  EXPECT_EQ(true, b != nullptr);
+  EXPECT_EQ(xml1.size(), b->udata_size);
+  EXPECT_EQ(0, memcmp(xml1.data(), b->udata, b->udata_size));
+  b = container2.getBlob("xml ", 2);
+  EXPECT_EQ(true, b == nullptr);
+  b = container2.getBlob("jumb");
+  EXPECT_EQ(true, b != nullptr);
+  EXPECT_EQ(jumb.size(), b->udata_size);
+  EXPECT_EQ(0, memcmp(jumb.data(), b->udata, b->udata_size));
   EXPECT_EQ(codestream.size(), container2.codestream_size);
   EXPECT_EQ(0, memcmp(codestream.data(), container2.codestream,
                       container2.codestream_size));
