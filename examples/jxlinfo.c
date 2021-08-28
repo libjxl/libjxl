@@ -27,7 +27,8 @@ int PrintBasicInfo(FILE* file) {
 
   if (JXL_DEC_SUCCESS !=
       JxlDecoderSubscribeEvents(
-          dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME)) {
+          dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME |
+                   JXL_DEC_JPEG_RECONSTRUCTION)) {
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
     JxlDecoderDestroy(dec);
     return 0;
@@ -35,6 +36,7 @@ int PrintBasicInfo(FILE* file) {
 
   JxlBasicInfo info;
   int seen_basic_info = 0;
+  int seen_jpeg_reconstruction = 0;
   JxlFrameHeader frame_header;
 
   for (;;) {
@@ -68,6 +70,8 @@ int PrintBasicInfo(FILE* file) {
     } else if (status == JXL_DEC_SUCCESS) {
       // Finished all processing.
       break;
+    } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
+      seen_jpeg_reconstruction = 1;
     } else if (status == JXL_DEC_BASIC_INFO) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetBasicInfo(dec, &info)) {
         fprintf(stderr, "JxlDecoderGetBasicInfo failed\n");
@@ -282,6 +286,10 @@ int PrintBasicInfo(FILE* file) {
       fprintf(stderr, "Unexpected decoder status\n");
       break;
     }
+  }
+
+  if (seen_basic_info && info.have_container) {
+    printf("have_jpeg_reconstruction: %d\n", seen_jpeg_reconstruction);
   }
 
   JxlDecoderDestroy(dec);
