@@ -931,6 +931,29 @@ JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
 
+/**
+ * Retrieves a metadata blob that is stored in the JPEG XL container.
+ * Returns the uncompressed blob in case it was Brotli-compressed.
+ * The data is owned by the decoder object; the returned pointer becomes invalid
+ * when the decoder is destroyed or reset.
+ *
+ * @param dec decoder object
+ * @param type 4-byte code representing the type of metadata. Examples are
+ * "Exif", "xml " (for XMP), and "jumb".
+ * @param index the index of the metadata blob of this type (there could be
+ * multiple blobs of the same type). Typically 0.
+ * @param data output pointer to the blob data
+ * @param size size in bytes of the blob data
+ * @return JXL_DEC_SUCCESS if the requested blob was found and successfully
+ * decompressed, JXL_DEC_ERROR if the requested blob was not found or an error
+ * happened during decompression, JXL_DEC_NEED_MORE_INPUT if not enough data
+ * was available to retrieve the blob or to determine that it is not there.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetMetadata(JxlDecoder* dec,
+                                                  const char* type,
+                                                  uint32_t index,
+                                                  uint8_t** data, size_t* size);
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif

@@ -282,6 +282,32 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
                                                    JXL_BOOL use_container);
 
 /**
+ * Adds a metadata blob to the JPEG XL container.
+ * Blobs are treated as a black box: there is no verification whatsoever that
+ * their content is valid.
+ * Blobs can either be stored in an uncompressed way, or wrapped in a "brob"
+ * box, applying Brotli compression.
+ * If metadata is added, the JPEG XL container format will implicitly be used.
+ *
+ * @param enc encoder object.
+ * @param type 4-byte code representing the type of metadata. The only values
+ * defined in 18181-2:2021 are "Exif", "xml " (for XMP), and "jumb", though
+ * this function can be used to add custom metadata blobs with other types.
+ * @param data pointer to the (uncompressed) blob data. This pointer has to
+ * remain valid until encoding has been completed.
+ * @param size size of the metadata blob.
+ * @param compressed true if the blob is to be stored with Brotli compression,
+ * false if it is to be stored uncompressed.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR or
+ * JXL_ENC_NOT_SUPPORTED otherwise
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddMetadata(JxlEncoder* enc,
+                                                  const char* type,
+                                                  const uint8_t* data,
+                                                  size_t size,
+                                                  JXL_BOOL compressed);
+
+/**
  * Sets lossless/lossy mode for the provided options. Default is lossy.
  *
  * @param options set of encoder options to update with the new mode
