@@ -40,10 +40,17 @@ uint32_t JxlEncoderVersion(void) {
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
       std::move(input_frame_queue[0]);
+
   input_frame_queue.erase(input_frame_queue.begin());
 
-  // TODO(zond): If the frame queue is empty and the input_closed is true,
-  // then mark this frame as the last.
+  // If the frame queue is empty and input_closed is true,
+  // mark this frame as the last.
+  jxl::FrameInfo frame_info;
+  if (input_closed && input_frame_queue.empty()) {
+    frame_info.is_last = true;
+  } else {
+    frame_info.is_last = false;
+  }
 
   jxl::BitWriter writer;
 
@@ -91,7 +98,8 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   }
 
   jxl::PassesEncoderState enc_state;
-  if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
+
+  if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                         &metadata, input_frame->frame, &enc_state,
                         thread_pool.get(), &writer,
                         /*aux_out=*/nullptr)) {
@@ -400,6 +408,12 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
   } else {
     c_current = options->enc->metadata.m.color_encoding;
   }
+
+  // treat multiple frames as animation
+  // until animation API is established
+  options->enc->metadata.m.have_animation = true;
+  options->enc->metadata.m.animation.tps_numerator = 100;
+  queued_frame->frame.duration = 10;
 
   if (!jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
                                 options->enc->metadata.ysize(), buffer, size,
