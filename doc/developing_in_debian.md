@@ -16,7 +16,7 @@ sudo apt install cmake clang doxygen g++-8 extra-cmake-modules libgif-dev \
   libjpeg-dev ninja-build libgoogle-perftools-dev
 ```
 
-Make sure your default "clang" compiler is at least version 6 running
+Make sure your default "clang" compiler is at least version 6 by running
 
 ```bash
 clang --version

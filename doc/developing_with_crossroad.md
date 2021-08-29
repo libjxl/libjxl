@@ -2,7 +2,7 @@
 
 [Crossroad](https://pypi.org/project/crossroad/) is a tool to set up cross-compilation environments on GNU/Linux distributions.  These instructions assume a Debian/Ubuntu system.  However, they can likely be adapted to other Linux environments.  Since Ubuntu can be run on Windows through WSL, these instruction may be useful for developing directly on Windows.
 
-## Installing Crossroad
+## Install Crossroad
 
 Crossroad requires tools included with `python3-docutils` and `mingw-w64`.  They may be installed using:
 
@@ -62,11 +62,11 @@ If any packages are later found to be missing, you may search for them using:
 
     crossroad search [...]
 
-## Building
+## Build `libjxl`
 
-Download the source from the libjxl [releases](https://github.com/libjxl/libjxl/releases) page.  Alternatively, you may obtain the latest development version with `git`.  Run `./deps.sh` to ensure additional third-party dependencies are downloaded.
+Download the source from the libjxl [releases](https://github.com/libjxl/libjxl/releases) page.  Alternatively, you may obtain the latest development version with `git`.  Run `./deps.sh` to ensure additional third-party dependencies are downloaded.  Unfortunately, the script `./ci.sh` does not work with Crossroad, so `cmake` will need to be called directly.
 
-Within the source direction, create a build directory.  If you haven't already, start your crossroad project and run `cmake`:
+Create a build directory within the source directory.  If you haven't already, start your crossroad project and run `cmake`:
 ```
 mkdir build
 cd build
@@ -81,11 +81,11 @@ Check the output to see if any dependencies were missed and need to be installed
 
     cmake --build .
 
-## GIMP Plugin
+## Try out the GIMP Plugin
 
-To use the GIMP plugin:
+To install and try out out the GIMP plugin:
 
-1. If you haven't already, [download](https://www.gimp.org/downloads/) and install the stable version of GIMP (currently 2.10.24).
+1. [Download](https://www.gimp.org/downloads/) and install the stable version of GIMP (currently 2.10.24).
 
 2. Create a new folder: `C:\Program Files\GIMP 2\lib\gimp\2.0\plug-ins\file-jxl`
 

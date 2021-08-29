@@ -112,15 +112,19 @@ For more comprehensive benchmarking options, see the
 We build a common environment based on Debian/Ubuntu using Docker. Other
 systems may have different combinations of versions and dependencies that
 have not been tested and may not work. For those cases we recommend using the
-Docker environment as explained in the
+Docker container as explained in the
 [step by step guide](doc/developing_in_docker.md).
 
 ### Building JPEG XL for developers
 
-For experienced developers, we also provide build instructions for an [up to
-date Debian-based Linux](doc/developing_in_debian.md) and [64-bit
-Windows](doc/developing_in_windows.md). If you encounter any difficulties,
-please use Docker instead.
+For experienced developers, we provide build instructions for several other environments:
+
+*   [Building on Debian](doc/developing_in_debian.md)
+*   Building on Windows with [vcpkg](doc/developing_in_windows_vcpkg.md) (Visual Studio 2019)
+*   Building on Windows with [MSYS2](doc/developing_in_windows_msys.md)
+*   [Cross Compiling for Windows with Crossroad](doc/developing_with_crossroad.md)
+
+If you encounter any difficulties, please use Docker instead.
 
 ## License
 
@@ -144,10 +148,7 @@ format: Cloudinary and Google.
 *   [JPEG XL community website](https://jpegxl.info)
 
 ### Development process
-*   [Docker setup - **start here**](doc/developing_in_docker.md)
-*   [Building on Debian](doc/developing_in_debian.md) - for experts
-*   [Building on Windows](doc/developing_in_windows.md) - for experts
-*   [Cross Compiling for Windows with Crossroad](doc/developing_with_crossroad.md) - for experts
+
 *   [More information on testing/build options](doc/building_and_testing.md)
 *   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers
 *   [Fuzzing](doc/fuzzing.md) - for developers
