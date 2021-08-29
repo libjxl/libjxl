@@ -897,9 +897,9 @@ Status FinalizeImageRect(
     JXL_RETURN_IF_ERROR(image_features.patches.AddTo(
         storage_for_if, rect_for_if_storage.Line(available_y),
         ec_ptrs_for_patches.data(), rect_for_if.Line(available_y)));
-    JXL_RETURN_IF_ERROR(image_features.splines.AddTo(
-        storage_for_if, rect_for_if_storage.Line(available_y),
-        rect_for_if.Line(available_y), dec_state->shared->cmap));
+    image_features.splines.AddTo(storage_for_if,
+                                 rect_for_if_storage.Line(available_y),
+                                 rect_for_if.Line(available_y));
     size_t num_ys = 1;
     if (frame_header.upsampling != 1) {
       // Upsampling `y` values are relative to `rect_for_upsampling`, not to

@@ -744,7 +744,8 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
       }
     }
   }
-  if (enc_state->shared.frame_header.upsampling != 1 && !cparams.already_downsampled) {
+  if (enc_state->shared.frame_header.upsampling != 1 &&
+      !cparams.already_downsampled) {
     // In VarDCT mode, LossyFrameHeuristics takes care of running downsampling
     // after noise, if necessary.
     if (cparams.resampling == 2) {
@@ -777,8 +778,9 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
   // Find and subtract splines.
   if (cparams.speed_tier <= SpeedTier::kSquirrel) {
     shared.image_features.splines = FindSplines(*opsin);
-    JXL_RETURN_IF_ERROR(
-        shared.image_features.splines.SubtractFrom(opsin, shared.cmap));
+    JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
+        opsin->xsize(), opsin->ysize(), shared.cmap));
+    shared.image_features.splines.SubtractFrom(opsin);
   }
 
   // Find and subtract patches/dots.
@@ -836,8 +838,8 @@ Status DefaultEncoderHeuristics::LossyFrameHeuristics(
     enc_state->initial_quant_field =
         ImageF(shared.frame_dim.xsize_blocks, shared.frame_dim.ysize_blocks);
     float q = cparams.uniform_quant > 0
-        ? cparams.uniform_quant
-        : kAcQuant / cparams.butteraugli_distance;
+                  ? cparams.uniform_quant
+                  : kAcQuant / cparams.butteraugli_distance;
     FillImage(q, &enc_state->initial_quant_field);
   } else {
     // Call this here, as it relies on pre-gaborish values.

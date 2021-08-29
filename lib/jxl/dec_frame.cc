@@ -371,6 +371,11 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
     JXL_RETURN_IF_ERROR(
         jxl::DecodeGlobalDCInfo(br, decoded_->IsJPEG(), dec_state_, pool_));
   }
+  // Splines' draw cache uses the color correlation map.
+  if (shared.frame_header.flags & FrameHeader::kSplines) {
+    JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
+        frame_dim_.xsize, frame_dim_.ysize, dec_state_->shared->cmap));
+  }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
       br, frame_header_, allow_partial_dc_global_);
   if (dec_status.IsFatalError()) return dec_status;
