@@ -266,7 +266,8 @@ TEST(SplinesTest, DuplicatePoints) {
 
   Image3F image(320, 320);
   ZeroFillImage(&image);
-  EXPECT_FALSE(splines.AddTo(&image, Rect(image), Rect(image), *cmap));
+  EXPECT_FALSE(
+      splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
 }
 
 TEST(SplinesTest, Drawing) {
@@ -295,7 +296,8 @@ TEST(SplinesTest, Drawing) {
 
   Image3F image(320, 320);
   ZeroFillImage(&image);
-  ASSERT_TRUE(splines.AddTo(&image, Rect(image), Rect(image), *cmap));
+  ASSERT_TRUE(splines.InitializeDrawCache(image.xsize(), image.ysize(), *cmap));
+  splines.AddTo(&image, Rect(image), Rect(image));
 
   OpsinParams opsin_params{};
   opsin_params.Init(kDefaultIntensityTarget);
