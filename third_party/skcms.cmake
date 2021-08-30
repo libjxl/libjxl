@@ -15,10 +15,17 @@
 add_library(skcms-obj OBJECT EXCLUDE_FROM_ALL skcms/skcms.cc)
 target_include_directories(skcms-obj PUBLIC "${CMAKE_CURRENT_LIST_DIR}/skcms/")
 
+# This library is meant to be compiled/used by external libs (such as plugins)
+# that need to use skcms. We use a wrapper for libjxl.
+add_library(skcms-interface INTERFACE)
+target_sources(skcms-interface INTERFACE ${CMAKE_CURRENT_LIST_DIR}/skcms/skcms.cc)
+target_include_directories(skcms-interface INTERFACE ${CMAKE_CURRENT_LIST_DIR}/skcms)
+
 include(CheckCXXCompilerFlag)
 check_cxx_compiler_flag("-Wno-psabi" CXX_WPSABI_SUPPORTED)
 if(CXX_WPSABI_SUPPORTED)
   target_compile_options(skcms-obj PRIVATE -Wno-psabi)
+  target_compile_options(skcms-interface INTERFACE -Wno-psabi)
 endif()
 
 if(JPEGXL_BUNDLE_SKCMS)
