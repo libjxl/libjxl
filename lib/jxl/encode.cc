@@ -220,7 +220,7 @@ JxlEncoderStatus JxlEncoderOptionsSetLossless(JxlEncoderOptions* options,
 
 JxlEncoderStatus JxlEncoderOptionsSetEffort(JxlEncoderOptions* options,
                                             const int effort) {
-  if (effort < 3 || effort > 9) {
+  if (effort < 1 || effort > 9) {
     return JXL_ENC_ERROR;
   }
   options->values.cparams.speed_tier = static_cast<jxl::SpeedTier>(10 - effort);

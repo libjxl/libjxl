@@ -244,7 +244,7 @@ TEST(EncodeTest, OptionsTest) {
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
     // Lower than currently supported values
-    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 2));
+    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 0));
     // Higher than currently supported values
     EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 10));
   }
