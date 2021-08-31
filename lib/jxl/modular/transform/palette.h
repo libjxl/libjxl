@@ -19,18 +19,24 @@ namespace palette_internal {
 
 static constexpr int kMaxPaletteLookupTableSize = 1 << 16;
 
-static constexpr int kCubePow = 3;
+static constexpr int kRgbChannels = 3;
 
 // 5x5x5 color cube for the larger cube.
 static constexpr int kLargeCube = 5;
 
 // Smaller interleaved color cube to fill the holes of the larger cube.
-static constexpr int kSmallCube = kLargeCube - 1;
-// kSmallCube ** kCubePow
+static constexpr int kSmallCube = 4;
+static constexpr int kSmallCubeBits = 2;
+// kSmallCube ** 3
 static constexpr int kLargeCubeOffset = kSmallCube * kSmallCube * kSmallCube;
 
-static constexpr pixel_type Scale(int value, int bit_depth, int denom) {
-  return (value * ((static_cast<pixel_type_w>(1) << bit_depth) - 1)) / denom;
+static inline pixel_type Scale(uint64_t value, uint64_t bit_depth,
+                               uint64_t denom) {
+  // return (value * ((static_cast<pixel_type_w>(1) << bit_depth) - 1)) / denom;
+  // We only call this function with kSmallCube or kLargeCube - 1 as denom,
+  // allowing us to avoid a division here.
+  JXL_ASSERT(denom == 4);
+  return (value * ((static_cast<uint64_t>(1) << bit_depth) - 1)) >> 2;
 }
 
 // The purpose of this function is solely to extend the interpretation of
@@ -68,7 +74,7 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
             {{45, -45, 24}},   {{24, 45, -45}},   {{64, 64, -64}},
             {{128, 128, 0}},   {{0, 0, -128}},    {{-24, 45, -45}},
         }};
-    if (c >= kDeltaPalette[0].size()) {
+    if (c >= kRgbChannels) {
       return 0;
     }
     // Do not open the brackets, otherwise INT32_MIN negation could overflow.
@@ -82,32 +88,28 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     }
     return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
-    if (c >= kCubePow) return 0;
+    if (c >= kRgbChannels) return 0;
     index -= palette_size;
-    if (c > 0) {
-      int divisor = kSmallCube;
-      for (size_t i = 1; i < c; ++i) {
-        divisor *= kSmallCube;
-      }
-      index /= divisor;
-    }
+    index >>= c * kSmallCubeBits;
     return Scale(index % kSmallCube, bit_depth, kSmallCube) +
            (1 << (std::max(0, bit_depth - 3)));
   } else if (palette_size + kLargeCubeOffset <= index) {
-    if (c >= kCubePow) return 0;
+    if (c >= kRgbChannels) return 0;
     index -= palette_size + kLargeCubeOffset;
     // TODO(eustas): should we take care of ambiguity created by
     //               index >= kLargeCube ** 3 ?
-    if (c > 0) {
-      int divisor = kLargeCube;
-      for (size_t i = 1; i < c; ++i) {
-        divisor *= kLargeCube;
-      }
-      index /= divisor;
+    switch (c) {
+      case 0:
+        break;
+      case 1:
+        index /= kLargeCube;
+        break;
+      case 2:
+        index /= kLargeCube * kLargeCube;
+        break;
     }
     return Scale(index % kLargeCube, bit_depth, kLargeCube - 1);
   }
-
   return palette[c * onerow + static_cast<size_t>(index)];
 }
 
