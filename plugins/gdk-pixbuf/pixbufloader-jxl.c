@@ -3,15 +3,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#define GDK_PIXBUF_ENABLE_BACKEND
-#include <gdk-pixbuf/gdk-pixbuf.h>
-#undef GDK_PIXBUF_ENABLE_BACKEND
-
 #include "jxl/codestream_header.h"
 #include "jxl/decode.h"
 #include "jxl/resizable_parallel_runner.h"
 #include "jxl/types.h"
 #include "skcms.h"
+
+#define GDK_PIXBUF_ENABLE_BACKEND
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#undef GDK_PIXBUF_ENABLE_BACKEND
 
 typedef struct {
   GdkPixbufModuleSizeFunc image_size_callback;
