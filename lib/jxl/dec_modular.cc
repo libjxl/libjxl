@@ -161,7 +161,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
     size_t tree_size_limit =
-        1024 + frame_dim.xsize * frame_dim.ysize * nb_chans;
+        1024 + frame_dim.xsize * frame_dim.ysize * nb_chans / 16;
     JXL_RETURN_IF_ERROR(DecodeTree(reader, &tree, tree_size_limit));
     JXL_RETURN_IF_ERROR(
         DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
