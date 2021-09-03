@@ -400,9 +400,6 @@ endif ()
 
 # Headers for exporting/importing public headers
 include(GenerateExportHeader)
-# TODO(deymo): Add these visibility properties to the static dependencies of
-# jxl_{dec,enc}-obj since those are currently compiled with the default
-# visibility.
 set_target_properties(jxl_dec-obj PROPERTIES
   CXX_VISIBILITY_PRESET hidden
   VISIBILITY_INLINES_HIDDEN 1
@@ -424,8 +421,6 @@ target_include_directories(jxl_enc-obj PUBLIC
 
 # Private static library. This exposes all the internal functions and is used
 # for tests.
-# TODO(lode): this library is missing symbols, more encoder-only code needs to
-# be moved to JPEGXL_INTERNAL_SOURCES_ENC before this works
 add_library(jxl_dec-static STATIC
   $<TARGET_OBJECTS:jxl_dec-obj>
 )
@@ -543,6 +538,11 @@ foreach(target IN ITEMS jxl jxl_dec)
   set_property(TARGET ${target} APPEND_STRING PROPERTY
       LINK_FLAGS " -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/jxl/jxl.version")
   endif()  # APPLE
+  # This hides the default visibility symbols from static libraries bundled into
+  # the shared library. In particular this prevents exposing symbols from hwy
+  # and skcms in the shared library.
+  set_property(TARGET ${target} APPEND_STRING PROPERTY
+      LINK_FLAGS " -Wl,--exclude-libs=ALL")
 endforeach()
 
 # Only install libjxl shared library. The libjxl_dec is not installed since it

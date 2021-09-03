@@ -39,7 +39,11 @@ if(JPEGXL_BUNDLE_SKCMS)
   endif()
 endif()
 
-set_property(TARGET skcms-obj PROPERTY POSITION_INDEPENDENT_CODE ON)
+set_target_properties(skcms-obj PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN 1
+)
 
 add_library(skcms STATIC EXCLUDE_FROM_ALL $<TARGET_OBJECTS:skcms-obj>)
 target_include_directories(skcms
