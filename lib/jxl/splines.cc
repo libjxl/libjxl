@@ -442,6 +442,15 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
   return true;
 }
 
+void Splines::Clear() {
+  quantization_adjustment_ = 0;
+  splines_.clear();
+  starting_points_.clear();
+  segments_.clear();
+  segment_indices_.clear();
+  segment_y_start_.clear();
+}
+
 Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {
   std::vector<uint8_t> context_map;
   ANSCode code;

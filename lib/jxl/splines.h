@@ -105,6 +105,8 @@ class Splines {
 
   bool HasAny() const { return !splines_.empty(); }
 
+  void Clear();
+
   Status Decode(BitReader* br, size_t num_pixels);
 
   void AddTo(Image3F* opsin, const Rect& opsin_rect,
