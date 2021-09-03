@@ -164,13 +164,18 @@ typedef enum {
    */
   JXL_DEC_NEED_IMAGE_OUT_BUFFER = 5,
 
-  /** Informative event by JxlDecoderProcessInput: JPEG reconstruction buffer is
-   * too small for reconstructed JPEG codestream to fit.
-   * JxlDecoderSetJPEGBuffer must be called again to make room for remaining
-   * bytes. This event may occur multiple times after
-   * JXL_DEC_JPEG_RECONSTRUCTION
+  /** The JPEG reconstruction buffer is too small for reconstructed JPEG
+   * codestream to fit. JxlDecoderSetJPEGBuffer must be called again to make
+   * room for remaining bytes. This event may occur multiple times after
+   * JXL_DEC_JPEG_RECONSTRUCTION.
    */
   JXL_DEC_JPEG_NEED_MORE_OUTPUT = 6,
+
+  /** The box contents output buffer is too small. JxlDecoderSetBoxBuffer must
+   * be called again to make room for remaining bytes. This event may occur
+   * multiple times after JXL_DEC_BOX.
+   */
+  JXL_DEC_BOX_NEED_MORE_OUTPUT = 7,
 
   /** Informative event by JxlDecoderProcessInput: basic information such as
    * image dimensions and extra channels. This event occurs max once per image.
@@ -240,6 +245,37 @@ typedef enum {
    * image and always before JXL_DEC_FULL_IMAGE.
    */
   JXL_DEC_JPEG_RECONSTRUCTION = 0x2000,
+
+  /** Informative event by JxlDecoderProcessInput: The header of a box of the
+   * container format (BMFF) is decoded. The following API functions related to
+   * boxes can be used after this event:
+   * @see JxlDecoderSetBoxBuffer and JxlDecoderReleaseBoxBuffer: set and release
+   * a buffer to get the box data.
+   * @see JxlDecoderGetBoxType get the 4-character box typename.
+   * @see JxlDecoderGetBoxSizeRaw get the size of the box as it appears in the
+   * container file, not decompressed.
+   * @see JxlDecoderSetDecompressBoxes to configure whether to get the box
+   * data decompressed, or possibly compressed.
+   *
+   * Boxes can be compressed. This is so when their box type is "brob". In that
+   * case, they have an underlying decompressed box type and decompressed data.
+   * Use JxlDecoderSetDecompressBoxes to configure which data to get,
+   * decompressing them requires Brotli. JxlDecoderGetBoxType has a flag to
+   * get the compressed box type, which can be "brob", or the decompressed box
+   * type. If a box is not compressed (its compressed type is not "brob"), then
+   * you get the same decompressed box type and data no matter what setting is
+   * configured.
+   *
+   * The buffer set with JxlDecoderSetBoxBuffer must be set again for each next
+   * box that you want to get, or can be left unset to skip outputting this box.
+   * The output buffer contains the full box data when the next JXL_DEC_BOX
+   * event or JXL_DEC_SUCCESS occurs. JXL_DEC_BOX occurs for all boxes,
+   * including non-metadata boxes such as the signature box or codestream boxes.
+   * To check whether the box is a metadata type for respectively EXIF, XMP or
+   * JUMBF, use JxlDecoderGetBoxType and check for types "Exif", "xml " and
+   * "jumb" respectively.
+   */
+  JXL_DEC_BOX = 0x4000,
 } JxlDecoderStatus;
 
 /** Rewinds decoder to the beginning. The same input must be given again from
@@ -413,7 +449,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec);
  * @param data pointer to next bytes to read from
  * @param size amount of bytes available starting from data
  * @return JXL_DEC_ERROR if input was already set without releasing,
- * JXL_DEC_SUCCESS otherwise
+ * JXL_DEC_SUCCESS otherwise.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec,
                                                const uint8_t* data,
@@ -678,9 +714,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetFrameHeader(const JxlDecoder* dec,
                                                      JxlFrameHeader* header);
 
 /**
- * Outputs name for the current frame. The buffer
- * for name must have at least name_length + 1 bytes allocated, gotten from
- * the associated JxlFrameHeader.
+ * Outputs name for the current frame. The buffer for name must have at least
+ * name_length + 1 bytes allocated, gotten from the associated JxlFrameHeader.
  *
  * @param dec decoder object
  * @param name buffer to copy the name into
@@ -884,15 +919,19 @@ JxlDecoderSetExtraChannelBuffer(JxlDecoder* dec, const JxlPixelFormat* format,
 /**
  * Sets output buffer for reconstructed JPEG codestream.
  *
- * The data is owned by the caller
- * and may be used by the decoder until JxlDecoderReleaseJPEGBuffer is called or
- * the decoder is destroyed or reset so must be kept alive until then.
+ * The data is owned by the caller and may be used by the decoder until
+ * JxlDecoderReleaseJPEGBuffer is called or the decoder is destroyed or reset so
+ * must be kept alive until then.
+ *
+ * If a JPEG buffer was set before and released with
+ * JxlDecoderReleaseJPEGBuffer, bytes that the decoder has already output should
+ * not be included, only the remaining bytes output must be set.
  *
  * @param dec decoder object
  * @param data pointer to next bytes to write to
  * @param size amount of bytes available starting from data
- * @return JXL_DEC_ERROR if input was already set without releasing,
- * JXL_DEC_SUCCESS otherwise
+ * @return JXL_DEC_ERROR if output buffer was already set and
+ * JxlDecoderReleaseJPEGBuffer was not called on it, JXL_DEC_SUCCESS otherwise
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
                                                     uint8_t* data, size_t size);
@@ -905,7 +944,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
  * JxlDecoderSetJPEGBuffer, but is not required before JxlDecoderDestroy or
  * JxlDecoderReset.
  *
- * Calling JxlDecoderReleaseJPEGBuffer when no input is set is
+ * Calling JxlDecoderReleaseJPEGBuffer when no buffer is set is
  * not an error and returns 0.
  *
  * @param dec decoder object
@@ -914,6 +953,103 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec,
  * JxlDecoderReleaseJPEGBuffer was already called.
  */
 JXL_EXPORT size_t JxlDecoderReleaseJPEGBuffer(JxlDecoder* dec);
+
+/**
+ * Sets output buffer for box output codestream.
+ *
+ * The data is owned by the caller and may be used by the decoder until
+ * JxlDecoderReleaseBoxBuffer is called or the decoder is destroyed or reset so
+ * must be kept alive until then.
+ *
+ * If for the current box a box buffer was set before and released with
+ * JxlDecoderReleaseBoxBuffer, bytes that the decoder has already output should
+ * not be included, only the remaining bytes output must be set.
+ *
+ * @param dec decoder object
+ * @param data pointer to next bytes to write to
+ * @param size amount of bytes available starting from data
+ * @return JXL_DEC_ERROR if output buffer was already set and
+ * JxlDecoderReleaseBoxBuffer was not called on it, JXL_DEC_SUCCESS otherwise
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetBoxBuffer(JxlDecoder* dec,
+                                                   uint8_t* data, size_t size);
+
+/**
+ * Releases buffer which was provided with JxlDecoderSetBoxBuffer.
+ *
+ * Calling JxlDecoderReleaseBoxBuffer is required whenever
+ * a buffer is already set and a new buffer needs to be added with
+ * JxlDecoderSetBoxBuffer, but is not required before JxlDecoderDestroy or
+ * JxlDecoderReset.
+ *
+ * Calling JxlDecoderReleaseBoxBuffer when no buffer is set is
+ * not an error and returns 0.
+ *
+ * @param dec decoder object
+ * @return the amount of bytes the decoder has not yet written to of the data
+ * set by JxlDecoderSetBoxBuffer, or 0 if no buffer is set or
+ * JxlDecoderReleaseBoxBuffer was already called.
+ */
+JXL_EXPORT size_t JxlDecoderReleaseBoxBuffer(JxlDecoder* dec);
+
+/**
+ * Configures whether to get boxes in raw mode or in decompressed mode. In raw
+ * mode, boxes are output as their bytes appear in the container file, which may
+ * be decompressed, or compressed if their type is "brob". In decompressed mode,
+ * "brob" boxes are decompressed with Brotli before outputting them. The size of
+ * the decompressed stream is not known before the decompression has already
+ * finished.
+ *
+ * The default mode is raw. This setting can only be changed before decoding, or
+ * directly after a JXL_DEC_BOX event, and is remembered until the decoder is
+ * reset or destroyed.
+ *
+ * Enabling decompressed mode requires Brotli support from the library.
+ *
+ * @param dec decoder object
+ * @param decompress JXL_TRUE to transparently decompress, JXL_FALSE to get
+ * boxes in raw mode.
+ * @return JXL_DEC_ERROR if decompressed mode is set and Brotli is not
+ * available, JXL_DEC_SUCCESS otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
+                                                         JXL_BOOL decompress);
+
+/**
+ * Outputs the type of the current box, after a JXL_DEC_BOX event occured, as 4
+ * characters without null termination character. In case of a compressed "brob"
+ * box, this will return "brob" if the decompressed argument is JXL_FALSE, or
+ * the underlying box type if the decompressed argument is JXL_TRUE.
+ *
+ * @param dec decoder object
+ * @param type buffer to copy the type into
+ * @param decompressed which box type to get: JXL_TRUE to get the raw box type,
+ * which can be "brob", JXL_FALSE, get the underlying box type.
+ * @return JXL_DEC_SUCCESS if the value is available, JXL_DEC_ERROR if not, for
+ *    example the JXL file does not use the container format.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
+                                                 JxlBoxType* type,
+                                                 JXL_BOOL decompressed);
+
+/**
+ * Returns the size of a box as it appears in the container file, after the
+ * JXL_DEC_BOX event. For a non-compressed box, this is the size of the
+ * contents, excluding the 4 bytes indicating the box type. For a compressed
+ * "brob" box, this is the size of the compressed box contents plus the
+ * additional 4 byte indicating the underlying box type, but excluding the 4
+ * bytes indicating "brob". This function gives the size of the data that will
+ * be written in the output buffer when getting boxes in the default raw
+ * compressed mode. When JxlDecoderSetDecompressBoxes is enabled, the return
+ * value of function does not change, and the decompressed size is not known
+ * before it has already been decompressed and output.
+ *
+ * @param dec decoder object
+ * @param size raw size of the box in bytes
+ * @return JXL_DEC_ERROR if no box size is available, JXL_DEC_SUCCESS otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
+                                                    uint64_t* size);
 
 /**
  * Outputs progressive step towards the decoded image so far when only partial

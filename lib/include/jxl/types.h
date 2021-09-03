@@ -111,6 +111,10 @@ typedef struct {
   size_t align;
 } JxlPixelFormat;
 
+/** Data type holding the 4-character type name of an ISOBMFF box.
+ */
+typedef char JxlBoxType[4];
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
