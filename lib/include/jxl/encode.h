@@ -235,6 +235,17 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
                                                     size_t size);
 
 /**
+ * Initializes a JxlBasicInfo struct to default values.
+ * For forwards-compatibility, this function has to be called before values
+ * are assigned to the struct fields.
+ * The default values correspond to an 8-bit RGB image, no alpha or any
+ * other extra channels.
+ *
+ * @param info global image metadata. Object owned by the caller.
+ */
+JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
+
+/**
  * Sets the global metadata of the image encoded by this encoder.
  *
  * @param enc encoder object.

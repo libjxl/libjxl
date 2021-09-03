@@ -544,10 +544,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
 
       if (!skip_basic_info) {
         JxlBasicInfo basic_info;
-        basic_info.exponent_bits_per_sample = 0;
-        basic_info.bits_per_sample = 8;
-        basic_info.alpha_bits = 0;
-        basic_info.alpha_exponent_bits = 0;
+        JxlEncoderInitBasicInfo(&basic_info);
         basic_info.xsize = orig_io.xsize();
         basic_info.ysize = orig_io.ysize();
         basic_info.uses_original_profile = true;

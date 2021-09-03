@@ -229,6 +229,11 @@ typedef struct JxlBasicInfo {
    * used if have_animation is JXL_TRUE.
    */
   JxlAnimationHeader animation;
+
+  /** Padding for forwards-compatibility, in case more fields are exposed
+   * in a future version of the library.
+   */
+  uint8_t padding[108];
 } JxlBasicInfo;
 
 /** Information for a single extra channel.
