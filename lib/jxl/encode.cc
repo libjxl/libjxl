@@ -149,6 +149,33 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   return JXL_ENC_SUCCESS;
 }
 
+void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
+  info->have_container = JXL_FALSE;
+  info->xsize = 0;
+  info->ysize = 0;
+  info->bits_per_sample = 8;
+  info->exponent_bits_per_sample = 0;
+  info->intensity_target = 255.f;
+  info->min_nits = 0.f;
+  info->relative_to_max_display = JXL_FALSE;
+  info->linear_below = 0.f;
+  info->uses_original_profile = JXL_FALSE;
+  info->have_preview = JXL_FALSE;
+  info->have_animation = JXL_FALSE;
+  info->orientation = JXL_ORIENT_IDENTITY;
+  info->num_color_channels = 3;
+  info->num_extra_channels = 0;
+  info->alpha_bits = 0;
+  info->alpha_exponent_bits = 0;
+  info->alpha_premultiplied = JXL_FALSE;
+  info->preview.xsize = 0;
+  info->preview.ysize = 0;
+  info->animation.tps_numerator = 10;
+  info->animation.tps_denominator = 1;
+  info->animation.num_loops = 0;
+  info->animation.have_timecodes = JXL_FALSE;
+}
+
 JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                         const JxlBasicInfo* info) {
   if (!enc->metadata.size.Set(info->xsize, info->ysize)) {
@@ -192,6 +219,11 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
       break;
   }
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
+  if (info->orientation > 0 && info->orientation <= 8) {
+    enc->metadata.m.orientation = info->orientation;
+  } else {
+    return JXL_API_ERROR("Invalid value for orientation field");
+  }
   enc->basic_info_set = true;
   return JXL_ENC_SUCCESS;
 }
@@ -316,10 +348,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
 
   if (!options->enc->basic_info_set) {
     JxlBasicInfo basic_info;
-    basic_info.exponent_bits_per_sample = 0;
-    basic_info.bits_per_sample = 8;
-    basic_info.alpha_bits = 0;
-    basic_info.alpha_exponent_bits = 0;
+    JxlEncoderInitBasicInfo(&basic_info);
     basic_info.xsize = io.Main().jpeg_data->width;
     basic_info.ysize = io.Main().jpeg_data->height;
     basic_info.uses_original_profile = true;

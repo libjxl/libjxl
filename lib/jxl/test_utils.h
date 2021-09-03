@@ -13,6 +13,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "jxl/codestream_header.h"
+#include "jxl/encode.h"
 #include "lib/jxl/aux_out_fwd.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/codec_in_out.h"
@@ -55,6 +56,7 @@ namespace test {
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
                                     const JxlPixelFormat* pixel_format) {
+  JxlEncoderInitBasicInfo(basic_info);
   switch (pixel_format->data_type) {
     case JXL_TYPE_FLOAT:
       basic_info->bits_per_sample = 32;
