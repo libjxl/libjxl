@@ -251,7 +251,23 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Animation") {
     io.metadata.m.have_animation = true;
     io.metadata.m.animation.tps_numerator = 1000;
+    io.metadata.m.animation.tps_denominator = 1;
     io.frames[0].duration = 100;
+  } else if (t == "AnimationFPS") {
+    t = tok();
+    size_t num = 0;
+    io.metadata.m.animation.tps_numerator = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid numerator: %s\n", t.c_str());
+      return false;
+    }
+    t = tok();
+    num = 0;
+    io.metadata.m.animation.tps_denominator = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid denominator: %s\n", t.c_str());
+      return false;
+    }
   } else if (t == "Duration") {
     t = tok();
     size_t num = 0;
@@ -264,6 +280,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     t = tok();
     if (t == "kAdd") {
       io.frames[0].blendmode = BlendMode::kAdd;
+    } else if (t == "kReplace") {
+      io.frames[0].blendmode = BlendMode::kReplace;
     } else if (t == "kBlend") {
       io.frames[0].blendmode = BlendMode::kBlend;
     } else if (t == "kAlphaWeightedAdd") {
