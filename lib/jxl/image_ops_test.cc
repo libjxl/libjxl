@@ -156,7 +156,7 @@ TEST(ImageTest, CopyImageToWithPaddingTest) {
                       (y - dst_rect.y0() + src_rect.y0()),
                   dst.Row(y)[x]);
       } else {
-        EXPECT_EQ(0, dst.Row(y)[x]);
+        EXPECT_EQ(0u, dst.Row(y)[x]);
       }
     }
   }

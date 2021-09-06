@@ -918,7 +918,7 @@ TEST(DecodeTest, BasicInfoTest) {
   size_t bits_per_sample[2] = {8, 23};
   size_t orientation[2] = {3, 5};
   size_t alpha_bits[2] = {0, 8};
-  size_t have_container[2] = {0, 1};
+  JXL_BOOL have_container[2] = {0, 1};
   bool xyb_encoded = false;
 
   std::vector<std::vector<uint8_t>> test_samples;
@@ -966,26 +966,26 @@ TEST(DecodeTest, BasicInfoTest) {
         }
         // The API should set the orientation to identity by default since it
         // already applies the transformation internally by default.
-        EXPECT_EQ(1, info.orientation);
+        EXPECT_EQ(1u, info.orientation);
 
-        EXPECT_EQ(3, info.num_color_channels);
+        EXPECT_EQ(3u, info.num_color_channels);
 
         if (alpha_bits[i] != 0) {
           // Expect an extra channel
-          EXPECT_EQ(1, info.num_extra_channels);
+          EXPECT_EQ(1u, info.num_extra_channels);
           JxlExtraChannelInfo extra;
           EXPECT_EQ(0, JxlDecoderGetExtraChannelInfo(dec, 0, &extra));
           EXPECT_EQ(alpha_bits[i], extra.bits_per_sample);
           EXPECT_EQ(JXL_CHANNEL_ALPHA, extra.type);
           EXPECT_EQ(0, extra.alpha_premultiplied);
           // Verify the name "alpha_test" given to the alpha channel
-          EXPECT_EQ(10, extra.name_length);
+          EXPECT_EQ(10u, extra.name_length);
           char name[11];
           EXPECT_EQ(0,
                     JxlDecoderGetExtraChannelName(dec, 0, name, sizeof(name)));
           EXPECT_EQ(std::string("alpha_test"), std::string(name));
         } else {
-          EXPECT_EQ(0, info.num_extra_channels);
+          EXPECT_EQ(0u, info.num_extra_channels);
         }
 
         EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
@@ -1285,7 +1285,7 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // We don't need to dictate exactly what size the generated ICC profile
   // must be (since there are many ways to represent the same color space),
   // but it should not be zero.
-  EXPECT_NE(0, dec_profile_size);
+  EXPECT_NE(0u, dec_profile_size);
   if (0 != dec_profile_size) {
     jxl::PaddedBytes icc_profile2(dec_profile_size);
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
@@ -1462,8 +1462,8 @@ TEST_P(DecodeTestParam, PixelTest) {
         nullptr, nullptr, static_cast<jxl::Orientation>(config.orientation)));
   }
 
-  EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                             format_orig, format));
+  EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                              format_orig, format));
 
   JxlDecoderDestroy(dec);
 }
@@ -1667,8 +1667,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
           /*use_resizable_runner=*/false);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels, pixels2.size());
-      EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                                 format_orig, format));
+      EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                  format_orig, format));
     }
     {
       JxlPixelFormat format = {channels, JXL_TYPE_UINT16, JXL_LITTLE_ENDIAN, 0};
@@ -1680,8 +1680,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
           /*use_resizable_runner=*/false);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 2, pixels2.size());
-      EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                                 format_orig, format));
+      EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                  format_orig, format));
     }
 
     {
@@ -1693,8 +1693,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
           /*use_resizable_runner=*/false);
       JxlDecoderReset(dec);
       EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
-      EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                                 format_orig, format));
+      EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                  format_orig, format));
     }
   }
 
@@ -2183,8 +2183,8 @@ TEST(DecodeTest, AlignTest) {
         use_callback, /*set_buffer_early=*/false,
         /*use_resizable_runner=*/false);
     EXPECT_EQ(expected_line_bytes * ysize, pixels2.size());
-    EXPECT_EQ(0, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                               format_orig, format));
+    EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                format_orig, format));
   }
 }
 
@@ -2262,7 +2262,7 @@ TEST(DecodeTest, AnimationTest) {
     JxlFrameHeader frame_header;
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec, &frame_header));
     EXPECT_EQ(frame_durations[i], frame_header.duration);
-    EXPECT_EQ(0, frame_header.name_length);
+    EXPECT_EQ(0u, frame_header.name_length);
     // For now, test with empty name, there's currently no easy way to encode
     // a jxl file with a frame name because ImageBundle doesn't have a
     // jxl::FrameHeader to set the name in. We can test the null termination
@@ -2279,8 +2279,8 @@ TEST(DecodeTest, AnimationTest) {
                                    dec, &format, pixels.data(), pixels.size()));
 
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
-                               format, format));
+    EXPECT_EQ(0u, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                                format, format));
   }
 
   // After all frames were decoded, JxlDecoderProcessInput should return
@@ -2450,7 +2450,7 @@ TEST(DecodeTest, ExtraChannelTest) {
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   JxlBasicInfo info;
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
-  EXPECT_EQ(1, info.num_extra_channels);
+  EXPECT_EQ(1u, info.num_extra_channels);
   EXPECT_EQ(JXL_FALSE, info.alpha_premultiplied);
 
   JxlExtraChannelInfo extra_info;
@@ -2487,8 +2487,8 @@ TEST(DecodeTest, ExtraChannelTest) {
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
   JxlDecoderDestroy(dec);
 
-  EXPECT_EQ(0, ComparePixels(pixels.data(), image.data(), xsize, ysize,
-                             format_orig, format));
+  EXPECT_EQ(0u, ComparePixels(pixels.data(), image.data(), xsize, ysize,
+                              format_orig, format));
 
   // Compare the extracted extra channel with the original alpha channel
 
@@ -2503,8 +2503,8 @@ TEST(DecodeTest, ExtraChannelTest) {
   JxlPixelFormat format_orig_alpha = format_orig;
   format_orig_alpha.num_channels = 1;
 
-  EXPECT_EQ(0, ComparePixels(alpha.data(), extra.data(), xsize, ysize,
-                             format_orig_alpha, format_alpha));
+  EXPECT_EQ(0u, ComparePixels(alpha.data(), extra.data(), xsize, ysize,
+                              format_orig_alpha, format_alpha));
 }
 
 TEST(DecodeTest, SkipFrameTest) {
@@ -2599,8 +2599,8 @@ TEST(DecodeTest, SkipFrameTest) {
                                    dec, &format, pixels.data(), pixels.size()));
 
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
-                               format, format));
+    EXPECT_EQ(0u, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                                format, format));
   }
 
   // After all frames were decoded, JxlDecoderProcessInput should return
@@ -2636,8 +2636,8 @@ TEST(DecodeTest, SkipFrameTest) {
                                    dec, &format, pixels.data(), pixels.size()));
 
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
-                               format, format));
+    EXPECT_EQ(0u, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                                format, format));
 
     if (test_skipping) i += test_skipping;
   }
@@ -2784,8 +2784,8 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
                                    dec, &format, pixels.data(), pixels.size()));
 
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
-                               format, format));
+    EXPECT_EQ(0u, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                                format, format));
 
     // Test rewinding mid-way, not decoding all frames.
     if (i == 8) {
@@ -2819,8 +2819,8 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
                                    dec, &format, pixels.data(), pixels.size()));
 
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
-                               format, format));
+    EXPECT_EQ(0u, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                                format, format));
   }
 
   // After all frames were decoded, JxlDecoderProcessInput should return
@@ -2856,8 +2856,8 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
                                    dec, &format, pixels.data(), pixels.size()));
 
     EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
-    EXPECT_EQ(0, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
-                               format, format));
+    EXPECT_EQ(0u, ComparePixels(frames[i].data(), pixels.data(), xsize, ysize,
+                                format, format));
 
     if (test_skipping) i += test_skipping;
   }

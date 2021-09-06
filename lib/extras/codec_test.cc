@@ -346,9 +346,9 @@ void VerifyWideGamutMetadata(const std::string& relative_pathname,
                              const Primaries primaries, ThreadPool* pool) {
   const CodecInOut io = DecodeRoundtrip(relative_pathname, Codec::kPNG, pool);
 
-  EXPECT_EQ(8, io.metadata.m.bit_depth.bits_per_sample);
+  EXPECT_EQ(8u, io.metadata.m.bit_depth.bits_per_sample);
   EXPECT_FALSE(io.metadata.m.bit_depth.floating_point_sample);
-  EXPECT_EQ(0, io.metadata.m.bit_depth.exponent_bits_per_sample);
+  EXPECT_EQ(0u, io.metadata.m.bit_depth.exponent_bits_per_sample);
 
   const ColorEncoding& c_original = io.metadata.m.color_encoding;
   EXPECT_FALSE(c_original.ICC().empty());

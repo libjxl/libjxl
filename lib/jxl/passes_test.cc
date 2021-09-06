@@ -171,7 +171,7 @@ TEST(PassesTest, AllDownsampleFeasible) {
   PassesEncoderState enc_state;
   ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, &aux, &pool));
 
-  EXPECT_LE(compressed.size(), 240000);
+  EXPECT_LE(compressed.size(), 240000u);
   float target_butteraugli[9] = {};
   target_butteraugli[1] = 2.5f;
   target_butteraugli[2] = 16.0f;
@@ -216,7 +216,7 @@ TEST(PassesTest, AllDownsampleFeasibleQProgressive) {
   PassesEncoderState enc_state;
   ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, &aux, &pool));
 
-  EXPECT_LE(compressed.size(), 220000);
+  EXPECT_LE(compressed.size(), 220000u);
 
   float target_butteraugli[9] = {};
   target_butteraugli[1] = 3.0f;
@@ -271,7 +271,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectlyGrayscale) {
   PassesEncoderState enc_state;
   ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, &aux, &pool));
 
-  EXPECT_LE(compressed.size(), 10000);
+  EXPECT_LE(compressed.size(), 10000u);
 
   DecompressParams dparams;
   dparams.max_downsampling = 1;
@@ -317,7 +317,7 @@ TEST(PassesTest, ProgressiveDownsample2DegradesCorrectly) {
   PassesEncoderState enc_state;
   ASSERT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, &aux, &pool));
 
-  EXPECT_LE(compressed.size(), 220000);
+  EXPECT_LE(compressed.size(), 220000u);
 
   DecompressParams dparams;
   dparams.max_downsampling = 1;

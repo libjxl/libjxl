@@ -280,7 +280,7 @@ TEST(EncodeTest, OptionsTest) {
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetDecodingSpeed(options, 2));
     VerifyFrameEncoding(enc.get(), options);
-    EXPECT_EQ(2, enc->last_used_cparams.decoding_speed_tier);
+    EXPECT_EQ(2u, enc->last_used_cparams.decoding_speed_tier);
   }
 }
 
@@ -461,7 +461,7 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   jxl::Span<const uint8_t> encoded_span =
       jxl::Span<const uint8_t>(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
-  EXPECT_EQ(0, encoded_span.size());
+  EXPECT_EQ(0u, encoded_span.size());
   EXPECT_EQ(0, memcmp("jxlc", container.boxes[0].type, 4));
   EXPECT_EQ(true, container.boxes[0].data_size_given);
 }
@@ -503,7 +503,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   jxl::Span<const uint8_t> encoded_span =
       jxl::Span<const uint8_t>(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
-  EXPECT_EQ(0, encoded_span.size());
+  EXPECT_EQ(0u, encoded_span.size());
   EXPECT_EQ(0, memcmp("jbrd", container.boxes[0].type, 4));
   EXPECT_EQ(0, memcmp("jxlc", container.boxes[1].type, 4));
 
