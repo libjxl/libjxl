@@ -123,7 +123,8 @@ TEST(BitReaderTest, TestSkip) {
           // SkipBits or manually read "skip" bits
           reader1.SkipBits(skip);
           for (size_t i = 0; i < skip; ++i) {
-            EXPECT_EQ(0u, reader2.ReadBits(1)) << " skip=" << skip << " i=" << i;
+            EXPECT_EQ(0u, reader2.ReadBits(1))
+                << " skip=" << skip << " i=" << i;
           }
           EXPECT_EQ(reader1.TotalBitsConsumed(), reader2.TotalBitsConsumed());
 
