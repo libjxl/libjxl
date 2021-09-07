@@ -110,7 +110,13 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
     codec = Codec::kGIF;
   }
 #endif
-  else if (extras::DecodeImageJPG(bytes, color_hints, pool, io)) {
+  else if (io->dec_target == DecodeTarget::kQuantizedCoeffs &&
+           extras::DecodeImageJPGCoefficients(bytes, io)) {
+    // TODO(deymo): In this case the tools should use a different API to
+    // transcode the input JPEG to JXL.
+    codec = Codec::kJPG;
+  } else if (io->dec_target == DecodeTarget::kPixels &&
+             extras::DecodeImageJPG(bytes, color_hints, pool, io)) {
     codec = Codec::kJPG;
   } else if (extras::DecodeImagePSD(bytes, color_hints, pool, io)) {
     codec = Codec::kPSD;
@@ -155,17 +161,19 @@ Status Encode(const CodecInOut& io, const Codec codec,
       return extras::EncodeImagePNG(&io, c_desired, bits_per_sample, pool,
                                     bytes);
     case Codec::kJPG:
+      if (io.Main().IsJPEG()) {
+        return extras::EncodeImageJPGCoefficients(&io, bytes);
+      } else {
 #if JPEGXL_ENABLE_JPEG
-      return EncodeImageJPG(&io,
-                            io.use_sjpeg ? extras::JpegEncoder::kSJpeg
-                                         : extras::JpegEncoder::kLibJpeg,
-                            io.jpeg_quality, YCbCrChromaSubsampling(), pool,
-                            bytes,
-                            io.Main().IsJPEG() ? DecodeTarget::kQuantizedCoeffs
-                                               : DecodeTarget::kPixels);
+        return EncodeImageJPG(&io,
+                              io.use_sjpeg ? extras::JpegEncoder::kSJpeg
+                                           : extras::JpegEncoder::kLibJpeg,
+                              io.jpeg_quality, YCbCrChromaSubsampling(), pool,
+                              bytes);
 #else
-      return JXL_FAILURE("JPEG XL was built without JPEG support");
+        return JXL_FAILURE("JPEG XL was built without JPEG support");
 #endif
+      }
     case Codec::kPNM:
       return extras::EncodeImagePNM(&io, c_desired, bits_per_sample, pool,
                                     bytes);

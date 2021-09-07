@@ -42,8 +42,17 @@ Status DecodeImageJPG(Span<const uint8_t> bytes, const ColorHints& color_hints,
 // Encodes into `bytes`.
 Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
                       YCbCrChromaSubsampling chroma_subsampling,
-                      ThreadPool* pool, PaddedBytes* bytes,
-                      DecodeTarget target = DecodeTarget::kPixels);
+                      ThreadPool* pool, PaddedBytes* bytes);
+
+// Temporary wrappers to load the JPEG coefficients to a CodecInOut. This should
+// be replaced by calling the corresponding JPEG input and output functions on
+// the API.
+
+// Decodes the JPEG image coefficients to a CodecIO for lossless recompression.
+Status DecodeImageJPGCoefficients(Span<const uint8_t> bytes, CodecInOut* io);
+
+// Reconstructs the JPEG from the coefficients and metadata in CodecInOut.
+Status EncodeImageJPGCoefficients(const CodecInOut* io, PaddedBytes* bytes);
 
 }  // namespace extras
 }  // namespace jxl
