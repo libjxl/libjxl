@@ -269,58 +269,5 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   return true;
 }
 
-void TestCodecPGX() {
-  {
-    std::string pgx = "PG ML + 8 2 3\npixels";
-
-    CodecInOut io;
-    ThreadPool* pool = nullptr;
-
-    Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), pool, &io);
-    JXL_CHECK(ok == true);
-
-    ScaleImage(255.f, io.Main().color());
-
-    JXL_CHECK(!io.metadata.m.bit_depth.floating_point_sample);
-    JXL_CHECK(io.metadata.m.bit_depth.bits_per_sample == 8);
-    JXL_CHECK(io.metadata.m.color_encoding.IsGray());
-    JXL_CHECK(io.xsize() == 2);
-    JXL_CHECK(io.ysize() == 3);
-    float eps = 1e-5;
-    ExpectNear<float>('p', io.Main().color()->Plane(0).Row(0)[0], eps);
-    ExpectNear<float>('i', io.Main().color()->Plane(0).Row(0)[1], eps);
-    ExpectNear<float>('x', io.Main().color()->Plane(0).Row(1)[0], eps);
-    ExpectNear<float>('e', io.Main().color()->Plane(0).Row(1)[1], eps);
-    ExpectNear<float>('l', io.Main().color()->Plane(0).Row(2)[0], eps);
-    ExpectNear<float>('s', io.Main().color()->Plane(0).Row(2)[1], eps);
-  }
-
-  {
-    std::string pgx = "PG ML + 16 2 3\np_i_x_e_l_s_";
-
-    CodecInOut io;
-    ThreadPool* pool = nullptr;
-
-    Status ok = DecodeImagePGX(MakeSpan(pgx.c_str()), ColorHints(), pool, &io);
-    JXL_CHECK(ok == true);
-
-    ScaleImage(255.f, io.Main().color());
-
-    JXL_CHECK(!io.metadata.m.bit_depth.floating_point_sample);
-    JXL_CHECK(io.metadata.m.bit_depth.bits_per_sample == 16);
-    JXL_CHECK(io.metadata.m.color_encoding.IsGray());
-    JXL_CHECK(io.xsize() == 2);
-    JXL_CHECK(io.ysize() == 3);
-    float eps = 1e-7;
-    const auto& plane = io.Main().color()->Plane(0);
-    ExpectNear(256.0f * 'p' + '_', plane.Row(0)[0] * 257, eps);
-    ExpectNear(256.0f * 'i' + '_', plane.Row(0)[1] * 257, eps);
-    ExpectNear(256.0f * 'x' + '_', plane.Row(1)[0] * 257, eps);
-    ExpectNear(256.0f * 'e' + '_', plane.Row(1)[1] * 257, eps);
-    ExpectNear(256.0f * 'l' + '_', plane.Row(2)[0] * 257, eps);
-    ExpectNear(256.0f * 's' + '_', plane.Row(2)[1] * 257, eps);
-  }
-}
-
 }  // namespace extras
 }  // namespace jxl

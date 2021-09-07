@@ -372,7 +372,6 @@ TEST(CodecTest, TestWideGamut) {
 }
 
 TEST(CodecTest, TestPNM) { TestCodecPNM(); }
-TEST(CodecTest, TestPGX) { TestCodecPGX(); }
 
 }  // namespace
 }  // namespace extras

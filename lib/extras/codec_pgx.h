@@ -32,7 +32,6 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes);
 
-void TestCodecPGX();
 }  // namespace extras
 }  // namespace jxl
 
