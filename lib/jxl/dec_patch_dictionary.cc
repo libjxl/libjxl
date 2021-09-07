@@ -201,6 +201,7 @@ Status PatchDictionary::AddTo(Image3F* opsin, const Rect& opsin_rect,
                               float* const* extra_channels,
                               const Rect& image_rect) const {
   JXL_CHECK(SameSize(opsin_rect, image_rect));
+  if (patch_starts_.empty()) return true;
   size_t num_ec = shared_->metadata->m.num_extra_channels;
   std::vector<const float*> fg_ptrs(3 + num_ec);
   std::vector<float*> bg_ptrs(3 + num_ec);
