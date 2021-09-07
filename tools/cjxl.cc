@@ -307,7 +307,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Target distance/size/bpp
   opt_distance_id = cmdline->AddOptionValue(
       'd', "distance", "maxError",
-      ("Max. butteraugli distance, lower = higher quality. Range: 0 .. 15.\n"
+      ("Max. butteraugli distance, lower = higher quality. Range: 0 .. 25.\n"
        "    0.0 = mathematically lossless. Default for already-lossy input "
        "(JPEG/GIF).\n"
        "    1.0 = visually lossless. Default for other input.\n"
@@ -420,9 +420,11 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "patches", "0|1",
                           "force disable/enable patches generation.",
                           &params.patches, &ParseOverride, 1);
-  cmdline->AddOptionValue('\0', "resampling", "1|2|4|8",
-                          "Subsample all color channels by this factor.",
-                          &params.resampling, &ParseUnsigned, 1);
+  cmdline->AddOptionValue(
+      '\0', "resampling", "0|1|2|4|8",
+      "Subsample all color channels by this factor, or use 0 to choose the "
+      "resampling factor based on distance.",
+      &params.resampling, &ParseUnsigned, 0);
   cmdline->AddOptionValue(
       '\0', "ec_resampling", "1|2|4|8",
       "Subsample all extra channels by this factor. If this value is smaller "
@@ -617,7 +619,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
 
   if (got_distance) {
     constexpr float butteraugli_min_dist = 0.1f;
-    constexpr float butteraugli_max_dist = 15.0f;
+    constexpr float butteraugli_max_dist = 25.0f;
     if (!(0 <= params.butteraugli_distance &&
           params.butteraugli_distance <= butteraugli_max_dist)) {
       fprintf(stderr, "Invalid/out of range distance, try 0 to %g.\n",
