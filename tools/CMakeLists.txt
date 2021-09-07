@@ -165,6 +165,9 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
     butteraugli_main
     decode_and_encode
     epf_main
+    pq_to_hlg
+    render_hlg
+    tone_map
     ssimulacra_main
     xyb_range
     jxl_from_tree
@@ -176,6 +179,9 @@ if(${JPEGXL_ENABLE_DEVTOOLS})
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(epf_main epf_main.cc epf.cc epf.h)
+  add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
+  add_executable(render_hlg hdr/render_hlg.cc)
+  add_executable(tone_map hdr/tone_map.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
 endif()  # JPEGXL_ENABLE_DEVTOOLS
