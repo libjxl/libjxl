@@ -3,10 +3,11 @@
 <img src="doc/jxl.svg" width="100" align="right" alt="JXL logo">
 
 This repository contains a reference implementation of JPEG XL (encoder and
-decoder), called `libjxl`.
+decoder), called `libjxl`. This software library is
+[used by many applications that support JPEG XL](doc/software_support.md).
 
-JPEG XL is in the final stages of standardization and its codestream format is
-frozen.
+JPEG XL is in the final stages of standardization and its codestream and file format
+are frozen.
 
 The library API, command line options, and tools in this repository are subject
 to change, however files encoded with `cjxl` conform to the JPEG XL format
