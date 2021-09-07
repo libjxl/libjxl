@@ -260,9 +260,9 @@ PaddedBytes CreateTestJXLCodestream(
   if (jpeg_codestream != nullptr) {
 #if JPEGXL_ENABLE_JPEG
     jxl::PaddedBytes jpeg_bytes;
-    EXPECT_TRUE(EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, /*quality=*/70,
-                               jxl::YCbCrChromaSubsampling(), &pool,
-                               &jpeg_bytes, jxl::DecodeTarget::kPixels));
+    EXPECT_TRUE(EncodeImageJPG(&io, jxl::extras::JpegEncoder::kLibJpeg,
+                               /*quality=*/70, jxl::YCbCrChromaSubsampling(),
+                               &pool, &jpeg_bytes, jxl::DecodeTarget::kPixels));
     jpeg_codestream->append(jpeg_bytes.data(),
                             jpeg_bytes.data() + jpeg_bytes.size());
     EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(

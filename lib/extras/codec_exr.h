@@ -17,6 +17,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`. color_hints are ignored.
 Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
@@ -27,6 +28,7 @@ Status DecodeImageEXR(Span<const uint8_t> bytes, const ColorHints& color_hints,
 Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
                       ThreadPool* pool, PaddedBytes* bytes);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_EXR_H_

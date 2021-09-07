@@ -92,31 +92,31 @@ Status SetFromBytes(const Span<const uint8_t> bytes,
   io->metadata.m.bit_depth.bits_per_sample = 0;  // (For is-set check below)
 
   Codec codec;
-  if (DecodeImagePNG(bytes, color_hints, pool, io)) {
+  if (extras::DecodeImagePNG(bytes, color_hints, pool, io)) {
     codec = Codec::kPNG;
   }
 #if JPEGXL_ENABLE_APNG
-  else if (DecodeImageAPNG(bytes, color_hints, pool, io)) {
+  else if (extras::DecodeImageAPNG(bytes, color_hints, pool, io)) {
     codec = Codec::kPNG;
   }
 #endif
-  else if (DecodeImagePGX(bytes, color_hints, pool, io)) {
+  else if (extras::DecodeImagePGX(bytes, color_hints, pool, io)) {
     codec = Codec::kPGX;
-  } else if (DecodeImagePNM(bytes, color_hints, pool, io)) {
+  } else if (extras::DecodeImagePNM(bytes, color_hints, pool, io)) {
     codec = Codec::kPNM;
   }
 #if JPEGXL_ENABLE_GIF
-  else if (DecodeImageGIF(bytes, color_hints, pool, io)) {
+  else if (extras::DecodeImageGIF(bytes, color_hints, pool, io)) {
     codec = Codec::kGIF;
   }
 #endif
-  else if (DecodeImageJPG(bytes, color_hints, pool, io)) {
+  else if (extras::DecodeImageJPG(bytes, color_hints, pool, io)) {
     codec = Codec::kJPG;
-  } else if (DecodeImagePSD(bytes, color_hints, pool, io)) {
+  } else if (extras::DecodeImagePSD(bytes, color_hints, pool, io)) {
     codec = Codec::kPSD;
   }
 #if JPEGXL_ENABLE_EXR
-  else if (DecodeImageEXR(bytes, color_hints, pool, io)) {
+  else if (extras::DecodeImageEXR(bytes, color_hints, pool, io)) {
     codec = Codec::kEXR;
   }
 #endif
@@ -152,28 +152,34 @@ Status Encode(const CodecInOut& io, const Codec codec,
 
   switch (codec) {
     case Codec::kPNG:
-      return EncodeImagePNG(&io, c_desired, bits_per_sample, pool, bytes);
+      return extras::EncodeImagePNG(&io, c_desired, bits_per_sample, pool,
+                                    bytes);
     case Codec::kJPG:
 #if JPEGXL_ENABLE_JPEG
-      return EncodeImageJPG(
-          &io, io.use_sjpeg ? JpegEncoder::kSJpeg : JpegEncoder::kLibJpeg,
-          io.jpeg_quality, YCbCrChromaSubsampling(), pool, bytes,
-          io.Main().IsJPEG() ? DecodeTarget::kQuantizedCoeffs
-                             : DecodeTarget::kPixels);
+      return EncodeImageJPG(&io,
+                            io.use_sjpeg ? extras::JpegEncoder::kSJpeg
+                                         : extras::JpegEncoder::kLibJpeg,
+                            io.jpeg_quality, YCbCrChromaSubsampling(), pool,
+                            bytes,
+                            io.Main().IsJPEG() ? DecodeTarget::kQuantizedCoeffs
+                                               : DecodeTarget::kPixels);
 #else
       return JXL_FAILURE("JPEG XL was built without JPEG support");
 #endif
     case Codec::kPNM:
-      return EncodeImagePNM(&io, c_desired, bits_per_sample, pool, bytes);
+      return extras::EncodeImagePNM(&io, c_desired, bits_per_sample, pool,
+                                    bytes);
     case Codec::kPGX:
-      return EncodeImagePGX(&io, c_desired, bits_per_sample, pool, bytes);
+      return extras::EncodeImagePGX(&io, c_desired, bits_per_sample, pool,
+                                    bytes);
     case Codec::kGIF:
       return JXL_FAILURE("Encoding to GIF is not implemented");
     case Codec::kPSD:
-      return EncodeImagePSD(&io, c_desired, bits_per_sample, pool, bytes);
+      return extras::EncodeImagePSD(&io, c_desired, bits_per_sample, pool,
+                                    bytes);
     case Codec::kEXR:
 #if JPEGXL_ENABLE_EXR
-      return EncodeImageEXR(&io, c_desired, pool, bytes);
+      return extras::EncodeImageEXR(&io, c_desired, pool, bytes);
 #else
       return JXL_FAILURE("JPEG XL was built without OpenEXR support");
 #endif

@@ -1359,7 +1359,7 @@ jxl::Status DecompressJxlToJPEGForTest(
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
   io.jpeg_quality = 95;
-  if (!EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, io.jpeg_quality,
+  if (!EncodeImageJPG(&io, jxl::extras::JpegEncoder::kLibJpeg, io.jpeg_quality,
                       jxl::YCbCrChromaSubsampling(), pool, output,
                       jxl::DecodeTarget::kQuantizedCoeffs)) {
     return JXL_FAILURE("Failed to generate JPEG");

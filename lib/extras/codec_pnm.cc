@@ -29,6 +29,7 @@
 #include "lib/jxl/luminance.h"
 
 namespace jxl {
+namespace extras {
 namespace {
 
 struct HeaderPNM {
@@ -573,4 +574,5 @@ void TestCodecPNM() {
   JXL_CHECK(std::abs(d - -3.141592) < 1E-15);
 }
 
+}  // namespace extras
 }  // namespace jxl

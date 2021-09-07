@@ -27,6 +27,7 @@
 #include "lib/jxl/luminance.h"
 
 namespace jxl {
+namespace extras {
 namespace {
 
 struct HeaderPGX {
@@ -321,4 +322,5 @@ void TestCodecPGX() {
   }
 }
 
+}  // namespace extras
 }  // namespace jxl

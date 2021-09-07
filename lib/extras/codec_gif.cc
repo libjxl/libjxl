@@ -24,6 +24,7 @@
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {
+namespace extras {
 
 namespace {
 
@@ -336,4 +337,5 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl

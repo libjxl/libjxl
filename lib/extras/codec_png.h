@@ -23,6 +23,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`.
 Status DecodeImagePNG(const Span<const uint8_t> bytes,
@@ -34,6 +35,7 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_PNG_H_

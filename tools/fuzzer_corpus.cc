@@ -225,7 +225,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // metadata and encode it in the beginning of the compressed bytes.
     jxl::PaddedBytes jpeg_bytes;
     JXL_RETURN_IF_ERROR(
-        EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, /*quality=*/70,
+        EncodeImageJPG(&io, jxl::extras::JpegEncoder::kLibJpeg, /*quality=*/70,
                        jxl::YCbCrChromaSubsampling(), /*pool=*/nullptr,
                        &jpeg_bytes, jxl::DecodeTarget::kPixels));
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(

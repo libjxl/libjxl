@@ -10,6 +10,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
+namespace extras {
 
 Status ApplyColorHints(const ColorHints& color_hints,
                        const bool color_already_set, const bool is_gray,
@@ -62,4 +63,5 @@ Status ApplyColorHints(const ColorHints& color_hints,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl
