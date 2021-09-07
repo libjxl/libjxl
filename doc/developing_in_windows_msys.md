@@ -22,31 +22,41 @@ Download MSYS2 from the homepage.  Install at a location without any spaces on a
 
 Toward the end of installation, select the option to run MSYS2 now.  A command-line window will open.  Run the following command, and answer the prompts to update the repository and close the terminal.
 
-    pacman -Syu
+```bash
+pacman -Syu
+```
 
 Now restart the MSYS environment and run the following command to complete updates:
 
-    packman -Su
+```bash
+pacman -Su
+```
 
 ## Package Management
 
 Packages are organized in groups, which share the build environment name, but in lower case.  Then they have name prefixes that indicate which group they belong to.  Consider this package search: `pacman -Ss cmake`
 
-    mingw32/mingw-w64-i686-cmake
-    mingw64/mingw-w64-x86_64-cmake
-    ucrt64/mingw-w64-ucrt-x86_64-cmake
-    clang64/mingw-w64-clang-x86_64-cmake
-    msys/cmake
+```
+mingw32/mingw-w64-i686-cmake
+mingw64/mingw-w64-x86_64-cmake
+ucrt64/mingw-w64-ucrt-x86_64-cmake
+clang64/mingw-w64-clang-x86_64-cmake
+msys/cmake
+```
 
 We can see the organization `group/prefix-name`.  When installing packages, the group name is optional.
 
-    pacman -S mingw-w64-x86_64-cmake
+```bash
+pacman -S mingw-w64-x86_64-cmake
+```
  
 For tools that need to be aware of the compiler to function, install the package that corresponds with the specific build-environment you plan to use.  For `cmake`, install the `mingw64` version.  The generic `msys/cmake` will not function correctly because it will not find the compiler.  For other tools, the generic `msys` version is adequate, like `msys/git`.
 
 To remove packages, use:
 
-    pacman -Rsc [package-name]
+```bash
+pacman -Rsc [package-name]
+```
 
 ## Worst-Case Scenario...
 
@@ -66,18 +76,20 @@ If packages management is done within a build environment other than MSYS, the e
 
 Next set up the MING64 environment.  The following commands should be run within the MSYS environment.  `pacman -S` is used to install packages.  The `--needed` argument prevents packages from being reinstalled.
 
-    pacman -S --needed base-devel mingw-w64-x86_64-toolchain
-    pacman -S git mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
-        mingw-w64-x86_64-gtest mingw-w64-x86_64-giflib \
-        mingw-w64-x86_64-libpng mingw-w64-x86_64-libjpeg-turbo 
-
+```bash
+pacman -S --needed base-devel mingw-w64-x86_64-toolchain
+pacman -S git mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
+    mingw-w64-x86_64-gtest mingw-w64-x86_64-giflib \
+    mingw-w64-x86_64-libpng mingw-w64-x86_64-libjpeg-turbo 
+```
 
 ## Build `libjxl`
 
 Download the source from the libjxl [releases](https://github.com/libjxl/libjxl/releases) page.  Alternatively, you may obtain the latest development version with `git`.  Run `./deps.sh` to ensure additional third-party dependencies are downloaded.
 
 Start the MINGW64 environment, create a build directory within the source directory, and configure with `cmake`.
-```
+
+```bash
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -91,7 +103,9 @@ Check the output to see if any dependencies were missed and need to be installed
 
 If all went well, you may now run `cmake` to build `libjxl`:
 
-    cmake --build .
+```bash
+cmake --build .
+```
 
 Do not be alarmed by the compiler warnings.  They are a caused by differences between gcc/g++ and clang.  The build should complete successfully.  Then `cjxl`, `djxl`, `jxlinfo`, and others can be run from within the build environment.  Moving them into the native Windows environment requires resolving `dll` issues that are beyond the scope of this document.
 
@@ -99,23 +113,27 @@ Do not be alarmed by the compiler warnings.  They are a caused by differences be
 
 To use the `clang` compiler, install the packages that correspond with the environment you wish to use.  Remember to make package changes from within the MSYS environment.
 
-    mingw-w64-i686-clang
-    mingw-w64-i686-clang-tools-extra
-    mingw-w64-i686-clang-compiler-rt
+```
+mingw-w64-i686-clang
+mingw-w64-i686-clang-tools-extra
+mingw-w64-i686-clang-compiler-rt
 
-    mingw-w64-x86_64-clang
-    mingw-w64-x86_64-clang-tools-extra
-    mingw-w64-x86_64-clang-compiler-rt
+mingw-w64-x86_64-clang
+mingw-w64-x86_64-clang-tools-extra
+mingw-w64-x86_64-clang-compiler-rt
 
-    mingw-w64-ucrt64-x86_64-clang
-    mingw-w64-ucrt64-x86_64-clang-tools-extra
-    mingw-w64-ucrt64-x86_64-clang-compiler-rt
+mingw-w64-ucrt64-x86_64-clang
+mingw-w64-ucrt64-x86_64-clang-tools-extra
+mingw-w64-ucrt64-x86_64-clang-compiler-rt
+```
 
 After the `clang` compiler is installed, 'libjxl' can be built with the `./ci.sh` script.
 
-    ./ci.sh opt -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
-        -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-        -DJPEGXL_FORCE_SYSTEM_GTEST=ON
+```bash
+./ci.sh opt -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
+    -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+    -DJPEGXL_FORCE_SYSTEM_GTEST=ON
+```
 
 On my computer, `doxygen` packages needed to be installed to proceed with building.  Use `pacman -Ss doxygen` to find the packages to install.
 
@@ -123,12 +141,15 @@ On my computer, `doxygen` packages needed to be installed to proceed with buildi
 
 To build the GIMP plugin, install the relevant `gimp` package.  This will also install dependencies.  Again, perform package management tasks from only the MSYS environment.  Then restart the build environment.
 
-    pacman -S mingw-w64-i686-gimp
-    pacman -S mingw-w64-x86_64-gimp
-    pacman -S mingw-w64-ucrt-x86_64-gimp
+```bash
+pacman -S mingw-w64-i686-gimp
+pacman -S mingw-w64-x86_64-gimp
+pacman -S mingw-w64-ucrt-x86_64-gimp
+```
 
 If `clang` is installed, you can use the `./ci.sh` script to build.  Otherwise, navigate to the build directory to reconfigure and build with `cmake`.
-```
+
+```bash
 cd build
 rm -r C*
 cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \

@@ -8,22 +8,22 @@ For other platforms, please instead use the following:
 
 ## Minimum build dependencies
 
-Apart from the dependencies in third_party, some of the tools use external
-dependencies that need to be installed in your system first:
+Apart from the dependencies in `third_party`, some of the tools use external
+dependencies that need to be installed on your system first:
 
 ```bash
-sudo apt install cmake clang doxygen g++-8 extra-cmake-modules libgif-dev \
+sudo apt install cmake clang doxygen g++ extra-cmake-modules libgif-dev \
   libjpeg-dev ninja-build libgoogle-perftools-dev
 ```
 
-Make sure your default "clang" compiler is at least version 6 by running
+Make sure your default `clang` compiler is at least version 6 by running
 
 ```bash
 clang --version
 ```
 
-If it still shows an old version despite having for example a clang-7 installed, you need
-to update the default clang compiler. In Debian-based systems run:
+If it still shows an old version despite having, for example, `clang-7` installed, you need
+to update the default `clang` compiler. On Debian-based systems run:
 
 ```bash
 sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-7 100
@@ -46,7 +46,7 @@ sudo apt install clang-format clang-tidy curl parallel gcovr
 
 ## Building
 
-The project uses CMake to build. We provide a script that simplifies the
+The `libjxl` project uses CMake to build. We provide a script that simplifies the
 invocation. To build and test the project, run
 
 ```bash
