@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - API: New functions to decode extra channels:
    `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
 
+### Changed
+ - API: Renamed the field `alpha_associated` in `JxlExtraChannelInfo` to
+   `alpha_premultiplied`, to match the corresponding name in `JxlBasicInfo`.
+ - Improved the 2x2 downscaling method in the encoder for the optional color
+   channel resampling for low bit rates.
+
 ## [0.5] - 2021-08-02
 ### Added
  - API: New function to decode the image using a callback outputting a part of a
