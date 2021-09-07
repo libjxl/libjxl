@@ -54,7 +54,7 @@ TEST(BoxTest, BoxTest) {
 
   EXPECT_EQ(exif.size(), container2.exif_size);
   EXPECT_EQ(0, memcmp(exif.data(), container2.exif, container2.exif_size));
-  EXPECT_EQ(2, container2.xml.size());
+  EXPECT_EQ(2u, container2.xml.size());
   if (container2.xml.size() == 2) {
     EXPECT_EQ(xml0.size(), container2.xml[0].second);
     EXPECT_EQ(0, memcmp(xml0.data(), container2.xml[0].first,
@@ -63,7 +63,7 @@ TEST(BoxTest, BoxTest) {
     EXPECT_EQ(0, memcmp(xml1.data(), container2.xml[1].first,
                         container2.xml[1].second));
   }
-  EXPECT_EQ(1, container2.xmlc.size());
+  EXPECT_EQ(1u, container2.xmlc.size());
   if (container2.xmlc.size() == 1) {
     EXPECT_EQ(xml1.size(), container2.xmlc[0].second);
     EXPECT_EQ(0, memcmp(xml1.data(), container2.xmlc[0].first,
