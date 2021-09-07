@@ -19,6 +19,7 @@
 #include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
+namespace extras {
 
 enum class JpegEncoder {
   kLibJpeg,
@@ -44,6 +45,7 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
                       ThreadPool* pool, PaddedBytes* bytes,
                       DecodeTarget target = DecodeTarget::kPixels);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_JPG_H_

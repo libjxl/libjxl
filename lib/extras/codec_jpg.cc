@@ -40,6 +40,7 @@
 #endif
 
 namespace jxl {
+namespace extras {
 
 #if JPEGXL_ENABLE_JPEG
 namespace {
@@ -515,4 +516,5 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
 #endif  // JPEGXL_ENABLE_JPEG
 }
 
+}  // namespace extras
 }  // namespace jxl

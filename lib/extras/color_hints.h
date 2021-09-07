@@ -59,12 +59,15 @@ class ColorHints {
   std::vector<KeyValue> kv_;
 };
 
+namespace extras {
+
 // Apply the color hints to the decoded image in CodecInOut if any.
 // color_already_set tells whether the color encoding was already set, in which
 // case the hints are ignored if any hint is passed.
 Status ApplyColorHints(const ColorHints& color_hints, bool color_already_set,
                        bool is_gray, CodecInOut* io);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_COLOR_HINTS_H_

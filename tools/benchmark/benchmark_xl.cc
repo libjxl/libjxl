@@ -62,7 +62,8 @@ Status WritePNG(Image3F&& image, ThreadPool* pool,
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
   PaddedBytes compressed;
-  JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
+  JXL_CHECK(
+      extras::EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
   return WriteFile(compressed, filename);
 }
 

@@ -18,12 +18,14 @@
 #include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`. color_hints are ignored.
 Status DecodeImageGIF(const Span<const uint8_t> bytes,
                       const ColorHints& color_hints, ThreadPool* pool,
                       CodecInOut* io);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_GIF_H_

@@ -55,6 +55,7 @@
 #include "png.h" /* original (unpatched) libpng is ok */
 
 namespace jxl {
+namespace extras {
 
 namespace {
 
@@ -404,4 +405,5 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, const ColorHints& color_hints,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl

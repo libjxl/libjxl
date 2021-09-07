@@ -23,6 +23,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`. color_hints may specify "color_space", which
 // defaults to sRGB.
@@ -37,6 +38,7 @@ Status EncodeImagePNM(const CodecInOut* io, const ColorEncoding& c_desired,
 
 void TestCodecPNM();
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_PNM_H_

@@ -28,6 +28,7 @@
 #include "lib/jxl/luminance.h"
 
 namespace jxl {
+namespace extras {
 namespace {
 
 uint64_t get_be_int(int bytes, const uint8_t*& pos, const uint8_t* maxpos) {
@@ -612,4 +613,5 @@ Status EncodeImagePSD(const CodecInOut* io, const ColorEncoding& c_desired,
   return JXL_FAILURE("PSD encoding not yet implemented");
 }
 
+}  // namespace extras
 }  // namespace jxl

@@ -100,7 +100,7 @@ class CustomCodec : public ImageCodec {
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     PaddedBytes png;
     JXL_RETURN_IF_ERROR(
-        EncodeImagePNG(io, io->Main().c_current(), bits, pool, &png));
+        extras::EncodeImagePNG(io, io->Main().c_current(), bits, pool, &png));
     JXL_RETURN_IF_ERROR(WriteFile(png, png_filename));
     std::vector<std::string> arguments = compress_args_;
     arguments.push_back(png_filename);

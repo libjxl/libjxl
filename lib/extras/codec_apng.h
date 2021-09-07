@@ -18,12 +18,14 @@
 #include "lib/jxl/codec_in_out.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`. color_space_hint is ignored.
 Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                        const ColorHints& color_hints, ThreadPool* pool,
                        CodecInOut* io);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_APNG_H_

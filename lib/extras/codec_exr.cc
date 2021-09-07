@@ -17,6 +17,7 @@
 #include "lib/jxl/color_management.h"
 
 namespace jxl {
+namespace extras {
 
 namespace {
 
@@ -347,4 +348,5 @@ Status EncodeImageEXR(const CodecInOut* io, const ColorEncoding& c_desired,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl

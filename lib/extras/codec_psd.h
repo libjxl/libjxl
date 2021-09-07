@@ -19,6 +19,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`.
 Status DecodeImagePSD(const Span<const uint8_t> bytes,
@@ -30,6 +31,7 @@ Status EncodeImagePSD(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,
                       PaddedBytes* bytes);
 
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_PSD_H_

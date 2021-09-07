@@ -20,6 +20,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 
 namespace jxl {
+namespace extras {
 
 // Decodes `bytes` into `io`.
 Status DecodeImagePGX(const Span<const uint8_t> bytes,
@@ -32,6 +33,7 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
                       PaddedBytes* bytes);
 
 void TestCodecPGX();
+}  // namespace extras
 }  // namespace jxl
 
 #endif  // LIB_EXTRAS_CODEC_PGX_H_

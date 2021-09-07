@@ -31,6 +31,7 @@
 #include "lib/jxl/luminance.h"
 
 namespace jxl {
+namespace extras {
 namespace {
 
 #define JXL_PNG_VERBOSE 0
@@ -847,4 +848,5 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl
