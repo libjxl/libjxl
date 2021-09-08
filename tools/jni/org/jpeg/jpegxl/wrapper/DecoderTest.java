@@ -6,6 +6,7 @@
 package org.jpeg.jpegxl.wrapper;
 
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 public class DecoderTest {
   static {
@@ -34,6 +35,35 @@ public class DecoderTest {
   private static final byte[] PIXEL_IMAGE_BYTES = {
       -1, 10, 0, 16, -80, 18, 8, 16, 16, 0, 28, 0, 75, 18, -59, -126, -123, 36, 12};
 
+  // Base64:
+  // "/woAAASASAgEAQBIAEsSxYKFFJdtAKxt8+9r/n34Aw=="
+  private static final byte[] RGB_RGB_BYTES = {-1, 10, 0, 0, 4, -128, 72, 8, 4, 1, 0, 72, 0, 75, 18,
+      -59, -126, -123, 20, -105, 109, 0, -84, 109, -13, -17, 107, -2, 125, -8, 3};
+
+  // Base64:
+  // "/woAAASAEC4UBiTMA0RuetFofl5XodBw1/O9QMOv+UIMd2nutmuEYa4HnKjBjtSm9ZyqBjzxD+CTfco69npucZV/s5t5h"
+  // "DlG8jOmmWQoZD6RQh0Lk+d5LgmIfgjEliQjBkNuMXAwWuZNiItTZw0EtdwJCAQBAEgASxLFgoUUl20ArG3z72v+ffgD"
+  private static final byte[] RGB_BGR_BYTES = {-1, 10, 0, 0, 4, -128, 16, 46, 20, 6, 36, -52, 3, 68,
+      110, 122, -47, 104, 126, 94, 87, -95, -48, 112, -41, -13, -67, 64, -61, -81, -7, 66, 12, 119,
+      105, -18, -74, 107, -124, 97, -82, 7, -100, -88, -63, -114, -44, -90, -11, -100, -86, 6, 60,
+      -15, 15, -32, -109, 125, -54, 58, -10, 122, 110, 113, -107, 127, -77, -101, 121, -124, 57, 70,
+      -14, 51, -90, -103, 100, 40, 100, 62, -111, 66, 29, 11, -109, -25, 121, 46, 9, -120, 126, 8,
+      -60, -106, 36, 35, 6, 67, 110, 49, 112, 48, 90, -26, 77, -120, -117, 83, 103, 13, 4, -75, -36,
+      9, 8, 4, 1, 0, 72, 0, 75, 18, -59, -126, -123, 20, -105, 109, 0, -84, 109, -13, -17, 107, -2,
+      125, -8, 3};
+
+  // Base64:
+  // "/woAAASAEC4UBiTMA0RuelFjfl5XodBw1/6zQMOv+UIMdzncbdcIw1wbdNRgLbU5errqAJ74B/DJPmUn9s50u8K/2c08x"
+  // "0gj+BnTTDIUMp9IodrC5HmeEYMhtxhojJZ5E+Li1FkD4ZKAOA+B2JJELXcCCAQBAEgASxLFgoUUl20ArG3z72v+ffgD"
+  private static final byte[] RGB_GRB_BYTES = {-1, 10, 0, 0, 4, -128, 16, 46, 20, 6, 36, -52, 3, 68,
+      110, 122, 81, 99, 126, 94, 87, -95, -48, 112, -41, -2, -77, 64, -61, -81, -7, 66, 12, 119, 57,
+      -36, 109, -41, 8, -61, 92, 27, 116, -44, 96, 45, -75, 57, 122, -70, -22, 0, -98, -8, 7, -16,
+      -55, 62, 101, 39, -10, -50, 116, -69, -62, -65, -39, -51, 60, -57, 72, 35, -8, 25, -45, 76,
+      50, 20, 50, -97, 72, -95, -38, -62, -28, 121, -98, 17, -125, 33, -73, 24, 104, -116, -106,
+      121, 19, -30, -30, -44, 89, 3, -31, -110, -128, 56, 15, -127, -40, -110, 68, 45, 119, 2, 8, 4,
+      1, 0, 72, 0, 75, 18, -59, -126, -123, 20, -105, 109, 0, -84, 109, -13, -17, 107, -2, 125, -8,
+      3};
+
   static ByteBuffer makeByteBuffer(byte[] src, int length) {
     ByteBuffer buffer = ByteBuffer.allocateDirect(length);
     buffer.put(src, 0, length);
@@ -59,10 +89,71 @@ public class DecoderTest {
   }
 
   static void checkPixelFormat(PixelFormat pixelFormat, int bytesPerPixel) {
-    ImageData imageData = Decoder.decode(makeSimpleImage(), pixelFormat);
+    ImageData imageData =
+        Decoder.decode(makeSimpleImage(), new Decoder.Options().setPixelFormat(pixelFormat));
     checkSimpleImageData(imageData);
     if (imageData.pixels.limit() != SIMPLE_IMAGE_DIM * SIMPLE_IMAGE_DIM * bytesPerPixel) {
       throw new IllegalStateException("Unexpected pixels size");
+    }
+  }
+
+  static double parseF16(char raw) {
+    int sign = ((raw & 0x8000) == 0) ? 1 : -1;
+    // Don't care about subnormals, etc.
+    int mantissa = 1024 + (raw & 1023);
+    int exponent = ((raw >> 10) & 31) - 15;
+    double base = Math.pow(2, exponent);
+    return sign * mantissa * base;
+  }
+
+  static int getPixelColor(ByteBuffer pixels, PixelFormat pixelFormat, int n) {
+    int stride = 0;
+    switch (pixelFormat) {
+      case RGBA_F16:
+        stride = 8;
+        break;
+      case RGB_F16:
+        stride = 6;
+        break;
+      default:
+        throw new IllegalArgumentException("Invalid pixelFormat " + pixelFormat);
+    }
+    pixels = pixels.order(ByteOrder.LITTLE_ENDIAN);
+    double rgb[] = new double[3];
+    for (int i = 0; i < 3; ++i) rgb[i] = parseF16(pixels.getChar(n * stride + 2 * i));
+    for (int i = 0; i < 3; ++i) {
+      boolean match = true;
+      for (int j = 0; j < 3; ++j) {
+        if (i == j) {
+          if ((int) rgb[j] != 1024) {
+            match = false;
+          }
+        } else {
+          if (rgb[j] >= 1) {
+            match = false;
+          }
+        }
+      }
+      if (match) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  static void checkRgbProfile(
+      byte[] data, PixelFormat pixelFormat, Colorspace colorspace, int... expectedOrder) {
+    ImageData imageData = Decoder.decode(makeByteBuffer(data, data.length),
+        new Decoder.Options().setPixelFormat(pixelFormat).setDesiredColorspace(colorspace));
+    if ((imageData.width != 3) || (imageData.height != 1)) {
+      throw new IllegalStateException("invalid width or height");
+    }
+    for (int i = 0; i < 3; ++i) {
+      int color = getPixelColor(imageData.pixels, pixelFormat, i);
+      if (color != expectedOrder[i]) {
+        throw new IllegalStateException(
+            "Wanted " + expectedOrder[i] + " @ " + i + ", but got " + color);
+      }
     }
   }
 
@@ -114,6 +205,42 @@ public class DecoderTest {
     }
   }
 
+  static void testRgbConverted() {
+    checkRgbProfile(RGB_RGB_BYTES, PixelFormat.RGBA_F16, Colorspace.SRGB, 0, 1, 2);
+  }
+
+  static void testRgbNoConversion() {
+    checkRgbProfile(RGB_RGB_BYTES, PixelFormat.RGBA_F16, null, 0, 1, 2);
+  }
+
+  static void testBgrConverted() {
+    checkRgbProfile(RGB_BGR_BYTES, PixelFormat.RGBA_F16, Colorspace.SRGB, 2, 1, 0);
+  }
+
+  static void testBgrNoConversion() {
+    checkRgbProfile(RGB_BGR_BYTES, PixelFormat.RGBA_F16, null, 0, 1, 2);
+  }
+
+  static void testGrbConverted() {
+    checkRgbProfile(RGB_GRB_BYTES, PixelFormat.RGBA_F16, Colorspace.SRGB, 1, 0, 2);
+  }
+
+  static void testGrbNoConversion() {
+    checkRgbProfile(RGB_GRB_BYTES, PixelFormat.RGBA_F16, null, 0, 1, 2);
+  }
+
+  static boolean probeColorConversion() {
+    try {
+      Decoder.decode(makeByteBuffer(RGB_RGB_BYTES, RGB_RGB_BYTES.length),
+          new Decoder.Options()
+              .setPixelFormat(PixelFormat.RGBA_F16)
+              .setDesiredColorspace(Colorspace.SRGB));
+    } catch (IllegalStateException ex) {
+      return false;
+    }
+    return true;
+  }
+
   // Simple executable to avoid extra dependencies.
   public static void main(String[] args) {
     testRgba();
@@ -123,5 +250,15 @@ public class DecoderTest {
     testGetInfoNoAlpha();
     testGetInfoAlpha();
     testNotEnoughInput();
+
+    testRgbNoConversion();
+    testBgrNoConversion();
+    testGrbNoConversion();
+
+    if (probeColorConversion()) {
+      testRgbConverted();
+      testBgrConverted();
+      testGrbConverted();
+    }
   }
 }

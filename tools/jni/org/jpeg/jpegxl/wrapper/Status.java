@@ -13,5 +13,8 @@ public enum Status {
   NOT_ENOUGH_INPUT,
 
   /** Stream is corrupted. */
-  INVALID_STREAM
+  INVALID_STREAM,
+
+  /** Requested operation (e.g. color transformation) is not supported. */
+  NOT_SUPPORTED
 }

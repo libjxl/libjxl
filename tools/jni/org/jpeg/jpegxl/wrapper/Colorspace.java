@@ -5,15 +5,7 @@
 
 package org.jpeg.jpegxl.wrapper;
 
-public enum PixelFormat {
-  RGBA_8888(false), // 0
-  RGBA_F16(true), // 1
-  RGB_888(false), // 2
-  RGB_F16(true); // 3
-
-  public final boolean isF16;
-
-  PixelFormat(boolean isF16) {
-    this.isF16 = isF16;
-  }
+public enum Colorspace {
+  SRGB, // 0
+  XYZ_D50 // 1
 }

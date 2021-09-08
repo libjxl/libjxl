@@ -13,6 +13,10 @@
 #include "jxl/thread_parallel_runner.h"
 #include "lib/jxl/base/status.h"
 
+#if JPEGXL_ENABLE_SKCMS
+#include "skcms.h"
+#endif  // JPEGXL_ENABLE_SKCMS
+
 namespace {
 
 template <typename From, typename To>
@@ -26,12 +30,17 @@ bool StaticCast(const From& from, To* to) {
   return true;
 }
 
-bool BufferToSpan(JNIEnv* env, jobject buffer, uint8_t** data, size_t* size) {
+struct Span {
+  uint8_t* data = nullptr;
+  size_t size = 0;
+};
+
+bool BufferToSpan(JNIEnv* env, jobject buffer, Span* span) {
   if (buffer == nullptr) return true;
 
-  *data = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
-  if (*data == nullptr) return false;
-  return StaticCast(env->GetDirectBufferCapacity(buffer), size);
+  span->data = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
+  if (span->data == nullptr) return false;
+  return StaticCast(env->GetDirectBufferCapacity(buffer), &span->size);
 }
 
 int ToStatusCode(const jxl::Status& status) {
@@ -42,6 +51,8 @@ int ToStatusCode(const jxl::Status& status) {
 
 constexpr const size_t kLastPixelFormat = 3;
 constexpr const size_t kNoPixelFormat = static_cast<size_t>(-1);
+
+constexpr const size_t kLastColorSpace = 1;
 
 JxlPixelFormat ToPixelFormat(size_t pixel_format) {
   if (pixel_format == 0) {
@@ -66,26 +77,12 @@ JxlPixelFormat ToPixelFormat(size_t pixel_format) {
 
 jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
                      size_t* info_icc_size, JxlBasicInfo* info,
-                     size_t pixel_format, jobject pixels_buffer,
-                     jobject icc_buffer) {
+                     size_t pixel_format, Span pixels, Span icc) {
   if (data_buffer == nullptr) return JXL_FAILURE("No data buffer");
 
-  uint8_t* data = nullptr;
-  size_t data_size = 0;
-  if (!BufferToSpan(env, data_buffer, &data, &data_size)) {
+  Span data = {};
+  if (!BufferToSpan(env, data_buffer, &data)) {
     return JXL_FAILURE("Failed to access data buffer");
-  }
-
-  uint8_t* pixels = nullptr;
-  size_t pixels_size = 0;
-  if (!BufferToSpan(env, pixels_buffer, &pixels, &pixels_size)) {
-    return JXL_FAILURE("Failed to access pixels buffer");
-  }
-
-  uint8_t* icc = nullptr;
-  size_t icc_size = 0;
-  if (!BufferToSpan(env, icc_buffer, &icc, &icc_size)) {
-    return JXL_FAILURE("Failed to access ICC buffer");
   }
 
   JxlDecoder* dec = JxlDecoderCreate(NULL);
@@ -112,7 +109,7 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
   if (status != JXL_DEC_SUCCESS) {
     return JXL_FAILURE("Failed to subscribe for events");
   }
-  status = JxlDecoderSetInput(dec, data, data_size);
+  status = JxlDecoderSetInput(dec, data.data, data.size);
   if (status != JXL_DEC_SUCCESS) {
     return JXL_FAILURE("Failed to set input");
   }
@@ -146,21 +143,22 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
         dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, info_icc_size);
     if (status != JXL_DEC_SUCCESS) *info_icc_size = 0;
   }
-  if (icc && icc_size > 0) {
+  if (icc.data && icc.size > 0) {
     JxlPixelFormat format = ToPixelFormat(pixel_format);
     status = JxlDecoderGetColorAsICCProfile(
-        dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, icc, icc_size);
+        dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, icc.data, icc.size);
     if (status != JXL_DEC_SUCCESS) {
       return JXL_FAILURE("Failed to get ICC");
     }
   }
-  if (pixels) {
+  if (pixels.data) {
     JxlPixelFormat format = ToPixelFormat(pixel_format);
     status = JxlDecoderProcessInput(dec);
     if (status != JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       return JXL_FAILURE("Unexpected notification (want: need out buffer)");
     }
-    status = JxlDecoderSetImageOutBuffer(dec, &format, pixels, pixels_size);
+    status =
+        JxlDecoderSetImageOutBuffer(dec, &format, pixels.data, pixels.size);
     if (status != JXL_DEC_SUCCESS) {
       return JXL_FAILURE("Failed to set out buffer");
     }
@@ -177,7 +175,34 @@ jxl::Status DoDecode(JNIEnv* env, jobject data_buffer, size_t* info_pixels_size,
   return true;
 }
 
-#undef FAILURE
+jxl::Status ConvertPixels(const Span pixels, const Span icc,
+                          size_t output_pixel_format,
+                          size_t output_colorspace) {
+#if JPEGXL_ENABLE_SKCMS
+  skcms_ICCProfile profile;
+  if (!skcms_Parse(icc.data, icc.size, &profile)) {
+    return JXL_FAILURE("Failed to parse ICC profile");
+  }
+  size_t bytes_per_pixel = (output_pixel_format == 1) ? 8 : 6;
+
+  skcms_PixelFormat pixel_format = (output_pixel_format == 1)
+                                       ? skcms_PixelFormat_RGBA_hhhh
+                                       : skcms_PixelFormat_RGB_hhh;
+  skcms_AlphaFormat alpha_format = (output_pixel_format == 1)
+                                       ? skcms_AlphaFormat_Unpremul
+                                       : skcms_AlphaFormat_Opaque;
+  const skcms_ICCProfile* output_profile =
+      (output_colorspace == 0) ? skcms_sRGB_profile() : skcms_XYZD50_profile();
+  if (!skcms_Transform(pixels.data, pixel_format, alpha_format, &profile,
+                       pixels.data, pixel_format, alpha_format, output_profile,
+                       pixels.size / bytes_per_pixel)) {
+    return JXL_FAILURE("Color conversion failed");
+  }
+  return true;
+#else   // JPEGXL_ENABLE_SKCMS
+  return JXL_FAILURE("Color conversion not supported");
+#endif  // JPEGXL_ENABLE_SKCMS
+}
 
 }  // namespace
 
@@ -210,14 +235,13 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
   if (status) {
     bool want_output_size = (pixel_format != kNoPixelFormat);
     if (want_output_size) {
-      status = DoDecode(
-          env, data_buffer, &pixels_size, &icc_size, &info, pixel_format,
-          /* pixels_buffer= */ nullptr, /* icc_buffer= */ nullptr);
+      status = DoDecode(env, data_buffer, &pixels_size, &icc_size, &info,
+                        pixel_format,
+                        /* pixels= */ Span(), /* icc= */ Span());
     } else {
-      status =
-          DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
-                   /* info_icc_size= */ nullptr, &info, pixel_format,
-                   /* pixels_buffer= */ nullptr, /* icc_buffer= */ nullptr);
+      status = DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
+                        /* info_icc_size= */ nullptr, &info, pixel_format,
+                        /* pixels= */ Span(), /* icc= */ Span());
     }
   }
 
@@ -246,12 +270,17 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(
 JNIEXPORT void JNICALL Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetPixels(
     JNIEnv* env, jobject /* jobj */, jintArray ctx, jobject data_buffer,
     jobject pixels_buffer, jobject icc_buffer) {
-  jint context[1] = {0};
-  env->GetIntArrayRegion(ctx, 0, 1, context);
-
-  size_t pixel_format = 0;
+  jint context[2] = {0};
+  env->GetIntArrayRegion(ctx, 0, 2, context);
 
   jxl::Status status = true;
+
+  bool want_color_transform = false;
+  size_t output_colorspace = 0;
+  Span pixels = {};
+  Span icc = {};
+  size_t pixel_format = 0;
+  int error_code = 0;
 
   if (status) {
     // Unlike getBasicInfo, "no-pixel-format" is not supported.
@@ -262,12 +291,41 @@ JNIEXPORT void JNICALL Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetPixels(
   }
 
   if (status) {
-    status = DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
-                      /* info_icc_size= */ nullptr, /* info= */ nullptr,
-                      pixel_format, pixels_buffer, icc_buffer);
+    if (context[1] >= 0) {
+      want_color_transform = true;
+      output_colorspace = context[1];
+      if (output_colorspace > kLastColorSpace) {
+        status = JXL_FAILURE("Unrecognized color space");
+      } else if ((pixel_format & 1) == 0) {
+        error_code = -2;
+        status = JXL_FAILURE("Only FP16 color transform is supported");
+      }
+#if !JPEGXL_ENABLE_SKCMS
+      error_code = -2;
+      status = JXL_FAILURE("Color transform is not supported");
+#endif  // JPEGXL_ENABLE_SKCMS
+    }
   }
 
-  context[0] = ToStatusCode(status);
+  if (status && !BufferToSpan(env, pixels_buffer, &pixels)) {
+    status = JXL_FAILURE("Failed to access pixels buffer");
+  }
+
+  if (status && !BufferToSpan(env, icc_buffer, &icc)) {
+    status = JXL_FAILURE("Failed to access icc buffer");
+  }
+
+  if (status) {
+    status = DoDecode(env, data_buffer, /* info_pixels_size= */ nullptr,
+                      /* info_icc_size= */ nullptr, /* info= */ nullptr,
+                      pixel_format, pixels, icc);
+  }
+
+  if (status && want_color_transform) {
+    status = ConvertPixels(pixels, icc, pixel_format, output_colorspace);
+  }
+
+  context[0] = error_code ? error_code : ToStatusCode(status);
   env->SetIntArrayRegion(ctx, 0, 1, context);
 }
 

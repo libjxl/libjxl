@@ -66,7 +66,6 @@ add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cpu/os_specific.cc
   tool_version.cc
 )
-target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_link_libraries(jxl_tool jxl-static)
 
 target_include_directories(jxl_tool
@@ -373,8 +372,13 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
   add_library(jxl_jni SHARED jni/org/jpeg/jpegxl/wrapper/decoder_jni.cc)
   target_include_directories(jxl_jni PRIVATE "${JNI_INCLUDE_DIRS}" "${PROJECT_SOURCE_DIR}")
   target_link_libraries(jxl_jni PUBLIC jxl_dec-static jxl_threads-static)
+  if (JPEGXL_ENABLE_SKCMS AND NOT JPEGXL_BUNDLE_SKCMS)
+    target_compile_options(jxl_jni PUBLIC "-DJPEGXL_ENABLE_SKCMS=1")
+    target_link_libraries(jxl_jni PUBLIC skcms)
+  endif()
 
   add_jar(jxl_jni_wrapper
+    jni/org/jpeg/jpegxl/wrapper/Colorspace.java
     jni/org/jpeg/jpegxl/wrapper/Decoder.java
     jni/org/jpeg/jpegxl/wrapper/DecoderJni.java
     jni/org/jpeg/jpegxl/wrapper/ImageData.java

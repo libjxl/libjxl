@@ -5,7 +5,7 @@
 
 package org.jpeg.jpegxl.wrapper;
 
-import java.nio.Buffer;
+import java.nio.ByteBuffer;
 
 /**
  * Low level JNI wrapper.
@@ -13,8 +13,9 @@ import java.nio.Buffer;
  * This class is package-private, should be only be used by high level wrapper.
  */
 class DecoderJni {
-  private static native void nativeGetBasicInfo(int[] context, Buffer data);
-  private static native void nativeGetPixels(int[] context, Buffer data, Buffer pixels, Buffer icc);
+  private static native void nativeGetBasicInfo(int[] context, ByteBuffer data);
+  private static native void nativeGetPixels(
+      int[] context, ByteBuffer data, ByteBuffer pixels, ByteBuffer icc);
 
   static Status makeStatus(int statusCode) {
     switch (statusCode) {
@@ -22,6 +23,8 @@ class DecoderJni {
         return Status.OK;
       case -1:
         return Status.INVALID_STREAM;
+      case -2:
+        return Status.NOT_SUPPORTED;
       case 1:
         return Status.NOT_ENOUGH_INPUT;
       default:
@@ -41,7 +44,7 @@ class DecoderJni {
   }
 
   /** Decode stream information. */
-  static StreamInfo getBasicInfo(Buffer data, PixelFormat pixelFormat) {
+  static StreamInfo getBasicInfo(ByteBuffer data, PixelFormat pixelFormat) {
     if (!data.isDirect()) {
       throw new IllegalArgumentException("data must be direct buffer");
     }
@@ -52,7 +55,8 @@ class DecoderJni {
   }
 
   /** One-shot decoding. */
-  static Status getPixels(Buffer data, Buffer pixels, Buffer icc, PixelFormat pixelFormat) {
+  static Status getPixels(ByteBuffer data, ByteBuffer pixels, ByteBuffer icc, Colorspace colorspace,
+      PixelFormat pixelFormat) {
     if (!data.isDirect()) {
       throw new IllegalArgumentException("data must be direct buffer");
     }
@@ -62,8 +66,15 @@ class DecoderJni {
     if (!icc.isDirect()) {
       throw new IllegalArgumentException("icc must be direct buffer");
     }
-    int[] context = new int[1];
+    if (pixelFormat == null) {
+      throw new IllegalArgumentException("pixelFormat must be non-null");
+    }
+    if (colorspace != null && !pixelFormat.isF16) {
+      throw new IllegalArgumentException("for color transform FP16 pixelFormat is expected");
+    }
+    int[] context = new int[2];
     context[0] = pixelFormat.ordinal();
+    context[1] = (colorspace == null) ? -1 : colorspace.ordinal();
     nativeGetPixels(context, data, pixels, icc);
     return makeStatus(context[0]);
   }

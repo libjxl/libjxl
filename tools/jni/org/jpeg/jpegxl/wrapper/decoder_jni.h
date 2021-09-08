@@ -17,7 +17,7 @@ extern "C" {
  *
  * @param ctx {in_pixel_format_out_status, out_width, out_height, pixels_size,
  *             icc_size} tuple
- * @param data [in] Buffer with encoded JXL stream
+ * @param data_buffer [in] Buffer with encoded JXL stream
  */
 JNIEXPORT void JNICALL
 Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(JNIEnv* env,
@@ -28,9 +28,10 @@ Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetBasicInfo(JNIEnv* env,
 /**
  * Get image pixel data.
  *
- * @param ctx {in_pixel_format_out_status} tuple
- * @param data [in] Buffer with encoded JXL stream
- * @param pixels [out] Buffer to place pixels to
+ * @param ctx {in_pixel_format_out_status, in_desired_color_space} tuple
+ * @param data_buffer [in] Buffer with encoded JXL stream
+ * @param pixels_buffer [out] Buffer to place pixels to
+ * @param icc_buffer [out] Buffer to place original ICC profile to
  */
 JNIEXPORT void JNICALL Java_org_jpeg_jpegxl_wrapper_DecoderJni_nativeGetPixels(
     JNIEnv* env, jobject /*jobj*/, jintArray ctx, jobject data_buffer,

@@ -13,9 +13,24 @@ public class Decoder {
   /** Utility library, disable object construction. */
   private Decoder() {}
 
+  public static class Options {
+    Colorspace desiredColorspace;
+    PixelFormat pixelFormat;
+
+    Options setDesiredColorspace(Colorspace colorspace) {
+      this.desiredColorspace = colorspace;
+      return this;
+    }
+
+    Options setPixelFormat(PixelFormat pixelFormat) {
+      this.pixelFormat = pixelFormat;
+      return this;
+    }
+  }
+
   /** One-shot decoding. */
-  public static ImageData decode(Buffer data, PixelFormat pixelFormat) {
-    StreamInfo basicInfo = DecoderJni.getBasicInfo(data, pixelFormat);
+  public static ImageData decode(ByteBuffer data, Options options) {
+    StreamInfo basicInfo = DecoderJni.getBasicInfo(data, options.pixelFormat);
     if (basicInfo.status != Status.OK) {
       throw new IllegalStateException("Decoding failed");
     }
@@ -23,17 +38,19 @@ public class Decoder {
         || basicInfo.iccSize < 0) {
       throw new IllegalStateException("JNI has returned negative size");
     }
-    Buffer pixels = ByteBuffer.allocateDirect(basicInfo.pixelsSize);
-    Buffer icc = ByteBuffer.allocateDirect(basicInfo.iccSize);
-    Status status = DecoderJni.getPixels(data, pixels, icc, pixelFormat);
+    ByteBuffer pixels = ByteBuffer.allocateDirect(basicInfo.pixelsSize);
+    ByteBuffer icc = ByteBuffer.allocateDirect(basicInfo.iccSize);
+    Status status =
+        DecoderJni.getPixels(data, pixels, icc, options.desiredColorspace, options.pixelFormat);
     if (status != Status.OK) {
-      throw new IllegalStateException("Decoding failed");
+      throw new IllegalStateException("Decoding failed with status " + status);
     }
-    return new ImageData(basicInfo.width, basicInfo.height, pixels, icc, pixelFormat);
+    return new ImageData(basicInfo.width, basicInfo.height, pixels, icc, options.desiredColorspace,
+        options.pixelFormat);
   }
 
   // TODO(eustas): accept byte-array as input.
-  public static StreamInfo decodeInfo(Buffer data) {
+  public static StreamInfo decodeInfo(ByteBuffer data) {
     return DecoderJni.getBasicInfo(data, null);
   }
 }
