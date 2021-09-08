@@ -331,20 +331,6 @@ test:fast_benchmark:release:
   script:
     - STORE_IMAGES=0 ./ci.sh fast_benchmark
 
-test:fast_benchmark:asan:
-  <<: *benchmark_x86_64_template
-  dependencies:
-    - build:x86_64:clang:asan
-  script:
-    - STORE_IMAGES=0 ./ci.sh fast_benchmark
-
-test:fast_benchmark.msan:
-  <<: *benchmark_x86_64_template
-  dependencies:
-    - build:x86_64:clang:msan
-  script:
-    - STORE_IMAGES=0 ./ci.sh fast_benchmark
-
 # This template runs on actual aarch64 hardware.
 .benchmark_aarch64_template: &benchmark_aarch64_template
   <<: *linux_host_template
