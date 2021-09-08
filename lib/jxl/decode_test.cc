@@ -262,7 +262,7 @@ PaddedBytes CreateTestJXLCodestream(
     jxl::PaddedBytes jpeg_bytes;
     EXPECT_TRUE(EncodeImageJPG(&io, jxl::extras::JpegEncoder::kLibJpeg,
                                /*quality=*/70, jxl::YCbCrChromaSubsampling(),
-                               &pool, &jpeg_bytes, jxl::DecodeTarget::kPixels));
+                               &pool, &jpeg_bytes));
     jpeg_codestream->append(jpeg_bytes.data(),
                             jpeg_bytes.data() + jpeg_bytes.size());
     EXPECT_TRUE(jxl::jpeg::DecodeImageJPG(

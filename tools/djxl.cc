@@ -221,11 +221,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   if (!DecodeJpegXlToJpeg(args.params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
-  if (!EncodeImageJPG(&io,
-                      io.use_sjpeg ? jxl::extras::JpegEncoder::kSJpeg
-                                   : jxl::extras::JpegEncoder::kLibJpeg,
-                      io.jpeg_quality, jxl::YCbCrChromaSubsampling(), pool,
-                      output, jxl::DecodeTarget::kQuantizedCoeffs)) {
+  if (!jxl::extras::EncodeImageJPGCoefficients(&io, output)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
   stats->SetImageSize(io.xsize(), io.ysize());
