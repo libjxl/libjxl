@@ -159,6 +159,14 @@ jobs:
           export TEST_STACK_LIMIT=2048
         fi
         ./ci.sh test
+    - name: Fast benchmark ${{ matrix.mode }}
+      if: |
+        github.event_name == 'push' ||
+        (github.event_name == 'pull_request' && (
+         matrix.test_in_pr ||
+         contains(github.event.pull_request.labels.*.names, 'CI:full')))
+      run: |
+        STORE_IMAGES=0 ./ci.sh fast_benchmark
 
 
   cross_compile_ubuntu:
