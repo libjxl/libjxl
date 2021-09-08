@@ -11,7 +11,6 @@
 stages:
   - build
   - test
-  - release
   - deploy
 
 variables:
@@ -147,23 +146,6 @@ test:x86_64:clang:release:
     # Quick run to make sure it doesn't crash. Not useful for actual benchmarks.
     - ./ci.sh gbench --benchmark_min_time=0
 
-# linux x86_64 with gcc in Debug mode.
-build:x86_64:gcc7:debug:
-  <<: *linux_host_build_template
-  stage: build
-  script:
-    - CC=gcc-7 CXX=g++-7 SKIP_TEST=1 PACK_TEST=1 ./ci.sh debug
-    - tools/build_stats.py --save build/stats.json
-        cjxl djxl libjxl.so
-
-test:x86_64:gcc7:debug:
-  <<: *linux_host_template
-  stage: test
-  dependencies:
-    - build:x86_64:gcc7:debug
-  script:
-    - TEST_STACK_LIMIT=1024 ./ci.sh test
-
 # x86_84 test coverage build
 build:x86_64:clang:coverage:
   <<: *linux_host_build_template
@@ -218,21 +200,6 @@ pages:
     paths:
       - public
 
-
-# x86_64 Scalar-only release runs only on master and on request.
-build:x86_64:clang:scalar:
-  <<: *linux_host_build_template
-  stage: build
-  script:
-    - SKIP_TEST=1 PACK_TEST=1 CMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=~HWY_SCALAR" ./ci.sh release
-
-test:x86_64:clang:scalar:
-  <<: *linux_host_template
-  stage: test
-  dependencies:
-    - build:x86_64:clang:scalar
-  script:
-    - ./ci.sh test
 
 # i686 (x86 32-bit) builders
 build:i686:clang:release:
@@ -314,45 +281,6 @@ test:aarch64:clang:release-nhp:
     # LeakSanitizer doesn't work when running under qemu-arm.
     - ASAN_OPTIONS=detect_leaks=0 ./ci.sh test
 
-# arm release
-build:armhf:clang:release:
-  <<: *linux_host_build_template
-  stage: build
-  script:
-    - BUILD_TARGET=arm-linux-gnueabihf
-        CMAKE_CXX_FLAGS="-DJXL_DISABLE_SLOW_TESTS -march=armv7a -Wno-unused-command-line-argument" SKIP_TEST=1 PACK_TEST=1
-        STACK_SIZE=1
-        ./ci.sh release -DJPEGXL_FORCE_NEON=ON
-    - tools/build_stats.py --save build/stats.json
-        --binutils=arm-linux-gnueabihf-
-        cjxl djxl libjxl.so
-
-test:armhf:clang:release:
-  <<: *linux_host_template
-  stage: test
-  dependencies:
-    - build:armhf:clang:release
-  script:
-    - ./ci.sh test
-
-# "asan", "tsan" and "msan" builds only run on master, tags and when requested
-# from the web. Only supported in x86_64 for now.
-build:x86_64:clang:asan:
-  <<: *linux_host_build_template
-  stage: build
-  script:
-    - SKIP_TEST=1 PACK_TEST=1 ./ci.sh asan
-
-test:x86_64:clang:asan:
-  <<: *linux_host_template
-  stage: test
-  dependencies:
-    - build:x86_64:clang:asan
-  script:
-    - ./ci.sh test
-    # Quick run to make sure it doesn't crash. Not useful for actual benchmarks.
-    - ./ci.sh gbench --benchmark_min_time=0
-
 # aarch64 asan build and test.
 build:aarch64:clang:asan:
   <<: *linux_host_build_template
@@ -385,52 +313,6 @@ test:x86_64:clang:tsan:
   script:
     # tsan test runs fail with a small stack.
     - TEST_STACK_LIMIT=1024 ./ci.sh test
-
-build:x86_64:clang:msan:
-  <<: *linux_host_build_template
-  stage: build
-  script:
-    - SKIP_TEST=1 PACK_TEST=1 ./ci.sh msan
-
-test:x86_64:clang:msan:
-  <<: *linux_host_template
-  stage: test
-  dependencies:
-    - build:x86_64:clang:msan
-  script:
-    - ./ci.sh test
-
-# Merge request linter checks.
-build:lint:
-  <<: *linux_host_template
-  stage: build
-  only:
-    - merge_requests
-  script:
-    - LINT_OUTPUT=clang-format.patch ./ci.sh lint
-  allow_failure: true
-  artifacts:
-    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
-    expire_in: 1 month
-    when: on_failure
-    paths:
-      - clang-format.patch
-
-# Most clang-tidy checks are currently informational only since these are
-# currently broken, however several are marked as errors.
-build:tidy:
-  <<: *linux_host_build_template
-  stage: build
-  only:
-    - merge_requests
-  script:
-    - CMAKE_BUILD_TYPE="Release" ./ci.sh tidy
-  artifacts:
-    name: "$CI_JOB_NAME-$CI_COMMIT_REF_NAME"
-    expire_in: 1 month
-    when: always
-    paths:
-      - build/clang-tidy.txt
 
 # Faster benchmark over a smaller set of images.
 .benchmark_x86_64_template: &benchmark_x86_64_template
@@ -564,94 +446,3 @@ test:ems_simd:all:
     - export V8=/opt/.jsvu/v8
     - source /opt/emsdk/emsdk_env.sh
     - BUILD_TARGET=wasm32 emconfigure ./ci.sh test
-
-### Release builds
-
-# Debian package build template.
-.linux_host_debian_template: &linux_host_debian_template
-  <<: *linux_host_template
-  variables:
-    GIT_SUBMODULE_STRATEGY: recursive
-    BUILD_DIR: build
-    # Prevent "apt" asking interactive questions.
-    DEBIAN_FRONTEND: noninteractive
-    TARGET_DIR: jpegxl-$CI_COMMIT_REF_NAME-$CI_BUILD_NAME
-  stage: release
-  script:
-    - apt update
-    - apt install -y devscripts build-essential
-    # Build and install highway.
-    - apt build-dep -y ./third_party/highway
-    - ./ci.sh debian_build highway
-    - dpkg -i build/debs/libhwy-dev_*_amd64.deb
-    # Build jpeg-xl
-    - apt build-dep -y .
-    - ./ci.sh debian_build jpeg-xl
-    # Print package stats.
-    - ./ci.sh debian_stats
-    - mkdir -p ${TARGET_DIR}
-    - mv -v build/debs/*.* ${TARGET_DIR}/
-  artifacts:
-    name: "jpegxl-$CI_COMMIT_REF_NAME-$CI_BUILD_NAME"
-    expire_in: 1 week
-    paths:
-      - jpegxl-*/*
-
-# Debian package build.
-debian10:
-  <<: *linux_host_debian_template
-  image: debian:10.6
-
-ubuntu18.04:
-  <<: *linux_host_debian_template
-  before_script:
-    # In Ubuntu 18.04 no package installed the libgtest.a. libgtest-dev installs
-    # the source files only.
-    - apt update
-    - apt install -y build-essential libgtest-dev cmake
-    - for prj in googletest googlemock; do
-        (cd /usr/src/googletest/${prj}/ &&
-         cmake CMakeLists.txt -DCMAKE_INSTALL_PREFIX=/usr &&
-         make all install)
-      done
-    # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
-    - sed '/libgmock-dev,/d' -i debian/control
-  image: ubuntu:18.04
-
-ubuntu20.04:
-  <<: *linux_host_debian_template
-  image: ubuntu:20.04
-
-# Static builds.
-x86_64:static:
-  <<: *linux_host_build_template
-  stage: release
-  script:
-    # OpenEXR doesn't install the static libraries in the docker image.
-    - SKIP_TEST=1 ./ci.sh release
-        -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc
-        -DJPEGXL_STATIC=ON
-        -DJPEGXL_ENABLE_VIEWERS=OFF
-        -DJPEGXL_ENABLE_PLUGINS=OFF
-        -DJPEGXL_ENABLE_OPENEXR=OFF
-    # Spot check built binaries
-    - build/tools/cjxl
-        third_party/testdata/wesaturate/64px/cvo9xd_keong_macan_srgb8.png
-
-win64:static:
-  <<: *linux_host_build_template
-  stage: release
-  script:
-    # OpenEXR doesn't install the static libraries in the docker image.
-    - BUILD_TARGET=x86_64-w64-mingw32 SKIP_TEST=1 ./ci.sh release
-        -DJPEGXL_DEP_LICENSE_DIR=/usr/share/doc
-        -DJPEGXL_STATIC=ON
-        -DBUILD_TESTING=OFF
-        -DJPEGXL_ENABLE_VIEWERS=OFF
-        -DJPEGXL_ENABLE_PLUGINS=OFF
-        -DJPEGXL_ENABLE_OPENEXR=OFF
-        -DJPEGXL_ENABLE_TCMALLOC=OFF
-        -DJPEGXL_ENABLE_FUZZERS=OFF
-    # Make sure the binary runs without any other environment variables set.
-    - wine64 build/tools/cjxl.exe
-        third_party/testdata/wesaturate/64px/cvo9xd_keong_macan_srgb8.png
