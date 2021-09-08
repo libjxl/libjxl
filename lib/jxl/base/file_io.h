@@ -35,7 +35,8 @@ class FileWrapper {
   FileWrapper& operator=(const FileWrapper& other) = delete;
 
   explicit FileWrapper(const std::string& pathname, const char* mode)
-      : file_(fopen(pathname.c_str(), mode)) {}
+      : file_(pathname == "-" ? (mode[0] == 'r' ? stdin : stdout)
+                              : fopen(pathname.c_str(), mode)) {}
 
   ~FileWrapper() {
     if (file_ != nullptr) {
@@ -55,6 +56,17 @@ class FileWrapper {
 template <typename ContainerType>
 static inline Status ReadFile(const std::string& pathname,
                               ContainerType* JXL_RESTRICT bytes) {
+  // Special case for stdin
+  if (pathname == "-") {
+    int byte;
+    bytes->clear();
+    while (true) {
+      byte = getchar();
+      if (byte == EOF) break;
+      bytes->push_back(byte);
+    }
+    return true;
+  }
   FileWrapper f(pathname, "rb");
   if (f == nullptr) return JXL_FAILURE("Failed to open file for reading");
 

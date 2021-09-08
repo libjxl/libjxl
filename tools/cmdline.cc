@@ -64,9 +64,14 @@ bool CommandLineParser::Parse(int argc, const char* argv[]) {
       i++;
       continue;
     }
+    // special case: "-" is a filename denoting stdin or stdout
+    bool parse_this_option = true;
+    if (!strcmp("-", argv[i])) {
+      parse_this_option = false;
+    }
     bool found = false;
     for (const auto& option : options_) {
-      if (option->Match(argv[i], parse_options)) {
+      if (option->Match(argv[i], parse_options && parse_this_option)) {
         // Parsing advances the value i on success.
         const char* arg = argv[i];
         if (!option->Parse(argc, argv, &i)) {
