@@ -4,7 +4,7 @@
 # license that can be found in the LICENSE file.
 
 find_package(PkgConfig)
-pkg_check_modules(Gdk-Pixbuf IMPORTED_TARGET gdk-pixbuf-2.0>=2.38)
+pkg_check_modules(Gdk-Pixbuf IMPORTED_TARGET gdk-pixbuf-2.0>=2.36)
 
 if (NOT Gdk-Pixbuf_FOUND)
   message(WARNING "GDK Pixbuf development libraries not found, \

@@ -190,6 +190,12 @@ jobs:
         # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
         sed '/libgmock-dev,/d' -i debian/control
 
+    - name: Remove libjxl-gimp-plugin package (only 18.04)
+      if: matrix.os == 'ubuntu:18.04'
+      run: |
+        # Gimp 2.8 is not supported.
+        sed -i '/Package: libjxl-gimp-plugin/,/^$/d' debian/control
+
     - name: Build hwy
       run: |
         apt build-dep -y ./third_party/highway
