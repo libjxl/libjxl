@@ -148,9 +148,7 @@ install_pkgs() {
   packages=(
     # Native compilers (minimum for SIMD is clang-7)
     clang-7 clang-format-7 clang-tidy-7
-
-    # TODO: Consider adding clang-8 to every builder:
-    #   clang-8 clang-format-8 clang-tidy-8
+    clang-8 clang-format-8 clang-tidy-8
 
     # For cross-compiling to Windows with mingw.
     mingw-w64
@@ -442,6 +440,10 @@ main() {
 
   # Remove prebuilt Java classes cache.
   rm /usr/lib/jvm/java-8-openjdk-amd64/jre/lib/amd64/server/classes.jsa
+
+  # Deal with mingw clang-8+ incompatibility.
+  # See: https://github.com/msys2-contrib/mingw-w64/commit/82b169c5734a6198d3b4c51a48f82e7b7104f143
+  grep -A99 --color=never diff ${MYDIR}/mingw_w64_float_fix.patch | patch -p 3 /usr/share/mingw-w64/include/float.h
 
   # Manually extract packages for the target arch that can't install it directly
   # at the same time as the native ones.

@@ -318,7 +318,7 @@ export_env() {
     # We also need our own libraries in the wine path.
     local real_build_dir=$(realpath "${BUILD_DIR}")
     # Some library .dll dependencies are installed in /bin:
-    export WINEPATH="${WINEPATH};${real_build_dir};${real_build_dir}/third_party/brotli;/usr/${BUILD_TARGET}/bin"
+    export WINEPATH="${WINEPATH};${real_build_dir};${real_build_dir}/bin;${real_build_dir}/third_party/brotli;/usr/${BUILD_TARGET}/bin"
 
     local prefix="${BUILD_DIR}/wineprefix"
     mkdir -p "${prefix}"

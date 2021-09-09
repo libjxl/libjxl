@@ -24,7 +24,7 @@ variables:
 # A template for running in the generic cloud builders. These are tagged with
 # "linux" and run on shared VMs.
 .linux_host_template: &linux_host_template
-  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:439a05c41f86a82067042fca16d5c9c7cc5836a8a5d8dba7fa0383f3c1e603c2
+  image: &jpegxl-builder gcr.io/jpegxl/jpegxl-builder@sha256:8cbbadbcd7ed58f1cdf549721e0b0597b9891d82b387ae439b9d7d44ecf4ef4b
   tags:
     - linux
   # By default all the workflows run on master and on request. This can be
@@ -226,6 +226,7 @@ build:win64:clang:release:
   stage: build
   script:
     - BUILD_TARGET=x86_64-w64-mingw32
+        CC=clang-8 CXX=clang++-8
         SKIP_TEST=1 PACK_TEST=1
         ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
           -DJPEGXL_ENABLE_PLUGINS=OFF
