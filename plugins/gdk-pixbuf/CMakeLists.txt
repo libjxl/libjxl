@@ -13,6 +13,14 @@ if (NOT Gdk-Pixbuf_FOUND)
 endif ()
 
 add_library(pixbufloader-jxl SHARED pixbufloader-jxl.c)
+
+# Mark all symbols as hidden by default. The PkgConfig::Gdk-Pixbuf dependency
+# will cause fill_info and fill_vtable entry points to be made public.
+set_target_properties(pixbufloader-jxl PROPERTIES
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN 1
+)
+
 # Note: This only needs the decoder library, but we don't install the decoder
 # shared library.
 target_link_libraries(pixbufloader-jxl jxl jxl_threads skcms-interface PkgConfig::Gdk-Pixbuf)
