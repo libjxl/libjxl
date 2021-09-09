@@ -758,12 +758,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
     args.params.modular_mode = true;
     args.params.quality_pair.first = args.params.quality_pair.second = 100;
   }
-  if (args.params.modular_mode && args.params.quality_pair.first < 100) {
-    if (io->metadata.m.bit_depth.floating_point_sample) {
-      // for lossy modular, pretend pfm/exr is integer data
-      io->metadata.m.SetUintSamples(12);
-    }
-  }
   if (args.override_bitdepth != 0) {
     if (args.override_bitdepth == 32) {
       io->metadata.m.SetFloat32Samples();

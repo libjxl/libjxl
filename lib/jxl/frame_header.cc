@@ -173,14 +173,7 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
   bool xyb_encoded = nonserialized_metadata == nullptr ||
                      nonserialized_metadata->m.xyb_encoded;
 
-  bool fp = nonserialized_metadata != nullptr &&
-            nonserialized_metadata->m.bit_depth.floating_point_sample;
-
   if (xyb_encoded) {
-    if (is_modular && fp) {
-      return JXL_FAILURE(
-          "Floating point samples is not supported with XYB color encoding");
-    }
     color_transform = ColorTransform::kXYB;
   } else {
     // Alternate if kYCbCr.
