@@ -71,6 +71,9 @@ endif()
 
 set(WARNINGS_AS_ERRORS_DEFAULT false)
 
+# Standard cmake naming for building shared libraries.
+option(BUILD_SHARED_LIBS "Build shared libraries instead of static ones" ON)
+
 set(JPEGXL_ENABLE_FUZZERS ${ENABLE_FUZZERS_DEFAULT} CACHE BOOL
     "Build JPEGXL fuzzer targets.")
 set(JPEGXL_ENABLE_DEVTOOLS false CACHE BOOL
