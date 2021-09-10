@@ -23,6 +23,7 @@ class JpegXlSaveOpts {
   bool is_linear = false;
   bool has_alpha = false;
   bool is_gray = false;
+  bool icc_attached = false;
 
   bool advanced_mode = false;
   bool use_container = true;
@@ -40,132 +41,191 @@ class JpegXlSaveOpts {
   // functions
   JpegXlSaveOpts();
 
-  bool set_distance(float dist);
-  bool set_quality(float qual);
-  bool set_dimensions(int x, int y);
-  bool set_num_channels(int channels);
+  bool SetDistance(float dist);
+  bool SetQuality(float qual);
+  bool SetDimensions(int x, int y);
+  bool SetNumChannels(int channels);
 
-  bool update_distance();
-  bool update_quality();
+  bool UpdateDistance();
+  bool UpdateQuality();
 
-  bool set_model(int gimp_model);
+  bool SetModel(bool is_linear_);
 
-  bool update_babl_format();
-  bool set_babl_model(std::string model);
-  bool set_babl_type(std::string type);
+  bool UpdateBablFormat();
+  bool SetBablModel(std::string model);
+  bool SetBablType(std::string type);
 
-  bool set_pixel_type(int type);
-  bool set_precision(int gimp_precision);
+  bool SetPrecision(int gimp_precision);
 
  private:
 };  // class JpegXlSaveOpts
 
 JpegXlSaveOpts jxl_save_opts;
 
-static bool gui_on_change_quality(GtkAdjustment* adj_qual,
-                                  GtkAdjustment* adj_dist) {
+class JpegXlSaveGui {
+ public:
+  bool SaveDialog();
+
+ private:
+  GtkWidget* toggle_lossless = nullptr;
+  GtkAdjustment* entry_distance = nullptr;
+  GtkAdjustment* entry_quality = nullptr;
+  GtkAdjustment* entry_effort = nullptr;
+  GtkAdjustment* entry_faster = nullptr;
+  GtkWidget* frame_advanced = nullptr;
+  GtkWidget* toggle_no_xyb = nullptr;
+  GtkWidget* toggle_raw = nullptr;
+  gulong handle_toggle_lossless = 0;
+  gulong handle_entry_quality = 0;
+  gulong handle_entry_distance = 0;
+
+  static bool GuiOnChangeQuality(GtkAdjustment* adj_qual, void* this_pointer);
+
+  static bool GuiOnChangeDistance(GtkAdjustment* adj_dist, void* this_pointer);
+
+  static bool GuiOnChangeEffort(GtkAdjustment* adj_effort);
+  static bool GuiOnChangeLossless(GtkWidget* toggle, void* this_pointer);
+  static bool GuiOnChangeCodestream(GtkWidget* toggle);
+  static bool GuiOnChangeNoXYB(GtkWidget* toggle);
+
+  static bool GuiOnChangeAdvancedMode(GtkWidget* toggle, void* this_pointer);
+};  // class JpegXlSaveGui
+
+JpegXlSaveGui jxl_save_gui;
+
+bool JpegXlSaveGui::GuiOnChangeQuality(GtkAdjustment* adj_qual,
+                                       void* this_pointer) {
+  JpegXlSaveGui* self = static_cast<JpegXlSaveGui*>(this_pointer);
+
+  g_clear_signal_handler(&self->handle_entry_distance, self->entry_distance);
+  g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
+  g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
+
+  GtkAdjustment* adj_dist = self->entry_distance;
   jxl_save_opts.quality = gtk_adjustment_get_value(adj_qual);
-  jxl_save_opts.update_distance();
+  jxl_save_opts.UpdateDistance();
   gtk_adjustment_set_value(adj_dist, jxl_save_opts.distance);
+
+  self->handle_toggle_lossless = g_signal_connect(
+      self->toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), self);
+  self->handle_entry_distance =
+      g_signal_connect(self->entry_distance, "value-changed",
+                       G_CALLBACK(GuiOnChangeDistance), self);
+  self->handle_entry_quality =
+      g_signal_connect(self->entry_quality, "value-changed",
+                       G_CALLBACK(GuiOnChangeQuality), self);
   return true;
 }
 
-static bool gui_on_change_distance(GtkAdjustment* adj_dist,
-                                   GtkAdjustment* adj_qual) {
-  float new_distance = gtk_adjustment_get_value(adj_dist);
-  jxl_save_opts.distance = new_distance;
-  jxl_save_opts.update_quality();
+bool JpegXlSaveGui::GuiOnChangeDistance(GtkAdjustment* adj_dist,
+                                        void* this_pointer) {
+  JpegXlSaveGui* self = static_cast<JpegXlSaveGui*>(this_pointer);
+  GtkAdjustment* adj_qual = self->entry_quality;
+
+  g_clear_signal_handler(&self->handle_entry_distance, self->entry_distance);
+  g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
+  g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
+
+  jxl_save_opts.distance = gtk_adjustment_get_value(adj_dist);
+  jxl_save_opts.UpdateQuality();
   gtk_adjustment_set_value(adj_qual, jxl_save_opts.quality);
 
-  // updating quality can change distance again
-  // set it again to ensure user value is maintained
-  if (jxl_save_opts.distance != new_distance) {
-    gtk_adjustment_set_value(adj_dist, new_distance);
+  if (!(jxl_save_opts.distance < 0.001)) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_lossless),
+                                 false);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_no_xyb), false);
   }
+
+  self->handle_toggle_lossless = g_signal_connect(
+      self->toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), self);
+  self->handle_entry_distance =
+      g_signal_connect(self->entry_distance, "value-changed",
+                       G_CALLBACK(GuiOnChangeDistance), self);
+  self->handle_entry_quality =
+      g_signal_connect(self->entry_quality, "value-changed",
+                       G_CALLBACK(GuiOnChangeQuality), self);
   return true;
 }
 
-static bool gui_on_change_lossless(GtkWidget* toggle,
-                                   GtkAdjustment* adjustments[]) {
-  GtkAdjustment* adj_distance = adjustments[0];
-  GtkAdjustment* adj_quality = adjustments[1];
-  GtkAdjustment* adj_effort = adjustments[2];
+bool JpegXlSaveGui::GuiOnChangeEffort(GtkAdjustment* adj_effort) {
+  float new_effort = 10 - gtk_adjustment_get_value(adj_effort);
+  jxl_save_opts.encoding_effort = new_effort;
+  return true;
+}
+
+bool JpegXlSaveGui::GuiOnChangeLossless(GtkWidget* toggle, void* this_pointer) {
+  JpegXlSaveGui* self = static_cast<JpegXlSaveGui*>(this_pointer);
+  GtkAdjustment* adj_distance = self->entry_distance;
+  GtkAdjustment* adj_quality = self->entry_quality;
+  GtkAdjustment* adj_effort = self->entry_effort;
 
   jxl_save_opts.lossless =
       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle));
 
-  g_message("lossless = %d", jxl_save_opts.lossless);
+  g_clear_signal_handler(&self->handle_entry_distance, self->entry_distance);
+  g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
+  g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
   if (jxl_save_opts.lossless) {
-    gimp_scale_entry_set_sensitive((GtkObject*)adj_distance, false);
-    gimp_scale_entry_set_sensitive((GtkObject*)adj_quality, false);
-    gtk_adjustment_set_value(adj_quality, 100.0f);
-    gtk_adjustment_set_value(adj_distance, 0.0f);
-
+    gtk_adjustment_set_value(adj_quality, 100.0);
+    gtk_adjustment_set_value(adj_distance, 0.0);
     jxl_save_opts.distance = 0;
-    jxl_save_opts.update_quality();
-
-    gtk_adjustment_set_value(adj_effort, 3);
-    jxl_save_opts.encoding_effort = 3;
-  } else {
-    gimp_scale_entry_set_sensitive((GtkObject*)adj_distance, true);
-    gimp_scale_entry_set_sensitive((GtkObject*)adj_quality, true);
-    gtk_adjustment_set_value(adj_quality, 100.0f);
-    gtk_adjustment_set_value(adj_distance, 0.1f);
-
-    jxl_save_opts.distance = 0.1f;
-    jxl_save_opts.update_quality();
-
+    jxl_save_opts.UpdateQuality();
     gtk_adjustment_set_value(adj_effort, 7);
-    jxl_save_opts.encoding_effort = 7;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_no_xyb), true);
+  } else {
+    gtk_adjustment_set_value(adj_quality, 90.0);
+    gtk_adjustment_set_value(adj_distance, 1.0);
+    jxl_save_opts.distance = 1.0;
+    jxl_save_opts.UpdateQuality();
+    gtk_adjustment_set_value(adj_effort, 3);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_no_xyb), false);
   }
+  self->handle_toggle_lossless = g_signal_connect(
+      self->toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), self);
+  self->handle_entry_distance =
+      g_signal_connect(self->entry_distance, "value-changed",
+                       G_CALLBACK(GuiOnChangeDistance), self);
+  self->handle_entry_quality =
+      g_signal_connect(self->entry_quality, "value-changed",
+                       G_CALLBACK(GuiOnChangeQuality), self);
   return true;
 }
 
-static bool gui_on_change_codestream(GtkWidget* toggle) {
+bool JpegXlSaveGui::GuiOnChangeCodestream(GtkWidget* toggle) {
   jxl_save_opts.use_container =
       !gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle));
   return true;
 }
 
-static bool gui_on_change_uses_original_profile(GtkWidget* toggle) {
+bool JpegXlSaveGui::GuiOnChangeNoXYB(GtkWidget* toggle) {
   jxl_save_opts.basic_info.uses_original_profile =
       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle));
   return true;
 }
 
-static bool gui_on_change_advanced_mode(GtkWidget* toggle,
-                                        std::vector<GtkWidget*> advanced_opts) {
+bool JpegXlSaveGui::GuiOnChangeAdvancedMode(GtkWidget* toggle,
+                                            void* this_pointer) {
+  JpegXlSaveGui* self = static_cast<JpegXlSaveGui*>(this_pointer);
   jxl_save_opts.advanced_mode =
       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle));
 
-  GtkWidget* frame = advanced_opts[0];
-
-  gtk_widget_set_sensitive(frame, jxl_save_opts.advanced_mode);
+  gtk_widget_set_sensitive(self->frame_advanced, jxl_save_opts.advanced_mode);
 
   if (!jxl_save_opts.advanced_mode) {
-    jxl_save_opts.lossless = false;
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(advanced_opts[1]), false);
+    jxl_save_opts.basic_info.uses_original_profile = false;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_no_xyb), false);
 
     jxl_save_opts.use_container = true;
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(advanced_opts[2]), false);
-
-    jxl_save_opts.basic_info.uses_original_profile = false;
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(advanced_opts[3]), false);
-
-    // save metadata
-    // gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(advanced_opts[4]), false);
-
-    jxl_save_opts.encoding_effort = 7;
-    gtk_adjustment_set_value((GtkAdjustment*)advanced_opts[5], 7);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_raw), false);
 
     jxl_save_opts.faster_decoding = 0;
-    gtk_adjustment_set_value((GtkAdjustment*)advanced_opts[6], 0);
+    gtk_adjustment_set_value(GTK_ADJUSTMENT(self->entry_faster), 0);
   }
   return true;
 }
 
-bool SaveDialog() {
+bool JpegXlSaveGui::SaveDialog() {
   gboolean run;
   GtkWidget* dialog;
   GtkWidget* content_area;
@@ -174,18 +234,13 @@ bool SaveDialog() {
   GtkWidget* toggle;
   GtkWidget* table;
   GtkWidget* vbox;
-  GtkWidget* toggle_lossless;
-  GtkWidget* frame_advanced;
-  GtkAdjustment* entry_distance;
-  GtkAdjustment* entry_quality;
-  GtkAdjustment* entry_effort;
-  GtkAdjustment* entry_faster;
+  GtkWidget* separator;
 
   // initialize export dialog
   gimp_ui_init(PLUG_IN_BINARY, true);
   dialog = gimp_export_dialog_new("JPEG XL", PLUG_IN_BINARY, SAVE_PROC);
 
-  gtk_window_set_resizable(GTK_WINDOW(dialog), true);
+  gtk_window_set_resizable(GTK_WINDOW(dialog), false);
   content_area = gimp_export_dialog_get_content_area(dialog);
 
   main_vbox = gtk_vbox_new(false, 6);
@@ -194,9 +249,9 @@ bool SaveDialog() {
   gtk_widget_show(main_vbox);
 
   // Standard Settings Frame
-  frame = gtk_frame_new("Standard Settings");
+  frame = gtk_frame_new(nullptr);
   gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_ETCHED_IN);
-  gtk_box_pack_start(GTK_BOX(main_vbox), frame, true, true, 0);
+  gtk_box_pack_start(GTK_BOX(main_vbox), frame, false, false, 0);
   gtk_widget_show(frame);
 
   vbox = gtk_vbox_new(false, 6);
@@ -204,59 +259,95 @@ bool SaveDialog() {
   gtk_container_add(GTK_CONTAINER(frame), vbox);
   gtk_widget_show(vbox);
 
-  // Butteraugli Distance
-  static gchar distance_help[] =
-      "Butteraugli distance.  Use lower values for higher quality.";
-  frame = gtk_frame_new("Butteraugli Distance");
-  gimp_help_set_help_data(frame, distance_help, nullptr);
-  gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_NONE);
-  gtk_box_pack_start(GTK_BOX(vbox), frame, false, false, 0);
-  gtk_widget_show(frame);
-
-  // Distance Scale
-  table = gtk_table_new(1, 3, false);
+  // Layout Table
+  table = gtk_table_new(20, 3, false);
   gtk_table_set_col_spacings(GTK_TABLE(table), 6);
-  gtk_container_add(GTK_CONTAINER(frame), table);
+  gtk_box_pack_start(GTK_BOX(vbox), table, false, false, 0);
   gtk_widget_show(table);
+
+  // Distance Slider
+  static gchar distance_help[] =
+      "Butteraugli distance target.  Suggested values:"
+      "\n\td\u00A0=\u00A00.3\tExcellent"
+      "\n\td\u00A0=\u00A01\tVery Good"
+      "\n\td\u00A0=\u00A02\tGood"
+      "\n\td\u00A0=\u00A03\tFair"
+      "\n\td\u00A0=\u00A06\tPoor";
 
   entry_distance = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 0, "", SCALE_WIDTH, 0, jxl_save_opts.distance, 0.0,
-      45.0, 0.001, 1.0, 3, true, 0.0, 0.0, distance_help, "file-jxl-save");
-
+      GTK_TABLE(table), 0, 0, "Distance", SCALE_WIDTH, 0,
+      jxl_save_opts.distance, 0.0, 15.0, 0.001, 1.0, 3, true, 0.0, 0.0,
+      distance_help, SAVE_PROC);
   gimp_scale_entry_set_logarithmic((GtkObject*)entry_distance, true);
 
-  // JPEG-style Quality
+  // Quality Slider
   static gchar quality_help[] =
-      "JPEG-style Quality setting is remapped to distance.  "
-      "Values roughly match libjpeg quality.";
-  frame = gtk_frame_new("JPEG-style Quality");
-  gimp_help_set_help_data(frame, quality_help, nullptr);
-  gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_NONE);
-  gtk_box_pack_start(GTK_BOX(vbox), frame, false, false, 0);
-  gtk_widget_show(frame);
-
-  // Quality Scale
-  table = gtk_table_new(1, 3, false);
-  gtk_table_set_col_spacings(GTK_TABLE(table), 6);
-  gtk_container_add(GTK_CONTAINER(frame), table);
-  gtk_widget_show(table);
-
+      "JPEG-style Quality is remapped to distance.  "
+      "Values roughly match libjpeg quality settings.";
   entry_quality = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 0, "", SCALE_WIDTH, 0, jxl_save_opts.quality, 0.0,
-      100.0, 1.0, 10.0, 2, true, 0.0, 0.0, quality_help, "file-jxl-save");
+      GTK_TABLE(table), 0, 1, "Quality", SCALE_WIDTH, 0, jxl_save_opts.quality,
+      8.26, 100.0, 1.0, 10.0, 2, true, 0.0, 0.0, quality_help, SAVE_PROC);
 
   // Distance and Quality Signals
-  g_signal_connect(entry_distance, "value-changed",
-                   G_CALLBACK(gui_on_change_distance), entry_quality);
-  g_signal_connect(entry_quality, "value-changed",
-                   G_CALLBACK(gui_on_change_quality), entry_distance);
+  handle_entry_distance = g_signal_connect(
+      entry_distance, "value-changed", G_CALLBACK(GuiOnChangeDistance), this);
+  handle_entry_quality = g_signal_connect(entry_quality, "value-changed",
+                                          G_CALLBACK(GuiOnChangeQuality), this);
+
+  // ----------
+  separator = gtk_vseparator_new();
+  gtk_table_attach(GTK_TABLE(table), separator, 0, 2, 2, 3, GTK_EXPAND,
+                   GTK_EXPAND, 9, 9);
+  gtk_widget_show(separator);
+
+  // Encoding Effort / Speed
+  static gchar effort_help[] =
+      "Adjust encoding speed.  Higher values are faster because "
+      "the encoder uses less effort to hit distance targets.  "
+      "As\u00A0a\u00A0result, image quality may be decreased.  "
+      "Default\u00A0=\u00A03.";
+  entry_effort = (GtkAdjustment*)gimp_scale_entry_new(
+      GTK_TABLE(table), 0, 3, "Speed", SCALE_WIDTH, 0,
+      10 - jxl_save_opts.encoding_effort, 1, 9, 1, 2, 0, true, 0.0, 0.0,
+      effort_help, SAVE_PROC);
+
+  // effort signal
+  g_signal_connect(entry_effort, "value-changed", G_CALLBACK(GuiOnChangeEffort),
+                   nullptr);
+
+  // ----------
+  separator = gtk_vseparator_new();
+  gtk_table_attach(GTK_TABLE(table), separator, 0, 2, 4, 5, GTK_EXPAND,
+                   GTK_EXPAND, 9, 9);
+  gtk_widget_show(separator);
+
+  // Lossless Mode Convenience Checkbox
+  static gchar lossless_help[] =
+      "Compress using modular lossless mode.  "
+      "Speed\u00A0is adjusted to improve performance.";
+  toggle_lossless = gtk_check_button_new_with_label("Lossless Mode");
+  gimp_help_set_help_data(toggle_lossless, lossless_help, nullptr);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_lossless),
+                               jxl_save_opts.lossless);
+  gtk_table_attach_defaults(GTK_TABLE(table), toggle_lossless, 0, 2, 5, 6);
+  gtk_widget_show(toggle_lossless);
+
+  // lossless signal
+  handle_toggle_lossless = g_signal_connect(
+      toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), this);
+
+  // ----------
+  separator = gtk_vseparator_new();
+  gtk_box_pack_start(GTK_BOX(main_vbox), separator, false, false, 1);
+  gtk_widget_show(separator);
 
   // Advanced Settings Frame
   std::vector<GtkWidget*> advanced_opts;
 
   frame_advanced = gtk_frame_new("Advanced Settings");
   gimp_help_set_help_data(frame_advanced,
-                          "Advanced Settings that shouldn't be used.", nullptr);
+                          "Some advanced settings may produce malformed files.",
+                          nullptr);
   gtk_frame_set_shadow_type(GTK_FRAME(frame_advanced), GTK_SHADOW_ETCHED_IN);
   gtk_box_pack_start(GTK_BOX(main_vbox), frame_advanced, true, true, 0);
   gtk_widget_show(frame_advanced);
@@ -268,119 +359,52 @@ bool SaveDialog() {
   gtk_container_add(GTK_CONTAINER(frame_advanced), vbox);
   gtk_widget_show(vbox);
 
-  advanced_opts.push_back(frame_advanced);
+  // uses_original_profile
+  static gchar uses_original_profile_help[] =
+      "Prevents conversion to the XYB colorspace.  "
+      "File sizes are approximately doubled.";
+  toggle_no_xyb = gtk_check_button_new_with_label("Do not use XYB colorspace");
+  gimp_help_set_help_data(toggle_no_xyb, uses_original_profile_help, nullptr);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_no_xyb),
+                               jxl_save_opts.basic_info.uses_original_profile);
+  gtk_box_pack_start(GTK_BOX(vbox), toggle_no_xyb, false, false, 0);
+  gtk_widget_show(toggle_no_xyb);
 
-  // lossless convenience checkbox
-  static gchar lossless_help[] =
-      "Compress using modular lossless mode.  "
-      "Effort is set to 3 to improve performance.";
-  toggle_lossless = gtk_check_button_new_with_label("Lossless Mode");
-  gimp_help_set_help_data(toggle_lossless, lossless_help, nullptr);
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_lossless),
-                               jxl_save_opts.lossless);
-  gtk_box_pack_start(GTK_BOX(vbox), toggle_lossless, false, false, 0);
-  gtk_widget_show(toggle_lossless);
-
-  advanced_opts.push_back(toggle_lossless);
+  g_signal_connect(toggle_no_xyb, "toggled", G_CALLBACK(GuiOnChangeNoXYB),
+                   nullptr);
 
   // save raw codestream
   static gchar codestream_help[] =
       "Save the raw codestream, without a container.  "
-      "Not recommended.  The container is required for "
-      "metadata, and the overhead is miniscule.";
-  toggle = gtk_check_button_new_with_label("Raw Codestream");
-  gimp_help_set_help_data(toggle, codestream_help, nullptr);
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle),
+      "The container is required for metadata and some other features.";
+  toggle_raw = gtk_check_button_new_with_label("Save Raw Codestream");
+  gimp_help_set_help_data(toggle_raw, codestream_help, nullptr);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_raw),
                                !jxl_save_opts.use_container);
-  gtk_box_pack_start(GTK_BOX(vbox), toggle, false, false, 0);
-  gtk_widget_show(toggle);
+  gtk_box_pack_start(GTK_BOX(vbox), toggle_raw, false, false, 0);
+  gtk_widget_show(toggle_raw);
 
-  g_signal_connect(toggle, "toggled", G_CALLBACK(gui_on_change_codestream),
+  g_signal_connect(toggle_raw, "toggled", G_CALLBACK(GuiOnChangeCodestream),
                    nullptr);
 
-  advanced_opts.push_back(toggle);
+  // ----------
+  separator = gtk_vseparator_new();
+  gtk_box_pack_start(GTK_BOX(vbox), separator, false, false, 1);
+  gtk_widget_show(separator);
 
-  // uses_original_profile
-  static gchar uses_original_profile_help[] =
-      "Prevents conversion to XYB colorspace.  "
-      "File sizes are approximately doubled.  "
-      "This option is not recommended.";
-  toggle = gtk_check_button_new_with_label("Use Original Color Profile");
-  gimp_help_set_help_data(toggle, uses_original_profile_help, nullptr);
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle),
-                               jxl_save_opts.basic_info.uses_original_profile);
-  gtk_box_pack_start(GTK_BOX(vbox), toggle, false, false, 0);
-  gtk_widget_show(toggle);
-
-  g_signal_connect(toggle, "toggled",
-                   G_CALLBACK(gui_on_change_uses_original_profile), nullptr);
-
-  advanced_opts.push_back(toggle);
-
-  // Save Exif Metadata
-  toggle = gtk_check_button_new_with_label("Save Exif Metadata");
-  gimp_help_set_help_data(
-      toggle, "This feature is not yet available in the API.", nullptr);
-  gtk_box_pack_start(GTK_BOX(vbox), toggle, false, false, 0);
-  gtk_widget_set_sensitive(toggle, false);
-  gtk_widget_show(toggle);
-
-  advanced_opts.push_back(toggle);
-
-  // Encoding Effort
-  static gchar effort_help[] =
-      "Encoding Effort: Higher number is more effort (slower).\n\tDefault = 7.";
-  frame = gtk_frame_new("Encoding Effort");
-  gimp_help_set_help_data(frame, effort_help, nullptr);
-  gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_NONE);
-  gtk_box_pack_start(GTK_BOX(vbox), frame, false, false, 0);
-  gtk_widget_show(frame);
-
-  // Effort Scale
-  table = gtk_table_new(1, 3, false);
-  gtk_table_set_col_spacings(GTK_TABLE(table), 6);
-  gtk_container_add(GTK_CONTAINER(frame), table);
-  gtk_widget_show(table);
-
-  entry_effort = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 0, "", SCALE_WIDTH, 0, jxl_save_opts.encoding_effort,
-      1, 9, 1, 2, 0, true, 0.0, 0.0, effort_help, "file-jxl-save");
-
-  // Effort Signals
-  g_signal_connect(entry_effort, "value-changed",
-                   G_CALLBACK(gimp_int_adjustment_update),
-                   &jxl_save_opts.encoding_effort);
-
-  advanced_opts.push_back((GtkWidget*)entry_effort);
-
-  // signal for lossless toggle
-  // has to be put here to change effort setting
-  GtkAdjustment* adjustments[] = {entry_distance, entry_quality, entry_effort};
-  g_signal_connect(toggle_lossless, "toggled",
-                   G_CALLBACK(gui_on_change_lossless), adjustments);
-
-  // Faster Decoding
+  // Faster Decoding / Decoding Speed
   static gchar faster_help[] =
-      "Faster Decoding to improve decoding speed.  "
-      "Higher values give higher speed at the expense of quality.\n"
-      "\tDefault = 0.";
-  frame = gtk_frame_new("Faster Decoding");
-  gimp_help_set_help_data(frame, faster_help, nullptr);
-  gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_NONE);
-  gtk_box_pack_start(GTK_BOX(vbox), frame, false, false, 0);
-  gtk_widget_show(frame);
-
-  // Faster Decoding Scale
+      "Improve decoding speed at the expense of quality.  "
+      "Default\u00A0=\u00A00.";
   table = gtk_table_new(1, 3, false);
   gtk_table_set_col_spacings(GTK_TABLE(table), 6);
-  gtk_container_add(GTK_CONTAINER(frame), table);
+  gtk_container_add(GTK_CONTAINER(vbox), table);
   gtk_widget_show(table);
 
   entry_faster = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 0, "", SCALE_WIDTH, 0, jxl_save_opts.faster_decoding,
-      0, 5, 1, 1, 0, true, 0.0, 0.0, faster_help, "file-jxl-save");
-
-  advanced_opts.push_back((GtkWidget*)entry_faster);
+      GTK_TABLE(table), 0, 0, "Faster Decoding", SCALE_WIDTH, 0,
+      jxl_save_opts.faster_decoding, 0, 4, 1, 1, 0, true, 0.0, 0.0, faster_help,
+      SAVE_PROC);
 
   // Faster Decoding Signals
   g_signal_connect(entry_faster, "value-changed",
@@ -388,9 +412,7 @@ bool SaveDialog() {
                    &jxl_save_opts.faster_decoding);
 
   // Enable Advanced Settings
-  frame = gtk_frame_new(0);
-  gimp_help_set_help_data(frame, "Advanced Settings shouldn't be used.",
-                          nullptr);
+  frame = gtk_frame_new(nullptr);
   gtk_frame_set_shadow_type(GTK_FRAME(frame), GTK_SHADOW_NONE);
   gtk_box_pack_start(GTK_BOX(main_vbox), frame, true, true, 0);
   gtk_widget_show(frame);
@@ -400,7 +422,8 @@ bool SaveDialog() {
   gtk_container_add(GTK_CONTAINER(frame), vbox);
   gtk_widget_show(vbox);
 
-  static gchar advanced_help[] = "Use advanced settings with care.";
+  static gchar advanced_help[] =
+      "Some advanced settings may produce malformed files.";
   toggle = gtk_check_button_new_with_label("Enable Advanced Settings");
   gimp_help_set_help_data(toggle, advanced_help, nullptr);
   gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle),
@@ -408,8 +431,8 @@ bool SaveDialog() {
   gtk_box_pack_start(GTK_BOX(vbox), toggle, false, false, 0);
   gtk_widget_show(toggle);
 
-  g_signal_connect(toggle, "toggled", G_CALLBACK(gui_on_change_advanced_mode),
-                   &advanced_opts);
+  g_signal_connect(toggle, "toggled", G_CALLBACK(GuiOnChangeAdvancedMode),
+                   this);
 
   // show dialog
   gtk_widget_show(dialog);
@@ -418,99 +441,75 @@ bool SaveDialog() {
   gtk_widget_get_allocation(dialog, &allocation);
 
   int height = allocation.height;
-  gtk_widget_set_size_request(dialog, height * 1.4, height);
+  gtk_widget_set_size_request(dialog, height * 1.5, height);
 
   run = (gimp_dialog_run(GIMP_DIALOG(dialog)) == GTK_RESPONSE_OK);
   gtk_widget_destroy(dialog);
 
   return run;
-}  // SaveDialog
+}  // JpegXlSaveGui::SaveDialog
 
 JpegXlSaveOpts::JpegXlSaveOpts() {
-  set_distance(1.0f);
+  SetDistance(1.0);
 
   pixel_format.num_channels = 4;
-  pixel_format.data_type = JXL_TYPE_UINT8;
+  pixel_format.data_type = JXL_TYPE_FLOAT;
   pixel_format.endianness = JXL_NATIVE_ENDIAN;
   pixel_format.align = 0;
 
-  basic_info.alpha_bits = 0;
-  basic_info.alpha_exponent_bits = 0;
-  basic_info.uses_original_profile = false;
-  basic_info.intensity_target = 255.0f;
-  basic_info.orientation = JXL_ORIENT_IDENTITY;
-
+  JxlEncoderInitBasicInfo(&basic_info);
   return;
 }  // JpegXlSaveOpts constructor
 
-bool JpegXlSaveOpts::set_model(int gimp_model) {
-  switch (gimp_model) {
-    case GIMP_GRAY_IMAGE:
-      if (is_linear) {
-        set_babl_model("Y");
-        set_num_channels(1);
-      } else {
-        set_babl_model("Y'");
-        set_num_channels(1);
-      }
-      return true;
+bool JpegXlSaveOpts::SetModel(bool is_linear_) {
+  int channels;
+  std::string model;
 
-    case GIMP_GRAYA_IMAGE:
-      if (is_linear) {
-        set_babl_model("YA");
-        set_num_channels(2);
-      } else {
-        set_babl_model("Y'A");
-        set_num_channels(2);
-      }
-      return true;
-
-    case GIMP_RGB_IMAGE:
-      if (is_linear) {
-        set_babl_model("RGB");
-        set_num_channels(3);
-      } else {
-        set_babl_model("R'G'B'");
-        set_num_channels(3);
-      }
-      return true;
-
-    case GIMP_RGBA_IMAGE:
-      if (is_linear) {
-        set_babl_model("RGBA");
-        set_num_channels(4);
-      } else {
-        set_babl_model("R'G'B'A");
-        set_num_channels(4);
-      }
-      return true;
-
-    default:
-      g_printerr("JXL Error: Unsupported pixel format.\n");
-      return false;
+  if (is_gray) {
+    channels = 1;
+    if (is_linear_) {
+      model = "Y";
+    } else {
+      model = "Y'";
+    }
+  } else {
+    channels = 3;
+    if (is_linear_) {
+      model = "RGB";
+    } else {
+      model = "R'G'B'";
+    }
   }
-}  // JpegXlSaveOpts::set_model
+  if (has_alpha) {
+    SetBablModel(model + "A");
+    SetNumChannels(channels + 1);
+  } else {
+    SetBablModel(model);
+    SetNumChannels(channels);
+  }
+  return true;
+}  // JpegXlSaveOpts::SetModel
 
-bool JpegXlSaveOpts::set_distance(float dist) {
+bool JpegXlSaveOpts::SetDistance(float dist) {
   distance = dist;
-  return update_quality();
+  return UpdateQuality();
 }
 
-bool JpegXlSaveOpts::set_quality(float qual) {
+bool JpegXlSaveOpts::SetQuality(float qual) {
   quality = qual;
-  return update_distance();
+  return UpdateDistance();
 }
 
-bool JpegXlSaveOpts::update_quality() {
+bool JpegXlSaveOpts::UpdateQuality() {
   float qual;
 
-  if (distance < 0.1f) {
+  if (distance < 0.1) {
     qual = 100;
-  } else if (distance <= 6.4) {
-    qual = 100 - (distance - 0.1) / 0.09f;
+  } else if (distance > 6.56) {
+    qual = 30 - 5 * log(abs(6.25 * distance - 40)) / log(2.5);
     lossless = false;
   } else {
-    qual = 30 - 5 * (log(6.25 * distance - 40)) / log(2.5);
+    qual = 100 - (distance - 0.1) / 0.09;
     lossless = false;
   }
 
@@ -525,25 +524,29 @@ bool JpegXlSaveOpts::update_quality() {
   return true;
 }
 
-bool JpegXlSaveOpts::update_distance() {
+bool JpegXlSaveOpts::UpdateDistance() {
   float dist;
   if (quality >= 30) {
     dist = 0.1 + (100 - quality) * 0.09;
   } else {
-    dist = 6.4 + pow(2.5, (30 - quality) / 5.0f) / 6.25f;
+    dist = 6.4 + pow(2.5, (30 - quality) / 5.0) / 6.25;
   }
 
-  distance = dist;
+  if (dist > 15) {
+    distance = 15;
+  } else {
+    distance = dist;
+  }
   return true;
 }
 
-bool JpegXlSaveOpts::set_dimensions(int x, int y) {
+bool JpegXlSaveOpts::SetDimensions(int x, int y) {
   basic_info.xsize = x;
   basic_info.ysize = y;
   return true;
 }
 
-bool JpegXlSaveOpts::set_num_channels(int channels) {
+bool JpegXlSaveOpts::SetNumChannels(int channels) {
   switch (channels) {
     case 1:
       pixel_format.num_channels = 1;
@@ -556,8 +559,8 @@ bool JpegXlSaveOpts::set_num_channels(int channels) {
       pixel_format.num_channels = 2;
       basic_info.num_color_channels = 1;
       basic_info.num_extra_channels = 1;
-      basic_info.alpha_bits = basic_info.bits_per_sample;
-      basic_info.alpha_exponent_bits = basic_info.exponent_bits_per_sample;
+      basic_info.alpha_bits = int(std::fmin(16, basic_info.bits_per_sample));
+      basic_info.alpha_exponent_bits = 0;
       break;
     case 3:
       pixel_format.num_channels = 3;
@@ -570,118 +573,74 @@ bool JpegXlSaveOpts::set_num_channels(int channels) {
       pixel_format.num_channels = 4;
       basic_info.num_color_channels = 3;
       basic_info.num_extra_channels = 1;
-      basic_info.alpha_bits = basic_info.bits_per_sample;
-      basic_info.alpha_exponent_bits = basic_info.exponent_bits_per_sample;
+      basic_info.alpha_bits = int(std::fmin(16, basic_info.bits_per_sample));
+      basic_info.alpha_exponent_bits = 0;
       break;
     default:
-      set_num_channels(3);
+      SetNumChannels(3);
   }  // switch
   return true;
-}  // JpegXlSaveOpts::set_num_channels
+}  // JpegXlSaveOpts::SetNumChannels
 
-bool JpegXlSaveOpts::update_babl_format() {
+bool JpegXlSaveOpts::UpdateBablFormat() {
   babl_format_str = babl_model_str + " " + babl_type_str;
   return true;
 }
 
-bool JpegXlSaveOpts::set_babl_model(std::string model) {
+bool JpegXlSaveOpts::SetBablModel(std::string model) {
   babl_model_str = model;
-  return update_babl_format();
+  return UpdateBablFormat();
 }
 
-bool JpegXlSaveOpts::set_babl_type(std::string type) {
+bool JpegXlSaveOpts::SetBablType(std::string type) {
   babl_type_str = type;
-  return update_babl_format();
+  return UpdateBablFormat();
 }
 
-bool JpegXlSaveOpts::set_pixel_type(int type) {
-  switch (type) {
-    case JXL_TYPE_FLOAT16:
-      set_babl_type("half");
-      pixel_format.data_type = JXL_TYPE_FLOAT16;
+bool JpegXlSaveOpts::SetPrecision(int gimp_precision) {
+  switch (gimp_precision) {
+    case GIMP_PRECISION_HALF_GAMMA:
+    case GIMP_PRECISION_HALF_LINEAR:
       basic_info.bits_per_sample = 16;
       basic_info.exponent_bits_per_sample = 5;
       break;
 
-    case JXL_TYPE_FLOAT:
-      set_babl_type("float");
-      pixel_format.data_type = JXL_TYPE_FLOAT;
+    // UINT32 not supported by encoder; using FLOAT instead
+    case GIMP_PRECISION_U32_GAMMA:
+    case GIMP_PRECISION_U32_LINEAR:
+    case GIMP_PRECISION_FLOAT_GAMMA:
+    case GIMP_PRECISION_FLOAT_LINEAR:
       basic_info.bits_per_sample = 32;
       basic_info.exponent_bits_per_sample = 8;
       break;
 
-    // UINT32 is not yet supported.  Using UINT16 instead.
-    // See documentation of JxlEncoderAddImageFrame().
-    case JXL_TYPE_UINT32:
-    case JXL_TYPE_UINT16:
-      set_babl_type("u16");
-      pixel_format.data_type = JXL_TYPE_UINT16;
-      basic_info.bits_per_sample = 16;
-      basic_info.exponent_bits_per_sample = 0;
-      break;
-
-    case JXL_TYPE_UINT8:
-    default:
-      set_babl_type("u8");
-      pixel_format.data_type = JXL_TYPE_UINT8;
-      basic_info.bits_per_sample = 8;
-      basic_info.exponent_bits_per_sample = 0;
-      break;
-  }
-
-  return true;
-}  // JpegXlSaveOpts::set_pixel_type
-
-bool JpegXlSaveOpts::set_precision(int gimp_precision) {
-  switch (gimp_precision) {
-    // Note: all floating point formats save as linear
-    // to prevent gamma interpretation problems when viewing.
-    // See documentation of JxlEncoderAddImageFrame().
-    case GIMP_PRECISION_HALF_GAMMA:
-    case GIMP_PRECISION_HALF_LINEAR:
-      is_linear = true;
-      set_pixel_type(JXL_TYPE_FLOAT16);
-      break;
-    case GIMP_PRECISION_FLOAT_GAMMA:
-    case GIMP_PRECISION_FLOAT_LINEAR:
-      is_linear = true;
-      set_pixel_type(JXL_TYPE_FLOAT);
-      break;
-
-    // Note: all INT formats save as non-linear to prevent
-    // gamma interpretation problems when viewing.
-    // See documentation of JxlEncoderAddImageFrame().
-    case GIMP_PRECISION_U32_GAMMA:
-    case GIMP_PRECISION_U32_LINEAR:
-      is_linear = false;
-      set_pixel_type(JXL_TYPE_UINT32);
-      break;
     case GIMP_PRECISION_U16_GAMMA:
     case GIMP_PRECISION_U16_LINEAR:
-      is_linear = false;
-      set_pixel_type(JXL_TYPE_UINT16);
+      basic_info.bits_per_sample = 16;
+      basic_info.exponent_bits_per_sample = 0;
       break;
 
     default:
     case GIMP_PRECISION_U8_LINEAR:
     case GIMP_PRECISION_U8_GAMMA:
-      is_linear = false;
-      set_pixel_type(JXL_TYPE_UINT8);
+      basic_info.bits_per_sample = 8;
+      basic_info.exponent_bits_per_sample = 0;
       break;
   }
   return true;
-}  // JpegXlSaveOpts::set_precision
+}  // JpegXlSaveOpts::SetPrecision
 
 }  // namespace
 
 bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
                      const gint32 orig_image_id, const gchar* const filename) {
-  if (!SaveDialog()) {
+  if (!jxl_save_gui.SaveDialog()) {
     return true;
   }
 
   gint32 nlayers;
   gint32* layers;
+  gint32 duplicate = gimp_image_duplicate(image_id);
 
   JpegXlGimpProgress gimp_save_progress(
       ("Saving JPEG XL file:" + std::string(filename)).c_str());
@@ -690,30 +649,31 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   // try to get ICC color profile...
   std::vector<uint8_t> icc;
 
-  GimpColorProfile* profile = gimp_image_get_color_profile(image_id);
+  GimpColorProfile* profile = gimp_image_get_effective_color_profile(image_id);
+  jxl_save_opts.is_gray = gimp_color_profile_is_gray(profile);
+  jxl_save_opts.is_linear = gimp_color_profile_is_linear(profile);
 
+  profile = gimp_image_get_color_profile(image_id);
   if (profile) {
-    jxl_save_opts.is_linear = gimp_color_profile_is_linear(profile);
-    jxl_save_opts.is_gray = gimp_color_profile_is_gray(profile);
-
-    g_printerr("JXL Info: Extracting ICC Profile...\n");
+    g_printerr(SAVE_PROC " Info: Extracting ICC Profile...\n");
     gsize icc_size;
     const guint8* const icc_bytes =
         gimp_color_profile_get_icc_profile(profile, &icc_size);
 
     icc.assign(icc_bytes, icc_bytes + icc_size);
   } else {
-    g_printerr("JXL Info: No ICC profile.  Exporting image anyway.\n");
+    g_printerr(SAVE_PROC " Info: No ICC profile.  Exporting image anyway.\n");
   }
 
   gimp_save_progress.update();
 
-  jxl_save_opts.set_dimensions(gimp_image_width(image_id),
-                               gimp_image_height(image_id));
+  jxl_save_opts.SetDimensions(gimp_image_width(image_id),
+                              gimp_image_height(image_id));
 
-  layers = gimp_image_get_layers(image_id, &nlayers);
+  jxl_save_opts.SetPrecision(gimp_image_get_precision(image_id));
+  layers = gimp_image_get_layers(duplicate, &nlayers);
 
-  for (gint32 i = 0; i < nlayers; i++) {
+  for (int i = 0; i < nlayers; i++) {
     if (gimp_drawable_has_alpha(layers[i])) {
       jxl_save_opts.has_alpha = true;
       break;
@@ -722,18 +682,16 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
 
   gimp_save_progress.update();
 
-  // JxlEncoderAddImageFrame() doesn't currently support
-  // JXL_TYPE_UINT32.  Rebuilding babl_format to match
-  // the JxlPixelFormat to allow  export to UINT16.
-  //
-  // When this is no longer necessary, will be able to
-  // replace extraneous code with just:
-  //    native_format = gegl_buffer_get_format(buffer);
-  //
-  const Babl* native_format;
-  jxl_save_opts.set_precision(gimp_image_get_precision(image_id));
-  jxl_save_opts.set_model(gimp_drawable_type(drawable_id));
-  native_format = babl_format(jxl_save_opts.babl_format_str.c_str());
+  // layers need to match image size, for now
+  for (int i = 0; i < nlayers; i++) {
+    gimp_layer_resize_to_image_size(layers[i]);
+  }
+
+  // treat layers as animation frames, for now
+  if (nlayers > 1) {
+    jxl_save_opts.basic_info.have_animation = true;
+    jxl_save_opts.basic_info.animation.tps_numerator = 100;
+  }
 
   gimp_save_progress.update();
 
@@ -751,44 +709,38 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   if (JXL_ENC_SUCCESS != JxlEncoderSetParallelRunner(enc.get(),
                                                      JxlResizableParallelRunner,
                                                      runner.get())) {
-    g_printerr("JXL Error: JxlEncoderSetParallelRunner failed\n");
-    return false;
-  }
-
-  if (JXL_ENC_SUCCESS !=
-      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
-    g_printerr("JXL Error: JxlEncoderSetBasicInfo failed\n");
+    g_printerr(SAVE_PROC " Error: JxlEncoderSetParallelRunner failed\n");
     return false;
   }
 
   // try to use ICC profile
-  if (icc.size() > 0 && !gimp_color_profile_is_gray(profile)) {
-    if (JXL_ENC_SUCCESS !=
+  if (icc.size() > 0 && !jxl_save_opts.is_gray) {
+    if (JXL_ENC_SUCCESS ==
         JxlEncoderSetICCProfile(enc.get(), icc.data(), icc.size())) {
-      g_printerr("JXL Warning: JxlEncoderSetICCProfile failed.\n");
+      jxl_save_opts.icc_attached = true;
+    } else {
+      g_printerr(SAVE_PROC " Warning: JxlEncoderSetICCProfile failed.\n");
       jxl_save_opts.basic_info.uses_original_profile = false;
+      jxl_save_opts.lossless = false;
     }
   } else {
-    g_printerr("JXL Warning: Using internal profile.\n");
+    g_printerr(SAVE_PROC " Warning: Using internal profile.\n");
     jxl_save_opts.basic_info.uses_original_profile = false;
+    jxl_save_opts.lossless = false;
   }
 
-  // detect internal color profile
+  // set up internal color profile
   JxlColorEncoding color_encoding = {};
 
   if (jxl_save_opts.is_linear) {
-    JxlColorEncodingSetToLinearSRGB(
-        &color_encoding,
-        /*is_gray=*/jxl_save_opts.pixel_format.num_channels < 3);
+    JxlColorEncodingSetToLinearSRGB(&color_encoding, jxl_save_opts.is_gray);
   } else {
-    JxlColorEncodingSetToSRGB(
-        &color_encoding,
-        /*is_gray=*/jxl_save_opts.pixel_format.num_channels < 3);
+    JxlColorEncodingSetToSRGB(&color_encoding, jxl_save_opts.is_gray);
   }
 
   if (JXL_ENC_SUCCESS !=
       JxlEncoderSetColorEncoding(enc.get(), &color_encoding)) {
-    g_printerr("JXL Warning: JxlEncoderSetColorEncoding failed\n");
+    g_printerr(SAVE_PROC " Warning: JxlEncoderSetColorEncoding failed\n");
   }
 
   // set encoder options
@@ -798,10 +750,12 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   JxlEncoderOptionsSetEffort(enc_opts, jxl_save_opts.encoding_effort);
   JxlEncoderOptionsSetDecodingSpeed(enc_opts, jxl_save_opts.faster_decoding);
 
-  if (jxl_save_opts.lossless || jxl_save_opts.distance < 0.01f) {
+  // lossless mode
+  if (jxl_save_opts.lossless || jxl_save_opts.distance < 0.01) {
     if (jxl_save_opts.basic_info.exponent_bits_per_sample > 0) {
-      // lossless mode doesn't work with floating point
+      // lossless mode doesn't work well with floating point
       jxl_save_opts.distance = 0.01;
+      jxl_save_opts.lossless = false;
       JxlEncoderOptionsSetLossless(enc_opts, false);
       JxlEncoderOptionsSetDistance(enc_opts, 0.01);
     } else {
@@ -809,72 +763,110 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       JxlEncoderOptionsSetLossless(enc_opts, true);
     }
   } else {
+    jxl_save_opts.lossless = false;
     JxlEncoderOptionsSetLossless(enc_opts, false);
     JxlEncoderOptionsSetDistance(enc_opts, jxl_save_opts.distance);
   }
 
+  // this sets some basic_info properties
+  jxl_save_opts.SetModel(jxl_save_opts.is_linear);
+
+  if (JXL_ENC_SUCCESS !=
+      JxlEncoderSetBasicInfo(enc.get(), &jxl_save_opts.basic_info)) {
+    g_printerr(SAVE_PROC " Error: JxlEncoderSetBasicInfo failed\n");
+    return false;
+  }
+
+  // convert precision and colorspace
+  if (jxl_save_opts.is_linear &&
+      jxl_save_opts.basic_info.bits_per_sample < 32) {
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
+  } else {
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_GAMMA);
+  }
+
   // process layers and compress into JXL
-  std::vector<uint8_t> compressed;
-  compressed.resize(262144);
-  uint8_t* next_out = compressed.data();
-  size_t avail_out = compressed.size();
+  size_t buffer_size =
+      jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize *
+      jxl_save_opts.pixel_format.num_channels * 4;  // bytes per sample
 
-  size_t buffer_size = jxl_save_opts.basic_info.xsize *
-                       jxl_save_opts.basic_info.ysize *
-                       jxl_save_opts.pixel_format.num_channels *
-                       (jxl_save_opts.basic_info.bits_per_sample >> 3);
-
-  nlayers = 1;  // just process one layer for now
-  for (gint32 i = 0; i < nlayers; i++) {
+  for (int i = nlayers - 1; i >= 0; i--) {
     gimp_save_progress.update();
 
     // copy image into buffer...
-    gpointer pixels_buffer;
-    pixels_buffer = g_malloc(buffer_size);
+    gpointer pixels_buffer_1;
+    gpointer pixels_buffer_2;
+    pixels_buffer_1 = g_malloc(buffer_size);
+    pixels_buffer_2 = g_malloc(buffer_size);
+
+    gimp_layer_resize_to_image_size(layers[i]);
 
     GeglBuffer* buffer = gimp_drawable_get_buffer(layers[i]);
+
+    // using gegl_buffer_set_format to get the format because
+    // gegl_buffer_get_format doesn't always get the original format
+    const Babl* native_format = gegl_buffer_set_format(buffer, nullptr);
+
     gegl_buffer_get(buffer,
                     GEGL_RECTANGLE(0, 0, jxl_save_opts.basic_info.xsize,
                                    jxl_save_opts.basic_info.ysize),
-                    1.0, native_format, pixels_buffer, GEGL_AUTO_ROWSTRIDE,
+                    1.0, native_format, pixels_buffer_1, GEGL_AUTO_ROWSTRIDE,
                     GEGL_ABYSS_NONE);
-
     g_clear_object(&buffer);
+
+    // use babl to fix gamma mismatch issues
+    if (jxl_save_opts.icc_attached) {
+      jxl_save_opts.SetModel(jxl_save_opts.is_linear);
+    } else {
+      jxl_save_opts.SetModel(!jxl_save_opts.is_linear);
+    }
+    jxl_save_opts.pixel_format.data_type = JXL_TYPE_FLOAT;
+    jxl_save_opts.SetBablType("float");
+    const Babl* destination_format =
+        babl_format(jxl_save_opts.babl_format_str.c_str());
+
+    babl_process(
+        babl_fish(native_format, destination_format), pixels_buffer_1,
+        pixels_buffer_2,
+        jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize);
 
     gimp_save_progress.update();
 
-    // compress layer
+    // send layer to encoder
     if (JXL_ENC_SUCCESS !=
         JxlEncoderAddImageFrame(enc_opts, &jxl_save_opts.pixel_format,
-                                pixels_buffer, buffer_size)) {
-      g_printerr("JXL Error: JxlEncoderAddImageFrame failed\n");
-      return false;
-    }
-
-    // get data from encoder
-    JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
-    while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-      gimp_save_progress.update();
-
-      process_result =
-          JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
-      if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
-        size_t offset = next_out - compressed.data();
-        compressed.resize(compressed.size() + 262144);
-        next_out = compressed.data() + offset;
-        avail_out = compressed.size() - offset;
-      }
-    }
-
-    if (JXL_ENC_SUCCESS != process_result) {
-      g_printerr("JXL Error: JxlEncoderProcessOutput failed\n");
+                                pixels_buffer_2, buffer_size)) {
+      g_printerr(SAVE_PROC " Error: JxlEncoderAddImageFrame failed\n");
       return false;
     }
   }
 
   JxlEncoderCloseInput(enc.get());
 
+  // get data from encoder
+  std::vector<uint8_t> compressed;
+  compressed.resize(262144);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size();
+
+  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+    gimp_save_progress.update();
+
+    process_result = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed.data();
+      compressed.resize(compressed.size() + 262144);
+      next_out = compressed.data() + offset;
+      avail_out = compressed.size() - offset;
+    }
+  }
   compressed.resize(next_out - compressed.data());
+
+  if (JXL_ENC_SUCCESS != process_result) {
+    g_printerr(SAVE_PROC " Error: JxlEncoderProcessOutput failed\n");
+    return false;
+  }
 
   // write file
   std::ofstream outstream(filename, std::ios::out | std::ios::binary);
