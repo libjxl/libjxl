@@ -191,6 +191,8 @@ bool EncodeJxlOneshot(const std::vector<float>& pixels, const uint32_t xsize,
     return false;
   }
 
+  JxlEncoderCloseInput(enc.get());
+
   compressed->resize(64);
   uint8_t* next_out = compressed->data();
   size_t avail_out = compressed->size() - (next_out - compressed->data());

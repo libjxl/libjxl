@@ -42,8 +42,24 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       std::move(input_frame_queue[0]);
   input_frame_queue.erase(input_frame_queue.begin());
 
-  // TODO(zond): If the frame queue is empty and the input_closed is true,
-  // then mark this frame as the last.
+  // If the frame queue is empty and input_closed is true,
+  // mark this frame as the last.
+  jxl::FrameInfo frame_info;
+  if (input_closed && input_frame_queue.empty()) {
+    frame_info.is_last = true;
+  } else {
+    frame_info.is_last = false;
+  }
+
+  // don't encode more than one non-animation frame,
+  // until the decode API can return them
+  // or the encode API can set processing parameters
+  if (!metadata.m.have_animation && !frame_info.is_last) {
+    input_closed = true;
+    input_frame_queue.clear();
+    frame_info.is_last = true;
+    return JXL_ENC_NOT_SUPPORTED;
+  }
 
   jxl::BitWriter writer;
 
@@ -91,7 +107,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   }
 
   jxl::PassesEncoderState enc_state;
-  if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
+  if (!jxl::EncodeFrame(input_frame->option_values.cparams, frame_info,
                         &metadata, input_frame->frame, &enc_state,
                         thread_pool.get(), &writer,
                         /*aux_out=*/nullptr)) {
@@ -217,6 +233,17 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     default:
       return JXL_ENC_ERROR;
       break;
+  }
+  enc->metadata.m.have_animation = info->have_animation;
+  if (info->have_animation) {
+    if (info->animation.tps_numerator < 1 ||
+        info->animation.tps_denominator < 1) {
+      return JXL_ENC_ERROR;
+    }
+    enc->metadata.m.animation.have_timecodes = info->animation.have_timecodes;
+    enc->metadata.m.animation.tps_numerator = info->animation.tps_numerator;
+    enc->metadata.m.animation.tps_denominator = info->animation.tps_denominator;
+    enc->metadata.m.animation.num_loops = info->animation.num_loops;
   }
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
   if (info->orientation > 0 && info->orientation <= 8) {
@@ -428,6 +455,12 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     }
   } else {
     c_current = options->enc->metadata.m.color_encoding;
+  }
+
+  // needed until API can adjust per-frame animation headers
+  if (options->enc->metadata.m.have_animation) {
+    queued_frame->frame.duration = 10;
+    options->enc->metadata.m.animation.have_timecodes = false;
   }
 
   if (!jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
