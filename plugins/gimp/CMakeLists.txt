@@ -19,7 +19,10 @@ add_executable(file-jxl WIN32
   file-jxl-save.cc
   file-jxl-save.h
   file-jxl.cc)
-target_link_libraries(file-jxl jxl-static jxl_threads-static PkgConfig::Gimp)
+target_link_libraries(file-jxl jxl jxl_threads PkgConfig::Gimp)
+
+target_include_directories(file-jxl PUBLIC
+    ${PROJECT_SOURCE_DIR})  # for plugins/gimp absolute paths.
 
 pkg_get_variable(GIMP_LIB_DIR gimp-2.0 gimplibdir)
 install(TARGETS file-jxl RUNTIME DESTINATION "${GIMP_LIB_DIR}/plug-ins/file-jxl/")
