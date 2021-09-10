@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6] - Unreleased
 ### Added
  - API: New functions to decode extra channels:
    `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
@@ -14,12 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    when using the encoder. Padding was added to the struct for forward
    compatibility.
  - API: Support for encoding oriented images.
+ - API: FLOAT16 support in the encoder API.
+ - Rewrite of the GDK pixbuf loader plugin. Added proper color management and
+   animation support.
+ - Rewrite of GIMP plugin. Added compression parameters dialog and switched to
+   using the public C API.
+ - Debian packages for GDK pixbuf loader (`libjxl-gdk-pixbuf`) and GIMP
+   (`libjxl-gimp-plugin`) plugins.
+ - `cjxl`/`djxl` support for `stdin` and `stdout`.
 
 ### Changed
  - API: Renamed the field `alpha_associated` in `JxlExtraChannelInfo` to
    `alpha_premultiplied`, to match the corresponding name in `JxlBasicInfo`.
  - Improved the 2x2 downscaling method in the encoder for the optional color
    channel resampling for low bit rates.
+ - `libjxl` static library now bundles skcms, fixing static linking in
+   downstream projects when skcms is used.
+ - Spline rendering performance improvements.
+ - Butteraugli changes for less visual masking.
 
 ## [0.5] - 2021-08-02
 ### Added
