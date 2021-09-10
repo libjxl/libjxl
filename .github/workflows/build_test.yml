@@ -166,6 +166,9 @@ jobs:
          matrix.test_in_pr ||
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
+        if [[ "${{ matrix.name }}" == "debug" ]]; then
+          export TEST_STACK_LIMIT=2048
+        fi
         STORE_IMAGES=0 ./ci.sh fast_benchmark
 
 
