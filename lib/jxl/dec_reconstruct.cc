@@ -1008,7 +1008,8 @@ Status FinalizeImageRect(
           *output_pixel_data_storage,
           upsampled_frame_rect_for_storage.Lines(available_y, num_ys),
           upsampled_frame_rect.Lines(available_y, num_ys)
-              .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+              .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                         frame_dim.ysize_upsampled)),
           alpha, alpha_rect.Lines(available_y, num_ys),
           dec_state->rgb_output_is_rgba, dec_state->rgb_output, frame_dim.xsize,
           dec_state->rgb_stride);
@@ -1042,9 +1043,9 @@ Status FinalizeImageRect(
         Rect alpha_line_rect = alpha_rect.Lines(available_y, num_ys);
         Rect color_input_line_rect =
             upsampled_frame_rect_for_storage.Lines(available_y, num_ys);
-        Rect image_line_rect =
-            upsampled_frame_rect.Lines(available_y, num_ys)
-                .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize));
+        Rect image_line_rect = upsampled_frame_rect.Lines(available_y, num_ys)
+                                   .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                                              frame_dim.ysize_upsampled));
         const float* line_buffers[4];
         for (size_t iy = 0; iy < image_line_rect.ysize(); iy++) {
           for (size_t c = 0; c < 3; c++) {
