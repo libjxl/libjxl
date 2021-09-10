@@ -468,7 +468,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   nb_chans += extra_channels.size();
 
-  bool fp = metadata.bit_depth.floating_point_sample;
+  bool fp = metadata.bit_depth.floating_point_sample &&
+            cparams.color_transform != ColorTransform::kXYB;
 
   // bits_per_sample is just metadata for XYB images.
   if (metadata.bit_depth.bits_per_sample >= 32 && do_color &&
