@@ -182,15 +182,10 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     return JXL_ENC_ERROR;
   }
   if (!info->exponent_bits_per_sample) {
-    switch (info->bits_per_sample) {
-      case 32:
-      case 16:
-      case 8:
-        enc->metadata.m.SetUintSamples(info->bits_per_sample);
-        break;
-      default:
-        return JXL_ENC_ERROR;
-        break;
+    if (info->bits_per_sample > 0 && info->bits_per_sample <= 24) {
+      enc->metadata.m.SetUintSamples(info->bits_per_sample);
+    } else {
+      return JXL_ENC_ERROR;
     }
   } else if (info->bits_per_sample == 32 &&
              info->exponent_bits_per_sample == 8) {

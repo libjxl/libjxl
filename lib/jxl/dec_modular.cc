@@ -470,8 +470,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     const bool rgb_from_gray =
         metadata->m.color_encoding.IsGray() &&
         frame_header.color_transform == ColorTransform::kNone;
-    const bool fp = metadata->m.bit_depth.floating_point_sample;
-
+    const bool fp = metadata->m.bit_depth.floating_point_sample &&
+                    frame_header.color_transform != ColorTransform::kXYB;
     for (; c < 3; c++) {
       float factor = full_image.bitdepth < 32
                          ? 1.f / ((1u << full_image.bitdepth) - 1)
