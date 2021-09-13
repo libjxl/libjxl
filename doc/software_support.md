@@ -17,6 +17,7 @@ Please add missing software to this list.
 - Safari: not supported, [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
 - Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
 - Opera: behind a flag since version 77.
+- For all browsers and to track browsers progress see [Can I Use](https://caniuse.com/jpegxl).
 
 ## Image libraries
 
