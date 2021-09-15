@@ -1286,13 +1286,41 @@ TEST(DecodeTest, IccProfileTestXybEncoded) {
   // must be (since there are many ways to represent the same color space),
   // but it should not be zero.
   EXPECT_NE(0u, dec_profile_size);
+  jxl::PaddedBytes icc_profile2(dec_profile_size);
   if (0 != dec_profile_size) {
-    jxl::PaddedBytes icc_profile2(dec_profile_size);
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
                                    dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
                                    icc_profile2.data(), icc_profile2.size()));
     // expected not equal
     EXPECT_NE(icc_profile, icc_profile2);
+  }
+
+  // Test setting another different preferred profile, to verify that the
+  // returned JXL_COLOR_PROFILE_TARGET_DATA ICC profile is correctly
+  // updated.
+
+  jxl::ColorEncoding temp_jxl_linear = jxl::ColorEncoding::LinearSRGB(false);
+  JxlColorEncoding pixel_encoding_linear;
+  ConvertInternalToExternalColorEncoding(temp_jxl_linear,
+                                         &pixel_encoding_linear);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetPreferredColorProfile(dec, &pixel_encoding_linear));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderGetColorAsEncodedProfile(
+                dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &pixel_encoding));
+  EXPECT_EQ(JXL_TRANSFER_FUNCTION_LINEAR, pixel_encoding.transfer_function);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetICCProfileSize(
+                                 dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                                 &dec_profile_size));
+  EXPECT_NE(0u, dec_profile_size);
+  jxl::PaddedBytes icc_profile3(dec_profile_size);
+  if (0 != dec_profile_size) {
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
+                                   dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                                   icc_profile3.data(), icc_profile3.size()));
+    // expected not equal to the previously set preferred profile.
+    EXPECT_NE(icc_profile2, icc_profile3);
   }
 
   JxlDecoderDestroy(dec);
