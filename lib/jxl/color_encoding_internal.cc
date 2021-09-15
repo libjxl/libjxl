@@ -651,6 +651,15 @@ Status ConvertExternalToInternalColorEncoding(const JxlColorEncoding& external,
   JXL_RETURN_IF_ERROR(ConvertExternalToInternalRenderingIntent(
       external.rendering_intent, &internal->rendering_intent));
 
+  // The ColorEncoding caches an ICC profile it created earlier that may no
+  // longer match the profile with the changed fields, so re-create it.
+  if (!(internal->CreateICC())) {
+    // This is not an error: for example, it doesn't have ICC profile creation
+    // implemented for XYB. This should not be returned as error, since
+    // ConvertExternalToInternalColorEncoding still worked correctly, and what
+    // matters is that internal->ICC() will not return the wrong profile.
+  }
+
   return true;
 }
 
