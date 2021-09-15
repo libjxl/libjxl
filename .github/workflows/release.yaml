@@ -192,6 +192,13 @@ jobs:
         # Remove libgmock-dev dependency in Ubuntu 18.04. It doesn't exist there.
         sed '/libgmock-dev,/d' -i debian/control
 
+    - name: Install gmock-dev (debian:sid)
+      # gtest-dev cmake depends on gmock-dev, but it is not installed by the
+      # package.
+      if: matrix.os == 'debian:sid'
+      run: |
+        apt install -y libgmock-dev
+
     - name: Remove libjxl-gimp-plugin package (only 18.04)
       if: matrix.os == 'ubuntu:18.04'
       run: |
