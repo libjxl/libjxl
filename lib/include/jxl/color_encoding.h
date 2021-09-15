@@ -4,7 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @file color_encoding.h
+/** @addtogroup libjxl_common
+ * @{
+ * @file color_encoding.h
  * @brief Color Encoding definitions used by JPEG XL.
  * All CIE units are for the standard 1931 2 degree observer.
  */
@@ -143,3 +145,5 @@ typedef struct {
 #endif
 
 #endif /* JXL_COLOR_ENCODING_H_ */
+
+/** @}*/
