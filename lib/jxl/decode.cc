@@ -822,6 +822,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
     ImageMetadata dummy_metadata;
     JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dummy_metadata));
 
+    dec->metadata.transform_data.nonserialized_xyb_encoded =
+        dec->metadata.m.xyb_encoded;
     JXL_API_RETURN_IF_ERROR(
         ReadBundle(span, reader.get(), &dec->metadata.transform_data));
   }
