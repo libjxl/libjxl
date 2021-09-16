@@ -263,6 +263,42 @@ JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
   return JXL_ENC_SUCCESS;
 }
 
+JxlEncoderStatus JxlEncoderOptionsSetAsInteger(JxlEncoderOptions* options,
+                                               JxlEncoderOptionId option,
+                                               int32_t value) {
+  switch (option) {
+    case JXL_ENC_OPTION_RESAMPLING:
+      if (value != 0 && value != 1 && value != 2 && value != 4 && value != 8) {
+        return JXL_ENC_ERROR;
+      }
+      options->values.cparams.resampling = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING:
+      if (value != 0 && value != 1 && value != 2 && value != 4 && value != 8) {
+        return JXL_ENC_ERROR;
+      }
+      // The implementation doesn't support the default choice between 1x1 and
+      // 2x2 for extra channels, so 1x1 is set as the default.
+      if (value == 0) value = 1;
+      options->values.cparams.ec_resampling = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_NOISE:
+      options->values.cparams.noise = static_cast<jxl::Override>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_DOTS:
+      options->values.cparams.dots = static_cast<jxl::Override>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_PATCHES:
+      options->values.cparams.patches = static_cast<jxl::Override>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_GABORISH:
+      options->values.cparams.gaborish = static_cast<jxl::Override>(value);
+      return JXL_ENC_SUCCESS;
+    default:
+      return JXL_ENC_ERROR;
+  }
+}
+
 JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   JxlMemoryManager local_memory_manager;
   if (!jxl::MemoryManagerInit(&local_memory_manager, memory_manager)) {
