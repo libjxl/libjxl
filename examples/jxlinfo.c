@@ -114,6 +114,7 @@ int PrintBasicInfo(FILE* file) {
       } else {
         fprintf(stderr, "Invalid orientation\n");
       }
+      printf("num_color_channels: %d\n", info.num_color_channels);
       printf("num_extra_channels: %d\n", info.num_extra_channels);
 
       const char* const ec_type_names[7] = {"Alpha",       "Depth",
@@ -271,10 +272,13 @@ int PrintBasicInfo(FILE* file) {
       float ms = frame_header.duration * 1000.f *
                  info.animation.tps_denominator / info.animation.tps_numerator;
       if (info.have_animation) {
-        printf("  Duration: %u ticks (%f ms)\n", frame_header.duration, ms);
+        printf("  duration: %u ticks (%f ms)\n", frame_header.duration, ms);
         if (info.animation.have_timecodes) {
-          printf("  Time code: %X\n", frame_header.timecode);
+          printf("  time code: %X\n", frame_header.timecode);
         }
+      }
+      if (!frame_header.name_length && !info.have_animation) {
+        printf("  still frame, unnamed\n");
       }
 
       // This is the last expected event, no need to read the rest of the file.
