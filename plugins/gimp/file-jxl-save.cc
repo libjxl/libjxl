@@ -5,6 +5,8 @@
 
 #include "plugins/gimp/file-jxl-save.h"
 
+#include "gobject/gsignal.h"
+
 #define PLUG_IN_BINARY "file-jxl"
 #define SAVE_PROC "file-jxl-save"
 
@@ -13,6 +15,16 @@
 namespace jxl {
 
 namespace {
+
+#ifndef g_clear_signal_handler
+// g_clear_signal_handler was added in glib 2.62
+void g_clear_signal_handler(gulong* handler, gpointer instance) {
+  if (handler != nullptr && *handler != 0) {
+    g_signal_handler_disconnect(instance, *handler);
+    *handler = 0;
+  }
+}
+#endif  // g_clear_signal_handler
 
 class JpegXlSaveOpts {
  public:
