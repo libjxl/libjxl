@@ -282,10 +282,6 @@ Status MetaSqueeze(Image &image, std::vector<SqueezeParams> *parameters) {
 
 Status InvSqueeze(Image &input, std::vector<SqueezeParams> parameters,
                   ThreadPool *pool) {
-  if (parameters.empty()) {
-    DefaultSqueezeParameters(&parameters, input);
-  }
-
   for (int i = parameters.size() - 1; i >= 0; i--) {
     JXL_RETURN_IF_ERROR(
         CheckMetaSqueezeParams(parameters[i], input.channel.size()));
