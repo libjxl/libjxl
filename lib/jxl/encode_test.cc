@@ -533,7 +533,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
     for (int skip_color_encoding = 0; skip_color_encoding < 2;
          skip_color_encoding++) {
       const std::string jpeg_path =
-          "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+          "imagecompression.info/flower_foveon_cropped.jpg";
       const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
       jxl::CodecInOut orig_io;
       ASSERT_TRUE(SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io,

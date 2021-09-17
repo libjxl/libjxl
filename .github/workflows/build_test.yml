@@ -30,6 +30,9 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
           - name: debug
+            # Runs on AVX3 CPUs require more stack than others. Make sure to
+            # test on AVX3-enabled CPUs when changing this value.
+            env_test_stack_size: 2048
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
@@ -39,6 +42,12 @@ jobs:
             cmake_args: >-
               -DJPEGXL_ENABLE_DEVTOOLS=OFF -DJPEGXL_ENABLE_PLUGINS=OFF
               -DJPEGXL_ENABLE_VIEWERS=OFF
+          - name: coverage
+            apt_pkgs: gcovr
+            # Coverage builds require a bit more RAM.
+            env_test_stack_size: 2048
+            # Exclude roundtrip tests from the unittest coverage.
+            ctest_args: -E '^JxlTest'
           # Build with support for decoding to JPEG bytes disabled. Produces a
           # smaller build if only decoding to pixels is needed.
           - name: release-nojpeg
@@ -59,6 +68,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       # Whether we track the stack size.
       STACK_SIZE: ${{ matrix.env_stack_size }}
+      TEST_STACK_LIMIT: ${{ matrix.env_test_stack_size }}
 
     steps:
     - name: Install build deps
@@ -153,12 +163,21 @@ jobs:
          matrix.test_in_pr ||
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
-        if [[ "${{ matrix.name }}" == "debug" ]]; then
-          # Runs on AVX3 CPUs require more stack than others. Make sure to test
-          # on AVX3-enabled CPUs when changing this value.
-          export TEST_STACK_LIMIT=2048
-        fi
-        ./ci.sh test
+        ./ci.sh test ${{ matrix.ctest_args }}
+    # Print the running time summary for the slowest tests.
+    - name: Test runtime stats
+      run: |
+        sort build/Testing/Temporary/CTestCostData.txt -k 3 -n | tail -n 20 || true
+    - name: Coverage report
+      if: github.event_name == 'push' && matrix.name == 'coverage'
+      run: |
+        ./ci.sh coverage_report
+    - name: Coverage upload to Codecov
+      if: github.event_name == 'push' && matrix.name == 'coverage'
+      uses: codecov/codecov-action@v2
+      with:
+        flags: unittests
+        files: build/coverage.xml
     - name: Fast benchmark ${{ matrix.mode }}
       if: |
         github.event_name == 'push' ||
@@ -166,9 +185,6 @@ jobs:
          matrix.test_in_pr ||
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
-        if [[ "${{ matrix.name }}" == "debug" ]]; then
-          export TEST_STACK_LIMIT=2048
-        fi
         STORE_IMAGES=0 ./ci.sh fast_benchmark
 
 
