@@ -411,8 +411,12 @@ Status FwdPaletteIteration(Image &input, uint32_t begin_c, uint32_t end_c,
           float index_penalty = 0;
           if (index == -1) {
             index_penalty = -124;
+          } else if (index < 0) {
+            index_penalty = -2 * index;
+          } else if (index < static_cast<int>(nb_deltas)) {
+            index_penalty = 250;
           } else if (index < static_cast<int>(nb_colors)) {
-            index_penalty = 2 * std::abs(index);
+            index_penalty = 150;
           } else if (index < static_cast<int>(nb_colors) +
                                  palette_internal::kLargeCubeOffset) {
             index_penalty = 70;
