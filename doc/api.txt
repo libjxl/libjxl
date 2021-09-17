@@ -8,7 +8,22 @@
  */
 
 /**
-@defgroup jpegxl_dec JPEG XL Decoder library (jpegxl_dec)
+@defgroup libjxl JPEG XL library (libjxl)
+@brief The main JPEG XL decoder / encoder library.
 
-@defgroup jpegxl_threads JPEG XL Threads API helper library (jpegxl_threads)
+@addtogroup libjxl
+@{
+
+@defgroup libjxl_decoder JPEG XL Decoder
+
+@defgroup libjxl_encoder JPEG XL Encoder
+
+@defgroup libjxl_common JPEG XL common definitions
+
+@defgroup libjxl_butteraugli Butteraugli metric
+
+@}
+
+@defgroup libjxl_threads JPEG XL Multi-thread library (libjxl_threads)
+@brief Additional multi-threaded implementations for the parallel runner.
 */

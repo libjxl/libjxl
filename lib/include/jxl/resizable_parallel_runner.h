@@ -4,7 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @file resizable_parallel_runner.h
+/** @addtogroup libjxl_threads
+ * @{
+ * @file resizable_parallel_runner.h
  * @brief implementation using std::thread of a resizeable ::JxlParallelRunner.
  */
 
@@ -73,3 +75,5 @@ JXL_THREADS_EXPORT void JxlResizableParallelRunnerDestroy(void* runner_opaque);
 #endif
 
 #endif /* JXL_RESIZABLE_PARALLEL_RUNNER_H_ */
+
+/** @}*/
