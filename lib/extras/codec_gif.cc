@@ -140,12 +140,10 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
   io->SetSize(gif->SWidth, gif->SHeight);
   ImageF alpha(gif->SWidth, gif->SHeight);
   GifColorType background_color;
-  if (gif->SColorMap == nullptr) {
+  if (gif->SColorMap == nullptr ||
+      gif->SBackGroundColor >= gif->SColorMap->ColorCount) {
     background_color = {0, 0, 0};
   } else {
-    if (gif->SBackGroundColor >= gif->SColorMap->ColorCount) {
-      return JXL_FAILURE("GIF specifies out-of-bounds background color");
-    }
     background_color = gif->SColorMap->Colors[gif->SBackGroundColor];
   }
   FillPlane<float>(background_color.Red, &canvas.Plane(0));
