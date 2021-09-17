@@ -161,6 +161,7 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/modular/modular_image.h
   jxl/modular/options.h
   jxl/modular/transform/palette.h
+  jxl/modular/transform/rct.cc
   jxl/modular/transform/rct.h
   jxl/modular/transform/squeeze.cc
   jxl/modular/transform/squeeze.h
