@@ -92,7 +92,7 @@ typedef struct {
 /** Basic image information. This information is available from the file
  * signature and first part of the codestream header.
  */
-typedef struct JxlBasicInfo {
+typedef struct {
   /* TODO(lode): need additional fields for (transcoded) JPEG? For reusable
    * fields orientation must be read from Exif APP1. For has_icc_profile: must
    * look up where ICC profile is guaranteed to be in a JPEG file to be able to
