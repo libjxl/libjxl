@@ -59,4 +59,17 @@ Image &Image::operator=(Image &&other) noexcept {
   return *this;
 }
 
+Image Image::clone() {
+  Image c(w, h, bitdepth, 0);
+  c.nb_meta_channels = nb_meta_channels;
+  c.error = error;
+  c.transform = transform;
+  for (Channel &ch : channel) {
+    Channel a(ch.w, ch.h, ch.hshift, ch.vshift);
+    CopyImageTo(ch.plane, &a.plane);
+    c.channel.push_back(std::move(a));
+  }
+  return c;
+}
+
 }  // namespace jxl

@@ -822,9 +822,8 @@ Status FrameDecoder::Flush() {
   // support for per-group decoding.
 
   // undo global modular transforms and copy int pixel buffers to float ones
-  JXL_RETURN_IF_ERROR(
-      modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_, decoded_));
-
+  JXL_RETURN_IF_ERROR(modular_frame_decoder_.FinalizeDecoding(
+      dec_state_, pool_, decoded_, is_finalized_));
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
                                             /*force_fir=*/false,
                                             /*skip_blending=*/false));

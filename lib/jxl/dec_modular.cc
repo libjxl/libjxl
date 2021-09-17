@@ -592,9 +592,10 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
 
 Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
                                              jxl::ThreadPool* pool,
-                                             ImageBundle* output) {
+                                             ImageBundle* output,
+                                             bool inplace) {
   if (!use_full_image) return true;
-  Image& gi = full_image;
+  Image gi = (inplace ? std::move(full_image) : full_image.clone());
   size_t xsize = gi.w;
   size_t ysize = gi.h;
 
