@@ -239,6 +239,7 @@ void MyOutputMessage(j_common_ptr cinfo) {
 Status DecodeImageJPGCoefficients(Span<const uint8_t> bytes, CodecInOut* io) {
   // Use brunsli JPEG decoder to read quantized coefficients.
   if (!jpeg::DecodeImageJPG(bytes, io)) {
+    if (!IsJPG(bytes)) return false;
     fprintf(stderr, "Corrupt or CMYK JPEG.\n");
     return false;
   }
