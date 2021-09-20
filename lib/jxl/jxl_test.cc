@@ -21,6 +21,7 @@
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/codec_y4m_testonly.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_file.h"
@@ -1181,7 +1182,7 @@ TEST(JxlTest, RoundtripYCbCr420) {
   const PaddedBytes yuv420 =
       ReadTestData("imagecompression.info/flower_foveon.png.ffmpeg.y4m");
   CodecInOut io2;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(yuv420), &io2, pool));
+  ASSERT_TRUE(test::DecodeImageY4M(Span<const uint8_t>(yuv420), &io2));
 
   CompressParams cparams = CParamsForLossless();
   cparams.speed_tier = SpeedTier::kThunder;
