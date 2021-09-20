@@ -22,7 +22,7 @@ constexpr static int64_t kPredictionRound = ((1 << kPredExtraBits) >> 1) - 1;
 constexpr static size_t kNumProperties = 1;
 
 struct Header : public Fields {
-  const char *Name() const override { return "WeightedPredictorHeader"; }
+  JXL_FIELDS_NAME(WeightedPredictorHeader)
   // TODO(janwas): move to cc file, avoid including fields.h.
   Header() { Bundle::Init(this); }
 
