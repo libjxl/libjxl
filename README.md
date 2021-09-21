@@ -154,6 +154,7 @@ format: Cloudinary and Google.
 
 ### Codec description
 
+*   [JPEG XL Format Overview](doc/format_overview.md)
 *   [Introductory paper](https://www.spiedigitallibrary.org/proceedings/Download?fullDOI=10.1117%2F12.2529237) (open-access)
 *   [XL Overview](doc/xl_overview.md) - a brief introduction to the source code modules
 *   [JPEG XL white paper](http://ds.jpeg.org/whitepapers/jpeg-xl-whitepaper.pdf)
