@@ -537,8 +537,8 @@ JxlDecoderStatus JxlDecoderDefaultPixelFormat(const JxlDecoder* dec,
   return JXL_DEC_SUCCESS;
 }
 
-void JxlDecoderReset(JxlDecoder* dec) {
-  dec->thread_pool.reset();
+// Resets the state that must be reset for both Rewind and Reset
+void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->stage = DecoderStage::kInited;
   dec->got_signature = false;
   dec->first_codestream_seen = false;
@@ -556,9 +556,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->codestream_pos = 0;
   dec->codestream_begin = 0;
   dec->codestream_end = 0;
-  dec->keep_orientation = false;
   dec->events_wanted = 0;
-  dec->orig_events_wanted = 0;
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
   dec->have_container = 0;
   dec->preview_out_buffer_set = false;
@@ -593,6 +591,14 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->skipping_frame = false;
   dec->internal_frames = 0;
   dec->external_frames = 0;
+}
+
+void JxlDecoderReset(JxlDecoder* dec) {
+  JxlDecoderRewindDecodingState(dec);
+
+  dec->thread_pool.reset();
+  dec->keep_orientation = false;
+  dec->orig_events_wanted = 0;
   dec->frame_references.clear();
   dec->frame_saved_as.clear();
   dec->frame_external_to_internal.clear();
@@ -624,27 +630,7 @@ void JxlDecoderDestroy(JxlDecoder* dec) {
   }
 }
 
-void JxlDecoderRewind(JxlDecoder* dec) {
-  int keep_orientation = dec->keep_orientation;
-  int events_wanted = dec->orig_events_wanted;
-  std::vector<int> frame_references;
-  std::vector<int> frame_saved_as;
-  std::vector<size_t> frame_external_to_internal;
-  std::vector<char> frame_required;
-  frame_references.swap(dec->frame_references);
-  frame_saved_as.swap(dec->frame_saved_as);
-  frame_external_to_internal.swap(dec->frame_external_to_internal);
-  frame_required.swap(dec->frame_required);
-
-  JxlDecoderReset(dec);
-  dec->keep_orientation = keep_orientation;
-  dec->events_wanted = events_wanted;
-  dec->orig_events_wanted = events_wanted;
-  frame_references.swap(dec->frame_references);
-  frame_saved_as.swap(dec->frame_saved_as);
-  frame_external_to_internal.swap(dec->frame_external_to_internal);
-  frame_required.swap(dec->frame_required);
-}
+void JxlDecoderRewind(JxlDecoder* dec) { JxlDecoderRewindDecodingState(dec); }
 
 void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
   // Increment amount, rather than set it: making the amount smaller is
@@ -678,7 +664,9 @@ void JxlDecoderSkipFrames(JxlDecoder* dec, size_t amount) {
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetParallelRunner(JxlDecoder* dec, JxlParallelRunner parallel_runner,
                             void* parallel_runner_opaque) {
-  if (dec->thread_pool) return JXL_API_ERROR("parallel runner already set");
+  if (dec->stage != DecoderStage::kInited) {
+    return JXL_API_ERROR("parallel_runner must be set before starting");
+  }
   dec->thread_pool.reset(
       new jxl::ThreadPool(parallel_runner, parallel_runner_opaque));
   return JXL_DEC_SUCCESS;

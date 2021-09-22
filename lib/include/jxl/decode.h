@@ -282,11 +282,11 @@ typedef enum {
  * the beginning of the file and the decoder will emit events from the beginning
  * again. When rewinding (as opposed to JxlDecoderReset), the decoder can keep
  * state about the image, which it can use to skip to a requested frame more
- * efficiently with JxlDecoderSkipFrames. After rewind,
- * JxlDecoderSubscribeEvents can be used again, and it is feasible to leave out
- * events that were already handled before, such as JXL_DEC_BASIC_INFO and
- * JXL_DEC_COLOR_ENCODING, since they will provide the same information as
- * before.
+ * efficiently with JxlDecoderSkipFrames. Settings such as parallel runner or
+ * subscribed events are kept. After rewind, JxlDecoderSubscribeEvents can be
+ * used again, and it is feasible to leave out events that were already handled
+ * before, such as JXL_DEC_BASIC_INFO and JXL_DEC_COLOR_ENCODING, since they
+ * will provide the same information as before.
  * @param dec decoder object
  */
 JXL_EXPORT void JxlDecoderRewind(JxlDecoder* dec);
