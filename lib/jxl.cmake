@@ -283,6 +283,8 @@ set(JPEGXL_INTERNAL_SOURCES_ENC
   jxl/jpeg/enc_jpeg_huffman_decode.cc
   jxl/jpeg/enc_jpeg_huffman_decode.h
   jxl/linalg.cc
+  jxl/modular/encoding/enc_debug_tree.cc
+  jxl/modular/encoding/enc_debug_tree.h
   jxl/modular/encoding/enc_encoding.cc
   jxl/modular/encoding/enc_encoding.h
   jxl/modular/encoding/enc_ma.cc

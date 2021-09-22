@@ -16,6 +16,7 @@
 #include "lib/jxl/enc_frame.h"
 #include "lib/jxl/enc_heuristics.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/splines.h"
@@ -351,29 +352,6 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   JXL_RETURN_IF_ERROR(
       ParseNode(tok, tree, spline_data, cparams, W, H, io, have_next, x0, y0));
   return true;
-}
-
-void PrintTree(const Tree& tree, const std::string& path) {
-  FILE* f = fopen((path + ".dot").c_str(), "w");
-  fprintf(f, "digraph{\n");
-  for (size_t cur = 0; cur < tree.size(); cur++) {
-    if (tree[cur].property < 0) {
-      fprintf(f, "n%05zu [label=\"%s%+lld\"];\n", cur,
-              PredictorName(tree[cur].predictor),
-              static_cast<long long>(tree[cur].predictor_offset));
-    } else {
-      fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
-              PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
-      fprintf(f, "n%05zu -> n%05d [style=dashed];\n", cur, tree[cur].rchild);
-      fprintf(f, "n%05zu -> n%05d;\n", cur, tree[cur].lchild);
-    }
-  }
-  fprintf(f, "}\n");
-  fclose(f);
-  std::string command = "dot " + path + ".dot -T png -o " + path + ".png";
-  if (system(command.c_str()) != 0) {
-    JXL_ABORT("Command failed: %s", command.c_str());
-  }
 }
 
 class Heuristics : public DefaultEncoderHeuristics {
