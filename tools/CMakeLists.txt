@@ -10,7 +10,7 @@ if(WIN32)
   if (NOT Qt5_FOUND)
     message(WARNING "Qt5 was not found.")
   else()
-    add_library(icc_detect STATIC
+    add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_win32.cc
       icc_detect/icc_detect.h
     )
@@ -24,7 +24,7 @@ if(WIN32)
 elseif(APPLE)
   find_package(Qt5 QUIET COMPONENTS Widgets)
   if (Qt5_FOUND)
-    add_library(icc_detect STATIC
+    add_library(icc_detect STATIC EXCLUDE_FROM_ALL
       icc_detect/icc_detect_empty.cc
       icc_detect/icc_detect.h
     )
@@ -46,7 +46,7 @@ else()
     set(CMAKE_MODULE_PATH ${ECM_FIND_MODULE_DIR})
     find_package(XCB COMPONENTS XCB)
     if (XCB_FOUND)
-      add_library(icc_detect STATIC
+      add_library(icc_detect STATIC EXCLUDE_FROM_ALL
         icc_detect/icc_detect_x11.cc
         icc_detect/icc_detect.h
       )
@@ -56,21 +56,15 @@ else()
 endif()
 endif()  # JPEGXL_ENABLE_VIEWERS
 
-# The JPEGXL_VERSION is set from the builders.
-if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
-  set(JPEGXL_VERSION "(unknown)")
-endif()
+# Tools are added conditionally below.
+set(TOOL_BINARIES)
 
-set(TOOL_BINARIES
-  cjxl
-  djxl
-  # Other tools are added conditionally below.
-)
-
-add_library(jxl_tool STATIC
+add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
+  codec_config.cc
   cpu/cpu.cc
   cpu/os_specific.cc
+  tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")
 target_link_libraries(jxl_tool jxl-static)
@@ -78,68 +72,118 @@ target_link_libraries(jxl_tool jxl-static)
 target_include_directories(jxl_tool
   PUBLIC "${PROJECT_SOURCE_DIR}")
 
-# Main compressors.
-add_library(cjxltool STATIC
-  cjxl.cc
-  codec_config.cc
-  speed_stats.cc
-)
-target_compile_definitions(cjxltool
-  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
-target_include_directories(cjxltool
-  PUBLIC "${PROJECT_SOURCE_DIR}")
-target_link_libraries(cjxltool
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-)
+# The JPEGXL_VERSION is set from the builders.
+if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
+  find_package(Git QUIET)
+  execute_process(
+      COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+      OUTPUT_VARIABLE GIT_REV
+      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+      ERROR_QUIET)
+  string(STRIP "${GIT_REV}" GIT_REV)
+  if(GIT_REV STREQUAL "")
+    set(JPEGXL_VERSION "(unknown)")
+  endif()
+endif()
+
+if(NOT DEFINED JPEGXL_VERSION OR JPEGXL_VERSION STREQUAL "")
+  # We are building from a git environment and the user didn't set
+  # JPEGXL_VERSION. Make a target that computes the GIT_REV at build-time always
+  # but only updates the file if it changed. This allows rebuilds without
+  # modifying cmake files to update the JPEGXL_VERSION.
+  message(STATUS "Building with JPEGXL_VERSION=${GIT_REV} (auto-updated)")
+  add_custom_target(
+    tool_version_git
+    ${CMAKE_COMMAND}
+      -D JPEGXL_ROOT_DIR=${CMAKE_SOURCE_DIR}
+      -D DST=${CMAKE_CURRENT_BINARY_DIR}/tool_version_git.h
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/git_version.cmake
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/tool_version_git.h"
+  )
+  add_dependencies(jxl_tool tool_version_git)
+
+  set_source_files_properties(tool_version.cc PROPERTIES
+    COMPILE_DEFINITIONS JPEGXL_VERSION_FROM_GIT=1)
+  target_include_directories(jxl_tool PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  # Note: Ninja looks for dependencies on the jxl_tool target before running
+  # the tool_version_git targets, so when updating the tool_version_git.h the
+  # jxl_tool target is not rebuilt. This forces to generate it at configure time
+  # if needed.
+  execute_process(
+    COMMAND ${CMAKE_COMMAND}
+      -D JPEGXL_ROOT_DIR=${CMAKE_SOURCE_DIR}
+      -D DST=${CMAKE_CURRENT_BINARY_DIR}/tool_version_git.h
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/git_version.cmake)
+else()
+  message(STATUS "Building with JPEGXL_VERSION=${JPEGXL_VERSION}")
+  set_source_files_properties(tool_version.cc PROPERTIES
+    COMPILE_DEFINITIONS JPEGXL_VERSION=\"${JPEGXL_VERSION}\")
+endif()
+
+if(JPEGXL_ENABLE_TOOLS)
+  list(APPEND TOOL_BINARIES
+    cjxl
+    djxl
+  )
+
+  # Main compressor.
+  add_executable(cjxl
+    cjxl.cc
+    speed_stats.cc
+    cjxl_main.cc
+  )
+  target_link_libraries(cjxl
+      box
+      jxl-static
+      jxl_extras-static
+      jxl_threads-static
+  )
 
 
-add_executable(cjxl cjxl_main.cc)
-target_link_libraries(cjxl cjxltool)
+  # Main decompressor.
+  add_library(djxltool STATIC
+    djxl.cc
+    speed_stats.cc
+  )
+  target_link_libraries(djxltool
+      box
+      jxl-static
+      jxl_extras-static
+      jxl_threads-static
+  )
 
-# Main decompressor.
-add_library(djxltool STATIC
-  djxl.cc
-  speed_stats.cc
-)
-target_link_libraries(djxltool
-    box
-    jxl-static
-    jxl_extras-static
-    jxl_threads-static
-)
-target_compile_definitions(djxltool
-  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
-
-add_executable(djxl
-    codec_config.cc
-    djxl_main.cc
-)
+  add_executable(djxl
+      djxl_main.cc
+  )
 target_link_libraries(djxl djxltool)
-target_compile_definitions(djxl
-  PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
+endif()  # JPEGXL_ENABLE_TOOLS
 
 # Other developer tools.
 if(${JPEGXL_ENABLE_DEVTOOLS})
   list(APPEND TOOL_BINARIES
     fuzzer_corpus
+    add_noise
     butteraugli_main
     decode_and_encode
     epf_main
+    pq_to_hlg
+    render_hlg
+    tone_map
     ssimulacra_main
     xyb_range
     jxl_from_tree
   )
 
   add_executable(fuzzer_corpus fuzzer_corpus.cc)
-  target_link_libraries(fuzzer_corpus cjxltool)
 
+  add_executable(add_noise add_noise.cc)
   add_executable(ssimulacra_main ssimulacra_main.cc ssimulacra.cc)
   add_executable(butteraugli_main butteraugli_main.cc)
   add_executable(decode_and_encode decode_and_encode.cc)
   add_executable(epf_main epf_main.cc epf.cc epf.h)
+  add_executable(pq_to_hlg hdr/pq_to_hlg.cc)
+  add_executable(render_hlg hdr/render_hlg.cc)
+  add_executable(tone_map hdr/tone_map.cc)
   add_executable(xyb_range xyb_range.cc)
   add_executable(jxl_from_tree jxl_from_tree.cc)
 endif()  # JPEGXL_ENABLE_DEVTOOLS
@@ -164,15 +208,11 @@ if(${JPEGXL_ENABLE_BENCHMARK})
     benchmark/benchmark_codec_jxl.h
     benchmark/benchmark_codec_png.cc
     benchmark/benchmark_codec_png.h
-    codec_config.cc
-    codec_config.h
     speed_stats.cc
     speed_stats.h
     ../third_party/dirent.cc
   )
   target_link_libraries(benchmark_xl Threads::Threads)
-  target_compile_definitions(benchmark_xl
-    PRIVATE "-DJPEGXL_VERSION=\"${JPEGXL_VERSION}\"")
   if(MINGW)
   # MINGW doesn't support glob.h.
   target_compile_definitions(benchmark_xl PRIVATE "-DHAS_GLOB=0")
@@ -229,6 +269,7 @@ foreach(BINARY IN LISTS TOOL_BINARIES)
   target_link_libraries("${BINARY}" box jxl-static jxl_extras-static jxl_threads-static jxl_tool)
 endforeach()
 install(TARGETS ${TOOL_BINARIES} RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+message(STATUS "Building tools: ${TOOL_BINARIES}")
 
 set(FUZZER_BINARIES
   color_encoding_fuzzer
@@ -238,6 +279,7 @@ set(FUZZER_BINARIES
   fields_fuzzer
   rans_fuzzer
   set_from_bytes_fuzzer
+  transforms_fuzzer
 )
 
 # Fuzzers.
@@ -253,20 +295,20 @@ foreach(FUZZER IN LISTS FUZZER_BINARIES)
     add_executable("${BINARY}" EXCLUDE_FROM_ALL
         "fuzzer_stub.cc" "${FUZZER}.cc")
   endif()  # JPEGXL_ENABLE_FUZZERS
-    target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
-    if(${FUZZER} STREQUAL djxl_fuzzer)
-      target_link_libraries("${BINARY}"
-        jxl_dec-static
-        jxl_threads-static
-      )
-    else()
-      target_link_libraries("${BINARY}"
-        jxl-static
-        jxl_extras-static
-        jxl_threads-static
-        jxl_tool
-      )
-    endif()
+  target_include_directories("${BINARY}" PRIVATE "${CMAKE_SOURCE_DIR}")
+  if(${FUZZER} STREQUAL djxl_fuzzer)
+    target_link_libraries("${BINARY}"
+      jxl_dec-static
+      jxl_threads-static
+    )
+  else()
+    target_link_libraries("${BINARY}"
+      jxl-static
+      jxl_extras-static
+      jxl_threads-static
+      jxl_tool
+    )
+  endif()
 endforeach()
 
 # EMSCRIPTEN doesn't support dynamic libraries so testing for linkage there
@@ -328,6 +370,7 @@ set_target_properties(jxl_emcc PROPERTIES LINK_FLAGS "\
 ")
 endif ()  # JPEGXL_EMSCRIPTEN
 
+if(JPEGXL_ENABLE_JNI)
 find_package(JNI QUIET)
 find_package(Java QUIET)
 
@@ -368,3 +411,4 @@ if ("${JNI_FOUND}" AND "${Java_FOUND}")
     )
   endif()  # JPEGXL_ENABLE_FUZZERS
 endif()  # JNI_FOUND & Java_FOUND
+endif()  # JPEGXL_ENABLE_JNI

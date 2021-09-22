@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/override.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
@@ -116,8 +117,8 @@ struct BenchmarkArgs {
 
   float intensity_target;
 
-  std::string dec_hints_string;
-  jxl::DecoderHints dec_hints;
+  std::string color_hints_string;
+  jxl::ColorHints color_hints;
 
   size_t override_bitdepth;
 

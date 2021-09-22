@@ -30,9 +30,7 @@
    JXL_ENC_ERROR)
 #endif  // JXL_CRASH_ON_ERROR
 
-namespace jxl {
-
-}  // namespace jxl
+namespace jxl {}  // namespace jxl
 
 uint32_t JxlEncoderVersion(void) {
   return JPEGXL_MAJOR_VERSION * 1000000 + JPEGXL_MINOR_VERSION * 1000 +
@@ -74,8 +72,8 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
     // TODO(lode): preview should be added here if a preview image is added
 
-	// Each frame should start on byte boundaries.
-	writer.ZeroPadToByte();
+    // Each frame should start on byte boundaries.
+    writer.ZeroPadToByte();
   }
 
   // TODO(zond): Handle progressive mode like EncodeFile does it.
@@ -144,11 +142,38 @@ JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
   }
   jxl::PaddedBytes icc;
   icc.assign(icc_profile, icc_profile + size);
-  if (!enc->metadata.m.color_encoding.SetICCRaw(std::move(icc))) {
+  if (!enc->metadata.m.color_encoding.SetICC(std::move(icc))) {
     return JXL_ENC_ERROR;
   }
   enc->color_encoding_set = true;
   return JXL_ENC_SUCCESS;
+}
+
+void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
+  info->have_container = JXL_FALSE;
+  info->xsize = 0;
+  info->ysize = 0;
+  info->bits_per_sample = 8;
+  info->exponent_bits_per_sample = 0;
+  info->intensity_target = 255.f;
+  info->min_nits = 0.f;
+  info->relative_to_max_display = JXL_FALSE;
+  info->linear_below = 0.f;
+  info->uses_original_profile = JXL_FALSE;
+  info->have_preview = JXL_FALSE;
+  info->have_animation = JXL_FALSE;
+  info->orientation = JXL_ORIENT_IDENTITY;
+  info->num_color_channels = 3;
+  info->num_extra_channels = 0;
+  info->alpha_bits = 0;
+  info->alpha_exponent_bits = 0;
+  info->alpha_premultiplied = JXL_FALSE;
+  info->preview.xsize = 0;
+  info->preview.ysize = 0;
+  info->animation.tps_numerator = 10;
+  info->animation.tps_denominator = 1;
+  info->animation.num_loops = 0;
+  info->animation.have_timecodes = JXL_FALSE;
 }
 
 JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
@@ -156,24 +181,20 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   if (!enc->metadata.size.Set(info->xsize, info->ysize)) {
     return JXL_ENC_ERROR;
   }
-  if (info->exponent_bits_per_sample) {
-    if (info->exponent_bits_per_sample != 8) return JXL_ENC_NOT_SUPPORTED;
-    if (info->bits_per_sample == 32) {
-      enc->metadata.m.SetFloat32Samples();
+  if (!info->exponent_bits_per_sample) {
+    if (info->bits_per_sample > 0 && info->bits_per_sample <= 24) {
+      enc->metadata.m.SetUintSamples(info->bits_per_sample);
     } else {
-      return JXL_ENC_NOT_SUPPORTED;
+      return JXL_ENC_ERROR;
     }
+  } else if (info->bits_per_sample == 32 &&
+             info->exponent_bits_per_sample == 8) {
+    enc->metadata.m.SetFloat32Samples();
+  } else if (info->bits_per_sample == 16 &&
+             info->exponent_bits_per_sample == 5) {
+    enc->metadata.m.SetFloat16Samples();
   } else {
-    switch (info->bits_per_sample) {
-      case 32:
-      case 16:
-      case 8:
-        enc->metadata.m.SetUintSamples(info->bits_per_sample);
-        break;
-      default:
-        return JXL_ENC_ERROR;
-        break;
-    }
+    return JXL_ENC_NOT_SUPPORTED;
   }
   if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
     return JXL_ENC_NOT_SUPPORTED;
@@ -193,6 +214,11 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
       break;
   }
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
+  if (info->orientation > 0 && info->orientation <= 8) {
+    enc->metadata.m.orientation = info->orientation;
+  } else {
+    return JXL_API_ERROR("Invalid value for orientation field");
+  }
   enc->basic_info_set = true;
   return JXL_ENC_SUCCESS;
 }
@@ -221,7 +247,7 @@ JxlEncoderStatus JxlEncoderOptionsSetLossless(JxlEncoderOptions* options,
 
 JxlEncoderStatus JxlEncoderOptionsSetEffort(JxlEncoderOptions* options,
                                             const int effort) {
-  if (effort < 3 || effort > 9) {
+  if (effort < 1 || effort > 9) {
     return JXL_ENC_ERROR;
   }
   options->values.cparams.speed_tier = static_cast<jxl::SpeedTier>(10 - effort);
@@ -317,10 +343,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
 
   if (!options->enc->basic_info_set) {
     JxlBasicInfo basic_info;
-    basic_info.exponent_bits_per_sample = 0;
-    basic_info.bits_per_sample = 8;
-    basic_info.alpha_bits = 0;
-    basic_info.alpha_exponent_bits = 0;
+    JxlEncoderInitBasicInfo(&basic_info);
     basic_info.xsize = io.Main().jpeg_data->width;
     basic_info.ysize = io.Main().jpeg_data->height;
     basic_info.uses_original_profile = true;
@@ -384,18 +407,15 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
       // default move constructor there.
       jxl::JxlEncoderQueuedFrame{options->values,
                                  jxl::ImageBundle(&options->enc->metadata.m)});
-  if (!queued_frame) {
-    return JXL_ENC_ERROR;
-  }
 
-  if (pixel_format->data_type == JXL_TYPE_FLOAT16) {
-    // float16 is currently only supported in the decoder
+  if (!queued_frame) {
     return JXL_ENC_ERROR;
   }
 
   jxl::ColorEncoding c_current;
   if (options->enc->metadata.m.xyb_encoded) {
-    if (pixel_format->data_type == JXL_TYPE_FLOAT) {
+    if ((pixel_format->data_type == JXL_TYPE_FLOAT) ||
+        (pixel_format->data_type == JXL_TYPE_FLOAT16)) {
       c_current =
           jxl::ColorEncoding::LinearSRGB(pixel_format->num_channels < 3);
     } else {

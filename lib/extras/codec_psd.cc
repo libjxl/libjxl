@@ -28,6 +28,7 @@
 #include "lib/jxl/luminance.h"
 
 namespace jxl {
+namespace extras {
 namespace {
 
 uint64_t get_be_int(int bytes, const uint8_t*& pos, const uint8_t* maxpos) {
@@ -187,7 +188,8 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
 
 }  // namespace
 
-Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
+Status DecodeImagePSD(const Span<const uint8_t> bytes,
+                      const ColorHints& color_hints, ThreadPool* pool,
                       CodecInOut* io) {
   const uint8_t* pos = bytes.data();
   const uint8_t* maxpos = bytes.data() + bytes.size();
@@ -229,6 +231,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
   bool hasmergeddata = true;
   bool have_alpha = false;
   bool merged_has_alpha = false;
+  bool color_already_set = false;
   size_t metalength = get_be_int(4, pos, maxpos);
   const uint8_t* metaoffset = pos;
   while (pos < metaoffset + metalength) {
@@ -257,6 +260,7 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
       if (!io->metadata.m.color_encoding.SetICC(std::move(icc))) {
         return JXL_FAILURE("PSD: Invalid color profile");
       }
+      color_already_set = true;
     } else if (id == 1057) {  // compatibility mode or not?
       if (get_be_int(4, pos, maxpos) != 1) {
         return JXL_FAILURE("PSD: expected version=1 in id=1057 resource block");
@@ -309,6 +313,9 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes, ThreadPool* pool,
     pos += blocklength;
     if (blocklength & 1) pos++;  // padding again
   }
+
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, color_already_set,
+                                      /*is_gray=*/false, io));
 
   size_t layerlength = get_be_int(4 * version, pos, maxpos);
   const uint8_t* after_layers_pos = pos + layerlength;
@@ -606,4 +613,5 @@ Status EncodeImagePSD(const CodecInOut* io, const ColorEncoding& c_desired,
   return JXL_FAILURE("PSD encoding not yet implemented");
 }
 
+}  // namespace extras
 }  // namespace jxl

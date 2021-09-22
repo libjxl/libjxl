@@ -105,8 +105,11 @@ class ModularFrameDecoder {
                                  BitReader* br, QuantEncoding* encoding,
                                  size_t idx,
                                  ModularFrameDecoder* modular_frame_decoder);
+  // if inplace is true, this can only be called once
+  // if it is false, it can be called multiple times (e.g. for progressive
+  // steps)
   Status FinalizeDecoding(PassesDecoderState* dec_state, jxl::ThreadPool* pool,
-                          ImageBundle* output);
+                          ImageBundle* output, bool inplace);
   bool have_dc() const { return have_something; }
   void MaybeDropFullImage();
 
@@ -121,6 +124,7 @@ class ModularFrameDecoder {
   bool do_color;
   bool have_something;
   bool use_full_image = true;
+  bool all_same_shift;
   Tree tree;
   ANSCode code;
   std::vector<uint8_t> context_map;

@@ -50,7 +50,7 @@ int main(int argc, const char** argv) {
 
   jxl::ThreadPoolInternal pool(num_threads);
   jxl::CodecInOut io;
-  if (!jxl::SetFromFile(input_filename, &io, &pool)) {
+  if (!jxl::SetFromFile(input_filename, jxl::ColorHints(), &io, &pool)) {
     fprintf(stderr, "Failed to read from \"%s\".\n", input_filename);
     return EXIT_FAILURE;
   }

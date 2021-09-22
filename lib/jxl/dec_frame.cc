@@ -288,7 +288,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   }
   JXL_RETURN_IF_ERROR(
       InitializePassesSharedState(frame_header_, &dec_state_->shared_storage));
-  dec_state_->Init();
+  JXL_RETURN_IF_ERROR(dec_state_->Init());
   modular_frame_decoder_.Init(frame_dim_);
 
   if (decoded->IsJPEG()) {
@@ -358,6 +358,7 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   } else {
     shared.image_features.patches.Clear();
   }
+  shared.image_features.splines.Clear();
   if (shared.frame_header.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.Decode(
         br, frame_dim_.xsize * frame_dim_.ysize));
@@ -370,6 +371,11 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   if (frame_header_.encoding == FrameEncoding::kVarDCT) {
     JXL_RETURN_IF_ERROR(
         jxl::DecodeGlobalDCInfo(br, decoded_->IsJPEG(), dec_state_, pool_));
+  }
+  // Splines' draw cache uses the color correlation map.
+  if (shared.frame_header.flags & FrameHeader::kSplines) {
+    JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
+        frame_dim_.xsize, frame_dim_.ysize, dec_state_->shared->cmap));
   }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
       br, frame_header_, allow_partial_dc_global_);
@@ -434,11 +440,16 @@ void FrameDecoder::AllocateOutput() {
       dec_state_->extra_channels.emplace_back(
           DivCeil(frame_dim_.xsize_upsampled_padded, ecups),
           DivCeil(frame_dim_.ysize_upsampled_padded, ecups));
-#if MEMORY_SANITIZER
+#if JXL_MEMORY_SANITIZER
       // Avoid errors due to loading vectors on the outermost padding.
+      // Upsample of extra channels requires this padding to be initialized.
+      // TODO(deymo): Remove this and use rects up to {x,y}size_upsampled
+      // instead of the padded one.
       for (size_t y = 0; y < DivCeil(frame_dim_.ysize_upsampled_padded, ecups);
            y++) {
-        for (size_t x = DivCeil(frame_dim_.xsize_upsampled, ecups);
+        for (size_t x = (y < DivCeil(frame_dim_.ysize_upsampled, ecups)
+                             ? DivCeil(frame_dim_.xsize_upsampled, ecups)
+                             : 0);
              x < DivCeil(frame_dim_.xsize_upsampled_padded, ecups); x++) {
           dec_state_->extra_channels.back().Row(y)[x] =
               msan::kSanitizerSentinel;
@@ -811,9 +822,8 @@ Status FrameDecoder::Flush() {
   // support for per-group decoding.
 
   // undo global modular transforms and copy int pixel buffers to float ones
-  JXL_RETURN_IF_ERROR(
-      modular_frame_decoder_.FinalizeDecoding(dec_state_, pool_, decoded_));
-
+  JXL_RETURN_IF_ERROR(modular_frame_decoder_.FinalizeDecoding(
+      dec_state_, pool_, decoded_, is_finalized_));
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
                                             /*force_fir=*/false,
                                             /*skip_blending=*/false));

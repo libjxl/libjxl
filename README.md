@@ -1,14 +1,24 @@
 # JPEG XL reference implementation
 
+[![Build&Test](https://github.com/libjxl/libjxl/actions/workflows/build_test.yml/badge.svg)](
+https://github.com/libjxl/libjxl/actions/workflows/build_test.yml)
+[![Releases](https://github.com/libjxl/libjxl/actions/workflows/release.yaml/badge.svg)](
+https://github.com/libjxl/libjxl/actions/workflows/release.yaml)
+[![Doc](https://readthedocs.org/projects/libjxl/badge/?version=latest)](
+https://libjxl.readthedocs.io/en/latest/?badge=latest)
+[![codecov](https://codecov.io/gh/libjxl/libjxl/branch/main/graph/badge.svg)](
+https://codecov.io/gh/libjxl/libjxl)
+
 <img src="doc/jxl.svg" width="100" align="right" alt="JXL logo">
 
 This repository contains a reference implementation of JPEG XL (encoder and
-decoder), called `libjxl`.
+decoder), called `libjxl`. This software library is
+[used by many applications that support JPEG XL](doc/software_support.md).
 
-JPEG XL is in the final stages of standardization and its codestream format is
-frozen.
+JPEG XL is in the final stages of standardization and its codestream and file format
+are frozen.
 
-The libraries API, command line options and tools in this repository are subject
+The library API, command line options, and tools in this repository are subject
 to change, however files encoded with `cjxl` conform to the JPEG XL format
 specification and can be decoded with current and future `djxl` decoders or
 `libjxl` decoding library.
@@ -24,9 +34,12 @@ git clone https://github.com/libjxl/libjxl.git --recursive
 ```
 
 This repository uses git submodules to handle some third party dependencies
-under `third_party/`, that's why is important to pass `--recursive`. If you
+under `third_party`, that's why is important to pass `--recursive`. If you
 didn't check out with `--recursive`, or any submodule has changed, run:
-`git submodule update --init --recursive`.
+
+```bash
+git submodule update --init --recursive
+```
 
 Important: If you downloaded a zip file or tarball from the web interface you
 won't get the needed submodules and the code will not compile. You can download
@@ -50,11 +63,11 @@ sudo apt install libgif-dev libjpeg-dev libopenexr-dev libpng-dev libwebp-dev
 ```
 
 We recommend using a recent Clang compiler (version 7 or newer), for that
-install clang and set `CC` and `CXX` variables. For example, with clang-7:
+install clang and set `CC` and `CXX` variables.
 
 ```bash
-sudo apt install clang-7
-export CC=clang-7 CXX=clang++-7
+sudo apt install clang
+export CC=clang CXX=clang++
 ```
 
 ### Building
@@ -112,15 +125,19 @@ For more comprehensive benchmarking options, see the
 We build a common environment based on Debian/Ubuntu using Docker. Other
 systems may have different combinations of versions and dependencies that
 have not been tested and may not work. For those cases we recommend using the
-Docker environment as explained in the
+Docker container as explained in the
 [step by step guide](doc/developing_in_docker.md).
 
 ### Building JPEG XL for developers
 
-For experienced developers, we also provide build instructions for an [up to
-date Debian-based Linux](doc/developing_in_debian.md) and [64-bit
-Windows](doc/developing_in_windows.md). If you encounter any difficulties,
-please use Docker instead.
+For experienced developers, we provide build instructions for several other environments:
+
+*   [Building on Debian](doc/developing_in_debian.md)
+*   Building on Windows with [vcpkg](doc/developing_in_windows_vcpkg.md) (Visual Studio 2019)
+*   Building on Windows with [MSYS2](doc/developing_in_windows_msys.md)
+*   [Cross Compiling for Windows with Crossroad](doc/developing_with_crossroad.md)
+
+If you encounter any difficulties, please use Docker instead.
 
 ## License
 
@@ -144,12 +161,14 @@ format: Cloudinary and Google.
 *   [JPEG XL community website](https://jpegxl.info)
 
 ### Development process
-*   [Docker setup - **start here**](doc/developing_in_docker.md)
-*   [Building on Debian](doc/developing_in_debian.md) - for experts only
-*   [Building on Windows](doc/developing_in_windows.md) - for experts only
+
 *   [More information on testing/build options](doc/building_and_testing.md)
-*   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers only
+*   [Git guide for JPEG XL](doc/developing_in_github.md) - for developers
+*   [Fuzzing](doc/fuzzing.md) - for developers
 *   [Building Web Assembly artifacts](doc/building_wasm.md)
+*   [Test coverage on Codecov.io](https://app.codecov.io/gh/libjxl/libjxl) - for
+    developers
+*   [libjxl documentation on readthedocs.io](https://libjxl.readthedocs.io/)
 
 ### Contact
 

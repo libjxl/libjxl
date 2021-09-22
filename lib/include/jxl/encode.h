@@ -4,7 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @file encode.h
+/** @addtogroup libjxl_encoder
+ * @{
+ * @file encode.h
  * @brief Encoding API for JPEG XL.
  */
 
@@ -170,14 +172,15 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * Currently only some pixel formats are supported:
  * - JXL_TYPE_UINT8
  * - JXL_TYPE_UINT16
+ * - JXL_TYPE_FLOAT16, with nominal range 0..1
  * - JXL_TYPE_FLOAT, with nominal range 0..1
  *
  * The color profile of the pixels depends on the value of uses_original_profile
  * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
  * original profile that is set with JxlEncoderSetColorEncoding or
  * JxlEncoderSetICCProfile. If false, the pixels are assumed to be nonlinear
- * sRGB for integer data types (JXL_TYPE_UINT8 and JXL_TYPE_UINT16), and linear
- * sRGB for floating point data types (JXL_TYPE_FLOAT).
+ * sRGB for integer data types (JXL_TYPE_UINT8, JXL_TYPE_UINT16), and linear
+ * sRGB for floating point data types (JXL_TYPE_FLOAT16, JXL_TYPE_FLOAT).
  *
  * @param options set of encoder options to use when encoding the frame.
  * @param pixel_format format for pixels. Object owned by the caller and its
@@ -232,6 +235,17 @@ JxlEncoderSetColorEncoding(JxlEncoder* enc, const JxlColorEncoding* color);
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
                                                     const uint8_t* icc_profile,
                                                     size_t size);
+
+/**
+ * Initializes a JxlBasicInfo struct to default values.
+ * For forwards-compatibility, this function has to be called before values
+ * are assigned to the struct fields.
+ * The default values correspond to an 8-bit RGB image, no alpha or any
+ * other extra channels.
+ *
+ * @param info global image metadata. Object owned by the caller.
+ */
+JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
 
 /**
  * Sets the global metadata of the image encoded by this encoder.
@@ -306,8 +320,9 @@ JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options, int tier);
 
 /**
  * Sets encoder effort/speed level without affecting decoding speed. Valid
- * values are, from faster to slower speed: 3:falcon 4:cheetah 5:hare 6:wombat
- * 7:squirrel 8:kitten 9:tortoise Default: squirrel (7).
+ * values are, from faster to slower speed: 1:lightning 2:thunder 3:falcon
+ * 4:cheetah 5:hare 6:wombat 7:squirrel 8:kitten 9:tortoise.
+ * Default: squirrel (7).
  *
  * @param options set of encoder options to update with the new mode.
  * @param effort the effort value to set.
@@ -377,3 +392,5 @@ JXL_EXPORT void JxlColorEncodingSetToLinearSRGB(
 #endif
 
 #endif /* JXL_ENCODE_H_ */
+
+/** @}*/

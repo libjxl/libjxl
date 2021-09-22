@@ -51,6 +51,7 @@ void RgbFromSingle(const size_t xsize,
                    const pixel_type* const JXL_RESTRICT row_in,
                    const float factor, Image3F* decoded, size_t /*c*/, size_t y,
                    Rect& rect) {
+  JXL_DASSERT(xsize <= rect.xsize());
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
@@ -73,6 +74,7 @@ void SingleFromSingle(const size_t xsize,
                       const pixel_type* const JXL_RESTRICT row_in,
                       const float factor, Image3F* decoded, size_t c, size_t y,
                       Rect& rect) {
+  JXL_DASSERT(xsize <= rect.xsize());
   const HWY_FULL(float) df;
   const Rebind<pixel_type, HWY_FULL(float)> di;  // assumes pixel_type <= float
 
@@ -159,7 +161,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
     size_t tree_size_limit =
-        1024 + frame_dim.xsize * frame_dim.ysize * nb_chans;
+        1024 + frame_dim.xsize * frame_dim.ysize * nb_chans / 16;
     JXL_RETURN_IF_ERROR(DecodeTree(reader, &tree, tree_size_limit));
     JXL_RETURN_IF_ERROR(
         DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
@@ -183,6 +185,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   Image gi(frame_dim.xsize, frame_dim.ysize, metadata.bit_depth.bits_per_sample,
            nb_chans + nb_extra);
 
+  all_same_shift = true;
   if (frame_header.color_transform == ColorTransform::kYCbCr) {
     for (size_t c = 0; c < nb_chans; c++) {
       gi.channel[c].hshift = frame_header.chroma_subsampling.HShift(c);
@@ -192,6 +195,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
       size_t ysize_shifted =
           DivCeil(frame_dim.ysize, 1 << gi.channel[c].vshift);
       gi.channel[c].shrink(xsize_shifted, ysize_shifted);
+      if (gi.channel[c].hshift != gi.channel[0].hshift ||
+          gi.channel[c].vshift != gi.channel[0].vshift)
+        all_same_shift = false;
     }
   }
 
@@ -201,6 +207,9 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
                          DivCeil(frame_dim.ysize_upsampled, ecups));
     gi.channel[c].hshift = gi.channel[c].vshift =
         CeilLog2Nonzero(ecups) - CeilLog2Nonzero(frame_header.upsampling);
+    if (gi.channel[c].hshift != gi.channel[0].hshift ||
+        gi.channel[c].vshift != gi.channel[0].vshift)
+      all_same_shift = false;
   }
 
   ModularOptions options;
@@ -225,7 +234,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
       have_something = true;
   }
   // move global transforms to groups if possible
-  if (!have_something) {
+  if (!have_something && all_same_shift) {
     if (gi.transform.size() == 1 && gi.transform[0].id == TransformId::kRCT) {
       global_transform = gi.transform;
       gi.transform.clear();
@@ -237,7 +246,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
 }
 
 void ModularFrameDecoder::MaybeDropFullImage() {
-  if (full_image.transform.empty() && !have_something) {
+  if (full_image.transform.empty() && !have_something && all_same_shift) {
     use_full_image = false;
     for (auto& ch : full_image.channel) {
       // keep metadata on channels around, but dealloc their planes
@@ -272,44 +281,39 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
            rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
     if (r.xsize() == 0 || r.ysize() == 0) continue;
-    Channel gc(r.xsize(), r.ysize());
-    gc.hshift = fc.hshift;
-    gc.vshift = fc.vshift;
-    gi.channel.emplace_back(std::move(gc));
-  }
-  if (zerofill) {
-    int gic = 0;
-    for (c = beginc; c < full_image.channel.size(); c++) {
-      Channel& fc = full_image.channel[c];
-      int shift = std::min(fc.hshift, fc.vshift);
-      if (shift > maxShift) continue;
-      if (shift < minShift) continue;
-      Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
-             rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
-      if (r.xsize() == 0 || r.ysize() == 0) continue;
+    if (zerofill && use_full_image) {
       for (size_t y = 0; y < r.ysize(); ++y) {
         pixel_type* const JXL_RESTRICT row_out = r.Row(&fc.plane, y);
         memset(row_out, 0, r.xsize() * sizeof(*row_out));
       }
-      gic++;
+    } else {
+      Channel gc(r.xsize(), r.ysize());
+      if (zerofill) ZeroFillImage(&gc.plane);
+      gc.hshift = fc.hshift;
+      gc.vshift = fc.vshift;
+      gi.channel.emplace_back(std::move(gc));
     }
-    return true;
   }
+  if (zerofill && use_full_image) return true;
+  // Return early if there's nothing to decode. Otherwise there might be
+  // problems later (in ModularImageToDecodedRect).
+  if (gi.channel.empty()) return true;
   ModularOptions options;
-  if (!ModularGenericDecompress(
-          reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
-          /*undo_transforms=*/-1, &tree, &code, &context_map))
-    return JXL_FAILURE("Failed to decode modular group");
-  if (minShift == 0) {
-    // Undo global transforms that have been pushed to the group level
+  if (!zerofill) {
+    if (!ModularGenericDecompress(
+            reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
+            /*undo_transforms=*/-1, &tree, &code, &context_map)) {
+      return JXL_FAILURE("Failed to decode modular group");
+    }
+  }
+  // Undo global transforms that have been pushed to the group level
+  if (!use_full_image) {
     for (auto t : global_transform) {
       JXL_RETURN_IF_ERROR(t.Inverse(gi, global_header.wp_header));
     }
-    if (!use_full_image) {
-      JXL_RETURN_IF_ERROR(ModularImageToDecodedRect(
-          gi, dec_state, nullptr, output, rect.Crop(*output)));
-      return true;
-    }
+    JXL_RETURN_IF_ERROR(ModularImageToDecodedRect(
+        gi, dec_state, nullptr, output, rect.Crop(dec_state->decoded)));
+    return true;
   }
   int gic = 0;
   for (c = beginc; c < full_image.channel.size(); c++) {
@@ -320,13 +324,10 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
     Rect r(rect.x0() >> fc.hshift, rect.y0() >> fc.vshift,
            rect.xsize() >> fc.hshift, rect.ysize() >> fc.vshift, fc.w, fc.h);
     if (r.xsize() == 0 || r.ysize() == 0) continue;
-    for (size_t y = 0; y < r.ysize(); ++y) {
-      pixel_type* const JXL_RESTRICT row_out = r.Row(&fc.plane, y);
-      const pixel_type* const JXL_RESTRICT row_in = gi.channel[gic].Row(y);
-      for (size_t x = 0; x < r.xsize(); ++x) {
-        row_out[x] = row_in[x];
-      }
-    }
+    JXL_ASSERT(use_full_image);
+    CopyImageTo(/*rect_from=*/Rect(0, 0, r.xsize(), r.ysize()),
+                /*from=*/gi.channel[gic].plane,
+                /*rect_to=*/r, /*to=*/&fc.plane);
     gic++;
   }
   return true;
@@ -459,19 +460,23 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
   const auto* metadata = frame_header.nonserialized_metadata;
   size_t xsize = rect.xsize();
   size_t ysize = rect.ysize();
+  if (!xsize || !ysize) {
+    return true;
+  }
+  JXL_DASSERT(rect.IsInside(decoded));
 
-  int c = 0;
+  size_t c = 0;
   if (do_color) {
     const bool rgb_from_gray =
         metadata->m.color_encoding.IsGray() &&
         frame_header.color_transform == ColorTransform::kNone;
-    const bool fp = metadata->m.bit_depth.floating_point_sample;
-
+    const bool fp = metadata->m.bit_depth.floating_point_sample &&
+                    frame_header.color_transform != ColorTransform::kXYB;
     for (; c < 3; c++) {
       float factor = full_image.bitdepth < 32
                          ? 1.f / ((1u << full_image.bitdepth) - 1)
                          : 0;
-      int c_in = c;
+      size_t c_in = c;
       if (frame_header.color_transform == ColorTransform::kXYB) {
         factor = dec_state->shared->matrices.DCQuants()[c];
         // XYB is encoded as YX(B-Y)
@@ -479,6 +484,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       } else if (rgb_from_gray) {
         c_in = 0;
       }
+      JXL_ASSERT(c_in < gi.channel.size());
       Channel& ch_in = gi.channel[c_in];
       // TODO(eustas): could we detect it on earlier stage?
       if (ch_in.w == 0 || ch_in.h == 0) {
@@ -556,10 +562,17 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     size_t ecups = frame_header.extra_channel_upsampling[ec];
     const size_t ec_xsize = DivCeil(frame_dim.xsize_upsampled, ecups);
     const size_t ec_ysize = DivCeil(frame_dim.ysize_upsampled, ecups);
+    JXL_ASSERT(c < gi.channel.size());
     Channel& ch_in = gi.channel[c];
+    // For x0, y0 there's no need to do a DivCeil().
+    JXL_DASSERT(rect.x0() % (1ul << ch_in.hshift) == 0);
+    JXL_DASSERT(rect.y0() % (1ul << ch_in.vshift) == 0);
     Rect r(rect.x0() >> ch_in.hshift, rect.y0() >> ch_in.vshift,
-           rect.xsize() >> ch_in.hshift, rect.ysize() >> ch_in.vshift, ec_xsize,
-           ec_ysize);
+           DivCeil(rect.xsize(), 1lu << ch_in.hshift),
+           DivCeil(rect.ysize(), 1lu << ch_in.vshift), ec_xsize, ec_ysize);
+
+    JXL_DASSERT(r.IsInside(dec_state->extra_channels[ec]));
+    JXL_DASSERT(Rect(0, 0, r.xsize(), r.ysize()).IsInside(ch_in.plane));
     for (size_t y = 0; y < r.ysize(); ++y) {
       float* const JXL_RESTRICT row_out =
           r.Row(&dec_state->extra_channels[ec], y);
@@ -572,15 +585,17 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
         }
       }
     }
+    JXL_CHECK_IMAGE_INITIALIZED(dec_state->extra_channels[ec], r);
   }
   return true;
 }
 
 Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
                                              jxl::ThreadPool* pool,
-                                             ImageBundle* output) {
+                                             ImageBundle* output,
+                                             bool inplace) {
   if (!use_full_image) return true;
-  Image& gi = full_image;
+  Image gi = (inplace ? std::move(full_image) : full_image.clone());
   size_t xsize = gi.w;
   size_t ysize = gi.h;
 

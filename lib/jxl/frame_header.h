@@ -64,13 +64,13 @@ enum class ColorTransform : uint32_t {
 
 inline std::array<int, 3> JpegOrder(ColorTransform ct, bool is_gray) {
   if (is_gray) {
-    return {0, 0, 0};
+    return {{0, 0, 0}};
   }
   JXL_ASSERT(ct != ColorTransform::kXYB);
   if (ct == ColorTransform::kYCbCr) {
-    return {1, 0, 2};
+    return {{1, 0, 2}};
   } else {
-    return {0, 1, 2};
+    return {{0, 1, 2}};
   }
 }
 

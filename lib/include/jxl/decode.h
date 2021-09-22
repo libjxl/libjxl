@@ -4,7 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @file decode.h
+/** @addtogroup libjxl_decoder
+ * @{
+ * @file decode.h
  * @brief Decoding API for JPEG XL.
  */
 
@@ -533,7 +535,7 @@ typedef enum {
  * check whether the information is available through the return value.
  * @return JXL_DEC_SUCCESS if the data is available and returned,
  *    JXL_DEC_NEED_MORE_INPUT if not yet available, JXL_DEC_ERROR in case
- *    the encuded structured color profile does not exist in the codestream.
+ *    the encoded structured color profile does not exist in the codestream.
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetColorAsEncodedProfile(
     const JxlDecoder* dec, const JxlPixelFormat* format,
@@ -766,7 +768,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSetImageOutBuffer(
  * Callback function type for JxlDecoderSetImageOutCallback. @see
  * JxlDecoderSetImageOutCallback for usage.
  *
- * The callback bay be called simultaneously by different threads when using a
+ * The callback may be called simultaneously by different threads when using a
  * threaded parallel runner, on different pixels.
  *
  * @param opaque optional user data, as given to JxlDecoderSetImageOutCallback.
@@ -794,7 +796,7 @@ typedef void (*JxlImageOutCallback)(void* opaque, size_t x, size_t y,
  * data, 1 pixel high, xsize pixels wide, called a scanline. The xsize here is
  * not the same as the full image width, the scanline may be a partial section,
  * and xsize may differ between calls. The user can then process and/or copy the
- * partial scanline to an image buffer. The callback bay be called
+ * partial scanline to an image buffer. The callback may be called
  * simultaneously by different threads when using a threaded parallel runner, on
  * different pixels.
  *
@@ -936,3 +938,5 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec);
 #endif
 
 #endif /* JXL_DECODE_H_ */
+
+/** @}*/

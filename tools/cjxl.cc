@@ -73,7 +73,7 @@ static double ApproximateDistanceForBPP(double bpp) {
 jxl::Status LoadSaliencyMap(const std::string& filename_heatmap,
                             jxl::ThreadPool* pool, jxl::ImageF* out_map) {
   jxl::CodecInOut io_heatmap;
-  if (!SetFromFile(filename_heatmap, &io_heatmap, pool)) {
+  if (!SetFromFile(filename_heatmap, jxl::ColorHints(), &io_heatmap, pool)) {
     return JXL_FAILURE("Could not load heatmap.");
   }
   *out_map = std::move(io_heatmap.Main().color()->Plane(0));
@@ -307,7 +307,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Target distance/size/bpp
   opt_distance_id = cmdline->AddOptionValue(
       'd', "distance", "maxError",
-      ("Max. butteraugli distance, lower = higher quality. Range: 0 .. 15.\n"
+      ("Max. butteraugli distance, lower = higher quality. Range: 0 .. 25.\n"
        "    0.0 = mathematically lossless. Default for already-lossy input "
        "(JPEG/GIF).\n"
        "    1.0 = visually lossless. Default for other input.\n"
@@ -413,16 +413,18 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       "exposure on a 35mm camera. For formats other than 35mm, or when the "
       "whole sensor was not used, you can multiply the ISO value by the "
       "equivalence ratio squared, for example by 2.25 for an APS-C camera.",
-      &params.photon_noise_iso, &ParsePhotonNoiseParameter, 0);
+      &params.photon_noise_iso, &ParsePhotonNoiseParameter, 1);
   cmdline->AddOptionValue('\0', "dots", "0|1",
                           "force disable/enable dots generation.", &params.dots,
                           &ParseOverride, 1);
   cmdline->AddOptionValue('\0', "patches", "0|1",
                           "force disable/enable patches generation.",
                           &params.patches, &ParseOverride, 1);
-  cmdline->AddOptionValue('\0', "resampling", "1|2|4|8",
-                          "Subsample all color channels by this factor.",
-                          &params.resampling, &ParseUnsigned, 1);
+  cmdline->AddOptionValue(
+      '\0', "resampling", "0|1|2|4|8",
+      "Subsample all color channels by this factor, or use 0 to choose the "
+      "resampling factor based on distance.",
+      &params.resampling, &ParseUnsigned, 0);
   cmdline->AddOptionValue(
       '\0', "ec_resampling", "1|2|4|8",
       "Subsample all extra channels by this factor. If this value is smaller "
@@ -462,7 +464,7 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
       'x', "dec-hints", "key=value",
       "color_space indicates the ColorEncoding, see Description();\n"
       "icc_pathname refers to a binary file containing an ICC profile.",
-      &dec_hints, &ParseAndAppendKeyValue, 1);
+      &color_hints, &ParseAndAppendKeyValue, 1);
 
   cmdline->AddOptionValue(
       '\0', "override_bitdepth", "0=use from image, 1-32=override",
@@ -617,7 +619,7 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
 
   if (got_distance) {
     constexpr float butteraugli_min_dist = 0.1f;
-    constexpr float butteraugli_max_dist = 15.0f;
+    constexpr float butteraugli_max_dist = 25.0f;
     if (!(0 <= params.butteraugli_distance &&
           params.butteraugli_distance <= butteraugli_max_dist)) {
       fprintf(stderr, "Invalid/out of range distance, try 0 to %g.\n",
@@ -632,6 +634,10 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
       params.butteraugli_distance = butteraugli_min_dist;
     }
     default_settings = false;
+  }
+
+  if (got_target_bpp || got_target_size) {
+    jpeg_transcode = false;
   }
 
   if (got_target_bpp + got_target_size + got_distance + got_quality > 1) {
@@ -737,11 +743,11 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   const double t0 = jxl::Now();
 
   io->target_nits = args.intensity_target;
-  io->dec_hints = args.dec_hints;
   io->dec_target = (args.jpeg_transcode ? jxl::DecodeTarget::kQuantizedCoeffs
                                         : jxl::DecodeTarget::kPixels);
   jxl::Codec input_codec;
-  if (!SetFromFile(args.params.file_in, io, nullptr, &input_codec)) {
+  if (!SetFromFile(args.params.file_in, args.color_hints, io, nullptr,
+                   &input_codec)) {
     fprintf(stderr, "Failed to read image %s.\n", args.params.file_in);
     return false;
   }
@@ -751,12 +757,6 @@ jxl::Status LoadAll(CompressArgs& args, jxl::ThreadPoolInternal* pool,
   if (input_codec == jxl::Codec::kGIF && args.default_settings) {
     args.params.modular_mode = true;
     args.params.quality_pair.first = args.params.quality_pair.second = 100;
-  }
-  if (args.params.modular_mode && args.params.quality_pair.first < 100) {
-    if (io->metadata.m.bit_depth.floating_point_sample) {
-      // for lossy modular, pretend pfm/exr is integer data
-      io->metadata.m.SetUintSamples(12);
-    }
   }
   if (args.override_bitdepth != 0) {
     if (args.override_bitdepth == 32) {

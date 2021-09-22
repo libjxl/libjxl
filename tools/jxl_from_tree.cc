@@ -24,7 +24,7 @@ namespace jxl {
 
 namespace {
 struct SplineData {
-  int32_t quantization_adjustment;
+  int32_t quantization_adjustment = 1;
   std::vector<Spline> splines;
 };
 
@@ -251,7 +251,23 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
   } else if (t == "Animation") {
     io.metadata.m.have_animation = true;
     io.metadata.m.animation.tps_numerator = 1000;
+    io.metadata.m.animation.tps_denominator = 1;
     io.frames[0].duration = 100;
+  } else if (t == "AnimationFPS") {
+    t = tok();
+    size_t num = 0;
+    io.metadata.m.animation.tps_numerator = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid numerator: %s\n", t.c_str());
+      return false;
+    }
+    t = tok();
+    num = 0;
+    io.metadata.m.animation.tps_denominator = std::stoul(t, &num);
+    if (num != t.size()) {
+      fprintf(stderr, "Invalid denominator: %s\n", t.c_str());
+      return false;
+    }
   } else if (t == "Duration") {
     t = tok();
     size_t num = 0;
@@ -264,6 +280,8 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     t = tok();
     if (t == "kAdd") {
       io.frames[0].blendmode = BlendMode::kAdd;
+    } else if (t == "kReplace") {
+      io.frames[0].blendmode = BlendMode::kReplace;
     } else if (t == "kBlend") {
       io.frames[0].blendmode = BlendMode::kBlend;
     } else if (t == "kAlphaWeightedAdd") {
@@ -419,8 +437,7 @@ int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   *metadata = io.metadata;
   JXL_RETURN_IF_ERROR(metadata->size.Set(io.xsize(), io.ysize()));
 
-  metadata->m.xyb_encoded =
-      cparams.color_transform == ColorTransform::kXYB ? true : false;
+  metadata->m.xyb_encoded = cparams.color_transform == ColorTransform::kXYB;
 
   JXL_RETURN_IF_ERROR(WriteHeaders(metadata.get(), &writer, nullptr));
   writer.ZeroPadToByte();

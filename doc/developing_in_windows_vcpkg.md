@@ -1,15 +1,19 @@
-# Developing on 64-bit Windows
+# Developing on Windows with Visual Studio 2019
 
 These instructions assume an up-to-date Windows 10 (e.g. build 19041.928) with
-Microsoft Visual Studio 2019 (e.g. Version 16.9.0 Preview 4.0) installed. If
-unavailable, please use the [Docker container](developing_in_docker.md).
+**Microsoft Visual Studio 2019** (e.g. Version 16.9.0 Preview 4.0) installed. If
+unavailable, please use another build environment:
+
+* [Docker container](developing_in_docker.md)
+* [MSYS2 on Windows](developing_in_windows_msys.md)
+* [Crossroad on Linux](developing_with_crossroad.md) (cross compilation for Windows)
 
 ## Minimum build dependencies
 
 Apart from the dependencies in third_party, some of the tools use external
 dependencies that need to be installed in your system first.
 
-Please [install vcpkg](https://vcpkg.readthedocs.io/en/latest/examples/installing-and-using-packages/)
+Please install [vcpkg](https://vcpkg.readthedocs.io/en/latest/examples/installing-and-using-packages/)
 (tested with version 2019.07.18), and use it to install the following libraries:
 
 ```
@@ -83,5 +87,5 @@ vcpkg above.
 
 The project is now ready for use. To build, simply press F7 (or choose
 Build All from the Build menu). This writes binaries to
-`out/build/x64-Clang-Release/tools`. The main [README.md](README.md) explains
+`out/build/x64-Clang-Release/tools`. The main [README.md](../README.md) explains
 how to use the encoder/decoder and benchmark binaries.

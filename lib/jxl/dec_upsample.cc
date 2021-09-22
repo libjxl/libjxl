@@ -12,6 +12,7 @@
 
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/image_ops.h"
+#include "lib/jxl/sanitizers.h"
 
 HWY_BEFORE_NAMESPACE();
 namespace jxl {
@@ -55,7 +56,8 @@ void InitKernel(const float* weights, CacheAlignedUniquePtr* kernel_storage,
       size_t y = std::min(i, j);
       size_t x = std::max(i, j);
       // Take the weight from "triangle" coordinates.
-      float weight = weights[M * N2 * y - y * (y - 1) / 2 + x - y];
+      float weight =
+          weights[M * N2 * y - y * (static_cast<ssize_t>(y) - 1) / 2 + x - y];
       kernels[offset * stride + kernel] = weight;
     }
   }
@@ -355,9 +357,11 @@ void Upsampler::UpsampleRect(const ImageF& src, const Rect& src_rect,
                              ssize_t image_y_offset, size_t image_ysize,
                              float* arena) const {
   JXL_CHECK(arena);
+  JXL_CHECK_IMAGE_INITIALIZED(src, src_rect);
   HWY_DYNAMIC_DISPATCH(UpsampleRect)
   (upsampling_, reinterpret_cast<float*>(kernel_storage_.get()), src, src_rect,
    dst, dst_rect, image_y_offset, image_ysize, arena, x_repeat_);
+  JXL_CHECK_IMAGE_INITIALIZED(*dst, dst_rect);
 }
 
 void Upsampler::UpsampleRect(const Image3F& src, const Rect& src_rect,
@@ -365,10 +369,12 @@ void Upsampler::UpsampleRect(const Image3F& src, const Rect& src_rect,
                              ssize_t image_y_offset, size_t image_ysize,
                              float* arena) const {
   PROFILER_FUNC;
+  JXL_CHECK_IMAGE_INITIALIZED(src, src_rect);
   for (size_t c = 0; c < 3; c++) {
     UpsampleRect(src.Plane(c), src_rect, &dst->Plane(c), dst_rect,
                  image_y_offset, image_ysize, arena);
   }
+  JXL_CHECK_IMAGE_INITIALIZED(*dst, dst_rect);
 }
 
 }  // namespace jxl

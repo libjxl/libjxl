@@ -75,24 +75,24 @@ inline const char* PredictorName(Predictor p) {
 inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
   switch (p) {
     case Predictor::Zero:
-      return {0, 0, 0};
+      return {{0, 0, 0}};
     case Predictor::Left:
-      return {255, 0, 0};
+      return {{255, 0, 0}};
     case Predictor::Top:
-      return {0, 255, 0};
+      return {{0, 255, 0}};
     case Predictor::Average0:
-      return {0, 0, 255};
+      return {{0, 0, 255}};
     case Predictor::Average4:
-      return {192, 128, 128};
+      return {{192, 128, 128}};
     case Predictor::Select:
-      return {255, 255, 0};
+      return {{255, 255, 0}};
     case Predictor::Gradient:
-      return {255, 0, 255};
+      return {{255, 0, 255}};
     case Predictor::Weighted:
-      return {0, 255, 255};
+      return {{0, 255, 255}};
       // TODO
     default:
-      return {255, 255, 255};
+      return {{255, 255, 255}};
   };
 }
 

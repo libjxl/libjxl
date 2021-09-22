@@ -23,6 +23,30 @@
 #define JXL_MEMORY_SANITIZER 0
 #endif
 
+#ifdef ADDRESS_SANITIZER
+#define JXL_ADDRESS_SANITIZER 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define JXL_ADDRESS_SANITIZER 1
+#else
+#define JXL_ADDRESS_SANITIZER 0
+#endif
+#else
+#define JXL_ADDRESS_SANITIZER 0
+#endif
+
+#ifdef THREAD_SANITIZER
+#define JXL_THREAD_SANITIZER 1
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define JXL_THREAD_SANITIZER 1
+#else
+#define JXL_THREAD_SANITIZER 0
+#endif
+#else
+#define JXL_THREAD_SANITIZER 0
+#endif
+
 #if JXL_MEMORY_SANITIZER
 #include <stdio.h>
 
@@ -178,8 +202,8 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
                 "xsize=%zu, ysize=%zu",
                 im.xsize(), im.ysize(), r.x0(), r.y0(), r.xsize(), r.ysize());
       size_t x = ret / sizeof(*row);
-      JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s", x, y,
-                message ? message : "");
+      JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s",
+                r.x0() + x, y, message ? message : "");
       PrintImageUninitialized(im);
     }
     // This will report an error if memory is not initialized.

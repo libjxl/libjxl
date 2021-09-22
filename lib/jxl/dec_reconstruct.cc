@@ -430,6 +430,7 @@ Rect ScaleRectForEC(Rect in, const FrameHeader& frame_header, size_t ec) {
     return DivCeil(x * frame_header.upsampling,
                    frame_header.extra_channel_upsampling[ec]);
   };
+  // For x0 and y0 the DivCeil is actually an exact division.
   return Rect(s(in.x0()), s(in.y0()), s(in.xsize()), s(in.ysize()));
 }
 
@@ -896,9 +897,9 @@ Status FinalizeImageRect(
     JXL_RETURN_IF_ERROR(image_features.patches.AddTo(
         storage_for_if, rect_for_if_storage.Line(available_y),
         ec_ptrs_for_patches.data(), rect_for_if.Line(available_y)));
-    JXL_RETURN_IF_ERROR(image_features.splines.AddTo(
-        storage_for_if, rect_for_if_storage.Line(available_y),
-        rect_for_if.Line(available_y), dec_state->shared->cmap));
+    image_features.splines.AddTo(storage_for_if,
+                                 rect_for_if_storage.Line(available_y),
+                                 rect_for_if.Line(available_y));
     size_t num_ys = 1;
     if (frame_header.upsampling != 1) {
       // Upsampling `y` values are relative to `rect_for_upsampling`, not to
@@ -1007,7 +1008,8 @@ Status FinalizeImageRect(
           *output_pixel_data_storage,
           upsampled_frame_rect_for_storage.Lines(available_y, num_ys),
           upsampled_frame_rect.Lines(available_y, num_ys)
-              .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+              .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                         frame_dim.ysize_upsampled)),
           alpha, alpha_rect.Lines(available_y, num_ys),
           dec_state->rgb_output_is_rgba, dec_state->rgb_output, frame_dim.xsize,
           dec_state->rgb_stride);
@@ -1041,9 +1043,9 @@ Status FinalizeImageRect(
         Rect alpha_line_rect = alpha_rect.Lines(available_y, num_ys);
         Rect color_input_line_rect =
             upsampled_frame_rect_for_storage.Lines(available_y, num_ys);
-        Rect image_line_rect =
-            upsampled_frame_rect.Lines(available_y, num_ys)
-                .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize));
+        Rect image_line_rect = upsampled_frame_rect.Lines(available_y, num_ys)
+                                   .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                                              frame_dim.ysize_upsampled));
         const float* line_buffers[4];
         for (size_t iy = 0; iy < image_line_rect.ysize(); iy++) {
           for (size_t c = 0; c < 3; c++) {
@@ -1149,10 +1151,12 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
           // Poison the temp image on this thread to prevent leaking initialized
           // data from a previous run in this thread in msan builds.
           msan::PoisonImage(*eti);
+          JXL_CHECK_IMAGE_INITIALIZED(dec_state->extra_channels[i], r);
           CopyImageToWithPadding(r, dec_state->extra_channels[i],
                                  /*padding=*/2, ec_input_rect, eti);
           ec_rects.emplace_back(eti, ec_input_rect);
         } else {
+          JXL_CHECK_IMAGE_INITIALIZED(decoded->extra_channels()[i], r);
           ec_rects.emplace_back(&decoded->extra_channels()[i], r);
         }
       }

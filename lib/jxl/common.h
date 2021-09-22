@@ -169,7 +169,10 @@ constexpr uint32_t PackSigned(int32_t value)
 }
 
 // Reverse to PackSigned, i.e. UnpackSigned(PackSigned(X)) == X.
-constexpr intptr_t UnpackSigned(size_t value) {
+// (((~value) & 1) - 1) is either 0 or 0xFF...FF and it will have an expected
+// unsigned-integer-overflow.
+constexpr intptr_t UnpackSigned(size_t value)
+    JXL_NO_SANITIZE("unsigned-integer-overflow") {
   return static_cast<intptr_t>((value >> 1) ^ (((~value) & 1) - 1));
 }
 

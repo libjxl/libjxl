@@ -2,7 +2,7 @@
 
 This file describes the building and testing facilities provided by the `ci.sh`
 script. It assumes you already have the build environment set up, preferably
-Docker (see [instructions](building_in_docker.md)).
+Docker (see [instructions](developing_in_docker.md)).
 
 ## Basic building
 

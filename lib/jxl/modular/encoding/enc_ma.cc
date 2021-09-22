@@ -943,6 +943,7 @@ void CollectPixelSamples(const Image &image, const ModularOptions &options,
                          std::vector<uint32_t> &channel_pixel_count,
                          std::vector<pixel_type> &pixel_samples,
                          std::vector<pixel_type> &diff_samples) {
+  if (options.nb_repeats == 0) return;
   if (group_pixel_count.size() <= group_id) {
     group_pixel_count.resize(group_id + 1);
   }

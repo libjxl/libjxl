@@ -822,6 +822,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
     ImageMetadata dummy_metadata;
     JXL_API_RETURN_IF_ERROR(ReadBundle(span, reader.get(), &dummy_metadata));
 
+    dec->metadata.transform_data.nonserialized_xyb_encoded =
+        dec->metadata.m.xyb_encoded;
     JXL_API_RETURN_IF_ERROR(
         ReadBundle(span, reader.get(), &dec->metadata.transform_data));
   }
@@ -914,7 +916,6 @@ static JxlDecoderStatus ConvertImageInternal(
   jxl::Orientation undo_orientation = dec->keep_orientation
                                           ? jxl::Orientation::kIdentity
                                           : dec->metadata.m.GetOrientation();
-  JXL_DASSERT(!dec->frame_dec || !dec->frame_dec->HasRGBBuffer());
 
   jxl::Status status(true);
   if (want_extra_channel) {
@@ -1226,7 +1227,7 @@ JxlDecoderStatus JxlDecoderProcessInternal(JxlDecoder* dec, const uint8_t* in,
 
       jxl::Status status = dec->frame_dec->InitFrame(
           reader.get(), dec->ib.get(), /*is_preview=*/false,
-          /*allow_partial_frames=*/false, /*allow_partial_dc_global=*/false);
+          /*allow_partial_frames=*/true, /*allow_partial_dc_global=*/false);
       if (!status) JXL_API_RETURN_IF_ERROR(status);
 
       size_t sections_begin =
@@ -1772,6 +1773,10 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   return result;
 }
 
+// To ensure ABI forward-compatibility, this struct has a constant size.
+static_assert(sizeof(JxlBasicInfo) == 204,
+              "JxlBasicInfo struct size should remain constant");
+
 JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
                                         JxlBasicInfo* info) {
   if (!dec->got_basic_info) return JXL_DEC_NEED_MORE_INPUT;
@@ -2013,17 +2018,8 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
     return JXL_DEC_ERROR;
   }
   if (!dec->frame_dec->HasDecodedDC()) {
-    // FrameDecoder::Fush currently requires DC to have been decoded already
+    // FrameDecoder::Flush currently requires DC to have been decoded already
     // to work correctly.
-    return JXL_DEC_ERROR;
-  }
-  if (dec->frame_header->encoding != jxl::FrameEncoding::kVarDCT) {
-    // Flushing does not yet work correctly if the frame uses modular encoding.
-    return JXL_DEC_ERROR;
-  }
-  if (dec->metadata.m.num_extra_channels > 0) {
-    // Flushing does not yet work correctly if there are extra channels, which
-    // use modular
     return JXL_DEC_ERROR;
   }
 
@@ -2041,7 +2037,8 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   size_t ysize = dec->ib->ysize();
   dec->ib->ShrinkTo(dec->metadata.size.xsize(), dec->metadata.size.ysize());
   JxlDecoderStatus status = jxl::ConvertImageInternal(
-      dec, *dec->ib, dec->image_out_format, /*want_extra_channel=*/false,
+      dec, *dec->ib, dec->image_out_format,
+      /*want_extra_channel=*/dec->metadata.m.num_extra_channels > 0,
       /*extra_channel_index=*/0, dec->image_out_buffer, dec->image_out_size,
       /*out_callback=*/nullptr, /*out_opaque=*/nullptr);
   dec->ib->ShrinkTo(xsize, ysize);

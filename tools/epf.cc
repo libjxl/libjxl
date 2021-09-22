@@ -55,7 +55,7 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   jxl::FillImage(static_cast<uint8_t>(sharpness_parameter),
                  &state.shared_storage.epf_sharpness);
 
-  state.filter_weights.Init(lf, frame_dim);
+  JXL_RETURN_IF_ERROR(state.filter_weights.Init(lf, frame_dim));
   ComputeSigma(jxl::Rect(state.shared_storage.epf_sharpness), &state);
 
   // Call with `force_fir` set to true to force to apply filters to all of the

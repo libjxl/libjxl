@@ -10,6 +10,66 @@
 
 namespace jxl {
 
+namespace {
+
+// Given two rects A and B, returns a set of rects whose union is A \ B. This
+// may require from 0 to 4 rects, one for each non-empty side of B. `storage`
+// must have room to accommodate that many rects. The order is consistent when
+// called successively with "parallel" rects.
+//
+// +----------------------+
+// |         top          |
+// +------+-------+-------+
+// | left | inner | right |
+// +------+-------+-------+
+// |        bottom        |
+// +----------------------+
+Span<const Rect> SubtractRect(const Rect& outer, const Rect& inner,
+                              Rect* storage) {
+  size_t num_rects = 0;
+
+  const Rect intersection = inner.Intersection(outer);
+  if (intersection.xsize() == 0 && intersection.ysize() == 0) {
+    storage[num_rects++] = outer;
+    return Span<const Rect>(storage, num_rects);
+  }
+
+  // Left, same height as inner
+  if (outer.x0() < inner.x0()) {
+    storage[num_rects++] =
+        Rect(outer.x0(), inner.y0(),
+             std::min(outer.xsize(), inner.x0() - outer.x0()), inner.ysize());
+  }
+
+  // Right, same height as inner
+  if (outer.x0() + outer.xsize() > inner.x0() + inner.xsize()) {
+    storage[num_rects++] =
+        Rect(inner.x0() + inner.xsize(), inner.y0(),
+             std::min(outer.xsize(), outer.x0() + outer.xsize() -
+                                         (inner.x0() + inner.xsize())),
+             inner.ysize());
+  }
+
+  // Top, full width
+  if (outer.y0() < inner.y0()) {
+    storage[num_rects++] =
+        Rect(outer.x0(), outer.y0(), outer.xsize(),
+             std::min(outer.ysize(), inner.y0() - outer.y0()));
+  }
+
+  // Bottom, full width
+  if (outer.y0() + outer.ysize() > inner.y0() + inner.ysize()) {
+    storage[num_rects++] =
+        Rect(outer.x0(), inner.y0() + inner.ysize(), outer.xsize(),
+             std::min(outer.ysize(), outer.y0() + outer.ysize() -
+                                         (inner.y0() + inner.ysize())));
+  }
+
+  return Span<const Rect>(storage, num_rects);
+}
+
+}  // namespace
+
 bool ImageBlender::NeedsBlending(PassesDecoderState* dec_state) {
   const PassesSharedState& state = *dec_state->shared;
   if (!(state.frame_header.frame_type == FrameType::kRegularFrame ||
@@ -43,6 +103,7 @@ Status ImageBlender::PrepareBlending(
 
   ec_info_ = &state.frame_header.extra_channel_blending_info;
 
+  frame_rect_ = frame_rect;
   extra_channel_info_ = extra_channel_info;
   output_ = output;
   output_rect_ = output_rect;
@@ -54,7 +115,7 @@ Status ImageBlender::PrepareBlending(
 
   // the rect in the canvas that needs to be updated
   cropbox_ = frame_rect;
-  // the rect of this frame that overlaps with the canvas
+  // the rect of the foreground that overlaps with the canvas
   overlap_ = cropbox_;
   o_ = foreground_origin;
   o_.x0 -= frame_rect.x0();
@@ -74,6 +135,7 @@ Status ImageBlender::PrepareBlending(
 
   // Image to write to.
   ImageBundle& bg = *state.reference_frames[info_.source].frame;
+  bg_ = &bg;
   if (bg.xsize() == 0 && bg.ysize() == 0) {
     // there is no background, assume it to be all zeroes
     ImageBundle empty(&state.metadata->m);
@@ -119,13 +181,29 @@ Status ImageBlender::PrepareBlending(
         bg.xsize(), bg.ysize());
   }
 
-  CopyImageTo(frame_rect, *bg.color(), output_rect, output);
+  Rect frame_rects_storage[4], output_rects_storage[4];
+  Span<const Rect> frame_rects = SubtractRect(
+      frame_rect, cropbox_.Translate(frame_rect.x0(), frame_rect.y0()),
+      frame_rects_storage);
+  Span<const Rect> output_rects = SubtractRect(
+      output_rect, cropbox_.Translate(output_rect.x0(), output_rect.y0()),
+      output_rects_storage);
+  JXL_ASSERT(frame_rects.size() == output_rects.size());
+  for (size_t i = 0; i < frame_rects.size(); ++i) {
+    CopyImageTo(frame_rects[i], *bg.color(), output_rects[i], output);
+  }
   for (size_t i = 0; i < ec_info_->size(); ++i) {
     const auto& eci = (*ec_info_)[i];
     const auto& src = *state.reference_frames[eci.source].frame;
+    output_rects =
+        SubtractRect(output_extra_channels_rects_[i],
+                     cropbox_.Translate(output_extra_channels_rects_[i].x0(),
+                                        output_extra_channels_rects_[i].y0()),
+                     output_rects_storage);
     if (src.xsize() == 0 && src.ysize() == 0) {
-      ZeroFillPlane(&(*output_extra_channels_)[i],
-                    output_extra_channels_rects_[i]);
+      for (size_t j = 0; j < output_rects.size(); ++j) {
+        ZeroFillPlane(&(*output_extra_channels_)[i], output_rects[j]);
+      }
     } else {
       if (src.extra_channels()[i].xsize() < image_xsize ||
           src.extra_channels()[i].ysize() < image_ysize || src.origin.x0 != 0 ||
@@ -137,9 +215,10 @@ Status ImageBlender::PrepareBlending(
             static_cast<int>(src.origin.x0), static_cast<int>(src.origin.y0), i,
             static_cast<size_t>(eci.source), image_xsize, image_ysize);
       }
-      CopyImageTo(frame_rect, src.extra_channels()[i],
-                  output_extra_channels_rects_[i],
-                  &(*output_extra_channels_)[i]);
+      for (size_t j = 0; j < frame_rects.size(); ++j) {
+        CopyImageTo(frame_rects[j], src.extra_channels()[i], output_rects[j],
+                    &(*output_extra_channels_)[i]);
+      }
     }
   }
 
@@ -227,19 +306,27 @@ ImageBlender::RectBlender ImageBlender::PrepareRect(
     blender.fg_ptrs_.push_back(overlap_row.ConstPlaneRow(foreground, c, 0));
     blender.fg_strides_.push_back(foreground.PixelsPerRow());
     blender.bg_ptrs_.push_back(
+        cropbox_row.Translate(frame_rect_.x0(), frame_rect_.y0())
+            .PlaneRow(bg_->color(), c, 0));
+    blender.bg_strides_.push_back(bg_->color()->PixelsPerRow());
+    blender.out_ptrs_.push_back(
         cropbox_row.Translate(output_rect_.x0(), output_rect_.y0())
             .PlaneRow(output_, c, 0));
-    blender.bg_strides_.push_back(output_->PixelsPerRow());
+    blender.out_strides_.push_back(output_->PixelsPerRow());
   }
   for (size_t c = 0; c < extra_channels.size(); c++) {
     blender.fg_ptrs_.push_back(overlap_row.ConstRow(extra_channels[c], 0));
     blender.fg_strides_.push_back(extra_channels[c].PixelsPerRow());
     blender.bg_ptrs_.push_back(
+        cropbox_row.Translate(frame_rect_.x0(), frame_rect_.y0())
+            .Row(&bg_->extra_channels()[c], 0));
+    blender.bg_strides_.push_back(bg_->extra_channels()[c].PixelsPerRow());
+    blender.out_ptrs_.push_back(
         cropbox_row
             .Translate(output_extra_channels_rects_[c].x0(),
                        output_extra_channels_rects_[c].y0())
             .Row(&(*output_extra_channels_)[c], 0));
-    blender.bg_strides_.push_back((*output_extra_channels_)[c].PixelsPerRow());
+    blender.out_strides_.push_back((*output_extra_channels_)[c].PixelsPerRow());
   }
 
   return blender;
@@ -370,12 +457,14 @@ Status ImageBlender::RectBlender::DoBlending(size_t y) {
   y -= current_overlap_.y0();
   fg_row_ptrs_.resize(fg_ptrs_.size());
   bg_row_ptrs_.resize(bg_ptrs_.size());
+  out_row_ptrs_.resize(out_ptrs_.size());
   for (size_t c = 0; c < fg_row_ptrs_.size(); c++) {
     fg_row_ptrs_[c] = fg_ptrs_[c] + y * fg_strides_[c];
     bg_row_ptrs_[c] = bg_ptrs_[c] + y * bg_strides_[c];
+    out_row_ptrs_[c] = out_ptrs_[c] + y * out_strides_[c];
   }
   return PerformBlending(bg_row_ptrs_.data(), fg_row_ptrs_.data(),
-                         bg_row_ptrs_.data(), current_overlap_.xsize(),
+                         out_row_ptrs_.data(), current_overlap_.xsize(),
                          blending_info_[0], blending_info_.data() + 1,
                          *extra_channel_info_);
 }

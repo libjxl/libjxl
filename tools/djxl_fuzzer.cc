@@ -493,7 +493,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   size_t max_pixels = 1 << 21;
 
   const auto targets = hwy::SupportedAndGeneratedTargets();
-  hwy::SetSupportedTargetsForTest(getFlag(targets.size() - 1));
+  hwy::SetSupportedTargetsForTest(targets[getFlag(targets.size() - 1)]);
   DecodeJpegXl(data, size, max_pixels, spec, &pixels, &jpeg, &xsize, &ysize,
                &icc);
   hwy::SetSupportedTargetsForTest(0);

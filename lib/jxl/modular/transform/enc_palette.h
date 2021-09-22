@@ -13,8 +13,9 @@
 namespace jxl {
 
 Status FwdPalette(Image &input, uint32_t begin_c, uint32_t end_c,
-                  uint32_t &nb_colors, bool ordered, bool lossy,
-                  Predictor &predictor, const weighted::Header &wp_header);
+                  uint32_t &nb_colors, uint32_t &nb_deltas, bool ordered,
+                  bool lossy, Predictor &predictor,
+                  const weighted::Header &wp_header);
 
 }  // namespace jxl
 

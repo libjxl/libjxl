@@ -55,6 +55,7 @@
 #include "png.h" /* original (unpatched) libpng is ok */
 
 namespace jxl {
+namespace extras {
 
 namespace {
 
@@ -192,8 +193,8 @@ int processing_finish(png_structp png_ptr, png_infop info_ptr) {
 
 }  // namespace
 
-Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
-                       CodecInOut* io) {
+Status DecodeImageAPNG(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                       ThreadPool* pool, CodecInOut* io) {
   Reader r;
   unsigned int id, i, j, w, h, w0, h0, x0, y0;
   unsigned int delay_num, delay_den, dop, bop, rowbytes, imagesize;
@@ -212,7 +213,7 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   r = {bytes.data(), bytes.data() + bytes.size()};
   // Not an aPNG => not an error
   unsigned char png_signature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
-  if (r.Read(sig, 8) || memcmp(sig, png_signature, 8) != 0) {
+  if (!r.Read(sig, 8) || memcmp(sig, png_signature, 8) != 0) {
     return false;
   }
   id = read_chunk(&r, &chunkIHDR);
@@ -223,11 +224,8 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   io->metadata.m.SetAlphaBits(8);
   io->metadata.m.color_encoding =
       ColorEncoding::SRGB();  // todo: get data from png metadata
-  (void)io->dec_hints.Foreach(
-      [](const std::string& key, const std::string& /*value*/) {
-        JXL_WARNING("APNG decoder ignoring %s hint", key.c_str());
-        return true;
-      });
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/true,
+                                      /*is_gray=*/false, io));
 
   bool errorstate = true;
   if (id == kId_IHDR && chunkIHDR.size == 25) {
@@ -407,4 +405,5 @@ Status DecodeImageAPNG(Span<const uint8_t> bytes, ThreadPool* pool,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl

@@ -12,6 +12,18 @@ MYDIR=$(dirname $(realpath "$0"))
 main() {
   cd "${MYDIR}/../../../third_party"
   local zipurl
+  local repourl
+  for repourl in \
+    'https://github.com/veluca93/IQA-optimization.git' \
+    'https://github.com/Netflix/vmaf.git' \
+    'https://github.com/thorfdbg/difftest_ng.git'
+  do
+    local reponame=$(basename "${repourl%.git}")
+    local dirname=$(basename "${reponame}")
+    if [[ ! -e "${dirname}" ]]; then
+      git clone "${repourl}"
+    fi
+  done
   for zipurl in \
     'https://sourceforge.net/projects/hdrvdp/files/hdrvdp/2.2.2/hdrvdp-2.2.2.zip' \
     'https://sourceforge.net/projects/hdrvdp/files/simple_metrics/1.0/hdr_metrics.zip'

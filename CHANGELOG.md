@@ -5,7 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased - to be released in 0.5.0]
+## [0.6] - Unreleased
+### Added
+ - API: New functions to decode extra channels:
+   `JxlDecoderExtraChannelBufferSize` and `JxlDecoderSetExtraChannelBuffer`.
+ - API: New function `JxlEncoderInitBasicInfo` to initialize `JxlBasicInfo`
+   (only needed when encoding). NOTE: it is now required to call this function
+   when using the encoder. Padding was added to the struct for forward
+   compatibility.
+ - API: Support for encoding oriented images.
+ - API: FLOAT16 support in the encoder API.
+ - Rewrite of the GDK pixbuf loader plugin. Added proper color management and
+   animation support.
+ - Rewrite of GIMP plugin. Added compression parameters dialog and switched to
+   using the public C API.
+ - Debian packages for GDK pixbuf loader (`libjxl-gdk-pixbuf`) and GIMP
+   (`libjxl-gimp-plugin`) plugins.
+ - `cjxl`/`djxl` support for `stdin` and `stdout`.
+
+### Changed
+ - API: Renamed the field `alpha_associated` in `JxlExtraChannelInfo` to
+   `alpha_premultiplied`, to match the corresponding name in `JxlBasicInfo`.
+ - Improved the 2x2 downscaling method in the encoder for the optional color
+   channel resampling for low bit rates.
+ - Fixed: the combination of floating point original data, XYB color encoding,
+   and Modular mode was broken (in both encoder and decoder). It now works.
+   NOTE: this can cause the current encoder to write jxl bitstreams that do
+   not decode with the old decoder. In particular this will happen when using
+   cjxl with PFM, EXR, or floating point PSD input, and a combination of XYB
+   and modular mode is used (which caused an encoder error before), e.g.
+   using options like `-m -q 80` (lossy modular), `-d 4.5` or `--progressive_dc=1`
+   (modular DC frame), or default lossy encoding on an image where patches
+   end up being used. There is no problem when using cjxl with PNG, JPEG, GIF,
+   APNG, PPM, PGM, PGX, or integer (8-bit or 16-bit) PSD input.
+ - `libjxl` static library now bundles skcms, fixing static linking in
+   downstream projects when skcms is used.
+ - Spline rendering performance improvements.
+ - Butteraugli changes for less visual masking.
+
+## [0.5] - 2021-08-02
 ### Added
  - API: New function to decode the image using a callback outputting a part of a
    row per call.
@@ -14,9 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    efficiently to earlier animation frames.
  - API: `JxlDecoderSetPreferredColorProfile` function to choose color profile in
    certain circumstances.
- - encoder: Adding `center_x` and `center_y` flags for more control of the tile order. 
+ - encoder: Adding `center_x` and `center_y` flags for more control of the tile
+   order.
+ - New encoder speeds `lightning` (1) and `thunder` (2).
 
 ### Changed
+ - Re-licensed the project under a BSD 3-Clause license. See the
+   [LICENSE](LICENSE) and [PATENTS](PATENTS) files for details.
  - Full JPEG XL part 1 specification support: Implemented all the spec required
    to decode files to pixels, including cases that are not used by the encoder
    yet. Part 2 of the spec (container format) is final but not fully implemented
@@ -27,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Reduce the size of the jxl_dec library by removing dependencies.
  - A few encoding speedups.
  - Clarify the security policy.
+ - Significant encoding improvements (~5 %) and less ringing.
+ - Butteraugli metric to have some less masking.
+ - `cjxl` flag `--speed` is deprecated and replaced by the `--effort` synonym.
 
 ### Removed
 - API for returning a downsampled DC was deprecated

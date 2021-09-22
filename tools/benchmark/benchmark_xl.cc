@@ -21,6 +21,7 @@
 #include "jxl/decode.h"
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_png.h"
+#include "lib/extras/color_hints.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/base/cache_aligned.h"
@@ -61,13 +62,14 @@ Status WritePNG(Image3F&& image, ThreadPool* pool,
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
   PaddedBytes compressed;
-  JXL_CHECK(EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
+  JXL_CHECK(
+      extras::EncodeImagePNG(&io, io.Main().c_current(), 8, pool, &compressed));
   return WriteFile(compressed, filename);
 }
 
 Status ReadPNG(const std::string& filename, Image3F* image) {
   CodecInOut io;
-  JXL_CHECK(SetFromFile(filename, &io));
+  JXL_CHECK(SetFromFile(filename, ColorHints(), &io));
   *image = CopyImage(*io.Main().color());
   return true;
 }
@@ -487,7 +489,11 @@ void WriteHtmlReport(const std::string& codec_desc,
     std::string html_height = StringPrintf("%zupx", ysize);
     double bpp = tasks[i]->stats.total_compressed_size * 8.0 /
                  tasks[i]->stats.total_input_pixels;
-    std::string compressed_title = StringPrintf("compressed: %f bpp", bpp);
+    double pnorm =
+        tasks[i]->stats.distance_p_norm / tasks[i]->stats.total_input_pixels;
+    double max_dist = tasks[i]->stats.max_distance;
+    std::string compressed_title = StringPrintf(
+        "compressed. bpp: %f, pnorm: %f, max dist: %f", bpp, pnorm, max_dist);
     out_html += "<div onclick=\"toggle3(" + number +
                 ");\" style=\"display:inline-block;width:" + html_width +
                 ";height:" + html_height +
@@ -686,12 +692,14 @@ struct StatPrinter {
       printf("```\n");
     }
     if (fnames_->size() == 1) printf("%s\n", (*fnames_)[0].c_str());
-    printf("%s", PrintHeader().c_str());
+    printf("%s", PrintHeader(*extra_metrics_names_).c_str());
     fflush(stdout);
   }
 
   void PrintStatsFooter() {
-    printf("%s", PrintAggregate(stats_aggregate_).c_str());
+    printf(
+        "%s",
+        PrintAggregate(extra_metrics_names_->size(), stats_aggregate_).c_str());
     if (Args()->markdown) printf("```\n");
     printf("\n");
     fflush(stdout);
@@ -971,12 +979,11 @@ class Benchmark {
           Status ok = true;
 
           loaded_images[i].target_nits = Args()->intensity_target;
-          loaded_images[i].dec_hints = Args()->dec_hints;
           loaded_images[i].dec_target = jpeg_transcoding_requested
                                             ? DecodeTarget::kQuantizedCoeffs
                                             : DecodeTarget::kPixels;
           if (!Args()->decode_only) {
-            ok = SetFromFile(fnames[i], &loaded_images[i]);
+            ok = SetFromFile(fnames[i], Args()->color_hints, &loaded_images[i]);
           }
           if (!ok) {
             if (!Args()->silent_errors) {

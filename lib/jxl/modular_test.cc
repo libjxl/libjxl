@@ -60,7 +60,7 @@ void TestLosslessGroups(size_t group_size_shift) {
   io.ShrinkTo(io.xsize() / 4, io.ysize() / 4);
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 280000);
+  EXPECT_LE(compressed_size, 280000u);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             0.0);
@@ -92,7 +92,7 @@ TEST(ModularTest, RoundtripLossy) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 40000);
+  EXPECT_LE(compressed_size, 40000u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
@@ -117,7 +117,7 @@ TEST(ModularTest, RoundtripLossy16) {
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 400);
+  EXPECT_LE(compressed_size, 400u);
   cparams.ba_params.intensity_target = 80.0f;
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),

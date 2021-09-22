@@ -216,7 +216,7 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
         /*has_alpha=*/has_alpha,
         /*alpha_is_premultiplied=*/spec.alpha_is_premultiplied,
         io.metadata.m.bit_depth.bits_per_sample, JXL_LITTLE_ENDIAN,
-        false /* flipped_y */, nullptr, &ib));
+        false /* flipped_y */, nullptr, &ib, /*float_in=*/false));
     io.frames.push_back(std::move(ib));
   }
 
@@ -224,10 +224,9 @@ bool GenerateFile(const char* output_dir, const ImageSpec& spec,
     // If this image is supposed to be a reconstructible JPEG, collect the JPEG
     // metadata and encode it in the beginning of the compressed bytes.
     jxl::PaddedBytes jpeg_bytes;
-    JXL_RETURN_IF_ERROR(
-        EncodeImageJPG(&io, jxl::JpegEncoder::kLibJpeg, /*quality=*/70,
-                       jxl::YCbCrChromaSubsampling(), /*pool=*/nullptr,
-                       &jpeg_bytes, jxl::DecodeTarget::kPixels));
+    JXL_RETURN_IF_ERROR(EncodeImageJPG(
+        &io, jxl::extras::JpegEncoder::kLibJpeg, /*quality=*/70,
+        jxl::YCbCrChromaSubsampling(), /*pool=*/nullptr, &jpeg_bytes));
     JXL_RETURN_IF_ERROR(jxl::jpeg::DecodeImageJPG(
         jxl::Span<const uint8_t>(jpeg_bytes.data(), jpeg_bytes.size()), &io));
     jxl::PaddedBytes jpeg_data;

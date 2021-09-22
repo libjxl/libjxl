@@ -89,7 +89,7 @@ if [[ ! -z "${HWY_BASELINE_TARGETS}" ]]; then
 fi
 
 # Version inferred from the CI variables.
-CI_COMMIT_SHA=${CI_COMMIT_SHA:-}
+CI_COMMIT_SHA=${CI_COMMIT_SHA:-${GITHUB_SHA:-}}
 JPEGXL_VERSION=${JPEGXL_VERSION:-${CI_COMMIT_SHA:0:8}}
 
 # Benchmark parameters
@@ -1187,7 +1187,7 @@ cmd_fuzz() {
 cmd_lint() {
   merge_request_commits
   { set +x; } 2>/dev/null
-  local versions=(${1:-6.0 7 8 9})
+  local versions=(${1:-6.0 7 8 9 10 11})
   local clang_format_bins=("${versions[@]/#/clang-format-}" clang-format)
   local tmpdir=$(mktemp -d)
   CLEANUP_FILES+=("${tmpdir}")
@@ -1358,6 +1358,60 @@ cmd_debian_build() {
       echo "ERROR: Must pass a valid source package name to build." >&2
       ;;
   esac
+}
+
+get_version() {
+  local varname=$1
+  local line=$(grep -F "set(${varname} " lib/CMakeLists.txt | head -n 1)
+  [[ -n "${line}" ]]
+  line="${line#set(${varname} }"
+  line="${line%)}"
+  echo "${line}"
+}
+
+cmd_bump_version() {
+  local newver="${1:-}"
+
+  if ! which dch >/dev/null; then
+    echo "Run:\n  sudo apt install debhelper"
+    exit 1
+  fi
+
+  if [[ -z "${newver}" ]]; then
+    local major=$(get_version JPEGXL_MAJOR_VERSION)
+    local minor=$(get_version JPEGXL_MINOR_VERSION)
+    local patch=0
+    minor=$(( ${minor}  + 1))
+  else
+    local major="${newver%%.*}"
+    newver="${newver#*.}"
+    local minor="${newver%%.*}"
+    newver="${newver#${minor}}"
+    local patch="${newver#.}"
+    if [[ -z "${patch}" ]]; then
+      patch=0
+    fi
+  fi
+
+  newver="${major}.${minor}"
+  if [[ "${patch}" != "0" ]]; then
+    newver="${newver}.${patch}"
+  fi
+  echo "Bumping version to ${newver} (${major}.${minor}.${patch})"
+  sed -E \
+    -e "s/(set\\(JPEGXL_MAJOR_VERSION) [0-9]+\\)/\\1 ${major})/" \
+    -e "s/(set\\(JPEGXL_MINOR_VERSION) [0-9]+\\)/\\1 ${minor})/" \
+    -e "s/(set\\(JPEGXL_PATCH_VERSION) [0-9]+\\)/\\1 ${patch})/" \
+    -i lib/CMakeLists.txt
+
+  # Update lib.gni
+  tools/build_cleaner.py --update
+
+  # Mark the previous version as "unstable".
+  DEBCHANGE_RELEASE_HEURISTIC=log dch -M --distribution unstable --release ''
+  DEBCHANGE_RELEASE_HEURISTIC=log dch -M \
+    --newversion "${newver}" \
+    "Bump JPEG XL version to ${newver}."
 }
 
 # Check that the AUTHORS file contains the email of the committer.

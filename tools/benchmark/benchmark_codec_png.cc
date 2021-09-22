@@ -40,8 +40,8 @@ class PNGCodec : public ImageCodec {
                   jpegxl::tools::SpeedStats* speed_stats) override {
     const size_t bits = io->metadata.m.bit_depth.bits_per_sample;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(
-        EncodeImagePNG(io, io->Main().c_current(), bits, pool, compressed));
+    JXL_RETURN_IF_ERROR(extras::EncodeImagePNG(io, io->Main().c_current(), bits,
+                                               pool, compressed));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;
@@ -52,7 +52,8 @@ class PNGCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     const double start = Now();
-    JXL_RETURN_IF_ERROR(DecodeImagePNG(compressed, pool, io));
+    JXL_RETURN_IF_ERROR(
+        extras::DecodeImagePNG(compressed, ColorHints(), pool, io));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

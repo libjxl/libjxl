@@ -5,22 +5,27 @@
 
 #include "lib/jxl/filters.h"
 
+#include <cmath>
+
 #include "lib/jxl/base/profiler.h"
 
 namespace jxl {
 
-void FilterWeights::Init(const LoopFilter& lf,
-                         const FrameDimensions& frame_dim) {
+Status FilterWeights::Init(const LoopFilter& lf,
+                           const FrameDimensions& frame_dim) {
   if (lf.epf_iters > 0) {
     sigma = ImageF(frame_dim.xsize_blocks + 2 * kSigmaPadding,
                    frame_dim.ysize_blocks + 2 * kSigmaPadding);
   }
   if (lf.gab) {
-    GaborishWeights(lf);
+    JXL_RETURN_IF_ERROR(GaborishWeights(lf));
   }
+  return true;
 }
 
-void FilterWeights::GaborishWeights(const LoopFilter& lf) {
+Status FilterWeights::GaborishWeights(const LoopFilter& lf) {
+  const float kZeroEpsilon = 1e-6;
+
   gab_weights[0] = 1;
   gab_weights[1] = lf.gab_x_weight1;
   gab_weights[2] = lf.gab_x_weight2;
@@ -32,13 +37,17 @@ void FilterWeights::GaborishWeights(const LoopFilter& lf) {
   gab_weights[8] = lf.gab_b_weight2;
   // Normalize
   for (size_t c = 0; c < 3; c++) {
-    const float mul =
-        1.0f / (gab_weights[3 * c] +
-                4 * (gab_weights[3 * c + 1] + gab_weights[3 * c + 2]));
+    const float div = gab_weights[3 * c] +
+                      4 * (gab_weights[3 * c + 1] + gab_weights[3 * c + 2]);
+    if (std::abs(div) < kZeroEpsilon) {
+      return JXL_FAILURE("Gaborish weights lead to near 0 unnormalized kernel");
+    }
+    const float mul = 1.0f / div;
     gab_weights[3 * c] *= mul;
     gab_weights[3 * c + 1] *= mul;
     gab_weights[3 * c + 2] *= mul;
   }
+  return true;
 }
 
 void FilterPipeline::ApplyFiltersRow(const LoopFilter& lf,

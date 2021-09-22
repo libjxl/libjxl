@@ -19,18 +19,24 @@ namespace palette_internal {
 
 static constexpr int kMaxPaletteLookupTableSize = 1 << 16;
 
-static constexpr int kCubePow = 3;
+static constexpr int kRgbChannels = 3;
 
 // 5x5x5 color cube for the larger cube.
 static constexpr int kLargeCube = 5;
 
 // Smaller interleaved color cube to fill the holes of the larger cube.
-static constexpr int kSmallCube = kLargeCube - 1;
-// kSmallCube ** kCubePow
+static constexpr int kSmallCube = 4;
+static constexpr int kSmallCubeBits = 2;
+// kSmallCube ** 3
 static constexpr int kLargeCubeOffset = kSmallCube * kSmallCube * kSmallCube;
 
-static constexpr pixel_type Scale(int value, int bit_depth, int denom) {
-  return (value * ((static_cast<pixel_type_w>(1) << bit_depth) - 1)) / denom;
+static inline pixel_type Scale(uint64_t value, uint64_t bit_depth,
+                               uint64_t denom) {
+  // return (value * ((static_cast<pixel_type_w>(1) << bit_depth) - 1)) / denom;
+  // We only call this function with kSmallCube or kLargeCube - 1 as denom,
+  // allowing us to avoid a division here.
+  JXL_ASSERT(denom == 4);
+  return (value * ((static_cast<uint64_t>(1) << bit_depth) - 1)) >> 2;
 }
 
 // The purpose of this function is solely to extend the interpretation of
@@ -43,26 +49,32 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
   if (index < 0) {
     static constexpr std::array<std::array<pixel_type, 3>, 72> kDeltaPalette = {
         {
-            {0, 0, 0},       {4, 4, 4},       {11, 0, 0},      {0, 0, -13},
-            {0, -12, 0},     {-10, -10, -10}, {-18, -18, -18}, {-27, -27, -27},
-            {-18, -18, 0},   {0, 0, -32},     {-32, 0, 0},     {-37, -37, -37},
-            {0, -32, -32},   {24, 24, 45},    {50, 50, 50},    {-45, -24, -24},
-            {-24, -45, -45}, {0, -24, -24},   {-34, -34, 0},   {-24, 0, -24},
-            {-45, -45, -24}, {64, 64, 64},    {-32, 0, -32},   {0, -32, 0},
-            {-32, 0, 32},    {-24, -45, -24}, {45, 24, 45},    {24, -24, -45},
-            {-45, -24, 24},  {80, 80, 80},    {64, 0, 0},      {0, 0, -64},
-            {0, -64, -64},   {-24, -24, 45},  {96, 96, 96},    {64, 64, 0},
-            {45, -24, -24},  {34, -34, 0},    {112, 112, 112}, {24, -45, -45},
-            {45, 45, -24},   {0, -32, 32},    {24, -24, 45},   {0, 96, 96},
-            {45, -24, 24},   {24, -45, -24},  {-24, -45, 24},  {0, -64, 0},
-            {96, 0, 0},      {128, 128, 128}, {64, 0, 64},     {144, 144, 144},
-            {96, 96, 0},     {-36, -36, 36},  {45, -24, -45},  {45, -45, -24},
-            {0, 0, -96},     {0, 128, 128},   {0, 96, 0},      {45, 24, -45},
-            {-128, 0, 0},    {24, -45, 24},   {-45, 24, -45},  {64, 0, -64},
-            {64, -64, -64},  {96, 0, 96},     {45, -45, 24},   {24, 45, -45},
-            {64, 64, -64},   {128, 128, 0},   {0, 0, -128},    {-24, 45, -45},
+            {{0, 0, 0}},       {{4, 4, 4}},       {{11, 0, 0}},
+            {{0, 0, -13}},     {{0, -12, 0}},     {{-10, -10, -10}},
+            {{-18, -18, -18}}, {{-27, -27, -27}}, {{-18, -18, 0}},
+            {{0, 0, -32}},     {{-32, 0, 0}},     {{-37, -37, -37}},
+            {{0, -32, -32}},   {{24, 24, 45}},    {{50, 50, 50}},
+            {{-45, -24, -24}}, {{-24, -45, -45}}, {{0, -24, -24}},
+            {{-34, -34, 0}},   {{-24, 0, -24}},   {{-45, -45, -24}},
+            {{64, 64, 64}},    {{-32, 0, -32}},   {{0, -32, 0}},
+            {{-32, 0, 32}},    {{-24, -45, -24}}, {{45, 24, 45}},
+            {{24, -24, -45}},  {{-45, -24, 24}},  {{80, 80, 80}},
+            {{64, 0, 0}},      {{0, 0, -64}},     {{0, -64, -64}},
+            {{-24, -24, 45}},  {{96, 96, 96}},    {{64, 64, 0}},
+            {{45, -24, -24}},  {{34, -34, 0}},    {{112, 112, 112}},
+            {{24, -45, -45}},  {{45, 45, -24}},   {{0, -32, 32}},
+            {{24, -24, 45}},   {{0, 96, 96}},     {{45, -24, 24}},
+            {{24, -45, -24}},  {{-24, -45, 24}},  {{0, -64, 0}},
+            {{96, 0, 0}},      {{128, 128, 128}}, {{64, 0, 64}},
+            {{144, 144, 144}}, {{96, 96, 0}},     {{-36, -36, 36}},
+            {{45, -24, -45}},  {{45, -45, -24}},  {{0, 0, -96}},
+            {{0, 128, 128}},   {{0, 96, 0}},      {{45, 24, -45}},
+            {{-128, 0, 0}},    {{24, -45, 24}},   {{-45, 24, -45}},
+            {{64, 0, -64}},    {{64, -64, -64}},  {{96, 0, 96}},
+            {{45, -45, 24}},   {{24, 45, -45}},   {{64, 64, -64}},
+            {{128, 128, 0}},   {{0, 0, -128}},    {{-24, 45, -45}},
         }};
-    if (c >= kDeltaPalette[0].size()) {
+    if (c >= kRgbChannels) {
       return 0;
     }
     // Do not open the brackets, otherwise INT32_MIN negation could overflow.
@@ -76,32 +88,28 @@ static pixel_type GetPaletteValue(const pixel_type *const palette, int index,
     }
     return result;
   } else if (palette_size <= index && index < palette_size + kLargeCubeOffset) {
-    if (c >= kCubePow) return 0;
+    if (c >= kRgbChannels) return 0;
     index -= palette_size;
-    if (c > 0) {
-      int divisor = kSmallCube;
-      for (size_t i = 1; i < c; ++i) {
-        divisor *= kSmallCube;
-      }
-      index /= divisor;
-    }
+    index >>= c * kSmallCubeBits;
     return Scale(index % kSmallCube, bit_depth, kSmallCube) +
            (1 << (std::max(0, bit_depth - 3)));
   } else if (palette_size + kLargeCubeOffset <= index) {
-    if (c >= kCubePow) return 0;
+    if (c >= kRgbChannels) return 0;
     index -= palette_size + kLargeCubeOffset;
     // TODO(eustas): should we take care of ambiguity created by
     //               index >= kLargeCube ** 3 ?
-    if (c > 0) {
-      int divisor = kLargeCube;
-      for (size_t i = 1; i < c; ++i) {
-        divisor *= kLargeCube;
-      }
-      index /= divisor;
+    switch (c) {
+      case 0:
+        break;
+      case 1:
+        index /= kLargeCube;
+        break;
+      case 2:
+        index /= kLargeCube * kLargeCube;
+        break;
     }
     return Scale(index % kLargeCube, bit_depth, kLargeCube - 1);
   }
-
   return palette[c * onerow + static_cast<size_t>(index)];
 }
 
@@ -271,7 +279,15 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
           "UndoDeltaPaletteNoWP");
     }
   }
-  input.nb_meta_channels--;
+  if (c0 >= input.nb_meta_channels) {
+    // Palette was done on normal channels
+    input.nb_meta_channels--;
+  } else {
+    // Palette was done on metachannels
+    JXL_ASSERT(static_cast<int>(input.nb_meta_channels) >= 2 - nb);
+    input.nb_meta_channels -= 2 - nb;
+    JXL_ASSERT(begin_c + nb - 1 < input.nb_meta_channels);
+  }
   input.channel.erase(input.channel.begin(), input.channel.begin() + 1);
   return num_errors.load(std::memory_order_relaxed) == 0;
 }
@@ -282,12 +298,13 @@ static Status MetaPalette(Image &input, uint32_t begin_c, uint32_t end_c,
 
   size_t nb = end_c - begin_c + 1;
   if (begin_c >= input.nb_meta_channels) {
+    // Palette was done on normal channels
     input.nb_meta_channels++;
-  } else if (end_c < input.nb_meta_channels) {
+  } else {
+    // Palette was done on metachannels
+    JXL_ASSERT(end_c < input.nb_meta_channels);
     // we remove nb-1 metachannels and add one
     input.nb_meta_channels += 2 - nb;
-  } else {
-    return JXL_FAILURE("Error: Palette operating on mixed meta/nonmeta");
   }
   input.channel.erase(input.channel.begin() + begin_c + 1,
                       input.channel.begin() + end_c + 1);

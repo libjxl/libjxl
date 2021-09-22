@@ -468,7 +468,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
 
   nb_chans += extra_channels.size();
 
-  bool fp = metadata.bit_depth.floating_point_sample;
+  bool fp = metadata.bit_depth.floating_point_sample &&
+            cparams.color_transform != ColorTransform::kXYB;
 
   // bits_per_sample is just metadata for XYB images.
   if (metadata.bit_depth.bits_per_sample >= 32 && do_color &&
@@ -731,10 +732,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
       // assuming default Squeeze here
       int component = ((i - gi.nb_meta_channels) % nb_chans);
       // last 4 channels are final chroma residuals
-      if (nb_chans > 2 && i >= gi.channel.size() - 4) {
+      if (nb_chans > 2 && i >= gi.channel.size() - 4 && cparams.responsive) {
         component = 1;
       }
-
       if (cparams.color_transform == ColorTransform::kXYB && component < 3) {
         q = (component == 0 ? quality : cquality) * squeeze_quality_factor_xyb *
             squeeze_xyb_qtable[component][shift];
@@ -838,8 +838,8 @@ Status ModularFrameEncoder::ComputeEncodingData(
             multiplier_info.back().range[1][0] != stream_id ||
             multiplier_info.back().multiplier != q) {
           StaticPropRange range;
-          range[0] = {i, i + 1};
-          range[1] = {stream_id, stream_id + 1};
+          range[0] = {{i, i + 1}};
+          range[1] = {{stream_id, stream_id + 1}};
           multiplier_info.push_back({range, (uint32_t)q});
         } else {
           // Previous channel in the same group had the same quantization
@@ -956,8 +956,8 @@ Status ModularFrameEncoder::PrepareEncoding(ThreadPool* pool,
                                 pixel_samples, diff_samples);
           }
           StaticPropRange range;
-          range[0] = {0, max_c};
-          range[1] = {start, stop};
+          range[0] = {{0, max_c}};
+          range[1] = {{start, stop}};
           auto local_multiplier_info = multiplier_info;
 
           tree_samples.PreQuantizeProperties(

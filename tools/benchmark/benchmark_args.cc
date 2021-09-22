@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/color_description.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
@@ -109,11 +110,11 @@ Status BenchmarkArgs::AddCommandLineOptions() {
            "HLG transfer function)",
            0);
 
-  AddString(&dec_hints_string, "dec-hints",
-            "Decoder hints for the input images to encoder. Comma separated "
-            "key=value pairs. The key color_space indicates ColorEncoding (see "
-            "ParseDescription; e.g. RGB_D65_SRG_Rel_709) for input images "
-            "without color encoding (such as PNM)");
+  AddString(&color_hints_string, "dec-hints",
+            "Color encoding hints for the input images to encoder. Comma "
+            "separated key=value pairs. The key color_space indicates "
+            "ColorEncoding (see ParseDescription; e.g. RGB_D65_SRG_Rel_709) "
+            "for input images without color encoding (such as PNM)");
 
   AddUnsigned(
       &override_bitdepth, "override_bitdepth",
@@ -239,11 +240,14 @@ Status BenchmarkArgs::ValidateArgs() {
   // output_description is not empty.
   if (!output_description.empty()) {
     // Validate, but also create the profile (only needs to happen once).
-    if (!ParseDescription(output_description, &output_encoding)) {
+    JxlColorEncoding output_encoding_external;
+    if (!ParseDescription(output_description, &output_encoding_external)) {
       JXL_WARNING("Unrecognized output_description %s, try RGB_D65_SRG_Rel_Lin",
                   output_description.c_str());
       return false;  // already warned
     }
+    JXL_RETURN_IF_ERROR(jxl::ConvertExternalToInternalColorEncoding(
+        output_encoding_external, &output_encoding));
     JXL_RETURN_IF_ERROR(output_encoding.CreateICC());
   }
 
@@ -255,15 +259,15 @@ Status BenchmarkArgs::ValidateArgs() {
     return JXL_FAILURE("override_bitdepth must be <= 32");
   }
 
-  if (!dec_hints_string.empty()) {
-    std::vector<std::string> hints = SplitString(dec_hints_string, ',');
+  if (!color_hints_string.empty()) {
+    std::vector<std::string> hints = SplitString(color_hints_string, ',');
     for (const auto& hint : hints) {
       std::vector<std::string> kv = SplitString(hint, '=');
       if (kv.size() != 2) {
         return JXL_FAILURE(
             "dec-hints key value pairs must have the form 'key=value'");
       }
-      dec_hints.Add(kv[0], kv[1]);
+      color_hints.Add(kv[0], kv[1]);
     }
   }
 

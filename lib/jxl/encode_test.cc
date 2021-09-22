@@ -244,7 +244,7 @@ TEST(EncodeTest, OptionsTest) {
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
     // Lower than currently supported values
-    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 2));
+    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 0));
     // Higher than currently supported values
     EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 10));
   }
@@ -280,7 +280,7 @@ TEST(EncodeTest, OptionsTest) {
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
     EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetDecodingSpeed(options, 2));
     VerifyFrameEncoding(enc.get(), options);
-    EXPECT_EQ(2, enc->last_used_cparams.decoding_speed_tier);
+    EXPECT_EQ(2u, enc->last_used_cparams.decoding_speed_tier);
   }
 }
 
@@ -461,7 +461,7 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   jxl::Span<const uint8_t> encoded_span =
       jxl::Span<const uint8_t>(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
-  EXPECT_EQ(0, encoded_span.size());
+  EXPECT_EQ(0u, encoded_span.size());
   EXPECT_EQ(0, memcmp("jxlc", container.boxes[0].type, 4));
   EXPECT_EQ(true, container.boxes[0].data_size_given);
 }
@@ -503,7 +503,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   jxl::Span<const uint8_t> encoded_span =
       jxl::Span<const uint8_t>(compressed.data(), compressed.size());
   EXPECT_TRUE(container.Decode(&encoded_span));
-  EXPECT_EQ(0, encoded_span.size());
+  EXPECT_EQ(0u, encoded_span.size());
   EXPECT_EQ(0, memcmp("jbrd", container.boxes[0].type, 4));
   EXPECT_EQ(0, memcmp("jxlc", container.boxes[1].type, 4));
 
@@ -533,7 +533,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
     for (int skip_color_encoding = 0; skip_color_encoding < 2;
          skip_color_encoding++) {
       const std::string jpeg_path =
-          "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
+          "imagecompression.info/flower_foveon_cropped.jpg";
       const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
       jxl::CodecInOut orig_io;
       ASSERT_TRUE(SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io,
@@ -544,10 +544,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
 
       if (!skip_basic_info) {
         JxlBasicInfo basic_info;
-        basic_info.exponent_bits_per_sample = 0;
-        basic_info.bits_per_sample = 8;
-        basic_info.alpha_bits = 0;
-        basic_info.alpha_exponent_bits = 0;
+        JxlEncoderInitBasicInfo(&basic_info);
         basic_info.xsize = orig_io.xsize();
         basic_info.ysize = orig_io.ysize();
         basic_info.uses_original_profile = true;

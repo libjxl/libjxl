@@ -9,6 +9,7 @@
 #include <QThread>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/color_hints.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/color_management.h"
@@ -18,12 +19,12 @@ namespace jxl {
 
 namespace {
 
-Status loadFromFile(const QString& filename, CodecInOut* const decoded,
-                    ThreadPool* const pool) {
+Status loadFromFile(const QString& filename, const ColorHints& color_hints,
+                    CodecInOut* const decoded, ThreadPool* const pool) {
   PaddedBytes compressed;
   JXL_RETURN_IF_ERROR(ReadFile(filename.toStdString(), &compressed));
   const Span<const uint8_t> compressed_span(compressed);
-  return SetFromBytes(compressed_span, decoded, pool);
+  return SetFromBytes(compressed_span, color_hints, decoded, pool, nullptr);
 }
 
 }  // namespace
@@ -46,10 +47,11 @@ QImage loadImage(const QString& filename, const QByteArray& targetIccProfile,
   static ThreadPoolInternal pool(QThread::idealThreadCount());
 
   CodecInOut decoded;
+  ColorHints color_hints;
   if (!sourceColorSpaceHint.isEmpty()) {
-    decoded.dec_hints.Add("color_space", sourceColorSpaceHint.toStdString());
+    color_hints.Add("color_space", sourceColorSpaceHint.toStdString());
   }
-  if (!loadFromFile(filename, &decoded, &pool)) {
+  if (!loadFromFile(filename, color_hints, &decoded, &pool)) {
     return QImage();
   }
   const ImageBundle& ib = decoded.Main();

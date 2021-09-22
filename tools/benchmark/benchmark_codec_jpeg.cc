@@ -23,6 +23,8 @@
 #include "lib/jxl/codec_in_out.h"
 #include "tools/cmdline.h"
 
+using jxl::extras::JpegEncoder;
+
 namespace jxl {
 
 namespace {
@@ -38,10 +40,10 @@ bool ParseChromaSubsampling(const char* param,
                             YCbCrChromaSubsampling* subsampling) {
   std::vector<std::pair<
       std::string, std::pair<std::array<uint8_t, 3>, std::array<uint8_t, 3>>>>
-      options = {{"444", {{1, 1, 1}, {1, 1, 1}}},
-                 {"420", {{2, 1, 1}, {2, 1, 1}}},
-                 {"422", {{2, 1, 1}, {1, 1, 1}}},
-                 {"440", {{1, 1, 1}, {2, 1, 1}}}};
+      options = {{"444", {{{1, 1, 1}}, {{1, 1, 1}}}},
+                 {"420", {{{2, 1, 1}}, {{2, 1, 1}}}},
+                 {"422", {{{2, 1, 1}}, {{1, 1, 1}}}},
+                 {"440", {{{1, 1, 1}}, {{2, 1, 1}}}}};
   for (const auto& option : options) {
     if (param == option.first) {
       JXL_CHECK(subsampling->Set(option.second.first.data(),
@@ -102,8 +104,8 @@ class JPEGCodec : public ImageCodec {
                     jpegxl::tools::SpeedStats* speed_stats) override {
     double elapsed_deinterleave;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(
-        DecodeImageJPG(compressed, pool, io, &elapsed_deinterleave));
+    JXL_RETURN_IF_ERROR(extras::DecodeImageJPG(compressed, ColorHints(), pool,
+                                               io, &elapsed_deinterleave));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start - elapsed_deinterleave);
     return true;

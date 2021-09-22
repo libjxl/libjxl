@@ -24,6 +24,7 @@
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {
+namespace extras {
 
 namespace {
 
@@ -52,8 +53,8 @@ bool AllOpaque(const ImageF& alpha) {
 
 }  // namespace
 
-Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
-                      CodecInOut* io) {
+Status DecodeImageGIF(Span<const uint8_t> bytes, const ColorHints& color_hints,
+                      ThreadPool* pool, CodecInOut* io) {
   int error = GIF_OK;
   ReadState state = {bytes};
   const auto ReadFromSpan = [](GifFileType* const gif, GifByteType* const bytes,
@@ -131,24 +132,18 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   io->dec_pixels = 0;
 
   io->metadata.m.SetUintSamples(8);
-  io->metadata.m.color_encoding = ColorEncoding::SRGB();
   io->metadata.m.SetAlphaBits(0);
-  (void)io->dec_hints.Foreach(
-      [](const std::string& key, const std::string& /*value*/) {
-        JXL_WARNING("GIF decoder ignoring %s hint", key.c_str());
-        return true;
-      });
+  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, /*color_already_set=*/false,
+                                      /*is_gray=*/false, io));
 
   Image3F canvas(gif->SWidth, gif->SHeight);
   io->SetSize(gif->SWidth, gif->SHeight);
   ImageF alpha(gif->SWidth, gif->SHeight);
   GifColorType background_color;
-  if (gif->SColorMap == nullptr) {
+  if (gif->SColorMap == nullptr ||
+      gif->SBackGroundColor >= gif->SColorMap->ColorCount) {
     background_color = {0, 0, 0};
   } else {
-    if (gif->SBackGroundColor >= gif->SColorMap->ColorCount) {
-      return JXL_FAILURE("GIF specifies out-of-bounds background color");
-    }
     background_color = gif->SColorMap->Colors[gif->SBackGroundColor];
   }
   FillPlane<float>(background_color.Red, &canvas.Plane(0));
@@ -340,4 +335,5 @@ Status DecodeImageGIF(Span<const uint8_t> bytes, ThreadPool* pool,
   return true;
 }
 
+}  // namespace extras
 }  // namespace jxl

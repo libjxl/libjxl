@@ -9,6 +9,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/codec_jpg.h"
+#include "lib/extras/color_description.h"
 #include "lib/extras/time.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/alpha.h"
@@ -25,7 +26,6 @@
 #include "tools/args.h"
 #include "tools/box/box.h"
 #include "tools/cpu/cpu.h"
-
 
 namespace jpegxl {
 namespace tools {
@@ -221,11 +221,7 @@ jxl::Status DecompressJxlToJPEG(const JpegXlContainer& container,
   if (!DecodeJpegXlToJpeg(args.params, container, &io, pool)) {
     return JXL_FAILURE("Failed to decode JXL to JPEG");
   }
-  if (!EncodeImageJPG(
-          &io,
-          io.use_sjpeg ? jxl::JpegEncoder::kSJpeg : jxl::JpegEncoder::kLibJpeg,
-          io.jpeg_quality, jxl::YCbCrChromaSubsampling(), pool, output,
-          jxl::DecodeTarget::kQuantizedCoeffs)) {
+  if (!jxl::extras::EncodeImageJPGCoefficients(&io, output)) {
     return JXL_FAILURE("Failed to generate JPEG");
   }
   stats->SetImageSize(io.xsize(), io.ysize());
@@ -246,7 +242,10 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
   jxl::ColorEncoding c_out = io.metadata.m.color_encoding;
   if (!args.color_space.empty()) {
     bool color_space_applied = false;
-    if (jxl::ParseDescription(args.color_space, &c_out) && c_out.CreateICC()) {
+    JxlColorEncoding c_out_external;
+    if (jxl::ParseDescription(args.color_space, &c_out_external) &&
+        ConvertExternalToInternalColorEncoding(c_out_external, &c_out) &&
+        c_out.CreateICC()) {
       color_space_applied = true;
     } else {
       jxl::PaddedBytes icc;

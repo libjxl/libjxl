@@ -4,7 +4,9 @@
 # license that can be found in the LICENSE file.
 
 set(TEST_FILES
+  extras/codec_pgx_test.cc
   extras/codec_test.cc
+  extras/color_description_test.cc
   jxl/ac_strategy_test.cc
   jxl/adaptive_reconstruction_test.cc
   jxl/alpha_test.cc
@@ -67,6 +69,8 @@ set(TEST_FILES
 
 # Test-only library code.
 set(TESTLIB_FILES
+  jxl/codec_y4m_testonly.cc
+  jxl/codec_y4m_testonly.h
   jxl/dct_for_test.h
   jxl/dec_transforms_testonly.cc
   jxl/dec_transforms_testonly.h
@@ -88,7 +92,7 @@ target_compile_definitions(jxl_testlib-static PUBLIC
 target_include_directories(jxl_testlib-static PUBLIC
   "${PROJECT_SOURCE_DIR}"
 )
-target_link_libraries(jxl_testlib-static hwy)
+target_link_libraries(jxl_testlib-static hwy jxl-static)
 
 # Individual test binaries:
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/tests)
