@@ -76,6 +76,34 @@ TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
   TestLosslessGroups(3);
 }
 
+TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  // 9 = permute to GBR, to test the special case of permutation-only
+  cparams.colorspace = 9;
+  // slowest speed so different WP modes are tried
+  cparams.speed_tier = SpeedTier::kTortoise;
+  cparams.options.predictor = {Predictor::Weighted};
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(100, 100);
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 10250u);
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            0.0);
+}
+
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
