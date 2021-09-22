@@ -16,14 +16,14 @@ void Image::undo_transforms(const weighted::Header &wp_header, int keep,
   if (keep == -2) return;
   while ((int)transform.size() > keep && transform.size() > 0) {
     Transform t = transform.back();
-    JXL_DEBUG_V(4, "Undoing transform %s", t.Name());
+    JXL_DEBUG_V(4, "Undoing transform");
     Status result = t.Inverse(*this, wp_header, pool);
     if (result == false) {
-      JXL_NOTIFY_ERROR("Error while undoing transform %s.", t.Name());
+      JXL_NOTIFY_ERROR("Error while undoing transform.");
       error = true;
       return;
     }
-    JXL_DEBUG_V(8, "Undoing transform %s: done", t.Name());
+    JXL_DEBUG_V(8, "Undoing transform: done");
     transform.pop_back();
   }
   if (!keep && bitdepth < 32) {

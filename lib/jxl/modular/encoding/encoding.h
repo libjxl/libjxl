@@ -27,7 +27,7 @@ constexpr int32_t kPropRangeFast = 512;
 struct GroupHeader : public Fields {
   GroupHeader();
 
-  const char *Name() const override { return "GroupHeader"; }
+  JXL_FIELDS_NAME(GroupHeader)
 
   Status VisitFields(Visitor *JXL_RESTRICT visitor) override {
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &use_global_tree));
