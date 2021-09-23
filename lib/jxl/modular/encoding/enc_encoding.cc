@@ -15,7 +15,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "lib/jxl/base/os_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
@@ -26,6 +25,7 @@
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
@@ -33,17 +33,37 @@
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/toc.h"
 
-#if JXL_OS_IOS
-#define JXL_ENABLE_DOT 0
-#else
-#define JXL_ENABLE_DOT 1  // iOS lacks C89 system()
-#endif
-
 namespace jxl {
 
 namespace {
 // Plot tree (if enabled) and predictor usage map.
 constexpr bool kWantDebug = false;
+constexpr bool kPrintTree = false;
+
+inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
+  switch (p) {
+    case Predictor::Zero:
+      return {{0, 0, 0}};
+    case Predictor::Left:
+      return {{255, 0, 0}};
+    case Predictor::Top:
+      return {{0, 255, 0}};
+    case Predictor::Average0:
+      return {{0, 0, 255}};
+    case Predictor::Average4:
+      return {{192, 128, 128}};
+    case Predictor::Select:
+      return {{255, 255, 0}};
+    case Predictor::Gradient:
+      return {{255, 0, 255}};
+    case Predictor::Weighted:
+      return {{0, 255, 255}};
+      // TODO
+    default:
+      return {{255, 255, 255}};
+  };
+}
+
 }  // namespace
 
 void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
@@ -137,32 +157,6 @@ Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
                   multiplier_info, static_prop_range,
                   options.fast_decode_multiplier, &tree);
   return tree;
-}
-
-constexpr bool kPrintTree = false;
-
-void PrintTree(const Tree &tree, const std::string &path) {
-  if (!kPrintTree) return;
-  FILE *f = fopen((path + ".dot").c_str(), "w");
-  fprintf(f, "graph{\n");
-  for (size_t cur = 0; cur < tree.size(); cur++) {
-    if (tree[cur].property < 0) {
-      fprintf(f, "n%05zu [label=\"%s%+" PRId64 " (x%u)\"];\n", cur,
-              PredictorName(tree[cur].predictor), tree[cur].predictor_offset,
-              tree[cur].multiplier);
-    } else {
-      fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
-              PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
-      fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].lchild);
-      fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].rchild);
-    }
-  }
-  fprintf(f, "}\n");
-  fclose(f);
-#if JXL_ENABLE_DOT
-  JXL_ASSERT(
-      system(("dot " + path + ".dot -T svg -o " + path + ".svg").c_str()) == 0);
-#endif
 }
 
 Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
@@ -470,7 +464,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     JXL_ASSERT(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
-    if (kWantDebug && WantDebugOutput(aux_out)) {
+    if (kWantDebug && kPrintTree && WantDebugOutput(aux_out)) {
       PrintTree(*tree, aux_out->debug_prefix + "/tree_" + ToString(group_id));
     }
     // Write tree
