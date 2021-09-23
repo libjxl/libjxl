@@ -104,6 +104,33 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
             0.0);
 }
 
+TEST(ModularTest, RoundtripLossyDeltaPalette) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.lossy_palette = true;
+  cparams.palette_colors = 0;
+
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(300, 100);
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 6700u);
+  cparams.ba_params.intensity_target = 80.0f;
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            1.5);
+}
+
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
