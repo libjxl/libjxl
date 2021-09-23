@@ -680,8 +680,9 @@ Status ModularFrameEncoder::ComputeEncodingData(
   }
 
   if (cparams.responsive && !gi.channel.empty()) {
-    do_transform(gi, Transform(TransformId::kSqueeze), weighted::Header(),
-                 pool);  // use default squeezing
+    Transform t(TransformId::kSqueeze);
+    t.squeezes = cparams.squeezes;
+    do_transform(gi, t, weighted::Header(), pool);
   }
 
   std::vector<uint32_t> quants;

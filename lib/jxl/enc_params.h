@@ -17,6 +17,7 @@
 #include "lib/jxl/butteraugli/butteraugli.h"
 #include "lib/jxl/frame_header.h"
 #include "lib/jxl/modular/options.h"
+#include "lib/jxl/modular/transform/transform.h"
 
 namespace jxl {
 
@@ -215,6 +216,8 @@ struct CompressParams {
   // modular mode options below
   ModularOptions options;
   int responsive = -1;
+  // empty for default squeeze
+  std::vector<SqueezeParams> squeezes;
   // A pair of <quality, cquality>.
   std::pair<float, float> quality_pair{100.f, 100.f};
   int colorspace = -1;

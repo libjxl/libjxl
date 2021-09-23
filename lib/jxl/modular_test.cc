@@ -195,5 +195,38 @@ TEST(ModularTest, RoundtripExtraProperties) {
   }
 }
 
+TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.quality_pair = {100, 100};
+  cparams.options.predictor = {Predictor::Zero};
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.responsive = 1;
+  // Custom squeeze params, atm just for testing
+  SqueezeParams p;
+  p.horizontal = true;
+  p.in_place = false;
+  p.begin_c = 0;
+  p.num_c = 3;
+  cparams.squeezes.push_back(p);
+  p.begin_c = 1;
+  p.in_place = true;
+  p.horizontal = false;
+  cparams.squeezes.push_back(p);
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 265000u);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
+}
+
 }  // namespace
 }  // namespace jxl
