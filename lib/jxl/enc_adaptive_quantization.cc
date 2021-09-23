@@ -1107,7 +1107,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   // Fine to do a JXL_ASSERT instead of error handling, since this only happens
   // on the encoder side where we can't be fed with invalid data.
   JXL_CHECK(FinalizeFrameDecoding(&decoded, dec_state.get(), pool,
-                                  /*force_fir=*/false, /*skip_blending=*/true));
+                                  /*force_fir=*/false, /*skip_blending=*/true,
+                                  /*move_ec=*/true));
   // Ensure we don't create any new special frames.
   enc_state->special_frames.resize(num_special_frames);
 

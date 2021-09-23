@@ -826,7 +826,8 @@ Status FrameDecoder::Flush() {
       dec_state_, pool_, decoded_, is_finalized_));
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
                                             /*force_fir=*/false,
-                                            /*skip_blending=*/false));
+                                            /*skip_blending=*/false,
+                                            /*move_ec=*/is_finalized_));
 
   num_renders_++;
   return true;
