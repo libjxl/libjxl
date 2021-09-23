@@ -391,8 +391,8 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
       // TODO(veluca): allow all predictors that don't break residual
       // multipliers in lossy mode.
       cparams.options.predictor = Predictor::Variable;
-    } else if (cparams.responsive) {
-      // zero predictor for Squeeze residues
+    } else if (cparams.responsive || cparams.lossy_palette) {
+      // zero predictor for Squeeze residues and lossy palette
       cparams.options.predictor = Predictor::Zero;
     } else if (quality < 100) {
       // If not responsive and lossy. TODO(veluca): use near_lossless instead?
@@ -407,6 +407,9 @@ ModularFrameEncoder::ModularFrameEncoder(const FrameHeader& frame_header,
       // just gradient predictor in thunder mode
       cparams.options.predictor = Predictor::Gradient;
     }
+  } else {
+    delta_pred = cparams.options.predictor;
+    if (cparams.lossy_palette) cparams.options.predictor = Predictor::Zero;
   }
   tree_splits.push_back(0);
   if (cparams.modular_mode == false) {
@@ -639,7 +642,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette.lossy_palette =
           (cparams.lossy_palette && maybe_palette.num_c == 3);
       if (maybe_palette.lossy_palette) {
-        maybe_palette.predictor = Predictor::Average4;
+        maybe_palette.predictor = delta_pred;
       }
       // TODO(veluca): use a custom weighted header if using the weighted
       // predictor.
@@ -656,7 +659,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       maybe_palette_3.ordered_palette = cparams.palette_colors >= 0;
       maybe_palette_3.lossy_palette = cparams.lossy_palette;
       if (maybe_palette_3.lossy_palette) {
-        maybe_palette_3.predictor = Predictor::Average4;
+        maybe_palette_3.predictor = delta_pred;
       }
       do_transform(gi, maybe_palette_3, weighted::Header(), pool);
     }
