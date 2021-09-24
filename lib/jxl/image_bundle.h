@@ -179,12 +179,6 @@ class ImageBundle {
   const ImageF& alpha() const;
   ImageF* alpha();
 
-  // -- DEPTH
-  bool HasDepth() const {
-    return metadata_->Find(ExtraChannel::kDepth) != nullptr;
-  }
-  const ImageF& depth() const;
-
   // -- EXTRA CHANNELS
 
   // Extra channels of unknown interpretation (e.g. spot colors).
