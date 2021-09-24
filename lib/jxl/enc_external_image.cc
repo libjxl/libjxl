@@ -120,10 +120,6 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
   const uint8_t* const in = bytes.data();
 
   Image3F color(xsize, ysize);
-  ImageF alpha;
-  if (has_alpha) {
-    alpha = ImageF(xsize, ysize);
-  }
 
   const auto get_y = [flipped_y, ysize](const size_t y) {
     return flipped_y ? ysize - 1 - y : y;
@@ -217,7 +213,11 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
 
   ib->SetFromImage(std::move(color), c_current);
 
-  if (has_alpha) {
+  // Passing an interleaved image with an alpha channel to an image that doesn't
+  // have alpha channel just discards the passed alpha channel.
+  if (has_alpha && ib->HasAlpha()) {
+    ImageF alpha(xsize, ysize);
+
     if (float_in) {
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
