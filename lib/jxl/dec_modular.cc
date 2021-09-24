@@ -218,7 +218,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
   Status dec_status = ModularGenericDecompress(
       reader, gi, &global_header, ModularStreamId::Global().ID(frame_dim),
       &options,
-      /*undo_transforms=*/-2, &tree, &code, &context_map,
+      /*undo_transforms=*/false, &tree, &code, &context_map,
       allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) {
@@ -302,7 +302,7 @@ Status ModularFrameDecoder::DecodeGroup(const Rect& rect, BitReader* reader,
   if (!zerofill) {
     if (!ModularGenericDecompress(
             reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
-            /*undo_transforms=*/-1, &tree, &code, &context_map)) {
+            /*undo_transforms=*/true, &tree, &code, &context_map)) {
       return JXL_FAILURE("Failed to decode modular group");
     }
   }
@@ -355,7 +355,7 @@ Status ModularFrameDecoder::DecodeVarDCTDC(size_t group_id, BitReader* reader,
   }
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,
-          /*undo_transforms=*/-1, &tree, &code, &context_map)) {
+          /*undo_transforms=*/true, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode modular DC group");
   }
   DequantDC(r, &dec_state->shared_storage.dc_storage,
@@ -384,7 +384,7 @@ Status ModularFrameDecoder::DecodeAcMetadata(size_t group_id, BitReader* reader,
   ModularOptions options;
   if (!ModularGenericDecompress(
           reader, image, /*header=*/nullptr, stream_id, &options,
-          /*undo_transforms=*/-1, &tree, &code, &context_map)) {
+          /*undo_transforms=*/true, &tree, &code, &context_map)) {
     return JXL_FAILURE("Failed to decode AC metadata");
   }
   ConvertPlaneAndClamp(Rect(image.channel[0].plane), image.channel[0].plane, cr,
@@ -603,7 +603,7 @@ Status ModularFrameDecoder::FinalizeDecoding(PassesDecoderState* dec_state,
   if (xsize * ysize < frame_dim.group_dim * frame_dim.group_dim) pool = nullptr;
 
   // Undo the global transforms
-  gi.undo_transforms(global_header.wp_header, -1, pool);
+  gi.undo_transforms(global_header.wp_header, pool);
   if (gi.error) return JXL_FAILURE("Undoing transforms failed");
 
   auto& decoded = dec_state->decoded;
@@ -631,12 +631,12 @@ Status ModularFrameDecoder::DecodeQuantTable(
     JXL_RETURN_IF_ERROR(ModularGenericDecompress(
         br, image, /*header=*/nullptr,
         ModularStreamId::QuantTable(idx).ID(modular_frame_decoder->frame_dim),
-        &options, /*undo_transforms=*/-1, &modular_frame_decoder->tree,
+        &options, /*undo_transforms=*/true, &modular_frame_decoder->tree,
         &modular_frame_decoder->code, &modular_frame_decoder->context_map));
   } else {
     JXL_RETURN_IF_ERROR(ModularGenericDecompress(br, image, /*header=*/nullptr,
                                                  0, &options,
-                                                 /*undo_transforms=*/-1));
+                                                 /*undo_transforms=*/true));
   }
   if (!encoding->qraw.qtable) {
     encoding->qraw.qtable = new std::vector<int>();
