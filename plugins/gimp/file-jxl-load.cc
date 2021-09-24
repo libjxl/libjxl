@@ -272,7 +272,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
             precision = GIMP_PRECISION_FLOAT_GAMMA;
           }
         } else if (is_linear) {
-            precision = GIMP_PRECISION_U32_LINEAR;
+          precision = GIMP_PRECISION_U32_LINEAR;
         } else {
           precision = GIMP_PRECISION_U32_GAMMA;
         }
@@ -289,8 +289,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       babl_format_str += " float";
 
       // create new image
-      *image_id = gimp_image_new_with_precision(
-          info.xsize, info.ysize, image_type, precision);
+      *image_id = gimp_image_new_with_precision(info.xsize, info.ysize,
+                                                image_type, precision);
 
       if (profile_int) {
         gimp_image_set_color_profile(*image_id, profile_int);
