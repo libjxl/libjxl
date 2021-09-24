@@ -19,13 +19,13 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
   gint32 layer;
 
-  gpointer pixels_buffer_1;
-  gpointer pixels_buffer_2;
-  size_t buffer_size;
+  gpointer pixels_buffer_1 = nullptr;
+  gpointer pixels_buffer_2 = nullptr;
+  size_t buffer_size = 0;
 
-  GimpImageBaseType image_type;
+  GimpImageBaseType image_type = GIMP_RGB;
   GimpImageType layer_type = GIMP_RGB_IMAGE;
-  GimpPrecision precision = GIMP_PRECISION_U16_GAMMA;
+  GimpPrecision precision = GIMP_PRECISION_FLOAT_LINEAR;
   JxlBasicInfo info = {};
   JxlPixelFormat format = {};
 
@@ -35,6 +35,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   format.align = 0;
 
   bool is_gray = false;
+  std::string babl_format_str = "";
 
   JpegXlGimpProgress gimp_load_progress(
       ("Opening JPEG XL file:" + std::string(filename)).c_str());
@@ -271,20 +272,25 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
             precision = GIMP_PRECISION_FLOAT_GAMMA;
           }
         } else if (is_linear) {
-          precision = GIMP_PRECISION_U32_LINEAR;
+            precision = GIMP_PRECISION_U32_LINEAR;
         } else {
           precision = GIMP_PRECISION_U32_GAMMA;
         }
       }
+      // used to convert float to image precision
+      if (is_gray) {
+        babl_format_str += "Y'";
+      } else {
+        babl_format_str += "R'G'B'";
+      }
+      if (info.alpha_bits > 0) {
+        babl_format_str += "A";
+      }
+      babl_format_str += " float";
 
       // create new image
-      if (is_linear) {
-        *image_id = gimp_image_new_with_precision(
-            info.xsize, info.ysize, image_type, GIMP_PRECISION_FLOAT_LINEAR);
-      } else {
-        *image_id = gimp_image_new_with_precision(
-            info.xsize, info.ysize, image_type, GIMP_PRECISION_FLOAT_GAMMA);
-      }
+      *image_id = gimp_image_new_with_precision(
+          info.xsize, info.ysize, image_type, precision);
 
       if (profile_int) {
         gimp_image_set_color_profile(*image_id, profile_int);
@@ -292,17 +298,21 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
         g_printerr(LOAD_PROC " Warning: No color profile.\n");
       }
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
-      // get image from decoder in FLOAT
       format.data_type = JXL_TYPE_FLOAT;
       if (JXL_DEC_SUCCESS !=
           JxlDecoderImageOutBufferSize(dec.get(), &format, &buffer_size)) {
         g_printerr(LOAD_PROC " Error: JxlDecoderImageOutBufferSize failed\n");
         return false;
       }
-      pixels_buffer_1 = g_malloc(buffer_size);
+      if (pixels_buffer_1 == nullptr) {
+        pixels_buffer_1 = g_malloc(buffer_size);
+        pixels_buffer_2 = g_malloc(buffer_size);
+      }
       if (JXL_DEC_SUCCESS != JxlDecoderSetImageOutBuffer(dec.get(), &format,
                                                          pixels_buffer_1,
                                                          buffer_size)) {
+        g_free(pixels_buffer_1);
+        g_free(pixels_buffer_2);
         g_printerr(LOAD_PROC " Error: JxlDecoderSetImageOutBuffer failed\n");
         return false;
       }
@@ -315,22 +325,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       gimp_image_insert_layer(*image_id, layer, /*parent_id=*/-1,
                               /*position=*/0);
 
-      pixels_buffer_2 = g_malloc(buffer_size);
       GeglBuffer *buffer = gimp_drawable_get_buffer(layer);
+      static const Babl *source_format = babl_format(babl_format_str.c_str());
       const Babl *destination_format = gegl_buffer_set_format(buffer, nullptr);
-
-      std::string babl_format_str = "";
-      if (is_gray) {
-        babl_format_str += "Y'";
-      } else {
-        babl_format_str += "R'G'B'";
-      }
-      if (info.alpha_bits > 0) {
-        babl_format_str += "A";
-      }
-      babl_format_str += " float";
-
-      const Babl *source_format = babl_format(babl_format_str.c_str());
 
       babl_process(babl_fish(source_format, destination_format),
                    pixels_buffer_1, pixels_buffer_2, info.xsize * info.ysize);
@@ -356,6 +353,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
     }
   }  // end grand decode loop
 
+  g_free(pixels_buffer_1);
+  g_free(pixels_buffer_2);
+
   gimp_load_progress.update();
 
   if (profile_icc) {
@@ -363,12 +363,6 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   }
 
   gimp_load_progress.update();
-
-  // TODO(xiota): Add option to keep image as float
-  if (info.bits_per_sample < 32) {
-    gimp_image_convert_precision(*image_id, precision);
-  }
-
   gimp_image_set_filename(*image_id, filename);
 
   gimp_load_progress.finished();

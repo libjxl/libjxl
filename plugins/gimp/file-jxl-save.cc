@@ -116,8 +116,7 @@ bool JpegXlSaveGui::GuiOnChangeQuality(GtkAdjustment* adj_qual,
   g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
   GtkAdjustment* adj_dist = self->entry_distance;
-  jxl_save_opts.quality = gtk_adjustment_get_value(adj_qual);
-  jxl_save_opts.UpdateDistance();
+  jxl_save_opts.SetQuality(gtk_adjustment_get_value(adj_qual));
   gtk_adjustment_set_value(adj_dist, jxl_save_opts.distance);
 
   self->handle_toggle_lossless = g_signal_connect(
@@ -140,8 +139,7 @@ bool JpegXlSaveGui::GuiOnChangeDistance(GtkAdjustment* adj_dist,
   g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
   g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
-  jxl_save_opts.distance = gtk_adjustment_get_value(adj_dist);
-  jxl_save_opts.UpdateQuality();
+  jxl_save_opts.SetDistance(gtk_adjustment_get_value(adj_dist));
   gtk_adjustment_set_value(adj_qual, jxl_save_opts.quality);
 
   if (!(jxl_save_opts.distance < 0.001)) {
@@ -766,16 +764,8 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
 
   // lossless mode
   if (jxl_save_opts.lossless || jxl_save_opts.distance < 0.01) {
-    if (jxl_save_opts.basic_info.exponent_bits_per_sample > 0) {
-      // lossless mode doesn't work well with floating point
-      jxl_save_opts.distance = 0.01;
-      jxl_save_opts.lossless = false;
-      JxlEncoderOptionsSetLossless(enc_opts, false);
-      JxlEncoderOptionsSetDistance(enc_opts, 0.01);
-    } else {
-      JxlEncoderOptionsSetDistance(enc_opts, 0);
-      JxlEncoderOptionsSetLossless(enc_opts, true);
-    }
+    JxlEncoderOptionsSetDistance(enc_opts, 0);
+    JxlEncoderOptionsSetLossless(enc_opts, true);
   } else {
     jxl_save_opts.lossless = false;
     JxlEncoderOptionsSetLossless(enc_opts, false);
@@ -791,14 +781,24 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     return false;
   }
 
-  // convert precision and colorspace
-  if (jxl_save_opts.is_linear &&
-      jxl_save_opts.basic_info.bits_per_sample < 32) {
-    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
+  // babl destination format for encoder, used inside loop
+  babl_init();
+  if (jxl_save_opts.icc_attached) {
+    jxl_save_opts.SetModel(jxl_save_opts.is_linear);
   } else {
-    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_GAMMA);
+    jxl_save_opts.SetModel(!jxl_save_opts.is_linear);
   }
+  jxl_save_opts.pixel_format.data_type = JXL_TYPE_FLOAT;
+  jxl_save_opts.SetBablType("float");
+  const Babl* destination_format =
+      babl_format(jxl_save_opts.babl_format_str.c_str());
 
+  // convert precision to float if needed
+  if (jxl_save_opts.basic_info.bits_per_sample < 32) {
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
+  } else if (!jxl_save_opts.is_linear) {
+    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
+  }
   // process layers and compress into JXL
   size_t buffer_size =
       jxl_save_opts.basic_info.xsize * jxl_save_opts.basic_info.ysize *
@@ -829,16 +829,6 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     g_clear_object(&buffer);
 
     // use babl to fix gamma mismatch issues
-    if (jxl_save_opts.icc_attached) {
-      jxl_save_opts.SetModel(jxl_save_opts.is_linear);
-    } else {
-      jxl_save_opts.SetModel(!jxl_save_opts.is_linear);
-    }
-    jxl_save_opts.pixel_format.data_type = JXL_TYPE_FLOAT;
-    jxl_save_opts.SetBablType("float");
-    const Babl* destination_format =
-        babl_format(jxl_save_opts.babl_format_str.c_str());
-
     babl_process(
         babl_fish(native_format, destination_format), pixels_buffer_1,
         pixels_buffer_2,
