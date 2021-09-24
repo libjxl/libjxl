@@ -1333,20 +1333,18 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
                   1 * 7 + 2, 2 * 7 + 1, 2 * 7 + 2, 2 * 7 + 3, 4 * 7 + 4,
                   4 * 7 + 5, 0 * 7 + 2, 0 * 7 + 1, 0 * 7 + 3}) {
       if (nb_rcts_to_try == 0) break;
-      int num_transforms_to_keep = gi.transform.size();
       sg.rct_type = i;
-      do_transform(gi, sg, weighted::Header());
-      float cost = EstimateCost(gi);
-      if (cost < best_cost) {
-        best_rct = i;
-        best_cost = cost;
-      }
       nb_rcts_to_try--;
-      // Ensure we do not clamp channels to their supposed range, as this
-      // otherwise breaks in the presence of patches.
-      gi.undo_transforms(weighted::Header(), num_transforms_to_keep == 0
-                                                 ? -1
-                                                 : num_transforms_to_keep);
+      if (do_transform(gi, sg, weighted::Header())) {
+        float cost = EstimateCost(gi);
+        if (cost < best_cost) {
+          best_rct = i;
+          best_cost = cost;
+        }
+        Transform t = gi.transform.back();
+        JXL_RETURN_IF_ERROR(t.Inverse(gi, weighted::Header(), nullptr));
+        gi.transform.pop_back();
+      }
     }
     // Apply the best RCT to the image for future encoding.
     sg.rct_type = best_rct;

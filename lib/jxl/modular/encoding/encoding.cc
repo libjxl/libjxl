@@ -490,7 +490,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
 Status ModularGenericDecompress(BitReader *br, Image &image,
                                 GroupHeader *header, size_t group_id,
-                                ModularOptions *options, int undo_transforms,
+                                ModularOptions *options, bool undo_transforms,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {
@@ -506,7 +506,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                   code, ctx_map, allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
-  image.undo_transforms(header->wp_header, undo_transforms);
+  if (undo_transforms) image.undo_transforms(header->wp_header);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();
   JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %zu bytes",
@@ -516,7 +516,7 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
 #ifdef JXL_ENABLE_ASSERT
   // Check that after applying all transforms we are back to the requested image
   // sizes, otherwise there's a programming error with the transformations.
-  if (undo_transforms == -1 || undo_transforms == 0) {
+  if (undo_transforms) {
     JXL_ASSERT(image.channel.size() == req_sizes.size());
     for (size_t c = 0; c < req_sizes.size(); c++) {
       JXL_ASSERT(req_sizes[c].first == image.channel[c].w);

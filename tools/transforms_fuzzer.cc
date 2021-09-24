@@ -113,7 +113,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
     FillChannel(image.channel[i], rng);
   }
 
-  image.undo_transforms(w_header, /*keep=*/-1);
+  image.undo_transforms(w_header);
 
   AssertEq(image.error, false);
   AssertEq<size_t>(image.nb_meta_channels, 0);
