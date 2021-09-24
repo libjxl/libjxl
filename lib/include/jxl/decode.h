@@ -344,7 +344,8 @@ JxlDecoderSetParallelRunner(JxlDecoder* dec, JxlParallelRunner parallel_runner,
  * need to make JxlDecoderGetBasicInfo available after the next
  * JxlDecoderProcessInput call. This is a suggested large enough value for
  * the amount of bytes to provide in the next JxlDecoderSetInput call, but it is
- * not guaranteed to be an upper bound nor a lower bound.
+ * not guaranteed to be an upper bound nor a lower bound. This number does not
+ * include bytes that have already been released from the input.
  * Can be used before the first JxlDecoderProcessInput call, and is correct
  * the first time in most cases. If not, JxlDecoderSizeHintBasicInfo can be
  * called again to get an updated hint.

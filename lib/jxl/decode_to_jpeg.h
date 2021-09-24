@@ -59,11 +59,11 @@ class JxlToJpegDecoder {
     return result;
   }
 
-  void StartBox(uint64_t box_size, size_t contents_size) {
+  void StartBox(bool box_until_eof, size_t contents_size) {
     // A new box implies that we clear the buffer.
     buffer_.clear();
     inside_box_ = true;
-    if (box_size == 0) {
+    if (box_until_eof) {
       box_until_eof_ = true;
     } else {
       box_size_ = contents_size;
