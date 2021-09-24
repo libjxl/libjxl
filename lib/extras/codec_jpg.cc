@@ -237,9 +237,9 @@ void MyOutputMessage(j_common_ptr cinfo) {
 #endif  // JPEGXL_ENABLE_JPEG
 
 Status DecodeImageJPGCoefficients(Span<const uint8_t> bytes, CodecInOut* io) {
+  if (!IsJPG(bytes)) return false;
   // Use brunsli JPEG decoder to read quantized coefficients.
   if (!jpeg::DecodeImageJPG(bytes, io)) {
-    if (!IsJPG(bytes)) return false;
     fprintf(stderr, "Corrupt or CMYK JPEG.\n");
     return false;
   }
