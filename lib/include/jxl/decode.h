@@ -422,7 +422,15 @@ JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
  * requires more JxlDecoderProcessInput calls to continue.
  *
  * @param dec decoder object
- * @return JXL_DEC_SUCCESS when decoding finished and all events handled.
+ * @return JXL_DEC_SUCCESS when decoding finished and all events handled. If you
+ * still have more unprocessed input data anyway, then you can still continue
+ * by using JxlDecoderSetInput and calling JxlDecoderProcessInput again, similar
+ * to handling JXL_DEC_NEED_MORE_INPUT. JXL_DEC_SUCCESS can occur instead of
+ * JXL_DEC_NEED_MORE_INPUT when, for example, the input data ended right at
+ * the boundary of a box of the container format, all essential codestream boxes
+ * were already decoded, but extra metadata boxes are still present in the next
+ * data. JxlDecoderProcessInput cannot return success if all codestream boxes
+ * have not been seen yet.
  * @return JXL_DEC_ERROR when decoding failed, e.g. invalid codestream.
  * TODO(lode) document the input data mechanism
  * @return JXL_DEC_NEED_MORE_INPUT more input data is necessary.

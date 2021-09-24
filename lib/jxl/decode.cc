@@ -176,7 +176,7 @@ size_t BitsPerChannel(JxlDataType data_type) {
 enum class DecoderStage : uint32_t {
   kInited,    // Decoder created, no JxlDecoderProcessInput called yet
   kStarted,   // Running JxlDecoderProcessInput calls
-  kFinished,  // Everything done, nothing left to process
+  kFinished,  // Codestream done, but other boxes could still occur
   kError,     // Error occurred, decoder object no longer usable
 };
 
@@ -1436,11 +1436,6 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         "Cannot keep using decoder after it encountered an error, use "
         "JxlDecoderReset to reset it");
   }
-  if (dec->stage == DecoderStage::kFinished) {
-    return JXL_API_ERROR(
-        "Cannot keep using decoder after it finished, use JxlDecoderReset to "
-        "reset it");
-  }
 
   if (!dec->got_signature) {
     JxlSignature sig = JxlSignatureCheck(*next_in, *avail_in);
@@ -1577,6 +1572,10 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         dec->box_begin = box_start;
         dec->box_end = dec->file_pos + box_start + box_size;
         if (strcmp(type, "jxlc") == 0 || strcmp(type, "jxlp") == 0) {
+          if (dec->stage == DecoderStage::kFinished) {
+            return JXL_API_ERROR(
+                "unexpected codestream box when codestream already finished");
+          }
           size_t codestream_size = contents_size;
           // Whether this is the last codestream box, either when it is a jxlc
           // box, or when it is a jxlp box that has the final bit set.
@@ -1722,6 +1721,12 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
     csize = *avail_in;
     if (dec->codestream_end && csize > dec->codestream_end - dec->file_pos) {
       csize = dec->codestream_end - dec->file_pos;
+    }
+  } else {
+    // no container
+    if (dec->stage == DecoderStage::kFinished) {
+      return JXL_API_ERROR(
+          "no more input expected after non-container codestream");
     }
   }
 

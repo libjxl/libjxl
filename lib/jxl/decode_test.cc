@@ -3043,3 +3043,52 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   container.append(codestream.data(), codestream.data() + codestream.size());
   VerifyJPEGReconstruction(container, orig);
 }
+
+TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
+  size_t xsize = 80, ysize = 90;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  jxl::CompressParams cparams;
+  // Lossless to verify pixels exactly after roundtrip.
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
+
+  // The non-essential final box has size 24, including header
+  size_t last_box_begin = compressed.size() - 24;
+  // Verify that the test is indeed setup correctly to be at the beginning of
+  // the 'unkn' box header.
+  ASSERT_EQ(compressed[last_box_begin + 3], 24);
+  ASSERT_EQ(compressed[last_box_begin + 4], 'u');
+  ASSERT_EQ(compressed[last_box_begin + 5], 'n');
+  ASSERT_EQ(compressed[last_box_begin + 6], 'k');
+  ASSERT_EQ(compressed[last_box_begin + 7], 'n');
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), last_box_begin));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+  size_t remaining = JxlDecoderReleaseInput(dec);
+  // Since the test was set up to end exactly at the boundary of the final
+  // codestream box, and the decoder returned success, all bytes are expected to
+  // be consumed.
+  EXPECT_EQ(0, remaining);
+
+  // Now set the remaining non-codestream box as input.
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data() + last_box_begin,
+                               compressed.size() - last_box_begin));
+  // Even though JxlDecoderProcessInput already returned JXL_DEC_SUCCESS before,
+  // when calling it again now after setting more input, success is expected, no
+  // event occurs but the box has been successfully skipped.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+  JxlDecoderDestroy(dec);
+}
