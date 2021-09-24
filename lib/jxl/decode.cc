@@ -2026,7 +2026,7 @@ JxlDecoderStatus JxlDecoderFlushImage(JxlDecoder* dec) {
   dec->ib->ShrinkTo(dec->metadata.size.xsize(), dec->metadata.size.ysize());
   JxlDecoderStatus status = jxl::ConvertImageInternal(
       dec, *dec->ib, dec->image_out_format,
-      /*want_extra_channel=*/dec->metadata.m.num_extra_channels > 0,
+      /*want_extra_channel=*/false,
       /*extra_channel_index=*/0, dec->image_out_buffer, dec->image_out_size,
       /*out_callback=*/nullptr, /*out_opaque=*/nullptr);
   dec->ib->ShrinkTo(xsize, ysize);

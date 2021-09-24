@@ -1081,7 +1081,7 @@ Status FinalizeImageRect(
 
 Status FinalizeFrameDecoding(ImageBundle* decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             bool force_fir, bool skip_blending) {
+                             bool force_fir, bool skip_blending, bool move_ec) {
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
@@ -1106,7 +1106,11 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       const ImageMetadata& metadata = frame_header.nonserialized_metadata->m;
       for (size_t i = 0; i < metadata.num_extra_channels; i++) {
         if (frame_header.extra_channel_upsampling[i] == 1) {
-          ecs.push_back(std::move(dec_state->extra_channels[i]));
+          if (move_ec) {
+            ecs.push_back(std::move(dec_state->extra_channels[i]));
+          } else {
+            ecs.push_back(CopyImage(dec_state->extra_channels[i]));
+          }
         } else {
           ecs.emplace_back(frame_dim.xsize_upsampled_padded,
                            frame_dim.ysize_upsampled_padded);

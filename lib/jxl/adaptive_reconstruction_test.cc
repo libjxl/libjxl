@@ -152,7 +152,7 @@ void EnsureUnchanged(const float background, const float foreground,
     // input image.
     JXL_CHECK(FinalizeFrameDecoding(&out, &state, /*pool=*/nullptr,
                                     /*force_fir=*/true,
-                                    /*skip_blending=*/true));
+                                    /*skip_blending=*/true, /*move_ec=*/true));
 
 #if JXL_HIGH_PRECISION
     VerifyRelativeError(in, *out.color(), 1E-3, 1E-4);

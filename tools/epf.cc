@@ -61,7 +61,7 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   // Call with `force_fir` set to true to force to apply filters to all of the
   // input image.
   JXL_CHECK(FinalizeFrameDecoding(&io->Main(), &state, pool, /*force_fir=*/true,
-                                  /*skip_blending=*/true));
+                                  /*skip_blending=*/true, /*move_ec=*/true));
   JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));
   return true;
 }
