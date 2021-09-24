@@ -189,7 +189,7 @@ Status decode_layer(const uint8_t*& pos, const uint8_t* maxpos,
 }  // namespace
 
 Status DecodeImagePSD(const Span<const uint8_t> bytes,
-                      const ColorHints& color_hints, ThreadPool* pool,
+                      const ColorHints& /*color_hints*/, ThreadPool* pool,
                       CodecInOut* io) {
   const uint8_t* pos = bytes.data();
   const uint8_t* maxpos = bytes.data() + bytes.size();
@@ -314,8 +314,10 @@ Status DecodeImagePSD(const Span<const uint8_t> bytes,
     if (blocklength & 1) pos++;  // padding again
   }
 
-  JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, color_already_set,
-                                      /*is_gray=*/false, io));
+  // TODO(deymo): Apply color hints when PSD is converted to PackedPixelFile.
+  (void)color_already_set;
+  // JXL_RETURN_IF_ERROR(ApplyColorHints(color_hints, color_already_set,
+  //                                     /*is_gray=*/false, io));
 
   size_t layerlength = get_be_int(4 * version, pos, maxpos);
   const uint8_t* after_layers_pos = pos + layerlength;
