@@ -92,14 +92,6 @@ ImageF* ImageBundle::alpha() {
   return &extra_channels_[ec];
 }
 
-const ImageF& ImageBundle::depth() const {
-  JXL_ASSERT(HasDepth());
-  const size_t ec = metadata_->Find(ExtraChannel::kDepth) -
-                    metadata_->extra_channel_info.data();
-  JXL_ASSERT(ec < extra_channels_.size());
-  return extra_channels_[ec];
-}
-
 void ImageBundle::SetAlpha(ImageF&& alpha, bool alpha_is_premultiplied) {
   const ExtraChannelInfo* eci = metadata_->Find(ExtraChannel::kAlpha);
   // Must call SetAlphaBits first, otherwise we don't know which channel index
