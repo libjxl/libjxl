@@ -3040,6 +3040,77 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlpha) {
 
   JxlDecoderDestroy(dec);
 }
+TEST(DecodeTest, FlushTestLossyProgressiveAlphaUpsampling) {
+  size_t xsize = 533, ysize = 401;
+  uint32_t num_channels = 4;
+  std::vector<uint8_t> pixels =
+      jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
+  jxl::CompressParams cparams;
+  cparams.resampling = 2;
+  cparams.ec_resampling = 4;
+  jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
+      num_channels, cparams, kCSBF_None, JXL_ORIENT_IDENTITY, true);
+  JxlPixelFormat format = {num_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  std::vector<uint8_t> pixels2;
+  pixels2.resize(pixels.size());
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(
+                dec, JXL_DEC_BASIC_INFO | JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE));
+
+  // Ensure that the first part contains at least the full DC of the image,
+  // otherwise flush does not work.
+  size_t first_part = data.size() * 2 / 3;
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), first_part));
+
+  EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+  JxlBasicInfo info;
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+  EXPECT_EQ(info.xsize, xsize);
+  EXPECT_EQ(info.ysize, ysize);
+
+  EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+
+  // Output buffer not yet set
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderFlushImage(dec));
+
+  size_t buffer_size;
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+  EXPECT_EQ(pixels2.size(), buffer_size);
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                 dec, &format, pixels2.data(), pixels2.size()));
+
+  // Must process input further until we get JXL_DEC_NEED_MORE_INPUT, even if
+  // data was already input before, since the processing of the frame only
+  // happens at the JxlDecoderProcessInput call after JXL_DEC_FRAME.
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderFlushImage(dec));
+
+  EXPECT_LE(ComparePixels(pixels2.data(), pixels.data(), xsize, ysize, format,
+                          format, 2560.0),
+            115000u);
+
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+
+  size_t consumed = first_part - JxlDecoderReleaseInput(dec);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data() + consumed,
+                                                data.size() - consumed));
+
+  EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  EXPECT_LE(ComparePixels(pixels2.data(), pixels.data(), xsize, ysize, format,
+                          format, 2560.0),
+            50000u);
+
+  JxlDecoderDestroy(dec);
+}
 TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
   // Size large enough for multiple groups, required to have progressive
   // stages
