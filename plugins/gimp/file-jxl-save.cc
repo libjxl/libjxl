@@ -794,9 +794,8 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       babl_format(jxl_save_opts.babl_format_str.c_str());
 
   // convert precision to float if needed
-  if (jxl_save_opts.basic_info.bits_per_sample < 32) {
-    gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
-  } else if (!jxl_save_opts.is_linear) {
+  if (jxl_save_opts.basic_info.bits_per_sample < 32 ||
+      !jxl_save_opts.is_linear) {
     gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
   }
   // process layers and compress into JXL
