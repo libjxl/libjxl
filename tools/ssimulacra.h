@@ -22,12 +22,14 @@ struct Ssimulacra {
   double avg_edgediff[3];
   double row_p2[2][3];
   double col_p2[2][3];
+  bool simple;
 
   double Score() const;
   void PrintDetails() const;
 };
 
-Ssimulacra ComputeDiff(const jxl::Image3F& orig, const jxl::Image3F& distorted);
+Ssimulacra ComputeDiff(const jxl::Image3F& orig, const jxl::Image3F& distorted,
+                       bool simple);
 
 }  // namespace ssimulacra
 
