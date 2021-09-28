@@ -551,10 +551,12 @@ cmd_coverage_report() {
   local gcovr_args=(
     -r "${real_build_dir}"
     --gcov-executable "${LLVM_COV} gcov"
-    # Only print coverage information for the jxl and fuif directories. The rest
+    # Only print coverage information for the libjxl directories. The rest
     # is not part of the code under test.
     --filter '.*jxl/.*'
     --exclude '.*_test.cc'
+    --exclude '.*_test-only..*'
+    --exclude '.*test_utils..*'
     --object-directory "${real_build_dir}"
   )
 
