@@ -282,6 +282,9 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   if (bits_per_sample == 1) {
     return JXL_FAILURE("packed 1-bit per sample is not yet supported");
   }
+  if (bits_per_sample > 16 && bits_per_sample < 32) {
+    return JXL_FAILURE("not supported, try bits_per_sample=32");
+  }
 
   // bytes_per_channel and is only valid for bits_per_sample > 1.
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
@@ -449,12 +452,6 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
               StoreUintRow<StoreLE16>(row_u32, num_channels, xsize, 2, row_out);
             } else {
               StoreUintRow<StoreBE16>(row_u32, num_channels, xsize, 2, row_out);
-            }
-          } else if (bits_per_sample <= 24) {
-            if (little_endian) {
-              StoreUintRow<StoreLE24>(row_u32, num_channels, xsize, 3, row_out);
-            } else {
-              StoreUintRow<StoreBE24>(row_u32, num_channels, xsize, 3, row_out);
             }
           } else {
             if (little_endian) {
