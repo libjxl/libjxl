@@ -282,5 +282,46 @@ TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
                                      /*distmap=*/nullptr, pool));
 }
 
+TEST(ModularTest, RoundtripLosslessCustomFloat) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  size_t xsize = 100, ysize = 300;
+  io.SetSize(xsize, ysize);
+  io.metadata.m.bit_depth.bits_per_sample = 18;
+  io.metadata.m.bit_depth.exponent_bits_per_sample = 6;
+  io.metadata.m.bit_depth.floating_point_sample = true;
+  io.metadata.m.modular_16_bit_buffer_sufficient = false;
+  ColorEncoding color_encoding;
+  color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
+  color_encoding.SetColorSpace(ColorSpace::kRGB);
+  Image3F testimage(xsize, ysize);
+  float factor = 1.f / (1 << 14);
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ysize; y++) {
+      float* const JXL_RESTRICT row = testimage.PlaneRow(c, y);
+      for (size_t x = 0; x < xsize; x++) {
+        row[x] = factor * (x ^ y);
+      }
+    }
+  }
+  io.SetFromImage(std::move(testimage), color_encoding);
+  io.metadata.m.color_encoding = color_encoding;
+  io.metadata.m.SetIntensityTarget(255);
+
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.quality_pair = {100, 100};
+  cparams.options.predictor = {Predictor::Zero};
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.decoding_speed_tier = 2;
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 23000u);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
+}
+
 }  // namespace
 }  // namespace jxl
