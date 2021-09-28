@@ -265,6 +265,7 @@ class FrameDecoder {
   bool finalized_dc_ = true;
   bool is_finalized_ = true;
   size_t num_renders_ = 0;
+  bool allocated_ = false;
 
   std::vector<GroupDecCache> group_dec_caches_;
 

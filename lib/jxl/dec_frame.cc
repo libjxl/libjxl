@@ -334,7 +334,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   processed_section_.resize(section_offsets_.size());
   max_passes_ = frame_header_.passes.num_passes;
   num_renders_ = 0;
-
+  allocated_ = false;
   return true;
 }
 
@@ -426,6 +426,7 @@ void FrameDecoder::FinalizeDC() {
 }
 
 void FrameDecoder::AllocateOutput() {
+  if (allocated_) return;
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback) {
     modular_frame_decoder_.MaybeDropFullImage();
@@ -459,6 +460,8 @@ void FrameDecoder::AllocateOutput() {
     }
   }
   decoded_->origin = dec_state_->shared->frame_header.frame_origin;
+  dec_state_->InitForAC(nullptr);
+  allocated_ = true;
 }
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
@@ -700,7 +703,6 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
 
   if (finalized_dc_) dec_state_->EnsureBordersStorage();
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
-    dec_state_->InitForAC(pool_);
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
@@ -784,6 +786,8 @@ Status FrameDecoder::Flush() {
     // Nothing to do.
     return true;
   }
+  AllocateOutput();
+
   uint32_t completely_decoded_ac_pass = *std::min_element(
       decoded_passes_per_ac_group_.begin(), decoded_passes_per_ac_group_.end());
   if (completely_decoded_ac_pass < frame_header_.passes.num_passes) {
@@ -917,7 +921,6 @@ Status FrameDecoder::FinalizeFrame() {
   if (!finalized_dc_) {
     JXL_ASSERT(allow_partial_frames_);
     AllocateOutput();
-    dec_state_->InitForAC(nullptr);
   }
 
   JXL_RETURN_IF_ERROR(Flush());
