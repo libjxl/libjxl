@@ -715,6 +715,7 @@ Status DecodeGroup(BitReader* JXL_RESTRICT* JXL_RESTRICT readers,
                       PassesDecoderState::kGroupDataYBorder, dst_rect.xsize(),
                       dst_rect.ysize());
     }
+    JXL_ASSERT(dst_rect.IsInside(*upsampling_dst));
     dec_state->upsamplers[2].UpsampleRect(
         dec_state->filter_input_storage[thread], copy_rect, upsampling_dst,
         dst_rect,
