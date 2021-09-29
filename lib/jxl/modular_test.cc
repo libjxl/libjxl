@@ -98,7 +98,7 @@ TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
   io.ShrinkTo(100, 100);
 
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
-  EXPECT_LE(compressed_size, 10250u);
+  EXPECT_LE(compressed_size, 10150u);
   EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
             0.0);
