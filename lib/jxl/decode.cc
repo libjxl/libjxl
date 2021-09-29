@@ -403,7 +403,6 @@ struct JxlDecoderStruct {
   // Position of next_in in the original file including box format if present
   // (as opposed to position in the codestream)
   size_t file_pos;
-  size_t box_begin;
   size_t box_end;
   bool skip_box;
   // Begin and end of the content of the current codestream box. This could be
@@ -550,7 +549,6 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->icc_reader.Reset();
   dec->got_preview_image = false;
   dec->file_pos = 0;
-  dec->box_begin = 0;
   dec->box_end = 0;
   dec->skip_box = false;
   dec->codestream_pos = 0;
@@ -1569,7 +1567,6 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         size_t contents_size =
             (box_size == 0) ? 0 : (box_size - pos + box_start);
 
-        dec->box_begin = box_start;
         dec->box_end = dec->file_pos + box_start + box_size;
         if (strcmp(type, "jxlc") == 0 || strcmp(type, "jxlp") == 0) {
           if (dec->stage == DecoderStage::kFinished) {
@@ -1604,22 +1601,6 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
           }
           dec->first_codestream_seen = true;
           if (last_codestream) dec->last_codestream_seen = true;
-          if (dec->codestream_begin != 0 && dec->codestream.empty()) {
-            // We've already seen a codestream part, so it's a stream spanning
-            // multiple boxes.
-            // We have no choice but to copy contents to the codestream
-            // vector to make it a contiguous stream for the C++ decoder.
-            // This appends the previous codestream box that we had seen to
-            // dec->codestream.
-            if (dec->codestream_begin < dec->file_pos) {
-              return JXL_API_ERROR("earlier codestream box out of range");
-            }
-            size_t begin = dec->codestream_begin - dec->file_pos;
-            size_t end = dec->codestream_end - dec->file_pos;
-            JXL_ASSERT(end <= *avail_in);
-            dec->codestream.insert(dec->codestream.end(), *next_in + begin,
-                                   *next_in + end);
-          }
           dec->codestream_begin = dec->file_pos + pos;
           dec->codestream_end =
               (box_size == 0) ? 0 : (dec->codestream_begin + codestream_size);
@@ -1627,8 +1608,12 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
               (box_size == 0)
                   ? (size - pos)
                   : std::min<size_t>(size - pos, box_size - pos + box_start);
-          // If already appending codestream, append what we have here too
-          if (!dec->codestream.empty()) {
+          // If this is not the last codestream, which means there are multiple
+          // non-contiguous parts of the codestream in the data, or if it's
+          // already appending to the codestream buffer before, then keep
+          // appending to the codestream buffer. In other cases, the data is
+          // not copied to the internal codestream buffer to save memory.
+          if (!last_codestream || !dec->codestream.empty()) {
             size_t begin = pos;
             size_t end =
                 std::min<size_t>(*avail_in, begin + avail_codestream_size);
