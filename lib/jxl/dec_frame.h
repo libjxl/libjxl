@@ -156,7 +156,21 @@ class FrameDecoder {
     if (decoded_->metadata()->xyb_encoded &&
         dec_state_->output_encoding_info.color_encoding.IsSRGB() &&
         dec_state_->output_encoding_info.all_default_opsin &&
-        HasFastXYBTosRGB8() && frame_header_.needs_color_transform()) {
+        HasFastXYBTosRGB8() && frame_header_.needs_color_transform() &&
+        ((frame_header_.flags & (FrameHeader::kPatches | FrameHeader::kSplines |
+                                 FrameHeader::kNoise)) == 0) &&
+        frame_header_.upsampling == 1 && frame_header_.loop_filter.gab &&
+        !frame_header_.loop_filter.gab_custom &&
+        frame_header_.loop_filter.epf_iters == 0 &&
+        (decoded_->metadata()->num_extra_channels == 0 ||
+         (decoded_->metadata()->num_extra_channels == 1 &&
+          decoded_->metadata()->extra_channel_info[0].type ==
+              ExtraChannel::kAlpha))) {
+      dec_state_->use_16bit_dec_reconstruct = true;
+    } else if (decoded_->metadata()->xyb_encoded &&
+               dec_state_->output_encoding_info.color_encoding.IsSRGB() &&
+               dec_state_->output_encoding_info.all_default_opsin &&
+               HasFastXYBTosRGB8() && frame_header_.needs_color_transform()) {
       dec_state_->fast_xyb_srgb8_conversion = true;
     }
 #endif

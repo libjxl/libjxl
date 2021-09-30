@@ -67,6 +67,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dct_scales.cc
   jxl/dct_scales.h
   jxl/dct_util.h
+  jxl/dec_16bit_reconstruct.cc
+  jxl/dec_16bit_reconstruct.h
   jxl/dec_ans.cc
   jxl/dec_ans.h
   jxl/dec_bit_reader.h

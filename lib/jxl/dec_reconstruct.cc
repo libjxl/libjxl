@@ -8,6 +8,7 @@
 #include <atomic>
 #include <utility>
 
+#include "lib/jxl/dec_16bit_reconstruct.h"
 #include "lib/jxl/filters.h"
 #include "lib/jxl/image_ops.h"
 
@@ -579,6 +580,15 @@ Status FinalizeImageRect(
     const std::vector<std::pair<ImageF*, Rect>>& extra_channels,
     PassesDecoderState* dec_state, size_t thread,
     ImageBundle* JXL_RESTRICT output_image, const Rect& frame_rect) {
+  if (dec_state->use_16bit_dec_reconstruct) {
+    FinalizeImageRect16(
+        input_image, input_rect,
+        extra_channels.empty() ? nullptr : extra_channels[0].first,
+        extra_channels.empty() ? Rect() : extra_channels[0].second, dec_state,
+        thread, frame_rect);
+    return true;
+  }
+
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const ImageMetadata& metadata = frame_header.nonserialized_metadata->m;

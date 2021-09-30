@@ -75,6 +75,9 @@ struct PassesDecoderState {
   // Whether to use int16 float-XYB-to-uint8-srgb conversion.
   bool fast_xyb_srgb8_conversion;
 
+  // Whether to run all of dec_reconstruct with 16 bit integers.
+  bool use_16bit_dec_reconstruct;
+
   // If true, rgb_output or callback output is RGBA using 4 instead of 3 bytes
   // per pixel.
   bool rgb_output_is_rgba;
@@ -86,8 +89,9 @@ struct PassesDecoderState {
   // One row per thread
   std::vector<std::vector<float>> pixel_callback_rows;
 
-  // Buffer for 16bit fixpoint fastpath.
+  // Buffer for 16bit fixpoint fastpaths.
   std::vector<ImageS> fixpoint_srgb_buffer;
+  std::vector<ImageS> fixpoint_buffer;
 
   // Seed for noise, to have different noise per-frame.
   size_t noise_seed = 0;
@@ -157,6 +161,22 @@ struct PassesDecoderState {
       RoundUpToBlockDim(kMaxFinalizeRectPadding) * 2 + kBlockDim;
 
   void EnsureStorage(size_t num_threads) {
+    for (size_t _ = group_data.size(); _ < num_threads; _++) {
+      group_data.emplace_back(kGroupDim + 2 * kGroupDataXBorder,
+                              kGroupDim + 2 * kGroupDataYBorder);
+#if MEMORY_SANITIZER
+      // Avoid errors due to loading vectors on the outermost padding.
+      FillImage(msan::kSanitizerSentinel, &group_data.back());
+#endif
+    }
+    if (use_16bit_dec_reconstruct) {
+      for (size_t _ = fixpoint_buffer.size(); _ < num_threads; _++) {
+        // 4 rows per color channel + 1 for alpha.
+        fixpoint_buffer.emplace_back(
+            ImageS(kApplyImageFeaturesTileDim, 3 * 4 + 1));
+      }
+      return;
+    }
     // We need one filter_storage per thread, ensure we have at least that many.
     if (shared->frame_header.loop_filter.epf_iters != 0 ||
         shared->frame_header.loop_filter.gab) {
@@ -192,14 +212,6 @@ struct PassesDecoderState {
       upsampler_storage.emplace_back(hwy::AllocateAligned<float>(arena_size));
     }
     upsampler_arena_size = arena_size;
-    for (size_t _ = group_data.size(); _ < num_threads; _++) {
-      group_data.emplace_back(kGroupDim + 2 * kGroupDataXBorder,
-                              kGroupDim + 2 * kGroupDataYBorder);
-#if MEMORY_SANITIZER
-      // Avoid errors due to loading vectors on the outermost padding.
-      FillImage(msan::kSanitizerSentinel, &group_data.back());
-#endif
-    }
     if (!shared->frame_header.chroma_subsampling.Is444()) {
       for (size_t _ = ycbcr_temp_images.size(); _ < num_threads; _++) {
         ycbcr_temp_images.emplace_back(kGroupDim + 2 * kGroupDataXBorder,
@@ -272,6 +284,7 @@ struct PassesDecoderState {
     pixel_callback = nullptr;
     rgb_output_is_rgba = false;
     fast_xyb_srgb8_conversion = false;
+    use_16bit_dec_reconstruct = false;
     used_acs = 0;
 
     group_border_assigner.Init(shared->frame_dim);
