@@ -182,14 +182,11 @@ HWY_EXPORT(HasFastXYBTosRGB8);
 bool HasFastXYBTosRGB8() { return HWY_DYNAMIC_DISPATCH(HasFastXYBTosRGB8)(); }
 
 HWY_EXPORT(FastXYBTosRGB8);
-void FastXYBTosRGB8(const Image3F& input, const Rect& input_rect,
-                    const Rect& output_buf_rect, const ImageF* alpha,
-                    const Rect& alpha_rect, bool is_rgba,
-                    uint8_t* JXL_RESTRICT output_buf, size_t xsize,
-                    size_t output_stride) {
-  return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(
-      input, input_rect, output_buf_rect, alpha, alpha_rect, is_rgba,
-      output_buf, xsize, output_stride);
+void FastXYBTosRGB8(const float* JXL_RESTRICT data[4], uint8_t* output,
+                    size_t xsize, bool is_rgba,
+                    int16_t* JXL_RESTRICT data16[4]) {
+  return HWY_DYNAMIC_DISPATCH(FastXYBTosRGB8)(data, output, xsize, is_rgba,
+                                              data16);
 }
 
 void OpsinParams::Init(float intensity_target) {

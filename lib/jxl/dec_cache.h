@@ -86,6 +86,9 @@ struct PassesDecoderState {
   // One row per thread
   std::vector<std::vector<float>> pixel_callback_rows;
 
+  // Buffer for 16bit fixpoint fastpath.
+  std::vector<ImageS> fixpoint_srgb_buffer;
+
   // Seed for noise, to have different noise per-frame.
   size_t noise_seed = 0;
 
@@ -203,6 +206,12 @@ struct PassesDecoderState {
                                        kGroupDim + 2 * kGroupDataYBorder);
         ycbcr_out_images.emplace_back(kGroupDim + 2 * kGroupDataXBorder,
                                       kGroupDim + 2 * kGroupDataYBorder);
+      }
+    }
+    if (fast_xyb_srgb8_conversion) {
+      for (size_t _ = fixpoint_srgb_buffer.size(); _ < num_threads; _++) {
+        fixpoint_srgb_buffer.emplace_back(
+            ImageS(kApplyImageFeaturesTileDim * 8, 4));
       }
     }
     if (rgb_output || pixel_callback) {

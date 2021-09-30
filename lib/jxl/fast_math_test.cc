@@ -194,7 +194,7 @@ HWY_NOINLINE void TestFastXYB() {
   int scaling = 1;
   int n = 256 * scaling;
   float inv_scaling = 1.0f / scaling;
-  int kChunk = 32;
+  constexpr int kChunk = 32;
   // The image is divided in chunks to reduce total memory usage.
   for (int cr = 0; cr < n; cr += kChunk) {
     for (int cg = 0; cg < n; cg += kChunk) {
@@ -214,11 +214,20 @@ HWY_NOINLINE void TestFastXYB() {
         }
         ib.SetFromImage(std::move(chunk), ColorEncoding::SRGB());
         Image3F xyb(kChunk * kChunk, kChunk);
+        int16_t rgb16buf[4][kChunk * kChunk];
+        int16_t* JXL_RESTRICT rgb16[4] = {rgb16buf[0], rgb16buf[1],
+                                          rgb16buf[2]};
         std::vector<uint8_t> roundtrip(kChunk * kChunk * kChunk * 3);
         ToXYB(ib, nullptr, &xyb);
-        jxl::HWY_NAMESPACE::FastXYBTosRGB8(
-            xyb, Rect(xyb), Rect(xyb), nullptr, Rect(), /*is_rgba=*/false,
-            roundtrip.data(), xyb.xsize(), xyb.xsize() * 3);
+        const float* rgb[4] = {};
+        for (size_t y = 0; y < xyb.ysize(); y++) {
+          rgb[0] = xyb.PlaneRow(0, y);
+          rgb[1] = xyb.PlaneRow(1, y);
+          rgb[2] = xyb.PlaneRow(2, y);
+          uint8_t* out = roundtrip.data() + xyb.xsize() * 3 * y;
+          jxl::HWY_NAMESPACE::FastXYBTosRGB8(rgb, out, xyb.xsize(),
+                                             /*is_rgba=*/false, rgb16);
+        }
         for (int ir = 0; ir < kChunk; ir++) {
           for (int ig = 0; ig < kChunk; ig++) {
             for (int ib = 0; ib < kChunk; ib++) {
