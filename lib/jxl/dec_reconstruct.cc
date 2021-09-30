@@ -1025,15 +1025,30 @@ Status FinalizeImageRect(
     // the frame is not supposed to be displayed.
 
     if (dec_state->fast_xyb_srgb8_conversion) {
-      FastXYBTosRGB8(
-          *output_pixel_data_storage,
-          upsampled_frame_rect_for_storage.Lines(available_y, num_ys),
-          upsampled_frame_rect.Lines(available_y, num_ys)
-              .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
-                         frame_dim.ysize_upsampled)),
-          alpha, alpha_rect.Lines(available_y, num_ys),
-          dec_state->rgb_output_is_rgba, dec_state->rgb_output, frame_dim.xsize,
-          dec_state->rgb_stride);
+      auto& buf = dec_state->fixpoint_srgb_buffer[thread];
+      int16_t* JXL_RESTRICT rgb16[4] = {buf.Row(0), buf.Row(1), buf.Row(2)};
+      if (alpha) rgb16[3] = buf.Row(3);
+      for (size_t y = available_y;
+           y < available_y + num_ys &&
+           upsampled_frame_rect.y0() + y < frame_dim.ysize_upsampled;
+           y++) {
+        const float* rgb[4] = {};
+        rgb[0] = upsampled_frame_rect_for_storage.ConstPlaneRow(
+            *output_pixel_data_storage, 0, y);
+        rgb[1] = upsampled_frame_rect_for_storage.ConstPlaneRow(
+            *output_pixel_data_storage, 1, y);
+        rgb[2] = upsampled_frame_rect_for_storage.ConstPlaneRow(
+            *output_pixel_data_storage, 2, y);
+        rgb[3] = alpha ? alpha_rect.ConstRow(*alpha, y) : nullptr;
+        size_t x0 = upsampled_frame_rect.x0();
+        size_t x1 = std::min(x0 + upsampled_frame_rect.xsize(),
+                             frame_dim.xsize_upsampled);
+        uint8_t* out = dec_state->rgb_output +
+                       dec_state->rgb_stride * (upsampled_frame_rect.y0() + y) +
+                       x0 * (dec_state->rgb_output_is_rgba ? 4 : 3);
+        FastXYBTosRGB8(rgb, out, x1 - upsampled_frame_rect.x0(),
+                       dec_state->rgb_output_is_rgba, rgb16);
+      }
     } else {
       if (frame_header.needs_color_transform()) {
         if (frame_header.color_transform == ColorTransform::kXYB) {
