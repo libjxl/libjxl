@@ -19,7 +19,9 @@
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/enc_external_image.h"
+#include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/sanitizers.h"
@@ -86,15 +88,25 @@ class WebPCodec : public ImageCodec {
     const double start = Now();
     const ImageBundle& ib = io->Main();
 
-    const ImageF* alpha = ib.HasAlpha() ? &ib.alpha() : nullptr;
     if (ib.HasAlpha() && ib.metadata()->GetAlphaBits() > 8) {
       return JXL_FAILURE("WebP alpha must be 8-bit");
     }
 
-    // TODO: ib.CopyToSRGB to Image3B assert-fails if 16-bit alpha. Fix that,
-    // since it may be bug in external_image (alpha isn't requested here).
-    Image3B srgb;
-    JXL_RETURN_IF_ERROR(ib.CopyToSRGB(Rect(ib), &srgb, pool));
+    size_t num_chans = (ib.HasAlpha() ? 4 : 3);
+    ImageMetadata metadata = io->metadata.m;
+    ImageBundle store(&metadata);
+    const ImageBundle* transformed;
+    const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
+    JXL_RETURN_IF_ERROR(
+        TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
+    size_t xsize = ib.oriented_xsize();
+    size_t ysize = ib.oriented_ysize();
+    size_t stride = xsize * num_chans;
+    PaddedBytes srgb(stride * ysize);
+    JXL_RETURN_IF_ERROR(ConvertToExternal(
+        *transformed, 8, /*float_out=*/false, num_chans, JXL_BIG_ENDIAN, stride,
+        pool, srgb.data(), srgb.size(), /*out_callback=*/nullptr,
+        /*out_opaque=*/nullptr, metadata.GetOrientation()));
 
     if (lossless_ || near_lossless_) {
       // The lossless codec does not support 16-bit channels.
@@ -105,13 +117,15 @@ class WebPCodec : public ImageCodec {
         return JXL_FAILURE("%s: webp:ll/nl requires 8-bit sRGB",
                            filename.c_str());
       }
-      JXL_RETURN_IF_ERROR(CompressInternal(srgb, alpha, 100, compressed));
+      JXL_RETURN_IF_ERROR(
+          CompressInternal(srgb, xsize, ysize, num_chans, 100, compressed));
     } else if (bitrate_target_ > 0.0) {
       int quality_bad = 100;
       int quality_good = 92;
-      size_t target_size = srgb.xsize() * srgb.ysize() * bitrate_target_ / 8.0;
+      size_t target_size = xsize * ysize * bitrate_target_ / 8.0;
       while (quality_good > 0 &&
-             CompressInternal(srgb, alpha, quality_good, compressed) &&
+             CompressInternal(srgb, xsize, ysize, num_chans, quality_good,
+                              compressed) &&
              compressed->size() > target_size) {
         quality_bad = quality_good;
         quality_good -= 8;
@@ -119,7 +133,8 @@ class WebPCodec : public ImageCodec {
       if (quality_good <= 0) quality_good = 1;
       while (quality_good + 1 < quality_bad) {
         int quality = (quality_bad + quality_good) / 2;
-        if (!CompressInternal(srgb, alpha, quality, compressed)) {
+        if (!CompressInternal(srgb, xsize, ysize, num_chans, quality,
+                              compressed)) {
           break;
         }
         if (compressed->size() <= target_size) {
@@ -128,10 +143,11 @@ class WebPCodec : public ImageCodec {
           quality_bad = quality;
         }
       }
-      JXL_RETURN_IF_ERROR(
-          CompressInternal(srgb, alpha, quality_good, compressed));
+      JXL_RETURN_IF_ERROR(CompressInternal(srgb, xsize, ysize, num_chans,
+                                           quality_good, compressed));
     } else if (quality_ > 0) {
-      JXL_RETURN_IF_ERROR(CompressInternal(srgb, alpha, quality_, compressed));
+      JXL_RETURN_IF_ERROR(CompressInternal(srgb, xsize, ysize, num_chans,
+                                           quality_, compressed));
     } else {
       return false;
     }
@@ -204,47 +220,8 @@ class WebPCodec : public ImageCodec {
     }
     return 1;
   }
-
-  static void Import(const Image3B& srgb, WebPPicture* pic) {
-    const size_t xsize = srgb.xsize();
-    const size_t ysize = srgb.ysize();
-    std::vector<uint8_t> rgb(xsize * ysize * 3);
-    for (size_t y = 0; y < ysize; ++y) {
-      const uint8_t* JXL_RESTRICT row0 = srgb.ConstPlaneRow(0, y);
-      const uint8_t* JXL_RESTRICT row1 = srgb.ConstPlaneRow(1, y);
-      const uint8_t* JXL_RESTRICT row2 = srgb.ConstPlaneRow(2, y);
-      uint8_t* const JXL_RESTRICT row_rgb = &rgb[y * xsize * 3];
-      for (size_t x = 0; x < xsize; ++x) {
-        row_rgb[3 * x + 0] = row0[x];
-        row_rgb[3 * x + 1] = row1[x];
-        row_rgb[3 * x + 2] = row2[x];
-      }
-    }
-    WebPPictureImportRGB(pic, &rgb[0], 3 * srgb.xsize());
-  }
-
-  static void Import(const Image3B& srgb, const ImageF& alpha,
-                     WebPPicture* pic) {
-    const size_t xsize = srgb.xsize();
-    const size_t ysize = srgb.ysize();
-    std::vector<uint8_t> rgba(xsize * ysize * 4);
-    for (size_t y = 0; y < ysize; ++y) {
-      const uint8_t* JXL_RESTRICT row0 = srgb.ConstPlaneRow(0, y);
-      const uint8_t* JXL_RESTRICT row1 = srgb.ConstPlaneRow(1, y);
-      const uint8_t* JXL_RESTRICT row2 = srgb.ConstPlaneRow(2, y);
-      const float* JXL_RESTRICT rowa = alpha.ConstRow(y);
-      uint8_t* const JXL_RESTRICT row_rgba = &rgba[y * xsize * 4];
-      for (size_t x = 0; x < xsize; ++x) {
-        row_rgba[4 * x + 0] = row0[x];
-        row_rgba[4 * x + 1] = row1[x];
-        row_rgba[4 * x + 2] = row2[x];
-        row_rgba[4 * x + 3] = rowa[x] * 255 + .5f;
-      }
-    }
-    WebPPictureImportRGBA(pic, &rgba[0], 4 * srgb.xsize());
-  }
-
-  Status CompressInternal(const Image3B& srgb, const ImageF* alpha, int quality,
+  Status CompressInternal(const PaddedBytes& srgb, size_t xsize, size_t ysize,
+                          size_t num_chans, int quality,
                           PaddedBytes* compressed) {
     *compressed = PaddedBytes();
     WebPConfig config;
@@ -264,16 +241,16 @@ class WebPCodec : public ImageCodec {
 
     WebPPicture pic;
     WebPPictureInit(&pic);
-    pic.width = static_cast<int>(srgb.xsize());
-    pic.height = static_cast<int>(srgb.ysize());
+    pic.width = static_cast<int>(xsize);
+    pic.height = static_cast<int>(ysize);
     pic.writer = &WebPStringWrite;
     if (lossless_ || near_lossless_) pic.use_argb = 1;
     pic.custom_ptr = compressed;
 
-    if (alpha == nullptr) {
-      Import(srgb, &pic);
+    if (num_chans == 3) {
+      WebPPictureImportRGB(&pic, srgb.data(), 3 * xsize);
     } else {
-      Import(srgb, *alpha, &pic);
+      WebPPictureImportRGBA(&pic, srgb.data(), 4 * xsize);
     }
 
     // WebP encoding may fail, for example, if the image is more than 16384

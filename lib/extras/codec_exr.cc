@@ -15,6 +15,7 @@
 #include "lib/jxl/alpha.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
+#include "lib/jxl/enc_image_bundle.h"
 
 namespace jxl {
 namespace extras {
