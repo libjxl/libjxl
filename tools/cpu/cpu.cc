@@ -18,10 +18,6 @@
 #endif
 #endif
 
-#if JXL_ARCH_PPC
-#include <sys/platform/ppc.h>  // __ppc_get_timebase_freq
-#endif
-
 #if JXL_ARCH_ARM
 #include <unistd.h>  // sysconf
 #endif
