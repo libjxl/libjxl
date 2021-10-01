@@ -1408,8 +1408,8 @@ int QuantizeGradient(const int32_t* qrow, size_t onerow, size_t c, size_t x,
 }
 
 void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
-                                      bool nl_dc,
-                                      PassesEncoderState* enc_state) {
+                                      bool nl_dc, PassesEncoderState* enc_state,
+                                      bool jpeg_transcode) {
   const Rect r = enc_state->shared.DCGroupRect(group_index);
   extra_dc_precision[group_index] = nl_dc ? 1 : 0;
   float mul = 1 << extra_dc_precision[group_index];
@@ -1420,6 +1420,13 @@ void ModularFrameEncoder::AddVarDCTDC(const Image3F& dc, size_t group_index,
   stream_options[stream_id].wp_tree_mode = ModularOptions::TreeMode::kWPOnly;
   if (cparams.speed_tier >= SpeedTier::kSquirrel) {
     stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kWPFixedDC;
+  }
+  if (cparams.speed_tier < SpeedTier::kSquirrel && jpeg_transcode) {
+    stream_options[stream_id].predictor =
+        (cparams.speed_tier < SpeedTier::kKitten ? Predictor::Variable
+                                                 : Predictor::Best);
+    stream_options[stream_id].wp_tree_mode = ModularOptions::TreeMode::kDefault;
+    stream_options[stream_id].tree_kind = ModularOptions::TreeKind::kLearn;
   }
   if (cparams.decoding_speed_tier >= 1) {
     stream_options[stream_id].tree_kind =
