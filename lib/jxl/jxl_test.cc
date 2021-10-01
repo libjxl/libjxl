@@ -1465,6 +1465,31 @@ TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
 }
 
 TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420EarlyFlush)) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
+  CodecInOut io;
+  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CodecInOut io2;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
+
+  CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kYCbCr;
+
+  DecompressParams dparams;
+  dparams.max_downsampling = 8;
+
+  CodecInOut io3;
+  Roundtrip(&io, cparams, dparams, &pool, &io3);
+
+  EXPECT_GE(50, ButteraugliDistance(io2, io3, cparams.ba_params,
+                                    /*distmap=*/nullptr, &pool));
+}
+
+TEST(JxlTest,
      JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420Mul16)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
