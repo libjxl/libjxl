@@ -163,7 +163,7 @@ void InitializePassesEncoder(const Image3F& opsin, ThreadPool* pool,
     auto compute_dc_coeffs = [&](int group_index, int /* thread */) {
       modular_frame_encoder->AddVarDCTDC(
           dc, group_index,
-          enc_state->cparams.butteraugli_distance >= 2.0f &&
+          enc_state->cparams.butteraugli_distance >= 2.5f &&
               enc_state->cparams.speed_tier < SpeedTier::kFalcon,
           enc_state, /*jpeg_transcode=*/false);
     };
