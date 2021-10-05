@@ -362,8 +362,10 @@ PaddedBytes CreateTestJXLCodestream(
       c.push_back('p');
       AppendU32BE(jxlp_index++, &c);
       c.append(compressed1.data(), compressed1.data() + compressed1.size());
-      // Third codestream part
-      AppendU32BE(add_container == kCSBF_Multi ? (compressed2.size() + 12) : 0,
+      // Third (last) codestream part
+      AppendU32BE(add_container == kCSBF_Multi_Zero_Terminated
+                      ? 0
+                      : (compressed2.size() + 12),
                   &c);
       c.push_back('j');
       c.push_back('x');
@@ -3310,6 +3312,91 @@ TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
   // Even though JxlDecoderProcessInput already returned JXL_DEC_SUCCESS before,
   // when calling it again now after setting more input, success is expected, no
   // event occurs but the box has been successfully skipped.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+
+  JxlDecoderDestroy(dec);
+}
+
+namespace {
+bool BoxTypeEquals(const std::string& type_string, JxlBoxType type) {
+  return type_string.size() == 4 && type_string[0] == type[0] &&
+         type_string[1] == type[1] && type_string[2] == type[2] &&
+         type_string[3] == type[3];
+}
+}  // namespace
+
+TEST(DecodeTest, BoxTest) {
+  size_t xsize = 1, ysize = 1;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  jxl::CompressParams cparams;
+  // Lossless to verify pixels exactly after roundtrip.
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
+
+  JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+
+  JxlBoxType type;
+  uint64_t box_size;
+
+  // Cannot get these when decoding didn't start yet
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("JXL ", type));
+  EXPECT_EQ(12, box_size);
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("ftyp", type));
+  EXPECT_EQ(20, box_size);
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("unkn", type));
+  EXPECT_EQ(24, box_size);
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("unkn", type));
+  EXPECT_EQ(24, box_size);
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
+
+  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+  EXPECT_TRUE(BoxTypeEquals("unkn", type));
+  EXPECT_EQ(24, box_size);
+
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlDecoderDestroy(dec);
