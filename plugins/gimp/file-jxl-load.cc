@@ -5,14 +5,15 @@
 
 #include "plugins/gimp/file-jxl-load.h"
 
-#define _PROFILE_ORIGIN_ JXL_COLOR_PROFILE_TARGET_ORIGINAL
-#define _PROFILE_TARGET_ JXL_COLOR_PROFILE_TARGET_DATA
+#define _PROFILE_ORIG_ JXL_COLOR_PROFILE_TARGET_ORIGINAL
+#define _PROFILE_DATA_ JXL_COLOR_PROFILE_TARGET_DATA
 #define LOAD_PROC "file-jxl-load"
 
 namespace jxl {
 
 bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
-  std::vector<uint8_t> icc_profile;
+  std::vector<uint8_t> icc_orig;
+  std::vector<uint8_t> icc_data;
   GimpColorProfile *profile_icc = nullptr;
   GimpColorProfile *profile_int = nullptr;
   bool is_linear = false;
@@ -23,9 +24,16 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   gpointer pixels_buffer_2 = nullptr;
   size_t buffer_size = 0;
 
+  cmsContext hContext = cmsCreateContext(nullptr, nullptr);
+  cmsHPROFILE hInProfile, hOutProfile;
+  cmsHTRANSFORM hTransform;
+  uint32_t hInFormat = TYPE_RGB_FLT;
+  uint32_t hOutFormat = 0;
+
   GimpImageBaseType image_type = GIMP_RGB;
   GimpImageType layer_type = GIMP_RGB_IMAGE;
-  GimpPrecision precision = GIMP_PRECISION_FLOAT_LINEAR;
+  GimpPrecision precision_linear = GIMP_PRECISION_FLOAT_LINEAR;
+  GimpPrecision precision_gamma = GIMP_PRECISION_FLOAT_GAMMA;
   JxlBasicInfo info = {};
   JxlPixelFormat format = {};
 
@@ -34,11 +42,8 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   format.endianness = JXL_NATIVE_ENDIAN;
   format.align = 0;
 
-  bool is_gray = false;
-  std::string babl_format_str = "";
-
-  JpegXlGimpProgress gimp_load_progress(
-      ("Opening JPEG XL file:" + std::string(filename)).c_str());
+  JpegXlGimpProgress gimp_load_progress(_("Opening JPEG XL file: %s"),
+                                        filename);
   gimp_load_progress.update();
 
   // read file
@@ -89,45 +94,68 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
       // check for ICC profile
       size_t icc_size = 0;
       JxlColorEncoding color_encoding;
+      // Attempt to load original ICC profile
       if (JXL_DEC_SUCCESS !=
-          JxlDecoderGetColorAsEncodedProfile(
-              dec.get(), &format, _PROFILE_ORIGIN_, &color_encoding)) {
-        // Attempt to load ICC profile when no internal color encoding
+          JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, _PROFILE_ORIG_,
+                                             &color_encoding)) {
         if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec.get(), &format,
-                                                           _PROFILE_ORIGIN_,
+                                                           _PROFILE_ORIG_,
                                                            &icc_size)) {
           g_printerr(LOAD_PROC
-                     " Warning: JxlDecoderGetICCProfileSize failed\n");
+                     " Warning: JxlDecoderGetICCProfileSize failed "
+                     "(_PROFILE_ORIG_)\n");
         }
 
         if (icc_size > 0) {
-          icc_profile.resize(icc_size);
+          icc_orig.resize(icc_size);
           if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
-                                     dec.get(), &format, _PROFILE_ORIGIN_,
-                                     icc_profile.data(), icc_profile.size())) {
+                                     dec.get(), &format, _PROFILE_ORIG_,
+                                     icc_orig.data(), icc_orig.size())) {
             g_printerr(LOAD_PROC
-                       " Warning: JxlDecoderGetColorAsICCProfile failed\n");
+                       " Warning: JxlDecoderGetColorAsICCProfile failed "
+                       "(_PROFILE_ORIG_)\n");
           }
 
           profile_icc = gimp_color_profile_new_from_icc_profile(
-              icc_profile.data(), icc_profile.size(), nullptr);
-
-          if (profile_icc) {
-            is_linear = gimp_color_profile_is_linear(profile_icc);
-            g_printerr(LOAD_PROC " Info: Color profile is_linear = %d\n",
-                       is_linear);
-          } else {
-            g_printerr(LOAD_PROC " Warning: Failed to read ICC profile.\n");
-          }
+              icc_orig.data(), icc_orig.size(), nullptr);
         } else {
-          g_printerr(LOAD_PROC " Warning: Empty ICC data.\n");
+          g_printerr(LOAD_PROC " Warning: Empty ICC data (_PROFILE_ORIG_)\n");
+        }
+      }
+
+      // Attempt to load data ICC profile... used for lcms2 transform
+      if (JXL_DEC_SUCCESS !=
+          JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, _PROFILE_DATA_,
+                                             &color_encoding)) {
+        if (JXL_DEC_SUCCESS != JxlDecoderGetICCProfileSize(dec.get(), &format,
+                                                           _PROFILE_DATA_,
+                                                           &icc_size)) {
+          g_printerr(LOAD_PROC
+                     " Warning: JxlDecoderGetICCProfileSize failed "
+                     "(_PROFILE_DATA_)\n");
+        }
+
+        if (icc_size > 0) {
+          icc_data.resize(icc_size);
+          if (JXL_DEC_SUCCESS != JxlDecoderGetColorAsICCProfile(
+                                     dec.get(), &format, _PROFILE_DATA_,
+                                     icc_data.data(), icc_data.size())) {
+            g_printerr(LOAD_PROC
+                       " Warning: JxlDecoderGetColorAsICCProfile failed "
+                       "(_PROFILE_DATA_)\n");
+          }
+
+          profile_int = gimp_color_profile_new_from_icc_profile(
+              icc_data.data(), icc_data.size(), nullptr);
+        } else {
+          g_printerr(LOAD_PROC " Warning: Empty ICC data (_PROFILE_DATA_)\n");
         }
       }
 
       // Internal color profile detection...
       if (JXL_DEC_SUCCESS ==
-          JxlDecoderGetColorAsEncodedProfile(
-              dec.get(), &format, _PROFILE_TARGET_, &color_encoding)) {
+          JxlDecoderGetColorAsEncodedProfile(dec.get(), &format, _PROFILE_DATA_,
+                                             &color_encoding)) {
         g_printerr(LOAD_PROC " Info: Internal color encoding detected.\n");
 
         // figure out linearity of internal profile
@@ -147,6 +175,7 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
           case JXL_TRANSFER_FUNCTION_UNKNOWN:
           default:
+            is_linear = false;
             if (profile_icc) {
               g_printerr(LOAD_PROC
                          " Info: Unknown transfer function.  "
@@ -191,7 +220,6 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
             break;
 
           case JXL_COLOR_SPACE_GRAY:
-            is_gray = true;
             if (!profile_icc ||
                 color_encoding.white_point == JXL_WHITE_POINT_D65) {
               if (is_linear) {
@@ -206,11 +234,12 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
           default:
             if (profile_icc) {
               g_printerr(LOAD_PROC
-                         " Info: Unknown colorspace.  Using ICC profile.\n");
+                         " Info: Unknown colorspace.  "
+                         "Using ICC profile.\n");
             } else {
-              g_error(
-                  LOAD_PROC
-                  " Warning: Unknown colorspace. Treating as sRGB profile.\n");
+              g_error(LOAD_PROC
+                      " Warning: Unknown colorspace.  "
+                      "Treating as sRGB profile.\n");
 
               if (is_linear) {
                 profile_int = gimp_color_profile_new_rgb_srgb_linear();
@@ -224,21 +253,27 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
       // set pixel format
       if (info.num_color_channels > 1) {
+        hOutFormat |= COLORSPACE_SH(PT_RGB) | CHANNELS_SH(3);
         if (info.alpha_bits == 0) {
           image_type = GIMP_RGB;
           layer_type = GIMP_RGB_IMAGE;
           format.num_channels = info.num_color_channels;
         } else {
+          hInFormat |= EXTRA_SH(1);
+          hOutFormat |= EXTRA_SH(1);
           image_type = GIMP_RGB;
           layer_type = GIMP_RGBA_IMAGE;
           format.num_channels = info.num_color_channels + 1;
         }
       } else if (info.num_color_channels == 1) {
+        hOutFormat |= CHANNELS_SH(1);
         if (info.alpha_bits == 0) {
           image_type = GIMP_GRAY;
           layer_type = GIMP_GRAY_IMAGE;
           format.num_channels = info.num_color_channels;
         } else {
+          hInFormat |= EXTRA_SH(1);
+          hOutFormat |= EXTRA_SH(1);
           image_type = GIMP_GRAY;
           layer_type = GIMP_GRAYA_IMAGE;
           format.num_channels = info.num_color_channels + 1;
@@ -247,55 +282,63 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
 
       // Set image bit depth and linearity
       if (info.bits_per_sample <= 8) {
-        if (is_linear) {
-          precision = GIMP_PRECISION_U8_LINEAR;
-        } else {
-          precision = GIMP_PRECISION_U8_GAMMA;
-        }
+        hOutFormat |= BYTES_SH(1);
+        precision_linear = GIMP_PRECISION_U8_LINEAR;
+        precision_gamma = GIMP_PRECISION_U8_GAMMA;
       } else if (info.bits_per_sample <= 16) {
+        hOutFormat |= BYTES_SH(2);
         if (info.exponent_bits_per_sample > 0) {
-          if (is_linear) {
-            precision = GIMP_PRECISION_HALF_LINEAR;
-          } else {
-            precision = GIMP_PRECISION_HALF_GAMMA;
-          }
-        } else if (is_linear) {
-          precision = GIMP_PRECISION_U16_LINEAR;
+          hOutFormat |= FLOAT_SH(1);
+          precision_linear = GIMP_PRECISION_HALF_LINEAR;
+          precision_gamma = GIMP_PRECISION_HALF_GAMMA;
         } else {
-          precision = GIMP_PRECISION_U16_GAMMA;
+          precision_linear = GIMP_PRECISION_U16_LINEAR;
+          precision_gamma = GIMP_PRECISION_U16_GAMMA;
         }
       } else {
+        hOutFormat |= BYTES_SH(4);
         if (info.exponent_bits_per_sample > 0) {
-          if (is_linear) {
-            precision = GIMP_PRECISION_FLOAT_LINEAR;
-          } else {
-            precision = GIMP_PRECISION_FLOAT_GAMMA;
-          }
-        } else if (is_linear) {
-          precision = GIMP_PRECISION_U32_LINEAR;
+          hOutFormat |= FLOAT_SH(1);
+          precision_linear = GIMP_PRECISION_FLOAT_LINEAR;
+          precision_gamma = GIMP_PRECISION_FLOAT_GAMMA;
         } else {
-          precision = GIMP_PRECISION_U32_GAMMA;
+          precision_linear = GIMP_PRECISION_U32_LINEAR;
+          precision_gamma = GIMP_PRECISION_U32_GAMMA;
         }
       }
-      // used to convert float to image precision
-      if (is_gray) {
-        babl_format_str += "Y'";
-      } else {
-        babl_format_str += "R'G'B'";
+
+      // setup lcms2 profile and transform
+      hInProfile =
+          cmsOpenProfileFromMemTHR(hContext, icc_data.data(), icc_data.size());
+      hOutProfile =
+          cmsOpenProfileFromMemTHR(hContext, icc_orig.data(), icc_orig.size());
+      const uint32_t flags = cmsFLAGS_BLACKPOINTCOMPENSATION |
+                             cmsFLAGS_HIGHRESPRECALC | cmsFLAGS_NULLTRANSFORM;
+
+      hTransform = cmsCreateTransformTHR(hContext, hInProfile, hInFormat,
+                                         hOutProfile, hOutFormat,
+                                         INTENT_ABSOLUTE_COLORIMETRIC, flags);
+
+      cmsCloseProfile(hInProfile);
+      cmsCloseProfile(hOutProfile);
+
+      if (!hTransform) {
+        g_printerr(LOAD_PROC " Error: cmsCreateTransformTHR failed.\n");
+        return false;
       }
-      if (info.alpha_bits > 0) {
-        babl_format_str += "A";
-      }
-      babl_format_str += " float";
 
       // create new image
-      *image_id = gimp_image_new_with_precision(info.xsize, info.ysize,
-                                                image_type, precision);
-
-      if (profile_int) {
-        gimp_image_set_color_profile(*image_id, profile_int);
-      } else if (!profile_icc) {
-        g_printerr(LOAD_PROC " Warning: No color profile.\n");
+      if (profile_icc) {
+        if (is_linear) {
+          *image_id = gimp_image_new_with_precision(
+              info.xsize, info.ysize, image_type, precision_linear);
+        } else {
+          *image_id = gimp_image_new_with_precision(
+              info.xsize, info.ysize, image_type, precision_gamma);
+        }
+      } else {
+        *image_id = gimp_image_new_with_precision(info.xsize, info.ysize,
+                                                  image_type, precision_gamma);
       }
     } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
       format.data_type = JXL_TYPE_FLOAT;
@@ -326,11 +369,9 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
                               /*position=*/0);
 
       GeglBuffer *buffer = gimp_drawable_get_buffer(layer);
-      static const Babl *source_format = babl_format(babl_format_str.c_str());
-      const Babl *destination_format = gegl_buffer_set_format(buffer, nullptr);
 
-      babl_process(babl_fish(source_format, destination_format),
-                   pixels_buffer_1, pixels_buffer_2, info.xsize * info.ysize);
+      cmsDoTransform(hTransform, pixels_buffer_1, pixels_buffer_2,
+                     info.xsize * info.ysize);
 
       gegl_buffer_set(buffer, GEGL_RECTANGLE(0, 0, info.xsize, info.ysize), 0,
                       nullptr, pixels_buffer_2, GEGL_AUTO_ROWSTRIDE);
@@ -356,10 +397,10 @@ bool LoadJpegXlImage(const gchar *const filename, gint32 *const image_id) {
   g_free(pixels_buffer_1);
   g_free(pixels_buffer_2);
 
-  gimp_load_progress.update();
-
   if (profile_icc) {
     gimp_image_set_color_profile(*image_id, profile_icc);
+  } else {
+    gimp_image_set_color_profile(*image_id, profile_int);
   }
 
   gimp_load_progress.update();

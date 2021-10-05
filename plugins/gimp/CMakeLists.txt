@@ -5,6 +5,7 @@
 
 find_package(PkgConfig)
 pkg_check_modules(Gimp IMPORTED_TARGET gimp-2.0>=2.10 gimpui-2.0>=2.10)
+pkg_check_modules(Gimp IMPORTED_TARGET gimp-2.0>=2.10 gimpui-2.0>=2.10)
 
 if (NOT Gimp_FOUND)
   message(WARNING "Gimp development libraries not found, the Gimp plugin will not be built")
@@ -19,7 +20,7 @@ add_executable(file-jxl WIN32
   file-jxl-save.cc
   file-jxl-save.h
   file-jxl.cc)
-target_link_libraries(file-jxl jxl jxl_threads PkgConfig::Gimp)
+target_link_libraries(file-jxl jxl jxl_threads PkgConfig::Gimp lcms2)
 
 target_include_directories(file-jxl PUBLIC
     ${PROJECT_SOURCE_DIR})  # for plugins/gimp absolute paths.
