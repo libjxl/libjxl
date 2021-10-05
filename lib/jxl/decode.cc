@@ -414,9 +414,16 @@ struct JxlDecoderStruct {
   size_t file_pos;
   size_t box_contents_end;
   size_t box_contents_size;
+  size_t box_size;
   // Either a final box that runs until EOF, or the case of no container format
   // at all.
   bool box_contents_unbounded;
+
+  JxlBoxType box_type;
+  JxlBoxType box_decoded_type;  // Underlying type for brob boxes
+  // Set to true right after a JXL_DEC_BOX event only.
+  bool box_event;
+  bool decompress_boxes;
 
   // Settings
   bool keep_orientation;
@@ -563,7 +570,11 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->file_pos = 0;
   dec->box_contents_end = 0;
   dec->box_contents_size = 0;
+  dec->box_size = 0;
   dec->box_contents_unbounded = false;
+  memset(dec->box_type, 0, sizeof(dec->box_type));
+  memset(dec->box_decoded_type, 0, sizeof(dec->box_decoded_type));
+  dec->box_event = false;
   dec->box_stage = BoxStage::kHeader;
 
   dec->events_wanted = 0;
@@ -614,6 +625,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
   dec->frame_saved_as.clear();
   dec->frame_external_to_internal.clear();
   dec->frame_required.clear();
+  dec->decompress_boxes = false;
 }
 
 JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
@@ -1483,6 +1495,10 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   return JXL_DEC_SUCCESS;
 }
 
+JxlDecoderStatus JxlDecoderOutputBox(JxlDecoder* dec) {
+  return JXL_DEC_SUCCESS;
+}
+
 JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   if (dec->stage == DecoderStage::kInited) {
     dec->stage = DecoderStage::kStarted;
@@ -1507,6 +1523,14 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
 
   // Box handling loop
   for (;;) {
+    if (dec->box_stage != BoxStage::kHeader &&
+        (dec->events_wanted & JXL_DEC_BOX)) {
+      JxlDecoderStatus status = JxlDecoderOutputBox(dec);
+      if (status != JXL_DEC_SUCCESS) {
+        return status;
+      }
+    }
+
     if (dec->box_stage == BoxStage::kHeader) {
       if (!dec->have_container) {
         if (dec->stage == DecoderStage::kFinished) return JXL_DEC_SUCCESS;
@@ -1514,7 +1538,6 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         dec->box_contents_unbounded = true;
         continue;
       }
-
       if (dec->avail_in == 0) {
         if (dec->stage == DecoderStage::kFinished) {
           // All codestream boxes done, return success. However, if the user
@@ -1526,10 +1549,9 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       }
 
       uint64_t box_size, header_size;
-      JxlBoxType type;
       JxlDecoderStatus status =
-          ParseBoxHeader(dec->next_in, dec->avail_in, 0, dec->file_pos, type,
-                         &box_size, &header_size);
+          ParseBoxHeader(dec->next_in, dec->avail_in, 0, dec->file_pos,
+                         dec->box_type, &box_size, &header_size);
       if (status != JXL_DEC_SUCCESS) {
         if (status == JXL_DEC_NEED_MORE_INPUT) {
           dec->basic_info_size_hint =
@@ -1545,15 +1567,32 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
                                   : (dec->file_pos + box_size - header_size);
       dec->box_contents_size =
           dec->box_contents_unbounded ? 0 : (box_size - header_size);
+      dec->box_size = box_size;
 
-      if (memcmp(type, "jxlc", 4) == 0) {
+      if (memcmp(dec->box_type, "brob", 4) == 0) {
+        if (dec->avail_in < 4) {
+          return JXL_DEC_NEED_MORE_INPUT;
+        }
+        memcpy(dec->box_decoded_type, dec->next_in,
+               sizeof(dec->box_decoded_type));
+      } else {
+        memcpy(dec->box_decoded_type, dec->box_type,
+               sizeof(dec->box_decoded_type));
+      }
+
+      if (memcmp(dec->box_type, "jxlc", 4) == 0) {
         dec->box_stage = BoxStage::kCodestream;
-      } else if (memcmp(type, "jxlp", 4) == 0) {
+      } else if (memcmp(dec->box_type, "jxlp", 4) == 0) {
         dec->box_stage = BoxStage::kPartialCodestream;
-      } else if (memcmp(type, "jbrd", 4) == 0) {
+      } else if (memcmp(dec->box_type, "jbrd", 4) == 0) {
         dec->box_stage = BoxStage::kJpeg;
       } else {
         dec->box_stage = BoxStage::kSkip;
+      }
+
+      if (dec->events_wanted & JXL_DEC_BOX) {
+        dec->box_event = true;
+        return JXL_DEC_BOX;
       }
     } else if (dec->box_stage == BoxStage::kPartialCodestream) {
       if (dec->last_codestream_seen) {
@@ -1609,13 +1648,19 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       if (status == JXL_DEC_SUCCESS) {
         if (dec->box_contents_unbounded) {
           // Last box reached and codestream done, nothing more to do.
+          dec->AdvanceInput(dec->avail_in);
           break;
         }
-        // TODO(lode): change this to continue the loop instead: there may be
-        // other non-codestream boxes after this box that must be handled, once
-        // metadata box handling is implemented.
-        dec->AdvanceInput(dec->avail_in);
-        break;
+        if (dec->events_wanted & JXL_DEC_BOX) {
+          // Codestream done, but there may be more other boxes.
+          dec->box_stage = BoxStage::kSkip;
+          continue;
+        } else {
+          // Codestreaam decoded, and no box output requested, skip all further
+          // input and return success.
+          dec->AdvanceInput(dec->avail_in);
+          break;
+        }
       }
       return status;
     } else if (dec->box_stage == BoxStage::kJpeg) {
@@ -2217,4 +2262,47 @@ void SetDecoderMemoryLimitBase_(size_t memory_limit_base) {
   // as W x H CPU processing units, so there could be numerous small frames
   // or few larger ones.
   cpu_limit_base_ = 5 * memory_limit_base;
+}
+
+JxlDecoderStatus JxlDecoderSetBoxBuffer(JxlDecoder* dec, uint8_t* data,
+                                        size_t size) {
+  return JXL_API_ERROR("getting box contents not yet implemented");
+}
+
+size_t JxlDecoderReleaseBoxBuffer(JxlDecoder* dec) {
+  return JXL_API_ERROR("getting box contents not yet implemented");
+}
+
+JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,
+                                              JXL_BOOL decompress) {
+  if (decompress) {
+    return JXL_API_ERROR("box decompression not yet implemented");
+  }
+  dec->decompress_boxes = decompress;
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec, JxlBoxType type,
+                                      JXL_BOOL decompressed) {
+  if (!dec->box_event) {
+    return JXL_API_ERROR("can only get box info after JXL_DEC_BOX event");
+  }
+  if (decompressed) {
+    memcpy(type, dec->box_decoded_type, sizeof(dec->box_decoded_type));
+  } else {
+    memcpy(type, dec->box_type, sizeof(dec->box_type));
+  }
+
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
+                                         uint64_t* size) {
+  if (!dec->box_event) {
+    return JXL_API_ERROR("can only get box info after JXL_DEC_BOX event");
+  }
+  if (size) {
+    *size = dec->box_size;
+  }
+  return JXL_DEC_SUCCESS;
 }
