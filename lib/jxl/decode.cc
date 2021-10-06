@@ -425,6 +425,20 @@ struct JxlDecoderStruct {
   bool box_event;
   bool decompress_boxes;
 
+  bool box_out_buffer_set;
+  // Whether the out buffer is set for the current box, if the user did not yet
+  // release the buffer while the next box is encountered, this will be set to
+  // false. If this is false, no JXL_DEC_NEED_MORE_INPUT is emitted
+  // (irrespective of the value of box_out_buffer_set), because not setting
+  // output indicates the user does not wish the data of this box.
+  bool box_out_buffer_set_current_box;
+  uint8_t* box_out_buffer;
+  size_t box_out_buffer_size;
+  // which byte of the full box content the start of the out buffer points to
+  size_t box_out_buffer_begin;
+  // which byte of the box content will be output next
+  size_t box_out_buffer_pos;
+
   // Settings
   bool keep_orientation;
 
@@ -576,6 +590,12 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   memset(dec->box_decoded_type, 0, sizeof(dec->box_decoded_type));
   dec->box_event = false;
   dec->box_stage = BoxStage::kHeader;
+  dec->box_out_buffer_set = false;
+  dec->box_out_buffer_set_current_box = false;
+  dec->box_out_buffer = nullptr;
+  dec->box_out_buffer_size = 0;
+  dec->box_out_buffer_begin = 0;
+  dec->box_out_buffer_pos = 0;
 
   dec->events_wanted = 0;
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
@@ -1495,9 +1515,47 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   return JXL_DEC_SUCCESS;
 }
 
+namespace {
 JxlDecoderStatus JxlDecoderOutputBox(JxlDecoder* dec) {
+  if (!dec->box_out_buffer_set_current_box) {
+    // No box output was requested
+    return JXL_DEC_SUCCESS;
+  }
+
+  size_t box_begin = dec->box_contents_end - dec->box_contents_size;
+  size_t out_pos = dec->box_out_buffer_pos - dec->box_out_buffer_begin;
+
+  // remaining box bytes as seen from dec->file_pos
+  size_t remaining = dec->avail_in;
+  if (!dec->box_contents_unbounded) {
+    remaining =
+        std::min<size_t>(remaining, dec->box_contents_end - dec->file_pos);
+  }
+  // how many of the remaining bytes have alredy been written out
+  size_t already_written =
+      box_begin + dec->box_out_buffer_begin - dec->file_pos;
+  if (remaining < already_written) {
+    return JXL_DEC_SUCCESS;
+  }
+
+  size_t to_write = remaining - already_written;
+  size_t can_write = to_write;
+
+  if (OutOfBounds(out_pos, to_write, dec->box_out_buffer_size)) {
+    can_write = dec->box_out_buffer_size - dec->box_out_buffer_pos;
+  }
+
+  memcpy(dec->box_out_buffer + dec->box_out_buffer_pos, dec->next_in,
+         can_write);
+  dec->box_out_buffer_pos += can_write;
+
+  if (can_write < to_write) {
+    return JXL_DEC_BOX_NEED_MORE_OUTPUT;
+  }
+
   return JXL_DEC_SUCCESS;
 }
+}  // namespace
 
 JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   if (dec->stage == DecoderStage::kInited) {
@@ -1592,6 +1650,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
 
       if (dec->events_wanted & JXL_DEC_BOX) {
         dec->box_event = true;
+        dec->box_out_buffer_set_current_box = false;
         return JXL_DEC_BOX;
       }
     } else if (dec->box_stage == BoxStage::kPartialCodestream) {
@@ -2266,11 +2325,34 @@ void SetDecoderMemoryLimitBase_(size_t memory_limit_base) {
 
 JxlDecoderStatus JxlDecoderSetBoxBuffer(JxlDecoder* dec, uint8_t* data,
                                         size_t size) {
-  return JXL_API_ERROR("getting box contents not yet implemented");
+  if (dec->box_out_buffer_set) {
+    return JXL_API_ERROR("must release box buffer before setting it again");
+  }
+  if (!dec->box_event) {
+    return JXL_API_ERROR("can only set box buffer after box event");
+  }
+
+  dec->box_out_buffer_set = true;
+  dec->box_out_buffer_set_current_box = true;
+  dec->box_out_buffer = data;
+  dec->box_out_buffer_size = size;
+  return JXL_DEC_SUCCESS;
 }
 
 size_t JxlDecoderReleaseBoxBuffer(JxlDecoder* dec) {
-  return JXL_API_ERROR("getting box contents not yet implemented");
+  if (!dec->box_out_buffer_set) {
+    return 0;
+  }
+  size_t result = dec->box_out_buffer_size - dec->box_out_buffer_pos;
+  dec->box_out_buffer_set = false;
+  dec->box_out_buffer = nullptr;
+  dec->box_out_buffer_size = 0;
+  if (!dec->box_out_buffer_set_current_box) {
+    dec->box_out_buffer_pos = 0;
+  }
+  dec->box_out_buffer_begin = dec->box_out_buffer_pos;
+  dec->box_out_buffer_set_current_box = false;
+  return result;
 }
 
 JxlDecoderStatus JxlDecoderSetDecompressBoxes(JxlDecoder* dec,

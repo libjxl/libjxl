@@ -25,9 +25,9 @@ int PrintBasicInfo(FILE* file) {
 
   JxlDecoderSetKeepOrientation(dec, 1);
 
-  if (JXL_DEC_SUCCESS !=
-      JxlDecoderSubscribeEvents(
-          dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_FRAME)) {
+  if (JXL_DEC_SUCCESS != JxlDecoderSubscribeEvents(
+                             dec, JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING |
+                                      JXL_DEC_FRAME | JXL_DEC_BOX)) {
     fprintf(stderr, "JxlDecoderSubscribeEvents failed\n");
     JxlDecoderDestroy(dec);
     return 0;
@@ -251,7 +251,6 @@ int PrintBasicInfo(FILE* file) {
         printf("  rendering intent: %d\n", (int)profile[67]);
         free(profile);
       }
-
     } else if (status == JXL_DEC_FRAME) {
       if (JXL_DEC_SUCCESS != JxlDecoderGetFrameHeader(dec, &frame_header)) {
         fprintf(stderr, "JxlDecoderGetFrameHeader failed\n");
@@ -280,8 +279,13 @@ int PrintBasicInfo(FILE* file) {
       if (!frame_header.name_length && !info.have_animation) {
         printf("  still frame, unnamed\n");
       }
-
-      // This is the last expected event, no need to read the rest of the file.
+    } else if (status == JXL_DEC_BOX) {
+      JxlBoxType type;
+      uint64_t size;
+      JxlDecoderGetBoxType(dec, type, JXL_FALSE);
+      JxlDecoderGetBoxSizeRaw(dec, &size);
+      printf("box: type: \"%c%c%c%c\" size: %zu\n", type[0], type[1], type[2],
+             type[3], (size_t)size);
     } else {
       fprintf(stderr, "Unexpected decoder status\n");
       break;
