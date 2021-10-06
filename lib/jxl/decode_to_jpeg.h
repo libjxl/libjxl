@@ -153,7 +153,7 @@ class JxlToJpegDecoder {
   }
   size_t ReleaseOutputBuffer() { return 0; }
 
-  void StartBox(uint64_t /* box_size */, size_t /* contents_size */) {}
+  void StartBox(bool /* box_until_eof */, size_t /* contents_size */) {}
 
   JxlDecoderStatus Process(const uint8_t** next_in, size_t* avail_in) {
     return JXL_DEC_ERROR;
