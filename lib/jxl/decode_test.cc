@@ -168,6 +168,17 @@ enum CodeStreamBoxFormat {
   kCSBF_NUM_ENTRIES,
 };
 
+// Unknown boxes for testing
+static const char* unk1_box_type = "unk1";
+static const char* unk1_box_contents = "abcdefghijklmnopqrstuvwxyz";
+static const size_t unk1_box_size = strlen(unk1_box_contents);
+static const char* unk2_box_type = "unk2";
+static const char* unk2_box_contents = "0123456789";
+static const size_t unk2_box_size = strlen(unk2_box_contents);
+static const char* unk3_box_type = "unk3";
+static const char* unk3_box_contents = "ABCDEF123456";
+static const size_t unk3_box_size = strlen(unk3_box_contents);
+
 // Returns an ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin,
 // but with, on purpose, rXYZ, bXYZ and gXYZ (the RGB primaries) switched to a
 // different order to ensure the profile does not match any known profile, so
@@ -215,6 +226,17 @@ jxl::PaddedBytes GetIccTestProfile() {
 
 namespace jxl {
 namespace {
+
+void AppendTestBox(const char* type, const char* contents, size_t contents_size,
+                   bool unbounded, PaddedBytes* bytes) {
+  AppendU32BE(contents_size + 8, bytes);
+  bytes->push_back(type[0]);
+  bytes->push_back(type[1]);
+  bytes->push_back(type[2]);
+  bytes->push_back(type[3]);
+  const uint8_t* contents_u = reinterpret_cast<const uint8_t*>(contents);
+  bytes->append(contents_u, contents_u + contents_size);
+}
 
 // Input pixels always given as 16-bit RGBA, 8 bytes per pixel.
 // include_alpha determines if the encoded image should contain the alpha
@@ -293,16 +315,6 @@ PaddedBytes CreateTestJXLCodestream(
                               0xd,  0xa,  0x87, 0xa,  0,    0,    0,    0x14,
                               0x66, 0x74, 0x79, 0x70, 0x6a, 0x78, 0x6c, 0x20,
                               0,    0,    0,    0,    0x6a, 0x78, 0x6c, 0x20};
-    // Unknown box, could be a box added by user, decoder must be able to skip
-    // over it. Type is set to 'unkn', size to 24, contents to 16 0's.
-    const uint8_t unknown[] = {0, 0, 0, 0x18, 0x75, 0x6e, 0x6b, 0x6e,
-                               0, 0, 0, 0,    0,    0,    0,    0,
-                               0, 0, 0, 0,    0,    0,    0,    0};
-    // same as the unknown box, but with size set to 0, this can only be a final
-    // box
-    const uint8_t unknown_end[] = {0, 0, 0, 0, 0x75, 0x6e, 0x6b, 0x6e,
-                                   0, 0, 0, 0, 0,    0,    0,    0,
-                                   0, 0, 0, 0, 0,    0,    0,    0};
 
     bool is_multi = add_container == kCSBF_Multi ||
                     add_container == kCSBF_Multi_Zero_Terminated ||
@@ -345,8 +357,8 @@ PaddedBytes CreateTestJXLCodestream(
       AppendU32BE(jxlp_index++, &c);
       c.append(compressed0.data(), compressed0.data() + compressed0.size());
       // A few non-codestream boxes in between
-      c.append(unknown, unknown + sizeof(unknown));
-      c.append(unknown, unknown + sizeof(unknown));
+      AppendTestBox(unk1_box_type, unk1_box_contents, unk1_box_size, false, &c);
+      AppendTestBox(unk2_box_type, unk2_box_contents, unk2_box_size, false, &c);
       // Dummy (empty) codestream part
       AppendU32BE(12, &c);
       c.push_back('j');
@@ -374,10 +386,12 @@ PaddedBytes CreateTestJXLCodestream(
       AppendU32BE(jxlp_index++ | 0x80000000, &c);
       c.append(compressed2.data(), compressed2.data() + compressed2.size());
       if (add_container == kCSBF_Multi_Other_Terminated) {
-        c.append(unknown, unknown + sizeof(unknown));
+        AppendTestBox(unk3_box_type, unk3_box_contents, unk3_box_size, false,
+                      &c);
       }
       if (add_container == kCSBF_Multi_Other_Zero_Terminated) {
-        c.append(unknown_end, unknown_end + sizeof(unknown_end));
+        AppendTestBox(unk3_box_type, unk3_box_contents, unk3_box_size, true,
+                      &c);
       }
       compressed.swap(c);
     } else {
@@ -398,7 +412,8 @@ PaddedBytes CreateTestJXLCodestream(
       c.push_back('c');
       c.append(compressed.data(), compressed.data() + compressed.size());
       if (add_container == kCSBF_Single_other) {
-        c.append(unknown, unknown + sizeof(unknown));
+        AppendTestBox(unk1_box_type, unk1_box_contents, unk1_box_size, false,
+                      &c);
       }
       compressed.swap(c);
     }
@@ -3277,15 +3292,16 @@ TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
 
-  // The non-essential final box has size 24, including header
-  size_t last_box_begin = compressed.size() - 24;
+  // The non-essential final box size including 8-byte header
+  size_t final_box_size = unk3_box_size + 8;
+  size_t last_box_begin = compressed.size() - final_box_size;
   // Verify that the test is indeed setup correctly to be at the beginning of
   // the 'unkn' box header.
-  ASSERT_EQ(compressed[last_box_begin + 3], 24);
+  ASSERT_EQ(compressed[last_box_begin + 3], final_box_size);
   ASSERT_EQ(compressed[last_box_begin + 4], 'u');
   ASSERT_EQ(compressed[last_box_begin + 5], 'n');
   ASSERT_EQ(compressed[last_box_begin + 6], 'k');
-  ASSERT_EQ(compressed[last_box_begin + 7], 'n');
+  ASSERT_EQ(compressed[last_box_begin + 7], '3');
 
   JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
@@ -3340,62 +3356,44 @@ TEST(DecodeTest, BoxTest) {
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
 
+  std::vector<std::string> expected_box_types = {
+      "JXL ", "ftyp", "jxlp", "unk1", "unk2", "jxlp", "jxlp", "jxlp", "unk3"};
+
+  // Value 0 means to not test the size: codestream is not required to be a
+  // particular exact size.
+  std::vector<size_t> expected_box_sizes = {12, 20, 0, 34, 18, 0, 0, 0, 20};
+
   JxlBoxType type;
   uint64_t box_size;
+  std::vector<uint8_t> contents(50);
+  size_t expected_release_size = 0;
 
   // Cannot get these when decoding didn't start yet
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
   EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderGetBoxSizeRaw(dec, &box_size));
 
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("JXL ", type));
-  EXPECT_EQ(12, box_size);
+  for (size_t i = 0; i < expected_box_types.size(); i++) {
+    EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
+    EXPECT_TRUE(BoxTypeEquals(expected_box_types[i], type));
+    if (expected_box_sizes[i]) {
+      EXPECT_EQ(expected_box_sizes[i], box_size);
+    }
 
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("ftyp", type));
-  EXPECT_EQ(20, box_size);
+    if (expected_release_size > 0) {
+      EXPECT_EQ(expected_release_size, JxlDecoderReleaseBoxBuffer(dec));
+      expected_release_size = 0;
+    }
 
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
-
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("unkn", type));
-  EXPECT_EQ(24, box_size);
-
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("unkn", type));
-  EXPECT_EQ(24, box_size);
-
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
-
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
-
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("jxlp", type));
-
-  EXPECT_EQ(JXL_DEC_BOX, JxlDecoderProcessInput(dec));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
-  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxSizeRaw(dec, &box_size));
-  EXPECT_TRUE(BoxTypeEquals("unkn", type));
-  EXPECT_EQ(24, box_size);
+    if (type[0] == 'u' && type[1] == 'n' && type[2] == 'k') {
+      JxlDecoderSetBoxBuffer(dec, contents.data(), contents.size());
+      size_t expected_box_contents_size =
+          type[3] == '1' ? unk1_box_size
+                         : (type[3] == '2' ? unk2_box_size : unk3_box_size);
+      expected_release_size = contents.size() - expected_box_contents_size;
+    }
+  }
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
