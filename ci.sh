@@ -752,6 +752,108 @@ cmd_msan_install() {
   done
 }
 
+cmd_libcpp() {
+  detect_clang_version
+  local libcpp_prefix="${HOME}/.libcpp/${CLANG_VERSION}"
+  if [[ ! -d "${libcpp_prefix}" || -e "${libcpp_prefix}/lib/libc++abi.a" ]]; then
+    # Install libcpp libraries for this version if needed or if an older version
+    # with libc++abi was installed.
+    cmd_libcpp_install
+  fi
+
+  local libcpp_c_flags=(
+    -fno-omit-frame-pointer
+
+    -DJXL_ENABLE_ASSERT=1
+    -g
+
+    # Force gtest to not use the cxxbai.
+    -DGTEST_HAS_CXXABI_H_=0
+  )
+  local libcpp_cxx_flags=(
+    "${libcpp_c_flags[@]}"
+
+    # Some C++ sources don't use the std at all, so the -stdlib=libc++ is unused
+    # in those cases. Ignore the warning.
+    -Wno-unused-command-line-argument
+    -stdlib=libc++
+
+    # We include the libc++ from the libcpp directory instead, so we don't want
+    # the std includes.
+    -nostdinc++
+    -cxx-isystem"${libcpp_prefix}/include/c++/v1"
+  )
+
+  local libcpp_linker_flags=(
+    -L"${libcpp_prefix}"/lib
+    -Wl,-rpath -Wl,"${libcpp_prefix}"/lib/
+  )
+
+  CMAKE_C_FLAGS+=" ${libcpp_c_flags[@]}"
+  CMAKE_CXX_FLAGS+=" ${libcpp_cxx_flags[@]}"
+  CMAKE_EXE_LINKER_FLAGS+=" ${libcpp_linker_flags[@]} -pthread"
+  CMAKE_MODULE_LINKER_FLAGS+=" ${libcpp_linker_flags[@]}"
+  CMAKE_SHARED_LINKER_FLAGS+=" ${libcpp_linker_flags[@]}"
+  strip_dead_code
+  cmake_configure "$@" \
+    -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=0 -DRUN_HAVE_POSIX_REGEX=0 \
+    -DJPEGXL_ENABLE_TCMALLOC=OFF
+  cmake_build_and_test
+}
+
+
+# install libc++ libraries.
+cmd_libcpp_install() {
+  local tmpdir=$(mktemp -d)
+  CLEANUP_FILES+=("${tmpdir}")
+  # Detect the llvm to install:
+  export CC="${CC:-clang}"
+  export CXX="${CXX:-clang++}"
+  detect_clang_version
+  local llvm_tag="llvmorg-${CLANG_VERSION}.0.0"
+  case "${CLANG_VERSION}" in
+    "6.0")
+      llvm_tag="llvmorg-6.0.1"
+      ;;
+    "7")
+      llvm_tag="llvmorg-7.0.1"
+      ;;
+  esac
+  local llvm_targz="${tmpdir}/${llvm_tag}.tar.gz"
+  curl -L --show-error -o "${llvm_targz}" \
+    "https://github.com/llvm/llvm-project/archive/${llvm_tag}.tar.gz"
+  tar -C "${tmpdir}" -zxf "${llvm_targz}"
+  local llvm_root="${tmpdir}/llvm-project-${llvm_tag}"
+
+  local libcpp_prefix="${HOME}/.libcpp/${CLANG_VERSION}"
+  rm -rf "${libcpp_prefix}"
+
+  declare -A CMAKE_EXTRAS
+  CMAKE_EXTRAS[libcxx]="\
+    -DLIBCXX_CXX_ABI=libstdc++ \
+    -DLIBCXX_INSTALL_EXPERIMENTAL_LIBRARY=ON"
+
+  for project in libcxx; do
+    local proj_build="${tmpdir}/build-${project}"
+    local proj_dir="${llvm_root}/${project}"
+    mkdir -p "${proj_build}"
+    cmake -B"${proj_build}" -H"${proj_dir}" \
+      -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLLVM_PATH="${llvm_root}/llvm" \
+      -DLLVM_CONFIG_PATH="$(which llvm-config llvm-config-7 llvm-config-6.0 | \
+                            head -n1)" \
+      -DCMAKE_CXX_FLAGS="${CMAKE_CXX_FLAGS}" \
+      -DCMAKE_C_FLAGS="${CMAKE_C_FLAGS}" \
+      -DCMAKE_EXE_LINKER_FLAGS="${CMAKE_EXE_LINKER_FLAGS}" \
+      -DCMAKE_SHARED_LINKER_FLAGS="${CMAKE_SHARED_LINKER_FLAGS}" \
+      -DCMAKE_INSTALL_PREFIX="${libcpp_prefix}" \
+      ${CMAKE_EXTRAS[${project}]}
+    cmake --build "${proj_build}"
+    ninja -C "${proj_build}" install
+  done
+}
+
 # Internal build step shared between all cmd_ossfuzz_* commands.
 _cmd_ossfuzz() {
   local sanitizer="$1"
