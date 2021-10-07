@@ -1337,6 +1337,27 @@ TEST(JxlTest, RoundtripLosslessAnimation) {
             5e-4);
 }
 
+TEST(JxlTest, RoundtripAnimationPatches) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig = ReadTestData("jxl/animation_patches.gif");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_EQ(2u, io.frames.size());
+
+  CompressParams cparams;
+  cparams.patches = Override::kOn;
+  DecompressParams dparams;
+  CodecInOut io2;
+  // 40k with no patches, 27k with patch frames encoded multiple times.
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 24000u);
+
+  EXPECT_EQ(io2.frames.size(), io.frames.size());
+  // >10 with broken patches
+  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(1.5));
+}
+
 #endif  // JPEGXL_ENABLE_GIF
 
 #if JPEGXL_ENABLE_JPEG
@@ -1628,27 +1649,6 @@ TEST(JxlTest, RoundtripProgressive) {
   EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params,
                                   /*distmap=*/nullptr, &pool),
               IsSlightlyBelow(2.5f));
-}
-
-TEST(JxlTest, RoundtripAnimationPatches) {
-  ThreadPool* pool = nullptr;
-  const PaddedBytes orig = ReadTestData("jxl/animation_patches.gif");
-  CodecInOut io;
-  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
-  ASSERT_EQ(2u, io.frames.size());
-
-  CompressParams cparams;
-  cparams.patches = Override::kOn;
-  DecompressParams dparams;
-  CodecInOut io2;
-  // 40k with no patches, 27k with patch frames encoded multiple times.
-  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 24000u);
-
-  EXPECT_EQ(io2.frames.size(), io.frames.size());
-  // >10 with broken patches
-  EXPECT_THAT(ButteraugliDistance(io, io2, cparams.ba_params,
-                                  /*distmap=*/nullptr, pool),
-              IsSlightlyBelow(1.5));
 }
 
 }  // namespace
