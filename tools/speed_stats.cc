@@ -12,8 +12,6 @@
 #include <algorithm>
 #include <string>
 
-#include "lib/jxl/base/robust_statistics.h"
-
 namespace jpegxl {
 namespace tools {
 
@@ -45,23 +43,30 @@ jxl::Status SpeedStats::GetSummary(SpeedStats::Summary* s) {
   }
 
   // Prefer geomean unless numerically unreliable (too many reps)
-  if (std::pow(elapsed_[0], elapsed_.size()) < 1E100) {
+  if (pow(elapsed_[0], elapsed_.size()) < 1E100) {
     double product = 1.0;
     for (size_t i = 1; i < elapsed_.size(); ++i) {
       product *= elapsed_[i];
     }
 
-    s->central_tendency = std::pow(product, 1.0 / (elapsed_.size() - 1));
+    s->central_tendency = pow(product, 1.0 / (elapsed_.size() - 1));
     s->variability = 0.0;
     s->type = " geomean:";
     return true;
   }
 
-  // Else: mode
+  // Else: median
   std::sort(elapsed_.begin(), elapsed_.end());
-  s->central_tendency = jxl::HalfSampleMode()(elapsed_.data(), elapsed_.size());
-  s->variability = jxl::MedianAbsoluteDeviation(elapsed_, s->central_tendency);
-  s->type = "mode: ";
+  s->central_tendency = elapsed_.data()[elapsed_.size() / 2];
+  std::vector<double> deviations(elapsed_.size());
+  for (size_t i = 0; i < elapsed_.size(); i++) {
+    deviations[i] = fabs(elapsed_[i] - s->central_tendency);
+  }
+  std::nth_element(deviations.begin(),
+                   deviations.begin() + deviations.size() / 2,
+                   deviations.end());
+  s->variability = deviations[deviations.size() / 2];
+  s->type = "median: ";
   return true;
 }
 

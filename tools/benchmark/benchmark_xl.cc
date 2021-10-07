@@ -30,7 +30,6 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/profiler.h"
-#include "lib/jxl/base/robust_statistics.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
