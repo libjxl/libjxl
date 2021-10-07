@@ -50,6 +50,10 @@
 #define JXL_GTEST_INSTANTIATE_TEST_SUITE_P INSTANTIATE_TEST_CASE_P
 #endif
 
+// Ensures that we don't make our test bounds too lax, effectively disabling the
+// tests.
+MATCHER_P(IsSlightlyBelow, max, "") { return max * 0.75 <= arg && arg <= max; }
+
 namespace jxl {
 namespace test {
 
