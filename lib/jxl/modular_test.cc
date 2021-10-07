@@ -7,7 +7,6 @@
 #include <stdio.h>
 
 #include <array>
-#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -212,12 +211,11 @@ TEST(ModularTest, RoundtripExtraProperties) {
   ModularOptions options;
   options.max_properties = 4;
   options.predictor = Predictor::Zero;
-  std::mt19937 rng(0);
-  std::uniform_int_distribution<> dist(0, 8);
+  Rng rng(0);
   for (size_t y = 0; y < kSize; y++) {
     for (size_t x = 0; x < kSize; x++) {
       image.channel[0].plane.Row(y)[x] = image.channel[2].plane.Row(y)[x] =
-          dist(rng);
+          rng.UniformU(0, 9);
     }
   }
   ZeroFillImage(&image.channel[1].plane);

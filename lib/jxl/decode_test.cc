@@ -2949,7 +2949,7 @@ TEST(DecodeTest, FlushTest) {
 
   // Ensure that the first part contains at least the full DC of the image,
   // otherwise flush does not work.
-  size_t first_part = data.size() / 2;
+  size_t first_part = data.size() - 1;
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), first_part));
 
@@ -3023,7 +3023,7 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlpha) {
 
   // Ensure that the first part contains at least the full DC of the image,
   // otherwise flush does not work.
-  size_t first_part = data.size() * 2 / 3;
+  size_t first_part = data.size() - 1;
 
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec, data.data(), first_part));
 
@@ -3125,7 +3125,7 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlphaUpsampling) {
 
   EXPECT_LE(ComparePixels(pixels2.data(), pixels.data(), xsize, ysize, format,
                           format, 2560.0),
-            115000u);
+            125000u);
 
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
 
@@ -3137,7 +3137,7 @@ TEST(DecodeTest, FlushTestLossyProgressiveAlphaUpsampling) {
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
   EXPECT_LE(ComparePixels(pixels2.data(), pixels.data(), xsize, ysize, format,
                           format, 2560.0),
-            50000u);
+            70000u);
 
   JxlDecoderDestroy(dec);
 }

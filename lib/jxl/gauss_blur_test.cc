@@ -206,7 +206,7 @@ void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
 }
 
 void TestRandomForSizes(float min, float max, double sigma) {
-  double max_l1 = 5E-3;
+  double max_l1 = 6E-3;
   double max_rel = 3E-3;
   TestRandom(128, 1, min, max, sigma, max_l1, max_rel);
   TestRandom(1, 128, min, max, sigma, max_l1, max_rel);
