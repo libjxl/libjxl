@@ -1460,8 +1460,7 @@ TEST_P(DecodeTestParam, PixelTest) {
   JxlPixelFormat format_orig = {orig_channels, JXL_TYPE_UINT16, JXL_BIG_ENDIAN,
                                 0};
   jxl::CompressParams cparams;
-  // Lossless to verify pixels exactly after roundtrip.
-  cparams.SetLossless();
+  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), config.xsize,
       config.ysize, orig_channels, cparams, config.add_container,
@@ -1695,8 +1694,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
   JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::CompressParams cparams;
-  // Lossless to verify pixels exactly after roundtrip.
-  cparams.SetLossless();
+  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
   // For variation: some have container and no preview, others have preview
   // and no container.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
@@ -1947,8 +1945,8 @@ void TestPartialStream(bool reconstructible_jpeg) {
   if (reconstructible_jpeg) {
     cparams.color_transform = jxl::ColorTransform::kNone;
   } else {
-    cparams
-        .SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+    // Lossless to verify pixels exactly after roundtrip.
+    cparams.SetLossless();
   }
 
   std::vector<uint8_t> pixels2;
@@ -3287,7 +3285,6 @@ TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
   size_t xsize = 80, ysize = 90;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
   jxl::CompressParams cparams;
-  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
@@ -3345,7 +3342,6 @@ TEST(DecodeTest, BoxTest) {
   size_t xsize = 1, ysize = 1;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
   jxl::CompressParams cparams;
-  // Lossless to verify pixels exactly after roundtrip.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_Multi_Other_Terminated, JXL_ORIENT_IDENTITY, false, true);
@@ -3398,4 +3394,153 @@ TEST(DecodeTest, BoxTest) {
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlDecoderDestroy(dec);
+}
+
+TEST(DecodeTest, PartialCodestreamBoxTest) {
+  size_t xsize = 23, ysize = 81;
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  jxl::CompressParams cparams;
+  cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
+      jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
+      cparams, kCSBF_Multi, JXL_ORIENT_IDENTITY, false, true);
+
+  std::vector<uint8_t> extracted_codestream;
+
+  {
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE | JXL_DEC_BOX));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+
+    size_t num_jxlp = 0;
+
+    std::vector<uint8_t> pixels2;
+    pixels2.resize(pixels.size());
+
+    std::vector<uint8_t> box_buffer;
+    size_t box_num_output;
+
+    for (;;) {
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+      if (status == JXL_DEC_NEED_MORE_INPUT) {
+        FAIL();
+        break;
+      } else if (status == JXL_DEC_BASIC_INFO) {
+        JxlBasicInfo info;
+        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+        EXPECT_EQ(info.xsize, xsize);
+        EXPECT_EQ(info.ysize, ysize);
+      } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+        EXPECT_EQ(JXL_DEC_SUCCESS,
+                  JxlDecoderSetImageOutBuffer(dec, &format_orig, pixels2.data(),
+                                              pixels2.size()));
+      } else if (status == JXL_DEC_FULL_IMAGE) {
+        continue;
+      } else if (status == JXL_DEC_BOX || status == JXL_DEC_SUCCESS) {
+        if (!box_buffer.empty()) {
+          size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+          box_num_output = box_buffer.size() - remaining;
+          EXPECT_GE(box_num_output, 4);
+          // Do not insert the first 4 bytes, which are not part of the
+          // codestream, but the partial codestream box index
+          extracted_codestream.insert(extracted_codestream.end(),
+                                      box_buffer.begin() + 4,
+                                      box_buffer.begin() + box_num_output);
+          box_buffer.clear();
+        }
+        if (status == JXL_DEC_SUCCESS) break;
+        JxlBoxType type;
+        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, JXL_FALSE));
+        if (BoxTypeEquals("jxlp", type) /*type[0] == 'u'*/) {
+          num_jxlp++;
+          box_buffer.resize(8);
+          box_num_output = 0;
+          JxlDecoderSetBoxBuffer(dec, box_buffer.data(), box_buffer.size());
+        }
+      } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+        size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+        box_num_output = box_buffer.size() - remaining;
+        box_buffer.resize(box_buffer.size() * 2);
+        JxlDecoderSetBoxBuffer(dec, box_buffer.data() + box_num_output,
+                               box_buffer.size() - box_num_output);
+      } else {
+        // We do not expect any other events or errors
+        FAIL();
+        break;
+      }
+    }
+
+    // The test file created with kCSBF_Multi is expected to have 4 jxlp boxes.
+    EXPECT_EQ(4, num_jxlp);
+
+    EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                format_orig, format_orig));
+
+    JxlDecoderDestroy(dec);
+  }
+
+  // Now test whether the codestream extracted from the jxlp boxes can itself
+  // also be decoded and gives the same pixels
+  {
+    JxlDecoder* dec = JxlDecoderCreate(nullptr);
+
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE | JXL_DEC_BOX));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, extracted_codestream.data(),
+                                 extracted_codestream.size()));
+
+    size_t num_boxes = 0;
+
+    std::vector<uint8_t> pixels2;
+    pixels2.resize(pixels.size());
+
+    std::vector<uint8_t> box_buffer;
+    size_t box_num_output;
+
+    for (;;) {
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+      if (status == JXL_DEC_NEED_MORE_INPUT) {
+        FAIL();
+        break;
+      } else if (status == JXL_DEC_BASIC_INFO) {
+        JxlBasicInfo info;
+        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &info));
+        EXPECT_EQ(info.xsize, xsize);
+        EXPECT_EQ(info.ysize, ysize);
+      } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+        EXPECT_EQ(JXL_DEC_SUCCESS,
+                  JxlDecoderSetImageOutBuffer(dec, &format_orig, pixels2.data(),
+                                              pixels2.size()));
+      } else if (status == JXL_DEC_FULL_IMAGE) {
+        continue;
+      } else if (status == JXL_DEC_BOX) {
+        num_boxes++;
+      } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+        size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
+        box_num_output = box_buffer.size() - remaining;
+        box_buffer.resize(box_buffer.size() * 2);
+        JxlDecoderSetBoxBuffer(dec, box_buffer.data() + box_num_output,
+                               box_buffer.size() - box_num_output);
+      } else if (status == JXL_DEC_SUCCESS) {
+        break;
+      } else {
+        // We do not expect any other events or errors
+        FAIL();
+        break;
+      }
+    }
+
+    EXPECT_EQ(0, num_boxes);  // The data does not use the container format.
+    EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                format_orig, format_orig));
+
+    JxlDecoderDestroy(dec);
+  }
 }
