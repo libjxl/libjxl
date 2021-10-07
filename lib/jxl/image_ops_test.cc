@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <random>
 #include <utility>
 
 #include "gtest/gtest.h"
@@ -48,7 +47,7 @@ TEST(ImageTest, TestPacked) {
 
 // Ensure entire payload is readable/writable for various size/offset combos.
 TEST(ImageTest, TestAllocator) {
-  std::mt19937 rng(129);
+  Rng rng(0);
   const size_t k32 = 32;
   const size_t kAlign = CacheAligned::kAlignment;
   for (size_t size : {k32 * 1, k32 * 2, k32 * 3, k32 * 4, k32 * 5,
@@ -60,12 +59,8 @@ TEST(ImageTest, TestAllocator) {
       // Ensure we can write/read the last byte. Use RNG to fool the compiler
       // into thinking the write is necessary.
       memset(bytes, 0, size);
-      bytes[size - 1] = 1;  // greatest element
-      std::uniform_int_distribution<uint32_t> dist(0, size - 1);
-      uint32_t pos = dist(rng);  // random but != greatest
-      while (pos == size - 1) {
-        pos = dist(rng);
-      }
+      bytes[size - 1] = 1;                       // greatest element
+      uint32_t pos = rng.UniformU(0, size - 1);  // random but != greatest
       JXL_CHECK(bytes[pos] < bytes[size - 1]);
 
       CacheAligned::Free(bytes);

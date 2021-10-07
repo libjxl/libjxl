@@ -13,7 +13,6 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
-#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,6 +29,7 @@
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
 #include "lib/jxl/base/profiler.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -919,15 +919,15 @@ class Benchmark {
       images.emplace_back(std::move(img));
     }
     JXL_CHECK(MakeDir(sample_tmp_dir));
-    std::mt19937_64 rng;
+    Rng rng(0);
     for (int i = 0; i < num_samples; ++i) {
-      int val = std::uniform_int_distribution<>(0, offsets.back())(rng);
+      int val = rng.UniformI(0, offsets.back());
       size_t idx = (std::lower_bound(offsets.begin(), offsets.end(), val) -
                     offsets.begin());
       JXL_CHECK(idx < images.size());
       const Image3F& img = images[idx];
-      int x0 = std::uniform_int_distribution<>(0, img.xsize() - size)(rng);
-      int y0 = std::uniform_int_distribution<>(0, img.ysize() - size)(rng);
+      int x0 = rng.UniformI(0, img.xsize() - size);
+      int y0 = rng.UniformI(0, img.ysize() - size);
       Image3F sample(size, size);
       for (size_t c = 0; c < 3; ++c) {
         for (size_t y = 0; y < size; ++y) {

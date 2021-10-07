@@ -7,6 +7,7 @@
 
 #include <QMouseEvent>
 #include <QPainter>
+#include <random>
 
 namespace jxl {
 
@@ -58,8 +59,7 @@ void SplitView::startTest(QString imageName, const int blankingTimeMSecs,
                           const bool gray, const int grayFadingTimeMSecs,
                           const int grayTimeMSecs) {
   imageName_ = std::move(imageName);
-  std::bernoulli_distribution bernoulli;
-  originalSide_ = bernoulli(g_) ? Side::kLeft : Side::kRight;
+  originalSide_ = g_.Bernoulli(0.5f) ? Side::kLeft : Side::kRight;
   viewingTimer_.setInterval(1000 * viewingTimeSecs);
 
   flicker_.setDuration(advanceTimeMSecs);
