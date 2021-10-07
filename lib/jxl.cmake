@@ -29,8 +29,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/compiler_specific.h
   jxl/base/data_parallel.cc
   jxl/base/data_parallel.h
-  jxl/base/descriptive_statistics.cc
-  jxl/base/descriptive_statistics.h
   jxl/base/file_io.h
   jxl/base/iaca.h
   jxl/base/os_macros.h
@@ -38,7 +36,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/padded_bytes.cc
   jxl/base/padded_bytes.h
   jxl/base/profiler.h
-  jxl/base/robust_statistics.h
   jxl/base/span.h
   jxl/base/status.cc
   jxl/base/status.h
@@ -168,7 +165,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/modular/transform/transform.cc
   jxl/modular/transform/transform.h
   jxl/noise.h
-  jxl/noise_distributions.h
   jxl/opsin_params.cc
   jxl/opsin_params.h
   jxl/passes_state.cc
