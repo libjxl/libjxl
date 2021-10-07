@@ -427,7 +427,8 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
                                    Span<const uint8_t> compressed,
                                    const JxlPixelFormat& format,
                                    bool use_callback, bool set_buffer_early,
-                                   bool use_resizable_runner) {
+                                   bool use_resizable_runner,
+                                   PaddedBytes* icc = nullptr) {
   JxlThreadParallelRunnerPtr runner_fixed;
   JxlResizableParallelRunnerPtr runner_resizable;
   JxlParallelRunner runner_fn;
@@ -450,7 +451,8 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
       JXL_DEC_SUCCESS,
       JxlDecoderSubscribeEvents(
           dec, JXL_DEC_BASIC_INFO | (set_buffer_early ? JXL_DEC_FRAME : 0) |
-                   JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FULL_IMAGE));
+                   JXL_DEC_PREVIEW_IMAGE | JXL_DEC_FULL_IMAGE |
+                   (icc != nullptr ? JXL_DEC_COLOR_ENCODING : 0)));
 
   EXPECT_EQ(JXL_DEC_SUCCESS,
             JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
@@ -480,6 +482,19 @@ std::vector<uint8_t> DecodeWithAPI(JxlDecoder* dec,
   };
 
   JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+
+  if (status == JXL_DEC_COLOR_ENCODING) {
+    size_t icc_size = 0;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderGetICCProfileSize(
+                  dec, &format, JXL_COLOR_PROFILE_TARGET_DATA, &icc_size));
+    icc->resize(icc_size);
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetColorAsICCProfile(
+                                   dec, &format, JXL_COLOR_PROFILE_TARGET_DATA,
+                                   icc->data(), icc_size));
+
+    status = JxlDecoderProcessInput(dec);
+  }
 
   std::vector<uint8_t> preview;
   if (status == JXL_DEC_NEED_PREVIEW_OUT_BUFFER) {
@@ -1763,10 +1778,11 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
 
   JxlPixelFormat format = {channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
 
+  jxl::PaddedBytes icc;
   std::vector<uint8_t> pixels2 = jxl::DecodeWithAPI(
       dec, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       format, /*use_callback=*/false, /*set_buffer_early=*/true,
-      /*use_resizable_runner=*/false);
+      /*use_resizable_runner=*/false, /*icc=*/&icc);
   JxlDecoderReset(dec);
   EXPECT_EQ(num_pixels * channels * 4, pixels2.size());
 
@@ -1782,9 +1798,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
       /*has_alpha=*/false, false, 16, format_orig.endianness,
       /*flipped_y=*/false, /*pool=*/nullptr, &io0.Main(), /*float_in=*/false));
 
-  // The output pixels are expected to be in the same colorspace as the input
-  // profile, as the profile can be represented by enum values.
-  jxl::ColorEncoding color_encoding1 = color_encoding0;
+  jxl::ColorEncoding color_encoding1;
+  EXPECT_TRUE(color_encoding1.SetICC(std::move(icc)));
   jxl::Span<const uint8_t> span1(pixels2.data(), pixels2.size());
   jxl::CodecInOut io1;
   io1.SetSize(xsize, ysize);
