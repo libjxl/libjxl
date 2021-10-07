@@ -1828,8 +1828,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
       /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main(), /*float_in=*/true));
 
   jxl::ButteraugliParams ba;
-  EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
-            2.4f);
+  EXPECT_THAT(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+              IsSlightlyBelow(1.0f));
 
   JxlDecoderDestroy(dec);
 }
@@ -1894,8 +1894,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     }
 
     jxl::ButteraugliParams ba;
-    EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
-              2.4f);
+    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+                IsSlightlyBelow(0.8f));
 
     JxlDecoderDestroy(dec);
   }
@@ -1961,8 +1961,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     }
 
     jxl::ButteraugliParams ba;
-    EXPECT_LE(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
-              2.6f);
+    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+                IsSlightlyBelow(2.6f));
 
     JxlDecoderDestroy(dec);
   }
@@ -2234,9 +2234,9 @@ TEST(DecodeTest, PreviewTest) {
   // smaller than 8x8, but jxl's ButteraugliDistance does not. Perhaps move
   // butteraugli's <8x8 handling from ButteraugliDiffmap to
   // ButteraugliComparator::Diffmap in butteraugli.cc.
-  EXPECT_LE(ButteraugliDistance(io0, io1, ba,
-                                /*distmap=*/nullptr, nullptr),
-            1.4f);
+  EXPECT_THAT(ButteraugliDistance(io0, io1, ba,
+                                  /*distmap=*/nullptr, nullptr),
+              IsSlightlyBelow(0.6f));
 
   JxlDecoderDestroy(dec);
 }

@@ -125,9 +125,9 @@ TEST(ModularTest, RoundtripLossyDeltaPalette) {
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 6800u);
   cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            1.5);
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(1.5));
 }
 TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   ThreadPool* pool = nullptr;
@@ -152,9 +152,9 @@ TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 7000u);
   cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            10.0);
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(10.0));
 }
 
 TEST(ModularTest, RoundtripLossy) {
@@ -175,9 +175,9 @@ TEST(ModularTest, RoundtripLossy) {
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 40000u);
   cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            3.0);
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(2.0));
 }
 
 TEST(ModularTest, RoundtripLossy16) {
@@ -200,9 +200,9 @@ TEST(ModularTest, RoundtripLossy16) {
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 400u);
   cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            1.5);
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(1.5));
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {
