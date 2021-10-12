@@ -447,7 +447,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
       max_tree_size += pixels;
       if (max_tree_size < pixels) return JXL_FAILURE("Tree size overflow");
     }
-
+    max_tree_size = std::min(static_cast<size_t>(1 << 20), max_tree_size);
     JXL_RETURN_IF_ERROR(DecodeTree(br, &tree_storage, max_tree_size));
     JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
                                          &code_storage, &context_map_storage));
