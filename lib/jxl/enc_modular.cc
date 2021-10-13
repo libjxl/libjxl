@@ -1384,7 +1384,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
   return true;
 }
 
-constexpr float q_deadzone = 0.666f;
+constexpr float q_deadzone = 0.62f;
 int QuantizeWP(const int32_t* qrow, size_t onerow, size_t c, size_t x, size_t y,
                size_t w, weighted::State* wp_state, float value,
                float inv_factor) {
