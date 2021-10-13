@@ -23,6 +23,8 @@ set(JPEGXL_EXTRAS_SOURCES
   extras/color_description.h
   extras/color_hints.cc
   extras/color_hints.h
+  extras/hlg.cc
+  extras/hlg.h
   extras/packed_image.h
   extras/packed_image_convert.cc
   extras/packed_image_convert.h

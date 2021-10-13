@@ -85,6 +85,20 @@ $ tools/render_hlg -t 1000 --pq ClassE_507_hlg.png ClassE_507_hlg_pq.png
 $ tools/pq_to_hlg -m 1000 ClassE_507_hlg_pq.png ClassE_507_hlg_pq_hlg.png
 ```
 
+## Display light to HLG
+
+By applying the inverse OOTF to a display-referred image, it is possible to
+compute the scene light, and from there the HLG signal, that would have
+produced that output on that display:
+
+```shell
+$ tools/display_to_hlg -m 600 -s 5 srgb_input.png hlg_output.png
+```
+
+This is the mathematical inverse of `tools/render_hlg`. Furthermore,
+`tools/pq_to_hlg` is equivalent to `tools/tone_map -t 1000` followed by
+`tools/display_to_hlg -m 1000`.
+
 # LUT generation
 
 There are additionally two tools that can be used to generate look-up tables

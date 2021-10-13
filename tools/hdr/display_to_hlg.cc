@@ -3,11 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+#include <lib/extras/hlg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -17,18 +17,14 @@ int main(int argc, const char** argv) {
 
   jpegxl::tools::CommandLineParser parser;
   float max_nits = 0;
-  parser.AddOptionValue('m', "max_nits", "nits",
-                        "maximum luminance in the image", &max_nits,
-                        &jpegxl::tools::ParseFloat, 0);
-  float target_nits = 0;
-  auto target_nits_option = parser.AddOptionValue(
-      't', "target_nits", "nits",
-      "peak luminance of the display for which to tone map", &target_nits,
+  auto max_nits_option = parser.AddOptionValue(
+      'm', "max_nits", "nits", "maximum luminance of the display", &max_nits,
       &jpegxl::tools::ParseFloat, 0);
-  bool pq = false;
-  parser.AddOptionFlag('p', "pq",
-                       "write the output with absolute luminance using PQ", &pq,
-                       &jpegxl::tools::SetBooleanTrue, 0);
+  float surround_nits = 5;
+  parser.AddOptionValue(
+      's', "surround_nits", "nits",
+      "surround luminance of the viewing environment (default: 5)",
+      &surround_nits, &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
       "input", true, "input image", &input_filename, 0);
@@ -46,9 +42,9 @@ int main(int argc, const char** argv) {
     return EXIT_SUCCESS;
   }
 
-  if (!parser.GetOption(target_nits_option)->matched()) {
+  if (!parser.GetOption(max_nits_option)->matched()) {
     fprintf(stderr,
-            "Missing required argument --target_nits.\nSee -h for help.\n");
+            "Missing required argument --max_nits.\nSee -h for help.\n");
     return EXIT_FAILURE;
   }
   if (!parser.GetOption(input_filename_option)->matched()) {
@@ -61,22 +57,18 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  jxl::ColorHints color_hints;
-  color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
-  JXL_CHECK(jxl::SetFromFile(input_filename, color_hints, &image, &pool));
-  if (max_nits > 0) {
-    image.metadata.m.SetIntensityTarget(max_nits);
-  }
-  JXL_CHECK(jxl::ToneMapTo({0, target_nits}, &image, &pool));
+  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::ColorHints(), &image, &pool));
+  image.metadata.m.SetIntensityTarget(max_nits);
+  JXL_CHECK(jxl::HlgInverseOOTF(
+      &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));
 
-  jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
-  if (pq) {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
-  } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::k709);
-  }
-  JXL_CHECK(c_out.CreateICC());
-  JXL_CHECK(image.TransformTo(c_out, &pool));
-  image.metadata.m.color_encoding = c_out;
+  jxl::ColorEncoding hlg;
+  hlg.SetColorSpace(jxl::ColorSpace::kRGB);
+  hlg.primaries = jxl::Primaries::k2100;
+  hlg.white_point = jxl::WhitePoint::kD65;
+  hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
+  JXL_CHECK(hlg.CreateICC());
+  JXL_CHECK(image.TransformTo(hlg, &pool));
+  image.metadata.m.color_encoding = hlg;
   JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
 }
