@@ -167,26 +167,27 @@ bool JpegXlSaveGui::SaveDialog() {
 
   // Distance Slider
   static gchar distance_help[] =
-      "Butteraugli distance target.  Suggested values:"
-      "\n\td\u00A0=\u00A00.3\tExcellent"
-      "\n\td\u00A0=\u00A01\tVery Good"
-      "\n\td\u00A0=\u00A02\tGood"
-      "\n\td\u00A0=\u00A03\tFair"
-      "\n\td\u00A0=\u00A06\tPoor";
+      _("Butteraugli distance target.  Suggested values:"
+        "\n\td\u00A0=\u00A00.3\tExcellent"
+        "\n\td\u00A0=\u00A01\tVery Good"
+        "\n\td\u00A0=\u00A02\tGood"
+        "\n\td\u00A0=\u00A03\tFair"
+        "\n\td\u00A0=\u00A06\tPoor");
 
   entry_distance = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 0, "Distance", SCALE_WIDTH, 0,
+      GTK_TABLE(table), 0, 0, _("Distance"), SCALE_WIDTH, 0,
       jxl_save_opts.distance, 0.0, 15.0, 0.001, 1.0, 3, true, 0.0, 0.0,
       distance_help, SAVE_PROC);
   gimp_scale_entry_set_logarithmic((GtkObject*)entry_distance, true);
 
   // Quality Slider
   static gchar quality_help[] =
-      "JPEG-style Quality is remapped to distance.  "
-      "Values roughly match libjpeg quality settings.";
+      _("JPEG-style Quality is remapped to distance.  "
+        "Values roughly match libjpeg quality settings.");
   entry_quality = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 1, "Quality", SCALE_WIDTH, 0, jxl_save_opts.quality,
-      8.26, 100.0, 1.0, 10.0, 2, true, 0.0, 0.0, quality_help, SAVE_PROC);
+      GTK_TABLE(table), 0, 1, _("Quality"), SCALE_WIDTH, 0,
+      jxl_save_opts.quality, 8.26, 100.0, 1.0, 10.0, 2, true, 0.0, 0.0,
+      quality_help, SAVE_PROC);
 
   // Distance and Quality Signals
   handle_entry_distance = g_signal_connect(
@@ -202,12 +203,12 @@ bool JpegXlSaveGui::SaveDialog() {
 
   // Encoding Effort / Speed
   static gchar effort_help[] =
-      "Adjust encoding speed.  Higher values are faster because "
-      "the encoder uses less effort to hit distance targets.  "
-      "As\u00A0a\u00A0result, image quality may be decreased.  "
-      "Default\u00A0=\u00A03.";
+      _("Adjust encoding speed.  Higher values are faster because "
+        "the encoder uses less effort to hit distance targets.  "
+        "As\u00A0a\u00A0result, image quality may be decreased.  "
+        "Default\u00A0=\u00A03.");
   entry_effort = (GtkAdjustment*)gimp_scale_entry_new(
-      GTK_TABLE(table), 0, 3, "Speed", SCALE_WIDTH, 0,
+      GTK_TABLE(table), 0, 3, _("Speed"), SCALE_WIDTH, 0,
       10 - jxl_save_opts.encoding_effort, 1, 9, 1, 2, 0, true, 0.0, 0.0,
       effort_help, SAVE_PROC);
 
