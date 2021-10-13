@@ -81,22 +81,26 @@ endif()  # Clang
 
 if (WIN32)
   list(APPEND JPEGXL_INTERNAL_FLAGS
-    -Wno-c++98-compat-pedantic
     -Wno-cast-align
     -Wno-double-promotion
     -Wno-float-equal
     -Wno-format-nonliteral
-    -Wno-global-constructors
-    -Wno-language-extension-token
-    -Wno-missing-prototypes
     -Wno-shadow
-    -Wno-shadow-field-in-constructor
     -Wno-sign-conversion
-    -Wno-unused-member-function
-    -Wno-unused-template
-    -Wno-used-but-marked-unused
     -Wno-zero-as-null-pointer-constant
   )
+
+  if (${CMAKE_CXX_COMPILER_ID} MATCHES "Clang")
+    list(APPEND JPEGXL_INTERNAL_FLAGS
+      -Wno-used-but-marked-unused
+      -Wno-unused-template
+      -Wno-unused-member-function
+      -Wno-shadow-field-in-constructor
+      -Wno-language-extension-token
+      -Wno-global-constructors
+      -Wno-c++98-compat-pedantic
+    )
+  endif()  # Clang
 else()  # WIN32
   list(APPEND JPEGXL_INTERNAL_FLAGS
     -fsized-deallocation
