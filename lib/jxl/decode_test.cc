@@ -421,8 +421,6 @@ PaddedBytes CreateTestJXLCodestream(
       if (add_container == kCSBF_Brob_Exif) {
         c.append(box_brob_exif, box_brob_exif + box_brob_exif_size);
       }
-      (void)box_brob_exif;
-      (void)box_brob_exif_size;
       AppendU32BE(add_container == kCSBF_Single_Zero_Terminated
                       ? 0
                       : (compressed.size() + 8),
@@ -3442,16 +3440,20 @@ TEST(DecodeTest, ExifBrobBoxTest) {
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_Brob_Exif, JXL_ORIENT_IDENTITY, false, true);
 
-  (void)exif_uncompressed;
-  (void)exif_uncompressed_size;
-
-  // Test raw brob box
-  {
+  // Test raw brob box, not brotli-decompressing
+  for (int streaming = 0; streaming < 2; ++streaming) {
     JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    if (!streaming) {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    }
+    // for streaming input case
+    const uint8_t* next_in = compressed.data();
+    size_t avail_in = 0;
+    size_t total_in = 0;
+    size_t step_size = 64;
 
     std::vector<uint8_t> box_buffer;
     size_t box_num_output;
@@ -3461,8 +3463,23 @@ TEST(DecodeTest, ExifBrobBoxTest) {
     for (;;) {
       JxlDecoderStatus status = JxlDecoderProcessInput(dec);
       if (status == JXL_DEC_NEED_MORE_INPUT) {
-        FAIL();
-        break;
+        if (streaming) {
+          size_t remaining = JxlDecoderReleaseInput(dec);
+          EXPECT_LE(remaining, avail_in);
+          next_in += avail_in - remaining;
+          avail_in = remaining;
+          size_t amount = step_size;
+          if (total_in + amount > compressed.size()) {
+            amount = compressed.size() - total_in;
+          }
+          avail_in += amount;
+          total_in += amount;
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetInput(dec, next_in, avail_in));
+        } else {
+          FAIL();
+          break;
+        }
       } else if (status == JXL_DEC_BOX || status == JXL_DEC_SUCCESS) {
         if (!box_buffer.empty()) {
           EXPECT_EQ(false, seen_brob_end);
@@ -3503,13 +3520,20 @@ TEST(DecodeTest, ExifBrobBoxTest) {
     JxlDecoderDestroy(dec);
   }
 
-  // Test decompressed brob box, now we expect Exif as its type instead
-  {
+  // Test decompressed brob box
+  for (int streaming = 0; streaming < 2; ++streaming) {
     JxlDecoder* dec = JxlDecoderCreate(nullptr);
 
     EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(dec, JXL_DEC_BOX));
-    EXPECT_EQ(JXL_DEC_SUCCESS,
-              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    if (!streaming) {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    }
+    // for streaming input case
+    const uint8_t* next_in = compressed.data();
+    size_t avail_in = 0;
+    size_t total_in = 0;
+    size_t step_size = 64;
 
     std::vector<uint8_t> box_buffer;
     size_t box_num_output;
@@ -3521,8 +3545,23 @@ TEST(DecodeTest, ExifBrobBoxTest) {
     for (;;) {
       JxlDecoderStatus status = JxlDecoderProcessInput(dec);
       if (status == JXL_DEC_NEED_MORE_INPUT) {
-        FAIL();
-        break;
+        if (streaming) {
+          size_t remaining = JxlDecoderReleaseInput(dec);
+          EXPECT_LE(remaining, avail_in);
+          next_in += avail_in - remaining;
+          avail_in = remaining;
+          size_t amount = step_size;
+          if (total_in + amount > compressed.size()) {
+            amount = compressed.size() - total_in;
+          }
+          avail_in += amount;
+          total_in += amount;
+          EXPECT_EQ(JXL_DEC_SUCCESS,
+                    JxlDecoderSetInput(dec, next_in, avail_in));
+        } else {
+          FAIL();
+          break;
+        }
       } else if (status == JXL_DEC_BOX || status == JXL_DEC_SUCCESS) {
         if (!box_buffer.empty()) {
           EXPECT_EQ(false, seen_exif_end);

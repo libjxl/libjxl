@@ -8,11 +8,11 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/box_content_decoder.h"
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_frame.h"
 #include "lib/jxl/dec_modular.h"
 #include "lib/jxl/dec_reconstruct.h"
-#include "lib/jxl/decode_brob_box.h"
 #include "lib/jxl/decode_to_jpeg.h"
 #include "lib/jxl/fields.h"
 #include "lib/jxl/headers.h"
@@ -196,8 +196,6 @@ enum class BoxStage : uint32_t {
   kCodestream,  // Handling codestream box contents, or non-container stream
   kPartialCodestream,  // Handling the extra header of partial codestream box
   kJpegRecon,          // Handling jpeg reconstruction box
-  kBrobBegin,          // Handling the beginning of a brob box
-  kBrob,               // Decompressing and outputting a brob box
 };
 
 // Manages the sections for the FrameDecoder based on input bytes received.
@@ -415,6 +413,8 @@ struct JxlDecoderStruct {
   // Position of next_in in the original file including box format if present
   // (as opposed to position in the codestream)
   size_t file_pos;
+
+  size_t box_contents_begin;
   size_t box_contents_end;
   size_t box_contents_size;
   size_t box_size;
@@ -550,7 +550,7 @@ struct JxlDecoderStruct {
   BoxStage box_stage;
 
   jxl::JxlToJpegDecoder jpeg_decoder;
-  jxl::JxlBrobBoxDecoder brob_decoder;
+  jxl::JxlBoxContentDecoder box_content_decoder;
 
   // Statistics which CodecInOut can keep
   uint64_t dec_pixels;
@@ -586,6 +586,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->icc_reader.Reset();
   dec->got_preview_image = false;
   dec->file_pos = 0;
+  dec->box_contents_begin = 0;
   dec->box_contents_end = 0;
   dec->box_contents_size = 0;
   dec->box_size = 0;
@@ -1520,42 +1521,6 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   return JXL_DEC_SUCCESS;
 }
 
-namespace {
-JxlDecoderStatus JxlDecoderOutputBox(JxlDecoder* dec) {
-  size_t box_begin = dec->box_contents_end - dec->box_contents_size;
-
-  // remaining box bytes as seen from dec->file_pos
-  size_t remaining = dec->avail_in;
-  if (!dec->box_contents_unbounded) {
-    remaining =
-        std::min<size_t>(remaining, dec->box_contents_end - dec->file_pos);
-  }
-  // how many of the remaining bytes have already been written out
-  size_t already_written = box_begin + dec->box_out_buffer_begin +
-                           dec->box_out_buffer_pos - dec->file_pos;
-  if (remaining < already_written) {
-    return JXL_DEC_SUCCESS;
-  }
-
-  size_t to_write = remaining - already_written;
-  size_t can_write = to_write;
-
-  if (OutOfBounds(dec->box_out_buffer_pos, to_write,
-                  dec->box_out_buffer_size)) {
-    can_write = dec->box_out_buffer_size - dec->box_out_buffer_pos;
-  }
-
-  memcpy(dec->box_out_buffer + dec->box_out_buffer_pos,
-         dec->next_in + already_written, can_write);
-  dec->box_out_buffer_pos += can_write;
-
-  if (can_write < to_write) {
-    return JXL_DEC_BOX_NEED_MORE_OUTPUT;
-  }
-
-  return JXL_DEC_SUCCESS;
-}
-}  // namespace
 
 JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   if (dec->stage == DecoderStage::kInited) {
@@ -1581,15 +1546,26 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
 
   // Box handling loop
   for (;;) {
-    bool use_brob_decompression =
-        (dec->box_stage == BoxStage::kBrob) ||
-        (dec->box_stage == BoxStage::kBrobBegin && dec->decompress_boxes);
-    if (dec->box_stage != BoxStage::kHeader &&
-        dec->box_out_buffer_set_current_box &&
-        (dec->events_wanted & JXL_DEC_BOX) && !use_brob_decompression) {
-      JxlDecoderStatus status = JxlDecoderOutputBox(dec);
-      if (status != JXL_DEC_SUCCESS) {
-        return status;
+    if (dec->box_stage != BoxStage::kHeader) {
+      if ((dec->events_wanted & JXL_DEC_BOX) &&
+          dec->box_out_buffer_set_current_box) {
+        uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
+        size_t avail_out = dec->box_out_buffer_size - dec->box_out_buffer_pos;
+
+        JxlDecoderStatus box_result = dec->box_content_decoder.Process(
+            dec->next_in, dec->avail_in,
+            dec->file_pos - dec->box_contents_begin, &next_out, &avail_out);
+        size_t produced =
+            next_out - (dec->box_out_buffer + dec->box_out_buffer_pos);
+        dec->box_out_buffer_pos += produced;
+
+        // Don't return JXL_DEC_NEED_MORE_INPUT: the box stages below, instead,
+        // handle the input progression, and the above only outputs the part of
+        // the box seen so far.
+        if (box_result != JXL_DEC_SUCCESS &&
+            box_result != JXL_DEC_NEED_MORE_INPUT) {
+          return box_result;
+        }
       }
     }
 
@@ -1636,24 +1612,27 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       dec->AdvanceInput(header_size);
 
       dec->box_contents_unbounded = (box_size == 0);
+      dec->box_contents_begin = dec->file_pos;
       dec->box_contents_end = dec->box_contents_unbounded
                                   ? 0
                                   : (dec->file_pos + box_size - header_size);
       dec->box_contents_size =
           dec->box_contents_unbounded ? 0 : (box_size - header_size);
       dec->box_size = box_size;
+
+      if (dec->events_wanted & JXL_DEC_BOX) {
+        bool decompress =
+            dec->decompress_boxes && memcmp(dec->box_type, "brob", 4) == 0;
+        dec->box_content_decoder.StartBox(
+            decompress, dec->box_contents_unbounded, dec->box_contents_size);
+      }
+
       if (memcmp(dec->box_type, "jxlc", 4) == 0) {
         dec->box_stage = BoxStage::kCodestream;
       } else if (memcmp(dec->box_type, "jxlp", 4) == 0) {
         dec->box_stage = BoxStage::kPartialCodestream;
       } else if (memcmp(dec->box_type, "jbrd", 4) == 0) {
-        if (dec->events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) {
-          dec->box_stage = BoxStage::kJpegRecon;
-        } else {
-          dec->box_stage = BoxStage::kSkip;
-        }
-      } else if (memcmp(dec->box_type, "brob", 4) == 0) {
-        dec->box_stage = BoxStage::kBrobBegin;
+        dec->box_stage = BoxStage::kJpegRecon;
       } else {
         dec->box_stage = BoxStage::kSkip;
       }
@@ -1755,34 +1734,6 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       } else {
         // If anything else, return the result.
         return recon_result;
-      }
-    } else if (dec->box_stage == BoxStage::kBrobBegin) {
-      if (dec->decompress_boxes) {
-        // Already advance the header, which was already parsed above, handle
-        // only the brotli decoding in BoxStage::kBrob.
-        dec->AdvanceInput(4);
-        dec->brob_decoder.StartBox();
-        dec->box_stage = BoxStage::kBrob;
-      } else {
-        dec->box_stage = BoxStage::kSkip;
-      }
-    } else if (dec->box_stage == BoxStage::kBrob) {
-      const uint8_t* next_in = dec->next_in;
-      size_t avail_in = dec->avail_in;
-      uint8_t* next_out = dec->box_out_buffer + dec->box_out_buffer_pos;
-      size_t avail_out = dec->box_out_buffer_size - dec->box_out_buffer_pos;
-
-      JxlDecoderStatus brob_result =
-          dec->brob_decoder.Process(&next_in, &avail_in, &next_out, &avail_out);
-      size_t consumed = next_in - dec->next_in;
-      size_t produced =
-          next_out - (dec->box_out_buffer + dec->box_out_buffer_pos);
-      dec->box_out_buffer_pos += produced;
-      dec->AdvanceInput(consumed);
-      if (brob_result != JXL_DEC_SUCCESS) return brob_result;
-      size_t remaining = dec->box_contents_end - dec->file_pos;
-      if (remaining == 0) {
-        dec->box_stage = BoxStage::kHeader;
       }
     } else if (dec->box_stage == BoxStage::kSkip) {
       if (dec->box_contents_unbounded) {
