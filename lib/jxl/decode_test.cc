@@ -3529,9 +3529,14 @@ TEST(DecodeTest, ExifBrobBoxTest) {
           seen_exif_end = true;
           size_t remaining = JxlDecoderReleaseBoxBuffer(dec);
           box_num_output = box_buffer.size() - remaining;
+          // Expect that the output has the same size and contents as the
+          // uncompressed exif data. Only check contents if the sizes match to
+          // avoid comparing uninitialized memory in the test.
           EXPECT_EQ(box_num_output, exif_uncompressed_size);
-          EXPECT_EQ(0, memcmp(box_buffer.data(), exif_uncompressed,
-                              exif_uncompressed_size));
+          if (box_num_output == exif_uncompressed_size) {
+            EXPECT_EQ(0, memcmp(box_buffer.data(), exif_uncompressed,
+                                exif_uncompressed_size));
+          }
           box_buffer.clear();
         }
         if (status == JXL_DEC_SUCCESS) break;
