@@ -44,6 +44,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/base/thread_pool_internal.h
   jxl/blending.cc
   jxl/blending.h
+  jxl/box_content_decoder.cc
+  jxl/box_content_decoder.h
   jxl/chroma_from_luma.cc
   jxl/chroma_from_luma.h
   jxl/codec_in_out.h
@@ -99,8 +101,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_xyb.cc
   jxl/dec_xyb.h
   jxl/decode.cc
-  jxl/decode_brob_box.cc
-  jxl/decode_brob_box.h
   jxl/decode_to_jpeg.cc
   jxl/decode_to_jpeg.h
   jxl/enc_bit_writer.cc
