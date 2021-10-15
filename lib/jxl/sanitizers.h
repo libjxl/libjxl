@@ -77,6 +77,11 @@ static JXL_INLINE JXL_MAYBE_UNUSED void UnpoisonMemory(const volatile void* m,
   __msan_unpoison(m, size);
 }
 
+static JXL_INLINE JXL_MAYBE_UNUSED void MemoryIsInitialized(
+    const volatile void* m, size_t size) {
+  __msan_check_mem_is_initialized(m, size);
+}
+
 // Mark all the bytes of an image (including padding) as poisoned bytes.
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const PlaneBase& im) {
   PoisonMemory(im.bytes(), im.bytes_per_row() * im.ysize());
@@ -231,6 +236,8 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
 
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonMemory(const void*, size_t) {}
 static JXL_INLINE JXL_MAYBE_UNUSED void UnpoisonMemory(const void*, size_t) {}
+static JXL_INLINE JXL_MAYBE_UNUSED void MemoryIsInitialized(const void*,
+                                                            size_t) {}
 
 static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const PlaneBase& im) {}
 template <typename T>

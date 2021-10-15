@@ -5,6 +5,8 @@
 
 #include "lib/jxl/decode_brob_box.h"
 
+#include "lib/jxl/sanitizers.h"
+
 namespace jxl {
 
 JxlBrobBoxDecoder::JxlBrobBoxDecoder() {}
@@ -26,12 +28,15 @@ JxlDecoderStatus JxlBrobBoxDecoder::Process(const uint8_t** next_in,
                                             size_t* avail_in,
                                             uint8_t** next_out,
                                             size_t* avail_out) {
+  uint8_t* next_out_before = *next_out;
+  size_t avail_out_before = *avail_out;
+  msan::MemoryIsInitialized(*next_in, *avail_in);
   BrotliDecoderResult res = BrotliDecoderDecompressStream(
       brotli_dec, avail_in, next_in, avail_out, next_out, nullptr);
-
   if (res == BROTLI_DECODER_RESULT_ERROR) {
     return JXL_DEC_ERROR;
   }
+  msan::UnpoisonMemory(next_out_before, avail_out_before - *avail_out);
   if (res == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) {
     return JXL_DEC_NEED_MORE_INPUT;
   }
