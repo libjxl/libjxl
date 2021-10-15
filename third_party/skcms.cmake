@@ -35,7 +35,7 @@ if(JPEGXL_BUNDLE_SKCMS)
       PRIVATE /FI${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/enc_jxl_skcms.h)
   else()
     target_compile_options(skcms-obj
-      PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/enc_jxl_skcms.h)
+      PRIVATE -include${CMAKE_CURRENT_SOURCE_DIR}/../lib/jxl/enc_jxl_skcms.h)
   endif()
 endif()
 
