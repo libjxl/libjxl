@@ -84,3 +84,54 @@ $ tools/render_hlg -t 1000 --pq ClassE_507_hlg.png ClassE_507_hlg_pq.png
 # roundtripping as it will not needlessly tone map the highlights.
 $ tools/pq_to_hlg -m 1000 ClassE_507_hlg_pq.png ClassE_507_hlg_pq_hlg.png
 ```
+
+## Display light to HLG
+
+By applying the inverse OOTF to a display-referred image, it is possible to
+compute the scene light, and from there the HLG signal, that would have
+produced that output on that display:
+
+```shell
+$ tools/display_to_hlg -m 600 -s 5 srgb_input.png hlg_output.png
+```
+
+This is the mathematical inverse of `tools/render_hlg`. Furthermore,
+`tools/pq_to_hlg` is equivalent to `tools/tone_map -t 1000` followed by
+`tools/display_to_hlg -m 1000`.
+
+# LUT generation
+
+There are additionally two tools that can be used to generate look-up tables
+for use with e.g. FFmpeg, ReShade, or DaVinci Resolve.
+
+The first of the two tools gives a starting point:
+
+```shell
+$ tools/generate_lut_template --lut_size=64 identity.ppm
+```
+
+From there, one can apply a chain of per-pixel transforms (including other
+LUTs) that the final LUT is intended to represent:
+
+```shell
+$ tools/pq_to_hlg identity.ppm pq_to_hlg.ppm
+$ tools/render_hlg -t 400 pq_to_hlg.ppm pq_to_400nit_rec2020.png
+$ convert pq_to_400nit_rec2020.png -profile /usr/share/color/icc/colord/Rec709.icc pq_to_400nit_rec709.png
+```
+
+From there, the PNG image can be used as-is with ReShade’s “LUT” shader
+(provided that the correct LUT size is set), or it can be converted to a
+[Cube](https://wwwimages2.adobe.com/content/dam/acom/en/products/speedgrade/cc/pdfs/cube-lut-specification-1.0.pdf)
+file for use in other software such as FFmpeg’s [lut3d](https://ffmpeg.org/ffmpeg-filters.html#lut3d-1)
+filter:
+
+```shell
+$ tools/texture_to_cube pq_to_400nit_rec709.png pq_to_400nit_rec709.cube
+$ ffmpeg -i pq_video.mkv -vf lut3d=pq_to_400nit_rec709.cube -colorspace bt709 -color_primaries bt709 -color_trc bt709 400nit_rec709_video.mkv
+```
+
+Note: instead of converting to a standard color space such as Rec. 709, it is
+also possible to convert to the color space of the specific display on which
+the content is to be shown, in which case the transformed content does not need
+any specific tagging and should be displayed directly without color management
+(for example using `ffplay`).

@@ -148,7 +148,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(
       reader, decoded, is_preview, dparams.allow_partial_files,
-      dparams.allow_partial_files && dparams.allow_more_progressive_steps));
+      dparams.allow_partial_files && dparams.allow_more_progressive_steps,
+      true));
 
   // Handling of progressive decoding.
   {
@@ -234,7 +235,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
 Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                                bool is_preview, bool allow_partial_frames,
-                               bool allow_partial_dc_global) {
+                               bool allow_partial_dc_global,
+                               bool output_needed) {
   PROFILER_FUNC;
   decoded_ = decoded;
   JXL_ASSERT(is_finalized_);
@@ -286,6 +288,8 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
         "Non-444 chroma subsampling is not allowed when adaptive DC "
         "smoothing is enabled");
   }
+
+  if (!output_needed) return true;
   JXL_RETURN_IF_ERROR(
       InitializePassesSharedState(frame_header_, &dec_state_->shared_storage));
   JXL_RETURN_IF_ERROR(dec_state_->Init());

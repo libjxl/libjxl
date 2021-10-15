@@ -195,7 +195,7 @@ enum class BoxStage : uint32_t {
   kSkip,        // Box whose contents are skipped
   kCodestream,  // Handling codestream box contents, or non-container stream
   kPartialCodestream,  // Handling the extra header of partial codestream box
-  kJpeg,               // Handling jpeg reconstruction box
+  kJpegRecon,          // Handling jpeg reconstruction box
   kBrobBegin,          // Handling the beginning of a brob box
   kBrob,               // Decompressing and outputting a brob box
 };
@@ -1264,7 +1264,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
 
       jxl::Status status = dec->frame_dec->InitFrame(
           reader.get(), dec->ib.get(), /*is_preview=*/false,
-          /*allow_partial_frames=*/true, /*allow_partial_dc_global=*/false);
+          /*allow_partial_frames=*/true, /*allow_partial_dc_global=*/false,
+          /*output_needed=*/dec->events_wanted & JXL_DEC_FULL_IMAGE);
       if (!status) JXL_API_RETURN_IF_ERROR(status);
 
       size_t sections_begin =
@@ -1646,7 +1647,11 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       } else if (memcmp(dec->box_type, "jxlp", 4) == 0) {
         dec->box_stage = BoxStage::kPartialCodestream;
       } else if (memcmp(dec->box_type, "jbrd", 4) == 0) {
-        dec->box_stage = BoxStage::kJpeg;
+        if (dec->events_wanted & JXL_DEC_JPEG_RECONSTRUCTION) {
+          dec->box_stage = BoxStage::kJpegRecon;
+        } else {
+          dec->box_stage = BoxStage::kSkip;
+        }
       } else if (memcmp(dec->box_type, "brob", 4) == 0) {
         dec->box_stage = BoxStage::kBrobBegin;
       } else {
@@ -1727,7 +1732,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         }
       }
       return status;
-    } else if (dec->box_stage == BoxStage::kJpeg) {
+    } else if (dec->box_stage == BoxStage::kJpegRecon) {
       if (!dec->jpeg_decoder.IsParsingBox()) {
         // This is a new JPEG reconstruction metadata box.
         dec->jpeg_decoder.StartBox(dec->box_contents_unbounded,

@@ -7,8 +7,6 @@
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/hlg.h"
-#include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -17,16 +15,12 @@ int main(int argc, const char** argv) {
   jxl::ThreadPoolInternal pool;
 
   jpegxl::tools::CommandLineParser parser;
-  float max_nits = 0;
-  parser.AddOptionValue('m', "max_nits", "nits",
-                        "maximum luminance in the image", &max_nits,
-                        &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
       "input", true, "input image", &input_filename, 0);
   const char* output_filename = nullptr;
   auto output_filename_option = parser.AddPositionalOption(
-      "output", true, "output image", &output_filename, 0);
+      "output", true, "output Cube LUT", &output_filename, 0);
 
   if (!parser.Parse(argc, argv)) {
     fprintf(stderr, "See -h for help.\n");
@@ -48,22 +42,29 @@ int main(int argc, const char** argv) {
   }
 
   jxl::CodecInOut image;
-  jxl::ColorHints color_hints;
-  color_hints.Add("color_space", "RGB_D65_202_Rel_PeQ");
-  JXL_CHECK(jxl::SetFromFile(input_filename, color_hints, &image, &pool));
-  if (max_nits > 0) {
-    image.metadata.m.SetIntensityTarget(max_nits);
-  }
-  JXL_CHECK(jxl::ToneMapTo({0, 1000}, &image, &pool));
-  JXL_CHECK(jxl::HlgInverseOOTF(&image.Main(), 1.2f, &pool));
+  JXL_CHECK(jxl::SetFromFile(input_filename, jxl::ColorHints(), &image, &pool));
 
-  jxl::ColorEncoding hlg;
-  hlg.SetColorSpace(jxl::ColorSpace::kRGB);
-  hlg.primaries = jxl::Primaries::k2100;
-  hlg.white_point = jxl::WhitePoint::kD65;
-  hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
-  JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(image.TransformTo(hlg, &pool));
-  image.metadata.m.color_encoding = hlg;
-  JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
+  JXL_CHECK(image.xsize() == image.ysize() * image.ysize());
+  const unsigned N = image.ysize();
+
+  FILE* const output = fopen(output_filename, "wb");
+  JXL_CHECK(output);
+
+  fprintf(output, "# Created by libjxl\n");
+  fprintf(output, "LUT_3D_SIZE %u\n", N);
+  fprintf(output, "DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n");
+
+  for (size_t b = 0; b < N; ++b) {
+    for (size_t g = 0; g < N; ++g) {
+      const size_t y = g;
+      const float* const JXL_RESTRICT rows[3] = {
+          image.Main().color()->ConstPlaneRow(0, y) + N * b,
+          image.Main().color()->ConstPlaneRow(1, y) + N * b,
+          image.Main().color()->ConstPlaneRow(2, y) + N * b};
+      for (size_t r = 0; r < N; ++r) {
+        const size_t x = r;
+        fprintf(output, "%.6f %.6f %.6f\n", rows[0][x], rows[1][x], rows[2][x]);
+      }
+    }
+  }
 }
