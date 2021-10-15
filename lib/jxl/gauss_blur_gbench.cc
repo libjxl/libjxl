@@ -9,7 +9,6 @@
 #include "lib/jxl/convolve.h"
 #include "lib/jxl/gauss_blur.h"
 #include "lib/jxl/image_ops.h"
-#include "lib/jxl/image_test_utils.h"
 
 namespace jxl {
 namespace {
