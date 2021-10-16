@@ -5,7 +5,7 @@
 
 find_package(PkgConfig)
 pkg_check_modules(Gimp IMPORTED_TARGET gimp-2.0>=2.10 gimpui-2.0>=2.10)
-pkg_check_modules(Gimp IMPORTED_TARGET gimp-2.0>=2.10 gimpui-2.0>=2.10)
+pkg_check_modules(lcms2 IMPORTED_TARGET lcms2)
 
 if (NOT Gimp_FOUND)
   message(WARNING "Gimp development libraries not found, the Gimp plugin will not be built")
