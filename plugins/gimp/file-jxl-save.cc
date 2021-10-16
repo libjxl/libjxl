@@ -3,10 +3,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <cmath>
-
-#include "gobject/gsignal.h"
 #include "plugins/gimp/file-jxl-save.h"
+
+#include <cmath>
 
 #define PLUG_IN_BINARY "file-jxl"
 #define SAVE_PROC "file-jxl-save"
@@ -166,14 +165,14 @@ bool JpegXlSaveGui::SaveDialog() {
   gtk_widget_show(table);
 
   // Distance Slider
-  static gchar distance_help[] =
+  gchar* distance_help = nullptr;
+  distance_help =
       _("Butteraugli distance target.  Suggested values:"
         "\n\td\u00A0=\u00A00.3\tExcellent"
         "\n\td\u00A0=\u00A01\tVery Good"
         "\n\td\u00A0=\u00A02\tGood"
         "\n\td\u00A0=\u00A03\tFair"
         "\n\td\u00A0=\u00A06\tPoor");
-
   entry_distance = (GtkAdjustment*)gimp_scale_entry_new(
       GTK_TABLE(table), 0, 0, _("Distance"), SCALE_WIDTH, 0,
       jxl_save_opts.distance, 0.0, 15.0, 0.001, 1.0, 3, true, 0.0, 0.0,
@@ -181,7 +180,8 @@ bool JpegXlSaveGui::SaveDialog() {
   gimp_scale_entry_set_logarithmic((GtkObject*)entry_distance, true);
 
   // Quality Slider
-  static gchar quality_help[] =
+  gchar* quality_help = nullptr;
+  quality_help =
       _("JPEG-style Quality is remapped to distance.  "
         "Values roughly match libjpeg quality settings.");
   entry_quality = (GtkAdjustment*)gimp_scale_entry_new(
@@ -202,7 +202,8 @@ bool JpegXlSaveGui::SaveDialog() {
   gtk_widget_show(separator);
 
   // Encoding Effort / Speed
-  static gchar effort_help[] =
+  gchar* effort_help = nullptr;
+  effort_help =
       _("Adjust encoding speed.  Higher values are faster because "
         "the encoder uses less effort to hit distance targets.  "
         "As\u00A0a\u00A0result, image quality may be decreased.  "
@@ -228,6 +229,10 @@ bool JpegXlSaveGui::SaveDialog() {
 
   run = (gimp_dialog_run(GIMP_DIALOG(dialog)) == GTK_RESPONSE_OK);
   gtk_widget_destroy(dialog);
+
+  g_free(effort_help);
+  g_free(quality_help);
+  g_free(distance_help);
 
   return run;
 }  // JpegXlSaveGui::SaveDialog
@@ -565,6 +570,9 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       g_printerr(SAVE_PROC " Error: JxlEncoderAddImageFrame failed\n");
       return false;
     }
+
+    g_free(pixels_buffer_1);
+    g_free(pixels_buffer_2);
   }
 
   JxlEncoderCloseInput(enc.get());
