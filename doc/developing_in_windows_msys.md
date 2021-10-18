@@ -93,9 +93,9 @@ Start the MINGW64 environment, create a build directory within the source direct
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-   -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
-   -DJPEGXL_ENABLE_PLUGINS=ON -DJPEGXL_ENABLE_MANPAGES=OFF \
-   -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+   -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
+   -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_PLUGINS=ON \
+   -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
    -DJPEGXL_FORCE_SYSTEM_GTEST=ON ..
 ```
 
@@ -130,9 +130,9 @@ mingw-w64-ucrt64-x86_64-clang-compiler-rt
 After the `clang` compiler is installed, 'libjxl' can be built with the `./ci.sh` script.
 
 ```bash
-./ci.sh opt -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
-    -DJPEGXL_ENABLE_MANPAGES=OFF -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
-    -DJPEGXL_FORCE_SYSTEM_GTEST=ON
+./ci.sh opt -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
+    -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_MANPAGES=OFF \
+    -DJPEGXL_FORCE_SYSTEM_BROTLI=ON -DJPEGXL_FORCE_SYSTEM_GTEST=ON
 ```
 
 On my computer, `doxygen` packages needed to be installed to proceed with building.  Use `pacman -Ss doxygen` to find the packages to install.
@@ -151,15 +151,15 @@ If `clang` is installed, you can use the `./ci.sh` script to build.  Otherwise, 
 
 ```bash
 cd build
-rm -r C*
+rm -r CM*
 cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-   -DBUILD_TESTING=OFF -DJPEGXL_ENABLE_BENCHMARK=OFF \
-   -DJPEGXL_ENABLE_PLUGINS=ON -DJPEGXL_ENABLE_MANPAGES=OFF \
-   -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+   -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF \
+   -DJPEGXL_ENABLE_BENCHMARK=OFF -DJPEGXL_ENABLE_MANPAGES=OFF \
+   -DJPEGXL_ENABLE_PLUGINS=ON -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
    -DJPEGXL_FORCE_SYSTEM_GTEST=ON ..
 ```
 
-Fortunately, the plugin works without installing `dll` files.  To test the plugin:
+The plugin is built statically, so there should be no need to install `dll` files.  To try out the plugin:
 
 1. [Download](https://www.gimp.org/downloads/) and install the stable version of GIMP (currently 2.10.24).
 
