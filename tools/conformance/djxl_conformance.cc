@@ -233,6 +233,8 @@ class JSONArray : public JSONField {
 // Helper macro for decoder error checking.
 #define EXPECT_SUCCESS(X) EXPECT_TRUE((X) == JXL_DEC_SUCCESS)
 
+// TODO(veluca): merge this back in DecodeJXL once/if the API supports decoding
+// to JPEG and to pixels at the same time.
 bool DecodeJXLToJpeg(const char* input_path, const char* output_path) {
   // JPEG output buffer when reconstructing a JPEG file.
   std::vector<uint8_t> jpeg_data;
