@@ -211,7 +211,6 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
       break;
     default:
       return JXL_ENC_ERROR;
-      break;
   }
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
   if (info->orientation > 0 && info->orientation <= 8) {
@@ -219,6 +218,11 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   } else {
     return JXL_API_ERROR("Invalid value for orientation field");
   }
+  enc->metadata.m.SetIntensityTarget(info->intensity_target);
+  enc->metadata.m.tone_mapping.min_nits = info->min_nits;
+  enc->metadata.m.tone_mapping.relative_to_max_display =
+      info->relative_to_max_display;
+  enc->metadata.m.tone_mapping.linear_below = info->linear_below;
   enc->basic_info_set = true;
   return JXL_ENC_SUCCESS;
 }
