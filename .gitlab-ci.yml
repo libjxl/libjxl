@@ -220,24 +220,6 @@ test:i686:clang:release:
   script:
     - ./ci.sh test
 
-# Windows builders. These are cross-compiled from a linux host.
-build:win64:clang:release:
-  <<: *linux_host_build_template
-  stage: build
-  script:
-    - BUILD_TARGET=x86_64-w64-mingw32
-        SKIP_TEST=1 PACK_TEST=1
-        ./ci.sh release -DJPEGXL_ENABLE_TCMALLOC=OFF -DJPEGXL_ENABLE_FUZZERS=OFF
-          -DJPEGXL_ENABLE_PLUGINS=OFF
-
-test:win64:clang:release:
-  <<: *linux_host_template
-  stage: test
-  dependencies:
-    - build:win64:clang:release
-  script:
-    - BUILD_TARGET=x86_64-w64-mingw32 ./ci.sh test
-
 # aarch64 release runs only on master and on request.
 build:aarch64:clang:release:
   <<: *linux_host_build_template
