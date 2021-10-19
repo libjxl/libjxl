@@ -316,9 +316,9 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   size_t ysize = channels[0]->ysize();
 
   if (stride < bytes_per_pixel * xsize) {
-    return JXL_FAILURE(
-        "stride is smaller than scanline width in bytes: %zu vs %zu", stride,
-        bytes_per_pixel * xsize);
+    return JXL_FAILURE("stride is smaller than scanline width in bytes: %" PRIuS
+                       " vs %" PRIuS,
+                       stride, bytes_per_pixel * xsize);
   }
 
   const bool little_endian =

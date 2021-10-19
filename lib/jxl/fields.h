@@ -40,7 +40,7 @@ class BitsCoder {
                           size_t* JXL_RESTRICT encoded_bits) {
     *encoded_bits = bits;
     if (value >= (1ULL << bits)) {
-      return JXL_FAILURE("Value %u too large for %zu bits", value, bits);
+      return JXL_FAILURE("Value %u too large for %" PRIuS " bits", value, bits);
     }
     return true;
   }
@@ -53,8 +53,8 @@ class BitsCoder {
   static Status Write(const size_t bits, const uint32_t value,
                       BitWriter* JXL_RESTRICT writer) {
     if (value >= (1ULL << bits)) {
-      return JXL_FAILURE("Value %d too large to encode in %zu bits", value,
-                         bits);
+      return JXL_FAILURE("Value %d too large to encode in %" PRIuS " bits",
+                         value, bits);
     }
     writer->Write(bits, value);
     return true;

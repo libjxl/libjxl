@@ -65,11 +65,13 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   }
 
   if (io1.xsize() != io2.xsize()) {
-    fprintf(stderr, "Width mismatch: %zu %zu\n", io1.xsize(), io2.xsize());
+    fprintf(stderr, "Width mismatch: %" PRIuS " %" PRIuS "\n", io1.xsize(),
+            io2.xsize());
     return false;
   }
   if (io1.ysize() != io2.ysize()) {
-    fprintf(stderr, "Height mismatch: %zu %zu\n", io1.ysize(), io2.ysize());
+    fprintf(stderr, "Height mismatch: %" PRIuS " %" PRIuS "\n", io1.ysize(),
+            io2.ysize());
     return false;
   }
 

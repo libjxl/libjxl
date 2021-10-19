@@ -353,7 +353,7 @@ class ReadVisitor : public VisitorBase {
     }
     const size_t remaining_bits = end - bits_read;
     if (remaining_bits != 0) {
-      JXL_WARNING("Skipping %zu-bit extension(s)", remaining_bits);
+      JXL_WARNING("Skipping %" PRIuS "-bit extension(s)", remaining_bits);
       reader_->SkipBits(remaining_bits);
       if (!reader_->AllReadsWithinBounds()) {
         return JXL_STATUS(StatusCode::kNotEnoughBytes,

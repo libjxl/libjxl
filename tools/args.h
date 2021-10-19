@@ -120,8 +120,10 @@ static inline bool ParsePredictor(const char* arg, jxl::Predictor* out) {
     return JXL_FAILURE("Args");
   }
   if (p >= jxl::kNumModularPredictors) {
-    fprintf(stderr, "Invalid predictor value %zu, must be less than %zu.\n", p,
-            jxl::kNumModularPredictors);
+    fprintf(stderr,
+            "Invalid predictor value %" PRIuS ", must be less than %" PRIuS
+            ".\n",
+            p, jxl::kNumModularPredictors);
     return JXL_FAILURE("Args");
   }
   *out = static_cast<jxl::Predictor>(p);

@@ -72,7 +72,7 @@ int DecompressMain(int argc, const char* argv[]) {
     return 1;
   }
   if (!args.quiet) {
-    fprintf(stderr, "Read %zu compressed bytes.\n", compressed.size());
+    fprintf(stderr, "Read %" PRIuS " compressed bytes.\n", compressed.size());
   }
 
   // If the file uses the box format container, unpack the boxes into
@@ -105,7 +105,7 @@ int DecompressMain(int argc, const char* argv[]) {
     // 1.1-1.2x speedup (36 cores) from pinning.
     if (thread < cpus.size()) {
       if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[thread])) {
-        fprintf(stderr, "WARNING: failed to pin thread %zu.\n", thread);
+        fprintf(stderr, "WARNING: failed to pin thread %" PRIuS ".\n", thread);
       }
     }
   });
@@ -187,7 +187,7 @@ int DecompressMain(int argc, const char* argv[]) {
     }
 
     if (args.print_read_bytes) {
-      fprintf(stderr, "Decoded bytes: %zu\n", io.Main().decoded_bytes());
+      fprintf(stderr, "Decoded bytes: %" PRIuS "\n", io.Main().decoded_bytes());
     }
   }
 

@@ -310,7 +310,9 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
                base.c_str(), digits, i, extension);
       if (!EncodeToFile(frame_io, c_out, bits_per_sample,
                         output_filename.data(), pool)) {
-        fprintf(stderr, "Failed to write decoded image for frame %zu/%zu.\n",
+        fprintf(stderr,
+                "Failed to write decoded image for frame %" PRIuS "/%" PRIuS
+                ".\n",
                 i + 1, io.frames.size());
       }
     }

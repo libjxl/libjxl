@@ -76,8 +76,9 @@ void TestFillImpl(Image3<T>* img, const char* layout) {
       T* JXL_RESTRICT row = img->PlaneRow(c, y);
       for (size_t x = 0; x < img->xsize(); ++x) {
         if (row[x] != T(1)) {
-          printf("Not 1 at c=%zu %zu, %zu (%zu x %zu) (%s)\n", c, x, y,
-                 img->xsize(), img->ysize(), layout);
+          printf("Not 1 at c=%" PRIuS " %" PRIuS ", %" PRIuS " (%" PRIuS
+                 " x %" PRIuS ") (%s)\n",
+                 c, x, y, img->xsize(), img->ysize(), layout);
           abort();
         }
         row[x] = T(2);
@@ -92,8 +93,9 @@ void TestFillImpl(Image3<T>* img, const char* layout) {
       T* JXL_RESTRICT row = img->PlaneRow(c, y);
       for (size_t x = 0; x < img->xsize(); ++x) {
         if (row[x] != T(0)) {
-          printf("Not 0 at c=%zu %zu, %zu (%zu x %zu) (%s)\n", c, x, y,
-                 img->xsize(), img->ysize(), layout);
+          printf("Not 0 at c=%" PRIuS " %" PRIuS ", %" PRIuS " (%" PRIuS
+                 " x %" PRIuS ") (%s)\n",
+                 c, x, y, img->xsize(), img->ysize(), layout);
           abort();
         }
         row[x] = T(3);

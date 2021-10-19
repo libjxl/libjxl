@@ -177,7 +177,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     if (!Args()->silent_errors) {
       // Animated gifs not supported yet?
       fprintf(stderr,
-              "Frame sizes not equal, is this an animated gif? %s %s %zu %zu\n",
+              "Frame sizes not equal, is this an animated gif? %s %s %" PRIuS
+              " %" PRIuS "\n",
               codec_name.c_str(), name.c_str(), io.frames.size(),
               io2.frames.size());
     }
@@ -480,12 +481,12 @@ void WriteHtmlReport(const std::string& codec_desc,
       url_out = Base64Image(fname_out);
       url_heatmap = Base64Image(fname_heatmap);
     }
-    std::string number = StringPrintf("%zu", i);
+    std::string number = StringPrintf("%" PRIuS, i);
     const CodecInOut& image = *images[i];
     size_t xsize = image.frames.size() == 1 ? image.xsize() : 0;
     size_t ysize = image.frames.size() == 1 ? image.ysize() : 0;
-    std::string html_width = StringPrintf("%zupx", xsize);
-    std::string html_height = StringPrintf("%zupx", ysize);
+    std::string html_width = StringPrintf("%" PRIuS "px", xsize);
+    std::string html_height = StringPrintf("%" PRIuS "px", ysize);
     double bpp = tasks[i]->stats.total_compressed_size * 8.0 /
                  tasks[i]->stats.total_input_pixels;
     double pnorm =
@@ -614,7 +615,8 @@ struct StatPrinter {
     const double dec_mps =
         t.stats.total_input_pixels / (1000000.0 * t.stats.total_time_decode);
     if (Args()->print_details_csv) {
-      printf("%s,%s,%zd,%zd,%zd,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
+      printf("%s,%s,%" PRIdS ",%" PRIdS ",%" PRIdS
+             ",%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
              (*methods_)[t.idx_method].c_str(),
              FileBaseName((*fnames_)[t.idx_image]).c_str(),
              t.stats.total_errors, t.stats.total_compressed_size, pixels,
@@ -636,8 +638,8 @@ struct StatPrinter {
         printf(" ");
       }
       printf(
-          "error:%zd    size:%8zd    pixels:%9zd    enc_speed:%8.8f"
-          "    dec_speed:%8.8f    bpp:%10.8f    dist:%10.8f"
+          "error:%" PRIdS "    size:%8" PRIdS "    pixels:%9" PRIdS
+          "    enc_speed:%8.8f    dec_speed:%8.8f    bpp:%10.8f    dist:%10.8f"
           "    psnr:%10.8f    p:%10.8f    bppp:%10.8f    qabpp:%10.8f ",
           t.stats.total_errors, t.stats.total_compressed_size, pixels, enc_mps,
           dec_mps, comp_bpp, t.stats.max_distance, psnr, p_norm, bpp_p_norm,
@@ -823,10 +825,11 @@ class Benchmark {
     pool->RunOnEachThread([&](int /*task*/, const int thread) {
       const size_t index = *next_index + static_cast<size_t>(thread);
       if (index < cpus.size()) {
-        // printf("pin pool %p thread %3d to index %3zu = cpu %3d\n",
+        // printf("pin pool %p thread %3d to index %3" PRIuS " = cpu %3d\n",
         //        static_cast<void*>(pool), thread, index, cpus[index]);
         if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[index])) {
-          fprintf(stderr, "WARNING: failed to pin thread %d, next %zu.\n",
+          fprintf(stderr,
+                  "WARNING: failed to pin thread %d, next %" PRIuS ".\n",
                   thread, *next_index);
         }
       }
@@ -904,7 +907,8 @@ class Benchmark {
                                    const std::string& sample_tmp_dir,
                                    int num_samples, size_t size) {
     JXL_CHECK(!sample_tmp_dir.empty());
-    fprintf(stderr, "Creating samples of %zux%zu tiles...\n", size, size);
+    fprintf(stderr, "Creating samples of %" PRIuS "x%" PRIuS " tiles...\n",
+            size, size);
     StringVec fnames_out;
     std::vector<Image3F> images;
     std::vector<size_t> offsets;

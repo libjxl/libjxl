@@ -145,7 +145,8 @@ void TestConvolve() {
              ThreadPoolInternal pool3(3);
              for (size_t ysize = kConvolveMaxRadius; ysize < 16; ++ysize) {
                JXL_DEBUG(JXL_DEBUG_CONVOLVE,
-                         "%zu x %zu (target %d)===============================",
+                         "%" PRIuS " x %" PRIuS
+                         " (target %d)===============================",
                          xsize, ysize, HWY_TARGET);
 
                JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");
