@@ -185,7 +185,8 @@ TEST(GaussBlurTest, DISABLED_SlowTestDirac1D) {
 
 void TestRandom(size_t xsize, size_t ysize, float min, float max, double sigma,
                 double max_l1, double max_rel) {
-  printf("%4zu x %4zu %4.1f %4.1f sigma %.1f\n", xsize, ysize, min, max, sigma);
+  printf("%4" PRIuS " x %4" PRIuS " %4.1f %4.1f sigma %.1f\n", xsize, ysize,
+         min, max, sigma);
   ImageF in(xsize, ysize);
   RandomFillImage(&in, min, max, 65537 + xsize * 129 + ysize);
   // FastGaussian/Convolve handle borders differently, so keep those pixels 0.
@@ -439,7 +440,7 @@ TEST(GaussBlurTest, TestSign) {
   {
     const std::vector<float> kernel =
         GaussianKernel(static_cast<int>(4 * sigma), static_cast<float>(sigma));
-    printf("old kernel size %zu\n", kernel.size());
+    printf("old kernel size %" PRIuS "\n", kernel.size());
     out_old = Convolve(in, kernel);
   }
 

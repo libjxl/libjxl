@@ -14,6 +14,7 @@
 #include "gtest/gtest.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/common.h"
 #include "lib/jxl/image.h"
 
 namespace jxl {
@@ -120,10 +121,11 @@ void VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
   if (any_bad) {
     // Never had a valid relative value, don't print it.
     if (max_relative < 0) {
-      fprintf(stderr, "c=%zu: max +/- %E exceeds +/- %.2E\n", c, max_l1,
+      fprintf(stderr, "c=%" PRIuS ": max +/- %E exceeds +/- %.2E\n", c, max_l1,
               threshold_l1);
     } else {
-      fprintf(stderr, "c=%zu: max +/- %E, x %E exceeds +/- %.2E, x %.2E\n", c,
+      fprintf(stderr,
+              "c=%" PRIuS ": max +/- %E, x %E exceeds +/- %.2E, x %.2E\n", c,
               max_l1, max_relative, threshold_l1, threshold_relative);
     }
     // Dump the expected image and actual image if the region is small enough.

@@ -77,7 +77,7 @@ void TestPermutation(Permutation kind, size_t len) {
       EXPECT_EQ(perm[idx], out[idx]);
     }
   }
-  printf("Encoded size: %zu\n", size);
+  printf("Encoded size: %" PRIuS "\n", size);
 }
 
 TEST(CoeffOrderTest, IdentitySmall) { TestPermutation(kIdentity, 256); }

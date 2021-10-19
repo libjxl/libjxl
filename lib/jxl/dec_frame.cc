@@ -221,8 +221,8 @@ Status DecodeFrame(const DecompressParams& dparams,
       if (dparams.max_downsampling > 1 && s == FrameDecoder::kSkipped) {
         continue;
       }
-      return JXL_FAILURE("Invalid section %zu status: %d", section_info[i].id,
-                         s);
+      return JXL_FAILURE("Invalid section %" PRIuS " status: %d",
+                         section_info[i].id, s);
     }
   }
 
@@ -958,8 +958,10 @@ Status FrameDecoder::FinalizeFrame() {
       if (reference_frame.frame->xsize() < metadata->xsize() ||
           reference_frame.frame->ysize() < metadata->ysize()) {
         return JXL_FAILURE(
-            "trying to save a reference frame that is too small: %zux%zu "
-            "instead of %zux%zu",
+            "trying to save a reference frame that is too small: %" PRIuS
+            "x%" PRIuS
+            " "
+            "instead of %" PRIuS "x%" PRIuS,
             reference_frame.frame->xsize(), reference_frame.frame->ysize(),
             metadata->xsize(), metadata->ysize());
       }

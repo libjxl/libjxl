@@ -191,7 +191,7 @@ void ConvolutionWithTranspose(const ImageF& in,
       break;
     }
     default:
-      printf("Warning: Unexpected kernel size! %zu\n", len);
+      printf("Warning: Unexpected kernel size! %" PRIuS "\n", len);
       for (size_t y = 0; y < in.ysize(); ++y) {
         const float* BUTTERAUGLI_RESTRICT row_in = in.Row(y);
         for (size_t x = border1; x < border2; ++x) {
@@ -1499,8 +1499,9 @@ static inline void CheckImage(const ImageF& image, const char* name) {
     const float* BUTTERAUGLI_RESTRICT row = image.Row(y);
     for (size_t x = 0; x < image.xsize(); ++x) {
       if (IsNan(row[x])) {
-        printf("NAN: Image %s @ %zu,%zu (of %zu,%zu)\n", name, x, y,
-               image.xsize(), image.ysize());
+        printf("NAN: Image %s @ %" PRIuS ",%" PRIuS " (of %" PRIuS ",%" PRIuS
+               ")\n",
+               name, x, y, image.xsize(), image.ysize());
         exit(1);
       }
     }

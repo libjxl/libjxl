@@ -119,7 +119,7 @@ void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
           quality);
       break;
     }
-    printf("Quality %.2f yields %6zu bytes, %.3f bpp.\n", quality,
+    printf("Quality %.2f yields %6" PRIuS " bytes, %.3f bpp.\n", quality,
            candidate.size(), candidate.size() * 8.0 / pixels);
     const double ratio = static_cast<double>(candidate.size()) / target_size;
     const double loss = std::abs(1.0 - ratio);
@@ -194,8 +194,8 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
           best_dist);
       break;
     }
-    printf("Butteraugli distance %.3f yields %6zu bytes, %.3f bpp.\n", dist,
-           candidate.size(), candidate.size() * 8.0 / pixels);
+    printf("Butteraugli distance %.3f yields %6" PRIuS " bytes, %.3f bpp.\n",
+           dist, candidate.size(), candidate.size() * 8.0 / pixels);
     const double ratio = static_cast<double>(candidate.size()) / target_size;
     const double loss = std::max(ratio, 1.0 / std::max(ratio, 1e-30));
     if (best_loss > loss) {
@@ -248,7 +248,8 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
   const char* speed = SpeedTierName(args.params.speed_tier);
   const std::string quality = QualityFromArgs(args);
   fprintf(stderr,
-          "Read %zux%zu image, %.1f MP/s\n"
+          "Read %" PRIuS "x%" PRIuS
+          " image, %.1f MP/s\n"
           "Encoding [%s%s, %s, %s",
           io.xsize(), io.ysize(), decode_mps,
           (args.use_container ? "Container | " : ""), mode, quality.c_str(),
@@ -256,13 +257,13 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
   if (args.use_container) {
     if (args.jpeg_transcode) fprintf(stderr, " | JPEG reconstruction data");
     if (!io.blobs.exif.empty())
-      fprintf(stderr, " | %zu-byte Exif", io.blobs.exif.size());
+      fprintf(stderr, " | %" PRIuS "-byte Exif", io.blobs.exif.size());
     if (!io.blobs.xmp.empty())
-      fprintf(stderr, " | %zu-byte XMP", io.blobs.xmp.size());
+      fprintf(stderr, " | %" PRIuS "-byte XMP", io.blobs.xmp.size());
     if (!io.blobs.jumbf.empty())
-      fprintf(stderr, " | %zu-byte JUMBF", io.blobs.jumbf.size());
+      fprintf(stderr, " | %" PRIuS "-byte JUMBF", io.blobs.jumbf.size());
   }
-  fprintf(stderr, "], %zu threads.\n", pool->NumWorkerThreads());
+  fprintf(stderr, "], %" PRIuS " threads.\n", pool->NumWorkerThreads());
 }
 
 }  // namespace
@@ -835,7 +836,7 @@ jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
   if (print_stats) {
     const double bpp =
         static_cast<double>(compressed->size() * jxl::kBitsPerByte) / pixels;
-    fprintf(stderr, "Compressed to %zu bytes (%.3f bpp%s).\n",
+    fprintf(stderr, "Compressed to %" PRIuS " bytes (%.3f bpp%s).\n",
             compressed->size(), bpp / io.frames.size(),
             io.frames.size() == 1 ? "" : "/frame");
     JXL_CHECK(stats.Print(args.num_threads));

@@ -610,7 +610,7 @@ Status ModularFrameEncoder::ComputeEncodingData(
       int min, max;
       compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
       int64_t colors = max - min + 1;
-      JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
+      JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
       Transform maybe_palette_1(TransformId::kPalette);
       maybe_palette_1.begin_c = i + gi.nb_meta_channels;
       maybe_palette_1.num_c = 1;
@@ -1283,7 +1283,7 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
         int min, max;
         compute_minmax(gi.channel[gi.nb_meta_channels + i], &min, &max);
         int colors = max - min + 1;
-        JXL_DEBUG_V(10, "Channel %zu: range=%i..%i", i, min, max);
+        JXL_DEBUG_V(10, "Channel %" PRIuS ": range=%i..%i", i, min, max);
         Transform maybe_palette_1(TransformId::kPalette);
         maybe_palette_1.begin_c = i + gi.nb_meta_channels;
         maybe_palette_1.num_c = 1;

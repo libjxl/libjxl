@@ -69,7 +69,8 @@ class BlobsReaderPNG {
       }
       if (type == "exif") {
         if (!metadata->exif.empty()) {
-          JXL_WARNING("overwriting EXIF (%zu bytes) with base16 (%zu bytes)",
+          JXL_WARNING("overwriting EXIF (%" PRIuS " bytes) with base16 (%" PRIuS
+                      " bytes)",
                       metadata->exif.size(), bytes.size());
         }
         metadata->exif = std::move(bytes);
@@ -79,14 +80,15 @@ class BlobsReaderPNG {
         // TODO (jon): Deal with 8bim in some way
       } else if (type == "xmp") {
         if (!metadata->xmp.empty()) {
-          JXL_WARNING("overwriting XMP (%zu bytes) with base16 (%zu bytes)",
+          JXL_WARNING("overwriting XMP (%" PRIuS " bytes) with base16 (%" PRIuS
+                      " bytes)",
                       metadata->xmp.size(), bytes.size());
         }
         metadata->xmp = std::move(bytes);
       } else {
-        JXL_WARNING(
-            "Unknown type in 'Raw format type' text chunk: %s: %zu bytes",
-            type.c_str(), bytes.size());
+        JXL_WARNING("Unknown type in 'Raw format type' text chunk: %s: %" PRIuS
+                    " bytes",
+                    type.c_str(), bytes.size());
       }
     }
 
@@ -234,7 +236,8 @@ class BlobsWriterPNG {
     snprintf(key, sizeof(key), "Raw profile type %s", type.c_str());
 
     char header[30];
-    snprintf(header, sizeof(header), "\n%s\n%8zu", type.c_str(), bytes.size());
+    snprintf(header, sizeof(header), "\n%s\n%8" PRIuS, type.c_str(),
+             bytes.size());
 
     const std::string& encoded = std::string(header) + base16;
     if (lodepng_add_text(info, key, encoded.c_str()) != 0) {

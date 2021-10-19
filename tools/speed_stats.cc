@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <string>
 
+#include "lib/jxl/common.h"
+
 namespace jpegxl {
 namespace tools {
 
@@ -102,9 +104,11 @@ jxl::Status SpeedStats::Print(size_t worker_threads) {
     snprintf(variability, sizeof(variability), " (var %.2f)", s.variability);
   }
 
-  fprintf(stderr, "%zu x %zu%s%s%s, %zu reps, %zu threads.\n", xsize_, ysize_,
-          mps_stats.c_str(), mbs_stats.c_str(), variability, elapsed_.size(),
-          worker_threads);
+  fprintf(stderr,
+          "%" PRIuS " x %" PRIuS "%s%s%s, %" PRIuS " reps, %" PRIuS
+          " threads.\n",
+          xsize_, ysize_, mps_stats.c_str(), mbs_stats.c_str(), variability,
+          elapsed_.size(), worker_threads);
   return true;
 }
 

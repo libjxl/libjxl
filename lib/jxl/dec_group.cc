@@ -521,8 +521,9 @@ Status DecodeACVarBlock(size_t ctx_offset, size_t log2_covered_blocks,
       nzeros -= prev;
     }
     if (JXL_UNLIKELY(nzeros != 0)) {
-      return JXL_FAILURE(
-          "Invalid AC: nzeros not 0. Block (%zu, %zu), channel %zu", bx, by, c);
+      return JXL_FAILURE("Invalid AC: nzeros not 0. Block (%" PRIuS ", %" PRIuS
+                         "), channel %" PRIuS,
+                         bx, by, c);
     }
   }
   return true;

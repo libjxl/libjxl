@@ -5,6 +5,8 @@
 
 // This example prints information from the main codestream header.
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -232,7 +234,7 @@ int PrintBasicInfo(FILE* file) {
           fprintf(stderr, "JxlDecoderGetICCProfileSize failed\n");
           continue;
         }
-        printf("  ICC profile size: %zu\n", profile_size);
+        printf("  ICC profile size: %" PRIu64 "\n", (uint64_t)profile_size);
         if (profile_size < 132) {
           fprintf(stderr, "ICC profile too small\n");
           continue;
@@ -284,8 +286,8 @@ int PrintBasicInfo(FILE* file) {
       uint64_t size;
       JxlDecoderGetBoxType(dec, type, JXL_FALSE);
       JxlDecoderGetBoxSizeRaw(dec, &size);
-      printf("box: type: \"%c%c%c%c\" size: %zu\n", type[0], type[1], type[2],
-             type[3], (size_t)size);
+      printf("box: type: \"%c%c%c%c\" size: %" PRIu64 "\n", type[0], type[1],
+             type[2], type[3], (uint64_t)size);
     } else {
       fprintf(stderr, "Unexpected decoder status\n");
       break;

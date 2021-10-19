@@ -98,7 +98,8 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PoisonImage(const Image3<T>& im) {
 template <typename T>
 static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
     const Plane<T>& im) {
-  fprintf(stderr, "Uninitialized regions for image of size %zux%zu:\n",
+  fprintf(stderr,
+          "Uninitialized regions for image of size %" PRIuS "x%" PRIuS ":\n",
           im.xsize(), im.ysize());
 
   // A segment of uninitialized pixels in a row, in the format [first, second).
@@ -137,15 +138,15 @@ static JXL_INLINE JXL_MAYBE_UNUSED void PrintImageUninitialized(
         return;
       }
       if (end_y - start_y_ > 1) {
-        fprintf(stderr, " y=[%zd, %zu):", start_y_, end_y);
+        fprintf(stderr, " y=[%" PRIdS ", %" PRIuS "):", start_y_, end_y);
       } else {
-        fprintf(stderr, " y=[%zd]:", start_y_);
+        fprintf(stderr, " y=[%" PRIdS "]:", start_y_);
       }
       for (const auto& seg : segments_) {
         if (seg.first + 1 == seg.second) {
-          fprintf(stderr, " [%zd]", seg.first);
+          fprintf(stderr, " [%" PRIdS "]", seg.first);
         } else {
-          fprintf(stderr, " [%zd, %zu)", seg.first, seg.second);
+          fprintf(stderr, " [%" PRIdS ", %" PRIuS ")", seg.first, seg.second);
         }
       }
       fprintf(stderr, "\n");
@@ -203,12 +204,15 @@ static JXL_INLINE JXL_MAYBE_UNUSED void CheckImageInitialized(
     intptr_t ret = __msan_test_shadow(row + r.x0(), sizeof(*row) * r.xsize());
     if (ret != -1) {
       JXL_DEBUG(1,
-                "Checking an image of %zu x %zu, rect x0=%zu, y0=%zu, "
-                "xsize=%zu, ysize=%zu",
+                "Checking an image of %" PRIuS " x %" PRIuS ", rect x0=%" PRIuS
+                ", y0=%" PRIuS
+                ", "
+                "xsize=%" PRIuS ", ysize=%" PRIuS,
                 im.xsize(), im.ysize(), r.x0(), r.y0(), r.xsize(), r.ysize());
       size_t x = ret / sizeof(*row);
-      JXL_DEBUG(1, "CheckImageInitialized failed at x=%zu, y=%zu: %s",
-                r.x0() + x, y, message ? message : "");
+      JXL_DEBUG(
+          1, "CheckImageInitialized failed at x=%" PRIuS ", y=%" PRIuS ": %s",
+          r.x0() + x, y, message ? message : "");
       PrintImageUninitialized(im);
     }
     // This will report an error if memory is not initialized.

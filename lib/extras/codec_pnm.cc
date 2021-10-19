@@ -258,16 +258,17 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
     const char type = ib.IsGray() ? 'f' : 'F';
     const double scale = little_endian ? -1.0 : 1.0;
     *chars_written =
-        snprintf(header, kMaxHeaderSize, "P%c\n%zu %zu\n%.1f\n", type,
-                 ib.oriented_xsize(), ib.oriented_ysize(), scale);
+        snprintf(header, kMaxHeaderSize, "P%c\n%" PRIuS " %" PRIuS "\n%.1f\n",
+                 type, ib.oriented_xsize(), ib.oriented_ysize(), scale);
     JXL_RETURN_IF_ERROR(static_cast<unsigned int>(*chars_written) <
                         kMaxHeaderSize);
   } else if (bits_per_sample == 1) {  // PBM
     if (!ib.IsGray()) {
       return JXL_FAILURE("Cannot encode color as PBM");
     }
-    *chars_written = snprintf(header, kMaxHeaderSize, "P4\n%zu %zu\n",
-                              ib.oriented_xsize(), ib.oriented_ysize());
+    *chars_written =
+        snprintf(header, kMaxHeaderSize, "P4\n%" PRIuS " %" PRIuS "\n",
+                 ib.oriented_xsize(), ib.oriented_ysize());
     JXL_RETURN_IF_ERROR(static_cast<unsigned int>(*chars_written) <
                         kMaxHeaderSize);
   } else {  // PGM/PPM
@@ -275,8 +276,8 @@ Status EncodeHeader(const ImageBundle& ib, const size_t bits_per_sample,
     if (max_val >= 65536) return JXL_FAILURE("PNM cannot have > 16 bits");
     const char type = ib.IsGray() ? '5' : '6';
     *chars_written =
-        snprintf(header, kMaxHeaderSize, "P%c\n%zu %zu\n%u\n", type,
-                 ib.oriented_xsize(), ib.oriented_ysize(), max_val);
+        snprintf(header, kMaxHeaderSize, "P%c\n%" PRIuS " %" PRIuS "\n%u\n",
+                 type, ib.oriented_xsize(), ib.oriented_ysize(), max_val);
     JXL_RETURN_IF_ERROR(static_cast<unsigned int>(*chars_written) <
                         kMaxHeaderSize);
   }

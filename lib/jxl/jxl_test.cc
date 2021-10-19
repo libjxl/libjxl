@@ -133,7 +133,7 @@ TEST(JxlTest, RoundtripTinyFast) {
 
   CodecInOut io2;
   const size_t enc_bytes = Roundtrip(&io, cparams, dparams, pool, &io2);
-  printf("32x32 image size %zu bytes\n", enc_bytes);
+  printf("32x32 image size %" PRIuS " bytes\n", enc_bytes);
 }
 
 TEST(JxlTest, RoundtripSmallD1) {
