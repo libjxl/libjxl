@@ -66,7 +66,8 @@ TEST(CodecPGXTest, Test16bits) {
   EXPECT_EQ(2u, io.xsize());
   EXPECT_EQ(3u, io.ysize());
 
-  float eps = 1e-7;
+  // Comparing ~16-bit numbers in floats, only ~7 bits left.
+  float eps = 1e-3;
   const auto& plane = io.Main().color()->Plane(0);
   EXPECT_NEAR(256.0f * 'p' + '_', plane.Row(0)[0] * 257, eps);
   EXPECT_NEAR(256.0f * 'i' + '_', plane.Row(0)[1] * 257, eps);

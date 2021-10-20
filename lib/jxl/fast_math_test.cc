@@ -33,7 +33,7 @@ HWY_NOINLINE void TestFastLog2() {
     const auto actual_v = FastLog2f(d, Set(d, f));
     const float actual = GetLane(actual_v);
     const float abs_err = std::abs(std::log2(f) - actual);
-    EXPECT_LT(abs_err, 2.9E-6) << "f = " << f;
+    EXPECT_LT(abs_err, 3.1E-6) << "f = " << f;
     max_abs_err = std::max(max_abs_err, abs_err);
   }
   printf("max abs err %e\n", static_cast<double>(max_abs_err));
