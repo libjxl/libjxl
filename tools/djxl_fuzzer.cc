@@ -43,6 +43,7 @@ struct FuzzSpec {
   // Whether to use the callback mechanism for the output image or not.
   bool use_callback;
   bool keep_orientation;
+  bool decode_boxes;
   // Used for random variation of chunk sizes, extra channels, ... to get
   uint32_t random_seed;
 };
@@ -86,7 +87,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           dec.get(), JXL_DEC_BASIC_INFO | JXL_DEC_EXTENSIONS |
                          JXL_DEC_COLOR_ENCODING | JXL_DEC_PREVIEW_IMAGE |
                          JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE |
-                         JXL_DEC_JPEG_RECONSTRUCTION)) {
+                         JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_BOX)) {
     return false;
   }
   if (JXL_DEC_SUCCESS != JxlDecoderSetParallelRunner(dec.get(),
@@ -163,6 +164,13 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   };
 
   JxlExtraChannelInfo extra_channel_info;
+
+  std::vector<uint8_t> box_buffer;
+
+  if (spec.decode_boxes &&
+      JXL_DEC_SUCCESS != JxlDecoderSetDecompressBoxes(dec.get(), JXL_TRUE)) {
+    // error ignored, can still fuzz if it doesn't brotli-decompress brob boxes.
+  }
 
   for (;;) {
     JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
@@ -446,6 +454,28 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       // It's not required to call JxlDecoderReleaseInput(dec.get()) here since
       // the decoder will be destroyed.
       return true;
+    } else if (status == JXL_DEC_BOX) {
+      if (spec.decode_boxes) {
+        if (!box_buffer.empty()) {
+          size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
+          size_t box_size = box_buffer.size() - remaining;
+          if (box_size != 0) {
+            Consume(box_buffer.begin(), box_buffer.begin() + box_size);
+            box_buffer.clear();
+          }
+        }
+        box_buffer.resize(64);
+        JxlDecoderSetBoxBuffer(dec.get(), box_buffer.data(), box_buffer.size());
+      }
+    } else if (status == JXL_DEC_BOX_NEED_MORE_OUTPUT) {
+      if (!spec.decode_boxes) {
+        abort();  // Not expected when not setting output buffer
+      }
+      size_t remaining = JxlDecoderReleaseBoxBuffer(dec.get());
+      size_t box_size = box_buffer.size() - remaining;
+      box_buffer.resize(box_buffer.size() * 2);
+      JxlDecoderSetBoxBuffer(dec.get(), box_buffer.data() + box_size,
+                             box_buffer.size() - box_size);
     } else {
       return false;
     }
@@ -484,6 +514,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   spec.output_type = static_cast<JxlDataType>(getFlag(JXL_TYPE_FLOAT16));
   spec.output_endianness = static_cast<JxlEndianness>(getFlag(JXL_BIG_ENDIAN));
   spec.output_align = getFlag(16);
+  spec.decode_boxes = !!getFlag(1);
 
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> jpeg;
