@@ -329,6 +329,31 @@ struct ComputeScaledDCT {
     }
   }
 };
+inline double alpha(size_t u) { return u == 0 ? 0.7071067811865475 : 1.0; }
+inline std::vector<double> DCTMatrix(size_t N) {
+  std::vector<double> matrix(N * N);
+  const double scale = std::sqrt(2.0);
+  for (unsigned y = 0; y < N; y++) {
+    for (unsigned u = 0; u < N; u++) {
+      // Transpose of DCT matrix.
+      matrix[N * y + u] = alpha(u) * cos((y + 0.5) * u * (M_PI / N)) * scale;
+    }
+  }
+  return matrix;
+}
+template <size_t R, size_t C>
+void SlowIDCT(DCTFrom from, DCTTo to) {
+  static std::vector<double> matrix = DCTMatrix(R);
+  for (size_t x = 0; x < C; x++) {
+    for (size_t u = 0; u < R; u++) {
+      *to.Address(u, x) = 0;
+      for (size_t y = 0; y < R; y++) {
+        *to.Address(u, x) += matrix[R * u + y] * *from.Address(y, x);
+      }
+    }
+  }
+}
+
 // Computes the non-transposed, scaled DCT of a block, that needs to be
 // HWY_ALIGN'ed. Used for rectangular blocks.
 template <size_t ROWS, size_t COLS>
@@ -342,9 +367,9 @@ struct ComputeScaledIDCT {
     // Reverse the steps done in ComputeScaledDCT.
     if (ROWS < COLS) {
       Transpose<ROWS, COLS>::Run(DCTFrom(from, COLS), DCTTo(block, ROWS));
-      IDCT1D<COLS, ROWS>()(DCTFrom(block, ROWS), DCTTo(from, ROWS));
+      SlowIDCT<COLS, ROWS>(DCTFrom(block, ROWS), DCTTo(from, ROWS));
       Transpose<COLS, ROWS>::Run(DCTFrom(from, ROWS), DCTTo(block, COLS));
-      IDCT1D<ROWS, COLS>()(DCTFrom(block, COLS), to);
+      SlowIDCT<ROWS, COLS>(DCTFrom(block, COLS), to);
     } else {
       IDCT1D<COLS, ROWS>()(DCTFrom(from, ROWS), DCTTo(block, ROWS));
       Transpose<COLS, ROWS>::Run(DCTFrom(block, ROWS), DCTTo(from, COLS));
