@@ -90,6 +90,10 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "luminance range of the display to which to "
                           "tone-map; the lower bound can be omitted",
                           &display_nits, &ParseLuminanceRange);
+  cmdline->AddOptionValue(
+      '\0', "preserve_saturation", "0..1",
+      "with --tone_map, how much to favor saturation over luminance",
+      &preserve_saturation, &ParseFloat);
 
   cmdline->AddOptionValue('\0', "color_space", "RGB_D65_SRG_Rel_Lin",
                           "defaults to original (input) color space",
@@ -269,11 +273,14 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     jxl::Status status = jxl::ToneMapTo(args.display_nits, &io, pool);
     if (!status) fprintf(stderr, "Failed to map tones.\n");
     JXL_RETURN_IF_ERROR(status);
+    status = jxl::GamutMap(&io, args.preserve_saturation, pool);
+    if (!status) fprintf(stderr, "Failed to map gamut.\n");
+    JXL_RETURN_IF_ERROR(status);
     if (c_out.tf.IsPQ() && args.color_space.empty()) {
       // Prevent writing the tone-mapped image to PQ output unless explicitly
       // requested. The result would look even dimmer than it would have without
       // tone mapping.
-      c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
+      c_out.tf.SetTransferFunction(jxl::TransferFunction::k709);
       status = c_out.CreateICC();
       if (!status) fprintf(stderr, "Failed to create ICC\n");
       JXL_RETURN_IF_ERROR(c_out.CreateICC());

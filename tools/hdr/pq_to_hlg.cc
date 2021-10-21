@@ -21,6 +21,11 @@ int main(int argc, const char** argv) {
   parser.AddOptionValue('m', "max_nits", "nits",
                         "maximum luminance in the image", &max_nits,
                         &jpegxl::tools::ParseFloat, 0);
+  float preserve_saturation = .1f;
+  parser.AddOptionValue(
+      's', "preserve_saturation", "0..1",
+      "to what extent to try and preserve saturation over luminance",
+      &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
       "input", true, "input image", &input_filename, 0);
@@ -56,6 +61,7 @@ int main(int argc, const char** argv) {
   }
   JXL_CHECK(jxl::ToneMapTo({0, 1000}, &image, &pool));
   JXL_CHECK(jxl::HlgInverseOOTF(&image.Main(), 1.2f, &pool));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);

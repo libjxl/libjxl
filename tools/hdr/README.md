@@ -8,9 +8,10 @@ including to SDR.
 `tools/tone_map` implements tone mapping as described in annex 5 of
 [Report ITU-R BT.2408-4](https://www.itu.int/pub/R-REP-BT.2408-4-2021), more
 specifically the YRGB variant. Since the result may contain out-of-gamut colors,
-it additionally does very basic gamut mapping, maintaining hue and luminance at
-the expense of saturation (so bright colorful highlights may be brought closer
-to white).
+it additionally does very basic gamut mapping. The balance between preserving
+saturation and preserving luminance can be controlled by passing a number
+between 0 and 1 using `--preserve_saturation`. The default is 0.1. Hue is never
+sacrificed.
 
 ### Examples
 
@@ -26,8 +27,7 @@ $ tools/tone_map -t 300 --pq ClassE_507.png ClassE_507_tone_mapped_300_pq.png
 # `--max_nits`. For OpenEXR input, it will override the `whiteLuminance` tag
 # which indicates the luminance of (1, 1, 1). For PQ, it will not affect the
 # luminance calculated from the signal, but it will tell the tone mapping how
-# much headroom to leave for highlights. Leaving more headroom than necessary
-# can help with the problem of desaturated highlights mentioned above.
+# much headroom to leave for highlights.
 $ tools/tone_map -m 4000 -t 300 ClassE_507.png ClassE_507_tone_mapped_300.png
 ```
 
@@ -42,8 +42,8 @@ HLG inverse OOTF with a gamma of 1.2 to get “back” to the linear scene-refer
 signal that would have produced that output on that reference display (and then
 encode it using the OETF).
 
-As with the tone mapping tool, the `--max_nits` option can be used to guide the
-1000 cd/m² limiting.
+As with the tone mapping tool, the `--max_nits` and `--preserve_saturation`
+options can be used to guide the 1000 cd/m² limiting.
 
 ### Example
 
