@@ -16,6 +16,8 @@ import subprocess
 import sys
 import tempfile
 
+import lcms2
+
 
 class ConformanceTestError(Exception):
     """General conformance test error."""
@@ -26,23 +28,30 @@ def CompareNPY(ref, ref_icc, dec, dec_icc, frame_idx, rmse, peak_error):
     if ref.shape != dec.shape:
         raise ConformanceTestError(
             f'Expected shape {ref.shape} but found {dec.shape}')
-    if ref_icc == dec_icc:
-        identity_first_ch = 0
-    else:
-        identity_first_ch = 3
-    if ref.shape[3] > identity_first_ch:
-        error = numpy.abs(ref[frame_idx, :, :, identity_first_ch:] -
-                          dec[frame_idx, :, :, identity_first_ch:])
-        actual_rmse = numpy.sqrt(numpy.mean(error * error))
+    ref_frame = ref[frame_idx]
+    dec_frame = dec[frame_idx]
+    num_channels = ref_frame.shape[2]
+
+    if ref_icc != dec_icc:
+        # Transform colors before comparison.
+        if num_channels < 3:
+            raise ConformanceTestError(f"Only RGB images are supported")
+        ref_clr = ref_frame[:, :, 0:3]
+        dec_clr = dec_frame[:, :, 0:3]
+        dec_frame[:, :, 0:3] = lcms2.convert_pixels(dec_icc, ref_icc, dec_clr)
+
+    error = numpy.abs(ref_frame - dec_frame)
+    for ch in range(num_channels):
+        error_ch = error[:, :, ch]
+        actual_rmse = numpy.sqrt(numpy.mean(error_ch * error_ch))
         if actual_rmse > rmse:
             raise ConformanceTestError(
                 f"RMSE too large: {actual_rmse} > {rmse}")
-        actual_peak_error = error.max()
-        if actual_peak_error > peak_error:
-            raise ConformanceTestError(
-                f"Peak error too large: {actual_peak_error} > {peak_error}")
-    # TODO(veluca): Implement color comparison when identity_first_ch is not 0.
-    # This needs a CMS.
+
+    actual_peak_error = error.max()
+    if actual_peak_error > peak_error:
+        raise ConformanceTestError(
+            f"Peak error too large: {actual_peak_error} > {peak_error}")
 
 
 def CompareBinaries(ref_bin, dec_bin):
