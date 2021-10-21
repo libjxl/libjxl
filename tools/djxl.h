@@ -54,6 +54,7 @@ struct DecompressArgs {
   size_t bits_per_sample = 0;
   bool tone_map = false;
   std::pair<float, float> display_nits = {0.f, jxl::kDefaultIntensityTarget};
+  float preserve_saturation = .1f;
   std::string color_space;  // description or path to ICC profile
 
   jxl::DecompressParams params;

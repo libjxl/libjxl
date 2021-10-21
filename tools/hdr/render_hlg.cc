@@ -8,6 +8,7 @@
 
 #include "lib/extras/codec.h"
 #include "lib/extras/hlg.h"
+#include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -25,6 +26,12 @@ int main(int argc, const char** argv) {
       's', "surround_nits", "nits",
       "surround luminance of the viewing environment (default: 5)",
       &surround_nits, &jpegxl::tools::ParseFloat, 0);
+  float preserve_saturation = .1f;
+  parser.AddOptionValue(
+      '\0', "preserve_saturation", "0..1",
+      "to what extent to try and preserve saturation over luminance if a gamma "
+      "< 1 generates out-of-gamut colors",
+      &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
   bool pq = false;
   parser.AddOptionFlag('p', "pq",
                        "write the output with absolute luminance using PQ", &pq,
@@ -67,6 +74,7 @@ int main(int argc, const char** argv) {
   const float gamma = jxl::GetHlgGamma(target_nits, surround_nits);
   fprintf(stderr, "Using a system gamma of %g\n", gamma);
   JXL_CHECK(jxl::HlgOOTF(&image.Main(), gamma, &pool));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
   image.metadata.m.SetIntensityTarget(target_nits);
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;

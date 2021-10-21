@@ -3,11 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <lib/extras/hlg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "lib/extras/codec.h"
+#include "lib/extras/hlg.h"
+#include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
@@ -25,6 +26,12 @@ int main(int argc, const char** argv) {
       's', "surround_nits", "nits",
       "surround luminance of the viewing environment (default: 5)",
       &surround_nits, &jpegxl::tools::ParseFloat, 0);
+  float preserve_saturation = .1f;
+  parser.AddOptionValue(
+      '\0', "preserve_saturation", "0..1",
+      "to what extent to try and preserve saturation over luminance if an "
+      "inverse gamma < 1 generates out-of-gamut colors",
+      &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
   const char* input_filename = nullptr;
   auto input_filename_option = parser.AddPositionalOption(
       "input", true, "input image", &input_filename, 0);
@@ -61,6 +68,7 @@ int main(int argc, const char** argv) {
   image.metadata.m.SetIntensityTarget(max_nits);
   JXL_CHECK(jxl::HlgInverseOOTF(
       &image.Main(), jxl::GetHlgGamma(max_nits, surround_nits), &pool));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
 
   jxl::ColorEncoding hlg;
   hlg.SetColorSpace(jxl::ColorSpace::kRGB);
