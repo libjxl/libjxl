@@ -129,14 +129,12 @@ def ConformanceTestRunner(args):
                 if 'reconstructed_jpeg' in descriptor:
                     jpeg_filename = os.path.join(work_dir, 'reconstructed.jpg')
                     cmd.extend(['-j', jpeg_filename])
-                    exact_tests.append(
-                        (os.path.join(test_dir,
-                                      'reconstructed.jpg'), jpeg_filename))
+                    exact_tests.append(('reconstructed.jpg', jpeg_filename))
                 if 'original_icc' in descriptor:
                     decoded_original_icc = os.path.join(
                         work_dir, 'decoded_org.icc')
                     cmd.extend(['-i', decoded_original_icc])
-                    exact_tests.append(('original_icc', decoded_original_icc))
+                    exact_tests.append(('original.icc', decoded_original_icc))
                 meta_filename = os.path.join(work_dir, 'meta.json')
                 cmd.extend(['-m', meta_filename])
 
@@ -146,9 +144,9 @@ def ConformanceTestRunner(args):
                         ' '.join(cmd))
 
                 # Run validation of exact files.
-                for key, decoded_filename in exact_tests:
+                for reference_basename, decoded_filename in exact_tests:
                     reference_filename = os.path.join(test_dir,
-                                                      descriptor[key])
+                                                      reference_basename)
                     CompareBinaries(reference_filename, decoded_filename)
 
                 # Validate metadata.
