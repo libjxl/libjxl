@@ -79,7 +79,8 @@ def CheckMeta(dec, ref):
             if k in TEST_KEYS:
                 continue
             if k not in dec:
-                raise ConformanceTestError("Malformed metadata file")
+                raise ConformanceTestError(
+                    f"Malformed metadata file: key {k} not found")
             vv = dec[k]
             CheckMeta(vv, v)
     elif isinstance(ref, list):
@@ -116,6 +117,7 @@ def ConformanceTestRunner(args):
 
             with open(os.path.join(test_dir, 'test.json'), 'r') as f:
                 descriptor = json.load(f)
+                del descriptor['sha256sums']
 
             exact_tests = []
 
