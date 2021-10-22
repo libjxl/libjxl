@@ -117,7 +117,8 @@ def ConformanceTestRunner(args):
 
             with open(os.path.join(test_dir, 'test.json'), 'r') as f:
                 descriptor = json.load(f)
-                del descriptor['sha256sums']
+                if 'sha256sums' in descriptor:
+                    del descriptor['sha256sums']
 
             exact_tests = []
 
