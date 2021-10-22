@@ -46,10 +46,11 @@ HWY_INLINE HWY_MAYBE_UNUSED void XybToRgb(D d, const V opsin_x, const V opsin_y,
   const auto neg_bias_g = Broadcast<1>(neg_bias_rgb);
   const auto neg_bias_b = Broadcast<2>(neg_bias_rgb);
 #endif
+  const auto xscale = Set(d, 1.f / kXScale);
 
   // Color space: XYB -> RGB
-  auto gamma_r = opsin_y + opsin_x;
-  auto gamma_g = opsin_y - opsin_x;
+  auto gamma_r = opsin_y + (opsin_x * xscale);
+  auto gamma_g = opsin_y - (opsin_x * xscale);
   auto gamma_b = opsin_b;
 
   gamma_r -= Set(d, opsin_params.opsin_biases_cbrt[0]);

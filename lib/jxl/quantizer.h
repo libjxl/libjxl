@@ -129,10 +129,10 @@ class Quantizer {
 
   // Calculates DC quantization step.
   JXL_INLINE float GetDcStep(size_t c) const {
-    return inv_quant_dc_ * dequant_->DCQuant(c);
+    return inv_quant_dc_ * dequant_->DCQuant(c) * (c == 0 ? kXScale : 1.f);
   }
   JXL_INLINE float GetInvDcStep(size_t c) const {
-    return dequant_->InvDCQuant(c) * (global_scale_float_ * quant_dc_);
+    return dequant_->InvDCQuant(c) * (global_scale_float_ * quant_dc_) * (c == 0 ? 1.f / kXScale : 1.f);
   }
 
   JXL_INLINE const float* MulDC() const { return mul_dc_; }

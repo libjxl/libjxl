@@ -60,6 +60,7 @@ Status LoopFilter::VisitFields(Visitor* JXL_RESTRICT visitor) {
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(0.45f, &epf_pass1_zeroflush));
       JXL_QUIET_RETURN_IF_ERROR(visitor->F16(0.6f, &epf_pass2_zeroflush));
     }
+    epf_channel_scale[0] /= kXScale;
 
     JXL_QUIET_RETURN_IF_ERROR(visitor->Bool(false, &epf_sigma_custom));
     if (visitor->Conditional(epf_sigma_custom)) {

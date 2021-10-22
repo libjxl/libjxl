@@ -106,6 +106,9 @@ constexpr size_t kMaxNumPasses = 11;
 // Maximum number of reference frames.
 constexpr size_t kMaxNumReferenceFrames = 4;
 
+// Scale X by this factor (makes fixedpoint implementations work better)
+constexpr float kXScale = 32.f;
+
 // Dimensions of a frame, in pixels, and other derived dimensions.
 // Computed from FrameHeader.
 // TODO(veluca): add extra channels.

@@ -148,7 +148,7 @@ void DequantBlock(const AcStrategy& acs, float inv_global_scale, int quant,
 
   const auto scaled_dequant_s = inv_global_scale / quant;
 
-  const auto scaled_dequant_x = Set(d, scaled_dequant_s * x_dm_multiplier);
+  const auto scaled_dequant_x = Set(d, scaled_dequant_s * x_dm_multiplier * kXScale);
   const auto scaled_dequant_y = Set(d, scaled_dequant_s);
   const auto scaled_dequant_b = Set(d, scaled_dequant_s * b_dm_multiplier);
 

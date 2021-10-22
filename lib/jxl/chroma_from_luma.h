@@ -62,7 +62,7 @@ struct ColorCorrelationMap {
   ColorCorrelationMap(size_t xsize, size_t ysize, bool XYB = true);
 
   float YtoXRatio(int32_t x_factor) const {
-    return base_correlation_x_ + x_factor * color_scale_;
+    return (base_correlation_x_ + x_factor * color_scale_) * kXScale;
   }
 
   float YtoBRatio(int32_t b_factor) const {
