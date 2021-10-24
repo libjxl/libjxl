@@ -10,15 +10,16 @@
 #define PLUG_IN_BINARY "file-jxl"
 #define SAVE_PROC "file-jxl-save"
 
-#define SCALE_WIDTH 300
+#define SCALE_WIDTH 400
 
 namespace jxl {
 
 namespace {
 
-#ifndef g_clear_signal_handler
-#include "gobject/gsignal.h"
 // g_clear_signal_handler was added in glib 2.62
+#if GLIB_CHECK_VERSION(2, 62, 0)
+#else
+#include "gobject/gsignal.h"
 void g_clear_signal_handler(gulong* handler, gpointer instance) {
   if (handler != nullptr && *handler != 0) {
     g_signal_handler_disconnect(instance, *handler);
@@ -32,6 +33,7 @@ class JpegXlSaveOpts {
   float distance;
   float quality;
 
+  bool lossless = false;
   bool is_linear = false;
   bool has_alpha = false;
   bool is_gray = false;
@@ -66,15 +68,18 @@ class JpegXlSaveGui {
   bool SaveDialog();
 
  private:
+  GtkWidget* toggle_lossless = nullptr;
   GtkAdjustment* entry_distance = nullptr;
   GtkAdjustment* entry_quality = nullptr;
   GtkAdjustment* entry_effort = nullptr;
+  gulong handle_toggle_lossless = 0;
   gulong handle_entry_quality = 0;
   gulong handle_entry_distance = 0;
 
   static bool GuiOnChangeQuality(GtkAdjustment* adj_qual, void* this_pointer);
   static bool GuiOnChangeDistance(GtkAdjustment* adj_dist, void* this_pointer);
   static bool GuiOnChangeEffort(GtkAdjustment* adj_effort);
+  static bool GuiOnChangeLossless(GtkWidget* toggle, void* this_pointer);
 };  // class JpegXlSaveGui
 
 JpegXlSaveGui jxl_save_gui;
@@ -85,11 +90,14 @@ bool JpegXlSaveGui::GuiOnChangeQuality(GtkAdjustment* adj_qual,
 
   g_clear_signal_handler(&self->handle_entry_distance, self->entry_distance);
   g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
+  g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
   GtkAdjustment* adj_dist = self->entry_distance;
   jxl_save_opts.SetQuality(gtk_adjustment_get_value(adj_qual));
   gtk_adjustment_set_value(adj_dist, jxl_save_opts.distance);
 
+  self->handle_toggle_lossless = g_signal_connect(
+      self->toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), self);
   self->handle_entry_distance =
       g_signal_connect(self->entry_distance, "value-changed",
                        G_CALLBACK(GuiOnChangeDistance), self);
@@ -106,10 +114,13 @@ bool JpegXlSaveGui::GuiOnChangeDistance(GtkAdjustment* adj_dist,
 
   g_clear_signal_handler(&self->handle_entry_distance, self->entry_distance);
   g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
+  g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
 
   jxl_save_opts.SetDistance(gtk_adjustment_get_value(adj_dist));
   gtk_adjustment_set_value(adj_qual, jxl_save_opts.quality);
 
+  self->handle_toggle_lossless = g_signal_connect(
+      self->toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), self);
   self->handle_entry_distance =
       g_signal_connect(self->entry_distance, "value-changed",
                        G_CALLBACK(GuiOnChangeDistance), self);
@@ -122,6 +133,42 @@ bool JpegXlSaveGui::GuiOnChangeDistance(GtkAdjustment* adj_dist,
 bool JpegXlSaveGui::GuiOnChangeEffort(GtkAdjustment* adj_effort) {
   float new_effort = 10 - gtk_adjustment_get_value(adj_effort);
   jxl_save_opts.encoding_effort = new_effort;
+  return true;
+}
+bool JpegXlSaveGui::GuiOnChangeLossless(GtkWidget* toggle, void* this_pointer) {
+  JpegXlSaveGui* self = static_cast<JpegXlSaveGui*>(this_pointer);
+  GtkAdjustment* adj_distance = self->entry_distance;
+  GtkAdjustment* adj_quality = self->entry_quality;
+  GtkAdjustment* adj_effort = self->entry_effort;
+
+  jxl_save_opts.lossless =
+      gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(toggle));
+
+  g_clear_signal_handler(&self->handle_entry_distance, self->entry_distance);
+  g_clear_signal_handler(&self->handle_entry_quality, self->entry_quality);
+  g_clear_signal_handler(&self->handle_toggle_lossless, self->toggle_lossless);
+
+  if (jxl_save_opts.lossless) {
+    gtk_adjustment_set_value(adj_quality, 100.0);
+    gtk_adjustment_set_value(adj_distance, 0.0);
+    jxl_save_opts.distance = 0;
+    jxl_save_opts.UpdateQuality();
+    gtk_adjustment_set_value(adj_effort, 7);
+  } else {
+    gtk_adjustment_set_value(adj_quality, 90.0);
+    gtk_adjustment_set_value(adj_distance, 1.0);
+    jxl_save_opts.distance = 1.0;
+    jxl_save_opts.UpdateQuality();
+    gtk_adjustment_set_value(adj_effort, 3);
+  }
+  self->handle_toggle_lossless = g_signal_connect(
+      self->toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), self);
+  self->handle_entry_distance =
+      g_signal_connect(self->entry_distance, "value-changed",
+                       G_CALLBACK(GuiOnChangeDistance), self);
+  self->handle_entry_quality =
+      g_signal_connect(self->entry_quality, "value-changed",
+                       G_CALLBACK(GuiOnChangeQuality), self);
   return true;
 }
 
@@ -139,7 +186,7 @@ bool JpegXlSaveGui::SaveDialog() {
   gimp_ui_init(PLUG_IN_BINARY, true);
   dialog = gimp_export_dialog_new("JPEG XL", PLUG_IN_BINARY, SAVE_PROC);
 
-  gtk_window_set_resizable(GTK_WINDOW(dialog), false);
+  gtk_window_set_resizable(GTK_WINDOW(dialog), true);
   content_area = gimp_export_dialog_get_content_area(dialog);
 
   main_vbox = gtk_vbox_new(false, 6);
@@ -217,22 +264,39 @@ bool JpegXlSaveGui::SaveDialog() {
   g_signal_connect(entry_effort, "value-changed", G_CALLBACK(GuiOnChangeEffort),
                    nullptr);
 
+  // ----------
+  separator = gtk_vseparator_new();
+  gtk_table_attach(GTK_TABLE(table), separator, 0, 2, 4, 5, GTK_EXPAND,
+                   GTK_EXPAND, 9, 9);
+  gtk_widget_show(separator);
+
+  // Lossless Mode Convenience Checkbox
+  static gchar lossless_help[] =
+      "Compress using modular lossless mode.  "
+      "Speed\u00A0is adjusted to improve performance.";
+  toggle_lossless = gtk_check_button_new_with_label("Lossless Mode");
+  gimp_help_set_help_data(toggle_lossless, lossless_help, nullptr);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(toggle_lossless),
+                               jxl_save_opts.lossless);
+  gtk_table_attach_defaults(GTK_TABLE(table), toggle_lossless, 0, 2, 5, 6);
+  gtk_widget_show(toggle_lossless);
+
+  // lossless signal
+  handle_toggle_lossless = g_signal_connect(
+      toggle_lossless, "toggled", G_CALLBACK(GuiOnChangeLossless), this);
+
   // show dialog
   gtk_widget_show(dialog);
 
   GtkAllocation allocation;
   gtk_widget_get_allocation(dialog, &allocation);
 
-  // int height = allocation.height;
-  // int width = allocation.width;
-  // gtk_widget_set_size_request(dialog, height * 1.5, height);
+  int width = allocation.width;
+  int height = width / 2;
+  gtk_widget_set_size_request(dialog, width, height);
 
   run = (gimp_dialog_run(GIMP_DIALOG(dialog)) == GTK_RESPONSE_OK);
   gtk_widget_destroy(dialog);
-
-  g_free(effort_help);
-  g_free(quality_help);
-  g_free(distance_help);
 
   return run;
 }  // JpegXlSaveGui::SaveDialog
@@ -427,9 +491,18 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     gimp_image_convert_precision(duplicate, GIMP_PRECISION_FLOAT_LINEAR);
   }
 
-  // get effective icc profile for lcms2 colorspace conversion
-  gsize icc_size;
+  // get actual icc profile to attach in lossless mode
+  gsize icc_size = 0;
   const guint8* icc_bytes = nullptr;
+  std::vector<uint8_t> icc_actual;
+  profile = gimp_image_get_color_profile(image_id);
+
+  icc_bytes = gimp_color_profile_get_icc_profile(profile, &icc_size);
+  if (icc_bytes) {
+    icc_actual.assign(icc_bytes, icc_bytes + icc_size);
+  }
+  // get effective icc profile for lcms2 colorspace conversion
+  icc_size = 0;
   std::vector<uint8_t> icc_effective;
   profile = gimp_image_get_effective_color_profile(image_id);
 
@@ -448,16 +521,27 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
       cmsFLAGS_BLACKPOINTCOMPENSATION | cmsFLAGS_HIGHRESPRECALC;
   cmsHTRANSFORM hTransform;
 
-  if (jxl_save_opts.has_alpha) {
-    hTransform = cmsCreateTransformTHR(hContext, hInProfile, TYPE_RGBA_FLT,
-                                       hOutProfile, TYPE_RGBA_FLT,
-                                       INTENT_ABSOLUTE_COLORIMETRIC, flags);
+  if (jxl_save_opts.lossless && jxl_save_opts.distance < 0.01) {
+    if (jxl_save_opts.has_alpha) {
+      hTransform = cmsCreateTransformTHR(hContext, hOutProfile, TYPE_RGBA_FLT,
+                                         hOutProfile, TYPE_RGBA_FLT,
+                                         INTENT_ABSOLUTE_COLORIMETRIC, flags);
+    } else {
+      hTransform = cmsCreateTransformTHR(hContext, hOutProfile, TYPE_RGB_FLT,
+                                         hOutProfile, TYPE_RGB_FLT,
+                                         INTENT_ABSOLUTE_COLORIMETRIC, flags);
+    }
   } else {
-    hTransform = cmsCreateTransformTHR(hContext, hInProfile, TYPE_RGB_FLT,
-                                       hOutProfile, TYPE_RGB_FLT,
-                                       INTENT_ABSOLUTE_COLORIMETRIC, flags);
+    if (jxl_save_opts.has_alpha) {
+      hTransform = cmsCreateTransformTHR(hContext, hInProfile, TYPE_RGBA_FLT,
+                                         hOutProfile, TYPE_RGBA_FLT,
+                                         INTENT_ABSOLUTE_COLORIMETRIC, flags);
+    } else {
+      hTransform = cmsCreateTransformTHR(hContext, hInProfile, TYPE_RGB_FLT,
+                                         hOutProfile, TYPE_RGB_FLT,
+                                         INTENT_ABSOLUTE_COLORIMETRIC, flags);
+    }
   }
-
   cmsCloseProfile(hInProfile);
   cmsCloseProfile(hOutProfile);
 
@@ -498,6 +582,17 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
     JxlColorEncodingSetToSRGB(&color_encoding, jxl_save_opts.is_gray);
   }
 
+  // Attach ICC profile for lossless mode
+  if (jxl_save_opts.lossless && jxl_save_opts.distance < 0.01) {
+    if (icc_actual.size() > 0) {
+      if (JXL_ENC_SUCCESS != JxlEncoderSetICCProfile(enc.get(),
+                                                     icc_actual.data(),
+                                                     icc_actual.size())) {
+        g_printerr(SAVE_PROC " Warning: JxlEncoderSetICCProfile failed.\n");
+      }
+    }
+  }
+  // Attempt to set color encoding
   if (JXL_ENC_SUCCESS !=
       JxlEncoderSetColorEncoding(enc.get(), &color_encoding)) {
     g_printerr(SAVE_PROC " Warning: JxlEncoderSetColorEncoding failed\n");
@@ -511,11 +606,19 @@ bool SaveJpegXlImage(const gint32 image_id, const gint32 drawable_id,
   JxlEncoderOptionsSetDecodingSpeed(enc_opts, jxl_save_opts.faster_decoding);
 
   // lossless mode
-  if (jxl_save_opts.distance < 0.01) {
-    JxlEncoderOptionsSetDistance(enc_opts, 0);
+  if (jxl_save_opts.lossless && jxl_save_opts.distance < 0.01) {
     JxlEncoderOptionsSetLossless(enc_opts, true);
-  } else {
+    jxl_save_opts.basic_info.uses_original_profile = true;
+    JxlEncoderOptionsSetDistance(enc_opts, 0);
+  } else if (jxl_save_opts.distance < 0.01) {
+    jxl_save_opts.lossless = false;
     JxlEncoderOptionsSetLossless(enc_opts, false);
+    jxl_save_opts.basic_info.uses_original_profile = false;
+    JxlEncoderOptionsSetDistance(enc_opts, 0);
+  } else {
+    jxl_save_opts.lossless = false;
+    JxlEncoderOptionsSetLossless(enc_opts, false);
+    jxl_save_opts.basic_info.uses_original_profile = false;
     JxlEncoderOptionsSetDistance(enc_opts, jxl_save_opts.distance);
   }
 
