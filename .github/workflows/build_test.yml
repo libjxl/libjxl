@@ -29,6 +29,8 @@ jobs:
             # Track static stack size on build and check it doesn't exceed 3 kB.
             env_stack_size: 1
             max_stack: 3000
+            # Conformance tooling test requires numpy.
+            apt_pkgs: python3-numpy
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
