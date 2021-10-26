@@ -345,6 +345,16 @@ bool ParseNode(F& tok, Tree& tree, SplineData& spline_data,
     }
 
     spline_data.splines.push_back(std::move(spline));
+  } else if (t == "Gaborish") {
+    cparams.gaborish = jxl::Override::kOn;
+  } else if (t == "EPF") {
+    t = tok();
+    size_t num = 0;
+    cparams.epf = std::stoul(t, &num);
+    if (num != t.size() || cparams.epf > 3) {
+      fprintf(stderr, "Invalid EPF: %s\n", t.c_str());
+      return false;
+    }
   } else {
     fprintf(stderr, "Unexpected node type: %s\n", t.c_str());
     return false;
