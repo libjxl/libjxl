@@ -29,6 +29,7 @@
 #include "lib/jxl/enc_cache.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
+#include "lib/jxl/fake_parallel_runner_testonly.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/image_ops.h"
@@ -244,6 +245,31 @@ TEST(JxlTest, RoundtripResample2MT) {
 #else
             13.5);
 #endif
+}
+
+// Roundtrip the image using a parallel runner that executes single-threaded but
+// in random order.
+TEST(JxlTest, RoundtripOutOfOrderProcessing) {
+  FakeParallelRunner fake_pool(/*order_seed=*/123, /*num_threads=*/8);
+  ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon_cropped.jpg");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  // Image size is selected so that the block border needed is larger than the
+  // amount of pixels available on the next block.
+  io.ShrinkTo(513, 515);
+
+  CompressParams cparams;
+  // Force epf so we end up needing a lot of border.
+  cparams.epf = 3;
+
+  DecompressParams dparams;
+  CodecInOut io2;
+  Roundtrip(&io, cparams, dparams, &pool, &io2);
+
+  EXPECT_GE(1.5, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
 }
 
 TEST(JxlTest, RoundtripResample4) {
