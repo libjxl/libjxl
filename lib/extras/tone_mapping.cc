@@ -98,13 +98,14 @@ Status ToneMapFrame(const std::pair<float, float> display_nits,
                                  TF_PQ().DisplayFromEncoded(df, e4)));
 
           const V ratio = new_luminance / luminance;
-          const V multiplier = ratio *
-                               Set(df, ib->metadata()->IntensityTarget()) *
-                               inv_max_display_nits;
+          const V normalizer =
+              Set(df, ib->metadata()->IntensityTarget()) * inv_max_display_nits;
 
-          red *= multiplier;
-          green *= multiplier;
-          blue *= multiplier;
+          for (V* const val : {&red, &green, &blue}) {
+            *val = IfThenElse(luminance <= Set(df, 1e-6f), new_luminance,
+                              *val * ratio) *
+                   normalizer;
+          }
 
           Store(red, df, row_r + x);
           Store(green, df, row_g + x);
