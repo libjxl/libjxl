@@ -72,12 +72,22 @@ class JxlToJpegDecoder {
   // if more input is needed, JXL_DEC_ERROR on parsing error.
   JxlDecoderStatus Process(const uint8_t** next_in, size_t* avail_in);
 
+  // Returns non-owned copy of the JPEGData, only after Process finished and
+  // the JPEGData was not yet moved to an image bundle with
+  // SetImageBundleJpegData.
+  jpeg::JPEGData* GetJpegData() { return jpeg_data_.get(); }
+
   // Returns how many exif or xmp app markers are present in the JPEG data. A
   // return value higher than 1 would require multiple exif boxes or multiple
   // xmp boxes in the container format, and this is not supported by the API and
   // considered an error. May only be called after Process returned success.
   static size_t NumExifMarkers(const jpeg::JPEGData& jpeg_data);
   static size_t NumXmpMarkers(const jpeg::JPEGData& jpeg_data);
+
+  // Returns box content size for metadata, using the known data from the app
+  // markers.
+  static size_t ExifBoxContentSize(const jpeg::JPEGData& jpeg_data);
+  static size_t XmlBoxContentSize(const jpeg::JPEGData& jpeg_data);
 
   // Returns JXL_DEC_ERROR if there is no exif/XMP marker or the data size
   // does not match, or this function is called before Process returned
@@ -168,6 +178,7 @@ class JxlToJpegDecoder {
   JxlDecoderStatus Process(const uint8_t** next_in, size_t* avail_in) {
     return JXL_DEC_ERROR;
   }
+  jpeg::JPEGData* GetJpegData() { return nullptr; }
 
   Status SetImageBundleJpegData(ImageBundle* /* ib */) { return true; }
 
@@ -175,6 +186,12 @@ class JxlToJpegDecoder {
     return 0;
   }
   static size_t NumXmpMarkers(const jpeg::JPEGData& /*jpeg_data*/) { return 0; }
+  static size_t ExifBoxContentSize(const jpeg::JPEGData& /*jpeg_data*/) {
+    return 0;
+  }
+  static size_t XmlBoxContentSize(const jpeg::JPEGData& /*jpeg_data*/) {
+    return 0;
+  }
   static JxlDecoderStatus SetExif(const uint8_t* /*data*/, size_t /*size*/,
                                   jpeg::JPEGData* /*jpeg_data*/) {
     return JXL_DEC_ERROR;
