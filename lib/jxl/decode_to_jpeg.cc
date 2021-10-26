@@ -92,6 +92,24 @@ size_t JxlToJpegDecoder::NumXmpMarkers(const jpeg::JPEGData& jpeg_data) {
   return num;
 }
 
+size_t JxlToJpegDecoder::ExifBoxContentSize(const jpeg::JPEGData& jpeg_data) {
+  for (size_t i = 0; i < jpeg_data.app_data.size(); ++i) {
+    if (jpeg_data.app_marker_type[i] == jxl::jpeg::AppMarkerType::kExif) {
+      return jpeg_data.app_data[i].size() + 4 - 9;
+    }
+  }
+  return 0;
+}
+
+size_t JxlToJpegDecoder::XmlBoxContentSize(const jpeg::JPEGData& jpeg_data) {
+  for (size_t i = 0; i < jpeg_data.app_data.size(); ++i) {
+    if (jpeg_data.app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
+      return jpeg_data.app_data[i].size() - 9;
+    }
+  }
+  return 0;
+}
+
 JxlDecoderStatus JxlToJpegDecoder::SetExif(const uint8_t* data, size_t size,
                                            jpeg::JPEGData* jpeg_data) {
   for (size_t i = 0; i < jpeg_data->app_data.size(); ++i) {
