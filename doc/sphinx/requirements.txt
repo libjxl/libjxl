@@ -1,3 +1,7 @@
 breathe
 sphinx
 sphinx-rtd-theme
+
+# sphinx 4.2 doesn't work with docutils 0.18. Remove this line once sphinx is
+# updated to 4.3. See https://github.com/sphinx-doc/sphinx/pull/9701
+docutils<0.18
