@@ -251,11 +251,7 @@ JxlEncoderStatus JxlEncoderOptionsSetLossless(JxlEncoderOptions* options,
 
 JxlEncoderStatus JxlEncoderOptionsSetEffort(JxlEncoderOptions* options,
                                             const int effort) {
-  if (effort < 1 || effort > 9) {
-    return JXL_ENC_ERROR;
-  }
-  options->values.cparams.speed_tier = static_cast<jxl::SpeedTier>(10 - effort);
-  return JXL_ENC_SUCCESS;
+  return JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT, effort);
 }
 
 JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
@@ -267,23 +263,42 @@ JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
   return JXL_ENC_SUCCESS;
 }
 
-JxlEncoderStatus JxlEncoderOptionsSetAsInteger(JxlEncoderOptions* options,
-                                               JxlEncoderOptionId option,
-                                               int32_t value) {
+JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options,
+                                                   int tier) {
+  return JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_DECODING_SPEED,
+                                     tier);
+}
+
+JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
+                                             JxlEncoderOptionId option,
+                                             int32_t value) {
   switch (option) {
+    case JXL_ENC_OPTION_EFFORT:
+      if (value < 1 || value > 9) {
+        return JXL_ENC_ERROR;
+      }
+      options->values.cparams.speed_tier =
+          static_cast<jxl::SpeedTier>(10 - value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_DECODING_SPEED:
+      if (value < 0 || value > 4) {
+        return JXL_ENC_ERROR;
+      }
+      options->values.cparams.decoding_speed_tier = value;
+      return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_RESAMPLING:
-      if (value != 0 && value != 1 && value != 2 && value != 4 && value != 8) {
+      if (value != -1 && value != 1 && value != 2 && value != 4 && value != 8) {
         return JXL_ENC_ERROR;
       }
       options->values.cparams.resampling = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING:
-      if (value != 0 && value != 1 && value != 2 && value != 4 && value != 8) {
+      if (value != -1 && value != 1 && value != 2 && value != 4 && value != 8) {
         return JXL_ENC_ERROR;
       }
       // The implementation doesn't support the default choice between 1x1 and
       // 2x2 for extra channels, so 1x1 is set as the default.
-      if (value == 0) value = 1;
+      if (value == -1) value = 1;
       options->values.cparams.ec_resampling = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_NOISE:
@@ -504,15 +519,6 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
   if (!enc->output_byte_queue.empty() || !enc->input_frame_queue.empty()) {
     return JXL_ENC_NEED_MORE_OUTPUT;
   }
-  return JXL_ENC_SUCCESS;
-}
-
-JxlEncoderStatus JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options,
-                                                   int tier) {
-  if (tier < 0 || tier > 4) {
-    return JXL_ENC_ERROR;
-  }
-  options->values.cparams.decoding_speed_tier = tier;
   return JXL_ENC_SUCCESS;
 }
 

@@ -231,7 +231,8 @@ TEST(EncodeTest, OptionsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
-    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetEffort(options, 5));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT, 5));
     VerifyFrameEncoding(enc.get(), options);
     EXPECT_EQ(jxl::SpeedTier::kHare, enc->last_used_cparams.speed_tier);
   }
@@ -241,9 +242,11 @@ TEST(EncodeTest, OptionsTest) {
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
     // Lower than currently supported values
-    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 0));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT, 0));
     // Higher than currently supported values
-    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetEffort(options, 10));
+    EXPECT_EQ(JXL_ENC_ERROR,
+              JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT, 10));
   }
 
   {
@@ -275,7 +278,8 @@ TEST(EncodeTest, OptionsTest) {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
     EXPECT_NE(nullptr, enc.get());
     JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
-    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetDecodingSpeed(options, 2));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_DECODING_SPEED, 2));
     VerifyFrameEncoding(enc.get(), options);
     EXPECT_EQ(2u, enc->last_used_cparams.decoding_speed_tier);
   }
