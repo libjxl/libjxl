@@ -1136,7 +1136,7 @@ void Mask(const ImageF& mask0, const ImageF& mask1,
   FuzzyErosion(blurred1, &diff1);
   for (size_t y = 0; y < ysize; ++y) {
     for (size_t x = 0; x < xsize; ++x) {
-      mask->Row(y)[x] = diff1.Row(y)[x];
+      mask->Row(y)[x] = diff0.Row(y)[x];
       if (diff_ac != nullptr) {
         static const float kMaskToErrorMul = 10.0;
         float diff = blurred0.Row(y)[x] - blurred1.Row(y)[x];
