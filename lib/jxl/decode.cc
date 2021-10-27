@@ -1759,10 +1759,12 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         if (dec->store_exif == 0 &&
             memcmp(dec->box_decoded_type, "Exif", 4) == 0) {
           dec->store_exif = 1;
+          dec->recon_out_buffer_pos = 0;
         }
         if (dec->store_xmp == 0 &&
-            memcmp(dec->box_decoded_type, "XML ", 4) == 0) {
+            memcmp(dec->box_decoded_type, "xml ", 4) == 0) {
           dec->store_xmp = 1;
+          dec->recon_out_buffer_pos = 0;
         }
       }
 

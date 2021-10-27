@@ -95,7 +95,7 @@ size_t JxlToJpegDecoder::NumXmpMarkers(const jpeg::JPEGData& jpeg_data) {
 size_t JxlToJpegDecoder::ExifBoxContentSize(const jpeg::JPEGData& jpeg_data) {
   for (size_t i = 0; i < jpeg_data.app_data.size(); ++i) {
     if (jpeg_data.app_marker_type[i] == jxl::jpeg::AppMarkerType::kExif) {
-      return jpeg_data.app_data[i].size() + 4 - 9;
+      return jpeg_data.app_data[i].size() + 4 - 3 - sizeof(jpeg::kExifTag);
     }
   }
   return 0;
@@ -104,7 +104,7 @@ size_t JxlToJpegDecoder::ExifBoxContentSize(const jpeg::JPEGData& jpeg_data) {
 size_t JxlToJpegDecoder::XmlBoxContentSize(const jpeg::JPEGData& jpeg_data) {
   for (size_t i = 0; i < jpeg_data.app_data.size(); ++i) {
     if (jpeg_data.app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
-      return jpeg_data.app_data[i].size() - 9;
+      return jpeg_data.app_data[i].size() - 3 - sizeof(jpeg::kXMPTag);
     }
   }
   return 0;
@@ -114,14 +114,17 @@ JxlDecoderStatus JxlToJpegDecoder::SetExif(const uint8_t* data, size_t size,
                                            jpeg::JPEGData* jpeg_data) {
   for (size_t i = 0; i < jpeg_data->app_data.size(); ++i) {
     if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kExif) {
-      if (jpeg_data->app_data[i].size() != size + 9 - 4) return JXL_DEC_ERROR;
+      if (jpeg_data->app_data[i].size() !=
+          size + 3 + sizeof(jpeg::kExifTag) - 4)
+        return JXL_DEC_ERROR;
       // The first 9 bytes are used for JPEG marker header.
       jpeg_data->app_data[i][0] = 0xE1;
       // The second and third byte are already filled in correctly
       memcpy(jpeg_data->app_data[i].data() + 3, jpeg::kExifTag,
              sizeof(jpeg::kExifTag));
       // The first 4
-      memcpy(jpeg_data->app_data[i].data() + 9, data + 4, size - 4);
+      memcpy(jpeg_data->app_data[i].data() + 3 + sizeof(jpeg::kExifTag),
+             data + 4, size - 4);
       return JXL_DEC_SUCCESS;
     }
   }
@@ -131,13 +134,15 @@ JxlDecoderStatus JxlToJpegDecoder::SetXmp(const uint8_t* data, size_t size,
                                           jpeg::JPEGData* jpeg_data) {
   for (size_t i = 0; i < jpeg_data->app_data.size(); ++i) {
     if (jpeg_data->app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
-      if (jpeg_data->app_data[i].size() != size + 9) return JXL_DEC_ERROR;
+      if (jpeg_data->app_data[i].size() != size + 3 + sizeof(jpeg::kXMPTag))
+        return JXL_DEC_ERROR;
       // The first 9 bytes are used for JPEG marker header.
       jpeg_data->app_data[i][0] = 0xE1;
       // The second and third byte are already filled in correctly
       memcpy(jpeg_data->app_data[i].data() + 3, jpeg::kXMPTag,
              sizeof(jpeg::kXMPTag));
-      memcpy(jpeg_data->app_data[i].data() + 5, data, size);
+      memcpy(jpeg_data->app_data[i].data() + 3 + sizeof(jpeg::kXMPTag), data,
+             size);
       return JXL_DEC_SUCCESS;
     }
   }
