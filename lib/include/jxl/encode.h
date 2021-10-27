@@ -73,42 +73,58 @@ typedef enum {
 } JxlEncoderStatus;
 
 /**
- * Id of options to set to JxlEncoderOptions.
+ * Id of options to set to JxlEncoderOptions with JxlEncoderOptionsSetInteger.
+ * NOTE: this enum includes most but not all encoder options. The image quality
+ * can be set with JxlEncoderOptionsSetDistance instead.
  */
 typedef enum {
+  /** Sets encoder effort/speed level without affecting decoding speed. Valid
+   * values are, from faster to slower speed: 1:lightning 2:thunder 3:falcon
+   * 4:cheetah 5:hare 6:wombat 7:squirrel 8:kitten 9:tortoise.
+   * Default: squirrel (7).
+   */
+  JXL_ENC_OPTION_EFFORT = 0,
+
+  /** Sets the decoding speed tier for the provided options. Minimum is 0
+   * (slowest to decode, best quality/density), and maximum is 4 (fastest to
+   * decode, at the cost of some quality/density). Default is 0.
+   */
+  JXL_ENC_OPTION_DECODING_SPEED = 1,
+
   /** Sets resampling option. If enabled, the image is downsampled before
    * compression, and upsampled to original size in the decoder. Integer option,
-   * use 0 for the default behavior (resampling only applied for low quality),
+   * use -1 for the default behavior (resampling only applied for low quality),
    * 1 for no downsampling (1x1), 2 for 2x2 downsampling, 4 for 4x4
-   * downsampling, 8 for 8x8 downsampling. The default value is 0.
+   * downsampling, 8 for 8x8 downsampling.
    */
-  JXL_ENC_OPTION_RESAMPLING = 0,
+  JXL_ENC_OPTION_RESAMPLING = 2,
 
   /** Similar to JXL_ENC_OPTION_RESAMPLING, but for extra channels. Integer
-   * option, use 1 for no downsampling (1x1), 2 for 2x2 downsampling, 4 for 4x4
-   * downsampling, 8 for 8x8 downsampling. The default value is 1.
+   * option, use -1 for the default behavior (depends on encoder
+   * implementation), 1 for no downsampling (1x1), 2 for 2x2 downsampling, 4 for
+   * 4x4 downsampling, 8 for 8x8 downsampling.
    */
-  JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING = 1,
+  JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING = 3,
 
   /** Enables or disables noise generation. Integer option, use -1 for the
-   * encoder default, 0 to disable, 1 to enable. The
+   * encoder default, 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_NOISE = 2,
+  JXL_ENC_OPTION_NOISE = 4,
 
   /** Enables or disables dots generation. Integer option, use -1 for the
    * encoder default, 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_DOTS = 3,
+  JXL_ENC_OPTION_DOTS = 5,
 
   /** Enables or disables patches generation. Integer option, use -1 for the
    * encoder default, 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_PATCHES = 4,
+  JXL_ENC_OPTION_PATCHES = 6,
 
   /** Enables or disables the gaborish filter. Integer option, use -1 for the
    * encoder default, 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_GABORISH = 5,
+  JXL_ENC_OPTION_GABORISH = 7,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
@@ -351,31 +367,45 @@ JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetLossless(JxlEncoderOptions* options, JXL_BOOL lossless);
 
 /**
- * Set the decoding speed tier for the provided options. Minimum is 0 (highest
- * quality), and maximum is 4 (lowest quality). Default is 0.
+ * @param options set of encoder options to update with the new mode.
+ * @param effort the effort value to set.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
  *
+ * DEPRECATED: use JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT,
+ * effort)) instead.
+ */
+JXL_EXPORT JXL_DEPRECATED JxlEncoderStatus
+JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
+
+/**
  * @param options set of encoder options to update with the new decoding speed
  * tier.
  * @param tier the decoding speed tier to set.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
+ *
+ * DEPRECATED: use JxlEncoderOptionsSetInteger(options,
+ * JXL_ENC_OPTION_DECODING_SPEED, tier)) instead.
  */
-JXL_EXPORT JxlEncoderStatus
+JXL_EXPORT JXL_DEPRECATED JxlEncoderStatus
 JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options, int tier);
 
 /**
- * Sets encoder effort/speed level without affecting decoding speed. Valid
- * values are, from faster to slower speed: 1:lightning 2:thunder 3:falcon
- * 4:cheetah 5:hare 6:wombat 7:squirrel 8:kitten 9:tortoise.
- * Default: squirrel (7).
+ * Sets an option of integer type to the encoder option. The JxlEncoderOptionId
+ * argument determines which option is set.
  *
  * @param options set of encoder options to update with the new mode.
- * @param effort the effort value to set.
- * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
- * otherwise.
+ * @param option ID of the option to set.
+ * @param value Integer value to set for this option.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR in
+ * case of an error, such as invalid or unknown option id, or invalid integer
+ * value for the given option. If an error is returned, the state of the
+ * JxlEncoderOptions object is still valid and is the same as before this
+ * function was called.
  */
-JXL_EXPORT JxlEncoderStatus
-JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
+JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetInteger(
+    JxlEncoderOptions* options, JxlEncoderOptionId option, int32_t value);
 
 /**
  * Sets the distance level for lossy compression: target max butteraugli
@@ -395,25 +425,6 @@ JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
  */
 JXL_EXPORT JxlEncoderStatus
 JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
-
-/**
- * Sets an option of integer type to the encoder option. The JxlEncoderOptionId
- * argument determines which option is set.
- *
- * TODO(lode): also use the option enum for the container, lossless, speed,
- * effort and distance options.
- *
- * @param options set of encoder options to update with the new mode.
- * @param option ID of the option to set.
- * @param value Integer value to set for this option.
- * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR in
- * case of an error, such as invalid or unknown option id, or invalid integer
- * value for the given option. If an error is returned, the state of the
- * JxlEncoderOptions object is still valid and is the same as before this
- * function was called.
- */
-JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetAsInteger(
-    JxlEncoderOptions* options, JxlEncoderOptionId option, int32_t value);
 
 /**
  * Create a new set of encoder options, with all values initially copied from
