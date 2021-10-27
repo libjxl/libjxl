@@ -445,15 +445,6 @@ class EnsurePaddingInPlaceRowByRow {
     *y0 = -std::min(image_rect.y0(), ypadding);
     *y1 = rect.ysize() + std::min(ypadding, image_ysize - image_rect.ysize() -
                                                 image_rect.y0());
-    if (image_rect.x0() >= xpadding &&
-        image_rect.x0() + image_rect.xsize() + xpadding <= image_xsize) {
-      // Nothing to do.
-      strategy_ = kSkip;
-    } else if (image_xsize >= 2 * xpadding) {
-      strategy_ = kFast;
-    } else {
-      strategy_ = kSlow;
-    }
     y0_ = rect.y0();
     JXL_DASSERT(rect.x0() >= xpadding);
     x0_ = x1_ = rect.x0() - xpadding;
@@ -464,6 +455,16 @@ class EnsurePaddingInPlaceRowByRow {
     if (image_rect.x0() + image_rect.xsize() + xpadding > image_xsize) {
       x2_ = rect.x0() + image_xsize - image_rect.x0();
     }
+
+    if ((x1_ == x0_) && (x3_ == x2_)) {
+      // Nothing to do.
+      strategy_ = kSkip;
+    } else if ((x1_ - x0_) <= xpadding && (x3_ - x2_) <= xpadding) {
+      strategy_ = kFast;
+    } else {
+      strategy_ = kSlow;
+    }
+
     JXL_DASSERT(image_xsize == (x2_ - x1_) ||
                 (x1_ - x0_ <= x2_ - x1_ && x3_ - x2_ <= x2_ - x1_));
   }
