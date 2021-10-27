@@ -3315,6 +3315,14 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   VerifyJPEGReconstruction(container, orig);
 }
 
+TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionMetadataTest)) {
+  const std::string jpeg_path = "jxl/jpeg_reconstruction/1x1_exif_xmp.jpg";
+  const std::string jxl_path = "jxl/jpeg_reconstruction/1x1_exif_xmp.jxl";
+  const jxl::PaddedBytes jpeg = jxl::ReadTestData(jpeg_path);
+  const jxl::PaddedBytes jxl = jxl::ReadTestData(jxl_path);
+  VerifyJPEGReconstruction(jxl, jpeg);
+}
+
 TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
   size_t xsize = 80, ysize = 90;
   std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
