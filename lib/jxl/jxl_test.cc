@@ -255,7 +255,7 @@ TEST(JxlTest, RoundtripOutOfOrderProcessing) {
   FakeParallelRunner fake_pool(/*order_seed=*/123, /*num_threads=*/8);
   ThreadPool pool(&JxlFakeParallelRunner, &fake_pool);
   const PaddedBytes orig =
-      ReadTestData("imagecompression.info/flower_foveon_cropped.jpg");
+      ReadTestData("imagecompression.info/flower_foveon.png");
   CodecInOut io;
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
   // Image size is selected so that the block border needed is larger than the

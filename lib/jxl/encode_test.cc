@@ -56,9 +56,6 @@ TEST(EncodeTest, AddJPEGAfterCloseTest) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
-  jxl::CodecInOut orig_io;
-  ASSERT_TRUE(
-      SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io, /*pool=*/nullptr));
 
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
 
@@ -470,9 +467,6 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
   const jxl::PaddedBytes orig = jxl::ReadTestData(jpeg_path);
-  jxl::CodecInOut orig_io;
-  ASSERT_TRUE(
-      SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io, /*pool=*/nullptr));
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
@@ -528,6 +522,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   EXPECT_EQ(0, memcmp(decoded_jpeg_bytes.data(), orig.data(), orig.size()));
 }
 
+#if JPEGXL_ENABLE_JPEG  // Loading .jpg files requires libjpeg support.
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   for (int skip_basic_info = 0; skip_basic_info < 2; skip_basic_info++) {
     for (int skip_color_encoding = 0; skip_color_encoding < 2;
@@ -592,3 +587,4 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
     }
   }
 }
+#endif  // JPEGXL_ENABLE_JPEG
