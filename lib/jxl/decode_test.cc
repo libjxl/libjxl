@@ -3764,3 +3764,125 @@ TEST(DecodeTest, PartialCodestreamBoxTest) {
     JxlDecoderDestroy(dec);
   }
 }
+
+TEST(DecodeTest, SpotColorTest) {
+  jxl::ThreadPool* pool = nullptr;
+  jxl::CodecInOut io;
+  size_t xsize = 55, ysize = 257;
+  io.metadata.m.color_encoding = jxl::ColorEncoding::LinearSRGB();
+  jxl::Image3F main(xsize, ysize);
+  jxl::ImageF spot(xsize, ysize);
+  jxl::ZeroFillImage(&main);
+  jxl::ZeroFillImage(&spot);
+
+  for (size_t y = 0; y < ysize; y++) {
+    float* JXL_RESTRICT rowm = main.PlaneRow(1, y);
+    float* JXL_RESTRICT rows = spot.Row(y);
+    for (size_t x = 0; x < xsize; x++) {
+      rowm[x] = (x + y) * (1.f / 255.f);
+      rows[x] = ((x ^ y) & 255) * (1.f / 255.f);
+    }
+  }
+  io.SetFromImage(std::move(main), jxl::ColorEncoding::LinearSRGB());
+  jxl::ExtraChannelInfo info;
+  info.bit_depth.bits_per_sample = 8;
+  info.dim_shift = 0;
+  info.type = jxl::ExtraChannel::kSpotColor;
+  info.spot_color[0] = 0.5f;
+  info.spot_color[1] = 0.2f;
+  info.spot_color[2] = 1.f;
+  info.spot_color[3] = 0.5f;
+
+  io.metadata.m.extra_channel_info.push_back(info);
+  std::vector<jxl::ImageF> ec;
+  ec.push_back(std::move(spot));
+  io.frames[0].SetExtraChannels(std::move(ec));
+
+  jxl::CompressParams cparams;
+  cparams.speed_tier = jxl::SpeedTier::kLightning;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.quality_pair = {100, 100};
+
+  jxl::PaddedBytes compressed;
+  std::unique_ptr<jxl::PassesEncoderState> enc_state =
+      jxl::make_unique<jxl::PassesEncoderState>();
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, enc_state.get(), &compressed,
+                              nullptr, pool));
+
+  for (size_t render_spot = 0; render_spot < 2; render_spot++) {
+    JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
+
+    JxlDecoder* dec = JxlDecoderCreate(NULL);
+
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSubscribeEvents(
+                  dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+    if (!render_spot) {
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetRenderSpotcolors(dec, JXL_FALSE));
+    }
+
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
+    JxlBasicInfo binfo;
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBasicInfo(dec, &binfo));
+    EXPECT_EQ(1u, binfo.num_extra_channels);
+    EXPECT_EQ(xsize, binfo.xsize);
+    EXPECT_EQ(ysize, binfo.ysize);
+
+    JxlExtraChannelInfo extra_info;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderGetExtraChannelInfo(dec, 0, &extra_info));
+    EXPECT_EQ((unsigned int)jxl::ExtraChannel::kSpotColor, extra_info.type);
+
+    EXPECT_EQ(JXL_DEC_NEED_IMAGE_OUT_BUFFER, JxlDecoderProcessInput(dec));
+    size_t buffer_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderImageOutBufferSize(dec, &format, &buffer_size));
+    size_t extra_size;
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderExtraChannelBufferSize(dec, &format, &extra_size, 0));
+
+    std::vector<uint8_t> image(buffer_size);
+    std::vector<uint8_t> extra(extra_size);
+    size_t bytes_per_pixel =
+        format.num_channels * GetDataBits(format.data_type) / jxl::kBitsPerByte;
+    size_t stride = bytes_per_pixel * binfo.xsize;
+
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetImageOutBuffer(
+                                   dec, &format, image.data(), image.size()));
+    EXPECT_EQ(JXL_DEC_SUCCESS,
+              JxlDecoderSetExtraChannelBuffer(dec, &format, extra.data(),
+                                              extra.size(), 0));
+
+    EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+
+    // After the full image was output, JxlDecoderProcessInput should return
+    // success to indicate all is done.
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
+    JxlDecoderDestroy(dec);
+
+    for (size_t y = 0; y < ysize; y++) {
+      uint8_t* JXL_RESTRICT rowm = image.data() + stride * y;
+      uint8_t* JXL_RESTRICT rows = extra.data() + xsize * y;
+      for (size_t x = 0; x < xsize; x++) {
+        if (!render_spot) {
+          // if spot color isn't rendered, main image should be as we made it
+          // (red and blue are all zeroes)
+
+          EXPECT_EQ(rowm[x * 3 + 0], 0);
+          EXPECT_EQ(rowm[x * 3 + 1], (x + y > 255 ? 255 : x + y));
+          EXPECT_EQ(rowm[x * 3 + 2], 0);
+        }
+        if (render_spot) {
+          // if spot color is rendered, expect red and blue to look like the
+          // spot color channel
+          EXPECT_LT(abs(rowm[x * 3 + 0] - (rows[x] * 0.25f)), 1);
+          EXPECT_LT(abs(rowm[x * 3 + 2] - (rows[x] * 0.5f)), 1);
+        }
+        EXPECT_EQ(rows[x], ((x ^ y) & 255));
+      }
+    }
+  }
+}

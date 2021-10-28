@@ -405,6 +405,19 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
 JXL_EXPORT JxlDecoderStatus
 JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_orientation);
 
+/** Enables or disables rendering spot colors. By default, spot colors
+ * are rendered, which is OK for viewing the decoded image. If render_spotcolors
+ * is JXL_FALSE, then spot colors are not rendered, and have to be retrieved
+ * separately using JxlDecoderSetExtraChannelBuffer. This is useful for e.g.
+ * printing applications.
+ *
+ * @param dec decoder object
+ * @param render_spotcolors JXL_TRUE to enable (default), JXL_FALSE to disable.
+ * @return JXL_DEC_SUCCESS if no error, JXL_DEC_ERROR otherwise.
+ */
+JXL_EXPORT JxlDecoderStatus
+JxlDecoderSetRenderSpotcolors(JxlDecoder* dec, JXL_BOOL render_spotcolors);
+
 /**
  * Decodes JPEG XL file using the available bytes. Requires input has been
  * set with JxlDecoderSetInput. After JxlDecoderProcessInput, input can
