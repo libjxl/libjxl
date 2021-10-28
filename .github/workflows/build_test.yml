@@ -411,3 +411,93 @@ jobs:
         # LibraryCLinkageTest doesn't work in here because it needs the DLL
         # which is not installed.
         run: ctest --test-dir build --parallel 2 --output-on-failure -E LibraryCLinkageTest
+
+  wasm32_build:
+    name: WASM wasm32/${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      EM_VERSION: 2.0.23
+      V8_VERSION: 9.3.22
+      V8: ${{ github.workspace }}/.jsvu/v8
+      BUILD_TARGET: wasm32
+
+    strategy:
+      matrix:
+        include:
+          - variant: scalar
+          - variant: simd
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+        fetch-depth: 1
+    - name: Install build deps
+      shell: bash
+      run: |
+        set -x
+        sudo apt update
+        pkgs=(
+          # Build dependencies
+          ccache
+          cmake
+          doxygen
+          ninja-build
+          pkg-config
+        )
+        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
+
+    - name: Git environment
+      id: git-env
+      run: |
+        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+      shell: bash
+    - name: ccache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
+
+    - name: Install emsdk
+      uses: mymindstorm/setup-emsdk@v10
+      # TODO(deymo): We could cache this action but it doesn't work when running
+      # in a matrix.
+      with:
+        version: ${{env.EM_VERSION}}
+        no-cache: true
+    - name: Install v8
+      run: |
+        npm install jsvu -g
+        HOME="${{ github.workspace }}" jsvu --os=linux64 "v8@${V8_VERSION}"
+        rm -f "${{ github.workspace }}/.jsvu/v8"
+        ln -s "${{ github.workspace }}/.jsvu/v8-${V8_VERSION}" \
+          "${{ github.workspace }}/.jsvu/v8"
+    # TODO(deymo): Build and install other dependencies like libpng, libjpeg,
+    # etc.
+    - name: Build
+      run: |
+        mkdir -p ${CCACHE_DIR}
+        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
+        if [[ "${{ matrix.variant }}" == "simd" ]]; then
+          export ENABLE_WASM_SIMD=1
+        fi
+        emconfigure ./ci.sh release \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DJPEGXL_ENABLE_JNI=OFF
+      env:
+        SKIP_TEST: 1
+    - name: ccache stats
+      run: ccache --show-stats
+
+    - name: Test
+      if: |
+        github.event_name == 'push' ||
+        (github.event_name == 'pull_request' &&
+         contains(github.event.pull_request.labels.*.names, 'CI:full'))
+      run: |
+        emconfigure ./ci.sh test
