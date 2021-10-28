@@ -61,19 +61,38 @@ bool SaveFile(const char* filename, std::vector<uint8_t> data) {
 struct ImageArray {
   uint32_t xsize, ysize;
   uint32_t num_channels;
+  uint32_t num_color_channels;
+  uint32_t num_extra_channels;
 
   // An array of "frames", where each frame is a 3D array of samples with
   // dimensions (ysize, xsize, channel).
   std::vector<std::vector<uint8_t>> frames;
+  // Extra channels, as an array of frames, where each frame is an array of 2D
+  // arrays of samples
+  std::vector<std::vector<std::vector<uint8_t>>> ec_frames;
 };
 
 // Saves an ImageArray as a numpy 4D ndarray in binary format.
 bool SaveNPYArray(const char* filename, const ImageArray& arr) {
-  size_t image_size = sizeof(float) * arr.xsize * arr.ysize * arr.num_channels;
+  size_t image_size =
+      sizeof(float) * arr.xsize * arr.ysize * arr.num_color_channels;
+  size_t ec_size = sizeof(float) * arr.xsize * arr.ysize;
   for (const auto& frame : arr.frames) {
     if (frame.size() != image_size) {
       fprintf(stderr, "Invalid frame size\n");
       return false;
+    }
+  }
+  for (const auto& frame : arr.ec_frames) {
+    if (frame.size() != arr.num_extra_channels) {
+      fprintf(stderr, "Invalid extra channel count\n");
+      return false;
+    }
+    for (const auto& ch : frame) {
+      if (ch.size() != ec_size) {
+        fprintf(stderr, "Invalid extra channel size\n");
+        return false;
+      }
     }
   }
 
@@ -106,8 +125,18 @@ bool SaveNPYArray(const char* filename, const ImageArray& arr) {
     WRITE_TO_FILE(ss.str().data(), ss.str().size());
   }
 
-  for (const auto& frame : arr.frames) {
-    WRITE_TO_FILE(frame.data(), frame.size());
+  // interleave the samples from color and extra channels
+  for (size_t f = 0; f < arr.frames.size(); ++f) {
+    size_t pos = 0;
+    for (size_t y = 0; y < arr.ysize; ++y) {
+      for (size_t x = 0; x < arr.xsize; ++x, pos += sizeof(float)) {
+        WRITE_TO_FILE(arr.frames[f].data() + pos * arr.num_color_channels,
+                      arr.num_color_channels * sizeof(float));
+        for (size_t i = 0; i < arr.num_extra_channels; i++) {
+          WRITE_TO_FILE(arr.ec_frames[f][i].data() + pos, sizeof(float));
+        }
+      }
+    }
   }
 
   return fclose(file) == 0;
@@ -316,6 +345,7 @@ bool DecodeJXL(const DecodeOptions& opts) {
   }
 
   EXPECT_SUCCESS(JxlDecoderSubscribeEvents(dec.get(), events));
+  EXPECT_SUCCESS(JxlDecoderSetRenderSpotcolors(dec.get(), JXL_FALSE));
 
   // TODO(deymo): Consider using a multi-threading decoder for conformance
   // testing as well.
@@ -334,6 +364,7 @@ bool DecodeJXL(const DecodeOptions& opts) {
 
   std::vector<JxlExtraChannelInfo> extra_channels;
   std::vector<std::string> extra_channel_names;
+  std::vector<std::vector<uint8_t>> extra_channel_pixels;
 
   std::vector<JxlFrameHeader> frame_headers;
   std::vector<std::string> frame_names;
@@ -365,10 +396,12 @@ bool DecodeJXL(const DecodeOptions& opts) {
       }
 
       // Select the output pixel format based on the basic info.
-      num_channels = (info.alpha_bits > 0 ? 1 : 0) + info.num_color_channels;
-      format =
-          JxlPixelFormat{num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
+      num_channels = info.num_color_channels + info.num_extra_channels;
+      format = JxlPixelFormat{info.num_color_channels, JXL_TYPE_FLOAT,
+                              JXL_LITTLE_ENDIAN, 0};
       image.num_channels = num_channels;
+      image.num_color_channels = info.num_color_channels;
+      image.num_extra_channels = info.num_extra_channels;
       image.xsize = info.xsize;
       image.ysize = info.ysize;
 
@@ -422,6 +455,17 @@ bool DecodeJXL(const DecodeOptions& opts) {
       memset(pixels.data(), 0, pixels.size());
       EXPECT_SUCCESS(JxlDecoderSetImageOutBuffer(dec.get(), &format,
                                                  pixels.data(), pixels.size()));
+      extra_channel_pixels.resize(info.num_extra_channels);
+      for (uint32_t i = 0; i < info.num_extra_channels; ++i) {
+        EXPECT_SUCCESS(JxlDecoderExtraChannelBufferSize(dec.get(), &format,
+                                                        &buffer_size, i));
+        extra_channel_pixels[i].resize(buffer_size);
+        memset(extra_channel_pixels[i].data(), 0,
+               extra_channel_pixels[i].size());
+        EXPECT_SUCCESS(JxlDecoderSetExtraChannelBuffer(
+            dec.get(), &format, extra_channel_pixels[i].data(),
+            extra_channel_pixels[i].size(), i));
+      }
     } else if (status == JXL_DEC_NEED_PREVIEW_OUT_BUFFER) {
       // Set preview pixel output buffer.
       size_t buffer_size;
@@ -436,6 +480,11 @@ bool DecodeJXL(const DecodeOptions& opts) {
       if (opts.pixel_prefix) {
         image.frames.emplace_back();
         swap(image.frames.back(), pixels);
+        image.ec_frames.emplace_back();
+        for (uint32_t i = 0; i < info.num_extra_channels; ++i) {
+          image.ec_frames.back().emplace_back();
+          swap(image.ec_frames.back().back(), extra_channel_pixels[i]);
+        }
       }
 
       // TODO(deymo): Get the extra channel pixel data an store it.
