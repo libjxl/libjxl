@@ -451,6 +451,7 @@ struct JxlDecoderStruct {
 
   // Settings
   bool keep_orientation;
+  bool render_spotcolors;
 
   // Bitfield, for which informative events (JXL_DEC_BASIC_INFO, etc...) the
   // decoder returns a status. By default, do not return for any of the events,
@@ -680,6 +681,7 @@ void JxlDecoderReset(JxlDecoder* dec) {
 
   dec->thread_pool.reset();
   dec->keep_orientation = false;
+  dec->render_spotcolors = true;
   dec->orig_events_wanted = 0;
   dec->frame_references.clear();
   dec->frame_saved_as.clear();
@@ -778,6 +780,15 @@ JxlDecoderStatus JxlDecoderSetKeepOrientation(JxlDecoder* dec,
     return JXL_API_ERROR("Must set keep_orientation option before starting");
   }
   dec->keep_orientation = !!keep_orientation;
+  return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderSetRenderSpotcolors(JxlDecoder* dec,
+                                               JXL_BOOL render_spotcolors) {
+  if (dec->stage != DecoderStage::kInited) {
+    return JXL_API_ERROR("Must set render_spotcolors option before starting");
+  }
+  dec->render_spotcolors = !!render_spotcolors;
   return JXL_DEC_SUCCESS;
 }
 
@@ -1154,6 +1165,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       auto reader = GetBitReader(compressed);
       jxl::DecompressParams dparams;
       dparams.preview = want_preview ? jxl::Override::kOn : jxl::Override::kOff;
+      dparams.render_spotcolors = dec->render_spotcolors;
       jxl::ImageBundle ib(&dec->metadata.m);
       PassesDecoderState preview_dec_state;
       JXL_API_RETURN_IF_ERROR(preview_dec_state.output_encoding_info.Set(
@@ -1301,6 +1313,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
 
       dec->frame_dec.reset(new FrameDecoder(
           dec->passes_state.get(), dec->metadata, dec->thread_pool.get()));
+      dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
 
       // If JPEG reconstruction is wanted and possible, set the jpeg_data of
       // the ImageBundle.
