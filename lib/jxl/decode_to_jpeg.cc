@@ -92,22 +92,36 @@ size_t JxlToJpegDecoder::NumXmpMarkers(const jpeg::JPEGData& jpeg_data) {
   return num;
 }
 
-size_t JxlToJpegDecoder::ExifBoxContentSize(const jpeg::JPEGData& jpeg_data) {
+JxlDecoderStatus JxlToJpegDecoder::ExifBoxContentSize(
+    const jpeg::JPEGData& jpeg_data, size_t* size) {
   for (size_t i = 0; i < jpeg_data.app_data.size(); ++i) {
     if (jpeg_data.app_marker_type[i] == jxl::jpeg::AppMarkerType::kExif) {
-      return jpeg_data.app_data[i].size() + 4 - 3 - sizeof(jpeg::kExifTag);
+      if (jpeg_data.app_data[i].size() < 3 + sizeof(jpeg::kExifTag)) {
+        // too small for app marker header
+        return JXL_DEC_ERROR;
+      }
+      // The first 4 bytes are the TIFF header from the box contents, and are
+      // not included in the JPEG
+      *size = jpeg_data.app_data[i].size() + 4 - 3 - sizeof(jpeg::kExifTag);
+      return JXL_DEC_SUCCESS;
     }
   }
-  return 0;
+  return JXL_DEC_ERROR;
 }
 
-size_t JxlToJpegDecoder::XmlBoxContentSize(const jpeg::JPEGData& jpeg_data) {
+JxlDecoderStatus JxlToJpegDecoder::XmlBoxContentSize(
+    const jpeg::JPEGData& jpeg_data, size_t* size) {
   for (size_t i = 0; i < jpeg_data.app_data.size(); ++i) {
     if (jpeg_data.app_marker_type[i] == jxl::jpeg::AppMarkerType::kXMP) {
-      return jpeg_data.app_data[i].size() - 3 - sizeof(jpeg::kXMPTag);
+      if (jpeg_data.app_data[i].size() < 3 + sizeof(jpeg::kXMPTag)) {
+        // too small for app marker header
+        return JXL_DEC_ERROR;
+      }
+      *size = jpeg_data.app_data[i].size() - 3 - sizeof(jpeg::kXMPTag);
+      return JXL_DEC_SUCCESS;
     }
   }
-  return 0;
+  return JXL_DEC_ERROR;
 }
 
 JxlDecoderStatus JxlToJpegDecoder::SetExif(const uint8_t* data, size_t size,
@@ -122,7 +136,8 @@ JxlDecoderStatus JxlToJpegDecoder::SetExif(const uint8_t* data, size_t size,
       // The second and third byte are already filled in correctly
       memcpy(jpeg_data->app_data[i].data() + 3, jpeg::kExifTag,
              sizeof(jpeg::kExifTag));
-      // The first 4
+      // The first 4 bytes are the TIFF header from the box contents, and are
+      // not included in the JPEG
       memcpy(jpeg_data->app_data[i].data() + 3 + sizeof(jpeg::kExifTag),
              data + 4, size - 4);
       return JXL_DEC_SUCCESS;
