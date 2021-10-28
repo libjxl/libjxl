@@ -86,8 +86,10 @@ class JxlToJpegDecoder {
 
   // Returns box content size for metadata, using the known data from the app
   // markers.
-  static size_t ExifBoxContentSize(const jpeg::JPEGData& jpeg_data);
-  static size_t XmlBoxContentSize(const jpeg::JPEGData& jpeg_data);
+  static JxlDecoderStatus ExifBoxContentSize(const jpeg::JPEGData& jpeg_data,
+                                             size_t* size);
+  static JxlDecoderStatus XmlBoxContentSize(const jpeg::JPEGData& jpeg_data,
+                                            size_t* size);
 
   // Returns JXL_DEC_ERROR if there is no exif/XMP marker or the data size
   // does not match, or this function is called before Process returned
@@ -186,11 +188,13 @@ class JxlToJpegDecoder {
     return 0;
   }
   static size_t NumXmpMarkers(const jpeg::JPEGData& /*jpeg_data*/) { return 0; }
-  static size_t ExifBoxContentSize(const jpeg::JPEGData& /*jpeg_data*/) {
-    return 0;
+  static size_t ExifBoxContentSize(const jpeg::JPEGData& /*jpeg_data*/,
+                                   size_t* /*size*/) {
+    return JXL_DEC_ERROR;
   }
-  static size_t XmlBoxContentSize(const jpeg::JPEGData& /*jpeg_data*/) {
-    return 0;
+  static size_t XmlBoxContentSize(const jpeg::JPEGData& /*jpeg_data*/,
+                                  size_t* /*size*/) {
+    return JXL_DEC_ERROR;
   }
   static JxlDecoderStatus SetExif(const uint8_t* /*data*/, size_t /*size*/,
                                   jpeg::JPEGData* /*jpeg_data*/) {

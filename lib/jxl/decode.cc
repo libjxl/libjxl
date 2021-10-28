@@ -1900,16 +1900,20 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
             return JXL_API_ERROR(
                 "multiple exif markers for JPEG reconstruction not supported");
           }
-          dec->recon_exif_size =
-              jxl::JxlToJpegDecoder::ExifBoxContentSize(*jpeg_data);
+          if (JXL_DEC_SUCCESS != jxl::JxlToJpegDecoder::ExifBoxContentSize(
+                                     *jpeg_data, &dec->recon_exif_size)) {
+            return JXL_API_ERROR("invalid jbrd exif size");
+          }
         }
         if (num_xmp) {
           if (num_xmp > 1) {
             return JXL_API_ERROR(
                 "multiple XMP markers for JPEG reconstruction not supported");
           }
-          dec->recon_xmp_size =
-              jxl::JxlToJpegDecoder::XmlBoxContentSize(*jpeg_data);
+          if (JXL_DEC_SUCCESS != jxl::JxlToJpegDecoder::XmlBoxContentSize(
+                                     *jpeg_data, &dec->recon_xmp_size)) {
+            return JXL_API_ERROR("invalid jbrd XMP size");
+          }
         }
 
         dec->box_stage = BoxStage::kHeader;
