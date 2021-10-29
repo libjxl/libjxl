@@ -222,6 +222,12 @@ class Rect {
     return Rect(x0_, y0_, xsize_, ysize_, image.xsize(), image.ysize());
   }
 
+  // Construct a subrect that resides in the [0, ysize) x [0, xsize) region of
+  // the current rect.
+  Rect Crop(size_t area_xsize, size_t area_ysize) const {
+    return Rect(x0_, y0_, xsize_, ysize_, area_xsize, area_ysize);
+  }
+
   // Returns a rect that only contains `num` lines with offset `y` from `y0()`.
   Rect Lines(size_t y, size_t num) const {
     JXL_DASSERT(y + num <= ysize_);
