@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2021-10-29
+### Changed
+ - Security: Fix OOB read in splines rendering (#735 -
+   [CVE-2021-22563](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22563))
+ - Security: Fix OOB copy (read/write) in out-of-order/multi-threaded decoding
+   (#708 - [CVE-2021-22564](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-22564))
+ - Fix segfault in `djxl` tool with `--allow_partial_files` flag (#781).
+ - Fix border in extra channels when using upsampling (#796)
+
 ## [0.6] - 2021-10-04
 ### Added
  - API: New functions to decode extra channels:
