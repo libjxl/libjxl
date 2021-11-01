@@ -192,6 +192,7 @@ enum class FrameStage : uint32_t {
 enum class BoxStage : uint32_t {
   kHeader,      // Parsing box header of the next box, or start of non-container
                 // stream
+  kFtyp,        // The ftyp box
   kSkip,        // Box whose contents are skipped
   kCodestream,  // Handling codestream box contents, or non-container stream
   kPartialCodestream,  // Handling the extra header of partial codestream box
@@ -462,6 +463,7 @@ struct JxlDecoderStruct {
   // Fields for reading the basic info from the header.
   size_t basic_info_size_hint;
   bool have_container;
+  size_t box_count;
 
   // Whether the preview out buffer was set. It is possible for the buffer to
   // be nullptr and buffer_set to be true, indicating it was deliberately
@@ -640,6 +642,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->events_wanted = 0;
   dec->basic_info_size_hint = InitialBasicInfoSizeHint();
   dec->have_container = 0;
+  dec->box_count = 0;
   dec->preview_out_buffer_set = false;
   dec->image_out_buffer_set = false;
   dec->preview_out_buffer = nullptr;
@@ -1743,6 +1746,17 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
                sizeof(dec->box_decoded_type));
       }
 
+      // Box order validity checks
+      // The signature box at box_count == 1 is not checked here since that's
+      // already done at the beginning.
+      dec->box_count++;
+      if (dec->box_count == 2 && memcmp(dec->box_type, "ftyp", 4) != 0) {
+        return JXL_API_ERROR("the second box must be the ftyp box");
+      }
+      if (memcmp(dec->box_type, "ftyp", 4) == 0 && dec->box_count != 2) {
+        return JXL_API_ERROR("the ftyp box must come second");
+      }
+
       dec->AdvanceInput(header_size);
 
       dec->box_contents_unbounded = (box_size == 0);
@@ -1780,7 +1794,9 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
                                        dec->box_contents_size);
       }
 
-      if (memcmp(dec->box_type, "jxlc", 4) == 0) {
+      if (memcmp(dec->box_type, "ftyp", 4) == 0) {
+        dec->box_stage = BoxStage::kFtyp;
+      } else if (memcmp(dec->box_type, "jxlc", 4) == 0) {
         dec->box_stage = BoxStage::kCodestream;
       } else if (memcmp(dec->box_type, "jxlp", 4) == 0) {
         dec->box_stage = BoxStage::kPartialCodestream;
@@ -1800,6 +1816,16 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         dec->box_out_buffer_set_current_box = false;
         return JXL_DEC_BOX;
       }
+    } else if (dec->box_stage == BoxStage::kFtyp) {
+      if (dec->box_contents_size < 12) {
+        return JXL_API_ERROR("file type box too small");
+      }
+      if (dec->avail_in < 4) return JXL_DEC_NEED_MORE_INPUT;
+      if (memcmp(dec->next_in, "jxl ", 4) != 0) {
+        return JXL_API_ERROR("file type box major brand must be \"jxl \"");
+      }
+      dec->AdvanceInput(4);
+      dec->box_stage = BoxStage::kSkip;
     } else if (dec->box_stage == BoxStage::kPartialCodestream) {
       if (dec->last_codestream_seen) {
         return JXL_API_ERROR("cannot have codestream after last codestream");
