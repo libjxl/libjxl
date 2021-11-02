@@ -268,6 +268,28 @@ JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
     return JXL_ENC_ERROR;
   }
   options->values.cparams.butteraugli_distance = distance;
+  float jpeg_quality;
+  // Formula to translate butteraugli distance roughly into JPEG 0-100 quality.
+  // This is the inverse of the formula in cjxl.cc to translate JPEG quality
+  // into butteraugli distance.
+  if (distance < 6.56f) {
+    jpeg_quality = -5.456783f * std::log(0.0256f * distance - 0.16384f);
+  } else {
+    jpeg_quality = -11.11111f * distance + 101.11111f;
+  }
+  // Translate JPEG quality into the quality_pair setting for modular encoding.
+  // This is the formula also used in cjxl.cc to convert the command line JPEG
+  // quality parameter to the quality_pair setting.
+  // TODO(lode): combine the distance -> quality_pair conversion into a single
+  // formula, possibly altering it to a more suitable heuristic.
+  float quality;
+  if (jpeg_quality < 7) {
+    quality = std::min<float>(35 + (jpeg_quality - 7) * 3.0f, 100.0f);
+  } else {
+    quality = std::min<float>(35 + (jpeg_quality - 7) * 65.f / 93.f, 100.0f);
+  }
+  options->values.cparams.quality_pair.first =
+      options->values.cparams.quality_pair.second = quality;
   return JXL_ENC_SUCCESS;
 }
 
@@ -310,16 +332,29 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       options->values.cparams.ec_resampling = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_NOISE:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.noise = static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_DOTS:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.dots = static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_PATCHES:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.patches = static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_GABORISH:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.gaborish = static_cast<jxl::Override>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR:
+      if (value == 1) {
+        options->values.cparams.modular_mode = true;
+      } else if (value == -1 || value == 0) {
+        options->values.cparams.modular_mode = false;
+      } else {
+        return JXL_ENC_ERROR;
+      }
       return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
