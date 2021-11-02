@@ -467,6 +467,60 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   EXPECT_EQ(true, container.boxes[0].data_size_given);
 }
 
+TEST(EncodeTest, CodestreamLevelTest) {
+  size_t xsize = 64;
+  size_t ysize = 64;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+
+  jxl::CodecInOut input_io =
+      jxl::test::SomeTestImageToCodecInOut(pixels, 4, xsize, ysize);
+
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.uses_original_profile = false;
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetCodestreamLevel(enc.get(), 10));
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding,
+                            /*is_gray=*/pixel_format.num_channels < 3);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
+  JxlEncoderCloseInput(enc.get());
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  JxlEncoderStatus process_result = JXL_ENC_NEED_MORE_OUTPUT;
+  while (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+    process_result = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+    if (process_result == JXL_ENC_NEED_MORE_OUTPUT) {
+      size_t offset = next_out - compressed.data();
+      compressed.resize(compressed.size() * 2);
+      next_out = compressed.data() + offset;
+      avail_out = compressed.size() - offset;
+    }
+  }
+  compressed.resize(next_out - compressed.data());
+  EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
+
+  Container container = {};
+  jxl::Span<const uint8_t> encoded_span =
+      jxl::Span<const uint8_t>(compressed.data(), compressed.size());
+  EXPECT_TRUE(container.Decode(&encoded_span));
+  EXPECT_EQ(0u, encoded_span.size());
+  EXPECT_EQ(0, memcmp("jxll", container.boxes[0].type, 4));
+}
+
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
@@ -475,7 +529,6 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
 
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderAddJPEGFrame(options, orig.data(), orig.size()));
