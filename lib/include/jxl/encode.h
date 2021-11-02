@@ -129,6 +129,12 @@ typedef enum {
    */
   JXL_ENC_OPTION_GABORISH = 7,
 
+  /** Enables modular encoding. Integer option, use -1 for default (encoder
+   * chooses), 0 to enforce VarDCT mode (e.g. for photographic images), 1 to
+   * enforce modular mode (e.g. for lossless images).
+   */
+  JXL_ENC_OPTION_MODULAR = 8,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */
@@ -405,10 +411,19 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc,
                                                          int level);
 
 /**
- * Sets lossless/lossy mode for the provided options. Default is lossy.
+ * Enables lossless encoding.
+ *
+ * This is not an option like the others on itself, but rather while enabled it
+ * overrides a set of existing options (such as distance and modular mode) that
+ * enables bit-for-bit lossless encoding.
+ *
+ * When disabled, those options are not overridden, but since those options
+ * could still have been manually set to a combination that operates losslessly,
+ * using this function with lossless set to JXL_DEC_FALSE does not guarantee
+ * lossy encoding, though the default set of options is lossy.
  *
  * @param options set of encoder options to update with the new mode
- * @param lossless whether the options should be lossless
+ * @param lossless whether to override options for lossless mode
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
@@ -443,13 +458,10 @@ JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options, int tier);
 /**
  * Sets the distance level for lossy compression: target max butteraugli
  * distance, lower = higher quality. Range: 0 .. 15.
- * 0.0 = mathematically lossless (however, use JxlEncoderOptionsSetLossless to
- * use true lossless).
- * 1.0 = visually lossless.
- * Recommended range: 0.5 .. 3.0.
- * Default value: 1.0.
- * If JxlEncoderOptionsSetLossless is used, this value is unused and implied
- * to be 0.
+ * 0.0 = mathematically lossless (however, use JxlEncoderOptionsSetLossless
+ * instead to use true lossless, as setting distance to 0 alone is not the only
+ * requirement). 1.0 = visually lossless. Recommended range: 0.5 .. 3.0. Default
+ * value: 1.0.
  *
  * @param options set of encoder options to update with the new mode.
  * @param distance the distance value to set.
