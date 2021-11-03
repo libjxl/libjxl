@@ -60,15 +60,24 @@ bool SaveFile(const char* filename, std::vector<uint8_t> data) {
 
 struct ImageArray {
   uint32_t xsize, ysize;
-  uint32_t num_channels;
+  // amount of color channels: 1 for grayscale, 3 for RGB
   uint32_t num_color_channels;
+  // amount of extra channels, including alpha channels, spot colors, ...
   uint32_t num_extra_channels;
 
-  // An array of "frames", where each frame is a 3D array of samples with
-  // dimensions (ysize, xsize, channel).
+  // Both frames and ec_frames are filled in by the JXL decoder, and will be
+  // converted into a numpy array of the form (frame, ysize, xsize, channel)
+
+  // Array of the color channels of the frames. This is an array of frames,
+  // where each frame is an array of pixels. The pixels in a frame are laid
+  // out per scanline, then per channel, and finally individual pixels as
+  // little endian 32-bit floating point.
   std::vector<std::vector<uint8_t>> frames;
-  // Extra channels, as an array of frames, where each frame is an array of 2D
-  // arrays of samples
+
+  // Array of the extra channels of the frames. This is an array of frames,
+  // where each frame is an array of extra channels. The pixels in an extra
+  // channel are laid out per scanline, then individual pixels as
+  // little endian 32-bit floating point.
   std::vector<std::vector<std::vector<uint8_t>>> ec_frames;
 };
 
@@ -114,10 +123,11 @@ bool SaveNPYArray(const char* filename, const ImageArray& arr) {
   WRITE_TO_FILE(header, 8);
 
   {
+    uint32_t num_channels = arr.num_color_channels + arr.num_extra_channels;
     std::stringstream ss;
     ss << "{'descr': '<f4', 'fortran_order': False, 'shape': ("
        << arr.frames.size() << ", " << arr.ysize << ", " << arr.xsize << ", "
-       << arr.num_channels << "), }\n";
+       << num_channels << "), }\n";
     // 16-bit little endian header length.
     uint8_t header_len[2] = {static_cast<uint8_t>(ss.str().size() % 256),
                              static_cast<uint8_t>(ss.str().size() / 256)};
@@ -370,7 +380,6 @@ bool DecodeJXL(const DecodeOptions& opts) {
   std::vector<std::string> frame_names;
 
   JxlPixelFormat format;
-  uint32_t num_channels = 0;
 
   ImageArray image, preview;
 
@@ -396,17 +405,16 @@ bool DecodeJXL(const DecodeOptions& opts) {
       }
 
       // Select the output pixel format based on the basic info.
-      num_channels = info.num_color_channels + info.num_extra_channels;
       format = JxlPixelFormat{info.num_color_channels, JXL_TYPE_FLOAT,
                               JXL_LITTLE_ENDIAN, 0};
-      image.num_channels = num_channels;
       image.num_color_channels = info.num_color_channels;
       image.num_extra_channels = info.num_extra_channels;
       image.xsize = info.xsize;
       image.ysize = info.ysize;
 
       if (info.have_preview) {
-        preview.num_channels = num_channels;
+        preview.num_color_channels = info.num_color_channels;
+        preview.num_extra_channels = info.num_extra_channels;
         preview.xsize = info.preview.xsize;
         preview.ysize = info.preview.ysize;
       }
