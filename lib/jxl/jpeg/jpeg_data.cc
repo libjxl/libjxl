@@ -5,6 +5,7 @@
 
 #include "lib/jxl/jpeg/jpeg_data.h"
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 
 namespace jxl {

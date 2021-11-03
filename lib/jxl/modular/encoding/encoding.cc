@@ -10,6 +10,7 @@
 
 #include <queue>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
 

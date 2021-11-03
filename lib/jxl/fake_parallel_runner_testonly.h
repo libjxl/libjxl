@@ -10,6 +10,7 @@
 
 #include <vector>
 
+#include "jxl/parallel_runner.h"
 #include "lib/jxl/base/random.h"
 
 namespace jxl {

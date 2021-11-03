@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "tools/args.h"
