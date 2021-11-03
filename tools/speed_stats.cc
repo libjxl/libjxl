@@ -5,14 +5,13 @@
 
 #include "tools/speed_stats.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #include <algorithm>
 #include <string>
-
-#include "lib/jxl/common.h"
 
 namespace jpegxl {
 namespace tools {
@@ -105,10 +104,12 @@ jxl::Status SpeedStats::Print(size_t worker_threads) {
   }
 
   fprintf(stderr,
-          "%" PRIuS " x %" PRIuS "%s%s%s, %" PRIuS " reps, %" PRIuS
+          "%" PRIu64 " x %" PRIu64 "%s%s%s, %" PRIu64 " reps, %" PRIu64
           " threads.\n",
-          xsize_, ysize_, mps_stats.c_str(), mbs_stats.c_str(), variability,
-          elapsed_.size(), worker_threads);
+          static_cast<uint64_t>(xsize_), static_cast<uint64_t>(ysize_),
+          mps_stats.c_str(), mbs_stats.c_str(), variability,
+          static_cast<uint64_t>(elapsed_.size()),
+          static_cast<uint64_t>(worker_threads));
   return true;
 }
 

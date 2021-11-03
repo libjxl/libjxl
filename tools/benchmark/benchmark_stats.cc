@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "tools/benchmark/benchmark_args.h"
 

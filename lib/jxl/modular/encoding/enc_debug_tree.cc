@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "lib/jxl/base/os_macros.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/encoding/dec_ma.h"

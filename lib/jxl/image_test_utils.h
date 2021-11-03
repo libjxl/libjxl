@@ -121,12 +121,13 @@ void VerifyRelativeError(const Plane<T>& expected, const Plane<T>& actual,
   if (any_bad) {
     // Never had a valid relative value, don't print it.
     if (max_relative < 0) {
-      fprintf(stderr, "c=%" PRIuS ": max +/- %E exceeds +/- %.2E\n", c, max_l1,
-              threshold_l1);
+      fprintf(stderr, "c=%" PRIu64 ": max +/- %E exceeds +/- %.2E\n",
+              static_cast<uint64_t>(c), max_l1, threshold_l1);
     } else {
       fprintf(stderr,
-              "c=%" PRIuS ": max +/- %E, x %E exceeds +/- %.2E, x %.2E\n", c,
-              max_l1, max_relative, threshold_l1, threshold_relative);
+              "c=%" PRIu64 ": max +/- %E, x %E exceeds +/- %.2E, x %.2E\n",
+              static_cast<uint64_t>(c), max_l1, max_relative, threshold_l1,
+              threshold_relative);
     }
     // Dump the expected image and actual image if the region is small enough.
     const intptr_t kMaxTestDumpSize = 16;
