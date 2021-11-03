@@ -12,8 +12,7 @@
 #include <QTimer>
 #include <QVariantAnimation>
 #include <QWidget>
-
-#include "lib/jxl/base/random.h"
+#include <random>
 
 namespace jxl {
 
@@ -61,7 +60,7 @@ class SplitView : public QWidget {
 
   int spacing_ = 50;
 
-  Rng g_;
+  std::mt19937 g_;
 
   QString imageName_;
   QPixmap original_, altered_;

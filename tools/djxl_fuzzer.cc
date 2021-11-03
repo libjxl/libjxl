@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <random>
 #include <vector>
 
 #include "hwy/targets.h"
@@ -19,7 +20,6 @@
 #include "jxl/decode_cxx.h"
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
-#include "lib/jxl/base/random.h"
 
 // Unpublised API.
 void SetDecoderMemoryLimitBase_(size_t memory_limit_base);
@@ -78,8 +78,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       std::min<size_t>(2, JxlThreadParallelRunnerDefaultNumWorkerThreads());
   auto runner = JxlThreadParallelRunnerMake(nullptr, num_threads);
 
-  jxl::Rng rng(spec.random_seed);
-  jxl::Rng::GeometricDistribution dist(1.0f / kStreamingTargetNumberOfChunks);
+  std::mt19937 mt(spec.random_seed);
+  std::exponential_distribution<> dis_streaming(kStreamingTargetNumberOfChunks);
 
   auto dec = JxlDecoderMake(nullptr);
   if (JXL_DEC_SUCCESS !=
@@ -185,7 +185,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
         leftover -= used;
         streaming_size -= used;
         size_t chunk_size = std::max<size_t>(
-            1, size * std::min<double>(1.0, rng.Geometric(dist)));
+            1, size * std::min<double>(1.0, dis_streaming(mt)));
         size_t add_size =
             std::min<size_t>(chunk_size, leftover - streaming_size);
         if (add_size == 0) {
@@ -347,7 +347,8 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
       }
 
       if (info.num_extra_channels > 0) {
-        size_t ec_index = rng.UniformU(0, info.num_extra_channels);
+        std::uniform_int_distribution<> dis(0, info.num_extra_channels);
+        size_t ec_index = dis(mt);
         // There is also a probability no extra channel is chosen
         if (ec_index < info.num_extra_channels) {
           size_t ec_index = info.num_extra_channels - 1;
