@@ -3434,6 +3434,10 @@ TEST(DecodeTest, BoxTest) {
     }
   }
 
+  // Even though all input is given, the decoder cannot assume there aren't
+  // more boxes if the input was not closed.
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
+  JxlDecoderCloseInput(dec);
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlDecoderDestroy(dec);
@@ -3456,6 +3460,7 @@ TEST(DecodeTest, ExifBrobBoxTest) {
     if (!streaming) {
       EXPECT_EQ(JXL_DEC_SUCCESS,
                 JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+      JxlDecoderCloseInput(dec);
     }
     // for streaming input case
     const uint8_t* next_in = compressed.data();
@@ -3484,6 +3489,7 @@ TEST(DecodeTest, ExifBrobBoxTest) {
           total_in += amount;
           EXPECT_EQ(JXL_DEC_SUCCESS,
                     JxlDecoderSetInput(dec, next_in, avail_in));
+          if (total_in == compressed.size()) JxlDecoderCloseInput(dec);
         } else {
           FAIL();
           break;
@@ -3536,6 +3542,7 @@ TEST(DecodeTest, ExifBrobBoxTest) {
     if (!streaming) {
       EXPECT_EQ(JXL_DEC_SUCCESS,
                 JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+      JxlDecoderCloseInput(dec);
     }
     // for streaming input case
     const uint8_t* next_in = compressed.data();
@@ -3566,6 +3573,7 @@ TEST(DecodeTest, ExifBrobBoxTest) {
           total_in += amount;
           EXPECT_EQ(JXL_DEC_SUCCESS,
                     JxlDecoderSetInput(dec, next_in, avail_in));
+          if (total_in == compressed.size()) JxlDecoderCloseInput(dec);
         } else {
           FAIL();
           break;
@@ -3636,6 +3644,7 @@ TEST(DecodeTest, PartialCodestreamBoxTest) {
                   dec, JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE | JXL_DEC_BOX));
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetInput(dec, compressed.data(), compressed.size()));
+    JxlDecoderCloseInput(dec);
 
     size_t num_jxlp = 0;
 
@@ -3715,6 +3724,7 @@ TEST(DecodeTest, PartialCodestreamBoxTest) {
     EXPECT_EQ(JXL_DEC_SUCCESS,
               JxlDecoderSetInput(dec, extracted_codestream.data(),
                                  extracted_codestream.size()));
+    JxlDecoderCloseInput(dec);
 
     size_t num_boxes = 0;
 
@@ -3885,4 +3895,19 @@ TEST(DecodeTest, SpotColorTest) {
       }
     }
   }
+}
+
+TEST(DecodeTest, CloseInput) {
+  std::vector<uint8_t> partial_file = {0xff};
+
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(),
+                                      JXL_DEC_BASIC_INFO | JXL_DEC_FULL_IMAGE));
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSetInput(dec.get(), partial_file.data(),
+                                                partial_file.size()));
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec.get()));
+  EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec.get()));
+  JxlDecoderCloseInput(dec.get());
+  EXPECT_EQ(JXL_DEC_ERROR, JxlDecoderProcessInput(dec.get()));
 }

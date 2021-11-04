@@ -587,6 +587,7 @@ struct JxlDecoderStruct {
 
   const uint8_t* next_in;
   size_t avail_in;
+  bool input_closed;
 
   void AdvanceInput(size_t size) {
     next_in += size;
@@ -656,6 +657,7 @@ void JxlDecoderRewindDecodingState(JxlDecoder* dec) {
   dec->dec_pixels = 0;
   dec->next_in = 0;
   dec->avail_in = 0;
+  dec->input_closed = false;
 
   dec->passes_state.reset(nullptr);
   dec->frame_dec.reset(nullptr);
@@ -1524,7 +1526,12 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
 
 JxlDecoderStatus JxlDecoderSetInput(JxlDecoder* dec, const uint8_t* data,
                                     size_t size) {
-  if (dec->next_in) return JXL_DEC_ERROR;
+  if (dec->next_in) {
+    return JXL_API_ERROR("already set input, use JxlDecoderReleaseInput first");
+  }
+  if (dec->input_closed) {
+    return JXL_API_ERROR("input already closed");
+  }
 
   dec->next_in = data;
   dec->avail_in = size;
@@ -1537,6 +1544,8 @@ size_t JxlDecoderReleaseInput(JxlDecoder* dec) {
   dec->avail_in = 0;
   return result;
 }
+
+void JxlDecoderCloseInput(JxlDecoder* dec) { dec->input_closed = true; }
 
 JxlDecoderStatus JxlDecoderSetJPEGBuffer(JxlDecoder* dec, uint8_t* data,
                                          size_t size) {
@@ -1601,29 +1610,8 @@ static JxlDecoderStatus ParseBoxHeader(const uint8_t* in, size_t size,
   return JXL_DEC_SUCCESS;
 }
 
-
-JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
-  if (dec->stage == DecoderStage::kInited) {
-    dec->stage = DecoderStage::kStarted;
-  }
-  if (dec->stage == DecoderStage::kError) {
-    return JXL_API_ERROR(
-        "Cannot keep using decoder after it encountered an error, use "
-        "JxlDecoderReset to reset it");
-  }
-
-  if (!dec->got_signature) {
-    JxlSignature sig = JxlSignatureCheck(dec->next_in, dec->avail_in);
-    if (sig == JXL_SIG_INVALID) return JXL_API_ERROR("invalid signature");
-    if (sig == JXL_SIG_NOT_ENOUGH_BYTES) return JXL_DEC_NEED_MORE_INPUT;
-
-    dec->got_signature = true;
-
-    if (sig == JXL_SIG_CONTAINER) {
-      dec->have_container = 1;
-    }
-  }
-
+// This includes handling the codestream if it is not a box-based jxl file.
+static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
   // Box handling loop
   for (;;) {
     if (dec->box_stage != BoxStage::kHeader) {
@@ -1728,12 +1716,27 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
         continue;
       }
       if (dec->avail_in == 0) {
-        if (dec->stage == DecoderStage::kFinished) {
-          // All codestream boxes done, break to return success. However, if the
-          // user still has more input, which could be a next metadata box, it's
-          // still possible to continue next JxlDecoderProcessInput calls.
-          break;
+        if (dec->stage != DecoderStage::kFinished) {
+          // Not yet seen (all) codestream boxes.
+          return JXL_DEC_NEED_MORE_INPUT;
         }
+        if (dec->JbrdNeedMoreBoxes()) {
+          return JXL_DEC_NEED_MORE_INPUT;
+        }
+        if (dec->input_closed) {
+          return JXL_DEC_SUCCESS;
+        }
+        if (!(dec->events_wanted & JXL_DEC_BOX)) {
+          // All codestream and jbrd metadata boxes finished, and no individual
+          // boxes requested by user, so no need to request any more input.
+          // This returns success for backwards compatibility, when
+          // JxlDecoderCloseInput and JXL_DEC_BOX did not exist, as well
+          // as for efficiency.
+          return JXL_DEC_SUCCESS;
+        }
+        // Even though we are exactly at a box end, there still may be more
+        // boxes. The user may call JxlDecoderCloseInput to indicate the input
+        // is finished and get success instead.
         return JXL_DEC_NEED_MORE_INPUT;
       }
 
@@ -1968,9 +1971,19 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       }
     } else if (dec->box_stage == BoxStage::kSkip) {
       if (dec->box_contents_unbounded) {
-        // Nothing further to do, an unbounded box is the last box,
-        // can end early.
-        break;
+        if (dec->input_closed) {
+          return JXL_DEC_SUCCESS;
+        }
+        if (!(dec->box_out_buffer_set)) {
+          // An unbounded box is always the last box. Not requesting box data,
+          // so return success even if JxlDecoderCloseInput was not called for
+          // backwards compatibility as well as efficiency since this box is
+          // being skipped.
+          return JXL_DEC_SUCCESS;
+        }
+        // Arbitrarily more bytes may follow, only JxlDecoderCloseInput can
+        // mark the end.
+        return JXL_DEC_NEED_MORE_INPUT;
       }
       // Amount of remaining bytes in the box that is being skipped.
       size_t remaining = dec->box_contents_end - dec->file_pos;
@@ -1991,15 +2004,58 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
     }
   }
 
-  if (dec->stage != DecoderStage::kFinished) {
-    return JXL_API_ERROR("codestream never finished");
-  }
-
-  if (dec->JbrdNeedMoreBoxes()) {
-    return JXL_DEC_NEED_MORE_INPUT;
-  }
-
   return JXL_DEC_SUCCESS;
+}
+
+JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
+  if (dec->stage == DecoderStage::kInited) {
+    dec->stage = DecoderStage::kStarted;
+  }
+  if (dec->stage == DecoderStage::kError) {
+    return JXL_API_ERROR(
+        "Cannot keep using decoder after it encountered an error, use "
+        "JxlDecoderReset to reset it");
+  }
+
+  if (!dec->got_signature) {
+    JxlSignature sig = JxlSignatureCheck(dec->next_in, dec->avail_in);
+    if (sig == JXL_SIG_INVALID) return JXL_API_ERROR("invalid signature");
+    if (sig == JXL_SIG_NOT_ENOUGH_BYTES) {
+      if (dec->input_closed) {
+        return JXL_API_ERROR("file too small for signature");
+      }
+      return JXL_DEC_NEED_MORE_INPUT;
+    }
+
+    dec->got_signature = true;
+
+    if (sig == JXL_SIG_CONTAINER) {
+      dec->have_container = 1;
+    }
+  }
+
+  JxlDecoderStatus status = HandleBoxes(dec);
+
+  if (status == JXL_DEC_NEED_MORE_INPUT && dec->input_closed) {
+    return JXL_API_ERROR("missing input");
+  }
+
+  // Even if the box handling returns success, certain types of
+  // data may be missing.
+  if (status == JXL_DEC_SUCCESS) {
+    if (dec->stage != DecoderStage::kFinished) {
+      // TODO(lode): consider not returning this error if only subscribed to
+      // the JXL_DEC_BOX event and so finishing the image frames is not
+      // required.
+      return JXL_API_ERROR("codestream never finished");
+    }
+
+    if (dec->JbrdNeedMoreBoxes()) {
+      return JXL_API_ERROR("missing metadata boxes for jpeg reconstruction");
+    }
+  }
+
+  return status;
 }
 
 // To ensure ABI forward-compatibility, this struct has a constant size.
