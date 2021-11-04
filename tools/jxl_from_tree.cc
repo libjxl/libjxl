@@ -382,7 +382,7 @@ class Heuristics : public DefaultEncoderHeuristics {
 int JxlFromTree(const char* in, const char* out, const char* tree_out) {
   Tree tree;
   SplineData spline_data;
-  CompressParams cparams;
+  CompressParams cparams = {};
   size_t width = 1024, height = 1024;
   int x0 = 0, y0 = 0;
   cparams.color_transform = ColorTransform::kNone;
