@@ -107,6 +107,7 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
   if (!spec.use_streaming) {
     // Set all input at once
     JxlDecoderSetInput(dec.get(), jxl, size);
+    JxlDecoderCloseInput(dec.get());
   }
 
   bool seen_basic_info = false;
@@ -193,7 +194,14 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
           return false;
         }
         streaming_size += add_size;
-        JxlDecoderSetInput(dec.get(), jxl, streaming_size);
+        if (JXL_DEC_SUCCESS !=
+            JxlDecoderSetInput(dec.get(), jxl, streaming_size)) {
+          return false;
+        }
+        if (leftover == streaming_size) {
+          // All possible input bytes given
+          JxlDecoderCloseInput(dec.get());
+        }
 
         if (!tested_flush && seen_frame) {
           // Test flush max once to avoid too slow fuzzer run
