@@ -23,9 +23,7 @@
 
 namespace jxl {
 
-namespace {
-
-inline const char *PredictorName(Predictor p) {
+const char *PredictorName(Predictor p) {
   switch (p) {
     case Predictor::Zero:
       return "Zero";
@@ -60,7 +58,7 @@ inline const char *PredictorName(Predictor p) {
   };
 }
 
-inline std::string PropertyName(size_t i) {
+std::string PropertyName(size_t i) {
   static_assert(kNumNonrefProperties == 16, "Update this function");
   switch (i) {
     case 0:
@@ -99,8 +97,6 @@ inline std::string PropertyName(size_t i) {
       return "ch[" + ToString(15 - (int)i) + "]";
   }
 }
-
-}  // namespace
 
 void PrintTree(const Tree &tree, const std::string &path) {
   FILE *f = fopen((path + ".dot").c_str(), "w");
