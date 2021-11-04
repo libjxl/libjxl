@@ -351,13 +351,13 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetInteger(
  * This setting can only be set at the beginning, before encoding starts.
  *
  * @param enc encoder object.
- * @param use_container true if the encoder should always output the JPEG XL
+ * @param force_container true if the encoder should always output the JPEG XL
  * container format.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
-                                                   JXL_BOOL use_container);
+                                                   JXL_BOOL force_container);
 
 /**
  * Configure the encoder to store JPEG reconstruction metadata in the JPEG XL
@@ -394,7 +394,7 @@ JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
  * may be less widely supported.
  *
  * The default value is 5. To use level 10 features, the setting must be
- * explicitely set to 10, the encoder will not automatically enable it. If
+ * explicitly set to 10, the encoder will not automatically enable it. If
  * incompatible parameters such as too high image resolution for the current
  * level are set, the encoder will return an error. For internal coding tools,
  * the encoder will only use those compatible with the level setting.
