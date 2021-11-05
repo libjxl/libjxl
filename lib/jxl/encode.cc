@@ -464,7 +464,7 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->input_closed = false;
   enc->basic_info_set = false;
   enc->color_encoding_set = false;
-  enc->force_container = false;
+  enc->use_container = false;
   enc->codestream_level = 5;
 }
 
@@ -477,11 +477,11 @@ void JxlEncoderDestroy(JxlEncoder* enc) {
 }
 
 JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
-                                        JXL_BOOL force_container) {
+                                        JXL_BOOL use_container) {
   if (enc->wrote_bytes) {
     return JXL_API_ERROR("this setting can only be set at the beginning");
   }
-  enc->force_container = static_cast<bool>(force_container);
+  enc->use_container = static_cast<bool>(use_container);
   return JXL_ENC_SUCCESS;
 }
 
