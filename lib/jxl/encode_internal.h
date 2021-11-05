@@ -94,7 +94,7 @@ struct JxlEncoderStruct {
       input_frame_queue;
   std::vector<uint8_t> output_byte_queue;
 
-  bool force_container = false;
+  bool use_container = false;
 
   // TODO(lode): move level into jxl::CompressParams since some C++
   // implementation decisions should be based on it: level 10 allows more
@@ -116,7 +116,7 @@ struct JxlEncoderStruct {
   JxlEncoderStatus RefillOutputByteQueue();
 
   bool MustUseContainer() const {
-    return force_container || codestream_level != 5 || store_jpeg_metadata;
+    return use_container || codestream_level != 5 || store_jpeg_metadata;
   }
 
   // Appends the bytes of a JXL box header with the provided type and size to

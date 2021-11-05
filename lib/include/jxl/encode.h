@@ -379,8 +379,128 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
     const JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
     const void* buffer, size_t size, uint32_t index);
 
+/** Adds a metadata box to the file format. JxlEncoderProcessOutput must be used
+ * to effectively write the box to the output. @ref JxlEncoderUseContainer must
+ * be enabled before using this function.
+ *
+ * Background information about the container format and boxes follows here:
+ *
+ * For users of libjxl, boxes allow inserting application-specific data and
+ * metadata (Exif, XML, JUMBF and user defined boxes).
+ *
+ * The box format follows ISO BMFF and shares features and box types with other
+ * image and video formats, including the Exif, XML and JUMBF boxes. The box
+ * format for JPEG XL is specified in ISO/IEC 18181-2.
+ *
+ * Boxes in general don't contain other boxes inside, except a JUMBF superbox.
+ * Boxes follow each other sequentially and are byte-aligned. If the container
+ * format is used, the JXL stream exists out of 3 or more concatenated boxes.
+ * It is also possible to use a direct codestream without boxes, but in that
+ * case metadata cannot be added.
+ *
+ * Each box generally has the following byte structure in the file:
+ * - 4 bytes: box size including box header (Big endian. If set to 0, an
+ *   8-byte 64-bit size follows instead).
+ * - 4 bytes: type, e.g. "JXL " for the signature box, "jxlc" for a codestream
+ *   box.
+ * - N bytes: box contents.
+ *
+ * Only the box contents are provided to the contents argument of this function,
+ * the encoder encodes the size header itself.
+ *
+ * Box types are given by 4 characters. A list of known types follows:
+ * - "JXL ": mandatory signature box, must come first, 12 bytes long including
+ *   the box header
+ * - "ftyp": a second mandatory signature box, must come second, 20 bytes long
+ *   including the box header
+ * - "jxll": A JXL level box. This indicates if the codestream is level 5 or
+ *   level 10 compatible. If not present, it is level 5. Level 10 allows more
+ *   features such as very high image resolution and bit-depths above 16 bits
+ *   per channel. Added automatically by the encoder when
+ *   JxlEncoderSetCodestreamLevel is used
+ * - "jxlc": a box with the image codestream, in case the codestream is not
+ *   split across multiple boxes. The codestream contains the JPEG XL image
+ *   itself, including the basic info such as image dimensions, ICC color
+ *   profile, and all the pixel data of all the image frames.
+ * - "jxlp": a codestream box in case it is split across multiple boxes. The
+ *   encoder will automatically do this if necessary. The contents are the same
+ *   as in case of a jxlc box, when concatenated.
+ * - "Exif": a box with EXIF metadata, can be added by libjxl users, or is
+ *   automatically added when needed for JPEG reconstruction. The contents of
+ *   this box must be prepended by a 4-byte tiff header offset, which may
+ *   be 4 zero bytes.
+ * - "XML ": a box with XMP or IPTC metadata, can be added by libjxl users, or
+ *   is automatically added when needed for JPEG reconstruction
+ * - "jumb": a JUMBF superbox, which can contain boxes with different types of
+ *   metadata inside. This box type can be added by the encoder transparently,
+ *   and other libraries to create and handle JUMBF content exist.
+ * - "brob": a Brotli-compressed box, which otherwise represents an existing
+ *   type of box such as Exif or XML. The encoder creates these when enabled and
+ *   users of libjxl don't need to create them directly. Some box types are not
+ *   allowed to be compressed: any of the signature, jxl* and jbrd boxes.
+ * - "jxli": frame index box, can list the keyframes in case of a JXL animation,
+ *   allowing the decoder to jump to individual frames more efficiently. This
+ *   box type is specified, but not currently supported by the encoder or
+ *   decoder.
+ * - "jbrd": JPEG reconstruction box, contains the information required to
+ *   byte-for-byte losslessly recontruct a JPEG-1 image. The JPEG coefficients
+ *   (pixel content) themselves are encoded in the JXL codestream (jxlc or jxlp)
+ *   itself. Exif and XMP metadata will be encoded in Exif and XMP boxes. The
+ *   jbrd box itself contains information such as the app markers of the JPEG-1
+ *   file and everything else required to fit the information together into the
+ *   exact original JPEG file. This box is added automatically by the encoder
+ *   when needed, and only when JPEG reconstruction is used.
+ * - other: other application-specific boxes can be added. Their typename should
+ *   not begin with "jxl" or "JXL" or conflict with other existing typenames.
+ *
+ * Most boxes are automatically added by the encoder and should not be added
+ * with JxlEncoderAddBox. Boxes that one may wish to add with JxlEncoderAddBox
+ * are: Exif and XML (but not when using JPEG reconstruction since if the
+ * JPEG has those, these boxes are already added automatically), jumb, and
+ * application-specific boxes.
+ *
+ * Adding metadata boxes increases the filesize. When adding Exif metadata, the
+ * data must be in sync with what is encoded in the JPEG XL codestream,
+ * specifically the image orientation. While this is not recommended in
+ * practice, in case of conflicting metadata, the JPEG XL codestream takes
+ * precedence.
+ *
+ * It is possible to create a codestream without boxes, then what would be in
+ * the jxlc box is written directly to the output
+ *
+ * It is possible to split the codestream across multiple boxes, in that case
+ * multiple boxes of type jxlp are used. This is handled by the encoder when
+ * needed.
+ *
+ * For now metadata boxes can only be added before or after the codestream with
+ * all frames, so using JxlEncoderAddBox is only possible before the first
+ * JxlEncoderAddImageFrame call, and/or after the last JxlEncoderAddImageFrame
+ * call and JxlEncoderCloseInput. Support for adding boxes in-between the
+ * codestream, and/or in-between image frames may be added later, and would
+ * cause the encoder to use jxlp boxes for the codestream.
+ *
+ * @param enc encoder object.
+ * @param type the box type, e.g. "Exif" for EXIF metadata, "XML " for XMP or
+ * IPTC metadata, "jumb" for JUMBF metadata.
+ * @param contents the full contents of the box, for example EXIF
+ * data. For an "Exif" box, the EXIF data must be prepended by a 4-byte tiff
+ * header offset, which may be 4 zero-bytes. The ISO BMFF box header must not
+ * be included, only the contents.
+ * @param size size of the box contents.
+ * @param compress_box Whether to compress this box as a "brob" box. Requires
+ * Brotli support.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error, such as when
+ * using this function without JxlEncoderUseContainer, or adding a box type
+ * that would result in an invalid file format.
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, JxlBoxType type,
+                                             const uint8_t* contents,
+                                             size_t size,
+                                             JXL_BOOL compress_box);
+
 /**
- * Declares that this encoder will not encode anything further.
+ * Declares that this encoder will not encode any further frames. Further
+ * metadata boxes may still be added.
  *
  * Must be called between JxlEncoderAddImageFrame/JPEGFrame of the last frame
  * and the next call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput
@@ -506,25 +626,29 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
 JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetInteger(
     JxlEncoderOptions* options, JxlEncoderOptionId option, int32_t value);
 
-/** Forces the encoder to use the box-based JPEG XL container format (BMFF).
+/** Indicates the encoder should use the box-based JPEG XL container format
+ * (BMFF) instead of outputting the codestream bytes directly. Both with and
+ * without container are valid JPEG XL files, but the container is necessary
+ * when metadata, level 10 features or JPEG reconstruction is used.
  *
  * If enabled, the encoder always uses the container format, even if not
- * necessary. If disabled, the encoder only uses the container format if
- * required (such as for JPEG metadata @ref JxlEncoderStoreJPEGMetadata), and
- * otherwise writes a direct codestream.
+ * necessary. If disabled, the encoder will still use the container format if
+ * required (such as for JPEG metadata @ref JxlEncoderStoreJPEGMetadata).
+ *
+ * This setting must be explicitely enabled before using @ref JxlEncoderAddBox.
  *
  * By default this setting is disabled.
  *
  * This setting can only be set at the beginning, before encoding starts.
  *
  * @param enc encoder object.
- * @param force_container true if the encoder should always output the JPEG XL
+ * @param use_container true if the encoder should always output the JPEG XL
  * container format.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderUseContainer(JxlEncoder* enc,
-                                                   JXL_BOOL force_container);
+                                                   JXL_BOOL use_container);
 
 /**
  * Configure the encoder to store JPEG reconstruction metadata in the JPEG XL

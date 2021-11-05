@@ -648,6 +648,41 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   EXPECT_EQ(0, memcmp(decoded_jpeg_bytes.data(), orig.data(), orig.size()));
 }
 
+// This test is commented out until JxlEncoderAddBox is implemented, and is a
+// prototype of JxlEncoderAddBox usage, not a finished test implementation.
+#if 0
+TEST(EncodeTest, BoxTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  // TODO(lode): create a test image, initialize encoder and options, prepare
+  // next_out and avail_out, and handle status and output buffer after the
+  // JxlEncoderProcessOutput calls below.
+
+  // Add an early metadata box
+  JxlEncoderAddBox("Exif", exif_data, exif_size);
+
+  // Write to output
+  status = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+
+  // Add image frame
+  EXPECT_EQ(JXL_ENC_ERROR,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
+  // Indicate this is the last frame
+  JxlEncoderCloseInput(enc.get());
+
+  // Write to output
+  status = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+
+  // Add a late metadata box
+  JxlEncoderAddBox("XML ", xml_data, xml_size);
+
+  // Write to output
+  status = JxlEncoderProcessOutput(enc.get(), &next_out, &avail_out);
+}
+#endif
+
 #if JPEGXL_ENABLE_JPEG  // Loading .jpg files requires libjpeg support.
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
   for (int skip_basic_info = 0; skip_basic_info < 2; skip_basic_info++) {
