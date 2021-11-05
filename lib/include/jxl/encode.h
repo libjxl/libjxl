@@ -109,31 +109,52 @@ typedef enum {
    */
   JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING = 3,
 
-  /** Enables or disables noise generation. Integer option, use -1 for the
-   * encoder default, 0 to disable, 1 to enable.
+  /** Enables or disables noise generation. Use -1 for the default (encoder
+   * chooses), 0 to disable, 1 to enable.
    */
   JXL_ENC_OPTION_NOISE = 4,
 
-  /** Enables or disables dots generation. Integer option, use -1 for the
-   * encoder default, 0 to disable, 1 to enable.
+  /** Enables or disables dots generation. Use -1 for the default (encoder
+   * chooses), 0 to disable, 1 to enable.
    */
   JXL_ENC_OPTION_DOTS = 5,
 
-  /** Enables or disables patches generation. Integer option, use -1 for the
-   * encoder default, 0 to disable, 1 to enable.
+  /** Enables or disables patches generation. Use -1 for the default (encoder
+   * chooses), 0 to disable, 1 to enable.
    */
   JXL_ENC_OPTION_PATCHES = 6,
 
-  /** Enables or disables the gaborish filter. Integer option, use -1 for the
-   * encoder default, 0 to disable, 1 to enable.
+  /** Edge preserving filter level, -1 to 3. Use -1 for the default (encoder
+   * chooses), 0 to 3 to set a strength.
    */
-  JXL_ENC_OPTION_GABORISH = 7,
+  JXL_ENC_OPTION_EPF = 7,
 
-  /** Enables modular encoding. Integer option, use -1 for default (encoder
+  /** Enables or disables the gaborish filter. Use -1 for the default (encoder
+   * chooses), 0 to disable, 1 to enable.
+   */
+  JXL_ENC_OPTION_GABORISH = 8,
+
+  /** Enables modular encoding. Use -1 for default (encoder
    * chooses), 0 to enforce VarDCT mode (e.g. for photographic images), 1 to
    * enforce modular mode (e.g. for lossless images).
    */
-  JXL_ENC_OPTION_MODULAR = 8,
+  JXL_ENC_OPTION_MODULAR = 9,
+
+  /** Enables or disables preserving color of invisible pixels. Use -1 for the
+   * default (1 if lossless, 0 if lossy), 0 to disable, 1 to enable.
+   */
+  JXL_ENC_OPTION_KEEP_INVISIBLE = 10,
+
+  /** TODO(lode): options for progressive: progressive, progressive_ac,
+   * qprogressive_ac, progressive_dc
+   */
+
+  /** TODO(lode): photon_noise option, which is float but may be usable as
+   * an integer option instead.
+   */
+
+  /** TODO(lode): center_first, center_x and center_y options.
+   */
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.

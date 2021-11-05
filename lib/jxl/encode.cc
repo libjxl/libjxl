@@ -343,6 +343,10 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.patches = static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_EPF:
+      if (value < -1 || value > 3) return JXL_ENC_ERROR;
+      options->values.cparams.epf = static_cast<int>(value);
+      return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_GABORISH:
       if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.gaborish = static_cast<jxl::Override>(value);
@@ -355,6 +359,11 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       } else {
         return JXL_ENC_ERROR;
       }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_KEEP_INVISIBLE:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      options->values.cparams.keep_invisible =
+          static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
