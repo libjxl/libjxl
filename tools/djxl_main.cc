@@ -25,8 +25,6 @@
 #include "tools/box/box.h"
 #include "tools/cmdline.h"
 #include "tools/codec_config.h"
-#include "tools/cpu/cpu.h"
-#include "tools/cpu/os_specific.h"
 #include "tools/djxl.h"
 #include "tools/speed_stats.h"
 
@@ -100,16 +98,6 @@ int DecompressMain(int argc, const char* argv[]) {
     fprintf(stderr, "Unknown compressed image format\n");
     return 1;
   }
-
-  const std::vector<int> cpus = jpegxl::tools::cpu::AvailableCPUs();
-  pool.RunOnEachThread([&cpus](const int task, const size_t thread) {
-    // 1.1-1.2x speedup (36 cores) from pinning.
-    if (thread < cpus.size()) {
-      if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[thread])) {
-        fprintf(stderr, "WARNING: failed to pin thread %" PRIuS ".\n", thread);
-      }
-    }
-  });
 
   if (!args.file_out && !args.quiet) {
     fprintf(stderr,

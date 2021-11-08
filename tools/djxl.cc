@@ -26,7 +26,6 @@
 #include "lib/jxl/image_ops.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
-#include "tools/cpu/cpu.h"
 
 namespace jpegxl {
 namespace tools {
@@ -69,9 +68,9 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "num_reps", "N", nullptr, &num_reps,
                           &ParseUnsigned);
 
-  opt_num_threads_id = cmdline->AddOptionValue('\0', "num_threads", "N",
-                                               "The number of threads to use",
-                                               &num_threads, &ParseUnsigned);
+  cmdline->AddOptionValue('\0', "num_threads", "N",
+                          "The number of threads to use", &num_threads,
+                          &ParseUnsigned);
 
   cmdline->AddOptionValue('\0', "print_profile", "0|1",
                           "print timing information before exiting",
@@ -149,21 +148,6 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (file_in == nullptr) {
     fprintf(stderr, "Missing INPUT filename.\n");
     return false;
-  }
-
-  // User didn't override num_threads, so we have to compute a default, which
-  // might fail, so only do so when necessary. Don't just check num_threads != 0
-  // because the user may have set it to that.
-  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    cpu::ProcessorTopology topology;
-    if (!cpu::DetectProcessorTopology(&topology)) {
-      // We have seen sporadic failures caused by setaffinity_np.
-      fprintf(stderr,
-              "Failed to choose default num_threads; you can avoid this "
-              "error by specifying a --num_threads N argument.\n");
-      return false;
-    }
-    num_threads = topology.packages * topology.cores_per_package;
   }
 
 #if JPEGXL_ENABLE_JPEG
