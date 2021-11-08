@@ -216,6 +216,22 @@ typedef enum {
    */
   JXL_ENC_OPTION_LOSSY_PALETTE = 22,
 
+  /** Color space for modular encoding: 0=RGB, 1=YCoCg, 2-37=RCT, -1=default:
+   * try several, depending on speed.
+   */
+  JXL_ENC_OPTION_MODULAR_COLOR_SPACE = 23,
+
+  /** Group size for modular encoding: -1=default, 0=128, 1=256, 2=512, 3=1024.
+   */
+  JXL_ENC_OPTION_MODULAR_GROUP_SIZE = 24,
+
+  /** Predictor for modular encoding. -1 = default, 0=zero, 1=left, 2=top,
+   * 3=avg0, 4=select, 5=gradient, 6=weighted, 7=topright, 8=topleft,
+   * 9=leftleft, 10=avg1, 11=avg2, 12=avg3, 13=toptop predictive average 14=mix
+   * 5 and 6, 15=mix everything.
+   */
+  JXL_ENC_OPTION_MODULAR_PREDICTOR = 25,
+
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
    */

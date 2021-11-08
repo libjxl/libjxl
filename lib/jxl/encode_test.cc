@@ -352,6 +352,25 @@ TEST(EncodeTest, OptionsTest) {
     EXPECT_EQ(70000, enc->last_used_cparams.palette_colors);
     EXPECT_EQ(true, enc->last_used_cparams.lossy_palette);
   }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(
+                  options, JXL_ENC_OPTION_MODULAR_COLOR_SPACE, 30));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(
+                  options, JXL_ENC_OPTION_MODULAR_GROUP_SIZE, 2));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(
+                  options, JXL_ENC_OPTION_MODULAR_PREDICTOR, 14));
+    VerifyFrameEncoding(enc.get(), options);
+    EXPECT_EQ(30, enc->last_used_cparams.colorspace);
+    EXPECT_EQ(2, enc->last_used_cparams.modular_group_size_shift);
+    EXPECT_EQ(jxl::Predictor::Best, enc->last_used_cparams.options.predictor);
+  }
 }
 
 namespace {
