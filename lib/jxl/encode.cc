@@ -365,6 +365,18 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       options->values.cparams.keep_invisible =
           static_cast<jxl::Override>(value);
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_GROUP_ORDER:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      options->values.cparams.centerfirst = (value == 1);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_GROUP_ORDER_CENTER_X:
+      if (value < -1) return JXL_ENC_ERROR;
+      options->values.cparams.center_x = static_cast<size_t>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y:
+      if (value < -1) return JXL_ENC_ERROR;
+      options->values.cparams.center_y = static_cast<size_t>(value);
+      return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
   }

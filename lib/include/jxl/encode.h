@@ -153,8 +153,22 @@ typedef enum {
    * an integer option instead.
    */
 
-  /** TODO(lode): center_first, center_x and center_y options.
+  /** Determines the order in which 256x256 regions are stored in the codestream
+   * for progressive rendering. Use -1 for the encoder
+   * default, 0 for scanline order, 1 for center-first order.
    */
+  JXL_ENC_OPTION_GROUP_ORDER = 11,
+
+  /** Determines the horizontal position of center for the center-first group
+   * order. Use -1 to automatically use the middle of the image, 0..xsize to
+   * specifically set it.
+   */
+  JXL_ENC_OPTION_GROUP_ORDER_CENTER_X = 12,
+
+  /** Determines the center for the center-first group order. Use -1 to
+   * automatically use the middle of the image, 0..ysize to specifically set it.
+   */
+  JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y = 13,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
