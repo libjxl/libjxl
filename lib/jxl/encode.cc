@@ -331,6 +331,12 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value == -1) value = 1;
       options->values.cparams.ec_resampling = value;
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_PHOTON_NOISE:
+      if (value < 0) return JXL_ENC_ERROR;
+      // TODO(lode): add encoder setting to set the 8 floating point values of
+      // the noise synthesis parameters per frame for more fine grained control.
+      options->values.cparams.photon_noise_iso = static_cast<float>(value);
+      return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_NOISE:
       if (value < -1 || value > 1) return JXL_ENC_ERROR;
       options->values.cparams.noise = static_cast<jxl::Override>(value);
