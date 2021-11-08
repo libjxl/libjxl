@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "jxl/parallel_runner.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/random.h"
 
 namespace jxl {
@@ -67,7 +68,7 @@ class FakeParallelRunner {
 
 extern "C" {
 // Function to pass as the parallel runner.
-JxlParallelRetCode JxlFakeParallelRunner(
+JXL_INLINE JxlParallelRetCode JxlFakeParallelRunner(
     void* runner_opaque, void* jpegxl_opaque, JxlParallelRunInit init,
     JxlParallelRunFunction func, uint32_t start_range, uint32_t end_range) {
   return static_cast<jxl::FakeParallelRunner*>(runner_opaque)
