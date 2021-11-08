@@ -109,85 +109,89 @@ typedef enum {
    */
   JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING = 3,
 
-  /** Enables or disables noise generation. Use -1 for the default (encoder
-   * chooses), 0 to disable, 1 to enable.
+  /** Adds noise to the image emulating photographic film noise, the higher the
+   * given number, the grainier the image will be. As an exmaple, a value of 100
+   * gives low noise whereas a value of 3200 gives a lot of noise. The default
+   * value is 0.
    */
-  JXL_ENC_OPTION_NOISE = 4,
+  JXL_ENC_OPTION_PHOTON_NOISE = 4,
+
+  /** Enables adaptive noise generation. This setting is not recommended for
+   * use, please use JXL_ENC_OPTION_PHOTON_NOISE instead. Use -1 for the default
+   * (encoder chooses), 0 to disable, 1 to enable.
+   */
+  JXL_ENC_OPTION_NOISE = 5,
 
   /** Enables or disables dots generation. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_DOTS = 5,
+  JXL_ENC_OPTION_DOTS = 6,
 
   /** Enables or disables patches generation. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_PATCHES = 6,
+  JXL_ENC_OPTION_PATCHES = 7,
 
   /** Edge preserving filter level, -1 to 3. Use -1 for the default (encoder
    * chooses), 0 to 3 to set a strength.
    */
-  JXL_ENC_OPTION_EPF = 7,
+  JXL_ENC_OPTION_EPF = 8,
 
   /** Enables or disables the gaborish filter. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_GABORISH = 8,
+  JXL_ENC_OPTION_GABORISH = 9,
 
   /** Enables modular encoding. Use -1 for default (encoder
    * chooses), 0 to enforce VarDCT mode (e.g. for photographic images), 1 to
    * enforce modular mode (e.g. for lossless images).
    */
-  JXL_ENC_OPTION_MODULAR = 9,
+  JXL_ENC_OPTION_MODULAR = 10,
 
   /** Enables or disables preserving color of invisible pixels. Use -1 for the
    * default (1 if lossless, 0 if lossy), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_KEEP_INVISIBLE = 10,
+  JXL_ENC_OPTION_KEEP_INVISIBLE = 11,
 
   /** Determines the order in which 256x256 regions are stored in the codestream
    * for progressive rendering. Use -1 for the encoder
    * default, 0 for scanline order, 1 for center-first order.
    */
-  JXL_ENC_OPTION_GROUP_ORDER = 11,
+  JXL_ENC_OPTION_GROUP_ORDER = 12,
 
   /** Determines the horizontal position of center for the center-first group
    * order. Use -1 to automatically use the middle of the image, 0..xsize to
    * specifically set it.
    */
-  JXL_ENC_OPTION_GROUP_ORDER_CENTER_X = 12,
+  JXL_ENC_OPTION_GROUP_ORDER_CENTER_X = 13,
 
   /** Determines the center for the center-first group order. Use -1 to
    * automatically use the middle of the image, 0..ysize to specifically set it.
    */
-  JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y = 13,
+  JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y = 14,
 
   /** Enables or disables progressive encoding for modular mode. Use -1 for the
    * encoder default, 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_RESPONSIVE = 14,
+  JXL_ENC_OPTION_RESPONSIVE = 15,
 
   /** Set the progressive mode for the AC coefficients of VarDCT, using spectral
    * progression from the DCT coefficients. Use -1 for the encoder default, 0 to
    * disable, 1 to enable.
    */
-  JXL_ENC_OPTION_PROGRESSIVE_AC = 15,
+  JXL_ENC_OPTION_PROGRESSIVE_AC = 16,
 
   /** Set the progressive mode for the AC coefficients of VarDCT, using
    * quantization of the least significant bits. Use -1 for the encoder default,
    * 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_QPROGRESSIVE_AC = 16,
+  JXL_ENC_OPTION_QPROGRESSIVE_AC = 17,
 
   /** Set the progressive mode using lower-resolution DC images for VarDCT. Use
    * -1 for the encoder default, 0 to disable, 1 to have an extra 64x64 lower
    * resolution pass, 2 to have a 512x512 and 64x64 lower resolution pass.
    */
-  JXL_ENC_OPTION_PROGRESSIVE_DC = 17,
-
-  /** TODO(lode): photon_noise option, which is float but may be usable as
-   * an integer option instead.
-   */
+  JXL_ENC_OPTION_PROGRESSIVE_DC = 18,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.

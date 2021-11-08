@@ -318,6 +318,16 @@ TEST(EncodeTest, OptionsTest) {
     EXPECT_EQ(true, enc->last_used_cparams.progressive_mode);
     EXPECT_EQ(2, enc->last_used_cparams.progressive_dc);
   }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_PHOTON_NOISE, 1777));
+    VerifyFrameEncoding(enc.get(), options);
+    EXPECT_EQ(1777.0f, enc->last_used_cparams.photon_noise_iso);
+  }
 }
 
 namespace {
