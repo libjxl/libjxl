@@ -40,7 +40,6 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
-#include "tools/cpu/cpu.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -404,9 +403,9 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          &params.force_cfl_jpeg_recompression, &SetBooleanFalse,
                          2);
 
-  opt_num_threads_id = cmdline->AddOptionValue(
-      '\0', "num_threads", "N", "number of worker threads (zero = none).",
-      &num_threads, &ParseUnsigned, 1);
+  cmdline->AddOptionValue('\0', "num_threads", "N",
+                          "number of worker threads (zero = none).",
+                          &num_threads, &ParseUnsigned, 1);
   cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
                           &num_reps, &ParseUnsigned, 1);
 
@@ -689,21 +688,6 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (params.epf > 3) {
     fprintf(stderr, "--epf must be in the 0..3 range\n");
     return false;
-  }
-
-  // User didn't override num_threads, so we have to compute a default, which
-  // might fail, so only do so when necessary. Don't just check num_threads != 0
-  // because the user may have set it to that.
-  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    cpu::ProcessorTopology topology;
-    if (!cpu::DetectProcessorTopology(&topology)) {
-      // We have seen sporadic failures caused by setaffinity_np.
-      fprintf(stderr,
-              "Failed to choose default num_threads; you can avoid this "
-              "error by specifying a --num_threads N argument.\n");
-      return false;
-    }
-    num_threads = topology.packages * topology.cores_per_package;
   }
 
   return true;

@@ -62,8 +62,6 @@ set(TOOL_BINARIES)
 add_library(jxl_tool STATIC EXCLUDE_FROM_ALL
   cmdline.cc
   codec_config.cc
-  cpu/cpu.cc
-  cpu/os_specific.cc
   tool_version.cc
 )
 target_compile_options(jxl_tool PUBLIC "${JPEGXL_INTERNAL_FLAGS}")

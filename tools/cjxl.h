@@ -9,6 +9,7 @@
 #include <stddef.h>
 
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "lib/extras/color_hints.h"
@@ -60,7 +61,7 @@ struct CompressArgs {
   // JXL flags
   size_t override_bitdepth = 0;
   jxl::CompressParams params;
-  size_t num_threads;
+  size_t num_threads = std::thread::hardware_concurrency();
   size_t num_reps = 1;
   float intensity_target = 0;
 
@@ -82,7 +83,6 @@ struct CompressArgs {
   jxl::InspectorImage3F inspector_image3f;
 
   // References (ids) of specific options to check if they were matched.
-  CommandLineParser::OptionId opt_num_threads_id = -1;
   CommandLineParser::OptionId opt_distance_id = -1;
   CommandLineParser::OptionId opt_target_size_id = -1;
   CommandLineParser::OptionId opt_target_bpp_id = -1;
