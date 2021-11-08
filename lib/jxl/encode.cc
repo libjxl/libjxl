@@ -399,6 +399,40 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1 || value > 2) return JXL_ENC_ERROR;
       options->values.cparams.progressive_dc = value;
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT:
+      if (value < -1 || value > 100) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.channel_colors_pre_transform_percent = 95.0f;
+      } else {
+        options->values.cparams.channel_colors_pre_transform_percent =
+            static_cast<float>(value);
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT:
+      if (value < -1 || value > 100) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.channel_colors_percent = 80.0f;
+      } else {
+        options->values.cparams.channel_colors_percent =
+            static_cast<float>(value);
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_PALETTE_COLORS:
+      if (value < -1 || value > 70913) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.palette_colors = 1 << 10;
+      } else {
+        options->values.cparams.palette_colors = value;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_LOSSY_PALETTE:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      // TODO(lode): the defaults of some palette settings depend on others.
+      // See the logic in cjxl. Similar for other settings. This should be
+      // handled in the encoder during JxlEncoderProcessOutput (or,
+      // alternatively, in the cjxl binary like now)
+      options->values.cparams.lossy_palette = (value == 1);
+      return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
   }
