@@ -1474,6 +1474,7 @@ struct PixelTestConfig {
   // Exif orientation, 1-8
   JxlOrientation orientation;
   bool keep_orientation;
+  size_t upsampling;
 };
 
 class DecodeTestParam : public ::testing::TestWithParam<PixelTestConfig> {};
@@ -1495,6 +1496,8 @@ TEST_P(DecodeTestParam, PixelTest) {
                                 0};
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.resampling = config.upsampling;
+  cparams.ec_resampling = config.upsampling;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), config.xsize,
       config.ysize, orig_channels, cparams, config.add_container,
@@ -1540,9 +1543,19 @@ TEST_P(DecodeTestParam, PixelTest) {
         xsize * 2 * orig_channels, nullptr, pixels.data(), pixels.size(),
         nullptr, nullptr, static_cast<jxl::Orientation>(config.orientation)));
   }
-
-  EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
-                              format_orig, format));
+  if (config.upsampling == 1) {
+    EXPECT_EQ(0u, ComparePixels(pixels.data(), pixels2.data(), xsize, ysize,
+                                format_orig, format));
+  } else {
+    // resampling is of course not lossless, so as a rough check:
+    // count pixels that are more than off-by-25 in the 8-bit value of one of
+    // the channels
+    EXPECT_LE(
+        ComparePixels(
+            pixels.data(), pixels2.data(), xsize, ysize, format_orig, format,
+            50.0 * (config.data_type == JXL_TYPE_UINT8 ? 1.0 : 256.0)),
+        300u);
+  }
 
   JxlDecoderDestroy(dec);
 }
@@ -1581,7 +1594,7 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
                        CodeStreamBoxFormat box, JxlOrientation orientation,
                        bool keep_orientation, OutputFormat format,
                        bool use_callback, bool set_buffer_early,
-                       bool resizable_runner) {
+                       bool resizable_runner, size_t upsampling) {
     PixelTestConfig c;
     c.grayscale = ch.grayscale;
     c.include_alpha = ch.include_alpha;
@@ -1597,17 +1610,21 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
     c.use_resizable_runner = resizable_runner;
     c.orientation = orientation;
     c.keep_orientation = keep_orientation;
+    c.upsampling = upsampling;
     all_tests.push_back(c);
   };
 
   // Test output formats and methods.
   for (ChannelInfo ch : ch_info) {
     for (int use_callback = 0; use_callback <= 1; use_callback++) {
-      for (OutputFormat fmt : out_formats) {
-        make_test(ch, 301, 33, /*add_preview=*/false,
-                  CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
-                  /*keep_orientation=*/false, fmt, use_callback,
-                  /*set_buffer_early=*/false, /*resizable_runner=*/false);
+      for (size_t upsampling : {1, 2, 4, 8}) {
+        for (OutputFormat fmt : out_formats) {
+          make_test(ch, 301, 33, /*add_preview=*/false,
+                    CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
+                    /*keep_orientation=*/false, fmt, use_callback,
+                    /*set_buffer_early=*/false, /*resizable_runner=*/false,
+                    upsampling);
+        }
       }
     }
   }
@@ -1617,21 +1634,21 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
               (CodeStreamBoxFormat)box, JXL_ORIENT_IDENTITY,
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false,
-              /*set_buffer_early=*/false, /*resizable_runner=*/false);
+              /*set_buffer_early=*/false, /*resizable_runner=*/false, 1);
   }
   // Test previews.
   for (int add_preview = 0; add_preview <= 1; add_preview++) {
     make_test(ch_info[0], 77, 33, add_preview, CodeStreamBoxFormat::kCSBF_None,
               JXL_ORIENT_IDENTITY, /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/false,
-              /*resizable_runner=*/false);
+              /*resizable_runner=*/false, 1);
   }
   // Test setting buffers early.
   make_test(ch_info[0], 300, 33, /*add_preview=*/false,
             CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
             /*keep_orientation=*/false, out_formats[0],
             /*use_callback=*/false, /*set_buffer_early=*/true,
-            /*resizable_runner=*/false);
+            /*resizable_runner=*/false, 1);
 
   // Test using the resizable runner
   for (size_t i = 0; i < 4; i++) {
@@ -1639,7 +1656,7 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
               CodeStreamBoxFormat::kCSBF_None, JXL_ORIENT_IDENTITY,
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/false,
-              /*resizable_runner=*/true);
+              /*resizable_runner=*/true, 1);
   }
 
   // Test orientations.
@@ -1649,13 +1666,13 @@ std::vector<PixelTestConfig> GeneratePixelTests() {
               static_cast<JxlOrientation>(orientation),
               /*keep_orientation=*/false, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/true,
-              /*resizable_runner=*/false);
+              /*resizable_runner=*/false, 1);
     make_test(ch_info[0], 280, 12, /*add_preview=*/false,
               CodeStreamBoxFormat::kCSBF_None,
               static_cast<JxlOrientation>(orientation),
               /*keep_orientation=*/true, out_formats[0],
               /*use_callback=*/false, /*set_buffer_early=*/true,
-              /*resizable_runner=*/false);
+              /*resizable_runner=*/false, 1);
   }
 
   return all_tests;
@@ -1706,6 +1723,7 @@ std::ostream& operator<<(std::ostream& os, const PixelTestConfig& c) {
   if (c.use_resizable_runner) os << "ResizableRunner";
   if (c.orientation != 1) os << "O" << c.orientation;
   if (c.keep_orientation) os << "Keep";
+  if (c.upsampling > 1) os << "x" << c.upsampling;
   return os;
 }
 
