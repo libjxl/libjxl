@@ -13,6 +13,7 @@
 #ifndef JXL_ENCODE_H_
 #define JXL_ENCODE_H_
 
+#include "jxl/codestream_header.h"
 #include "jxl/decode.h"
 #include "jxl/jxl_export.h"
 #include "jxl/memory_manager.h"
@@ -297,11 +298,20 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * Sets the buffer to read pixels from for the next image to encode. Must call
  * JxlEncoderSetBasicInfo before JxlEncoderAddImageFrame.
  *
- * Currently only some pixel formats are supported:
+ * Currently only some data types for pixel formats are supported:
  * - JXL_TYPE_UINT8
  * - JXL_TYPE_UINT16
  * - JXL_TYPE_FLOAT16, with nominal range 0..1
  * - JXL_TYPE_FLOAT, with nominal range 0..1
+ *
+ * We support interleaved channels as described by the JxlPixelFormat:
+ * - single-channel data, e.g. grayscale
+ * - single-channel + alpha
+ * - trichromatic, e.g. RGB
+ * - trichromatic + alpha
+ *
+ * Extra channels not handled here need to be set by @ref
+ * JxlEncoderSetExtraChannelBuffer.
  *
  * The color profile of the pixels depends on the value of uses_original_profile
  * in the JxlBasicInfo. If true, the pixels are assumed to be encoded in the
@@ -321,6 +331,31 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
     const JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
     const void* buffer, size_t size);
+
+/**
+ * Sets the buffer to read pixels from for an extra channel at a given index.
+ * The index must be smaller than the num_extra_channels in the associated
+ * JxlBasicInfo. Must call @ref JxlEncoderSetExtraChannelInfo before
+ * JxlEncoderSetExtraChannelBuffer.
+ *
+ * TODO(firsching): mention what data types in pixel formats are supported.
+ *
+ * It is required to call this function for every extra channel, except for the
+ * alpha channel if that was already set through @ref JxlEncoderAddImageFrame.
+ *
+ * @param options set of encoder options to use when encoding the extra channel.
+ * @param pixel_format format for pixels. Object owned by the caller and its
+ * contents are copied internally. The num_channels value is ignored, since the
+ * number of channels for an extra channel is always assumed to be one.
+ * @param buffer buffer type to input the pixel data from. Owned by the caller
+ * and its contents are copied internally.
+ * @param size size of buffer in bytes.
+ * @param index index of the extra channel to use.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
+    const JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
+    const void* buffer, size_t size, uint32_t index);
 
 /**
  * Declares that this encoder will not encode anything further.
@@ -378,6 +413,10 @@ JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
 /**
  * Sets the global metadata of the image encoded by this encoder.
  *
+ * If the JxlBasicInfo contains information of extra channels beyond an alpha
+ * channel, then @ref JxlEncoderSetExtraChannelInfo must be called between
+ * JxlEncoderSetBasicInfo and @ref JxlEncoderAddImageFrame.
+ *
  * @param enc encoder object.
  * @param info global image metadata. Object owned by the caller and its
  * contents are copied internally.
@@ -386,6 +425,48 @@ JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
                                                    const JxlBasicInfo* info);
+
+/**
+ * Initializes a JxlExtraChannelInfo struct to default values.
+ * For forwards-compatibility, this function has to be called before values
+ * are assigned to the struct fields.
+ * The default values correspond to an 8-bit channel of the provided type.
+ *
+ * @param type type of the extra channel.
+ * @param info global extra channel metadata. Object owned by the caller and its
+ * contents are copied internally.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
+                                               JxlExtraChannelInfo* info);
+
+/**
+ * Sets information for the extra channel at the given index. The index
+ * must be smaller than num_extra_channels in the associated JxlBasicInfo.
+ *
+ * @param enc encoder object
+ * @param index index of the extra channel to set.
+ * @param info global extra channel metadata. Object owned by the caller and its
+ * contents are copied internally.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
+    JxlEncoder* enc, size_t index, const JxlExtraChannelInfo* info);
+
+/**
+ * Sets the name for the extra channel at the given index in UTF-8. The index
+ * must be smaller than the num_extra_channels in the associated JxlBasicInfo.
+ *
+ * @param enc encoder object
+ * @param index index of the extra channel to set.
+ * @param name buffer with the name of the extra channel.
+ * @param size size of the name buffer in bytes.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
+                                                          size_t index,
+                                                          const char* name,
+                                                          size_t size);
 
 /**
  * Sets a frame-specific option of integer type to the encoder options.
