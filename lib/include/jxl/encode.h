@@ -145,14 +145,6 @@ typedef enum {
    */
   JXL_ENC_OPTION_KEEP_INVISIBLE = 10,
 
-  /** TODO(lode): options for progressive: progressive, progressive_ac,
-   * qprogressive_ac, progressive_dc
-   */
-
-  /** TODO(lode): photon_noise option, which is float but may be usable as
-   * an integer option instead.
-   */
-
   /** Determines the order in which 256x256 regions are stored in the codestream
    * for progressive rendering. Use -1 for the encoder
    * default, 0 for scanline order, 1 for center-first order.
@@ -169,6 +161,33 @@ typedef enum {
    * automatically use the middle of the image, 0..ysize to specifically set it.
    */
   JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y = 13,
+
+  /** Enables or disables progressive encoding for modular mode. Use -1 for the
+   * encoder default, 0 to disable, 1 to enable.
+   */
+  JXL_ENC_OPTION_RESPONSIVE = 14,
+
+  /** Set the progressive mode for the AC coefficients of VarDCT, using spectral
+   * progression from the DCT coefficients. Use -1 for the encoder default, 0 to
+   * disable, 1 to enable.
+   */
+  JXL_ENC_OPTION_PROGRESSIVE_AC = 15,
+
+  /** Set the progressive mode for the AC coefficients of VarDCT, using
+   * quantization of the least significant bits. Use -1 for the encoder default,
+   * 0 to disable, 1 to enable.
+   */
+  JXL_ENC_OPTION_QPROGRESSIVE_AC = 16,
+
+  /** Set the progressive mode using lower-resolution DC images for VarDCT. Use
+   * -1 for the encoder default, 0 to disable, 1 to have an extra 64x64 lower
+   * resolution pass, 2 to have a 512x512 and 64x64 lower resolution pass.
+   */
+  JXL_ENC_OPTION_PROGRESSIVE_DC = 17,
+
+  /** TODO(lode): photon_noise option, which is float but may be usable as
+   * an integer option instead.
+   */
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.

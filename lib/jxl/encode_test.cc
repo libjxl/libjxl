@@ -283,6 +283,41 @@ TEST(EncodeTest, OptionsTest) {
     VerifyFrameEncoding(enc.get(), options);
     EXPECT_EQ(2u, enc->last_used_cparams.decoding_speed_tier);
   }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_ERROR, JxlEncoderOptionsSetInteger(
+                                 options, JXL_ENC_OPTION_GROUP_ORDER, 100));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_GROUP_ORDER, 1));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(
+                  options, JXL_ENC_OPTION_GROUP_ORDER_CENTER_X, 5));
+    VerifyFrameEncoding(enc.get(), options);
+    EXPECT_EQ(true, enc->last_used_cparams.centerfirst);
+    EXPECT_EQ(5, enc->last_used_cparams.center_x);
+  }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_RESPONSIVE, 0));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_PROGRESSIVE_AC, 1));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(options,
+                                          JXL_ENC_OPTION_QPROGRESSIVE_AC, -1));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_PROGRESSIVE_DC, 2));
+    VerifyFrameEncoding(enc.get(), options);
+    EXPECT_EQ(false, enc->last_used_cparams.responsive);
+    EXPECT_EQ(true, enc->last_used_cparams.progressive_mode);
+    EXPECT_EQ(2, enc->last_used_cparams.progressive_dc);
+  }
 }
 
 namespace {
