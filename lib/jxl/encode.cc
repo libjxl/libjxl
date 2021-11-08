@@ -433,6 +433,28 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       // alternatively, in the cjxl binary like now)
       options->values.cparams.lossy_palette = (value == 1);
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_COLOR_SPACE:
+      // TODO(lode): also add color transform option (xyb, none, ycbcr)
+      if (value < -1 || value > 37) return JXL_ENC_ERROR;
+      options->values.cparams.colorspace = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_GROUP_SIZE:
+      if (value < -1 || value > 3) return JXL_ENC_ERROR;
+      // TODO(lode): the default behavior of this parameter for cjxl is
+      // to choose 1 or 2 depending on the situation. This behavior needs to be
+      // implemented either in the C++ library by allowing to set this to -1, or
+      // kept in cjxl and set it to 1 or 2 using this API.
+      if (value == -1) {
+        options->values.cparams.modular_group_size_shift = 1;
+      } else {
+        options->values.cparams.modular_group_size_shift = value;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_PREDICTOR:
+      if (value < -1 || value > 15) return JXL_ENC_ERROR;
+      options->values.cparams.options.predictor =
+          static_cast<jxl::Predictor>(value);
+      return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
   }
