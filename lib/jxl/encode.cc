@@ -377,6 +377,22 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1) return JXL_ENC_ERROR;
       options->values.cparams.center_y = static_cast<size_t>(value);
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_RESPONSIVE:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      options->values.cparams.responsive = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_PROGRESSIVE_AC:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      options->values.cparams.progressive_mode = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_QPROGRESSIVE_AC:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      options->values.cparams.qprogressive_mode = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_PROGRESSIVE_DC:
+      if (value < -1 || value > 2) return JXL_ENC_ERROR;
+      options->values.cparams.progressive_dc = value;
+      return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
   }
