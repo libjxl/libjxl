@@ -328,6 +328,30 @@ TEST(EncodeTest, OptionsTest) {
     VerifyFrameEncoding(enc.get(), options);
     EXPECT_EQ(1777.0f, enc->last_used_cparams.photon_noise_iso);
   }
+
+  {
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    EXPECT_EQ(
+        JXL_ENC_SUCCESS,
+        JxlEncoderOptionsSetInteger(
+            options, JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT, 55));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(
+                  options, JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT, 25));
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderOptionsSetInteger(
+                  options, JXL_ENC_OPTION_PALETTE_COLORS, 70000));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
+                                   options, JXL_ENC_OPTION_LOSSY_PALETTE, 1));
+    VerifyFrameEncoding(enc.get(), options);
+    EXPECT_EQ(55.0f,
+              enc->last_used_cparams.channel_colors_pre_transform_percent);
+    EXPECT_EQ(25.0f, enc->last_used_cparams.channel_colors_percent);
+    EXPECT_EQ(70000, enc->last_used_cparams.palette_colors);
+    EXPECT_EQ(true, enc->last_used_cparams.lossy_palette);
+  }
 }
 
 namespace {

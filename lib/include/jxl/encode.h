@@ -111,7 +111,7 @@ typedef enum {
   JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING = 3,
 
   /** Adds noise to the image emulating photographic film noise, the higher the
-   * given number, the grainier the image will be. As an exmaple, a value of 100
+   * given number, the grainier the image will be. As an example, a value of 100
    * gives low noise whereas a value of 3200 gives a lot of noise. The default
    * value is 0.
    */
@@ -193,6 +193,28 @@ typedef enum {
    * resolution pass, 2 to have a 512x512 and 64x64 lower resolution pass.
    */
   JXL_ENC_OPTION_PROGRESSIVE_DC = 18,
+
+  /** Use Global channel palette if the amount of colors is smaller than this
+   * percentage of range. Use 0-100 to set an explicit percentage, -1 to use the
+   * encoder default. Used for modular encoding.
+   */
+  JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT = 19,
+
+  /** Use Local channel palette if the amount of colors is smaller than this
+   * percentage of range. Use 0-100 to set an explicit percentage, -1 to use the
+   * encoder default. Used for modular encoding.
+   */
+  JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT = 20,
+
+  /** Use color palette if amount of colors is smaller than or equal to this
+   * amount, or -1 to use the encoder default. Used for modular encoding.
+   */
+  JXL_ENC_OPTION_PALETTE_COLORS = 21,
+
+  /** Enables or disables delta palette. Use -1 for the default (encoder
+   * chooses), 0 to disable, 1 to enable. Used in modular mode.
+   */
+  JXL_ENC_OPTION_LOSSY_PALETTE = 22,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
