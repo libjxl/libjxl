@@ -177,6 +177,7 @@ Status DecodeFrame(const DecompressParams& dparams,
     frame_decoder.SetMaxPasses(max_passes);
   }
   frame_decoder.SetRenderSpotcolors(dparams.render_spotcolors);
+  frame_decoder.SetCoalescing(dparams.coalescing);
 
   size_t processed_bytes = reader->TotalBitsConsumed() / kBitsPerByte;
 
@@ -875,7 +876,7 @@ Status FrameDecoder::Flush() {
       dec_state_, pool_, decoded_, is_finalized_));
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
                                             /*force_fir=*/false,
-                                            /*skip_blending=*/false,
+                                            /*skip_blending=*/!coalescing_,
                                             /*move_ec=*/is_finalized_));
 
   num_renders_++;
@@ -970,7 +971,8 @@ Status FrameDecoder::FinalizeFrame() {
 
   JXL_RETURN_IF_ERROR(Flush());
 
-  if (dec_state_->shared->frame_header.CanBeReferenced()) {
+  if (dec_state_->shared->frame_header.CanBeReferenced() &&
+      (frame_header_.frame_type != kRegularFrame || coalescing_)) {
     size_t id = dec_state_->shared->frame_header.save_as_reference;
     auto& reference_frame = dec_state_->shared_storage.reference_frames[id];
     if (dec_state_->pre_color_transform_frame.xsize() == 0) {
@@ -1018,8 +1020,8 @@ Status FrameDecoder::FinalizeFrame() {
     // coalesced frame of size equal to image dimensions. Other frames are not
     // blended, thus their final size is the size that was defined in the
     // frame_header.
-    if (frame_header_.frame_type == kRegularFrame ||
-        frame_header_.frame_type == kSkipProgressive) {
+    if (coalescing_ && (frame_header_.frame_type == kRegularFrame ||
+                        frame_header_.frame_type == kSkipProgressive)) {
       decoded_->ShrinkTo(
           dec_state_->shared->frame_header.nonserialized_metadata->xsize(),
           dec_state_->shared->frame_header.nonserialized_metadata->ysize());
