@@ -110,127 +110,146 @@ typedef enum {
    */
   JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING = 3,
 
+  /** Indicates the frame added with @ref JxlEncoderAddImageFrame is already
+   * downsampled by the downsampling factor set with @ref
+   * JXL_ENC_OPTION_RESAMPLING. The input frame must then be given in the
+   * downsampled resolution, not the full image resolution. The downsampled
+   * resolution is given by ceil(xsize / resampling), ceil(ysize / resampling)
+   * with xsize and ysize the dimensions given in the basic info, and resampling
+   * the factor set with @ref JXL_ENC_OPTION_RESAMPLING.
+   * Use 0 to disable, 1 to enable. Default value is 0.
+   */
+  JXL_ENC_OPTION_ALREADY_DOWNSAMPLED = 4,
+
   /** Adds noise to the image emulating photographic film noise, the higher the
    * given number, the grainier the image will be. As an example, a value of 100
    * gives low noise whereas a value of 3200 gives a lot of noise. The default
    * value is 0.
    */
-  JXL_ENC_OPTION_PHOTON_NOISE = 4,
+  JXL_ENC_OPTION_PHOTON_NOISE = 5,
 
   /** Enables adaptive noise generation. This setting is not recommended for
    * use, please use JXL_ENC_OPTION_PHOTON_NOISE instead. Use -1 for the default
    * (encoder chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_NOISE = 5,
+  JXL_ENC_OPTION_NOISE = 6,
 
   /** Enables or disables dots generation. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_DOTS = 6,
+  JXL_ENC_OPTION_DOTS = 7,
 
   /** Enables or disables patches generation. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_PATCHES = 7,
+  JXL_ENC_OPTION_PATCHES = 8,
 
   /** Edge preserving filter level, -1 to 3. Use -1 for the default (encoder
    * chooses), 0 to 3 to set a strength.
    */
-  JXL_ENC_OPTION_EPF = 8,
+  JXL_ENC_OPTION_EPF = 9,
 
   /** Enables or disables the gaborish filter. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_GABORISH = 9,
+  JXL_ENC_OPTION_GABORISH = 10,
 
   /** Enables modular encoding. Use -1 for default (encoder
    * chooses), 0 to enforce VarDCT mode (e.g. for photographic images), 1 to
    * enforce modular mode (e.g. for lossless images).
    */
-  JXL_ENC_OPTION_MODULAR = 10,
+  JXL_ENC_OPTION_MODULAR = 11,
 
   /** Enables or disables preserving color of invisible pixels. Use -1 for the
    * default (1 if lossless, 0 if lossy), 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_KEEP_INVISIBLE = 11,
+  JXL_ENC_OPTION_KEEP_INVISIBLE = 12,
 
   /** Determines the order in which 256x256 regions are stored in the codestream
    * for progressive rendering. Use -1 for the encoder
    * default, 0 for scanline order, 1 for center-first order.
    */
-  JXL_ENC_OPTION_GROUP_ORDER = 12,
+  JXL_ENC_OPTION_GROUP_ORDER = 13,
 
   /** Determines the horizontal position of center for the center-first group
    * order. Use -1 to automatically use the middle of the image, 0..xsize to
    * specifically set it.
    */
-  JXL_ENC_OPTION_GROUP_ORDER_CENTER_X = 13,
+  JXL_ENC_OPTION_GROUP_ORDER_CENTER_X = 14,
 
   /** Determines the center for the center-first group order. Use -1 to
    * automatically use the middle of the image, 0..ysize to specifically set it.
    */
-  JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y = 14,
+  JXL_ENC_OPTION_GROUP_ORDER_CENTER_Y = 15,
 
   /** Enables or disables progressive encoding for modular mode. Use -1 for the
    * encoder default, 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_RESPONSIVE = 15,
+  JXL_ENC_OPTION_RESPONSIVE = 16,
 
   /** Set the progressive mode for the AC coefficients of VarDCT, using spectral
    * progression from the DCT coefficients. Use -1 for the encoder default, 0 to
    * disable, 1 to enable.
    */
-  JXL_ENC_OPTION_PROGRESSIVE_AC = 16,
+  JXL_ENC_OPTION_PROGRESSIVE_AC = 17,
 
   /** Set the progressive mode for the AC coefficients of VarDCT, using
    * quantization of the least significant bits. Use -1 for the encoder default,
    * 0 to disable, 1 to enable.
    */
-  JXL_ENC_OPTION_QPROGRESSIVE_AC = 17,
+  JXL_ENC_OPTION_QPROGRESSIVE_AC = 18,
 
   /** Set the progressive mode using lower-resolution DC images for VarDCT. Use
    * -1 for the encoder default, 0 to disable, 1 to have an extra 64x64 lower
    * resolution pass, 2 to have a 512x512 and 64x64 lower resolution pass.
    */
-  JXL_ENC_OPTION_PROGRESSIVE_DC = 18,
+  JXL_ENC_OPTION_PROGRESSIVE_DC = 19,
 
   /** Use Global channel palette if the amount of colors is smaller than this
    * percentage of range. Use 0-100 to set an explicit percentage, -1 to use the
    * encoder default. Used for modular encoding.
    */
-  JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT = 19,
+  JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT = 20,
 
   /** Use Local channel palette if the amount of colors is smaller than this
    * percentage of range. Use 0-100 to set an explicit percentage, -1 to use the
    * encoder default. Used for modular encoding.
    */
-  JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT = 20,
+  JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT = 21,
 
   /** Use color palette if amount of colors is smaller than or equal to this
    * amount, or -1 to use the encoder default. Used for modular encoding.
    */
-  JXL_ENC_OPTION_PALETTE_COLORS = 21,
+  JXL_ENC_OPTION_PALETTE_COLORS = 22,
 
   /** Enables or disables delta palette. Use -1 for the default (encoder
    * chooses), 0 to disable, 1 to enable. Used in modular mode.
    */
-  JXL_ENC_OPTION_LOSSY_PALETTE = 22,
+  JXL_ENC_OPTION_LOSSY_PALETTE = 23,
 
-  /** Color space for modular encoding: 0=RGB, 1=YCoCg, 2-37=RCT, -1=default:
-   * try several, depending on speed.
+  /** Color transform for internal encoding: -1 = default, 0=XYB, 1=none (RGB),
+   * 2=YCbCr. The XYB setting performs the forward XYB transform. None and
+   * YCbCr both perform no transform, but YCbCr is used to indicate that the
+   * encoded data losslessly represents YCbCr values.
    */
-  JXL_ENC_OPTION_MODULAR_COLOR_SPACE = 23,
+  JXL_ENC_OPTION_COLOR_TRANSFORM = 24,
+
+  /** Color space for modular encoding: -1=default, 0-35=reverse color transform
+   * index, e.g. index 0 = none, index 6 = YCoCg.
+   * The default behavior is to try several, depending on the speed setting.
+   */
+  JXL_ENC_OPTION_MODULAR_COLOR_SPACE = 25,
 
   /** Group size for modular encoding: -1=default, 0=128, 1=256, 2=512, 3=1024.
    */
-  JXL_ENC_OPTION_MODULAR_GROUP_SIZE = 24,
+  JXL_ENC_OPTION_MODULAR_GROUP_SIZE = 26,
 
   /** Predictor for modular encoding. -1 = default, 0=zero, 1=left, 2=top,
    * 3=avg0, 4=select, 5=gradient, 6=weighted, 7=topright, 8=topleft,
    * 9=leftleft, 10=avg1, 11=avg2, 12=avg3, 13=toptop predictive average 14=mix
    * 5 and 6, 15=mix everything.
    */
-  JXL_ENC_OPTION_MODULAR_PREDICTOR = 25,
+  JXL_ENC_OPTION_MODULAR_PREDICTOR = 27,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
@@ -751,8 +770,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc,
  * Enables lossless encoding.
  *
  * This is not an option like the others on itself, but rather while enabled it
- * overrides a set of existing options (such as distance and modular mode) that
- * enables bit-for-bit lossless encoding.
+ * overrides a set of existing options (such as distance, modular mode and
+ * color transform) that enables bit-for-bit lossless encoding.
  *
  * When disabled, those options are not overridden, but since those options
  * could still have been manually set to a combination that operates losslessly,
