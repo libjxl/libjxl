@@ -334,6 +334,15 @@ Status MakeFrameHeader(const CompressParams& cparams,
     frame_header->frame_origin = ib.origin;
     size_t ups = 1;
     if (cparams.already_downsampled) ups = cparams.resampling;
+
+    // TODO(lode): this is not correct in case of odd original image sizes in
+    // combination with cparams.already_downsampled. Likely these values should
+    // be set to respectively frame_header->default_xsize() and
+    // frame_header->default_ysize() instead, the original (non downsampled)
+    // intended decoded image dimensions. But it may be more subtle than that
+    // if combined with crop. This issue causes custom_size_or_origin to be
+    // incorrectly set to true in case of already_downsampled with odd output
+    // image size when no cropping is used.
     frame_header->frame_size.xsize = ib.xsize() * ups;
     frame_header->frame_size.ysize = ib.ysize() * ups;
     if (ib.origin.x0 != 0 || ib.origin.y0 != 0 ||

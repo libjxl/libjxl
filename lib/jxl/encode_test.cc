@@ -366,7 +366,10 @@ TEST(EncodeTest, OptionsTest) {
               JxlEncoderOptionsSetInteger(
                   options, JXL_ENC_OPTION_MODULAR_PREDICTOR, 14));
     VerifyFrameEncoding(enc.get(), options);
-    EXPECT_EQ(30, enc->last_used_cparams.colorspace);
+    // It was set to 30, but becomes 32 because in the C++ implementation, the
+    // numerical RCT values are shifted 2 compared to the specification. The
+    // API uses the values seen in the JXL specification.
+    EXPECT_EQ(32, enc->last_used_cparams.colorspace);
     EXPECT_EQ(2, enc->last_used_cparams.modular_group_size_shift);
     EXPECT_EQ(jxl::Predictor::Best, enc->last_used_cparams.options.predictor);
   }

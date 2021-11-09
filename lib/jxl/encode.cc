@@ -455,6 +455,11 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       options->values.cparams.resampling = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING:
+      // TOOD(lode): the jxl codestream allows choosing a different resampling
+      // factor for each extra channel, independently per frame. Move this
+      // option to a JxlEncoderOptions-option that can be set per extra channel,
+      // so needs its own function rather than JxlEncoderOptionsSetInteger due
+      // to the extra channel index argument required.
       if (value != -1 && value != 1 && value != 2 && value != 4 && value != 8) {
         return JXL_ENC_ERROR;
       }
@@ -462,6 +467,12 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       // 2x2 for extra channels, so 1x1 is set as the default.
       if (value == -1) value = 1;
       options->values.cparams.ec_resampling = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_ALREADY_DOWNSAMPLED:
+      if (value < 0 || value > 1) {
+        return JXL_ENC_ERROR;
+      }
+      options->values.cparams.already_downsampled = (value == 1);
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_PHOTON_NOISE:
       if (value < 0) return JXL_ENC_ERROR;
@@ -565,10 +576,18 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       // alternatively, in the cjxl binary like now)
       options->values.cparams.lossy_palette = (value == 1);
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_COLOR_TRANSFORM:
+      if (value < -1 || value > 2) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.color_transform = jxl::ColorTransform::kXYB;
+      } else {
+        options->values.cparams.color_transform =
+            static_cast<jxl::ColorTransform>(value);
+      }
+      return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_MODULAR_COLOR_SPACE:
-      // TODO(lode): also add color transform option (xyb, none, ycbcr)
-      if (value < -1 || value > 37) return JXL_ENC_ERROR;
-      options->values.cparams.colorspace = value;
+      if (value < -1 || value > 35) return JXL_ENC_ERROR;
+      options->values.cparams.colorspace = value + 2;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_MODULAR_GROUP_SIZE:
       if (value < -1 || value > 3) return JXL_ENC_ERROR;
@@ -780,8 +799,15 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     c_current = options->enc->metadata.m.color_encoding;
   }
 
-  if (!jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
-                                options->enc->metadata.ysize(), buffer, size,
+  size_t xsize = options->enc->metadata.xsize();
+  size_t ysize = options->enc->metadata.ysize();
+  if (options->values.cparams.already_downsampled) {
+    size_t factor = options->values.cparams.resampling;
+    xsize = jxl::DivCeil(xsize, factor);
+    ysize = jxl::DivCeil(ysize, factor);
+  }
+
+  if (!jxl::BufferToImageBundle(*pixel_format, xsize, ysize, buffer, size,
                                 options->enc->thread_pool.get(), c_current,
                                 &(queued_frame->frame))) {
     return JXL_ENC_ERROR;
