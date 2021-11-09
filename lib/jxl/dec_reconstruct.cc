@@ -1057,7 +1057,8 @@ Status FinalizeImageRect(
          dec_state->rgb_output_is_rgba, alpha,
          alpha_rect.Lines(available_y, num_ys),
          upsampled_frame_rect.Lines(available_y, num_ys)
-             .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+             .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                        frame_dim.ysize_upsampled)),
          dec_state->rgb_output, dec_state->rgb_stride);
       }
       if (dec_state->pixel_callback != nullptr) {
