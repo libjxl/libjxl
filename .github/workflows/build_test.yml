@@ -30,7 +30,7 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
             # Conformance tooling test requires numpy.
-            apt_pkgs: python3-numpy
+            apt_pkgs: python3-numpy libbenchmark-dev libbenchmark-tools
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
@@ -197,6 +197,12 @@ jobs:
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
+    # Run gbench once, just to make sure it runs, not for actual benchmarking.
+    - name: gbench check
+      if: |
+        matrix.name == 'release' || github.event_name == 'push'
+      run: |
+        ./ci.sh gbench --benchmark_min_time=0
 
 
   cross_compile_ubuntu:
