@@ -30,7 +30,7 @@ jobs:
             env_stack_size: 1
             max_stack: 3000
             # Conformance tooling test requires numpy.
-            apt_pkgs: python3-numpy libbenchmark-dev libbenchmark-tools
+            apt_pkgs: python3-numpy
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
@@ -81,6 +81,8 @@ jobs:
           clang-7 \
           cmake \
           doxygen \
+          libbenchmark-dev \
+          libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
