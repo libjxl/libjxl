@@ -1,0 +1,27 @@
+/* Copyright (c) the JPEG XL Project Authors. All rights reserved.
+ *
+ * Use of this source code is governed by a BSD-style
+ * license that can be found in the LICENSE file.
+ */
+
+/** @addtogroup libjxl_common
+ * @{
+ * @file version.h
+ * @brief libjxl version information
+ */
+
+#ifndef JXL_VERSION_H_
+#define JXL_VERSION_H_
+
+#define JPEGXL_LIBRARY_VERSION @JPEGXL_LIBRARY_VERSION@
+#define JPEGXL_MAJOR_VERSION @JPEGXL_MAJOR_VERSION@
+#define JPEGXL_MINOR_VERSION @JPEGXL_MINOR_VERSION@
+#define JPEGXL_PATCH_VERSION @JPEGXL_PATCH_VERSION@
+
+#define JPEGXL_COMPUTE_LIBRARY_VERSION(maj,min,patch) ((maj)*1000000+(min)*1000+(rev))
+
+#define JPEGXL_VERSION_NUM JPEGXL_COMPUTE_LIBRARY_VERSION(JPEGXL_MAJOR_VERSION,JPEGXL_MINOR_VERSION,JPEGXL_PATCH_VERSION)
+
+#endif /* JXL_VERSION_H_ */
+
+/** @}*/
