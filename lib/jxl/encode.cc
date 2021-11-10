@@ -607,7 +607,12 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
 JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
                                          const JxlPixelFormat* pixel_format,
                                          const void* buffer, size_t size) {
-  if (!options->enc->basic_info_set || !options->enc->color_encoding_set) {
+  if (!options->enc->basic_info_set ||
+      (!options->enc->color_encoding_set &&
+       !options->enc->metadata.m.xyb_encoded)) {
+    // Basic Info must be set, and color encoding must be set directly,
+    // or set to XYB via JxlBasicInfo.uses_original_profile = JXL_FALSE
+    // Otherwise, this is an API misuse.
     return JXL_ENC_ERROR;
   }
 
