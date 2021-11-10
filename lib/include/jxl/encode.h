@@ -618,7 +618,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
  * @param enc encoder object
  * @param index index of the extra channel to set.
  * @param name buffer with the name of the extra channel.
- * @param size size of the name buffer in bytes.
+ * @param size size of the name buffer in bytes, not counting the terminating
+ * character.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
