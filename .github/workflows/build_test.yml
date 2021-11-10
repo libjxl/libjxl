@@ -34,7 +34,7 @@ jobs:
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
-            env_test_stack_size: 2048
+            env_test_stack_size: 4000
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
