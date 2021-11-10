@@ -235,6 +235,54 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   return JXL_ENC_SUCCESS;
 }
 
+void JxlEncoderInitExtraChannelInfo(JxlExtraChannelType type,
+                                    JxlExtraChannelInfo* info) {
+  info->type = type;
+  info->bits_per_sample = 8;
+  info->exponent_bits_per_sample = 0;
+  info->dim_shift = 0;
+  info->name_length = 0;
+  info->alpha_premultiplied = JXL_FALSE;
+  info->spot_color[0] = 0;
+  info->spot_color[1] = 0;
+  info->spot_color[2] = 0;
+  info->spot_color[3] = 0;
+  info->cfa_channel = 0;
+}
+
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
+    JxlEncoder* enc, size_t index, const JxlExtraChannelInfo* info) {
+  if (index >= enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR("Invalid value for the index of extra channel");
+  }
+  jxl::ExtraChannelInfo& channel = enc->metadata.m.extra_channel_info[index];
+  channel.type = static_cast<jxl::ExtraChannel>(info->type);
+  channel.bit_depth.bits_per_sample = info->bits_per_sample;
+  channel.bit_depth.exponent_bits_per_sample = info->exponent_bits_per_sample;
+  channel.bit_depth.floating_point_sample = info->exponent_bits_per_sample != 0;
+  channel.dim_shift = info->dim_shift;
+  channel.name = "";
+  channel.alpha_associated = (info->alpha_premultiplied != 0);
+  channel.cfa_channel = info->cfa_channel;
+  channel.spot_color[0] = info->spot_color[0];
+  channel.spot_color[1] = info->spot_color[1];
+  channel.spot_color[2] = info->spot_color[2];
+  channel.spot_color[3] = info->spot_color[3];
+  return JXL_ENC_SUCCESS;
+}
+
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
+                                                          size_t index,
+                                                          const char* name,
+                                                          size_t size) {
+  if (index >= enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR("Invalid value for the index of extra channel");
+  }
+  enc->metadata.m.extra_channel_info[index].name =
+      std::string(name, name + size);
+  return JXL_ENC_SUCCESS;
+}
+
 JxlEncoderOptions* JxlEncoderOptionsCreate(JxlEncoder* enc,
                                            const JxlEncoderOptions* source) {
   auto opts =
