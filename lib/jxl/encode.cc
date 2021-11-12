@@ -632,7 +632,7 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
   }
 
   jxl::ColorEncoding c_current;
-  if (options->enc->metadata.m.xyb_encoded) {
+  if (!options->enc->color_encoding_set) {
     if ((pixel_format->data_type == JXL_TYPE_FLOAT) ||
         (pixel_format->data_type == JXL_TYPE_FLOAT16)) {
       c_current =
