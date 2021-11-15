@@ -3371,6 +3371,10 @@ TEST(DecodeTest, ContinueFinalNonEssentialBoxTest) {
 
   EXPECT_EQ(JXL_DEC_BASIC_INFO, JxlDecoderProcessInput(dec));
   EXPECT_EQ(JXL_DEC_FRAME, JxlDecoderProcessInput(dec));
+  // The decoder returns success despite not having seen the final unknown box
+  // yet. This is because calling JxlDecoderCloseInput is not mandatory for
+  // backwards compatibility, so it doesn't know more bytes follow, the current
+  // bytes ended at a perfectly valid place.
   EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   size_t remaining = JxlDecoderReleaseInput(dec);
