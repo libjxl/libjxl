@@ -491,7 +491,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * For now metadata boxes can only be added before or after the codestream with
  * all frames, so using JxlEncoderAddBox is only possible before the first
  * JxlEncoderAddImageFrame call, and/or after the last JxlEncoderAddImageFrame
- * call and JxlEncoderCloseInput. Support for adding boxes in-between the
+ * call and JxlEncoderCloseFrames. Support for adding boxes in-between the
  * codestream, and/or in-between image frames may be added later, and would
  * cause the encoder to use jxlp boxes for the codestream.
  *
@@ -533,6 +533,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc);
  * the stream will be finished. It is not necessary to use this function if
  * @ref JxlEncoderUseBoxes is not used.
  *
+ * NOTE: if you don't need to close frames and boxes at separate times, you can
+ * use @ref JxlEncoderCloseInput instead to close both at once.
+ *
  * @param enc encoder object.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderCloseBoxes(JxlEncoder* enc);
@@ -541,9 +544,21 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderCloseBoxes(JxlEncoder* enc);
  * Declares that this encoder will not encode any further frames. Further
  * metadata boxes may still be added.
  *
- * Must be called between JxlEncoderAddImageFrame/JPEGFrame of the last frame
- * and the next call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput
- * won't output the last frame correctly.
+ * NOTE: if you don't need to close frames and boxes at separate times, you can
+ * use @ref JxlEncoderCloseInput instead to close both at once.
+ *
+ * @param enc encoder object.
+ */
+JXL_EXPORT void JxlEncoderCloseFrames(JxlEncoder* enc);
+
+/**
+ * Closes any input to the encoder, equivalent to calling JxlEncoderCloseFrames
+ * as well as calling JxlEncoderCloseBoxes if needed. No further input of any
+ * kind may be given to the encoder, but further @ref JxlEncoderProcessOutput
+ * calls should be done to create the final output.
+ *
+ * The requirements of both @ref JxlEncoderCloseFrames and @ref
+ * JxlEncoderCloseBoxes apply to this function.
  *
  * @param enc encoder object.
  */

@@ -86,7 +86,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
   // TODO(zond): Handle progressive mode like EncodeFile does it.
   // TODO(zond): Handle animation like EncodeFile does it, by checking if
-  //             JxlEncoderCloseInput has been called and if the frame queue is
+  //             JxlEncoderCloseFrames has been called and if the frame queue is
   //             empty (to see if it's the last animation frame).
 
   if (metadata.m.xyb_encoded) {
@@ -707,7 +707,12 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
   return JXL_ENC_SUCCESS;
 }
 
-void JxlEncoderCloseInput(JxlEncoder* enc) { enc->input_closed = true; }
+void JxlEncoderCloseFrames(JxlEncoder* enc) { enc->input_closed = true; }
+
+void JxlEncoderCloseInput(JxlEncoder* enc) {
+  JxlEncoderCloseFrames(enc);
+  // TODO(lode): also call JxlEncoderCloseBoxes once implemented
+}
 
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
