@@ -949,7 +949,7 @@ Status FrameDecoder::FinalizeFrame() {
     } else {
       reference_frame.storage = ImageBundle(decoded_->metadata());
       reference_frame.storage.SetFromImage(
-          std::move(dec_state_->pre_color_transform_frame),
+          CopyImage(dec_state_->pre_color_transform_frame),
           decoded_->c_current());
       if (decoded_->HasExtraChannels()) {
         const std::vector<ImageF>* ecs = &dec_state_->pre_color_transform_ec;
