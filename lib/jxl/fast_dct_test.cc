@@ -68,7 +68,8 @@ HWY_NOINLINE void TestFastTranspose8x8() { TestFastTranspose<8, 8>(); }
 HWY_NOINLINE void TestFloatTranspose8x8() { TestFloatTranspose<8, 8>(); }
 HWY_NOINLINE void TestFastIDCT8x8() { TestFastIDCT<8, 8>(); }
 HWY_NOINLINE void TestFloatIDCT8x8() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<8, 8>();
@@ -78,7 +79,8 @@ HWY_NOINLINE void TestFastTranspose8x16() { TestFastTranspose<8, 16>(); }
 HWY_NOINLINE void TestFloatTranspose8x16() { TestFloatTranspose<8, 16>(); }
 HWY_NOINLINE void TestFastIDCT8x16() { TestFastIDCT<8, 16>(); }
 HWY_NOINLINE void TestFloatIDCT8x16() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<8, 16>();
@@ -88,7 +90,8 @@ HWY_NOINLINE void TestFastTranspose8x32() { TestFastTranspose<8, 32>(); }
 HWY_NOINLINE void TestFloatTranspose8x32() { TestFloatTranspose<8, 32>(); }
 HWY_NOINLINE void TestFastIDCT8x32() { TestFastIDCT<8, 32>(); }
 HWY_NOINLINE void TestFloatIDCT8x32() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<8, 32>();
@@ -98,7 +101,8 @@ HWY_NOINLINE void TestFastTranspose16x8() { TestFastTranspose<16, 8>(); }
 HWY_NOINLINE void TestFloatTranspose16x8() { TestFloatTranspose<16, 8>(); }
 HWY_NOINLINE void TestFastIDCT16x8() { TestFastIDCT<16, 8>(); }
 HWY_NOINLINE void TestFloatIDCT16x8() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<16, 8>();
@@ -108,7 +112,8 @@ HWY_NOINLINE void TestFastTranspose16x16() { TestFastTranspose<16, 16>(); }
 HWY_NOINLINE void TestFloatTranspose16x16() { TestFloatTranspose<16, 16>(); }
 HWY_NOINLINE void TestFastIDCT16x16() { TestFastIDCT<16, 16>(); }
 HWY_NOINLINE void TestFloatIDCT16x16() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<16, 16>();
@@ -118,7 +123,8 @@ HWY_NOINLINE void TestFastTranspose16x32() { TestFastTranspose<16, 32>(); }
 HWY_NOINLINE void TestFloatTranspose16x32() { TestFloatTranspose<16, 32>(); }
 HWY_NOINLINE void TestFastIDCT16x32() { TestFastIDCT<16, 32>(); }
 HWY_NOINLINE void TestFloatIDCT16x32() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<16, 32>();
@@ -128,7 +134,8 @@ HWY_NOINLINE void TestFastTranspose32x8() { TestFastTranspose<32, 8>(); }
 HWY_NOINLINE void TestFloatTranspose32x8() { TestFloatTranspose<32, 8>(); }
 HWY_NOINLINE void TestFastIDCT32x8() { TestFastIDCT<32, 8>(); }
 HWY_NOINLINE void TestFloatIDCT32x8() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<32, 8>();
@@ -138,7 +145,8 @@ HWY_NOINLINE void TestFastTranspose32x16() { TestFastTranspose<32, 16>(); }
 HWY_NOINLINE void TestFloatTranspose32x16() { TestFloatTranspose<32, 16>(); }
 HWY_NOINLINE void TestFastIDCT32x16() { TestFastIDCT<32, 16>(); }
 HWY_NOINLINE void TestFloatIDCT32x16() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<32, 16>();
@@ -148,7 +156,8 @@ HWY_NOINLINE void TestFastTranspose32x32() { TestFastTranspose<32, 32>(); }
 HWY_NOINLINE void TestFloatTranspose32x32() { TestFloatTranspose<32, 32>(); }
 HWY_NOINLINE void TestFastIDCT32x32() { TestFastIDCT<32, 32>(); }
 HWY_NOINLINE void TestFloatIDCT32x32() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<32, 32>();
@@ -158,7 +167,8 @@ HWY_NOINLINE void TestFastTranspose32x64() { TestFastTranspose<32, 64>(); }
 HWY_NOINLINE void TestFloatTranspose32x64() { TestFloatTranspose<32, 64>(); }
 HWY_NOINLINE void TestFastIDCT32x64() { TestFastIDCT<32, 64>(); }
 HWY_NOINLINE void TestFloatIDCT32x64() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<32, 64>();
@@ -168,7 +178,8 @@ HWY_NOINLINE void TestFastTranspose64x32() { TestFastTranspose<64, 32>(); }
 HWY_NOINLINE void TestFloatTranspose64x32() { TestFloatTranspose<64, 32>(); }
 HWY_NOINLINE void TestFastIDCT64x32() { TestFastIDCT<64, 32>(); }
 HWY_NOINLINE void TestFloatIDCT64x32() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<64, 32>();
@@ -178,7 +189,8 @@ HWY_NOINLINE void TestFastTranspose64x64() { TestFastTranspose<64, 64>(); }
 HWY_NOINLINE void TestFloatTranspose64x64() { TestFloatTranspose<64, 64>(); }
 HWY_NOINLINE void TestFastIDCT64x64() { TestFastIDCT<64, 64>(); }
 HWY_NOINLINE void TestFloatIDCT64x64() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<64, 64>();
@@ -188,7 +200,8 @@ HWY_NOINLINE void TestFastTranspose64x128() { TestFastTranspose<64, 128>(); }
 HWY_NOINLINE void TestFloatTranspose64x128() { TestFloatTranspose<64, 128>(); }
 HWY_NOINLINE void TestFastIDCT64x128() { TestFastIDCT<64, 128>(); }
 HWY_NOINLINE void TestFloatIDCT64x128() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<64, 128>();
@@ -198,7 +211,8 @@ HWY_NOINLINE void TestFastTranspose128x64() { TestFastTranspose<128, 64>(); }
 HWY_NOINLINE void TestFloatTranspose128x64() { TestFloatTranspose<128, 64>(); }
 HWY_NOINLINE void TestFastIDCT128x64() { TestFastIDCT<128, 64>(); }
 HWY_NOINLINE void TestFloatIDCT128x64() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<128, 64>();
@@ -210,7 +224,8 @@ HWY_NOINLINE void TestFloatTranspose128x128() {
 }
 HWY_NOINLINE void TestFastIDCT128x128() { TestFastIDCT<128, 128>(); }
 HWY_NOINLINE void TestFloatIDCT128x128() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<128, 128>();
@@ -222,7 +237,8 @@ HWY_NOINLINE void TestFloatTranspose128x256() {
 }
 HWY_NOINLINE void TestFastIDCT128x256() { TestFastIDCT<128, 256>(); }
 HWY_NOINLINE void TestFloatIDCT128x256() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<128, 256>();
@@ -234,7 +250,8 @@ HWY_NOINLINE void TestFloatTranspose256x128() {
 }
 HWY_NOINLINE void TestFastIDCT256x128() { TestFastIDCT<256, 128>(); }
 HWY_NOINLINE void TestFloatIDCT256x128() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<256, 128>();
@@ -246,7 +263,8 @@ HWY_NOINLINE void TestFloatTranspose256x256() {
 }
 HWY_NOINLINE void TestFastIDCT256x256() { TestFastIDCT<256, 256>(); }
 HWY_NOINLINE void TestFloatIDCT256x256() {
-#if HWY_TARGET == HWY_SCALAR && defined(ADDRESS_SANITIZER)
+#if HWY_TARGET == HWY_SCALAR && \
+    (defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER))
   GTEST_SKIP();
 #else
   TestFloatIDCT<256, 256>();
