@@ -88,24 +88,13 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/highway/CMakeLists.txt" AND
   configure_file("${CMAKE_CURRENT_SOURCE_DIR}/highway/LICENSE"
                  ${PROJECT_BINARY_DIR}/LICENSE.highway COPYONLY)
 else()
-  pkg_check_modules(HWY libhwy)  # >=0.15.0 when supported by CMake
+  find_package(HWY 0.15.0)
   if (NOT HWY_FOUND)
     message(FATAL_ERROR
         "Highway library (hwy) not found. Install libhwy-dev or download it "
         "to third_party/highway from https://github.com/google/highway . "
         "Highway is required to build JPEG XL. You can run "
         "${PROJECT_SOURCE_DIR}/deps.sh to download this dependency.")
-  endif()
-  add_library(hwy INTERFACE IMPORTED GLOBAL)
-  if(${CMAKE_VERSION} VERSION_LESS "3.13.5")
-    set_property(TARGET hwy PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${HWY_INCLUDE_DIR})
-    target_link_libraries(hwy INTERFACE ${HWY_LDFLAGS})
-    set_property(TARGET hwy PROPERTY INTERFACE_COMPILE_OPTIONS ${HWY_CFLAGS_OTHER})
-  else()
-    target_include_directories(hwy INTERFACE ${HWY_INCLUDE_DIRS})
-    target_link_libraries(hwy INTERFACE ${HWY_LINK_LIBRARIES})
-    target_link_options(hwy INTERFACE ${HWY_LDFLAGS_OTHER})
-    target_compile_options(hwy INTERFACE ${HWY_CFLAGS_OTHER})
   endif()
   if(JPEGXL_DEP_LICENSE_DIR)
     configure_file("${JPEGXL_DEP_LICENSE_DIR}/libhwy-dev/copyright"

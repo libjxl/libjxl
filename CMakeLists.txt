@@ -5,6 +5,7 @@
 
 # Ubuntu bionic ships with cmake 3.10.
 cmake_minimum_required(VERSION 3.10)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Honor VISIBILITY_INLINES_HIDDEN on all types of targets.
 if(POLICY CMP0063)
