@@ -79,7 +79,7 @@ TEST(EncodeTest, AddFrameBeforeColorEncodingTest) {
   jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
   basic_info.xsize = xsize;
   basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
+  basic_info.uses_original_profile = true;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
   EXPECT_EQ(JXL_ENC_ERROR,
