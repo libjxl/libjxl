@@ -37,52 +37,33 @@ uint32_t JxlEncoderVersion(void) {
          JPEGXL_PATCH_VERSION;
 }
 
+namespace {
+template <typename T>
+void AppendJxlpBoxCounter(uint32_t counter, bool last, T* output) {
+  if (last) counter |= 0x80000000;
+  StoreBE32(counter, jxl::Extend(output, 4));
+}
+
+void QueueFrame(
+    const JxlEncoderOptions* options,
+    jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame>& frame) {
+  if (options->values.lossless) {
+    frame->option_values.cparams.SetLossless();
+  }
+
+  jxl::JxlEncoderQueuedInput queued_input(options->enc->memory_manager);
+  queued_input.frame = std::move(frame);
+  options->enc->input_queue.emplace_back(std::move(queued_input));
+}
+}  // namespace
+
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
-      std::move(input_frame_queue[0]);
-  input_frame_queue.erase(input_frame_queue.begin());
+      std::move(input_queue[0].frame);
+  input_queue.erase(input_queue.begin());
 
-  // TODO(zond): If the frame queue is empty and the input_closed is true,
+  // TODO(zond): If the input queue is empty and the frames_closed is true,
   // then mark this frame as the last.
-
-  jxl::BitWriter writer;
-
-  if (!wrote_bytes) {
-    if (MustUseContainer()) {
-      // Add "JXL " and ftyp box.
-      output_byte_queue.insert(
-          output_byte_queue.end(), jxl::kContainerHeader,
-          jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
-      if (codestream_level != 5) {
-        // Add jxll box.
-        output_byte_queue.insert(
-            output_byte_queue.end(), jxl::kLevelBoxHeader,
-            jxl::kLevelBoxHeader + sizeof(jxl::kLevelBoxHeader));
-        output_byte_queue.push_back(codestream_level);
-      }
-      if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
-        jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(),
-                             false, &output_byte_queue);
-        output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
-                                 jpeg_metadata.end());
-      }
-    }
-    if (!WriteHeaders(&metadata, &writer, nullptr)) {
-      return JXL_ENC_ERROR;
-    }
-    // Only send ICC (at least several hundred bytes) if fields aren't enough.
-    if (metadata.m.color_encoding.WantICC()) {
-      if (!jxl::WriteICC(metadata.m.color_encoding.ICC(), &writer,
-                         jxl::kLayerHeader, nullptr)) {
-        return JXL_ENC_ERROR;
-      }
-    }
-
-    // TODO(lode): preview should be added here if a preview image is added
-
-    // Each frame should start on byte boundaries.
-    writer.ZeroPadToByte();
-  }
 
   // TODO(zond): Handle progressive mode like EncodeFile does it.
   // TODO(zond): Handle animation like EncodeFile does it, by checking if
@@ -98,6 +79,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         jxl::ColorTransform::kNone;
   }
 
+  jxl::BitWriter writer;
   jxl::PassesEncoderState enc_state;
   if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
                         &metadata, input_frame->frame, &enc_state,
@@ -108,19 +90,94 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
   jxl::PaddedBytes bytes = std::move(writer).TakeBytes();
 
-  if (MustUseContainer() && !wrote_bytes) {
-    if (input_closed && input_frame_queue.empty()) {
+  // Whether to write the basic info and color profile header of the codestream
+  // into an early separate jxlp box, so that it comes before metadata or
+  // jpeg reconstruction boxes. In theory this could simply always be done, but
+  // there's no reason to add an extra box with box header overhead if the
+  // codestream will already come immediately after the signature and level
+  // boxes.
+  // TODO(lode): when outputting boxes is implemented, this should also be
+  // set to true if the user indicated they'll add metadata boxes, to ensure
+  // basic info comes early
+  bool partial_header = MustUseContainer() && store_jpeg_metadata;
+
+  if (!wrote_bytes) {
+    jxl::BitWriter writer;
+    if (!WriteHeaders(&metadata, &writer, nullptr)) {
+      return JXL_ENC_ERROR;
+    }
+    // Only send ICC (at least several hundred bytes) if fields aren't enough.
+    if (metadata.m.color_encoding.WantICC()) {
+      if (!jxl::WriteICC(metadata.m.color_encoding.ICC(), &writer,
+                         jxl::kLayerHeader, nullptr)) {
+        return JXL_ENC_ERROR;
+      }
+    }
+    // TODO(lode): preview should be added here if a preview image is added
+
+    writer.ZeroPadToByte();
+    jxl::PaddedBytes header_bytes = std::move(writer).TakeBytes();
+
+    if (MustUseContainer()) {
+      // Add "JXL " and ftyp box.
+      output_byte_queue.insert(
+          output_byte_queue.end(), jxl::kContainerHeader,
+          jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
+      if (codestream_level != 5) {
+        // Add jxll box.
+        output_byte_queue.insert(
+            output_byte_queue.end(), jxl::kLevelBoxHeader,
+            jxl::kLevelBoxHeader + sizeof(jxl::kLevelBoxHeader));
+        output_byte_queue.push_back(codestream_level);
+      }
+
+      // TODO(lode): consider adding the output of WriteHeaders here as a jxlp
+      // box in case there is a jbrd box or other big boxes before the
+      // codestream, to ensure having the basic info available early, for faster
+      // rendering of correct xsize and ysize in browsers.
+      if (partial_header) {
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), header_bytes.size() + 4,
+                             /*unbounded=*/false, &output_byte_queue);
+        AppendJxlpBoxCounter(jxlp_counter++, /*last=*/false,
+                             &output_byte_queue);
+        output_byte_queue.insert(output_byte_queue.end(), header_bytes.data(),
+                                 header_bytes.data() + header_bytes.size());
+      } else {
+        // Prepend the codestream header before the first frame
+        header_bytes.append(bytes);
+        bytes.swap(header_bytes);
+      }
+
+      if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jbrd"), jpeg_metadata.size(),
+                             false, &output_byte_queue);
+        output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
+                                 jpeg_metadata.end());
+      }
+
+    } else {
+      output_byte_queue.insert(output_byte_queue.end(), header_bytes.data(),
+                               header_bytes.data() + header_bytes.size());
+    }
+    wrote_bytes = true;
+  }
+
+  if (MustUseContainer()) {
+    bool last_frame = frames_closed && input_queue.empty();
+    if (last_frame && jxlp_counter == 0) {
+      // If this is the last frame and no jxlp boxes were used yet, it's slighly
+      // more efficient to write a jxlc box since it has 4 bytes less overhead.
       jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), bytes.size(),
                            /*unbounded=*/false, &output_byte_queue);
     } else {
-      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), 0, /*unbounded=*/true,
-                           &output_byte_queue);
+      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), bytes.size() + 4,
+                           /*unbounded=*/false, &output_byte_queue);
+      AppendJxlpBoxCounter(jxlp_counter++, last_frame, &output_byte_queue);
     }
   }
 
   output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
                            bytes.data() + bytes.size());
-  wrote_bytes = true;
 
   last_used_cparams = input_frame->option_values.cparams;
 
@@ -520,22 +577,29 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   JxlEncoder* enc = new (alloc) JxlEncoder();
   enc->memory_manager = local_memory_manager;
 
+  // Initialize all the field values.
+  JxlEncoderReset(enc);
+
   return enc;
 }
 
 void JxlEncoderReset(JxlEncoder* enc) {
   enc->thread_pool.reset();
-  enc->input_frame_queue.clear();
+  enc->input_queue.clear();
   enc->encoder_options.clear();
   enc->output_byte_queue.clear();
   enc->wrote_bytes = false;
+  enc->jxlp_counter = 0;
   enc->metadata = jxl::CodecMetadata();
   enc->last_used_cparams = jxl::CompressParams();
-  enc->input_closed = false;
+  enc->frames_closed = false;
+  enc->boxes_closed = false;
   enc->basic_info_set = false;
   enc->color_encoding_set = false;
   enc->use_container = false;
+  enc->use_boxes = false;
   enc->codestream_level = 5;
+  enc->boxes.clear();
 }
 
 void JxlEncoderDestroy(JxlEncoder* enc) {
@@ -587,7 +651,7 @@ JxlEncoderStatus JxlEncoderSetParallelRunner(JxlEncoder* enc,
 
 JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
                                         const uint8_t* buffer, size_t size) {
-  if (options->enc->input_closed) {
+  if (options->enc->frames_closed) {
     return JXL_ENC_ERROR;
   }
 
@@ -644,11 +708,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(const JxlEncoderOptions* options,
   queued_frame->frame.color_transform = io.Main().color_transform;
   queued_frame->frame.chroma_subsampling = io.Main().chroma_subsampling;
 
-  if (options->values.lossless) {
-    queued_frame->option_values.cparams.SetLossless();
-  }
-
-  options->enc->input_frame_queue.emplace_back(std::move(queued_frame));
+  QueueFrame(options, queued_frame);
   return JXL_ENC_SUCCESS;
 }
 
@@ -664,7 +724,7 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     return JXL_ENC_ERROR;
   }
 
-  if (options->enc->input_closed) {
+  if (options->enc->frames_closed) {
     return JXL_ENC_ERROR;
   }
 
@@ -699,15 +759,11 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     return JXL_ENC_ERROR;
   }
 
-  if (options->values.lossless) {
-    queued_frame->option_values.cparams.SetLossless();
-  }
-
-  options->enc->input_frame_queue.emplace_back(std::move(queued_frame));
+  QueueFrame(options, queued_frame);
   return JXL_ENC_SUCCESS;
 }
 
-void JxlEncoderCloseFrames(JxlEncoder* enc) { enc->input_closed = true; }
+void JxlEncoderCloseFrames(JxlEncoder* enc) { enc->frames_closed = true; }
 
 void JxlEncoderCloseInput(JxlEncoder* enc) {
   JxlEncoderCloseFrames(enc);
@@ -717,7 +773,7 @@ void JxlEncoderCloseInput(JxlEncoder* enc) {
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
   while (*avail_out > 0 &&
-         (!enc->output_byte_queue.empty() || !enc->input_frame_queue.empty())) {
+         (!enc->output_byte_queue.empty() || !enc->input_queue.empty())) {
     if (!enc->output_byte_queue.empty()) {
       size_t to_copy = std::min(*avail_out, enc->output_byte_queue.size());
       memcpy(static_cast<void*>(*next_out), enc->output_byte_queue.data(),
@@ -726,14 +782,14 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
       *avail_out -= to_copy;
       enc->output_byte_queue.erase(enc->output_byte_queue.begin(),
                                    enc->output_byte_queue.begin() + to_copy);
-    } else if (!enc->input_frame_queue.empty()) {
+    } else if (!enc->input_queue.empty()) {
       if (enc->RefillOutputByteQueue() != JXL_ENC_SUCCESS) {
         return JXL_ENC_ERROR;
       }
     }
   }
 
-  if (!enc->output_byte_queue.empty() || !enc->input_frame_queue.empty()) {
+  if (!enc->output_byte_queue.empty() || !enc->input_queue.empty()) {
     return JXL_ENC_NEED_MORE_OUTPUT;
   }
   return JXL_ENC_SUCCESS;

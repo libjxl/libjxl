@@ -258,6 +258,9 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
                                  decoded_bytes.data(), decoded_bytes.size()));
 
   EXPECT_EQ(JXL_DEC_FULL_IMAGE, JxlDecoderProcessInput(dec));
+  // Check if there are no further errors after getting the full image, e.g.
+  // check that the final codestream box is actually marked as last.
+  EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderProcessInput(dec));
 
   JxlDecoderDestroy(dec);
 

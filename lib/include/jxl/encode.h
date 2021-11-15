@@ -488,20 +488,14 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * multiple boxes of type jxlp are used. This is handled by the encoder when
  * needed.
  *
- * For now metadata boxes can only be added before or after the codestream with
- * all frames, so using JxlEncoderAddBox is only possible before the first
- * JxlEncoderAddImageFrame call, and/or after the last JxlEncoderAddImageFrame
- * call and JxlEncoderCloseFrames. Support for adding boxes in-between the
- * codestream, and/or in-between image frames may be added later, and would
- * cause the encoder to use jxlp boxes for the codestream.
- *
  * @param enc encoder object.
  * @param type the box type, e.g. "Exif" for EXIF metadata, "XML " for XMP or
  * IPTC metadata, "jumb" for JUMBF metadata.
  * @param contents the full contents of the box, for example EXIF
  * data. For an "Exif" box, the EXIF data must be prepended by a 4-byte tiff
  * header offset, which may be 4 zero-bytes. The ISO BMFF box header must not
- * be included, only the contents.
+ * be included, only the contents. Owned by the caller and its contents are
+ * copied internally.
  * @param size size of the box contents.
  * @param compress_box Whether to compress this box as a "brob" box. Requires
  * Brotli support.
@@ -509,7 +503,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
  * using this function without JxlEncoderUseContainer, or adding a box type
  * that would result in an invalid file format.
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, JxlBoxType type,
+JXL_EXPORT JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc,
+                                             const JxlBoxType type,
                                              const uint8_t* contents,
                                              size_t size,
                                              JXL_BOOL compress_box);
@@ -531,7 +526,11 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc);
  * Declares that no further boxes will be added with @ref JxlEncoderAddBox.
  * This function must be called after the last box is added so the encoder knows
  * the stream will be finished. It is not necessary to use this function if
- * @ref JxlEncoderUseBoxes is not used.
+ * @ref JxlEncoderUseBoxes is not used. Further frames may still be added.
+ *
+ * Must be called between JxlEncoderAddBox of the last box
+ * and the next call to JxlEncoderProcessOutput, or JxlEncoderProcessOutput
+ * won't output the last box correctly.
  *
  * NOTE: if you don't need to close frames and boxes at separate times, you can
  * use @ref JxlEncoderCloseInput instead to close both at once.
@@ -541,8 +540,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc);
 JXL_EXPORT JxlEncoderStatus JxlEncoderCloseBoxes(JxlEncoder* enc);
 
 /**
- * Declares that this encoder will not encode any further frames. Further
- * metadata boxes may still be added.
+ * Declares that no frames will be added and @ref JxlEncoderAddImageFrame and
+ * @ref JxlEncoderAddJPEGFrame won't be called anymore. Further metadata boxes
+ * may still be added.
  *
  * NOTE: if you don't need to close frames and boxes at separate times, you can
  * use @ref JxlEncoderCloseInput instead to close both at once.

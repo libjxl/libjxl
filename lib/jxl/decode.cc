@@ -403,10 +403,11 @@ struct JxlDecoderStruct {
   // Status of progression, internal.
   bool got_signature;
   bool first_codestream_seen;
-  // Indicates we know that we've seen the last codestream, however this is not
-  // guaranteed to be true for the last box because a jxl file may have multiple
-  // "jxlp" boxes and it is possible (and permitted) that the last one is not a
-  // final box that uses size 0 to indicate the end.
+  // Indicates we know that we've seen the last codestream box: either this
+  // was a jxlc box, or a jxlp box that has its index indicated as last by
+  // having its most significant bit set, or no boxes are used at all. This
+  // does not indicate the full codestream has already been seen, only the
+  // last box of it has been initiated.
   bool last_codestream_seen;
   bool got_basic_info;
   size_t header_except_icc_bits = 0;  // To skip everything before ICC.
@@ -593,6 +594,29 @@ struct JxlDecoderStruct {
     next_in += size;
     avail_in -= size;
     file_pos += size;
+  }
+
+  // Whether the decoder can use more codestream input for a purpose it needs.
+  // This returns false if the user didn't subscribe to any events that
+  // require the codestream (e.g. only subscribed to metadata boxes), or all
+  // parts of the codestream that are subscribed to (e.g. only basic info) have
+  // already occured.
+  bool CanUseMoreCodestreamInput() const {
+    if (!got_basic_info && (orig_events_wanted & JXL_DEC_BASIC_INFO))
+      return true;
+    if (!got_all_headers && (orig_events_wanted & JXL_DEC_EXTENSIONS))
+      return true;
+    if (!got_all_headers && (orig_events_wanted & JXL_DEC_COLOR_ENCODING))
+      return true;
+    // For these events, always return true, they are part of frames and more
+    // frames could appear in the codestream at any time
+    if ((orig_events_wanted & JXL_DEC_PREVIEW_IMAGE) ||
+        (orig_events_wanted & JXL_DEC_FRAME) ||
+        (orig_events_wanted & JXL_DEC_FULL_IMAGE) ||
+        (orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION)) {
+      return true;
+    }
+    return false;
   }
 };
 
@@ -1813,6 +1837,10 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       if (memcmp(dec->box_type, "ftyp", 4) == 0) {
         dec->box_stage = BoxStage::kFtyp;
       } else if (memcmp(dec->box_type, "jxlc", 4) == 0) {
+        if (dec->last_codestream_seen) {
+          return JXL_API_ERROR("there can only be one jxlc box");
+        }
+        dec->last_codestream_seen = true;
         dec->box_stage = BoxStage::kCodestream;
       } else if (memcmp(dec->box_type, "jxlp", 4) == 0) {
         dec->box_stage = BoxStage::kPartialCodestream;
@@ -1844,7 +1872,7 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
       dec->box_stage = BoxStage::kSkip;
     } else if (dec->box_stage == BoxStage::kPartialCodestream) {
       if (dec->last_codestream_seen) {
-        return JXL_API_ERROR("cannot have codestream after last codestream");
+        return JXL_API_ERROR("cannot have jxlp box after last jxlp box");
       }
       // TODO(lode): error if box is unbounded but last bit not set
       if (dec->avail_in < 4) return JXL_DEC_NEED_MORE_INPUT;
@@ -1911,6 +1939,15 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
         }
         if (dec->events_wanted & JXL_DEC_BOX) {
           // Codestream done, but there may be more other boxes.
+          dec->box_stage = BoxStage::kSkip;
+          continue;
+        } else if (!dec->last_codestream_seen &&
+                   dec->CanUseMoreCodestreamInput()) {
+          // Even though the codestream was successfully decoded, the last seen
+          // jxlp box was not marked as last, so more jxlp boxes are expected.
+          // Since the codestream already successfully finished, the only valid
+          // case where this could happen is if there are empty jxlp boxes after
+          // this.
           dec->box_stage = BoxStage::kSkip;
           continue;
         } else {
@@ -2031,6 +2068,8 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
 
     if (sig == JXL_SIG_CONTAINER) {
       dec->have_container = 1;
+    } else {
+      dec->last_codestream_seen = true;
     }
   }
 
@@ -2048,6 +2087,13 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
       // the JXL_DEC_BOX event and so finishing the image frames is not
       // required.
       return JXL_API_ERROR("codestream never finished");
+    }
+    if (!dec->last_codestream_seen && dec->CanUseMoreCodestreamInput()) {
+      // In case of jxlp boxes, this means no jxlp box marked as final was
+      // seen yet. Only do this if events requiring more codestream bytes were
+      // requested, in other cases the decoder may have returned success early
+      // on purpose.
+      return JXL_DEC_NEED_MORE_INPUT;
     }
 
     if (dec->JbrdNeedMoreBoxes()) {
