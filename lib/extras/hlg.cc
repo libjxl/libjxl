@@ -7,6 +7,8 @@
 
 #include <cmath>
 
+#include "lib/jxl/enc_color_management.h"
+
 namespace jxl {
 
 float GetHlgGamma(const float peak_luminance, const float surround_luminance) {
@@ -21,7 +23,7 @@ Status HlgOOTF(ImageBundle* ib, const float gamma, ThreadPool* pool) {
   linear_rec2020.white_point = WhitePoint::kD65;
   linear_rec2020.tf.SetTransferFunction(TransferFunction::kLinear);
   JXL_RETURN_IF_ERROR(linear_rec2020.CreateICC());
-  JXL_RETURN_IF_ERROR(ib->TransformTo(linear_rec2020, pool));
+  JXL_RETURN_IF_ERROR(ib->TransformTo(linear_rec2020, GetJxlCms(), pool));
 
   return RunOnPool(
       pool, 0, ib->ysize(), ThreadPool::SkipInit(),

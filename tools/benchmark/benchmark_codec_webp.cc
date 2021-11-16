@@ -20,6 +20,7 @@
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image.h"
@@ -97,8 +98,8 @@ class WebPCodec : public ImageCodec {
     ImageBundle store(&metadata);
     const ImageBundle* transformed;
     const ColorEncoding& c_desired = ColorEncoding::SRGB(false);
-    JXL_RETURN_IF_ERROR(
-        TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
+    JXL_RETURN_IF_ERROR(TransformIfNeeded(ib, c_desired, GetJxlCms(), pool,
+                                          &store, &transformed));
     size_t xsize = ib.oriented_xsize();
     size_t ysize = ib.oriented_ysize();
     size_t stride = xsize * num_chans;

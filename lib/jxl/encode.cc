@@ -13,6 +13,7 @@
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_icc_codec.h"
@@ -202,7 +203,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     jxl::BitWriter writer;
     jxl::PassesEncoderState enc_state;
     if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
-                          &metadata, input_frame->frame, &enc_state,
+                          &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
                           /*aux_out=*/nullptr)) {
       return JXL_ENC_ERROR;
@@ -735,6 +736,8 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
   if (!alloc) return nullptr;
   JxlEncoder* enc = new (alloc) JxlEncoder();
   enc->memory_manager = local_memory_manager;
+  // TODO(sboukortt): add an API function to set this.
+  enc->cms = jxl::GetJxlCms();
 
   // Initialize all the field values.
   JxlEncoderReset(enc);

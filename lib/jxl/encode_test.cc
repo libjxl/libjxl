@@ -200,7 +200,9 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
       dparams, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       &decoded_io, /*pool=*/nullptr));
 
-  EXPECT_LE(ComputeDistance2(input_io.Main(), decoded_io.Main()), 1.8);
+  EXPECT_LE(
+      ComputeDistance2(input_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),
+      1.8);
 }
 
 void VerifyFrameEncoding(JxlEncoder* enc, const JxlEncoderOptions* options) {
@@ -1052,7 +1054,9 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
           jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           &decoded_io, /*pool=*/nullptr));
 
-      EXPECT_LE(ComputeDistance2(orig_io.Main(), decoded_io.Main()), 3.5);
+      EXPECT_LE(
+          ComputeDistance2(orig_io.Main(), decoded_io.Main(), jxl::GetJxlCms()),
+          3.5);
     }
   }
 }

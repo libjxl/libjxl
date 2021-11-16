@@ -25,11 +25,9 @@ namespace {
 // Copies ib:rect, converts, and copies into out.
 Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
                const Rect& rect, const ColorEncoding& c_desired,
-               ThreadPool* pool, Image3F* out) {
+               const JxlCmsInterface& cms, ThreadPool* pool, Image3F* out) {
   PROFILER_FUNC;
-  // TODO(sboukortt): allow other CMS implementations to be passed instead of
-  // hardcoding ours.
-  ColorSpaceTransform c_transform(GetJxlCms());
+  ColorSpaceTransform c_transform(cms);
   // Changing IsGray is probably a bug.
   JXL_CHECK(ib->IsGray() == c_desired.IsGray());
 #if JPEGXL_ENABLE_SKCMS
@@ -99,19 +97,20 @@ Status CopyToT(const ImageMetadata* metadata, const ImageBundle* ib,
 }  // namespace
 
 Status ImageBundle::TransformTo(const ColorEncoding& c_desired,
-                                ThreadPool* pool) {
+                                const JxlCmsInterface& cms, ThreadPool* pool) {
   PROFILER_FUNC;
-  JXL_RETURN_IF_ERROR(CopyTo(Rect(color_), c_desired, &color_, pool));
+  JXL_RETURN_IF_ERROR(CopyTo(Rect(color_), c_desired, cms, &color_, pool));
   c_current_ = c_desired;
   return true;
 }
 Status ImageBundle::CopyTo(const Rect& rect, const ColorEncoding& c_desired,
-                           Image3F* out, ThreadPool* pool) const {
-  return CopyToT(metadata_, this, rect, c_desired, pool, out);
+                           const JxlCmsInterface& cms, Image3F* out,
+                           ThreadPool* pool) const {
+  return CopyToT(metadata_, this, rect, c_desired, cms, pool, out);
 }
 Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
-                         ThreadPool* pool, ImageBundle* store,
-                         const ImageBundle** out) {
+                         const JxlCmsInterface& cms, ThreadPool* pool,
+                         ImageBundle* store, const ImageBundle** out) {
   if (in.c_current().SameColorEncoding(c_desired)) {
     *out = &in;
     return true;
@@ -129,7 +128,7 @@ Status TransformIfNeeded(const ImageBundle& in, const ColorEncoding& c_desired,
     store->SetExtraChannels(std::move(extra_channels));
   }
 
-  if (!store->TransformTo(c_desired, pool)) {
+  if (!store->TransformTo(c_desired, cms, pool)) {
     return false;
   }
   *out = store;

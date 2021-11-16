@@ -27,6 +27,7 @@
 #include "lib/jxl/dec_external_image.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_gamma_correct.h"
@@ -323,8 +324,8 @@ PaddedBytes CreateTestJXLCodestream(
   AuxOut aux_out;
   PaddedBytes compressed;
   PassesEncoderState enc_state;
-  EXPECT_TRUE(
-      EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out, &pool));
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, GetJxlCms(),
+                         &aux_out, &pool));
   if (add_container != kCSBF_None) {
     // Header with signature box and ftyp box.
     const uint8_t header[] = {0,    0,    0,    0xc,  0x4a, 0x58, 0x4c, 0x20,
@@ -1846,7 +1847,8 @@ TEST(DecodeTest, PixelTestWithICCProfileLossy) {
       /*flipped_y=*/false, /*pool=*/nullptr, &io1.Main(), /*float_in=*/true));
 
   jxl::ButteraugliParams ba;
-  EXPECT_THAT(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+  EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
+                                  /*distmap=*/nullptr, nullptr),
               IsSlightlyBelow(0.75f));
 
   JxlDecoderDestroy(dec);
@@ -1912,7 +1914,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossy) {
     }
 
     jxl::ButteraugliParams ba;
-    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
+                                    /*distmap=*/nullptr, nullptr),
                 IsSlightlyBelow(0.8f));
 
     JxlDecoderDestroy(dec);
@@ -1979,7 +1982,8 @@ TEST(DecodeTest, PixelTestOpaqueSrgbLossyNoise) {
     }
 
     jxl::ButteraugliParams ba;
-    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, /*distmap=*/nullptr, nullptr),
+    EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
+                                    /*distmap=*/nullptr, nullptr),
                 IsSlightlyBelow(2.6f));
 
     JxlDecoderDestroy(dec);
@@ -2252,7 +2256,7 @@ TEST(DecodeTest, PreviewTest) {
   // smaller than 8x8, but jxl's ButteraugliDistance does not. Perhaps move
   // butteraugli's <8x8 handling from ButteraugliDiffmap to
   // ButteraugliComparator::Diffmap in butteraugli.cc.
-  EXPECT_THAT(ButteraugliDistance(io0, io1, ba,
+  EXPECT_THAT(ButteraugliDistance(io0, io1, ba, jxl::GetJxlCms(),
                                   /*distmap=*/nullptr, nullptr),
               IsSlightlyBelow(0.6f));
 
@@ -2328,8 +2332,8 @@ TEST(DecodeTest, AnimationTest) {
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out,
-                              nullptr));
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
+                              jxl::GetJxlCms(), &aux_out, nullptr));
 
   // Decode and test the animation frames
 
@@ -2432,8 +2436,8 @@ TEST(DecodeTest, AnimationTestStreaming) {
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out,
-                              nullptr));
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
+                              jxl::GetJxlCms(), &aux_out, nullptr));
 
   // Decode and test the animation frames
 
@@ -2655,8 +2659,8 @@ TEST(DecodeTest, SkipFrameTest) {
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out,
-                              nullptr));
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
+                              jxl::GetJxlCms(), &aux_out, nullptr));
 
   // Decode and test the animation frames
 
@@ -2818,8 +2822,8 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out,
-                              nullptr));
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
+                              jxl::GetJxlCms(), &aux_out, nullptr));
 
   // Independently decode all frames without any skipping, to create the
   // expected blended frames, for the actual tests below to compare with.
@@ -3056,8 +3060,8 @@ TEST(DecodeTest, SkipFrameWithAlphaBlendingTest) {
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
-  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed, &aux_out,
-                              nullptr));
+  EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
+                              jxl::GetJxlCms(), &aux_out, nullptr));
   // try both with and without coalescing
   for (auto coalescing : {JXL_TRUE, JXL_FALSE}) {
     // Independently decode all frames without any skipping, to create the
@@ -3306,7 +3310,7 @@ TEST(DecodeTest, OrientedCroppedFrameTest) {
       jxl::PaddedBytes compressed;
       jxl::PassesEncoderState enc_state;
       EXPECT_TRUE(jxl::EncodeFile(cparams, &io, &enc_state, &compressed,
-                                  &aux_out, nullptr));
+                                  jxl::GetJxlCms(), &aux_out, nullptr));
 
       // 0 is merged frame as decoded with coalescing enabled (default)
       // 1-3 are non-coalesced frames as decoded with coalescing disabled
@@ -3749,7 +3753,7 @@ TEST(DecodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   jxl::CompressParams cparams;
   cparams.color_transform = jxl::ColorTransform::kNone;
   ASSERT_TRUE(jxl::EncodeFrame(cparams, jxl::FrameInfo{}, &orig_io.metadata,
-                               orig_io.Main(), &enc_state,
+                               orig_io.Main(), &enc_state, jxl::GetJxlCms(),
                                /*pool=*/nullptr, &writer,
                                /*aux_out=*/nullptr));
 
@@ -4275,7 +4279,7 @@ TEST(DecodeTest, SpotColorTest) {
   std::unique_ptr<jxl::PassesEncoderState> enc_state =
       jxl::make_unique<jxl::PassesEncoderState>();
   EXPECT_TRUE(jxl::EncodeFile(cparams, &io, enc_state.get(), &compressed,
-                              nullptr, pool));
+                              jxl::GetJxlCms(), nullptr, pool));
 
   for (size_t render_spot = 0; render_spot < 2; render_spot++) {
     JxlPixelFormat format = {3, JXL_TYPE_UINT8, JXL_LITTLE_ENDIAN, 0};
