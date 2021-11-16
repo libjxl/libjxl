@@ -25,6 +25,7 @@
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
@@ -255,7 +256,7 @@ class JxlCodec : public ImageCodec {
           jxl::make_unique<jxl::FastEncoderHeuristics>();
     }
     JXL_RETURN_IF_ERROR(EncodeFile(cparams_, io, &passes_encoder_state,
-                                   compressed, &cinfo_, pool));
+                                   compressed, GetJxlCms(), &cinfo_, pool));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
     return true;

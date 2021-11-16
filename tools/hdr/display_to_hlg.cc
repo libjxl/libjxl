@@ -10,6 +10,7 @@
 #include "lib/extras/hlg.h"
 #include "lib/extras/tone_mapping.h"
 #include "lib/jxl/base/thread_pool_internal.h"
+#include "lib/jxl/enc_color_management.h"
 #include "tools/args.h"
 #include "tools/cmdline.h"
 
@@ -76,7 +77,7 @@ int main(int argc, const char** argv) {
   hlg.white_point = jxl::WhitePoint::kD65;
   hlg.tf.SetTransferFunction(jxl::TransferFunction::kHLG);
   JXL_CHECK(hlg.CreateICC());
-  JXL_CHECK(image.TransformTo(hlg, &pool));
+  JXL_CHECK(image.TransformTo(hlg, jxl::GetJxlCms(), &pool));
   image.metadata.m.color_encoding = hlg;
   JXL_CHECK(jxl::EncodeToFile(image, output_filename, &pool));
 }

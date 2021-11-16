@@ -106,6 +106,7 @@ struct JxlEncoderStruct {
   JxlMemoryManager memory_manager;
   jxl::MemoryManagerUniquePtr<jxl::ThreadPool> thread_pool{
       nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)};
+  JxlCmsInterface cms;
   std::vector<jxl::MemoryManagerUniquePtr<JxlEncoderOptions>> encoder_options;
 
   size_t num_queued_frames;

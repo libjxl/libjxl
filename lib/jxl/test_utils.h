@@ -20,6 +20,7 @@
 #include "lib/jxl/common.h"  // JPEGXL_ENABLE_TRANSCODE_JPEG
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/dec_params.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
@@ -127,8 +128,8 @@ size_t Roundtrip(const CodecInOut* io, const CompressParams& cparams,
 
   std::unique_ptr<PassesEncoderState> enc_state =
       jxl::make_unique<PassesEncoderState>();
-  EXPECT_TRUE(
-      EncodeFile(cparams, io, enc_state.get(), &compressed, aux_out, pool));
+  EXPECT_TRUE(EncodeFile(cparams, io, enc_state.get(), &compressed, GetJxlCms(),
+                         aux_out, pool));
 
   std::vector<ColorEncoding> metadata_encodings_1;
   for (const ImageBundle& ib1 : io->frames) {

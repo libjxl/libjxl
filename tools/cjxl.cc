@@ -32,6 +32,7 @@
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/enc_cache.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_file.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/frame_header.h"
@@ -812,7 +813,7 @@ jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
       args.params.color_transform = io.Main().color_transform;
     }
     ok = EncodeFile(args.params, &io, &passes_encoder_state, compressed,
-                    &aux_out, pool);
+                    jxl::GetJxlCms(), &aux_out, pool);
     if (!ok) {
       fprintf(stderr, "Failed to compress to %s.\n", ModeFromArgs(args));
       return false;

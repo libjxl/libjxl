@@ -732,7 +732,8 @@ static const float kDcQuant = 1.12f;
 static const float kAcQuant = 0.825f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
-                          PassesEncoderState* enc_state, ThreadPool* pool,
+                          PassesEncoderState* enc_state,
+                          const JxlCmsInterface& cms, ThreadPool* pool,
                           AuxOut* aux_out) {
   const CompressParams& cparams = enc_state->cparams;
   Quantizer& quantizer = enc_state->shared.quantizer;
@@ -748,7 +749,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
   if (fabs(params.intensity_target - 255.0f) < 1e-3) {
     params.intensity_target = 80.0f;
   }
-  JxlButteraugliComparator comparator(params);
+  JxlButteraugliComparator comparator(params, cms);
   JXL_CHECK(comparator.SetReferenceImage(linear));
   bool lower_is_better =
       (comparator.GoodQualityScore() < comparator.BadQualityScore());
@@ -788,7 +789,7 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
       }
     }
     quantizer.SetQuantField(initial_quant_dc, quant_field, &raw_quant_field);
-    ImageBundle linear = RoundtripImage(opsin, enc_state, pool);
+    ImageBundle linear = RoundtripImage(opsin, enc_state, cms, pool);
     PROFILER_ZONE("enc Butteraugli");
     float score;
     ImageF diffmap;
@@ -898,7 +899,8 @@ void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
 
 void FindBestQuantizationMaxError(const Image3F& opsin,
                                   PassesEncoderState* enc_state,
-                                  ThreadPool* pool, AuxOut* aux_out) {
+                                  const JxlCmsInterface& cms, ThreadPool* pool,
+                                  AuxOut* aux_out) {
   // TODO(veluca): this only works if opsin is in XYB. The current encoder does
   // not have code paths that produce non-XYB opsin here.
   JXL_CHECK(enc_state->shared.frame_header.color_transform ==
@@ -923,7 +925,7 @@ void FindBestQuantizationMaxError(const Image3F& opsin,
     if (aux_out) {
       aux_out->DumpXybImage(("ops" + ToString(i)).c_str(), opsin);
     }
-    ImageBundle decoded = RoundtripImage(opsin, enc_state, pool);
+    ImageBundle decoded = RoundtripImage(opsin, enc_state, cms, pool);
     if (aux_out) {
       aux_out->DumpXybImage(("dec" + ToString(i)).c_str(), *decoded.color());
     }
@@ -1024,21 +1026,22 @@ ImageF InitialQuantField(const float butteraugli_target, const Image3F& opsin,
 }
 
 void FindBestQuantizer(const ImageBundle* linear, const Image3F& opsin,
-                       PassesEncoderState* enc_state, ThreadPool* pool,
+                       PassesEncoderState* enc_state,
+                       const JxlCmsInterface& cms, ThreadPool* pool,
                        AuxOut* aux_out, double rescale) {
   const CompressParams& cparams = enc_state->cparams;
   if (cparams.max_error_mode) {
     PROFILER_ZONE("enc find best maxerr");
-    FindBestQuantizationMaxError(opsin, enc_state, pool, aux_out);
+    FindBestQuantizationMaxError(opsin, enc_state, cms, pool, aux_out);
   } else if (cparams.speed_tier <= SpeedTier::kKitten) {
     // Normal encoding to a butteraugli score.
     PROFILER_ZONE("enc find best2");
-    FindBestQuantization(*linear, opsin, enc_state, pool, aux_out);
+    FindBestQuantization(*linear, opsin, enc_state, cms, pool, aux_out);
   }
 }
 
 ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
-                           ThreadPool* pool) {
+                           const JxlCmsInterface& cms, ThreadPool* pool) {
   PROFILER_ZONE("enc roundtrip");
   std::unique_ptr<PassesDecoderState> dec_state =
       jxl::make_unique<PassesDecoderState>();
@@ -1058,8 +1061,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   std::unique_ptr<ModularFrameEncoder> modular_frame_encoder =
       jxl::make_unique<ModularFrameEncoder>(enc_state->shared.frame_header,
                                             enc_state->cparams);
-  InitializePassesEncoder(opsin, pool, enc_state, modular_frame_encoder.get(),
-                          nullptr);
+  InitializePassesEncoder(opsin, cms, pool, enc_state,
+                          modular_frame_encoder.get(), nullptr);
   JXL_CHECK(dec_state->Init());
   dec_state->InitForAC(pool);
 

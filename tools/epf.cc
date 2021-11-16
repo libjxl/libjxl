@@ -9,6 +9,7 @@
 #include "lib/jxl/dec_cache.h"
 #include "lib/jxl/dec_reconstruct.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_xyb.h"
 #include "lib/jxl/epf.h"
 #include "lib/jxl/frame_header.h"
@@ -27,7 +28,7 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   const jxl::ColorEncoding original_color_encoding =
       io->metadata.m.color_encoding;
   jxl::Image3F opsin(io->xsize(), io->ysize());
-  (void)ToXYB(io->Main(), pool, &opsin);
+  (void)ToXYB(io->Main(), pool, &opsin, jxl::GetJxlCms());
 
   JXL_CHECK(io->metadata.size.Set(opsin.xsize(), opsin.ysize()));
 
@@ -62,7 +63,8 @@ jxl::Status RunEPF(uint32_t epf_iters, const float distance,
   // input image.
   JXL_CHECK(FinalizeFrameDecoding(&io->Main(), &state, pool, /*force_fir=*/true,
                                   /*skip_blending=*/true, /*move_ec=*/true));
-  JXL_RETURN_IF_ERROR(io->TransformTo(original_color_encoding, pool));
+  JXL_RETURN_IF_ERROR(
+      io->TransformTo(original_color_encoding, jxl::GetJxlCms(), pool));
   return true;
 }
 

@@ -27,6 +27,7 @@
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image.h"
 #include "lib/jxl/image_bundle.h"
@@ -507,8 +508,9 @@ Status EncodeImageJPG(const CodecInOut* io, JpegEncoder encoder, size_t quality,
   const ImageBundle* ib;
   ImageMetadata metadata = io->metadata.m;
   ImageBundle ib_store(&metadata);
-  JXL_RETURN_IF_ERROR(TransformIfNeeded(
-      io->Main(), io->metadata.m.color_encoding, pool, &ib_store, &ib));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(io->Main(),
+                                        io->metadata.m.color_encoding,
+                                        GetJxlCms(), pool, &ib_store, &ib));
 
   switch (encoder) {
     case JpegEncoder::kLibJpeg:

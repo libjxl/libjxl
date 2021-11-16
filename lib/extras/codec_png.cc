@@ -26,6 +26,7 @@
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/image.h"
@@ -809,8 +810,8 @@ Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
-  JXL_RETURN_IF_ERROR(
-      TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(ib, c_desired, GetJxlCms(), pool,
+                                        &store, &transformed));
   size_t stride = ib.oriented_xsize() *
                   DivCeil(c_desired.Channels() * bits_per_sample + alpha_bits,
                           kBitsPerByte);

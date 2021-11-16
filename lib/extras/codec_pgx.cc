@@ -21,6 +21,7 @@
 #include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_external_image.h"
+#include "lib/jxl/enc_color_management.h"
 #include "lib/jxl/enc_external_image.h"
 #include "lib/jxl/enc_image_bundle.h"
 #include "lib/jxl/fields.h"  // AllDefault
@@ -257,8 +258,8 @@ Status EncodeImagePGX(const CodecInOut* io, const ColorEncoding& c_desired,
   ImageMetadata metadata = io->metadata.m;
   ImageBundle store(&metadata);
   const ImageBundle* transformed;
-  JXL_RETURN_IF_ERROR(
-      TransformIfNeeded(ib, c_desired, pool, &store, &transformed));
+  JXL_RETURN_IF_ERROR(TransformIfNeeded(ib, c_desired, GetJxlCms(), pool,
+                                        &store, &transformed));
   PaddedBytes pixels(ib.xsize() * ib.ysize() *
                      (bits_per_sample / kBitsPerByte));
   size_t stride = ib.xsize() * (bits_per_sample / kBitsPerByte);

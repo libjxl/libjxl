@@ -295,8 +295,9 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
   }
 
   jxl::ButteraugliParams ba;
-  float butteraugli_score = ButteraugliDistance(original_io, decoded_io, ba,
-                                                /*distmap=*/nullptr, nullptr);
+  float butteraugli_score =
+      ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
+                          /*distmap=*/nullptr, nullptr);
   if (lossless && !already_downsampled) {
     EXPECT_LE(butteraugli_score, 0.0f);
   } else {
@@ -482,8 +483,9 @@ TEST(RoundtripTest, ExtraBoxesTest) {
       ConvertTestImage(decoded_bytes, xsize, ysize, pixel_format, icc_profile);
 
   jxl::ButteraugliParams ba;
-  float butteraugli_score = ButteraugliDistance(original_io, decoded_io, ba,
-                                                /*distmap=*/nullptr, nullptr);
+  float butteraugli_score =
+      ButteraugliDistance(original_io, decoded_io, ba, jxl::GetJxlCms(),
+                          /*distmap=*/nullptr, nullptr);
   EXPECT_LE(butteraugli_score, 2.0f);
 }
 
