@@ -160,7 +160,6 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     nb_chans = 1;
   }
   do_color = decode_color;
-  if (!do_color) nb_chans = 0;
   size_t nb_extra = metadata.extra_channel_info.size();
   bool has_tree = reader->ReadBits(1);
   if (has_tree) {
@@ -171,6 +170,7 @@ Status ModularFrameDecoder::DecodeGlobalInfo(BitReader* reader,
     JXL_RETURN_IF_ERROR(
         DecodeHistograms(reader, (tree.size() + 1) / 2, &code, &context_map));
   }
+  if (!do_color) nb_chans = 0;
 
   bool fp = metadata.bit_depth.floating_point_sample;
 
