@@ -9,7 +9,7 @@
 #include "jxl/encode_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/dec_file.h"
-#include "lib/jxl/enc_butteraugli_comparator.h"
+#include "lib/jxl/enc_butteraugli_pnorm.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/dec_jpeg_data.h"
 #include "lib/jxl/jpeg/dec_jpeg_data_writer.h"
@@ -198,10 +198,7 @@ void VerifyFrameEncoding(size_t xsize, size_t ysize, JxlEncoder* enc,
       dparams, jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
       &decoded_io, /*pool=*/nullptr));
 
-  jxl::ButteraugliParams ba;
-  EXPECT_LE(ButteraugliDistance(input_io, decoded_io, ba,
-                                /*distmap=*/nullptr, nullptr),
-            3.0f);
+  EXPECT_LE(ComputeDistance2(input_io.Main(), decoded_io.Main()), 1.8);
 }
 
 void VerifyFrameEncoding(JxlEncoder* enc, const JxlEncoderOptions* options) {
@@ -506,8 +503,7 @@ struct Container {
 TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
   EXPECT_NE(nullptr, enc.get());
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(),
-			  true));
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), true));
   JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
 
   size_t xsize = 71;
@@ -524,7 +520,8 @@ TEST(EncodeTest, SingleFrameBoundedJXLCTest) {
   JxlColorEncoding color_encoding;
   JxlColorEncodingSetToSRGB(&color_encoding,
                             /*is_gray=*/false);
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
                                     pixels.size()));
@@ -716,7 +713,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
 
       JxlEncoderPtr enc = JxlEncoderMake(nullptr);
       JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
-
+      JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT, 1);
       if (!skip_basic_info) {
         JxlBasicInfo basic_info;
         JxlEncoderInitBasicInfo(&basic_info);
@@ -760,10 +757,7 @@ TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGFrameTest)) {
           jxl::Span<const uint8_t>(compressed.data(), compressed.size()),
           &decoded_io, /*pool=*/nullptr));
 
-      jxl::ButteraugliParams ba;
-      EXPECT_LE(ButteraugliDistance(orig_io, decoded_io, ba,
-                                    /*distmap=*/nullptr, nullptr),
-                2.5f);
+      EXPECT_LE(ComputeDistance2(orig_io.Main(), decoded_io.Main()), 3.5);
     }
   }
 }

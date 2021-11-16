@@ -1496,6 +1496,7 @@ TEST_P(DecodeTestParam, PixelTest) {
                                 0};
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   cparams.resampling = config.upsampling;
   cparams.ec_resampling = config.upsampling;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
@@ -1747,6 +1748,7 @@ TEST(DecodeTest, PixelTestWithICCProfileLossless) {
   JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   // For variation: some have container and no preview, others have preview
   // and no container.
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
@@ -2264,6 +2266,7 @@ TEST(DecodeTest, AlignTest) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false);
@@ -2321,6 +2324,7 @@ TEST(DecodeTest, AnimationTest) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
@@ -2424,6 +2428,7 @@ TEST(DecodeTest, AnimationTestStreaming) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
@@ -2529,6 +2534,7 @@ TEST(DecodeTest, ExtraChannelTest) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_None, JXL_ORIENT_IDENTITY, false);
@@ -2645,6 +2651,7 @@ TEST(DecodeTest, SkipFrameTest) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
@@ -2807,6 +2814,7 @@ TEST(DecodeTest, SkipFrameWithBlendingTest) {
 
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::AuxOut aux_out;
   jxl::PaddedBytes compressed;
   jxl::PassesEncoderState enc_state;
@@ -3187,6 +3195,7 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
       jxl::test::GetSomeTestImage(xsize, ysize, num_channels, 0);
   jxl::CompressParams cparams;
   cparams.SetLossless();
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   cparams.responsive = 1;
   jxl::PaddedBytes data = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize,
@@ -3235,7 +3244,7 @@ TEST(DecodeTest, FlushTestLosslessProgressiveAlpha) {
 
   EXPECT_LE(ComparePixels(pixels2.data(), pixels.data(), xsize, ysize, format,
                           format, 2560.0),
-            1700u);
+            2700u);
 
   EXPECT_EQ(JXL_DEC_NEED_MORE_INPUT, JxlDecoderProcessInput(dec));
 
@@ -3648,6 +3657,7 @@ TEST(DecodeTest, PartialCodestreamBoxTest) {
   JxlPixelFormat format_orig = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
   jxl::CompressParams cparams;
   cparams.SetLossless();  // Lossless to verify pixels exactly after roundtrip.
+  cparams.speed_tier = jxl::SpeedTier::kThunder;
   jxl::PaddedBytes compressed = jxl::CreateTestJXLCodestream(
       jxl::Span<const uint8_t>(pixels.data(), pixels.size()), xsize, ysize, 4,
       cparams, kCSBF_Multi, JXL_ORIENT_IDENTITY, false, true);
