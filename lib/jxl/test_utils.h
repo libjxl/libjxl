@@ -91,8 +91,10 @@ void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
     basic_info->alpha_exponent_bits = 0;
     if (basic_info->bits_per_sample == 32) {
       basic_info->alpha_bits = 16;
+      basic_info->num_extra_channels = 1;
     } else {
       basic_info->alpha_bits = basic_info->bits_per_sample;
+      basic_info->num_extra_channels = 1;
     }
   } else {
     basic_info->alpha_exponent_bits = 0;

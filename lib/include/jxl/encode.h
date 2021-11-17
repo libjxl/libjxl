@@ -742,7 +742,9 @@ JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
  *
  * If the JxlBasicInfo contains information of extra channels beyond an alpha
  * channel, then @ref JxlEncoderSetExtraChannelInfo must be called between
- * JxlEncoderSetBasicInfo and @ref JxlEncoderAddImageFrame.
+ * JxlEncoderSetBasicInfo and @ref JxlEncoderAddImageFrame. In order to indicate
+ * extra channels, the value of `info.num_extra_channels` should be set to the
+ * number of extra channels, also counting the alpha channel if present.
  *
  * @param enc encoder object.
  * @param info global image metadata. Object owned by the caller and its

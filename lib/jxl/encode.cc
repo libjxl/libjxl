@@ -8,8 +8,10 @@
 #include <brotli/encode.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 
+#include "jxl/codestream_header.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/codec_in_out.h"
@@ -441,6 +443,7 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
   if (info->alpha_bits > 0 && info->alpha_exponent_bits > 0) {
     return JXL_ENC_NOT_SUPPORTED;
   }
+
   switch (info->alpha_bits) {
     case 0:
       break;
@@ -454,6 +457,10 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
     default:
       return JXL_ENC_ERROR;
   }
+  // The number of extra channels includes the alpha channel, so for example and
+  // RGBA with no other extra channels, has exactly num_extra_channels == 1
+  enc->metadata.m.num_extra_channels = info->num_extra_channels;
+  enc->metadata.m.extra_channel_info.resize(enc->metadata.m.num_extra_channels);
   enc->metadata.m.xyb_encoded = !info->uses_original_profile;
   if (info->orientation > 0 && info->orientation <= 8) {
     enc->metadata.m.orientation = info->orientation;
@@ -992,6 +999,7 @@ JxlEncoderStatus JxlEncoderAddJPEGFrame(
   }
   queued_frame->frame.SetFromImage(std::move(*io.Main().color()),
                                    io.Main().c_current());
+  // TODO(firsching) add extra channels here
   queued_frame->frame.jpeg_data = std::move(io.Main().jpeg_data);
   queued_frame->frame.color_transform = io.Main().color_transform;
   queued_frame->frame.chroma_subsampling = io.Main().chroma_subsampling;
@@ -1040,6 +1048,21 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
   } else {
     c_current = frame_settings->enc->metadata.m.color_encoding;
   }
+  uint32_t num_channels = pixel_format->num_channels;
+  size_t has_interleaved_alpha =
+      static_cast<size_t>(num_channels == 2 || num_channels == 4);
+  if (has_interleaved_alpha >
+      frame_settings->enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR("number of extra channels mismatch");
+  }
+  std::vector<jxl::ImageF> extra_channels(
+      frame_settings->enc->metadata.m.num_extra_channels -
+      has_interleaved_alpha);
+  for (auto& extra_channel : extra_channels) {
+    extra_channel = jxl::ImageF(frame_settings->enc->metadata.xsize(),
+                                frame_settings->enc->metadata.ysize());
+  }
+  queued_frame->frame.SetExtraChannels(std::move(extra_channels));
 
   size_t xsize = frame_settings->enc->metadata.xsize();
   size_t ysize = frame_settings->enc->metadata.ysize();
@@ -1053,6 +1076,9 @@ JxlEncoderStatus JxlEncoderAddImageFrame(
                                 frame_settings->enc->thread_pool.get(),
                                 c_current, &(queued_frame->frame))) {
     return JXL_ENC_ERROR;
+  }
+  if (frame_settings->values.lossless) {
+    queued_frame->option_values.cparams.SetLossless();
   }
 
   QueueFrame(frame_settings, queued_frame);
@@ -1100,6 +1126,33 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
   return JXL_ENC_SUCCESS;
 }
 
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
+    const JxlEncoderOptions* frame_settings, const JxlPixelFormat* pixel_format,
+    const void* buffer, size_t size, uint32_t index) {
+  if (index >= frame_settings->enc->metadata.m.num_extra_channels) {
+    return JXL_API_ERROR("Invalid value for the index of extra channel");
+  }
+  if (!frame_settings->enc->basic_info_set ||
+      !frame_settings->enc->color_encoding_set) {
+    return JXL_ENC_ERROR;
+  }
+  if (frame_settings->enc->input_queue.empty()) {
+    return JXL_ENC_ERROR;
+  }
+  if (frame_settings->enc->frames_closed) {
+    return JXL_ENC_ERROR;
+  }
+  if (!jxl::BufferToImageF(*pixel_format, frame_settings->enc->metadata.xsize(),
+                           frame_settings->enc->metadata.ysize(), buffer, size,
+                           frame_settings->enc->thread_pool.get(),
+                           &frame_settings->enc->input_queue.back()
+                                .frame->frame.extra_channels()[index])) {
+    return JXL_API_ERROR("Failed to set buffer for extra channel");
+  }
+
+  return JXL_ENC_SUCCESS;
+}
+
 void JxlEncoderCloseFrames(JxlEncoder* enc) { enc->frames_closed = true; }
 
 void JxlEncoderCloseBoxes(JxlEncoder* enc) { enc->boxes_closed = true; }
@@ -1108,7 +1161,6 @@ void JxlEncoderCloseInput(JxlEncoder* enc) {
   JxlEncoderCloseFrames(enc);
   JxlEncoderCloseBoxes(enc);
 }
-
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
                                          size_t* avail_out) {
   while (*avail_out > 0 &&
