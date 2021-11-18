@@ -175,10 +175,15 @@ size_t BitsPerChannel(JxlDataType data_type) {
 }
 
 enum class DecoderStage : uint32_t {
-  kInited,    // Decoder created, no JxlDecoderProcessInput called yet
-  kStarted,   // Running JxlDecoderProcessInput calls
-  kFinished,  // Codestream done, but other boxes could still occur
-  kError,     // Error occurred, decoder object no longer usable
+  kInited,              // Decoder created, no JxlDecoderProcessInput called yet
+  kStarted,             // Running JxlDecoderProcessInput calls
+  kCodestreamFinished,  // Codestream done, but other boxes could still occur.
+                        // This stage can also occur before having seen the
+                        // entire codestream if the user didn't subscribe to any
+                        // codestream events at all, e.g. only to box events,
+                        // or, the user only subscribed to basic info, and only
+                        // the header of the codestream was parsed.
+  kError,               // Error occurred, decoder object no longer usable
 };
 
 enum class FrameStage : uint32_t {
@@ -602,21 +607,9 @@ struct JxlDecoderStruct {
   // parts of the codestream that are subscribed to (e.g. only basic info) have
   // already occured.
   bool CanUseMoreCodestreamInput() const {
-    if (!got_basic_info && (orig_events_wanted & JXL_DEC_BASIC_INFO))
-      return true;
-    if (!got_all_headers && (orig_events_wanted & JXL_DEC_EXTENSIONS))
-      return true;
-    if (!got_all_headers && (orig_events_wanted & JXL_DEC_COLOR_ENCODING))
-      return true;
-    // For these events, always return true, they are part of frames and more
-    // frames could appear in the codestream at any time
-    if ((orig_events_wanted & JXL_DEC_PREVIEW_IMAGE) ||
-        (orig_events_wanted & JXL_DEC_FRAME) ||
-        (orig_events_wanted & JXL_DEC_FULL_IMAGE) ||
-        (orig_events_wanted & JXL_DEC_JPEG_RECONSTRUCTION)) {
-      return true;
-    }
-    return false;
+    // The decoder can set this to finished early if all relevant events were
+    // processed, so this check works.
+    return stage != DecoderStage::kCodestreamFinished;
   }
 };
 
@@ -1540,7 +1533,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
     }
   }
 
-  dec->stage = DecoderStage::kFinished;
+  dec->stage = DecoderStage::kCodestreamFinished;
   // Return success, this means there is nothing more to do.
   return JXL_DEC_SUCCESS;
 }
@@ -1734,13 +1727,14 @@ static JxlDecoderStatus HandleBoxes(JxlDecoder* dec) {
 
     if (dec->box_stage == BoxStage::kHeader) {
       if (!dec->have_container) {
-        if (dec->stage == DecoderStage::kFinished) return JXL_DEC_SUCCESS;
+        if (dec->stage == DecoderStage::kCodestreamFinished)
+          return JXL_DEC_SUCCESS;
         dec->box_stage = BoxStage::kCodestream;
         dec->box_contents_unbounded = true;
         continue;
       }
       if (dec->avail_in == 0) {
-        if (dec->stage != DecoderStage::kFinished) {
+        if (dec->stage != DecoderStage::kCodestreamFinished) {
           // Not yet seen (all) codestream boxes.
           return JXL_DEC_NEED_MORE_INPUT;
         }
@@ -2082,18 +2076,14 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
   // Even if the box handling returns success, certain types of
   // data may be missing.
   if (status == JXL_DEC_SUCCESS) {
-    if (dec->stage != DecoderStage::kFinished) {
-      // TODO(lode): consider not returning this error if only subscribed to
-      // the JXL_DEC_BOX event and so finishing the image frames is not
-      // required.
+    if (dec->CanUseMoreCodestreamInput()) {
+      if (!dec->last_codestream_seen) {
+        // In case of jxlp boxes, this means no jxlp box marked as final was
+        // seen yet. Perhaps there is an empty jxlp box after this, this is not
+        // an error but will require more input.
+        return JXL_DEC_NEED_MORE_INPUT;
+      }
       return JXL_API_ERROR("codestream never finished");
-    }
-    if (!dec->last_codestream_seen && dec->CanUseMoreCodestreamInput()) {
-      // In case of jxlp boxes, this means no jxlp box marked as final was
-      // seen yet. Only do this if events requiring more codestream bytes were
-      // requested, in other cases the decoder may have returned success early
-      // on purpose.
-      return JXL_DEC_NEED_MORE_INPUT;
     }
 
     if (dec->JbrdNeedMoreBoxes()) {

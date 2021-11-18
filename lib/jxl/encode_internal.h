@@ -108,6 +108,8 @@ struct JxlEncoderStruct {
       nullptr, jxl::MemoryManagerDeleteHelper(&memory_manager)};
   std::vector<jxl::MemoryManagerUniquePtr<JxlEncoderOptions>> encoder_options;
 
+  size_t num_queued_frames;
+  size_t num_queued_boxes;
   std::vector<jxl::JxlEncoderQueuedInput> input_queue;
   std::vector<uint8_t> output_byte_queue;
 
@@ -140,14 +142,13 @@ struct JxlEncoderStruct {
   bool basic_info_set;
   bool color_encoding_set;
 
-  std::vector<jxl::JxlEncoderQueuedBox> boxes;
-
   // Takes the first frame in the input_queue, encodes it, and appends
   // the bytes to the output_byte_queue.
   JxlEncoderStatus RefillOutputByteQueue();
 
   bool MustUseContainer() const {
-    return use_container || codestream_level != 5 || store_jpeg_metadata;
+    return use_container || codestream_level != 5 || store_jpeg_metadata ||
+           use_boxes;
   }
 
   // Appends the bytes of a JXL box header with the provided type and size to
