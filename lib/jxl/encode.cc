@@ -54,52 +54,26 @@ void QueueFrame(
   jxl::JxlEncoderQueuedInput queued_input(options->enc->memory_manager);
   queued_input.frame = std::move(frame);
   options->enc->input_queue.emplace_back(std::move(queued_input));
+  options->enc->num_queued_frames++;
+}
+
+void QueueBox(JxlEncoder* enc,
+              jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedBox>& box) {
+  jxl::JxlEncoderQueuedInput queued_input(enc->memory_manager);
+  queued_input.box = std::move(box);
+  enc->input_queue.emplace_back(std::move(queued_input));
+  enc->num_queued_boxes++;
 }
 }  // namespace
 
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
-  jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
-      std::move(input_queue[0].frame);
-  input_queue.erase(input_queue.begin());
+  jxl::PaddedBytes bytes;
 
-  // TODO(zond): If the input queue is empty and the frames_closed is true,
-  // then mark this frame as the last.
+  jxl::JxlEncoderQueuedInput& input = input_queue[0];
 
-  // TODO(zond): Handle progressive mode like EncodeFile does it.
-  // TODO(zond): Handle animation like EncodeFile does it, by checking if
-  //             JxlEncoderCloseFrames has been called and if the frame queue is
-  //             empty (to see if it's the last animation frame).
-
-  if (metadata.m.xyb_encoded) {
-    input_frame->option_values.cparams.color_transform =
-        jxl::ColorTransform::kXYB;
-  } else {
-    // TODO(zond): Figure out when to use kYCbCr instead.
-    input_frame->option_values.cparams.color_transform =
-        jxl::ColorTransform::kNone;
-  }
-
-  jxl::BitWriter writer;
-  jxl::PassesEncoderState enc_state;
-  if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
-                        &metadata, input_frame->frame, &enc_state,
-                        thread_pool.get(), &writer,
-                        /*aux_out=*/nullptr)) {
-    return JXL_ENC_ERROR;
-  }
-
-  jxl::PaddedBytes bytes = std::move(writer).TakeBytes();
-
-  // Whether to write the basic info and color profile header of the codestream
-  // into an early separate jxlp box, so that it comes before metadata or
-  // jpeg reconstruction boxes. In theory this could simply always be done, but
-  // there's no reason to add an extra box with box header overhead if the
-  // codestream will already come immediately after the signature and level
-  // boxes.
-  // TODO(lode): when outputting boxes is implemented, this should also be
-  // set to true if the user indicated they'll add metadata boxes, to ensure
-  // basic info comes early
-  bool partial_header = MustUseContainer() && store_jpeg_metadata;
+  // TODO(lode): split this into 3 functions: for adding the signature and other
+  // initial headers (jbrd, ...), one for adding frame, and one for adding user
+  // box.
 
   if (!wrote_bytes) {
     jxl::BitWriter writer;
@@ -116,7 +90,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     // TODO(lode): preview should be added here if a preview image is added
 
     writer.ZeroPadToByte();
-    jxl::PaddedBytes header_bytes = std::move(writer).TakeBytes();
+    bytes = std::move(writer).TakeBytes();
 
     if (MustUseContainer()) {
       // Add "JXL " and ftyp box.
@@ -131,21 +105,22 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         output_byte_queue.push_back(codestream_level);
       }
 
-      // TODO(lode): consider adding the output of WriteHeaders here as a jxlp
-      // box in case there is a jbrd box or other big boxes before the
-      // codestream, to ensure having the basic info available early, for faster
-      // rendering of correct xsize and ysize in browsers.
+      // Whether to write the basic info and color profile header of the
+      // codestream into an early separate jxlp box, so that it comes before
+      // metadata or jpeg reconstruction boxes. In theory this could simply
+      // always be done, but there's no reason to add an extra box with box
+      // header overhead if the codestream will already come immediately after
+      // the signature and level boxes.
+      bool partial_header = store_jpeg_metadata || (use_boxes && !input.frame);
+
       if (partial_header) {
-        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), header_bytes.size() + 4,
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), bytes.size() + 4,
                              /*unbounded=*/false, &output_byte_queue);
         AppendJxlpBoxCounter(jxlp_counter++, /*last=*/false,
                              &output_byte_queue);
-        output_byte_queue.insert(output_byte_queue.end(), header_bytes.data(),
-                                 header_bytes.data() + header_bytes.size());
-      } else {
-        // Prepend the codestream header before the first frame
-        header_bytes.append(bytes);
-        bytes.swap(header_bytes);
+        output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
+                                 bytes.data() + bytes.size());
+        bytes.clear();
       }
 
       if (store_jpeg_metadata && jpeg_metadata.size() > 0) {
@@ -155,31 +130,83 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
                                  jpeg_metadata.end());
       }
 
-    } else {
-      output_byte_queue.insert(output_byte_queue.end(), header_bytes.data(),
-                               header_bytes.data() + header_bytes.size());
     }
     wrote_bytes = true;
   }
 
-  if (MustUseContainer()) {
-    bool last_frame = frames_closed && input_queue.empty();
-    if (last_frame && jxlp_counter == 0) {
-      // If this is the last frame and no jxlp boxes were used yet, it's slighly
-      // more efficient to write a jxlc box since it has 4 bytes less overhead.
-      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), bytes.size(),
-                           /*unbounded=*/false, &output_byte_queue);
+  // Choose frame or box processing: exactly one of the two unique pointers (box
+  // or frame) in the input queue item is non-null.
+  if (input.frame) {
+    jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedFrame> input_frame =
+        std::move(input.frame);
+    input_queue.erase(input_queue.begin());
+    num_queued_frames--;
+
+    // TODO(zond): If the input queue is empty and the frames_closed is true,
+    // then mark this frame as the last.
+
+    // TODO(zond): Handle progressive mode like EncodeFile does it.
+    // TODO(zond): Handle animation like EncodeFile does it, by checking if
+    //             JxlEncoderCloseFrames has been called and if the frame queue
+    //             is empty (to see if it's the last animation frame).
+
+    if (metadata.m.xyb_encoded) {
+      input_frame->option_values.cparams.color_transform =
+          jxl::ColorTransform::kXYB;
     } else {
-      jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), bytes.size() + 4,
-                           /*unbounded=*/false, &output_byte_queue);
-      AppendJxlpBoxCounter(jxlp_counter++, last_frame, &output_byte_queue);
+      // TODO(zond): Figure out when to use kYCbCr instead.
+      input_frame->option_values.cparams.color_transform =
+          jxl::ColorTransform::kNone;
     }
+
+    jxl::BitWriter writer;
+    jxl::PassesEncoderState enc_state;
+    if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
+                          &metadata, input_frame->frame, &enc_state,
+                          thread_pool.get(), &writer,
+                          /*aux_out=*/nullptr)) {
+      return JXL_ENC_ERROR;
+    }
+
+    // Possibly bytes already contains the codestream header: in case this is
+    // the first frame, and the codestream header was not encoded as jxlp above.
+    bytes.append(std::move(writer).TakeBytes());
+
+    if (MustUseContainer()) {
+      bool last_frame = frames_closed && !num_queued_frames;
+      if (last_frame && jxlp_counter == 0) {
+        // If this is the last frame and no jxlp boxes were used yet, it's
+        // slighly more efficient to write a jxlc box since it has 4 bytes less
+        // overhead.
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlc"), bytes.size(),
+                             /*unbounded=*/false, &output_byte_queue);
+      } else {
+        jxl::AppendBoxHeader(jxl::MakeBoxType("jxlp"), bytes.size() + 4,
+                             /*unbounded=*/false, &output_byte_queue);
+        AppendJxlpBoxCounter(jxlp_counter++, last_frame, &output_byte_queue);
+      }
+    }
+
+    output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
+                             bytes.data() + bytes.size());
+
+    last_used_cparams = input_frame->option_values.cparams;
+  } else {
+    // Not a frame, so is a box instead
+    jxl::MemoryManagerUniquePtr<jxl::JxlEncoderQueuedBox> box =
+        std::move(input.box);
+    input_queue.erase(input_queue.begin());
+    num_queued_boxes--;
+
+    if (box->compress_box) {
+      // TODO(lode): implement brotli compression for brob boxes
+      return JXL_ENC_ERROR;
+    }
+    jxl::AppendBoxHeader(box->type, box->contents.size(), false,
+                         &output_byte_queue);
+    output_byte_queue.insert(output_byte_queue.end(), box->contents.data(),
+                             box->contents.data() + box->contents.size());
   }
-
-  output_byte_queue.insert(output_byte_queue.end(), bytes.data(),
-                           bytes.data() + bytes.size());
-
-  last_used_cparams = input_frame->option_values.cparams;
 
   return JXL_ENC_SUCCESS;
 }
@@ -586,6 +613,8 @@ JxlEncoder* JxlEncoderCreate(const JxlMemoryManager* memory_manager) {
 void JxlEncoderReset(JxlEncoder* enc) {
   enc->thread_pool.reset();
   enc->input_queue.clear();
+  enc->num_queued_frames = 0;
+  enc->num_queued_boxes = 0;
   enc->encoder_options.clear();
   enc->output_byte_queue.clear();
   enc->wrote_bytes = false;
@@ -599,7 +628,6 @@ void JxlEncoderReset(JxlEncoder* enc) {
   enc->use_container = false;
   enc->use_boxes = false;
   enc->codestream_level = 5;
-  enc->boxes.clear();
 }
 
 void JxlEncoderDestroy(JxlEncoder* enc) {
@@ -763,11 +791,39 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
   return JXL_ENC_SUCCESS;
 }
 
+JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc) {
+  if (enc->wrote_bytes) {
+    return JXL_API_ERROR("this setting can only be set at the beginning");
+  }
+  enc->use_boxes = true;
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
+                                  const uint8_t* contents, size_t size,
+                                  JXL_BOOL compress_box) {
+  if (!enc->use_boxes) {
+    return JXL_API_ERROR(
+        "must set JxlEncoderUseBoxes at the beginning to add boxes");
+  }
+
+  auto box = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedBox>(
+      &enc->memory_manager);
+
+  box->type = jxl::MakeBoxType(type);
+  box->contents.assign(contents, contents + size);
+  box->compress_box = !!compress_box;
+  QueueBox(enc, box);
+  return JXL_ENC_SUCCESS;
+}
+
 void JxlEncoderCloseFrames(JxlEncoder* enc) { enc->frames_closed = true; }
+
+void JxlEncoderCloseBoxes(JxlEncoder* enc) { enc->boxes_closed = true; }
 
 void JxlEncoderCloseInput(JxlEncoder* enc) {
   JxlEncoderCloseFrames(enc);
-  // TODO(lode): also call JxlEncoderCloseBoxes once implemented
+  JxlEncoderCloseBoxes(enc);
 }
 
 JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,

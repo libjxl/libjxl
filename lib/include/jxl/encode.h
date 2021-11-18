@@ -537,7 +537,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderUseBoxes(JxlEncoder* enc);
  *
  * @param enc encoder object.
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderCloseBoxes(JxlEncoder* enc);
+JXL_EXPORT void JxlEncoderCloseBoxes(JxlEncoder* enc);
 
 /**
  * Declares that no frames will be added and @ref JxlEncoderAddImageFrame and
