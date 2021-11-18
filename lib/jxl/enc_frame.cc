@@ -49,6 +49,7 @@
 #include "lib/jxl/enc_noise.h"
 #include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_patch_dictionary.h"
+#include "lib/jxl/enc_photon_noise.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_splines.h"
 #include "lib/jxl/enc_toc.h"
@@ -302,8 +303,9 @@ Status MakeFrameHeader(const CompressParams& cparams,
   }
 
   frame_header->flags = FrameFlagsFromParams(cparams);
-  // Noise is not supported in the Modular encoder for now.
-  if (frame_header->encoding != FrameEncoding::kVarDCT) {
+  // Non-photon noise is not supported in the Modular encoder for now.
+  if (frame_header->encoding != FrameEncoding::kVarDCT &&
+      cparams.photon_noise_iso == 0) {
     frame_header->UpdateFlag(false, FrameHeader::Flags::kNoise);
   }
 
@@ -1250,6 +1252,10 @@ Status EncodeFrame(const CompressParams& cparams_orig,
                   get_output(0), kLayerSplines, HistogramParams(), aux_out);
   }
 
+  if (cparams.photon_noise_iso > 0) {
+    lossy_frame_encoder.State()->shared.image_features.noise_params =
+        SimulatePhotonNoise(ib.xsize(), ib.ysize(), cparams.photon_noise_iso);
+  }
   if (frame_header->flags & FrameHeader::kNoise) {
     EncodeNoise(lossy_frame_encoder.State()->shared.image_features.noise_params,
                 get_output(0), kLayerNoise, aux_out);
