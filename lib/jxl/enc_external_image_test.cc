@@ -45,5 +45,25 @@ TEST(ExternalImageTest, InvalidSize) {
 }
 #endif
 
+TEST(ExternalImageTest, AlphaMissing) {
+  ImageMetadata im;
+  im.SetAlphaBits(0);  // No alpha
+  ImageBundle ib(&im);
+
+  const size_t xsize = 10;
+  const size_t ysize = 20;
+  const uint8_t buf[xsize * ysize * 4] = {};
+
+  // has_alpha is true but the ImageBundle has no alpha. Alpha channel should
+  // be ignored.
+  EXPECT_TRUE(ConvertFromExternal(
+      Span<const uint8_t>(buf, sizeof(buf)), xsize, ysize,
+      /*c_current=*/ColorEncoding::SRGB(),
+      /*has_alpha=*/true, /*alpha_is_premultiplied=*/false,
+      /*bits_per_sample=*/8, JXL_BIG_ENDIAN,
+      /*flipped_y=*/false, nullptr, &ib, /*float_in=*/false));
+  EXPECT_FALSE(ib.HasAlpha());
+}
+
 }  // namespace
 }  // namespace jxl

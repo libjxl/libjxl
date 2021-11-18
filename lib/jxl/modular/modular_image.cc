@@ -11,33 +11,19 @@
 
 namespace jxl {
 
-void Image::undo_transforms(const weighted::Header &wp_header, int keep,
+void Image::undo_transforms(const weighted::Header &wp_header,
                             jxl::ThreadPool *pool) {
-  if (keep == -2) return;
-  while ((int)transform.size() > keep && transform.size() > 0) {
+  while (!transform.empty()) {
     Transform t = transform.back();
-    JXL_DEBUG_V(4, "Undoing transform %s", t.Name());
+    JXL_DEBUG_V(4, "Undoing transform");
     Status result = t.Inverse(*this, wp_header, pool);
     if (result == false) {
-      JXL_NOTIFY_ERROR("Error while undoing transform %s.", t.Name());
+      JXL_NOTIFY_ERROR("Error while undoing transform.");
       error = true;
       return;
     }
-    JXL_DEBUG_V(8, "Undoing transform %s: done", t.Name());
+    JXL_DEBUG_V(8, "Undoing transform: done");
     transform.pop_back();
-  }
-  if (!keep && bitdepth < 32) {
-    // clamp the values to the valid range (lossy compression can produce values
-    // outside the range)
-    pixel_type maxval = (1u << bitdepth) - 1;
-    for (size_t i = 0; i < channel.size(); i++) {
-      for (size_t y = 0; y < channel[i].h; y++) {
-        pixel_type *JXL_RESTRICT p = channel[i].plane.Row(y);
-        for (size_t x = 0; x < channel[i].w; x++, p++) {
-          *p = Clamp1(*p, 0, maxval);
-        }
-      }
-    }
   }
 }
 

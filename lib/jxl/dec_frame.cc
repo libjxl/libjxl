@@ -21,6 +21,7 @@
 #include "lib/jxl/base/bits.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
@@ -148,7 +149,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
   JXL_RETURN_IF_ERROR(frame_decoder.InitFrame(
       reader, decoded, is_preview, dparams.allow_partial_files,
-      dparams.allow_partial_files && dparams.allow_more_progressive_steps));
+      dparams.allow_partial_files && dparams.allow_more_progressive_steps,
+      true));
 
   // Handling of progressive decoding.
   {
@@ -220,8 +222,8 @@ Status DecodeFrame(const DecompressParams& dparams,
       if (dparams.max_downsampling > 1 && s == FrameDecoder::kSkipped) {
         continue;
       }
-      return JXL_FAILURE("Invalid section %zu status: %d", section_info[i].id,
-                         s);
+      return JXL_FAILURE("Invalid section %" PRIuS " status: %d",
+                         section_info[i].id, s);
     }
   }
 
@@ -234,7 +236,8 @@ Status DecodeFrame(const DecompressParams& dparams,
 
 Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
                                bool is_preview, bool allow_partial_frames,
-                               bool allow_partial_dc_global) {
+                               bool allow_partial_dc_global,
+                               bool output_needed) {
   PROFILER_FUNC;
   decoded_ = decoded;
   JXL_ASSERT(is_finalized_);
@@ -286,6 +289,8 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
         "Non-444 chroma subsampling is not allowed when adaptive DC "
         "smoothing is enabled");
   }
+
+  if (!output_needed) return true;
   JXL_RETURN_IF_ERROR(
       InitializePassesSharedState(frame_header_, &dec_state_->shared_storage));
   JXL_RETURN_IF_ERROR(dec_state_->Init());
@@ -334,7 +339,7 @@ Status FrameDecoder::InitFrame(BitReader* JXL_RESTRICT br, ImageBundle* decoded,
   processed_section_.resize(section_offsets_.size());
   max_passes_ = frame_header_.passes.num_passes;
   num_renders_ = 0;
-
+  allocated_ = false;
   return true;
 }
 
@@ -375,7 +380,8 @@ Status FrameDecoder::ProcessDCGlobal(BitReader* br) {
   // Splines' draw cache uses the color correlation map.
   if (shared.frame_header.flags & FrameHeader::kSplines) {
     JXL_RETURN_IF_ERROR(shared.image_features.splines.InitializeDrawCache(
-        frame_dim_.xsize, frame_dim_.ysize, dec_state_->shared->cmap));
+        frame_dim_.xsize_upsampled_padded, frame_dim_.ysize_upsampled_padded,
+        dec_state_->shared->cmap));
   }
   Status dec_status = modular_frame_decoder_.DecodeGlobalInfo(
       br, frame_header_, allow_partial_dc_global_);
@@ -426,6 +432,7 @@ void FrameDecoder::FinalizeDC() {
 }
 
 void FrameDecoder::AllocateOutput() {
+  if (allocated_) return;
   const CodecMetadata& metadata = *frame_header_.nonserialized_metadata;
   if (dec_state_->rgb_output == nullptr && !dec_state_->pixel_callback) {
     modular_frame_decoder_.MaybeDropFullImage();
@@ -459,6 +466,8 @@ void FrameDecoder::AllocateOutput() {
     }
   }
   decoded_->origin = dec_state_->shared->frame_header.frame_origin;
+  dec_state_->InitForAC(nullptr);
+  allocated_ = true;
 }
 
 Status FrameDecoder::ProcessACGlobal(BitReader* br) {
@@ -533,16 +542,26 @@ Status FrameDecoder::ProcessACGlobal(BitReader* br) {
     size_t num_components = jpeg_data->components.size();
     bool is_gray = (num_components == 1);
     auto jpeg_c_map = JpegOrder(frame_header_.color_transform, is_gray);
+    size_t qt_set = 0;
     for (size_t c = 0; c < num_components; c++) {
       // TODO(eustas): why 1-st quant table for gray?
       size_t quant_c = is_gray ? 1 : c;
       size_t qpos = jpeg_data->components[jpeg_c_map[c]].quant_idx;
       JXL_CHECK(qpos != jpeg_data->quant.size());
+      qt_set |= 1 << qpos;
       for (size_t x = 0; x < 8; x++) {
         for (size_t y = 0; y < 8; y++) {
           jpeg_data->quant[qpos].values[x * 8 + y] =
               (*qe[0].qraw.qtable)[quant_c * 64 + y * 8 + x];
         }
+      }
+    }
+    for (size_t i = 0; i < jpeg_data->quant.size(); i++) {
+      if (qt_set & (1 << i)) continue;
+      if (i == 0) return JXL_FAILURE("First quant table unused.");
+      // Unused quant table is set to copy of previous quant table
+      for (size_t j = 0; j < 64; j++) {
+        jpeg_data->quant[i].values[j] = jpeg_data->quant[i - 1].values[j];
       }
     }
   }
@@ -700,7 +719,6 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
 
   if (finalized_dc_) dec_state_->EnsureBordersStorage();
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
-    dec_state_->InitForAC(pool_);
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;
   }
@@ -784,6 +802,8 @@ Status FrameDecoder::Flush() {
     // Nothing to do.
     return true;
   }
+  AllocateOutput();
+
   uint32_t completely_decoded_ac_pass = *std::min_element(
       decoded_passes_per_ac_group_.begin(), decoded_passes_per_ac_group_.end());
   if (completely_decoded_ac_pass < frame_header_.passes.num_passes) {
@@ -826,7 +846,8 @@ Status FrameDecoder::Flush() {
       dec_state_, pool_, decoded_, is_finalized_));
   JXL_RETURN_IF_ERROR(FinalizeFrameDecoding(decoded_, dec_state_, pool_,
                                             /*force_fir=*/false,
-                                            /*skip_blending=*/false));
+                                            /*skip_blending=*/false,
+                                            /*move_ec=*/is_finalized_));
 
   num_renders_++;
   return true;
@@ -916,7 +937,6 @@ Status FrameDecoder::FinalizeFrame() {
   if (!finalized_dc_) {
     JXL_ASSERT(allow_partial_frames_);
     AllocateOutput();
-    dec_state_->InitForAC(nullptr);
   }
 
   JXL_RETURN_IF_ERROR(Flush());
@@ -929,7 +949,7 @@ Status FrameDecoder::FinalizeFrame() {
     } else {
       reference_frame.storage = ImageBundle(decoded_->metadata());
       reference_frame.storage.SetFromImage(
-          std::move(dec_state_->pre_color_transform_frame),
+          CopyImage(dec_state_->pre_color_transform_frame),
           decoded_->c_current());
       if (decoded_->HasExtraChannels()) {
         const std::vector<ImageF>* ecs = &dec_state_->pre_color_transform_ec;
@@ -950,8 +970,10 @@ Status FrameDecoder::FinalizeFrame() {
       if (reference_frame.frame->xsize() < metadata->xsize() ||
           reference_frame.frame->ysize() < metadata->ysize()) {
         return JXL_FAILURE(
-            "trying to save a reference frame that is too small: %zux%zu "
-            "instead of %zux%zu",
+            "trying to save a reference frame that is too small: %" PRIuS
+            "x%" PRIuS
+            " "
+            "instead of %" PRIuS "x%" PRIuS,
             reference_frame.frame->xsize(), reference_frame.frame->ysize(),
             metadata->xsize(), metadata->ysize());
       }

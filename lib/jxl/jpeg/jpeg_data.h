@@ -216,7 +216,7 @@ struct JPEGData : public Fields {
         error(JPEGReadError::OK),
         has_zero_padding_bit(false) {}
 
-  const char* Name() const override { return "JPEGData"; }
+  JXL_FIELDS_NAME(JPEGData)
 #if JPEGXL_ENABLE_TRANSCODE_JPEG
   // Doesn't serialize everything - skips brotli-encoded data and what is
   // already encoded in the codestream.

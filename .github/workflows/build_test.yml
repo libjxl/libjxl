@@ -29,10 +29,12 @@ jobs:
             # Track static stack size on build and check it doesn't exceed 3 kB.
             env_stack_size: 1
             max_stack: 3000
+            # Conformance tooling test requires numpy.
+            apt_pkgs: python3-numpy
           - name: debug
             # Runs on AVX3 CPUs require more stack than others. Make sure to
             # test on AVX3-enabled CPUs when changing this value.
-            env_test_stack_size: 2048
+            env_test_stack_size: 4000
           # Build scalar-only hwy instructions.
           - name: scalar
             mode: release
@@ -79,6 +81,8 @@ jobs:
           clang-7 \
           cmake \
           doxygen \
+          libbenchmark-dev \
+          libbenchmark-tools \
           libbrotli-dev \
           libgdk-pixbuf2.0-dev \
           libgif-dev \
@@ -195,6 +199,15 @@ jobs:
          contains(github.event.pull_request.labels.*.names, 'CI:full')))
       run: |
         STORE_IMAGES=0 ./ci.sh fast_benchmark
+    # Run gbench once, just to make sure it runs, not for actual benchmarking.
+    # This doesn't work on msan because we use gbench library from the system
+    # which is not instrumented by msan.
+    - name: gbench check
+      if: |
+        matrix.name == 'release' || (
+          github.event_name == 'push' && matrix.name != 'msan')
+      run: |
+        ./ci.sh gbench --benchmark_min_time=0
 
 
   cross_compile_ubuntu:
@@ -347,3 +360,155 @@ jobs:
         ./ci.sh test
       env:
         BUILD_TARGET: ${{ matrix.build_target }}
+
+  windows_msys:
+    name: Windows MSYS2 / ${{ matrix.arch }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            msystem: mingw64
+          - arch: i686
+            msystem: mingw32
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout the source
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+          fetch-depth: 1
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          path-type: inherit
+          install: >-
+            base-devel
+            git
+            mingw-w64-${{ matrix.arch }}-brotli
+            mingw-w64-${{ matrix.arch }}-cmake
+            mingw-w64-${{ matrix.arch }}-gcc
+            mingw-w64-${{ matrix.arch }}-giflib
+            mingw-w64-${{ matrix.arch }}-gtest
+            mingw-w64-${{ matrix.arch }}-libavif
+            mingw-w64-${{ matrix.arch }}-libjpeg-turbo
+            mingw-w64-${{ matrix.arch }}-libpng
+            mingw-w64-${{ matrix.arch }}-libwebp
+            mingw-w64-${{ matrix.arch }}-ninja
+
+      - name: CMake configure
+        # AVX2 tests fail with segfault when built in MSYS2.
+        run: |
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS="-DHWY_DISABLED_TARGETS=\"HWY_AVX2|HWY_AVX3\"" \
+            -DJPEGXL_ENABLE_JNI=OFF \
+            -DJPEGXL_ENABLE_MANPAGES=OFF \
+            -DJPEGXL_FORCE_SYSTEM_BROTLI=ON \
+            -DJPEGXL_FORCE_SYSTEM_GTEST=ON \
+            -B build \
+            -G Ninja
+      - name: CMake build
+        run: cmake --build build
+      - name: Test
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' &&
+           contains(github.event.pull_request.labels.*.names, 'CI:full'))
+        # LibraryCLinkageTest doesn't work in here because it needs the DLL
+        # which is not installed.
+        run: ctest --test-dir build --parallel 2 --output-on-failure -E LibraryCLinkageTest
+
+  wasm32_build:
+    name: WASM wasm32/${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      EM_VERSION: 2.0.23
+      V8_VERSION: 9.3.22
+      V8: ${{ github.workspace }}/.jsvu/v8
+      BUILD_TARGET: wasm32
+
+    strategy:
+      matrix:
+        include:
+          - variant: scalar
+          - variant: simd
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: true
+        fetch-depth: 1
+    - name: Install build deps
+      shell: bash
+      run: |
+        set -x
+        sudo apt update
+        pkgs=(
+          # Build dependencies
+          ccache
+          cmake
+          doxygen
+          ninja-build
+          pkg-config
+        )
+        DEBIAN_FRONTEND=noninteractive sudo apt install -y "${pkgs[@]}"
+
+    - name: Git environment
+      id: git-env
+      run: |
+        echo "::set-output name=parent::$(git rev-parse ${{ github.sha }}^)"
+      shell: bash
+    - name: ccache
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.CCACHE_DIR }}
+        key: ${{ runner.os }}-${{ github.sha }}-${{ matrix.variant }}
+        restore-keys: |
+          ${{ runner.os }}-${{ steps.git-env.outputs.parent }}-${{ matrix.variant }}
+
+    - name: Install emsdk
+      uses: mymindstorm/setup-emsdk@v10
+      # TODO(deymo): We could cache this action but it doesn't work when running
+      # in a matrix.
+      with:
+        version: ${{env.EM_VERSION}}
+        no-cache: true
+    - name: Install v8
+      run: |
+        npm install jsvu -g
+        HOME="${{ github.workspace }}" jsvu --os=linux64 "v8@${V8_VERSION}"
+        rm -f "${{ github.workspace }}/.jsvu/v8"
+        ln -s "${{ github.workspace }}/.jsvu/v8-${V8_VERSION}" \
+          "${{ github.workspace }}/.jsvu/v8"
+    # TODO(deymo): Build and install other dependencies like libpng, libjpeg,
+    # etc.
+    - name: Build
+      run: |
+        mkdir -p ${CCACHE_DIR}
+        echo "max_size = 200M" > ${CCACHE_DIR}/ccache.conf
+        if [[ "${{ matrix.variant }}" == "simd" ]]; then
+          export ENABLE_WASM_SIMD=1
+        fi
+        emconfigure ./ci.sh release \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DBUILD_SHARED_LIBS=OFF \
+          -DJPEGXL_ENABLE_JNI=OFF
+      env:
+        SKIP_TEST: 1
+    - name: ccache stats
+      run: ccache --show-stats
+
+    - name: Test
+      if: |
+        github.event_name == 'push' ||
+        (github.event_name == 'pull_request' &&
+         contains(github.event.pull_request.labels.*.names, 'CI:full'))
+      run: |
+        emconfigure ./ci.sh test

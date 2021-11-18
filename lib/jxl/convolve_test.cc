@@ -13,11 +13,11 @@
 #include <hwy/highway.h>
 #include <hwy/nanobenchmark.h>
 #include <hwy/tests/test_util-inl.h>
-#include <random>
 #include <vector>
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/image_test_utils.h"
@@ -59,13 +59,12 @@ void TestNeighbors() {
 #endif  // HWY_TARGET != HWY_SCALAR
 }
 
-template <class Random>
 void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
-                      Random* rng) {
+                      Rng* rng) {
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
-  GenerateImage(GeneratorRandom<float, Random>(rng, 1.0f), &in);
+  GenerateImage(*rng, &in, 0.0f, 1.0f);
 
   ImageF out_expected(xsize, ysize);
   ImageF out_actual(xsize, ysize);
@@ -78,13 +77,12 @@ void VerifySymmetric3(const size_t xsize, const size_t ysize, ThreadPool* pool,
 }
 
 // Ensures Symmetric and Separable give the same result.
-template <class Random>
 void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
-                      Random* rng) {
+                      Rng* rng) {
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
-  GenerateImage(GeneratorRandom<float, Random>(rng, 1.0f), &in);
+  GenerateImage(*rng, &in, 0.0f, 1.0f);
 
   ImageF out_expected(xsize, ysize);
   ImageF out_actual(xsize, ysize);
@@ -95,13 +93,12 @@ void VerifySymmetric5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
 }
 
-template <class Random>
 void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
-                      Random* rng) {
+                      Rng* rng) {
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
-  GenerateImage(GeneratorRandom<float, Random>(rng, 1.0f), &in);
+  GenerateImage(*rng, &in, 0.0f, 1.0f);
 
   ImageF out_expected(xsize, ysize);
   ImageF out_actual(xsize, ysize);
@@ -113,13 +110,12 @@ void VerifySeparable5(const size_t xsize, const size_t ysize, ThreadPool* pool,
   VerifyRelativeError(out_expected, out_actual, 1E-5f, 1E-5f);
 }
 
-template <class Random>
 void VerifySeparable7(const size_t xsize, const size_t ysize, ThreadPool* pool,
-                      Random* rng) {
+                      Rng* rng) {
   const Rect rect(0, 0, xsize, ysize);
 
   ImageF in(xsize, ysize);
-  GenerateImage(GeneratorRandom<float, Random>(rng, 1.0f), &in);
+  GenerateImage(*rng, &in, 0.0f, 1.0f);
 
   ImageF out_expected(xsize, ysize);
   ImageF out_actual(xsize, ysize);
@@ -144,13 +140,14 @@ void TestConvolve() {
   pool.Run(kConvolveMaxRadius, 40, ThreadPool::SkipInit(),
            [](const int task, int /*thread*/) {
              const size_t xsize = task;
-             std::mt19937_64 rng(129 + 13 * xsize);
+             Rng rng(129 + 13 * xsize);
 
              ThreadPool* null_pool = nullptr;
              ThreadPoolInternal pool3(3);
              for (size_t ysize = kConvolveMaxRadius; ysize < 16; ++ysize) {
                JXL_DEBUG(JXL_DEBUG_CONVOLVE,
-                         "%zu x %zu (target %d)===============================",
+                         "%" PRIuS " x %" PRIuS
+                         " (target %d)===============================",
                          xsize, ysize, HWY_TARGET);
 
                JXL_DEBUG(JXL_DEBUG_CONVOLVE, "Sym3------------------");

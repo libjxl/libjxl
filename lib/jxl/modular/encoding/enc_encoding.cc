@@ -10,12 +10,11 @@
 #include <limits>
 #include <numeric>
 #include <queue>
-#include <random>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "lib/jxl/base/os_macros.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/dec_ans.h"
@@ -26,6 +25,7 @@
 #include "lib/jxl/fields.h"
 #include "lib/jxl/image_ops.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
+#include "lib/jxl/modular/encoding/enc_debug_tree.h"
 #include "lib/jxl/modular/encoding/enc_ma.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/encoding/ma_common.h"
@@ -33,17 +33,37 @@
 #include "lib/jxl/modular/transform/transform.h"
 #include "lib/jxl/toc.h"
 
-#if JXL_OS_IOS
-#define JXL_ENABLE_DOT 0
-#else
-#define JXL_ENABLE_DOT 1  // iOS lacks C89 system()
-#endif
-
 namespace jxl {
 
 namespace {
 // Plot tree (if enabled) and predictor usage map.
 constexpr bool kWantDebug = false;
+constexpr bool kPrintTree = false;
+
+inline std::array<uint8_t, 3> PredictorColor(Predictor p) {
+  switch (p) {
+    case Predictor::Zero:
+      return {{0, 0, 0}};
+    case Predictor::Left:
+      return {{255, 0, 0}};
+    case Predictor::Top:
+      return {{0, 255, 0}};
+    case Predictor::Average0:
+      return {{0, 0, 255}};
+    case Predictor::Average4:
+      return {{192, 128, 128}};
+    case Predictor::Select:
+      return {{255, 255, 0}};
+    case Predictor::Gradient:
+      return {{255, 0, 255}};
+    case Predictor::Weighted:
+      return {{0, 255, 255}};
+      // TODO
+    default:
+      return {{255, 255, 255}};
+  };
+}
+
 }  // namespace
 
 void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
@@ -52,7 +72,8 @@ void GatherTreeData(const Image &image, pixel_type chan, size_t group_id,
                     size_t *total_pixels) {
   const Channel &channel = image.channel[chan];
 
-  JXL_DEBUG_V(7, "Learning %zux%zu channel %d", channel.w, channel.h, chan);
+  JXL_DEBUG_V(7, "Learning %" PRIuS "x%" PRIuS " channel %d", channel.w,
+              channel.h, chan);
 
   std::array<pixel_type, kNumStaticProperties> static_props = {
       {chan, (int)group_id}};
@@ -139,32 +160,6 @@ Tree LearnTree(TreeSamples &&tree_samples, size_t total_pixels,
   return tree;
 }
 
-constexpr bool kPrintTree = false;
-
-void PrintTree(const Tree &tree, const std::string &path) {
-  if (!kPrintTree) return;
-  FILE *f = fopen((path + ".dot").c_str(), "w");
-  fprintf(f, "graph{\n");
-  for (size_t cur = 0; cur < tree.size(); cur++) {
-    if (tree[cur].property < 0) {
-      fprintf(f, "n%05zu [label=\"%s%+" PRId64 " (x%u)\"];\n", cur,
-              PredictorName(tree[cur].predictor), tree[cur].predictor_offset,
-              tree[cur].multiplier);
-    } else {
-      fprintf(f, "n%05zu [label=\"%s>%d\"];\n", cur,
-              PropertyName(tree[cur].property).c_str(), tree[cur].splitval);
-      fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].lchild);
-      fprintf(f, "n%05zu -- n%05d;\n", cur, tree[cur].rchild);
-    }
-  }
-  fprintf(f, "}\n");
-  fclose(f);
-#if JXL_ENABLE_DOT
-  JXL_ASSERT(
-      system(("dot " + path + ".dot -T svg -o " + path + ".svg").c_str()) == 0);
-#endif
-}
-
 Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                                  const weighted::Header &wp_header,
                                  const Tree &global_tree,
@@ -178,7 +173,8 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
   if (kWantDebug) predictor_img = Image3F(channel.w, channel.h);
 
   JXL_DEBUG_V(6,
-              "Encoding %zux%zu channel %d, "
+              "Encoding %" PRIuS "x%" PRIuS
+              " channel %d, "
               "(shift=%i,%i)",
               channel.w, channel.h, chan, channel.hshift, channel.vshift);
 
@@ -191,7 +187,7 @@ Status EncodeModularChannelMAANS(const Image &image, pixel_type chan,
                              &is_wp_only, &is_gradient_only);
   Properties properties(num_props);
   MATreeLookup tree_lookup(tree);
-  JXL_DEBUG_V(3, "Encoding using a MA tree with %zu nodes", tree.size());
+  JXL_DEBUG_V(3, "Encoding using a MA tree with %" PRIuS " nodes", tree.size());
 
   // Check if this tree is a WP-only tree with a small enough property value
   // range.
@@ -388,8 +384,9 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
                      size_t *width) {
   if (image.error) return JXL_FAILURE("Invalid image");
   size_t nb_channels = image.channel.size();
-  JXL_DEBUG_V(2, "Encoding %zu-channel, %i-bit, %zux%zu image.", nb_channels,
-              image.bitdepth, image.w, image.h);
+  JXL_DEBUG_V(
+      2, "Encoding %" PRIuS "-channel, %i-bit, %" PRIuS "x%" PRIuS " image.",
+      nb_channels, image.bitdepth, image.w, image.h);
 
   if (nb_channels < 1) {
     return true;  // is there any use for a zero-channel image?
@@ -470,7 +467,7 @@ Status ModularEncode(const Image &image, const ModularOptions &options,
     JXL_ASSERT(tree->size() == decoded_tree.size());
     tree_storage = std::move(decoded_tree);
 
-    if (kWantDebug && WantDebugOutput(aux_out)) {
+    if (kWantDebug && kPrintTree && WantDebugOutput(aux_out)) {
       PrintTree(*tree, aux_out->debug_prefix + "/tree_" + ToString(group_id));
     }
     // Write tree
@@ -537,10 +534,11 @@ Status ModularGenericCompress(Image &image, const ModularOptions &opts,
                                     header, tokens, width));
   bits = writer ? writer->BitsWritten() - bits : 0;
   if (writer) {
-    JXL_DEBUG_V(
-        4,
-        "Modular-encoded a %zux%zu bitdepth=%i nbchans=%zu image in %zu bytes",
-        image.w, image.h, image.bitdepth, image.channel.size(), bits / 8);
+    JXL_DEBUG_V(4,
+                "Modular-encoded a %" PRIuS "x%" PRIuS
+                " bitdepth=%i nbchans=%" PRIuS " image in %" PRIuS " bytes",
+                image.w, image.h, image.bitdepth, image.channel.size(),
+                bits / 8);
   }
   (void)bits;
   return true;

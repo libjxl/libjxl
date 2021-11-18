@@ -140,7 +140,7 @@ Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
     DoUndoXYBInPlace(idct, rect, Op709(), output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
              output_encoding_info.color_encoding.tf.IsDCI()) {
-    OpGamma op = {output_encoding_info.inverse_gamma};
+    OpGamma op{output_encoding_info.inverse_gamma};
     DoUndoXYBInPlace(idct, rect, op, output_encoding_info);
   } else {
     // This is a programming error.
@@ -357,8 +357,8 @@ void DoYCbCrUpsampling(size_t hs, size_t vs, ImageF* plane_in, const Rect& rect,
         Store(left, d, out + x);
         Store(right, d, out + x + 1);
 #else
-        Store(InterleaveLower(left, right), d, out + x);
-        Store(InterleaveUpper(left, right), d, out + x + Lanes(d));
+        Store(InterleaveLower(d, left, right), d, out + x);
+        Store(InterleaveUpper(d, left, right), d, out + x + Lanes(d));
 #endif
       }
     }
@@ -418,10 +418,13 @@ HWY_EXPORT(DoYCbCrUpsampling);
 void UndoXYB(const Image3F& src, Image3F* dst,
              const OutputEncodingInfo& output_info, ThreadPool* pool) {
   CopyImageTo(src, dst);
-  pool->Run(0, src.ysize(), ThreadPool::SkipInit(), [&](int y, int /*thread*/) {
-    JXL_CHECK(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(dst, Rect(*dst).Line(y),
-                                                   output_info));
-  });
+  RunOnPool(
+      pool, 0, src.ysize(), ThreadPool::SkipInit(),
+      [&](int y, int /*thread*/) {
+        JXL_CHECK(HWY_DYNAMIC_DISPATCH(UndoXYBInPlace)(dst, Rect(*dst).Line(y),
+                                                       output_info));
+      },
+      "UndoXYB");
 }
 
 namespace {
@@ -441,7 +444,9 @@ class EnsurePaddingInPlaceRowByRow {
             size_t image_ysize, size_t xpadding, size_t ypadding, ssize_t* y0,
             ssize_t* y1) {
     // coordinates relative to rect.
-    JXL_DASSERT(SameSize(rect, image_rect));
+    JXL_ASSERT(SameSize(rect, image_rect));
+    JXL_ASSERT(image_rect.x0() + image_rect.xsize() <= image_xsize);
+    JXL_ASSERT(image_rect.y0() + image_rect.ysize() <= image_ysize);
     *y0 = -std::min(image_rect.y0(), ypadding);
     *y1 = rect.ysize() + std::min(ypadding, image_ysize - image_rect.ysize() -
                                                 image_rect.y0());
@@ -455,7 +460,7 @@ class EnsurePaddingInPlaceRowByRow {
       strategy_ = kSlow;
     }
     y0_ = rect.y0();
-    JXL_DASSERT(rect.x0() >= xpadding);
+    JXL_ASSERT(rect.x0() >= xpadding);
     x0_ = x1_ = rect.x0() - xpadding;
     // If close to the left border - do mirroring.
     if (image_rect.x0() < xpadding) x1_ = rect.x0() - image_rect.x0();
@@ -464,8 +469,11 @@ class EnsurePaddingInPlaceRowByRow {
     if (image_rect.x0() + image_rect.xsize() + xpadding > image_xsize) {
       x2_ = rect.x0() + image_xsize - image_rect.x0();
     }
-    JXL_DASSERT(image_xsize == (x2_ - x1_) ||
-                (x1_ - x0_ <= x2_ - x1_ && x3_ - x2_ <= x2_ - x1_));
+    JXL_ASSERT(x0_ <= x1_);
+    JXL_ASSERT(x1_ <= x2_);
+    JXL_ASSERT(x2_ <= x3_);
+    JXL_ASSERT(image_xsize == (x2_ - x1_) ||
+               (x1_ - x0_ <= x2_ - x1_ && x3_ - x2_ <= x2_ - x1_));
   }
 
  public:
@@ -554,6 +562,18 @@ void EnsurePaddingInPlace(Image3F* img, const Rect& rect,
             &y0, &y1);
   for (ssize_t y = y0; y < y1; y++) {
     impl.Process3(y);
+  }
+}
+
+void EnsurePaddingInPlace(ImageF* img, const Rect& rect, const Rect& image_rect,
+                          size_t image_xsize, size_t image_ysize,
+                          size_t xpadding, size_t ypadding) {
+  ssize_t y0, y1;
+  EnsurePaddingInPlaceRowByRow impl;
+  impl.Init(img, rect, image_rect, image_xsize, image_ysize, xpadding, ypadding,
+            &y0, &y1);
+  for (ssize_t y = y0; y < y1; y++) {
+    impl.Process(y);
   }
 }
 
@@ -781,7 +801,9 @@ Status FinalizeImageRect(
       }
       ssize_t ensure_padding_y0, ensure_padding_y1;
       EnsurePaddingInPlaceRowByRow ensure_padding;
-      Rect ec_image_rect = ScaleRectForEC(frame_rect, frame_header, ec);
+      // frame_rect can go up to frame_dim.xsize_padded, in VarDCT mode.
+      Rect ec_image_rect = ScaleRectForEC(
+          frame_rect.Crop(frame_dim.xsize, frame_dim.ysize), frame_header, ec);
       size_t ecxs = DivCeil(frame_dim.xsize_upsampled,
                             frame_header.extra_channel_upsampling[ec]);
       size_t ecys = DivCeil(frame_dim.ysize_upsampled,
@@ -824,8 +846,10 @@ Status FinalizeImageRect(
              extra_channels[ec].second.ysize() + rect_for_if_storage.ysize() -
                  rect_for_upsampling.ysize());
       extra_channels_for_patches.emplace_back(extra_channels[ec].first, r);
+      // frame_rect can go up to frame_dim.xsize_padded, in VarDCT mode.
       ec_padding[ec].Init(extra_channels[ec].first, extra_channels[ec].second,
-                          frame_rect, frame_dim.xsize, frame_dim.ysize, 2, 2,
+                          frame_rect.Crop(frame_dim.xsize, frame_dim.ysize),
+                          frame_dim.xsize, frame_dim.ysize, 2, 2,
                           &ensure_padding_upsampling_ec_y0,
                           &ensure_padding_upsampling_ec_y1);
     }
@@ -1036,7 +1060,8 @@ Status FinalizeImageRect(
          dec_state->rgb_output_is_rgba, alpha,
          alpha_rect.Lines(available_y, num_ys),
          upsampled_frame_rect.Lines(available_y, num_ys)
-             .Crop(Rect(0, 0, frame_dim.xsize, frame_dim.ysize)),
+             .Crop(Rect(0, 0, frame_dim.xsize_upsampled,
+                        frame_dim.ysize_upsampled)),
          dec_state->rgb_output, dec_state->rgb_stride);
       }
       if (dec_state->pixel_callback != nullptr) {
@@ -1081,7 +1106,7 @@ Status FinalizeImageRect(
 
 Status FinalizeFrameDecoding(ImageBundle* decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             bool force_fir, bool skip_blending) {
+                             bool force_fir, bool skip_blending, bool move_ec) {
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const FrameDimensions& frame_dim = dec_state->shared->frame_dim;
 
@@ -1106,7 +1131,11 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       const ImageMetadata& metadata = frame_header.nonserialized_metadata->m;
       for (size_t i = 0; i < metadata.num_extra_channels; i++) {
         if (frame_header.extra_channel_upsampling[i] == 1) {
-          ecs.push_back(std::move(dec_state->extra_channels[i]));
+          if (move_ec) {
+            ecs.push_back(std::move(dec_state->extra_channels[i]));
+          } else {
+            ecs.push_back(CopyImage(dec_state->extra_channels[i]));
+          }
         } else {
           ecs.emplace_back(frame_dim.xsize_upsampled_padded,
                            frame_dim.ysize_upsampled_padded);
@@ -1141,7 +1170,9 @@ Status FinalizeFrameDecoding(ImageBundle* decoded,
       std::vector<std::pair<ImageF*, Rect>> ec_rects;
       ec_rects.reserve(decoded->extra_channels().size());
       for (size_t i = 0; i < decoded->extra_channels().size(); i++) {
-        Rect r = ScaleRectForEC(rects_to_process[rect_id], frame_header, i);
+        Rect r = ScaleRectForEC(
+            rects_to_process[rect_id].Crop(frame_dim.xsize, frame_dim.ysize),
+            frame_header, i);
         if (frame_header.extra_channel_upsampling[i] != 1) {
           Rect ec_input_rect(kBlockDim, 2, r.xsize(), r.ysize());
           auto eti =

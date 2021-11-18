@@ -468,6 +468,8 @@ cmake_build_and_test() {
   if [[ "${PACK_TEST:-}" == "1" ]]; then
     (cd "${BUILD_DIR}"
      ${FIND_BIN} -name '*.cmake' -a '!' -path '*CMakeFiles*'
+     # gtest / gmock / gtest_main shared libs
+     ${FIND_BIN} lib/ -name 'libg*.so*'
      ${FIND_BIN} -type d -name tests -a '!' -path '*CMakeFiles*'
     ) | tar -C "${BUILD_DIR}" -cf "${BUILD_DIR}/tests.tar.xz" -T - \
       --use-compress-program="xz --threads=$(nproc --all || echo 1) -6"
@@ -551,10 +553,13 @@ cmd_coverage_report() {
   local gcovr_args=(
     -r "${real_build_dir}"
     --gcov-executable "${LLVM_COV} gcov"
-    # Only print coverage information for the jxl and fuif directories. The rest
+    # Only print coverage information for the libjxl directories. The rest
     # is not part of the code under test.
     --filter '.*jxl/.*'
     --exclude '.*_test.cc'
+    --exclude '.*_testonly..*'
+    --exclude '.*_debug.*'
+    --exclude '.*test_utils..*'
     --object-directory "${real_build_dir}"
   )
 

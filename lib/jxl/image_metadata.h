@@ -71,7 +71,7 @@ static inline constexpr uint64_t EnumBits(ExtraChannel /*unused*/) {
 // Used in ImageMetadata and ExtraChannelInfo.
 struct BitDepth : public Fields {
   BitDepth();
-  const char* Name() const override { return "BitDepth"; }
+  JXL_FIELDS_NAME(BitDepth)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -99,7 +99,7 @@ struct BitDepth : public Fields {
 // Describes one extra channel.
 struct ExtraChannelInfo : public Fields {
   ExtraChannelInfo();
-  const char* Name() const override { return "ExtraChannelInfo"; }
+  JXL_FIELDS_NAME(ExtraChannelInfo)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -119,7 +119,7 @@ struct ExtraChannelInfo : public Fields {
 
 struct OpsinInverseMatrix : public Fields {
   OpsinInverseMatrix();
-  const char* Name() const override { return "OpsinInverseMatrix"; }
+  JXL_FIELDS_NAME(OpsinInverseMatrix)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -133,7 +133,7 @@ struct OpsinInverseMatrix : public Fields {
 // Information useful for mapping HDR images to lower dynamic range displays.
 struct ToneMapping : public Fields {
   ToneMapping();
-  const char* Name() const override { return "ToneMapping"; }
+  JXL_FIELDS_NAME(ToneMapping)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -163,7 +163,7 @@ struct ToneMapping : public Fields {
 // upsampling.
 struct CustomTransformData : public Fields {
   CustomTransformData();
-  const char* Name() const override { return "CustomTransformData"; }
+  JXL_FIELDS_NAME(CustomTransformData)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 
@@ -185,7 +185,7 @@ struct CustomTransformData : public Fields {
 // re-create an equivalent image without user input.
 struct ImageMetadata : public Fields {
   ImageMetadata();
-  const char* Name() const override { return "ImageMetadata"; }
+  JXL_FIELDS_NAME(ImageMetadata)
 
   Status VisitFields(Visitor* JXL_RESTRICT visitor) override;
 

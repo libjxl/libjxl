@@ -32,9 +32,6 @@ struct DecodeOptions {
   // no pixel data should be save to disk.
   const char* pixel_prefix = nullptr;
 
-  // Whether to also generate a preview output when generating pixel data.
-  bool preview = false;
-
   // Path to the original ICC profile to be generated, if requested.
   const char* icc_path = nullptr;
 
@@ -63,20 +60,48 @@ bool SaveFile(const char* filename, std::vector<uint8_t> data) {
 
 struct ImageArray {
   uint32_t xsize, ysize;
-  uint32_t num_channels;
+  // amount of color channels: 1 for grayscale, 3 for RGB
+  uint32_t num_color_channels;
+  // amount of extra channels, including alpha channels, spot colors, ...
+  uint32_t num_extra_channels;
 
-  // An array of "frames", where each frame is a 3D array of samples with
-  // dimensions (ysize, xsize, channel).
+  // Both frames and ec_frames are filled in by the JXL decoder, and will be
+  // converted into a numpy array of the form (frame, ysize, xsize, channel)
+
+  // Array of the color channels of the frames. This is an array of frames,
+  // where each frame is an array of pixels. The pixels in a frame are laid
+  // out per scanline, then per channel, and finally individual pixels as
+  // little endian 32-bit floating point.
   std::vector<std::vector<uint8_t>> frames;
+
+  // Array of the extra channels of the frames. This is an array of frames,
+  // where each frame is an array of extra channels. The pixels in an extra
+  // channel are laid out per scanline, then individual pixels as
+  // little endian 32-bit floating point.
+  std::vector<std::vector<std::vector<uint8_t>>> ec_frames;
 };
 
 // Saves an ImageArray as a numpy 4D ndarray in binary format.
 bool SaveNPYArray(const char* filename, const ImageArray& arr) {
-  size_t image_size = sizeof(float) * arr.xsize * arr.ysize * arr.num_channels;
+  size_t image_size =
+      sizeof(float) * arr.xsize * arr.ysize * arr.num_color_channels;
+  size_t ec_size = sizeof(float) * arr.xsize * arr.ysize;
   for (const auto& frame : arr.frames) {
     if (frame.size() != image_size) {
       fprintf(stderr, "Invalid frame size\n");
       return false;
+    }
+  }
+  for (const auto& frame : arr.ec_frames) {
+    if (frame.size() != arr.num_extra_channels) {
+      fprintf(stderr, "Invalid extra channel count\n");
+      return false;
+    }
+    for (const auto& ch : frame) {
+      if (ch.size() != ec_size) {
+        fprintf(stderr, "Invalid extra channel size\n");
+        return false;
+      }
     }
   }
 
@@ -98,10 +123,11 @@ bool SaveNPYArray(const char* filename, const ImageArray& arr) {
   WRITE_TO_FILE(header, 8);
 
   {
+    uint32_t num_channels = arr.num_color_channels + arr.num_extra_channels;
     std::stringstream ss;
     ss << "{'descr': '<f4', 'fortran_order': False, 'shape': ("
        << arr.frames.size() << ", " << arr.ysize << ", " << arr.xsize << ", "
-       << arr.num_channels << "), }\n";
+       << num_channels << "), }\n";
     // 16-bit little endian header length.
     uint8_t header_len[2] = {static_cast<uint8_t>(ss.str().size() % 256),
                              static_cast<uint8_t>(ss.str().size() / 256)};
@@ -109,8 +135,18 @@ bool SaveNPYArray(const char* filename, const ImageArray& arr) {
     WRITE_TO_FILE(ss.str().data(), ss.str().size());
   }
 
-  for (const auto& frame : arr.frames) {
-    WRITE_TO_FILE(frame.data(), frame.size());
+  // interleave the samples from color and extra channels
+  for (size_t f = 0; f < arr.frames.size(); ++f) {
+    size_t pos = 0;
+    for (size_t y = 0; y < arr.ysize; ++y) {
+      for (size_t x = 0; x < arr.xsize; ++x, pos += sizeof(float)) {
+        WRITE_TO_FILE(arr.frames[f].data() + pos * arr.num_color_channels,
+                      arr.num_color_channels * sizeof(float));
+        for (size_t i = 0; i < arr.num_extra_channels; i++) {
+          WRITE_TO_FILE(arr.ec_frames[f][i].data() + pos, sizeof(float));
+        }
+      }
+    }
   }
 
   return fclose(file) == 0;
@@ -236,17 +272,90 @@ class JSONArray : public JSONField {
 // Helper macro for decoder error checking.
 #define EXPECT_SUCCESS(X) EXPECT_TRUE((X) == JXL_DEC_SUCCESS)
 
+// TODO(veluca): merge this back in DecodeJXL once/if the API supports decoding
+// to JPEG and to pixels at the same time.
+bool DecodeJXLToJpeg(const char* input_path, const char* output_path) {
+  // JPEG output buffer when reconstructing a JPEG file.
+  std::vector<uint8_t> jpeg_data;
+  std::vector<uint8_t> jpeg_data_chunk(16 * 1024);
+  auto dec = JxlDecoderMake(nullptr);
+
+  uint32_t events = JXL_DEC_JPEG_RECONSTRUCTION | JXL_DEC_FULL_IMAGE;
+  EXPECT_SUCCESS(JxlDecoderSubscribeEvents(dec.get(), events));
+
+  // TODO(deymo): Consider using a multi-threading decoder for conformance
+  // testing as well.
+
+  // Load and set input all at oncee.
+  std::vector<uint8_t> jxl_input;
+  EXPECT_TRUE(LoadFile(input_path, &jxl_input));
+  EXPECT_SUCCESS(
+      JxlDecoderSetInput(dec.get(), jxl_input.data(), jxl_input.size()));
+
+  bool has_jpeg_reconstruction = false;
+
+  while (true) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      fprintf(stderr, "Error decoding.\n");
+      return false;
+    } else if (status == JXL_DEC_NEED_MORE_INPUT) {
+      fprintf(stderr, "Error decoding: expected more input.\n");
+      return false;
+    } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
+      has_jpeg_reconstruction = true;
+      // Decoding to JPEG.
+      EXPECT_SUCCESS(JxlDecoderSetJPEGBuffer(dec.get(), jpeg_data_chunk.data(),
+                                             jpeg_data_chunk.size()));
+    } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
+      // Decoded a chunk to JPEG.
+      size_t used_jpeg_output =
+          jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+      jpeg_data.insert(jpeg_data.end(), jpeg_data_chunk.data(),
+                       jpeg_data_chunk.data() + used_jpeg_output);
+      if (used_jpeg_output == 0) {
+        // Chunk is too small.
+        jpeg_data_chunk.resize(jpeg_data_chunk.size() * 2);
+      }
+      EXPECT_SUCCESS(JxlDecoderSetJPEGBuffer(dec.get(), jpeg_data_chunk.data(),
+                                             jpeg_data_chunk.size()));
+    } else if (status == JXL_DEC_SUCCESS) {
+      break;
+    } else if (status == JXL_DEC_FULL_IMAGE) {
+    } else if (status == JXL_DEC_NEED_IMAGE_OUT_BUFFER) {
+      return true;
+    } else {
+      fprintf(stderr, "Error: unexpected status: %d\n",
+              static_cast<int>(status));
+      return false;
+    }
+  }
+
+  if (has_jpeg_reconstruction) {
+    size_t used_jpeg_output =
+        jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
+    jpeg_data.insert(jpeg_data.end(), jpeg_data_chunk.data(),
+                     jpeg_data_chunk.data() + used_jpeg_output);
+    EXPECT_TRUE(SaveFile(output_path, jpeg_data));
+  }
+  return true;
+}
+
 bool DecodeJXL(const DecodeOptions& opts) {
   auto dec = JxlDecoderMake(nullptr);
 
-  uint32_t events = JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING;
+  uint32_t events =
+      JXL_DEC_BASIC_INFO | JXL_DEC_COLOR_ENCODING | JXL_DEC_PREVIEW_IMAGE;
   if (opts.pixel_prefix) events |= JXL_DEC_FRAME | JXL_DEC_FULL_IMAGE;
-  if (opts.jpeg_path) events |= JXL_DEC_JPEG_RECONSTRUCTION;
-  if (opts.preview) events |= JXL_DEC_PREVIEW_IMAGE;
   // We need to output the frame header info in the metadata.
   if (opts.metadata_path) events |= JXL_DEC_FRAME;
 
+  if (opts.jpeg_path) {
+    EXPECT_TRUE(DecodeJXLToJpeg(opts.input, opts.jpeg_path));
+  }
+
   EXPECT_SUCCESS(JxlDecoderSubscribeEvents(dec.get(), events));
+  EXPECT_SUCCESS(JxlDecoderSetRenderSpotcolors(dec.get(), JXL_FALSE));
 
   // TODO(deymo): Consider using a multi-threading decoder for conformance
   // testing as well.
@@ -259,22 +368,18 @@ bool DecodeJXL(const DecodeOptions& opts) {
 
   JxlBasicInfo info{};
 
-  // JPEG output buffer when reconstructing a JPEG file.
-  std::vector<uint8_t> jpeg_data;
-  std::vector<uint8_t> jpeg_data_chunk(16 * 1024);
-
   // Pixel data when decoding a frame or a preview frame.
   std::vector<uint8_t> pixels;
   std::vector<uint8_t> preview_pixels;
 
   std::vector<JxlExtraChannelInfo> extra_channels;
   std::vector<std::string> extra_channel_names;
+  std::vector<std::vector<uint8_t>> extra_channel_pixels;
 
   std::vector<JxlFrameHeader> frame_headers;
   std::vector<std::string> frame_names;
 
   JxlPixelFormat format;
-  uint32_t num_channels = 0;
 
   ImageArray image, preview;
 
@@ -286,20 +391,6 @@ bool DecodeJXL(const DecodeOptions& opts) {
     } else if (status == JXL_DEC_NEED_MORE_INPUT) {
       fprintf(stderr, "Error decoding: expected more input.\n");
       return false;
-    } else if (status == JXL_DEC_JPEG_RECONSTRUCTION) {
-      // Decoding to JPEG.
-      EXPECT_TRUE(opts.jpeg_path);
-      EXPECT_SUCCESS(JxlDecoderSetJPEGBuffer(dec.get(), jpeg_data_chunk.data(),
-                                             jpeg_data_chunk.size()));
-    } else if (status == JXL_DEC_JPEG_NEED_MORE_OUTPUT) {
-      // Decoded a chunk to JPEG.
-      EXPECT_TRUE(opts.jpeg_path);
-      size_t used_jpeg_output =
-          jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
-      jpeg_data.insert(jpeg_data.end(), jpeg_data_chunk.data(),
-                       jpeg_data_chunk.data() + used_jpeg_output);
-      EXPECT_SUCCESS(JxlDecoderSetJPEGBuffer(dec.get(), jpeg_data_chunk.data(),
-                                             jpeg_data_chunk.size()));
     } else if (status == JXL_DEC_BASIC_INFO) {
       // Basic info.
       EXPECT_SUCCESS(JxlDecoderGetBasicInfo(dec.get(), &info));
@@ -314,17 +405,16 @@ bool DecodeJXL(const DecodeOptions& opts) {
       }
 
       // Select the output pixel format based on the basic info.
-      num_channels = (info.alpha_bits > 0 ? 1 : 0) + info.num_color_channels;
-      format =
-          JxlPixelFormat{num_channels, JXL_TYPE_FLOAT, JXL_LITTLE_ENDIAN, 0};
-      image.num_channels = num_channels;
+      format = JxlPixelFormat{info.num_color_channels, JXL_TYPE_FLOAT,
+                              JXL_LITTLE_ENDIAN, 0};
+      image.num_color_channels = info.num_color_channels;
+      image.num_extra_channels = info.num_extra_channels;
       image.xsize = info.xsize;
       image.ysize = info.ysize;
 
-      if (opts.preview) {
-        // Requesting a preview if the .jxl file doesn't have one is an error.
-        EXPECT_TRUE(info.have_preview);
-        preview.num_channels = num_channels;
+      if (info.have_preview) {
+        preview.num_color_channels = info.num_color_channels;
+        preview.num_extra_channels = info.num_extra_channels;
         preview.xsize = info.preview.xsize;
         preview.ysize = info.preview.ysize;
       }
@@ -373,6 +463,17 @@ bool DecodeJXL(const DecodeOptions& opts) {
       memset(pixels.data(), 0, pixels.size());
       EXPECT_SUCCESS(JxlDecoderSetImageOutBuffer(dec.get(), &format,
                                                  pixels.data(), pixels.size()));
+      extra_channel_pixels.resize(info.num_extra_channels);
+      for (uint32_t i = 0; i < info.num_extra_channels; ++i) {
+        EXPECT_SUCCESS(JxlDecoderExtraChannelBufferSize(dec.get(), &format,
+                                                        &buffer_size, i));
+        extra_channel_pixels[i].resize(buffer_size);
+        memset(extra_channel_pixels[i].data(), 0,
+               extra_channel_pixels[i].size());
+        EXPECT_SUCCESS(JxlDecoderSetExtraChannelBuffer(
+            dec.get(), &format, extra_channel_pixels[i].data(),
+            extra_channel_pixels[i].size(), i));
+      }
     } else if (status == JXL_DEC_NEED_PREVIEW_OUT_BUFFER) {
       // Set preview pixel output buffer.
       size_t buffer_size;
@@ -387,12 +488,17 @@ bool DecodeJXL(const DecodeOptions& opts) {
       if (opts.pixel_prefix) {
         image.frames.emplace_back();
         swap(image.frames.back(), pixels);
+        image.ec_frames.emplace_back();
+        for (uint32_t i = 0; i < info.num_extra_channels; ++i) {
+          image.ec_frames.back().emplace_back();
+          swap(image.ec_frames.back().back(), extra_channel_pixels[i]);
+        }
       }
 
       // TODO(deymo): Get the extra channel pixel data an store it.
     } else if (status == JXL_DEC_PREVIEW_IMAGE) {
       // Preview pixel output buffer is set.
-      if (opts.pixel_prefix && opts.preview) {
+      if (opts.pixel_prefix && info.have_preview) {
         preview.frames.emplace_back();
         swap(preview.frames.back(), preview_pixels);
       }
@@ -406,83 +512,92 @@ bool DecodeJXL(const DecodeOptions& opts) {
   }
 
   if (opts.pixel_prefix) {
-    std::string name = std::string(opts.pixel_prefix) + ".npy";
+    std::string name = std::string(opts.pixel_prefix) + "_image.npy";
     EXPECT_TRUE(SaveNPYArray(name.c_str(), image));
   }
 
-  if (opts.preview) {
+  if (opts.pixel_prefix && info.have_preview) {
     std::string name = std::string(opts.pixel_prefix) + "_preview.npy";
     EXPECT_TRUE(SaveNPYArray(name.c_str(), preview));
   }
 
-  if (opts.jpeg_path) {
-    size_t used_jpeg_output =
-        jpeg_data_chunk.size() - JxlDecoderReleaseJPEGBuffer(dec.get());
-    jpeg_data.insert(jpeg_data.end(), jpeg_data_chunk.data(),
-                     jpeg_data_chunk.data() + used_jpeg_output);
-    EXPECT_TRUE(SaveFile(opts.jpeg_path, jpeg_data));
-  }
-
   if (opts.metadata_path) {
     JSONDict meta;
-#define METADATA(FIELD) meta.Add(#FIELD, info.FIELD)
-    METADATA(xsize);
-    METADATA(ysize);
-    METADATA(uses_original_profile);
-    METADATA(bits_per_sample);
-    METADATA(exponent_bits_per_sample);
-    METADATA(have_preview);
-    if (info.have_preview) {
-      auto* meta_preview = meta.AddEmpty<JSONDict>("preview");
-      meta_preview->Add("xsize", info.preview.xsize);
-      meta_preview->Add("ysize", info.preview.ysize);
-    }
-    METADATA(have_animation);
-    if (info.have_animation) {
-      auto* meta_animation = meta.AddEmpty<JSONDict>("animation");
-      meta_animation->Add("tps_numerator", info.animation.tps_numerator);
-      meta_animation->Add("tps_denominator", info.animation.tps_denominator);
-      meta_animation->Add("num_loops", info.animation.num_loops);
-      meta_animation->Add("have_timecodes", info.animation.have_timecodes);
-    }
-    METADATA(orientation);
-    METADATA(num_extra_channels);
-    METADATA(alpha_bits);
-    if (info.alpha_bits > 0) {
-      METADATA(alpha_exponent_bits);
-      METADATA(alpha_premultiplied);
-    }
-
-    // Extra channels.
-    auto* meta_channels = meta.AddEmpty<JSONArray>("extra_channels");
-    for (uint32_t i = 0; i < info.num_extra_channels; i++) {
-      auto* channel_i = meta_channels->AddEmpty<JSONDict>();
-
-#define METADATA_CHANNEL(FIELD) \
-  channel_i->Add(#FIELD, JSONValue(extra_channels[i].FIELD))
-
-      // TODO(deymo): Make the type a string.
-      METADATA_CHANNEL(type);
-      METADATA_CHANNEL(bits_per_sample);
-      METADATA_CHANNEL(exponent_bits_per_sample);
-      METADATA_CHANNEL(dim_shift);
-      channel_i->Add("name", JSONValue(extra_channel_names[i]));
-      METADATA_CHANNEL(alpha_premultiplied);
-      METADATA_CHANNEL(cfa_channel);
-      // TODO(deymo): Spot color.
-    }
+    // Same order as in 18181-3 CD.
 
     // Frames.
-    meta.Add("num_frames", JSONValue(frame_headers.size()));
     auto* meta_frames = meta.AddEmpty<JSONArray>("frames");
     for (size_t i = 0; i < frame_headers.size(); i++) {
       auto* frame_i = meta_frames->AddEmpty<JSONDict>();
-      frame_i->Add("duration", JSONValue(frame_headers[i].duration));
+      if (info.have_animation) {
+        frame_i->Add("duration", JSONValue(frame_headers[i].duration * 1.0f *
+                                           info.animation.tps_denominator /
+                                           info.animation.tps_numerator));
+      }
+
+      frame_i->Add("name", JSONValue(frame_names[i]));
 
       if (info.animation.have_timecodes) {
         frame_i->Add("timecode", JSONValue(frame_headers[i].timecode));
       }
-      frame_i->Add("name", JSONValue(frame_names[i]));
+    }
+
+#define METADATA(FIELD) meta.Add(#FIELD, info.FIELD)
+
+    METADATA(intensity_target);
+    METADATA(min_nits);
+    METADATA(relative_to_max_display);
+    METADATA(linear_below);
+
+    if (info.have_preview) {
+      meta.AddEmpty<JSONDict>("preview");
+      // TODO(veluca): can we have duration/name/timecode here?
+    }
+
+    {
+      auto ectype = meta.AddEmpty<JSONArray>("extra_channel_type");
+      auto bps = meta.AddEmpty<JSONArray>("bits_per_sample");
+      auto ebps = meta.AddEmpty<JSONArray>("exp_bits_per_sample");
+      bps->Add(info.bits_per_sample);
+      ebps->Add(info.exponent_bits_per_sample);
+      for (size_t i = 0; i < extra_channels.size(); i++) {
+        switch (extra_channels[i].type) {
+          case JXL_CHANNEL_ALPHA: {
+            ectype->Add(std::string("Alpha"));
+            break;
+          }
+          case JXL_CHANNEL_DEPTH: {
+            ectype->Add(std::string("Depth"));
+            break;
+          }
+          case JXL_CHANNEL_SPOT_COLOR: {
+            ectype->Add(std::string("SpotColor"));
+            break;
+          }
+          case JXL_CHANNEL_SELECTION_MASK: {
+            ectype->Add(std::string("SelectionMask"));
+            break;
+          }
+          case JXL_CHANNEL_BLACK: {
+            ectype->Add(std::string("Black"));
+            break;
+          }
+          case JXL_CHANNEL_CFA: {
+            ectype->Add(std::string("CFA"));
+            break;
+          }
+          case JXL_CHANNEL_THERMAL: {
+            ectype->Add(std::string("Thermal"));
+            break;
+          }
+          default: {
+            ectype->Add(std::string("UNKNOWN"));
+            break;
+          }
+        }
+        bps->Add(extra_channels[i].bits_per_sample);
+        ebps->Add(extra_channels[i].exponent_bits_per_sample);
+      }
     }
 
     std::ofstream ofs(opts.metadata_path);
@@ -497,7 +612,7 @@ bool DecodeJXL(const DecodeOptions& opts) {
 int Usage(const char* program) {
   fprintf(
       stderr,
-      "Usage: %s INPUT_JXL [-i ORG_ICC] [-p PREFIX [-w]] [-m METADATA]\n"
+      "Usage: %s INPUT_JXL [-i ORG_ICC] [-p PREFIX] [-m METADATA]\n"
       "\n"
       "  INPUT_JXL: Path to the input .jxl file.\n"
       "  -i ORG_ICC: Path to the output \"original\" ICC profile.\n"
@@ -505,8 +620,6 @@ int Usage(const char* program) {
       "       suffix \".npy\") and ICC profile (with suffix \".icc\"). The \n"
       "       image data will be a 4D numpy array with dimensions (number of \n"
       "       frames, height, width, number of channels).\n"
-      "  -w: Generate a preview image as well with suffix \"_preview.npy\".\n"
-      "       The preview numpy image will have 1 frame. Requires -p.\n"
       "  -j JPEG: Path to the output reconstructed JPEG file.\n"
       "  -m METADATA: Path to the output JSON text metadata file.\n",
       program);
@@ -527,7 +640,6 @@ int main(int argc, char* argv[]) {
 
   for (int optind = 1; optind < argc;) {
     if (!strcmp(argv[optind], "-i")) {
-      // -i ORG_ICC
       optind++;
       EXPECT_ARG("-i");
       opts.icc_path = argv[optind++];
@@ -535,9 +647,6 @@ int main(int argc, char* argv[]) {
       optind++;
       EXPECT_ARG("-p");
       opts.pixel_prefix = argv[optind++];
-    } else if (!strcmp(argv[optind], "-w")) {
-      optind++;
-      opts.preview = true;
     } else if (!strcmp(argv[optind], "-j")) {
       optind++;
       EXPECT_ARG("-j");
@@ -552,10 +661,6 @@ int main(int argc, char* argv[]) {
       fprintf(stderr, "Unknown parameter: \"%s\".\n", argv[optind]);
       return Usage(argv[0]);
     }
-  }
-  if (opts.preview && !opts.pixel_prefix) {
-    fprintf(stderr, "-w parameter requires -p\n");
-    return Usage(argv[0]);
   }
   if (!opts.input) {
     fprintf(stderr, "JXL decoder for conformance testing.\n");

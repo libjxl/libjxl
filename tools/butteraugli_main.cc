@@ -15,6 +15,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/butteraugli/butteraugli.h"
@@ -65,11 +66,13 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
   }
 
   if (io1.xsize() != io2.xsize()) {
-    fprintf(stderr, "Width mismatch: %zu %zu\n", io1.xsize(), io2.xsize());
+    fprintf(stderr, "Width mismatch: %" PRIuS " %" PRIuS "\n", io1.xsize(),
+            io2.xsize());
     return false;
   }
   if (io1.ysize() != io2.ysize()) {
-    fprintf(stderr, "Height mismatch: %zu %zu\n", io1.ysize(), io2.ysize());
+    fprintf(stderr, "Height mismatch: %" PRIuS " %" PRIuS "\n", io1.ysize(),
+            io2.ysize());
     return false;
   }
 

@@ -10,6 +10,8 @@
 #include <string>
 
 #include "lib/extras/codec_png.h"
+#include "lib/extras/packed_image.h"
+#include "lib/extras/packed_image_convert.h"
 #include "lib/extras/time.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
@@ -51,11 +53,13 @@ class PNGCodec : public ImageCodec {
                     const Span<const uint8_t> compressed,
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
+    extras::PackedPixelFile ppf;
     const double start = Now();
-    JXL_RETURN_IF_ERROR(
-        extras::DecodeImagePNG(compressed, ColorHints(), pool, io));
+    JXL_RETURN_IF_ERROR(extras::DecodeImagePNG(compressed, ColorHints(),
+                                               SizeConstraints(), &ppf));
     const double end = Now();
     speed_stats->NotifyElapsed(end - start);
+    JXL_RETURN_IF_ERROR(ConvertPackedPixelFileToCodecInOut(ppf, pool, io));
     return true;
   }
 };

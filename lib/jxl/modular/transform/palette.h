@@ -215,40 +215,6 @@ static Status InvPalette(Image &input, uint32_t begin_c, uint32_t nb_colors,
             }
           },
           "UndoDeltaPaletteWP");
-    } else if (predictor == Predictor::Gradient) {
-      // Gradient is the most common predictor for now. This special case gives
-      // about 20% extra speed.
-      RunOnPool(
-          pool, 0, nb, ThreadPool::SkipInit(),
-          [&](size_t c, size_t _) {
-            Channel &channel = input.channel[c0 + c];
-            for (size_t y = 0; y < channel.h; y++) {
-              pixel_type *JXL_RESTRICT p = channel.Row(y);
-              const pixel_type *JXL_RESTRICT idx = indices.Row(y);
-              for (size_t x = 0; x < channel.w; x++) {
-                int index = idx[x];
-                pixel_type val = 0;
-                const pixel_type palette_entry =
-                    palette_internal::GetPaletteValue(
-                        p_palette, index, /*c=*/c,
-                        /*palette_size=*/palette.w,
-                        /*onerow=*/onerow, /*bit_depth=*/bit_depth);
-                if (index < static_cast<int32_t>(nb_deltas)) {
-                  pixel_type left =
-                      x ? p[x - 1] : (y ? *(p + x - onerow_image) : 0);
-                  pixel_type top = y ? *(p + x - onerow_image) : left;
-                  pixel_type topleft =
-                      x && y ? *(p + x - 1 - onerow_image) : left;
-                  val = PixelAdd(ClampedGradient(left, top, topleft),
-                                 palette_entry);
-                } else {
-                  val = palette_entry;
-                }
-                p[x] = val;
-              }
-            }
-          },
-          "UndoDeltaPaletteGradient");
     } else {
       RunOnPool(
           pool, 0, nb, ThreadPool::SkipInit(),

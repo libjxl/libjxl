@@ -1,5 +1,3 @@
-# Copyright (c) the JPEG XL Project Authors. All rights reserved.
-#
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
@@ -25,11 +23,11 @@ set(TEST_FILES
   jxl/data_parallel_test.cc
   jxl/dct_test.cc
   jxl/decode_test.cc
-  jxl/descriptive_statistics_test.cc
   jxl/enc_external_image_test.cc
   jxl/enc_photon_noise_test.cc
   jxl/encode_test.cc
   jxl/entropy_coder_test.cc
+  jxl/fast_dct_test.cc
   jxl/fast_math_test.cc
   jxl/fields_test.cc
   jxl/filters_internal_test.cc
@@ -55,7 +53,6 @@ set(TEST_FILES
   jxl/quant_weights_test.cc
   jxl/quantizer_test.cc
   jxl/rational_polynomial_test.cc
-  jxl/robust_statistics_test.cc
   jxl/roundtrip_test.cc
   jxl/speed_tier_test.cc
   jxl/splines_test.cc
@@ -74,6 +71,7 @@ set(TESTLIB_FILES
   jxl/dct_for_test.h
   jxl/dec_transforms_testonly.cc
   jxl/dec_transforms_testonly.h
+  jxl/fake_parallel_runner_testonly.h
   jxl/image_test_utils.h
   jxl/test_utils.h
   jxl/testdata.h

@@ -34,7 +34,7 @@ namespace jxl {
 // those use cases where this is needed.
 Status FinalizeFrameDecoding(ImageBundle* JXL_RESTRICT decoded,
                              PassesDecoderState* dec_state, ThreadPool* pool,
-                             bool force_fir, bool skip_blending);
+                             bool force_fir, bool skip_blending, bool move_ec);
 
 // Renders the `frame_rect` portion of the final image to `output_image`
 // (unless the frame is upsampled - in which case, `frame_rect` is scaled
@@ -59,6 +59,9 @@ Status FinalizeImageRect(
 void EnsurePaddingInPlace(Image3F* img, const Rect& rect,
                           const Rect& image_rect, size_t image_xsize,
                           size_t image_ysize, size_t xpadding, size_t ypadding);
+void EnsurePaddingInPlace(ImageF* img, const Rect& rect, const Rect& image_rect,
+                          size_t image_xsize, size_t image_ysize,
+                          size_t xpadding, size_t ypadding);
 
 // For DC in the API.
 void UndoXYB(const Image3F& src, Image3F* dst,

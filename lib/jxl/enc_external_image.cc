@@ -107,6 +107,9 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
   // bits_per_sample > 1.
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
   const size_t bytes_per_pixel = channels * bytes_per_channel;
+  if (bits_per_sample > 16 && bits_per_sample < 32) {
+    return JXL_FAILURE("not supported, try bits_per_sample=32");
+  }
 
   const size_t row_size = xsize * bytes_per_pixel;
   if (ysize && bytes.size() / ysize < row_size) {
@@ -120,10 +123,6 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
   const uint8_t* const in = bytes.data();
 
   Image3F color(xsize, ysize);
-  ImageF alpha;
-  if (has_alpha) {
-    alpha = ImageF(xsize, ysize);
-  }
 
   const auto get_y = [flipped_y, ysize](const size_t y) {
     return flipped_y ? ysize - 1 - y : y;
@@ -188,14 +187,6 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
                 LoadFloatRow<LoadBE16>(row_out, in + i, mul, xsize,
                                        bytes_per_pixel);
               }
-            } else if (bits_per_sample <= 24) {
-              if (little_endian) {
-                LoadFloatRow<LoadLE24>(row_out, in + i, mul, xsize,
-                                       bytes_per_pixel);
-              } else {
-                LoadFloatRow<LoadBE24>(row_out, in + i, mul, xsize,
-                                       bytes_per_pixel);
-              }
             } else {
               if (little_endian) {
                 LoadFloatRow<LoadLE32>(row_out, in + i, mul, xsize,
@@ -217,7 +208,11 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
 
   ib->SetFromImage(std::move(color), c_current);
 
-  if (has_alpha) {
+  // Passing an interleaved image with an alpha channel to an image that doesn't
+  // have alpha channel just discards the passed alpha channel.
+  if (has_alpha && ib->HasAlpha()) {
+    ImageF alpha(xsize, ysize);
+
     if (float_in) {
       RunOnPool(
           pool, 0, static_cast<uint32_t>(ysize), ThreadPool::SkipInit(),
@@ -271,14 +266,6 @@ Status ConvertFromExternal(Span<const uint8_t> bytes, size_t xsize,
                                        bytes_per_pixel);
               } else {
                 LoadFloatRow<LoadBE16>(row_out, in + i, mul, xsize,
-                                       bytes_per_pixel);
-              }
-            } else if (bits_per_sample <= 24) {
-              if (little_endian) {
-                LoadFloatRow<LoadLE24>(row_out, in + i, mul, xsize,
-                                       bytes_per_pixel);
-              } else {
-                LoadFloatRow<LoadBE24>(row_out, in + i, mul, xsize,
                                        bytes_per_pixel);
               }
             } else {

@@ -8,6 +8,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/dec_file.h"
 #include "lib/jxl/enc_butteraugli_comparator.h"
 #include "lib/jxl/enc_splines.h"
@@ -193,7 +194,7 @@ TEST(SplinesTest, Serialization) {
   writer.ZeroPadToByte();
   const size_t bits_written = writer.BitsWritten();
 
-  printf("Wrote %zu bits of splines.\n", bits_written);
+  printf("Wrote %" PRIuS " bits of splines.\n", bits_written);
 
   BitReader reader(writer.GetSpan());
   Splines decoded_splines;

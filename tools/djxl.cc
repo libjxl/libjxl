@@ -16,6 +16,7 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/dec_file.h"
@@ -25,7 +26,6 @@
 #include "lib/jxl/image_ops.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
-#include "tools/cpu/cpu.h"
 
 namespace jpegxl {
 namespace tools {
@@ -68,9 +68,9 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   cmdline->AddOptionValue('\0', "num_reps", "N", nullptr, &num_reps,
                           &ParseUnsigned);
 
-  opt_num_threads_id = cmdline->AddOptionValue('\0', "num_threads", "N",
-                                               "The number of threads to use",
-                                               &num_threads, &ParseUnsigned);
+  cmdline->AddOptionValue('\0', "num_threads", "N",
+                          "The number of threads to use", &num_threads,
+                          &ParseUnsigned);
 
   cmdline->AddOptionValue('\0', "print_profile", "0|1",
                           "print timing information before exiting",
@@ -90,6 +90,10 @@ void DecompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                           "luminance range of the display to which to "
                           "tone-map; the lower bound can be omitted",
                           &display_nits, &ParseLuminanceRange);
+  cmdline->AddOptionValue(
+      '\0', "preserve_saturation", "0..1",
+      "with --tone_map, how much to favor saturation over luminance",
+      &preserve_saturation, &ParseFloat);
 
   cmdline->AddOptionValue('\0', "color_space", "RGB_D65_SRG_Rel_Lin",
                           "defaults to original (input) color space",
@@ -144,21 +148,6 @@ jxl::Status DecompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
   if (file_in == nullptr) {
     fprintf(stderr, "Missing INPUT filename.\n");
     return false;
-  }
-
-  // User didn't override num_threads, so we have to compute a default, which
-  // might fail, so only do so when necessary. Don't just check num_threads != 0
-  // because the user may have set it to that.
-  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    cpu::ProcessorTopology topology;
-    if (!cpu::DetectProcessorTopology(&topology)) {
-      // We have seen sporadic failures caused by setaffinity_np.
-      fprintf(stderr,
-              "Failed to choose default num_threads; you can avoid this "
-              "error by specifying a --num_threads N argument.\n");
-      return false;
-    }
-    num_threads = topology.packages * topology.cores_per_package;
   }
 
 #if JPEGXL_ENABLE_JPEG
@@ -269,11 +258,14 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
     jxl::Status status = jxl::ToneMapTo(args.display_nits, &io, pool);
     if (!status) fprintf(stderr, "Failed to map tones.\n");
     JXL_RETURN_IF_ERROR(status);
+    status = jxl::GamutMap(&io, args.preserve_saturation, pool);
+    if (!status) fprintf(stderr, "Failed to map gamut.\n");
+    JXL_RETURN_IF_ERROR(status);
     if (c_out.tf.IsPQ() && args.color_space.empty()) {
       // Prevent writing the tone-mapped image to PQ output unless explicitly
       // requested. The result would look even dimmer than it would have without
       // tone mapping.
-      c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
+      c_out.tf.SetTransferFunction(jxl::TransferFunction::k709);
       status = c_out.CreateICC();
       if (!status) fprintf(stderr, "Failed to create ICC\n");
       JXL_RETURN_IF_ERROR(c_out.CreateICC());
@@ -310,7 +302,9 @@ jxl::Status WriteJxlOutput(const DecompressArgs& args, const char* file_out,
                base.c_str(), digits, i, extension);
       if (!EncodeToFile(frame_io, c_out, bits_per_sample,
                         output_filename.data(), pool)) {
-        fprintf(stderr, "Failed to write decoded image for frame %zu/%zu.\n",
+        fprintf(stderr,
+                "Failed to write decoded image for frame %" PRIuS "/%" PRIuS
+                ".\n",
                 i + 1, io.frames.size());
       }
     }

@@ -6,6 +6,7 @@
 #include <stdio.h>
 
 #include "lib/extras/codec.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/thread_pool_internal.h"
 #include "lib/jxl/enc_adaptive_quantization.h"
 #include "tools/args.h"
@@ -43,7 +44,8 @@ int main(int argc, const char** argv) {
     return EXIT_FAILURE;
   }
   if (!epf_iters || epf_iters > 3) {
-    fprintf(stderr, "epf_iters value (%zu) is out of range, must be 1..3.\n",
+    fprintf(stderr,
+            "epf_iters value (%" PRIuS ") is out of range, must be 1..3.\n",
             epf_iters);
     return EXIT_FAILURE;
   }

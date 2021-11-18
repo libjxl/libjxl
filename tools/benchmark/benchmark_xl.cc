@@ -13,7 +13,6 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
-#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,8 +28,9 @@
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
-#include "lib/jxl/base/robust_statistics.h"
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -48,8 +48,6 @@
 #include "tools/benchmark/benchmark_stats.h"
 #include "tools/benchmark/benchmark_utils.h"
 #include "tools/codec_config.h"
-#include "tools/cpu/cpu.h"
-#include "tools/cpu/os_specific.h"
 #include "tools/speed_stats.h"
 
 namespace jxl {
@@ -178,7 +176,8 @@ void DoCompress(const std::string& filename, const CodecInOut& io,
     if (!Args()->silent_errors) {
       // Animated gifs not supported yet?
       fprintf(stderr,
-              "Frame sizes not equal, is this an animated gif? %s %s %zu %zu\n",
+              "Frame sizes not equal, is this an animated gif? %s %s %" PRIuS
+              " %" PRIuS "\n",
               codec_name.c_str(), name.c_str(), io.frames.size(),
               io2.frames.size());
     }
@@ -481,12 +480,12 @@ void WriteHtmlReport(const std::string& codec_desc,
       url_out = Base64Image(fname_out);
       url_heatmap = Base64Image(fname_heatmap);
     }
-    std::string number = StringPrintf("%zu", i);
+    std::string number = StringPrintf("%" PRIuS, i);
     const CodecInOut& image = *images[i];
     size_t xsize = image.frames.size() == 1 ? image.xsize() : 0;
     size_t ysize = image.frames.size() == 1 ? image.ysize() : 0;
-    std::string html_width = StringPrintf("%zupx", xsize);
-    std::string html_height = StringPrintf("%zupx", ysize);
+    std::string html_width = StringPrintf("%" PRIuS "px", xsize);
+    std::string html_height = StringPrintf("%" PRIuS "px", ysize);
     double bpp = tasks[i]->stats.total_compressed_size * 8.0 /
                  tasks[i]->stats.total_input_pixels;
     double pnorm =
@@ -615,7 +614,8 @@ struct StatPrinter {
     const double dec_mps =
         t.stats.total_input_pixels / (1000000.0 * t.stats.total_time_decode);
     if (Args()->print_details_csv) {
-      printf("%s,%s,%zd,%zd,%zd,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
+      printf("%s,%s,%" PRIdS ",%" PRIdS ",%" PRIdS
+             ",%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f,%.8f",
              (*methods_)[t.idx_method].c_str(),
              FileBaseName((*fnames_)[t.idx_image]).c_str(),
              t.stats.total_errors, t.stats.total_compressed_size, pixels,
@@ -637,8 +637,8 @@ struct StatPrinter {
         printf(" ");
       }
       printf(
-          "error:%zd    size:%8zd    pixels:%9zd    enc_speed:%8.8f"
-          "    dec_speed:%8.8f    bpp:%10.8f    dist:%10.8f"
+          "error:%" PRIdS "    size:%8" PRIdS "    pixels:%9" PRIdS
+          "    enc_speed:%8.8f    dec_speed:%8.8f    bpp:%10.8f    dist:%10.8f"
           "    psnr:%10.8f    p:%10.8f    bppp:%10.8f    qabpp:%10.8f ",
           t.stats.total_errors, t.stats.total_compressed_size, pixels, enc_mps,
           dec_mps, comp_bpp, t.stats.max_distance, psnr, p_norm, bpp_p_norm,
@@ -771,19 +771,10 @@ class Benchmark {
   }
 
  private:
-  static int NumCores() {
-    jpegxl::tools::cpu::ProcessorTopology topology;
-    JXL_CHECK(DetectProcessorTopology(&topology));
-    const int num_cores =
-        static_cast<int>(topology.packages * topology.cores_per_package);
-    JXL_CHECK(num_cores != 0);
-    return num_cores;
-  }
-
-  static int NumOuterThreads(const int num_cores, const int num_tasks) {
+  static int NumOuterThreads(const int num_hw_threads, const int num_tasks) {
     int num_threads = Args()->num_threads;
     // Default to #cores
-    if (num_threads < 0) num_threads = num_cores;
+    if (num_threads < 0) num_threads = num_hw_threads;
 
     // As a safety precaution, limit the number of threads to 4x the number of
     // available CPUs.
@@ -799,13 +790,14 @@ class Benchmark {
     return num_threads;
   }
 
-  static int NumInnerThreads(const int num_cores, const int num_threads) {
+  static int NumInnerThreads(const int num_hw_threads, const int num_threads) {
     int num_inner = Args()->inner_threads;
 
     // Default: distribute remaining cores among tasks.
     if (num_inner < 0) {
-      const int cores_for_outer = num_cores - num_threads;
-      num_inner = num_threads == 0 ? num_cores : cores_for_outer / num_threads;
+      const int cores_for_outer = num_hw_threads - num_threads;
+      num_inner =
+          num_threads == 0 ? num_hw_threads : cores_for_outer / num_threads;
     }
 
     // Just one thread is counterproductive.
@@ -814,50 +806,22 @@ class Benchmark {
     return num_inner;
   }
 
-  // Pins the first worker thread in pool to cpus[*next_index] etc.
-  // Not thread-safe (non-atomic update of next_index).
-  static void PinThreads(ThreadPoolInternal* pool, const std::vector<int>& cpus,
-                         size_t* next_index) {
-    // No benefit to pinning if no actual worker threads.
-    if (pool->NumWorkerThreads() == 0) return;
-
-    pool->RunOnEachThread([&](int /*task*/, const int thread) {
-      const size_t index = *next_index + static_cast<size_t>(thread);
-      if (index < cpus.size()) {
-        // printf("pin pool %p thread %3d to index %3zu = cpu %3d\n",
-        //        static_cast<void*>(pool), thread, index, cpus[index]);
-        if (!jpegxl::tools::cpu::PinThreadToCPU(cpus[index])) {
-          fprintf(stderr, "WARNING: failed to pin thread %d, next %zu.\n",
-                  thread, *next_index);
-        }
-      }
-    });
-    *next_index += pool->NumWorkerThreads();
-  }
-
   static void InitThreads(
       const int num_tasks, std::unique_ptr<ThreadPoolInternal>* pool,
       std::vector<std::unique_ptr<ThreadPoolInternal>>* inner_pools) {
-    const int num_cores = NumCores();
-    const int num_threads = NumOuterThreads(num_cores, num_tasks);
-    const int num_inner = NumInnerThreads(num_cores, num_threads);
+    const int num_hw_threads = std::thread::hardware_concurrency();
+    const int num_threads = NumOuterThreads(num_hw_threads, num_tasks);
+    const int num_inner = NumInnerThreads(num_hw_threads, num_threads);
 
-    fprintf(stderr, "%d cores, %d tasks, %d threads, %d inner threads\n",
-            num_cores, num_tasks, num_threads, num_inner);
+    fprintf(stderr,
+            "%d total threads, %d tasks, %d threads, %d inner threads\n",
+            num_hw_threads, num_tasks, num_threads, num_inner);
 
     pool->reset(new ThreadPoolInternal(num_threads));
     // Main thread OR worker threads in pool each get a possibly empty nested
     // pool (helps use all available cores when #tasks < #threads)
     for (size_t i = 0; i < (*pool)->NumThreads(); ++i) {
       inner_pools->emplace_back(new ThreadPoolInternal(num_inner));
-    }
-
-    // Pin all actual worker threads to available CPUs.
-    const std::vector<int> cpus = jpegxl::tools::cpu::AvailableCPUs();
-    size_t next_index = 0;
-    PinThreads(pool->get(), cpus, &next_index);
-    for (std::unique_ptr<ThreadPoolInternal>& inner : *inner_pools) {
-      PinThreads(inner.get(), cpus, &next_index);
     }
   }
 
@@ -905,7 +869,8 @@ class Benchmark {
                                    const std::string& sample_tmp_dir,
                                    int num_samples, size_t size) {
     JXL_CHECK(!sample_tmp_dir.empty());
-    fprintf(stderr, "Creating samples of %zux%zu tiles...\n", size, size);
+    fprintf(stderr, "Creating samples of %" PRIuS "x%" PRIuS " tiles...\n",
+            size, size);
     StringVec fnames_out;
     std::vector<Image3F> images;
     std::vector<size_t> offsets;
@@ -920,15 +885,15 @@ class Benchmark {
       images.emplace_back(std::move(img));
     }
     JXL_CHECK(MakeDir(sample_tmp_dir));
-    std::mt19937_64 rng;
+    Rng rng(0);
     for (int i = 0; i < num_samples; ++i) {
-      int val = std::uniform_int_distribution<>(0, offsets.back())(rng);
+      int val = rng.UniformI(0, offsets.back());
       size_t idx = (std::lower_bound(offsets.begin(), offsets.end(), val) -
                     offsets.begin());
       JXL_CHECK(idx < images.size());
       const Image3F& img = images[idx];
-      int x0 = std::uniform_int_distribution<>(0, img.xsize() - size)(rng);
-      int y0 = std::uniform_int_distribution<>(0, img.ysize() - size)(rng);
+      int x0 = rng.UniformI(0, img.xsize() - size);
+      int y0 = rng.UniformI(0, img.ysize() - size);
       Image3F sample(size, size);
       for (size_t c = 0; c < 3; ++c) {
         for (size_t y = 0; y < size; ++y) {

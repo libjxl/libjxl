@@ -10,6 +10,7 @@
 
 #include <queue>
 
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/modular/encoding/context_predict.h"
 #include "lib/jxl/modular/options.h"
 
@@ -154,7 +155,7 @@ Status DecodeModularChannelMAANS(BitReader *br, ANSSymbolReader *reader,
     }
   }
 
-  JXL_DEBUG_V(3, "Decoded MA tree with %zu nodes", tree.size());
+  JXL_DEBUG_V(3, "Decoded MA tree with %" PRIuS " nodes", tree.size());
 
   // MAANS decode
   const auto make_pixel = [](uint64_t v, pixel_type multiplier,
@@ -387,7 +388,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
   // decode transforms
   JXL_RETURN_IF_ERROR(Bundle::Read(br, &header));
-  JXL_DEBUG_V(3, "Image data underwent %zu transformations: ",
+  JXL_DEBUG_V(3, "Image data underwent %" PRIuS " transformations: ",
               header.transforms.size());
   image.transform = header.transforms;
   for (Transform &transform : image.transform) {
@@ -446,7 +447,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
       max_tree_size += pixels;
       if (max_tree_size < pixels) return JXL_FAILURE("Tree size overflow");
     }
-
+    max_tree_size = std::min(static_cast<size_t>(1 << 20), max_tree_size);
     JXL_RETURN_IF_ERROR(DecodeTree(br, &tree_storage, max_tree_size));
     JXL_RETURN_IF_ERROR(DecodeHistograms(br, (tree_storage.size() + 1) / 2,
                                          &code_storage, &context_map_storage));
@@ -490,7 +491,7 @@ Status ModularDecode(BitReader *br, Image &image, GroupHeader &header,
 
 Status ModularGenericDecompress(BitReader *br, Image &image,
                                 GroupHeader *header, size_t group_id,
-                                ModularOptions *options, int undo_transforms,
+                                ModularOptions *options, bool undo_transforms,
                                 const Tree *tree, const ANSCode *code,
                                 const std::vector<uint8_t> *ctx_map,
                                 bool allow_truncated_group) {
@@ -506,17 +507,19 @@ Status ModularGenericDecompress(BitReader *br, Image &image,
                                   code, ctx_map, allow_truncated_group);
   if (!allow_truncated_group) JXL_RETURN_IF_ERROR(dec_status);
   if (dec_status.IsFatalError()) return dec_status;
-  image.undo_transforms(header->wp_header, undo_transforms);
+  if (undo_transforms) image.undo_transforms(header->wp_header);
   if (image.error) return JXL_FAILURE("Corrupt file. Aborting.");
   size_t bit_pos = br->TotalBitsConsumed();
-  JXL_DEBUG_V(4, "Modular-decoded a %zux%zu nbchans=%zu image from %zu bytes",
+  JXL_DEBUG_V(4,
+              "Modular-decoded a %" PRIuS "x%" PRIuS " nbchans=%" PRIuS
+              " image from %" PRIuS " bytes",
               image.w, image.h, image.channel.size(),
               (br->TotalBitsConsumed() - bit_pos) / 8);
   (void)bit_pos;
 #ifdef JXL_ENABLE_ASSERT
   // Check that after applying all transforms we are back to the requested image
   // sizes, otherwise there's a programming error with the transformations.
-  if (undo_transforms == -1 || undo_transforms == 0) {
+  if (undo_transforms) {
     JXL_ASSERT(image.channel.size() == req_sizes.size());
     for (size_t c = 0; c < req_sizes.size(); c++) {
       JXL_ASSERT(req_sizes[c].first == image.channel[c].w);

@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "lib/jxl/ans_params.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"
@@ -52,7 +53,7 @@ float ContinuousIDCT(const float dct[32], float t) {
     auto local_res = LoadU(df, dct + i) * cos;
     result = MulAdd(Set(df, square_root<2>::value), local_res, result);
   }
-  return GetLane(SumOfLanes(result));
+  return GetLane(SumOfLanes(df, result));
 }
 
 template <typename DF>
@@ -82,8 +83,11 @@ void DrawSegment(DF df, const SplineSegment& segment, bool add, size_t y,
 
 void DrawSegment(const SplineSegment& segment, bool add, size_t y, ssize_t x0,
                  ssize_t x1, float* JXL_RESTRICT rows[3]) {
-  ssize_t x = std::max<ssize_t>(x0, segment.xbegin);
-  x1 = std::min<ssize_t>(x1, segment.xend);
+  ssize_t x =
+      std::max<ssize_t>(x0, segment.center_x - segment.maximum_distance + 0.5f);
+  // one-past-the-end
+  x1 =
+      std::min<ssize_t>(x1, segment.center_x + segment.maximum_distance + 1.5f);
   HWY_FULL(float) df;
   for (; x + static_cast<ssize_t>(Lanes(df)) <= x1; x += Lanes(df)) {
     DrawSegment(df, segment, add, y, x, rows);
@@ -122,11 +126,8 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segment.center_y = center.y;
   segment.center_x = center.x;
   memcpy(segment.color, color, sizeof(segment.color));
-  segment.sigma = sigma;
   segment.inv_sigma = 1.0f / sigma;
   segment.sigma_over_4_times_intensity = .25f * sigma * intensity;
-  segment.xbegin = std::max<float>(0, center.x - maximum_distance + 0.5f);
-  segment.xend = center.x + maximum_distance + 1.5f;  // one-past-the-end
   segment.maximum_distance = maximum_distance;
   ssize_t y0 = center.y - maximum_distance + .5f;
   ssize_t y1 = center.y + maximum_distance + 1.5f;  // one-past-the-end
@@ -417,7 +418,7 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
       decoder->ReadHybridUint(kNumControlPointsContext, br, context_map);
   *total_num_control_points += num_control_points;
   if (*total_num_control_points > max_control_points) {
-    return JXL_FAILURE("Too many control points: %zu",
+    return JXL_FAILURE("Too many control points: %" PRIuS,
                        *total_num_control_points);
   }
   control_points_.resize(num_control_points);
@@ -462,7 +463,7 @@ Status Splines::Decode(jxl::BitReader* br, size_t num_pixels) {
   size_t max_control_points = std::min(
       kMaxNumControlPoints, num_pixels / kMaxNumControlPointsPerPixelRatio);
   if (num_splines > max_control_points) {
-    return JXL_FAILURE("Too many splines: %zu", num_splines);
+    return JXL_FAILURE("Too many splines: %" PRIuS, num_splines);
   }
   JXL_RETURN_IF_ERROR(DecodeAllStartingPoints(&starting_points_, br, &decoder,
                                               context_map, num_splines));
@@ -513,8 +514,8 @@ Status Splines::InitializeDrawCache(size_t image_xsize, size_t image_ysize,
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {
-      return JXL_FAILURE("identical successive control points in spline %zu",
-                         i);
+      return JXL_FAILURE(
+          "identical successive control points in spline %" PRIuS, i);
     }
     std::vector<std::pair<Spline::Point, float>> points_to_draw;
     ForEachEquallySpacedPoint(

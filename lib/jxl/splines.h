@@ -84,10 +84,8 @@ class QuantizedSpline {
 // row, which allows reuse for different y values (which are tracked
 // separately).
 struct SplineSegment {
-  ssize_t xbegin, xend;
   float center_x, center_y;
   float maximum_distance;
-  float sigma;
   float inv_sigma;
   float sigma_over_4_times_intensity;
   float color[3];

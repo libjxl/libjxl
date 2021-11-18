@@ -10,7 +10,6 @@
 #include <sys/types.h>
 
 #include <algorithm>
-#include <random>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -19,6 +18,7 @@
 #include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/override.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/blending.h"
 #include "lib/jxl/chroma_from_luma.h"
@@ -105,12 +105,14 @@ Status PatchDictionary::Decode(BitReader* br, size_t xsize, size_t ysize,
             positions_.back().y + UnpackSigned(read_num(kPatchOffsetContext));
       }
       if (pos.x + ref_pos.xsize > xsize) {
-        return JXL_FAILURE("Invalid patch x: at %zu + %zu > %zu", pos.x,
-                           ref_pos.xsize, xsize);
+        return JXL_FAILURE("Invalid patch x: at %" PRIuS " + %" PRIuS
+                           " > %" PRIuS,
+                           pos.x, ref_pos.xsize, xsize);
       }
       if (pos.y + ref_pos.ysize > ysize) {
-        return JXL_FAILURE("Invalid patch y: at %zu + %zu > %zu", pos.y,
-                           ref_pos.ysize, ysize);
+        return JXL_FAILURE("Invalid patch y: at %" PRIuS " + %" PRIuS
+                           " > %" PRIuS,
+                           pos.y, ref_pos.ysize, ysize);
       }
       for (size_t i = 0; i < shared_->metadata->m.extra_channel_info.size() + 1;
            i++) {

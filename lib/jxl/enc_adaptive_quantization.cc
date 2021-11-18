@@ -189,7 +189,7 @@ V GammaModulation(const D d, const size_t x, const size_t y,
       overall_ratio += avg_ratio;
     }
   }
-  overall_ratio = SumOfLanes(overall_ratio);
+  overall_ratio = SumOfLanes(d, overall_ratio);
   overall_ratio *= Set(d, 1.0f / 64);
   // ideally -1.0, but likely optimal correction adds some entropy, so slightly
   // less than that.
@@ -246,12 +246,12 @@ V ColorModulation(const D d, const size_t x, const size_t y,
   // blue we consider as if it was fully red or blue.
   static const float ratio = 30.610615782142737f;  // out of 64 pixels.
 
-  auto overall_red_coverage = SumOfLanes(red_coverage);
+  auto overall_red_coverage = SumOfLanes(d, red_coverage);
   overall_red_coverage =
       Min(overall_red_coverage, Set(d, ratio * kRedRampLength));
   overall_red_coverage *= Set(d, red_strength / ratio);
 
-  auto overall_blue_coverage = SumOfLanes(blue_coverage);
+  auto overall_blue_coverage = SumOfLanes(d, blue_coverage);
   overall_blue_coverage =
       Min(overall_blue_coverage, Set(d, ratio * kBlueRampLength));
   overall_blue_coverage *= Set(d, blue_strength / ratio);
@@ -295,7 +295,7 @@ V HfModulation(const D d, const size_t x, const size_t y, const ImageF& xyb,
     }
   }
 
-  sum = SumOfLanes(sum);
+  sum = SumOfLanes(d, sum);
   return MulAdd(sum, Set(d, -2.0052193233688884f / 112), out_val);
 }
 
@@ -729,7 +729,7 @@ ImageF TileDistMap(const ImageF& distmap, int tile_size, int margin,
 
 constexpr float kDcQuantPow = 0.57f;
 static const float kDcQuant = 1.12f;
-static const float kAcQuant = 0.7886f;
+static const float kAcQuant = 0.825f;
 
 void FindBestQuantization(const ImageBundle& linear, const Image3F& opsin,
                           PassesEncoderState* enc_state, ThreadPool* pool,
@@ -1107,7 +1107,8 @@ ImageBundle RoundtripImage(const Image3F& opsin, PassesEncoderState* enc_state,
   // Fine to do a JXL_ASSERT instead of error handling, since this only happens
   // on the encoder side where we can't be fed with invalid data.
   JXL_CHECK(FinalizeFrameDecoding(&decoded, dec_state.get(), pool,
-                                  /*force_fir=*/false, /*skip_blending=*/true));
+                                  /*force_fir=*/false, /*skip_blending=*/true,
+                                  /*move_ec=*/true));
   // Ensure we don't create any new special frames.
   enc_state->special_frames.resize(num_special_frames);
 

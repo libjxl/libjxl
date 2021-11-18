@@ -5,8 +5,7 @@
 
 #include <stdint.h>
 
-#include <random>
-
+#include "lib/jxl/base/random.h"
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "lib/jxl/modular/transform/transform.h"
@@ -14,14 +13,14 @@
 namespace jxl {
 
 namespace {
-void FillChannel(Channel& ch, std::mt19937& rng) {
+void FillChannel(Channel& ch, Rng& rng) {
   auto p = &ch.plane;
   const size_t w = ch.w;
   const size_t h = ch.h;
   for (size_t y = 0; y < h; ++y) {
     pixel_type* row = p->Row(y);
     for (size_t x = 0; x < w; ++x) {
-      row[x] = rng() & 0x7FFFFFFF;
+      row[x] = rng.UniformU(0, 0x80000000);
     }
   }
 }
@@ -36,7 +35,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
   BitReader reader(Span<const uint8_t>(data, size));
   BitReaderScopedCloser reader_closer(&reader, &nevermind);
 
-  std::mt19937 rng(reader.ReadFixedBits<56>());
+  Rng rng(reader.ReadFixedBits<56>());
 
   // One of {0, 1, _2_, 3}; "2" will be filtered out soon.
   size_t nb_chans = static_cast<size_t>(reader.ReadFixedBits<8>()) & 0x3;
@@ -113,7 +112,7 @@ int TestOneInput(const uint8_t* data, size_t size) {
     FillChannel(image.channel[i], rng);
   }
 
-  image.undo_transforms(w_header, /*keep=*/-1);
+  image.undo_transforms(w_header);
 
   AssertEq(image.error, false);
   AssertEq<size_t>(image.nb_meta_channels, 0);

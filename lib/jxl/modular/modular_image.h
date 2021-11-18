@@ -99,8 +99,7 @@ class Image {
 
   Image clone();
 
-  // undo all except the first 'keep' transforms
-  void undo_transforms(const weighted::Header& wp_header, int keep = 0,
+  void undo_transforms(const weighted::Header& wp_header,
                        jxl::ThreadPool* pool = nullptr);
 };
 

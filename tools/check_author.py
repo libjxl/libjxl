@@ -44,14 +44,40 @@ def IsAuthorInFile(email, name, filename):
           return True
   return False
 
+def IndividualsInAlphabeticOrder(filename):
+  """Checks if the names are in alphabetic order"""
+  with open(filename, 'r') as f:
+    lines = f.readlines()
+    individual_header = '# Individuals:\n'
+    if individual_header in lines:
+      individual_authors = lines[lines.index(individual_header) + 1:]
+      sorted_authors = sorted(individual_authors, key=str.casefold)
+      if sorted_authors == individual_authors:
+        print("Individual authors are sorted alphabetically.")
+        return True
+      else:
+        print("Individual authors are not sorted alphabetically."
+              " The expected order is:")
+        print(''.join(sorted_authors))
+        return False
+    else:
+      print("Cannot find line '# Individuals:' in file.")
+  return False
+
 
 def CheckAuthor(args):
-  ret = IsAuthorInFile(
-      args.email, args.name, os.path.join(args.source_dir, 'AUTHORS'))
-  if not ret:
+  authors_path = os.path.join(args.source_dir, 'AUTHORS')
+  author_in_file = IsAuthorInFile(
+      args.email, args.name, authors_path)
+  if not author_in_file:
     print("User %s <%s> not found, please add yourself to the AUTHORS file" % (
               args.name, args.email),
           file=sys.stderr)
+
+  sorted_alphabetically = IndividualsInAlphabeticOrder(authors_path)
+  if not sorted_alphabetically:
+    print("Authors not in alphabetical order, please sort them.", file=sys.stderr)
+  if not author_in_file or not sorted_alphabetically:
     if not args.dry_run:
       sys.exit(1)
 

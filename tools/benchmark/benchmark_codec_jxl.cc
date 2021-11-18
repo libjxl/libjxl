@@ -266,7 +266,8 @@ class JxlCodec : public ImageCodec {
                     ThreadPoolInternal* pool, CodecInOut* io,
                     jpegxl::tools::SpeedStats* speed_stats) override {
     io->frames.clear();
-    if (dparams_ != DecompressParams{}) {
+    if (dparams_.max_passes != DecompressParams().max_passes ||
+        dparams_.max_downsampling != DecompressParams().max_downsampling) {
       // Must use the C++ API to honor non-default dparams.
       if (uint8_) {
         return JXL_FAILURE(

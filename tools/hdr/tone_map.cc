@@ -25,6 +25,11 @@ int main(int argc, const char** argv) {
       't', "target_nits", "nits",
       "peak luminance of the display for which to tone map", &target_nits,
       &jpegxl::tools::ParseFloat, 0);
+  float preserve_saturation = .1f;
+  parser.AddOptionValue(
+      's', "preserve_saturation", "0..1",
+      "to what extent to try and preserve saturation over luminance",
+      &preserve_saturation, &jpegxl::tools::ParseFloat, 0);
   bool pq = false;
   parser.AddOptionFlag('p', "pq",
                        "write the output with absolute luminance using PQ", &pq,
@@ -68,12 +73,13 @@ int main(int argc, const char** argv) {
     image.metadata.m.SetIntensityTarget(max_nits);
   }
   JXL_CHECK(jxl::ToneMapTo({0, target_nits}, &image, &pool));
+  JXL_CHECK(jxl::GamutMap(&image, preserve_saturation, &pool));
 
   jxl::ColorEncoding c_out = image.metadata.m.color_encoding;
   if (pq) {
     c_out.tf.SetTransferFunction(jxl::TransferFunction::kPQ);
   } else {
-    c_out.tf.SetTransferFunction(jxl::TransferFunction::kSRGB);
+    c_out.tf.SetTransferFunction(jxl::TransferFunction::k709);
   }
   JXL_CHECK(c_out.CreateICC());
   JXL_CHECK(image.TransformTo(c_out, &pool));

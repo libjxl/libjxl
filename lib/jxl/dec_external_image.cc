@@ -22,6 +22,7 @@
 #include "lib/jxl/base/byte_order.h"
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/color_management.h"
 #include "lib/jxl/common.h"
 #include "lib/jxl/sanitizers.h"
@@ -282,6 +283,9 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   if (bits_per_sample == 1) {
     return JXL_FAILURE("packed 1-bit per sample is not yet supported");
   }
+  if (bits_per_sample > 16 && bits_per_sample < 32) {
+    return JXL_FAILURE("not supported, try bits_per_sample=32");
+  }
 
   // bytes_per_channel and is only valid for bits_per_sample > 1.
   const size_t bytes_per_channel = DivCeil(bits_per_sample, jxl::kBitsPerByte);
@@ -313,9 +317,9 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
   size_t ysize = channels[0]->ysize();
 
   if (stride < bytes_per_pixel * xsize) {
-    return JXL_FAILURE(
-        "stride is smaller than scanline width in bytes: %zu vs %zu", stride,
-        bytes_per_pixel * xsize);
+    return JXL_FAILURE("stride is smaller than scanline width in bytes: %" PRIuS
+                       " vs %" PRIuS,
+                       stride, bytes_per_pixel * xsize);
   }
 
   const bool little_endian =
@@ -449,12 +453,6 @@ Status ConvertChannelsToExternal(const ImageF* channels[], size_t num_channels,
               StoreUintRow<StoreLE16>(row_u32, num_channels, xsize, 2, row_out);
             } else {
               StoreUintRow<StoreBE16>(row_u32, num_channels, xsize, 2, row_out);
-            }
-          } else if (bits_per_sample <= 24) {
-            if (little_endian) {
-              StoreUintRow<StoreLE24>(row_u32, num_channels, xsize, 3, row_out);
-            } else {
-              StoreUintRow<StoreBE24>(row_u32, num_channels, xsize, 3, row_out);
             }
           } else {
             if (little_endian) {

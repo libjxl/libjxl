@@ -9,6 +9,7 @@
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/codec_in_out.h"
 #include "lib/jxl/color_encoding_internal.h"
 #include "lib/jxl/color_management.h"
@@ -63,11 +64,11 @@ void PrintXybRange() {
         }
       }
     }
-    printf(
-        "Opsin image plane %zu range: [%8.4f, %8.4f] "
-        "center: %.12f, range: %.12f (RGBmin=%06x, RGBmax=%06x)\n",
-        c, minval, maxval, 0.5 * (minval + maxval), 0.5 * (maxval - minval),
-        rgb_min, rgb_max);
+    printf("Opsin image plane %" PRIuS
+           " range: [%8.4f, %8.4f] "
+           "center: %.12f, range: %.12f (RGBmin=%06x, RGBmax=%06x)\n",
+           c, minval, maxval, 0.5 * (minval + maxval), 0.5 * (maxval - minval),
+           rgb_min, rgb_max);
     // Ensure our constants are at least as wide as those obtained from sRGB.
   }
 }

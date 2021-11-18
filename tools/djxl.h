@@ -8,6 +8,8 @@
 
 #include <stddef.h>
 
+#include <thread>
+
 #include "jxl/decode.h"
 #include "lib/jxl/aux_out.h"
 #include "lib/jxl/base/data_parallel.h"
@@ -40,7 +42,7 @@ struct DecompressArgs {
   // Common djxl parameters.
   const char* file_in = nullptr;
   const char* file_out = nullptr;
-  size_t num_threads;
+  size_t num_threads = std::thread::hardware_concurrency();
   bool use_sjpeg = false;
   size_t jpeg_quality = 95;
   bool decode_to_pixels = false;
@@ -54,6 +56,7 @@ struct DecompressArgs {
   size_t bits_per_sample = 0;
   bool tone_map = false;
   std::pair<float, float> display_nits = {0.f, jxl::kDefaultIntensityTarget};
+  float preserve_saturation = .1f;
   std::string color_space;  // description or path to ICC profile
 
   jxl::DecompressParams params;
@@ -63,7 +66,6 @@ struct DecompressArgs {
   bool quiet = false;
 
   // References (ids) of specific options to check if they were matched.
-  CommandLineParser::OptionId opt_num_threads_id = -1;
   CommandLineParser::OptionId opt_jpeg_quality_id = -1;
 };
 

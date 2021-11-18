@@ -39,6 +39,8 @@ main() {
   "${MYDIR}/generator.py" \
     --decoder="${decoder}" \
     --output="${tmpdir}" \
+    --peak_error=0.001 \
+    --rmse=0.001 \
     "${MYDIR}/../../third_party/testdata/jxl/blending/cropped_traffic_light.jxl"
 
   # List the contents of the corpus dir.

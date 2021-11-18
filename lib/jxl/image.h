@@ -8,6 +8,7 @@
 
 // SIMD/multicore-friendly planar image representation with row accessors.
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -18,6 +19,7 @@
 #include "lib/jxl/base/cache_aligned.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
+#include "lib/jxl/common.h"
 
 namespace jxl {
 
@@ -83,7 +85,7 @@ struct PlaneBase {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
     if (y >= ysize_) {
-      JXL_ABORT("Row(%zu) in (%u x %u) image\n", y, xsize_, ysize_);
+      JXL_ABORT("Row(%" PRIu64 ") in (%u x %u) image\n", y, xsize_, ysize_);
     }
 #endif
 
@@ -220,6 +222,12 @@ class Rect {
   template <typename Image>
   Rect Crop(const Image& image) const {
     return Rect(x0_, y0_, xsize_, ysize_, image.xsize(), image.ysize());
+  }
+
+  // Construct a subrect that resides in the [0, ysize) x [0, xsize) region of
+  // the current rect.
+  Rect Crop(size_t area_xsize, size_t area_ysize) const {
+    return Rect(x0_, y0_, xsize_, ysize_, area_xsize, area_ysize);
   }
 
   // Returns a rect that only contains `num` lines with offset `y` from `y0()`.
@@ -415,8 +423,10 @@ class Image3 {
 #if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
     defined(THREAD_SANITIZER)
     if (c >= kNumPlanes || y >= ysize()) {
-      JXL_ABORT("PlaneRow(%zu, %zu) in (%zu x %zu) image\n", c, y, xsize(),
-                ysize());
+      JXL_ABORT("PlaneRow(%" PRIu64 ", %" PRIu64 ") in (%" PRIu64 " x %" PRIu64
+                ") image\n",
+                static_cast<uint64_t>(c), static_cast<uint64_t>(y),
+                static_cast<uint64_t>(xsize()), static_cast<uint64_t>(ysize()));
     }
 #endif
   }

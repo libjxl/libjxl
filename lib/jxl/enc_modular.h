@@ -42,7 +42,7 @@ class ModularFrameEncoder {
   // `nl_dc` decides whether to apply a near-lossless processing to the DC or
   // not.
   void AddVarDCTDC(const Image3F& dc, size_t group_index, bool nl_dc,
-                   PassesEncoderState* enc_state);
+                   PassesEncoderState* enc_state, bool jpeg_transcode);
   // Creates a modular image for the AC metadata of the given group
   // (`group_index`).
   void AddACMetadata(size_t group_index, bool jpeg_transcode,
@@ -85,6 +85,7 @@ class ModularFrameEncoder {
   std::vector<ModularMultiplierInfo> multiplier_info;
   std::vector<std::vector<uint32_t>> gi_channel;
   std::vector<size_t> image_widths;
+  Predictor delta_pred = Predictor::Average4;
 };
 
 }  // namespace jxl

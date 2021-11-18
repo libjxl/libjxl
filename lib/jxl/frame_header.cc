@@ -6,6 +6,7 @@
 #include "lib/jxl/frame_header.h"
 
 #include "lib/jxl/aux_out.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/fields.h"
 
@@ -345,7 +346,8 @@ Status FrameHeader::VisitFields(Visitor* JXL_RESTRICT visitor) {
            frame_size.ysize < nonserialized_metadata->ysize() ||
            frame_origin.x0 != 0 || frame_origin.y0 != 0)) {
         return JXL_FAILURE(
-            "non-patch reference frame with invalid crop: %zux%zu%+d%+d",
+            "non-patch reference frame with invalid crop: %" PRIuS "x%" PRIuS
+            "%+d%+d",
             static_cast<size_t>(frame_size.xsize),
             static_cast<size_t>(frame_size.ysize),
             static_cast<int>(frame_origin.x0),

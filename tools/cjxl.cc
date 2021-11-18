@@ -25,6 +25,7 @@
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/padded_bytes.h"
+#include "lib/jxl/base/printf_macros.h"
 #include "lib/jxl/base/profiler.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/base/thread_pool_internal.h"
@@ -39,7 +40,6 @@
 #include "lib/jxl/modular/encoding/encoding.h"
 #include "tools/args.h"
 #include "tools/box/box.h"
-#include "tools/cpu/cpu.h"
 #include "tools/speed_stats.h"
 
 namespace jpegxl {
@@ -119,7 +119,7 @@ void SetModularQualityForBitrate(jxl::ThreadPoolInternal* pool,
           quality);
       break;
     }
-    printf("Quality %.2f yields %6zu bytes, %.3f bpp.\n", quality,
+    printf("Quality %.2f yields %6" PRIuS " bytes, %.3f bpp.\n", quality,
            candidate.size(), candidate.size() * 8.0 / pixels);
     const double ratio = static_cast<double>(candidate.size()) / target_size;
     const double loss = std::abs(1.0 - ratio);
@@ -194,8 +194,8 @@ void SetParametersForSizeOrBitrate(jxl::ThreadPoolInternal* pool,
           best_dist);
       break;
     }
-    printf("Butteraugli distance %.3f yields %6zu bytes, %.3f bpp.\n", dist,
-           candidate.size(), candidate.size() * 8.0 / pixels);
+    printf("Butteraugli distance %.3f yields %6" PRIuS " bytes, %.3f bpp.\n",
+           dist, candidate.size(), candidate.size() * 8.0 / pixels);
     const double ratio = static_cast<double>(candidate.size()) / target_size;
     const double loss = std::max(ratio, 1.0 / std::max(ratio, 1e-30));
     if (best_loss > loss) {
@@ -248,7 +248,8 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
   const char* speed = SpeedTierName(args.params.speed_tier);
   const std::string quality = QualityFromArgs(args);
   fprintf(stderr,
-          "Read %zux%zu image, %.1f MP/s\n"
+          "Read %" PRIuS "x%" PRIuS
+          " image, %.1f MP/s\n"
           "Encoding [%s%s, %s, %s",
           io.xsize(), io.ysize(), decode_mps,
           (args.use_container ? "Container | " : ""), mode, quality.c_str(),
@@ -256,13 +257,13 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
   if (args.use_container) {
     if (args.jpeg_transcode) fprintf(stderr, " | JPEG reconstruction data");
     if (!io.blobs.exif.empty())
-      fprintf(stderr, " | %zu-byte Exif", io.blobs.exif.size());
+      fprintf(stderr, " | %" PRIuS "-byte Exif", io.blobs.exif.size());
     if (!io.blobs.xmp.empty())
-      fprintf(stderr, " | %zu-byte XMP", io.blobs.xmp.size());
+      fprintf(stderr, " | %" PRIuS "-byte XMP", io.blobs.xmp.size());
     if (!io.blobs.jumbf.empty())
-      fprintf(stderr, " | %zu-byte JUMBF", io.blobs.jumbf.size());
+      fprintf(stderr, " | %" PRIuS "-byte JUMBF", io.blobs.jumbf.size());
   }
-  fprintf(stderr, "], %zu threads.\n", pool->NumWorkerThreads());
+  fprintf(stderr, "], %" PRIuS " threads.\n", pool->NumWorkerThreads());
 }
 
 }  // namespace
@@ -397,10 +398,14 @@ void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
                          "Do lossy transcode of input JPEG file (decode to "
                          "pixels instead of doing lossless transcode).",
                          &jpeg_transcode, &SetBooleanFalse, 1);
+  cmdline->AddOptionFlag('\0', "jpeg_transcode_disable_cfl",
+                         "Disable CFL for lossless JPEG recompression",
+                         &params.force_cfl_jpeg_recompression, &SetBooleanFalse,
+                         2);
 
-  opt_num_threads_id = cmdline->AddOptionValue(
-      '\0', "num_threads", "N", "number of worker threads (zero = none).",
-      &num_threads, &ParseUnsigned, 1);
+  cmdline->AddOptionValue('\0', "num_threads", "N",
+                          "number of worker threads (zero = none).",
+                          &num_threads, &ParseUnsigned, 1);
   cmdline->AddOptionValue('\0', "num_reps", "N", "how many times to compress.",
                           &num_reps, &ParseUnsigned, 1);
 
@@ -685,21 +690,6 @@ jxl::Status CompressArgs::ValidateArgs(const CommandLineParser& cmdline) {
     return false;
   }
 
-  // User didn't override num_threads, so we have to compute a default, which
-  // might fail, so only do so when necessary. Don't just check num_threads != 0
-  // because the user may have set it to that.
-  if (!cmdline.GetOption(opt_num_threads_id)->matched()) {
-    cpu::ProcessorTopology topology;
-    if (!cpu::DetectProcessorTopology(&topology)) {
-      // We have seen sporadic failures caused by setaffinity_np.
-      fprintf(stderr,
-              "Failed to choose default num_threads; you can avoid this "
-              "error by specifying a --num_threads N argument.\n");
-      return false;
-    }
-    num_threads = topology.packages * topology.cores_per_package;
-  }
-
   return true;
 }
 
@@ -835,7 +825,7 @@ jxl::Status CompressJxl(jxl::CodecInOut& io, double decode_mps,
   if (print_stats) {
     const double bpp =
         static_cast<double>(compressed->size() * jxl::kBitsPerByte) / pixels;
-    fprintf(stderr, "Compressed to %zu bytes (%.3f bpp%s).\n",
+    fprintf(stderr, "Compressed to %" PRIuS " bytes (%.3f bpp%s).\n",
             compressed->size(), bpp / io.frames.size(),
             io.frames.size() == 1 ? "" : "/frame");
     JXL_CHECK(stats.Print(args.num_threads));

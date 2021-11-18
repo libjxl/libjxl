@@ -7,7 +7,6 @@
 #include <stdio.h>
 
 #include <array>
-#include <random>
 #include <string>
 #include <utility>
 #include <vector>
@@ -76,6 +75,88 @@ TEST(ModularTest, JXL_TSAN_SLOW_TEST(RoundtripLosslessGroups1024)) {
   TestLosslessGroups(3);
 }
 
+TEST(ModularTest, RoundtripLosslessCustomWP_PermuteRCT) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  // 9 = permute to GBR, to test the special case of permutation-only
+  cparams.colorspace = 9;
+  // slowest speed so different WP modes are tried
+  cparams.speed_tier = SpeedTier::kTortoise;
+  cparams.options.predictor = {Predictor::Weighted};
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(100, 100);
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 10150u);
+  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            0.0);
+}
+
+TEST(ModularTest, RoundtripLossyDeltaPalette) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.lossy_palette = true;
+  cparams.palette_colors = 0;
+
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(300, 100);
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 6800u);
+  cparams.ba_params.intensity_target = 80.0f;
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(1.5));
+}
+TEST(ModularTest, RoundtripLossyDeltaPaletteWP) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/u76c0g_bliznaca_srgb8.png");
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.lossy_palette = true;
+  cparams.palette_colors = 0;
+  cparams.options.predictor = jxl::Predictor::Weighted;
+
+  DecompressParams dparams;
+
+  CodecInOut io_out;
+  size_t compressed_size;
+
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  io.ShrinkTo(300, 100);
+
+  compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
+  EXPECT_LE(compressed_size, 7000u);
+  cparams.ba_params.intensity_target = 80.0f;
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(10.0));
+}
+
 TEST(ModularTest, RoundtripLossy) {
   ThreadPool* pool = nullptr;
   const PaddedBytes orig =
@@ -94,9 +175,9 @@ TEST(ModularTest, RoundtripLossy) {
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 40000u);
   cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            3.0);
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(2.0));
 }
 
 TEST(ModularTest, RoundtripLossy16) {
@@ -119,9 +200,9 @@ TEST(ModularTest, RoundtripLossy16) {
   compressed_size = Roundtrip(&io, cparams, dparams, pool, &io_out);
   EXPECT_LE(compressed_size, 400u);
   cparams.ba_params.intensity_target = 80.0f;
-  EXPECT_LE(ButteraugliDistance(io, io_out, cparams.ba_params,
-                                /*distmap=*/nullptr, pool),
-            1.5);
+  EXPECT_THAT(ButteraugliDistance(io, io_out, cparams.ba_params,
+                                  /*distmap=*/nullptr, pool),
+              IsSlightlyBelow(1.5));
 }
 
 TEST(ModularTest, RoundtripExtraProperties) {
@@ -130,12 +211,11 @@ TEST(ModularTest, RoundtripExtraProperties) {
   ModularOptions options;
   options.max_properties = 4;
   options.predictor = Predictor::Zero;
-  std::mt19937 rng(0);
-  std::uniform_int_distribution<> dist(0, 8);
+  Rng rng(0);
   for (size_t y = 0; y < kSize; y++) {
     for (size_t x = 0; x < kSize; x++) {
       image.channel[0].plane.Row(y)[x] = image.channel[2].plane.Row(y)[x] =
-          dist(rng);
+          rng.UniformU(0, 9);
     }
   }
   ZeroFillImage(&image.channel[1].plane);
@@ -165,6 +245,80 @@ TEST(ModularTest, RoundtripExtraProperties) {
       }
     }
   }
+}
+
+TEST(ModularTest, RoundtripLosslessCustomSqueeze) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.quality_pair = {100, 100};
+  cparams.options.predictor = {Predictor::Zero};
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.responsive = 1;
+  // Custom squeeze params, atm just for testing
+  SqueezeParams p;
+  p.horizontal = true;
+  p.in_place = false;
+  p.begin_c = 0;
+  p.num_c = 3;
+  cparams.squeezes.push_back(p);
+  p.begin_c = 1;
+  p.in_place = true;
+  p.horizontal = false;
+  cparams.squeezes.push_back(p);
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 265000u);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
+}
+
+TEST(ModularTest, RoundtripLosslessCustomFloat) {
+  ThreadPool* pool = nullptr;
+  CodecInOut io;
+  size_t xsize = 100, ysize = 300;
+  io.SetSize(xsize, ysize);
+  io.metadata.m.bit_depth.bits_per_sample = 18;
+  io.metadata.m.bit_depth.exponent_bits_per_sample = 6;
+  io.metadata.m.bit_depth.floating_point_sample = true;
+  io.metadata.m.modular_16_bit_buffer_sufficient = false;
+  ColorEncoding color_encoding;
+  color_encoding.tf.SetTransferFunction(TransferFunction::kLinear);
+  color_encoding.SetColorSpace(ColorSpace::kRGB);
+  Image3F testimage(xsize, ysize);
+  float factor = 1.f / (1 << 14);
+  for (size_t c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ysize; y++) {
+      float* const JXL_RESTRICT row = testimage.PlaneRow(c, y);
+      for (size_t x = 0; x < xsize; x++) {
+        row[x] = factor * (x ^ y);
+      }
+    }
+  }
+  io.SetFromImage(std::move(testimage), color_encoding);
+  io.metadata.m.color_encoding = color_encoding;
+  io.metadata.m.SetIntensityTarget(255);
+
+  CompressParams cparams;
+  cparams.modular_mode = true;
+  cparams.color_transform = jxl::ColorTransform::kNone;
+  cparams.quality_pair = {100, 100};
+  cparams.options.predictor = {Predictor::Zero};
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.decoding_speed_tier = 2;
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 23000u);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, pool));
 }
 
 }  // namespace
