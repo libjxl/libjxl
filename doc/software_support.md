@@ -17,6 +17,7 @@ Please add missing software to this list.
 - Safari: not supported, [tracking bug](https://bugs.webkit.org/show_bug.cgi?id=208235)
 - Edge: behind a flag since version 91, start with `.\msedge.exe --enable-features=JXL`
 - Opera: behind a flag since version 77.
+- For all browsers and to track browsers progress see [Can I Use](https://caniuse.com/jpegxl).
 
 ## Image libraries
 
@@ -37,7 +38,7 @@ Please add missing software to this list.
 
 ## Image editors
 
-- GIMP: plugin available in libjxl repo, no official support, [tracking bug](https://gitlab.gnome.org/GNOME/gimp/-/issues/4681)
+- [GIMP (since 2.99.8)](https://www.gimp.org/news/2021/10/20/gimp-2-99-8-released/); plugin for older versions available in libjxl repo
 - Photoshop: no plugin available yet, no official support yet
 
 ## Image viewers
@@ -53,3 +54,4 @@ Please add missing software to this list.
 - [Squoosh](https://squoosh.app/)
 - [Cloudinary](https://cloudinary.com/blog/cloudinary_supports_jpeg_xl)
 - [MConverter](https://mconverter.eu/)
+- [jpegxl.io](https://jpegxl.io/)
