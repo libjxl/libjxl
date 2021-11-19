@@ -7,6 +7,7 @@
 
 #include "gtest/gtest.h"
 #include "jxl/decode.h"
+#include "jxl/decode_cxx.h"
 #include "jxl/encode_cxx.h"
 #include "lib/extras/codec.h"
 #include "lib/jxl/dec_file.h"
@@ -798,41 +799,43 @@ TEST(EncodeTest, BoxTest) {
   ProcessEncoder(enc.get(), compressed, next_out, avail_out);
 
   // Decode to verify the boxes, we don't decode to pixels, only the boxes.
-  JxlDecoder* dec = JxlDecoderCreate(nullptr);
-  EXPECT_NE(nullptr, dec);
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_NE(nullptr, dec.get());
 
   EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderSubscribeEvents(dec, JXL_DEC_FRAME | JXL_DEC_BOX));
+            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FRAME | JXL_DEC_BOX));
 
-  JxlDecoderSetInput(dec, compressed.data(), compressed.size());
-  JxlDecoderCloseInput(dec);
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  JxlDecoderCloseInput(dec.get());
 
   std::vector<uint8_t> dec_exif_box(exif_size);
   std::vector<uint8_t> dec_xml_box(xml_size);
 
   for (bool post_frame = false;;) {
-    JxlDecoderStatus status = JxlDecoderProcessInput(dec);
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
     if (status == JXL_DEC_ERROR) {
       FAIL();
     } else if (status == JXL_DEC_SUCCESS) {
-      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec));
+      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
       break;
     } else if (status == JXL_DEC_FRAME) {
       post_frame = true;
     } else if (status == JXL_DEC_BOX) {
       // Since we gave the exif/xml box output buffer of the exact known correct
       // size, 0 bytes should be released. Same when no buffer was set.
-      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec));
+      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
       JxlBoxType type;
-      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec, type, true));
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
       if (!memcmp(type, "Exif", 4)) {
         // This box should have been encoded before the image frame
         EXPECT_EQ(false, post_frame);
-        JxlDecoderSetBoxBuffer(dec, dec_exif_box.data(), dec_exif_box.size());
+        JxlDecoderSetBoxBuffer(dec.get(), dec_exif_box.data(),
+                               dec_exif_box.size());
       } else if (!memcmp(type, "XML ", 4)) {
         // This box should have been encoded after the image frame
         EXPECT_EQ(true, post_frame);
-        JxlDecoderSetBoxBuffer(dec, dec_xml_box.data(), dec_xml_box.size());
+        JxlDecoderSetBoxBuffer(dec.get(), dec_xml_box.data(),
+                               dec_xml_box.size());
       }
     } else {
       FAIL();  // unexpected status
