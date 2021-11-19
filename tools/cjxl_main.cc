@@ -25,6 +25,7 @@ enum CjxlRetCode : int {
   ERR_ENCODING,
   ERR_CONTAINER,
   ERR_WRITE,
+  DROPPED_JBRD,
 };
 
 int CompressJpegXlMain(int argc, const char* argv[]) {
@@ -84,6 +85,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
     return CjxlRetCode::ERR_ENCODING;
   }
 
+  int ret = CjxlRetCode::OK;
   if (args.use_container) {
     JpegXlContainer container;
     container.codestream = compressed.data();
@@ -104,9 +106,13 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
     jxl::PaddedBytes jpeg_data;
     if (io.Main().IsJPEG()) {
       jxl::jpeg::JPEGData data_in = *io.Main().jpeg_data;
-      JXL_RETURN_IF_ERROR(EncodeJPEGData(data_in, &jpeg_data));
-      container.jpeg_reconstruction = jpeg_data.data();
-      container.jpeg_reconstruction_size = jpeg_data.size();
+      if (EncodeJPEGData(data_in, &jpeg_data)) {
+        container.jpeg_reconstruction = jpeg_data.data();
+        container.jpeg_reconstruction_size = jpeg_data.size();
+      } else {
+        fprintf(stderr, "Warning: failed to create JPEG reconstruction data\n");
+        ret = CjxlRetCode::DROPPED_JBRD;
+      }
     }
     jxl::PaddedBytes container_file;
     if (!EncodeJpegXlContainerOneShot(container, &container_file)) {
@@ -136,7 +142,7 @@ int CompressJpegXlMain(int argc, const char* argv[]) {
   if (!args.quiet && cmdline.verbosity > 0) {
     jxl::CacheAligned::PrintStats();
   }
-  return 0;
+  return ret;
 }
 
 }  // namespace tools
