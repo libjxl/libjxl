@@ -37,7 +37,6 @@ uint8_t* jxlCompress(const uint8_t* data, size_t size) {
   meta[0] = compressed_size;
   memcpy(result + 4, compressed.data(), compressed_size);
   return result;
-  return nullptr;
 }
 
 /** Result: uint32_t 'size' followed by decompressed image (JPG). */
