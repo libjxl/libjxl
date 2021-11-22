@@ -402,9 +402,13 @@ endif()
 
 #TODO(lode): don't depend on CMS for the core library
 if (JPEGXL_ENABLE_SKCMS)
-  target_link_libraries(jxl_enc-obj PRIVATE skcms)
+  target_include_directories(jxl_enc-obj PRIVATE
+    $<TARGET_PROPERTY:skcms,INCLUDE_DIRECTORIES>
+  )
 else ()
-  target_link_libraries(jxl_enc-obj PRIVATE lcms2)
+  target_include_directories(jxl_enc-obj PRIVATE
+    $<TARGET_PROPERTY:lcms2,INCLUDE_DIRECTORIES>
+  )
 endif ()
 
 # Headers for exporting/importing public headers
