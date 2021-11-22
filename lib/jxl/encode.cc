@@ -542,7 +542,7 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1 || value > 2) return JXL_ENC_ERROR;
       options->values.cparams.progressive_dc = value;
       return JXL_ENC_SUCCESS;
-    case JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT:
+    case JXL_ENC_OPTION_CHANNEL_COLORS_GLOBAL_PERCENT:
       if (value < -1 || value > 100) return JXL_ENC_ERROR;
       if (value == -1) {
         options->values.cparams.channel_colors_pre_transform_percent = 95.0f;
@@ -551,7 +551,7 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
             static_cast<float>(value);
       }
       return JXL_ENC_SUCCESS;
-    case JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT:
+    case JXL_ENC_OPTION_CHANNEL_COLORS_GROUP_PERCENT:
       if (value < -1 || value > 100) return JXL_ENC_ERROR;
       if (value == -1) {
         options->values.cparams.channel_colors_percent = 80.0f;
@@ -605,6 +605,40 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1 || value > 15) return JXL_ENC_ERROR;
       options->values.cparams.options.predictor =
           static_cast<jxl::Predictor>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_MA_TREE_LEARNING_PERCENT:
+      if (value < -1) return JXL_ENC_ERROR;
+      // This value is called "iterations" or "nb_repeats" in cjxl, but is in
+      // fact a fraction in range 0.0-1.0, with the defautl value 0.5.
+      // Convert from integer percentage to floating point fraction here.
+      if (value == -1) {
+        // TODO(lode): for this and many other settings, avoid duplicating the
+        // default values here and in enc_params.h and options.h, have one
+        // location where the defaults are specified.
+        options->values.cparams.options.nb_repeats = 0.5f;
+      } else {
+        options->values.cparams.options.nb_repeats = value * 0.01f;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_NB_PREV_CHANNELS:
+      // The max allowed value can in theory be higher. However, it depends on
+      // the effort setting. 11 is the highest safe value that doesn't cause
+      // tree_samples to be >= 64 in the encoder. The specification may allow
+      // more than this. With more fine tuning higher values could be allowed.
+      if (value < -1 || value > 11) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.options.max_properties = 0;
+      } else {
+        options->values.cparams.options.max_properties = value;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_JPEG_RECON_CFL:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.force_cfl_jpeg_recompression = true;
+      } else {
+        options->values.cparams.force_cfl_jpeg_recompression = value;
+      }
       return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;

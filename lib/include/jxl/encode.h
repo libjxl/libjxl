@@ -209,13 +209,13 @@ typedef enum {
    * percentage of range. Use 0-100 to set an explicit percentage, -1 to use the
    * encoder default. Used for modular encoding.
    */
-  JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT = 20,
+  JXL_ENC_OPTION_CHANNEL_COLORS_GLOBAL_PERCENT = 20,
 
-  /** Use Local channel palette if the amount of colors is smaller than this
-   * percentage of range. Use 0-100 to set an explicit percentage, -1 to use the
-   * encoder default. Used for modular encoding.
+  /** Use Local (per-group) channel palette if the amount of colors is smaller
+   * than this percentage of range. Use 0-100 to set an explicit percentage, -1
+   * to use the encoder default. Used for modular encoding.
    */
-  JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT = 21,
+  JXL_ENC_OPTION_CHANNEL_COLORS_GROUP_PERCENT = 21,
 
   /** Use color palette if amount of colors is smaller than or equal to this
    * amount, or -1 to use the encoder default. Used for modular encoding.
@@ -250,6 +250,25 @@ typedef enum {
    * 5 and 6, 15=mix everything.
    */
   JXL_ENC_OPTION_MODULAR_PREDICTOR = 27,
+
+  /** Fraction of pixels used to learn MA trees as a percentage. -1 = default,
+   * 0 = no MA and fast decode, 50 = default value, 100 = all, values above
+   * 100 are also permitted. Higher values use more encoder memory.
+   */
+  JXL_ENC_OPTION_MODULAR_MA_TREE_LEARNING_PERCENT = 28,
+
+  /** Number of extra (previous-channel) MA tree properties to use. -1 =
+   * default, 0-11 = valid values. Recommended values are in the range 0 to 3,
+   * or 0 to amount of channels minus 1 (including all extra channels, and
+   * excluding color channels when using VarDCT mode). Higher value gives slower
+   * encoding and slower decoding.
+   */
+  JXL_ENC_OPTION_MODULAR_NB_PREV_CHANNELS = 29,
+
+  /** Enable or disable CFL (chroma-from-luma) for lossless JPEG recompression.
+   * -1 = default, 0 = disable CFL, 1 = enable CFL.
+   */
+  JXL_ENC_OPTION_JPEG_RECON_CFL = 30,
 
   /** Enum value not to be used as an option. This value is added to force the
    * C compiler to have the enum to take a known size.
