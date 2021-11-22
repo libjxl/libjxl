@@ -122,10 +122,12 @@ set(JPEGXL_FORCE_NEON false CACHE BOOL
 
 
 # Force system dependencies.
-set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL
-    "Force using system installed googletest (gtest/gmock) instead of third_party/googletest source.")
 set(JPEGXL_FORCE_SYSTEM_BROTLI false CACHE BOOL
     "Force using system installed brotli instead of third_party/brotli source.")
+set(JPEGXL_FORCE_SYSTEM_GTEST false CACHE BOOL
+    "Force using system installed googletest (gtest/gmock) instead of third_party/googletest source.")
+set(JPEGXL_FORCE_SYSTEM_LCMS2 false CACHE BOOL
+    "Force using system installed lcms2 instead of third_party/lcms source.")
 set(JPEGXL_FORCE_SYSTEM_HWY false CACHE BOOL
     "Force using system installed highway (libhwy-dev) instead of third_party/highway source.")
 
