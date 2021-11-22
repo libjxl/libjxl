@@ -5,6 +5,8 @@
 
 #include "jxl/encode.h"
 
+#include <brotli/encode.h>
+
 #include <algorithm>
 #include <cstring>
 
@@ -16,6 +18,7 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/sanitizers.h"
 
 // Debug-printing failure macro similar to JXL_FAILURE, but for the status code
 // JXL_ENC_ERROR
@@ -63,6 +66,44 @@ void QueueBox(JxlEncoder* enc,
   queued_input.box = std::move(box);
   enc->input_queue.emplace_back(std::move(queued_input));
   enc->num_queued_boxes++;
+}
+
+// TODO(lode): share this code and the Brotli compression code in enc_jpeg_data
+JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
+                                jxl::PaddedBytes* out) {
+  std::unique_ptr<BrotliEncoderState, decltype(BrotliEncoderDestroyInstance)*>
+      enc(BrotliEncoderCreateInstance(nullptr, nullptr, nullptr),
+          BrotliEncoderDestroyInstance);
+  if (!enc) return JXL_API_ERROR("BrotliEncoderCreateInstance failed");
+
+  BrotliEncoderSetParameter(enc.get(), BROTLI_PARAM_QUALITY, quality);
+  BrotliEncoderSetParameter(enc.get(), BROTLI_PARAM_SIZE_HINT, in_size);
+
+  constexpr size_t kBufferSize = 128 * 1024;
+  jxl::PaddedBytes temp_buffer(kBufferSize);
+
+  size_t avail_in = in_size;
+  const uint8_t* next_in = in;
+
+  size_t total_out = 0;
+
+  for (;;) {
+    size_t avail_out = kBufferSize;
+    uint8_t* next_out = temp_buffer.data();
+    jxl::msan::MemoryIsInitialized(next_in, avail_in);
+    if (!BrotliEncoderCompressStream(enc.get(), BROTLI_OPERATION_FINISH,
+                                     &avail_in, &next_in, &avail_out, &next_out,
+                                     &total_out)) {
+      return JXL_API_ERROR("Brotli compression failed");
+    }
+    size_t out_size = next_out - temp_buffer.data();
+    jxl::msan::UnpoisonMemory(next_out - out_size, out_size);
+    out->resize(out->size() + out_size);
+    memcpy(out->data() + out->size() - out_size, temp_buffer.data(), out_size);
+    if (BrotliEncoderIsFinished(enc.get())) break;
+  }
+
+  return JXL_ENC_SUCCESS;
 }
 }  // namespace
 
@@ -199,13 +240,26 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     num_queued_boxes--;
 
     if (box->compress_box) {
-      // TODO(lode): implement brotli compression for brob boxes
-      return JXL_ENC_ERROR;
+      jxl::PaddedBytes compressed(4);
+      // Prepend the original box type in the brob box contents
+      for (size_t i = 0; i < 4; i++) {
+        compressed[i] = static_cast<uint8_t>(box->type[i]);
+      }
+      if (JXL_ENC_SUCCESS != BrotliCompress(9, box->contents.data(),
+                                            box->contents.size(),
+                                            &compressed)) {
+        return JXL_ENC_ERROR;
+      }
+      jxl::AppendBoxHeader(jxl::MakeBoxType("brob"), compressed.size(), false,
+                           &output_byte_queue);
+      output_byte_queue.insert(output_byte_queue.end(), compressed.data(),
+                               compressed.data() + compressed.size());
+    } else {
+      jxl::AppendBoxHeader(box->type, box->contents.size(), false,
+                           &output_byte_queue);
+      output_byte_queue.insert(output_byte_queue.end(), box->contents.data(),
+                               box->contents.data() + box->contents.size());
     }
-    jxl::AppendBoxHeader(box->type, box->contents.size(), false,
-                         &output_byte_queue);
-    output_byte_queue.insert(output_byte_queue.end(), box->contents.data(),
-                             box->contents.data() + box->contents.size());
   }
 
   return JXL_ENC_SUCCESS;
@@ -865,6 +919,21 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
   if (!enc->use_boxes) {
     return JXL_API_ERROR(
         "must set JxlEncoderUseBoxes at the beginning to add boxes");
+  }
+  if (compress_box) {
+    if (memcmp("jxl", type, 3) == 0) {
+      return JXL_API_ERROR(
+          "brob box may not contain a type starting with \"jxl\"");
+    }
+    if (memcmp("jbrd", type, 4) == 0) {
+      return JXL_API_ERROR("jbrd box may not be brob compressed");
+    }
+    if (memcmp("brob", type, 4) == 0) {
+      // The compress_box will compress an existing non-brob box into a brob
+      // box. If already giving a valid brotli-compressed brob box, set
+      // compress_box to false since it is already compressed.
+      return JXL_API_ERROR("a brob box cannot contain another brob box");
+    }
   }
 
   auto box = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedBox>(
