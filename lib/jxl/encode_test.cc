@@ -765,116 +765,126 @@ static void ProcessEncoder(JxlEncoder* enc, std::vector<uint8_t>& compressed,
 }
 
 TEST(EncodeTest, BoxTest) {
-  // Tests adding two metadata boxes with the encoder: an exif box before the
-  // image frame, and an xml box after the image frame. Then verifies the
-  // decoder can decode them, they are in the expected place, and have the
-  // correct content after decoding.
-  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
-  EXPECT_NE(nullptr, enc.get());
+  // Test with uncompressed boxes and with brob boxes
+  for (int compress_box = 0; compress_box <= 1; ++compress_box) {
+    // Tests adding two metadata boxes with the encoder: an exif box before the
+    // image frame, and an xml box after the image frame. Then verifies the
+    // decoder can decode them, they are in the expected place, and have the
+    // correct content after decoding.
+    JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+    EXPECT_NE(nullptr, enc.get());
 
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseBoxes(enc.get()));
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseBoxes(enc.get()));
 
-  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
-  size_t xsize = 50;
-  size_t ysize = 17;
-  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
-  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
-  JxlBasicInfo basic_info;
-  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
-  basic_info.xsize = xsize;
-  basic_info.ysize = ysize;
-  basic_info.uses_original_profile = false;
-  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
-  JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/false);
-  EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+    JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+    size_t xsize = 50;
+    size_t ysize = 17;
+    JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+    std::vector<uint8_t> pixels =
+        jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+    JxlBasicInfo basic_info;
+    jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+    basic_info.xsize = xsize;
+    basic_info.ysize = ysize;
+    basic_info.uses_original_profile = false;
+    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+    JxlColorEncoding color_encoding;
+    JxlColorEncodingSetToSRGB(&color_encoding,
+                              /*is_gray=*/false);
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
 
-  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
-  uint8_t* next_out = compressed.data();
-  size_t avail_out = compressed.size() - (next_out - compressed.data());
+    std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+    uint8_t* next_out = compressed.data();
+    size_t avail_out = compressed.size() - (next_out - compressed.data());
 
-  // Add an early metadata box. Also add a valid 4-byte TIFF offset header
-  // before the fake exif data of these box contents.
-  constexpr const char* exif_test_string = "\0\0\0\0exif test data";
-  const uint8_t* exif_data = reinterpret_cast<const uint8_t*>(exif_test_string);
-  // Skip the 4 zeroes for strlen
-  const size_t exif_size = 4 + strlen(exif_test_string + 4);
-  JxlEncoderAddBox(enc.get(), "Exif", exif_data, exif_size, JXL_FALSE);
+    // Add an early metadata box. Also add a valid 4-byte TIFF offset header
+    // before the fake exif data of these box contents.
+    constexpr const char* exif_test_string = "\0\0\0\0exif test data";
+    const uint8_t* exif_data =
+        reinterpret_cast<const uint8_t*>(exif_test_string);
+    // Skip the 4 zeroes for strlen
+    const size_t exif_size = 4 + strlen(exif_test_string + 4);
+    JxlEncoderAddBox(enc.get(), "Exif", exif_data, exif_size, compress_box);
 
-  // Write to output
-  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+    // Write to output
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
 
-  // Add image frame
-  EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
-                                    pixels.size()));
-  // Indicate this is the last frame
-  JxlEncoderCloseFrames(enc.get());
+    // Add image frame
+    EXPECT_EQ(JXL_ENC_SUCCESS,
+              JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                      pixels.size()));
+    // Indicate this is the last frame
+    JxlEncoderCloseFrames(enc.get());
 
-  // Write to output
-  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+    // Write to output
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
 
-  // Add a late metadata box
-  constexpr const char* xml_test_string = "<some random xml data>";
-  const uint8_t* xml_data = reinterpret_cast<const uint8_t*>(xml_test_string);
-  size_t xml_size = strlen(xml_test_string);
-  JxlEncoderAddBox(enc.get(), "XML ", xml_data, xml_size,
-                   /*compress_box=*/false);
+    // Add a late metadata box
+    constexpr const char* xml_test_string = "<some random xml data>";
+    const uint8_t* xml_data = reinterpret_cast<const uint8_t*>(xml_test_string);
+    size_t xml_size = strlen(xml_test_string);
+    JxlEncoderAddBox(enc.get(), "XML ", xml_data, xml_size, compress_box);
 
-  // Indicate this is the last box
-  JxlEncoderCloseBoxes(enc.get());
+    // Indicate this is the last box
+    JxlEncoderCloseBoxes(enc.get());
 
-  // Write to output
-  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+    // Write to output
+    ProcessEncoder(enc.get(), compressed, next_out, avail_out);
 
-  // Decode to verify the boxes, we don't decode to pixels, only the boxes.
-  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
-  EXPECT_NE(nullptr, dec.get());
+    // Decode to verify the boxes, we don't decode to pixels, only the boxes.
+    JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+    EXPECT_NE(nullptr, dec.get());
 
-  EXPECT_EQ(JXL_DEC_SUCCESS,
-            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FRAME | JXL_DEC_BOX));
-
-  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
-  JxlDecoderCloseInput(dec.get());
-
-  std::vector<uint8_t> dec_exif_box(exif_size);
-  std::vector<uint8_t> dec_xml_box(xml_size);
-
-  for (bool post_frame = false;;) {
-    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
-    if (status == JXL_DEC_ERROR) {
-      FAIL();
-    } else if (status == JXL_DEC_SUCCESS) {
-      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
-      break;
-    } else if (status == JXL_DEC_FRAME) {
-      post_frame = true;
-    } else if (status == JXL_DEC_BOX) {
-      // Since we gave the exif/xml box output buffer of the exact known correct
-      // size, 0 bytes should be released. Same when no buffer was set.
-      EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
-      JxlBoxType type;
-      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
-      if (!memcmp(type, "Exif", 4)) {
-        // This box should have been encoded before the image frame
-        EXPECT_EQ(false, post_frame);
-        JxlDecoderSetBoxBuffer(dec.get(), dec_exif_box.data(),
-                               dec_exif_box.size());
-      } else if (!memcmp(type, "XML ", 4)) {
-        // This box should have been encoded after the image frame
-        EXPECT_EQ(true, post_frame);
-        JxlDecoderSetBoxBuffer(dec.get(), dec_xml_box.data(),
-                               dec_xml_box.size());
-      }
-    } else {
-      FAIL();  // unexpected status
+    if (compress_box) {
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderSetDecompressBoxes(dec.get(), JXL_TRUE));
     }
-  }
 
-  EXPECT_EQ(0, memcmp(exif_data, dec_exif_box.data(), exif_size));
-  EXPECT_EQ(0, memcmp(xml_data, dec_xml_box.data(), xml_size));
+    EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderSubscribeEvents(
+                                   dec.get(), JXL_DEC_FRAME | JXL_DEC_BOX));
+
+    JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+    JxlDecoderCloseInput(dec.get());
+
+    std::vector<uint8_t> dec_exif_box(exif_size);
+    std::vector<uint8_t> dec_xml_box(xml_size);
+
+    for (bool post_frame = false;;) {
+      JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+      if (status == JXL_DEC_ERROR) {
+        FAIL();
+      } else if (status == JXL_DEC_SUCCESS) {
+        EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
+        break;
+      } else if (status == JXL_DEC_FRAME) {
+        post_frame = true;
+      } else if (status == JXL_DEC_BOX) {
+        // Since we gave the exif/xml box output buffer of the exact known
+        // correct size, 0 bytes should be released. Same when no buffer was
+        // set.
+        EXPECT_EQ(0, JxlDecoderReleaseBoxBuffer(dec.get()));
+        JxlBoxType type;
+        EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetBoxType(dec.get(), type, true));
+        if (!memcmp(type, "Exif", 4)) {
+          // This box should have been encoded before the image frame
+          EXPECT_EQ(false, post_frame);
+          JxlDecoderSetBoxBuffer(dec.get(), dec_exif_box.data(),
+                                 dec_exif_box.size());
+        } else if (!memcmp(type, "XML ", 4)) {
+          // This box should have been encoded after the image frame
+          EXPECT_EQ(true, post_frame);
+          JxlDecoderSetBoxBuffer(dec.get(), dec_xml_box.data(),
+                                 dec_xml_box.size());
+        }
+      } else {
+        FAIL();  // unexpected status
+      }
+    }
+
+    EXPECT_EQ(0, memcmp(exif_data, dec_exif_box.data(), exif_size));
+    EXPECT_EQ(0, memcmp(xml_data, dec_xml_box.data(), xml_size));
+  }
 }
 
 #if JPEGXL_ENABLE_JPEG  // Loading .jpg files requires libjpeg support.
