@@ -21,9 +21,6 @@
 #include "jxl/thread_parallel_runner.h"
 #include "jxl/thread_parallel_runner_cxx.h"
 
-// Unpublised API.
-void SetDecoderMemoryLimitBase_(size_t memory_limit_base);
-
 namespace {
 
 // Externally visible value to ensure pixels are used in the fuzzer.
@@ -71,7 +68,6 @@ bool DecodeJpegXl(const uint8_t* jxl, size_t size, size_t max_pixels,
                   const FuzzSpec& spec, std::vector<uint8_t>* pixels,
                   std::vector<uint8_t>* jpeg, size_t* xsize, size_t* ysize,
                   std::vector<uint8_t>* icc_profile) {
-  SetDecoderMemoryLimitBase_(max_pixels);
   // Multi-threaded parallel runner. Limit to max 2 threads since the fuzzer
   // itself is already multithreaded.
   size_t num_threads =

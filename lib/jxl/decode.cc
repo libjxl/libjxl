@@ -20,27 +20,11 @@
 #include "lib/jxl/image_bundle.h"
 #include "lib/jxl/loop_filter.h"
 #include "lib/jxl/memory_manager_internal.h"
+#include "lib/jxl/sanitizers.h"
 #include "lib/jxl/toc.h"
 
 namespace {
 
-// If set (by fuzzer) then some operations will fail, if those would require
-// allocating large objects. Actual memory usage might be two orders of
-// magnitude bigger.
-// TODO(eustas): this is a poor-mans replacement for memory-manager approach;
-//               remove, once memory-manager actually works.
-size_t memory_limit_base_ = 0;
-size_t cpu_limit_base_ = 0;
-size_t used_cpu_base_ = 0;
-
-bool CheckSizeLimit(size_t xsize, size_t ysize) {
-  if (!memory_limit_base_) return true;
-  if (xsize == 0 || ysize == 0) return true;
-  size_t num_pixels = xsize * ysize;
-  if (num_pixels / xsize != ysize) return false;  // overflow
-  if (num_pixels > memory_limit_base_) return false;
-  return true;
-}
 
 // Checks if a + b > size, taking possible integer overflow into account.
 bool OutOfBounds(size_t a, size_t b, size_t size) {
@@ -612,7 +596,28 @@ struct JxlDecoderStruct {
     // processed, so this check works.
     return stage != DecoderStage::kCodestreamFinished;
   }
+
+  // If set then some operations will fail, if those would require
+  // allocating large objects. Actual memory usage might be two orders of
+  // magnitude bigger.
+  // TODO(eustas): remove once there is working API for memory / CPU limit.
+  size_t memory_limit_base = 0;
+  size_t cpu_limit_base = 0;
+  size_t used_cpu_base = 0;
 };
+
+namespace {
+
+bool CheckSizeLimit(JxlDecoder* dec, size_t xsize, size_t ysize) {
+  if (!dec->memory_limit_base) return true;
+  if (xsize == 0 || ysize == 0) return true;
+  size_t num_pixels = xsize * ysize;
+  if (num_pixels / xsize != ysize) return false;  // overflow
+  if (num_pixels > dec->memory_limit_base) return false;
+  return true;
+}
+
+}  // namespace
 
 // TODO(zond): Make this depend on the data loaded into the decoder.
 JxlDecoderStatus JxlDecoderDefaultPixelFormat(const JxlDecoder* dec,
@@ -725,6 +730,16 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
   // Placement new constructor on allocated memory
   JxlDecoder* dec = new (alloc) JxlDecoder();
   dec->memory_manager = local_memory_manager;
+
+#if (JXL_MEMORY_SANITIZER || JXL_ADDRESS_SANITIZER || JXL_THREAD_SANITIZER)
+  if (!memory_manager) {
+    dec->memory_limit_base = 1 << 21;
+    // Allow 5 x max_image_size processing units; every frame is accounted
+    // as W x H CPU processing units, so there could be numerous small frames
+    // or few larger ones.
+    dec->cpu_limit_base = 5 * dec->memory_limit_base;
+  }
+#endif
 
   JxlDecoderReset(dec);
 
@@ -900,7 +915,8 @@ JxlDecoderStatus JxlDecoderReadBasicInfo(JxlDecoder* dec, const uint8_t* in,
   dec->got_basic_info = true;
   dec->basic_info_size_hint = 0;
 
-  if (!CheckSizeLimit(dec->metadata.size.xsize(), dec->metadata.size.ysize())) {
+  if (!CheckSizeLimit(dec, dec->metadata.size.xsize(),
+                      dec->metadata.size.ysize())) {
     return JXL_API_ERROR("image is too large");
   }
 
@@ -945,7 +961,8 @@ JxlDecoderStatus JxlDecoderReadAllHeaders(JxlDecoder* dec, const uint8_t* in,
   dec->header_except_icc_bits = reader->TotalBitsConsumed();
 
   if (dec->metadata.m.color_encoding.WantICC()) {
-    jxl::Status status = dec->icc_reader.Init(reader.get(), memory_limit_base_);
+    jxl::Status status =
+        dec->icc_reader.Init(reader.get(), dec->memory_limit_base);
     // Always check AllReadsWithinBounds, not all the C++ decoder implementation
     // handles reader out of bounds correctly  yet (e.g. context map). Not
     // checking AllReadsWithinBounds can cause reader->Close() to trigger an
@@ -1054,7 +1071,8 @@ static JxlDecoderStatus ConvertImageInternal(
 // Parses the FrameHeader and the total frame_size, given the initial bytes
 // of the frame up to and including the TOC.
 // TODO(lode): merge this with FrameDecoder
-JxlDecoderStatus ParseFrameHeader(jxl::FrameHeader* frame_header,
+JxlDecoderStatus ParseFrameHeader(JxlDecoder* dec,
+                                  jxl::FrameHeader* frame_header,
                                   const uint8_t* in, size_t size, size_t pos,
                                   bool is_preview, size_t* frame_size,
                                   int* saved_as) {
@@ -1067,7 +1085,7 @@ JxlDecoderStatus ParseFrameHeader(jxl::FrameHeader* frame_header,
   frame_header->nonserialized_is_preview = is_preview;
   jxl::Status status = DecodeFrameHeader(reader.get(), frame_header);
   jxl::FrameDimensions frame_dim = frame_header->ToFrameDimensions();
-  if (!CheckSizeLimit(frame_dim.xsize_upsampled_padded,
+  if (!CheckSizeLimit(dec, frame_dim.xsize_upsampled_padded,
                       frame_dim.ysize_upsampled_padded)) {
     return JXL_API_ERROR("frame is too large");
   }
@@ -1180,9 +1198,9 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       size_t frame_size;
       size_t pos = dec->frame_start;
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
-      JxlDecoderStatus status = ParseFrameHeader(dec->frame_header.get(), in,
-                                                 size, pos, true, &frame_size,
-                                                 /*saved_as=*/nullptr);
+      JxlDecoderStatus status = ParseFrameHeader(
+          dec, dec->frame_header.get(), in, size, pos, true, &frame_size,
+          /*saved_as=*/nullptr);
       if (status != JXL_DEC_SUCCESS) return status;
       if (OutOfBounds(pos, frame_size, size)) {
         return JXL_DEC_NEED_MORE_INPUT;
@@ -1255,7 +1273,7 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       dec->frame_header.reset(new FrameHeader(&dec->metadata));
       int saved_as = 0;
       JxlDecoderStatus status =
-          ParseFrameHeader(dec->frame_header.get(), in, size, pos,
+          ParseFrameHeader(dec, dec->frame_header.get(), in, size, pos,
                            /*is_preview=*/false, &dec->frame_size, &saved_as);
       if (status != JXL_DEC_SUCCESS) return status;
 
@@ -1436,15 +1454,15 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       }
       dec->sections->SetInput(in + pos, size - pos);
 
-      if (cpu_limit_base_ != 0) {
+      if (dec->cpu_limit_base != 0) {
         FrameDimensions frame_dim = dec->frame_header->ToFrameDimensions();
         // No overflow, checked in ParseHeader.
         size_t num_pixels = frame_dim.xsize * frame_dim.ysize;
-        if (used_cpu_base_ + num_pixels < used_cpu_base_) {
+        if (dec->used_cpu_base + num_pixels < dec->used_cpu_base) {
           return JXL_API_ERROR("used too much CPU");
         }
-        used_cpu_base_ += num_pixels;
-        if (used_cpu_base_ > cpu_limit_base_) {
+        dec->used_cpu_base += num_pixels;
+        if (dec->used_cpu_base > dec->cpu_limit_base) {
           return JXL_API_ERROR("used too much CPU");
         }
       }
@@ -2726,18 +2744,6 @@ JxlDecoderStatus JxlDecoderSetPreferredColorProfile(
   JXL_API_RETURN_IF_ERROR(dec->passes_state->output_encoding_info.Set(
       dec->metadata, dec->default_enc));
   return JXL_DEC_SUCCESS;
-}
-
-// This function is "package-private". It is only used by fuzzer to avoid
-// running cases that are too memory / CPU hungry. Limitations are applied
-// at mid-level API. In the future high-level API would also include the
-// means of limiting / throttling memory / CPU usage.
-void SetDecoderMemoryLimitBase_(size_t memory_limit_base) {
-  memory_limit_base_ = memory_limit_base;
-  // Allow 5 x max_image_size processing units; every frame is accounted
-  // as W x H CPU processing units, so there could be numerous small frames
-  // or few larger ones.
-  cpu_limit_base_ = 5 * memory_limit_base;
 }
 
 JxlDecoderStatus JxlDecoderSetBoxBuffer(JxlDecoder* dec, uint8_t* data,
