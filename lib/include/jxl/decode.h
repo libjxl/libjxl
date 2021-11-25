@@ -625,7 +625,7 @@ typedef enum {
  *
  * When rendering an image on a system that supports ICC profiles,
  * JxlDecoderGetColorAsICCProfile should be used first. When rendering
- * for a specicif color space, possibly indicated in the JPEG XL
+ * for a specific color space, possibly indicated in the JPEG XL
  * image, JxlDecoderGetColorAsEncodedProfile should be used first.
  *
  * @param dec decoder object
