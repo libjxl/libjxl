@@ -398,8 +398,8 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * transformation, but can cause wrong display of the image if the orientation
  * tag is not correctly taken into account by the user.
  *
- * By default, this option is disabled, and the decoder respects the
- * orientation setting provided by the image.
+ * By default, this option is disabled, and the returned pixel data is
+ * re-oriented according to the image's Orientation setting.
  *
  * This function must be called at the beginning, before decoding is performed.
  *
