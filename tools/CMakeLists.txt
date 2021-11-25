@@ -349,6 +349,26 @@ endif()  # NOT WIN32
 endif()  # NOT MSVC
 
 add_test(NAME LibraryCLinkageTest COMMAND libjxl_test)
+
+add_executable(jxl_encode jxl_encode.c)
+set_property(TARGET jxl_encode PROPERTY C_STANDARD 99)
+if(NOT ${SANITIZER} STREQUAL "none")
+  # Linking a C test binary with the C++ JPEG XL implementation when using
+  # address sanitizer is not well supported by clang 9, so force using clang++
+  # for linking this test if a sanitizer is used.
+  set_target_properties(jxl_encode PROPERTIES LINKER_LANGUAGE CXX)
+endif()  # SANITIZER != "none"
+set_target_properties(jxl_encode PROPERTIES PREFIX "tests/")
+target_link_libraries(jxl_encode jxl)
+if (NOT MSVC)
+target_compile_options(jxl_encode PRIVATE -Wall -Wextra -Werror)
+if(NOT WIN32)
+  target_compile_options(jxl_encode PRIVATE -pedantic)
+endif()  # NOT WIN32
+endif()  # NOT MSVC
+
+add_test(NAME CLinkageEncoderTest COMMAND jxl_encode)
+
 endif()  # BUILD_TESTING AND TARGET jxl AND NOT JPEGXL_EMSCRIPTEN
 
 # Tools defined in subdirectories.
