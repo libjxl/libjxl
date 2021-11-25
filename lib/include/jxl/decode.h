@@ -283,6 +283,16 @@ typedef enum {
    * "jumb" respectively.
    */
   JXL_DEC_BOX = 0x4000,
+
+  /** Informative event by JxlDecoderProcessInput: a progressive step in
+   * decoding the frame is reached. When calling @ref JxlDecoderFlushImage at
+   * this point, the flushed image will correspond exactly to this point in
+   * decoding, and not yet contain partial results (such as partially more fine
+   * detail) of a next step. By default, this event will trigger maximum once
+   * per frame, when a 8x8th resolution (DC) image is ready. Use @ref
+   * JxlDecoderSetProgressiveDetail to configure more fine-grainedness.
+   */
+  JXL_DEC_FRAME_PROGRESSION = 0x8000,
 } JxlDecoderStatus;
 
 /** Rewinds decoder to the beginning. The same input must be given again from
@@ -1137,6 +1147,20 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxType(JxlDecoder* dec,
  */
 JXL_EXPORT JxlDecoderStatus JxlDecoderGetBoxSizeRaw(const JxlDecoder* dec,
                                                     uint64_t* size);
+
+/**
+ * Configures at which progressive steps in frame decoding the @ref
+ * JXL_DEC_FRAME_PROGRESSION event occurs. By default, this is 0. The detail
+ * values mean: 0 = only trigger for the DC image, the 8x8th lower resolution
+ * image. 1 = also trigger when a full pass of groups is ready. Higher values
+ * indicate more steps but are not yet implemented. Higher values always include
+ * the events of lower values as well.
+ *
+ * @param dec decoder object
+ * @param detail at which level of detail to trigger JXL_DEC_FRAME_PROGRESSION
+ */
+JXL_EXPORT void JxlDecoderSetProgressiveDetail(JxlDecoder* dec,
+                                               uint32_t detail);
 
 /**
  * Outputs progressive step towards the decoded image so far when only partial
