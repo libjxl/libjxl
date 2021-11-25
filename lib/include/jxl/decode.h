@@ -113,9 +113,9 @@ JXL_EXPORT void JxlDecoderDestroy(JxlDecoder* dec);
 
 /**
  * Return value for JxlDecoderProcessInput.
- * The values from JXL_DEC_EXTENSIONS onwards are optional informal events
- * that can be subscribed to, they are never returned if they have not been
- * registered with JxlDecoderSubscribeEvents.
+ * The values from JXL_DEC_BASIC_INFO onwards are optional informative
+ * events that can be subscribed to, they are never returned if they
+ * have not been registered with JxlDecoderSubscribeEvents.
  */
 typedef enum {
   /** Function call finished successfully, or decoding is finished and there is
