@@ -383,7 +383,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * indicating that the decoder must perform a rotation and/or
  * mirroring to the encoded image data.
  *
- * *) If keep_data_orientation is JXL_FALSE (the default): the decoder
+ * *) If skip_reorientation is JXL_FALSE (the default): the decoder
  * will apply the transformation from the orientation setting, hence
  * rendering the image according to its specified intent. When
  * producing a JxlBasicInfo, the decoder will always set the
@@ -391,7 +391,7 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * pixel data) and also align xsize and ysize so that they correspond
  * to the width and the height of the returned pixel data.
  *
- * *) If keep_data_orientation is JXL_TRUE: the decoder will skip
+ * *) If skip_reorientation is JXL_TRUE: the decoder will skip
  * applying the transformation from the orientation setting, returning
  * the image in the as-in-bitstream pixeldata orientation.
  * This may be faster to decode since the decoder doesn't have to apply the
@@ -407,11 +407,11 @@ JXL_EXPORT JxlDecoderStatus JxlDecoderSubscribeEvents(JxlDecoder* dec,
  * possible values.
  *
  * @param dec decoder object
- * @param keep_orientation JXL_TRUE to enable, JXL_FALSE to disable.
+ * @param skip_reorientation JXL_TRUE to enable, JXL_FALSE to disable.
  * @return JXL_DEC_SUCCESS if no error, JXL_DEC_ERROR otherwise.
  */
 JXL_EXPORT JxlDecoderStatus
-JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL keep_data_orientation);
+JxlDecoderSetKeepOrientation(JxlDecoder* dec, JXL_BOOL skip_reorientation);
 
 /** Enables or disables rendering spot colors. By default, spot colors
  * are rendered, which is OK for viewing the decoded image. If render_spotcolors
