@@ -318,8 +318,8 @@ jobs:
           libgtk2.0-dev
 
           # QT
-          libqt5x11extras5-dev:${{ matrix.arch }}
-          qtbase5-dev:${{ matrix.arch }}
+          libqt5x11extras5-dev
+          qtbase5-dev
         )
         if [[ "${{ matrix.build_target }}" != "x86_64-linux-gnu" ]]; then
           pkgs+=(
