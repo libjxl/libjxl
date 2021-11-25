@@ -106,6 +106,76 @@ JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
 
   return JXL_ENC_SUCCESS;
 }
+
+// The JXL codestream can have level 5 or level 10. Levels have certain
+// restrictions such as max allowed image dimensions. This function verifies
+// the user-given parameters against the chosen level. By default the codestream
+// has level 5, making it level 10 is done with JxlEncoderSetCodestreamLevel.
+JxlEncoderStatus VerifyLevelSettings(JxlEncoder* enc) {
+  if (enc->codestream_level != 5 && enc->codestream_level != 10) {
+    return JXL_API_ERROR(
+        "Unknown codestream level, only 5 or 10 are supported");
+  }
+
+  const auto& m = enc->metadata.m;
+
+  uint64_t xsize = enc->metadata.size.xsize();
+  uint64_t ysize = enc->metadata.size.ysize();
+  // The uncompressed ICC size, if it is used.
+  size_t icc_size = 0;
+  if (m.color_encoding.WantICC()) {
+    icc_size = m.color_encoding.ICC().size();
+  }
+
+  if (enc->codestream_level == 10) {
+    // Level 10 has fewer restrictions than level 5
+    if (xsize > (1ull << 30ull) || ysize > (1ull << 30ull) ||
+        xsize * ysize > (1ull << 40ull)) {
+      return JXL_API_ERROR("Dimensions out of bounds for codestream level 10");
+    }
+    if (icc_size > (1ull << 28)) {
+      return JXL_API_ERROR(
+          "Too large ICC profile size for codestream level 10");
+    }
+    if (m.num_extra_channels > 256) {
+      return JXL_API_ERROR("Too many extra channels for codestream level 10");
+    }
+    return JXL_ENC_SUCCESS;
+  }
+
+  if (xsize > (1ull << 18ull) || ysize > (1ull << 18ull) ||
+      xsize * ysize > (1ull << 28ull)) {
+    return JXL_API_ERROR("Dimensions out of bounds for codestream level 5");
+  }
+  if (icc_size > (1ull << 22)) {
+    return JXL_API_ERROR("Too large ICC profile size for codestream level 5");
+  }
+  if (m.num_extra_channels > 4) {
+    return JXL_API_ERROR("Too many extra channels for codestream level 5");
+  }
+  for (size_t i = 0; i < m.extra_channel_info.size(); ++i) {
+    if (m.extra_channel_info[i].type == jxl::ExtraChannel::kBlack) {
+      return JXL_API_ERROR(
+          "CMYK extra channel not allowed in codestream level 5");
+    }
+  }
+
+  // TODO(lode): also need to check if consecutive composite-still frames total
+  // pixel amount doesn't exceed 2**28 in the case of level 5. This should be
+  // done when adding frame and requires ability to add composite still frames
+  // to be added first.
+
+  // TODO(lode): also need to check animation duration of a frame. This should
+  // be done when adding frame, but first requires implementing setting the
+  // JxlFrameHeader for a frame.
+
+  // TODO(lode): also need to check properties such as num_splines, num_patches,
+  // modular_16bit_buffers and multiple properties of modular trees. However
+  // these are not user-set properties so cannot be checked here, but decisions
+  // the C++ encoder should be able to make based on the level.
+
+  return JXL_ENC_SUCCESS;
+}
 }  // namespace
 
 JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
@@ -118,15 +188,20 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
   // box.
 
   if (!wrote_bytes) {
+    // First time encoding any data, verify the level 5 vs level 10 settings
+    if (JXL_ENC_SUCCESS != VerifyLevelSettings(this)) {
+      return JXL_API_ERROR("Codestream level features verification failed");
+    }
+
     jxl::BitWriter writer;
     if (!WriteHeaders(&metadata, &writer, nullptr)) {
-      return JXL_ENC_ERROR;
+      return JXL_API_ERROR("Failed to write codestream header");
     }
     // Only send ICC (at least several hundred bytes) if fields aren't enough.
     if (metadata.m.color_encoding.WantICC()) {
       if (!jxl::WriteICC(metadata.m.color_encoding.ICC(), &writer,
                          jxl::kLayerHeader, nullptr)) {
-        return JXL_ENC_ERROR;
+        return JXL_API_ERROR("Failed to write ICC profile");
       }
     }
     // TODO(lode): preview should be added here if a preview image is added
@@ -140,7 +215,8 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
           output_byte_queue.end(), jxl::kContainerHeader,
           jxl::kContainerHeader + sizeof(jxl::kContainerHeader));
       if (codestream_level != 5) {
-        // Add jxll box.
+        // Add jxll box directly after the ftyp box to indicate the codestream
+        // level.
         output_byte_queue.insert(
             output_byte_queue.end(), jxl::kLevelBoxHeader,
             jxl::kLevelBoxHeader + sizeof(jxl::kLevelBoxHeader));
@@ -206,7 +282,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
                           &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
                           /*aux_out=*/nullptr)) {
-      return JXL_ENC_ERROR;
+      return JXL_API_ERROR("Failed to encode frame");
     }
 
     // Possibly bytes already contains the codestream header: in case this is
@@ -248,7 +324,7 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
       if (JXL_ENC_SUCCESS != BrotliCompress(9, box->contents.data(),
                                             box->contents.size(),
                                             &compressed)) {
-        return JXL_ENC_ERROR;
+        return JXL_API_ERROR("Brotli compression for brob box failed");
       }
       jxl::AppendBoxHeader(jxl::MakeBoxType("brob"), compressed.size(), false,
                            &output_byte_queue);
