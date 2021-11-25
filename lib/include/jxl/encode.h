@@ -362,6 +362,65 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
                                                     size_t* avail_out);
 
 /**
+ * Sets the frame information for this frame to the encoder. This includes
+ * animation information such as frame duration to store in the frame header.
+ * The frame header fields represent the frame as passed to the encoder, but not
+ * necessarily the exact values as they will be encoded file format: the encoder
+ * could change crop and blending options of a frame for more efficient encoding
+ * or introduce additional internal frames. Animation duration and time code
+ * information is not altered since those are immutable metadata of the frame.
+ *
+ * TODO(lode): JxlFrameHeader currently only contains animation information,
+ * also allow setting crop and blending fields.
+ *
+ * It is not required to use this function, however if have_animation is set
+ * to true in the basic info, then this function should be used to set the
+ * time duration of this individual frame. By default individual frames have a
+ * time duration of 0, making them form a composite still. See @ref
+ * JxlFrameHeader for more information.
+ *
+ * This information is stored in the JxlEncoderOptions and so is used for any
+ * frame encoded with these JxlEncoderOptions. It is ok to change between @ref
+ * JxlEncoderAddImageFrame calls, each added image frame will have the frame
+ * header that was set in the options at the time of calling
+ * JxlEncoderAddImageFrame.
+ *
+ * The is_last and name_length fields of the JxlFrameHeader are ignored, use
+ * @ref JxlEncoderCloseFrames to indicate last frame, and @ref
+ * JxlEncoderSetFrameName to indicate the name and its length instead. Calling
+ * this function will clear any name that was previously set with @ref
+ * JxlEncoderSetFrameName.
+ *
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param frame_header frame header data to set.
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameInfo(
+    JxlEncoderOptions* frame_settings, const JxlFrameHeader* frame_header);
+
+/**
+ * Sets the name of the animation frame. This function is optional, frames are
+ * not required to have a name. This setting is a part of the frame header, and
+ * the same principles as for @ref JxlEncoderSetFrameInfo apply. The
+ * name_length field of JxlFrameHeader is ignored by the encoder, this function
+ * determines the name length instead as the length in bytes of the C string.
+ *
+ * The maximum possible name length is 1071 bytes (excluding terminating null
+ * character).
+ *
+ * Calling @ref JxlEncoderSetFrameInfo clears any name that was previously set.
+ *
+ * @param frame_options set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
+ * @param frame_name name of the next frame to be encoded, as a UTF-8 encoded C
+ * string (zero terminated).
+ * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
+ */
+JXL_EXPORT JxlEncoderStatus JxlEncoderSetFrameName(
+    JxlEncoderOptions* frame_options, const char* frame_name);
+
+/**
  * Sets the buffer to read JPEG encoded bytes from for the next frame to encode.
  *
  * If JxlEncoderSetBasicInfo has not yet been called, calling
@@ -724,6 +783,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelInfo(
 /**
  * Sets the name for the extra channel at the given index in UTF-8. The index
  * must be smaller than the num_extra_channels in the associated JxlBasicInfo.
+ *
+ * TODO(lode): remove size parameter for consistency with JxlEncoderSetFrameName
  *
  * @param enc encoder object
  * @param index index of the extra channel to set.
