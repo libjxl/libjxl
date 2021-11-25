@@ -164,13 +164,13 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
   out->marker_order.emplace_back(0xC4);
   out->huffman_code.resize(2);
   out->huffman_code[0].slot_id = 0x00;  // DC
-  out->huffman_code[0].counts = {0, 0, 0, 0, 13};
+  out->huffman_code[0].counts = {{0, 0, 0, 0, 13}};
   std::iota(out->huffman_code[0].values.begin(),
             out->huffman_code[0].values.end(), 0);
   out->huffman_code[0].is_last = false;
 
   out->huffman_code[1].slot_id = 0x10;  // AC
-  out->huffman_code[1].counts = {0, 0, 0, 0, 0, 0, 0, 0, 255};
+  out->huffman_code[1].counts = {{0, 0, 0, 0, 0, 0, 0, 0, 255}};
   std::iota(out->huffman_code[1].values.begin(),
             out->huffman_code[1].values.end(), 0);
   out->huffman_code[1].is_last = true;
@@ -183,15 +183,15 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
   // DC
   // comp id, DC tbl, AC tbl
   out->scan_info[0].num_components = 3;
-  out->scan_info[0].components = {jxl::jpeg::JPEGComponentScanInfo{0, 0, 0},
-                                  jxl::jpeg::JPEGComponentScanInfo{1, 0, 0},
-                                  jxl::jpeg::JPEGComponentScanInfo{2, 0, 0}};
+  out->scan_info[0].components = {{jxl::jpeg::JPEGComponentScanInfo{0, 0, 0},
+                                   jxl::jpeg::JPEGComponentScanInfo{1, 0, 0},
+                                   jxl::jpeg::JPEGComponentScanInfo{2, 0, 0}}};
   out->scan_info[0].Ss = 0;
   out->scan_info[0].Se = 0;
   out->scan_info[0].Ah = out->scan_info[0].Al = 0;
   // AC 1 - highest bits
   out->scan_info[1].num_components = 1;
-  out->scan_info[1].components = {jxl::jpeg::JPEGComponentScanInfo{0, 0, 0}};
+  out->scan_info[1].components = {{jxl::jpeg::JPEGComponentScanInfo{0, 0, 0}}};
   out->scan_info[1].Ss = 1;
   out->scan_info[1].Se = 63;
   out->scan_info[1].Ah = 0;
@@ -205,7 +205,7 @@ void FillJPEGData(const jxl::Image3F& ycbcr, const jxl::PaddedBytes& icc,
 
   // AC 2 - lowest bit
   out->scan_info[4].num_components = 1;
-  out->scan_info[4].components = {jxl::jpeg::JPEGComponentScanInfo{0, 0, 0}};
+  out->scan_info[4].components = {{jxl::jpeg::JPEGComponentScanInfo{0, 0, 0}}};
   out->scan_info[4].Ss = 1;
   out->scan_info[4].Se = 63;
   out->scan_info[4].Ah = 1;

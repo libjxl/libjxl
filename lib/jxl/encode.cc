@@ -5,6 +5,8 @@
 
 #include "jxl/encode.h"
 
+#include <brotli/encode.h>
+
 #include <algorithm>
 #include <cstring>
 
@@ -16,6 +18,7 @@
 #include "lib/jxl/enc_icc_codec.h"
 #include "lib/jxl/encode_internal.h"
 #include "lib/jxl/jpeg/enc_jpeg_data.h"
+#include "lib/jxl/sanitizers.h"
 
 // Debug-printing failure macro similar to JXL_FAILURE, but for the status code
 // JXL_ENC_ERROR
@@ -63,6 +66,44 @@ void QueueBox(JxlEncoder* enc,
   queued_input.box = std::move(box);
   enc->input_queue.emplace_back(std::move(queued_input));
   enc->num_queued_boxes++;
+}
+
+// TODO(lode): share this code and the Brotli compression code in enc_jpeg_data
+JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
+                                jxl::PaddedBytes* out) {
+  std::unique_ptr<BrotliEncoderState, decltype(BrotliEncoderDestroyInstance)*>
+      enc(BrotliEncoderCreateInstance(nullptr, nullptr, nullptr),
+          BrotliEncoderDestroyInstance);
+  if (!enc) return JXL_API_ERROR("BrotliEncoderCreateInstance failed");
+
+  BrotliEncoderSetParameter(enc.get(), BROTLI_PARAM_QUALITY, quality);
+  BrotliEncoderSetParameter(enc.get(), BROTLI_PARAM_SIZE_HINT, in_size);
+
+  constexpr size_t kBufferSize = 128 * 1024;
+  jxl::PaddedBytes temp_buffer(kBufferSize);
+
+  size_t avail_in = in_size;
+  const uint8_t* next_in = in;
+
+  size_t total_out = 0;
+
+  for (;;) {
+    size_t avail_out = kBufferSize;
+    uint8_t* next_out = temp_buffer.data();
+    jxl::msan::MemoryIsInitialized(next_in, avail_in);
+    if (!BrotliEncoderCompressStream(enc.get(), BROTLI_OPERATION_FINISH,
+                                     &avail_in, &next_in, &avail_out, &next_out,
+                                     &total_out)) {
+      return JXL_API_ERROR("Brotli compression failed");
+    }
+    size_t out_size = next_out - temp_buffer.data();
+    jxl::msan::UnpoisonMemory(next_out - out_size, out_size);
+    out->resize(out->size() + out_size);
+    memcpy(out->data() + out->size() - out_size, temp_buffer.data(), out_size);
+    if (BrotliEncoderIsFinished(enc.get())) break;
+  }
+
+  return JXL_ENC_SUCCESS;
 }
 }  // namespace
 
@@ -199,13 +240,26 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
     num_queued_boxes--;
 
     if (box->compress_box) {
-      // TODO(lode): implement brotli compression for brob boxes
-      return JXL_ENC_ERROR;
+      jxl::PaddedBytes compressed(4);
+      // Prepend the original box type in the brob box contents
+      for (size_t i = 0; i < 4; i++) {
+        compressed[i] = static_cast<uint8_t>(box->type[i]);
+      }
+      if (JXL_ENC_SUCCESS != BrotliCompress(9, box->contents.data(),
+                                            box->contents.size(),
+                                            &compressed)) {
+        return JXL_ENC_ERROR;
+      }
+      jxl::AppendBoxHeader(jxl::MakeBoxType("brob"), compressed.size(), false,
+                           &output_byte_queue);
+      output_byte_queue.insert(output_byte_queue.end(), compressed.data(),
+                               compressed.data() + compressed.size());
+    } else {
+      jxl::AppendBoxHeader(box->type, box->contents.size(), false,
+                           &output_byte_queue);
+      output_byte_queue.insert(output_byte_queue.end(), box->contents.data(),
+                               box->contents.data() + box->contents.size());
     }
-    jxl::AppendBoxHeader(box->type, box->contents.size(), false,
-                         &output_byte_queue);
-    output_byte_queue.insert(output_byte_queue.end(), box->contents.data(),
-                             box->contents.data() + box->contents.size());
   }
 
   return JXL_ENC_SUCCESS;
@@ -455,6 +509,11 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       options->values.cparams.resampling = value;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_EXTRA_CHANNEL_RESAMPLING:
+      // TOOD(lode): the jxl codestream allows choosing a different resampling
+      // factor for each extra channel, independently per frame. Move this
+      // option to a JxlEncoderOptions-option that can be set per extra channel,
+      // so needs its own function rather than JxlEncoderOptionsSetInteger due
+      // to the extra channel index argument required.
       if (value != -1 && value != 1 && value != 2 && value != 4 && value != 8) {
         return JXL_ENC_ERROR;
       }
@@ -462,6 +521,12 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       // 2x2 for extra channels, so 1x1 is set as the default.
       if (value == -1) value = 1;
       options->values.cparams.ec_resampling = value;
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_ALREADY_DOWNSAMPLED:
+      if (value < 0 || value > 1) {
+        return JXL_ENC_ERROR;
+      }
+      options->values.cparams.already_downsampled = (value == 1);
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_PHOTON_NOISE:
       if (value < 0) return JXL_ENC_ERROR;
@@ -531,7 +596,7 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1 || value > 2) return JXL_ENC_ERROR;
       options->values.cparams.progressive_dc = value;
       return JXL_ENC_SUCCESS;
-    case JXL_ENC_OPTION_CHANNEL_COLORS_PRE_TRANSFORM_PERCENT:
+    case JXL_ENC_OPTION_CHANNEL_COLORS_GLOBAL_PERCENT:
       if (value < -1 || value > 100) return JXL_ENC_ERROR;
       if (value == -1) {
         options->values.cparams.channel_colors_pre_transform_percent = 95.0f;
@@ -540,7 +605,7 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
             static_cast<float>(value);
       }
       return JXL_ENC_SUCCESS;
-    case JXL_ENC_OPTION_CHANNEL_COLORS_PERCENT:
+    case JXL_ENC_OPTION_CHANNEL_COLORS_GROUP_PERCENT:
       if (value < -1 || value > 100) return JXL_ENC_ERROR;
       if (value == -1) {
         options->values.cparams.channel_colors_percent = 80.0f;
@@ -565,10 +630,18 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       // alternatively, in the cjxl binary like now)
       options->values.cparams.lossy_palette = (value == 1);
       return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_COLOR_TRANSFORM:
+      if (value < -1 || value > 2) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.color_transform = jxl::ColorTransform::kXYB;
+      } else {
+        options->values.cparams.color_transform =
+            static_cast<jxl::ColorTransform>(value);
+      }
+      return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_MODULAR_COLOR_SPACE:
-      // TODO(lode): also add color transform option (xyb, none, ycbcr)
-      if (value < -1 || value > 37) return JXL_ENC_ERROR;
-      options->values.cparams.colorspace = value;
+      if (value < -1 || value > 35) return JXL_ENC_ERROR;
+      options->values.cparams.colorspace = value + 2;
       return JXL_ENC_SUCCESS;
     case JXL_ENC_OPTION_MODULAR_GROUP_SIZE:
       if (value < -1 || value > 3) return JXL_ENC_ERROR;
@@ -586,6 +659,40 @@ JxlEncoderStatus JxlEncoderOptionsSetInteger(JxlEncoderOptions* options,
       if (value < -1 || value > 15) return JXL_ENC_ERROR;
       options->values.cparams.options.predictor =
           static_cast<jxl::Predictor>(value);
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_MA_TREE_LEARNING_PERCENT:
+      if (value < -1) return JXL_ENC_ERROR;
+      // This value is called "iterations" or "nb_repeats" in cjxl, but is in
+      // fact a fraction in range 0.0-1.0, with the defautl value 0.5.
+      // Convert from integer percentage to floating point fraction here.
+      if (value == -1) {
+        // TODO(lode): for this and many other settings, avoid duplicating the
+        // default values here and in enc_params.h and options.h, have one
+        // location where the defaults are specified.
+        options->values.cparams.options.nb_repeats = 0.5f;
+      } else {
+        options->values.cparams.options.nb_repeats = value * 0.01f;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_MODULAR_NB_PREV_CHANNELS:
+      // The max allowed value can in theory be higher. However, it depends on
+      // the effort setting. 11 is the highest safe value that doesn't cause
+      // tree_samples to be >= 64 in the encoder. The specification may allow
+      // more than this. With more fine tuning higher values could be allowed.
+      if (value < -1 || value > 11) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.options.max_properties = 0;
+      } else {
+        options->values.cparams.options.max_properties = value;
+      }
+      return JXL_ENC_SUCCESS;
+    case JXL_ENC_OPTION_JPEG_RECON_CFL:
+      if (value < -1 || value > 1) return JXL_ENC_ERROR;
+      if (value == -1) {
+        options->values.cparams.force_cfl_jpeg_recompression = true;
+      } else {
+        options->values.cparams.force_cfl_jpeg_recompression = value;
+      }
       return JXL_ENC_SUCCESS;
     default:
       return JXL_ENC_ERROR;
@@ -780,8 +887,15 @@ JxlEncoderStatus JxlEncoderAddImageFrame(const JxlEncoderOptions* options,
     c_current = options->enc->metadata.m.color_encoding;
   }
 
-  if (!jxl::BufferToImageBundle(*pixel_format, options->enc->metadata.xsize(),
-                                options->enc->metadata.ysize(), buffer, size,
+  size_t xsize = options->enc->metadata.xsize();
+  size_t ysize = options->enc->metadata.ysize();
+  if (options->values.cparams.already_downsampled) {
+    size_t factor = options->values.cparams.resampling;
+    xsize = jxl::DivCeil(xsize, factor);
+    ysize = jxl::DivCeil(ysize, factor);
+  }
+
+  if (!jxl::BufferToImageBundle(*pixel_format, xsize, ysize, buffer, size,
                                 options->enc->thread_pool.get(), c_current,
                                 &(queued_frame->frame))) {
     return JXL_ENC_ERROR;
@@ -805,6 +919,21 @@ JxlEncoderStatus JxlEncoderAddBox(JxlEncoder* enc, const JxlBoxType type,
   if (!enc->use_boxes) {
     return JXL_API_ERROR(
         "must set JxlEncoderUseBoxes at the beginning to add boxes");
+  }
+  if (compress_box) {
+    if (memcmp("jxl", type, 3) == 0) {
+      return JXL_API_ERROR(
+          "brob box may not contain a type starting with \"jxl\"");
+    }
+    if (memcmp("jbrd", type, 4) == 0) {
+      return JXL_API_ERROR("jbrd box may not be brob compressed");
+    }
+    if (memcmp("brob", type, 4) == 0) {
+      // The compress_box will compress an existing non-brob box into a brob
+      // box. If already giving a valid brotli-compressed brob box, set
+      // compress_box to false since it is already compressed.
+      return JXL_API_ERROR("a brob box cannot contain another brob box");
+    }
   }
 
   auto box = jxl::MemoryManagerMakeUnique<jxl::JxlEncoderQueuedBox>(

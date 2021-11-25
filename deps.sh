@@ -23,7 +23,7 @@ download_github() {
   local path="$1"
   local project="$2"
 
-  local varname="${path^^}"
+  local varname=`echo "$path" | tr '[:lower:]' '[:upper:]'`
   varname="${varname/\//_}"
   local sha
   eval "sha=\${${varname}}"

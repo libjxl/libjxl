@@ -58,10 +58,10 @@ HWY_NOINLINE void FastTransposeBlock(const int16_t* JXL_RESTRICT data_in,
       auto a01 = vtrnq_s16(a0, a1);
       auto a23 = vtrnq_s16(a2, a3);
 
-      auto four0 = vtrnq_s32(vreinterpretq_s16_s32(a01.val[0]),
-                             vreinterpretq_s16_s32(a23.val[0]));
-      auto four1 = vtrnq_s32(vreinterpretq_s16_s32(a01.val[1]),
-                             vreinterpretq_s16_s32(a23.val[1]));
+      auto four0 = vtrnq_s32(vreinterpretq_s32_s16(a01.val[0]),
+                             vreinterpretq_s32_s16(a23.val[0]));
+      auto four1 = vtrnq_s32(vreinterpretq_s32_s16(a01.val[1]),
+                             vreinterpretq_s32_s16(a23.val[1]));
 
       auto a4 = vld1q_s16(data_in + (i + 4) * stride_in + j);
       auto a5 = vld1q_s16(data_in + (i + 5) * stride_in + j);
@@ -71,10 +71,10 @@ HWY_NOINLINE void FastTransposeBlock(const int16_t* JXL_RESTRICT data_in,
       auto a45 = vtrnq_s16(a4, a5);
       auto a67 = vtrnq_s16(a6, a7);
 
-      auto four2 = vtrnq_s32(vreinterpretq_s16_s32(a45.val[0]),
-                             vreinterpretq_s16_s32(a67.val[0]));
-      auto four3 = vtrnq_s32(vreinterpretq_s16_s32(a45.val[1]),
-                             vreinterpretq_s16_s32(a67.val[1]));
+      auto four2 = vtrnq_s32(vreinterpretq_s32_s16(a45.val[0]),
+                             vreinterpretq_s32_s16(a67.val[0]));
+      auto four3 = vtrnq_s32(vreinterpretq_s32_s16(a45.val[1]),
+                             vreinterpretq_s32_s16(a67.val[1]));
 
       auto out0 =
           vcombine_s32(vget_low_s32(four0.val[0]), vget_low_s32(four2.val[0]));
@@ -92,14 +92,21 @@ HWY_NOINLINE void FastTransposeBlock(const int16_t* JXL_RESTRICT data_in,
                                vget_high_s32(four2.val[1]));
       auto out7 = vcombine_s32(vget_high_s32(four1.val[1]),
                                vget_high_s32(four3.val[1]));
-      vst1q_s16(data_out + j * stride_out + i, out0);
-      vst1q_s16(data_out + (j + 1) * stride_out + i, out1);
-      vst1q_s16(data_out + (j + 2) * stride_out + i, out2);
-      vst1q_s16(data_out + (j + 3) * stride_out + i, out3);
-      vst1q_s16(data_out + (j + 4) * stride_out + i, out4);
-      vst1q_s16(data_out + (j + 5) * stride_out + i, out5);
-      vst1q_s16(data_out + (j + 6) * stride_out + i, out6);
-      vst1q_s16(data_out + (j + 7) * stride_out + i, out7);
+      vst1q_s16(data_out + j * stride_out + i, vreinterpretq_s16_s32(out0));
+      vst1q_s16(data_out + (j + 1) * stride_out + i,
+                vreinterpretq_s16_s32(out1));
+      vst1q_s16(data_out + (j + 2) * stride_out + i,
+                vreinterpretq_s16_s32(out2));
+      vst1q_s16(data_out + (j + 3) * stride_out + i,
+                vreinterpretq_s16_s32(out3));
+      vst1q_s16(data_out + (j + 4) * stride_out + i,
+                vreinterpretq_s16_s32(out4));
+      vst1q_s16(data_out + (j + 5) * stride_out + i,
+                vreinterpretq_s16_s32(out5));
+      vst1q_s16(data_out + (j + 6) * stride_out + i,
+                vreinterpretq_s16_s32(out6));
+      vst1q_s16(data_out + (j + 7) * stride_out + i,
+                vreinterpretq_s16_s32(out7));
     }
   }
 }
