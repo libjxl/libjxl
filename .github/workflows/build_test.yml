@@ -239,6 +239,9 @@ jobs:
           - arch: i386
             build_target: i686-linux-gnu
 
+    # TODO(eustas): see https://github.com/libjxl/libjxl/issues/910
+    continue-on-error: true
+
     env:
       BUILD_DIR: build
 
