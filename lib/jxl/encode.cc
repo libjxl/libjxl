@@ -170,7 +170,6 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
         output_byte_queue.insert(output_byte_queue.end(), jpeg_metadata.begin(),
                                  jpeg_metadata.end());
       }
-
     }
     wrote_bytes = true;
   }
@@ -450,15 +449,18 @@ JxlEncoderStatus JxlEncoderOptionsSetEffort(JxlEncoderOptions* options,
 
 JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
                                               float distance) {
-  if (distance < 0 || distance > 15) {
+  if (distance < 0.f || distance > 25.f) {
     return JXL_ENC_ERROR;
+  }
+  if (distance > 0.f && distance < 0.01f) {
+    distance = 0.01f;
   }
   options->values.cparams.butteraugli_distance = distance;
   float jpeg_quality;
   // Formula to translate butteraugli distance roughly into JPEG 0-100 quality.
   // This is the inverse of the formula in cjxl.cc to translate JPEG quality
   // into butteraugli distance.
-  if (distance < 6.56f) {
+  if (distance > 6.56f) {
     jpeg_quality = -5.456783f * std::log(0.0256f * distance - 0.16384f);
   } else {
     jpeg_quality = -11.11111f * distance + 101.11111f;
@@ -469,10 +471,11 @@ JxlEncoderStatus JxlEncoderOptionsSetDistance(JxlEncoderOptions* options,
   // TODO(lode): combine the distance -> quality_pair conversion into a single
   // formula, possibly altering it to a more suitable heuristic.
   float quality;
-  if (jpeg_quality < 7) {
-    quality = std::min<float>(35 + (jpeg_quality - 7) * 3.0f, 100.0f);
+  if (jpeg_quality < 7.f) {
+    quality = std::min<float>(35.f + (jpeg_quality - 7.f) * 3.0f, 100.0f);
   } else {
-    quality = std::min<float>(35 + (jpeg_quality - 7) * 65.f / 93.f, 100.0f);
+    quality =
+        std::min<float>(35.f + (jpeg_quality - 7.f) * 65.f / 93.f, 100.0f);
   }
   options->values.cparams.quality_pair.first =
       options->values.cparams.quality_pair.second = quality;
