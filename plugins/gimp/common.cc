@@ -5,13 +5,20 @@
 
 #include "plugins/gimp/common.h"
 
+#include <stdarg.h>
+
 namespace jxl {
 
-JpegXlGimpProgress::JpegXlGimpProgress(const char *message) {
+JpegXlGimpProgress::JpegXlGimpProgress(const char* fmt, ...) {
   cur_progress = 0;
   max_progress = 100;
 
-  gimp_progress_init_printf("%s\n", message);
+  va_list args;
+  va_start(args, fmt);
+  gchar* tmpstr = g_strdup_vprintf(fmt, args);
+  gimp_progress_init_printf("%s", tmpstr);
+  g_free(tmpstr);
+  va_end(args);
 }
 
 void JpegXlGimpProgress::update() {

@@ -8,12 +8,19 @@
 
 #include <libgimp/gimp.h>
 #include <libgimp/gimpui.h>
+#include <libintl.h>
 #include <math.h>
 
 #include <fstream>
 #include <iterator>
 #include <string>
 #include <vector>
+
+#include "lcms2.h"
+
+#define _(String) gettext(String)
+#define gettext_noop(String) String
+#define N_(String) gettext_noop(String)
 
 #define PLUG_IN_BINARY "file-jxl"
 #define SAVE_PROC "file-jxl-save"
@@ -30,7 +37,7 @@ namespace jxl {
 
 class JpegXlGimpProgress {
  public:
-  explicit JpegXlGimpProgress(const char *message);
+  explicit JpegXlGimpProgress(const char *fmt, ...);
   void update();
   void finished();
 
