@@ -935,12 +935,12 @@ float* JxlCmsGetDstBuf(void* cms_data, size_t thread) {
 
 const JxlCmsInterface& GetJxlCms() {
   static constexpr JxlCmsInterface kInterface = {
-      .init_data = nullptr,
-      .init = &JxlCmsInit,
-      .get_src_buf = &JxlCmsGetSrcBuf,
-      .get_dst_buf = &JxlCmsGetDstBuf,
-      .run = &DoColorSpaceTransform,
-      .destroy = &JxlCmsDestroy};
+      /*init_data=*/nullptr,
+      /*init=*/&JxlCmsInit,
+      /*get_src_buf=*/&JxlCmsGetSrcBuf,
+      /*get_dst_buf=*/&JxlCmsGetDstBuf,
+      /*run=*/&DoColorSpaceTransform,
+      /*destroy=*/&JxlCmsDestroy};
   return kInterface;
 }
 
