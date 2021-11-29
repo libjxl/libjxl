@@ -369,6 +369,22 @@ JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
       info->relative_to_max_display;
   enc->metadata.m.tone_mapping.linear_below = info->linear_below;
   enc->basic_info_set = true;
+
+  enc->metadata.m.have_animation = info->have_animation;
+  if (info->have_animation) {
+    if (info->animation.tps_denominator < 1) {
+      return JXL_API_ERROR(
+          "If animation is used, tps_denominator must be >= 1");
+    }
+    if (info->animation.tps_numerator < 1) {
+      return JXL_API_ERROR("If animation is used, tps_numerator must be >= 1");
+    }
+    enc->metadata.m.animation.tps_numerator = info->animation.tps_numerator;
+    enc->metadata.m.animation.tps_denominator = info->animation.tps_denominator;
+    enc->metadata.m.animation.num_loops = info->animation.num_loops;
+    enc->metadata.m.animation.have_timecodes = info->animation.have_timecodes;
+  }
+
   return JXL_ENC_SUCCESS;
 }
 

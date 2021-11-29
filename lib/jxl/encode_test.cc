@@ -764,6 +764,113 @@ static void ProcessEncoder(JxlEncoder* enc, std::vector<uint8_t>& compressed,
   EXPECT_EQ(JXL_ENC_SUCCESS, process_result);
 }
 
+TEST(EncodeTest, BasicInfoTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+  size_t xsize = 1;
+  size_t ysize = 1;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.uses_original_profile = false;
+  basic_info.have_animation = true;
+  basic_info.intensity_target = 123.4;
+  basic_info.min_nits = 5.0;
+  basic_info.linear_below = 12.7;
+  basic_info.orientation = JXL_ORIENT_ROTATE_90_CW;
+  basic_info.animation.tps_numerator = 55;
+  basic_info.animation.tps_denominator = 77;
+  basic_info.animation.num_loops = 10;
+  basic_info.animation.have_timecodes = JXL_TRUE;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding,
+                            /*is_gray=*/false);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(options, &pixel_format, pixels.data(),
+                                    pixels.size()));
+  JxlEncoderCloseFrames(enc.get());
+  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+
+  // Decode to verify the boxes, we don't decode to pixels, only the boxes.
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_NE(nullptr, dec.get());
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_BASIC_INFO));
+  // Allow testing the orientation field, without this setting it will be
+  // overridden to identity.
+  JxlDecoderSetKeepOrientation(dec.get(), JXL_TRUE);
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  JxlDecoderCloseInput(dec.get());
+
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      FAIL();
+    } else if (status == JXL_DEC_SUCCESS) {
+      break;
+    } else if (status == JXL_DEC_BASIC_INFO) {
+      JxlBasicInfo basic_info2;
+      EXPECT_EQ(JXL_DEC_SUCCESS,
+                JxlDecoderGetBasicInfo(dec.get(), &basic_info2));
+      EXPECT_EQ(basic_info.xsize, basic_info2.xsize);
+      EXPECT_EQ(basic_info.ysize, basic_info2.ysize);
+      EXPECT_EQ(basic_info.bits_per_sample, basic_info2.bits_per_sample);
+      EXPECT_EQ(basic_info.exponent_bits_per_sample,
+                basic_info2.exponent_bits_per_sample);
+      EXPECT_NEAR(basic_info.intensity_target, basic_info2.intensity_target,
+                  0.5);
+      EXPECT_NEAR(basic_info.min_nits, basic_info2.min_nits, 0.5);
+      EXPECT_NEAR(basic_info.linear_below, basic_info2.linear_below, 0.5);
+      EXPECT_EQ(basic_info.relative_to_max_display,
+                basic_info2.relative_to_max_display);
+      EXPECT_EQ(basic_info.uses_original_profile,
+                basic_info2.uses_original_profile);
+      EXPECT_EQ(basic_info.orientation, basic_info2.orientation);
+      EXPECT_EQ(basic_info.num_color_channels, basic_info2.num_color_channels);
+      // TODO(lode): also test num_extra_channels, but currently there may be a
+      // mismatch between 0 and 1 if there is alpha, until encoder support for
+      // extra channels is fully implemented.
+      EXPECT_EQ(basic_info.alpha_bits, basic_info2.alpha_bits);
+      EXPECT_EQ(basic_info.alpha_exponent_bits,
+                basic_info2.alpha_exponent_bits);
+      EXPECT_EQ(basic_info.alpha_premultiplied,
+                basic_info2.alpha_premultiplied);
+
+      EXPECT_EQ(basic_info.have_preview, basic_info2.have_preview);
+      if (basic_info.have_preview) {
+        EXPECT_EQ(basic_info.preview.xsize, basic_info2.preview.xsize);
+        EXPECT_EQ(basic_info.preview.ysize, basic_info2.preview.ysize);
+      }
+
+      EXPECT_EQ(basic_info.have_animation, basic_info2.have_animation);
+      if (basic_info.have_animation) {
+        EXPECT_EQ(basic_info.animation.tps_numerator,
+                  basic_info2.animation.tps_numerator);
+        EXPECT_EQ(basic_info.animation.tps_denominator,
+                  basic_info2.animation.tps_denominator);
+        EXPECT_EQ(basic_info.animation.num_loops,
+                  basic_info2.animation.num_loops);
+        EXPECT_EQ(basic_info.animation.have_timecodes,
+                  basic_info2.animation.have_timecodes);
+      }
+    } else {
+      FAIL();  // unexpected status
+    }
+  }
+}
+
 TEST(EncodeTest, BoxTest) {
   // Test with uncompressed boxes and with brob boxes
   for (int compress_box = 0; compress_box <= 1; ++compress_box) {
