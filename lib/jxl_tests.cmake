@@ -53,6 +53,7 @@ set(TEST_FILES
   jxl/quant_weights_test.cc
   jxl/quantizer_test.cc
   jxl/rational_polynomial_test.cc
+  jxl/render_pipeline/render_pipeline_test.cc
   jxl/roundtrip_test.cc
   jxl/speed_tier_test.cc
   jxl/splines_test.cc

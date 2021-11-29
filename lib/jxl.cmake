@@ -94,7 +94,6 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/dec_patch_dictionary.h
   jxl/dec_reconstruct.cc
   jxl/dec_reconstruct.h
-  jxl/dec_render_pipeline.h
   jxl/dec_transforms-inl.h
   jxl/dec_upsample.cc
   jxl/dec_upsample.h
@@ -190,6 +189,13 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/quantizer.cc
   jxl/quantizer.h
   jxl/rational_polynomial-inl.h
+  jxl/render_pipeline/low_memory_render_pipeline.cc
+  jxl/render_pipeline/low_memory_render_pipeline.h
+  jxl/render_pipeline/render_pipeline.cc
+  jxl/render_pipeline/render_pipeline.h
+  jxl/render_pipeline/render_pipeline_stage.h
+  jxl/render_pipeline/simple_render_pipeline.cc
+  jxl/render_pipeline/simple_render_pipeline.h
   jxl/sanitizers.h
   jxl/splines.cc
   jxl/splines.h
