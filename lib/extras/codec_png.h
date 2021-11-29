@@ -26,11 +26,6 @@
 namespace jxl {
 namespace extras {
 
-// Decodes `bytes` into `ppf`.
-Status DecodeImagePNG(const Span<const uint8_t> bytes,
-                      const ColorHints& color_hints,
-                      const SizeConstraints& constraints, PackedPixelFile* ppf);
-
 // Transforms from io->c_current to `c_desired` and encodes into `bytes`.
 Status EncodeImagePNG(const CodecInOut* io, const ColorEncoding& c_desired,
                       size_t bits_per_sample, ThreadPool* pool,

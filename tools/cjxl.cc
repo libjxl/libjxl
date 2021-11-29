@@ -272,20 +272,20 @@ void PrintMode(jxl::ThreadPoolInternal* pool, const jxl::CodecInOut& io,
 void CompressArgs::AddCommandLineOptions(CommandLineParser* cmdline) {
   // Positional arguments.
   cmdline->AddPositionalOption("INPUT", /* required = */ true,
-                               "the input can be PNG"
+                               "the input can be "
 #if JPEGXL_ENABLE_APNG
-                               ", APNG"
+                               "PNG, APNG, "
 #endif
 #if JPEGXL_ENABLE_GIF
-                               ", GIF"
+                               "GIF, "
 #endif
 #if JPEGXL_ENABLE_JPEG
-                               ", JPEG"
+                               "JPEG, "
 #endif
 #if JPEGXL_ENABLE_EXR
-                               ", EXR"
+                               "EXR, "
 #endif
-                               ", PPM, PFM, or PGX",
+                               "PPM, PFM, or PGX",
                                &file_in);
   cmdline->AddPositionalOption(
       "OUTPUT", /* required = */ true,
