@@ -41,8 +41,12 @@ JXL_EXPORT uint32_t JxlEncoderVersion(void);
 typedef struct JxlEncoderStruct JxlEncoder;
 
 /**
- * Opaque structure that holds frame specific encoding options for a JPEG XL
- * encoder.
+ * The settings for a single image frame to be encoded with the JXL encoder.
+ * This includes options such as compression speed, as well as frame metadata.
+ *
+ * Despite the name JxlEncoderOptions, it represents settings of a frame, not
+ * the entire encoder. Most settings, such as image quality and speed settings,
+ * are frame settings though.
  *
  * Allocated and initialized with JxlEncoderOptionsCreate().
  * Cleaned up and deallocated when the encoder is destroyed with
@@ -361,14 +365,16 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  * JxlEncoderStoreJPEGMetadata and a single JPEG frame is added, it will be
  * possible to losslessly reconstruct the JPEG codestream.
  *
- * @param options set of encoder options to use when encoding the frame.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param buffer bytes to read JPEG from. Owned by the caller and its contents
  * are copied internally.
  * @param size size of buffer in bytes.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
-    const JxlEncoderOptions* options, const uint8_t* buffer, size_t size);
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderAddJPEGFrame(const JxlEncoderOptions* frame_settings,
+                       const uint8_t* buffer, size_t size);
 
 /**
  * Sets the buffer to read pixels from for the next image to encode. Must call
@@ -411,7 +417,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * uses_original_profile=false case. They are however not allowed to be NaN or
  * +-infinity.
  *
- * @param options set of encoder options to use when encoding the frame.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param pixel_format format for pixels. Object owned by the caller and its
  * contents are copied internally.
  * @param buffer buffer type to input the pixel data from. Owned by the caller
@@ -420,7 +427,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddJPEGFrame(
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
-    const JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
+    const JxlEncoderOptions* frame_settings, const JxlPixelFormat* pixel_format,
     const void* buffer, size_t size);
 
 /**
@@ -434,7 +441,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  * It is required to call this function for every extra channel, except for the
  * alpha channel if that was already set through @ref JxlEncoderAddImageFrame.
  *
- * @param options set of encoder options to use when encoding the extra channel.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param pixel_format format for pixels. Object owned by the caller and its
  * contents are copied internally. The num_channels value is ignored, since the
  * number of channels for an extra channel is always assumed to be one.
@@ -445,7 +453,7 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderAddImageFrame(
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelBuffer(
-    const JxlEncoderOptions* options, const JxlPixelFormat* pixel_format,
+    const JxlEncoderOptions* frame_settings, const JxlPixelFormat* pixel_format,
     const void* buffer, size_t size, uint32_t index);
 
 /** Adds a metadata box to the file format. JxlEncoderProcessOutput must be used
@@ -722,7 +730,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
  * Sets a frame-specific option of integer type to the encoder options.
  * The JxlEncoderOptionId argument determines which option is set.
  *
- * @param options set of encoder options to update with the new mode.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param option ID of the option to set.
  * @param value Integer value to set for this option.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR in
@@ -731,8 +740,9 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetExtraChannelName(JxlEncoder* enc,
  * JxlEncoderOptions object is still valid and is the same as before this
  * function was called.
  */
-JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetInteger(
-    JxlEncoderOptions* options, JxlEncoderOptionId option, int32_t value);
+JXL_EXPORT JxlEncoderStatus
+JxlEncoderOptionsSetInteger(JxlEncoderOptions* frame_settings,
+                            JxlEncoderOptionId option, int32_t value);
 
 /** Forces the encoder to use the box-based container format (BMFF) even
  * when not necessary.
@@ -812,16 +822,18 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc,
  * using this function with lossless set to JXL_DEC_FALSE does not guarantee
  * lossy encoding, though the default set of options is lossy.
  *
- * @param options set of encoder options to update with the new mode
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param lossless whether to override options for lossless mode
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
-JXL_EXPORT JxlEncoderStatus
-JxlEncoderOptionsSetLossless(JxlEncoderOptions* options, JXL_BOOL lossless);
+JXL_EXPORT JxlEncoderStatus JxlEncoderOptionsSetLossless(
+    JxlEncoderOptions* frame_settings, JXL_BOOL lossless);
 
 /**
- * @param options set of encoder options to update with the new mode.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param effort the effort value to set.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
@@ -830,11 +842,11 @@ JxlEncoderOptionsSetLossless(JxlEncoderOptions* options, JXL_BOOL lossless);
  * effort)) instead.
  */
 JXL_EXPORT JXL_DEPRECATED JxlEncoderStatus
-JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
+JxlEncoderOptionsSetEffort(JxlEncoderOptions* frame_settings, int effort);
 
 /**
- * @param options set of encoder options to update with the new decoding speed
- * tier.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param tier the decoding speed tier to set.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
@@ -843,7 +855,7 @@ JxlEncoderOptionsSetEffort(JxlEncoderOptions* options, int effort);
  * JXL_ENC_OPTION_DECODING_SPEED, tier)) instead.
  */
 JXL_EXPORT JXL_DEPRECATED JxlEncoderStatus
-JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options, int tier);
+JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* frame_settings, int tier);
 
 /**
  * Sets the distance level for lossy compression: target max butteraugli
@@ -853,13 +865,14 @@ JxlEncoderOptionsSetDecodingSpeed(JxlEncoderOptions* options, int tier);
  * requirement). 1.0 = visually lossless. Recommended range: 0.5 .. 3.0. Default
  * value: 1.0.
  *
- * @param options set of encoder options to update with the new mode.
+ * @param frame_settings set of options and metadata for this frame. Also
+ * includes reference to the encoder object.
  * @param distance the distance value to set.
  * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
  * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus
-JxlEncoderOptionsSetDistance(JxlEncoderOptions* options, float distance);
+JxlEncoderOptionsSetDistance(JxlEncoderOptions* frame_settings, float distance);
 
 /**
  * Create a new set of encoder options, with all values initially copied from
