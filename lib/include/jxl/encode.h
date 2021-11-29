@@ -312,6 +312,17 @@ JXL_EXPORT void JxlEncoderReset(JxlEncoder* enc);
 JXL_EXPORT void JxlEncoderDestroy(JxlEncoder* enc);
 
 /**
+ * Sets the color management system (CMS) that will be used for color conversion
+ * (if applicable) during encoding. May only be set before starting encoding. If
+ * left unset, the default CMS implementation will be used.
+ *
+ * @param enc encoder object.
+ * @param cms structure representing a CMS implementation. See JxlCmsInterface
+ * for more details.
+ */
+JXL_EXPORT void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms);
+
+/**
  * Set the parallel runner for multithreading. May only be set before starting
  * encoding.
  *

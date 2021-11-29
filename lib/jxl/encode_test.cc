@@ -227,6 +227,39 @@ TEST(EncodeTest, EncoderResetTest) {
                       JxlEncoderOptionsCreate(enc.get(), nullptr));
 }
 
+TEST(EncodeTest, CmsTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+  bool cms_called = false;
+  JxlCmsInterface cms = jxl::GetJxlCms();
+  struct InitData {
+    void* original_init_data;
+    jpegxl_cms_init_func original_init;
+    bool* cms_called;
+  };
+  InitData init_data = {/*original_init_data=*/cms.init_data,
+                        /*original_init=*/cms.init,
+                        /*cms_called=*/&cms_called};
+  cms.init_data = &init_data;
+  cms.init = +[](void* raw_init_data, size_t num_threads,
+                 size_t pixels_per_thread, const JxlColorProfile* input_profile,
+                 const JxlColorProfile* output_profile,
+                 float intensity_target) {
+    const InitData* init_data = static_cast<const InitData*>(raw_init_data);
+    *init_data->cms_called = true;
+    return init_data->original_init(init_data->original_init_data, num_threads,
+                                    pixels_per_thread, input_profile,
+                                    output_profile, intensity_target);
+  };
+  JxlEncoderSetCms(enc.get(), cms);
+  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), nullptr);
+  JxlEncoderOptionsSetLossless(options, false);
+  ASSERT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderOptionsSetInteger(options, JXL_ENC_OPTION_EFFORT, 8));
+  VerifyFrameEncoding(enc.get(), options);
+  EXPECT_TRUE(cms_called);
+}
+
 TEST(EncodeTest, OptionsTest) {
   {
     JxlEncoderPtr enc = JxlEncoderMake(nullptr);
