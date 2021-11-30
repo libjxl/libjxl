@@ -18,6 +18,23 @@ HWY_BEFORE_NAMESPACE();
 namespace jxl {
 namespace HWY_NAMESPACE {
 
+template <typename Op>
+struct PerChannelOp {
+  explicit PerChannelOp(Op op) : op(op) {}
+  template <typename D, typename T>
+  void Transform(D d, T* r, T* g, T* b) const {
+    *r = op.Transform(d, *r);
+    *g = op.Transform(d, *g);
+    *b = op.Transform(d, *b);
+  }
+
+  Op op;
+};
+template <typename Op>
+PerChannelOp<Op> MakePerChannelOp(Op&& op) {
+  return PerChannelOp<Op>(std::forward<Op>(op));
+}
+
 struct OpLinear {
   template <typename D, typename T>
   T Transform(D d, const T& linear) const {
@@ -44,10 +61,34 @@ struct OpPq {
 };
 
 struct OpHlg {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) const {
-    return TF_HLG().EncodedFromDisplay(d, linear);
+  explicit OpHlg(const float luminances[3], const float intensity_target)
+      : luminances(luminances) {
+    if (295 <= intensity_target && intensity_target <= 305) {
+      apply_inverse_ootf = false;
+      return;
+    }
+    exponent =
+        (1 / 1.2f) * std::pow(1.111f, -std::log2(intensity_target * 1e-3f)) - 1;
   }
+  template <typename D, typename T>
+  void Transform(D d, T* r, T* g, T* b) const {
+    if (apply_inverse_ootf) {
+      const T luminance = Set(d, luminances[0]) * *r +
+                          Set(d, luminances[1]) * *g +
+                          Set(d, luminances[2]) * *b;
+      const T ratio =
+          Min(FastPowf(d, luminance, Set(d, exponent)), Set(d, 1e9));
+      *r *= ratio;
+      *g *= ratio;
+      *b *= ratio;
+    }
+    *r = TF_HLG().EncodedFromDisplay(d, *r);
+    *g = TF_HLG().EncodedFromDisplay(d, *g);
+    *b = TF_HLG().EncodedFromDisplay(d, *b);
+  }
+  bool apply_inverse_ootf = true;
+  const float* luminances;
+  float exponent;
 };
 
 struct Op709 {
@@ -95,14 +136,15 @@ class XYBStage : public RenderPipelineStage {
       const auto in_opsin_y = Load(d, row1 + x + kRenderPipelineXOffset);
       const auto in_opsin_b = Load(d, row2 + x + kRenderPipelineXOffset);
       JXL_COMPILER_FENCE;
-      auto linear_r = Undefined(d);
-      auto linear_g = Undefined(d);
-      auto linear_b = Undefined(d);
-      XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params_, &linear_r,
-               &linear_g, &linear_b);
-      Store(op_.Transform(d, linear_r), d, row0 + x + kRenderPipelineXOffset);
-      Store(op_.Transform(d, linear_g), d, row1 + x + kRenderPipelineXOffset);
-      Store(op_.Transform(d, linear_b), d, row2 + x + kRenderPipelineXOffset);
+      auto r = Undefined(d);
+      auto g = Undefined(d);
+      auto b = Undefined(d);
+      XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b, opsin_params_, &r, &g,
+               &b);
+      op_.Transform(d, &r, &g, &b);
+      Store(r, d, row0 + x + kRenderPipelineXOffset);
+      Store(g, d, row1 + x + kRenderPipelineXOffset);
+      Store(b, d, row2 + x + kRenderPipelineXOffset);
     }
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
@@ -119,28 +161,35 @@ class XYBStage : public RenderPipelineStage {
   Op op_;
 };
 
+template <typename Op>
+std::unique_ptr<XYBStage<Op>> MakeXYBStage(const OpsinParams& opsin_params,
+                                           Op&& op) {
+  return jxl::make_unique<XYBStage<Op>>(opsin_params, std::forward<Op>(op));
+}
+
 std::unique_ptr<RenderPipelineStage> GetXYBStage(
     const OutputEncodingInfo& output_encoding_info) {
   if (output_encoding_info.color_encoding.tf.IsLinear()) {
-    return jxl::make_unique<XYBStage<OpLinear>>(
-        output_encoding_info.opsin_params, OpLinear());
+    return MakeXYBStage(output_encoding_info.opsin_params,
+                        MakePerChannelOp(OpLinear()));
   } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
-    return jxl::make_unique<XYBStage<OpRgb>>(output_encoding_info.opsin_params,
-                                             OpRgb());
+    return MakeXYBStage(output_encoding_info.opsin_params,
+                        MakePerChannelOp(OpRgb()));
   } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
-    return jxl::make_unique<XYBStage<OpPq>>(output_encoding_info.opsin_params,
-                                            OpPq());
+    return MakeXYBStage(output_encoding_info.opsin_params,
+                        MakePerChannelOp(OpPq()));
   } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
-    return jxl::make_unique<XYBStage<OpHlg>>(output_encoding_info.opsin_params,
-                                             OpHlg());
+    return MakeXYBStage(output_encoding_info.opsin_params,
+                        OpHlg(output_encoding_info.luminances,
+                              output_encoding_info.intensity_target));
   } else if (output_encoding_info.color_encoding.tf.Is709()) {
-    return jxl::make_unique<XYBStage<Op709>>(output_encoding_info.opsin_params,
-                                             Op709());
+    return MakeXYBStage(output_encoding_info.opsin_params,
+                        MakePerChannelOp(Op709()));
   } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
              output_encoding_info.color_encoding.tf.IsDCI()) {
-    OpGamma op{output_encoding_info.inverse_gamma};
-    return jxl::make_unique<XYBStage<OpGamma>>(
-        output_encoding_info.opsin_params, op);
+    return MakeXYBStage(
+        output_encoding_info.opsin_params,
+        MakePerChannelOp(OpGamma{output_encoding_info.inverse_gamma}));
   } else {
     // This is a programming error.
     JXL_ABORT("Invalid target encoding");
