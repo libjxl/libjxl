@@ -600,8 +600,8 @@ cmd_gbench() {
 }
 
 cmd_asanfuzz() {
-  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link"
-  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link"
+  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
+  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
   cmd_asan -DJPEGXL_ENABLE_FUZZERS=ON "$@"
 }
 
@@ -615,8 +615,8 @@ cmd_msanfuzz() {
     cmd_msan_install
   fi
 
-  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link"
-  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link"
+  CMAKE_CXX_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
+  CMAKE_C_FLAGS+=" -fsanitize=fuzzer-no-link -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION=1"
   cmd_msan -DJPEGXL_ENABLE_FUZZERS=ON "$@"
 }
 
