@@ -60,6 +60,12 @@ struct JxlCms {
   void* lcms_transform;
 #endif
 
+  // These fields are used when the HLG OOTF or inverse OOTF must be applied.
+  bool apply_hlg_ootf;
+  size_t hlg_ootf_num_channels;
+  // Y component of the primaries.
+  std::array<float, 3> hlg_ootf_luminances;
+
   ImageF buf_src;
   ImageF buf_dst;
   float intensity_target;
@@ -67,6 +73,9 @@ struct JxlCms {
   ExtraTF preprocess = ExtraTF::kNone;
   ExtraTF postprocess = ExtraTF::kNone;
 };
+
+Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
+                    bool forward);
 }  // namespace
 }  // namespace jxl
 
@@ -81,7 +90,7 @@ const size_t kX = 0;  // pixel index, multiplied by 3 for RGB
 #endif
 
 // xform_src = UndoGammaCompression(buf_src).
-void BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
+Status BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
   switch (t->preprocess) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
@@ -112,6 +121,10 @@ void BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
         xform_src[i] = static_cast<float>(
             TF_HLG().DisplayFromEncoded(static_cast<double>(buf_src[i])));
       }
+      if (t->apply_hlg_ootf) {
+        JXL_RETURN_IF_ERROR(
+            ApplyHlgOotf(t, xform_src, t->buf_src.xsize(), /*forward=*/true));
+      }
 #if JXL_CMS_VERBOSE >= 2
       printf("pre in %.4f %.4f %.4f undoHLG %.4f %.4f %.4f\n", buf_src[3 * kX],
              buf_src[3 * kX + 1], buf_src[3 * kX + 2], xform_src[3 * kX],
@@ -133,10 +146,11 @@ void BeforeTransform(JxlCms* t, const float* buf_src, float* xform_src) {
 #endif
       break;
   }
+  return true;
 }
 
 // Applies gamma compression in-place.
-void AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
+Status AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
   switch (t->postprocess) {
     case ExtraTF::kNone:
       JXL_DASSERT(false);  // unreachable
@@ -158,6 +172,10 @@ void AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
       break;
     }
     case ExtraTF::kHLG:
+      if (t->apply_hlg_ootf) {
+        JXL_RETURN_IF_ERROR(
+            ApplyHlgOotf(t, buf_dst, t->buf_dst.xsize(), /*forward=*/false));
+      }
       for (size_t i = 0; i < t->buf_dst.xsize(); ++i) {
         buf_dst[i] = static_cast<float>(
             TF_HLG().EncodedFromDisplay(static_cast<double>(buf_dst[i])));
@@ -181,17 +199,19 @@ void AfterTransform(JxlCms* t, float* JXL_RESTRICT buf_dst) {
 #endif
       break;
   }
+  return true;
 }
 
-void DoColorSpaceTransform(void* cms_data, const size_t thread,
-                           const float* buf_src, float* buf_dst, size_t xsize) {
+Status DoColorSpaceTransform(void* cms_data, const size_t thread,
+                             const float* buf_src, float* buf_dst,
+                             size_t xsize) {
   // No lock needed.
   JxlCms* t = reinterpret_cast<JxlCms*>(cms_data);
 
   const float* xform_src = buf_src;  // Read-only.
   if (t->preprocess != ExtraTF::kNone) {
     float* mutable_xform_src = t->buf_src.Row(thread);  // Writable buffer.
-    BeforeTransform(t, buf_src, mutable_xform_src);
+    JXL_RETURN_IF_ERROR(BeforeTransform(t, buf_src, mutable_xform_src));
     xform_src = mutable_xform_src;
   }
 
@@ -224,8 +244,9 @@ void DoColorSpaceTransform(void* cms_data, const size_t thread,
 #endif
 
   if (t->postprocess != ExtraTF::kNone) {
-    AfterTransform(t, buf_dst);
+    JXL_RETURN_IF_ERROR(AfterTransform(t, buf_dst));
   }
+  return true;
 }
 
 // NOLINTNEXTLINE(google-readability-namespace-comments)
@@ -240,9 +261,8 @@ namespace {
 HWY_EXPORT(DoColorSpaceTransform);
 int DoColorSpaceTransform(void* t, size_t thread, const float* buf_src,
                           float* buf_dst, size_t xsize) {
-  HWY_DYNAMIC_DISPATCH(DoColorSpaceTransform)
-  (t, thread, buf_src, buf_dst, xsize);
-  return JXL_TRUE;
+  return HWY_DYNAMIC_DISPATCH(DoColorSpaceTransform)(t, thread, buf_src,
+                                                     buf_dst, xsize);
 }
 
 // Define to 1 on OS X as a workaround for older LCMS lacking MD5.
@@ -650,6 +670,106 @@ cmsContext GetContext() {
 
 #endif  // JPEGXL_ENABLE_SKCMS
 
+Status GetPrimariesLuminances(const ColorEncoding& encoding,
+                              float luminances[3]) {
+  // Explanation:
+  // We know that the three primaries must sum to white:
+  //
+  // [Xr, Xg, Xb;     [1;     [Xw;
+  //  Yr, Yg, Yb;  ×   1;  =   Yw;
+  //  Zr, Zg, Zb]      1]      Zw]
+  //
+  // By noting that X = x·(X+Y+Z), Y = y·(X+Y+Z) and Z = z·(X+Y+Z) (note the
+  // lower case indicating chromaticity), and factoring the totals (X+Y+Z) out
+  // of the left matrix and into the all-ones vector, we get:
+  //
+  // [xr, xg, xb;     [Xr + Yr + Zr;     [Xw;
+  //  yr, yg, yb;  ×   Xg + Yg + Zg;  =   Yw;
+  //  zr, zg, zb]      Xb + Yb + Zb]      Zw]
+  //
+  // Which makes it apparent that we can compute those totals as:
+  //
+  //                  [Xr + Yr + Zr;     inv([xr, xg, xb;      [Xw;
+  //                   Xg + Yg + Zg;  =       yr, yg, yb;   ×   Yw;
+  //                   Xb + Yb + Zb]          zr, zg, zb])      Zw]
+  //
+  // From there, by multiplying each total by its corresponding y, we get Y for
+  // that primary.
+
+  float white_XYZ[3];
+  JXL_RETURN_IF_ERROR(
+      CIEXYZFromWhiteCIExy(encoding.GetWhitePoint(), white_XYZ));
+
+  const PrimariesCIExy primaries = encoding.GetPrimaries();
+  double chromaticities[3][3] = {
+      {primaries.r.x, primaries.g.x, primaries.b.x},
+      {primaries.r.y, primaries.g.y, primaries.b.y},
+      {1 - primaries.r.x - primaries.r.y, 1 - primaries.g.x - primaries.g.y,
+       1 - primaries.b.x - primaries.b.y}};
+  JXL_RETURN_IF_ERROR(Inv3x3Matrix(&chromaticities[0][0]));
+  const double ys[3] = {primaries.r.y, primaries.g.y, primaries.b.y};
+  for (size_t i = 0; i < 3; ++i) {
+    luminances[i] = ys[i] * (chromaticities[i][0] * white_XYZ[0] +
+                             chromaticities[i][1] * white_XYZ[1] +
+                             chromaticities[i][2] * white_XYZ[2]);
+  }
+  return true;
+}
+
+Status ApplyHlgOotf(JxlCms* t, float* JXL_RESTRICT buf, size_t xsize,
+                    bool forward) {
+  if (295 <= t->intensity_target && t->intensity_target <= 305) {
+    // The gamma is approximately 1 so this can essentially be skipped.
+    return true;
+  }
+  float gamma = 1.2f * std::pow(1.111f, std::log2(t->intensity_target * 1e-3f));
+  if (!forward) gamma = 1.f / gamma;
+
+  switch (t->hlg_ootf_num_channels) {
+    case 1:
+      for (size_t x = 0; x < xsize; ++x) {
+        buf[x] = std::pow(buf[x], gamma);
+      }
+      break;
+
+    case 3:
+      for (size_t x = 0; x < xsize; x += 3) {
+        const float luminance = buf[x] * t->hlg_ootf_luminances[0] +
+                                buf[x + 1] * t->hlg_ootf_luminances[1] +
+                                buf[x + 2] * t->hlg_ootf_luminances[2];
+        const float ratio = std::pow(luminance, gamma - 1);
+        if (std::isfinite(ratio)) {
+          buf[x] *= ratio;
+          buf[x + 1] *= ratio;
+          buf[x + 2] *= ratio;
+          if (forward && gamma < 1) {
+            // If gamma < 1, the ratio above will be > 1 which can push bright
+            // saturated highlights out of gamut. There are several possible
+            // ways to bring them back in-gamut; this one preserves hue and
+            // saturation at the slight expense of luminance. If !forward, the
+            // previously-applied forward OOTF with gamma > 1 already pushed
+            // those highlights down and we are simply putting them back where
+            // they were so this is not necessary.
+            const float maximum =
+                std::max(buf[x], std::max(buf[x + 1], buf[x + 2]));
+            if (maximum > 1) {
+              const float normalizer = 1.f / maximum;
+              buf[x] *= normalizer;
+              buf[x + 1] *= normalizer;
+              buf[x + 2] *= normalizer;
+            }
+          }
+        }
+      }
+      break;
+
+    default:
+      return JXL_FAILURE("HLG OOTF not implemented for %" PRIuS " channels",
+                         t->hlg_ootf_num_channels);
+  }
+  return true;
+}
+
 }  // namespace
 
 // All functions that call lcms directly (except ColorSpaceTransform::Run) must
@@ -808,6 +928,18 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
 #endif
   }
 
+  t->apply_hlg_ootf = c_src.tf.IsHLG() != c_dst.tf.IsHLG();
+  if (t->apply_hlg_ootf) {
+    const ColorEncoding* c_hlg = c_src.tf.IsHLG() ? &c_src : &c_dst;
+    t->hlg_ootf_num_channels = c_hlg->Channels();
+    if (t->hlg_ootf_num_channels == 3 &&
+        !GetPrimariesLuminances(*c_hlg, t->hlg_ootf_luminances.data())) {
+      JXL_NOTIFY_ERROR(
+          "JxlCmsInit: failed to compute the luminances of primaries");
+      return nullptr;
+    }
+  }
+
   // Special-case SRGB <=> linear and when PQ or HLG is involved:
   const bool src_linear = c_src.tf.IsLinear();
   const bool dst_linear = c_dst.tf.IsLinear();
@@ -834,7 +966,7 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
         DecodeProfile(context, icc_src, &new_src) &&
         DecodeProfile(context, icc_dst, &new_dst)) {
 #endif  // JPEGXL_ENABLE_SKCMS
-      if (c_src.SameColorSpace(c_dst)) {
+      if (c_linear_src.SameColorSpace(c_linear_dst)) {
         t->skip_lcms = true;
       }
 #if JXL_CMS_VERBOSE
@@ -860,6 +992,11 @@ void* JxlCmsInit(void* init_data, size_t num_threads, size_t xsize,
                              : (c_dst.tf.IsPQ() ? ExtraTF::kPQ : ExtraTF::kHLG);
       }
     } else {
+      if (t->apply_hlg_ootf) {
+        JXL_NOTIFY_ERROR(
+            "Failed to create extra linear profiles, and HLG OOTF required");
+        return nullptr;
+      }
       JXL_WARNING("Failed to create extra linear profiles");
     }
   }

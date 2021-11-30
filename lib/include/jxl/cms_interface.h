@@ -4,7 +4,9 @@
  * license that can be found in the LICENSE file.
  */
 
-/** @file cms_interface.h
+/** @addtogroup libjxl_common
+ * @{
+ * @file cms_interface.h
  * @brief Interface to allow the injection of different color management systems
  * (CMSes, also called color management modules, or CMMs) in JPEG XL.
  *
@@ -64,11 +66,19 @@ typedef struct {
  * @param output_profile the colorspace to which JxlCmsInterface::run should
  *        convert the input data.
  * @param intensity_target for colorspaces where luminance is relative
- *        (essentially: not PQ), indicates the luminance of (1, 1, 1). This is
- *        only useful for conversions between a relative luminance colorspace
- *        and an absolute luminance one, in either direction.
- *        @p intensity_target cd/m² in the absolute colorspace should map to and
- *        from (1, 1, 1) in the relative one.
+ *        (essentially: not PQ), indicates the luminance at which (1, 1, 1) will
+ *        be displayed. This is useful for conversions between PQ and a relative
+ *        luminance colorspace, in either direction: @p intensity_target cd/m²
+ *        in PQ should map to and from (1, 1, 1) in the relative one.\n
+ *        It is also used for conversions to and from HLG, as it is
+ *        scene-referred while other colorspaces are assumed to be
+ *        display-referred. That is, conversions from HLG should apply the OOTF
+ *        for a peak display luminance of @p intensity_target, and conversions
+ *        to HLG should undo it. The OOTF is a gamma function applied to the
+ *        luminance channel (https://www.itu.int/rec/R-REC-BT.2100-2-201807-I
+ *        page 7), with the gamma value computed as
+ *        <tt>1.2 * 1.111^log2(intensity_target / 1000)</tt> (footnote 2 page 8
+ *        of the same document).
  * @return The data needed for the transform, or @c NULL in case of failure.
  *         This will be passed to the other functions as @c user_data.
  */
@@ -218,3 +228,5 @@ typedef struct {
 #endif
 
 #endif /* JXL_CMS_INTERFACE_H_ */
+
+/** @} */

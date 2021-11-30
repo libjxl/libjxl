@@ -208,7 +208,7 @@ Status OutputEncodingInfo::Set(const CodecMetadata& metadata,
   const auto& im = metadata.transform_data.opsin_inverse_matrix;
   float inverse_matrix[9];
   memcpy(inverse_matrix, im.inverse_matrix, sizeof(inverse_matrix));
-  float intensity_target = metadata.m.IntensityTarget();
+  intensity_target = metadata.m.IntensityTarget();
   if (metadata.m.xyb_encoded) {
     const auto& orig_color_encoding = metadata.m.color_encoding;
     color_encoding = default_enc;
@@ -246,8 +246,8 @@ Status OutputEncodingInfo::Set(const CodecMetadata& metadata,
             srgb.GetPrimaries().g.x, srgb.GetPrimaries().g.y,
             srgb.GetPrimaries().b.x, srgb.GetPrimaries().b.y,
             srgb.GetWhitePoint().x, srgb.GetWhitePoint().y, srgb_to_xyzd50));
-        float xyzd50_to_original[9];
-        JXL_RETURN_IF_ERROR(PrimariesToXYZD50(
+        float original_to_xyz[3][3];
+        JXL_RETURN_IF_ERROR(PrimariesToXYZ(
             orig_color_encoding.GetPrimaries().r.x,
             orig_color_encoding.GetPrimaries().r.y,
             orig_color_encoding.GetPrimaries().g.x,
@@ -255,7 +255,15 @@ Status OutputEncodingInfo::Set(const CodecMetadata& metadata,
             orig_color_encoding.GetPrimaries().b.x,
             orig_color_encoding.GetPrimaries().b.y,
             orig_color_encoding.GetWhitePoint().x,
-            orig_color_encoding.GetWhitePoint().y, xyzd50_to_original));
+            orig_color_encoding.GetWhitePoint().y, &original_to_xyz[0][0]));
+        memcpy(luminances, original_to_xyz[1], sizeof luminances);
+        float adapt_to_d50[9];
+        JXL_RETURN_IF_ERROR(AdaptToXYZD50(orig_color_encoding.GetWhitePoint().x,
+                                          orig_color_encoding.GetWhitePoint().y,
+                                          adapt_to_d50));
+        float xyzd50_to_original[9];
+        MatMul(adapt_to_d50, &original_to_xyz[0][0], 3, 3, 3,
+               xyzd50_to_original);
         JXL_RETURN_IF_ERROR(Inv3x3Matrix(xyzd50_to_original));
         float srgb_to_original[9];
         MatMul(xyzd50_to_original, srgb_to_xyzd50, 3, 3, 3, srgb_to_original);

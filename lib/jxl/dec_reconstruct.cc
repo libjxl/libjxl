@@ -60,21 +60,35 @@ void DoUndoXYBInPlace(Image3F* idct, const Rect& rect, Op op,
       const auto in_opsin_y = Load(d, row1 + x);
       const auto in_opsin_b = Load(d, row2 + x);
       JXL_COMPILER_FENCE;
-      auto linear_r = Undefined(d);
-      auto linear_g = Undefined(d);
-      auto linear_b = Undefined(d);
+      auto r = Undefined(d);
+      auto g = Undefined(d);
+      auto b = Undefined(d);
       XybToRgb(d, in_opsin_x, in_opsin_y, in_opsin_b,
-               output_encoding_info.opsin_params, &linear_r, &linear_g,
-               &linear_b);
-      Store(op.Transform(d, linear_r), d, row0 + x);
-      Store(op.Transform(d, linear_g), d, row1 + x);
-      Store(op.Transform(d, linear_b), d, row2 + x);
+               output_encoding_info.opsin_params, &r, &g, &b);
+      op.Transform(d, &r, &g, &b);
+      Store(r, d, row0 + x);
+      Store(g, d, row1 + x);
+      Store(b, d, row2 + x);
     }
     msan::PoisonMemory(row0 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row1 + xsize, sizeof(float) * (xsize_v - xsize));
     msan::PoisonMemory(row2 + xsize, sizeof(float) * (xsize_v - xsize));
   }
 }
+
+template <typename Op>
+struct PerChannelOp {
+  template <typename... Args>
+  explicit PerChannelOp(Args&&... args) : op(std::forward<Args>(args)...) {}
+  template <typename D, typename T>
+  void Transform(D d, T* r, T* g, T* b) {
+    *r = op.Transform(d, *r);
+    *g = op.Transform(d, *g);
+    *b = op.Transform(d, *b);
+  }
+
+  Op op;
+};
 
 struct OpLinear {
   template <typename D, typename T>
@@ -102,10 +116,34 @@ struct OpPq {
 };
 
 struct OpHlg {
-  template <typename D, typename T>
-  T Transform(D d, const T& linear) {
-    return TF_HLG().EncodedFromDisplay(d, linear);
+  explicit OpHlg(const float luminances[3], const float intensity_target)
+      : luminances(luminances) {
+    if (295 <= intensity_target && intensity_target <= 305) {
+      apply_inverse_ootf = false;
+      return;
+    }
+    exponent =
+        (1 / 1.2f) * std::pow(1.111f, -std::log2(intensity_target * 1e-3f)) - 1;
   }
+  template <typename D, typename T>
+  void Transform(D d, T* r, T* g, T* b) {
+    if (apply_inverse_ootf) {
+      const T luminance = Set(d, luminances[0]) * *r +
+                          Set(d, luminances[1]) * *g +
+                          Set(d, luminances[2]) * *b;
+      const T ratio =
+          Min(FastPowf(d, luminance, Set(d, exponent)), Set(d, 1e9));
+      *r *= ratio;
+      *g *= ratio;
+      *b *= ratio;
+    }
+    *r = TF_HLG().EncodedFromDisplay(d, *r);
+    *g = TF_HLG().EncodedFromDisplay(d, *g);
+    *b = TF_HLG().EncodedFromDisplay(d, *b);
+  }
+  bool apply_inverse_ootf = true;
+  const float* luminances;
+  float exponent;
 };
 
 struct Op709 {
@@ -116,6 +154,7 @@ struct Op709 {
 };
 
 struct OpGamma {
+  explicit OpGamma(const float inverse_gamma) : inverse_gamma(inverse_gamma) {}
   const float inverse_gamma;
   template <typename D, typename T>
   T Transform(D d, const T& linear) {
@@ -129,19 +168,24 @@ Status UndoXYBInPlace(Image3F* idct, const Rect& rect,
   PROFILER_ZONE("UndoXYB");
 
   if (output_encoding_info.color_encoding.tf.IsLinear()) {
-    DoUndoXYBInPlace(idct, rect, OpLinear(), output_encoding_info);
+    DoUndoXYBInPlace(idct, rect, PerChannelOp<OpLinear>(),
+                     output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.IsSRGB()) {
-    DoUndoXYBInPlace(idct, rect, OpRgb(), output_encoding_info);
+    DoUndoXYBInPlace(idct, rect, PerChannelOp<OpRgb>(), output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.IsPQ()) {
-    DoUndoXYBInPlace(idct, rect, OpPq(), output_encoding_info);
+    DoUndoXYBInPlace(idct, rect, PerChannelOp<OpPq>(), output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.IsHLG()) {
-    DoUndoXYBInPlace(idct, rect, OpHlg(), output_encoding_info);
+    DoUndoXYBInPlace(idct, rect,
+                     OpHlg(output_encoding_info.luminances,
+                           output_encoding_info.intensity_target),
+                     output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.Is709()) {
-    DoUndoXYBInPlace(idct, rect, Op709(), output_encoding_info);
+    DoUndoXYBInPlace(idct, rect, PerChannelOp<Op709>(), output_encoding_info);
   } else if (output_encoding_info.color_encoding.tf.IsGamma() ||
              output_encoding_info.color_encoding.tf.IsDCI()) {
-    OpGamma op{output_encoding_info.inverse_gamma};
-    DoUndoXYBInPlace(idct, rect, op, output_encoding_info);
+    DoUndoXYBInPlace(idct, rect,
+                     PerChannelOp<OpGamma>(output_encoding_info.inverse_gamma),
+                     output_encoding_info);
   } else {
     // This is a programming error.
     JXL_ABORT("Invalid target encoding");
