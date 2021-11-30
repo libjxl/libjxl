@@ -17,14 +17,18 @@ namespace jxl {
 // amounts of memory and be slow. It is intended to be used mostly for testing
 // purposes.
 class SimpleRenderPipeline : public RenderPipeline {
- public:
-  void PrepareForThreads(size_t num) override;
-
- private:
   std::vector<std::pair<ImageF*, Rect>> PrepareBuffers(
       size_t group_id, size_t thread_id) override;
 
   void ProcessBuffers(size_t group_id, size_t thread_id) override;
+
+  void RunPipeline();
+
+  void PrepareForThreadsInternal(size_t num) override;
+
+  // Full frame buffers. Both X and Y dimensions are padded by
+  // kRenderPipelineXOffset.
+  std::vector<ImageF> channel_data_;
 };
 
 }  // namespace jxl
