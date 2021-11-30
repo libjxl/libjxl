@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "lib/extras/codec.h"
-#include "lib/extras/codec_png.h"
 #include "lib/extras/color_hints.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/file_io.h"
@@ -32,16 +31,13 @@
 namespace jxl {
 namespace {
 
-Status WritePNG(Image3F&& image, const std::string& filename) {
+Status WriteImage(Image3F&& image, const std::string& filename) {
   ThreadPoolInternal pool(4);
   CodecInOut io;
   io.metadata.m.SetUintSamples(8);
   io.metadata.m.color_encoding = ColorEncoding::SRGB();
   io.SetFromImage(std::move(image), io.metadata.m.color_encoding);
-  PaddedBytes compressed;
-  JXL_CHECK(extras::EncodeImagePNG(&io, io.Main().c_current(), 8, &pool,
-                                   &compressed));
-  return WriteFile(compressed, filename);
+  return EncodeToFile(io, filename, &pool);
 }
 
 Status RunButteraugli(const char* pathname1, const char* pathname2,
@@ -93,7 +89,7 @@ Status RunButteraugli(const char* pathname1, const char* pathname2,
     float good = ButteraugliFuzzyInverse(1.5);
     float bad = ButteraugliFuzzyInverse(0.5);
     JXL_CHECK(
-        WritePNG(CreateHeatMapImage(distmap, good, bad), distmap_filename));
+        WriteImage(CreateHeatMapImage(distmap, good, bad), distmap_filename));
   }
   return true;
 }

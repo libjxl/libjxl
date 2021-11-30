@@ -21,11 +21,16 @@
 namespace jxl {
 namespace extras {
 
-// Decodes `bytes` into `io`. color_space_hint is ignored.
+// Decodes `bytes` into `ppf`.
 Status DecodeImageAPNG(const Span<const uint8_t> bytes,
                        const ColorHints& color_hints,
                        const SizeConstraints& constraints,
                        PackedPixelFile* ppf);
+
+// Encodes `io` into `bytes`.
+Status EncodeImageAPNG(const CodecInOut* io, const ColorEncoding& c_desired,
+                       size_t bits_per_sample, ThreadPool* pool,
+                       PaddedBytes* bytes);
 
 }  // namespace extras
 }  // namespace jxl
