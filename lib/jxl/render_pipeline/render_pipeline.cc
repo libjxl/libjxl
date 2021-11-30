@@ -117,6 +117,18 @@ void RenderPipeline::InputReady(
   ProcessBuffers(group_id, thread_id);
 }
 
+void RenderPipeline::PrepareForThreads(size_t num) {
+  temp_buffers_.resize(num);
+  for (auto& thread_buffers : temp_buffers_) {
+    thread_buffers.reserve(stages_.size());
+    for (const auto& stage : stages_) {
+      thread_buffers.push_back(
+          AllocateArray(sizeof(float) * stage->settings_.temp_buffer_size));
+    }
+  }
+  PrepareForThreadsInternal(num);
+}
+
 RenderPipelineInput::~RenderPipelineInput() {
   if (pipeline_) {
     pipeline_->InputReady(group_id_, thread_id_, buffers_);

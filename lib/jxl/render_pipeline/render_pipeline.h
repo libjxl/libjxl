@@ -76,7 +76,7 @@ class RenderPipeline {
   virtual ~RenderPipeline() = default;
 
   // Allocates storage to run with `num` threads.
-  virtual void PrepareForThreads(size_t num) = 0;
+  void PrepareForThreads(size_t num);
 
   // Retrieves a buffer where input data should be stored by the callee. When
   // input has been provided for all buffers, the pipeline will complete its
@@ -84,21 +84,13 @@ class RenderPipeline {
   // different threads, provided that a different `thread_id` is given.
   RenderPipelineInput GetInputBuffers(size_t group_id, size_t thread_id);
 
-  bool IsDone() const {
+  bool ReceivedAllInput() const {
     return std::find_if(group_status_.begin(), group_status_.end(),
                         [](GroupStatus s) { return s != kDone; }) ==
            group_status_.end();
   }
 
- private:
-  void InputReady(size_t group_id, size_t thread_id,
-                  const std::vector<std::pair<ImageF*, Rect>>& buffers);
-
-  virtual std::vector<std::pair<ImageF*, Rect>> PrepareBuffers(
-      size_t group_id, size_t thread_id) = 0;
-
-  virtual void ProcessBuffers(size_t group_id, size_t thread_id) = 0;
-
+ protected:
   std::vector<std::unique_ptr<RenderPipelineStage>> stages_;
   // Shifts for every channel at the input of each stage.
   std::vector<std::vector<std::pair<size_t, size_t>>> channel_shifts_;
@@ -109,7 +101,21 @@ class RenderPipeline {
   enum GroupStatus { kUninitialized, kInitializing, kDone };
   std::vector<GroupStatus> group_status_;
 
+  // Indexed by [thread_id][stage]
+  std::vector<std::vector<CacheAlignedUniquePtr>> temp_buffers_;
+
   friend class RenderPipelineInput;
+
+ private:
+  void InputReady(size_t group_id, size_t thread_id,
+                  const std::vector<std::pair<ImageF*, Rect>>& buffers);
+
+  virtual std::vector<std::pair<ImageF*, Rect>> PrepareBuffers(
+      size_t group_id, size_t thread_id) = 0;
+
+  virtual void ProcessBuffers(size_t group_id, size_t thread_id) = 0;
+
+  virtual void PrepareForThreadsInternal(size_t num) = 0;
 };
 
 }  // namespace jxl

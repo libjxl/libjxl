@@ -16,12 +16,10 @@ namespace jxl {
 // A multithreaded, low-memory rendering pipeline that only allocates a minimal
 // amount of buffers.
 class LowMemoryRenderPipeline : public RenderPipeline {
- public:
-  void PrepareForThreads(size_t num) override;
-
- private:
   std::vector<std::pair<ImageF*, Rect>> PrepareBuffers(
       size_t group_id, size_t thread_id) override;
+
+  void PrepareForThreadsInternal(size_t num) override;
 
   void ProcessBuffers(size_t group_id, size_t thread_id) override;
 };

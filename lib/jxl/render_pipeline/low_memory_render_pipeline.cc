@@ -6,7 +6,7 @@
 #include "lib/jxl/render_pipeline/low_memory_render_pipeline.h"
 
 namespace jxl {
-void LowMemoryRenderPipeline::PrepareForThreads(size_t num) {
+void LowMemoryRenderPipeline::PrepareForThreadsInternal(size_t num) {
   JXL_ABORT("Not implemented");
 }
 
