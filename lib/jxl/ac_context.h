@@ -109,7 +109,8 @@ struct BlockCtxMap {
   // Non-zero context is based on number of non-zeros and block context.
   // For better clustering, contexts with same number of non-zeros are grouped.
   constexpr uint32_t ZeroDensityContextsOffset(uint32_t block_ctx) const {
-    return (uint32_t)(num_ctxs * kNonZeroBuckets + kZeroDensityContextCount * block_ctx);
+    return static_cast<uint32_t>(num_ctxs * kNonZeroBuckets +
+                                 kZeroDensityContextCount * block_ctx);
   }
 
   // Context map for AC coefficients consists of 2 blocks:
@@ -121,7 +122,8 @@ struct BlockCtxMap {
   //                               number of non-zeros left and
   //                               index in scan order
   constexpr uint32_t NumACContexts() const {
-    return (uint32_t)(num_ctxs * (kNonZeroBuckets + kZeroDensityContextCount));
+    return static_cast<uint32_t>(num_ctxs *
+                                 (kNonZeroBuckets + kZeroDensityContextCount));
   }
 
   // Non-zero context is based on number of non-zeros and block context.
@@ -134,7 +136,7 @@ struct BlockCtxMap {
     } else {
       ctx = 4 + non_zeros / 2;
     }
-    return (uint32_t)(ctx * num_ctxs + block_ctx);
+    return static_cast<uint32_t>(ctx * num_ctxs + block_ctx);
   }
 
   BlockCtxMap() {
