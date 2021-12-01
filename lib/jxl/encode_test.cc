@@ -691,6 +691,35 @@ TEST(EncodeTest, CodestreamLevelTest) {
   EXPECT_EQ(0, memcmp("jxll", container.boxes[0].type, 4));
 }
 
+TEST(EncodeTest, CodestreamLevelVerificationTest) {
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = 64;
+  basic_info.ysize = 64;
+  basic_info.uses_original_profile = false;
+
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+
+  EXPECT_EQ(5, JxlEncoderGetRequiredCodestreamLevel(enc.get()));
+
+  // Set an image dimension that is too large for level 5, but fits in level 10
+
+  basic_info.xsize = 1ull << 30ull;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+
+  EXPECT_EQ(10, JxlEncoderGetRequiredCodestreamLevel(enc.get()));
+
+  // Set an image dimension that is too large even for level 10
+
+  basic_info.xsize = 1ull << 31ull;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+
+  EXPECT_EQ(-1, JxlEncoderGetRequiredCodestreamLevel(enc.get()));
+}
+
 TEST(EncodeTest, JXL_TRANSCODE_JPEG_TEST(JPEGReconstructionTest)) {
   const std::string jpeg_path =
       "imagecompression.info/flower_foveon.png.im_q85_420.jpg";
