@@ -108,15 +108,11 @@ JxlEncoderStatus BrotliCompress(int quality, const uint8_t* in, size_t in_size,
 }
 
 // The JXL codestream can have level 5 or level 10. Levels have certain
-// restrictions such as max allowed image dimensions. This function verifies
-// the user-given parameters against the chosen level. By default the codestream
-// has level 5, making it level 10 is done with JxlEncoderSetCodestreamLevel.
-JxlEncoderStatus VerifyLevelSettings(JxlEncoder* enc) {
-  if (enc->codestream_level != 5 && enc->codestream_level != 10) {
-    return JXL_API_ERROR(
-        "Unknown codestream level, only 5 or 10 are supported");
-  }
-
+// restrictions such as max allowed image dimensions. This function checks the
+// level required to support the current encoder settings. The debug_string is
+// intended to be used for developer API error messages, and may be set to
+// nullptr.
+int VerifyLevelSettings(const JxlEncoder* enc, std::string* debug_string) {
   const auto& m = enc->metadata.m;
 
   uint64_t xsize = enc->metadata.size.xsize();
@@ -127,36 +123,41 @@ JxlEncoderStatus VerifyLevelSettings(JxlEncoder* enc) {
     icc_size = m.color_encoding.ICC().size();
   }
 
-  if (enc->codestream_level == 10) {
-    // Level 10 has fewer restrictions than level 5
-    if (xsize > (1ull << 30ull) || ysize > (1ull << 30ull) ||
-        xsize * ysize > (1ull << 40ull)) {
-      return JXL_API_ERROR("Dimensions out of bounds for codestream level 10");
-    }
-    if (icc_size > (1ull << 28)) {
-      return JXL_API_ERROR(
-          "Too large ICC profile size for codestream level 10");
-    }
-    if (m.num_extra_channels > 256) {
-      return JXL_API_ERROR("Too many extra channels for codestream level 10");
-    }
-    return JXL_ENC_SUCCESS;
+  // Level 10 checks
+
+  if (xsize > (1ull << 30ull) || ysize > (1ull << 30ull) ||
+      xsize * ysize > (1ull << 40ull)) {
+    if (debug_string) *debug_string = "Too large image dimensions";
+    return -1;
   }
+  if (icc_size > (1ull << 28)) {
+    if (debug_string) *debug_string = "Too large ICC profile size";
+    return -1;
+  }
+  if (m.num_extra_channels > 256) {
+    if (debug_string) *debug_string = "Too many extra channels";
+    return -1;
+  }
+
+  // Level 5 checks
 
   if (xsize > (1ull << 18ull) || ysize > (1ull << 18ull) ||
       xsize * ysize > (1ull << 28ull)) {
-    return JXL_API_ERROR("Dimensions out of bounds for codestream level 5");
+    if (debug_string) *debug_string = "Too large image dimensions";
+    return 10;
   }
   if (icc_size > (1ull << 22)) {
-    return JXL_API_ERROR("Too large ICC profile size for codestream level 5");
+    if (debug_string) *debug_string = "Too large ICC profile";
+    return 10;
   }
   if (m.num_extra_channels > 4) {
-    return JXL_API_ERROR("Too many extra channels for codestream level 5");
+    if (debug_string) *debug_string = "Too many extra channels";
+    return 10;
   }
   for (size_t i = 0; i < m.extra_channel_info.size(); ++i) {
     if (m.extra_channel_info[i].type == jxl::ExtraChannel::kBlack) {
-      return JXL_API_ERROR(
-          "CMYK extra channel not allowed in codestream level 5");
+      if (debug_string) *debug_string = "CMYK channel not allowed";
+      return 10;
     }
   }
 
@@ -174,7 +175,8 @@ JxlEncoderStatus VerifyLevelSettings(JxlEncoder* enc) {
   // these are not user-set properties so cannot be checked here, but decisions
   // the C++ encoder should be able to make based on the level.
 
-  return JXL_ENC_SUCCESS;
+  // All level 5 checks passes, so can return the more compatible level 5
+  return 5;
 }
 }  // namespace
 
@@ -189,8 +191,26 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
   if (!wrote_bytes) {
     // First time encoding any data, verify the level 5 vs level 10 settings
-    if (JXL_ENC_SUCCESS != VerifyLevelSettings(this)) {
-      return JXL_API_ERROR("Codestream level features verification failed");
+    std::string level_message;
+    int required_level = VerifyLevelSettings(this, &level_message);
+    // Only level 5 and 10 are defined, and the function can return -1 to
+    // indicate full incompatibility.
+    JXL_ASSERT(required_level == -1 || required_level == 5 ||
+               required_level == 10);
+    if (codestream_level == 5 && required_level != 5) {
+      // If the required level is 10, return error rather than automatically
+      // setting the level to 10, to avoid inadvertently creating a level 10
+      // JXL file while intending to target a level 5 decoder.
+      return JXL_API_ERROR(
+          "%s",
+          ("Codestream level verification for level 5 failed: " + level_message)
+              .c_str());
+    }
+    if (codestream_level == 10 && required_level == -1) {
+      return JXL_API_ERROR(
+          "%s", ("Codestream level verification for level 10 failed: " +
+                 level_message)
+                    .c_str());
     }
 
     jxl::BitWriter writer;
@@ -874,6 +894,10 @@ JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc, int level) {
   }
   enc->codestream_level = level;
   return JXL_ENC_SUCCESS;
+}
+
+int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc) {
+  return VerifyLevelSettings(enc, nullptr);
 }
 
 void JxlEncoderSetCms(JxlEncoder* enc, JxlCmsInterface cms) { enc->cms = cms; }

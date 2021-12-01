@@ -794,7 +794,8 @@ JXL_EXPORT JxlEncoderStatus
 JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
 
 /** Sets the feature level of the JPEG XL codestream. Valid values are 5 and
- * 10.
+ * 10. Keeping the default value of 5 is recommended for compatibility with all
+ * decoders.
  *
  * Level 5: for end-user image delivery, this level is the most widely
  * supported level by image decoders and the recommended level to use unless a
@@ -817,9 +818,35 @@ JxlEncoderStoreJPEGMetadata(JxlEncoder* enc, JXL_BOOL store_jpeg_metadata);
  * the encoder will only use those compatible with the level setting.
  *
  * This setting can only be set at the beginning, before encoding starts.
+ *
+ * @param enc encoder object.
+ * @param level the level value to set, must be 5 or 10.
+ * @return JXL_ENC_SUCCESS if the operation was successful, JXL_ENC_ERROR
+ * otherwise.
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderSetCodestreamLevel(JxlEncoder* enc,
                                                          int level);
+
+/** Returns the codestream level required to support the currently configured
+ * settings and basic info. This function can only be used at the beginning,
+ * before encoding starts, but after setting basic info.
+ *
+ * This does not support per-frame settings, only global configuration, such as
+ * the image dimensions, that are known at the time of writing the header of
+ * the JPEG XL file.
+ *
+ * If this returns 5, nothing needs to be done and the codestream can be
+ * compatible with any decoder. If this returns 10, JxlEncoderSetCodestreamLevel
+ * has to be used to set the codestream level to 10, or the encoder can be
+ * configured differently to allow using the more compatible level 5.
+ *
+ * @param enc encoder object.
+ * @return -1 if no level can support the configuration (e.g. image dimensions
+ * larger than even level 10 supports), 5 if level 5 is supported, 10 if setting
+ * the codestream level to 10 is required.
+ *
+ */
+JXL_EXPORT int JxlEncoderGetRequiredCodestreamLevel(const JxlEncoder* enc);
 
 /**
  * Enables lossless encoding.
