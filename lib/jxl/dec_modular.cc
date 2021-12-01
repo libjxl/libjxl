@@ -304,13 +304,11 @@ Status ModularFrameDecoder::DecodeGroup(
   if (gi.channel.empty()) return true;
   ModularOptions options;
   if (!zerofill) {
-    if (!ModularGenericDecompress(reader, gi, /*header=*/nullptr,
-                                  stream.ID(frame_dim), &options,
-                                  /*undo_transforms=*/true, &tree, &code,
-                                  &context_map, allow_truncated) &&
-        !allow_truncated) {
-      return JXL_FAILURE("Failed to decode modular group");
-    }
+    auto status = ModularGenericDecompress(
+        reader, gi, /*header=*/nullptr, stream.ID(frame_dim), &options,
+        /*undo_transforms=*/true, &tree, &code, &context_map, allow_truncated);
+    if (!allow_truncated) JXL_RETURN_IF_ERROR(status);
+    if (status.IsFatalError()) return status;
   }
   // Undo global transforms that have been pushed to the group level
   if (!use_full_image) {
