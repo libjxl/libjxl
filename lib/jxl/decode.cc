@@ -25,7 +25,6 @@
 
 namespace {
 
-
 // Checks if a + b > size, taking possible integer overflow into account.
 bool OutOfBounds(size_t a, size_t b, size_t size) {
   size_t pos = a + b;
@@ -731,7 +730,7 @@ JxlDecoder* JxlDecoderCreate(const JxlMemoryManager* memory_manager) {
   JxlDecoder* dec = new (alloc) JxlDecoder();
   dec->memory_manager = local_memory_manager;
 
-#if (JXL_MEMORY_SANITIZER || JXL_ADDRESS_SANITIZER || JXL_THREAD_SANITIZER)
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
   if (!memory_manager) {
     dec->memory_limit_base = 1 << 21;
     // Allow 5 x max_image_size processing units; every frame is accounted
