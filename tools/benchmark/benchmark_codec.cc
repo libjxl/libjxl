@@ -31,7 +31,9 @@
 #include "tools/benchmark/benchmark_codec_jpeg.h"
 #endif  // BENCHMARK_JPEG
 #include "tools/benchmark/benchmark_codec_jxl.h"
+#if JPEGXL_ENABLE_APNG
 #include "tools/benchmark/benchmark_codec_png.h"
+#endif
 #include "tools/benchmark/benchmark_stats.h"
 
 #ifdef BENCHMARK_WEBP
@@ -169,8 +171,10 @@ ImageCodecPtr CreateImageCodec(const std::string& description) {
   } else if (name == "jpeg") {
     result.reset(CreateNewJPEGCodec(*Args()));
 #endif  // BENCHMARK_JPEG
+#if JPEGXL_ENABLE_APNG
   } else if (name == "png") {
     result.reset(CreateNewPNGCodec(*Args()));
+#endif
   } else if (name == "none") {
     result.reset(new NoneCodec(*Args()));
 #ifdef BENCHMARK_WEBP
