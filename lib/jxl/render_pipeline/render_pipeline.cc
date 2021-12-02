@@ -26,7 +26,9 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
     std::pair<size_t, size_t> current_shift = {-1, -1};
     for (size_t c = 0; c < channel_shifts_.size(); c++) {
       if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
-        if (current_shift.first == -1UL) current_shift = channel_shifts_[c];
+        if (current_shift.first == size_t(-1)) {
+          current_shift = channel_shifts_[c];
+        }
         JXL_ASSERT(current_shift == channel_shifts_[c]);
         channel_shifts_[c].first -= stage->settings_.shift_x;
         channel_shifts_[c].second -= stage->settings_.shift_y;
