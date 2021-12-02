@@ -208,18 +208,21 @@ void VerifyRoundtripCompression(const size_t xsize, const size_t ysize,
                               /*is_gray=*/input_pixel_format.num_channels < 3);
   }
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
-  JxlEncoderOptions* opts = JxlEncoderOptionsCreate(enc, nullptr);
-  JxlEncoderOptionsSetLossless(opts, lossless);
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc, nullptr);
+  JxlEncoderSetFrameLossless(frame_settings, lossless);
   if (resampling > 1) {
+    EXPECT_EQ(
+        JXL_ENC_SUCCESS,
+        JxlEncoderFrameSettingsSetOption(
+            frame_settings, JXL_ENC_FRAME_SETTING_RESAMPLING, resampling));
     EXPECT_EQ(JXL_ENC_SUCCESS,
-              JxlEncoderOptionsSetInteger(opts, JXL_ENC_OPTION_RESAMPLING,
-                                          resampling));
-    EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderOptionsSetInteger(
-                                   opts, JXL_ENC_OPTION_ALREADY_DOWNSAMPLED,
-                                   already_downsampled));
+              JxlEncoderFrameSettingsSetOption(
+                  frame_settings, JXL_ENC_FRAME_SETTING_ALREADY_DOWNSAMPLED,
+                  already_downsampled));
   }
   EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderAddImageFrame(opts, &input_pixel_format,
+            JxlEncoderAddImageFrame(frame_settings, &input_pixel_format,
                                     (void*)original_bytes.data(),
                                     original_bytes.size()));
   JxlEncoderCloseInput(enc);
@@ -414,12 +417,13 @@ TEST(RoundtripTest, ExtraBoxesTest) {
                               /*is_gray=*/pixel_format.num_channels < 3);
   }
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetColorEncoding(enc, &color_encoding));
-  JxlEncoderOptions* opts = JxlEncoderOptionsCreate(enc, nullptr);
-  JxlEncoderOptionsSetLossless(opts, false);
-  EXPECT_EQ(
-      JXL_ENC_SUCCESS,
-      JxlEncoderAddImageFrame(opts, &pixel_format, (void*)original_bytes.data(),
-                              original_bytes.size()));
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc, nullptr);
+  JxlEncoderSetFrameLossless(frame_settings, false);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                    (void*)original_bytes.data(),
+                                    original_bytes.size()));
   JxlEncoderCloseInput(enc);
 
   std::vector<uint8_t> compressed;
@@ -554,9 +558,11 @@ TEST(RoundtripTest, TestICCProfile) {
 
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetICCProfile(enc, icc.data(), icc.size()));
-  JxlEncoderOptions* opts = JxlEncoderOptionsCreate(enc, nullptr);
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc, nullptr);
   EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderAddImageFrame(opts, &format, (void*)original_bytes.data(),
+            JxlEncoderAddImageFrame(frame_settings, &format,
+                                    (void*)original_bytes.data(),
                                     original_bytes.size()));
   JxlEncoderCloseInput(enc);
 
@@ -626,12 +632,13 @@ TEST(RoundtripTest, JXL_TRANSCODE_JPEG_TEST(TestJPEGReconstruction)) {
       SetFromBytes(jxl::Span<const uint8_t>(orig), &orig_io, /*pool=*/nullptr));
 
   JxlEncoderPtr enc = JxlEncoderMake(nullptr);
-  JxlEncoderOptions* options = JxlEncoderOptionsCreate(enc.get(), NULL);
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
 
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderUseContainer(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderStoreJPEGMetadata(enc.get(), JXL_TRUE));
   EXPECT_EQ(JXL_ENC_SUCCESS,
-            JxlEncoderAddJPEGFrame(options, orig.data(), orig.size()));
+            JxlEncoderAddJPEGFrame(frame_settings, orig.data(), orig.size()));
   JxlEncoderCloseInput(enc.get());
 
   std::vector<uint8_t> compressed;
