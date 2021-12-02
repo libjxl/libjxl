@@ -367,9 +367,6 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  * or introduce additional internal frames. Animation duration and time code
  * information is not altered since those are immutable metadata of the frame.
  *
- * TODO(lode): JxlFrameHeader currently only contains animation information,
- * also allow setting crop and blending fields.
- *
  * It is not required to use this function, however if have_animation is set
  * to true in the basic info, then this function should be used to set the
  * time duration of this individual frame. By default individual frames have a
@@ -390,7 +387,8 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc,
  *
  * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
- * @param frame_header frame header data to set.
+ * @param frame_header frame header data to set. Object owned by the caller and
+ * does not need to be kept in memory, its information is copied internally.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus
@@ -410,14 +408,14 @@ JxlEncoderFrameSettingsSetInfo(JxlEncoderFrameSettings* frame_settings,
  * Calling @ref JxlEncoderFrameSettingsSetInfo clears any name that was
  * previously set.
  *
- * @param frame_options set of options and metadata for this frame. Also
+ * @param frame_settings set of options and metadata for this frame. Also
  * includes reference to the encoder object.
  * @param frame_name name of the next frame to be encoded, as a UTF-8 encoded C
- * string (zero terminated).
+ * string (zero terminated). Owned by the caller, and copied internally.
  * @return JXL_ENC_SUCCESS on success, JXL_ENC_ERROR on error
  */
 JXL_EXPORT JxlEncoderStatus JxlEncoderFrameSettingsSetName(
-    JxlEncoderFrameSettings* frame_options, const char* frame_name);
+    JxlEncoderFrameSettings* frame_settings, const char* frame_name);
 
 /**
  * Sets the buffer to read JPEG encoded bytes from for the next frame to encode.
@@ -736,6 +734,17 @@ JXL_EXPORT JxlEncoderStatus JxlEncoderSetICCProfile(JxlEncoder* enc,
  * @param info global image metadata. Object owned by the caller.
  */
 JXL_EXPORT void JxlEncoderInitBasicInfo(JxlBasicInfo* info);
+/**
+ * Initializes a JxlFrameHeader struct to default values.
+ * For forwards-compatibility, this function has to be called before values
+ * are assigned to the struct fields.
+ * The default values correspond to a frame with no animation duration and the
+ * 'replace' blend mode. After using this function, For animation duration must
+ * be set, for composite still blend settings must be set.
+ *
+ * @param frame_header frame metadata. Object owned by the caller.
+ */
+JXL_EXPORT void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header);
 
 /**
  * Sets the global metadata of the image encoded by this encoder.

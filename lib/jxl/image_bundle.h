@@ -213,8 +213,15 @@ class ImageBundle {
   YCbCrChromaSubsampling chroma_subsampling;
 
   FrameOrigin origin{0, 0};
-  // Animation-related information. This assumes GIF- and APNG- like animation.
+
+  // Animation-related information, corresponding to the timecode and duration
+  // fields of the jxl::AnimationFrame of the jxl::FrameHeader.
+  // TODO(lode): ImageBundle is used here to carry the information from
+  // jxl::FrameHeader, consider instead passing a jxl::FrameHeader directly to
+  // EncodeFrame or having a field of that type here.
   uint32_t duration = 0;
+  uint32_t timecode = 0;
+
   bool use_for_next_frame = false;
   bool blend = false;
   BlendMode blendmode = BlendMode::kBlend;

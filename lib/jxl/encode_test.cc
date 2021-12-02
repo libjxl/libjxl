@@ -897,8 +897,7 @@ TEST(EncodeTest, BasicInfoTest) {
   basic_info.animation.have_timecodes = JXL_TRUE;
   EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
   JxlColorEncoding color_encoding;
-  JxlColorEncodingSetToSRGB(&color_encoding,
-                            /*is_gray=*/false);
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
   EXPECT_EQ(JXL_ENC_SUCCESS,
             JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
 
@@ -977,6 +976,86 @@ TEST(EncodeTest, BasicInfoTest) {
       FAIL();  // unexpected status
     }
   }
+}
+
+TEST(EncodeTest, AnimationHeaderTest) {
+  JxlEncoderPtr enc = JxlEncoderMake(nullptr);
+  EXPECT_NE(nullptr, enc.get());
+
+  JxlEncoderFrameSettings* frame_settings =
+      JxlEncoderFrameSettingsCreate(enc.get(), NULL);
+  size_t xsize = 1;
+  size_t ysize = 1;
+  JxlPixelFormat pixel_format = {4, JXL_TYPE_UINT16, JXL_BIG_ENDIAN, 0};
+  std::vector<uint8_t> pixels = jxl::test::GetSomeTestImage(xsize, ysize, 4, 0);
+  JxlBasicInfo basic_info;
+  jxl::test::JxlBasicInfoSetFromPixelFormat(&basic_info, &pixel_format);
+  basic_info.xsize = xsize;
+  basic_info.ysize = ysize;
+  basic_info.have_animation = true;
+  basic_info.animation.tps_numerator = 1000;
+  basic_info.animation.tps_denominator = 1;
+  basic_info.animation.have_timecodes = JXL_TRUE;
+  EXPECT_EQ(JXL_ENC_SUCCESS, JxlEncoderSetBasicInfo(enc.get(), &basic_info));
+  JxlColorEncoding color_encoding;
+  JxlColorEncodingSetToSRGB(&color_encoding, /*is_gray=*/false);
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderSetColorEncoding(enc.get(), &color_encoding));
+
+  std::string frame_name = "test frame";
+  JxlFrameHeader header;
+  JxlEncoderInitFrameHeader(&header);
+  header.duration = 50;
+  header.timecode = 800;
+  JxlEncoderFrameSettingsSetInfo(frame_settings, &header);
+  JxlEncoderFrameSettingsSetName(frame_settings, frame_name.c_str());
+
+  std::vector<uint8_t> compressed = std::vector<uint8_t>(64);
+  uint8_t* next_out = compressed.data();
+  size_t avail_out = compressed.size() - (next_out - compressed.data());
+  EXPECT_EQ(JXL_ENC_SUCCESS,
+            JxlEncoderAddImageFrame(frame_settings, &pixel_format,
+                                    pixels.data(), pixels.size()));
+  JxlEncoderCloseFrames(enc.get());
+  ProcessEncoder(enc.get(), compressed, next_out, avail_out);
+
+  // Decode to verify the boxes, we don't decode to pixels, only the boxes.
+  JxlDecoderPtr dec = JxlDecoderMake(nullptr);
+  EXPECT_NE(nullptr, dec.get());
+  EXPECT_EQ(JXL_DEC_SUCCESS,
+            JxlDecoderSubscribeEvents(dec.get(), JXL_DEC_FRAME));
+  JxlDecoderSetInput(dec.get(), compressed.data(), compressed.size());
+  JxlDecoderCloseInput(dec.get());
+
+  bool seen_frame = false;
+
+  for (;;) {
+    JxlDecoderStatus status = JxlDecoderProcessInput(dec.get());
+    if (status == JXL_DEC_ERROR) {
+      FAIL();
+    } else if (status == JXL_DEC_SUCCESS) {
+      break;
+    } else if (status == JXL_DEC_FRAME) {
+      seen_frame = true;
+      JxlFrameHeader header2;
+      EXPECT_EQ(JXL_DEC_SUCCESS, JxlDecoderGetFrameHeader(dec.get(), &header2));
+      EXPECT_EQ(header.duration, header2.duration);
+      EXPECT_EQ(header.timecode, header2.timecode);
+      EXPECT_EQ(frame_name.size(), header2.name_length);
+      if (header2.name_length > 0) {
+        std::string frame_name2(header2.name_length + 1, '\0');
+        EXPECT_EQ(JXL_DEC_SUCCESS,
+                  JxlDecoderGetFrameName(dec.get(), &frame_name2.front(),
+                                         frame_name2.size()));
+        frame_name2.resize(header2.name_length);
+        EXPECT_EQ(frame_name, frame_name2);
+      }
+    } else {
+      FAIL();  // unexpected status
+    }
+  }
+
+  EXPECT_EQ(true, seen_frame);
 }
 
 TEST(EncodeTest, BoxTest) {
