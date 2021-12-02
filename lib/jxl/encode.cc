@@ -300,6 +300,15 @@ JxlEncoderStatus JxlEncoderStruct::RefillOutputByteQueue() {
 
     jxl::BitWriter writer;
     jxl::PassesEncoderState enc_state;
+
+    // EncodeFrame creates jxl::FrameHeader object internally based on the
+    // FrameInfo, imagebundle, cparams and metadata. Copy the information to
+    // these.
+    jxl::ImageBundle& ib = input_frame->frame;
+    ib.name = input_frame->option_values.frame_name;
+    ib.duration = input_frame->option_values.header.duration;
+    ib.timecode = input_frame->option_values.header.timecode;
+
     if (!jxl::EncodeFrame(input_frame->option_values.cparams, jxl::FrameInfo{},
                           &metadata, input_frame->frame, &enc_state, cms,
                           thread_pool.get(), &writer,
@@ -418,6 +427,39 @@ void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
   info->animation.tps_denominator = 1;
   info->animation.num_loops = 0;
   info->animation.have_timecodes = JXL_FALSE;
+}
+
+void JxlEncoderInitFrameHeader(JxlFrameHeader* frame_header) {
+  // For each field, the default value of the specification is used. Depending
+  // on wheter an animation frame, or a composite still blending frame, is used,
+  // different fields have to be set up by the user after initing the frame
+  // header.
+  frame_header->duration = 0;
+  frame_header->timecode = 0;
+  frame_header->name_length = 0;
+  // In the specification, the default value of is_last is !frame_type, and the
+  // default frame_type is kRegularFrame which has value 0, so is_last is true
+  // by default. However, the encoder does not use this value (the field exists
+  // for the decoder to set) since last frame is determined by usage of
+  // JxlEncoderCloseFrames instead.
+  frame_header->is_last = JXL_TRUE;
+  frame_header->layer_info.crop_x0 = 0;
+  frame_header->layer_info.crop_y0 = 0;
+  // These must be set if have_crop is enabled, but the default value has
+  // have_crop false, and these dimensions 0. The user must set these to the
+  // desired size after enabling have_crop (which is not yet implemented).
+  frame_header->layer_info.xsize = 0;
+  frame_header->layer_info.ysize = 0;
+  // Default blend mode in the specification is 0. Note that combining
+  // blend mode of replace with a duration is not useful, but the user has to
+  // manually set duration in case of animation, or manually change the blend
+  // mode in case of composite stills, so initing to a combination that is not
+  // useful on its own is not an issue.
+  frame_header->layer_info.blend_info.blendmode = JXL_BLEND_REPLACE;
+  frame_header->layer_info.blend_info.source = 0;
+  frame_header->layer_info.blend_info.alpha = 0;
+  frame_header->layer_info.blend_info.clamp = 0;
+  frame_header->layer_info.save_as_reference = 0;
 }
 
 JxlEncoderStatus JxlEncoderSetBasicInfo(JxlEncoder* enc,
@@ -1183,6 +1225,29 @@ JxlEncoderStatus JxlEncoderProcessOutput(JxlEncoder* enc, uint8_t** next_out,
   if (!enc->output_byte_queue.empty() || !enc->input_queue.empty()) {
     return JXL_ENC_NEED_MORE_OUTPUT;
   }
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderFrameSettingsSetInfo(
+    JxlEncoderOptions* frame_settings, const JxlFrameHeader* frame_header) {
+  frame_settings->values.header = *frame_header;
+  // Setting the frame header resets the frame name, it must be set again with
+  // JxlEncoderFrameSettingsSetName if desired.
+  frame_settings->values.frame_name = "";
+
+  // TODO(lode): also set and handle blending fields
+
+  return JXL_ENC_SUCCESS;
+}
+
+JxlEncoderStatus JxlEncoderFrameSettingsSetName(
+    JxlEncoderFrameSettings* frame_settings, const char* frame_name) {
+  std::string str = frame_name;
+  if (str.size() > 1071) {
+    return JXL_API_ERROR("frame name can be max 1071 bytes long");
+  }
+  frame_settings->values.frame_name = str;
+  frame_settings->values.header.name_length = str.size();
   return JXL_ENC_SUCCESS;
 }
 

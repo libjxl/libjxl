@@ -26,6 +26,8 @@ typedef struct JxlEncoderFrameSettingsValuesStruct {
   // setting that overrides multiple settings inside of cparams.
   bool lossless;
   CompressParams cparams;
+  JxlFrameHeader header;
+  std::string frame_name;
 } JxlEncoderFrameSettingsValues;
 
 typedef std::array<uint8_t, 4> BoxType;

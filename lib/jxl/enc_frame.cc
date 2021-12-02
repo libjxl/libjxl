@@ -393,8 +393,7 @@ Status MakeFrameHeader(const CompressParams& cparams,
   }
 
   frame_header->animation_frame.duration = ib.duration;
-
-  // TODO(veluca): timecode.
+  frame_header->animation_frame.timecode = ib.timecode;
 
   return true;
 }
