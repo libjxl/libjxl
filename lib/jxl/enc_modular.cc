@@ -529,11 +529,21 @@ Status ModularFrameEncoder::ComputeEncodingData(
         size_t xsize_shifted = DivCeil(xsize, 1 << gi.channel[c_out].hshift);
         size_t ysize_shifted = DivCeil(ysize, 1 << gi.channel[c_out].vshift);
         gi.channel[c_out].shrink(xsize_shifted, ysize_shifted);
-        for (size_t y = 0; y < ysize_shifted; ++y) {
-          const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
-          pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
-          JXL_RETURN_IF_ERROR(float_to_int(row_in, row_out, xsize_shifted, bits,
-                                           exp_bits, fp, factor));
+        std::atomic<bool> has_error{false};
+        JXL_RETURN_IF_ERROR(RunOnPool(
+            pool, 0, ysize_shifted, ThreadPool::NoInit,
+            [&](const int task, const int thread) {
+              const size_t y = task;
+              const float* const JXL_RESTRICT row_in = color->PlaneRow(c, y);
+              pixel_type* const JXL_RESTRICT row_out = gi.channel[c_out].Row(y);
+              if (!float_to_int(row_in, row_out, xsize_shifted, bits, exp_bits,
+                                fp, factor)) {
+                has_error = true;
+              };
+            },
+            "float2int"));
+        if (has_error) {
+          return JXL_FAILURE("Error in float to integer conversion");
         }
       }
     }
@@ -554,13 +564,20 @@ Status ModularFrameEncoder::ComputeEncodingData(
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
     bool fp = eci.bit_depth.floating_point_sample;
     float factor = (fp ? 1 : ((1u << eci.bit_depth.bits_per_sample) - 1));
-    for (size_t y = 0; y < gi.channel[c].plane.ysize(); ++y) {
-      const float* const JXL_RESTRICT row_in = extra_channels[ec].Row(y);
-      pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
-      JXL_RETURN_IF_ERROR(float_to_int(row_in, row_out,
-                                       gi.channel[c].plane.xsize(), bits,
-                                       exp_bits, fp, factor));
-    }
+    std::atomic<bool> has_error{false};
+    JXL_RETURN_IF_ERROR(RunOnPool(
+        pool, 0, gi.channel[c].plane.ysize(), ThreadPool::NoInit,
+        [&](const int task, const int thread) {
+          const size_t y = task;
+          const float* const JXL_RESTRICT row_in = extra_channels[ec].Row(y);
+          pixel_type* const JXL_RESTRICT row_out = gi.channel[c].Row(y);
+          if (!float_to_int(row_in, row_out, gi.channel[c].plane.xsize(), bits,
+                            exp_bits, fp, factor)) {
+            has_error = true;
+          };
+        },
+        "float2int"));
+    if (has_error) return JXL_FAILURE("Error in float to integer conversion");
   }
   JXL_ASSERT(c == nb_chans);
 
@@ -1231,11 +1248,8 @@ Status ModularFrameEncoder::PrepareStreamParams(const Rect& rect,
       gc.hshift = fc.hshift;
       gc.vshift = fc.vshift;
       for (size_t y = 0; y < r.ysize(); ++y) {
-        const pixel_type* const JXL_RESTRICT row_in = r.ConstRow(fc.plane, y);
-        pixel_type* const JXL_RESTRICT row_out = gc.Row(y);
-        for (size_t x = 0; x < r.xsize(); ++x) {
-          row_out[x] = row_in[x];
-        }
+        memcpy(gc.Row(y), r.ConstRow(fc.plane, y),
+               r.xsize() * sizeof(pixel_type));
       }
       gi.channel.emplace_back(std::move(gc));
     }
