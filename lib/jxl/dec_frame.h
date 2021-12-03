@@ -54,8 +54,11 @@ class FrameDecoder {
  public:
   // All parameters must outlive the FrameDecoder.
   FrameDecoder(PassesDecoderState* dec_state, const CodecMetadata& metadata,
-               ThreadPool* pool)
-      : dec_state_(dec_state), pool_(pool), frame_header_(&metadata) {}
+               ThreadPool* pool, bool use_slow_rendering_pipeline)
+      : dec_state_(dec_state),
+        pool_(pool),
+        frame_header_(&metadata),
+        use_slow_rendering_pipeline_(use_slow_rendering_pipeline) {}
 
   // `constraints` must outlive the FrameDecoder if not null, or stay alive
   // until the next call to SetFrameSizeLimits.
@@ -197,6 +200,7 @@ class FrameDecoder {
   Status ProcessDCGroup(size_t dc_group_id, BitReader* br);
   void FinalizeDC();
   void AllocateOutput();
+  void PreparePipeline();
   Status ProcessACGlobal(BitReader* br);
   Status ProcessACGroup(size_t ac_group_id, BitReader* JXL_RESTRICT* br,
                         size_t num_passes, size_t thread, bool force_draw,
@@ -214,6 +218,9 @@ class FrameDecoder {
     }
     dec_state_->EnsureStorage(storage_size);
     use_task_id_ = num_threads > num_tasks;
+    if (dec_state_->render_pipeline) {
+      dec_state_->render_pipeline->PrepareForThreads(storage_size);
+    }
   }
 
   size_t GetStorageLocation(size_t thread, size_t task) {
@@ -275,6 +282,9 @@ class FrameDecoder {
   // Whether or not the task id should be used for storage indexing, instead of
   // the thread id.
   bool use_task_id_ = false;
+
+  // Testing setting: whether or not to use the slow rendering pipeline.
+  bool use_slow_rendering_pipeline_;
 };
 
 }  // namespace jxl

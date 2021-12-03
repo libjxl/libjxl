@@ -472,6 +472,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
 
   size_t c = 0;
   if (do_color) {
+    // TODO(veluca): adapt this code to output to the rendering pipeline.
+    JXL_CHECK(!dec_state->render_pipeline);
     const bool rgb_from_gray =
         metadata->m.color_encoding.IsGray() &&
         frame_header.color_transform == ColorTransform::kNone;
@@ -560,6 +562,8 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     }
   }
   for (size_t ec = 0; ec < dec_state->extra_channels.size(); ec++, c++) {
+    // TODO(veluca): adapt this code to output to the rendering pipeline.
+    JXL_CHECK(!dec_state->render_pipeline);
     const ExtraChannelInfo& eci = output->metadata()->extra_channel_info[ec];
     int bits = eci.bit_depth.bits_per_sample;
     int exp_bits = eci.bit_depth.exponent_bits_per_sample;
