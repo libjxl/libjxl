@@ -159,9 +159,9 @@ Status PredictICC(const uint8_t* icc, size_t size, PaddedBytes* result) {
         ok &= DecodeKeyword(icc, size, pos + 0) == kGtrcTag;
         ok &= DecodeKeyword(icc, size, pos + 12) == kBtrcTag;
         if (ok) {
-          for (size_t i = 0; i < 8; i++) {
-            if (icc[pos - 8 + i] != icc[pos + 4 + i]) ok = false;
-            if (icc[pos - 8 + i] != icc[pos + 16 + i]) ok = false;
+          for (size_t kk = 0; kk < 8; kk++) {
+            if (icc[pos - 8 + kk] != icc[pos + 4 + kk]) ok = false;
+            if (icc[pos - 8 + kk] != icc[pos + 16 + kk]) ok = false;
           }
         }
         if (ok) {
