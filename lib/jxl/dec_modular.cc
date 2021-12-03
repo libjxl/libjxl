@@ -468,6 +468,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
     return true;
   }
   JXL_DASSERT(rect.IsInside(decoded));
+  JXL_CHECK(gi.transform.empty());
 
   size_t c = 0;
   if (do_color) {
@@ -494,6 +495,7 @@ Status ModularFrameDecoder::ModularImageToDecodedRect(
       if (ch_in.w == 0 || ch_in.h == 0) {
         return JXL_FAILURE("Empty image");
       }
+      JXL_CHECK(ch_in.hshift <= 3 && ch_in.vshift <= 3);
       size_t xsize_shifted = DivCeil(xsize, 1 << ch_in.hshift);
       size_t ysize_shifted = DivCeil(ysize, 1 << ch_in.vshift);
       Rect r(rect.x0() >> ch_in.hshift, rect.y0() >> ch_in.vshift,
