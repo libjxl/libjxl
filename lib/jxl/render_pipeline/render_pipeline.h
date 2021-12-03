@@ -20,23 +20,27 @@ class RenderPipelineInput {
  public:
   RenderPipelineInput(const RenderPipelineInput&) = delete;
   RenderPipelineInput(RenderPipelineInput&& other) noexcept {
+    *this = std::move(other);
+  }
+  RenderPipelineInput& operator=(RenderPipelineInput&& other) noexcept {
     pipeline_ = other.pipeline_;
     group_id_ = other.group_id_;
     thread_id_ = other.thread_id_;
     buffers_ = std::move(other.buffers_);
     other.pipeline_ = nullptr;
+    return *this;
   }
 
   RenderPipelineInput() = default;
   ~RenderPipelineInput();
 
   const std::pair<ImageF*, Rect>& GetBuffer(size_t c) const {
-    JXL_DASSERT(c < buffers_.size());
+    JXL_ASSERT(c < buffers_.size());
     return buffers_[c];
   }
 
  private:
-  RenderPipeline* pipeline_;
+  RenderPipeline* pipeline_ = nullptr;
   size_t group_id_;
   size_t thread_id_;
   std::vector<std::pair<ImageF*, Rect>> buffers_;
@@ -115,6 +119,8 @@ class RenderPipeline {
 
   virtual void ProcessBuffers(size_t group_id, size_t thread_id) = 0;
 
+  // Note that this method may be called multiple times with different (or
+  // equal) `num`.
   virtual void PrepareForThreadsInternal(size_t num) = 0;
 };
 

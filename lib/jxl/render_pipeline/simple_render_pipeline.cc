@@ -7,6 +7,9 @@
 
 namespace jxl {
 void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
+  if (!channel_data_.empty()) {
+    return;
+  }
   auto ch_size = [](size_t frame_size, size_t shift) {
     return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
   };
@@ -14,6 +17,7 @@ void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
     channel_data_.push_back(
         ImageF(ch_size(frame_dimensions_.xsize_padded, ch_shifts.first),
                ch_size(frame_dimensions_.ysize_padded, ch_shifts.second)));
+    msan::PoisonImage(channel_data_.back());
   }
 }
 
@@ -48,6 +52,13 @@ std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
 
 void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
   if (!ReceivedAllInput()) return;
+  for (const auto& ch : channel_data_) {
+    (void)ch;
+    JXL_CHECK_IMAGE_INITIALIZED(
+        ch, Rect(kRenderPipelineXOffset, kRenderPipelineXOffset,
+                 ch.xsize() - 2 * kRenderPipelineXOffset,
+                 ch.ysize() - 2 * kRenderPipelineXOffset));
+  }
   for (size_t stage_id = 0; stage_id < stages_.size(); stage_id++) {
     const auto& stage = stages_[stage_id];
     // Prepare buffers for kInOut channels.
@@ -150,7 +161,7 @@ void SimpleRenderPipeline::ProcessBuffers(size_t group_id, size_t thread_id) {
         }
         stage->ProcessRow(
             input_rows, output_rows, /*xextra=*/0, xsize,
-            /*xpos=*/0, /*ypos=*/0,
+            /*xpos=*/0, y,
             reinterpret_cast<float*>(temp_buffers_[thread_id][stage_id].get()));
       }
     }

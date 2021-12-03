@@ -53,6 +53,8 @@
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
 #include "lib/jxl/quantizer.h"
+#include "lib/jxl/render_pipeline/stage_write_to_ib.h"
+#include "lib/jxl/render_pipeline/stage_xyb.h"
 #include "lib/jxl/sanitizers.h"
 #include "lib/jxl/splines.h"
 #include "lib/jxl/toc.h"
@@ -143,7 +145,8 @@ Status DecodeFrame(const DecompressParams& dparams,
                    const SizeConstraints* constraints, bool is_preview) {
   PROFILER_ZONE("DecodeFrame uninstrumented");
 
-  FrameDecoder frame_decoder(dec_state, metadata, pool);
+  FrameDecoder frame_decoder(dec_state, metadata, pool,
+                             dparams.use_slow_render_pipeline);
 
   frame_decoder.SetFrameSizeLimits(constraints);
 
@@ -651,6 +654,72 @@ Status FrameDecoder::ProcessACGroup(size_t ac_group_id,
   return true;
 }
 
+void FrameDecoder::PreparePipeline() {
+  if (frame_header_.nonserialized_metadata->m.num_extra_channels != 0) {
+    JXL_ABORT("Not implemented: extra channels");
+  }
+  if (frame_header_.upsampling != 1) {
+    JXL_ABORT("Not implemented: upsampling");
+  }
+  if (!frame_header_.chroma_subsampling.Is444()) {
+    JXL_ABORT("Not implemented: chroma subsampling");
+  }
+
+  RenderPipeline::Builder builder(
+      std::vector<std::pair<size_t, size_t>>{{0, 0}, {0, 0}, {0, 0}});
+
+  if (use_slow_rendering_pipeline_) {
+    builder.UseSimpleImplementation();
+  } else {
+    JXL_ABORT("Not implemented: fast pipeline");
+  }
+
+  if (frame_header_.loop_filter.gab) {
+    JXL_ABORT("Not implemented: Gaborish");
+  }
+  if (frame_header_.loop_filter.epf_iters != 0) {
+    JXL_ABORT("Not implemented: EPF");
+  }
+  if ((frame_header_.flags & FrameHeader::kPatches) != 0) {
+    JXL_ABORT("Not implemented: patches");
+  }
+  if ((frame_header_.flags & FrameHeader::kSplines) != 0) {
+    JXL_ABORT("Not implemented: splines");
+  }
+  if ((frame_header_.flags & FrameHeader::kNoise) != 0) {
+    JXL_ABORT("Not implemented: noise");
+  }
+  if (frame_header_.dc_level != 0) {
+    JXL_ABORT("Not implemented: save as dc frames");
+  }
+  if (!coalescing_) {
+    JXL_ABORT("Not implemented: skip coalescing");
+  }
+  if (dec_state_->shared->frame_header.CanBeReferenced()) {
+    JXL_ABORT("Not implemented: save as reference");
+  }
+
+  if (frame_header_.color_transform == ColorTransform::kYCbCr) {
+    JXL_ABORT("Not implemented: YCbCr");
+  } else if (frame_header_.color_transform == ColorTransform::kXYB) {
+    builder.AddStage(GetXYBStage(dec_state_->output_encoding_info));
+  }  // Nothing to do for kNone.
+
+  if (ImageBlender::NeedsBlending(dec_state_)) {
+    JXL_ABORT("Not implemented: blending");
+  }
+  if (dec_state_->pixel_callback) {
+    JXL_ABORT("Not implemented: pixel callback");
+  } else if (dec_state_->fast_xyb_srgb8_conversion) {
+    JXL_ABORT("Not implemented: fast xyb->srgb conversion");
+  } else if (dec_state_->rgb_output) {
+    JXL_ABORT("Not implemented: u8 output");
+  } else {
+    builder.AddStage(GetWriteToImageBundleStage(decoded_));
+  }
+  dec_state_->render_pipeline = std::move(builder).Finalize(frame_dim_);
+}
+
 Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
                                      SectionStatus* section_status) {
   if (num == 0) return true;  // Nothing to process
@@ -743,11 +812,15 @@ Status FrameDecoder::ProcessSections(const SectionInfo* sections, size_t num,
   if (*std::min_element(decoded_dc_groups_.begin(), decoded_dc_groups_.end()) ==
           true &&
       !finalized_dc_) {
+    if (use_slow_rendering_pipeline_) {
+      PreparePipeline();
+    }
     FinalizeDC();
     AllocateOutput();
   }
 
   if (finalized_dc_) dec_state_->EnsureBordersStorage();
+
   if (finalized_dc_ && ac_global_sec != num && !decoded_ac_global_) {
     JXL_RETURN_IF_ERROR(ProcessACGlobal(sections[ac_global_sec].br));
     section_status[ac_global_sec] = SectionStatus::kDone;

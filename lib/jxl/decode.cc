@@ -1366,7 +1366,8 @@ JxlDecoderStatus JxlDecoderProcessCodestream(JxlDecoder* dec, const uint8_t* in,
       }
 
       dec->frame_dec.reset(new FrameDecoder(
-          dec->passes_state.get(), dec->metadata, dec->thread_pool.get()));
+          dec->passes_state.get(), dec->metadata, dec->thread_pool.get(),
+          /*use_slow_rendering_pipeline=*/false));
       dec->frame_dec->SetRenderSpotcolors(dec->render_spotcolors);
       dec->frame_dec->SetCoalescing(dec->coalescing);
 

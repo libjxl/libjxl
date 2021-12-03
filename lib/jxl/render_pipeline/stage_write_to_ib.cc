@@ -21,7 +21,6 @@ class WriteToImageBundleStage : public RenderPipelineStage {
                   size_t xextra, size_t xsize, size_t xpos, size_t ypos,
                   float* JXL_RESTRICT temp) const final {
     for (size_t c = 0; c < 3; c++) {
-      JXL_ASSERT(image_bundle_->color()->xsize() <= xpos + xsize + xextra);
       memcpy(image_bundle_->color()->PlaneRow(c, ypos) + xpos - xextra,
              GetInputRow(input_rows, c, 0) + kRenderPipelineXOffset - xextra,
              sizeof(float) * (xsize + 2 * xextra));

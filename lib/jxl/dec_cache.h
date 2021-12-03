@@ -22,6 +22,7 @@
 #include "lib/jxl/image.h"
 #include "lib/jxl/passes_state.h"
 #include "lib/jxl/quant_weights.h"
+#include "lib/jxl/render_pipeline/render_pipeline.h"
 #include "lib/jxl/sanitizers.h"
 
 namespace jxl {
@@ -105,6 +106,10 @@ struct PassesDecoderState {
 
   // Manages the status of borders.
   GroupBorderAssigner group_border_assigner;
+
+  // Rendering pipeline. TODO(veluca): eventually, this pipeline will replace
+  // most of the state in this struct.
+  std::unique_ptr<RenderPipeline> render_pipeline;
 
   // TODO(veluca): this should eventually become "iff no global modular
   // transform was applied".
@@ -294,6 +299,8 @@ struct PassesDecoderState {
       shared_storage.coeff_orders.resize(sz);
     }
     if (shared->frame_header.flags & FrameHeader::kNoise) {
+      // TODO(veluca): adapt this code to output to the rendering pipeline.
+      JXL_CHECK(!render_pipeline);
       noise = Image3F(shared->frame_dim.xsize_upsampled_padded,
                       shared->frame_dim.ysize_upsampled_padded);
       size_t num_x_groups = DivCeil(noise.xsize(), kGroupDim);

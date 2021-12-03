@@ -582,6 +582,10 @@ Status FinalizeImageRect(
     const std::vector<std::pair<ImageF*, Rect>>& extra_channels,
     PassesDecoderState* dec_state, size_t thread,
     ImageBundle* JXL_RESTRICT output_image, const Rect& frame_rect) {
+  // Do nothing if using the rendering pipeline.
+  if (dec_state->render_pipeline) {
+    return true;
+  }
   const ImageFeatures& image_features = dec_state->shared->image_features;
   const FrameHeader& frame_header = dec_state->shared->frame_header;
   const ImageMetadata& metadata = frame_header.nonserialized_metadata->m;
