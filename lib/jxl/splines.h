@@ -62,9 +62,9 @@ class QuantizedSpline {
                            int32_t quantization_adjustment, float ytox,
                            float ytob);
 
-  Spline Dequantize(const Spline::Point& starting_point,
-                    int32_t quantization_adjustment, float ytox,
-                    float ytob) const;
+  Status Dequantize(const Spline::Point& starting_point,
+                    int32_t quantization_adjustment, float ytox, float ytob,
+                    Spline& result) const;
 
   Status Decode(const std::vector<uint8_t>& context_map,
                 ANSSymbolReader* decoder, BitReader* br,

@@ -44,12 +44,14 @@ constexpr float kTolerance = 0.003125;
 std::vector<Spline> DequantizeSplines(const Splines& splines) {
   const auto& quantized_splines = splines.QuantizedSplines();
   const auto& starting_points = splines.StartingPoints();
-  JXL_ASSERT(quantized_splines.size() == starting_points.size());
+  JXL_CHECK(quantized_splines.size() == starting_points.size());
 
   std::vector<Spline> dequantized;
   for (size_t i = 0; i < quantized_splines.size(); ++i) {
-    dequantized.push_back(quantized_splines[i].Dequantize(
-        starting_points[i], kQuantizationAdjustment, kYToX, kYToB));
+    dequantized.emplace_back();
+    JXL_CHECK(quantized_splines[i].Dequantize(starting_points[i],
+                                              kQuantizationAdjustment, kYToX,
+                                              kYToB, dequantized.back()));
   }
   return dequantized;
 }
@@ -326,6 +328,7 @@ TEST(SplinesTest, ClearedEveryFrame) {
       ReadTestData("jxl/spline_on_first_frame.jxl");
   ASSERT_TRUE(DecodeFile(DecompressParams(), bytes_actual, &io_actual,
                          /*pool=*/nullptr));
+
   ASSERT_TRUE(io_actual.TransformTo(ColorEncoding::SRGB(), GetJxlCms()));
   for (size_t c = 0; c < 3; ++c) {
     for (size_t y = 0; y < io_actual.ysize(); ++y) {
