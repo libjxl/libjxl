@@ -100,7 +100,8 @@ void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
 void ComputeSegments(const Spline::Point& center, const float intensity,
                      const float color[3], const float sigma,
                      std::vector<SplineSegment>& segments,
-                     std::vector<std::pair<size_t, size_t>>& segments_by_y) {
+                     std::vector<std::pair<size_t, size_t>>& segments_by_y,
+                     size_t* pixel_limit) {
   // Sanity check sigma, inverse sigma and intensity
   if (!(std::isfinite(sigma) && sigma != 0.0f && std::isfinite(1.0f / sigma) &&
         std::isfinite(intensity))) {
@@ -129,6 +130,21 @@ void ComputeSegments(const Spline::Point& center, const float intensity,
   segment.inv_sigma = 1.0f / sigma;
   segment.sigma_over_4_times_intensity = .25f * sigma * intensity;
   segment.maximum_distance = maximum_distance;
+  float cost = 2.0f * maximum_distance + 2.0f;
+  // Check cost^2 fits size_t.
+  if (cost >= static_cast<float>(1 << 15)) {
+    // Too much to rasterize.
+    *pixel_limit = 0;
+    return;
+  }
+  size_t area_cost = static_cast<size_t>(cost * cost);
+  if (area_cost > *pixel_limit) {
+    *pixel_limit = 0;
+    return;
+  }
+  *pixel_limit -= area_cost;
+  // TODO(eustas): this will work incorrectly for (center.y >= 1 << 23)
+  //               we have to use double precision in that case...
   ssize_t y0 = center.y - maximum_distance + .5f;
   ssize_t y1 = center.y + maximum_distance + 1.5f;  // one-past-the-end
   for (ssize_t y = std::max<ssize_t>(y0, 0); y < y1; y++) {
@@ -157,7 +173,8 @@ void SegmentsFromPoints(
     const Spline& spline,
     const std::vector<std::pair<Spline::Point, float>>& points_to_draw,
     const float arc_length, std::vector<SplineSegment>& segments,
-    std::vector<std::pair<size_t, size_t>>& segments_by_y) {
+    std::vector<std::pair<size_t, size_t>>& segments_by_y,
+    size_t* pixel_limit) {
   const float inv_arc_length = 1.0f / arc_length;
   int k = 0;
   for (const auto& point_to_draw : points_to_draw) {
@@ -173,7 +190,11 @@ void SegmentsFromPoints(
     }
     const float sigma =
         ContinuousIDCT(spline.sigma_dct, (32 - 1) * progress_along_arc);
-    ComputeSegments(point, multiplier, color, sigma, segments, segments_by_y);
+    ComputeSegments(point, multiplier, color, sigma, segments, segments_by_y,
+                    pixel_limit);
+    if (*pixel_limit == 0) {
+      return;
+    }
   }
 }
 }  // namespace
@@ -369,22 +390,36 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
   }
 }
 
-Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
+Status QuantizedSpline::Dequantize(const Spline::Point& starting_point,
                                    const int32_t quantization_adjustment,
-                                   const float ytox, const float ytob) const {
-  Spline result;
-
+                                   const float ytox, const float ytob,
+                                   Spline& result) const {
+  result.control_points.clear();
   result.control_points.reserve(control_points_.size() + 1);
   int current_x = static_cast<int>(roundf(starting_point.x)),
       current_y = static_cast<int>(roundf(starting_point.y));
+  // It is not in spec, but reasonable limit to avoid overflows.
+  constexpr int kPosLimit = 1u << 30;
+  if ((current_x >= kPosLimit) || (current_x <= -kPosLimit) ||
+      (current_y >= kPosLimit) || (current_y <= -kPosLimit)) {
+    return JXL_FAILURE("Spline coordinates out of bounds");
+  }
   result.control_points.push_back(Spline::Point{static_cast<float>(current_x),
                                                 static_cast<float>(current_y)});
   int current_delta_x = 0, current_delta_y = 0;
   for (const auto& point : control_points_) {
     current_delta_x += point.first;
     current_delta_y += point.second;
+    if ((current_delta_x >= kPosLimit) || (current_delta_x <= -kPosLimit) ||
+        (current_delta_y >= kPosLimit) || (current_delta_y <= -kPosLimit)) {
+      return JXL_FAILURE("Spline coordinates out of bounds");
+    }
     current_x += current_delta_x;
     current_y += current_delta_y;
+    if ((current_x >= kPosLimit) || (current_x <= -kPosLimit) ||
+        (current_y >= kPosLimit) || (current_y <= -kPosLimit)) {
+      return JXL_FAILURE("Spline coordinates out of bounds");
+    }
     result.control_points.push_back(Spline::Point{
         static_cast<float>(current_x), static_cast<float>(current_y)});
   }
@@ -406,7 +441,7 @@ Spline QuantizedSpline::Dequantize(const Spline::Point& starting_point,
         ColorQuantizationWeight(quantization_adjustment, 3, i);
   }
 
-  return result;
+  return true;
 }
 
 Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
@@ -422,11 +457,21 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
                        *total_num_control_points);
   }
   control_points_.resize(num_control_points);
+  // Maximal image dimension.
+  constexpr int64_t kDeltaLimit = 1u << 30;
   for (std::pair<int64_t, int64_t>& control_point : control_points_) {
     control_point.first = UnpackSigned(
         decoder->ReadHybridUint(kControlPointsContext, br, context_map));
     control_point.second = UnpackSigned(
         decoder->ReadHybridUint(kControlPointsContext, br, context_map));
+    // Check delta-deltas are not outrageous; it is not in spec, but there is
+    // no reason to allow larger values.
+    if ((control_point.first >= kDeltaLimit) ||
+        (control_point.first <= -kDeltaLimit) ||
+        (control_point.second >= kDeltaLimit) ||
+        (control_point.second <= -kDeltaLimit)) {
+      return JXL_FAILURE("Spline delta-delta is out of bounds");
+    }
   }
 
   const auto decode_dct = [decoder, br, &context_map](int dct[32]) -> Status {
@@ -512,10 +557,18 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   segment_indices_.clear();
   segment_y_start_.clear();
   std::vector<std::pair<size_t, size_t>> segments_by_y;
+  Spline spline;
+  // TODO(eustas): not in the spec; limit spline pixels with image area.
+  float pixel_limit = 16.0f * image_xsize * image_ysize + (1 << 16);
+  // Apply some extra cap to avoid overflows.
+  constexpr size_t kHardPixelLimit = 1u << 30;
+  size_t px_limit = (pixel_limit < static_cast<float>(kHardPixelLimit))
+                        ? static_cast<size_t>(pixel_limit)
+                        : kHardPixelLimit;
   for (size_t i = 0; i < splines_.size(); ++i) {
-    const Spline spline =
+    JXL_RETURN_IF_ERROR(
         splines_[i].Dequantize(starting_points_[i], quantization_adjustment_,
-                               cmap.YtoXRatio(0), cmap.YtoBRatio(0));
+                               cmap.YtoXRatio(0), cmap.YtoBRatio(0), spline));
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {
@@ -536,8 +589,12 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
       continue;
     }
     HWY_DYNAMIC_DISPATCH(SegmentsFromPoints)
-    (spline, points_to_draw, arc_length, segments_, segments_by_y);
+    (spline, points_to_draw, arc_length, segments_, segments_by_y, &px_limit);
+    if (px_limit == 0) {
+      return JXL_FAILURE("Too many pixels covered with splines");
+    }
   }
+  // TODO(eustas): consider linear sorting here.
   std::sort(segments_by_y.begin(), segments_by_y.end());
   segment_indices_.resize(segments_by_y.size());
   segment_y_start_.resize(image_ysize + 1);
