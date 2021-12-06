@@ -190,14 +190,6 @@ typedef struct {
    */
   JXL_BOOL have_animation;
 
-  /** Indicates if an intrinsic size is present in the codestream.
-   * If JXL_TRUE, the intrinsic image size is given by intrinsic_size.
-   * The intrinsic size can be different from the actual size in pixels (as given by xsize and ysize)
-   * and it denotes the recommended dimensions for displaying the image,
-   * i.e. applications are advised to resample the decoded image to the intrinsic dimensions.
-   */
-  JXL_BOOL have_intrinsic_size;
-
   /** Image orientation, value 1-8 matching the values used by JEITA CP-3451C
    * (Exif version 2.3).
    */
@@ -249,6 +241,14 @@ typedef struct {
    */
   JxlAnimationHeader animation;
 
+  /** Indicates if an intrinsic size is present in the codestream.
+   * If JXL_TRUE, the intrinsic image size is given by intrinsic_size.
+   * The intrinsic size can be different from the actual size in pixels (as given by xsize and ysize)
+   * and it denotes the recommended dimensions for displaying the image,
+   * i.e. applications are advised to resample the decoded image to the intrinsic dimensions.
+   */
+  JXL_BOOL have_intrinsic_size;
+
   /** Dimensions of the intrinsic size, only used if have_intrinsic_size is
    * JXL_TRUE.
    */
@@ -257,7 +257,7 @@ typedef struct {
   /** Padding for forwards-compatibility, in case more fields are exposed
    * in a future version of the library.
    */
-  uint8_t padding[108];
+  uint8_t padding[96];
 } JxlBasicInfo;
 
 /** Information for a single extra channel.

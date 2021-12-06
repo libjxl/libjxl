@@ -2128,7 +2128,7 @@ JxlDecoderStatus JxlDecoderProcessInput(JxlDecoder* dec) {
 }
 
 // To ensure ABI forward-compatibility, this struct has a constant size.
-static_assert(sizeof(JxlBasicInfo) == 216,
+static_assert(sizeof(JxlBasicInfo) == 204,
               "JxlBasicInfo struct size should remain constant");
 
 JxlDecoderStatus JxlDecoderGetBasicInfo(const JxlDecoder* dec,
