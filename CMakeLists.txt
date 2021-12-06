@@ -404,7 +404,7 @@ if (ASCIIDOC_PY_FOUND)
     list(APPEND MANPAGES "${PAGE}.1")
   endforeach()
   add_custom_target(manpages ALL DEPENDS ${MANPAGES})
-  install(FILES ${MANPAGE_FILES} DESTINATION share/man/man1)
+  install(FILES ${MANPAGE_FILES} DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 endif()  # ASCIIDOC_PY_FOUND
 else()
   message(WARNING "asciidoc was not found, the man pages will not be installed.")
