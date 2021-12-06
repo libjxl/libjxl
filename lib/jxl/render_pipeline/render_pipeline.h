@@ -51,10 +51,7 @@ class RenderPipeline {
  public:
   class Builder {
    public:
-    // Initial shifts for the channels (following the same convention as
-    // RenderPipelineStage for naming the channels).
-    explicit Builder(std::vector<std::pair<size_t, size_t>> channel_shifts)
-        : channel_shifts_(std::move(channel_shifts)) {}
+    explicit Builder(size_t num_c) : num_c_(num_c) { JXL_ASSERT(num_c > 0); }
 
     // Adds a stage to the pipeline. Must be called at least once; the last
     // added stage cannot have kInOut channels.
@@ -71,7 +68,7 @@ class RenderPipeline {
 
    private:
     std::vector<std::unique_ptr<RenderPipelineStage>> stages_;
-    std::vector<std::pair<size_t, size_t>> channel_shifts_;
+    size_t num_c_;
     bool use_simple_implementation_ = false;
   };
 

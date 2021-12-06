@@ -21,28 +21,10 @@ void RenderPipeline::Builder::AddStage(
 std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
     FrameDimensions frame_dimensions) && {
 #if JXL_ENABLE_ASSERT
-  // Check channel shifts.
-  for (const auto& stage : stages_) {
-    std::pair<size_t, size_t> current_shift = {-1, -1};
-    for (size_t c = 0; c < channel_shifts_.size(); c++) {
-      if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
-        if (current_shift.first == size_t(-1)) {
-          current_shift = channel_shifts_[c];
-        }
-        JXL_ASSERT(current_shift == channel_shifts_[c]);
-        channel_shifts_[c].first -= stage->settings_.shift_x;
-        channel_shifts_[c].second -= stage->settings_.shift_y;
-      }
-    }
-  }
-  for (const auto& cc : channel_shifts_) {
-    JXL_ASSERT(cc.first == 0);
-    JXL_ASSERT(cc.second == 0);
-  }
   // Check that the last stage is not an kInOut stage for any channel, and that
   // there is at least one stage.
   JXL_ASSERT(!stages_.empty());
-  for (size_t c = 0; c < channel_shifts_.size(); c++) {
+  for (size_t c = 0; c < num_c_; c++) {
     JXL_ASSERT(stages_.back()->GetChannelMode(c) !=
                RenderPipelineChannelMode::kInOut);
   }
@@ -55,10 +37,10 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
     res = jxl::make_unique<LowMemoryRenderPipeline>();
   }
   res->padding_.resize(stages_.size());
-  std::vector<size_t> channel_border(channel_shifts_.size());
+  std::vector<size_t> channel_border(num_c_);
   for (size_t i = stages_.size(); i > 0; i--) {
     const auto& stage = stages_[i - 1];
-    for (size_t c = 0; c < channel_shifts_.size(); c++) {
+    for (size_t c = 0; c < num_c_; c++) {
       if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
         channel_border[c] = DivCeil(
             channel_border[c],
@@ -70,21 +52,29 @@ std::unique_ptr<RenderPipeline> RenderPipeline::Builder::Finalize(
     res->padding_[i - 1] =
         *std::max_element(channel_border.begin(), channel_border.end());
   }
-  size_t num_c = channel_shifts_.size();
   res->frame_dimensions_ = frame_dimensions;
   res->group_status_.resize(frame_dimensions.num_groups,
                             RenderPipeline::kUninitialized);
   res->channel_shifts_.resize(stages_.size());
-  res->channel_shifts_[0] = std::move(channel_shifts_);
+  res->channel_shifts_[0].resize(num_c_);
   for (size_t i = 1; i < stages_.size(); i++) {
     auto& stage = stages_[i - 1];
-    res->channel_shifts_[i].resize(num_c);
-    for (size_t c = 0; c < num_c; c++) {
+    for (size_t c = 0; c < num_c_; c++) {
+      if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
+        res->channel_shifts_[0][c].first += stage->settings_.shift_x;
+        res->channel_shifts_[0][c].second += stage->settings_.shift_y;
+      }
+    }
+  }
+  for (size_t i = 1; i < stages_.size(); i++) {
+    auto& stage = stages_[i - 1];
+    res->channel_shifts_[i].resize(num_c_);
+    for (size_t c = 0; c < num_c_; c++) {
       if (stage->GetChannelMode(c) == RenderPipelineChannelMode::kInOut) {
         res->channel_shifts_[i][c].first =
             res->channel_shifts_[i - 1][c].first - stage->settings_.shift_x;
         res->channel_shifts_[i][c].second =
-            res->channel_shifts_[i - 1][c].first - stage->settings_.shift_y;
+            res->channel_shifts_[i - 1][c].second - stage->settings_.shift_y;
       }
     }
   }

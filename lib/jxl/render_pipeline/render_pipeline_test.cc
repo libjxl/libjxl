@@ -25,7 +25,7 @@ namespace jxl {
 namespace {
 
 TEST(RenderPipelineTest, Build) {
-  RenderPipeline::Builder builder(/*channel_shifts=*/{{1, 1}});
+  RenderPipeline::Builder builder(/*num_c=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -33,12 +33,12 @@ TEST(RenderPipelineTest, Build) {
   FrameDimensions frame_dimensions;
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
-                       /*modular_mode=*/false, /*upsampling=*/2);
+                       /*modular_mode=*/false, /*upsampling=*/1);
   std::move(builder).Finalize(frame_dimensions);
 }
 
 TEST(RenderPipelineTest, CallAllGroups) {
-  RenderPipeline::Builder builder({{1, 1}});
+  RenderPipeline::Builder builder(/*num_c=*/1);
   builder.AddStage(jxl::make_unique<UpsampleXSlowStage>());
   builder.AddStage(jxl::make_unique<UpsampleYSlowStage>());
   builder.AddStage(jxl::make_unique<Check0FinalStage>());
@@ -46,7 +46,7 @@ TEST(RenderPipelineTest, CallAllGroups) {
   FrameDimensions frame_dimensions;
   frame_dimensions.Set(/*xsize=*/1024, /*ysize=*/1024, /*group_size_shift=*/0,
                        /*max_hshift=*/0, /*max_vshift=*/0,
-                       /*modular_mode=*/false, /*upsampling=*/2);
+                       /*modular_mode=*/false, /*upsampling=*/1);
   auto pipeline = std::move(builder).Finalize(frame_dimensions);
   pipeline->PrepareForThreads(1);
 
@@ -98,9 +98,6 @@ TEST_P(RenderPipelineTestParam, PipelineTest) {
   CodecInOut io_slow_pipeline;
   dparams.use_slow_render_pipeline = true;
   ASSERT_TRUE(DecodeFile(dparams, compressed, &io_slow_pipeline, &pool));
-
-  JXL_CHECK(EncodeToFile(io_default, "/tmp/default.png"));
-  JXL_CHECK(EncodeToFile(io_slow_pipeline, "/tmp/pipeline.png"));
 
   ASSERT_EQ(io_default.frames.size(), io_slow_pipeline.frames.size());
   for (size_t i = 0; i < io_default.frames.size(); i++) {

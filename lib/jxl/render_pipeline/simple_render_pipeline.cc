@@ -14,9 +14,9 @@ void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
     return DivCeil(frame_size, 1 << shift) + kRenderPipelineXOffset * 2;
   };
   for (auto ch_shifts : channel_shifts_[0]) {
-    channel_data_.push_back(
-        ImageF(ch_size(frame_dimensions_.xsize_padded, ch_shifts.first),
-               ch_size(frame_dimensions_.ysize_padded, ch_shifts.second)));
+    channel_data_.push_back(ImageF(
+        ch_size(frame_dimensions_.xsize_upsampled_padded, ch_shifts.first),
+        ch_size(frame_dimensions_.ysize_upsampled_padded, ch_shifts.second)));
     msan::PoisonImage(channel_data_.back());
   }
 }
@@ -24,27 +24,21 @@ void SimpleRenderPipeline::PrepareForThreadsInternal(size_t num) {
 std::vector<std::pair<ImageF*, Rect>> SimpleRenderPipeline::PrepareBuffers(
     size_t group_id, size_t thread_id) {
   std::vector<std::pair<ImageF*, Rect>> ret;
-  std::pair<size_t, size_t> min_color_shifts{64, 64};
-  for (size_t c = 0; c < channel_data_.size() && c < 3; c++) {
-    min_color_shifts.first =
-        std::min(min_color_shifts.first, channel_shifts_[0][c].first);
-    min_color_shifts.second =
-        std::min(min_color_shifts.first, channel_shifts_[0][c].second);
-  }
+  size_t base_color_shift =
+      CeilLog2Nonzero(frame_dimensions_.xsize_upsampled_padded /
+                      frame_dimensions_.xsize_padded);
   for (size_t c = 0; c < channel_data_.size(); c++) {
     const size_t gx = group_id % frame_dimensions_.xsize_groups;
     const size_t gy = group_id / frame_dimensions_.xsize_groups;
-    size_t xgroupdim =
-        (frame_dimensions_.group_dim << min_color_shifts.first) >>
-        channel_shifts_[0][c].first;
-    size_t ygroupdim =
-        (frame_dimensions_.group_dim << min_color_shifts.second) >>
-        channel_shifts_[0][c].second;
-    const Rect rect(kRenderPipelineXOffset + gx * xgroupdim,
-                    kRenderPipelineXOffset + gy * ygroupdim, xgroupdim,
-                    ygroupdim,
-                    kRenderPipelineXOffset + frame_dimensions_.xsize_padded,
-                    kRenderPipelineXOffset + frame_dimensions_.ysize_padded);
+    size_t xgroupdim = (frame_dimensions_.group_dim << base_color_shift) >>
+                       channel_shifts_[0][c].first;
+    size_t ygroupdim = (frame_dimensions_.group_dim << base_color_shift) >>
+                       channel_shifts_[0][c].second;
+    const Rect rect(
+        kRenderPipelineXOffset + gx * xgroupdim,
+        kRenderPipelineXOffset + gy * ygroupdim, xgroupdim, ygroupdim,
+        kRenderPipelineXOffset + frame_dimensions_.xsize_upsampled_padded,
+        kRenderPipelineXOffset + frame_dimensions_.ysize_upsampled_padded);
     ret.emplace_back(&channel_data_[c], rect);
   }
   return ret;
