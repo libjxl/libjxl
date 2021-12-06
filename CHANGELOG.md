@@ -27,9 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    `JxlEncoderFrameSettingsSetOption`
  - encoder API: new function `JxlEncoderFrameSettingsSetInfo` to set animation
    and blending parameters of the frame.
- - decoder/encoder API: add fields to `JXLBasicInfo`: a boolean
-   `have_intrinsic_size` and a new `JXLIntrinsicSizeHeader` struct that contains
-   the dimensions of the intrinsic size.
+ - decoder/encoder API: add two fields to `JXLBasicInfo`: `intrinsic_xsize`
+   and `intrinsic_ysize` to signal the intrinsic size.
 
 ### Changed
 - decoder API: using `JxlDecoderCloseInput` at the end of all input is required

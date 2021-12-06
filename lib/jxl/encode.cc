@@ -416,7 +416,6 @@ void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
   info->uses_original_profile = JXL_FALSE;
   info->have_preview = JXL_FALSE;
   info->have_animation = JXL_FALSE;
-  info->have_intrinsic_size = JXL_FALSE;
   info->orientation = JXL_ORIENT_IDENTITY;
   info->num_color_channels = 3;
   info->num_extra_channels = 0;
@@ -425,8 +424,8 @@ void JxlEncoderInitBasicInfo(JxlBasicInfo* info) {
   info->alpha_premultiplied = JXL_FALSE;
   info->preview.xsize = 0;
   info->preview.ysize = 0;
-  info->intrinsic_size.xsize = 0;
-  info->intrinsic_size.ysize = 0;
+  info->intrinsic_xsize = 0;
+  info->intrinsic_ysize = 0;
   info->animation.tps_numerator = 10;
   info->animation.tps_denominator = 1;
   info->animation.num_loops = 0;

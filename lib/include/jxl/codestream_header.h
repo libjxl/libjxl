@@ -241,24 +241,26 @@ typedef struct {
    */
   JxlAnimationHeader animation;
 
-  /** Indicates if an intrinsic size is present in the codestream.
-   * If JXL_TRUE, the intrinsic image size is given by intrinsic_size.
+  /** Intrinsic width of the image.
    * The intrinsic size can be different from the actual size in pixels
    * (as given by xsize and ysize) and it denotes the recommended dimensions
    * for displaying the image, i.e. applications are advised to resample the
    * decoded image to the intrinsic dimensions.
    */
-  JXL_BOOL have_intrinsic_size;
+  uint32_t intrinsic_xsize;
 
-  /** Dimensions of the intrinsic size, only used if have_intrinsic_size is
-   * JXL_TRUE.
+  /** Intrinsic heigth of the image.
+   * The intrinsic size can be different from the actual size in pixels
+   * (as given by xsize and ysize) and it denotes the recommended dimensions
+   * for displaying the image, i.e. applications are advised to resample the
+   * decoded image to the intrinsic dimensions.
    */
-  JxlIntrinsicSizeHeader intrinsic_size;
+  uint32_t intrinsic_ysize;
 
   /** Padding for forwards-compatibility, in case more fields are exposed
    * in a future version of the library.
    */
-  uint8_t padding[96];
+  uint8_t padding[100];
 } JxlBasicInfo;
 
 /** Information for a single extra channel.

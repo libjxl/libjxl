@@ -231,7 +231,6 @@ PaddedBytes CreateTestJXLCodestream(
                                                io.preview_frame.ysize()));
   }
   if (add_intrinsic_size) {
-    io.metadata.m.have_intrinsic_size = true;
     EXPECT_TRUE(io.metadata.m.intrinsic_size.Set(xsize / 3, ysize / 3));
   }
   io.metadata.m.orientation = orientation;
