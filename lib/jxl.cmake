@@ -196,6 +196,8 @@ set(JPEGXL_INTERNAL_SOURCES_DEC
   jxl/render_pipeline/render_pipeline_stage.h
   jxl/render_pipeline/simple_render_pipeline.cc
   jxl/render_pipeline/simple_render_pipeline.h
+  jxl/render_pipeline/stage_gaborish.cc
+  jxl/render_pipeline/stage_gaborish.h
   jxl/render_pipeline/stage_write_to_ib.cc
   jxl/render_pipeline/stage_write_to_ib.h
   jxl/render_pipeline/stage_xyb.cc
